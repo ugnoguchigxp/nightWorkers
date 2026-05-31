@@ -1,0 +1,34 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+build
+storybook-static
+
+# Testing
+coverage
+*.tsbuildinfo
+
+# OS / Editor
+.DS_Store
+.idea
+.vscode/*
+!.vscode/extensions.json
+
+# Environment
+.env
+.env.local
+.env.production
+.env.development
+*.tgz
+
+# pnpm
+.pnpm-store

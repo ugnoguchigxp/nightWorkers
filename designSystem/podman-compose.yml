@@ -1,0 +1,12 @@
+services:
+  storybook:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "6006:6006"
+    volumes:
+      - .:/app
+    command: sh -c "bun install && bun run storybook --host 0.0.0.0 --ci"
+    environment:
+      - CHOKIDAR_USEPOLLING=true # Often needed for hot reload in Docker

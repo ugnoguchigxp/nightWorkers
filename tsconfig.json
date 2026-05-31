@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "@/*": ["./src/*", "./designSystem/src/*"],
+      "@api/*": ["./api/*"],
+      "@repo/design-system": ["./designSystem/src"],
+      "@repo/design-system/*": ["./designSystem/src/*"],
+      "@repo/design-system/pencil": ["./designSystem/pencil"]
+    },
+    "types": ["node", "vite/client"]
+  },
+  "include": ["src/**/*", "api/**/*", "shared/**/*"],
+  "exclude": ["node_modules", "dist", "drizzle"]
+}
