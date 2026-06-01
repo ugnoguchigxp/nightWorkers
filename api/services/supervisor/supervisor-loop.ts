@@ -56,7 +56,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<str
     let decision: Awaited<ReturnType<typeof callSupervisorLLM>>;
     try {
       const round1 = await callSupervisorLLM(buildRound1SystemPrompt(repoRoot), userPrompt, {
-        tolerateSchemaFailure: true,
+        tolerateSchemaFailure: false,
         round: 1,
       });
       logger.info(

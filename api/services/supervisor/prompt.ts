@@ -18,6 +18,7 @@ export function buildRound1SystemPrompt(projectRoot: string): string {
 - 分析後に Goal と実行プロセスを考案してください。
 - 出力は JSON のみ（自然文の前置き・コードブロック禁止）。
 - 必須キー: phase, instruction, rationale, finalResponse, expectedEvidence, riskLevel, toolCall
+- toolCall に許可外のツール名（例: mcp__*, functions.*, exec_command）を絶対に入れない。
 - すぐ返答できる会話タスクなら phase="stop" と finalResponse を埋める。
 - 実行が必要なら phase="plan" または phase="act" を返す。`;
 }
@@ -33,6 +34,7 @@ export function buildRound2SystemPrompt(): string {
 - 単純な1箇所編集は replace_content を優先し、複雑な構造変更のみ apply_patch を使う。
 - 出力は JSON のみ。
 - 実行を続ける場合は toolCall を必ず返す。会話だけで完了する場合のみ phase="stop" + finalResponse を返す。
+- 許可外のツール名（例: mcp__*, functions.*, exec_command）は絶対に使わない。
 
 [toolCall の Zod スキーマ相当]
 toolCall: z.object({

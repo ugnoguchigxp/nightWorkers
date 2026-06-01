@@ -43,7 +43,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       if (!project) return;
       const session = await workspace.createSession({
         repositoryId: project.id,
-        title: prompt.slice(0, 40),
+        title: 'New Session',
         description: '',
         objective: '',
         acceptanceCriteria: 'Ensure tests compile and complete without errors',

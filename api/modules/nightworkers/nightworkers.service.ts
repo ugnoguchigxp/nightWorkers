@@ -87,13 +87,21 @@ export async function appendTaskMessage(id: string, prompt: string) {
   if (!task) throw new NotFoundError('Task not found');
   const trimmed = prompt.trim();
   if (!trimmed) throw new AppError(400, 'EMPTY_PROMPT', 'Prompt must not be empty');
+  const existingMessages = await repo.listTaskMessages(id);
+  const hasAnyUserMessage = existingMessages.some((message) => message.role === 'user');
   await repo.createTaskMessage({
     taskId: id,
     role: 'user',
     content: trimmed,
     messageType: 'text',
   });
-  return task;
+  if (task.title === 'New Session' && !hasAnyUserMessage) {
+    const firstPromptTitle = trimmed.replace(/\s+/g, ' ').slice(0, 40);
+    await repo.updateTask(id, { title: firstPromptTitle });
+  }
+  const latestTask = await repo.getTask(id);
+  if (!latestTask) throw new NotFoundError('Task not found');
+  return latestTask;
 }
 
 export async function deleteTask(id: string) {

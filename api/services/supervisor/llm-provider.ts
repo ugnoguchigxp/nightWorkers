@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { appendSupervisorTrace, logger } from '../../lib/logger';
 import { buildCodexTurnPrompt } from './prompt';
+import { isTemporarilyBlockedExternalToolName } from './TEMP_DISABLE_EXTERNAL_MCP_TOOLS';
 
 const supervisorDecisionBaseSchema = z.object({
   phase: z.enum(['observe', 'plan', 'act', 'verify', 'report', 'stop']),
@@ -189,13 +190,21 @@ function normalizeDecisionForSchema(input: unknown): unknown {
     }
     // 互換: 非許可ツール名を許可名へマッピング
     if (typeof toolCall.name === 'string') {
+      const toolName = toolCall.name;
       const mappedToolName: Record<string, string> = {
         exec_command: 'run_command',
         command: 'run_command',
         shell: 'run_command',
       };
-      const mapped = mappedToolName[toolCall.name];
+      const mapped = mappedToolName[toolName];
       if (mapped) toolCall.name = mapped;
+
+      // 外部MCP名や namespaced 形式は許可対象外として無効化する
+      const normalizedName = typeof toolCall.name === 'string' ? toolCall.name : toolName;
+      if (isTemporarilyBlockedExternalToolName(normalizedName)) {
+        obj.toolCall = null;
+        return obj;
+      }
     }
     if (
       !toolCall.arguments ||

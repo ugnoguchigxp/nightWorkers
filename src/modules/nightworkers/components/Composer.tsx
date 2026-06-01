@@ -34,31 +34,19 @@ export function Composer({
   const hasDiff = !!latestDiffPatch.trim();
   const diffFiles = hasDiff ? getChangedFiles(latestDiffPatch).length : 0;
   const diffStats = hasDiff ? getDiffStats(latestDiffPatch) : { added: 0, deleted: 0 };
-  const wsStatusLabel =
+  const wsStatusDotClass =
     realtimeStatus === 'connected'
-      ? 'WS 接続完了'
+      ? 'bg-emerald-400'
       : realtimeStatus === 'connecting'
-        ? 'WS 接続中'
+        ? 'bg-orange-400'
         : realtimeStatus === 'disconnected'
-          ? 'WS 切断'
-          : 'WS 初期化中';
-  const wsStatusClass =
-    realtimeStatus === 'connected'
-      ? 'text-slate-100 border-slate-500 bg-slate-700'
-      : realtimeStatus === 'connecting'
-        ? 'text-slate-100 border-slate-500 bg-slate-700'
-        : realtimeStatus === 'disconnected'
-          ? 'text-slate-100 border-slate-500 bg-slate-700'
-          : 'text-slate-100 border-slate-500 bg-slate-800';
+          ? 'bg-red-500'
+          : 'bg-orange-400';
 
   return (
     <div className="bg-transparent p-4">
       <div className="relative mx-auto max-w-4xl rounded-2xl border border-slate-600/70 bg-[#1e293b] p-4 shadow-[0_0_0_1px_rgba(148,163,184,0.08)]">
-        <div
-          className={`absolute -top-3 left-4 rounded-full border px-3 py-1 text-[11px] ${wsStatusClass}`}
-        >
-          {wsStatusLabel}
-        </div>
+        <div className={`absolute -top-[5px] left-4 h-3 w-3 rounded-full ${wsStatusDotClass}`} />
         {hasDiff ? (
           <div className="absolute -top-3 right-4 rounded-full border border-slate-600/80 bg-slate-800 px-3 py-1 text-[11px]">
             <span className="text-slate-200">{diffFiles} files</span>{' '}

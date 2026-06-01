@@ -71,6 +71,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('initializing');
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const lastSubmitRef = useRef<{ taskId: string; prompt: string; at: number } | null>(null);
   const pendingChatQueueRef = useRef<Array<{ taskId: string; prompt: string }>>([]);
   const chatSubmitStartedAtRef = useRef<number | null>(null);
   const lastSubmitRecoveryAtRef = useRef<number>(0);
@@ -545,6 +546,17 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     sendChatMessage: async (sessionId, prompt) => {
       const content = prompt.trim();
       if (!content) return;
+      const now = Date.now();
+      const lastSubmit = lastSubmitRef.current;
+      if (
+        lastSubmit &&
+        lastSubmit.taskId === sessionId &&
+        lastSubmit.prompt === content &&
+        now - lastSubmit.at < 1500
+      ) {
+        return;
+      }
+      lastSubmitRef.current = { taskId: sessionId, prompt: content, at: now };
       const optimisticUserMessage: TaskMessage = {
         id: `optimistic-user-${Date.now()}`,
         taskId: sessionId,
