@@ -58,6 +58,7 @@ toolCall: z.object({
 - search_files: 対象文字列の全文検索（必要時のみ）。
 - git_status: 変更有無や状態を確認する。
 - apply_patch: unified diff を arguments.patchContent に入れて実行する（filePath 単独は無効）。
+- 新規ファイル作成は apply_patch で --- /dev/null / +++ b/<path> の new file patch を使う。
 - replace_content: 単純置換を安全に実行する（1件一致が前提）。
 - run_command: arguments.command に実行コマンドを入れる。`;
 }

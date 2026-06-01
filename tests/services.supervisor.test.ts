@@ -60,7 +60,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
 
     // 3. Trigger supervisor loop execution
     const dummyRepoRoot = __dirname;
-    const finalReport = await runSupervisorLoop({
+    const result = await runSupervisorLoop({
       runId: 'run-1',
       repoRoot: dummyRepoRoot,
       prompt: 'Start',
@@ -68,7 +68,8 @@ describe('Supervisor Control Loop Unit Tests', () => {
     });
 
     // 4. Assertions
-    expect(finalReport).toBe('Task complete');
+    expect(result.finalReport).toBe('Task complete');
+    expect(result.terminalState).toBe('completed');
     expect(repo.createTaskEvent).toHaveBeenCalled();
     expect(repo.updateTaskRun).toHaveBeenCalledWith('run-1', {
       finalReport: 'Task complete',
@@ -76,5 +77,78 @@ describe('Supervisor Control Loop Unit Tests', () => {
       status: 'completed',
     });
     expect(repo.updateTaskStatus).toHaveBeenCalledWith('task-1', 'completed');
+  });
+
+  it('stops with needs_human after repeated missing toolCall decisions', async () => {
+    const mockRun = { id: 'run-2', taskId: 'task-2' };
+    const mockTask = {
+      id: 'task-2',
+      objective: 'Do task',
+      acceptanceCriteria: 'Done',
+    };
+
+    vi.mocked(repo.getTaskRun).mockResolvedValue(mockRun as any);
+    vi.mocked(repo.getTask).mockResolvedValue(mockTask as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        phase: 'plan',
+        instruction: 'analyze',
+        rationale: 'r1',
+        expectedEvidence: [],
+        riskLevel: 'low',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'act',
+        instruction: 'act',
+        rationale: 'r2',
+        expectedEvidence: [],
+        riskLevel: 'low',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'plan',
+        instruction: 'analyze',
+        rationale: 'r3',
+        expectedEvidence: [],
+        riskLevel: 'low',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'act',
+        instruction: 'act',
+        rationale: 'r4',
+        expectedEvidence: [],
+        riskLevel: 'low',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'plan',
+        instruction: 'analyze',
+        rationale: 'r5',
+        expectedEvidence: [],
+        riskLevel: 'low',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'act',
+        instruction: 'act',
+        rationale: 'r6',
+        expectedEvidence: [],
+        riskLevel: 'low',
+        toolCall: null,
+      });
+
+    const result = await runSupervisorLoop({
+      runId: 'run-2',
+      repoRoot: __dirname,
+      prompt: 'Start',
+      timeoutSeconds: 60,
+    });
+
+    expect(result.terminalState).toBe('needs_human');
+    expect(result.stoppedBy).toBe('missing_tool_call');
   });
 });

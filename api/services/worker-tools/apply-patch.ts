@@ -92,6 +92,15 @@ export async function applyPatchTool(
 
       // Read-before-edit check
       if (requireReadBeforeEdit) {
+        let fileExists = true;
+        try {
+          await fs.access(absolutePath);
+        } catch {
+          fileExists = false;
+        }
+        if (!fileExists) {
+          continue;
+        }
         const hasBeenRead = readFiles.some((read) => {
           const absRead = path.resolve(absoluteRepoRoot, read);
           return absRead === absolutePath;

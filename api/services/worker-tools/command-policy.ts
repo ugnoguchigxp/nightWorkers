@@ -6,9 +6,9 @@
 export type CommandClassification =
   | 'read_only'
   | 'build_test'
-  | 'write'
+  | 'format'
+  | 'package_install_if_explicit'
   | 'destructive'
-  | 'networked'
   | 'unknown';
 
 export interface CommandSafetyResult {
@@ -38,6 +38,7 @@ const DESTRUCTIVE_KEYWORDS = [
 const READ_ONLY_COMMANDS = [
   'ls',
   'pwd',
+  'echo',
   'git status',
   'git diff',
   'git log',
@@ -46,30 +47,33 @@ const READ_ONLY_COMMANDS = [
   'grep',
   'find',
   'rg',
-  'echo',
 ];
 
 const BUILD_TEST_COMMANDS = [
-  'npm test',
   'pnpm test',
-  'yarn test',
-  'bun test',
-  'npm run build',
+  'pnpm typecheck',
+  'pnpm lint',
   'pnpm build',
-  'yarn build',
-  'bun run build',
-  'npm run dev',
-  'pnpm dev',
-  'vitest',
-  'jest',
-  'playwright',
-  'tsc',
-  'eslint',
-  'biome',
+  'pnpm test run',
 ];
+
+const FORMAT_COMMANDS = ['pnpm format', 'pnpm biome format'];
+const EXPLICIT_INSTALL_COMMANDS = ['pnpm add', 'pnpm install'];
+
+function startsWithCommand(command: string, prefix: string): boolean {
+  return command === prefix || command.startsWith(`${prefix} `);
+}
 
 export function analyzeCommand(command: string, blockedCommands?: string[]): CommandSafetyResult {
   const trimmedCmd = command.trim();
+  const hasUnsafeChain = /&&|;|\||`|\$\(/.test(trimmedCmd);
+  if (hasUnsafeChain) {
+    return {
+      allowed: false,
+      classification: 'destructive',
+      reason: 'Chained/expanded shell syntax is blocked by policy.',
+    };
+  }
 
   // 1. Check custom blocked commands
   if (blockedCommands && blockedCommands.length > 0) {
@@ -103,34 +107,31 @@ export function analyzeCommand(command: string, blockedCommands?: string[]): Com
 
   const baseCmd = trimmedCmd.split(/\s+/)[0];
 
-  if (READ_ONLY_COMMANDS.some((cmd) => trimmedCmd.startsWith(cmd) || baseCmd === cmd)) {
+  if (READ_ONLY_COMMANDS.some((cmd) => startsWithCommand(trimmedCmd, cmd) || baseCmd === cmd)) {
     classification = 'read_only';
-  } else if (BUILD_TEST_COMMANDS.some((cmd) => trimmedCmd.includes(cmd) || baseCmd === cmd)) {
+  } else if (BUILD_TEST_COMMANDS.some((cmd) => startsWithCommand(trimmedCmd, cmd))) {
     classification = 'build_test';
+  } else if (FORMAT_COMMANDS.some((cmd) => startsWithCommand(trimmedCmd, cmd))) {
+    classification = 'format';
+  } else if (EXPLICIT_INSTALL_COMMANDS.some((cmd) => startsWithCommand(trimmedCmd, cmd))) {
+    classification = 'package_install_if_explicit';
   } else if (
     trimmedCmd.startsWith('git ') &&
-    !trimmedCmd.includes('push') &&
-    !trimmedCmd.includes('checkout') &&
-    !trimmedCmd.includes('reset')
+    (trimmedCmd.includes('push') ||
+      trimmedCmd.includes('checkout') ||
+      trimmedCmd.includes('reset') ||
+      trimmedCmd.includes('commit'))
   ) {
-    classification = 'read_only';
-  } else if (
-    trimmedCmd.includes('curl') ||
-    trimmedCmd.includes('wget') ||
-    trimmedCmd.includes('fetch')
-  ) {
-    classification = 'networked';
-  } else if (
-    trimmedCmd.includes('touch') ||
-    trimmedCmd.includes('mkdir') ||
-    trimmedCmd.includes('cp') ||
-    trimmedCmd.includes('mv')
-  ) {
-    classification = 'write';
+    return {
+      allowed: false,
+      classification: 'destructive',
+      reason: 'Mutating git command is blocked by policy.',
+    };
   }
 
   return {
-    allowed: true,
+    allowed: classification !== 'unknown',
     classification,
+    reason: classification === 'unknown' ? 'Unknown command is denied by default.' : undefined,
   };
 }

@@ -289,5 +289,29 @@ describe('Worker Tools Unit Tests', () => {
       expect(result.ok).toBe(false);
       expect(result.error?.code).toBe('DESTRUCTIVE_COMMAND');
     });
+
+    it('blocks unknown commands by default', async () => {
+      const result = await runCommandTool({
+        command: 'custom-unknown-cmd',
+        repoRoot: dummyRepoDir,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe('DESTRUCTIVE_COMMAND');
+    });
+
+    it('blocks chained commands', async () => {
+      const result = await runCommandTool({
+        command: 'pnpm test && rm -rf .',
+        repoRoot: dummyRepoDir,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe('DESTRUCTIVE_COMMAND');
+    });
+
+    it('does not allow substring-matched build command names', () => {
+      const safety = analyzeCommand('xpnpm test run tests/foo.ts');
+      expect(safety.allowed).toBe(false);
+      expect(safety.classification).toBe('unknown');
+    });
   });
 });

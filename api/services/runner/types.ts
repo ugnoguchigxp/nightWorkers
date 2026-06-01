@@ -2,10 +2,25 @@ export interface RunnerOptions {
   timeoutSeconds?: number;
   env?: Record<string, string>;
   latestUserMessage?: string;
+  safetyPolicy?: {
+    allowedPaths?: string[];
+    deniedPaths?: string[];
+    blockedCommands?: string[];
+    maxCommandSeconds?: number;
+    requireReadBeforeEdit?: boolean;
+  };
 }
 
 export interface RunnerStatus {
-  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  status:
+    | 'running'
+    | 'completed'
+    | 'failed'
+    | 'cancelled'
+    | 'needs_review'
+    | 'needs_human'
+    | 'blocked'
+    | 'timed_out';
   exitCode?: number;
 }
 

@@ -43,12 +43,13 @@ export class NativeLocalRunner implements IRunner {
 
         // 2. Call the main supervisor control loop
         this.emitLog(runId, '[System] Handing control over to Supervisor Loop...');
-        const finalReport = await runSupervisorLoop({
+        const supervisorResult = await runSupervisorLoop({
           runId,
           repoRoot: repositoryPath,
           prompt,
           timeoutSeconds: options?.timeoutSeconds ?? 3600,
           latestUserMessage: options?.latestUserMessage,
+          safetyPolicy: options?.safetyPolicy,
         });
 
         // 3. Final git diff check
@@ -62,14 +63,23 @@ export class NativeLocalRunner implements IRunner {
           actor: 'supervisor',
           eventType: 'final_report',
           payloadJson: {
-            finalReport,
+            finalReport: supervisorResult.finalReport,
+            terminalState: supervisorResult.terminalState,
             diffStat: gitDiffRes.payload.diffStat,
           },
         });
 
-        // Update run status
-        this.statuses.set(runId, { status: 'completed', exitCode: 0 });
-        this.emitLog(runId, '[System] Native Local Worker completed successfully.');
+        const isSuccessLike =
+          supervisorResult.terminalState === 'completed' ||
+          supervisorResult.terminalState === 'needs_review';
+        this.statuses.set(runId, {
+          status: supervisorResult.terminalState,
+          exitCode: isSuccessLike ? 0 : 1,
+        });
+        this.emitLog(
+          runId,
+          `[System] Native Local Worker finished with terminalState=${supervisorResult.terminalState}.`
+        );
       } catch (err: any) {
         console.error(`Error in NativeLocalRunner execution loop for run ${runId}:`, err);
         this.statuses.set(runId, { status: 'failed' });

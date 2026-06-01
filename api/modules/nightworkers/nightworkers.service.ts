@@ -192,6 +192,7 @@ export async function startTaskRun(taskId: string) {
       await nativeLocalRunner.start(run.id, repoInfo?.localPath || '', compiledPromptText, {
         timeoutSeconds: task.timeoutSeconds,
         latestUserMessage: lastUserMessage?.content || compiledPromptText,
+        safetyPolicy: repoInfo.safetyPolicy || undefined,
       });
 
       // Poll until process is no longer running
@@ -213,8 +214,8 @@ export async function startTaskRun(taskId: string) {
         diffPatch: diff,
       });
 
-      // Status goes to needs_review upon success, failed otherwise
-      const finalTaskStatus = runnerStatus.status === 'completed' ? 'needs_review' : 'failed';
+      const terminalLikeStatus = runnerStatus.status;
+      const finalTaskStatus = terminalLikeStatus === 'cancelled' ? 'cancelled' : terminalLikeStatus;
       await repo.updateTaskStatus(taskId, finalTaskStatus);
 
       await repo.createTaskEvent({

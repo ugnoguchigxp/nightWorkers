@@ -76,6 +76,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const chatSubmitStartedAtRef = useRef<number | null>(null);
   const lastSubmitRecoveryAtRef = useRef<number>(0);
   const [realtimeEvents, setRealtimeEvents] = useState<TaskEvent[]>([]);
+  const [bufferedEventsByRun, setBufferedEventsByRun] = useState<Record<string, TaskEvent[]>>({});
 
   const fetchDirectories = async (targetPath?: string) => {
     setIsBrowserLoading(true);
@@ -310,8 +311,17 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   }, [activeSessionId, isChatSubmitting, queryClient]);
 
   useEffect(() => {
-    setRealtimeEvents(latestRunDetails?.events || []);
-  }, [latestRunDetails?.events]);
+    const runId = latestRun?.id;
+    if (!runId) {
+      setRealtimeEvents(latestRunDetails?.events || []);
+      return;
+    }
+    const merged = dedupeAndSortEvents([
+      ...((latestRunDetails?.events || []) as TaskEvent[]),
+      ...(bufferedEventsByRun[runId] || []),
+    ]);
+    setRealtimeEvents(merged);
+  }, [latestRun?.id, latestRunDetails?.events, bufferedEventsByRun]);
 
   useEffect(() => {
     if (!activeSessionId) return;
@@ -362,6 +372,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
           const msg = JSON.parse(String(event.data)) as {
             type?: string;
             runId?: string;
+            seq?: number;
             message?: string;
             payload?: { message?: TaskMessage; run?: TaskRun; status?: string; task?: Task };
             event?: {
@@ -374,15 +385,14 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
               timestamp?: unknown;
             };
           };
-          if (
-            msg.type === 'task_event_created' &&
-            msg.runId &&
-            latestRun?.id &&
-            msg.runId === latestRun.id &&
-            msg.event
-          ) {
-            const eventPayload = msg.event;
-            setRealtimeEvents((prev) => [...prev, eventPayload]);
+          if (msg.type === 'task_event_created' && msg.runId && msg.event) {
+            const eventPayload = msg.event as TaskEvent;
+            setBufferedEventsByRun((prev) => {
+              const next = { ...prev };
+              const current = next[msg.runId as string] || [];
+              next[msg.runId as string] = dedupeAndSortEvents([...current, eventPayload]);
+              return next;
+            });
           }
           if (msg.type === 'task_message_created' && msg.payload?.message) {
             queryClient.setQueryData<TaskMessage[]>(
@@ -506,7 +516,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       setIsRealtimeConnected(false);
       setRealtimeStatus('disconnected');
     };
-  }, [activeSessionId, latestRun?.id, queryClient]);
+  }, [activeSessionId, queryClient]);
 
   return {
     projects,
@@ -649,4 +659,23 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       return (await res.json()) as { ok: boolean; provider: string; message: string };
     },
   };
+}
+
+function dedupeAndSortEvents(events: TaskEvent[]): TaskEvent[] {
+  const uniq = new Map<string, TaskEvent>();
+  for (const event of events) {
+    if (event?.id) uniq.set(event.id, event);
+  }
+  return Array.from(uniq.values()).sort((a, b) => {
+    const sa = typeof a.seq === 'number' ? a.seq : Number.MAX_SAFE_INTEGER;
+    const sb = typeof b.seq === 'number' ? b.seq : Number.MAX_SAFE_INTEGER;
+    if (sa !== sb) return sa - sb;
+    return toMs(a.timestamp || a.createdAt) - toMs(b.timestamp || b.createdAt);
+  });
+}
+
+function toMs(value: unknown): number {
+  if (!value) return Number.MAX_SAFE_INTEGER;
+  const n = Date.parse(String(value));
+  return Number.isNaN(n) ? Number.MAX_SAFE_INTEGER : n;
 }

@@ -5,6 +5,7 @@ type SocketMessage = {
   type: string;
   taskId?: string;
   runId?: string;
+  seq?: number;
   event?: unknown;
   payload?: unknown;
   timestamp: string;
@@ -74,6 +75,7 @@ class NightWorkersRealtimeBroker {
     const wire = JSON.stringify({
       ...message,
       taskId,
+      seq: (message as { event?: { seq?: number } }).event?.seq,
       timestamp: new Date().toISOString(),
     } satisfies SocketMessage);
     for (const ws of set) {
