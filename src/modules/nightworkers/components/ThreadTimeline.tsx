@@ -75,9 +75,12 @@ export function ThreadTimeline({
           >
             <MessagePayload message={item.message} />
           </ThreadMessage>
-        ) : showDebugEvents ? (
-          <AgentDebugEventCard key={item.id} event={item.event} />
-        ) : null
+        ) : (
+          <div key={item.id} className="space-y-2">
+            <AgentPatchSummaryCard event={item.event} />
+            {showDebugEvents ? <AgentDebugEventCard event={item.event} /> : null}
+          </div>
+        )
       )}
       {isAgentWorking ? (
         <ThreadMessage messageRole="assistant">
@@ -91,16 +94,44 @@ export function ThreadTimeline({
   );
 }
 
+function AgentPatchSummaryCard({ event }: { event: TaskEvent }) {
+  const payload = event.payloadJson as any;
+  const patchContent = getApplyPatchContent(payload);
+  const sections =
+    typeof patchContent === 'string' && patchContent.trim()
+      ? parseApplyPatchSections(patchContent)
+      : [];
+
+  if (sections.length === 0) return null;
+
+  return (
+    <details className="rounded border border-slate-700/80 bg-slate-900/30">
+      <summary className="cursor-pointer list-none px-3 py-2 text-xs text-slate-200">
+        コード変更 ({sections.length})
+      </summary>
+      <div className="space-y-1 border-t border-slate-700/80 px-3 py-2 text-xs">
+        {sections.map((section, idx) => (
+          <div
+            key={`${event.id}-section-${idx}`}
+            className="rounded border border-slate-700/70 bg-slate-950/40 px-2 py-1"
+          >
+            <div className="truncate text-slate-200">{section.path}</div>
+            <div className="text-slate-400">
+              <span className="text-emerald-400">+{section.added}</span>{' '}
+              <span className="text-rose-400">-{section.deleted}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function AgentDebugEventCard({ event }: { event: TaskEvent }) {
   const [copiedEventId, setCopiedEventId] = useState<string | null>(null);
   const payload = event.payloadJson as any;
   const toolName = payload?.toolName || payload?.toolCall?.name;
-  const patchContent =
-    toolName === 'apply_patch'
-      ? payload?.arguments?.patchContent ||
-        payload?.toolCall?.arguments?.patchContent ||
-        payload?.decision?.toolCall?.arguments?.patchContent
-      : null;
+  const patchContent = getApplyPatchContent(payload);
   const round = payload?.round;
   const phase = payload?.phase;
   const patchLines = typeof patchContent === 'string' ? patchContent.split('\n') : [];
@@ -194,6 +225,64 @@ function AgentDebugEventCard({ event }: { event: TaskEvent }) {
       ) : null}
     </div>
   );
+}
+
+function getApplyPatchContent(payload: any): string | null {
+  const toolName = payload?.toolName || payload?.toolCall?.name;
+  if (toolName !== 'apply_patch') return null;
+  return (
+    payload?.arguments?.patchContent ||
+    payload?.toolCall?.arguments?.patchContent ||
+    payload?.decision?.toolCall?.arguments?.patchContent ||
+    null
+  );
+}
+
+function parseApplyPatchSections(
+  patchContent: string
+): Array<{ path: string; added: number; deleted: number }> {
+  const lines = patchContent.split('\n');
+  const sections: Array<{ path: string; added: number; deleted: number }> = [];
+  let activePath: string | null = null;
+  let activeSection: { path: string; added: number; deleted: number } | null = null;
+
+  const pushSection = () => {
+    if (activeSection) sections.push(activeSection);
+  };
+
+  for (const line of lines) {
+    if (line.startsWith('*** Update File: ')) {
+      pushSection();
+      activePath = line.replace('*** Update File: ', '').trim();
+      activeSection = null;
+      continue;
+    }
+    if (line.startsWith('*** Add File: ')) {
+      pushSection();
+      activePath = line.replace('*** Add File: ', '').trim();
+      activeSection = null;
+      continue;
+    }
+    if (line.startsWith('*** Delete File: ')) {
+      pushSection();
+      const deletedPath = line.replace('*** Delete File: ', '').trim();
+      sections.push({ path: deletedPath, added: 0, deleted: 0 });
+      activePath = null;
+      activeSection = null;
+      continue;
+    }
+    if (line.startsWith('@@')) {
+      pushSection();
+      activeSection = { path: activePath || 'unknown', added: 0, deleted: 0 };
+      continue;
+    }
+    if (!activeSection) continue;
+    if (line.startsWith('+') && !line.startsWith('+++')) activeSection.added += 1;
+    if (line.startsWith('-') && !line.startsWith('---')) activeSection.deleted += 1;
+  }
+  pushSection();
+
+  return sections;
 }
 
 function toMs(value: unknown): number {
