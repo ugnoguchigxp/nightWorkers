@@ -85,35 +85,35 @@ export function ProjectSidebar(props: ProjectSidebarProps) {
                 {isExpanded ? (
                   <div className="space-y-0.5">
                     {projSessions.map((session) => (
-                    <div
-                      key={session.id}
-                      className={`mx-2 flex w-[calc(100%-1rem)] items-center justify-between rounded-md border pl-8 pr-2 py-1.5 text-xs ${session.id === props.activeSessionId ? 'border-slate-500/70 bg-slate-800/60 text-slate-100' : 'border-slate-700/70 text-slate-300 hover:border-slate-500/60 hover:bg-slate-800/40'}`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => props.onSelectSession(session.id)}
-                        className="min-w-0 flex-1 text-left"
+                      <div
+                        key={session.id}
+                        className={`mx-2 flex w-[calc(100%-1rem)] items-center justify-between rounded-md border pl-8 pr-2 py-1.5 text-xs ${session.id === props.activeSessionId ? 'border-slate-500/70 bg-slate-800/60 text-slate-100' : 'border-slate-700/70 text-slate-300 hover:border-slate-500/60 hover:bg-slate-800/40'}`}
                       >
-                        <span className="block truncate pr-2">{session.title}</span>
-                      </button>
-                      <span className="shrink-0 pr-2 text-[10px] text-slate-400">
-                        {getRelativeTimestamp(session.createdAt)}
-                      </span>
-                      <button
-                        type="button"
-                        className="rounded p-1 text-slate-400 hover:bg-slate-800/60 hover:text-amber-200"
-                        onClick={() => {
-                          const ok = window.confirm(
-                            `Session "${session.title}" を archive(削除)します。続行しますか？`
-                          );
-                          if (!ok) return;
-                          props.onDeleteSession(session.id);
-                        }}
-                        title="Archive session"
-                      >
-                        <Archive className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                        <button
+                          type="button"
+                          onClick={() => props.onSelectSession(session.id)}
+                          className="min-w-0 flex-1 text-left"
+                        >
+                          <span className="block truncate pr-2">{session.title}</span>
+                        </button>
+                        <span className="shrink-0 pr-2 text-[10px] text-slate-400">
+                          {getRelativeTimestamp(session.createdAt)}
+                        </span>
+                        <button
+                          type="button"
+                          className="rounded p-1 text-slate-400 hover:bg-slate-800/60 hover:text-amber-200"
+                          onClick={() => {
+                            const ok = window.confirm(
+                              `Session "${session.title}" を archive(削除)します。続行しますか？`
+                            );
+                            if (!ok) return;
+                            props.onDeleteSession(session.id);
+                          }}
+                          title="Archive session"
+                        >
+                          <Archive className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 ) : null}

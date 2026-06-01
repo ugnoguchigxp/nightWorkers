@@ -9,8 +9,8 @@ import type {
   LlmSettings,
   Repository,
   ReviewRunInput,
-  TaskEvent,
   Task,
+  TaskEvent,
   TaskMessage,
   TaskRun,
 } from '../types';

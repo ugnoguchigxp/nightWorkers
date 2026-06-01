@@ -37,7 +37,9 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-sm font-semibold text-slate-100">{props.activeSession.title}</h2>
-              <p className="text-xs text-slate-300/70">{props.activeProject?.name || 'No Project'}</p>
+              <p className="text-xs text-slate-300/70">
+                {props.activeProject?.name || 'No Project'}
+              </p>
             </div>
             <span className="rounded-full border border-slate-600/80 bg-slate-800 px-2.5 py-0.5 text-[10px] uppercase text-slate-200">
               {props.activeSession.status}

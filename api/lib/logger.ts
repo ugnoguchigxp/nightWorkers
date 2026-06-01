@@ -1,6 +1,6 @@
-import pino from 'pino';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import pino from 'pino';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 

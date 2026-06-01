@@ -167,7 +167,10 @@ function AgentDebugEventCard({ event }: { event: TaskEvent }) {
                 const text = JSON.stringify(payload, null, 2);
                 await navigator.clipboard.writeText(text);
                 setCopiedEventId(event.id);
-                setTimeout(() => setCopiedEventId((current) => (current === event.id ? null : current)), 1200);
+                setTimeout(
+                  () => setCopiedEventId((current) => (current === event.id ? null : current)),
+                  1200
+                );
               }}
               aria-label="Copy debug JSON"
             >
