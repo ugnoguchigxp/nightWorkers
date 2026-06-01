@@ -2,7 +2,7 @@ import { exec } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { isPathSafe } from './path-policy';
+import { enforcePathPolicy } from './tool-policy-enforcer';
 import type { WorkerToolResult } from './types';
 
 const execAsync = promisify(exec);
@@ -75,7 +75,12 @@ export async function applyPatchTool(
       const absolutePath = path.resolve(absoluteRepoRoot, relativePath);
 
       // Workspace boundaries check
-      if (!isPathSafe(absolutePath, absoluteRepoRoot, allowedPaths, deniedPaths)) {
+      const policy = enforcePathPolicy(absolutePath, {
+        repoRoot: absoluteRepoRoot,
+        allowedPaths,
+        deniedPaths,
+      });
+      if (!policy.allowed) {
         await fs.unlink(tempPatchFile).catch(() => {});
         return {
           ok: false,
@@ -85,7 +90,9 @@ export async function applyPatchTool(
           payload: { applied: false, changedFiles: [] },
           error: {
             code: 'ACCESS_DENIED',
-            message: `Patch target lies outside allowed workspace directories: ${relativePath}`,
+            message:
+              policy.message ||
+              `Patch target lies outside allowed workspace directories: ${relativePath}`,
           },
         };
       }

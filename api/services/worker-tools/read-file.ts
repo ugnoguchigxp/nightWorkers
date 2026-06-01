@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { isPathSafe } from './path-policy';
+import { enforcePathPolicy } from './tool-policy-enforcer';
 import type { WorkerToolResult } from './types';
 
 export interface ReadFileInput {
@@ -32,7 +32,12 @@ export async function readFileTool(
     ? filePath
     : path.resolve(absoluteRepoRoot, filePath);
 
-  if (!isPathSafe(targetPath, repoRoot, allowedPaths, deniedPaths)) {
+  const pathDecision = enforcePathPolicy(targetPath, {
+    repoRoot,
+    allowedPaths,
+    deniedPaths,
+  });
+  if (!pathDecision.allowed) {
     return {
       ok: false,
       toolName: 'read_file',
@@ -48,7 +53,8 @@ export async function readFileTool(
       },
       error: {
         code: 'ACCESS_DENIED',
-        message: `Access to path is denied by security policies: ${filePath}`,
+        message:
+          pathDecision.message || `Access to path is denied by security policies: ${filePath}`,
       },
     };
   }

@@ -1,5 +1,7 @@
 import { appendSupervisorTrace, logger } from '../../lib/logger';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
+import { RunBudgetController } from '../run-control/run-budget-controller';
+import type { SupervisorLoopResult } from '../run-control/types';
 import {
   applyPatchTool,
   findFileTool,
@@ -33,67 +35,49 @@ export interface SupervisorLoopInput {
   };
 }
 
-export type SupervisorLoopResult = {
-  finalReport: string;
-  terminalState: 'completed' | 'needs_review' | 'needs_human' | 'failed' | 'timed_out' | 'blocked';
-  summary: string;
-  stoppedBy: 'decision' | 'budget' | 'tool_failure' | 'llm_error' | 'missing_tool_call';
-  riskLevel: 'low' | 'medium' | 'high';
-};
-
 export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<SupervisorLoopResult> {
   const { runId, repoRoot, prompt, latestUserMessage } = input;
-  let iteration = 0;
   let finalReportText = 'Task execution completed.';
   let terminalState: SupervisorLoopResult['terminalState'] = 'completed';
   let summary = 'Task execution completed.';
   let stoppedBy: SupervisorLoopResult['stoppedBy'] = 'decision';
   let riskLevel: SupervisorLoopResult['riskLevel'] = 'low';
-  let consecutiveToolFailures = 0;
-  const maxConsecutiveToolFailures = 3;
-  let totalToolCalls = 0;
-  let consecutiveMissingToolCalls = 0;
-  let repeatedToolPatternCount = 0;
-  let previousToolPattern = '';
   const maxIterations = input.maxIterations ?? 30;
   const maxToolCalls = input.maxToolCalls ?? 80;
   const maxRepeatedToolPattern = input.maxRepeatedToolPattern ?? 3;
-  const deadlineAt = new Date(
-    input.deadlineAt || new Date(Date.now() + input.timeoutSeconds * 1000).toISOString()
-  );
+  const budget = new RunBudgetController({
+    maxIterations,
+    maxToolCalls,
+    maxRepeatedAction: maxRepeatedToolPattern,
+    maxMissingToolCalls: 3,
+    timeoutSeconds: input.timeoutSeconds,
+  });
+  let iteration = 0;
 
   // Maintain list of read files for read-before-edit policy validation
   const readFiles: string[] = [];
 
   while (true) {
-    iteration++;
-    if (new Date() > deadlineAt) {
-      finalReportText = `Supervisor loop timed out at iteration=${iteration}.`;
-      terminalState = 'timed_out';
-      summary = 'Stopped by timeout budget';
+    const iterationBudget = budget.onIterationStart();
+    iteration += 1;
+    if (!iterationBudget.allowed) {
+      finalReportText = `Supervisor loop stopped by budget. reason=${iterationBudget.reason}`;
+      terminalState = iterationBudget.reason === 'deadline' ? 'timed_out' : 'needs_human';
+      summary =
+        iterationBudget.reason === 'deadline'
+          ? 'Stopped by timeout budget'
+          : 'Stopped by iteration budget';
       stoppedBy = 'budget';
       await repo.createTaskEvent({
         taskRunId: runId,
         type: 'error',
-        message: '[Budget Stop] Supervisor timeout reached.',
+        message:
+          iterationBudget.reason === 'deadline'
+            ? '[Budget Stop] Supervisor timeout reached.'
+            : '[Budget Stop] maxIterations reached.',
         actor: 'system',
         eventType: 'error',
-        payloadJson: { reason: 'deadline', iteration, deadlineAt: deadlineAt.toISOString() },
-      });
-      break;
-    }
-    if (iteration > maxIterations) {
-      finalReportText = `Supervisor loop stopped: maxIterations reached (${maxIterations}).`;
-      terminalState = 'needs_human';
-      summary = 'Stopped by iteration budget';
-      stoppedBy = 'budget';
-      await repo.createTaskEvent({
-        taskRunId: runId,
-        type: 'error',
-        message: '[Budget Stop] maxIterations reached.',
-        actor: 'system',
-        eventType: 'error',
-        payloadJson: { reason: 'max_iterations', iteration, maxIterations },
+        payloadJson: { reason: iterationBudget.reason, ...(iterationBudget.detail || {}) },
       });
       break;
     }
@@ -257,49 +241,26 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
 
     // 7. Dispatch worker tool executions
     if (decision.toolCall) {
-      consecutiveMissingToolCalls = 0;
       const { name, arguments: toolArgs } = decision.toolCall;
-      totalToolCalls += 1;
-      if (totalToolCalls > maxToolCalls) {
-        finalReportText = `Supervisor loop stopped: maxToolCalls reached (${maxToolCalls}).`;
+      const toolBudget = budget.onToolCall(name, toolArgs || {});
+      if (!toolBudget.allowed) {
+        finalReportText = `Supervisor loop stopped by budget. reason=${toolBudget.reason}`;
         terminalState = 'needs_human';
-        summary = 'Stopped by tool-call budget';
+        summary =
+          toolBudget.reason === 'tool_limit'
+            ? 'Stopped by tool-call budget'
+            : 'Stopped by repeated tool pattern';
         stoppedBy = 'budget';
         await repo.createTaskEvent({
           taskRunId: runId,
           type: 'error',
-          message: '[Budget Stop] maxToolCalls reached.',
+          message:
+            toolBudget.reason === 'tool_limit'
+              ? '[Budget Stop] maxToolCalls reached.'
+              : '[Budget Stop] repeated tool pattern detected.',
           actor: 'system',
           eventType: 'error',
-          payloadJson: { reason: 'max_tool_calls', iteration, maxToolCalls },
-        });
-        break;
-      }
-      const toolPattern = `${name}:${JSON.stringify(toolArgs || {})}`;
-      if (toolPattern === previousToolPattern) {
-        repeatedToolPatternCount += 1;
-      } else {
-        previousToolPattern = toolPattern;
-        repeatedToolPatternCount = 1;
-      }
-      if (repeatedToolPatternCount >= maxRepeatedToolPattern) {
-        finalReportText = `同一toolCallが${maxRepeatedToolPattern}回連続したため停止しました。pattern=${toolPattern}`;
-        terminalState = 'needs_human';
-        summary = 'Stopped by repeated tool pattern';
-        stoppedBy = 'budget';
-        await repo.createTaskEvent({
-          taskRunId: runId,
-          type: 'error',
-          message: '[Budget Stop] repeated tool pattern detected.',
-          actor: 'system',
-          eventType: 'error',
-          payloadJson: {
-            reason: 'repeated_tool_pattern',
-            iteration,
-            pattern: toolPattern,
-            lastToolName: name,
-            repeatedCount: repeatedToolPatternCount,
-          },
+          payloadJson: { reason: toolBudget.reason, ...(toolBudget.detail || {}) },
         });
         break;
       }
@@ -390,7 +351,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             blockedCommands: input.safetyPolicy?.blockedCommands,
             allowedPaths: input.safetyPolicy?.allowedPaths,
             deniedPaths: input.safetyPolicy?.deniedPaths,
-            timeoutSeconds: input.safetyPolicy?.maxCommandSeconds,
+            timeoutSeconds: toolArgs.timeoutSeconds,
+            maxCommandSeconds: input.safetyPolicy?.maxCommandSeconds,
           });
         } else if (name === 'git_status') {
           toolResult = await gitStatusTool({
@@ -430,11 +392,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         'Worker tool call completed'
       );
 
-      if (!toolResult.ok) {
-        consecutiveToolFailures += 1;
-      } else {
-        consecutiveToolFailures = 0;
-      }
+      const failureBudget = budget.onToolResult(toolResult.ok);
 
       // Log tool execution result in ledger
       await repo.createTaskEvent({
@@ -446,18 +404,18 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         payloadJson: { iteration, ...toolResult },
       });
 
-      if (consecutiveToolFailures >= maxConsecutiveToolFailures) {
+      if (!failureBudget.allowed && failureBudget.reason === 'tool_failure') {
         const failureSummary = toolResult.error?.message || 'Unknown tool failure';
-        finalReportText = `同一ラン内でツール実行失敗が${maxConsecutiveToolFailures}回連続したため中断しました。lastTool=${name} error=${failureSummary}`;
+        finalReportText = `同一ラン内でツール実行失敗が3回連続したため中断しました。lastTool=${name} error=${failureSummary}`;
         await repo.createTaskEvent({
           taskRunId: runId,
           type: 'error',
-          message: `[Safety Stop] Aborted after ${maxConsecutiveToolFailures} consecutive tool failures.`,
+          message: '[Safety Stop] Aborted after 3 consecutive tool failures.',
           actor: 'system',
           eventType: 'error',
           payloadJson: {
             iteration,
-            consecutiveToolFailures,
+            ...(failureBudget.detail || {}),
             lastToolName: name,
             lastError: toolResult.error ?? null,
           },
@@ -500,8 +458,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         });
       }
     } else {
-      consecutiveMissingToolCalls += 1;
-      if (consecutiveMissingToolCalls >= 3) {
+      const missingToolBudget = budget.onMissingToolCall();
+      if (!missingToolBudget.allowed) {
         finalReportText = 'toolCall が連続で欠落したため停止しました。';
         terminalState = 'needs_human';
         summary = 'Stopped by missing toolCall pattern';
@@ -516,21 +474,17 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         actor: 'system',
         eventType: 'warning',
       });
-      if (consecutiveMissingToolCalls >= 3) {
+      if (!missingToolBudget.allowed) {
         await repo.createTaskEvent({
           taskRunId: runId,
           type: 'error',
           message: '[Budget Stop] missing toolCall repeated.',
           actor: 'system',
           eventType: 'error',
-          payloadJson: {
-            reason: 'missing_tool_call',
-            iteration,
-            repeatedCount: consecutiveMissingToolCalls,
-          },
+          payloadJson: { reason: 'missing_tool_call', ...(missingToolBudget.detail || {}) },
         });
       }
-      if (consecutiveMissingToolCalls >= 3) {
+      if (!missingToolBudget.allowed) {
         break;
       }
     }

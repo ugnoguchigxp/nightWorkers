@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 
 export type TestUser = {
   id: string;
@@ -59,3 +59,29 @@ export const mockBbsThreads = async (
     });
   });
 };
+
+export async function pollUntil<T>(
+  fn: () => Promise<T>,
+  predicate: (value: T) => boolean,
+  timeoutMs = 15000,
+  intervalMs = 500
+): Promise<T> {
+  const started = Date.now();
+  let lastValue = await fn();
+  while (!predicate(lastValue)) {
+    if (Date.now() - started > timeoutMs) {
+      return lastValue;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    lastValue = await fn();
+  }
+  return lastValue;
+}
+
+export async function getJson<T>(request: APIRequestContext, path: string): Promise<T> {
+  const res = await request.get(path);
+  if (!res.ok()) {
+    throw new Error(`GET ${path} failed: ${res.status()} ${await res.text()}`);
+  }
+  return (await res.json()) as T;
+}

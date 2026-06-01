@@ -386,7 +386,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
             };
           };
           if (msg.type === 'task_event_created' && msg.runId && msg.event) {
-            const eventPayload = msg.event as TaskEvent;
+            const eventPayload = { ...(msg.event as TaskEvent), runId: msg.runId } as TaskEvent;
             setBufferedEventsByRun((prev) => {
               const next = { ...prev };
               const current = next[msg.runId as string] || [];

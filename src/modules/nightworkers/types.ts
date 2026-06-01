@@ -64,6 +64,7 @@ export type RunDetails = TaskRun & {
 export type TaskEvent = {
   id: string;
   taskRunId?: string;
+  runId?: string;
   seq?: number;
   type?: string;
   actor?: string;

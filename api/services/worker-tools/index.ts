@@ -9,4 +9,5 @@ export * from './replace-content';
 export * from './run-command';
 export * from './run-verification';
 export * from './search-files';
+export * from './tool-policy-enforcer';
 export * from './types';

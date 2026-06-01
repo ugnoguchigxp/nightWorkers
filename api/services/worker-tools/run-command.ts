@@ -2,7 +2,11 @@ import { exec } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { analyzeCommand } from './command-policy';
-import { isPathSafe } from './path-policy';
+import {
+  enforceCommandPolicy,
+  enforcePathPolicy,
+  resolveCommandTimeout,
+} from './tool-policy-enforcer';
 import type { WorkerToolResult } from './types';
 
 const execAsync = promisify(exec);
@@ -12,6 +16,7 @@ export interface RunCommandInput {
   repoRoot: string;
   cwd?: string; // Relative to repoRoot
   timeoutSeconds?: number;
+  maxCommandSeconds?: number;
   blockedCommands?: string[];
   allowedPaths?: string[];
   deniedPaths?: string[];
@@ -36,6 +41,7 @@ export async function runCommandTool(
     repoRoot,
     cwd = '',
     timeoutSeconds = 60,
+    maxCommandSeconds,
     blockedCommands = [],
     allowedPaths,
     deniedPaths,
@@ -45,7 +51,12 @@ export async function runCommandTool(
   const targetCwd = cwd ? path.resolve(absoluteRepoRoot, cwd) : absoluteRepoRoot;
 
   // 1. Path Safety Check
-  if (!isPathSafe(targetCwd, absoluteRepoRoot, allowedPaths, deniedPaths)) {
+  const pathDecision = enforcePathPolicy(targetCwd, {
+    repoRoot: absoluteRepoRoot,
+    allowedPaths,
+    deniedPaths,
+  });
+  if (!pathDecision.allowed) {
     return {
       ok: false,
       toolName: 'run_command',
@@ -61,14 +72,20 @@ export async function runCommandTool(
       },
       error: {
         code: 'ACCESS_DENIED',
-        message: `Command execution working directory is restricted by policy: ${cwd}`,
+        message:
+          pathDecision.message ||
+          `Command execution working directory is restricted by policy: ${cwd}`,
       },
     };
   }
 
   // 2. Command Safety Policy Check
+  const cmdDecision = enforceCommandPolicy(command, {
+    repoRoot: absoluteRepoRoot,
+    blockedCommands,
+  });
   const safety = analyzeCommand(command, blockedCommands);
-  if (!safety.allowed) {
+  if (!cmdDecision.allowed) {
     return {
       ok: false,
       toolName: 'run_command',
@@ -79,20 +96,28 @@ export async function runCommandTool(
         exitCode: -1,
         stdout: '',
         stderr: '',
-        classification: safety.classification,
+        classification: 'unknown',
         truncated: false,
       },
       error: {
         code: 'DESTRUCTIVE_COMMAND',
-        message: safety.reason || `Execution of command was blocked by policy: ${command}`,
+        message: cmdDecision.message || `Execution of command was blocked by policy: ${command}`,
       },
     };
   }
 
+  const effectiveTimeoutSeconds = resolveCommandTimeout(timeoutSeconds, {
+    repoRoot: absoluteRepoRoot,
+    blockedCommands,
+    allowedPaths,
+    deniedPaths,
+    maxCommandSeconds,
+  });
+
   try {
     const promise = execAsync(command, {
       cwd: targetCwd,
-      timeout: timeoutSeconds * 1000,
+      timeout: effectiveTimeoutSeconds * 1000,
       maxBuffer: 50 * 1024 * 1024, // 50MB buffer
     });
 
@@ -148,7 +173,7 @@ export async function runCommandTool(
     }
 
     const message = err.killed
-      ? `Command timed out after ${timeoutSeconds}s`
+      ? `Command timed out after ${effectiveTimeoutSeconds}s`
       : `Command failed: ${err.message}`;
 
     return {

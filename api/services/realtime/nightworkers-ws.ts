@@ -72,10 +72,29 @@ class NightWorkersRealtimeBroker {
       });
       return;
     }
+    const eventPayload = (message as { event?: any }).event;
+    if (message.type === 'task_event_created') {
+      if (
+        !taskId ||
+        !message.runId ||
+        !eventPayload?.id ||
+        typeof eventPayload?.seq !== 'number' ||
+        !eventPayload?.timestamp
+      ) {
+        logEvent({
+          channel: 'ws',
+          level: 'warn',
+          message: 'publish skipped: invalid task_event_created payload',
+          meta: { taskId, runId: message.runId, event: eventPayload },
+        });
+        return;
+      }
+    }
+
     const wire = JSON.stringify({
       ...message,
       taskId,
-      seq: (message as { event?: { seq?: number } }).event?.seq,
+      seq: eventPayload?.seq,
       timestamp: new Date().toISOString(),
     } satisfies SocketMessage);
     for (const ws of set) {

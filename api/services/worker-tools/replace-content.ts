@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { isPathSafe } from './path-policy';
+import { enforcePathPolicy } from './tool-policy-enforcer';
 import type { WorkerToolResult } from './types';
 
 export interface ReplaceContentInput {
@@ -48,7 +48,12 @@ export async function replaceContentTool(
     ? path.resolve(filePath)
     : path.resolve(absoluteRepoRoot, filePath);
 
-  if (!isPathSafe(targetPath, absoluteRepoRoot, allowedPaths, deniedPaths)) {
+  const policy = enforcePathPolicy(targetPath, {
+    repoRoot: absoluteRepoRoot,
+    allowedPaths,
+    deniedPaths,
+  });
+  if (!policy.allowed) {
     return {
       ok: false,
       toolName: 'replace_content',
@@ -57,7 +62,7 @@ export async function replaceContentTool(
       payload: { applied: false, occurrences: 0, filePath },
       error: {
         code: 'ACCESS_DENIED',
-        message: `Content replacement is restricted by policy: ${filePath}`,
+        message: policy.message || `Content replacement is restricted by policy: ${filePath}`,
       },
     };
   }

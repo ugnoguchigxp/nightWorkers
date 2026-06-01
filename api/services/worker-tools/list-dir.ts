@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getRelativePath, isPathSafe } from './path-policy';
+import { enforcePathPolicy } from './tool-policy-enforcer';
 import type { WorkerToolResult } from './types';
 
 export interface ListDirInput {
@@ -36,7 +37,12 @@ export async function listDirTool(input: ListDirInput): Promise<WorkerToolResult
   const absoluteRepoRoot = path.resolve(repoRoot);
   const targetPath = path.resolve(absoluteRepoRoot, relativePath);
 
-  if (!isPathSafe(targetPath, absoluteRepoRoot, allowedPaths, deniedPaths)) {
+  const targetDecision = enforcePathPolicy(targetPath, {
+    repoRoot: absoluteRepoRoot,
+    allowedPaths,
+    deniedPaths,
+  });
+  if (!targetDecision.allowed) {
     return {
       ok: false,
       toolName: 'list_dir',
@@ -45,7 +51,8 @@ export async function listDirTool(input: ListDirInput): Promise<WorkerToolResult
       payload: { dirs: [], files: [], truncated: false },
       error: {
         code: 'ACCESS_DENIED',
-        message: `Directory listing is restricted by policy: ${relativePath}`,
+        message:
+          targetDecision.message || `Directory listing is restricted by policy: ${relativePath}`,
       },
     };
   }

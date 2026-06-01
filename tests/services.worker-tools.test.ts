@@ -92,6 +92,24 @@ describe('Worker Tools Unit Tests', () => {
       expect(safety.allowed).toBe(false);
       expect(safety.classification).toBe('destructive');
     });
+
+    it('denies unknown command by default', () => {
+      const safety = analyzeCommand('curl https://example.com');
+      expect(safety.allowed).toBe(false);
+      expect(safety.classification).toBe('unknown');
+    });
+
+    it('denies chained commands by default', () => {
+      const safety = analyzeCommand('pnpm test && rm -rf .');
+      expect(safety.allowed).toBe(false);
+      expect(safety.classification).toBe('destructive');
+    });
+
+    it('denies mutating git commands by default', () => {
+      const safety = analyzeCommand('git push origin main');
+      expect(safety.allowed).toBe(false);
+      expect(safety.classification).toBe('destructive');
+    });
   });
 
   describe('readFileTool', () => {

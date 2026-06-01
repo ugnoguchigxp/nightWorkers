@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { AppError, NotFoundError } from '../../lib/errors';
 import { compileContext, evaluateContext } from '../../services/context-still';
+import { decideRunOutcome } from '../../services/run-control/run-outcome-gate';
 import { nativeLocalRunner } from '../../services/runner/NativeLocalRunner';
 import * as repo from './nightworkers.repository';
 
@@ -214,31 +215,58 @@ export async function startTaskRun(taskId: string) {
         diffPatch: diff,
       });
 
-      const terminalLikeStatus = runnerStatus.status;
-      const finalTaskStatus = terminalLikeStatus === 'cancelled' ? 'cancelled' : terminalLikeStatus;
-      await repo.updateTaskStatus(taskId, finalTaskStatus);
+      const completedRun = await repo.getTaskRun(run.id);
+      const outcome = decideRunOutcome({
+        supervisor: {
+          finalReport: completedRun?.finalReport || '',
+          terminalState: (runnerStatus.status as any) || 'failed',
+          summary: completedRun?.summary || `Runner finished with status=${runnerStatus.status}`,
+          stoppedBy:
+            runnerStatus.status === 'timed_out' || runnerStatus.status === 'blocked'
+              ? 'budget'
+              : runnerStatus.status === 'needs_human'
+                ? 'missing_tool_call'
+                : runnerStatus.status === 'failed'
+                  ? 'llm_error'
+                  : 'decision',
+          riskLevel: 'medium',
+        },
+      });
+      await repo.updateTaskRun(run.id, {
+        status: outcome.status,
+        summary: completedRun?.summary || outcome.summary,
+      });
+      await repo.updateTaskStatus(taskId, outcome.status);
 
       await repo.createTaskEvent({
         taskRunId: run.id,
         type: 'checkpoint',
-        message: `Execution finished with runner status: ${runnerStatus.status}. Task status: ${finalTaskStatus}`,
+        message: `Execution finished with runner status: ${runnerStatus.status}. Task status: ${outcome.status}`,
         actor: 'system',
         eventType: 'state_change',
+      });
+      await repo.createTaskEvent({
+        taskRunId: run.id,
+        type: 'info',
+        message: `Run outcome decided: ${outcome.status} (${outcome.reason})`,
+        actor: 'system',
+        eventType: 'run_outcome_decided',
+        payloadJson: outcome,
       });
 
       // Feedback evaluation back to contextStill
       await evaluateContext(
         run.id,
-        `Task run execution completed with status: ${runnerStatus.status}. Diff size: ${diff.length} bytes.`,
-        runnerStatus.status === 'completed'
+        `Task run execution completed with status: ${outcome.status}. Diff size: ${diff.length} bytes.`,
+        outcome.status === 'completed'
       );
-      const completedRun = await repo.getTaskRun(run.id);
+      const completedRunAfterOutcome = await repo.getTaskRun(run.id);
       const responseText =
-        completedRun?.finalReport ||
-        completedRun?.summary ||
-        (runnerStatus.status === 'completed'
+        completedRunAfterOutcome?.finalReport ||
+        completedRunAfterOutcome?.summary ||
+        (outcome.status === 'completed'
           ? '実行が完了しました。'
-          : `実行が終了しました。status: ${runnerStatus.status}`);
+          : `実行が終了しました。status: ${outcome.status}`);
       await repo.createTaskMessage({
         taskId,
         runId: run.id,
@@ -246,9 +274,9 @@ export async function startTaskRun(taskId: string) {
         content: responseText,
         messageType: 'text',
         payloadJson: {
-          finalReport: completedRun?.finalReport ?? null,
-          summary: completedRun?.summary ?? null,
-          status: runnerStatus.status,
+          finalReport: completedRunAfterOutcome?.finalReport ?? null,
+          summary: completedRunAfterOutcome?.summary ?? null,
+          status: outcome.status,
         },
       });
     } catch (err: any) {
@@ -349,18 +377,21 @@ export async function reviewTaskRun(
   const run = await repo.getTaskRun(runId);
   if (!run) throw new Error('Run not found');
 
-  let finalStatus = 'completed';
-  if (action === 'request_follow_up') {
-    finalStatus = 'ready';
-  } else if (action === 'cancel') {
-    finalStatus = 'cancelled';
-  } else if (action === 'accept_risk') {
-    finalStatus = 'needs_review';
-  }
+  const outcome = decideRunOutcome({
+    supervisor: {
+      finalReport: run.finalReport || '',
+      terminalState: (run.status as any) || 'needs_review',
+      summary: run.summary || `Review action: ${action}`,
+      stoppedBy: 'decision',
+      riskLevel: 'medium',
+    },
+    humanAction: action,
+  });
+  const finalStatus = action === 'request_follow_up' ? 'ready' : outcome.status;
 
   await repo.updateTaskRun(runId, {
-    status: finalStatus === 'ready' ? 'failed' : finalStatus,
-    summary: note || `Review action: ${action}`,
+    status: finalStatus === 'ready' ? 'failed' : outcome.status,
+    summary: note || outcome.summary,
   });
 
   await repo.updateTaskStatus(run.taskId, finalStatus);
@@ -371,6 +402,14 @@ export async function reviewTaskRun(
     message: `Human review completed. Action: ${action}. Note: ${note || 'None'}`,
     actor: 'human',
     eventType: 'state_change',
+  });
+  await repo.createTaskEvent({
+    taskRunId: runId,
+    type: 'info',
+    message: `Run outcome decided: ${outcome.status} (${outcome.reason})`,
+    actor: 'human',
+    eventType: 'run_outcome_decided',
+    payloadJson: outcome,
   });
 
   return { ok: true, status: finalStatus };

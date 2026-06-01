@@ -2,7 +2,8 @@ import { exec } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { getRelativePath, isPathSafe } from './path-policy';
+import { getRelativePath } from './path-policy';
+import { enforcePathPolicy } from './tool-policy-enforcer';
 import type { WorkerToolResult } from './types';
 
 const execAsync = promisify(exec);
@@ -68,7 +69,12 @@ export async function searchFilesTool(
             const data = parsed.data;
             const absolutePath = path.resolve(absoluteRepoRoot, data.path.text);
 
-            if (isPathSafe(absolutePath, absoluteRepoRoot, allowedPaths, deniedPaths)) {
+            const policy = enforcePathPolicy(absolutePath, {
+              repoRoot: absoluteRepoRoot,
+              allowedPaths,
+              deniedPaths,
+            });
+            if (policy.allowed) {
               matches.push({
                 filePath: getRelativePath(absolutePath, absoluteRepoRoot),
                 lineNumber: data.line_number,
@@ -129,7 +135,12 @@ export async function searchFilesTool(
           }
           await scanDir(fullPath);
         } else if (entry.isFile()) {
-          if (!isPathSafe(fullPath, absoluteRepoRoot, allowedPaths, deniedPaths)) {
+          const policy = enforcePathPolicy(fullPath, {
+            repoRoot: absoluteRepoRoot,
+            allowedPaths,
+            deniedPaths,
+          });
+          if (!policy.allowed) {
             continue;
           }
 
