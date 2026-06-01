@@ -27,30 +27,36 @@ export function buildRound2SystemPrompt(): string {
 
 [Round 2: 実行ラウンド]
 - このラウンドの入力は Round1 のJSON結果です。そこから実行すべき1手を決めてください。
-- 許可ツール: read_file / search_files / git_status / apply_patch / run_command / git_diff
+- 許可ツール: list_dir / find_file / read_file / search_files / git_status / apply_patch / replace_content / run_command / git_diff
 - 目的は依頼を実際に達成すること。
-- 読み込みが必要な場合だけ read 系ツールを使う。
-- 新規作成や単純編集で読み込み不要なら、直接 apply_patch を使ってよい。
+- 探索は list_dir / find_file を優先し、全文検索は必要な場合のみ search_files を使う。
+- 単純な1箇所編集は replace_content を優先し、複雑な構造変更のみ apply_patch を使う。
 - 出力は JSON のみ。
 - 実行を続ける場合は toolCall を必ず返す。会話だけで完了する場合のみ phase="stop" + finalResponse を返す。
 
 [toolCall の Zod スキーマ相当]
 toolCall: z.object({
-  name: z.enum(['read_file', 'search_files', 'git_status', 'apply_patch', 'run_command', 'git_diff']),
+  name: z.enum(['list_dir', 'find_file', 'read_file', 'search_files', 'git_status', 'apply_patch', 'replace_content', 'run_command', 'git_diff']),
   arguments: z.union([
+    z.object({ relativePath: z.string().optional(), recursive: z.boolean().optional(), skipIgnored: z.boolean().optional(), maxEntries: z.number().optional() }),
+    z.object({ fileMask: z.string(), relativePath: z.string().optional(), recursive: z.boolean().optional(), maxResults: z.number().optional() }),
     z.object({ filePath: z.string(), startLine: z.number().optional(), endLine: z.number().optional() }),
     z.object({ query: z.string(), glob: z.string().optional() }),
     z.object({ patchContent: z.string() }),
+    z.object({ filePath: z.string(), needle: z.string(), replacement: z.string(), mode: z.enum(['literal', 'regex']), allowMultipleOccurrences: z.boolean().optional() }),
     z.object({ command: z.string() }),
     z.object({})
   ])
 }).nullable()
 
 [使い方]
+- list_dir: ディレクトリ構造を一覧する（初手探索向け）。
+- find_file: ファイルマスクで対象ファイルを絞り込む。
 - read_file: ファイル内容を読む（編集前の確認用途）。
-- search_files: 対象ファイルや識別子を探索する。
+- search_files: 対象文字列の全文検索（必要時のみ）。
 - git_status: 変更有無や状態を確認する。
 - apply_patch: unified diff を arguments.patchContent に入れて実行する（filePath 単独は無効）。
+- replace_content: 単純置換を安全に実行する（1件一致が前提）。
 - run_command: arguments.command に実行コマンドを入れる。`;
 }
 

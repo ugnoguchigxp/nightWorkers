@@ -2,9 +2,12 @@ import { appendSupervisorTrace, logger } from '../../lib/logger';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import {
   applyPatchTool,
+  findFileTool,
   gitDiffTool,
   gitStatusTool,
+  listDirTool,
   readFileTool,
+  replaceContentTool,
   runCommandTool,
   searchFilesTool,
 } from '../worker-tools';
@@ -198,7 +201,23 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<str
       let toolResult: any;
 
       try {
-        if (name === 'read_file') {
+        if (name === 'list_dir') {
+          toolResult = await listDirTool({
+            relativePath: toolArgs.relativePath,
+            recursive: toolArgs.recursive,
+            skipIgnored: toolArgs.skipIgnored,
+            maxEntries: toolArgs.maxEntries,
+            repoRoot,
+          });
+        } else if (name === 'find_file') {
+          toolResult = await findFileTool({
+            fileMask: toolArgs.fileMask,
+            relativePath: toolArgs.relativePath,
+            recursive: toolArgs.recursive,
+            maxResults: toolArgs.maxResults,
+            repoRoot,
+          });
+        } else if (name === 'read_file') {
           toolResult = await readFileTool({
             filePath: toolArgs.filePath,
             repoRoot,
@@ -224,6 +243,17 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<str
             repoRoot,
             readFiles,
             requireReadBeforeEdit: true,
+          });
+        } else if (name === 'replace_content') {
+          toolResult = await replaceContentTool({
+            filePath: toolArgs.filePath,
+            needle: toolArgs.needle,
+            replacement: toolArgs.replacement,
+            mode: toolArgs.mode,
+            allowMultipleOccurrences: toolArgs.allowMultipleOccurrences,
+            readFiles,
+            requireReadBeforeEdit: true,
+            repoRoot,
           });
         } else if (name === 'run_command') {
           toolResult = await runCommandTool({

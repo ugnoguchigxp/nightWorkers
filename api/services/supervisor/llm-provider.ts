@@ -23,9 +23,12 @@ const supervisorDecisionBaseSchema = z.object({
   toolCall: z
     .object({
       name: z.enum([
+        'list_dir',
+        'find_file',
         'read_file',
         'search_files',
         'apply_patch',
+        'replace_content',
         'run_command',
         'git_status',
         'git_diff',
@@ -40,10 +43,13 @@ const round2DecisionSchema = supervisorDecisionBaseSchema.extend({
   toolCall: z
     .object({
       name: z.enum([
+        'list_dir',
+        'find_file',
         'read_file',
         'search_files',
         'git_status',
         'apply_patch',
+        'replace_content',
         'run_command',
         'git_diff',
       ]),
@@ -70,8 +76,28 @@ function getDecisionSchema(round?: 1 | 2 | 3) {
 
 function getAllowedToolNamesByRound(round?: 1 | 2 | 3): string[] {
   if (round === 2)
-    return ['read_file', 'search_files', 'git_status', 'apply_patch', 'run_command', 'git_diff'];
-  return ['read_file', 'search_files', 'apply_patch', 'run_command', 'git_status', 'git_diff'];
+    return [
+      'list_dir',
+      'find_file',
+      'read_file',
+      'search_files',
+      'git_status',
+      'apply_patch',
+      'replace_content',
+      'run_command',
+      'git_diff',
+    ];
+  return [
+    'list_dir',
+    'find_file',
+    'read_file',
+    'search_files',
+    'apply_patch',
+    'replace_content',
+    'run_command',
+    'git_status',
+    'git_diff',
+  ];
 }
 
 function normalizeLegacyDecisionShape(input: unknown): unknown {
@@ -127,10 +153,21 @@ function normalizeDecisionForSchema(input: unknown): unknown {
     if (normalizedPhase) obj.phase = normalizedPhase;
   }
 
+  // 欠損/型崩れを受けてもパーサで落とさず継続できるよう補正
+  if (typeof obj.finalResponse !== 'string') obj.finalResponse = '';
+  if (typeof obj.instruction !== 'string') obj.instruction = '';
+  if (typeof obj.rationale !== 'string') obj.rationale = '';
+  if (!Array.isArray(obj.expectedEvidence)) obj.expectedEvidence = [];
+
   // toolCall が配列で返ってきた場合は先頭のみ採用
   if (Array.isArray(obj.toolCall)) {
     const first = obj.toolCall[0];
     obj.toolCall = first && typeof first === 'object' ? (first as Record<string, unknown>) : null;
+  }
+
+  // toolCall が説明文字列の場合は「未指定」として扱う
+  if (typeof obj.toolCall === 'string') {
+    obj.toolCall = null;
   }
 
   if (obj.toolCall && typeof obj.toolCall === 'object') {
@@ -138,6 +175,27 @@ function normalizeDecisionForSchema(input: unknown): unknown {
     // 互換: { tool: "...", purpose: "..." } -> { name, arguments }
     if (typeof toolCall.name !== 'string' && typeof toolCall.tool === 'string') {
       toolCall.name = toolCall.tool;
+    }
+    // 互換: { args: {...} } -> { arguments: {...} }
+    if (
+      (!toolCall.arguments ||
+        typeof toolCall.arguments !== 'object' ||
+        Array.isArray(toolCall.arguments)) &&
+      toolCall.args &&
+      typeof toolCall.args === 'object' &&
+      !Array.isArray(toolCall.args)
+    ) {
+      toolCall.arguments = toolCall.args;
+    }
+    // 互換: 非許可ツール名を許可名へマッピング
+    if (typeof toolCall.name === 'string') {
+      const mappedToolName: Record<string, string> = {
+        exec_command: 'run_command',
+        command: 'run_command',
+        shell: 'run_command',
+      };
+      const mapped = mappedToolName[toolCall.name];
+      if (mapped) toolCall.name = mapped;
     }
     if (
       !toolCall.arguments ||

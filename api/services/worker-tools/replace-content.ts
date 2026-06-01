@@ -1,0 +1,158 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { isPathSafe } from './path-policy';
+import type { WorkerToolResult } from './types';
+
+export interface ReplaceContentInput {
+  filePath: string;
+  repoRoot: string;
+  needle: string;
+  replacement: string;
+  mode: 'literal' | 'regex';
+  allowMultipleOccurrences?: boolean;
+  readFiles?: string[];
+  requireReadBeforeEdit?: boolean;
+  allowedPaths?: string[];
+  deniedPaths?: string[];
+}
+
+export interface ReplaceContentOutput {
+  applied: boolean;
+  occurrences: number;
+  filePath: string;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export async function replaceContentTool(
+  input: ReplaceContentInput
+): Promise<WorkerToolResult<ReplaceContentOutput>> {
+  const startedAt = new Date().toISOString();
+  const {
+    filePath,
+    repoRoot,
+    needle,
+    replacement,
+    mode,
+    allowMultipleOccurrences = false,
+    readFiles = [],
+    requireReadBeforeEdit = false,
+    allowedPaths,
+    deniedPaths,
+  } = input;
+
+  const absoluteRepoRoot = path.resolve(repoRoot);
+  const targetPath = path.isAbsolute(filePath)
+    ? path.resolve(filePath)
+    : path.resolve(absoluteRepoRoot, filePath);
+
+  if (!isPathSafe(targetPath, absoluteRepoRoot, allowedPaths, deniedPaths)) {
+    return {
+      ok: false,
+      toolName: 'replace_content',
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      payload: { applied: false, occurrences: 0, filePath },
+      error: {
+        code: 'ACCESS_DENIED',
+        message: `Content replacement is restricted by policy: ${filePath}`,
+      },
+    };
+  }
+
+  if (!needle.trim()) {
+    return {
+      ok: false,
+      toolName: 'replace_content',
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      payload: { applied: false, occurrences: 0, filePath },
+      error: {
+        code: 'EMPTY_NEEDLE',
+        message: 'Needle must not be empty.',
+      },
+    };
+  }
+
+  if (requireReadBeforeEdit) {
+    const hasBeenRead = readFiles.some((read) => {
+      const absRead = path.resolve(absoluteRepoRoot, read);
+      return absRead === targetPath;
+    });
+    if (!hasBeenRead) {
+      return {
+        ok: false,
+        toolName: 'replace_content',
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        payload: { applied: false, occurrences: 0, filePath },
+        error: {
+          code: 'READ_BEFORE_EDIT_VIOLATION',
+          message: `You must read the file contents using read_file before you edit it: ${filePath}`,
+        },
+      };
+    }
+  }
+
+  try {
+    const original = await fs.readFile(targetPath, 'utf-8');
+    const regex =
+      mode === 'regex' ? new RegExp(needle, 'gm') : new RegExp(escapeRegExp(needle), 'gm');
+
+    const matches = original.match(regex);
+    const occurrences = matches ? matches.length : 0;
+
+    if (occurrences === 0) {
+      return {
+        ok: false,
+        toolName: 'replace_content',
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        payload: { applied: false, occurrences: 0, filePath },
+        error: {
+          code: 'NO_MATCH',
+          message: 'Needle did not match any content in target file.',
+        },
+      };
+    }
+
+    if (!allowMultipleOccurrences && occurrences > 1) {
+      return {
+        ok: false,
+        toolName: 'replace_content',
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        payload: { applied: false, occurrences, filePath },
+        error: {
+          code: 'MULTIPLE_MATCHES',
+          message: `Needle matched ${occurrences} occurrences. Set allowMultipleOccurrences=true to proceed.`,
+        },
+      };
+    }
+
+    const updated = original.replace(regex, replacement);
+    await fs.writeFile(targetPath, updated, 'utf-8');
+
+    return {
+      ok: true,
+      toolName: 'replace_content',
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      payload: { applied: true, occurrences, filePath },
+    };
+  } catch (err: any) {
+    return {
+      ok: false,
+      toolName: 'replace_content',
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      payload: { applied: false, occurrences: 0, filePath },
+      error: {
+        code: 'REPLACE_FAILED',
+        message: `Failed to replace content: ${err.message}`,
+      },
+    };
+  }
+}

@@ -15,7 +15,10 @@ export function ThreadMessage({ messageRole, children, timestamp }: ThreadMessag
       : 'bg-zinc-900/70 border-zinc-700/50 text-zinc-300';
 
   return (
-    <div className={`flex w-full flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+    <div
+      className={`flex w-full flex-col ${isUser ? 'items-end' : 'items-start'}`}
+      data-testid={`message-${messageRole}`}
+    >
       <div
         className={`max-w-[85%] rounded-2xl border px-5 py-3 text-sm leading-relaxed whitespace-pre-wrap ${bubbleClass}`}
       >

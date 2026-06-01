@@ -3,8 +3,11 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   analyzeCommand,
+  findFileTool,
   isPathSafe,
+  listDirTool,
   readFileTool,
+  replaceContentTool,
   runCommandTool,
   searchFilesTool,
 } from '../api/services/worker-tools';
@@ -124,6 +127,145 @@ describe('Worker Tools Unit Tests', () => {
       expect(result.ok).toBe(true);
       expect(result.payload.count).toBeGreaterThanOrEqual(1);
       expect(result.payload.matches[0].excerpt).toContain('hello');
+    });
+  });
+
+  describe('listDirTool', () => {
+    it('lists dirs and files in repository root', async () => {
+      const result = await listDirTool({
+        repoRoot: dummyRepoDir,
+        recursive: false,
+      });
+      expect(result.ok).toBe(true);
+      expect(result.payload.files).toContain('hello.txt');
+      expect(result.payload.dirs).toContain('src');
+    });
+
+    it('fails when target is not a directory', async () => {
+      const result = await listDirTool({
+        repoRoot: dummyRepoDir,
+        relativePath: 'hello.txt',
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe('NOT_A_DIRECTORY');
+    });
+
+    it('fails when path is denied by policy', async () => {
+      const result = await listDirTool({
+        repoRoot: dummyRepoDir,
+        relativePath: 'src',
+        deniedPaths: ['src'],
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe('ACCESS_DENIED');
+    });
+  });
+
+  describe('findFileTool', () => {
+    it('finds files by wildcard mask', async () => {
+      const result = await findFileTool({
+        repoRoot: dummyRepoDir,
+        fileMask: '*.js',
+      });
+      expect(result.ok).toBe(true);
+      expect(result.payload.files).toContain('src/main.js');
+    });
+
+    it('respects maxResults limit', async () => {
+      await fs.writeFile(path.join(dummyRepoDir, 'src/a.js'), 'a', 'utf-8');
+      await fs.writeFile(path.join(dummyRepoDir, 'src/b.js'), 'b', 'utf-8');
+      const result = await findFileTool({
+        repoRoot: dummyRepoDir,
+        fileMask: '*.js',
+        maxResults: 1,
+      });
+      expect(result.ok).toBe(true);
+      expect(result.payload.count).toBe(1);
+    });
+
+    it('fails when path is denied by policy', async () => {
+      const result = await findFileTool({
+        repoRoot: dummyRepoDir,
+        fileMask: '*.js',
+        relativePath: 'src',
+        deniedPaths: ['src'],
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe('ACCESS_DENIED');
+    });
+  });
+
+  describe('replaceContentTool', () => {
+    it('replaces a single literal occurrence safely', async () => {
+      const target = path.join(dummyRepoDir, 'hello.txt');
+      await fs.writeFile(target, 'alpha\nbeta\n', 'utf-8');
+
+      const result = await replaceContentTool({
+        repoRoot: dummyRepoDir,
+        filePath: 'hello.txt',
+        needle: 'alpha',
+        replacement: 'ALPHA',
+        mode: 'literal',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.payload.occurrences).toBe(1);
+
+      const updated = await fs.readFile(target, 'utf-8');
+      expect(updated).toContain('ALPHA');
+    });
+
+    it('rejects empty needle', async () => {
+      const result = await replaceContentTool({
+        repoRoot: dummyRepoDir,
+        filePath: 'hello.txt',
+        needle: '',
+        replacement: 'X',
+        mode: 'literal',
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe('EMPTY_NEEDLE');
+    });
+
+    it('returns no_match when target text is missing', async () => {
+      await fs.writeFile(path.join(dummyRepoDir, 'hello.txt'), 'foo\nbar\n', 'utf-8');
+      const result = await replaceContentTool({
+        repoRoot: dummyRepoDir,
+        filePath: 'hello.txt',
+        needle: 'not-found',
+        replacement: 'X',
+        mode: 'literal',
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe('NO_MATCH');
+    });
+
+    it('returns multiple_matches when more than one occurrence exists', async () => {
+      await fs.writeFile(path.join(dummyRepoDir, 'hello.txt'), 'dup\ndup\n', 'utf-8');
+      const result = await replaceContentTool({
+        repoRoot: dummyRepoDir,
+        filePath: 'hello.txt',
+        needle: 'dup',
+        replacement: 'X',
+        mode: 'literal',
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe('MULTIPLE_MATCHES');
+    });
+
+    it('enforces read-before-edit policy when required', async () => {
+      await fs.writeFile(path.join(dummyRepoDir, 'hello.txt'), 'read-me\n', 'utf-8');
+      const result = await replaceContentTool({
+        repoRoot: dummyRepoDir,
+        filePath: 'hello.txt',
+        needle: 'read-me',
+        replacement: 'READ',
+        mode: 'literal',
+        requireReadBeforeEdit: true,
+        readFiles: [],
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe('READ_BEFORE_EDIT_VIOLATION');
     });
   });
 
