@@ -9,6 +9,7 @@ import type {
   LlmSettings,
   Repository,
   ReviewRunInput,
+  TaskEvent,
   Task,
   TaskMessage,
   TaskRun,
@@ -26,13 +27,7 @@ export type NightWorkersWorkspaceState = {
   activeSessionRuns: TaskRun[];
   latestRun: TaskRun | undefined;
   taskMessages: TaskMessage[];
-  latestRunEvents: Array<{
-    id: string;
-    actor?: string;
-    type?: string;
-    message: string;
-    timestamp?: unknown;
-  }>;
+  latestRunEvents: TaskEvent[];
   isRealtimeConnected: boolean;
   realtimeStatus: RealtimeStatus;
   isChatSubmitting: boolean;
@@ -44,6 +39,7 @@ export type NightWorkersWorkspaceState = {
   setActiveSessionId: (id: string | null) => void;
   createProject: (input: CreateProjectInput) => void;
   deleteProject: (id: string) => void;
+  deleteSession: (id: string) => void;
   createSession: (input: CreateSessionInput) => Promise<Task>;
   startRun: (sessionId: string) => Promise<TaskRun>;
   reviewRun: (input: ReviewRunInput) => Promise<{ ok: boolean; status: string }>;
@@ -78,9 +74,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const pendingChatQueueRef = useRef<Array<{ taskId: string; prompt: string }>>([]);
   const chatSubmitStartedAtRef = useRef<number | null>(null);
   const lastSubmitRecoveryAtRef = useRef<number>(0);
-  const [realtimeEvents, setRealtimeEvents] = useState<
-    Array<{ id: string; actor?: string; type?: string; message: string; timestamp?: unknown }>
-  >([]);
+  const [realtimeEvents, setRealtimeEvents] = useState<TaskEvent[]>([]);
 
   const fetchDirectories = async (targetPath?: string) => {
     setIsBrowserLoading(true);
@@ -214,6 +208,20 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     },
   });
 
+  const deleteSessionMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await client.tasks[':id'].$delete({ param: { id } });
+      if (!res.ok) throw new Error('Failed to archive session');
+      return res.json();
+    },
+    onSuccess: (_, deletedId) => {
+      if (activeSessionId === deletedId) setActiveSessionId(null);
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['sessionRuns'] });
+      queryClient.invalidateQueries({ queryKey: ['taskMessages'] });
+    },
+  });
+
   const startRunMutation = useMutation({
     mutationFn: async (sessionId: string) => {
       const res = await client.tasks[':id'].run.$post({ param: { id: sessionId } });
@@ -244,13 +252,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       const res = await client.runs[':id'].$get({ param: { id: latestRun.id } });
       if (!res.ok) throw new Error('Failed to fetch run details');
       return (await res.json()) as TaskRun & {
-        events?: Array<{
-          id: string;
-          actor?: string;
-          type?: string;
-          message: string;
-          timestamp?: unknown;
-        }>;
+        events?: TaskEvent[];
       };
     },
     enabled: !!latestRun?.id,
@@ -365,6 +367,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
               id: string;
               actor?: string;
               type?: string;
+              eventType?: string | null;
+              payloadJson?: any;
               message: string;
               timestamp?: unknown;
             };
@@ -523,6 +527,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     setActiveSessionId,
     createProject: (input) => createProjectMutation.mutate(input),
     deleteProject: (id) => deleteProjectMutation.mutate(id),
+    deleteSession: (id) => deleteSessionMutation.mutate(id),
     createSession: (input) => createSessionMutation.mutateAsync(input),
     startRun: (sessionId) => startRunMutation.mutateAsync(sessionId),
     reviewRun: async (input) => {

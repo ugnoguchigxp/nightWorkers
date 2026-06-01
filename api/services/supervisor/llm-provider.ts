@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { logger } from '../../lib/logger';
+import { appendSupervisorTrace, logger } from '../../lib/logger';
 import { buildCodexTurnPrompt } from './prompt';
 
 const supervisorDecisionBaseSchema = z.object({
@@ -595,7 +595,14 @@ export async function callSupervisorLLM(
         'Supervisor LLM response parsed'
       );
 
-      if (options.requireToolCall && !parsed.data.toolCall) {
+      if (options.requireToolCall && parsed.data.phase !== 'stop' && !parsed.data.toolCall) {
+        appendSupervisorTrace('missing_tool_call', {
+          round: options.round,
+          phase: parsed.data.phase,
+          instruction: parsed.data.instruction,
+          rationale: parsed.data.rationale,
+          riskLevel: parsed.data.riskLevel,
+        });
         logger.warn(
           {
             provider,
@@ -619,7 +626,8 @@ export async function callSupervisorLLM(
           phase: 'stop',
           instruction: 'Safety system interrupted due to missing toolCall.',
           rationale: 'Execution round requires a toolCall but none was provided.',
-          finalResponse: '必要なツール呼び出しが生成されなかったため中断しました。',
+          finalResponse:
+            '必要なツール呼び出しが生成されなかったため中断しました。LLM最終回答は実行ラウンドで必須のtoolCallを返せておらず、実行継続条件を満たしていません。',
           expectedEvidence: [],
           terminalState: 'needs_human',
           riskLevel: 'high',
@@ -638,6 +646,12 @@ export async function callSupervisorLLM(
       },
       'Supervisor LLM schema validation failed'
     );
+    appendSupervisorTrace('schema_validation_failed', {
+      round: options.round,
+      provider,
+      issues: parsed.error.issues,
+      rawContentPreview: rawContent.slice(0, 1000),
+    });
     // Fallback: return a safe terminal state to let humans intervene
     if (options.tolerateSchemaFailure) {
       return {
@@ -655,7 +669,8 @@ export async function callSupervisorLLM(
       phase: 'stop',
       instruction: 'Safety system interrupted execution due to formatting errors.',
       rationale: `LLM response failed to match schema. Raw content: ${rawContent}`,
-      finalResponse: '内部形式エラーのため処理を中断しました。',
+      finalResponse:
+        '内部形式エラーのため処理を中断しました。LLM最終回答が要求スキーマに一致せず、必要なキーまたは許可ツール名が不正でした。',
       expectedEvidence: [],
       terminalState: 'needs_human',
       riskLevel: 'high',
@@ -694,6 +709,12 @@ export async function callSupervisorLLM(
       },
       'Supervisor LLM JSON parse failed'
     );
+    appendSupervisorTrace('json_parse_failed', {
+      round: options.round,
+      provider,
+      errorMessage,
+      rawContentPreview: rawContent.slice(0, 1000),
+    });
     return {
       phase: 'stop',
       instruction: 'Safety system interrupted execution due to JSON syntax errors.',

@@ -1,4 +1,4 @@
-import { logger } from '../../lib/logger';
+import { appendSupervisorTrace, logger } from '../../lib/logger';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import {
   applyPatchTool,
@@ -23,6 +23,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<str
   const { runId, repoRoot, prompt, latestUserMessage } = input;
   let iteration = 0;
   let finalReportText = 'Task execution completed.';
+  let consecutiveToolFailures = 0;
+  const maxConsecutiveToolFailures = 3;
 
   // Maintain list of read files for read-before-edit policy validation
   const readFiles: string[] = [];
@@ -59,6 +61,21 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<str
         'Supervisor round decision'
       );
       logger.info({ runId, iteration, round: 1, output: round1 }, 'Supervisor round output');
+      appendSupervisorTrace('round1_output', {
+        runId,
+        iteration,
+        phase: round1.phase,
+        hasToolCall: Boolean(round1.toolCall),
+        toolName: round1.toolCall?.name ?? null,
+      });
+      await repo.createTaskEvent({
+        taskRunId: runId,
+        type: 'info',
+        message: `[Supervisor Round] round=1 phase=${round1.phase} hasToolCall=${Boolean(round1.toolCall)}`,
+        actor: 'supervisor',
+        eventType: 'supervisor_decision',
+        payloadJson: { round: 1, iteration, decision: round1 },
+      });
 
       if (round1.phase === 'stop') {
         decision = round1;
@@ -82,6 +99,21 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<str
           'Supervisor round decision'
         );
         logger.info({ runId, iteration, round: 2, output: round2 }, 'Supervisor round output');
+        appendSupervisorTrace('round2_output', {
+          runId,
+          iteration,
+          phase: round2.phase,
+          hasToolCall: Boolean(round2.toolCall),
+          toolName: round2.toolCall?.name ?? null,
+        });
+        await repo.createTaskEvent({
+          taskRunId: runId,
+          type: 'info',
+          message: `[Supervisor Round] round=2 phase=${round2.phase} hasToolCall=${Boolean(round2.toolCall)}`,
+          actor: 'supervisor',
+          eventType: 'supervisor_decision',
+          payloadJson: { round: 2, iteration, decision: round2 },
+        });
         decision = round2;
       }
       logger.info(
@@ -104,6 +136,11 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<str
         },
         'Supervisor LLM call failed'
       );
+      appendSupervisorTrace('supervisor_call_failed', {
+        runId,
+        iteration,
+        errorMessage: err?.message,
+      });
       await repo.createTaskEvent({
         taskRunId: runId,
         type: 'error',
@@ -121,7 +158,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<str
       message: `[Supervisor Decision] Phase: ${decision.phase}. Instruction: ${decision.instruction}`,
       actor: 'supervisor',
       eventType: 'supervisor_decision',
-      payloadJson: decision,
+      payloadJson: { iteration, decision },
     });
 
     // 6. Handle stop decision
@@ -155,7 +192,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<str
         message: `[Worker Tool Call] Invoking tool ${name}...`,
         actor: 'worker',
         eventType: 'tool_call',
-        payloadJson: { toolName: name, arguments: toolArgs },
+        payloadJson: { iteration, toolName: name, arguments: toolArgs },
       });
 
       let toolResult: any;
@@ -231,6 +268,12 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<str
         'Worker tool call completed'
       );
 
+      if (!toolResult.ok) {
+        consecutiveToolFailures += 1;
+      } else {
+        consecutiveToolFailures = 0;
+      }
+
       // Log tool execution result in ledger
       await repo.createTaskEvent({
         taskRunId: runId,
@@ -238,8 +281,33 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<str
         message: `[Worker Tool Result] Tool ${name} execution ${toolResult.ok ? 'SUCCESS' : 'FAILED'}.`,
         actor: 'worker',
         eventType: 'tool_result',
-        payloadJson: toolResult,
+        payloadJson: { iteration, ...toolResult },
       });
+
+      if (consecutiveToolFailures >= maxConsecutiveToolFailures) {
+        const failureSummary = toolResult.error?.message || 'Unknown tool failure';
+        finalReportText = `同一ラン内でツール実行失敗が${maxConsecutiveToolFailures}回連続したため中断しました。lastTool=${name} error=${failureSummary}`;
+        await repo.createTaskEvent({
+          taskRunId: runId,
+          type: 'error',
+          message: `[Safety Stop] Aborted after ${maxConsecutiveToolFailures} consecutive tool failures.`,
+          actor: 'system',
+          eventType: 'error',
+          payloadJson: {
+            iteration,
+            consecutiveToolFailures,
+            lastToolName: name,
+            lastError: toolResult.error ?? null,
+          },
+        });
+        await repo.updateTaskRun(runId, {
+          finalReport: finalReportText,
+          summary: 'Stopped by safety policy after repeated tool failures',
+          status: 'needs_human',
+        });
+        await repo.updateTaskStatus(task.id, 'needs_human');
+        break;
+      }
 
       const multimodalType = detectMessageType(toolResult);
       if (multimodalType) {

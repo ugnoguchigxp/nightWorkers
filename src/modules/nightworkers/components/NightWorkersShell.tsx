@@ -55,7 +55,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#101014] text-zinc-100">
+    <div className="flex min-h-screen bg-[#111827] text-slate-100">
       <ProjectSidebar
         projects={workspace.projects}
         sessions={workspace.sessions}
@@ -71,6 +71,12 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
             objective: '',
             acceptanceCriteria: 'Ensure tests compile and complete without errors',
           });
+        }}
+        onDeleteProject={(projectId) => {
+          workspace.deleteProject(projectId);
+        }}
+        onDeleteSession={(sessionId) => {
+          workspace.deleteSession(sessionId);
         }}
         onToggleProject={(projectId) =>
           workspace.setExpandedProjects((prev) => ({ ...prev, [projectId]: !prev[projectId] }))

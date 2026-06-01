@@ -1,4 +1,6 @@
 import pino from 'pino';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -78,3 +80,13 @@ export const llmLogger = pino({
 
 // Backward-compatible alias for existing imports.
 export const logger = llmLogger;
+
+const TRACE_LOG_PATH = path.resolve(process.cwd(), 'logs/supervisor-trace.log');
+
+export function appendSupervisorTrace(event: string, payload?: Record<string, unknown>) {
+  const line = `[${new Date().toISOString()}] ${event}${payload ? ` ${JSON.stringify(payload)}` : ''}\n`;
+  void fs
+    .mkdir(path.dirname(TRACE_LOG_PATH), { recursive: true })
+    .then(() => fs.appendFile(TRACE_LOG_PATH, line, 'utf-8'))
+    .catch(() => {});
+}

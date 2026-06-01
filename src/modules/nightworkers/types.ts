@@ -61,6 +61,19 @@ export type RunDetails = TaskRun & {
   events: unknown[];
 };
 
+export type TaskEvent = {
+  id: string;
+  taskRunId?: string;
+  seq?: number;
+  type?: string;
+  actor?: string;
+  eventType?: string | null;
+  message: string;
+  payloadJson?: any;
+  timestamp?: unknown;
+  createdAt?: unknown;
+};
+
 export type ThinkingDepth = 'low' | 'medium' | 'high' | 'very_high';
 
 export type ThinkingDepthOption = {

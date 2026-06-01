@@ -44,24 +44,24 @@ export function Composer({
           : 'WS 初期化中';
   const wsStatusClass =
     realtimeStatus === 'connected'
-      ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10'
+      ? 'text-slate-100 border-slate-500 bg-slate-700'
       : realtimeStatus === 'connecting'
-        ? 'text-cyan-300 border-cyan-500/30 bg-cyan-500/10'
+        ? 'text-slate-100 border-slate-500 bg-slate-700'
         : realtimeStatus === 'disconnected'
-          ? 'text-rose-300 border-rose-500/30 bg-rose-500/10'
-          : 'text-zinc-300 border-zinc-600/40 bg-zinc-800/40';
+          ? 'text-slate-100 border-slate-500 bg-slate-700'
+          : 'text-slate-100 border-slate-500 bg-slate-800';
 
   return (
-    <div className="border-t border-zinc-800/80 bg-[#121214] p-4">
-      <div className="relative mx-auto max-w-4xl rounded-2xl border border-[#30303b] bg-[#22222a] p-4">
+    <div className="bg-transparent p-4">
+      <div className="relative mx-auto max-w-4xl rounded-2xl border border-slate-600/70 bg-[#1e293b] p-4 shadow-[0_0_0_1px_rgba(148,163,184,0.08)]">
         <div
           className={`absolute -top-3 left-4 rounded-full border px-3 py-1 text-[11px] ${wsStatusClass}`}
         >
           {wsStatusLabel}
         </div>
         {hasDiff ? (
-          <div className="absolute -top-3 right-4 rounded-full border border-zinc-700 bg-[#121214] px-3 py-1 text-[11px]">
-            <span className="text-zinc-300">{diffFiles} files</span>{' '}
+          <div className="absolute -top-3 right-4 rounded-full border border-slate-600/80 bg-slate-800 px-3 py-1 text-[11px]">
+            <span className="text-slate-200">{diffFiles} files</span>{' '}
             <span className="text-emerald-400">+{diffStats.added}</span>{' '}
             <span className="text-rose-400">-{diffStats.deleted}</span>
           </div>
@@ -83,9 +83,9 @@ export function Composer({
           }}
           disabled={disabled}
           placeholder="指示を入力（送信: Cmd+Enter / Ctrl+Enter）"
-          className="min-h-[58px] w-full resize-none border-0 bg-transparent text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
+          className="min-h-[58px] w-full resize-none border-0 bg-transparent text-sm text-slate-100 placeholder:text-slate-300/60 focus:outline-none"
         />
-        <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#30303b]/20 pt-3">
+        <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-600/50 pt-3">
           <ModelThinkingControls
             model={model}
             thinkingDepth={thinkingDepth}
@@ -103,7 +103,7 @@ export function Composer({
               await onSubmit(text);
             }}
             disabled={!canSubmit}
-            className={`h-8 w-8 rounded-full flex items-center justify-center ${canSubmit ? 'bg-zinc-200 text-black' : 'bg-zinc-800 text-zinc-600'}`}
+            className={`h-8 w-8 rounded-full flex items-center justify-center ${canSubmit ? 'bg-slate-200 text-slate-900' : 'bg-slate-700 text-slate-400'}`}
           >
             <ArrowUp className="h-4 w-4" />
           </button>
