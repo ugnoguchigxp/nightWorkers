@@ -22,7 +22,7 @@ Hono、Drizzle ORM、React、TanStack Router を活用した、モダンで堅�
 
 ### データベース
 - **ORM**: [Drizzle ORM](https://orm.drizzle.team/)
-- **DB**: PostgreSQL (postgres.js)
+- **DB**: SQLite / libSQL (`@libsql/client`)
 
 ### フロントエンド
 - **フレームワーク**: React 19, Vite
@@ -42,7 +42,6 @@ Hono、Drizzle ORM、React、TanStack Router を活用した、モダンで堅�
 ### 前提条件
 - Node.js (v20+)
 - pnpm
-- Docker / Docker Compose
 
 ### セットアップ手順
 
@@ -65,23 +64,19 @@ Hono、Drizzle ORM、React、TanStack Router を活用した、モダンで堅�
    `VITE_ENABLE_MSW=true` を設定すると、開発時に MSW モックを有効化できます（デフォルトは `false`）。
    リバースプロキシ配下（Nginx / Cloudflare など）で動かす場合は `TRUST_PROXY=true` を設定してください。
 
-3. **データベースの起動**
-   ```bash
-   docker-compose up -d
-   ```
-
-4. **データベースの初期化**
+3. **データベースの初期化**
    ```bash
    pnpm db:migrate # 既存マイグレーションを適用
    pnpm db:seed   # テストデータの投入
    ```
+   デフォルトでは `DATABASE_URL=sqlite.db` を使用し、ローカルの SQLite ファイルに保存します。
 
-5. **開発サーバーの起動**
+4. **開発サーバーの起動**
    ```bash
    pnpm dev
    ```
 
-アプリケーション、API、ドキュメントはすべて `http://localhost:5173` 経由でアクセス可能です。
+アプリケーション、API、ドキュメントはすべて `http://localhost:39174` 経由でアクセス可能です。
 
 ---
 
@@ -112,7 +107,7 @@ Hono、Drizzle ORM、React、TanStack Router を活用した、モダンで堅�
 ### マイグレーション運用（推奨）
 1. スキーマ変更後に `pnpm db:generate` で SQL を生成
 2. 生成された `drizzle/migrations/*.sql` をレビューしてコミット
-3. ローカル・CI・本番で `pnpm db:migrate` を実行して適用
+3. ローカル・CI・本番の SQLite/libSQL データベースに `pnpm db:migrate` を実行して適用
 4. `pnpm db:push` は試作や検証時のみ利用し、本番フローには使わない
 
 ---

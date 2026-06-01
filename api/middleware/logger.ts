@@ -1,26 +1,32 @@
 import { createMiddleware } from 'hono/factory';
-import { logger as globalLogger } from '../lib/logger';
+import { logger as globalLogger, logHttpEvent } from '../lib/logger';
 import type { AppEnv } from '../lib/types';
 
 export const loggerMiddleware = () => {
   return createMiddleware<AppEnv>(async (c, next) => {
     const requestId = crypto.randomUUID();
-    const logger = globalLogger.child({ requestId });
-    c.set('logger', logger);
+    c.set('logger', globalLogger.child({ requestId }));
     c.header('X-Request-Id', requestId);
 
     const start = Date.now();
-    logger.info({ method: c.req.method, path: c.req.path }, 'Request started');
 
     await next();
 
     const ms = Date.now() - start;
-    logger.info(
-      {
-        status: c.res.status,
-        durationMs: ms,
-      },
-      'Request completed'
-    );
+    const method = c.req.method.toUpperCase();
+    const isGet = method === 'GET';
+    const isError = c.res.status >= 400;
+    const shouldLog = isError || !isGet;
+
+    if (!shouldLog) return;
+
+    logHttpEvent({
+      channel: 'api',
+      method,
+      path: c.req.path,
+      level: c.res.status >= 500 ? 'error' : c.res.status >= 400 ? 'warn' : 'info',
+      message: 'request completed',
+      meta: { requestId, status: c.res.status, durationMs: ms },
+    });
   });
 };

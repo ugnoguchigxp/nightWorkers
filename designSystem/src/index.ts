@@ -20,6 +20,7 @@ export { Calculator } from './components/Calculator';
 export * from './components/Card';
 export * from './components/ChatDock';
 export * from './components/Checkbox';
+export * from './components/CodeBlock';
 export * from './components/Collapsible';
 export * from './components/Command/Command';
 export * from './components/ConfirmModal';

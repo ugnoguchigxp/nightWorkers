@@ -20,6 +20,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    if (window.location.pathname === '/') {
+      setIsLoading(false);
+      return;
+    }
+
     const initAuth = async () => {
       try {
         const res = await client.auth.me.$get({});

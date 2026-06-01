@@ -8,6 +8,20 @@
       "when": 1780214921596,
       "tag": "0000_fluffy_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1780232469209,
+      "tag": "0001_puzzling_thunderball",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1780274591382,
+      "tag": "0002_sudden_socket_messages",
+      "breakpoints": true
     }
   ]
 }

@@ -23,7 +23,7 @@ FROM base AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=39173
 
 COPY --from=builder /app/package.json ./
 # Only production dependencies needed
@@ -31,7 +31,7 @@ COPY --from=builder --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/dist-api ./dist-api
 COPY --from=builder --chown=node:node /app/dist ./dist
 
-EXPOSE 3000
+EXPOSE 39173
 
 USER node
 

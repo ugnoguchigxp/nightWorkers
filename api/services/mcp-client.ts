@@ -4,10 +4,14 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
 class McpClientService {
   private client: Client | null = null;
-  // biome-ignore lint/suspicious/noExplicitAny: transport can be StdioClientTransport or SSEClientTransport
-  private transport: any = null;
+  private transport: StdioClientTransport | SSEClientTransport | null = null;
+
+  isEnabled() {
+    return process.env.CONTEXT_STILL_ENABLED?.toLowerCase() === 'true';
+  }
 
   async connect() {
+    if (!this.isEnabled()) return;
     if (this.client) return;
 
     this.client = new Client(
@@ -39,8 +43,10 @@ class McpClientService {
     try {
       await this.client.connect(this.transport);
       console.log('Successfully connected to contextStill MCP Server');
-    } catch (err) {
-      console.error('Failed to connect to contextStill MCP Server:', err);
+    } catch (_err) {
+      console.warn(
+        'contextStill MCP connection skipped (server unavailable). Set CONTEXT_STILL_ENABLED=true and start contextStill when needed.'
+      );
       // Fallback: allow the application to run without throwing, but log the error
       this.client = null;
     }

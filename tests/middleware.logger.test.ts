@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const loggerMocks = vi.hoisted(() => {
-  const childLogger = {
-    info: vi.fn(),
-  };
+  const childLogger = {};
+  const logHttpEvent = vi.fn();
 
   return {
     childLogger,
+    logHttpEvent,
     logger: {
       child: vi.fn(() => childLogger),
     },
@@ -15,6 +15,7 @@ const loggerMocks = vi.hoisted(() => {
 
 vi.mock('../api/lib/logger', () => ({
   logger: loggerMocks.logger,
+  logHttpEvent: loggerMocks.logHttpEvent,
 }));
 
 import { loggerMiddleware } from '../api/middleware/logger';
@@ -29,7 +30,7 @@ describe('loggerMiddleware', () => {
     vi.restoreAllMocks();
   });
 
-  it('logs method and path without query parameters', async () => {
+  it('logs method and path without query parameters on error response', async () => {
     const middleware = loggerMiddleware();
     const c = {
       req: {
@@ -38,7 +39,7 @@ describe('loggerMiddleware', () => {
         path: '/api/auth/oauth/google/callback',
       },
       res: {
-        status: 200,
+        status: 500,
       },
       set: vi.fn(),
       header: vi.fn(),
@@ -48,12 +49,14 @@ describe('loggerMiddleware', () => {
 
     expect(loggerMocks.logger.child).toHaveBeenCalledWith({ requestId: 'request-id-1' });
 
-    const startCall = loggerMocks.childLogger.info.mock.calls[0];
-    expect(startCall?.[0]).toEqual({
+    const httpLogCall = loggerMocks.logHttpEvent.mock.calls[0];
+    expect(httpLogCall?.[0]).toMatchObject({
+      channel: 'api',
       method: 'GET',
       path: '/api/auth/oauth/google/callback',
+      message: 'request completed',
     });
-    expect(JSON.stringify(startCall?.[0])).not.toContain('secret-code');
-    expect(JSON.stringify(startCall?.[0])).not.toContain('secret-state');
+    expect(JSON.stringify(httpLogCall?.[0])).not.toContain('secret-code');
+    expect(JSON.stringify(httpLogCall?.[0])).not.toContain('secret-state');
   });
 });

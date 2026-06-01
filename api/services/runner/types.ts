@@ -1,6 +1,7 @@
 export interface RunnerOptions {
   timeoutSeconds?: number;
   env?: Record<string, string>;
+  latestUserMessage?: string;
 }
 
 export interface RunnerStatus {

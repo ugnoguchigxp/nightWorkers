@@ -1,5 +1,4 @@
 import path from 'node:path';
-import devServer from '@hono/vite-dev-server';
 import tailwindcss from '@tailwindcss/vite';
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
@@ -13,12 +12,6 @@ export default defineConfig({
       generatedRouteTree: './src/routeTree.gen.ts',
     }),
     react(),
-    devServer({
-      entry: 'api/app.ts',
-      // Forward only /api requests to Hono. Let Vite handle SPA routes and assets.
-      exclude: [/^\/(?!api(?:\/|$)).*/],
-      injectClientScript: false,
-    }),
   ],
   resolve: {
     alias: {
@@ -27,6 +20,13 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 39174,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:39173',
+        changeOrigin: true,
+        ws: true,
+      },
+    },
   },
 });

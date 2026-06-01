@@ -14,6 +14,11 @@ function RepositoriesPage() {
   const [name, setName] = useState('');
   const [localPath, setLocalPath] = useState('');
   const [branch, setBranch] = useState('main');
+  const [allowedPaths, setAllowedPaths] = useState('');
+  const [deniedPaths, setDeniedPaths] = useState('');
+  const [blockedCommands, setBlockedCommands] = useState('rm -rf,npm publish,git push');
+  const [maxCommandSeconds, setMaxCommandSeconds] = useState(60);
+  const [requireReadBeforeEdit, setRequireReadBeforeEdit] = useState(true);
 
   // Fetch Repositories
   const { data: repos = [], isLoading } = useQuery({
@@ -27,8 +32,13 @@ function RepositoriesPage() {
 
   // Create Repository Mutation
   const createRepoMutation = useMutation({
-    mutationFn: async (data: { name: string; localPath: string; branch: string }) => {
-      const res = await client.repositories.$post({ json: data });
+    mutationFn: async (data: {
+      name: string;
+      localPath: string;
+      branch: string;
+      safetyPolicy?: any;
+    }) => {
+      const res = await client.repositories.$post({ json: data as any });
       if (!res.ok) throw new Error('Failed to create repository');
       return res.json();
     },
@@ -37,6 +47,11 @@ function RepositoriesPage() {
       setName('');
       setLocalPath('');
       setBranch('main');
+      setAllowedPaths('');
+      setDeniedPaths('');
+      setBlockedCommands('rm -rf,npm publish,git push');
+      setMaxCommandSeconds(60);
+      setRequireReadBeforeEdit(true);
     },
   });
 
@@ -55,7 +70,16 @@ function RepositoriesPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !localPath) return;
-    createRepoMutation.mutate({ name, localPath, branch });
+
+    const safetyPolicy = {
+      allowedPaths: allowedPaths ? allowedPaths.split(',').map((s) => s.trim()) : undefined,
+      deniedPaths: deniedPaths ? deniedPaths.split(',').map((s) => s.trim()) : undefined,
+      blockedCommands: blockedCommands ? blockedCommands.split(',').map((s) => s.trim()) : [],
+      maxCommandSeconds: Number(maxCommandSeconds),
+      requireReadBeforeEdit,
+    };
+
+    createRepoMutation.mutate({ name, localPath, branch, safetyPolicy });
   };
 
   return (
@@ -117,6 +141,83 @@ function RepositoriesPage() {
                 className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 required
               />
+            </div>
+
+            <div className="border-t border-border/60 pt-4 mt-4 space-y-4">
+              <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                <Shield className="h-4 w-4 text-emerald-400" />
+                Safety & Execution Policies
+              </h3>
+
+              <div>
+                <span className="block text-xs font-medium text-muted-foreground mb-1">
+                  Allowed Subdirs (comma separated, relative)
+                </span>
+                <input
+                  type="text"
+                  placeholder="e.g. src, lib (leave empty for all)"
+                  value={allowedPaths}
+                  onChange={(e) => setAllowedPaths(e.target.value)}
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <span className="block text-xs font-medium text-muted-foreground mb-1">
+                  Denied Subdirs (comma separated, relative)
+                </span>
+                <input
+                  type="text"
+                  placeholder="e.g. tests/e2e, config (leave empty for none)"
+                  value={deniedPaths}
+                  onChange={(e) => setDeniedPaths(e.target.value)}
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <span className="block text-xs font-medium text-muted-foreground mb-1">
+                  Blocked Shell Commands (comma separated)
+                </span>
+                <input
+                  type="text"
+                  placeholder="e.g. rm -rf, npm publish"
+                  value={blockedCommands}
+                  onChange={(e) => setBlockedCommands(e.target.value)}
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <span className="block text-xs font-medium text-muted-foreground mb-1">
+                    Command Timeout (s)
+                  </span>
+                  <input
+                    type="number"
+                    value={maxCommandSeconds}
+                    onChange={(e) => setMaxCommandSeconds(Number(e.target.value))}
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    required
+                  />
+                </div>
+
+                <div className="flex-1 flex items-center gap-2 pt-5">
+                  <input
+                    type="checkbox"
+                    id="requireRead"
+                    checked={requireReadBeforeEdit}
+                    onChange={(e) => setRequireReadBeforeEdit(e.target.checked)}
+                    className="rounded bg-background border-border text-primary focus:ring-primary h-4 w-4"
+                  />
+                  <label
+                    htmlFor="requireRead"
+                    className="text-xs font-medium text-muted-foreground cursor-pointer select-none"
+                  >
+                    Read Before Edit
+                  </label>
+                </div>
+              </div>
             </div>
 
             <Button type="submit" disabled={createRepoMutation.isPending} className="w-full">

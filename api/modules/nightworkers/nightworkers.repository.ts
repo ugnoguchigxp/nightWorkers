@@ -1,12 +1,21 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
-import { repositories, taskEvents, taskRuns, tasks } from '../../db/schema';
+import {
+  artifacts,
+  repositories,
+  taskEvents,
+  taskMessages,
+  taskRuns,
+  tasks,
+} from '../../db/schema';
+import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
 
 // --- Repositories ---
 export async function createRepository(data: {
   name: string;
   localPath: string;
   branch: string;
+  allowed?: boolean;
   // biome-ignore lint/suspicious/noExplicitAny: safetyPolicy is an arbitrary JSON object
   safetyPolicy?: any;
 }) {
@@ -33,8 +42,12 @@ export async function createTask(data: {
   repositoryId: string;
   title: string;
   description?: string | null;
+  objective?: string | null;
+  acceptanceCriteria?: string | null;
   status?: string;
   timeoutSeconds?: number;
+  priority?: number;
+  createdBy?: string | null;
 }) {
   const [task] = await db.insert(tasks).values(data).returning();
   return task;
@@ -49,12 +62,55 @@ export async function listTasks() {
   return db.select().from(tasks).orderBy(desc(tasks.createdAt));
 }
 
+export async function listTaskMessages(taskId: string) {
+  return db
+    .select()
+    .from(taskMessages)
+    .where(eq(taskMessages.taskId, taskId))
+    .orderBy(taskMessages.createdAt);
+}
+
+export async function createTaskMessage(data: {
+  taskId: string;
+  runId?: string | null;
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string;
+  messageType?: string | null;
+  payloadJson?: any;
+}) {
+  const [message] = await db
+    .insert(taskMessages)
+    .values({
+      taskId: data.taskId,
+      runId: data.runId ?? null,
+      role: data.role,
+      content: data.content,
+      messageType: data.messageType ?? null,
+      metadataJson: data.payloadJson ?? null,
+    })
+    .returning();
+  if (message) {
+    nightWorkersRealtimeBroker.publish(data.taskId, {
+      type: 'task_message_created',
+      runId: data.runId ?? undefined,
+      payload: { message },
+    });
+  }
+  return message;
+}
+
 export async function updateTaskStatus(id: string, status: string) {
   const [task] = await db
     .update(tasks)
     .set({ status, updatedAt: new Date() })
     .where(eq(tasks.id, id))
     .returning();
+  if (task) {
+    nightWorkersRealtimeBroker.publish(task.id, {
+      type: 'task_status_updated',
+      payload: { status: task.status, task },
+    });
+  }
   return task;
 }
 
@@ -67,13 +123,45 @@ export async function updateTaskCompiledPrompt(id: string, compiledPrompt: strin
   return task;
 }
 
+export async function updateTask(
+  id: string,
+  data: {
+    title?: string;
+    description?: string | null;
+    objective?: string | null;
+    acceptanceCriteria?: string | null;
+    status?: string;
+  }
+) {
+  const [task] = await db
+    .update(tasks)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(tasks.id, id))
+    .returning();
+  return task;
+}
+
 export async function deleteTask(id: string) {
   const [task] = await db.delete(tasks).where(eq(tasks.id, id)).returning();
   return task;
 }
 
 // --- Task Runs ---
-export async function createTaskRun(data: { taskId: string; status?: string; startedAt?: Date }) {
+export async function createTaskRun(data: {
+  taskId: string;
+  repositoryId?: string | null;
+  status?: string;
+  workerKind?: string;
+  baseRef?: string | null;
+  worktreePath?: string | null;
+  timeoutSeconds?: number;
+  contextSnapshot?: any;
+  summary?: string | null;
+  finalReport?: string | null;
+  startedAt?: Date;
+  endedAt?: Date;
+  finishedAt?: Date;
+}) {
   const [run] = await db.insert(taskRuns).values(data).returning();
   return run;
 }
@@ -91,17 +179,34 @@ export async function listTaskRunsForTask(taskId: string) {
     .orderBy(desc(taskRuns.startedAt));
 }
 
+export async function listActiveTaskRunsForTask(taskId: string) {
+  return db
+    .select()
+    .from(taskRuns)
+    .where(
+      and(eq(taskRuns.taskId, taskId), inArray(taskRuns.status, ['running', 'context_compiling']))
+    );
+}
+
 export async function updateTaskRun(
   id: string,
   data: {
     status?: string;
     endedAt?: Date;
+    finishedAt?: Date;
     logContent?: string;
     diffPatch?: string;
     // biome-ignore lint/suspicious/noExplicitAny: arbitrary json
     testResults?: any;
     // biome-ignore lint/suspicious/noExplicitAny: arbitrary json
     contextEval?: any;
+    workerKind?: string;
+    baseRef?: string | null;
+    worktreePath?: string | null;
+    timeoutSeconds?: number;
+    contextSnapshot?: any;
+    summary?: string | null;
+    finalReport?: string | null;
   }
 ) {
   const [run] = await db
@@ -109,12 +214,47 @@ export async function updateTaskRun(
     .set({ ...data, updatedAt: new Date() })
     .where(eq(taskRuns.id, id))
     .returning();
+  if (run) {
+    nightWorkersRealtimeBroker.publish(run.taskId, {
+      type: 'task_run_updated',
+      runId: run.id,
+      payload: { run },
+    });
+  }
   return run;
 }
 
 // --- Task Events ---
-export async function createTaskEvent(data: { taskRunId: string; type: string; message: string }) {
-  const [event] = await db.insert(taskEvents).values(data).returning();
+export async function createTaskEvent(data: {
+  taskRunId: string;
+  type: string;
+  message: string;
+  seq?: number;
+  actor?: string;
+  eventType?: string | null;
+  payloadJson?: any;
+  timestamp?: Date;
+}) {
+  let seq = data.seq;
+  if (seq === undefined) {
+    const result = await db
+      .select({ maxSeq: sql<number>`coalesce(max(${taskEvents.seq}), 0)` })
+      .from(taskEvents)
+      .where(eq(taskEvents.taskRunId, data.taskRunId));
+    seq = (result[0]?.maxSeq || 0) + 1;
+  }
+  const [event] = await db
+    .insert(taskEvents)
+    .values({ ...data, seq })
+    .returning();
+  const [run] = await db.select().from(taskRuns).where(eq(taskRuns.id, data.taskRunId));
+  if (event && run) {
+    nightWorkersRealtimeBroker.publish(run.taskId, {
+      type: 'task_event_created',
+      runId: run.id,
+      event,
+    });
+  }
   return event;
 }
 
@@ -123,5 +263,24 @@ export async function listTaskEventsForRun(taskRunId: string) {
     .select()
     .from(taskEvents)
     .where(eq(taskEvents.taskRunId, taskRunId))
-    .orderBy(taskEvents.timestamp);
+    .orderBy(taskEvents.seq, taskEvents.timestamp);
+}
+
+// --- Artifacts ---
+export async function createArtifact(data: {
+  runId: string;
+  kind: string;
+  path: string;
+  metadataJson?: any;
+}) {
+  const [artifact] = await db.insert(artifacts).values(data).returning();
+  return artifact;
+}
+
+export async function listArtifactsForRun(runId: string) {
+  return db
+    .select()
+    .from(artifacts)
+    .where(eq(artifacts.runId, runId))
+    .orderBy(desc(artifacts.createdAt));
 }

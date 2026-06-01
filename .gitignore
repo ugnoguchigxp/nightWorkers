@@ -54,3 +54,9 @@ drizzle/*
 
 # AI & Other
 .gemini/
+api/.runtime/
+
+# Local SQLite
+*.db
+*.sqlite
+*.sqlite3

@@ -69,17 +69,25 @@ describe('errorHandler', () => {
       json: vi.fn((payload, status) => ({ payload, status })),
     } as unknown as Parameters<typeof errorHandler>[1];
 
-    const result = await errorHandler(new Error('unexpected'), c);
+    const { config } = await import('../api/config');
+    const originalNodeEnv = config.NODE_ENV;
+    config.NODE_ENV = 'production';
 
-    expect(logger.error).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({
-      payload: {
-        error: {
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'An unexpected error occurred',
+    try {
+      const result = await errorHandler(new Error('unexpected'), c);
+
+      expect(logger.error).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({
+        payload: {
+          error: {
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'An unexpected error occurred',
+          },
         },
-      },
-      status: 500,
-    });
+        status: 500,
+      });
+    } finally {
+      config.NODE_ENV = originalNodeEnv;
+    }
   });
 });

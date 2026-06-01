@@ -6,7 +6,7 @@ dotenvConfig(); // ensure env is loaded in Node.js, Bun might auto-load
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-    PORT: z.coerce.number().default(3000),
+    PORT: z.coerce.number().default(39173),
     DATABASE_URL: z.string(),
     JWT_SECRET: z.string().min(32),
     JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
@@ -17,7 +17,7 @@ const envSchema = z
     GITHUB_CLIENT_ID: z.string().trim().optional(),
     GITHUB_CLIENT_SECRET: z.string().trim().optional(),
     APP_URL: z.string().url().optional(),
-    CORS_ORIGIN: z.string().default('http://localhost:5173'),
+    CORS_ORIGIN: z.string().default('http://localhost:39174'),
     COOKIE_SAME_SITE: z.enum(['lax', 'strict', 'none']).default('lax'),
     TRUST_PROXY: z
       .enum(['true', 'false'])
