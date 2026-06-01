@@ -387,7 +387,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
             queryClient.setQueryData<TaskMessage[]>(
               ['taskMessages', activeSessionId],
               (prev = []) => {
-                const incoming = msg.payload!.message!;
+                const incoming = msg.payload?.message;
+                if (!incoming) return prev;
                 const next = [...prev];
                 if (incoming.role === 'user') {
                   const optimisticIndex = next.findIndex(

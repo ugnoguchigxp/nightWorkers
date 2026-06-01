@@ -41,7 +41,6 @@ describe('Health Check Endpoints', () => {
   });
 
   it('GET /api/health/ready returns 200 when DB is reachable', async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mock value
     dbMocks.run.mockResolvedValueOnce({ rowsAffected: 0 } as any);
     const app = createApp();
     const res = await app.request('/api/health/ready');
@@ -64,7 +63,6 @@ describe('Health Check Endpoints', () => {
   });
 
   it('GET /api/health (legacy) behaves as readiness endpoint', async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mock value
     dbMocks.run.mockResolvedValueOnce({ rowsAffected: 0 } as any);
     const app = createApp();
     const res = await app.request('/api/health');

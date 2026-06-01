@@ -16,7 +16,6 @@ export async function createRepository(data: {
   localPath: string;
   branch: string;
   allowed?: boolean;
-  // biome-ignore lint/suspicious/noExplicitAny: safetyPolicy is an arbitrary JSON object
   safetyPolicy?: any;
 }) {
   const [repo] = await db.insert(repositories).values(data).returning();
@@ -196,9 +195,7 @@ export async function updateTaskRun(
     finishedAt?: Date;
     logContent?: string;
     diffPatch?: string;
-    // biome-ignore lint/suspicious/noExplicitAny: arbitrary json
     testResults?: any;
-    // biome-ignore lint/suspicious/noExplicitAny: arbitrary json
     contextEval?: any;
     workerKind?: string;
     baseRef?: string | null;

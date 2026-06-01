@@ -105,13 +105,11 @@ export async function runCommandTool(
     let truncated = false;
 
     if (stdout.length > MAX_OUTPUT_CHARS) {
-      finalStdout =
-        stdout.substring(0, MAX_OUTPUT_CHARS) + `\n[... stdout truncated by tool limit ...]`;
+      finalStdout = `${stdout.substring(0, MAX_OUTPUT_CHARS)}\n[... stdout truncated by tool limit ...]`;
       truncated = true;
     }
     if (stderr.length > MAX_OUTPUT_CHARS) {
-      finalStderr =
-        stderr.substring(0, MAX_OUTPUT_CHARS) + `\n[... stderr truncated by tool limit ...]`;
+      finalStderr = `${stderr.substring(0, MAX_OUTPUT_CHARS)}\n[... stderr truncated by tool limit ...]`;
       truncated = true;
     }
 
@@ -141,13 +139,11 @@ export async function runCommandTool(
     let truncated = false;
 
     if (stdout.length > MAX_OUTPUT_CHARS) {
-      finalStdout =
-        stdout.substring(0, MAX_OUTPUT_CHARS) + `\n[... stdout truncated by tool limit ...]`;
+      finalStdout = `${stdout.substring(0, MAX_OUTPUT_CHARS)}\n[... stdout truncated by tool limit ...]`;
       truncated = true;
     }
     if (stderr.length > MAX_OUTPUT_CHARS) {
-      finalStderr =
-        stderr.substring(0, MAX_OUTPUT_CHARS) + `\n[... stderr truncated by tool limit ...]`;
+      finalStderr = `${stderr.substring(0, MAX_OUTPUT_CHARS)}\n[... stderr truncated by tool limit ...]`;
       truncated = true;
     }
 

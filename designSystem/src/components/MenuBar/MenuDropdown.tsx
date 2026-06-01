@@ -104,10 +104,7 @@ export const MenuDropdown: React.FC<IMenuDropdownProps> = ({
     >
       {items.map((item, index) => {
         if (item.separator) {
-          return (
-            // biome-ignore lint/suspicious/noArrayIndexKey: Separators do not have unique IDs and order is static
-            <div key={`sep-${index}`} className="h-[1px] bg-border my-1 mx-3" />
-          );
+          return <div key={`sep-${index}`} className="h-[1px] bg-border my-1 mx-3" />;
         }
 
         return (

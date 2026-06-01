@@ -390,7 +390,7 @@ const router = createOpenApiRouter()
 
     // Resilient Fallback: If validated data is missing required fields,
     // manually extract them from the raw body to avoid DB constraint crashes.
-    if (!data || !data.name || !data.localPath) {
+    if (!data?.name || !data.localPath) {
       try {
         const rawJson = await c.req.json();
         if (rawJson) {
@@ -414,7 +414,7 @@ const router = createOpenApiRouter()
     }
 
     // Double check: if still missing required fields, throw a ValidationError rather than crashing the DB
-    if (!data || !data.name || !data.localPath) {
+    if (!data?.name || !data.localPath) {
       throw new ValidationError('Name and local path are required');
     }
 
@@ -443,7 +443,7 @@ const router = createOpenApiRouter()
 
     // Resilient Fallback: If validated data is missing required fields,
     // manually extract them from the raw body to avoid DB constraint crashes.
-    if (!data || !data.repositoryId || !data.title) {
+    if (!data?.repositoryId || !data.title) {
       try {
         const rawJson = await c.req.json();
         if (rawJson) {
@@ -481,7 +481,7 @@ const router = createOpenApiRouter()
     }
 
     // Double check: if still missing required fields, throw a ValidationError rather than crashing the DB
-    if (!data || !data.repositoryId || !data.title) {
+    if (!data?.repositoryId || !data.title) {
       throw new ValidationError('Repository ID and title are required');
     }
 
@@ -538,7 +538,6 @@ const router = createOpenApiRouter()
     try {
       const run = await service.startTaskRun(id);
       return c.json(run, 201);
-      // biome-ignore lint/suspicious/noExplicitAny: catch block error
     } catch (err: any) {
       if (err instanceof AppError) {
         return c.json({ error: err.message, code: err.code }, err.statusCode as any);

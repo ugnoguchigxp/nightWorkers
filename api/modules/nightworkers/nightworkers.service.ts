@@ -12,7 +12,6 @@ export async function createRepository(data: {
   localPath: string;
   branch: string;
   allowed?: boolean;
-  // biome-ignore lint/suspicious/noExplicitAny: arbitrary JSON
   safetyPolicy?: any;
 }) {
   return repo.createRepository(data);
@@ -243,7 +242,6 @@ export async function startTaskRun(taskId: string) {
           status: runnerStatus.status,
         },
       });
-      // biome-ignore lint/suspicious/noExplicitAny: catch error
     } catch (err: any) {
       console.error(`Error during NativeLocalRunner execution for run ${run.id}:`, err);
       await repo.updateTaskStatus(taskId, 'failed');

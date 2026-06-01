@@ -166,7 +166,6 @@ export function FileTree({ items, setItems }: FileTreeProps) {
           if (nextContainerId === 'root') {
             targetList = newItems;
           } else {
-            // biome-ignore lint/style/noNonNullAssertion: Guaranteed by logic
             const parentFolder = findItem(newItems, nextContainerId!);
             if (parentFolder) {
               targetList = parentFolder.items;

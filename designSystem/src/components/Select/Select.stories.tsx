@@ -80,7 +80,6 @@ export function SelectAlignExample() {
                 ))}
                 {/* Simulate many items for scrolling */}
                 {Array.from({ length: 20 }).map((_, i) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: Demo content
                   <SelectItem key={`extra-${i}`} value={`extra-${i}`}>
                     Extra Item {i}
                   </SelectItem>

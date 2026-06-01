@@ -276,7 +276,6 @@ const HealthRadarChart = React.forwardRef<SVGSVGElement, HealthRadarChartProps>(
             <g data-testid="health-radar-grid">
               {gridPaths.map((path, index) => (
                 <path
-                  // biome-ignore lint/suspicious/noArrayIndexKey: grid levels are stable and don't reorder
                   key={`grid-${index + 1}`}
                   d={path}
                   fill="none"

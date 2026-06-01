@@ -2,7 +2,7 @@ import { exec } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { getRelativePath, isPathSafe } from './path-policy';
+import { isPathSafe } from './path-policy';
 import type { WorkerToolResult } from './types';
 
 const execAsync = promisify(exec);

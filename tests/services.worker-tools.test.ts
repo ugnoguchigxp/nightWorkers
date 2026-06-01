@@ -3,9 +3,6 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   analyzeCommand,
-  applyPatchTool,
-  gitDiffTool,
-  gitStatusTool,
   isPathSafe,
   readFileTool,
   runCommandTool,

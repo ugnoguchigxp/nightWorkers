@@ -67,7 +67,6 @@ export class OpenHandsProcessRunner implements IRunner {
         });
         this.emitLog(runId, `[System Error] Failed to start process: ${err.message}`);
       });
-      // biome-ignore lint/suspicious/noExplicitAny: catch error
     } catch (err: any) {
       this.statuses.set(runId, { status: 'failed' });
       this.emitLog(runId, `[System Error] Process launch threw: ${err.message}`);

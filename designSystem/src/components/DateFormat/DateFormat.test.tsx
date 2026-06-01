@@ -227,7 +227,6 @@ describe('DateFormat', () => {
   describe('Error Handling', () => {
     it('falls back to base locale on formatting error', () => {
       const originalIntl = Intl.DateTimeFormat;
-      // biome-ignore lint/complexity/useArrowFunction: Constructor mock requires function type
       const mockImpl: any = function (loc: any, opts: any) {
         if (typeof loc === 'string' && loc.includes('-u-ca-')) {
           throw new Error('Calendar not supported');

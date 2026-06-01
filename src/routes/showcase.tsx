@@ -26,7 +26,6 @@ import {
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 
-// biome-ignore lint/suspicious/noExplicitAny: route path type is dynamic
 export const Route = createFileRoute('/showcase' as any)({
   component: ShowcasePage,
 });
