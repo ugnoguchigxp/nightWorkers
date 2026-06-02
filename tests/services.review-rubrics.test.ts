@@ -167,4 +167,45 @@ describe('review evidence pack builder', () => {
     expect(JSON.stringify(pack.reviewResults)).toContain('[REDACTED]');
     expect(JSON.stringify(pack.reviewResults)).not.toContain('review-secret');
   });
+
+  it('uses final judgment events as final report evidence when the run row has no final report', () => {
+    const run = {
+      id: '11111111-1111-4111-8111-111111111111',
+      taskId: '22222222-2222-4222-8222-222222222222',
+      status: 'needs_review',
+      diffPatch: 'diff --git a/src/a.ts b/src/a.ts\n+new',
+      finalReport: null,
+      summary: 'ready',
+    } as any;
+    const events = [
+      {
+        id: '33333333-3333-4333-8333-333333333333',
+        taskRunId: run.id,
+        seq: 1,
+        actor: 'system',
+        eventType: 'checkpoint',
+        type: 'checkpoint',
+        message: 'Final judgment created',
+        payloadJson: {
+          runEvent: {
+            version: 1,
+            runId: run.id,
+            taskId: run.taskId,
+            seq: 1,
+            timestamp: '2026-06-02T00:00:01.000Z',
+            type: 'run.final_judgment_created',
+            severity: 'checkpoint',
+            actor: 'system',
+            message: 'Final judgment created',
+            data: { finalJudgment: { conclusion: 'Finished from event' } },
+          },
+        },
+        timestamp: new Date('2026-06-02T00:00:01.000Z'),
+      },
+    ] as any[];
+
+    const pack = buildReviewEvidencePackFromRun(run, events);
+
+    expect(pack.finalReport).toBe('Finished from event');
+  });
 });

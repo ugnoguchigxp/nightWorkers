@@ -134,6 +134,7 @@ export type FirewallResult = {
 export type LlmReviewerResult = {
   status: ReviewerEvaluationStatus;
   draft?: ReviewerDraft;
+  rawOutput?: unknown;
   provider: string;
   model?: string;
   promptDigest: string;

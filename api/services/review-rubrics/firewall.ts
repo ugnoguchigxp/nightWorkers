@@ -144,6 +144,5 @@ function sanitizeFinding(finding: ReviewFinding): ReviewFinding {
 }
 
 function isKnownRef(ref: ReviewEvidenceRef, existence: Set<string>): boolean {
-  if (ref.kind === 'changed_file' || ref.kind === 'artifact') return true;
   return existence.has(refKey(ref));
 }

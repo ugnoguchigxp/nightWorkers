@@ -386,7 +386,23 @@ const listReviewRubricsRoute = createRoute({
     200: {
       content: {
         'application/json': {
-          schema: z.array(z.any()),
+          schema: z.array(
+            z.object({
+              id: z.string(),
+              title: z.string(),
+              description: z.string().optional(),
+              source: z.enum(['builtin', 'repository', 'inline']),
+              digest: z.string(),
+              criteriaCount: z.number().int().nonnegative(),
+              llm: z
+                .object({
+                  enabledByDefault: z.boolean(),
+                  promptHints: z.array(z.string()).optional(),
+                  maxEvidenceChars: z.number().int().positive(),
+                })
+                .optional(),
+            })
+          ),
         },
       },
       description: 'List available review rubrics',
@@ -447,6 +463,14 @@ const createReviewerReplayEvaluationRoute = createRoute({
         },
       },
       description: 'Read-only replay reviewer evaluation completed',
+    },
+    400: {
+      content: {
+        'application/json': {
+          schema: z.object({ error: z.string(), code: z.string().optional() }),
+        },
+      },
+      description: 'Invalid reviewer replay input',
     },
     500: {
       content: {

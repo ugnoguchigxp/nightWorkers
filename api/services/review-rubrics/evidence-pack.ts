@@ -78,6 +78,9 @@ function selectedEventsFrom(events: RunEventBase[]): ReviewEvidencePack['selecte
         'run.runtime_finished',
         'run.outcome_decided',
         'run.final_judgment_created',
+        'memory.candidate_generated',
+        'memory.context_injected',
+        'memory.feedback_evaluated',
         'verification.finished',
         'tool.policy_blocked',
         'safety.policy_violation',
@@ -195,7 +198,7 @@ export function buildReviewEvidencePackFromRun(
     taskId: run.taskId,
     status: run.status,
     outcome: terminalFromEvents(events),
-    finalReport: redactedString(run.finalReport, 4_000),
+    finalReport: redactedString(run.finalReport, 4_000) ?? finalReportFromEvents(events),
     diff: {
       hasChanges: diffBytes > 0,
       bytes: diffBytes,
@@ -259,6 +262,9 @@ export function buildEvidenceRefExistenceSet(pack: ReviewEvidencePack): Set<stri
     keys.add(
       refKey({ kind: 'policy', eventId: item.eventId, code: item.code, message: item.message })
     );
+  }
+  for (const path of pack.diff.changedFiles) {
+    keys.add(refKey({ kind: 'changed_file', path }));
   }
   return keys;
 }

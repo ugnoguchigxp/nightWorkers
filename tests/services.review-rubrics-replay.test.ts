@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { runReviewReplayEvaluationFromJsonl } from '../api/services/review-rubrics/replay-evaluation';
 import { parseRunJsonl } from '../api/services/run-events/jsonl-parse';
@@ -5,6 +6,10 @@ import { replayRunJsonl } from '../api/services/run-events/replay';
 
 const runId = '11111111-1111-4111-8111-111111111111';
 const taskId = '22222222-2222-4222-8222-222222222222';
+
+function fixture(name: string): string {
+  return readFileSync(new URL(`./fixtures/reviewer-rubrics/${name}`, import.meta.url), 'utf8');
+}
 
 function buildJsonl(options: {
   verification?: boolean;
@@ -96,6 +101,42 @@ function buildJsonl(options: {
 }
 
 describe('review rubric replay evaluation', () => {
+  it('keeps JSONL regression fixtures wired into deterministic replay', async () => {
+    const approved = await runReviewReplayEvaluationFromJsonl({
+      jsonl: fixture('basic-approved.jsonl'),
+      rubricId: 'basic-coding-run',
+      mode: 'deterministic_only',
+    });
+    expect(approved.finalReviewerVerdict).toBe('approved');
+
+    const missingVerification = await runReviewReplayEvaluationFromJsonl({
+      jsonl: fixture('missing-verification.jsonl'),
+      rubricId: 'basic-coding-run',
+      mode: 'deterministic_only',
+    });
+    expect(missingVerification.finalReviewerVerdict).toBe('changes_requested');
+    expect(missingVerification.reviewResult.findings.map((finding) => finding.title)).toContain(
+      'Verification result is present'
+    );
+
+    const policyViolation = await runReviewReplayEvaluationFromJsonl({
+      jsonl: fixture('policy-violation.jsonl'),
+      rubricId: 'basic-coding-run',
+      mode: 'deterministic_only',
+    });
+    expect(policyViolation.reviewResult.findings.map((finding) => finding.title)).toContain(
+      'No policy violation is present'
+    );
+
+    const reviewFollowup = await runReviewReplayEvaluationFromJsonl({
+      jsonl: fixture('review-followup-needed.jsonl'),
+      rubricId: 'review-ready-run',
+      mode: 'deterministic_only',
+    });
+    expect(reviewFollowup.finalReviewerVerdict).toBe('approved');
+    expect(reviewFollowup.evidencePack.reviewResults.length).toBeGreaterThan(0);
+  });
+
   it('builds a reviewer result from JSONL without provider credentials', async () => {
     const result = await runReviewReplayEvaluationFromJsonl({
       jsonl: buildJsonl({ verification: true, diffBytes: 42 }),

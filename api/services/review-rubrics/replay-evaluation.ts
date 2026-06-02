@@ -56,9 +56,10 @@ export async function runReviewerEvaluationFromPack(
       evidencePack: input.pack,
     });
     degradedReasons.push(...llm.degradedReasons);
-    if (llm.draft || input.mockLlmOutput) {
+    const rawLlmOutput = input.mockLlmOutput ?? llm.rawOutput ?? llm.draft;
+    if (rawLlmOutput) {
       firewall = applyReviewerFirewall({
-        rawOutput: input.mockLlmOutput ?? llm.draft,
+        rawOutput: rawLlmOutput,
         evidencePack: input.pack,
         deterministic,
       });

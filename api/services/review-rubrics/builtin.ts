@@ -91,11 +91,27 @@ export const BUILTIN_RUBRICS: Record<string, RubricDefinition> = {
     scope: {},
     criteria: [
       {
-        id: 'memory-evaluation-event-present',
+        id: 'memory-candidate-generated',
+        title: 'Memory candidate generation event is present',
+        severity: 'warning',
+        evaluationMode: 'deterministic',
+        evidenceSelectors: [{ kind: 'run_event_type', type: 'memory.candidate_generated' }],
+        rule: { required: true, failWhenMissing: true },
+      },
+      {
+        id: 'memory-context-injected',
+        title: 'Memory context injection event is present',
+        severity: 'warning',
+        evaluationMode: 'deterministic',
+        evidenceSelectors: [{ kind: 'run_event_type', type: 'memory.context_injected' }],
+        rule: { required: true, failWhenMissing: true },
+      },
+      {
+        id: 'memory-feedback-evaluated',
         title: 'Memory feedback evaluation event is present',
         severity: 'warning',
         evaluationMode: 'deterministic',
-        evidenceSelectors: [{ kind: 'run_event_type', type: 'run.context_compiled' }],
+        evidenceSelectors: [{ kind: 'run_event_type', type: 'memory.feedback_evaluated' }],
         rule: { required: true, failWhenMissing: true },
       },
       {

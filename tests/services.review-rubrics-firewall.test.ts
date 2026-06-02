@@ -79,4 +79,45 @@ describe('reviewer firewall', () => {
     );
     expect(result.draft?.findings[0].title).toContain('Unsupported evidence reference');
   });
+
+  it('requires changed_file and artifact refs to exist in the evidence pack', () => {
+    const deterministic = evaluateDeterministicRubric(loadRubric('basic-coding-run').rubric, {
+      ...pack,
+      diff: { hasChanges: true, bytes: 10, changedFiles: ['src/known.ts'] },
+      verification: [{ eventId: '33333333-3333-4333-8333-333333333333', passed: true }],
+    });
+    const result = applyReviewerFirewall({
+      rawOutput: {
+        version: 1,
+        verdict: 'approved',
+        summary: 'approved',
+        findings: [
+          {
+            severity: 'info',
+            title: 'mixed refs',
+            evidenceRefs: [
+              { kind: 'changed_file', path: 'src/known.ts' },
+              { kind: 'changed_file', path: 'src/missing.ts' },
+              { kind: 'artifact', artifactId: 'missing-artifact' },
+            ],
+          },
+        ],
+        humanCallouts: [],
+        agentFollowUps: [],
+        suggestedNextTasks: [],
+      },
+      evidencePack: {
+        ...pack,
+        diff: { hasChanges: true, bytes: 10, changedFiles: ['src/known.ts'] },
+        verification: [{ eventId: '33333333-3333-4333-8333-333333333333', passed: true }],
+      },
+      deterministic,
+    });
+
+    expect(result.status).toBe('degraded');
+    expect(result.degradedReasons).toContain('llm_output_unknown_evidence_ref');
+    expect(result.draft?.findings[0].evidenceRefs).toEqual([
+      { kind: 'changed_file', path: 'src/known.ts' },
+    ]);
+  });
 });

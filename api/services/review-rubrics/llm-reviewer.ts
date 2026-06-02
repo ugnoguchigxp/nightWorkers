@@ -21,6 +21,7 @@ export async function callLlmReviewer(input: CallLlmReviewerInput): Promise<LlmR
     return {
       status: 'completed',
       draft: typeof input.mockDraft === 'string' ? undefined : (input.mockDraft as ReviewerDraft),
+      rawOutput: input.mockDraft,
       provider: 'mock',
       model: 'mock-reviewer',
       promptDigest,
