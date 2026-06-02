@@ -109,4 +109,40 @@ describe('deterministic rubric evaluator', () => {
       ])
     );
   });
+
+  it('requires blocking review findings to have follow-up instructions', () => {
+    const rubric = loadRubric('review-ready-run').rubric;
+    const result = evaluateDeterministicRubric(rubric, {
+      ...basePack,
+      reviewResults: [
+        {
+          findings: [{ severity: 'blocking', title: 'Fix this before completion' }],
+          humanCallouts: [],
+          agentFollowUps: [],
+        },
+      ],
+    });
+
+    expect(result.findings.map((finding) => finding.title)).toContain(
+      'Blocking review findings have follow-up instructions'
+    );
+  });
+
+  it('rejects blocking findings duplicated into human callouts', () => {
+    const rubric = loadRubric('review-ready-run').rubric;
+    const result = evaluateDeterministicRubric(rubric, {
+      ...basePack,
+      reviewResults: [
+        {
+          findings: [{ severity: 'blocking', title: 'Fix this before completion' }],
+          humanCallouts: [{ severity: 'blocking', title: 'Fix this before completion' }],
+          agentFollowUps: ['Fix this before completion.'],
+        },
+      ],
+    });
+
+    expect(result.findings.map((finding) => finding.title)).toContain(
+      'Human callouts are separated from blocking findings'
+    );
+  });
 });

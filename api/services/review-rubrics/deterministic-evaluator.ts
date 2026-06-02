@@ -43,6 +43,10 @@ function refForSelector(
       }));
     case 'review_result':
       return [];
+    case 'review_followup':
+      return [];
+    case 'review_callout_separation':
+      return [];
     case 'run_event_type':
       return pack.selectedEvents
         .filter((event) => event.type === selector.type && event.id)
@@ -100,11 +104,77 @@ function selectorPasses(selector: RubricEvidenceSelector, pack: ReviewEvidencePa
       return selector.allowViolations === false ? pack.policy.length === 0 : true;
     case 'review_result':
       return selector.required ? pack.reviewResults.length > 0 : true;
+    case 'review_followup':
+      return reviewResultsHaveBlockingFollowUps(pack);
+    case 'review_callout_separation':
+      return reviewResultsSeparateHumanCallouts(pack);
     case 'run_event_type':
       return pack.eventTypes.includes(selector.type);
     case 'tool_failure':
       return consecutiveToolFailures(pack) < (selector.maxConsecutive ?? 3);
   }
+}
+
+type ReviewFindingLike = {
+  severity?: unknown;
+  title?: unknown;
+  body?: unknown;
+};
+
+type ReviewResultLike = {
+  findings?: unknown;
+  humanCallouts?: unknown;
+  agentFollowUps?: unknown;
+};
+
+function reviewResultObjects(pack: ReviewEvidencePack): ReviewResultLike[] {
+  return pack.reviewResults.filter(
+    (value): value is ReviewResultLike => Boolean(value) && typeof value === 'object'
+  );
+}
+
+function findingObjects(value: unknown): ReviewFindingLike[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is ReviewFindingLike => Boolean(item) && typeof item === 'object')
+    : [];
+}
+
+function hasBlockingFinding(result: ReviewResultLike): boolean {
+  return findingObjects(result.findings).some((finding) => finding.severity === 'blocking');
+}
+
+function hasAgentFollowUp(result: ReviewResultLike): boolean {
+  return (
+    Array.isArray(result.agentFollowUps) &&
+    result.agentFollowUps.some((item) => typeof item === 'string' && item.trim().length > 0)
+  );
+}
+
+function reviewResultsHaveBlockingFollowUps(pack: ReviewEvidencePack): boolean {
+  return reviewResultObjects(pack).every(
+    (result) => !hasBlockingFinding(result) || hasAgentFollowUp(result)
+  );
+}
+
+function findingKey(finding: ReviewFindingLike): string {
+  return [finding.title, finding.body]
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.trim().toLowerCase())
+    .join('\n');
+}
+
+function reviewResultsSeparateHumanCallouts(pack: ReviewEvidencePack): boolean {
+  return reviewResultObjects(pack).every((result) => {
+    const blockingKeys = new Set(
+      findingObjects(result.findings)
+        .filter((finding) => finding.severity === 'blocking')
+        .map(findingKey)
+        .filter(Boolean)
+    );
+    return findingObjects(result.humanCallouts).every(
+      (callout) => callout.severity !== 'blocking' && !blockingKeys.has(findingKey(callout))
+    );
+  });
 }
 
 function shouldFail(

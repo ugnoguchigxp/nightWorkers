@@ -73,6 +73,22 @@ export const BUILTIN_RUBRICS: Record<string, RubricDefinition> = {
         rule: { required: true, failWhenMissing: true },
       },
       {
+        id: 'blocking-review-has-followup',
+        title: 'Blocking review findings have follow-up instructions',
+        severity: 'blocking',
+        evaluationMode: 'deterministic',
+        evidenceSelectors: [{ kind: 'review_followup', requiredForBlocking: true }],
+        rule: { required: true, failWhenMissing: true },
+      },
+      {
+        id: 'human-callouts-separated',
+        title: 'Human callouts are separated from blocking findings',
+        severity: 'warning',
+        evaluationMode: 'deterministic',
+        evidenceSelectors: [{ kind: 'review_callout_separation' }],
+        rule: { required: true, failWhenMissing: true },
+      },
+      {
         id: 'final-report-present',
         title: 'Final report is present',
         severity: 'blocking',

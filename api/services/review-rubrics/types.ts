@@ -18,6 +18,8 @@ export type RubricEvidenceSelector =
   | { kind: 'diff'; required?: boolean; maxBytes?: number }
   | { kind: 'policy'; allowViolations?: boolean }
   | { kind: 'review_result'; required?: boolean }
+  | { kind: 'review_followup'; requiredForBlocking?: boolean }
+  | { kind: 'review_callout_separation' }
   | { kind: 'final_report'; required?: boolean }
   | { kind: 'tool_failure'; maxConsecutive?: number };
 

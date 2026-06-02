@@ -505,6 +505,13 @@ export const rubricEvidenceSelectorSchema = z.discriminatedUnion('kind', [
     required: z.boolean().optional(),
   }),
   z.object({
+    kind: z.literal('review_followup'),
+    requiredForBlocking: z.boolean().optional(),
+  }),
+  z.object({
+    kind: z.literal('review_callout_separation'),
+  }),
+  z.object({
     kind: z.literal('final_report'),
     required: z.boolean().optional(),
   }),
