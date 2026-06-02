@@ -66,6 +66,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
   const maxToolCalls = input.maxToolCalls ?? 80;
   const maxRepeatedToolPattern = input.maxRepeatedToolPattern ?? 3;
   let activeWorkflow: SupervisorWorkflow = 'general';
+  let workflowSelected = false;
+  let workflowSelectionDecision: Awaited<ReturnType<typeof callSupervisorLLM>> | null = null;
   const budget = new RunBudgetController({
     maxIterations,
     maxToolCalls,
@@ -75,6 +77,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
   });
   let iteration = 0;
   let supervisorToolCalls = 0;
+  let editToolCalls = 0;
 
   // Maintain list of read files for read-before-edit policy validation
   const readFiles: string[] = [];
@@ -138,40 +141,111 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     // 4. Invoke the Supervisor LLM
     let decision: Awaited<ReturnType<typeof callSupervisorLLM>>;
     try {
-      const round1 = await callSupervisorLLM(buildRound1SystemPrompt(repoRoot), userPrompt, {
-        tolerateSchemaFailure: false,
-        round: 1,
-        emitEvent: emitLlmDebugEvent,
-      });
-      logger.info(
-        { runId, iteration, round: 1, phase: round1.phase, hasToolCall: Boolean(round1.toolCall) },
-        'Supervisor round decision'
-      );
-      logger.info({ runId, iteration, round: 1, output: round1 }, 'Supervisor round output');
-      appendSupervisorTrace('round1_output', {
-        runId,
-        iteration,
-        phase: round1.phase,
-        workflow: round1.workflow,
-        hasToolCall: Boolean(round1.toolCall),
-        toolName: round1.toolCall?.name ?? null,
-      });
-      await repo.createTaskEvent({
-        taskRunId: runId,
-        type: 'info',
-        message: `[Supervisor Round] round=1 phase=${round1.phase} hasToolCall=${Boolean(round1.toolCall)}`,
-        actor: 'supervisor',
-        eventType: 'supervisor_decision',
-        payloadJson: { round: 1, iteration, decision: round1 },
-      });
+      if (!workflowSelected) {
+        const round1 = await callSupervisorLLM(buildRound1SystemPrompt(repoRoot), userPrompt, {
+          tolerateSchemaFailure: false,
+          round: 1,
+          emitEvent: emitLlmDebugEvent,
+        });
+        logger.info(
+          {
+            runId,
+            iteration,
+            round: 1,
+            phase: round1.phase,
+            hasToolCall: Boolean(round1.toolCall),
+          },
+          'Supervisor round decision'
+        );
+        logger.info({ runId, iteration, round: 1, output: round1 }, 'Supervisor round output');
+        appendSupervisorTrace('round1_output', {
+          runId,
+          iteration,
+          phase: round1.phase,
+          workflow: round1.workflow,
+          hasToolCall: Boolean(round1.toolCall),
+          toolName: round1.toolCall?.name ?? null,
+        });
+        await repo.createTaskEvent({
+          taskRunId: runId,
+          type: 'info',
+          message: `[Supervisor Round] round=1 phase=${round1.phase} hasToolCall=${Boolean(round1.toolCall)}`,
+          actor: 'supervisor',
+          eventType: 'supervisor_decision',
+          payloadJson: { round: 1, iteration, decision: round1 },
+        });
 
-      if (round1.phase === 'stop') {
-        decision = round1;
+        workflowSelected = true;
+        workflowSelectionDecision = round1;
+        if (round1.phase === 'stop') {
+          decision = round1;
+        } else {
+          activeWorkflow = round1.workflow || activeWorkflow;
+          const round2Input = JSON.stringify({
+            latestUserMessage: userInput,
+            round1Decision: workflowSelectionDecision,
+            observations: toolObservations.slice(-6),
+          });
+          const round2 = await callSupervisorLLM(
+            buildRound2SystemPrompt(activeWorkflow),
+            round2Input,
+            {
+              round: 2,
+              emitEvent: emitLlmDebugEvent,
+            }
+          );
+          logger.info(
+            {
+              runId,
+              iteration,
+              round: 2,
+              phase: round2.phase,
+              hasToolCall: Boolean(round2.toolCall),
+            },
+            'Supervisor round decision'
+          );
+          logger.info({ runId, iteration, round: 2, output: round2 }, 'Supervisor round output');
+          appendSupervisorTrace('round2_output', {
+            runId,
+            iteration,
+            phase: round2.phase,
+            workflow: round2.workflow,
+            hasToolCall: Boolean(round2.toolCall),
+            toolName: round2.toolCall?.name ?? null,
+          });
+          await repo.createTaskEvent({
+            taskRunId: runId,
+            type: 'info',
+            message: `[Supervisor Round] round=2 phase=${round2.phase} hasToolCall=${Boolean(round2.toolCall)}`,
+            actor: 'supervisor',
+            eventType: 'supervisor_decision',
+            payloadJson: { round: 2, iteration, decision: round2 },
+          });
+          decision = round2;
+          activeWorkflow = round2.workflow || activeWorkflow;
+        }
       } else {
-        activeWorkflow = round1.workflow || activeWorkflow;
+        const round1Decision = workflowSelectionDecision
+          ? { ...workflowSelectionDecision, workflow: activeWorkflow }
+          : {
+              phase: 'plan',
+              workflow: activeWorkflow,
+              instruction: 'Continue with the previously selected workflow.',
+              rationale: 'Workflow selection is reused to avoid repeated classification calls.',
+              finalResponse: '',
+              expectedEvidence: [],
+              riskLevel: 'low',
+              toolCall: null,
+            };
+        appendSupervisorTrace('round1_reused', {
+          runId,
+          iteration,
+          workflow: activeWorkflow,
+          observations: toolObservations.length,
+        });
         const round2Input = JSON.stringify({
           latestUserMessage: userInput,
-          round1Decision: round1,
+          round1Decision,
           observations: toolObservations.slice(-6),
         });
         const round2 = await callSupervisorLLM(
@@ -264,6 +338,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     // 6. Handle stop decision
     if (decision.phase === 'stop') {
       const evidenceRequired = requiresWorkflowEvidence(decision.workflow || activeWorkflow);
+      const editRequired = requiresWorkflowEdit(decision.workflow || activeWorkflow);
       if (evidenceRequired && supervisorToolCalls === 0) {
         const missingToolBudget = budget.onMissingToolCall();
         const detail = {
@@ -293,6 +368,43 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             '証拠取得が必要なタスクで、Supervisor が対象ファイルやログを確認する前に stop を繰り返したため停止しました。';
           terminalState = 'needs_human';
           summary = 'Stopped because supervisor stopped before collecting required evidence';
+          stoppedBy = 'missing_tool_call';
+          riskLevel = 'high';
+          break;
+        }
+        continue;
+      }
+
+      if (editRequired && editToolCalls === 0) {
+        const missingToolBudget = budget.onMissingToolCall();
+        const detail = {
+          iteration,
+          reason: 'stop_without_edit_attempt',
+          phase: decision.phase,
+          instruction: decision.instruction,
+          rationale: decision.rationale,
+          finalResponseLength: decision.finalResponse?.length ?? 0,
+          expectedEvidence: decision.expectedEvidence ?? [],
+          supervisorToolCalls,
+          editToolCalls,
+          ...(missingToolBudget.detail || {}),
+        };
+        appendSupervisorTrace('stop_without_edit_attempt', { runId, ...detail });
+        await repo.createTaskEvent({
+          taskRunId: runId,
+          type: missingToolBudget.allowed ? 'warning' : 'error',
+          message: missingToolBudget.allowed
+            ? '[Supervisor Guard] code_change stop was ignored because no edit tool was attempted.'
+            : '[Budget Stop] supervisor repeatedly stopped a code_change without attempting an edit tool.',
+          actor: 'system',
+          eventType: missingToolBudget.allowed ? 'warning' : 'error',
+          payloadJson: detail,
+        });
+        if (!missingToolBudget.allowed) {
+          finalReportText =
+            'code_change workflow で、replace_content または apply_patch を一度も実行せずに stop を繰り返したため停止しました。read-only という自己判断ではなく、編集ツールの実行結果を根拠にする必要があります。';
+          terminalState = 'needs_human';
+          summary = 'Stopped because supervisor stopped without attempting an edit tool';
           stoppedBy = 'missing_tool_call';
           riskLevel = 'high';
           break;
@@ -389,6 +501,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         break;
       }
       supervisorToolCalls += 1;
+      if (isEditTool(name)) editToolCalls += 1;
       logger.info({ runId, iteration, toolName: name, toolArgs }, 'Worker tool call start');
       // Log tool call start
       await repo.createTaskEvent({
@@ -682,6 +795,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     riskLevel,
     iterations: iteration,
     supervisorToolCalls,
+    editToolCalls,
     activeWorkflow,
     evidenceRequired,
     finalReportLength: finalReportText.length,
@@ -694,6 +808,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       riskLevel,
       iterations: iteration,
       supervisorToolCalls,
+      editToolCalls,
       activeWorkflow,
       evidenceRequired,
       finalReportLength: finalReportText.length,
@@ -711,6 +826,14 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
 
 function requiresWorkflowEvidence(workflow: SupervisorWorkflow): boolean {
   return workflow === 'evidence_review' || workflow === 'code_change' || workflow === 'research';
+}
+
+function requiresWorkflowEdit(workflow: SupervisorWorkflow): boolean {
+  return workflow === 'code_change';
+}
+
+function isEditTool(toolName: string): boolean {
+  return toolName === 'apply_patch' || toolName === 'replace_content';
 }
 
 function evaluateStopDecisionQuality(input: {

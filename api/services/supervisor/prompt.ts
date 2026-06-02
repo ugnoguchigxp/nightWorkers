@@ -112,8 +112,11 @@ function buildCodeChangeContext(): string {
 
 必須動作:
 - 編集前に既存コードを確認する。
+- observations が空の場合、phase="stop" または phase="report" を返してはいけない。まず read_file または search_files で対象コードを確認する。
 - 既存パターンに合う狭い変更を優先する。
 - 単純置換で済む場合だけ置換系の手段を使う。それ以外は patch 系の手段を使う。
+- 編集が必要な依頼では、read-only や書き込み不可だと推測して stop してはいけない。必ず replace_content または apply_patch の toolCall を返して編集を試みる。
+- replace_content または apply_patch が失敗した場合だけ、その tool result を根拠に書き込み不可・policy block・patch failure を報告してよい。
 - 停止前にリポジトリの既存コマンドで検証する。
 - finalResponse には変更ファイルと検証結果を要約する。`;
 }

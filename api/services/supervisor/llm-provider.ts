@@ -498,7 +498,7 @@ async function emitSupervisorLlmDebugEvent(
   }
 }
 
-async function emitBufferedResponseDelta(input: {
+function emitBufferedResponseDelta(input: {
   options: CallSupervisorOptions;
   provider: string;
   round?: 1 | 2 | 3;
@@ -506,7 +506,7 @@ async function emitBufferedResponseDelta(input: {
   force?: boolean;
 }) {
   if (!input.text) return;
-  await emitSupervisorLlmDebugEvent(input.options, {
+  void emitSupervisorLlmDebugEvent(input.options, {
     type: 'model.response_delta',
     severity: 'debug',
     message: input.text,
@@ -554,17 +554,17 @@ async function readOpenAIChatCompletionStream(input: {
       if (typeof delta === 'string' && delta) {
         content += delta;
         pendingDelta += delta;
-        await flushDelta(false);
+        flushDelta(false);
       }
     }
   };
 
-  const flushDelta = async (force = false) => {
+  const flushDelta = (force = false) => {
     if (!pendingDelta) return;
     if (!force && pendingDelta.length < 24 && !pendingDelta.includes('\n')) return;
     const text = pendingDelta;
     pendingDelta = '';
-    await emitBufferedResponseDelta({
+    emitBufferedResponseDelta({
       options: input.options,
       provider: input.provider,
       round: input.round,
@@ -589,7 +589,7 @@ async function readOpenAIChatCompletionStream(input: {
   if (buffer.trim()) {
     await processStreamRecord(buffer);
   }
-  await flushDelta(true);
+  flushDelta(true);
   return content;
 }
 

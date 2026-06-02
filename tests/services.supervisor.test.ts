@@ -18,7 +18,7 @@ vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
 
 describe('Supervisor Control Loop Unit Tests', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it('runs supervisor loop through observe, execute, and stop sequences', async () => {
@@ -38,6 +38,15 @@ describe('Supervisor Control Loop Unit Tests', () => {
     // First iteration: worker calls git_status
     // Second iteration: stop execution
     vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        phase: 'plan',
+        workflow: 'general',
+        instruction: 'Use the general workflow',
+        rationale: 'A lightweight repository check is enough',
+        expectedEvidence: ['Git status output'],
+        riskLevel: 'low',
+        toolCall: null,
+      })
       .mockResolvedValueOnce({
         phase: 'observe',
         workflow: 'general',
@@ -79,6 +88,9 @@ describe('Supervisor Control Loop Unit Tests', () => {
       status: 'completed',
     });
     expect(repo.updateTaskStatus).toHaveBeenCalledWith('task-1', 'completed');
+    expect(vi.mocked(llm.callSupervisorLLM).mock.calls.map((call) => call[2]?.round)).toEqual([
+      1, 2, 2,
+    ]);
   });
 
   it('stops with needs_human after repeated missing toolCall decisions', async () => {
@@ -172,28 +184,27 @@ describe('Supervisor Control Loop Unit Tests', () => {
     vi.mocked(repo.getTask).mockResolvedValue(mockTask as any);
     vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
 
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
+      phase: 'plan',
+      workflow: 'evidence_review',
+      instruction: 'Review the requested file',
+      rationale: 'Need to inspect the document',
+      expectedEvidence: ['spec file contents'],
+      riskLevel: 'medium',
+      toolCall: null,
+    });
     for (let i = 0; i < 3; i += 1) {
-      vi.mocked(llm.callSupervisorLLM)
-        .mockResolvedValueOnce({
-          phase: 'plan',
-          workflow: 'evidence_review',
-          instruction: 'Review the requested file',
-          rationale: 'Need to inspect the document',
-          expectedEvidence: ['spec file contents'],
-          riskLevel: 'medium',
-          toolCall: null,
-        })
-        .mockResolvedValueOnce({
-          phase: 'stop',
-          workflow: 'evidence_review',
-          instruction: 'Looks fine',
-          rationale: 'Review complete',
-          finalResponse: 'レビューしました。',
-          expectedEvidence: [],
-          riskLevel: 'low',
-          terminalState: 'completed',
-          toolCall: null,
-        });
+      vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
+        phase: 'stop',
+        workflow: 'evidence_review',
+        instruction: 'Looks fine',
+        rationale: 'Review complete',
+        finalResponse: 'レビューしました。',
+        expectedEvidence: [],
+        riskLevel: 'low',
+        terminalState: 'completed',
+        toolCall: null,
+      });
     }
 
     const result = await runSupervisorLoop({
@@ -207,6 +218,9 @@ describe('Supervisor Control Loop Unit Tests', () => {
     expect(result.terminalState).toBe('needs_human');
     expect(result.stoppedBy).toBe('missing_tool_call');
     expect(result.finalReport).toContain('証拠取得が必要なタスク');
+    expect(vi.mocked(llm.callSupervisorLLM).mock.calls.map((call) => call[2]?.round)).toEqual([
+      1, 2, 2, 2,
+    ]);
     expect(repo.createTaskEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         payloadJson: expect.objectContaining({
@@ -273,6 +287,9 @@ describe('Supervisor Control Loop Unit Tests', () => {
     expect(result.terminalState).toBe('needs_human');
     expect(result.stoppedBy).toBe('missing_tool_call');
     expect(result.finalReport).toContain('最終回答がレビュー本文として不十分');
+    expect(vi.mocked(llm.callSupervisorLLM).mock.calls.map((call) => call[2]?.round)).toEqual([
+      1, 2, 2, 2, 2,
+    ]);
     expect(repo.createTaskEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         payloadJson: expect.objectContaining({
@@ -303,10 +320,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
         rationale: 'Need execution',
         expectedEvidence: [],
         riskLevel: 'low',
-        toolCall: {
-          name: 'run_command',
-          arguments: { command: 'curl https://example.com' },
-        },
+        toolCall: null,
       })
       .mockResolvedValueOnce({
         phase: 'act',
@@ -344,6 +358,73 @@ describe('Supervisor Control Loop Unit Tests', () => {
         payloadJson: expect.objectContaining({
           error: expect.objectContaining({ code: 'UNKNOWN_COMMAND' }),
           runEvent: expect.objectContaining({ type: 'tool.call_finished' }),
+        }),
+      })
+    );
+  });
+
+  it('does not accept code_change stop before an edit tool is attempted', async () => {
+    const mockRun = { id: 'run-code-change-readonly', taskId: 'task-code-change-readonly' };
+    const mockTask = {
+      id: 'task-code-change-readonly',
+      objective: 'Change button color',
+      acceptanceCriteria: 'Patch is applied',
+    };
+
+    vi.mocked(repo.getTaskRun).mockResolvedValue(mockRun as any);
+    vi.mocked(repo.getTask).mockResolvedValue(mockTask as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        phase: 'plan',
+        workflow: 'code_change',
+        instruction: 'Inspect the target file',
+        rationale: 'Need repository evidence before editing',
+        expectedEvidence: ['target file'],
+        riskLevel: 'medium',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'observe',
+        workflow: 'code_change',
+        instruction: 'Check repository status',
+        rationale: 'Need repository evidence',
+        expectedEvidence: ['git status'],
+        riskLevel: 'low',
+        toolCall: { name: 'git_status', arguments: {} },
+      });
+
+    for (let i = 0; i < 3; i += 1) {
+      vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
+        phase: 'stop',
+        workflow: 'code_change',
+        instruction: 'filesystem is read-only',
+        rationale: 'apply_patch cannot be used because the environment is read-only.',
+        finalResponse: 'read-only のため編集できませんでした。',
+        expectedEvidence: ['git status'],
+        riskLevel: 'high',
+        terminalState: 'needs_human',
+        toolCall: null,
+      });
+    }
+
+    const result = await runSupervisorLoop({
+      runId: 'run-code-change-readonly',
+      repoRoot: __dirname,
+      prompt: 'Composer.tsx の送信ボタンを修正してください',
+      timeoutSeconds: 60,
+    });
+
+    expect(result.terminalState).toBe('needs_human');
+    expect(result.stoppedBy).toBe('missing_tool_call');
+    expect(result.finalReport).toContain('replace_content または apply_patch を一度も実行せず');
+    expect(repo.createTaskEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payloadJson: expect.objectContaining({
+          reason: 'stop_without_edit_attempt',
+          editToolCalls: 0,
+          supervisorToolCalls: 1,
         }),
       })
     );

@@ -47,4 +47,13 @@ describe('Supervisor prompt structure', () => {
     expect(prompt).toContain('phase="stop" の finalResponse は UI に表示されるレビュー結果本文');
     expect(prompt).toContain('latestUserMessage は元の依頼');
   });
+
+  it('forces code change workflow to attempt edit tools instead of claiming read-only', () => {
+    const prompt = buildRound2SystemPrompt('code_change');
+
+    expect(prompt).toContain('observations が空の場合');
+    expect(prompt).toContain('read_file または search_files');
+    expect(prompt).toContain('read-only や書き込み不可だと推測して stop してはいけない');
+    expect(prompt).toContain('replace_content または apply_patch の toolCall を返して編集を試みる');
+  });
 });
