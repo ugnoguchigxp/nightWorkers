@@ -70,6 +70,40 @@ describe('run-events jsonl serializer', () => {
         },
         timestamp: new Date('2026-06-02T00:00:01.000Z'),
       },
+      {
+        id: 'evt-3',
+        taskRunId: run.id,
+        seq: 3,
+        actor: 'human',
+        eventType: 'state_change',
+        type: 'info',
+        message: 'reviewed',
+        payloadJson: {
+          reviewResult: {
+            version: 1,
+            id: 'review-1',
+            runId: run.id,
+            taskId: run.taskId,
+            reviewer: { type: 'human', label: 'human reviewer' },
+            action: 'complete',
+            verdict: 'approved',
+            statusBefore: 'needs_review',
+            statusAfter: 'completed',
+            outcome: {
+              status: 'completed',
+              reason: 'human_review',
+              summary: 'done',
+            },
+            evidenceRefs: [],
+            findings: [],
+            humanCallouts: [],
+            agentFollowUps: [],
+            suggestedNextTasks: [],
+            createdAt: '2026-06-02T00:00:03.000Z',
+          },
+        },
+        timestamp: new Date('2026-06-02T00:00:03.000Z'),
+      },
     ] as any[];
 
     const jsonl = serializeRunToJsonl({
@@ -85,7 +119,8 @@ describe('run-events jsonl serializer', () => {
     expect(lines[0].type).toBe('nightworkers_run');
     expect(lines[1].seq).toBe(1);
     expect(lines[2].seq).toBe(2);
-    expect(lines[3].type).toBe('run_summary');
-    expect(lines[3].eventCount).toBe(2);
+    expect(lines[3].reviewResult.id).toBe('review-1');
+    expect(lines[4].type).toBe('run_summary');
+    expect(lines[4].eventCount).toBe(3);
   });
 });

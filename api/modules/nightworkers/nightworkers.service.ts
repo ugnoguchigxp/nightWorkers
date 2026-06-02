@@ -5,6 +5,9 @@ import { AppError, NotFoundError } from '../../lib/errors';
 import { createLedgerSink } from '../../services/agent-runtime/ledger-sink';
 import { resolveAgentRuntime } from '../../services/agent-runtime/registry';
 import { compileContext, evaluateContext } from '../../services/context-still';
+import { buildReviewResult } from '../../services/review-results/build-review-result';
+import { collectDefaultReviewEvidence } from '../../services/review-results/evidence-collector';
+import type { ReviewResult, ReviewRunRequest } from '../../services/review-results/types';
 import { decideRunOutcome } from '../../services/run-control/run-outcome-gate';
 import { serializeRunToJsonl } from '../../services/run-events/jsonl-export';
 import { nativeLocalRunner } from '../../services/runner/NativeLocalRunner';
@@ -388,51 +391,67 @@ export async function getTaskRun(runId: string) {
   const run = await repo.getTaskRun(runId);
   if (!run) return null;
   const events = await repo.listTaskEventsForRun(runId);
-  return { ...run, events };
+  const reviews = events
+    .map((event) => (event.payloadJson as { reviewResult?: ReviewResult } | null)?.reviewResult)
+    .filter((reviewResult): reviewResult is ReviewResult => Boolean(reviewResult));
+  return { ...run, events, reviews };
 }
 
 export async function getTaskRunsForTask(taskId: string) {
   return repo.listTaskRunsForTask(taskId);
 }
 
-export async function reviewTaskRun(
-  runId: string,
-  action: 'complete' | 'request_follow_up' | 'cancel' | 'accept_risk',
-  note?: string
-) {
+export async function reviewTaskRun(runId: string, request: ReviewRunRequest) {
   const run = await repo.getTaskRun(runId);
   if (!run) throw new Error('Run not found');
+  const events = await repo.listTaskEventsForRun(runId);
+  const defaultEvidenceRefs = collectDefaultReviewEvidence(run, events);
 
   const outcome = decideRunOutcome({
     supervisor: {
       finalReport: run.finalReport || '',
       terminalState: (run.status as any) || 'needs_review',
-      summary: run.summary || `Review action: ${action}`,
+      summary: run.summary || `Review action: ${request.action}`,
       stoppedBy: 'decision',
       riskLevel: 'medium',
     },
-    humanAction: action,
+    humanAction: request.action,
   });
-  const finalStatus = action === 'request_follow_up' ? 'ready' : outcome.status;
+  const finalTaskStatus = request.action === 'request_follow_up' ? 'ready' : outcome.status;
+  const reviewResult = buildReviewResult({
+    run: {
+      id: run.id,
+      taskId: run.taskId,
+      status: run.status,
+      summary: run.summary,
+    },
+    request,
+    outcome,
+    evidenceRefs: request.evidenceRefs?.length ? request.evidenceRefs : defaultEvidenceRefs,
+  });
+
+  await repo.createRunEvent(
+    {
+      version: 1,
+      runId,
+      taskId: run.taskId,
+      timestamp: new Date().toISOString(),
+      type: 'human.review_submitted',
+      severity: 'info',
+      actor: 'human',
+      message: `Human review completed. Action: ${request.action}. Note: ${request.note || 'None'}`,
+      data: { action: request.action, reviewResultId: reviewResult.id },
+    },
+    { payloadJson: { reviewResult } }
+  );
 
   await repo.updateTaskRun(runId, {
-    status: finalStatus === 'ready' ? 'failed' : outcome.status,
-    summary: note || outcome.summary,
+    status: outcome.status,
+    summary: request.note || outcome.summary,
   });
 
-  await repo.updateTaskStatus(run.taskId, finalStatus);
+  await repo.updateTaskStatus(run.taskId, finalTaskStatus);
 
-  await repo.createRunEvent({
-    version: 1,
-    runId,
-    taskId: run.taskId,
-    timestamp: new Date().toISOString(),
-    type: 'human.review_submitted',
-    severity: 'info',
-    actor: 'human',
-    message: `Human review completed. Action: ${action}. Note: ${note || 'None'}`,
-    data: { action, note: note || null },
-  });
   await repo.createRunEvent(
     {
       version: 1,
@@ -443,12 +462,19 @@ export async function reviewTaskRun(
       severity: 'info',
       actor: 'human',
       message: `Run outcome decided: ${outcome.status} (${outcome.reason})`,
-      data: outcome as Record<string, unknown>,
+      data: { ...outcome, reviewResultId: reviewResult.id },
     },
-    { legacyPayload: outcome }
+    { legacyPayload: outcome, payloadJson: { reviewResultId: reviewResult.id } }
   );
 
-  return { ok: true, status: finalStatus };
+  // Feedback evaluation back to contextStill should never fail the review persistence.
+  void evaluateContext(
+    run.id,
+    `Review submitted with status=${finalTaskStatus}. Outcome=${outcome.status}.`,
+    outcome.status === 'completed'
+  );
+
+  return { ok: true, status: finalTaskStatus, outcome, reviewResult };
 }
 
 export async function browseLocalFolders(targetPath?: string) {

@@ -70,6 +70,7 @@ export type RunEventJsonlLine = {
   runId: string;
   seq: number;
   event: RunEventBase;
+  reviewResult?: unknown;
 };
 
 export type RunSummaryJsonlLine = {

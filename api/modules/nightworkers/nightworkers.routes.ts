@@ -3,7 +3,10 @@ import {
   createRepositorySchema,
   createTaskSchema,
   repositorySchema,
+  reviewRunRequestSchema,
+  reviewRunResponseSchema,
   taskMessageSchema,
+  taskRunDetailSchema,
   taskRunSchema,
   taskSchema,
 } from '../../../shared/schemas/nightworkers.schema';
@@ -307,9 +310,7 @@ const getTaskRunRoute = createRoute({
     200: {
       content: {
         'application/json': {
-          schema: taskRunSchema.extend({
-            events: z.array(z.unknown()),
-          }),
+          schema: taskRunDetailSchema,
         },
       },
       description: 'Task run details and log events',
@@ -353,10 +354,7 @@ const reviewTaskRunRoute = createRoute({
     body: {
       content: {
         'application/json': {
-          schema: z.object({
-            action: z.enum(['complete', 'request_follow_up', 'cancel', 'accept_risk']),
-            note: z.string().optional(),
-          }),
+          schema: reviewRunRequestSchema,
         },
       },
     },
@@ -365,10 +363,7 @@ const reviewTaskRunRoute = createRoute({
     200: {
       content: {
         'application/json': {
-          schema: z.object({
-            ok: z.boolean(),
-            status: z.string(),
-          }),
+          schema: reviewRunResponseSchema,
         },
       },
       description: 'Review saved successfully',
@@ -581,9 +576,9 @@ const router = createOpenApiRouter()
   })
   .openapi(reviewTaskRunRoute, async (c) => {
     const id = c.req.param('id');
-    const { action, note } = c.req.valid('json');
+    const request = c.req.valid('json');
     try {
-      const result = await service.reviewTaskRun(id, action, note);
+      const result = await service.reviewTaskRun(id, request);
       return c.json(result, 200);
     } catch (err: any) {
       if (err instanceof AppError) {

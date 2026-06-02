@@ -257,15 +257,22 @@ export async function createTaskEvent(data: {
   return event;
 }
 
-export async function createRunEvent(event: RunEventBase, options?: { legacyPayload?: unknown }) {
+export async function createRunEvent(
+  event: RunEventBase,
+  options?: { legacyPayload?: unknown; payloadJson?: Record<string, unknown> }
+) {
   const normalized = normalizeRunEventToLegacy({ event, legacyPayload: options?.legacyPayload });
+  const payloadJson = {
+    ...normalized.payloadJson,
+    ...(options?.payloadJson || {}),
+  };
   const created = await createTaskEvent({
     taskRunId: event.runId,
     actor: normalized.actor,
     type: normalized.type,
     eventType: normalized.eventType,
     message: normalized.message,
-    payloadJson: normalized.payloadJson,
+    payloadJson,
     timestamp: normalized.timestamp,
   });
   if (!created) return created;
@@ -276,6 +283,7 @@ export async function createRunEvent(event: RunEventBase, options?: { legacyPayl
 
   const patchedPayload = {
     ...payload,
+    ...(options?.payloadJson || {}),
     runEvent: {
       ...currentRunEvent,
       id: created.id,

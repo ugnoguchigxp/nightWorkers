@@ -44,6 +44,8 @@ export type TaskRun = {
   contextEval?: unknown | null;
   createdAt: unknown;
   updatedAt: unknown;
+  events?: TaskEvent[];
+  reviews?: ReviewResult[];
 };
 
 export type TaskMessage = {
@@ -58,7 +60,8 @@ export type TaskMessage = {
 };
 
 export type RunDetails = TaskRun & {
-  events: unknown[];
+  events: TaskEvent[];
+  reviews: ReviewResult[];
 };
 
 export type TaskEvent = {
@@ -142,8 +145,90 @@ export type CreateSessionInput = {
 
 export type ReviewRunInput = {
   runId: string;
-  action: 'complete' | 'request_follow_up' | 'cancel' | 'accept_risk';
+  action: ReviewAction;
   note?: string;
+  evidenceRefs?: ReviewEvidenceRef[];
+  findings?: ReviewFinding[];
+  humanCallouts?: ReviewFinding[];
+  agentFollowUps?: string[];
+  suggestedNextTasks?: string[];
+  riskAcceptance?: {
+    acceptedRisk: string;
+    reason?: string;
+    evidenceRefs?: ReviewEvidenceRef[];
+  };
+};
+
+export type ReviewAction = 'complete' | 'request_follow_up' | 'cancel' | 'accept_risk';
+
+export type ReviewVerdict = 'approved' | 'changes_requested' | 'cancelled' | 'risk_accepted';
+
+export type ReviewEvidenceRef =
+  | { kind: 'run_event'; eventId: string; seq?: number; eventType?: string }
+  | { kind: 'diff'; runId: string; bytes?: number; hasChanges?: boolean }
+  | { kind: 'final_report'; runId: string }
+  | { kind: 'verification'; eventId?: string; passed?: boolean; command?: string }
+  | { kind: 'policy'; eventId?: string; code?: string; message?: string }
+  | { kind: 'artifact'; artifactId: string; artifactKind?: string }
+  | { kind: 'changed_file'; path: string; added?: number; deleted?: number };
+
+export type ReviewFinding = {
+  severity: 'info' | 'warning' | 'blocking';
+  title: string;
+  body?: string;
+  filePath?: string;
+  line?: number;
+  evidenceRefs?: ReviewEvidenceRef[];
+};
+
+export type ReviewOutcome = {
+  status:
+    | 'needs_review'
+    | 'completed'
+    | 'needs_human'
+    | 'failed'
+    | 'blocked'
+    | 'timed_out'
+    | 'cancelled';
+  reason:
+    | 'supervisor_completed'
+    | 'supervisor_needs_human'
+    | 'budget_exceeded'
+    | 'tool_failure_limit'
+    | 'policy_violation'
+    | 'verification_failed'
+    | 'runner_crashed'
+    | 'human_review';
+  summary: string;
+};
+
+export type ReviewResult = {
+  version: 1;
+  id: string;
+  runId: string;
+  taskId: string;
+  reviewer: {
+    type: 'human' | 'system' | 'agent';
+    id?: string;
+    label?: string;
+  };
+  action: ReviewAction;
+  verdict: ReviewVerdict;
+  note?: string;
+  statusBefore: string;
+  statusAfter: string;
+  outcome: ReviewOutcome;
+  evidenceRefs: ReviewEvidenceRef[];
+  findings: ReviewFinding[];
+  humanCallouts: ReviewFinding[];
+  agentFollowUps: string[];
+  suggestedNextTasks: string[];
+  riskAcceptance?: {
+    acceptedRisk: string;
+    reason?: string;
+    evidenceRefs?: ReviewEvidenceRef[];
+  };
+  createdAt: string;
 };
 
 export const THINKING_DEPTH_OPTIONS: ThinkingDepthOption[] = [

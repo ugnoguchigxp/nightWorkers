@@ -1,6 +1,6 @@
 import { Check, Copy, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
-import type { Task, TaskEvent, TaskMessage, TaskRun } from '../types';
+import type { ReviewResult, Task, TaskEvent, TaskMessage, TaskRun } from '../types';
 import { formatFinishedTime } from '../utils/time';
 import { ThreadMessage } from './ThreadMessage';
 
@@ -131,6 +131,7 @@ function AgentDebugEventCard({ event }: { event: TaskEvent }) {
   const [copiedEventId, setCopiedEventId] = useState<string | null>(null);
   const payload = event.payloadJson as any;
   const runEventType = payload?.runEvent?.type;
+  const reviewResult = payload?.reviewResult;
   const toolName = payload?.toolName || payload?.toolCall?.name;
   const patchContent = getApplyPatchContent(payload);
   const round = payload?.round;
@@ -165,6 +166,7 @@ function AgentDebugEventCard({ event }: { event: TaskEvent }) {
         ) : null}
       </div>
       <div className="mb-2 text-xs text-slate-100">{event.message}</div>
+      {reviewResult ? <ReviewResultSummary reviewResult={reviewResult} /> : null}
       {typeof patchContent === 'string' && patchContent.trim() ? (
         <div className="mt-2 overflow-hidden rounded border border-slate-700/80 bg-[#0b1020]">
           <div className="flex items-center border-b border-slate-700/80 bg-[#131a2e] px-3 py-2 text-xs text-slate-300">
@@ -223,6 +225,25 @@ function AgentDebugEventCard({ event }: { event: TaskEvent }) {
             {JSON.stringify(payload, null, 2)}
           </pre>
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ReviewResultSummary({ reviewResult }: { reviewResult: ReviewResult }) {
+  return (
+    <div className="mt-2 rounded border border-cyan-700/60 bg-cyan-950/25 px-3 py-2 text-[11px] text-cyan-50">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded border border-cyan-700/70 px-1.5 py-0.5 text-cyan-100">
+          review_result
+        </span>
+        <span className="text-cyan-100">{reviewResult.action}</span>
+        <span className="text-cyan-300">→ {reviewResult.verdict}</span>
+        <span className="text-cyan-300">status {reviewResult.statusAfter}</span>
+      </div>
+      {reviewResult.note ? <div className="mt-1 text-cyan-100">{reviewResult.note}</div> : null}
+      {reviewResult.outcome?.summary ? (
+        <div className="mt-1 text-cyan-200">{reviewResult.outcome.summary}</div>
       ) : null}
     </div>
   );

@@ -65,7 +65,8 @@ function fallbackRunEvent(event: EventRow, run: RunRow): RunEventBase {
 }
 
 export function serializeRunEventForJsonl(event: EventRow, run: RunRow): string {
-  const canonical = (event.payloadJson as any)?.runEvent as RunEventBase | undefined;
+  const payload = (event.payloadJson as any) || {};
+  const canonical = payload.runEvent as RunEventBase | undefined;
   const runEvent = canonical ?? fallbackRunEvent(event, run);
   const line: RunEventJsonlLine = {
     type: 'run_event',
@@ -79,6 +80,7 @@ export function serializeRunEventForJsonl(event: EventRow, run: RunRow): string 
       runId: runEvent.runId || run.id,
       taskId: runEvent.taskId || run.taskId,
     },
+    ...(payload.reviewResult ? { reviewResult: payload.reviewResult } : {}),
   };
   return JSON.stringify(line);
 }
