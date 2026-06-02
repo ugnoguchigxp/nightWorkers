@@ -42,6 +42,7 @@ export function ThreadTimeline({
   ].sort((a, b) => a.ts - b.ts);
 
   const latestEvent = latestRunEvents[latestRunEvents.length - 1];
+  const streamingPreview = isAgentWorking ? buildStreamingResponsePreview(latestRunEvents) : null;
 
   return (
     <div className="space-y-5 p-6">
@@ -75,13 +76,18 @@ export function ThreadTimeline({
           >
             <MessagePayload message={item.message} />
           </ThreadMessage>
-        ) : (
+        ) : showDebugEvents || hasApplyPatchContent(item.event) ? (
           <div key={item.id} className="space-y-2">
             <AgentPatchSummaryCard event={item.event} />
             {showDebugEvents ? <AgentDebugEventCard event={item.event} /> : null}
           </div>
-        )
+        ) : null
       )}
+      {streamingPreview ? (
+        <ThreadMessage messageRole="assistant">
+          <StreamingResponsePreview preview={streamingPreview} />
+        </ThreadMessage>
+      ) : null}
       {isAgentWorking ? (
         <ThreadMessage messageRole="assistant">
           <ThinkingIndicator />
@@ -89,6 +95,103 @@ export function ThreadTimeline({
       ) : null}
     </div>
   );
+}
+
+function StreamingResponsePreview({ preview }: { preview: StreamingPreview }) {
+  return (
+    <div className="space-y-2" aria-live="polite">
+      <div className="inline-flex items-center gap-2 text-xs text-cyan-200">
+        <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-cyan-300" />
+        応答を生成中
+      </div>
+      {preview.visibleText ? (
+        <div className="whitespace-pre-wrap text-sm leading-6 text-slate-100">
+          {preview.visibleText}
+          <span className="ml-0.5 inline-block h-4 w-1 animate-pulse bg-cyan-300 align-[-2px]" />
+        </div>
+      ) : (
+        <div className="text-xs text-slate-400">{preview.statusText}</div>
+      )}
+    </div>
+  );
+}
+
+type StreamingPreview = {
+  visibleText: string;
+  statusText: string;
+};
+
+function buildStreamingResponsePreview(events: TaskEvent[]): StreamingPreview | null {
+  const chunks = events
+    .filter((event) => {
+      const payload = event.payloadJson as any;
+      return payload?.runEvent?.type === 'model.response_delta';
+    })
+    .map((event) => {
+      const payload = event.payloadJson as any;
+      return String(payload?.runEvent?.data?.text || event.message || '');
+    })
+    .filter(Boolean);
+
+  if (chunks.length === 0) return null;
+
+  const raw = chunks.join('');
+  const parsed = tryParseJsonObject(raw);
+  if (typeof parsed?.finalResponse === 'string' && parsed.finalResponse.trim()) {
+    return { visibleText: parsed.finalResponse, statusText: '最終回答を組み立てています。' };
+  }
+
+  const partialFinalResponse = extractPartialJsonStringValue(raw, 'finalResponse');
+  if (partialFinalResponse.trim()) {
+    return {
+      visibleText: partialFinalResponse,
+      statusText: '最終回答を生成しています。',
+    };
+  }
+
+  return {
+    visibleText: '',
+    statusText: 'Supervisor の応答構造を生成しています。',
+  };
+}
+
+function tryParseJsonObject(raw: string): any | null {
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractPartialJsonStringValue(raw: string, key: string): string {
+  const match = new RegExp(`"${key}"\\s*:\\s*"`).exec(raw);
+  if (!match) return '';
+  const valueStart = match.index + match[0].length;
+  let value = '';
+  let escaped = false;
+  for (let i = valueStart; i < raw.length; i += 1) {
+    const char = raw[i];
+    if (escaped) {
+      value += decodeJsonEscape(char);
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') break;
+    value += char;
+  }
+  return value;
+}
+
+function decodeJsonEscape(char: string): string {
+  if (char === 'n') return '\n';
+  if (char === 'r') return '\r';
+  if (char === 't') return '\t';
+  return char;
 }
 
 function ThinkingIndicator() {
@@ -140,6 +243,12 @@ function AgentPatchSummaryCard({ event }: { event: TaskEvent }) {
       </div>
     </details>
   );
+}
+
+function hasApplyPatchContent(event: TaskEvent): boolean {
+  const payload = event.payloadJson as any;
+  const patchContent = getApplyPatchContent(payload);
+  return typeof patchContent === 'string' && patchContent.trim().length > 0;
 }
 
 function AgentDebugEventCard({ event }: { event: TaskEvent }) {

@@ -310,6 +310,10 @@ function normalizeDecisionForSchema(input: unknown): unknown {
     obj.expectedEvidence = obj.expectedEvidence.map(stringifyExpectedEvidenceItem);
   }
 
+  if (obj.terminalState === null || obj.phase !== 'stop') {
+    delete obj.terminalState;
+  }
+
   // toolCall が配列で返ってきた場合は先頭のみ採用
   if (Array.isArray(obj.toolCall)) {
     const first = obj.toolCall[0];
@@ -557,7 +561,7 @@ async function readOpenAIChatCompletionStream(input: {
 
   const flushDelta = async (force = false) => {
     if (!pendingDelta) return;
-    if (!force && pendingDelta.length < 120 && !pendingDelta.includes('\n')) return;
+    if (!force && pendingDelta.length < 24 && !pendingDelta.includes('\n')) return;
     const text = pendingDelta;
     pendingDelta = '';
     await emitBufferedResponseDelta({

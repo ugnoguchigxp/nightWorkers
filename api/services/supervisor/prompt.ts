@@ -56,6 +56,7 @@ JSON のみを返してください。markdown のコードブロックで囲ま
 - toolCall: ${TOOL_CALL_SHAPE}
 - terminalState: needs_review | completed | blocked | failed | timed_out | cancelled | needs_human。phase が stop のときだけ指定する。
 
+terminalState は phase="stop" のときだけキーを出してください。phase が stop 以外のときは terminalState キー自体を省略し、null を返してはいけません。
 toolCall.name を返す場合は、同じ prompt 内の Tool catalog だけを参照してください。
 利用できないツール名を返してはいけません。例: mcp__*, functions.*, exec_command, shell namespace。`;
 }

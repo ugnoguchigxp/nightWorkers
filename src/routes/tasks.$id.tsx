@@ -270,12 +270,35 @@ function TaskConsolePage() {
 
                 {runDetails?.events && runDetails.events.length > 0 ? (
                   runDetails.events.map((evt: any) => {
+                    const runEventType = evt.payloadJson?.runEvent?.type;
+                    const isResponseDelta = runEventType === 'model.response_delta';
                     const isSupervisor =
                       evt.actor === 'supervisor' || evt.eventType === 'supervisor_decision';
                     const isToolCall = evt.eventType === 'tool_call';
                     const isToolResult = evt.eventType === 'tool_result';
                     const isFinalReport = evt.eventType === 'final_report';
                     const isError = evt.type === 'error' || evt.eventType === 'error';
+
+                    if (isResponseDelta) {
+                      const text = String(
+                        evt.payloadJson?.runEvent?.data?.text || evt.message || ''
+                      );
+                      return (
+                        <div
+                          key={evt.id}
+                          className="border-l-2 border-cyan-500 pl-4 py-2 bg-cyan-950/10 rounded-r-lg space-y-1"
+                        >
+                          <div className="flex items-center gap-2 text-cyan-300 font-semibold">
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                            <span>OpenAI stream</span>
+                            <span className="text-[10px] text-zinc-500 font-mono">
+                              [{new Date(evt.timestamp).toLocaleTimeString()}]
+                            </span>
+                          </div>
+                          <p className="text-zinc-200 whitespace-pre-wrap font-sans">{text}</p>
+                        </div>
+                      );
+                    }
 
                     if (isSupervisor) {
                       const payload = evt.payloadJson;
