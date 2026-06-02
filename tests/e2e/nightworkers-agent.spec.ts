@@ -44,14 +44,51 @@ test.describe('NightWorkers Agent Debug @regression', () => {
   test.describe.configure({ mode: 'serial' });
 
   test('debug panel is available on a task detail page @smoke', async ({ page, request }) => {
-    const tasks = await getJson<Array<{ id: string }>>(request, '/api/tasks');
-    const taskId = tasks[0]?.id;
-    expect(taskId).toBeTruthy();
+    const workspaceDir = await createDisposableGitWorkspace();
+    let repositoryId: string | null = null;
+    let taskId: string | null = null;
 
-    await page.goto(`/tasks/${taskId}`);
+    try {
+      const repositoryRes = await request.post('/api/repositories', {
+        headers: sameOriginHeaders,
+        data: {
+          name: `E2E debug fixture ${Date.now()}`,
+          localPath: workspaceDir,
+          branch: 'main',
+          allowed: true,
+        },
+      });
+      expect(repositoryRes.status(), await repositoryRes.text()).toBe(201);
+      const repository = (await repositoryRes.json()) as { id: string };
+      repositoryId = repository.id;
 
-    await expect(page.getByRole('button', { name: 'Agent Terminal Console' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Review Diffs' })).toBeVisible();
+      const taskRes = await request.post('/api/tasks', {
+        headers: sameOriginHeaders,
+        data: {
+          repositoryId,
+          title: 'E2E debug fixture',
+          description: 'Open task detail debug panels.',
+          objective: 'Open task detail debug panels.',
+          acceptanceCriteria: 'Debug panels are visible.',
+          timeoutSeconds: 60,
+        },
+      });
+      expect(taskRes.status(), await taskRes.text()).toBe(201);
+      const task = (await taskRes.json()) as { id: string };
+      taskId = task.id;
+
+      await page.goto(`/tasks/${taskId}`);
+
+      await expect(page.getByRole('button', { name: 'Agent Terminal Console' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Review Diffs' })).toBeVisible();
+    } finally {
+      if (taskId) await request.delete(`/api/tasks/${taskId}`, { headers: sameOriginHeaders });
+      if (repositoryId)
+        await request.delete(`/api/repositories/${repositoryId}`, {
+          headers: sameOriginHeaders,
+        });
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
   });
 
   test('single prompt creates exactly one user message bubble @smoke', async ({ page }) => {
@@ -69,81 +106,105 @@ test.describe('NightWorkers Agent Debug @regression', () => {
     await expect(userBubbles).toHaveCount(1);
   });
 
-  test('run is created once and outcome/events are persisted @smoke', async ({ page, request }) => {
+  test('run is created once and outcome/events are persisted @smoke', async ({ request }) => {
     test.setTimeout(60000);
-    await page.goto('/');
+    const workspaceDir = await createDisposableGitWorkspace();
+    let repositoryId: string | null = null;
+    let taskId: string | null = null;
 
-    const tasksBefore = await getJson<
-      Array<{
-        id: string;
-        title: string;
-      }>
-    >(request, '/api/tasks');
-    const taskId = tasksBefore[0]?.id;
-    expect(taskId).toBeTruthy();
-    const runsBefore = await getJson<
-      Array<{
-        id: string;
-        status: string;
-      }>
-    >(request, `/api/tasks/${taskId}/runs`);
-    const latestRunIdBefore = runsBefore[0]?.id ?? null;
-    const prompt = `NIGHTWORKERS_TEST_AGENT_SCENARIO=policy_blocked_command E2E outcome ${Date.now()}`;
-    const input = page.getByPlaceholder('指示を入力（送信: Cmd+Enter / Ctrl+Enter）');
-    await input.fill(prompt);
-    await input.press('Meta+Enter');
+    try {
+      const repositoryRes = await request.post('/api/repositories', {
+        headers: sameOriginHeaders,
+        data: {
+          name: `E2E run persistence fixture ${Date.now()}`,
+          localPath: workspaceDir,
+          branch: 'main',
+          allowed: true,
+          safetyPolicy: {
+            requireReadBeforeEdit: false,
+            blockedCommands: ['rm'],
+            maxCommandSeconds: 5,
+          },
+        },
+      });
+      expect(repositoryRes.status(), await repositoryRes.text()).toBe(201);
+      const repository = (await repositoryRes.json()) as { id: string };
+      repositoryId = repository.id;
 
-    const runs = await pollUntil(
-      async () =>
-        getJson<
-          Array<{
-            id: string;
+      const prompt = `NIGHTWORKERS_TEST_AGENT_SCENARIO=policy_blocked_command E2E outcome ${Date.now()}`;
+      const taskRes = await request.post('/api/tasks', {
+        headers: sameOriginHeaders,
+        data: {
+          repositoryId,
+          title: 'E2E run persistence fixture',
+          description: prompt,
+          objective: prompt,
+          acceptanceCriteria: 'Run outcome and events are persisted exactly once.',
+          timeoutSeconds: 60,
+        },
+      });
+      expect(taskRes.status(), await taskRes.text()).toBe(201);
+      const task = (await taskRes.json()) as { id: string };
+      taskId = task.id;
+
+      const runRes = await request.post(`/api/tasks/${taskId}/run`, {
+        headers: sameOriginHeaders,
+      });
+      expect(runRes.status(), await runRes.text()).toBe(201);
+      const startedRun = (await runRes.json()) as { id: string };
+
+      const runs = await pollUntil(
+        async () =>
+          getJson<
+            Array<{
+              id: string;
+              status: string;
+            }>
+          >(request, `/api/tasks/${taskId}/runs`),
+        (list) => list.length === 1 && list[0]?.id === startedRun.id,
+        20000,
+        1000
+      );
+      expect(runs).toHaveLength(1);
+
+      const runId = runs[0].id;
+      const runDetails = await pollUntil(
+        async () =>
+          getJson<{
             status: string;
-          }>
-        >(request, `/api/tasks/${taskId}/runs`),
-      (list) => list.length >= 1 && list[0]?.id !== latestRunIdBefore,
-      20000,
-      1000
-    );
-    expect(runs.length).toBeGreaterThanOrEqual(1);
+            events: Array<{ eventType?: string; message?: string }>;
+          }>(request, `/api/runs/${runId}`),
+        (run) =>
+          (run.events || []).some((event) => event.eventType === 'run_outcome_decided') ||
+          ['completed', 'failed', 'cancelled', 'needs_human', 'blocked', 'timed_out'].includes(
+            run.status
+          ),
+        30000,
+        1000
+      );
 
-    const runId = runs[0].id;
-    const runDetails = await pollUntil(
-      async () =>
-        getJson<{
-          status: string;
-          events: Array<{ eventType?: string; message?: string }>;
-        }>(request, `/api/runs/${runId}`),
-      (run) =>
-        (run.events || []).some((event) => event.eventType === 'run_outcome_decided') ||
-        ['completed', 'failed', 'cancelled', 'needs_human', 'blocked', 'timed_out'].includes(
-          run.status
-        ),
-      30000,
-      1000
-    );
-
-    const eventTypes = new Set((runDetails.events || []).map((event) => event.eventType));
-    expect(eventTypes.has('state_change')).toBe(true);
-    const hasOutcome = (runDetails.events || []).some(
-      (event) => event.eventType === 'run_outcome_decided'
-    );
-    const isTerminal = [
-      'completed',
-      'failed',
-      'cancelled',
-      'needs_human',
-      'blocked',
-      'timed_out',
-    ].includes(runDetails.status);
-    if (isTerminal) {
+      const eventTypes = new Set((runDetails.events || []).map((event) => event.eventType));
+      expect(eventTypes.has('state_change')).toBe(true);
+      const hasOutcome = (runDetails.events || []).some(
+        (event) => event.eventType === 'run_outcome_decided'
+      );
+      const isTerminal = [
+        'completed',
+        'failed',
+        'cancelled',
+        'needs_human',
+        'blocked',
+        'timed_out',
+      ].includes(runDetails.status);
+      expect(isTerminal).toBe(true);
       expect(hasOutcome).toBe(true);
-    } else {
-      expect(
-        eventTypes.has('tool_call') ||
-          eventTypes.has('tool_result') ||
-          eventTypes.has('supervisor_decision')
-      ).toBe(true);
+    } finally {
+      if (taskId) await request.delete(`/api/tasks/${taskId}`, { headers: sameOriginHeaders });
+      if (repositoryId)
+        await request.delete(`/api/repositories/${repositoryId}`, {
+          headers: sameOriginHeaders,
+        });
+      await fs.rm(workspaceDir, { recursive: true, force: true });
     }
   });
 

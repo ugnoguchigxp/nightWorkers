@@ -55,6 +55,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         objective: '',
         acceptanceCriteria: 'Ensure tests compile and complete without errors',
       });
+      workspace.setActiveSessionId(session.id);
       await workspace.sendChatMessage(session.id, prompt);
       return;
     }

@@ -23,8 +23,9 @@ export default defineConfig({
       'x-nightworkers-e2e': '1',
     },
 
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-    trace: 'on-first-retry',
+    /* Keep visual/debug artifacts for failed E2E runs. */
+    screenshot: 'only-on-failure',
+    trace: 'retain-on-failure',
   },
 
   /* Chromium (Desktop Chrome) のみをターゲットにします */

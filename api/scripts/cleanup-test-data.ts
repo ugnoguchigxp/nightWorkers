@@ -26,6 +26,14 @@ type CleanupPlan = {
   };
 };
 
+function chunks<T>(items: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+  return result;
+}
+
 function parseArgs(argv: string[]) {
   const args = {
     mode: 'dry-run' as CleanupMode,
@@ -196,13 +204,71 @@ async function buildPlan(all: boolean, patterns: RegExp[]): Promise<CleanupPlan>
 
 async function deleteRepositories(repositoryIds: string[]) {
   if (repositoryIds.length === 0) return 0;
-  const result = await db
-    .delete(repositories)
-    .where(inArray(repositories.id, repositoryIds))
-    .returning({
+  const chunkSize = 1;
+
+  const taskIds = (
+    await db.select({ id: tasks.id }).from(tasks).where(inArray(tasks.repositoryId, repositoryIds))
+  ).map((row) => row.id);
+  const runIds = (
+    await db
+      .select({ id: taskRuns.id })
+      .from(taskRuns)
+      .where(inArray(taskRuns.repositoryId, repositoryIds))
+  ).map((row) => row.id);
+  if (taskIds.length > 0) {
+    const taskRunIds = (
+      await db.select({ id: taskRuns.id }).from(taskRuns).where(inArray(taskRuns.taskId, taskIds))
+    ).map((row) => row.id);
+    for (const id of taskRunIds) {
+      if (!runIds.includes(id)) runIds.push(id);
+    }
+  }
+
+  if (runIds.length > 0) {
+    const artifactIds = (
+      await db.select({ id: artifacts.id }).from(artifacts).where(inArray(artifacts.runId, runIds))
+    ).map((row) => row.id);
+    const eventIds = (
+      await db
+        .select({ id: taskEvents.id })
+        .from(taskEvents)
+        .where(inArray(taskEvents.taskRunId, runIds))
+    ).map((row) => row.id);
+    if (artifactIds.length > 0) {
+      for (const ids of chunks(artifactIds, chunkSize)) {
+        await db.delete(artifacts).where(inArray(artifacts.id, ids));
+      }
+    }
+    if (eventIds.length > 0) {
+      for (const ids of chunks(eventIds, chunkSize)) {
+        await db.delete(taskEvents).where(inArray(taskEvents.id, ids));
+      }
+    }
+  }
+  if (taskIds.length > 0) {
+    for (const ids of chunks(taskIds, chunkSize)) {
+      await db.delete(taskMessages).where(inArray(taskMessages.taskId, ids));
+    }
+  }
+  if (runIds.length > 0) {
+    for (const ids of chunks(runIds, chunkSize)) {
+      await db.delete(taskRuns).where(inArray(taskRuns.id, ids));
+    }
+  }
+  if (taskIds.length > 0) {
+    for (const ids of chunks(taskIds, chunkSize)) {
+      await db.delete(tasks).where(inArray(tasks.id, ids));
+    }
+  }
+
+  let deleted = 0;
+  for (const ids of chunks(repositoryIds, chunkSize)) {
+    const result = await db.delete(repositories).where(inArray(repositories.id, ids)).returning({
       id: repositories.id,
     });
-  return result.length;
+    deleted += result.length;
+  }
+  return deleted;
 }
 
 async function main() {

@@ -153,6 +153,70 @@ describe('run-events jsonl parser', () => {
       }),
     ]);
   });
+
+  it('reports duplicate headers, duplicate seq, unsupported versions, and unknown line types', () => {
+    const text = [
+      JSON.stringify({
+        type: 'nightworkers_run',
+        version: 1,
+        runId,
+        taskId,
+        createdAt: '2026-06-02T00:00:00.000Z',
+        exportedAt: '2026-06-02T00:00:10.000Z',
+      }),
+      JSON.stringify({
+        type: 'nightworkers_run',
+        version: 1,
+        runId,
+        taskId,
+        createdAt: '2026-06-02T00:00:00.000Z',
+        exportedAt: '2026-06-02T00:00:11.000Z',
+      }),
+      JSON.stringify({
+        type: 'run_event',
+        version: 1,
+        runId,
+        seq: 1,
+        event: {
+          version: 1,
+          runId,
+          taskId,
+          seq: 1,
+          timestamp: '2026-06-02T00:00:01.000Z',
+          type: 'run.runtime_started',
+          severity: 'info',
+          actor: 'runtime',
+          message: 'started',
+        },
+      }),
+      JSON.stringify({
+        type: 'run_event',
+        version: 1,
+        runId,
+        seq: 1,
+        event: {
+          version: 1,
+          runId,
+          taskId,
+          seq: 1,
+          timestamp: '2026-06-02T00:00:02.000Z',
+          type: 'run.runtime_finished',
+          severity: 'checkpoint',
+          actor: 'runtime',
+          message: 'finished',
+        },
+      }),
+      JSON.stringify({ type: 'run_summary', version: 2, runId, status: 'completed' }),
+      JSON.stringify({ type: 'unknown_line', version: 1, runId }),
+    ].join('\n');
+
+    const diagnostics = parseRunJsonl(text).diagnostics.map((item) => item.code);
+
+    expect(diagnostics).toContain('duplicate_header');
+    expect(diagnostics).toContain('duplicate_seq');
+    expect(diagnostics).toContain('unsupported_version');
+    expect(diagnostics).toContain('invalid_schema');
+  });
 });
 
 describe('run-events jsonl round trip', () => {

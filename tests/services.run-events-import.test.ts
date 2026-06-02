@@ -102,6 +102,19 @@ describe('run-events import preparation', () => {
 });
 
 describe('run-events import snapshot', () => {
+  it('does not touch the repository when parsing has blocking diagnostics', async () => {
+    const result = await importRunJsonlToRun(
+      '44444444-4444-4444-8444-444444444444',
+      '{"type":"run_event"}'
+    );
+
+    expect(result.insertedEventCount).toBe(0);
+    expect(result.diagnostics.some((diagnostic) => diagnostic.level === 'error')).toBe(true);
+    expect(repoMocks.getTaskRun).not.toHaveBeenCalled();
+    expect(repoMocks.listTaskEventsForRun).not.toHaveBeenCalled();
+    expect(repoMocks.createRunEvent).not.toHaveBeenCalled();
+  });
+
   it('imports events into a target run idempotently and rewrites target run/task ids', async () => {
     const targetRun = {
       id: '44444444-4444-4444-8444-444444444444',
