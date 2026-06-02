@@ -147,7 +147,7 @@ export const taskRuns = sqliteTable(
       .notNull()
       .references(() => tasks.id, { onDelete: 'cascade' }),
     repositoryId: text('repository_id').references(() => repositories.id, { onDelete: 'cascade' }),
-    status: text('status').default('running').notNull(), // running | completed | failed | cancelled | needs_review | blocked | timed_out | needs_human
+    status: text('status').default('running').notNull(), // running | context_compiling | finalizing | completed | failed | cancelled | needs_review | blocked | timed_out | needs_human
     workerKind: text('worker_kind').default('native-local-worker').notNull(),
     baseRef: text('base_ref'),
     worktreePath: text('worktree_path'),
@@ -155,6 +155,7 @@ export const taskRuns = sqliteTable(
     contextSnapshot: text('context_snapshot', { mode: 'json' }),
     summary: text('summary'),
     finalReport: text('final_report'),
+    finalJudgment: text('final_judgment', { mode: 'json' }),
     startedAt: integer('started_at', { mode: 'timestamp' })
       .$defaultFn(() => new Date())
       .notNull(),

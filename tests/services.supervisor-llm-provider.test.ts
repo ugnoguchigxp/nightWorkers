@@ -1,5 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { callSupervisorLLM } from '../api/services/supervisor/llm-provider';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  buildCodexSupervisorSdkOptions,
+  callSupervisorLLM,
+} from '../api/services/supervisor/llm-provider';
 import { buildRound2SystemPrompt } from '../api/services/supervisor/prompt';
 
 describe('Supervisor LLM provider evidence fallback', () => {
@@ -95,5 +98,137 @@ describe('Supervisor LLM provider evidence fallback', () => {
       'spec/memory-feedback-long-run-implementation-plan.md: 1-767: implementation plan consistency',
       'api/services/context-still/client.ts: context compile integration',
     ]);
+  });
+
+  it('emits supervisor LLM debug lifecycle events through the optional sink', async () => {
+    const events: Array<{ type: string; message: string }> = [];
+
+    const decision = await callSupervisorLLM(buildRound2SystemPrompt(), 'fixture smoke', {
+      round: 1,
+      emitEvent: (event) => events.push({ type: event.type, message: event.message }),
+    });
+
+    expect(decision.phase).toBe('plan');
+    expect(events.map((event) => event.type)).toEqual([
+      'model.request_started',
+      'model.response_finished',
+    ]);
+  });
+
+  it('isolates Codex supervisor calls from image and plugin features', () => {
+    const options = buildCodexSupervisorSdkOptions('');
+
+    expect(options).toEqual({
+      config: {
+        features: {
+          image_generation: false,
+          plugins: false,
+          computer_use: false,
+          browser_use: false,
+          browser_use_external: false,
+          in_app_browser: false,
+          multi_agent: false,
+          workspace_dependencies: false,
+          tool_search: false,
+        },
+      },
+    });
+  });
+
+  it('passes Codex access token while preserving supervisor feature isolation', () => {
+    const originalPath = process.env.PATH;
+    process.env.PATH = '/usr/bin';
+
+    try {
+      const options = buildCodexSupervisorSdkOptions('codex-token');
+
+      expect(options.config).toEqual({
+        features: {
+          image_generation: false,
+          plugins: false,
+          computer_use: false,
+          browser_use: false,
+          browser_use_external: false,
+          in_app_browser: false,
+          multi_agent: false,
+          workspace_dependencies: false,
+          tool_search: false,
+        },
+      });
+      expect(options.env).toMatchObject({
+        PATH: '/usr/bin',
+        CODEX_ACCESS_TOKEN: 'codex-token',
+      });
+    } finally {
+      if (originalPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = originalPath;
+      }
+    }
+  });
+});
+
+describe('Supervisor LLM OpenAI streaming', () => {
+  const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+  const originalOpenAiEnabled = process.env.OPENAI_ENABLED;
+  const originalOpenAiKey = process.env.OPENAI_API_KEY;
+  const originalOpenAiModel = process.env.OPENAI_MODEL;
+  const originalStreaming = process.env.OPENAI_STREAMING_ENABLED;
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+    else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+    if (originalOpenAiEnabled === undefined) delete process.env.OPENAI_ENABLED;
+    else process.env.OPENAI_ENABLED = originalOpenAiEnabled;
+    if (originalOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = originalOpenAiKey;
+    if (originalOpenAiModel === undefined) delete process.env.OPENAI_MODEL;
+    else process.env.OPENAI_MODEL = originalOpenAiModel;
+    if (originalStreaming === undefined) delete process.env.OPENAI_STREAMING_ENABLED;
+    else process.env.OPENAI_STREAMING_ENABLED = originalStreaming;
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('assembles streamed Chat Completions deltas and emits response_delta events', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'openai';
+    process.env.OPENAI_ENABLED = 'true';
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.OPENAI_MODEL = 'gpt-test';
+    process.env.OPENAI_STREAMING_ENABLED = 'true';
+
+    const streamedJson =
+      '{"phase":"stop","workflow":"general","instruction":"done","rationale":"ok","finalResponse":"done","expectedEvidence":[],"terminalState":"completed","riskLevel":"low","toolCall":null}';
+    const chunks = [streamedJson.slice(0, 80), streamedJson.slice(80)];
+    const streamBody = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: chunks[0] } }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: chunks[1] } }] })}`,
+    ].join('');
+
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body || '{}'));
+      expect(body.stream).toBe(true);
+      return new Response(streamBody, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const events: Array<{ type: string; message: string }> = [];
+    const decision = await callSupervisorLLM('system', 'user', {
+      round: 1,
+      emitEvent: (event) => events.push({ type: event.type, message: event.message }),
+    });
+
+    expect(decision.phase).toBe('stop');
+    expect(decision.finalResponse).toBe('done');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(events.some((event) => event.type === 'model.response_delta')).toBe(true);
+    expect(events.find((event) => event.type === 'model.response_delta')?.message).toContain(
+      '"phase":"stop"'
+    );
   });
 });

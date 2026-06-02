@@ -5,6 +5,8 @@ import { AppError, NotFoundError } from '../../lib/errors';
 import { createLedgerSink } from '../../services/agent-runtime/ledger-sink';
 import { resolveAgentRuntime } from '../../services/agent-runtime/registry';
 import { compileContext, evaluateContext } from '../../services/context-still';
+import { buildFinalJudgment } from '../../services/final-judgment/build-final-judgment';
+import { renderFinalMessage } from '../../services/final-judgment/render-final-message';
 import { buildReviewResult } from '../../services/review-results/build-review-result';
 import { collectDefaultReviewEvidence } from '../../services/review-results/evidence-collector';
 import type { ReviewResult, ReviewRunRequest } from '../../services/review-results/types';
@@ -211,16 +213,41 @@ export async function startTaskRun(taskId: string) {
         sink
       );
 
-      // Update the run record
+      await repo.createRunEvent({
+        version: 1,
+        runId: run.id,
+        taskId,
+        timestamp: new Date().toISOString(),
+        type: 'run.runtime_finished',
+        severity: 'checkpoint',
+        actor: 'runtime',
+        message: `Runtime execution finished with terminal status: ${runtimeResult.terminalState}.`,
+        data: {
+          terminalState: runtimeResult.terminalState,
+          stoppedBy: runtimeResult.stoppedBy,
+          riskLevel: runtimeResult.riskLevel,
+        },
+      });
+
       await repo.updateTaskRun(run.id, {
-        status: runtimeResult.terminalState,
-        endedAt: new Date(),
-        finishedAt: new Date(),
+        status: 'finalizing',
         logContent: runtimeResult.logContent,
         diffPatch: runtimeResult.diffPatch,
         testResults: runtimeResult.testResults,
         finalReport: runtimeResult.finalReport,
         summary: runtimeResult.summary,
+      });
+      await repo.updateTaskStatus(taskId, 'finalizing');
+      await repo.createRunEvent({
+        version: 1,
+        runId: run.id,
+        taskId,
+        timestamp: new Date().toISOString(),
+        type: 'run.finalizing_started',
+        severity: 'info',
+        actor: 'system',
+        message: 'Runtime result captured. Building final judgment.',
+        data: { terminalState: runtimeResult.terminalState },
       });
 
       const outcome =
@@ -246,10 +273,27 @@ export async function startTaskRun(taskId: string) {
                 riskLevel: runtimeResult.riskLevel,
               },
             });
-      const completedRun = await repo.getTaskRun(run.id);
+      const finalJudgment = buildFinalJudgment({
+        runId: run.id,
+        taskId,
+        outcomeStatus: outcome.status,
+        outcomeSummary: outcome.summary,
+        supervisor: {
+          finalReport: runtimeResult.finalReport,
+          summary: runtimeResult.summary,
+          terminalState: runtimeResult.terminalState,
+          stoppedBy: runtimeResult.stoppedBy,
+          riskLevel: runtimeResult.riskLevel,
+        },
+      });
+      const finalMessage = renderFinalMessage(finalJudgment);
       await repo.updateTaskRun(run.id, {
         status: outcome.status,
-        summary: completedRun?.summary || outcome.summary,
+        endedAt: new Date(),
+        finishedAt: new Date(),
+        finalReport: runtimeResult.finalReport || finalJudgment.conclusion,
+        finalJudgment,
+        summary: runtimeResult.summary || outcome.summary,
       });
       await repo.updateTaskStatus(taskId, outcome.status);
 
@@ -258,11 +302,11 @@ export async function startTaskRun(taskId: string) {
         runId: run.id,
         taskId,
         timestamp: new Date().toISOString(),
-        type: 'run.runtime_finished',
+        type: 'run.final_judgment_created',
         severity: 'checkpoint',
-        actor: 'runtime',
-        message: `Execution finished with runtime status: ${runtimeResult.terminalState}. Task status: ${outcome.status}`,
-        data: { terminalState: runtimeResult.terminalState, status: outcome.status },
+        actor: 'system',
+        message: `Final judgment created: ${finalJudgment.title}`,
+        data: { finalJudgment },
       });
       await repo.createRunEvent(
         {
@@ -285,33 +329,54 @@ export async function startTaskRun(taskId: string) {
         `Task run execution completed with status: ${outcome.status}. Diff size: ${(runtimeResult.diffPatch || '').length} bytes.`,
         outcome.status === 'completed'
       );
-      const completedRunAfterOutcome = await repo.getTaskRun(run.id);
-      const responseText =
-        completedRunAfterOutcome?.finalReport ||
-        completedRunAfterOutcome?.summary ||
-        (outcome.status === 'completed'
-          ? '実行が完了しました。'
-          : `実行が終了しました。status: ${outcome.status}`);
       await repo.createTaskMessage({
         taskId,
         runId: run.id,
         role: 'assistant',
-        content: responseText,
+        content: finalMessage,
         messageType: 'text',
         payloadJson: {
-          finalReport: completedRunAfterOutcome?.finalReport ?? null,
-          summary: completedRunAfterOutcome?.summary ?? null,
+          finalJudgment,
+          finalReport: runtimeResult.finalReport || finalJudgment.conclusion,
+          summary: runtimeResult.summary || outcome.summary,
           status: outcome.status,
         },
       });
     } catch (err: any) {
       console.error(`Error during NativeLocalRunner execution for run ${run.id}:`, err);
+      const finalJudgment = buildFinalJudgment({
+        runId: run.id,
+        taskId,
+        outcomeStatus: 'failed',
+        outcomeSummary: `Execution crashed: ${err.message}`,
+        supervisor: {
+          finalReport: `実行に失敗しました: ${err.message}`,
+          summary: `Execution crashed: ${err.message}`,
+          terminalState: 'failed',
+          stoppedBy: 'llm_error',
+          riskLevel: 'high',
+        },
+      });
       await repo.updateTaskStatus(taskId, 'failed');
       await repo.updateTaskRun(run.id, {
         status: 'failed',
         endedAt: new Date(),
         finishedAt: new Date(),
         logContent: `[System Error] ${err.message}`,
+        finalReport: finalJudgment.conclusion,
+        finalJudgment,
+        summary: `Execution crashed: ${err.message}`,
+      });
+      await repo.createRunEvent({
+        version: 1,
+        runId: run.id,
+        taskId,
+        timestamp: new Date().toISOString(),
+        type: 'run.final_judgment_created',
+        severity: 'checkpoint',
+        actor: 'system',
+        message: `Final judgment created after runtime crash: ${finalJudgment.title}`,
+        data: { finalJudgment },
       });
 
       await evaluateContext(run.id, `Execution crashed: ${err.message}`, false);
@@ -319,8 +384,14 @@ export async function startTaskRun(taskId: string) {
         taskId,
         runId: run.id,
         role: 'assistant',
-        content: `実行に失敗しました: ${err.message}`,
+        content: renderFinalMessage(finalJudgment),
         messageType: 'text',
+        payloadJson: {
+          finalJudgment,
+          finalReport: finalJudgment.conclusion,
+          summary: `Execution crashed: ${err.message}`,
+          status: 'failed',
+        },
       });
     }
   })();
@@ -360,6 +431,19 @@ export async function recoverStaleActiveRuns(taskId: string) {
       endedAt: new Date(),
       finishedAt: new Date(),
       summary: 'Run recovered as failed after stale active-state detection.',
+      finalJudgment: buildFinalJudgment({
+        runId: activeRun.id,
+        taskId,
+        outcomeStatus: 'failed',
+        outcomeSummary: 'Run recovered as failed after stale active-state detection.',
+        supervisor: {
+          summary: activeRun.summary || undefined,
+          finalReport: activeRun.finalReport || undefined,
+          terminalState: activeRun.status,
+          stoppedBy: 'llm_error',
+          riskLevel: 'high',
+        },
+      }),
     });
     await repo.updateTaskStatus(taskId, 'failed');
     await repo.createRunEvent({

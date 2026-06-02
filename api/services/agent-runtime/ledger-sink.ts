@@ -20,6 +20,31 @@ const EVENT_MAPPING: Record<AgentRuntimeEvent['type'], EventMapping> = {
     severity: 'debug',
     canonicalType: 'model.response_delta',
   },
+  model_response_finished: {
+    actor: 'supervisor',
+    severity: 'info',
+    canonicalType: 'model.response_finished',
+  },
+  model_response_parse_failed: {
+    actor: 'supervisor',
+    severity: 'error',
+    canonicalType: 'model.response_parse_failed',
+  },
+  model_response_repaired: {
+    actor: 'supervisor',
+    severity: 'warning',
+    canonicalType: 'model.response_repaired',
+  },
+  model_retry_scheduled: {
+    actor: 'supervisor',
+    severity: 'warning',
+    canonicalType: 'model.retry_scheduled',
+  },
+  model_retry_started: {
+    actor: 'supervisor',
+    severity: 'info',
+    canonicalType: 'model.retry_started',
+  },
   supervisor_decision: {
     actor: 'supervisor',
     severity: 'info',

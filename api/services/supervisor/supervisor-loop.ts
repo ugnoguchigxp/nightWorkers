@@ -6,7 +6,7 @@ import { buildBlockedToolResult } from '../tool-policy/blocked-result';
 import { DefaultToolPolicyGate } from '../tool-policy/tool-policy-gate';
 import type { ToolCallRequest, WorkerToolName } from '../tool-policy/types';
 import { executeWorkerTool } from '../worker-tools/dispatcher';
-import { callSupervisorLLM } from './llm-provider';
+import { callSupervisorLLM, type SupervisorLlmDebugEvent } from './llm-provider';
 import {
   buildRound1SystemPrompt,
   buildRound2SystemPrompt,
@@ -31,6 +31,28 @@ export interface SupervisorLoopInput {
     maxCommandSeconds?: number;
     requireReadBeforeEdit?: boolean;
   };
+}
+
+async function createSupervisorLlmRunEvent(input: {
+  runId: string;
+  taskId: string;
+  iteration: number;
+  event: SupervisorLlmDebugEvent;
+}) {
+  await repo.createRunEvent({
+    version: 1,
+    runId: input.runId,
+    taskId: input.taskId,
+    timestamp: new Date().toISOString(),
+    type: input.event.type,
+    severity: input.event.severity,
+    actor: 'supervisor',
+    message: input.event.message,
+    data: {
+      iteration: input.iteration,
+      ...(input.event.data || {}),
+    },
+  });
 }
 
 export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<SupervisorLoopResult> {
@@ -107,6 +129,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     }
 
     const userInput = (latestUserMessage || prompt || '').trim();
+    const emitLlmDebugEvent = (event: SupervisorLlmDebugEvent) =>
+      createSupervisorLlmRunEvent({ runId, taskId: task.id, iteration, event });
 
     // 3. Prompt building
     const userPrompt = buildSupervisorTurnInput(userInput, toolObservations);
@@ -117,6 +141,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       const round1 = await callSupervisorLLM(buildRound1SystemPrompt(repoRoot), userPrompt, {
         tolerateSchemaFailure: false,
         round: 1,
+        emitEvent: emitLlmDebugEvent,
       });
       logger.info(
         { runId, iteration, round: 1, phase: round1.phase, hasToolCall: Boolean(round1.toolCall) },
@@ -154,6 +179,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           round2Input,
           {
             round: 2,
+            emitEvent: emitLlmDebugEvent,
           }
         );
         logger.info(

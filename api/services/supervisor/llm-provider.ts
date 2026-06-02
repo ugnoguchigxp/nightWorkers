@@ -1,3 +1,4 @@
+import type { CodexOptions } from '@openai/codex-sdk';
 import { z } from 'zod';
 import { appendSupervisorTrace, logger } from '../../lib/logger';
 import { buildCodexTurnPrompt } from './prompt';
@@ -72,7 +73,55 @@ export type SupervisorDecision = z.infer<typeof supervisorDecisionSchema>;
 type CallSupervisorOptions = {
   tolerateSchemaFailure?: boolean;
   round?: 1 | 2 | 3;
+  emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
 };
+
+export type SupervisorLlmDebugEvent = {
+  type:
+    | 'model.request_started'
+    | 'model.retry_scheduled'
+    | 'model.retry_started'
+    | 'model.response_delta'
+    | 'model.response_finished'
+    | 'model.response_parse_failed'
+    | 'model.response_repaired';
+  severity: 'debug' | 'info' | 'warning' | 'error';
+  message: string;
+  data?: Record<string, unknown>;
+};
+
+const codexSupervisorFeatureOverrides = {
+  image_generation: false,
+  plugins: false,
+  computer_use: false,
+  browser_use: false,
+  browser_use_external: false,
+  in_app_browser: false,
+  multi_agent: false,
+  workspace_dependencies: false,
+  tool_search: false,
+} satisfies Record<string, boolean>;
+
+export function buildCodexSupervisorSdkOptions(accessToken: string): CodexOptions {
+  const sdkOptions: CodexOptions = {
+    config: {
+      features: codexSupervisorFeatureOverrides,
+    },
+  };
+  if (!accessToken) return sdkOptions;
+
+  const mergedEnv = Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => {
+      const [, value] = entry;
+      return typeof value === 'string';
+    })
+  );
+  sdkOptions.env = {
+    ...mergedEnv,
+    CODEX_ACCESS_TOKEN: accessToken,
+  };
+  return sdkOptions;
+}
 
 const fixtureCodingRound2Calls = new Map<string, number>();
 
@@ -401,6 +450,145 @@ function tryExtractJsonCandidate(raw: string): string | null {
   return null;
 }
 
+function buildOpenAIChatCompletionBody(input: {
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+  round?: 1 | 2 | 3;
+  responseFormat: 'json_schema' | 'json_object';
+  stream: boolean;
+}) {
+  return {
+    model: input.model,
+    messages: [
+      { role: 'system', content: input.systemPrompt },
+      { role: 'user', content: input.userPrompt },
+    ],
+    temperature: 0.1,
+    stream: input.stream,
+    response_format:
+      input.responseFormat === 'json_schema'
+        ? {
+            type: 'json_schema',
+            json_schema: buildResponseJsonSchema(input.round),
+          }
+        : { type: 'json_object' },
+  };
+}
+
+async function emitSupervisorLlmDebugEvent(
+  options: CallSupervisorOptions,
+  event: SupervisorLlmDebugEvent
+) {
+  if (!options.emitEvent) return;
+  try {
+    await options.emitEvent(event);
+  } catch (err) {
+    logger.warn(
+      {
+        eventType: event.type,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      },
+      'Supervisor LLM debug event emission failed'
+    );
+  }
+}
+
+async function emitBufferedResponseDelta(input: {
+  options: CallSupervisorOptions;
+  provider: string;
+  round?: 1 | 2 | 3;
+  text: string;
+  force?: boolean;
+}) {
+  if (!input.text) return;
+  await emitSupervisorLlmDebugEvent(input.options, {
+    type: 'model.response_delta',
+    severity: 'debug',
+    message: input.text,
+    data: {
+      provider: input.provider,
+      round: input.round ?? null,
+      text: input.text,
+      forced: Boolean(input.force),
+    },
+  });
+}
+
+async function readOpenAIChatCompletionStream(input: {
+  response: Response;
+  options: CallSupervisorOptions;
+  provider: string;
+  round?: 1 | 2 | 3;
+}): Promise<string> {
+  if (!input.response.body) {
+    throw new Error('OpenAI streaming response did not include a readable body.');
+  }
+
+  const decoder = new TextDecoder();
+  const reader = input.response.body.getReader();
+  let buffer = '';
+  let content = '';
+  let pendingDelta = '';
+
+  const processStreamRecord = async (record: string) => {
+    const lines = record
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('data:'));
+    for (const line of lines) {
+      const payload = line.slice('data:'.length).trim();
+      if (!payload || payload === '[DONE]') continue;
+      let parsed: any;
+      try {
+        parsed = JSON.parse(payload);
+      } catch {
+        logger.warn({ payloadPreview: payload.slice(0, 200) }, 'OpenAI stream chunk parse failed');
+        continue;
+      }
+      const delta = parsed?.choices?.[0]?.delta?.content;
+      if (typeof delta === 'string' && delta) {
+        content += delta;
+        pendingDelta += delta;
+        await flushDelta(false);
+      }
+    }
+  };
+
+  const flushDelta = async (force = false) => {
+    if (!pendingDelta) return;
+    if (!force && pendingDelta.length < 120 && !pendingDelta.includes('\n')) return;
+    const text = pendingDelta;
+    pendingDelta = '';
+    await emitBufferedResponseDelta({
+      options: input.options,
+      provider: input.provider,
+      round: input.round,
+      text,
+      force,
+    });
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const records = buffer.split(/\r?\n\r?\n/);
+    buffer = records.pop() ?? '';
+    for (const record of records) {
+      await processStreamRecord(record);
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    await processStreamRecord(buffer);
+  }
+  await flushDelta(true);
+  return content;
+}
+
 export async function callSupervisorLLM(
   systemPrompt: string,
   userPrompt: string,
@@ -422,6 +610,17 @@ export async function callSupervisorLLM(
     },
     'Supervisor LLM call start'
   );
+  await emitSupervisorLlmDebugEvent(options, {
+    type: 'model.request_started',
+    severity: 'info',
+    message: `Supervisor LLM request started. provider=${provider} round=${options.round ?? 'unknown'}`,
+    data: {
+      provider,
+      round: options.round ?? null,
+      systemPromptLength: systemPrompt.length,
+      userPromptLength: userPrompt.length,
+    },
+  });
 
   if (provider === 'azure') {
     if (!isEnabled('AZURE_OPENAI_ENABLED', false)) {
@@ -463,6 +662,18 @@ export async function callSupervisorLLM(
         { provider: 'azure', round: options.round, status: response.status },
         'json_schema rejected, fallback to json_object'
       );
+      await emitSupervisorLlmDebugEvent(options, {
+        type: 'model.retry_scheduled',
+        severity: 'warning',
+        message: 'Azure OpenAI json_schema request failed with 400; retrying with json_object.',
+        data: { provider: 'azure', round: options.round ?? null, status: response.status },
+      });
+      await emitSupervisorLlmDebugEvent(options, {
+        type: 'model.retry_started',
+        severity: 'info',
+        message: 'Azure OpenAI json_object retry started.',
+        data: { provider: 'azure', round: options.round ?? null },
+      });
       response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -500,29 +711,29 @@ export async function callSupervisorLLM(
     const apiKey = process.env.OPENAI_API_KEY;
     const baseURL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
     const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    const streamResponses = isEnabled('OPENAI_STREAMING_ENABLED', true);
 
     if (!apiKey) {
       throw new Error('OpenAI API key is not configured in environment variables.');
     }
 
+    let responseFormat: 'json_schema' | 'json_object' = 'json_schema';
     let response = await fetch(`${baseURL.replace(/\/+$/, '')}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.1,
-        response_format: {
-          type: 'json_schema',
-          json_schema: buildResponseJsonSchema(options.round),
-        },
-      }),
+      body: JSON.stringify(
+        buildOpenAIChatCompletionBody({
+          model,
+          systemPrompt,
+          userPrompt,
+          round: options.round,
+          responseFormat,
+          stream: streamResponses,
+        })
+      ),
     });
 
     if (!response.ok && response.status === 400) {
@@ -530,21 +741,35 @@ export async function callSupervisorLLM(
         { provider: 'openai', round: options.round, status: response.status },
         'json_schema rejected, fallback to json_object'
       );
+      await emitSupervisorLlmDebugEvent(options, {
+        type: 'model.retry_scheduled',
+        severity: 'warning',
+        message: 'OpenAI json_schema request failed with 400; retrying with json_object.',
+        data: { provider: 'openai', round: options.round ?? null, status: response.status },
+      });
+      await emitSupervisorLlmDebugEvent(options, {
+        type: 'model.retry_started',
+        severity: 'info',
+        message: 'OpenAI json_object retry started.',
+        data: { provider: 'openai', round: options.round ?? null },
+      });
+      responseFormat = 'json_object';
       response = await fetch(`${baseURL.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          temperature: 0.1,
-          response_format: { type: 'json_object' },
-        }),
+        body: JSON.stringify(
+          buildOpenAIChatCompletionBody({
+            model,
+            systemPrompt,
+            userPrompt,
+            round: options.round,
+            responseFormat,
+            stream: streamResponses,
+          })
+        ),
       });
     }
 
@@ -553,14 +778,23 @@ export async function callSupervisorLLM(
       throw new Error(`OpenAI call failed with status ${response.status}: ${errorText}`);
     }
 
-    const responseData = await response.json();
+    const responseData = streamResponses ? null : await response.json();
     providerDebug = {
       provider: 'openai',
       status: response.status,
       model,
+      streamed: streamResponses,
+      responseFormat,
       hasChoices: Boolean(responseData?.choices),
     };
-    rawContent = responseData.choices?.[0]?.message?.content || '';
+    rawContent = streamResponses
+      ? await readOpenAIChatCompletionStream({
+          response,
+          options,
+          provider: 'openai',
+          round: options.round,
+        })
+      : responseData?.choices?.[0]?.message?.content || '';
   } else if (provider === 'bedrock') {
     if (!isEnabled('AWS_BEDROCK_ENABLED', false)) {
       throw new Error('Bedrock provider is inactive. Enable AWS_BEDROCK_ENABLED first.');
@@ -613,7 +847,6 @@ export async function callSupervisorLLM(
       'gpt-5.4-mini',
       'gpt-5.3-codex',
       'gpt-5.3-codex-spark',
-      'gpt-5.2',
     ]);
     if (configuredModel && !allowedCodexModels.has(configuredModel.toLowerCase())) {
       throw new Error(
@@ -621,19 +854,7 @@ export async function callSupervisorLLM(
       );
     }
 
-    const sdkOptions: { env?: Record<string, string> } = {};
-    if (accessToken) {
-      const mergedEnv = Object.fromEntries(
-        Object.entries(process.env).filter((entry): entry is [string, string] => {
-          const [, value] = entry;
-          return typeof value === 'string';
-        })
-      );
-      sdkOptions.env = {
-        ...mergedEnv,
-        CODEX_ACCESS_TOKEN: accessToken,
-      };
-    }
+    const sdkOptions = buildCodexSupervisorSdkOptions(accessToken);
     const prompt = buildCodexTurnPrompt(systemPrompt, userPrompt);
     const codex = new Codex(sdkOptions);
 
@@ -772,14 +993,49 @@ export async function callSupervisorLLM(
     },
     'Supervisor LLM raw response received'
   );
+  await emitSupervisorLlmDebugEvent(options, {
+    type: 'model.response_finished',
+    severity: 'info',
+    message: `Supervisor LLM response received. provider=${provider} bytes=${Buffer.byteLength(rawContent, 'utf8')}`,
+    data: {
+      provider,
+      round: options.round ?? null,
+      rawContentLength: rawContent.length,
+      providerDebug,
+    },
+  });
 
   try {
     let parsedJson: unknown;
     try {
       parsedJson = JSON.parse(rawContent);
-    } catch {
+    } catch (parseErr) {
       const candidate = tryExtractJsonCandidate(rawContent);
-      if (!candidate) throw new Error('JSON parse failed and no extractable JSON candidate found');
+      if (!candidate) {
+        await emitSupervisorLlmDebugEvent(options, {
+          type: 'model.response_parse_failed',
+          severity: 'error',
+          message: 'Supervisor LLM JSON parse failed and no extractable candidate was found.',
+          data: {
+            provider,
+            round: options.round ?? null,
+            errorMessage: parseErr instanceof Error ? parseErr.message : String(parseErr),
+            rawContentPreview: rawContent.slice(0, 500),
+          },
+        });
+        throw new Error('JSON parse failed and no extractable JSON candidate found');
+      }
+      await emitSupervisorLlmDebugEvent(options, {
+        type: 'model.response_repaired',
+        severity: 'warning',
+        message: 'Supervisor LLM response was repaired by extracting a JSON candidate.',
+        data: {
+          provider,
+          round: options.round ?? null,
+          rawContentLength: rawContent.length,
+          candidateLength: candidate.length,
+        },
+      });
       parsedJson = JSON.parse(candidate);
     }
     const normalization = (() => {
@@ -879,6 +1135,17 @@ export async function callSupervisorLLM(
     }
 
     console.warn('LLM output format validation failed. Issues:', parsed.error.format());
+    await emitSupervisorLlmDebugEvent(options, {
+      type: 'model.response_parse_failed',
+      severity: 'error',
+      message: 'Supervisor LLM response failed schema validation.',
+      data: {
+        provider,
+        round: options.round ?? null,
+        issues: parsed.error.issues,
+        rawContentPreview: rawContent.slice(0, 500),
+      },
+    });
     logger.warn(
       {
         provider,
@@ -922,6 +1189,16 @@ export async function callSupervisorLLM(
     // Plain-text fallback: conversational responses are allowed when no tool is needed.
     const plain = rawContent.trim();
     if (plain.length > 0) {
+      await emitSupervisorLlmDebugEvent(options, {
+        type: 'model.response_repaired',
+        severity: 'warning',
+        message: 'Supervisor LLM plain-text response was accepted as a final response.',
+        data: {
+          provider,
+          round: options.round ?? null,
+          rawContentLength: plain.length,
+        },
+      });
       logger.info(
         {
           provider,
@@ -944,6 +1221,17 @@ export async function callSupervisorLLM(
     }
 
     console.error('Failed to parse LLM decision JSON:', rawContent);
+    await emitSupervisorLlmDebugEvent(options, {
+      type: 'model.response_parse_failed',
+      severity: 'error',
+      message: 'Supervisor LLM JSON parse failed.',
+      data: {
+        provider,
+        round: options.round ?? null,
+        errorMessage,
+        rawContentPreview: rawContent.slice(0, 500),
+      },
+    });
     logger.error(
       {
         provider,

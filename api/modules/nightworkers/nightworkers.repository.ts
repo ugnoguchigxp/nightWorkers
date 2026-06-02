@@ -159,6 +159,7 @@ export async function createTaskRun(data: {
   contextSnapshot?: any;
   summary?: string | null;
   finalReport?: string | null;
+  finalJudgment?: any;
   startedAt?: Date;
   endedAt?: Date;
   finishedAt?: Date;
@@ -185,7 +186,10 @@ export async function listActiveTaskRunsForTask(taskId: string) {
     .select()
     .from(taskRuns)
     .where(
-      and(eq(taskRuns.taskId, taskId), inArray(taskRuns.status, ['running', 'context_compiling']))
+      and(
+        eq(taskRuns.taskId, taskId),
+        inArray(taskRuns.status, ['running', 'context_compiling', 'finalizing'])
+      )
     );
 }
 
@@ -206,6 +210,7 @@ export async function updateTaskRun(
     contextSnapshot?: any;
     summary?: string | null;
     finalReport?: string | null;
+    finalJudgment?: any;
   }
 ) {
   const [run] = await db

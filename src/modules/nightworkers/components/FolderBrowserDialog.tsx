@@ -72,7 +72,7 @@ export function FolderBrowserDialog(props: FolderBrowserDialogProps) {
             size="sm"
             className="h-7 px-3 text-xs"
             onClick={props.onConfirmSelection}
-            disabled={!props.selectedPath}
+            disabled={!props.selectedPath && !props.currentPath}
           >
             Select Folder
           </Button>

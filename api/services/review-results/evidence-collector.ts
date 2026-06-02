@@ -14,6 +14,7 @@ type ReviewRunLike = {
   id: string;
   diffPatch?: string | null;
   finalReport?: string | null;
+  finalJudgment?: unknown | null;
 };
 
 function isCanonicalEventType(event: ReviewEventLike, type: string) {
@@ -62,7 +63,11 @@ export function collectDefaultReviewEvidence(
   const latestByType = (types: string[]) =>
     [...events].reverse().find((event) => types.some((type) => isCanonicalEventType(event, type)));
 
-  const finalReportEvent = latestByType(['run.runtime_finished', 'final_report']);
+  const finalReportEvent = latestByType([
+    'run.final_judgment_created',
+    'run.runtime_finished',
+    'final_report',
+  ]);
   if (finalReportEvent) pushEventRef(finalReportEvent, 'run.runtime_finished');
 
   const diffEvent = latestByType(['git.diff_collected', 'tool_result']);
@@ -95,10 +100,16 @@ export function collectDefaultReviewEvidence(
     });
   }
 
-  const finalReport = latestByType(['run.runtime_finished', 'final_report']);
+  const finalReport = latestByType([
+    'run.final_judgment_created',
+    'run.runtime_finished',
+    'final_report',
+  ]);
   if (finalReport) {
     refs.push({ kind: 'final_report', runId: run.id });
   } else if (typeof run.finalReport === 'string' && run.finalReport.trim()) {
+    refs.push({ kind: 'final_report', runId: run.id });
+  } else if (run.finalJudgment) {
     refs.push({ kind: 'final_report', runId: run.id });
   }
 

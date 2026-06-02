@@ -35,6 +35,7 @@ export type TaskRun = {
   contextSnapshot?: unknown | null;
   summary?: string | null;
   finalReport?: string | null;
+  finalJudgment?: unknown | null;
   startedAt: unknown;
   endedAt?: unknown | null;
   finishedAt?: unknown | null;
@@ -268,6 +269,5 @@ export const PROVIDER_MODEL_OPTIONS: Record<LlmProvider, ModelOption[]> = {
     { value: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
     { value: 'gpt-5.3-codex', label: 'gpt-5.3-codex' },
     { value: 'gpt-5.3-codex-spark', label: 'gpt-5.3-codex-spark' },
-    { value: 'gpt-5.2', label: 'gpt-5.2' },
   ],
 };

@@ -3,6 +3,12 @@ import { client } from './client';
 export async function ensureNightWorkersSchema() {
   await client.execute('PRAGMA foreign_keys = ON');
 
+  const taskRunColumns = await client.execute('PRAGMA table_info(task_runs)');
+  const hasFinalJudgmentColumn = taskRunColumns.rows.some((row) => row.name === 'final_judgment');
+  if (taskRunColumns.rows.length > 0 && !hasFinalJudgmentColumn) {
+    await client.execute('ALTER TABLE task_runs ADD COLUMN final_judgment text');
+  }
+
   await client.execute(`
     CREATE TABLE IF NOT EXISTS task_messages (
       id text PRIMARY KEY NOT NULL,

@@ -4,12 +4,18 @@ export const RUN_EVENT_TYPES = [
   'run.runtime_started',
   'run.runtime_finished',
   'run.outcome_decided',
+  'run.finalizing_started',
+  'run.final_judgment_created',
   'run.recovered',
   'turn.started',
   'turn.finished',
   'model.request_started',
+  'model.retry_scheduled',
+  'model.retry_started',
   'model.response_delta',
   'model.response_finished',
+  'model.response_repaired',
+  'model.response_parse_failed',
   'supervisor.decision',
   'tool.call_started',
   'tool.call_progress',
@@ -80,6 +86,7 @@ export type RunSummaryJsonlLine = {
   status: string;
   summary?: string | null;
   finalReport?: string | null;
+  finalJudgment?: unknown;
   diffBytes: number;
   eventCount: number;
 };

@@ -93,6 +93,7 @@ export function buildRunJsonlSummary(run: RunRow, events: EventRow[]): RunSummar
     status: run.status,
     summary: run.summary,
     finalReport: run.finalReport,
+    finalJudgment: run.finalJudgment,
     diffBytes: Buffer.byteLength(run.diffPatch || '', 'utf8'),
     eventCount: events.length,
   };

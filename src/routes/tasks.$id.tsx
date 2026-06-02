@@ -113,6 +113,8 @@ function TaskConsolePage() {
         return 'text-rose-400 bg-rose-400/10 border border-rose-400/20';
       case 'running':
       case 'compiling_context':
+      case 'context_compiling':
+      case 'finalizing':
         return 'text-cyan-400 bg-cyan-400/10 border border-cyan-400/20 animate-pulse';
       case 'needs_review':
         return 'text-amber-400 bg-amber-400/10 border border-amber-400/20';
@@ -156,7 +158,9 @@ function TaskConsolePage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {task.status !== 'running' && task.status !== 'compiling_context' && (
+          {!['running', 'context_compiling', 'compiling_context', 'finalizing'].includes(
+            task.status
+          ) && (
             <Button
               onClick={() => startRunMutation.mutate()}
               disabled={startRunMutation.isPending}
@@ -425,10 +429,16 @@ function TaskConsolePage() {
                   </div>
                 )}
 
-                {activeRun?.status === 'running' && (
+                {['running', 'context_compiling', 'compiling_context', 'finalizing'].includes(
+                  activeRun?.status || ''
+                ) && (
                   <div className="flex items-center gap-2 text-cyan-400 animate-pulse mt-4">
                     <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                    <span>Agent is working inside the workspace sandbox...</span>
+                    <span>
+                      {activeRun?.status === 'finalizing'
+                        ? 'Final judgment is being prepared...'
+                        : 'Agent is working inside the workspace sandbox...'}
+                    </span>
                   </div>
                 )}
               </div>

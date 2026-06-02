@@ -34,6 +34,7 @@ describe('run-events jsonl serializer', () => {
       diffPatch: 'abc',
       summary: 'sum',
       finalReport: 'report',
+      finalJudgment: { version: 1, conclusion: 'judgment' },
     } as any;
     const events = [
       {
@@ -121,6 +122,7 @@ describe('run-events jsonl serializer', () => {
     expect(lines[2].seq).toBe(2);
     expect(lines[3].reviewResult.id).toBe('review-1');
     expect(lines[4].type).toBe('run_summary');
+    expect(lines[4].finalJudgment.conclusion).toBe('judgment');
     expect(lines[4].eventCount).toBe(3);
   });
 });

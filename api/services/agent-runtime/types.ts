@@ -31,6 +31,11 @@ export type AgentRuntimeEvent =
   | { type: 'turn_started'; message: string; payload?: AgentEventPayload }
   | { type: 'model_response_started'; message: string; payload?: AgentEventPayload }
   | { type: 'model_response_delta'; message: string; payload?: AgentEventPayload }
+  | { type: 'model_response_finished'; message: string; payload?: AgentEventPayload }
+  | { type: 'model_response_parse_failed'; message: string; payload?: AgentEventPayload }
+  | { type: 'model_response_repaired'; message: string; payload?: AgentEventPayload }
+  | { type: 'model_retry_scheduled'; message: string; payload?: AgentEventPayload }
+  | { type: 'model_retry_started'; message: string; payload?: AgentEventPayload }
   | { type: 'supervisor_decision'; message: string; payload?: AgentEventPayload }
   | { type: 'tool_call_started'; message: string; payload?: AgentEventPayload }
   | { type: 'tool_call_progress'; message: string; payload?: AgentEventPayload }

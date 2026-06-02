@@ -355,7 +355,6 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   }, [latestRun?.id, latestRunDetails?.events, bufferedEventsByRun]);
 
   useEffect(() => {
-    if (!activeSessionId) return;
     setRealtimeStatus('connecting');
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const configuredUrl = (import.meta as any).env?.VITE_NIGHTWORKERS_WS_URL as string | undefined;
@@ -371,6 +370,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     let reconnectAttempts = 0;
     const maxReconnectAttempts = 8;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let initialConnectTimer: ReturnType<typeof setTimeout> | null = null;
     let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
     let usingFallback = false;
 
@@ -382,7 +382,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
         reconnectAttempts = 0;
         setIsRealtimeConnected(true);
         setRealtimeStatus('connected');
-        ws?.send(JSON.stringify({ type: 'subscribe_task', taskId: activeSessionId }));
+        if (activeSessionId) {
+          ws?.send(JSON.stringify({ type: 'subscribe_task', taskId: activeSessionId }));
+        }
         if (pendingChatQueueRef.current.length > 0) {
           const queued = [...pendingChatQueueRef.current];
           pendingChatQueueRef.current = [];
@@ -464,6 +466,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
             chatSubmitStartedAtRef.current = null;
             pendingChatRunIdRef.current = null;
             setPendingChatRunId(null);
+            if (!activeSessionId) return;
             const errorMessage: TaskMessage = {
               id: `chat-error-${Date.now()}`,
               taskId: activeSessionId,
@@ -529,7 +532,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       });
     };
 
-    connect(primaryUrl);
+    initialConnectTimer = setTimeout(() => connect(primaryUrl), 0);
 
     fallbackTimer = setTimeout(() => {
       const notConnected = !ws || ws.readyState !== WebSocket.OPEN;
@@ -546,10 +549,13 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
     return () => {
       closedManually = true;
+      if (initialConnectTimer) clearTimeout(initialConnectTimer);
       if (fallbackTimer) clearTimeout(fallbackTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       try {
-        ws?.send(JSON.stringify({ type: 'unsubscribe_task', taskId: activeSessionId }));
+        if (activeSessionId) {
+          ws?.send(JSON.stringify({ type: 'unsubscribe_task', taskId: activeSessionId }));
+        }
       } catch {
         // noop
       }
@@ -731,9 +737,19 @@ function toMs(value: unknown): number {
 }
 
 function isActiveRunStatus(status: string | undefined): boolean {
-  return status === 'running' || status === 'context_compiling' || status === 'compiling_context';
+  return (
+    status === 'running' ||
+    status === 'context_compiling' ||
+    status === 'compiling_context' ||
+    status === 'finalizing'
+  );
 }
 
 function isActiveTaskStatus(status: string | undefined): boolean {
-  return status === 'running' || status === 'context_compiling' || status === 'compiling_context';
+  return (
+    status === 'running' ||
+    status === 'context_compiling' ||
+    status === 'compiling_context' ||
+    status === 'finalizing'
+  );
 }

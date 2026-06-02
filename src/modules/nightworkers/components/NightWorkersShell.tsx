@@ -153,15 +153,18 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         selectedPath={selectedPath}
         isLoading={workspace.isBrowserLoading}
         onClose={props.onCloseFolderBrowser}
-        onNavigate={(path) => void workspace.fetchDirectories(path)}
+        onNavigate={(path) => {
+          setSelectedPath(path);
+          void workspace.fetchDirectories(path);
+        }}
         onSelectPath={(path) => {
           setSelectedPath(path);
         }}
         onConfirmSelection={() => {
           const selected = selectedPath || workspace.currentBrowserPath;
           if (!selected) return;
-          const cleanPath = selected.replace(/\/$/, '');
-          const folderName = cleanPath.split('/').at(-1) || 'Project';
+          const cleanPath = selected.replace(/[\\/]+$/, '');
+          const folderName = cleanPath.split(/[\\/]/).filter(Boolean).at(-1) || 'Project';
           workspace.createProject({
             name: folderName,
             localPath: selected,

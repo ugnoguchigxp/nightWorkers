@@ -31,7 +31,7 @@ export const llmSettingsSchema = z.object({
   OPENAI_MODEL: z.string().default('').openapi({ example: 'gpt-4o' }),
   CODEX_ENABLED: z.boolean().default(false).openapi({ example: false }),
   CODEX_ACCESS_TOKEN: z.string().default('').openapi({ example: 'your-codex-token' }),
-  CODEX_MODEL: z.string().default('').openapi({ example: 'codex-sdk-agent' }),
+  CODEX_MODEL: z.string().default('').openapi({ example: 'gpt-5.3-codex' }),
 });
 
 const llmModelsSchema = z.object({
@@ -118,7 +118,7 @@ const providerModelOptions = {
   azure: ['gpt-5.5', 'gpt-5.4-mini', 'gpt-5-mini'],
   openai: ['gpt-5.5', 'gpt-5.4-mini', 'gpt-5-mini', 'gpt-4.1-mini'],
   bedrock: ['anthropic.claude-3-5-sonnet-20241022-v2:0'],
-  codex: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.3-codex-spark', 'gpt-5.2'],
+  codex: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.3-codex-spark'],
 } as const;
 
 const getBoolEnv = (key: string, fallback: boolean) => {
