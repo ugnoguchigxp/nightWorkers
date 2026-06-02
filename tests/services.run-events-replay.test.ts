@@ -157,4 +157,59 @@ describe('run-events replay evaluator', () => {
     expect(replay.terminal.status).toBe('needs_review');
     expect(replay.evidence.hasOutcomeDecided).toBe(false);
   });
+
+  it('warns when run summary status conflicts with outcome event and keeps the event outcome', () => {
+    const runId = '11111111-1111-4111-8111-111111111117';
+    const taskId = '22222222-2222-4222-8222-222222222228';
+    const jsonl = [
+      {
+        type: 'nightworkers_run',
+        version: 1,
+        runId,
+        taskId,
+        createdAt: '2026-06-02T00:00:00.000Z',
+        exportedAt: '2026-06-02T00:00:10.000Z',
+      },
+      {
+        type: 'run_event',
+        version: 1,
+        runId,
+        seq: 1,
+        event: {
+          version: 1,
+          runId,
+          taskId,
+          seq: 1,
+          timestamp: '2026-06-02T00:00:01.000Z',
+          type: 'run.outcome_decided',
+          severity: 'checkpoint',
+          actor: 'supervisor',
+          message: 'completed',
+          data: { status: 'completed', reason: 'supervisor_completed' },
+        },
+      },
+      {
+        type: 'run_summary',
+        version: 1,
+        runId,
+        status: 'failed',
+        summary: 'stale summary',
+        diffBytes: 0,
+        eventCount: 1,
+      },
+    ]
+      .map((line) => JSON.stringify(line))
+      .join('\n');
+
+    const replay = replayRunJsonl(parseRunJsonl(jsonl));
+
+    expect(replay.terminal.status).toBe('completed');
+    expect(replay.diagnostics).toEqual([
+      expect.objectContaining({
+        level: 'warning',
+        code: 'invalid_schema',
+        message: expect.stringContaining('outcome event takes precedence'),
+      }),
+    ]);
+  });
 });
