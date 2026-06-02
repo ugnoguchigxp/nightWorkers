@@ -81,6 +81,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const lastSubmitRef = useRef<{ taskId: string; prompt: string; at: number } | null>(null);
   const pendingChatQueueRef = useRef<Array<{ taskId: string; prompt: string }>>([]);
   const chatSubmitStartedAtRef = useRef<number | null>(null);
+  const pendingChatRunIdRef = useRef<string | null>(null);
   const lastSubmitRecoveryAtRef = useRef<number>(0);
   const [realtimeEvents, setRealtimeEvents] = useState<TaskEvent[]>([]);
   const [bufferedEventsByRun, setBufferedEventsByRun] = useState<Record<string, TaskEvent[]>>({});
@@ -281,6 +282,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     if (realtimeStatus !== 'disconnected') return;
     setIsChatSubmitting(false);
     chatSubmitStartedAtRef.current = null;
+    pendingChatRunIdRef.current = null;
     pendingChatQueueRef.current = [];
   }, [realtimeStatus]);
 
@@ -312,6 +314,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
       setIsChatSubmitting(false);
       chatSubmitStartedAtRef.current = null;
+      pendingChatRunIdRef.current = null;
       pendingChatQueueRef.current = [];
     }, 2000);
     return () => clearInterval(timer);
@@ -402,10 +405,10 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
             });
           }
           if (msg.type === 'task_message_created' && msg.payload?.message) {
+            const incoming = msg.payload.message;
             queryClient.setQueryData<TaskMessage[]>(
               ['taskMessages', activeSessionId],
               (prev = []) => {
-                const incoming = msg.payload?.message;
                 if (!incoming) return prev;
                 const next = [...prev];
                 if (incoming.role === 'user') {
@@ -421,14 +424,22 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
                 return next;
               }
             );
+            if (
+              incoming.role === 'assistant' &&
+              (!pendingChatRunIdRef.current || incoming.runId === pendingChatRunIdRef.current)
+            ) {
+              setIsChatSubmitting(false);
+              chatSubmitStartedAtRef.current = null;
+              pendingChatRunIdRef.current = null;
+            }
           }
           if (msg.type === 'chat_submit_enqueued') {
-            setIsChatSubmitting(false);
-            chatSubmitStartedAtRef.current = null;
+            pendingChatRunIdRef.current = msg.runId || null;
           }
           if (msg.type === 'error') {
             setIsChatSubmitting(false);
             chatSubmitStartedAtRef.current = null;
+            pendingChatRunIdRef.current = null;
             const errorMessage: TaskMessage = {
               id: `chat-error-${Date.now()}`,
               taskId: activeSessionId,
@@ -593,6 +604,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       ]);
       setIsChatSubmitting(true);
       chatSubmitStartedAtRef.current = Date.now();
+      pendingChatRunIdRef.current = null;
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         pendingChatQueueRef.current.push({ taskId: sessionId, prompt: content });

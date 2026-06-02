@@ -152,6 +152,61 @@ describe('Supervisor Control Loop Unit Tests', () => {
     expect(result.stoppedBy).toBe('missing_tool_call');
   });
 
+  it('does not accept stop before evidence is collected for document review tasks', async () => {
+    const mockRun = { id: 'run-review-no-evidence', taskId: 'task-review-no-evidence' };
+    const mockTask = {
+      id: 'task-review-no-evidence',
+      objective: 'Review a plan',
+      acceptanceCriteria: 'Findings include evidence',
+    };
+
+    vi.mocked(repo.getTaskRun).mockResolvedValue(mockRun as any);
+    vi.mocked(repo.getTask).mockResolvedValue(mockTask as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+
+    for (let i = 0; i < 3; i += 1) {
+      vi.mocked(llm.callSupervisorLLM)
+        .mockResolvedValueOnce({
+          phase: 'plan',
+          instruction: 'Review the requested file',
+          rationale: 'Need to inspect the document',
+          expectedEvidence: ['spec file contents'],
+          riskLevel: 'medium',
+          toolCall: null,
+        })
+        .mockResolvedValueOnce({
+          phase: 'stop',
+          instruction: 'Looks fine',
+          rationale: 'Review complete',
+          finalResponse: 'レビューしました。',
+          expectedEvidence: [],
+          riskLevel: 'low',
+          terminalState: 'completed',
+          toolCall: null,
+        });
+    }
+
+    const result = await runSupervisorLoop({
+      runId: 'run-review-no-evidence',
+      repoRoot: __dirname,
+      prompt:
+        'spec/jsonl-replay-import-regression-implementation-plan.md のドキュメントレビューをしてください',
+      timeoutSeconds: 60,
+    });
+
+    expect(result.terminalState).toBe('needs_human');
+    expect(result.stoppedBy).toBe('missing_tool_call');
+    expect(result.finalReport).toContain('証拠取得が必要なタスク');
+    expect(repo.createTaskEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payloadJson: expect.objectContaining({
+          reason: 'stop_without_evidence',
+          supervisorToolCalls: 0,
+        }),
+      })
+    );
+  });
+
   it('stops with policy when a command is blocked before execution', async () => {
     const mockRun = { id: 'run-policy', taskId: 'task-policy' };
     const mockTask = {

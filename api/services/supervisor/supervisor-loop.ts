@@ -38,6 +38,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
   const maxIterations = input.maxIterations ?? 30;
   const maxToolCalls = input.maxToolCalls ?? 80;
   const maxRepeatedToolPattern = input.maxRepeatedToolPattern ?? 3;
+  const evidenceRequired = requiresRepositoryEvidence(latestUserMessage || prompt || '');
   const budget = new RunBudgetController({
     maxIterations,
     maxToolCalls,
@@ -46,10 +47,22 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     timeoutSeconds: input.timeoutSeconds,
   });
   let iteration = 0;
+  let supervisorToolCalls = 0;
 
   // Maintain list of read files for read-before-edit policy validation
   const readFiles: string[] = [];
+  const toolObservations: string[] = [];
   const toolPolicyGate = new DefaultToolPolicyGate();
+
+  appendSupervisorTrace('supervisor_loop_started', {
+    runId,
+    repoRoot,
+    maxIterations,
+    maxToolCalls,
+    maxRepeatedToolPattern,
+    timeoutSeconds: input.timeoutSeconds,
+    evidenceRequired,
+  });
 
   while (true) {
     const iterationBudget = budget.onIterationStart();
@@ -91,7 +104,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     const userInput = (latestUserMessage || prompt || '').trim();
 
     // 3. Prompt building
-    const userPrompt = userInput;
+    const userPrompt = buildSupervisorUserPrompt(userInput, toolObservations);
 
     // 4. Invoke the Supervisor LLM
     let decision: Awaited<ReturnType<typeof callSupervisorLLM>>;
@@ -127,6 +140,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         const round2Input = JSON.stringify({
           latestUserMessage: userInput,
           round1Decision: round1,
+          observations: toolObservations.slice(-6),
         });
         const round2 = await callSupervisorLLM(buildRound2SystemPrompt(), round2Input, {
           round: 2,
@@ -211,6 +225,41 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
 
     // 6. Handle stop decision
     if (decision.phase === 'stop') {
+      if (evidenceRequired && supervisorToolCalls === 0) {
+        const missingToolBudget = budget.onMissingToolCall();
+        const detail = {
+          iteration,
+          reason: 'stop_without_evidence',
+          phase: decision.phase,
+          instruction: decision.instruction,
+          rationale: decision.rationale,
+          finalResponseLength: decision.finalResponse?.length ?? 0,
+          expectedEvidence: decision.expectedEvidence ?? [],
+          supervisorToolCalls,
+          ...(missingToolBudget.detail || {}),
+        };
+        appendSupervisorTrace('stop_without_evidence', { runId, ...detail });
+        await repo.createTaskEvent({
+          taskRunId: runId,
+          type: missingToolBudget.allowed ? 'warning' : 'error',
+          message: missingToolBudget.allowed
+            ? '[Supervisor Guard] stop was ignored because repository evidence has not been collected yet.'
+            : '[Budget Stop] supervisor repeatedly stopped before collecting repository evidence.',
+          actor: 'system',
+          eventType: missingToolBudget.allowed ? 'warning' : 'error',
+          payloadJson: detail,
+        });
+        if (!missingToolBudget.allowed) {
+          finalReportText =
+            '証拠取得が必要なタスクで、Supervisor が対象ファイルやログを確認する前に stop を繰り返したため停止しました。';
+          terminalState = 'needs_human';
+          summary = 'Stopped because supervisor stopped before collecting required evidence';
+          stoppedBy = 'missing_tool_call';
+          riskLevel = 'high';
+          break;
+        }
+        continue;
+      }
       finalReportText =
         decision.finalResponse?.trim() || decision.instruction?.trim() || decision.rationale;
       terminalState =
@@ -258,6 +307,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         });
         break;
       }
+      supervisorToolCalls += 1;
       logger.info({ runId, iteration, toolName: name, toolArgs }, 'Worker tool call start');
       // Log tool call start
       await repo.createTaskEvent({
@@ -413,6 +463,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       );
 
       const failureBudget = budget.onToolResult(toolResult.ok);
+      toolObservations.push(formatToolObservation(name, toolResult));
 
       // Log tool execution result in ledger
       await repo.createTaskEvent({
@@ -541,7 +592,30 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     });
     await repo.updateTaskStatus(run.taskId, terminalState);
   }
-  logger.info({ runId, finalReportLength: finalReportText.length }, 'Supervisor loop finished');
+  appendSupervisorTrace('supervisor_loop_finished', {
+    runId,
+    terminalState,
+    stoppedBy,
+    summary,
+    riskLevel,
+    iterations: iteration,
+    supervisorToolCalls,
+    evidenceRequired,
+    finalReportLength: finalReportText.length,
+  });
+  logger.info(
+    {
+      runId,
+      terminalState,
+      stoppedBy,
+      riskLevel,
+      iterations: iteration,
+      supervisorToolCalls,
+      evidenceRequired,
+      finalReportLength: finalReportText.length,
+    },
+    'Supervisor loop finished'
+  );
   return {
     finalReport: finalReportText,
     terminalState,
@@ -549,6 +623,80 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     stoppedBy,
     riskLevel,
   };
+}
+
+function requiresRepositoryEvidence(prompt: string): boolean {
+  const normalized = prompt.toLowerCase();
+  if (
+    /(^|\s|["'`])[\w./-]+\.(md|ts|tsx|js|jsx|json|jsonl|sql|yaml|yml|toml|lock)\b/.test(normalized)
+  ) {
+    return true;
+  }
+
+  return [
+    'review',
+    'レビュー',
+    'ドキュメント',
+    'implementation-plan',
+    '実装計画',
+    '原因',
+    '分析',
+    'ログ',
+    '調査',
+    '修正',
+    '実装',
+    'regression',
+  ].some((keyword) => normalized.includes(keyword));
+}
+
+function buildSupervisorUserPrompt(userInput: string, observations: string[]): string {
+  if (observations.length === 0) return userInput;
+  return [
+    userInput,
+    '',
+    '[Repository evidence collected so far]',
+    ...observations
+      .slice(-6)
+      .map((observation, index) => `Observation ${index + 1}:\n${observation}`),
+  ].join('\n');
+}
+
+function formatToolObservation(toolName: string, toolResult: any): string {
+  const status = toolResult.ok ? 'ok' : 'failed';
+  const header = `tool=${toolName} status=${status}`;
+  if (!toolResult.ok) {
+    return `${header}\nerror=${toolResult.error?.code || 'UNKNOWN'}: ${
+      toolResult.error?.message || 'Unknown tool error'
+    }`;
+  }
+
+  if (toolName === 'read_file') {
+    const payload = toolResult.payload || {};
+    const content = typeof payload.content === 'string' ? payload.content : '';
+    return [
+      header,
+      `lines=${payload.startLine ?? '?'}-${payload.endLine ?? '?'} total=${payload.totalLines ?? '?'}`,
+      content.slice(0, 6000),
+      content.length > 6000 ? '[truncated]' : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  if (toolName === 'search_files') {
+    const matches = Array.isArray(toolResult.payload?.matches) ? toolResult.payload.matches : [];
+    return `${header}\nmatches=${matches.length}\n${JSON.stringify(matches.slice(0, 10)).slice(0, 3000)}`;
+  }
+
+  if (toolName === 'git_status') {
+    return `${header}\n${toolResult.payload?.shortStatus || 'Clean worktree'}`;
+  }
+
+  if (toolName === 'git_diff') {
+    return `${header}\n${toolResult.payload?.diffStat || 'No changes'}`;
+  }
+
+  return `${header}\npayload=${JSON.stringify(toolResult.payload || {}).slice(0, 3000)}`;
 }
 
 function detectMessageType(

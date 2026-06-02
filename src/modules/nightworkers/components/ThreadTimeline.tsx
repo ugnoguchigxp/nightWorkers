@@ -1,4 +1,4 @@
-import { Check, Copy, RefreshCw } from 'lucide-react';
+import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
 import type { ReviewResult, Task, TaskEvent, TaskMessage, TaskRun } from '../types';
 import { formatFinishedTime } from '../utils/time';
@@ -84,12 +84,27 @@ export function ThreadTimeline({
       )}
       {isAgentWorking ? (
         <ThreadMessage messageRole="assistant">
-          <span className="inline-flex items-center gap-2 text-cyan-300">
-            <RefreshCw className="h-4 w-4 animate-spin" />
-            AIが返答を生成中です...
-          </span>
+          <ThinkingIndicator />
         </ThreadMessage>
       ) : null}
+    </div>
+  );
+}
+
+function ThinkingIndicator() {
+  return (
+    <div
+      className="inline-flex h-8 items-center gap-2"
+      aria-label="AIが返答を生成中です"
+      role="status"
+    >
+      {[0, 1, 2, 3].map((dot) => (
+        <span
+          key={dot}
+          className="nightworkers-thinking-dot h-3 w-3 rounded-full bg-cyan-400 shadow-[0_0_14px_rgba(34,211,238,0.55)]"
+          style={{ animationDelay: `${dot * 140}ms` }}
+        />
+      ))}
     </div>
   );
 }

@@ -11,3 +11,23 @@
 }
 
 /* Add any app-specific overrides here */
+
+@keyframes nightworkers-thinking-pop {
+  0%,
+  72%,
+  100% {
+    opacity: 0.55;
+    transform: translateY(0) scale(0.82);
+  }
+
+  28% {
+    opacity: 1;
+    transform: translateY(-7px) scale(1.18);
+  }
+}
+
+@layer utilities {
+  .nightworkers-thinking-dot {
+    animation: nightworkers-thinking-pop 1.12s ease-in-out infinite;
+  }
+}

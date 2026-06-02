@@ -35,6 +35,7 @@ export function buildRound2SystemPrompt(): string {
 - 外部の最新情報、公開仕様、ライブラリ/API ドキュメント、価格、Web 固有の事実が必要なら search_web を使い、候補 URL を決めてから fetch_content で読む。
 - search_web の検索結果 snippet だけを根拠にせず、採用する主張は fetch_content の本文で確認する。
 - 単純な1箇所編集は replace_content を優先し、複雑な構造変更のみ apply_patch を使う。
+- ドキュメントレビュー、コードレビュー、実装計画レビュー、ファイルパス指定、ログ調査、原因分析、修正依頼は証拠取得が必須です。read_file / search_files / git_status / git_diff / run_command などで対象を確認する前に phase="stop" を返してはいけません。
 - 出力は JSON のみ。
 - 実行を続ける場合は toolCall を必ず返す。会話だけで完了する場合のみ phase="stop" + finalResponse を返す。
 - 許可外のツール名（例: mcp__*, functions.*, exec_command）は絶対に使わない。

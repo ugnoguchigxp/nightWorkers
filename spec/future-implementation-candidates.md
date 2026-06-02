@@ -394,6 +394,130 @@ status: memo
 
 - quality と speed の制約が大きく、まず deterministic evaluator と replay を優先する。
 
+## Personal Devin Capability Landscape
+
+この節は、個人利用の Devin / Manus 的な体験を目指すうえで、後日どこかの候補へ吸収される可能性がある機能・概念・アルゴリズムを一覧化する。
+
+Tier A-C と重複するものはここでは再掲しない。ここに置くものは、まだ実装候補として独立させるには早いが、設計時に見落とすと後から境界を作り直す可能性があるものに限定する。
+
+### Core Autonomous Development Capabilities
+
+| 領域 | 候補 | 何に効くか | 関連する既存候補 |
+| --- | --- | --- | --- |
+| Goal decomposition | objective / acceptance criteria から task graph を生成する planner | 大きい依頼を複数 run に分ける | Multi-Run Campaign / Task Graph |
+| Plan quality gate | 実行前に plan の危険度、検証可能性、依存関係を採点する | 無謀な run 開始を減らす | Agent Outcome E2E Harness |
+| Progress state machine | planning / editing / verifying / blocked / reviewing などの状態を固定する | UI、ledger、retry 判断を安定させる | RunEvent Taxonomy |
+| Explicit uncertainty tracking | agent が未確認前提、仮説、保留事項を ledger に残す | 推測による誤実装を減らす | ReviewResult / Memory Feedback |
+| Stop condition library | missing tool call、repeated action、low confidence、dirty worktree などの停止条件を部品化する | runaway run と無意味な継続を減らす | Run Control Layer |
+| Recovery policy | failed / blocked / timed_out から再開、縮小、human escalation を選ぶ | long-running task の継続性を上げる | JSONL Replay / Import Regression |
+| Worktree ownership model | agent が触ってよい変更、user-owned dirty change、generated artifact を区別する | ユーザー変更の破壊を避ける | ToolPolicyGate / Sandbox Runtime |
+| Change intent ledger | 各 file change がどの要求・検証・follow-up に対応するかを残す | review と rollback の精度を上げる | ReviewResult |
+| Verification strategy selection | repo 状況から lint / typecheck / test / smoke / e2e の最小セットを選ぶ | 検証コストと信頼性のバランスを取る | Agent Outcome E2E Harness |
+| Minimal patch discipline | 大きい diff を避け、目的に対して最小変更かを検査する | personal agent の暴走感を減らす | LLM Reviewer / Rubric Replay |
+
+### Context And Memory Concepts
+
+| 領域 | 候補 | 何に効くか | 関連する既存候補 |
+| --- | --- | --- | --- |
+| Context budget allocator | system / task / repo memory / file evidence / recent events の token 配分を管理する | context が長くなるほど重要 | Memory Feedback Long-Run |
+| Evidence freshness model | compile context、file snapshot、diagnostic がいつの状態かを記録する | stale evidence による誤判断を減らす | RunEvent / JSONL Replay |
+| Source trust tiers | user instruction、repo file、memory、agent-generated summary、external web を優先度分けする | prompt injection と古い知識の混入を抑える | Repository-Specific Skill / Procedure Injection |
+| Memory applicability classifier | 過去手順が今回の repo/task に本当に適用できるか判定する | 間違った procedure 注入を減らす | Memory Feedback Long-Run |
+| Stale knowledge detector | procedure / rubric / repo notes が現行コードと矛盾しないか検出する | learned memory の腐敗を抑える | Repository-Specific Skill / Procedure Injection |
+| Run-to-memory distillation policy | 何を candidate にし、何を ephemeral event に留めるかを決める | memory 汚染を避ける | Memory Feedback Long-Run |
+| Retrieval audit view | context に入った memory が outcome に役立ったかを後で確認する | contextStill 連携の価値検証 | Memory Feedback Long-Run |
+| Cross-run pattern mining | 失敗、policy block、review finding の反復パターンを抽出する | agent 改善点を見つける | Run Failure Taxonomy Dashboard |
+
+### Planning And Search Algorithms
+
+| アルゴリズム候補 | 用途 | 注意点 |
+| --- | --- | --- |
+| Hierarchical task decomposition | 大きい依頼を epic / task / run / tool step に分割する | 分割結果を user review なしに実行しすぎない |
+| ReAct style loop with typed events | reason / act / observe を ledger に分けて残す | reasoning text を保存しすぎるとノイズと機密リスクが増える |
+| Plan-and-execute with re-planning | 実行途中の観測で plan を更新する | plan drift を ReviewResult / RunEvent で追跡する必要がある |
+| Tree-of-thought / branch evaluation | 複数実装案から低リスク案を選ぶ | token cost が高く、deterministic scoring が必要 |
+| Monte Carlo style retry selection | 同じ失敗後の再試行方針を複数候補から選ぶ | provider cost と runaway 防止が課題 |
+| Reflexion / self-critique | run 後に失敗原因と次回ルールを生成する | 自動 memory 登録は禁止し、人間承認を挟む |
+| Case-based reasoning | 類似過去 run の成功手順を今回に適用する | applicability と freshness の検査が必須 |
+| Constraint solving for policy | allowed paths / commands / approvals から実行可能 action を選ぶ | policy を迂回する代替案を選ばせない |
+| Dynamic verification planning | diff と repo metadata から検証コマンドを選ぶ | 検証不足を hidden success にしない |
+| Failure clustering | failed run を原因別にクラスタリングする | outcome taxonomy が安定してからでよい |
+
+### Coding-Agent Tooling Concepts
+
+| 領域 | 候補 | 何に効くか | 関連する既存候補 |
+| --- | --- | --- | --- |
+| Semantic code map | file tree ではなく symbol / module / dependency map を作る | 探索効率を上げる | LSP / Static Analysis Integration |
+| Impact analysis | 変更が触れる API、tests、routes、schemas、migrations を推定する | review と verification selection に効く | LSP / Static Analysis Integration |
+| Patch provenance | patch hunk ごとに intent、source evidence、prompt を紐付ける | human review と rollback に効く | ReviewResult |
+| Rollback plan artifact | run 開始前後の diff / touched files / revert option を保持する | agent 変更を安心して試せる | Support Bundle Import |
+| Test gap detector | diff に対して不足する test / fixture / e2e を提案する | completed 判定の品質を上げる | LLM Reviewer / Rubric Replay |
+| Dependency change classifier | dependency / lockfile 変更を risk class に分ける | supply-chain risk を見える化する | Supply-chain Hardening |
+| Migration safety checker | DB migration、schema change、destructive operation を検出する | high-risk change の review を強める | Repository-Local Rubric Definition |
+| Generated artifact hygiene | build output、temp file、debug log が diff に混ざらないよう検査する | dirty diff を減らす | ReviewResult |
+
+### Human Control And Trust Concepts
+
+| 領域 | 候補 | 何に効くか | 関連する既存候補 |
+| --- | --- | --- | --- |
+| Approval budget | command、network、file write、external post に approval cost を付ける | personal use で過剰確認と危険操作のバランスを取る | ToolPolicyGate |
+| Risk preview before run | run 開始前に想定副作用、必要権限、予想検証時間を表示する | ユーザーが任せる範囲を選びやすくする | AgentRuntime / ToolPolicyGate |
+| Human interrupt semantics | stop、pause、abort、cancel、rollback、continue を区別する | 長時間runの制御性を上げる | AgentRuntime |
+| Review queue | needs_review / needs_human / blocked を横断して処理する | scheduled run や campaign の運用に必要 | Scheduled / Long-Running Agent Runs |
+| Explainable final report | final report が evidence refs を持つ | LLM最終回答の自己申告問題を減らす | ReviewResult |
+| User preference model | 「小さく直す」「自動commitしない」などの個人方針を safe data として持つ | personal agent 化に効く | Repository-Specific Skill / Procedure Injection |
+| Notification policy | いつ通知し、いつ黙って進めるかを決める | long-running operation の体験を整える | Scheduled / Long-Running Agent Runs |
+
+### Runtime, Reliability, And Operations Concepts
+
+| 領域 | 候補 | 何に効くか | 関連する既存候補 |
+| --- | --- | --- | --- |
+| Run lease / heartbeat | runner が生きているか、どの process が所有しているかを記録する | stuck run の復旧 | Remote / Headless Runtime Adapter |
+| Durable cancellation | process kill、tool abort、provider abort、ledger close を一貫させる | stop が信用できるようにする | AgentRuntime |
+| Idempotent tool execution | retry してよい tool としてはいけない tool を区別する | network / external action の安全性 | ToolPolicyGate |
+| Backpressure management | event streaming、large output、tool logs の詰まりを制御する | long run の安定性 | RunEvent Taxonomy |
+| Artifact retention policy | logs、diff、screenshots、JSONL をいつ消すか決める | local-first storage の肥大化を防ぐ | Support Bundle Import |
+| Secret redaction pipeline | command output、tool args、JSONL、support bundle を横断 redaction する | ledger/export の安全性 | RunEvent / JSONL Export |
+| Health and doctor view | runner、DB、provider、contextStill、sandbox の状態を一覧化する | 運用時の切り分け | Run Failure Taxonomy Dashboard |
+| Provider failover policy | primary provider failure 時の retry / fallback / stop を定義する | run の安定性 | LLM Provider Operations |
+| Model capability registry | tool calling、structured output、context window、cost、reasoning 対応を管理する | provider/model選択の事故を減らす | LLM Provider Operations |
+
+### Security And Supply-Chain Concepts
+
+| 領域 | 候補 | 何に効くか | 関連する既存候補 |
+| --- | --- | --- | --- |
+| Supply-chain hardening | exact pin、ignore scripts、lockfile diff approval、lifecycle allowlist | agent が依存を触る時の安全性 | Repository-Local Rubric Definition |
+| Package install policy | npm / pip / cargo / brew などの install 操作を approval 対象にする | tool が環境を汚すのを防ぐ | ToolPolicyGate |
+| Network egress policy | default deny、domain allowlist、download classification | browser/external tool導入時に必要 | Sandbox Runtime E2E |
+| Credential access boundary | env、auth files、cloud tokens、browser session を capability で制限する | secret leakage 防止 | Capability-Based External MCP Tool Model |
+| Prompt injection classifier | repo file / web page / issue text の instruction injection を検出する | external context 利用時に必要 | Browser / Computer-Use Outcome Harness |
+| Untrusted content quarantine | downloaded file、web content、issue body を trusted code と分ける | agent が悪意ある指示に従うのを防ぐ | Browser / Computer-Use Outcome Harness |
+| Policy regression suite | dangerous command、secret output、path escape を fixture 化する | security boundary の劣化検出 | Golden Task Suite |
+
+### Product Workflow Concepts
+
+| 領域 | 候補 | 何に効くか | 関連する既存候補 |
+| --- | --- | --- | --- |
+| Issue / task intake | GitHub issue、local note、manual prompt を統一 task にする | personal backlog の入口 | Scheduled / Long-Running Agent Runs |
+| Branch / worktree orchestration | task ごとの branch / worktree / base ref を管理する | 複数runの衝突回避 | Multi-Run Campaign / Task Graph |
+| Commit / PR draft mode | user approval 後に commit / PR draft を作る | Devinらしい完了導線 | PR Review Comment Export |
+| Dependency maintenance lane | renovate 的な検出から修正・検証・review まで回す | 継続保守 | Scheduled / Long-Running Agent Runs |
+| Test repair lane | failing test を検知し、原因分析と最小修正を提案する | personal CI assistant | Scheduled / Long-Running Agent Runs |
+| Docs sync lane | code change に伴う docs / README / changelog 更新を検出する | 完了品質向上 | LLM Reviewer / Rubric Replay |
+| Release readiness lane | version、build、test、publish dry-run、changelog を検査する | 個人OSS運用に効く | Repository-Local Rubric Definition |
+
+### Candidate Promotion Notes
+
+この節の候補を実装計画へ昇格する時は、次を先に確認する。
+
+1. 既存 Tier A-C の候補に吸収できないか。
+2. 優先度 1-8 のどの contract を前提にするか。
+3. run ledger / JSONL / ReviewResult / memory feedback のどこに evidence を残すか。
+4. deterministic test または replay fixture で検証できるか。
+5. 任意コード実行、credential access、network access を要求するか。
+
+上記を満たせない候補は、実装ではなく探索メモに留める。
+
 ## 後日再考時の進め方
 
 1. 優先度 1-8 の完了状況を確認する。

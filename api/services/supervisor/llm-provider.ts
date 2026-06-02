@@ -74,6 +74,76 @@ type CallSupervisorOptions = {
   requireToolCall?: boolean;
 };
 
+const fixtureCodingRound2Calls = new Map<string, number>();
+
+function getFixtureLatestUserMessage(userPrompt: string): string {
+  try {
+    const parsed = JSON.parse(userPrompt) as { latestUserMessage?: unknown };
+    if (typeof parsed.latestUserMessage === 'string') return parsed.latestUserMessage;
+  } catch {
+    // Round 1 receives the original prompt, not the JSON Round 2 envelope.
+  }
+  return userPrompt;
+}
+
+function buildFixtureCodingDecision(userPrompt: string, round?: 1 | 2 | 3) {
+  const latestUserMessage = getFixtureLatestUserMessage(userPrompt);
+  const key = latestUserMessage.slice(0, 500);
+
+  if (round === 1) {
+    return {
+      phase: 'plan',
+      instruction: 'E2E_SIMPLE_CODING_FIXTURE: update the tracked greeting file.',
+      rationale: 'The fixture plans a deterministic coding task.',
+      finalResponse: '',
+      expectedEvidence: ['src/greeting.txt contains fixture output', 'apply_patch tool result'],
+      riskLevel: 'low',
+      toolCall: null,
+    };
+  }
+
+  if (round === 2) {
+    const callCount = fixtureCodingRound2Calls.get(key) ?? 0;
+    fixtureCodingRound2Calls.set(key, callCount + 1);
+    if (callCount === 0) {
+      return {
+        phase: 'act',
+        instruction: 'Apply the deterministic fixture patch.',
+        rationale: 'A simple coding task should produce a concrete file change.',
+        finalResponse: '',
+        expectedEvidence: ['src/greeting.txt contains fixture output'],
+        riskLevel: 'low',
+        toolCall: {
+          name: 'apply_patch',
+          arguments: {
+            patchContent: [
+              'diff --git a/src/greeting.txt b/src/greeting.txt',
+              '--- a/src/greeting.txt',
+              '+++ b/src/greeting.txt',
+              '@@ -1 +1,2 @@',
+              '-TODO',
+              '+Hello from NightWorkers fixture',
+              '+E2E_SIMPLE_CODING_FIXTURE',
+              '',
+            ].join('\n'),
+          },
+        },
+      };
+    }
+  }
+
+  return {
+    phase: 'stop',
+    instruction: 'Fixture coding task complete.',
+    rationale: 'The deterministic patch was already requested.',
+    finalResponse: 'Fixture coding task completed with an updated greeting file.',
+    expectedEvidence: ['src/greeting.txt contains fixture output'],
+    terminalState: 'completed',
+    riskLevel: 'low',
+    toolCall: null,
+  };
+}
+
 function getDecisionSchema(round?: 1 | 2 | 3) {
   if (round === 2) return round2DecisionSchema;
   return supervisorDecisionBaseSchema;
@@ -229,6 +299,49 @@ function normalizeDecisionForSchema(input: unknown): unknown {
   }
 
   return obj;
+}
+
+function getLatestUserMessageFromRoundInput(userPrompt: string): string {
+  try {
+    const parsed = JSON.parse(userPrompt) as { latestUserMessage?: unknown };
+    if (typeof parsed.latestUserMessage === 'string') return parsed.latestUserMessage;
+  } catch {
+    // Round 1 receives a plain user prompt.
+  }
+  return userPrompt;
+}
+
+function hasRoundObservations(userPrompt: string): boolean {
+  try {
+    const parsed = JSON.parse(userPrompt) as { observations?: unknown };
+    return Array.isArray(parsed.observations) && parsed.observations.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function inferEvidenceToolCall(userPrompt: string): SupervisorDecision['toolCall'] {
+  if (hasRoundObservations(userPrompt)) return null;
+
+  const latestUserMessage = getLatestUserMessageFromRoundInput(userPrompt);
+  const fileMatch = latestUserMessage.match(
+    /(?:^|\s|["'`])([\w./-]+\.(?:md|ts|tsx|js|jsx|json|jsonl|sql|yaml|yml|toml|lock))\b/
+  );
+  if (fileMatch?.[1]) {
+    return {
+      name: 'read_file',
+      arguments: { filePath: fileMatch[1] },
+    };
+  }
+
+  if (/レビュー|review|調査|原因|分析|実装計画|ドキュメント/i.test(latestUserMessage)) {
+    return {
+      name: 'git_status',
+      arguments: {},
+    };
+  }
+
+  return null;
 }
 
 function buildResponseJsonSchema(round?: 1 | 2 | 3) {
@@ -533,7 +646,7 @@ export async function callSupervisorLLM(
     const runWithModel = async (model?: string) => {
       const thread = codex.startThread({
         model,
-        sandboxMode: 'workspace-write',
+        sandboxMode: 'read-only',
         approvalPolicy: 'never',
         networkAccessEnabled: false,
         webSearchMode: 'disabled',
@@ -548,6 +661,58 @@ export async function callSupervisorLLM(
     };
 
     rawContent = await runWithModel(configuredModel);
+  } else if (provider === 'fixture') {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Fixture provider is not available in production.');
+    }
+    providerDebug = {
+      provider: 'fixture',
+      round: options.round ?? null,
+      mode: userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
+        ? 'simple_coding'
+        : 'stop_without_evidence',
+    };
+    rawContent = JSON.stringify(
+      userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
+        ? buildFixtureCodingDecision(userPrompt, options.round)
+        : options.round === 1
+          ? {
+              phase: 'plan',
+              instruction: 'Review the requested specification document.',
+              rationale: 'The fixture intentionally plans without a tool call.',
+              finalResponse: '',
+              expectedEvidence: ['spec document contents'],
+              riskLevel: 'medium',
+              toolCall: null,
+            }
+          : options.round === 2
+            ? {
+                phase: 'stop',
+                instruction: 'Fixture review complete.',
+                rationale: hasRoundObservations(userPrompt)
+                  ? 'The fixture stops after repository evidence has been supplied.'
+                  : 'The fixture intentionally stops before collecting evidence.',
+                finalResponse: hasRoundObservations(userPrompt)
+                  ? 'Fixture review completed after reading repository evidence.'
+                  : 'Fixture stopped without collecting repository evidence.',
+                expectedEvidence: hasRoundObservations(userPrompt)
+                  ? ['spec document contents']
+                  : [],
+                terminalState: 'completed',
+                riskLevel: 'low',
+                toolCall: null,
+              }
+            : {
+                phase: 'stop',
+                instruction: 'Fixture smoke complete.',
+                rationale: 'Fixture provider returned a smoke response.',
+                finalResponse: 'Fixture smoke complete.',
+                expectedEvidence: [],
+                terminalState: 'completed',
+                riskLevel: 'low',
+                toolCall: null,
+              }
+    );
   } else {
     throw new Error(`Unsupported LLM provider: ${provider}`);
   }
@@ -639,6 +804,19 @@ export async function callSupervisorLLM(
             : 'Supervisor LLM returned empty stop decision'
         );
 
+        const inferredToolCall = options.requireToolCall ? inferEvidenceToolCall(userPrompt) : null;
+        if (inferredToolCall) {
+          return {
+            phase: 'act',
+            instruction: 'Collect required repository evidence before responding.',
+            rationale: 'Execution round requires a tool call and repository evidence is available.',
+            finalResponse: '',
+            expectedEvidence: parsed.data.expectedEvidence ?? [],
+            riskLevel: parsed.data.riskLevel || 'medium',
+            toolCall: inferredToolCall,
+          };
+        }
+
         if (options.tolerateSchemaFailure) {
           return {
             phase: 'plan',
@@ -674,7 +852,34 @@ export async function callSupervisorLLM(
         'Supervisor LLM response parsed'
       );
 
-      if (options.requireToolCall && parsed.data.phase !== 'stop' && !parsed.data.toolCall) {
+      if (
+        options.requireToolCall &&
+        !parsed.data.toolCall &&
+        (parsed.data.phase !== 'stop' || !hasRoundObservations(userPrompt))
+      ) {
+        const inferredToolCall = inferEvidenceToolCall(userPrompt);
+        if (inferredToolCall) {
+          logger.info(
+            {
+              provider,
+              round: options.round,
+              phase: parsed.data.phase,
+              inferredToolCallName: inferredToolCall.name,
+            },
+            'Supervisor inferred required evidence toolCall'
+          );
+          return {
+            ...parsed.data,
+            phase: 'act',
+            finalResponse: '',
+            instruction:
+              parsed.data.instruction || 'Collect required repository evidence before responding.',
+            rationale:
+              parsed.data.rationale ||
+              'Execution round requires an explicit tool call before final response.',
+            toolCall: inferredToolCall,
+          };
+        }
         appendSupervisorTrace('missing_tool_call', {
           round: options.round,
           phase: parsed.data.phase,
