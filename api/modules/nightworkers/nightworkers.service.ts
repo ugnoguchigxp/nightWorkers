@@ -2,6 +2,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { AppError, NotFoundError } from '../../lib/errors';
+import { createLedgerSink } from '../../services/agent-runtime/ledger-sink';
+import { resolveAgentRuntime } from '../../services/agent-runtime/registry';
 import { compileContext, evaluateContext } from '../../services/context-still';
 import { decideRunOutcome } from '../../services/run-control/run-outcome-gate';
 import { nativeLocalRunner } from '../../services/runner/NativeLocalRunner';
@@ -140,12 +142,14 @@ export async function startTaskRun(taskId: string) {
   const messages = await repo.listTaskMessages(taskId);
   const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
   let compiledPromptText = lastUserMessage?.content || task.description || task.objective || '';
+  let contextSource: 'context-still' | 'fallback' = 'fallback';
   if (!compiledPromptText.trim()) {
     throw new AppError(400, 'EMPTY_PROMPT', 'No user message found to start a run');
   }
   try {
     const compileResult = await compileContext(repoInfo.localPath, task.title, compiledPromptText);
     compiledPromptText = compileResult.compiledPromptText;
+    contextSource = 'context-still';
   } catch (err) {
     console.error('Failed to compile context, falling back to latest user message', err);
     // Keep the already selected latest user message as fallback.
@@ -158,7 +162,7 @@ export async function startTaskRun(taskId: string) {
     taskId,
     repositoryId: task.repositoryId,
     status: 'running',
-    workerKind: 'native-local-worker',
+    workerKind: 'native-local',
     timeoutSeconds: task.timeoutSeconds,
     contextSnapshot: { compiledPrompt: compiledPromptText },
     startedAt: new Date(),
@@ -173,65 +177,68 @@ export async function startTaskRun(taskId: string) {
   });
 
   // Track logs in memory and create database event entries
-  let accumulativeLog = '';
-  nativeLocalRunner.onLog(run.id, async (logChunk) => {
-    accumulativeLog += `${logChunk}\n`;
-    await repo.createTaskEvent({
-      taskRunId: run.id,
-      type: 'info',
-      message: logChunk.trim().slice(0, 500),
-      actor: 'worker',
-      eventType: 'info',
-    });
-  });
+  const runtime = resolveAgentRuntime('native-local');
+  const sink = createLedgerSink(run.id);
 
   // Asynchronously execute runner so that startTaskRun returns immediately
   (async () => {
     try {
       await repo.updateTaskStatus(taskId, 'running');
 
-      await nativeLocalRunner.start(run.id, repoInfo?.localPath || '', compiledPromptText, {
-        timeoutSeconds: task.timeoutSeconds,
-        latestUserMessage: lastUserMessage?.content || compiledPromptText,
-        safetyPolicy: repoInfo.safetyPolicy || undefined,
-      });
-
-      // Poll until process is no longer running
-      let runnerStatus = await nativeLocalRunner.getStatus(run.id);
-      while (runnerStatus.status === 'running') {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        runnerStatus = await nativeLocalRunner.getStatus(run.id);
-      }
-
-      // Collect diff output from the repository workspace
-      const diff = await nativeLocalRunner.getGitDiff(repoInfo.localPath);
+      const runtimeResult = await runtime.start(
+        {
+          runId: run.id,
+          taskId,
+          repositoryId: task.repositoryId,
+          repoRoot: repoInfo.localPath,
+          compiledPrompt: compiledPromptText,
+          latestUserMessage: lastUserMessage?.content || compiledPromptText,
+          timeoutSeconds: task.timeoutSeconds ?? 3600,
+          safetyPolicy: repoInfo.safetyPolicy || undefined,
+          contextSnapshot: {
+            compiledPrompt: compiledPromptText,
+            source: contextSource,
+          },
+        },
+        sink
+      );
 
       // Update the run record
       await repo.updateTaskRun(run.id, {
-        status: runnerStatus.status,
+        status: runtimeResult.terminalState,
         endedAt: new Date(),
         finishedAt: new Date(),
-        logContent: accumulativeLog,
-        diffPatch: diff,
+        logContent: runtimeResult.logContent,
+        diffPatch: runtimeResult.diffPatch,
+        testResults: runtimeResult.testResults,
+        finalReport: runtimeResult.finalReport,
+        summary: runtimeResult.summary,
       });
 
+      const outcome =
+        runtimeResult.terminalState === 'cancelled'
+          ? {
+              status: 'cancelled' as const,
+              reason: 'human_review' as const,
+              summary: runtimeResult.summary || 'Run cancelled by runtime.',
+            }
+          : decideRunOutcome({
+              supervisor: {
+                finalReport: runtimeResult.finalReport || '',
+                terminalState: runtimeResult.terminalState,
+                summary:
+                  runtimeResult.summary ||
+                  `Runtime finished with status=${runtimeResult.terminalState}`,
+                stoppedBy:
+                  runtimeResult.stoppedBy === 'policy'
+                    ? 'tool_failure'
+                    : runtimeResult.stoppedBy === 'cancelled'
+                      ? 'llm_error'
+                      : runtimeResult.stoppedBy,
+                riskLevel: runtimeResult.riskLevel,
+              },
+            });
       const completedRun = await repo.getTaskRun(run.id);
-      const outcome = decideRunOutcome({
-        supervisor: {
-          finalReport: completedRun?.finalReport || '',
-          terminalState: (runnerStatus.status as any) || 'failed',
-          summary: completedRun?.summary || `Runner finished with status=${runnerStatus.status}`,
-          stoppedBy:
-            runnerStatus.status === 'timed_out' || runnerStatus.status === 'blocked'
-              ? 'budget'
-              : runnerStatus.status === 'needs_human'
-                ? 'missing_tool_call'
-                : runnerStatus.status === 'failed'
-                  ? 'llm_error'
-                  : 'decision',
-          riskLevel: 'medium',
-        },
-      });
       await repo.updateTaskRun(run.id, {
         status: outcome.status,
         summary: completedRun?.summary || outcome.summary,
@@ -241,7 +248,7 @@ export async function startTaskRun(taskId: string) {
       await repo.createTaskEvent({
         taskRunId: run.id,
         type: 'checkpoint',
-        message: `Execution finished with runner status: ${runnerStatus.status}. Task status: ${outcome.status}`,
+        message: `Execution finished with runtime status: ${runtimeResult.terminalState}. Task status: ${outcome.status}`,
         actor: 'system',
         eventType: 'state_change',
       });
@@ -257,7 +264,7 @@ export async function startTaskRun(taskId: string) {
       // Feedback evaluation back to contextStill
       await evaluateContext(
         run.id,
-        `Task run execution completed with status: ${outcome.status}. Diff size: ${diff.length} bytes.`,
+        `Task run execution completed with status: ${outcome.status}. Diff size: ${(runtimeResult.diffPatch || '').length} bytes.`,
         outcome.status === 'completed'
       );
       const completedRunAfterOutcome = await repo.getTaskRun(run.id);
@@ -286,7 +293,7 @@ export async function startTaskRun(taskId: string) {
         status: 'failed',
         endedAt: new Date(),
         finishedAt: new Date(),
-        logContent: `${accumulativeLog}\n[System Error] ${err.message}`,
+        logContent: `[System Error] ${err.message}`,
       });
 
       await evaluateContext(run.id, `Execution crashed: ${err.message}`, false);

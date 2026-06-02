@@ -1,9 +1,9 @@
-import * as repo from '../../modules/nightworkers/nightworkers.repository';
-import { runSupervisorLoop } from '../supervisor/supervisor-loop';
-import { gitDiffTool, gitStatusTool } from '../worker-tools';
+import { NativeAgentRuntime } from '../agent-runtime/NativeAgentRuntime';
+import { gitDiffTool } from '../worker-tools';
 import type { IRunner, RunnerOptions, RunnerStatus } from './types';
 
 export class NativeLocalRunner implements IRunner {
+  private runtime = new NativeAgentRuntime();
   private logCallbacks = new Map<string, Array<(log: string) => void>>();
   private statuses = new Map<string, RunnerStatus>();
 
@@ -14,81 +14,47 @@ export class NativeLocalRunner implements IRunner {
     options?: RunnerOptions
   ): Promise<void> {
     this.statuses.set(runId, { status: 'running' });
-    this.emitLog(
-      runId,
-      `[System] Native Local Worker started execution in workspace: ${repositoryPath}`
-    );
-
-    // Asynchronously run the execution loop so start returns immediately
     (async () => {
       try {
-        // Fetch run context
-        const run = await repo.getTaskRun(runId);
-        if (!run) {
-          throw new Error(`Run context not found: ${runId}`);
-        }
-
-        // 1. Initial git status check
-        this.emitLog(runId, '[Tool Call] Executing git_status...');
-        const gitStatusRes = await gitStatusTool({ repoRoot: repositoryPath });
-
-        await repo.createTaskEvent({
-          taskRunId: runId,
-          type: 'info',
-          message: `Git short status: ${gitStatusRes.payload.shortStatus || 'Clean worktree'}`,
-          actor: 'worker',
-          eventType: 'tool_result',
-          payloadJson: gitStatusRes,
-        });
-
-        // 2. Call the main supervisor control loop
-        this.emitLog(runId, '[System] Handing control over to Supervisor Loop...');
-        const supervisorResult = await runSupervisorLoop({
-          runId,
-          repoRoot: repositoryPath,
-          prompt,
-          timeoutSeconds: options?.timeoutSeconds ?? 3600,
-          latestUserMessage: options?.latestUserMessage,
-          safetyPolicy: options?.safetyPolicy,
-        });
-
-        // 3. Final git diff check
-        this.emitLog(runId, '[Tool Call] Executing git_diff...');
-        const gitDiffRes = await gitDiffTool({ repoRoot: repositoryPath });
-
-        await repo.createTaskEvent({
-          taskRunId: runId,
-          type: 'checkpoint',
-          message: `Execution complete. Diff stat:\n${gitDiffRes.payload.diffStat || 'No changes'}`,
-          actor: 'supervisor',
-          eventType: 'final_report',
-          payloadJson: {
-            finalReport: supervisorResult.finalReport,
-            terminalState: supervisorResult.terminalState,
-            diffStat: gitDiffRes.payload.diffStat,
+        const result = await this.runtime.start(
+          {
+            runId,
+            taskId: '',
+            repositoryId: '',
+            repoRoot: repositoryPath,
+            compiledPrompt: prompt,
+            latestUserMessage: options?.latestUserMessage || prompt,
+            timeoutSeconds: options?.timeoutSeconds ?? 3600,
+            safetyPolicy: options?.safetyPolicy,
+            contextSnapshot: {
+              compiledPrompt: prompt,
+              source: 'fallback',
+            },
           },
-        });
-
+          {
+            emit: async (event) => {
+              this.emitLog(runId, event.message);
+            },
+          }
+        );
         const isSuccessLike =
-          supervisorResult.terminalState === 'completed' ||
-          supervisorResult.terminalState === 'needs_review';
+          result.terminalState === 'completed' || result.terminalState === 'needs_review';
         this.statuses.set(runId, {
-          status: supervisorResult.terminalState,
+          status: result.terminalState,
           exitCode: isSuccessLike ? 0 : 1,
         });
+      } catch (err: any) {
+        this.statuses.set(runId, { status: 'failed' });
         this.emitLog(
           runId,
-          `[System] Native Local Worker finished with terminalState=${supervisorResult.terminalState}.`
+          `[System Error] Native Local Worker failed: ${err?.message ?? 'Unknown error'}`
         );
-      } catch (err: any) {
-        console.error(`Error in NativeLocalRunner execution loop for run ${runId}:`, err);
-        this.statuses.set(runId, { status: 'failed' });
-        this.emitLog(runId, `[System Error] Native Local Worker failed: ${err.message}`);
       }
     })();
   }
 
   async stop(runId: string): Promise<void> {
+    await this.runtime.stop(runId);
     this.statuses.set(runId, { status: 'cancelled' });
     this.emitLog(runId, '[System] Native Local Worker execution stopped.');
   }

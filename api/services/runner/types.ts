@@ -1,14 +1,10 @@
+import type { AgentSafetyPolicy } from '../agent-runtime/types';
+
 export interface RunnerOptions {
   timeoutSeconds?: number;
   env?: Record<string, string>;
   latestUserMessage?: string;
-  safetyPolicy?: {
-    allowedPaths?: string[];
-    deniedPaths?: string[];
-    blockedCommands?: string[];
-    maxCommandSeconds?: number;
-    requireReadBeforeEdit?: boolean;
-  };
+  safetyPolicy?: AgentSafetyPolicy;
 }
 
 export interface RunnerStatus {
