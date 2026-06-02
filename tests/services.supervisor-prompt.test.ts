@@ -38,4 +38,13 @@ describe('Supervisor prompt structure', () => {
       expect(countOccurrences(prompt, toolName)).toBe(1);
     }
   });
+
+  it('forces evidence review to use tools before returning a UI review result', () => {
+    const prompt = buildRound2SystemPrompt('evidence_review');
+
+    expect(prompt).toContain('observations が空の場合');
+    expect(prompt).toContain('toolCall を必ず返す');
+    expect(prompt).toContain('phase="stop" の finalResponse は UI に表示されるレビュー結果本文');
+    expect(prompt).toContain('latestUserMessage は元の依頼');
+  });
 });

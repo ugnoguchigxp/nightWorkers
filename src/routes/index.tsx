@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { NightWorkersShell } from '../modules/nightworkers/components/NightWorkersShell';
+import { WorkspaceLayoutProvider } from '../modules/nightworkers/contexts/WorkspaceLayoutContext';
 import { useNightWorkersWorkspace } from '../modules/nightworkers/hooks/useNightWorkersWorkspace';
 
 export const Route = createFileRoute('/')({
@@ -13,14 +14,16 @@ function NightWorkersHome() {
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
 
   return (
-    <NightWorkersShell
-      workspace={workspace}
-      showSettings={showSettings}
-      onOpenSettings={() => setShowSettings(true)}
-      onCloseSettings={() => setShowSettings(false)}
-      showFolderBrowser={showFolderBrowser}
-      onOpenFolderBrowser={() => setShowFolderBrowser(true)}
-      onCloseFolderBrowser={() => setShowFolderBrowser(false)}
-    />
+    <WorkspaceLayoutProvider>
+      <NightWorkersShell
+        workspace={workspace}
+        showSettings={showSettings}
+        onOpenSettings={() => setShowSettings(true)}
+        onCloseSettings={() => setShowSettings(false)}
+        showFolderBrowser={showFolderBrowser}
+        onOpenFolderBrowser={() => setShowFolderBrowser(true)}
+        onCloseFolderBrowser={() => setShowFolderBrowser(false)}
+      />
+    </WorkspaceLayoutProvider>
   );
 }

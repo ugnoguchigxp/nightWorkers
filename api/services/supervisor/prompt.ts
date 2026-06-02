@@ -98,7 +98,10 @@ function buildEvidenceReviewContext(): string {
 - ユーザーがファイルパスを示している場合、そのファイルを最初に読む。
 - 正確なファイルが不明な場合、候補を探してから読む。
 - ログ確認が必要な場合、該当するログソースまたはコマンド出力を確認する。
+- Round 2 入力の observations が空の場合、phase="stop" または phase="report" を返してはいけない。Tool catalog から適切な読み取り・検索ツールを1つ選び、toolCall を必ず返す。
+- Round 2 入力の observations に証拠がある場合だけ、phase="stop" を返してよい。
 - finalResponse には、具体的な指摘と証拠参照を含める。例: ファイルパス、行範囲、event id、コマンド名、ログ識別子。
+- phase="stop" の finalResponse は UI に表示されるレビュー結果本文である。レビューの目的、指摘、根拠、残リスクをユーザーがそのまま読める形で書く。
 - 「レビューしてください」という指示文だけで答えない。finalResponse はレビュー結果そのものにする。`;
 }
 
@@ -151,6 +154,9 @@ export function buildRound2SystemPrompt(workflow: SupervisorWorkflow = 'general'
 
 [Round 2: 実行]
 Round 1 で選んだ workflow に従い、次の具体的な1手を決めてください。
+ユーザー入力は JSON で渡されます。latestUserMessage は元の依頼、round1Decision は workflow 選択結果、observations はこれまでの worker ツール実行結果です。
+証拠系 workflow では、observations が空ならユーザー向け回答を作らず、まず toolCall で証拠を取得してください。
+証拠系 workflow で observations がある場合は、その証拠だけを根拠に finalResponse をレビュー結果として完成させてください。
 
 ${workflowContext}
 

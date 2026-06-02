@@ -19,7 +19,7 @@ type ProjectSidebarProps = {
 
 export function ProjectSidebar(props: ProjectSidebarProps) {
   return (
-    <div className="flex min-h-screen w-[320px] shrink-0 flex-col border-r border-slate-700/70 bg-[#0f172a]">
+    <div className="flex min-h-screen w-full flex-col border-r border-slate-700/70 bg-[#0f172a]">
       <div className="flex items-center justify-between px-4 pb-2 pt-4">
         <span className="text-xs font-bold uppercase tracking-wider text-slate-300/80">
           NightWorkers
