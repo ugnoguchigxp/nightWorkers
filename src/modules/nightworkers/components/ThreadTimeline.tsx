@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import type {
-  ReviewAction,
   ReviewResult,
   Task,
   TaskEvent,
@@ -23,7 +22,6 @@ import type {
 } from '../types';
 import { getChangedFiles } from '../utils/diff';
 import { formatFinishedTime } from '../utils/time';
-import { getRunEventType } from '../workbenchSelectors';
 import { ThreadMessage } from './ThreadMessage';
 
 type ThreadTimelineProps = {
@@ -36,7 +34,6 @@ type ThreadTimelineProps = {
   isAgentWorking: boolean;
   showDebugEvents: boolean;
   onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
-  onReviewRun: (runId: string, action: ReviewAction, note?: string) => void;
 };
 
 export function ThreadTimeline({
@@ -49,7 +46,6 @@ export function ThreadTimeline({
   isAgentWorking,
   showDebugEvents,
   onOpenArtifact,
-  onReviewRun,
 }: ThreadTimelineProps) {
   const chatMessages = taskMessages.filter(
     (message) => message.role === 'user' || message.role === 'assistant'
@@ -74,9 +70,7 @@ export function ThreadTimeline({
 
   return (
     <div className="space-y-5 p-6">
-      <RunReviewActions latestRun={latestRun} onReviewRun={onReviewRun} />
       <TodoProgress todos={latestRunTodos} />
-      <RunLedgerCard events={latestRunEvents} />
       <ContextPackCard latestRun={latestRun} />
       <DiffSummaryCard session={session} latestRun={latestRun} onOpenArtifact={onOpenArtifact} />
       <FinalReportCard latestRun={latestRun} />
@@ -122,33 +116,6 @@ export function ThreadTimeline({
         </ThreadMessage>
       ) : null}
     </div>
-  );
-}
-
-function RunLedgerCard({ events }: { events: TaskEvent[] }) {
-  if (events.length === 0) return null;
-  const visibleEvents = events.slice(-12);
-  return (
-    <details open className="border-slate-700/80 border-y bg-slate-950/20 py-3">
-      <summary className="cursor-pointer list-none px-1 text-xs font-medium text-slate-100">
-        Run ledger
-      </summary>
-      <ol className="mt-2 space-y-1">
-        {visibleEvents.map((event) => (
-          <li key={event.id} className="grid grid-cols-[auto_1fr] gap-2 px-1 text-[11px]">
-            <span className="font-mono text-slate-500">#{event.seq || '-'}</span>
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="shrink-0 rounded border border-slate-700 px-1 py-0.5 font-mono text-[10px] text-cyan-200">
-                  {getRunEventType(event)}
-                </span>
-                <span className="min-w-0 truncate text-slate-300">{event.message}</span>
-              </div>
-            </div>
-          </li>
-        ))}
-      </ol>
-    </details>
   );
 }
 
@@ -343,62 +310,6 @@ function todoStatusStyle(status: TodoStatus): {
         container: 'border-slate-700/70 bg-slate-900/20',
       };
   }
-}
-
-function RunReviewActions({
-  latestRun,
-  onReviewRun,
-}: {
-  latestRun?: TaskRun;
-  onReviewRun: (runId: string, action: ReviewAction, note?: string) => void;
-}) {
-  if (!latestRun) return null;
-  const reviewableStatuses = new Set([
-    'needs_review',
-    'needs_human',
-    'blocked',
-    'failed',
-    'timed_out',
-  ]);
-  if (!reviewableStatuses.has(latestRun.status)) return null;
-
-  const actions: Array<{ action: ReviewAction; label: string; note: string; tone: string }> = [
-    {
-      action: 'complete',
-      label: '完了',
-      note: 'Approved from NightWorkers review UI.',
-      tone: 'border-emerald-500/60 bg-emerald-950/30 text-emerald-100 hover:bg-emerald-900/40',
-    },
-    {
-      action: 'cancel',
-      label: 'キャンセル',
-      note: 'Cancelled from NightWorkers review UI.',
-      tone: 'border-rose-500/60 bg-rose-950/30 text-rose-100 hover:bg-rose-900/40',
-    },
-  ];
-
-  return (
-    <div className="rounded border border-slate-700/80 bg-slate-900/35 px-3 py-2">
-      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-200">
-        <span className="rounded border border-slate-600/80 px-1.5 py-0.5 text-[10px] uppercase text-slate-300">
-          review
-        </span>
-        <span>run status: {latestRun.status}</span>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {actions.map((item) => (
-          <button
-            key={item.action}
-            type="button"
-            className={`rounded border px-3 py-1 text-xs ${item.tone}`}
-            onClick={() => onReviewRun(latestRun.id, item.action, item.note)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 function StreamingResponsePreview({ preview }: { preview: StreamingPreview }) {

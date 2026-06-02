@@ -57,7 +57,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
           ? workspace.llmSettings?.AWS_BEDROCK_MODEL
           : workspace.llmSettings?.CODEX_MODEL;
 
-  const submitPrompt = async (prompt: string, intent: WorkbenchChatIntent = 'discuss') => {
+  const submitPrompt = async (prompt: string, intent: WorkbenchChatIntent = 'draft') => {
     if (!workspace.activeProject && workspace.projects[0]) {
       workspace.setActiveSessionId(
         workspace.sessions.find((s) => s.repositoryId === workspace.projects[0].id)?.id || null
@@ -216,13 +216,6 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                 }
                 setShowArtifactPane(true);
                 setSelectedArtifact(artifact);
-              }}
-              onReviewRun={(runId, action, note) => {
-                void workspace.reviewRun({
-                  runId,
-                  action,
-                  note,
-                });
               }}
             />
           )}

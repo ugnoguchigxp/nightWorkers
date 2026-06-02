@@ -504,33 +504,6 @@ export const reviewResultSchema = z
   })
   .openapi('ReviewResult');
 
-export const reviewRunRequestSchema = z
-  .object({
-    action: reviewActionSchema,
-    note: z.string().optional(),
-    evidenceRefs: z.array(reviewEvidenceRefSchema).optional(),
-    findings: z.array(reviewFindingSchema).optional(),
-    humanCallouts: z.array(reviewFindingSchema).optional(),
-    agentFollowUps: z.array(z.string()).optional(),
-    suggestedNextTasks: z.array(z.string()).optional(),
-  })
-  .openapi('ReviewRunRequest');
-
-export const reviewRunResponseSchema = z
-  .object({
-    ok: z.boolean(),
-    status: z.string(),
-    outcome: z
-      .object({
-        status: reviewOutcomeStatusSchema,
-        reason: reviewOutcomeReasonSchema,
-        summary: z.string(),
-      })
-      .openapi('ReviewOutcome'),
-    reviewResult: reviewResultSchema,
-  })
-  .openapi('ReviewRunResponse');
-
 export const rubricEvidenceSelectorSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('run_event_type'), type: z.string().min(1) }),
   z.object({

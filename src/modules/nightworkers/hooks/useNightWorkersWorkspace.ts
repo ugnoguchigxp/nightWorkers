@@ -11,9 +11,7 @@ import type {
   ProjectFileContent,
   ProjectFileEntry,
   Repository,
-  ReviewOutcome,
   ReviewResult,
-  ReviewRunInput,
   RunDetails,
   Task,
   TaskEvent,
@@ -85,12 +83,6 @@ export type NightWorkersWorkspaceState = {
     queueIds: string[];
     archiveIds: string[];
   }) => Promise<void>;
-  reviewRun: (input: ReviewRunInput) => Promise<{
-    ok: boolean;
-    status: string;
-    outcome: ReviewOutcome;
-    reviewResult: ReviewResult;
-  }>;
   sendChatMessage: (sessionId: string, prompt: string) => Promise<void>;
   sendWorkbenchMessage: (
     sessionId: string,
@@ -973,22 +965,6 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       updateSessionStatusMutation.mutateAsync({ sessionId, status }),
     reorderQueueSessions: (sessionIds) => reorderQueueSessionsMutation.mutateAsync(sessionIds),
     moveWorkbenchSession: (input) => moveWorkbenchSessionMutation.mutateAsync(input),
-    reviewRun: async (input) => {
-      const res = await fetch(`/api/runs/${input.runId}/review`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-      });
-      if (!res.ok) throw new Error('Failed to submit review');
-      queryClient.invalidateQueries({ queryKey: ['sessions'] });
-      queryClient.invalidateQueries({ queryKey: ['sessionRuns', activeSessionId] });
-      return (await res.json()) as {
-        ok: boolean;
-        status: string;
-        outcome: ReviewOutcome;
-        reviewResult: ReviewResult;
-      };
-    },
     sendChatMessage: async (sessionId, prompt) => {
       const content = prompt.trim();
       if (!content) return;

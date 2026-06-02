@@ -38,18 +38,19 @@ describe('NightWorkers workbench routes', () => {
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
   });
 
-  it('stores discuss messages without creating a run', async () => {
+  it('stores draft conversation messages without creating a run', async () => {
     const { task } = await createWorkbenchTask();
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
-      body: JSON.stringify({ prompt: 'まず方針を相談したい', intent: 'discuss' }),
+      body: JSON.stringify({ prompt: 'まず方針を相談したい', intent: 'draft' }),
     });
 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.run).toBeNull();
+    expect(body.task.status).toBe('draft');
     expect(body.messages.some((message: any) => message.role === 'user')).toBe(true);
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
   });
@@ -157,7 +158,7 @@ async function createWorkbenchTask(input: { title?: string; status?: string } = 
     repositoryId: project.id,
     title: input.title || 'Workbench task',
     objective: 'Implement chat-first workbench',
-    acceptanceCriteria: 'Discuss, draft, queue, and run are separate actions',
+    acceptanceCriteria: 'Draft conversation, queue, and run are separate task-queue steps',
     status: input.status || 'draft',
   });
   return { project, task };

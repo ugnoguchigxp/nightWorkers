@@ -216,7 +216,7 @@ export async function appendTaskMessage(id: string, prompt: string) {
 }
 
 export type WorkbenchChatIntent =
-  | 'discuss'
+  | 'draft'
   | 'draft_spec'
   | 'create_task'
   | 'queue'
@@ -229,7 +229,7 @@ export async function appendWorkbenchMessage(
   id: string,
   input: { prompt: string; intent?: WorkbenchChatIntent }
 ) {
-  const intent = input.intent || 'discuss';
+  const intent = input.intent || 'draft';
   const task = await repo.getTask(id);
   if (!task) throw new NotFoundError('Task not found');
   const prompt = input.prompt.trim();
@@ -316,7 +316,7 @@ function assertRunnableWorkbenchTask(task: Awaited<ReturnType<typeof repo.getTas
     throw new AppError(
       409,
       'TASK_NOT_READY_TO_RUN',
-      'Workbench runs require a ready or queued task. Discuss or draft first, then queue the task.'
+      'Workbench runs require a ready or queued task. Draft the task first, then queue or run it.'
     );
   }
   assertTaskDraftComplete(task);

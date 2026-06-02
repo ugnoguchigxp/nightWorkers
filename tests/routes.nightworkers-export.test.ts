@@ -17,7 +17,6 @@ const serviceMocks = vi.hoisted(() => ({
   startTaskRun: vi.fn(),
   getTaskRun: vi.fn(),
   getTaskRunsForTask: vi.fn(),
-  reviewTaskRun: vi.fn(),
   browseLocalFolders: vi.fn(),
   exportTaskRunJsonl: vi.fn(),
 }));

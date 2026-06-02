@@ -3,7 +3,6 @@ import { useState } from 'react';
 import type {
   ModelOption,
   Repository,
-  ReviewAction,
   Task,
   TaskEvent,
   TaskMessage,
@@ -46,7 +45,6 @@ type ThreadWorkspaceProps = {
   isProjectFilesOpen: boolean;
   onOpenProjectFiles: () => void;
   onOpenDiffArtifact: (artifact: WorkbenchArtifactRef) => void;
-  onReviewRun: (runId: string, action: ReviewAction, note?: string) => void;
 };
 
 export function ThreadWorkspace(props: ThreadWorkspaceProps) {
@@ -196,7 +194,6 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
             isAgentWorking={props.isAgentThinking}
             showDebugEvents={showDebugEvents}
             onOpenArtifact={props.onOpenArtifact}
-            onReviewRun={props.onReviewRun}
           />
         ) : (
           <div className="h-[40vh]" />

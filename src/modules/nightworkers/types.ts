@@ -193,7 +193,7 @@ export type TaskMessage = {
 };
 
 export type WorkbenchChatIntent =
-  | 'discuss'
+  | 'draft'
   | 'draft_spec'
   | 'create_task'
   | 'queue'
@@ -285,17 +285,6 @@ export type CreateSessionInput = {
   description: string;
   objective: string;
   acceptanceCriteria: string;
-};
-
-export type ReviewRunInput = {
-  runId: string;
-  action: ReviewAction;
-  note?: string;
-  evidenceRefs?: ReviewEvidenceRef[];
-  findings?: ReviewFinding[];
-  humanCallouts?: ReviewFinding[];
-  agentFollowUps?: string[];
-  suggestedNextTasks?: string[];
 };
 
 export type ReviewAction = 'complete' | 'cancel';

@@ -201,7 +201,7 @@ Chat は補助欄ではなく Workbench の主要入力である。初期実装�
 
 | Intent | 入力例 | 保存/動作 |
 | --- | --- | --- |
-| discuss | 改善点を洗い出したい | `task_messages` に user/assistant を保存。Run は作らない |
+| draft | 改善点を洗い出したい | Draft 状態の `task_messages` に user/assistant を保存。Run は作らない |
 | draft_spec | このうち A と C を仕様書に落として | assistant markdown artifact を生成。Task status は draft/ready |
 | create_task | タスク化して Queue に入れて | title/objective/acceptanceCriteria/priority を更新し `queued` へ |
 | run_task | 実行して | `task_runs` を作成し context compile -> runtime へ |
@@ -322,7 +322,7 @@ Session item の情報:
 
 - Header は title、Project Folder、phase、progress、review need を表示。
 - Timeline は `task_messages` と important Run events を混ぜて表示する。
-- Composer は draft discussion と run command を分ける。初期は button または mode selector で `Discuss` / `Queue` / `Run` を明示する。
+- Composer は Draft 内の会話と run command を分ける。初期は button または mode selector で `Draft` / `Queue` / `Run` を明示する。
 - `isAgentWorking` は pending chat submit だけでなく active run status も見る。
 - Thinking indicator は latest run event と pending assistant message の両方から判断する。
 
@@ -443,12 +443,12 @@ contextStill 接続:
 
 目的:
 
-- Chat を「submit = 即 run」だけでなく、discussion / draft / queue / run の入口にする。
+- Chat を「submit = 即 run」だけでなく、Draft 内会話 / Queue / Run の入口にする。
 
 実装:
 
 - Composer に mode selector または explicit action buttons を追加する。
-- `Discuss` は message 保存のみ。
+- Draft 内会話は message 保存のみで、Task status は Draft のまま維持する。
 - `Draft Spec` は assistant markdown artifact / message を作る。
 - `Queue` は title/objective/acceptanceCriteria を検証して `queued` にする。
 - `Run` は queued/ready task だけ実行する。
@@ -464,7 +464,7 @@ contextStill 接続:
 検証:
 
 - API route test: message only / queue / run の分岐。
-- E2E: 新規 Project Folder Session -> discuss -> queue -> run。Git repository ではない temporary folder fixture でも通す。
+- E2E: 新規 Project Folder Session -> draft conversation -> queue -> run。Git repository ではない temporary folder fixture でも通す。
 
 ### Phase 4: Session restore と Chat timeline
 
@@ -623,8 +623,8 @@ Phase 2 と Phase 3 は UI 変更が大きいため、別 PR にする。Phase 5
 ## 完了条件
 
 - `spec/chat_first_agent_workbench_concept.md` の MVP 12 項目のうち、GitHub PR 連携以外の初期導線が NightWorkers shell 上で操作できる。
-- Project Folder-targeted New Session から、discussion -> draft -> queue -> run -> review -> follow-up draft までの一連の流れが E2E で通る。
-- Git repository ではない folder を Project として登録し、少なくとも discuss / draft / queue / run ledger / final report が成立する。
+- Project Folder-targeted New Session から、draft conversation -> queue -> run -> review -> follow-up draft までの一連の流れが E2E で通る。
+- Git repository ではない folder を Project として登録し、少なくとも draft conversation / queue / run ledger / final report が成立する。
 - Session item から latest Run / Todo / Review / Artifact / Context を復元できる。
 - Processing / Queue / Archive が Task 単位で表示され、Todo が Queue に混ざらない。
 - Progress は evidence basis を持ち、LLM 自己申告値だけに依存しない。

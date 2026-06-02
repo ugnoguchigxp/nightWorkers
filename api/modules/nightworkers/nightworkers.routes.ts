@@ -8,8 +8,6 @@ import {
   memoryFeedbackEvaluationSchema,
   repositorySchema,
   reviewerEvaluationSchema,
-  reviewRunRequestSchema,
-  reviewRunResponseSchema,
   taskMessageSchema,
   taskRunDetailSchema,
   taskRunSchema,
@@ -355,7 +353,7 @@ const appendWorkbenchMessageRoute = createRoute({
             prompt: z.string().min(1),
             intent: z
               .enum([
-                'discuss',
+                'draft',
                 'draft_spec',
                 'create_task',
                 'queue',
@@ -364,7 +362,7 @@ const appendWorkbenchMessageRoute = createRoute({
                 'review_followup',
                 'learning_capture',
               ])
-              .default('discuss'),
+              .default('draft'),
           }),
         },
       },
@@ -518,36 +516,6 @@ const listTaskRunsRoute = createRoute({
     },
     404: {
       description: 'Task not found',
-    },
-  },
-});
-
-const reviewTaskRunRoute = createRoute({
-  method: 'post',
-  path: '/runs/:id/review',
-  request: {
-    params: z.object({
-      id: z.string().uuid().openapi({ example: 'run-uuid' }),
-    }),
-    body: {
-      content: {
-        'application/json': {
-          schema: reviewRunRequestSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      content: {
-        'application/json': {
-          schema: reviewRunResponseSchema,
-        },
-      },
-      description: 'Review saved successfully',
-    },
-    404: {
-      description: 'Run not found',
     },
   },
 });
@@ -1073,19 +1041,6 @@ const router = createOpenApiRouter()
     const id = c.req.param('id');
     const runs = await service.getTaskRunsForTask(id);
     return c.json(runs, 200);
-  })
-  .openapi(reviewTaskRunRoute, async (c) => {
-    const id = c.req.param('id');
-    const request = c.req.valid('json');
-    try {
-      const result = await service.reviewTaskRun(id, request);
-      return c.json(result, 200);
-    } catch (err: any) {
-      if (err instanceof AppError) {
-        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
-      }
-      return c.json({ error: String(err?.message || err) }, 500);
-    }
   })
   .openapi(listReviewRubricsRoute, async (c) => {
     return c.json(service.getReviewRubrics(), 200);

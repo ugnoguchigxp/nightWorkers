@@ -18,7 +18,7 @@ const baseTask: Task = {
   id: '11111111-1111-4111-8111-111111111111',
   repositoryId: '22222222-2222-4222-8222-222222222222',
   title: 'Implement workbench',
-  description: 'Discuss workbench',
+  description: 'Draft workbench conversation',
   objective: 'Ship chat first workbench',
   acceptanceCriteria: 'Selectors are deterministic',
   status: 'draft',

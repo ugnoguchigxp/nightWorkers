@@ -36,7 +36,7 @@ export function Composer({
 }: ComposerProps) {
   const [prompt, setPrompt] = useState('');
   const [planMode, setPlanMode] = useState(false);
-  const intent: WorkbenchChatIntent = planMode ? 'draft_spec' : 'discuss';
+  const intent: WorkbenchChatIntent = planMode ? 'draft_spec' : 'draft';
   const canSubmit = !disabled && !!prompt.trim();
   const diffSummary = useMemo(() => {
     if (!latestDiffPatch.trim()) return null;
