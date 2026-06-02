@@ -129,6 +129,7 @@ export type ParsedRunJsonl = {
 export type ReplayResult = {
   sourceRunId: string;
   eventCount: number;
+  events: RunEventBase[];
   terminal: {
     status?: string;
     reason?: string;

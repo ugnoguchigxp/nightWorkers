@@ -77,6 +77,7 @@ export function replayRunJsonl(parsed: ParsedRunJsonl): ReplayResult {
   return {
     sourceRunId: parsed.header?.runId ?? parsed.summary?.runId ?? '',
     eventCount: events.length,
+    events: events.map((line) => line.event),
     terminal,
     evidence: {
       hasRuntimeStarted: events.some((line) => line.event.type === 'run.runtime_started'),

@@ -1,3 +1,6 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { APIRequestContext, Page } from '@playwright/test';
 
 export type TestUser = {
@@ -84,4 +87,11 @@ export async function getJson<T>(request: APIRequestContext, path: string): Prom
     throw new Error(`GET ${path} failed: ${res.status()} ${await res.text()}`);
   }
   return (await res.json()) as T;
+}
+
+const e2eDir = path.dirname(fileURLToPath(import.meta.url));
+const testsDir = path.resolve(e2eDir, '..');
+
+export async function readTestFixture(...segments: string[]) {
+  return readFile(path.join(testsDir, 'fixtures', ...segments), 'utf8');
 }
