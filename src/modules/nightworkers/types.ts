@@ -70,7 +70,23 @@ export type TaskEvent = {
   actor?: string;
   eventType?: string | null;
   message: string;
-  payloadJson?: any;
+  payloadJson?: {
+    runEvent?: {
+      version: 1;
+      id?: string;
+      runId: string;
+      taskId?: string;
+      seq?: number;
+      timestamp: string;
+      type: string;
+      severity: 'debug' | 'info' | 'warning' | 'error' | 'checkpoint';
+      actor: 'system' | 'runtime' | 'supervisor' | 'worker' | 'tool' | 'verifier' | 'human';
+      message: string;
+      data?: Record<string, unknown>;
+    };
+    legacyPayload?: unknown;
+    [key: string]: unknown;
+  };
   timestamp?: unknown;
   createdAt?: unknown;
 };

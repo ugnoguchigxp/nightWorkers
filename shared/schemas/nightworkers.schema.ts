@@ -1,5 +1,90 @@
 import { z } from '@hono/zod-openapi';
 
+const runEventTypeSchema = z.enum([
+  'run.created',
+  'run.context_compiled',
+  'run.runtime_started',
+  'run.runtime_finished',
+  'run.outcome_decided',
+  'run.recovered',
+  'turn.started',
+  'turn.finished',
+  'model.request_started',
+  'model.response_delta',
+  'model.response_finished',
+  'supervisor.decision',
+  'tool.call_started',
+  'tool.call_progress',
+  'tool.call_finished',
+  'tool.policy_blocked',
+  'verification.started',
+  'verification.finished',
+  'git.status_collected',
+  'git.diff_collected',
+  'safety.budget_reached',
+  'safety.policy_violation',
+  'safety.repeated_failure',
+  'human.review_submitted',
+  'system.warning',
+  'system.error',
+]);
+
+const runEventSeveritySchema = z.enum(['debug', 'info', 'warning', 'error', 'checkpoint']);
+const runEventActorSchema = z.enum([
+  'system',
+  'runtime',
+  'supervisor',
+  'worker',
+  'tool',
+  'verifier',
+  'human',
+]);
+
+export const runEventSchema = z.object({
+  version: z.literal(1),
+  id: z.string().uuid().optional(),
+  runId: z.string().uuid(),
+  taskId: z.string().uuid().optional(),
+  seq: z.number().int().optional(),
+  timestamp: z.string(),
+  type: runEventTypeSchema,
+  severity: runEventSeveritySchema,
+  actor: runEventActorSchema,
+  message: z.string(),
+  data: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const runEventJsonlLineSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('nightworkers_run'),
+    version: z.literal(1),
+    runId: z.string().uuid(),
+    taskId: z.string().uuid(),
+    repositoryId: z.string().uuid().nullable().optional(),
+    createdAt: z.string(),
+    cwd: z.string().nullable().optional(),
+    workerKind: z.string().nullable().optional(),
+    exportedAt: z.string(),
+  }),
+  z.object({
+    type: z.literal('run_event'),
+    version: z.literal(1),
+    runId: z.string().uuid(),
+    seq: z.number().int(),
+    event: runEventSchema,
+  }),
+  z.object({
+    type: z.literal('run_summary'),
+    version: z.literal(1),
+    runId: z.string().uuid(),
+    status: z.string(),
+    summary: z.string().nullable().optional(),
+    finalReport: z.string().nullable().optional(),
+    diffBytes: z.number().int(),
+    eventCount: z.number().int(),
+  }),
+]);
+
 export const safetyPolicySchema = z
   .object({
     allowedPaths: z.array(z.string()).optional(),

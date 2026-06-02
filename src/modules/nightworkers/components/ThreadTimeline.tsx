@@ -130,6 +130,7 @@ function AgentPatchSummaryCard({ event }: { event: TaskEvent }) {
 function AgentDebugEventCard({ event }: { event: TaskEvent }) {
   const [copiedEventId, setCopiedEventId] = useState<string | null>(null);
   const payload = event.payloadJson as any;
+  const runEventType = payload?.runEvent?.type;
   const toolName = payload?.toolName || payload?.toolCall?.name;
   const patchContent = getApplyPatchContent(payload);
   const round = payload?.round;
@@ -140,7 +141,7 @@ function AgentDebugEventCard({ event }: { event: TaskEvent }) {
     <div className="rounded border border-slate-700/80 bg-slate-900/30 p-3">
       <div className="mb-1 flex flex-wrap items-center gap-2 text-[10px]">
         <span className="rounded border border-slate-600/80 px-1.5 py-0.5 text-slate-200">
-          {event.eventType || event.type || 'event'}
+          {runEventType || event.eventType || event.type || 'event'}
         </span>
         {event.actor ? (
           <span className="rounded border border-slate-600/80 px-1.5 py-0.5 text-slate-300">

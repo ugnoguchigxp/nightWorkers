@@ -9,6 +9,8 @@ import {
   tasks,
 } from '../../db/schema';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
+import { normalizeRunEventToLegacy } from '../../services/run-events/normalizer';
+import type { RunEventBase } from '../../services/run-events/types';
 
 // --- Repositories ---
 export async function createRepository(data: {
@@ -253,6 +255,41 @@ export async function createTaskEvent(data: {
     });
   }
   return event;
+}
+
+export async function createRunEvent(event: RunEventBase, options?: { legacyPayload?: unknown }) {
+  const normalized = normalizeRunEventToLegacy({ event, legacyPayload: options?.legacyPayload });
+  const created = await createTaskEvent({
+    taskRunId: event.runId,
+    actor: normalized.actor,
+    type: normalized.type,
+    eventType: normalized.eventType,
+    message: normalized.message,
+    payloadJson: normalized.payloadJson,
+    timestamp: normalized.timestamp,
+  });
+  if (!created) return created;
+
+  const payload = (created.payloadJson || {}) as any;
+  const currentRunEvent = payload.runEvent;
+  if (!currentRunEvent) return created;
+
+  const patchedPayload = {
+    ...payload,
+    runEvent: {
+      ...currentRunEvent,
+      id: created.id,
+      seq: created.seq,
+      runId: currentRunEvent.runId || created.taskRunId,
+    },
+  };
+
+  const [updated] = await db
+    .update(taskEvents)
+    .set({ payloadJson: patchedPayload })
+    .where(eq(taskEvents.id, created.id))
+    .returning();
+  return updated ?? { ...created, payloadJson: patchedPayload };
 }
 
 export async function listTaskEventsForRun(taskRunId: string) {

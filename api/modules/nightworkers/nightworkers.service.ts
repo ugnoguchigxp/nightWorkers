@@ -6,6 +6,7 @@ import { createLedgerSink } from '../../services/agent-runtime/ledger-sink';
 import { resolveAgentRuntime } from '../../services/agent-runtime/registry';
 import { compileContext, evaluateContext } from '../../services/context-still';
 import { decideRunOutcome } from '../../services/run-control/run-outcome-gate';
+import { serializeRunToJsonl } from '../../services/run-events/jsonl-export';
 import { nativeLocalRunner } from '../../services/runner/NativeLocalRunner';
 import * as repo from './nightworkers.repository';
 
@@ -168,12 +169,16 @@ export async function startTaskRun(taskId: string) {
     startedAt: new Date(),
   });
 
-  await repo.createTaskEvent({
-    taskRunId: run.id,
-    type: 'info',
-    message: 'Task run started. Compiling context completed.',
+  await repo.createRunEvent({
+    version: 1,
+    runId: run.id,
+    taskId,
+    timestamp: new Date().toISOString(),
+    type: 'run.created',
+    severity: 'info',
     actor: 'system',
-    eventType: 'state_change',
+    message: 'Task run started. Compiling context completed.',
+    data: { contextSource },
   });
 
   // Track logs in memory and create database event entries
@@ -245,21 +250,31 @@ export async function startTaskRun(taskId: string) {
       });
       await repo.updateTaskStatus(taskId, outcome.status);
 
-      await repo.createTaskEvent({
-        taskRunId: run.id,
-        type: 'checkpoint',
+      await repo.createRunEvent({
+        version: 1,
+        runId: run.id,
+        taskId,
+        timestamp: new Date().toISOString(),
+        type: 'run.runtime_finished',
+        severity: 'checkpoint',
+        actor: 'runtime',
         message: `Execution finished with runtime status: ${runtimeResult.terminalState}. Task status: ${outcome.status}`,
-        actor: 'system',
-        eventType: 'state_change',
+        data: { terminalState: runtimeResult.terminalState, status: outcome.status },
       });
-      await repo.createTaskEvent({
-        taskRunId: run.id,
-        type: 'info',
-        message: `Run outcome decided: ${outcome.status} (${outcome.reason})`,
-        actor: 'system',
-        eventType: 'run_outcome_decided',
-        payloadJson: outcome,
-      });
+      await repo.createRunEvent(
+        {
+          version: 1,
+          runId: run.id,
+          taskId,
+          timestamp: new Date().toISOString(),
+          type: 'run.outcome_decided',
+          severity: 'info',
+          actor: 'system',
+          message: `Run outcome decided: ${outcome.status} (${outcome.reason})`,
+          data: outcome as Record<string, unknown>,
+        },
+        { legacyPayload: outcome }
+      );
 
       // Feedback evaluation back to contextStill
       await evaluateContext(
@@ -344,12 +359,16 @@ export async function recoverStaleActiveRuns(taskId: string) {
       summary: 'Run recovered as failed after stale active-state detection.',
     });
     await repo.updateTaskStatus(taskId, 'failed');
-    await repo.createTaskEvent({
-      taskRunId: activeRun.id,
-      type: 'error',
-      message: `Stale active run auto-recovered. Previous status was active but runner state is "${runnerStatus.status}".`,
+    await repo.createRunEvent({
+      version: 1,
+      runId: activeRun.id,
+      taskId,
+      timestamp: new Date().toISOString(),
+      type: 'run.recovered',
+      severity: 'warning',
       actor: 'system',
-      eventType: 'state_change',
+      message: `Stale active run auto-recovered. Previous status was active but runner state is "${runnerStatus.status}".`,
+      data: { runnerStatus: runnerStatus.status },
     });
     await repo.createTaskMessage({
       taskId,
@@ -403,21 +422,31 @@ export async function reviewTaskRun(
 
   await repo.updateTaskStatus(run.taskId, finalStatus);
 
-  await repo.createTaskEvent({
-    taskRunId: runId,
-    type: 'info',
+  await repo.createRunEvent({
+    version: 1,
+    runId,
+    taskId: run.taskId,
+    timestamp: new Date().toISOString(),
+    type: 'human.review_submitted',
+    severity: 'info',
+    actor: 'human',
     message: `Human review completed. Action: ${action}. Note: ${note || 'None'}`,
-    actor: 'human',
-    eventType: 'state_change',
+    data: { action, note: note || null },
   });
-  await repo.createTaskEvent({
-    taskRunId: runId,
-    type: 'info',
-    message: `Run outcome decided: ${outcome.status} (${outcome.reason})`,
-    actor: 'human',
-    eventType: 'run_outcome_decided',
-    payloadJson: outcome,
-  });
+  await repo.createRunEvent(
+    {
+      version: 1,
+      runId,
+      taskId: run.taskId,
+      timestamp: new Date().toISOString(),
+      type: 'run.outcome_decided',
+      severity: 'info',
+      actor: 'human',
+      message: `Run outcome decided: ${outcome.status} (${outcome.reason})`,
+      data: outcome as Record<string, unknown>,
+    },
+    { legacyPayload: outcome }
+  );
 
   return { ok: true, status: finalStatus };
 }
@@ -456,4 +485,12 @@ export async function browseLocalFolders(targetPath?: string) {
       error: err.message,
     };
   }
+}
+
+export async function exportTaskRunJsonl(runId: string) {
+  const run = await repo.getTaskRun(runId);
+  if (!run) return null;
+  const events = await repo.listTaskEventsForRun(runId);
+  const repository = run.repositoryId ? await repo.getRepository(run.repositoryId) : null;
+  return serializeRunToJsonl({ run, events, repository });
 }

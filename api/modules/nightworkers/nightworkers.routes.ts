@@ -379,6 +379,29 @@ const reviewTaskRunRoute = createRoute({
   },
 });
 
+const exportTaskRunJsonlRoute = createRoute({
+  method: 'get',
+  path: '/runs/:id/export.jsonl',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'run-uuid' }),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'Run JSONL export',
+      content: {
+        'application/x-ndjson': {
+          schema: z.string(),
+        },
+      },
+    },
+    404: {
+      description: 'Run not found',
+    },
+  },
+});
+
 const router = createOpenApiRouter()
   // Repositories
   .openapi(listRepositoriesRoute, async (c) => {
@@ -568,6 +591,14 @@ const router = createOpenApiRouter()
       }
       return c.json({ error: String(err?.message || err) }, 500);
     }
+  })
+  .openapi(exportTaskRunJsonlRoute, async (c) => {
+    const id = c.req.param('id');
+    const jsonl = await service.exportTaskRunJsonl(id);
+    if (!jsonl) return c.json({ error: 'Run not found' }, 404);
+    c.header('Content-Type', 'application/x-ndjson; charset=utf-8');
+    c.header('Content-Disposition', `attachment; filename="nightworkers-run-${id}.jsonl"`);
+    return c.body(jsonl, 200);
   });
 
 const browseFoldersRoute = createRoute({

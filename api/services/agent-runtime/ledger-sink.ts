@@ -2,42 +2,64 @@ import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import type { AgentRuntimeEvent, AgentRuntimeSink } from './types';
 
 type EventMapping = {
-  actor: 'system' | 'supervisor' | 'worker' | 'human';
-  type: 'info' | 'warning' | 'error' | 'checkpoint' | 'state_change';
-  eventType: string;
+  actor: 'runtime' | 'supervisor' | 'worker' | 'system';
+  severity: 'debug' | 'info' | 'warning' | 'error' | 'checkpoint';
+  canonicalType: import('../run-events/types').RunEventType;
 };
 
 const EVENT_MAPPING: Record<AgentRuntimeEvent['type'], EventMapping> = {
-  runtime_started: { actor: 'system', type: 'info', eventType: 'state_change' },
-  turn_started: { actor: 'supervisor', type: 'checkpoint', eventType: 'supervisor_decision' },
-  model_response_started: { actor: 'supervisor', type: 'info', eventType: 'info' },
-  model_response_delta: { actor: 'supervisor', type: 'info', eventType: 'info' },
+  runtime_started: { actor: 'runtime', severity: 'info', canonicalType: 'run.runtime_started' },
+  turn_started: { actor: 'supervisor', severity: 'info', canonicalType: 'turn.started' },
+  model_response_started: {
+    actor: 'supervisor',
+    severity: 'info',
+    canonicalType: 'model.request_started',
+  },
+  model_response_delta: {
+    actor: 'supervisor',
+    severity: 'debug',
+    canonicalType: 'model.response_delta',
+  },
   supervisor_decision: {
     actor: 'supervisor',
-    type: 'checkpoint',
-    eventType: 'supervisor_decision',
+    severity: 'info',
+    canonicalType: 'supervisor.decision',
   },
-  tool_call_started: { actor: 'worker', type: 'info', eventType: 'tool_call' },
-  tool_call_progress: { actor: 'worker', type: 'info', eventType: 'tool_call' },
-  tool_call_finished: { actor: 'worker', type: 'info', eventType: 'tool_result' },
-  verification_started: { actor: 'supervisor', type: 'checkpoint', eventType: 'state_change' },
-  verification_finished: { actor: 'supervisor', type: 'checkpoint', eventType: 'state_change' },
-  diff_collected: { actor: 'worker', type: 'checkpoint', eventType: 'tool_result' },
-  runtime_finished: { actor: 'supervisor', type: 'checkpoint', eventType: 'final_report' },
-  runtime_error: { actor: 'system', type: 'error', eventType: 'state_change' },
+  tool_call_started: { actor: 'worker', severity: 'info', canonicalType: 'tool.call_started' },
+  tool_call_progress: { actor: 'worker', severity: 'info', canonicalType: 'tool.call_progress' },
+  tool_call_finished: { actor: 'worker', severity: 'info', canonicalType: 'tool.call_finished' },
+  verification_started: {
+    actor: 'supervisor',
+    severity: 'checkpoint',
+    canonicalType: 'verification.started',
+  },
+  verification_finished: {
+    actor: 'supervisor',
+    severity: 'checkpoint',
+    canonicalType: 'verification.finished',
+  },
+  diff_collected: { actor: 'worker', severity: 'checkpoint', canonicalType: 'git.diff_collected' },
+  runtime_finished: {
+    actor: 'runtime',
+    severity: 'checkpoint',
+    canonicalType: 'run.runtime_finished',
+  },
+  runtime_error: { actor: 'system', severity: 'error', canonicalType: 'system.error' },
 };
 
 export function createLedgerSink(taskRunId: string): AgentRuntimeSink {
   return {
     async emit(event: AgentRuntimeEvent) {
       const mapped = EVENT_MAPPING[event.type];
-      await repo.createTaskEvent({
-        taskRunId,
+      await repo.createRunEvent({
+        version: 1,
+        runId: taskRunId,
+        timestamp: new Date().toISOString(),
+        type: mapped.canonicalType,
+        severity: mapped.severity,
         actor: mapped.actor,
-        type: mapped.type,
-        eventType: mapped.eventType,
         message: event.message.slice(0, 1000),
-        payloadJson: event.payload ?? null,
+        data: (event.payload as Record<string, unknown>) || {},
       });
     },
   };

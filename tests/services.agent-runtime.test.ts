@@ -6,7 +6,7 @@ import * as supervisor from '../api/services/supervisor/supervisor-loop';
 import * as gitTools from '../api/services/worker-tools/git';
 
 vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
-  createTaskEvent: vi.fn(),
+  createRunEvent: vi.fn(),
 }));
 
 vi.mock('../api/services/supervisor/supervisor-loop', () => ({
@@ -31,12 +31,12 @@ describe('AgentRuntime', () => {
       payload: { ok: true },
     });
 
-    expect(repo.createTaskEvent).toHaveBeenCalledWith(
+    expect(repo.createRunEvent).toHaveBeenCalledWith(
       expect.objectContaining({
-        taskRunId: 'run-123',
+        runId: 'run-123',
         actor: 'worker',
-        type: 'info',
-        eventType: 'tool_result',
+        severity: 'info',
+        type: 'tool.call_finished',
         message: 'tool finished',
       })
     );
