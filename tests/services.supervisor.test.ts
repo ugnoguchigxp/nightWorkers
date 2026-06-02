@@ -151,4 +151,68 @@ describe('Supervisor Control Loop Unit Tests', () => {
     expect(result.terminalState).toBe('needs_human');
     expect(result.stoppedBy).toBe('missing_tool_call');
   });
+
+  it('stops with policy when a command is blocked before execution', async () => {
+    const mockRun = { id: 'run-policy', taskId: 'task-policy' };
+    const mockTask = {
+      id: 'task-policy',
+      objective: 'Run unsafe command',
+      acceptanceCriteria: 'Blocked',
+    };
+
+    vi.mocked(repo.getTaskRun).mockResolvedValue(mockRun as any);
+    vi.mocked(repo.getTask).mockResolvedValue(mockTask as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        phase: 'plan',
+        instruction: 'Run command',
+        rationale: 'Need execution',
+        expectedEvidence: [],
+        riskLevel: 'low',
+        toolCall: {
+          name: 'run_command',
+          arguments: { command: 'curl https://example.com' },
+        },
+      })
+      .mockResolvedValueOnce({
+        phase: 'act',
+        instruction: 'Run command',
+        rationale: 'Need execution',
+        expectedEvidence: [],
+        riskLevel: 'low',
+        toolCall: {
+          name: 'run_command',
+          arguments: { command: 'curl https://example.com' },
+        },
+      });
+
+    const result = await runSupervisorLoop({
+      runId: 'run-policy',
+      repoRoot: __dirname,
+      prompt: 'Start',
+      timeoutSeconds: 60,
+    });
+
+    expect(result.terminalState).toBe('needs_human');
+    expect(result.stoppedBy).toBe('policy');
+    expect(repo.createTaskEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'error',
+        payloadJson: expect.objectContaining({
+          runEvent: expect.objectContaining({ type: 'tool.policy_blocked' }),
+        }),
+      })
+    );
+    expect(repo.createTaskEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'tool_result',
+        payloadJson: expect.objectContaining({
+          error: expect.objectContaining({ code: 'UNKNOWN_COMMAND' }),
+          runEvent: expect.objectContaining({ type: 'tool.call_finished' }),
+        }),
+      })
+    );
+  });
 });

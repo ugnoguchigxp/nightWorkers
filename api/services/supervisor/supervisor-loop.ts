@@ -2,17 +2,10 @@ import { appendSupervisorTrace, logger } from '../../lib/logger';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import { RunBudgetController } from '../run-control/run-budget-controller';
 import type { SupervisorLoopResult } from '../run-control/types';
-import {
-  applyPatchTool,
-  findFileTool,
-  gitDiffTool,
-  gitStatusTool,
-  listDirTool,
-  readFileTool,
-  replaceContentTool,
-  runCommandTool,
-  searchFilesTool,
-} from '../worker-tools';
+import { buildBlockedToolResult } from '../tool-policy/blocked-result';
+import { DefaultToolPolicyGate } from '../tool-policy/tool-policy-gate';
+import type { ToolCallRequest, WorkerToolName } from '../tool-policy/types';
+import { executeWorkerTool } from '../worker-tools/dispatcher';
 import { callSupervisorLLM } from './llm-provider';
 import { buildRound1SystemPrompt, buildRound2SystemPrompt } from './prompt';
 
@@ -56,6 +49,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
 
   // Maintain list of read files for read-before-edit policy validation
   const readFiles: string[] = [];
+  const toolPolicyGate = new DefaultToolPolicyGate();
 
   while (true) {
     const iterationBudget = budget.onIterationStart();
@@ -272,98 +266,124 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         message: `[Worker Tool Call] Invoking tool ${name}...`,
         actor: 'worker',
         eventType: 'tool_call',
-        payloadJson: { iteration, toolName: name, arguments: toolArgs },
+        payloadJson: {
+          iteration,
+          toolName: name,
+          arguments: toolArgs,
+          runEvent: buildCanonicalRunEvent({
+            runId,
+            iteration,
+            type: 'tool.call_started',
+            severity: 'info',
+            actor: 'worker',
+            message: `[Worker Tool Call] Invoking tool ${name}...`,
+            data: { toolName: name, arguments: toolArgs },
+          }),
+        },
       });
 
       let toolResult: any;
+      let policyViolationDetected = false;
 
       try {
-        if (name === 'list_dir') {
-          toolResult = await listDirTool({
-            relativePath: toolArgs.relativePath,
-            recursive: toolArgs.recursive,
-            skipIgnored: toolArgs.skipIgnored,
-            maxEntries: toolArgs.maxEntries,
-            repoRoot,
-            allowedPaths: input.safetyPolicy?.allowedPaths,
-            deniedPaths: input.safetyPolicy?.deniedPaths,
-          });
-        } else if (name === 'find_file') {
-          toolResult = await findFileTool({
-            fileMask: toolArgs.fileMask,
-            relativePath: toolArgs.relativePath,
-            recursive: toolArgs.recursive,
-            maxResults: toolArgs.maxResults,
-            repoRoot,
-            allowedPaths: input.safetyPolicy?.allowedPaths,
-            deniedPaths: input.safetyPolicy?.deniedPaths,
-          });
-        } else if (name === 'read_file') {
-          toolResult = await readFileTool({
-            filePath: toolArgs.filePath,
-            repoRoot,
-            startLine: toolArgs.startLine,
-            endLine: toolArgs.endLine,
-            allowedPaths: input.safetyPolicy?.allowedPaths,
-            deniedPaths: input.safetyPolicy?.deniedPaths,
+        const request: ToolCallRequest = {
+          runId,
+          iteration,
+          toolName: name as WorkerToolName,
+          args: (toolArgs && typeof toolArgs === 'object' ? toolArgs : {}) as Record<
+            string,
+            unknown
+          >,
+          repoRoot,
+          safetyPolicy: input.safetyPolicy,
+          readFiles,
+        };
+        const beforeDecision = await toolPolicyGate.beforeToolCall(request);
+        if (!beforeDecision.allowed) {
+          toolResult = buildBlockedToolResult(request, beforeDecision);
+          policyViolationDetected = true;
+          await repo.createTaskEvent({
+            taskRunId: runId,
+            type: 'error',
+            message: `[Tool Policy Blocked] ${name}: ${beforeDecision.message}`,
+            actor: 'system',
+            eventType: 'error',
+            payloadJson: {
+              iteration,
+              toolName: name,
+              policy: beforeDecision,
+              runEvent: buildCanonicalRunEvent({
+                runId,
+                iteration,
+                type: 'tool.policy_blocked',
+                severity: 'error',
+                actor: 'system',
+                message: `[Tool Policy Blocked] ${name}: ${beforeDecision.message}`,
+                data: { toolName: name, policy: beforeDecision },
+              }),
+            },
           });
 
-          if (toolResult.ok && toolResult.payload.content) {
-            // Track files read
-            if (!readFiles.includes(toolArgs.filePath)) {
-              readFiles.push(toolArgs.filePath);
-            }
-          }
-        } else if (name === 'search_files') {
-          toolResult = await searchFilesTool({
-            query: toolArgs.query,
-            repoRoot,
-            glob: toolArgs.glob,
-            allowedPaths: input.safetyPolicy?.allowedPaths,
-            deniedPaths: input.safetyPolicy?.deniedPaths,
-          });
-        } else if (name === 'apply_patch') {
-          toolResult = await applyPatchTool({
-            patchContent: toolArgs.patchContent,
-            repoRoot,
-            readFiles,
-            requireReadBeforeEdit: input.safetyPolicy?.requireReadBeforeEdit ?? true,
-            allowedPaths: input.safetyPolicy?.allowedPaths,
-            deniedPaths: input.safetyPolicy?.deniedPaths,
-          });
-        } else if (name === 'replace_content') {
-          toolResult = await replaceContentTool({
-            filePath: toolArgs.filePath,
-            needle: toolArgs.needle,
-            replacement: toolArgs.replacement,
-            mode: toolArgs.mode,
-            allowMultipleOccurrences: toolArgs.allowMultipleOccurrences,
-            readFiles,
-            requireReadBeforeEdit: input.safetyPolicy?.requireReadBeforeEdit ?? true,
-            repoRoot,
-            allowedPaths: input.safetyPolicy?.allowedPaths,
-            deniedPaths: input.safetyPolicy?.deniedPaths,
-          });
-        } else if (name === 'run_command') {
-          toolResult = await runCommandTool({
-            command: toolArgs.command,
-            repoRoot,
-            blockedCommands: input.safetyPolicy?.blockedCommands,
-            allowedPaths: input.safetyPolicy?.allowedPaths,
-            deniedPaths: input.safetyPolicy?.deniedPaths,
-            timeoutSeconds: toolArgs.timeoutSeconds,
-            maxCommandSeconds: input.safetyPolicy?.maxCommandSeconds,
-          });
-        } else if (name === 'git_status') {
-          toolResult = await gitStatusTool({
-            repoRoot,
-          });
-        } else if (name === 'git_diff') {
-          toolResult = await gitDiffTool({
-            repoRoot,
-          });
+          finalReportText = `Tool policy blocked execution. tool=${name} code=${beforeDecision.code}`;
+          terminalState = 'needs_human';
+          summary = 'Stopped by policy block';
+          stoppedBy = 'policy';
         } else {
-          throw new Error(`Unsupported tool name: ${name}`);
+          const dispatch = await executeWorkerTool({
+            toolName: request.toolName,
+            args: beforeDecision.normalizedArgs,
+            repoRoot,
+            safetyPolicy: input.safetyPolicy,
+            readFiles,
+          });
+          toolResult = dispatch.result;
+          if (dispatch.readFilesChanged) {
+            readFiles.splice(0, readFiles.length, ...dispatch.readFilesChanged);
+          }
+          const postDecision = await toolPolicyGate.afterToolCall(
+            request,
+            dispatch.result,
+            beforeDecision.preflight
+          );
+          toolResult = postDecision.result;
+          if (postDecision.policyViolation && !postDecision.policyViolation.allowed) {
+            policyViolationDetected = true;
+            finalReportText = `Tool policy violation detected after execution. tool=${name} code=${postDecision.policyViolation.code}`;
+            terminalState = 'needs_human';
+            summary = 'Stopped by postflight policy violation';
+            stoppedBy = 'policy';
+            await repo.createTaskEvent({
+              taskRunId: runId,
+              type: 'error',
+              message: `[Tool Policy Violation] ${name}: ${postDecision.policyViolation.message}`,
+              actor: 'system',
+              eventType: 'error',
+              payloadJson: {
+                iteration,
+                toolName: name,
+                policy: postDecision.policyViolation,
+                runEvent: buildCanonicalRunEvent({
+                  runId,
+                  iteration,
+                  type: 'safety.policy_violation',
+                  severity: 'error',
+                  actor: 'system',
+                  message: `[Tool Policy Violation] ${name}: ${postDecision.policyViolation.message}`,
+                  data: { toolName: name, policy: postDecision.policyViolation },
+                }),
+              },
+            });
+          }
+          if (postDecision.warnings?.length) {
+            await repo.createTaskEvent({
+              taskRunId: runId,
+              type: 'warning',
+              message: `[Tool Policy Warning] ${name}`,
+              actor: 'system',
+              eventType: 'system.warning',
+              payloadJson: { iteration, toolName: name, warnings: postDecision.warnings },
+            });
+          }
         }
       } catch (toolErr: any) {
         toolResult = {
@@ -401,8 +421,30 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         message: `[Worker Tool Result] Tool ${name} execution ${toolResult.ok ? 'SUCCESS' : 'FAILED'}.`,
         actor: 'worker',
         eventType: 'tool_result',
-        payloadJson: { iteration, ...toolResult },
+        payloadJson: {
+          iteration,
+          ...toolResult,
+          runEvent: buildCanonicalRunEvent({
+            runId,
+            iteration,
+            type: 'tool.call_finished',
+            severity: toolResult.ok ? 'info' : 'error',
+            actor: 'worker',
+            message: `[Worker Tool Result] Tool ${name} execution ${toolResult.ok ? 'SUCCESS' : 'FAILED'}.`,
+            data: { toolName: name, result: toolResult },
+          }),
+        },
       });
+
+      if (policyViolationDetected && stoppedBy === 'policy') {
+        await repo.updateTaskRun(runId, {
+          finalReport: finalReportText,
+          summary,
+          status: 'needs_human',
+        });
+        await repo.updateTaskStatus(task.id, 'needs_human');
+        break;
+      }
 
       if (!failureBudget.allowed && failureBudget.reason === 'tool_failure') {
         const failureSummary = toolResult.error?.message || 'Unknown tool failure';
@@ -531,4 +573,25 @@ function extractMultimodalPayload(messageType: string, toolResult: any) {
   if (messageType === 'markdown_document')
     return { markdownDocumentData: payload.markdownDocumentData };
   return {};
+}
+
+function buildCanonicalRunEvent(input: {
+  runId: string;
+  iteration: number;
+  type: string;
+  severity: 'info' | 'warning' | 'error';
+  actor: 'system' | 'worker';
+  message: string;
+  data?: Record<string, unknown>;
+}) {
+  return {
+    version: 1,
+    runId: input.runId,
+    timestamp: new Date().toISOString(),
+    type: input.type,
+    severity: input.severity,
+    actor: input.actor,
+    message: input.message,
+    data: { iteration: input.iteration, ...(input.data || {}) },
+  };
 }

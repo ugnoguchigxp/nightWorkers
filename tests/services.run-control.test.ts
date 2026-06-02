@@ -43,6 +43,20 @@ describe('RunControl', () => {
       });
       expect(outcome.status).toBe('completed');
     });
+
+    it('maps policy-stopped supervisor result to policy violation', () => {
+      const outcome = decideRunOutcome({
+        supervisor: {
+          finalReport: 'Blocked',
+          terminalState: 'needs_human',
+          summary: 'Stopped by policy block',
+          stoppedBy: 'policy',
+          riskLevel: 'high',
+        },
+      });
+      expect(outcome.status).toBe('needs_human');
+      expect(outcome.reason).toBe('policy_violation');
+    });
   });
 
   describe('RunBudgetController', () => {

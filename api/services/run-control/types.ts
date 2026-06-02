@@ -43,7 +43,7 @@ export type SupervisorLoopResult = {
   finalReport: string;
   terminalState: 'completed' | 'needs_review' | 'needs_human' | 'failed' | 'timed_out' | 'blocked';
   summary: string;
-  stoppedBy: 'decision' | 'budget' | 'tool_failure' | 'llm_error' | 'missing_tool_call';
+  stoppedBy: 'decision' | 'budget' | 'tool_failure' | 'llm_error' | 'missing_tool_call' | 'policy';
   riskLevel: 'low' | 'medium' | 'high';
 };
 

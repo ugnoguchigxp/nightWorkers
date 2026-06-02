@@ -40,6 +40,14 @@ export function decideRunOutcome(input: OutcomeGateInput): OutcomeGateResult {
     };
   }
 
+  if (supervisor.stoppedBy === 'policy') {
+    return {
+      status: 'needs_human',
+      reason: 'policy_violation',
+      summary: supervisor.summary || 'Stopped by policy.',
+    };
+  }
+
   if (budgetStopped) {
     if (supervisor.terminalState === 'timed_out') {
       return { status: 'timed_out', reason: 'budget_exceeded', summary: supervisor.summary };
