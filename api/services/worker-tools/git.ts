@@ -1,4 +1,5 @@
 import { exec } from 'node:child_process';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { WorkerToolResult } from './types';
@@ -115,19 +116,61 @@ export interface GitDiffOutput {
   hasChanges: boolean;
 }
 
+async function collectUntrackedDiff(repoRoot: string): Promise<{ diff: string; stat: string }> {
+  const { stdout } = await execAsync('git ls-files --others --exclude-standard', {
+    cwd: repoRoot,
+  }).catch(() => ({ stdout: '' }));
+  const files = stdout
+    .split('\n')
+    .map((file) => file.trim())
+    .filter(Boolean);
+  if (files.length === 0) return { diff: '', stat: '' };
+
+  const chunks: string[] = [];
+  for (const file of files) {
+    const target = path.resolve(repoRoot, file);
+    const content = await fs.readFile(target, 'utf-8').catch(() => '');
+    const lines =
+      content.length === 0
+        ? []
+        : content.endsWith('\n')
+          ? content.slice(0, -1).split('\n')
+          : content.split('\n');
+    chunks.push(
+      [
+        `diff --git a/${file} b/${file}`,
+        'new file mode 100644',
+        'index 0000000..0000000',
+        '--- /dev/null',
+        `+++ b/${file}`,
+        `@@ -0,0 +1,${lines.length} @@`,
+        ...lines,
+      ]
+        .map((line, index) => (index >= 6 ? `+${line}` : line))
+        .join('\n')
+    );
+  }
+
+  return {
+    diff: `${chunks.join('\n')}\n`,
+    stat: files.map((file) => ` ${file} | untracked`).join('\n'),
+  };
+}
+
 export async function gitDiffTool(input: GitDiffInput): Promise<WorkerToolResult<GitDiffOutput>> {
   const startedAt = new Date().toISOString();
   const { repoRoot } = input;
   const absoluteRepoRoot = path.resolve(repoRoot);
 
   try {
-    const [diffResult, diffStatResult] = await Promise.all([
+    const [diffResult, diffStatResult, untracked] = await Promise.all([
       execAsync('git diff HEAD', { cwd: absoluteRepoRoot }),
       execAsync('git diff --stat HEAD', { cwd: absoluteRepoRoot }).catch(() => ({ stdout: '' })),
+      collectUntrackedDiff(absoluteRepoRoot),
     ]);
 
-    const diff = diffResult.stdout;
-    const diffStat = diffStatResult.stdout.trim();
+    const diff = [diffResult.stdout, untracked.diff].filter(Boolean).join('\n');
+    const diffStat = [diffStatResult.stdout.trim(), untracked.stat].filter(Boolean).join('\n');
     const hasChanges = diff.trim().length > 0;
 
     // Secret Redaction Hook

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -5,6 +6,7 @@ import {
   analyzeCommand,
   fetchContentTool,
   findFileTool,
+  gitDiffTool,
   isPathSafe,
   listDirTool,
   readFileTool,
@@ -409,6 +411,40 @@ describe('Worker Tools Unit Tests', () => {
       const safety = analyzeCommand('xpnpm test run tests/foo.ts');
       expect(safety.allowed).toBe(false);
       expect(safety.classification).toBe('unknown');
+    });
+  });
+
+  describe('gitDiffTool', () => {
+    it('includes untracked files in diff evidence', async () => {
+      const repoDir = path.join(dummyRepoDir, 'git-diff-untracked');
+      await fs.rm(repoDir, { recursive: true, force: true });
+      await fs.mkdir(repoDir, { recursive: true });
+      await fs.writeFile(path.join(repoDir, 'README.md'), '# fixture\n', 'utf-8');
+      execFileSync('git', ['init'], { cwd: repoDir, stdio: 'ignore' });
+      execFileSync('git', ['add', 'README.md'], { cwd: repoDir, stdio: 'ignore' });
+      execFileSync(
+        'git',
+        [
+          '-c',
+          'user.email=e2e@example.test',
+          '-c',
+          'user.name=NightWorkers Test',
+          'commit',
+          '-m',
+          'initial',
+        ],
+        { cwd: repoDir, stdio: 'ignore' }
+      );
+      await fs.mkdir(path.join(repoDir, 'src'), { recursive: true });
+      await fs.writeFile(path.join(repoDir, 'src/new-file.txt'), 'untracked evidence\n', 'utf-8');
+
+      const result = await gitDiffTool({ repoRoot: repoDir });
+
+      expect(result.ok).toBe(true);
+      expect(result.payload.hasChanges).toBe(true);
+      expect(result.payload.diff).toContain('src/new-file.txt');
+      expect(result.payload.diff).toContain('@@ -0,0 +1,1 @@');
+      expect(result.payload.diff).toContain('+untracked evidence');
     });
   });
 });

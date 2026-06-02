@@ -19,6 +19,9 @@ export default defineConfig({
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
     baseURL: 'http://localhost:39174',
+    extraHTTPHeaders: {
+      'x-nightworkers-e2e': '1',
+    },
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
@@ -54,7 +57,7 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'pnpm dev',
+    command: 'cross-env NIGHTWORKERS_E2E=1 pnpm dev',
     url: 'http://localhost:39174',
     reuseExistingServer: !process.env.CI,
   },

@@ -43,21 +43,21 @@ async function createDisposableGitWorkspace(): Promise<string> {
 test.describe('NightWorkers Agent Debug @regression', () => {
   test.describe.configure({ mode: 'serial' });
 
-  test('debug panel is hidden by default and can be toggled @smoke', async ({ page }) => {
-    await page.goto('/');
+  test('debug panel is available on a task detail page @smoke', async ({ page, request }) => {
+    const tasks = await getJson<Array<{ id: string }>>(request, '/api/tasks');
+    const taskId = tasks[0]?.id;
+    expect(taskId).toBeTruthy();
 
-    const toggle = page.getByRole('button', { name: 'Show Debug' });
-    await expect(toggle).toBeVisible();
-    await expect(page.getByText('AGENT DEBUG EVENTS')).toHaveCount(0);
+    await page.goto(`/tasks/${taskId}`);
 
-    await toggle.click();
-    await expect(page.getByRole('button', { name: 'Hide Debug' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Agent Terminal Console' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Review Diffs' })).toBeVisible();
   });
 
   test('single prompt creates exactly one user message bubble @smoke', async ({ page }) => {
     await page.goto('/');
 
-    const prompt = `E2E single submit ${Date.now()}`;
+    const prompt = `NIGHTWORKERS_TEST_AGENT_SCENARIO=policy_blocked_command E2E single submit ${Date.now()}`;
     const input = page.getByPlaceholder('指示を入力（送信: Cmd+Enter / Ctrl+Enter）');
     await input.fill(prompt);
     await input.press('Meta+Enter');
@@ -88,7 +88,7 @@ test.describe('NightWorkers Agent Debug @regression', () => {
       }>
     >(request, `/api/tasks/${taskId}/runs`);
     const latestRunIdBefore = runsBefore[0]?.id ?? null;
-    const prompt = `E2E outcome ${Date.now()}`;
+    const prompt = `NIGHTWORKERS_TEST_AGENT_SCENARIO=policy_blocked_command E2E outcome ${Date.now()}`;
     const input = page.getByPlaceholder('指示を入力（送信: Cmd+Enter / Ctrl+Enter）');
     await input.fill(prompt);
     await input.press('Meta+Enter');

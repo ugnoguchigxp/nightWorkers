@@ -91,11 +91,15 @@ Detailed setup and provider configuration:
 | `pnpm typecheck` | Run TypeScript checks |
 | `pnpm test` | Run Vitest |
 | `pnpm test:e2e` | Run Playwright E2E |
+| `pnpm test:e2e:agent-outcome` | Run deterministic agent outcome E2E |
+| `pnpm test:e2e:agent-live` | Run optional live-provider agent E2E |
 | `pnpm verify` | Typecheck + lint + tests (+ design system checks) |
 
 ## Testing
 - Unit/integration: Vitest
 - End-to-end: Playwright (`@smoke`, `@regression` tags)
+- Agent outcome E2E: `pnpm test:e2e:agent-outcome` uses the deterministic `test` provider, scratch git workspaces, real API/DB/run ledger paths, and requires no provider credentials. Set `KEEP_E2E_WORKSPACE=1` to keep the scratch workspace after a failure.
+- Live agent E2E: `pnpm test:e2e:agent-live` is optional and skips unless provider credentials are configured.
 - Recommended pre-PR validation:
 ```bash
 pnpm verify

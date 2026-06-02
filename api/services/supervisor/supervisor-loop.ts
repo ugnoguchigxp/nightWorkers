@@ -508,7 +508,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         taskRunId: runId,
         type: 'info',
         message: `[Worker Tool Call] Invoking tool ${name}...`,
-        actor: 'worker',
+        actor: name === 'run_verification' ? 'verifier' : 'worker',
         eventType: 'tool_call',
         payloadJson: {
           iteration,
@@ -517,9 +517,9 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           runEvent: buildCanonicalRunEvent({
             runId,
             iteration,
-            type: 'tool.call_started',
+            type: name === 'run_verification' ? 'verification.started' : 'tool.call_started',
             severity: 'info',
-            actor: 'worker',
+            actor: name === 'run_verification' ? 'verifier' : 'worker',
             message: `[Worker Tool Call] Invoking tool ${name}...`,
             data: { toolName: name, arguments: toolArgs },
           }),
@@ -664,7 +664,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         taskRunId: runId,
         type: toolResult.ok ? 'info' : 'error',
         message: `[Worker Tool Result] Tool ${name} execution ${toolResult.ok ? 'SUCCESS' : 'FAILED'}.`,
-        actor: 'worker',
+        actor: name === 'run_verification' ? 'verifier' : 'worker',
         eventType: 'tool_result',
         payloadJson: {
           iteration,
@@ -672,9 +672,9 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           runEvent: buildCanonicalRunEvent({
             runId,
             iteration,
-            type: 'tool.call_finished',
+            type: name === 'run_verification' ? 'verification.finished' : 'tool.call_finished',
             severity: toolResult.ok ? 'info' : 'error',
-            actor: 'worker',
+            actor: name === 'run_verification' ? 'verifier' : 'worker',
             message: `[Worker Tool Result] Tool ${name} execution ${toolResult.ok ? 'SUCCESS' : 'FAILED'}.`,
             data: { toolName: name, result: toolResult },
           }),
@@ -932,7 +932,7 @@ function buildCanonicalRunEvent(input: {
   iteration: number;
   type: string;
   severity: 'info' | 'warning' | 'error';
-  actor: 'system' | 'worker';
+  actor: 'system' | 'worker' | 'verifier';
   message: string;
   data?: Record<string, unknown>;
 }) {

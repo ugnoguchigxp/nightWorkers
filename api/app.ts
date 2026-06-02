@@ -32,6 +32,12 @@ const apiRoutes = createOpenApiRouter()
 
 const app = createOpenApiRouter();
 const isProduction = config.NODE_ENV === 'production';
+const apiRateLimit = process.env.NIGHTWORKERS_E2E === '1' ? 10_000 : 100;
+const apiLimiter = rateLimiter({
+  windowMs: 60 * 1000,
+  limit: apiRateLimit,
+  trustProxy: config.TRUST_PROXY,
+});
 export const nodeWebSocket = createNodeWebSocket({ app });
 const { upgradeWebSocket } = nodeWebSocket;
 
@@ -80,7 +86,13 @@ app.use(
 app.use('*', loggerMiddleware());
 app.onError(errorHandler);
 
-app.use('/api/*', rateLimiter({ windowMs: 60 * 1000, limit: 100, trustProxy: config.TRUST_PROXY }));
+app.use('/api/*', async (c, next) => {
+  if (!isProduction && c.req.header('x-nightworkers-e2e') === '1') {
+    await next();
+    return;
+  }
+  await apiLimiter(c, next);
+});
 app.use(
   '/api/auth/login',
   rateLimiter({ windowMs: 60 * 1000, limit: 5, trustProxy: config.TRUST_PROXY })

@@ -4,6 +4,22 @@ import { z } from 'zod';
 import { appendSupervisorTrace, logger } from '../../lib/logger';
 import { buildCodexTurnPrompt } from './prompt';
 import { isTemporarilyBlockedExternalToolName } from './TEMP_DISABLE_EXTERNAL_MCP_TOOLS';
+import { buildTestProviderDecision } from './test-provider';
+
+const supervisorToolNames = [
+  'list_dir',
+  'find_file',
+  'read_file',
+  'search_files',
+  'search_web',
+  'fetch_content',
+  'apply_patch',
+  'replace_content',
+  'run_command',
+  'run_verification',
+  'git_status',
+  'git_diff',
+] as const;
 
 const supervisorDecisionBaseSchema = z.object({
   phase: z.enum(['observe', 'plan', 'act', 'verify', 'report', 'stop']),
@@ -26,19 +42,7 @@ const supervisorDecisionBaseSchema = z.object({
   riskLevel: z.enum(['low', 'medium', 'high']).default('low'),
   toolCall: z
     .object({
-      name: z.enum([
-        'list_dir',
-        'find_file',
-        'read_file',
-        'search_files',
-        'search_web',
-        'fetch_content',
-        'apply_patch',
-        'replace_content',
-        'run_command',
-        'git_status',
-        'git_diff',
-      ]),
+      name: z.enum(supervisorToolNames),
       arguments: z.any().default({}),
     })
     .nullable()
@@ -48,19 +52,7 @@ const supervisorDecisionBaseSchema = z.object({
 const round2DecisionSchema = supervisorDecisionBaseSchema.extend({
   toolCall: z
     .object({
-      name: z.enum([
-        'list_dir',
-        'find_file',
-        'read_file',
-        'search_files',
-        'search_web',
-        'fetch_content',
-        'git_status',
-        'apply_patch',
-        'replace_content',
-        'run_command',
-        'git_diff',
-      ]),
+      name: z.enum(supervisorToolNames),
       arguments: z.any().default({}),
     })
     .nullable()
@@ -215,33 +207,7 @@ function getDecisionSchema(round?: 1 | 2 | 3) {
 }
 
 function getAllowedToolNamesByRound(round?: 1 | 2 | 3): string[] {
-  if (round === 2)
-    return [
-      'list_dir',
-      'find_file',
-      'read_file',
-      'search_files',
-      'search_web',
-      'fetch_content',
-      'git_status',
-      'apply_patch',
-      'replace_content',
-      'run_command',
-      'git_diff',
-    ];
-  return [
-    'list_dir',
-    'find_file',
-    'read_file',
-    'search_files',
-    'search_web',
-    'fetch_content',
-    'apply_patch',
-    'replace_content',
-    'run_command',
-    'git_status',
-    'git_diff',
-  ];
+  return [...supervisorToolNames];
 }
 
 function normalizeLegacyDecisionShape(input: unknown): unknown {
@@ -611,7 +577,9 @@ export async function callSupervisorLLM(
   userPrompt: string,
   options: CallSupervisorOptions = {}
 ): Promise<SupervisorDecision> {
-  const provider = process.env.ACTIVE_LLM_PROVIDER || 'azure';
+  const provider = userPrompt.includes('NIGHTWORKERS_TEST_AGENT_SCENARIO=')
+    ? 'test'
+    : process.env.ACTIVE_LLM_PROVIDER || 'azure';
   const isEnabled = (key: string, fallback: boolean) => {
     const raw = process.env[key];
     if (!raw) return fallback;
@@ -889,97 +857,103 @@ export async function callSupervisorLLM(
     };
 
     rawContent = await runWithModel(configuredModel);
-  } else if (provider === 'fixture') {
+  } else if (provider === 'fixture' || provider === 'test') {
     if (process.env.NODE_ENV === 'production') {
-      throw new Error('Fixture provider is not available in production.');
+      throw new Error('Fixture/test provider is not available in production.');
     }
+    const isAgentOutcomeTestProvider =
+      provider === 'test' || userPrompt.includes('NIGHTWORKERS_TEST_AGENT_SCENARIO=');
     providerDebug = {
-      provider: 'fixture',
+      provider,
       round: options.round ?? null,
-      mode: userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
-        ? 'simple_coding'
-        : 'stop_without_evidence',
+      mode: isAgentOutcomeTestProvider
+        ? 'agent_outcome'
+        : userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
+          ? 'simple_coding'
+          : 'stop_without_evidence',
     };
     rawContent = JSON.stringify(
-      userPrompt.includes('E2E_OBJECT_EVIDENCE_FIXTURE')
-        ? {
-            phase: 'plan',
-            workflow: 'evidence_review',
-            instruction: 'Review object evidence fixture.',
-            rationale:
-              'The fixture returns structured expected evidence like Codex sometimes does.',
-            finalResponse: '',
-            expectedEvidence: [
-              {
-                path: 'spec/memory-feedback-long-run-implementation-plan.md',
-                lines: '1-767',
-                focus: 'implementation plan consistency',
-              },
-              {
-                path: 'api/services/context-still/client.ts',
-                focus: 'context compile integration',
-              },
-            ],
-            riskLevel: 'medium',
-            toolCall: null,
-          }
-        : userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
-          ? buildFixtureCodingDecision(userPrompt, options.round)
-          : options.round === 1
-            ? {
-                phase: 'plan',
-                workflow: 'evidence_review',
-                instruction: 'Review the requested specification document.',
-                rationale: 'The fixture intentionally plans without a tool call.',
-                finalResponse: '',
-                expectedEvidence: ['spec document contents'],
-                riskLevel: 'medium',
-                toolCall: null,
-              }
-            : options.round === 2
-              ? hasRoundObservations(userPrompt)
-                ? {
+      isAgentOutcomeTestProvider
+        ? buildTestProviderDecision(userPrompt, options.round)
+        : userPrompt.includes('E2E_OBJECT_EVIDENCE_FIXTURE')
+          ? {
+              phase: 'plan',
+              workflow: 'evidence_review',
+              instruction: 'Review object evidence fixture.',
+              rationale:
+                'The fixture returns structured expected evidence like Codex sometimes does.',
+              finalResponse: '',
+              expectedEvidence: [
+                {
+                  path: 'spec/memory-feedback-long-run-implementation-plan.md',
+                  lines: '1-767',
+                  focus: 'implementation plan consistency',
+                },
+                {
+                  path: 'api/services/context-still/client.ts',
+                  focus: 'context compile integration',
+                },
+              ],
+              riskLevel: 'medium',
+              toolCall: null,
+            }
+          : userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
+            ? buildFixtureCodingDecision(userPrompt, options.round)
+            : options.round === 1
+              ? {
+                  phase: 'plan',
+                  workflow: 'evidence_review',
+                  instruction: 'Review the requested specification document.',
+                  rationale: 'The fixture intentionally plans without a tool call.',
+                  finalResponse: '',
+                  expectedEvidence: ['spec document contents'],
+                  riskLevel: 'medium',
+                  toolCall: null,
+                }
+              : options.round === 2
+                ? hasRoundObservations(userPrompt)
+                  ? {
+                      phase: 'stop',
+                      workflow: 'evidence_review',
+                      instruction: 'Fixture review complete.',
+                      rationale: 'The fixture stops after repository evidence has been supplied.',
+                      finalResponse: [
+                        'Fixture review completed after reading repository evidence.',
+                        'Finding: spec/jsonl-replay-import-regression-implementation-plan.md:1 has been inspected and the fixture confirms the requested document review path can finish with concrete evidence.',
+                        'Risk: low; the run includes a read_file tool result before completion.',
+                      ].join(' '),
+                      expectedEvidence: ['spec document contents'],
+                      terminalState: 'completed',
+                      riskLevel: 'low',
+                      toolCall: null,
+                    }
+                  : {
+                      phase: 'act',
+                      workflow: 'evidence_review',
+                      instruction: 'Read the fixture specification document before review.',
+                      rationale:
+                        'The evidence_review prompt requires repository evidence before stopping.',
+                      finalResponse: '',
+                      expectedEvidence: ['spec document contents'],
+                      riskLevel: 'medium',
+                      toolCall: {
+                        name: 'read_file',
+                        arguments: {
+                          filePath: 'spec/jsonl-replay-import-regression-implementation-plan.md',
+                        },
+                      },
+                    }
+                : {
                     phase: 'stop',
-                    workflow: 'evidence_review',
-                    instruction: 'Fixture review complete.',
-                    rationale: 'The fixture stops after repository evidence has been supplied.',
-                    finalResponse: [
-                      'Fixture review completed after reading repository evidence.',
-                      'Finding: spec/jsonl-replay-import-regression-implementation-plan.md:1 has been inspected and the fixture confirms the requested document review path can finish with concrete evidence.',
-                      'Risk: low; the run includes a read_file tool result before completion.',
-                    ].join(' '),
-                    expectedEvidence: ['spec document contents'],
+                    workflow: 'general',
+                    instruction: 'Fixture smoke complete.',
+                    rationale: 'Fixture provider returned a smoke response.',
+                    finalResponse: 'Fixture smoke complete.',
+                    expectedEvidence: [],
                     terminalState: 'completed',
                     riskLevel: 'low',
                     toolCall: null,
                   }
-                : {
-                    phase: 'act',
-                    workflow: 'evidence_review',
-                    instruction: 'Read the fixture specification document before review.',
-                    rationale:
-                      'The evidence_review prompt requires repository evidence before stopping.',
-                    finalResponse: '',
-                    expectedEvidence: ['spec document contents'],
-                    riskLevel: 'medium',
-                    toolCall: {
-                      name: 'read_file',
-                      arguments: {
-                        filePath: 'spec/jsonl-replay-import-regression-implementation-plan.md',
-                      },
-                    },
-                  }
-              : {
-                  phase: 'stop',
-                  workflow: 'general',
-                  instruction: 'Fixture smoke complete.',
-                  rationale: 'Fixture provider returned a smoke response.',
-                  finalResponse: 'Fixture smoke complete.',
-                  expectedEvidence: [],
-                  terminalState: 'completed',
-                  riskLevel: 'low',
-                  toolCall: null,
-                }
     );
   } else {
     throw new Error(`Unsupported LLM provider: ${provider}`);
