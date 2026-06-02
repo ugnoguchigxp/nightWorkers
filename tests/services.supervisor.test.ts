@@ -40,6 +40,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
     vi.mocked(llm.callSupervisorLLM)
       .mockResolvedValueOnce({
         phase: 'observe',
+        workflow: 'general',
         instruction: 'Check repository status',
         rationale: 'Observe current state',
         expectedEvidence: ['Git status output'],
@@ -51,6 +52,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
       })
       .mockResolvedValueOnce({
         phase: 'stop',
+        workflow: 'general',
         instruction: 'Task complete',
         rationale: 'Verification succeeded',
         expectedEvidence: [],
@@ -94,6 +96,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
     vi.mocked(llm.callSupervisorLLM)
       .mockResolvedValueOnce({
         phase: 'plan',
+        workflow: 'general',
         instruction: 'analyze',
         rationale: 'r1',
         expectedEvidence: [],
@@ -102,6 +105,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
       })
       .mockResolvedValueOnce({
         phase: 'act',
+        workflow: 'general',
         instruction: 'act',
         rationale: 'r2',
         expectedEvidence: [],
@@ -110,6 +114,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
       })
       .mockResolvedValueOnce({
         phase: 'plan',
+        workflow: 'general',
         instruction: 'analyze',
         rationale: 'r3',
         expectedEvidence: [],
@@ -118,6 +123,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
       })
       .mockResolvedValueOnce({
         phase: 'act',
+        workflow: 'general',
         instruction: 'act',
         rationale: 'r4',
         expectedEvidence: [],
@@ -126,6 +132,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
       })
       .mockResolvedValueOnce({
         phase: 'plan',
+        workflow: 'general',
         instruction: 'analyze',
         rationale: 'r5',
         expectedEvidence: [],
@@ -134,6 +141,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
       })
       .mockResolvedValueOnce({
         phase: 'act',
+        workflow: 'general',
         instruction: 'act',
         rationale: 'r6',
         expectedEvidence: [],
@@ -168,6 +176,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
       vi.mocked(llm.callSupervisorLLM)
         .mockResolvedValueOnce({
           phase: 'plan',
+          workflow: 'evidence_review',
           instruction: 'Review the requested file',
           rationale: 'Need to inspect the document',
           expectedEvidence: ['spec file contents'],
@@ -176,6 +185,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
         })
         .mockResolvedValueOnce({
           phase: 'stop',
+          workflow: 'evidence_review',
           instruction: 'Looks fine',
           rationale: 'Review complete',
           finalResponse: 'レビューしました。',
@@ -222,6 +232,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
     vi.mocked(llm.callSupervisorLLM)
       .mockResolvedValueOnce({
         phase: 'plan',
+        workflow: 'evidence_review',
         instruction: 'Review the requested file',
         rationale: 'Need to inspect the document',
         expectedEvidence: ['spec file contents'],
@@ -230,6 +241,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
       })
       .mockResolvedValueOnce({
         phase: 'act',
+        workflow: 'evidence_review',
         instruction: 'Check worktree before review',
         rationale: 'Need repository evidence',
         expectedEvidence: [],
@@ -240,6 +252,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
     for (let i = 0; i < 3; i += 1) {
       vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
         phase: 'stop',
+        workflow: 'evidence_review',
         instruction: '実装前レビューとして、ドキュメントの実行可能性を確認してください。',
         rationale: 'Review findings are incomplete.',
         finalResponse: '',
@@ -285,6 +298,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
     vi.mocked(llm.callSupervisorLLM)
       .mockResolvedValueOnce({
         phase: 'plan',
+        workflow: 'code_change',
         instruction: 'Run command',
         rationale: 'Need execution',
         expectedEvidence: [],
@@ -296,6 +310,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
       })
       .mockResolvedValueOnce({
         phase: 'act',
+        workflow: 'code_change',
         instruction: 'Run command',
         rationale: 'Need execution',
         expectedEvidence: [],

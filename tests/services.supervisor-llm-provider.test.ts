@@ -24,7 +24,7 @@ describe('Supervisor LLM provider evidence fallback', () => {
     }
   });
 
-  it('infers read_file for file-path review tasks when round 2 omits a required tool call', async () => {
+  it('keeps evidence tool selection in the prompt-driven fixture path', async () => {
     const decision = await callSupervisorLLM(
       buildRound2SystemPrompt(),
       JSON.stringify({
@@ -32,6 +32,7 @@ describe('Supervisor LLM provider evidence fallback', () => {
           'spec/jsonl-replay-import-regression-implementation-plan.md のドキュメントレビューをしてください',
         round1Decision: {
           phase: 'plan',
+          workflow: 'evidence_review',
           instruction: 'Review the requested specification document.',
           rationale: 'Need repository evidence.',
           finalResponse: '',
@@ -41,10 +42,11 @@ describe('Supervisor LLM provider evidence fallback', () => {
         },
         observations: [],
       }),
-      { round: 2, requireToolCall: true }
+      { round: 2 }
     );
 
     expect(decision.phase).toBe('act');
+    expect(decision.workflow).toBe('evidence_review');
     expect(decision.toolCall).toEqual({
       name: 'read_file',
       arguments: {
@@ -61,6 +63,7 @@ describe('Supervisor LLM provider evidence fallback', () => {
           'spec/jsonl-replay-import-regression-implementation-plan.md のドキュメントレビューをしてください',
         round1Decision: {
           phase: 'plan',
+          workflow: 'evidence_review',
           instruction: 'Review the requested specification document.',
           rationale: 'Need repository evidence.',
           finalResponse: '',
@@ -70,10 +73,11 @@ describe('Supervisor LLM provider evidence fallback', () => {
         },
         observations: ['tool=read_file status=ok\n# implementation plan'],
       }),
-      { round: 2, requireToolCall: true }
+      { round: 2 }
     );
 
     expect(decision.phase).toBe('stop');
+    expect(decision.workflow).toBe('evidence_review');
     expect(decision.toolCall).toBeNull();
     expect(decision.finalResponse).toContain('after reading repository evidence');
   });
@@ -86,6 +90,7 @@ describe('Supervisor LLM provider evidence fallback', () => {
     );
 
     expect(decision.phase).toBe('plan');
+    expect(decision.workflow).toBe('evidence_review');
     expect(decision.expectedEvidence).toEqual([
       'spec/memory-feedback-long-run-implementation-plan.md: 1-767: implementation plan consistency',
       'api/services/context-still/client.ts: context compile integration',

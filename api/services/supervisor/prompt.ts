@@ -1,74 +1,179 @@
-/**
- * Supervisor 用の Prompt 定義。
- *
- * 方針:
- * - 共通の人格定義は最小化。
- * - 具体ルールとツール利用方針は各ラウンドで分離。
- */
-export function buildSystemPrompt(): string {
-  return `あなたはコーディングエージェントです。ユーザーの依頼に忠実に対応してください。`;
+export type SupervisorWorkflow = 'general' | 'evidence_review' | 'code_change' | 'research';
+
+const TOOL_CATALOG = [
+  { name: 'list_dir', description: 'リポジトリ内のディレクトリを一覧する。' },
+  { name: 'find_file', description: '正確なパスが不明なとき、ファイルマスクで候補を探す。' },
+  { name: 'read_file', description: 'レビューや編集の前に、リポジトリ内のファイルを読む。' },
+  {
+    name: 'search_files',
+    description: '直接読むだけでは足りないとき、リポジトリ内の文字列を検索する。',
+  },
+  { name: 'search_web', description: '最新の外部情報が必要なとき、公開 Web を検索する。' },
+  {
+    name: 'fetch_content',
+    description: '検索で選んだ URL の本文を読む。検索結果 snippet だけを根拠にしない。',
+  },
+  { name: 'git_status', description: '作業ツリーの状態を確認する。' },
+  { name: 'git_diff', description: 'リポジトリの差分を確認する。' },
+  {
+    name: 'replace_content',
+    description: '対象が1箇所に限定できる単純なリテラル置換を行う。',
+  },
+  { name: 'apply_patch', description: '構造的な編集や新規ファイル作成を unified diff で行う。' },
+  {
+    name: 'run_command',
+    description: 'ポリシーの範囲内で検証コマンドやリポジトリのスクリプトを実行する。',
+  },
+] as const;
+
+const TOOL_CALL_SHAPE = `toolCall: {
+  name: string,
+  arguments: object
+} | null`;
+
+function buildToolCatalog(): string {
+  return `[Tool catalog]
+このセクションだけを worker ツール名、詳細情報、使うべきタイミングの根拠にしてください。
+${TOOL_CATALOG.map((tool) => `- ${tool.name}: ${tool.description}`).join('\n')}
+
+[toolCall スキーマ]
+${TOOL_CALL_SHAPE}
+
+toolCall.name は必ず Tool catalog にある名前だけを使う。`;
+}
+
+function buildDecisionContract(): string {
+  return `[Decision JSON 契約]
+JSON のみを返してください。markdown のコードブロックで囲まないでください。
+必須キー:
+- phase: observe | plan | act | verify | report | stop
+- workflow: general | evidence_review | code_change | research
+- instruction: string
+- rationale: string
+- finalResponse: string
+- expectedEvidence: string[]
+- riskLevel: low | medium | high
+- toolCall: ${TOOL_CALL_SHAPE}
+- terminalState: needs_review | completed | blocked | failed | timed_out | cancelled | needs_human。phase が stop のときだけ指定する。
+
+toolCall.name を返す場合は、同じ prompt 内の Tool catalog だけを参照してください。
+利用できないツール名を返してはいけません。例: mcp__*, functions.*, exec_command, shell namespace。`;
+}
+
+function buildBaseSystemContext(projectRoot?: string): string {
+  return `[SystemContext]
+あなたはコーディングエージェントです。ユーザーの目的を完遂するため、必要な調査、実行、検証を行い、構造化された decision を返してください。
+${projectRoot ? `プロジェクトルート: ${projectRoot}` : ''}
+
+[基本ルール]
+- 証拠が必要な場合、phase="stop" の前に必ず証拠を取得する。
+- 外部の最新情報が必要な場合、検索結果だけで判断せず本文を確認する。
+- 編集が必要な場合、対象確認、編集、検証の順で進める。
+- finalResponse はユーザーに見える最終回答です。停止時の実際の結果は instruction や rationale ではなく finalResponse に書く。
+- 判断に迷う場合は、推測で完了扱いにせず、次に必要な証拠または検証を取得する。`;
+}
+
+function buildWorkflowSelectionContext(projectRoot: string): string {
+  return `${buildBaseSystemContext(projectRoot)}
+
+[Round 1: workflow 選択]
+必ず1つだけ workflow を選んでください。
+- general: リポジトリ証拠を必要としない直接回答や単純なタスク。
+- evidence_review: ドキュメントレビュー、コードレビュー、ログ調査、回帰調査、実装計画レビュー、原因調査、またはリポジトリ証拠を引用すべきタスク。
+- code_change: リポジトリのファイル変更を伴う実装や修正。
+- research: 最新の公開 Web 情報や外部ドキュメント確認が必要なタスク。
+
+Round 1 は基本的に計画を返してください。リポジトリ証拠や Web 証拠を本当に必要としない軽い会話だけ、phase="stop" を許可します。
+Round 1 では toolCall を原則 null にしてください。実行手段の選択は Round 2 の Tool catalog に基づいて行います。
+
+${buildDecisionContract()}`;
+}
+
+function buildEvidenceReviewContext(): string {
+  return `[Workflow SystemContext: evidence_review]
+この workflow は、リポジトリ証拠に基づくレビューや調査のためのものです。
+
+必須動作:
+- phase="stop" の前に、関連するリポジトリ証拠を取得する。
+- ユーザーがファイルパスを示している場合、そのファイルを最初に読む。
+- 正確なファイルが不明な場合、候補を探してから読む。
+- ログ確認が必要な場合、該当するログソースまたはコマンド出力を確認する。
+- finalResponse には、具体的な指摘と証拠参照を含める。例: ファイルパス、行範囲、event id、コマンド名、ログ識別子。
+- 「レビューしてください」という指示文だけで答えない。finalResponse はレビュー結果そのものにする。`;
+}
+
+function buildCodeChangeContext(): string {
+  return `[Workflow SystemContext: code_change]
+この workflow は、実装や修正のためのものです。
+
+必須動作:
+- 編集前に既存コードを確認する。
+- 既存パターンに合う狭い変更を優先する。
+- 単純置換で済む場合だけ置換系の手段を使う。それ以外は patch 系の手段を使う。
+- 停止前にリポジトリの既存コマンドで検証する。
+- finalResponse には変更ファイルと検証結果を要約する。`;
+}
+
+function buildResearchContext(): string {
+  return `[Workflow SystemContext: research]
+この workflow は、最新の外部情報が必要なタスクのためのものです。
+
+必須動作:
+- 候補ソースを探し、根拠にするソースは本文まで読む。
+- 技術、法律、金融、API 関連の話題では一次情報または公式情報を優先する。
+- finalResponse には使用した URL または取得したページタイトルを含める。`;
+}
+
+function buildGeneralContext(): string {
+  return `[Workflow SystemContext: general]
+この workflow は、直接回答や単純なタスクのためのものです。
+
+必須動作:
+- リポジトリ証拠や Web 証拠なしで答えられる場合、phase="stop" と finalResponse で完了してよい。
+- 証拠が必要だと分かった場合、general 以外の workflow を返し、適切なツールを要求する。`;
 }
 
 export function buildRound1SystemPrompt(projectRoot: string): string {
-  return `${buildSystemPrompt()}
-
-[Round 1: 意図分析]
-- 現在のプロジェクトルート(絶対パス): ${projectRoot}
-- ユーザー入力を分析し、何をしなければならないか考案してください。
-- 分析後に Goal と実行プロセスを考案してください。
-- 外部の最新情報や公開仕様が必要なら search_web / fetch_content も選択肢に含めてください。
-- 出力は JSON のみ（自然文の前置き・コードブロック禁止）。
-- 必須キー: phase, instruction, rationale, finalResponse, expectedEvidence, riskLevel, toolCall
-- toolCall に許可外のツール名（例: mcp__*, functions.*, exec_command）を絶対に入れない。
-- すぐ返答できる会話タスクなら phase="stop" と finalResponse を埋める。
-- 実行が必要なら phase="plan" または phase="act" を返す。`;
+  return buildWorkflowSelectionContext(projectRoot);
 }
 
-export function buildRound2SystemPrompt(): string {
-  return `${buildSystemPrompt()}
+export function buildRound2SystemPrompt(workflow: SupervisorWorkflow = 'general'): string {
+  const workflowContext =
+    workflow === 'evidence_review'
+      ? buildEvidenceReviewContext()
+      : workflow === 'code_change'
+        ? buildCodeChangeContext()
+        : workflow === 'research'
+          ? buildResearchContext()
+          : buildGeneralContext();
 
-[Round 2: 実行ラウンド]
-- このラウンドの入力は Round1 のJSON結果です。そこから実行すべき1手を決めてください。
-- 許可ツール: list_dir / find_file / read_file / search_files / search_web / fetch_content / git_status / apply_patch / replace_content / run_command / git_diff
-- 目的は依頼を実際に達成すること。
-- 探索は list_dir / find_file を優先し、全文検索は必要な場合のみ search_files を使う。
-- 外部の最新情報、公開仕様、ライブラリ/API ドキュメント、価格、Web 固有の事実が必要なら search_web を使い、候補 URL を決めてから fetch_content で読む。
-- search_web の検索結果 snippet だけを根拠にせず、採用する主張は fetch_content の本文で確認する。
-- 単純な1箇所編集は replace_content を優先し、複雑な構造変更のみ apply_patch を使う。
-- ドキュメントレビュー、コードレビュー、実装計画レビュー、ファイルパス指定、ログ調査、原因分析、修正依頼は証拠取得が必須です。read_file / search_files / git_status / git_diff / run_command などで対象を確認する前に phase="stop" を返してはいけません。
-- 出力は JSON のみ。
-- 実行を続ける場合は toolCall を必ず返す。会話だけで完了する場合のみ phase="stop" + finalResponse を返す。
-- 許可外のツール名（例: mcp__*, functions.*, exec_command）は絶対に使わない。
+  return `${buildBaseSystemContext()}
 
-[toolCall の Zod スキーマ相当]
-toolCall: z.object({
-  name: z.enum(['list_dir', 'find_file', 'read_file', 'search_files', 'search_web', 'fetch_content', 'git_status', 'apply_patch', 'replace_content', 'run_command', 'git_diff']),
-  arguments: z.union([
-    z.object({ relativePath: z.string().optional(), recursive: z.boolean().optional(), skipIgnored: z.boolean().optional(), maxEntries: z.number().optional() }),
-    z.object({ fileMask: z.string(), relativePath: z.string().optional(), recursive: z.boolean().optional(), maxResults: z.number().optional() }),
-    z.object({ filePath: z.string(), startLine: z.number().optional(), endLine: z.number().optional() }),
-    z.object({ query: z.string(), glob: z.string().optional() }),
-    z.object({ query: z.string(), maxResults: z.number().optional() }),
-    z.object({ url: z.string(), maxChars: z.number().optional() }),
-    z.object({ patchContent: z.string() }),
-    z.object({ filePath: z.string(), needle: z.string(), replacement: z.string(), mode: z.enum(['literal', 'regex']), allowMultipleOccurrences: z.boolean().optional() }),
-    z.object({ command: z.string() }),
-    z.object({})
-  ])
-}).nullable()
+[Round 2: 実行]
+Round 1 で選んだ workflow に従い、次の具体的な1手を決めてください。
 
-[使い方]
-- list_dir: ディレクトリ構造を一覧する（初手探索向け）。
-- find_file: ファイルマスクで対象ファイルを絞り込む。
-- read_file: ファイル内容を読む（編集前の確認用途）。
-- search_files: 対象文字列の全文検索（必要時のみ）。
-- search_web: 公開Webの検索結果を調べる。検索結果 snippet だけを根拠にせず、必要なら fetch_content で本文を読む。
-- fetch_content: URL の本文を読む。外部の最新情報や仕様を確認する時は search_web の後に使う。
-- git_status: 変更有無や状態を確認する。
-- apply_patch: unified diff を arguments.patchContent に入れて実行する（filePath 単独は無効）。
-- 新規ファイル作成は apply_patch で --- /dev/null / +++ b/<path> の new file patch を使う。
-- replace_content: 単純置換を安全に実行する（1件一致が前提）。
-- run_command: arguments.command に実行コマンドを入れる。`;
+${workflowContext}
+
+${buildDecisionContract()}
+
+${buildToolCatalog()}`;
+}
+
+export function buildSupervisorTurnInput(userInput: string, observations: string[]): string {
+  if (observations.length === 0) return userInput;
+  return [
+    userInput,
+    '',
+    '[これまでに取得したリポジトリ証拠]',
+    ...observations
+      .slice(-6)
+      .map((observation, index) => `Observation ${index + 1}:\n${observation}`),
+    '',
+    '[停止時の回答要件]',
+    '- phase="stop" の場合、finalResponse にユーザー向けの実際の結果を書く。',
+    '- 結果を instruction や rationale だけに書かない。',
+    '- 証拠系 workflow では、使用した具体的な証拠を含める。',
+  ].join('\n');
 }
 
 export function buildCodexTurnPrompt(systemPrompt: string, userPrompt: string): string {

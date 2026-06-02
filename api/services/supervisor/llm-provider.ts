@@ -5,6 +5,7 @@ import { isTemporarilyBlockedExternalToolName } from './TEMP_DISABLE_EXTERNAL_MC
 
 const supervisorDecisionBaseSchema = z.object({
   phase: z.enum(['observe', 'plan', 'act', 'verify', 'report', 'stop']),
+  workflow: z.enum(['general', 'evidence_review', 'code_change', 'research']).default('general'),
   instruction: z.string().default(''),
   rationale: z.string().default(''),
   finalResponse: z.string().default(''),
@@ -71,7 +72,6 @@ export type SupervisorDecision = z.infer<typeof supervisorDecisionSchema>;
 type CallSupervisorOptions = {
   tolerateSchemaFailure?: boolean;
   round?: 1 | 2 | 3;
-  requireToolCall?: boolean;
 };
 
 const fixtureCodingRound2Calls = new Map<string, number>();
@@ -93,6 +93,7 @@ function buildFixtureCodingDecision(userPrompt: string, round?: 1 | 2 | 3) {
   if (round === 1) {
     return {
       phase: 'plan',
+      workflow: 'code_change',
       instruction: 'E2E_SIMPLE_CODING_FIXTURE: update the tracked greeting file.',
       rationale: 'The fixture plans a deterministic coding task.',
       finalResponse: '',
@@ -108,6 +109,7 @@ function buildFixtureCodingDecision(userPrompt: string, round?: 1 | 2 | 3) {
     if (callCount === 0) {
       return {
         phase: 'act',
+        workflow: 'code_change',
         instruction: 'Apply the deterministic fixture patch.',
         rationale: 'A simple coding task should produce a concrete file change.',
         finalResponse: '',
@@ -134,6 +136,7 @@ function buildFixtureCodingDecision(userPrompt: string, round?: 1 | 2 | 3) {
 
   return {
     phase: 'stop',
+    workflow: 'code_change',
     instruction: 'Fixture coding task complete.',
     rationale: 'The deterministic patch was already requested.',
     finalResponse: 'Fixture coding task completed with an updated greeting file.',
@@ -194,6 +197,7 @@ function normalizeLegacyDecisionShape(input: unknown): unknown {
   if (status) {
     return {
       phase: status === 'completed' ? 'stop' : 'plan',
+      workflow: 'general',
       instruction: message || '',
       rationale: `Normalized legacy decision format. status=${status}`,
       finalResponse: message || (created.length > 0 ? `created: ${created.join(', ')}` : ''),
@@ -250,6 +254,7 @@ function normalizeDecisionForSchema(input: unknown): unknown {
   if (typeof obj.finalResponse !== 'string') obj.finalResponse = '';
   if (typeof obj.instruction !== 'string') obj.instruction = '';
   if (typeof obj.rationale !== 'string') obj.rationale = '';
+  if (typeof obj.workflow !== 'string') obj.workflow = 'general';
   if (!Array.isArray(obj.expectedEvidence)) {
     obj.expectedEvidence = [];
   } else {
@@ -319,16 +324,6 @@ function normalizeDecisionForSchema(input: unknown): unknown {
   return obj;
 }
 
-function getLatestUserMessageFromRoundInput(userPrompt: string): string {
-  try {
-    const parsed = JSON.parse(userPrompt) as { latestUserMessage?: unknown };
-    if (typeof parsed.latestUserMessage === 'string') return parsed.latestUserMessage;
-  } catch {
-    // Round 1 receives a plain user prompt.
-  }
-  return userPrompt;
-}
-
 function hasRoundObservations(userPrompt: string): boolean {
   try {
     const parsed = JSON.parse(userPrompt) as { observations?: unknown };
@@ -336,30 +331,6 @@ function hasRoundObservations(userPrompt: string): boolean {
   } catch {
     return false;
   }
-}
-
-function inferEvidenceToolCall(userPrompt: string): SupervisorDecision['toolCall'] {
-  if (hasRoundObservations(userPrompt)) return null;
-
-  const latestUserMessage = getLatestUserMessageFromRoundInput(userPrompt);
-  const fileMatch = latestUserMessage.match(
-    /(?:^|\s|["'`])([\w./-]+\.(?:md|ts|tsx|js|jsx|json|jsonl|sql|yaml|yml|toml|lock))\b/
-  );
-  if (fileMatch?.[1]) {
-    return {
-      name: 'read_file',
-      arguments: { filePath: fileMatch[1] },
-    };
-  }
-
-  if (/レビュー|review|調査|原因|分析|実装計画|ドキュメント/i.test(latestUserMessage)) {
-    return {
-      name: 'git_status',
-      arguments: {},
-    };
-  }
-
-  return null;
 }
 
 function buildResponseJsonSchema(round?: 1 | 2 | 3) {
@@ -372,6 +343,7 @@ function buildResponseJsonSchema(round?: 1 | 2 | 3) {
       additionalProperties: false,
       required: [
         'phase',
+        'workflow',
         'instruction',
         'rationale',
         'finalResponse',
@@ -380,6 +352,10 @@ function buildResponseJsonSchema(round?: 1 | 2 | 3) {
       ],
       properties: {
         phase: { type: 'string', enum: ['observe', 'plan', 'act', 'verify', 'report', 'stop'] },
+        workflow: {
+          type: 'string',
+          enum: ['general', 'evidence_review', 'code_change', 'research'],
+        },
         instruction: { type: 'string' },
         rationale: { type: 'string' },
         finalResponse: { type: 'string' },
@@ -694,6 +670,7 @@ export async function callSupervisorLLM(
       userPrompt.includes('E2E_OBJECT_EVIDENCE_FIXTURE')
         ? {
             phase: 'plan',
+            workflow: 'evidence_review',
             instruction: 'Review object evidence fixture.',
             rationale:
               'The fixture returns structured expected evidence like Codex sometimes does.',
@@ -717,6 +694,7 @@ export async function callSupervisorLLM(
           : options.round === 1
             ? {
                 phase: 'plan',
+                workflow: 'evidence_review',
                 instruction: 'Review the requested specification document.',
                 rationale: 'The fixture intentionally plans without a tool call.',
                 finalResponse: '',
@@ -725,28 +703,41 @@ export async function callSupervisorLLM(
                 toolCall: null,
               }
             : options.round === 2
-              ? {
-                  phase: 'stop',
-                  instruction: 'Fixture review complete.',
-                  rationale: hasRoundObservations(userPrompt)
-                    ? 'The fixture stops after repository evidence has been supplied.'
-                    : 'The fixture intentionally stops before collecting evidence.',
-                  finalResponse: hasRoundObservations(userPrompt)
-                    ? [
-                        'Fixture review completed after reading repository evidence.',
-                        'Finding: spec/jsonl-replay-import-regression-implementation-plan.md:1 has been inspected and the fixture confirms the requested document review path can finish with concrete evidence.',
-                        'Risk: low; the run includes a read_file tool result before completion.',
-                      ].join(' ')
-                    : 'Fixture stopped without collecting repository evidence.',
-                  expectedEvidence: hasRoundObservations(userPrompt)
-                    ? ['spec document contents']
-                    : [],
-                  terminalState: 'completed',
-                  riskLevel: 'low',
-                  toolCall: null,
-                }
+              ? hasRoundObservations(userPrompt)
+                ? {
+                    phase: 'stop',
+                    workflow: 'evidence_review',
+                    instruction: 'Fixture review complete.',
+                    rationale: 'The fixture stops after repository evidence has been supplied.',
+                    finalResponse: [
+                      'Fixture review completed after reading repository evidence.',
+                      'Finding: spec/jsonl-replay-import-regression-implementation-plan.md:1 has been inspected and the fixture confirms the requested document review path can finish with concrete evidence.',
+                      'Risk: low; the run includes a read_file tool result before completion.',
+                    ].join(' '),
+                    expectedEvidence: ['spec document contents'],
+                    terminalState: 'completed',
+                    riskLevel: 'low',
+                    toolCall: null,
+                  }
+                : {
+                    phase: 'act',
+                    workflow: 'evidence_review',
+                    instruction: 'Read the fixture specification document before review.',
+                    rationale:
+                      'The evidence_review prompt requires repository evidence before stopping.',
+                    finalResponse: '',
+                    expectedEvidence: ['spec document contents'],
+                    riskLevel: 'medium',
+                    toolCall: {
+                      name: 'read_file',
+                      arguments: {
+                        filePath: 'spec/jsonl-replay-import-regression-implementation-plan.md',
+                      },
+                    },
+                  }
               : {
                   phase: 'stop',
+                  workflow: 'general',
                   instruction: 'Fixture smoke complete.',
                   rationale: 'Fixture provider returned a smoke response.',
                   finalResponse: 'Fixture smoke complete.',
@@ -847,22 +838,10 @@ export async function callSupervisorLLM(
             : 'Supervisor LLM returned empty stop decision'
         );
 
-        const inferredToolCall = options.requireToolCall ? inferEvidenceToolCall(userPrompt) : null;
-        if (inferredToolCall) {
-          return {
-            phase: 'act',
-            instruction: 'Collect required repository evidence before responding.',
-            rationale: 'Execution round requires a tool call and repository evidence is available.',
-            finalResponse: '',
-            expectedEvidence: parsed.data.expectedEvidence ?? [],
-            riskLevel: parsed.data.riskLevel || 'medium',
-            toolCall: inferredToolCall,
-          };
-        }
-
         if (options.tolerateSchemaFailure) {
           return {
             phase: 'plan',
+            workflow: parsed.data.workflow || 'general',
             instruction: 'Empty stop decision detected. Continue to next round.',
             rationale: 'Model returned stop with empty payload.',
             finalResponse: '',
@@ -874,6 +853,7 @@ export async function callSupervisorLLM(
 
         return {
           phase: 'stop',
+          workflow: parsed.data.workflow || 'general',
           instruction: 'Safety system interrupted due to empty stop decision.',
           rationale: 'Model returned stop without any meaningful response fields.',
           finalResponse: '応答内容が空だったため処理を中断しました。',
@@ -894,73 +874,6 @@ export async function callSupervisorLLM(
         },
         'Supervisor LLM response parsed'
       );
-
-      if (
-        options.requireToolCall &&
-        !parsed.data.toolCall &&
-        (parsed.data.phase !== 'stop' || !hasRoundObservations(userPrompt))
-      ) {
-        const inferredToolCall = inferEvidenceToolCall(userPrompt);
-        if (inferredToolCall) {
-          logger.info(
-            {
-              provider,
-              round: options.round,
-              phase: parsed.data.phase,
-              inferredToolCallName: inferredToolCall.name,
-            },
-            'Supervisor inferred required evidence toolCall'
-          );
-          return {
-            ...parsed.data,
-            phase: 'act',
-            finalResponse: '',
-            instruction:
-              parsed.data.instruction || 'Collect required repository evidence before responding.',
-            rationale:
-              parsed.data.rationale ||
-              'Execution round requires an explicit tool call before final response.',
-            toolCall: inferredToolCall,
-          };
-        }
-        appendSupervisorTrace('missing_tool_call', {
-          round: options.round,
-          phase: parsed.data.phase,
-          instruction: parsed.data.instruction,
-          rationale: parsed.data.rationale,
-          riskLevel: parsed.data.riskLevel,
-        });
-        logger.warn(
-          {
-            provider,
-            round: options.round,
-            rawContentPreview: rawContent.slice(0, 300),
-          },
-          'Supervisor decision missing required toolCall'
-        );
-        if (options.tolerateSchemaFailure) {
-          return {
-            phase: 'plan',
-            instruction: 'toolCall required but missing. Continue to next round.',
-            rationale: 'Execution round requires an explicit tool call.',
-            finalResponse: '',
-            expectedEvidence: [],
-            riskLevel: 'medium',
-            toolCall: null,
-          };
-        }
-        return {
-          phase: 'stop',
-          instruction: 'Safety system interrupted due to missing toolCall.',
-          rationale: 'Execution round requires a toolCall but none was provided.',
-          finalResponse:
-            '必要なツール呼び出しが生成されなかったため中断しました。LLM最終回答は実行ラウンドで必須のtoolCallを返せておらず、実行継続条件を満たしていません。',
-          expectedEvidence: [],
-          terminalState: 'needs_human',
-          riskLevel: 'high',
-          toolCall: null,
-        };
-      }
 
       return parsed.data;
     }
@@ -983,6 +896,7 @@ export async function callSupervisorLLM(
     if (options.tolerateSchemaFailure) {
       return {
         phase: 'plan',
+        workflow: 'general',
         instruction: 'Schema mismatch in previous round. Continue to next round.',
         rationale: `LLM response schema mismatch tolerated. Raw content: ${rawContent}`,
         finalResponse: '',
@@ -994,6 +908,7 @@ export async function callSupervisorLLM(
 
     return {
       phase: 'stop',
+      workflow: 'general',
       instruction: 'Safety system interrupted execution due to formatting errors.',
       rationale: `LLM response failed to match schema. Raw content: ${rawContent}`,
       finalResponse:
@@ -1017,6 +932,7 @@ export async function callSupervisorLLM(
       );
       return {
         phase: 'stop',
+        workflow: 'general',
         instruction: 'Conversation response completed without tool execution.',
         rationale: 'Model returned plain-text response; no tool call was required.',
         finalResponse: plain,
@@ -1044,6 +960,7 @@ export async function callSupervisorLLM(
     });
     return {
       phase: 'stop',
+      workflow: 'general',
       instruction: 'Safety system interrupted execution due to JSON syntax errors.',
       rationale: `LLM response failed to parse as JSON. Raw content: ${rawContent}. Error: ${errorMessage}`,
       finalResponse: '内部JSONエラーのため処理を中断しました。',

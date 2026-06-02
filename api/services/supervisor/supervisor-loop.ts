@@ -7,7 +7,12 @@ import { DefaultToolPolicyGate } from '../tool-policy/tool-policy-gate';
 import type { ToolCallRequest, WorkerToolName } from '../tool-policy/types';
 import { executeWorkerTool } from '../worker-tools/dispatcher';
 import { callSupervisorLLM } from './llm-provider';
-import { buildRound1SystemPrompt, buildRound2SystemPrompt } from './prompt';
+import {
+  buildRound1SystemPrompt,
+  buildRound2SystemPrompt,
+  buildSupervisorTurnInput,
+  type SupervisorWorkflow,
+} from './prompt';
 
 export interface SupervisorLoopInput {
   runId: string;
@@ -38,7 +43,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
   const maxIterations = input.maxIterations ?? 30;
   const maxToolCalls = input.maxToolCalls ?? 80;
   const maxRepeatedToolPattern = input.maxRepeatedToolPattern ?? 3;
-  const evidenceRequired = requiresRepositoryEvidence(latestUserMessage || prompt || '');
+  let activeWorkflow: SupervisorWorkflow = 'general';
   const budget = new RunBudgetController({
     maxIterations,
     maxToolCalls,
@@ -61,7 +66,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     maxToolCalls,
     maxRepeatedToolPattern,
     timeoutSeconds: input.timeoutSeconds,
-    evidenceRequired,
+    activeWorkflow,
   });
 
   while (true) {
@@ -104,7 +109,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     const userInput = (latestUserMessage || prompt || '').trim();
 
     // 3. Prompt building
-    const userPrompt = buildSupervisorUserPrompt(userInput, toolObservations);
+    const userPrompt = buildSupervisorTurnInput(userInput, toolObservations);
 
     // 4. Invoke the Supervisor LLM
     let decision: Awaited<ReturnType<typeof callSupervisorLLM>>;
@@ -122,6 +127,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         runId,
         iteration,
         phase: round1.phase,
+        workflow: round1.workflow,
         hasToolCall: Boolean(round1.toolCall),
         toolName: round1.toolCall?.name ?? null,
       });
@@ -137,15 +143,19 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       if (round1.phase === 'stop') {
         decision = round1;
       } else {
+        activeWorkflow = round1.workflow || activeWorkflow;
         const round2Input = JSON.stringify({
           latestUserMessage: userInput,
           round1Decision: round1,
           observations: toolObservations.slice(-6),
         });
-        const round2 = await callSupervisorLLM(buildRound2SystemPrompt(), round2Input, {
-          round: 2,
-          requireToolCall: true,
-        });
+        const round2 = await callSupervisorLLM(
+          buildRound2SystemPrompt(activeWorkflow),
+          round2Input,
+          {
+            round: 2,
+          }
+        );
         logger.info(
           {
             runId,
@@ -161,6 +171,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           runId,
           iteration,
           phase: round2.phase,
+          workflow: round2.workflow,
           hasToolCall: Boolean(round2.toolCall),
           toolName: round2.toolCall?.name ?? null,
         });
@@ -173,6 +184,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           payloadJson: { round: 2, iteration, decision: round2 },
         });
         decision = round2;
+        activeWorkflow = round2.workflow || activeWorkflow;
       }
       logger.info(
         {
@@ -225,6 +237,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
 
     // 6. Handle stop decision
     if (decision.phase === 'stop') {
+      const evidenceRequired = requiresWorkflowEvidence(decision.workflow || activeWorkflow);
       if (evidenceRequired && supervisorToolCalls === 0) {
         const missingToolBudget = budget.onMissingToolCall();
         const detail = {
@@ -634,6 +647,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     });
     await repo.updateTaskStatus(run.taskId, terminalState);
   }
+  const evidenceRequired = requiresWorkflowEvidence(activeWorkflow);
   appendSupervisorTrace('supervisor_loop_finished', {
     runId,
     terminalState,
@@ -642,6 +656,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     riskLevel,
     iterations: iteration,
     supervisorToolCalls,
+    activeWorkflow,
     evidenceRequired,
     finalReportLength: finalReportText.length,
   });
@@ -653,6 +668,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       riskLevel,
       iterations: iteration,
       supervisorToolCalls,
+      activeWorkflow,
       evidenceRequired,
       finalReportLength: finalReportText.length,
     },
@@ -667,45 +683,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
   };
 }
 
-function requiresRepositoryEvidence(prompt: string): boolean {
-  const normalized = prompt.toLowerCase();
-  if (
-    /(^|\s|["'`])[\w./-]+\.(md|ts|tsx|js|jsx|json|jsonl|sql|yaml|yml|toml|lock)\b/.test(normalized)
-  ) {
-    return true;
-  }
-
-  return [
-    'review',
-    'レビュー',
-    'ドキュメント',
-    'implementation-plan',
-    '実装計画',
-    '原因',
-    '分析',
-    'ログ',
-    '調査',
-    '修正',
-    '実装',
-    'regression',
-  ].some((keyword) => normalized.includes(keyword));
-}
-
-function buildSupervisorUserPrompt(userInput: string, observations: string[]): string {
-  if (observations.length === 0) return userInput;
-  return [
-    userInput,
-    '',
-    '[Repository evidence collected so far]',
-    ...observations
-      .slice(-6)
-      .map((observation, index) => `Observation ${index + 1}:\n${observation}`),
-    '',
-    '[Final response requirements]',
-    '- If you stop after reviewing repository evidence, finalResponse must contain the actual review findings.',
-    '- Do not put the review result only in instruction or rationale.',
-    '- Include concrete evidence references such as file paths or line numbers.',
-  ].join('\n');
+function requiresWorkflowEvidence(workflow: SupervisorWorkflow): boolean {
+  return workflow === 'evidence_review' || workflow === 'code_change' || workflow === 'research';
 }
 
 function evaluateStopDecisionQuality(input: {
@@ -730,18 +709,6 @@ function evaluateStopDecisionQuality(input: {
       reason: 'too_short_final_response_after_evidence',
       message:
         'stop was ignored because finalResponse was too short to be a substantive review result.',
-    };
-  }
-
-  if (
-    !/(^|\s|`)[\w./-]+\.(md|ts|tsx|js|jsx|json|jsonl|sql|yaml|yml|toml|lock)(:\d+)?\b/.test(
-      finalResponse
-    )
-  ) {
-    return {
-      reason: 'missing_evidence_reference_after_evidence',
-      message:
-        'stop was ignored because finalResponse did not include concrete repository evidence references.',
     };
   }
 
