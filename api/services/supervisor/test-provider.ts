@@ -3,6 +3,7 @@ import type { SupervisorDecision } from './llm-provider';
 type ScenarioId =
   | 'basic_file_create'
   | 'existing_file_edit_requires_read'
+  | 'ws_badge_color_update'
   | 'policy_blocked_command'
   | 'verification_failure';
 
@@ -26,6 +27,7 @@ function getScenarioId(userPrompt: string): ScenarioId {
   if (
     candidate === 'basic_file_create' ||
     candidate === 'existing_file_edit_requires_read' ||
+    candidate === 'ws_badge_color_update' ||
     candidate === 'policy_blocked_command' ||
     candidate === 'verification_failure'
   ) {
@@ -213,6 +215,73 @@ export function buildTestProviderDecision(
         'Updated src/greeting.txt after reading the file first.'
       ),
       expectedEvidence: ['read_file before apply_patch', 'src/greeting.txt updated'],
+      terminalState: 'completed',
+      riskLevel: 'low',
+      toolCall: null,
+    };
+  }
+
+  if (scenarioId === 'ws_badge_color_update') {
+    if (!hasObservation(userPrompt, 'tool=read_file')) {
+      return {
+        phase: 'act',
+        workflow: 'code_change',
+        instruction: 'Read the WS badge component before editing it.',
+        rationale: 'The UI scenario should verify an actual file change with read evidence.',
+        finalResponse: '',
+        expectedEvidence: ['read_file src/WsBadge.tsx'],
+        riskLevel: 'low',
+        toolCall: { name: 'read_file', arguments: { filePath: 'src/WsBadge.tsx' } },
+      };
+    }
+    if (!hasObservation(userPrompt, 'tool=apply_patch')) {
+      return {
+        phase: 'act',
+        workflow: 'code_change',
+        instruction: 'Patch the WS badge to render three status circles.',
+        rationale: 'The harness asserts a UI-oriented diff, not just a generic file create.',
+        finalResponse: '',
+        expectedEvidence: ['src/WsBadge.tsx contains three status circles'],
+        riskLevel: 'low',
+        toolCall: {
+          name: 'apply_patch',
+          arguments: {
+            patchContent: [
+              'diff --git a/src/WsBadge.tsx b/src/WsBadge.tsx',
+              '--- a/src/WsBadge.tsx',
+              '+++ b/src/WsBadge.tsx',
+              '@@ -1,3 +1,15 @@',
+              ' export function WsBadge() {',
+              '-  return <span>WS</span>;',
+              '+  const states = [',
+              '+    { label: "connected", color: "#16a34a" },',
+              '+    { label: "connecting", color: "#f59e0b" },',
+              '+    { label: "disconnected", color: "#dc2626" },',
+              '+  ];',
+              '+',
+              '+  return (',
+              '+    <div aria-label="WS status badge" className="ws-status-badge">',
+              '+      {states.map((state) => (',
+              '+        <span key={state.label} title={state.label} style={{ backgroundColor: state.color }} />',
+              '+      ))}',
+              '+    </div>',
+              '+  );',
+              ' }',
+              '',
+            ].join('\n'),
+          },
+        },
+      };
+    }
+    return {
+      phase: 'stop',
+      workflow: 'code_change',
+      instruction: 'WS badge UI scenario completed.',
+      rationale: 'The component was read and patched with three status color circles.',
+      finalResponse: makeLongFinalResponse(
+        'Updated src/WsBadge.tsx so the WebSocket badge renders connected, connecting, and disconnected circles.'
+      ),
+      expectedEvidence: ['read_file before apply_patch', 'src/WsBadge.tsx updated'],
       terminalState: 'completed',
       riskLevel: 'low',
       toolCall: null,

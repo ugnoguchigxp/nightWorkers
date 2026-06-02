@@ -346,12 +346,10 @@ const reviewOutcomeReasonSchema = z.enum([
   'human_review',
 ]);
 
-export const reviewActionSchema = z
-  .enum(['complete', 'request_follow_up', 'cancel', 'accept_risk'])
-  .openapi('ReviewAction');
+export const reviewActionSchema = z.enum(['complete', 'cancel']).openapi('ReviewAction');
 
 export const reviewVerdictSchema = z
-  .enum(['approved', 'changes_requested', 'cancelled', 'risk_accepted'])
+  .enum(['approved', 'changes_requested', 'cancelled'])
   .openapi('ReviewVerdict');
 
 export const reviewEvidenceRefSchema = z
@@ -439,13 +437,6 @@ export const reviewResultSchema = z
     humanCallouts: z.array(reviewFindingSchema),
     agentFollowUps: z.array(z.string()),
     suggestedNextTasks: z.array(z.string()),
-    riskAcceptance: z
-      .object({
-        acceptedRisk: z.string(),
-        reason: z.string().optional(),
-        evidenceRefs: z.array(reviewEvidenceRefSchema).optional(),
-      })
-      .optional(),
     createdAt: z.string(),
   })
   .openapi('ReviewResult');
@@ -459,13 +450,6 @@ export const reviewRunRequestSchema = z
     humanCallouts: z.array(reviewFindingSchema).optional(),
     agentFollowUps: z.array(z.string()).optional(),
     suggestedNextTasks: z.array(z.string()).optional(),
-    riskAcceptance: z
-      .object({
-        acceptedRisk: z.string(),
-        reason: z.string().optional(),
-        evidenceRefs: z.array(reviewEvidenceRefSchema).optional(),
-      })
-      .optional(),
   })
   .openapi('ReviewRunRequest');
 

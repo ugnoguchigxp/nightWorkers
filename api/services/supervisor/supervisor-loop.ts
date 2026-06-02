@@ -1,7 +1,8 @@
 import { appendSupervisorTrace, logger } from '../../lib/logger';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import { RunBudgetController } from '../run-control/run-budget-controller';
-import type { SupervisorLoopResult } from '../run-control/types';
+import type { BudgetDecision, SupervisorLoopResult } from '../run-control/types';
+import type { RunEventActor, RunEventSeverity, RunEventType } from '../run-events/types';
 import { buildBlockedToolResult } from '../tool-policy/blocked-result';
 import { DefaultToolPolicyGate } from '../tool-policy/tool-policy-gate';
 import type { ToolCallRequest, WorkerToolName } from '../tool-policy/types';
@@ -55,6 +56,37 @@ async function createSupervisorLlmRunEvent(input: {
   });
 }
 
+async function createSupervisorRunEvent(input: {
+  runId: string;
+  taskId?: string;
+  iteration?: number;
+  type: RunEventType;
+  severity: RunEventSeverity;
+  actor: RunEventActor;
+  message: string;
+  data?: Record<string, unknown>;
+  payloadJson?: Record<string, unknown>;
+}) {
+  const data =
+    input.iteration === undefined
+      ? input.data
+      : { iteration: input.iteration, ...(input.data || {}) };
+  await repo.createRunEvent(
+    {
+      version: 1,
+      runId: input.runId,
+      taskId: input.taskId,
+      timestamp: new Date().toISOString(),
+      type: input.type,
+      severity: input.severity,
+      actor: input.actor,
+      message: input.message,
+      ...(data ? { data } : {}),
+    },
+    { payloadJson: input.payloadJson || {} }
+  );
+}
+
 export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<SupervisorLoopResult> {
   const { runId, repoRoot, prompt, latestUserMessage } = input;
   let finalReportText = 'Task execution completed.';
@@ -73,6 +105,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     maxToolCalls,
     maxRepeatedAction: maxRepeatedToolPattern,
     maxMissingToolCalls: 3,
+    maxSchemaFallbacks: 3,
     timeoutSeconds: input.timeoutSeconds,
   });
   let iteration = 0;
@@ -105,15 +138,16 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           ? 'Stopped by timeout budget'
           : 'Stopped by iteration budget';
       stoppedBy = 'budget';
-      await repo.createTaskEvent({
-        taskRunId: runId,
-        type: 'error',
+      await createSupervisorRunEvent({
+        runId,
+        type: 'safety.budget_reached',
+        severity: 'error',
+        actor: 'system',
         message:
           iterationBudget.reason === 'deadline'
             ? '[Budget Stop] Supervisor timeout reached.'
             : '[Budget Stop] maxIterations reached.',
-        actor: 'system',
-        eventType: 'error',
+        data: { reason: iterationBudget.reason, ...(iterationBudget.detail || {}) },
         payloadJson: { reason: iterationBudget.reason, ...(iterationBudget.detail || {}) },
       });
       break;
@@ -132,8 +166,24 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     }
 
     const userInput = (latestUserMessage || prompt || '').trim();
-    const emitLlmDebugEvent = (event: SupervisorLlmDebugEvent) =>
-      createSupervisorLlmRunEvent({ runId, taskId: task.id, iteration, event });
+    const schemaFallbackBudget: { stop: BudgetDecision | null; seen: boolean } = {
+      stop: null,
+      seen: false,
+    };
+    const emitLlmDebugEvent = async (event: SupervisorLlmDebugEvent) => {
+      await createSupervisorLlmRunEvent({ runId, taskId: task.id, iteration, event });
+      if (
+        event.type === 'model.response_parse_failed' ||
+        event.type === 'model.response_repaired' ||
+        (event.type === 'model.retry_scheduled' &&
+          typeof event.message === 'string' &&
+          event.message.includes('json_schema'))
+      ) {
+        schemaFallbackBudget.seen = true;
+        const decision = budget.onSchemaFallback(event.type);
+        if (!decision.allowed) schemaFallbackBudget.stop = decision;
+      }
+    };
 
     // 3. Prompt building
     const userPrompt = buildSupervisorTurnInput(userInput, toolObservations);
@@ -166,12 +216,15 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           hasToolCall: Boolean(round1.toolCall),
           toolName: round1.toolCall?.name ?? null,
         });
-        await repo.createTaskEvent({
-          taskRunId: runId,
-          type: 'info',
-          message: `[Supervisor Round] round=1 phase=${round1.phase} hasToolCall=${Boolean(round1.toolCall)}`,
+        await createSupervisorRunEvent({
+          runId,
+          taskId: task.id,
+          iteration,
+          type: 'supervisor.decision',
+          severity: 'info',
           actor: 'supervisor',
-          eventType: 'supervisor_decision',
+          message: `[Supervisor Round] round=1 phase=${round1.phase} hasToolCall=${Boolean(round1.toolCall)}`,
+          data: { round: 1, decision: round1 },
           payloadJson: { round: 1, iteration, decision: round1 },
         });
 
@@ -213,12 +266,15 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             hasToolCall: Boolean(round2.toolCall),
             toolName: round2.toolCall?.name ?? null,
           });
-          await repo.createTaskEvent({
-            taskRunId: runId,
-            type: 'info',
-            message: `[Supervisor Round] round=2 phase=${round2.phase} hasToolCall=${Boolean(round2.toolCall)}`,
+          await createSupervisorRunEvent({
+            runId,
+            taskId: task.id,
+            iteration,
+            type: 'supervisor.decision',
+            severity: 'info',
             actor: 'supervisor',
-            eventType: 'supervisor_decision',
+            message: `[Supervisor Round] round=2 phase=${round2.phase} hasToolCall=${Boolean(round2.toolCall)}`,
+            data: { round: 2, decision: round2 },
             payloadJson: { round: 2, iteration, decision: round2 },
           });
           decision = round2;
@@ -275,16 +331,41 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           hasToolCall: Boolean(round2.toolCall),
           toolName: round2.toolCall?.name ?? null,
         });
-        await repo.createTaskEvent({
-          taskRunId: runId,
-          type: 'info',
-          message: `[Supervisor Round] round=2 phase=${round2.phase} hasToolCall=${Boolean(round2.toolCall)}`,
+        await createSupervisorRunEvent({
+          runId,
+          taskId: task.id,
+          iteration,
+          type: 'supervisor.decision',
+          severity: 'info',
           actor: 'supervisor',
-          eventType: 'supervisor_decision',
+          message: `[Supervisor Round] round=2 phase=${round2.phase} hasToolCall=${Boolean(round2.toolCall)}`,
+          data: { round: 2, decision: round2 },
           payloadJson: { round: 2, iteration, decision: round2 },
         });
         decision = round2;
         activeWorkflow = round2.workflow || activeWorkflow;
+      }
+      const schemaFallbackStop = schemaFallbackBudget.stop;
+      if (schemaFallbackStop) {
+        finalReportText = `Supervisor loop stopped by budget. reason=${schemaFallbackStop.reason}`;
+        terminalState = 'needs_human';
+        summary = 'Stopped by repeated schema fallback';
+        stoppedBy = 'budget';
+        await createSupervisorRunEvent({
+          runId,
+          taskId: task.id,
+          iteration,
+          type: 'safety.budget_reached',
+          severity: 'error',
+          actor: 'system',
+          message: '[Budget Stop] supervisor schema fallback repeated.',
+          data: { reason: 'schema_fallback', ...(schemaFallbackStop.detail || {}) },
+          payloadJson: { reason: 'schema_fallback', ...(schemaFallbackStop.detail || {}) },
+        });
+        break;
+      }
+      if (!schemaFallbackBudget.seen) {
+        budget.onSchemaDecisionAccepted();
       }
       logger.info(
         {
@@ -311,12 +392,15 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         iteration,
         errorMessage: err?.message,
       });
-      await repo.createTaskEvent({
-        taskRunId: runId,
-        type: 'error',
-        message: `Supervisor Loop encountered LLM parsing/connection error: ${err.message}`,
+      await createSupervisorRunEvent({
+        runId,
+        taskId: task.id,
+        iteration,
+        type: 'system.error',
+        severity: 'error',
         actor: 'system',
-        eventType: 'error',
+        message: `Supervisor Loop encountered LLM parsing/connection error: ${err.message}`,
+        data: { errorMessage: err.message },
       });
       finalReportText = `Supervisor LLM call failed: ${err.message}`;
       terminalState = 'needs_human';
@@ -326,12 +410,15 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     }
 
     // 5. Log supervisor decision in the DB ledger
-    await repo.createTaskEvent({
-      taskRunId: runId,
-      type: 'info',
-      message: `[Supervisor Decision] Phase: ${decision.phase}. Instruction: ${decision.instruction}`,
+    await createSupervisorRunEvent({
+      runId,
+      taskId: task.id,
+      iteration,
+      type: 'supervisor.decision',
+      severity: 'info',
       actor: 'supervisor',
-      eventType: 'supervisor_decision',
+      message: `[Supervisor Decision] Phase: ${decision.phase}. Instruction: ${decision.instruction}`,
+      data: { decision },
       payloadJson: { iteration, decision },
     });
 
@@ -353,14 +440,17 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           ...(missingToolBudget.detail || {}),
         };
         appendSupervisorTrace('stop_without_evidence', { runId, ...detail });
-        await repo.createTaskEvent({
-          taskRunId: runId,
-          type: missingToolBudget.allowed ? 'warning' : 'error',
+        await createSupervisorRunEvent({
+          runId,
+          taskId: task.id,
+          iteration,
+          type: missingToolBudget.allowed ? 'system.warning' : 'safety.repeated_failure',
+          severity: missingToolBudget.allowed ? 'warning' : 'error',
+          actor: 'system',
           message: missingToolBudget.allowed
             ? '[Supervisor Guard] stop was ignored because repository evidence has not been collected yet.'
             : '[Budget Stop] supervisor repeatedly stopped before collecting repository evidence.',
-          actor: 'system',
-          eventType: missingToolBudget.allowed ? 'warning' : 'error',
+          data: detail,
           payloadJson: detail,
         });
         if (!missingToolBudget.allowed) {
@@ -390,14 +480,17 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           ...(missingToolBudget.detail || {}),
         };
         appendSupervisorTrace('stop_without_edit_attempt', { runId, ...detail });
-        await repo.createTaskEvent({
-          taskRunId: runId,
-          type: missingToolBudget.allowed ? 'warning' : 'error',
+        await createSupervisorRunEvent({
+          runId,
+          taskId: task.id,
+          iteration,
+          type: missingToolBudget.allowed ? 'system.warning' : 'safety.repeated_failure',
+          severity: missingToolBudget.allowed ? 'warning' : 'error',
+          actor: 'system',
           message: missingToolBudget.allowed
             ? '[Supervisor Guard] code_change stop was ignored because no edit tool was attempted.'
             : '[Budget Stop] supervisor repeatedly stopped a code_change without attempting an edit tool.',
-          actor: 'system',
-          eventType: missingToolBudget.allowed ? 'warning' : 'error',
+          data: detail,
           payloadJson: detail,
         });
         if (!missingToolBudget.allowed) {
@@ -431,14 +524,17 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           ...(missingToolBudget.detail || {}),
         };
         appendSupervisorTrace('stop_quality_rejected', { runId, ...detail });
-        await repo.createTaskEvent({
-          taskRunId: runId,
-          type: missingToolBudget.allowed ? 'warning' : 'error',
+        await createSupervisorRunEvent({
+          runId,
+          taskId: task.id,
+          iteration,
+          type: missingToolBudget.allowed ? 'system.warning' : 'safety.repeated_failure',
+          severity: missingToolBudget.allowed ? 'warning' : 'error',
+          actor: 'system',
           message: missingToolBudget.allowed
             ? `[Supervisor Guard] ${qualityFailure.message}`
             : '[Budget Stop] supervisor repeatedly returned an incomplete final response.',
-          actor: 'system',
-          eventType: missingToolBudget.allowed ? 'warning' : 'error',
+          data: detail,
           payloadJson: detail,
         });
         if (!missingToolBudget.allowed) {
@@ -487,15 +583,18 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             ? 'Stopped by tool-call budget'
             : 'Stopped by repeated tool pattern';
         stoppedBy = 'budget';
-        await repo.createTaskEvent({
-          taskRunId: runId,
-          type: 'error',
+        await createSupervisorRunEvent({
+          runId,
+          taskId: task.id,
+          iteration,
+          type: 'safety.budget_reached',
+          severity: 'error',
+          actor: 'system',
           message:
             toolBudget.reason === 'tool_limit'
               ? '[Budget Stop] maxToolCalls reached.'
               : '[Budget Stop] repeated tool pattern detected.',
-          actor: 'system',
-          eventType: 'error',
+          data: { reason: toolBudget.reason, ...(toolBudget.detail || {}) },
           payloadJson: { reason: toolBudget.reason, ...(toolBudget.detail || {}) },
         });
         break;
@@ -504,25 +603,19 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       if (isEditTool(name)) editToolCalls += 1;
       logger.info({ runId, iteration, toolName: name, toolArgs }, 'Worker tool call start');
       // Log tool call start
-      await repo.createTaskEvent({
-        taskRunId: runId,
-        type: 'info',
-        message: `[Worker Tool Call] Invoking tool ${name}...`,
+      await createSupervisorRunEvent({
+        runId,
+        taskId: task.id,
+        iteration,
+        type: name === 'run_verification' ? 'verification.started' : 'tool.call_started',
+        severity: 'info',
         actor: name === 'run_verification' ? 'verifier' : 'worker',
-        eventType: 'tool_call',
+        message: `[Worker Tool Call] Invoking tool ${name}...`,
+        data: { toolName: name, arguments: toolArgs },
         payloadJson: {
           iteration,
           toolName: name,
           arguments: toolArgs,
-          runEvent: buildCanonicalRunEvent({
-            runId,
-            iteration,
-            type: name === 'run_verification' ? 'verification.started' : 'tool.call_started',
-            severity: 'info',
-            actor: name === 'run_verification' ? 'verifier' : 'worker',
-            message: `[Worker Tool Call] Invoking tool ${name}...`,
-            data: { toolName: name, arguments: toolArgs },
-          }),
         },
       });
 
@@ -546,25 +639,19 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         if (!beforeDecision.allowed) {
           toolResult = buildBlockedToolResult(request, beforeDecision);
           policyViolationDetected = true;
-          await repo.createTaskEvent({
-            taskRunId: runId,
-            type: 'error',
-            message: `[Tool Policy Blocked] ${name}: ${beforeDecision.message}`,
+          await createSupervisorRunEvent({
+            runId,
+            taskId: task.id,
+            iteration,
+            type: 'tool.policy_blocked',
+            severity: 'error',
             actor: 'system',
-            eventType: 'error',
+            message: `[Tool Policy Blocked] ${name}: ${beforeDecision.message}`,
+            data: { toolName: name, policy: beforeDecision },
             payloadJson: {
               iteration,
               toolName: name,
               policy: beforeDecision,
-              runEvent: buildCanonicalRunEvent({
-                runId,
-                iteration,
-                type: 'tool.policy_blocked',
-                severity: 'error',
-                actor: 'system',
-                message: `[Tool Policy Blocked] ${name}: ${beforeDecision.message}`,
-                data: { toolName: name, policy: beforeDecision },
-              }),
             },
           });
 
@@ -596,35 +683,32 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             terminalState = 'needs_human';
             summary = 'Stopped by postflight policy violation';
             stoppedBy = 'policy';
-            await repo.createTaskEvent({
-              taskRunId: runId,
-              type: 'error',
-              message: `[Tool Policy Violation] ${name}: ${postDecision.policyViolation.message}`,
+            await createSupervisorRunEvent({
+              runId,
+              taskId: task.id,
+              iteration,
+              type: 'safety.policy_violation',
+              severity: 'error',
               actor: 'system',
-              eventType: 'error',
+              message: `[Tool Policy Violation] ${name}: ${postDecision.policyViolation.message}`,
+              data: { toolName: name, policy: postDecision.policyViolation },
               payloadJson: {
                 iteration,
                 toolName: name,
                 policy: postDecision.policyViolation,
-                runEvent: buildCanonicalRunEvent({
-                  runId,
-                  iteration,
-                  type: 'safety.policy_violation',
-                  severity: 'error',
-                  actor: 'system',
-                  message: `[Tool Policy Violation] ${name}: ${postDecision.policyViolation.message}`,
-                  data: { toolName: name, policy: postDecision.policyViolation },
-                }),
               },
             });
           }
           if (postDecision.warnings?.length) {
-            await repo.createTaskEvent({
-              taskRunId: runId,
-              type: 'warning',
-              message: `[Tool Policy Warning] ${name}`,
+            await createSupervisorRunEvent({
+              runId,
+              taskId: task.id,
+              iteration,
+              type: 'system.warning',
+              severity: 'warning',
               actor: 'system',
-              eventType: 'system.warning',
+              message: `[Tool Policy Warning] ${name}`,
+              data: { toolName: name, warnings: postDecision.warnings },
               payloadJson: { iteration, toolName: name, warnings: postDecision.warnings },
             });
           }
@@ -660,24 +744,18 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       toolObservations.push(formatToolObservation(name, toolResult));
 
       // Log tool execution result in ledger
-      await repo.createTaskEvent({
-        taskRunId: runId,
-        type: toolResult.ok ? 'info' : 'error',
-        message: `[Worker Tool Result] Tool ${name} execution ${toolResult.ok ? 'SUCCESS' : 'FAILED'}.`,
+      await createSupervisorRunEvent({
+        runId,
+        taskId: task.id,
+        iteration,
+        type: name === 'run_verification' ? 'verification.finished' : 'tool.call_finished',
+        severity: toolResult.ok ? 'info' : 'error',
         actor: name === 'run_verification' ? 'verifier' : 'worker',
-        eventType: 'tool_result',
+        message: `[Worker Tool Result] Tool ${name} execution ${toolResult.ok ? 'SUCCESS' : 'FAILED'}.`,
+        data: { toolName: name, result: toolResult },
         payloadJson: {
           iteration,
           ...toolResult,
-          runEvent: buildCanonicalRunEvent({
-            runId,
-            iteration,
-            type: name === 'run_verification' ? 'verification.finished' : 'tool.call_finished',
-            severity: toolResult.ok ? 'info' : 'error',
-            actor: name === 'run_verification' ? 'verifier' : 'worker',
-            message: `[Worker Tool Result] Tool ${name} execution ${toolResult.ok ? 'SUCCESS' : 'FAILED'}.`,
-            data: { toolName: name, result: toolResult },
-          }),
         },
       });
 
@@ -694,12 +772,19 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       if (!failureBudget.allowed && failureBudget.reason === 'tool_failure') {
         const failureSummary = toolResult.error?.message || 'Unknown tool failure';
         finalReportText = `同一ラン内でツール実行失敗が3回連続したため中断しました。lastTool=${name} error=${failureSummary}`;
-        await repo.createTaskEvent({
-          taskRunId: runId,
-          type: 'error',
-          message: '[Safety Stop] Aborted after 3 consecutive tool failures.',
+        await createSupervisorRunEvent({
+          runId,
+          taskId: task.id,
+          iteration,
+          type: 'safety.repeated_failure',
+          severity: 'error',
           actor: 'system',
-          eventType: 'error',
+          message: '[Safety Stop] Aborted after 3 consecutive tool failures.',
+          data: {
+            ...(failureBudget.detail || {}),
+            lastToolName: name,
+            lastError: toolResult.error ?? null,
+          },
           payloadJson: {
             iteration,
             ...(failureBudget.detail || {}),
@@ -744,6 +829,20 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           metadataJson: { bytes: toolResult.payload.diff.length },
         });
       }
+      if (toolResult.payload?.logArtifactPath) {
+        await repo.createArtifact({
+          runId,
+          kind: name === 'run_verification' ? 'verification_log' : 'command_log',
+          path: toolResult.payload.logArtifactPath,
+          metadataJson: {
+            toolName: name,
+            command: toolResult.payload.command,
+            exitCode: toolResult.payload.exitCode,
+            classification: toolResult.payload.classification,
+            truncated: toolResult.payload.truncated,
+          },
+        });
+      }
     } else {
       const missingToolBudget = budget.onMissingToolCall();
       if (!missingToolBudget.allowed) {
@@ -752,22 +851,27 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         summary = 'Stopped by missing toolCall pattern';
         stoppedBy = 'missing_tool_call';
       }
-      // Loop backup guard
-      await repo.createTaskEvent({
-        taskRunId: runId,
-        type: 'warning',
+      await createSupervisorRunEvent({
+        runId,
+        taskId: task.id,
+        iteration,
+        type: 'system.warning',
+        severity: 'warning',
+        actor: 'system',
         message:
           'Supervisor did not specify any worker tool action. continuing until missing_tool_call threshold.',
-        actor: 'system',
-        eventType: 'warning',
+        data: { reason: 'missing_tool_call', ...(missingToolBudget.detail || {}) },
       });
       if (!missingToolBudget.allowed) {
-        await repo.createTaskEvent({
-          taskRunId: runId,
-          type: 'error',
-          message: '[Budget Stop] missing toolCall repeated.',
+        await createSupervisorRunEvent({
+          runId,
+          taskId: task.id,
+          iteration,
+          type: 'safety.repeated_failure',
+          severity: 'error',
           actor: 'system',
-          eventType: 'error',
+          message: '[Budget Stop] missing toolCall repeated.',
+          data: { reason: 'missing_tool_call', ...(missingToolBudget.detail || {}) },
           payloadJson: { reason: 'missing_tool_call', ...(missingToolBudget.detail || {}) },
         });
       }
@@ -925,25 +1029,4 @@ function extractMultimodalPayload(messageType: string, toolResult: any) {
   if (messageType === 'markdown_document')
     return { markdownDocumentData: payload.markdownDocumentData };
   return {};
-}
-
-function buildCanonicalRunEvent(input: {
-  runId: string;
-  iteration: number;
-  type: string;
-  severity: 'info' | 'warning' | 'error';
-  actor: 'system' | 'worker' | 'verifier';
-  message: string;
-  data?: Record<string, unknown>;
-}) {
-  return {
-    version: 1,
-    runId: input.runId,
-    timestamp: new Date().toISOString(),
-    type: input.type,
-    severity: input.severity,
-    actor: input.actor,
-    message: input.message,
-    data: { iteration: input.iteration, ...(input.data || {}) },
-  };
 }

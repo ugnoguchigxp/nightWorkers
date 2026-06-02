@@ -153,16 +153,11 @@ export type ReviewRunInput = {
   humanCallouts?: ReviewFinding[];
   agentFollowUps?: string[];
   suggestedNextTasks?: string[];
-  riskAcceptance?: {
-    acceptedRisk: string;
-    reason?: string;
-    evidenceRefs?: ReviewEvidenceRef[];
-  };
 };
 
-export type ReviewAction = 'complete' | 'request_follow_up' | 'cancel' | 'accept_risk';
+export type ReviewAction = 'complete' | 'cancel';
 
-export type ReviewVerdict = 'approved' | 'changes_requested' | 'cancelled' | 'risk_accepted';
+export type ReviewVerdict = 'approved' | 'changes_requested' | 'cancelled';
 
 export type ReviewEvidenceRef =
   | { kind: 'run_event'; eventId: string; seq?: number; eventType?: string }
@@ -224,11 +219,6 @@ export type ReviewResult = {
   humanCallouts: ReviewFinding[];
   agentFollowUps: string[];
   suggestedNextTasks: string[];
-  riskAcceptance?: {
-    acceptedRisk: string;
-    reason?: string;
-    evidenceRefs?: ReviewEvidenceRef[];
-  };
   createdAt: string;
 };
 

@@ -22,6 +22,7 @@ export type RunBudgetConfig = {
   maxToolCalls: number;
   maxRepeatedAction: number;
   maxMissingToolCalls: number;
+  maxSchemaFallbacks: number;
   timeoutSeconds: number;
 };
 
@@ -31,7 +32,8 @@ export type BudgetDecisionReason =
   | 'deadline'
   | 'repeat_action'
   | 'missing_tool_call'
-  | 'tool_failure';
+  | 'tool_failure'
+  | 'schema_fallback';
 
 export type BudgetDecision = {
   allowed: boolean;
@@ -53,7 +55,7 @@ export type OutcomeGateInput = {
   verificationPassed?: boolean;
   safetyViolation?: boolean;
   budgetStopped?: boolean;
-  humanAction?: 'complete' | 'request_follow_up' | 'cancel' | 'accept_risk';
+  humanAction?: 'complete' | 'cancel';
 };
 
 export type OutcomeGateResult = {

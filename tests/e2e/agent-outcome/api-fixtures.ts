@@ -123,7 +123,7 @@ export async function fetchTaskDetails(request: APIRequestContext, taskId: strin
 export async function submitReview(
   request: APIRequestContext,
   runId: string,
-  action: 'complete' | 'request_follow_up' | 'cancel' | 'accept_risk',
+  action: 'complete' | 'cancel',
   note = `E2E review action: ${action}`
 ) {
   const response = await request.post(`/api/runs/${runId}/review`, {

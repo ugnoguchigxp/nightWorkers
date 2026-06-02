@@ -11,20 +11,6 @@ export function decideRunOutcome(input: OutcomeGateInput): OutcomeGateResult {
         summary: 'Human review cancelled run.',
       };
     }
-    if (humanAction === 'request_follow_up') {
-      return {
-        status: 'needs_human',
-        reason: 'human_review',
-        summary: 'Human requested follow-up execution.',
-      };
-    }
-    if (humanAction === 'accept_risk') {
-      return {
-        status: 'needs_review',
-        reason: 'human_review',
-        summary: 'Human accepted current risk and kept run in review state.',
-      };
-    }
     return {
       status: 'completed',
       reason: 'human_review',

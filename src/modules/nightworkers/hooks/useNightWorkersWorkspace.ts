@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Dispatch, SetStateAction } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { client } from '../../../lib/api';
+import { dedupeAndSortRunEvents, mergeRunEvents } from '../realtimeEvents';
 import type {
   CreateProjectInput,
   CreateSessionInput,
@@ -344,13 +345,20 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   useEffect(() => {
     const runId = latestRun?.id;
     if (!runId) {
-      setRealtimeEvents(latestRunDetails?.events || []);
+      setRealtimeEvents(
+        mergeRunEvents({
+          latestRunId: null,
+          restEvents: latestRunDetails?.events || [],
+          bufferedEventsByRun,
+        })
+      );
       return;
     }
-    const merged = dedupeAndSortEvents([
-      ...((latestRunDetails?.events || []) as TaskEvent[]),
-      ...(bufferedEventsByRun[runId] || []),
-    ]);
+    const merged = mergeRunEvents({
+      latestRunId: runId,
+      restEvents: (latestRunDetails?.events || []) as TaskEvent[],
+      bufferedEventsByRun,
+    });
     setRealtimeEvents(merged);
   }, [latestRun?.id, latestRunDetails?.events, bufferedEventsByRun]);
 
@@ -423,7 +431,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
             setBufferedEventsByRun((prev) => {
               const next = { ...prev };
               const current = next[msg.runId as string] || [];
-              next[msg.runId as string] = dedupeAndSortEvents([...current, eventPayload]);
+              next[msg.runId as string] = dedupeAndSortRunEvents([...current, eventPayload]);
               return next;
             });
           }
@@ -715,25 +723,6 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       return (await res.json()) as { ok: boolean; provider: string; message: string };
     },
   };
-}
-
-function dedupeAndSortEvents(events: TaskEvent[]): TaskEvent[] {
-  const uniq = new Map<string, TaskEvent>();
-  for (const event of events) {
-    if (event?.id) uniq.set(event.id, event);
-  }
-  return Array.from(uniq.values()).sort((a, b) => {
-    const sa = typeof a.seq === 'number' ? a.seq : Number.MAX_SAFE_INTEGER;
-    const sb = typeof b.seq === 'number' ? b.seq : Number.MAX_SAFE_INTEGER;
-    if (sa !== sb) return sa - sb;
-    return toMs(a.timestamp || a.createdAt) - toMs(b.timestamp || b.createdAt);
-  });
-}
-
-function toMs(value: unknown): number {
-  if (!value) return Number.MAX_SAFE_INTEGER;
-  const n = Date.parse(String(value));
-  return Number.isNaN(n) ? Number.MAX_SAFE_INTEGER : n;
 }
 
 function isActiveRunStatus(status: string | undefined): boolean {

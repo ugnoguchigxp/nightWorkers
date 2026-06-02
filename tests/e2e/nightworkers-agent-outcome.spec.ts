@@ -131,6 +131,28 @@ test.describe('NightWorkers Agent Outcome Harness @regression', () => {
     }
   });
 
+  test('UI badge change is verified by workspace diff @regression', async ({ request }) => {
+    test.setTimeout(70000);
+    const scenario = agentOutcomeScenarios.wsBadgeColorUpdate;
+    const result = await runScenario(request, scenario);
+    try {
+      const readEventIndex = result.terminalRun.events.findIndex(
+        (event) => event.eventType === 'tool_result' && event.payloadJson?.toolName === 'read_file'
+      );
+      const patchEventIndex = result.terminalRun.events.findIndex(
+        (event) =>
+          event.eventType === 'tool_result' && event.payloadJson?.toolName === 'apply_patch'
+      );
+      expect(readEventIndex).toBeGreaterThanOrEqual(0);
+      expect(patchEventIndex).toBeGreaterThan(readEventIndex);
+      const review = await submitReview(request, result.handles.runId as string, 'complete');
+      const reviewedRun = await fetchRunDetails(request, result.handles.runId as string);
+      assertReviewResult(review, reviewedRun, scenario);
+    } finally {
+      await cleanup(request, result);
+    }
+  });
+
   test('policy blocked command records needs_human @regression', async ({ request }) => {
     test.setTimeout(70000);
     const scenario = agentOutcomeScenarios.policyBlockedCommand;
@@ -150,11 +172,7 @@ test.describe('NightWorkers Agent Outcome Harness @regression', () => {
     try {
       expect(result.terminalRun.status).toBe('needs_human');
       expect(result.terminalRun.finalReport || '').toContain('Verification failed');
-      const review = await submitReview(
-        request,
-        result.handles.runId as string,
-        'request_follow_up'
-      );
+      const review = await submitReview(request, result.handles.runId as string, 'cancel');
       const reviewedRun = await fetchRunDetails(request, result.handles.runId as string);
       assertReviewResult(review, reviewedRun, scenario);
       const reviewedTask = await fetchTaskDetails(request, result.handles.taskId as string);

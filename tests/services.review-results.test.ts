@@ -3,7 +3,7 @@ import { buildReviewResult } from '../api/services/review-results/build-review-r
 import { collectDefaultReviewEvidence } from '../api/services/review-results/evidence-collector';
 
 describe('review-results builder', () => {
-  it('maps actions to review verdicts and preserves risk acceptance fallback', () => {
+  it('maps actions to review verdicts', () => {
     const result = buildReviewResult({
       run: {
         id: 'run-1',
@@ -12,22 +12,21 @@ describe('review-results builder', () => {
         summary: 'ready for review',
       },
       request: {
-        action: 'accept_risk',
-        note: 'Ship with known lint warnings',
+        action: 'cancel',
+        note: 'This result was not useful',
       },
       outcome: {
-        status: 'needs_review',
+        status: 'cancelled',
         reason: 'human_review',
-        summary: 'Human accepted current risk and kept run in review state.',
+        summary: 'Human review cancelled run.',
       },
       evidenceRefs: [],
       createdAt: '2026-06-02T00:00:00.000Z',
     });
 
-    expect(result.verdict).toBe('risk_accepted');
-    expect(result.riskAcceptance?.acceptedRisk).toBe('Ship with known lint warnings');
+    expect(result.verdict).toBe('cancelled');
     expect(result.statusBefore).toBe('needs_review');
-    expect(result.statusAfter).toBe('needs_review');
+    expect(result.statusAfter).toBe('cancelled');
   });
 });
 

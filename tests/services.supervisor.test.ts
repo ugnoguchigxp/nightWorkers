@@ -12,6 +12,7 @@ vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   getTask: vi.fn(),
   listTaskEventsForRun: vi.fn(),
   createTaskEvent: vi.fn(),
+  createRunEvent: vi.fn(),
   updateTaskRun: vi.fn(),
   updateTaskStatus: vi.fn(),
 }));
@@ -81,7 +82,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
     // 4. Assertions
     expect(result.finalReport).toBe('Task complete');
     expect(result.terminalState).toBe('completed');
-    expect(repo.createTaskEvent).toHaveBeenCalled();
+    expect(repo.createRunEvent).toHaveBeenCalled();
     expect(repo.updateTaskRun).toHaveBeenCalledWith('run-1', {
       finalReport: 'Task complete',
       summary: 'Task complete',
@@ -172,6 +173,57 @@ describe('Supervisor Control Loop Unit Tests', () => {
     expect(result.stoppedBy).toBe('missing_tool_call');
   });
 
+  it('stops with budget reason after repeated schema fallback events', async () => {
+    const mockRun = { id: 'run-schema-fallback', taskId: 'task-schema-fallback' };
+    const mockTask = {
+      id: 'task-schema-fallback',
+      objective: 'Do task',
+      acceptanceCriteria: 'Done',
+    };
+
+    vi.mocked(repo.getTaskRun).mockResolvedValue(mockRun as any);
+    vi.mocked(repo.getTask).mockResolvedValue(mockTask as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+
+    vi.mocked(llm.callSupervisorLLM).mockImplementation(async (_system, _user, options) => {
+      await options?.emitEvent?.({
+        type: 'model.response_parse_failed',
+        severity: 'error',
+        message: 'Supervisor LLM response failed schema validation.',
+        data: { round: options?.round ?? null },
+      });
+      return {
+        phase: 'act',
+        workflow: 'general',
+        instruction: 'continue',
+        rationale: 'schema fallback tolerated',
+        expectedEvidence: [],
+        riskLevel: 'medium',
+        toolCall: null,
+      };
+    });
+
+    const result = await runSupervisorLoop({
+      runId: 'run-schema-fallback',
+      repoRoot: __dirname,
+      prompt: 'Start',
+      timeoutSeconds: 60,
+    });
+
+    expect(result.terminalState).toBe('needs_human');
+    expect(result.stoppedBy).toBe('budget');
+    expect(result.summary).toBe('Stopped by repeated schema fallback');
+    expect(repo.createRunEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'safety.budget_reached',
+        severity: 'error',
+      }),
+      expect.objectContaining({
+        payloadJson: expect.objectContaining({ reason: 'schema_fallback' }),
+      })
+    );
+  });
+
   it('does not accept stop before evidence is collected for document review tasks', async () => {
     const mockRun = { id: 'run-review-no-evidence', taskId: 'task-review-no-evidence' };
     const mockTask = {
@@ -221,7 +273,11 @@ describe('Supervisor Control Loop Unit Tests', () => {
     expect(vi.mocked(llm.callSupervisorLLM).mock.calls.map((call) => call[2]?.round)).toEqual([
       1, 2, 2, 2,
     ]);
-    expect(repo.createTaskEvent).toHaveBeenCalledWith(
+    expect(repo.createRunEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'safety.repeated_failure',
+        severity: 'error',
+      }),
       expect.objectContaining({
         payloadJson: expect.objectContaining({
           reason: 'stop_without_evidence',
@@ -290,7 +346,11 @@ describe('Supervisor Control Loop Unit Tests', () => {
     expect(vi.mocked(llm.callSupervisorLLM).mock.calls.map((call) => call[2]?.round)).toEqual([
       1, 2, 2, 2, 2,
     ]);
-    expect(repo.createTaskEvent).toHaveBeenCalledWith(
+    expect(repo.createRunEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'safety.repeated_failure',
+        severity: 'error',
+      }),
       expect.objectContaining({
         payloadJson: expect.objectContaining({
           reason: 'empty_final_response_after_evidence',
@@ -344,20 +404,23 @@ describe('Supervisor Control Loop Unit Tests', () => {
 
     expect(result.terminalState).toBe('needs_human');
     expect(result.stoppedBy).toBe('policy');
-    expect(repo.createTaskEvent).toHaveBeenCalledWith(
+    expect(repo.createRunEvent).toHaveBeenCalledWith(
       expect.objectContaining({
-        eventType: 'error',
-        payloadJson: expect.objectContaining({
-          runEvent: expect.objectContaining({ type: 'tool.policy_blocked' }),
-        }),
+        type: 'tool.policy_blocked',
+        severity: 'error',
+      }),
+      expect.objectContaining({
+        payloadJson: expect.objectContaining({ toolName: 'run_command' }),
       })
     );
-    expect(repo.createTaskEvent).toHaveBeenCalledWith(
+    expect(repo.createRunEvent).toHaveBeenCalledWith(
       expect.objectContaining({
-        eventType: 'tool_result',
+        type: 'tool.call_finished',
+        severity: 'error',
+      }),
+      expect.objectContaining({
         payloadJson: expect.objectContaining({
           error: expect.objectContaining({ code: 'UNKNOWN_COMMAND' }),
-          runEvent: expect.objectContaining({ type: 'tool.call_finished' }),
         }),
       })
     );
@@ -419,7 +482,11 @@ describe('Supervisor Control Loop Unit Tests', () => {
     expect(result.terminalState).toBe('needs_human');
     expect(result.stoppedBy).toBe('missing_tool_call');
     expect(result.finalReport).toContain('replace_content または apply_patch を一度も実行せず');
-    expect(repo.createTaskEvent).toHaveBeenCalledWith(
+    expect(repo.createRunEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'safety.repeated_failure',
+        severity: 'error',
+      }),
       expect.objectContaining({
         payloadJson: expect.objectContaining({
           reason: 'stop_without_edit_attempt',

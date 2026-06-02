@@ -15,6 +15,7 @@ export class RunBudgetController {
   private toolCalls = 0;
   private consecutiveMissingToolCalls = 0;
   private consecutiveToolFailures = 0;
+  private consecutiveSchemaFallbacks = 0;
   private lastSignature = '';
   private repeatedActionCount = 0;
 
@@ -107,6 +108,28 @@ export class RunBudgetController {
       };
     }
 
+    return { allowed: true };
+  }
+
+  onSchemaFallback(kind: string): BudgetDecision {
+    this.consecutiveSchemaFallbacks += 1;
+    if (this.consecutiveSchemaFallbacks >= this.config.maxSchemaFallbacks) {
+      return {
+        allowed: false,
+        reason: 'schema_fallback',
+        detail: {
+          kind,
+          repeatedCount: this.consecutiveSchemaFallbacks,
+          maxSchemaFallbacks: this.config.maxSchemaFallbacks,
+        },
+      };
+    }
+
+    return { allowed: true };
+  }
+
+  onSchemaDecisionAccepted(): BudgetDecision {
+    this.consecutiveSchemaFallbacks = 0;
     return { allowed: true };
   }
 }

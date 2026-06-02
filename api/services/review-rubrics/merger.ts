@@ -26,11 +26,9 @@ function verdictToAction(verdict: ReviewVerdict): ReviewResult['action'] {
     case 'approved':
       return 'complete';
     case 'changes_requested':
-      return 'request_follow_up';
+      return 'cancel';
     case 'cancelled':
       return 'cancel';
-    case 'risk_accepted':
-      return 'accept_risk';
   }
 }
 

@@ -1,4 +1,20 @@
+import fs from 'node:fs';
 import path from 'node:path';
+
+function resolveExistingPath(targetPath: string): string {
+  let current = path.resolve(targetPath);
+  const missingSegments: string[] = [];
+
+  while (!fs.existsSync(current)) {
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    missingSegments.unshift(path.basename(current));
+    current = parent;
+  }
+
+  const realCurrent = fs.existsSync(current) ? fs.realpathSync.native(current) : current;
+  return missingSegments.length ? path.join(realCurrent, ...missingSegments) : realCurrent;
+}
 
 /**
  * Checks if a given path is within the allowed repository workspace.
@@ -10,13 +26,14 @@ export function isPathSafe(
   allowedPaths?: string[],
   deniedPaths?: string[]
 ): boolean {
-  const absoluteRepoRoot = path.resolve(repoRoot);
+  const absoluteRepoRoot = resolveExistingPath(path.resolve(repoRoot));
   let absoluteTargetPath = path.resolve(targetPath);
 
   // If targetPath is relative, resolve it relative to repoRoot
   if (!path.isAbsolute(targetPath)) {
     absoluteTargetPath = path.resolve(absoluteRepoRoot, targetPath);
   }
+  absoluteTargetPath = resolveExistingPath(absoluteTargetPath);
 
   // Check if targetPath is within absoluteRepoRoot
   const relative = path.relative(absoluteRepoRoot, absoluteTargetPath);

@@ -1,11 +1,12 @@
 import { Button } from '@repo/design-system';
+import type { ReviewAction } from '../types';
 import { getChangedFiles, getDiffStats } from '../utils/diff';
 
 type ChangeCardProps = {
   runId: string;
   diffPatch: string;
   status: string;
-  onReview: (runId: string) => void;
+  onReview: (runId: string, action: ReviewAction, note?: string) => void;
 };
 
 export function ChangeCard({ runId, diffPatch, status, onReview }: ChangeCardProps) {
@@ -31,7 +32,7 @@ export function ChangeCard({ runId, diffPatch, status, onReview }: ChangeCardPro
           size="sm"
           className="h-7 text-xs"
           disabled={!canReview}
-          onClick={() => onReview(runId)}
+          onClick={() => onReview(runId, 'complete', 'Approved from NightWorkers change card.')}
         >
           レビューする
         </Button>

@@ -57,6 +57,21 @@ describe('RunControl', () => {
       expect(outcome.status).toBe('needs_human');
       expect(outcome.reason).toBe('policy_violation');
     });
+
+    it('maps budget-stopped supervisor result to budget_exceeded', () => {
+      const outcome = decideRunOutcome({
+        supervisor: {
+          finalReport: 'Stopped by budget',
+          terminalState: 'needs_human',
+          summary: 'Repeated schema fallback',
+          stoppedBy: 'budget',
+          riskLevel: 'high',
+        },
+        budgetStopped: true,
+      });
+      expect(outcome.status).toBe('blocked');
+      expect(outcome.reason).toBe('budget_exceeded');
+    });
   });
 
   describe('RunBudgetController', () => {
@@ -66,6 +81,7 @@ describe('RunControl', () => {
         maxToolCalls: 10,
         maxRepeatedAction: 3,
         maxMissingToolCalls: 3,
+        maxSchemaFallbacks: 3,
         timeoutSeconds: 60,
       });
       expect(c.onIterationStart().allowed).toBe(true);
@@ -82,6 +98,7 @@ describe('RunControl', () => {
         maxToolCalls: 10,
         maxRepeatedAction: 3,
         maxMissingToolCalls: 3,
+        maxSchemaFallbacks: 3,
         timeoutSeconds: 60,
       });
       expect(c.onMissingToolCall().allowed).toBe(true);
@@ -89,6 +106,37 @@ describe('RunControl', () => {
       const stop = c.onMissingToolCall();
       expect(stop.allowed).toBe(false);
       expect(stop.reason).toBe('missing_tool_call');
+    });
+
+    it('stops after repeated schema fallback events', () => {
+      const c = new RunBudgetController({
+        maxIterations: 10,
+        maxToolCalls: 10,
+        maxRepeatedAction: 3,
+        maxMissingToolCalls: 3,
+        maxSchemaFallbacks: 3,
+        timeoutSeconds: 60,
+      });
+      expect(c.onSchemaFallback('model.response_repaired').allowed).toBe(true);
+      expect(c.onSchemaFallback('model.response_parse_failed').allowed).toBe(true);
+      const stop = c.onSchemaFallback('model.response_parse_failed');
+      expect(stop.allowed).toBe(false);
+      expect(stop.reason).toBe('schema_fallback');
+    });
+
+    it('resets schema fallback counter after an accepted schema decision', () => {
+      const c = new RunBudgetController({
+        maxIterations: 10,
+        maxToolCalls: 10,
+        maxRepeatedAction: 3,
+        maxMissingToolCalls: 3,
+        maxSchemaFallbacks: 3,
+        timeoutSeconds: 60,
+      });
+      expect(c.onSchemaFallback('model.response_repaired').allowed).toBe(true);
+      expect(c.onSchemaFallback('model.response_parse_failed').allowed).toBe(true);
+      c.onSchemaDecisionAccepted();
+      expect(c.onSchemaFallback('model.response_parse_failed').allowed).toBe(true);
     });
   });
 });

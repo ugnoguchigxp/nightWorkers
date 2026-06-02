@@ -87,10 +87,7 @@ function TaskConsolePage() {
   });
 
   const reviewRunMutation = useMutation({
-    mutationFn: async (data: {
-      action: 'complete' | 'request_follow_up' | 'cancel' | 'accept_risk';
-      note?: string;
-    }) => {
+    mutationFn: async (data: { action: 'complete' | 'cancel'; note?: string }) => {
       const res = await fetch(`/api/runs/${activeRun?.id}/review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

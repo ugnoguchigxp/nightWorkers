@@ -25,7 +25,7 @@ export type AgentOutcomeScenario = {
     requiredEventTypes?: string[];
     requiredRunEventTypes?: string[];
     review?: {
-      action: 'complete' | 'request_follow_up' | 'cancel' | 'accept_risk';
+      action: 'complete' | 'cancel';
       finalStatus: string;
     };
     finalReportExcludes?: string[];
@@ -84,6 +84,35 @@ export const agentOutcomeScenarios = {
       review: { action: 'complete', finalStatus: 'completed' },
     },
   },
+  wsBadgeColorUpdate: {
+    id: 'ws_badge_color_update',
+    title: 'WS badge color update',
+    prompt:
+      'NIGHTWORKERS_TEST_AGENT_SCENARIO=ws_badge_color_update WS badge を3色丸の状態表示に変更してください',
+    workspaceSeed: [
+      { path: 'README.md', content: '# Agent outcome fixture\n' },
+      {
+        path: 'src/WsBadge.tsx',
+        content: 'export function WsBadge() {\n  return <span>WS</span>;\n}\n',
+      },
+    ],
+    safetyPolicy: { requireReadBeforeEdit: true },
+    expected: {
+      runStatus: 'needs_review',
+      taskStatus: 'completed',
+      changedFiles: ['src/WsBadge.tsx'],
+      fileAssertions: [
+        {
+          path: 'src/WsBadge.tsx',
+          includes: ['WS status badge', 'connected', 'connecting', 'disconnected'],
+          excludes: ['return <span>WS</span>'],
+        },
+      ],
+      requiredEventTypes: ['tool_call', 'tool_result', 'run_outcome_decided'],
+      requiredRunEventTypes: ['tool.call_finished', 'run.outcome_decided'],
+      review: { action: 'complete', finalStatus: 'completed' },
+    },
+  },
   policyBlockedCommand: {
     id: 'policy_blocked_command',
     title: 'Policy blocked command',
@@ -128,7 +157,7 @@ export const agentOutcomeScenarios = {
       ],
       requiredEventTypes: ['tool_call', 'tool_result', 'run_outcome_decided'],
       requiredRunEventTypes: ['verification.finished', 'run.outcome_decided'],
-      review: { action: 'request_follow_up', finalStatus: 'ready' },
+      review: { action: 'cancel', finalStatus: 'cancelled' },
       finalReportExcludes: ['completed successfully', 'unqualified success'],
     },
   },

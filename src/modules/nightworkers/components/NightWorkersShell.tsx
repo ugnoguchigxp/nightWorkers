@@ -138,8 +138,12 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               }}
               onThinkingDepthChange={setThinkingDepth}
               onSubmitInitialPrompt={submitPrompt}
-              onReviewRun={(runId) => {
-                void workspace.reviewRun({ runId, action: 'complete' });
+              onReviewRun={(runId, action, note) => {
+                void workspace.reviewRun({
+                  runId,
+                  action,
+                  note,
+                });
               }}
             />
           )}

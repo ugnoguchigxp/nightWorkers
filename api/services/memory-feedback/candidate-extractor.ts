@@ -102,7 +102,7 @@ export function extractLearningCandidates(input: ExtractInput): LearningCandidat
   const reviewEvents = input.events.filter((event) => {
     if (event.type !== 'human.review_submitted') return false;
     const data = (event.data || {}) as Record<string, unknown>;
-    return data.action === 'request_follow_up' || data.verdict === 'changes_requested';
+    return data.verdict === 'changes_requested';
   });
   if (reviewEvents.length > 0) {
     result.push(

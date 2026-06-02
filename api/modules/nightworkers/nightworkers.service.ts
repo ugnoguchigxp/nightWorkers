@@ -366,13 +366,11 @@ export async function startTaskRun(taskId: string) {
                   runtimeResult.summary ||
                   `Runtime finished with status=${runtimeResult.terminalState}`,
                 stoppedBy:
-                  runtimeResult.stoppedBy === 'policy'
-                    ? 'tool_failure'
-                    : runtimeResult.stoppedBy === 'cancelled'
-                      ? 'llm_error'
-                      : runtimeResult.stoppedBy,
+                  runtimeResult.stoppedBy === 'cancelled' ? 'llm_error' : runtimeResult.stoppedBy,
                 riskLevel: runtimeResult.riskLevel,
               },
+              budgetStopped: runtimeResult.stoppedBy === 'budget',
+              safetyViolation: runtimeResult.stoppedBy === 'policy',
             });
       const finalJudgment = buildFinalJudgment({
         runId: run.id,
@@ -779,7 +777,7 @@ export async function reviewTaskRun(runId: string, request: ReviewRunRequest) {
     },
     humanAction: request.action,
   });
-  const finalTaskStatus = request.action === 'request_follow_up' ? 'ready' : outcome.status;
+  const finalTaskStatus = outcome.status;
   const reviewResult = buildReviewResult({
     run: {
       id: run.id,

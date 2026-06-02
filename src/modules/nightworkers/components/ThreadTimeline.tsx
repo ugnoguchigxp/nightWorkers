@@ -1,6 +1,6 @@
 import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
-import type { ReviewResult, Task, TaskEvent, TaskMessage, TaskRun } from '../types';
+import type { ReviewAction, ReviewResult, Task, TaskEvent, TaskMessage, TaskRun } from '../types';
 import { formatFinishedTime } from '../utils/time';
 import { ThreadMessage } from './ThreadMessage';
 
@@ -11,12 +11,13 @@ type ThreadTimelineProps = {
   taskMessages: TaskMessage[];
   latestRunEvents: TaskEvent[];
   isAgentWorking: boolean;
-  onReviewRun: (runId: string) => void;
+  onReviewRun: (runId: string, action: ReviewAction, note?: string) => void;
 };
 
 export function ThreadTimeline({
   session,
   runs,
+  latestRun,
   taskMessages,
   latestRunEvents,
   isAgentWorking,
@@ -55,6 +56,7 @@ export function ThreadTimeline({
           {showDebugEvents ? 'Hide Debug' : 'Show Debug'}
         </button>
       </div>
+      <RunReviewActions latestRun={latestRun} onReviewRun={onReviewRun} />
       {showDebugEvents && isAgentWorking && latestEvent ? (
         <div className="rounded-lg border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-200">
           <span className="mr-2 inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
@@ -96,6 +98,62 @@ export function ThreadTimeline({
           <ThinkingIndicator />
         </ThreadMessage>
       ) : null}
+    </div>
+  );
+}
+
+function RunReviewActions({
+  latestRun,
+  onReviewRun,
+}: {
+  latestRun?: TaskRun;
+  onReviewRun: (runId: string, action: ReviewAction, note?: string) => void;
+}) {
+  if (!latestRun) return null;
+  const reviewableStatuses = new Set([
+    'needs_review',
+    'needs_human',
+    'blocked',
+    'failed',
+    'timed_out',
+  ]);
+  if (!reviewableStatuses.has(latestRun.status)) return null;
+
+  const actions: Array<{ action: ReviewAction; label: string; note: string; tone: string }> = [
+    {
+      action: 'complete',
+      label: '完了',
+      note: 'Approved from NightWorkers review UI.',
+      tone: 'border-emerald-500/60 bg-emerald-950/30 text-emerald-100 hover:bg-emerald-900/40',
+    },
+    {
+      action: 'cancel',
+      label: 'キャンセル',
+      note: 'Cancelled from NightWorkers review UI.',
+      tone: 'border-rose-500/60 bg-rose-950/30 text-rose-100 hover:bg-rose-900/40',
+    },
+  ];
+
+  return (
+    <div className="rounded border border-slate-700/80 bg-slate-900/35 px-3 py-2">
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-200">
+        <span className="rounded border border-slate-600/80 px-1.5 py-0.5 text-[10px] uppercase text-slate-300">
+          review
+        </span>
+        <span>run status: {latestRun.status}</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {actions.map((item) => (
+          <button
+            key={item.action}
+            type="button"
+            className={`rounded border px-3 py-1 text-xs ${item.tone}`}
+            onClick={() => onReviewRun(latestRun.id, item.action, item.note)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -15,37 +15,12 @@ type BuildReviewResultInput = {
   createdAt?: string;
 };
 
-function buildRiskAcceptance(
-  request: ReviewRunRequest,
-  note: string | undefined
-): ReviewResult['riskAcceptance'] {
-  if (request.riskAcceptance?.acceptedRisk?.trim()) {
-    return {
-      acceptedRisk: request.riskAcceptance.acceptedRisk.trim(),
-      reason: request.riskAcceptance.reason?.trim() || undefined,
-      evidenceRefs: request.riskAcceptance.evidenceRefs,
-    };
-  }
-
-  const fallbackRisk = note?.trim() || 'Risk accepted.';
-  if (request.action !== 'accept_risk') return undefined;
-  return {
-    acceptedRisk: fallbackRisk,
-    reason: request.riskAcceptance?.reason?.trim() || undefined,
-    evidenceRefs: request.riskAcceptance?.evidenceRefs,
-  };
-}
-
 function mapActionToVerdict(action: ReviewAction): ReviewResult['verdict'] {
   switch (action) {
     case 'complete':
       return 'approved';
-    case 'request_follow_up':
-      return 'changes_requested';
     case 'cancel':
       return 'cancelled';
-    case 'accept_risk':
-      return 'risk_accepted';
   }
 }
 
@@ -62,7 +37,6 @@ export function buildReviewResult({
   const agentFollowUps = request.agentFollowUps || [];
   const suggestedNextTasks = request.suggestedNextTasks || [];
   const statusAfter = outcome.status;
-  const riskAcceptance = buildRiskAcceptance(request, note);
 
   return {
     version: 1,
@@ -84,7 +58,6 @@ export function buildReviewResult({
     humanCallouts,
     agentFollowUps,
     suggestedNextTasks,
-    ...(riskAcceptance ? { riskAcceptance } : {}),
     createdAt,
   };
 }

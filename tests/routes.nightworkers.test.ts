@@ -90,6 +90,24 @@ describe('NightWorkers repositories routes', () => {
 });
 
 describe('NightWorkers review routes', () => {
+  it('rejects removed review actions', async () => {
+    const res = await app.request(
+      'http://localhost/api/runs/11111111-1111-4111-8111-111111111111/review',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'accept_risk',
+          note: 'No longer supported',
+        }),
+      }
+    );
+
+    expect(res.status).toBe(400);
+  });
+
   it('persists structured review results and returns run reviews', async () => {
     const createdRepo = await repo.createRepository({
       name: 'TEST: Review Route Workspace',

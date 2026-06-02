@@ -33,8 +33,7 @@ function hasFailureSignal(events: RunEventBase[]) {
         (((event.data || {}) as Record<string, unknown>).passed === false ||
           ((event.data || {}) as Record<string, unknown>).status === 'failed')) ||
       (event.type === 'human.review_submitted' &&
-        (((event.data || {}) as Record<string, unknown>).action === 'request_follow_up' ||
-          ((event.data || {}) as Record<string, unknown>).verdict === 'changes_requested'))
+        ((event.data || {}) as Record<string, unknown>).verdict === 'changes_requested')
   );
 }
 

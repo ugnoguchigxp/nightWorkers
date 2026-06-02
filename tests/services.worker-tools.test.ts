@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -140,6 +141,23 @@ describe('Worker Tools Unit Tests', () => {
 
       expect(result.ok).toBe(false);
       expect(result.error?.code).toBe('ACCESS_DENIED');
+    });
+
+    it('blocks symlinks that resolve outside repo root', async () => {
+      const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-outside-'));
+      const linkPath = path.join(dummyRepoDir, 'outside-link');
+      await fs.writeFile(path.join(outsideDir, 'secret.txt'), 'outside\n', 'utf-8');
+      await fs.rm(linkPath, { recursive: true, force: true });
+      await fs.symlink(outsideDir, linkPath, 'dir');
+
+      const result = await readFileTool({
+        filePath: 'outside-link/secret.txt',
+        repoRoot: dummyRepoDir,
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe('ACCESS_DENIED');
+      await fs.rm(outsideDir, { recursive: true, force: true });
     });
   });
 
@@ -411,6 +429,22 @@ describe('Worker Tools Unit Tests', () => {
       const safety = analyzeCommand('xpnpm test run tests/foo.ts');
       expect(safety.allowed).toBe(false);
       expect(safety.classification).toBe('unknown');
+    });
+
+    it('stores full command output as an artifact when preview is truncated', async () => {
+      const longOutput = 'x'.repeat(21000);
+      const result = await runCommandTool({
+        command: `echo "${longOutput}"`,
+        repoRoot: dummyRepoDir,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.payload.truncated).toBe(true);
+      expect(result.payload.stdout).toContain('[... stdout truncated by tool limit ...]');
+      expect(result.payload.logArtifactPath).toBeTruthy();
+
+      const artifact = await fs.readFile(result.payload.logArtifactPath as string, 'utf-8');
+      expect(artifact).toContain(longOutput);
     });
   });
 

@@ -1,4 +1,7 @@
 import { exec } from 'node:child_process';
+import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { analyzeCommand } from './command-policy';
@@ -10,6 +13,66 @@ import {
 import type { WorkerToolResult } from './types';
 
 const execAsync = promisify(exec);
+const MAX_OUTPUT_CHARS = 20000;
+
+async function writeCommandOutputArtifact(input: {
+  command: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  classification: string;
+  startedAt: string;
+  finishedAt: string;
+}): Promise<string> {
+  const dir = path.join(os.tmpdir(), 'nightworkers-command-artifacts');
+  await fs.mkdir(dir, { recursive: true });
+  const digest = crypto
+    .createHash('sha256')
+    .update(`${input.startedAt}\n${input.command}\n${input.stdout}\n${input.stderr}`)
+    .digest('hex')
+    .slice(0, 20);
+  const filePath = path.join(dir, `${digest}.json`);
+  await fs.writeFile(filePath, JSON.stringify(input, null, 2), 'utf-8');
+  return filePath;
+}
+
+async function buildCommandOutput(input: {
+  command: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  classification: string;
+  startedAt: string;
+  finishedAt: string;
+}): Promise<RunCommandOutput> {
+  let finalStdout = input.stdout;
+  let finalStderr = input.stderr;
+  let truncated = false;
+  let logArtifactPath: string | undefined;
+
+  if (input.stdout.length > MAX_OUTPUT_CHARS) {
+    finalStdout = `${input.stdout.substring(0, MAX_OUTPUT_CHARS)}\n[... stdout truncated by tool limit ...]`;
+    truncated = true;
+  }
+  if (input.stderr.length > MAX_OUTPUT_CHARS) {
+    finalStderr = `${input.stderr.substring(0, MAX_OUTPUT_CHARS)}\n[... stderr truncated by tool limit ...]`;
+    truncated = true;
+  }
+
+  if (truncated) {
+    logArtifactPath = await writeCommandOutputArtifact(input);
+  }
+
+  return {
+    command: input.command,
+    exitCode: input.exitCode,
+    stdout: finalStdout,
+    stderr: finalStderr,
+    classification: input.classification,
+    truncated,
+    logArtifactPath,
+  };
+}
 
 export interface RunCommandInput {
   command: string;
@@ -122,55 +185,28 @@ export async function runCommandTool(
     });
 
     const { stdout, stderr } = await promise;
-
-    // Check outputs size
-    const MAX_OUTPUT_CHARS = 20000;
-    let finalStdout = stdout;
-    let finalStderr = stderr;
-    let truncated = false;
-
-    if (stdout.length > MAX_OUTPUT_CHARS) {
-      finalStdout = `${stdout.substring(0, MAX_OUTPUT_CHARS)}\n[... stdout truncated by tool limit ...]`;
-      truncated = true;
-    }
-    if (stderr.length > MAX_OUTPUT_CHARS) {
-      finalStderr = `${stderr.substring(0, MAX_OUTPUT_CHARS)}\n[... stderr truncated by tool limit ...]`;
-      truncated = true;
-    }
+    const finishedAt = new Date().toISOString();
 
     return {
       ok: true,
       toolName: 'run_command',
       startedAt,
-      finishedAt: new Date().toISOString(),
-      payload: {
+      finishedAt,
+      payload: await buildCommandOutput({
         command,
         exitCode: 0,
-        stdout: finalStdout,
-        stderr: finalStderr,
         classification: safety.classification,
-        truncated,
-      },
+        stdout,
+        stderr,
+        startedAt,
+        finishedAt,
+      }),
     };
   } catch (err: any) {
     const exitCode = err.code ?? 1;
     const stdout = err.stdout ?? '';
     const stderr = err.stderr ?? '';
-
-    // Check outputs size
-    const MAX_OUTPUT_CHARS = 20000;
-    let finalStdout = stdout;
-    let finalStderr = stderr;
-    let truncated = false;
-
-    if (stdout.length > MAX_OUTPUT_CHARS) {
-      finalStdout = `${stdout.substring(0, MAX_OUTPUT_CHARS)}\n[... stdout truncated by tool limit ...]`;
-      truncated = true;
-    }
-    if (stderr.length > MAX_OUTPUT_CHARS) {
-      finalStderr = `${stderr.substring(0, MAX_OUTPUT_CHARS)}\n[... stderr truncated by tool limit ...]`;
-      truncated = true;
-    }
+    const finishedAt = new Date().toISOString();
 
     const message = err.killed
       ? `Command timed out after ${effectiveTimeoutSeconds}s`
@@ -180,15 +216,16 @@ export async function runCommandTool(
       ok: false,
       toolName: 'run_command',
       startedAt,
-      finishedAt: new Date().toISOString(),
-      payload: {
+      finishedAt,
+      payload: await buildCommandOutput({
         command,
         exitCode,
-        stdout: finalStdout,
-        stderr: finalStderr,
         classification: safety.classification,
-        truncated,
-      },
+        stdout,
+        stderr,
+        startedAt,
+        finishedAt,
+      }),
       error: {
         code: err.killed ? 'COMMAND_TIMEOUT' : 'COMMAND_FAILED',
         message,

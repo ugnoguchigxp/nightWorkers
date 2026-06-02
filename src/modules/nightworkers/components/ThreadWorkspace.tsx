@@ -1,6 +1,7 @@
 import type {
   ModelOption,
   Repository,
+  ReviewAction,
   Task,
   TaskEvent,
   TaskMessage,
@@ -27,7 +28,7 @@ type ThreadWorkspaceProps = {
   modelOptions: ModelOption[];
   onThinkingDepthChange: (depth: ThinkingDepth) => void;
   onSubmitInitialPrompt: (prompt: string) => Promise<void>;
-  onReviewRun: (runId: string) => void;
+  onReviewRun: (runId: string, action: ReviewAction, note?: string) => void;
 };
 
 export function ThreadWorkspace(props: ThreadWorkspaceProps) {
