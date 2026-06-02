@@ -29,6 +29,17 @@ export const RUN_EVENT_TYPES = [
   'safety.policy_violation',
   'safety.repeated_failure',
   'human.review_submitted',
+  'review.rubric_loaded',
+  'review.evaluation_started',
+  'review.llm_started',
+  'review.llm_finished',
+  'review.evaluation_finished',
+  'memory.candidate_generated',
+  'memory.candidate_approved',
+  'memory.register_started',
+  'memory.register_finished',
+  'memory.context_injected',
+  'memory.feedback_evaluated',
   'system.warning',
   'system.error',
 ] as const;
@@ -135,6 +146,7 @@ export type ReplayResult = {
   reviewResults: unknown[];
   policyEvents: RunEventBase[];
   verificationEvents: RunEventBase[];
+  memoryEvents: RunEventBase[];
   diagnostics: JsonlDiagnostic[];
 };
 

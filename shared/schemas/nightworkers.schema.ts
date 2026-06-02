@@ -31,6 +31,17 @@ const runEventTypeSchema = z.enum([
   'safety.policy_violation',
   'safety.repeated_failure',
   'human.review_submitted',
+  'review.rubric_loaded',
+  'review.evaluation_started',
+  'review.llm_started',
+  'review.llm_finished',
+  'review.evaluation_finished',
+  'memory.candidate_generated',
+  'memory.candidate_approved',
+  'memory.register_started',
+  'memory.register_finished',
+  'memory.context_injected',
+  'memory.feedback_evaluated',
   'system.warning',
   'system.error',
 ]);
@@ -183,6 +194,136 @@ export const taskRunSchema = z
     updatedAt: z.any(),
   })
   .openapi('TaskRun');
+
+export const includedMemoryRefSchema = z
+  .object({
+    kind: z.enum(['candidate', 'memory', 'procedure', 'unknown']),
+    sourceRunId: z.string().uuid().optional(),
+    candidateId: z.string().uuid().optional(),
+    externalId: z.string().optional(),
+    title: z.string().optional(),
+    confidence: z.enum(['low', 'medium', 'high']).optional(),
+  })
+  .openapi('IncludedMemoryRef');
+
+export const learningCandidateSchema = z
+  .object({
+    id: z.string().uuid(),
+    version: z.literal(1),
+    sourceRunId: z.string().uuid(),
+    sourceTaskId: z.string().uuid(),
+    sourceEventIds: z.array(z.string()).min(1),
+    kind: z.enum(['rule', 'procedure', 'warning', 'verification']),
+    title: z.string().min(1),
+    body: z.string().min(1),
+    appliesTo: z.object({
+      repositoryId: z.string().uuid().optional(),
+      repoPath: z.string().optional(),
+      domains: z.array(z.string()).optional(),
+      technologies: z.array(z.string()).optional(),
+      changeTypes: z.array(z.string()).optional(),
+    }),
+    confidence: z.enum(['low', 'medium', 'high']),
+    status: z.enum(['draft', 'approved', 'rejected', 'registered', 'failed']),
+    createdAt: z.string(),
+    approvedAt: z.string().optional(),
+    registeredAt: z.string().optional(),
+    externalRef: z
+      .object({
+        target: z.literal('context-still'),
+        id: z.string().optional(),
+      })
+      .optional(),
+  })
+  .openapi('LearningCandidate');
+
+export const contextCompileSnapshotSchema = z
+  .object({
+    compiledPrompt: z.string(),
+    source: z.enum(['context-still', 'fallback']),
+    degraded: z.boolean(),
+    degradedReason: z.string().optional(),
+    request: z.object({
+      repositoryPath: z.string(),
+      taskTitle: z.string(),
+      taskDescriptionDigest: z.string(),
+    }),
+    result: z.object({
+      digest: z.string(),
+      charCount: z.number().int().nonnegative(),
+      sourceMetadata: z.unknown().optional(),
+      includedMemoryRefs: z.array(includedMemoryRefSchema),
+    }),
+  })
+  .openapi('ContextCompileSnapshot');
+
+export const memoryFeedbackEvaluationSchema = z
+  .object({
+    baselineRunId: z.string().uuid(),
+    followupRunId: z.string().uuid(),
+    candidateIds: z.array(z.string().uuid()),
+    verdict: z.enum(['effective', 'ineffective', 'inconclusive', 'not_injected']),
+    reasons: z.array(z.string()).min(1),
+    evidenceEventIds: z.array(z.string()),
+  })
+  .openapi('MemoryFeedbackEvaluation');
+
+export const memoryRunEventDataSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('memory.candidate_generated'),
+    candidateId: z.string().uuid(),
+    sourceRunId: z.string().uuid(),
+    sourceEventIds: z.array(z.string()),
+    kind: z.enum(['rule', 'procedure', 'warning', 'verification']),
+    title: z.string(),
+    confidence: z.enum(['low', 'medium', 'high']),
+    requiresHumanApproval: z.literal(true),
+    status: z.literal('draft'),
+  }),
+  z.object({
+    type: z.literal('memory.candidate_approved'),
+    candidateId: z.string().uuid(),
+    sourceRunId: z.string().uuid(),
+    approvedBy: z.literal('human'),
+    approvalNote: z.string().optional(),
+    approvedAt: z.string(),
+  }),
+  z.object({
+    type: z.literal('memory.register_started'),
+    candidateId: z.string().uuid(),
+    sourceRunId: z.string().uuid(),
+    target: z.literal('context-still'),
+    tool: z.literal('register_candidate'),
+  }),
+  z.object({
+    type: z.literal('memory.register_finished'),
+    candidateId: z.string().uuid(),
+    sourceRunId: z.string().uuid(),
+    target: z.literal('context-still'),
+    status: z.enum(['registered', 'degraded', 'failed']),
+    externalId: z.string().optional(),
+    errorCode: z.string().optional(),
+    errorMessage: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('memory.context_injected'),
+    runId: z.string().uuid(),
+    source: z.enum(['context-still', 'fallback']),
+    degraded: z.boolean(),
+    compiledContextDigest: z.string(),
+    includedSourceRefs: z.array(includedMemoryRefSchema),
+    charCount: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal('memory.feedback_evaluated'),
+    baselineRunId: z.string().uuid(),
+    followupRunId: z.string().uuid(),
+    candidateIds: z.array(z.string().uuid()),
+    verdict: z.enum(['effective', 'ineffective', 'inconclusive', 'not_injected']),
+    reasons: z.array(z.string()),
+    evidenceEventIds: z.array(z.string()),
+  }),
+]);
 
 const reviewOutcomeStatusSchema = z.enum([
   'needs_review',
@@ -342,6 +483,177 @@ export const reviewRunResponseSchema = z
     reviewResult: reviewResultSchema,
   })
   .openapi('ReviewRunResponse');
+
+export const rubricEvidenceSelectorSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('run_event_type'), type: z.string().min(1) }),
+  z.object({
+    kind: z.literal('verification'),
+    required: z.boolean().optional(),
+    passed: z.boolean().optional(),
+  }),
+  z.object({
+    kind: z.literal('diff'),
+    required: z.boolean().optional(),
+    maxBytes: z.number().int().nonnegative().optional(),
+  }),
+  z.object({
+    kind: z.literal('policy'),
+    allowViolations: z.boolean().optional(),
+  }),
+  z.object({
+    kind: z.literal('review_result'),
+    required: z.boolean().optional(),
+  }),
+  z.object({
+    kind: z.literal('final_report'),
+    required: z.boolean().optional(),
+  }),
+  z.object({
+    kind: z.literal('tool_failure'),
+    maxConsecutive: z.number().int().positive().optional(),
+  }),
+]);
+
+export const rubricCriterionSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    severity: z.enum(['info', 'warning', 'blocking']),
+    evaluationMode: z.enum(['deterministic', 'llm']),
+    evidenceSelectors: z.array(rubricEvidenceSelectorSchema).min(1),
+    rule: z
+      .object({
+        required: z.boolean(),
+        failWhenMissing: z.boolean().optional(),
+        failWhenPresent: z.boolean().optional(),
+      })
+      .optional(),
+    llmPrompt: z.string().optional(),
+  })
+  .strict()
+  .openapi('RubricCriterion');
+
+export const rubricDefinitionSchema = z
+  .object({
+    version: z.literal(1),
+    id: z.string().min(1),
+    title: z.string().min(1),
+    description: z.string().optional(),
+    scope: z
+      .object({
+        repositoryIds: z.array(z.string()).optional(),
+        paths: z.array(z.string()).optional(),
+        taskKinds: z.array(z.string()).optional(),
+      })
+      .strict(),
+    criteria: z.array(rubricCriterionSchema).min(1),
+    llm: z
+      .object({
+        enabledByDefault: z.boolean(),
+        promptHints: z.array(z.string()).optional(),
+        maxEvidenceChars: z.number().int().positive(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .openapi('RubricDefinition');
+
+export const reviewEvidencePackSchema = z
+  .object({
+    version: z.literal(1),
+    runId: z.string(),
+    taskId: z.string(),
+    status: z.string(),
+    outcome: z
+      .object({
+        status: z.string(),
+        reason: z.string().optional(),
+        summary: z.string().optional(),
+      })
+      .optional(),
+    finalReport: z.string().optional(),
+    diff: z.object({
+      hasChanges: z.boolean(),
+      bytes: z.number().int().nonnegative(),
+      changedFiles: z.array(z.string()),
+    }),
+    verification: z.array(
+      z.object({
+        eventId: z.string().optional(),
+        command: z.string().optional(),
+        passed: z.boolean().optional(),
+        summary: z.string().optional(),
+      })
+    ),
+    policy: z.array(
+      z.object({
+        eventId: z.string().optional(),
+        code: z.string().optional(),
+        message: z.string(),
+      })
+    ),
+    reviewResults: z.array(z.unknown()),
+    selectedEvents: z.array(
+      z.object({
+        id: z.string().optional(),
+        seq: z.number().int().optional(),
+        type: z.string(),
+        severity: z.string(),
+        message: z.string(),
+      })
+    ),
+    eventTypes: z.array(z.string()),
+    diagnostics: z.array(z.string()),
+  })
+  .openapi('ReviewEvidencePack');
+
+export const reviewerDraftSchema = z
+  .object({
+    version: z.literal(1),
+    verdict: reviewVerdictSchema,
+    summary: z.string(),
+    findings: z.array(reviewFindingSchema),
+    humanCallouts: z.array(reviewFindingSchema),
+    agentFollowUps: z.array(z.string()),
+    suggestedNextTasks: z.array(z.string()),
+  })
+  .strict()
+  .openapi('ReviewerDraft');
+
+export const reviewerEvaluationSchema = z
+  .object({
+    evaluationId: z.string().uuid(),
+    rubricId: z.string(),
+    status: z.enum(['completed', 'degraded', 'failed']),
+    mode: z.enum(['deterministic_only', 'llm_assisted', 'replay']),
+    deterministicVerdict: reviewVerdictSchema,
+    llmVerdict: reviewVerdictSchema.optional(),
+    finalReviewerVerdict: reviewVerdictSchema,
+    reviewResult: reviewResultSchema,
+    blockingFindingCount: z.number().int().nonnegative(),
+    degradedReasons: z.array(z.string()),
+    evidencePack: reviewEvidencePackSchema,
+  })
+  .openapi('ReviewerEvaluation');
+
+export const createReviewerEvaluationRequestSchema = z
+  .object({
+    rubricId: z.string().default('basic-coding-run'),
+    mode: z.enum(['deterministic_only', 'llm_assisted']).default('deterministic_only'),
+    persist: z.boolean().default(true),
+  })
+  .openapi('CreateReviewerEvaluationRequest');
+
+export const createReviewerReplayEvaluationRequestSchema = z
+  .object({
+    rubricId: z.string().default('basic-coding-run'),
+    mode: z.enum(['deterministic_only', 'llm_assisted']).default('deterministic_only'),
+    jsonl: z.string().optional(),
+    parsedJsonl: z.any().optional(),
+    replayResult: z.any().optional(),
+  })
+  .openapi('CreateReviewerReplayEvaluationRequest');
 
 export const taskRunDetailSchema = taskRunSchema.extend({
   events: z.array(z.lazy(() => taskEventSchema)),

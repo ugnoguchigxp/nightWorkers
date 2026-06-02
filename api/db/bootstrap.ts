@@ -2,6 +2,7 @@ import { client } from './client';
 
 export async function ensureNightWorkersSchema() {
   await client.execute('PRAGMA foreign_keys = ON');
+  await client.execute('PRAGMA busy_timeout = 5000');
 
   const taskRunColumns = await client.execute('PRAGMA table_info(task_runs)');
   const hasFinalJudgmentColumn = taskRunColumns.rows.some((row) => row.name === 'final_judgment');

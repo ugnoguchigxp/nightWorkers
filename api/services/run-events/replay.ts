@@ -19,10 +19,12 @@ function outcomeFrom(event: RunEventBase): ReplayResult['terminal'] {
 
 export function replayRunJsonl(parsed: ParsedRunJsonl): ReplayResult {
   const events = [...parsed.events].sort((a, b) => a.seq - b.seq);
+  const diagnostics = [...parsed.diagnostics];
   const reviewResults: unknown[] = [];
   const reviewResultKeys = new Set<string>();
   const policyEvents: RunEventBase[] = [];
   const verificationEvents: RunEventBase[] = [];
+  const memoryEvents: RunEventBase[] = [];
   let terminal: ReplayResult['terminal'] = {};
 
   const pushReviewResult = (value: unknown) => {
@@ -38,7 +40,10 @@ export function replayRunJsonl(parsed: ParsedRunJsonl): ReplayResult {
     if (event.data && 'reviewResult' in event.data) {
       pushReviewResult((event.data as { reviewResult: unknown }).reviewResult);
     }
-    if (event.type === 'human.review_submitted' && !line.reviewResult) {
+    if (
+      (event.type === 'human.review_submitted' || event.type === 'review.evaluation_finished') &&
+      !line.reviewResult
+    ) {
       pushReviewResult(event.data ?? { message: event.message });
     }
     if (event.type === 'tool.policy_blocked' || event.type === 'safety.policy_violation') {
@@ -46,6 +51,9 @@ export function replayRunJsonl(parsed: ParsedRunJsonl): ReplayResult {
     }
     if (event.type === 'verification.started' || event.type === 'verification.finished') {
       verificationEvents.push(event);
+    }
+    if (event.type.startsWith('memory.')) {
+      memoryEvents.push(event);
     }
     if (event.type === 'run.outcome_decided') {
       terminal = outcomeFrom(event);
@@ -57,6 +65,13 @@ export function replayRunJsonl(parsed: ParsedRunJsonl): ReplayResult {
       status: parsed.summary.status,
       summary: parsed.summary.summary ?? undefined,
     };
+  } else if (terminal.status && parsed.summary && terminal.status !== parsed.summary.status) {
+    diagnostics.push({
+      level: 'warning',
+      line: 0,
+      code: 'invalid_schema',
+      message: `run.outcome_decided status ${terminal.status} differs from run_summary status ${parsed.summary.status}; outcome event takes precedence`,
+    });
   }
 
   return {
@@ -77,6 +92,7 @@ export function replayRunJsonl(parsed: ParsedRunJsonl): ReplayResult {
     reviewResults,
     policyEvents,
     verificationEvents,
-    diagnostics: parsed.diagnostics,
+    memoryEvents,
+    diagnostics,
   };
 }

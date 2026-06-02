@@ -76,8 +76,11 @@ export function ThreadTimeline({
           >
             <MessagePayload message={item.message} />
           </ThreadMessage>
-        ) : showDebugEvents || hasApplyPatchContent(item.event) ? (
+        ) : showDebugEvents ||
+          hasApplyPatchContent(item.event) ||
+          isReviewerEvaluationEvent(item.event) ? (
           <div key={item.id} className="space-y-2">
+            <ReviewerEvaluationCard event={item.event} />
             <AgentPatchSummaryCard event={item.event} />
             {showDebugEvents ? <AgentDebugEventCard event={item.event} /> : null}
           </div>
@@ -242,6 +245,54 @@ function AgentPatchSummaryCard({ event }: { event: TaskEvent }) {
         ))}
       </div>
     </details>
+  );
+}
+
+function ReviewerEvaluationCard({ event }: { event: TaskEvent }) {
+  const payload = event.payloadJson as any;
+  const runEvent = payload?.runEvent;
+  if (!isReviewerEvaluationEvent(event)) return null;
+  const data = runEvent?.data || {};
+  const eventType = runEvent?.type || event.eventType || event.type;
+  const status = data.status || (eventType === 'review.evaluation_started' ? 'started' : 'loaded');
+  const verdict = data.finalReviewerVerdict || data.deterministicVerdict;
+  const blockingCount = data.blockingFindingCount;
+  const degradedReasons = Array.isArray(data.degradedReasons) ? data.degradedReasons : [];
+
+  return (
+    <details className="rounded border border-amber-700/60 bg-amber-950/20">
+      <summary className="cursor-pointer list-none px-3 py-2 text-xs text-amber-100">
+        <span className="mr-2 rounded border border-amber-700/70 px-1.5 py-0.5">
+          agent reviewer
+        </span>
+        {String(status)}
+        {verdict ? <span className="ml-2 text-amber-200">verdict {String(verdict)}</span> : null}
+        {typeof blockingCount === 'number' ? (
+          <span className="ml-2 text-amber-200">blocking {blockingCount}</span>
+        ) : null}
+      </summary>
+      <div className="space-y-2 border-t border-amber-800/60 px-3 py-2 text-[11px] text-amber-50">
+        <div>{event.message}</div>
+        {degradedReasons.length > 0 ? (
+          <div className="text-amber-200">degraded: {degradedReasons.join(', ')}</div>
+        ) : null}
+        <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-all rounded bg-slate-950/40 p-2 text-[10px] text-slate-300">
+          {JSON.stringify(data, null, 2)}
+        </pre>
+      </div>
+    </details>
+  );
+}
+
+function isReviewerEvaluationEvent(event: TaskEvent): boolean {
+  const payload = event.payloadJson as any;
+  const type = payload?.runEvent?.type || event.eventType || event.type;
+  return (
+    type === 'review.rubric_loaded' ||
+    type === 'review.evaluation_started' ||
+    type === 'review.llm_started' ||
+    type === 'review.llm_finished' ||
+    type === 'review.evaluation_finished'
   );
 }
 

@@ -1,0 +1,112 @@
+import type { RubricDefinition } from './types';
+
+export const BUILTIN_RUBRICS: Record<string, RubricDefinition> = {
+  'basic-coding-run': {
+    version: 1,
+    id: 'basic-coding-run',
+    title: 'Basic coding run',
+    description: 'Diff, final report, verification, policy, and repeated failure checks.',
+    scope: {},
+    criteria: [
+      {
+        id: 'diff-present',
+        title: 'Diff evidence is present',
+        severity: 'blocking',
+        evaluationMode: 'deterministic',
+        evidenceSelectors: [{ kind: 'diff', required: true }],
+        rule: { required: true, failWhenMissing: true },
+      },
+      {
+        id: 'final-report-present',
+        title: 'Final report is present',
+        severity: 'blocking',
+        evaluationMode: 'deterministic',
+        evidenceSelectors: [{ kind: 'final_report', required: true }],
+        rule: { required: true, failWhenMissing: true },
+      },
+      {
+        id: 'verification-present',
+        title: 'Verification result is present',
+        severity: 'blocking',
+        evaluationMode: 'deterministic',
+        evidenceSelectors: [{ kind: 'verification', required: true }],
+        rule: { required: true, failWhenMissing: true },
+      },
+      {
+        id: 'policy-clean',
+        title: 'No policy violation is present',
+        severity: 'blocking',
+        evaluationMode: 'deterministic',
+        evidenceSelectors: [{ kind: 'policy', allowViolations: false }],
+        rule: { required: true, failWhenPresent: true },
+      },
+      {
+        id: 'tool-failure-limit',
+        title: 'Tool failures are not repeated',
+        severity: 'warning',
+        evaluationMode: 'deterministic',
+        evidenceSelectors: [{ kind: 'tool_failure', maxConsecutive: 3 }],
+        rule: { required: true, failWhenPresent: true },
+      },
+    ],
+    llm: {
+      enabledByDefault: false,
+      maxEvidenceChars: 12_000,
+      promptHints: [
+        'final outcome を上書きせず、evidence に基づく findings / callouts / follow-ups だけを返す。',
+      ],
+    },
+  },
+  'review-ready-run': {
+    version: 1,
+    id: 'review-ready-run',
+    title: 'Review ready run',
+    description: 'Checks that a needs_review run has review evidence available.',
+    scope: {},
+    criteria: [
+      {
+        id: 'review-result-present',
+        title: 'ReviewResult evidence is present',
+        severity: 'blocking',
+        evaluationMode: 'deterministic',
+        evidenceSelectors: [{ kind: 'review_result', required: true }],
+        rule: { required: true, failWhenMissing: true },
+      },
+      {
+        id: 'final-report-present',
+        title: 'Final report is present',
+        severity: 'blocking',
+        evaluationMode: 'deterministic',
+        evidenceSelectors: [{ kind: 'final_report', required: true }],
+        rule: { required: true, failWhenMissing: true },
+      },
+    ],
+    llm: { enabledByDefault: false, maxEvidenceChars: 12_000 },
+  },
+  'memory-feedback-run': {
+    version: 1,
+    id: 'memory-feedback-run',
+    title: 'Memory feedback run',
+    description: 'Checks that memory feedback-related evidence is present.',
+    scope: {},
+    criteria: [
+      {
+        id: 'memory-evaluation-event-present',
+        title: 'Memory feedback evaluation event is present',
+        severity: 'warning',
+        evaluationMode: 'deterministic',
+        evidenceSelectors: [{ kind: 'run_event_type', type: 'run.context_compiled' }],
+        rule: { required: true, failWhenMissing: true },
+      },
+      {
+        id: 'final-report-present',
+        title: 'Final report is present',
+        severity: 'blocking',
+        evaluationMode: 'deterministic',
+        evidenceSelectors: [{ kind: 'final_report', required: true }],
+        rule: { required: true, failWhenMissing: true },
+      },
+    ],
+    llm: { enabledByDefault: false, maxEvidenceChars: 12_000 },
+  },
+};
