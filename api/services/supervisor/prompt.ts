@@ -3,7 +3,16 @@ export type SupervisorWorkflow = 'general' | 'evidence_review' | 'code_change' |
 const TOOL_CATALOG = [
   { name: 'list_dir', description: 'リポジトリ内のディレクトリを一覧する。' },
   { name: 'find_file', description: '正確なパスが不明なとき、ファイルマスクで候補を探す。' },
-  { name: 'read_file', description: 'レビューや編集の前に、リポジトリ内のファイルを読む。' },
+  {
+    name: 'read_file',
+    description:
+      'レビューや編集の前に、リポジトリ内のファイルを読む。デフォルトは圧縮ビュー。完全な従来出力が必要な場合だけ compressionMode="off" または行範囲を使う。',
+  },
+  {
+    name: 'inspect_structure',
+    description:
+      '大きな TypeScript/JavaScript/JSON を読む前に構造だけ確認する。TS/JS は import と symbol、JSON は値ではなくパスと型を返す。',
+  },
   {
     name: 'search_files',
     description: '直接読むだけでは足りないとき、リポジトリ内の文字列を検索する。',
@@ -22,7 +31,8 @@ const TOOL_CATALOG = [
   { name: 'apply_patch', description: '構造的な編集や新規ファイル作成を unified diff で行う。' },
   {
     name: 'run_command',
-    description: 'ポリシーの範囲内で検証コマンドやリポジトリのスクリプトを実行する。',
+    description:
+      'ポリシーの範囲内で検証コマンドやリポジトリのスクリプトを実行する。巨大出力はデフォルトでエラー周辺と末尾中心に圧縮される。',
   },
 ] as const;
 
@@ -158,7 +168,8 @@ export function buildRound2SystemPrompt(workflow: SupervisorWorkflow = 'general'
 
 [Round 2: 実行]
 Round 1 で選んだ workflow に従い、次の具体的な1手を決めてください。
-ユーザー入力は JSON で渡されます。latestUserMessage は元の依頼、round1Decision は workflow 選択結果、observations はこれまでの worker ツール実行結果です。
+ユーザー入力は JSON で渡されます。latestUserMessage は元の依頼、round1Decision は workflow 選択結果、todoPlan は run 内の Todo と procedure/context の要約、observations はこれまでの worker ツール実行結果です。
+todoPlan がある場合、現在の実行は Todo を順番に完了する前提で進め、未完了 Todo を finalResponse で完了扱いにしないでください。
 証拠系 workflow では、observations が空ならユーザー向け回答を作らず、まず toolCall で証拠を取得してください。
 証拠系 workflow で observations がある場合は、その証拠だけを根拠に finalResponse をレビュー結果として完成させてください。
 

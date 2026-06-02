@@ -8,6 +8,7 @@ import {
   fetchContentTool,
   findFileTool,
   gitDiffTool,
+  inspectStructureTool,
   isPathSafe,
   listDirTool,
   readFileTool,
@@ -32,6 +33,44 @@ describe('Worker Tools Unit Tests', () => {
     await fs.writeFile(
       path.join(dummyRepoDir, 'src/main.js'),
       'console.log("running");\n',
+      'utf-8'
+    );
+    await fs.writeFile(
+      path.join(dummyRepoDir, 'src/tool.ts'),
+      [
+        "import fs from 'node:fs';",
+        'export interface ToolInput {',
+        '  filePath: string;',
+        '}',
+        'export function readFileTool(input: ToolInput) {',
+        '  return fs.readFileSync(input.filePath, "utf-8");',
+        '}',
+        'export class Runner {',
+        '  execute() {',
+        '    return readFileTool({ filePath: "hello.txt" });',
+        '  }',
+        '}',
+        'export const loadTool = () => readFileTool({ filePath: "hello.txt" });',
+        'export default function defaultTool() {',
+        '  return loadTool();',
+        '}',
+      ].join('\n'),
+      'utf-8'
+    );
+    await fs.writeFile(
+      path.join(dummyRepoDir, 'config.json'),
+      JSON.stringify(
+        {
+          scripts: { verify: 'pnpm verify' },
+          nested: { enabled: true },
+          items: [
+            { id: 1, name: 'one' },
+            { id: 2, flag: false },
+          ],
+        },
+        null,
+        2
+      ),
       'utf-8'
     );
   });
@@ -158,6 +197,112 @@ describe('Worker Tools Unit Tests', () => {
       expect(result.ok).toBe(false);
       expect(result.error?.code).toBe('ACCESS_DENIED');
       await fs.rm(outsideDir, { recursive: true, force: true });
+    });
+
+    it('uses compressed context by default for large full-file reads', async () => {
+      await fs.writeFile(
+        path.join(dummyRepoDir, 'large.ts'),
+        Array.from({ length: 400 }, (_, index) =>
+          index === 200
+            ? 'export function important() { return 1; }'
+            : `const line${index} = ${index};`
+        ).join('\n'),
+        'utf-8'
+      );
+
+      const result = await readFileTool({
+        filePath: 'large.ts',
+        repoRoot: dummyRepoDir,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.payload.content).toContain('[read-file-compressed]');
+      expect(result.payload.content).toContain('important');
+      expect(result.payload.compression?.compressed).toBe(true);
+    });
+
+    it('allows traditional full read output when compressionMode is off', async () => {
+      const result = await readFileTool({
+        filePath: 'large.ts',
+        repoRoot: dummyRepoDir,
+        compressionMode: 'off',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.payload.content).toContain('1: const line0 = 0;');
+      expect(result.payload.content).not.toContain('[read-file-compressed]');
+    });
+
+    it('returns a cache marker for unchanged repeated reads in one tool context', async () => {
+      const readCache = new Map();
+      await readFileTool({ filePath: 'hello.txt', repoRoot: dummyRepoDir, readCache });
+      const secondRead = await readFileTool({
+        filePath: 'hello.txt',
+        repoRoot: dummyRepoDir,
+        readCache,
+      });
+
+      expect(secondRead.ok).toBe(true);
+      expect(secondRead.payload.cached).toBe(true);
+      expect(secondRead.payload.content).toContain('"status": "cached"');
+      expect(secondRead.payload.compression?.strategy).toBe('read_cache_marker');
+    });
+  });
+
+  describe('inspectStructureTool', () => {
+    it('summarizes TypeScript imports and symbols without reading full content', async () => {
+      const result = await inspectStructureTool({
+        filePath: 'src/tool.ts',
+        repoRoot: dummyRepoDir,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.payload.kind).toBe('source');
+      if (result.payload.kind !== 'source') throw new Error('expected source output');
+      expect(result.payload.imports?.[0]).toMatchObject({ module: 'node:fs' });
+      expect(result.payload.symbols.map((symbol) => symbol.name)).toEqual(
+        expect.arrayContaining(['ToolInput', 'readFileTool', 'Runner', 'execute', 'loadTool'])
+      );
+      expect(result.payload.symbols.find((symbol) => symbol.name === 'loadTool')).toMatchObject({
+        kind: 'function',
+        exported: true,
+      });
+      expect(result.payload.compression?.omittedReason).toBe('source_ast_symbols_only');
+    });
+
+    it('marks JSON shape as truncated only when maxPaths cuts traversal short', async () => {
+      const result = await inspectStructureTool({
+        filePath: 'config.json',
+        repoRoot: dummyRepoDir,
+        maxPaths: 2,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.payload.kind).toBe('json');
+      if (result.payload.kind !== 'json') throw new Error('expected json output');
+      expect(result.payload.paths.length).toBe(2);
+      expect(result.payload.truncated).toBe(true);
+    });
+
+    it('summarizes JSON shape without primitive values by default', async () => {
+      const result = await inspectStructureTool({
+        filePath: 'config.json',
+        repoRoot: dummyRepoDir,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.payload.kind).toBe('json');
+      if (result.payload.kind !== 'json') throw new Error('expected json output');
+      expect(result.payload.paths).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: '$.scripts.verify', type: 'string' }),
+          expect.objectContaining({ path: '$.items', type: 'array', length: 2 }),
+        ])
+      );
+      expect(
+        result.payload.paths.find((entry) => entry.path === '$.scripts.verify')
+      ).not.toHaveProperty('preview');
+      expect(result.payload.truncated).toBe(false);
     });
   });
 
@@ -440,7 +585,8 @@ describe('Worker Tools Unit Tests', () => {
 
       expect(result.ok).toBe(true);
       expect(result.payload.truncated).toBe(true);
-      expect(result.payload.stdout).toContain('[... stdout truncated by tool limit ...]');
+      expect(result.payload.stdout).toContain('[command-output-compressed]');
+      expect(result.payload.compression?.stdout?.strategy).toBe('log_error_tail');
       expect(result.payload.logArtifactPath).toBeTruthy();
 
       const artifact = await fs.readFile(result.payload.logArtifactPath as string, 'utf-8');

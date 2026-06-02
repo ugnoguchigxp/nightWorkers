@@ -126,6 +126,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               latestRun={workspace.latestRun}
               taskMessages={workspace.taskMessages}
               latestRunEvents={workspace.latestRunEvents}
+              latestRunTodos={workspace.latestRunTodos}
               isAgentWorking={workspace.isAgentWorking}
               isAgentThinking={workspace.isAgentThinking}
               realtimeStatus={workspace.realtimeStatus}

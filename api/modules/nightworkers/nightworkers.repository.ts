@@ -6,6 +6,7 @@ import {
   taskEvents,
   taskMessages,
   taskRuns,
+  taskRunTodos,
   tasks,
 } from '../../db/schema';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
@@ -226,6 +227,80 @@ export async function updateTaskRun(
     });
   }
   return run;
+}
+
+// --- Task Run Todos ---
+export async function createTaskRunTodo(data: {
+  runId: string;
+  seq: number;
+  title: string;
+  description?: string | null;
+  taskType: string;
+  status?: string;
+  procedureId?: string | null;
+  procedureSnapshot?: any;
+  contextSnapshot?: any;
+  completionGateResult?: any;
+  dependsOn?: Array<string | number> | null;
+  statusReason?: string | null;
+  startedAt?: Date | null;
+  completedAt?: Date | null;
+}) {
+  const [todo] = await db
+    .insert(taskRunTodos)
+    .values({
+      ...data,
+      dependsOn: data.dependsOn ?? [],
+    })
+    .returning();
+  return todo;
+}
+
+export async function listTaskRunTodosForRun(runId: string) {
+  return db
+    .select()
+    .from(taskRunTodos)
+    .where(eq(taskRunTodos.runId, runId))
+    .orderBy(taskRunTodos.seq);
+}
+
+export async function updateTaskRunTodo(
+  id: string,
+  data: {
+    title?: string;
+    description?: string | null;
+    taskType?: string;
+    status?: string;
+    procedureId?: string | null;
+    procedureSnapshot?: any;
+    contextSnapshot?: any;
+    completionGateResult?: any;
+    dependsOn?: Array<string | number> | null;
+    statusReason?: string | null;
+    startedAt?: Date | null;
+    completedAt?: Date | null;
+  }
+) {
+  const [todo] = await db
+    .update(taskRunTodos)
+    .set({
+      ...data,
+      dependsOn: data.dependsOn === undefined ? undefined : (data.dependsOn ?? []),
+      updatedAt: new Date(),
+    })
+    .where(eq(taskRunTodos.id, id))
+    .returning();
+  if (todo) {
+    const [run] = await db.select().from(taskRuns).where(eq(taskRuns.id, todo.runId));
+    if (run) {
+      nightWorkersRealtimeBroker.publish(run.taskId, {
+        type: 'task_run_updated',
+        runId: run.id,
+        payload: { run },
+      });
+    }
+  }
+  return todo;
 }
 
 // --- Task Events ---

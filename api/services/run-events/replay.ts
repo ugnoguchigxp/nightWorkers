@@ -78,6 +78,7 @@ export function replayRunJsonl(parsed: ParsedRunJsonl): ReplayResult {
     sourceRunId: parsed.header?.runId ?? parsed.summary?.runId ?? '',
     eventCount: events.length,
     events: events.map((line) => line.event),
+    todos: parsed.summary?.todos ?? [],
     terminal,
     evidence: {
       hasRuntimeStarted: events.some((line) => line.event.type === 'run.runtime_started'),
@@ -89,6 +90,7 @@ export function replayRunJsonl(parsed: ParsedRunJsonl): ReplayResult {
       hasVerification: verificationEvents.length > 0,
       hasPolicyBlock: policyEvents.length > 0,
       hasReviewResult: reviewResults.length > 0,
+      hasTodos: (parsed.summary?.todos ?? []).length > 0,
     },
     reviewResults,
     policyEvents,

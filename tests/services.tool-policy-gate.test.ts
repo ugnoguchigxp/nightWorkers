@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { buildBlockedToolResult } from '../api/services/tool-policy/blocked-result';
 import { DefaultToolPolicyGate } from '../api/services/tool-policy/tool-policy-gate';
 
 const gate = new DefaultToolPolicyGate();
@@ -97,5 +98,38 @@ describe('ToolPolicyGate', () => {
     });
 
     expect(decision.allowed).toBe(true);
+  });
+
+  it('returns an inspect_structure-shaped payload for blocked structure inspection', async () => {
+    const decision = await gate.beforeToolCall({
+      runId: 'run-1',
+      iteration: 1,
+      toolName: 'inspect_structure',
+      args: { filePath: '../secret.json' },
+      repoRoot,
+      readFiles: [],
+    });
+
+    expect(decision.allowed).toBe(false);
+    if (decision.allowed) throw new Error('expected policy block');
+
+    const result = buildBlockedToolResult(
+      {
+        runId: 'run-1',
+        iteration: 1,
+        toolName: 'inspect_structure',
+        args: { filePath: '../secret.json' },
+        repoRoot,
+        readFiles: [],
+      },
+      decision
+    );
+
+    expect(result.payload).toEqual({
+      kind: 'json',
+      filePath: '',
+      paths: [],
+      truncated: false,
+    });
   });
 });

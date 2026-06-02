@@ -4,6 +4,7 @@ import path from 'node:path';
 import { AppError, NotFoundError } from '../../lib/errors';
 import { createLedgerSink } from '../../services/agent-runtime/ledger-sink';
 import { resolveAgentRuntime } from '../../services/agent-runtime/registry';
+import type { AgentRuntimeResult } from '../../services/agent-runtime/types';
 import { compileContext, evaluateContext } from '../../services/context-still';
 import { buildFinalJudgment } from '../../services/final-judgment/build-final-judgment';
 import { renderFinalMessage } from '../../services/final-judgment/render-final-message';
@@ -22,6 +23,7 @@ import type {
   LearningCandidate,
   RunLedgerView,
 } from '../../services/memory-feedback/types';
+import { selectProcedureForTaskType, toProcedureSnapshot } from '../../services/procedures';
 import { buildReviewResult } from '../../services/review-results/build-review-result';
 import { collectDefaultReviewEvidence } from '../../services/review-results/evidence-collector';
 import type { ReviewResult, ReviewRunRequest } from '../../services/review-results/types';
@@ -37,7 +39,82 @@ import { decideRunOutcome } from '../../services/run-control/run-outcome-gate';
 import { serializeRunToJsonl } from '../../services/run-events/jsonl-export';
 import type { RunEventBase } from '../../services/run-events/types';
 import { nativeLocalRunner } from '../../services/runner/NativeLocalRunner';
+import { planTaskIntake } from '../../services/task-intake';
+import { buildTodoContextSnapshot } from '../../services/todo-context';
+import {
+  appendTodoSummaryToFinalReport,
+  buildSkippedTodoGate,
+  evaluateTodoCompletionGate,
+} from '../../services/todo-runtime';
 import * as repo from './nightworkers.repository';
+
+type PlannedTodoRow = Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>[number];
+
+function buildTodoRuntimePrompt(input: { compiledPrompt: string; todo: PlannedTodoRow }) {
+  return [
+    input.compiledPrompt,
+    '',
+    'Current Todo Runtime Boundary:',
+    `- todoId: ${input.todo.id}`,
+    `- seq: ${input.todo.seq}`,
+    `- title: ${input.todo.title}`,
+    `- taskType: ${input.todo.taskType}`,
+    input.todo.description ? `- description: ${input.todo.description}` : null,
+    `- procedureId: ${input.todo.procedureId || 'none'}`,
+    '',
+    'Execute this Todo only. Do not mark later Todos complete. Report evidence for this Todo so the completion gate can evaluate it before the next Todo starts.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function combineRuntimeResults(results: AgentRuntimeResult[]): AgentRuntimeResult {
+  const latest = results.at(-1);
+  if (!latest) {
+    return {
+      terminalState: 'needs_human',
+      summary: 'No executable Todo was available.',
+      finalReport: 'No executable Todo was available.',
+      stoppedBy: 'missing_tool_call',
+      riskLevel: 'medium',
+      logContent: '',
+      diffPatch: '',
+    };
+  }
+  return {
+    ...latest,
+    summary: results.map((result, index) => `Todo ${index + 1}: ${result.summary}`).join('\n'),
+    finalReport: results
+      .map((result, index) => `Todo ${index + 1} report:\n${result.finalReport || result.summary}`)
+      .join('\n\n'),
+    logContent: results
+      .map((result) => result.logContent || '')
+      .filter(Boolean)
+      .join('\n'),
+  };
+}
+
+function outcomeFromRuntimeResult(runtimeResult: AgentRuntimeResult) {
+  return runtimeResult.terminalState === 'cancelled'
+    ? {
+        status: 'cancelled' as const,
+        reason: 'human_review' as const,
+        summary: runtimeResult.summary || 'Run cancelled by runtime.',
+      }
+    : decideRunOutcome({
+        supervisor: {
+          finalReport: runtimeResult.finalReport || '',
+          terminalState: runtimeResult.terminalState,
+          summary:
+            runtimeResult.summary || `Runtime finished with status=${runtimeResult.terminalState}`,
+          stoppedBy:
+            runtimeResult.stoppedBy === 'cancelled' ? 'llm_error' : runtimeResult.stoppedBy,
+          riskLevel: runtimeResult.riskLevel,
+        },
+        budgetStopped: runtimeResult.stoppedBy === 'budget',
+        safetyViolation: runtimeResult.stoppedBy === 'policy',
+      });
+}
 
 // --- Repositories ---
 export async function createRepository(data: {
@@ -198,6 +275,45 @@ export async function startTaskRun(taskId: string) {
     data: { contextSource },
   });
 
+  const intakePlan = await planTaskIntake({
+    taskTitle: task.title,
+    taskDescription: task.description || task.objective || null,
+    latestUserMessage: lastUserMessage?.content || compiledPromptText,
+    maxTodos: 8,
+  });
+  for (const todo of intakePlan.todos) {
+    const procedure = await selectProcedureForTaskType(todo.taskType);
+    await repo.createTaskRunTodo({
+      runId: run.id,
+      seq: todo.seq,
+      title: todo.title,
+      description: todo.description,
+      taskType: todo.taskType,
+      status: todo.status,
+      procedureId: procedure.id,
+      procedureSnapshot: toProcedureSnapshot(procedure),
+      dependsOn: todo.dependsOn,
+      statusReason: todo.statusReason,
+    });
+  }
+  if (intakePlan.warnings.length > 0) {
+    await repo.createRunEvent({
+      version: 1,
+      runId: run.id,
+      taskId,
+      timestamp: new Date().toISOString(),
+      type: 'system.warning',
+      severity: 'warning',
+      actor: 'system',
+      message: 'Task intake planner completed with fallback or compression warnings.',
+      data: {
+        intakeSource: intakePlan.source,
+        warningCodes: intakePlan.warnings,
+        todoCount: intakePlan.todos.length,
+      },
+    });
+  }
+
   const compileResult = await compileContext({
     repositoryPath: repoInfo.localPath,
     taskTitle: task.title,
@@ -245,6 +361,32 @@ export async function startTaskRun(taskId: string) {
   };
 
   await repo.updateTaskCompiledPrompt(taskId, compiledPromptText);
+  const plannedTodos = await repo.listTaskRunTodosForRun(run.id);
+  for (const todo of plannedTodos) {
+    await repo.updateTaskRunTodo(todo.id, {
+      contextSnapshot: buildTodoContextSnapshot({
+        todo: {
+          id: todo.id,
+          seq: todo.seq,
+          title: todo.title,
+          description: todo.description,
+          taskType: todo.taskType,
+          procedureId: todo.procedureId,
+          procedureSnapshot: todo.procedureSnapshot as any,
+        },
+        runContext: contextSnapshot,
+        previousTodoSummaries: plannedTodos
+          .filter((candidate) => candidate.seq < todo.seq)
+          .map((candidate) => ({
+            id: candidate.id,
+            seq: candidate.seq,
+            title: candidate.title,
+            status: candidate.status,
+            summary: null,
+          })),
+      }),
+    });
+  }
   const compiledRun = await repo.updateTaskRun(run.id, {
     status: 'running',
     contextSnapshot,
@@ -298,37 +440,192 @@ export async function startTaskRun(taskId: string) {
   (async () => {
     try {
       await repo.updateTaskStatus(taskId, 'running');
+      const runtimeResults: AgentRuntimeResult[] = [];
+      const todoStatuses = new Map(plannedTodos.map((todo) => [todo.id, todo.status]));
+      let terminalOutcome: ReturnType<typeof outcomeFromRuntimeResult> | null = null;
 
-      const runtimeResult = await runtime.start(
-        {
+      for (const todo of plannedTodos) {
+        if (todoStatuses.get(todo.id) === 'needs_human') {
+          terminalOutcome = {
+            status: 'needs_human' as const,
+            reason: 'human_review' as const,
+            summary: todo.statusReason || `Todo #${todo.seq} requires human input.`,
+          };
+          break;
+        }
+
+        await repo.updateTaskRunTodo(todo.id, {
+          status: 'running',
+          statusReason: 'Runtime execution started for this Todo.',
+          startedAt: new Date(),
+        });
+        todoStatuses.set(todo.id, 'running');
+        await repo.createRunEvent({
+          version: 1,
           runId: run.id,
           taskId,
-          repositoryId: task.repositoryId,
-          repoRoot: repoInfo.localPath,
-          compiledPrompt: compiledPromptText,
-          latestUserMessage: lastUserMessage?.content || compiledPromptText,
-          timeoutSeconds: task.timeoutSeconds ?? 3600,
-          safetyPolicy: repoInfo.safetyPolicy || undefined,
-          contextSnapshot,
-        },
-        sink
-      );
+          timestamp: new Date().toISOString(),
+          type: 'turn.started',
+          severity: 'info',
+          actor: 'system',
+          message: `Todo #${todo.seq} started: ${todo.title}`,
+          data: {
+            todoId: todo.id,
+            todoSeq: todo.seq,
+            todoTitle: todo.title,
+            taskType: todo.taskType,
+            procedureId: todo.procedureId,
+          },
+        });
 
-      await repo.createRunEvent({
-        version: 1,
-        runId: run.id,
-        taskId,
-        timestamp: new Date().toISOString(),
-        type: 'run.runtime_finished',
-        severity: 'checkpoint',
-        actor: 'runtime',
-        message: `Runtime execution finished with terminal status: ${runtimeResult.terminalState}.`,
-        data: {
-          terminalState: runtimeResult.terminalState,
-          stoppedBy: runtimeResult.stoppedBy,
-          riskLevel: runtimeResult.riskLevel,
-        },
-      });
+        const runtimeResult = await runtime.start(
+          {
+            runId: run.id,
+            taskId,
+            repositoryId: task.repositoryId,
+            repoRoot: repoInfo.localPath,
+            compiledPrompt: buildTodoRuntimePrompt({ compiledPrompt: compiledPromptText, todo }),
+            latestUserMessage: lastUserMessage?.content || compiledPromptText,
+            timeoutSeconds: task.timeoutSeconds ?? 3600,
+            safetyPolicy: repoInfo.safetyPolicy || undefined,
+            contextSnapshot,
+            currentTodo: {
+              id: todo.id,
+              seq: todo.seq,
+              title: todo.title,
+              taskType: todo.taskType,
+              status: todoStatuses.get(todo.id) || todo.status,
+              procedureId: todo.procedureId,
+            },
+            todoPlan: plannedTodos.map((candidate) => {
+              const procedureSnapshot = candidate.procedureSnapshot as
+                | { digest?: string; id?: string }
+                | null
+                | undefined;
+              return {
+                id: candidate.id,
+                seq: candidate.seq,
+                title: candidate.title,
+                description: candidate.description,
+                taskType: candidate.taskType,
+                status: todoStatuses.get(candidate.id) || candidate.status,
+                procedureId: candidate.procedureId,
+                procedureDigest: procedureSnapshot?.digest || null,
+                contextDigest: contextSnapshot.result.digest,
+              };
+            }),
+          },
+          sink
+        );
+        runtimeResults.push(runtimeResult);
+
+        await repo.createRunEvent({
+          version: 1,
+          runId: run.id,
+          taskId,
+          timestamp: new Date().toISOString(),
+          type: 'run.runtime_finished',
+          severity: 'checkpoint',
+          actor: 'runtime',
+          message: `Runtime execution finished for Todo #${todo.seq} with terminal status: ${runtimeResult.terminalState}.`,
+          data: {
+            todoId: todo.id,
+            todoSeq: todo.seq,
+            procedureId: todo.procedureId,
+            terminalState: runtimeResult.terminalState,
+            stoppedBy: runtimeResult.stoppedBy,
+            riskLevel: runtimeResult.riskLevel,
+          },
+        });
+
+        const todoOutcome = outcomeFromRuntimeResult(runtimeResult);
+        const gate = evaluateTodoCompletionGate({
+          todo,
+          runtimeResult,
+          outcomeStatus: todoOutcome.status,
+        });
+        const status = gate.status === 'passed' ? 'passed' : gate.status;
+        const completedAt = new Date();
+        await repo.updateTaskRunTodo(todo.id, {
+          status,
+          statusReason: gate.reason,
+          completionGateResult: {
+            ...gate,
+            status,
+            passed: status === 'passed',
+          },
+          completedAt,
+        });
+        todoStatuses.set(todo.id, status);
+        await repo.createRunEvent({
+          version: 1,
+          runId: run.id,
+          taskId,
+          timestamp: new Date().toISOString(),
+          type: 'turn.finished',
+          severity: status === 'passed' ? 'checkpoint' : 'warning',
+          actor: 'system',
+          message: `Todo #${todo.seq} ${status}: ${todo.title}`,
+          data: {
+            todoId: todo.id,
+            todoSeq: todo.seq,
+            todoTitle: todo.title,
+            taskType: todo.taskType,
+            procedureId: todo.procedureId,
+            completionGateResult: {
+              ...gate,
+              status,
+              passed: status === 'passed',
+            },
+          },
+        });
+
+        if (status !== 'passed') {
+          terminalOutcome = todoOutcome;
+          for (const skippedTodo of plannedTodos.filter((candidate) => candidate.seq > todo.seq)) {
+            if (
+              ['passed', 'failed', 'skipped', 'needs_human'].includes(
+                todoStatuses.get(skippedTodo.id) || ''
+              )
+            ) {
+              continue;
+            }
+            const skippedGate = buildSkippedTodoGate({
+              todo: skippedTodo,
+              reason: 'Skipped because an earlier Todo did not pass the runtime completion gate.',
+              runtimeResult,
+            });
+            await repo.updateTaskRunTodo(skippedTodo.id, {
+              status: 'skipped',
+              statusReason: skippedGate.reason,
+              completionGateResult: skippedGate,
+              completedAt: new Date(),
+            });
+            todoStatuses.set(skippedTodo.id, 'skipped');
+            await repo.createRunEvent({
+              version: 1,
+              runId: run.id,
+              taskId,
+              timestamp: new Date().toISOString(),
+              type: 'turn.finished',
+              severity: 'info',
+              actor: 'system',
+              message: `Todo #${skippedTodo.seq} skipped: ${skippedTodo.title}`,
+              data: {
+                todoId: skippedTodo.id,
+                todoSeq: skippedTodo.seq,
+                todoTitle: skippedTodo.title,
+                taskType: skippedTodo.taskType,
+                procedureId: skippedTodo.procedureId,
+                completionGateResult: skippedGate,
+              },
+            });
+          }
+          break;
+        }
+      }
+
+      const runtimeResult = combineRuntimeResults(runtimeResults);
 
       await repo.updateTaskRun(run.id, {
         status: 'finalizing',
@@ -351,34 +648,19 @@ export async function startTaskRun(taskId: string) {
         data: { terminalState: runtimeResult.terminalState },
       });
 
-      const outcome =
-        runtimeResult.terminalState === 'cancelled'
-          ? {
-              status: 'cancelled' as const,
-              reason: 'human_review' as const,
-              summary: runtimeResult.summary || 'Run cancelled by runtime.',
-            }
-          : decideRunOutcome({
-              supervisor: {
-                finalReport: runtimeResult.finalReport || '',
-                terminalState: runtimeResult.terminalState,
-                summary:
-                  runtimeResult.summary ||
-                  `Runtime finished with status=${runtimeResult.terminalState}`,
-                stoppedBy:
-                  runtimeResult.stoppedBy === 'cancelled' ? 'llm_error' : runtimeResult.stoppedBy,
-                riskLevel: runtimeResult.riskLevel,
-              },
-              budgetStopped: runtimeResult.stoppedBy === 'budget',
-              safetyViolation: runtimeResult.stoppedBy === 'policy',
-            });
+      const outcome = terminalOutcome ?? outcomeFromRuntimeResult(runtimeResult);
+      const finalizedTodos = await repo.listTaskRunTodosForRun(run.id);
+      const finalReportWithTodos = appendTodoSummaryToFinalReport({
+        finalReport: runtimeResult.finalReport || '',
+        todos: finalizedTodos,
+      });
       const finalJudgment = buildFinalJudgment({
         runId: run.id,
         taskId,
         outcomeStatus: outcome.status,
         outcomeSummary: outcome.summary,
         supervisor: {
-          finalReport: runtimeResult.finalReport,
+          finalReport: finalReportWithTodos,
           summary: runtimeResult.summary,
           terminalState: runtimeResult.terminalState,
           stoppedBy: runtimeResult.stoppedBy,
@@ -390,7 +672,7 @@ export async function startTaskRun(taskId: string) {
         status: outcome.status,
         endedAt: new Date(),
         finishedAt: new Date(),
-        finalReport: runtimeResult.finalReport || finalJudgment.conclusion,
+        finalReport: finalReportWithTodos || finalJudgment.conclusion,
         finalJudgment,
         summary: runtimeResult.summary || outcome.summary,
       });
@@ -436,13 +718,65 @@ export async function startTaskRun(taskId: string) {
         messageType: 'text',
         payloadJson: {
           finalJudgment,
-          finalReport: runtimeResult.finalReport || finalJudgment.conclusion,
+          finalReport: finalReportWithTodos || finalJudgment.conclusion,
           summary: runtimeResult.summary || outcome.summary,
           status: outcome.status,
         },
       });
     } catch (err: any) {
       console.error(`Error during NativeLocalRunner execution for run ${run.id}:`, err);
+      const crashCompletedAt = new Date();
+      for (const [index, todo] of plannedTodos.entries()) {
+        const status = index === 0 ? 'failed' : 'skipped';
+        const reason =
+          index === 0
+            ? `Runtime crashed before this todo could pass: ${err.message}`
+            : 'Skipped because runtime crashed before reaching this todo.';
+        const completionGateResult = {
+          version: 1,
+          todoId: todo.id,
+          todoSeq: todo.seq,
+          procedureId: todo.procedureId,
+          status,
+          passed: false,
+          reason,
+          checks: [{ id: 'runtime_crash', passed: false, evidence: err.message }],
+          evidence: {
+            terminalState: 'failed',
+            stoppedBy: 'llm_error',
+            riskLevel: 'high',
+            summaryDigest: digestText(reason),
+            finalReportDigest: digestText(`実行に失敗しました: ${err.message}`),
+            diffBytes: 0,
+            hasTests: false,
+          },
+        };
+        await repo.updateTaskRunTodo(todo.id, {
+          status,
+          statusReason: reason,
+          completionGateResult,
+          completedAt: crashCompletedAt,
+          startedAt: todo.startedAt ? new Date(todo.startedAt as any) : crashCompletedAt,
+        });
+        await repo.createRunEvent({
+          version: 1,
+          runId: run.id,
+          taskId,
+          timestamp: new Date().toISOString(),
+          type: 'turn.finished',
+          severity: status === 'failed' ? 'error' : 'warning',
+          actor: 'system',
+          message: `Todo #${todo.seq} ${status} after runtime crash: ${todo.title}`,
+          data: {
+            todoId: todo.id,
+            todoSeq: todo.seq,
+            todoTitle: todo.title,
+            taskType: todo.taskType,
+            procedureId: todo.procedureId,
+            completionGateResult,
+          },
+        });
+      }
       const finalJudgment = buildFinalJudgment({
         runId: run.id,
         taskId,
@@ -525,6 +859,61 @@ export async function recoverStaleActiveRuns(taskId: string) {
       return { hasRunning: true as const, recoveredRunIds };
     }
 
+    const activeTodos = await repo.listTaskRunTodosForRun(activeRun.id);
+    const recoveredAt = new Date();
+    for (const todo of activeTodos) {
+      if (['passed', 'failed', 'skipped', 'needs_human'].includes(todo.status)) continue;
+      const status = todo.status === 'running' ? 'failed' : 'skipped';
+      const reason =
+        status === 'failed'
+          ? 'Run recovered as failed while this Todo was active.'
+          : 'Skipped because the run was recovered before this Todo started.';
+      const completionGateResult = {
+        version: 1,
+        todoId: todo.id,
+        todoSeq: todo.seq,
+        procedureId: todo.procedureId,
+        status,
+        passed: false,
+        reason,
+        checks: [{ id: 'stale_run_recovery', passed: false, evidence: runnerStatus.status }],
+        evidence: {
+          terminalState: 'failed',
+          stoppedBy: 'llm_error',
+          riskLevel: 'high',
+          summaryDigest: digestText(reason),
+          finalReportDigest: digestText(activeRun.finalReport || ''),
+          diffBytes: Buffer.byteLength(activeRun.diffPatch || '', 'utf8'),
+          hasTests: activeRun.testResults !== undefined && activeRun.testResults !== null,
+        },
+      };
+      await repo.updateTaskRunTodo(todo.id, {
+        status,
+        statusReason: reason,
+        completionGateResult,
+        completedAt: recoveredAt,
+        startedAt: todo.startedAt ? new Date(todo.startedAt as any) : recoveredAt,
+      });
+      await repo.createRunEvent({
+        version: 1,
+        runId: activeRun.id,
+        taskId,
+        timestamp: new Date().toISOString(),
+        type: 'turn.finished',
+        severity: status === 'failed' ? 'error' : 'warning',
+        actor: 'system',
+        message: `Todo #${todo.seq} ${status} during stale run recovery: ${todo.title}`,
+        data: {
+          todoId: todo.id,
+          todoSeq: todo.seq,
+          todoTitle: todo.title,
+          taskType: todo.taskType,
+          procedureId: todo.procedureId,
+          completionGateResult,
+        },
+      });
+    }
+
     await repo.updateTaskRun(activeRun.id, {
       status: 'failed',
       endedAt: new Date(),
@@ -573,11 +962,12 @@ export async function recoverStaleActiveRuns(taskId: string) {
 export async function getTaskRun(runId: string) {
   const run = await repo.getTaskRun(runId);
   if (!run) return null;
+  const todos = await repo.listTaskRunTodosForRun(runId);
   const events = await repo.listTaskEventsForRun(runId);
   const reviews = events
     .map((event) => (event.payloadJson as { reviewResult?: ReviewResult } | null)?.reviewResult)
     .filter((reviewResult): reviewResult is ReviewResult => Boolean(reviewResult));
-  return { ...run, events, reviews };
+  return { ...run, todos, events, reviews };
 }
 
 function extractRunEvents(
@@ -966,6 +1356,7 @@ export async function exportTaskRunJsonl(runId: string) {
   const run = await repo.getTaskRun(runId);
   if (!run) return null;
   const events = await repo.listTaskEventsForRun(runId);
+  const todos = await repo.listTaskRunTodosForRun(runId);
   const repository = run.repositoryId ? await repo.getRepository(run.repositoryId) : null;
-  return serializeRunToJsonl({ run, events, repository });
+  return serializeRunToJsonl({ run, events, repository, todos });
 }

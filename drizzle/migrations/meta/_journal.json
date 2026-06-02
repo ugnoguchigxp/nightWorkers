@@ -22,6 +22,13 @@
       "when": 1780274591382,
       "tag": "0002_sudden_socket_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1780406110222,
+      "tag": "0003_short_carlie_cooper",
+      "breakpoints": true
     }
   ]
 }

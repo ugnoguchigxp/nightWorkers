@@ -5,6 +5,9 @@ function emptyPayloadByTool(toolName: ToolCallRequest['toolName']): Record<strin
   if (toolName === 'list_dir') return { dirs: [], files: [] };
   if (toolName === 'find_file') return { files: [], count: 0 };
   if (toolName === 'read_file') return { content: '', filePath: '', totalLines: 0 };
+  if (toolName === 'inspect_structure') {
+    return { kind: 'json', filePath: '', paths: [], truncated: false };
+  }
   if (toolName === 'search_files') return { matches: [], count: 0, engine: 'ripgrep' };
   if (toolName === 'search_web')
     return { query: '', engine: 'duckduckgo-lite', results: [], truncated: false };

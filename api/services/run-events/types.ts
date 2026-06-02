@@ -98,6 +98,16 @@ export type RunSummaryJsonlLine = {
   summary?: string | null;
   finalReport?: string | null;
   finalJudgment?: unknown;
+  todos?: Array<{
+    id: string;
+    seq: number;
+    title: string;
+    taskType: string;
+    status: string;
+    procedureId?: string | null;
+    statusReason?: string | null;
+    completionGateResult?: unknown;
+  }>;
   diffBytes: number;
   eventCount: number;
 };
@@ -130,6 +140,7 @@ export type ReplayResult = {
   sourceRunId: string;
   eventCount: number;
   events: RunEventBase[];
+  todos: RunSummaryJsonlLine['todos'];
   terminal: {
     status?: string;
     reason?: string;
@@ -143,6 +154,7 @@ export type ReplayResult = {
     hasVerification: boolean;
     hasPolicyBlock: boolean;
     hasReviewResult: boolean;
+    hasTodos: boolean;
   };
   reviewResults: unknown[];
   policyEvents: RunEventBase[];

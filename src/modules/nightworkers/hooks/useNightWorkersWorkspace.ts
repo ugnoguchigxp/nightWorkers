@@ -12,10 +12,12 @@ import type {
   ReviewOutcome,
   ReviewResult,
   ReviewRunInput,
+  RunDetails,
   Task,
   TaskEvent,
   TaskMessage,
   TaskRun,
+  TaskRunTodo,
 } from '../types';
 
 type FolderDir = { name: string; path: string };
@@ -31,6 +33,7 @@ export type NightWorkersWorkspaceState = {
   latestRun: TaskRun | undefined;
   taskMessages: TaskMessage[];
   latestRunEvents: TaskEvent[];
+  latestRunTodos: TaskRunTodo[];
   isRealtimeConnected: boolean;
   realtimeStatus: RealtimeStatus;
   isChatSubmitting: boolean;
@@ -264,9 +267,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       if (!latestRun?.id) return null;
       const res = await client.runs[':id'].$get({ param: { id: latestRun.id } });
       if (!res.ok) throw new Error('Failed to fetch run details');
-      return (await res.json()) as TaskRun & {
-        events?: TaskEvent[];
-      };
+      return (await res.json()) as RunDetails;
     },
     enabled: !!latestRun?.id,
     refetchInterval: false,
@@ -284,6 +285,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     isActiveTaskStatus(activeSession?.status);
   const latestRunEvents =
     realtimeEvents.length > 0 ? realtimeEvents : latestRunDetails?.events || [];
+  const latestRunTodos = latestRunDetails?.todos || [];
 
   useEffect(() => {
     // サーバーダウンやWS切断時に入力が永久ロックされるのを防ぐ
@@ -434,6 +436,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
               next[msg.runId as string] = dedupeAndSortRunEvents([...current, eventPayload]);
               return next;
             });
+            queryClient.invalidateQueries({ queryKey: ['runDetails', msg.runId] });
           }
           if (msg.type === 'task_message_created' && msg.payload?.message) {
             const incoming = msg.payload.message;
@@ -500,6 +503,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
               }
               return next;
             });
+            queryClient.invalidateQueries({ queryKey: ['runDetails', incomingRun.id] });
           }
           if (msg.type === 'task_status_updated' && msg.payload?.task) {
             const incomingTask = msg.payload.task as Task;
@@ -584,6 +588,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     latestRun,
     taskMessages,
     latestRunEvents,
+    latestRunTodos,
     isRealtimeConnected,
     realtimeStatus,
     isChatSubmitting,
@@ -662,6 +667,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
       queryClient.invalidateQueries({ queryKey: ['sessionRuns', activeSessionId] });
+      queryClient.invalidateQueries({ queryKey: ['runDetails', latestRun?.id] });
     },
     currentBrowserPath,
     browserParentPath,

@@ -99,6 +99,20 @@ export const runEventJsonlLineSchema = z.discriminatedUnion('type', [
     summary: z.string().nullable().optional(),
     finalReport: z.string().nullable().optional(),
     finalJudgment: z.any().nullable().optional(),
+    todos: z
+      .array(
+        z.object({
+          id: z.string().uuid(),
+          seq: z.number().int(),
+          title: z.string(),
+          taskType: z.string(),
+          status: z.string(),
+          procedureId: z.string().nullable().optional(),
+          statusReason: z.string().nullable().optional(),
+          completionGateResult: z.any().nullable().optional(),
+        })
+      )
+      .optional(),
     diffBytes: z.number().int(),
     eventCount: z.number().int(),
   }),
@@ -194,6 +208,49 @@ export const taskRunSchema = z
     updatedAt: z.any(),
   })
   .openapi('TaskRun');
+
+export const taskTypeSchema = z.enum([
+  'code_change',
+  'test_change',
+  'documentation',
+  'review',
+  'investigation',
+  'verification',
+]);
+
+export const todoStatusSchema = z.enum([
+  'pending',
+  'running',
+  'passed',
+  'failed',
+  'skipped',
+  'needs_human',
+]);
+
+export const taskRunTodoSchema = z
+  .object({
+    id: z.string().uuid(),
+    runId: z.string().uuid(),
+    seq: z.number().int(),
+    title: z.string(),
+    description: z.string().nullable().optional(),
+    taskType: taskTypeSchema,
+    status: todoStatusSchema,
+    procedureId: z.string().nullable().optional(),
+    procedureSnapshot: z.any().nullable().optional(),
+    contextSnapshot: z.any().nullable().optional(),
+    completionGateResult: z.any().nullable().optional(),
+    dependsOn: z
+      .array(z.union([z.string(), z.number()]))
+      .nullable()
+      .optional(),
+    statusReason: z.string().nullable().optional(),
+    startedAt: z.any().nullable().optional(),
+    completedAt: z.any().nullable().optional(),
+    createdAt: z.any(),
+    updatedAt: z.any(),
+  })
+  .openapi('TaskRunTodo');
 
 export const includedMemoryRefSchema = z
   .object({
@@ -647,6 +704,7 @@ export const createReviewerReplayEvaluationRequestSchema = z
   .openapi('CreateReviewerReplayEvaluationRequest');
 
 export const taskRunDetailSchema = taskRunSchema.extend({
+  todos: z.array(z.lazy(() => taskRunTodoSchema)),
   events: z.array(z.lazy(() => taskEventSchema)),
   reviews: z.array(z.lazy(() => reviewResultSchema)),
 });

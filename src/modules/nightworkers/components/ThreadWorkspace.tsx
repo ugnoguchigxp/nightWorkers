@@ -6,6 +6,7 @@ import type {
   TaskEvent,
   TaskMessage,
   TaskRun,
+  TaskRunTodo,
   ThinkingDepth,
 } from '../types';
 import { THINKING_DEPTH_OPTIONS } from '../types';
@@ -19,6 +20,7 @@ type ThreadWorkspaceProps = {
   latestRun?: TaskRun;
   taskMessages: TaskMessage[];
   latestRunEvents: TaskEvent[];
+  latestRunTodos: TaskRunTodo[];
   isAgentWorking: boolean;
   isAgentThinking: boolean;
   realtimeStatus: 'initializing' | 'connecting' | 'connected' | 'disconnected';
@@ -59,6 +61,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
             latestRun={props.latestRun}
             taskMessages={props.taskMessages}
             latestRunEvents={props.latestRunEvents}
+            latestRunTodos={props.latestRunTodos}
             isAgentWorking={props.isAgentThinking}
             onReviewRun={props.onReviewRun}
           />

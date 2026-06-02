@@ -21,6 +21,8 @@ export interface SupervisorLoopInput {
   prompt: string;
   timeoutSeconds: number;
   latestUserMessage?: string;
+  todoPlan?: SupervisorTodoContext[];
+  currentTodo?: SupervisorTodoContext;
   maxIterations?: number;
   maxToolCalls?: number;
   maxRepeatedToolPattern?: number;
@@ -34,11 +36,77 @@ export interface SupervisorLoopInput {
   };
 }
 
+export type SupervisorTodoContext = {
+  id: string;
+  seq: number;
+  title: string;
+  description?: string | null;
+  taskType: string;
+  status: string;
+  procedureId?: string | null;
+  procedureDigest?: string | null;
+  contextDigest?: string | null;
+};
+
+function normalizeTodoPlan(value: unknown): SupervisorTodoContext[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .slice(0, 8)
+    .map((item) => normalizeTodoContext(item))
+    .filter((item): item is SupervisorTodoContext => Boolean(item));
+}
+
+function normalizeTodoContext(value: unknown): SupervisorTodoContext | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const id = stringValue(record.id);
+  const seq = numberValue(record.seq);
+  const title = stringValue(record.title);
+  const taskType = stringValue(record.taskType);
+  const status = stringValue(record.status);
+  if (!id || !seq || !title || !taskType || !status) return null;
+  return {
+    id,
+    seq,
+    title: title.slice(0, 120),
+    description: nullableString(record.description)?.slice(0, 500) ?? null,
+    taskType,
+    status,
+    procedureId: nullableString(record.procedureId),
+    procedureDigest: nullableString(record.procedureDigest),
+    contextDigest: nullableString(record.contextDigest),
+  };
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
+function nullableString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : 0;
+}
+
+function todoEventData(todo: SupervisorTodoContext | null): Record<string, unknown> {
+  if (!todo) return {};
+  return {
+    todoId: todo.id,
+    todoSeq: todo.seq,
+    todoTitle: todo.title,
+    taskType: todo.taskType,
+    procedureId: todo.procedureId,
+  };
+}
+
 async function createSupervisorLlmRunEvent(input: {
   runId: string;
   taskId: string;
   iteration: number;
   event: SupervisorLlmDebugEvent;
+  currentTodo?: SupervisorTodoContext | null;
 }) {
   await repo.createRunEvent({
     version: 1,
@@ -51,6 +119,7 @@ async function createSupervisorLlmRunEvent(input: {
     message: input.event.message,
     data: {
       iteration: input.iteration,
+      ...todoEventData(input.currentTodo ?? null),
       ...(input.event.data || {}),
     },
   });
@@ -66,11 +135,13 @@ async function createSupervisorRunEvent(input: {
   message: string;
   data?: Record<string, unknown>;
   payloadJson?: Record<string, unknown>;
+  currentTodo?: SupervisorTodoContext | null;
 }) {
+  const todoData = todoEventData(input.currentTodo ?? null);
   const data =
     input.iteration === undefined
-      ? input.data
-      : { iteration: input.iteration, ...(input.data || {}) };
+      ? { ...todoData, ...(input.data || {}) }
+      : { iteration: input.iteration, ...todoData, ...(input.data || {}) };
   await repo.createRunEvent(
     {
       version: 1,
@@ -111,9 +182,15 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
   let iteration = 0;
   let supervisorToolCalls = 0;
   let editToolCalls = 0;
+  const todoPlan = normalizeTodoPlan(input.todoPlan);
+  const currentTodo = normalizeTodoContext(input.currentTodo) ?? null;
+  const emitSupervisorRunEvent = (
+    event: Omit<Parameters<typeof createSupervisorRunEvent>[0], 'currentTodo'>
+  ) => createSupervisorRunEvent({ ...event, currentTodo });
 
   // Maintain list of read files for read-before-edit policy validation
   const readFiles: string[] = [];
+  const toolContext = { readFileCache: new Map() };
   const toolObservations: string[] = [];
   const toolPolicyGate = new DefaultToolPolicyGate();
 
@@ -138,7 +215,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           ? 'Stopped by timeout budget'
           : 'Stopped by iteration budget';
       stoppedBy = 'budget';
-      await createSupervisorRunEvent({
+      await emitSupervisorRunEvent({
         runId,
         type: 'safety.budget_reached',
         severity: 'error',
@@ -171,7 +248,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       seen: false,
     };
     const emitLlmDebugEvent = async (event: SupervisorLlmDebugEvent) => {
-      await createSupervisorLlmRunEvent({ runId, taskId: task.id, iteration, event });
+      await createSupervisorLlmRunEvent({ runId, taskId: task.id, iteration, event, currentTodo });
       if (
         event.type === 'model.response_parse_failed' ||
         event.type === 'model.response_repaired' ||
@@ -216,7 +293,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           hasToolCall: Boolean(round1.toolCall),
           toolName: round1.toolCall?.name ?? null,
         });
-        await createSupervisorRunEvent({
+        await emitSupervisorRunEvent({
           runId,
           taskId: task.id,
           iteration,
@@ -237,6 +314,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           const round2Input = JSON.stringify({
             latestUserMessage: userInput,
             round1Decision: workflowSelectionDecision,
+            todoPlan,
             observations: toolObservations.slice(-6),
           });
           const round2 = await callSupervisorLLM(
@@ -266,7 +344,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             hasToolCall: Boolean(round2.toolCall),
             toolName: round2.toolCall?.name ?? null,
           });
-          await createSupervisorRunEvent({
+          await emitSupervisorRunEvent({
             runId,
             taskId: task.id,
             iteration,
@@ -302,6 +380,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         const round2Input = JSON.stringify({
           latestUserMessage: userInput,
           round1Decision,
+          todoPlan,
           observations: toolObservations.slice(-6),
         });
         const round2 = await callSupervisorLLM(
@@ -331,7 +410,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           hasToolCall: Boolean(round2.toolCall),
           toolName: round2.toolCall?.name ?? null,
         });
-        await createSupervisorRunEvent({
+        await emitSupervisorRunEvent({
           runId,
           taskId: task.id,
           iteration,
@@ -351,7 +430,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         terminalState = 'needs_human';
         summary = 'Stopped by repeated schema fallback';
         stoppedBy = 'budget';
-        await createSupervisorRunEvent({
+        await emitSupervisorRunEvent({
           runId,
           taskId: task.id,
           iteration,
@@ -392,7 +471,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         iteration,
         errorMessage: err?.message,
       });
-      await createSupervisorRunEvent({
+      await emitSupervisorRunEvent({
         runId,
         taskId: task.id,
         iteration,
@@ -410,7 +489,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     }
 
     // 5. Log supervisor decision in the DB ledger
-    await createSupervisorRunEvent({
+    await emitSupervisorRunEvent({
       runId,
       taskId: task.id,
       iteration,
@@ -440,7 +519,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           ...(missingToolBudget.detail || {}),
         };
         appendSupervisorTrace('stop_without_evidence', { runId, ...detail });
-        await createSupervisorRunEvent({
+        await emitSupervisorRunEvent({
           runId,
           taskId: task.id,
           iteration,
@@ -480,7 +559,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           ...(missingToolBudget.detail || {}),
         };
         appendSupervisorTrace('stop_without_edit_attempt', { runId, ...detail });
-        await createSupervisorRunEvent({
+        await emitSupervisorRunEvent({
           runId,
           taskId: task.id,
           iteration,
@@ -524,7 +603,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           ...(missingToolBudget.detail || {}),
         };
         appendSupervisorTrace('stop_quality_rejected', { runId, ...detail });
-        await createSupervisorRunEvent({
+        await emitSupervisorRunEvent({
           runId,
           taskId: task.id,
           iteration,
@@ -583,7 +662,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             ? 'Stopped by tool-call budget'
             : 'Stopped by repeated tool pattern';
         stoppedBy = 'budget';
-        await createSupervisorRunEvent({
+        await emitSupervisorRunEvent({
           runId,
           taskId: task.id,
           iteration,
@@ -603,7 +682,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       if (isEditTool(name)) editToolCalls += 1;
       logger.info({ runId, iteration, toolName: name, toolArgs }, 'Worker tool call start');
       // Log tool call start
-      await createSupervisorRunEvent({
+      await emitSupervisorRunEvent({
         runId,
         taskId: task.id,
         iteration,
@@ -639,7 +718,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         if (!beforeDecision.allowed) {
           toolResult = buildBlockedToolResult(request, beforeDecision);
           policyViolationDetected = true;
-          await createSupervisorRunEvent({
+          await emitSupervisorRunEvent({
             runId,
             taskId: task.id,
             iteration,
@@ -666,6 +745,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             repoRoot,
             safetyPolicy: input.safetyPolicy,
             readFiles,
+            toolContext,
           });
           toolResult = dispatch.result;
           if (dispatch.readFilesChanged) {
@@ -683,7 +763,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             terminalState = 'needs_human';
             summary = 'Stopped by postflight policy violation';
             stoppedBy = 'policy';
-            await createSupervisorRunEvent({
+            await emitSupervisorRunEvent({
               runId,
               taskId: task.id,
               iteration,
@@ -700,7 +780,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             });
           }
           if (postDecision.warnings?.length) {
-            await createSupervisorRunEvent({
+            await emitSupervisorRunEvent({
               runId,
               taskId: task.id,
               iteration,
@@ -744,7 +824,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       toolObservations.push(formatToolObservation(name, toolResult));
 
       // Log tool execution result in ledger
-      await createSupervisorRunEvent({
+      await emitSupervisorRunEvent({
         runId,
         taskId: task.id,
         iteration,
@@ -772,7 +852,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       if (!failureBudget.allowed && failureBudget.reason === 'tool_failure') {
         const failureSummary = toolResult.error?.message || 'Unknown tool failure';
         finalReportText = `同一ラン内でツール実行失敗が3回連続したため中断しました。lastTool=${name} error=${failureSummary}`;
-        await createSupervisorRunEvent({
+        await emitSupervisorRunEvent({
           runId,
           taskId: task.id,
           iteration,
@@ -851,7 +931,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         summary = 'Stopped by missing toolCall pattern';
         stoppedBy = 'missing_tool_call';
       }
-      await createSupervisorRunEvent({
+      await emitSupervisorRunEvent({
         runId,
         taskId: task.id,
         iteration,
@@ -863,7 +943,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         data: { reason: 'missing_tool_call', ...(missingToolBudget.detail || {}) },
       });
       if (!missingToolBudget.allowed) {
-        await createSupervisorRunEvent({
+        await emitSupervisorRunEvent({
           runId,
           taskId: task.id,
           iteration,
@@ -989,6 +1069,11 @@ function formatToolObservation(toolName: string, toolResult: any): string {
     ]
       .filter(Boolean)
       .join('\n');
+  }
+
+  if (toolName === 'inspect_structure') {
+    const payload = toolResult.payload || {};
+    return `${header}\n${JSON.stringify(payload).slice(0, 12_000)}`;
   }
 
   if (toolName === 'search_files') {

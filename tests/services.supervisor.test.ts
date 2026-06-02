@@ -77,6 +77,30 @@ describe('Supervisor Control Loop Unit Tests', () => {
       repoRoot: dummyRepoRoot,
       prompt: 'Start',
       timeoutSeconds: 60,
+      currentTodo: {
+        id: 'todo-1',
+        seq: 1,
+        title: 'Implement feature',
+        description: 'Detailed work',
+        taskType: 'code_change',
+        status: 'running',
+        procedureId: 'code-change',
+        procedureDigest: 'sha256:procedure',
+        contextDigest: 'context-digest',
+      },
+      todoPlan: [
+        {
+          id: 'todo-1',
+          seq: 1,
+          title: 'Implement feature',
+          description: 'Detailed work',
+          taskType: 'code_change',
+          status: 'pending',
+          procedureId: 'code-change',
+          procedureDigest: 'sha256:procedure',
+          contextDigest: 'context-digest',
+        },
+      ],
     });
 
     // 4. Assertions
@@ -92,6 +116,40 @@ describe('Supervisor Control Loop Unit Tests', () => {
     expect(vi.mocked(llm.callSupervisorLLM).mock.calls.map((call) => call[2]?.round)).toEqual([
       1, 2, 2,
     ]);
+    const firstRound2Input = JSON.parse(String(vi.mocked(llm.callSupervisorLLM).mock.calls[1][1]));
+    expect(firstRound2Input.todoPlan).toEqual([
+      expect.objectContaining({
+        id: 'todo-1',
+        seq: 1,
+        title: 'Implement feature',
+        taskType: 'code_change',
+        procedureId: 'code-change',
+        procedureDigest: 'sha256:procedure',
+        contextDigest: 'context-digest',
+      }),
+    ]);
+    expect(repo.createRunEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'supervisor.decision',
+        data: expect.objectContaining({
+          todoId: 'todo-1',
+          todoSeq: 1,
+          procedureId: 'code-change',
+        }),
+      }),
+      expect.anything()
+    );
+    expect(repo.createRunEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'tool.call_started',
+        data: expect.objectContaining({
+          todoId: 'todo-1',
+          todoSeq: 1,
+          procedureId: 'code-change',
+        }),
+      }),
+      expect.anything()
+    );
   });
 
   it('stops with needs_human after repeated missing toolCall decisions', async () => {

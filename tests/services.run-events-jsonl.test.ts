@@ -233,6 +233,18 @@ describe('run-events jsonl round trip', () => {
       finalReport: 'report',
       finalJudgment: null,
     } as any;
+    const todos = [
+      {
+        id: '3f0f27a7-f986-4593-9bb5-c9bc05749bc6',
+        seq: 1,
+        title: 'Implement',
+        taskType: 'code_change',
+        status: 'passed',
+        procedureId: 'code-change',
+        statusReason: 'Runtime completed this planned todo.',
+        completionGateResult: { passed: true },
+      },
+    ] as any[];
     const events = [
       {
         id: 'd9483774-5f2a-4730-af45-6c17cbd0b801',
@@ -270,13 +282,28 @@ describe('run-events jsonl round trip', () => {
       },
     ] as any[];
 
-    const parsed = parseRunJsonl(serializeRunToJsonl({ run, events }));
+    const parsed = parseRunJsonl(serializeRunToJsonl({ run, events, todos }));
     const replay = replayRunJsonl(parsed);
 
     expect(parsed.diagnostics).toHaveLength(0);
     expect(replay.eventCount).toBe(2);
     expect(replay.evidence.hasRuntimeStarted).toBe(true);
+    expect(replay.evidence.hasTodos).toBe(true);
+    expect(replay.todos).toEqual([
+      expect.objectContaining({
+        id: '3f0f27a7-f986-4593-9bb5-c9bc05749bc6',
+        status: 'passed',
+      }),
+    ]);
     expect(parsed.summary?.eventCount).toBe(replay.eventCount);
+    expect(parsed.summary?.todos).toEqual([
+      expect.objectContaining({
+        id: '3f0f27a7-f986-4593-9bb5-c9bc05749bc6',
+        seq: 1,
+        status: 'passed',
+        completionGateResult: { passed: true },
+      }),
+    ]);
     expect(parsed.events[1].event.type).toBe('tool.call_finished');
   });
 });

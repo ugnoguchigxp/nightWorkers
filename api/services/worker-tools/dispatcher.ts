@@ -6,6 +6,7 @@ import {
   findFileTool,
   gitDiffTool,
   gitStatusTool,
+  inspectStructureTool,
   listDirTool,
   readFileTool,
   replaceContentTool,
@@ -14,6 +15,7 @@ import {
   searchFilesTool,
   searchWebTool,
 } from '.';
+import type { WorkerToolExecutionContext } from './output-compression';
 import type { WorkerToolResult } from './types';
 
 export type WorkerToolDispatchInput = {
@@ -22,6 +24,7 @@ export type WorkerToolDispatchInput = {
   repoRoot: string;
   safetyPolicy?: AgentSafetyPolicy;
   readFiles: string[];
+  toolContext?: WorkerToolExecutionContext;
 };
 
 export type WorkerToolDispatchResult = {
@@ -32,7 +35,7 @@ export type WorkerToolDispatchResult = {
 export async function executeWorkerTool(
   input: WorkerToolDispatchInput
 ): Promise<WorkerToolDispatchResult> {
-  const { toolName, args, repoRoot, safetyPolicy, readFiles } = input;
+  const { toolName, args, repoRoot, safetyPolicy, readFiles, toolContext } = input;
 
   if (toolName === 'list_dir') {
     return {
@@ -68,6 +71,9 @@ export async function executeWorkerTool(
       repoRoot,
       startLine: args.startLine as number | undefined,
       endLine: args.endLine as number | undefined,
+      fresh: args.fresh as boolean | undefined,
+      compressionMode: args.compressionMode as 'auto' | 'off' | undefined,
+      readCache: toolContext?.readFileCache,
       allowedPaths: safetyPolicy?.allowedPaths,
       deniedPaths: safetyPolicy?.deniedPaths,
     });
@@ -76,6 +82,20 @@ export async function executeWorkerTool(
       return { result, readFilesChanged: [...readFiles, filePath] };
     }
     return { result };
+  }
+
+  if (toolName === 'inspect_structure') {
+    return {
+      result: await inspectStructureTool({
+        filePath: args.filePath as string,
+        repoRoot,
+        includeImports: args.includeImports as boolean | undefined,
+        previewPrimitives: args.previewPrimitives as boolean | undefined,
+        maxPaths: args.maxPaths as number | undefined,
+        allowedPaths: safetyPolicy?.allowedPaths,
+        deniedPaths: safetyPolicy?.deniedPaths,
+      }),
+    };
   }
 
   if (toolName === 'search_files') {
@@ -148,6 +168,7 @@ export async function executeWorkerTool(
         allowedPaths: safetyPolicy?.allowedPaths,
         deniedPaths: safetyPolicy?.deniedPaths,
         timeoutSeconds: args.timeoutSeconds as number | undefined,
+        compressionMode: args.compressionMode as 'auto' | 'off' | undefined,
         maxCommandSeconds: safetyPolicy?.maxCommandSeconds,
       }),
     };
@@ -164,6 +185,7 @@ export async function executeWorkerTool(
         allowedPaths: safetyPolicy?.allowedPaths,
         deniedPaths: safetyPolicy?.deniedPaths,
         timeoutSeconds: args.timeoutSeconds as number | undefined,
+        compressionMode: args.compressionMode as 'auto' | 'off' | undefined,
         maxCommandSeconds: safetyPolicy?.maxCommandSeconds,
       }),
     };

@@ -171,6 +171,33 @@ export const taskRuns = sqliteTable(
   })
 );
 
+export const taskRunTodos = sqliteTable(
+  'task_run_todos',
+  {
+    ...commonColumns,
+    runId: text('run_id')
+      .notNull()
+      .references(() => taskRuns.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    title: text('title').notNull(),
+    description: text('description'),
+    taskType: text('task_type').notNull(),
+    status: text('status').default('pending').notNull(),
+    procedureId: text('procedure_id'),
+    procedureSnapshot: text('procedure_snapshot', { mode: 'json' }),
+    contextSnapshot: text('context_snapshot', { mode: 'json' }),
+    completionGateResult: text('completion_gate_result', { mode: 'json' }),
+    dependsOn: text('depends_on', { mode: 'json' }).$type<Array<string | number>>(),
+    statusReason: text('status_reason'),
+    startedAt: integer('started_at', { mode: 'timestamp' }),
+    completedAt: integer('completed_at', { mode: 'timestamp' }),
+  },
+  (table) => ({
+    runIdIdx: index('task_run_todos_run_id_idx').on(table.runId),
+    runSeqUniqueIdx: uniqueIndex('task_run_todos_run_seq_uidx').on(table.runId, table.seq),
+  })
+);
+
 export const taskEvents = sqliteTable(
   'task_events',
   {

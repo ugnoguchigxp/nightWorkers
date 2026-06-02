@@ -23,10 +23,26 @@ export class NativeAgentRuntime implements AgentRuntime {
     const appendLog = (line: string) => {
       logs.push(line);
     };
+    const currentTodoData = context.currentTodo
+      ? {
+          todoId: context.currentTodo.id,
+          todoSeq: context.currentTodo.seq,
+          todoTitle: context.currentTodo.title,
+          taskType: context.currentTodo.taskType,
+          procedureId: context.currentTodo.procedureId,
+        }
+      : {};
 
     const emit = async (event: Parameters<AgentRuntimeSink['emit']>[0]) => {
       appendLog(event.message);
-      await sink.emit(event);
+      const payload =
+        event.payload && typeof event.payload === 'object' && !Array.isArray(event.payload)
+          ? { ...currentTodoData, ...(event.payload as Record<string, unknown>) }
+          : { ...currentTodoData, payload: event.payload };
+      await sink.emit({
+        ...event,
+        payload: Object.keys(currentTodoData).length > 0 ? payload : event.payload,
+      });
     };
 
     try {
@@ -61,6 +77,8 @@ export class NativeAgentRuntime implements AgentRuntime {
         prompt: context.compiledPrompt,
         timeoutSeconds: context.timeoutSeconds,
         latestUserMessage: context.latestUserMessage,
+        todoPlan: context.todoPlan,
+        currentTodo: context.currentTodo,
         safetyPolicy: context.safetyPolicy,
       });
 
@@ -109,7 +127,7 @@ export class NativeAgentRuntime implements AgentRuntime {
       return result;
     } catch (err: any) {
       const message = `[System Error] Native Local Worker failed: ${err?.message ?? 'Unknown error'}`;
-      await sink.emit({
+      await emit({
         type: 'runtime_error',
         message,
         payload: {

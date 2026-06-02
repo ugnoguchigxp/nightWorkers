@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { analyzeCommand } from './command-policy';
+import { compressCommandStream, type ToolOutputCompressionMetadata } from './output-compression';
 import {
   enforceCommandPolicy,
   enforcePathPolicy,
@@ -44,33 +45,52 @@ async function buildCommandOutput(input: {
   classification: string;
   startedAt: string;
   finishedAt: string;
+  compressionMode?: 'auto' | 'off';
 }): Promise<RunCommandOutput> {
-  let finalStdout = input.stdout;
-  let finalStderr = input.stderr;
-  let truncated = false;
-  let logArtifactPath: string | undefined;
+  const shouldCompress =
+    input.compressionMode !== 'off' &&
+    (input.stdout.length > MAX_OUTPUT_CHARS || input.stderr.length > MAX_OUTPUT_CHARS);
+  const logArtifactPath = shouldCompress ? await writeCommandOutputArtifact(input) : undefined;
 
-  if (input.stdout.length > MAX_OUTPUT_CHARS) {
-    finalStdout = `${input.stdout.substring(0, MAX_OUTPUT_CHARS)}\n[... stdout truncated by tool limit ...]`;
-    truncated = true;
-  }
-  if (input.stderr.length > MAX_OUTPUT_CHARS) {
-    finalStderr = `${input.stderr.substring(0, MAX_OUTPUT_CHARS)}\n[... stderr truncated by tool limit ...]`;
-    truncated = true;
+  if (!shouldCompress) {
+    return {
+      command: input.command,
+      exitCode: input.exitCode,
+      stdout: input.stdout,
+      stderr: input.stderr,
+      classification: input.classification,
+      truncated: false,
+    };
   }
 
-  if (truncated) {
-    logArtifactPath = await writeCommandOutputArtifact(input);
-  }
+  const stdoutCompression = compressCommandStream({
+    streamName: 'stdout',
+    content: input.stdout,
+    command: input.command,
+    exitCode: input.exitCode,
+    artifactPath: logArtifactPath,
+  });
+  const stderrCompression = compressCommandStream({
+    streamName: 'stderr',
+    content: input.stderr,
+    command: input.command,
+    exitCode: input.exitCode,
+    artifactPath: logArtifactPath,
+  });
+
+  const compression: RunCommandOutput['compression'] = {};
+  if (stdoutCompression.compression) compression.stdout = stdoutCompression.compression;
+  if (stderrCompression.compression) compression.stderr = stderrCompression.compression;
 
   return {
     command: input.command,
     exitCode: input.exitCode,
-    stdout: finalStdout,
-    stderr: finalStderr,
+    stdout: stdoutCompression.content,
+    stderr: stderrCompression.content,
     classification: input.classification,
-    truncated,
+    truncated: stdoutCompression.truncated || stderrCompression.truncated,
     logArtifactPath,
+    compression: compression.stdout || compression.stderr ? compression : undefined,
   };
 }
 
@@ -80,6 +100,7 @@ export interface RunCommandInput {
   cwd?: string; // Relative to repoRoot
   timeoutSeconds?: number;
   maxCommandSeconds?: number;
+  compressionMode?: 'auto' | 'off';
   blockedCommands?: string[];
   allowedPaths?: string[];
   deniedPaths?: string[];
@@ -93,6 +114,10 @@ export interface RunCommandOutput {
   classification: string;
   truncated: boolean;
   logArtifactPath?: string;
+  compression?: {
+    stdout?: ToolOutputCompressionMetadata;
+    stderr?: ToolOutputCompressionMetadata;
+  };
 }
 
 export async function runCommandTool(
@@ -105,6 +130,7 @@ export async function runCommandTool(
     cwd = '',
     timeoutSeconds = 60,
     maxCommandSeconds,
+    compressionMode = 'auto',
     blockedCommands = [],
     allowedPaths,
     deniedPaths,
@@ -200,6 +226,7 @@ export async function runCommandTool(
         stderr,
         startedAt,
         finishedAt,
+        compressionMode,
       }),
     };
   } catch (err: any) {
@@ -225,6 +252,7 @@ export async function runCommandTool(
         stderr,
         startedAt,
         finishedAt,
+        compressionMode,
       }),
       error: {
         code: err.killed ? 'COMMAND_TIMEOUT' : 'COMMAND_FAILED',

@@ -47,6 +47,37 @@ export type TaskRun = {
   updatedAt: unknown;
   events?: TaskEvent[];
   reviews?: ReviewResult[];
+  todos?: TaskRunTodo[];
+};
+
+export type TaskType =
+  | 'code_change'
+  | 'test_change'
+  | 'documentation'
+  | 'review'
+  | 'investigation'
+  | 'verification';
+
+export type TodoStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'needs_human';
+
+export type TaskRunTodo = {
+  id: string;
+  runId: string;
+  seq: number;
+  title: string;
+  description?: string | null;
+  taskType: TaskType;
+  status: TodoStatus;
+  procedureId?: string | null;
+  procedureSnapshot?: unknown | null;
+  contextSnapshot?: unknown | null;
+  completionGateResult?: unknown | null;
+  dependsOn?: Array<string | number> | null;
+  statusReason?: string | null;
+  startedAt?: unknown | null;
+  completedAt?: unknown | null;
+  createdAt: unknown;
+  updatedAt: unknown;
 };
 
 export type TaskMessage = {
@@ -61,6 +92,7 @@ export type TaskMessage = {
 };
 
 export type RunDetails = TaskRun & {
+  todos: TaskRunTodo[];
   events: TaskEvent[];
   reviews: ReviewResult[];
 };

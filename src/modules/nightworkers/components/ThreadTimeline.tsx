@@ -1,6 +1,24 @@
-import { Check, Copy } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  Circle,
+  Copy,
+  LoaderCircle,
+  PauseCircle,
+  XCircle,
+} from 'lucide-react';
 import { useState } from 'react';
-import type { ReviewAction, ReviewResult, Task, TaskEvent, TaskMessage, TaskRun } from '../types';
+import type {
+  ReviewAction,
+  ReviewResult,
+  Task,
+  TaskEvent,
+  TaskMessage,
+  TaskRun,
+  TaskRunTodo,
+  TodoStatus,
+} from '../types';
 import { formatFinishedTime } from '../utils/time';
 import { ThreadMessage } from './ThreadMessage';
 
@@ -10,6 +28,7 @@ type ThreadTimelineProps = {
   latestRun?: TaskRun;
   taskMessages: TaskMessage[];
   latestRunEvents: TaskEvent[];
+  latestRunTodos: TaskRunTodo[];
   isAgentWorking: boolean;
   onReviewRun: (runId: string, action: ReviewAction, note?: string) => void;
 };
@@ -20,6 +39,7 @@ export function ThreadTimeline({
   latestRun,
   taskMessages,
   latestRunEvents,
+  latestRunTodos,
   isAgentWorking,
   onReviewRun,
 }: ThreadTimelineProps) {
@@ -57,6 +77,7 @@ export function ThreadTimeline({
         </button>
       </div>
       <RunReviewActions latestRun={latestRun} onReviewRun={onReviewRun} />
+      <TodoProgress todos={latestRunTodos} />
       {showDebugEvents && isAgentWorking && latestEvent ? (
         <div className="rounded-lg border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-200">
           <span className="mr-2 inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
@@ -100,6 +121,121 @@ export function ThreadTimeline({
       ) : null}
     </div>
   );
+}
+
+function TodoProgress({ todos }: { todos: TaskRunTodo[] }) {
+  if (todos.length === 0) return null;
+  const completedCount = todos.filter((todo) => todo.status === 'passed').length;
+  return (
+    <section
+      className="border-slate-700/80 border-y bg-slate-950/25 py-3"
+      aria-label="Todo progress"
+    >
+      <div className="mb-2 flex items-center justify-between gap-3 px-1 text-xs text-slate-300">
+        <span className="font-medium text-slate-100">Todo progress</span>
+        <span className="shrink-0 text-slate-400">
+          {completedCount}/{todos.length}
+        </span>
+      </div>
+      <ol className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {todos.map((todo) => {
+          const style = todoStatusStyle(todo.status);
+          const Icon = style.icon;
+          return (
+            <li key={todo.id} className={`min-h-14 rounded border px-3 py-2 ${style.container}`}>
+              <div className="flex min-w-0 items-start gap-2">
+                <Icon
+                  aria-hidden="true"
+                  className={`mt-0.5 h-4 w-4 shrink-0 ${style.iconClass} ${
+                    todo.status === 'running' ? 'animate-spin' : ''
+                  }`}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 text-[10px] text-slate-400">#{todo.seq}</span>
+                    <span className="min-w-0 truncate text-xs font-medium text-slate-100">
+                      {todo.title}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
+                    <span className={style.textClass}>{style.label}</span>
+                    <span className="text-slate-500">{todo.taskType}</span>
+                    {todo.procedureId ? (
+                      <span className="max-w-full truncate text-slate-500">{todo.procedureId}</span>
+                    ) : null}
+                  </div>
+                  {todo.statusReason ? (
+                    <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-400">
+                      {todo.statusReason}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
+function todoStatusStyle(status: TodoStatus): {
+  label: string;
+  icon: typeof Circle;
+  iconClass: string;
+  textClass: string;
+  container: string;
+} {
+  switch (status) {
+    case 'passed':
+      return {
+        label: 'passed',
+        icon: CheckCircle2,
+        iconClass: 'text-emerald-300',
+        textClass: 'text-emerald-200',
+        container: 'border-emerald-500/35 bg-emerald-950/15',
+      };
+    case 'running':
+      return {
+        label: 'running',
+        icon: LoaderCircle,
+        iconClass: 'text-cyan-300',
+        textClass: 'text-cyan-200',
+        container: 'border-cyan-500/35 bg-cyan-950/15',
+      };
+    case 'failed':
+      return {
+        label: 'failed',
+        icon: XCircle,
+        iconClass: 'text-rose-300',
+        textClass: 'text-rose-200',
+        container: 'border-rose-500/35 bg-rose-950/15',
+      };
+    case 'skipped':
+      return {
+        label: 'skipped',
+        icon: PauseCircle,
+        iconClass: 'text-slate-400',
+        textClass: 'text-slate-300',
+        container: 'border-slate-600/50 bg-slate-900/25',
+      };
+    case 'needs_human':
+      return {
+        label: 'needs human',
+        icon: AlertTriangle,
+        iconClass: 'text-amber-300',
+        textClass: 'text-amber-200',
+        container: 'border-amber-500/35 bg-amber-950/15',
+      };
+    case 'pending':
+      return {
+        label: 'pending',
+        icon: Circle,
+        iconClass: 'text-slate-400',
+        textClass: 'text-slate-300',
+        container: 'border-slate-700/70 bg-slate-900/20',
+      };
+  }
 }
 
 function RunReviewActions({

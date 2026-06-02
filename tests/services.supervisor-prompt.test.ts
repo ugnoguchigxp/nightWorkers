@@ -8,6 +8,7 @@ const workerToolNames = [
   'list_dir',
   'find_file',
   'read_file',
+  'inspect_structure',
   'search_files',
   'search_web',
   'fetch_content',

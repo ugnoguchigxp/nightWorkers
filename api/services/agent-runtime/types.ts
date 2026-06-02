@@ -21,6 +21,25 @@ export interface AgentRunContext {
     compiledPrompt: string;
     source: 'context-still' | 'fallback';
   };
+  todoPlan?: Array<{
+    id: string;
+    seq: number;
+    title: string;
+    description?: string | null;
+    taskType: string;
+    status: string;
+    procedureId?: string | null;
+    procedureDigest?: string | null;
+    contextDigest?: string | null;
+  }>;
+  currentTodo?: {
+    id: string;
+    seq: number;
+    title: string;
+    taskType: string;
+    status: string;
+    procedureId?: string | null;
+  };
   runtimeOptions?: Record<string, unknown>;
 }
 

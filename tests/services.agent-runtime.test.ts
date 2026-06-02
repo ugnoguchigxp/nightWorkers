@@ -85,4 +85,99 @@ describe('AgentRuntime', () => {
     expect(result.stoppedBy).toBe('llm_error');
     expect(events).toContain('runtime_error');
   });
+
+  it('passes current todo context into the supervisor loop', async () => {
+    vi.mocked(gitTools.gitStatusTool).mockResolvedValue({
+      ok: true,
+      toolName: 'git_status',
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      payload: {
+        branch: 'main',
+        isDirty: false,
+        untrackedCount: 0,
+        modifiedCount: 0,
+        shortStatus: '',
+      },
+    });
+    vi.mocked(gitTools.gitDiffTool).mockResolvedValue({
+      ok: true,
+      toolName: 'git_diff',
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      payload: {
+        diff: '',
+        diffStat: '',
+        hasChanges: false,
+      },
+    });
+    vi.mocked(supervisor.runSupervisorLoop).mockResolvedValue({
+      terminalState: 'completed',
+      summary: 'done',
+      finalReport: 'done',
+      stoppedBy: 'decision',
+      riskLevel: 'low',
+    });
+
+    const runtime = new NativeAgentRuntime();
+    const emitted: any[] = [];
+    await runtime.start(
+      {
+        runId: 'run-1',
+        taskId: 'task-1',
+        repositoryId: 'repo-1',
+        repoRoot: process.cwd(),
+        compiledPrompt: 'do work',
+        latestUserMessage: 'do work',
+        timeoutSeconds: 60,
+        contextSnapshot: {
+          compiledPrompt: 'do work',
+          source: 'fallback',
+        },
+        currentTodo: {
+          id: 'todo-1',
+          seq: 1,
+          title: 'Implement feature',
+          taskType: 'code_change',
+          status: 'running',
+          procedureId: 'code-change',
+        },
+      },
+      {
+        emit: async (event) => {
+          emitted.push(event);
+        },
+      }
+    );
+
+    expect(supervisor.runSupervisorLoop).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentTodo: expect.objectContaining({
+          id: 'todo-1',
+          seq: 1,
+          procedureId: 'code-change',
+        }),
+      })
+    );
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'tool_call_finished',
+          payload: expect.objectContaining({
+            todoId: 'todo-1',
+            todoSeq: 1,
+            procedureId: 'code-change',
+          }),
+        }),
+        expect.objectContaining({
+          type: 'runtime_finished',
+          payload: expect.objectContaining({
+            todoId: 'todo-1',
+            todoSeq: 1,
+            procedureId: 'code-change',
+          }),
+        }),
+      ])
+    );
+  });
 });

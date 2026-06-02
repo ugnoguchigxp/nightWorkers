@@ -28,6 +28,12 @@ export const TOOL_MANIFEST: Record<WorkerToolName, ToolManifestEntry> = {
     requiresReadBeforeEdit: false,
     pathArgs: ['filePath'],
   },
+  inspect_structure: {
+    name: 'inspect_structure',
+    mutatesWorkspace: false,
+    requiresReadBeforeEdit: false,
+    pathArgs: ['filePath'],
+  },
   search_files: {
     name: 'search_files',
     mutatesWorkspace: false,
