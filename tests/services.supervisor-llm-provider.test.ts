@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildCodexSupervisorSdkOptions,
+  buildCodexSupervisorThreadOptions,
   callSupervisorLLM,
 } from '../api/services/supervisor/llm-provider';
 import { buildRound2SystemPrompt } from '../api/services/supervisor/prompt';
@@ -167,6 +168,21 @@ describe('Supervisor LLM provider evidence fallback', () => {
       }
     }
   });
+
+  it('does not run Codex supervisor calls in a read-only sandbox', () => {
+    const options = buildCodexSupervisorThreadOptions('gpt-5.4-mini');
+
+    expect(options).toMatchObject({
+      model: 'gpt-5.4-mini',
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'never',
+      networkAccessEnabled: false,
+      webSearchMode: 'disabled',
+      skipGitRepoCheck: true,
+    });
+    expect(options.sandboxMode).not.toBe('read-only');
+    expect(options.workingDirectory).toBeTruthy();
+  });
 });
 
 describe('Supervisor LLM OpenAI streaming', () => {
@@ -230,5 +246,62 @@ describe('Supervisor LLM OpenAI streaming', () => {
     expect(events.find((event) => event.type === 'model.response_delta')?.message).toContain(
       '"phase":"stop"'
     );
+  });
+
+  it('rejects plain text supervisor output instead of completing without tools', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'openai';
+    process.env.OPENAI_ENABLED = 'true';
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.OPENAI_MODEL = 'gpt-test';
+    process.env.OPENAI_STREAMING_ENABLED = 'false';
+
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: 'read-only sandbox のため編集できませんでした。',
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }) as unknown as typeof fetch;
+
+    const events: Array<{ type: string; message: string }> = [];
+    const decision = await callSupervisorLLM(
+      buildRound2SystemPrompt('code_change'),
+      JSON.stringify({
+        latestUserMessage: 'Composer.tsx の送信ボタンを修正してください',
+        round1Decision: {
+          phase: 'plan',
+          workflow: 'code_change',
+          instruction: 'Change code',
+          rationale: 'User requested an edit.',
+          finalResponse: '',
+          expectedEvidence: [],
+          riskLevel: 'medium',
+          toolCall: null,
+        },
+        observations: [],
+      }),
+      {
+        round: 2,
+        emitEvent: (event) => events.push({ type: event.type, message: event.message }),
+      }
+    );
+
+    expect(decision).toMatchObject({
+      phase: 'stop',
+      terminalState: 'needs_human',
+      riskLevel: 'high',
+    });
+    expect(decision.finalResponse).toContain('decision JSON ではなく通常文');
+    expect(events.some((event) => event.type === 'model.response_parse_failed')).toBe(true);
   });
 });

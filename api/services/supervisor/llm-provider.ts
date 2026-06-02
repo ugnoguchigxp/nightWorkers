@@ -1,3 +1,4 @@
+import os from 'node:os';
 import type { CodexOptions } from '@openai/codex-sdk';
 import { z } from 'zod';
 import { appendSupervisorTrace, logger } from '../../lib/logger';
@@ -121,6 +122,18 @@ export function buildCodexSupervisorSdkOptions(accessToken: string): CodexOption
     CODEX_ACCESS_TOKEN: accessToken,
   };
   return sdkOptions;
+}
+
+export function buildCodexSupervisorThreadOptions(model?: string) {
+  return {
+    model,
+    sandboxMode: 'workspace-write' as const,
+    approvalPolicy: 'never' as const,
+    networkAccessEnabled: false,
+    webSearchMode: 'disabled' as const,
+    workingDirectory: os.tmpdir(),
+    skipGitRepoCheck: true,
+  };
 }
 
 const fixtureCodingRound2Calls = new Map<string, number>();
@@ -863,14 +876,10 @@ export async function callSupervisorLLM(
     const codex = new Codex(sdkOptions);
 
     const runWithModel = async (model?: string) => {
-      const thread = codex.startThread({
-        model,
-        sandboxMode: 'read-only',
-        approvalPolicy: 'never',
-        networkAccessEnabled: false,
-        webSearchMode: 'disabled',
+      const thread = codex.startThread(buildCodexSupervisorThreadOptions(model));
+      const turn = await thread.run(prompt, {
+        outputSchema: buildResponseJsonSchema(options.round).schema,
       });
-      const turn = await thread.run(prompt);
       providerDebug = {
         provider: 'codex',
         model: model || null,
@@ -1190,13 +1199,12 @@ export async function callSupervisorLLM(
     };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    // Plain-text fallback: conversational responses are allowed when no tool is needed.
     const plain = rawContent.trim();
     if (plain.length > 0) {
       await emitSupervisorLlmDebugEvent(options, {
-        type: 'model.response_repaired',
-        severity: 'warning',
-        message: 'Supervisor LLM plain-text response was accepted as a final response.',
+        type: 'model.response_parse_failed',
+        severity: 'error',
+        message: 'Supervisor LLM returned plain text instead of the required decision JSON.',
         data: {
           provider,
           round: options.round ?? null,
@@ -1209,17 +1217,18 @@ export async function callSupervisorLLM(
           rawContentLength: plain.length,
           rawContentPreview: plain.slice(0, 500),
         },
-        'Supervisor LLM plain-text response accepted'
+        'Supervisor LLM plain-text response rejected'
       );
       return {
         phase: 'stop',
         workflow: 'general',
-        instruction: 'Conversation response completed without tool execution.',
-        rationale: 'Model returned plain-text response; no tool call was required.',
-        finalResponse: plain,
+        instruction: 'Safety system interrupted execution due to plain-text supervisor output.',
+        rationale: `Model returned plain text instead of decision JSON. Raw content: ${plain}`,
+        finalResponse:
+          '内部形式エラーのため処理を中断しました。Supervisor LLM が decision JSON ではなく通常文を返したため、ツール実行なしの完了扱いは拒否されました。',
         expectedEvidence: [],
-        terminalState: 'completed',
-        riskLevel: 'low',
+        terminalState: 'needs_human',
+        riskLevel: 'high',
         toolCall: null,
       };
     }
