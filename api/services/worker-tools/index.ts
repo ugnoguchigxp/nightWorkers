@@ -1,5 +1,6 @@
 export * from './apply-patch';
 export * from './command-policy';
+export * from './fetch-content';
 export * from './find-file';
 export * from './git';
 export * from './list-dir';
@@ -9,5 +10,6 @@ export * from './replace-content';
 export * from './run-command';
 export * from './run-verification';
 export * from './search-files';
+export * from './search-web';
 export * from './tool-policy-enforcer';
 export * from './types';

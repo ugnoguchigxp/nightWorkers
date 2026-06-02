@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   analyzeCommand,
+  fetchContentTool,
   findFileTool,
   isPathSafe,
   listDirTool,
@@ -10,6 +11,7 @@ import {
   replaceContentTool,
   runCommandTool,
   searchFilesTool,
+  searchWebTool,
 } from '../api/services/worker-tools';
 
 describe('Worker Tools Unit Tests', () => {
@@ -34,6 +36,10 @@ describe('Worker Tools Unit Tests', () => {
   afterAll(async () => {
     // Clean up temporary dummy workspace
     await fs.rm(dummyRepoDir, { recursive: true, force: true });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   describe('Path Safety Policy', () => {
@@ -145,6 +151,79 @@ describe('Worker Tools Unit Tests', () => {
       expect(result.ok).toBe(true);
       expect(result.payload.count).toBeGreaterThanOrEqual(1);
       expect(result.payload.matches[0].excerpt).toContain('hello');
+    });
+  });
+
+  describe('searchWebTool', () => {
+    it('parses DuckDuckGo search results', async () => {
+      const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => `
+          <div class="result results_links results_links_deep web-result ">
+            <div class="links_main links_deep result__body">
+              <h2 class="result__title">
+                <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fpage&amp;rut=abc">Example Title</a>
+              </h2>
+              <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fpage&amp;rut=abc">Example snippet</a>
+            </div>
+          </div>
+        `,
+      } as Response);
+
+      const result = await searchWebTool({ query: 'example query', maxResults: 3 });
+
+      expect(fetchSpy).toHaveBeenCalled();
+      expect(result.ok).toBe(true);
+      expect(result.payload.results).toHaveLength(1);
+      expect(result.payload.results[0]).toMatchObject({
+        title: 'Example Title',
+        url: 'https://example.com/page',
+      });
+    });
+  });
+
+  describe('fetchContentTool', () => {
+    it('fetches and extracts text from HTML pages', async () => {
+      const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        url: 'https://example.com/docs',
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : null,
+        },
+        text: async () => `
+          <html>
+            <head>
+              <title>Example Docs</title>
+              <meta name="description" content="A short example description.">
+            </head>
+            <body>
+              <h1>Hello</h1>
+              <p>First paragraph.</p>
+              <p>Second paragraph.</p>
+            </body>
+          </html>
+        `,
+      } as Response);
+
+      const result = await fetchContentTool({ url: 'https://example.com/docs' });
+
+      expect(fetchSpy).toHaveBeenCalled();
+      const [calledUrl, calledInit] = fetchSpy.mock.calls[0] as [URL, RequestInit];
+      expect(calledUrl.href).toBe('https://example.com/docs');
+      expect(calledInit).toEqual(
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Accept: expect.stringContaining('text/html'),
+          }),
+        })
+      );
+      expect(result.ok).toBe(true);
+      expect(result.payload.title).toBe('Example Docs');
+      expect(result.payload.description).toBe('A short example description.');
+      expect(result.payload.text).toContain('First paragraph.');
     });
   });
 

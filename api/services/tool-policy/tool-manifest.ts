@@ -34,6 +34,18 @@ export const TOOL_MANIFEST: Record<WorkerToolName, ToolManifestEntry> = {
     requiresReadBeforeEdit: false,
     pathArgs: [],
   },
+  search_web: {
+    name: 'search_web',
+    mutatesWorkspace: false,
+    requiresReadBeforeEdit: false,
+    pathArgs: [],
+  },
+  fetch_content: {
+    name: 'fetch_content',
+    mutatesWorkspace: false,
+    requiresReadBeforeEdit: false,
+    pathArgs: [],
+  },
   apply_patch: {
     name: 'apply_patch',
     mutatesWorkspace: true,

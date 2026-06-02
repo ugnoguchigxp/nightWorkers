@@ -6,6 +6,8 @@ export type WorkerToolName =
   | 'find_file'
   | 'read_file'
   | 'search_files'
+  | 'search_web'
+  | 'fetch_content'
   | 'apply_patch'
   | 'replace_content'
   | 'run_command'

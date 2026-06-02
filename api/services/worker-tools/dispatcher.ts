@@ -2,6 +2,7 @@ import type { AgentSafetyPolicy } from '../agent-runtime/types';
 import type { WorkerToolName } from '../tool-policy/types';
 import {
   applyPatchTool,
+  fetchContentTool,
   findFileTool,
   gitDiffTool,
   gitStatusTool,
@@ -11,6 +12,7 @@ import {
   runCommandTool,
   runVerificationTool,
   searchFilesTool,
+  searchWebTool,
 } from '.';
 import type { WorkerToolResult } from './types';
 
@@ -84,6 +86,24 @@ export async function executeWorkerTool(
         glob: args.glob as string | undefined,
         allowedPaths: safetyPolicy?.allowedPaths,
         deniedPaths: safetyPolicy?.deniedPaths,
+      }),
+    };
+  }
+
+  if (toolName === 'search_web') {
+    return {
+      result: await searchWebTool({
+        query: args.query as string,
+        maxResults: args.maxResults as number | undefined,
+      }),
+    };
+  }
+
+  if (toolName === 'fetch_content') {
+    return {
+      result: await fetchContentTool({
+        url: args.url as string,
+        maxChars: args.maxChars as number | undefined,
       }),
     };
   }

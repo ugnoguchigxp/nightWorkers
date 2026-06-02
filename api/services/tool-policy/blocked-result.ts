@@ -6,6 +6,18 @@ function emptyPayloadByTool(toolName: ToolCallRequest['toolName']): Record<strin
   if (toolName === 'find_file') return { files: [], count: 0 };
   if (toolName === 'read_file') return { content: '', filePath: '', totalLines: 0 };
   if (toolName === 'search_files') return { matches: [], count: 0, engine: 'ripgrep' };
+  if (toolName === 'search_web')
+    return { query: '', engine: 'duckduckgo-lite', results: [], truncated: false };
+  if (toolName === 'fetch_content') {
+    return {
+      url: '',
+      finalUrl: '',
+      contentType: '',
+      status: 0,
+      text: '',
+      truncated: false,
+    };
+  }
   if (toolName === 'apply_patch') return { applied: false, changedFiles: [] };
   if (toolName === 'replace_content') return { applied: false, occurrences: 0, filePath: '' };
   if (toolName === 'run_command' || toolName === 'run_verification') {
