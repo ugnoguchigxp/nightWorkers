@@ -10,7 +10,7 @@ describe('NightWorkers repositories routes', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        name: 'Valid Test Workspace',
+        name: 'TEST: Valid Workspace',
         localPath: '/Users/y.noguchi/Code/nightWorkers',
         branch: 'main',
       }),
@@ -19,7 +19,7 @@ describe('NightWorkers repositories routes', () => {
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body).toHaveProperty('id');
-    expect(body.name).toBe('Valid Test Workspace');
+    expect(body.name).toBe('TEST: Valid Workspace');
     expect(body.localPath).toBe('/Users/y.noguchi/Code/nightWorkers');
   });
 
@@ -47,7 +47,7 @@ describe('NightWorkers repositories routes', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        name: 'Missing Path Workspace',
+        name: 'TEST: Missing Path Workspace',
         branch: 'main',
       }),
     });
@@ -64,7 +64,7 @@ describe('NightWorkers repositories routes', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        name: 'To Be Deleted',
+        name: 'TEST: To Be Deleted',
         localPath: '/Users/y.noguchi/Code/nightWorkers',
         branch: 'main',
       }),
@@ -92,13 +92,13 @@ describe('NightWorkers repositories routes', () => {
 describe('NightWorkers review routes', () => {
   it('persists structured review results and returns run reviews', async () => {
     const createdRepo = await repo.createRepository({
-      name: 'Review Route Workspace',
+      name: 'TEST: Review Route Workspace',
       localPath: '/Users/y.noguchi/Code/nightWorkers',
       branch: 'main',
     });
     const task = await repo.createTask({
       repositoryId: createdRepo.id,
-      title: 'Review task',
+      title: 'TEST: Review task',
       description: 'Review task description',
       status: 'needs_review',
     });
