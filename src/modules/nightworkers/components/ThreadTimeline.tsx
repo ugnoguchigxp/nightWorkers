@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Circle,
   Copy,
+  GitCompare,
   LoaderCircle,
   PauseCircle,
   XCircle,
@@ -18,8 +19,11 @@ import type {
   TaskRun,
   TaskRunTodo,
   TodoStatus,
+  WorkbenchArtifactRef,
 } from '../types';
+import { getChangedFiles } from '../utils/diff';
 import { formatFinishedTime } from '../utils/time';
+import { getRunEventType } from '../workbenchSelectors';
 import { ThreadMessage } from './ThreadMessage';
 
 type ThreadTimelineProps = {
@@ -30,6 +34,8 @@ type ThreadTimelineProps = {
   latestRunEvents: TaskEvent[];
   latestRunTodos: TaskRunTodo[];
   isAgentWorking: boolean;
+  showDebugEvents: boolean;
+  onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
   onReviewRun: (runId: string, action: ReviewAction, note?: string) => void;
 };
 
@@ -41,9 +47,10 @@ export function ThreadTimeline({
   latestRunEvents,
   latestRunTodos,
   isAgentWorking,
+  showDebugEvents,
+  onOpenArtifact,
   onReviewRun,
 }: ThreadTimelineProps) {
-  const [showDebugEvents, setShowDebugEvents] = useState(false);
   const chatMessages = taskMessages.filter(
     (message) => message.role === 'user' || message.role === 'assistant'
   );
@@ -67,17 +74,12 @@ export function ThreadTimeline({
 
   return (
     <div className="space-y-5 p-6">
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => setShowDebugEvents((v) => !v)}
-          className="rounded border border-slate-600/80 bg-slate-900/40 px-3 py-1 text-xs text-slate-200 hover:bg-slate-800/50"
-        >
-          {showDebugEvents ? 'Hide Debug' : 'Show Debug'}
-        </button>
-      </div>
       <RunReviewActions latestRun={latestRun} onReviewRun={onReviewRun} />
       <TodoProgress todos={latestRunTodos} />
+      <RunLedgerCard events={latestRunEvents} />
+      <ContextPackCard latestRun={latestRun} />
+      <DiffSummaryCard session={session} latestRun={latestRun} onOpenArtifact={onOpenArtifact} />
+      <FinalReportCard latestRun={latestRun} />
       {showDebugEvents && isAgentWorking && latestEvent ? (
         <div className="rounded-lg border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-200">
           <span className="mr-2 inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
@@ -120,6 +122,111 @@ export function ThreadTimeline({
         </ThreadMessage>
       ) : null}
     </div>
+  );
+}
+
+function RunLedgerCard({ events }: { events: TaskEvent[] }) {
+  if (events.length === 0) return null;
+  const visibleEvents = events.slice(-12);
+  return (
+    <details open className="border-slate-700/80 border-y bg-slate-950/20 py-3">
+      <summary className="cursor-pointer list-none px-1 text-xs font-medium text-slate-100">
+        Run ledger
+      </summary>
+      <ol className="mt-2 space-y-1">
+        {visibleEvents.map((event) => (
+          <li key={event.id} className="grid grid-cols-[auto_1fr] gap-2 px-1 text-[11px]">
+            <span className="font-mono text-slate-500">#{event.seq || '-'}</span>
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="shrink-0 rounded border border-slate-700 px-1 py-0.5 font-mono text-[10px] text-cyan-200">
+                  {getRunEventType(event)}
+                </span>
+                <span className="min-w-0 truncate text-slate-300">{event.message}</span>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
+function ContextPackCard({ latestRun }: { latestRun?: TaskRun }) {
+  if (!latestRun?.contextSnapshot) return null;
+  return (
+    <details className="rounded border border-slate-700/80 bg-slate-900/25">
+      <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-slate-100">
+        Context Pack
+      </summary>
+      <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap border-t border-slate-800 p-3 font-mono text-[11px] leading-5 text-slate-300">
+        {JSON.stringify(latestRun.contextSnapshot, null, 2)}
+      </pre>
+    </details>
+  );
+}
+
+function DiffSummaryCard({
+  session,
+  latestRun,
+  onOpenArtifact,
+}: {
+  session: Task;
+  latestRun?: TaskRun;
+  onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
+}) {
+  if (!latestRun?.diffPatch?.trim()) return null;
+  const changedFiles = getChangedFiles(latestRun.diffPatch);
+  return (
+    <div className="rounded border border-slate-700/80 bg-slate-900/25 px-3 py-2">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="min-w-0 text-xs font-medium text-slate-100">Code diff</div>
+        <button
+          type="button"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-slate-600/80 text-slate-200 hover:border-cyan-500/70 hover:text-cyan-100"
+          onClick={() =>
+            onOpenArtifact({
+              id: `run-${latestRun.id}-diffPatch`,
+              taskId: session.id,
+              runId: latestRun.id,
+              kind: 'diff',
+              title: 'Code Diff',
+              source: { type: 'run_field', runId: latestRun.id, field: 'diffPatch' },
+              createdAt: String(latestRun.finishedAt || latestRun.updatedAt || latestRun.createdAt),
+            })
+          }
+          title="Open diff viewer"
+        >
+          <GitCompare className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      {changedFiles.length > 0 ? (
+        <ul className="grid gap-1">
+          {changedFiles.slice(0, 6).map((file) => (
+            <li key={file.path} className="flex items-center justify-between gap-3 text-[11px]">
+              <span className="min-w-0 truncate text-slate-300">{file.path}</span>
+              <span className="shrink-0 text-slate-500">
+                <span className="text-emerald-300">+{file.added}</span>{' '}
+                <span className="text-rose-300">-{file.deleted}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-[11px] text-slate-500">Diff is available.</p>
+      )}
+    </div>
+  );
+}
+
+function FinalReportCard({ latestRun }: { latestRun?: TaskRun }) {
+  if (!latestRun?.finalReport?.trim()) return null;
+  return (
+    <ThreadMessage messageRole="assistant" timestamp={formatFinishedTime(latestRun.finishedAt)}>
+      <div className="whitespace-pre-wrap text-sm leading-6 text-slate-100">
+        {latestRun.finalReport}
+      </div>
+    </ThreadMessage>
   );
 }
 

@@ -81,6 +81,66 @@ const getRepositoryRoute = createRoute({
   },
 });
 
+const listProjectFilesRoute = createRoute({
+  method: 'get',
+  path: '/repositories/:id/files',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'repo-uuid' }),
+    }),
+    query: z.object({
+      path: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.array(
+            z.object({
+              name: z.string(),
+              path: z.string(),
+              type: z.enum(['file', 'directory']),
+              size: z.number().optional(),
+            })
+          ),
+        },
+      },
+      description: 'Project file tree entries',
+    },
+    404: { description: 'Repository not found' },
+  },
+});
+
+const readProjectFileRoute = createRoute({
+  method: 'get',
+  path: '/repositories/:id/file',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'repo-uuid' }),
+    }),
+    query: z.object({
+      path: z.string(),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            path: z.string(),
+            content: z.string(),
+            size: z.number(),
+            truncated: z.boolean(),
+          }),
+        },
+      },
+      description: 'Project file content',
+    },
+    404: { description: 'Repository not found' },
+  },
+});
+
 const deleteRepositoryRoute = createRoute({
   method: 'delete',
   path: '/repositories/:id',
@@ -205,6 +265,7 @@ const updateTaskRoute = createRoute({
             objective: z.string().optional(),
             acceptanceCriteria: z.string().optional(),
             status: z.string().optional(),
+            priority: z.number().optional(),
           }),
         },
       },
@@ -277,6 +338,118 @@ const appendTaskMessageRoute = createRoute({
     404: {
       description: 'Task not found',
     },
+  },
+});
+
+const appendWorkbenchMessageRoute = createRoute({
+  method: 'post',
+  path: '/workbench/sessions/:id/messages',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'task-uuid' }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            prompt: z.string().min(1),
+            intent: z
+              .enum([
+                'discuss',
+                'draft_spec',
+                'create_task',
+                'queue',
+                'run_task',
+                'adjust_running',
+                'review_followup',
+                'learning_capture',
+              ])
+              .default('discuss'),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: z.any() } },
+      description: 'Workbench message handled',
+    },
+    404: { description: 'Task not found' },
+  },
+});
+
+const createWorkbenchSessionRoute = createRoute({
+  method: 'post',
+  path: '/workbench/sessions',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            repositoryId: z.string().uuid(),
+            title: z.string().optional(),
+            description: z.string().optional(),
+            objective: z.string().optional(),
+            acceptanceCriteria: z.string().optional(),
+            timeoutSeconds: z.number().optional(),
+            priority: z.number().optional(),
+            createdBy: z.string().optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      content: { 'application/json': { schema: taskSchema } },
+      description: 'Workbench session created',
+    },
+  },
+});
+
+const queueWorkbenchSessionRoute = createRoute({
+  method: 'post',
+  path: '/workbench/sessions/:id/queue',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: taskSchema } },
+      description: 'Workbench session queued',
+    },
+    404: { description: 'Task not found' },
+  },
+});
+
+const runWorkbenchSessionRoute = createRoute({
+  method: 'post',
+  path: '/workbench/sessions/:id/run',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+  },
+  responses: {
+    201: {
+      content: { 'application/json': { schema: taskRunSchema } },
+      description: 'Workbench session run started',
+    },
+    404: { description: 'Task not found' },
+  },
+});
+
+const archiveWorkbenchSessionRoute = createRoute({
+  method: 'patch',
+  path: '/workbench/sessions/:id/archive',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: taskSchema } },
+      description: 'Workbench session archived',
+    },
+    404: { description: 'Task not found' },
   },
 });
 
@@ -697,6 +870,30 @@ const router = createOpenApiRouter()
     if (!repo) return c.json({ error: 'Repository not found' }, 404);
     return c.json(repo, 200);
   })
+  .openapi(listProjectFilesRoute, async (c) => {
+    try {
+      const entries = await service.listProjectFiles(c.req.param('id'), c.req.query('path'));
+      return c.json(entries, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(readProjectFileRoute, async (c) => {
+    try {
+      const filePath = c.req.query('path');
+      if (!filePath) return c.json({ error: 'path is required' }, 400);
+      const file = await service.readProjectFile(c.req.param('id'), filePath);
+      return c.json(file, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
   .openapi(deleteRepositoryRoute, async (c) => {
     const id = c.req.param('id');
     const repo = await service.deleteRepository(id);
@@ -782,6 +979,57 @@ const router = createOpenApiRouter()
     const { prompt } = c.req.valid('json');
     try {
       const task = await service.appendTaskMessage(id, prompt);
+      return c.json(task, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(createWorkbenchSessionRoute, async (c) => {
+    const data = c.req.valid('json');
+    const task = await service.createWorkbenchSession(data);
+    return c.json(task, 201);
+  })
+  .openapi(appendWorkbenchMessageRoute, async (c) => {
+    const id = c.req.param('id');
+    const body = c.req.valid('json');
+    try {
+      const result = await service.appendWorkbenchMessage(id, body);
+      return c.json(result, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(queueWorkbenchSessionRoute, async (c) => {
+    try {
+      const task = await service.queueTask(c.req.param('id'));
+      return c.json(task, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(runWorkbenchSessionRoute, async (c) => {
+    try {
+      const run = await service.startWorkbenchTaskRun(c.req.param('id'));
+      return c.json(run, 201);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(archiveWorkbenchSessionRoute, async (c) => {
+    try {
+      const task = await service.archiveTask(c.req.param('id'));
       return c.json(task, 200);
     } catch (err: any) {
       if (err instanceof AppError) {

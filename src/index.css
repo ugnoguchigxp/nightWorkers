@@ -30,4 +30,45 @@
   .nightworkers-thinking-dot {
     animation: nightworkers-thinking-pop 1.12s ease-in-out infinite;
   }
+
+  .nightworkers-artifact-code {
+    --background: #1e1e2e;
+    --foreground: #cdd6f4;
+    --card: #1e1e2e;
+    --card-foreground: #cdd6f4;
+    --muted: #181825;
+    --muted-foreground: #a6adc8;
+    --border: #313244;
+  }
+
+  .nightworkers-artifact-code,
+  .nightworkers-artifact-code > div {
+    height: 100%;
+    min-height: 100%;
+    border: 0;
+    border-radius: 0;
+    background: #1e1e2e;
+    box-shadow: none;
+    color: #cdd6f4;
+  }
+
+  .nightworkers-artifact-code > div {
+    max-height: none;
+  }
+
+  .nightworkers-artifact-code pre {
+    background: transparent;
+    padding-block: 1rem;
+    font-size: 0.75rem;
+  }
+
+  .nightworkers-artifact-code code {
+    color: #cdd6f4;
+    font-size: inherit;
+  }
+
+  .nightworkers-artifact-code .line::before {
+    color: #7f849c;
+    font-size: 0.75rem;
+  }
 }

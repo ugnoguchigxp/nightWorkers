@@ -1,5 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Dispatch, SetStateAction } from 'react';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { client } from '../../../lib/api';
 import { dedupeAndSortRunEvents, mergeRunEvents } from '../realtimeEvents';
@@ -8,6 +8,8 @@ import type {
   CreateSessionInput,
   LlmProvider,
   LlmSettings,
+  ProjectFileContent,
+  ProjectFileEntry,
   Repository,
   ReviewOutcome,
   ReviewResult,
@@ -18,7 +20,16 @@ import type {
   TaskMessage,
   TaskRun,
   TaskRunTodo,
+  WorkbenchArtifactRef,
+  WorkbenchChatIntent,
+  WorkbenchMovableSessionGroup,
+  WorkbenchSessionView,
 } from '../types';
+import {
+  buildWorkbenchArtifactRefs,
+  buildWorkbenchSessionView,
+  groupWorkbenchSessions,
+} from '../workbenchSelectors';
 
 type FolderDir = { name: string; path: string };
 type RealtimeStatus = 'initializing' | 'connecting' | 'connected' | 'disconnected';
@@ -26,14 +37,27 @@ type RealtimeStatus = 'initializing' | 'connecting' | 'connected' | 'disconnecte
 export type NightWorkersWorkspaceState = {
   projects: Repository[];
   sessions: Task[];
+  sessionViews: WorkbenchSessionView[];
+  groupedSessionViews: Record<string, ProjectSessionGroups>;
   activeSessionId: string | null;
   activeSession: Task | null;
+  activeSessionView: WorkbenchSessionView | null;
   activeProject: Repository | null;
   activeSessionRuns: TaskRun[];
   latestRun: TaskRun | undefined;
   taskMessages: TaskMessage[];
   latestRunEvents: TaskEvent[];
   latestRunTodos: TaskRunTodo[];
+  latestRunReviews: ReviewResult[];
+  activeArtifactRefs: WorkbenchArtifactRef[];
+  projectFileEntries: ProjectFileEntry[];
+  projectFileEntriesByDirectory: Record<string, ProjectFileEntry[]>;
+  expandedProjectDirectories: Record<string, boolean>;
+  loadingProjectDirectories: Record<string, boolean>;
+  selectedProjectFile: ProjectFileContent | null;
+  selectedProjectFilePath: string | null;
+  isProjectFilesLoading: boolean;
+  isProjectFileLoading: boolean;
   isRealtimeConnected: boolean;
   realtimeStatus: RealtimeStatus;
   isChatSubmitting: boolean;
@@ -41,6 +65,7 @@ export type NightWorkersWorkspaceState = {
   isSessionsLoading: boolean;
   isAgentWorking: boolean;
   isAgentThinking: boolean;
+  isUpdatingSessionStatus: boolean;
   expandedProjects: Record<string, boolean>;
   setExpandedProjects: Dispatch<SetStateAction<Record<string, boolean>>>;
   setActiveSessionId: (id: string | null) => void;
@@ -49,6 +74,17 @@ export type NightWorkersWorkspaceState = {
   deleteSession: (id: string) => void;
   createSession: (input: CreateSessionInput) => Promise<Task>;
   startRun: (sessionId: string) => Promise<TaskRun>;
+  queueSession: (sessionId: string) => Promise<Task>;
+  updateSessionStatus: (sessionId: string, status: 'draft' | 'ready') => Promise<Task>;
+  reorderQueueSessions: (sessionIds: string[]) => Promise<Task[]>;
+  moveWorkbenchSession: (input: {
+    sessionId: string;
+    sourceGroup: WorkbenchMovableSessionGroup;
+    targetGroup: WorkbenchMovableSessionGroup;
+    processingIds: string[];
+    queueIds: string[];
+    archiveIds: string[];
+  }) => Promise<void>;
   reviewRun: (input: ReviewRunInput) => Promise<{
     ok: boolean;
     status: string;
@@ -56,6 +92,11 @@ export type NightWorkersWorkspaceState = {
     reviewResult: ReviewResult;
   }>;
   sendChatMessage: (sessionId: string, prompt: string) => Promise<void>;
+  sendWorkbenchMessage: (
+    sessionId: string,
+    prompt: string,
+    intent: WorkbenchChatIntent
+  ) => Promise<void>;
   refreshWorkspace: () => void;
   currentBrowserPath: string | null;
   browserParentPath: string | null;
@@ -69,6 +110,14 @@ export type NightWorkersWorkspaceState = {
   toggleProviderEnabled: (provider: LlmProvider, enabled: boolean) => Promise<void>;
   updateProviderModel: (model: string) => Promise<void>;
   runLlmSmokeTest: () => Promise<{ ok: boolean; provider: string; message: string }>;
+  toggleProjectDirectory: (path: string) => Promise<void>;
+  openProjectFile: (path: string) => void;
+};
+
+export type ProjectSessionGroups = {
+  processing: WorkbenchSessionView[];
+  queue: WorkbenchSessionView[];
+  archive: WorkbenchSessionView[];
 };
 
 export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
@@ -78,6 +127,17 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const [currentBrowserPath, setCurrentBrowserPath] = useState<string | null>(null);
   const [browserDirectories, setBrowserDirectories] = useState<FolderDir[]>([]);
   const [browserParentPath, setBrowserParentPath] = useState<string | null>(null);
+  const rootProjectDirectory = '';
+  const [selectedProjectFilePath, setSelectedProjectFilePath] = useState<string | null>(null);
+  const [projectFileEntriesByDirectory, setProjectFileEntriesByDirectory] = useState<
+    Record<string, ProjectFileEntry[]>
+  >({});
+  const [expandedProjectDirectories, setExpandedProjectDirectories] = useState<
+    Record<string, boolean>
+  >({});
+  const [loadingProjectDirectories, setLoadingProjectDirectories] = useState<
+    Record<string, boolean>
+  >({});
   const [isBrowserLoading, setIsBrowserLoading] = useState(false);
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('initializing');
@@ -192,7 +252,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
   const createProjectMutation = useMutation({
     mutationFn: async (data: CreateProjectInput) => {
-      const res = await client.repositories.$post({ json: data });
+      const res = await client.repositories.$post({
+        json: { ...data, branch: data.branch || 'main' },
+      });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
@@ -214,7 +276,11 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
   const createSessionMutation = useMutation({
     mutationFn: async (data: CreateSessionInput) => {
-      const res = await client.tasks.$post({ json: data });
+      const res = await fetch('/api/workbench/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
       if (!res.ok) throw new Error('Failed to create session');
       return (await res.json()) as Task;
     },
@@ -226,7 +292,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
   const deleteSessionMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await client.tasks[':id'].$delete({ param: { id } });
+      const res = await fetch(`/api/workbench/sessions/${id}/archive`, { method: 'PATCH' });
       if (!res.ok) throw new Error('Failed to archive session');
       return res.json();
     },
@@ -240,7 +306,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
   const startRunMutation = useMutation({
     mutationFn: async (sessionId: string) => {
-      const res = await client.tasks[':id'].run.$post({ param: { id: sessionId } });
+      const res = await fetch(`/api/workbench/sessions/${sessionId}/run`, { method: 'POST' });
       if (!res.ok) throw new Error('Failed to start run');
       return (await res.json()) as TaskRun;
     },
@@ -250,15 +316,224 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     },
   });
 
+  const queueSessionMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      const res = await fetch(`/api/workbench/sessions/${sessionId}/queue`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as Task;
+    },
+    onSuccess: (task) => {
+      queryClient.setQueryData<Task[]>(['sessions'], (prev = []) => {
+        const next = [...prev];
+        const idx = next.findIndex((candidate) => candidate.id === task.id);
+        if (idx >= 0) next[idx] = task;
+        else next.unshift(task);
+        return next;
+      });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+  });
+
+  const updateSessionStatusMutation = useMutation({
+    mutationFn: async (input: { sessionId: string; status: 'draft' | 'ready' }) => {
+      const res = await client.tasks[':id'].$patch({
+        param: { id: input.sessionId },
+        json: { status: input.status },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as Task;
+    },
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: ['sessions'] });
+      const previous = queryClient.getQueryData<Task[]>(['sessions']);
+      queryClient.setQueryData<Task[]>(['sessions'], (prev = []) =>
+        prev.map((session) =>
+          session.id === input.sessionId ? { ...session, status: input.status } : session
+        )
+      );
+      return { previous };
+    },
+    onError: (_error, _input, context) => {
+      if (context?.previous) queryClient.setQueryData(['sessions'], context.previous);
+    },
+    onSuccess: (task) => {
+      queryClient.setQueryData<Task[]>(['sessions'], (prev = []) => {
+        const next = [...prev];
+        const idx = next.findIndex((candidate) => candidate.id === task.id);
+        if (idx >= 0) next[idx] = task;
+        else next.unshift(task);
+        return next;
+      });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+  });
+
+  const reorderQueueSessionsMutation = useMutation({
+    mutationFn: async (sessionIds: string[]) => {
+      const updates = buildPriorityUpdates(
+        sessionIds,
+        queryClient.getQueryData<Task[]>(['sessions']) ?? []
+      );
+      const tasks = await Promise.all(
+        updates.map(async ({ sessionId, priority }) => {
+          const res = await client.tasks[':id'].$patch({
+            param: { id: sessionId },
+            json: { priority },
+          });
+          if (!res.ok) throw new Error(await res.text());
+          return (await res.json()) as Task;
+        })
+      );
+      return tasks;
+    },
+    onMutate: async (sessionIds) => {
+      await queryClient.cancelQueries({ queryKey: ['sessions'] });
+      const previous = queryClient.getQueryData<Task[]>(['sessions']);
+      const priorityById = new Map(sessionIds.map((id, index) => [id, sessionIds.length - index]));
+      queryClient.setQueryData<Task[]>(['sessions'], (prev = []) =>
+        prev.map((session) =>
+          priorityById.has(session.id)
+            ? { ...session, priority: priorityById.get(session.id) as number }
+            : session
+        )
+      );
+      return { previous };
+    },
+    onError: (_error, _sessionIds, context) => {
+      if (context?.previous) queryClient.setQueryData(['sessions'], context.previous);
+    },
+    onSuccess: (tasks) => {
+      queryClient.setQueryData<Task[]>(['sessions'], (prev = []) => {
+        const taskById = new Map(tasks.map((task) => [task.id, task]));
+        return prev.map((session) => taskById.get(session.id) || session);
+      });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['sessions'] }),
+  });
+
+  const moveWorkbenchSessionMutation = useMutation({
+    mutationFn: async (input: {
+      sessionId: string;
+      sourceGroup: WorkbenchMovableSessionGroup;
+      targetGroup: WorkbenchMovableSessionGroup;
+      processingIds: string[];
+      queueIds: string[];
+      archiveIds: string[];
+    }) => {
+      if (input.sourceGroup === 'queue' && input.targetGroup === 'processing') {
+        const res = await fetch(`/api/workbench/sessions/${input.sessionId}/run`, {
+          method: 'POST',
+        });
+        if (!res.ok) throw new Error(await res.text());
+      } else if (input.sourceGroup === 'processing' && input.targetGroup === 'queue') {
+        const res = await client.tasks[':id'].$patch({
+          param: { id: input.sessionId },
+          json: { status: 'queued' },
+        });
+        if (!res.ok) throw new Error(await res.text());
+      } else if (input.targetGroup === 'archive') {
+        const res = await fetch(`/api/workbench/sessions/${input.sessionId}/archive`, {
+          method: 'PATCH',
+        });
+        if (!res.ok) throw new Error(await res.text());
+      }
+
+      const rankedIds = [...input.processingIds, ...input.queueIds];
+      const updates = buildPriorityUpdates(
+        rankedIds,
+        queryClient.getQueryData<Task[]>(['sessions']) ?? []
+      );
+      await Promise.all(
+        updates.map(async ({ sessionId, priority }) => {
+          const res = await client.tasks[':id'].$patch({
+            param: { id: sessionId },
+            json: { priority },
+          });
+          if (!res.ok) throw new Error(await res.text());
+        })
+      );
+    },
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: ['sessions'] });
+      const previous = queryClient.getQueryData<Task[]>(['sessions']);
+      const rankedIds = [...input.processingIds, ...input.queueIds];
+      const priorityById = new Map(rankedIds.map((id, index) => [id, rankedIds.length - index]));
+      queryClient.setQueryData<Task[]>(['sessions'], (prev = []) =>
+        prev.map((session) => {
+          const priority = priorityById.get(session.id);
+          if (session.id === input.sessionId && input.targetGroup === 'queue') {
+            return { ...session, status: 'queued', priority: priority ?? session.priority };
+          }
+          if (session.id === input.sessionId && input.targetGroup === 'archive') {
+            return { ...session, status: 'cancelled', priority: priority ?? session.priority };
+          }
+          if (priority !== undefined) return { ...session, priority };
+          return session;
+        })
+      );
+      return { previous };
+    },
+    onError: (_error, _input, context) => {
+      if (context?.previous) queryClient.setQueryData(['sessions'], context.previous);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['sessionRuns'] });
+      queryClient.invalidateQueries({ queryKey: ['runDetails'] });
+    },
+  });
+
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === activeSessionId) ?? null,
     [activeSessionId, sessions]
   );
   const activeProject = useMemo(
     () =>
-      activeSession ? (projects.find((p) => p.id === activeSession.repositoryId) ?? null) : null,
+      activeSession
+        ? (projects.find((p) => p.id === activeSession.repositoryId) ?? null)
+        : (projects[0] ?? null),
     [activeSession, projects]
   );
+  const activeProjectId = activeProject?.id;
+
+  const { data: projectFileEntries = [], isLoading: isProjectFilesLoading } = useQuery({
+    queryKey: ['projectFiles', activeProjectId, rootProjectDirectory],
+    queryFn: async () => {
+      if (!activeProjectId) return [];
+      const params = new URLSearchParams();
+      if (rootProjectDirectory) params.set('path', rootProjectDirectory);
+      const query = params.toString();
+      const res = await fetch(
+        `/api/repositories/${activeProjectId}/files${query ? `?${query}` : ''}`
+      );
+      if (!res.ok) throw new Error('Failed to fetch project files');
+      return (await res.json()) as ProjectFileEntry[];
+    },
+    enabled: !!activeProjectId,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const mergedProjectFileEntriesByDirectory = useMemo<Record<string, ProjectFileEntry[]>>(
+    () => ({
+      ...projectFileEntriesByDirectory,
+      [rootProjectDirectory]: projectFileEntries,
+    }),
+    [projectFileEntries, projectFileEntriesByDirectory]
+  );
+
+  const { data: selectedProjectFile = null, isLoading: isProjectFileLoading } = useQuery({
+    queryKey: ['projectFile', activeProjectId, selectedProjectFilePath],
+    queryFn: async () => {
+      if (!activeProjectId || !selectedProjectFilePath) return null;
+      const params = new URLSearchParams({ path: selectedProjectFilePath });
+      const res = await fetch(`/api/repositories/${activeProjectId}/file?${params.toString()}`);
+      if (!res.ok) throw new Error('Failed to fetch project file');
+      return (await res.json()) as ProjectFileContent;
+    },
+    enabled: !!activeProjectId && !!selectedProjectFilePath,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
 
   const latestRun = activeSessionRuns[0];
   const { data: latestRunDetails = null } = useQuery({
@@ -286,6 +561,81 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const latestRunEvents =
     realtimeEvents.length > 0 ? realtimeEvents : latestRunDetails?.events || [];
   const latestRunTodos = latestRunDetails?.todos || [];
+  const latestRunReviews = latestRunDetails?.reviews || [];
+  const activeArtifactRefs = useMemo(
+    () =>
+      activeSession
+        ? buildWorkbenchArtifactRefs({
+            task: activeSession,
+            latestRun,
+            todos: latestRunTodos,
+            events: latestRunEvents,
+            reviews: latestRunReviews,
+            messages: taskMessages,
+          })
+        : [],
+    [activeSession, latestRun, latestRunEvents, latestRunReviews, latestRunTodos, taskMessages]
+  );
+  const activeSessionView = useMemo(
+    () =>
+      activeSession
+        ? buildWorkbenchSessionView(activeSession, {
+            latestRun,
+            todos: latestRunTodos,
+            events: latestRunEvents,
+            reviews: latestRunReviews,
+            messages: taskMessages,
+          })
+        : null,
+    [activeSession, latestRun, latestRunEvents, latestRunReviews, latestRunTodos, taskMessages]
+  );
+  const sessionViews = useMemo(
+    () =>
+      sessions.map((session) =>
+        session.id === activeSession?.id && activeSessionView
+          ? activeSessionView
+          : buildWorkbenchSessionView(session)
+      ),
+    [activeSession?.id, activeSessionView, sessions]
+  );
+  const groupedSessionViews = useMemo(() => {
+    const grouped: Record<string, ProjectSessionGroups> = {};
+    for (const project of projects) {
+      grouped[project.id] = { processing: [], queue: [], archive: [] };
+    }
+    for (const session of sessionViews) {
+      const repositoryId = session.task.repositoryId;
+      grouped[repositoryId] ||= { processing: [], queue: [], archive: [] };
+      grouped[repositoryId][session.group].push(session);
+    }
+    for (const groups of Object.values(grouped)) {
+      const sorted = groupWorkbenchSessions([
+        ...groups.processing,
+        ...groups.queue,
+        ...groups.archive,
+      ]);
+      let queuePosition = 0;
+      groups.processing = sorted.processing;
+      groups.queue = sorted.queue.map((session) => {
+        if (session.task.status === 'draft') return { ...session, queuePosition: undefined };
+        queuePosition += 1;
+        return { ...session, queuePosition };
+      });
+      groups.archive = sorted.archive;
+    }
+    return grouped;
+  }, [projects, sessionViews]);
+  const activeSessionViewWithQueuePosition = useMemo(() => {
+    if (!activeSessionView) return null;
+    const groups = groupedSessionViews[activeSessionView.task.repositoryId];
+    if (!groups) return activeSessionView;
+    return (
+      groups.processing.find((session) => session.task.id === activeSessionView.task.id) ||
+      groups.queue.find((session) => session.task.id === activeSessionView.task.id) ||
+      groups.archive.find((session) => session.task.id === activeSessionView.task.id) ||
+      activeSessionView
+    );
+  }, [activeSessionView, groupedSessionViews]);
 
   useEffect(() => {
     // サーバーダウンやWS切断時に入力が永久ロックされるのを防ぐ
@@ -581,14 +931,27 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   return {
     projects,
     sessions,
+    sessionViews,
+    groupedSessionViews,
     activeSessionId,
     activeSession,
+    activeSessionView: activeSessionViewWithQueuePosition,
     activeProject,
     activeSessionRuns,
     latestRun,
     taskMessages,
     latestRunEvents,
     latestRunTodos,
+    latestRunReviews,
+    activeArtifactRefs,
+    projectFileEntries,
+    projectFileEntriesByDirectory: mergedProjectFileEntriesByDirectory,
+    expandedProjectDirectories,
+    loadingProjectDirectories,
+    selectedProjectFile,
+    selectedProjectFilePath,
+    isProjectFilesLoading,
+    isProjectFileLoading,
     isRealtimeConnected,
     realtimeStatus,
     isChatSubmitting,
@@ -596,6 +959,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     isSessionsLoading,
     isAgentWorking,
     isAgentThinking,
+    isUpdatingSessionStatus: updateSessionStatusMutation.isPending,
     expandedProjects,
     setExpandedProjects,
     setActiveSessionId,
@@ -604,6 +968,11 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     deleteSession: (id) => deleteSessionMutation.mutate(id),
     createSession: (input) => createSessionMutation.mutateAsync(input),
     startRun: (sessionId) => startRunMutation.mutateAsync(sessionId),
+    queueSession: (sessionId) => queueSessionMutation.mutateAsync(sessionId),
+    updateSessionStatus: (sessionId, status) =>
+      updateSessionStatusMutation.mutateAsync({ sessionId, status }),
+    reorderQueueSessions: (sessionIds) => reorderQueueSessionsMutation.mutateAsync(sessionIds),
+    moveWorkbenchSession: (input) => moveWorkbenchSessionMutation.mutateAsync(input),
     reviewRun: async (input) => {
       const res = await fetch(`/api/runs/${input.runId}/review`, {
         method: 'POST',
@@ -623,29 +992,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     sendChatMessage: async (sessionId, prompt) => {
       const content = prompt.trim();
       if (!content) return;
-      const now = Date.now();
-      const lastSubmit = lastSubmitRef.current;
-      if (
-        lastSubmit &&
-        lastSubmit.taskId === sessionId &&
-        lastSubmit.prompt === content &&
-        now - lastSubmit.at < 1500
-      ) {
-        return;
-      }
-      lastSubmitRef.current = { taskId: sessionId, prompt: content, at: now };
-      const optimisticUserMessage: TaskMessage = {
-        id: `optimistic-user-${Date.now()}`,
-        taskId: sessionId,
-        role: 'user',
-        content,
-        messageType: 'text',
-        createdAt: new Date().toISOString(),
-      };
-      queryClient.setQueryData<TaskMessage[]>(['taskMessages', sessionId], (prev = []) => [
-        ...prev,
-        optimisticUserMessage,
-      ]);
+      if (!appendOptimisticUserMessage(sessionId, content, lastSubmitRef, queryClient)) return;
       setIsChatSubmitting(true);
       chatSubmitStartedAtRef.current = Date.now();
       pendingChatRunIdRef.current = null;
@@ -662,6 +1009,51 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
           prompt: content,
         })
       );
+    },
+    sendWorkbenchMessage: async (sessionId, prompt, intent) => {
+      const content = prompt.trim();
+      if (!content) return;
+      if (!appendOptimisticUserMessage(sessionId, content, lastSubmitRef, queryClient)) return;
+      setIsChatSubmitting(true);
+      chatSubmitStartedAtRef.current = Date.now();
+      pendingChatRunIdRef.current = null;
+      setPendingChatRunId(null);
+      try {
+        const res = await fetch(`/api/workbench/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: content, intent }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const result = (await res.json()) as {
+          task?: Task;
+          run?: TaskRun | null;
+          messages?: TaskMessage[];
+        };
+        if (result.messages) queryClient.setQueryData(['taskMessages', sessionId], result.messages);
+        if (result.task) {
+          queryClient.setQueryData<Task[]>(['sessions'], (prev = []) => {
+            const next = [...prev];
+            const idx = next.findIndex((task) => task.id === result.task?.id);
+            if (idx >= 0 && result.task) next[idx] = result.task;
+            else if (result.task) next.unshift(result.task);
+            return next;
+          });
+        }
+        if (result.run) {
+          pendingChatRunIdRef.current = result.run.id;
+          setPendingChatRunId(result.run.id);
+        }
+        queryClient.invalidateQueries({ queryKey: ['sessions'] });
+        queryClient.invalidateQueries({ queryKey: ['sessionRuns', sessionId] });
+      } finally {
+        setIsChatSubmitting(false);
+        chatSubmitStartedAtRef.current = null;
+        if (intent !== 'run_task') {
+          pendingChatRunIdRef.current = null;
+          setPendingChatRunId(null);
+        }
+      }
     },
     refreshWorkspace: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
@@ -728,6 +1120,24 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       if (!res.ok) throw new Error('Failed to run smoke');
       return (await res.json()) as { ok: boolean; provider: string; message: string };
     },
+    toggleProjectDirectory: async (path) => {
+      const nextExpanded = !expandedProjectDirectories[path];
+      setExpandedProjectDirectories((prev) => ({ ...prev, [path]: nextExpanded }));
+      if (!nextExpanded || mergedProjectFileEntriesByDirectory[path] || !activeProjectId) return;
+      setLoadingProjectDirectories((prev) => ({ ...prev, [path]: true }));
+      try {
+        const params = new URLSearchParams({ path });
+        const res = await fetch(`/api/repositories/${activeProjectId}/files?${params.toString()}`);
+        if (!res.ok) throw new Error('Failed to fetch project files');
+        const entries = (await res.json()) as ProjectFileEntry[];
+        setProjectFileEntriesByDirectory((prev) => ({ ...prev, [path]: entries }));
+      } finally {
+        setLoadingProjectDirectories((prev) => ({ ...prev, [path]: false }));
+      }
+    },
+    openProjectFile: (path) => {
+      setSelectedProjectFilePath(path);
+    },
   };
 }
 
@@ -738,6 +1148,48 @@ function isActiveRunStatus(status: string | undefined): boolean {
     status === 'compiling_context' ||
     status === 'finalizing'
   );
+}
+
+function appendOptimisticUserMessage(
+  sessionId: string,
+  content: string,
+  lastSubmitRef: MutableRefObject<{ taskId: string; prompt: string; at: number } | null>,
+  queryClient: QueryClient
+): boolean {
+  const now = Date.now();
+  const lastSubmit = lastSubmitRef.current;
+  if (
+    lastSubmit &&
+    lastSubmit.taskId === sessionId &&
+    lastSubmit.prompt === content &&
+    now - lastSubmit.at < 1500
+  ) {
+    return false;
+  }
+  lastSubmitRef.current = { taskId: sessionId, prompt: content, at: now };
+  const optimisticUserMessage: TaskMessage = {
+    id: `optimistic-user-${Date.now()}`,
+    taskId: sessionId,
+    role: 'user',
+    content,
+    messageType: 'text',
+    createdAt: new Date().toISOString(),
+  };
+  queryClient.setQueryData<TaskMessage[]>(['taskMessages', sessionId], (prev = []) => [
+    ...prev,
+    optimisticUserMessage,
+  ]);
+  return true;
+}
+
+function buildPriorityUpdates(sessionIds: string[], sessions: Task[]) {
+  const currentPriorityById = new Map(sessions.map((session) => [session.id, session.priority]));
+  return sessionIds
+    .map((sessionId, index) => ({
+      sessionId,
+      priority: sessionIds.length - index,
+    }))
+    .filter(({ sessionId, priority }) => currentPriorityById.get(sessionId) !== priority);
 }
 
 function isActiveTaskStatus(status: string | undefined): boolean {

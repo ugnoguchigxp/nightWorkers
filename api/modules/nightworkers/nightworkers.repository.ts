@@ -133,6 +133,7 @@ export async function updateTask(
     objective?: string | null;
     acceptanceCriteria?: string | null;
     status?: string;
+    priority?: number;
   }
 ) {
   const [task] = await db

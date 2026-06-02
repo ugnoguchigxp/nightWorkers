@@ -42,6 +42,12 @@ const runEventTypeSchema = z.enum([
   'memory.register_finished',
   'memory.context_injected',
   'memory.feedback_evaluated',
+  'workbench.session.created',
+  'workbench.session.queued',
+  'workbench.session.run_requested',
+  'workbench.artifact.created',
+  'workbench.review.followup_requested',
+  'workbench.learning.capture_requested',
   'system.warning',
   'system.error',
 ]);
@@ -146,7 +152,7 @@ export const createRepositorySchema = z
   .object({
     name: z.string().min(1, 'Name is required'),
     localPath: z.string().min(1, 'Local path is required'),
-    branch: z.string().default('main'),
+    branch: z.string().optional().default('main'),
     allowed: z.boolean().default(true),
     safetyPolicy: safetyPolicySchema.optional(),
   })

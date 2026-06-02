@@ -120,11 +120,11 @@ function outcomeFromRuntimeResult(runtimeResult: AgentRuntimeResult) {
 export async function createRepository(data: {
   name: string;
   localPath: string;
-  branch: string;
+  branch?: string;
   allowed?: boolean;
   safetyPolicy?: any;
 }) {
-  return repo.createRepository(data);
+  return repo.createRepository({ ...data, branch: data.branch || 'main' });
 }
 
 export async function getRepository(id: string) {
@@ -187,6 +187,7 @@ export async function updateTask(
     objective?: string | null;
     acceptanceCriteria?: string | null;
     status?: string;
+    priority?: number;
   }
 ) {
   return repo.updateTask(id, data);
@@ -212,6 +213,171 @@ export async function appendTaskMessage(id: string, prompt: string) {
   const latestTask = await repo.getTask(id);
   if (!latestTask) throw new NotFoundError('Task not found');
   return latestTask;
+}
+
+export type WorkbenchChatIntent =
+  | 'discuss'
+  | 'draft_spec'
+  | 'create_task'
+  | 'queue'
+  | 'run_task'
+  | 'adjust_running'
+  | 'review_followup'
+  | 'learning_capture';
+
+export async function appendWorkbenchMessage(
+  id: string,
+  input: { prompt: string; intent?: WorkbenchChatIntent }
+) {
+  const intent = input.intent || 'discuss';
+  const task = await repo.getTask(id);
+  if (!task) throw new NotFoundError('Task not found');
+  const prompt = input.prompt.trim();
+  if (!prompt) throw new AppError(400, 'EMPTY_PROMPT', 'Prompt must not be empty');
+
+  if (intent === 'run_task') {
+    assertRunnableWorkbenchTask(task);
+    await appendTaskMessage(id, prompt);
+    const run = await startTaskRun(id);
+    return {
+      task: await repo.getTask(id),
+      run,
+      messages: await repo.listTaskMessages(id),
+    };
+  }
+
+  await appendTaskMessage(id, prompt);
+
+  if (intent === 'draft_spec') {
+    const title =
+      task.title === 'New Session' ? prompt.replace(/\s+/g, ' ').slice(0, 60) : task.title;
+    const markdown = [
+      `# ${title}`,
+      '',
+      '## Request',
+      prompt,
+      '',
+      '## Draft',
+      'この内容を Session の仕様ドラフトとして保持しました。必要な objective / acceptance criteria を補って Queue に入れてください。',
+    ].join('\n');
+    await repo.createTaskMessage({
+      taskId: id,
+      role: 'assistant',
+      content: markdown,
+      messageType: 'markdown_document',
+      payloadJson: {
+        intent: 'draft_spec',
+        title,
+        source: 'workbench',
+      },
+    });
+    const updated = await repo.updateTask(id, {
+      title,
+      objective: task.objective || prompt,
+      acceptanceCriteria:
+        task.acceptanceCriteria || 'User reviews this draft, then explicitly queues or runs it.',
+      status: task.status === 'draft' ? 'ready' : task.status,
+    });
+    return { task: updated, run: null, messages: await repo.listTaskMessages(id) };
+  }
+
+  if (intent === 'queue' || intent === 'create_task') {
+    const queued = await queueTask(id);
+    return { task: queued, run: null, messages: await repo.listTaskMessages(id) };
+  }
+
+  if (intent === 'review_followup') {
+    await repo.createTaskMessage({
+      taskId: id,
+      role: 'assistant',
+      content:
+        'レビュー後の追加依頼として記録しました。内容を確認して Queue または Run を明示してください。',
+      messageType: 'text',
+      payloadJson: { intent: 'review_followup', source: 'workbench' },
+    });
+  }
+
+  if (intent === 'learning_capture') {
+    await repo.createTaskMessage({
+      taskId: id,
+      role: 'assistant',
+      content: '学習候補の整理依頼として記録しました。登録は明示承認後に行います。',
+      messageType: 'text',
+      payloadJson: { intent: 'learning_capture', requiresApproval: true, source: 'workbench' },
+    });
+  }
+
+  return { task: await repo.getTask(id), run: null, messages: await repo.listTaskMessages(id) };
+}
+
+function assertRunnableWorkbenchTask(task: Awaited<ReturnType<typeof repo.getTask>>) {
+  if (!task) throw new NotFoundError('Task not found');
+  if (!['queued', 'ready'].includes(task.status)) {
+    throw new AppError(
+      409,
+      'TASK_NOT_READY_TO_RUN',
+      'Workbench runs require a ready or queued task. Discuss or draft first, then queue the task.'
+    );
+  }
+  assertTaskDraftComplete(task);
+}
+
+function assertTaskDraftComplete(task: Awaited<ReturnType<typeof repo.getTask>>) {
+  if (!task) throw new NotFoundError('Task not found');
+  const missing = [
+    !task.title?.trim() || task.title === 'New Session' ? 'title' : null,
+    !task.objective?.trim() ? 'objective' : null,
+    !task.acceptanceCriteria?.trim() ? 'acceptanceCriteria' : null,
+  ].filter(Boolean);
+  if (missing.length > 0) {
+    throw new AppError(422, 'TASK_DRAFT_INCOMPLETE', `Missing draft fields: ${missing.join(', ')}`);
+  }
+}
+
+export async function queueTask(id: string) {
+  const task = await repo.getTask(id);
+  if (!task) throw new NotFoundError('Task not found');
+  assertTaskDraftComplete(task);
+  const queued = await repo.updateTask(id, { status: 'queued' });
+  if (!queued) throw new NotFoundError('Task not found');
+  return queued;
+}
+
+export async function startWorkbenchTaskRun(taskId: string) {
+  const task = await repo.getTask(taskId);
+  assertRunnableWorkbenchTask(task);
+  return startTaskRun(taskId);
+}
+
+export async function createWorkbenchSession(data: {
+  repositoryId: string;
+  title?: string;
+  description?: string | null;
+  objective?: string | null;
+  acceptanceCriteria?: string | null;
+  timeoutSeconds?: number;
+  priority?: number;
+  createdBy?: string | null;
+}) {
+  return createTask({
+    repositoryId: data.repositoryId,
+    title: data.title?.trim() || 'New Session',
+    description: data.description || '',
+    objective: data.objective || '',
+    acceptanceCriteria: data.acceptanceCriteria || '',
+    timeoutSeconds: data.timeoutSeconds,
+    priority: data.priority,
+    createdBy: data.createdBy,
+  });
+}
+
+export async function archiveTask(id: string) {
+  const task = await repo.getTask(id);
+  if (!task) throw new NotFoundError('Task not found');
+  if (['completed', 'cancelled', 'failed'].includes(task.status)) return task;
+  const archived = await repo.updateTask(id, { status: 'cancelled' });
+  if (!archived) throw new NotFoundError('Task not found');
+  return archived;
 }
 
 export async function deleteTask(id: string) {
@@ -1349,6 +1515,76 @@ export async function browseLocalFolders(targetPath?: string) {
       directories: [],
       error: err.message,
     };
+  }
+}
+
+const PROJECT_TREE_EXCLUDED_DIRS = new Set([
+  '.git',
+  'node_modules',
+  'dist',
+  'dist-api',
+  'coverage',
+  '.next',
+  '.turbo',
+  '.cache',
+]);
+const PROJECT_FILE_READ_LIMIT = 256 * 1024;
+
+function resolveProjectPath(rootPath: string, relativePath?: string) {
+  const root = path.resolve(rootPath);
+  const target = path.resolve(root, relativePath || '.');
+  if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
+    throw new AppError(400, 'PATH_OUTSIDE_PROJECT', 'Path must stay inside the project root');
+  }
+  return { root, target };
+}
+
+export async function listProjectFiles(repositoryId: string, relativePath?: string) {
+  const repository = await repo.getRepository(repositoryId);
+  if (!repository) throw new NotFoundError('Repository not found');
+  const { root, target } = resolveProjectPath(repository.localPath, relativePath);
+  const entries = await fs.readdir(target, { withFileTypes: true });
+  const result = await Promise.all(
+    entries
+      .filter((entry) => !entry.name.startsWith('.') || entry.name === '.env.example')
+      .filter((entry) => !(entry.isDirectory() && PROJECT_TREE_EXCLUDED_DIRS.has(entry.name)))
+      .slice(0, 400)
+      .map(async (entry) => {
+        const absolutePath = path.join(target, entry.name);
+        const stat = await fs.stat(absolutePath).catch(() => null);
+        return {
+          name: entry.name,
+          path: path.relative(root, absolutePath),
+          type: entry.isDirectory() ? ('directory' as const) : ('file' as const),
+          size: stat?.isFile() ? stat.size : undefined,
+        };
+      })
+  );
+  return result.sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+export async function readProjectFile(repositoryId: string, relativePath: string) {
+  const repository = await repo.getRepository(repositoryId);
+  if (!repository) throw new NotFoundError('Repository not found');
+  const { root, target } = resolveProjectPath(repository.localPath, relativePath);
+  const stat = await fs.stat(target);
+  if (!stat.isFile()) throw new AppError(400, 'NOT_A_FILE', 'Path is not a file');
+  const handle = await fs.open(target, 'r');
+  try {
+    const readLength = Math.min(stat.size, PROJECT_FILE_READ_LIMIT);
+    const buffer = Buffer.alloc(readLength);
+    await handle.read(buffer, 0, readLength, 0);
+    return {
+      path: path.relative(root, target),
+      content: buffer.toString('utf8'),
+      size: stat.size,
+      truncated: stat.size > PROJECT_FILE_READ_LIMIT,
+    };
+  } finally {
+    await handle.close();
   }
 }
 

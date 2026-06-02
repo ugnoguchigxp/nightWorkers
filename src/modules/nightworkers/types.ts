@@ -50,6 +50,107 @@ export type TaskRun = {
   todos?: TaskRunTodo[];
 };
 
+export type WorkbenchSessionGroup = 'processing' | 'queue' | 'archive';
+
+export type WorkbenchMovableSessionGroup = 'processing' | 'queue' | 'archive';
+
+export type WorkbenchPhase =
+  | 'Analyzing'
+  | 'Context Compiling'
+  | 'Queued'
+  | 'Implementing'
+  | 'Verifying'
+  | 'Reviewing'
+  | 'Improving'
+  | 'Learning'
+  | 'Needs Human'
+  | 'Completed'
+  | 'Archived';
+
+export type WorkbenchProgressBasisKind =
+  | 'task_status'
+  | 'run_status'
+  | 'todo_status'
+  | 'run_event'
+  | 'review_result'
+  | 'context_eval'
+  | 'artifact';
+
+export type WorkbenchProgressBlocker = {
+  kind: 'needs_human' | 'policy' | 'verification' | 'timeout' | 'review' | 'runtime';
+  message: string;
+  evidenceRef?: string;
+};
+
+export type WorkbenchProgressSnapshot = {
+  percent: number;
+  phase: WorkbenchPhase;
+  basis: Array<{
+    kind: WorkbenchProgressBasisKind;
+    refId?: string;
+    label: string;
+  }>;
+  blockers: WorkbenchProgressBlocker[];
+};
+
+export type WorkbenchArtifactKind =
+  | 'spec'
+  | 'implementation_plan'
+  | 'context_pack'
+  | 'diff'
+  | 'source_preview'
+  | 'test_result'
+  | 'review_result'
+  | 'run_ledger'
+  | 'todo_plan'
+  | 'final_report'
+  | 'pr_reference'
+  | 'learning_candidate';
+
+export type ProjectFileEntry = {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  size?: number;
+};
+
+export type ProjectFileContent = {
+  path: string;
+  content: string;
+  size: number;
+  truncated: boolean;
+};
+
+export type WorkbenchArtifactRef = {
+  id: string;
+  taskId: string;
+  runId?: string;
+  kind: WorkbenchArtifactKind;
+  title: string;
+  summary?: string;
+  source:
+    | { type: 'artifact_row'; artifactId: string }
+    | { type: 'run_field'; runId: string; field: string }
+    | { type: 'task_message'; messageId: string }
+    | { type: 'run_event'; eventId: string }
+    | { type: 'review_result'; reviewId: string };
+  createdAt: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type WorkbenchSessionView = {
+  task: Task;
+  group: WorkbenchSessionGroup;
+  queuePosition?: number;
+  phase: WorkbenchPhase;
+  progress: WorkbenchProgressSnapshot;
+  latestRun?: TaskRun;
+  latestEventSummary?: string;
+  reviewNeed?: string;
+  artifactCounts: Partial<Record<WorkbenchArtifactKind, number>>;
+  badges: string[];
+};
+
 export type TaskType =
   | 'code_change'
   | 'test_change'
@@ -90,6 +191,16 @@ export type TaskMessage = {
   metadataJson?: any;
   createdAt: unknown;
 };
+
+export type WorkbenchChatIntent =
+  | 'discuss'
+  | 'draft_spec'
+  | 'create_task'
+  | 'queue'
+  | 'run_task'
+  | 'adjust_running'
+  | 'review_followup'
+  | 'learning_capture';
 
 export type RunDetails = TaskRun & {
   todos: TaskRunTodo[];
@@ -165,7 +276,7 @@ export type LlmSettings = {
 export type CreateProjectInput = {
   name: string;
   localPath: string;
-  branch: string;
+  branch?: string;
 };
 
 export type CreateSessionInput = {

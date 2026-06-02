@@ -3,6 +3,8 @@
 作成日: 2026-06-02  
 対象プロジェクト: NightWorkers / contextStill を主軸にした personal Devin 型開発環境
 
+実装計画: `spec/chat-first-agent-workbench-implementation-plan.md`
+
 ---
 
 ## 1. コンセプト
@@ -425,30 +427,42 @@ Token budget は主役にしない。
 
 ---
 
-## 10. Git / GitHub 連携
+## 10. Folder / Git / GitHub 連携
 
-Git 管理は GitHub 依存でよい。  
-Workbench 内で GitHub を再実装しない。
+Project は Git repository ではなく、ユーザーが選択した **local folder** として定義する。
+
+理由:
+
+- Git repository を作らなくても、仕様検討、Task 化、Queue、agent run、ledger、review、learning は成立する。
+- scratch folder、既存の非 Git workspace、ドキュメントだけの作業、検証用一時フォルダーも Workbench の対象にしたい。
+- Git / GitHub は便利な連携先だが、Project の成立条件にすると personal workbench としての入口が狭くなる。
+
+Workbench 内で GitHub を再実装しない。Git / GitHub は、対象 folder で検出できる場合だけ使う任意の artifact / metadata として扱う。
 
 保持する情報:
 
-- repo URL
-- branch name
-- base branch
-- PR number
-- PR URL
-- checks status
-- mergeable status
-- changed files
-- diff summary
+- local folder path
+- folder display name
+- safety policy
+- Git repository metadata, if detected
+- branch name, if detected
+- base branch, if detected
+- PR number, if linked
+- PR URL, if linked
+- checks status, if linked
+- mergeable status, if linked
+- changed files, if available
+- diff summary, if available
 
-Branch 命名例:
+Git repository として検出できた場合の Branch 命名例:
 
 ```text
 agent/{task-id}-{slug}
 ```
 
-PR は Artifact として右ペインに表示する。
+PR は、GitHub 連携がある Project Folder では Artifact として右ペインに表示する。
+
+Git がない folder では、PR / branch / mergeable status は表示しない。代わりに、file artifact、run ledger、test result、final report、review result を右ペインで確認できるようにする。
 
 ---
 
