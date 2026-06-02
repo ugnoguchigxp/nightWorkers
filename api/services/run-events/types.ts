@@ -90,3 +90,63 @@ export type RunSummaryJsonlLine = {
   diffBytes: number;
   eventCount: number;
 };
+
+export type JsonlDiagnostic = {
+  level: 'warning' | 'error';
+  line: number;
+  code:
+    | 'invalid_json'
+    | 'invalid_schema'
+    | 'missing_header'
+    | 'duplicate_header'
+    | 'duplicate_summary'
+    | 'event_before_header'
+    | 'seq_out_of_order'
+    | 'duplicate_seq'
+    | 'run_id_mismatch'
+    | 'unsupported_version';
+  message: string;
+};
+
+export type ParsedRunJsonl = {
+  header?: RunEventJsonlHeader;
+  events: RunEventJsonlLine[];
+  summary?: RunSummaryJsonlLine;
+  diagnostics: JsonlDiagnostic[];
+};
+
+export type ReplayResult = {
+  sourceRunId: string;
+  eventCount: number;
+  terminal: {
+    status?: string;
+    reason?: string;
+    summary?: string;
+  };
+  evidence: {
+    hasRuntimeStarted: boolean;
+    hasRuntimeFinished: boolean;
+    hasOutcomeDecided: boolean;
+    hasDiff: boolean;
+    hasVerification: boolean;
+    hasPolicyBlock: boolean;
+    hasReviewResult: boolean;
+  };
+  reviewResults: unknown[];
+  policyEvents: RunEventBase[];
+  verificationEvents: RunEventBase[];
+  diagnostics: JsonlDiagnostic[];
+};
+
+export type JsonlImportMode = 'validate_only' | 'replay_only' | 'import_snapshot';
+
+export type JsonlImportResult = {
+  mode: JsonlImportMode;
+  sourceRunId: string;
+  targetRunId?: string;
+  parsedEventCount: number;
+  insertedEventCount: number;
+  skippedDuplicateCount: number;
+  replay: ReplayResult;
+  diagnostics: JsonlDiagnostic[];
+};
