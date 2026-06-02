@@ -207,6 +207,20 @@ function normalizeLegacyDecisionShape(input: unknown): unknown {
   return obj;
 }
 
+function stringifyExpectedEvidenceItem(item: unknown): string {
+  if (typeof item === 'string') return item;
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return JSON.stringify(item);
+
+  const record = item as Record<string, unknown>;
+  const path = typeof record.path === 'string' ? record.path : '';
+  const lines = typeof record.lines === 'string' ? record.lines : '';
+  const focus = typeof record.focus === 'string' ? record.focus : '';
+  const label = [path, lines, focus].filter(Boolean).join(': ');
+  if (label) return label;
+
+  return JSON.stringify(record);
+}
+
 function normalizeDecisionForSchema(input: unknown): unknown {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return input;
   const obj = { ...(input as Record<string, unknown>) };
@@ -236,7 +250,11 @@ function normalizeDecisionForSchema(input: unknown): unknown {
   if (typeof obj.finalResponse !== 'string') obj.finalResponse = '';
   if (typeof obj.instruction !== 'string') obj.instruction = '';
   if (typeof obj.rationale !== 'string') obj.rationale = '';
-  if (!Array.isArray(obj.expectedEvidence)) obj.expectedEvidence = [];
+  if (!Array.isArray(obj.expectedEvidence)) {
+    obj.expectedEvidence = [];
+  } else {
+    obj.expectedEvidence = obj.expectedEvidence.map(stringifyExpectedEvidenceItem);
+  }
 
   // toolCall が配列で返ってきた場合は先頭のみ採用
   if (Array.isArray(obj.toolCall)) {
@@ -673,45 +691,70 @@ export async function callSupervisorLLM(
         : 'stop_without_evidence',
     };
     rawContent = JSON.stringify(
-      userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
-        ? buildFixtureCodingDecision(userPrompt, options.round)
-        : options.round === 1
-          ? {
-              phase: 'plan',
-              instruction: 'Review the requested specification document.',
-              rationale: 'The fixture intentionally plans without a tool call.',
-              finalResponse: '',
-              expectedEvidence: ['spec document contents'],
-              riskLevel: 'medium',
-              toolCall: null,
-            }
-          : options.round === 2
+      userPrompt.includes('E2E_OBJECT_EVIDENCE_FIXTURE')
+        ? {
+            phase: 'plan',
+            instruction: 'Review object evidence fixture.',
+            rationale:
+              'The fixture returns structured expected evidence like Codex sometimes does.',
+            finalResponse: '',
+            expectedEvidence: [
+              {
+                path: 'spec/memory-feedback-long-run-implementation-plan.md',
+                lines: '1-767',
+                focus: 'implementation plan consistency',
+              },
+              {
+                path: 'api/services/context-still/client.ts',
+                focus: 'context compile integration',
+              },
+            ],
+            riskLevel: 'medium',
+            toolCall: null,
+          }
+        : userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
+          ? buildFixtureCodingDecision(userPrompt, options.round)
+          : options.round === 1
             ? {
-                phase: 'stop',
-                instruction: 'Fixture review complete.',
-                rationale: hasRoundObservations(userPrompt)
-                  ? 'The fixture stops after repository evidence has been supplied.'
-                  : 'The fixture intentionally stops before collecting evidence.',
-                finalResponse: hasRoundObservations(userPrompt)
-                  ? 'Fixture review completed after reading repository evidence.'
-                  : 'Fixture stopped without collecting repository evidence.',
-                expectedEvidence: hasRoundObservations(userPrompt)
-                  ? ['spec document contents']
-                  : [],
-                terminalState: 'completed',
-                riskLevel: 'low',
+                phase: 'plan',
+                instruction: 'Review the requested specification document.',
+                rationale: 'The fixture intentionally plans without a tool call.',
+                finalResponse: '',
+                expectedEvidence: ['spec document contents'],
+                riskLevel: 'medium',
                 toolCall: null,
               }
-            : {
-                phase: 'stop',
-                instruction: 'Fixture smoke complete.',
-                rationale: 'Fixture provider returned a smoke response.',
-                finalResponse: 'Fixture smoke complete.',
-                expectedEvidence: [],
-                terminalState: 'completed',
-                riskLevel: 'low',
-                toolCall: null,
-              }
+            : options.round === 2
+              ? {
+                  phase: 'stop',
+                  instruction: 'Fixture review complete.',
+                  rationale: hasRoundObservations(userPrompt)
+                    ? 'The fixture stops after repository evidence has been supplied.'
+                    : 'The fixture intentionally stops before collecting evidence.',
+                  finalResponse: hasRoundObservations(userPrompt)
+                    ? [
+                        'Fixture review completed after reading repository evidence.',
+                        'Finding: spec/jsonl-replay-import-regression-implementation-plan.md:1 has been inspected and the fixture confirms the requested document review path can finish with concrete evidence.',
+                        'Risk: low; the run includes a read_file tool result before completion.',
+                      ].join(' ')
+                    : 'Fixture stopped without collecting repository evidence.',
+                  expectedEvidence: hasRoundObservations(userPrompt)
+                    ? ['spec document contents']
+                    : [],
+                  terminalState: 'completed',
+                  riskLevel: 'low',
+                  toolCall: null,
+                }
+              : {
+                  phase: 'stop',
+                  instruction: 'Fixture smoke complete.',
+                  rationale: 'Fixture provider returned a smoke response.',
+                  finalResponse: 'Fixture smoke complete.',
+                  expectedEvidence: [],
+                  terminalState: 'completed',
+                  riskLevel: 'low',
+                  toolCall: null,
+                }
     );
   } else {
     throw new Error(`Unsupported LLM provider: ${provider}`);

@@ -304,7 +304,12 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       // 接続が生きて見えても応答が詰まるケース向けのフェイルセーフ
       if (elapsed < 20000) return;
 
-      if (Date.now() - lastSubmitRecoveryAtRef.current > 15000) {
+      const hasAcceptedOrActiveRun =
+        Boolean(pendingChatRunIdRef.current || pendingChatRunId) ||
+        isActiveRunStatus(latestRun?.status) ||
+        isActiveTaskStatus(activeSession?.status);
+
+      if (!hasAcceptedOrActiveRun && Date.now() - lastSubmitRecoveryAtRef.current > 15000) {
         lastSubmitRecoveryAtRef.current = Date.now();
         const timeoutMessage: TaskMessage = {
           id: `chat-timeout-${Date.now()}`,
@@ -327,7 +332,14 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       pendingChatQueueRef.current = [];
     }, 2000);
     return () => clearInterval(timer);
-  }, [activeSessionId, isChatSubmitting, queryClient]);
+  }, [
+    activeSession?.status,
+    activeSessionId,
+    isChatSubmitting,
+    latestRun?.status,
+    pendingChatRunId,
+    queryClient,
+  ]);
 
   useEffect(() => {
     const runId = latestRun?.id;

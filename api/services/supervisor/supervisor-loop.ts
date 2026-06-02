@@ -260,6 +260,48 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         }
         continue;
       }
+
+      const qualityFailure = evaluateStopDecisionQuality({
+        decision,
+        evidenceRequired,
+        supervisorToolCalls,
+      });
+      if (qualityFailure) {
+        const missingToolBudget = budget.onMissingToolCall();
+        const detail = {
+          iteration,
+          reason: qualityFailure.reason,
+          phase: decision.phase,
+          instruction: decision.instruction,
+          rationale: decision.rationale,
+          finalResponseLength: decision.finalResponse?.trim().length ?? 0,
+          expectedEvidence: decision.expectedEvidence ?? [],
+          supervisorToolCalls,
+          ...(missingToolBudget.detail || {}),
+        };
+        appendSupervisorTrace('stop_quality_rejected', { runId, ...detail });
+        await repo.createTaskEvent({
+          taskRunId: runId,
+          type: missingToolBudget.allowed ? 'warning' : 'error',
+          message: missingToolBudget.allowed
+            ? `[Supervisor Guard] ${qualityFailure.message}`
+            : '[Budget Stop] supervisor repeatedly returned an incomplete final response.',
+          actor: 'system',
+          eventType: missingToolBudget.allowed ? 'warning' : 'error',
+          payloadJson: detail,
+        });
+        if (!missingToolBudget.allowed) {
+          finalReportText =
+            '証拠取得後の最終回答がレビュー本文として不十分なまま繰り返されたため停止しました。';
+          terminalState = 'needs_human';
+          summary = 'Stopped because final response quality was insufficient';
+          stoppedBy = 'missing_tool_call';
+          riskLevel = 'high';
+          break;
+        }
+        continue;
+      }
+
       finalReportText =
         decision.finalResponse?.trim() || decision.instruction?.trim() || decision.rationale;
       terminalState =
@@ -658,7 +700,52 @@ function buildSupervisorUserPrompt(userInput: string, observations: string[]): s
     ...observations
       .slice(-6)
       .map((observation, index) => `Observation ${index + 1}:\n${observation}`),
+    '',
+    '[Final response requirements]',
+    '- If you stop after reviewing repository evidence, finalResponse must contain the actual review findings.',
+    '- Do not put the review result only in instruction or rationale.',
+    '- Include concrete evidence references such as file paths or line numbers.',
   ].join('\n');
+}
+
+function evaluateStopDecisionQuality(input: {
+  decision: Awaited<ReturnType<typeof callSupervisorLLM>>;
+  evidenceRequired: boolean;
+  supervisorToolCalls: number;
+}): { reason: string; message: string } | null {
+  const { decision, evidenceRequired, supervisorToolCalls } = input;
+  if (!evidenceRequired || supervisorToolCalls === 0) return null;
+
+  const finalResponse = decision.finalResponse?.trim() || '';
+  if (!finalResponse) {
+    return {
+      reason: 'empty_final_response_after_evidence',
+      message:
+        'stop was ignored because finalResponse was empty after repository evidence was collected.',
+    };
+  }
+
+  if (finalResponse.length < 120) {
+    return {
+      reason: 'too_short_final_response_after_evidence',
+      message:
+        'stop was ignored because finalResponse was too short to be a substantive review result.',
+    };
+  }
+
+  if (
+    !/(^|\s|`)[\w./-]+\.(md|ts|tsx|js|jsx|json|jsonl|sql|yaml|yml|toml|lock)(:\d+)?\b/.test(
+      finalResponse
+    )
+  ) {
+    return {
+      reason: 'missing_evidence_reference_after_evidence',
+      message:
+        'stop was ignored because finalResponse did not include concrete repository evidence references.',
+    };
+  }
+
+  return null;
 }
 
 function formatToolObservation(toolName: string, toolResult: any): string {
@@ -673,11 +760,12 @@ function formatToolObservation(toolName: string, toolResult: any): string {
   if (toolName === 'read_file') {
     const payload = toolResult.payload || {};
     const content = typeof payload.content === 'string' ? payload.content : '';
+    const maxChars = 24_000;
     return [
       header,
       `lines=${payload.startLine ?? '?'}-${payload.endLine ?? '?'} total=${payload.totalLines ?? '?'}`,
-      content.slice(0, 6000),
-      content.length > 6000 ? '[truncated]' : '',
+      content.slice(0, maxChars),
+      content.length > maxChars ? '[truncated]' : '',
     ]
       .filter(Boolean)
       .join('\n');

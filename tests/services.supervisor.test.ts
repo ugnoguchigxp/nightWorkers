@@ -207,6 +207,69 @@ describe('Supervisor Control Loop Unit Tests', () => {
     );
   });
 
+  it('does not accept empty finalResponse after evidence is collected for review tasks', async () => {
+    const mockRun = { id: 'run-review-empty-final', taskId: 'task-review-empty-final' };
+    const mockTask = {
+      id: 'task-review-empty-final',
+      objective: 'Review a plan',
+      acceptanceCriteria: 'Findings include evidence',
+    };
+
+    vi.mocked(repo.getTaskRun).mockResolvedValue(mockRun as any);
+    vi.mocked(repo.getTask).mockResolvedValue(mockTask as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        phase: 'plan',
+        instruction: 'Review the requested file',
+        rationale: 'Need to inspect the document',
+        expectedEvidence: ['spec file contents'],
+        riskLevel: 'medium',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'act',
+        instruction: 'Check worktree before review',
+        rationale: 'Need repository evidence',
+        expectedEvidence: [],
+        riskLevel: 'low',
+        toolCall: { name: 'git_status', arguments: {} },
+      });
+
+    for (let i = 0; i < 3; i += 1) {
+      vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
+        phase: 'stop',
+        instruction: '実装前レビューとして、ドキュメントの実行可能性を確認してください。',
+        rationale: 'Review findings are incomplete.',
+        finalResponse: '',
+        expectedEvidence: ['spec/example.md:1'],
+        riskLevel: 'high',
+        terminalState: 'completed',
+        toolCall: null,
+      });
+    }
+
+    const result = await runSupervisorLoop({
+      runId: 'run-review-empty-final',
+      repoRoot: __dirname,
+      prompt: 'spec/example.md のドキュメントレビューをしてください',
+      timeoutSeconds: 60,
+    });
+
+    expect(result.terminalState).toBe('needs_human');
+    expect(result.stoppedBy).toBe('missing_tool_call');
+    expect(result.finalReport).toContain('最終回答がレビュー本文として不十分');
+    expect(repo.createTaskEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payloadJson: expect.objectContaining({
+          reason: 'empty_final_response_after_evidence',
+          supervisorToolCalls: 1,
+        }),
+      })
+    );
+  });
+
   it('stops with policy when a command is blocked before execution', async () => {
     const mockRun = { id: 'run-policy', taskId: 'task-policy' };
     const mockTask = {
