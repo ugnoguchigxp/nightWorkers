@@ -97,6 +97,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
           taskMessages={workspace.taskMessages}
           latestRunEvents={workspace.latestRunEvents}
           isAgentWorking={workspace.isAgentWorking}
+          isAgentThinking={workspace.isAgentThinking}
           realtimeStatus={workspace.realtimeStatus}
           model={currentProviderModel || model}
           modelOptions={workspace.providerModelOptions}

@@ -19,6 +19,7 @@ type ThreadWorkspaceProps = {
   taskMessages: TaskMessage[];
   latestRunEvents: TaskEvent[];
   isAgentWorking: boolean;
+  isAgentThinking: boolean;
   realtimeStatus: 'initializing' | 'connecting' | 'connected' | 'disconnected';
   model: string;
   thinkingDepth: ThinkingDepth;
@@ -57,7 +58,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
             latestRun={props.latestRun}
             taskMessages={props.taskMessages}
             latestRunEvents={props.latestRunEvents}
-            isAgentWorking={props.isAgentWorking}
+            isAgentWorking={props.isAgentThinking}
             onReviewRun={props.onReviewRun}
           />
         ) : (

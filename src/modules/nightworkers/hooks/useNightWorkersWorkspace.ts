@@ -36,6 +36,7 @@ export type NightWorkersWorkspaceState = {
   isProjectsLoading: boolean;
   isSessionsLoading: boolean;
   isAgentWorking: boolean;
+  isAgentThinking: boolean;
   expandedProjects: Record<string, boolean>;
   setExpandedProjects: Dispatch<SetStateAction<Record<string, boolean>>>;
   setActiveSessionId: (id: string | null) => void;
@@ -77,6 +78,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('initializing');
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
+  const [pendingChatRunId, setPendingChatRunId] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const lastSubmitRef = useRef<{ taskId: string; prompt: string; at: number } | null>(null);
   const pendingChatQueueRef = useRef<Array<{ taskId: string; prompt: string }>>([]);
@@ -274,6 +276,11 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   // 入力ロックは「送信待ち」の間だけに限定する。
   // run status に依存すると、サーバーダウン時に running が残って永久ロックになる。
   const isAgentWorking = isChatSubmitting;
+  const isAgentThinking =
+    isChatSubmitting ||
+    Boolean(pendingChatRunId) ||
+    isActiveRunStatus(latestRun?.status) ||
+    isActiveTaskStatus(activeSession?.status);
   const latestRunEvents =
     realtimeEvents.length > 0 ? realtimeEvents : latestRunDetails?.events || [];
 
@@ -283,6 +290,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     setIsChatSubmitting(false);
     chatSubmitStartedAtRef.current = null;
     pendingChatRunIdRef.current = null;
+    setPendingChatRunId(null);
     pendingChatQueueRef.current = [];
   }, [realtimeStatus]);
 
@@ -315,6 +323,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       setIsChatSubmitting(false);
       chatSubmitStartedAtRef.current = null;
       pendingChatRunIdRef.current = null;
+      setPendingChatRunId(null);
       pendingChatQueueRef.current = [];
     }, 2000);
     return () => clearInterval(timer);
@@ -431,15 +440,18 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
               setIsChatSubmitting(false);
               chatSubmitStartedAtRef.current = null;
               pendingChatRunIdRef.current = null;
+              setPendingChatRunId(null);
             }
           }
           if (msg.type === 'chat_submit_enqueued') {
             pendingChatRunIdRef.current = msg.runId || null;
+            setPendingChatRunId(msg.runId || null);
           }
           if (msg.type === 'error') {
             setIsChatSubmitting(false);
             chatSubmitStartedAtRef.current = null;
             pendingChatRunIdRef.current = null;
+            setPendingChatRunId(null);
             const errorMessage: TaskMessage = {
               id: `chat-error-${Date.now()}`,
               taskId: activeSessionId,
@@ -552,6 +564,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     isProjectsLoading,
     isSessionsLoading,
     isAgentWorking,
+    isAgentThinking,
     expandedProjects,
     setExpandedProjects,
     setActiveSessionId,
@@ -605,6 +618,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       setIsChatSubmitting(true);
       chatSubmitStartedAtRef.current = Date.now();
       pendingChatRunIdRef.current = null;
+      setPendingChatRunId(null);
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         pendingChatQueueRef.current.push({ taskId: sessionId, prompt: content });
@@ -702,4 +716,12 @@ function toMs(value: unknown): number {
   if (!value) return Number.MAX_SAFE_INTEGER;
   const n = Date.parse(String(value));
   return Number.isNaN(n) ? Number.MAX_SAFE_INTEGER : n;
+}
+
+function isActiveRunStatus(status: string | undefined): boolean {
+  return status === 'running' || status === 'context_compiling' || status === 'compiling_context';
+}
+
+function isActiveTaskStatus(status: string | undefined): boolean {
+  return status === 'running' || status === 'context_compiling' || status === 'compiling_context';
 }
