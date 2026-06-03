@@ -45,6 +45,25 @@ describe('Supervisor prompt structure', () => {
     }
   });
 
+  it('lists external MCP tools through the internal bridge contract', () => {
+    const prompt = buildRound2SystemPrompt('research', {
+      externalTools: [
+        {
+          namespacedName: 'mcp__docs__lookup',
+          serverId: 'server-1',
+          toolName: 'lookup',
+          description: 'Look up documentation.',
+        },
+      ],
+    });
+
+    expect(prompt).toContain('[External MCP tools]');
+    expect(prompt).toContain('mcp__docs__lookup');
+    expect(prompt).toContain('toolCall.name="mcp_call_tool"');
+    expect(prompt).toContain('arguments.serverId="server-1"');
+    expect(prompt).toContain('arguments.toolName="lookup"');
+  });
+
   it('forces evidence review to use tools before returning a UI review result', () => {
     const prompt = buildRound2SystemPrompt('evidence_review');
 

@@ -23,6 +23,10 @@ const runEventTypeSchema = z.enum([
   'tool.call_progress',
   'tool.call_finished',
   'tool.policy_blocked',
+  'hook.started',
+  'hook.finished',
+  'hook.blocked',
+  'hook.failed',
   'verification.started',
   'verification.finished',
   'git.status_collected',
@@ -192,6 +196,69 @@ export const createTaskSchema = z
     createdBy: z.string().optional(),
   })
   .openapi('CreateTask');
+
+export const blueprintPreviewDesignSettingsSchema = z
+  .object({
+    theme: z.enum([
+      'light',
+      'dark',
+      'eclipse',
+      'macosclassic',
+      'campfire',
+      'mint',
+      'bloom',
+      'mocha',
+    ]),
+    density: z.enum(['compact', 'default', 'comfortable']),
+    shape: z.enum(['sharp', 'default', 'rounded', 'pill']),
+    shadow: z.enum(['none', 'subtle', 'medium', 'strong']),
+    shadowDirection: z.enum([
+      '0deg',
+      '45deg',
+      '90deg',
+      '135deg',
+      '180deg',
+      '225deg',
+      '270deg',
+      '315deg',
+    ]),
+    font: z.enum(['system', 'geist', 'serif', 'mono']),
+    contrast: z.enum(['standard', 'high']),
+    motion: z.enum(['reduced', 'standard']),
+    componentVariants: z.object({
+      button: z.enum(['solid', 'soft', 'outline']),
+      card: z.enum(['plain', 'outlined', 'elevated']),
+      table: z.enum(['plain', 'striped', 'dense-grid']),
+      input: z.enum(['outline', 'filled', 'underline']),
+    }),
+  })
+  .openapi('BlueprintPreviewDesignSettings');
+
+export const blueprintSessionDesignSettingsSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    settings: blueprintPreviewDesignSettingsSchema.nullable(),
+    createdAt: z.any().optional(),
+    updatedAt: z.any().optional(),
+  })
+  .openapi('BlueprintSessionDesignSettings');
+
+export const blueprintAdoptionRequestSchema = z
+  .object({
+    messageId: z.string().uuid(),
+    adopted: z.boolean(),
+  })
+  .openapi('BlueprintAdoptionRequest');
+
+export const blueprintAdoptionSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    messageId: z.string().uuid(),
+    adopted: z.boolean(),
+    createdAt: z.any().optional(),
+    updatedAt: z.any().optional(),
+  })
+  .openapi('BlueprintAdoption');
 
 export const taskRunSchema = z
   .object({
@@ -408,6 +475,7 @@ const reviewOutcomeReasonSchema = z.enum([
   'budget_exceeded',
   'tool_failure_limit',
   'policy_violation',
+  'hook_blocked',
   'verification_failed',
   'runner_crashed',
   'human_review',

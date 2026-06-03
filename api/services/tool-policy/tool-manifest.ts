@@ -80,6 +80,12 @@ export const TOOL_MANIFEST: Record<WorkerToolName, ToolManifestEntry> = {
     commandArg: 'command',
     cwdArg: 'cwd',
   },
+  mcp_call_tool: {
+    name: 'mcp_call_tool',
+    mutatesWorkspace: false,
+    requiresReadBeforeEdit: false,
+    pathArgs: [],
+  },
   git_status: {
     name: 'git_status',
     mutatesWorkspace: false,

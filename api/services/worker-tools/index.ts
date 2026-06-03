@@ -4,6 +4,7 @@ export * from './fetch-content';
 export * from './find-file';
 export * from './git';
 export * from './list-dir';
+export * from './mcp-call-tool';
 export * from './path-policy';
 export * from './read-file';
 export * from './replace-content';

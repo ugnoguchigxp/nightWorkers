@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  blueprintPreviewDesignOptions,
   createBlueprintDesignReference,
   createBlueprintPreviewDesignSettings,
   designReferenceSummary,
@@ -12,6 +13,7 @@ describe('Blueprint Preview design settings', () => {
       density: 'compact',
       radius: 'rounded',
       shadow: 'medium',
+      shadowDirection: '90deg',
       fontScale: 'default',
       contrast: 'high',
       motion: 'reduced',
@@ -22,6 +24,7 @@ describe('Blueprint Preview design settings', () => {
       density: 'compact',
       shape: 'rounded',
       shadow: 'medium',
+      shadowDirection: '90deg',
       font: 'geist',
       contrast: 'high',
       motion: 'reduced',
@@ -34,6 +37,7 @@ describe('Blueprint Preview design settings', () => {
       density: 'loose',
       radius: 'blob',
       shadow: 'glow',
+      shadowDirection: '13deg',
       fontScale: 'huge',
       contrast: 'extreme',
       motion: 'busy',
@@ -44,6 +48,7 @@ describe('Blueprint Preview design settings', () => {
       density: 'compact',
       shape: 'default',
       shadow: 'subtle',
+      shadowDirection: '0deg',
       font: 'geist',
       contrast: 'standard',
       motion: 'standard',
@@ -59,12 +64,37 @@ describe('Blueprint Preview design settings', () => {
     expect(second.componentVariants.button).toBe('solid');
   });
 
+  it('exposes current governed preview themes', () => {
+    expect([...blueprintPreviewDesignOptions.theme]).toEqual([
+      'light',
+      'dark',
+      'eclipse',
+      'macosclassic',
+      'campfire',
+      'mint',
+      'bloom',
+      'mocha',
+    ]);
+  });
+
+  it('maps legacy Fire to Camp Fire and removes Tokyo Night from selection', () => {
+    expect(createBlueprintPreviewDesignSettings({ theme: 'fire' }).theme).toBe('campfire');
+    expect(createBlueprintPreviewDesignSettings({ theme: 'tokyonight' }).theme).toBe('light');
+  });
+
+  it('accepts new light preview themes', () => {
+    expect(createBlueprintPreviewDesignSettings({ theme: 'mint' }).theme).toBe('mint');
+    expect(createBlueprintPreviewDesignSettings({ theme: 'bloom' }).theme).toBe('bloom');
+    expect(createBlueprintPreviewDesignSettings({ theme: 'mocha' }).theme).toBe('mocha');
+  });
+
   it('accepts shape and component variants from existing design references', () => {
     const settings = createBlueprintPreviewDesignSettings({
       theme: 'dark',
       density: 'default',
       shape: 'pill',
       shadow: 'none',
+      shadowDirection: '225deg',
       fontScale: 'mono',
       contrast: 'standard',
       motion: 'standard',
@@ -81,6 +111,7 @@ describe('Blueprint Preview design settings', () => {
       density: 'default',
       shape: 'pill',
       shadow: 'none',
+      shadowDirection: '225deg',
       font: 'mono',
       componentVariants: {
         button: 'outline',
@@ -97,6 +128,7 @@ describe('Blueprint Preview design settings', () => {
       density: 'comfortable',
       radius: 'pill',
       shadow: 'strong',
+      shadowDirection: '315deg',
       fontScale: 'large',
       contrast: 'standard',
       motion: 'standard',
@@ -123,12 +155,14 @@ describe('Blueprint Preview design settings', () => {
         density: 'comfortable',
         radius: 'pill',
         shadow: 'strong',
+        shadowDirection: '315deg',
         font: 'geist',
         contrast: 'standard',
         motion: 'standard',
       },
     });
     expect(reference.notes.join(' ')).toContain('specification-review mock');
+    expect(designReferenceSummary(reference.settings)).toContain('Shadow direction: 315deg');
     expect(designReferenceSummary(reference.settings)).toContain(
       'Component variants: button=soft, card=elevated, table=dense-grid, input=filled'
     );

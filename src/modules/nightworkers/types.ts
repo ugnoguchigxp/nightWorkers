@@ -207,7 +207,8 @@ export type WorkbenchChatIntent =
   | 'adjust_running'
   | 'review_followup'
   | 'learning_capture'
-  | 'design_component';
+  | 'design_component'
+  | 'design_blueprint_data';
 
 export type RunDetails = TaskRun & {
   todos: TaskRunTodo[];
@@ -281,6 +282,116 @@ export type LlmSettings = {
   SESSION_QUEUE_MAX_CONCURRENCY: number;
 };
 
+export type McpServerTransport = 'stdio' | 'sse' | 'streamable_http';
+
+export type McpServerConfig = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  transport: McpServerTransport;
+  command?: string;
+  args: string[];
+  url?: string;
+  cwd?: string;
+  env: Record<string, string>;
+  toolPrefix: string;
+  createdAt: string;
+  updatedAt: string;
+  lastStatus?: {
+    ok: boolean;
+    checkedAt: string;
+    message: string;
+    toolCount?: number;
+  };
+};
+
+export type McpServerInput = {
+  name: string;
+  enabled: boolean;
+  transport: McpServerTransport;
+  command?: string;
+  args?: string[];
+  url?: string;
+  cwd?: string;
+  env?: Record<string, string>;
+  toolPrefix: string;
+};
+
+export type McpServerTestResult = {
+  ok: boolean;
+  message: string;
+  toolCount?: number;
+};
+
+export type McpServerImportResult = {
+  servers: McpServerConfig[];
+  results: Array<{
+    serverId: string;
+    ok: boolean;
+    message: string;
+    toolCount?: number;
+  }>;
+};
+
+export type AgentHookEvent =
+  | 'SessionStart'
+  | 'UserPromptSubmit'
+  | 'PreToolUse'
+  | 'PostToolUse'
+  | 'PostToolUseFailure'
+  | 'Stop'
+  | 'SessionEnd';
+
+export type AgentHookHandler =
+  | {
+      type: 'command';
+      command: string;
+      args?: string[];
+      cwd?: string;
+      env?: Record<string, string>;
+      timeoutSeconds?: number;
+      failClosed?: boolean;
+    }
+  | {
+      type: 'http';
+      url: string;
+      headers?: Record<string, string>;
+      allowedEnvVars?: string[];
+      timeoutSeconds?: number;
+      failClosed?: boolean;
+    };
+
+export type AgentHookConfig = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  event: AgentHookEvent;
+  matcher?: string;
+  handler: AgentHookHandler;
+  createdAt: string;
+  updatedAt: string;
+  lastRun?: {
+    ok: boolean;
+    checkedAt: string;
+    message: string;
+    durationMs?: number;
+  };
+};
+
+export type AgentHookInput = {
+  name: string;
+  enabled: boolean;
+  event: AgentHookEvent;
+  matcher?: string;
+  handler: AgentHookHandler;
+};
+
+export type AgentHookTestResult = {
+  ok: boolean;
+  message: string;
+  durationMs?: number;
+};
+
 export type CreateProjectInput = {
   name: string;
   localPath: string;
@@ -337,6 +448,7 @@ export type ReviewOutcome = {
     | 'budget_exceeded'
     | 'tool_failure_limit'
     | 'policy_violation'
+    | 'hook_blocked'
     | 'verification_failed'
     | 'runner_crashed'
     | 'human_review';

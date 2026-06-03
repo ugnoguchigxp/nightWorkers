@@ -3,6 +3,7 @@ import os from 'node:os';
 import type { CodexOptions, Thread, ThreadEvent, Usage } from '@openai/codex-sdk';
 import { z } from 'zod';
 import { appendLlmTrace, appendSupervisorTrace, logger } from '../../lib/logger';
+import { listMcpServers } from '../mcp/mcp-settings';
 import { buildCodexTurnPrompt } from './prompt';
 import {
   defaultSupervisorRoutingHypothesis,
@@ -26,6 +27,7 @@ const supervisorToolNames = [
   'replace_content',
   'run_command',
   'run_verification',
+  'mcp_call_tool',
   'git_status',
   'git_diff',
 ] as const;
@@ -389,9 +391,33 @@ function normalizeDecisionForSchema(input: unknown): unknown {
       const mapped = mappedToolName[toolName];
       if (mapped) toolCall.name = mapped;
 
-      // 外部MCP名や namespaced 形式は許可対象外として無効化する
       const normalizedName = typeof toolCall.name === 'string' ? toolCall.name : toolName;
-      if (isTemporarilyBlockedExternalToolName(normalizedName)) {
+      if (normalizedName.startsWith('mcp__')) {
+        const match = /^mcp__([a-z][a-z0-9_]*)__([^.\s]+)$/.exec(normalizedName);
+        const server = match
+          ? listMcpServers().find((candidate) => candidate.toolPrefix === match[1])
+          : null;
+        if (server && match) {
+          toolCall.name = 'mcp_call_tool';
+          toolCall.arguments = {
+            serverId: server.id,
+            toolName: match[2],
+            arguments:
+              toolCall.arguments &&
+              typeof toolCall.arguments === 'object' &&
+              !Array.isArray(toolCall.arguments)
+                ? toolCall.arguments
+                : {},
+          };
+        } else {
+          obj.toolCall = null;
+          return obj;
+        }
+      }
+
+      // 未対応の外部 namespace / dotted 形式は許可対象外として無効化する
+      const nextName = typeof toolCall.name === 'string' ? toolCall.name : normalizedName;
+      if (isTemporarilyBlockedExternalToolName(nextName)) {
         obj.toolCall = null;
         return obj;
       }
@@ -1095,63 +1121,81 @@ export async function callSupervisorLLM(
                 riskLevel: 'medium',
                 toolCall: null,
               }
-            : userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
-              ? buildFixtureCodingDecision(userPrompt, options.round)
-              : options.round === 1
-                ? {
-                    phase: 'plan',
-                    workflow: 'evidence_review',
-                    instruction: 'Review the requested specification document.',
-                    rationale: 'The fixture intentionally plans without a tool call.',
-                    finalResponse: '',
-                    expectedEvidence: ['spec document contents'],
-                    riskLevel: 'medium',
-                    toolCall: null,
-                  }
-                : options.round === 2
-                  ? hasRoundObservations(userPrompt)
-                    ? {
+            : userPrompt.includes('E2E_MCP_NAMESPACED_TOOL_FIXTURE')
+              ? {
+                  phase: 'act',
+                  workflow: 'research',
+                  instruction: 'Call the configured MCP fixture tool.',
+                  rationale: 'The fixture returns a namespaced MCP tool name for normalization.',
+                  finalResponse: '',
+                  expectedEvidence: ['MCP tool result'],
+                  riskLevel: 'low',
+                  toolCall: {
+                    name: 'mcp__fixture_server__lookup',
+                    arguments: {
+                      query: 'nightworkers',
+                    },
+                  },
+                }
+              : userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
+                ? buildFixtureCodingDecision(userPrompt, options.round)
+                : options.round === 1
+                  ? {
+                      phase: 'plan',
+                      workflow: 'evidence_review',
+                      instruction: 'Review the requested specification document.',
+                      rationale: 'The fixture intentionally plans without a tool call.',
+                      finalResponse: '',
+                      expectedEvidence: ['spec document contents'],
+                      riskLevel: 'medium',
+                      toolCall: null,
+                    }
+                  : options.round === 2
+                    ? hasRoundObservations(userPrompt)
+                      ? {
+                          phase: 'stop',
+                          workflow: 'evidence_review',
+                          instruction: 'Fixture review complete.',
+                          rationale:
+                            'The fixture stops after repository evidence has been supplied.',
+                          finalResponse: [
+                            'Fixture review completed after reading repository evidence.',
+                            'Finding: spec/jsonl-replay-import-regression-implementation-plan.md:1 has been inspected and the fixture confirms the requested document review path can finish with concrete evidence.',
+                            'Risk: low; the run includes a read_file tool result before completion.',
+                          ].join(' '),
+                          expectedEvidence: ['spec document contents'],
+                          terminalState: 'completed',
+                          riskLevel: 'low',
+                          toolCall: null,
+                        }
+                      : {
+                          phase: 'act',
+                          workflow: 'evidence_review',
+                          instruction: 'Read the fixture specification document before review.',
+                          rationale:
+                            'The evidence_review prompt requires repository evidence before stopping.',
+                          finalResponse: '',
+                          expectedEvidence: ['spec document contents'],
+                          riskLevel: 'medium',
+                          toolCall: {
+                            name: 'read_file',
+                            arguments: {
+                              filePath:
+                                'spec/jsonl-replay-import-regression-implementation-plan.md',
+                            },
+                          },
+                        }
+                    : {
                         phase: 'stop',
-                        workflow: 'evidence_review',
-                        instruction: 'Fixture review complete.',
-                        rationale: 'The fixture stops after repository evidence has been supplied.',
-                        finalResponse: [
-                          'Fixture review completed after reading repository evidence.',
-                          'Finding: spec/jsonl-replay-import-regression-implementation-plan.md:1 has been inspected and the fixture confirms the requested document review path can finish with concrete evidence.',
-                          'Risk: low; the run includes a read_file tool result before completion.',
-                        ].join(' '),
-                        expectedEvidence: ['spec document contents'],
+                        workflow: 'general',
+                        instruction: 'Fixture smoke complete.',
+                        rationale: 'Fixture provider returned a smoke response.',
+                        finalResponse: 'Fixture smoke complete.',
+                        expectedEvidence: [],
                         terminalState: 'completed',
                         riskLevel: 'low',
                         toolCall: null,
                       }
-                    : {
-                        phase: 'act',
-                        workflow: 'evidence_review',
-                        instruction: 'Read the fixture specification document before review.',
-                        rationale:
-                          'The evidence_review prompt requires repository evidence before stopping.',
-                        finalResponse: '',
-                        expectedEvidence: ['spec document contents'],
-                        riskLevel: 'medium',
-                        toolCall: {
-                          name: 'read_file',
-                          arguments: {
-                            filePath: 'spec/jsonl-replay-import-regression-implementation-plan.md',
-                          },
-                        },
-                      }
-                  : {
-                      phase: 'stop',
-                      workflow: 'general',
-                      instruction: 'Fixture smoke complete.',
-                      rationale: 'Fixture provider returned a smoke response.',
-                      finalResponse: 'Fixture smoke complete.',
-                      expectedEvidence: [],
-                      terminalState: 'completed',
-                      riskLevel: 'low',
-                      toolCall: null,
-                    }
       );
     } else {
       throw new Error(`Unsupported LLM provider: ${provider}`);

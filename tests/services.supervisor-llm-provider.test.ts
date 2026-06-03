@@ -1,4 +1,8 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMcpServer } from '../api/services/mcp/mcp-settings';
 import {
   buildCodexSupervisorSdkOptions,
   buildCodexSupervisorThreadOptions,
@@ -9,13 +13,23 @@ import { buildRound2SystemPrompt } from '../api/services/supervisor/prompt';
 describe('Supervisor LLM provider evidence fallback', () => {
   const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
   const originalNodeEnv = process.env.NODE_ENV;
+  const originalMcpSettingsPath = process.env.NIGHTWORKERS_MCP_SETTINGS_PATH;
+  let tempDir: string;
 
   beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-supervisor-mcp-'));
+    process.env.NIGHTWORKERS_MCP_SETTINGS_PATH = path.join(tempDir, 'mcp-servers.json');
     process.env.ACTIVE_LLM_PROVIDER = 'fixture';
     process.env.NODE_ENV = 'test';
   });
 
   afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    if (originalMcpSettingsPath === undefined) {
+      delete process.env.NIGHTWORKERS_MCP_SETTINGS_PATH;
+    } else {
+      process.env.NIGHTWORKERS_MCP_SETTINGS_PATH = originalMcpSettingsPath;
+    }
     if (originalProvider === undefined) {
       delete process.env.ACTIVE_LLM_PROVIDER;
     } else {
@@ -99,6 +113,34 @@ describe('Supervisor LLM provider evidence fallback', () => {
       'spec/memory-feedback-long-run-implementation-plan.md: 1-767: implementation plan consistency',
       'api/services/context-still/client.ts: context compile integration',
     ]);
+  });
+
+  it('normalizes namespaced MCP tool calls into the internal bridge tool', async () => {
+    const server = createMcpServer({
+      name: 'Fixture MCP',
+      enabled: true,
+      transport: 'stdio',
+      command: 'node',
+      args: ['fixture-server.js'],
+      toolPrefix: 'fixture_server',
+    });
+
+    const decision = await callSupervisorLLM(
+      buildRound2SystemPrompt(),
+      'E2E_MCP_NAMESPACED_TOOL_FIXTURE',
+      { round: 2 }
+    );
+
+    expect(decision.toolCall).toEqual({
+      name: 'mcp_call_tool',
+      arguments: {
+        serverId: server.id,
+        toolName: 'lookup',
+        arguments: {
+          query: 'nightworkers',
+        },
+      },
+    });
   });
 
   it('emits supervisor LLM debug lifecycle events through the optional sink', async () => {

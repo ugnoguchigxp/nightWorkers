@@ -13,6 +13,7 @@ export type RunOutcomeReason =
   | 'budget_exceeded'
   | 'tool_failure_limit'
   | 'policy_violation'
+  | 'hook_blocked'
   | 'verification_failed'
   | 'runner_crashed'
   | 'human_review';
@@ -45,7 +46,14 @@ export type SupervisorLoopResult = {
   finalReport: string;
   terminalState: 'completed' | 'needs_review' | 'needs_human' | 'failed' | 'timed_out' | 'blocked';
   summary: string;
-  stoppedBy: 'decision' | 'budget' | 'tool_failure' | 'llm_error' | 'missing_tool_call' | 'policy';
+  stoppedBy:
+    | 'decision'
+    | 'budget'
+    | 'tool_failure'
+    | 'llm_error'
+    | 'missing_tool_call'
+    | 'policy'
+    | 'hook';
   riskLevel: 'low' | 'medium' | 'high';
 };
 

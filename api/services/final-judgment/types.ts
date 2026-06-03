@@ -37,6 +37,7 @@ export type SupervisorResultLike = {
     | 'llm_error'
     | 'missing_tool_call'
     | 'policy'
+    | 'hook'
     | 'cancelled';
   riskLevel?: 'low' | 'medium' | 'high';
 };

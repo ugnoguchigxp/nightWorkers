@@ -13,6 +13,7 @@ export type WorkerToolName =
   | 'replace_content'
   | 'run_command'
   | 'run_verification'
+  | 'mcp_call_tool'
   | 'git_status'
   | 'git_diff';
 
@@ -34,7 +35,8 @@ export type ToolPolicyViolationCode =
   | 'READ_BEFORE_EDIT_REQUIRED'
   | 'TOOL_NOT_ALLOWED'
   | 'INVALID_TOOL_ARGS'
-  | 'POLICY_VIOLATION';
+  | 'POLICY_VIOLATION'
+  | 'HOOK_BLOCKED';
 
 export type ToolPolicyDecision =
   | {

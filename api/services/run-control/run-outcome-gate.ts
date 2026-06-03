@@ -34,6 +34,14 @@ export function decideRunOutcome(input: OutcomeGateInput): OutcomeGateResult {
     };
   }
 
+  if (supervisor.stoppedBy === 'hook') {
+    return {
+      status: supervisor.terminalState === 'needs_human' ? 'needs_human' : 'blocked',
+      reason: 'hook_blocked',
+      summary: supervisor.summary || 'Stopped by agent hook.',
+    };
+  }
+
   if (budgetStopped) {
     if (supervisor.terminalState === 'timed_out') {
       return { status: 'timed_out', reason: 'budget_exceeded', summary: supervisor.summary };

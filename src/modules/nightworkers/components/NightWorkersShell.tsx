@@ -286,9 +286,15 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
             <Separator className="group relative w-1 shrink-0 bg-slate-800 outline-none transition-colors hover:bg-slate-600 focus-visible:bg-slate-500">
               <span className="-translate-x-1/2 absolute top-1/2 left-1/2 h-12 w-1 rounded-full bg-slate-600/70 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
             </Separator>
-            <Panel id="nightworkers-artifact" defaultSize="42%" minSize="32%" maxSize="55%">
+            <Panel
+              id="nightworkers-artifact"
+              defaultSize={isBlueprintArtifactOpen ? '100%' : '42%'}
+              minSize="32%"
+              maxSize="55%"
+            >
               <ArtifactPane
                 activeProject={workspace.activeProject}
+                activeSessionId={workspace.activeSessionId}
                 selectedArtifact={selectedArtifact}
                 taskMessages={workspace.taskMessages}
                 latestRun={workspace.latestRun}
@@ -310,6 +316,28 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                     (artifact) => artifact.kind === 'diff'
                   );
                   if (diffArtifact) setSelectedArtifact(diffArtifact);
+                }}
+                isWorkbenchMessageSubmitting={workspace.isChatSubmitting}
+                onSubmitWorkbenchMessage={async (prompt, intent) => {
+                  if (workspace.activeSession) {
+                    const result = await workspace.sendWorkbenchMessage(
+                      workspace.activeSession.id,
+                      prompt,
+                      intent
+                    );
+                    const latestBlueprintMessage = [...(result?.messages || [])]
+                      .reverse()
+                      .find(
+                        (message) =>
+                          message.messageType === 'markdown_document' &&
+                          message.metadataJson?.appBlueprint
+                      );
+                    if (latestBlueprintMessage) {
+                      setSelectedArtifact(buildBlueprintArtifactRef(latestBlueprintMessage));
+                    }
+                    return;
+                  }
+                  await submitPrompt(prompt, intent);
                 }}
               />
             </Panel>

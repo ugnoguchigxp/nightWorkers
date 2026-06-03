@@ -58,6 +58,20 @@ describe('RunControl', () => {
       expect(outcome.reason).toBe('policy_violation');
     });
 
+    it('maps hook-stopped supervisor result to hook_blocked', () => {
+      const outcome = decideRunOutcome({
+        supervisor: {
+          finalReport: 'Blocked',
+          terminalState: 'blocked',
+          summary: 'Stopped by agent hook',
+          stoppedBy: 'hook',
+          riskLevel: 'medium',
+        },
+      });
+      expect(outcome.status).toBe('blocked');
+      expect(outcome.reason).toBe('hook_blocked');
+    });
+
     it('maps budget-stopped supervisor result to budget_exceeded', () => {
       const outcome = decideRunOutcome({
         supervisor: {

@@ -5,11 +5,17 @@ import { AppError, NotFoundError } from '../../lib/errors';
 import { createLedgerSink } from '../../services/agent-runtime/ledger-sink';
 import { resolveAgentRuntime } from '../../services/agent-runtime/registry';
 import type { AgentRuntimeResult } from '../../services/agent-runtime/types';
+import {
+  BlueprintDataDesignGenerationError,
+  generateBlueprintDataDesignDraft,
+  parseBlueprintDbDesignRequestPrompt,
+} from '../../services/blueprints/data-design';
 import { renderBlueprintMarkdown } from '../../services/blueprints/draft';
 import {
   BlueprintDraftGenerationError,
   generatePlanModeBlueprintDraft,
 } from '../../services/blueprints/llm-draft';
+import { validateAppBlueprint } from '../../services/blueprints/validation';
 import { compileContext, evaluateContext } from '../../services/context-still';
 import { buildFinalJudgment } from '../../services/final-judgment/build-final-judgment';
 import { renderFinalMessage } from '../../services/final-judgment/render-final-message';
@@ -233,6 +239,136 @@ export async function updateTask(
   return updated;
 }
 
+export async function getBlueprintDesignSettings(taskId: string) {
+  const task = await repo.getTask(taskId);
+  if (!task) throw new NotFoundError('Task not found');
+  const row = await repo.getBlueprintDesignSettings(taskId);
+  return {
+    sessionId: taskId,
+    settings: row?.settingsJson ?? null,
+    createdAt: row?.createdAt,
+    updatedAt: row?.updatedAt,
+  };
+}
+
+export async function saveBlueprintDesignSettings(taskId: string, settings: any) {
+  const task = await repo.getTask(taskId);
+  if (!task) throw new NotFoundError('Task not found');
+  const row = await repo.upsertBlueprintDesignSettings(taskId, settings);
+  return {
+    sessionId: taskId,
+    settings: row.settingsJson,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+type BlueprintAdoptionKind = 'blueprint' | 'dbDesign' | 'designTokens';
+
+function serializeBlueprintAdoption(input: {
+  taskId: string;
+  messageId: string;
+  adopted: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}) {
+  return {
+    sessionId: input.taskId,
+    messageId: input.messageId,
+    adopted: input.adopted,
+    createdAt: input.createdAt,
+    updatedAt: input.updatedAt,
+  };
+}
+
+async function assertTaskMessageBelongsToTask(taskId: string, messageId: string) {
+  const task = await repo.getTask(taskId);
+  if (!task) throw new NotFoundError('Task not found');
+  const message = await repo.getTaskMessage(messageId);
+  if (!message || message.taskId !== taskId) {
+    throw new NotFoundError('Task message not found');
+  }
+}
+
+async function getBlueprintAdoption(
+  kind: BlueprintAdoptionKind,
+  taskId: string,
+  messageId: string
+) {
+  await assertTaskMessageBelongsToTask(taskId, messageId);
+  const row =
+    kind === 'blueprint'
+      ? await repo.getBlueprintArtifactAdoption(taskId, messageId)
+      : kind === 'dbDesign'
+        ? await repo.getBlueprintDbDesignAdoption(taskId, messageId)
+        : await repo.getBlueprintDesignTokenAdoption(taskId, messageId);
+  return serializeBlueprintAdoption({
+    taskId,
+    messageId,
+    adopted: row?.adopted ?? false,
+    createdAt: row?.createdAt,
+    updatedAt: row?.updatedAt,
+  });
+}
+
+async function saveBlueprintAdoption(
+  kind: BlueprintAdoptionKind,
+  taskId: string,
+  messageId: string,
+  adopted: boolean
+) {
+  await assertTaskMessageBelongsToTask(taskId, messageId);
+  const row =
+    kind === 'blueprint'
+      ? await repo.upsertBlueprintArtifactAdoption(taskId, messageId, adopted)
+      : kind === 'dbDesign'
+        ? await repo.upsertBlueprintDbDesignAdoption(taskId, messageId, adopted)
+        : await repo.upsertBlueprintDesignTokenAdoption(taskId, messageId, adopted);
+  return serializeBlueprintAdoption({
+    taskId,
+    messageId,
+    adopted: row.adopted,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  });
+}
+
+export async function getBlueprintArtifactAdoption(taskId: string, messageId: string) {
+  return getBlueprintAdoption('blueprint', taskId, messageId);
+}
+
+export async function saveBlueprintArtifactAdoption(
+  taskId: string,
+  messageId: string,
+  adopted: boolean
+) {
+  return saveBlueprintAdoption('blueprint', taskId, messageId, adopted);
+}
+
+export async function getBlueprintDbDesignAdoption(taskId: string, messageId: string) {
+  return getBlueprintAdoption('dbDesign', taskId, messageId);
+}
+
+export async function saveBlueprintDbDesignAdoption(
+  taskId: string,
+  messageId: string,
+  adopted: boolean
+) {
+  return saveBlueprintAdoption('dbDesign', taskId, messageId, adopted);
+}
+
+export async function getBlueprintDesignTokenAdoption(taskId: string, messageId: string) {
+  return getBlueprintAdoption('designTokens', taskId, messageId);
+}
+
+export async function saveBlueprintDesignTokenAdoption(
+  taskId: string,
+  messageId: string,
+  adopted: boolean
+) {
+  return saveBlueprintAdoption('designTokens', taskId, messageId, adopted);
+}
+
 export async function appendTaskMessage(id: string, prompt: string) {
   const task = await repo.getTask(id);
   if (!task) throw new NotFoundError('Task not found');
@@ -265,7 +401,8 @@ export type WorkbenchChatIntent =
   | 'adjust_running'
   | 'review_followup'
   | 'learning_capture'
-  | 'design_component';
+  | 'design_component'
+  | 'design_blueprint_data';
 
 export async function appendWorkbenchMessage(
   id: string,
@@ -288,6 +425,10 @@ export async function appendWorkbenchMessage(
     };
   }
 
+  if (intent === 'design_blueprint_data') {
+    return handleBlueprintDataDesignMessage(id, task, prompt);
+  }
+
   await appendTaskMessage(id, prompt);
 
   if (intent === 'queue' || intent === 'create_task') {
@@ -303,6 +444,119 @@ export async function appendWorkbenchMessage(
   const updated = await prepareWorkbenchIntakeTask(id, task, prompt);
   void handleWorkbenchIntakeMessage(id, task, prompt, { failureMode: 'record' });
   return { task: updated, run: null, messages: await repo.listTaskMessages(id) };
+}
+
+async function handleBlueprintDataDesignMessage(
+  taskId: string,
+  task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>,
+  prompt: string
+) {
+  const emitWorkbenchLlmDebugEvent = createWorkbenchLlmDebugEventEmitter(taskId);
+  try {
+    const parsedRequest = parseBlueprintDbDesignRequestPrompt(prompt);
+    const currentValidation = validateAppBlueprint(parsedRequest.currentBlueprint);
+    const request = {
+      ...parsedRequest,
+      validationIssues: currentValidation.issues,
+    };
+    await repo.createTaskMessage({
+      taskId,
+      role: 'user',
+      content: renderBlueprintDataDesignRequestContent(request),
+      messageType: 'text',
+      payloadJson: {
+        intent: 'design_blueprint_data',
+        source: 'blueprint-preview',
+        blueprintId: request.blueprintId,
+        dbDesignTarget: request.target,
+        prompt: request.prompt,
+        validation: currentValidation,
+      },
+    });
+    const { blueprint, validation, generation } = await generateBlueprintDataDesignDraft({
+      request,
+      emitEvent: emitWorkbenchLlmDebugEvent,
+    });
+    await repo.createTaskMessage({
+      taskId,
+      role: 'assistant',
+      content: renderBlueprintMarkdown(blueprint),
+      messageType: 'markdown_document',
+      payloadJson: {
+        intent: 'app_blueprint',
+        title: blueprint.name || task.title,
+        appBlueprint: blueprint,
+        validation,
+        generation,
+        source: 'blueprint-db-design',
+        parentBlueprintId: request.blueprintId,
+        dbDesignTarget: request.target,
+      },
+    });
+    const updated = await repo.updateTask(taskId, {
+      objective: task.objective || request.prompt,
+      status: task.status === 'draft' ? 'ready' : task.status,
+    });
+    return { task: updated, run: null, messages: await repo.listTaskMessages(taskId) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof BlueprintDataDesignGenerationError && error.rawOutput?.trim()) {
+      await repo.createTaskMessage({
+        taskId,
+        role: 'assistant',
+        content: error.rawOutput.trim(),
+        messageType: 'text',
+        payloadJson: {
+          intent: 'blueprint_db_design_raw_output',
+          source: 'blueprint-db-design',
+          validationStatus: 'failed',
+          error: message,
+          promptDiagnostics: error.promptDiagnostics,
+        },
+      });
+    }
+    await repo.createTaskMessage({
+      taskId,
+      role: 'system',
+      content: `Blueprint DB Design generation failed: ${message}`,
+      messageType: 'text',
+      payloadJson: {
+        intent: 'blueprint_db_design_failed',
+        source: 'blueprint-db-design',
+        error: message,
+        rawOutputRecorded:
+          error instanceof BlueprintDataDesignGenerationError && Boolean(error.rawOutput?.trim()),
+        promptDiagnostics:
+          error instanceof BlueprintDataDesignGenerationError ? error.promptDiagnostics : undefined,
+      },
+    });
+    throw new AppError(
+      502,
+      'BLUEPRINT_DB_DESIGN_FAILED',
+      `Blueprint DB Design generation failed: ${message}`
+    );
+  }
+}
+
+function renderBlueprintDataDesignRequestContent(
+  request: ReturnType<typeof parseBlueprintDbDesignRequestPrompt>
+) {
+  return [
+    'Blueprint DB Design request',
+    `Target: ${blueprintDataDesignTargetLabel(request.target)}`,
+    `Instruction: ${request.prompt}`,
+  ].join('\n');
+}
+
+function blueprintDataDesignTargetLabel(
+  target: ReturnType<typeof parseBlueprintDbDesignRequestPrompt>['target']
+) {
+  if (target.kind === 'schema') return 'Schema';
+  if (target.kind === 'table') return `Table ${target.tableName}`;
+  if (target.kind === 'relation') return `Relation ${target.relationId}`;
+  if (target.kind === 'binding') return `Binding ${target.bindingId}`;
+  if (target.sectionId) return `Screen ${target.screenId} / section ${target.sectionId}`;
+  return `Screen ${target.screenId}`;
 }
 
 async function handleWorkbenchIntakeMessage(

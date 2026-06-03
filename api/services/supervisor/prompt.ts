@@ -57,15 +57,33 @@ const TOOL_CALL_SHAPE = `toolCall: {
   arguments: object
 } | null`;
 
-function buildToolCatalog(): string {
+export type ExternalSupervisorToolCatalogEntry = {
+  namespacedName: string;
+  serverId: string;
+  toolName: string;
+  description?: string;
+};
+
+function buildToolCatalog(externalTools: ExternalSupervisorToolCatalogEntry[] = []): string {
+  const externalToolLines =
+    externalTools.length === 0
+      ? ['- なし']
+      : externalTools.map(
+          (tool) =>
+            `- ${tool.namespacedName}: ${tool.description || 'MCP server tool'}。使う場合は toolCall.name="mcp_call_tool"、arguments.serverId="${tool.serverId}"、arguments.toolName="${tool.toolName}"、arguments.arguments にそのツールの引数を入れる。`
+        );
   return `[Tool catalog]
 このセクションだけを worker ツール名、詳細情報、使うべきタイミングの根拠にしてください。
 ${TOOL_CATALOG.map((tool) => `- ${tool.name}: ${tool.description}`).join('\n')}
+- mcp_call_tool: 設定済み MCP Server の tool を呼び出す bridge。下の External MCP tools に listed された tool だけに使う。
+
+[External MCP tools]
+${externalToolLines.join('\n')}
 
 [toolCall スキーマ]
 ${TOOL_CALL_SHAPE}
 
-toolCall.name は必ず Tool catalog にある名前だけを使う。`;
+toolCall.name は必ず Tool catalog にある内部 worker ツール名だけを使う。External MCP tools の名前を直接 toolCall.name に入れず、mcp_call_tool に正規化して返す。`;
 }
 
 function buildDecisionContract(): string {
@@ -157,7 +175,10 @@ export function buildRound1SystemPrompt(projectRoot: string): string {
 
 export function buildRound2SystemPrompt(
   routingOrWorkflow: SupervisorWorkflow | Partial<SupervisorRoutingHypothesis> = 'general',
-  options?: { skillsDirectory?: string }
+  options?: {
+    skillsDirectory?: string;
+    externalTools?: ExternalSupervisorToolCatalogEntry[];
+  }
 ): string {
   const routing =
     typeof routingOrWorkflow === 'string'
@@ -193,7 +214,7 @@ routing が変わった場合は routingHypothesis を更新し、必要な next
 
 ${buildDecisionContract()}
 
-${buildToolCatalog()}`;
+${buildToolCatalog(options?.externalTools)}`;
 }
 
 export function buildSupervisorTurnInput(userInput: string, observations: string[]): string {

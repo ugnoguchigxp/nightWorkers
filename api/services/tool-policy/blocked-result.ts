@@ -33,6 +33,7 @@ function emptyPayloadByTool(toolName: ToolCallRequest['toolName']): Record<strin
       truncated: false,
     };
   }
+  if (toolName === 'mcp_call_tool') return { serverId: '', toolName: '', result: null };
   if (toolName === 'git_status') {
     return {
       branch: 'unknown',

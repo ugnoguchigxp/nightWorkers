@@ -1,4 +1,11 @@
+export { BlueprintDbDesignPanel } from './BlueprintDbDesignPanel';
 export { BlueprintPreview } from './BlueprintPreview';
+export {
+  type BlueprintDbDesignRequest,
+  type BlueprintDbDesignTarget,
+  buildBlueprintDbDesignPrompt,
+  targetLabel,
+} from './dbDesignModel';
 export {
   type BlueprintDesignReference,
   type BlueprintPreviewDesignSettings,

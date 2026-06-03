@@ -1,5 +1,8 @@
 import { appendSupervisorTrace, logger } from '../../lib/logger';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
+import { runAgentHooks } from '../hooks/hooks-runner';
+import type { AgentHookInput, AgentHookRunEvent } from '../hooks/types';
+import { mcpClientManager } from '../mcp/mcp-client-manager';
 import { RunBudgetController } from '../run-control/run-budget-controller';
 import type { BudgetDecision, SupervisorLoopResult } from '../run-control/types';
 import type { RunEventActor, RunEventSeverity, RunEventType } from '../run-events/types';
@@ -12,6 +15,7 @@ import {
   buildRound1SystemPrompt,
   buildRound2SystemPrompt,
   buildSupervisorTurnInput,
+  type ExternalSupervisorToolCatalogEntry,
   type SupervisorRoutingHypothesis,
   type SupervisorWorkflow,
 } from './prompt';
@@ -19,6 +23,8 @@ import { defaultSupervisorRoutingHypothesis } from './skills/types';
 
 export interface SupervisorLoopInput {
   runId: string;
+  taskId?: string;
+  repositoryId?: string;
   repoRoot: string;
   prompt: string;
   timeoutSeconds: number;
@@ -36,6 +42,24 @@ export interface SupervisorLoopInput {
     maxCommandSeconds?: number;
     requireReadBeforeEdit?: boolean;
   };
+}
+
+async function loadExternalSupervisorTools(): Promise<ExternalSupervisorToolCatalogEntry[]> {
+  try {
+    const tools = await mcpClientManager.listAvailableTools();
+    return tools.map((tool) => ({
+      namespacedName: tool.namespacedName,
+      serverId: tool.serverId,
+      toolName: tool.name,
+      description: tool.description,
+    }));
+  } catch (err) {
+    logger.warn(
+      { error: err instanceof Error ? err.message : String(err) },
+      'MCP tool catalog unavailable'
+    );
+    return [];
+  }
 }
 
 export type SupervisorTodoContext = {
@@ -196,6 +220,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
   const toolContext = { readFileCache: new Map() };
   const toolObservations: string[] = [];
   const toolPolicyGate = new DefaultToolPolicyGate();
+  let hookBlockedToolCalls = 0;
+  let stopHookBlocks = 0;
 
   appendSupervisorTrace('supervisor_loop_started', {
     runId,
@@ -266,6 +292,34 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       }
     };
 
+    const emitHookRunEvent = (event: AgentHookRunEvent) =>
+      emitSupervisorRunEvent({
+        runId,
+        taskId: task.id,
+        iteration,
+        type: event.type,
+        severity: event.severity,
+        actor: 'system',
+        message: event.message,
+        data: event.data,
+        payloadJson: event.data,
+      });
+
+    const buildHookBaseInput = (
+      event: AgentHookInput['hook_event_name']
+    ): Omit<AgentHookInput, 'hook_event_name'> & {
+      hook_event_name: AgentHookInput['hook_event_name'];
+    } =>
+      ({
+        hook_event_name: event,
+        session_id: task.id,
+        run_id: runId,
+        task_id: task.id,
+        repository_id: run.repositoryId ?? input.repositoryId,
+        cwd: repoRoot,
+        timestamp: new Date().toISOString(),
+      }) as AgentHookInput;
+
     // 3. Prompt building
     const userPrompt = buildSupervisorTurnInput(userInput, toolObservations);
 
@@ -324,7 +378,9 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             observations: toolObservations.slice(-6),
           });
           const round2 = await callSupervisorLLM(
-            buildRound2SystemPrompt(activeRoutingHypothesis),
+            buildRound2SystemPrompt(activeRoutingHypothesis, {
+              externalTools: await loadExternalSupervisorTools(),
+            }),
             round2Input,
             {
               round: 2,
@@ -389,7 +445,9 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           observations: toolObservations.slice(-6),
         });
         const round2 = await callSupervisorLLM(
-          buildRound2SystemPrompt(activeRoutingHypothesis),
+          buildRound2SystemPrompt(activeRoutingHypothesis, {
+            externalTools: await loadExternalSupervisorTools(),
+          }),
           round2Input,
           {
             round: 2,
@@ -635,6 +693,42 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         continue;
       }
 
+      const stopHook = await runAgentHooks({
+        input: {
+          ...buildHookBaseInput('Stop'),
+          hook_event_name: 'Stop',
+          stop_reason:
+            (decision.terminalState as
+              | 'completed'
+              | 'needs_review'
+              | 'needs_human'
+              | 'failed'
+              | 'blocked'
+              | undefined) || 'end_turn',
+          last_assistant_message:
+            decision.finalResponse?.trim() || decision.instruction?.trim() || decision.rationale,
+        },
+        repoRoot,
+        onEvent: emitHookRunEvent,
+      });
+      if (stopHook.additionalContext) {
+        toolObservations.push(`[Hook Context] ${stopHook.additionalContext}`);
+      }
+      if (stopHook.decision === 'block') {
+        stopHookBlocks += 1;
+        const reason = stopHook.reason || 'Stop blocked by agent hook.';
+        toolObservations.push(`[Hook Blocked Stop] ${reason}`);
+        if (stopHookBlocks >= 2) {
+          finalReportText = reason;
+          terminalState = 'blocked';
+          summary = 'Stopped because Stop hook blocked repeatedly';
+          stoppedBy = 'hook';
+          riskLevel = 'medium';
+          break;
+        }
+        continue;
+      }
+
       finalReportText =
         decision.finalResponse?.trim() || decision.instruction?.trim() || decision.rationale;
       terminalState =
@@ -707,6 +801,9 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
 
       let toolResult: any;
       let policyViolationDetected = false;
+      let hookBlockedToolCall = false;
+      let postHookRequest: ToolCallRequest | null = null;
+      let postHookArgs: Record<string, unknown> | null = null;
 
       try {
         const request: ToolCallRequest = {
@@ -746,47 +843,21 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           summary = 'Stopped by policy block';
           stoppedBy = 'policy';
         } else {
-          const dispatch = await executeWorkerTool({
-            toolName: request.toolName,
-            args: beforeDecision.normalizedArgs,
+          const preHook = await runAgentHooks({
+            input: {
+              ...buildHookBaseInput('PreToolUse'),
+              hook_event_name: 'PreToolUse',
+              tool_name: request.toolName,
+              tool_input: beforeDecision.normalizedArgs,
+              tool_use_id: `${runId}:${iteration}:${request.toolName}`,
+            },
             repoRoot,
-            safetyPolicy: input.safetyPolicy,
-            readFiles,
-            toolContext,
+            onEvent: emitHookRunEvent,
           });
-          toolResult = dispatch.result;
-          if (dispatch.readFilesChanged) {
-            readFiles.splice(0, readFiles.length, ...dispatch.readFilesChanged);
+          if (preHook.additionalContext) {
+            toolObservations.push(`[Hook Context] ${preHook.additionalContext}`);
           }
-          const postDecision = await toolPolicyGate.afterToolCall(
-            request,
-            dispatch.result,
-            beforeDecision.preflight
-          );
-          toolResult = postDecision.result;
-          if (postDecision.policyViolation && !postDecision.policyViolation.allowed) {
-            policyViolationDetected = true;
-            finalReportText = `Tool policy violation detected after execution. tool=${name} code=${postDecision.policyViolation.code}`;
-            terminalState = 'needs_human';
-            summary = 'Stopped by postflight policy violation';
-            stoppedBy = 'policy';
-            await emitSupervisorRunEvent({
-              runId,
-              taskId: task.id,
-              iteration,
-              type: 'safety.policy_violation',
-              severity: 'error',
-              actor: 'system',
-              message: `[Tool Policy Violation] ${name}: ${postDecision.policyViolation.message}`,
-              data: { toolName: name, policy: postDecision.policyViolation },
-              payloadJson: {
-                iteration,
-                toolName: name,
-                policy: postDecision.policyViolation,
-              },
-            });
-          }
-          if (postDecision.warnings?.length) {
+          if (preHook.modifiedArgs) {
             await emitSupervisorRunEvent({
               runId,
               taskId: task.id,
@@ -794,10 +865,94 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
               type: 'system.warning',
               severity: 'warning',
               actor: 'system',
-              message: `[Tool Policy Warning] ${name}`,
-              data: { toolName: name, warnings: postDecision.warnings },
-              payloadJson: { iteration, toolName: name, warnings: postDecision.warnings },
+              message: `[Agent Hook] ${name}: modifiedArgs ignored in first slice.`,
+              data: { toolName: name, modifiedArgs: preHook.modifiedArgs },
+              payloadJson: { iteration, toolName: name, modifiedArgs: preHook.modifiedArgs },
             });
+          }
+          if (preHook.decision === 'deny' || preHook.decision === 'block') {
+            hookBlockedToolCall = true;
+            hookBlockedToolCalls += 1;
+            toolResult = buildBlockedToolResult(request, {
+              allowed: false,
+              code: 'HOOK_BLOCKED',
+              message: preHook.reason || 'Tool call blocked by agent hook.',
+            });
+          } else {
+            postHookRequest = request;
+            postHookArgs = beforeDecision.normalizedArgs;
+            const dispatch = await executeWorkerTool({
+              toolName: request.toolName,
+              args: beforeDecision.normalizedArgs,
+              repoRoot,
+              safetyPolicy: input.safetyPolicy,
+              readFiles,
+              toolContext,
+            });
+            toolResult = dispatch.result;
+            if (dispatch.readFilesChanged) {
+              readFiles.splice(0, readFiles.length, ...dispatch.readFilesChanged);
+            }
+            const postDecision = await toolPolicyGate.afterToolCall(
+              request,
+              dispatch.result,
+              beforeDecision.preflight
+            );
+            toolResult = postDecision.result;
+            if (postDecision.policyViolation && !postDecision.policyViolation.allowed) {
+              policyViolationDetected = true;
+              finalReportText = `Tool policy violation detected after execution. tool=${name} code=${postDecision.policyViolation.code}`;
+              terminalState = 'needs_human';
+              summary = 'Stopped by postflight policy violation';
+              stoppedBy = 'policy';
+              await emitSupervisorRunEvent({
+                runId,
+                taskId: task.id,
+                iteration,
+                type: 'safety.policy_violation',
+                severity: 'error',
+                actor: 'system',
+                message: `[Tool Policy Violation] ${name}: ${postDecision.policyViolation.message}`,
+                data: { toolName: name, policy: postDecision.policyViolation },
+                payloadJson: {
+                  iteration,
+                  toolName: name,
+                  policy: postDecision.policyViolation,
+                },
+              });
+            }
+            if (postDecision.warnings?.length) {
+              await emitSupervisorRunEvent({
+                runId,
+                taskId: task.id,
+                iteration,
+                type: 'system.warning',
+                severity: 'warning',
+                actor: 'system',
+                message: `[Tool Policy Warning] ${name}`,
+                data: { toolName: name, warnings: postDecision.warnings },
+                payloadJson: { iteration, toolName: name, warnings: postDecision.warnings },
+              });
+            }
+            if (!policyViolationDetected) {
+              const postHook = await runAgentHooks({
+                input: {
+                  ...buildHookBaseInput(toolResult.ok ? 'PostToolUse' : 'PostToolUseFailure'),
+                  hook_event_name: toolResult.ok ? 'PostToolUse' : 'PostToolUseFailure',
+                  tool_name: request.toolName,
+                  tool_input: beforeDecision.normalizedArgs,
+                  tool_use_id: `${runId}:${iteration}:${request.toolName}`,
+                  ...(toolResult.ok
+                    ? { tool_result: toolResult }
+                    : { error: toolResult.error?.message || 'Tool execution failed' }),
+                },
+                repoRoot,
+                onEvent: emitHookRunEvent,
+              });
+              if (postHook.additionalContext) {
+                toolObservations.push(`[Hook Context] ${postHook.additionalContext}`);
+              }
+            }
           }
         }
       } catch (toolErr: any) {
@@ -812,6 +967,23 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             message: toolErr.message,
           },
         };
+        if (postHookRequest && postHookArgs && !hookBlockedToolCall && !policyViolationDetected) {
+          const failureHook = await runAgentHooks({
+            input: {
+              ...buildHookBaseInput('PostToolUseFailure'),
+              hook_event_name: 'PostToolUseFailure',
+              tool_name: postHookRequest.toolName,
+              tool_input: postHookArgs,
+              tool_use_id: `${runId}:${iteration}:${postHookRequest.toolName}`,
+              error: toolResult.error?.message || 'Tool execution failed',
+            },
+            repoRoot,
+            onEvent: emitHookRunEvent,
+          });
+          if (failureHook.additionalContext) {
+            toolObservations.push(`[Hook Context] ${failureHook.additionalContext}`);
+          }
+        }
       }
 
       logger.info(
@@ -827,7 +999,9 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         'Worker tool call completed'
       );
 
-      const failureBudget = budget.onToolResult(toolResult.ok);
+      const failureBudget = hookBlockedToolCall
+        ? ({ allowed: true } as BudgetDecision)
+        : budget.onToolResult(toolResult.ok);
       toolObservations.push(formatToolObservation(name, toolResult));
 
       // Log tool execution result in ledger
@@ -854,6 +1028,26 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         });
         await repo.updateTaskStatus(task.id, 'needs_human');
         break;
+      }
+
+      if (hookBlockedToolCall) {
+        const reason = toolResult.error?.message || 'Tool call blocked by agent hook.';
+        toolObservations.push(`[Hook Blocked Tool] ${reason}`);
+        if (hookBlockedToolCalls >= maxRepeatedToolPattern) {
+          finalReportText = reason;
+          terminalState = 'blocked';
+          summary = 'Stopped because agent hook blocked tool calls repeatedly';
+          stoppedBy = 'hook';
+          riskLevel = 'medium';
+          await repo.updateTaskRun(runId, {
+            finalReport: finalReportText,
+            summary,
+            status: terminalState,
+          });
+          await repo.updateTaskStatus(task.id, terminalState);
+          break;
+        }
+        continue;
       }
 
       if (!failureBudget.allowed && failureBudget.reason === 'tool_failure') {

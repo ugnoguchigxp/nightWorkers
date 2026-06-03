@@ -2,6 +2,40 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRoute, z } from '@hono/zod-openapi';
 import { createOpenApiRouter } from '../lib/openapi';
+import {
+  agentHookConfigSchema,
+  agentHookInputSchema,
+  agentHooksResponseSchema,
+  agentHookTestResponseSchema,
+  agentHookUpdateInputSchema,
+  buildSampleHookInput,
+} from '../services/hooks/hooks-config-schema';
+import { runSingleAgentHookForTest } from '../services/hooks/hooks-runner';
+import {
+  createAgentHook,
+  deleteAgentHook,
+  getAgentHook,
+  listAgentHooks,
+  updateAgentHook,
+} from '../services/hooks/hooks-settings';
+import { mcpClientManager } from '../services/mcp/mcp-client-manager';
+import {
+  mcpServerConfigSchema,
+  mcpServerImportRequestSchema,
+  mcpServerImportResponseSchema,
+  mcpServerInputSchema,
+  mcpServersResponseSchema,
+  mcpServerTestResponseSchema,
+  mcpServerUpdateInputSchema,
+} from '../services/mcp/mcp-config-schema';
+import {
+  createMcpServer,
+  deleteMcpServer,
+  getMcpServer,
+  importMcpServersFromText,
+  listMcpServers,
+  updateMcpServer,
+} from '../services/mcp/mcp-settings';
 import { callSupervisorLLM } from '../services/supervisor/llm-provider';
 
 const RUNTIME_SETTINGS_DIR = path.resolve(process.cwd(), 'api/.runtime');
@@ -111,6 +145,248 @@ const smokeLlmRoute = createRoute({
         },
       },
       description: 'Run LLM smoke test with active provider',
+    },
+  },
+});
+
+const getMcpServersRoute = createRoute({
+  method: 'get',
+  path: '/mcp/servers',
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: mcpServersResponseSchema,
+        },
+      },
+      description: 'List configured MCP servers',
+    },
+  },
+});
+
+const createMcpServerRoute = createRoute({
+  method: 'post',
+  path: '/mcp/servers',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: mcpServerInputSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      content: {
+        'application/json': {
+          schema: mcpServerConfigSchema,
+        },
+      },
+      description: 'Create MCP server',
+    },
+  },
+});
+
+const importMcpServersRoute = createRoute({
+  method: 'post',
+  path: '/mcp/servers/import',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: mcpServerImportRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      content: {
+        'application/json': {
+          schema: mcpServerImportResponseSchema,
+        },
+      },
+      description: 'Import MCP servers from pasted JSON config',
+    },
+  },
+});
+
+const updateMcpServerRoute = createRoute({
+  method: 'put',
+  path: '/mcp/servers/{id}',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: mcpServerUpdateInputSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: mcpServerConfigSchema,
+        },
+      },
+      description: 'Update MCP server',
+    },
+    404: {
+      description: 'MCP server not found',
+    },
+  },
+});
+
+const deleteMcpServerRoute = createRoute({
+  method: 'delete',
+  path: '/mcp/servers/{id}',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: mcpServerConfigSchema,
+        },
+      },
+      description: 'Delete MCP server',
+    },
+    404: {
+      description: 'MCP server not found',
+    },
+  },
+});
+
+const testMcpServerRoute = createRoute({
+  method: 'post',
+  path: '/mcp/servers/{id}/test',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: mcpServerTestResponseSchema,
+        },
+      },
+      description: 'Test MCP server connection',
+    },
+    404: {
+      description: 'MCP server not found',
+    },
+  },
+});
+
+const getAgentHooksRoute = createRoute({
+  method: 'get',
+  path: '/hooks',
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: agentHooksResponseSchema,
+        },
+      },
+      description: 'List configured agent hooks',
+    },
+  },
+});
+
+const createAgentHookRoute = createRoute({
+  method: 'post',
+  path: '/hooks',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: agentHookInputSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      content: {
+        'application/json': {
+          schema: agentHookConfigSchema,
+        },
+      },
+      description: 'Create agent hook',
+    },
+  },
+});
+
+const updateAgentHookRoute = createRoute({
+  method: 'put',
+  path: '/hooks/{id}',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: agentHookUpdateInputSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: agentHookConfigSchema,
+        },
+      },
+      description: 'Update agent hook',
+    },
+    404: {
+      description: 'Agent hook not found',
+    },
+  },
+});
+
+const deleteAgentHookRoute = createRoute({
+  method: 'delete',
+  path: '/hooks/{id}',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: agentHookConfigSchema,
+        },
+      },
+      description: 'Delete agent hook',
+    },
+    404: {
+      description: 'Agent hook not found',
+    },
+  },
+});
+
+const testAgentHookRoute = createRoute({
+  method: 'post',
+  path: '/hooks/{id}/test',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: agentHookTestResponseSchema,
+        },
+      },
+      description: 'Test agent hook',
+    },
+    404: {
+      description: 'Agent hook not found',
     },
   },
 });
@@ -231,4 +507,83 @@ export const settingsRouter = createOpenApiRouter()
       const message = err instanceof Error ? err.message : String(err);
       return c.json({ ok: false, provider, message }, 200);
     }
+  })
+  .openapi(getMcpServersRoute, (c) => {
+    return c.json({ servers: listMcpServers() }, 200);
+  })
+  .openapi(createMcpServerRoute, (c) => {
+    const server = createMcpServer(c.req.valid('json'));
+    return c.json(server, 201);
+  })
+  .openapi(importMcpServersRoute, async (c) => {
+    const input = c.req.valid('json');
+    const servers = importMcpServersFromText(input.text);
+    const results = input.testAfterImport
+      ? await Promise.all(
+          servers.map(async (server) => {
+            const status = await mcpClientManager.testServer(server);
+            return {
+              serverId: server.id,
+              ok: status.ok,
+              message: status.message,
+              toolCount: status.toolCount,
+            };
+          })
+        )
+      : [];
+    return c.json({ servers, results }, 201);
+  })
+  .openapi(updateMcpServerRoute, async (c) => {
+    const server = updateMcpServer(c.req.param('id'), c.req.valid('json'));
+    if (!server)
+      return c.json({ error: { code: 'NOT_FOUND', message: 'MCP server not found' } }, 404);
+    await mcpClientManager.disconnect(server.id);
+    return c.json(server, 200);
+  })
+  .openapi(deleteMcpServerRoute, async (c) => {
+    const removed = deleteMcpServer(c.req.param('id'));
+    if (!removed)
+      return c.json({ error: { code: 'NOT_FOUND', message: 'MCP server not found' } }, 404);
+    await mcpClientManager.disconnect(removed.id);
+    return c.json(removed, 200);
+  })
+  .openapi(testMcpServerRoute, async (c) => {
+    const server = getMcpServer(c.req.param('id'));
+    if (!server)
+      return c.json({ error: { code: 'NOT_FOUND', message: 'MCP server not found' } }, 404);
+    const status = await mcpClientManager.testServer(server);
+    return c.json(
+      {
+        ok: status.ok,
+        message: status.message,
+        toolCount: status.toolCount,
+      },
+      200
+    );
+  })
+  .openapi(getAgentHooksRoute, (c) => {
+    return c.json({ hooks: listAgentHooks() }, 200);
+  })
+  .openapi(createAgentHookRoute, (c) => {
+    const hook = createAgentHook(c.req.valid('json'));
+    return c.json(hook, 201);
+  })
+  .openapi(updateAgentHookRoute, (c) => {
+    const hook = updateAgentHook(c.req.param('id'), c.req.valid('json'));
+    if (!hook)
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Agent hook not found' } }, 404);
+    return c.json(hook, 200);
+  })
+  .openapi(deleteAgentHookRoute, (c) => {
+    const removed = deleteAgentHook(c.req.param('id'));
+    if (!removed)
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Agent hook not found' } }, 404);
+    return c.json(removed, 200);
+  })
+  .openapi(testAgentHookRoute, async (c) => {
+    const hook = getAgentHook(c.req.param('id'));
+    if (!hook)
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Agent hook not found' } }, 404);
+    const result = await runSingleAgentHookForTest(hook, buildSampleHookInput(hook.event));
+    return c.json(result, 200);
   });

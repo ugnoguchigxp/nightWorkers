@@ -1,8 +1,17 @@
 export type BlueprintPreviewDesignSettings = {
-  theme: 'light' | 'dark' | 'tokyonight' | 'eclipse' | 'macosclassic' | 'fire';
+  theme: 'light' | 'dark' | 'eclipse' | 'macosclassic' | 'campfire' | 'mint' | 'bloom' | 'mocha';
   density: 'compact' | 'default' | 'comfortable';
   shape: 'sharp' | 'default' | 'rounded' | 'pill';
   shadow: 'none' | 'subtle' | 'medium' | 'strong';
+  shadowDirection:
+    | '0deg'
+    | '45deg'
+    | '90deg'
+    | '135deg'
+    | '180deg'
+    | '225deg'
+    | '270deg'
+    | '315deg';
   font: 'system' | 'geist' | 'serif' | 'mono';
   contrast: 'standard' | 'high';
   motion: 'reduced' | 'standard';
@@ -24,6 +33,7 @@ export type BlueprintDesignReference = {
     density: string;
     radius: string;
     shadow: string;
+    shadowDirection: string;
     font: string;
     contrast: string;
     motion: string;
@@ -36,6 +46,7 @@ export const defaultBlueprintPreviewDesignSettings: BlueprintPreviewDesignSettin
   density: 'compact',
   shape: 'default',
   shadow: 'subtle',
+  shadowDirection: '0deg',
   font: 'geist',
   contrast: 'standard',
   motion: 'standard',
@@ -47,10 +58,29 @@ export const defaultBlueprintPreviewDesignSettings: BlueprintPreviewDesignSettin
   },
 };
 
-const themes = ['light', 'dark', 'tokyonight', 'eclipse', 'macosclassic', 'fire'] as const;
+const themes = [
+  'light',
+  'dark',
+  'eclipse',
+  'macosclassic',
+  'campfire',
+  'mint',
+  'bloom',
+  'mocha',
+] as const;
 const densities = ['compact', 'default', 'comfortable'] as const;
 const shapes = ['sharp', 'default', 'rounded', 'pill'] as const;
 const shadows = ['none', 'subtle', 'medium', 'strong'] as const;
+const shadowDirections = [
+  '0deg',
+  '45deg',
+  '90deg',
+  '135deg',
+  '180deg',
+  '225deg',
+  '270deg',
+  '315deg',
+] as const;
 const fonts = ['system', 'geist', 'serif', 'mono'] as const;
 const contrasts = ['standard', 'high'] as const;
 const motions = ['reduced', 'standard'] as const;
@@ -64,6 +94,7 @@ export const blueprintPreviewDesignOptions = {
   density: densities,
   shape: shapes,
   shadow: shadows,
+  shadowDirection: shadowDirections,
   font: fonts,
   contrast: contrasts,
   motion: motions,
@@ -94,7 +125,12 @@ export function createBlueprintPreviewDesignSettings(
       defaultBlueprintPreviewDesignSettings.shape
     ),
     shadow: pickOption(designPreset.shadow, shadows, defaultBlueprintPreviewDesignSettings.shadow),
-    font: normalizeFont(designPreset.fontScale),
+    shadowDirection: pickOption(
+      designPreset.shadowDirection,
+      shadowDirections,
+      defaultBlueprintPreviewDesignSettings.shadowDirection
+    ),
+    font: normalizeFont(designPreset.font ?? designPreset.fontScale),
     contrast: pickOption(
       designPreset.contrast,
       contrasts,
@@ -141,6 +177,7 @@ export function createBlueprintDesignReference(input: {
       density: input.settings.density,
       radius: input.settings.shape,
       shadow: input.settings.shadow,
+      shadowDirection: input.settings.shadowDirection,
       font: input.settings.font,
       contrast: input.settings.contrast,
       motion: input.settings.motion,
@@ -158,6 +195,7 @@ export function designReferenceSummary(settings: BlueprintPreviewDesignSettings)
     `Density: ${settings.density}`,
     `Shape: ${settings.shape}`,
     `Shadow: ${settings.shadow}`,
+    `Shadow direction: ${settings.shadowDirection}`,
     `Font: ${settings.font}`,
     `Contrast: ${settings.contrast}`,
     `Motion: ${settings.motion}`,
@@ -168,6 +206,7 @@ export function designReferenceSummary(settings: BlueprintPreviewDesignSettings)
 function normalizeTheme(value: unknown): BlueprintPreviewDesignSettings['theme'] {
   if (value === 'nightworkers-light') return 'light';
   if (value === 'nightworkers-dark') return 'light';
+  if (value === 'fire') return 'campfire';
   return pickOption(value, themes, defaultBlueprintPreviewDesignSettings.theme);
 }
 

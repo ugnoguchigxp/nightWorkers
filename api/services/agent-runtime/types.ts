@@ -87,6 +87,7 @@ export interface AgentRuntimeResult {
     | 'llm_error'
     | 'missing_tool_call'
     | 'policy'
+    | 'hook'
     | 'cancelled';
   riskLevel: 'low' | 'medium' | 'high';
   logContent?: string;

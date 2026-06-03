@@ -98,6 +98,133 @@ describe('NightWorkers repositories routes', () => {
 });
 
 describe('NightWorkers task routes', () => {
+  it('persists Blueprint design settings per session', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: Blueprint Design Settings ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: Blueprint design settings target',
+      description: 'Persist design token settings',
+      status: 'draft',
+    });
+
+    const settings = {
+      theme: 'mint',
+      density: 'comfortable',
+      shape: 'pill',
+      shadow: 'strong',
+      shadowDirection: '135deg',
+      font: 'mono',
+      contrast: 'high',
+      motion: 'reduced',
+      componentVariants: {
+        button: 'outline',
+        card: 'elevated',
+        table: 'dense-grid',
+        input: 'filled',
+      },
+    };
+
+    const saveRes = await app.request(
+      `http://localhost/api/tasks/${task.id}/blueprint-design-settings`,
+      {
+        method: 'PUT',
+        headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      }
+    );
+    expect(saveRes.status).toBe(200);
+    expect(await saveRes.json()).toMatchObject({
+      sessionId: task.id,
+      settings,
+    });
+
+    const getRes = await app.request(
+      `http://localhost/api/tasks/${task.id}/blueprint-design-settings`,
+      { headers: sameOriginHeaders }
+    );
+    expect(getRes.status).toBe(200);
+    expect(await getRes.json()).toMatchObject({
+      sessionId: task.id,
+      settings,
+    });
+  });
+
+  it('persists independent Blueprint adoption decisions per session message', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: Blueprint Adoption ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: Blueprint adoption target',
+      description: 'Persist adoption states',
+      status: 'draft',
+    });
+    const message = await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: '# Blueprint',
+      messageType: 'markdown_document',
+      payloadJson: { intent: 'app_blueprint' },
+    });
+
+    const endpoints = [
+      'blueprint-adoption',
+      'blueprint-db-design-adoption',
+      'blueprint-design-token-adoption',
+    ];
+
+    for (const endpoint of endpoints) {
+      const initialRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/${endpoint}?messageId=${message.id}`,
+        { headers: sameOriginHeaders }
+      );
+      expect(initialRes.status).toBe(200);
+      expect(await initialRes.json()).toMatchObject({
+        sessionId: task.id,
+        messageId: message.id,
+        adopted: false,
+      });
+    }
+
+    const saveDbDesignRes = await app.request(
+      `http://localhost/api/tasks/${task.id}/blueprint-db-design-adoption`,
+      {
+        method: 'PUT',
+        headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messageId: message.id, adopted: true }),
+      }
+    );
+    expect(saveDbDesignRes.status).toBe(200);
+    expect(await saveDbDesignRes.json()).toMatchObject({
+      sessionId: task.id,
+      messageId: message.id,
+      adopted: true,
+    });
+
+    const getBlueprintRes = await app.request(
+      `http://localhost/api/tasks/${task.id}/blueprint-adoption?messageId=${message.id}`,
+      { headers: sameOriginHeaders }
+    );
+    const getDbDesignRes = await app.request(
+      `http://localhost/api/tasks/${task.id}/blueprint-db-design-adoption?messageId=${message.id}`,
+      { headers: sameOriginHeaders }
+    );
+    const getDesignTokenRes = await app.request(
+      `http://localhost/api/tasks/${task.id}/blueprint-design-token-adoption?messageId=${message.id}`,
+      { headers: sameOriginHeaders }
+    );
+
+    expect(await getBlueprintRes.json()).toMatchObject({ adopted: false });
+    expect(await getDbDesignRes.json()).toMatchObject({ adopted: true });
+    expect(await getDesignTokenRes.json()).toMatchObject({ adopted: false });
+  });
+
   it('deletes a task and its dependent workbench data', async () => {
     const createdRepo = await repo.createRepository({
       name: `TEST: Task Delete Workspace ${crypto.randomUUID()}`,

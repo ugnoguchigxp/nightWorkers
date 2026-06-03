@@ -88,10 +88,9 @@ app.onError(errorHandler);
 
 app.use('/api/*', async (c, next) => {
   if (!isProduction && c.req.header('x-nightworkers-e2e') === '1') {
-    await next();
-    return;
+    return next();
   }
-  await apiLimiter(c, next);
+  return apiLimiter(c, next);
 });
 app.use(
   '/api/auth/login',

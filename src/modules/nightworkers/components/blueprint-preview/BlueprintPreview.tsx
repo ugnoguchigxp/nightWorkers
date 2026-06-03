@@ -1,5 +1,7 @@
-import { Palette, SlidersHorizontal } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { CheckCircle2, Database, Palette, SlidersHorizontal, XCircle } from 'lucide-react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { BlueprintDbDesignPanel } from './BlueprintDbDesignPanel';
 import './blueprintPreview.css';
 import {
   type BlueprintPreviewDesignSettings,
@@ -10,32 +12,114 @@ import {
 } from './designSettings';
 
 type BlueprintPreviewProps = {
+  sessionId?: string | null;
+  messageId?: string | null;
   blueprint: Record<string, any>;
   screens: Array<Record<string, any>>;
   tables: Array<Record<string, any>>;
   bindings: Array<Record<string, any>>;
+  validationIssues?: Array<Record<string, any>>;
+  isDbDesignSubmitting?: boolean;
+  onSubmitDbDesignRequest?: (prompt: string) => Promise<void>;
 };
 
-export function BlueprintPreview({ blueprint, screens, tables, bindings }: BlueprintPreviewProps) {
+export function BlueprintPreview({
+  sessionId,
+  messageId,
+  blueprint,
+  screens,
+  tables,
+  bindings,
+  validationIssues = [],
+  isDbDesignSubmitting = false,
+  onSubmitDbDesignRequest,
+}: BlueprintPreviewProps) {
+  const blueprintId = String(blueprint.id || blueprint.name || screens[0]?.id || 'draft-blueprint');
+  const previousBlueprintId = useRef(blueprintId);
   const initialSettings = useMemo(
     () => createBlueprintPreviewDesignSettings(blueprint.designPreset),
     [blueprint.designPreset]
   );
   const [settings, setSettings] = useState<BlueprintPreviewDesignSettings>(initialSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [dbDesignOpen, setDbDesignOpen] = useState(false);
+  const blueprintAdoption = useBlueprintAdoption({
+    sessionId,
+    messageId,
+    endpoint: 'blueprint-adoption',
+  });
+  const dbDesignAdoption = useBlueprintAdoption({
+    sessionId,
+    messageId,
+    endpoint: 'blueprint-db-design-adoption',
+  });
+  const designTokenAdoption = useBlueprintAdoption({
+    sessionId,
+    messageId,
+    endpoint: 'blueprint-design-token-adoption',
+  });
+  const saveRequestSeqRef = useRef(0);
 
   useEffect(() => {
     setSettings(initialSettings);
+    if (!sessionId) return;
+    const controller = new AbortController();
+    fetch(`/api/tasks/${sessionId}/blueprint-design-settings`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        return (await res.json()) as { settings?: unknown };
+      })
+      .then((data) => {
+        if (controller.signal.aborted || !data?.settings) return;
+        setSettings(createBlueprintPreviewDesignSettings(data.settings));
+      })
+      .catch((error) => {
+        if (error?.name !== 'AbortError') {
+          console.warn('Failed to load Blueprint design settings', error);
+        }
+      });
+    return () => controller.abort();
+  }, [initialSettings, sessionId]);
+
+  useEffect(() => {
+    if (previousBlueprintId.current === blueprintId) return;
+    previousBlueprintId.current = blueprintId;
     setSettingsOpen(false);
-  }, [initialSettings]);
+    setDbDesignOpen(false);
+  }, [blueprintId]);
 
   const designReference = useMemo(
     () =>
       createBlueprintDesignReference({
-        blueprintId: String(blueprint.id || 'draft-blueprint'),
+        blueprintId,
         settings,
       }),
-    [blueprint.id, settings]
+    [blueprintId, settings]
+  );
+
+  const updateSettings = useCallback(
+    (next: BlueprintPreviewDesignSettings) => {
+      setSettings(next);
+      if (!sessionId) return;
+      const requestSeq = ++saveRequestSeqRef.current;
+      fetch(`/api/tasks/${sessionId}/blueprint-design-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(next),
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error(`Failed to save Blueprint design settings: ${res.status}`);
+          return res.json();
+        })
+        .then((data: { settings?: unknown }) => {
+          if (requestSeq !== saveRequestSeqRef.current || !data.settings) return;
+          setSettings(createBlueprintPreviewDesignSettings(data.settings));
+        })
+        .catch((error) => {
+          console.warn('Failed to save Blueprint design settings', error);
+        });
+    },
+    [sessionId]
   );
 
   if (screens.length === 0) {
@@ -50,20 +134,51 @@ export function BlueprintPreview({ blueprint, screens, tables, bindings }: Bluep
   const sections = toObjectArray(firstScreen?.sections);
 
   return (
-    <div className="grid gap-3">
+    <div
+      className="blueprint-preview grid gap-[var(--blueprint-preview-gap)] rounded-xl border border-border p-[var(--blueprint-preview-section-padding)] text-ui"
+      data-blueprint-preview
+      data-theme={settings.theme}
+      data-density={settings.density}
+      data-shape={settings.shape}
+      data-shadow={settings.shadow}
+      data-shadow-direction={settings.shadowDirection}
+      data-font={settings.font}
+      data-contrast={settings.contrast}
+      data-motion={settings.motion}
+      data-button-variant={settings.componentVariants.button}
+      data-card-variant={settings.componentVariants.card}
+      data-table-variant={settings.componentVariants.table}
+      data-input-variant={settings.componentVariants.input}
+    >
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <div className="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-[11px] text-slate-300">
+        <AdoptionToggle
+          label="Blueprint"
+          adopted={blueprintAdoption.adopted}
+          disabled={!blueprintAdoption.enabled || blueprintAdoption.saving}
+          onToggle={blueprintAdoption.toggle}
+        />
+        <div className="rounded-full border border-border bg-card px-3 py-1 text-[11px] text-muted-foreground">
           {sections.length} sections
         </div>
         <button
           type="button"
           aria-expanded={settingsOpen}
           aria-controls="blueprint-design-settings"
-          className="inline-flex h-8 items-center gap-2 rounded border border-cyan-500/40 bg-cyan-400/10 px-3 text-xs font-semibold text-cyan-100 transition hover:border-cyan-300/70 hover:bg-cyan-300/15"
+          className="blueprint-preview-button inline-flex h-8 items-center gap-2 border border-border bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:opacity-90"
           onClick={() => setSettingsOpen((open) => !open)}
         >
           <Palette className="h-3.5 w-3.5" />
           Design
+        </button>
+        <button
+          type="button"
+          aria-expanded={dbDesignOpen}
+          aria-controls="blueprint-db-design"
+          className="blueprint-preview-button inline-flex h-8 items-center gap-2 border border-border bg-card px-3 text-xs font-semibold text-foreground transition hover:bg-background"
+          onClick={() => setDbDesignOpen((open) => !open)}
+        >
+          <Database className="h-3.5 w-3.5" />
+          DB Design
         </button>
       </div>
 
@@ -72,25 +187,39 @@ export function BlueprintPreview({ blueprint, screens, tables, bindings }: Bluep
           id="blueprint-design-settings"
           value={settings}
           designReference={designReference}
-          onChange={setSettings}
+          adoption={
+            <AdoptionToggle
+              label="Design Tokens"
+              adopted={designTokenAdoption.adopted}
+              disabled={!designTokenAdoption.enabled || designTokenAdoption.saving}
+              onToggle={designTokenAdoption.toggle}
+            />
+          }
+          onChange={updateSettings}
         />
       ) : null}
 
-      <div
-        className="blueprint-preview grid gap-[var(--blueprint-preview-gap)] text-ui"
-        data-blueprint-preview
-        data-theme={settings.theme}
-        data-density={settings.density}
-        data-shape={settings.shape}
-        data-shadow={settings.shadow}
-        data-font={settings.font}
-        data-contrast={settings.contrast}
-        data-motion={settings.motion}
-        data-button-variant={settings.componentVariants.button}
-        data-card-variant={settings.componentVariants.card}
-        data-table-variant={settings.componentVariants.table}
-        data-input-variant={settings.componentVariants.input}
-      >
+      {dbDesignOpen ? (
+        <BlueprintDbDesignPanel
+          blueprint={blueprint}
+          screens={screens}
+          tables={tables}
+          bindings={bindings}
+          validationIssues={validationIssues}
+          adoption={
+            <AdoptionToggle
+              label="DB Design"
+              adopted={dbDesignAdoption.adopted}
+              disabled={!dbDesignAdoption.enabled || dbDesignAdoption.saving}
+              onToggle={dbDesignAdoption.toggle}
+            />
+          }
+          isSubmitting={isDbDesignSubmitting}
+          onSubmitDbDesignRequest={onSubmitDbDesignRequest}
+        />
+      ) : null}
+
+      <div className="grid gap-[var(--blueprint-preview-gap)]">
         {sections.map((section, index) => (
           <BlueprintPreviewSection
             key={String(section.id || index)}
@@ -104,31 +233,129 @@ export function BlueprintPreview({ blueprint, screens, tables, bindings }: Bluep
   );
 }
 
+type BlueprintAdoptionEndpoint =
+  | 'blueprint-adoption'
+  | 'blueprint-db-design-adoption'
+  | 'blueprint-design-token-adoption';
+
+function useBlueprintAdoption({
+  sessionId,
+  messageId,
+  endpoint,
+}: {
+  sessionId?: string | null;
+  messageId?: string | null;
+  endpoint: BlueprintAdoptionEndpoint;
+}) {
+  const [adopted, setAdopted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const enabled = Boolean(sessionId && messageId);
+
+  useEffect(() => {
+    setAdopted(false);
+    if (!sessionId || !messageId) return;
+    const controller = new AbortController();
+    fetch(`/api/tasks/${sessionId}/${endpoint}?messageId=${encodeURIComponent(messageId)}`, {
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        return (await res.json()) as { adopted?: boolean };
+      })
+      .then((data) => {
+        if (controller.signal.aborted || !data) return;
+        setAdopted(Boolean(data.adopted));
+      })
+      .catch((error) => {
+        if (error?.name !== 'AbortError') {
+          console.warn(`Failed to load Blueprint adoption state for ${endpoint}`, error);
+        }
+      });
+    return () => controller.abort();
+  }, [endpoint, messageId, sessionId]);
+
+  const toggle = useCallback(() => {
+    if (!sessionId || !messageId || saving) return;
+    const next = !adopted;
+    setAdopted(next);
+    setSaving(true);
+    fetch(`/api/tasks/${sessionId}/${endpoint}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messageId, adopted: next }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to save Blueprint adoption: ${res.status}`);
+        return res.json();
+      })
+      .then((data: { adopted?: boolean }) => {
+        setAdopted(Boolean(data.adopted));
+      })
+      .catch((error) => {
+        setAdopted(!next);
+        console.warn(`Failed to save Blueprint adoption state for ${endpoint}`, error);
+      })
+      .finally(() => setSaving(false));
+  }, [adopted, endpoint, messageId, saving, sessionId]);
+
+  return { adopted, enabled, saving, toggle };
+}
+
+function AdoptionToggle({
+  label,
+  adopted,
+  disabled,
+  onToggle,
+}: {
+  label: string;
+  adopted: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}) {
+  const Icon = adopted ? CheckCircle2 : XCircle;
+  return (
+    <button
+      type="button"
+      aria-pressed={adopted}
+      className={`blueprint-preview-button inline-flex h-8 items-center gap-2 border px-3 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+        adopted
+          ? 'border-primary bg-primary text-primary-foreground hover:opacity-90'
+          : 'border-border bg-card text-foreground hover:bg-background'
+      }`}
+      disabled={disabled}
+      onClick={onToggle}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {label}: {adopted ? 'Adopted' : 'Not adopted'}
+    </button>
+  );
+}
+
 function DesignSettingsPanel({
   id,
   value,
   designReference,
+  adoption,
   onChange,
 }: {
   id: string;
   value: BlueprintPreviewDesignSettings;
   designReference: ReturnType<typeof createBlueprintDesignReference>;
+  adoption?: ReactNode;
   onChange: (next: BlueprintPreviewDesignSettings) => void;
 }) {
   return (
-    <div
-      id={id}
-      className="rounded-lg border border-slate-700/80 bg-slate-950/35 p-3 text-xs text-slate-200"
-    >
-      <div className="mb-3 flex items-start gap-2 text-slate-400">
-        <SlidersHorizontal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-200" />
-        <div>
-          <div className="font-semibold text-slate-200">Design reference settings</div>
+    <div id={id} className="blueprint-preview-card rounded-lg border p-3 text-xs">
+      <div className="mb-3 flex items-start gap-2 text-muted-foreground">
+        <SlidersHorizontal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-foreground">Design reference settings</div>
           <div className="mt-1 leading-5">
             Preview is a specification-review mock. These selected tokens can be attached to later
             implementation plans.
           </div>
         </div>
+        {adoption ? <div className="shrink-0">{adoption}</div> : null}
       </div>
       <div className="grid gap-2">
         <SettingsGroup title="Theme" summary={value.theme}>
@@ -152,12 +379,24 @@ function DesignSettingsPanel({
             onSelect={(shape) => onChange({ ...value, shape })}
           />
         </SettingsGroup>
-        <SettingsGroup title="Shadow" summary={value.shadow}>
-          <OptionRow
-            options={blueprintPreviewDesignOptions.shadow}
-            value={value.shadow}
-            onSelect={(shadow) => onChange({ ...value, shadow })}
-          />
+        <SettingsGroup
+          title="Shadow"
+          summary={`${value.shadow} / ${labelForOption(value.shadowDirection)}`}
+        >
+          <div className="grid gap-3">
+            <VariantRow
+              label="Strength"
+              options={blueprintPreviewDesignOptions.shadow}
+              value={value.shadow}
+              onSelect={(shadow) => onChange({ ...value, shadow })}
+            />
+            <VariantRow
+              label="Direction"
+              options={blueprintPreviewDesignOptions.shadowDirection}
+              value={value.shadowDirection}
+              onSelect={(shadowDirection) => onChange({ ...value, shadowDirection })}
+            />
+          </div>
         </SettingsGroup>
         <SettingsGroup title="Font" summary={value.font}>
           <OptionRow
@@ -228,12 +467,12 @@ function DesignSettingsPanel({
             />
           </div>
         </SettingsGroup>
-        <details className="rounded border border-slate-800 bg-slate-950/40">
-          <summary className="cursor-pointer select-none px-3 py-2 font-semibold text-slate-300">
+        <details className="rounded border border-border bg-card">
+          <summary className="cursor-pointer select-none px-3 py-2 font-semibold text-foreground">
             Implementation-plan attachment
           </summary>
-          <div className="border-slate-800 border-t p-3">
-            <pre className="whitespace-pre-wrap rounded border border-slate-800 bg-slate-950 p-2 font-mono text-[11px] leading-5 text-slate-300">
+          <div className="border-border border-t p-3">
+            <pre className="whitespace-pre-wrap rounded border border-border bg-background p-2 font-mono text-[11px] leading-5 text-foreground">
               {designReferenceSummary(designReference.settings)}
             </pre>
           </div>
@@ -253,15 +492,15 @@ function SettingsGroup({
   children: React.ReactNode;
 }) {
   return (
-    <details className="rounded border border-slate-800 bg-slate-900/30">
-      <summary className="flex cursor-pointer select-none items-center justify-between gap-3 px-3 py-2">
-        <span className="font-semibold text-slate-200">{title}</span>
-        <span className="rounded border border-slate-700 bg-slate-950/60 px-2 py-0.5 text-[10px] text-slate-400">
+    <section className="rounded border border-border bg-card">
+      <div className="flex items-center justify-between gap-3 px-3 py-2">
+        <span className="font-semibold text-foreground">{title}</span>
+        <span className="rounded border border-border bg-background px-2 py-0.5 text-[10px] text-muted-foreground">
           {summary}
         </span>
-      </summary>
-      <div className="border-slate-800 border-t p-3">{children}</div>
-    </details>
+      </div>
+      <div className="border-border border-t p-3">{children}</div>
+    </section>
   );
 }
 
@@ -278,7 +517,7 @@ function VariantRow<const T extends readonly string[]>({
 }) {
   return (
     <div className="grid gap-1.5">
-      <div className="text-[11px] font-semibold uppercase text-slate-500">{label}</div>
+      <div className="text-[11px] font-semibold uppercase text-muted-foreground">{label}</div>
       <OptionRow options={options} value={value} onSelect={onSelect} />
     </div>
   );
@@ -299,10 +538,11 @@ function OptionRow<const T extends readonly string[]>({
         <button
           type="button"
           key={option}
-          className={`rounded border px-2.5 py-1 text-[11px] transition ${
+          aria-label={labelForOptionA11y(option)}
+          className={`blueprint-preview-option rounded border px-2.5 py-1 text-[11px] font-semibold transition ${
             option === value
-              ? 'border-cyan-300 bg-cyan-300 text-slate-950'
-              : 'border-slate-700 bg-slate-950/40 text-slate-300 hover:border-slate-500'
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'border-border bg-background text-foreground hover:bg-secondary'
           }`}
           aria-pressed={option === value}
           onClick={() => onSelect(option)}
@@ -482,18 +722,39 @@ function renderPreviewSectionBody(
     const chartItems = chartPreviewItems(props, table, binding);
     return (
       <div className="grid gap-[var(--blueprint-preview-gap)] md:grid-cols-[minmax(0,1fr)_12rem]">
-        <div className="flex h-40 items-end gap-2 rounded-md border border-border bg-muted p-3">
-          {chartItems.map((item, index) => (
-            <div className="flex min-w-0 flex-1 flex-col items-center gap-2" key={item.label}>
-              <div
-                className="w-full rounded-t bg-primary"
-                style={{ height: `${Math.max(18, Math.min(100, item.value))}%` }}
+        <div className="h-44 rounded-md border border-border bg-muted p-2">
+          <ResponsiveContainer height="100%" width="100%">
+            <BarChart data={chartItems} margin={{ top: 8, right: 8, bottom: 4, left: -12 }}>
+              <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+              <XAxis
+                axisLine={{ stroke: 'var(--border)' }}
+                dataKey="label"
+                interval={0}
+                tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }}
+                tickFormatter={compactChartLabel}
+                tickLine={false}
               />
-              <span className="max-w-full truncate text-[10px] text-muted-foreground">
-                {item.label || `Item ${index + 1}`}
-              </span>
-            </div>
-          ))}
+              <YAxis
+                axisLine={false}
+                tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }}
+                tickLine={false}
+                width={30}
+              />
+              <Tooltip
+                cursor={{ fill: 'color-mix(in srgb, var(--primary) 10%, transparent)' }}
+                contentStyle={{
+                  background: 'var(--card)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)',
+                  color: 'var(--foreground)',
+                  fontSize: 11,
+                }}
+                formatter={(value) => [String(value), 'Value']}
+                labelStyle={{ color: 'var(--muted-foreground)' }}
+              />
+              <Bar dataKey="value" fill="var(--primary)" maxBarSize={44} radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
         <div className="grid content-start gap-2">
           {chartItems.slice(0, 4).map((item) => (
@@ -979,7 +1240,7 @@ function chartPreviewItems(
   if (sourceItems.length > 0) {
     return sourceItems.slice(0, 6).map((item, index) => ({
       label: String(item.label || item.title || `Item ${index + 1}`),
-      value: Number(item.value || item.max || 24 + index * 14),
+      value: previewChartValue(item.value ?? item.max, 24 + index * 14),
     }));
   }
 
@@ -988,6 +1249,16 @@ function chartPreviewItems(
     label: column.label,
     value: 24 + index * 14,
   }));
+}
+
+function previewChartValue(value: unknown, fallback: number) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function compactChartLabel(value: unknown) {
+  const label = String(value || '');
+  return label.length > 9 ? `${label.slice(0, 8)}...` : label;
 }
 
 function previewGenericItems(
@@ -1047,8 +1318,41 @@ function titleCase(value: string) {
 }
 
 function labelForOption(value: string) {
+  if (value in shadowDirectionLabels) return shadowDirectionLabels[value];
+  if (value in optionLabels) return optionLabels[value];
   return titleCase(value);
 }
+
+function labelForOptionA11y(value: string) {
+  if (value in shadowDirectionLabels) return `Shadow direction ${shadowDirectionA11yLabels[value]}`;
+  return labelForOption(value);
+}
+
+const shadowDirectionLabels: Record<string, string> = {
+  '0deg': '↓',
+  '45deg': '↘',
+  '90deg': '→',
+  '135deg': '↗',
+  '180deg': '↑',
+  '225deg': '↖',
+  '270deg': '←',
+  '315deg': '↙',
+};
+
+const optionLabels: Record<string, string> = {
+  campfire: 'Camp Fire',
+};
+
+const shadowDirectionA11yLabels: Record<string, string> = {
+  '0deg': 'down',
+  '45deg': 'down right',
+  '90deg': 'right',
+  '135deg': 'up right',
+  '180deg': 'up',
+  '225deg': 'up left',
+  '270deg': 'left',
+  '315deg': 'down left',
+};
 
 function isObject(value: unknown): value is Record<string, any> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));

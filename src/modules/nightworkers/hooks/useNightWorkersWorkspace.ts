@@ -8,10 +8,17 @@ import {
   mergeRunEvents,
 } from '../realtimeEvents';
 import type {
+  AgentHookConfig,
+  AgentHookInput,
+  AgentHookTestResult,
   CreateProjectInput,
   CreateSessionInput,
   LlmProvider,
   LlmSettings,
+  McpServerConfig,
+  McpServerImportResult,
+  McpServerInput,
+  McpServerTestResult,
   ProjectFileContent,
   ProjectFileEntry,
   Repository,
@@ -128,6 +135,17 @@ export type NightWorkersWorkspaceState = {
   llmSettings: LlmSettings | null;
   activeProvider: LlmProvider;
   providerModelOptions: Array<{ value: string; label: string }>;
+  mcpServers: McpServerConfig[];
+  agentHooks: AgentHookConfig[];
+  createMcpServer: (input: McpServerInput) => Promise<McpServerConfig>;
+  importMcpServers: (text: string, testAfterImport?: boolean) => Promise<McpServerImportResult>;
+  updateMcpServer: (id: string, input: Partial<McpServerInput>) => Promise<McpServerConfig>;
+  deleteMcpServer: (id: string) => Promise<void>;
+  testMcpServer: (id: string) => Promise<McpServerTestResult>;
+  createAgentHook: (input: AgentHookInput) => Promise<AgentHookConfig>;
+  updateAgentHook: (id: string, input: Partial<AgentHookInput>) => Promise<AgentHookConfig>;
+  deleteAgentHook: (id: string) => Promise<void>;
+  testAgentHook: (id: string) => Promise<AgentHookTestResult>;
   setActiveProvider: (provider: LlmProvider) => Promise<void>;
   toggleProviderEnabled: (provider: LlmProvider, enabled: boolean) => Promise<void>;
   updateProviderModel: (model: string) => Promise<void>;
@@ -165,12 +183,14 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('initializing');
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
   const [pendingChatRunId, setPendingChatRunId] = useState<string | null>(null);
+  const [pendingAssistantTaskId, setPendingAssistantTaskId] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const lastSubmitRef = useRef<{ taskId: string; prompt: string; at: number } | null>(null);
   const pendingChatQueueRef = useRef<Array<{ taskId: string; prompt: string }>>([]);
   const chatSubmitStartedAtRef = useRef<number | null>(null);
   const chatSubmitTransportRef = useRef<'http' | 'websocket' | null>(null);
   const pendingChatRunIdRef = useRef<string | null>(null);
+  const pendingAssistantTaskIdRef = useRef<string | null>(null);
   const processedRealtimeMessageKeysRef = useRef<Set<string>>(new Set());
   const [realtimeEvents, setRealtimeEvents] = useState<TaskEvent[]>([]);
   const [bufferedEventsByRun, setBufferedEventsByRun] = useState<Record<string, TaskEvent[]>>({});
@@ -265,6 +285,30 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       if (!res.ok) throw new Error('Failed to fetch model options');
       const data = (await res.json()) as { options: Array<{ value: string; label: string }> };
       return data.options;
+    },
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
+  const { data: mcpServers = [] } = useQuery({
+    queryKey: ['mcpServers'],
+    queryFn: async () => {
+      const res = await fetch('/api/settings/mcp/servers');
+      if (!res.ok) throw new Error('Failed to fetch MCP servers');
+      const data = (await res.json()) as { servers: McpServerConfig[] };
+      return data.servers;
+    },
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
+  const { data: agentHooks = [] } = useQuery({
+    queryKey: ['agentHooks'],
+    queryFn: async () => {
+      const res = await fetch('/api/settings/hooks');
+      if (!res.ok) throw new Error('Failed to fetch Agent Hooks');
+      const data = (await res.json()) as { hooks: AgentHookConfig[] };
+      return data.hooks;
     },
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -594,6 +638,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const isAgentThinking =
     isChatSubmitting ||
     Boolean(pendingChatRunId) ||
+    Boolean(activeSessionId && pendingAssistantTaskId === activeSessionId) ||
     isActiveRunStatus(latestRun?.status) ||
     isActiveTaskStatus(activeSession?.status);
   const latestRunEvents =
@@ -683,6 +728,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     chatSubmitTransportRef.current = null;
     pendingChatRunIdRef.current = null;
     setPendingChatRunId(null);
+    pendingAssistantTaskIdRef.current = null;
+    setPendingAssistantTaskId(null);
     pendingChatQueueRef.current = [];
   }, [realtimeStatus]);
 
@@ -708,6 +755,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
         chatSubmitTransportRef.current = null;
         pendingChatRunIdRef.current = null;
         setPendingChatRunId(null);
+        pendingAssistantTaskIdRef.current = null;
+        setPendingAssistantTaskId(null);
         pendingChatQueueRef.current = [];
       }
     }, 2000);
@@ -870,6 +919,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
             );
             if (
               (incoming.role === 'assistant' || incoming.role === 'system') &&
+              (!pendingAssistantTaskIdRef.current ||
+                incoming.taskId === pendingAssistantTaskIdRef.current) &&
               (!pendingChatRunIdRef.current || incoming.runId === pendingChatRunIdRef.current)
             ) {
               setStreamingTextByTask((prev) => {
@@ -881,6 +932,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
               chatSubmitStartedAtRef.current = null;
               pendingChatRunIdRef.current = null;
               setPendingChatRunId(null);
+              pendingAssistantTaskIdRef.current = null;
+              setPendingAssistantTaskId(null);
             }
           }
           if (msg.type === 'chat_submit_enqueued') {
@@ -892,6 +945,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
             chatSubmitStartedAtRef.current = null;
             pendingChatRunIdRef.current = null;
             setPendingChatRunId(null);
+            pendingAssistantTaskIdRef.current = null;
+            setPendingAssistantTaskId(null);
             if (!activeSessionId) return;
             const errorMessage: TaskMessage = {
               id: `chat-error-${Date.now()}`,
@@ -1049,6 +1104,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       chatSubmitTransportRef.current = 'websocket';
       pendingChatRunIdRef.current = null;
       setPendingChatRunId(null);
+      pendingAssistantTaskIdRef.current = sessionId;
+      setPendingAssistantTaskId(sessionId);
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         pendingChatQueueRef.current.push({ taskId: sessionId, prompt: content });
@@ -1071,6 +1128,15 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       chatSubmitTransportRef.current = 'http';
       pendingChatRunIdRef.current = null;
       setPendingChatRunId(null);
+      const expectsAssistantResponse = intent !== 'queue' && intent !== 'create_task';
+      let shouldClearPendingAssistant = !expectsAssistantResponse;
+      if (expectsAssistantResponse) {
+        pendingAssistantTaskIdRef.current = sessionId;
+        setPendingAssistantTaskId(sessionId);
+      } else {
+        pendingAssistantTaskIdRef.current = null;
+        setPendingAssistantTaskId(null);
+      }
       try {
         const res = await fetch(`/api/workbench/sessions/${sessionId}/messages`, {
           method: 'POST',
@@ -1093,16 +1159,28 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
           pendingChatRunIdRef.current = result.run.id;
           setPendingChatRunId(result.run.id);
         }
+        const latestMessage = result.messages?.[result.messages.length - 1];
+        shouldClearPendingAssistant =
+          !expectsAssistantResponse ||
+          latestMessage?.role === 'assistant' ||
+          latestMessage?.role === 'system';
         queryClient.invalidateQueries({ queryKey: ['sessions'] });
         queryClient.invalidateQueries({ queryKey: ['sessionRuns', sessionId] });
         return result;
+      } catch (error) {
+        shouldClearPendingAssistant = true;
+        throw error;
       } finally {
         setIsChatSubmitting(false);
         chatSubmitStartedAtRef.current = null;
         chatSubmitTransportRef.current = null;
-        if (intent !== 'run_task') {
+        if (!pendingChatRunIdRef.current) {
           pendingChatRunIdRef.current = null;
           setPendingChatRunId(null);
+        }
+        if (shouldClearPendingAssistant) {
+          pendingAssistantTaskIdRef.current = null;
+          setPendingAssistantTaskId(null);
         }
       }
     },
@@ -1120,6 +1198,87 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     llmSettings,
     activeProvider,
     providerModelOptions,
+    mcpServers,
+    agentHooks,
+    createMcpServer: async (input) => {
+      const res = await fetch('/api/settings/mcp/servers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const server = (await res.json()) as McpServerConfig;
+      queryClient.invalidateQueries({ queryKey: ['mcpServers'] });
+      return server;
+    },
+    importMcpServers: async (text, testAfterImport = true) => {
+      const res = await fetch('/api/settings/mcp/servers/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, testAfterImport }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const result = (await res.json()) as McpServerImportResult;
+      queryClient.invalidateQueries({ queryKey: ['mcpServers'] });
+      return result;
+    },
+    updateMcpServer: async (id, input) => {
+      const res = await fetch(`/api/settings/mcp/servers/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const server = (await res.json()) as McpServerConfig;
+      queryClient.invalidateQueries({ queryKey: ['mcpServers'] });
+      return server;
+    },
+    deleteMcpServer: async (id) => {
+      const res = await fetch(`/api/settings/mcp/servers/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(await res.text());
+      queryClient.invalidateQueries({ queryKey: ['mcpServers'] });
+    },
+    testMcpServer: async (id) => {
+      const res = await fetch(`/api/settings/mcp/servers/${id}/test`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      const result = (await res.json()) as McpServerTestResult;
+      queryClient.invalidateQueries({ queryKey: ['mcpServers'] });
+      return result;
+    },
+    createAgentHook: async (input) => {
+      const res = await fetch('/api/settings/hooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const hook = (await res.json()) as AgentHookConfig;
+      queryClient.invalidateQueries({ queryKey: ['agentHooks'] });
+      return hook;
+    },
+    updateAgentHook: async (id, input) => {
+      const res = await fetch(`/api/settings/hooks/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const hook = (await res.json()) as AgentHookConfig;
+      queryClient.invalidateQueries({ queryKey: ['agentHooks'] });
+      return hook;
+    },
+    deleteAgentHook: async (id) => {
+      const res = await fetch(`/api/settings/hooks/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(await res.text());
+      queryClient.invalidateQueries({ queryKey: ['agentHooks'] });
+    },
+    testAgentHook: async (id) => {
+      const res = await fetch(`/api/settings/hooks/${id}/test`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      const result = (await res.json()) as AgentHookTestResult;
+      queryClient.invalidateQueries({ queryKey: ['agentHooks'] });
+      return result;
+    },
     setActiveProvider: async (provider) => {
       const merged = { ...(llmSettings || {}), ACTIVE_LLM_PROVIDER: provider } as LlmSettings;
       const res = await fetch('/api/settings/llm', {

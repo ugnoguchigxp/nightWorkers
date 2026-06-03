@@ -5,6 +5,7 @@ import { ensureNightWorkersSchema } from '../api/db/bootstrap';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import * as service from '../api/modules/nightworkers/nightworkers.service';
 import * as llm from '../api/services/supervisor/llm-provider';
+import { buildBlueprintDbDesignPrompt } from '../src/modules/nightworkers/components/blueprint-preview/dbDesignModel';
 import { representativeAppBlueprint } from './fixtures/app-blueprint';
 
 vi.mock('../api/services/supervisor/llm-provider', async () => {
@@ -253,6 +254,15 @@ describe('NightWorkers workbench routes', () => {
     expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(2);
     expect(vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[0]).toContain(
       '[Skill Document: references/work_kinds/blueprint.md]'
+    );
+    expect(vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[0]).toContain(
+      '通常の Blueprint 生成では DB/DDL/data model/data binding を設計しない'
+    );
+    expect(vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[0]).toContain(
+      'databaseSchema は必ず {"tables":[],"relations":[]}'
+    );
+    expect(vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[0]).toContain(
+      'DB table/column/relation/binding/DDL の考案は DB Design workflow の担当'
     );
     expect(body.run).toBeNull();
     expect(body.task.status).toBe('ready');
@@ -638,6 +648,96 @@ describe('NightWorkers workbench routes', () => {
       (message: any) => message.role === 'assistant' && message.metadataJson?.intent === 'intake'
     );
     expect(intakeMessage?.content).toContain('Analyze the requested component design.');
+  });
+
+  it('creates a revised Blueprint artifact from DB Design intent without round-1 intake', async () => {
+    const revisedBlueprint = {
+      ...representativeAppBlueprint,
+      databaseSchema: {
+        ...representativeAppBlueprint.databaseSchema,
+        tables: [
+          {
+            ...representativeAppBlueprint.databaseSchema.tables[0],
+            columns: [
+              ...representativeAppBlueprint.databaseSchema.tables[0].columns,
+              {
+                name: 'priority',
+                type: 'string',
+                nullable: false,
+                primaryKey: false,
+                unique: false,
+                label: 'Priority',
+                uiHint: 'status',
+              },
+            ],
+            indexes: [['status'], ['priority']],
+          },
+        ],
+      },
+      dataBindings: [
+        {
+          ...representativeAppBlueprint.dataBindings[0],
+          fields: ['id', 'status', 'priority'],
+        },
+        representativeAppBlueprint.dataBindings[1],
+      ],
+    };
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
+      phase: 'stop',
+      workflow: 'general',
+      routingHypothesis: undefined,
+      instruction: '',
+      rationale: 'Revised Blueprint data design.',
+      finalResponse: JSON.stringify(revisedBlueprint),
+      expectedEvidence: [],
+      terminalState: 'completed',
+      riskLevel: 'low',
+      toolCall: null,
+    });
+    const { task } = await createWorkbenchTask({ title: 'DB Design task', objective: '' });
+    const prompt = buildBlueprintDbDesignPrompt({
+      blueprintId: representativeAppBlueprint.id,
+      currentBlueprint: representativeAppBlueprint as unknown as Record<string, unknown>,
+      prompt: 'priority column を追加してください',
+      target: { kind: 'table', tableName: 'decision-items' },
+      validationIssues: [],
+    });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt, intent: 'design_blueprint_data' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(llm.callSupervisorLLM).mock.calls[0]?.[0]).toContain(
+      'AppBlueprint の DB Design'
+    );
+    const userMessage = body.messages.find(
+      (message: any) =>
+        message.role === 'user' && message.metadataJson?.intent === 'design_blueprint_data'
+    );
+    expect(userMessage?.content).toContain('Target: Table decision-items');
+    expect(userMessage?.content).toContain('Instruction: priority column を追加してください');
+    expect(userMessage?.content).not.toContain('currentBlueprint');
+    expect(userMessage?.metadataJson?.validation?.valid).toBe(true);
+    const blueprintMessage = body.messages.find(
+      (message: any) =>
+        message.messageType === 'markdown_document' &&
+        message.metadataJson?.source === 'blueprint-db-design'
+    );
+    expect(blueprintMessage?.metadataJson?.intent).toBe('app_blueprint');
+    expect(blueprintMessage?.metadataJson?.dbDesignTarget).toEqual({
+      kind: 'table',
+      tableName: 'decision-items',
+    });
+    expect(
+      blueprintMessage?.metadataJson?.appBlueprint?.databaseSchema?.tables?.[0]?.columns
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'priority' })]));
+    expect(blueprintMessage?.metadataJson?.validation?.valid).toBe(true);
+    expect(body.task.status).toBe('ready');
   });
 
   it('returns a validation error instead of changing task status for incomplete drafts', async () => {

@@ -268,3 +268,80 @@ export const taskMessages = sqliteTable(
     runIdIdx: index('task_messages_run_id_idx').on(table.runId),
   })
 );
+
+export const blueprintDesignSettings = sqliteTable(
+  'blueprint_design_settings',
+  {
+    ...commonColumns,
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    settingsJson: text('settings_json', { mode: 'json' }).notNull(),
+  },
+  (table) => ({
+    taskIdUniqueIdx: uniqueIndex('blueprint_design_settings_task_id_uidx').on(table.taskId),
+  })
+);
+
+export const blueprintArtifactAdoptions = sqliteTable(
+  'blueprint_artifact_adoptions',
+  {
+    ...commonColumns,
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    messageId: text('message_id')
+      .notNull()
+      .references(() => taskMessages.id, { onDelete: 'cascade' }),
+    adopted: integer('adopted', { mode: 'boolean' }).default(false).notNull(),
+  },
+  (table) => ({
+    taskIdIdx: index('blueprint_artifact_adoptions_task_id_idx').on(table.taskId),
+    messageUniqueIdx: uniqueIndex('blueprint_artifact_adoptions_message_uidx').on(
+      table.taskId,
+      table.messageId
+    ),
+  })
+);
+
+export const blueprintDbDesignAdoptions = sqliteTable(
+  'blueprint_db_design_adoptions',
+  {
+    ...commonColumns,
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    messageId: text('message_id')
+      .notNull()
+      .references(() => taskMessages.id, { onDelete: 'cascade' }),
+    adopted: integer('adopted', { mode: 'boolean' }).default(false).notNull(),
+  },
+  (table) => ({
+    taskIdIdx: index('blueprint_db_design_adoptions_task_id_idx').on(table.taskId),
+    messageUniqueIdx: uniqueIndex('blueprint_db_design_adoptions_message_uidx').on(
+      table.taskId,
+      table.messageId
+    ),
+  })
+);
+
+export const blueprintDesignTokenAdoptions = sqliteTable(
+  'blueprint_design_token_adoptions',
+  {
+    ...commonColumns,
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    messageId: text('message_id')
+      .notNull()
+      .references(() => taskMessages.id, { onDelete: 'cascade' }),
+    adopted: integer('adopted', { mode: 'boolean' }).default(false).notNull(),
+  },
+  (table) => ({
+    taskIdIdx: index('blueprint_design_token_adoptions_task_id_idx').on(table.taskId),
+    messageUniqueIdx: uniqueIndex('blueprint_design_token_adoptions_message_uidx').on(
+      table.taskId,
+      table.messageId
+    ),
+  })
+);

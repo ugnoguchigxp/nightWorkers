@@ -11,12 +11,14 @@ import type {
   TaskMessage,
   TaskRun,
   WorkbenchArtifactRef,
+  WorkbenchChatIntent,
 } from '../types';
 import { getChangedFiles } from '../utils/diff';
 import { BlueprintPreview } from './blueprint-preview';
 
 type ArtifactPaneProps = {
   activeProject: Repository | null;
+  activeSessionId: string | null;
   latestRun?: TaskRun;
   selectedArtifact: WorkbenchArtifactRef | null;
   taskMessages: TaskMessage[];
@@ -31,6 +33,8 @@ type ArtifactPaneProps = {
   onToggleDirectory: (path: string) => Promise<void>;
   onOpenFile: (path: string) => void;
   onShowDiff: () => void;
+  onSubmitWorkbenchMessage?: (prompt: string, intent: WorkbenchChatIntent) => Promise<void>;
+  isWorkbenchMessageSubmitting?: boolean;
 };
 
 const artifactCodeBlockThemes = {
@@ -91,6 +95,7 @@ const markdownComponents: Components = {
 
 export function ArtifactPane({
   activeProject,
+  activeSessionId,
   latestRun,
   selectedArtifact,
   taskMessages,
@@ -105,6 +110,8 @@ export function ArtifactPane({
   onToggleDirectory,
   onOpenFile,
   onShowDiff,
+  onSubmitWorkbenchMessage,
+  isWorkbenchMessageSubmitting = false,
 }: ArtifactPaneProps) {
   const showDiff = selectedArtifact?.kind === 'diff';
   const showBlueprint = selectedArtifact?.kind === 'app_blueprint';
@@ -153,9 +160,17 @@ export function ArtifactPane({
             <DiffViewer diff={latestRun?.diffPatch || ''} />
           ) : showBlueprint ? (
             <BlueprintViewer
+              sessionId={activeSessionId}
+              messageId={taskMessageId}
               blueprint={selectedArtifact?.metadata?.appBlueprint}
               validation={selectedArtifact?.metadata?.validation}
               markdown={selectedMessage?.content}
+              isDbDesignSubmitting={isWorkbenchMessageSubmitting}
+              onSubmitDbDesignRequest={
+                onSubmitWorkbenchMessage
+                  ? (prompt) => onSubmitWorkbenchMessage(prompt, 'design_blueprint_data')
+                  : undefined
+              }
             />
           ) : showComponentDesign ? (
             <ComponentDesignViewer
@@ -235,13 +250,21 @@ function FilesOutline({
 }
 
 function BlueprintViewer({
+  sessionId,
+  messageId,
   blueprint,
   validation,
   markdown,
+  isDbDesignSubmitting,
+  onSubmitDbDesignRequest,
 }: {
+  sessionId: string | null;
+  messageId: string | null;
   blueprint: unknown;
   validation: unknown;
   markdown?: string;
+  isDbDesignSubmitting?: boolean;
+  onSubmitDbDesignRequest?: (prompt: string) => Promise<void>;
 }) {
   if (!isObject(blueprint)) {
     return <MarkdownViewer content={markdown || 'No Blueprint content'} />;
@@ -259,10 +282,15 @@ function BlueprintViewer({
         <BlueprintSection title="Design Preview">
           <BlueprintPreview
             key={String(blueprint.id || blueprint.name || screens[0]?.id || 'draft-blueprint')}
+            sessionId={sessionId}
+            messageId={messageId}
             blueprint={blueprint}
             screens={screens}
             tables={tables}
             bindings={bindings}
+            validationIssues={issues}
+            isDbDesignSubmitting={isDbDesignSubmitting}
+            onSubmitDbDesignRequest={onSubmitDbDesignRequest}
           />
         </BlueprintSection>
         <PromptDetail>

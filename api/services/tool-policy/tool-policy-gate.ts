@@ -211,6 +211,35 @@ export class DefaultToolPolicyGate implements ToolPolicyGate {
       };
     }
 
+    if (request.toolName === 'mcp_call_tool') {
+      if (typeof args.serverId !== 'string' || args.serverId.trim().length === 0) {
+        return {
+          allowed: false,
+          code: 'INVALID_TOOL_ARGS',
+          message: 'mcp_call_tool requires serverId string.',
+        };
+      }
+      if (typeof args.toolName !== 'string' || args.toolName.trim().length === 0) {
+        return {
+          allowed: false,
+          code: 'INVALID_TOOL_ARGS',
+          message: 'mcp_call_tool requires toolName string.',
+        };
+      }
+      const toolArguments = args.arguments;
+      if (
+        toolArguments !== undefined &&
+        (!toolArguments || typeof toolArguments !== 'object' || Array.isArray(toolArguments))
+      ) {
+        return {
+          allowed: false,
+          code: 'INVALID_TOOL_ARGS',
+          message: 'mcp_call_tool arguments must be an object when provided.',
+        };
+      }
+      return { allowed: true, normalizedArgs: args };
+    }
+
     return { allowed: true, normalizedArgs: args };
   }
 

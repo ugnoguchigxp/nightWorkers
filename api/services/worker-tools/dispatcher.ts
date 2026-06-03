@@ -8,6 +8,7 @@ import {
   gitStatusTool,
   inspectStructureTool,
   listDirTool,
+  mcpCallTool,
   readFileTool,
   replaceContentTool,
   runCommandTool,
@@ -187,6 +188,16 @@ export async function executeWorkerTool(
         timeoutSeconds: args.timeoutSeconds as number | undefined,
         compressionMode: args.compressionMode as 'auto' | 'off' | undefined,
         maxCommandSeconds: safetyPolicy?.maxCommandSeconds,
+      }),
+    };
+  }
+
+  if (toolName === 'mcp_call_tool') {
+    return {
+      result: await mcpCallTool({
+        serverId: args.serverId as string,
+        toolName: args.toolName as string,
+        arguments: args.arguments as Record<string, unknown> | undefined,
       }),
     };
   }

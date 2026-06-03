@@ -1,5 +1,9 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
+  blueprintAdoptionRequestSchema,
+  blueprintAdoptionSchema,
+  blueprintPreviewDesignSettingsSchema,
+  blueprintSessionDesignSettingsSchema,
   createRepositorySchema,
   createReviewerEvaluationRequestSchema,
   createReviewerReplayEvaluationRequestSchema,
@@ -318,6 +322,209 @@ const updateTaskRoute = createRoute({
   },
 });
 
+const getBlueprintDesignSettingsRoute = createRoute({
+  method: 'get',
+  path: '/tasks/:id/blueprint-design-settings',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'task-uuid' }),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: blueprintSessionDesignSettingsSchema,
+        },
+      },
+      description: 'Session-scoped Blueprint Preview design settings',
+    },
+    404: { description: 'Task not found' },
+  },
+});
+
+const saveBlueprintDesignSettingsRoute = createRoute({
+  method: 'put',
+  path: '/tasks/:id/blueprint-design-settings',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'task-uuid' }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: blueprintPreviewDesignSettingsSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: blueprintSessionDesignSettingsSchema,
+        },
+      },
+      description: 'Session-scoped Blueprint Preview design settings saved',
+    },
+    404: { description: 'Task not found' },
+  },
+});
+
+const blueprintAdoptionQuerySchema = z.object({
+  messageId: z.string().uuid(),
+});
+
+const getBlueprintArtifactAdoptionRoute = createRoute({
+  method: 'get',
+  path: '/tasks/:id/blueprint-adoption',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'task-uuid' }),
+    }),
+    query: blueprintAdoptionQuerySchema,
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: blueprintAdoptionSchema,
+        },
+      },
+      description: 'Blueprint artifact adoption state',
+    },
+    404: { description: 'Task or message not found' },
+  },
+});
+
+const saveBlueprintArtifactAdoptionRoute = createRoute({
+  method: 'put',
+  path: '/tasks/:id/blueprint-adoption',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'task-uuid' }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: blueprintAdoptionRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: blueprintAdoptionSchema,
+        },
+      },
+      description: 'Blueprint artifact adoption state saved',
+    },
+    404: { description: 'Task or message not found' },
+  },
+});
+
+const getBlueprintDbDesignAdoptionRoute = createRoute({
+  method: 'get',
+  path: '/tasks/:id/blueprint-db-design-adoption',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'task-uuid' }),
+    }),
+    query: blueprintAdoptionQuerySchema,
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: blueprintAdoptionSchema,
+        },
+      },
+      description: 'Blueprint DB Design adoption state',
+    },
+    404: { description: 'Task or message not found' },
+  },
+});
+
+const saveBlueprintDbDesignAdoptionRoute = createRoute({
+  method: 'put',
+  path: '/tasks/:id/blueprint-db-design-adoption',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'task-uuid' }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: blueprintAdoptionRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: blueprintAdoptionSchema,
+        },
+      },
+      description: 'Blueprint DB Design adoption state saved',
+    },
+    404: { description: 'Task or message not found' },
+  },
+});
+
+const getBlueprintDesignTokenAdoptionRoute = createRoute({
+  method: 'get',
+  path: '/tasks/:id/blueprint-design-token-adoption',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'task-uuid' }),
+    }),
+    query: blueprintAdoptionQuerySchema,
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: blueprintAdoptionSchema,
+        },
+      },
+      description: 'Blueprint design token adoption state',
+    },
+    404: { description: 'Task or message not found' },
+  },
+});
+
+const saveBlueprintDesignTokenAdoptionRoute = createRoute({
+  method: 'put',
+  path: '/tasks/:id/blueprint-design-token-adoption',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'task-uuid' }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: blueprintAdoptionRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: blueprintAdoptionSchema,
+        },
+      },
+      description: 'Blueprint design token adoption state saved',
+    },
+    404: { description: 'Task or message not found' },
+  },
+});
+
 const startTaskRunRoute = createRoute({
   method: 'post',
   path: '/tasks/:id/run',
@@ -398,6 +605,7 @@ const appendWorkbenchMessageRoute = createRoute({
                 'review_followup',
                 'learning_capture',
                 'design_component',
+                'design_blueprint_data',
               ])
               .default('intake'),
           }),
@@ -1011,6 +1219,121 @@ const router = createOpenApiRouter()
     const task = await service.updateTask(id, data);
     if (!task) return c.json({ error: 'Task not found' }, 404);
     return c.json(task, 200);
+  })
+  .openapi(getBlueprintDesignSettingsRoute, async (c) => {
+    try {
+      const settings = await service.getBlueprintDesignSettings(c.req.param('id'));
+      return c.json(settings, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(saveBlueprintDesignSettingsRoute, async (c) => {
+    try {
+      const settings = await service.saveBlueprintDesignSettings(
+        c.req.param('id'),
+        c.req.valid('json')
+      );
+      return c.json(settings, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(getBlueprintArtifactAdoptionRoute, async (c) => {
+    try {
+      const adoption = await service.getBlueprintArtifactAdoption(
+        c.req.param('id'),
+        c.req.valid('query').messageId
+      );
+      return c.json(adoption, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(saveBlueprintArtifactAdoptionRoute, async (c) => {
+    try {
+      const body = c.req.valid('json');
+      const adoption = await service.saveBlueprintArtifactAdoption(
+        c.req.param('id'),
+        body.messageId,
+        body.adopted
+      );
+      return c.json(adoption, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(getBlueprintDbDesignAdoptionRoute, async (c) => {
+    try {
+      const adoption = await service.getBlueprintDbDesignAdoption(
+        c.req.param('id'),
+        c.req.valid('query').messageId
+      );
+      return c.json(adoption, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(saveBlueprintDbDesignAdoptionRoute, async (c) => {
+    try {
+      const body = c.req.valid('json');
+      const adoption = await service.saveBlueprintDbDesignAdoption(
+        c.req.param('id'),
+        body.messageId,
+        body.adopted
+      );
+      return c.json(adoption, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(getBlueprintDesignTokenAdoptionRoute, async (c) => {
+    try {
+      const adoption = await service.getBlueprintDesignTokenAdoption(
+        c.req.param('id'),
+        c.req.valid('query').messageId
+      );
+      return c.json(adoption, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(saveBlueprintDesignTokenAdoptionRoute, async (c) => {
+    try {
+      const body = c.req.valid('json');
+      const adoption = await service.saveBlueprintDesignTokenAdoption(
+        c.req.param('id'),
+        body.messageId,
+        body.adopted
+      );
+      return c.json(adoption, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
   })
   .openapi(appendTaskMessageRoute, async (c) => {
     const id = c.req.param('id');

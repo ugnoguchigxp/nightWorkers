@@ -19,9 +19,12 @@ NightWorkers is a local-first autonomous development control plane. It coordinat
 ## Why NightWorkers
 - Local-first operation with SQLite/libSQL by default
 - Structured run lifecycle with task/run/event persistence
-- Model-provider aware LLM settings (OpenAI, Azure OpenAI, Bedrock)
+- Model-provider aware LLM settings (OpenAI, Azure OpenAI, Bedrock, Codex SDK)
+- Non-authenticated MCP Server settings for the coding agent
+- Agent Hooks settings for lifecycle command / HTTP automation
 - Optional contextStill integration (degrades gracefully when unavailable)
 - Chat-first workbench flow for draft sessions, queue ordering, and run execution
+- App Blueprint review with governed preview settings, DB Design revisions, and adopted-artifact state
 
 ## Current Capabilities
 - Project Folder registration and per-project Session/Task management
@@ -29,7 +32,13 @@ NightWorkers is a local-first autonomous development control plane. It coordinat
 - Project-level Session queue Play/Pause controls with global and per-project processing limits
 - Chat timeline inspection with run events, todo state, context output, diffs, and final reports
 - Artifact pane with project tree and source file preview
+- App Blueprint artifacts rendered as reviewable Blueprint Preview surfaces
+- Design settings in Blueprint Preview for governed theme, density, shape, shadow, font, contrast, motion, and component variants
+- DB Design action in Blueprint Preview for revising Blueprint `databaseSchema` and `dataBindings` without applying physical database changes
+- Separate adopted/not-adopted decisions for Blueprint artifacts, DB Design revisions, and Design Token settings, tied to the Workbench session and source conversation message
 - LLM provider settings UI and smoke-test API
+- MCP Server settings UI for non-auth stdio / Streamable HTTP servers, with paste-import, immediate connection tests, ON/OFF controls, and legacy SSE compatibility
+- Agent Hooks settings UI for `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, and session lifecycle hooks
 - Health/readiness endpoints and API docs UI
 
 Known non-goals at this stage:
@@ -79,10 +88,11 @@ Important environment variables:
 - `TRUST_PROXY`: set `true` behind reverse proxy
 - `CONTEXT_STILL_ENABLED`: enable optional contextStill integration
 - `SESSION_QUEUE_MAX_CONCURRENCY`: global maximum active Session queue runs
+- `NIGHTWORKERS_MCP_SETTINGS_PATH`: optional override for the MCP Server settings JSON path
+- `NIGHTWORKERS_HOOKS_SETTINGS_PATH`: optional override for the Agent Hooks settings JSON path
 
-Detailed setup and provider configuration:
+Detailed runtime configuration:
 - [Runtime Configuration Reference](./spec/docs/configuration.md)
-- [LLM Provider Operations](./spec/docs/llm-providers.md)
 
 ## Development Commands
 | Command | Description |
@@ -96,6 +106,13 @@ Detailed setup and provider configuration:
 | `pnpm test:e2e` | Run Playwright E2E |
 | `pnpm test:e2e:agent-outcome` | Run deterministic agent outcome E2E |
 | `pnpm test:e2e:agent-live` | Run optional live-provider agent E2E |
+| `pnpm db:generate` | Generate Drizzle migrations from schema changes |
+| `pnpm db:migrate` | Apply Drizzle migrations |
+| `pnpm db:studio` | Open Drizzle Studio |
+| `pnpm db:seed` | Seed local development data |
+| `pnpm cleanup:test-data:dry-run` | Preview cleanup of TEST-prefixed local data |
+| `pnpm cleanup:test-data` | Delete TEST-prefixed local data |
+| `pnpm design-system:storybook` | Start the design system Storybook |
 | `pnpm verify` | Typecheck + lint |
 
 ## Testing
@@ -122,8 +139,8 @@ This repository uses the following documentation layout.
 - Engineering specs and internal references:
   - `spec/docs/` (primary specification/reference docs)
   - [`NightWorkers Concept`](./spec/docs/nightworkers-concept.md)
-  - [`App Blueprint and Design Governance Implementation Plan`](./spec/docs/app-blueprint-design-governance-implementation-plan.md)
-  - [`Blueprint Design Settings UI Implementation Plan`](./spec/docs/blueprint-design-settings-ui-plan.md)
+  - [`Architecture and Module Boundaries`](./spec/docs/architecture.md)
+  - [`Runtime Configuration Reference`](./spec/docs/configuration.md)
 - `spec/public/` (public-facing specs managed outside GitHub-rendered root docs)
 
 Note: `spec/public/` is reserved for non-GitHub-public spec artifacts. GitHub-rendered documents are intentionally kept at the repository root.

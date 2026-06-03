@@ -61,8 +61,8 @@ knowledge lifecycle, retrieval, approval, and reuse.
 
 ### Design Governance: UI Quality Constraints
 
-NightWorkers already includes a local `designSystem` workspace. The next concept
-is to use it as a governance layer rather than just a component library.
+NightWorkers includes a local `designSystem` workspace and now uses governed
+Blueprint Preview settings as an early design governance layer.
 
 The goal is to allow design freedom at the selection level while keeping code
 output constrained:
@@ -76,8 +76,8 @@ output constrained:
 - motion
 - component variants
 
-These choices should be represented as design presets and semantic tokens. UI
-code should consume the fixed tokens and variants instead of growing
+These choices are represented as design presets, preview settings, and semantic
+tokens. UI code should consume fixed tokens and variants instead of growing
 one-off Tailwind class combinations or ad hoc CSS.
 
 The design system should become the place where UI implementation rules are
@@ -95,13 +95,14 @@ design, and data bindings instead of relying only on prose specifications.
 NightWorkers should absorb the useful concept, not blindly port the whole
 prototype.
 
-The Blueprint Layer should define:
+The Blueprint Layer defines or records:
 
 - selected design preset
 - allowed component catalog
 - screen and section structure
-- database schema draft
-- data bindings between UI sections and data
+- preview-only sample content for visual review
+- DB Design revisions when the user explicitly requests data contract work
+- adopted/not-adopted state for Blueprint, DB Design, and Design Token artifacts
 - implementation scope
 - non-goals
 - validation and review expectations
@@ -121,8 +122,8 @@ AppBlueprint
   designPreset
   componentCatalogPolicy
   screens
-  databaseSchema
-  dataBindings
+  databaseSchema          # empty in normal visual Blueprint generation
+  dataBindings            # empty in normal visual Blueprint generation
   implementationTasks
   acceptanceCriteria
   governanceRules
@@ -134,12 +135,17 @@ The blueprint should answer questions that prose specs often leave vague:
 - What screens exist?
 - Which sections can appear on each screen?
 - Which component variants are legal?
-- Which data entities and tables exist?
-- Which UI sections read or write which data?
+- Which sample content should appear in the review preview?
+- Which DB Design questions need a focused follow-up?
 - Which parts are fixed and which are configurable?
 - What should the coding agent implement first?
 - What must be verified before the run is accepted?
 - Which design or implementation decisions should be preserved for reuse?
+
+DB table, column, relation, binding, and DDL reasoning is intentionally split
+out of normal Blueprint generation. It runs through the Blueprint Preview
+DB Design action, which can return a revised App Blueprint data contract without
+applying physical database changes.
 
 ## Fixed Versus Configurable Design
 
@@ -180,6 +186,8 @@ Design preset
   -> semantic tokens
   -> component variants
   -> blueprint screens
+  -> optional DB Design revision
+  -> user adoption decisions
   -> implementation tasks
   -> run evidence
   -> reusable knowledge
@@ -212,7 +220,7 @@ quality available without letting implementation style fragment.
 `../composia-ui` should be treated as a source of concepts and reusable
 contracts, not as a direct dependency at first.
 
-Useful ideas to extract:
+Useful ideas extracted or still useful as references:
 
 - governed AI UI runtime
 - App UI Schema
@@ -230,7 +238,8 @@ Risks to avoid:
 - letting arbitrary app generation become the product center
 - mixing generated UI runtime concerns into NightWorkers execution control
 - replacing implementation plans with screen JSON alone
-- adding DB generation without explicit migration and safety boundaries
+- adding DB generation without an explicit DB Design action, migration boundary,
+  and safety boundary
 
 ## Relationship To Implementation Plans
 
@@ -239,6 +248,8 @@ Traditional implementation plans remain necessary.
 The intended split is:
 
 - Blueprint defines the application shape.
+- DB Design defines the optional data contract only when explicitly requested.
+- Adoption decisions mark which generated artifacts should influence later work.
 - Implementation plan defines how NightWorkers will build it.
 - Run events prove what actually happened.
 - ContextStill stores what should affect future runs.

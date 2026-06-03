@@ -132,7 +132,7 @@ or backend-specific values into preview-safe values.
 
 ```ts
 type BlueprintPreviewDesignSettings = {
-  theme: 'light' | 'dark' | 'tokyonight' | 'eclipse' | 'macosclassic' | 'fire';
+  theme: 'light' | 'dark' | 'eclipse' | 'macosclassic' | 'campfire' | 'mint' | 'bloom' | 'mocha';
   density: 'compact' | 'default' | 'comfortable';
   shape: 'sharp' | 'default' | 'rounded' | 'pill';
   shadow: 'none' | 'subtle' | 'medium' | 'strong';
@@ -426,6 +426,25 @@ The likely second slice is artifact-local plus plan-local capture. That keeps
 the selected design attached to the reviewable Blueprint contract while also
 making it available as reference material for implementation planning.
 
+## Related DB Design Plan
+
+DB table design from the same Blueprint Preview surface is planned separately in
+`spec/docs/blueprint-db-design-ui-plan.md`. Keep visual design settings focused
+on governed UI taste; use DB Design for revising `databaseSchema` and
+`dataBindings` through an agent-backed Blueprint revision flow.
+
+Normal Blueprint generation must not ask the model to invent DB tables,
+columns, relations, bindings, or DDL. It should leave `databaseSchema.tables`,
+`databaseSchema.relations`, and `dataBindings` empty and put preview-only sample
+content into `section.props`. If table design is needed, the implementation task
+should point the user to the DB Design button instead of doing that reasoning in
+the visual Blueprint pass.
+
+Adoption state is separate from the settings payload. Store the Design Token
+adoption decision in `blueprint_design_token_adoptions`, keyed by `task_id` and
+`message_id`, so later implementation-plan generation can read only the
+conversation artifact the user explicitly adopted.
+
 ## Risks
 
 - `ArtifactPane.tsx` already has broad responsibilities. Implementing settings
@@ -461,5 +480,7 @@ making it available as reference material for implementation planning.
   specification-review mock, not production UI source.
 - The selected design settings can be serialized as a design reference for
   later implementation plans.
+- Design Token adoption is saved separately from Blueprint and DB Design
+  adoption, tied to the session and source conversation message.
 - Tests cover default normalization, accordion interaction, and data attribute
   updates.

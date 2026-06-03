@@ -2,13 +2,13 @@
 
 ## Use When
 
-ユーザーが実装前にアプリや画面の Blueprint、試作、プレビュー、完成イメージ、画面構成、情報設計、またはデータ連携の見取り図を確認したいときに使う。
+ユーザーが実装前にアプリや画面の Blueprint、試作、プレビュー、完成イメージ、画面構成、情報設計を確認したいときに使う。DB/table/column/relation/binding/DDL の設計は通常 Blueprint では行わず、DB Design workflow に分離する。
 
 ## Required Behavior
 
-- まずユーザーの目的、対象ユーザー、主要導線、必要な画面、主要データ、成功条件を Blueprint として整理する。
+- まずユーザーの目的、対象ユーザー、主要導線、必要な画面、サンプル表示内容、成功条件を Blueprint として整理する。
 - 「試作して」「どんなイメージか見せて」「Blueprint を見たい」「プレビューを作って」「トップページ案を出して」のような依頼は、実装開始ではなく Blueprint 作成/更新の依頼として扱う。
-- UI だけでなく、screen、section、data model、binding、implementation task を一貫した単位として扱う。
+- 通常 Blueprint は screen、section、props に入るサンプル表示、implementation task を一貫した単位として扱う。data model、binding、DDL は DB Design workflow で扱う。
 - 既存の Blueprint artifact がある場合は、現在の user request を反映して更新・差分化する前提で考える。
 - e-commerce、dashboard、admin、content、workflow などのドメインらしさを、generic overview ではなく実際の画面構成とコンポーネント選定に反映する。
 - AppBlueprint JSON を作る場合は、下記の Schema Reference と JSON Contract に従う。schema にない自由なキーを主要構造へ追加せず、必要な補足は description、intent、visualIntent、props、implementationTasks、learningHooks の中に収める。
@@ -19,8 +19,8 @@ Blueprint JSON を生成・更新する前に、次の Zod schema を根拠と�
 
 - `shared/schemas/app-blueprint.schema.ts`: root AppBlueprint、implementationTasks、learningHooks。
 - `shared/schemas/app-blueprint-ui.schema.ts`: screens、sections、actions。
-- `shared/schemas/app-blueprint-data.schema.ts`: databaseSchema、tables、columns、relations。
-- `shared/schemas/app-blueprint-binding.schema.ts`: dataBindings。
+- `shared/schemas/app-blueprint-data.schema.ts`: databaseSchema の空 contract。通常 Blueprint では `tables: []`、`relations: []` のままにする。
+- `shared/schemas/app-blueprint-binding.schema.ts`: dataBindings の空 contract。通常 Blueprint では `[]` のままにする。
 - `shared/schemas/blueprint-catalog.schema.ts`: 利用可能な page/section componentName と data source kind。
 - `shared/schemas/design-governance.schema.ts`: designPreset。
 
@@ -62,11 +62,10 @@ AppBlueprint JSON は次の root 形にする。
 - `screens` は最低1件。screen は `id`、`name`、`path`、`componentName`、`sections`、必要なら `actions` を持つ。
 - `path` は `/` から始め、英数字、`/`、`_`、`-` だけを使う。例: `/`, `/products`, `/account/orders`。
 - `componentName` は `blueprint-catalog.schema.ts` の enum から選ぶ。トップページなら `SidebarPage`、`ListPage`、`ArticleFeedPage`、`DashboardPage` などの汎用 page を、section には `SplitHeroSection`、`CarouselSection`、`CardGridSection`、`DataTableSection`、`CheckoutSummarySection` などを目的に応じて使う。
-- section は `id`、`name`、`componentName`、`source`、必要なら `dataBindingId`、`intent`、`visualIntent`、`props`、`actions` を持つ。UI の理由は `intent` と `visualIntent` に短く入れる。
-- `source` は `none`、`static`、`table`、`record`、`computed`、`app`、`summary`、`postgres`、`api`、`rss`、`markdown`、`navigation` のいずれか。table/record/postgres/api などデータ依存の section は原則 `dataBindingId` を持つ。
-- `dataBindingId` は `dataBindings[].id` と一致させる。binding の `table` は `databaseSchema.tables[].name` と一致させ、`fields` と `sort` はその table の column name だけを使う。
-- `databaseSchema.tables[].columns` は最低1件。主キーには `primaryKey: true` を付け、表示に使う列には `label` と `uiHint` をできるだけ付ける。
-- relation は `fromTable`、`fromColumn`、`toTable`、`toColumn` が実在する table/column を指すようにする。
+- section は `id`、`name`、`componentName`、`source`、`intent`、`visualIntent`、`props`、必要なら `actions` を持つ。通常 Blueprint では `dataBindingId` を使わない。
+- `source` は `none`、`static`、`computed`、`app`、`summary`、`rss`、`markdown`、`navigation` を優先する。`table`、`record`、`postgres`、`api` は DB Design 後に binding が採用された Blueprint 更新で扱う。
+- 通常 Blueprint では `databaseSchema.tables`、`databaseSchema.relations`、`dataBindings` を空にする。DB table/column/relation/binding/DDL の考案は DB Design button からの workflow だけで実行する。
+- データ構造が必要そうな場合も、通常 Blueprint では DDL や table/column を書かず、`implementationTasks` に DB Design で検討する作業を残す。
 - `implementationTasks[].affectedDomains` は schema の enum から選ぶ。Blueprint JSON の構造や生成なら `blueprint-ui`、`blueprint-data`、`blueprint-binding`、`blueprints`、`blueprint-task-planning` を優先する。
 - `props` は component-specific な自由領域だが、画面の意味を埋めるために使い、schema root の代替として使わない。
 
@@ -75,16 +74,16 @@ AppBlueprint JSON は次の root 形にする。
 - EC サイトなら hero、campaign、category navigation、featured products、trust/support、cart/checkout への導線など、トップページらしい section を入れる。
 - Dashboard なら KPI、trend、activity、table/action、alert/notification など、運用画面らしい section を入れる。
 - Admin なら filters、bulk action、status、audit/history、detail/edit 導線など、管理作業に必要な section を入れる。
-- どのドメインでも、section 名だけでなく binding と table/column が画面目的に対応していることを確認する。
+- どのドメインでも、section 名、componentName、props のサンプル表示内容が画面目的に対応していることを確認する。table/column の具体化は DB Design workflow に渡す。
 
 ## Stop Conditions
 
-- Blueprint の目的、画面構成、主要コンポーネント、データ構造、次に実装できるタスクが揃ったら summarize へ進む。
+- Blueprint の目的、画面構成、主要コンポーネント、サンプル表示内容、次に実装できるタスクが揃ったら summarize へ進む。
 - 必要なドメイン情報が不足していても、停止せず、仮定を明示した初期 Blueprint を作れる粒度まで整理する。
 
 ## Report Contract
 
-- Blueprint として扱った理由、想定画面、主要セクション、データ/バインディング、未確定事項を報告する。
+- Blueprint として扱った理由、想定画面、主要セクション、DB Design に回すべき未確定事項を報告する。
 - 実装に進める場合は、Blueprint から派生する implementation task を短く列挙する。
 
 ## Tool Guidance
@@ -96,9 +95,9 @@ AppBlueprint JSON は次の root 形にする。
 ## Verification Guidance
 
 - Blueprint が generic dashboard に偏っていないか確認する。
-- ユーザーのドメイン語彙が screen/section/data model に反映されているか確認する。
+- ユーザーのドメイン語彙が screen/section/props のサンプル表示に反映されているか確認する。
 - AppBlueprint JSON が schema の root keys、required fields、enum、ID regex に従っているか確認する。
-- section の `dataBindingId`、binding の `table`/`fields`、databaseSchema の table/column が相互に参照切れしていないか確認する。
+- 通常 Blueprint で `databaseSchema.tables`、`databaseSchema.relations`、`dataBindings`、`section.dataBindingId` が空のままか確認する。DB Design workflow では相互参照の整合性を別途確認する。
 - `componentName` と `source` が catalog schema の enum に存在するか確認する。
 
 ## Risk Notes
