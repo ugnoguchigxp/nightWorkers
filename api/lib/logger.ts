@@ -44,6 +44,7 @@ function inlineMeta(meta?: Record<string, unknown>): string {
 const LOG_DIR = path.resolve(process.cwd(), 'logs');
 const API_LOG_PATH = path.join(LOG_DIR, 'api.log');
 const TRACE_LOG_PATH = path.join(LOG_DIR, 'supervisor-trace.log');
+const LLM_TRACE_LOG_PATH = path.join(LOG_DIR, 'llm-trace.jsonl');
 
 function appendLogFile(filePath: string, line: string) {
   void fs
@@ -97,4 +98,13 @@ export const logger = llmLogger;
 export function appendSupervisorTrace(event: string, payload?: Record<string, unknown>) {
   const line = `[${new Date().toISOString()}] ${event}${payload ? ` ${JSON.stringify(payload)}` : ''}\n`;
   appendLogFile(TRACE_LOG_PATH, line.trimEnd());
+}
+
+export function appendLlmTrace(event: string, payload: Record<string, unknown>) {
+  const line = JSON.stringify({
+    timestamp: new Date().toISOString(),
+    event,
+    ...payload,
+  });
+  appendLogFile(LLM_TRACE_LOG_PATH, line);
 }

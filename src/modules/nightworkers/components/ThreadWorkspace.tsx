@@ -34,6 +34,7 @@ type ThreadWorkspaceProps = {
   latestRun?: TaskRun;
   taskMessages: TaskMessage[];
   latestRunEvents: TaskEvent[];
+  activeStreamingResponse: string;
   latestRunTodos: TaskRunTodo[];
   artifactRefs: WorkbenchArtifactRef[];
   isAgentWorking: boolean;
@@ -264,6 +265,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
             latestRun={props.latestRun}
             taskMessages={props.taskMessages}
             latestRunEvents={props.latestRunEvents}
+            activeStreamingResponse={props.activeStreamingResponse}
             latestRunTodos={props.latestRunTodos}
             isAgentWorking={props.isAgentThinking}
             showDebugEvents={showDebugEvents}

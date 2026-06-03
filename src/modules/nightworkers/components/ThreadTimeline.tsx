@@ -31,6 +31,7 @@ type ThreadTimelineProps = {
   latestRun?: TaskRun;
   taskMessages: TaskMessage[];
   latestRunEvents: TaskEvent[];
+  activeStreamingResponse: string;
   latestRunTodos: TaskRunTodo[];
   isAgentWorking: boolean;
   showDebugEvents: boolean;
@@ -43,6 +44,7 @@ export function ThreadTimeline({
   latestRun,
   taskMessages,
   latestRunEvents,
+  activeStreamingResponse,
   latestRunTodos,
   isAgentWorking,
   showDebugEvents,
@@ -67,7 +69,12 @@ export function ThreadTimeline({
   ].sort((a, b) => a.ts - b.ts);
 
   const latestEvent = latestRunEvents[latestRunEvents.length - 1];
-  const streamingPreview = isAgentWorking ? buildStreamingResponsePreview(latestRunEvents) : null;
+  const streamingPreview = isAgentWorking
+    ? buildStreamingResponsePreview({
+        events: latestRunEvents,
+        activeStreamingResponse,
+      })
+    : null;
 
   return (
     <div className="space-y-5 p-6">
@@ -337,8 +344,14 @@ type StreamingPreview = {
   statusText: string;
 };
 
-function buildStreamingResponsePreview(events: TaskEvent[]): StreamingPreview | null {
-  const chunks = events
+function buildStreamingResponsePreview(input: {
+  events: TaskEvent[];
+  activeStreamingResponse?: string;
+}): StreamingPreview | null {
+  if (input.activeStreamingResponse?.trim()) {
+    return buildStreamingPreviewFromRaw(input.activeStreamingResponse);
+  }
+  const chunks = input.events
     .filter((event) => {
       const payload = event.payloadJson as any;
       return payload?.runEvent?.type === 'model.response_delta';
@@ -351,7 +364,10 @@ function buildStreamingResponsePreview(events: TaskEvent[]): StreamingPreview | 
 
   if (chunks.length === 0) return null;
 
-  const raw = chunks.join('');
+  return buildStreamingPreviewFromRaw(chunks.join(''));
+}
+
+function buildStreamingPreviewFromRaw(raw: string): StreamingPreview {
   const parsed = tryParseJsonObject(raw);
   if (typeof parsed?.finalResponse === 'string' && parsed.finalResponse.trim()) {
     return { visibleText: parsed.finalResponse, statusText: '最終回答を組み立てています。' };
@@ -366,7 +382,7 @@ function buildStreamingResponsePreview(events: TaskEvent[]): StreamingPreview | 
   }
 
   return {
-    visibleText: '',
+    visibleText: raw,
     statusText: 'Supervisor の応答構造を生成しています。',
   };
 }

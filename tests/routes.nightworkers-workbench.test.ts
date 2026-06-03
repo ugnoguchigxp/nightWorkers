@@ -135,6 +135,71 @@ describe('NightWorkers workbench routes', () => {
     expect(body.task.objective).toBe('ECサイトのトップページを作ってください');
   });
 
+  it('records a visible intake message even when the LLM decision has no display text', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
+      phase: 'plan',
+      workflow: 'general',
+      routingHypothesis: {
+        primaryMode: 'planning',
+        secondaryModes: [],
+        phase: 'plan',
+        workKinds: [],
+        overlays: [],
+        requiredEvidence: [],
+        nextSkillFiles: [],
+        confidence: 0.75,
+      },
+      instruction: '',
+      rationale: '',
+      finalResponse: '',
+      expectedEvidence: [],
+      riskLevel: 'low',
+      toolCall: null,
+    });
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: '空のdecisionでも表示してください' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'assistant',
+          content: expect.stringContaining('"phase": "plan"'),
+          metadataJson: expect.objectContaining({ intent: 'intake' }),
+        }),
+      ])
+    );
+  });
+
+  it('returns immediately when workbench intake is not explicitly awaited', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockImplementationOnce(() => new Promise(() => {}));
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const startedAt = Date.now();
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({
+        prompt: '同期で待たずに受付してください',
+        waitForIntake: false,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Date.now() - startedAt).toBeLessThan(100);
+    expect(body.run).toBeNull();
+    expect(body.messages.some((message: any) => message.role === 'user')).toBe(true);
+    expect(body.messages.some((message: any) => message.role === 'assistant')).toBe(false);
+    expect(body.task.objective).toBe('同期で待たずに受付してください');
+  });
+
   it('generates an app blueprint artifact when LLM intake classifies the prompt as blueprint work', async () => {
     vi.mocked(llm.callSupervisorLLM)
       .mockResolvedValueOnce({
@@ -303,9 +368,16 @@ describe('NightWorkers workbench routes', () => {
     expect(blueprintMessage?.content).toContain('Sales KPIs');
     expect(blueprintMessage?.content).toContain('Pipeline Table');
     expect(blueprintMessage?.metadataJson?.validation?.valid).toBe(true);
+    expect(blueprintMessage?.metadataJson?.generation?.promptDiagnostics).toEqual(
+      expect.objectContaining({
+        schemaIncluded: true,
+        catalogComponentCount: expect.any(Number),
+        skillDocumentCount: expect.any(Number),
+      })
+    );
   });
 
-  it('records an observable failure when blueprint artifact generation fails', async () => {
+  it('records raw LLM output when blueprint generation returns non-json', async () => {
     vi.mocked(llm.callSupervisorLLM)
       .mockResolvedValueOnce({
         phase: 'plan',
@@ -349,15 +421,32 @@ describe('NightWorkers workbench routes', () => {
     });
 
     expect(res.status).toBe(502);
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[0]).toContain(
+      '[Skill Document: references/work_kinds/blueprint.md]'
+    );
+    expect(vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[0]).toContain(
+      '[AppBlueprint JSON Schema]'
+    );
     const messages = await repo.listTaskMessages(task.id);
     expect(messages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
+          role: 'assistant',
+          content: 'not json',
+          metadataJson: expect.objectContaining({
+            intent: 'blueprint_raw_output',
+            promptDiagnostics: expect.objectContaining({
+              schemaIncluded: true,
+              skillDocumentCount: expect.any(Number),
+            }),
+          }),
+        }),
+        expect.objectContaining({
           role: 'system',
-          messageType: 'text',
           metadataJson: expect.objectContaining({
             intent: 'blueprint_generation_failed',
-            error: expect.stringContaining('Blueprint LLM output did not contain JSON'),
+            rawOutputRecorded: true,
           }),
         }),
       ])
@@ -365,6 +454,75 @@ describe('NightWorkers workbench routes', () => {
     expect(messages).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ metadataJson: expect.objectContaining({ intent: 'intake' }) }),
+      ])
+    );
+  });
+
+  it('records raw LLM output when generated blueprint json fails catalog validation', async () => {
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        phase: 'plan',
+        workflow: 'general',
+        routingHypothesis: {
+          primaryMode: 'planning',
+          secondaryModes: ['review'],
+          phase: 'plan',
+          workKinds: ['blueprint', 'ui_ux'],
+          overlays: ['user_facing_change'],
+          subtype: 'app_blueprint',
+          requiredEvidence: ['screen structure'],
+          nextSkillFiles: ['references/work_kinds/blueprint.md'],
+          confidence: 0.9,
+        },
+        instruction: 'Create a Blueprint artifact.',
+        rationale: 'The request was classified as Blueprint work.',
+        finalResponse: '',
+        expectedEvidence: [],
+        riskLevel: 'medium',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'stop',
+        workflow: 'general',
+        routingHypothesis: undefined,
+        instruction: '',
+        rationale: 'Invalid generation.',
+        finalResponse: JSON.stringify({
+          ...representativeAppBlueprint,
+          designPreset: { ...representativeAppBlueprint.designPreset, theme: 'design_governance' },
+        }),
+        expectedEvidence: [],
+        terminalState: 'completed',
+        riskLevel: 'low',
+        toolCall: null,
+      });
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'SFAのダッシュボードをblueprintで表示してください。' }),
+    });
+
+    expect(res.status).toBe(502);
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(2);
+    const messages = await repo.listTaskMessages(task.id);
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'assistant',
+          metadataJson: expect.objectContaining({
+            intent: 'blueprint_raw_output',
+            validationStatus: 'failed',
+          }),
+        }),
+        expect.objectContaining({
+          role: 'system',
+          metadataJson: expect.objectContaining({
+            intent: 'blueprint_generation_failed',
+            error: expect.stringContaining('designPreset.theme:design_governance'),
+          }),
+        }),
       ])
     );
   });

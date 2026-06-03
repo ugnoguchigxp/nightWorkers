@@ -1,7 +1,8 @@
+import { createHash, randomUUID } from 'node:crypto';
 import os from 'node:os';
-import type { CodexOptions } from '@openai/codex-sdk';
+import type { CodexOptions, Thread, ThreadEvent, Usage } from '@openai/codex-sdk';
 import { z } from 'zod';
-import { appendSupervisorTrace, logger } from '../../lib/logger';
+import { appendLlmTrace, appendSupervisorTrace, logger } from '../../lib/logger';
 import { buildCodexTurnPrompt } from './prompt';
 import {
   defaultSupervisorRoutingHypothesis,
@@ -90,6 +91,7 @@ type CallSupervisorOptions = {
   tolerateSchemaFailure?: boolean;
   round?: 1 | 2 | 3;
   emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
+  timeoutMs?: number;
 };
 
 export type SupervisorLlmDebugEvent = {
@@ -140,6 +142,8 @@ export function buildCodexSupervisorSdkOptions(accessToken: string): CodexOption
 }
 
 export function buildCodexSupervisorThreadOptions(model?: string) {
+  const configuredEffort = process.env.CODEX_MODEL_REASONING_EFFORT;
+  const modelReasoningEffort = isCodexReasoningEffort(configuredEffort) ? configuredEffort : 'low';
   return {
     model,
     sandboxMode: 'workspace-write' as const,
@@ -148,7 +152,20 @@ export function buildCodexSupervisorThreadOptions(model?: string) {
     webSearchMode: 'disabled' as const,
     workingDirectory: os.tmpdir(),
     skipGitRepoCheck: true,
+    modelReasoningEffort,
   };
+}
+
+function isCodexReasoningEffort(
+  value: string | undefined
+): value is 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' {
+  return (
+    value === 'minimal' ||
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'xhigh'
+  );
 }
 
 const fixtureCodingRound2Calls = new Map<string, number>();
@@ -645,6 +662,80 @@ async function readOpenAIChatCompletionStream(input: {
   return content;
 }
 
+function getSupervisorLlmTimeoutMs(options: CallSupervisorOptions): number {
+  if (options.timeoutMs && Number.isFinite(options.timeoutMs) && options.timeoutMs > 0) {
+    return Math.floor(options.timeoutMs);
+  }
+  const configured = Number(process.env.SUPERVISOR_LLM_TIMEOUT_MS || 120_000);
+  if (!Number.isFinite(configured) || configured <= 0) return 120_000;
+  return Math.floor(configured);
+}
+
+function createSupervisorLlmAbortSignal(options: CallSupervisorOptions): AbortSignal {
+  return AbortSignal.timeout(getSupervisorLlmTimeoutMs(options));
+}
+
+function digestLlmText(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+async function readCodexStreamedTurn(input: {
+  thread: Thread;
+  prompt: string;
+  outputSchema?: unknown;
+  signal: AbortSignal;
+  options: CallSupervisorOptions;
+  provider: string;
+  model?: string;
+  structuredOutput: boolean;
+}): Promise<{ finalResponse: string; usage: Usage | null }> {
+  const { events } = await input.thread.runStreamed(input.prompt, {
+    ...(input.outputSchema ? { outputSchema: input.outputSchema } : {}),
+    signal: input.signal,
+  });
+  let finalResponse = '';
+  let usage: Usage | null = null;
+  const agentMessageTextById = new Map<string, string>();
+  let latestAgentMessageText = '';
+
+  const handleItemEvent = (event: Extract<ThreadEvent, { type: `item.${string}` }>) => {
+    const item = event.item;
+    if (item.type !== 'agent_message') return;
+    const previous = agentMessageTextById.get(item.id) || '';
+    const current = item.text || '';
+    if (current.length > previous.length) {
+      emitBufferedResponseDelta({
+        options: input.options,
+        provider: input.provider,
+        round: input.options.round,
+        text: current.slice(previous.length),
+        force: event.type === 'item.completed',
+      });
+    }
+    agentMessageTextById.set(item.id, current);
+    if (current.trim()) latestAgentMessageText = current;
+    if (event.type === 'item.completed') finalResponse = current;
+  };
+
+  for await (const event of events) {
+    if (
+      event.type === 'item.started' ||
+      event.type === 'item.updated' ||
+      event.type === 'item.completed'
+    ) {
+      handleItemEvent(event);
+    } else if (event.type === 'turn.completed') {
+      usage = event.usage;
+    } else if (event.type === 'turn.failed') {
+      throw new Error(event.error.message);
+    } else if (event.type === 'error') {
+      throw new Error(event.message);
+    }
+  }
+
+  return { finalResponse: finalResponse || latestAgentMessageText, usage };
+}
+
 export async function callSupervisorLLM(
   systemPrompt: string,
   userPrompt: string,
@@ -660,6 +751,22 @@ export async function callSupervisorLLM(
   };
   let rawContent = '';
   let providerDebug: Record<string, unknown> = {};
+  const startedAt = Date.now();
+  const callId = randomUUID();
+  const requestSignal = createSupervisorLlmAbortSignal(options);
+  appendLlmTrace('request', {
+    callId,
+    provider,
+    round: options.round ?? null,
+    systemPrompt,
+    userPrompt,
+    systemPromptLength: systemPrompt.length,
+    userPromptLength: userPrompt.length,
+    systemPromptBytes: Buffer.byteLength(systemPrompt, 'utf8'),
+    userPromptBytes: Buffer.byteLength(userPrompt, 'utf8'),
+    systemPromptSha256: digestLlmText(systemPrompt),
+    userPromptSha256: digestLlmText(userPrompt),
+  });
   logger.debug(
     {
       provider,
@@ -680,60 +787,26 @@ export async function callSupervisorLLM(
     },
   });
 
-  if (provider === 'azure') {
-    if (!isEnabled('AZURE_OPENAI_ENABLED', false)) {
-      throw new Error('Azure provider is inactive. Enable AZURE_OPENAI_ENABLED first.');
-    }
-    const apiKey = process.env.AZURE_OPENAI_API_KEY;
-    const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-    const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME || 'gpt-5-mini';
-    const apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2024-05-01-preview';
+  try {
+    if (provider === 'azure') {
+      if (!isEnabled('AZURE_OPENAI_ENABLED', false)) {
+        throw new Error('Azure provider is inactive. Enable AZURE_OPENAI_ENABLED first.');
+      }
+      const apiKey = process.env.AZURE_OPENAI_API_KEY;
+      const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
+      const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME || 'gpt-5-mini';
+      const apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2024-05-01-preview';
 
-    if (!apiKey || !endpoint) {
-      throw new Error('Azure OpenAI credentials are not configured in environment variables.');
-    }
+      if (!apiKey || !endpoint) {
+        throw new Error('Azure OpenAI credentials are not configured in environment variables.');
+      }
 
-    const cleanEndpoint = endpoint.endsWith('/') ? endpoint.slice(0, -1) : endpoint;
-    const url = `${cleanEndpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
+      const cleanEndpoint = endpoint.endsWith('/') ? endpoint.slice(0, -1) : endpoint;
+      const url = `${cleanEndpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
 
-    let response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': apiKey,
-      },
-      body: JSON.stringify({
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.1,
-        response_format: {
-          type: 'json_schema',
-          json_schema: buildResponseJsonSchema(options.round),
-        },
-      }),
-    });
-
-    if (!response.ok && response.status === 400) {
-      logger.warn(
-        { provider: 'azure', round: options.round, status: response.status },
-        'json_schema rejected, fallback to json_object'
-      );
-      await emitSupervisorLlmDebugEvent(options, {
-        type: 'model.retry_scheduled',
-        severity: 'warning',
-        message: 'Azure OpenAI json_schema request failed with 400; retrying with json_object.',
-        data: { provider: 'azure', round: options.round ?? null, status: response.status },
-      });
-      await emitSupervisorLlmDebugEvent(options, {
-        type: 'model.retry_started',
-        severity: 'info',
-        message: 'Azure OpenAI json_object retry started.',
-        data: { provider: 'azure', round: options.round ?? null },
-      });
-      response = await fetch(url, {
+      let response = await fetch(url, {
         method: 'POST',
+        signal: requestSignal,
         headers: {
           'Content-Type': 'application/json',
           'api-key': apiKey,
@@ -744,76 +817,78 @@ export async function callSupervisorLLM(
             { role: 'user', content: userPrompt },
           ],
           temperature: 0.1,
-          response_format: { type: 'json_object' },
+          response_format: {
+            type: 'json_schema',
+            json_schema: buildResponseJsonSchema(options.round),
+          },
         }),
       });
-    }
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Azure OpenAI call failed with status ${response.status}: ${errorText}`);
-    }
+      if (!response.ok && response.status === 400) {
+        logger.warn(
+          { provider: 'azure', round: options.round, status: response.status },
+          'json_schema rejected, fallback to json_object'
+        );
+        await emitSupervisorLlmDebugEvent(options, {
+          type: 'model.retry_scheduled',
+          severity: 'warning',
+          message: 'Azure OpenAI json_schema request failed with 400; retrying with json_object.',
+          data: { provider: 'azure', round: options.round ?? null, status: response.status },
+        });
+        await emitSupervisorLlmDebugEvent(options, {
+          type: 'model.retry_started',
+          severity: 'info',
+          message: 'Azure OpenAI json_object retry started.',
+          data: { provider: 'azure', round: options.round ?? null },
+        });
+        response = await fetch(url, {
+          method: 'POST',
+          signal: requestSignal,
+          headers: {
+            'Content-Type': 'application/json',
+            'api-key': apiKey,
+          },
+          body: JSON.stringify({
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            temperature: 0.1,
+            response_format: { type: 'json_object' },
+          }),
+        });
+      }
 
-    const responseData = await response.json();
-    providerDebug = {
-      provider: 'azure',
-      status: response.status,
-      deploymentName,
-      hasChoices: Boolean(responseData?.choices),
-    };
-    rawContent = responseData.choices?.[0]?.message?.content || '';
-  } else if (provider === 'openai') {
-    if (!isEnabled('OPENAI_ENABLED', true)) {
-      throw new Error('OpenAI provider is inactive. Enable OPENAI_ENABLED first.');
-    }
-    const apiKey = process.env.OPENAI_API_KEY;
-    const baseURL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
-    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-    const streamResponses = isEnabled('OPENAI_STREAMING_ENABLED', true);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Azure OpenAI call failed with status ${response.status}: ${errorText}`);
+      }
 
-    if (!apiKey) {
-      throw new Error('OpenAI API key is not configured in environment variables.');
-    }
+      const responseData = await response.json();
+      providerDebug = {
+        provider: 'azure',
+        status: response.status,
+        deploymentName,
+        hasChoices: Boolean(responseData?.choices),
+      };
+      rawContent = responseData.choices?.[0]?.message?.content || '';
+    } else if (provider === 'openai') {
+      if (!isEnabled('OPENAI_ENABLED', true)) {
+        throw new Error('OpenAI provider is inactive. Enable OPENAI_ENABLED first.');
+      }
+      const apiKey = process.env.OPENAI_API_KEY;
+      const baseURL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+      const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+      const streamResponses = isEnabled('OPENAI_STREAMING_ENABLED', true);
 
-    let responseFormat: 'json_schema' | 'json_object' = 'json_schema';
-    let response = await fetch(`${baseURL.replace(/\/+$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(
-        buildOpenAIChatCompletionBody({
-          model,
-          systemPrompt,
-          userPrompt,
-          round: options.round,
-          responseFormat,
-          stream: streamResponses,
-        })
-      ),
-    });
+      if (!apiKey) {
+        throw new Error('OpenAI API key is not configured in environment variables.');
+      }
 
-    if (!response.ok && response.status === 400) {
-      logger.warn(
-        { provider: 'openai', round: options.round, status: response.status },
-        'json_schema rejected, fallback to json_object'
-      );
-      await emitSupervisorLlmDebugEvent(options, {
-        type: 'model.retry_scheduled',
-        severity: 'warning',
-        message: 'OpenAI json_schema request failed with 400; retrying with json_object.',
-        data: { provider: 'openai', round: options.round ?? null, status: response.status },
-      });
-      await emitSupervisorLlmDebugEvent(options, {
-        type: 'model.retry_started',
-        severity: 'info',
-        message: 'OpenAI json_object retry started.',
-        data: { provider: 'openai', round: options.round ?? null },
-      });
-      responseFormat = 'json_object';
-      response = await fetch(`${baseURL.replace(/\/+$/, '')}/chat/completions`, {
+      let responseFormat: 'json_schema' | 'json_object' = 'json_schema';
+      let response = await fetch(`${baseURL.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
+        signal: requestSignal,
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
@@ -829,213 +904,279 @@ export async function callSupervisorLLM(
           })
         ),
       });
-    }
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenAI call failed with status ${response.status}: ${errorText}`);
-    }
+      if (!response.ok && response.status === 400) {
+        logger.warn(
+          { provider: 'openai', round: options.round, status: response.status },
+          'json_schema rejected, fallback to json_object'
+        );
+        await emitSupervisorLlmDebugEvent(options, {
+          type: 'model.retry_scheduled',
+          severity: 'warning',
+          message: 'OpenAI json_schema request failed with 400; retrying with json_object.',
+          data: { provider: 'openai', round: options.round ?? null, status: response.status },
+        });
+        await emitSupervisorLlmDebugEvent(options, {
+          type: 'model.retry_started',
+          severity: 'info',
+          message: 'OpenAI json_object retry started.',
+          data: { provider: 'openai', round: options.round ?? null },
+        });
+        responseFormat = 'json_object';
+        response = await fetch(`${baseURL.replace(/\/+$/, '')}/chat/completions`, {
+          method: 'POST',
+          signal: requestSignal,
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(
+            buildOpenAIChatCompletionBody({
+              model,
+              systemPrompt,
+              userPrompt,
+              round: options.round,
+              responseFormat,
+              stream: streamResponses,
+            })
+          ),
+        });
+      }
 
-    const responseData = streamResponses ? null : await response.json();
-    providerDebug = {
-      provider: 'openai',
-      status: response.status,
-      model,
-      streamed: streamResponses,
-      responseFormat,
-      hasChoices: Boolean(responseData?.choices),
-    };
-    rawContent = streamResponses
-      ? await readOpenAIChatCompletionStream({
-          response,
-          options,
-          provider: 'openai',
-          round: options.round,
-        })
-      : responseData?.choices?.[0]?.message?.content || '';
-  } else if (provider === 'bedrock') {
-    if (!isEnabled('AWS_BEDROCK_ENABLED', false)) {
-      throw new Error('Bedrock provider is inactive. Enable AWS_BEDROCK_ENABLED first.');
-    }
-    const { BedrockRuntimeClient, ConverseCommand } = await import(
-      '@aws-sdk/client-bedrock-runtime'
-    );
-    const region = process.env.AWS_REGION || 'us-east-1';
-    const modelId = process.env.AWS_BEDROCK_MODEL || 'anthropic.claude-3-5-sonnet-20241022-v2:0';
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OpenAI call failed with status ${response.status}: ${errorText}`);
+      }
 
-    const client = new BedrockRuntimeClient({
-      region,
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-      },
-    });
-
-    const command = new ConverseCommand({
-      modelId,
-      messages: [
-        {
-          role: 'user',
-          content: [{ text: userPrompt }],
-        },
-      ],
-      system: [{ text: systemPrompt }],
-      inferenceConfig: {
-        temperature: 0.1,
-      },
-    });
-
-    const res = await client.send(command);
-    providerDebug = {
-      provider: 'bedrock',
-      modelId,
-      hasOutput: Boolean(res.output),
-    };
-    rawContent = res.output?.message?.content?.[0]?.text || '';
-  } else if (provider === 'codex') {
-    if (!isEnabled('CODEX_ENABLED', false)) {
-      throw new Error('Codex provider is inactive. Enable CODEX_ENABLED first.');
-    }
-    const { Codex } = await import('@openai/codex-sdk');
-    const accessToken = process.env.CODEX_ACCESS_TOKEN || '';
-    const configuredModel = process.env.CODEX_MODEL || undefined;
-    const allowedCodexModels = new Set([
-      'gpt-5.5',
-      'gpt-5.4',
-      'gpt-5.4-mini',
-      'gpt-5.3-codex',
-      'gpt-5.3-codex-spark',
-    ]);
-    if (configuredModel && !allowedCodexModels.has(configuredModel.toLowerCase())) {
-      throw new Error(
-        `Unsupported CODEX_MODEL: "${configuredModel}". Allowed models: ${Array.from(allowedCodexModels).join(', ')}`
-      );
-    }
-
-    const sdkOptions = buildCodexSupervisorSdkOptions(accessToken);
-    const prompt = buildCodexTurnPrompt(systemPrompt, userPrompt);
-    const codex = new Codex(sdkOptions);
-    const useStructuredOutput = isEnabled('CODEX_STRUCTURED_OUTPUT_ENABLED', false);
-
-    const runWithModel = async (model?: string) => {
-      const thread = codex.startThread(buildCodexSupervisorThreadOptions(model));
-      const turn = await thread.run(
-        prompt,
-        useStructuredOutput ? { outputSchema: buildResponseJsonSchema(options.round).schema } : {}
-      );
+      const responseData = streamResponses ? null : await response.json();
       providerDebug = {
-        provider: 'codex',
-        model: model || null,
-        structuredOutput: useStructuredOutput,
-        hasFinalResponse: Boolean(turn.finalResponse),
+        provider: 'openai',
+        status: response.status,
+        model,
+        streamed: streamResponses,
+        responseFormat,
+        hasChoices: Boolean(responseData?.choices),
       };
-      return turn.finalResponse || '';
-    };
+      rawContent = streamResponses
+        ? await readOpenAIChatCompletionStream({
+            response,
+            options,
+            provider: 'openai',
+            round: options.round,
+          })
+        : responseData?.choices?.[0]?.message?.content || '';
+    } else if (provider === 'bedrock') {
+      if (!isEnabled('AWS_BEDROCK_ENABLED', false)) {
+        throw new Error('Bedrock provider is inactive. Enable AWS_BEDROCK_ENABLED first.');
+      }
+      const { BedrockRuntimeClient, ConverseCommand } = await import(
+        '@aws-sdk/client-bedrock-runtime'
+      );
+      const region = process.env.AWS_REGION || 'us-east-1';
+      const modelId = process.env.AWS_BEDROCK_MODEL || 'anthropic.claude-3-5-sonnet-20241022-v2:0';
 
-    rawContent = await runWithModel(configuredModel);
-  } else if (provider === 'fixture' || provider === 'test') {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('Fixture/test provider is not available in production.');
-    }
-    const isAgentOutcomeTestProvider =
-      provider === 'test' || userPrompt.includes('NIGHTWORKERS_TEST_AGENT_SCENARIO=');
-    providerDebug = {
-      provider,
-      round: options.round ?? null,
-      mode: isAgentOutcomeTestProvider
-        ? 'agent_outcome'
-        : userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
-          ? 'simple_coding'
-          : 'stop_without_evidence',
-    };
-    rawContent = JSON.stringify(
-      isAgentOutcomeTestProvider
-        ? buildTestProviderDecision(userPrompt, options.round)
-        : userPrompt.includes('E2E_OBJECT_EVIDENCE_FIXTURE')
-          ? {
-              phase: 'plan',
-              workflow: 'evidence_review',
-              instruction: 'Review object evidence fixture.',
-              rationale:
-                'The fixture returns structured expected evidence like Codex sometimes does.',
-              finalResponse: '',
-              expectedEvidence: [
-                {
-                  path: 'spec/memory-feedback-long-run-implementation-plan.md',
-                  lines: '1-767',
-                  focus: 'implementation plan consistency',
-                },
-                {
-                  path: 'api/services/context-still/client.ts',
-                  focus: 'context compile integration',
-                },
-              ],
-              riskLevel: 'medium',
-              toolCall: null,
-            }
+      const client = new BedrockRuntimeClient({
+        region,
+        credentials: {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+        },
+      });
+
+      const command = new ConverseCommand({
+        modelId,
+        messages: [
+          {
+            role: 'user',
+            content: [{ text: userPrompt }],
+          },
+        ],
+        system: [{ text: systemPrompt }],
+        inferenceConfig: {
+          temperature: 0.1,
+        },
+      });
+
+      const res = await client.send(command, { abortSignal: requestSignal });
+      providerDebug = {
+        provider: 'bedrock',
+        modelId,
+        hasOutput: Boolean(res.output),
+      };
+      rawContent = res.output?.message?.content?.[0]?.text || '';
+    } else if (provider === 'codex') {
+      if (!isEnabled('CODEX_ENABLED', false)) {
+        throw new Error('Codex provider is inactive. Enable CODEX_ENABLED first.');
+      }
+      const { Codex } = await import('@openai/codex-sdk');
+      const accessToken = process.env.CODEX_ACCESS_TOKEN || '';
+      const configuredModel = process.env.CODEX_MODEL || undefined;
+      const allowedCodexModels = new Set([
+        'gpt-5.5',
+        'gpt-5.4',
+        'gpt-5.4-mini',
+        'gpt-5.3-codex',
+        'gpt-5.3-codex-spark',
+      ]);
+      if (configuredModel && !allowedCodexModels.has(configuredModel.toLowerCase())) {
+        throw new Error(
+          `Unsupported CODEX_MODEL: "${configuredModel}". Allowed models: ${Array.from(allowedCodexModels).join(', ')}`
+        );
+      }
+
+      const sdkOptions = buildCodexSupervisorSdkOptions(accessToken);
+      const prompt = buildCodexTurnPrompt(systemPrompt, userPrompt);
+      const codex = new Codex(sdkOptions);
+      const useStructuredOutput = isEnabled('CODEX_STRUCTURED_OUTPUT_ENABLED', false);
+
+      const runWithModel = async (model?: string) => {
+        const thread = codex.startThread(buildCodexSupervisorThreadOptions(model));
+        const turn = await readCodexStreamedTurn({
+          thread,
+          prompt,
+          outputSchema: useStructuredOutput
+            ? buildResponseJsonSchema(options.round).schema
+            : undefined,
+          signal: requestSignal,
+          options,
+          provider: 'codex',
+          model,
+          structuredOutput: useStructuredOutput,
+        });
+        providerDebug = {
+          provider: 'codex',
+          model: model || null,
+          structuredOutput: useStructuredOutput,
+          modelReasoningEffort: buildCodexSupervisorThreadOptions(model).modelReasoningEffort,
+          usage: turn.usage,
+          hasFinalResponse: Boolean(turn.finalResponse),
+        };
+        return turn.finalResponse || '';
+      };
+
+      rawContent = await runWithModel(configuredModel);
+    } else if (provider === 'fixture' || provider === 'test') {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('Fixture/test provider is not available in production.');
+      }
+      const isAgentOutcomeTestProvider =
+        provider === 'test' || userPrompt.includes('NIGHTWORKERS_TEST_AGENT_SCENARIO=');
+      providerDebug = {
+        provider,
+        round: options.round ?? null,
+        mode: isAgentOutcomeTestProvider
+          ? 'agent_outcome'
           : userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
-            ? buildFixtureCodingDecision(userPrompt, options.round)
-            : options.round === 1
-              ? {
-                  phase: 'plan',
-                  workflow: 'evidence_review',
-                  instruction: 'Review the requested specification document.',
-                  rationale: 'The fixture intentionally plans without a tool call.',
-                  finalResponse: '',
-                  expectedEvidence: ['spec document contents'],
-                  riskLevel: 'medium',
-                  toolCall: null,
-                }
-              : options.round === 2
-                ? hasRoundObservations(userPrompt)
-                  ? {
+            ? 'simple_coding'
+            : 'stop_without_evidence',
+      };
+      rawContent = JSON.stringify(
+        isAgentOutcomeTestProvider
+          ? buildTestProviderDecision(userPrompt, options.round)
+          : userPrompt.includes('E2E_OBJECT_EVIDENCE_FIXTURE')
+            ? {
+                phase: 'plan',
+                workflow: 'evidence_review',
+                instruction: 'Review object evidence fixture.',
+                rationale:
+                  'The fixture returns structured expected evidence like Codex sometimes does.',
+                finalResponse: '',
+                expectedEvidence: [
+                  {
+                    path: 'spec/memory-feedback-long-run-implementation-plan.md',
+                    lines: '1-767',
+                    focus: 'implementation plan consistency',
+                  },
+                  {
+                    path: 'api/services/context-still/client.ts',
+                    focus: 'context compile integration',
+                  },
+                ],
+                riskLevel: 'medium',
+                toolCall: null,
+              }
+            : userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
+              ? buildFixtureCodingDecision(userPrompt, options.round)
+              : options.round === 1
+                ? {
+                    phase: 'plan',
+                    workflow: 'evidence_review',
+                    instruction: 'Review the requested specification document.',
+                    rationale: 'The fixture intentionally plans without a tool call.',
+                    finalResponse: '',
+                    expectedEvidence: ['spec document contents'],
+                    riskLevel: 'medium',
+                    toolCall: null,
+                  }
+                : options.round === 2
+                  ? hasRoundObservations(userPrompt)
+                    ? {
+                        phase: 'stop',
+                        workflow: 'evidence_review',
+                        instruction: 'Fixture review complete.',
+                        rationale: 'The fixture stops after repository evidence has been supplied.',
+                        finalResponse: [
+                          'Fixture review completed after reading repository evidence.',
+                          'Finding: spec/jsonl-replay-import-regression-implementation-plan.md:1 has been inspected and the fixture confirms the requested document review path can finish with concrete evidence.',
+                          'Risk: low; the run includes a read_file tool result before completion.',
+                        ].join(' '),
+                        expectedEvidence: ['spec document contents'],
+                        terminalState: 'completed',
+                        riskLevel: 'low',
+                        toolCall: null,
+                      }
+                    : {
+                        phase: 'act',
+                        workflow: 'evidence_review',
+                        instruction: 'Read the fixture specification document before review.',
+                        rationale:
+                          'The evidence_review prompt requires repository evidence before stopping.',
+                        finalResponse: '',
+                        expectedEvidence: ['spec document contents'],
+                        riskLevel: 'medium',
+                        toolCall: {
+                          name: 'read_file',
+                          arguments: {
+                            filePath: 'spec/jsonl-replay-import-regression-implementation-plan.md',
+                          },
+                        },
+                      }
+                  : {
                       phase: 'stop',
-                      workflow: 'evidence_review',
-                      instruction: 'Fixture review complete.',
-                      rationale: 'The fixture stops after repository evidence has been supplied.',
-                      finalResponse: [
-                        'Fixture review completed after reading repository evidence.',
-                        'Finding: spec/jsonl-replay-import-regression-implementation-plan.md:1 has been inspected and the fixture confirms the requested document review path can finish with concrete evidence.',
-                        'Risk: low; the run includes a read_file tool result before completion.',
-                      ].join(' '),
-                      expectedEvidence: ['spec document contents'],
+                      workflow: 'general',
+                      instruction: 'Fixture smoke complete.',
+                      rationale: 'Fixture provider returned a smoke response.',
+                      finalResponse: 'Fixture smoke complete.',
+                      expectedEvidence: [],
                       terminalState: 'completed',
                       riskLevel: 'low',
                       toolCall: null,
                     }
-                  : {
-                      phase: 'act',
-                      workflow: 'evidence_review',
-                      instruction: 'Read the fixture specification document before review.',
-                      rationale:
-                        'The evidence_review prompt requires repository evidence before stopping.',
-                      finalResponse: '',
-                      expectedEvidence: ['spec document contents'],
-                      riskLevel: 'medium',
-                      toolCall: {
-                        name: 'read_file',
-                        arguments: {
-                          filePath: 'spec/jsonl-replay-import-regression-implementation-plan.md',
-                        },
-                      },
-                    }
-                : {
-                    phase: 'stop',
-                    workflow: 'general',
-                    instruction: 'Fixture smoke complete.',
-                    rationale: 'Fixture provider returned a smoke response.',
-                    finalResponse: 'Fixture smoke complete.',
-                    expectedEvidence: [],
-                    terminalState: 'completed',
-                    riskLevel: 'low',
-                    toolCall: null,
-                  }
-    );
-  } else {
-    throw new Error(`Unsupported LLM provider: ${provider}`);
+      );
+    } else {
+      throw new Error(`Unsupported LLM provider: ${provider}`);
+    }
+  } catch (error) {
+    appendLlmTrace('provider_error', {
+      callId,
+      provider,
+      round: options.round ?? null,
+      durationMs: Date.now() - startedAt,
+      errorName: error instanceof Error ? error.name : null,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      providerDebug,
+    });
+    throw error;
   }
 
   if (!rawContent) {
+    appendLlmTrace('empty_response', {
+      callId,
+      provider,
+      round: options.round ?? null,
+      durationMs: Date.now() - startedAt,
+      providerDebug,
+    });
     logger.error(
       {
         provider,
@@ -1056,6 +1197,17 @@ export async function callSupervisorLLM(
     },
     'Supervisor LLM raw response received'
   );
+  appendLlmTrace('response', {
+    callId,
+    provider,
+    round: options.round ?? null,
+    durationMs: Date.now() - startedAt,
+    rawContent,
+    rawContentLength: rawContent.length,
+    rawContentBytes: Buffer.byteLength(rawContent, 'utf8'),
+    rawContentSha256: digestLlmText(rawContent),
+    providerDebug,
+  });
   await emitSupervisorLlmDebugEvent(options, {
     type: 'model.response_finished',
     severity: 'info',
@@ -1064,6 +1216,7 @@ export async function callSupervisorLLM(
       provider,
       round: options.round ?? null,
       rawContentLength: rawContent.length,
+      durationMs: Date.now() - startedAt,
       providerDebug,
     },
   });
@@ -1173,9 +1326,9 @@ export async function callSupervisorLLM(
         return {
           phase: 'stop',
           workflow: parsed.data.workflow || 'general',
-          instruction: 'Safety system interrupted due to empty stop decision.',
-          rationale: 'Model returned stop without any meaningful response fields.',
-          finalResponse: '応答内容が空だったため処理を中断しました。',
+          instruction: 'Safety system interrupted due to an empty display payload.',
+          rationale: `Model returned a valid stop decision JSON, but finalResponse/instruction/rationale were empty. Raw content: ${rawContent}`,
+          finalResponse: rawContent,
           expectedEvidence: [],
           terminalState: 'needs_human',
           riskLevel: 'high',
@@ -1241,8 +1394,7 @@ export async function callSupervisorLLM(
       workflow: 'general',
       instruction: 'Safety system interrupted execution due to formatting errors.',
       rationale: `LLM response failed to match schema. Raw content: ${rawContent}`,
-      finalResponse:
-        '内部形式エラーのため処理を中断しました。LLM最終回答が要求スキーマに一致せず、必要なキーまたは許可ツール名が不正でした。',
+      finalResponse: rawContent,
       expectedEvidence: [],
       terminalState: 'needs_human',
       riskLevel: 'high',
@@ -1274,8 +1426,7 @@ export async function callSupervisorLLM(
         workflow: 'general',
         instruction: 'Safety system interrupted execution due to plain-text supervisor output.',
         rationale: `Model returned plain text instead of decision JSON. Raw content: ${plain}`,
-        finalResponse:
-          '内部形式エラーのため処理を中断しました。Supervisor LLM が decision JSON ではなく通常文を返したため、ツール実行なしの完了扱いは拒否されました。',
+        finalResponse: plain,
         expectedEvidence: [],
         terminalState: 'needs_human',
         riskLevel: 'high',
@@ -1314,7 +1465,7 @@ export async function callSupervisorLLM(
       workflow: 'general',
       instruction: 'Safety system interrupted execution due to JSON syntax errors.',
       rationale: `LLM response failed to parse as JSON. Raw content: ${rawContent}. Error: ${errorMessage}`,
-      finalResponse: '内部JSONエラーのため処理を中断しました。',
+      finalResponse: rawContent,
       expectedEvidence: [],
       terminalState: 'needs_human',
       riskLevel: 'high',

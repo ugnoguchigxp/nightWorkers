@@ -6,7 +6,10 @@ import { createLedgerSink } from '../../services/agent-runtime/ledger-sink';
 import { resolveAgentRuntime } from '../../services/agent-runtime/registry';
 import type { AgentRuntimeResult } from '../../services/agent-runtime/types';
 import { renderBlueprintMarkdown } from '../../services/blueprints/draft';
-import { generatePlanModeBlueprintDraft } from '../../services/blueprints/llm-draft';
+import {
+  BlueprintDraftGenerationError,
+  generatePlanModeBlueprintDraft,
+} from '../../services/blueprints/llm-draft';
 import { compileContext, evaluateContext } from '../../services/context-still';
 import { buildFinalJudgment } from '../../services/final-judgment/build-final-judgment';
 import { renderFinalMessage } from '../../services/final-judgment/render-final-message';
@@ -26,6 +29,7 @@ import type {
   RunLedgerView,
 } from '../../services/memory-feedback/types';
 import { selectProcedureForTaskType, toProcedureSnapshot } from '../../services/procedures';
+import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
 import { buildReviewResult } from '../../services/review-results/build-review-result';
 import { collectDefaultReviewEvidence } from '../../services/review-results/evidence-collector';
 import type { ReviewResult, ReviewRunRequest } from '../../services/review-results/types';
@@ -41,7 +45,10 @@ import { decideRunOutcome } from '../../services/run-control/run-outcome-gate';
 import { serializeRunToJsonl } from '../../services/run-events/jsonl-export';
 import type { RunEventBase } from '../../services/run-events/types';
 import { nativeLocalRunner } from '../../services/runner/NativeLocalRunner';
-import { callSupervisorLLM } from '../../services/supervisor/llm-provider';
+import {
+  callSupervisorLLM,
+  type SupervisorLlmDebugEvent,
+} from '../../services/supervisor/llm-provider';
 import { buildRound1SystemPrompt } from '../../services/supervisor/prompt';
 import type { SupervisorRoutingHypothesis } from '../../services/supervisor/skills/types';
 import { planTaskIntake } from '../../services/task-intake';
@@ -262,7 +269,7 @@ export type WorkbenchChatIntent =
 
 export async function appendWorkbenchMessage(
   id: string,
-  input: { prompt: string; intent?: WorkbenchChatIntent }
+  input: { prompt: string; intent?: WorkbenchChatIntent; waitForIntake?: boolean }
 ) {
   const intent = input.intent || 'intake';
   const task = await repo.getTask(id);
@@ -288,23 +295,33 @@ export async function appendWorkbenchMessage(
     return { task: queued, run: null, messages: await repo.listTaskMessages(id) };
   }
 
-  return handleWorkbenchIntakeMessage(id, task, prompt);
+  const waitForIntake = input.waitForIntake ?? process.env.NODE_ENV === 'test';
+  if (waitForIntake) {
+    return handleWorkbenchIntakeMessage(id, task, prompt, { failureMode: 'throw' });
+  }
+
+  const updated = await prepareWorkbenchIntakeTask(id, task, prompt);
+  void handleWorkbenchIntakeMessage(id, task, prompt, { failureMode: 'record' });
+  return { task: updated, run: null, messages: await repo.listTaskMessages(id) };
 }
 
 async function handleWorkbenchIntakeMessage(
   taskId: string,
   task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>,
-  prompt: string
+  prompt: string,
+  options: { failureMode: 'throw' | 'record' } = { failureMode: 'throw' }
 ) {
   const title =
     task.title === 'New Session' ? prompt.replace(/\s+/g, ' ').slice(0, 60) : task.title;
   const repository = await repo.getRepository(task.repositoryId);
   const projectRoot = repository?.localPath || process.cwd();
+  const emitWorkbenchLlmDebugEvent = createWorkbenchLlmDebugEventEmitter(taskId);
 
   try {
     const decision = await callSupervisorLLM(buildRound1SystemPrompt(projectRoot), prompt, {
       round: 1,
       tolerateSchemaFailure: false,
+      emitEvent: emitWorkbenchLlmDebugEvent,
     });
     const routing = decision.routingHypothesis;
     if (isBlueprintRouting(routing)) {
@@ -314,6 +331,7 @@ async function handleWorkbenchIntakeMessage(
           title,
           prompt,
           routing,
+          emitEvent: emitWorkbenchLlmDebugEvent,
         });
         await repo.createTaskMessage({
           taskId,
@@ -333,6 +351,23 @@ async function handleWorkbenchIntakeMessage(
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        if (error instanceof BlueprintDraftGenerationError && error.rawOutput?.trim()) {
+          await repo.createTaskMessage({
+            taskId,
+            role: 'assistant',
+            content: error.rawOutput.trim(),
+            messageType: 'text',
+            payloadJson: {
+              intent: 'blueprint_raw_output',
+              source: 'llm',
+              validationStatus: 'failed',
+              error: message,
+              promptDiagnostics: error.promptDiagnostics,
+              routingHypothesis: routing,
+              intakeDecision: decision,
+            },
+          });
+        }
         await repo.createTaskMessage({
           taskId,
           role: 'system',
@@ -344,25 +379,26 @@ async function handleWorkbenchIntakeMessage(
             routingHypothesis: routing,
             intakeDecision: decision,
             error: message,
+            rawOutputRecorded:
+              error instanceof BlueprintDraftGenerationError && Boolean(error.rawOutput?.trim()),
+            promptDiagnostics:
+              error instanceof BlueprintDraftGenerationError ? error.promptDiagnostics : undefined,
           },
         });
-        throw error;
+        throw new BlueprintArtifactGenerationError(message);
       }
     } else {
-      const intakeContent = renderLlmIntakeContent(decision);
-      if (intakeContent) {
-        await repo.createTaskMessage({
-          taskId,
-          role: 'assistant',
-          content: intakeContent,
-          messageType: 'text',
-          payloadJson: {
-            intent: 'intake',
-            source: 'llm',
-            decision,
-          },
-        });
-      }
+      await repo.createTaskMessage({
+        taskId,
+        role: 'assistant',
+        content: renderLlmIntakeContent(decision) || JSON.stringify(decision, null, 2),
+        messageType: 'text',
+        payloadJson: {
+          intent: 'intake',
+          source: 'llm',
+          decision,
+        },
+      });
     }
     const updated = await repo.updateTask(taskId, {
       title,
@@ -379,6 +415,23 @@ async function handleWorkbenchIntakeMessage(
       title,
       objective: task.objective || prompt,
     });
+    if (options.failureMode === 'record' && !(error instanceof BlueprintArtifactGenerationError)) {
+      await repo.createTaskMessage({
+        taskId,
+        role: 'system',
+        content: `LLM intake failed: ${message}`,
+        messageType: 'text',
+        payloadJson: {
+          intent: 'intake_failed',
+          source: 'workbench',
+          error: message,
+        },
+      });
+      return { task: updated, run: null, messages: await repo.listTaskMessages(taskId) };
+    }
+    if (options.failureMode === 'record') {
+      return { task: updated, run: null, messages: await repo.listTaskMessages(taskId) };
+    }
     throw new AppError(
       502,
       'LLM_RESPONSE_REQUIRED',
@@ -386,6 +439,42 @@ async function handleWorkbenchIntakeMessage(
       { task: updated }
     );
   }
+}
+
+class BlueprintArtifactGenerationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BlueprintArtifactGenerationError';
+  }
+}
+
+function createWorkbenchLlmDebugEventEmitter(taskId: string) {
+  return async (event: SupervisorLlmDebugEvent) => {
+    if (event.type !== 'model.response_delta') return;
+    const text = typeof event.data?.text === 'string' ? event.data.text : event.message;
+    if (!text) return;
+    nightWorkersRealtimeBroker.publish(taskId, {
+      type: 'task_llm_delta',
+      payload: {
+        text,
+        event,
+      },
+    });
+  };
+}
+
+async function prepareWorkbenchIntakeTask(
+  taskId: string,
+  task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>,
+  prompt: string
+) {
+  const title =
+    task.title === 'New Session' ? prompt.replace(/\s+/g, ' ').slice(0, 60) : task.title;
+  const updated = await repo.updateTask(taskId, {
+    title,
+    objective: task.objective || prompt,
+  });
+  return updated;
 }
 
 function renderLlmIntakeContent(decision: Awaited<ReturnType<typeof callSupervisorLLM>>): string {

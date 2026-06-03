@@ -248,7 +248,7 @@ describe('Supervisor LLM OpenAI streaming', () => {
     );
   });
 
-  it('rejects plain text supervisor output instead of completing without tools', async () => {
+  it('returns plain text supervisor output visibly instead of substituting a fallback message', async () => {
     process.env.ACTIVE_LLM_PROVIDER = 'openai';
     process.env.OPENAI_ENABLED = 'true';
     process.env.OPENAI_API_KEY = 'test-key';
@@ -301,7 +301,42 @@ describe('Supervisor LLM OpenAI streaming', () => {
       terminalState: 'needs_human',
       riskLevel: 'high',
     });
-    expect(decision.finalResponse).toContain('decision JSON ではなく通常文');
+    expect(decision.finalResponse).toBe('read-only sandbox のため編集できませんでした。');
     expect(events.some((event) => event.type === 'model.response_parse_failed')).toBe(true);
+  });
+
+  it('returns raw JSON visibly when a stop decision has no display fields', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'openai';
+    process.env.OPENAI_ENABLED = 'true';
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.OPENAI_MODEL = 'gpt-test';
+    process.env.OPENAI_STREAMING_ENABLED = 'false';
+
+    const rawDecision = JSON.stringify({
+      phase: 'stop',
+      workflow: 'general',
+      instruction: '',
+      rationale: '',
+      finalResponse: '',
+      expectedEvidence: [],
+      terminalState: 'completed',
+      riskLevel: 'low',
+      toolCall: null,
+    });
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({ choices: [{ message: { content: rawDecision } }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    const decision = await callSupervisorLLM('system', 'user', { round: 1 });
+
+    expect(decision).toMatchObject({
+      phase: 'stop',
+      terminalState: 'needs_human',
+      riskLevel: 'high',
+    });
+    expect(decision.finalResponse).toBe(rawDecision);
   });
 });

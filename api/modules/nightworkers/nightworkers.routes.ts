@@ -385,6 +385,7 @@ const appendWorkbenchMessageRoute = createRoute({
         'application/json': {
           schema: z.object({
             prompt: z.string().min(1),
+            waitForIntake: z.boolean().optional(),
             intent: z
               .enum([
                 'intake',

@@ -69,6 +69,7 @@ export type NightWorkersWorkspaceState = {
   latestRun: TaskRun | undefined;
   taskMessages: TaskMessage[];
   latestRunEvents: TaskEvent[];
+  activeStreamingResponse: string;
   latestRunTodos: TaskRunTodo[];
   latestRunReviews: ReviewResult[];
   activeArtifactRefs: WorkbenchArtifactRef[];
@@ -168,6 +169,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const pendingChatRunIdRef = useRef<string | null>(null);
   const [realtimeEvents, setRealtimeEvents] = useState<TaskEvent[]>([]);
   const [bufferedEventsByRun, setBufferedEventsByRun] = useState<Record<string, TaskEvent[]>>({});
+  const [streamingTextByTask, setStreamingTextByTask] = useState<Record<string, string>>({});
 
   const fetchDirectories = async (targetPath?: string) => {
     setIsBrowserLoading(true);
@@ -783,10 +785,17 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
         try {
           const msg = JSON.parse(String(event.data)) as {
             type?: string;
+            taskId?: string;
             runId?: string;
             seq?: number;
             message?: string;
-            payload?: { message?: TaskMessage; run?: TaskRun; status?: string; task?: Task };
+            payload?: {
+              message?: TaskMessage;
+              run?: TaskRun;
+              status?: string;
+              task?: Task;
+              text?: string;
+            };
             event?: {
               id: string;
               actor?: string;
@@ -797,6 +806,22 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
               timestamp?: unknown;
             };
           };
+          if (msg.type === 'task_llm_delta' && activeSessionId) {
+            const taskId = msg.taskId || activeSessionId;
+            if (taskId !== activeSessionId) return;
+            const text =
+              typeof msg.payload?.text === 'string'
+                ? msg.payload.text
+                : typeof msg.message === 'string'
+                  ? msg.message
+                  : '';
+            if (text) {
+              setStreamingTextByTask((prev) => ({
+                ...prev,
+                [taskId]: `${prev[taskId] || ''}${text}`,
+              }));
+            }
+          }
           if (msg.type === 'task_event_created' && msg.runId && msg.event) {
             const eventPayload = { ...(msg.event as TaskEvent), runId: msg.runId } as TaskEvent;
             setBufferedEventsByRun((prev) => {
@@ -828,9 +853,14 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
               }
             );
             if (
-              incoming.role === 'assistant' &&
+              (incoming.role === 'assistant' || incoming.role === 'system') &&
               (!pendingChatRunIdRef.current || incoming.runId === pendingChatRunIdRef.current)
             ) {
+              setStreamingTextByTask((prev) => {
+                const next = { ...prev };
+                delete next[incoming.taskId];
+                return next;
+              });
               setIsChatSubmitting(false);
               chatSubmitStartedAtRef.current = null;
               pendingChatRunIdRef.current = null;
@@ -960,6 +990,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     latestRun,
     taskMessages,
     latestRunEvents,
+    activeStreamingResponse: activeSessionId ? streamingTextByTask[activeSessionId] || '' : '',
     latestRunTodos,
     latestRunReviews,
     activeArtifactRefs,
