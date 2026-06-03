@@ -1,0 +1,30 @@
+title: NightWorkers
+description: NightWorkers is a local-first autonomous development control plane with verifiable run evidence.
+lang: ja
+url: "https://ugnoguchigxp.github.io"
+baseurl: "/nightWorkers"
+
+source: site
+destination: ../docs
+
+markdown: kramdown
+permalink: pretty
+
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+
+include:
+  - .nojekyll
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - README.md
+  - vendor
