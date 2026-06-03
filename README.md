@@ -88,12 +88,14 @@ Default URL: `http://localhost:39174`
 Important environment variables:
 - `DATABASE_URL`: SQLite/libSQL connection target (default local file: `sqlite.db`)
 - `AUTH_MODE`: `local` / `oauth` / `both`
+- `API_AUTH_REQUIRED`: protect product APIs and NightWorkers WebSocket with the auth middleware. Defaults to `true` outside tests; set `false` only for explicitly local unauthenticated development.
 - `APP_URL`: required for OAuth and secure cookie scenarios
 - `TRUST_PROXY`: set `true` behind reverse proxy
 - `CONTEXT_STILL_ENABLED`: enable optional contextStill integration
 - `SESSION_QUEUE_MAX_CONCURRENCY`: global maximum active Session queue runs
 - `NIGHTWORKERS_MCP_SETTINGS_PATH`: optional override for the MCP Server settings JSON path
 - `NIGHTWORKERS_HOOKS_SETTINGS_PATH`: optional override for the Agent Hooks settings JSON path
+- `NIGHTWORKERS_LLM_SETTINGS_PATH`: optional override for the LLM settings JSON path in tests or local experiments
 
 Detailed runtime configuration:
 - [Runtime Configuration Reference](./spec/docs/configuration.md)

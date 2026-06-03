@@ -39,7 +39,10 @@ import {
 import { callSupervisorLLM } from '../services/supervisor/llm-provider';
 
 const RUNTIME_SETTINGS_DIR = path.resolve(process.cwd(), 'api/.runtime');
-const RUNTIME_SETTINGS_PATH = path.join(RUNTIME_SETTINGS_DIR, 'llm-settings.json');
+const RUNTIME_SETTINGS_PATH =
+  process.env.NIGHTWORKERS_LLM_SETTINGS_PATH ||
+  path.join(RUNTIME_SETTINGS_DIR, 'llm-settings.json');
+const MASKED_SECRET = '********';
 
 export const llmSettingsSchema = z.object({
   ACTIVE_LLM_PROVIDER: z.string().default('azure').openapi({ example: 'azure' }),
@@ -68,6 +71,13 @@ export const llmSettingsSchema = z.object({
   CODEX_MODEL: z.string().default('').openapi({ example: 'gpt-5.3-codex' }),
   SESSION_QUEUE_MAX_CONCURRENCY: z.number().int().positive().default(2).openapi({ example: 2 }),
 });
+
+const SECRET_SETTING_KEYS = [
+  'AZURE_OPENAI_API_KEY',
+  'AWS_SECRET_ACCESS_KEY',
+  'OPENAI_API_KEY',
+  'CODEX_ACCESS_TOKEN',
+] as const satisfies ReadonlyArray<keyof z.infer<typeof llmSettingsSchema>>;
 
 const llmModelsSchema = z.object({
   activeProvider: z.enum(['azure', 'openai', 'bedrock', 'codex']),
@@ -415,8 +425,17 @@ const readRuntimeSettings = (): Partial<z.infer<typeof llmSettingsSchema>> => {
 };
 
 const writeRuntimeSettings = (settings: z.infer<typeof llmSettingsSchema>) => {
-  fs.mkdirSync(RUNTIME_SETTINGS_DIR, { recursive: true });
-  fs.writeFileSync(RUNTIME_SETTINGS_PATH, `${JSON.stringify(settings, null, 2)}\n`, 'utf-8');
+  fs.mkdirSync(path.dirname(RUNTIME_SETTINGS_PATH), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(RUNTIME_SETTINGS_PATH, `${JSON.stringify(settings, null, 2)}\n`, {
+    encoding: 'utf-8',
+    mode: 0o600,
+  });
+  try {
+    fs.chmodSync(path.dirname(RUNTIME_SETTINGS_PATH), 0o700);
+    fs.chmodSync(RUNTIME_SETTINGS_PATH, 0o600);
+  } catch {
+    // Best-effort hardening; unsupported filesystems should not block local settings updates.
+  }
 };
 
 const getCurrentSettings = (): z.infer<typeof llmSettingsSchema> => {
@@ -471,14 +490,35 @@ const applySettingsToProcessEnv = (settings: z.infer<typeof llmSettingsSchema>) 
   }
 };
 
+export function maskLlmSettings(settings: z.infer<typeof llmSettingsSchema>) {
+  const masked = { ...settings };
+  for (const key of SECRET_SETTING_KEYS) {
+    masked[key] = settings[key] ? MASKED_SECRET : '';
+  }
+  return masked;
+}
+
+export function mergeMaskedSecrets(
+  incoming: z.infer<typeof llmSettingsSchema>,
+  current: z.infer<typeof llmSettingsSchema>
+) {
+  const merged = { ...incoming };
+  for (const key of SECRET_SETTING_KEYS) {
+    if (incoming[key] === MASKED_SECRET) {
+      merged[key] = current[key] || '';
+    }
+  }
+  return merged;
+}
+
 applySettingsToProcessEnv(getCurrentSettings());
 
 export const settingsRouter = createOpenApiRouter()
   .openapi(getLlmSettingsRoute, (c) => {
-    return c.json(getCurrentSettings());
+    return c.json(maskLlmSettings(getCurrentSettings()));
   })
   .openapi(saveLlmSettingsRoute, async (c) => {
-    const settings = c.req.valid('json');
+    const settings = mergeMaskedSecrets(c.req.valid('json'), getCurrentSettings());
     writeRuntimeSettings(settings);
 
     // Update in-memory environment variables instantly!

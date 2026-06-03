@@ -23,6 +23,10 @@ const envSchema = z
       .enum(['true', 'false'])
       .default('false')
       .transform((value) => value === 'true'),
+    API_AUTH_REQUIRED: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((value) => (value === undefined ? undefined : value === 'true')),
     SUPERVISOR_SKILLS_DIR: z.string().trim().optional(),
     LOG_LEVEL: z.string().default('info'),
   })
@@ -99,5 +103,6 @@ if (corsOrigins.length === 0 || corsOrigins.includes('*')) {
 
 export const config = {
   ...result.data,
+  API_AUTH_REQUIRED: result.data.API_AUTH_REQUIRED ?? result.data.NODE_ENV !== 'test',
   CORS_ORIGINS: corsOrigins,
 };

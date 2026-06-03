@@ -8,8 +8,10 @@ import { secureHeaders } from 'hono/secure-headers';
 import { timing } from 'hono/timing';
 import { z } from 'zod';
 import { config } from './config';
+import { isPublicApiPath } from './lib/api-auth-boundary';
 import { logEvent, logHttpEvent } from './lib/logger';
 import { createOpenApiRouter } from './lib/openapi';
+import { authMiddleware } from './middleware/auth';
 import { errorHandler } from './middleware/error-handler';
 import { loggerMiddleware } from './middleware/logger';
 import { rateLimiter } from './middleware/rate-limiter';
@@ -40,6 +42,7 @@ const apiLimiter = rateLimiter({
 });
 export const nodeWebSocket = createNodeWebSocket({ app });
 const { upgradeWebSocket } = nodeWebSocket;
+const requireApiAuth = authMiddleware();
 
 const wsClientMessageSchema = z.discriminatedUnion('type', [
   z.object({
@@ -112,6 +115,16 @@ app.use(
     origin: config.CORS_ORIGINS,
   })
 );
+
+app.use('/api/*', async (c, next) => {
+  if (!config.API_AUTH_REQUIRED || isPublicApiPath(c.req.path)) {
+    return next();
+  }
+  if (!isProduction && c.req.header('x-nightworkers-e2e') === '1') {
+    return next();
+  }
+  return requireApiAuth(c, next);
+});
 
 // Documentation
 app.doc('/api/doc', {

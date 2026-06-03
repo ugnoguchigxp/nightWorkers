@@ -3,6 +3,9 @@
 ## Core Variables
 - `DATABASE_URL`: SQLite/libSQL target
 - `AUTH_MODE`: `local`, `oauth`, `both`
+- `API_AUTH_REQUIRED`: protect product APIs and the NightWorkers WebSocket with
+  `authMiddleware`. Defaults to `true` outside tests; set `false` only for
+  explicitly local unauthenticated development.
 - `APP_URL`: base URL for auth callbacks and cookie behavior
 - `TRUST_PROXY`: set `true` when proxy headers should be trusted
 
@@ -19,6 +22,11 @@ Enable as needed:
   `/api/settings/llm/*`.
 - Runtime settings can override environment defaults for local development
   without requiring `.env` edits.
+- Secret fields are masked in `GET /api/settings/llm` responses. Saving a masked
+  value keeps the existing secret instead of persisting the mask.
+- LLM runtime settings are written with owner-only file permissions where the
+  filesystem supports them. `NIGHTWORKERS_LLM_SETTINGS_PATH` can override the
+  file path for tests or local experiments.
 - The smoke-test API validates whether the selected provider configuration can
   complete a small model request before it is used by Workbench runs.
 
