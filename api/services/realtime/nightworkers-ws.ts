@@ -9,10 +9,25 @@ type SocketMessage = {
   event?: unknown;
   payload?: unknown;
   timestamp: string;
+  replayed?: boolean;
 };
 
-class NightWorkersRealtimeBroker {
+type OutboundSocketMessage = Omit<SocketMessage, 'taskId' | 'timestamp'>;
+type ReplayEntry = { message: SocketMessage; storedAtMs: number };
+
+const REPLAYABLE_MESSAGE_TYPES = new Set([
+  'task_llm_delta',
+  'task_event_created',
+  'task_run_updated',
+  'task_status_updated',
+]);
+const MAX_REPLAY_MESSAGES_PER_TASK = 240;
+const REPLAY_TTL_MS = 10 * 60 * 1000;
+
+export class NightWorkersRealtimeBroker {
   private subscribers = new Map<string, Set<WebSocket>>();
+  private replayHistory = new Map<string, ReplayEntry[]>();
+  private nextSeqByTask = new Map<string, number>();
 
   subscribe(taskId: string, ws: WebSocket) {
     if (!this.subscribers.has(taskId)) {
@@ -25,6 +40,21 @@ class NightWorkersRealtimeBroker {
       message: 'subscribed',
       meta: { taskId, subscribers: this.subscribers.get(taskId)?.size ?? 0 },
     });
+  }
+
+  replayRecent(taskId: string, ws: WebSocket) {
+    const history = this.pruneReplayHistory(taskId);
+    let replayed = 0;
+    for (const entry of history) {
+      if (this.send(ws, { ...entry.message, replayed: true })) replayed += 1;
+    }
+    logEvent({
+      channel: 'ws',
+      level: 'debug',
+      message: 'replayed recent messages',
+      meta: { taskId, replayed },
+    });
+    return replayed;
   }
 
   unsubscribe(taskId: string, ws: WebSocket) {
@@ -61,17 +91,7 @@ class NightWorkersRealtimeBroker {
     });
   }
 
-  publish(taskId: string, message: Omit<SocketMessage, 'taskId' | 'timestamp'>) {
-    const set = this.subscribers.get(taskId);
-    if (!set || set.size === 0) {
-      logEvent({
-        channel: 'ws',
-        level: 'debug',
-        message: 'publish skipped: no subscribers',
-        meta: { taskId, type: message.type },
-      });
-      return;
-    }
+  publish(taskId: string, message: OutboundSocketMessage) {
     const eventPayload = (message as { event?: any }).event;
     if (message.type === 'task_event_created') {
       if (
@@ -91,23 +111,69 @@ class NightWorkersRealtimeBroker {
       }
     }
 
-    const wire = JSON.stringify({
+    const wire = {
       ...message,
       taskId,
-      seq: eventPayload?.seq,
+      seq: eventPayload?.seq ?? message.seq ?? this.nextTaskSeq(taskId),
       timestamp: new Date().toISOString(),
-    } satisfies SocketMessage);
+    } satisfies SocketMessage;
+    if (REPLAYABLE_MESSAGE_TYPES.has(message.type)) {
+      this.remember(taskId, wire);
+    }
+
+    const set = this.subscribers.get(taskId);
+    if (!set || set.size === 0) {
+      logEvent({
+        channel: 'ws',
+        level: 'debug',
+        message: 'publish queued: no subscribers',
+        meta: { taskId, type: message.type, seq: wire.seq },
+      });
+      return;
+    }
     for (const ws of set) {
-      if (ws.readyState === ws.OPEN) {
-        ws.send(wire);
-      }
+      this.send(ws, wire);
     }
     logEvent({
       channel: 'ws',
       level: 'debug',
       message: 'published',
-      meta: { taskId, type: message.type, subscribers: set.size },
+      meta: { taskId, type: message.type, seq: wire.seq, subscribers: set.size },
     });
+  }
+
+  private nextTaskSeq(taskId: string) {
+    const next = (this.nextSeqByTask.get(taskId) || 0) + 1;
+    this.nextSeqByTask.set(taskId, next);
+    return next;
+  }
+
+  private remember(taskId: string, message: SocketMessage) {
+    const history = this.pruneReplayHistory(taskId);
+    history.push({ message, storedAtMs: Date.now() });
+    if (history.length > MAX_REPLAY_MESSAGES_PER_TASK) {
+      history.splice(0, history.length - MAX_REPLAY_MESSAGES_PER_TASK);
+    }
+    this.replayHistory.set(taskId, history);
+  }
+
+  private pruneReplayHistory(taskId: string) {
+    const expiresBefore = Date.now() - REPLAY_TTL_MS;
+    const history = (this.replayHistory.get(taskId) || []).filter(
+      (entry) => entry.storedAtMs >= expiresBefore
+    );
+    if (history.length === 0) {
+      this.replayHistory.delete(taskId);
+    } else {
+      this.replayHistory.set(taskId, history);
+    }
+    return history;
+  }
+
+  private send(ws: WebSocket, message: SocketMessage) {
+    if (ws.readyState !== ws.OPEN) return false;
+    ws.send(JSON.stringify(message));
+    return true;
   }
 }
 

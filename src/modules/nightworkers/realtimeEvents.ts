@@ -28,6 +28,17 @@ export function mergeRunEvents(input: {
   return dedupeAndSortRunEvents([...restEvents, ...(bufferedEventsByRun[latestRunId] || [])]);
 }
 
+export function getRealtimeMessageDedupeKey(message: {
+  type?: string;
+  taskId?: string;
+  seq?: number;
+  timestamp?: string;
+}): string | null {
+  if (!message.type || !message.taskId) return null;
+  if (typeof message.seq !== 'number' || !message.timestamp) return null;
+  return `${message.taskId}:${message.type}:${message.seq}:${message.timestamp}`;
+}
+
 function toMs(value: unknown): number {
   if (value instanceof Date) return value.getTime();
   if (typeof value === 'number') return value;

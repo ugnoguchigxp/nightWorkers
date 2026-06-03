@@ -197,6 +197,7 @@ app.get(
                   timestamp: new Date().toISOString(),
                 })
               );
+              nightWorkersRealtimeBroker.replayRecent(parsed.taskId, ws.raw);
             } else if (parsed.type === 'unsubscribe_task') {
               if (!ws.raw) return;
               nightWorkersRealtimeBroker.unsubscribe(parsed.taskId, ws.raw);

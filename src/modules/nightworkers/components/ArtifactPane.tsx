@@ -252,126 +252,65 @@ function BlueprintViewer({
       : [];
   const bindings = toObjectArray(blueprint.dataBindings);
   const issues = isObject(validation) ? toObjectArray(validation.issues) : [];
-  const valid = isObject(validation) && validation.valid === true;
-  const designPreset = isObject(blueprint.designPreset) ? blueprint.designPreset : null;
   return (
     <div className="h-full overflow-y-auto px-6 py-5 text-sm text-slate-100">
-      <div className="mb-5 flex items-start justify-between gap-4 border-slate-700 border-b pb-4">
-        <div className="min-w-0">
-          <h1 className="truncate text-xl font-semibold text-slate-50">
-            {String(blueprint.name || 'App Blueprint')}
-          </h1>
-          <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-400">
-            {String(blueprint.description || '')}
-          </p>
-        </div>
-        <span
-          className={`shrink-0 rounded border px-2 py-1 text-[11px] ${
-            valid
-              ? 'border-emerald-500/60 bg-emerald-950/25 text-emerald-100'
-              : 'border-amber-500/60 bg-amber-950/25 text-amber-100'
-          }`}
-        >
-          {valid ? 'valid' : `${issues.length} issues`}
-        </span>
-      </div>
       <div className="grid gap-4">
-        <BlueprintSection title="Screen Preview">
-          <BlueprintScreenPreview
-            screens={screens}
-            tables={tables}
-            bindings={bindings}
-            designPreset={designPreset}
-          />
+        <BlueprintSection title="Design Preview">
+          <BlueprintScreenPreview screens={screens} tables={tables} bindings={bindings} />
         </BlueprintSection>
-        <BlueprintSection title="Screens">
-          {screens.map((screen, index) => (
-            <div
-              key={String(screen?.id || index)}
-              className="rounded border border-slate-700/80 p-3"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-medium text-slate-100">
-                  {String(screen?.name || screen?.id)}
-                </span>
-                <span className="text-[11px] text-slate-500">
-                  {String(screen?.componentName || '')}
-                </span>
-              </div>
-              <div className="mt-2 grid gap-1">
-                {toObjectArray(screen.sections).map((section, sectionIndex) => (
-                  <div
-                    key={String(section?.id || sectionIndex)}
-                    className="flex items-center justify-between gap-3 text-xs"
-                  >
-                    <span className="min-w-0 truncate text-slate-300">
-                      {String(section?.name || section?.id)}
-                    </span>
-                    <span className="shrink-0 text-slate-500">
-                      {String(section?.componentName || '')}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </BlueprintSection>
-        <BlueprintSection title="Data Model">
-          {tables.map((table, index) => (
-            <div
-              key={String(table?.name || index)}
-              className="rounded border border-slate-700/80 p-3"
-            >
-              <div className="font-medium text-slate-100">
-                {String(table?.label || table?.name)}
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1">
-                {toObjectArray(table.columns).map((column, columnIndex) => (
-                  <span
-                    key={String(column?.name || columnIndex)}
-                    className="rounded border border-slate-700 px-1.5 py-0.5 text-[11px] text-slate-300"
-                  >
-                    {String(column?.name || '')}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </BlueprintSection>
-        <BlueprintSection title="Bindings">
-          {bindings.map((binding, index) => (
-            <div
-              key={String(binding?.id || index)}
-              className="rounded border border-slate-700/80 p-3 text-xs"
-            >
-              <div className="font-medium text-slate-100">
-                {String(binding?.name || binding?.id)}
-              </div>
-              <div className="mt-1 text-slate-400">
-                {String(binding?.mode || '')} / {String(binding?.table || '')}
-              </div>
-            </div>
-          ))}
-        </BlueprintSection>
-        <BlueprintSection title="Validation Issues">
-          {issues.length > 0 ? (
-            issues.map((issue, index) => (
+        <PromptDetail>
+          <BlueprintSection title="Screen Composition">
+            {screens.map((screen, index) => (
               <div
-                key={`${String(issue?.path)}-${index}`}
-                className="rounded border border-amber-700/70 bg-amber-950/20 p-2 text-xs"
+                key={String(screen?.id || index)}
+                className="rounded border border-slate-700/80 p-3"
               >
-                <div className="font-mono text-amber-100">{String(issue?.path || '$')}</div>
-                <div className="mt-1 text-amber-50">
-                  {String(issue?.message || issue?.code || '')}
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-medium text-slate-100">
+                    {String(screen?.name || screen?.id)}
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    {String(screen?.componentName || '')}
+                  </span>
+                </div>
+                <div className="mt-2 grid gap-1">
+                  {toObjectArray(screen.sections).map((section, sectionIndex) => (
+                    <div
+                      key={String(section?.id || sectionIndex)}
+                      className="flex items-center justify-between gap-3 text-xs"
+                    >
+                      <span className="min-w-0 truncate text-slate-300">
+                        {String(section?.name || section?.id)}
+                      </span>
+                      <span className="shrink-0 text-slate-500">
+                        {String(section?.componentName || '')}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))
-          ) : (
-            <div className="rounded border border-emerald-700/60 bg-emerald-950/20 p-2 text-xs text-emerald-100">
-              No validation issues.
-            </div>
-          )}
-        </BlueprintSection>
+            ))}
+          </BlueprintSection>
+          <BlueprintSection title="Validation Issues">
+            {issues.length > 0 ? (
+              issues.map((issue, index) => (
+                <div
+                  key={`${String(issue?.path)}-${index}`}
+                  className="rounded border border-amber-700/70 bg-amber-950/20 p-2 text-xs"
+                >
+                  <div className="font-mono text-amber-100">{String(issue?.path || '$')}</div>
+                  <div className="mt-1 text-amber-50">
+                    {String(issue?.message || issue?.code || '')}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded border border-emerald-700/60 bg-emerald-950/20 p-2 text-xs text-emerald-100">
+                No validation issues.
+              </div>
+            )}
+          </BlueprintSection>
+        </PromptDetail>
       </div>
     </div>
   );
@@ -381,12 +320,10 @@ function BlueprintScreenPreview({
   screens,
   tables,
   bindings,
-  designPreset,
 }: {
   screens: Array<Record<string, any>>;
   tables: Array<Record<string, any>>;
   bindings: Array<Record<string, any>>;
-  designPreset: Record<string, any> | null;
 }) {
   if (screens.length === 0) {
     return (
@@ -397,70 +334,29 @@ function BlueprintScreenPreview({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-700/80 bg-[#0f0f11] shadow-2xl shadow-black/20">
-      <div className="flex items-center justify-between gap-3 border-slate-800 border-b bg-[#141416] px-4 py-3">
-        <div className="min-w-0">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200">
-            Governed ScreenJSON Preview
+    <div className="grid gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-2xl font-semibold tracking-tight text-slate-50">
+            {String(screens[0]?.name || 'Designed Screen')}
           </div>
-          <div className="mt-1 truncate font-medium text-slate-100">
-            {String(screens[0]?.name || screens[0]?.id || 'Screen')}
+          <div className="mt-1 text-xs text-slate-500">
+            {String(screens[0]?.componentName || 'DashboardPage')}
           </div>
         </div>
-        <div className="hidden shrink-0 items-center gap-2 text-[10px] text-slate-500 sm:flex">
-          <span>{String(designPreset?.theme || 'nightworkers-dark')}</span>
-          <span className="h-1 w-1 rounded-full bg-slate-600" />
-          <span>{String(designPreset?.density || 'compact')}</span>
+        <div className="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-[11px] text-slate-300">
+          {toObjectArray(screens[0]?.sections).length} sections
         </div>
       </div>
-      <div className="grid min-h-[28rem] bg-[#111113] md:grid-cols-[13rem_minmax(0,1fr)]">
-        <nav className="hidden border-slate-800 border-r bg-[#141416] p-3 md:block">
-          <div className="mb-3 px-2 text-[10px] font-semibold uppercase text-slate-500">
-            Screens
-          </div>
-          <div className="grid gap-1">
-            {screens.map((screen, index) => (
-              <div
-                key={String(screen.id || index)}
-                className={`rounded-md px-2 py-2 text-xs ${
-                  index === 0
-                    ? 'bg-cyan-400/10 text-cyan-100 ring-1 ring-cyan-400/25'
-                    : 'text-slate-400'
-                }`}
-              >
-                <div className="truncate font-medium">{String(screen.name || screen.id)}</div>
-                <div className="mt-0.5 truncate text-[10px] text-slate-500">
-                  {String(screen.path || '/')}
-                </div>
-              </div>
-            ))}
-          </div>
-        </nav>
-        <main className="min-w-0 p-4">
-          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="text-2xl font-semibold tracking-tight text-slate-50">
-                {String(screens[0]?.name || 'Overview')}
-              </div>
-              <div className="mt-1 text-xs text-slate-500">
-                {String(screens[0]?.componentName || 'DashboardPage')}
-              </div>
-            </div>
-            <div className="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-[11px] text-slate-300">
-              {toObjectArray(screens[0]?.sections).length} sections
-            </div>
-          </div>
-          <div className="grid gap-4">
-            {toObjectArray(screens[0]?.sections).map((section, index) => (
-              <BlueprintPreviewSection
-                key={String(section.id || index)}
-                section={section}
-                table={tableForSection(section, bindings, tables)}
-                binding={bindingForSection(section, bindings)}
-              />
-            ))}
-          </div>
-        </main>
+      <div className="grid gap-4">
+        {toObjectArray(screens[0]?.sections).map((section, index) => (
+          <BlueprintPreviewSection
+            key={String(section.id || index)}
+            section={section}
+            table={tableForSection(section, bindings, tables)}
+            binding={bindingForSection(section, bindings)}
+          />
+        ))}
       </div>
     </div>
   );
@@ -511,12 +407,9 @@ function renderPreviewSectionBody(
       items.length > 0
         ? items
         : [
-            {
-              label: 'Records',
-              value: table ? String(toObjectArray(table.columns).length * 12) : '24',
-            },
-            { label: 'Status fields', value: String((binding?.fields || []).length || 3) },
-            { label: 'Open work', value: '8' },
+            { label: String(props.title || 'Primary signal'), value: '-' },
+            { label: String(binding?.name || table?.label || 'Secondary signal'), value: '-' },
+            { label: 'Next action', value: String(props.actionLabel || '-') },
           ];
     return (
       <div className="grid gap-3 sm:grid-cols-3">
@@ -527,7 +420,7 @@ function renderPreviewSectionBody(
           >
             <div className="text-[11px] text-slate-500">{String(item.label || 'Metric')}</div>
             <div className="mt-2 text-2xl font-semibold text-slate-50">
-              {String(item.value || item.description || index + 1)}
+              {String(item.value || ('description' in item ? item.description : '') || index + 1)}
             </div>
           </div>
         ))}
@@ -611,7 +504,7 @@ function renderPreviewSectionBody(
     const links = toObjectArray(props.links).map((link) => String(link.label || link.href));
     const tabs = Array.isArray(props.tabs) ? props.tabs.map(String) : [];
     const labels = [...links, ...tabs];
-    const navLabels = labels.length > 0 ? labels : ['Overview', 'Active', 'Archived'];
+    const navLabels = labels.length > 0 ? labels : ['Primary', 'In focus', 'Follow-up'];
     return (
       <div className="grid gap-3">
         {componentName === 'MainSearchNavigationSection' ? (
@@ -922,9 +815,7 @@ function previewRows(props: Record<string, any>, columns: Array<{ key: string; l
     Object.fromEntries(
       columns.map((column, columnIndex) => [
         column.key,
-        columnIndex === 0
-          ? `${column.label} ${rowIndex + 1}`
-          : sampleCellValue(column.key, rowIndex),
+        columnIndex === 0 ? `${column.label} ${rowIndex + 1}` : `Sample ${rowIndex + 1}`,
       ])
     )
   );
@@ -985,13 +876,6 @@ function previewGenericItems(
       ),
     },
   ];
-}
-
-function sampleCellValue(key: string, rowIndex: number) {
-  if (key.includes('status')) return ['Ready', 'In review', 'Queued'][rowIndex % 3];
-  if (key.includes('date') || key.includes('created')) return `2026-06-0${rowIndex + 1}`;
-  if (key.includes('count') || key.includes('total')) return String((rowIndex + 1) * 12);
-  return ['Primary', 'Secondary', 'Tertiary'][rowIndex % 3];
 }
 
 function sectionFallbackText(
@@ -1131,6 +1015,17 @@ function BlueprintSection({ title, children }: { title: string; children: React.
       <h2 className="mb-2 text-xs font-semibold uppercase text-slate-400">{title}</h2>
       <div className="grid gap-2">{children}</div>
     </section>
+  );
+}
+
+function PromptDetail({ children }: { children: React.ReactNode }) {
+  return (
+    <details className="rounded border border-slate-800 bg-slate-950/20">
+      <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold uppercase text-slate-400 hover:text-slate-200">
+        Prompt Detail
+      </summary>
+      <div className="grid gap-4 border-slate-800 border-t p-3">{children}</div>
+    </details>
   );
 }
 

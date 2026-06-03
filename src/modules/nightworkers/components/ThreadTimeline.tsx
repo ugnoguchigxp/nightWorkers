@@ -738,8 +738,7 @@ function MessagePayload({
             </div>
             <div className="mt-1 text-xs text-slate-400">
               {metadata.appBlueprint.screens?.length || 0} screens /{' '}
-              {metadata.appBlueprint.databaseSchema?.tables?.length || 0} tables / {issueCount}{' '}
-              issues
+              {countBlueprintSections(metadata.appBlueprint)} sections / {issueCount} issues
             </div>
           </div>
           <button
@@ -764,7 +763,7 @@ function MessagePayload({
           </button>
         </div>
         <p className="line-clamp-3 text-xs leading-5 text-slate-300">
-          {metadata.appBlueprint.description || message.content}
+          {summarizeBlueprintCard(metadata.appBlueprint, message.content)}
         </p>
       </div>
     );
@@ -866,4 +865,28 @@ function MessagePayload({
     );
   }
   return <>{message.content}</>;
+}
+
+function summarizeBlueprintCard(blueprint: any, fallback: string) {
+  if (!blueprint || typeof blueprint !== 'object') return fallback;
+  const screens = Array.isArray(blueprint.screens) ? blueprint.screens : [];
+  const sectionNames = screens
+    .flatMap((screen: any) => (Array.isArray(screen?.sections) ? screen.sections : []))
+    .map((section: any) => String(section?.name || section?.id || '').trim())
+    .filter(Boolean)
+    .slice(0, 4);
+  const description = String(blueprint.description || '').trim();
+  const details = [sectionNames.length > 0 ? `Sections: ${sectionNames.join(', ')}` : ''].filter(
+    Boolean
+  );
+  return [description, ...details].filter(Boolean).join(' ');
+}
+
+function countBlueprintSections(blueprint: any) {
+  const screens = Array.isArray(blueprint?.screens) ? blueprint.screens : [];
+  return screens.reduce(
+    (total: number, screen: any) =>
+      total + (Array.isArray(screen?.sections) ? screen.sections.length : 0),
+    0
+  );
 }

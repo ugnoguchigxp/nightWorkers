@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { dedupeAndSortRunEvents, mergeRunEvents } from '../src/modules/nightworkers/realtimeEvents';
+import {
+  dedupeAndSortRunEvents,
+  getRealtimeMessageDedupeKey,
+  mergeRunEvents,
+} from '../src/modules/nightworkers/realtimeEvents';
 import type { TaskEvent } from '../src/modules/nightworkers/types';
 
 function event(id: string, runId: string, seq: number): TaskEvent {
@@ -35,5 +39,17 @@ describe('NightWorkers realtime event reconciliation', () => {
     });
 
     expect(merged.map((e) => e.id)).toEqual(['run-2-ws', 'run-2-rest']);
+  });
+
+  it('builds stable websocket message dedupe keys from task sequence metadata', () => {
+    expect(
+      getRealtimeMessageDedupeKey({
+        type: 'task_llm_delta',
+        taskId: 'task-1',
+        seq: 3,
+        timestamp: '2026-06-03T00:00:00.000Z',
+      })
+    ).toBe('task-1:task_llm_delta:3:2026-06-03T00:00:00.000Z');
+    expect(getRealtimeMessageDedupeKey({ type: 'task_llm_delta', taskId: 'task-1' })).toBeNull();
   });
 });

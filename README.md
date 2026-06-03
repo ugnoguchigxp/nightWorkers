@@ -123,6 +123,7 @@ This repository uses the following documentation layout.
   - `spec/docs/` (primary specification/reference docs)
   - [`NightWorkers Concept`](./spec/docs/nightworkers-concept.md)
   - [`App Blueprint and Design Governance Implementation Plan`](./spec/docs/app-blueprint-design-governance-implementation-plan.md)
+  - [`Blueprint Design Settings UI Implementation Plan`](./spec/docs/blueprint-design-settings-ui-plan.md)
 - `spec/public/` (public-facing specs managed outside GitHub-rendered root docs)
 
 Note: `spec/public/` is reserved for non-GitHub-public spec artifacts. GitHub-rendered documents are intentionally kept at the repository root.

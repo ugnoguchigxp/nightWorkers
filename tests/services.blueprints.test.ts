@@ -88,6 +88,47 @@ describe('Blueprint validation service', () => {
     );
   });
 
+  it('accepts static design props for presentational blueprint sections', () => {
+    const result = validateAppBlueprint({
+      ...representativeAppBlueprint,
+      screens: [
+        {
+          ...representativeAppBlueprint.screens[0],
+          sections: [
+            {
+              id: 'trust-section',
+              name: 'Trust Signals',
+              componentName: 'StatsTrendCardsSection',
+              source: 'static',
+              props: {
+                title: 'Trust Signals',
+                items: [
+                  { label: 'Free shipping', value: '5,000円以上' },
+                  { label: 'Fast dispatch', value: '14時まで' },
+                ],
+              },
+              actions: [],
+            },
+            {
+              id: 'help-panel',
+              name: 'Purchase Support',
+              componentName: 'InsightPanel',
+              source: 'static',
+              props: {
+                title: 'Purchase Support',
+                description: 'Clarifies delivery, returns, and payment reassurance.',
+              },
+              actions: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.issues).toEqual([]);
+  });
+
   it('includes Composia-derived component variants in the Blueprint catalog', () => {
     const catalogNames = new Set(blueprintCatalog.map((definition) => definition.name));
 

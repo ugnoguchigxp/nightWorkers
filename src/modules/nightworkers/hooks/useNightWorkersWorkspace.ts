@@ -2,7 +2,11 @@ import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tansta
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { client } from '../../../lib/api';
-import { dedupeAndSortRunEvents, mergeRunEvents } from '../realtimeEvents';
+import {
+  dedupeAndSortRunEvents,
+  getRealtimeMessageDedupeKey,
+  mergeRunEvents,
+} from '../realtimeEvents';
 import type {
   CreateProjectInput,
   CreateSessionInput,
@@ -167,6 +171,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const chatSubmitStartedAtRef = useRef<number | null>(null);
   const chatSubmitTransportRef = useRef<'http' | 'websocket' | null>(null);
   const pendingChatRunIdRef = useRef<string | null>(null);
+  const processedRealtimeMessageKeysRef = useRef<Set<string>>(new Set());
   const [realtimeEvents, setRealtimeEvents] = useState<TaskEvent[]>([]);
   const [bufferedEventsByRun, setBufferedEventsByRun] = useState<Record<string, TaskEvent[]>>({});
   const [streamingTextByTask, setStreamingTextByTask] = useState<Record<string, string>>({});
@@ -789,6 +794,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
             runId?: string;
             seq?: number;
             message?: string;
+            timestamp?: string;
+            replayed?: boolean;
             payload?: {
               message?: TaskMessage;
               run?: TaskRun;
@@ -809,6 +816,15 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
           if (msg.type === 'task_llm_delta' && activeSessionId) {
             const taskId = msg.taskId || activeSessionId;
             if (taskId !== activeSessionId) return;
+            const messageKey = getRealtimeMessageDedupeKey({ ...msg, taskId });
+            if (messageKey) {
+              if (processedRealtimeMessageKeysRef.current.has(messageKey)) return;
+              processedRealtimeMessageKeysRef.current.add(messageKey);
+              if (processedRealtimeMessageKeysRef.current.size > 5000) {
+                processedRealtimeMessageKeysRef.current.clear();
+                processedRealtimeMessageKeysRef.current.add(messageKey);
+              }
+            }
             const text =
               typeof msg.payload?.text === 'string'
                 ? msg.payload.text

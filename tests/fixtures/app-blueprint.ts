@@ -19,27 +19,46 @@ export const representativeAppBlueprint: AppBlueprint = {
   },
   screens: [
     {
-      id: 'overview',
-      name: 'Overview',
+      id: 'operations-command-center',
+      name: 'Operations Command Center',
       path: '/',
       componentName: 'DashboardPage',
       sections: [
         {
-          id: 'summary',
-          name: 'Summary',
+          id: 'priority-signals',
+          name: 'Priority Signals',
           componentName: 'KpiSummarySection',
           source: 'computed',
-          dataBindingId: 'work-items-summary',
-          props: {},
+          dataBindingId: 'signals-summary',
+          props: {
+            title: 'Priority Signals',
+            description: 'Highlights the strongest operational cues before opening a task.',
+            items: [
+              { label: 'Ready to review', value: '12' },
+              { label: 'Needs decision', value: '4' },
+              { label: 'Blocked paths', value: '2' },
+            ],
+          },
           actions: [],
         },
         {
-          id: 'work-items',
-          name: 'Work Items',
+          id: 'decision-queue',
+          name: 'Decision Queue',
           componentName: 'DataTableSection',
           source: 'table',
-          dataBindingId: 'work-items-list',
-          props: {},
+          dataBindingId: 'decision-queue-list',
+          props: {
+            title: 'Decision Queue',
+            description: 'Keeps the next review action visible in a compact work surface.',
+            columns: [
+              { key: 'title', label: 'Decision' },
+              { key: 'status', label: 'State' },
+            ],
+            rows: [
+              { title: 'Approve launch copy', status: 'Ready' },
+              { title: 'Resolve intake ambiguity', status: 'Needs decision' },
+            ],
+          },
           actions: [],
         },
       ],
@@ -49,8 +68,8 @@ export const representativeAppBlueprint: AppBlueprint = {
   databaseSchema: {
     tables: [
       {
-        name: 'work-items',
-        label: 'Work Items',
+        name: 'decision-items',
+        label: 'Decision Items',
         columns: [
           { name: 'id', type: 'string', nullable: false, primaryKey: true, unique: true },
           { name: 'title', type: 'string', nullable: false, primaryKey: false, unique: false },
@@ -63,18 +82,18 @@ export const representativeAppBlueprint: AppBlueprint = {
   },
   dataBindings: [
     {
-      id: 'work-items-summary',
-      name: 'Work Items Summary',
-      table: 'work-items',
+      id: 'signals-summary',
+      name: 'Signals Snapshot',
+      table: 'decision-items',
       mode: 'summary',
       fields: ['id', 'status'],
       filters: [],
       sort: [],
     },
     {
-      id: 'work-items-list',
-      name: 'Work Items List',
-      table: 'work-items',
+      id: 'decision-queue-list',
+      name: 'Decision Queue List',
+      table: 'decision-items',
       mode: 'list',
       fields: ['title', 'status'],
       filters: [],
@@ -83,10 +102,10 @@ export const representativeAppBlueprint: AppBlueprint = {
   ],
   implementationTasks: [
     {
-      id: 'implement-overview',
-      title: 'Implement overview',
-      description: 'Build the overview screen and wire data bindings.',
-      affectedDomains: ['blueprint-ui', 'blueprint-data', 'blueprint-binding'],
+      id: 'implement-command-center',
+      title: 'Implement command center',
+      description: 'Build the designed command center screen and preview states.',
+      affectedDomains: ['blueprint-ui', 'blueprints'],
     },
   ],
   learningHooks: [],

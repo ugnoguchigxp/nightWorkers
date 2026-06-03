@@ -49,7 +49,7 @@ export const blueprintCatalog: BlueprintComponentDefinition[] = [
   component(
     'InsightPanel',
     'section',
-    ['computed', 'summary', 'rss', 'postgres', 'api', 'markdown'],
+    ['static', 'computed', 'summary', 'rss', 'postgres', 'api', 'markdown'],
     'Show a concise insight, recommendation, or explanation.'
   ),
   component(
@@ -138,7 +138,7 @@ export const blueprintCatalog: BlueprintComponentDefinition[] = [
   component(
     'StatsTrendCardsSection',
     'section',
-    ['computed', 'summary', 'api', 'postgres', 'app'],
+    ['static', 'computed', 'summary', 'api', 'postgres', 'app'],
     'Show metric cards with comparison deltas.',
     ['kpi-trends']
   ),
