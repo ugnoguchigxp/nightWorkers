@@ -20,6 +20,34 @@ Users should choose from constrained options, not author raw CSS. Every change
 must immediately update the Blueprint Preview. The surrounding NightWorkers app
 can remain dark, but Blueprint Preview should default to a light theme.
 
+## Product Framing
+
+Blueprint Preview is a specification discussion surface. It is not the final UI
+that will be copied directly into the generated application.
+
+The intended workflow is:
+
+1. The user and agent discuss the product shape.
+2. NightWorkers creates or updates an App Blueprint as a structured alternative
+   to a prose-only specification.
+3. The user opens Blueprint Preview to inspect the proposed screens, sections,
+   data bindings, and design taste.
+4. The user adjusts governed design settings until the taste is close enough to
+   express intent.
+5. NightWorkers attaches the resulting design-token choices as reference
+   information when it later creates implementation plans or execution tasks.
+
+This means the preview can be approximate at the component-detail level. It
+must be accurate as an intent-capture tool:
+
+- what kind of UI the user expects
+- which design axes were deliberately selected
+- which component variants are allowed as a starting point
+- which screens and sections need implementation planning
+
+The selected design settings are more durable than the preview markup. They
+should become a reusable design reference for the system being planned.
+
 ## Current State
 
 Blueprint artifacts are rendered in
@@ -55,6 +83,9 @@ token model.
 - Do not let users type arbitrary token values or Tailwind class names.
 - Do not rewrite the Blueprint schema generator unless validation requires it.
 - Do not convert Blueprint Preview into a full runtime renderer.
+- Do not treat preview markup as production UI source code.
+- Do not require the generated system to use the preview component tree
+  verbatim.
 
 ## UX Shape
 
@@ -129,6 +160,54 @@ Initialization rules:
 
 Persistence can be added later by writing the selected settings back into the
 Blueprint artifact metadata or a project-scoped preference.
+
+## Implementation Plan Attachment
+
+The selected settings should be serializable as reference information attached
+to later implementation plans.
+
+The attachment is not a full design-system export. It is a concise, structured
+record of user-approved design intent:
+
+```ts
+type BlueprintDesignReference = {
+  source: 'blueprint-preview';
+  blueprintId: string;
+  capturedAt: string;
+  settings: BlueprintPreviewDesignSettings;
+  tokenMapping: {
+    theme: string;
+    density: string;
+    radius: string;
+    shadow: string;
+    font: string;
+    contrast: string;
+    motion: string;
+  };
+  notes: string[];
+};
+```
+
+When an implementation plan is generated from a Blueprint, it should be able to
+include a section like:
+
+```md
+## Design Reference
+
+Source: Blueprint Preview
+Theme: light
+Density: compact
+Shape: rounded
+Shadow: subtle
+Font: geist
+Contrast: standard
+Motion: reduced
+Component variants: button=soft, card=outlined, table=striped, input=outline
+```
+
+The implementation agent should treat this as guidance for the real system's
+design tokens and component choices, not as proof that the preview UI is the
+target implementation.
 
 ## Token Mapping
 
@@ -331,17 +410,21 @@ pnpm dev
 pnpm test:e2e:smoke
 ```
 
-## Persistence Follow-Up
+## Reference Capture Follow-Up
 
-Do not include persistence in the first slice. After the local preview behavior
-is stable, choose one of these intentionally:
+Do not include durable write-back in the first slice. After the local preview
+behavior is stable, choose one of these intentionally:
 
-- artifact-local: write settings into `metadata.appBlueprint.designPreset`
+- artifact-local: write settings into `metadata.appBlueprint.designPreset` and
+  attach `BlueprintDesignReference`
 - project-local: save a project-scoped Blueprint Preview preference
 - global default: save a user-level default for future Blueprints
+- plan-local: attach `BlueprintDesignReference` only to a generated
+  implementation plan
 
-The likely second slice is artifact-local because it keeps the selected design
-attached to the reviewable Blueprint contract.
+The likely second slice is artifact-local plus plan-local capture. That keeps
+the selected design attached to the reviewable Blueprint contract while also
+making it available as reference material for implementation planning.
 
 ## Risks
 
@@ -357,6 +440,11 @@ attached to the reviewable Blueprint contract.
   the first slice.
 - Generated Blueprint artifacts may keep `nightworkers-dark`. Preview should
   normalize safely without changing backend generation in this first UI slice.
+- Users may assume the preview is the final implementation. The UI and plan
+  copy should consistently frame it as a specification-review mock and design
+  reference.
+- If selected settings are not captured in a structured attachment, the design
+  conversation will be hard to reuse in later implementation plans.
 
 ## Acceptance Criteria
 
@@ -369,5 +457,9 @@ attached to the reviewable Blueprint contract.
   one-off preview colors.
 - The implementation keeps Design Governance settings as one source of truth
   for the preview.
+- The document and UI framing make clear that Blueprint Preview is a
+  specification-review mock, not production UI source.
+- The selected design settings can be serialized as a design reference for
+  later implementation plans.
 - Tests cover default normalization, accordion interaction, and data attribute
   updates.
