@@ -5,6 +5,8 @@ import { AppError, NotFoundError } from '../../lib/errors';
 import { createLedgerSink } from '../../services/agent-runtime/ledger-sink';
 import { resolveAgentRuntime } from '../../services/agent-runtime/registry';
 import type { AgentRuntimeResult } from '../../services/agent-runtime/types';
+import { renderBlueprintMarkdown } from '../../services/blueprints/draft';
+import { generatePlanModeBlueprintDraft } from '../../services/blueprints/llm-draft';
 import { compileContext, evaluateContext } from '../../services/context-still';
 import { buildFinalJudgment } from '../../services/final-judgment/build-final-judgment';
 import { renderFinalMessage } from '../../services/final-judgment/render-final-message';
@@ -39,6 +41,9 @@ import { decideRunOutcome } from '../../services/run-control/run-outcome-gate';
 import { serializeRunToJsonl } from '../../services/run-events/jsonl-export';
 import type { RunEventBase } from '../../services/run-events/types';
 import { nativeLocalRunner } from '../../services/runner/NativeLocalRunner';
+import { callSupervisorLLM } from '../../services/supervisor/llm-provider';
+import { buildRound1SystemPrompt } from '../../services/supervisor/prompt';
+import type { SupervisorRoutingHypothesis } from '../../services/supervisor/skills/types';
 import { planTaskIntake } from '../../services/task-intake';
 import { buildTodoContextSnapshot } from '../../services/todo-context';
 import {
@@ -214,7 +219,11 @@ export async function updateTask(
     priority?: number;
   }
 ) {
-  return repo.updateTask(id, data);
+  const updated = await repo.updateTask(id, data);
+  if (updated?.status === 'ready') {
+    void runSessionQueueForRepository(updated.repositoryId);
+  }
+  return updated;
 }
 
 export async function appendTaskMessage(id: string, prompt: string) {
@@ -240,6 +249,7 @@ export async function appendTaskMessage(id: string, prompt: string) {
 }
 
 export type WorkbenchChatIntent =
+  | 'intake'
   | 'draft'
   | 'draft_spec'
   | 'create_task'
@@ -247,13 +257,14 @@ export type WorkbenchChatIntent =
   | 'run_task'
   | 'adjust_running'
   | 'review_followup'
-  | 'learning_capture';
+  | 'learning_capture'
+  | 'design_component';
 
 export async function appendWorkbenchMessage(
   id: string,
   input: { prompt: string; intent?: WorkbenchChatIntent }
 ) {
-  const intent = input.intent || 'draft';
+  const intent = input.intent || 'intake';
   const task = await repo.getTask(id);
   if (!task) throw new NotFoundError('Task not found');
   const prompt = input.prompt.trim();
@@ -272,66 +283,138 @@ export async function appendWorkbenchMessage(
 
   await appendTaskMessage(id, prompt);
 
-  if (intent === 'draft_spec') {
-    const title =
-      task.title === 'New Session' ? prompt.replace(/\s+/g, ' ').slice(0, 60) : task.title;
-    const markdown = [
-      `# ${title}`,
-      '',
-      '## Request',
-      prompt,
-      '',
-      '## Draft',
-      'この内容を Session の仕様ドラフトとして保持しました。必要な objective / acceptance criteria を補って Queue に入れてください。',
-    ].join('\n');
-    await repo.createTaskMessage({
-      taskId: id,
-      role: 'assistant',
-      content: markdown,
-      messageType: 'markdown_document',
-      payloadJson: {
-        intent: 'draft_spec',
-        title,
-        source: 'workbench',
-      },
-    });
-    const updated = await repo.updateTask(id, {
-      title,
-      objective: task.objective || prompt,
-      acceptanceCriteria:
-        task.acceptanceCriteria || 'User reviews this draft, then explicitly queues or runs it.',
-      status: task.status === 'draft' ? 'ready' : task.status,
-    });
-    return { task: updated, run: null, messages: await repo.listTaskMessages(id) };
-  }
-
   if (intent === 'queue' || intent === 'create_task') {
     const queued = await queueTask(id);
     return { task: queued, run: null, messages: await repo.listTaskMessages(id) };
   }
 
-  if (intent === 'review_followup') {
-    await repo.createTaskMessage({
-      taskId: id,
-      role: 'assistant',
-      content:
-        'レビュー後の追加依頼として記録しました。内容を確認して Queue または Run を明示してください。',
-      messageType: 'text',
-      payloadJson: { intent: 'review_followup', source: 'workbench' },
-    });
-  }
+  return handleWorkbenchIntakeMessage(id, task, prompt);
+}
 
-  if (intent === 'learning_capture') {
-    await repo.createTaskMessage({
-      taskId: id,
-      role: 'assistant',
-      content: '学習候補の整理依頼として記録しました。登録は明示承認後に行います。',
-      messageType: 'text',
-      payloadJson: { intent: 'learning_capture', requiresApproval: true, source: 'workbench' },
-    });
-  }
+async function handleWorkbenchIntakeMessage(
+  taskId: string,
+  task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>,
+  prompt: string
+) {
+  const title =
+    task.title === 'New Session' ? prompt.replace(/\s+/g, ' ').slice(0, 60) : task.title;
+  const repository = await repo.getRepository(task.repositoryId);
+  const projectRoot = repository?.localPath || process.cwd();
 
-  return { task: await repo.getTask(id), run: null, messages: await repo.listTaskMessages(id) };
+  try {
+    const decision = await callSupervisorLLM(buildRound1SystemPrompt(projectRoot), prompt, {
+      round: 1,
+      tolerateSchemaFailure: false,
+    });
+    const routing = decision.routingHypothesis;
+    if (isBlueprintRouting(routing)) {
+      try {
+        const { blueprint, validation, generation } = await generatePlanModeBlueprintDraft({
+          taskId,
+          title,
+          prompt,
+          routing,
+        });
+        await repo.createTaskMessage({
+          taskId,
+          role: 'assistant',
+          content: renderBlueprintMarkdown(blueprint),
+          messageType: 'markdown_document',
+          payloadJson: {
+            intent: 'app_blueprint',
+            title,
+            appBlueprint: blueprint,
+            validation,
+            generation,
+            source: 'workbench',
+            routingHypothesis: routing,
+            intakeDecision: decision,
+          },
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await repo.createTaskMessage({
+          taskId,
+          role: 'system',
+          content: `Blueprint artifact generation failed: ${message}`,
+          messageType: 'text',
+          payloadJson: {
+            intent: 'blueprint_generation_failed',
+            source: 'workbench',
+            routingHypothesis: routing,
+            intakeDecision: decision,
+            error: message,
+          },
+        });
+        throw error;
+      }
+    } else {
+      const intakeContent = renderLlmIntakeContent(decision);
+      if (intakeContent) {
+        await repo.createTaskMessage({
+          taskId,
+          role: 'assistant',
+          content: intakeContent,
+          messageType: 'text',
+          payloadJson: {
+            intent: 'intake',
+            source: 'llm',
+            decision,
+          },
+        });
+      }
+    }
+    const updated = await repo.updateTask(taskId, {
+      title,
+      objective: task.objective || prompt,
+      acceptanceCriteria: isBlueprintRouting(routing)
+        ? task.acceptanceCriteria || buildAcceptanceCriteriaFromDecision(decision)
+        : task.acceptanceCriteria,
+      status: isBlueprintRouting(routing) && task.status === 'draft' ? 'ready' : task.status,
+    });
+    return { task: updated, run: null, messages: await repo.listTaskMessages(taskId) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const updated = await repo.updateTask(taskId, {
+      title,
+      objective: task.objective || prompt,
+    });
+    throw new AppError(
+      502,
+      'LLM_RESPONSE_REQUIRED',
+      `LLM response is required but generation failed: ${message}`,
+      { task: updated }
+    );
+  }
+}
+
+function renderLlmIntakeContent(decision: Awaited<ReturnType<typeof callSupervisorLLM>>): string {
+  return [decision.finalResponse, decision.instruction, decision.rationale]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .join('\n\n');
+}
+
+function buildAcceptanceCriteriaFromDecision(
+  decision: Awaited<ReturnType<typeof callSupervisorLLM>>
+): string {
+  return (
+    decision.expectedEvidence
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .join('\n') ||
+    decision.instruction.trim() ||
+    decision.rationale.trim()
+  );
+}
+
+function isBlueprintRouting(routing: SupervisorRoutingHypothesis | undefined): boolean {
+  if (!routing) return false;
+  return (
+    routing.subtype === 'app_blueprint' ||
+    routing.workKinds.includes('blueprint') ||
+    routing.nextSkillFiles.includes('references/work_kinds/blueprint.md')
+  );
 }
 
 function assertRunnableWorkbenchTask(task: Awaited<ReturnType<typeof repo.getTask>>) {
@@ -1088,7 +1171,7 @@ async function drainSessionQueueForRepository(repositoryId: string) {
       await repo.updateTaskStatus(nextTask.id, 'failed');
       await repo.createTaskMessage({
         taskId: nextTask.id,
-        role: 'assistant',
+        role: 'system',
         content: `Session queue failed to start this task: ${err instanceof Error ? err.message : String(err)}`,
         messageType: 'text',
         payloadJson: { source: 'session_queue', status: 'failed_to_start' },
@@ -1215,7 +1298,7 @@ export async function recoverStaleActiveRuns(taskId: string) {
     await repo.createTaskMessage({
       taskId,
       runId: activeRun.id,
-      role: 'assistant',
+      role: 'system',
       content:
         '前回の実行は中断状態のまま残っていたため、失敗として確定しました。新しい依頼を継続します。',
       messageType: 'text',

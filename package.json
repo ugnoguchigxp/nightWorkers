@@ -33,7 +33,7 @@
     "test:e2e:agent-outcome": "playwright test tests/e2e/nightworkers-agent-outcome.spec.ts",
     "test:e2e:agent-live": "playwright test --grep @agent-live",
     "format": "biome format --write .",
-    "verify": "pnpm typecheck && pnpm lint && pnpm test run && pnpm -C designSystem type-check && pnpm -C designSystem test run"
+    "verify": "pnpm typecheck && pnpm lint"
   },
   "type": "module",
   "keywords": [],

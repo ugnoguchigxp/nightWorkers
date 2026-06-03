@@ -32,6 +32,29 @@ import {
 
 type FolderDir = { name: string; path: string };
 type RealtimeStatus = 'initializing' | 'connecting' | 'connected' | 'disconnected';
+type WorkbenchMessageResult = {
+  task?: Task;
+  run?: TaskRun | null;
+  messages?: TaskMessage[];
+};
+type TaskPatchInput = {
+  title?: string;
+  description?: string;
+  objective?: string;
+  acceptanceCriteria?: string;
+  status?: string;
+  priority?: number;
+};
+
+async function patchTask(sessionId: string, input: TaskPatchInput) {
+  const res = await fetch(`/api/tasks/${sessionId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as Task;
+}
 
 export type NightWorkersWorkspaceState = {
   projects: Repository[];
@@ -90,7 +113,7 @@ export type NightWorkersWorkspaceState = {
     sessionId: string,
     prompt: string,
     intent: WorkbenchChatIntent
-  ) => Promise<void>;
+  ) => Promise<WorkbenchMessageResult | undefined>;
   refreshWorkspace: () => void;
   currentBrowserPath: string | null;
   browserParentPath: string | null;
@@ -141,8 +164,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const lastSubmitRef = useRef<{ taskId: string; prompt: string; at: number } | null>(null);
   const pendingChatQueueRef = useRef<Array<{ taskId: string; prompt: string }>>([]);
   const chatSubmitStartedAtRef = useRef<number | null>(null);
+  const chatSubmitTransportRef = useRef<'http' | 'websocket' | null>(null);
   const pendingChatRunIdRef = useRef<string | null>(null);
-  const lastSubmitRecoveryAtRef = useRef<number>(0);
   const [realtimeEvents, setRealtimeEvents] = useState<TaskEvent[]>([]);
   const [bufferedEventsByRun, setBufferedEventsByRun] = useState<Record<string, TaskEvent[]>>({});
 
@@ -315,8 +338,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
   const deleteSessionMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/workbench/sessions/${id}/archive`, { method: 'PATCH' });
-      if (!res.ok) throw new Error('Failed to archive session');
+      const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete session');
       return res.json();
     },
     onSuccess: (_, deletedId) => {
@@ -359,12 +382,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
   const updateSessionStatusMutation = useMutation({
     mutationFn: async (input: { sessionId: string; status: 'draft' | 'ready' }) => {
-      const res = await client.tasks[':id'].$patch({
-        param: { id: input.sessionId },
-        json: { status: input.status },
-      });
-      if (!res.ok) throw new Error(await res.text());
-      return (await res.json()) as Task;
+      return patchTask(input.sessionId, { status: input.status });
     },
     onMutate: async (input) => {
       await queryClient.cancelQueries({ queryKey: ['sessions'] });
@@ -399,12 +417,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       );
       const tasks = await Promise.all(
         updates.map(async ({ sessionId, priority }) => {
-          const res = await client.tasks[':id'].$patch({
-            param: { id: sessionId },
-            json: { priority },
-          });
-          if (!res.ok) throw new Error(await res.text());
-          return (await res.json()) as Task;
+          return patchTask(sessionId, { priority });
         })
       );
       return tasks;
@@ -444,14 +457,10 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       archiveIds: string[];
     }) => {
       if (input.sourceGroup === 'queue' && input.targetGroup === 'processing') {
-        const res = await fetch(`/api/workbench/sessions/${input.sessionId}/run`, {
-          method: 'POST',
-        });
-        if (!res.ok) throw new Error(await res.text());
+        await patchTask(input.sessionId, { status: 'draft' });
       } else if (input.sourceGroup === 'processing' && input.targetGroup === 'queue') {
-        const res = await client.tasks[':id'].$patch({
-          param: { id: input.sessionId },
-          json: { status: 'queued' },
+        const res = await fetch(`/api/workbench/sessions/${input.sessionId}/queue`, {
+          method: 'POST',
         });
         if (!res.ok) throw new Error(await res.text());
       } else if (input.targetGroup === 'archive') {
@@ -468,11 +477,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       );
       await Promise.all(
         updates.map(async ({ sessionId, priority }) => {
-          const res = await client.tasks[':id'].$patch({
-            param: { id: sessionId },
-            json: { priority },
-          });
-          if (!res.ok) throw new Error(await res.text());
+          await patchTask(sessionId, { priority });
         })
       );
     },
@@ -486,6 +491,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
           const priority = priorityById.get(session.id);
           if (session.id === input.sessionId && input.targetGroup === 'queue') {
             return { ...session, status: 'queued', priority: priority ?? session.priority };
+          }
+          if (session.id === input.sessionId && input.targetGroup === 'processing') {
+            return { ...session, status: 'draft', priority: priority ?? session.priority };
           }
           if (session.id === input.sessionId && input.targetGroup === 'archive') {
             return { ...session, status: 'cancelled', priority: priority ?? session.priority };
@@ -640,7 +648,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       let queuePosition = 0;
       groups.processing = sorted.processing;
       groups.queue = sorted.queue.map((session) => {
-        if (session.task.status === 'draft') return { ...session, queuePosition: undefined };
+        if (session.task.status !== 'queued') return { ...session, queuePosition: undefined };
         queuePosition += 1;
         return { ...session, queuePosition };
       });
@@ -665,6 +673,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     if (realtimeStatus !== 'disconnected') return;
     setIsChatSubmitting(false);
     chatSubmitStartedAtRef.current = null;
+    chatSubmitTransportRef.current = null;
     pendingChatRunIdRef.current = null;
     setPendingChatRunId(null);
     pendingChatQueueRef.current = [];
@@ -676,6 +685,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       if (!isChatSubmitting) return;
       const startedAt = chatSubmitStartedAtRef.current;
       if (!startedAt) return;
+      if (chatSubmitTransportRef.current === 'http') return;
       const elapsed = Date.now() - startedAt;
       // 接続が生きて見えても応答が詰まるケース向けのフェイルセーフ
       if (elapsed < 20000) return;
@@ -685,27 +695,14 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
         isActiveRunStatus(latestRun?.status) ||
         isActiveTaskStatus(activeSession?.status);
 
-      if (!hasAcceptedOrActiveRun && Date.now() - lastSubmitRecoveryAtRef.current > 15000) {
-        lastSubmitRecoveryAtRef.current = Date.now();
-        const timeoutMessage: TaskMessage = {
-          id: `chat-timeout-${Date.now()}`,
-          taskId: activeSessionId,
-          role: 'assistant',
-          content: '応答待機がタイムアウトしたため入力ロックを解除しました。再送してください。',
-          messageType: 'text',
-          createdAt: new Date().toISOString(),
-        };
-        queryClient.setQueryData<TaskMessage[]>(['taskMessages', activeSessionId], (prev = []) => [
-          ...prev,
-          timeoutMessage,
-        ]);
+      if (!hasAcceptedOrActiveRun) {
+        setIsChatSubmitting(false);
+        chatSubmitStartedAtRef.current = null;
+        chatSubmitTransportRef.current = null;
+        pendingChatRunIdRef.current = null;
+        setPendingChatRunId(null);
+        pendingChatQueueRef.current = [];
       }
-
-      setIsChatSubmitting(false);
-      chatSubmitStartedAtRef.current = null;
-      pendingChatRunIdRef.current = null;
-      setPendingChatRunId(null);
-      pendingChatQueueRef.current = [];
     }, 2000);
     return () => clearInterval(timer);
   }, [
@@ -714,7 +711,6 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     isChatSubmitting,
     latestRun?.status,
     pendingChatRunId,
-    queryClient,
   ]);
 
   useEffect(() => {
@@ -854,7 +850,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
             const errorMessage: TaskMessage = {
               id: `chat-error-${Date.now()}`,
               taskId: activeSessionId,
-              role: 'assistant',
+              role: 'system',
               content: msg.message || '送信に失敗しました。接続状態を確認してください。',
               messageType: 'text',
               createdAt: new Date().toISOString(),
@@ -1003,6 +999,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       if (!appendOptimisticUserMessage(sessionId, content, lastSubmitRef, queryClient)) return;
       setIsChatSubmitting(true);
       chatSubmitStartedAtRef.current = Date.now();
+      chatSubmitTransportRef.current = 'websocket';
       pendingChatRunIdRef.current = null;
       setPendingChatRunId(null);
       const ws = wsRef.current;
@@ -1024,6 +1021,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       if (!appendOptimisticUserMessage(sessionId, content, lastSubmitRef, queryClient)) return;
       setIsChatSubmitting(true);
       chatSubmitStartedAtRef.current = Date.now();
+      chatSubmitTransportRef.current = 'http';
       pendingChatRunIdRef.current = null;
       setPendingChatRunId(null);
       try {
@@ -1033,11 +1031,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
           body: JSON.stringify({ prompt: content, intent }),
         });
         if (!res.ok) throw new Error(await res.text());
-        const result = (await res.json()) as {
-          task?: Task;
-          run?: TaskRun | null;
-          messages?: TaskMessage[];
-        };
+        const result = (await res.json()) as WorkbenchMessageResult;
         if (result.messages) queryClient.setQueryData(['taskMessages', sessionId], result.messages);
         if (result.task) {
           queryClient.setQueryData<Task[]>(['sessions'], (prev = []) => {
@@ -1054,9 +1048,11 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
         }
         queryClient.invalidateQueries({ queryKey: ['sessions'] });
         queryClient.invalidateQueries({ queryKey: ['sessionRuns', sessionId] });
+        return result;
       } finally {
         setIsChatSubmitting(false);
         chatSubmitStartedAtRef.current = null;
+        chatSubmitTransportRef.current = null;
         if (intent !== 'run_task') {
           pendingChatRunIdRef.current = null;
           setPendingChatRunId(null);

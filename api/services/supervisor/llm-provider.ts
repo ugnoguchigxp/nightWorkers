@@ -311,7 +311,13 @@ function normalizeDecisionForSchema(input: unknown): unknown {
     typeof obj.routingHypothesis !== 'object' ||
     Array.isArray(obj.routingHypothesis)
   ) {
-    obj.routingHypothesis = buildDefaultRoutingHypothesisForWorkflow(obj.workflow);
+    obj.routingHypothesis = { ...defaultSupervisorRoutingHypothesis };
+  } else {
+    const routing = { ...(obj.routingHypothesis as Record<string, unknown>) };
+    if (routing.subtype === null || typeof routing.subtype !== 'string') {
+      delete routing.subtype;
+    }
+    obj.routingHypothesis = routing;
   }
   if (!Array.isArray(obj.expectedEvidence)) {
     obj.expectedEvidence = [];
@@ -386,50 +392,6 @@ function normalizeDecisionForSchema(input: unknown): unknown {
   return obj;
 }
 
-function buildDefaultRoutingHypothesisForWorkflow(workflow: unknown) {
-  if (workflow === 'code_change') {
-    return {
-      primaryMode: 'code_edit',
-      secondaryModes: ['test_and_verification'],
-      phase: 'execute',
-      workKinds: ['code'],
-      overlays: ['evidence'],
-      requiredEvidence: ['repo inspection', 'verification result'],
-      nextSkillFiles: ['SKILL.md', 'references/modes/code_edit.md'],
-      confidence: 0.65,
-    };
-  }
-  if (workflow === 'evidence_review') {
-    return {
-      primaryMode: 'investigation',
-      secondaryModes: ['review'],
-      phase: 'investigate',
-      workKinds: [],
-      overlays: ['evidence'],
-      requiredEvidence: ['repo evidence'],
-      nextSkillFiles: [
-        'SKILL.md',
-        'references/modes/investigation.md',
-        'references/overlays/evidence.md',
-      ],
-      confidence: 0.65,
-    };
-  }
-  if (workflow === 'research') {
-    return {
-      primaryMode: 'research',
-      secondaryModes: [],
-      phase: 'investigate',
-      workKinds: ['research'],
-      overlays: ['external_research_required'],
-      requiredEvidence: ['source pages'],
-      nextSkillFiles: ['SKILL.md', 'references/modes/research.md'],
-      confidence: 0.65,
-    };
-  }
-  return defaultSupervisorRoutingHypothesis;
-}
-
 function hasRoundObservations(userPrompt: string): boolean {
   try {
     const parsed = JSON.parse(userPrompt) as { observations?: unknown };
@@ -454,7 +416,10 @@ function buildResponseJsonSchema(round?: 1 | 2 | 3) {
         'rationale',
         'finalResponse',
         'expectedEvidence',
+        'terminalState',
         'riskLevel',
+        'routingHypothesis',
+        'toolCall',
       ],
       properties: {
         phase: { type: 'string', enum: ['observe', 'plan', 'act', 'verify', 'report', 'stop'] },
@@ -471,6 +436,7 @@ function buildResponseJsonSchema(round?: 1 | 2 | 3) {
             'phase',
             'workKinds',
             'overlays',
+            'subtype',
             'requiredEvidence',
             'nextSkillFiles',
             'confidence',
@@ -484,7 +450,7 @@ function buildResponseJsonSchema(round?: 1 | 2 | 3) {
             phase: { type: 'string', enum: [...supervisorPhases] },
             workKinds: { type: 'array', items: { type: 'string', enum: [...supervisorWorkKinds] } },
             overlays: { type: 'array', items: { type: 'string', enum: [...supervisorOverlays] } },
-            subtype: { type: 'string' },
+            subtype: { anyOf: [{ type: 'string' }, { type: 'null' }] },
             requiredEvidence: { type: 'array', items: { type: 'string' } },
             nextSkillFiles: { type: 'array', items: { type: 'string' } },
             confidence: { type: 'number', minimum: 0, maximum: 1 },
@@ -495,15 +461,20 @@ function buildResponseJsonSchema(round?: 1 | 2 | 3) {
         finalResponse: { type: 'string' },
         expectedEvidence: { type: 'array', items: { type: 'string' } },
         terminalState: {
-          type: 'string',
-          enum: [
-            'needs_review',
-            'completed',
-            'blocked',
-            'failed',
-            'timed_out',
-            'cancelled',
-            'needs_human',
+          anyOf: [
+            {
+              type: 'string',
+              enum: [
+                'needs_review',
+                'completed',
+                'blocked',
+                'failed',
+                'timed_out',
+                'cancelled',
+                'needs_human',
+              ],
+            },
+            { type: 'null' },
           ],
         },
         riskLevel: { type: 'string', enum: ['low', 'medium', 'high'] },
@@ -944,15 +915,18 @@ export async function callSupervisorLLM(
     const sdkOptions = buildCodexSupervisorSdkOptions(accessToken);
     const prompt = buildCodexTurnPrompt(systemPrompt, userPrompt);
     const codex = new Codex(sdkOptions);
+    const useStructuredOutput = isEnabled('CODEX_STRUCTURED_OUTPUT_ENABLED', false);
 
     const runWithModel = async (model?: string) => {
       const thread = codex.startThread(buildCodexSupervisorThreadOptions(model));
-      const turn = await thread.run(prompt, {
-        outputSchema: buildResponseJsonSchema(options.round).schema,
-      });
+      const turn = await thread.run(
+        prompt,
+        useStructuredOutput ? { outputSchema: buildResponseJsonSchema(options.round).schema } : {}
+      );
       providerDebug = {
         provider: 'codex',
         model: model || null,
+        structuredOutput: useStructuredOutput,
         hasFinalResponse: Boolean(turn.finalResponse),
       };
       return turn.finalResponse || '';

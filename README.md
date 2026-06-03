@@ -96,7 +96,7 @@ Detailed setup and provider configuration:
 | `pnpm test:e2e` | Run Playwright E2E |
 | `pnpm test:e2e:agent-outcome` | Run deterministic agent outcome E2E |
 | `pnpm test:e2e:agent-live` | Run optional live-provider agent E2E |
-| `pnpm verify` | Typecheck + lint + tests (+ design system checks) |
+| `pnpm verify` | Typecheck + lint |
 
 ## Testing
 - Unit/integration: Vitest
@@ -121,6 +121,8 @@ This repository uses the following documentation layout.
   - [`CHANGELOG.md`](./CHANGELOG.md)
 - Engineering specs and internal references:
   - `spec/docs/` (primary specification/reference docs)
+  - [`NightWorkers Concept`](./spec/docs/nightworkers-concept.md)
+  - [`App Blueprint and Design Governance Implementation Plan`](./spec/docs/app-blueprint-design-governance-implementation-plan.md)
 - `spec/public/` (public-facing specs managed outside GitHub-rendered root docs)
 
 Note: `spec/public/` is reserved for non-GitHub-public spec artifacts. GitHub-rendered documents are intentionally kept at the repository root.

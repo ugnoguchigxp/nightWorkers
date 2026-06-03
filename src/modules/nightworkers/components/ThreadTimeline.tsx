@@ -6,6 +6,7 @@ import {
   Copy,
   GitCompare,
   LoaderCircle,
+  PanelsTopLeft,
   PauseCircle,
   XCircle,
 } from 'lucide-react';
@@ -93,7 +94,7 @@ export function ThreadTimeline({
             }
             timestamp={formatFinishedTime(item.message.createdAt)}
           >
-            <MessagePayload message={item.message} />
+            <MessagePayload message={item.message} onOpenArtifact={onOpenArtifact} />
           </ThreadMessage>
         ) : showDebugEvents ||
           hasApplyPatchContent(item.event) ||
@@ -700,8 +701,102 @@ function toMs(value: unknown): number {
   return Number.isNaN(n) ? Number.MAX_SAFE_INTEGER : n;
 }
 
-function MessagePayload({ message }: { message: TaskMessage }) {
+function MessagePayload({
+  message,
+  onOpenArtifact,
+}: {
+  message: TaskMessage;
+  onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
+}) {
   const metadata = message.metadataJson as any;
+  if (message.messageType === 'markdown_document' && metadata?.appBlueprint) {
+    const validation = metadata.validation;
+    const issueCount = Array.isArray(validation?.issues) ? validation.issues.length : 0;
+    return (
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold uppercase text-cyan-200">Blueprint artifact</div>
+            <div className="mt-1 truncate text-sm font-semibold text-slate-100">
+              {metadata.appBlueprint.name || metadata.title || 'App Blueprint'}
+            </div>
+            <div className="mt-1 text-xs text-slate-400">
+              {metadata.appBlueprint.screens?.length || 0} screens /{' '}
+              {metadata.appBlueprint.databaseSchema?.tables?.length || 0} tables / {issueCount}{' '}
+              issues
+            </div>
+          </div>
+          <button
+            type="button"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-cyan-500/60 text-cyan-100 hover:bg-cyan-950/30"
+            onClick={() =>
+              onOpenArtifact({
+                id: `message-${message.id}`,
+                taskId: message.taskId,
+                runId: message.runId || undefined,
+                kind: 'app_blueprint',
+                title: `Blueprint: ${metadata.appBlueprint.name || metadata.title || 'Draft'}`,
+                summary: message.content.slice(0, 160),
+                source: { type: 'task_message', messageId: message.id },
+                createdAt: String(message.createdAt),
+                metadata,
+              })
+            }
+            title="Open Blueprint artifact"
+          >
+            <PanelsTopLeft className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="line-clamp-3 text-xs leading-5 text-slate-300">
+          {metadata.appBlueprint.description || message.content}
+        </p>
+      </div>
+    );
+  }
+  if (message.messageType === 'markdown_document' && metadata?.componentDesign) {
+    const componentDesign = metadata.componentDesign;
+    return (
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold uppercase text-cyan-200">
+              Component design artifact
+            </div>
+            <div className="mt-1 truncate text-sm font-semibold text-slate-100">
+              {componentDesign.componentName || metadata.title || 'Component Design'}
+            </div>
+            <div className="mt-1 text-xs text-slate-400">
+              {componentDesign.variants?.length || 0} variants /{' '}
+              {componentDesign.tokenChanges?.length || 0} token changes
+            </div>
+          </div>
+          <button
+            type="button"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-cyan-500/60 text-cyan-100 hover:bg-cyan-950/30"
+            onClick={() =>
+              onOpenArtifact({
+                id: `message-${message.id}`,
+                taskId: message.taskId,
+                runId: message.runId || undefined,
+                kind: 'component_design',
+                title: `Component: ${componentDesign.componentName || metadata.title || 'Design'}`,
+                summary: message.content.slice(0, 160),
+                source: { type: 'task_message', messageId: message.id },
+                createdAt: String(message.createdAt),
+                metadata,
+              })
+            }
+            title="Open component design artifact"
+          >
+            <PanelsTopLeft className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="line-clamp-3 text-xs leading-5 text-slate-300">
+          {componentDesign.summary || message.content}
+        </p>
+      </div>
+    );
+  }
   if (message.messageType === 'chart' && metadata?.chartData) {
     return (
       <div className="space-y-2">

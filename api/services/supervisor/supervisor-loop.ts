@@ -367,23 +367,14 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           activeRoutingHypothesis = round2.routingHypothesis || activeRoutingHypothesis;
         }
       } else {
-        const round1Decision = workflowSelectionDecision
-          ? {
-              ...workflowSelectionDecision,
-              workflow: activeWorkflow,
-              routingHypothesis: activeRoutingHypothesis,
-            }
-          : {
-              phase: 'plan',
-              workflow: activeWorkflow,
-              routingHypothesis: activeRoutingHypothesis,
-              instruction: 'Continue with the previously selected workflow.',
-              rationale: 'Workflow selection is reused to avoid repeated classification calls.',
-              finalResponse: '',
-              expectedEvidence: [],
-              riskLevel: 'low',
-              toolCall: null,
-            };
+        if (!workflowSelectionDecision) {
+          throw new Error('Round 1 workflow decision is missing.');
+        }
+        const round1Decision = {
+          ...workflowSelectionDecision,
+          workflow: activeWorkflow,
+          routingHypothesis: activeRoutingHypothesis,
+        };
         appendSupervisorTrace('round1_reused', {
           runId,
           iteration,

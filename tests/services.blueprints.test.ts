@@ -1,0 +1,118 @@
+import { describe, expect, it } from 'vitest';
+import { blueprintCatalog } from '../api/services/blueprint-catalog';
+import { validateAppBlueprint } from '../api/services/blueprints/validation';
+import { representativeAppBlueprint } from './fixtures/app-blueprint';
+
+describe('Blueprint validation service', () => {
+  it('accepts a representative valid blueprint', () => {
+    const result = validateAppBlueprint(representativeAppBlueprint);
+
+    expect(result.valid).toBe(true);
+    expect(result.issues).toEqual([]);
+  });
+
+  it('reports missing section bindings with stable paths', () => {
+    const result = validateAppBlueprint({
+      ...representativeAppBlueprint,
+      screens: [
+        {
+          ...representativeAppBlueprint.screens[0],
+          sections: [
+            {
+              ...representativeAppBlueprint.screens[0]?.sections[0],
+              dataBindingId: 'missing-binding',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'screens.0.sections.0.dataBindingId',
+          code: 'missing_binding',
+        }),
+      ])
+    );
+  });
+
+  it('reports binding fields that are not present on the target table', () => {
+    const result = validateAppBlueprint({
+      ...representativeAppBlueprint,
+      dataBindings: [
+        {
+          ...representativeAppBlueprint.dataBindings[0],
+          fields: ['id', 'missing-field'],
+        },
+      ],
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'dataBindings.0.fields.1',
+          code: 'missing_field',
+        }),
+      ])
+    );
+  });
+
+  it('reports component source mismatches', () => {
+    const result = validateAppBlueprint({
+      ...representativeAppBlueprint,
+      screens: [
+        {
+          ...representativeAppBlueprint.screens[0],
+          sections: [
+            {
+              ...representativeAppBlueprint.screens[0]?.sections[0],
+              componentName: 'EmptyState',
+              source: 'table',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'screens.0.sections.0.source',
+          code: 'invalid_component_source',
+        }),
+      ])
+    );
+  });
+
+  it('includes Composia-derived component variants in the Blueprint catalog', () => {
+    const catalogNames = new Set(blueprintCatalog.map((definition) => definition.name));
+
+    expect([...catalogNames]).toEqual(
+      expect.arrayContaining([
+        'ChartSection',
+        'ChartInsightSection',
+        'ProgressListSection',
+        'KanbanSection',
+        'CalendarSection',
+        'ScheduleSection',
+        'HoldingsListSection',
+        'ControlPanelSection',
+        'StatsTrendCardsSection',
+        'ActivityFeedSection',
+        'NotificationCenterSection',
+        'QuickActionsSection',
+        'CheckoutSummarySection',
+        'ChatPanelSection',
+        'EditorPreviewSection',
+        'MainSearchNavigationSection',
+      ])
+    );
+    expect(
+      blueprintCatalog.find((definition) => definition.name === 'ChartSection')?.variants
+    ).toEqual(['bar', 'line', 'area', 'pie', 'radar']);
+  });
+});

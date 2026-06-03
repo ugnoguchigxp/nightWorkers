@@ -6,6 +6,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     fileParallelism: false,
+    globalSetup: ['./tests/global-cleanup-after-tests.ts'],
     include: ['tests/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['tests/e2e/**'],
     coverage: {

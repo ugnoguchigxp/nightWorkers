@@ -25,7 +25,7 @@ const PROCESSING_TASK_STATUSES = new Set([
   'blocked',
   'timed_out',
 ]);
-const QUEUE_TASK_STATUSES = new Set(['draft', 'ready', 'queued']);
+const QUEUE_TASK_STATUSES = new Set(['ready', 'queued']);
 const ARCHIVE_TASK_STATUSES = new Set(['completed', 'cancelled', 'failed']);
 const ACTIVE_RUN_STATUSES = new Set([
   'context_compiling',
@@ -280,7 +280,7 @@ export function buildWorkbenchArtifactRefs(input: {
       taskId: input.task.id,
       runId: message.runId || undefined,
       kind,
-      title: kind === 'implementation_plan' ? 'Implementation Plan' : 'Spec',
+      title: artifactTitleForKind(kind, message),
       summary: message.content.slice(0, 160),
       source: { type: 'task_message', messageId: message.id },
       createdAt: String(message.createdAt),
@@ -342,11 +342,29 @@ function countArtifacts(refs: WorkbenchArtifactRef[]) {
 
 function inferDocumentArtifactKind(message: TaskMessage): WorkbenchArtifactKind {
   const intent = message.metadataJson?.intent;
+  if (intent === 'app_blueprint' || message.metadataJson?.appBlueprint) return 'app_blueprint';
+  if (intent === 'component_design' || message.metadataJson?.componentDesign)
+    return 'component_design';
+  if (intent === 'design_delta' || message.metadataJson?.designDelta) return 'design_delta';
   if (intent === 'draft_spec') return 'spec';
   if (intent === 'implementation_plan') return 'implementation_plan';
   const title = String(message.metadataJson?.title || '').toLowerCase();
   if (title.includes('plan')) return 'implementation_plan';
   return 'spec';
+}
+
+function artifactTitleForKind(kind: WorkbenchArtifactKind, message: TaskMessage): string {
+  const metadataTitle = message.metadataJson?.title;
+  if (typeof metadataTitle === 'string' && metadataTitle.trim()) {
+    if (kind === 'app_blueprint') return `Blueprint: ${metadataTitle}`;
+    if (kind === 'component_design') return `Component: ${metadataTitle}`;
+    if (kind === 'design_delta') return `Design Delta: ${metadataTitle}`;
+  }
+  if (kind === 'app_blueprint') return 'App Blueprint';
+  if (kind === 'component_design') return 'Component Design';
+  if (kind === 'design_delta') return 'Design Delta';
+  if (kind === 'implementation_plan') return 'Implementation Plan';
+  return 'Spec';
 }
 
 function hasFailedVerification(event: TaskEvent): boolean {

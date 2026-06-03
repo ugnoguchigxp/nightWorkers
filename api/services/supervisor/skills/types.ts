@@ -30,6 +30,7 @@ export const supervisorWorkKinds = [
   'config',
   'dependency',
   'data_migration',
+  'blueprint',
   'ui_ux',
   'git',
   'release',

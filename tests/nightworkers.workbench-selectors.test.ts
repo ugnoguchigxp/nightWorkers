@@ -31,6 +31,8 @@ const baseTask: Task = {
 
 describe('workbench selectors', () => {
   it('groups task status into processing queue and archive deterministically', () => {
+    expect(getSessionGroup({ ...baseTask, status: 'draft' })).toBe('processing');
+    expect(getSessionGroup({ ...baseTask, status: 'ready' })).toBe('queue');
     expect(getSessionGroup({ ...baseTask, status: 'running' })).toBe('processing');
     expect(getSessionGroup({ ...baseTask, status: 'queued' })).toBe('queue');
     expect(getSessionGroup({ ...baseTask, status: 'failed' })).toBe('archive');
@@ -147,6 +149,65 @@ describe('workbench selectors', () => {
     expect(refs.map((ref) => ref.kind)).not.toEqual(
       expect.arrayContaining(['context_pack', 'todo_plan', 'run_ledger', 'final_report'])
     );
+  });
+
+  it('builds App Blueprint artifact refs from Plan mode markdown messages', () => {
+    const message: TaskMessage = {
+      id: '44444444-4444-4444-8444-444444444445',
+      taskId: baseTask.id,
+      role: 'assistant',
+      content: '# App Blueprint',
+      messageType: 'markdown_document',
+      metadataJson: {
+        intent: 'app_blueprint',
+        title: 'Inventory App',
+        appBlueprint: { name: 'Inventory App' },
+        validation: { valid: true, issues: [] },
+      },
+      createdAt: '2026-06-02T00:00:01.000Z',
+    };
+
+    const refs = buildWorkbenchArtifactRefs({
+      task: baseTask,
+      messages: [message],
+    });
+
+    expect(refs).toEqual([
+      expect.objectContaining({
+        kind: 'app_blueprint',
+        title: 'Blueprint: Inventory App',
+        source: { type: 'task_message', messageId: message.id },
+      }),
+    ]);
+  });
+
+  it('builds component design artifact refs from design tool messages', () => {
+    const message: TaskMessage = {
+      id: '44444444-4444-4444-8444-444444444446',
+      taskId: baseTask.id,
+      role: 'assistant',
+      content: '# Button Component Design',
+      messageType: 'markdown_document',
+      metadataJson: {
+        intent: 'component_design',
+        title: 'Button Component Design',
+        componentDesign: { componentName: 'Button', variants: [], tokenChanges: [] },
+      },
+      createdAt: '2026-06-02T00:00:01.000Z',
+    };
+
+    const refs = buildWorkbenchArtifactRefs({
+      task: baseTask,
+      messages: [message],
+    });
+
+    expect(refs).toEqual([
+      expect.objectContaining({
+        kind: 'component_design',
+        title: 'Component: Button Component Design',
+        source: { type: 'task_message', messageId: message.id },
+      }),
+    ]);
   });
 });
 

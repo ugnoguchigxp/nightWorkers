@@ -41,6 +41,17 @@ function inlineMeta(meta?: Record<string, unknown>): string {
   return ` ${pairs.join(' ')}`;
 }
 
+const LOG_DIR = path.resolve(process.cwd(), 'logs');
+const API_LOG_PATH = path.join(LOG_DIR, 'api.log');
+const TRACE_LOG_PATH = path.join(LOG_DIR, 'supervisor-trace.log');
+
+function appendLogFile(filePath: string, line: string) {
+  void fs
+    .mkdir(path.dirname(filePath), { recursive: true })
+    .then(() => fs.appendFile(filePath, `${line}\n`, 'utf-8'))
+    .catch(() => {});
+}
+
 export function logHttpEvent(params: {
   channel?: string;
   level?: LogLevel;
@@ -55,6 +66,7 @@ export function logHttpEvent(params: {
   const line = `[${channel}]${nowLabel()} [${params.method}]${params.path} ${levelLabel(level)}: ${params.message}${inlineMeta(params.meta)}`;
   // eslint-disable-next-line no-console
   console.log(line);
+  appendLogFile(API_LOG_PATH, line);
 }
 
 export function logEvent(params: {
@@ -69,6 +81,7 @@ export function logEvent(params: {
   const line = `[${channel}]${nowLabel()} ${levelLabel(level)}: ${params.message}${inlineMeta(params.meta)}`;
   // eslint-disable-next-line no-console
   console.log(line);
+  appendLogFile(API_LOG_PATH, line);
 }
 
 // LLM behavior is intentionally emitted as JSON for full-fidelity debugging.
@@ -81,12 +94,7 @@ export const llmLogger = pino({
 // Backward-compatible alias for existing imports.
 export const logger = llmLogger;
 
-const TRACE_LOG_PATH = path.resolve(process.cwd(), 'logs/supervisor-trace.log');
-
 export function appendSupervisorTrace(event: string, payload?: Record<string, unknown>) {
   const line = `[${new Date().toISOString()}] ${event}${payload ? ` ${JSON.stringify(payload)}` : ''}\n`;
-  void fs
-    .mkdir(path.dirname(TRACE_LOG_PATH), { recursive: true })
-    .then(() => fs.appendFile(TRACE_LOG_PATH, line, 'utf-8'))
-    .catch(() => {});
+  appendLogFile(TRACE_LOG_PATH, line.trimEnd());
 }

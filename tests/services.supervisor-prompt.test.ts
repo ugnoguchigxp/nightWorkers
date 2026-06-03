@@ -81,4 +81,40 @@ describe('Supervisor prompt structure', () => {
     expect(round2).toContain('[Skill Document: references/modes/code_edit.md]');
     expect(round2).toContain('[Re-evaluation Gate]');
   });
+
+  it('teaches round 1 to classify prototype and image requests as blueprint tasks', () => {
+    const prompt = buildRound1SystemPrompt('/repo');
+
+    expect(prompt).toContain('[Blueprint routing]');
+    expect(prompt).toContain('試作して');
+    expect(prompt).toContain('どんなイメージか教えて');
+    expect(prompt).toContain('Blueprint を見たい');
+    expect(prompt).toContain('ECサイトトップページ');
+    expect(prompt).toContain("workKinds: ['blueprint', 'ui_ux']");
+    expect(prompt).toContain("subtype: 'app_blueprint'");
+    expect(prompt).toContain("nextSkillFiles: ['references/work_kinds/blueprint.md']");
+  });
+
+  it('loads the blueprint skill body when routing requests an app blueprint', () => {
+    const prompt = buildRound2SystemPrompt({
+      primaryMode: 'planning',
+      secondaryModes: ['review'],
+      phase: 'plan',
+      workKinds: ['blueprint', 'ui_ux'],
+      overlays: ['user_facing_change'],
+      subtype: 'app_blueprint',
+      requiredEvidence: ['latest user request'],
+      nextSkillFiles: ['references/work_kinds/blueprint.md'],
+      confidence: 0.85,
+    });
+
+    expect(prompt).toContain('[Skill Document: references/work_kinds/blueprint.md]');
+    expect(prompt).toContain('試作して');
+    expect(prompt).toContain('Blueprint artifact');
+    expect(prompt).toContain('shared/schemas/app-blueprint.schema.ts');
+    expect(prompt).toContain('### JSON Contract');
+    expect(prompt).toContain('dataBindingId');
+    expect(prompt).toContain('blueprint-catalog.schema.ts');
+    expect(prompt).toContain('[Re-evaluation Gate]');
+  });
 });

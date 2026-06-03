@@ -96,6 +96,9 @@ export type WorkbenchProgressSnapshot = {
 };
 
 export type WorkbenchArtifactKind =
+  | 'app_blueprint'
+  | 'component_design'
+  | 'design_delta'
   | 'spec'
   | 'implementation_plan'
   | 'context_pack'
@@ -195,6 +198,7 @@ export type TaskMessage = {
 };
 
 export type WorkbenchChatIntent =
+  | 'intake'
   | 'draft'
   | 'draft_spec'
   | 'create_task'
@@ -202,7 +206,8 @@ export type WorkbenchChatIntent =
   | 'run_task'
   | 'adjust_running'
   | 'review_followup'
-  | 'learning_capture';
+  | 'learning_capture'
+  | 'design_component';
 
 export type RunDetails = TaskRun & {
   todos: TaskRunTodo[];

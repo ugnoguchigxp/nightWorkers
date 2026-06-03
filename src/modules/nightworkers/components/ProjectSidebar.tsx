@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ChevronRight,
   Folder,
+  ListTodo,
   LoaderCircle,
   Pause,
   Play,
@@ -65,13 +66,14 @@ const EMPTY_PROJECT_SESSION_GROUPS: ProjectSessionGroups = {
 
 export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebarProps) {
   const [expandedArchives, setExpandedArchives] = useState<Record<string, boolean>>({});
+  const [expandedQueues, setExpandedQueues] = useState<Record<string, boolean>>({});
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
   return (
-    <div className="flex min-h-screen w-full flex-col border-r border-slate-700/70 bg-[#0f172a]">
-      <div className="flex items-center justify-between px-4 pb-2 pt-4">
+    <div className="flex h-screen min-h-0 w-full flex-col overflow-hidden border-r border-slate-700/70 bg-[#0f172a]">
+      <div className="flex shrink-0 items-center justify-between px-4 pb-2 pt-4">
         <span className="text-xs font-bold uppercase tracking-wider text-slate-300/80">
           NightWorkers
         </span>
@@ -83,7 +85,7 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
           <Plus className="h-3.5 w-3.5" />
         </button>
       </div>
-      <div className="space-y-5 py-2">
+      <div className="nightworkers-scrollbar min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain py-2">
         {props.isProjectsLoading ? (
           <div className="px-4 text-xs text-slate-300/70">Loading workspaces...</div>
         ) : props.projects.length === 0 ? (
@@ -95,6 +97,8 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
             const grouped = props.groupedSessions[project.id] || EMPTY_PROJECT_SESSION_GROUPS;
             const isExpanded = props.expandedProjects[project.id] ?? true;
             const isArchiveExpanded = expandedArchives[project.id] ?? false;
+            const isQueueExpanded = expandedQueues[project.id] ?? false;
+            const currentSessions = [...grouped.processing, ...grouped.queue];
             return (
               <div key={project.id} className="space-y-1">
                 <div className="flex items-center justify-between px-4 py-1.5 text-slate-200/90">
@@ -111,23 +115,24 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className={`h-6 w-6 p-0 ${
-                        project.queueEnabled
-                          ? 'text-emerald-300 hover:text-emerald-200'
+                      className={`h-6 min-w-6 px-1.5 text-[10px] ${
+                        isQueueExpanded
+                          ? 'bg-slate-700/60 text-cyan-200 hover:text-cyan-100'
                           : 'text-slate-400 hover:text-slate-200'
                       }`}
                       onClick={() =>
-                        props.onUpdateProject(project.id, {
-                          queueEnabled: !project.queueEnabled,
-                        })
+                        setExpandedQueues((prev) => ({
+                          ...prev,
+                          [project.id]: !isQueueExpanded,
+                        }))
                       }
-                      title={project.queueEnabled ? 'Pause session queue' : 'Play session queue'}
+                      title="Show implementation queue and processing sessions"
                     >
-                      {project.queueEnabled ? (
-                        <Pause className="h-3.5 w-3.5" />
-                      ) : (
-                        <Play className="h-3.5 w-3.5" />
-                      )}
+                      <ListTodo className="h-3.5 w-3.5" />
+                      <span>Queue</span>
+                      {grouped.queue.length + grouped.processing.length > 0 ? (
+                        <span>{grouped.queue.length + grouped.processing.length}</span>
+                      ) : null}
                     </Button>
                     <Button
                       type="button"
@@ -158,12 +163,29 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                 </div>
                 {isExpanded ? (
                   <div className="space-y-2">
-                    <ProjectSessionDnD
-                      projectId={project.id}
-                      grouped={grouped}
+                    <SessionList
+                      label="Sessions"
+                      sessions={currentSessions}
                       activeSessionId={props.activeSessionId}
-                      sensors={sensors}
-                      archiveExpanded={isArchiveExpanded}
+                      onSelectSession={props.onSelectSession}
+                    />
+                    {isQueueExpanded ? (
+                      <ProjectQueuePanel
+                        project={project}
+                        projectId={project.id}
+                        grouped={grouped}
+                        activeSessionId={props.activeSessionId}
+                        sensors={sensors}
+                        onSelectSession={props.onSelectSession}
+                        onMoveSession={props.onMoveSession}
+                        onUpdateProject={props.onUpdateProject}
+                      />
+                    ) : null}
+                    <ProjectArchive
+                      projectId={project.id}
+                      sessions={isArchiveExpanded ? grouped.archive : []}
+                      count={grouped.archive.length}
+                      activeSessionId={props.activeSessionId}
                       onToggleArchive={() =>
                         setExpandedArchives((prev) => ({
                           ...prev,
@@ -171,7 +193,7 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                         }))
                       }
                       onSelectSession={props.onSelectSession}
-                      onMoveSession={props.onMoveSession}
+                      archiveExpanded={isArchiveExpanded}
                     />
                   </div>
                 ) : null}
@@ -184,16 +206,17 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
   );
 });
 
-function ProjectSessionDnD({
+function ProjectQueuePanel({
+  project,
   projectId,
   grouped,
   activeSessionId,
   sensors,
   onSelectSession,
   onMoveSession,
-  archiveExpanded,
-  onToggleArchive,
+  onUpdateProject,
 }: {
+  project: Repository;
   projectId: string;
   grouped: ProjectSessionGroups;
   activeSessionId: string | null;
@@ -207,8 +230,10 @@ function ProjectSessionDnD({
     queueIds: string[];
     archiveIds: string[];
   }) => void;
-  archiveExpanded: boolean;
-  onToggleArchive: () => void;
+  onUpdateProject: (
+    projectId: string,
+    input: { queueEnabled?: boolean; maxConcurrentSessions?: number }
+  ) => void;
 }) {
   const containerId = (group: WorkbenchMovableSessionGroup) => `${projectId}:${group}`;
   const processingId = containerId('processing');
@@ -301,26 +326,76 @@ function ProjectSessionDnD({
   );
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
-      <SessionSection
-        id={processingId}
-        label="Processing"
-        sessions={grouped.processing}
-        activeSessionId={activeSessionId}
-        onSelectSession={onSelectSession}
-      />
-      <SessionSection
-        id={queueId}
-        label="Queue"
-        sessions={grouped.queue}
-        activeSessionId={activeSessionId}
-        onSelectSession={onSelectSession}
-      />
+    <div className="mx-2 rounded-lg border border-slate-700/70 bg-slate-950/35 py-1">
+      <div className="flex items-center justify-between gap-2 px-2 py-1">
+        <div className="min-w-0 text-[10px] font-semibold uppercase text-cyan-200/80">Queue</div>
+        <button
+          type="button"
+          onClick={() =>
+            onUpdateProject(project.id, {
+              queueEnabled: !project.queueEnabled,
+            })
+          }
+          className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[10px] ${
+            project.queueEnabled
+              ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200'
+              : 'border-slate-700 bg-slate-800/80 text-slate-300'
+          }`}
+          title={
+            project.queueEnabled
+              ? 'Pause automatic start for ready sessions'
+              : 'Enable automatic start for ready sessions'
+          }
+        >
+          {project.queueEnabled ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+          {project.queueEnabled ? 'Auto On' : 'Paused'}
+        </button>
+      </div>
+      <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+        <SessionSection
+          id={processingId}
+          label="Processing"
+          sessions={grouped.processing}
+          activeSessionId={activeSessionId}
+          onSelectSession={onSelectSession}
+        />
+        <SessionSection
+          id={queueId}
+          label="Implementation Queue"
+          sessions={grouped.queue}
+          activeSessionId={activeSessionId}
+          onSelectSession={onSelectSession}
+        />
+      </DndContext>
+    </div>
+  );
+}
+
+function ProjectArchive({
+  projectId,
+  sessions,
+  count,
+  activeSessionId,
+  onSelectSession,
+  archiveExpanded,
+  onToggleArchive,
+}: {
+  projectId: string;
+  sessions: WorkbenchSessionView[];
+  count: number;
+  activeSessionId: string | null;
+  onSelectSession: (sessionId: string) => void;
+  archiveExpanded: boolean;
+  onToggleArchive: () => void;
+}) {
+  const archiveId = `${projectId}:archive`;
+  return (
+    <DndContext sensors={useSensors()} collisionDetection={closestCorners}>
       <SessionSection
         id={archiveId}
         label="Archive"
-        sessions={archiveExpanded ? grouped.archive : []}
-        count={grouped.archive.length}
+        sessions={sessions}
+        count={count}
         activeSessionId={activeSessionId}
         onSelectSession={onSelectSession}
         onToggle={onToggleArchive}
@@ -328,6 +403,42 @@ function ProjectSessionDnD({
         showEmpty={false}
       />
     </DndContext>
+  );
+}
+
+function SessionList({
+  label,
+  sessions,
+  activeSessionId,
+  onSelectSession,
+}: {
+  label: string;
+  sessions: WorkbenchSessionView[];
+  activeSessionId: string | null;
+  onSelectSession: (sessionId: string) => void;
+}) {
+  return (
+    <section>
+      <div className="flex items-center justify-between px-4 py-1 text-[10px] font-semibold uppercase text-slate-400">
+        <span>{label}</span>
+        <span>{sessions.length}</span>
+      </div>
+      {sessions.length === 0 ? (
+        <div className="px-8 py-1 text-[10px] text-slate-500">None</div>
+      ) : (
+        <ul className="space-y-0.5">
+          {sessions.map((session) => (
+            <SessionRow
+              key={session.task.id}
+              session={session}
+              queuePosition={session.group === 'queue' ? session.queuePosition : undefined}
+              active={session.task.id === activeSessionId}
+              onSelectSession={onSelectSession}
+            />
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -402,6 +513,40 @@ function SessionSection({
   );
 }
 
+function SessionRow({
+  session,
+  queuePosition,
+  active,
+  onSelectSession,
+}: {
+  session: WorkbenchSessionView;
+  queuePosition?: number;
+  active: boolean;
+  onSelectSession: (sessionId: string) => void;
+}) {
+  return (
+    <li
+      className={`mx-2 min-h-9 w-[calc(100%-1rem)] rounded-md border px-2 py-1.5 text-xs ${
+        active
+          ? 'border-slate-500/70 bg-slate-800/60 text-slate-100'
+          : 'border-slate-700/70 text-slate-300 hover:border-slate-500/60 hover:bg-slate-800/40'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => onSelectSession(session.task.id)}
+        className="flex w-full min-w-0 items-center gap-2 text-left"
+      >
+        <span className="min-w-0 flex-1 truncate font-medium">{session.task.title}</span>
+        <span className="flex shrink-0 items-center gap-2 text-[10px] text-slate-400">
+          <SessionProgressLabel session={session} queuePosition={queuePosition} />
+          <SessionStateMarker session={session} />
+        </span>
+      </button>
+    </li>
+  );
+}
+
 function SortableSessionRow({
   session,
   queuePosition,
@@ -461,7 +606,7 @@ function SessionProgressLabel({
   queuePosition?: number;
 }) {
   if (session.group === 'queue') {
-    if (session.task.status === 'draft') return <span className="shrink-0">draft</span>;
+    if (session.task.status === 'ready') return <span className="shrink-0">ready</span>;
     return <span className="shrink-0">#{queuePosition ?? session.queuePosition ?? '-'}</span>;
   }
   if (session.latestRun) return <span className="shrink-0">{session.progress.percent}%</span>;
@@ -487,10 +632,9 @@ function SessionStateMarker({ session }: { session: WorkbenchSessionView }) {
   const isRunning =
     !hasProblem &&
     !isComplete &&
-    (session.group === 'processing' ||
-      ['running', 'context_compiling', 'compiling_context', 'finalizing', 'verifying'].includes(
-        taskStatus
-      ) ||
+    (['running', 'context_compiling', 'compiling_context', 'finalizing', 'verifying'].includes(
+      taskStatus
+    ) ||
       (runStatus
         ? ['running', 'context_compiling', 'compiling_context', 'finalizing', 'verifying'].includes(
             runStatus

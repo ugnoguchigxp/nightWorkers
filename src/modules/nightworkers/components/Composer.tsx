@@ -35,8 +35,7 @@ export function Composer({
   onSubmit,
 }: ComposerProps) {
   const [prompt, setPrompt] = useState('');
-  const [planMode, setPlanMode] = useState(false);
-  const intent: WorkbenchChatIntent = planMode ? 'draft_spec' : 'draft';
+  const intent: WorkbenchChatIntent = 'intake';
   const canSubmit = !disabled && !!prompt.trim();
   const diffSummary = useMemo(() => {
     if (!latestDiffPatch.trim()) return null;
@@ -86,17 +85,6 @@ export function Composer({
         />
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-600/50 pt-3">
           <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setPlanMode((value) => !value)}
-              className={`rounded border px-2 py-1 text-[10px] uppercase ${
-                planMode
-                  ? 'border-cyan-400/70 bg-cyan-950/30 text-cyan-100'
-                  : 'border-slate-600/70 text-slate-300 hover:border-slate-400'
-              }`}
-            >
-              Plan {planMode ? 'On' : 'Off'}
-            </button>
             <ModelThinkingControls
               model={model}
               thinkingDepth={thinkingDepth}

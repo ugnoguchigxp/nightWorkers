@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { desc, eq, inArray, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../db/client';
@@ -125,7 +126,7 @@ Flags:
   process.exit(0);
 }
 
-function buildPatternList(patterns: string[]) {
+export function buildPatternList(patterns: string[]) {
   const sources =
     patterns.length > 0
       ? patterns
@@ -150,7 +151,7 @@ function selectRepositories(
   );
 }
 
-async function buildPlan(all: boolean, patterns: RegExp[]): Promise<CleanupPlan> {
+export async function buildPlan(all: boolean, patterns: RegExp[]): Promise<CleanupPlan> {
   const allRepositories = await db
     .select({
       id: repositories.id,
@@ -232,7 +233,7 @@ async function buildPlan(all: boolean, patterns: RegExp[]): Promise<CleanupPlan>
   };
 }
 
-async function deleteRepositories(repositoryIds: string[]) {
+export async function deleteRepositories(repositoryIds: string[]) {
   if (repositoryIds.length === 0) return 0;
   const chunkSize = 100;
 
@@ -276,10 +277,23 @@ async function deleteRepositories(repositoryIds: string[]) {
   return repositoryIds.length;
 }
 
+export async function cleanupNightWorkersTestData(
+  input: { mode?: CleanupMode; all?: boolean; patterns?: string[] } = {}
+) {
+  const patterns = buildPatternList(input.patterns || []);
+  const plan = await buildPlan(input.all ?? false, patterns);
+  let deleted = 0;
+
+  if ((input.mode || 'dry-run') === 'execute' && plan.repositoryIds.length > 0) {
+    deleted = await deleteRepositories(plan.repositoryIds);
+  }
+
+  return { plan, deleted };
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const patterns = buildPatternList(args.patterns);
-  const plan = await buildPlan(args.all, patterns);
+  const { plan, deleted } = await cleanupNightWorkersTestData(args);
 
   console.log(
     `Matched ${plan.counts.repositories} repositories, ${plan.counts.tasks} tasks, ${plan.counts.taskRuns} runs, ${plan.counts.taskEvents} events, ${plan.counts.taskMessages} messages, ${plan.counts.artifacts} artifacts.`
@@ -301,11 +315,12 @@ async function main() {
     return;
   }
 
-  const deleted = await deleteRepositories(plan.repositoryIds);
   console.log(`Deleted ${deleted} repositories and their dependent data.`);
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}

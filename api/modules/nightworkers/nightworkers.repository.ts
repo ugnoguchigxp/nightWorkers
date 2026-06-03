@@ -231,14 +231,14 @@ export async function claimNextQueuedTask(repositoryId: string) {
   const [task] = await db
     .select()
     .from(tasks)
-    .where(and(eq(tasks.repositoryId, repositoryId), eq(tasks.status, 'queued')))
+    .where(and(eq(tasks.repositoryId, repositoryId), inArray(tasks.status, ['ready', 'queued'])))
     .orderBy(desc(tasks.priority), asc(tasks.updatedAt))
     .limit(1);
   if (!task) return null;
   const [claimed] = await db
     .update(tasks)
     .set({ status: 'context_compiling', updatedAt: new Date() })
-    .where(and(eq(tasks.id, task.id), eq(tasks.status, 'queued')))
+    .where(and(eq(tasks.id, task.id), inArray(tasks.status, ['ready', 'queued'])))
     .returning();
   if (claimed) {
     nightWorkersRealtimeBroker.publish(claimed.id, {

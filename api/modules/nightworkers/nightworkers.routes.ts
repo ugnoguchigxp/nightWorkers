@@ -14,6 +14,7 @@ import {
   taskSchema,
 } from '../../../shared/schemas/nightworkers.schema';
 import { AppError, ValidationError } from '../../lib/errors';
+import { logEvent } from '../../lib/logger';
 import { createOpenApiRouter } from '../../lib/openapi';
 import * as service from './nightworkers.service';
 
@@ -386,6 +387,7 @@ const appendWorkbenchMessageRoute = createRoute({
             prompt: z.string().min(1),
             intent: z
               .enum([
+                'intake',
                 'draft',
                 'draft_spec',
                 'create_task',
@@ -394,8 +396,9 @@ const appendWorkbenchMessageRoute = createRoute({
                 'adjust_running',
                 'review_followup',
                 'learning_capture',
+                'design_component',
               ])
-              .default('draft'),
+              .default('intake'),
           }),
         },
       },
@@ -994,6 +997,16 @@ const router = createOpenApiRouter()
   .openapi(updateTaskRoute, async (c) => {
     const id = c.req.param('id');
     const data = c.req.valid('json');
+    logEvent({
+      channel: 'api',
+      level: 'info',
+      message: 'task update requested',
+      meta: {
+        taskId: id,
+        requestedStatus: data.status,
+        hasPriority: data.priority !== undefined,
+      },
+    });
     const task = await service.updateTask(id, data);
     if (!task) return c.json({ error: 'Task not found' }, 404);
     return c.json(task, 200);

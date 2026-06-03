@@ -19,6 +19,9 @@ describe('Supervisor skill registry', () => {
     expect(
       documents.some((document) => document.relativePath === 'references/overlays/evidence.md')
     ).toBe(true);
+    expect(
+      documents.some((document) => document.relativePath === 'references/work_kinds/blueprint.md')
+    ).toBe(true);
     expect(documents.every((document) => document.digest.startsWith('sha256:'))).toBe(true);
   });
 
@@ -43,6 +46,30 @@ describe('Supervisor skill registry', () => {
     expect(paths).toContain('references/work_kinds/code.md');
     expect(paths).toContain('references/overlays/evidence.md');
     expect(paths).not.toContain('references/overlays/security.md');
+  });
+
+  it('resolves blueprint references from app blueprint routing', () => {
+    const documents = resolveSupervisorSkillDocuments({
+      primaryMode: 'planning',
+      secondaryModes: ['review'],
+      phase: 'plan',
+      workKinds: ['blueprint', 'ui_ux'],
+      overlays: ['user_facing_change'],
+      subtype: 'app_blueprint',
+      requiredEvidence: ['latest user request'],
+      nextSkillFiles: ['references/work_kinds/blueprint.md'],
+      confidence: 0.85,
+    });
+    const paths = documents.map((document) => document.relativePath);
+
+    expect(paths).toContain('SKILL.md');
+    expect(paths).toContain('references/router.md');
+    expect(paths).toContain('references/phases/plan.md');
+    expect(paths).toContain('references/modes/planning.md');
+    expect(paths).toContain('references/modes/review.md');
+    expect(paths).toContain('references/work_kinds/blueprint.md');
+    expect(paths).toContain('references/work_kinds/ui_ux.md');
+    expect(paths).toContain('references/overlays/user_facing_change.md');
   });
 
   it('ignores unknown nextSkillFiles while allowing known extra references', () => {

@@ -128,6 +128,22 @@ function buildWorkflowSelectionContext(projectRoot: string): string {
 - workKinds の候補: ${supervisorWorkKinds.join(' | ')}
 - overlays の候補: ${supervisorOverlays.join(' | ')}
 
+[Blueprint routing]
+次のような依頼は Blueprint タスクとして扱ってください:
+- 「試作して」「プロトタイプを見たい」「プレビューを作って」
+- 「どんなイメージか教えて」「完成イメージを見たい」「画面案を見たい」
+- 「Blueprint を見たい」「Blueprint で作って」「Blueprint を更新して」
+- 実装前に ECサイトトップページ、ダッシュボード、管理画面などの画面構成、セクション、データ連携を確認したい依頼
+
+この場合 routingHypothesis は原則として次の形に寄せてください:
+- primaryMode: planning
+- secondaryModes: ['review'] または []
+- phase: plan
+- workKinds: ['blueprint', 'ui_ux']。ドキュメントだけが目的なら docs も追加する。
+- overlays: ['user_facing_change']
+- subtype: 'app_blueprint'
+- nextSkillFiles: ['references/work_kinds/blueprint.md'] を含める。
+
 workflow は legacy 互換のため、routing に最も近い general | evidence_review | code_change | research のどれかを入れてください。
 Round 1 は基本的に phase="plan" または phase="observe" を返してください。リポジトリ証拠や Web 証拠を本当に必要としない軽い会話だけ、phase="stop" を許可します。
 Round 1 では toolCall を原則 null にしてください。実行手段の選択は Round 2 の Tool catalog に基づいて行います。

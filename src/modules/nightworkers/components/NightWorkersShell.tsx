@@ -5,7 +5,12 @@ import {
   useWorkspaceLayoutState,
 } from '../contexts/WorkspaceLayoutContext';
 import type { NightWorkersWorkspaceState } from '../hooks/useNightWorkersWorkspace';
-import type { ThinkingDepth, WorkbenchArtifactRef, WorkbenchChatIntent } from '../types';
+import type {
+  TaskMessage,
+  ThinkingDepth,
+  WorkbenchArtifactRef,
+  WorkbenchChatIntent,
+} from '../types';
 import { ArtifactPane } from './ArtifactPane';
 import { FolderBrowserDialog } from './FolderBrowserDialog';
 import { ProjectSidebar } from './ProjectSidebar';
@@ -23,6 +28,23 @@ type NightWorkersShellProps = {
   onCloseFolderBrowser: () => void;
 };
 
+function buildBlueprintArtifactRef(message: TaskMessage): WorkbenchArtifactRef {
+  const metadata = message.metadataJson || {};
+  const blueprint = metadata.appBlueprint || {};
+  const title = blueprint.name || metadata.title || 'App Blueprint';
+  return {
+    id: `message-${message.id}`,
+    taskId: message.taskId,
+    runId: message.runId || undefined,
+    kind: 'app_blueprint',
+    title: `Blueprint: ${title}`,
+    summary: message.content.slice(0, 160),
+    source: { type: 'task_message', messageId: message.id },
+    createdAt: String(message.createdAt),
+    metadata,
+  };
+}
+
 export function NightWorkersShell(props: NightWorkersShellProps) {
   const { workspace } = props;
   const { panelSizes } = useWorkspaceLayoutState();
@@ -35,6 +57,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const [selectedArtifact, setSelectedArtifact] = useState<WorkbenchArtifactRef | null>(null);
   const [showArtifactPane, setShowArtifactPane] = useState(false);
   const artifactPaneOpen = showArtifactPane || Boolean(selectedArtifact);
+  const isBlueprintArtifactOpen = artifactPaneOpen && selectedArtifact?.kind === 'app_blueprint';
 
   useEffect(() => {
     workspaceRef.current = workspace;
@@ -57,7 +80,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
           ? workspace.llmSettings?.AWS_BEDROCK_MODEL
           : workspace.llmSettings?.CODEX_MODEL;
 
-  const submitPrompt = async (prompt: string, intent: WorkbenchChatIntent = 'draft') => {
+  const submitPrompt = async (prompt: string, intent: WorkbenchChatIntent = 'intake') => {
     if (!workspace.activeProject && workspace.projects[0]) {
       workspace.setActiveSessionId(
         workspace.sessions.find((s) => s.repositoryId === workspace.projects[0].id)?.id || null
@@ -79,6 +102,38 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     }
     await workspace.sendWorkbenchMessage(workspace.activeSession.id, prompt, intent);
   };
+  const handleOpenBlueprintArtifact = useCallback(async () => {
+    if (isBlueprintArtifactOpen) {
+      setSelectedArtifact(null);
+      setShowArtifactPane(false);
+      return;
+    }
+    const current = workspaceRef.current;
+    const existing = current.activeArtifactRefs.find(
+      (artifact) => artifact.kind === 'app_blueprint'
+    );
+    if (existing) {
+      setShowArtifactPane(true);
+      setSelectedArtifact(existing);
+      return;
+    }
+    const session = current.activeSession;
+    if (!session) return;
+    const prompt = [session.objective, session.description, session.title]
+      .find((value) => value?.trim())
+      ?.trim();
+    if (!prompt) return;
+    const result = await current.sendWorkbenchMessage(session.id, prompt, 'draft_spec');
+    const blueprintMessage = [...(result?.messages || [])]
+      .reverse()
+      .find(
+        (message) =>
+          message.messageType === 'markdown_document' && message.metadataJson?.appBlueprint
+      );
+    if (!blueprintMessage) return;
+    setShowArtifactPane(true);
+    setSelectedArtifact(buildBlueprintArtifactRef(blueprintMessage));
+  }, [isBlueprintArtifactOpen]);
   const handleSelectSession = useCallback((sessionId: string | null) => {
     setSelectedArtifact(null);
     setShowArtifactPane(false);
@@ -116,9 +171,9 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   }, [props.onOpenFolderBrowser, selectedPath]);
 
   return (
-    <div className="min-h-screen bg-[#111827] text-slate-100">
+    <div className="h-screen overflow-hidden bg-[#111827] text-slate-100">
       <Group
-        className="min-h-screen"
+        className="h-screen min-h-0"
         defaultLayout={{
           'nightworkers-sidebar': initialPanelSizes.current[0],
           'nightworkers-chat': initialPanelSizes.current[1],
@@ -182,16 +237,20 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               }}
               onThinkingDepthChange={setThinkingDepth}
               onSubmitInitialPrompt={submitPrompt}
-              onSubmitWorkbenchMessage={(prompt, intent) =>
-                workspace.activeSession
-                  ? workspace.sendWorkbenchMessage(workspace.activeSession.id, prompt, intent)
-                  : submitPrompt(prompt, intent)
-              }
-              onToggleDraftReady={async () => {
-                if (!workspace.activeSession) return;
-                if (!['draft', 'ready'].includes(workspace.activeSession.status)) return;
-                const nextStatus = workspace.activeSession.status === 'draft' ? 'ready' : 'draft';
-                await workspace.updateSessionStatus(workspace.activeSession.id, nextStatus);
+              onSubmitWorkbenchMessage={async (prompt, intent) => {
+                if (workspace.activeSession) {
+                  await workspace.sendWorkbenchMessage(workspace.activeSession.id, prompt, intent);
+                  return;
+                }
+                await submitPrompt(prompt, intent);
+              }}
+              onOpenBlueprintArtifact={handleOpenBlueprintArtifact}
+              isBlueprintArtifactOpen={isBlueprintArtifactOpen}
+              isBlueprintActionBusy={workspace.isChatSubmitting}
+              onToggleDraftReady={async (sessionId, status) => {
+                if (!['draft', 'ready'].includes(status)) return;
+                const nextStatus = status === 'draft' ? 'ready' : 'draft';
+                await workspaceRef.current.updateSessionStatus(sessionId, nextStatus);
               }}
               isUpdatingSessionStatus={workspace.isUpdatingSessionStatus}
               onDeleteSession={() => {
@@ -230,6 +289,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               <ArtifactPane
                 activeProject={workspace.activeProject}
                 selectedArtifact={selectedArtifact}
+                taskMessages={workspace.taskMessages}
                 latestRun={workspace.latestRun}
                 fileEntries={workspace.projectFileEntries}
                 fileEntriesByDirectory={workspace.projectFileEntriesByDirectory}

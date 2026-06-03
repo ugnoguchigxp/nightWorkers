@@ -7,6 +7,35 @@
     --font-size-base: 1rem;
     --radius: 0.5rem;
     --font-sans: "Geist Variable", sans-serif;
+    --nightworkers-scrollbar-track: #101014;
+    --nightworkers-scrollbar-thumb: #3f3f46;
+    --nightworkers-scrollbar-thumb-hover: #52525b;
+  }
+
+  html,
+  body {
+    color-scheme: dark;
+    scrollbar-color: var(--nightworkers-scrollbar-thumb) var(--nightworkers-scrollbar-track);
+    scrollbar-width: thin;
+  }
+
+  ::-webkit-scrollbar {
+    width: 0.625rem;
+    height: 0.625rem;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--nightworkers-scrollbar-track);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border: 2px solid var(--nightworkers-scrollbar-track);
+    border-radius: 999px;
+    background: var(--nightworkers-scrollbar-thumb);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--nightworkers-scrollbar-thumb-hover);
   }
 }
 
@@ -27,6 +56,31 @@
 }
 
 @layer utilities {
+  .nightworkers-scrollbar {
+    color-scheme: dark;
+    scrollbar-color: var(--nightworkers-scrollbar-thumb) var(--nightworkers-scrollbar-track);
+    scrollbar-width: thin;
+  }
+
+  .nightworkers-scrollbar::-webkit-scrollbar {
+    width: 0.625rem;
+    height: 0.625rem;
+  }
+
+  .nightworkers-scrollbar::-webkit-scrollbar-track {
+    background: var(--nightworkers-scrollbar-track);
+  }
+
+  .nightworkers-scrollbar::-webkit-scrollbar-thumb {
+    border: 2px solid var(--nightworkers-scrollbar-track);
+    border-radius: 999px;
+    background: var(--nightworkers-scrollbar-thumb);
+  }
+
+  .nightworkers-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--nightworkers-scrollbar-thumb-hover);
+  }
+
   .nightworkers-thinking-dot {
     animation: nightworkers-thinking-pop 1.12s ease-in-out infinite;
   }

@@ -4,6 +4,18 @@ import app from '../api/app';
 import { ensureNightWorkersSchema } from '../api/db/bootstrap';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import * as service from '../api/modules/nightworkers/nightworkers.service';
+import * as llm from '../api/services/supervisor/llm-provider';
+import { representativeAppBlueprint } from './fixtures/app-blueprint';
+
+vi.mock('../api/services/supervisor/llm-provider', async () => {
+  const actual = await vi.importActual<typeof import('../api/services/supervisor/llm-provider')>(
+    '../api/services/supervisor/llm-provider'
+  );
+  return {
+    ...actual,
+    callSupervisorLLM: vi.fn(),
+  };
+});
 
 const sameOriginHeaders = { Origin: 'http://localhost:39174' };
 
@@ -12,6 +24,7 @@ beforeAll(async () => {
 });
 
 afterEach(() => {
+  vi.clearAllMocks();
   vi.restoreAllMocks();
 });
 
@@ -39,6 +52,26 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('stores draft conversation messages without creating a run', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
+      phase: 'plan',
+      workflow: 'general',
+      routingHypothesis: {
+        primaryMode: 'planning',
+        secondaryModes: [],
+        phase: 'plan',
+        workKinds: [],
+        overlays: [],
+        requiredEvidence: [],
+        nextSkillFiles: [],
+        confidence: 0.75,
+      },
+      instruction: '相談内容を整理して次の一手を提案します。',
+      rationale: 'The user is asking for planning before implementation.',
+      finalResponse: '',
+      expectedEvidence: [],
+      riskLevel: 'low',
+      toolCall: null,
+    });
     const { task } = await createWorkbenchTask();
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -52,10 +85,325 @@ describe('NightWorkers workbench routes', () => {
     expect(body.run).toBeNull();
     expect(body.task.status).toBe('draft');
     expect(body.messages.some((message: any) => message.role === 'user')).toBe(true);
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(body.messages.some((message: any) => message.role === 'assistant')).toBe(true);
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
   });
 
+  it('routes a normal prompt through LLM intake without starting a run', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
+      phase: 'plan',
+      workflow: 'code_change',
+      routingHypothesis: {
+        primaryMode: 'planning',
+        secondaryModes: [],
+        phase: 'plan',
+        workKinds: ['ui_ux'],
+        overlays: ['user_facing_change'],
+        requiredEvidence: ['current UI structure'],
+        nextSkillFiles: ['SKILL.md'],
+        confidence: 0.82,
+      },
+      instruction: 'Analyze the goal and propose the next implementation step.',
+      rationale: 'The prompt describes a user-facing UI change.',
+      finalResponse: '',
+      expectedEvidence: [],
+      riskLevel: 'medium',
+      toolCall: null,
+    });
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'ECサイトのトップページを作ってください' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(body.run).toBeNull();
+    expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
+    const assistantMessage = body.messages.find(
+      (message: any) => message.role === 'assistant' && message.metadataJson?.intent === 'intake'
+    );
+    expect(assistantMessage?.metadataJson?.source).toBe('llm');
+    expect(assistantMessage?.content).toContain(
+      'Analyze the goal and propose the next implementation step.'
+    );
+    expect(assistantMessage?.content).not.toContain('GOAL分析を受け取りました');
+    expect(body.task.objective).toBe('ECサイトのトップページを作ってください');
+  });
+
+  it('generates an app blueprint artifact when LLM intake classifies the prompt as blueprint work', async () => {
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        phase: 'plan',
+        workflow: 'general',
+        routingHypothesis: {
+          primaryMode: 'planning',
+          secondaryModes: ['review'],
+          phase: 'plan',
+          workKinds: ['blueprint', 'ui_ux'],
+          overlays: ['user_facing_change'],
+          subtype: 'app_blueprint',
+          requiredEvidence: ['screen structure'],
+          nextSkillFiles: ['references/work_kinds/blueprint.md'],
+          confidence: 0.9,
+        },
+        instruction: 'Create an EC site top page Blueprint.',
+        rationale: 'The user asked to see a Blueprint before implementation.',
+        finalResponse: '',
+        expectedEvidence: [],
+        riskLevel: 'medium',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'stop',
+        workflow: 'general',
+        routingHypothesis: undefined,
+        instruction: '',
+        rationale: 'Generated AppBlueprint JSON.',
+        finalResponse: JSON.stringify({
+          ...representativeAppBlueprint,
+          id: 'shop-home',
+          name: 'EC Site Top Page',
+          description: 'LLM generated storefront blueprint with commerce-specific sections.',
+        }),
+        expectedEvidence: [],
+        terminalState: 'completed',
+        riskLevel: 'low',
+        toolCall: null,
+      });
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'ECサイトのトップページをBlueprintで作って見てください' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[0]).toContain(
+      '[Skill Document: references/work_kinds/blueprint.md]'
+    );
+    expect(body.run).toBeNull();
+    expect(body.task.status).toBe('ready');
+    const intakeMessage = body.messages.find(
+      (message: any) => message.role === 'assistant' && message.metadataJson?.intent === 'intake'
+    );
+    expect(intakeMessage).toBeUndefined();
+    const blueprintMessage = body.messages.find(
+      (message: any) => message.metadataJson?.intent === 'app_blueprint'
+    );
+    expect(blueprintMessage?.messageType).toBe('markdown_document');
+    expect(blueprintMessage?.metadataJson?.appBlueprint?.screens).toHaveLength(1);
+    expect(blueprintMessage?.metadataJson?.appBlueprint?.name).toBe('EC Site Top Page');
+    expect(blueprintMessage?.metadataJson?.validation?.valid).toBe(true);
+    expect(blueprintMessage?.metadataJson?.generation?.source).toBe('llm');
+    expect(blueprintMessage?.metadataJson?.generation?.skillDocuments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ relativePath: 'references/work_kinds/blueprint.md' }),
+      ])
+    );
+    expect(blueprintMessage?.metadataJson?.routingHypothesis?.subtype).toBe('app_blueprint');
+    expect(blueprintMessage?.metadataJson?.intakeDecision?.instruction).toBe(
+      'Create an EC site top page Blueprint.'
+    );
+  });
+
+  it('shows an SFA dashboard request as an app blueprint artifact', async () => {
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        phase: 'plan',
+        workflow: 'general',
+        routingHypothesis: {
+          primaryMode: 'planning',
+          secondaryModes: ['review'],
+          phase: 'plan',
+          workKinds: ['blueprint', 'ui_ux'],
+          overlays: ['user_facing_change'],
+          subtype: 'app_blueprint',
+          requiredEvidence: ['SFA dashboard KPIs', 'sales activities', 'pipeline table'],
+          nextSkillFiles: ['references/work_kinds/blueprint.md'],
+          confidence: 0.96,
+        },
+        instruction: 'Create an SFA dashboard AppBlueprint artifact.',
+        rationale: 'The user asked to display the dashboard as a Blueprint.',
+        finalResponse: '',
+        expectedEvidence: [],
+        riskLevel: 'medium',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'stop',
+        workflow: 'general',
+        routingHypothesis: undefined,
+        instruction: '',
+        rationale: 'Generated AppBlueprint JSON.',
+        finalResponse: JSON.stringify({
+          ...representativeAppBlueprint,
+          id: 'sfa-dashboard',
+          name: 'SFA Dashboard',
+          description: 'Sales force automation dashboard for pipeline, activity, and alerts.',
+          screens: [
+            {
+              ...representativeAppBlueprint.screens[0],
+              id: 'sales-dashboard',
+              name: 'Sales Dashboard',
+              componentName: 'DashboardPage',
+              sections: [
+                {
+                  ...representativeAppBlueprint.screens[0].sections[0],
+                  id: 'sales-kpis',
+                  name: 'Sales KPIs',
+                  componentName: 'KpiSummarySection',
+                },
+                {
+                  ...representativeAppBlueprint.screens[0].sections[1],
+                  id: 'pipeline-table',
+                  name: 'Pipeline Table',
+                  componentName: 'DataTableSection',
+                },
+              ],
+            },
+          ],
+        }),
+        expectedEvidence: [],
+        terminalState: 'completed',
+        riskLevel: 'low',
+        toolCall: null,
+      });
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'SFAのダッシュボードをblueprintで表示してください。' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(2);
+    expect(body.messages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ metadataJson: expect.objectContaining({ intent: 'intake' }) }),
+      ])
+    );
+    const blueprintMessage = body.messages.find(
+      (message: any) => message.metadataJson?.intent === 'app_blueprint'
+    );
+    expect(blueprintMessage?.messageType).toBe('markdown_document');
+    expect(blueprintMessage?.metadataJson?.appBlueprint?.id).toBe('sfa-dashboard');
+    expect(blueprintMessage?.metadataJson?.appBlueprint?.screens[0]?.componentName).toBe(
+      'DashboardPage'
+    );
+    expect(blueprintMessage?.content).toContain('Sales KPIs');
+    expect(blueprintMessage?.content).toContain('Pipeline Table');
+    expect(blueprintMessage?.metadataJson?.validation?.valid).toBe(true);
+  });
+
+  it('records an observable failure when blueprint artifact generation fails', async () => {
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        phase: 'plan',
+        workflow: 'general',
+        routingHypothesis: {
+          primaryMode: 'planning',
+          secondaryModes: ['review'],
+          phase: 'plan',
+          workKinds: ['blueprint', 'ui_ux'],
+          overlays: ['user_facing_change'],
+          subtype: 'app_blueprint',
+          requiredEvidence: ['screen structure'],
+          nextSkillFiles: ['references/work_kinds/blueprint.md'],
+          confidence: 0.9,
+        },
+        instruction: 'Create a Blueprint artifact.',
+        rationale: 'The request was classified as Blueprint work.',
+        finalResponse: '',
+        expectedEvidence: [],
+        riskLevel: 'medium',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'stop',
+        workflow: 'general',
+        routingHypothesis: undefined,
+        instruction: '',
+        rationale: 'Invalid generation.',
+        finalResponse: 'not json',
+        expectedEvidence: [],
+        terminalState: 'completed',
+        riskLevel: 'low',
+        toolCall: null,
+      });
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'SFAのダッシュボードをblueprintで表示してください。' }),
+    });
+
+    expect(res.status).toBe(502);
+    const messages = await repo.listTaskMessages(task.id);
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'system',
+          messageType: 'text',
+          metadataJson: expect.objectContaining({
+            intent: 'blueprint_generation_failed',
+            error: expect.stringContaining('Blueprint LLM output did not contain JSON'),
+          }),
+        }),
+      ])
+    );
+    expect(messages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ metadataJson: expect.objectContaining({ intent: 'intake' }) }),
+      ])
+    );
+  });
+
   it('drafts a markdown spec message and queues only after validation passes', async () => {
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        phase: 'plan',
+        workflow: 'general',
+        routingHypothesis: {
+          primaryMode: 'planning',
+          secondaryModes: [],
+          phase: 'plan',
+          workKinds: ['blueprint'],
+          overlays: [],
+          subtype: 'app_blueprint',
+          requiredEvidence: ['screen structure'],
+          nextSkillFiles: ['references/work_kinds/blueprint.md'],
+          confidence: 0.86,
+        },
+        instruction: 'Create a Blueprint from the requested workbench spec.',
+        rationale: 'Round 1 classified the request as Blueprint planning.',
+        finalResponse: '',
+        expectedEvidence: [],
+        riskLevel: 'low',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'stop',
+        workflow: 'general',
+        routingHypothesis: undefined,
+        instruction: '',
+        rationale: 'Generated AppBlueprint JSON.',
+        finalResponse: JSON.stringify(representativeAppBlueprint),
+        expectedEvidence: [],
+        terminalState: 'completed',
+        riskLevel: 'low',
+        toolCall: null,
+      });
     const { task } = await createWorkbenchTask();
 
     const draftRes = await app.request(
@@ -69,10 +417,17 @@ describe('NightWorkers workbench routes', () => {
 
     expect(draftRes.status).toBe(200);
     const draftBody = await draftRes.json();
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(2);
     expect(draftBody.task.status).toBe('ready');
     expect(
       draftBody.messages.some((message: any) => message.messageType === 'markdown_document')
     ).toBe(true);
+    const blueprintMessage = draftBody.messages.find(
+      (message: any) => message.metadataJson?.intent === 'app_blueprint'
+    );
+    expect(blueprintMessage?.metadataJson?.appBlueprint?.screens).toHaveLength(1);
+    expect(blueprintMessage?.metadataJson?.validation?.valid).toBe(true);
+    expect(blueprintMessage?.metadataJson?.generation?.source).toBe('llm');
 
     const queueRes = await app.request(`http://localhost/api/workbench/sessions/${task.id}/queue`, {
       method: 'POST',
@@ -82,6 +437,49 @@ describe('NightWorkers workbench routes', () => {
     const queued = await queueRes.json();
     expect(queued.status).toBe('queued');
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
+  });
+
+  it('routes design tool intent through LLM intake instead of fixed component artifacts', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
+      phase: 'plan',
+      workflow: 'general',
+      routingHypothesis: {
+        primaryMode: 'planning',
+        secondaryModes: ['review'],
+        phase: 'plan',
+        workKinds: ['ui_ux'],
+        overlays: ['user_facing_change'],
+        requiredEvidence: ['component requirements'],
+        nextSkillFiles: ['references/work_kinds/ui_ux.md'],
+        confidence: 0.8,
+      },
+      instruction: 'Analyze the requested component design.',
+      rationale: 'The user asked for design work.',
+      finalResponse: '',
+      expectedEvidence: [],
+      riskLevel: 'medium',
+      toolCall: null,
+    });
+    const { task } = await createWorkbenchTask({ title: 'Button design session' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({
+        prompt: 'ボタンのデザインだけを見直したい',
+        intent: 'design_component',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(
+      body.messages.some((message: any) => message.metadataJson?.intent === 'component_design')
+    ).toBe(false);
+    const intakeMessage = body.messages.find(
+      (message: any) => message.role === 'assistant' && message.metadataJson?.intent === 'intake'
+    );
+    expect(intakeMessage?.content).toContain('Analyze the requested component design.');
   });
 
   it('returns a validation error instead of changing task status for incomplete drafts', async () => {
@@ -146,9 +544,68 @@ describe('NightWorkers workbench routes', () => {
     expect(res.status).toBe(201);
     expect(startSpy).toHaveBeenCalledWith(task.id);
   });
+
+  it('keeps plan-mode AI responses available for queued sessions without starting a run', async () => {
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        phase: 'plan',
+        workflow: 'general',
+        routingHypothesis: {
+          primaryMode: 'planning',
+          secondaryModes: [],
+          phase: 'plan',
+          workKinds: ['blueprint'],
+          overlays: [],
+          subtype: 'app_blueprint',
+          requiredEvidence: ['screen structure'],
+          nextSkillFiles: ['references/work_kinds/blueprint.md'],
+          confidence: 0.84,
+        },
+        instruction: 'Update the queued plan as a Blueprint.',
+        rationale: 'Round 1 classified the queued session message as Blueprint planning.',
+        finalResponse: '',
+        expectedEvidence: [],
+        riskLevel: 'low',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'stop',
+        workflow: 'general',
+        routingHypothesis: undefined,
+        instruction: '',
+        rationale: 'Generated AppBlueprint JSON.',
+        finalResponse: JSON.stringify(representativeAppBlueprint),
+        expectedEvidence: [],
+        terminalState: 'completed',
+        riskLevel: 'low',
+        toolCall: null,
+      });
+    const { task } = await createWorkbenchTask({ status: 'queued' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({
+        prompt: '実装前に計画をもう少し具体化して',
+        intent: 'draft_spec',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.run).toBeNull();
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(2);
+    expect(body.task.status).toBe('queued');
+    expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
+    expect(
+      body.messages.some((message: any) => message.metadataJson?.intent === 'app_blueprint')
+    ).toBe(true);
+  });
 });
 
-async function createWorkbenchTask(input: { title?: string; status?: string } = {}) {
+async function createWorkbenchTask(
+  input: { title?: string; status?: string; objective?: string } = {}
+) {
   const project = await repo.createRepository({
     name: `TEST: Workbench Project ${crypto.randomUUID()}`,
     localPath: '/Users/y.noguchi/Code/nightWorkers',
@@ -157,7 +614,7 @@ async function createWorkbenchTask(input: { title?: string; status?: string } = 
   const task = await repo.createTask({
     repositoryId: project.id,
     title: input.title || 'Workbench task',
-    objective: 'Implement chat-first workbench',
+    objective: input.objective ?? 'Implement chat-first workbench',
     acceptanceCriteria: 'Draft conversation, queue, and run are separate task-queue steps',
     status: input.status || 'draft',
   });
