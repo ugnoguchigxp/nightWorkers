@@ -5,6 +5,7 @@ import { ValidationError } from '../../lib/errors';
 import {
   type McpServerConfig,
   type McpServerInput,
+  type McpServerSettingsDiagnostic,
   type McpServerTransport,
   mcpServerConfigSchema,
   mcpServerInputSchema,
@@ -15,6 +16,7 @@ const DEFAULT_MCP_SETTINGS_PATH = path.join(RUNTIME_SETTINGS_DIR, 'mcp-servers.j
 
 type PersistedMcpSettings = {
   servers: McpServerConfig[];
+  diagnostics?: McpServerSettingsDiagnostic[];
 };
 
 function getMcpSettingsPath() {
@@ -22,31 +24,64 @@ function getMcpSettingsPath() {
 }
 
 function parsePersistedSettings(value: unknown): PersistedMcpSettings {
-  if (!value || typeof value !== 'object') return { servers: [] };
+  const diagnostics: McpServerSettingsDiagnostic[] = [];
+  if (!value || typeof value !== 'object') {
+    return {
+      servers: [],
+      diagnostics: [{ level: 'error', message: 'MCP settings file must contain a JSON object.' }],
+    };
+  }
   const rawServers = Array.isArray((value as { servers?: unknown }).servers)
     ? (value as { servers: unknown[] }).servers
     : [];
-  const servers = rawServers.flatMap((server) => {
+  if (!Array.isArray((value as { servers?: unknown }).servers)) {
+    diagnostics.push({
+      level: 'warning',
+      message: 'MCP settings file does not contain a servers array.',
+      path: 'servers',
+    });
+  }
+  const servers = rawServers.flatMap((server, index) => {
     const parsed = mcpServerConfigSchema.safeParse(server);
-    return parsed.success ? [parsed.data] : [];
+    if (parsed.success) return [parsed.data];
+    diagnostics.push({
+      level: 'error',
+      message: `Invalid MCP server entry: ${parsed.error.issues.map((issue) => issue.message).join('; ')}`,
+      path: 'servers',
+      index,
+    });
+    return [];
   });
-  return { servers };
+  return { servers, diagnostics };
 }
 
 export function readMcpServerSettings(): PersistedMcpSettings {
+  const settingsPath = getMcpSettingsPath();
   try {
-    const settingsPath = getMcpSettingsPath();
     if (!fs.existsSync(settingsPath)) return { servers: [] };
     return parsePersistedSettings(JSON.parse(fs.readFileSync(settingsPath, 'utf-8')));
-  } catch {
-    return { servers: [] };
+  } catch (err) {
+    return {
+      servers: [],
+      diagnostics: [
+        {
+          level: 'error',
+          message: `Failed to read MCP settings: ${err instanceof Error ? err.message : String(err)}`,
+          path: settingsPath,
+        },
+      ],
+    };
   }
 }
 
 function writeMcpServerSettings(settings: PersistedMcpSettings) {
   const settingsPath = getMcpSettingsPath();
   fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-  fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf-8');
+  fs.writeFileSync(
+    settingsPath,
+    `${JSON.stringify({ servers: settings.servers }, null, 2)}\n`,
+    'utf-8'
+  );
 }
 
 export function listMcpServers(): McpServerConfig[] {
@@ -113,11 +148,43 @@ function transportFromRaw(raw: Record<string, unknown>): McpServerTransport {
   throw new ValidationError('MCP server transport could not be inferred.');
 }
 
+function assertNoUnsupportedAuthFields(nameHint: string, raw: Record<string, unknown>) {
+  const unsupportedKeys = [
+    'authorization',
+    'headers',
+    'header',
+    'bearerToken',
+    'accessToken',
+    'refreshToken',
+    'token',
+    'apiKey',
+    'api_key',
+    'clientId',
+    'clientSecret',
+    'oauth',
+    'auth',
+    'cookies',
+    'cookie',
+  ];
+  const keys = new Set(Object.keys(raw).map((key) => key.toLowerCase()));
+  for (const key of unsupportedKeys) {
+    if (keys.has(key.toLowerCase())) {
+      throw new ValidationError(
+        `Authenticated MCP server settings are not supported yet: ${nameHint}.${key}`
+      );
+    }
+  }
+  if (raw.headers && typeof raw.headers === 'object') {
+    throw new ValidationError(`Authenticated MCP headers are not supported yet: ${nameHint}`);
+  }
+}
+
 function inputFromRawServer(nameHint: string, rawValue: unknown): McpServerInput {
   if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
     throw new ValidationError(`Invalid MCP server config for ${nameHint}.`);
   }
   const raw = rawValue as Record<string, unknown>;
+  assertNoUnsupportedAuthFields(nameHint, raw);
   const name =
     typeof raw.name === 'string' && raw.name.trim().length > 0 ? raw.name.trim() : nameHint;
   const transport = transportFromRaw(raw);

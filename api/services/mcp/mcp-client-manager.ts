@@ -53,6 +53,31 @@ function namespaceToolName(server: McpServerConfig, toolName: string) {
   return `mcp__${server.toolPrefix}__${toolName}`;
 }
 
+async function createClientEntry(server: McpServerConfig): Promise<ClientEntry> {
+  const client = new Client(
+    { name: 'nightworkers-mcp-bridge', version: '0.1.0' },
+    { capabilities: {} }
+  );
+  const transport = createTransport(server);
+  await client.connect(transport);
+  return { client, transport, server };
+}
+
+async function closeClientEntry(entry: ClientEntry) {
+  try {
+    if (entry.transport instanceof StreamableHTTPClientTransport) {
+      try {
+        await entry.transport.terminateSession();
+      } catch {
+        // Some servers legitimately respond 405 for session termination.
+      }
+    }
+    await entry.client.close();
+  } catch {
+    // Closing a failed transport is best-effort.
+  }
+}
+
 class McpClientManager {
   private clients = new Map<string, ClientEntry>();
 
@@ -63,19 +88,15 @@ class McpClientManager {
     }
     await this.disconnect(server.id);
 
-    const client = new Client(
-      { name: 'nightworkers-mcp-bridge', version: '0.1.0' },
-      { capabilities: {} }
-    );
-    const transport = createTransport(server);
-    await client.connect(transport);
-    this.clients.set(server.id, { client, transport, server });
-    return client;
+    const entry = await createClientEntry(server);
+    this.clients.set(server.id, entry);
+    return entry.client;
   }
 
-  async listToolsForServer(server: McpServerConfig): Promise<McpToolSummary[]> {
-    if (!server.enabled) return [];
-    const client = await this.getClient(server);
+  private async listToolsWithClient(
+    server: McpServerConfig,
+    client: Client
+  ): Promise<McpToolSummary[]> {
     const tools: McpToolSummary[] = [];
     let cursor: string | undefined;
     do {
@@ -98,6 +119,12 @@ class McpClientManager {
     return tools;
   }
 
+  async listToolsForServer(server: McpServerConfig): Promise<McpToolSummary[]> {
+    if (!server.enabled) return [];
+    const client = await this.getClient(server);
+    return this.listToolsWithClient(server, client);
+  }
+
   async listAvailableTools(): Promise<McpToolSummary[]> {
     const enabledServers = listMcpServers().filter((server) => server.enabled);
     const toolLists = await Promise.allSettled(
@@ -107,8 +134,11 @@ class McpClientManager {
   }
 
   async testServer(server: McpServerConfig) {
+    let entry: ClientEntry | null = null;
     try {
-      const tools = await this.listToolsForServer({ ...server, enabled: true });
+      const testServer = { ...server, enabled: true };
+      entry = await createClientEntry(testServer);
+      const tools = await this.listToolsWithClient(testServer, entry.client);
       const status = {
         ok: true,
         checkedAt: new Date().toISOString(),
@@ -116,7 +146,6 @@ class McpClientManager {
         toolCount: tools.length,
       };
       updateMcpServerStatus(server.id, status);
-      await this.disconnect(server.id);
       return status;
     } catch (err) {
       const status = {
@@ -126,8 +155,9 @@ class McpClientManager {
         toolCount: 0,
       };
       updateMcpServerStatus(server.id, status);
-      await this.disconnect(server.id);
       return status;
+    } finally {
+      if (entry) await closeClientEntry(entry);
     }
   }
 
@@ -154,14 +184,7 @@ class McpClientManager {
     const existing = this.clients.get(serverId);
     if (!existing) return;
     try {
-      if (existing.transport instanceof StreamableHTTPClientTransport) {
-        try {
-          await existing.transport.terminateSession();
-        } catch {
-          // Some servers legitimately respond 405 for session termination.
-        }
-      }
-      await existing.client.close();
+      await closeClientEntry(existing);
     } finally {
       this.clients.delete(serverId);
     }

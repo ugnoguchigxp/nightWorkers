@@ -155,6 +155,41 @@ describe('MCP server settings', () => {
     expect(listMcpServers()).toEqual([]);
   });
 
+  it('rejects pasted authenticated MCP config instead of silently dropping auth fields', () => {
+    expect(() =>
+      importMcpServersFromText(
+        JSON.stringify({
+          mcpServers: {
+            auth_server: {
+              url: 'https://example.com/mcp',
+              headers: { Authorization: 'Bearer token' },
+            },
+          },
+        })
+      )
+    ).toThrow(/authenticated/i);
+
+    expect(listMcpServers()).toEqual([]);
+  });
+
+  it('returns diagnostics for invalid persisted settings without erasing the file', async () => {
+    fs.writeFileSync(
+      process.env.NIGHTWORKERS_MCP_SETTINGS_PATH as string,
+      JSON.stringify({ servers: [{ id: 'not-a-uuid', name: 'broken' }] }),
+      'utf-8'
+    );
+
+    const listRes = await app.request('http://localhost/api/settings/mcp/servers');
+    expect(listRes.status).toBe(200);
+    await expect(listRes.json()).resolves.toMatchObject({
+      servers: [],
+      diagnostics: [{ level: 'error', path: 'servers', index: 0 }],
+    });
+    expect(
+      fs.readFileSync(process.env.NIGHTWORKERS_MCP_SETTINGS_PATH as string, 'utf-8')
+    ).toContain('not-a-uuid');
+  });
+
   it('exposes CRUD routes under settings/mcp', async () => {
     const createRes = await app.request('http://localhost/api/settings/mcp/servers', {
       method: 'POST',
@@ -214,6 +249,29 @@ describe('MCP server settings', () => {
     await expect(importRes.json()).resolves.toMatchObject({
       servers: [{ name: 'route_docs', command: 'node', toolPrefix: 'route_docs' }],
       results: [],
+    });
+  });
+
+  it('turns imported servers off when immediate connection test fails', async () => {
+    const importRes = await app.request('http://localhost/api/settings/mcp/servers/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: JSON.stringify({
+          mcpServers: {
+            missing_binary: {
+              command: 'nightworkers-missing-mcp-binary',
+            },
+          },
+        }),
+        testAfterImport: true,
+      }),
+    });
+
+    expect(importRes.status).toBe(201);
+    await expect(importRes.json()).resolves.toMatchObject({
+      servers: [{ name: 'missing_binary', enabled: false, toolPrefix: 'missing_binary' }],
+      results: [{ ok: false }],
     });
   });
 });

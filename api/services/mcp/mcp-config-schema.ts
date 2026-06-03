@@ -11,6 +11,42 @@ export const mcpServerStatusSchema = z.object({
   toolCount: z.number().int().nonnegative().optional(),
 });
 
+export const mcpServerSettingsDiagnosticSchema = z.object({
+  level: z.enum(['warning', 'error']),
+  message: z.string(),
+  path: z.string().optional(),
+  index: z.number().int().nonnegative().optional(),
+});
+
+function rejectUnsupportedAuthFields(value: Record<string, unknown>, ctx: z.RefinementCtx) {
+  const unsupportedKeys = [
+    'authorization',
+    'headers',
+    'header',
+    'bearerToken',
+    'accessToken',
+    'refreshToken',
+    'token',
+    'apiKey',
+    'api_key',
+    'clientId',
+    'clientSecret',
+    'oauth',
+    'auth',
+    'cookies',
+    'cookie',
+  ];
+  for (const key of unsupportedKeys) {
+    if (key in value) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [key],
+        message: 'Authenticated MCP server settings are not supported yet.',
+      });
+    }
+  }
+}
+
 export const mcpServerConfigSchema = z
   .object({
     id: z.string().uuid(),
@@ -32,7 +68,10 @@ export const mcpServerConfigSchema = z
     updatedAt: z.string(),
     lastStatus: mcpServerStatusSchema.optional(),
   })
+  .strict()
   .superRefine((config, ctx) => {
+    rejectUnsupportedAuthFields(config as Record<string, unknown>, ctx);
+
     if (config.transport === 'stdio' && !config.command) {
       ctx.addIssue({
         code: 'custom',
@@ -116,7 +155,10 @@ export const mcpServerInputSchema = z
       .max(64)
       .regex(/^[a-z][a-z0-9_]*$/),
   })
+  .strict()
   .superRefine((input, ctx) => {
+    rejectUnsupportedAuthFields(input as Record<string, unknown>, ctx);
+
     const now = new Date().toISOString();
     const full = mcpServerConfigSchema.safeParse({
       ...input,
@@ -134,26 +176,32 @@ export const mcpServerInputSchema = z
     }
   });
 
-export const mcpServerUpdateInputSchema = z.object({
-  name: z.string().trim().min(1).max(120).optional(),
-  enabled: z.boolean().optional(),
-  transport: mcpServerTransportSchema.optional(),
-  command: z.string().trim().optional(),
-  args: z.array(z.string()).optional(),
-  url: z.string().trim().optional(),
-  cwd: z.string().trim().optional(),
-  env: z.record(z.string(), z.string()).optional(),
-  toolPrefix: z
-    .string()
-    .trim()
-    .min(1)
-    .max(64)
-    .regex(/^[a-z][a-z0-9_]*$/)
-    .optional(),
-});
+export const mcpServerUpdateInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    enabled: z.boolean().optional(),
+    transport: mcpServerTransportSchema.optional(),
+    command: z.string().trim().optional(),
+    args: z.array(z.string()).optional(),
+    url: z.string().trim().optional(),
+    cwd: z.string().trim().optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    toolPrefix: z
+      .string()
+      .trim()
+      .min(1)
+      .max(64)
+      .regex(/^[a-z][a-z0-9_]*$/)
+      .optional(),
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    rejectUnsupportedAuthFields(input as Record<string, unknown>, ctx);
+  });
 
 export const mcpServersResponseSchema = z.object({
   servers: z.array(mcpServerConfigSchema),
+  diagnostics: z.array(mcpServerSettingsDiagnosticSchema).optional(),
 });
 
 export const mcpServerTestResponseSchema = z.object({
@@ -184,3 +232,4 @@ export type McpServerConfig = z.infer<typeof mcpServerConfigSchema>;
 export type McpServerInput = z.infer<typeof mcpServerInputSchema>;
 export type McpServerUpdateInput = z.infer<typeof mcpServerUpdateInputSchema>;
 export type McpServerImportRequest = z.infer<typeof mcpServerImportRequestSchema>;
+export type McpServerSettingsDiagnostic = z.infer<typeof mcpServerSettingsDiagnosticSchema>;

@@ -33,7 +33,7 @@ import {
   deleteMcpServer,
   getMcpServer,
   importMcpServersFromText,
-  listMcpServers,
+  readMcpServerSettings,
   updateMcpServer,
 } from '../services/mcp/mcp-settings';
 import { callSupervisorLLM } from '../services/supervisor/llm-provider';
@@ -509,7 +509,8 @@ export const settingsRouter = createOpenApiRouter()
     }
   })
   .openapi(getMcpServersRoute, (c) => {
-    return c.json({ servers: listMcpServers() }, 200);
+    const settings = readMcpServerSettings();
+    return c.json({ servers: settings.servers, diagnostics: settings.diagnostics || [] }, 200);
   })
   .openapi(createMcpServerRoute, (c) => {
     const server = createMcpServer(c.req.valid('json'));
@@ -518,10 +519,15 @@ export const settingsRouter = createOpenApiRouter()
   .openapi(importMcpServersRoute, async (c) => {
     const input = c.req.valid('json');
     const servers = importMcpServersFromText(input.text);
+    const updatedServers = new Map(servers.map((server) => [server.id, server]));
     const results = input.testAfterImport
       ? await Promise.all(
           servers.map(async (server) => {
             const status = await mcpClientManager.testServer(server);
+            if (!status.ok) {
+              const updated = updateMcpServer(server.id, { enabled: false });
+              if (updated) updatedServers.set(updated.id, updated);
+            }
             return {
               serverId: server.id,
               ok: status.ok,
@@ -531,7 +537,10 @@ export const settingsRouter = createOpenApiRouter()
           })
         )
       : [];
-    return c.json({ servers, results }, 201);
+    return c.json(
+      { servers: servers.map((server) => updatedServers.get(server.id) ?? server), results },
+      201
+    );
   })
   .openapi(updateMcpServerRoute, async (c) => {
     const server = updateMcpServer(c.req.param('id'), c.req.valid('json'));

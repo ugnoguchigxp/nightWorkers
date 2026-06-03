@@ -66,6 +66,13 @@ rl.on('line', (line) => {
     return;
   }
   if (msg.method === 'tools/call') {
+    if (msg.params.arguments.query === 'error') {
+      send(msg.id, {
+        content: [{ type: 'text', text: 'lookup failed' }],
+        isError: true
+      });
+      return;
+    }
     send(msg.id, {
       content: [{ type: 'text', text: 'lookup:' + msg.params.arguments.query }]
     });
@@ -141,5 +148,34 @@ describe('MCP worker tool bridge', () => {
 
     expect(dispatch.result.ok).toBe(true);
     expect(JSON.stringify(dispatch.result.payload)).toContain('lookup:nightworkers');
+  });
+
+  it('maps MCP isError tool results to failed worker tool results', async () => {
+    const serverPath = writeFakeMcpServer();
+    const server = createMcpServer({
+      name: 'Fake MCP',
+      enabled: true,
+      transport: 'stdio',
+      command: process.execPath,
+      args: [serverPath],
+      toolPrefix: 'fake',
+    });
+
+    const dispatch = await executeWorkerTool({
+      toolName: 'mcp_call_tool',
+      args: {
+        serverId: server.id,
+        toolName: 'lookup',
+        arguments: { query: 'error' },
+      },
+      repoRoot: process.cwd(),
+      readFiles: [],
+    });
+
+    expect(dispatch.result).toMatchObject({
+      ok: false,
+      toolName: 'mcp_call_tool',
+      error: { code: 'MCP_TOOL_EXECUTION_ERROR', message: 'lookup failed' },
+    });
   });
 });
