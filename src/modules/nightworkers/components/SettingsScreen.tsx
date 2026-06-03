@@ -6,7 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@repo/design-system';
-import { Pause, Play, PlugZap, RefreshCw, Settings, Trash2, Workflow } from 'lucide-react';
+import { PlugZap, RefreshCw, Settings, Trash2, Workflow } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { NightWorkersWorkspaceState } from '../hooks/useNightWorkersWorkspace';
 import {
@@ -1148,80 +1148,41 @@ export function SettingsScreen({
         <div className="space-y-4 rounded-2xl border border-zinc-800/60 bg-[#16161a] p-6">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <h2 className="text-sm font-bold text-zinc-100">Session Queue</h2>
+              <h2 className="text-sm font-bold text-zinc-100">TODO Workflow</h2>
               <p className="mt-1 text-xs text-zinc-500">
-                queued Session の自動起動数を制御します。
+                Processor が各 Todo で実行する標準 gate を設定します。
               </p>
-            </div>
-            <div className="flex items-end gap-2">
-              <NumberField
-                id="session-queue-global"
-                label="全体同時Processing"
-                value={settings.SESSION_QUEUE_MAX_CONCURRENCY}
-                min={1}
-                onChange={(v) => onChange('SESSION_QUEUE_MAX_CONCURRENCY', v)}
-              />
-              <Button
-                type="button"
-                onClick={() => void handleSave()}
-                disabled={isSaving}
-                className="h-9 px-4 text-xs"
-              >
-                {isSaving ? <RefreshCw className="h-3 w-3 animate-spin" /> : null}
-                保存
-              </Button>
             </div>
           </div>
 
-          <div className="space-y-2">
-            {workspace.projects.length === 0 ? (
-              <p className="text-xs text-zinc-500">登録済みプロジェクトはありません。</p>
-            ) : (
-              workspace.projects.map((project) => (
-                <div
-                  key={project.id}
-                  className="grid grid-cols-[1fr_auto_auto] items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-xs font-semibold text-zinc-200">
-                      {project.name}
-                    </div>
-                    <div className="truncate text-[10px] text-zinc-500">{project.localPath}</div>
-                  </div>
-                  <NumberField
-                    id={`project-max-${project.id}`}
-                    label="Project上限"
-                    value={project.maxConcurrentSessions}
-                    min={1}
-                    onChange={(value) =>
-                      void workspace.updateProject(project.id, {
-                        maxConcurrentSessions: value,
-                      })
-                    }
-                  />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void workspace.updateProject(project.id, {
-                        queueEnabled: !project.queueEnabled,
-                      })
-                    }
-                    className={`flex h-9 items-center gap-2 rounded-lg border px-3 text-xs ${
-                      project.queueEnabled
-                        ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200'
-                        : 'border-zinc-700 bg-zinc-800 text-zinc-300'
-                    }`}
-                  >
-                    {project.queueEnabled ? (
-                      <Pause className="h-3.5 w-3.5" />
-                    ) : (
-                      <Play className="h-3.5 w-3.5" />
-                    )}
-                    {project.queueEnabled ? 'Pause' : 'Play'}
-                  </button>
-                </div>
-              ))
-            )}
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              ['requireContextCompile', 'context_compile'],
+              ['requirePerTodoReview', 'Todoごとのコードレビュー'],
+              ['requirePerTodoFix', 'レビュー後の修正'],
+              ['requireFinalVerification', '最終Verify'],
+              ['requireCompileEval', 'compile_eval'],
+              ['requireRegisterCandidatePrompt', 'register_candidate'],
+              ['askCommitOnCompletion', '完了時Commit確認'],
+            ].map(([key, label]) => (
+              <label
+                key={key}
+                className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-300"
+              >
+                <input
+                  type="checkbox"
+                  checked={Boolean(
+                    workspace.todoWorkflowSettings?.[
+                      key as keyof typeof workspace.todoWorkflowSettings
+                    ]
+                  )}
+                  onChange={(event) =>
+                    void workspace.updateTodoWorkflowSettings({ [key]: event.target.checked })
+                  }
+                />
+                <span>{label}</span>
+              </label>
+            ))}
           </div>
         </div>
       </div>

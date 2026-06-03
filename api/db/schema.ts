@@ -173,6 +173,84 @@ export const taskRuns = sqliteTable(
   })
 );
 
+export const implementationQueueEntries = sqliteTable(
+  'implementation_queue_entries',
+  {
+    ...commonColumns,
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    repositoryId: text('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
+    status: text('status').default('queued').notNull(),
+    priority: integer('priority').default(0).notNull(),
+    queuePosition: integer('queue_position'),
+    processorSlot: integer('processor_slot'),
+    activeRunId: text('active_run_id').references(() => taskRuns.id, { onDelete: 'set null' }),
+    claimedAt: integer('claimed_at', { mode: 'timestamp' }),
+    lastHeartbeatAt: integer('last_heartbeat_at', { mode: 'timestamp' }),
+    archivedAt: integer('archived_at', { mode: 'timestamp' }),
+    statusReason: text('status_reason'),
+  },
+  (table) => ({
+    taskIdIdx: index('implementation_queue_entries_task_id_idx').on(table.taskId),
+    repositoryStatusIdx: index('implementation_queue_entries_repository_status_idx').on(
+      table.repositoryId,
+      table.status
+    ),
+    claimOrderIdx: index('implementation_queue_entries_claim_order_idx').on(
+      table.status,
+      table.priority,
+      table.queuePosition,
+      table.createdAt
+    ),
+  })
+);
+
+export const implementationQueueSettings = sqliteTable('implementation_queue_settings', {
+  id: text('id').primaryKey(),
+  processorCount: integer('processor_count').default(1).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .$defaultFn(() => new Date())
+    .notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .$defaultFn(() => new Date())
+    .$onUpdateFn(() => new Date())
+    .notNull(),
+});
+
+export const todoWorkflowSettings = sqliteTable('todo_workflow_settings', {
+  id: text('id').primaryKey(),
+  requireContextCompile: integer('require_context_compile', { mode: 'boolean' })
+    .default(true)
+    .notNull(),
+  requirePerTodoReview: integer('require_per_todo_review', { mode: 'boolean' })
+    .default(true)
+    .notNull(),
+  requirePerTodoFix: integer('require_per_todo_fix', { mode: 'boolean' }).default(true).notNull(),
+  requireFinalVerification: integer('require_final_verification', { mode: 'boolean' })
+    .default(true)
+    .notNull(),
+  requireCompileEval: integer('require_compile_eval', { mode: 'boolean' }).default(true).notNull(),
+  requireRegisterCandidatePrompt: integer('require_register_candidate_prompt', {
+    mode: 'boolean',
+  })
+    .default(true)
+    .notNull(),
+  askCommitOnCompletion: integer('ask_commit_on_completion', { mode: 'boolean' })
+    .default(true)
+    .notNull(),
+  hookPolicyJson: text('hook_policy_json', { mode: 'json' }),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .$defaultFn(() => new Date())
+    .notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .$defaultFn(() => new Date())
+    .$onUpdateFn(() => new Date())
+    .notNull(),
+});
+
 export const taskRunTodos = sqliteTable(
   'task_run_todos',
   {

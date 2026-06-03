@@ -861,24 +861,42 @@ function assertRunnableWorkbenchTask(task: Awaited<ReturnType<typeof repo.getTas
 
 function assertTaskDraftComplete(task: Awaited<ReturnType<typeof repo.getTask>>) {
   if (!task) throw new NotFoundError('Task not found');
-  const missing = [
-    !task.title?.trim() || task.title === 'New Session' ? 'title' : null,
-    !task.objective?.trim() ? 'objective' : null,
-    !task.acceptanceCriteria?.trim() ? 'acceptanceCriteria' : null,
-  ].filter(Boolean);
+  const missing = getTaskDraftMissingFields(task);
   if (missing.length > 0) {
     throw new AppError(422, 'TASK_DRAFT_INCOMPLETE', `Missing draft fields: ${missing.join(', ')}`);
   }
 }
 
+function getTaskDraftMissingFields(task: Awaited<ReturnType<typeof repo.getTask>>) {
+  if (!task) return ['task'];
+  const missing = [
+    !task.title?.trim() || task.title === 'New Session' ? 'title' : null,
+    !task.objective?.trim() ? 'objective' : null,
+    !task.acceptanceCriteria?.trim() ? 'acceptanceCriteria' : null,
+  ].filter(Boolean);
+  return missing;
+}
+
+function hasImplementationPlanEvidence(messages: TaskMessageRow[]) {
+  return messages.some((message) => {
+    if (message.messageType !== 'markdown_document') return false;
+    const metadata = (message.metadataJson || {}) as { intent?: unknown; title?: unknown };
+    const intent = String(metadata.intent || '').toLowerCase();
+    const title = String(metadata.title || '').toLowerCase();
+    return (
+      intent === 'implementation_plan' ||
+      intent === 'draft_spec' ||
+      title.includes('implementation plan') ||
+      title.includes('plan')
+    );
+  });
+}
+
 export async function queueTask(id: string) {
+  await createImplementationQueueEntry(id);
   const task = await repo.getTask(id);
   if (!task) throw new NotFoundError('Task not found');
-  assertTaskDraftComplete(task);
-  const queued = await repo.updateTask(id, { status: 'queued' });
-  if (!queued) throw new NotFoundError('Task not found');
-  void runSessionQueueForRepository(queued.repositoryId);
-  return queued;
+  return task;
 }
 
 export async function startWorkbenchTaskRun(taskId: string) {
@@ -920,6 +938,163 @@ export async function archiveTask(id: string) {
 
 export async function deleteTask(id: string) {
   return repo.deleteTask(id);
+}
+
+export async function listImplementationQueueDashboard() {
+  const [settings, rows, tasks, repositories, activeQueueEntries] = await Promise.all([
+    repo.getImplementationQueueSettings(),
+    repo.listImplementationQueueEntries(),
+    repo.listTasks(),
+    repo.listRepositories(),
+    repo.listActiveImplementationQueueEntries(),
+  ]);
+  const entries = rows.map(({ entry, task, repository }) => ({ ...entry, task, repository }));
+  const activeQueuedTaskIds = new Set(activeQueueEntries.map((entry) => entry.taskId));
+  const repositoryById = new Map(repositories.map((repository) => [repository.id, repository]));
+  const notQueued = [];
+  for (const task of tasks) {
+    if (activeQueuedTaskIds.has(task.id)) continue;
+    if (['completed', 'cancelled', 'failed', 'timed_out'].includes(task.status)) continue;
+    if (getTaskDraftMissingFields(task).length > 0) continue;
+    const messages = await repo.listTaskMessages(task.id);
+    const hasPlanEvidence = hasImplementationPlanEvidence(messages);
+    if (!hasPlanEvidence && !['ready', 'queued'].includes(task.status)) continue;
+    const repository = repositoryById.get(task.repositoryId);
+    if (!repository) continue;
+    notQueued.push({ task, repository });
+  }
+  const occupiedEntries = entries.filter((entry) =>
+    ['claimed', 'processing', 'needs_human', 'awaiting_commit_decision'].includes(entry.status)
+  );
+  const processors = Array.from({ length: settings.processorCount }, (_value, index) => {
+    const slot = index + 1;
+    return {
+      slot,
+      entry: occupiedEntries.find((entry) => entry.processorSlot === slot) || null,
+    };
+  });
+  return {
+    settings: { processorCount: settings.processorCount },
+    processors,
+    queued: entries.filter((entry) => entry.status === 'queued'),
+    completed: entries.filter((entry) =>
+      ['execution_completed', 'failed', 'cancelled'].includes(entry.status)
+    ),
+    notQueued,
+  };
+}
+
+export async function updateImplementationQueueSettings(data: { processorCount: number }) {
+  const settings = await repo.updateImplementationQueueSettings(data);
+  void runImplementationQueue();
+  return { processorCount: settings.processorCount };
+}
+
+export async function getTodoWorkflowSettings() {
+  return repo.getTodoWorkflowSettings();
+}
+
+export async function updateTodoWorkflowSettings(
+  data: Parameters<typeof repo.updateTodoWorkflowSettings>[0]
+) {
+  return repo.updateTodoWorkflowSettings(data);
+}
+
+export async function createImplementationQueueEntry(taskId: string) {
+  const task = await repo.getTask(taskId);
+  if (!task) throw new NotFoundError('Task not found');
+  if (['completed', 'cancelled', 'failed', 'timed_out'].includes(task.status)) {
+    throw new AppError(
+      409,
+      'TASK_TERMINAL',
+      'Terminal sessions cannot enter the Implementation Queue.'
+    );
+  }
+  assertTaskDraftComplete(task);
+  if (await repo.hasActiveImplementationQueueEntry(taskId)) {
+    throw new AppError(
+      409,
+      'QUEUE_ENTRY_EXISTS',
+      'This session already has an active Queue Entry.'
+    );
+  }
+  const messages = await repo.listTaskMessages(taskId);
+  if (!hasImplementationPlanEvidence(messages) && !['ready', 'queued'].includes(task.status)) {
+    throw new AppError(
+      422,
+      'IMPLEMENTATION_PLAN_REQUIRED',
+      'Create or mark an implementation plan before adding this session to the Queue.'
+    );
+  }
+  const queuedTask =
+    task.status === 'queued' ? task : await repo.updateTask(taskId, { status: 'queued' });
+  if (!queuedTask) throw new NotFoundError('Task not found');
+  const entry = await repo.createImplementationQueueEntry({
+    taskId,
+    repositoryId: queuedTask.repositoryId,
+    priority: queuedTask.priority,
+  });
+  await repo.createTaskMessage({
+    taskId,
+    role: 'system',
+    content: 'Implementation Queue entry created.',
+    messageType: 'text',
+    payloadJson: { source: 'implementation_queue', status: 'queued', queueEntryId: entry.id },
+  });
+  void runImplementationQueue();
+  return entry;
+}
+
+export async function patchImplementationQueueEntry(
+  id: string,
+  input: { action?: 'cancel' | 'resume'; priority?: number; queuePosition?: number | null }
+) {
+  const entry = await repo.getImplementationQueueEntry(id);
+  if (!entry) throw new NotFoundError('Queue Entry not found');
+  if (input.action === 'cancel') {
+    return repo.updateImplementationQueueEntry(id, {
+      status: 'cancelled',
+      statusReason: 'Cancelled by user.',
+      processorSlot: null,
+    });
+  }
+  if (input.action === 'resume') {
+    if (entry.status !== 'needs_human') {
+      throw new AppError(409, 'QUEUE_ENTRY_NOT_RESUMABLE', 'Only needs_human entries can resume.');
+    }
+    const resumed = await repo.updateImplementationQueueEntry(id, {
+      status: 'processing',
+      statusReason: null,
+    });
+    void runImplementationQueue();
+    return resumed;
+  }
+  if (entry.status !== 'queued') {
+    throw new AppError(409, 'QUEUE_ENTRY_NOT_REORDERABLE', 'Only queued entries can be reordered.');
+  }
+  return repo.updateImplementationQueueEntry(id, {
+    priority: input.priority ?? entry.priority,
+    queuePosition: input.queuePosition ?? entry.queuePosition,
+  });
+}
+
+export async function archiveImplementationQueueEntry(id: string) {
+  const entry = await repo.getImplementationQueueEntry(id);
+  if (!entry) throw new NotFoundError('Queue Entry not found');
+  if (!['execution_completed', 'failed', 'cancelled'].includes(entry.status)) {
+    throw new AppError(
+      409,
+      'QUEUE_ENTRY_NOT_ARCHIVABLE',
+      'Only completed Queue executions can archive.'
+    );
+  }
+  const archived = await repo.updateImplementationQueueEntry(id, {
+    status: 'execution_archived',
+    processorSlot: null,
+    archivedAt: new Date(),
+  });
+  void runImplementationQueue();
+  return archived;
 }
 
 // --- Execution Orchestration (Runner Integration) ---
@@ -1410,6 +1585,7 @@ export async function startTaskRun(taskId: string) {
         summary: runtimeResult.summary || outcome.summary,
       });
       await repo.updateTaskStatus(taskId, outcome.status);
+      await completeImplementationQueueEntryForRun(run.id, outcome.status);
       if (shouldContinueSessionQueue(outcome.status)) {
         void runSessionQueueForRepository(task.repositoryId);
       }
@@ -1576,6 +1752,97 @@ function getSessionQueueMaxConcurrency() {
 
 function shouldContinueSessionQueue(status: string) {
   return ['completed', 'cancelled', 'failed'].includes(status);
+}
+
+let implementationQueueDrainPromise: Promise<void> | null = null;
+
+export async function runImplementationQueue() {
+  if (implementationQueueDrainPromise) {
+    await implementationQueueDrainPromise;
+    return [];
+  }
+  const started: Awaited<ReturnType<typeof startTaskRun>>[] = [];
+  implementationQueueDrainPromise = drainImplementationQueue(started).finally(() => {
+    implementationQueueDrainPromise = null;
+  });
+  await implementationQueueDrainPromise;
+  return started;
+}
+
+async function drainImplementationQueue(started: Awaited<ReturnType<typeof startTaskRun>>[]) {
+  while (true) {
+    const settings = await repo.getImplementationQueueSettings();
+    const claimed = await repo.claimNextImplementationQueueEntry(settings.processorCount);
+    if (!claimed) break;
+    try {
+      const run = await startTaskRun(claimed.taskId);
+      started.push(run);
+      await repo.updateImplementationQueueEntry(claimed.id, {
+        status: 'processing',
+        activeRunId: run.id,
+        lastHeartbeatAt: new Date(),
+      });
+      await repo.createTaskMessage({
+        taskId: claimed.taskId,
+        runId: run.id,
+        role: 'system',
+        content: `Implementation Queue processor ${claimed.processorSlot ?? 1} started this run.`,
+        messageType: 'text',
+        payloadJson: {
+          source: 'implementation_queue',
+          status: 'processing',
+          queueEntryId: claimed.id,
+          processorSlot: claimed.processorSlot,
+        },
+      });
+    } catch (err) {
+      await repo.updateImplementationQueueEntry(claimed.id, {
+        status: 'failed',
+        processorSlot: null,
+        statusReason: err instanceof Error ? err.message : String(err),
+      });
+      await repo.createTaskMessage({
+        taskId: claimed.taskId,
+        role: 'system',
+        content: `Implementation Queue failed to start this task: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        messageType: 'text',
+        payloadJson: {
+          source: 'implementation_queue',
+          status: 'failed_to_start',
+          queueEntryId: claimed.id,
+        },
+      });
+      break;
+    }
+  }
+}
+
+async function completeImplementationQueueEntryForRun(runId: string, status: string) {
+  try {
+    const entry = await repo.getImplementationQueueEntryForRun(runId);
+    if (!entry) return;
+    const nextStatus =
+      status === 'completed'
+        ? 'execution_completed'
+        : status === 'cancelled'
+          ? 'cancelled'
+          : status === 'needs_human'
+            ? 'needs_human'
+            : 'failed';
+    await repo.updateImplementationQueueEntry(entry.id, {
+      status: nextStatus,
+      processorSlot: null,
+      lastHeartbeatAt: new Date(),
+      statusReason: nextStatus === 'failed' ? `Run finished with status=${status}` : null,
+    });
+    if (['execution_completed', 'cancelled', 'failed'].includes(nextStatus)) {
+      void runImplementationQueue();
+    }
+  } catch {
+    // Queue bookkeeping must not change the run outcome.
+  }
 }
 
 const pendingSessionQueueRepositoryIds = new Set<string>();
@@ -2028,6 +2295,7 @@ export async function reviewTaskRun(runId: string, request: ReviewRunRequest) {
   });
 
   await repo.updateTaskStatus(run.taskId, finalTaskStatus);
+  await completeImplementationQueueEntryForRun(runId, finalTaskStatus);
   if (shouldContinueSessionQueue(finalTaskStatus)) {
     const reviewedTask = run.repositoryId ? null : await repo.getTask(run.taskId);
     const repositoryId = run.repositoryId || reviewedTask?.repositoryId;

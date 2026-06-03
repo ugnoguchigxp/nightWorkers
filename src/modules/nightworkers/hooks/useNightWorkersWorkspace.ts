@@ -13,6 +13,7 @@ import type {
   AgentHookTestResult,
   CreateProjectInput,
   CreateSessionInput,
+  ImplementationQueueDashboard,
   LlmProvider,
   LlmSettings,
   McpServerConfig,
@@ -29,6 +30,7 @@ import type {
   TaskMessage,
   TaskRun,
   TaskRunTodo,
+  TodoWorkflowSettings,
   UpdateProjectInput,
   WorkbenchArtifactRef,
   WorkbenchChatIntent,
@@ -84,6 +86,8 @@ export type NightWorkersWorkspaceState = {
   latestRunTodos: TaskRunTodo[];
   latestRunReviews: ReviewResult[];
   activeArtifactRefs: WorkbenchArtifactRef[];
+  implementationQueue: ImplementationQueueDashboard | null;
+  todoWorkflowSettings: TodoWorkflowSettings | null;
   projectFileEntries: ProjectFileEntry[];
   projectFileEntriesByDirectory: Record<string, ProjectFileEntry[]>;
   expandedProjectDirectories: Record<string, boolean>;
@@ -100,6 +104,7 @@ export type NightWorkersWorkspaceState = {
   isAgentWorking: boolean;
   isAgentThinking: boolean;
   isUpdatingSessionStatus: boolean;
+  isImplementationQueueLoading: boolean;
   expandedProjects: Record<string, boolean>;
   setExpandedProjects: Dispatch<SetStateAction<Record<string, boolean>>>;
   setActiveSessionId: (id: string | null) => void;
@@ -110,6 +115,10 @@ export type NightWorkersWorkspaceState = {
   createSession: (input: CreateSessionInput) => Promise<Task>;
   startRun: (sessionId: string) => Promise<TaskRun>;
   queueSession: (sessionId: string) => Promise<Task>;
+  createImplementationQueueEntry: (sessionId: string) => Promise<void>;
+  archiveImplementationQueueEntry: (entryId: string) => Promise<void>;
+  updateImplementationQueueProcessorCount: (processorCount: number) => Promise<void>;
+  updateTodoWorkflowSettings: (input: Partial<TodoWorkflowSettings>) => Promise<void>;
   updateSessionStatus: (sessionId: string, status: 'draft' | 'ready') => Promise<Task>;
   reorderQueueSessions: (sessionIds: string[]) => Promise<Task[]>;
   moveWorkbenchSession: (input: {
@@ -237,6 +246,28 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       const res = await client.tasks.$get();
       if (!res.ok) throw new Error('Failed to fetch sessions');
       return (await res.json()) as Task[];
+    },
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
+  const { data: implementationQueue = null, isLoading: isImplementationQueueLoading } = useQuery({
+    queryKey: ['implementationQueue'],
+    queryFn: async () => {
+      const res = await fetch('/api/implementation-queue');
+      if (!res.ok) throw new Error('Failed to fetch implementation queue');
+      return (await res.json()) as ImplementationQueueDashboard;
+    },
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
+  const { data: todoWorkflowSettings = null } = useQuery({
+    queryKey: ['todoWorkflowSettings'],
+    queryFn: async () => {
+      const res = await fetch('/api/todo-workflow/settings');
+      if (!res.ok) throw new Error('Failed to fetch Todo Workflow settings');
+      return (await res.json()) as TodoWorkflowSettings;
     },
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -431,6 +462,66 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
         return next;
       });
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+  });
+
+  const createImplementationQueueEntryMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      const res = await fetch('/api/implementation-queue/entries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId: sessionId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+  });
+
+  const archiveImplementationQueueEntryMutation = useMutation({
+    mutationFn: async (entryId: string) => {
+      const res = await fetch(`/api/implementation-queue/entries/${entryId}/archive`, {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
+    },
+  });
+
+  const updateImplementationQueueProcessorCountMutation = useMutation({
+    mutationFn: async (processorCount: number) => {
+      const res = await fetch('/api/implementation-queue/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ processorCount }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
+    },
+  });
+
+  const updateTodoWorkflowSettingsMutation = useMutation({
+    mutationFn: async (input: Partial<TodoWorkflowSettings>) => {
+      const res = await fetch('/api/todo-workflow/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as TodoWorkflowSettings;
+    },
+    onSuccess: (settings) => {
+      queryClient.setQueryData(['todoWorkflowSettings'], settings);
+      queryClient.invalidateQueries({ queryKey: ['todoWorkflowSettings'] });
     },
   });
 
@@ -1006,6 +1097,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
               return next;
             });
             queryClient.invalidateQueries({ queryKey: ['runDetails', incomingRun.id] });
+            queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
           }
           if (msg.type === 'task_status_updated' && msg.payload?.task) {
             const incomingTask = msg.payload.task as Task;
@@ -1019,6 +1111,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
               }
               return next;
             });
+            queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
           }
         } catch {
           // ignore malformed payload
@@ -1097,6 +1190,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     latestRunTodos,
     latestRunReviews,
     activeArtifactRefs,
+    implementationQueue,
+    todoWorkflowSettings,
     projectFileEntries,
     projectFileEntriesByDirectory: mergedProjectFileEntriesByDirectory,
     expandedProjectDirectories,
@@ -1113,6 +1208,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     isAgentWorking,
     isAgentThinking,
     isUpdatingSessionStatus: updateSessionStatusMutation.isPending,
+    isImplementationQueueLoading,
     expandedProjects,
     setExpandedProjects,
     setActiveSessionId,
@@ -1123,6 +1219,18 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     createSession: (input) => createSessionMutation.mutateAsync(input),
     startRun: (sessionId) => startRunMutation.mutateAsync(sessionId),
     queueSession: (sessionId) => queueSessionMutation.mutateAsync(sessionId),
+    createImplementationQueueEntry: async (sessionId) => {
+      await createImplementationQueueEntryMutation.mutateAsync(sessionId);
+    },
+    archiveImplementationQueueEntry: async (entryId) => {
+      await archiveImplementationQueueEntryMutation.mutateAsync(entryId);
+    },
+    updateImplementationQueueProcessorCount: async (processorCount) => {
+      await updateImplementationQueueProcessorCountMutation.mutateAsync(processorCount);
+    },
+    updateTodoWorkflowSettings: async (input) => {
+      await updateTodoWorkflowSettingsMutation.mutateAsync(input);
+    },
     updateSessionStatus: (sessionId, status) =>
       updateSessionStatusMutation.mutateAsync({ sessionId, status }),
     reorderQueueSessions: (sessionIds) => reorderQueueSessionsMutation.mutateAsync(sessionIds),

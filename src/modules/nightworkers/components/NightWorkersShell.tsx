@@ -13,6 +13,7 @@ import type {
 } from '../types';
 import { ArtifactPane } from './ArtifactPane';
 import { FolderBrowserDialog } from './FolderBrowserDialog';
+import { ImplementationQueueScreen } from './ImplementationQueueScreen';
 import { ProjectSidebar } from './ProjectSidebar';
 import { SettingsButton } from './SettingsButton';
 import { SettingsScreen } from './SettingsScreen';
@@ -56,6 +57,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const [thinkingDepth, setThinkingDepth] = useState<ThinkingDepth>('medium');
   const [selectedArtifact, setSelectedArtifact] = useState<WorkbenchArtifactRef | null>(null);
   const [showArtifactPane, setShowArtifactPane] = useState(false);
+  const [showQueueScreen, setShowQueueScreen] = useState(false);
+  const [queueProjectFilterId, setQueueProjectFilterId] = useState<string | null>(null);
   const artifactPaneOpen = showArtifactPane || Boolean(selectedArtifact);
   const isBlueprintArtifactOpen = artifactPaneOpen && selectedArtifact?.kind === 'app_blueprint';
 
@@ -137,6 +140,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const handleSelectSession = useCallback((sessionId: string | null) => {
     setSelectedArtifact(null);
     setShowArtifactPane(false);
+    setShowQueueScreen(false);
     workspaceRef.current.setActiveSessionId(sessionId);
   }, []);
   const handleCreateSession = useCallback((repositoryId: string) => {
@@ -151,12 +155,6 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const handleDeleteProject = useCallback((projectId: string) => {
     workspaceRef.current.deleteProject(projectId);
   }, []);
-  const handleMoveSession = useCallback(
-    (input: Parameters<NightWorkersWorkspaceState['moveWorkbenchSession']>[0]) => {
-      void workspaceRef.current.moveWorkbenchSession(input);
-    },
-    []
-  );
   const handleToggleProject = useCallback(
     (projectId: string) =>
       workspaceRef.current.setExpandedProjects((prev) => ({
@@ -169,6 +167,12 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     props.onOpenFolderBrowser();
     void workspaceRef.current.fetchDirectories(selectedPath || undefined);
   }, [props.onOpenFolderBrowser, selectedPath]);
+  const handleOpenQueue = useCallback((projectId: string) => {
+    setSelectedArtifact(null);
+    setShowArtifactPane(false);
+    setQueueProjectFilterId(projectId);
+    setShowQueueScreen(true);
+  }, []);
 
   return (
     <div className="h-screen overflow-hidden bg-[#111827] text-slate-100">
@@ -197,10 +201,9 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
             expandedProjects={workspace.expandedProjects}
             onSelectSession={handleSelectSession}
             onCreateSession={handleCreateSession}
-            onUpdateProject={(projectId, input) => void workspace.updateProject(projectId, input)}
             onDeleteProject={handleDeleteProject}
-            onMoveSession={handleMoveSession}
             onToggleProject={handleToggleProject}
+            onOpenQueue={handleOpenQueue}
             onOpenFolderBrowser={handleOpenFolderBrowser}
           />
         </Panel>
@@ -214,6 +217,20 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         >
           {props.showSettings ? (
             <SettingsScreen onClose={props.onCloseSettings} workspace={workspace} />
+          ) : showQueueScreen ? (
+            <ImplementationQueueScreen
+              dashboard={workspace.implementationQueue}
+              todoWorkflowSettings={workspace.todoWorkflowSettings}
+              projects={workspace.projects}
+              activeProjectFilterId={queueProjectFilterId}
+              isLoading={workspace.isImplementationQueueLoading}
+              onSetProjectFilter={setQueueProjectFilterId}
+              onOpenSession={(sessionId) => handleSelectSession(sessionId)}
+              onQueueSession={workspace.createImplementationQueueEntry}
+              onArchiveEntry={workspace.archiveImplementationQueueEntry}
+              onUpdateProcessorCount={workspace.updateImplementationQueueProcessorCount}
+              onUpdateTodoWorkflowSettings={workspace.updateTodoWorkflowSettings}
+            />
           ) : (
             <ThreadWorkspace
               activeSession={workspace.activeSession}
@@ -248,12 +265,6 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               onOpenBlueprintArtifact={handleOpenBlueprintArtifact}
               isBlueprintArtifactOpen={isBlueprintArtifactOpen}
               isBlueprintActionBusy={workspace.isChatSubmitting}
-              onToggleDraftReady={async (sessionId, status) => {
-                if (!['draft', 'ready'].includes(status)) return;
-                const nextStatus = status === 'draft' ? 'ready' : 'draft';
-                await workspaceRef.current.updateSessionStatus(sessionId, nextStatus);
-              }}
-              isUpdatingSessionStatus={workspace.isUpdatingSessionStatus}
               onDeleteSession={() => {
                 if (!workspace.activeSession) return;
                 workspace.deleteSession(workspace.activeSession.id);

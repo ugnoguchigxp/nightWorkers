@@ -23,13 +23,13 @@ NightWorkers is a local-first autonomous development control plane. It coordinat
 - Non-authenticated MCP Server settings for the coding agent
 - Agent Hooks settings for lifecycle command / HTTP automation
 - Optional contextStill integration (degrades gracefully when unavailable)
-- Chat-first workbench flow for draft sessions, queue ordering, and run execution
+- Chat-first workbench flow with explicit Implementation Queue admission and run execution
 - App Blueprint review with governed preview settings, DB Design revisions, and adopted-artifact state
 
 ## Current Capabilities
 - Project Folder registration and per-project Session/Task management
-- Draft / queue / run lifecycle with drag-reorderable queue sessions
-- Project-level Session queue Play/Pause controls with global and per-project processing limits
+- Dedicated Implementation Queue screen with Processor lanes, queued work, and not-queued plan-ready Sessions
+- Global Processor capacity controls plus TODO Workflow gates for implementation runs
 - Chat timeline inspection with run events, todo state, context output, diffs, and final reports
 - DB-backed run event replay for Workbench WebSocket reattach through `runId` / `afterSeq` cursors
 - Cursor-based run event API at `/api/runs/:id/events?afterSeq=...`
@@ -92,7 +92,7 @@ Important environment variables:
 - `APP_URL`: required for OAuth and secure cookie scenarios
 - `TRUST_PROXY`: set `true` behind reverse proxy
 - `CONTEXT_STILL_ENABLED`: enable optional contextStill integration
-- `SESSION_QUEUE_MAX_CONCURRENCY`: global maximum active Session queue runs
+- `SESSION_QUEUE_MAX_CONCURRENCY`: legacy Session queue default retained for migration compatibility
 - `NIGHTWORKERS_MCP_SETTINGS_PATH`: optional override for the MCP Server settings JSON path
 - `NIGHTWORKERS_HOOKS_SETTINGS_PATH`: optional override for the Agent Hooks settings JSON path
 - `NIGHTWORKERS_LLM_SETTINGS_PATH`: optional override for the LLM settings JSON path in tests or local experiments

@@ -43,6 +43,13 @@
       "when": 1780461000000,
       "tag": "0005_blueprint_design_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1780533600000,
+      "tag": "0006_implementation_queue_redesign",
+      "breakpoints": true
     }
   ]
 }

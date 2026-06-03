@@ -607,6 +607,52 @@ describe('NightWorkers workbench routes', () => {
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
   });
 
+  it('admits ready sessions to the Implementation Queue without duplicating not-queued work', async () => {
+    await repo.updateImplementationQueueSettings({ processorCount: 1 });
+    const { task: blockerTask } = await createWorkbenchTask({
+      title: 'Processor blocker',
+      status: 'queued',
+    });
+    const blockerEntry = await repo.createImplementationQueueEntry({
+      taskId: blockerTask.id,
+      repositoryId: blockerTask.repositoryId,
+    });
+    await repo.updateImplementationQueueEntry(blockerEntry.id, {
+      status: 'claimed',
+      processorSlot: 1,
+    });
+    const { task } = await createWorkbenchTask({ status: 'ready' });
+
+    const res = await app.request('http://localhost/api/implementation-queue/entries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ taskId: task.id }),
+    });
+
+    expect(res.status).toBe(201);
+    const entry = await res.json();
+    expect(entry).toMatchObject({ taskId: task.id, status: 'queued' });
+    expect((await repo.getTask(task.id))?.status).toBe('queued');
+
+    const dashboardRes = await app.request('http://localhost/api/implementation-queue', {
+      headers: sameOriginHeaders,
+    });
+    expect(dashboardRes.status).toBe(200);
+    const dashboard = await dashboardRes.json();
+    expect(dashboard.queued.map((queueEntry: any) => queueEntry.task.id)).toContain(task.id);
+    expect(dashboard.notQueued.map((item: any) => item.task.id)).not.toContain(task.id);
+
+    const duplicateRes = await app.request(
+      `http://localhost/api/workbench/sessions/${task.id}/queue`,
+      {
+        method: 'POST',
+        headers: sameOriginHeaders,
+      }
+    );
+    expect(duplicateRes.status).toBe(409);
+    expect((await duplicateRes.json()).code).toBe('QUEUE_ENTRY_EXISTS');
+  });
+
   it('routes design tool intent through LLM intake instead of fixed component artifacts', async () => {
     vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
       phase: 'plan',

@@ -49,9 +49,7 @@ type ThreadWorkspaceProps = {
   onSubmitWorkbenchMessage: (prompt: string, intent: WorkbenchChatIntent) => Promise<void>;
   onOpenBlueprintArtifact: () => Promise<void>;
   isBlueprintArtifactOpen: boolean;
-  onToggleDraftReady: (sessionId: string, status: string) => Promise<void>;
   isBlueprintActionBusy: boolean;
-  isUpdatingSessionStatus: boolean;
   onDeleteSession: () => void;
   onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
   isProjectFilesOpen: boolean;
@@ -70,8 +68,6 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
     )
   );
   const [showDebugEvents, setShowDebugEvents] = useState(false);
-  const canToggleDraftReady =
-    props.activeSession?.status === 'draft' || props.activeSession?.status === 'ready';
   return (
     <div className="relative flex h-screen min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#111827]">
       <div className="shrink-0 border-b border-slate-700/70 bg-[#0f172a] px-6 py-3 pr-16">
@@ -108,39 +104,6 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
                   title={showDebugEvents ? 'Hide debug events' : 'Show debug events'}
                 >
                   <Bug className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex overflow-hidden rounded border border-slate-600/80 bg-slate-900/30 text-[10px] uppercase text-slate-300 hover:border-slate-400 disabled:cursor-wait disabled:opacity-70"
-                  onClick={() => {
-                    if (!props.activeSession) return;
-                    void props.onToggleDraftReady(
-                      props.activeSession.id,
-                      props.activeSession.status
-                    );
-                  }}
-                  disabled={props.isUpdatingSessionStatus || !canToggleDraftReady}
-                  aria-pressed={props.activeSession.status === 'ready'}
-                  title="Draft / Ready"
-                >
-                  <span
-                    className={`px-2 py-1 ${
-                      props.activeSession.status === 'draft'
-                        ? 'bg-slate-200 text-slate-950'
-                        : 'text-slate-400'
-                    }`}
-                  >
-                    Draft
-                  </span>
-                  <span
-                    className={`border-slate-700 border-l px-2 py-1 ${
-                      props.activeSession.status === 'ready'
-                        ? 'bg-emerald-400 text-slate-950'
-                        : 'text-slate-400'
-                    }`}
-                  >
-                    Ready
-                  </span>
                 </button>
                 <button
                   type="button"

@@ -10,11 +10,12 @@
 ## Runtime Model
 NightWorkers manages Project Folder sessions through a chat-first task lifecycle:
 1. Draft Session creation
-2. Queue readiness and queue ordering
-3. Run creation
-4. Event append (state changes, tool outcomes, todos, diffs, and decisions)
-5. Final report and archived/completed state
-6. Optional Session queue drain for enabled Project Folders when capacity is available
+2. Implementation plan generation or adoption
+3. Optional explicit admission into the global Implementation Queue
+4. Processor claim and run creation
+5. Event append (state changes, tool outcomes, todos, diffs, and decisions)
+6. Final report and archived/completed state
+7. Queue execution archive, while the Session remains available for normal chat
 
 Run observation is ledger-first. Task events are persisted in SQLite and then
 projected to WebSocket clients. Workbench reattach uses `runId` plus an optional
@@ -31,7 +32,7 @@ Token artifact should be adopted for later planning.
 
 ## API Surface (high level)
 - `/api/repositories`: Project Folder registration and listing
-- `/api/repositories/:id`: Project Folder updates, including Session queue Play/Pause and per-project concurrency
+- `/api/repositories/:id`: Project Folder updates
 - `/api/tasks`: Session/Task CRUD, queue updates, and run start
 - `/api/tasks/:id/blueprint-design-settings`: session-scoped Blueprint Preview design settings
 - `/api/tasks/:id/blueprint-adoption`: adopted/not-adopted state for a Blueprint artifact message
@@ -40,6 +41,8 @@ Token artifact should be adopted for later planning.
 - `/api/runs/:id`: run detail and event timeline
 - `/api/runs/:id/events`: run events after an optional `afterSeq` cursor
 - `/api/workbench/*`: chat-first workbench read/write model
+- `/api/implementation-queue/*`: explicit implementation Queue dashboard, admission, Processor settings, drain, and archive
+- `/api/todo-workflow/settings`: Processor Todo Workflow gate settings
 - `/api/settings/llm/*`: provider/model settings, runtime settings, and smoke checks
 - `/api/settings/mcp/*`: non-authenticated MCP Server settings, connection tests, and tool discovery
 - `/api/settings/hooks/*`: Agent Hooks settings, CRUD, and sample-input test execution
@@ -66,7 +69,9 @@ Token artifact should be adopted for later planning.
 - Keep optional integrations optional (e.g., contextStill).
 - Keep MCP Server execution inside the native worker-tool bridge unless a later Codex SDK integration preserves equivalent policy and run-event evidence.
 - Keep Agent Hooks inside the native runtime and supervisor tool boundary; hook commands use the hook runner, while worker commands still use worker-tool policy.
-- Keep Session queue controls scoped: global capacity is a runtime setting, while Play/Pause and per-project capacity live on the Project Folder.
+- Keep Implementation Queue execution separate from Session chat. Queue Entries
+  are explicit user-approved automation items; normal Session chat and direct
+  coding requests remain available outside the Queue.
 - Keep Blueprint visual design, DB Design, and implementation planning as
   separate reasoning boundaries. A UI action should map to a distinct backend
   intent and persistence path when it changes the model's scope.

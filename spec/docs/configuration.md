@@ -76,10 +76,19 @@ Use these inputs to demonstrate rejected or recoverable extension paths without 
   conversation `message_id`, so later planning can prefer explicitly adopted
   artifacts instead of the newest generated artifact.
 
-## Session Queue
-- `SESSION_QUEUE_MAX_CONCURRENCY`: global maximum number of active Session queue runs across all Project Folders. Runtime settings can override the environment default.
-- Project Folder queue controls are stored per project: `queueEnabled` controls Play/Pause, and `maxConcurrentSessions` controls how many Sessions that project may process at once.
-- Queue draining only starts Sessions that are already in Queue. Suggested follow-up tasks remain drafts until a user explicitly queues them.
+## Implementation Queue
+- Processor capacity is stored in `implementation_queue_settings.processor_count`
+  and clamped to `1..3`.
+- Queue execution uses explicit `implementation_queue_entries`; `tasks.status`
+  is not the Queue claim source of truth.
+- A Session enters the Queue only after a user explicitly queues an
+  implementation-plan-ready task.
+- Todo Workflow gates are stored in `todo_workflow_settings` and control
+  required `context_compile`, per-Todo review/fix, final verification,
+  `compile_eval`, `register_candidate`, and completion commit confirmation.
+- Legacy `SESSION_QUEUE_MAX_CONCURRENCY`, `queueEnabled`, and
+  `maxConcurrentSessions` may exist for migration compatibility, but they are
+  no longer the visible Implementation Queue control surface.
 
 ## Run Event Reattach
 - Workbench WebSocket `subscribe_task` accepts optional `runId` and `afterSeq`

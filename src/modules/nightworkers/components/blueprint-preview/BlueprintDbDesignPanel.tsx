@@ -10,6 +10,7 @@ import {
 } from './dbDesignModel';
 
 type BlueprintDbDesignPanelProps = {
+  id?: string;
   blueprint: Record<string, any>;
   screens: Array<Record<string, any>>;
   tables: Array<Record<string, any>>;
@@ -21,6 +22,7 @@ type BlueprintDbDesignPanelProps = {
 };
 
 export function BlueprintDbDesignPanel({
+  id,
   blueprint,
   screens,
   tables,
@@ -62,7 +64,7 @@ export function BlueprintDbDesignPanel({
   };
 
   return (
-    <div className="blueprint-preview-card grid gap-3 rounded-lg border p-3 text-xs">
+    <div id={id} className="blueprint-preview-card grid gap-3 rounded-lg border p-3 text-xs">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 font-semibold text-foreground">
@@ -159,23 +161,12 @@ export function BlueprintDbDesignPanel({
                           </div>
                         </div>
                       ) : null}
-                      <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <RelatedBindings
                           bindings={bindings.filter((binding) => binding.table === tableName)}
                           selectedTarget={target}
                           onSelect={setTarget}
                         />
-                        <button
-                          type="button"
-                          className={
-                            target.kind === 'table' && target.tableName === tableName
-                              ? selectedTargetClass
-                              : targetButtonClass
-                          }
-                          onClick={() => setTarget({ kind: 'table', tableName })}
-                        >
-                          Design this table
-                        </button>
                       </div>
                     </div>
                   ) : null}

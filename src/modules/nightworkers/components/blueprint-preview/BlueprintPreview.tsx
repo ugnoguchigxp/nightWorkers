@@ -164,7 +164,11 @@ export function BlueprintPreview({
           type="button"
           aria-expanded={settingsOpen}
           aria-controls="blueprint-design-settings"
-          className="blueprint-preview-button inline-flex h-8 items-center gap-2 border border-border bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:opacity-90"
+          className={`blueprint-preview-button inline-flex h-8 items-center gap-2 border border-border px-3 text-xs font-semibold transition ${
+            settingsOpen
+              ? 'bg-primary text-primary-foreground hover:opacity-90'
+              : 'bg-card text-foreground hover:bg-background'
+          }`}
           onClick={() => setSettingsOpen((open) => !open)}
         >
           <Palette className="h-3.5 w-3.5" />
@@ -174,7 +178,11 @@ export function BlueprintPreview({
           type="button"
           aria-expanded={dbDesignOpen}
           aria-controls="blueprint-db-design"
-          className="blueprint-preview-button inline-flex h-8 items-center gap-2 border border-border bg-card px-3 text-xs font-semibold text-foreground transition hover:bg-background"
+          className={`blueprint-preview-button inline-flex h-8 items-center gap-2 border border-border px-3 text-xs font-semibold transition ${
+            dbDesignOpen
+              ? 'bg-primary text-primary-foreground hover:opacity-90'
+              : 'bg-card text-foreground hover:bg-background'
+          }`}
           onClick={() => setDbDesignOpen((open) => !open)}
         >
           <Database className="h-3.5 w-3.5" />
@@ -201,6 +209,7 @@ export function BlueprintPreview({
 
       {dbDesignOpen ? (
         <BlueprintDbDesignPanel
+          id="blueprint-db-design"
           blueprint={blueprint}
           screens={screens}
           tables={tables}

@@ -33,6 +33,8 @@ vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   updateTaskCompiledPrompt: vi.fn(),
   updateTaskRun: vi.fn(),
   createTaskMessage: vi.fn(),
+  getImplementationQueueEntryForRun: vi.fn(),
+  updateImplementationQueueEntry: vi.fn(),
 }));
 
 vi.mock('../api/services/agent-runtime/registry', () => ({

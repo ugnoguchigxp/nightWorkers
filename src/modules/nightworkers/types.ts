@@ -52,6 +52,66 @@ export type TaskRun = {
   todos?: TaskRunTodo[];
 };
 
+export type ImplementationQueueEntryStatus =
+  | 'queued'
+  | 'claimed'
+  | 'processing'
+  | 'needs_human'
+  | 'awaiting_commit_decision'
+  | 'execution_completed'
+  | 'execution_archived'
+  | 'failed'
+  | 'cancelled';
+
+export type ImplementationQueueEntry = {
+  id: string;
+  taskId: string;
+  repositoryId: string;
+  status: ImplementationQueueEntryStatus;
+  priority: number;
+  queuePosition?: number | null;
+  processorSlot?: number | null;
+  activeRunId?: string | null;
+  claimedAt?: unknown | null;
+  lastHeartbeatAt?: unknown | null;
+  archivedAt?: unknown | null;
+  statusReason?: string | null;
+  createdAt: unknown;
+  updatedAt: unknown;
+};
+
+export type ImplementationQueueItem = ImplementationQueueEntry & {
+  task: Task;
+  repository: Repository;
+};
+
+export type ImplementationProcessorLane = {
+  slot: number;
+  entry: ImplementationQueueItem | null;
+};
+
+export type ImplementationQueueDashboard = {
+  settings: { processorCount: number };
+  processors: ImplementationProcessorLane[];
+  queued: ImplementationQueueItem[];
+  completed: ImplementationQueueItem[];
+  notQueued: Array<{ task: Task; repository: Repository }>;
+};
+
+export type TodoWorkflowSettings = {
+  id: string;
+  requireContextCompile: boolean;
+  requirePerTodoReview: boolean;
+  requirePerTodoFix: boolean;
+  requireFinalVerification: boolean;
+  requireCompileEval: boolean;
+  requireRegisterCandidatePrompt: boolean;
+  askCommitOnCompletion: boolean;
+  hookPolicyJson?: unknown | null;
+  createdAt: unknown;
+  updatedAt: unknown;
+};
+
 export type WorkbenchSessionGroup = 'processing' | 'queue' | 'archive';
 
 export type WorkbenchMovableSessionGroup = 'processing' | 'queue' | 'archive';

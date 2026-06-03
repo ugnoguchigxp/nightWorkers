@@ -23,6 +23,13 @@ import { logEvent } from '../../lib/logger';
 import { createOpenApiRouter } from '../../lib/openapi';
 import * as service from './nightworkers.service';
 
+function queueRouteError(c: any, err: any): any {
+  if (err instanceof AppError) {
+    return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+  }
+  return c.json({ error: String(err?.message || err) }, 500);
+}
+
 const listRepositoriesRoute = createRoute({
   method: 'get',
   path: '/repositories',
@@ -648,6 +655,214 @@ const createWorkbenchSessionRoute = createRoute({
     201: {
       content: { 'application/json': { schema: taskSchema } },
       description: 'Workbench session created',
+    },
+  },
+});
+
+const implementationQueueEntrySchema = z.object({
+  id: z.string().uuid(),
+  taskId: z.string().uuid(),
+  repositoryId: z.string().uuid(),
+  status: z.string(),
+  priority: z.number(),
+  queuePosition: z.number().nullable().optional(),
+  processorSlot: z.number().nullable().optional(),
+  activeRunId: z.string().uuid().nullable().optional(),
+  claimedAt: z.any().nullable().optional(),
+  lastHeartbeatAt: z.any().nullable().optional(),
+  archivedAt: z.any().nullable().optional(),
+  statusReason: z.string().nullable().optional(),
+  createdAt: z.any(),
+  updatedAt: z.any(),
+});
+
+const implementationQueueDashboardRoute = createRoute({
+  method: 'get',
+  path: '/implementation-queue',
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            settings: z.object({ processorCount: z.number().int() }),
+            processors: z.array(
+              z.object({
+                slot: z.number().int(),
+                entry: implementationQueueEntrySchema
+                  .extend({ task: taskSchema, repository: repositorySchema })
+                  .nullable(),
+              })
+            ),
+            queued: z.array(
+              implementationQueueEntrySchema.extend({
+                task: taskSchema,
+                repository: repositorySchema,
+              })
+            ),
+            completed: z.array(
+              implementationQueueEntrySchema.extend({
+                task: taskSchema,
+                repository: repositorySchema,
+              })
+            ),
+            notQueued: z.array(z.object({ task: taskSchema, repository: repositorySchema })),
+          }),
+        },
+      },
+      description: 'Implementation Queue dashboard',
+    },
+  },
+});
+
+const createImplementationQueueEntryRoute = createRoute({
+  method: 'post',
+  path: '/implementation-queue/entries',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ taskId: z.string().uuid() }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      content: { 'application/json': { schema: implementationQueueEntrySchema } },
+      description: 'Implementation Queue Entry created',
+    },
+  },
+});
+
+const patchImplementationQueueEntryRoute = createRoute({
+  method: 'patch',
+  path: '/implementation-queue/entries/:id',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            action: z.enum(['cancel', 'resume']).optional(),
+            priority: z.number().int().optional(),
+            queuePosition: z.number().int().nullable().optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: implementationQueueEntrySchema } },
+      description: 'Implementation Queue Entry updated',
+    },
+  },
+});
+
+const archiveImplementationQueueEntryRoute = createRoute({
+  method: 'post',
+  path: '/implementation-queue/entries/:id/archive',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: implementationQueueEntrySchema } },
+      description: 'Implementation Queue Entry archived',
+    },
+  },
+});
+
+const drainImplementationQueueRoute = createRoute({
+  method: 'post',
+  path: '/implementation-queue/drain',
+  responses: {
+    200: {
+      content: { 'application/json': { schema: z.object({ started: z.number().int() }) } },
+      description: 'Implementation Queue drain triggered',
+    },
+  },
+});
+
+const getImplementationQueueSettingsRoute = createRoute({
+  method: 'get',
+  path: '/implementation-queue/settings',
+  responses: {
+    200: {
+      content: { 'application/json': { schema: z.object({ processorCount: z.number().int() }) } },
+      description: 'Implementation Queue settings',
+    },
+  },
+});
+
+const patchImplementationQueueSettingsRoute = createRoute({
+  method: 'patch',
+  path: '/implementation-queue/settings',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ processorCount: z.number().int().min(1).max(3) }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: z.object({ processorCount: z.number().int() }) } },
+      description: 'Implementation Queue settings updated',
+    },
+  },
+});
+
+const todoWorkflowSettingsSchema = z.object({
+  id: z.string(),
+  requireContextCompile: z.boolean(),
+  requirePerTodoReview: z.boolean(),
+  requirePerTodoFix: z.boolean(),
+  requireFinalVerification: z.boolean(),
+  requireCompileEval: z.boolean(),
+  requireRegisterCandidatePrompt: z.boolean(),
+  askCommitOnCompletion: z.boolean(),
+  hookPolicyJson: z.any().nullable().optional(),
+  createdAt: z.any(),
+  updatedAt: z.any(),
+});
+
+const todoWorkflowSettingsInputSchema = z.object({
+  requireContextCompile: z.boolean().optional(),
+  requirePerTodoReview: z.boolean().optional(),
+  requirePerTodoFix: z.boolean().optional(),
+  requireFinalVerification: z.boolean().optional(),
+  requireCompileEval: z.boolean().optional(),
+  requireRegisterCandidatePrompt: z.boolean().optional(),
+  askCommitOnCompletion: z.boolean().optional(),
+  hookPolicyJson: z.any().optional(),
+});
+
+const getTodoWorkflowSettingsRoute = createRoute({
+  method: 'get',
+  path: '/todo-workflow/settings',
+  responses: {
+    200: {
+      content: { 'application/json': { schema: todoWorkflowSettingsSchema } },
+      description: 'Todo Workflow settings',
+    },
+  },
+});
+
+const patchTodoWorkflowSettingsRoute = createRoute({
+  method: 'patch',
+  path: '/todo-workflow/settings',
+  request: {
+    body: {
+      content: { 'application/json': { schema: todoWorkflowSettingsInputSchema } },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: todoWorkflowSettingsSchema } },
+      description: 'Todo Workflow settings updated',
     },
   },
 });
@@ -1391,6 +1606,82 @@ const router = createOpenApiRouter()
         return c.json({ error: err.message, code: err.code }, err.statusCode as any);
       }
       return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(implementationQueueDashboardRoute, async (c) => {
+    try {
+      const result = await service.listImplementationQueueDashboard();
+      return c.json(result, 200);
+    } catch (err: any) {
+      return queueRouteError(c, err);
+    }
+  })
+  .openapi(createImplementationQueueEntryRoute, async (c) => {
+    try {
+      const body = c.req.valid('json');
+      const entry = await service.createImplementationQueueEntry(body.taskId);
+      return c.json(entry, 201);
+    } catch (err: any) {
+      return queueRouteError(c, err);
+    }
+  })
+  .openapi(patchImplementationQueueEntryRoute, async (c) => {
+    try {
+      const body = c.req.valid('json');
+      const entry = await service.patchImplementationQueueEntry(c.req.param('id'), body);
+      return c.json(entry, 200);
+    } catch (err: any) {
+      return queueRouteError(c, err);
+    }
+  })
+  .openapi(archiveImplementationQueueEntryRoute, async (c) => {
+    try {
+      const entry = await service.archiveImplementationQueueEntry(c.req.param('id'));
+      return c.json(entry, 200);
+    } catch (err: any) {
+      return queueRouteError(c, err);
+    }
+  })
+  .openapi(drainImplementationQueueRoute, async (c) => {
+    try {
+      const started = await service.runImplementationQueue();
+      return c.json({ started: started.length }, 200);
+    } catch (err: any) {
+      return queueRouteError(c, err);
+    }
+  })
+  .openapi(getImplementationQueueSettingsRoute, async (c) => {
+    try {
+      const result = await service.listImplementationQueueDashboard();
+      return c.json(result.settings, 200);
+    } catch (err: any) {
+      return queueRouteError(c, err);
+    }
+  })
+  .openapi(patchImplementationQueueSettingsRoute, async (c) => {
+    try {
+      const body = c.req.valid('json');
+      const settings = await service.updateImplementationQueueSettings(body);
+      return c.json(settings, 200);
+    } catch (err: any) {
+      return queueRouteError(c, err);
+    }
+  })
+  .openapi(getTodoWorkflowSettingsRoute, async (c) => {
+    try {
+      const settings = await service.getTodoWorkflowSettings();
+      return c.json(settings, 200);
+    } catch (err: any) {
+      return queueRouteError(c, err);
+    }
+  })
+  .openapi(patchTodoWorkflowSettingsRoute, async (c) => {
+    try {
+      const body = c.req.valid('json');
+      const settings = await service.updateTodoWorkflowSettings(body);
+      return c.json(settings, 200);
+    } catch (err: any) {
+      return queueRouteError(c, err);
     }
   })
   .openapi(queueWorkbenchSessionRoute, async (c) => {
