@@ -1,6 +1,6 @@
 # NightWorkers
 
-NightWorkers is a local-first autonomous development control plane. It coordinates repository-scoped work threads, runs supervisor-worker executions, and records verifiable run ledgers (events, logs, diffs, review results).
+NightWorkers is a local-first autonomous development control plane. It coordinates project-scoped work sessions, runs supervisor-worker executions, and records verifiable run evidence such as events, logs, diffs, todos, test results, and final reports.
 
 ## Table of Contents
 - [Why NightWorkers](#why-nightworkers)
@@ -21,12 +21,14 @@ NightWorkers is a local-first autonomous development control plane. It coordinat
 - Structured run lifecycle with task/run/event persistence
 - Model-provider aware LLM settings (OpenAI, Azure OpenAI, Bedrock)
 - Optional contextStill integration (degrades gracefully when unavailable)
-- Human-review-oriented workflow for run outcomes and diffs
+- Chat-first workbench flow for draft sessions, queue ordering, and run execution
 
 ## Current Capabilities
-- Repository registration and per-repository thread/task management
-- Task execution lifecycle (`queued`, `running`, `completed`, `failed`, etc.)
-- Timeline-style run inspection with logs and diffs
+- Project Folder registration and per-project Session/Task management
+- Draft / queue / run lifecycle with drag-reorderable queue sessions
+- Project-level Session queue Play/Pause controls with global and per-project processing limits
+- Chat timeline inspection with run events, todo state, context output, diffs, and final reports
+- Artifact pane with project tree and source file preview
 - LLM provider settings UI and smoke-test API
 - Health/readiness endpoints and API docs UI
 
@@ -76,6 +78,7 @@ Important environment variables:
 - `APP_URL`: required for OAuth and secure cookie scenarios
 - `TRUST_PROXY`: set `true` behind reverse proxy
 - `CONTEXT_STILL_ENABLED`: enable optional contextStill integration
+- `SESSION_QUEUE_MAX_CONCURRENCY`: global maximum active Session queue runs
 
 Detailed setup and provider configuration:
 - [Runtime Configuration Reference](./spec/docs/configuration.md)
@@ -98,7 +101,7 @@ Detailed setup and provider configuration:
 ## Testing
 - Unit/integration: Vitest
 - End-to-end: Playwright (`@smoke`, `@regression` tags)
-- Agent outcome E2E: `pnpm test:e2e:agent-outcome` uses the deterministic `test` provider, scratch git workspaces, real API/DB/run ledger paths, and requires no provider credentials. Set `KEEP_E2E_WORKSPACE=1` to keep the scratch workspace after a failure.
+- Agent outcome E2E: `pnpm test:e2e:agent-outcome` uses the deterministic `test` provider, scratch git workspaces, real API/DB/run event paths, and requires no provider credentials. Set `KEEP_E2E_WORKSPACE=1` to keep the scratch workspace after a failure.
 - Live agent E2E: `pnpm test:e2e:agent-live` is optional and skips unless provider credentials are configured.
 - Recommended pre-PR validation:
 ```bash
