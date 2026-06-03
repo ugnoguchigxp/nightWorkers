@@ -107,6 +107,8 @@ export const repositories = sqliteTable('repositories', {
   localPath: text('local_path').notNull(),
   branch: text('branch').default('main').notNull(),
   allowed: integer('allowed', { mode: 'boolean' }).default(true).notNull(),
+  queueEnabled: integer('queue_enabled', { mode: 'boolean' }).default(false).notNull(),
+  maxConcurrentSessions: integer('max_concurrent_sessions').default(1).notNull(),
   safetyPolicy: text('safety_policy', { mode: 'json' }).$type<{
     allowedPaths?: string[];
     deniedPaths?: string[];

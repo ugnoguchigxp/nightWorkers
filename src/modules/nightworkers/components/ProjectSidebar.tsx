@@ -17,7 +17,16 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Button } from '@repo/design-system';
-import { ChevronDown, ChevronRight, Folder, LoaderCircle, Plus, Trash2 } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Folder,
+  LoaderCircle,
+  Pause,
+  Play,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 import { memo, useCallback, useMemo, useState } from 'react';
 import type { ProjectSessionGroups } from '../hooks/useNightWorkersWorkspace';
 import type { Repository, WorkbenchMovableSessionGroup, WorkbenchSessionView } from '../types';
@@ -31,6 +40,10 @@ type ProjectSidebarProps = {
   expandedProjects: Record<string, boolean>;
   onSelectSession: (sessionId: string) => void;
   onCreateSession: (repositoryId: string) => void;
+  onUpdateProject: (
+    projectId: string,
+    input: { queueEnabled?: boolean; maxConcurrentSessions?: number }
+  ) => void;
   onDeleteProject: (projectId: string) => void;
   onMoveSession: (input: {
     sessionId: string;
@@ -94,6 +107,28 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                     <span>{project.name}</span>
                   </button>
                   <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className={`h-6 w-6 p-0 ${
+                        project.queueEnabled
+                          ? 'text-emerald-300 hover:text-emerald-200'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                      onClick={() =>
+                        props.onUpdateProject(project.id, {
+                          queueEnabled: !project.queueEnabled,
+                        })
+                      }
+                      title={project.queueEnabled ? 'Pause session queue' : 'Play session queue'}
+                    >
+                      {project.queueEnabled ? (
+                        <Pause className="h-3.5 w-3.5" />
+                      ) : (
+                        <Play className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
                     <Button
                       type="button"
                       variant="ghost"

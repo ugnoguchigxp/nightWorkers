@@ -18,6 +18,7 @@ import type {
   TaskMessage,
   TaskRun,
   TaskRunTodo,
+  UpdateProjectInput,
   WorkbenchArtifactRef,
   WorkbenchChatIntent,
   WorkbenchMovableSessionGroup,
@@ -68,6 +69,7 @@ export type NightWorkersWorkspaceState = {
   setExpandedProjects: Dispatch<SetStateAction<Record<string, boolean>>>;
   setActiveSessionId: (id: string | null) => void;
   createProject: (input: CreateProjectInput) => void;
+  updateProject: (id: string, input: UpdateProjectInput) => Promise<Repository>;
   deleteProject: (id: string) => void;
   deleteSession: (id: string) => void;
   createSession: (input: CreateSessionInput) => Promise<Task>;
@@ -264,6 +266,35 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
     },
+  });
+
+  const updateProjectMutation = useMutation({
+    mutationFn: async (input: { id: string; data: UpdateProjectInput }) => {
+      const res = await client.repositories[':id'].$patch({
+        param: { id: input.id },
+        json: input.data,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as Repository;
+    },
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: ['projects'] });
+      const previous = queryClient.getQueryData<Repository[]>(['projects']);
+      queryClient.setQueryData<Repository[]>(['projects'], (prev = []) =>
+        prev.map((project) => (project.id === input.id ? { ...project, ...input.data } : project))
+      );
+      return { previous };
+    },
+    onError: (_error, _input, context) => {
+      if (context?.previous) queryClient.setQueryData(['projects'], context.previous);
+    },
+    onSuccess: (project) => {
+      queryClient.setQueryData<Repository[]>(['projects'], (prev = []) =>
+        prev.map((candidate) => (candidate.id === project.id ? project : candidate))
+      );
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['projects'] }),
   });
 
   const createSessionMutation = useMutation({
@@ -956,6 +987,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     setExpandedProjects,
     setActiveSessionId,
     createProject: (input) => createProjectMutation.mutate(input),
+    updateProject: (id, input) => updateProjectMutation.mutateAsync({ id, data: input }),
     deleteProject: (id) => deleteProjectMutation.mutate(id),
     deleteSession: (id) => deleteSessionMutation.mutate(id),
     createSession: (input) => createSessionMutation.mutateAsync(input),

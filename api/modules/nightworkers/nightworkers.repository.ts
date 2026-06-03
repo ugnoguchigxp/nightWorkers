@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import {
   artifacts,
@@ -19,6 +19,8 @@ export async function createRepository(data: {
   localPath: string;
   branch: string;
   allowed?: boolean;
+  queueEnabled?: boolean;
+  maxConcurrentSessions?: number;
   safetyPolicy?: any;
 }) {
   const [repo] = await db.insert(repositories).values(data).returning();
@@ -32,6 +34,21 @@ export async function getRepository(id: string) {
 
 export async function listRepositories() {
   return db.select().from(repositories).orderBy(desc(repositories.createdAt));
+}
+
+export async function updateRepository(
+  id: string,
+  data: {
+    queueEnabled?: boolean;
+    maxConcurrentSessions?: number;
+  }
+) {
+  const [repo] = await db
+    .update(repositories)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(repositories.id, id))
+    .returning();
+  return repo;
 }
 
 export async function deleteRepository(id: string) {
@@ -193,6 +210,43 @@ export async function listActiveTaskRunsForTask(taskId: string) {
         inArray(taskRuns.status, ['running', 'context_compiling', 'finalizing'])
       )
     );
+}
+
+export async function countActiveTaskRuns(repositoryId?: string) {
+  const rows = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(taskRuns)
+    .where(
+      repositoryId
+        ? and(
+            eq(taskRuns.repositoryId, repositoryId),
+            inArray(taskRuns.status, ['running', 'context_compiling', 'finalizing'])
+          )
+        : inArray(taskRuns.status, ['running', 'context_compiling', 'finalizing'])
+    );
+  return Number(rows[0]?.count ?? 0);
+}
+
+export async function claimNextQueuedTask(repositoryId: string) {
+  const [task] = await db
+    .select()
+    .from(tasks)
+    .where(and(eq(tasks.repositoryId, repositoryId), eq(tasks.status, 'queued')))
+    .orderBy(desc(tasks.priority), asc(tasks.updatedAt))
+    .limit(1);
+  if (!task) return null;
+  const [claimed] = await db
+    .update(tasks)
+    .set({ status: 'context_compiling', updatedAt: new Date() })
+    .where(and(eq(tasks.id, task.id), eq(tasks.status, 'queued')))
+    .returning();
+  if (claimed) {
+    nightWorkersRealtimeBroker.publish(claimed.id, {
+      type: 'task_status_updated',
+      payload: { status: claimed.status, task: claimed },
+    });
+  }
+  return claimed ?? null;
 }
 
 export async function updateTaskRun(

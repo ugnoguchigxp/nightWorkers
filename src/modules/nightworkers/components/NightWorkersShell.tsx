@@ -142,6 +142,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
             expandedProjects={workspace.expandedProjects}
             onSelectSession={handleSelectSession}
             onCreateSession={handleCreateSession}
+            onUpdateProject={(projectId, input) => void workspace.updateProject(projectId, input)}
             onDeleteProject={handleDeleteProject}
             onMoveSession={handleMoveSession}
             onToggleProject={handleToggleProject}

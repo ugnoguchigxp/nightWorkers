@@ -79,6 +79,39 @@ const getRepositoryRoute = createRoute({
   },
 });
 
+const updateRepositoryRoute = createRoute({
+  method: 'patch',
+  path: '/repositories/:id',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'repo-uuid' }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            queueEnabled: z.boolean().optional(),
+            maxConcurrentSessions: z.number().int().positive().optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: repositorySchema,
+        },
+      },
+      description: 'Repository updated successfully',
+    },
+    404: {
+      description: 'Repository not found',
+    },
+  },
+});
+
 const listProjectFilesRoute = createRoute({
   method: 'get',
   path: '/repositories/:id/files',
@@ -816,6 +849,18 @@ const router = createOpenApiRouter()
                 : rawJson.allowed !== undefined
                   ? rawJson.allowed
                   : true,
+            queueEnabled:
+              data?.queueEnabled !== undefined
+                ? data.queueEnabled
+                : rawJson.queueEnabled !== undefined
+                  ? rawJson.queueEnabled
+                  : false,
+            maxConcurrentSessions:
+              data?.maxConcurrentSessions !== undefined
+                ? data.maxConcurrentSessions
+                : rawJson.maxConcurrentSessions !== undefined
+                  ? rawJson.maxConcurrentSessions
+                  : 1,
             safetyPolicy: data?.safetyPolicy || rawJson.safetyPolicy || undefined,
           };
         }
@@ -837,6 +882,17 @@ const router = createOpenApiRouter()
     const repo = await service.getRepository(id);
     if (!repo) return c.json({ error: 'Repository not found' }, 404);
     return c.json(repo, 200);
+  })
+  .openapi(updateRepositoryRoute, async (c) => {
+    try {
+      const repo = await service.updateRepository(c.req.param('id'), c.req.valid('json'));
+      return c.json(repo, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
   })
   .openapi(listProjectFilesRoute, async (c) => {
     try {

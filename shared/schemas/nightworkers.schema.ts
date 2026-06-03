@@ -142,6 +142,8 @@ export const repositorySchema = z
     localPath: z.string(),
     branch: z.string(),
     allowed: z.boolean(),
+    queueEnabled: z.boolean().default(false),
+    maxConcurrentSessions: z.number().int().positive().default(1),
     safetyPolicy: safetyPolicySchema.nullable().optional(),
     createdAt: z.any(),
     updatedAt: z.any(),
@@ -154,6 +156,8 @@ export const createRepositorySchema = z
     localPath: z.string().min(1, 'Local path is required'),
     branch: z.string().optional().default('main'),
     allowed: z.boolean().default(true),
+    queueEnabled: z.boolean().default(false),
+    maxConcurrentSessions: z.number().int().positive().default(1),
     safetyPolicy: safetyPolicySchema.optional(),
   })
   .openapi('CreateRepository');

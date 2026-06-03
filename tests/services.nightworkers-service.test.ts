@@ -3,12 +3,18 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
-import { startTaskRun } from '../api/modules/nightworkers/nightworkers.service';
+import {
+  runSessionQueueForRepository,
+  startTaskRun,
+} from '../api/modules/nightworkers/nightworkers.service';
 import * as runtimeRegistry from '../api/services/agent-runtime/registry';
 import * as contextStill from '../api/services/context-still';
 
 vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   getTask: vi.fn(),
+  updateRepository: vi.fn(),
+  countActiveTaskRuns: vi.fn(),
+  claimNextQueuedTask: vi.fn(),
   listActiveTaskRunsForTask: vi.fn(),
   updateTaskStatus: vi.fn(),
   getRepository: vi.fn(),
@@ -282,5 +288,114 @@ describe('NightWorkers service', () => {
       'todo-test',
       expect.objectContaining({ status: 'passed' })
     );
+  });
+
+  it('starts the next queued session when project queue capacity is available', async () => {
+    const task = {
+      id: 'task-next',
+      repositoryId: 'repo-queue',
+      title: 'Queued session',
+      description: 'Run queued session',
+      objective: 'Run queued session',
+      acceptanceCriteria: 'Queued session starts',
+      timeoutSeconds: 60,
+      status: 'context_compiling',
+    };
+    const run = {
+      id: 'run-next',
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+      status: 'context_compiling',
+    };
+    const todo = {
+      id: 'todo-next',
+      runId: run.id,
+      seq: 1,
+      title: 'Run queued session',
+      description: 'Run queued session',
+      taskType: 'code_change',
+      status: 'pending',
+      procedureId: 'code-change',
+      procedureSnapshot: { id: 'code-change', digest: 'sha256:queue' },
+    };
+
+    vi.mocked(repo.getRepository).mockResolvedValue({
+      id: task.repositoryId,
+      localPath: repoRoot,
+      queueEnabled: true,
+      maxConcurrentSessions: 1,
+      safetyPolicy: {},
+    } as any);
+    vi.mocked(repo.countActiveTaskRuns).mockResolvedValue(0);
+    vi.mocked(repo.claimNextQueuedTask)
+      .mockResolvedValueOnce(task as any)
+      .mockResolvedValueOnce(null);
+    vi.mocked(repo.getTask).mockResolvedValue(task as any);
+    vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+    vi.mocked(repo.listTaskMessages).mockResolvedValue([
+      { role: 'user', content: task.description },
+    ] as any);
+    vi.mocked(repo.createTaskRun).mockResolvedValue(run as any);
+    vi.mocked(repo.createTaskRunTodo).mockResolvedValue({ id: todo.id } as any);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([todo] as any);
+    vi.mocked(repo.updateTaskRunTodo).mockResolvedValue(todo as any);
+    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as any);
+    vi.mocked(contextStill.compileContext).mockResolvedValue({
+      compiledPromptText: task.description,
+      degraded: false,
+      sourceMetadata: {},
+      includedMemoryRefs: [],
+    } as any);
+    vi.mocked(contextStill.evaluateContext).mockResolvedValue(undefined as any);
+
+    const runtimeStart = vi.fn().mockResolvedValue({
+      terminalState: 'completed',
+      summary: 'Queued session done',
+      finalReport: 'Queued session report',
+      stoppedBy: 'decision',
+      riskLevel: 'low',
+      diffPatch: '',
+      logContent: '',
+    });
+    vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+      kind: 'native-local',
+      start: runtimeStart,
+      stop: vi.fn(),
+    } as any);
+
+    const started = await runSessionQueueForRepository(task.repositoryId);
+
+    expect(started).toHaveLength(1);
+    expect(repo.claimNextQueuedTask).toHaveBeenCalledWith(task.repositoryId);
+    expect(repo.createTaskRun).toHaveBeenCalledWith(
+      expect.objectContaining({ taskId: task.id, repositoryId: task.repositoryId })
+    );
+    await vi.waitFor(() => {
+      expect(runtimeStart).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('does not claim queued sessions when global capacity is full', async () => {
+    vi.mocked(repo.getRepository).mockResolvedValue({
+      id: 'repo-full',
+      localPath: repoRoot,
+      queueEnabled: true,
+      maxConcurrentSessions: 3,
+      safetyPolicy: {},
+    } as any);
+    vi.mocked(repo.countActiveTaskRuns).mockResolvedValue(2);
+
+    const previousLimit = process.env.SESSION_QUEUE_MAX_CONCURRENCY;
+    process.env.SESSION_QUEUE_MAX_CONCURRENCY = '2';
+    try {
+      const started = await runSessionQueueForRepository('repo-full');
+      expect(started).toHaveLength(0);
+      expect(repo.claimNextQueuedTask).not.toHaveBeenCalled();
+    } finally {
+      if (previousLimit === undefined) delete process.env.SESSION_QUEUE_MAX_CONCURRENCY;
+      else process.env.SESSION_QUEUE_MAX_CONCURRENCY = previousLimit;
+    }
   });
 });

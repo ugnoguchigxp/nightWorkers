@@ -10,6 +10,22 @@ export async function ensureNightWorkersSchema() {
     await client.execute('ALTER TABLE task_runs ADD COLUMN final_judgment text');
   }
 
+  const repositoryColumns = await client.execute('PRAGMA table_info(repositories)');
+  const hasQueueEnabledColumn = repositoryColumns.rows.some((row) => row.name === 'queue_enabled');
+  if (repositoryColumns.rows.length > 0 && !hasQueueEnabledColumn) {
+    await client.execute(
+      'ALTER TABLE repositories ADD COLUMN queue_enabled integer DEFAULT false NOT NULL'
+    );
+  }
+  const hasMaxConcurrentSessionsColumn = repositoryColumns.rows.some(
+    (row) => row.name === 'max_concurrent_sessions'
+  );
+  if (repositoryColumns.rows.length > 0 && !hasMaxConcurrentSessionsColumn) {
+    await client.execute(
+      'ALTER TABLE repositories ADD COLUMN max_concurrent_sessions integer DEFAULT 1 NOT NULL'
+    );
+  }
+
   await client.execute(`
     CREATE TABLE IF NOT EXISTS task_messages (
       id text PRIMARY KEY NOT NULL,

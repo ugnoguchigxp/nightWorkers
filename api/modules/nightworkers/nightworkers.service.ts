@@ -122,6 +122,8 @@ export async function createRepository(data: {
   localPath: string;
   branch?: string;
   allowed?: boolean;
+  queueEnabled?: boolean;
+  maxConcurrentSessions?: number;
   safetyPolicy?: any;
 }) {
   return repo.createRepository({ ...data, branch: data.branch || 'main' });
@@ -133,6 +135,28 @@ export async function getRepository(id: string) {
 
 export async function listRepositories() {
   return repo.listRepositories();
+}
+
+export async function updateRepository(
+  id: string,
+  data: {
+    queueEnabled?: boolean;
+    maxConcurrentSessions?: number;
+  }
+) {
+  const normalized = {
+    ...data,
+    maxConcurrentSessions:
+      data.maxConcurrentSessions === undefined
+        ? undefined
+        : Math.max(1, Math.floor(data.maxConcurrentSessions)),
+  };
+  const updated = await repo.updateRepository(id, normalized);
+  if (!updated) throw new NotFoundError('Repository not found');
+  if (updated.queueEnabled) {
+    void runSessionQueueForRepository(updated.id);
+  }
+  return updated;
 }
 
 export async function deleteRepository(id: string) {
@@ -340,6 +364,7 @@ export async function queueTask(id: string) {
   assertTaskDraftComplete(task);
   const queued = await repo.updateTask(id, { status: 'queued' });
   if (!queued) throw new NotFoundError('Task not found');
+  void runSessionQueueForRepository(queued.repositoryId);
   return queued;
 }
 
@@ -843,6 +868,9 @@ export async function startTaskRun(taskId: string) {
         summary: runtimeResult.summary || outcome.summary,
       });
       await repo.updateTaskStatus(taskId, outcome.status);
+      if (shouldContinueSessionQueue(outcome.status)) {
+        void runSessionQueueForRepository(task.repositoryId);
+      }
 
       await repo.createRunEvent({
         version: 1,
@@ -996,6 +1024,79 @@ export async function startTaskRun(taskId: string) {
   })();
 
   return compiledRun ?? run;
+}
+
+function getSessionQueueMaxConcurrency() {
+  const parsed = Number(process.env.SESSION_QUEUE_MAX_CONCURRENCY || 2);
+  if (!Number.isFinite(parsed)) return 2;
+  return Math.max(1, Math.floor(parsed));
+}
+
+function shouldContinueSessionQueue(status: string) {
+  return ['completed', 'cancelled', 'failed'].includes(status);
+}
+
+const pendingSessionQueueRepositoryIds = new Set<string>();
+let sessionQueueDrainPromise: Promise<void> | null = null;
+
+export async function runSessionQueueForRepository(repositoryId: string) {
+  const started: Awaited<ReturnType<typeof startTaskRun>>[] = [];
+  pendingSessionQueueRepositoryIds.add(repositoryId);
+  if (sessionQueueDrainPromise) {
+    await sessionQueueDrainPromise;
+    return started;
+  }
+
+  sessionQueueDrainPromise = drainPendingSessionQueues(started).finally(() => {
+    sessionQueueDrainPromise = null;
+  });
+  await sessionQueueDrainPromise;
+  return started;
+}
+
+async function drainPendingSessionQueues(started: Awaited<ReturnType<typeof startTaskRun>>[]) {
+  while (pendingSessionQueueRepositoryIds.size > 0) {
+    const repositoryIds = [...pendingSessionQueueRepositoryIds];
+    pendingSessionQueueRepositoryIds.clear();
+    for (const repositoryId of repositoryIds) {
+      started.push(...(await drainSessionQueueForRepository(repositoryId)));
+    }
+  }
+}
+
+async function drainSessionQueueForRepository(repositoryId: string) {
+  const repository = await repo.getRepository(repositoryId);
+  if (!repository?.queueEnabled) return [];
+
+  const started: Awaited<ReturnType<typeof startTaskRun>>[] = [];
+  while (true) {
+    const globalActive = await repo.countActiveTaskRuns();
+    const globalLimit = getSessionQueueMaxConcurrency();
+    if (globalActive >= globalLimit) break;
+
+    const projectActive = await repo.countActiveTaskRuns(repositoryId);
+    const projectLimit = Math.max(1, Math.floor(repository.maxConcurrentSessions || 1));
+    if (projectActive >= projectLimit) break;
+
+    const nextTask = await repo.claimNextQueuedTask(repositoryId);
+    if (!nextTask) break;
+
+    try {
+      const run = await startTaskRun(nextTask.id);
+      started.push(run);
+    } catch (err) {
+      await repo.updateTaskStatus(nextTask.id, 'failed');
+      await repo.createTaskMessage({
+        taskId: nextTask.id,
+        role: 'assistant',
+        content: `Session queue failed to start this task: ${err instanceof Error ? err.message : String(err)}`,
+        messageType: 'text',
+        payloadJson: { source: 'session_queue', status: 'failed_to_start' },
+      });
+      break;
+    }
+  }
+  return started;
 }
 
 export async function getActiveTaskRun(taskId: string) {
@@ -1367,6 +1468,11 @@ export async function reviewTaskRun(runId: string, request: ReviewRunRequest) {
   });
 
   await repo.updateTaskStatus(run.taskId, finalTaskStatus);
+  if (shouldContinueSessionQueue(finalTaskStatus)) {
+    const reviewedTask = run.repositoryId ? null : await repo.getTask(run.taskId);
+    const repositoryId = run.repositoryId || reviewedTask?.repositoryId;
+    if (repositoryId) void runSessionQueueForRepository(repositoryId);
+  }
 
   await repo.createRunEvent(
     {

@@ -4,6 +4,8 @@ export type Repository = {
   localPath: string;
   branch: string;
   allowed: boolean;
+  queueEnabled: boolean;
+  maxConcurrentSessions: number;
   safetyPolicy?: unknown | null;
   createdAt: unknown;
   updatedAt: unknown;
@@ -271,12 +273,18 @@ export type LlmSettings = {
   CODEX_ENABLED: boolean;
   CODEX_ACCESS_TOKEN: string;
   CODEX_MODEL: string;
+  SESSION_QUEUE_MAX_CONCURRENCY: number;
 };
 
 export type CreateProjectInput = {
   name: string;
   localPath: string;
   branch?: string;
+};
+
+export type UpdateProjectInput = {
+  queueEnabled?: boolean;
+  maxConcurrentSessions?: number;
 };
 
 export type CreateSessionInput = {

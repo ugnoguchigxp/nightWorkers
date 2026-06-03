@@ -6,7 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@repo/design-system';
-import { RefreshCw, Settings } from 'lucide-react';
+import { Pause, Play, RefreshCw, Settings } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { NightWorkersWorkspaceState } from '../hooks/useNightWorkersWorkspace';
 import { type LlmProvider, type LlmSettings, PROVIDER_MODEL_OPTIONS } from '../types';
@@ -30,6 +30,7 @@ const defaultSettings: LlmSettings = {
   CODEX_ENABLED: false,
   CODEX_ACCESS_TOKEN: '',
   CODEX_MODEL: 'gpt-5.5',
+  SESSION_QUEUE_MAX_CONCURRENCY: 2,
 };
 
 type ProviderDef = { id: LlmProvider; name: string };
@@ -307,6 +308,86 @@ export function SettingsScreen({
           </div>
           {smokeResult ? <p className="text-xs text-zinc-400">{smokeResult}</p> : null}
         </div>
+
+        <div className="space-y-4 rounded-2xl border border-zinc-800/60 bg-[#16161a] p-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-bold text-zinc-100">Session Queue</h2>
+              <p className="mt-1 text-xs text-zinc-500">
+                queued Session の自動起動数を制御します。
+              </p>
+            </div>
+            <div className="flex items-end gap-2">
+              <NumberField
+                id="session-queue-global"
+                label="全体同時Processing"
+                value={settings.SESSION_QUEUE_MAX_CONCURRENCY}
+                min={1}
+                onChange={(v) => onChange('SESSION_QUEUE_MAX_CONCURRENCY', v)}
+              />
+              <Button
+                type="button"
+                onClick={() => void handleSave()}
+                disabled={isSaving}
+                className="h-9 px-4 text-xs"
+              >
+                {isSaving ? <RefreshCw className="h-3 w-3 animate-spin" /> : null}
+                保存
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {workspace.projects.length === 0 ? (
+              <p className="text-xs text-zinc-500">登録済みプロジェクトはありません。</p>
+            ) : (
+              workspace.projects.map((project) => (
+                <div
+                  key={project.id}
+                  className="grid grid-cols-[1fr_auto_auto] items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-semibold text-zinc-200">
+                      {project.name}
+                    </div>
+                    <div className="truncate text-[10px] text-zinc-500">{project.localPath}</div>
+                  </div>
+                  <NumberField
+                    id={`project-max-${project.id}`}
+                    label="Project上限"
+                    value={project.maxConcurrentSessions}
+                    min={1}
+                    onChange={(value) =>
+                      void workspace.updateProject(project.id, {
+                        maxConcurrentSessions: value,
+                      })
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void workspace.updateProject(project.id, {
+                        queueEnabled: !project.queueEnabled,
+                      })
+                    }
+                    className={`flex h-9 items-center gap-2 rounded-lg border px-3 text-xs ${
+                      project.queueEnabled
+                        ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200'
+                        : 'border-zinc-700 bg-zinc-800 text-zinc-300'
+                    }`}
+                  >
+                    {project.queueEnabled ? (
+                      <Pause className="h-3.5 w-3.5" />
+                    ) : (
+                      <Play className="h-3.5 w-3.5" />
+                    )}
+                    {project.queueEnabled ? 'Pause' : 'Play'}
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -331,6 +412,32 @@ function Field({ id, label, value, onChange, type = 'text' }: FieldProps) {
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs text-zinc-100"
+      />
+    </div>
+  );
+}
+
+type NumberFieldProps = {
+  id: string;
+  label: string;
+  value: number;
+  min?: number;
+  onChange: (value: number) => void;
+};
+
+function NumberField({ id, label, value, min = 1, onChange }: NumberFieldProps) {
+  return (
+    <div className="w-32 space-y-1.5">
+      <label htmlFor={id} className="block text-[11px] font-semibold text-zinc-400">
+        {label}
+      </label>
+      <input
+        id={id}
+        type="number"
+        min={min}
+        value={value}
+        onChange={(e) => onChange(Math.max(min, Number(e.target.value) || min))}
         className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs text-zinc-100"
       />
     </div>

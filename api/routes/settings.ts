@@ -32,6 +32,7 @@ export const llmSettingsSchema = z.object({
   CODEX_ENABLED: z.boolean().default(false).openapi({ example: false }),
   CODEX_ACCESS_TOKEN: z.string().default('').openapi({ example: 'your-codex-token' }),
   CODEX_MODEL: z.string().default('').openapi({ example: 'gpt-5.3-codex' }),
+  SESSION_QUEUE_MAX_CONCURRENCY: z.number().int().positive().default(2).openapi({ example: 2 }),
 });
 
 const llmModelsSchema = z.object({
@@ -181,12 +182,16 @@ const getCurrentSettings = (): z.infer<typeof llmSettingsSchema> => {
         : getBoolEnv('CODEX_ENABLED', false),
     CODEX_ACCESS_TOKEN: persisted.CODEX_ACCESS_TOKEN ?? process.env.CODEX_ACCESS_TOKEN ?? '',
     CODEX_MODEL: persisted.CODEX_MODEL ?? process.env.CODEX_MODEL ?? '',
+    SESSION_QUEUE_MAX_CONCURRENCY:
+      typeof persisted.SESSION_QUEUE_MAX_CONCURRENCY === 'number'
+        ? persisted.SESSION_QUEUE_MAX_CONCURRENCY
+        : Number(process.env.SESSION_QUEUE_MAX_CONCURRENCY || 2),
   };
 };
 
 const applySettingsToProcessEnv = (settings: z.infer<typeof llmSettingsSchema>) => {
   for (const [key, val] of Object.entries(settings)) {
-    process.env[key] = typeof val === 'boolean' ? String(val) : val;
+    process.env[key] = String(val);
   }
 };
 
