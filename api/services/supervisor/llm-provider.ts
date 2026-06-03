@@ -3,6 +3,13 @@ import type { CodexOptions } from '@openai/codex-sdk';
 import { z } from 'zod';
 import { appendSupervisorTrace, logger } from '../../lib/logger';
 import { buildCodexTurnPrompt } from './prompt';
+import {
+  defaultSupervisorRoutingHypothesis,
+  supervisorModes,
+  supervisorOverlays,
+  supervisorPhases,
+  supervisorWorkKinds,
+} from './skills/types';
 import { isTemporarilyBlockedExternalToolName } from './TEMP_DISABLE_EXTERNAL_MCP_TOOLS';
 import { buildTestProviderDecision } from './test-provider';
 
@@ -22,9 +29,24 @@ const supervisorToolNames = [
   'git_diff',
 ] as const;
 
+const supervisorRoutingHypothesisSchema = z
+  .object({
+    primaryMode: z.enum(supervisorModes).default(defaultSupervisorRoutingHypothesis.primaryMode),
+    secondaryModes: z.array(z.enum(supervisorModes)).default([]),
+    phase: z.enum(supervisorPhases).default(defaultSupervisorRoutingHypothesis.phase),
+    workKinds: z.array(z.enum(supervisorWorkKinds)).default([]),
+    overlays: z.array(z.enum(supervisorOverlays)).default([]),
+    subtype: z.string().optional(),
+    requiredEvidence: z.array(z.string()).default([]),
+    nextSkillFiles: z.array(z.string()).default(defaultSupervisorRoutingHypothesis.nextSkillFiles),
+    confidence: z.number().min(0).max(1).default(defaultSupervisorRoutingHypothesis.confidence),
+  })
+  .optional();
+
 const supervisorDecisionBaseSchema = z.object({
   phase: z.enum(['observe', 'plan', 'act', 'verify', 'report', 'stop']),
   workflow: z.enum(['general', 'evidence_review', 'code_change', 'research']).default('general'),
+  routingHypothesis: supervisorRoutingHypothesisSchema,
   instruction: z.string().default(''),
   rationale: z.string().default(''),
   finalResponse: z.string().default(''),
@@ -284,6 +306,13 @@ function normalizeDecisionForSchema(input: unknown): unknown {
   if (typeof obj.instruction !== 'string') obj.instruction = '';
   if (typeof obj.rationale !== 'string') obj.rationale = '';
   if (typeof obj.workflow !== 'string') obj.workflow = 'general';
+  if (
+    !obj.routingHypothesis ||
+    typeof obj.routingHypothesis !== 'object' ||
+    Array.isArray(obj.routingHypothesis)
+  ) {
+    obj.routingHypothesis = buildDefaultRoutingHypothesisForWorkflow(obj.workflow);
+  }
   if (!Array.isArray(obj.expectedEvidence)) {
     obj.expectedEvidence = [];
   } else {
@@ -357,6 +386,50 @@ function normalizeDecisionForSchema(input: unknown): unknown {
   return obj;
 }
 
+function buildDefaultRoutingHypothesisForWorkflow(workflow: unknown) {
+  if (workflow === 'code_change') {
+    return {
+      primaryMode: 'code_edit',
+      secondaryModes: ['test_and_verification'],
+      phase: 'execute',
+      workKinds: ['code'],
+      overlays: ['evidence'],
+      requiredEvidence: ['repo inspection', 'verification result'],
+      nextSkillFiles: ['SKILL.md', 'references/modes/code_edit.md'],
+      confidence: 0.65,
+    };
+  }
+  if (workflow === 'evidence_review') {
+    return {
+      primaryMode: 'investigation',
+      secondaryModes: ['review'],
+      phase: 'investigate',
+      workKinds: [],
+      overlays: ['evidence'],
+      requiredEvidence: ['repo evidence'],
+      nextSkillFiles: [
+        'SKILL.md',
+        'references/modes/investigation.md',
+        'references/overlays/evidence.md',
+      ],
+      confidence: 0.65,
+    };
+  }
+  if (workflow === 'research') {
+    return {
+      primaryMode: 'research',
+      secondaryModes: [],
+      phase: 'investigate',
+      workKinds: ['research'],
+      overlays: ['external_research_required'],
+      requiredEvidence: ['source pages'],
+      nextSkillFiles: ['SKILL.md', 'references/modes/research.md'],
+      confidence: 0.65,
+    };
+  }
+  return defaultSupervisorRoutingHypothesis;
+}
+
 function hasRoundObservations(userPrompt: string): boolean {
   try {
     const parsed = JSON.parse(userPrompt) as { observations?: unknown };
@@ -388,6 +461,34 @@ function buildResponseJsonSchema(round?: 1 | 2 | 3) {
         workflow: {
           type: 'string',
           enum: ['general', 'evidence_review', 'code_change', 'research'],
+        },
+        routingHypothesis: {
+          type: 'object',
+          additionalProperties: false,
+          required: [
+            'primaryMode',
+            'secondaryModes',
+            'phase',
+            'workKinds',
+            'overlays',
+            'requiredEvidence',
+            'nextSkillFiles',
+            'confidence',
+          ],
+          properties: {
+            primaryMode: { type: 'string', enum: [...supervisorModes] },
+            secondaryModes: {
+              type: 'array',
+              items: { type: 'string', enum: [...supervisorModes] },
+            },
+            phase: { type: 'string', enum: [...supervisorPhases] },
+            workKinds: { type: 'array', items: { type: 'string', enum: [...supervisorWorkKinds] } },
+            overlays: { type: 'array', items: { type: 'string', enum: [...supervisorOverlays] } },
+            subtype: { type: 'string' },
+            requiredEvidence: { type: 'array', items: { type: 'string' } },
+            nextSkillFiles: { type: 'array', items: { type: 'string' } },
+            confidence: { type: 'number', minimum: 0, maximum: 1 },
+          },
         },
         instruction: { type: 'string' },
         rationale: { type: 'string' },

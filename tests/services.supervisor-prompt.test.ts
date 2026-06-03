@@ -23,6 +23,10 @@ function countOccurrences(value: string, needle: string): number {
   return value.split(needle).length - 1;
 }
 
+function extractToolCatalog(prompt: string): string {
+  return prompt.slice(prompt.indexOf('[Tool catalog]'));
+}
+
 describe('Supervisor prompt structure', () => {
   it('keeps worker tool names out of the workflow selection prompt', () => {
     const prompt = buildRound1SystemPrompt('/repo');
@@ -34,9 +38,10 @@ describe('Supervisor prompt structure', () => {
 
   it('lists each worker tool name only once in the execution prompt', () => {
     const prompt = buildRound2SystemPrompt('evidence_review');
+    const toolCatalog = extractToolCatalog(prompt);
 
     for (const toolName of workerToolNames) {
-      expect(countOccurrences(prompt, toolName)).toBe(1);
+      expect(countOccurrences(toolCatalog, toolName)).toBe(1);
     }
   });
 
@@ -56,5 +61,24 @@ describe('Supervisor prompt structure', () => {
     expect(prompt).toContain('read_file または search_files');
     expect(prompt).toContain('read-only や書き込み不可だと推測して stop してはいけない');
     expect(prompt).toContain('replace_content または apply_patch の toolCall を返して編集を試みる');
+  });
+
+  it('loads routing references without putting their full body in round 1', () => {
+    const round1 = buildRound1SystemPrompt('/repo');
+    const round2 = buildRound2SystemPrompt({
+      primaryMode: 'code_edit',
+      secondaryModes: ['test_and_verification'],
+      phase: 'execute',
+      workKinds: ['code'],
+      overlays: ['evidence'],
+      requiredEvidence: ['repo inspection'],
+      nextSkillFiles: [],
+      confidence: 0.8,
+    });
+
+    expect(round1).toContain('routing hypothesis');
+    expect(round1).not.toContain('[Skill Document: references/modes/code_edit.md]');
+    expect(round2).toContain('[Skill Document: references/modes/code_edit.md]');
+    expect(round2).toContain('[Re-evaluation Gate]');
   });
 });

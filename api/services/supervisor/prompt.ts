@@ -1,4 +1,20 @@
+import {
+  legacyWorkflowToRoutingHypothesis,
+  normalizeSupervisorRoutingHypothesis,
+  renderSupervisorSkillDocuments,
+  resolveSupervisorSkillDocuments,
+  summarizeSupervisorSkillDocuments,
+} from './skills/registry';
+import {
+  type SupervisorRoutingHypothesis,
+  supervisorModes,
+  supervisorOverlays,
+  supervisorPhases,
+  supervisorWorkKinds,
+} from './skills/types';
+
 export type SupervisorWorkflow = 'general' | 'evidence_review' | 'code_change' | 'research';
+export type { SupervisorRoutingHypothesis };
 
 const TOOL_CATALOG = [
   { name: 'list_dir', description: 'リポジトリ内のディレクトリを一覧する。' },
@@ -57,7 +73,8 @@ function buildDecisionContract(): string {
 JSON のみを返してください。markdown のコードブロックで囲まないでください。
 必須キー:
 - phase: observe | plan | act | verify | report | stop
-- workflow: general | evidence_review | code_change | research
+- workflow: general | evidence_review | code_change | research。legacy 互換フィールドです。routingHypothesis から最も近い値を入れてください。
+- routingHypothesis: object
 - instruction: string
 - rationale: string
 - finalResponse: string
@@ -68,7 +85,22 @@ JSON のみを返してください。markdown のコードブロックで囲ま
 
 terminalState は phase="stop" のときだけキーを出してください。phase が stop 以外のときは terminalState キー自体を省略し、null を返してはいけません。
 toolCall.name を返す場合は、同じ prompt 内の Tool catalog だけを参照してください。
-利用できないツール名を返してはいけません。例: mcp__*, functions.*, exec_command, shell namespace。`;
+利用できないツール名を返してはいけません。例: mcp__*, functions.*, exec_command, shell namespace。
+
+routingHypothesis は次の形にしてください:
+{
+  primaryMode: ${supervisorModes.join(' | ')},
+  secondaryModes: string[],
+  phase: ${supervisorPhases.join(' | ')},
+  workKinds: string[],
+  overlays: string[],
+  subtype?: string,
+  requiredEvidence: string[],
+  nextSkillFiles: string[],
+  confidence: number
+}
+
+phase / primaryMode / secondaryModes / workKinds / overlays は観測結果で変わり得ます。現在の routing が不適切なら、同じ decision 内で更新してください。`;
 }
 
 function buildBaseSystemContext(projectRoot?: string): string {
@@ -87,93 +119,61 @@ ${projectRoot ? `プロジェクトルート: ${projectRoot}` : ''}
 function buildWorkflowSelectionContext(projectRoot: string): string {
   return `${buildBaseSystemContext(projectRoot)}
 
-[Round 1: workflow 選択]
-必ず1つだけ workflow を選んでください。
-- general: リポジトリ証拠を必要としない直接回答や単純なタスク。
-- evidence_review: ドキュメントレビュー、コードレビュー、ログ調査、回帰調査、実装計画レビュー、原因調査、またはリポジトリ証拠を引用すべきタスク。
-- code_change: リポジトリのファイル変更を伴う実装や修正。
-- research: 最新の公開 Web 情報や外部ドキュメント確認が必要なタスク。
+[Round 1: routing hypothesis]
+単一分類を確定せず、routing hypothesis を返してください。
+- primaryMode は1つだけ選ぶ。
+- secondaryModes / workKinds / overlays は必要なら複数選ぶ。
+- phase は現在位置を表す: ${supervisorPhases.join(' | ')}
+- primaryMode / secondaryModes の候補: ${supervisorModes.join(' | ')}
+- workKinds の候補: ${supervisorWorkKinds.join(' | ')}
+- overlays の候補: ${supervisorOverlays.join(' | ')}
 
-Round 1 は基本的に計画を返してください。リポジトリ証拠や Web 証拠を本当に必要としない軽い会話だけ、phase="stop" を許可します。
+workflow は legacy 互換のため、routing に最も近い general | evidence_review | code_change | research のどれかを入れてください。
+Round 1 は基本的に phase="plan" または phase="observe" を返してください。リポジトリ証拠や Web 証拠を本当に必要としない軽い会話だけ、phase="stop" を許可します。
 Round 1 では toolCall を原則 null にしてください。実行手段の選択は Round 2 の Tool catalog に基づいて行います。
 
 ${buildDecisionContract()}`;
-}
-
-function buildEvidenceReviewContext(): string {
-  return `[Workflow SystemContext: evidence_review]
-この workflow は、リポジトリ証拠に基づくレビューや調査のためのものです。
-
-必須動作:
-- phase="stop" の前に、関連するリポジトリ証拠を取得する。
-- ユーザーがファイルパスを示している場合、そのファイルを最初に読む。
-- 正確なファイルが不明な場合、候補を探してから読む。
-- ログ確認が必要な場合、該当するログソースまたはコマンド出力を確認する。
-- Round 2 入力の observations が空の場合、phase="stop" または phase="report" を返してはいけない。Tool catalog から適切な読み取り・検索ツールを1つ選び、toolCall を必ず返す。
-- Round 2 入力の observations に証拠がある場合だけ、phase="stop" を返してよい。
-- finalResponse には、具体的な指摘と証拠参照を含める。例: ファイルパス、行範囲、event id、コマンド名、ログ識別子。
-- phase="stop" の finalResponse は UI に表示されるレビュー結果本文である。レビューの目的、指摘、根拠、残リスクをユーザーがそのまま読める形で書く。
-- 「レビューしてください」という指示文だけで答えない。finalResponse はレビュー結果そのものにする。`;
-}
-
-function buildCodeChangeContext(): string {
-  return `[Workflow SystemContext: code_change]
-この workflow は、実装や修正のためのものです。
-
-必須動作:
-- 編集前に既存コードを確認する。
-- observations が空の場合、phase="stop" または phase="report" を返してはいけない。まず read_file または search_files で対象コードを確認する。
-- 既存パターンに合う狭い変更を優先する。
-- 単純置換で済む場合だけ置換系の手段を使う。それ以外は patch 系の手段を使う。
-- 編集が必要な依頼では、read-only や書き込み不可だと推測して stop してはいけない。必ず replace_content または apply_patch の toolCall を返して編集を試みる。
-- replace_content または apply_patch が失敗した場合だけ、その tool result を根拠に書き込み不可・policy block・patch failure を報告してよい。
-- 停止前にリポジトリの既存コマンドで検証する。
-- finalResponse には変更ファイルと検証結果を要約する。`;
-}
-
-function buildResearchContext(): string {
-  return `[Workflow SystemContext: research]
-この workflow は、最新の外部情報が必要なタスクのためのものです。
-
-必須動作:
-- 候補ソースを探し、根拠にするソースは本文まで読む。
-- 技術、法律、金融、API 関連の話題では一次情報または公式情報を優先する。
-- finalResponse には使用した URL または取得したページタイトルを含める。`;
-}
-
-function buildGeneralContext(): string {
-  return `[Workflow SystemContext: general]
-この workflow は、直接回答や単純なタスクのためのものです。
-
-必須動作:
-- リポジトリ証拠や Web 証拠なしで答えられる場合、phase="stop" と finalResponse で完了してよい。
-- 証拠が必要だと分かった場合、general 以外の workflow を返し、適切なツールを要求する。`;
 }
 
 export function buildRound1SystemPrompt(projectRoot: string): string {
   return buildWorkflowSelectionContext(projectRoot);
 }
 
-export function buildRound2SystemPrompt(workflow: SupervisorWorkflow = 'general'): string {
-  const workflowContext =
-    workflow === 'evidence_review'
-      ? buildEvidenceReviewContext()
-      : workflow === 'code_change'
-        ? buildCodeChangeContext()
-        : workflow === 'research'
-          ? buildResearchContext()
-          : buildGeneralContext();
+export function buildRound2SystemPrompt(
+  routingOrWorkflow: SupervisorWorkflow | Partial<SupervisorRoutingHypothesis> = 'general',
+  options?: { skillsDirectory?: string }
+): string {
+  const routing =
+    typeof routingOrWorkflow === 'string'
+      ? legacyWorkflowToRoutingHypothesis(routingOrWorkflow)
+      : normalizeSupervisorRoutingHypothesis(routingOrWorkflow);
+  const skillDocuments = resolveSupervisorSkillDocuments(routing, options?.skillsDirectory);
+  const skillDocumentSummary = summarizeSupervisorSkillDocuments(skillDocuments);
 
   return `${buildBaseSystemContext()}
 
 [Round 2: 実行]
 Round 1 で選んだ workflow に従い、次の具体的な1手を決めてください。
-ユーザー入力は JSON で渡されます。latestUserMessage は元の依頼、round1Decision は workflow 選択結果、todoPlan は run 内の Todo と procedure/context の要約、observations はこれまでの worker ツール実行結果です。
+ユーザー入力は JSON で渡されます。latestUserMessage は元の依頼、round1Decision は routing hypothesis を含む Round 1 結果、todoPlan は run 内の Todo と procedure/context の要約、observations はこれまでの worker ツール実行結果です。
 todoPlan がある場合、現在の実行は Todo を順番に完了する前提で進め、未完了 Todo を finalResponse で完了扱いにしないでください。
-証拠系 workflow では、observations が空ならユーザー向け回答を作らず、まず toolCall で証拠を取得してください。
-証拠系 workflow で observations がある場合は、その証拠だけを根拠に finalResponse をレビュー結果として完成させてください。
+evidence overlay または調査・レビュー系 mode では、observations が空ならユーザー向け回答を作らず、まず toolCall で証拠を取得してください。
+証拠がある場合は、その証拠だけを根拠に finalResponse を完成させてください。
 
-${workflowContext}
+[Routing Hypothesis]
+${JSON.stringify(routing, null, 2)}
+
+[Loaded Skill Documents]
+${JSON.stringify(skillDocumentSummary, null, 2)}
+
+${renderSupervisorSkillDocuments(skillDocuments)}
+
+[Re-evaluation Gate]
+toolCall または phase="stop" を返す前に、次を確認してください。
+- Is the current routing still correct?
+- Has new evidence changed the task type?
+- Do we need to load another skill file?
+- Is this now verification, review, or final answer?
+routing が変わった場合は routingHypothesis を更新し、必要な nextSkillFiles を返してください。
 
 ${buildDecisionContract()}
 

@@ -12,8 +12,10 @@ import {
   buildRound1SystemPrompt,
   buildRound2SystemPrompt,
   buildSupervisorTurnInput,
+  type SupervisorRoutingHypothesis,
   type SupervisorWorkflow,
 } from './prompt';
+import { defaultSupervisorRoutingHypothesis } from './skills/types';
 
 export interface SupervisorLoopInput {
   runId: string;
@@ -169,6 +171,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
   const maxToolCalls = input.maxToolCalls ?? 80;
   const maxRepeatedToolPattern = input.maxRepeatedToolPattern ?? 3;
   let activeWorkflow: SupervisorWorkflow = 'general';
+  let activeRoutingHypothesis: SupervisorRoutingHypothesis = defaultSupervisorRoutingHypothesis;
   let workflowSelected = false;
   let workflowSelectionDecision: Awaited<ReturnType<typeof callSupervisorLLM>> | null = null;
   const budget = new RunBudgetController({
@@ -202,6 +205,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     maxRepeatedToolPattern,
     timeoutSeconds: input.timeoutSeconds,
     activeWorkflow,
+    activeRoutingHypothesis,
   });
 
   while (true) {
@@ -290,6 +294,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           iteration,
           phase: round1.phase,
           workflow: round1.workflow,
+          routingHypothesis: round1.routingHypothesis,
           hasToolCall: Boolean(round1.toolCall),
           toolName: round1.toolCall?.name ?? null,
         });
@@ -307,10 +312,11 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
 
         workflowSelected = true;
         workflowSelectionDecision = round1;
+        activeWorkflow = round1.workflow || activeWorkflow;
+        activeRoutingHypothesis = round1.routingHypothesis || activeRoutingHypothesis;
         if (round1.phase === 'stop') {
           decision = round1;
         } else {
-          activeWorkflow = round1.workflow || activeWorkflow;
           const round2Input = JSON.stringify({
             latestUserMessage: userInput,
             round1Decision: workflowSelectionDecision,
@@ -318,7 +324,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             observations: toolObservations.slice(-6),
           });
           const round2 = await callSupervisorLLM(
-            buildRound2SystemPrompt(activeWorkflow),
+            buildRound2SystemPrompt(activeRoutingHypothesis),
             round2Input,
             {
               round: 2,
@@ -341,6 +347,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             iteration,
             phase: round2.phase,
             workflow: round2.workflow,
+            routingHypothesis: round2.routingHypothesis,
             hasToolCall: Boolean(round2.toolCall),
             toolName: round2.toolCall?.name ?? null,
           });
@@ -357,13 +364,19 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           });
           decision = round2;
           activeWorkflow = round2.workflow || activeWorkflow;
+          activeRoutingHypothesis = round2.routingHypothesis || activeRoutingHypothesis;
         }
       } else {
         const round1Decision = workflowSelectionDecision
-          ? { ...workflowSelectionDecision, workflow: activeWorkflow }
+          ? {
+              ...workflowSelectionDecision,
+              workflow: activeWorkflow,
+              routingHypothesis: activeRoutingHypothesis,
+            }
           : {
               phase: 'plan',
               workflow: activeWorkflow,
+              routingHypothesis: activeRoutingHypothesis,
               instruction: 'Continue with the previously selected workflow.',
               rationale: 'Workflow selection is reused to avoid repeated classification calls.',
               finalResponse: '',
@@ -375,6 +388,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           runId,
           iteration,
           workflow: activeWorkflow,
+          routingHypothesis: activeRoutingHypothesis,
           observations: toolObservations.length,
         });
         const round2Input = JSON.stringify({
@@ -384,7 +398,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           observations: toolObservations.slice(-6),
         });
         const round2 = await callSupervisorLLM(
-          buildRound2SystemPrompt(activeWorkflow),
+          buildRound2SystemPrompt(activeRoutingHypothesis),
           round2Input,
           {
             round: 2,
@@ -407,6 +421,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           iteration,
           phase: round2.phase,
           workflow: round2.workflow,
+          routingHypothesis: round2.routingHypothesis,
           hasToolCall: Boolean(round2.toolCall),
           toolName: round2.toolCall?.name ?? null,
         });
@@ -423,6 +438,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         });
         decision = round2;
         activeWorkflow = round2.workflow || activeWorkflow;
+        activeRoutingHypothesis = round2.routingHypothesis || activeRoutingHypothesis;
       }
       const schemaFallbackStop = schemaFallbackBudget.stop;
       if (schemaFallbackStop) {
