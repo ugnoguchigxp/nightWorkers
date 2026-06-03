@@ -104,7 +104,7 @@ export const blueprintPreviewDesignOptions = {
   inputVariant: inputVariants,
 };
 
-export function createBlueprintPreviewDesignSettings(
+export function createBlueprintPreviewDesignSettingsFromPreset(
   designPreset: unknown
 ): BlueprintPreviewDesignSettings {
   if (!isRecord(designPreset)) return cloneDefaultSettings();
@@ -162,6 +162,8 @@ export function createBlueprintPreviewDesignSettings(
   };
 }
 
+export const createBlueprintPreviewDesignSettings = createBlueprintPreviewDesignSettingsFromPreset;
+
 export function createBlueprintDesignReference(input: {
   blueprintId: string;
   capturedAt?: string;
@@ -205,7 +207,7 @@ export function designReferenceSummary(settings: BlueprintPreviewDesignSettings)
 
 function normalizeTheme(value: unknown): BlueprintPreviewDesignSettings['theme'] {
   if (value === 'nightworkers-light') return 'light';
-  if (value === 'nightworkers-dark') return 'light';
+  if (value === 'nightworkers-dark') return 'dark';
   if (value === 'fire') return 'campfire';
   return pickOption(value, themes, defaultBlueprintPreviewDesignSettings.theme);
 }

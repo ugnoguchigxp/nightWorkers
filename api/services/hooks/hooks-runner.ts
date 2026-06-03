@@ -48,7 +48,10 @@ export async function runAgentHooks(options: RunAgentHooksOptions): Promise<Agen
         message =
           rawResult.stderr || rawResult.stdout || `Hook exited with code ${rawResult.exitCode}`;
         if (isFailClosed(hook, options.input)) {
-          decision = failClosedDecision(options.input.hook_event_name, message);
+          decision = failClosedDecision(
+            options.input.hook_event_name,
+            sanitizeHookMessage(message)
+          );
         }
       } else {
         message = rawResult.stderr || rawResult.stdout || 'Hook completed';
@@ -57,7 +60,7 @@ export async function runAgentHooks(options: RunAgentHooksOptions): Promise<Agen
       ok = false;
       message = err instanceof Error ? err.message : String(err);
       if (isFailClosed(hook, options.input)) {
-        decision = failClosedDecision(options.input.hook_event_name, message);
+        decision = failClosedDecision(options.input.hook_event_name, sanitizeHookMessage(message));
       }
     }
     const durationMs = Math.max(0, Math.round(performance.now() - started));

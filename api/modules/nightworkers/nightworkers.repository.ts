@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import {
   artifacts,
@@ -590,11 +590,15 @@ export async function createRunEvent(
   return updated ?? { ...created, payloadJson: patchedPayload };
 }
 
-export async function listTaskEventsForRun(taskRunId: string) {
+export async function listTaskEventsForRun(taskRunId: string, options?: { afterSeq?: number }) {
+  const predicates = [eq(taskEvents.taskRunId, taskRunId)];
+  if (typeof options?.afterSeq === 'number') {
+    predicates.push(gt(taskEvents.seq, options.afterSeq));
+  }
   return db
     .select()
     .from(taskEvents)
-    .where(eq(taskEvents.taskRunId, taskRunId))
+    .where(and(...predicates))
     .orderBy(taskEvents.seq, taskEvents.timestamp);
 }
 

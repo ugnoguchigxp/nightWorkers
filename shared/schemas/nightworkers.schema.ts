@@ -52,6 +52,7 @@ const runEventTypeSchema = z.enum([
   'workbench.artifact.created',
   'workbench.review.followup_requested',
   'workbench.learning.capture_requested',
+  'system.info',
   'system.warning',
   'system.error',
 ]);

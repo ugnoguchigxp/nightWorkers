@@ -45,6 +45,7 @@ export type ContextCompileSnapshot = {
   source: 'context-still' | 'fallback';
   degraded: boolean;
   degradedReason?: string;
+  blueprintPlanning?: unknown;
   request: {
     repositoryPath: string;
     taskTitle: string;

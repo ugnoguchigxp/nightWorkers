@@ -859,6 +859,87 @@ describe('NightWorkers workbench routes', () => {
       body.messages.some((message: any) => message.metadataJson?.intent === 'app_blueprint')
     ).toBe(true);
   });
+
+  it('prefers adopted Blueprint artifacts over newer generated Blueprint messages for planning', async () => {
+    const { task } = await createWorkbenchTask({ status: 'ready' });
+    const adoptedMessage = await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: 'Adopted Blueprint',
+      messageType: 'markdown_document',
+      payloadJson: {
+        intent: 'app_blueprint',
+        appBlueprint: { ...representativeAppBlueprint, id: 'adopted-blueprint' },
+      },
+    });
+    await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: 'Newer generated Blueprint',
+      messageType: 'markdown_document',
+      payloadJson: {
+        intent: 'app_blueprint',
+        appBlueprint: { ...representativeAppBlueprint, id: 'newer-generated-blueprint' },
+      },
+    });
+    await repo.upsertBlueprintArtifactAdoption(task.id, adoptedMessage.id, true);
+
+    const readiness = await service.resolveBlueprintPlanningReadiness(task.id);
+
+    expect(readiness).toMatchObject({
+      source: 'adopted',
+      diagnostic: 'adopted_blueprint',
+      messageId: adoptedMessage.id,
+      blueprint: { id: 'adopted-blueprint' },
+    });
+  });
+
+  it('uses the latest generated Blueprint only when no artifact is adopted', async () => {
+    const { task } = await createWorkbenchTask({ status: 'ready' });
+    await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: 'Older Blueprint',
+      messageType: 'markdown_document',
+      payloadJson: {
+        intent: 'app_blueprint',
+        appBlueprint: { ...representativeAppBlueprint, id: 'older-blueprint' },
+      },
+    });
+    const latestMessage = await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: 'Latest Blueprint',
+      messageType: 'markdown_document',
+      payloadJson: {
+        intent: 'app_blueprint',
+        appBlueprint: { ...representativeAppBlueprint, id: 'latest-blueprint' },
+      },
+    });
+
+    const readiness = await service.resolveBlueprintPlanningReadiness(task.id);
+
+    expect(readiness).toMatchObject({
+      source: 'latest_generated',
+      diagnostic: 'using_latest_generated_blueprint',
+      messageId: latestMessage.id,
+      blueprint: { id: 'latest-blueprint' },
+    });
+  });
+
+  it('emits a stable diagnostic when no Blueprint artifact is available for planning', async () => {
+    const { task } = await createWorkbenchTask({ status: 'ready' });
+
+    const readiness = await service.resolveBlueprintPlanningReadiness(task.id);
+
+    expect(readiness).toMatchObject({
+      source: 'none',
+      diagnostic: 'no_adopted_blueprint',
+      messageId: null,
+      blueprint: null,
+    });
+    expect(readiness.summary).toContain('No adopted Blueprint artifact');
+  });
 });
 
 async function createWorkbenchTask(

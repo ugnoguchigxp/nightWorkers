@@ -67,6 +67,15 @@ import {
 import * as repo from './nightworkers.repository';
 
 type PlannedTodoRow = Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>[number];
+type TaskMessageRow = Awaited<ReturnType<typeof repo.listTaskMessages>>[number];
+
+export type BlueprintPlanningReadiness = {
+  source: 'adopted' | 'latest_generated' | 'none';
+  diagnostic: 'adopted_blueprint' | 'using_latest_generated_blueprint' | 'no_adopted_blueprint';
+  messageId: string | null;
+  blueprint: unknown;
+  summary: string;
+};
 
 function buildTodoRuntimePrompt(input: { compiledPrompt: string; todo: PlannedTodoRow }) {
   return [
@@ -219,6 +228,30 @@ export async function listTaskMessages(taskId: string) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
   return repo.listTaskMessages(taskId);
+}
+
+export async function resolveBlueprintPlanningReadiness(
+  taskId: string
+): Promise<BlueprintPlanningReadiness> {
+  const messages = await repo.listTaskMessages(taskId);
+  const blueprintMessages = messages.filter(isAppBlueprintMessage);
+  for (const message of [...blueprintMessages].reverse()) {
+    const adoption = await repo.getBlueprintArtifactAdoption(taskId, message.id);
+    if (adoption?.adopted) {
+      return buildBlueprintPlanningReadiness('adopted', message);
+    }
+  }
+  const latestGenerated = blueprintMessages.at(-1);
+  if (latestGenerated) {
+    return buildBlueprintPlanningReadiness('latest_generated', latestGenerated);
+  }
+  return {
+    source: 'none',
+    diagnostic: 'no_adopted_blueprint',
+    messageId: null,
+    blueprint: null,
+    summary: 'No adopted Blueprint artifact is available for task planning.',
+  };
 }
 
 export async function updateTask(
@@ -751,6 +784,60 @@ function buildAcceptanceCriteriaFromDecision(
   );
 }
 
+function isAppBlueprintMessage(message: TaskMessageRow): boolean {
+  const metadata = message.metadataJson;
+  return Boolean(
+    metadata &&
+      typeof metadata === 'object' &&
+      !Array.isArray(metadata) &&
+      (metadata as { intent?: unknown; appBlueprint?: unknown }).intent === 'app_blueprint' &&
+      (metadata as { appBlueprint?: unknown }).appBlueprint
+  );
+}
+
+function buildBlueprintPlanningReadiness(
+  source: 'adopted' | 'latest_generated',
+  message: TaskMessageRow
+): BlueprintPlanningReadiness {
+  const metadata = message.metadataJson as { appBlueprint?: unknown };
+  const blueprint = metadata.appBlueprint;
+  return {
+    source,
+    diagnostic: source === 'adopted' ? 'adopted_blueprint' : 'using_latest_generated_blueprint',
+    messageId: message.id,
+    blueprint,
+    summary: summarizePlanningBlueprint(source, blueprint),
+  };
+}
+
+function summarizePlanningBlueprint(
+  source: 'adopted' | 'latest_generated',
+  blueprint: unknown
+): string {
+  const prefix =
+    source === 'adopted'
+      ? 'Adopted Blueprint artifact is available for task planning.'
+      : 'No adopted Blueprint artifact is available; using the latest generated Blueprint.';
+  if (!blueprint || typeof blueprint !== 'object' || Array.isArray(blueprint)) return prefix;
+  const value = blueprint as {
+    id?: unknown;
+    name?: unknown;
+    screens?: unknown;
+    implementationTasks?: unknown;
+  };
+  const screens = Array.isArray(value.screens) ? value.screens.length : 0;
+  const implementationTasks = Array.isArray(value.implementationTasks)
+    ? value.implementationTasks.length
+    : 0;
+  return [
+    prefix,
+    `Blueprint id: ${String(value.id || 'unknown')}`,
+    `Blueprint name: ${String(value.name || 'Untitled Blueprint')}`,
+    `Screens: ${screens}`,
+    `Implementation tasks: ${implementationTasks}`,
+  ].join('\n');
+}
+
 function isBlueprintRouting(routing: SupervisorRoutingHypothesis | undefined): boolean {
   if (!routing) return false;
   return (
@@ -870,13 +957,24 @@ export async function startTaskRun(taskId: string) {
   if (!compiledPromptText.trim()) {
     throw new AppError(400, 'EMPTY_PROMPT', 'No user message found to start a run');
   }
+  const blueprintReadiness = await resolveBlueprintPlanningReadiness(taskId);
+  const planningPromptText =
+    blueprintReadiness.source === 'none'
+      ? compiledPromptText
+      : [
+          compiledPromptText,
+          '',
+          'Blueprint Planning Readiness:',
+          blueprintReadiness.summary,
+          'Planning should prefer this Blueprint artifact over newer generated drafts only when source=adopted.',
+        ].join('\n');
   const run = await repo.createTaskRun({
     taskId,
     repositoryId: task.repositoryId,
     status: 'context_compiling',
     workerKind: 'native-local',
     timeoutSeconds: task.timeoutSeconds,
-    contextSnapshot: { compiledPrompt: compiledPromptText },
+    contextSnapshot: { compiledPrompt: compiledPromptText, blueprintPlanning: blueprintReadiness },
     startedAt: new Date(),
   });
 
@@ -889,13 +987,30 @@ export async function startTaskRun(taskId: string) {
     severity: 'info',
     actor: 'system',
     message: 'Task run created. Context compile is starting.',
-    data: { contextSource },
+    data: { contextSource, blueprintPlanning: blueprintReadiness },
+  });
+
+  await repo.createRunEvent({
+    version: 1,
+    runId: run.id,
+    taskId,
+    timestamp: new Date().toISOString(),
+    type: 'system.info',
+    severity: 'info',
+    actor: 'system',
+    message: blueprintReadiness.summary,
+    data: {
+      findingSource: 'blueprint-task-planning',
+      diagnostic: blueprintReadiness.diagnostic,
+      source: blueprintReadiness.source,
+      messageId: blueprintReadiness.messageId,
+    },
   });
 
   const intakePlan = await planTaskIntake({
     taskTitle: task.title,
     taskDescription: task.description || task.objective || null,
-    latestUserMessage: lastUserMessage?.content || compiledPromptText,
+    latestUserMessage: planningPromptText,
     maxTodos: 8,
   });
   for (const todo of intakePlan.todos) {
@@ -934,7 +1049,7 @@ export async function startTaskRun(taskId: string) {
   const compileResult = await compileContext({
     repositoryPath: repoInfo.localPath,
     taskTitle: task.title,
-    taskDescription: compiledPromptText,
+    taskDescription: planningPromptText,
     taskId,
     runId: run.id,
   });
@@ -962,6 +1077,7 @@ export async function startTaskRun(taskId: string) {
     source: contextSource,
     degraded: compileResult.degraded,
     degradedReason: compileResult.degradedReason,
+    blueprintPlanning: blueprintReadiness,
     request: {
       repositoryPath: repoInfo.localPath,
       taskTitle: task.title,
@@ -1661,6 +1777,24 @@ export async function getTaskRun(runId: string) {
     .map((event) => (event.payloadJson as { reviewResult?: ReviewResult } | null)?.reviewResult)
     .filter((reviewResult): reviewResult is ReviewResult => Boolean(reviewResult));
   return { ...run, todos, events, reviews };
+}
+
+export async function listTaskRunEvents(runId: string, options?: { afterSeq?: number }) {
+  const run = await repo.getTaskRun(runId);
+  if (!run) throw new NotFoundError('Run not found');
+  return repo.listTaskEventsForRun(runId, { afterSeq: options?.afterSeq });
+}
+
+export async function listTaskRunEventsForReplay(input: {
+  taskId: string;
+  runId: string;
+  afterSeq?: number;
+}) {
+  const run = await repo.getTaskRun(input.runId);
+  if (!run || run.taskId !== input.taskId) {
+    throw new NotFoundError('Run not found for task');
+  }
+  return repo.listTaskEventsForRun(input.runId, { afterSeq: input.afterSeq });
 }
 
 function extractRunEvents(

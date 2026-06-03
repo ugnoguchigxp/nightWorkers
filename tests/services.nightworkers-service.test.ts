@@ -4,6 +4,9 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import {
+  getTaskRun as getTaskRunDetail,
+  listTaskRunEvents,
+  listTaskRunEventsForReplay,
   runSessionQueueForRepository,
   startTaskRun,
 } from '../api/modules/nightworkers/nightworkers.service';
@@ -20,6 +23,7 @@ vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   getRepository: vi.fn(),
   listTaskMessages: vi.fn(),
   createTaskRun: vi.fn(),
+  getTaskRun: vi.fn(),
   createTaskRunTodo: vi.fn(),
   listTaskRunTodosForRun: vi.fn(),
   updateTaskRunTodo: vi.fn(),
@@ -50,6 +54,74 @@ describe('NightWorkers service', () => {
 
   afterEach(async () => {
     await rm(repoRoot, { recursive: true, force: true });
+  });
+
+  it('lists replay events for a run after the requested cursor', async () => {
+    vi.mocked(repo.getTaskRun).mockResolvedValue({
+      id: 'run-replay',
+      taskId: 'task-replay',
+    } as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([
+      { id: 'event-3', seq: 3, taskRunId: 'run-replay', message: 'after cursor' },
+    ] as any);
+
+    const events = await listTaskRunEventsForReplay({
+      taskId: 'task-replay',
+      runId: 'run-replay',
+      afterSeq: 2,
+    });
+
+    expect(events).toHaveLength(1);
+    expect(repo.listTaskEventsForRun).toHaveBeenCalledWith('run-replay', { afterSeq: 2 });
+  });
+
+  it('applies the event cursor when listing run events', async () => {
+    vi.mocked(repo.getTaskRun).mockResolvedValue({
+      id: 'run-detail',
+      taskId: 'task-detail',
+      status: 'running',
+    } as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([
+      { id: 'event-8', seq: 8, taskRunId: 'run-detail', message: 'new event' },
+    ] as any);
+
+    const events = await listTaskRunEvents('run-detail', { afterSeq: 7 });
+
+    expect(events).toHaveLength(1);
+    expect(repo.listTaskEventsForRun).toHaveBeenCalledWith('run-detail', { afterSeq: 7 });
+  });
+
+  it('loads full run details without applying an event cursor', async () => {
+    vi.mocked(repo.getTaskRun).mockResolvedValue({
+      id: 'run-detail',
+      taskId: 'task-detail',
+      status: 'running',
+    } as any);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([
+      { id: 'event-1', seq: 1, taskRunId: 'run-detail', message: 'existing event' },
+    ] as any);
+
+    const detail = await getTaskRunDetail('run-detail');
+
+    expect(detail?.events).toHaveLength(1);
+    expect(repo.listTaskEventsForRun).toHaveBeenCalledWith('run-detail');
+  });
+
+  it('rejects replay events when the run does not belong to the subscribed task', async () => {
+    vi.mocked(repo.getTaskRun).mockResolvedValue({
+      id: 'run-replay',
+      taskId: 'other-task',
+    } as any);
+
+    await expect(
+      listTaskRunEventsForReplay({
+        taskId: 'task-replay',
+        runId: 'run-replay',
+        afterSeq: 2,
+      })
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(repo.listTaskEventsForRun).not.toHaveBeenCalled();
   });
 
   it('preserves policy stopped runtime results as policy_violation outcomes', async () => {

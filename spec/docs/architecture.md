@@ -16,6 +16,12 @@ NightWorkers manages Project Folder sessions through a chat-first task lifecycle
 5. Final report and archived/completed state
 6. Optional Session queue drain for enabled Project Folders when capacity is available
 
+Run observation is ledger-first. Task events are persisted in SQLite and then
+projected to WebSocket clients. Workbench reattach uses `runId` plus an optional
+event sequence cursor so page navigation or WebSocket reconnect can replay
+missed events from the database instead of relying only on in-memory broker
+history.
+
 Blueprint review lives inside the same Workbench lifecycle. A generated
 App Blueprint is stored as a `markdown_document` task message with structured
 `metadataJson.appBlueprint`. The Artifact Pane renders that artifact through
@@ -32,6 +38,7 @@ Token artifact should be adopted for later planning.
 - `/api/tasks/:id/blueprint-db-design-adoption`: adopted/not-adopted state for a DB Design revision message
 - `/api/tasks/:id/blueprint-design-token-adoption`: adopted/not-adopted state for Design Token settings tied to a message
 - `/api/runs/:id`: run detail and event timeline
+- `/api/runs/:id/events`: run events after an optional `afterSeq` cursor
 - `/api/workbench/*`: chat-first workbench read/write model
 - `/api/settings/llm/*`: provider/model settings, runtime settings, and smoke checks
 - `/api/settings/mcp/*`: non-authenticated MCP Server settings, connection tests, and tool discovery
@@ -54,6 +61,8 @@ Token artifact should be adopted for later planning.
 
 ## Design Rule
 - Keep provider and runtime boundaries explicit.
+- Keep run execution transport-independent: Hono, CLI, worker, and future terminal surfaces should share the same run orchestration and event ledger contracts.
+- Keep run detail and event replay separate: full run detail should remain complete, while cursor-based attach reads through the dedicated run-events surface.
 - Keep optional integrations optional (e.g., contextStill).
 - Keep MCP Server execution inside the native worker-tool bridge unless a later Codex SDK integration preserves equivalent policy and run-event evidence.
 - Keep Agent Hooks inside the native runtime and supervisor tool boundary; hook commands use the hook runner, while worker commands still use worker-tool policy.
@@ -62,3 +71,5 @@ Token artifact should be adopted for later planning.
   separate reasoning boundaries. A UI action should map to a distinct backend
   intent and persistence path when it changes the model's scope.
 - Prefer additive, test-backed schema changes.
+
+Related plan: [Runtime Worker and CLI Implementation Plan](./runtime-worker-cli-implementation-plan.md).

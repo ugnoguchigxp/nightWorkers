@@ -155,7 +155,7 @@ export const mcpServerInputSchema = z
       .max(64)
       .regex(/^[a-z][a-z0-9_]*$/),
   })
-  .strict()
+  .passthrough()
   .superRefine((input, ctx) => {
     rejectUnsupportedAuthFields(input as Record<string, unknown>, ctx);
 
@@ -194,7 +194,7 @@ export const mcpServerUpdateInputSchema = z
       .regex(/^[a-z][a-z0-9_]*$/)
       .optional(),
   })
-  .strict()
+  .passthrough()
   .superRefine((input, ctx) => {
     rejectUnsupportedAuthFields(input as Record<string, unknown>, ctx);
   });

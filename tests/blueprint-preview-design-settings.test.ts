@@ -1,14 +1,39 @@
 import { describe, expect, it } from 'vitest';
+import { defaultDesignPreset } from '../api/services/design-governance';
 import {
   blueprintPreviewDesignOptions,
   createBlueprintDesignReference,
   createBlueprintPreviewDesignSettings,
+  createBlueprintPreviewDesignSettingsFromPreset,
   designReferenceSummary,
 } from '../src/modules/nightworkers/components/blueprint-preview/designSettings';
 
 describe('Blueprint Preview design settings', () => {
-  it('defaults generated dark NightWorkers presets to a light preview', () => {
-    const settings = createBlueprintPreviewDesignSettings({
+  it('maps governed backend preset themes to preview themes', () => {
+    expect(
+      createBlueprintPreviewDesignSettingsFromPreset({ theme: 'nightworkers-light' }).theme
+    ).toBe('light');
+    expect(
+      createBlueprintPreviewDesignSettingsFromPreset({ theme: 'nightworkers-dark' }).theme
+    ).toBe('dark');
+  });
+
+  it('creates preview settings from the default backend design preset', () => {
+    const settings = createBlueprintPreviewDesignSettingsFromPreset(defaultDesignPreset);
+
+    expect(settings).toMatchObject({
+      theme: 'dark',
+      density: 'compact',
+      shape: 'default',
+      shadow: 'subtle',
+      font: 'geist',
+      contrast: 'standard',
+      motion: 'standard',
+    });
+  });
+
+  it('normalizes generated NightWorkers preset fields into preview settings', () => {
+    const settings = createBlueprintPreviewDesignSettingsFromPreset({
       theme: 'nightworkers-dark',
       density: 'compact',
       radius: 'rounded',
@@ -20,7 +45,7 @@ describe('Blueprint Preview design settings', () => {
     });
 
     expect(settings).toMatchObject({
-      theme: 'light',
+      theme: 'dark',
       density: 'compact',
       shape: 'rounded',
       shadow: 'medium',

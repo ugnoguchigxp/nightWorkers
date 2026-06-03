@@ -31,6 +31,8 @@ NightWorkers is a local-first autonomous development control plane. It coordinat
 - Draft / queue / run lifecycle with drag-reorderable queue sessions
 - Project-level Session queue Play/Pause controls with global and per-project processing limits
 - Chat timeline inspection with run events, todo state, context output, diffs, and final reports
+- DB-backed run event replay for Workbench WebSocket reattach through `runId` / `afterSeq` cursors
+- Cursor-based run event API at `/api/runs/:id/events?afterSeq=...`
 - Artifact pane with project tree and source file preview
 - App Blueprint artifacts rendered as reviewable Blueprint Preview surfaces
 - Design settings in Blueprint Preview for governed theme, density, shape, shadow, font, contrast, motion, and component variants
@@ -39,6 +41,8 @@ NightWorkers is a local-first autonomous development control plane. It coordinat
 - LLM provider settings UI and smoke-test API
 - MCP Server settings UI for non-auth stdio / Streamable HTTP servers, with paste-import, immediate connection tests, ON/OFF controls, and legacy SSE compatibility
 - Agent Hooks settings UI for `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, and session lifecycle hooks
+- MCP auth headers/API keys/secret-like env values are rejected; MCP tool calls stay in the runtime evidence path through the worker-tool bridge
+- Agent Hook commands run through the hook runner, not recursive worker `run_command`, and failure summaries are redacted
 - Health/readiness endpoints and API docs UI
 
 Known non-goals at this stage:
@@ -113,16 +117,25 @@ Detailed runtime configuration:
 | `pnpm cleanup:test-data:dry-run` | Preview cleanup of TEST-prefixed local data |
 | `pnpm cleanup:test-data` | Delete TEST-prefixed local data |
 | `pnpm design-system:storybook` | Start the design system Storybook |
-| `pnpm verify` | Typecheck + lint |
+| `pnpm verify` | Run the default fast confidence gate: TypeScript + Biome |
+| `pnpm verify:fast` | Alias for `pnpm verify` |
+| `pnpm verify:full` | Run the explicit full gate: `verify` + Vitest |
 
 ## Testing
+- Default fast gate: `pnpm verify` runs TypeScript and Biome. It should finish without TypeScript errors or Biome diagnostics.
+- Fast alias: `pnpm verify:fast` is kept as an alias for `pnpm verify`.
+- Full gate: `pnpm verify:full` runs the default fast gate plus Vitest. Use it when a change touches runtime behavior, API contracts, schemas, or user-visible flows.
+- Smoke E2E: `pnpm test:e2e:smoke` remains separate until local app/server prerequisites are explicitly available.
+- Husky hooks: `pre-commit` and `pre-push` both run `pnpm verify` only. Vitest is intentionally opt-in through `pnpm verify:full`, so everyday Git operations stay fast.
 - Unit/integration: Vitest
 - End-to-end: Playwright (`@smoke`, `@regression` tags)
 - Agent outcome E2E: `pnpm test:e2e:agent-outcome` uses the deterministic `test` provider, scratch git workspaces, real API/DB/run event paths, and requires no provider credentials. Set `KEEP_E2E_WORKSPACE=1` to keep the scratch workspace after a failure.
 - Live agent E2E: `pnpm test:e2e:agent-live` is optional and skips unless provider credentials are configured.
+- If validation fails, first identify the phase that failed: TypeScript (`pnpm typecheck`), Biome (`pnpm lint`), Vitest (`pnpm test run`), or Playwright (`pnpm test:e2e:smoke`).
 - Recommended pre-PR validation:
 ```bash
 pnpm verify
+pnpm verify:full
 pnpm test:e2e:smoke
 ```
 
@@ -138,9 +151,11 @@ This repository uses the following documentation layout.
   - [`CHANGELOG.md`](./CHANGELOG.md)
 - Engineering specs and internal references:
   - `spec/docs/` (primary specification/reference docs)
-  - [`NightWorkers Concept`](./spec/docs/nightworkers-concept.md)
   - [`Architecture and Module Boundaries`](./spec/docs/architecture.md)
   - [`Runtime Configuration Reference`](./spec/docs/configuration.md)
+  - [`Project Intelligence Overview 実装計画`](./spec/docs/project-intelligence-layer-concept.md)
+  - [`品質価値向上 実装計画`](./spec/docs/quality-value-uplift-implementation-plan.md)
+  - [`Runtime Worker and CLI Implementation Plan`](./spec/docs/runtime-worker-cli-implementation-plan.md)
 - `spec/public/` (public-facing specs managed outside GitHub-rendered root docs)
 
 Note: `spec/public/` is reserved for non-GitHub-public spec artifacts. GitHub-rendered documents are intentionally kept at the repository root.

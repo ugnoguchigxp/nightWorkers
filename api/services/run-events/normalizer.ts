@@ -48,6 +48,7 @@ const LEGACY_MAPPING: Record<RunEventType, LegacyMapping> = {
   'memory.register_finished': { eventType: 'memory.register_finished', type: 'info' },
   'memory.context_injected': { eventType: 'memory.context_injected', type: 'info' },
   'memory.feedback_evaluated': { eventType: 'memory.feedback_evaluated', type: 'checkpoint' },
+  'system.info': { eventType: 'info', type: 'info' },
   'system.warning': { eventType: 'warning', type: 'warning' },
   'system.error': { eventType: 'error', type: 'error' },
 };

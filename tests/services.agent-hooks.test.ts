@@ -153,6 +153,68 @@ describe('Agent Hooks runner', () => {
     expect(result.reason).toMatch(/code 9/i);
   });
 
+  it('redacts secret-like command hook failure output from summaries and events', async () => {
+    const events: any[] = [];
+    createAgentHook({
+      name: 'Secret crashing pre hook',
+      enabled: true,
+      event: 'PreToolUse',
+      matcher: 'run_command',
+      handler: {
+        type: 'command',
+        command: process.execPath,
+        args: ['-e', 'console.error("token=should-not-leak"); process.exit(9)'],
+      },
+    });
+
+    const result = await runAgentHooks({
+      input: baseToolInput,
+      repoRoot: process.cwd(),
+      onEvent: async (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(result.reason).not.toContain('should-not-leak');
+    expect(result.runs[0]?.message).not.toContain('should-not-leak');
+    expect(JSON.stringify(events)).not.toContain('should-not-leak');
+    expect(result.reason).toContain('[redacted]');
+  });
+
+  it('keeps HTTP hook failure summaries actionable without response secret leakage', async () => {
+    const server = http.createServer((_req, res) => {
+      res.statusCode = 500;
+      res.end('api_key=should-not-leak');
+    });
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('missing test server port');
+
+    createAgentHook({
+      name: 'Failing HTTP hook',
+      enabled: true,
+      event: 'PostToolUse',
+      matcher: 'run_command',
+      handler: {
+        type: 'http',
+        url: `http://localhost:${address.port}/hook`,
+      },
+    });
+
+    const result = await runAgentHooks({
+      input: {
+        ...baseToolInput,
+        hook_event_name: 'PostToolUse',
+        tool_result: { ok: true },
+      },
+      repoRoot: process.cwd(),
+    });
+    server.close();
+
+    expect(result.runs[0]).toMatchObject({ ok: false, message: 'HTTP 500' });
+    expect(JSON.stringify(result)).not.toContain('should-not-leak');
+  });
+
   it('posts JSON to HTTP hooks', async () => {
     const server = http.createServer((req, res) => {
       let body = '';

@@ -151,7 +151,7 @@ class McpClientManager {
       const status = {
         ok: false,
         checkedAt: new Date().toISOString(),
-        message: err instanceof Error ? err.message : String(err),
+        message: sanitizeMcpStatusMessage(err instanceof Error ? err.message : String(err)),
         toolCount: 0,
       };
       updateMcpServerStatus(server.id, status);
@@ -193,6 +193,13 @@ class McpClientManager {
   async disconnectAll() {
     await Promise.all([...this.clients.keys()].map((serverId) => this.disconnect(serverId)));
   }
+}
+
+function sanitizeMcpStatusMessage(message: string): string {
+  return message.replace(
+    /(?:api[_-]?key|token|password|secret|authorization|bearer)\s*[:=]\s*['"]?[^\s'"]+/gi,
+    '[redacted]'
+  );
 }
 
 export const mcpClientManager = new McpClientManager();

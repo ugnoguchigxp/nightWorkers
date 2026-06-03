@@ -42,7 +42,12 @@ export const nodeWebSocket = createNodeWebSocket({ app });
 const { upgradeWebSocket } = nodeWebSocket;
 
 const wsClientMessageSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('subscribe_task'), taskId: z.string().uuid() }),
+  z.object({
+    type: z.literal('subscribe_task'),
+    taskId: z.string().uuid(),
+    runId: z.string().uuid().optional(),
+    afterSeq: z.number().int().min(0).optional(),
+  }),
   z.object({ type: z.literal('unsubscribe_task'), taskId: z.string().uuid() }),
   z.object({
     type: z.literal('chat_submit'),
@@ -188,14 +193,50 @@ app.get(
             });
             if (parsed.type === 'subscribe_task') {
               if (!ws.raw) return;
+              const replayEvents = parsed.runId
+                ? await nightworkersService.listTaskRunEventsForReplay({
+                    taskId: parsed.taskId,
+                    runId: parsed.runId,
+                    afterSeq: parsed.afterSeq,
+                  })
+                : [];
               nightWorkersRealtimeBroker.subscribe(parsed.taskId, ws.raw);
               ws.send(
                 JSON.stringify({
                   type: 'subscribed',
                   taskId: parsed.taskId,
+                  runId: parsed.runId,
+                  afterSeq: parsed.afterSeq,
                   timestamp: new Date().toISOString(),
                 })
               );
+              if (parsed.runId) {
+                for (const replayEvent of replayEvents) {
+                  ws.send(
+                    JSON.stringify({
+                      type: 'task_event_created',
+                      taskId: parsed.taskId,
+                      runId: parsed.runId,
+                      seq: replayEvent.seq,
+                      event: replayEvent,
+                      timestamp: new Date().toISOString(),
+                      replayed: true,
+                    })
+                  );
+                }
+                logEvent({
+                  channel: 'ws',
+                  level: 'debug',
+                  message: 'replayed persisted run events',
+                  meta: {
+                    requestId,
+                    taskId: parsed.taskId,
+                    runId: parsed.runId,
+                    afterSeq: parsed.afterSeq,
+                    replayed: replayEvents.length,
+                  },
+                });
+              }
               nightWorkersRealtimeBroker.replayRecent(parsed.taskId, ws.raw);
             } else if (parsed.type === 'unsubscribe_task') {
               if (!ws.raw) return;

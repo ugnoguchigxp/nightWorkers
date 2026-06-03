@@ -32,6 +32,7 @@ Enable as needed:
 - `NIGHTWORKERS_MCP_SETTINGS_PATH` can override that file path for tests or local experiments.
 - OAuth, bearer-token, API-key header, cookie auth, and secret-like env values are intentionally rejected in the first implementation slice.
 - Enabled MCP tools execute through the internal `mcp_call_tool` bridge so policy checks, run events, and review evidence remain in the NightWorkers runtime path.
+- MCP tool calls stay inside the worker-tool bridge. They are recorded as runtime evidence rather than bypassing the NightWorkers run ledger.
 
 ## Agent Hooks
 - Agent Hooks can be configured from the Settings screen.
@@ -42,6 +43,14 @@ Enable as needed:
 - Secret-like env values and HTTP headers are intentionally rejected in this slice.
 - Hook commands use a dedicated hook runner, not the worker `run_command` tool, so hook execution does not recursively trigger tool hooks.
 - Fixed tool policy still runs before configurable hooks. Post-tool hooks run only after fixed post-policy accepts the tool result.
+
+### Failure Recovery Demo Inputs
+Use these inputs to demonstrate rejected or recoverable extension paths without adding new capabilities.
+
+- Disabled MCP server: save a valid server with `enabled=false`; it remains stored but does not participate in tool discovery or connection tests.
+- Rejected auth config: paste an MCP config with `headers.Authorization`, `apiKey`, `token`, or secret-like `env` keys and confirm it is rejected with a user-readable auth/secret message.
+- Hook command failure: create a command hook that exits non-zero and confirm the hook runner stores a redacted failure summary in `lastRun`.
+- Hook HTTP failure: point an HTTP hook at an endpoint that returns a non-2xx response and confirm the failure summary is actionable and does not include secret-like response text.
 
 ## Blueprint Preview
 - Blueprint Preview design settings are session-scoped and stored in SQLite in
@@ -63,6 +72,17 @@ Enable as needed:
 - `SESSION_QUEUE_MAX_CONCURRENCY`: global maximum number of active Session queue runs across all Project Folders. Runtime settings can override the environment default.
 - Project Folder queue controls are stored per project: `queueEnabled` controls Play/Pause, and `maxConcurrentSessions` controls how many Sessions that project may process at once.
 - Queue draining only starts Sessions that are already in Queue. Suggested follow-up tasks remain drafts until a user explicitly queues them.
+
+## Run Event Reattach
+- Workbench WebSocket `subscribe_task` accepts optional `runId` and `afterSeq`
+  fields. When present, the API verifies the run belongs to the task and
+  replays persisted events after the cursor before normal live updates.
+- `GET /api/runs/:id/events?afterSeq=<seq>` exposes the same cursor model for
+  HTTP clients and future CLI/TUI attach flows.
+- `GET /api/runs/:id` remains a full run-detail endpoint and should not be used
+  as a partial event cursor API.
+- In-memory WebSocket replay is a fast path only; persisted `task_events`
+  remain the durable recovery source.
 
 ## Local Startup Baseline
 ```bash

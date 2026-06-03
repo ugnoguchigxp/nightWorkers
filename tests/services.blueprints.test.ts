@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { blueprintCatalog } from '../api/services/blueprint-catalog';
 import { validateAppBlueprint } from '../api/services/blueprints/validation';
 import { representativeAppBlueprint } from './fixtures/app-blueprint';
+import { canonicalBadAppBlueprint } from './fixtures/bad-app-blueprint';
 
 describe('Blueprint validation service', () => {
   it('accepts a representative valid blueprint', () => {
@@ -85,6 +86,77 @@ describe('Blueprint validation service', () => {
           code: 'invalid_component_source',
         }),
       ])
+    );
+  });
+
+  it('reports unknown component ids as stable schema evidence', () => {
+    const result = validateAppBlueprint({
+      ...representativeAppBlueprint,
+      screens: [
+        {
+          ...representativeAppBlueprint.screens[0],
+          componentName: 'MissingPageComponent',
+        },
+      ],
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'screens.0.componentName',
+          code: 'schema_invalid',
+        }),
+      ])
+    );
+  });
+
+  it('produces canonical bad blueprint evidence for recovery demos', () => {
+    const result = validateAppBlueprint(canonicalBadAppBlueprint);
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'screens',
+          code: 'duplicate_id',
+        }),
+        expect.objectContaining({
+          path: 'screens.0.componentName',
+          code: 'invalid_component_placement',
+        }),
+        expect.objectContaining({
+          path: 'screens.0.sections',
+          code: 'duplicate_id',
+        }),
+        expect.objectContaining({
+          path: 'screens.0.sections.0.dataBindingId',
+          code: 'missing_binding',
+        }),
+        expect.objectContaining({
+          path: 'screens.0.sections.1.componentName',
+          code: 'invalid_component_placement',
+        }),
+        expect.objectContaining({
+          path: 'dataBindings.0.table',
+          code: 'missing_table',
+        }),
+        expect.objectContaining({
+          path: 'dataBindings.1.fields.1',
+          code: 'missing_field',
+        }),
+        expect.objectContaining({
+          path: 'databaseSchema.relations.0.fromColumn',
+          code: 'invalid_relation',
+        }),
+        expect.objectContaining({
+          path: 'databaseSchema.relations.0.toTable',
+          code: 'invalid_relation',
+        }),
+      ])
+    );
+    expect(result.issues.map((issue) => issue.path)).toEqual(
+      [...result.issues.map((issue) => issue.path)].sort((a, b) => a.localeCompare(b))
     );
   });
 

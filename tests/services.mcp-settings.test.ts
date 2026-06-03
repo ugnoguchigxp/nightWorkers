@@ -61,6 +61,19 @@ describe('MCP server settings', () => {
     ).toThrow(/secret-like/i);
   });
 
+  it('keeps authenticated MCP rejection messages user-readable', () => {
+    expect(() =>
+      createMcpServer({
+        name: 'Auth server',
+        enabled: true,
+        transport: 'streamable_http',
+        url: 'https://example.com/mcp',
+        toolPrefix: 'auth_server',
+        authorization: 'Bearer should-not-save',
+      } as any)
+    ).toThrow(/Authenticated MCP server settings are not supported yet/i);
+  });
+
   it('rejects duplicate tool prefixes and non-local plain HTTP URLs', () => {
     createMcpServer({
       name: 'First',
@@ -273,5 +286,35 @@ describe('MCP server settings', () => {
       servers: [{ name: 'missing_binary', enabled: false, toolPrefix: 'missing_binary' }],
       results: [{ ok: false }],
     });
+  });
+
+  it('records actionable MCP connection failures without leaking secret-like values', async () => {
+    const createRes = await app.request('http://localhost/api/settings/mcp/servers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Failing server',
+        enabled: true,
+        transport: 'stdio',
+        command: process.execPath,
+        args: ['-e', 'console.error("api_key=should-not-leak"); process.exit(1)'],
+        toolPrefix: 'failing_server',
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = await createRes.json();
+
+    const testRes = await app.request(
+      `http://localhost/api/settings/mcp/servers/${created.id}/test`,
+      {
+        method: 'POST',
+        headers: { Origin: 'http://localhost:39174' },
+      }
+    );
+
+    expect(testRes.status).toBe(200);
+    const body = await testRes.json();
+    expect(body.ok).toBe(false);
+    expect(body.message).not.toContain('should-not-leak');
   });
 });

@@ -192,6 +192,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const pendingChatRunIdRef = useRef<string | null>(null);
   const pendingAssistantTaskIdRef = useRef<string | null>(null);
   const processedRealtimeMessageKeysRef = useRef<Set<string>>(new Set());
+  const latestRunSubscriptionRef = useRef<{ runId: string | null; afterSeq?: number }>({
+    runId: null,
+  });
   const [realtimeEvents, setRealtimeEvents] = useState<TaskEvent[]>([]);
   const [bufferedEventsByRun, setBufferedEventsByRun] = useState<Record<string, TaskEvent[]>>({});
   const [streamingTextByTask, setStreamingTextByTask] = useState<Record<string, string>>({});
@@ -645,6 +648,21 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     realtimeEvents.length > 0 ? realtimeEvents : latestRunDetails?.events || [];
   const latestRunTodos = latestRunDetails?.todos || [];
   const latestRunReviews = latestRunDetails?.reviews || [];
+
+  useEffect(() => {
+    const runBelongsToActiveSession = Boolean(
+      activeSessionId && latestRun?.id && latestRun.taskId === activeSessionId
+    );
+    const maxSeq = latestRunEvents.reduce<number | undefined>((currentMax, event) => {
+      if (typeof event.seq !== 'number') return currentMax;
+      if (currentMax === undefined) return event.seq;
+      return Math.max(currentMax, event.seq);
+    }, undefined);
+    latestRunSubscriptionRef.current = {
+      runId: runBelongsToActiveSession ? latestRun?.id || null : null,
+      afterSeq: runBelongsToActiveSession ? maxSeq : undefined,
+    };
+  }, [activeSessionId, latestRun?.id, latestRun?.taskId, latestRunEvents]);
   const activeArtifactRefs = useMemo(
     () =>
       activeSession
@@ -818,7 +836,17 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
         setIsRealtimeConnected(true);
         setRealtimeStatus('connected');
         if (activeSessionId) {
-          ws?.send(JSON.stringify({ type: 'subscribe_task', taskId: activeSessionId }));
+          const subscription = latestRunSubscriptionRef.current;
+          ws?.send(
+            JSON.stringify({
+              type: 'subscribe_task',
+              taskId: activeSessionId,
+              ...(subscription.runId ? { runId: subscription.runId } : {}),
+              ...(typeof subscription.afterSeq === 'number'
+                ? { afterSeq: subscription.afterSeq }
+                : {}),
+            })
+          );
         }
         if (pendingChatQueueRef.current.length > 0) {
           const queued = [...pendingChatQueueRef.current];
@@ -888,7 +916,11 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
             }
           }
           if (msg.type === 'task_event_created' && msg.runId && msg.event) {
-            const eventPayload = { ...(msg.event as TaskEvent), runId: msg.runId } as TaskEvent;
+            const eventPayload = {
+              ...(msg.event as TaskEvent),
+              runId: msg.runId,
+              seq: (msg.event as TaskEvent).seq ?? msg.seq,
+            } as TaskEvent;
             setBufferedEventsByRun((prev) => {
               const next = { ...prev };
               const current = next[msg.runId as string] || [];

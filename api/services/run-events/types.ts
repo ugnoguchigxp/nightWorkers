@@ -44,6 +44,7 @@ export const RUN_EVENT_TYPES = [
   'memory.register_finished',
   'memory.context_injected',
   'memory.feedback_evaluated',
+  'system.info',
   'system.warning',
   'system.error',
 ] as const;
