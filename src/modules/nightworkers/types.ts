@@ -284,6 +284,11 @@ export type ActivityEvent = {
   createdAt: unknown;
 };
 
+export type ActivityReplay = {
+  events: ActivityEvent[];
+  artifacts: ActivityArtifact[];
+};
+
 export type WorkbenchChatIntent =
   | 'intake'
   | 'draft'

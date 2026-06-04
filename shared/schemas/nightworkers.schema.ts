@@ -704,6 +704,13 @@ export const activityEventSchema = z
   })
   .openapi('ActivityEvent');
 
+export const activityReplaySchema = z
+  .object({
+    events: z.array(activityEventSchema),
+    artifacts: z.array(activityArtifactSchema),
+  })
+  .openapi('ActivityReplay');
+
 export const taskMessageSchema = z
   .object({
     id: z.string().uuid(),

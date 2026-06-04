@@ -21,6 +21,7 @@ import {
   type TranscriptItem,
 } from '../activityTranscript';
 import type {
+  ActivityArtifact,
   ActivityEvent,
   ReviewResult,
   Task,
@@ -124,6 +125,7 @@ type ThreadTimelineProps = {
   taskMessages: TaskMessage[];
   latestRunEvents: TaskEvent[];
   activityEvents: ActivityEvent[];
+  activityArtifacts: ActivityArtifact[];
   activeStreamingResponse: string;
   latestRunTodos: TaskRunTodo[];
   isAgentWorking: boolean;
@@ -137,13 +139,17 @@ export function ThreadTimeline({
   taskMessages,
   latestRunEvents,
   activityEvents,
+  activityArtifacts,
   activeStreamingResponse,
   latestRunTodos,
   isAgentWorking,
   showDebugEvents,
   onOpenArtifact,
 }: ThreadTimelineProps) {
-  const transcriptItems = buildTranscriptItems({ events: activityEvents });
+  const transcriptItems = buildTranscriptItems({
+    events: activityEvents,
+    artifacts: activityArtifacts,
+  });
   const hasActivityTranscript = transcriptItems.length > 0;
   const chatMessages = taskMessages.filter(
     (message) => message.role === 'user' || message.role === 'assistant'

@@ -9,7 +9,9 @@ import {
   mergeRunEvents,
 } from '../realtimeEvents';
 import type {
+  ActivityArtifact,
   ActivityEvent,
+  ActivityReplay,
   AgentHookConfig,
   AgentHookInput,
   AgentHookTestResult,
@@ -61,6 +63,8 @@ type TaskPatchInput = {
   priority?: number;
 };
 
+const emptyActivityReplay: ActivityReplay = { events: [], artifacts: [] };
+
 async function patchTask(sessionId: string, input: TaskPatchInput) {
   const res = await fetch(`/api/tasks/${sessionId}`, {
     method: 'PATCH',
@@ -90,6 +94,7 @@ export type NightWorkersWorkspaceState = {
   taskMessages: TaskMessage[];
   latestRunEvents: TaskEvent[];
   activityEvents: ActivityEvent[];
+  activityArtifacts: ActivityArtifact[];
   activeStreamingResponse: string;
   latestRunTodos: TaskRunTodo[];
   latestRunReviews: ReviewResult[];
@@ -307,18 +312,20 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     refetchOnReconnect: false,
   });
 
-  const { data: activityEvents = [] } = useQuery({
-    queryKey: ['activityEvents', activeSessionId],
+  const { data: activityReplay = emptyActivityReplay } = useQuery({
+    queryKey: ['activityReplay', activeSessionId],
     queryFn: async () => {
-      if (!activeSessionId) return [];
+      if (!activeSessionId) return emptyActivityReplay;
       const res = await fetch(`/api/tasks/${activeSessionId}/activity-events`);
       if (!res.ok) throw new Error('Failed to fetch activity events');
-      return (await res.json()) as ActivityEvent[];
+      return normalizeActivityReplay(await res.json());
     },
     enabled: !!activeSessionId,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+  const activityEvents = activityReplay.events;
+  const activityArtifacts = activityReplay.artifacts;
 
   const { data: llmSettings = null } = useQuery({
     queryKey: ['llmSettings'],
@@ -1027,10 +1034,16 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
           if (msg.type === 'activity_event_created' && msg.payload?.event) {
             const incoming = msg.payload.event;
             if (activeSessionId && incoming.taskId !== activeSessionId) return;
-            queryClient.setQueryData<ActivityEvent[]>(
-              ['activityEvents', incoming.taskId],
-              (prev = []) => dedupeAndSortActivityEvents([...prev, incoming])
+            queryClient.setQueryData<ActivityReplay>(
+              ['activityReplay', incoming.taskId],
+              (prev = emptyActivityReplay) => ({
+                ...prev,
+                events: dedupeAndSortActivityEvents([...prev.events, incoming]),
+              })
             );
+            if (incoming.artifactId) {
+              void queryClient.invalidateQueries({ queryKey: ['activityReplay', incoming.taskId] });
+            }
           }
           if (msg.type === 'task_llm_delta' && activeSessionId) {
             const taskId = msg.taskId || activeSessionId;
@@ -1243,6 +1256,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     taskMessages,
     latestRunEvents,
     activityEvents,
+    activityArtifacts,
     activeStreamingResponse: activeSessionId ? streamingTextByTask[activeSessionId] || '' : '',
     latestRunTodos,
     latestRunReviews,
@@ -1555,6 +1569,16 @@ function isActiveRunStatus(status: string | undefined): boolean {
     status === 'compiling_context' ||
     status === 'finalizing'
   );
+}
+
+function normalizeActivityReplay(data: unknown): ActivityReplay {
+  if (Array.isArray(data)) return { events: data as ActivityEvent[], artifacts: [] };
+  if (!data || typeof data !== 'object') return emptyActivityReplay;
+  const replay = data as Partial<ActivityReplay>;
+  return {
+    events: Array.isArray(replay.events) ? replay.events : [],
+    artifacts: Array.isArray(replay.artifacts) ? replay.artifacts : [],
+  };
 }
 
 function appendOptimisticUserMessage(

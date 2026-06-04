@@ -121,7 +121,9 @@ describe('NightWorkers task routes', () => {
 
     const res = await app.request(`http://localhost/api/tasks/${task.id}/activity-events`);
     expect(res.status).toBe(200);
-    const events = await res.json();
+    const replay = await res.json();
+    expect(replay.artifacts).toEqual([]);
+    const events = replay.events;
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -138,7 +140,7 @@ describe('NightWorkers task routes', () => {
       `http://localhost/api/tasks/${task.id}/activity-events?afterSeq=1`
     );
     expect(afterRes.status).toBe(200);
-    expect(await afterRes.json()).toEqual([]);
+    expect(await afterRes.json()).toEqual({ events: [], artifacts: [] });
   });
 
   it('persists run events into activity ledger even when the event omits taskId', async () => {
@@ -171,7 +173,9 @@ describe('NightWorkers task routes', () => {
 
     const res = await app.request(`http://localhost/api/runs/${run.id}/activity-events`);
     expect(res.status).toBe(200);
-    const events = await res.json();
+    const replay = await res.json();
+    expect(replay.artifacts).toEqual([]);
+    const events = replay.events;
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -217,7 +221,8 @@ describe('NightWorkers task routes', () => {
 
     const res = await app.request(`http://localhost/api/tasks/${task.id}/activity-events`);
     expect(res.status).toBe(200);
-    const events = await res.json();
+    const replay = await res.json();
+    const events = replay.events;
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -225,6 +230,15 @@ describe('NightWorkers task routes', () => {
           kind: 'file.patch',
           source: 'tool',
           artifactId: expect.any(String),
+        }),
+      ])
+    );
+    expect(replay.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          taskId: task.id,
+          kind: 'patch',
+          contentText: '*** Begin Patch\n*** End Patch',
         }),
       ])
     );

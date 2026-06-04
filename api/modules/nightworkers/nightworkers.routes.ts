@@ -1,6 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
-  activityEventSchema,
+  activityReplaySchema,
   blueprintAdoptionRequestSchema,
   blueprintAdoptionSchema,
   blueprintPreviewDesignSettingsSchema,
@@ -943,7 +943,7 @@ const listTaskActivityEventsRoute = createRoute({
     200: {
       content: {
         'application/json': {
-          schema: z.array(activityEventSchema),
+          schema: activityReplaySchema,
         },
       },
       description: 'Task activity events after an optional task sequence cursor',
@@ -1018,7 +1018,7 @@ const listTaskRunActivityEventsRoute = createRoute({
     200: {
       content: {
         'application/json': {
-          schema: z.array(activityEventSchema),
+          schema: activityReplaySchema,
         },
       },
       description: 'Run activity events after an optional task sequence cursor',

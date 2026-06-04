@@ -218,7 +218,9 @@ export async function listTaskMessages(taskId: string) {
 export async function listTaskActivityEvents(taskId: string, options?: { afterSeq?: number }) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
-  return repo.listActivityEventsForTask(taskId, { afterSeq: options?.afterSeq });
+  const events = await repo.listActivityEventsForTask(taskId, { afterSeq: options?.afterSeq });
+  const artifacts = await listReferencedActivityArtifacts(taskId, events);
+  return { events, artifacts };
 }
 
 export async function resolveBlueprintPlanningReadiness(
@@ -2031,7 +2033,19 @@ export async function listTaskRunEvents(runId: string, options?: { afterSeq?: nu
 export async function listTaskRunActivityEvents(runId: string, options?: { afterSeq?: number }) {
   const run = await repo.getTaskRun(runId);
   if (!run) throw new NotFoundError('Run not found');
-  return repo.listActivityEventsForRun(runId, { afterSeq: options?.afterSeq });
+  const events = await repo.listActivityEventsForRun(runId, { afterSeq: options?.afterSeq });
+  const artifacts = await listReferencedActivityArtifacts(run.taskId, events);
+  return { events, artifacts };
+}
+
+async function listReferencedActivityArtifacts(
+  taskId: string,
+  events: Array<{ artifactId?: string | null }>
+) {
+  const artifactIds = new Set(events.map((event) => event.artifactId).filter(Boolean));
+  if (artifactIds.size === 0) return [];
+  const artifacts = await repo.listActivityArtifactsForTask(taskId);
+  return artifacts.filter((artifact) => artifactIds.has(artifact.id));
 }
 
 export async function listTaskRunEventsForReplay(input: {
