@@ -17,7 +17,7 @@
 
 ## Stop Conditions
 
-- 編集と検証が完了した場合だけ summarize へ進む。
+- 編集と検証が完了した場合だけ decision phase="stop" へ進む。
 - 編集ツールの実行結果、変更後 read_file 証拠、必要な検証結果が observations に揃った場合だけ phase="stop" に進む。
 - phase="stop" を返す場合は terminalState を必ず指定する。完了なら terminalState="completed" を返す。
 - phase="stop" 以外では terminalState を返さない。

@@ -543,6 +543,10 @@ describe('Supervisor Control Loop Unit Tests', () => {
     expect(result.terminalState).toBe('needs_human');
     expect(result.stoppedBy).toBe('missing_tool_call');
     expect(result.finalReport).toContain('replace_content または apply_patch を一度も実行せず');
+    const retryAfterGuard = String(vi.mocked(llm.callSupervisorLLM).mock.calls[3][1]);
+    expect(retryAfterGuard).toContain('[Supervisor Guard]');
+    expect(retryAfterGuard).toContain('stop_without_edit_attempt');
+    expect(retryAfterGuard).toContain('replace_content または apply_patch');
     expect(repo.createRunEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'safety.repeated_failure',
@@ -606,6 +610,9 @@ describe('Supervisor Control Loop Unit Tests', () => {
     expect(vi.mocked(llm.callSupervisorLLM).mock.calls.map((call) => call[2]?.round)).toEqual([
       1, 2, 2, 2,
     ]);
+    const retryAfterGuard = String(vi.mocked(llm.callSupervisorLLM).mock.calls[2][1]);
+    expect(retryAfterGuard).toContain('[Supervisor Guard]');
+    expect(retryAfterGuard).toContain('stop_without_edit_attempt');
     expect(
       vi.mocked(llm.callSupervisorLLM).mock.calls.map((call) => call[2]?.workingDirectory)
     ).toEqual(['/repo/project', '/repo/project', '/repo/project', '/repo/project']);
@@ -689,6 +696,9 @@ describe('Supervisor Control Loop Unit Tests', () => {
     expect(result.terminalState).toBe('needs_human');
     expect(result.stoppedBy).toBe('missing_tool_call');
     expect(result.finalReport).toContain('report/stop を繰り返したため停止');
+    const retryAfterGuard = String(vi.mocked(llm.callSupervisorLLM).mock.calls[2][1]);
+    expect(retryAfterGuard).toContain('[Supervisor Guard]');
+    expect(retryAfterGuard).toContain('report_without_edit_attempt');
     expect(vi.mocked(llm.callSupervisorLLM).mock.calls.map((call) => call[2]?.round)).toEqual([
       1, 2, 2, 2,
     ]);
@@ -706,7 +716,7 @@ describe('Supervisor Control Loop Unit Tests', () => {
     );
   });
 
-  it('reads back edited files immediately and passes that result as code_change evidence', async () => {
+  it('completes code_change immediately after edit success and post-edit readback', async () => {
     const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-readback-'));
     await fs.mkdir(path.join(repoRoot, 'src'), { recursive: true });
     await fs.writeFile(path.join(repoRoot, 'src/greeting.txt'), 'hello before\n', 'utf-8');
@@ -760,18 +770,6 @@ describe('Supervisor Control Loop Unit Tests', () => {
             mode: 'literal',
           },
         },
-      })
-      .mockResolvedValueOnce({
-        phase: 'stop',
-        workflow: 'code_change',
-        instruction: 'Report the completed edit.',
-        rationale: 'replace_content and post-edit readback evidence are present.',
-        finalResponse:
-          'src/greeting.txt を更新し、replace_content の成功結果と post-edit readback の read_file 結果で hello after が反映されていることを確認しました。追加の検証コマンドは不要な単純テキスト変更です。',
-        expectedEvidence: ['replace_content result', 'post-edit readback read_file'],
-        riskLevel: 'low',
-        terminalState: 'completed',
-        toolCall: null,
       });
 
     try {
@@ -782,14 +780,14 @@ describe('Supervisor Control Loop Unit Tests', () => {
         timeoutSeconds: 60,
       });
 
-      expect(result.terminalState).toBe('completed');
+      expect(result.terminalState).toBe('needs_review');
+      expect(result.stoppedBy).toBe('decision');
+      expect(result.finalReport).toContain('コード変更を完了し、レビュー待ちにしました。');
+      expect(result.finalReport).toContain('src/greeting.txt');
       expect(await fs.readFile(path.join(repoRoot, 'src/greeting.txt'), 'utf-8')).toContain(
         'hello after'
       );
-      const finalRoundInput = JSON.parse(String(vi.mocked(llm.callSupervisorLLM).mock.calls[3][1]));
-      expect(finalRoundInput.observations.join('\n')).toContain('[Post-edit readback]');
-      expect(finalRoundInput.observations.join('\n')).toContain('tool=read_file status=ok');
-      expect(finalRoundInput.observations.join('\n')).toContain('hello after');
+      expect(vi.mocked(llm.callSupervisorLLM)).toHaveBeenCalledTimes(3);
       expect(repo.createRunEvent).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'tool.call_started',
@@ -800,6 +798,19 @@ describe('Supervisor Control Loop Unit Tests', () => {
             toolName: 'read_file',
             sourceToolName: 'replace_content',
             automatic: true,
+          }),
+        })
+      );
+      expect(repo.createRunEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'system.info',
+          message: expect.stringContaining('Code change ready after edit tool success'),
+        }),
+        expect.objectContaining({
+          payloadJson: expect.objectContaining({
+            toolName: 'replace_content',
+            terminalState: 'needs_review',
+            stoppedBy: 'decision',
           }),
         })
       );

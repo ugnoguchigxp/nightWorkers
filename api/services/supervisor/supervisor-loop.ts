@@ -227,9 +227,11 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     taskId: string,
     sourceToolName: string,
     sourceToolResult: any
-  ) => {
+  ): Promise<PostEditReadbackResult> => {
     const editedFiles = getEditedFilePathsForReadBack(sourceToolName, sourceToolResult);
-    if (editedFiles.length === 0) return;
+    if (editedFiles.length === 0) return { files: [], results: [] };
+
+    const results: PostEditReadbackResult['results'] = [];
 
     for (const filePath of editedFiles.slice(0, 5)) {
       const readArgs = { filePath, fresh: true };
@@ -269,9 +271,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       if (dispatch.readFilesChanged) {
         readFiles.splice(0, readFiles.length, ...dispatch.readFilesChanged);
       }
-      toolObservations.push(
-        `[Post-edit readback]\n${formatToolObservation('read_file', readResult)}`
-      );
+      results.push({ filePath, result: readResult });
       await emitSupervisorRunEvent({
         runId,
         taskId,
@@ -307,6 +307,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         changedFiles: editedFiles.length,
       });
     }
+
+    return { files: editedFiles, results };
   };
 
   appendSupervisorTrace('supervisor_loop_started', {
@@ -698,6 +700,16 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         data: detail,
         payloadJson: detail,
       });
+      if (missingToolBudget.allowed) {
+        toolObservations.push(
+          formatSupervisorGuardObservation({
+            reason: detail.reason,
+            message:
+              'code_change の完了報告は無効です。replace_content または apply_patch の toolCall を返して編集を試みてください。',
+            nextAction: 'phase="act" で replace_content または apply_patch を実行する',
+          })
+        );
+      }
       if (!missingToolBudget.allowed) {
         finalReportText =
           'code_change workflow で、replace_content または apply_patch を一度も実行せずに report/stop を繰り返したため停止しました。read-only という自己判断ではなく、編集ツールの実行結果を根拠にする必要があります。';
@@ -738,6 +750,16 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           data: detail,
           payloadJson: detail,
         });
+        if (missingToolBudget.allowed) {
+          toolObservations.push(
+            formatSupervisorGuardObservation({
+              reason: detail.reason,
+              message:
+                '証拠取得前の stop は無効です。Tool catalog の読み取り・検索ツールで必要な証拠を取得してください。',
+              nextAction: 'phase="observe" または phase="act" で適切な toolCall を返す',
+            })
+          );
+        }
         if (!missingToolBudget.allowed) {
           finalReportText =
             '証拠取得が必要なタスクで、Supervisor が対象ファイルやログを確認する前に stop を繰り返したため停止しました。';
@@ -782,6 +804,16 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           data: detail,
           payloadJson: detail,
         });
+        if (missingToolBudget.allowed) {
+          toolObservations.push(
+            formatSupervisorGuardObservation({
+              reason: detail.reason,
+              message:
+                '最終回答が不十分なため stop は無効です。既存の observations だけを根拠に finalResponse を具体化してください。',
+              nextAction: 'phase="stop" で十分な finalResponse と terminalState を返す',
+            })
+          );
+        }
         if (!missingToolBudget.allowed) {
           finalReportText =
             '証拠取得後の最終回答がレビュー本文として不十分なまま繰り返されたため停止しました。';
@@ -1121,10 +1153,6 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         },
       });
 
-      if (toolResult.ok && isEditTool(name)) {
-        await readBackEditedFiles(task.id, name, toolResult);
-      }
-
       if (policyViolationDetected && stoppedBy === 'policy') {
         await repo.updateTaskRun(runId, {
           finalReport: finalReportText,
@@ -1133,6 +1161,11 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         });
         await repo.updateTaskStatus(task.id, 'needs_human');
         break;
+      }
+
+      let postEditReadback: PostEditReadbackResult | null = null;
+      if (toolResult.ok && isEditTool(name)) {
+        postEditReadback = await readBackEditedFiles(task.id, name, toolResult);
       }
 
       if (hookBlockedToolCall) {
@@ -1188,6 +1221,67 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         summary = 'Stopped by safety policy after repeated tool failures';
         stoppedBy = 'tool_failure';
         break;
+      }
+
+      if (
+        shouldCompleteAfterPostEditReadback({
+          workflow: decision.workflow || activeWorkflow,
+          toolName: name,
+          toolResult,
+          readback: postEditReadback,
+        })
+      ) {
+        const editedFiles = postEditReadback?.files ?? [];
+        finalReportText = buildPostEditCompletionReport({
+          toolName: name,
+          editedFiles,
+          readbackCount: postEditReadback?.results.length ?? 0,
+        });
+        terminalState = 'needs_review';
+        summary = `Code change ready for review after ${name} and post-edit readback`;
+        stoppedBy = 'decision';
+        riskLevel = 'low';
+        appendSupervisorTrace('post_edit_readback_completed_run', {
+          runId,
+          iteration,
+          toolName: name,
+          editedFiles,
+        });
+        await emitSupervisorRunEvent({
+          runId,
+          taskId: task.id,
+          iteration,
+          type: 'system.info',
+          severity: 'info',
+          actor: 'system',
+          message:
+            '[Supervisor Fast Path] Code change ready after edit tool success and post-edit readback.',
+          data: {
+            toolName: name,
+            editedFiles,
+            readbackCount: postEditReadback?.results.length ?? 0,
+          },
+          payloadJson: {
+            iteration,
+            toolName: name,
+            editedFiles,
+            readbackCount: postEditReadback?.results.length ?? 0,
+            terminalState,
+            stoppedBy,
+          },
+        });
+        break;
+      }
+
+      if (postEditReadback && postEditReadback.files.length > 0) {
+        toolObservations.push(formatPostEditReadbackSummary(postEditReadback));
+        for (const entry of postEditReadback.results) {
+          if (!entry.result.ok) {
+            toolObservations.push(
+              `[Post-edit readback failed]\n${formatToolObservation('read_file', entry.result)}`
+            );
+          }
+        }
       }
 
       const multimodalType = detectMessageType(toolResult);
@@ -1248,6 +1342,16 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           'Supervisor did not specify any worker tool action. continuing until missing_tool_call threshold.',
         data: { reason: 'missing_tool_call', ...(missingToolBudget.detail || {}) },
       });
+      if (missingToolBudget.allowed) {
+        toolObservations.push(
+          formatSupervisorGuardObservation({
+            reason: 'missing_tool_call',
+            message:
+              'toolCall なしの中間 decision は進捗になりません。次の具体的な worker toolCall を返してください。',
+            nextAction: 'Tool catalog から必要な1手を選び toolCall を返す',
+          })
+        );
+      }
       if (!missingToolBudget.allowed) {
         await emitSupervisorRunEvent({
           runId,
@@ -1324,6 +1428,66 @@ function requiresWorkflowEdit(workflow: SupervisorWorkflow): boolean {
 
 function isEditTool(toolName: string): boolean {
   return toolName === 'apply_patch' || toolName === 'replace_content';
+}
+
+type PostEditReadbackResult = {
+  files: string[];
+  results: Array<{
+    filePath: string;
+    result: Awaited<ReturnType<typeof executeWorkerTool>>['result'];
+  }>;
+};
+
+function shouldCompleteAfterPostEditReadback(input: {
+  workflow: SupervisorWorkflow;
+  toolName: string;
+  toolResult: any;
+  readback: PostEditReadbackResult | null;
+}): boolean {
+  if (input.workflow !== 'code_change') return false;
+  if (!isEditTool(input.toolName)) return false;
+  if (!input.toolResult?.ok || !input.toolResult.payload?.applied) return false;
+  if (!input.readback || input.readback.files.length === 0) return false;
+  if (input.readback.results.length !== input.readback.files.length) return false;
+  return input.readback.results.every((entry) => entry.result.ok);
+}
+
+function buildPostEditCompletionReport(input: {
+  toolName: string;
+  editedFiles: string[];
+  readbackCount: number;
+}): string {
+  const fileList = input.editedFiles.join(', ');
+  return [
+    'コード変更を完了し、レビュー待ちにしました。',
+    `編集ツール: ${input.toolName}`,
+    `変更ファイル: ${fileList || '(unknown)'}`,
+    `証拠: 編集ツールの成功結果と、変更後 read_file の読み戻し ${input.readbackCount} 件を確認しました。`,
+  ].join('\n');
+}
+
+function formatSupervisorGuardObservation(input: {
+  reason: string;
+  message: string;
+  nextAction: string;
+}): string {
+  return [
+    '[Supervisor Guard]',
+    `reason=${input.reason}`,
+    input.message,
+    `次の必須アクション: ${input.nextAction}`,
+  ].join('\n');
+}
+
+function formatPostEditReadbackSummary(readback: PostEditReadbackResult): string {
+  const okCount = readback.results.filter((entry) => entry.result.ok).length;
+  return [
+    '[Post-edit readback summary]',
+    `files=${readback.files.length}`,
+    `readback=${readback.results.length}`,
+    `ok=${okCount}`,
+    `failed=${readback.results.length - okCount}`,
+  ].join(' ');
 }
 
 function getEditedFilePathsForReadBack(toolName: string, toolResult: any): string[] {

@@ -12,9 +12,8 @@
 
 ## Stop Conditions
 
-- 実行後は verify または summarize へ進む。
+- 実行後は verify へ進むか、証拠が揃っている場合だけ decision phase="stop" へ進む。
 
 ## Report Contract
 
 - 実行した変更と未検証事項を明確にする。
-
