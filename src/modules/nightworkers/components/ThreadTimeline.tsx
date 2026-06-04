@@ -469,7 +469,7 @@ function decodeJsonEscape(char: string): string {
   return char;
 }
 
-function ThinkingIndicator() {
+export function ThinkingIndicator() {
   return (
     <div
       className="inline-flex h-8 items-center gap-2"

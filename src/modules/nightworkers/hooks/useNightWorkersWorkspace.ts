@@ -417,6 +417,13 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     },
     onSuccess: (newSession) => {
       setActiveSessionId(newSession.id);
+      queryClient.setQueryData<Task[]>(['sessions'], (prev = []) => {
+        const next = [...prev];
+        const idx = next.findIndex((session) => session.id === newSession.id);
+        if (idx >= 0) next[idx] = newSession;
+        else next.unshift(newSession);
+        return next;
+      });
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
     },
   });
@@ -726,10 +733,12 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     refetchOnReconnect: false,
   });
 
-  // 入力ロックは「送信待ち」の間だけに限定する。
+  // 入力ロックは「送信/初期スレッド作成待ち」の間だけに限定する。
   // run status に依存すると、サーバーダウン時に running が残って永久ロックになる。
-  const isAgentWorking = isChatSubmitting;
+  const isInitialSessionCreating = createSessionMutation.isPending;
+  const isAgentWorking = isChatSubmitting || isInitialSessionCreating;
   const isAgentThinking =
+    isInitialSessionCreating ||
     isChatSubmitting ||
     Boolean(pendingChatRunId) ||
     Boolean(activeSessionId && pendingAssistantTaskId === activeSessionId) ||

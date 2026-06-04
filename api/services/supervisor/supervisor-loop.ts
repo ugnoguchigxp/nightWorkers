@@ -223,6 +223,92 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
   let hookBlockedToolCalls = 0;
   let stopHookBlocks = 0;
 
+  const readBackEditedFiles = async (
+    taskId: string,
+    sourceToolName: string,
+    sourceToolResult: any
+  ) => {
+    const editedFiles = getEditedFilePathsForReadBack(sourceToolName, sourceToolResult);
+    if (editedFiles.length === 0) return;
+
+    for (const filePath of editedFiles.slice(0, 5)) {
+      const readArgs = { filePath, fresh: true };
+      appendSupervisorTrace('post_edit_readback_started', {
+        runId,
+        iteration,
+        sourceToolName,
+        filePath,
+      });
+      await emitSupervisorRunEvent({
+        runId,
+        taskId,
+        iteration,
+        type: 'tool.call_started',
+        severity: 'info',
+        actor: 'worker',
+        message: `[Worker Tool Call] Invoking tool read_file after ${sourceToolName}...`,
+        data: { toolName: 'read_file', arguments: readArgs, sourceToolName, automatic: true },
+        payloadJson: {
+          iteration,
+          toolName: 'read_file',
+          arguments: readArgs,
+          sourceToolName,
+          automatic: true,
+        },
+      });
+
+      const dispatch = await executeWorkerTool({
+        toolName: 'read_file',
+        args: readArgs,
+        repoRoot,
+        safetyPolicy: input.safetyPolicy,
+        readFiles,
+        toolContext,
+      });
+      const readResult = dispatch.result;
+      if (dispatch.readFilesChanged) {
+        readFiles.splice(0, readFiles.length, ...dispatch.readFilesChanged);
+      }
+      toolObservations.push(
+        `[Post-edit readback]\n${formatToolObservation('read_file', readResult)}`
+      );
+      await emitSupervisorRunEvent({
+        runId,
+        taskId,
+        iteration,
+        type: 'tool.call_finished',
+        severity: readResult.ok ? 'info' : 'error',
+        actor: 'worker',
+        message: `[Worker Tool Result] Tool read_file post-edit readback ${readResult.ok ? 'SUCCESS' : 'FAILED'}.`,
+        data: { toolName: 'read_file', result: readResult, sourceToolName, automatic: true },
+        payloadJson: {
+          iteration,
+          ...readResult,
+          sourceToolName,
+          automatic: true,
+        },
+      });
+      appendSupervisorTrace('post_edit_readback_finished', {
+        runId,
+        iteration,
+        sourceToolName,
+        filePath,
+        ok: readResult.ok,
+        error: readResult.error,
+      });
+    }
+
+    if (editedFiles.length > 5) {
+      appendSupervisorTrace('post_edit_readback_truncated', {
+        runId,
+        iteration,
+        sourceToolName,
+        readBackFiles: 5,
+        changedFiles: editedFiles.length,
+      });
+    }
+  };
+
   appendSupervisorTrace('supervisor_loop_started', {
     runId,
     repoRoot,
@@ -1035,6 +1121,10 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         },
       });
 
+      if (toolResult.ok && isEditTool(name)) {
+        await readBackEditedFiles(task.id, name, toolResult);
+      }
+
       if (policyViolationDetected && stoppedBy === 'policy') {
         await repo.updateTaskRun(runId, {
           finalReport: finalReportText,
@@ -1234,6 +1324,23 @@ function requiresWorkflowEdit(workflow: SupervisorWorkflow): boolean {
 
 function isEditTool(toolName: string): boolean {
   return toolName === 'apply_patch' || toolName === 'replace_content';
+}
+
+function getEditedFilePathsForReadBack(toolName: string, toolResult: any): string[] {
+  if (!toolResult?.ok || !toolResult.payload?.applied) return [];
+  if (toolName === 'apply_patch') {
+    const changedFiles: string[] = Array.isArray(toolResult.payload.changedFiles)
+      ? (toolResult.payload.changedFiles as unknown[]).filter(
+          (filePath: unknown): filePath is string => typeof filePath === 'string'
+        )
+      : [];
+    return [...new Set(changedFiles)];
+  }
+  if (toolName === 'replace_content') {
+    const filePath = toolResult.payload.filePath;
+    return typeof filePath === 'string' && filePath.trim() ? [filePath] : [];
+  }
+  return [];
 }
 
 function evaluateStopDecisionQuality(input: {

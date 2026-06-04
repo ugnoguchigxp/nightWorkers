@@ -1,0 +1,13 @@
+{
+  "languages": {
+    "JavaScript": {
+      "enable_language_server": false
+    },
+    "TSX": {
+      "enable_language_server": false
+    },
+    "TypeScript": {
+      "enable_language_server": false
+    }
+  }
+}

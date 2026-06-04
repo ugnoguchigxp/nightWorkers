@@ -13,11 +13,12 @@
 - 既存ファイルの単純な変更では replace_content を第一選択にする。
 - 新規ファイル作成、複数ファイル変更、構造的な編集では apply_patch を使う。
 - 必ず replace_content または apply_patch の toolCall を返して編集を試みる。
+- apply_patch または replace_content の成功後に post-edit readback の read_file 結果が observations にある場合、それを変更後ファイルの証拠として扱い、証拠不足を理由に同じ read_file を繰り返さない。
 
 ## Stop Conditions
 
 - 編集と検証が完了した場合だけ summarize へ進む。
-- 編集ツールの実行結果と必要な検証結果が observations に揃った場合だけ phase="stop" に進む。
+- 編集ツールの実行結果、変更後 read_file 証拠、必要な検証結果が observations に揃った場合だけ phase="stop" に進む。
 - phase="stop" を返す場合は terminalState を必ず指定する。完了なら terminalState="completed" を返す。
 - phase="stop" 以外では terminalState を返さない。
 

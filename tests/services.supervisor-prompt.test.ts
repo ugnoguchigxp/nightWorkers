@@ -106,6 +106,9 @@ describe('Supervisor prompt structure', () => {
       'worker tool の実行結果が observations に無い場合、cp / mv / touch / apply_patch / replace_content / run_command を実行済み、失敗済み、拒否済みだと書いてはいけません。'
     );
     expect(prompt).toContain(
+      'apply_patch または replace_content の成功後に read_file の post-edit readback が observations にある場合'
+    );
+    expect(prompt).toContain(
       '編集ツールを実行していないまま read-only / 書き込み不可 / 権限不足を理由に phase="stop" を返してはいけません。'
     );
   });

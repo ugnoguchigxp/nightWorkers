@@ -23,7 +23,8 @@ import type {
 import { THINKING_DEPTH_OPTIONS } from '../types';
 import { getRelativeTimestamp } from '../utils/time';
 import { Composer } from './Composer';
-import { ThreadTimeline } from './ThreadTimeline';
+import { ThreadMessage } from './ThreadMessage';
+import { ThinkingIndicator, ThreadTimeline } from './ThreadTimeline';
 
 type ThreadWorkspaceProps = {
   activeSession: Task | null;
@@ -232,6 +233,12 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
             showDebugEvents={showDebugEvents}
             onOpenArtifact={props.onOpenArtifact}
           />
+        ) : props.isAgentThinking ? (
+          <div className="nightworkers-chat-window space-y-5 p-6">
+            <ThreadMessage messageRole="assistant">
+              <ThinkingIndicator />
+            </ThreadMessage>
+          </div>
         ) : (
           <div className="h-[40vh]" />
         )}

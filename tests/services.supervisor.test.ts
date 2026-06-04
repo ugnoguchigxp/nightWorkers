@@ -1,3 +1,6 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import * as llm from '../api/services/supervisor/llm-provider';
@@ -701,6 +704,108 @@ describe('Supervisor Control Loop Unit Tests', () => {
         }),
       })
     );
+  });
+
+  it('reads back edited files immediately and passes that result as code_change evidence', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-readback-'));
+    await fs.mkdir(path.join(repoRoot, 'src'), { recursive: true });
+    await fs.writeFile(path.join(repoRoot, 'src/greeting.txt'), 'hello before\n', 'utf-8');
+
+    const mockRun = { id: 'run-code-change-readback', taskId: 'task-code-change-readback' };
+    const mockTask = {
+      id: 'task-code-change-readback',
+      objective: 'Update greeting',
+      acceptanceCriteria: 'File contains updated greeting',
+    };
+
+    vi.mocked(repo.getTaskRun).mockResolvedValue(mockRun as any);
+    vi.mocked(repo.getTask).mockResolvedValue(mockTask as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        phase: 'plan',
+        workflow: 'code_change',
+        instruction: 'Use code edit workflow.',
+        rationale: 'The user requested a file edit.',
+        finalResponse: '',
+        expectedEvidence: ['src/greeting.txt'],
+        riskLevel: 'low',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'observe',
+        workflow: 'code_change',
+        instruction: 'Read the target file.',
+        rationale: 'Existing content is required before editing.',
+        finalResponse: '',
+        expectedEvidence: ['src/greeting.txt contents'],
+        riskLevel: 'low',
+        toolCall: { name: 'read_file', arguments: { filePath: 'src/greeting.txt' } },
+      })
+      .mockResolvedValueOnce({
+        phase: 'act',
+        workflow: 'code_change',
+        instruction: 'Replace the greeting.',
+        rationale: 'The target content has been read.',
+        finalResponse: '',
+        expectedEvidence: ['replace_content result', 'post-edit readback'],
+        riskLevel: 'low',
+        toolCall: {
+          name: 'replace_content',
+          arguments: {
+            filePath: 'src/greeting.txt',
+            needle: 'hello before',
+            replacement: 'hello after',
+            mode: 'literal',
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        phase: 'stop',
+        workflow: 'code_change',
+        instruction: 'Report the completed edit.',
+        rationale: 'replace_content and post-edit readback evidence are present.',
+        finalResponse:
+          'src/greeting.txt を更新し、replace_content の成功結果と post-edit readback の read_file 結果で hello after が反映されていることを確認しました。追加の検証コマンドは不要な単純テキスト変更です。',
+        expectedEvidence: ['replace_content result', 'post-edit readback read_file'],
+        riskLevel: 'low',
+        terminalState: 'completed',
+        toolCall: null,
+      });
+
+    try {
+      const result = await runSupervisorLoop({
+        runId: 'run-code-change-readback',
+        repoRoot,
+        prompt: 'src/greeting.txt の greeting を更新してください',
+        timeoutSeconds: 60,
+      });
+
+      expect(result.terminalState).toBe('completed');
+      expect(await fs.readFile(path.join(repoRoot, 'src/greeting.txt'), 'utf-8')).toContain(
+        'hello after'
+      );
+      const finalRoundInput = JSON.parse(String(vi.mocked(llm.callSupervisorLLM).mock.calls[3][1]));
+      expect(finalRoundInput.observations.join('\n')).toContain('[Post-edit readback]');
+      expect(finalRoundInput.observations.join('\n')).toContain('tool=read_file status=ok');
+      expect(finalRoundInput.observations.join('\n')).toContain('hello after');
+      expect(repo.createRunEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'tool.call_started',
+          message: expect.stringContaining('after replace_content'),
+        }),
+        expect.objectContaining({
+          payloadJson: expect.objectContaining({
+            toolName: 'read_file',
+            sourceToolName: 'replace_content',
+            automatic: true,
+          }),
+        })
+      );
+    } finally {
+      await fs.rm(repoRoot, { recursive: true, force: true });
+    }
   });
 
   it('passes latest user message together with compiled runtime context', async () => {

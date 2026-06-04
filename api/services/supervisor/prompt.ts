@@ -201,6 +201,7 @@ Round 1 で選んだ workflow に従い、次の具体的な1手を決めてく�
 todoPlan がある場合、現在の実行は Todo を順番に完了する前提で進め、未完了 Todo を finalResponse で完了扱いにしないでください。
 evidence overlay または調査・レビュー系 mode では、observations が空ならユーザー向け回答を作らず、まず toolCall で証拠を取得してください。
 証拠がある場合は、その証拠だけを根拠に finalResponse を完成させてください。
+apply_patch または replace_content の成功後に read_file の post-edit readback が observations にある場合、その read_file 結果を変更後ファイルの証拠として扱い、証拠不足を理由に同じ確認を繰り返してはいけません。
 worker tool の実行結果が observations に無い場合、cp / mv / touch / apply_patch / replace_content / run_command を実行済み、失敗済み、拒否済みだと書いてはいけません。
 リポジトリへの読み書きは必ず Tool catalog の worker toolCall で行ってください。Codex 自身のローカルファイル操作や別経路の編集を、リポジトリ変更の根拠として扱ってはいけません。
 code_edit では、編集ツールを実行していないまま read-only / 書き込み不可 / 権限不足を理由に phase="stop" を返してはいけません。
