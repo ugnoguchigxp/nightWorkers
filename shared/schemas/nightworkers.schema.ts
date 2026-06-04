@@ -2,7 +2,7 @@ import { z } from '@hono/zod-openapi';
 
 const runEventTypeSchema = z.enum([
   'run.created',
-  'run.context_compiled',
+  'run.prompt_prepared',
   'run.runtime_started',
   'run.runtime_finished',
   'run.outcome_decided',
@@ -40,12 +40,6 @@ const runEventTypeSchema = z.enum([
   'review.llm_started',
   'review.llm_finished',
   'review.evaluation_finished',
-  'memory.candidate_generated',
-  'memory.candidate_approved',
-  'memory.register_started',
-  'memory.register_finished',
-  'memory.context_injected',
-  'memory.feedback_evaluated',
   'workbench.session.created',
   'workbench.session.queued',
   'workbench.session.run_requested',
@@ -330,52 +324,10 @@ export const taskRunTodoSchema = z
   })
   .openapi('TaskRunTodo');
 
-export const includedMemoryRefSchema = z
-  .object({
-    kind: z.enum(['candidate', 'memory', 'procedure', 'unknown']),
-    sourceRunId: z.string().uuid().optional(),
-    candidateId: z.string().uuid().optional(),
-    externalId: z.string().optional(),
-    title: z.string().optional(),
-    confidence: z.enum(['low', 'medium', 'high']).optional(),
-  })
-  .openapi('IncludedMemoryRef');
-
-export const learningCandidateSchema = z
-  .object({
-    id: z.string().uuid(),
-    version: z.literal(1),
-    sourceRunId: z.string().uuid(),
-    sourceTaskId: z.string().uuid(),
-    sourceEventIds: z.array(z.string()).min(1),
-    kind: z.enum(['rule', 'procedure', 'warning', 'verification']),
-    title: z.string().min(1),
-    body: z.string().min(1),
-    appliesTo: z.object({
-      repositoryId: z.string().uuid().optional(),
-      repoPath: z.string().optional(),
-      domains: z.array(z.string()).optional(),
-      technologies: z.array(z.string()).optional(),
-      changeTypes: z.array(z.string()).optional(),
-    }),
-    confidence: z.enum(['low', 'medium', 'high']),
-    status: z.enum(['draft', 'approved', 'rejected', 'registered', 'failed']),
-    createdAt: z.string(),
-    approvedAt: z.string().optional(),
-    registeredAt: z.string().optional(),
-    externalRef: z
-      .object({
-        target: z.literal('context-still'),
-        id: z.string().optional(),
-      })
-      .optional(),
-  })
-  .openapi('LearningCandidate');
-
-export const contextCompileSnapshotSchema = z
+export const runtimePromptSnapshotSchema = z
   .object({
     compiledPrompt: z.string(),
-    source: z.enum(['context-still', 'fallback']),
+    source: z.enum(['task_prompt', 'fallback']),
     degraded: z.boolean(),
     degradedReason: z.string().optional(),
     request: z.object({
@@ -386,79 +338,9 @@ export const contextCompileSnapshotSchema = z
     result: z.object({
       digest: z.string(),
       charCount: z.number().int().nonnegative(),
-      sourceMetadata: z.unknown().optional(),
-      includedMemoryRefs: z.array(includedMemoryRefSchema),
     }),
   })
-  .openapi('ContextCompileSnapshot');
-
-export const memoryFeedbackEvaluationSchema = z
-  .object({
-    baselineRunId: z.string().uuid(),
-    followupRunId: z.string().uuid(),
-    candidateIds: z.array(z.string().uuid()),
-    verdict: z.enum(['effective', 'ineffective', 'inconclusive', 'not_injected']),
-    reasons: z.array(z.string()).min(1),
-    evidenceEventIds: z.array(z.string()),
-  })
-  .openapi('MemoryFeedbackEvaluation');
-
-export const memoryRunEventDataSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('memory.candidate_generated'),
-    candidateId: z.string().uuid(),
-    sourceRunId: z.string().uuid(),
-    sourceEventIds: z.array(z.string()),
-    kind: z.enum(['rule', 'procedure', 'warning', 'verification']),
-    title: z.string(),
-    confidence: z.enum(['low', 'medium', 'high']),
-    requiresHumanApproval: z.literal(true),
-    status: z.literal('draft'),
-  }),
-  z.object({
-    type: z.literal('memory.candidate_approved'),
-    candidateId: z.string().uuid(),
-    sourceRunId: z.string().uuid(),
-    approvedBy: z.literal('human'),
-    approvalNote: z.string().optional(),
-    approvedAt: z.string(),
-  }),
-  z.object({
-    type: z.literal('memory.register_started'),
-    candidateId: z.string().uuid(),
-    sourceRunId: z.string().uuid(),
-    target: z.literal('context-still'),
-    tool: z.literal('register_candidate'),
-  }),
-  z.object({
-    type: z.literal('memory.register_finished'),
-    candidateId: z.string().uuid(),
-    sourceRunId: z.string().uuid(),
-    target: z.literal('context-still'),
-    status: z.enum(['registered', 'degraded', 'failed']),
-    externalId: z.string().optional(),
-    errorCode: z.string().optional(),
-    errorMessage: z.string().optional(),
-  }),
-  z.object({
-    type: z.literal('memory.context_injected'),
-    runId: z.string().uuid(),
-    source: z.enum(['context-still', 'fallback']),
-    degraded: z.boolean(),
-    compiledContextDigest: z.string(),
-    includedSourceRefs: z.array(includedMemoryRefSchema),
-    charCount: z.number().int().nonnegative(),
-  }),
-  z.object({
-    type: z.literal('memory.feedback_evaluated'),
-    baselineRunId: z.string().uuid(),
-    followupRunId: z.string().uuid(),
-    candidateIds: z.array(z.string().uuid()),
-    verdict: z.enum(['effective', 'ineffective', 'inconclusive', 'not_injected']),
-    reasons: z.array(z.string()),
-    evidenceEventIds: z.array(z.string()),
-  }),
-]);
+  .openapi('RuntimePromptSnapshot');
 
 const reviewOutcomeStatusSchema = z.enum([
   'needs_review',

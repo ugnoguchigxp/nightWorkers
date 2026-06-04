@@ -16,24 +16,8 @@ import {
   generatePlanModeBlueprintDraft,
 } from '../../services/blueprints/llm-draft';
 import { validateAppBlueprint } from '../../services/blueprints/validation';
-import { compileContext, evaluateContext } from '../../services/context-still';
 import { buildFinalJudgment } from '../../services/final-judgment/build-final-judgment';
 import { renderFinalMessage } from '../../services/final-judgment/render-final-message';
-import { extractLearningCandidates } from '../../services/memory-feedback/candidate-extractor';
-import {
-  createLearningCandidateEvent,
-  getLearningCandidateFromEvents,
-  listLearningCandidatesForRun,
-} from '../../services/memory-feedback/candidate-store';
-import { evaluateMemoryFeedback } from '../../services/memory-feedback/effectiveness';
-import { digestText } from '../../services/memory-feedback/hash';
-import { weakMatchCandidateRefs } from '../../services/memory-feedback/injection-matcher';
-import { registerApprovedCandidate } from '../../services/memory-feedback/register';
-import type {
-  ContextCompileSnapshot,
-  LearningCandidate,
-  RunLedgerView,
-} from '../../services/memory-feedback/types';
 import { selectProcedureForTaskType, toProcedureSnapshot } from '../../services/procedures';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
 import { buildReviewResult } from '../../services/review-results/build-review-result';
@@ -49,7 +33,6 @@ import {
 import type { ReviewerEvaluationMode } from '../../services/review-rubrics/types';
 import { decideRunOutcome } from '../../services/run-control/run-outcome-gate';
 import { serializeRunToJsonl } from '../../services/run-events/jsonl-export';
-import type { RunEventBase } from '../../services/run-events/types';
 import { nativeLocalRunner } from '../../services/runner/NativeLocalRunner';
 import {
   callSupervisorLLM,
@@ -58,6 +41,8 @@ import {
 import { buildRound1SystemPrompt } from '../../services/supervisor/prompt';
 import type { SupervisorRoutingHypothesis } from '../../services/supervisor/skills/types';
 import { planTaskIntake } from '../../services/task-intake';
+import { digestText } from '../../services/text-digest';
+import type { RuntimePromptSnapshot } from '../../services/todo-context';
 import { buildTodoContextSnapshot } from '../../services/todo-context';
 import {
   appendTodoSummaryToFinalReport,
@@ -613,6 +598,10 @@ async function handleWorkbenchIntakeMessage(
       emitEvent: emitWorkbenchLlmDebugEvent,
     });
     const routing = decision.routingHypothesis;
+    const startsImmediateRun = shouldStartImmediateWorkbenchRun(
+      decision,
+      options.intent || 'intake'
+    );
     if (isBlueprintRouting(routing)) {
       try {
         const { blueprint, validation, generation } = await generatePlanModeBlueprintDraft({
@@ -676,7 +665,7 @@ async function handleWorkbenchIntakeMessage(
         });
         throw new BlueprintArtifactGenerationError(message);
       }
-    } else {
+    } else if (!startsImmediateRun) {
       await repo.createTaskMessage({
         taskId,
         role: 'assistant',
@@ -689,7 +678,7 @@ async function handleWorkbenchIntakeMessage(
         },
       });
     }
-    if (shouldStartImmediateWorkbenchRun(decision, options.intent || 'intake')) {
+    if (startsImmediateRun) {
       const runnable = await repo.updateTask(taskId, {
         title,
         objective: task.objective || prompt,
@@ -1169,8 +1158,7 @@ export async function startTaskRun(taskId: string) {
   }
   const messages = await repo.listTaskMessages(taskId);
   const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
-  let compiledPromptText = lastUserMessage?.content || task.description || task.objective || '';
-  let contextSource: 'context-still' | 'fallback' = 'fallback';
+  const compiledPromptText = lastUserMessage?.content || task.description || task.objective || '';
   if (!compiledPromptText.trim()) {
     throw new AppError(400, 'EMPTY_PROMPT', 'No user message found to start a run');
   }
@@ -1188,7 +1176,7 @@ export async function startTaskRun(taskId: string) {
   const run = await repo.createTaskRun({
     taskId,
     repositoryId: task.repositoryId,
-    status: 'context_compiling',
+    status: 'running',
     workerKind: 'native-local',
     timeoutSeconds: task.timeoutSeconds,
     contextSnapshot: { compiledPrompt: compiledPromptText, blueprintPlanning: blueprintReadiness },
@@ -1203,8 +1191,8 @@ export async function startTaskRun(taskId: string) {
     type: 'run.created',
     severity: 'info',
     actor: 'system',
-    message: 'Task run created. Context compile is starting.',
-    data: { contextSource, blueprintPlanning: blueprintReadiness },
+    message: 'Task run created. Runtime prompt is being prepared.',
+    data: { contextSource: 'task_prompt', blueprintPlanning: blueprintReadiness },
   });
 
   await repo.createRunEvent({
@@ -1263,37 +1251,10 @@ export async function startTaskRun(taskId: string) {
     });
   }
 
-  const compileResult = await compileContext({
-    repositoryPath: repoInfo.localPath,
-    taskTitle: task.title,
-    taskDescription: planningPromptText,
-    taskId,
-    runId: run.id,
-  });
-  compiledPromptText = compileResult.compiledPromptText;
-  contextSource = compileResult.degraded ? 'fallback' : 'context-still';
-  const previousRuns = (await repo.listTaskRunsForTask(taskId)).filter(
-    (taskRun) => taskRun.id !== run.id
-  );
-  const previousCandidates: LearningCandidate[] = [];
-  for (const previousRun of previousRuns) {
-    const previousEvents = await repo.listTaskEventsForRun(previousRun.id);
-    previousCandidates.push(
-      ...listLearningCandidatesForRun(previousEvents).filter((candidate) =>
-        ['approved', 'registered'].includes(candidate.status)
-      )
-    );
-  }
-  const weakMatchedRefs =
-    compileResult.includedMemoryRefs.length === 0
-      ? weakMatchCandidateRefs({ compiledText: compiledPromptText, candidates: previousCandidates })
-      : [];
-  const includedMemoryRefs = [...compileResult.includedMemoryRefs, ...weakMatchedRefs];
-  const contextSnapshot: ContextCompileSnapshot = {
+  const contextSnapshot: RuntimePromptSnapshot = {
     compiledPrompt: compiledPromptText,
-    source: contextSource,
-    degraded: compileResult.degraded,
-    degradedReason: compileResult.degradedReason,
+    source: 'task_prompt',
+    degraded: false,
     blueprintPlanning: blueprintReadiness,
     request: {
       repositoryPath: repoInfo.localPath,
@@ -1305,8 +1266,6 @@ export async function startTaskRun(taskId: string) {
     result: {
       digest: digestText(compiledPromptText),
       charCount: compiledPromptText.length,
-      sourceMetadata: compileResult.sourceMetadata,
-      includedMemoryRefs,
     },
   };
 
@@ -1346,38 +1305,14 @@ export async function startTaskRun(taskId: string) {
     runId: run.id,
     taskId,
     timestamp: new Date().toISOString(),
-    type: 'run.context_compiled',
+    type: 'run.prompt_prepared',
     severity: 'info',
     actor: 'system',
-    message: compileResult.degraded
-      ? 'Context compile completed with degraded fallback.'
-      : 'Context compile completed.',
+    message: 'Runtime prompt prepared.',
     data: {
-      source: contextSource,
-      degraded: compileResult.degraded,
-      degradedReason: compileResult.degradedReason,
+      source: contextSnapshot.source,
+      degraded: false,
       digest: contextSnapshot.result.digest,
-      charCount: contextSnapshot.result.charCount,
-    },
-  });
-  await repo.createRunEvent({
-    version: 1,
-    runId: run.id,
-    taskId,
-    timestamp: new Date().toISOString(),
-    type: 'memory.context_injected',
-    severity: compileResult.degraded ? 'warning' : 'info',
-    actor: 'system',
-    message: includedMemoryRefs.length
-      ? `Context compile included ${includedMemoryRefs.length} memory source refs.`
-      : 'Context compile completed without memory source refs.',
-    data: {
-      runId: run.id,
-      source: contextSource,
-      degraded: compileResult.degraded,
-      degradedReason: compileResult.degradedReason,
-      compiledContextDigest: contextSnapshot.result.digest,
-      includedSourceRefs: includedMemoryRefs,
       charCount: contextSnapshot.result.charCount,
     },
   });
@@ -1658,12 +1593,6 @@ export async function startTaskRun(taskId: string) {
         { legacyPayload: outcome }
       );
 
-      // Feedback evaluation back to contextStill
-      await evaluateContext(
-        run.id,
-        `Task run execution completed with status: ${outcome.status}. Diff size: ${(runtimeResult.diffPatch || '').length} bytes.`,
-        outcome.status === 'completed'
-      );
       await repo.createTaskMessage({
         taskId,
         runId: run.id,
@@ -1766,7 +1695,6 @@ export async function startTaskRun(taskId: string) {
         data: { finalJudgment },
       });
 
-      await evaluateContext(run.id, `Execution crashed: ${err.message}`, false);
       await repo.createTaskMessage({
         taskId,
         runId: run.id,
@@ -2106,183 +2034,6 @@ export async function listTaskRunEventsForReplay(input: {
   return repo.listTaskEventsForRun(input.runId, { afterSeq: input.afterSeq });
 }
 
-function extractRunEvents(
-  events: Awaited<ReturnType<typeof repo.listTaskEventsForRun>>
-): RunEventBase[] {
-  return events
-    .map((event) => ((event.payloadJson || {}) as { runEvent?: RunEventBase }).runEvent)
-    .filter((event): event is RunEventBase => Boolean(event));
-}
-
-async function getRunWithEvents(runId: string) {
-  const run = await repo.getTaskRun(runId);
-  if (!run) throw new NotFoundError('Run not found');
-  const events = await repo.listTaskEventsForRun(runId);
-  return { run, events, runEvents: extractRunEvents(events) };
-}
-
-export async function listMemoryCandidates(runId: string) {
-  const { events } = await getRunWithEvents(runId);
-  return listLearningCandidatesForRun(events);
-}
-
-export async function generateMemoryCandidates(runId: string) {
-  const { run, events, runEvents } = await getRunWithEvents(runId);
-  const existing = listLearningCandidatesForRun(events);
-  if (existing.length > 0) return existing;
-  const repository = run.repositoryId ? await repo.getRepository(run.repositoryId) : null;
-  const candidates = extractLearningCandidates({
-    runId: run.id,
-    taskId: run.taskId,
-    repositoryId: run.repositoryId,
-    repoPath: repository?.localPath,
-    events: runEvents,
-    outcomeStatus: run.status,
-  });
-
-  for (const candidate of candidates) {
-    await repo.createRunEvent(
-      createLearningCandidateEvent({ runId: run.id, taskId: run.taskId, candidate }),
-      {
-        payloadJson: { memoryCandidate: candidate },
-      }
-    );
-  }
-  return candidates;
-}
-
-export async function approveMemoryCandidate(
-  runId: string,
-  candidateId: string,
-  approvalNote?: string
-) {
-  const { run, events } = await getRunWithEvents(runId);
-  const candidate = getLearningCandidateFromEvents(events, candidateId);
-  if (!candidate) throw new NotFoundError('Memory candidate not found');
-  if (candidate.status === 'rejected') {
-    throw new AppError(409, 'MEMORY_CANDIDATE_REJECTED', 'Rejected candidate cannot be approved');
-  }
-  const approvedAt = new Date().toISOString();
-  const approvedCandidate: LearningCandidate = {
-    ...candidate,
-    status: 'approved',
-    approvedAt,
-  };
-  await repo.createRunEvent(
-    {
-      version: 1,
-      runId,
-      taskId: run.taskId,
-      timestamp: approvedAt,
-      type: 'memory.candidate_approved',
-      severity: 'info',
-      actor: 'human',
-      message: `Memory candidate approved: ${candidate.title}`,
-      data: {
-        candidateId,
-        sourceRunId: candidate.sourceRunId,
-        approvedBy: 'human',
-        approvalNote,
-        approvedAt,
-      },
-    },
-    { payloadJson: { memoryCandidate: approvedCandidate } }
-  );
-  return approvedCandidate;
-}
-
-export async function rejectMemoryCandidate(runId: string, candidateId: string, note?: string) {
-  const { run, events } = await getRunWithEvents(runId);
-  const candidate = getLearningCandidateFromEvents(events, candidateId);
-  if (!candidate) throw new NotFoundError('Memory candidate not found');
-  if (candidate.status === 'registered') {
-    throw new AppError(
-      409,
-      'MEMORY_CANDIDATE_REGISTERED',
-      'Registered candidate cannot be rejected'
-    );
-  }
-  const rejectedCandidate: LearningCandidate = {
-    ...candidate,
-    status: 'rejected',
-  };
-  await repo.createRunEvent(
-    {
-      version: 1,
-      runId,
-      taskId: run.taskId,
-      timestamp: new Date().toISOString(),
-      type: 'system.warning',
-      severity: 'warning',
-      actor: 'human',
-      message: `Memory candidate rejected: ${candidate.title}`,
-      data: {
-        candidateId,
-        sourceRunId: candidate.sourceRunId,
-        status: 'rejected',
-        note,
-      },
-    },
-    { payloadJson: { memoryCandidate: rejectedCandidate } }
-  );
-  return rejectedCandidate;
-}
-
-export async function registerMemoryCandidate(runId: string, candidateId: string) {
-  const { run, events } = await getRunWithEvents(runId);
-  const candidate = getLearningCandidateFromEvents(events, candidateId);
-  if (!candidate) throw new NotFoundError('Memory candidate not found');
-  if (candidate.status !== 'approved') {
-    throw new AppError(
-      409,
-      'MEMORY_CANDIDATE_NOT_APPROVED',
-      'Only approved memory candidates can be registered'
-    );
-  }
-  return registerApprovedCandidate({
-    runId,
-    taskId: run.taskId,
-    candidate,
-    appendEvent: (event, payloadJson) => repo.createRunEvent(event, { payloadJson }),
-  });
-}
-
-export async function evaluateMemoryFeedbackForRuns(input: {
-  baselineRunId: string;
-  followupRunId: string;
-  candidateIds: string[];
-}) {
-  const baseline = await getRunWithEvents(input.baselineRunId);
-  const followup = await getRunWithEvents(input.followupRunId);
-  const baselineView: RunLedgerView = {
-    runId: baseline.run.id,
-    events: baseline.runEvents,
-    terminal: { status: baseline.run.status, summary: baseline.run.summary || undefined },
-  };
-  const followupView: RunLedgerView = {
-    runId: followup.run.id,
-    events: followup.runEvents,
-    terminal: { status: followup.run.status, summary: followup.run.summary || undefined },
-  };
-  const evaluation = evaluateMemoryFeedback({
-    baselineRun: baselineView,
-    followupRun: followupView,
-    candidateIds: input.candidateIds,
-  });
-  await repo.createRunEvent({
-    version: 1,
-    runId: followup.run.id,
-    taskId: followup.run.taskId,
-    timestamp: new Date().toISOString(),
-    type: 'memory.feedback_evaluated',
-    severity: 'checkpoint',
-    actor: 'system',
-    message: `Memory feedback evaluated: ${evaluation.verdict}`,
-    data: evaluation as unknown as Record<string, unknown>,
-  });
-  return evaluation;
-}
-
 export async function getTaskRunsForTask(taskId: string) {
   return repo.listTaskRunsForTask(taskId);
 }
@@ -2357,13 +2108,6 @@ export async function reviewTaskRun(runId: string, request: ReviewRunRequest) {
       data: { ...outcome, reviewResultId: reviewResult.id },
     },
     { legacyPayload: outcome, payloadJson: { reviewResultId: reviewResult.id } }
-  );
-
-  // Feedback evaluation back to contextStill should never fail the review persistence.
-  void evaluateContext(
-    run.id,
-    `Review submitted with status=${finalTaskStatus}. Outcome=${outcome.status}.`,
-    outcome.status === 'completed'
   );
 
   return { ok: true, status: finalTaskStatus, outcome, reviewResult };

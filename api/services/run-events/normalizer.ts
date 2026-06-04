@@ -4,7 +4,7 @@ type LegacyMapping = { eventType: string; type: 'info' | 'warning' | 'error' | '
 
 const LEGACY_MAPPING: Record<RunEventType, LegacyMapping> = {
   'run.created': { eventType: 'state_change', type: 'info' },
-  'run.context_compiled': { eventType: 'state_change', type: 'info' },
+  'run.prompt_prepared': { eventType: 'state_change', type: 'info' },
   'run.runtime_started': { eventType: 'state_change', type: 'info' },
   'run.runtime_finished': { eventType: 'state_change', type: 'checkpoint' },
   'run.finalizing_started': { eventType: 'state_change', type: 'info' },
@@ -42,12 +42,6 @@ const LEGACY_MAPPING: Record<RunEventType, LegacyMapping> = {
   'review.llm_started': { eventType: 'review_evaluation', type: 'info' },
   'review.llm_finished': { eventType: 'review_evaluation', type: 'info' },
   'review.evaluation_finished': { eventType: 'review_evaluation', type: 'checkpoint' },
-  'memory.candidate_generated': { eventType: 'memory.candidate_generated', type: 'info' },
-  'memory.candidate_approved': { eventType: 'memory.candidate_approved', type: 'info' },
-  'memory.register_started': { eventType: 'memory.register_started', type: 'info' },
-  'memory.register_finished': { eventType: 'memory.register_finished', type: 'info' },
-  'memory.context_injected': { eventType: 'memory.context_injected', type: 'info' },
-  'memory.feedback_evaluated': { eventType: 'memory.feedback_evaluated', type: 'checkpoint' },
   'system.info': { eventType: 'info', type: 'info' },
   'system.warning': { eventType: 'warning', type: 'warning' },
   'system.error': { eventType: 'error', type: 'error' },

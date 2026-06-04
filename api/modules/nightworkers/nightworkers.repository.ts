@@ -250,12 +250,9 @@ export async function getTodoWorkflowSettings() {
 }
 
 export async function updateTodoWorkflowSettings(data: {
-  requireContextCompile?: boolean;
   requirePerTodoReview?: boolean;
   requirePerTodoFix?: boolean;
   requireFinalVerification?: boolean;
-  requireCompileEval?: boolean;
-  requireRegisterCandidatePrompt?: boolean;
   askCommitOnCompletion?: boolean;
   hookPolicyJson?: any;
 }) {
@@ -264,13 +261,9 @@ export async function updateTodoWorkflowSettings(data: {
   const [settings] = await db
     .update(todoWorkflowSettings)
     .set({
-      requireContextCompile: data.requireContextCompile ?? current.requireContextCompile,
       requirePerTodoReview: data.requirePerTodoReview ?? current.requirePerTodoReview,
       requirePerTodoFix: data.requirePerTodoFix ?? current.requirePerTodoFix,
       requireFinalVerification: data.requireFinalVerification ?? current.requireFinalVerification,
-      requireCompileEval: data.requireCompileEval ?? current.requireCompileEval,
-      requireRegisterCandidatePrompt:
-        data.requireRegisterCandidatePrompt ?? current.requireRegisterCandidatePrompt,
       askCommitOnCompletion: data.askCommitOnCompletion ?? current.askCommitOnCompletion,
       hookPolicyJson: data.hookPolicyJson ?? current.hookPolicyJson,
       updatedAt: now,

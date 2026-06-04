@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildTodoContextSnapshot } from '../api/services/todo-context';
 
 describe('Todo context snapshots', () => {
-  it('captures todo, selected procedure, run context, and selected knowledge ids', () => {
+  it('captures todo, selected procedure, and runtime prompt context', () => {
     const snapshot = buildTodoContextSnapshot({
       todo: {
         id: 'todo-1',
@@ -28,7 +28,7 @@ describe('Todo context snapshots', () => {
       },
       runContext: {
         compiledPrompt: 'compiled',
-        source: 'context-still',
+        source: 'task_prompt',
         degraded: false,
         request: {
           repositoryPath: '/repo',
@@ -38,11 +38,6 @@ describe('Todo context snapshots', () => {
         result: {
           digest: 'run-context-digest',
           charCount: 8,
-          includedMemoryRefs: [
-            { kind: 'candidate', candidateId: 'candidate-1' },
-            { kind: 'memory', externalId: 'memory-1' },
-            { kind: 'candidate', candidateId: 'candidate-1' },
-          ],
         },
       },
     });
@@ -60,9 +55,8 @@ describe('Todo context snapshots', () => {
         digest: 'sha256:procedure',
       },
       runContext: {
-        source: 'context-still',
+        source: 'task_prompt',
         digest: 'run-context-digest',
-        selectedKnowledgeIds: ['candidate-1', 'memory-1'],
       },
       previousTodoSummaries: [],
     });

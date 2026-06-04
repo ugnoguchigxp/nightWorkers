@@ -17,7 +17,16 @@
 ## Stop Conditions
 
 - 編集と検証が完了した場合だけ summarize へ進む。
+- 編集ツールの実行結果と必要な検証結果が observations に揃った場合だけ phase="stop" に進む。
+- phase="stop" を返す場合は terminalState を必ず指定する。完了なら terminalState="completed" を返す。
+- phase="stop" 以外では terminalState を返さない。
 
 ## Report Contract
 
 - finalResponse には変更ファイルと検証結果を要約する。
+
+## Avoid
+
+- phase="stop" で terminalState を省略しない。
+- 編集ツール結果が observations に無いまま、作成済み・編集済み・確認済みとして完了報告しない。
+- Codex 自身の作業や別経路のファイル変更を、worker tool の実行結果として扱わない。

@@ -1,7 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import type { CodexOptions, Thread, ThreadEvent, Usage } from '@openai/codex-sdk';
 import { z } from 'zod';
 import { appendLlmTrace, appendSupervisorTrace, logger } from '../../lib/logger';
@@ -152,47 +149,16 @@ export function buildCodexSupervisorThreadOptions(
 ) {
   const configuredEffort = process.env.CODEX_MODEL_REASONING_EFFORT;
   const modelReasoningEffort = isCodexReasoningEffort(configuredEffort) ? configuredEffort : 'low';
-  const decisionWorkingDirectory = resolveCodexSupervisorWorkingDirectory(workingDirectory);
   return {
     model,
     sandboxMode: 'workspace-write' as const,
     approvalPolicy: 'never' as const,
     networkAccessEnabled: false,
     webSearchMode: 'disabled' as const,
-    workingDirectory: decisionWorkingDirectory,
+    workingDirectory,
     skipGitRepoCheck: true,
     modelReasoningEffort,
   };
-}
-
-function resolveCodexSupervisorWorkingDirectory(requestedWorkingDirectory: string): string {
-  const configured = process.env.CODEX_SUPERVISOR_WORKING_DIRECTORY?.trim();
-  const fallback = ensureCodexSupervisorDecisionWorkspace();
-  if (!configured) return fallback;
-
-  return pathsOverlap(configured, requestedWorkingDirectory)
-    ? fallback
-    : ensureDirectory(path.resolve(configured));
-}
-
-function ensureCodexSupervisorDecisionWorkspace(): string {
-  const workspace = path.join(os.tmpdir(), 'nightworkers-codex-supervisor-decisions');
-  return ensureDirectory(workspace);
-}
-
-function ensureDirectory(workspace: string): string {
-  fs.mkdirSync(workspace, { recursive: true });
-  return workspace;
-}
-
-function pathsOverlap(left: string, right: string): boolean {
-  const leftResolved = path.resolve(left);
-  const rightResolved = path.resolve(right);
-  return (
-    leftResolved === rightResolved ||
-    leftResolved.startsWith(`${rightResolved}${path.sep}`) ||
-    rightResolved.startsWith(`${leftResolved}${path.sep}`)
-  );
 }
 
 function isCodexReasoningEffort(
@@ -1148,13 +1114,13 @@ export async function callSupervisorLLM(
                 finalResponse: '',
                 expectedEvidence: [
                   {
-                    path: 'spec/memory-feedback-long-run-implementation-plan.md',
-                    lines: '1-767',
+                    path: 'spec/implementation-queue-redesign-plan.md',
+                    lines: '1-200',
                     focus: 'implementation plan consistency',
                   },
                   {
-                    path: 'api/services/context-still/client.ts',
-                    focus: 'context compile integration',
+                    path: 'api/services/supervisor/llm-provider.ts',
+                    focus: 'supervisor decision parsing',
                   },
                 ],
                 riskLevel: 'medium',
@@ -1397,9 +1363,9 @@ export async function callSupervisorLLM(
           return {
             phase: 'plan',
             workflow: parsed.data.workflow || 'general',
-            instruction: 'Empty stop decision detected. Continue to next round.',
-            rationale: 'Model returned stop with empty payload.',
-            finalResponse: '',
+            instruction: '',
+            rationale: '',
+            finalResponse: rawContent,
             expectedEvidence: [],
             riskLevel: 'medium',
             toolCall: null,
@@ -1409,8 +1375,8 @@ export async function callSupervisorLLM(
         return {
           phase: 'stop',
           workflow: parsed.data.workflow || 'general',
-          instruction: 'Safety system interrupted due to an empty display payload.',
-          rationale: `Model returned a valid stop decision JSON, but finalResponse/instruction/rationale were empty. Raw content: ${rawContent}`,
+          instruction: '',
+          rationale: '',
           finalResponse: rawContent,
           expectedEvidence: [],
           terminalState: 'needs_human',
@@ -1463,9 +1429,9 @@ export async function callSupervisorLLM(
       return {
         phase: 'plan',
         workflow: 'general',
-        instruction: 'Schema mismatch in previous round. Continue to next round.',
-        rationale: `LLM response schema mismatch tolerated. Raw content: ${rawContent}`,
-        finalResponse: '',
+        instruction: '',
+        rationale: '',
+        finalResponse: rawContent,
         expectedEvidence: [],
         riskLevel: 'medium',
         toolCall: null,
@@ -1475,8 +1441,8 @@ export async function callSupervisorLLM(
     return {
       phase: 'stop',
       workflow: 'general',
-      instruction: 'Safety system interrupted execution due to formatting errors.',
-      rationale: `LLM response failed to match schema. Raw content: ${rawContent}`,
+      instruction: '',
+      rationale: '',
       finalResponse: rawContent,
       expectedEvidence: [],
       terminalState: 'needs_human',
@@ -1507,8 +1473,8 @@ export async function callSupervisorLLM(
       return {
         phase: 'stop',
         workflow: 'general',
-        instruction: 'Safety system interrupted execution due to plain-text supervisor output.',
-        rationale: `Model returned plain text instead of decision JSON. Raw content: ${plain}`,
+        instruction: '',
+        rationale: '',
         finalResponse: plain,
         expectedEvidence: [],
         terminalState: 'needs_human',
@@ -1546,8 +1512,8 @@ export async function callSupervisorLLM(
     return {
       phase: 'stop',
       workflow: 'general',
-      instruction: 'Safety system interrupted execution due to JSON syntax errors.',
-      rationale: `LLM response failed to parse as JSON. Raw content: ${rawContent}. Error: ${errorMessage}`,
+      instruction: '',
+      rationale: '',
       finalResponse: rawContent,
       expectedEvidence: [],
       terminalState: 'needs_human',

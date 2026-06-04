@@ -184,17 +184,17 @@ function TaskConsolePage() {
             </div>
           </div>
 
-          {/* contextStill Compiled Context Box */}
+          {/* Runtime Prompt Snapshot Box */}
           <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
             <h2 className="text-lg font-bold mb-3 text-foreground flex items-center gap-2">
               <MessageSquare className="h-5 w-5 text-cyan-400" />
-              Durable Memory Prompt
+              Runtime Prompt
             </h2>
             <p className="text-xs text-muted-foreground mb-2">
-              Compiled by contextStill before execution:
+              Prompt snapshot used for execution:
             </p>
             <div className="text-xs text-muted-foreground bg-background/50 rounded-lg p-3 border border-border/60 font-mono min-h-[100px] max-h-[250px] overflow-y-auto whitespace-pre-wrap">
-              {task.compiledPrompt || '(No compiled prompt yet. Run the agent to compile context.)'}
+              {task.compiledPrompt || '(No runtime prompt snapshot yet. Run the agent first.)'}
             </div>
           </div>
 

@@ -1299,12 +1299,9 @@ export function SettingsScreen({
 
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  ['requireContextCompile', 'context_compile'],
                   ['requirePerTodoReview', 'Todoごとのコードレビュー'],
                   ['requirePerTodoFix', 'レビュー後の修正'],
                   ['requireFinalVerification', '最終Verify'],
-                  ['requireCompileEval', 'compile_eval'],
-                  ['requireRegisterCandidatePrompt', 'register_candidate'],
                   ['askCommitOnCompletion', '完了時Commit確認'],
                 ].map(([key, label]) => (
                   <label

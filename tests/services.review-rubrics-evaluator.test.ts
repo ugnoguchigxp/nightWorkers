@@ -79,34 +79,15 @@ describe('deterministic rubric evaluator', () => {
   });
 
   it('evaluates run_event_type criteria against all event types, not selected timeline events only', () => {
-    const rubric = loadRubric('memory-feedback-run').rubric;
+    const rubric = loadRubric('review-ready-run').rubric;
     const result = evaluateDeterministicRubric(rubric, {
       ...basePack,
       selectedEvents: [],
-      eventTypes: [
-        'memory.candidate_generated',
-        'memory.context_injected',
-        'memory.feedback_evaluated',
-      ],
+      eventTypes: ['verification.finished'],
     });
 
     expect(result.findings.map((finding) => finding.title)).not.toContain(
-      'Memory feedback evaluation event is present'
-    );
-  });
-
-  it('requires candidate, injection, and feedback events for memory feedback runs', () => {
-    const rubric = loadRubric('memory-feedback-run').rubric;
-    const result = evaluateDeterministicRubric(rubric, {
-      ...basePack,
-      eventTypes: ['memory.context_injected'],
-    });
-
-    expect(result.findings.map((finding) => finding.title)).toEqual(
-      expect.arrayContaining([
-        'Memory candidate generation event is present',
-        'Memory feedback evaluation event is present',
-      ])
+      'Verification result is present'
     );
   });
 

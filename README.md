@@ -22,7 +22,6 @@ NightWorkers is a local-first autonomous development control plane. It coordinat
 - Model-provider aware LLM settings (OpenAI, Azure OpenAI, Bedrock, Codex SDK)
 - Non-authenticated MCP Server settings for the coding agent
 - Agent Hooks settings for lifecycle command / HTTP automation
-- Optional contextStill integration (degrades gracefully when unavailable)
 - Chat-first workbench flow with explicit Implementation Queue admission and run execution
 - App Blueprint review with governed preview settings, DB Design revisions, and adopted-artifact state
 
@@ -91,7 +90,6 @@ Important environment variables:
 - `API_AUTH_REQUIRED`: opt-in protection for product APIs and the NightWorkers WebSocket. Defaults to `false` for local personal use; set `true` when intentionally exposing the app beyond localhost.
 - `APP_URL`: required for OAuth and secure cookie scenarios
 - `TRUST_PROXY`: set `true` behind reverse proxy
-- `CONTEXT_STILL_ENABLED`: enable optional contextStill integration
 - `SESSION_QUEUE_MAX_CONCURRENCY`: legacy Session queue default retained for migration compatibility
 - `NIGHTWORKERS_MCP_SETTINGS_PATH`: optional override for the MCP Server settings JSON path
 - `NIGHTWORKERS_HOOKS_SETTINGS_PATH`: optional override for the Agent Hooks settings JSON path

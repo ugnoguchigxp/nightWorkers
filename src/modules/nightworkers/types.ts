@@ -100,12 +100,9 @@ export type ImplementationQueueDashboard = {
 
 export type TodoWorkflowSettings = {
   id: string;
-  requireContextCompile: boolean;
   requirePerTodoReview: boolean;
   requirePerTodoFix: boolean;
   requireFinalVerification: boolean;
-  requireCompileEval: boolean;
-  requireRegisterCandidatePrompt: boolean;
   askCommitOnCompletion: boolean;
   hookPolicyJson?: unknown | null;
   createdAt: unknown;

@@ -1,5 +1,5 @@
 import type { AgentRuntimeResult } from '../agent-runtime/types';
-import { digestText } from '../memory-feedback/hash';
+import { digestText } from '../text-digest';
 import type { TodoCompletionGateResult, TodoRuntimeTodo } from './types';
 
 export function evaluateTodoCompletionGate(input: {

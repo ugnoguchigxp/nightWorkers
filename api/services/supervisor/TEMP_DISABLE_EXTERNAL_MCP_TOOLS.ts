@@ -6,7 +6,7 @@
  *
  * Why this exists:
  * - When external system context leaks into the internal agent output,
- *   the model may emit unsupported tool names (e.g. mcp__context_still.initial_instructions).
+ *   the model may emit unsupported tool names from external namespaces.
  * - That causes schema failures / execution loops.
  *
  * Removal plan:

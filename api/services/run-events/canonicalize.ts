@@ -15,12 +15,6 @@ const LEGACY_TO_CANONICAL: Record<string, RunEventType> = {
   checkpoint: 'verification.finished',
   state_change: 'run.recovered',
   info: 'model.response_delta',
-  'memory.candidate_generated': 'memory.candidate_generated',
-  'memory.candidate_approved': 'memory.candidate_approved',
-  'memory.register_started': 'memory.register_started',
-  'memory.register_finished': 'memory.register_finished',
-  'memory.context_injected': 'memory.context_injected',
-  'memory.feedback_evaluated': 'memory.feedback_evaluated',
 };
 
 export function canonicalizeTaskEvent(event: EventRow, run: RunRow): RunEventBase {

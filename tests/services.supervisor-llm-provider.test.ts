@@ -14,12 +14,7 @@ describe('Supervisor LLM provider evidence fallback', () => {
   const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
   const originalNodeEnv = process.env.NODE_ENV;
   const originalMcpSettingsPath = process.env.NIGHTWORKERS_MCP_SETTINGS_PATH;
-  const originalCodexSupervisorWorkingDirectory = process.env.CODEX_SUPERVISOR_WORKING_DIRECTORY;
   let tempDir: string;
-  const defaultCodexSupervisorDecisionWorkspace = path.join(
-    os.tmpdir(),
-    'nightworkers-codex-supervisor-decisions'
-  );
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-supervisor-mcp-'));
@@ -44,11 +39,6 @@ describe('Supervisor LLM provider evidence fallback', () => {
       delete process.env.NODE_ENV;
     } else {
       process.env.NODE_ENV = originalNodeEnv;
-    }
-    if (originalCodexSupervisorWorkingDirectory === undefined) {
-      delete process.env.CODEX_SUPERVISOR_WORKING_DIRECTORY;
-    } else {
-      process.env.CODEX_SUPERVISOR_WORKING_DIRECTORY = originalCodexSupervisorWorkingDirectory;
     }
   });
 
@@ -120,8 +110,8 @@ describe('Supervisor LLM provider evidence fallback', () => {
     expect(decision.phase).toBe('plan');
     expect(decision.workflow).toBe('evidence_review');
     expect(decision.expectedEvidence).toEqual([
-      'spec/memory-feedback-long-run-implementation-plan.md: 1-767: implementation plan consistency',
-      'api/services/context-still/client.ts: context compile integration',
+      'spec/implementation-queue-redesign-plan.md: 1-200: implementation plan consistency',
+      'api/services/supervisor/llm-provider.ts: supervisor decision parsing',
     ]);
   });
 
@@ -221,8 +211,7 @@ describe('Supervisor LLM provider evidence fallback', () => {
     }
   });
 
-  it('runs Codex supervisor calls in an isolated decision workspace', () => {
-    delete process.env.CODEX_SUPERVISOR_WORKING_DIRECTORY;
+  it('runs Codex supervisor calls from the repository workspace', () => {
     const options = buildCodexSupervisorThreadOptions('gpt-5.4-mini', '/repo/project');
 
     expect(options).toMatchObject({
@@ -234,28 +223,7 @@ describe('Supervisor LLM provider evidence fallback', () => {
       skipGitRepoCheck: true,
     });
     expect(options.sandboxMode).not.toBe('read-only');
-    expect(options.workingDirectory).toBe(defaultCodexSupervisorDecisionWorkspace);
-    expect(options.workingDirectory).not.toBe('/repo/project');
-    expect(fs.existsSync(defaultCodexSupervisorDecisionWorkspace)).toBe(true);
-  });
-
-  it('allows overriding the isolated Codex supervisor decision workspace', () => {
-    process.env.CODEX_SUPERVISOR_WORKING_DIRECTORY = '/tmp/nightworkers-decision-workspace';
-
-    const options = buildCodexSupervisorThreadOptions('gpt-5.4-mini', '/repo/project');
-
-    expect(options.workingDirectory).toBe(path.resolve('/tmp/nightworkers-decision-workspace'));
-    expect(options.workingDirectory).not.toBe('/repo/project');
-    expect(fs.existsSync(options.workingDirectory)).toBe(true);
-  });
-
-  it('ignores a Codex supervisor decision workspace override that overlaps the repo root', () => {
-    process.env.CODEX_SUPERVISOR_WORKING_DIRECTORY = '/repo';
-
-    const options = buildCodexSupervisorThreadOptions('gpt-5.4-mini', '/repo/project');
-
-    expect(options.workingDirectory).toBe(defaultCodexSupervisorDecisionWorkspace);
-    expect(options.workingDirectory).not.toBe('/repo');
+    expect(options.workingDirectory).toBe('/repo/project');
   });
 });
 
@@ -376,6 +344,8 @@ describe('Supervisor LLM OpenAI streaming', () => {
       riskLevel: 'high',
     });
     expect(decision.finalResponse).toBe('read-only sandbox のため編集できませんでした。');
+    expect(decision.instruction).toBe('');
+    expect(decision.rationale).toBe('');
     expect(events.some((event) => event.type === 'model.response_parse_failed')).toBe(true);
   });
 
@@ -412,5 +382,37 @@ describe('Supervisor LLM OpenAI streaming', () => {
       riskLevel: 'high',
     });
     expect(decision.finalResponse).toBe(rawDecision);
+    expect(decision.instruction).toBe('');
+    expect(decision.rationale).toBe('');
+  });
+
+  it('returns schema-invalid raw output visibly without adding fixed display text', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'openai';
+    process.env.OPENAI_ENABLED = 'true';
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.OPENAI_MODEL = 'gpt-test';
+    process.env.OPENAI_STREAMING_ENABLED = 'false';
+
+    const rawDecision = JSON.stringify({
+      phase: 'invalid_phase',
+      finalResponse: 'LLM raw schema-invalid response',
+    });
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({ choices: [{ message: { content: rawDecision } }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    const decision = await callSupervisorLLM('system', 'user', { round: 1 });
+
+    expect(decision).toMatchObject({
+      phase: 'stop',
+      terminalState: 'needs_human',
+      riskLevel: 'high',
+    });
+    expect(decision.finalResponse).toBe(rawDecision);
+    expect(decision.instruction).toBe('');
+    expect(decision.rationale).toBe('');
   });
 });

@@ -222,20 +222,11 @@ export const implementationQueueSettings = sqliteTable('implementation_queue_set
 
 export const todoWorkflowSettings = sqliteTable('todo_workflow_settings', {
   id: text('id').primaryKey(),
-  requireContextCompile: integer('require_context_compile', { mode: 'boolean' })
-    .default(true)
-    .notNull(),
   requirePerTodoReview: integer('require_per_todo_review', { mode: 'boolean' })
     .default(true)
     .notNull(),
   requirePerTodoFix: integer('require_per_todo_fix', { mode: 'boolean' }).default(true).notNull(),
   requireFinalVerification: integer('require_final_verification', { mode: 'boolean' })
-    .default(true)
-    .notNull(),
-  requireCompileEval: integer('require_compile_eval', { mode: 'boolean' }).default(true).notNull(),
-  requireRegisterCandidatePrompt: integer('require_register_candidate_prompt', {
-    mode: 'boolean',
-  })
     .default(true)
     .notNull(),
   askCommitOnCompletion: integer('ask_commit_on_completion', { mode: 'boolean' })

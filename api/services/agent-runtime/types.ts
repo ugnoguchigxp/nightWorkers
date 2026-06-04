@@ -19,7 +19,7 @@ export interface AgentRunContext {
   safetyPolicy?: AgentSafetyPolicy;
   contextSnapshot: {
     compiledPrompt: string;
-    source: 'context-still' | 'fallback';
+    source: 'task_prompt' | 'fallback';
   };
   todoPlan?: Array<{
     id: string;

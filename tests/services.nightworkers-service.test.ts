@@ -11,7 +11,6 @@ import {
   startTaskRun,
 } from '../api/modules/nightworkers/nightworkers.service';
 import * as runtimeRegistry from '../api/services/agent-runtime/registry';
-import * as contextStill from '../api/services/context-still';
 
 vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   getTask: vi.fn(),
@@ -39,11 +38,6 @@ vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
 
 vi.mock('../api/services/agent-runtime/registry', () => ({
   resolveAgentRuntime: vi.fn(),
-}));
-
-vi.mock('../api/services/context-still', () => ({
-  compileContext: vi.fn(),
-  evaluateContext: vi.fn(),
 }));
 
 describe('NightWorkers service', () => {
@@ -179,15 +173,6 @@ describe('NightWorkers service', () => {
     vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as any);
     vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
     vi.mocked(repo.updateTaskRun).mockResolvedValue(run as any);
-    vi.mocked(contextStill.compileContext).mockResolvedValue({
-      compiledPromptText: 'Run a blocked command',
-      degraded: true,
-      degradedReason: 'test',
-      sourceMetadata: {},
-      includedMemoryRefs: [],
-    } as any);
-    vi.mocked(contextStill.evaluateContext).mockResolvedValue(undefined as any);
-
     const runtimeStart = vi.fn().mockResolvedValue({
       terminalState: 'needs_human',
       summary: 'Stopped by policy block',
@@ -229,7 +214,7 @@ describe('NightWorkers service', () => {
             digest: 'sha256:test',
           }),
           runContext: expect.objectContaining({
-            source: 'fallback',
+            source: 'task_prompt',
             digest: expect.any(String),
           }),
         }),
@@ -323,14 +308,6 @@ describe('NightWorkers service', () => {
     vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as any);
     vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
     vi.mocked(repo.updateTaskRun).mockResolvedValue(run as any);
-    vi.mocked(contextStill.compileContext).mockResolvedValue({
-      compiledPromptText: task.description,
-      degraded: false,
-      sourceMetadata: {},
-      includedMemoryRefs: [],
-    } as any);
-    vi.mocked(contextStill.evaluateContext).mockResolvedValue(undefined as any);
-
     const runtimeStart = vi.fn().mockResolvedValue({
       terminalState: 'completed',
       summary: 'Todo done',
@@ -415,14 +392,6 @@ describe('NightWorkers service', () => {
     vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as any);
     vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
     vi.mocked(repo.updateTaskRun).mockResolvedValue(run as any);
-    vi.mocked(contextStill.compileContext).mockResolvedValue({
-      compiledPromptText: task.description,
-      degraded: false,
-      sourceMetadata: {},
-      includedMemoryRefs: [],
-    } as any);
-    vi.mocked(contextStill.evaluateContext).mockResolvedValue(undefined as any);
-
     const runtimeStart = vi.fn().mockResolvedValue({
       terminalState: 'completed',
       summary: 'Queued session done',

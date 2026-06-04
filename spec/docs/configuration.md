@@ -15,7 +15,6 @@ Enable as needed:
 - GitHub: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_REDIRECT_URI`
 
 ## Optional Integration
-- `CONTEXT_STILL_ENABLED=true` to enable contextStill-dependent features.
 
 ## LLM Providers
 - Provider/model settings are managed from the Settings screen and exposed under
@@ -84,8 +83,7 @@ Use these inputs to demonstrate rejected or recoverable extension paths without 
 - A Session enters the Queue only after a user explicitly queues an
   implementation-plan-ready task.
 - Todo Workflow gates are stored in `todo_workflow_settings` and control
-  required `context_compile`, per-Todo review/fix, final verification,
-  `compile_eval`, `register_candidate`, and completion commit confirmation.
+  per-Todo review/fix, final verification, and completion commit confirmation.
 - Legacy `SESSION_QUEUE_MAX_CONCURRENCY`, `queueEnabled`, and
   `maxConcurrentSessions` may exist for migration compatibility, but they are
   no longer the visible Implementation Queue control surface.

@@ -8,8 +8,6 @@ import {
   createReviewerEvaluationRequestSchema,
   createReviewerReplayEvaluationRequestSchema,
   createTaskSchema,
-  learningCandidateSchema,
-  memoryFeedbackEvaluationSchema,
   repositorySchema,
   reviewerEvaluationSchema,
   taskEventSchema,
@@ -817,12 +815,9 @@ const patchImplementationQueueSettingsRoute = createRoute({
 
 const todoWorkflowSettingsSchema = z.object({
   id: z.string(),
-  requireContextCompile: z.boolean(),
   requirePerTodoReview: z.boolean(),
   requirePerTodoFix: z.boolean(),
   requireFinalVerification: z.boolean(),
-  requireCompileEval: z.boolean(),
-  requireRegisterCandidatePrompt: z.boolean(),
   askCommitOnCompletion: z.boolean(),
   hookPolicyJson: z.any().nullable().optional(),
   createdAt: z.any(),
@@ -830,12 +825,9 @@ const todoWorkflowSettingsSchema = z.object({
 });
 
 const todoWorkflowSettingsInputSchema = z.object({
-  requireContextCompile: z.boolean().optional(),
   requirePerTodoReview: z.boolean().optional(),
   requirePerTodoFix: z.boolean().optional(),
   requireFinalVerification: z.boolean().optional(),
-  requireCompileEval: z.boolean().optional(),
-  requireRegisterCandidatePrompt: z.boolean().optional(),
   askCommitOnCompletion: z.boolean().optional(),
   hookPolicyJson: z.any().optional(),
 });
@@ -1131,149 +1123,6 @@ const exportTaskRunJsonlRoute = createRoute({
     404: {
       description: 'Run not found',
     },
-  },
-});
-
-const listMemoryCandidatesRoute = createRoute({
-  method: 'get',
-  path: '/runs/:id/memory-candidates',
-  request: {
-    params: z.object({ id: z.string().uuid() }),
-  },
-  responses: {
-    200: {
-      content: { 'application/json': { schema: z.array(learningCandidateSchema) } },
-      description: 'Memory learning candidates for a run',
-    },
-    404: { description: 'Run not found' },
-  },
-});
-
-const generateMemoryCandidatesRoute = createRoute({
-  method: 'post',
-  path: '/runs/:id/memory-candidates',
-  request: {
-    params: z.object({ id: z.string().uuid() }),
-    body: {
-      content: {
-        'application/json': {
-          schema: z.object({}).optional(),
-        },
-      },
-    },
-  },
-  responses: {
-    201: {
-      content: { 'application/json': { schema: z.array(learningCandidateSchema) } },
-      description: 'Memory learning candidates generated',
-    },
-    404: { description: 'Run not found' },
-  },
-});
-
-const approveMemoryCandidateRoute = createRoute({
-  method: 'post',
-  path: '/runs/:id/memory-candidates/:candidateId/approve',
-  request: {
-    params: z.object({ id: z.string().uuid(), candidateId: z.string().uuid() }),
-    body: {
-      content: {
-        'application/json': {
-          schema: z.object({ note: z.string().optional() }),
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      content: { 'application/json': { schema: learningCandidateSchema } },
-      description: 'Memory candidate approved',
-    },
-    404: { description: 'Run or candidate not found' },
-    409: { description: 'Candidate status conflict' },
-  },
-});
-
-const rejectMemoryCandidateRoute = createRoute({
-  method: 'post',
-  path: '/runs/:id/memory-candidates/:candidateId/reject',
-  request: {
-    params: z.object({ id: z.string().uuid(), candidateId: z.string().uuid() }),
-    body: {
-      content: {
-        'application/json': {
-          schema: z.object({ note: z.string().optional() }),
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      content: { 'application/json': { schema: learningCandidateSchema } },
-      description: 'Memory candidate rejected',
-    },
-    404: { description: 'Run or candidate not found' },
-    409: { description: 'Candidate status conflict' },
-  },
-});
-
-const registerMemoryCandidateRoute = createRoute({
-  method: 'post',
-  path: '/runs/:id/memory-candidates/:candidateId/register',
-  request: {
-    params: z.object({ id: z.string().uuid(), candidateId: z.string().uuid() }),
-    body: {
-      content: {
-        'application/json': {
-          schema: z.object({}).optional(),
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      content: {
-        'application/json': {
-          schema: z.object({
-            candidate: learningCandidateSchema,
-            registration: z.object({
-              status: z.enum(['registered', 'degraded', 'failed']),
-              externalId: z.string().optional(),
-              errorCode: z.string().optional(),
-              errorMessage: z.string().optional(),
-            }),
-          }),
-        },
-      },
-      description: 'Approved candidate registered to contextStill',
-    },
-    404: { description: 'Run or candidate not found' },
-    409: { description: 'Candidate is not approved' },
-  },
-});
-
-const evaluateMemoryFeedbackRoute = createRoute({
-  method: 'post',
-  path: '/runs/:id/memory-feedback/evaluate',
-  request: {
-    params: z.object({ id: z.string().uuid() }),
-    body: {
-      content: {
-        'application/json': {
-          schema: z.object({
-            baselineRunId: z.string().uuid(),
-            candidateIds: z.array(z.string().uuid()).min(1),
-          }),
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      content: { 'application/json': { schema: memoryFeedbackEvaluationSchema } },
-      description: 'Memory feedback effectiveness evaluation',
-    },
-    404: { description: 'Run not found' },
   },
 });
 
@@ -1801,90 +1650,6 @@ const router = createOpenApiRouter()
     c.header('Content-Type', 'application/x-ndjson; charset=utf-8');
     c.header('Content-Disposition', `attachment; filename="nightworkers-run-${id}.jsonl"`);
     return c.body(jsonl, 200);
-  })
-  .openapi(listMemoryCandidatesRoute, async (c) => {
-    try {
-      const candidates = await service.listMemoryCandidates(c.req.param('id'));
-      return c.json(candidates, 200);
-    } catch (err: any) {
-      if (err instanceof AppError) {
-        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
-      }
-      return c.json({ error: String(err?.message || err) }, 500);
-    }
-  })
-  .openapi(generateMemoryCandidatesRoute, async (c) => {
-    try {
-      const candidates = await service.generateMemoryCandidates(c.req.param('id'));
-      return c.json(candidates, 201);
-    } catch (err: any) {
-      if (err instanceof AppError) {
-        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
-      }
-      return c.json({ error: String(err?.message || err) }, 500);
-    }
-  })
-  .openapi(approveMemoryCandidateRoute, async (c) => {
-    try {
-      const body = c.req.valid('json');
-      const candidate = await service.approveMemoryCandidate(
-        c.req.param('id'),
-        c.req.param('candidateId'),
-        body.note
-      );
-      return c.json(candidate, 200);
-    } catch (err: any) {
-      if (err instanceof AppError) {
-        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
-      }
-      return c.json({ error: String(err?.message || err) }, 500);
-    }
-  })
-  .openapi(rejectMemoryCandidateRoute, async (c) => {
-    try {
-      const body = c.req.valid('json');
-      const candidate = await service.rejectMemoryCandidate(
-        c.req.param('id'),
-        c.req.param('candidateId'),
-        body.note
-      );
-      return c.json(candidate, 200);
-    } catch (err: any) {
-      if (err instanceof AppError) {
-        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
-      }
-      return c.json({ error: String(err?.message || err) }, 500);
-    }
-  })
-  .openapi(registerMemoryCandidateRoute, async (c) => {
-    try {
-      const result = await service.registerMemoryCandidate(
-        c.req.param('id'),
-        c.req.param('candidateId')
-      );
-      return c.json(result, 200);
-    } catch (err: any) {
-      if (err instanceof AppError) {
-        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
-      }
-      return c.json({ error: String(err?.message || err) }, 500);
-    }
-  })
-  .openapi(evaluateMemoryFeedbackRoute, async (c) => {
-    try {
-      const body = c.req.valid('json');
-      const result = await service.evaluateMemoryFeedbackForRuns({
-        baselineRunId: body.baselineRunId,
-        followupRunId: c.req.param('id'),
-        candidateIds: body.candidateIds,
-      });
-      return c.json(result, 200);
-    } catch (err: any) {
-      if (err instanceof AppError) {
-        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
-      }
-      return c.json({ error: String(err?.message || err) }, 500);
-    }
   });
 
 const browseFoldersRoute = createRoute({

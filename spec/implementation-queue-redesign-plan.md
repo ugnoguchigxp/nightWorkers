@@ -37,7 +37,6 @@ These decisions are fixed for the first implementation slice so implementation c
 - Processor 開始時の task analysis と TodoList 生成
 - Todo Workflow 設定
 - Todo ごとの code review / fix / quality gate を標準化
-- `context_compile` / `compile_eval` / `register_candidate` を workflow step として扱う
 - 完了時の commit 確認
 - Queue execution 完了後の archive
 
@@ -204,12 +203,9 @@ Indexes:
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | text primary key | Use singleton id `global` for v1 |
-| `require_context_compile` | integer boolean not null default `true` | |
 | `require_per_todo_review` | integer boolean not null default `true` | |
 | `require_per_todo_fix` | integer boolean not null default `true` | |
 | `require_final_verification` | integer boolean not null default `true` | |
-| `require_compile_eval` | integer boolean not null default `true` | |
-| `require_register_candidate_prompt` | integer boolean not null default `true` | |
 | `ask_commit_on_completion` | integer boolean not null default `true` | |
 | `hook_policy_json` | json text | Named hook prompts only in v1 |
 | `created_at` / `updated_at` | integer timestamp | Standard columns |
@@ -284,34 +280,27 @@ Admission must reject:
 Each Processor Run should create or confirm a TodoList with this minimum workflow:
 
 1. Analyze implementation plan and task requirements.
-2. Run `context_compile`.
-3. Generate TodoList for the run.
-4. Execute implementation Todo.
-5. Review code for that Todo.
-6. Apply review fixes.
-7. Run relevant verification or quality gate.
-8. Repeat for all implementation Todos.
-9. Run final verification.
-10. Run `compile_eval`.
-11. Register reusable learning with `register_candidate` when applicable.
-12. Ask whether to commit.
-13. Archive Queue execution.
+2. Generate TodoList for the run.
+3. Execute implementation Todo.
+4. Review code for that Todo.
+5. Apply review fixes.
+6. Run relevant verification or quality gate.
+7. Repeat for all implementation Todos.
+8. Run final verification.
+9. Ask whether to commit.
+10. Archive Queue execution.
 
 ### Todo Invariants
 - Every implementation Todo must include review and fix steps.
 - Verification must be explicit and recorded as a gate result.
-- MCP steps should be first-class workflow steps, not hidden side effects.
 - Workflow step outcomes should be persisted to `task_events` and/or `task_run_todos`.
 
 ### Configurable TODO Workflow
 Settings screen gets a `TODO Workflow` section.
 
 Initial configurable options:
-- Require `context_compile` before execution
 - Require review/fix for every Todo
 - Require final verification
-- Require `compile_eval`
-- Require `register_candidate` prompt
 - Ask for commit at completion
 - Hook prompts before or after selected workflow steps
 

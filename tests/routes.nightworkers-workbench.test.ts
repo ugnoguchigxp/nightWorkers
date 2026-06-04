@@ -18,17 +18,6 @@ vi.mock('../api/services/supervisor/llm-provider', async () => {
   };
 });
 
-vi.mock('../api/services/context-still', () => ({
-  compileContext: vi.fn(async (request: { taskDescription: string }) => ({
-    compiledPromptText: request.taskDescription,
-    degraded: true,
-    degradedReason: 'test',
-    sourceMetadata: {},
-    includedMemoryRefs: [],
-  })),
-  evaluateContext: vi.fn(async () => false),
-}));
-
 vi.mock('../api/services/agent-runtime/registry', () => ({
   resolveAgentRuntime: vi.fn(() => ({
     kind: 'native-local',
@@ -163,7 +152,7 @@ describe('NightWorkers workbench routes', () => {
     expect(body.task.objective).toBe('ECサイトのトップページを作ってください');
   });
 
-  it('starts an implementation run for code-change intake while preserving LLM text', async () => {
+  it('starts an implementation run for code-change intake without persisting the round 1 response as chat', async () => {
     vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
       phase: 'stop',
       workflow: 'code_change',
@@ -202,14 +191,12 @@ describe('NightWorkers workbench routes', () => {
     const assistantMessage = body.messages.find(
       (message: any) => message.role === 'assistant' && message.metadataJson?.intent === 'intake'
     );
-    expect(assistantMessage?.content).toContain('fizzbuzz.ts');
-    expect(assistantMessage?.content).toContain('sandbox');
-    expect(assistantMessage?.content).toContain('書き込みができません');
-    expect(assistantMessage?.metadataJson?.decision?.finalResponse).toContain('書き込み');
+    expect(assistantMessage).toBeUndefined();
     const systemMessage = body.messages.find(
       (message: any) => message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
     expect(systemMessage?.content).toContain('Implementation run started');
+    expect(systemMessage?.metadataJson?.intakeDecision?.finalResponse).toContain('書き込み');
     expect(['context_compiling', 'running']).toContain(body.task.status);
   });
 

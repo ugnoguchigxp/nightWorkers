@@ -298,12 +298,9 @@ function TodoWorkflowPanel({
   onUpdate: (input: Partial<TodoWorkflowSettings>) => Promise<void>;
 }) {
   const options: Array<{ key: keyof TodoWorkflowSettings; label: string }> = [
-    { key: 'requireContextCompile', label: 'context_compile' },
     { key: 'requirePerTodoReview', label: 'review every Todo' },
     { key: 'requirePerTodoFix', label: 'fix after review' },
     { key: 'requireFinalVerification', label: 'final verify' },
-    { key: 'requireCompileEval', label: 'compile_eval' },
-    { key: 'requireRegisterCandidatePrompt', label: 'register_candidate' },
     { key: 'askCommitOnCompletion', label: 'commit prompt' },
   ];
   return (

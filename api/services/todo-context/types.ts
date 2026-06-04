@@ -1,6 +1,22 @@
-import type { ContextCompileSnapshot, IncludedMemoryRef } from '../memory-feedback/types';
 import type { ProcedureSnapshot } from '../procedures';
 import type { TaskType } from '../task-intake';
+
+export type RuntimePromptSnapshot = {
+  compiledPrompt: string;
+  source: 'task_prompt' | 'fallback';
+  degraded: boolean;
+  degradedReason?: string;
+  blueprintPlanning?: unknown;
+  request: {
+    repositoryPath: string;
+    taskTitle: string;
+    taskDescriptionDigest: string;
+  };
+  result: {
+    digest: string;
+    charCount: number;
+  };
+};
 
 export type TodoContextInput = {
   todo: {
@@ -12,7 +28,7 @@ export type TodoContextInput = {
     procedureId?: string | null;
     procedureSnapshot?: ProcedureSnapshot | null;
   };
-  runContext: ContextCompileSnapshot;
+  runContext: RuntimePromptSnapshot;
   previousTodoSummaries?: Array<{
     id: string;
     seq: number;
@@ -38,13 +54,11 @@ export type TodoContextSnapshot = {
     digest: string | null;
   };
   runContext: {
-    source: ContextCompileSnapshot['source'];
+    source: RuntimePromptSnapshot['source'];
     degraded: boolean;
     degradedReason?: string;
     digest: string;
     charCount: number;
-    includedMemoryRefs: IncludedMemoryRef[];
-    selectedKnowledgeIds: string[];
   };
   previousTodoSummaries: Array<{
     id: string;
