@@ -59,6 +59,7 @@ api/.runtime/
 github-pages/.preview/
 github-pages/reports/
 github-pages/vendor/
+scratch/test-patch/
 
 # Local SQLite
 *.db
