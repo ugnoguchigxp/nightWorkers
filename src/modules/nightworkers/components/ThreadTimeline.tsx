@@ -39,6 +39,8 @@ const chatCodeBlockThemes = {
   light: 'github-dark-default',
   dark: 'github-dark-default',
 } as const;
+const chatCodeBlockClassName =
+  'nightworkers-code-block dark max-w-full rounded-[var(--radius-md)] border-[color:var(--nw-border)] bg-[var(--nw-surface)] text-[var(--nw-text)] text-xs shadow-none [&_.line]:whitespace-pre-wrap [&_code]:break-words [&_code]:whitespace-pre-wrap [&_pre]:overflow-x-hidden';
 const chatMarkdownRemarkPlugins = [remarkGfm];
 const chatMarkdownComponents: Components = {
   a: ({ children, ...props }) => (
@@ -61,7 +63,7 @@ const chatMarkdownComponents: Components = {
     if (language) {
       return (
         <CodeBlock
-          className="dark my-3 max-w-full rounded-[var(--radius-md)] border-border bg-card text-card-foreground text-xs [&_.line]:whitespace-pre-wrap [&_code]:break-words [&_code]:whitespace-pre-wrap [&_pre]:overflow-x-hidden"
+          className={`${chatCodeBlockClassName} my-3`}
           data={[
             {
               code: String(children).replace(/\n$/, ''),
@@ -361,7 +363,15 @@ function TranscriptActivityBlock({
   const payload = event.payloadJson || {};
   const displayTitle = activityDisplayTitle(event, title);
   const summary = activityDisplaySummary(event);
-  const code = artifactText || getActivityCode(event);
+  const showDiffDetails = isDiffActivity(event);
+  const showLlmDetails = showJson && isLlmOutputActivity(event);
+  const code = showDiffDetails
+    ? artifactText || getActivityCode(event)
+    : showLlmDetails
+      ? getActivityCode(event)
+      : '';
+  const codeFilename = activityCodeFilename(event);
+  const codeLanguage = activityCodeLanguage(event);
   const defaultOpen = !compact && !isHighVolumeActivity(event);
 
   return (
@@ -374,14 +384,16 @@ function TranscriptActivityBlock({
       </summary>
       <div className="space-y-2 border-current/10 border-t px-3 py-2 text-xs">
         {summary ? <div className="whitespace-pre-wrap break-words">{summary}</div> : null}
-        {code ? (
+        {code && codeLanguage === 'diff' ? (
+          <DiffCodeBlock code={code} label={codeFilename} />
+        ) : code ? (
           <CodeBlock
-            className="dark max-w-full rounded-[var(--radius-md)] border-border bg-card text-card-foreground [&_.line]:whitespace-pre-wrap [&_code]:break-words [&_code]:whitespace-pre-wrap [&_pre]:overflow-x-hidden"
+            className={chatCodeBlockClassName}
             data={[
               {
                 code,
-                filename: activityCodeFilename(event),
-                language: activityCodeLanguage(event),
+                filename: codeFilename,
+                language: codeLanguage,
               },
             ]}
             lineNumbers={false}
@@ -390,27 +402,53 @@ function TranscriptActivityBlock({
             themes={chatCodeBlockThemes}
           />
         ) : null}
-        {showJson ? (
+        {showLlmDetails && !code ? (
           <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap break-all rounded bg-slate-950/40 p-2 font-mono text-[10px] text-slate-300">
-            {JSON.stringify(
-              {
-                id: event.id,
-                kind: event.kind,
-                source: event.source,
-                status: event.status,
-                turnId: event.turnId,
-                runId: event.runId,
-                payloadJson: payload,
-                ingestError: event.ingestError,
-              },
-              null,
-              2
-            )}
+            {formatLlmOutputJson(event, payload)}
           </pre>
         ) : null}
       </div>
     </details>
   );
+}
+
+function DiffCodeBlock({ code, label }: { code: string; label: string }) {
+  const metadata = parseDiffMetadata(code);
+  return (
+    <div className="nightworkers-diff-view">
+      <div className="nightworkers-diff-header">
+        <span className="nightworkers-diff-file">{metadata.filePath || 'diff'}</span>
+        <span className="nightworkers-diff-label">{label}</span>
+      </div>
+      <pre className="nightworkers-diff-body">
+        {metadata.lines.map((line, index) => (
+          <span
+            className={`nightworkers-diff-line ${diffLineClassName(line)}`}
+            key={`${index}-${line}`}
+          >
+            <span className="nightworkers-diff-line-number">{index + 1}</span>
+            <code className="nightworkers-diff-line-code">{line || ' '}</code>
+          </span>
+        ))}
+      </pre>
+    </div>
+  );
+}
+
+function parseDiffMetadata(code: string): { filePath: string; lines: string[] } {
+  const lines = code.split('\n');
+  const filePathLine = lines.find((line) => line.startsWith('+++ ') || line.startsWith('--- '));
+  return {
+    filePath: filePathLine ? filePathLine.slice(4).trim() : '',
+    lines: lines.filter((line) => !(line.startsWith('+++ ') || line.startsWith('--- '))),
+  };
+}
+
+function diffLineClassName(line: string): string {
+  if (line.startsWith('@@')) return 'nightworkers-diff-line-hunk';
+  if (line.startsWith('+')) return 'nightworkers-diff-line-add';
+  if (line.startsWith('-')) return 'nightworkers-diff-line-remove';
+  return '';
 }
 
 function childEventId(child: TranscriptChild) {
@@ -425,16 +463,13 @@ function fallbackEventText(event?: ActivityEvent) {
 
 function getActivityCode(event: ActivityEvent) {
   const payload = event.payloadJson as any;
+  const editToolDiff = getEditToolCallDiff(event);
+  if (editToolDiff) return editToolDiff;
+  if (isDiffActivity(event) && typeof payload?.code === 'string') return payload.code;
   if (typeof payload?.payload?.rawContent === 'string') return payload.payload.rawContent;
-  if (typeof payload?.payload?.systemPrompt === 'string') return payload.payload.systemPrompt;
-  if (typeof payload?.payload?.userPrompt === 'string') return payload.payload.userPrompt;
-  if (
-    payload?.payload &&
-    (event.kind === 'llm.schema_result' || event.kind.startsWith('runtime.'))
-  ) {
+  if (payload?.payload && event.kind === 'llm.schema_result') {
     return JSON.stringify(payload.payload, null, 2);
   }
-  if (typeof payload?.code === 'string') return payload.code;
   if (typeof payload?.runEvent?.data?.text === 'string' && event.kind.includes('delta')) {
     return payload.runEvent.data.text;
   }
@@ -450,7 +485,39 @@ function getActivityCode(event: ActivityEvent) {
   return '';
 }
 
+function isLlmOutputActivity(event: ActivityEvent) {
+  return [
+    'assistant.raw_output',
+    'llm.schema_result',
+    'llm.decision_json',
+    'llm.response_delta',
+    'llm.response_final',
+  ].includes(event.kind);
+}
+
+function isDiffActivity(event: ActivityEvent) {
+  return event.kind === 'file.patch' || event.kind === 'file.diff';
+}
+
+function formatLlmOutputJson(event: ActivityEvent, payload: unknown): string {
+  const activityCode = getActivityCode(event).trim();
+  if (activityCode) {
+    const parsed = tryParseJsonObject(activityCode);
+    return parsed ? JSON.stringify(parsed, null, 2) : activityCode;
+  }
+  if (event.text?.trim()) {
+    const parsed = tryParseJsonObject(event.text);
+    return parsed ? JSON.stringify(parsed, null, 2) : event.text;
+  }
+  const record = payload as any;
+  const llmPayload = record?.payload || record?.runEvent?.data || {};
+  return JSON.stringify(llmPayload, null, 2);
+}
+
 function activityCodeFilename(event: ActivityEvent) {
+  const editToolName = getEditToolCall(event)?.name;
+  if (editToolName === 'apply_patch') return 'apply_patch.patch';
+  if (editToolName === 'replace_content') return 'replace_content.diff';
   if (event.kind.includes('patch')) return 'activity.patch';
   if (event.kind.includes('diff')) return 'activity.diff';
   if (event.kind.includes('json') || event.kind.startsWith('llm.')) return 'activity.json';
@@ -460,9 +527,84 @@ function activityCodeFilename(event: ActivityEvent) {
 }
 
 function activityCodeLanguage(event: ActivityEvent) {
+  if (getEditToolCall(event)) return 'diff';
   if (event.kind.includes('patch') || event.kind.includes('diff')) return 'diff';
   if (event.kind.includes('json') || event.kind.startsWith('llm.')) return 'json';
   return 'text';
+}
+
+type EditToolCall = {
+  name: 'apply_patch' | 'replace_content';
+  arguments: Record<string, unknown>;
+};
+
+function getEditToolCall(event: ActivityEvent): EditToolCall | null {
+  const payload = event.payloadJson as any;
+  const candidates = [
+    payload?.payload?.toolCall,
+    payload?.runEvent?.data?.payload?.toolCall,
+    payload?.runEvent?.data?.toolCall,
+  ];
+
+  if (event.text?.trim()) {
+    candidates.push(tryParseJsonObject(event.text)?.toolCall);
+  }
+
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const name = candidate.name;
+    if (name !== 'apply_patch' && name !== 'replace_content') continue;
+    const args =
+      candidate.arguments &&
+      typeof candidate.arguments === 'object' &&
+      !Array.isArray(candidate.arguments)
+        ? candidate.arguments
+        : {};
+    return { name, arguments: args };
+  }
+
+  return null;
+}
+
+function getEditToolCallDiff(event: ActivityEvent): string {
+  const toolCall = getEditToolCall(event);
+  if (!toolCall) return '';
+
+  if (toolCall.name === 'apply_patch') {
+    return formatApplyPatchDiff(stringValue(toolCall.arguments.patchContent));
+  }
+
+  const filePath = stringValue(toolCall.arguments.filePath) || 'unknown';
+  const needle = stringValue(toolCall.arguments.needle);
+  const replacement = stringValue(toolCall.arguments.replacement);
+  const content = [
+    `--- ${filePath}`,
+    `+++ ${filePath}`,
+    '# replace_content',
+    needle ? `- ${needle}` : '',
+    replacement ? `+ ${replacement}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  return content.trim();
+}
+
+function formatApplyPatchDiff(patchContent: string): string {
+  return patchContent
+    .split('\n')
+    .map((line) => {
+      if (line === '*** Begin Patch' || line === '*** End Patch') return '';
+      if (line.startsWith('*** Add File: ')) return `+++ ${line.slice('*** Add File: '.length)}`;
+      if (line.startsWith('*** Delete File: '))
+        return `--- ${line.slice('*** Delete File: '.length)}`;
+      if (line.startsWith('*** Update File: '))
+        return `--- ${line.slice('*** Update File: '.length)}`;
+      return line;
+    })
+    .filter((line) => line.trim())
+    .join('\n')
+    .trimEnd();
 }
 
 function schemaFirstAgentEventType(event: ActivityEvent): string {
@@ -914,7 +1056,7 @@ function AgentEditSummaryCard({ event }: { event: TaskEvent }) {
         </div>
         {summary.codeBlocks?.length ? (
           <CodeBlock
-            className="dark max-w-full rounded-[var(--radius-md)] border-border bg-card text-card-foreground [&_.line]:whitespace-pre-wrap [&_code]:break-words [&_code]:whitespace-pre-wrap [&_pre]:overflow-x-hidden"
+            className={chatCodeBlockClassName}
             data={summary.codeBlocks}
             lineNumbers={false}
             maxHeight={320}
@@ -1354,7 +1496,7 @@ function MessagePayload({
           {metadata.toolName ? <span>{String(metadata.toolName)}</span> : null}
         </div>
         <CodeBlock
-          className="dark max-w-full rounded-[var(--radius-md)] border-border bg-card text-card-foreground [&_.line]:whitespace-pre-wrap [&_code]:break-words [&_code]:whitespace-pre-wrap [&_pre]:overflow-x-hidden"
+          className={chatCodeBlockClassName}
           data={[
             {
               code,
