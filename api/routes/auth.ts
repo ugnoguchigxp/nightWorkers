@@ -113,6 +113,7 @@ const methodsRoute = createRoute({
         'application/json': {
           schema: z.object({
             authMode: z.enum(['local', 'oauth', 'both']),
+            apiAuthRequired: z.boolean(),
             local: z.boolean(),
             oauth: z.object({
               enabled: z.boolean(),
@@ -138,6 +139,7 @@ const publicAuthRouter = createOpenApiRouter()
     return c.json(
       {
         authMode: config.AUTH_MODE,
+        apiAuthRequired: config.API_AUTH_REQUIRED,
         local: config.AUTH_MODE !== 'oauth',
         oauth: {
           enabled: oauthEnabled,

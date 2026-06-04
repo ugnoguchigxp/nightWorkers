@@ -9,6 +9,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
+  apiAuthRequired: boolean;
   login: (user: User) => void;
   logout: () => void;
 }
@@ -18,15 +19,23 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [apiAuthRequired, setApiAuthRequired] = useState(false);
 
   useEffect(() => {
-    if (window.location.pathname === '/') {
-      setIsLoading(false);
-      return;
-    }
-
     const initAuth = async () => {
       try {
+        const methodsRes = await fetch('/api/auth/methods', { credentials: 'include' });
+        if (methodsRes.ok) {
+          const methods = (await methodsRes.json()) as { apiAuthRequired?: boolean };
+          const required = Boolean(methods.apiAuthRequired);
+          setApiAuthRequired(required);
+          if (!required) {
+            setUser(null);
+            setIsLoading(false);
+            return;
+          }
+        }
+
         const res = await client.auth.me.$get({});
         if (res.ok) {
           const data = (await res.json()) as { userId: string; email: string };
@@ -57,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, apiAuthRequired, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

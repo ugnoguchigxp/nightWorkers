@@ -10,6 +10,7 @@ describe('Auth Middleware & Protected Routes', () => {
     const data = await res.json();
     expect(data).toMatchObject({
       authMode: expect.stringMatching(/^(local|oauth|both)$/),
+      apiAuthRequired: false,
       local: expect.any(Boolean),
       oauth: {
         enabled: expect.any(Boolean),

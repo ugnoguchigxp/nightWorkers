@@ -2,6 +2,7 @@ import type { AppType } from '@api/app';
 import { hc } from 'hono/client';
 
 let isRefreshing = false;
+let apiAuthRequiredCache: boolean | null = null;
 let refreshSubscribers: {
   resolve: () => void;
   reject: (error: Error) => void;
@@ -34,6 +35,22 @@ const redirectToLoginIfNeeded = () => {
   }
 };
 
+async function isApiAuthRequired() {
+  if (apiAuthRequiredCache !== null) return apiAuthRequiredCache;
+  try {
+    const res = await fetch('/api/auth/methods', { credentials: 'include' });
+    if (!res.ok) {
+      apiAuthRequiredCache = false;
+      return apiAuthRequiredCache;
+    }
+    const data = (await res.json()) as { apiAuthRequired?: boolean };
+    apiAuthRequiredCache = Boolean(data.apiAuthRequired);
+  } catch {
+    apiAuthRequiredCache = false;
+  }
+  return apiAuthRequiredCache;
+}
+
 const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const newInit: RequestInit = {
     ...init,
@@ -51,6 +68,7 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promis
   const isRegisterEndpoint = urlString.includes('/auth/register');
   const isLogoutEndpoint = urlString.includes('/auth/logout');
   const isMeEndpoint = urlString.includes('/auth/me');
+  const isMethodsEndpoint = urlString.includes('/auth/methods');
 
   if (
     response.status === 401 &&
@@ -58,8 +76,13 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promis
     !isLoginEndpoint &&
     !isRegisterEndpoint &&
     !isLogoutEndpoint &&
-    !isMeEndpoint
+    !isMeEndpoint &&
+    !isMethodsEndpoint
   ) {
+    if (!(await isApiAuthRequired())) {
+      return response;
+    }
+
     if (!isRefreshing) {
       isRefreshing = true;
       try {

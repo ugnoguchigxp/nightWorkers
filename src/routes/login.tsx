@@ -12,6 +12,7 @@ function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [authMethods, setAuthMethods] = useState<{
+    apiAuthRequired: boolean;
     local: boolean;
     oauth: {
       enabled: boolean;
@@ -21,6 +22,7 @@ function Login() {
       };
     };
   }>({
+    apiAuthRequired: false,
     local: true,
     oauth: {
       enabled: false,
@@ -30,23 +32,25 @@ function Login() {
       },
     },
   });
-  const { login, user } = useAuth();
+  const { login, user, apiAuthRequired, isLoading } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (user) {
+    if (isLoading) return;
+    if (!apiAuthRequired || user) {
       navigate({ to: '/' });
     }
-  }, [user, navigate]);
+  }, [apiAuthRequired, isLoading, user, navigate]);
 
   useEffect(() => {
     let active = true;
 
     const loadAuthMethods = async () => {
       try {
-        const res = await client.auth.methods.$get({});
+        const res = await fetch('/api/auth/methods', { credentials: 'include' });
         if (!res.ok || !active) return;
         const data = (await res.json()) as {
+          apiAuthRequired: boolean;
           local: boolean;
           oauth: {
             enabled: boolean;
@@ -85,6 +89,10 @@ function Login() {
       setError(err instanceof Error ? err.message : 'Login failed');
     }
   };
+
+  if (isLoading || !apiAuthRequired) {
+    return null;
+  }
 
   return (
     <div className="mx-auto max-w-md">
