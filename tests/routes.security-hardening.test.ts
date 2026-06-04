@@ -97,6 +97,29 @@ describe('LLM settings secret hardening', () => {
 });
 
 describe('API auth boundary', () => {
+  async function importConfigWithApiAuth(apiAuthRequired?: 'true' | 'false') {
+    vi.resetModules();
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('DATABASE_URL', 'sqlite.db');
+    vi.stubEnv('JWT_SECRET', 'x'.repeat(32));
+    vi.stubEnv('AUTH_MODE', 'local');
+    vi.stubEnv('CORS_ORIGIN', 'http://localhost:39174');
+    vi.stubEnv('API_AUTH_REQUIRED', apiAuthRequired);
+    return import('../api/config');
+  }
+
+  it('keeps API auth disabled by default for local personal use', async () => {
+    const { config } = await importConfigWithApiAuth();
+
+    expect(config.API_AUTH_REQUIRED).toBe(false);
+  });
+
+  it('enables API auth only when API_AUTH_REQUIRED=true is configured', async () => {
+    const { config } = await importConfigWithApiAuth('true');
+
+    expect(config.API_AUTH_REQUIRED).toBe(true);
+  });
+
   it('keeps only bootstrap and documentation endpoints public', async () => {
     const { isPublicApiPath } = await import('../api/lib/api-auth-boundary');
 

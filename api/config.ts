@@ -103,6 +103,6 @@ if (corsOrigins.length === 0 || corsOrigins.includes('*')) {
 
 export const config = {
   ...result.data,
-  API_AUTH_REQUIRED: result.data.API_AUTH_REQUIRED ?? result.data.NODE_ENV !== 'test',
+  API_AUTH_REQUIRED: result.data.API_AUTH_REQUIRED ?? false,
   CORS_ORIGINS: corsOrigins,
 };

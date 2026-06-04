@@ -88,7 +88,7 @@ Default URL: `http://localhost:39174`
 Important environment variables:
 - `DATABASE_URL`: SQLite/libSQL connection target (default local file: `sqlite.db`)
 - `AUTH_MODE`: `local` / `oauth` / `both`
-- `API_AUTH_REQUIRED`: protect product APIs and NightWorkers WebSocket with the auth middleware. Defaults to `true` outside tests; set `false` only for explicitly local unauthenticated development.
+- `API_AUTH_REQUIRED`: opt-in protection for product APIs and the NightWorkers WebSocket. Defaults to `false` for local personal use; set `true` when intentionally exposing the app beyond localhost.
 - `APP_URL`: required for OAuth and secure cookie scenarios
 - `TRUST_PROXY`: set `true` behind reverse proxy
 - `CONTEXT_STILL_ENABLED`: enable optional contextStill integration

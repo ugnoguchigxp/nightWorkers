@@ -3,9 +3,9 @@
 ## Core Variables
 - `DATABASE_URL`: SQLite/libSQL target
 - `AUTH_MODE`: `local`, `oauth`, `both`
-- `API_AUTH_REQUIRED`: protect product APIs and the NightWorkers WebSocket with
-  `authMiddleware`. Defaults to `true` outside tests; set `false` only for
-  explicitly local unauthenticated development.
+- `API_AUTH_REQUIRED`: opt-in protection for product APIs and the NightWorkers
+  WebSocket with `authMiddleware`. Defaults to `false` for local personal use;
+  set `true` when intentionally exposing the app beyond localhost.
 - `APP_URL`: base URL for auth callbacks and cookie behavior
 - `TRUST_PROXY`: set `true` when proxy headers should be trusted
 
