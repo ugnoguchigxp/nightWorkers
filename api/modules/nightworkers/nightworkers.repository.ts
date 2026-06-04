@@ -218,7 +218,25 @@ function taskMessageRoleToActivitySource(role: string): ActivitySource {
   return 'system';
 }
 
-function runEventToActivityKind(eventType?: string | null, legacyType?: string | null) {
+function runEventToActivityKind(
+  eventType?: string | null,
+  legacyType?: string | null,
+  agentEventType?: string | null
+) {
+  if (agentEventType === 'model.response_finished') return 'assistant.raw_output';
+  if (agentEventType === 'round1.parsed' || agentEventType === 'round2.parsed') {
+    return 'llm.schema_result';
+  }
+  if (agentEventType === 'round1.prompt_built' || agentEventType === 'round2.prompt_built') {
+    return 'llm.request';
+  }
+  if (agentEventType === 'skill.loaded') return 'runtime.state';
+  if (agentEventType === 'tool.validation_failed') return 'tool.error';
+  if (agentEventType === 'finalize.received') return 'assistant.message';
+  if (agentEventType === 'run.started' || agentEventType === 'run.completed') return 'run.status';
+  if (agentEventType === 'run.needs_human' || agentEventType === 'run.failed') {
+    return agentEventType === 'run.failed' ? 'system.error' : 'run.status';
+  }
   if (eventType === 'model.response_delta') return 'assistant.delta';
   if (eventType === 'model.response_finished') return 'llm.response_final';
   if (eventType === 'model.request_started') return 'llm.request';
@@ -237,6 +255,97 @@ function runEventToActivityKind(eventType?: string | null, legacyType?: string |
   if (legacyType === 'error') return 'system.error';
   if (legacyType === 'state_change' || legacyType === 'checkpoint') return 'runtime.state';
   return 'unknown.activity';
+}
+
+function schemaFirstAgentEventType(payload: any): string | null {
+  const direct = payload?.agentEventType;
+  if (typeof direct === 'string') return direct;
+  const dataEventType = payload?.runEvent?.data?.agentEventType;
+  if (typeof dataEventType === 'string') return dataEventType;
+  return null;
+}
+
+function schemaFirstPayload(payload: any): any {
+  return payload?.payload ?? payload?.runEvent?.data?.payload ?? payload?.runEvent?.data ?? {};
+}
+
+function runEventToActivityText(input: {
+  eventType?: string | null;
+  agentEventType?: string | null;
+  message: string;
+  payload: any;
+}) {
+  const payload = schemaFirstPayload(input.payload);
+  if (input.agentEventType === 'model.response_finished') {
+    return String(
+      input.payload?.rawContent || input.payload?.runEvent?.data?.rawContent || input.message || ''
+    );
+  }
+  if (input.agentEventType === 'round1.parsed' || input.agentEventType === 'round2.parsed') {
+    return JSON.stringify(payload, null, 2);
+  }
+  if (
+    input.agentEventType === 'round1.prompt_built' ||
+    input.agentEventType === 'round2.prompt_built'
+  ) {
+    return String(payload.systemPrompt || input.message || '');
+  }
+  if (input.agentEventType === 'skill.loaded') {
+    return String(payload.skillPath || 'skill.loaded');
+  }
+  if (input.agentEventType === 'tool.validation_failed') {
+    return String(payload.summary || input.message || 'tool validation failed');
+  }
+  if (input.agentEventType === 'tool.started') {
+    return `${String(payload.toolName || 'tool')} started`;
+  }
+  if (input.agentEventType === 'tool.finished' || input.agentEventType === 'tool.failed') {
+    return String(payload.summary || input.message || input.agentEventType);
+  }
+  if (input.agentEventType === 'job.switched') {
+    return `jobType -> ${String(payload.nextJobType || '')}`;
+  }
+  if (input.agentEventType === 'finalize.received') {
+    return String(payload.message || input.message || '');
+  }
+  if (input.agentEventType?.startsWith('run.')) {
+    return String(
+      payload.finalReport ||
+        payload.reason ||
+        payload.error ||
+        input.message ||
+        input.agentEventType
+    );
+  }
+  return input.message;
+}
+
+function runEventToActivityStatus(input: {
+  eventType?: string | null;
+  legacyType?: string | null;
+  agentEventType?: string | null;
+}) {
+  if (input.agentEventType?.endsWith('.started')) return 'started';
+  if (input.agentEventType?.endsWith('.failed')) return 'failed';
+  if (input.agentEventType === 'round1.invalid' || input.agentEventType === 'round2.invalid') {
+    return 'failed';
+  }
+  if (input.agentEventType === 'tool.validation_failed') return 'failed';
+  if (input.eventType === 'model.response_delta') return 'delta';
+  if (input.legacyType === 'error') return 'failed';
+  return 'completed';
+}
+
+function runEventToActivityTurnId(input: {
+  runId: string;
+  eventType?: string | null;
+  agentEventType?: string | null;
+}) {
+  if (input.agentEventType) return `assistant:${input.runId}`;
+  if (input.eventType === 'model.response_delta' || input.eventType === 'model.response_finished') {
+    return `assistant:${input.runId}`;
+  }
+  return undefined;
 }
 
 export async function appendActivityArtifact(data: {
@@ -1160,15 +1269,17 @@ export async function createRunEvent(
     taskId = run?.taskId;
   }
   if (taskId) {
+    const agentEventType = schemaFirstAgentEventType(patchedPayload);
     await appendActivityEvent({
       taskId,
       runId: event.runId,
-      turnId:
-        event.type === 'model.response_delta' || event.type === 'model.response_finished'
-          ? `assistant:${event.runId}`
-          : undefined,
+      turnId: runEventToActivityTurnId({
+        runId: event.runId,
+        eventType: event.type,
+        agentEventType,
+      }),
       runSeq: finalEvent.seq,
-      kind: runEventToActivityKind(event.type, finalEvent.type),
+      kind: runEventToActivityKind(event.type, finalEvent.type, agentEventType),
       source:
         event.actor === 'worker'
           ? 'worker'
@@ -1181,17 +1292,23 @@ export async function createRunEvent(
                 : event.actor === 'human'
                   ? 'user'
                   : 'system',
-      status:
-        event.type === 'model.response_delta'
-          ? 'delta'
-          : finalEvent.type === 'error'
-            ? 'failed'
-            : 'completed',
-      text: event.message,
+      status: runEventToActivityStatus({
+        eventType: event.type,
+        legacyType: finalEvent.type,
+        agentEventType,
+      }),
+      text: runEventToActivityText({
+        eventType: event.type,
+        agentEventType,
+        message: event.message,
+        payload: patchedPayload,
+      }),
       payloadJson: {
         runEvent: patchedPayload.runEvent,
         legacyEvent: finalEvent,
         legacyPayload: options?.legacyPayload ?? null,
+        agentEventType,
+        payload: schemaFirstPayload(patchedPayload),
       },
       externalId: finalEvent.id,
       dedupeKey: `task_event:${finalEvent.id}`,

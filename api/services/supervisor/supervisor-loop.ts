@@ -1,29 +1,19 @@
 import { appendSupervisorTrace, logger } from '../../lib/logger';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
-import { mcpClientManager } from '../mcp/mcp-client-manager';
 import type { SupervisorLoopResult } from '../run-control/types';
 import type { RunEventActor, RunEventSeverity, RunEventType } from '../run-events/types';
-import type { WorkerToolName } from '../tool-policy/types';
 import { executeWorkerTool } from '../worker-tools/dispatcher';
 import { callSupervisorLLM, type SupervisorLlmDebugEvent } from './llm-provider';
 import {
-  buildFinalizeSystemPrompt,
-  buildRound1SystemPrompt,
-  buildRound2SystemPrompt,
-  buildSupervisorTurnInput,
-  type ExternalSupervisorToolCatalogEntry,
-  type SupervisorRoutingHypothesis,
-  type SupervisorWorkflow,
-} from './prompt';
-import {
-  compactSessionMemoryForPrompt,
-  createInitialSessionMemory,
-  digestSessionMemory,
-  mergeDecisionIntoSessionMemory,
-  mergeToolResultIntoSessionMemory,
-  type SupervisorSessionMemory,
-} from './session-memory';
-import { defaultSupervisorRoutingHypothesis } from './skills/types';
+  type AgentToolCallEnvelope,
+  buildRound1JobTypePrompt,
+  buildRound2ToolCallPrompt,
+  getAllowedToolsForJobType,
+  getExecutableWorkerToolName,
+  type JobType,
+  loadFlatSkill,
+  validateToolCallForJobType,
+} from './schema-first';
 
 export interface SupervisorLoopInput {
   runId: string;
@@ -60,99 +50,51 @@ export type SupervisorTodoContext = {
   contextDigest?: string | null;
 };
 
-async function loadExternalSupervisorTools(): Promise<ExternalSupervisorToolCatalogEntry[]> {
-  try {
-    const tools = await mcpClientManager.listAvailableTools();
-    return tools.map((tool) => ({
-      namespacedName: tool.namespacedName,
-      serverId: tool.serverId,
-      toolName: tool.name,
-      description: tool.description,
-    }));
-  } catch (err) {
-    logger.warn(
-      { error: err instanceof Error ? err.message : String(err) },
-      'MCP tool catalog unavailable'
-    );
-    return [];
-  }
+type CompactToolResult = {
+  step: number;
+  toolName: string;
+  ok: boolean;
+  arguments: Record<string, unknown>;
+  summary: string;
+  payload?: unknown;
+  error?: unknown;
+};
+
+type AgentEventType =
+  | 'run.started'
+  | 'round1.prompt_built'
+  | 'round1.parsed'
+  | 'skill.loaded'
+  | 'round2.prompt_built'
+  | 'round2.parsed'
+  | 'round2.invalid'
+  | 'tool.validation_failed'
+  | 'tool.started'
+  | 'tool.finished'
+  | 'tool.failed'
+  | 'job.switched'
+  | 'finalize.received'
+  | 'run.completed'
+  | 'run.needs_human'
+  | 'run.failed';
+
+function mapAgentEventToRunEventType(type: AgentEventType): RunEventType {
+  if (type === 'tool.started') return 'tool.call_started';
+  if (type === 'tool.finished' || type === 'tool.failed') return 'tool.call_finished';
+  if (type === 'round1.parsed' || type === 'round2.parsed') return 'supervisor.decision';
+  if (type === 'run.failed') return 'system.error';
+  if (type === 'run.needs_human') return 'system.warning';
+  return 'system.info';
 }
 
-function normalizeTodoPlan(value: unknown): SupervisorTodoContext[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .slice(0, 8)
-    .map((item) => normalizeTodoContext(item))
-    .filter((item): item is SupervisorTodoContext => Boolean(item));
+function eventActor(type: AgentEventType): RunEventActor {
+  if (type.startsWith('tool.')) return 'worker';
+  if (type.startsWith('round')) return 'supervisor';
+  return 'runtime';
 }
 
-function normalizeTodoContext(value: unknown): SupervisorTodoContext | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const record = value as Record<string, unknown>;
-  const id = stringValue(record.id);
-  const seq = numberValue(record.seq);
-  const title = stringValue(record.title);
-  const taskType = stringValue(record.taskType);
-  const status = stringValue(record.status);
-  if (!id || !seq || !title || !taskType || !status) return null;
-  return {
-    id,
-    seq,
-    title: title.slice(0, 120),
-    description: nullableString(record.description)?.slice(0, 500) ?? null,
-    taskType,
-    status,
-    procedureId: nullableString(record.procedureId),
-    procedureDigest: nullableString(record.procedureDigest),
-    contextDigest: nullableString(record.contextDigest),
-  };
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === 'string' && value.trim() ? value.trim() : '';
-}
-
-function nullableString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function numberValue(value: unknown): number {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : 0;
-}
-
-function todoEventData(todo: SupervisorTodoContext | null): Record<string, unknown> {
-  if (!todo) return {};
-  return {
-    todoId: todo.id,
-    todoSeq: todo.seq,
-    todoTitle: todo.title,
-    taskType: todo.taskType,
-    procedureId: todo.procedureId,
-  };
-}
-
-async function createSupervisorLlmRunEvent(input: {
-  runId: string;
-  taskId: string;
-  iteration: number;
-  event: SupervisorLlmDebugEvent;
-  currentTodo?: SupervisorTodoContext | null;
-}) {
-  await repo.createRunEvent({
-    version: 1,
-    runId: input.runId,
-    taskId: input.taskId,
-    timestamp: new Date().toISOString(),
-    type: input.event.type,
-    severity: input.event.severity,
-    actor: 'supervisor',
-    message: input.event.message,
-    data: {
-      iteration: input.iteration,
-      ...todoEventData(input.currentTodo ?? null),
-      ...(input.event.data || {}),
-    },
-  });
+function eventMessage(type: AgentEventType): string {
+  return `[SchemaFirstAgent] ${type}`;
 }
 
 async function createSupervisorRunEvent(input: {
@@ -165,13 +107,11 @@ async function createSupervisorRunEvent(input: {
   message: string;
   data?: Record<string, unknown>;
   payloadJson?: Record<string, unknown>;
-  currentTodo?: SupervisorTodoContext | null;
 }) {
-  const todoData = todoEventData(input.currentTodo ?? null);
   const data =
     input.iteration === undefined
-      ? { ...todoData, ...(input.data || {}) }
-      : { iteration: input.iteration, ...todoData, ...(input.data || {}) };
+      ? input.data || {}
+      : { iteration: input.iteration, ...(input.data || {}) };
   await repo.createRunEvent(
     {
       version: 1,
@@ -182,261 +122,212 @@ async function createSupervisorRunEvent(input: {
       severity: input.severity,
       actor: input.actor,
       message: input.message,
-      ...(data ? { data } : {}),
+      data,
     },
     { payloadJson: input.payloadJson || {} }
   );
 }
 
+async function createSupervisorLlmRunEvent(input: {
+  runId: string;
+  taskId: string;
+  iteration: number;
+  event: SupervisorLlmDebugEvent;
+}) {
+  await createSupervisorRunEvent({
+    runId: input.runId,
+    taskId: input.taskId,
+    iteration: input.iteration,
+    type: input.event.type,
+    severity: input.event.severity,
+    actor: 'supervisor',
+    message: input.event.message,
+    data: input.event.data || {},
+    payloadJson: {
+      agentEventType: input.event.type,
+      ...(input.event.data || {}),
+    },
+  });
+}
+
+function buildUserInput(input: SupervisorLoopInput): string {
+  const latest = input.latestUserMessage?.trim();
+  if (latest) {
+    return [latest, '', '[Runtime Context]', input.prompt.trim() || '(empty)'].join('\n');
+  }
+  return (input.prompt || '').trim();
+}
+
 export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<SupervisorLoopResult> {
-  const { runId, repoRoot, prompt, latestUserMessage } = input;
-  const maxIterations = input.maxIterations ?? 8;
+  const { runId, repoRoot } = input;
   const maxToolCalls = input.maxToolCalls ?? 20;
-  const todoPlan = normalizeTodoPlan(input.todoPlan);
-  const currentTodo = normalizeTodoContext(input.currentTodo) ?? null;
-  const readFiles: string[] = [];
-  const toolContext = { readFileCache: new Map() };
-  const toolObservations: string[] = [];
-  const sessionMemory = createInitialSessionMemory(latestUserMessage || prompt);
-
-  let finalReportText = 'Task execution completed.';
-  let terminalState: SupervisorLoopResult['terminalState'] = 'completed';
-  let summary = 'Task execution completed.';
-  let stoppedBy: SupervisorLoopResult['stoppedBy'] = 'decision';
-  let riskLevel: SupervisorLoopResult['riskLevel'] = 'low';
-  let iteration = 0;
-  let toolCalls = 0;
-  let activeWorkflow: SupervisorWorkflow = 'general';
-  let activeRoutingHypothesis: SupervisorRoutingHypothesis = defaultSupervisorRoutingHypothesis;
-  let round1Decision: Awaited<ReturnType<typeof callSupervisorLLM>> | null = null;
-  let memory: SupervisorSessionMemory = sessionMemory;
-
-  const emitSupervisorRunEvent = (
-    event: Omit<Parameters<typeof createSupervisorRunEvent>[0], 'currentTodo'>
-  ) => createSupervisorRunEvent({ ...event, currentTodo });
-
+  const maxIterations = input.maxIterations ?? 20;
   const run = await repo.getTaskRun(runId);
   if (!run) throw new Error(`Run context not found: ${runId}`);
   const task = await repo.getTask(run.taskId);
   if (!task) throw new Error(`Task context not found: ${run.taskId}`);
 
-  const userInput = latestUserMessage?.trim()
-    ? [latestUserMessage.trim(), '', '[Runtime Context]', prompt.trim() || '(empty)'].join('\n')
-    : (prompt || '').trim();
+  const userInput = buildUserInput(input);
+  const readFiles: string[] = [];
+  const toolContext = { readFileCache: new Map() };
+  const toolResults: CompactToolResult[] = [];
+  let step = 0;
+  let currentJobType: JobType = 'minor_code_edit';
+  let finalReportText = '';
+  let terminalState: SupervisorLoopResult['terminalState'] = 'completed';
+  let summary = '';
+  let stoppedBy: SupervisorLoopResult['stoppedBy'] = 'decision';
+  let riskLevel: SupervisorLoopResult['riskLevel'] = 'low';
 
-  appendSupervisorTrace('supervisor_loop_started', {
+  const emitAgentEvent = async (
+    type: AgentEventType,
+    payload: Record<string, unknown> = {},
+    severity: RunEventSeverity = type.endsWith('failed') ? 'error' : 'info'
+  ) => {
+    await createSupervisorRunEvent({
+      runId,
+      taskId: task.id,
+      iteration: step,
+      type: mapAgentEventToRunEventType(type),
+      severity,
+      actor: eventActor(type),
+      message: eventMessage(type),
+      data: {
+        agentEventType: type,
+        jobType: currentJobType,
+        step,
+      },
+      payloadJson: {
+        agentEventType: type,
+        jobType: currentJobType,
+        step,
+        payload,
+      },
+    });
+  };
+
+  const emitLlmDebugEvent = async (event: SupervisorLlmDebugEvent) => {
+    await createSupervisorLlmRunEvent({
+      runId,
+      taskId: task.id,
+      iteration: step,
+      event,
+    });
+  };
+
+  appendSupervisorTrace('schema_first_loop_started', {
     runId,
     repoRoot,
     maxIterations,
     maxToolCalls,
   });
+  await emitAgentEvent('run.started', { repoRoot, userInput });
 
   try {
-    for (iteration = 1; iteration <= maxIterations; iteration += 1) {
-      logger.info({ runId, iteration }, 'Supervisor loop iteration start');
-      const emitLlmDebugEvent = async (event: SupervisorLlmDebugEvent) => {
-        await createSupervisorLlmRunEvent({
-          runId,
-          taskId: task.id,
-          iteration,
-          event,
-          currentTodo,
-        });
-      };
+    const round1SystemPrompt = buildRound1JobTypePrompt(repoRoot);
+    await emitAgentEvent('round1.prompt_built', { systemPrompt: round1SystemPrompt });
+    const round1 = (await callSupervisorLLM(round1SystemPrompt, userInput, {
+      round: 1,
+      schemaFirst: true,
+      emitEvent: emitLlmDebugEvent,
+      workingDirectory: repoRoot,
+    })) as { jobType: JobType };
+    currentJobType = round1.jobType;
+    await emitAgentEvent('round1.parsed', round1);
 
-      let decision: Awaited<ReturnType<typeof callSupervisorLLM>>;
-      if (!round1Decision) {
-        const userPrompt = buildSupervisorTurnInput(userInput, toolObservations);
-        round1Decision = await callSupervisorLLM(buildRound1SystemPrompt(repoRoot), userPrompt, {
-          tolerateSchemaFailure: false,
-          round: 1,
-          emitEvent: emitLlmDebugEvent,
-          workingDirectory: repoRoot,
-        });
-        activeWorkflow = round1Decision.workflow || activeWorkflow;
-        activeRoutingHypothesis = round1Decision.routingHypothesis || activeRoutingHypothesis;
-        memory = mergeDecisionIntoSessionMemory(memory, round1Decision, {
-          iteration,
-          source: 'round1',
-        });
-        await emitSessionMemoryEvent({
-          runId,
-          taskId: task.id,
-          iteration,
-          reason: 'round1_decision',
-          memory,
-          emitSupervisorRunEvent,
-        });
-        await emitDecisionEvent({
-          runId,
-          taskId: task.id,
-          iteration,
-          round: 1,
-          decision: round1Decision,
-          emitSupervisorRunEvent,
-        });
-        appendSupervisorTrace('round1_output', {
-          runId,
-          iteration,
-          phase: round1Decision.phase,
-          workflow: round1Decision.workflow,
-          routingHypothesis: round1Decision.routingHypothesis,
-          hasToolCall: Boolean(round1Decision.toolCall),
-          toolName: round1Decision.toolCall?.name ?? null,
-        });
-        if (round1Decision.phase === 'stop' || round1Decision.phase === 'report') {
-          decision = round1Decision;
-        } else {
-          decision = await requestRound2({
-            runId,
-            taskId: task.id,
-            iteration,
-            userInput,
-            round1Decision,
-            todoPlan,
-            toolObservations,
-            sessionMemory: memory,
-            activeRoutingHypothesis,
-            repoRoot,
-            emitLlmDebugEvent,
-            emitSupervisorRunEvent,
-          });
-        }
-      } else {
-        decision = await requestRound2({
-          runId,
-          taskId: task.id,
-          iteration,
-          userInput,
-          round1Decision: {
-            ...round1Decision,
-            workflow: activeWorkflow,
-            routingHypothesis: activeRoutingHypothesis,
-          },
-          todoPlan,
-          toolObservations,
-          sessionMemory: memory,
-          activeRoutingHypothesis,
-          repoRoot,
-          emitLlmDebugEvent,
-          emitSupervisorRunEvent,
-        });
+    for (step = 1; step <= maxIterations && toolResults.length < maxToolCalls; step += 1) {
+      const skill = loadFlatSkill(currentJobType);
+      const allowedTools = getAllowedToolsForJobType(currentJobType);
+      await emitAgentEvent('skill.loaded', {
+        skillPath: `skills/${currentJobType}.md`,
+        skill,
+      });
+
+      const round2SystemPrompt = buildRound2ToolCallPrompt({
+        projectRoot: repoRoot,
+        jobType: currentJobType,
+        skill,
+        tools: allowedTools,
+      });
+      const round2UserPrompt = JSON.stringify({
+        userRequest: userInput,
+        currentJobType,
+        toolResults: toolResults.slice(-8),
+      });
+      await emitAgentEvent('round2.prompt_built', {
+        systemPrompt: round2SystemPrompt,
+        userPrompt: round2UserPrompt,
+      });
+      const round2 = (await callSupervisorLLM(round2SystemPrompt, round2UserPrompt, {
+        round: 2,
+        schemaFirst: true,
+        emitEvent: emitLlmDebugEvent,
+        workingDirectory: repoRoot,
+      })) as AgentToolCallEnvelope;
+      await emitAgentEvent('round2.parsed', round2);
+
+      const validation = validateToolCallForJobType({
+        jobType: currentJobType,
+        toolCall: round2.toolCall,
+      });
+      if (!validation.ok) {
+        const result = {
+          step,
+          toolName: round2.toolCall.name,
+          ok: false,
+          arguments: round2.toolCall.arguments,
+          summary: validation.message,
+        };
+        toolResults.push(result);
+        await emitAgentEvent('tool.validation_failed', result, 'warning');
+        continue;
       }
 
-      activeWorkflow = decision.workflow || activeWorkflow;
-      activeRoutingHypothesis = decision.routingHypothesis || activeRoutingHypothesis;
-      memory = mergeDecisionIntoSessionMemory(memory, decision, {
-        iteration,
-        source: 'round2',
-      });
-      await emitSessionMemoryEvent({
-        runId,
-        taskId: task.id,
-        iteration,
-        reason: `round_${decision.phase === 'report' ? 'stop' : decision.phase}_decision`,
-        memory,
-        emitSupervisorRunEvent,
-      });
-      await emitSupervisorRunEvent({
-        runId,
-        taskId: task.id,
-        iteration,
-        type: 'supervisor.decision',
-        severity: 'info',
-        actor: 'supervisor',
-        message: `[Supervisor Decision] Phase: ${decision.phase}. Instruction: ${decision.instruction}`,
-        data: { decision },
-        payloadJson: { iteration, decision },
-      });
+      if (round2.toolCall.name === 'select_job_type') {
+        const nextJobType = round2.toolCall.arguments.jobType;
+        if (typeof nextJobType === 'string') {
+          currentJobType = nextJobType as JobType;
+          await emitAgentEvent('job.switched', {
+            toolCall: round2.toolCall,
+            nextJobType,
+          });
+          continue;
+        }
+      }
 
-      if (isTerminalDecision(decision)) {
-        const finalized = await requestFinalizeAnswer({
-          runId,
-          taskId: task.id,
-          iteration,
-          userInput,
-          decision,
-          todoPlan,
-          currentTodo,
-          toolObservations,
-          sessionMemory: memory,
-          repoRoot,
-          activeWorkflow,
-          emitLlmDebugEvent,
-          emitSupervisorRunEvent,
-        });
-        finalReportText = finalized.finalReportText;
-        terminalState = finalized.terminalState;
-        summary = finalized.summary;
-        riskLevel = finalized.riskLevel;
+      if (round2.toolCall.name === 'finalize_answer') {
+        const message = String(round2.toolCall.arguments.message || '').trim();
+        finalReportText = message || '';
+        summary = finalReportText.slice(0, 200) || 'Completed';
+        terminalState = 'completed';
         stoppedBy = 'decision';
-        memory = finalized.sessionMemory;
+        riskLevel = 'low';
+        await emitAgentEvent('finalize.received', { message: finalReportText });
+        await emitAgentEvent('run.completed', { finalReport: finalReportText });
         break;
       }
 
-      if (!decision.toolCall) {
-        if (memory.changedFiles.length > 0) {
-          const finalized = await requestFinalizeAnswer({
-            runId,
-            taskId: task.id,
-            iteration,
-            userInput,
-            decision: {
-              ...decision,
-              phase: 'stop',
-              terminalState: decision.terminalState || 'needs_review',
-            },
-            todoPlan,
-            currentTodo,
-            toolObservations,
-            sessionMemory: memory,
-            repoRoot,
-            activeWorkflow,
-            emitLlmDebugEvent,
-            emitSupervisorRunEvent,
-          });
-          finalReportText = finalized.finalReportText;
-          terminalState = finalized.terminalState;
-          summary = finalized.summary;
-          riskLevel = finalized.riskLevel;
-          stoppedBy = 'decision';
-          memory = finalized.sessionMemory;
-        } else {
-          finalReportText = 'Supervisor decision did not include a worker toolCall.';
-          terminalState = 'needs_human';
-          summary = 'Stopped because supervisor did not provide a toolCall';
-          stoppedBy = 'missing_tool_call';
-          riskLevel = 'high';
-        }
-        break;
+      const workerToolName = getExecutableWorkerToolName(round2.toolCall.name);
+      if (!workerToolName) {
+        const result = {
+          step,
+          toolName: round2.toolCall.name,
+          ok: false,
+          arguments: round2.toolCall.arguments,
+          summary: `Tool is not executable: ${round2.toolCall.name}`,
+        };
+        toolResults.push(result);
+        await emitAgentEvent('tool.validation_failed', result, 'warning');
+        continue;
       }
 
-      if (toolCalls >= maxToolCalls) {
-        finalReportText = 'Supervisor loop stopped by maxToolCalls.';
-        terminalState = 'needs_human';
-        summary = 'Stopped by tool-call budget';
-        stoppedBy = 'budget';
-        riskLevel = 'high';
-        break;
-      }
-
-      const { name, arguments: toolArgs } = decision.toolCall;
-      toolCalls += 1;
-      await emitSupervisorRunEvent({
-        runId,
-        taskId: task.id,
-        iteration,
-        type: name === 'run_verification' ? 'verification.started' : 'tool.call_started',
-        severity: 'info',
-        actor: name === 'run_verification' ? 'verifier' : 'worker',
-        message: `[Worker Tool Call] Invoking tool ${name}...`,
-        data: { toolName: name, arguments: toolArgs },
-        payloadJson: { iteration, toolName: name, arguments: toolArgs },
+      await emitAgentEvent('tool.started', {
+        toolName: workerToolName,
+        arguments: round2.toolCall.arguments,
       });
-
       const dispatch = await executeWorkerTool({
-        toolName: name as WorkerToolName,
-        args: (toolArgs && typeof toolArgs === 'object' ? toolArgs : {}) as Record<string, unknown>,
+        toolName: workerToolName,
+        args: round2.toolCall.arguments,
         repoRoot,
         safetyPolicy: input.safetyPolicy,
         readFiles,
@@ -446,79 +337,49 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         readFiles.splice(0, readFiles.length, ...dispatch.readFilesChanged);
       }
       const toolResult = dispatch.result;
-      const observation = formatToolObservation(name, toolResult);
-      toolObservations.push(observation);
-      const changedFiles = getEditedFilePaths(name, toolResult);
-      memory = mergeToolResultIntoSessionMemory(memory, {
-        iteration,
-        toolName: name as WorkerToolName,
-        toolResult,
-        observation,
-        changedFiles,
-      });
-      await emitSessionMemoryEvent({
-        runId,
-        taskId: task.id,
-        iteration,
-        reason: `${name}_result`,
-        memory,
-        emitSupervisorRunEvent,
-      });
-      await emitSupervisorRunEvent({
-        runId,
-        taskId: task.id,
-        iteration,
-        type: name === 'run_verification' ? 'verification.finished' : 'tool.call_finished',
-        severity: toolResult.ok ? 'info' : 'error',
-        actor: name === 'run_verification' ? 'verifier' : 'worker',
-        message: `[Worker Tool Result] Tool ${name} execution ${toolResult.ok ? 'SUCCESS' : 'FAILED'}.`,
-        data: { toolName: name, arguments: toolArgs, result: toolResult },
-        payloadJson: { iteration, ...toolResult, toolName: name, arguments: toolArgs },
-      });
+      const compactResult: CompactToolResult = {
+        step,
+        toolName: workerToolName,
+        ok: toolResult.ok,
+        arguments: round2.toolCall.arguments,
+        summary: formatToolObservation(workerToolName, toolResult),
+        payload: toolResult.payload,
+        error: toolResult.error,
+      };
+      toolResults.push(compactResult);
+      await emitAgentEvent(toolResult.ok ? 'tool.finished' : 'tool.failed', compactResult);
 
-      if (isEditTool(name) && toolResult.ok) {
+      if (isEditTool(workerToolName) && toolResult.ok) {
         await persistEditToolMessage({
           runId,
           taskId: task.id,
-          iteration,
-          toolName: name,
-          toolArgs,
+          iteration: step,
+          toolName: workerToolName,
+          toolArgs: round2.toolCall.arguments,
           toolResult,
         });
       }
-
-      if (isEditTool(name) && toolResult.ok) {
-        appendSupervisorTrace('edit_tool_completed_continue', {
-          runId,
-          iteration,
-          toolName: name,
-          changedFiles,
-        });
-      }
-
-      if (!toolResult.ok) {
-        finalReportText = toolResult.error?.message || `Tool ${name} failed.`;
-        terminalState = 'needs_human';
-        summary = `Stopped because tool ${name} failed`;
-        stoppedBy = 'tool_failure';
-        riskLevel = 'high';
-        break;
-      }
     }
 
-    if (iteration > maxIterations) {
-      finalReportText = 'Supervisor loop stopped by maxIterations.';
+    if (!finalReportText) {
       terminalState = 'needs_human';
-      summary = 'Stopped by iteration budget';
       stoppedBy = 'budget';
       riskLevel = 'high';
+      summary = 'Stopped before finalize_answer';
+      finalReportText = 'Stopped before finalize_answer.';
+      await emitAgentEvent('run.needs_human', {
+        reason: 'missing_finalize_answer',
+        step,
+        toolResultCount: toolResults.length,
+      });
     }
-  } catch (err: any) {
-    finalReportText = `Supervisor LLM call failed: ${err.message}`;
+  } catch (err) {
     terminalState = 'needs_human';
-    summary = 'Supervisor LLM error';
     stoppedBy = 'llm_error';
     riskLevel = 'high';
+    finalReportText = err instanceof Error ? err.message : String(err);
+    summary = 'Schema-first supervisor error';
+    await emitAgentEvent('run.failed', { error: finalReportText }, 'error');
   }
 
   await repo.updateTaskRun(runId, {
@@ -527,15 +388,14 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     status: terminalState,
   });
   await repo.updateTaskStatus(run.taskId, terminalState);
-  appendSupervisorTrace('supervisor_loop_finished', {
+  appendSupervisorTrace('schema_first_loop_finished', {
     runId,
     terminalState,
     stoppedBy,
     summary,
     riskLevel,
-    iterations: iteration,
-    toolCalls,
-    activeWorkflow,
+    step,
+    toolResultCount: toolResults.length,
     finalReportLength: finalReportText.length,
   });
   logger.info(
@@ -544,275 +404,17 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       terminalState,
       stoppedBy,
       riskLevel,
-      iterations: iteration,
-      toolCalls,
-      activeWorkflow,
+      step,
+      toolResultCount: toolResults.length,
       finalReportLength: finalReportText.length,
     },
-    'Supervisor loop finished'
+    'Schema-first supervisor loop finished'
   );
   return { finalReport: finalReportText, terminalState, summary, stoppedBy, riskLevel };
 }
 
-async function requestRound2(input: {
-  runId: string;
-  taskId: string;
-  iteration: number;
-  userInput: string;
-  round1Decision: Awaited<ReturnType<typeof callSupervisorLLM>>;
-  todoPlan: SupervisorTodoContext[];
-  toolObservations: string[];
-  sessionMemory: SupervisorSessionMemory;
-  activeRoutingHypothesis: SupervisorRoutingHypothesis;
-  repoRoot: string;
-  emitLlmDebugEvent: (event: SupervisorLlmDebugEvent) => Promise<void>;
-  emitSupervisorRunEvent: (
-    event: Omit<Parameters<typeof createSupervisorRunEvent>[0], 'currentTodo'>
-  ) => Promise<void>;
-}): Promise<Awaited<ReturnType<typeof callSupervisorLLM>>> {
-  const round2Input = JSON.stringify({
-    latestUserMessage: input.userInput,
-    round1Decision: input.round1Decision,
-    sessionMemory: compactSessionMemoryForPrompt(input.sessionMemory),
-    todoPlan: input.todoPlan,
-    observations: input.toolObservations.slice(-6),
-  });
-  const decision = await callSupervisorLLM(
-    buildRound2SystemPrompt(input.activeRoutingHypothesis, {
-      projectRoot: input.repoRoot,
-      externalTools: await loadExternalSupervisorTools(),
-    }),
-    round2Input,
-    {
-      round: 2,
-      emitEvent: input.emitLlmDebugEvent,
-      workingDirectory: input.repoRoot,
-    }
-  );
-  await emitDecisionEvent({
-    runId: input.runId,
-    taskId: input.taskId,
-    iteration: input.iteration,
-    round: 2,
-    decision,
-    emitSupervisorRunEvent: input.emitSupervisorRunEvent,
-  });
-  appendSupervisorTrace('round2_output', {
-    runId: input.runId,
-    iteration: input.iteration,
-    phase: decision.phase,
-    workflow: decision.workflow,
-    routingHypothesis: decision.routingHypothesis,
-    hasToolCall: Boolean(decision.toolCall),
-    toolName: decision.toolCall?.name ?? null,
-  });
-  return decision;
-}
-
-async function requestFinalizeAnswer(input: {
-  runId: string;
-  taskId: string;
-  iteration: number;
-  userInput: string;
-  decision: Awaited<ReturnType<typeof callSupervisorLLM>>;
-  todoPlan: SupervisorTodoContext[];
-  currentTodo: SupervisorTodoContext | null;
-  toolObservations: string[];
-  sessionMemory: SupervisorSessionMemory;
-  repoRoot: string;
-  activeWorkflow: SupervisorWorkflow;
-  emitLlmDebugEvent: (event: SupervisorLlmDebugEvent) => Promise<void>;
-  emitSupervisorRunEvent: (
-    event: Omit<Parameters<typeof createSupervisorRunEvent>[0], 'currentTodo'>
-  ) => Promise<void>;
-}): Promise<{
-  finalReportText: string;
-  terminalState: SupervisorLoopResult['terminalState'];
-  summary: string;
-  riskLevel: SupervisorLoopResult['riskLevel'];
-  sessionMemory: SupervisorSessionMemory;
-}> {
-  let finalizeDecision: Awaited<ReturnType<typeof callSupervisorLLM>> | null = null;
-  try {
-    finalizeDecision = await callSupervisorLLM(
-      buildFinalizeSystemPrompt(input.repoRoot),
-      JSON.stringify({
-        latestUserMessage: input.userInput,
-        sessionMemory: compactSessionMemoryForPrompt(input.sessionMemory),
-        observations: input.toolObservations.slice(-8),
-        finalDecision: {
-          ...input.decision,
-          phase: 'stop',
-        },
-        todoPlan: input.todoPlan,
-        currentTodo: input.currentTodo,
-      }),
-      {
-        round: 3,
-        tolerateSchemaFailure: true,
-        emitEvent: input.emitLlmDebugEvent,
-        workingDirectory: input.repoRoot,
-      }
-    );
-    if (finalizeDecision.phase !== 'stop' || finalizeDecision.toolCall) {
-      appendSupervisorTrace('finalize_answer_rejected', {
-        runId: input.runId,
-        iteration: input.iteration,
-        phase: finalizeDecision.phase,
-        toolName: finalizeDecision.toolCall?.name ?? null,
-      });
-      finalizeDecision = null;
-    }
-    await emitDecisionEvent({
-      runId: input.runId,
-      taskId: input.taskId,
-      iteration: input.iteration,
-      round: 3,
-      decision: finalizeDecision || {
-        ...input.decision,
-        phase: 'stop',
-        toolCall: null,
-      },
-      emitSupervisorRunEvent: input.emitSupervisorRunEvent,
-    });
-  } catch (err) {
-    appendSupervisorTrace('finalize_answer_failed', {
-      runId: input.runId,
-      iteration: input.iteration,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  const fallbackText =
-    input.decision.finalResponse?.trim() ||
-    input.decision.instruction?.trim() ||
-    input.decision.rationale?.trim() ||
-    'Task complete.';
-  const finalReportText = finalizeDecision?.finalResponse?.trim() || fallbackText;
-  const terminalState =
-    normalizeTerminalState(finalizeDecision?.terminalState) ||
-    normalizeTerminalState(input.decision.terminalState) ||
-    (input.activeWorkflow === 'code_change' || input.sessionMemory.changedFiles.length > 0
-      ? 'needs_review'
-      : 'completed');
-  const summary =
-    finalizeDecision?.instruction?.trim() ||
-    input.decision.instruction?.trim() ||
-    finalReportText.slice(0, 200);
-  const riskLevel = finalizeDecision?.riskLevel || input.decision.riskLevel || 'low';
-  const sessionMemory = finalizeDecision
-    ? mergeDecisionIntoSessionMemory(input.sessionMemory, finalizeDecision, {
-        iteration: input.iteration,
-        source: 'finalize',
-      })
-    : input.sessionMemory;
-
-  await emitSessionMemoryEvent({
-    runId: input.runId,
-    taskId: input.taskId,
-    iteration: input.iteration,
-    reason: 'finalize_answer',
-    memory: sessionMemory,
-    emitSupervisorRunEvent: input.emitSupervisorRunEvent,
-  });
-
-  return { finalReportText, terminalState, summary, riskLevel, sessionMemory };
-}
-
-async function emitDecisionEvent(input: {
-  runId: string;
-  taskId: string;
-  iteration: number;
-  round: number;
-  decision: Awaited<ReturnType<typeof callSupervisorLLM>>;
-  emitSupervisorRunEvent: (
-    event: Omit<Parameters<typeof createSupervisorRunEvent>[0], 'currentTodo'>
-  ) => Promise<void>;
-}) {
-  await input.emitSupervisorRunEvent({
-    runId: input.runId,
-    taskId: input.taskId,
-    iteration: input.iteration,
-    type: 'supervisor.decision',
-    severity: 'info',
-    actor: 'supervisor',
-    message: `[Supervisor Round] round=${input.round} phase=${input.decision.phase} hasToolCall=${Boolean(input.decision.toolCall)}`,
-    data: { round: input.round, decision: input.decision },
-    payloadJson: { round: input.round, iteration: input.iteration, decision: input.decision },
-  });
-}
-
 function isEditTool(toolName: string): boolean {
   return toolName === 'apply_patch' || toolName === 'replace_content';
-}
-
-function isTerminalDecision(decision: Awaited<ReturnType<typeof callSupervisorLLM>>): boolean {
-  return decision.phase === 'stop' || decision.phase === 'report';
-}
-
-async function emitSessionMemoryEvent(input: {
-  runId: string;
-  taskId: string;
-  iteration: number;
-  reason: string;
-  memory: SupervisorSessionMemory;
-  emitSupervisorRunEvent: (
-    event: Omit<Parameters<typeof createSupervisorRunEvent>[0], 'currentTodo'>
-  ) => Promise<void>;
-}) {
-  const promptSnapshot = compactSessionMemoryForPrompt(input.memory);
-  await input.emitSupervisorRunEvent({
-    runId: input.runId,
-    taskId: input.taskId,
-    iteration: input.iteration,
-    type: 'system.info',
-    severity: 'info',
-    actor: 'supervisor',
-    message: `[SessionMemory] Updated: ${input.reason}.`,
-    data: {
-      reason: input.reason,
-      sessionMemoryDigest: digestSessionMemory(input.memory),
-      changedFiles: input.memory.changedFiles,
-      evidenceCount: input.memory.evidence.length,
-      verificationCount: input.memory.verification.length,
-      blockerCount: input.memory.blockers.length,
-    },
-    payloadJson: {
-      iteration: input.iteration,
-      reason: input.reason,
-      sessionMemory: promptSnapshot,
-    },
-  });
-}
-
-function normalizeTerminalState(value: unknown): SupervisorLoopResult['terminalState'] | null {
-  if (
-    value === 'completed' ||
-    value === 'needs_review' ||
-    value === 'needs_human' ||
-    value === 'failed' ||
-    value === 'timed_out' ||
-    value === 'blocked'
-  ) {
-    return value;
-  }
-  return null;
-}
-
-function getEditedFilePaths(toolName: string, toolResult: any): string[] {
-  if (toolName === 'apply_patch') {
-    const changedFiles = Array.isArray(toolResult.payload?.changedFiles)
-      ? toolResult.payload.changedFiles
-      : [];
-    return changedFiles.filter(
-      (filePath: unknown): filePath is string => typeof filePath === 'string'
-    );
-  }
-  if (toolName === 'replace_content') {
-    const filePath = toolResult.payload?.filePath;
-    return typeof filePath === 'string' && filePath.trim() ? [filePath] : [];
-  }
-  return [];
 }
 
 function formatToolObservation(toolName: string, toolResult: any): string {
@@ -909,4 +511,8 @@ function buildEditToolDiffContent(toolName: string, toolArgs: unknown, toolResul
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' && value.trim() ? value : '';
 }

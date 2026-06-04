@@ -1,0 +1,32 @@
+# minor_code_edit
+
+## Use When
+小さい変更タスク、ちょっとした修正、小さい新規作成、単一ファイルまたは少数ファイルの明確な変更。
+
+## Tools
+- list_dir
+- read_file
+- search_files
+- apply_patch
+- replace_content
+- run_command
+- select_job_type
+- finalize_answer
+
+## Procedure
+1. 必要最小限のファイル状態を確認する。
+2. 新規作成なら apply_patch を使う。
+3. 既存ファイルの単純置換なら replace_content を使う。
+4. 必要なら read_file または run_command で結果を確認する。
+5. 完了したら finalize_answer を呼ぶ。
+
+## Completion
+LLM が依頼内容を満たしたと判断したら finalize_answer を呼ぶ。runtime は完了可否を判定しない。
+finalize_answer.message でプロジェクト内のファイルに触れる場合は、プロジェクトルートからの相対パスで書く。
+
+## Switch Job Type
+初期実装では原則として minor_code_edit の中で完結させる。
+
+## Output
+Always return only:
+{ "toolCall": { "name": "...", "arguments": { ... } } }

@@ -5,6 +5,10 @@ import { appendLlmTrace, appendSupervisorTrace, logger } from '../../lib/logger'
 import { listMcpServers } from '../mcp/mcp-settings';
 import { buildCodexTurnPrompt } from './prompt';
 import {
+  buildResponseJsonSchema as buildSchemaFirstResponseJsonSchema,
+  parseSupervisorOutput,
+} from './schema-first';
+import {
   defaultSupervisorRoutingHypothesis,
   supervisorModes,
   supervisorOverlays,
@@ -98,6 +102,7 @@ export type SupervisorDecision = z.infer<typeof supervisorDecisionSchema>;
 type CallSupervisorOptions = {
   tolerateSchemaFailure?: boolean;
   round?: 1 | 2 | 3;
+  schemaFirst?: boolean;
   emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
   timeoutMs?: number;
   workingDirectory?: string;
@@ -250,6 +255,69 @@ function buildFixtureCodingDecision(userPrompt: string, round?: 1 | 2 | 3) {
     terminalState: 'completed',
     riskLevel: 'low',
     toolCall: null,
+  };
+}
+
+function buildSchemaFirstFixtureOutput(userPrompt: string, round?: 1 | 2 | 3) {
+  if (round === 1) {
+    return { jobType: 'minor_code_edit' };
+  }
+
+  let parsed: { toolResults?: Array<{ toolName?: string }> } = {};
+  try {
+    parsed = JSON.parse(userPrompt) as { toolResults?: Array<{ toolName?: string }> };
+  } catch {
+    parsed = {};
+  }
+  const toolResults = Array.isArray(parsed.toolResults) ? parsed.toolResults : [];
+  const hasTool = (toolName: string) => toolResults.some((result) => result.toolName === toolName);
+
+  if (!hasTool('list_dir')) {
+    return {
+      toolCall: {
+        name: 'list_dir',
+        arguments: { relativePath: '.', maxEntries: 100 },
+      },
+    };
+  }
+  if (!hasTool('apply_patch')) {
+    return {
+      toolCall: {
+        name: 'apply_patch',
+        arguments: {
+          patchContent: [
+            'diff --git a/fizzbuzz.ts b/fizzbuzz.ts',
+            'new file mode 100644',
+            '--- /dev/null',
+            '+++ b/fizzbuzz.ts',
+            '@@ -0,0 +1,8 @@',
+            '+for (let i = 1; i <= 100; i += 1) {',
+            '+  const fizz = i % 3 === 0;',
+            '+  const buzz = i % 5 === 0;',
+            '+  if (fizz && buzz) console.log("FizzBuzz");',
+            '+  else if (fizz) console.log("Fizz");',
+            '+  else if (buzz) console.log("Buzz");',
+            '+  else console.log(i);',
+            '+}',
+            '',
+          ].join('\n'),
+        },
+      },
+    };
+  }
+  if (!hasTool('read_file')) {
+    return {
+      toolCall: {
+        name: 'read_file',
+        arguments: { filePath: 'fizzbuzz.ts', compressionMode: 'off' },
+      },
+    };
+  }
+  return {
+    toolCall: {
+      name: 'finalize_answer',
+      arguments: { message: 'プロジェクトルートに `fizzbuzz.ts` を作成しました。' },
+    },
   };
 }
 
@@ -577,6 +645,7 @@ function buildOpenAIChatCompletionBody(input: {
   systemPrompt: string;
   userPrompt: string;
   round?: 1 | 2 | 3;
+  schemaFirst?: boolean;
   responseFormat: 'json_schema' | 'json_object';
   stream: boolean;
 }) {
@@ -592,7 +661,9 @@ function buildOpenAIChatCompletionBody(input: {
       input.responseFormat === 'json_schema'
         ? {
             type: 'json_schema',
-            json_schema: buildResponseJsonSchema(input.round),
+            json_schema: input.schemaFirst
+              ? buildSchemaFirstResponseJsonSchema(input.round === 1 ? 1 : 2)
+              : buildResponseJsonSchema(input.round),
           }
         : { type: 'json_object' },
   };
@@ -785,11 +856,23 @@ async function readCodexStreamedTurn(input: {
   return { finalResponse: finalResponse || latestAgentMessageText, usage };
 }
 
+export function callSupervisorLLM(
+  systemPrompt: string,
+  userPrompt: string,
+  options: CallSupervisorOptions & { schemaFirst: true; round: 1 | 2 }
+): Promise<
+  import('./schema-first').JobTypeSelection | import('./schema-first').AgentToolCallEnvelope
+>;
+export function callSupervisorLLM(
+  systemPrompt: string,
+  userPrompt: string,
+  options?: CallSupervisorOptions
+): Promise<SupervisorDecision>;
 export async function callSupervisorLLM(
   systemPrompt: string,
   userPrompt: string,
   options: CallSupervisorOptions = {}
-): Promise<SupervisorDecision> {
+): Promise<any> {
   const provider = userPrompt.includes('NIGHTWORKERS_TEST_AGENT_SCENARIO=')
     ? 'test'
     : process.env.ACTIVE_LLM_PROVIDER || 'azure';
@@ -868,7 +951,9 @@ export async function callSupervisorLLM(
           temperature: 0.1,
           response_format: {
             type: 'json_schema',
-            json_schema: buildResponseJsonSchema(options.round),
+            json_schema: options.schemaFirst
+              ? buildSchemaFirstResponseJsonSchema(options.round === 1 ? 1 : 2)
+              : buildResponseJsonSchema(options.round),
           },
         }),
       });
@@ -948,6 +1033,7 @@ export async function callSupervisorLLM(
             systemPrompt,
             userPrompt,
             round: options.round,
+            schemaFirst: options.schemaFirst,
             responseFormat,
             stream: streamResponses,
           })
@@ -985,6 +1071,7 @@ export async function callSupervisorLLM(
               systemPrompt,
               userPrompt,
               round: options.round,
+              schemaFirst: options.schemaFirst,
               responseFormat,
               stream: streamResponses,
             })
@@ -1085,7 +1172,9 @@ export async function callSupervisorLLM(
           thread,
           prompt,
           outputSchema: useStructuredOutput
-            ? buildResponseJsonSchema(options.round).schema
+            ? options.schemaFirst
+              ? buildSchemaFirstResponseJsonSchema(options.round === 1 ? 1 : 2).schema
+              : buildResponseJsonSchema(options.round).schema
             : undefined,
           signal: requestSignal,
           options,
@@ -1117,111 +1206,117 @@ export async function callSupervisorLLM(
         round: options.round ?? null,
         mode: isAgentOutcomeTestProvider
           ? 'agent_outcome'
-          : userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
-            ? 'simple_coding'
-            : 'stop_without_evidence',
+          : options.schemaFirst
+            ? 'schema_first'
+            : userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
+              ? 'simple_coding'
+              : 'stop_without_evidence',
       };
-      rawContent = JSON.stringify(
-        isAgentOutcomeTestProvider
-          ? buildTestProviderDecision(userPrompt, options.round)
-          : userPrompt.includes('E2E_OBJECT_EVIDENCE_FIXTURE')
-            ? {
-                phase: 'plan',
-                workflow: 'evidence_review',
-                instruction: 'Review object evidence fixture.',
-                rationale:
-                  'The fixture returns structured expected evidence like Codex sometimes does.',
-                finalResponse: '',
-                expectedEvidence: [
-                  {
-                    path: 'spec/implementation-queue-redesign-plan.md',
-                    lines: '1-200',
-                    focus: 'implementation plan consistency',
-                  },
-                  {
-                    path: 'api/services/supervisor/llm-provider.ts',
-                    focus: 'supervisor decision parsing',
-                  },
-                ],
-                riskLevel: 'medium',
-                toolCall: null,
-              }
-            : userPrompt.includes('E2E_MCP_NAMESPACED_TOOL_FIXTURE')
+      if (options.schemaFirst) {
+        rawContent = JSON.stringify(buildSchemaFirstFixtureOutput(userPrompt, options.round));
+      } else {
+        rawContent = JSON.stringify(
+          isAgentOutcomeTestProvider
+            ? buildTestProviderDecision(userPrompt, options.round)
+            : userPrompt.includes('E2E_OBJECT_EVIDENCE_FIXTURE')
               ? {
-                  phase: 'act',
-                  workflow: 'research',
-                  instruction: 'Call the configured MCP fixture tool.',
-                  rationale: 'The fixture returns a namespaced MCP tool name for normalization.',
+                  phase: 'plan',
+                  workflow: 'evidence_review',
+                  instruction: 'Review object evidence fixture.',
+                  rationale:
+                    'The fixture returns structured expected evidence like Codex sometimes does.',
                   finalResponse: '',
-                  expectedEvidence: ['MCP tool result'],
-                  riskLevel: 'low',
-                  toolCall: {
-                    name: 'mcp__fixture_server__lookup',
-                    arguments: {
-                      query: 'nightworkers',
+                  expectedEvidence: [
+                    {
+                      path: 'spec/implementation-queue-redesign-plan.md',
+                      lines: '1-200',
+                      focus: 'implementation plan consistency',
                     },
-                  },
+                    {
+                      path: 'api/services/supervisor/llm-provider.ts',
+                      focus: 'supervisor decision parsing',
+                    },
+                  ],
+                  riskLevel: 'medium',
+                  toolCall: null,
                 }
-              : userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
-                ? buildFixtureCodingDecision(userPrompt, options.round)
-                : options.round === 1
-                  ? {
-                      phase: 'plan',
-                      workflow: 'evidence_review',
-                      instruction: 'Review the requested specification document.',
-                      rationale: 'The fixture intentionally plans without a tool call.',
-                      finalResponse: '',
-                      expectedEvidence: ['spec document contents'],
-                      riskLevel: 'medium',
-                      toolCall: null,
-                    }
-                  : options.round === 2
-                    ? hasRoundObservations(userPrompt)
-                      ? {
+              : userPrompt.includes('E2E_MCP_NAMESPACED_TOOL_FIXTURE')
+                ? {
+                    phase: 'act',
+                    workflow: 'research',
+                    instruction: 'Call the configured MCP fixture tool.',
+                    rationale: 'The fixture returns a namespaced MCP tool name for normalization.',
+                    finalResponse: '',
+                    expectedEvidence: ['MCP tool result'],
+                    riskLevel: 'low',
+                    toolCall: {
+                      name: 'mcp__fixture_server__lookup',
+                      arguments: {
+                        query: 'nightworkers',
+                      },
+                    },
+                  }
+                : userPrompt.includes('E2E_SIMPLE_CODING_FIXTURE')
+                  ? buildFixtureCodingDecision(userPrompt, options.round)
+                  : options.round === 1
+                    ? {
+                        phase: 'plan',
+                        workflow: 'evidence_review',
+                        instruction: 'Review the requested specification document.',
+                        rationale: 'The fixture intentionally plans without a tool call.',
+                        finalResponse: '',
+                        expectedEvidence: ['spec document contents'],
+                        riskLevel: 'medium',
+                        toolCall: null,
+                      }
+                    : options.round === 2
+                      ? hasRoundObservations(userPrompt)
+                        ? {
+                            phase: 'stop',
+                            workflow: 'evidence_review',
+                            instruction: 'Fixture review complete.',
+                            rationale:
+                              'The fixture stops after repository evidence has been supplied.',
+                            finalResponse: [
+                              'Fixture review completed after reading repository evidence.',
+                              'Finding: spec/jsonl-replay-import-regression-implementation-plan.md:1 has been inspected and the fixture confirms the requested document review path can finish with concrete evidence.',
+                              'Risk: low; the run includes a read_file tool result before completion.',
+                            ].join(' '),
+                            expectedEvidence: ['spec document contents'],
+                            terminalState: 'completed',
+                            riskLevel: 'low',
+                            toolCall: null,
+                          }
+                        : {
+                            phase: 'act',
+                            workflow: 'evidence_review',
+                            instruction: 'Read the fixture specification document before review.',
+                            rationale:
+                              'The evidence_review prompt requires repository evidence before stopping.',
+                            finalResponse: '',
+                            expectedEvidence: ['spec document contents'],
+                            riskLevel: 'medium',
+                            toolCall: {
+                              name: 'read_file',
+                              arguments: {
+                                filePath:
+                                  'spec/jsonl-replay-import-regression-implementation-plan.md',
+                              },
+                            },
+                          }
+                      : {
                           phase: 'stop',
-                          workflow: 'evidence_review',
-                          instruction: 'Fixture review complete.',
-                          rationale:
-                            'The fixture stops after repository evidence has been supplied.',
-                          finalResponse: [
-                            'Fixture review completed after reading repository evidence.',
-                            'Finding: spec/jsonl-replay-import-regression-implementation-plan.md:1 has been inspected and the fixture confirms the requested document review path can finish with concrete evidence.',
-                            'Risk: low; the run includes a read_file tool result before completion.',
-                          ].join(' '),
-                          expectedEvidence: ['spec document contents'],
+                          workflow: 'general',
+                          instruction: 'Fixture smoke complete.',
+                          rationale: 'Fixture provider returned a smoke response.',
+                          finalResponse: 'Fixture smoke complete.',
+                          expectedEvidence: [],
                           terminalState: 'completed',
                           riskLevel: 'low',
                           toolCall: null,
                         }
-                      : {
-                          phase: 'act',
-                          workflow: 'evidence_review',
-                          instruction: 'Read the fixture specification document before review.',
-                          rationale:
-                            'The evidence_review prompt requires repository evidence before stopping.',
-                          finalResponse: '',
-                          expectedEvidence: ['spec document contents'],
-                          riskLevel: 'medium',
-                          toolCall: {
-                            name: 'read_file',
-                            arguments: {
-                              filePath:
-                                'spec/jsonl-replay-import-regression-implementation-plan.md',
-                            },
-                          },
-                        }
-                    : {
-                        phase: 'stop',
-                        workflow: 'general',
-                        instruction: 'Fixture smoke complete.',
-                        rationale: 'Fixture provider returned a smoke response.',
-                        finalResponse: 'Fixture smoke complete.',
-                        expectedEvidence: [],
-                        terminalState: 'completed',
-                        riskLevel: 'low',
-                        toolCall: null,
-                      }
-      );
+        );
+      }
     } else {
       throw new Error(`Unsupported LLM provider: ${provider}`);
     }
@@ -1285,6 +1380,7 @@ export async function callSupervisorLLM(
       provider,
       round: options.round ?? null,
       rawContentLength: rawContent.length,
+      ...(options.schemaFirst ? { rawContent } : {}),
       durationMs: Date.now() - startedAt,
       providerDebug,
     },
@@ -1322,6 +1418,24 @@ export async function callSupervisorLLM(
         },
       });
       parsedJson = JSON.parse(candidate);
+    }
+    if (options.schemaFirst) {
+      try {
+        return parseSupervisorOutput(parsedJson, options.round === 1 ? 1 : 2);
+      } catch (err) {
+        await emitSupervisorLlmDebugEvent(options, {
+          type: 'model.response_parse_failed',
+          severity: 'error',
+          message: 'Schema-first LLM response failed schema validation.',
+          data: {
+            provider,
+            round: options.round ?? null,
+            errorMessage: err instanceof Error ? err.message : String(err),
+            rawContentPreview: rawContent.slice(0, 500),
+          },
+        });
+        throw err;
+      }
     }
     const normalization = (() => {
       let phaseAutofilled = false;

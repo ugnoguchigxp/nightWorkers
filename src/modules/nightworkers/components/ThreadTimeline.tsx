@@ -253,10 +253,11 @@ function TranscriptItemView({ item }: { item: TranscriptItem }) {
 
   if (item.kind === 'assistant_turn') {
     const timestamp = item.events.at(-1)?.createdAt;
+    const visibleText = formatVisibleAssistantText(item.text);
     return (
       <ThreadMessage messageRole="assistant" timestamp={formatFinishedTime(timestamp)}>
         <div className="space-y-3">
-          {item.text.trim() ? <ChatMarkdown content={item.text} /> : null}
+          {visibleText.trim() ? <ChatMarkdown content={visibleText} /> : null}
           {item.children.map((child, index) => (
             <TranscriptChildView
               key={`${item.id}-child-${index}-${childEventId(child)}`}
@@ -358,13 +359,15 @@ function TranscriptActivityBlock({
       ? 'border-amber-700/60 bg-amber-950/20 text-amber-50'
       : 'border-slate-700/80 bg-slate-900/30 text-slate-100';
   const payload = event.payloadJson || {};
-  const summary = event.text || event.ingestError || event.status || event.kind;
+  const displayTitle = activityDisplayTitle(event, title);
+  const summary = activityDisplaySummary(event);
   const code = artifactText || getActivityCode(event);
+  const defaultOpen = !compact && !isHighVolumeActivity(event);
 
   return (
-    <details className={`rounded border ${borderClass}`} open={!compact}>
+    <details className={`rounded border ${borderClass}`} open={defaultOpen}>
       <summary className="cursor-pointer list-none px-3 py-2 text-xs">
-        <span className="mr-2 rounded border border-current/30 px-1.5 py-0.5">{title}</span>
+        <span className="mr-2 rounded border border-current/30 px-1.5 py-0.5">{displayTitle}</span>
         <span className="text-current/80">{event.source}</span>
         {event.status ? <span className="ml-2 text-current/70">{event.status}</span> : null}
         <span className="ml-2 text-current/50">#{event.seq}</span>
@@ -417,14 +420,26 @@ function childEventId(child: TranscriptChild) {
 
 function fallbackEventText(event?: ActivityEvent) {
   if (!event) return '';
-  return event.text || JSON.stringify(event.payloadJson || {}, null, 2);
+  return formatVisibleAssistantText(event.text || JSON.stringify(event.payloadJson || {}, null, 2));
 }
 
 function getActivityCode(event: ActivityEvent) {
   const payload = event.payloadJson as any;
+  if (typeof payload?.payload?.rawContent === 'string') return payload.payload.rawContent;
+  if (typeof payload?.payload?.systemPrompt === 'string') return payload.payload.systemPrompt;
+  if (typeof payload?.payload?.userPrompt === 'string') return payload.payload.userPrompt;
+  if (
+    payload?.payload &&
+    (event.kind === 'llm.schema_result' || event.kind.startsWith('runtime.'))
+  ) {
+    return JSON.stringify(payload.payload, null, 2);
+  }
   if (typeof payload?.code === 'string') return payload.code;
   if (typeof payload?.runEvent?.data?.text === 'string' && event.kind.includes('delta')) {
     return payload.runEvent.data.text;
+  }
+  if (typeof payload?.runEvent?.data?.rawContent === 'string') {
+    return payload.runEvent.data.rawContent;
   }
   if (typeof payload?.runEvent?.data?.result?.payload?.stdout === 'string') {
     return payload.runEvent.data.result.payload.stdout;
@@ -439,6 +454,8 @@ function activityCodeFilename(event: ActivityEvent) {
   if (event.kind.includes('patch')) return 'activity.patch';
   if (event.kind.includes('diff')) return 'activity.diff';
   if (event.kind.includes('json') || event.kind.startsWith('llm.')) return 'activity.json';
+  if (schemaFirstAgentEventType(event) === 'model.response_finished') return 'raw-output.json';
+  if (schemaFirstAgentEventType(event)?.endsWith('prompt_built')) return 'prompt.txt';
   return event.kind;
 }
 
@@ -446,6 +463,108 @@ function activityCodeLanguage(event: ActivityEvent) {
   if (event.kind.includes('patch') || event.kind.includes('diff')) return 'diff';
   if (event.kind.includes('json') || event.kind.startsWith('llm.')) return 'json';
   return 'text';
+}
+
+function schemaFirstAgentEventType(event: ActivityEvent): string {
+  const payload = event.payloadJson as any;
+  return typeof payload?.agentEventType === 'string' ? payload.agentEventType : '';
+}
+
+function activityDisplayTitle(event: ActivityEvent, fallback: string): string {
+  const agentEventType = schemaFirstAgentEventType(event);
+  switch (agentEventType) {
+    case 'run.started':
+      return 'Run started';
+    case 'round1.prompt_built':
+      return 'Round 1 prompt';
+    case 'round1.parsed':
+      return 'Round 1 jobType';
+    case 'skill.loaded':
+      return 'Skill loaded';
+    case 'round2.prompt_built':
+      return 'Round 2 prompt';
+    case 'round2.parsed':
+      return 'Round 2 toolCall';
+    case 'round2.invalid':
+      return 'Round 2 invalid';
+    case 'model.request_started':
+      return 'LLM request';
+    case 'model.response_finished':
+      return 'LLM raw output';
+    case 'tool.started':
+      return 'Tool started';
+    case 'tool.finished':
+      return 'Tool result';
+    case 'tool.failed':
+      return 'Tool failed';
+    case 'tool.validation_failed':
+      return 'Tool validation failed';
+    case 'job.switched':
+      return 'Job switched';
+    case 'finalize.received':
+      return 'Final answer';
+    case 'run.completed':
+      return 'Run completed';
+    case 'run.needs_human':
+      return 'Needs human';
+    case 'run.failed':
+      return 'Run failed';
+    default:
+      return fallback;
+  }
+}
+
+function activityDisplaySummary(event: ActivityEvent): string {
+  const payload = event.payloadJson as any;
+  const data = payload?.payload || payload?.runEvent?.data || {};
+  const agentEventType = schemaFirstAgentEventType(event);
+  if (agentEventType === 'round1.parsed' && typeof data.jobType === 'string') {
+    return data.jobType;
+  }
+  if (agentEventType === 'round2.parsed' && data.toolCall) {
+    return toolCallSummary(data.toolCall);
+  }
+  if (agentEventType === 'tool.started' && data.toolCall) {
+    return toolCallSummary(data.toolCall);
+  }
+  if (agentEventType === 'tool.finished') {
+    return typeof data.toolName === 'string' ? data.toolName : event.text || 'tool finished';
+  }
+  if (agentEventType === 'finalize.received') {
+    return formatVisibleAssistantText(
+      typeof data.message === 'string' ? data.message : event.text || ''
+    );
+  }
+  if (agentEventType === 'model.response_finished') {
+    return formatVisibleAssistantText(
+      typeof data.rawContent === 'string' ? data.rawContent : event.text || ''
+    );
+  }
+  if (agentEventType.endsWith('prompt_built')) {
+    return event.text || 'prompt built';
+  }
+  return event.text || event.ingestError || event.status || event.kind;
+}
+
+function toolCallSummary(toolCall: any): string {
+  if (!toolCall || typeof toolCall !== 'object') return '';
+  const name = typeof toolCall.name === 'string' ? toolCall.name : 'toolCall';
+  const args =
+    toolCall.arguments && typeof toolCall.arguments === 'object' ? toolCall.arguments : {};
+  const filePath = typeof args.filePath === 'string' ? args.filePath : '';
+  const command = typeof args.command === 'string' ? args.command : '';
+  const query = typeof args.query === 'string' ? args.query : '';
+  const detail = filePath || command || query;
+  return detail ? `${name}: ${detail}` : name;
+}
+
+function isHighVolumeActivity(event: ActivityEvent): boolean {
+  const agentEventType = schemaFirstAgentEventType(event);
+  return (
+    agentEventType === 'model.response_finished' ||
+    agentEventType.endsWith('prompt_built') ||
+    event.kind === 'assistant.raw_output'
+  );
 }
 
 function RuntimePromptSnapshotCard({ latestRun }: { latestRun?: TaskRun }) {
@@ -466,7 +585,7 @@ function FinalReportCard({ latestRun }: { latestRun?: TaskRun }) {
   if (!latestRun?.finalReport?.trim()) return null;
   return (
     <ThreadMessage messageRole="assistant" timestamp={formatFinishedTime(latestRun.finishedAt)}>
-      <ChatMarkdown content={latestRun.finalReport} />
+      <ChatMarkdown content={formatVisibleAssistantText(latestRun.finalReport)} />
     </ThreadMessage>
   );
 }
@@ -656,9 +775,9 @@ export function buildPersistedStreamingResponsePreview(input: {
 }
 
 function buildStreamingPreviewFromRaw(raw: string): StreamingPreview {
-  const parsed = tryParseJsonObject(raw);
-  if (typeof parsed?.finalResponse === 'string' && parsed.finalResponse.trim()) {
-    return { visibleText: parsed.finalResponse, statusText: '最終回答を組み立てています。' };
+  const visibleText = formatVisibleAssistantText(raw);
+  if (visibleText !== raw && visibleText.trim()) {
+    return { visibleText, statusText: '最終回答を組み立てています。' };
   }
 
   const partialFinalResponse = extractLatestPartialJsonStringValue(raw, 'finalResponse');
@@ -673,6 +792,32 @@ function buildStreamingPreviewFromRaw(raw: string): StreamingPreview {
     visibleText: raw,
     statusText: 'Supervisor の応答構造を生成しています。',
   };
+}
+
+export function formatVisibleAssistantText(raw: string): string {
+  const parsed = tryParseJsonObject(raw);
+  const directMessage = stringValue(parsed?.message);
+  const legacyFinalResponse = stringValue(parsed?.finalResponse);
+  const finalizeToolMessage = stringValue(parsed?.toolCall?.arguments?.message);
+  const instruction = stringValue(parsed?.instruction);
+  const rationale = stringValue(parsed?.rationale);
+  return (
+    firstNonEmpty(
+      legacyFinalResponse,
+      finalizeToolMessage,
+      directMessage,
+      instruction,
+      rationale
+    ) || raw
+  );
+}
+
+function firstNonEmpty(...values: string[]): string {
+  return values.find((value) => value.trim()) || '';
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
 }
 
 function tryParseJsonObject(raw: string): any | null {

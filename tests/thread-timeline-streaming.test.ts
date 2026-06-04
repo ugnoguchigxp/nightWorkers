@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildPersistedStreamingResponsePreview } from '../src/modules/nightworkers/components/ThreadTimeline';
+import {
+  buildPersistedStreamingResponsePreview,
+  formatVisibleAssistantText,
+} from '../src/modules/nightworkers/components/ThreadTimeline';
 
 describe('ThreadTimeline streaming persistence', () => {
   it('keeps the latest streamed finalResponse visible after a run stops', () => {
@@ -100,5 +103,32 @@ describe('ThreadTimeline streaming persistence', () => {
     });
 
     expect(preview).toBeNull();
+  });
+
+  it('renders legacy supervisor decision JSON as the finalResponse only', () => {
+    const raw = JSON.stringify({
+      phase: 'stop',
+      workflow: 'code_change',
+      instruction: 'プロジェクトルート直下に fizzbuzz.ts を作成しました。',
+      finalResponse: '/Users/y.noguchi/Code/nightWorkers/fizzbuzz.ts を作成しました。',
+      toolCall: null,
+    });
+
+    expect(formatVisibleAssistantText(raw)).toBe(
+      '/Users/y.noguchi/Code/nightWorkers/fizzbuzz.ts を作成しました。'
+    );
+  });
+
+  it('renders schema-first finalize toolCall JSON as the message only', () => {
+    const raw = JSON.stringify({
+      toolCall: {
+        name: 'finalize_answer',
+        arguments: {
+          message: 'fizzbuzz.ts を作成しました。',
+        },
+      },
+    });
+
+    expect(formatVisibleAssistantText(raw)).toBe('fizzbuzz.ts を作成しました。');
   });
 });

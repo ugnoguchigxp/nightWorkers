@@ -76,6 +76,51 @@ describe('activity transcript reducer', () => {
     if (diffChild?.kind === 'diff') expect(diffChild.artifact?.id).toBe('art-1');
   });
 
+  it('groups schema-first raw output, parsed JSON, tools, and final answer in one assistant turn', () => {
+    const items = buildTranscriptItems({
+      events: [
+        event({
+          id: 'raw-1',
+          kind: 'assistant.raw_output',
+          seq: 1,
+          turnId: 'assistant:run-1',
+          runId: 'run-1',
+          text: '{"toolCall":{"name":"list_dir","arguments":{}}}',
+        }),
+        event({
+          id: 'parsed-1',
+          kind: 'llm.schema_result',
+          seq: 2,
+          turnId: 'assistant:run-1',
+          runId: 'run-1',
+          text: '{"toolCall":{"name":"list_dir","arguments":{}}}',
+        }),
+        event({
+          id: 'tool-1',
+          kind: 'tool.call',
+          seq: 3,
+          turnId: 'assistant:run-1',
+          runId: 'run-1',
+          text: 'list_dir started',
+        }),
+        event({
+          id: 'final-1',
+          kind: 'assistant.message',
+          seq: 4,
+          turnId: 'assistant:run-1',
+          runId: 'run-1',
+          text: '完了しました。',
+        }),
+      ],
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.kind).toBe('assistant_turn');
+    if (items[0]?.kind !== 'assistant_turn') return;
+    expect(items[0].text).toBe('完了しました。');
+    expect(items[0].children.map((child) => child.kind)).toEqual(['log', 'json', 'tool']);
+  });
+
   it('renders unknown activity instead of dropping it', () => {
     const items = buildTranscriptItems({
       events: [event({ id: 'u1', kind: 'unknown.activity', seq: 1, ingestError: 'unsupported' })],

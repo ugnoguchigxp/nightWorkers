@@ -189,6 +189,95 @@ describe('NightWorkers task routes', () => {
     );
   });
 
+  it('maps schema-first agent events into chat activity kinds', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: Schema-first Activity ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: Schema-first activity target',
+      description: 'Persist schema-first activity',
+      status: 'draft',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+    });
+
+    await repo.createRunEvent(
+      {
+        version: 1,
+        runId: run.id,
+        taskId: task.id,
+        timestamp: new Date().toISOString(),
+        type: 'supervisor.decision',
+        severity: 'info',
+        actor: 'supervisor',
+        message: '[SchemaFirstAgent] round2.parsed',
+      },
+      {
+        payloadJson: {
+          agentEventType: 'round2.parsed',
+          payload: {
+            toolCall: {
+              name: 'apply_patch',
+              arguments: { patchContent: 'diff --git a/a b/a' },
+            },
+          },
+        },
+      }
+    );
+    await repo.createRunEvent(
+      {
+        version: 1,
+        runId: run.id,
+        taskId: task.id,
+        timestamp: new Date().toISOString(),
+        type: 'system.info',
+        severity: 'info',
+        actor: 'runtime',
+        message: '[SchemaFirstAgent] finalize.received',
+      },
+      {
+        payloadJson: {
+          agentEventType: 'finalize.received',
+          payload: { message: '完了しました。' },
+        },
+      }
+    );
+
+    const res = await app.request(`http://localhost/api/runs/${run.id}/activity-events`);
+    expect(res.status).toBe(200);
+    const replay = await res.json();
+    expect(replay.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          taskId: task.id,
+          runId: run.id,
+          kind: 'llm.schema_result',
+          turnId: `assistant:${run.id}`,
+          text: expect.stringContaining('apply_patch'),
+          payloadJson: expect.objectContaining({
+            agentEventType: 'round2.parsed',
+          }),
+        }),
+        expect.objectContaining({
+          taskId: task.id,
+          runId: run.id,
+          kind: 'assistant.message',
+          turnId: `assistant:${run.id}`,
+          text: '完了しました。',
+          payloadJson: expect.objectContaining({
+            agentEventType: 'finalize.received',
+          }),
+        }),
+      ])
+    );
+  });
+
   it('persists tool diff messages as file activity artifacts', async () => {
     const createdRepo = await repo.createRepository({
       name: `TEST: Activity Diff ${crypto.randomUUID()}`,
