@@ -202,6 +202,7 @@ todoPlan がある場合、現在の実行は Todo を順番に完了する前�
 evidence overlay または調査・レビュー系 mode では、observations が空ならユーザー向け回答を作らず、まず toolCall で証拠を取得してください。
 証拠がある場合は、その証拠だけを根拠に finalResponse を完成させてください。
 worker tool の実行結果が observations に無い場合、cp / mv / touch / apply_patch / replace_content / run_command を実行済み、失敗済み、拒否済みだと書いてはいけません。
+リポジトリへの読み書きは必ず Tool catalog の worker toolCall で行ってください。Codex 自身のローカルファイル操作や別経路の編集を、リポジトリ変更の根拠として扱ってはいけません。
 code_edit では、編集ツールを実行していないまま read-only / 書き込み不可 / 権限不足を理由に phase="stop" を返してはいけません。
 
 [Routing Hypothesis]

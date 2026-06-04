@@ -573,50 +573,58 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       payloadJson: { iteration, decision },
     });
 
-    // 6. Handle stop decision
-    if (decision.phase === 'stop') {
-      const evidenceRequired = requiresWorkflowEvidence(decision.workflow || activeWorkflow);
-      const editRequired = requiresWorkflowEdit(decision.workflow || activeWorkflow);
-      if (editRequired && editToolCalls === 0) {
-        const missingToolBudget = budget.onMissingToolCall();
-        const detail = {
-          iteration,
-          reason: 'stop_without_edit_attempt',
-          phase: decision.phase,
-          instruction: decision.instruction,
-          rationale: decision.rationale,
-          finalResponseLength: decision.finalResponse?.length ?? 0,
-          expectedEvidence: decision.expectedEvidence ?? [],
-          supervisorToolCalls,
-          editToolCalls,
-          ...(missingToolBudget.detail || {}),
-        };
-        appendSupervisorTrace('stop_without_edit_attempt', { runId, ...detail });
-        await emitSupervisorRunEvent({
-          runId,
-          taskId: task.id,
-          iteration,
-          type: missingToolBudget.allowed ? 'system.warning' : 'safety.repeated_failure',
-          severity: missingToolBudget.allowed ? 'warning' : 'error',
-          actor: 'system',
-          message: missingToolBudget.allowed
-            ? '[Supervisor Guard] code_change stop was ignored because no edit tool was attempted.'
-            : '[Budget Stop] supervisor repeatedly stopped a code_change without attempting an edit tool.',
-          data: detail,
-          payloadJson: detail,
-        });
-        if (!missingToolBudget.allowed) {
-          finalReportText =
-            'code_change workflow で、replace_content または apply_patch を一度も実行せずに stop を繰り返したため停止しました。read-only という自己判断ではなく、編集ツールの実行結果を根拠にする必要があります。';
-          terminalState = 'needs_human';
-          summary = 'Stopped because supervisor stopped without attempting an edit tool';
-          stoppedBy = 'missing_tool_call';
-          riskLevel = 'high';
-          break;
-        }
-        continue;
+    // 6. Handle terminal/report decisions
+    const evidenceRequired = requiresWorkflowEvidence(decision.workflow || activeWorkflow);
+    const editRequired = requiresWorkflowEdit(decision.workflow || activeWorkflow);
+    if (
+      editRequired &&
+      editToolCalls === 0 &&
+      (decision.phase === 'stop' || decision.phase === 'report')
+    ) {
+      const missingToolBudget = budget.onMissingToolCall();
+      const detail = {
+        iteration,
+        reason:
+          decision.phase === 'stop' ? 'stop_without_edit_attempt' : 'report_without_edit_attempt',
+        phase: decision.phase,
+        instruction: decision.instruction,
+        rationale: decision.rationale,
+        finalResponseLength: decision.finalResponse?.length ?? 0,
+        expectedEvidence: decision.expectedEvidence ?? [],
+        supervisorToolCalls,
+        editToolCalls,
+        ...(missingToolBudget.detail || {}),
+      };
+      appendSupervisorTrace(
+        decision.phase === 'stop' ? 'stop_without_edit_attempt' : 'report_without_edit_attempt',
+        { runId, ...detail }
+      );
+      await emitSupervisorRunEvent({
+        runId,
+        taskId: task.id,
+        iteration,
+        type: missingToolBudget.allowed ? 'system.warning' : 'safety.repeated_failure',
+        severity: missingToolBudget.allowed ? 'warning' : 'error',
+        actor: 'system',
+        message: missingToolBudget.allowed
+          ? `[Supervisor Guard] code_change ${decision.phase} was ignored because no edit tool was attempted.`
+          : `[Budget Stop] supervisor repeatedly returned ${decision.phase} for a code_change without attempting an edit tool.`,
+        data: detail,
+        payloadJson: detail,
+      });
+      if (!missingToolBudget.allowed) {
+        finalReportText =
+          'code_change workflow で、replace_content または apply_patch を一度も実行せずに report/stop を繰り返したため停止しました。read-only という自己判断ではなく、編集ツールの実行結果を根拠にする必要があります。';
+        terminalState = 'needs_human';
+        summary = 'Stopped because supervisor reported completion without attempting an edit tool';
+        stoppedBy = 'missing_tool_call';
+        riskLevel = 'high';
+        break;
       }
+      continue;
+    }
 
+    if (decision.phase === 'stop') {
       if (evidenceRequired && supervisorToolCalls === 0) {
         const missingToolBudget = budget.onMissingToolCall();
         const detail = {

@@ -620,6 +620,89 @@ describe('Supervisor Control Loop Unit Tests', () => {
     );
   });
 
+  it('does not accept a code_change report before an edit tool is attempted', async () => {
+    const mockRun = { id: 'run-code-change-report-no-edit', taskId: 'task-code-change-report' };
+    const mockTask = {
+      id: 'task-code-change-report',
+      objective: 'Create fizzbuzz.ts',
+      acceptanceCriteria: 'File is created',
+    };
+
+    vi.mocked(repo.getTaskRun).mockResolvedValue(mockRun as any);
+    vi.mocked(repo.getTask).mockResolvedValue(mockTask as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
+      phase: 'plan',
+      workflow: 'code_change',
+      routingHypothesis: {
+        primaryMode: 'code_edit',
+        secondaryModes: [],
+        phase: 'execute',
+        workKinds: ['code'],
+        overlays: [],
+        requiredEvidence: ['fizzbuzz.ts exists'],
+        nextSkillFiles: [],
+        confidence: 0.95,
+      },
+      instruction: 'Create fizzbuzz.ts.',
+      rationale: 'A file edit is required.',
+      finalResponse: '',
+      expectedEvidence: ['fizzbuzz.ts exists'],
+      riskLevel: 'low',
+      toolCall: null,
+    });
+
+    for (let i = 0; i < 3; i += 1) {
+      vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
+        phase: 'report',
+        workflow: 'code_change',
+        routingHypothesis: {
+          primaryMode: 'code_edit',
+          secondaryModes: [],
+          phase: 'summarize',
+          workKinds: ['code'],
+          overlays: [],
+          requiredEvidence: ['fizzbuzz.ts exists'],
+          nextSkillFiles: [],
+          confidence: 0.95,
+        },
+        instruction: 'Report the file as created.',
+        rationale: 'Claims completion without worker edit evidence.',
+        finalResponse: 'fizzbuzz.ts を作成しました。',
+        expectedEvidence: ['fizzbuzz.ts exists'],
+        riskLevel: 'low',
+        toolCall: null,
+      });
+    }
+
+    const result = await runSupervisorLoop({
+      runId: 'run-code-change-report-no-edit',
+      repoRoot: '/repo/project',
+      prompt: 'fizzbuzz.tsをプロジェクトルートに作ってください',
+      timeoutSeconds: 60,
+    });
+
+    expect(result.terminalState).toBe('needs_human');
+    expect(result.stoppedBy).toBe('missing_tool_call');
+    expect(result.finalReport).toContain('report/stop を繰り返したため停止');
+    expect(vi.mocked(llm.callSupervisorLLM).mock.calls.map((call) => call[2]?.round)).toEqual([
+      1, 2, 2, 2,
+    ]);
+    expect(repo.createRunEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'safety.repeated_failure',
+        severity: 'error',
+      }),
+      expect.objectContaining({
+        payloadJson: expect.objectContaining({
+          reason: 'report_without_edit_attempt',
+          editToolCalls: 0,
+        }),
+      })
+    );
+  });
+
   it('passes latest user message together with compiled runtime context', async () => {
     const mockRun = { id: 'run-runtime-context', taskId: 'task-runtime-context' };
     const mockTask = {

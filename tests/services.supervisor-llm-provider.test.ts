@@ -14,7 +14,12 @@ describe('Supervisor LLM provider evidence fallback', () => {
   const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
   const originalNodeEnv = process.env.NODE_ENV;
   const originalMcpSettingsPath = process.env.NIGHTWORKERS_MCP_SETTINGS_PATH;
+  const originalCodexSupervisorWorkingDirectory = process.env.CODEX_SUPERVISOR_WORKING_DIRECTORY;
   let tempDir: string;
+  const defaultCodexSupervisorDecisionWorkspace = path.join(
+    os.tmpdir(),
+    'nightworkers-codex-supervisor-decisions'
+  );
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-supervisor-mcp-'));
@@ -39,6 +44,11 @@ describe('Supervisor LLM provider evidence fallback', () => {
       delete process.env.NODE_ENV;
     } else {
       process.env.NODE_ENV = originalNodeEnv;
+    }
+    if (originalCodexSupervisorWorkingDirectory === undefined) {
+      delete process.env.CODEX_SUPERVISOR_WORKING_DIRECTORY;
+    } else {
+      process.env.CODEX_SUPERVISOR_WORKING_DIRECTORY = originalCodexSupervisorWorkingDirectory;
     }
   });
 
@@ -211,7 +221,8 @@ describe('Supervisor LLM provider evidence fallback', () => {
     }
   });
 
-  it('does not run Codex supervisor calls in a read-only sandbox', () => {
+  it('runs Codex supervisor calls in an isolated decision workspace', () => {
+    delete process.env.CODEX_SUPERVISOR_WORKING_DIRECTORY;
     const options = buildCodexSupervisorThreadOptions('gpt-5.4-mini', '/repo/project');
 
     expect(options).toMatchObject({
@@ -223,7 +234,28 @@ describe('Supervisor LLM provider evidence fallback', () => {
       skipGitRepoCheck: true,
     });
     expect(options.sandboxMode).not.toBe('read-only');
-    expect(options.workingDirectory).toBe('/repo/project');
+    expect(options.workingDirectory).toBe(defaultCodexSupervisorDecisionWorkspace);
+    expect(options.workingDirectory).not.toBe('/repo/project');
+    expect(fs.existsSync(defaultCodexSupervisorDecisionWorkspace)).toBe(true);
+  });
+
+  it('allows overriding the isolated Codex supervisor decision workspace', () => {
+    process.env.CODEX_SUPERVISOR_WORKING_DIRECTORY = '/tmp/nightworkers-decision-workspace';
+
+    const options = buildCodexSupervisorThreadOptions('gpt-5.4-mini', '/repo/project');
+
+    expect(options.workingDirectory).toBe(path.resolve('/tmp/nightworkers-decision-workspace'));
+    expect(options.workingDirectory).not.toBe('/repo/project');
+    expect(fs.existsSync(options.workingDirectory)).toBe(true);
+  });
+
+  it('ignores a Codex supervisor decision workspace override that overlaps the repo root', () => {
+    process.env.CODEX_SUPERVISOR_WORKING_DIRECTORY = '/repo';
+
+    const options = buildCodexSupervisorThreadOptions('gpt-5.4-mini', '/repo/project');
+
+    expect(options.workingDirectory).toBe(defaultCodexSupervisorDecisionWorkspace);
+    expect(options.workingDirectory).not.toBe('/repo');
   });
 });
 

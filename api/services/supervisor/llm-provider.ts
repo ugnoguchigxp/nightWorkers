@@ -1,4 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { CodexOptions, Thread, ThreadEvent, Usage } from '@openai/codex-sdk';
 import { z } from 'zod';
 import { appendLlmTrace, appendSupervisorTrace, logger } from '../../lib/logger';
@@ -149,16 +152,47 @@ export function buildCodexSupervisorThreadOptions(
 ) {
   const configuredEffort = process.env.CODEX_MODEL_REASONING_EFFORT;
   const modelReasoningEffort = isCodexReasoningEffort(configuredEffort) ? configuredEffort : 'low';
+  const decisionWorkingDirectory = resolveCodexSupervisorWorkingDirectory(workingDirectory);
   return {
     model,
     sandboxMode: 'workspace-write' as const,
     approvalPolicy: 'never' as const,
     networkAccessEnabled: false,
     webSearchMode: 'disabled' as const,
-    workingDirectory,
+    workingDirectory: decisionWorkingDirectory,
     skipGitRepoCheck: true,
     modelReasoningEffort,
   };
+}
+
+function resolveCodexSupervisorWorkingDirectory(requestedWorkingDirectory: string): string {
+  const configured = process.env.CODEX_SUPERVISOR_WORKING_DIRECTORY?.trim();
+  const fallback = ensureCodexSupervisorDecisionWorkspace();
+  if (!configured) return fallback;
+
+  return pathsOverlap(configured, requestedWorkingDirectory)
+    ? fallback
+    : ensureDirectory(path.resolve(configured));
+}
+
+function ensureCodexSupervisorDecisionWorkspace(): string {
+  const workspace = path.join(os.tmpdir(), 'nightworkers-codex-supervisor-decisions');
+  return ensureDirectory(workspace);
+}
+
+function ensureDirectory(workspace: string): string {
+  fs.mkdirSync(workspace, { recursive: true });
+  return workspace;
+}
+
+function pathsOverlap(left: string, right: string): boolean {
+  const leftResolved = path.resolve(left);
+  const rightResolved = path.resolve(right);
+  return (
+    leftResolved === rightResolved ||
+    leftResolved.startsWith(`${rightResolved}${path.sep}`) ||
+    rightResolved.startsWith(`${leftResolved}${path.sep}`)
+  );
 }
 
 function isCodexReasoningEffort(
@@ -1059,9 +1093,8 @@ export async function callSupervisorLLM(
       const useStructuredOutput = isEnabled('CODEX_STRUCTURED_OUTPUT_ENABLED', false);
 
       const runWithModel = async (model?: string) => {
-        const thread = codex.startThread(
-          buildCodexSupervisorThreadOptions(model, options.workingDirectory)
-        );
+        const threadOptions = buildCodexSupervisorThreadOptions(model, options.workingDirectory);
+        const thread = codex.startThread(threadOptions);
         const turn = await readCodexStreamedTurn({
           thread,
           prompt,
@@ -1078,9 +1111,8 @@ export async function callSupervisorLLM(
           provider: 'codex',
           model: model || null,
           structuredOutput: useStructuredOutput,
-          modelReasoningEffort: buildCodexSupervisorThreadOptions(model, options.workingDirectory)
-            .modelReasoningEffort,
-          workingDirectory: options.workingDirectory || process.cwd(),
+          modelReasoningEffort: threadOptions.modelReasoningEffort,
+          workingDirectory: threadOptions.workingDirectory,
           usage: turn.usage,
           hasFinalResponse: Boolean(turn.finalResponse),
         };

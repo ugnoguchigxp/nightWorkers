@@ -111,11 +111,11 @@ export function ThreadTimeline({
             <MessagePayload message={item.message} onOpenArtifact={onOpenArtifact} />
           </ThreadMessage>
         ) : showDebugEvents ||
-          hasApplyPatchContent(item.event) ||
+          hasAgentEditSummary(item.event) ||
           isReviewerEvaluationEvent(item.event) ? (
           <div key={item.id} className="space-y-2">
             <ReviewerEvaluationCard event={item.event} />
-            <AgentPatchSummaryCard event={item.event} />
+            <AgentEditSummaryCard event={item.event} />
             {showDebugEvents ? <AgentDebugEventCard event={item.event} /> : null}
           </div>
         ) : null
@@ -487,31 +487,31 @@ function ThinkingIndicator() {
   );
 }
 
-function AgentPatchSummaryCard({ event }: { event: TaskEvent }) {
-  const payload = event.payloadJson as any;
-  const patchContent = getApplyPatchContent(payload);
-  const sections =
-    typeof patchContent === 'string' && patchContent.trim()
-      ? parseApplyPatchSections(patchContent)
-      : [];
-
-  if (sections.length === 0) return null;
+function AgentEditSummaryCard({ event }: { event: TaskEvent }) {
+  const summary = getAgentEditSummary(event);
+  if (!summary) return null;
 
   return (
     <details className="rounded border border-slate-700/80 bg-slate-900/30">
       <summary className="cursor-pointer list-none px-3 py-2 text-xs text-slate-200">
-        コード変更 ({sections.length})
+        コード変更 ({summary.sections.length}){' '}
+        <span className="text-slate-400">{summary.toolName}</span>
       </summary>
       <div className="space-y-1 border-t border-slate-700/80 px-3 py-2 text-xs">
-        {sections.map((section, idx) => (
+        {summary.sections.map((section, idx) => (
           <div
             key={`${event.id}-section-${idx}`}
             className="rounded border border-slate-700/70 bg-slate-950/40 px-2 py-1"
           >
             <div className="truncate text-slate-200">{section.path}</div>
             <div className="text-slate-400">
-              <span className="text-emerald-400">+{section.added}</span>{' '}
-              <span className="text-rose-400">-{section.deleted}</span>
+              {typeof section.added === 'number' || typeof section.deleted === 'number' ? (
+                <>
+                  <span className="text-emerald-400">+{section.added || 0}</span>{' '}
+                  <span className="text-rose-400">-{section.deleted || 0}</span>
+                </>
+              ) : null}
+              {section.detail ? <span className="ml-2">{section.detail}</span> : null}
             </div>
           </div>
         ))}
@@ -568,10 +568,8 @@ function isReviewerEvaluationEvent(event: TaskEvent): boolean {
   );
 }
 
-function hasApplyPatchContent(event: TaskEvent): boolean {
-  const payload = event.payloadJson as any;
-  const patchContent = getApplyPatchContent(payload);
-  return typeof patchContent === 'string' && patchContent.trim().length > 0;
+function hasAgentEditSummary(event: TaskEvent): boolean {
+  return getAgentEditSummary(event) !== null;
 }
 
 function AgentDebugEventCard({ event }: { event: TaskEvent }) {
@@ -696,15 +694,133 @@ function ReviewResultSummary({ reviewResult }: { reviewResult: ReviewResult }) {
   );
 }
 
+type AgentEditSummary = {
+  toolName: 'apply_patch' | 'replace_content';
+  sections: Array<{ path: string; added?: number; deleted?: number; detail?: string }>;
+};
+
+export function getAgentEditSummary(event: TaskEvent): AgentEditSummary | null {
+  const payload = event.payloadJson as any;
+  const toolName = getToolName(payload);
+  const args = getToolArguments(payload);
+  const result = getToolResult(payload);
+
+  if (toolName === 'apply_patch') {
+    const patchContent = asString(args?.patchContent || getApplyPatchContent(payload));
+    if (patchContent.trim()) {
+      const sections = parseApplyPatchSections(patchContent);
+      if (sections.length > 0) return { toolName, sections };
+    }
+    const changedFiles = getChangedFilesFromResult(result);
+    if (changedFiles.length > 0) {
+      return {
+        toolName,
+        sections: changedFiles.map((path) => ({ path, detail: result?.ok ? 'applied' : 'failed' })),
+      };
+    }
+    return null;
+  }
+
+  if (toolName === 'replace_content') {
+    const filePath = asString(args?.filePath || result?.payload?.filePath);
+    if (!filePath.trim()) return null;
+    const occurrences = asNumber(result?.payload?.occurrences);
+    const estimate = estimateReplacementStats({
+      needle: asString(args?.needle),
+      replacement: asString(args?.replacement),
+      occurrences,
+    });
+    return {
+      toolName,
+      sections: [
+        {
+          path: filePath,
+          added: estimate?.added,
+          deleted: estimate?.deleted,
+          detail:
+            typeof occurrences === 'number'
+              ? `${occurrences} occurrence${occurrences === 1 ? '' : 's'}`
+              : 'replacement requested',
+        },
+      ],
+    };
+  }
+
+  return null;
+}
+
 function getApplyPatchContent(payload: any): string | null {
-  const toolName = payload?.toolName || payload?.toolCall?.name;
-  if (toolName !== 'apply_patch') return null;
   return (
     payload?.arguments?.patchContent ||
+    payload?.args?.patchContent ||
     payload?.toolCall?.arguments?.patchContent ||
     payload?.decision?.toolCall?.arguments?.patchContent ||
+    payload?.runEvent?.data?.arguments?.patchContent ||
+    payload?.runEvent?.data?.toolCall?.arguments?.patchContent ||
     null
   );
+}
+
+function getToolName(payload: any): string | null {
+  return (
+    payload?.toolName ||
+    payload?.toolCall?.name ||
+    payload?.decision?.toolCall?.name ||
+    payload?.runEvent?.data?.toolName ||
+    payload?.runEvent?.data?.result?.toolName ||
+    null
+  );
+}
+
+function getToolArguments(payload: any): any {
+  return (
+    payload?.arguments ||
+    payload?.args ||
+    payload?.toolCall?.arguments ||
+    payload?.decision?.toolCall?.arguments ||
+    payload?.runEvent?.data?.arguments ||
+    payload?.runEvent?.data?.toolCall?.arguments ||
+    null
+  );
+}
+
+function getToolResult(payload: any): any {
+  if (payload?.result) return payload.result;
+  if (payload?.runEvent?.data?.result) return payload.runEvent.data.result;
+  if (typeof payload?.ok === 'boolean' && payload?.payload) return payload;
+  return null;
+}
+
+function getChangedFilesFromResult(result: any): string[] {
+  const changedFiles = result?.payload?.changedFiles;
+  return Array.isArray(changedFiles) ? changedFiles.filter((file) => typeof file === 'string') : [];
+}
+
+function estimateReplacementStats(input: {
+  needle: string;
+  replacement: string;
+  occurrences?: number;
+}): { added: number; deleted: number } | null {
+  if (!input.needle && !input.replacement) return null;
+  const occurrences =
+    typeof input.occurrences === 'number' && input.occurrences > 0 ? input.occurrences : 1;
+  return {
+    added: countContentLines(input.replacement) * occurrences,
+    deleted: countContentLines(input.needle) * occurrences,
+  };
+}
+
+function countContentLines(value: string): number {
+  if (!value) return 0;
+  return value.split('\n').length;
+}
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function parseApplyPatchSections(
@@ -729,7 +845,7 @@ function parseApplyPatchSections(
     if (line.startsWith('*** Add File: ')) {
       pushSection();
       activePath = line.replace('*** Add File: ', '').trim();
-      activeSection = null;
+      activeSection = { path: activePath || 'unknown', added: 0, deleted: 0 };
       continue;
     }
     if (line.startsWith('*** Delete File: ')) {
