@@ -49,6 +49,8 @@ const supervisorDecisionBaseSchema = z.object({
   phase: z.enum(['observe', 'plan', 'act', 'verify', 'report', 'stop']),
   workflow: z.enum(['general', 'evidence_review', 'code_change', 'research']).default('general'),
   routingHypothesis: supervisorRoutingHypothesisSchema,
+  likelyTools: z.array(z.enum(supervisorToolNames)).optional(),
+  sessionMemoryUpdate: z.record(z.string(), z.unknown()).nullable().optional(),
   instruction: z.string().default(''),
   rationale: z.string().default(''),
   finalResponse: z.string().default(''),
@@ -82,6 +84,11 @@ const round2DecisionSchema = supervisorDecisionBaseSchema.extend({
     })
     .nullable()
     .optional(),
+});
+
+const finalizeDecisionSchema = supervisorDecisionBaseSchema.extend({
+  phase: z.literal('stop'),
+  toolCall: z.null().default(null),
 });
 
 export const supervisorDecisionSchema = supervisorDecisionBaseSchema;
@@ -247,6 +254,7 @@ function buildFixtureCodingDecision(userPrompt: string, round?: 1 | 2 | 3) {
 }
 
 function getDecisionSchema(round?: 1 | 2 | 3) {
+  if (round === 3) return finalizeDecisionSchema;
   if (round === 2) return round2DecisionSchema;
   return supervisorDecisionBaseSchema;
 }
@@ -449,6 +457,7 @@ function hasRoundObservations(userPrompt: string): boolean {
 
 function buildResponseJsonSchema(round?: 1 | 2 | 3) {
   const allowedTools = getAllowedToolNamesByRound(round);
+  const finalizeOnly = round === 3;
   return {
     name: `supervisor_round_${round || 1}`,
     strict: true,
@@ -465,10 +474,15 @@ function buildResponseJsonSchema(round?: 1 | 2 | 3) {
         'terminalState',
         'riskLevel',
         'routingHypothesis',
+        'likelyTools',
+        'sessionMemoryUpdate',
         'toolCall',
       ],
       properties: {
-        phase: { type: 'string', enum: ['observe', 'plan', 'act', 'verify', 'report', 'stop'] },
+        phase: {
+          type: 'string',
+          enum: finalizeOnly ? ['stop'] : ['observe', 'plan', 'act', 'verify', 'report', 'stop'],
+        },
         workflow: {
           type: 'string',
           enum: ['general', 'evidence_review', 'code_change', 'research'],
@@ -506,6 +520,10 @@ function buildResponseJsonSchema(round?: 1 | 2 | 3) {
         rationale: { type: 'string' },
         finalResponse: { type: 'string' },
         expectedEvidence: { type: 'array', items: { type: 'string' } },
+        likelyTools: { type: 'array', items: { type: 'string', enum: allowedTools } },
+        sessionMemoryUpdate: {
+          anyOf: [{ type: 'object', additionalProperties: true }, { type: 'null' }],
+        },
         terminalState: {
           anyOf: [
             {
@@ -525,18 +543,20 @@ function buildResponseJsonSchema(round?: 1 | 2 | 3) {
         },
         riskLevel: { type: 'string', enum: ['low', 'medium', 'high'] },
         toolCall: {
-          anyOf: [
-            { type: 'null' },
-            {
-              type: 'object',
-              additionalProperties: false,
-              required: ['name', 'arguments'],
-              properties: {
-                name: { type: 'string', enum: allowedTools },
-                arguments: { type: 'object' },
-              },
-            },
-          ],
+          anyOf: finalizeOnly
+            ? [{ type: 'null' }]
+            : [
+                { type: 'null' },
+                {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['name', 'arguments'],
+                  properties: {
+                    name: { type: 'string', enum: allowedTools },
+                    arguments: { type: 'object' },
+                  },
+                },
+              ],
         },
       },
     },

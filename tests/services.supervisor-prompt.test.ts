@@ -19,31 +19,30 @@ const workerToolNames = [
   'git_diff',
 ];
 
-function extractToolCatalog(prompt: string): string {
-  return prompt.slice(prompt.indexOf('[Tool catalog]'));
-}
-
 function countToolCatalogEntries(value: string, toolName: string): number {
   const pattern = new RegExp(`^- ${toolName}:`, 'gm');
   return value.match(pattern)?.length ?? 0;
 }
 
 describe('Supervisor prompt structure', () => {
-  it('keeps worker tool names out of the workflow selection prompt', () => {
+  it('uses a capability summary instead of full skill documents in the workflow selection prompt', () => {
     const prompt = buildRound1SystemPrompt('/repo');
 
-    for (const toolName of workerToolNames) {
-      expect(prompt).not.toContain(toolName);
-    }
+    expect(prompt).toContain('[Tool Capability Summary]');
+    expect(prompt).toContain('repo evidence: read_file / search_files / inspect_structure');
+    expect(prompt).toContain('likelyTools');
+    expect(prompt).not.toContain('[Skill Document: references/modes/code_edit.md]');
   });
 
-  it('lists each worker tool name only once in the execution prompt', () => {
+  it('lists each worker tool in the round 2 contract details', () => {
     const prompt = buildRound2SystemPrompt('evidence_review');
-    const toolCatalog = extractToolCatalog(prompt);
+    const toolCatalog = prompt.slice(prompt.indexOf('[Worker tool details]'));
 
     for (const toolName of workerToolNames) {
       expect(countToolCatalogEntries(toolCatalog, toolName)).toBe(1);
     }
+    expect(prompt).toContain('[Tool Contract Summary]');
+    expect(prompt).toContain('likelyTools は分類上の候補であり、toolCall とは違う');
   });
 
   it('lists external MCP tools through the internal bridge contract', () => {
@@ -104,9 +103,6 @@ describe('Supervisor prompt structure', () => {
     expect(prompt).toContain('プロジェクトルート: /repo/project');
     expect(prompt).toContain(
       'worker tool の実行結果が observations に無い場合、cp / mv / touch / apply_patch / replace_content / run_command を実行済み、失敗済み、拒否済みだと書いてはいけません。'
-    );
-    expect(prompt).toContain(
-      'apply_patch または replace_content の成功後に read_file の post-edit readback が observations にある場合'
     );
     expect(prompt).toContain(
       '編集ツールを実行していないまま read-only / 書き込み不可 / 権限不足を理由に phase="stop" を返してはいけません。'

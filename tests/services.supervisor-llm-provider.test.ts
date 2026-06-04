@@ -290,6 +290,56 @@ describe('Supervisor LLM OpenAI streaming', () => {
     );
   });
 
+  it('constrains finalize response schema to stop decisions without tool calls', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'openai';
+    process.env.OPENAI_ENABLED = 'true';
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.OPENAI_MODEL = 'gpt-test';
+    process.env.OPENAI_STREAMING_ENABLED = 'false';
+
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body || '{}'));
+      const schema = body.response_format?.json_schema?.schema;
+      expect(schema.properties.phase.enum).toEqual(['stop']);
+      expect(schema.properties.toolCall.anyOf).toEqual([{ type: 'null' }]);
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  phase: 'stop',
+                  workflow: 'general',
+                  routingHypothesis: null,
+                  likelyTools: [],
+                  sessionMemoryUpdate: null,
+                  instruction: 'Finalized.',
+                  rationale: 'Summary only.',
+                  finalResponse: 'Done',
+                  expectedEvidence: [],
+                  terminalState: 'completed',
+                  riskLevel: 'low',
+                  toolCall: null,
+                }),
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const decision = await callSupervisorLLM('finalize system', '{}', { round: 3 });
+
+    expect(decision.phase).toBe('stop');
+    expect(decision.toolCall).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('returns plain text supervisor output visibly instead of substituting a fallback message', async () => {
     process.env.ACTIVE_LLM_PROVIDER = 'openai';
     process.env.OPENAI_ENABLED = 'true';

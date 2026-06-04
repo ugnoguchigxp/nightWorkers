@@ -69,7 +69,20 @@ export type ExternalSupervisorToolCatalogEntry = {
   description?: string;
 };
 
-function buildToolCatalog(externalTools: ExternalSupervisorToolCatalogEntry[] = []): string {
+export function buildToolCapabilitySummary(): string {
+  return `[Tool Capability Summary]
+Round 1 はこの要約を使って requiredEvidence / nextSkillFiles / likelyTools を提案できます。ただし tool 実行はしません。
+- repo evidence: read_file / search_files / inspect_structure
+- edit: replace_content / apply_patch
+- verification: run_command / run_verification
+- worktree evidence: git_status / git_diff
+- external evidence: search_web / fetch_content
+- external bridge: mcp_call_tool`;
+}
+
+export function buildToolContractSummary(
+  externalTools: ExternalSupervisorToolCatalogEntry[] = []
+): string {
   const externalToolLines =
     externalTools.length === 0
       ? ['- なし']
@@ -77,8 +90,17 @@ function buildToolCatalog(externalTools: ExternalSupervisorToolCatalogEntry[] = 
           (tool) =>
             `- ${tool.namespacedName}: ${tool.description || 'MCP server tool'}。使う場合は toolCall.name="mcp_call_tool"、arguments.serverId="${tool.serverId}"、arguments.toolName="${tool.toolName}"、arguments.arguments にそのツールの引数を入れる。`
         );
-  return `[Tool catalog]
-このセクションだけを worker ツール名、詳細情報、使うべきタイミングの根拠にしてください。
+  return `[Tool Contract Summary]
+毎 Round 2 で守る短い worker tool 契約です。
+- 利用可能 worker tools: ${TOOL_CATALOG.map((tool) => tool.name).join(', ')}, mcp_call_tool
+- toolCall.name は必ず利用可能 worker tool 名だけを使う。
+- mcp__*, functions.*, exec_command, shell namespace を toolCall.name に入れない。
+- worker tool の実行結果が observations に無い場合、実行済み・成功済み・失敗済みとして扱わない。
+- likelyTools は分類上の候補であり、toolCall とは違う。実行要求は toolCall だけで返す。
+- phase="stop" または phase="report" の場合は toolCall を返さず、Finalize Answer に進む。
+- リポジトリの読み書きは登録済み Project の repo root を基準にした worker tool だけで行う。
+
+[Worker tool details]
 ${TOOL_CATALOG.map((tool) => `- ${tool.name}: ${tool.description}`).join('\n')}
 - mcp_call_tool: 設定済み MCP Server の tool を呼び出す bridge。下の External MCP tools に listed された tool だけに使う。
 
@@ -91,6 +113,30 @@ ${TOOL_CALL_SHAPE}
 toolCall.name は必ず Tool catalog にある内部 worker ツール名だけを使う。External MCP tools の名前を直接 toolCall.name に入れず、mcp_call_tool に正規化して返す。`;
 }
 
+export function buildSessionMemoryContract(): string {
+  return `[SessionMemory Contract]
+SessionMemory は現在の run 状態です。暗黙の推論ではなく、この snapshot と observations を見て次の decision を決めてください。
+- workflow は legacy 互換フィールドです。分類の本体は routingHypothesis です。
+- Round 1 の routingHypothesis は初期仮説であり、Round 2 では observations と SessionMemory に基づいて更新できます。
+- changedFiles / evidence / verification / blockers は実際の worker tool 結果または decision の明示更新だけを根拠にします。
+- decision で sessionMemoryUpdate を返すと runtime が保存します。
+- 編集成功後は必要なら verify へ、十分なら phase="stop" へ進んでください。runtime は編集成功だけで最終回答を作りません。`;
+}
+
+export function buildFinalizeContract(): string {
+  return `[Finalize Contract]
+phase="stop" は最終回答を直接返す意味ではありません。必ず Finalize Answer に進む合図です。
+phase="report" は互換目的で受けるだけです。内部では stop と同じく Finalize Answer に進みます。
+Finalize Answer は toolCall 不可です。SessionMemory、observations、final decision だけを要約し、新しい作業判断や未実行 tool の主張をしないでください。`;
+}
+
+export function buildLoopBoundsContract(): string {
+  return `[Loop Bounds Contract]
+終了判断ができない場合、runtime は maxIterations / maxToolCalls などの明示上限で停止します。
+LLM は上限回避のために推測で完了扱いしてはいけません。
+phase="stop" 以外では terminalState を返さないでください。`;
+}
+
 function buildDecisionContract(): string {
   return `[Decision JSON 契約]
 JSON のみを返してください。markdown のコードブロックで囲まないでください。
@@ -98,6 +144,8 @@ JSON のみを返してください。markdown のコードブロックで囲ま
 - phase: observe | plan | act | verify | report | stop
 - workflow: general | evidence_review | code_change | research。legacy 互換フィールドです。routingHypothesis から最も近い値を入れてください。
 - routingHypothesis: object
+- likelyTools: string[]。分類上の候補です。実行要求ではありません。
+- sessionMemoryUpdate: object。必要なときだけ返す run 状態更新です。
 - instruction: string
 - rationale: string
 - finalResponse: string
@@ -135,7 +183,7 @@ ${projectRoot ? `プロジェクトルート: ${projectRoot}` : ''}
 - 証拠が必要な場合、phase="stop" の前に必ず証拠を取得する。
 - 外部の最新情報が必要な場合、検索結果だけで判断せず本文を確認する。
 - 編集が必要な場合、対象確認、編集、検証の順で進める。
-- finalResponse はユーザーに見える最終回答です。停止時の実際の結果は instruction や rationale ではなく finalResponse に書く。
+- Round 2 の finalResponse は Finalize Answer の fallback です。通常の最終回答は Finalize Answer が作ります。
 - 判断に迷う場合は、推測で完了扱いにせず、次に必要な証拠または検証を取得する。`;
 }
 
@@ -170,6 +218,9 @@ function buildWorkflowSelectionContext(projectRoot: string): string {
 workflow は legacy 互換のため、routing に最も近い general | evidence_review | code_change | research のどれかを入れてください。
 Round 1 は基本的に phase="plan" または phase="observe" を返してください。リポジトリ証拠や Web 証拠を本当に必要としない軽い会話だけ、phase="stop" を許可します。
 Round 1 では toolCall を原則 null にしてください。実行手段の選択は Round 2 の Tool catalog に基づいて行います。
+Round 1 は Tool Capability Summary を使って requiredEvidence / nextSkillFiles / likelyTools を提案できます。ただし tool 実行はしません。
+
+${buildToolCapabilitySummary()}
 
 ${buildDecisionContract()}`;
 }
@@ -198,13 +249,19 @@ export function buildRound2SystemPrompt(
 [Round 2: 実行]
 Round 1 で選んだ workflow に従い、次の具体的な1手を決めてください。
 ユーザー入力は JSON で渡されます。latestUserMessage は元の依頼、round1Decision は routing hypothesis を含む Round 1 結果、todoPlan は run 内の Todo と procedure/context の要約、observations はこれまでの worker ツール実行結果です。
+sessionMemory は現在の run 状態です。observations だけでなく sessionMemory を見て、phase / routingHypothesis / nextSkillFiles を毎回再評価してください。
 todoPlan がある場合、現在の実行は Todo を順番に完了する前提で進め、未完了 Todo を finalResponse で完了扱いにしないでください。
 evidence overlay または調査・レビュー系 mode では、observations が空ならユーザー向け回答を作らず、まず toolCall で証拠を取得してください。
 証拠がある場合は、その証拠だけを根拠に finalResponse を完成させてください。
-apply_patch または replace_content の成功後に read_file の post-edit readback が observations にある場合、その read_file 結果を変更後ファイルの証拠として扱い、証拠不足を理由に同じ確認を繰り返してはいけません。
 worker tool の実行結果が observations に無い場合、cp / mv / touch / apply_patch / replace_content / run_command を実行済み、失敗済み、拒否済みだと書いてはいけません。
 リポジトリへの読み書きは必ず Tool catalog の worker toolCall で行ってください。Codex 自身のローカルファイル操作や別経路の編集を、リポジトリ変更の根拠として扱ってはいけません。
 code_edit では、編集ツールを実行していないまま read-only / 書き込み不可 / 権限不足を理由に phase="stop" を返してはいけません。
+
+${buildSessionMemoryContract()}
+
+${buildFinalizeContract()}
+
+${buildLoopBoundsContract()}
 
 [Routing Hypothesis]
 ${JSON.stringify(routing, null, 2)}
@@ -224,7 +281,36 @@ routing が変わった場合は routingHypothesis を更新し、必要な next
 
 ${buildDecisionContract()}
 
-${buildToolCatalog(options?.externalTools)}`;
+${buildToolContractSummary(options?.externalTools)}`;
+}
+
+export function buildFinalizeSystemPrompt(projectRoot?: string): string {
+  return `${buildBaseSystemContext(projectRoot)}
+
+[Finalize Answer]
+あなたは Supervisor run の最終回答だけを作成します。toolCall は返さないでください。
+入力 JSON には latestUserMessage、sessionMemory、observations、finalDecision、todoPlan、currentTodo が含まれます。
+SessionMemory と observations にある証拠、変更ファイル、検証結果、blocker、残リスクだけを根拠にしてください。
+内部 routing や skill 名を不要に説明しないでください。
+code change の場合、編集成功後にレビュー待ちで止めるなら terminalState="needs_review" を返せます。
+
+${buildFinalizeContract()}
+
+[Finalize JSON 契約]
+JSON のみを返してください。markdown のコードブロックで囲まないでください。
+必須キー:
+- phase: stop
+- workflow: general | evidence_review | code_change | research
+- routingHypothesis: object
+- instruction: string
+- rationale: string
+- finalResponse: string
+- expectedEvidence: string[]
+- likelyTools: []
+- sessionMemoryUpdate: null または final summary に必要な最小更新
+- terminalState: needs_review | completed | blocked | failed | timed_out | cancelled | needs_human
+- riskLevel: low | medium | high
+- toolCall: null`;
 }
 
 export function buildSupervisorTurnInput(userInput: string, observations: string[]): string {
