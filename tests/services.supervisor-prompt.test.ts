@@ -19,12 +19,13 @@ const workerToolNames = [
   'git_diff',
 ];
 
-function countOccurrences(value: string, needle: string): number {
-  return value.split(needle).length - 1;
-}
-
 function extractToolCatalog(prompt: string): string {
   return prompt.slice(prompt.indexOf('[Tool catalog]'));
+}
+
+function countToolCatalogEntries(value: string, toolName: string): number {
+  const pattern = new RegExp(`^- ${toolName}:`, 'gm');
+  return value.match(pattern)?.length ?? 0;
 }
 
 describe('Supervisor prompt structure', () => {
@@ -41,7 +42,7 @@ describe('Supervisor prompt structure', () => {
     const toolCatalog = extractToolCatalog(prompt);
 
     for (const toolName of workerToolNames) {
-      expect(countOccurrences(toolCatalog, toolName)).toBe(1);
+      expect(countToolCatalogEntries(toolCatalog, toolName)).toBe(1);
     }
   });
 
@@ -79,7 +80,34 @@ describe('Supervisor prompt structure', () => {
     expect(prompt).toContain('observations が空の場合');
     expect(prompt).toContain('read_file または search_files');
     expect(prompt).toContain('read-only や書き込み不可だと推測して stop してはいけない');
+    expect(prompt).toContain('既存ファイルの単純な変更では replace_content を第一選択にする');
+    expect(prompt).toContain(
+      '新規ファイル作成、複数ファイル変更、構造的な編集では apply_patch を使う'
+    );
     expect(prompt).toContain('replace_content または apply_patch の toolCall を返して編集を試みる');
+  });
+
+  it('describes replace_content as the primary tool for existing-file edits', () => {
+    const prompt = buildRound2SystemPrompt('code_change');
+    const replaceContentIndex = prompt.indexOf('- replace_content:');
+    const applyPatchIndex = prompt.indexOf('- apply_patch:');
+
+    expect(replaceContentIndex).toBeGreaterThanOrEqual(0);
+    expect(applyPatchIndex).toBeGreaterThan(replaceContentIndex);
+    expect(prompt).toContain('既存ファイルの編集で優先する');
+    expect(prompt).toContain('既存ファイルの単純置換では replace_content を優先する');
+  });
+
+  it('keeps project root visible in round 2 execution prompts', () => {
+    const prompt = buildRound2SystemPrompt('code_change', { projectRoot: '/repo/project' });
+
+    expect(prompt).toContain('プロジェクトルート: /repo/project');
+    expect(prompt).toContain(
+      'worker tool の実行結果が observations に無い場合、cp / mv / touch / apply_patch / replace_content / run_command を実行済み、失敗済み、拒否済みだと書いてはいけません。'
+    );
+    expect(prompt).toContain(
+      '編集ツールを実行していないまま read-only / 書き込み不可 / 権限不足を理由に phase="stop" を返してはいけません。'
+    );
   });
 
   it('loads routing references without putting their full body in round 1', () => {

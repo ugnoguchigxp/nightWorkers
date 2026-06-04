@@ -18,6 +18,33 @@ vi.mock('../api/services/supervisor/llm-provider', async () => {
   };
 });
 
+vi.mock('../api/services/context-still', () => ({
+  compileContext: vi.fn(async (request: { taskDescription: string }) => ({
+    compiledPromptText: request.taskDescription,
+    degraded: true,
+    degradedReason: 'test',
+    sourceMetadata: {},
+    includedMemoryRefs: [],
+  })),
+  evaluateContext: vi.fn(async () => false),
+}));
+
+vi.mock('../api/services/agent-runtime/registry', () => ({
+  resolveAgentRuntime: vi.fn(() => ({
+    kind: 'native-local',
+    start: vi.fn(async () => ({
+      terminalState: 'completed',
+      summary: 'Runtime completed.',
+      finalReport: 'Runtime completed.',
+      stoppedBy: 'decision',
+      riskLevel: 'low',
+      diffPatch: '',
+      logContent: '',
+    })),
+    stop: vi.fn(),
+  })),
+}));
+
 const sameOriginHeaders = { Origin: 'http://localhost:39174' };
 
 beforeAll(async () => {
@@ -134,6 +161,56 @@ describe('NightWorkers workbench routes', () => {
     );
     expect(assistantMessage?.content).not.toContain('GOAL分析を受け取りました');
     expect(body.task.objective).toBe('ECサイトのトップページを作ってください');
+  });
+
+  it('starts an implementation run for code-change intake while preserving LLM text', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
+      phase: 'stop',
+      workflow: 'code_change',
+      routingHypothesis: {
+        primaryMode: 'code_edit',
+        secondaryModes: [],
+        phase: 'execute',
+        workKinds: ['code'],
+        overlays: [],
+        subtype: 'file_addition',
+        requiredEvidence: ['project root path confirmation', 'file creation attempt result'],
+        nextSkillFiles: [],
+        confidence: 0.94,
+      },
+      instruction: '`/repo` のプロジェクトルートに `fizzbuzz.ts` を追加する。',
+      rationale: 'sandbox 制限で拒否されたため、実ファイル作成を完了できない。',
+      finalResponse:
+        '`fizzbuzz.ts` を作る実行までは行いましたが、現在の権限制約で書き込みができませんでした。',
+      expectedEvidence: ['`fizzbuzz.ts` の作成結果'],
+      terminalState: 'blocked',
+      riskLevel: 'low',
+      toolCall: null,
+    });
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'fizzbuzz.tsをプロジェクトルートに作ってください' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
+    expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(1);
+    const assistantMessage = body.messages.find(
+      (message: any) => message.role === 'assistant' && message.metadataJson?.intent === 'intake'
+    );
+    expect(assistantMessage?.content).toContain('fizzbuzz.ts');
+    expect(assistantMessage?.content).toContain('sandbox');
+    expect(assistantMessage?.content).toContain('書き込みができません');
+    expect(assistantMessage?.metadataJson?.decision?.finalResponse).toContain('書き込み');
+    const systemMessage = body.messages.find(
+      (message: any) => message.role === 'system' && message.metadataJson?.intent === 'run_started'
+    );
+    expect(systemMessage?.content).toContain('Implementation run started');
+    expect(['context_compiling', 'running']).toContain(body.task.status);
   });
 
   it('records a visible intake message even when the LLM decision has no display text', async () => {

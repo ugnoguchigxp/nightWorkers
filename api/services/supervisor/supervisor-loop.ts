@@ -272,7 +272,9 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       throw new Error(`Task context not found: ${run.taskId}`);
     }
 
-    const userInput = (latestUserMessage || prompt || '').trim();
+    const userInput = latestUserMessage?.trim()
+      ? [latestUserMessage.trim(), '', '[Runtime Context]', prompt.trim() || '(empty)'].join('\n')
+      : (prompt || '').trim();
     const schemaFallbackBudget: { stop: BudgetDecision | null; seen: boolean } = {
       stop: null,
       seen: false,
@@ -331,6 +333,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           tolerateSchemaFailure: false,
           round: 1,
           emitEvent: emitLlmDebugEvent,
+          workingDirectory: repoRoot,
         });
         logger.info(
           {
@@ -368,7 +371,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         workflowSelectionDecision = round1;
         activeWorkflow = round1.workflow || activeWorkflow;
         activeRoutingHypothesis = round1.routingHypothesis || activeRoutingHypothesis;
-        if (round1.phase === 'stop') {
+        if (round1.phase === 'stop' && !requiresWorkflowEvidence(activeWorkflow)) {
           decision = round1;
         } else {
           const round2Input = JSON.stringify({
@@ -379,12 +382,14 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           });
           const round2 = await callSupervisorLLM(
             buildRound2SystemPrompt(activeRoutingHypothesis, {
+              projectRoot: repoRoot,
               externalTools: await loadExternalSupervisorTools(),
             }),
             round2Input,
             {
               round: 2,
               emitEvent: emitLlmDebugEvent,
+              workingDirectory: repoRoot,
             }
           );
           logger.info(
@@ -446,12 +451,14 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         });
         const round2 = await callSupervisorLLM(
           buildRound2SystemPrompt(activeRoutingHypothesis, {
+            projectRoot: repoRoot,
             externalTools: await loadExternalSupervisorTools(),
           }),
           round2Input,
           {
             round: 2,
             emitEvent: emitLlmDebugEvent,
+            workingDirectory: repoRoot,
           }
         );
         logger.info(
@@ -570,45 +577,6 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     if (decision.phase === 'stop') {
       const evidenceRequired = requiresWorkflowEvidence(decision.workflow || activeWorkflow);
       const editRequired = requiresWorkflowEdit(decision.workflow || activeWorkflow);
-      if (evidenceRequired && supervisorToolCalls === 0) {
-        const missingToolBudget = budget.onMissingToolCall();
-        const detail = {
-          iteration,
-          reason: 'stop_without_evidence',
-          phase: decision.phase,
-          instruction: decision.instruction,
-          rationale: decision.rationale,
-          finalResponseLength: decision.finalResponse?.length ?? 0,
-          expectedEvidence: decision.expectedEvidence ?? [],
-          supervisorToolCalls,
-          ...(missingToolBudget.detail || {}),
-        };
-        appendSupervisorTrace('stop_without_evidence', { runId, ...detail });
-        await emitSupervisorRunEvent({
-          runId,
-          taskId: task.id,
-          iteration,
-          type: missingToolBudget.allowed ? 'system.warning' : 'safety.repeated_failure',
-          severity: missingToolBudget.allowed ? 'warning' : 'error',
-          actor: 'system',
-          message: missingToolBudget.allowed
-            ? '[Supervisor Guard] stop was ignored because repository evidence has not been collected yet.'
-            : '[Budget Stop] supervisor repeatedly stopped before collecting repository evidence.',
-          data: detail,
-          payloadJson: detail,
-        });
-        if (!missingToolBudget.allowed) {
-          finalReportText =
-            '証拠取得が必要なタスクで、Supervisor が対象ファイルやログを確認する前に stop を繰り返したため停止しました。';
-          terminalState = 'needs_human';
-          summary = 'Stopped because supervisor stopped before collecting required evidence';
-          stoppedBy = 'missing_tool_call';
-          riskLevel = 'high';
-          break;
-        }
-        continue;
-      }
-
       if (editRequired && editToolCalls === 0) {
         const missingToolBudget = budget.onMissingToolCall();
         const detail = {
@@ -642,6 +610,45 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             'code_change workflow で、replace_content または apply_patch を一度も実行せずに stop を繰り返したため停止しました。read-only という自己判断ではなく、編集ツールの実行結果を根拠にする必要があります。';
           terminalState = 'needs_human';
           summary = 'Stopped because supervisor stopped without attempting an edit tool';
+          stoppedBy = 'missing_tool_call';
+          riskLevel = 'high';
+          break;
+        }
+        continue;
+      }
+
+      if (evidenceRequired && supervisorToolCalls === 0) {
+        const missingToolBudget = budget.onMissingToolCall();
+        const detail = {
+          iteration,
+          reason: 'stop_without_evidence',
+          phase: decision.phase,
+          instruction: decision.instruction,
+          rationale: decision.rationale,
+          finalResponseLength: decision.finalResponse?.length ?? 0,
+          expectedEvidence: decision.expectedEvidence ?? [],
+          supervisorToolCalls,
+          ...(missingToolBudget.detail || {}),
+        };
+        appendSupervisorTrace('stop_without_evidence', { runId, ...detail });
+        await emitSupervisorRunEvent({
+          runId,
+          taskId: task.id,
+          iteration,
+          type: missingToolBudget.allowed ? 'system.warning' : 'safety.repeated_failure',
+          severity: missingToolBudget.allowed ? 'warning' : 'error',
+          actor: 'system',
+          message: missingToolBudget.allowed
+            ? '[Supervisor Guard] stop was ignored because repository evidence has not been collected yet.'
+            : '[Budget Stop] supervisor repeatedly stopped before collecting repository evidence.',
+          data: detail,
+          payloadJson: detail,
+        });
+        if (!missingToolBudget.allowed) {
+          finalReportText =
+            '証拠取得が必要なタスクで、Supervisor が対象ファイルやログを確認する前に stop を繰り返したため停止しました。';
+          terminalState = 'needs_human';
+          summary = 'Stopped because supervisor stopped before collecting required evidence';
           stoppedBy = 'missing_tool_call';
           riskLevel = 'high';
           break;

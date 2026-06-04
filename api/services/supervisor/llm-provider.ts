@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto';
-import os from 'node:os';
 import type { CodexOptions, Thread, ThreadEvent, Usage } from '@openai/codex-sdk';
 import { z } from 'zod';
 import { appendLlmTrace, appendSupervisorTrace, logger } from '../../lib/logger';
@@ -94,6 +93,7 @@ type CallSupervisorOptions = {
   round?: 1 | 2 | 3;
   emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
   timeoutMs?: number;
+  workingDirectory?: string;
 };
 
 export type SupervisorLlmDebugEvent = {
@@ -143,7 +143,10 @@ export function buildCodexSupervisorSdkOptions(accessToken: string): CodexOption
   return sdkOptions;
 }
 
-export function buildCodexSupervisorThreadOptions(model?: string) {
+export function buildCodexSupervisorThreadOptions(
+  model?: string,
+  workingDirectory = process.cwd()
+) {
   const configuredEffort = process.env.CODEX_MODEL_REASONING_EFFORT;
   const modelReasoningEffort = isCodexReasoningEffort(configuredEffort) ? configuredEffort : 'low';
   return {
@@ -152,7 +155,7 @@ export function buildCodexSupervisorThreadOptions(model?: string) {
     approvalPolicy: 'never' as const,
     networkAccessEnabled: false,
     webSearchMode: 'disabled' as const,
-    workingDirectory: os.tmpdir(),
+    workingDirectory,
     skipGitRepoCheck: true,
     modelReasoningEffort,
   };
@@ -1056,7 +1059,9 @@ export async function callSupervisorLLM(
       const useStructuredOutput = isEnabled('CODEX_STRUCTURED_OUTPUT_ENABLED', false);
 
       const runWithModel = async (model?: string) => {
-        const thread = codex.startThread(buildCodexSupervisorThreadOptions(model));
+        const thread = codex.startThread(
+          buildCodexSupervisorThreadOptions(model, options.workingDirectory)
+        );
         const turn = await readCodexStreamedTurn({
           thread,
           prompt,
@@ -1073,7 +1078,9 @@ export async function callSupervisorLLM(
           provider: 'codex',
           model: model || null,
           structuredOutput: useStructuredOutput,
-          modelReasoningEffort: buildCodexSupervisorThreadOptions(model).modelReasoningEffort,
+          modelReasoningEffort: buildCodexSupervisorThreadOptions(model, options.workingDirectory)
+            .modelReasoningEffort,
+          workingDirectory: options.workingDirectory || process.cwd(),
           usage: turn.usage,
           hasFinalResponse: Boolean(turn.finalResponse),
         };

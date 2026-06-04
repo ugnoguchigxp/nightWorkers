@@ -239,7 +239,6 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
           ) : (
             <ThreadWorkspace
               activeSession={workspace.activeSession}
-              activeSessionView={workspace.activeSessionView}
               activeProject={workspace.activeProject}
               runs={workspace.activeSessionRuns}
               latestRun={workspace.latestRun}

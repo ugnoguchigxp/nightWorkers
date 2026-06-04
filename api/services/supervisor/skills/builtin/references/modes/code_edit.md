@@ -10,6 +10,8 @@
 - observations が空の場合、phase="stop" または phase="report" を返してはいけない。まず read_file または search_files で対象コードを確認する。
 - 不具合原因が未確認なら、先に investigation / evidence の rule を読む。
 - read-only や書き込み不可だと推測して stop してはいけない。
+- 既存ファイルの単純な変更では replace_content を第一選択にする。
+- 新規ファイル作成、複数ファイル変更、構造的な編集では apply_patch を使う。
 - 必ず replace_content または apply_patch の toolCall を返して編集を試みる。
 
 ## Stop Conditions

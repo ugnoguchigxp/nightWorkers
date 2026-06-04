@@ -5,7 +5,7 @@
  * like `mcp__*` or `functions.*`.
  *
  * Why this exists:
- * - When global AGENTS.md/system context leaks into the internal agent output,
+ * - When external system context leaks into the internal agent output,
  *   the model may emit unsupported tool names (e.g. mcp__context_still.initial_instructions).
  * - That causes schema failures / execution loops.
  *

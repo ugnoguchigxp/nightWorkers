@@ -75,6 +75,13 @@ export function ThreadTimeline({
         activeStreamingResponse,
       })
     : null;
+  const persistedStreamingPreview = !isAgentWorking
+    ? buildPersistedStreamingResponsePreview({
+        events: latestRunEvents,
+        taskMessages,
+        runId: latestRun?.id,
+      })
+    : null;
 
   return (
     <div className="nightworkers-chat-window space-y-5 p-6">
@@ -116,6 +123,11 @@ export function ThreadTimeline({
       {streamingPreview ? (
         <ThreadMessage messageRole="assistant">
           <StreamingResponsePreview preview={streamingPreview} />
+        </ThreadMessage>
+      ) : null}
+      {persistedStreamingPreview ? (
+        <ThreadMessage messageRole="assistant">
+          <PersistedStreamingResponse preview={persistedStreamingPreview} />
         </ThreadMessage>
       ) : null}
       {isAgentWorking ? (
@@ -339,6 +351,14 @@ function StreamingResponsePreview({ preview }: { preview: StreamingPreview }) {
   );
 }
 
+function PersistedStreamingResponse({ preview }: { preview: StreamingPreview }) {
+  return (
+    <div className="whitespace-pre-wrap text-sm leading-6 text-slate-100">
+      {preview.visibleText || preview.statusText}
+    </div>
+  );
+}
+
 type StreamingPreview = {
   visibleText: string;
   statusText: string;
@@ -367,13 +387,31 @@ function buildStreamingResponsePreview(input: {
   return buildStreamingPreviewFromRaw(chunks.join(''));
 }
 
+export function buildPersistedStreamingResponsePreview(input: {
+  events: TaskEvent[];
+  taskMessages: TaskMessage[];
+  runId?: string;
+}): StreamingPreview | null {
+  if (!input.runId) return null;
+  const preview = buildStreamingResponsePreview({ events: input.events });
+  if (!preview?.visibleText.trim()) return null;
+
+  const normalizedPreview = normalizeMessageText(preview.visibleText);
+  const alreadyPersisted = input.taskMessages.some((message) => {
+    if (message.role !== 'assistant' || message.runId !== input.runId) return false;
+    return normalizeMessageText(message.content).includes(normalizedPreview);
+  });
+
+  return alreadyPersisted ? null : preview;
+}
+
 function buildStreamingPreviewFromRaw(raw: string): StreamingPreview {
   const parsed = tryParseJsonObject(raw);
   if (typeof parsed?.finalResponse === 'string' && parsed.finalResponse.trim()) {
     return { visibleText: parsed.finalResponse, statusText: '最終回答を組み立てています。' };
   }
 
-  const partialFinalResponse = extractPartialJsonStringValue(raw, 'finalResponse');
+  const partialFinalResponse = extractLatestPartialJsonStringValue(raw, 'finalResponse');
   if (partialFinalResponse.trim()) {
     return {
       visibleText: partialFinalResponse,
@@ -396,8 +434,9 @@ function tryParseJsonObject(raw: string): any | null {
   }
 }
 
-function extractPartialJsonStringValue(raw: string, key: string): string {
-  const match = new RegExp(`"${key}"\\s*:\\s*"`).exec(raw);
+function extractLatestPartialJsonStringValue(raw: string, key: string): string {
+  const matches = Array.from(raw.matchAll(new RegExp(`"${key}"\\s*:\\s*"`, 'g')));
+  const match = matches[matches.length - 1];
   if (!match) return '';
   const valueStart = match.index + match[0].length;
   let value = '';
@@ -417,6 +456,10 @@ function extractPartialJsonStringValue(raw: string, key: string): string {
     value += char;
   }
   return value;
+}
+
+function normalizeMessageText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
 }
 
 function decodeJsonEscape(char: string): string {

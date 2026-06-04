@@ -306,7 +306,6 @@ describe('NightWorkers service', () => {
         procedureSnapshot: { id: 'test-change', digest: 'sha256:test' },
       },
     ];
-
     vi.mocked(repo.getTask).mockResolvedValue(task as any);
     vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
     vi.mocked(repo.getRepository).mockResolvedValue({

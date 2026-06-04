@@ -212,7 +212,7 @@ describe('Supervisor LLM provider evidence fallback', () => {
   });
 
   it('does not run Codex supervisor calls in a read-only sandbox', () => {
-    const options = buildCodexSupervisorThreadOptions('gpt-5.4-mini');
+    const options = buildCodexSupervisorThreadOptions('gpt-5.4-mini', '/repo/project');
 
     expect(options).toMatchObject({
       model: 'gpt-5.4-mini',
@@ -223,7 +223,7 @@ describe('Supervisor LLM provider evidence fallback', () => {
       skipGitRepoCheck: true,
     });
     expect(options.sandboxMode).not.toBe('read-only');
-    expect(options.workingDirectory).toBeTruthy();
+    expect(options.workingDirectory).toBe('/repo/project');
   });
 });
 

@@ -471,11 +471,11 @@ export async function appendWorkbenchMessage(
 
   const waitForIntake = input.waitForIntake ?? process.env.NODE_ENV === 'test';
   if (waitForIntake) {
-    return handleWorkbenchIntakeMessage(id, task, prompt, { failureMode: 'throw' });
+    return handleWorkbenchIntakeMessage(id, task, prompt, { failureMode: 'throw', intent });
   }
 
   const updated = await prepareWorkbenchIntakeTask(id, task, prompt);
-  void handleWorkbenchIntakeMessage(id, task, prompt, { failureMode: 'record' });
+  void handleWorkbenchIntakeMessage(id, task, prompt, { failureMode: 'record', intent });
   return { task: updated, run: null, messages: await repo.listTaskMessages(id) };
 }
 
@@ -596,7 +596,9 @@ async function handleWorkbenchIntakeMessage(
   taskId: string,
   task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>,
   prompt: string,
-  options: { failureMode: 'throw' | 'record' } = { failureMode: 'throw' }
+  options: { failureMode: 'throw' | 'record'; intent?: WorkbenchChatIntent } = {
+    failureMode: 'throw',
+  }
 ) {
   const title =
     task.title === 'New Session' ? prompt.replace(/\s+/g, ' ').slice(0, 60) : task.title;
@@ -687,6 +689,33 @@ async function handleWorkbenchIntakeMessage(
         },
       });
     }
+    if (shouldStartImmediateWorkbenchRun(decision, options.intent || 'intake')) {
+      const runnable = await repo.updateTask(taskId, {
+        title,
+        objective: task.objective || prompt,
+        acceptanceCriteria:
+          task.acceptanceCriteria || buildAcceptanceCriteriaFromDecision(decision) || prompt,
+        status: 'ready',
+      });
+      await repo.createTaskMessage({
+        taskId,
+        role: 'system',
+        content: 'Implementation run started from Workbench intake.',
+        messageType: 'text',
+        payloadJson: {
+          intent: 'run_started',
+          source: 'workbench',
+          routingHypothesis: routing,
+          intakeDecision: decision,
+        },
+      });
+      const run = await startTaskRun(taskId);
+      return {
+        task: (await repo.getTask(taskId)) || runnable,
+        run,
+        messages: await repo.listTaskMessages(taskId),
+      };
+    }
     const updated = await repo.updateTask(taskId, {
       title,
       objective: task.objective || prompt,
@@ -769,6 +798,19 @@ function renderLlmIntakeContent(decision: Awaited<ReturnType<typeof callSupervis
     .map((value) => value?.trim())
     .filter((value): value is string => Boolean(value))
     .join('\n\n');
+}
+
+function shouldStartImmediateWorkbenchRun(
+  decision: Awaited<ReturnType<typeof callSupervisorLLM>>,
+  intent: WorkbenchChatIntent
+) {
+  if (intent !== 'intake') return false;
+  const routing = decision.routingHypothesis;
+  return (
+    !decision.toolCall &&
+    (decision.workflow === 'code_change' || routing?.primaryMode === 'code_edit') &&
+    (routing?.primaryMode === 'code_edit' || routing?.phase === 'execute')
+  );
 }
 
 function buildAcceptanceCriteriaFromDecision(

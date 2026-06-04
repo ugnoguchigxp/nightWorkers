@@ -19,7 +19,6 @@ import type {
   ThinkingDepth,
   WorkbenchArtifactRef,
   WorkbenchChatIntent,
-  WorkbenchSessionView,
 } from '../types';
 import { THINKING_DEPTH_OPTIONS } from '../types';
 import { getRelativeTimestamp } from '../utils/time';
@@ -28,7 +27,6 @@ import { ThreadTimeline } from './ThreadTimeline';
 
 type ThreadWorkspaceProps = {
   activeSession: Task | null;
-  activeSessionView: WorkbenchSessionView | null;
   activeProject: Repository | null;
   runs: TaskRun[];
   latestRun?: TaskRun;
@@ -85,11 +83,11 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
                 <span className="shrink-0 text-xs text-slate-400">
                   {getRelativeTimestamp(props.activeSession.updatedAt)}
                 </span>
-                {props.activeSessionView ? (
-                  <span className="shrink-0">
-                    <SessionStateMarker session={props.activeSessionView} />
-                  </span>
-                ) : null}
+                {/*
+                  Do not add a session-state spinner here. The header marker has no
+                  clear meaning for draft/new sessions and repeatedly caused false
+                  "running" indicators beside the debug button.
+                */}
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <button
@@ -260,39 +258,4 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
       </div>
     </div>
   );
-}
-
-function SessionStateMarker({ session }: { session: WorkbenchSessionView }) {
-  const taskStatus = session.task.status;
-  const runStatus = session.latestRun?.status;
-  const hasProblem =
-    session.progress.blockers.length > 0 ||
-    ['failed', 'blocked', 'timed_out', 'needs_human'].includes(taskStatus) ||
-    (runStatus ? ['failed', 'blocked', 'timed_out', 'needs_human'].includes(runStatus) : false);
-  const isComplete = taskStatus === 'completed' || session.phase === 'Completed';
-  const isRunning =
-    !hasProblem &&
-    !isComplete &&
-    (session.group === 'processing' ||
-      ['running', 'context_compiling', 'compiling_context', 'finalizing', 'verifying'].includes(
-        taskStatus
-      ) ||
-      (runStatus
-        ? ['running', 'context_compiling', 'compiling_context', 'finalizing', 'verifying'].includes(
-            runStatus
-          )
-        : false));
-
-  if (hasProblem) {
-    return <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500" title="問題あり" />;
-  }
-  if (isComplete) {
-    return <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" title="完了" />;
-  }
-  if (isRunning) {
-    return (
-      <LoaderCircle className="h-3 w-3 shrink-0 animate-spin text-cyan-300" aria-label="実行中" />
-    );
-  }
-  return null;
 }

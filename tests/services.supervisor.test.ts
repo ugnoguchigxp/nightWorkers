@@ -554,4 +554,116 @@ describe('Supervisor Control Loop Unit Tests', () => {
       })
     );
   });
+
+  it('does not accept a round 1 code_change stop as an execution result', async () => {
+    const mockRun = { id: 'run-code-change-round1-stop', taskId: 'task-code-change-round1-stop' };
+    const mockTask = {
+      id: 'task-code-change-round1-stop',
+      objective: 'Create fizzbuzz.ts',
+      acceptanceCriteria: 'File is created',
+    };
+
+    vi.mocked(repo.getTaskRun).mockResolvedValue(mockRun as any);
+    vi.mocked(repo.getTask).mockResolvedValue(mockTask as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+
+    for (let i = 0; i < 4; i += 1) {
+      vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
+        phase: 'stop',
+        workflow: 'code_change',
+        routingHypothesis: {
+          primaryMode: 'code_edit',
+          secondaryModes: [],
+          phase: 'execute',
+          workKinds: ['code'],
+          overlays: [],
+          requiredEvidence: ['fizzbuzz.ts exists'],
+          nextSkillFiles: [],
+          confidence: 0.95,
+        },
+        instruction: 'Cannot create the file.',
+        rationale: 'Claims apply_patch was rejected, but no tool was called.',
+        finalResponse: '書き込み不可のため作成できませんでした。',
+        expectedEvidence: ['apply_patch result'],
+        riskLevel: 'high',
+        terminalState: 'needs_human',
+        toolCall: null,
+      });
+    }
+
+    const result = await runSupervisorLoop({
+      runId: 'run-code-change-round1-stop',
+      repoRoot: '/repo/project',
+      prompt: 'fizzbuzz.tsをプロジェクトルートに作ってください',
+      timeoutSeconds: 60,
+    });
+
+    expect(result.terminalState).toBe('needs_human');
+    expect(result.finalReport).toContain('replace_content または apply_patch を一度も実行せず');
+    expect(vi.mocked(llm.callSupervisorLLM).mock.calls.map((call) => call[2]?.round)).toEqual([
+      1, 2, 2, 2,
+    ]);
+    expect(
+      vi.mocked(llm.callSupervisorLLM).mock.calls.map((call) => call[2]?.workingDirectory)
+    ).toEqual(['/repo/project', '/repo/project', '/repo/project', '/repo/project']);
+    expect(repo.createRunEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'safety.repeated_failure',
+        severity: 'error',
+      }),
+      expect.objectContaining({
+        payloadJson: expect.objectContaining({
+          reason: 'stop_without_edit_attempt',
+          editToolCalls: 0,
+        }),
+      })
+    );
+  });
+
+  it('passes latest user message together with compiled runtime context', async () => {
+    const mockRun = { id: 'run-runtime-context', taskId: 'task-runtime-context' };
+    const mockTask = {
+      id: 'task-runtime-context',
+      objective: 'Do work',
+      acceptanceCriteria: 'Done',
+    };
+
+    vi.mocked(repo.getTaskRun).mockResolvedValue(mockRun as any);
+    vi.mocked(repo.getTask).mockResolvedValue(mockTask as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        phase: 'plan',
+        workflow: 'general',
+        instruction: 'Plan',
+        rationale: 'Need context',
+        expectedEvidence: [],
+        riskLevel: 'low',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'stop',
+        workflow: 'general',
+        instruction: 'Done',
+        rationale: 'Context read',
+        finalResponse: 'Done',
+        expectedEvidence: [],
+        riskLevel: 'low',
+        terminalState: 'completed',
+        toolCall: null,
+      });
+
+    await runSupervisorLoop({
+      runId: 'run-runtime-context',
+      repoRoot: '/repo/project',
+      prompt: 'compiled runtime context',
+      latestUserMessage: 'latest user request',
+      timeoutSeconds: 60,
+    });
+
+    const round1UserPrompt = vi.mocked(llm.callSupervisorLLM).mock.calls[0][1];
+    expect(round1UserPrompt).toContain('latest user request');
+    expect(round1UserPrompt).toContain('[Runtime Context]');
+    expect(round1UserPrompt).toContain('compiled runtime context');
+  });
 });

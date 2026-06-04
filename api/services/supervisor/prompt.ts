@@ -42,9 +42,14 @@ const TOOL_CATALOG = [
   { name: 'git_diff', description: 'リポジトリの差分を確認する。' },
   {
     name: 'replace_content',
-    description: '対象が1箇所に限定できる単純なリテラル置換を行う。',
+    description:
+      '既存ファイルの編集で優先する。対象が1箇所に限定できる単純なリテラル/regex 置換を行う。',
   },
-  { name: 'apply_patch', description: '構造的な編集や新規ファイル作成を unified diff で行う。' },
+  {
+    name: 'apply_patch',
+    description:
+      '新規ファイル作成、複数ファイル変更、構造的な編集を unified diff で行う。既存ファイルの単純置換では replace_content を優先する。',
+  },
   {
     name: 'run_command',
     description:
@@ -176,6 +181,7 @@ export function buildRound1SystemPrompt(projectRoot: string): string {
 export function buildRound2SystemPrompt(
   routingOrWorkflow: SupervisorWorkflow | Partial<SupervisorRoutingHypothesis> = 'general',
   options?: {
+    projectRoot?: string;
     skillsDirectory?: string;
     externalTools?: ExternalSupervisorToolCatalogEntry[];
   }
@@ -187,7 +193,7 @@ export function buildRound2SystemPrompt(
   const skillDocuments = resolveSupervisorSkillDocuments(routing, options?.skillsDirectory);
   const skillDocumentSummary = summarizeSupervisorSkillDocuments(skillDocuments);
 
-  return `${buildBaseSystemContext()}
+  return `${buildBaseSystemContext(options?.projectRoot)}
 
 [Round 2: 実行]
 Round 1 で選んだ workflow に従い、次の具体的な1手を決めてください。
@@ -195,6 +201,8 @@ Round 1 で選んだ workflow に従い、次の具体的な1手を決めてく�
 todoPlan がある場合、現在の実行は Todo を順番に完了する前提で進め、未完了 Todo を finalResponse で完了扱いにしないでください。
 evidence overlay または調査・レビュー系 mode では、observations が空ならユーザー向け回答を作らず、まず toolCall で証拠を取得してください。
 証拠がある場合は、その証拠だけを根拠に finalResponse を完成させてください。
+worker tool の実行結果が observations に無い場合、cp / mv / touch / apply_patch / replace_content / run_command を実行済み、失敗済み、拒否済みだと書いてはいけません。
+code_edit では、編集ツールを実行していないまま read-only / 書き込み不可 / 権限不足を理由に phase="stop" を返してはいけません。
 
 [Routing Hypothesis]
 ${JSON.stringify(routing, null, 2)}
