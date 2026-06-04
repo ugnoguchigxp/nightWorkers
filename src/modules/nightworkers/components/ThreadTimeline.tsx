@@ -15,7 +15,13 @@ import { useState } from 'react';
 import type { Components } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import {
+  buildTranscriptItems,
+  type TranscriptChild,
+  type TranscriptItem,
+} from '../activityTranscript';
 import type {
+  ActivityEvent,
   ReviewResult,
   Task,
   TaskEvent,
@@ -117,6 +123,7 @@ type ThreadTimelineProps = {
   latestRun?: TaskRun;
   taskMessages: TaskMessage[];
   latestRunEvents: TaskEvent[];
+  activityEvents: ActivityEvent[];
   activeStreamingResponse: string;
   latestRunTodos: TaskRunTodo[];
   isAgentWorking: boolean;
@@ -129,12 +136,15 @@ export function ThreadTimeline({
   latestRun,
   taskMessages,
   latestRunEvents,
+  activityEvents,
   activeStreamingResponse,
   latestRunTodos,
   isAgentWorking,
   showDebugEvents,
   onOpenArtifact,
 }: ThreadTimelineProps) {
+  const transcriptItems = buildTranscriptItems({ events: activityEvents });
+  const hasActivityTranscript = transcriptItems.length > 0;
   const chatMessages = taskMessages.filter(
     (message) => message.role === 'user' || message.role === 'assistant'
   );
@@ -179,37 +189,39 @@ export function ThreadTimeline({
           Live: {latestEvent.message}
         </div>
       ) : null}
-      {timelineItems.map((item) =>
-        item.kind === 'message' ? (
-          <ThreadMessage
-            key={item.id}
-            messageRole={
-              item.message.role === 'assistant'
-                ? 'assistant'
-                : item.message.role === 'user'
-                  ? 'user'
-                  : 'system'
-            }
-            timestamp={formatFinishedTime(item.message.createdAt)}
-          >
-            <MessagePayload message={item.message} onOpenArtifact={onOpenArtifact} />
-          </ThreadMessage>
-        ) : showDebugEvents ||
-          hasAgentEditSummary(item.event) ||
-          isReviewerEvaluationEvent(item.event) ? (
-          <div key={item.id} className="space-y-2">
-            <ReviewerEvaluationCard event={item.event} />
-            <AgentEditSummaryCard event={item.event} />
-            {showDebugEvents ? <AgentDebugEventCard event={item.event} /> : null}
-          </div>
-        ) : null
-      )}
-      {streamingPreview ? (
+      {hasActivityTranscript
+        ? transcriptItems.map((item) => <TranscriptItemView key={item.id} item={item} />)
+        : timelineItems.map((item) =>
+            item.kind === 'message' ? (
+              <ThreadMessage
+                key={item.id}
+                messageRole={
+                  item.message.role === 'assistant'
+                    ? 'assistant'
+                    : item.message.role === 'user'
+                      ? 'user'
+                      : 'system'
+                }
+                timestamp={formatFinishedTime(item.message.createdAt)}
+              >
+                <MessagePayload message={item.message} onOpenArtifact={onOpenArtifact} />
+              </ThreadMessage>
+            ) : showDebugEvents ||
+              hasAgentEditSummary(item.event) ||
+              isReviewerEvaluationEvent(item.event) ? (
+              <div key={item.id} className="space-y-2">
+                <ReviewerEvaluationCard event={item.event} />
+                <AgentEditSummaryCard event={item.event} />
+                {showDebugEvents ? <AgentDebugEventCard event={item.event} /> : null}
+              </div>
+            ) : null
+          )}
+      {!hasActivityTranscript && streamingPreview ? (
         <ThreadMessage messageRole="assistant">
           <StreamingResponsePreview preview={streamingPreview} />
         </ThreadMessage>
       ) : null}
-      {persistedStreamingPreview ? (
+      {!hasActivityTranscript && persistedStreamingPreview ? (
         <ThreadMessage messageRole="assistant">
           <PersistedStreamingResponse preview={persistedStreamingPreview} />
         </ThreadMessage>
@@ -221,6 +233,213 @@ export function ThreadTimeline({
       ) : null}
     </div>
   );
+}
+
+function TranscriptItemView({ item }: { item: TranscriptItem }) {
+  if (item.kind === 'user_turn') {
+    const timestamp = item.events.at(-1)?.createdAt;
+    return (
+      <ThreadMessage messageRole="user" timestamp={formatFinishedTime(timestamp)}>
+        <ChatMarkdown content={item.text || fallbackEventText(item.events.at(-1))} />
+      </ThreadMessage>
+    );
+  }
+
+  if (item.kind === 'assistant_turn') {
+    const timestamp = item.events.at(-1)?.createdAt;
+    return (
+      <ThreadMessage messageRole="assistant" timestamp={formatFinishedTime(timestamp)}>
+        <div className="space-y-3">
+          {item.text.trim() ? <ChatMarkdown content={item.text} /> : null}
+          {item.children.map((child, index) => (
+            <TranscriptChildView
+              key={`${item.id}-child-${index}-${childEventId(child)}`}
+              child={child}
+            />
+          ))}
+        </div>
+      </ThreadMessage>
+    );
+  }
+
+  if (item.kind === 'unknown') {
+    return (
+      <TranscriptActivityBlock
+        event={item.event}
+        title="unknown.activity"
+        tone="warning"
+        artifactText={item.artifact?.contentText}
+        showJson={true}
+      />
+    );
+  }
+
+  return <TranscriptActivityBlock event={item.event} title={item.event.kind} showJson={true} />;
+}
+
+function TranscriptChildView({ child }: { child: TranscriptChild }) {
+  if (child.kind === 'tool') {
+    return (
+      <TranscriptActivityBlock
+        event={child.events[0]}
+        title={child.events[0]?.kind || 'tool'}
+        showJson={true}
+      />
+    );
+  }
+  if (child.kind === 'diff') {
+    return (
+      <TranscriptActivityBlock
+        event={child.event}
+        title={child.event.kind}
+        artifactText={child.artifact?.contentText}
+        showJson={true}
+      />
+    );
+  }
+  if (child.kind === 'json') {
+    return <TranscriptActivityBlock event={child.event} title={child.event.kind} showJson={true} />;
+  }
+  if (child.kind === 'log') {
+    return (
+      <TranscriptActivityBlock
+        event={child.event}
+        title={child.event.kind}
+        artifactText={child.artifact?.contentText}
+        showJson={true}
+      />
+    );
+  }
+  if (child.kind === 'unknown') {
+    return (
+      <TranscriptActivityBlock
+        event={child.event}
+        title="unknown.activity"
+        tone="warning"
+        artifactText={child.artifact?.contentText}
+        showJson={true}
+      />
+    );
+  }
+  return (
+    <TranscriptActivityBlock
+      event={child.event}
+      title={child.event.kind}
+      compact={true}
+      showJson={true}
+    />
+  );
+}
+
+function TranscriptActivityBlock({
+  event,
+  title,
+  tone = 'default',
+  compact = false,
+  artifactText,
+  showJson,
+}: {
+  event?: ActivityEvent;
+  title: string;
+  tone?: 'default' | 'warning';
+  compact?: boolean;
+  artifactText?: string | null;
+  showJson?: boolean;
+}) {
+  if (!event) return null;
+  const borderClass =
+    tone === 'warning'
+      ? 'border-amber-700/60 bg-amber-950/20 text-amber-50'
+      : 'border-slate-700/80 bg-slate-900/30 text-slate-100';
+  const payload = event.payloadJson || {};
+  const summary = event.text || event.ingestError || event.status || event.kind;
+  const code = artifactText || getActivityCode(event);
+
+  return (
+    <details className={`rounded border ${borderClass}`} open={!compact}>
+      <summary className="cursor-pointer list-none px-3 py-2 text-xs">
+        <span className="mr-2 rounded border border-current/30 px-1.5 py-0.5">{title}</span>
+        <span className="text-current/80">{event.source}</span>
+        {event.status ? <span className="ml-2 text-current/70">{event.status}</span> : null}
+        <span className="ml-2 text-current/50">#{event.seq}</span>
+      </summary>
+      <div className="space-y-2 border-current/10 border-t px-3 py-2 text-xs">
+        {summary ? <div className="whitespace-pre-wrap break-words">{summary}</div> : null}
+        {code ? (
+          <CodeBlock
+            className="dark max-w-full rounded-[var(--radius-md)] border-border bg-card text-card-foreground [&_.line]:whitespace-pre-wrap [&_code]:break-words [&_code]:whitespace-pre-wrap [&_pre]:overflow-x-hidden"
+            data={[
+              {
+                code,
+                filename: activityCodeFilename(event),
+                language: activityCodeLanguage(event),
+              },
+            ]}
+            lineNumbers={false}
+            maxHeight={360}
+            showHeader={true}
+            themes={chatCodeBlockThemes}
+          />
+        ) : null}
+        {showJson ? (
+          <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap break-all rounded bg-slate-950/40 p-2 font-mono text-[10px] text-slate-300">
+            {JSON.stringify(
+              {
+                id: event.id,
+                kind: event.kind,
+                source: event.source,
+                status: event.status,
+                turnId: event.turnId,
+                runId: event.runId,
+                payloadJson: payload,
+                ingestError: event.ingestError,
+              },
+              null,
+              2
+            )}
+          </pre>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+function childEventId(child: TranscriptChild) {
+  if (child.kind === 'tool') return child.events.map((event) => event.id).join('-');
+  return child.event.id;
+}
+
+function fallbackEventText(event?: ActivityEvent) {
+  if (!event) return '';
+  return event.text || JSON.stringify(event.payloadJson || {}, null, 2);
+}
+
+function getActivityCode(event: ActivityEvent) {
+  const payload = event.payloadJson as any;
+  if (typeof payload?.code === 'string') return payload.code;
+  if (typeof payload?.runEvent?.data?.text === 'string' && event.kind.includes('delta')) {
+    return payload.runEvent.data.text;
+  }
+  if (typeof payload?.runEvent?.data?.result?.payload?.stdout === 'string') {
+    return payload.runEvent.data.result.payload.stdout;
+  }
+  if (typeof payload?.runEvent?.data?.result?.payload?.stderr === 'string') {
+    return payload.runEvent.data.result.payload.stderr;
+  }
+  return '';
+}
+
+function activityCodeFilename(event: ActivityEvent) {
+  if (event.kind.includes('patch')) return 'activity.patch';
+  if (event.kind.includes('diff')) return 'activity.diff';
+  if (event.kind.includes('json') || event.kind.startsWith('llm.')) return 'activity.json';
+  return event.kind;
+}
+
+function activityCodeLanguage(event: ActivityEvent) {
+  if (event.kind.includes('patch') || event.kind.includes('diff')) return 'diff';
+  if (event.kind.includes('json') || event.kind.startsWith('llm.')) return 'json';
+  return 'text';
 }
 
 function RuntimePromptSnapshotCard({ latestRun }: { latestRun?: TaskRun }) {

@@ -1,6 +1,7 @@
 import { Bug, FolderTree, GitCompare, LoaderCircle, PanelsTopLeft, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import type {
+  ActivityEvent,
   ModelOption,
   Repository,
   Task,
@@ -25,6 +26,7 @@ type ThreadWorkspaceProps = {
   latestRun?: TaskRun;
   taskMessages: TaskMessage[];
   latestRunEvents: TaskEvent[];
+  activityEvents: ActivityEvent[];
   activeStreamingResponse: string;
   latestRunTodos: TaskRunTodo[];
   artifactRefs: WorkbenchArtifactRef[];
@@ -213,6 +215,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
             latestRun={props.latestRun}
             taskMessages={props.taskMessages}
             latestRunEvents={props.latestRunEvents}
+            activityEvents={props.activityEvents}
             activeStreamingResponse={props.activeStreamingResponse}
             latestRunTodos={props.latestRunTodos}
             isAgentWorking={props.isAgentThinking}

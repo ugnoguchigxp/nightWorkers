@@ -245,6 +245,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               latestRun={workspace.latestRun}
               taskMessages={workspace.taskMessages}
               latestRunEvents={workspace.latestRunEvents}
+              activityEvents={workspace.activityEvents}
               activeStreamingResponse={workspace.activeStreamingResponse}
               latestRunTodos={workspace.latestRunTodos}
               artifactRefs={workspace.activeArtifactRefs}
