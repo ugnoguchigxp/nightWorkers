@@ -63,6 +63,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const [queueProjectFilterId, setQueueProjectFilterId] = useState<string | null>(null);
   const artifactPaneOpen = showArtifactPane || Boolean(selectedArtifact);
   const isBlueprintArtifactOpen = artifactPaneOpen && selectedArtifact?.kind === 'app_blueprint';
+  const isDiffArtifactOpen = artifactPaneOpen && selectedArtifact?.kind === 'diff';
 
   useEffect(() => {
     workspaceRef.current = workspace;
@@ -269,6 +270,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               onOpenBlueprintArtifact={handleOpenBlueprintArtifact}
               isBlueprintArtifactOpen={isBlueprintArtifactOpen}
               isBlueprintActionBusy={workspace.isChatSubmitting}
+              isDiffArtifactOpen={isDiffArtifactOpen}
               onDeleteSession={() => {
                 if (!workspace.activeSession) return;
                 workspace.deleteSession(workspace.activeSession.id);

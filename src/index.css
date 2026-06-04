@@ -636,7 +636,7 @@
 
   28% {
     opacity: 1;
-    transform: translateY(-7px) scale(1.18);
+    transform: translateY(-0.18em) scale(1.05);
   }
 }
 

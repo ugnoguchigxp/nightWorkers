@@ -69,6 +69,11 @@ async function patchTask(sessionId: string, input: TaskPatchInput) {
   return (await res.json()) as Task;
 }
 
+export function resolveNextActiveSessionId(currentId: string | null, sessions: Pick<Task, 'id'>[]) {
+  if (currentId && sessions.some((session) => session.id === currentId)) return currentId;
+  return sessions[0]?.id ?? null;
+}
+
 export type NightWorkersWorkspaceState = {
   projects: Repository[];
   sessions: Task[];
@@ -349,7 +354,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   });
 
   useEffect(() => {
-    if (!activeSessionId && sessions[0]) setActiveSessionId(sessions[0].id);
+    const nextActiveSessionId = resolveNextActiveSessionId(activeSessionId, sessions);
+    if (nextActiveSessionId !== activeSessionId) setActiveSessionId(nextActiveSessionId);
   }, [activeSessionId, sessions]);
 
   const createProjectMutation = useMutation({
@@ -435,7 +441,13 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       return res.json();
     },
     onSuccess: (_, deletedId) => {
-      if (activeSessionId === deletedId) setActiveSessionId(null);
+      const remainingSessions = (queryClient.getQueryData<Task[]>(['sessions']) ?? []).filter(
+        (session) => session.id !== deletedId
+      );
+      queryClient.setQueryData<Task[]>(['sessions'], remainingSessions);
+      setActiveSessionId((currentId) => resolveNextActiveSessionId(currentId, remainingSessions));
+      queryClient.removeQueries({ queryKey: ['sessionRuns', deletedId] });
+      queryClient.removeQueries({ queryKey: ['taskMessages', deletedId] });
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
       queryClient.invalidateQueries({ queryKey: ['sessionRuns'] });
       queryClient.invalidateQueries({ queryKey: ['taskMessages'] });

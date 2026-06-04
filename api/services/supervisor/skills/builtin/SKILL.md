@@ -13,7 +13,7 @@ Supervisor がユーザー依頼を処理するすべてのラウンドで使う
 
 ## Stop Conditions
 
-- 必要な証拠、編集、検証、または回答材料が揃ったときだけ decision phase="stop" に進む。
+- 必要な証拠、編集、検証、または回答材料が揃ったときだけ stop または summarize に進む。
 - routing に迷う場合は stop せず、次に必要な証拠または reference を明示する。
 
 ## Report Contract

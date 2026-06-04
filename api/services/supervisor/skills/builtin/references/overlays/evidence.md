@@ -12,7 +12,7 @@ repo evidence、logs、DB、run events、diff、file contents が判断に必要
 
 ## Stop Conditions
 
-- 必要な証拠を取得した後だけ decision phase="stop" へ進む。
+- 必要な証拠を取得した後だけ summarize または stop へ進む。
 
 ## Report Contract
 

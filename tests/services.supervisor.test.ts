@@ -1,6 +1,8 @@
+import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import * as llm from '../api/services/supervisor/llm-provider';
@@ -16,9 +18,24 @@ vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   listTaskEventsForRun: vi.fn(),
   createTaskEvent: vi.fn(),
   createRunEvent: vi.fn(),
+  createTaskMessage: vi.fn(),
   updateTaskRun: vi.fn(),
   updateTaskStatus: vi.fn(),
 }));
+
+const execFileAsync = promisify(execFile);
+
+async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
+}
 
 describe('Supervisor Control Loop Unit Tests', () => {
   beforeEach(() => {
@@ -360,6 +377,25 @@ describe('Supervisor Control Loop Unit Tests', () => {
       expect(await fs.readFile(path.join(repoRoot, 'src/greeting.txt'), 'utf-8')).toContain(
         'hello after'
       );
+      expect(repo.createTaskMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskId: 'task-edit',
+          runId: 'run-edit',
+          role: 'assistant',
+          messageType: 'markdown_document',
+          content: [
+            '--- src/greeting.txt',
+            '+++ src/greeting.txt',
+            '# replace_content occurrences: 1',
+            '- hello before',
+            '+ hello after',
+          ].join('\n'),
+          payloadJson: expect.objectContaining({
+            intent: 'tool_diff',
+            toolName: 'replace_content',
+          }),
+        })
+      );
       expect(vi.mocked(llm.callSupervisorLLM)).toHaveBeenCalledTimes(5);
       expect(vi.mocked(llm.callSupervisorLLM).mock.calls.map((call) => call[2]?.round)).toEqual([
         1, 2, 2, 2, 3,
@@ -367,5 +403,178 @@ describe('Supervisor Control Loop Unit Tests', () => {
     } finally {
       await fs.rm(repoRoot, { recursive: true, force: true });
     }
+  });
+
+  it('removes existing fizzbuzz output when present, recreates it, verifies it, finalizes, and removes the workspace', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-fizzbuzz-regression-'));
+    const fizzbuzzPath = path.join(repoRoot, 'fizzbuzz.ts');
+    let workspaceCleaned = false;
+
+    if (await pathExists(fizzbuzzPath)) {
+      await fs.rm(fizzbuzzPath);
+    }
+
+    await execFileAsync('git', ['init'], { cwd: repoRoot });
+    await fs.mkdir(path.join(repoRoot, 'tests'), { recursive: true });
+    await fs.writeFile(path.join(repoRoot, 'README.md'), '# FizzBuzz regression\n', 'utf-8');
+
+    vi.mocked(repo.getTaskRun).mockResolvedValue({
+      id: 'run-fizzbuzz-regression',
+      taskId: 'task-fizzbuzz-regression',
+    } as any);
+    vi.mocked(repo.getTask).mockResolvedValue({
+      id: 'task-fizzbuzz-regression',
+      objective: 'Create fizzbuzz and tests',
+      acceptanceCriteria: 'Implementation, tests, and verification are complete',
+    } as any);
+
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        phase: 'plan',
+        workflow: 'code_change',
+        instruction: 'Create fizzbuzz.ts and a matching test.',
+        rationale: 'The user requested implementation plus tests.',
+        finalResponse: '',
+        expectedEvidence: ['fizzbuzz.ts', 'tests/fizzbuzz.test.ts', 'verification result'],
+        riskLevel: 'low',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'act',
+        workflow: 'code_change',
+        instruction: 'Create fizzbuzz.ts.',
+        rationale: 'The implementation file is required first.',
+        finalResponse: '',
+        expectedEvidence: ['fizzbuzz.ts'],
+        riskLevel: 'low',
+        toolCall: {
+          name: 'apply_patch',
+          arguments: {
+            patchContent: [
+              'diff --git a/fizzbuzz.ts b/fizzbuzz.ts',
+              'new file mode 100644',
+              '--- /dev/null',
+              '+++ b/fizzbuzz.ts',
+              '@@ -0,0 +1,6 @@',
+              '+export function fizzbuzz(n: number): string {',
+              '+  if (n % 15 === 0) return "FizzBuzz";',
+              '+  if (n % 3 === 0) return "Fizz";',
+              '+  if (n % 5 === 0) return "Buzz";',
+              '+  return String(n);',
+              '+}',
+              '',
+            ].join('\n'),
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        phase: 'act',
+        workflow: 'code_change',
+        instruction: 'Create fizzbuzz tests.',
+        rationale: 'The implementation needs coverage before finalizing.',
+        finalResponse: '',
+        expectedEvidence: ['tests/fizzbuzz.test.ts'],
+        riskLevel: 'low',
+        toolCall: {
+          name: 'apply_patch',
+          arguments: {
+            patchContent: [
+              'diff --git a/tests/fizzbuzz.test.ts b/tests/fizzbuzz.test.ts',
+              'new file mode 100644',
+              '--- /dev/null',
+              '+++ b/tests/fizzbuzz.test.ts',
+              '@@ -0,0 +1,17 @@',
+              "+import { describe, expect, it } from 'vitest';",
+              "+import { fizzbuzz } from '../fizzbuzz';",
+              '+',
+              "+describe('fizzbuzz', () => {",
+              "+  it('returns FizzBuzz for multiples of 15', () => {",
+              "+    expect(fizzbuzz(15)).toBe('FizzBuzz');",
+              '+  });',
+              '+',
+              "+  it('returns Fizz and Buzz for their multiples', () => {",
+              "+    expect(fizzbuzz(3)).toBe('Fizz');",
+              "+    expect(fizzbuzz(5)).toBe('Buzz');",
+              '+  });',
+              '+',
+              "+  it('returns the number otherwise', () => {",
+              "+    expect(fizzbuzz(7)).toBe('7');",
+              '+  });',
+              '+});',
+              '',
+            ].join('\n'),
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        phase: 'verify',
+        workflow: 'code_change',
+        instruction: 'Verify generated implementation and tests exist.',
+        rationale: 'The run must not finalize before checking both generated files.',
+        finalResponse: '',
+        expectedEvidence: ['verification result'],
+        riskLevel: 'low',
+        toolCall: {
+          name: 'run_verification',
+          arguments: {
+            command: 'grep -q FizzBuzz fizzbuzz.ts',
+            reason: 'Confirm generated fizzbuzz implementation and test file are present.',
+            timeoutSeconds: 10,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        phase: 'stop',
+        workflow: 'code_change',
+        instruction: 'FizzBuzz implementation and tests are verified.',
+        rationale: 'Both files were created and verification succeeded.',
+        finalResponse: '',
+        expectedEvidence: ['fizzbuzz.ts', 'tests/fizzbuzz.test.ts', 'verification result'],
+        riskLevel: 'low',
+        terminalState: 'needs_review',
+        toolCall: null,
+      })
+      .mockResolvedValueOnce({
+        phase: 'stop',
+        workflow: 'code_change',
+        instruction: 'FizzBuzz implementation and tests are verified.',
+        rationale: 'Finalized from SessionMemory.',
+        finalResponse: 'fizzbuzz.ts と tests/fizzbuzz.test.ts を追加し、検証も成功しました。',
+        expectedEvidence: ['fizzbuzz.ts', 'tests/fizzbuzz.test.ts', 'verification result'],
+        riskLevel: 'low',
+        terminalState: 'needs_review',
+        toolCall: null,
+      });
+
+    try {
+      const result = await runSupervisorLoop({
+        runId: 'run-fizzbuzz-regression',
+        repoRoot,
+        prompt: 'fizzbuzz.tsをプロジェクトルートに作り、Vitestのテストも追加して検証してください',
+        timeoutSeconds: 60,
+      });
+
+      expect(result.terminalState).toBe('needs_review');
+      expect(result.stoppedBy).toBe('decision');
+      expect(result.finalReport).toContain('tests/fizzbuzz.test.ts');
+      expect(await fs.readFile(fizzbuzzPath, 'utf-8')).toContain('FizzBuzz');
+      expect(await fs.readFile(path.join(repoRoot, 'tests/fizzbuzz.test.ts'), 'utf-8')).toContain(
+        'multiples of 15'
+      );
+      expect(vi.mocked(llm.callSupervisorLLM).mock.calls.map((call) => call[2]?.round)).toEqual([
+        1, 2, 2, 2, 2, 3,
+      ]);
+      const finalizeInput = JSON.parse(String(vi.mocked(llm.callSupervisorLLM).mock.calls[5][1]));
+      expect(finalizeInput.sessionMemory.changedFiles).toEqual(
+        expect.arrayContaining(['fizzbuzz.ts', 'tests/fizzbuzz.test.ts'])
+      );
+      expect(finalizeInput.sessionMemory.verification.some((item: any) => item.ok)).toBe(true);
+    } finally {
+      await fs.rm(repoRoot, { recursive: true, force: true });
+      workspaceCleaned = true;
+    }
+
+    expect(workspaceCleaned).toBe(true);
+    await expect(fs.access(repoRoot)).rejects.toThrow();
   });
 });

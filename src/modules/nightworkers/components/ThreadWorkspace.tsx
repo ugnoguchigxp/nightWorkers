@@ -1,12 +1,4 @@
-import {
-  Bug,
-  FileText,
-  FolderTree,
-  GitCompare,
-  LoaderCircle,
-  PanelsTopLeft,
-  Trash2,
-} from 'lucide-react';
+import { Bug, FolderTree, GitCompare, LoaderCircle, PanelsTopLeft, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import type {
   ModelOption,
@@ -49,6 +41,7 @@ type ThreadWorkspaceProps = {
   onOpenBlueprintArtifact: () => Promise<void>;
   isBlueprintArtifactOpen: boolean;
   isBlueprintActionBusy: boolean;
+  isDiffArtifactOpen: boolean;
   onDeleteSession: () => void;
   onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
   isProjectFilesOpen: boolean;
@@ -61,11 +54,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
   const blueprintArtifact = props.artifactRefs.find(
     (artifact) => artifact.kind === 'app_blueprint'
   );
-  const pinnedArtifacts = props.artifactRefs.filter((artifact) =>
-    ['app_blueprint', 'component_design', 'design_delta', 'implementation_plan', 'spec'].includes(
-      artifact.kind
-    )
-  );
+  const latestDiffArtifact = diffArtifacts[0];
   const [showDebugEvents, setShowDebugEvents] = useState(false);
   return (
     <div className="relative flex h-screen min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#111827]">
@@ -121,7 +110,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
                 </button>
                 <button
                   type="button"
-                  className={`rounded border px-2 py-1 text-[10px] uppercase ${
+                  className={`inline-flex h-7 w-7 items-center justify-center rounded border ${
                     props.isProjectFilesOpen
                       ? 'border-cyan-400/70 bg-cyan-950/30 text-cyan-100'
                       : 'border-slate-600/80 bg-slate-900/30 text-slate-200 hover:border-slate-400'
@@ -131,6 +120,35 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
                   title="Project files"
                 >
                   <FolderTree className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  className={`inline-flex h-7 w-7 items-center justify-center rounded border disabled:cursor-not-allowed disabled:opacity-40 ${
+                    props.isDiffArtifactOpen
+                      ? 'border-cyan-400/70 bg-cyan-950/30 text-cyan-100 hover:bg-cyan-900/30'
+                      : 'border-slate-600/80 bg-slate-900/30 text-slate-300 hover:border-slate-400'
+                  }`}
+                  onClick={() => {
+                    if (latestDiffArtifact) props.onOpenDiffArtifact(latestDiffArtifact);
+                  }}
+                  disabled={!latestDiffArtifact}
+                  title={
+                    props.isDiffArtifactOpen
+                      ? 'Hide Code Diff artifact'
+                      : latestDiffArtifact
+                        ? 'Open Code Diff artifact'
+                        : 'No Code Diff artifact'
+                  }
+                  aria-label={
+                    props.isDiffArtifactOpen
+                      ? 'Hide Code Diff artifact'
+                      : latestDiffArtifact
+                        ? 'Open Code Diff artifact'
+                        : 'No Code Diff artifact'
+                  }
+                  aria-pressed={props.isDiffArtifactOpen}
+                >
+                  <GitCompare className="h-3.5 w-3.5" />
                 </button>
                 <button
                   type="button"
@@ -165,38 +183,6 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
                 </button>
               </div>
             </div>
-            {pinnedArtifacts.length > 0 || diffArtifacts.length > 0 ? (
-              <div className="flex gap-1 overflow-x-auto">
-                {pinnedArtifacts.slice(0, 8).map((artifact) => (
-                  <button
-                    key={artifact.id}
-                    type="button"
-                    className="inline-flex shrink-0 items-center gap-1 rounded border border-slate-700/80 px-2 py-1 text-[10px] uppercase text-slate-300 hover:border-cyan-500/70 hover:text-cyan-100"
-                    onClick={() => props.onOpenArtifact(artifact)}
-                  >
-                    {['app_blueprint', 'component_design', 'design_delta'].includes(
-                      artifact.kind
-                    ) ? (
-                      <PanelsTopLeft className="h-3 w-3" />
-                    ) : (
-                      <FileText className="h-3 w-3" />
-                    )}
-                    {artifact.kind.replace(/_/g, ' ')}
-                  </button>
-                ))}
-                {diffArtifacts.slice(0, 8).map((artifact) => (
-                  <button
-                    key={artifact.id}
-                    type="button"
-                    className="inline-flex shrink-0 items-center gap-1 rounded border border-slate-700/80 px-2 py-1 text-[10px] uppercase text-slate-300 hover:border-cyan-500/70 hover:text-cyan-100"
-                    onClick={() => props.onOpenDiffArtifact(artifact)}
-                  >
-                    <GitCompare className="h-3 w-3" />
-                    {artifact.kind.replace(/_/g, ' ')}
-                  </button>
-                ))}
-              </div>
-            ) : null}
           </div>
         ) : (
           <div className="flex items-center justify-between gap-4">
@@ -205,7 +191,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
             </p>
             <button
               type="button"
-              className={`rounded border px-2 py-1 text-[10px] uppercase ${
+              className={`inline-flex h-7 w-7 items-center justify-center rounded border ${
                 props.isProjectFilesOpen
                   ? 'border-cyan-400/70 bg-cyan-950/30 text-cyan-100'
                   : 'border-slate-600/80 bg-slate-900/30 text-slate-200 hover:border-slate-400'

@@ -1,16 +1,20 @@
+import type { CodeBlockData } from '@repo/design-system';
+import { CodeBlock } from '@repo/design-system';
 import {
   AlertTriangle,
   Check,
   CheckCircle2,
   Circle,
   Copy,
-  GitCompare,
   LoaderCircle,
   PanelsTopLeft,
   PauseCircle,
   XCircle,
 } from 'lucide-react';
 import { useState } from 'react';
+import type { Components } from 'react-markdown';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type {
   ReviewResult,
   Task,
@@ -21,9 +25,91 @@ import type {
   TodoStatus,
   WorkbenchArtifactRef,
 } from '../types';
-import { getChangedFiles } from '../utils/diff';
 import { formatFinishedTime } from '../utils/time';
 import { ThreadMessage } from './ThreadMessage';
+
+const chatCodeBlockThemes = {
+  light: 'github-dark-default',
+  dark: 'github-dark-default',
+} as const;
+const chatMarkdownRemarkPlugins = [remarkGfm];
+const chatMarkdownComponents: Components = {
+  a: ({ children, ...props }) => (
+    <a
+      className="text-cyan-200 underline underline-offset-2 hover:text-cyan-100"
+      target="_blank"
+      rel="noreferrer"
+      {...props}
+    >
+      {children}
+    </a>
+  ),
+  blockquote: ({ children }) => (
+    <blockquote className="my-3 border-slate-600 border-l-2 pl-3 text-slate-300">
+      {children}
+    </blockquote>
+  ),
+  code: ({ children, className }) => {
+    const language = /language-(\w+)/.exec(className || '')?.[1];
+    if (language) {
+      return (
+        <CodeBlock
+          className="dark my-3 max-w-full rounded-[var(--radius-md)] border-border bg-card text-card-foreground text-xs [&_.line]:whitespace-pre-wrap [&_code]:break-words [&_code]:whitespace-pre-wrap [&_pre]:overflow-x-hidden"
+          data={[
+            {
+              code: String(children).replace(/\n$/, ''),
+              filename: language,
+              language,
+            },
+          ]}
+          lineNumbers={false}
+          maxHeight={360}
+          showHeader={true}
+          themes={chatCodeBlockThemes}
+        />
+      );
+    }
+    return (
+      <code
+        className="rounded-[var(--radius-sm)] px-1 py-0.5 font-mono text-[0.92em]"
+        style={{
+          backgroundColor: 'color-mix(in srgb, var(--nw-surface-soft) 52%, transparent)',
+          boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--nw-primary) 14%, transparent)',
+          color: 'color-mix(in srgb, var(--nw-primary) 68%, var(--nw-text))',
+        }}
+      >
+        {children}
+      </code>
+    );
+  },
+  h1: ({ children }) => (
+    <h1 className="mt-1 mb-3 text-lg font-semibold text-slate-50">{children}</h1>
+  ),
+  h2: ({ children }) => (
+    <h2 className="mt-4 mb-2 text-base font-semibold text-slate-50">{children}</h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="mt-3 mb-2 text-sm font-semibold text-slate-50">{children}</h3>
+  ),
+  li: ({ children }) => <li className="my-1 pl-1">{children}</li>,
+  ol: ({ children }) => <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>,
+  p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
+  pre: ({ children }) => <>{children}</>,
+  table: ({ children }) => (
+    <div className="my-3 overflow-x-auto">
+      <table className="w-full border-collapse text-xs">{children}</table>
+    </div>
+  ),
+  td: ({ children }) => (
+    <td className="border border-slate-700 px-2 py-1 align-top text-slate-200">{children}</td>
+  ),
+  th: ({ children }) => (
+    <th className="border border-slate-700 bg-slate-950/60 px-2 py-1 text-left font-medium text-slate-100">
+      {children}
+    </th>
+  ),
+  ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>,
+};
 
 type ThreadTimelineProps = {
   session: Task;
@@ -39,7 +125,6 @@ type ThreadTimelineProps = {
 };
 
 export function ThreadTimeline({
-  session,
   runs,
   latestRun,
   taskMessages,
@@ -86,8 +171,7 @@ export function ThreadTimeline({
   return (
     <div className="nightworkers-chat-window space-y-5 p-6">
       <TodoProgress todos={latestRunTodos} />
-      <RuntimePromptSnapshotCard latestRun={latestRun} />
-      <DiffSummaryCard session={session} latestRun={latestRun} onOpenArtifact={onOpenArtifact} />
+      {showDebugEvents ? <RuntimePromptSnapshotCard latestRun={latestRun} /> : null}
       <FinalReportCard latestRun={latestRun} />
       {showDebugEvents && isAgentWorking && latestEvent ? (
         <div className="rounded-lg border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-200">
@@ -153,66 +237,11 @@ function RuntimePromptSnapshotCard({ latestRun }: { latestRun?: TaskRun }) {
   );
 }
 
-function DiffSummaryCard({
-  session,
-  latestRun,
-  onOpenArtifact,
-}: {
-  session: Task;
-  latestRun?: TaskRun;
-  onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
-}) {
-  if (!latestRun?.diffPatch?.trim()) return null;
-  const changedFiles = getChangedFiles(latestRun.diffPatch);
-  return (
-    <div className="rounded border border-slate-700/80 bg-slate-900/25 px-3 py-2">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="min-w-0 text-xs font-medium text-slate-100">Code diff</div>
-        <button
-          type="button"
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-slate-600/80 text-slate-200 hover:border-cyan-500/70 hover:text-cyan-100"
-          onClick={() =>
-            onOpenArtifact({
-              id: `run-${latestRun.id}-diffPatch`,
-              taskId: session.id,
-              runId: latestRun.id,
-              kind: 'diff',
-              title: 'Code Diff',
-              source: { type: 'run_field', runId: latestRun.id, field: 'diffPatch' },
-              createdAt: String(latestRun.finishedAt || latestRun.updatedAt || latestRun.createdAt),
-            })
-          }
-          title="Open diff viewer"
-        >
-          <GitCompare className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      {changedFiles.length > 0 ? (
-        <ul className="grid gap-1">
-          {changedFiles.slice(0, 6).map((file) => (
-            <li key={file.path} className="flex items-center justify-between gap-3 text-[11px]">
-              <span className="min-w-0 truncate text-slate-300">{file.path}</span>
-              <span className="shrink-0 text-slate-500">
-                <span className="text-emerald-300">+{file.added}</span>{' '}
-                <span className="text-rose-300">-{file.deleted}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-[11px] text-slate-500">Diff is available.</p>
-      )}
-    </div>
-  );
-}
-
 function FinalReportCard({ latestRun }: { latestRun?: TaskRun }) {
   if (!latestRun?.finalReport?.trim()) return null;
   return (
     <ThreadMessage messageRole="assistant" timestamp={formatFinishedTime(latestRun.finishedAt)}>
-      <div className="nightworkers-message-content whitespace-pre-wrap text-sm leading-6 text-slate-100">
-        {latestRun.finalReport}
-      </div>
+      <ChatMarkdown content={latestRun.finalReport} />
     </ThreadMessage>
   );
 }
@@ -340,8 +369,8 @@ function StreamingResponsePreview({ preview }: { preview: StreamingPreview }) {
         応答を生成中
       </div>
       {preview.visibleText ? (
-        <div className="whitespace-pre-wrap text-sm leading-6 text-slate-100">
-          {preview.visibleText}
+        <div className="space-y-1">
+          <ChatMarkdown content={preview.visibleText} />
           <span className="ml-0.5 inline-block h-4 w-1 animate-pulse bg-cyan-300 align-[-2px]" />
         </div>
       ) : (
@@ -352,11 +381,7 @@ function StreamingResponsePreview({ preview }: { preview: StreamingPreview }) {
 }
 
 function PersistedStreamingResponse({ preview }: { preview: StreamingPreview }) {
-  return (
-    <div className="whitespace-pre-wrap text-sm leading-6 text-slate-100">
-      {preview.visibleText || preview.statusText}
-    </div>
-  );
+  return <ChatMarkdown content={preview.visibleText || preview.statusText} />;
 }
 
 type StreamingPreview = {
@@ -472,14 +497,14 @@ function decodeJsonEscape(char: string): string {
 export function ThinkingIndicator() {
   return (
     <div
-      className="inline-flex h-8 items-center gap-2"
+      className="inline-flex h-[1em] items-center gap-[0.3em]"
       aria-label="AIが返答を生成中です"
       role="status"
     >
-      {[0, 1, 2, 3].map((dot) => (
+      {[0, 1, 2].map((dot) => (
         <span
           key={dot}
-          className="nightworkers-thinking-dot h-3 w-3 rounded-full bg-cyan-400 shadow-[0_0_14px_rgba(34,211,238,0.55)]"
+          className="nightworkers-thinking-dot h-[0.38em] w-[0.38em] rounded-full bg-cyan-400 shadow-[0_0_3px_rgba(34,211,238,0.25)]"
           style={{ animationDelay: `${dot * 140}ms` }}
         />
       ))}
@@ -497,24 +522,36 @@ function AgentEditSummaryCard({ event }: { event: TaskEvent }) {
         コード変更 ({summary.sections.length}){' '}
         <span className="text-slate-400">{summary.toolName}</span>
       </summary>
-      <div className="space-y-1 border-t border-slate-700/80 px-3 py-2 text-xs">
-        {summary.sections.map((section, idx) => (
-          <div
-            key={`${event.id}-section-${idx}`}
-            className="rounded border border-slate-700/70 bg-slate-950/40 px-2 py-1"
-          >
-            <div className="truncate text-slate-200">{section.path}</div>
-            <div className="text-slate-400">
-              {typeof section.added === 'number' || typeof section.deleted === 'number' ? (
-                <>
-                  <span className="text-emerald-400">+{section.added || 0}</span>{' '}
-                  <span className="text-rose-400">-{section.deleted || 0}</span>
-                </>
-              ) : null}
-              {section.detail ? <span className="ml-2">{section.detail}</span> : null}
+      <div className="space-y-3 border-t border-slate-700/80 px-3 py-2 text-xs">
+        <div className="space-y-1">
+          {summary.sections.map((section, idx) => (
+            <div
+              key={`${event.id}-section-${idx}`}
+              className="rounded border border-slate-700/70 bg-slate-950/40 px-2 py-1"
+            >
+              <div className="truncate text-slate-200">{section.path}</div>
+              <div className="text-slate-400">
+                {typeof section.added === 'number' || typeof section.deleted === 'number' ? (
+                  <>
+                    <span className="text-emerald-400">+{section.added || 0}</span>{' '}
+                    <span className="text-rose-400">-{section.deleted || 0}</span>
+                  </>
+                ) : null}
+                {section.detail ? <span className="ml-2">{section.detail}</span> : null}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+        {summary.codeBlocks?.length ? (
+          <CodeBlock
+            className="dark max-w-full rounded-[var(--radius-md)] border-border bg-card text-card-foreground [&_.line]:whitespace-pre-wrap [&_code]:break-words [&_code]:whitespace-pre-wrap [&_pre]:overflow-x-hidden"
+            data={summary.codeBlocks}
+            lineNumbers={false}
+            maxHeight={320}
+            showHeader={true}
+            themes={chatCodeBlockThemes}
+          />
+        ) : null}
       </div>
     </details>
   );
@@ -697,6 +734,7 @@ function ReviewResultSummary({ reviewResult }: { reviewResult: ReviewResult }) {
 type AgentEditSummary = {
   toolName: 'apply_patch' | 'replace_content';
   sections: Array<{ path: string; added?: number; deleted?: number; detail?: string }>;
+  codeBlocks?: CodeBlockData[];
 };
 
 export function getAgentEditSummary(event: TaskEvent): AgentEditSummary | null {
@@ -709,7 +747,9 @@ export function getAgentEditSummary(event: TaskEvent): AgentEditSummary | null {
     const patchContent = asString(args?.patchContent || getApplyPatchContent(payload));
     if (patchContent.trim()) {
       const sections = parseApplyPatchSections(patchContent);
-      if (sections.length > 0) return { toolName, sections };
+      if (sections.length > 0) {
+        return { toolName, sections, codeBlocks: buildApplyPatchCodeBlockData(patchContent) };
+      }
     }
     const changedFiles = getChangedFilesFromResult(result);
     if (changedFiles.length > 0) {
@@ -743,6 +783,12 @@ export function getAgentEditSummary(event: TaskEvent): AgentEditSummary | null {
               : 'replacement requested',
         },
       ],
+      codeBlocks: buildReplaceContentCodeBlockData({
+        filePath,
+        needle: asString(args?.needle),
+        replacement: asString(args?.replacement),
+        occurrences,
+      }),
     };
   }
 
@@ -768,6 +814,8 @@ function getToolName(payload: any): string | null {
     payload?.decision?.toolCall?.name ||
     payload?.runEvent?.data?.toolName ||
     payload?.runEvent?.data?.result?.toolName ||
+    payload?.result?.toolName ||
+    payload?.payload?.toolName ||
     null
   );
 }
@@ -780,6 +828,7 @@ function getToolArguments(payload: any): any {
     payload?.decision?.toolCall?.arguments ||
     payload?.runEvent?.data?.arguments ||
     payload?.runEvent?.data?.toolCall?.arguments ||
+    payload?.runEvent?.data?.toolArgs ||
     null
   );
 }
@@ -787,6 +836,7 @@ function getToolArguments(payload: any): any {
 function getToolResult(payload: any): any {
   if (payload?.result) return payload.result;
   if (payload?.runEvent?.data?.result) return payload.runEvent.data.result;
+  if (payload?.runEvent?.data?.toolResult) return payload.runEvent.data.toolResult;
   if (typeof payload?.ok === 'boolean' && payload?.payload) return payload;
   return null;
 }
@@ -794,6 +844,44 @@ function getToolResult(payload: any): any {
 function getChangedFilesFromResult(result: any): string[] {
   const changedFiles = result?.payload?.changedFiles;
   return Array.isArray(changedFiles) ? changedFiles.filter((file) => typeof file === 'string') : [];
+}
+
+function buildApplyPatchCodeBlockData(patchContent: string): CodeBlockData[] {
+  return [
+    {
+      code: patchContent.trimEnd() || 'No patch',
+      filename: 'apply_patch.patch',
+      language: 'diff',
+    },
+  ];
+}
+
+function buildReplaceContentCodeBlockData(input: {
+  filePath: string;
+  needle: string;
+  replacement: string;
+  occurrences?: number;
+}): CodeBlockData[] | undefined {
+  if (!input.needle && !input.replacement) return undefined;
+  const occurrenceLabel =
+    typeof input.occurrences === 'number'
+      ? `# occurrences: ${input.occurrences}`
+      : '# replacement requested';
+  return [
+    {
+      code: [
+        `--- ${input.filePath}`,
+        `+++ ${input.filePath}`,
+        occurrenceLabel,
+        input.needle ? `- ${input.needle}` : '',
+        input.replacement ? `+ ${input.replacement}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      filename: `${input.filePath}.replace.diff`,
+      language: 'diff',
+    },
+  ];
 }
 
 function estimateReplacementStats(input: {
@@ -884,6 +972,35 @@ function MessagePayload({
   onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
 }) {
   const metadata = message.metadataJson as any;
+  if (metadata?.intent === 'tool_diff') {
+    const codeBlock = metadata.codeBlock || {};
+    const code = typeof codeBlock.code === 'string' ? codeBlock.code : message.content;
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+          <span className="rounded-[var(--radius-sm)] border border-border bg-muted px-1.5 py-0.5 text-card-foreground">
+            code change
+          </span>
+          {metadata.toolName ? <span>{String(metadata.toolName)}</span> : null}
+        </div>
+        <CodeBlock
+          className="dark max-w-full rounded-[var(--radius-md)] border-border bg-card text-card-foreground [&_.line]:whitespace-pre-wrap [&_code]:break-words [&_code]:whitespace-pre-wrap [&_pre]:overflow-x-hidden"
+          data={[
+            {
+              code,
+              filename:
+                typeof codeBlock.filename === 'string' ? codeBlock.filename : 'tool-output.diff',
+              language: typeof codeBlock.language === 'string' ? codeBlock.language : 'diff',
+            },
+          ]}
+          lineNumbers={false}
+          maxHeight={360}
+          showHeader={true}
+          themes={chatCodeBlockThemes}
+        />
+      </div>
+    );
+  }
   if (message.messageType === 'markdown_document' && metadata?.appBlueprint) {
     const validation = metadata.validation;
     const issueCount = Array.isArray(validation?.issues) ? validation.issues.length : 0;
@@ -1019,13 +1136,22 @@ function MessagePayload({
     );
   }
   if (message.messageType === 'markdown_document' && metadata?.markdownDocumentData?.content) {
-    return (
-      <pre className="whitespace-pre-wrap break-all rounded-md bg-black/30 p-2 text-xs">
-        {metadata.markdownDocumentData.content}
-      </pre>
-    );
+    return <ChatMarkdown content={metadata.markdownDocumentData.content} />;
+  }
+  if (message.role === 'assistant') {
+    return <ChatMarkdown content={message.content} />;
   }
   return <>{message.content}</>;
+}
+
+function ChatMarkdown({ content }: { content: string }) {
+  return (
+    <div className="nightworkers-message-content max-w-full whitespace-normal break-words text-sm leading-6 text-slate-100">
+      <ReactMarkdown components={chatMarkdownComponents} remarkPlugins={chatMarkdownRemarkPlugins}>
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 function summarizeBlueprintCard(blueprint: any, fallback: string) {

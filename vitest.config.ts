@@ -14,6 +14,7 @@ export default defineConfig({
       reporter: ['text', 'html', 'lcov'],
       reportsDirectory: './coverage',
       include: [
+        'fizzbuzz.ts',
         'api/lib/**/*.ts',
         'api/middleware/**/*.ts',
         'api/services/oauth/**/*.ts',
