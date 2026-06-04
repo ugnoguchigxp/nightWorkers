@@ -215,6 +215,12 @@ export async function listTaskMessages(taskId: string) {
   return repo.listTaskMessages(taskId);
 }
 
+export async function listTaskActivityEvents(taskId: string, options?: { afterSeq?: number }) {
+  const task = await repo.getTask(taskId);
+  if (!task) throw new NotFoundError('Task not found');
+  return repo.listActivityEventsForTask(taskId, { afterSeq: options?.afterSeq });
+}
+
 export async function resolveBlueprintPlanningReadiness(
   taskId: string
 ): Promise<BlueprintPlanningReadiness> {
@@ -2020,6 +2026,12 @@ export async function listTaskRunEvents(runId: string, options?: { afterSeq?: nu
   const run = await repo.getTaskRun(runId);
   if (!run) throw new NotFoundError('Run not found');
   return repo.listTaskEventsForRun(runId, { afterSeq: options?.afterSeq });
+}
+
+export async function listTaskRunActivityEvents(runId: string, options?: { afterSeq?: number }) {
+  const run = await repo.getTaskRun(runId);
+  if (!run) throw new NotFoundError('Run not found');
+  return repo.listActivityEventsForRun(runId, { afterSeq: options?.afterSeq });
 }
 
 export async function listTaskRunEventsForReplay(input: {

@@ -16,6 +16,7 @@ type OutboundSocketMessage = Omit<SocketMessage, 'taskId' | 'timestamp'>;
 type ReplayEntry = { message: SocketMessage; storedAtMs: number };
 
 const REPLAYABLE_MESSAGE_TYPES = new Set([
+  'activity_event_created',
   'task_llm_delta',
   'task_event_created',
   'task_run_updated',

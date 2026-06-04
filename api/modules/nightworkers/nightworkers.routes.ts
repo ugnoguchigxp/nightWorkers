@@ -1,5 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
+  activityEventSchema,
   blueprintAdoptionRequestSchema,
   blueprintAdoptionSchema,
   blueprintPreviewDesignSettingsSchema,
@@ -927,6 +928,32 @@ const listTaskMessagesRoute = createRoute({
   },
 });
 
+const listTaskActivityEventsRoute = createRoute({
+  method: 'get',
+  path: '/tasks/:id/activity-events',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'task-uuid' }),
+    }),
+    query: z.object({
+      afterSeq: z.coerce.number().int().min(0).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.array(activityEventSchema),
+        },
+      },
+      description: 'Task activity events after an optional task sequence cursor',
+    },
+    404: {
+      description: 'Task not found',
+    },
+  },
+});
+
 const getTaskRunRoute = createRoute({
   method: 'get',
   path: '/runs/:id',
@@ -969,6 +996,32 @@ const listTaskRunEventsRoute = createRoute({
         },
       },
       description: 'Task run events after an optional sequence cursor',
+    },
+    404: {
+      description: 'Run not found',
+    },
+  },
+});
+
+const listTaskRunActivityEventsRoute = createRoute({
+  method: 'get',
+  path: '/runs/:id/activity-events',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'run-uuid' }),
+    }),
+    query: z.object({
+      afterSeq: z.coerce.number().int().min(0).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.array(activityEventSchema),
+        },
+      },
+      description: 'Run activity events after an optional task sequence cursor',
     },
     404: {
       description: 'Run not found',
@@ -1578,6 +1631,18 @@ const router = createOpenApiRouter()
       return c.json({ error: String(err?.message || err) }, 500);
     }
   })
+  .openapi(listTaskActivityEventsRoute, async (c) => {
+    const id = c.req.param('id');
+    try {
+      const events = await service.listTaskActivityEvents(id, c.req.valid('query'));
+      return c.json(events, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
   // Execution
   .openapi(startTaskRunRoute, async (c) => {
     const id = c.req.param('id');
@@ -1601,6 +1666,18 @@ const router = createOpenApiRouter()
     const id = c.req.param('id');
     try {
       const events = await service.listTaskRunEvents(id, c.req.valid('query'));
+      return c.json(events, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(listTaskRunActivityEventsRoute, async (c) => {
+    const id = c.req.param('id');
+    try {
+      const events = await service.listTaskRunActivityEvents(id, c.req.valid('query'));
       return c.json(events, 200);
     } catch (err: any) {
       if (err instanceof AppError) {

@@ -262,7 +262,10 @@ export async function deleteRepositories(repositoryIds: string[]) {
     statements.push(`DELETE FROM task_events WHERE task_run_id IN (${list});`);
   }
   for (const ids of chunks(taskIds, chunkSize)) {
-    statements.push(`DELETE FROM task_messages WHERE task_id IN (${sqlIn(ids)});`);
+    const list = sqlIn(ids);
+    statements.push(`DELETE FROM activity_events WHERE task_id IN (${list});`);
+    statements.push(`DELETE FROM activity_artifacts WHERE task_id IN (${list});`);
+    statements.push(`DELETE FROM task_messages WHERE task_id IN (${list});`);
   }
   for (const ids of chunks(runIds, chunkSize)) {
     statements.push(`DELETE FROM task_runs WHERE id IN (${sqlIn(ids)});`);

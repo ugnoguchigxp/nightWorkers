@@ -251,6 +251,39 @@ export type TaskMessage = {
   createdAt: unknown;
 };
 
+export type ActivityArtifact = {
+  id: string;
+  taskId: string;
+  runId?: string | null;
+  kind: string;
+  path?: string | null;
+  contentText?: string | null;
+  metadataJson?: any;
+  createdAt: unknown;
+};
+
+export type ActivityEvent = {
+  id: string;
+  taskId: string;
+  runId?: string | null;
+  turnId?: string | null;
+  parentEventId?: string | null;
+  seq: number;
+  runSeq?: number | null;
+  kind: string;
+  source: string;
+  status?: string | null;
+  text?: string | null;
+  payloadJson?: any;
+  artifactId?: string | null;
+  clientTempId?: string | null;
+  externalId?: string | null;
+  dedupeKey?: string | null;
+  ingestError?: string | null;
+  visibility: string;
+  createdAt: unknown;
+};
+
 export type WorkbenchChatIntent =
   | 'intake'
   | 'draft'

@@ -98,6 +98,138 @@ describe('NightWorkers repositories routes', () => {
 });
 
 describe('NightWorkers task routes', () => {
+  it('persists task messages into activity ledger and replays them by task cursor', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: Activity Message ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: Activity message target',
+      description: 'Persist activity message',
+      status: 'draft',
+    });
+
+    const message = await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'tool',
+      content: 'tool output',
+      messageType: 'text',
+      payloadJson: { raw: 'result' },
+    });
+
+    const res = await app.request(`http://localhost/api/tasks/${task.id}/activity-events`);
+    expect(res.status).toBe(200);
+    const events = await res.json();
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          taskId: task.id,
+          kind: 'tool.result',
+          source: 'tool',
+          text: 'tool output',
+          externalId: message.id,
+        }),
+      ])
+    );
+
+    const afterRes = await app.request(
+      `http://localhost/api/tasks/${task.id}/activity-events?afterSeq=1`
+    );
+    expect(afterRes.status).toBe(200);
+    expect(await afterRes.json()).toEqual([]);
+  });
+
+  it('persists run events into activity ledger even when the event omits taskId', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: Activity Run Event ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: Activity run event target',
+      description: 'Persist activity run event',
+      status: 'draft',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+    });
+
+    await repo.createRunEvent({
+      version: 1,
+      runId: run.id,
+      timestamp: new Date().toISOString(),
+      type: 'model.response_delta',
+      severity: 'info',
+      actor: 'supervisor',
+      message: 'delta text',
+    });
+
+    const res = await app.request(`http://localhost/api/runs/${run.id}/activity-events`);
+    expect(res.status).toBe(200);
+    const events = await res.json();
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          taskId: task.id,
+          runId: run.id,
+          kind: 'assistant.delta',
+          status: 'delta',
+          text: 'delta text',
+        }),
+      ])
+    );
+  });
+
+  it('persists tool diff messages as file activity artifacts', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: Activity Diff ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: Activity diff target',
+      description: 'Persist activity diff',
+      status: 'draft',
+    });
+
+    await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: '*** Begin Patch\n*** End Patch',
+      messageType: 'markdown_document',
+      payloadJson: {
+        intent: 'tool_diff',
+        title: 'apply_patch diff',
+        toolName: 'apply_patch',
+        codeBlock: {
+          filename: 'apply_patch.patch',
+          language: 'diff',
+          code: '*** Begin Patch\n*** End Patch',
+        },
+      },
+    });
+
+    const res = await app.request(`http://localhost/api/tasks/${task.id}/activity-events`);
+    expect(res.status).toBe(200);
+    const events = await res.json();
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          taskId: task.id,
+          kind: 'file.patch',
+          source: 'tool',
+          artifactId: expect.any(String),
+        }),
+      ])
+    );
+  });
+
   it('persists Blueprint design settings per session', async () => {
     const createdRepo = await repo.createRepository({
       name: `TEST: Blueprint Design Settings ${crypto.randomUUID()}`,

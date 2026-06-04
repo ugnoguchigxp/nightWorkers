@@ -667,6 +667,43 @@ export const artifactSchema = z
   })
   .openapi('Artifact');
 
+export const activityArtifactSchema = z
+  .object({
+    id: z.string().uuid(),
+    taskId: z.string().uuid(),
+    runId: z.string().uuid().nullable().optional(),
+    kind: z.string(),
+    path: z.string().nullable().optional(),
+    contentText: z.string().nullable().optional(),
+    metadataJson: z.any().nullable().optional(),
+    createdAt: z.any(),
+  })
+  .openapi('ActivityArtifact');
+
+export const activityEventSchema = z
+  .object({
+    id: z.string().uuid(),
+    taskId: z.string().uuid(),
+    runId: z.string().uuid().nullable().optional(),
+    turnId: z.string().nullable().optional(),
+    parentEventId: z.string().nullable().optional(),
+    seq: z.number().int(),
+    runSeq: z.number().int().nullable().optional(),
+    kind: z.string(),
+    source: z.string(),
+    status: z.string().nullable().optional(),
+    text: z.string().nullable().optional(),
+    payloadJson: z.any().nullable().optional(),
+    artifactId: z.string().uuid().nullable().optional(),
+    clientTempId: z.string().nullable().optional(),
+    externalId: z.string().nullable().optional(),
+    dedupeKey: z.string().nullable().optional(),
+    ingestError: z.string().nullable().optional(),
+    visibility: z.string(),
+    createdAt: z.any(),
+  })
+  .openapi('ActivityEvent');
+
 export const taskMessageSchema = z
   .object({
     id: z.string().uuid(),

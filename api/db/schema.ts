@@ -313,6 +313,79 @@ export const artifacts = sqliteTable(
   })
 );
 
+export const activityArtifacts = sqliteTable(
+  'activity_artifacts',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    runId: text('run_id').references(() => taskRuns.id, { onDelete: 'set null' }),
+    kind: text('kind').notNull(),
+    path: text('path'),
+    contentText: text('content_text'),
+    metadataJson: text('metadata_json', { mode: 'json' }),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    taskIdIdx: index('activity_artifacts_task_id_idx').on(table.taskId),
+    runIdIdx: index('activity_artifacts_run_id_idx').on(table.runId),
+    kindCreatedAtIdx: index('activity_artifacts_kind_created_at_idx').on(
+      table.kind,
+      table.createdAt
+    ),
+  })
+);
+
+export const activityEvents = sqliteTable(
+  'activity_events',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    runId: text('run_id').references(() => taskRuns.id, { onDelete: 'set null' }),
+    turnId: text('turn_id'),
+    parentEventId: text('parent_event_id'),
+    seq: integer('seq').notNull(),
+    runSeq: integer('run_seq'),
+    kind: text('kind').notNull(),
+    source: text('source').notNull(),
+    status: text('status'),
+    text: text('text'),
+    payloadJson: text('payload_json', { mode: 'json' }),
+    artifactId: text('artifact_id').references(() => activityArtifacts.id, {
+      onDelete: 'set null',
+    }),
+    clientTempId: text('client_temp_id'),
+    externalId: text('external_id'),
+    dedupeKey: text('dedupe_key'),
+    ingestError: text('ingest_error'),
+    visibility: text('visibility').default('visible').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    taskSeqUniqueIdx: uniqueIndex('activity_events_task_seq_uidx').on(table.taskId, table.seq),
+    taskCreatedAtIdx: index('activity_events_task_created_at_idx').on(
+      table.taskId,
+      table.createdAt
+    ),
+    runSeqIdx: index('activity_events_run_seq_idx').on(table.runId, table.runSeq),
+    turnSeqIdx: index('activity_events_turn_seq_idx').on(table.turnId, table.seq),
+    kindCreatedAtIdx: index('activity_events_kind_created_at_idx').on(table.kind, table.createdAt),
+    artifactIdIdx: index('activity_events_artifact_id_idx').on(table.artifactId),
+    dedupeKeyUniqueIdx: uniqueIndex('activity_events_dedupe_key_uidx').on(table.dedupeKey),
+  })
+);
+
 export const taskMessages = sqliteTable(
   'task_messages',
   {

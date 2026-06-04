@@ -1,6 +1,8 @@
 import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import {
+  activityArtifacts,
+  activityEvents,
   artifacts,
   blueprintArtifactAdoptions,
   blueprintDbDesignAdoptions,
@@ -36,6 +38,62 @@ const OCCUPIED_PROCESSOR_STATUSES = [
   'needs_human',
   'awaiting_commit_decision',
 ] as const;
+
+const KNOWN_ACTIVITY_KINDS = new Set([
+  'user.message',
+  'assistant.delta',
+  'assistant.message',
+  'assistant.pause',
+  'assistant.resume',
+  'assistant.raw_output',
+  'llm.request',
+  'llm.response_delta',
+  'llm.response_final',
+  'llm.decision_json',
+  'llm.schema_result',
+  'llm.error',
+  'runtime.decision',
+  'runtime.state',
+  'tool.call',
+  'tool.result',
+  'tool.error',
+  'command.output',
+  'file.diff',
+  'file.patch',
+  'file.write',
+  'verification.output',
+  'run.status',
+  'todo.status',
+  'transport.subscribe',
+  'transport.replay',
+  'transport.publish',
+  'ui.optimistic',
+  'system.info',
+  'system.error',
+  'unknown.activity',
+]);
+
+export type ActivitySource =
+  | 'user'
+  | 'assistant'
+  | 'supervisor'
+  | 'worker'
+  | 'tool'
+  | 'system'
+  | 'provider'
+  | 'runtime'
+  | 'transport'
+  | 'ui';
+
+export type ActivityStatus =
+  | 'started'
+  | 'delta'
+  | 'completed'
+  | 'failed'
+  | 'paused'
+  | 'resumed'
+  | 'info'
+  | 'unknown';
 
 export type ImplementationQueueEntryStatus =
   | 'queued'
@@ -124,6 +182,193 @@ export async function listTaskMessages(taskId: string) {
     .orderBy(taskMessages.createdAt);
 }
 
+function normalizeActivityKind(kind: string) {
+  return KNOWN_ACTIVITY_KINDS.has(kind) ? kind : 'unknown.activity';
+}
+
+function taskMessageRoleToActivityKind(role: string) {
+  if (role === 'user') return 'user.message';
+  if (role === 'assistant') return 'assistant.message';
+  if (role === 'tool') return 'tool.result';
+  return 'system.info';
+}
+
+function getToolDiffActivityKind(payload: any) {
+  if (payload?.intent !== 'tool_diff') return null;
+  if (payload?.toolName === 'apply_patch') return 'file.patch';
+  if (payload?.toolName === 'replace_content') return 'file.diff';
+  return 'file.diff';
+}
+
+function activityPayloadJson(payload: any, normalizedKind: string, originalKind: string) {
+  const base =
+    payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? payload
+      : payload === undefined
+        ? {}
+        : { rawPayload: payload };
+  if (normalizedKind === originalKind) return base;
+  return { ...base, originalKind, rawPayload: payload };
+}
+
+function taskMessageRoleToActivitySource(role: string): ActivitySource {
+  if (role === 'user') return 'user';
+  if (role === 'assistant') return 'assistant';
+  if (role === 'tool') return 'tool';
+  return 'system';
+}
+
+function runEventToActivityKind(eventType?: string | null, legacyType?: string | null) {
+  if (eventType === 'model.response_delta') return 'assistant.delta';
+  if (eventType === 'model.response_finished') return 'llm.response_final';
+  if (eventType === 'model.request_started') return 'llm.request';
+  if (eventType === 'model.response_parse_failed') return 'llm.error';
+  if (eventType === 'supervisor.decision') return 'llm.decision_json';
+  if (eventType === 'tool.call_started' || eventType === 'tool.call_progress') return 'tool.call';
+  if (eventType === 'tool.call_finished') return 'tool.result';
+  if (eventType === 'tool.policy_blocked') return 'tool.error';
+  if (eventType === 'verification.started' || eventType === 'verification.finished') {
+    return 'verification.output';
+  }
+  if (eventType?.startsWith('run.') || eventType?.startsWith('turn.')) return 'run.status';
+  if (eventType?.startsWith('safety.')) return 'runtime.decision';
+  if (eventType?.startsWith('system.'))
+    return eventType === 'system.error' ? 'system.error' : 'system.info';
+  if (legacyType === 'error') return 'system.error';
+  if (legacyType === 'state_change' || legacyType === 'checkpoint') return 'runtime.state';
+  return 'unknown.activity';
+}
+
+export async function appendActivityArtifact(data: {
+  taskId: string;
+  runId?: string | null;
+  kind: string;
+  path?: string | null;
+  contentText?: string | null;
+  metadataJson?: any;
+}) {
+  const [artifact] = await db
+    .insert(activityArtifacts)
+    .values({
+      taskId: data.taskId,
+      runId: data.runId ?? null,
+      kind: data.kind,
+      path: data.path ?? null,
+      contentText: data.contentText ?? null,
+      metadataJson: data.metadataJson ?? null,
+    })
+    .returning();
+  return artifact;
+}
+
+export async function appendActivityEvent(data: {
+  taskId: string;
+  runId?: string | null;
+  turnId?: string | null;
+  parentEventId?: string | null;
+  runSeq?: number | null;
+  kind: string;
+  source: ActivitySource | string;
+  status?: ActivityStatus | string | null;
+  text?: string | null;
+  payloadJson?: any;
+  artifactId?: string | null;
+  clientTempId?: string | null;
+  externalId?: string | null;
+  dedupeKey?: string | null;
+  ingestError?: string | null;
+  visibility?: string;
+  createdAt?: Date;
+}) {
+  const normalizedKind = normalizeActivityKind(data.kind);
+  const ingestError =
+    normalizedKind === data.kind
+      ? data.ingestError
+      : [data.ingestError, `Unsupported activity kind: ${data.kind}`].filter(Boolean).join('\n');
+
+  if (data.dedupeKey) {
+    const [existing] = await db
+      .select()
+      .from(activityEvents)
+      .where(eq(activityEvents.dedupeKey, data.dedupeKey));
+    if (existing) return existing;
+  }
+
+  const result = await db.transaction(async (tx) => {
+    const [seqRow] = await tx
+      .select({ maxSeq: sql<number>`coalesce(max(${activityEvents.seq}), 0)` })
+      .from(activityEvents)
+      .where(eq(activityEvents.taskId, data.taskId));
+    const seq = (seqRow?.maxSeq || 0) + 1;
+    const [event] = await tx
+      .insert(activityEvents)
+      .values({
+        taskId: data.taskId,
+        runId: data.runId ?? null,
+        turnId: data.turnId ?? null,
+        parentEventId: data.parentEventId ?? null,
+        seq,
+        runSeq: data.runSeq ?? null,
+        kind: normalizedKind,
+        source: data.source,
+        status: data.status ?? null,
+        text: data.text ?? null,
+        payloadJson: activityPayloadJson(data.payloadJson, normalizedKind, data.kind),
+        artifactId: data.artifactId ?? null,
+        clientTempId: data.clientTempId ?? null,
+        externalId: data.externalId ?? null,
+        dedupeKey: data.dedupeKey ?? null,
+        ingestError: ingestError || null,
+        visibility: data.visibility ?? 'visible',
+        createdAt: data.createdAt ?? new Date(),
+      })
+      .returning();
+    return event;
+  });
+
+  if (result) {
+    nightWorkersRealtimeBroker.publish(data.taskId, {
+      type: 'activity_event_created',
+      runId: data.runId ?? undefined,
+      seq: result.seq,
+      payload: { event: result },
+    });
+  }
+  return result;
+}
+
+export async function listActivityEventsForTask(taskId: string, options?: { afterSeq?: number }) {
+  const predicates = [eq(activityEvents.taskId, taskId)];
+  if (typeof options?.afterSeq === 'number') {
+    predicates.push(gt(activityEvents.seq, options.afterSeq));
+  }
+  return db
+    .select()
+    .from(activityEvents)
+    .where(and(...predicates))
+    .orderBy(activityEvents.seq, activityEvents.createdAt);
+}
+
+export async function listActivityEventsForRun(runId: string, options?: { afterSeq?: number }) {
+  const predicates = [eq(activityEvents.runId, runId)];
+  if (typeof options?.afterSeq === 'number') {
+    predicates.push(gt(activityEvents.seq, options.afterSeq));
+  }
+  return db
+    .select()
+    .from(activityEvents)
+    .where(and(...predicates))
+    .orderBy(activityEvents.seq, activityEvents.createdAt);
+}
+
+export async function listActivityArtifactsForTask(taskId: string) {
+  return db
+    .select()
+    .from(activityArtifacts)
+    .where(eq(activityArtifacts.taskId, taskId))
+    .orderBy(activityArtifacts.createdAt);
+}
+
 export async function createTaskMessage(data: {
   taskId: string;
   runId?: string | null;
@@ -144,6 +389,59 @@ export async function createTaskMessage(data: {
     })
     .returning();
   if (message) {
+    await appendActivityEvent({
+      taskId: data.taskId,
+      runId: data.runId ?? null,
+      turnId: message.id,
+      kind: taskMessageRoleToActivityKind(data.role),
+      source: taskMessageRoleToActivitySource(data.role),
+      status: 'completed',
+      text: data.content,
+      payloadJson: {
+        message,
+        messageType: data.messageType ?? null,
+        metadata: data.payloadJson ?? null,
+      },
+      externalId: message.id,
+      dedupeKey: `task_message:${message.id}`,
+      createdAt: message.createdAt,
+    });
+    const diffActivityKind = getToolDiffActivityKind(data.payloadJson);
+    if (diffActivityKind) {
+      const artifact = await appendActivityArtifact({
+        taskId: data.taskId,
+        runId: data.runId ?? null,
+        kind: diffActivityKind === 'file.patch' ? 'patch' : 'diff',
+        path:
+          data.payloadJson?.codeBlock?.filename ?? `${data.payloadJson?.toolName || 'tool'}.diff`,
+        contentText: data.payloadJson?.codeBlock?.code ?? data.content,
+        metadataJson: {
+          messageId: message.id,
+          toolName: data.payloadJson?.toolName,
+          title: data.payloadJson?.title,
+          iteration: data.payloadJson?.iteration,
+          toolResult: data.payloadJson?.toolResult,
+        },
+      });
+      await appendActivityEvent({
+        taskId: data.taskId,
+        runId: data.runId ?? null,
+        turnId: message.id,
+        kind: diffActivityKind,
+        source: 'tool',
+        status: data.payloadJson?.toolResult?.ok === false ? 'failed' : 'completed',
+        text: data.payloadJson?.title ?? message.content.slice(0, 240),
+        payloadJson: {
+          messageId: message.id,
+          toolName: data.payloadJson?.toolName,
+          toolResult: data.payloadJson?.toolResult,
+        },
+        artifactId: artifact?.id ?? null,
+        externalId: message.id,
+        dedupeKey: `task_message_diff:${message.id}`,
+        createdAt: message.createdAt,
+      });
+    }
     nightWorkersRealtimeBroker.publish(data.taskId, {
       type: 'task_message_created',
       runId: data.runId ?? undefined,
@@ -812,14 +1110,6 @@ export async function createTaskEvent(data: {
     .insert(taskEvents)
     .values({ ...data, seq })
     .returning();
-  const [run] = await db.select().from(taskRuns).where(eq(taskRuns.id, data.taskRunId));
-  if (event && run) {
-    nightWorkersRealtimeBroker.publish(run.taskId, {
-      type: 'task_event_created',
-      runId: run.id,
-      event,
-    });
-  }
   return event;
 }
 
@@ -863,7 +1153,57 @@ export async function createRunEvent(
     .set({ payloadJson: patchedPayload })
     .where(eq(taskEvents.id, created.id))
     .returning();
-  return updated ?? { ...created, payloadJson: patchedPayload };
+  const finalEvent = updated ?? { ...created, payloadJson: patchedPayload };
+  let taskId = event.taskId || (patchedPayload.runEvent as any)?.taskId;
+  if (!taskId) {
+    const [run] = await db.select().from(taskRuns).where(eq(taskRuns.id, event.runId));
+    taskId = run?.taskId;
+  }
+  if (taskId) {
+    await appendActivityEvent({
+      taskId,
+      runId: event.runId,
+      turnId:
+        event.type === 'model.response_delta' || event.type === 'model.response_finished'
+          ? `assistant:${event.runId}`
+          : undefined,
+      runSeq: finalEvent.seq,
+      kind: runEventToActivityKind(event.type, finalEvent.type),
+      source:
+        event.actor === 'worker'
+          ? 'worker'
+          : event.actor === 'tool'
+            ? 'tool'
+            : event.actor === 'supervisor'
+              ? 'supervisor'
+              : event.actor === 'runtime'
+                ? 'runtime'
+                : event.actor === 'human'
+                  ? 'user'
+                  : 'system',
+      status:
+        event.type === 'model.response_delta'
+          ? 'delta'
+          : finalEvent.type === 'error'
+            ? 'failed'
+            : 'completed',
+      text: event.message,
+      payloadJson: {
+        runEvent: patchedPayload.runEvent,
+        legacyEvent: finalEvent,
+        legacyPayload: options?.legacyPayload ?? null,
+      },
+      externalId: finalEvent.id,
+      dedupeKey: `task_event:${finalEvent.id}`,
+      createdAt: finalEvent.timestamp,
+    });
+    nightWorkersRealtimeBroker.publish(taskId, {
+      type: 'task_event_created',
+      runId: event.runId,
+      event: finalEvent,
+    });
+  }
+  return finalEvent;
 }
 
 export async function listTaskEventsForRun(taskRunId: string, options?: { afterSeq?: number }) {

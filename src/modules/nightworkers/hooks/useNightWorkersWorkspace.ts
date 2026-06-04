@@ -2,12 +2,14 @@ import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tansta
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { client } from '../../../lib/api';
+import { dedupeAndSortActivityEvents } from '../activityTranscript';
 import {
   dedupeAndSortRunEvents,
   getRealtimeMessageDedupeKey,
   mergeRunEvents,
 } from '../realtimeEvents';
 import type {
+  ActivityEvent,
   AgentHookConfig,
   AgentHookInput,
   AgentHookTestResult,
@@ -87,6 +89,7 @@ export type NightWorkersWorkspaceState = {
   latestRun: TaskRun | undefined;
   taskMessages: TaskMessage[];
   latestRunEvents: TaskEvent[];
+  activityEvents: ActivityEvent[];
   activeStreamingResponse: string;
   latestRunTodos: TaskRunTodo[];
   latestRunReviews: ReviewResult[];
@@ -298,6 +301,19 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       const res = await fetch(`/api/tasks/${activeSessionId}/messages`);
       if (!res.ok) throw new Error('Failed to fetch task messages');
       return (await res.json()) as TaskMessage[];
+    },
+    enabled: !!activeSessionId,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
+  const { data: activityEvents = [] } = useQuery({
+    queryKey: ['activityEvents', activeSessionId],
+    queryFn: async () => {
+      if (!activeSessionId) return [];
+      const res = await fetch(`/api/tasks/${activeSessionId}/activity-events`);
+      if (!res.ok) throw new Error('Failed to fetch activity events');
+      return (await res.json()) as ActivityEvent[];
     },
     enabled: !!activeSessionId,
     refetchOnWindowFocus: false,
@@ -991,6 +1007,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
             timestamp?: string;
             replayed?: boolean;
             payload?: {
+              event?: ActivityEvent;
               message?: TaskMessage;
               run?: TaskRun;
               status?: string;
@@ -1007,6 +1024,14 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
               timestamp?: unknown;
             };
           };
+          if (msg.type === 'activity_event_created' && msg.payload?.event) {
+            const incoming = msg.payload.event;
+            if (activeSessionId && incoming.taskId !== activeSessionId) return;
+            queryClient.setQueryData<ActivityEvent[]>(
+              ['activityEvents', incoming.taskId],
+              (prev = []) => dedupeAndSortActivityEvents([...prev, incoming])
+            );
+          }
           if (msg.type === 'task_llm_delta' && activeSessionId) {
             const taskId = msg.taskId || activeSessionId;
             if (taskId !== activeSessionId) return;
@@ -1217,6 +1242,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     latestRun,
     taskMessages,
     latestRunEvents,
+    activityEvents,
     activeStreamingResponse: activeSessionId ? streamingTextByTask[activeSessionId] || '' : '',
     latestRunTodos,
     latestRunReviews,
