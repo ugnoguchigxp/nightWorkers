@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
+import { useWorkspaceAppearanceState } from '../contexts/WorkspaceAppearanceContext';
 import {
   useWorkspaceLayoutActions,
   useWorkspaceLayoutState,
@@ -48,6 +49,7 @@ function buildBlueprintArtifactRef(message: TaskMessage): WorkbenchArtifactRef {
 
 export function NightWorkersShell(props: NightWorkersShellProps) {
   const { workspace } = props;
+  const { attributes: appearanceAttributes } = useWorkspaceAppearanceState();
   const { panelSizes } = useWorkspaceLayoutState();
   const { setPanelSizes } = useWorkspaceLayoutActions();
   const initialPanelSizes = useRef(panelSizes);
@@ -175,7 +177,10 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   }, []);
 
   return (
-    <div className="h-screen overflow-hidden bg-[#111827] text-slate-100">
+    <div
+      className="nightworkers-shell h-screen overflow-hidden bg-[#111827] text-slate-100"
+      {...appearanceAttributes}
+    >
       <Group
         className="h-screen min-h-0"
         defaultLayout={{

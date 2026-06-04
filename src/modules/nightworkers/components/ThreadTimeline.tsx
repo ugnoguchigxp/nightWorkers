@@ -77,7 +77,7 @@ export function ThreadTimeline({
     : null;
 
   return (
-    <div className="space-y-5 p-6">
+    <div className="nightworkers-chat-window space-y-5 p-6">
       <TodoProgress todos={latestRunTodos} />
       <ContextPackCard latestRun={latestRun} />
       <DiffSummaryCard session={session} latestRun={latestRun} onOpenArtifact={onOpenArtifact} />
@@ -198,7 +198,7 @@ function FinalReportCard({ latestRun }: { latestRun?: TaskRun }) {
   if (!latestRun?.finalReport?.trim()) return null;
   return (
     <ThreadMessage messageRole="assistant" timestamp={formatFinishedTime(latestRun.finishedAt)}>
-      <div className="whitespace-pre-wrap text-sm leading-6 text-slate-100">
+      <div className="nightworkers-message-content whitespace-pre-wrap text-sm leading-6 text-slate-100">
         {latestRun.finalReport}
       </div>
     </ThreadMessage>
@@ -729,21 +729,23 @@ function MessagePayload({
     const validation = metadata.validation;
     const issueCount = Array.isArray(validation?.issues) ? validation.issues.length : 0;
     return (
-      <div className="space-y-3">
+      <div className="nightworkers-artifact-message space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-xs font-semibold uppercase text-cyan-200">Blueprint artifact</div>
-            <div className="mt-1 truncate text-sm font-semibold text-slate-100">
+            <div className="nightworkers-artifact-kicker text-xs font-semibold uppercase text-cyan-200">
+              Blueprint artifact
+            </div>
+            <div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold text-slate-100">
               {metadata.appBlueprint.name || metadata.title || 'App Blueprint'}
             </div>
-            <div className="mt-1 text-xs text-slate-400">
+            <div className="nightworkers-artifact-meta mt-1 text-xs text-slate-400">
               {metadata.appBlueprint.screens?.length || 0} screens /{' '}
               {countBlueprintSections(metadata.appBlueprint)} sections / {issueCount} issues
             </div>
           </div>
           <button
             type="button"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-cyan-500/60 text-cyan-100 hover:bg-cyan-950/30"
+            className="nightworkers-artifact-open-button inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-cyan-500/60 text-cyan-100 hover:bg-cyan-950/30"
             onClick={() =>
               onOpenArtifact({
                 id: `message-${message.id}`,
@@ -762,7 +764,7 @@ function MessagePayload({
             <PanelsTopLeft className="h-4 w-4" />
           </button>
         </div>
-        <p className="line-clamp-3 text-xs leading-5 text-slate-300">
+        <p className="nightworkers-artifact-summary line-clamp-3 text-xs leading-5 text-slate-300">
           {summarizeBlueprintCard(metadata.appBlueprint, message.content)}
         </p>
       </div>
@@ -771,23 +773,23 @@ function MessagePayload({
   if (message.messageType === 'markdown_document' && metadata?.componentDesign) {
     const componentDesign = metadata.componentDesign;
     return (
-      <div className="space-y-3">
+      <div className="nightworkers-artifact-message space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-xs font-semibold uppercase text-cyan-200">
+            <div className="nightworkers-artifact-kicker text-xs font-semibold uppercase text-cyan-200">
               Component design artifact
             </div>
-            <div className="mt-1 truncate text-sm font-semibold text-slate-100">
+            <div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold text-slate-100">
               {componentDesign.componentName || metadata.title || 'Component Design'}
             </div>
-            <div className="mt-1 text-xs text-slate-400">
+            <div className="nightworkers-artifact-meta mt-1 text-xs text-slate-400">
               {componentDesign.variants?.length || 0} variants /{' '}
               {componentDesign.tokenChanges?.length || 0} token changes
             </div>
           </div>
           <button
             type="button"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-cyan-500/60 text-cyan-100 hover:bg-cyan-950/30"
+            className="nightworkers-artifact-open-button inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-cyan-500/60 text-cyan-100 hover:bg-cyan-950/30"
             onClick={() =>
               onOpenArtifact({
                 id: `message-${message.id}`,
@@ -806,7 +808,7 @@ function MessagePayload({
             <PanelsTopLeft className="h-4 w-4" />
           </button>
         </div>
-        <p className="line-clamp-3 text-xs leading-5 text-slate-300">
+        <p className="nightworkers-artifact-summary line-clamp-3 text-xs leading-5 text-slate-300">
           {componentDesign.summary || message.content}
         </p>
       </div>

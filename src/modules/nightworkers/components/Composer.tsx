@@ -55,10 +55,10 @@ export function Composer({
 
   return (
     <div className="bg-transparent p-4">
-      <div className="relative mx-auto max-w-4xl rounded-2xl border border-slate-600/70 bg-[#1e293b] p-4 shadow-[0_0_0_1px_rgba(148,163,184,0.08)]">
+      <div className="nightworkers-composer relative mx-auto max-w-4xl rounded-2xl border border-slate-600/70 bg-[#1e293b] p-4 shadow-[0_0_0_1px_rgba(148,163,184,0.08)]">
         <div className={`absolute -top-[5px] left-4 h-3 w-3 rounded-full ${wsStatusDotClass}`} />
         {diffSummary ? (
-          <div className="absolute -top-3 right-4 rounded-full border border-slate-600/80 bg-slate-800 px-3 py-1 text-[11px]">
+          <div className="nightworkers-composer-badge absolute -top-3 right-4 rounded-full border border-slate-600/80 bg-slate-800 px-3 py-1 text-[11px]">
             <span className="text-slate-200">{diffSummary.files} files</span>{' '}
             <span className="text-emerald-400">+{diffSummary.stats.added}</span>{' '}
             <span className="text-rose-400">-{diffSummary.stats.deleted}</span>
@@ -81,9 +81,9 @@ export function Composer({
           }}
           disabled={disabled}
           placeholder="指示を入力（送信: Cmd+Enter / Ctrl+Enter）"
-          className="min-h-[58px] w-full resize-none border-0 bg-transparent text-sm text-slate-100 placeholder:text-slate-300/60 focus:outline-none"
+          className="nightworkers-composer-input min-h-[58px] w-full resize-none border-0 bg-transparent text-sm text-slate-100 placeholder:text-slate-300/60 focus:outline-none"
         />
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-600/50 pt-3">
+        <div className="nightworkers-composer-toolbar mt-3 flex flex-wrap items-center gap-2 border-t border-slate-600/50 pt-3">
           <div className="flex shrink-0 items-center gap-2">
             <ModelThinkingControls
               model={model}
@@ -103,7 +103,11 @@ export function Composer({
               await onSubmit(text, intent);
             }}
             disabled={!canSubmit}
-            className={`ml-auto flex h-8 w-8 items-center justify-center rounded-full ${canSubmit ? 'bg-slate-200 text-slate-900' : 'bg-slate-700 text-slate-400'}`}
+            className={`nightworkers-composer-submit ml-auto flex h-8 w-8 items-center justify-center rounded-full ${
+              canSubmit
+                ? 'nightworkers-composer-submit-ready bg-slate-200 text-slate-900'
+                : 'nightworkers-composer-submit-idle bg-slate-700 text-slate-400'
+            }`}
           >
             <ArrowUp className="h-4 w-4" />
           </button>

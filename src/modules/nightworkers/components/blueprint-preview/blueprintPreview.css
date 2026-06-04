@@ -54,21 +54,22 @@
 }
 
 .blueprint-preview[data-theme="campfire"] {
-  --background: hsl(34 100% 98%);
-  --foreground: hsl(24 42% 14%);
-  --card: hsl(0 0% 100%);
-  --card-foreground: hsl(24 42% 14%);
-  --primary: hsl(25 96% 54%);
-  --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(31 100% 92%);
-  --secondary-foreground: hsl(24 48% 18%);
-  --muted: hsl(31 76% 94%);
-  --muted-foreground: hsl(24 24% 38%);
-  --accent: hsl(18 100% 88%);
-  --accent-foreground: hsl(20 74% 22%);
-  --border: hsl(28 74% 76%);
-  --input: hsl(28 74% 76%);
-  --ring: hsl(25 96% 54%);
+  --background: hsl(24 38% 8%);
+  --foreground: hsl(35 52% 92%);
+  --card: hsl(24 34% 13%);
+  --card-foreground: hsl(35 52% 92%);
+  --primary: hsl(25 96% 58%);
+  --primary-foreground: hsl(24 42% 8%);
+  --secondary: hsl(25 30% 18%);
+  --secondary-foreground: hsl(35 48% 90%);
+  --muted: hsl(25 28% 17%);
+  --muted-foreground: hsl(34 24% 70%);
+  --accent: hsl(16 72% 34%);
+  --accent-foreground: hsl(35 52% 94%);
+  --border: hsl(25 30% 28%);
+  --input: hsl(25 30% 28%);
+  --ring: hsl(25 96% 58%);
+  color-scheme: dark;
 }
 
 .blueprint-preview[data-theme="eclipse"] {
@@ -259,6 +260,13 @@
   --foreground: hsl(0 0% 100%);
   --muted-foreground: hsl(210 30% 84%);
   --border: hsl(210 25% 58%);
+}
+
+.blueprint-preview[data-theme="campfire"][data-contrast="high"] {
+  --foreground: hsl(35 68% 98%);
+  --muted-foreground: hsl(34 36% 84%);
+  --border: hsl(25 38% 52%);
+  --ring: hsl(25 96% 62%);
 }
 
 .blueprint-preview[data-motion="reduced"],

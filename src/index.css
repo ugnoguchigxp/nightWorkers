@@ -41,6 +41,591 @@
 
 /* Add any app-specific overrides here */
 
+.nightworkers-shell {
+  --nw-background: hsl(222 42% 10%);
+  --nw-panel: hsl(222 47% 11%);
+  --nw-surface: hsl(222 34% 14%);
+  --nw-surface-soft: hsl(222 32% 17%);
+  --nw-text: hsl(0 0% 98%);
+  --nw-muted-text: hsl(210 24% 82%);
+  --nw-subtle-text: hsl(215 14% 55%);
+  --nw-primary: hsl(188 86% 58%);
+  --nw-primary-foreground: hsl(222 44% 6%);
+  --nw-danger: hsl(350 88% 68%);
+  --nw-border: hsl(218 24% 30% / 0.78);
+  --nw-strong-border: hsl(218 28% 44% / 0.88);
+  --nw-radius: 0.5rem;
+  --nw-control-radius: calc(var(--nw-radius) - 0.125rem);
+  --nw-control-height: 2rem;
+  --nw-page-padding: 1.5rem;
+  --nw-gap: 0.75rem;
+  --nw-font-size: 0.875rem;
+  --nw-shadow-x: 0px;
+  --nw-shadow-y: 1px;
+  --nw-shadow:
+    var(--nw-shadow-x) var(--nw-shadow-y) 3px 0 rgb(0 0 0 / 0.18),
+    var(--nw-shadow-x) var(--nw-shadow-y) 2px -1px rgb(0 0 0 / 0.22);
+  --nightworkers-scrollbar-track: var(--nw-background);
+  --nightworkers-scrollbar-thumb: var(--nw-strong-border);
+  --nightworkers-scrollbar-thumb-hover: var(--nw-primary);
+  background: var(--nw-background);
+  color: var(--nw-text);
+  color-scheme: dark;
+  font-family: var(--font-sans, "Geist Variable", system-ui, sans-serif);
+  font-size: var(--nw-font-size);
+}
+
+.nightworkers-shell[data-theme="light"] {
+  --nw-background: hsl(210 24% 96%);
+  --nw-panel: hsl(0 0% 100%);
+  --nw-surface: hsl(210 24% 98%);
+  --nw-surface-soft: hsl(210 24% 93%);
+  --nw-text: hsl(215 25% 14%);
+  --nw-muted-text: hsl(215 13% 42%);
+  --nw-subtle-text: hsl(215 11% 54%);
+  --nw-primary: hsl(210 62% 49%);
+  --nw-primary-foreground: hsl(0 0% 100%);
+  --nw-border: hsl(214 18% 78% / 0.9);
+  --nw-strong-border: hsl(214 18% 64% / 0.95);
+  color-scheme: light;
+}
+
+.nightworkers-shell[data-theme="eclipse"] {
+  --nw-background: hsl(245 46% 90%);
+  --nw-panel: hsl(245 44% 84%);
+  --nw-surface: hsl(245 42% 80%);
+  --nw-surface-soft: hsl(245 38% 76%);
+  --nw-text: hsl(241 62% 16%);
+  --nw-muted-text: hsl(240 23% 32%);
+  --nw-primary: hsl(248 30% 45%);
+  --nw-primary-foreground: hsl(0 0% 100%);
+  --nw-border: hsl(245 26% 64% / 0.9);
+  color-scheme: light;
+}
+
+.nightworkers-shell[data-theme="macosclassic"] {
+  --nw-background: hsl(0 0% 89%);
+  --nw-panel: hsl(0 0% 96%);
+  --nw-surface: hsl(0 0% 92%);
+  --nw-surface-soft: hsl(0 0% 86%);
+  --nw-text: hsl(215 20% 12%);
+  --nw-muted-text: hsl(215 12% 38%);
+  --nw-primary: hsl(210 85% 45%);
+  --nw-primary-foreground: hsl(0 0% 100%);
+  --nw-border: hsl(0 0% 68% / 0.95);
+  color-scheme: light;
+}
+
+.nightworkers-shell[data-theme="campfire"] {
+  --nw-background: hsl(24 38% 8%);
+  --nw-panel: hsl(24 34% 13%);
+  --nw-surface: hsl(25 30% 18%);
+  --nw-surface-soft: hsl(25 28% 22%);
+  --nw-text: hsl(35 68% 96%);
+  --nw-muted-text: hsl(34 36% 82%);
+  --nw-subtle-text: hsl(32 16% 58%);
+  --nw-primary: hsl(25 96% 58%);
+  --nw-primary-foreground: hsl(24 42% 8%);
+  --nw-border: hsl(25 30% 30% / 0.9);
+  --nw-strong-border: hsl(25 34% 42% / 0.92);
+  color-scheme: dark;
+}
+
+.nightworkers-shell[data-theme="mint"] {
+  --nw-background: hsl(154 30% 96%);
+  --nw-panel: hsl(150 34% 91%);
+  --nw-surface: hsl(152 30% 92%);
+  --nw-surface-soft: hsl(156 34% 82%);
+  --nw-text: hsl(160 38% 18%);
+  --nw-muted-text: hsl(158 22% 42%);
+  --nw-primary: hsl(158 42% 40%);
+  --nw-primary-foreground: hsl(0 0% 100%);
+  --nw-border: hsl(153 24% 72% / 0.9);
+  color-scheme: light;
+}
+
+.nightworkers-shell[data-theme="bloom"] {
+  --nw-background: hsl(344 76% 96%);
+  --nw-panel: hsl(337 68% 92%);
+  --nw-surface: hsl(333 52% 91%);
+  --nw-surface-soft: hsl(350 84% 87%);
+  --nw-text: hsl(327 34% 18%);
+  --nw-muted-text: hsl(325 18% 45%);
+  --nw-primary: hsl(338 68% 63%);
+  --nw-primary-foreground: hsl(0 0% 100%);
+  --nw-border: hsl(334 38% 74% / 0.9);
+  color-scheme: light;
+}
+
+.nightworkers-shell[data-theme="mocha"] {
+  --nw-background: hsl(38 38% 94%);
+  --nw-panel: hsl(34 34% 88%);
+  --nw-surface: hsl(36 30% 86%);
+  --nw-surface-soft: hsl(31 34% 80%);
+  --nw-text: hsl(24 32% 18%);
+  --nw-muted-text: hsl(24 18% 42%);
+  --nw-primary: hsl(188 58% 36%);
+  --nw-primary-foreground: hsl(38 54% 96%);
+  --nw-border: hsl(28 28% 68% / 0.9);
+  color-scheme: light;
+}
+
+.nightworkers-shell[data-density="default"] {
+  --nw-control-height: 2.25rem;
+  --nw-page-padding: 1.75rem;
+  --nw-gap: 0.875rem;
+  --nw-font-size: 0.875rem;
+}
+
+.nightworkers-shell[data-density="comfortable"] {
+  --nw-control-height: 2.75rem;
+  --nw-page-padding: 2rem;
+  --nw-gap: 1rem;
+  --nw-font-size: 0.9375rem;
+}
+
+.nightworkers-shell[data-shape="sharp"] {
+  --nw-radius: 0;
+  --nw-control-radius: 0;
+}
+
+.nightworkers-shell[data-shape="rounded"] {
+  --nw-radius: 0.875rem;
+  --nw-control-radius: 0.75rem;
+}
+
+.nightworkers-shell[data-shape="pill"] {
+  --nw-radius: 0.5rem;
+  --nw-control-radius: 9999px;
+}
+
+.nightworkers-shell[data-shadow="none"] {
+  --nw-shadow: none;
+}
+
+.nightworkers-shell[data-shadow="medium"] {
+  --nw-shadow:
+    calc(var(--nw-shadow-x) * 4) calc(var(--nw-shadow-y) * 4) 18px -12px rgb(0 0 0 / 0.38),
+    calc(var(--nw-shadow-x) * 2) calc(var(--nw-shadow-y) * 2) 8px -6px rgb(0 0 0 / 0.3);
+}
+
+.nightworkers-shell[data-shadow="strong"] {
+  --nw-shadow:
+    calc(var(--nw-shadow-x) * 7) calc(var(--nw-shadow-y) * 7) 40px -20px rgb(0 0 0 / 0.48),
+    calc(var(--nw-shadow-x) * 4) calc(var(--nw-shadow-y) * 4) 18px -16px rgb(0 0 0 / 0.38);
+}
+
+.nightworkers-shell[data-shadow-direction="45deg"] {
+  --nw-shadow-x: 1px;
+  --nw-shadow-y: 1px;
+}
+
+.nightworkers-shell[data-shadow-direction="90deg"] {
+  --nw-shadow-x: 1px;
+  --nw-shadow-y: 0px;
+}
+
+.nightworkers-shell[data-shadow-direction="135deg"] {
+  --nw-shadow-x: 1px;
+  --nw-shadow-y: -1px;
+}
+
+.nightworkers-shell[data-shadow-direction="180deg"] {
+  --nw-shadow-x: 0px;
+  --nw-shadow-y: -1px;
+}
+
+.nightworkers-shell[data-shadow-direction="225deg"] {
+  --nw-shadow-x: -1px;
+  --nw-shadow-y: -1px;
+}
+
+.nightworkers-shell[data-shadow-direction="270deg"] {
+  --nw-shadow-x: -1px;
+  --nw-shadow-y: 0px;
+}
+
+.nightworkers-shell[data-shadow-direction="315deg"] {
+  --nw-shadow-x: -1px;
+  --nw-shadow-y: 1px;
+}
+
+.nightworkers-shell[data-font="system"] {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.nightworkers-shell[data-font="serif"] {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.nightworkers-shell[data-font="mono"] {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.nightworkers-shell[data-contrast="high"] {
+  --nw-text: hsl(0 0% 100%);
+  --nw-muted-text: hsl(210 30% 84%);
+  --nw-border: hsl(210 25% 58% / 0.96);
+}
+
+.nightworkers-shell[data-contrast="high"][data-theme]:not([data-theme="dark"]):not(
+    [data-theme="campfire"]
+  ) {
+  --nw-text: hsl(210 30% 4%);
+  --nw-muted-text: hsl(210 15% 24%);
+  --nw-border: hsl(210 18% 42% / 0.96);
+}
+
+.nightworkers-shell[data-motion="reduced"],
+.nightworkers-shell[data-motion="reduced"] * {
+  scroll-behavior: auto;
+  transition-duration: 0ms;
+  animation-duration: 0ms;
+}
+
+.nightworkers-shell [class~="bg-[#111827]"],
+.nightworkers-shell [class~="bg-[#121214]"] {
+  background-color: var(--nw-background);
+}
+
+.nightworkers-shell [class~="bg-[#0f172a]"],
+.nightworkers-shell [class~="bg-[#16161a]"],
+.nightworkers-shell [class~="bg-[#1e293b]"],
+.nightworkers-shell [class~="bg-[#1e1e2e]"],
+.nightworkers-shell [class~="bg-slate-900/30"],
+.nightworkers-shell [class~="bg-slate-950/45"],
+.nightworkers-shell [class~="bg-slate-950/55"],
+.nightworkers-shell [class~="bg-zinc-950"],
+.nightworkers-shell [class~="bg-zinc-950/30"],
+.nightworkers-shell [class~="bg-zinc-950/40"],
+.nightworkers-shell [class~="bg-zinc-950/60"] {
+  background-color: var(--nw-panel);
+}
+
+.nightworkers-shell [class~="bg-slate-800"],
+.nightworkers-shell [class~="bg-slate-800/40"],
+.nightworkers-shell [class~="bg-slate-800/50"],
+.nightworkers-shell [class~="bg-slate-800/60"],
+.nightworkers-shell [class~="bg-zinc-800"],
+.nightworkers-shell [class~="bg-zinc-800/40"],
+.nightworkers-shell [class~="bg-zinc-900"],
+.nightworkers-shell [class~="bg-zinc-900/50"],
+.nightworkers-shell [class~="bg-zinc-900/60"],
+.nightworkers-shell [class~="bg-slate-700/40"] {
+  background-color: var(--nw-surface-soft);
+}
+
+.nightworkers-shell [class~="border-slate-700/70"],
+.nightworkers-shell [class~="border-slate-700/80"],
+.nightworkers-shell [class~="border-slate-600/80"],
+.nightworkers-shell [class~="border-slate-600/70"],
+.nightworkers-shell [class~="border-slate-600/50"],
+.nightworkers-shell [class~="border-slate-500/70"],
+.nightworkers-shell [class~="border-slate-500/60"],
+.nightworkers-shell [class~="border-zinc-800"],
+.nightworkers-shell [class~="border-zinc-800/60"],
+.nightworkers-shell [class~="border-zinc-800/80"],
+.nightworkers-shell [class~="border-zinc-700/50"],
+.nightworkers-shell [class~="border-zinc-700"] {
+  border-color: var(--nw-border);
+}
+
+.nightworkers-shell [class~="text-slate-100"],
+.nightworkers-shell [class~="text-slate-50"],
+.nightworkers-shell [class~="text-zinc-100"],
+.nightworkers-shell [class~="text-slate-200"],
+.nightworkers-shell [class~="text-zinc-200"],
+.nightworkers-shell [class~="text-slate-200/90"] {
+  color: var(--nw-text);
+}
+
+.nightworkers-shell [class~="text-slate-300"],
+.nightworkers-shell [class~="text-slate-300/70"],
+.nightworkers-shell [class~="text-slate-300/80"],
+.nightworkers-shell [class~="text-slate-300/60"],
+.nightworkers-shell [class~="text-zinc-300"],
+.nightworkers-shell [class~="text-zinc-400"] {
+  color: var(--nw-muted-text);
+}
+
+.nightworkers-shell [class~="text-slate-400"],
+.nightworkers-shell [class~="text-slate-500"],
+.nightworkers-shell [class~="text-zinc-500"] {
+  color: var(--nw-subtle-text);
+}
+
+.nightworkers-shell [class~="text-indigo-400"],
+.nightworkers-shell [class~="text-cyan-100"],
+.nightworkers-shell [class~="text-cyan-200"],
+.nightworkers-shell [class~="text-cyan-300"],
+.nightworkers-shell [class~="text-cyan-400"],
+.nightworkers-shell [class~="text-cyan-500"] {
+  color: var(--nw-primary);
+}
+
+.nightworkers-shell [class~="border-indigo-500"],
+.nightworkers-shell [class~="border-indigo-400"],
+.nightworkers-shell [class~="border-cyan-400/70"],
+.nightworkers-shell [class~="border-cyan-500/70"] {
+  border-color: var(--nw-primary);
+}
+
+.nightworkers-shell [class~="bg-indigo-500"],
+.nightworkers-shell [class~="bg-cyan-500"],
+.nightworkers-shell [class~="bg-cyan-950/25"],
+.nightworkers-shell [class~="bg-cyan-950/30"] {
+  background-color: color-mix(in srgb, var(--nw-primary) 78%, transparent);
+  color: var(--nw-primary-foreground);
+}
+
+.nightworkers-shell [class*="rounded"] {
+  border-radius: var(--nw-radius);
+}
+
+.nightworkers-shell button,
+.nightworkers-shell input,
+.nightworkers-shell textarea,
+.nightworkers-shell select {
+  border-radius: var(--nw-control-radius);
+}
+
+.nightworkers-shell [class~="p-8"] {
+  padding: var(--nw-page-padding);
+}
+
+.nightworkers-shell [class~="space-y-6"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: calc(var(--nw-gap) * 1.5);
+}
+
+.nightworkers-shell[data-card-variant="elevated"] [class*="border"][class*="bg-"] {
+  box-shadow: var(--nw-shadow);
+}
+
+.nightworkers-shell[data-card-variant="plain"] [class*="border"][class*="bg-"] {
+  box-shadow: none;
+}
+
+.nightworkers-shell[data-button-variant="outline"] button:not(:disabled) {
+  background-color: transparent;
+}
+
+.nightworkers-shell[data-button-variant="soft"] button:not(:disabled) {
+  background-color: color-mix(in srgb, var(--nw-primary) 16%, var(--nw-surface));
+}
+
+.nightworkers-settings-button {
+  background: var(--nw-panel);
+  border-color: var(--nw-border);
+  border-radius: var(--nw-control-radius);
+  color: var(--nw-text);
+  box-shadow: var(--nw-shadow);
+}
+
+.nightworkers-settings-button:hover {
+  background: var(--nw-surface-soft);
+  color: var(--nw-primary);
+}
+
+.nightworkers-composer {
+  background: color-mix(in srgb, var(--nw-panel) 88%, var(--nw-primary) 12%);
+  border-color: var(--nw-strong-border);
+  border-radius: var(--nw-radius);
+  box-shadow: var(--nw-shadow);
+  color: var(--nw-text);
+}
+
+.nightworkers-composer-badge {
+  background: var(--nw-surface);
+  border-color: var(--nw-border);
+}
+
+.nightworkers-composer-input {
+  color: var(--nw-text);
+  caret-color: var(--nw-primary);
+}
+
+.nightworkers-composer-input::placeholder {
+  color: color-mix(in srgb, var(--nw-muted-text) 72%, transparent);
+}
+
+.nightworkers-composer-toolbar {
+  border-color: var(--nw-border);
+}
+
+.nightworkers-control-label {
+  color: var(--nw-subtle-text);
+}
+
+.nightworkers-control-select {
+  background: var(--nw-surface);
+  border-color: var(--nw-border);
+  border-radius: var(--nw-control-radius);
+  color: var(--nw-text);
+  min-height: var(--nw-control-height);
+}
+
+.nightworkers-composer-submit {
+  border-radius: var(--nw-control-radius);
+  min-height: var(--nw-control-height);
+}
+
+.nightworkers-composer-submit-ready {
+  background: var(--nw-primary);
+  color: var(--nw-primary-foreground);
+}
+
+.nightworkers-composer-submit-idle {
+  background: var(--nw-surface-soft);
+  color: var(--nw-subtle-text);
+}
+
+.nightworkers-chat-window {
+  color: var(--nw-text);
+}
+
+.nightworkers-message-bubble {
+  border-color: var(--nw-border);
+  border-radius: var(--nw-radius);
+  box-shadow: var(--nw-shadow);
+  color: var(--nw-text);
+}
+
+.nightworkers-message-bubble-user {
+  background: color-mix(in srgb, var(--nw-primary) 22%, var(--nw-panel));
+}
+
+.nightworkers-message-bubble-assistant {
+  background: var(--nw-panel);
+}
+
+.nightworkers-message-bubble-system {
+  background: var(--nw-surface);
+  color: var(--nw-muted-text);
+}
+
+.nightworkers-message-timestamp,
+.nightworkers-artifact-meta {
+  color: var(--nw-subtle-text);
+}
+
+.nightworkers-message-content,
+.nightworkers-artifact-title {
+  color: var(--nw-text);
+}
+
+.nightworkers-artifact-kicker,
+.nightworkers-artifact-open-button {
+  color: var(--nw-primary);
+}
+
+.nightworkers-artifact-open-button {
+  border-color: color-mix(in srgb, var(--nw-primary) 70%, var(--nw-border));
+  border-radius: var(--nw-control-radius);
+}
+
+.nightworkers-artifact-open-button:hover {
+  background: color-mix(in srgb, var(--nw-primary) 16%, transparent);
+}
+
+.nightworkers-artifact-summary {
+  color: var(--nw-muted-text);
+}
+
+.nightworkers-shell .nightworkers-settings-button {
+  background: var(--nw-panel);
+  border-color: var(--nw-border);
+  border-radius: var(--nw-control-radius);
+  color: var(--nw-text);
+  box-shadow: var(--nw-shadow);
+}
+
+.nightworkers-shell .nightworkers-composer {
+  background: color-mix(in srgb, var(--nw-panel) 88%, var(--nw-primary) 12%);
+  border-color: var(--nw-strong-border);
+  border-radius: var(--nw-radius);
+  box-shadow: var(--nw-shadow);
+  color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-control-label {
+  color: var(--nw-subtle-text);
+}
+
+.nightworkers-shell .nightworkers-control-select {
+  background: var(--nw-surface);
+  border-color: var(--nw-border);
+  border-radius: var(--nw-control-radius);
+  color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-composer-submit {
+  border-radius: var(--nw-control-radius);
+}
+
+.nightworkers-shell .nightworkers-message-bubble {
+  border-color: var(--nw-border);
+  border-radius: var(--nw-radius);
+  box-shadow: var(--nw-shadow);
+  color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-message-bubble-user {
+  background: color-mix(in srgb, var(--nw-primary) 22%, var(--nw-panel));
+}
+
+.nightworkers-shell .nightworkers-message-bubble-assistant {
+  background: var(--nw-panel);
+}
+
+.nightworkers-shell .nightworkers-message-bubble-system {
+  background: var(--nw-surface);
+  color: var(--nw-muted-text);
+}
+
+.nightworkers-shell .nightworkers-message-timestamp,
+.nightworkers-shell .nightworkers-artifact-meta {
+  color: var(--nw-subtle-text);
+}
+
+.nightworkers-shell .nightworkers-message-content,
+.nightworkers-shell .nightworkers-artifact-title {
+  color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-artifact-kicker,
+.nightworkers-shell .nightworkers-artifact-open-button {
+  color: var(--nw-primary);
+}
+
+.nightworkers-shell .nightworkers-artifact-open-button {
+  border-color: color-mix(in srgb, var(--nw-primary) 70%, var(--nw-border));
+  border-radius: var(--nw-control-radius);
+}
+
+.nightworkers-shell .nightworkers-artifact-summary {
+  color: var(--nw-muted-text);
+}
+
+.nightworkers-shell[data-theme="dark"] .nightworkers-message-bubble,
+.nightworkers-shell[data-theme="dark"] .nightworkers-message-content,
+.nightworkers-shell[data-theme="dark"] .nightworkers-artifact-title,
+.nightworkers-shell[data-theme="dark"] .nightworkers-composer,
+.nightworkers-shell[data-theme="dark"] .nightworkers-composer-input,
+.nightworkers-shell[data-theme="campfire"] .nightworkers-message-bubble,
+.nightworkers-shell[data-theme="campfire"] .nightworkers-message-content,
+.nightworkers-shell[data-theme="campfire"] .nightworkers-artifact-title,
+.nightworkers-shell[data-theme="campfire"] .nightworkers-composer,
+.nightworkers-shell[data-theme="campfire"] .nightworkers-composer-input {
+  color: var(--nw-text);
+}
+
+.nightworkers-shell[data-theme="dark"] .nightworkers-artifact-summary,
+.nightworkers-shell[data-theme="dark"] .nightworkers-artifact-meta,
+.nightworkers-shell[data-theme="campfire"] .nightworkers-artifact-summary,
+.nightworkers-shell[data-theme="campfire"] .nightworkers-artifact-meta {
+  color: var(--nw-muted-text);
+}
+
 @keyframes nightworkers-thinking-pop {
   0%,
   72%,
