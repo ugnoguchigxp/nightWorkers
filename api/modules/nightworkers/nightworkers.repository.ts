@@ -669,7 +669,7 @@ export async function claimNextQueuedTask(repositoryId: string) {
   if (!task) return null;
   const [claimed] = await db
     .update(tasks)
-    .set({ status: 'context_compiling', updatedAt: new Date() })
+    .set({ status: 'running', updatedAt: new Date() })
     .where(and(eq(tasks.id, task.id), inArray(tasks.status, ['ready', 'queued'])))
     .returning();
   if (claimed) {
@@ -690,7 +690,6 @@ export async function updateTaskRun(
     logContent?: string;
     diffPatch?: string;
     testResults?: any;
-    contextEval?: any;
     workerKind?: string;
     baseRef?: string | null;
     worktreePath?: string | null;

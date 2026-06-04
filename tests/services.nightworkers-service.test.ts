@@ -134,7 +134,7 @@ describe('NightWorkers service', () => {
       id: 'run-policy',
       taskId: task.id,
       repositoryId: task.repositoryId,
-      status: 'context_compiling',
+      status: 'running',
     };
 
     vi.mocked(repo.getTask).mockResolvedValue(task as any);
@@ -265,7 +265,7 @@ describe('NightWorkers service', () => {
       id: 'run-sequential',
       taskId: task.id,
       repositoryId: task.repositoryId,
-      status: 'context_compiling',
+      status: 'running',
     };
     const todos = [
       {
@@ -349,13 +349,13 @@ describe('NightWorkers service', () => {
       objective: 'Run queued session',
       acceptanceCriteria: 'Queued session starts',
       timeoutSeconds: 60,
-      status: 'context_compiling',
+      status: 'running',
     };
     const run = {
       id: 'run-next',
       taskId: task.id,
       repositoryId: task.repositoryId,
-      status: 'context_compiling',
+      status: 'running',
     };
     const todo = {
       id: 'todo-next',

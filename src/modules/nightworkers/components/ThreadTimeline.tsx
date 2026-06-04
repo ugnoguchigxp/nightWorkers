@@ -86,7 +86,7 @@ export function ThreadTimeline({
   return (
     <div className="nightworkers-chat-window space-y-5 p-6">
       <TodoProgress todos={latestRunTodos} />
-      <ContextPackCard latestRun={latestRun} />
+      <RuntimePromptSnapshotCard latestRun={latestRun} />
       <DiffSummaryCard session={session} latestRun={latestRun} onOpenArtifact={onOpenArtifact} />
       <FinalReportCard latestRun={latestRun} />
       {showDebugEvents && isAgentWorking && latestEvent ? (
@@ -139,12 +139,12 @@ export function ThreadTimeline({
   );
 }
 
-function ContextPackCard({ latestRun }: { latestRun?: TaskRun }) {
+function RuntimePromptSnapshotCard({ latestRun }: { latestRun?: TaskRun }) {
   if (!latestRun?.contextSnapshot) return null;
   return (
     <details className="rounded border border-slate-700/80 bg-slate-900/25">
       <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-slate-100">
-        Context Pack
+        Runtime Prompt Snapshot
       </summary>
       <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap border-t border-slate-800 p-3 font-mono text-[11px] leading-5 text-slate-300">
         {JSON.stringify(latestRun.contextSnapshot, null, 2)}

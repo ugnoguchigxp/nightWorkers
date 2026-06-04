@@ -24,7 +24,6 @@ export function replayRunJsonl(parsed: ParsedRunJsonl): ReplayResult {
   const reviewResultKeys = new Set<string>();
   const policyEvents: RunEventBase[] = [];
   const verificationEvents: RunEventBase[] = [];
-  const memoryEvents: RunEventBase[] = [];
   let terminal: ReplayResult['terminal'] = {};
 
   const pushReviewResult = (value: unknown) => {
@@ -51,9 +50,6 @@ export function replayRunJsonl(parsed: ParsedRunJsonl): ReplayResult {
     }
     if (event.type === 'verification.started' || event.type === 'verification.finished') {
       verificationEvents.push(event);
-    }
-    if (event.type.startsWith('memory.')) {
-      memoryEvents.push(event);
     }
     if (event.type === 'run.outcome_decided') {
       terminal = outcomeFrom(event);
@@ -95,7 +91,6 @@ export function replayRunJsonl(parsed: ParsedRunJsonl): ReplayResult {
     reviewResults,
     policyEvents,
     verificationEvents,
-    memoryEvents,
     diagnostics,
   };
 }

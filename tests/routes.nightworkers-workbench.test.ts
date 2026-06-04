@@ -197,7 +197,7 @@ describe('NightWorkers workbench routes', () => {
     );
     expect(systemMessage?.content).toContain('Implementation run started');
     expect(systemMessage?.metadataJson?.intakeDecision?.finalResponse).toContain('書き込み');
-    expect(['context_compiling', 'running']).toContain(body.task.status);
+    expect(body.task.status).toBe('running');
   });
 
   it('records a visible intake message even when the LLM decision has no display text', async () => {
@@ -896,7 +896,7 @@ describe('NightWorkers workbench routes', () => {
       id: crypto.randomUUID(),
       taskId: task.id,
       repositoryId: task.repositoryId,
-      status: 'context_compiling',
+      status: 'running',
       workerKind: 'native-local',
       timeoutSeconds: 3600,
       startedAt: new Date(),

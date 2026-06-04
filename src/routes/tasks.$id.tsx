@@ -119,6 +119,8 @@ function TaskConsolePage() {
         return 'text-muted-foreground bg-muted/20 border border-border';
     }
   };
+  const getStatusLabel = (status?: string) =>
+    status === 'context_compiling' || status === 'compiling_context' ? 'prompt_preparing' : status;
 
   if (isTaskLoading || !task) {
     return (
@@ -137,7 +139,7 @@ function TaskConsolePage() {
             <span
               className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${getStatusColor(task.status)}`}
             >
-              {task.status}
+              {getStatusLabel(task.status)}
             </span>
             <span className="text-xs text-muted-foreground font-mono">
               ID: {task.id.slice(0, 8)}

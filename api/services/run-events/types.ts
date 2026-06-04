@@ -158,7 +158,6 @@ export type ReplayResult = {
   reviewResults: unknown[];
   policyEvents: RunEventBase[];
   verificationEvents: RunEventBase[];
-  memoryEvents: RunEventBase[];
   diagnostics: JsonlDiagnostic[];
 };
 

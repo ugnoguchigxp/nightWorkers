@@ -66,11 +66,10 @@ export function getSessionPhase(task: Task, evidence: SessionEvidence = {}): Wor
   if (task.status === 'cancelled' || task.status === 'failed') return 'Archived';
   if (task.status === 'queued' || task.status === 'ready') return 'Queued';
   if (task.status === 'context_compiling' || latestRun?.status === 'context_compiling') {
-    return 'Context Compiling';
+    return 'Prompt Preparing';
   }
   if (latestRun?.status === 'needs_review' || task.status === 'needs_review') return 'Reviewing';
   if (reviews.some((review) => review.verdict === 'changes_requested')) return 'Improving';
-  if (events.some((event) => getRunEventType(event).startsWith('memory.'))) return 'Learning';
   if (
     latestRun?.status === 'verifying' ||
     task.status === 'verifying' ||
@@ -113,7 +112,11 @@ export function getSessionProgress(
   }
   if (task.compiledPrompt?.trim() || latestRun?.contextSnapshot) {
     percent = Math.max(percent, 30);
-    basis.push({ kind: 'context_eval', refId: latestRun?.id, label: 'Context snapshot exists' });
+    basis.push({
+      kind: 'prompt_snapshot',
+      refId: latestRun?.id,
+      label: 'Runtime prompt snapshot exists',
+    });
   }
   if (latestRun) {
     percent = Math.max(percent, 50);
@@ -144,17 +147,6 @@ export function getSessionProgress(
   ) {
     percent = Math.max(percent, 85);
     basis.push({ kind: 'review_result', refId: reviews[0]?.id, label: 'Review evidence exists' });
-  }
-  if (
-    latestRun?.contextEval ||
-    events.some((event) => getRunEventType(event).startsWith('memory.'))
-  ) {
-    percent = Math.max(percent, 95);
-    basis.push({
-      kind: 'context_eval',
-      refId: latestRun?.id,
-      label: 'Learning or context eval evidence exists',
-    });
   }
   if (task.status === 'completed') percent = 100;
 
@@ -208,7 +200,6 @@ export function getSessionBadges(input: {
   const badges: string[] = [];
   if (input.progress.blockers.length > 0) badges.push(input.progress.blockers[0].kind);
   if (input.latestRun?.testResults) badges.push('tests');
-  if (input.latestRun?.contextEval) badges.push('context');
   if (input.latestRun?.diffPatch?.trim()) badges.push('diff');
   if (input.task.priority > 0) badges.push(`P${input.task.priority}`);
   return badges;
@@ -291,10 +282,6 @@ export function buildWorkbenchArtifactRefs(input: {
     refs.push(runFieldRef(input.task.id, run, 'diff', 'Code Diff', 'diffPatch'));
   if (run?.testResults)
     refs.push(runFieldRef(input.task.id, run, 'test_result', 'Test Result', 'testResults'));
-  if (run?.contextEval)
-    refs.push(
-      runFieldRef(input.task.id, run, 'learning_candidate', 'Learning Evidence', 'contextEval')
-    );
   for (const review of input.reviews || []) {
     refs.push({
       id: `review-${review.id}`,

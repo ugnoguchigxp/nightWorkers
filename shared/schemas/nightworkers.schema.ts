@@ -275,7 +275,6 @@ export const taskRunSchema = z
     logContent: z.string().nullable().optional(),
     diffPatch: z.string().nullable().optional(),
     testResults: z.any().nullable().optional(),
-    contextEval: z.any().nullable().optional(),
     createdAt: z.any(),
     updatedAt: z.any(),
   })

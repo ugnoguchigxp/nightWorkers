@@ -166,7 +166,6 @@ export const taskRuns = sqliteTable(
     logContent: text('log_content'),
     diffPatch: text('diff_patch'),
     testResults: text('test_results', { mode: 'json' }),
-    contextEval: text('context_eval', { mode: 'json' }),
   },
   (table) => ({
     taskIdIdx: index('task_runs_task_id_idx').on(table.taskId),

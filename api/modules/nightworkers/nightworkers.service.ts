@@ -1139,8 +1139,8 @@ export async function startTaskRun(taskId: string) {
     throw new AppError(409, 'RUN_ALREADY_ACTIVE', 'Another run is already active for this task');
   }
 
-  // 1. Update status to context_compiling
-  await repo.updateTaskStatus(taskId, 'context_compiling');
+  // 1. Mark the task as running while the runtime prompt is prepared.
+  await repo.updateTaskStatus(taskId, 'running');
 
   // 2. Fetch repo information and create the run before compiling context.
   const repoInfo = await repo.getRepository(task.repositoryId);

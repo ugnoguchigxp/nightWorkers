@@ -44,7 +44,6 @@ export type TaskRun = {
   logContent?: string | null;
   diffPatch?: string | null;
   testResults?: unknown | null;
-  contextEval?: unknown | null;
   createdAt: unknown;
   updatedAt: unknown;
   events?: TaskEvent[];
@@ -115,13 +114,12 @@ export type WorkbenchMovableSessionGroup = 'processing' | 'queue' | 'archive';
 
 export type WorkbenchPhase =
   | 'Analyzing'
-  | 'Context Compiling'
+  | 'Prompt Preparing'
   | 'Queued'
   | 'Implementing'
   | 'Verifying'
   | 'Reviewing'
   | 'Improving'
-  | 'Learning'
   | 'Needs Human'
   | 'Completed'
   | 'Archived';
@@ -132,7 +130,7 @@ export type WorkbenchProgressBasisKind =
   | 'todo_status'
   | 'run_event'
   | 'review_result'
-  | 'context_eval'
+  | 'prompt_snapshot'
   | 'artifact';
 
 export type WorkbenchProgressBlocker = {
@@ -166,8 +164,7 @@ export type WorkbenchArtifactKind =
   | 'run_ledger'
   | 'todo_plan'
   | 'final_report'
-  | 'pr_reference'
-  | 'learning_candidate';
+  | 'pr_reference';
 
 export type ProjectFileEntry = {
   name: string;
