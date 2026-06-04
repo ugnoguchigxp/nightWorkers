@@ -28,8 +28,10 @@ export class NightWorkersRealtimeBroker {
   private subscribers = new Map<string, Set<WebSocket>>();
   private replayHistory = new Map<string, ReplayEntry[]>();
   private nextSeqByTask = new Map<string, number>();
+  private sockets = new Set<WebSocket>();
 
   subscribe(taskId: string, ws: WebSocket) {
+    this.sockets.add(ws);
     if (!this.subscribers.has(taskId)) {
       this.subscribers.set(taskId, new Set());
     }
@@ -73,6 +75,7 @@ export class NightWorkersRealtimeBroker {
   }
 
   unsubscribeAll(ws: WebSocket) {
+    this.sockets.delete(ws);
     let removed = 0;
     for (const [taskId, set] of this.subscribers.entries()) {
       if (set.has(ws)) {
@@ -88,6 +91,23 @@ export class NightWorkersRealtimeBroker {
       level: 'debug',
       message: 'unsubscribeAll',
       meta: { removedSubscriptions: removed },
+    });
+  }
+
+  closeAll(code = 1001, reason = 'server shutting down') {
+    const sockets = [...this.sockets];
+    for (const ws of sockets) {
+      this.unsubscribeAll(ws);
+      if (ws.readyState === ws.OPEN || ws.readyState === ws.CONNECTING) {
+        ws.close(code, reason);
+      }
+    }
+    this.subscribers.clear();
+    logEvent({
+      channel: 'ws',
+      level: 'info',
+      message: 'closed realtime sockets',
+      meta: { sockets: sockets.length },
     });
   }
 

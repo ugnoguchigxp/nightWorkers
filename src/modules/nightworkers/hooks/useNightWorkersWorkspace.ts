@@ -917,8 +917,13 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     let initialConnectTimer: ReturnType<typeof setTimeout> | null = null;
     let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
     let usingFallback = false;
+    let suppressNextReconnect = false;
 
     const connect = (url: string) => {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
       ws = new WebSocket(url);
       wsRef.current = ws;
 
@@ -1122,11 +1127,15 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
         setIsRealtimeConnected(false);
         setRealtimeStatus('disconnected');
         if (closedManually) return;
+        if (suppressNextReconnect) {
+          suppressNextReconnect = false;
+          return;
+        }
         if (reconnectAttempts >= maxReconnectAttempts) {
           setIsChatSubmitting(false);
           return;
         }
-        const backoffMs = Math.min(1000 * 2 ** reconnectAttempts, 15000);
+        const backoffMs = Math.min(2000 * 2 ** reconnectAttempts, 30000);
         reconnectAttempts += 1;
         reconnectTimer = setTimeout(() => {
           const nextUrl = usingFallback && fallbackUrl ? fallbackUrl : url;
@@ -1145,6 +1154,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       const notConnected = !ws || ws.readyState !== WebSocket.OPEN;
       if (notConnected && !closedManually && fallbackUrl && fallbackUrl !== primaryUrl) {
         try {
+          suppressNextReconnect = true;
           ws?.close();
         } catch {
           // noop

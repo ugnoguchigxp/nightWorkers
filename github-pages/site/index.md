@@ -147,8 +147,7 @@ og_image_alt: NightWorkers の開発コントロールプレーンを表すワ�
         <p class="section-kicker">Local-first by design</p>
         <h2>自律開発を、運用できる単位に戻す。</h2>
         <p>
-          NightWorkers は、OpenHands や contextStill のような周辺システムを取り込みすぎず、
-          ローカル環境で実行制御と証跡確認を担うための control plane です。
+          NightWorkers は、ローカル環境で実行制御と証跡確認を担うための control plane です。
         </p>
         <a class="btn btn-primary" href="https://github.com/ugnoguchigxp/nightWorkers">GitHub プロジェクトを見る</a>
       </div>

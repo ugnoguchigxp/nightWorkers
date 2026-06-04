@@ -4,7 +4,15 @@ import { AuthProvider, useAuth } from './lib/auth';
 // Let tanstack router generate it dynamically if not exist
 import { routeTree } from './routeTree.gen';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: false,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+    },
+  },
+});
 
 // Set up a Router instance
 const router = createRouter({

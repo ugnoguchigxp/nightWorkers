@@ -90,4 +90,3 @@ export class NativeLocalRunner implements IRunner {
 }
 
 export const nativeLocalRunner = new NativeLocalRunner();
-export const openHandsProcessRunner = nativeLocalRunner; // compatible export
