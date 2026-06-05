@@ -143,7 +143,7 @@ describe('NightWorkers task routes', () => {
     expect(await afterRes.json()).toEqual({ events: [], artifacts: [] });
   });
 
-  it('persists run events into activity ledger even when the event omits taskId', async () => {
+  it('does not persist response deltas into the activity ledger', async () => {
     const createdRepo = await repo.createRepository({
       name: `TEST: Activity Run Event ${crypto.randomUUID()}`,
       localPath: '/Users/y.noguchi/Code/nightWorkers',
@@ -175,18 +175,7 @@ describe('NightWorkers task routes', () => {
     expect(res.status).toBe(200);
     const replay = await res.json();
     expect(replay.artifacts).toEqual([]);
-    const events = replay.events;
-    expect(events).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          taskId: task.id,
-          runId: run.id,
-          kind: 'assistant.delta',
-          status: 'delta',
-          text: 'delta text',
-        }),
-      ])
-    );
+    expect(replay.events).toEqual([]);
   });
 
   it('maps schema-first agent events into chat activity kinds', async () => {

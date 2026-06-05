@@ -128,7 +128,7 @@ export const toolRegistry = {
   },
   apply_patch: {
     name: 'apply_patch',
-    description: 'unified diff で新規作成または構造的な変更を行う。',
+    description: 'unified diff で新規作成または構造的な変更を行う。*** Begin Patch 形式は禁止。',
     inputSchema: objectSchema({ patchContent: { type: 'string' } }, ['patchContent']),
   },
   replace_content: {
@@ -206,7 +206,6 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   general_answer: ['finalize_answer'],
   planning: ['list_dir', 'read_file', 'search_files', 'git_status', 'finalize_answer'],
   minor_code_edit: [
-    'list_dir',
     'read_file',
     'search_files',
     'apply_patch',
@@ -329,6 +328,7 @@ export function getExecutableWorkerToolName(name: string): WorkerToolName | null
 const jobTypeSelectionSchema = z
   .object({
     jobType: z.enum(jobTypes),
+    goal: z.string().min(1),
   })
   .strict();
 
@@ -349,14 +349,15 @@ export type AgentToolCallEnvelope = z.infer<typeof toolCallEnvelopeSchema>;
 export function buildResponseJsonSchema(round?: 1 | 2) {
   if (round === 1) {
     return {
-      name: 'schema_first_round_1_job_type',
+      name: 'schema_first_round_1_job_type_and_goal',
       strict: true,
       schema: {
         type: 'object',
-        required: ['jobType'],
+        required: ['jobType', 'goal'],
         additionalProperties: false,
         properties: {
           jobType: { type: 'string', enum: [...jobTypes] },
+          goal: { type: 'string' },
         },
       },
     };
@@ -425,7 +426,8 @@ export function defaultFlatSkillDirectory(): string {
 
 export function buildRound1JobTypePrompt(projectRoot: string): string {
   return [
-    'jobType を1つだけ選んでください。',
+    'jobType と goal を1つずつ選んでください。',
+    'goal はこの run で達成する状態を短い一文で書く。',
     'JSON のみ。rationale、plan、toolCall、phase、workflow、routingHypothesis は出さない。',
     '',
     `プロジェクトルート: ${projectRoot}`,
@@ -437,7 +439,7 @@ export function buildRound1JobTypePrompt(projectRoot: string): string {
     renderToolDefinitions(Object.values(toolRegistry)),
     '',
     '[Output Schema]',
-    '{ "jobType": "<job type>" }',
+    '{ "jobType": "<job type>", "goal": "<short concrete goal>" }',
   ].join('\n');
 }
 
@@ -453,6 +455,9 @@ export function buildRound2ToolCallPrompt(input: {
     'JSON のみ。rationale、plan、phase、workflow、routingHypothesis、finalResponse、expectedEvidence は出さない。',
     '完了したと判断したら finalize_answer を返す。',
     'finalize_answer.message でプロジェクト内のファイルに触れる場合は、プロジェクトルートからの相対パスで書く。',
+    'apply_patch.patchContent は unified diff だけを入れる。*** Begin Patch / *** Add File / *** End Patch は使わない。',
+    '新規ファイル作成の patchContent は必ず次の形にする: --- /dev/null, +++ b/<path>, @@ -0,0 +1,<lineCount> @@, 追加行は + で始める。',
+    'apply_patch が成功したら次は changedFiles の対象を read_file する。対象パスが分かっている場合に list_dir は使わない。',
     '',
     `プロジェクトルート: ${input.projectRoot}`,
     '',

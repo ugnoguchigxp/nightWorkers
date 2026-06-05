@@ -190,7 +190,6 @@ export function ThreadTimeline({
     <div className="nightworkers-chat-window space-y-5 p-6">
       <TodoProgress todos={latestRunTodos} />
       {showDebugEvents ? <RuntimePromptSnapshotCard latestRun={latestRun} /> : null}
-      <FinalReportCard latestRun={latestRun} />
       {showDebugEvents && isAgentWorking && latestEvent ? (
         <div className="rounded-lg border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-200">
           <span className="mr-2 inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
@@ -239,6 +238,7 @@ export function ThreadTimeline({
           <ThinkingIndicator />
         </ThreadMessage>
       ) : null}
+      <FinalReportCard latestRun={latestRun} />
     </div>
   );
 }
@@ -363,13 +363,8 @@ function TranscriptActivityBlock({
   const payload = event.payloadJson || {};
   const displayTitle = activityDisplayTitle(event, title);
   const summary = activityDisplaySummary(event);
-  const showDiffDetails = isDiffActivity(event);
   const showLlmDetails = showJson && isLlmOutputActivity(event);
-  const code = showDiffDetails
-    ? artifactText || getActivityCode(event)
-    : showLlmDetails
-      ? getActivityCode(event)
-      : '';
+  const code = artifactText || getActivityCode(event);
   const codeFilename = activityCodeFilename(event);
   const codeLanguage = activityCodeLanguage(event);
   const defaultOpen = !compact && !isHighVolumeActivity(event);
@@ -423,11 +418,11 @@ function DiffCodeBlock({ code, label }: { code: string; label: string }) {
       <pre className="nightworkers-diff-body">
         {metadata.lines.map((line, index) => (
           <span
-            className={`nightworkers-diff-line ${diffLineClassName(line)}`}
-            key={`${index}-${line}`}
+            className={`nightworkers-diff-line ${diffLineClassName(line.text)}`}
+            key={`${index}-${line.text}`}
           >
-            <span className="nightworkers-diff-line-number">{index + 1}</span>
-            <code className="nightworkers-diff-line-code">{line || ' '}</code>
+            <span className="nightworkers-diff-line-number">{line.lineNumber ?? ''}</span>
+            <code className="nightworkers-diff-line-code">{line.text || ' '}</code>
           </span>
         ))}
       </pre>
@@ -435,13 +430,68 @@ function DiffCodeBlock({ code, label }: { code: string; label: string }) {
   );
 }
 
-function parseDiffMetadata(code: string): { filePath: string; lines: string[] } {
+type DiffDisplayLine = {
+  text: string;
+  lineNumber?: number;
+};
+
+export function parseDiffMetadata(code: string): { filePath: string; lines: DiffDisplayLine[] } {
   const lines = code.split('\n');
-  const filePathLine = lines.find((line) => line.startsWith('+++ ') || line.startsWith('--- '));
+  const filePathLine =
+    lines.find((line) => line.startsWith('+++ ') && line.slice(4).trim() !== '/dev/null') ||
+    lines.find((line) => line.startsWith('--- ') && line.slice(4).trim() !== '/dev/null') ||
+    lines.find((line) => line.startsWith('+++ ') || line.startsWith('--- '));
   return {
     filePath: filePathLine ? filePathLine.slice(4).trim() : '',
-    lines: lines.filter((line) => !(line.startsWith('+++ ') || line.startsWith('--- '))),
+    lines: buildDiffDisplayLines(lines),
   };
+}
+
+function buildDiffDisplayLines(lines: string[]): DiffDisplayLine[] {
+  const displayLines: DiffDisplayLine[] = [];
+  let nextNewLine = 1;
+
+  for (const line of lines) {
+    if (isDiffFileMetadataLine(line)) continue;
+
+    const hunkMatch = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (hunkMatch) {
+      nextNewLine = Number(hunkMatch[1]);
+      displayLines.push({ text: line });
+      continue;
+    }
+
+    if (line.startsWith('@@')) {
+      displayLines.push({ text: line });
+      continue;
+    }
+
+    if (line.startsWith('-') || line.startsWith('\\')) {
+      displayLines.push({ text: line });
+      continue;
+    }
+
+    displayLines.push({ text: line, lineNumber: nextNewLine });
+    nextNewLine += 1;
+  }
+
+  return displayLines;
+}
+
+function isDiffFileMetadataLine(line: string): boolean {
+  return (
+    line.startsWith('diff --git ') ||
+    line.startsWith('index ') ||
+    line.startsWith('new file mode ') ||
+    line.startsWith('deleted file mode ') ||
+    line.startsWith('old mode ') ||
+    line.startsWith('new mode ') ||
+    line.startsWith('similarity index ') ||
+    line.startsWith('rename from ') ||
+    line.startsWith('rename to ') ||
+    line.startsWith('--- ') ||
+    line.startsWith('+++ ')
+  );
 }
 
 function diffLineClassName(line: string): string {
@@ -467,9 +517,15 @@ function getActivityCode(event: ActivityEvent) {
   if (editToolDiff) return editToolDiff;
   if (isDiffActivity(event) && typeof payload?.code === 'string') return payload.code;
   if (typeof payload?.payload?.rawContent === 'string') return payload.payload.rawContent;
-  if (payload?.payload && event.kind === 'llm.schema_result') {
+  if (typeof payload?.payload?.systemPrompt === 'string') return payload.payload.systemPrompt;
+  if (typeof payload?.payload?.userPrompt === 'string') return payload.payload.userPrompt;
+  if (
+    payload?.payload &&
+    (event.kind === 'llm.schema_result' || event.kind.startsWith('runtime.'))
+  ) {
     return JSON.stringify(payload.payload, null, 2);
   }
+  if (typeof payload?.code === 'string') return payload.code;
   if (typeof payload?.runEvent?.data?.text === 'string' && event.kind.includes('delta')) {
     return payload.runEvent.data.text;
   }

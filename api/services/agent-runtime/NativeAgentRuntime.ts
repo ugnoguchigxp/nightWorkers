@@ -2,7 +2,6 @@ import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import { runAgentHooks } from '../hooks/hooks-runner';
 import type { AgentHookInput, AgentHookRunEvent } from '../hooks/types';
 import { runSupervisorLoop } from '../supervisor/supervisor-loop';
-import { gitDiffTool, gitStatusTool } from '../worker-tools';
 import type { AgentRunContext, AgentRuntime, AgentRuntimeResult, AgentRuntimeSink } from './types';
 
 const DEFAULT_RESULT: AgentRuntimeResult = {
@@ -115,18 +114,6 @@ export class NativeAgentRuntime implements AgentRuntime {
       }
 
       await emit({
-        type: 'tool_call_started',
-        message: '[Tool Call] Executing git_status...',
-        payload: { toolName: 'git_status' },
-      });
-      const gitStatusRes = await gitStatusTool({ repoRoot: context.repoRoot });
-      await emit({
-        type: 'tool_call_finished',
-        message: `Git short status: ${gitStatusRes.payload.shortStatus || 'Clean worktree'}`,
-        payload: gitStatusRes,
-      });
-
-      await emit({
         type: 'turn_started',
         message: '[System] Handing control over to Supervisor Loop...',
       });
@@ -143,21 +130,6 @@ export class NativeAgentRuntime implements AgentRuntime {
         safetyPolicy: context.safetyPolicy,
       });
 
-      await emit({
-        type: 'tool_call_started',
-        message: '[Tool Call] Executing git_diff...',
-        payload: { toolName: 'git_diff' },
-      });
-      const gitDiffRes = await gitDiffTool({ repoRoot: context.repoRoot });
-      await emit({
-        type: 'diff_collected',
-        message: `Execution complete. Diff stat:\n${gitDiffRes.payload.diffStat || 'No changes'}`,
-        payload: {
-          diffStat: gitDiffRes.payload.diffStat,
-          hasChanges: gitDiffRes.payload.hasChanges,
-        },
-      });
-
       const terminalState = this.cancelledRunIds.has(context.runId)
         ? 'cancelled'
         : supervisorResult.terminalState;
@@ -170,7 +142,6 @@ export class NativeAgentRuntime implements AgentRuntime {
         finalReport: supervisorResult.finalReport,
         stoppedBy,
         riskLevel: supervisorResult.riskLevel,
-        diffPatch: gitDiffRes.payload.diff,
         logContent: logs.join('\n'),
       };
 

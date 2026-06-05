@@ -6,6 +6,10 @@ import { promisify } from 'node:util';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import * as llm from '../api/services/supervisor/llm-provider';
+import {
+  buildRound2ToolCallPrompt,
+  getAllowedToolsForJobType,
+} from '../api/services/supervisor/schema-first';
 import { runSupervisorLoop } from '../api/services/supervisor/supervisor-loop';
 
 const execFileAsync = promisify(execFile);
@@ -34,25 +38,39 @@ describe('Schema-first supervisor loop', () => {
     } as any);
   });
 
-  it('runs minor_code_edit with jobType-only Round 1 and toolCall-only Round 2', async () => {
+  it('describes minor_code_edit apply_patch file creation without git terminology', () => {
+    const prompt = buildRound2ToolCallPrompt({
+      projectRoot: '/repo/project',
+      jobType: 'minor_code_edit',
+      skill: '# minor_code_edit',
+      tools: getAllowedToolsForJobType('minor_code_edit'),
+    });
+
+    expect(prompt).toContain('--- /dev/null');
+    expect(prompt).toContain('+++ b/<path>');
+    expect(prompt).toContain('@@ -0,0 +1,<lineCount> @@');
+    expect(prompt).toContain('apply_patch が成功したら次は changedFiles の対象を read_file');
+    expect(prompt).not.toContain('READ_BEFORE_EDIT');
+    expect(prompt).not.toContain('git apply');
+    expect(prompt).not.toContain('- list_dir:');
+    expect(prompt).not.toContain('git_status');
+    expect(prompt).not.toContain('git_diff');
+  });
+
+  it('runs minor_code_edit with jobType+goal Round 1 and toolCall-only Round 2', async () => {
     const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-schema-first-'));
     await execFileAsync('git', ['init'], { cwd: repoRoot });
 
     vi.mocked(llm.callSupervisorLLM)
-      .mockResolvedValueOnce({ jobType: 'minor_code_edit' })
       .mockResolvedValueOnce({
-        toolCall: {
-          name: 'list_dir',
-          arguments: { relativePath: '.', maxEntries: 100 },
-        },
+        jobType: 'minor_code_edit',
+        goal: 'プロジェクトルートに fizzbuzz.ts を作成する',
       })
       .mockResolvedValueOnce({
         toolCall: {
           name: 'apply_patch',
           arguments: {
             patchContent: [
-              'diff --git a/fizzbuzz.ts b/fizzbuzz.ts',
-              'new file mode 100644',
               '--- /dev/null',
               '+++ b/fizzbuzz.ts',
               '@@ -0,0 +1,6 @@',
@@ -65,12 +83,6 @@ describe('Schema-first supervisor loop', () => {
               '',
             ].join('\n'),
           },
-        },
-      })
-      .mockResolvedValueOnce({
-        toolCall: {
-          name: 'read_file',
-          arguments: { filePath: 'fizzbuzz.ts', compressionMode: 'off' },
         },
       })
       .mockResolvedValueOnce({
@@ -98,10 +110,8 @@ describe('Schema-first supervisor loop', () => {
         expect.objectContaining({ round: 1, schemaFirst: true }),
         expect.objectContaining({ round: 2, schemaFirst: true }),
         expect.objectContaining({ round: 2, schemaFirst: true }),
-        expect.objectContaining({ round: 2, schemaFirst: true }),
-        expect.objectContaining({ round: 2, schemaFirst: true }),
       ]);
-      expect(vi.mocked(llm.callSupervisorLLM)).toHaveBeenCalledTimes(5);
+      expect(vi.mocked(llm.callSupervisorLLM)).toHaveBeenCalledTimes(3);
       expect(vi.mocked(llm.callSupervisorLLM).mock.calls.length).toBeLessThanOrEqual(20);
       expect(repo.updateTaskRun).toHaveBeenCalledWith('run-1', {
         finalReport: 'プロジェクトルートに `fizzbuzz.ts` を作成しました。',
@@ -128,9 +138,9 @@ describe('Schema-first supervisor loop', () => {
           type: 'model.response_finished',
           severity: 'info',
           message: 'round1 raw',
-          data: { rawContent: '{"jobType":"minor_code_edit"}' },
+          data: { rawContent: '{"jobType":"minor_code_edit","goal":"完了する"}' },
         });
-        return { jobType: 'minor_code_edit' } as any;
+        return { jobType: 'minor_code_edit', goal: '完了する' } as any;
       })
       .mockImplementationOnce(async (_system, _user, options) => {
         await options?.emitEvent?.({
@@ -168,7 +178,7 @@ describe('Schema-first supervisor loop', () => {
           expect.objectContaining({ agentEventType: 'model.request_started' }),
           expect.objectContaining({
             agentEventType: 'model.response_finished',
-            rawContent: '{"jobType":"minor_code_edit"}',
+            rawContent: '{"jobType":"minor_code_edit","goal":"完了する"}',
           }),
           expect.objectContaining({ agentEventType: 'round1.parsed' }),
           expect.objectContaining({ agentEventType: 'skill.loaded' }),
@@ -187,7 +197,7 @@ describe('Schema-first supervisor loop', () => {
     const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-invalid-tool-'));
 
     vi.mocked(llm.callSupervisorLLM)
-      .mockResolvedValueOnce({ jobType: 'minor_code_edit' })
+      .mockResolvedValueOnce({ jobType: 'minor_code_edit', goal: 'invalid tool retry' })
       .mockResolvedValueOnce({
         toolCall: {
           name: 'unknown_tool',

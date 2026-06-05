@@ -19,7 +19,7 @@ describe('ToolPolicyGate', () => {
     if (!decision.allowed) expect(['UNKNOWN_COMMAND', 'COMMAND_BLOCKED']).toContain(decision.code);
   });
 
-  it('blocks replace_content when read-before-edit is required', async () => {
+  it('allows replace_content without read-before-edit gating', async () => {
     const decision = await gate.beforeToolCall({
       runId: 'run-1',
       iteration: 1,
@@ -27,10 +27,8 @@ describe('ToolPolicyGate', () => {
       args: { filePath: 'src/main.ts', needle: 'a', replacement: 'b', mode: 'literal' },
       repoRoot,
       readFiles: [],
-      safetyPolicy: { requireReadBeforeEdit: true },
     });
-    expect(decision.allowed).toBe(false);
-    if (!decision.allowed) expect(decision.code).toBe('READ_BEFORE_EDIT_REQUIRED');
+    expect(decision.allowed).toBe(true);
   });
 
   it('caps command timeout with safety policy', async () => {
@@ -94,7 +92,6 @@ describe('ToolPolicyGate', () => {
       },
       repoRoot,
       readFiles: [],
-      safetyPolicy: { requireReadBeforeEdit: true },
     });
 
     expect(decision.allowed).toBe(true);

@@ -250,7 +250,7 @@ describe('Supervisor LLM OpenAI streaming', () => {
     vi.restoreAllMocks();
   });
 
-  it('assembles streamed Chat Completions deltas and emits response_delta events', async () => {
+  it('assembles streamed Chat Completions without emitting response_delta events', async () => {
     process.env.ACTIVE_LLM_PROVIDER = 'openai';
     process.env.OPENAI_ENABLED = 'true';
     process.env.OPENAI_API_KEY = 'test-key';
@@ -284,10 +284,8 @@ describe('Supervisor LLM OpenAI streaming', () => {
     expect(decision.phase).toBe('stop');
     expect(decision.finalResponse).toBe('done');
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(events.some((event) => event.type === 'model.response_delta')).toBe(true);
-    expect(events.find((event) => event.type === 'model.response_delta')?.message).toContain(
-      '"phase":"stop"'
-    );
+    expect(events.some((event) => event.type === 'model.response_delta')).toBe(false);
+    expect(events.map((event) => event.type)).toContain('model.response_finished');
   });
 
   it('constrains finalize response schema to stop decisions without tool calls', async () => {
@@ -464,5 +462,33 @@ describe('Supervisor LLM OpenAI streaming', () => {
     expect(decision.finalResponse).toBe(rawDecision);
     expect(decision.instruction).toBe('');
     expect(decision.rationale).toBe('');
+  });
+
+  it('repairs truncated schema-first toolCall JSON before schema validation', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'openai';
+    process.env.OPENAI_ENABLED = 'true';
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.OPENAI_MODEL = 'gpt-test';
+    process.env.OPENAI_STREAMING_ENABLED = 'false';
+
+    const rawDecision =
+      '{"toolCall":{"name":"apply_patch","arguments":{"patchContent":"--- /dev/null\\n+++ b/fizzbuzz.ts\\n@@ -0,0 +1,1 @@\\n+export const fizzbuzz = true;"}}';
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({ choices: [{ message: { content: rawDecision } }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    const events: Array<{ type: string; message: string }> = [];
+    const decision = await callSupervisorLLM('system', 'user', {
+      round: 2,
+      schemaFirst: true,
+      emitEvent: (event) => events.push({ type: event.type, message: event.message }),
+    });
+
+    expect(decision.toolCall.name).toBe('apply_patch');
+    expect(decision.toolCall.arguments.patchContent).toContain('+++ b/fizzbuzz.ts');
+    expect(events.some((event) => event.type === 'model.response_repaired')).toBe(true);
   });
 });

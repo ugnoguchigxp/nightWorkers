@@ -515,7 +515,7 @@ describe('Worker Tools Unit Tests', () => {
       expect(result.error?.code).toBe('MULTIPLE_MATCHES');
     });
 
-    it('enforces read-before-edit policy when required', async () => {
+    it('applies replacement without read-before-edit gating', async () => {
       await fs.writeFile(path.join(dummyRepoDir, 'hello.txt'), 'read-me\n', 'utf-8');
       const result = await replaceContentTool({
         repoRoot: dummyRepoDir,
@@ -523,11 +523,9 @@ describe('Worker Tools Unit Tests', () => {
         needle: 'read-me',
         replacement: 'READ',
         mode: 'literal',
-        requireReadBeforeEdit: true,
-        readFiles: [],
       });
-      expect(result.ok).toBe(false);
-      expect(result.error?.code).toBe('READ_BEFORE_EDIT_VIOLATION');
+      expect(result.ok).toBe(true);
+      expect(await fs.readFile(path.join(dummyRepoDir, 'hello.txt'), 'utf-8')).toBe('READ\n');
     });
   });
 

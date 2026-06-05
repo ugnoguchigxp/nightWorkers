@@ -5,7 +5,6 @@ export interface AgentSafetyPolicy {
   deniedPaths?: string[];
   blockedCommands?: string[];
   maxCommandSeconds?: number;
-  requireReadBeforeEdit?: boolean;
 }
 
 export interface AgentRunContext {

@@ -121,7 +121,6 @@ test.describe('NightWorkers Agent Debug @regression', () => {
           branch: 'main',
           allowed: true,
           safetyPolicy: {
-            requireReadBeforeEdit: false,
             blockedCommands: ['rm'],
             maxCommandSeconds: 5,
           },
@@ -336,7 +335,6 @@ test.describe('NightWorkers Agent Debug @regression', () => {
           localPath: workspaceDir,
           branch: 'main',
           allowed: true,
-          safetyPolicy: { requireReadBeforeEdit: false },
         },
       });
       expect(repositoryRes.status()).toBe(201);

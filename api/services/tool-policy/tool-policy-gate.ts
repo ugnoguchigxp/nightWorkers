@@ -1,5 +1,3 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { analyzeCommand } from '../worker-tools/command-policy';
 import {
   enforceCommandPolicy,
@@ -35,22 +33,6 @@ function isDeniedPath(relPath: string, request: ToolCallRequest): boolean {
     deniedPaths: request.safetyPolicy?.deniedPaths,
   });
   return !decision.allowed;
-}
-
-function requireReadBeforeEdit(relPath: string, request: ToolCallRequest): boolean {
-  const absTarget = path.resolve(request.repoRoot, relPath);
-  return !request.readFiles.some(
-    (readPath) => path.resolve(request.repoRoot, readPath) === absTarget
-  );
-}
-
-async function fileExists(repoRoot: string, relPath: string): Promise<boolean> {
-  try {
-    await fs.access(path.resolve(repoRoot, relPath));
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export class DefaultToolPolicyGate implements ToolPolicyGate {
@@ -115,18 +97,6 @@ export class DefaultToolPolicyGate implements ToolPolicyGate {
             evidence: { target },
           };
         }
-        if (
-          request.safetyPolicy?.requireReadBeforeEdit !== false &&
-          (await fileExists(request.repoRoot, target)) &&
-          requireReadBeforeEdit(target, request)
-        ) {
-          return {
-            allowed: false,
-            code: 'READ_BEFORE_EDIT_REQUIRED',
-            message: `You must read the file before editing it: ${target}`,
-            evidence: { target },
-          };
-        }
       }
       return { allowed: true, normalizedArgs: args, preflight: { patchTargets: targets } };
     }
@@ -138,17 +108,6 @@ export class DefaultToolPolicyGate implements ToolPolicyGate {
           allowed: false,
           code: 'INVALID_TOOL_ARGS',
           message: 'replace_content requires filePath string.',
-        };
-      }
-      if (
-        request.safetyPolicy?.requireReadBeforeEdit !== false &&
-        requireReadBeforeEdit(target, request)
-      ) {
-        return {
-          allowed: false,
-          code: 'READ_BEFORE_EDIT_REQUIRED',
-          message: `You must read the file before editing it: ${target}`,
-          evidence: { target },
         };
       }
       return { allowed: true, normalizedArgs: args, preflight: { targetFile: target } };

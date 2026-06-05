@@ -7,7 +7,6 @@ import { createLedgerSink } from '../api/services/agent-runtime/ledger-sink';
 import { NativeAgentRuntime } from '../api/services/agent-runtime/NativeAgentRuntime';
 import { createAgentHook } from '../api/services/hooks/hooks-settings';
 import * as supervisor from '../api/services/supervisor/supervisor-loop';
-import * as gitTools from '../api/services/worker-tools/git';
 
 vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   createRunEvent: vi.fn(),
@@ -15,11 +14,6 @@ vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
 
 vi.mock('../api/services/supervisor/supervisor-loop', () => ({
   runSupervisorLoop: vi.fn(),
-}));
-
-vi.mock('../api/services/worker-tools/git', () => ({
-  gitStatusTool: vi.fn(),
-  gitDiffTool: vi.fn(),
 }));
 
 describe('AgentRuntime', () => {
@@ -56,19 +50,6 @@ describe('AgentRuntime', () => {
   });
 
   it('normalizes runtime crash to failed result and runtime_error event', async () => {
-    vi.mocked(gitTools.gitStatusTool).mockResolvedValue({
-      ok: true,
-      toolName: 'git_status',
-      startedAt: new Date().toISOString(),
-      finishedAt: new Date().toISOString(),
-      payload: {
-        branch: 'main',
-        isDirty: false,
-        untrackedCount: 0,
-        modifiedCount: 0,
-        shortStatus: '',
-      },
-    });
     vi.mocked(supervisor.runSupervisorLoop).mockRejectedValue(new Error('supervisor exploded'));
 
     const runtime = new NativeAgentRuntime();
@@ -100,19 +81,6 @@ describe('AgentRuntime', () => {
   });
 
   it('runs SessionEnd hooks after runtime errors once the session has started', async () => {
-    vi.mocked(gitTools.gitStatusTool).mockResolvedValue({
-      ok: true,
-      toolName: 'git_status',
-      startedAt: new Date().toISOString(),
-      finishedAt: new Date().toISOString(),
-      payload: {
-        branch: 'main',
-        isDirty: false,
-        untrackedCount: 0,
-        modifiedCount: 0,
-        shortStatus: '',
-      },
-    });
     vi.mocked(supervisor.runSupervisorLoop).mockRejectedValue(new Error('supervisor exploded'));
     createAgentHook({
       name: 'Session end audit',
@@ -159,30 +127,6 @@ describe('AgentRuntime', () => {
   });
 
   it('passes current todo context into the supervisor loop', async () => {
-    vi.mocked(gitTools.gitStatusTool).mockResolvedValue({
-      ok: true,
-      toolName: 'git_status',
-      startedAt: new Date().toISOString(),
-      finishedAt: new Date().toISOString(),
-      payload: {
-        branch: 'main',
-        isDirty: false,
-        untrackedCount: 0,
-        modifiedCount: 0,
-        shortStatus: '',
-      },
-    });
-    vi.mocked(gitTools.gitDiffTool).mockResolvedValue({
-      ok: true,
-      toolName: 'git_diff',
-      startedAt: new Date().toISOString(),
-      finishedAt: new Date().toISOString(),
-      payload: {
-        diff: '',
-        diffStat: '',
-        hasChanges: false,
-      },
-    });
     vi.mocked(supervisor.runSupervisorLoop).mockResolvedValue({
       terminalState: 'completed',
       summary: 'done',
@@ -234,7 +178,7 @@ describe('AgentRuntime', () => {
     expect(emitted).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          type: 'tool_call_finished',
+          type: 'turn_started',
           payload: expect.objectContaining({
             todoId: 'todo-1',
             todoSeq: 1,

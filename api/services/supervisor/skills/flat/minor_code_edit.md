@@ -4,7 +4,6 @@
 小さい変更タスク、ちょっとした修正、小さい新規作成、単一ファイルまたは少数ファイルの明確な変更。
 
 ## Tools
-- list_dir
 - read_file
 - search_files
 - apply_patch
@@ -14,10 +13,10 @@
 - finalize_answer
 
 ## Procedure
-1. 必要最小限のファイル状態を確認する。
-2. 新規作成なら apply_patch を使う。
+1. 対象パスが分かっている場合は read_file で確認し、周辺ディレクトリ一覧は取らない。
+2. 新規作成なら apply_patch を使う。patchContent は `--- /dev/null`、`+++ b/<path>`、`@@ -0,0 +1,<lineCount> @@`、`+` で始まる追加行だけで構成する。`*** Begin Patch` / `*** Add File` / `*** End Patch` 形式は使わない。
 3. 既存ファイルの単純置換なら replace_content を使う。
-4. 必要なら read_file または run_command で結果を確認する。
+4. apply_patch が成功したら changedFiles の対象を read_file する。READ_BEFORE_EDIT で失敗したら、エラーに出た対象を read_file する。
 5. 完了したら finalize_answer を呼ぶ。
 
 ## Completion

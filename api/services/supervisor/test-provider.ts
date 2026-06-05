@@ -102,8 +102,6 @@ export function buildTestProviderDecision(
           name: 'apply_patch',
           arguments: {
             patchContent: [
-              'diff --git a/src/fizzbuzz.ts b/src/fizzbuzz.ts',
-              'new file mode 100644',
               '--- /dev/null',
               '+++ b/src/fizzbuzz.ts',
               '@@ -0,0 +1,8 @@',
@@ -193,7 +191,6 @@ export function buildTestProviderDecision(
           name: 'apply_patch',
           arguments: {
             patchContent: [
-              'diff --git a/src/greeting.txt b/src/greeting.txt',
               '--- a/src/greeting.txt',
               '+++ b/src/greeting.txt',
               '@@ -1 +1,2 @@',
@@ -247,7 +244,6 @@ export function buildTestProviderDecision(
           name: 'apply_patch',
           arguments: {
             patchContent: [
-              'diff --git a/src/WsBadge.tsx b/src/WsBadge.tsx',
               '--- a/src/WsBadge.tsx',
               '+++ b/src/WsBadge.tsx',
               '@@ -1,3 +1,15 @@',
@@ -321,8 +317,6 @@ export function buildTestProviderDecision(
         name: 'apply_patch',
         arguments: {
           patchContent: [
-            'diff --git a/src/failing-check.txt b/src/failing-check.txt',
-            'new file mode 100644',
             '--- /dev/null',
             '+++ b/src/failing-check.txt',
             '@@ -0,0 +1 @@',

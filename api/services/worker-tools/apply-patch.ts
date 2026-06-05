@@ -10,10 +10,8 @@ const execAsync = promisify(exec);
 export interface ApplyPatchInput {
   patchContent: string;
   repoRoot: string;
-  readFiles?: string[]; // Relative paths of files read in this run
   allowedPaths?: string[];
   deniedPaths?: string[];
-  requireReadBeforeEdit?: boolean;
 }
 
 export interface ApplyPatchOutput {
@@ -27,14 +25,7 @@ export async function applyPatchTool(
   input: ApplyPatchInput
 ): Promise<WorkerToolResult<ApplyPatchOutput>> {
   const startedAt = new Date().toISOString();
-  const {
-    patchContent,
-    repoRoot,
-    readFiles = [],
-    allowedPaths,
-    deniedPaths,
-    requireReadBeforeEdit = false,
-  } = input;
+  const { patchContent, repoRoot, allowedPaths, deniedPaths } = input;
 
   const absoluteRepoRoot = path.resolve(repoRoot);
   const tempPatchFile = path.join(
@@ -95,38 +86,6 @@ export async function applyPatchTool(
               `Patch target lies outside allowed workspace directories: ${relativePath}`,
           },
         };
-      }
-
-      // Read-before-edit check
-      if (requireReadBeforeEdit) {
-        let fileExists = true;
-        try {
-          await fs.access(absolutePath);
-        } catch {
-          fileExists = false;
-        }
-        if (!fileExists) {
-          continue;
-        }
-        const hasBeenRead = readFiles.some((read) => {
-          const absRead = path.resolve(absoluteRepoRoot, read);
-          return absRead === absolutePath;
-        });
-
-        if (!hasBeenRead) {
-          await fs.unlink(tempPatchFile).catch(() => {});
-          return {
-            ok: false,
-            toolName: 'apply_patch',
-            startedAt,
-            finishedAt: new Date().toISOString(),
-            payload: { applied: false, changedFiles: [] },
-            error: {
-              code: 'READ_BEFORE_EDIT_VIOLATION',
-              message: `You must read the file contents using read_file before you edit it: ${relativePath}`,
-            },
-          };
-        }
       }
     }
 

@@ -8,12 +8,11 @@ export type ToolPolicyContext = {
   deniedPaths?: string[];
   blockedCommands?: string[];
   maxCommandSeconds?: number;
-  requireReadBeforeEdit?: boolean;
 };
 
 export type PolicyDecision = {
   allowed: boolean;
-  code?: 'ACCESS_DENIED' | 'COMMAND_BLOCKED' | 'TIMEOUT_EXCEEDED' | 'READ_BEFORE_EDIT_REQUIRED';
+  code?: 'ACCESS_DENIED' | 'COMMAND_BLOCKED' | 'TIMEOUT_EXCEEDED';
   message?: string;
 };
 

@@ -1,7 +1,55 @@
 import { describe, expect, it } from 'vitest';
-import { getAgentEditSummary } from '../src/modules/nightworkers/components/ThreadTimeline';
+import {
+  getAgentEditSummary,
+  parseDiffMetadata,
+} from '../src/modules/nightworkers/components/ThreadTimeline';
 
 describe('ThreadTimeline edit summaries', () => {
+  it('keeps diff hunk headers out of displayed code line numbers', () => {
+    const metadata = parseDiffMetadata(
+      [
+        'diff --git a/src/new-file.txt b/src/new-file.txt',
+        'new file mode 100644',
+        '--- /dev/null',
+        '+++ b/src/new-file.txt',
+        '@@ -0,0 +1,3 @@',
+        '+first',
+        '+second',
+        '+third',
+      ].join('\n')
+    );
+
+    expect(metadata.filePath).toBe('b/src/new-file.txt');
+    expect(metadata.lines).toEqual([
+      { text: '@@ -0,0 +1,3 @@' },
+      { text: '+first', lineNumber: 1 },
+      { text: '+second', lineNumber: 2 },
+      { text: '+third', lineNumber: 3 },
+    ]);
+  });
+
+  it('uses new-file line numbers for unified diff context and additions', () => {
+    const metadata = parseDiffMetadata(
+      [
+        '--- a/src/greeting.txt',
+        '+++ b/src/greeting.txt',
+        '@@ -8,3 +8,4 @@',
+        ' unchanged',
+        '-old',
+        '+new',
+        ' next',
+      ].join('\n')
+    );
+
+    expect(metadata.lines).toEqual([
+      { text: '@@ -8,3 +8,4 @@' },
+      { text: ' unchanged', lineNumber: 8 },
+      { text: '-old' },
+      { text: '+new', lineNumber: 9 },
+      { text: ' next', lineNumber: 10 },
+    ]);
+  });
+
   it('builds an apply_patch summary from a tool call start event', () => {
     const summary = getAgentEditSummary({
       id: 'event-apply-patch-start',

@@ -34,7 +34,6 @@ export interface SupervisorLoopInput {
     deniedPaths?: string[];
     blockedCommands?: string[];
     maxCommandSeconds?: number;
-    requireReadBeforeEdit?: boolean;
   };
 }
 
@@ -152,9 +151,7 @@ async function createSupervisorLlmRunEvent(input: {
 
 function buildUserInput(input: SupervisorLoopInput): string {
   const latest = input.latestUserMessage?.trim();
-  if (latest) {
-    return [latest, '', '[Runtime Context]', input.prompt.trim() || '(empty)'].join('\n');
-  }
+  if (latest) return latest;
   return (input.prompt || '').trim();
 }
 
@@ -173,6 +170,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
   const toolResults: CompactToolResult[] = [];
   let step = 0;
   let currentJobType: JobType = 'minor_code_edit';
+  let goal = userInput;
+  let loadedSkillJobType: JobType | null = null;
   let finalReportText = '';
   let terminalState: SupervisorLoopResult['terminalState'] = 'completed';
   let summary = '';
@@ -231,17 +230,21 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       schemaFirst: true,
       emitEvent: emitLlmDebugEvent,
       workingDirectory: repoRoot,
-    })) as { jobType: JobType };
+    })) as { jobType: JobType; goal: string };
     currentJobType = round1.jobType;
+    goal = round1.goal.trim() || userInput;
     await emitAgentEvent('round1.parsed', round1);
 
     for (step = 1; step <= maxIterations && toolResults.length < maxToolCalls; step += 1) {
       const skill = loadFlatSkill(currentJobType);
       const allowedTools = getAllowedToolsForJobType(currentJobType);
-      await emitAgentEvent('skill.loaded', {
-        skillPath: `skills/${currentJobType}.md`,
-        skill,
-      });
+      if (loadedSkillJobType !== currentJobType) {
+        loadedSkillJobType = currentJobType;
+        await emitAgentEvent('skill.loaded', {
+          skillPath: `skills/${currentJobType}.md`,
+          skill,
+        });
+      }
 
       const round2SystemPrompt = buildRound2ToolCallPrompt({
         projectRoot: repoRoot,
@@ -250,7 +253,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         tools: allowedTools,
       });
       const round2UserPrompt = JSON.stringify({
-        userRequest: userInput,
+        goal,
         currentJobType,
         toolResults: toolResults.slice(-8),
       });

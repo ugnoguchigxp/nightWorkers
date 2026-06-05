@@ -230,7 +230,6 @@ function buildFixtureCodingDecision(userPrompt: string, round?: 1 | 2 | 3) {
           name: 'apply_patch',
           arguments: {
             patchContent: [
-              'diff --git a/src/greeting.txt b/src/greeting.txt',
               '--- a/src/greeting.txt',
               '+++ b/src/greeting.txt',
               '@@ -1 +1,2 @@',
@@ -260,7 +259,7 @@ function buildFixtureCodingDecision(userPrompt: string, round?: 1 | 2 | 3) {
 
 function buildSchemaFirstFixtureOutput(userPrompt: string, round?: 1 | 2 | 3) {
   if (round === 1) {
-    return { jobType: 'minor_code_edit' };
+    return { jobType: 'minor_code_edit', goal: 'プロジェクトルートに fizzbuzz.ts を作成する' };
   }
 
   let parsed: { toolResults?: Array<{ toolName?: string }> } = {};
@@ -272,22 +271,12 @@ function buildSchemaFirstFixtureOutput(userPrompt: string, round?: 1 | 2 | 3) {
   const toolResults = Array.isArray(parsed.toolResults) ? parsed.toolResults : [];
   const hasTool = (toolName: string) => toolResults.some((result) => result.toolName === toolName);
 
-  if (!hasTool('list_dir')) {
-    return {
-      toolCall: {
-        name: 'list_dir',
-        arguments: { relativePath: '.', maxEntries: 100 },
-      },
-    };
-  }
   if (!hasTool('apply_patch')) {
     return {
       toolCall: {
         name: 'apply_patch',
         arguments: {
           patchContent: [
-            'diff --git a/fizzbuzz.ts b/fizzbuzz.ts',
-            'new file mode 100644',
             '--- /dev/null',
             '+++ b/fizzbuzz.ts',
             '@@ -0,0 +1,8 @@',
@@ -302,14 +291,6 @@ function buildSchemaFirstFixtureOutput(userPrompt: string, round?: 1 | 2 | 3) {
             '',
           ].join('\n'),
         },
-      },
-    };
-  }
-  if (!hasTool('read_file')) {
-    return {
-      toolCall: {
-        name: 'read_file',
-        arguments: { filePath: 'fizzbuzz.ts', compressionMode: 'off' },
       },
     };
   }
@@ -640,6 +621,82 @@ function tryExtractJsonCandidate(raw: string): string | null {
   return null;
 }
 
+type JsonFixWrapperResult = {
+  parsedJson: unknown;
+  sourceText: string;
+  repaired: boolean;
+  repairKind: 'none' | 'extracted_candidate' | 'balanced_json' | 'extracted_and_balanced_json';
+};
+
+function jsonFixWrapper(raw: string): JsonFixWrapperResult | null {
+  const direct = raw.trim();
+  const extracted = tryExtractJsonCandidate(raw);
+  const candidates = [
+    { text: direct, extracted: false },
+    ...(extracted && extracted !== direct ? [{ text: extracted, extracted: true }] : []),
+  ].filter((candidate) => candidate.text.length > 0);
+
+  for (const candidate of candidates) {
+    try {
+      return {
+        parsedJson: JSON.parse(candidate.text),
+        sourceText: candidate.text,
+        repaired: candidate.extracted,
+        repairKind: candidate.extracted ? 'extracted_candidate' : 'none',
+      };
+    } catch {
+      const balanced = balanceJsonCandidate(candidate.text);
+      if (!balanced || balanced === candidate.text) continue;
+      try {
+        return {
+          parsedJson: JSON.parse(balanced),
+          sourceText: balanced,
+          repaired: true,
+          repairKind: candidate.extracted ? 'extracted_and_balanced_json' : 'balanced_json',
+        };
+      } catch {
+        // Try the next candidate.
+      }
+    }
+  }
+
+  return null;
+}
+
+function balanceJsonCandidate(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null;
+
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+
+  for (const char of trimmed) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\' && inString) {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === '{') stack.push('}');
+    else if (char === '[') stack.push(']');
+    else if (char === '}' || char === ']') {
+      if (stack.at(-1) !== char) return null;
+      stack.pop();
+    }
+  }
+
+  const stringSuffix = inString ? '"' : '';
+  return `${trimmed}${stringSuffix}${stack.reverse().join('')}`;
+}
+
 function buildOpenAIChatCompletionBody(input: {
   model: string;
   systemPrompt: string;
@@ -694,18 +751,7 @@ function emitBufferedResponseDelta(input: {
   text: string;
   force?: boolean;
 }) {
-  if (!input.text) return;
-  void emitSupervisorLlmDebugEvent(input.options, {
-    type: 'model.response_delta',
-    severity: 'debug',
-    message: input.text,
-    data: {
-      provider: input.provider,
-      round: input.round ?? null,
-      text: input.text,
-      forced: Boolean(input.force),
-    },
-  });
+  void input;
 }
 
 async function readOpenAIChatCompletionStream(input: {
@@ -1387,38 +1433,35 @@ export async function callSupervisorLLM(
   });
 
   try {
-    let parsedJson: unknown;
-    try {
-      parsedJson = JSON.parse(rawContent);
-    } catch (parseErr) {
-      const candidate = tryExtractJsonCandidate(rawContent);
-      if (!candidate) {
-        await emitSupervisorLlmDebugEvent(options, {
-          type: 'model.response_parse_failed',
-          severity: 'error',
-          message: 'Supervisor LLM JSON parse failed and no extractable candidate was found.',
-          data: {
-            provider,
-            round: options.round ?? null,
-            errorMessage: parseErr instanceof Error ? parseErr.message : String(parseErr),
-            rawContentPreview: rawContent.slice(0, 500),
-          },
-        });
-        throw new Error('JSON parse failed and no extractable JSON candidate found');
-      }
+    const jsonFix = jsonFixWrapper(rawContent);
+    if (!jsonFix) {
       await emitSupervisorLlmDebugEvent(options, {
-        type: 'model.response_repaired',
-        severity: 'warning',
-        message: 'Supervisor LLM response was repaired by extracting a JSON candidate.',
+        type: 'model.response_parse_failed',
+        severity: 'error',
+        message: 'Supervisor LLM JSON parse failed and automatic repair did not produce JSON.',
         data: {
           provider,
           round: options.round ?? null,
-          rawContentLength: rawContent.length,
-          candidateLength: candidate.length,
+          rawContentPreview: rawContent.slice(0, 500),
         },
       });
-      parsedJson = JSON.parse(candidate);
+      throw new Error('JSON parse failed and automatic repair did not produce JSON');
     }
+    if (jsonFix.repaired) {
+      await emitSupervisorLlmDebugEvent(options, {
+        type: 'model.response_repaired',
+        severity: 'warning',
+        message: 'Supervisor LLM response JSON was repaired before schema validation.',
+        data: {
+          provider,
+          round: options.round ?? null,
+          repairKind: jsonFix.repairKind,
+          rawContentLength: rawContent.length,
+          repairedContentLength: jsonFix.sourceText.length,
+        },
+      });
+    }
+    const parsedJson = jsonFix.parsedJson;
     if (options.schemaFirst) {
       try {
         return parseSupervisorOutput(parsedJson, options.round === 1 ? 1 : 2);

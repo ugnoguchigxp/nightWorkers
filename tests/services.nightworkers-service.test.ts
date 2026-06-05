@@ -148,28 +148,7 @@ describe('NightWorkers service', () => {
       { role: 'user', content: 'Run a blocked command' },
     ] as any);
     vi.mocked(repo.createTaskRun).mockResolvedValue(run as any);
-    vi.mocked(repo.createTaskRunTodo).mockResolvedValue({ id: 'todo-policy' } as any);
-    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([
-      {
-        id: 'todo-policy',
-        runId: run.id,
-        seq: 1,
-        title: 'Run a blocked command',
-        description: 'Run a blocked command',
-        taskType: 'code_change',
-        status: 'pending',
-        procedureId: 'code-change',
-        procedureSnapshot: {
-          source: 'builtin',
-          id: 'code-change',
-          title: 'Code Change',
-          version: 1,
-          digest: 'sha256:test',
-          sections: {},
-        },
-      },
-    ] as any);
-    vi.mocked(repo.updateTaskRunTodo).mockResolvedValue({ id: 'todo-policy' } as any);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
     vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as any);
     vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
     vi.mocked(repo.updateTaskRun).mockResolvedValue(run as any);
@@ -189,48 +168,13 @@ describe('NightWorkers service', () => {
     } as any);
 
     await startTaskRun(task.id);
-    expect(repo.createTaskRunTodo).toHaveBeenCalledWith(
-      expect.objectContaining({
-        runId: run.id,
-        seq: 1,
-        title: 'Run a blocked command',
-        taskType: 'code_change',
-        status: 'pending',
-        procedureId: 'code-change',
-        procedureSnapshot: expect.objectContaining({
-          id: 'code-change',
-          digest: expect.stringMatching(/^sha256:/),
-        }),
-        dependsOn: [],
-      })
-    );
-    expect(repo.updateTaskRunTodo).toHaveBeenCalledWith(
-      'todo-policy',
-      expect.objectContaining({
-        contextSnapshot: expect.objectContaining({
-          todo: expect.objectContaining({ id: 'todo-policy', taskType: 'code_change' }),
-          selectedProcedure: expect.objectContaining({
-            id: 'code-change',
-            digest: 'sha256:test',
-          }),
-          runContext: expect.objectContaining({
-            source: 'task_prompt',
-            digest: expect.any(String),
-          }),
-        }),
-      })
-    );
+    expect(repo.createTaskRunTodo).not.toHaveBeenCalled();
+    expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
     await vi.waitFor(() => {
       expect(runtimeStart).toHaveBeenCalledWith(
         expect.objectContaining({
-          todoPlan: [
-            expect.objectContaining({
-              id: 'todo-policy',
-              taskType: 'code_change',
-              procedureId: 'code-change',
-              procedureDigest: 'sha256:test',
-            }),
-          ],
+          compiledPrompt: expect.stringContaining('Run a blocked command'),
+          latestUserMessage: 'Run a blocked command',
         }),
         expect.anything()
       );
@@ -251,14 +195,14 @@ describe('NightWorkers service', () => {
     });
   });
 
-  it('executes multiple planned todos sequentially', async () => {
+  it('starts simple runtime once without creating planned todos', async () => {
     const task = {
       id: 'task-sequential',
       repositoryId: 'repo-sequential',
       title: 'Sequential task',
       description: '1. Update the code\n2. Add regression tests',
-      objective: 'Run todos in order',
-      acceptanceCriteria: 'Both todos complete',
+      objective: 'Run task once',
+      acceptanceCriteria: 'Runtime completes',
       timeoutSeconds: 60,
     };
     const run = {
@@ -267,30 +211,6 @@ describe('NightWorkers service', () => {
       repositoryId: task.repositoryId,
       status: 'running',
     };
-    const todos = [
-      {
-        id: 'todo-code',
-        runId: run.id,
-        seq: 1,
-        title: 'Update the code',
-        description: 'Update the code',
-        taskType: 'code_change',
-        status: 'pending',
-        procedureId: 'code-change',
-        procedureSnapshot: { id: 'code-change', digest: 'sha256:code' },
-      },
-      {
-        id: 'todo-test',
-        runId: run.id,
-        seq: 2,
-        title: 'Add regression tests',
-        description: 'Add regression tests',
-        taskType: 'test_change',
-        status: 'pending',
-        procedureId: 'test-change',
-        procedureSnapshot: { id: 'test-change', digest: 'sha256:test' },
-      },
-    ];
     vi.mocked(repo.getTask).mockResolvedValue(task as any);
     vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
     vi.mocked(repo.getRepository).mockResolvedValue({
@@ -302,16 +222,14 @@ describe('NightWorkers service', () => {
       { role: 'user', content: task.description },
     ] as any);
     vi.mocked(repo.createTaskRun).mockResolvedValue(run as any);
-    vi.mocked(repo.createTaskRunTodo).mockResolvedValue({ id: 'todo' } as any);
-    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue(todos as any);
-    vi.mocked(repo.updateTaskRunTodo).mockResolvedValue({ id: 'todo' } as any);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
     vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as any);
     vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
     vi.mocked(repo.updateTaskRun).mockResolvedValue(run as any);
     const runtimeStart = vi.fn().mockResolvedValue({
       terminalState: 'completed',
-      summary: 'Todo done',
-      finalReport: 'Todo report',
+      summary: 'Runtime done',
+      finalReport: 'Runtime report',
       stoppedBy: 'decision',
       riskLevel: 'low',
       diffPatch: 'diff --git a/a b/a',
@@ -326,18 +244,16 @@ describe('NightWorkers service', () => {
     await startTaskRun(task.id);
 
     await vi.waitFor(() => {
-      expect(runtimeStart).toHaveBeenCalledTimes(2);
+      expect(runtimeStart).toHaveBeenCalledTimes(1);
     });
-    expect(runtimeStart.mock.calls[0][0].compiledPrompt).toContain('seq: 1');
-    expect(runtimeStart.mock.calls[1][0].compiledPrompt).toContain('seq: 2');
-    expect(repo.updateTaskRunTodo).toHaveBeenCalledWith(
-      'todo-code',
-      expect.objectContaining({ status: 'passed' })
+    expect(runtimeStart.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        compiledPrompt: expect.stringContaining('Update the code'),
+        latestUserMessage: task.description,
+      })
     );
-    expect(repo.updateTaskRunTodo).toHaveBeenCalledWith(
-      'todo-test',
-      expect.objectContaining({ status: 'passed' })
-    );
+    expect(repo.createTaskRunTodo).not.toHaveBeenCalled();
+    expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
   });
 
   it('starts the next queued session when project queue capacity is available', async () => {
@@ -357,18 +273,6 @@ describe('NightWorkers service', () => {
       repositoryId: task.repositoryId,
       status: 'running',
     };
-    const todo = {
-      id: 'todo-next',
-      runId: run.id,
-      seq: 1,
-      title: 'Run queued session',
-      description: 'Run queued session',
-      taskType: 'code_change',
-      status: 'pending',
-      procedureId: 'code-change',
-      procedureSnapshot: { id: 'code-change', digest: 'sha256:queue' },
-    };
-
     vi.mocked(repo.getRepository).mockResolvedValue({
       id: task.repositoryId,
       localPath: repoRoot,
@@ -386,9 +290,7 @@ describe('NightWorkers service', () => {
       { role: 'user', content: task.description },
     ] as any);
     vi.mocked(repo.createTaskRun).mockResolvedValue(run as any);
-    vi.mocked(repo.createTaskRunTodo).mockResolvedValue({ id: todo.id } as any);
-    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([todo] as any);
-    vi.mocked(repo.updateTaskRunTodo).mockResolvedValue(todo as any);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
     vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as any);
     vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
     vi.mocked(repo.updateTaskRun).mockResolvedValue(run as any);

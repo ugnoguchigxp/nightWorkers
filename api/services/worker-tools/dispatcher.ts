@@ -134,8 +134,6 @@ export async function executeWorkerTool(
       result: await applyPatchTool({
         patchContent: args.patchContent as string,
         repoRoot,
-        readFiles,
-        requireReadBeforeEdit: safetyPolicy?.requireReadBeforeEdit ?? true,
         allowedPaths: safetyPolicy?.allowedPaths,
         deniedPaths: safetyPolicy?.deniedPaths,
       }),
@@ -150,8 +148,6 @@ export async function executeWorkerTool(
         replacement: args.replacement as string,
         mode: (args.mode as 'literal' | 'regex') || 'literal',
         allowMultipleOccurrences: args.allowMultipleOccurrences as boolean | undefined,
-        readFiles,
-        requireReadBeforeEdit: safetyPolicy?.requireReadBeforeEdit ?? true,
         repoRoot,
         allowedPaths: safetyPolicy?.allowedPaths,
         deniedPaths: safetyPolicy?.deniedPaths,

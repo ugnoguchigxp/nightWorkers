@@ -269,6 +269,36 @@ function schemaFirstPayload(payload: any): any {
   return payload?.payload ?? payload?.runEvent?.data?.payload ?? payload?.runEvent?.data ?? {};
 }
 
+function shouldProjectRunEventToActivity(input: {
+  eventType?: string | null;
+  agentEventType?: string | null;
+}) {
+  if (
+    input.agentEventType === 'round1.prompt_built' ||
+    input.agentEventType === 'round2.prompt_built' ||
+    input.agentEventType === 'round1.parsed' ||
+    input.agentEventType === 'round2.parsed' ||
+    input.agentEventType === 'model.response_finished' ||
+    input.agentEventType === 'tool.started' ||
+    input.agentEventType === 'tool.finished' ||
+    input.agentEventType === 'tool.failed' ||
+    input.agentEventType === 'tool.validation_failed' ||
+    input.agentEventType === 'job.switched' ||
+    input.agentEventType === 'finalize.received'
+  ) {
+    return true;
+  }
+  return (
+    input.eventType === 'model.request_started' ||
+    input.eventType === 'model.response_finished' ||
+    input.eventType === 'model.response_parse_failed' ||
+    input.eventType === 'supervisor.decision' ||
+    input.eventType === 'tool.call_started' ||
+    input.eventType === 'tool.call_finished' ||
+    input.eventType === 'tool.policy_blocked'
+  );
+}
+
 function runEventToActivityText(input: {
   eventType?: string | null;
   agentEventType?: string | null;
@@ -1226,6 +1256,8 @@ export async function createRunEvent(
   event: RunEventBase,
   options?: { legacyPayload?: unknown; payloadJson?: Record<string, unknown> }
 ) {
+  if (event.type === 'model.response_delta') return null;
+
   const normalized = normalizeRunEventToLegacy({ event, legacyPayload: options?.legacyPayload });
   const payloadJson = {
     ...normalized.payloadJson,
@@ -1270,6 +1302,18 @@ export async function createRunEvent(
   }
   if (taskId) {
     const agentEventType = schemaFirstAgentEventType(patchedPayload);
+    const projectToActivity = shouldProjectRunEventToActivity({
+      eventType: event.type,
+      agentEventType,
+    });
+    if (!projectToActivity) {
+      nightWorkersRealtimeBroker.publish(taskId, {
+        type: 'task_event_created',
+        runId: event.runId,
+        event: finalEvent,
+      });
+      return finalEvent;
+    }
     await appendActivityEvent({
       taskId,
       runId: event.runId,

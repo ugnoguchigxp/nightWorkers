@@ -10,8 +10,6 @@ export interface ReplaceContentInput {
   replacement: string;
   mode: 'literal' | 'regex';
   allowMultipleOccurrences?: boolean;
-  readFiles?: string[];
-  requireReadBeforeEdit?: boolean;
   allowedPaths?: string[];
   deniedPaths?: string[];
 }
@@ -37,8 +35,6 @@ export async function replaceContentTool(
     replacement,
     mode,
     allowMultipleOccurrences = false,
-    readFiles = [],
-    requireReadBeforeEdit = false,
     allowedPaths,
     deniedPaths,
   } = input;
@@ -79,26 +75,6 @@ export async function replaceContentTool(
         message: 'Needle must not be empty.',
       },
     };
-  }
-
-  if (requireReadBeforeEdit) {
-    const hasBeenRead = readFiles.some((read) => {
-      const absRead = path.resolve(absoluteRepoRoot, read);
-      return absRead === targetPath;
-    });
-    if (!hasBeenRead) {
-      return {
-        ok: false,
-        toolName: 'replace_content',
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        payload: { applied: false, occurrences: 0, filePath },
-        error: {
-          code: 'READ_BEFORE_EDIT_VIOLATION',
-          message: `You must read the file contents using read_file before you edit it: ${filePath}`,
-        },
-      };
-    }
   }
 
   try {

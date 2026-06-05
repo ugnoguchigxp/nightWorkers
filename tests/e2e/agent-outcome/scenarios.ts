@@ -11,7 +11,6 @@ export type AgentOutcomeScenario = {
     deniedPaths?: string[];
     blockedCommands?: string[];
     maxCommandSeconds?: number;
-    requireReadBeforeEdit?: boolean;
   };
   expected: {
     runStatus: string;
@@ -42,7 +41,6 @@ export const agentOutcomeScenarios = {
       { path: 'README.md', content: '# Agent outcome fixture\n' },
       { path: 'src/greeting.txt', content: 'TODO\n' },
     ],
-    safetyPolicy: { requireReadBeforeEdit: false },
     expected: {
       runStatus: 'needs_review',
       taskStatus: 'completed',
@@ -67,7 +65,6 @@ export const agentOutcomeScenarios = {
       { path: 'README.md', content: '# Agent outcome fixture\n' },
       { path: 'src/greeting.txt', content: 'TODO\n' },
     ],
-    safetyPolicy: { requireReadBeforeEdit: true },
     expected: {
       runStatus: 'needs_review',
       taskStatus: 'completed',
@@ -96,7 +93,6 @@ export const agentOutcomeScenarios = {
         content: 'export function WsBadge() {\n  return <span>WS</span>;\n}\n',
       },
     ],
-    safetyPolicy: { requireReadBeforeEdit: true },
     expected: {
       runStatus: 'needs_review',
       taskStatus: 'completed',
@@ -123,7 +119,6 @@ export const agentOutcomeScenarios = {
       { path: 'src/greeting.txt', content: 'TODO\n' },
     ],
     safetyPolicy: {
-      requireReadBeforeEdit: false,
       blockedCommands: ['rm'],
       maxCommandSeconds: 5,
     },
@@ -144,7 +139,6 @@ export const agentOutcomeScenarios = {
       { path: 'README.md', content: '# Agent outcome fixture\n' },
       { path: 'src/greeting.txt', content: 'TODO\n' },
     ],
-    safetyPolicy: { requireReadBeforeEdit: false },
     expected: {
       runStatus: 'needs_human',
       taskStatus: 'ready',
