@@ -17,11 +17,21 @@ async function enableMocking() {
   });
 }
 
+async function loadDesktopConfig() {
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    window.__NIGHTWORKERS_DESKTOP_CONFIG__ = await invoke('get_desktop_config');
+  } catch (err) {
+    console.warn('Tauri desktop config unavailable, continuing with browser API defaults.', err);
+  }
+}
+
 const rootElement = document.getElementById('root');
 if (rootElement && !rootElement.innerHTML) {
-  enableMocking()
+  Promise.all([loadDesktopConfig(), enableMocking()])
     .catch((err) => {
-      console.warn('MSW failed to start, continuing without mocks.', err);
+      console.warn('App bootstrap warning, continuing with defaults.', err);
     })
     .finally(() => {
       const root = createRoot(rootElement);

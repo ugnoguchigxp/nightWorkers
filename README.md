@@ -61,6 +61,7 @@ Details: [Architecture and Module Boundaries](./spec/docs/architecture.md)
 ## Requirements
 - Node.js 20+
 - pnpm 10+
+- Rust toolchain and macOS build tools for desktop packaging
 
 ## Quick Start
 1. Install dependencies
@@ -82,6 +83,43 @@ pnpm dev
 ```
 
 Default URL: `http://localhost:39174`
+
+## Desktop App
+NightWorkers can also be built as a macOS Tauri app. The desktop shell launches
+the Vite frontend in a WebView and manages the Node backend as a sidecar.
+
+```bash
+pnpm desktop:build
+pnpm desktop:smoke
+```
+
+The generated app is written to:
+
+```text
+src-tauri/target/release/bundle/macos/NightWorkers.app
+```
+
+Desktop runtime state is stored under the macOS app data directory, not the repo
+checkout. On this platform the default identifier path is:
+
+```text
+~/Library/Application Support/dev.nightworkers.desktop/runtime
+```
+
+Desktop diagnostics are written under:
+
+```text
+~/Library/Application Support/dev.nightworkers.desktop/runtime/logs
+```
+
+The main files are `desktop.log` for the Tauri shell startup path, `sidecar.log`
+for the bundled Node process stdout/stderr, and `api.log` for API request and
+runtime events.
+
+The desktop build currently produces a verified `.app` artifact. DMG creation is
+kept as a separate release gate via `pnpm desktop:build:dmg` because create-dmg
+can fail on local mount/Finder state. Signing requires Developer ID credentials
+and is run separately with `pnpm desktop:sign`.
 
 ## Configuration
 Important environment variables:
@@ -110,6 +148,14 @@ Implementation plans:
 | `pnpm dev` | Start API + web in watch mode |
 | `pnpm build` | Build frontend and backend |
 | `pnpm start` | Start production backend bundle |
+| `pnpm desktop:dev` | Start the Tauri desktop app in development mode |
+| `pnpm desktop:build` | Build the macOS `.app` desktop artifact |
+| `pnpm desktop:build:dmg` | Build a DMG release artifact as a separate gate |
+| `pnpm desktop:lint` | Run Rust format and Clippy checks for the Tauri shell |
+| `pnpm desktop:prepare-sidecar` | Stage the Node sidecar runtime resources |
+| `pnpm desktop:smoke-sidecar` | Smoke-test the staged sidecar health endpoint |
+| `pnpm desktop:smoke` | Launch the packaged `.app` and verify API, WebSocket, logs, and shutdown |
+| `pnpm desktop:sign` | Sign/verify an app path when Developer ID credentials are available |
 | `pnpm lint` | Run Biome checks |
 | `pnpm typecheck` | Run TypeScript checks |
 | `pnpm test` | Run Vitest |
@@ -123,21 +169,23 @@ Implementation plans:
 | `pnpm cleanup:test-data:dry-run` | Preview cleanup of TEST-prefixed local data |
 | `pnpm cleanup:test-data` | Delete TEST-prefixed local data |
 | `pnpm design-system:storybook` | Start the design system Storybook |
-| `pnpm verify` | Run the default fast confidence gate: TypeScript + Biome |
-| `pnpm verify:fast` | Alias for `pnpm verify` |
-| `pnpm verify:full` | Run the explicit full gate: `verify` + Vitest |
+| `pnpm verify:base` | Run the base gate: TypeScript, Biome, and supervisor regression tests |
+| `pnpm verify:desktop` | Run Tauri/Rust checks, build the `.app`, and smoke-test it |
+| `pnpm verify` | Run `verify:base` and `verify:desktop` |
+| `pnpm verify:fast` | Run only `verify:base` |
+| `pnpm verify:full` | Run `verify` plus the full Vitest suite |
 
 ## Testing
-- Default fast gate: `pnpm verify` runs TypeScript and Biome. It should finish without TypeScript errors or Biome diagnostics.
-- Fast alias: `pnpm verify:fast` is kept as an alias for `pnpm verify`.
-- Full gate: `pnpm verify:full` runs the default fast gate plus Vitest. Use it when a change touches runtime behavior, API contracts, schemas, or user-visible flows.
+- Default gate: `pnpm verify` runs TypeScript, Biome, supervisor regression tests, Rust format/Clippy checks, Tauri `.app` build, and packaged app smoke.
+- Fast gate: `pnpm verify:fast` runs only the TypeScript/Biome/supervisor regression base gate.
+- Full gate: `pnpm verify:full` runs the default gate plus the full Vitest suite. Use it when a change touches runtime behavior, API contracts, schemas, or user-visible flows.
 - Smoke E2E: `pnpm test:e2e:smoke` remains separate until local app/server prerequisites are explicitly available.
-- Husky hooks: `pre-commit` and `pre-push` both run `pnpm verify` only. Vitest is intentionally opt-in through `pnpm verify:full`, so everyday Git operations stay fast.
+- Husky hooks: `pre-commit` and `pre-push` both run `pnpm verify`.
 - Unit/integration: Vitest
 - End-to-end: Playwright (`@smoke`, `@regression` tags)
 - Agent outcome E2E: `pnpm test:e2e:agent-outcome` uses the deterministic `test` provider, scratch git workspaces, real API/DB/run event paths, and requires no provider credentials. Set `KEEP_E2E_WORKSPACE=1` to keep the scratch workspace after a failure.
 - Live agent E2E: `pnpm test:e2e:agent-live` is optional and skips unless provider credentials are configured.
-- If validation fails, first identify the phase that failed: TypeScript (`pnpm typecheck`), Biome (`pnpm lint`), Vitest (`pnpm test run`), or Playwright (`pnpm test:e2e:smoke`).
+- If validation fails, first identify the phase that failed: TypeScript (`pnpm typecheck`), Biome (`pnpm lint`), Rust/Tauri (`pnpm desktop:lint` / `pnpm desktop:build`), packaged smoke (`pnpm desktop:smoke`), Vitest (`pnpm test run`), or Playwright (`pnpm test:e2e:smoke`).
 - Recommended pre-PR validation:
 ```bash
 pnpm verify

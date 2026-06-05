@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { client } from '../lib/api';
+import { apiPath } from '../lib/api-base';
 
 export const Route = createFileRoute('/tasks/$id')({
   component: TaskConsolePage,
@@ -88,7 +89,7 @@ function TaskConsolePage() {
 
   const reviewRunMutation = useMutation({
     mutationFn: async (data: { action: 'complete' | 'cancel'; note?: string }) => {
-      const res = await fetch(`/api/runs/${activeRun?.id}/review`, {
+      const res = await fetch(apiPath(`/api/runs/${activeRun?.id}/review`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),

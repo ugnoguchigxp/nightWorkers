@@ -1,5 +1,6 @@
 import { createContext, type ReactNode, useContext, useEffect, useState } from 'react';
 import { client } from './api';
+import { apiPath } from './api-base';
 
 interface User {
   id: string;
@@ -24,7 +25,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const methodsRes = await fetch('/api/auth/methods', { credentials: 'include' });
+        const methodsRes = await fetch(apiPath('/api/auth/methods'), { credentials: 'include' });
         if (methodsRes.ok) {
           const methods = (await methodsRes.json()) as { apiAuthRequired?: boolean };
           const required = Boolean(methods.apiAuthRequired);

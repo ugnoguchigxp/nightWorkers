@@ -2,6 +2,7 @@ import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tansta
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { client } from '../../../lib/api';
+import { apiFetch, devWsFallbackPath, wsPath } from '../../../lib/api-base';
 import { dedupeAndSortActivityEvents } from '../activityTranscript';
 import {
   dedupeAndSortRunEvents,
@@ -67,7 +68,7 @@ type TaskPatchInput = {
 const emptyActivityReplay: ActivityReplay = { events: [], artifacts: [] };
 
 async function patchTask(sessionId: string, input: TaskPatchInput) {
-  const res = await fetch(`/api/tasks/${sessionId}`, {
+  const res = await apiFetch(`/api/tasks/${sessionId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -229,7 +230,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       const url = targetPath
         ? `/api/utils/browse-folders?path=${encodeURIComponent(targetPath)}`
         : '/api/utils/browse-folders';
-      const res = await fetch(url);
+      const res = await apiFetch(url);
       if (!res.ok) return;
       const data = (await res.json()) as {
         currentPath: string | null;
@@ -269,7 +270,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const { data: implementationQueue = null, isLoading: isImplementationQueueLoading } = useQuery({
     queryKey: ['implementationQueue'],
     queryFn: async () => {
-      const res = await fetch('/api/implementation-queue');
+      const res = await apiFetch('/api/implementation-queue');
       if (!res.ok) throw new Error('Failed to fetch implementation queue');
       return (await res.json()) as ImplementationQueueDashboard;
     },
@@ -280,7 +281,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const { data: todoWorkflowSettings = null } = useQuery({
     queryKey: ['todoWorkflowSettings'],
     queryFn: async () => {
-      const res = await fetch('/api/todo-workflow/settings');
+      const res = await apiFetch('/api/todo-workflow/settings');
       if (!res.ok) throw new Error('Failed to fetch Todo Workflow settings');
       return (await res.json()) as TodoWorkflowSettings;
     },
@@ -305,7 +306,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     queryKey: ['taskMessages', activeSessionId],
     queryFn: async () => {
       if (!activeSessionId) return [];
-      const res = await fetch(`/api/tasks/${activeSessionId}/messages`);
+      const res = await apiFetch(`/api/tasks/${activeSessionId}/messages`);
       if (!res.ok) throw new Error('Failed to fetch task messages');
       return (await res.json()) as TaskMessage[];
     },
@@ -318,7 +319,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     queryKey: ['llmUsage', activeSessionId],
     queryFn: async () => {
       if (!activeSessionId) return null;
-      const res = await fetch(`/api/tasks/${activeSessionId}/llm-usage`);
+      const res = await apiFetch(`/api/tasks/${activeSessionId}/llm-usage`);
       if (!res.ok) throw new Error('Failed to fetch LLM usage summary');
       return (await res.json()) as TaskLlmUsageSummary;
     },
@@ -331,7 +332,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     queryKey: ['activityReplay', activeSessionId],
     queryFn: async () => {
       if (!activeSessionId) return emptyActivityReplay;
-      const res = await fetch(`/api/tasks/${activeSessionId}/activity-events`);
+      const res = await apiFetch(`/api/tasks/${activeSessionId}/activity-events`);
       if (!res.ok) throw new Error('Failed to fetch activity events');
       return normalizeActivityReplay(await res.json());
     },
@@ -345,7 +346,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const { data: llmSettings = null } = useQuery({
     queryKey: ['llmSettings'],
     queryFn: async () => {
-      const res = await fetch('/api/settings/llm');
+      const res = await apiFetch('/api/settings/llm');
       if (!res.ok) throw new Error('Failed to fetch llm settings');
       return (await res.json()) as LlmSettings;
     },
@@ -358,7 +359,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const { data: providerModelOptions = [] } = useQuery({
     queryKey: ['llmModelOptions', activeProvider],
     queryFn: async () => {
-      const res = await fetch('/api/settings/llm/models');
+      const res = await apiFetch('/api/settings/llm/models');
       if (!res.ok) throw new Error('Failed to fetch model options');
       const data = (await res.json()) as { options: Array<{ value: string; label: string }> };
       return data.options;
@@ -370,7 +371,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const { data: mcpServers = [] } = useQuery({
     queryKey: ['mcpServers'],
     queryFn: async () => {
-      const res = await fetch('/api/settings/mcp/servers');
+      const res = await apiFetch('/api/settings/mcp/servers');
       if (!res.ok) throw new Error('Failed to fetch MCP servers');
       const data = (await res.json()) as { servers: McpServerConfig[] };
       return data.servers;
@@ -382,7 +383,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const { data: agentHooks = [] } = useQuery({
     queryKey: ['agentHooks'],
     queryFn: async () => {
-      const res = await fetch('/api/settings/hooks');
+      const res = await apiFetch('/api/settings/hooks');
       if (!res.ok) throw new Error('Failed to fetch Agent Hooks');
       const data = (await res.json()) as { hooks: AgentHookConfig[] };
       return data.hooks;
@@ -451,7 +452,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
   const createSessionMutation = useMutation({
     mutationFn: async (data: CreateSessionInput) => {
-      const res = await fetch('/api/workbench/sessions', {
+      const res = await apiFetch('/api/workbench/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -474,7 +475,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
   const deleteSessionMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/tasks/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete session');
       return res.json();
     },
@@ -494,7 +495,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
   const startRunMutation = useMutation({
     mutationFn: async (sessionId: string) => {
-      const res = await fetch(`/api/workbench/sessions/${sessionId}/run`, { method: 'POST' });
+      const res = await apiFetch(`/api/workbench/sessions/${sessionId}/run`, { method: 'POST' });
       if (!res.ok) throw new Error('Failed to start run');
       return (await res.json()) as TaskRun;
     },
@@ -506,7 +507,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
   const queueSessionMutation = useMutation({
     mutationFn: async (sessionId: string) => {
-      const res = await fetch(`/api/workbench/sessions/${sessionId}/queue`, { method: 'POST' });
+      const res = await apiFetch(`/api/workbench/sessions/${sessionId}/queue`, { method: 'POST' });
       if (!res.ok) throw new Error(await res.text());
       return (await res.json()) as Task;
     },
@@ -524,7 +525,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
   const createImplementationQueueEntryMutation = useMutation({
     mutationFn: async (sessionId: string) => {
-      const res = await fetch('/api/implementation-queue/entries', {
+      const res = await apiFetch('/api/implementation-queue/entries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ taskId: sessionId }),
@@ -540,7 +541,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
   const archiveImplementationQueueEntryMutation = useMutation({
     mutationFn: async (entryId: string) => {
-      const res = await fetch(`/api/implementation-queue/entries/${entryId}/archive`, {
+      const res = await apiFetch(`/api/implementation-queue/entries/${entryId}/archive`, {
         method: 'POST',
       });
       if (!res.ok) throw new Error(await res.text());
@@ -553,7 +554,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
   const updateImplementationQueueProcessorCountMutation = useMutation({
     mutationFn: async (processorCount: number) => {
-      const res = await fetch('/api/implementation-queue/settings', {
+      const res = await apiFetch('/api/implementation-queue/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ processorCount }),
@@ -568,7 +569,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
   const updateTodoWorkflowSettingsMutation = useMutation({
     mutationFn: async (input: Partial<TodoWorkflowSettings>) => {
-      const res = await fetch('/api/todo-workflow/settings', {
+      const res = await apiFetch('/api/todo-workflow/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -661,12 +662,12 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       if (input.sourceGroup === 'queue' && input.targetGroup === 'processing') {
         await patchTask(input.sessionId, { status: 'draft' });
       } else if (input.sourceGroup === 'processing' && input.targetGroup === 'queue') {
-        const res = await fetch(`/api/workbench/sessions/${input.sessionId}/queue`, {
+        const res = await apiFetch(`/api/workbench/sessions/${input.sessionId}/queue`, {
           method: 'POST',
         });
         if (!res.ok) throw new Error(await res.text());
       } else if (input.targetGroup === 'archive') {
-        const res = await fetch(`/api/workbench/sessions/${input.sessionId}/archive`, {
+        const res = await apiFetch(`/api/workbench/sessions/${input.sessionId}/archive`, {
           method: 'PATCH',
         });
         if (!res.ok) throw new Error(await res.text());
@@ -736,7 +737,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       const params = new URLSearchParams();
       if (rootProjectDirectory) params.set('path', rootProjectDirectory);
       const query = params.toString();
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/repositories/${activeProjectId}/files${query ? `?${query}` : ''}`
       );
       if (!res.ok) throw new Error('Failed to fetch project files');
@@ -759,7 +760,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     queryFn: async () => {
       if (!activeProjectId || !selectedProjectFilePath) return null;
       const params = new URLSearchParams({ path: selectedProjectFilePath });
-      const res = await fetch(`/api/repositories/${activeProjectId}/file?${params.toString()}`);
+      const res = await apiFetch(`/api/repositories/${activeProjectId}/file?${params.toString()}`);
       if (!res.ok) throw new Error('Failed to fetch project file');
       return (await res.json()) as ProjectFileContent;
     },
@@ -959,14 +960,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 
   useEffect(() => {
     setRealtimeStatus('connecting');
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const configuredUrl = (import.meta as any).env?.VITE_NIGHTWORKERS_WS_URL as string | undefined;
-    const primaryUrl = configuredUrl || `${protocol}//${window.location.host}/api/ws/nightworkers`;
-    const fallbackUrl =
-      !configuredUrl &&
-      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-        ? `${protocol}//localhost:39173/api/ws/nightworkers`
-        : null;
+    const primaryUrl = wsPath('/api/ws/nightworkers');
+    const fallbackUrl = devWsFallbackPath('/api/ws/nightworkers');
 
     let ws: WebSocket | null = null;
     let closedManually = false;
@@ -1370,7 +1365,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
         setPendingAssistantTaskId(null);
       }
       try {
-        const res = await fetch(`/api/workbench/sessions/${sessionId}/messages`, {
+        const res = await apiFetch(`/api/workbench/sessions/${sessionId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: content, intent }),
@@ -1433,7 +1428,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     mcpServers,
     agentHooks,
     createMcpServer: async (input) => {
-      const res = await fetch('/api/settings/mcp/servers', {
+      const res = await apiFetch('/api/settings/mcp/servers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -1444,7 +1439,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       return server;
     },
     importMcpServers: async (text, testAfterImport = true) => {
-      const res = await fetch('/api/settings/mcp/servers/import', {
+      const res = await apiFetch('/api/settings/mcp/servers/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, testAfterImport }),
@@ -1455,7 +1450,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       return result;
     },
     updateMcpServer: async (id, input) => {
-      const res = await fetch(`/api/settings/mcp/servers/${id}`, {
+      const res = await apiFetch(`/api/settings/mcp/servers/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -1466,19 +1461,19 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       return server;
     },
     deleteMcpServer: async (id) => {
-      const res = await fetch(`/api/settings/mcp/servers/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/settings/mcp/servers/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(await res.text());
       queryClient.invalidateQueries({ queryKey: ['mcpServers'] });
     },
     testMcpServer: async (id) => {
-      const res = await fetch(`/api/settings/mcp/servers/${id}/test`, { method: 'POST' });
+      const res = await apiFetch(`/api/settings/mcp/servers/${id}/test`, { method: 'POST' });
       if (!res.ok) throw new Error(await res.text());
       const result = (await res.json()) as McpServerTestResult;
       queryClient.invalidateQueries({ queryKey: ['mcpServers'] });
       return result;
     },
     createAgentHook: async (input) => {
-      const res = await fetch('/api/settings/hooks', {
+      const res = await apiFetch('/api/settings/hooks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -1489,7 +1484,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       return hook;
     },
     updateAgentHook: async (id, input) => {
-      const res = await fetch(`/api/settings/hooks/${id}`, {
+      const res = await apiFetch(`/api/settings/hooks/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -1500,12 +1495,12 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       return hook;
     },
     deleteAgentHook: async (id) => {
-      const res = await fetch(`/api/settings/hooks/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/settings/hooks/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(await res.text());
       queryClient.invalidateQueries({ queryKey: ['agentHooks'] });
     },
     testAgentHook: async (id) => {
-      const res = await fetch(`/api/settings/hooks/${id}/test`, { method: 'POST' });
+      const res = await apiFetch(`/api/settings/hooks/${id}/test`, { method: 'POST' });
       if (!res.ok) throw new Error(await res.text());
       const result = (await res.json()) as AgentHookTestResult;
       queryClient.invalidateQueries({ queryKey: ['agentHooks'] });
@@ -1513,7 +1508,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     },
     setActiveProvider: async (provider) => {
       const merged = { ...(llmSettings || {}), ACTIVE_LLM_PROVIDER: provider } as LlmSettings;
-      const res = await fetch('/api/settings/llm', {
+      const res = await apiFetch('/api/settings/llm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(merged),
@@ -1531,7 +1526,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
         codex: 'CODEX_ENABLED',
       };
       const merged = { ...llmSettings, [flagKey[provider]]: enabled };
-      const res = await fetch('/api/settings/llm', {
+      const res = await apiFetch('/api/settings/llm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(merged),
@@ -1548,7 +1543,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
         codex: 'CODEX_MODEL',
       };
       const merged = { ...llmSettings, [modelKey[activeProvider]]: model };
-      const res = await fetch('/api/settings/llm', {
+      const res = await apiFetch('/api/settings/llm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(merged),
@@ -1558,7 +1553,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       queryClient.invalidateQueries({ queryKey: ['llmModelOptions'] });
     },
     runLlmSmokeTest: async () => {
-      const res = await fetch('/api/settings/llm/smoke', { method: 'POST' });
+      const res = await apiFetch('/api/settings/llm/smoke', { method: 'POST' });
       if (!res.ok) throw new Error('Failed to run smoke');
       return (await res.json()) as { ok: boolean; provider: string; message: string };
     },
@@ -1569,7 +1564,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       setLoadingProjectDirectories((prev) => ({ ...prev, [path]: true }));
       try {
         const params = new URLSearchParams({ path });
-        const res = await fetch(`/api/repositories/${activeProjectId}/files?${params.toString()}`);
+        const res = await apiFetch(
+          `/api/repositories/${activeProjectId}/files?${params.toString()}`
+        );
         if (!res.ok) throw new Error('Failed to fetch project files');
         const entries = (await res.json()) as ProjectFileEntry[];
         setProjectFileEntriesByDirectory((prev) => ({ ...prev, [path]: entries }));

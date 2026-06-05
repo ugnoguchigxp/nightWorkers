@@ -3,6 +3,7 @@
 ## Top-Level Components
 - `api/`: backend API, domain services, integrations, and runners
 - `src/`: frontend routes and feature modules
+- `src-tauri/`: macOS Tauri shell and desktop sidecar lifecycle
 - `shared/`: shared schemas and type contracts
 - `drizzle/`: database schema migrations and seed data
 - `designSystem/`: reusable UI primitives and stories
@@ -30,6 +31,23 @@ Blueprint Preview, where users can adjust governed preview design settings,
 request DB Design revisions, and mark which Blueprint, DB Design, or Design
 Token artifact should be adopted for later planning.
 
+## Desktop Packaging Boundary
+The desktop app keeps the existing Node backend boundary. The Tauri shell owns
+window lifecycle, app data path resolution, dynamic loopback port allocation,
+Node sidecar startup, health readiness, and shutdown. The backend still owns
+Hono routes, SQLite/libSQL, supervisor/worker execution, MCP, hooks, and Codex
+SDK integration.
+
+Writable desktop state is rooted at `NIGHTWORKERS_RUNTIME_DIR`, which Tauri sets
+to the app data directory. Bundled readonly resources are rooted at
+`NIGHTWORKERS_RESOURCE_DIR`, which points to the packaged resource directory.
+Registered Project work still uses the Project repo root and must not use the
+Tauri temporary/resource directory as a workspace.
+
+The frontend receives the sidecar API origin through the Tauri
+`get_desktop_config` command and uses `src/lib/api-base.ts` to build REST and
+WebSocket URLs. Browser development keeps the existing Vite `/api` proxy path.
+
 ## API Surface (high level)
 - `/api/repositories`: Project Folder registration and listing
 - `/api/repositories/:id`: Project Folder updates
@@ -46,6 +64,7 @@ Token artifact should be adopted for later planning.
 - `/api/settings/llm/*`: provider/model settings, runtime settings, and smoke checks
 - `/api/settings/mcp/*`: non-authenticated MCP Server settings, connection tests, and tool discovery
 - `/api/settings/hooks/*`: Agent Hooks settings, CRUD, and sample-input test execution
+- `/api/settings/preflight/startup`: startup diagnostics for runtime/resource paths
 
 ## Blueprint Boundaries
 - Normal App Blueprint generation owns visual application structure: screens,

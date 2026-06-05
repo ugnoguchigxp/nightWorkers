@@ -1,5 +1,6 @@
 import type { AppType } from '@api/app';
 import { hc } from 'hono/client';
+import { apiPath } from './api-base';
 
 let isRefreshing = false;
 let apiAuthRequiredCache: boolean | null = null;
@@ -38,7 +39,7 @@ const redirectToLoginIfNeeded = () => {
 async function isApiAuthRequired() {
   if (apiAuthRequiredCache !== null) return apiAuthRequiredCache;
   try {
-    const res = await fetch('/api/auth/methods', { credentials: 'include' });
+    const res = await fetch(apiPath('/api/auth/methods'), { credentials: 'include' });
     if (!res.ok) {
       apiAuthRequiredCache = false;
       return apiAuthRequiredCache;
@@ -86,7 +87,7 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promis
     if (!isRefreshing) {
       isRefreshing = true;
       try {
-        const refreshRes = await fetch('/api/auth/refresh', {
+        const refreshRes = await fetch(apiPath('/api/auth/refresh'), {
           method: 'POST',
           credentials: 'include',
         });
@@ -120,6 +121,6 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promis
   return response;
 };
 
-export const client = hc<AppType>('/api', {
+export const client = hc<AppType>(apiPath('/api'), {
   fetch: customFetch,
 });

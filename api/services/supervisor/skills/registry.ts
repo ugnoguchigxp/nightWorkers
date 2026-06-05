@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { getResourceRoot } from '../../../runtime/paths';
 import {
   defaultSupervisorRoutingHypothesis,
   type SupervisorMode,
@@ -33,7 +34,7 @@ const optionalSections: SupervisorSkillSectionName[] = [
 const allowedSections = [...requiredSections, ...optionalSections];
 
 export const defaultSupervisorSkillsDirectory = path.join(
-  process.cwd(),
+  getResourceRoot(),
   'api/services/supervisor/skills/builtin'
 );
 

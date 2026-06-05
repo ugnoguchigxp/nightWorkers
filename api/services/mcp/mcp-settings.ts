@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ValidationError } from '../../lib/errors';
+import { getRuntimePaths } from '../../runtime/paths';
 import {
   type McpServerConfig,
   type McpServerInput,
@@ -11,7 +12,7 @@ import {
   mcpServerInputSchema,
 } from './mcp-config-schema';
 
-const RUNTIME_SETTINGS_DIR = path.resolve(process.cwd(), 'api/.runtime');
+const RUNTIME_SETTINGS_DIR = getRuntimePaths().settingsDir;
 const DEFAULT_MCP_SETTINGS_PATH = path.join(RUNTIME_SETTINGS_DIR, 'mcp-servers.json');
 
 type PersistedMcpSettings = {

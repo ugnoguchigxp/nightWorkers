@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import path from 'node:path';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { createNodeWebSocket } from '@hono/node-ws';
 import { swaggerUI } from '@hono/swagger-ui';
@@ -22,6 +23,7 @@ import { authRouter } from './routes/auth';
 import { healthRouter } from './routes/health';
 import { oauthRouter } from './routes/oauth';
 import { settingsRouter } from './routes/settings';
+import { getResourceRoot } from './runtime/paths';
 import { nightWorkersRealtimeBroker } from './services/realtime/nightworkers-ws';
 
 const apiRoutes = createOpenApiRouter()
@@ -46,6 +48,18 @@ const wsLimiter = rateLimiter({
   limit: isE2e ? 10_000 : 120,
   trustProxy: config.TRUST_PROXY,
 });
+const connectSrcOrigins = [
+  ...config.CORS_ORIGINS,
+  ...config.CORS_ORIGINS.flatMap((origin) => {
+    if (origin.startsWith('https://')) return [`wss://${origin.slice('https://'.length)}`];
+    if (origin.startsWith('http://')) return [`ws://${origin.slice('http://'.length)}`];
+    return [];
+  }),
+  ...(isProduction && config.NIGHTWORKERS_DESKTOP
+    ? ['asset:', 'tauri:', 'http://tauri.localhost']
+    : []),
+  ...(isProduction ? [] : ['ws:', 'wss:']),
+];
 export const nodeWebSocket = createNodeWebSocket({ app });
 const { upgradeWebSocket } = nodeWebSocket;
 const requireApiAuth = authMiddleware();
@@ -88,7 +102,7 @@ app.use(
       scriptSrc: isProduction ? ["'self'"] : ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       styleSrc: isProduction ? ["'self'"] : ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'https:'],
-      connectSrc: ["'self'", ...config.CORS_ORIGINS, ...(isProduction ? [] : ['ws:', 'wss:'])],
+      connectSrc: ["'self'", ...connectSrcOrigins],
       objectSrc: ["'none'"],
       frameAncestors: ["'none'"],
       baseUri: ["'self'"],
@@ -374,9 +388,12 @@ app.get(
 );
 
 if (config.NODE_ENV === 'production') {
-  const serveIndex = serveStatic({ path: './dist/index.html' });
-  app.use('/assets/*', serveStatic({ root: './dist' }));
-  app.use('/favicon.ico', serveStatic({ root: './dist' }));
+  const frontendDist = process.env.NIGHTWORKERS_FRONTEND_DIST
+    ? path.resolve(process.env.NIGHTWORKERS_FRONTEND_DIST)
+    : path.join(getResourceRoot(), 'dist');
+  const serveIndex = serveStatic({ path: path.join(frontendDist, 'index.html') });
+  app.use('/assets/*', serveStatic({ root: frontendDist }));
+  app.use('/favicon.ico', serveStatic({ root: frontendDist }));
   app.get('*', async (c, next) => {
     if (c.req.path.startsWith('/api')) return next();
     return serveIndex(c, next);

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ValidationError } from '../../lib/errors';
+import { getRuntimePaths } from '../../runtime/paths';
 import {
   type AgentHookInputConfig,
   type AgentHookUpdateInput,
@@ -10,7 +11,7 @@ import {
 } from './hooks-config-schema';
 import type { AgentHookConfig, AgentHookLastRun } from './types';
 
-const RUNTIME_SETTINGS_DIR = path.resolve(process.cwd(), 'api/.runtime');
+const RUNTIME_SETTINGS_DIR = getRuntimePaths().settingsDir;
 const DEFAULT_HOOKS_SETTINGS_PATH = path.join(RUNTIME_SETTINGS_DIR, 'agent-hooks.json');
 
 type PersistedAgentHooksSettings = {

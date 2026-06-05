@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { apiFetch } from '../../../lib/api-base';
 import {
   useWorkspaceAppearanceActions,
   useWorkspaceAppearanceState,
@@ -356,8 +357,8 @@ export function SettingsScreen({
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/settings/llm').then((res) => res.json()),
-      fetch('/api/settings/general').then((res) => res.json()),
+      apiFetch('/api/settings/llm').then((res) => res.json()),
+      apiFetch('/api/settings/general').then((res) => res.json()),
     ])
       .then(([llmData, generalData]: [Partial<LlmSettings>, Partial<GeneralSettings>]) => {
         setSettings({ ...defaultSettings, ...llmData });
@@ -376,7 +377,7 @@ export function SettingsScreen({
       ...settings,
       ACTIVE_LLM_PROVIDER: providerOverride ?? settings.ACTIVE_LLM_PROVIDER,
     };
-    const res = await fetch('/api/settings/llm', {
+    const res = await apiFetch('/api/settings/llm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updated),
@@ -397,7 +398,7 @@ export function SettingsScreen({
       ACTIVE_LLM_PROVIDER: provider,
     };
     try {
-      const saveRes = await fetch('/api/settings/llm', {
+      const saveRes = await apiFetch('/api/settings/llm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated),
@@ -425,7 +426,7 @@ export function SettingsScreen({
 
   const saveGeneralSettings = async () => {
     setGeneralMessage('');
-    const res = await fetch('/api/settings/general', {
+    const res = await apiFetch('/api/settings/general', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(generalSettings),
@@ -444,7 +445,7 @@ export function SettingsScreen({
     setIsRefreshingFx(true);
     setGeneralMessage('');
     try {
-      const res = await fetch('/api/settings/fx/refresh', { method: 'POST' });
+      const res = await apiFetch('/api/settings/fx/refresh', { method: 'POST' });
       if (!res.ok) {
         throw new Error(t('settings.general.exchangeRefreshFailed', { status: res.status }));
       }

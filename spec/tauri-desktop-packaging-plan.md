@@ -1,374 +1,620 @@
-# Tauri Desktop Packaging Plan
+# Tauri Desktop Packaging Implementation Plan
 
 ## 目的
 
-NightWorkers を Tauri デスクトップアプリとして配布できる形にし、利用者が Node.js / pnpm / `.env` / DB migration / API と Web の 2 プロセス起動でつまずく導入問題を減らす。
+NightWorkers を macOS 向け Tauri デスクトップアプリとして配布できる状態にする。利用者に Node.js / pnpm / `.env` / DB migration / API と Web の 2 プロセス起動を要求せず、通常の `.app` / `.dmg` から Workbench UI まで到達できる導入体験にする。
 
-この計画は、NightWorkers を Tauri アプリとして配布することを前提にした実装計画である。方式は Tauri shell に Vite frontend を載せ、既存 Hono + Node backend bundle を Node sidecar として同梱する。現在の runtime は `child_process`、MCP stdio、Agent Hooks、Codex SDK、repo root ファイル操作、SQLite file DB に依存しているため、Tauri 化の初期実装では backend 境界を維持し、Rust 側は window、packaging、sidecar lifecycle、app data path、配布 UX を担当する。
+初期実装では既存の Hono + Node backend を Rust に移植しない。Tauri は window、packaging、Node sidecar lifecycle、app data path、first-run bootstrap、diagnostics を担当し、supervisor / worker tools / MCP / hooks / Codex SDK / SQLite DB は既存 Node backend 境界に残す。
 
-## 現状
+## 現状確認
 
-- Frontend は React + Vite + TanStack Router。開発時は `vite.config.ts` の proxy で `/api` と WebSocket を `localhost:39173` の API に転送している。
-- Backend は `api/index.ts` が `ensureNightWorkersSchema()` を実行してから Hono server を起動し、`api/app.ts` が REST API、WebSocket、production static serving をまとめて持っている。
-- DB は `@libsql/client` + Drizzle で、`DATABASE_URL` が `file:` でなければ `file:${DATABASE_URL}` として扱う。Tauri の app data 配下に SQLite file を置く設計と相性がよい。
-- Runtime settings は `api/.runtime` 配下、logs は `logs` 配下など、現状は `process.cwd()` 前提の保存先がある。
-- LLM provider、Codex SDK、worker tools、MCP、Agent Hooks は Node runtime と OS process 実行に依存している。
+- `src-tauri/` はまだ存在しない。
+- Frontend は React + Vite + TanStack Router。`vite.config.ts` の dev server は `39174`、`/api` と WebSocket proxy は `localhost:39173` を向く。
+- Backend entry は `api/index.ts`。top-level await で `ensureNightWorkersSchema()`、`serve()`、WebSocket injection、signal handler、`process.exit()` まで持っている。
+- `package.json` の `build:backend` は `esbuild api/index.ts --bundle --packages=external --platform=node --target=node20 --format=esm --outfile=dist-api/index.js`。配布には Node runtime と external production dependencies の同梱戦略が必要。
+- `api/config.ts` は `DATABASE_URL` と `JWT_SECRET` を必須としている。`.env` なしの first-run には bootstrap layer が必要。
+- Runtime state は複数箇所で `process.cwd()` 前提になっている。確認済みの主な対象は `api/.runtime`、`logs`、builtin skill / procedure path、settings JSON、hook settings、MCP settings。
+- Frontend は `/api` 相対 fetch が多く、WebSocket は `window.location.host` と `localhost:39173` fallback を使っている。
 
-## 期待する改善
+## 成功条件
 
-- インストール後の起動に Node.js 20+、pnpm、`pnpm install`、`pnpm db:migrate`、`.env` 手作業を要求しない。
-- API server と Web server を利用者が別々に起動しなくてよい。
-- 初回起動時に DB、JWT secret、runtime settings、logs 保存先を自動初期化する。
-- localhost の Web アプリではなく、通常の macOS app として起動できる。
-- 将来の署名、notarization、auto update、クラッシュログ、環境 preflight に進める配布基盤を持つ。
+- `pnpm tauri dev` で Tauri WebView、Node sidecar、REST API、WebSocket が同時に起動する。
+- clean runtime dir で `.env` なしに DB、JWT secret、settings dir、logs dir が作成され、`/api/health/ready` と Workbench 初期画面まで到達する。
+- repo checkout 外の packaged `.app` から起動しても、状態は app data 配下に保存され、checkout 配下の `api/.runtime` / `logs` へ配布版状態が漏れない。
+- app 終了後に sidecar process が残らない。
+- 既存の browser dev flow (`pnpm dev`、`pnpm dev:api`、`pnpm dev:web`) は壊れない。
+- 未署名 dev artifact と署名 / notarization 付き release artifact の手順が分かれている。
+
+## 実装状況
+
+- backend lifecycle は `api/server.ts` に分離済み。`api/index.ts` は CLI entry と signal handling を担当する。
+- desktop runtime path は `api/runtime/paths.ts`、first-run bootstrap は `api/runtime/bootstrap.ts` に実装済み。
+- frontend REST / WebSocket URL は `src/lib/api-base.ts` に集約済み。Tauri WebView は `get_desktop_config` command から API origin を受け取る。
+- Tauri v2 shell は `src-tauri/` に追加済み。Rust shell が動的 port を選び、Node sidecar を起動し、health ready を待ち、終了時に sidecar を止める。
+- desktop backend は `scripts/desktop/build-backend.mjs` で CJS bundle を作り、native packages だけを `scripts/desktop/prepare-sidecar.mjs` で staging する。
+- `pnpm desktop:build` は macOS `.app` artifact を生成する。DMG は `pnpm desktop:build:dmg` の別 gate に分離済み。
+- 実起動 smoke は `pnpm desktop:smoke` に組み込み済み。packaged `.app` から sidecar が起動し、`/api/health/ready`、`/api/overview`、`/api/implementation-queue` が 200、Workbench WebSocket open、desktop/sidecar logs、shutdown complete まで確認する。
+- `pnpm verify` は base gate に加えて `desktop:lint`、`desktop:build`、`desktop:smoke` を実行する。
+- 署名 / notarization は Developer ID credentials が必要なため未実行。`pnpm desktop:sign` に credential gate を実装済み。
 
 ## 非目標
 
-- Tauri 化の初期実装では backend を Rust に全面移植しない。既存 backend を Node sidecar として同梱し、配布後に Rust へ移す価値がある小さな native 機能だけを個別に評価する。
-- 初期段階では Mac App Store 配布を前提にしない。Developer ID 署名 + notarization による App Store 外配布を優先する。
-- 対象 Project 側の依存導入失敗までは Tauri 化だけで解決しない。`git`、package manager、test runner、外部 MCP server、hook command、LLM credential は Project / ユーザー環境の preflight 対象として扱う。
-- AGENTS.md / AGENT.md を app runtime に読み込ませる変更はしない。これらは人間向け作業ルールとして維持する。
+- 初期実装では backend を Rust に全面移植しない。
+- 初期実装では Mac App Store 配布を前提にしない。Developer ID 署名 + notarization の App Store 外配布を優先する。
+- 対象 Project 側の `git`、package manager、test runner、MCP server、hook command、LLM credential 不足までは Tauri 化だけで解決しない。これは preflight / degraded state の対象にする。
+- AGENTS.md / AGENT.md を app runtime に読み込ませない。人間向け作業ルールとして維持する。
+- ユーザー文言の keyword / regex 分類で desktop-only routing を追加しない。実行判断は既存 supervisor workflow / prompt 指示の境界に従う。
 
-## Tauri アーキテクチャ
-
-### 全体構成
+## 採用アーキテクチャ
 
 ```text
 NightWorkers.app
-  Tauri Rust shell
+  src-tauri Rust shell
     - window lifecycle
-    - sidecar lifecycle
     - app data path resolution
-    - optional native file/folder picker
-    - future auto update / signing support
+    - free port allocation
+    - Node sidecar lifecycle
+    - startup diagnostics
+    - future signing / updater hooks
 
   WebView
     - built Vite frontend from dist/
-    - REST fetch to local API base
-    - WebSocket connect to local API base
+    - REST fetch to sidecar API origin
+    - WebSocket connect to sidecar API origin
 
   Node sidecar
-    - bundled dist-api/index.js
+    - bundled backend entry
+    - production dependencies
     - Hono REST API
     - Hono WebSocket endpoint
-    - SQLite/libSQL file DB
+    - SQLite/libSQL file DB in app data
     - supervisor-worker runtime
     - MCP / hooks / worker tools
 ```
 
-### API 接続方式
+標準は動的 port。明示 env がある dev / debug のみ固定 `39173` を許可する。Tauri shell が API origin を決め、sidecar env と frontend runtime config の両方へ渡す。
 
-Tauri アプリ内の WebView は、同梱 Node sidecar が起動する `localhost` loopback API に接続する。Tauri shell は app 起動時に API origin を確定し、frontend に渡す。REST と WebSocket は同じ API origin を使う。
+## 実装順序
 
-実装方針:
+### Phase 0: 事前棚卸し
 
-- Tauri 側で空き port を選び、sidecar env と frontend config に渡す。
-- 開発互換のため、明示 env がある場合のみ固定 port `39173` を許可する。
-- frontend は Tauri から渡された API origin を最優先し、通常 browser dev では既存 Vite proxy の `/api` を使う。
+目的: Tauri skeleton を入れる前に、現在の runtime path、API base、native dependency、entrypoint の変更対象を固定する。
 
-動的 port を標準にする。port 衝突を利用者に解決させる設計にはしない。
+変更対象:
 
-### Backend 同梱方式
+- `package.json`
+- `api/config.ts`
+- `api/index.ts`
+- `api/app.ts`
+- `api/lib/logger.ts`
+- `api/routes/settings.ts`
+- `api/services/mcp/mcp-settings.ts`
+- `api/services/hooks/hooks-settings.ts`
+- `api/services/settings/general-settings.ts`
+- `api/services/supervisor/prompt.ts`
+- `api/services/supervisor/skills/registry.ts`
+- `api/services/procedures/registry.ts`
+- `src/modules/nightworkers/hooks/useNightWorkersWorkspace.ts`
+- `src/lib/api.ts`
 
-`pnpm build:backend` の成果物を sidecar 用 entry として使う。ただし現在の bundle は `--packages=external` なので、配布時に Node runtime と `node_modules` 相当をどう含めるかを決める必要がある。
+作業:
 
-実装方針:
+1. `rg -n "process\\.cwd\\(|api/\\.runtime|logs|localhost:39173|/api/ws|DATABASE_URL|JWT_SECRET" api src shared tests` の結果をこの Phase の issue list として整理する。
+2. 配布で writable にする path と readonly resource にする path を分ける。
+3. native dependency を `pnpm why argon2 better-sqlite3 @libsql/client` で確認し、sidecar packaging の署名対象候補に入れる。
+4. `api/index.ts` を分離する前の shutdown 挙動を `SIGTERM` smoke で確認する。
 
-- Node runtime + backend bundle + production dependencies を resource / sidecar として同梱する。
-- `pkg` / `nexe` / SEA などで Node backend を単一実行ファイル化する。
-- 将来的に backend の一部だけ Rust command に移す。
+Exit:
 
-Tauri 化の初期実装では、最もデバッグしやすい Node runtime + backend bundle + production dependencies 同梱を採用する。単一実行ファイル化は packaging が安定してから、artifact サイズ、native module 互換性、署名 / notarization への影響を見て評価する。
+- `runtime state`、`readonly bundled resource`、`registered Project repo root` の 3 分類が実装メモに残っている。
+- `src-tauri` 追加前に触るべき Node / frontend ファイルが確定している。
 
-## 実装すべき点
+検証:
 
-### 1. Tauri project skeleton
+```bash
+pnpm typecheck
+pnpm lint
+pnpm test:supervisor-regression
+```
 
-- `src-tauri/` を追加する。
-- Tauri v2 を前提にする。
-- `beforeDevCommand` は既存 `pnpm dev:web` / `pnpm dev:api` と衝突しないように分ける。
-- `beforeBuildCommand` は frontend build と backend build の両方を実行する。
-- `frontendDist` は Vite の `dist` を指す。
-- sidecar binary / backend resource の配置規約を決める。
+### Phase 1: Backend 起動制御を reusable にする
 
-完了条件:
+目的: CLI 起動と Tauri sidecar 起動で同じ backend 起動処理を使えるようにする。
 
-- `pnpm tauri dev` 相当で WebView が起動する。
-- 開発時は既存 `pnpm dev` も壊さない。
+変更対象:
 
-### 2. Backend startup を reusable にする
+- `api/index.ts`
+- `api/server.ts` 新規
+- `api/app.ts`
+- `tests/api-server-lifecycle.test.ts` 新規または既存 server lifecycle test へ追加
 
-現在の `api/index.ts` は top-level で server 起動、signal handler、`process.exit()` を持つ。Tauri sidecar でも使えるが、テストや将来の埋め込みには起動制御を分離した方がよい。
+実装:
 
-実装方針:
+1. `api/server.ts` を追加し、`createNightWorkersServer(options)` を実装する。
+2. `options` は最低限 `port`、`host`、`shutdownTimeoutMs`、`signalHandling`、`exitProcess` を受ける。
+3. `createNightWorkersServer` 内で `ensureNightWorkersSchema()`、`serve()`、`nodeWebSocket.injectWebSocket(server)` を行う。
+4. 戻り値は `{ port, origin, close, server }` にする。`close()` は `nightWorkersRealtimeBroker.closeAll()`、WebSocket close、HTTP close、DB client close を順に実行する。
+5. `api/index.ts` は config を読み、`createNightWorkersServer()` を呼び、`SIGTERM` / `SIGINT` handler と `process.exit()` だけを担当する CLI entry にする。
+6. shutdown timeout と log event の文言は既存挙動を維持する。
 
-- `createNightWorkersServer(options)` のような起動関数を追加する。
-- `api/index.ts` はその関数を呼ぶ CLI entry にする。
-- shutdown は `close()` を返す形にし、signal handler は CLI entry 側に限定する。
-- `ensureNightWorkersSchema()` と WebSocket injection は起動関数に含める。
+Exit:
 
-完了条件:
+- `pnpm dev:api` が従来通り `39173` で起動する。
+- `pnpm start` が `dist-api/index.js` から起動する。
+- テストから server を起動し、`close()` で process exit せず終了できる。
 
-- 既存 `pnpm dev:api` / `pnpm start` が同じ挙動を維持する。
-- sidecar entry から port / path / env を渡せる。
+検証:
 
-### 3. App data path へ runtime state を移す
+```bash
+pnpm typecheck
+pnpm vitest run tests/api-server-lifecycle.test.ts tests/health.test.ts
+pnpm build:backend
+```
 
-現状の `process.cwd()` 前提を、Tauri 配布時は app data 配下へ逃がす。
+失敗時の切り分け:
 
-対象:
+- schema bootstrap 前に落ちる場合は `DATABASE_URL` / app data bootstrap を Phase 2 へ先送りせず、現行 `.env` dev path で再現確認する。
+- WebSocket close が hang する場合は broker close と `nodeWebSocket.wss.close()` の順序を確認する。
 
-- `DATABASE_URL`
-- `JWT_SECRET`
-- LLM settings JSON
-- MCP settings JSON
-- Agent Hooks settings JSON
-- logs
-- command output artifacts
-- optional seed / first-run marker
+### Phase 2: Runtime path と first-run bootstrap
 
-実装方針:
+目的: 配布版では runtime state を app data 配下に置き、`.env` なしで起動できるようにする。
 
-- Tauri 側が app data root を解決する。
-- sidecar 起動時に env を渡す。
-- backend は `NIGHTWORKERS_RUNTIME_DIR` のような単一 root を受け取り、未指定なら現行 `process.cwd()` ベースを維持する。
-- 個別 override env は既存互換として残す。
+変更対象:
 
-完了条件:
+- `api/config.ts`
+- `api/runtime/paths.ts` 新規
+- `api/runtime/bootstrap.ts` 新規
+- `api/db/client.ts`
+- `api/lib/logger.ts`
+- `api/routes/settings.ts`
+- `api/services/mcp/mcp-settings.ts`
+- `api/services/hooks/hooks-settings.ts`
+- `api/services/settings/general-settings.ts`
+- `.env.example`
+- `tests/runtime-paths.test.ts` 新規
+- `tests/runtime-bootstrap.test.ts` 新規
 
-- インストール済み app をどこから起動しても同じ DB / settings を読む。
-- repo checkout 配下の `api/.runtime` や `logs` に配布版の状態が漏れない。
-- 既存開発モードは現行パスで動く。
+実装:
 
-### 4. First-run bootstrap
+1. `NIGHTWORKERS_RUNTIME_DIR` を追加する。未指定なら既存互換として `process.cwd()` を runtime root にする。
+2. `api/runtime/paths.ts` で以下を返す。
+   - `runtimeRoot`
+   - `databasePath`
+   - `settingsDir`
+   - `logsDir`
+   - `secretsDir`
+   - `artifactsDir`
+3. 既存の `api/.runtime` は dev 互換 path として残す。配布版では `NIGHTWORKERS_RUNTIME_DIR/settings` へ向ける。
+4. `DATABASE_URL` 未指定かつ `NIGHTWORKERS_DESKTOP=1` の場合、`file:${runtimeRoot}/sqlite.db` を既定にする。
+5. `JWT_SECRET` 未指定かつ `NIGHTWORKERS_DESKTOP=1` の場合、`secrets/jwt-secret` に 32 bytes 以上の secret を生成して保存する。既存ファイルがあれば再利用する。
+6. `AUTH_MODE` は desktop default を `local` にする。OAuth は明示設定時だけ有効にする。
+7. `APP_URL`、`CORS_ORIGIN` は sidecar env の `NIGHTWORKERS_API_ORIGIN` を優先して生成する。
+8. `api/lib/logger.ts` の `logs` は `runtimePaths.logsDir` に移す。
+9. settings 系 JSON は `runtimePaths.settingsDir` 配下に移す。
+10. builtin skill / procedure は writable runtime state ではないため、`process.cwd()` ではなく bundle された repo resource / app resource を読む方針に分ける。ただしこの Phase では dev 互換 path を維持し、Tauri resource path 注入は Phase 4 で接続する。
 
-利用者が `.env` を作らなくても起動できるようにする。
+Exit:
 
-実装方針:
+- `NIGHTWORKERS_DESKTOP=1 NIGHTWORKERS_RUNTIME_DIR=$(mktemp -d) pnpm dev:api` で `.env` なしに起動できる。
+- runtime dir 内に `sqlite.db`、settings、logs、secret が作成される。
+- 既存 `.env` dev mode は従来通り動く。
 
-- `DATABASE_URL` が未指定なら app data 配下の `sqlite.db` を使う。
-- `JWT_SECRET` が未指定なら app data 配下に生成して保存する。
-- `AUTH_MODE` は local-first の既定として `local` または既存仕様に沿う値を明示する。
-- OAuth はデスクトップ配布の初期範囲から外し、必要な場合だけ設定可能にする。
-- `CORS_ORIGIN` と `APP_URL` は sidecar API origin / Tauri origin に合わせて生成する。
+検証:
 
-完了条件:
+```bash
+pnpm typecheck
+pnpm vitest run tests/runtime-paths.test.ts tests/runtime-bootstrap.test.ts tests/services.mcp-settings.test.ts tests/services.agent-hooks.test.ts
+tmpdir="$(mktemp -d)" && NIGHTWORKERS_DESKTOP=1 NIGHTWORKERS_RUNTIME_DIR="$tmpdir" pnpm dev:api
+```
 
-- 新規ユーザーが app を起動するだけで health endpoint と Workbench UI まで到達する。
-- credential 未設定時は LLM smoke / 実行だけが明示的に未設定表示になる。
+手動 smoke:
 
-### 5. Frontend API base / WebSocket base の抽象化
+- `curl http://localhost:39173/api/health/ready` が 200 を返す。
+- `ls "$tmpdir"` で DB、settings、logs、secrets が確認できる。
+- repo checkout の `api/.runtime` / `logs` が配布モードで更新されていない。
 
-現状は `/api` 相対 fetch が多く、WebSocket は `window.location.host` と `localhost:39173` fallback を使う。
+### Phase 3: Frontend API / WebSocket base を統一する
 
-実装方針:
+目的: Tauri WebView、Vite dev、production browser serving で REST / WS 接続契約を一箇所に集める。
 
-- `src/lib/api-base.ts` のような小さな helper を追加する。
-- REST fetch wrapper と WebSocket URL builder を統一する。
-- Tauri 環境では Tauri shell から渡された API origin を使う。
-- ブラウザ開発環境では現行の `/api` と Vite proxy を維持する。
+変更対象:
 
-完了条件:
+- `src/lib/api-base.ts` 新規
+- `src/lib/api.ts`
+- `src/modules/nightworkers/hooks/useNightWorkersWorkspace.ts`
+- `src/routes/login.tsx`
+- `src/routes/tasks.$id.tsx`
+- `src/modules/nightworkers/components/SettingsScreen.tsx`
+- `src/modules/nightworkers/components/OverviewScreen.tsx`
+- `src/modules/nightworkers/components/blueprint-preview/BlueprintPreview.tsx`
+- fetch を直接呼んでいる周辺コンポーネント
+- `tests/api-base.test.ts` 新規
 
-- Tauri WebView、Vite dev、production browser serving の 3 パターンで API / WS が同じ契約で動く。
-- hardcoded `localhost:39173` fallback は dev 専用として閉じ込める。
+実装:
 
-### 6. CORS / CSRF / secure headers 調整
+1. `getApiOrigin()` を追加する。優先順位は `window.__NIGHTWORKERS_DESKTOP_CONFIG__.apiOrigin`、`import.meta.env.VITE_NIGHTWORKERS_API_ORIGIN`、browser dev の相対 origin。
+2. `apiPath(path)` は REST 用に、Tauri mode では absolute URL、browser dev では `/api/...` 相対 URL を返す。
+3. `wsPath(path)` は WebSocket 用に、Tauri mode では sidecar origin を `ws:` / `wss:` に変換し、browser dev では `window.location` と Vite proxy を使う。
+4. `localhost:39173` fallback は `import.meta.env.DEV` のみに閉じ込め、production build では使わない。
+5. 既存 fetch を段階的に `apiPath()` へ寄せる。まず Workbench 起動、settings、auth methods、WebSocket subscribe に必要な path を優先する。
+6. `src/lib/api.ts` の client があれば `apiPath()` を使う。
 
-Tauri WebView の origin と localhost API の関係を明示する。
+Exit:
 
-実装方針:
+- `pnpm dev` の browser flow で REST / WS が通る。
+- `VITE_NIGHTWORKERS_API_ORIGIN=http://127.0.0.1:39173 pnpm dev:web` で proxy なし absolute origin 接続が通る。
+- production build 内に unconditional `localhost:39173` が残らない。
 
-- Tauri mode を env で backend に伝える。
-- Tauri mode の許可 origin を明示する。
-- `connectSrc` に sidecar API / WS origin を含める。
-- CSRF が Tauri WebView の通常操作を誤って落とさないことを確認する。
-- `API_AUTH_REQUIRED=false` の local-first 既定と、署名済み配布後の保護方針を分ける。
+検証:
 
-完了条件:
+```bash
+pnpm typecheck
+pnpm vitest run tests/api-base.test.ts
+pnpm build:frontend
+rg -n "localhost:39173" dist src
+```
 
-- Tauri WebView から REST / WS が成功する。
-- ブラウザから意図せず外部公開される構成にならない。
+### Phase 4: Tauri shell と sidecar dev flow
 
-### 7. Sidecar lifecycle
+目的: Tauri WebView と Node sidecar を `pnpm tauri dev` で起動できるようにする。
 
-Tauri shell が Node sidecar を管理する。
+変更対象:
 
-実装方針:
+- `src-tauri/Cargo.toml` 新規
+- `src-tauri/tauri.conf.json` 新規
+- `src-tauri/src/main.rs` 新規
+- `src-tauri/src/sidecar.rs` 新規
+- `src-tauri/src/config.rs` 新規
+- `package.json`
+- `scripts/desktop/prepare-sidecar.mjs` 新規
+- `scripts/desktop/dev-sidecar.mjs` 新規または Rust 側 dev sidecar 起動で代替
 
-- app 起動時に sidecar を起動する。
-- health endpoint が通るまで WebView に ready を出さない。
-- 起動失敗時はエラー画面に原因と logs path を出す。
-- app 終了時に sidecar を graceful shutdown する。
-- sidecar が落ちた場合は再起動または明示的な degraded state にする。
+実装:
 
-完了条件:
+1. Tauri v2 skeleton を追加する。
+2. `package.json` に以下の scripts を追加する。
+   - `tauri`
+   - `desktop:dev`
+   - `desktop:build`
+   - `desktop:prepare-sidecar`
+   - `desktop:smoke`
+3. `beforeDevCommand` は frontend dev server と backend sidecar 準備だけを行い、既存 `pnpm dev` と衝突させない。
+4. `beforeBuildCommand` は `pnpm build:frontend && pnpm build:backend && pnpm desktop:prepare-sidecar` にする。
+5. Rust shell は app data path を解決し、空き port を選び、sidecar env に渡す。
+6. sidecar env は最低限以下を渡す。
+   - `NIGHTWORKERS_DESKTOP=1`
+   - `NIGHTWORKERS_RUNTIME_DIR=<app data>/runtime`
+   - `PORT=<selected port>`
+   - `NIGHTWORKERS_API_ORIGIN=http://127.0.0.1:<selected port>`
+   - `APP_URL=http://127.0.0.1:<selected port>`
+   - `CORS_ORIGIN=http://127.0.0.1:<selected port>,tauri://localhost,http://tauri.localhost`
+   - `API_AUTH_REQUIRED=false`
+7. WebView へ API origin を渡す。まずは preload script で `window.__NIGHTWORKERS_DESKTOP_CONFIG__` を注入する。より良い Tauri command 方式は Phase 6 で評価する。
+8. health endpoint が ready になるまで loading view を出す。失敗時は error、logs path、runtime dir、port を表示する。
+9. app 終了時に sidecar へ `SIGTERM` を送り、timeout 後に kill する。
 
-- app を閉じた後に sidecar process が残らない。
-- port 衝突、DB permission、invalid config を区別して表示できる。
+Exit:
 
-### 8. Packaging and distribution
+- `pnpm desktop:dev` で WebView が開き、Workbench UI が API / WS に接続する。
+- `pnpm dev` は従来通り browser dev として動く。
+- app を閉じた後に Node sidecar が残らない。
 
-macOS 配布の摩擦を減らす。
+検証:
 
-実装方針:
+```bash
+pnpm desktop:dev
+lsof -nP -iTCP:<selected-port> -sTCP:LISTEN
+```
 
-- `.app` / `.dmg` の生成を Tauri build に載せる。
-- Developer ID Application 証明書で署名する。
-- notarization を CI または release script に組み込む。
-- sidecar binary / Node runtime / native modules を署名対象に含める。
-- Apple Silicon / Intel の arch を明示する。Universal build にするか、arch 別 artifact にするかを決める。
+手動 smoke:
 
-完了条件:
+- WebView で settings と Workbench list が読める。
+- WebSocket が connected event を受け取る。
+- app 終了後に `lsof` で port listener が消える。
 
-- ダウンロードした app が Gatekeeper の通常フローで開ける。
-- 署名なし開発 build と署名済み release build の手順が分かれている。
+### Phase 5: Backend artifact と production dependency 同梱
 
-### 9. Environment preflight
+目的: repo checkout 外の packaged app で Node backend を実行できるようにする。
 
-Tauri 化で NightWorkers 本体の導入は簡単になるが、対象 Project の実行環境依存は残る。
+変更対象:
+
+- `scripts/desktop/prepare-sidecar.mjs`
+- `package.json`
+- `src-tauri/tauri.conf.json`
+- `.gitignore`
+- `README.md`
+
+実装:
+
+1. `dist-api/index.js`、production `node_modules`、必要な package metadata、Node runtime を `src-tauri/binaries` または Tauri resources staging dir に配置する。
+2. 初期実装は Node runtime + JS bundle + production dependencies 同梱を採用する。`pkg` / `nexe` / Node SEA は後続評価に残す。
+3. staging dir は git 管理しない。生成物は `.gitignore` に追加する。
+4. `better-sqlite3` / `argon2` のような native module が実際に runtime import されるかを確認し、必要なら arch 別 rebuild を staging に組み込む。
+5. Tauri config の `bundle.resources` / sidecar 設定へ staging artifact を追加する。
+6. app resource 内の readonly path を backend へ `NIGHTWORKERS_RESOURCE_DIR` として渡す。builtin skill / procedure registry はこの env を優先して読む。
+
+Exit:
+
+- repo root に依存せず、Tauri dev / build artifact から backend entry が起動する。
+- `pnpm install` 済み checkout がなくても packaged sidecar が production dependencies を解決できる。
+
+検証:
+
+```bash
+pnpm desktop:prepare-sidecar
+node scripts/desktop/smoke-sidecar.mjs
+pnpm desktop:build
+```
+
+失敗時の切り分け:
+
+- `ERR_MODULE_NOT_FOUND` は staging dependency 漏れ。
+- native module load error は arch / platform rebuild 漏れ。
+- builtin skill / procedure missing は `NIGHTWORKERS_RESOURCE_DIR` 接続漏れ。
+
+### Phase 6: CORS / CSRF / secure headers
+
+目的: Tauri WebView からの REST / WS を許可しつつ、意図しない外部公開を避ける。
+
+変更対象:
+
+- `api/config.ts`
+- `api/app.ts`
+- `api/lib/auth-cookies.ts`
+- `tests/cors-desktop.test.ts` 新規
+- `tests/security-headers-desktop.test.ts` 新規
+
+実装:
+
+1. `NIGHTWORKERS_DESKTOP=1` のときだけ desktop origin set を有効にする。
+2. `CORS_ORIGIN` は wildcard を引き続き禁止し、Tauri shell が具体 origin を渡す。
+3. `secureHeaders.connectSrc` に selected API origin と WS origin を含める。
+4. CSRF origin check が Tauri WebView の normal fetch を落とさないことを test で固定する。
+5. `API_AUTH_REQUIRED=false` は local-first desktop default とし、remote browser serving の default とは混ぜない。
+6. Cookies が必要な auth flow は local desktop default では必須にしない。OAuth は明示設定時だけ検証対象にする。
+
+Exit:
+
+- Tauri WebView から REST POST と WebSocket が成功する。
+- `CORS_ORIGIN=*` は引き続き拒否される。
+- desktop mode 以外の production security header が弱くならない。
+
+検証:
+
+```bash
+pnpm vitest run tests/cors-desktop.test.ts tests/security-headers-desktop.test.ts tests/middleware.auth.test.ts
+pnpm desktop:dev
+```
+
+### Phase 7: Packaged app smoke
+
+目的: 実際の `.app` / `.dmg` で、配布版固有の path、sidecar、resource、shutdown 問題を潰す。
+
+変更対象:
+
+- `scripts/desktop/smoke-packaged-app.mjs` 新規
+- `package.json`
+- `README.md`
+- `spec/docs/architecture.md` 新規または既存 docs
+- `spec/docs/configuration.md` 新規または既存 docs
+
+実装:
+
+1. `pnpm desktop:build` で macOS `.app` と `.dmg` を作る。
+2. smoke script は app を起動し、health ready、Workbench static load、WebSocket connected、runtime dir 作成を確認する。
+3. app close 後、sidecar process と selected port listener が残っていないことを確認する。
+4. app data を削除した clean first-run と、既存 app data を残した second-run の両方を確認する。
+5. README に dev flow、packaged smoke、既知制約を書く。
+
+Exit:
+
+- repo checkout 外から `.app` を起動できる。
+- app data clean / existing の両方で起動できる。
+- close 後に process が残らない。
+
+検証:
+
+```bash
+pnpm desktop:build
+pnpm desktop:smoke
+```
+
+### Phase 8: Signing / notarization
+
+目的: Gatekeeper の通常フローで開ける release artifact を作る。
+
+変更対象:
+
+- `src-tauri/tauri.conf.json`
+- `scripts/release/desktop-sign-notarize.mjs` 新規
+- `.github/workflows/desktop-release.yml` 任意
+- `README.md`
+- release docs
+
+実装:
+
+1. Developer ID Application 証明書で `.app`、sidecar、Node runtime、native modules を署名する。
+2. notarization と stapling を release script へ入れる。
+3. Apple Silicon / Intel は最初に arch 別 artifact を優先する。Universal は native module と Node runtime の安定後に評価する。
+4. secrets は local keychain / CI secret のどちらで使うかを docs に分ける。
+5. unsigned dev build と signed release build の scripts を分ける。
+
+Exit:
+
+- 署名済み `.dmg` を別マシン相当で開ける。
+- notarization failure 時にどの binary が原因か分かる log が残る。
+
+検証:
+
+```bash
+codesign --verify --deep --strict path/to/NightWorkers.app
+spctl --assess --type execute --verbose path/to/NightWorkers.app
+xcrun stapler validate path/to/NightWorkers.app
+```
+
+### Phase 9: Preflight と onboarding polish
+
+目的: NightWorkers 本体の起動問題と Project 実行環境不足を UI 上で分離する。
+
+変更対象:
+
+- `api/services/preflight/*` 新規
+- `api/routes/settings.ts` または専用 preflight route
+- `src/modules/nightworkers/components/SettingsScreen.tsx`
+- Project registration / Workbench 周辺 UI
+- `tests/preflight.test.ts` 新規
 
 チェック対象:
 
 - `git`
 - shell
-- Node / pnpm / npm / bun など対象 Project が必要とする package manager
+- Project ごとの Node / pnpm / npm / bun
 - LLM credential
 - Codex token
 - MCP server command / URL
 - Agent Hook command
-- repository permission
+- registered Project repo permission
 - app data DB write permission
 
-実装方針:
+実装:
 
-- Settings または Project registration 時に preflight を実行する。
-- NightWorkers 本体の起動問題と Project 実行環境問題を UI 上で分離する。
-- 実行不能でも chat / planning / settings は使える degraded state を残す。
-
-完了条件:
-
-- 「アプリは起動したが、この Project は pnpm がないので実行できない」のように原因が分かる。
-- 導入失敗と実行環境不足を混同しない。
-
-## 段階的な移行順序
-
-### Phase 0: Tauri shell foundation
-
-- Tauri skeleton を追加する。
-- 既存 Vite UI を WebView に表示する。
-- Tauri dev flow から WebView を起動できるようにする。
-- 一時的に手動起動の既存 API へ接続し、Tauri WebView から `/api` と WebSocket が通ることを初期 smoke として確認する。
+1. app startup preflight と Project preflight を別 API にする。
+2. startup preflight は app data DB、logs、sidecar health、resource path を確認する。
+3. Project preflight は登録済み repo root を基準に worker tool 経由で確認する。一時ディレクトリを実作業 workspace として扱わない。
+4. 実行不能でも chat / planning / settings は使える degraded state を残す。
+5. UI 文言は「アプリは起動したが、この Project は pnpm がないので実行できない」のように原因を分ける。
 
 Exit:
 
-- UI が表示され、health / settings / Workbench list が読める。
-- Tauri 化を前提にした frontend 起動導線ができている。
+- 本体導入失敗、Project 環境不足、credential 不足が別々に表示される。
+- Project 実行不能でも ordinary chat / intake が不必要にブロックされない。
 
-### Phase 1: sidecar 起動
+検証:
 
-- backend bundle を Tauri sidecar として起動する。
-- Tauri shell が空き port を選び、sidecar env と frontend config に渡す。
-- health check と shutdown を通す。
-- frontend が sidecar API origin を使えるようにする。
+```bash
+pnpm vitest run tests/preflight.test.ts
+pnpm typecheck
+pnpm lint
+```
 
-Exit:
+## 実装時のファイル別チェックリスト
 
-- `pnpm tauri dev` だけで UI + API + WS が動く。
+| File | 変更内容 | 完了確認 |
+| --- | --- | --- |
+| `package.json` | Tauri / desktop scripts、build scripts、smoke scripts を追加 | `pnpm desktop:dev` / `pnpm desktop:build` が存在する |
+| `api/server.ts` | reusable server lifecycle | test から `close()` できる |
+| `api/index.ts` | CLI entry のみに縮小 | `pnpm dev:api` が従来通り起動する |
+| `api/config.ts` | desktop env、runtime defaults、origin defaults | `.env` なし desktop mode が通る |
+| `api/runtime/paths.ts` | runtime path 集約 | `process.cwd()` state が残らない |
+| `api/runtime/bootstrap.ts` | DB / JWT / dirs first-run | clean runtime dir smoke が通る |
+| `api/lib/logger.ts` | logs dir を runtime path 化 | desktop mode で app data に出る |
+| settings services | JSON 保存先を runtime path 化 | old dev path と desktop path の test が通る |
+| skill / procedure registry | readonly resource path を env 注入可能にする | packaged app で builtin docs が読める |
+| `src/lib/api-base.ts` | REST / WS URL builder | dev / desktop / production test が通る |
+| direct fetch callers | `apiPath()` へ移行 | production build に固定 localhost が残らない |
+| `src-tauri/*` | Tauri v2 shell、sidecar lifecycle、config injection | WebView + API + WS が起動する |
+| desktop scripts | sidecar staging、smoke、packaging | repo checkout 外 app が起動する |
+| docs | README / architecture / configuration | dev と release flow が分かる |
 
-### Phase 2: app data runtime
-
-- DB、settings、logs、secret を app data 配下へ移す。
-- first-run bootstrap を実装する。
-- `.env` なしで起動する配布モードを作る。
-
-Exit:
-
-- clean machine 相当の runtime dir で初回起動できる。
-
-### Phase 3: packaging
-
-- macOS app / dmg を生成する。
-- sidecar / Node runtime / native modules を artifact に含める。
-- local install smoke を行う。
-
-Exit:
-
-- repo checkout 外の app artifact から起動できる。
-
-### Phase 4: signing and notarization
-
-- Developer ID 証明書を使った署名を設定する。
-- notarization と stapling を release script / CI に入れる。
-- Gatekeeper 通過を実機で確認する。
-
-Exit:
-
-- 署名済み dmg をダウンロードして通常起動できる。
-
-### Phase 5: preflight and onboarding polish
-
-- Project 実行環境の preflight を UI に出す。
-- LLM / MCP / hooks / package manager の不足を明示する。
-- 起動失敗 diagnostics を整える。
-
-Exit:
-
-- 本体導入失敗、Project 環境不足、credential 不足を別々に案内できる。
-
-## 主なリスク
+## リスクと対策
 
 ### Node sidecar packaging
 
-Node runtime、native modules、production dependencies、arch 別 binary の扱いが最大の packaging リスク。`better-sqlite3` は dependency にあるが現状 DB client は libSQL を使っているため、配布に本当に必要な native dependency を棚卸しする。
+`--packages=external` のままでは production dependencies の staging 漏れが起きやすい。初期実装では Node runtime + JS bundle + production dependencies 同梱を採用し、`ERR_MODULE_NOT_FOUND` と native module load error を smoke で早期検出する。
 
-### port / origin / CSRF
+### Native modules
 
-Tauri WebView と localhost sidecar の origin がずれる。REST は通っても WebSocket や CSRF で落ちる可能性がある。API base と WS base を一箇所に集約してから進める。
+`argon2`、`better-sqlite3`、libSQL 周辺は platform / arch の影響を受ける可能性がある。実際の import path を確認し、不要なら dependency cleanup は別タスクにする。必要なら `desktop:prepare-sidecar` で arch 別 rebuild を行う。
 
 ### cwd 前提
 
-`process.cwd()` 前提の paths が配布版では app bundle 内や起動元 shell に依存して壊れる。runtime state は app data、readonly resource は app resource、対象 repo の作業は登録済み Project root に分ける。
+配布版では `process.cwd()` が app bundle や起動元に依存する。runtime state は `NIGHTWORKERS_RUNTIME_DIR`、readonly resource は `NIGHTWORKERS_RESOURCE_DIR`、対象 Project 作業は登録済み Project repo root に分ける。
+
+### port / origin / CSRF
+
+REST は通っても WebSocket や CSRF が落ちる可能性がある。API base helper と desktop origin tests を先に入れ、Tauri shell は具体 origin だけを渡す。wildcard CORS は引き続き禁止する。
 
 ### sidecar shutdown
 
-app 終了時に backend が残ると port、DB lock、queue active state が壊れる。graceful shutdown と stale active run recovery を組み合わせる。
+sidecar が残ると port、DB lock、queue active state が壊れる。Rust shell は graceful shutdown、timeout kill、startup stale recovery log を持つ。backend `close()` は test 可能にする。
 
 ### 署名 / notarization
 
-Developer ID と notarization は導入摩擦を減らすために重要。未署名配布は検証用途に限定する。sidecar binary や native modules が署名漏れすると notarization で失敗する。
+sidecar、Node runtime、native modules の署名漏れが notarization failure になりやすい。release script は codesign 対象を列挙し、failure log を保存する。
 
 ### ユーザー環境依存
 
-NightWorkers 本体は簡単に入っても、対象 Project の `git`、package manager、test runner、外部 command は残る。preflight と degraded state が必要。
+Tauri 化で NightWorkers 本体の導入は簡単になるが、対象 Project の tools は残る。preflight と degraded state で「app 起動」と「Project 実行可能」を分ける。
 
-## 検証計画
+## 最小実装の推奨 PR 分割
 
-- `pnpm typecheck`
-- `pnpm lint`
-- `pnpm test:supervisor-regression`
-- `pnpm build`
-- Tauri dev 起動 smoke
-- Tauri packaged app 起動 smoke
-- WebSocket reattach smoke
-- first-run clean app data smoke
-- existing `.env` based dev mode smoke
-- app close 後の sidecar process 残存チェック
-- SQLite integrity check for generated app data DB
-- macOS Gatekeeper / notarization smoke for release artifact
+1. Backend lifecycle split
+   - `api/server.ts`
+   - `api/index.ts`
+   - lifecycle tests
+2. Runtime path + first-run bootstrap
+   - `api/runtime/*`
+   - config / logger / settings path
+   - runtime tests
+3. Frontend API base
+   - `src/lib/api-base.ts`
+   - WebSocket builder
+   - direct fetch migration for Workbench / settings
+4. Tauri dev shell
+   - `src-tauri/*`
+   - desktop scripts
+   - sidecar dev lifecycle
+5. Packaged sidecar resources
+   - staging scripts
+   - resource path injection
+   - packaged smoke
+6. Security / release polish
+   - CORS / CSRF tests
+   - signing / notarization scripts
+   - docs
+7. Preflight UI
+   - startup / Project preflight
+   - degraded state
 
-## ドキュメント更新対象
+## 全体検証コマンド
 
-実装時には、この計画書だけでなく以下も更新する。
+各 PR で最低限:
 
-- `README.md`: インストール方法、desktop app の current capability、developer flow
-- `spec/docs/architecture.md`: Tauri shell、Node sidecar、runtime state boundary
+```bash
+pnpm typecheck
+pnpm lint
+pnpm test:supervisor-regression
+```
+
+desktop 機能が入った後:
+
+```bash
+pnpm verify
+```
+
+`pnpm verify` は TypeScript、Biome、supervisor regression、Rust format /
+Clippy、Tauri `.app` build、packaged app smoke を含む。`pnpm verify:fast` は
+base gate のみを実行する。
+
+release 前:
+
+```bash
+codesign --verify --deep --strict path/to/NightWorkers.app
+spctl --assess --type execute --verbose path/to/NightWorkers.app
+xcrun stapler validate path/to/NightWorkers.app
+```
+
+## ドキュメント更新
+
+実装時に以下を更新する。
+
+- `README.md`: desktop install、developer flow、packaged smoke、current capability、known limitations
+- `spec/docs/architecture.md`: Tauri shell、Node sidecar、runtime state、resource boundary
 - `spec/docs/configuration.md`: app data path、desktop env、first-run bootstrap、credential 設定
-- `.env.example`: desktop 配布では不要なものと dev only の区別
-- release docs or scripts: signing / notarization / artifact smoke
+- `.env.example`: dev only と desktop default の区別
+- release docs or scripts: signing、notarization、artifact smoke
 
-## 実装方針の確定
+## 実装開始時の最初のタスク
 
-NightWorkers は Tauri デスクトップアプリとして配布する。これにより、NightWorkers 本体の導入失敗を減らす。特に Node/pnpm/migration/env/2-process 起動を利用者から隠せるため、配布体験は大きく改善する。
-
-ただし、NightWorkers の価値の中心は Project repo を読み書きし、worker tools、hooks、MCP、LLM provider を動かすことにある。したがって初期移行では既存 Node backend を sidecar として維持し、Tauri は packaging、lifecycle、path、onboarding、preflight を担当する境界が最も安全である。
+まず Phase 1 の backend lifecycle split から始める。Tauri skeleton を先に入れると sidecar 起動失敗と backend shutdown 問題が混ざるため、先に `api/server.ts` で test 可能な `createNightWorkersServer()` を作る。その後 Phase 2 の runtime path / bootstrap を入れて、`.env` なし desktop mode の土台を作ってから Tauri shell に接続する。

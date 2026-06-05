@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "NightWorkers",
+  "version": "0.1.0",
+  "identifier": "dev.nightworkers.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm build:backend && pnpm dev:web -- --host 127.0.0.1",
+    "beforeBuildCommand": "pnpm build:frontend && pnpm desktop:prepare-sidecar",
+    "devUrl": "http://127.0.0.1:39174",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "NightWorkers",
+        "width": 1440,
+        "height": 960,
+        "minWidth": 1024,
+        "minHeight": 720
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "resources": [
+      "../dist",
+      "../dist-api-desktop",
+      "../api/services/supervisor/skills",
+      "../api/services/procedures/builtin",
+      "../scripts/desktop/staged/node",
+      "../scripts/desktop/staged/node_modules"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    }
+  }
+}

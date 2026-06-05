@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import pino from 'pino';
+import { getRuntimePaths } from '../runtime/paths';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -41,7 +42,7 @@ function inlineMeta(meta?: Record<string, unknown>): string {
   return ` ${pairs.join(' ')}`;
 }
 
-const LOG_DIR = path.resolve(process.cwd(), 'logs');
+const LOG_DIR = getRuntimePaths().logsDir;
 const API_LOG_PATH = path.join(LOG_DIR, 'api.log');
 const TRACE_LOG_PATH = path.join(LOG_DIR, 'supervisor-trace.log');
 const LLM_TRACE_LOG_PATH = path.join(LOG_DIR, 'llm-trace.jsonl');

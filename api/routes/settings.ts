@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRoute, z } from '@hono/zod-openapi';
 import { createOpenApiRouter } from '../lib/openapi';
+import { getRuntimePaths } from '../runtime/paths';
 import {
   agentHookConfigSchema,
   agentHookInputSchema,
@@ -36,6 +37,7 @@ import {
   readMcpServerSettings,
   updateMcpServer,
 } from '../services/mcp/mcp-settings';
+import { runStartupPreflight } from '../services/preflight/preflight';
 import { listPricingRows, seedCodexPricingRows, upsertPricingRow } from '../services/pricing';
 import {
   readFxRateCache,
@@ -49,7 +51,7 @@ import {
 import { callSupervisorLLM } from '../services/supervisor/llm-provider';
 import { buildRound1JobTypePrompt } from '../services/supervisor/prompt';
 
-const RUNTIME_SETTINGS_DIR = path.resolve(process.cwd(), 'api/.runtime');
+const RUNTIME_SETTINGS_DIR = getRuntimePaths().settingsDir;
 const RUNTIME_SETTINGS_PATH =
   process.env.NIGHTWORKERS_LLM_SETTINGS_PATH ||
   path.join(RUNTIME_SETTINGS_DIR, 'llm-settings.json');
@@ -149,6 +151,20 @@ const pricingInputSchema = z.object({
   fetchedAt: z.string().nullable().optional(),
   manualOverride: z.boolean().optional(),
   enabled: z.boolean().optional(),
+});
+
+const startupPreflightSchema = z.object({
+  mode: z.enum(['desktop', 'development']),
+  runtimeRoot: z.string(),
+  resourceRoot: z.string(),
+  checks: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      status: z.enum(['pass', 'warn', 'fail']),
+      detail: z.string(),
+    })
+  ),
 });
 
 const getLlmSettingsRoute = createRoute({
@@ -260,6 +276,17 @@ const refreshFxRatesRoute = createRoute({
     500: {
       content: { 'application/json': { schema: z.object({ error: z.string() }) } },
       description: 'FX refresh failed',
+    },
+  },
+});
+
+const getStartupPreflightRoute = createRoute({
+  method: 'get',
+  path: '/preflight/startup',
+  responses: {
+    200: {
+      content: { 'application/json': { schema: startupPreflightSchema } },
+      description: 'Get startup preflight diagnostics',
     },
   },
 });
@@ -718,6 +745,9 @@ export const settingsRouter = createOpenApiRouter()
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) } as any, 500);
     }
+  })
+  .openapi(getStartupPreflightRoute, (c) => {
+    return c.json(runStartupPreflight(), 200);
   })
   .openapi(listPricingRoute, async (c) => {
     const rows = await listPricingRows();

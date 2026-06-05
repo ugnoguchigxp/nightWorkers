@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { getResourceRoot } from '../../runtime/paths';
 import type { TaskType } from '../task-intake';
 import { taskTypes } from '../task-intake/types';
 import type { ProcedureDefinition, ProcedureSectionName, ProcedureSnapshot } from './types';
@@ -13,7 +14,7 @@ const allowedSections: ProcedureSectionName[] = [
   'Report Contract',
 ];
 
-const defaultBuiltinDirectory = path.join(process.cwd(), 'api/services/procedures/builtin');
+const defaultBuiltinDirectory = path.join(getResourceRoot(), 'api/services/procedures/builtin');
 
 let cachedProcedures: ProcedureDefinition[] | null = null;
 

@@ -8,20 +8,20 @@
     --radius: 0.5rem;
     --font-sans: "Geist Variable", sans-serif;
     --nightworkers-scrollbar-track: #101014;
-    --nightworkers-scrollbar-thumb: #3f3f46;
-    --nightworkers-scrollbar-thumb-hover: #52525b;
+    --nightworkers-scrollbar-thumb: hsl(218 28% 44% / 0.88);
+    --nightworkers-scrollbar-thumb-hover: hsl(188 86% 58%);
   }
 
   html,
   body {
     color-scheme: dark;
     scrollbar-color: var(--nightworkers-scrollbar-thumb) var(--nightworkers-scrollbar-track);
-    scrollbar-width: thin;
+    scrollbar-width: auto;
   }
 
   ::-webkit-scrollbar {
-    width: 0.625rem;
-    height: 0.625rem;
+    width: 0.875rem;
+    height: 0.875rem;
   }
 
   ::-webkit-scrollbar-track {
@@ -29,13 +29,62 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    border: 2px solid var(--nightworkers-scrollbar-track);
+    border: 3px solid var(--nightworkers-scrollbar-track);
     border-radius: 999px;
     background: var(--nightworkers-scrollbar-thumb);
   }
 
   ::-webkit-scrollbar-thumb:hover {
     background: var(--nightworkers-scrollbar-thumb-hover);
+  }
+
+  :root:has(.nightworkers-shell[data-theme="light"]) {
+    --nightworkers-scrollbar-track: hsl(210 24% 96%);
+    --nightworkers-scrollbar-thumb: hsl(214 18% 64% / 0.95);
+    --nightworkers-scrollbar-thumb-hover: hsl(210 62% 49%);
+    color-scheme: light;
+  }
+
+  :root:has(.nightworkers-shell[data-theme="eclipse"]) {
+    --nightworkers-scrollbar-track: hsl(245 46% 90%);
+    --nightworkers-scrollbar-thumb: hsl(245 26% 64% / 0.9);
+    --nightworkers-scrollbar-thumb-hover: hsl(248 30% 45%);
+    color-scheme: light;
+  }
+
+  :root:has(.nightworkers-shell[data-theme="macosclassic"]) {
+    --nightworkers-scrollbar-track: hsl(0 0% 89%);
+    --nightworkers-scrollbar-thumb: hsl(0 0% 68% / 0.95);
+    --nightworkers-scrollbar-thumb-hover: hsl(210 85% 45%);
+    color-scheme: light;
+  }
+
+  :root:has(.nightworkers-shell[data-theme="campfire"]) {
+    --nightworkers-scrollbar-track: hsl(24 38% 8%);
+    --nightworkers-scrollbar-thumb: hsl(25 34% 42% / 0.92);
+    --nightworkers-scrollbar-thumb-hover: hsl(25 96% 58%);
+    color-scheme: dark;
+  }
+
+  :root:has(.nightworkers-shell[data-theme="mint"]) {
+    --nightworkers-scrollbar-track: hsl(154 30% 96%);
+    --nightworkers-scrollbar-thumb: hsl(153 24% 72% / 0.9);
+    --nightworkers-scrollbar-thumb-hover: hsl(158 42% 40%);
+    color-scheme: light;
+  }
+
+  :root:has(.nightworkers-shell[data-theme="bloom"]) {
+    --nightworkers-scrollbar-track: hsl(344 76% 96%);
+    --nightworkers-scrollbar-thumb: hsl(334 38% 74% / 0.9);
+    --nightworkers-scrollbar-thumb-hover: hsl(338 68% 63%);
+    color-scheme: light;
+  }
+
+  :root:has(.nightworkers-shell[data-theme="mocha"]) {
+    --nightworkers-scrollbar-track: hsl(38 38% 94%);
+    --nightworkers-scrollbar-thumb: hsl(28 28% 68% / 0.9);
+    --nightworkers-scrollbar-thumb-hover: hsl(188 58% 36%);
+    color-scheme: light;
   }
 }
 
@@ -856,14 +905,14 @@
 
 @layer utilities {
   .nightworkers-scrollbar {
-    color-scheme: dark;
+    color-scheme: inherit;
     scrollbar-color: var(--nightworkers-scrollbar-thumb) var(--nightworkers-scrollbar-track);
-    scrollbar-width: thin;
+    scrollbar-width: auto;
   }
 
   .nightworkers-scrollbar::-webkit-scrollbar {
-    width: 0.625rem;
-    height: 0.625rem;
+    width: 0.875rem;
+    height: 0.875rem;
   }
 
   .nightworkers-scrollbar::-webkit-scrollbar-track {
@@ -871,7 +920,7 @@
   }
 
   .nightworkers-scrollbar::-webkit-scrollbar-thumb {
-    border: 2px solid var(--nightworkers-scrollbar-track);
+    border: 3px solid var(--nightworkers-scrollbar-track);
     border-radius: 999px;
     background: var(--nightworkers-scrollbar-thumb);
   }

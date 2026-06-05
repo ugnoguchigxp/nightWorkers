@@ -131,3 +131,55 @@ describe('API auth boundary', () => {
     expect(isPublicApiPath('/api/ws/nightworkers')).toBe(false);
   });
 });
+
+describe('Desktop security configuration', () => {
+  function stubDesktopEnv() {
+    const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-desktop-security-'));
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('NIGHTWORKERS_DESKTOP', '1');
+    vi.stubEnv('NIGHTWORKERS_RUNTIME_DIR', runtimeDir);
+    vi.stubEnv('NIGHTWORKERS_API_ORIGIN', 'http://127.0.0.1:41234');
+    vi.stubEnv('AUTH_MODE', undefined);
+    vi.stubEnv('API_AUTH_REQUIRED', undefined);
+    vi.stubEnv('DATABASE_URL', undefined);
+    vi.stubEnv('JWT_SECRET', undefined);
+    vi.stubEnv('CORS_ORIGIN', undefined);
+    vi.stubEnv('APP_URL', undefined);
+    return runtimeDir;
+  }
+
+  it('derives explicit desktop origins and local auth defaults during first-run bootstrap', async () => {
+    stubDesktopEnv();
+    vi.resetModules();
+
+    const { config } = await import('../api/config');
+
+    expect(config.AUTH_MODE).toBe('local');
+    expect(config.API_AUTH_REQUIRED).toBe(false);
+    expect(config.CORS_ORIGINS).toEqual([
+      'http://127.0.0.1:41234',
+      'http://tauri.localhost',
+      'tauri://localhost',
+    ]);
+    expect(config.DATABASE_URL).toContain('/sqlite.db');
+    expect(config.JWT_SECRET.length).toBeGreaterThanOrEqual(32);
+  });
+
+  it('allows desktop REST and WebSocket origins in production CSP', async () => {
+    stubDesktopEnv();
+    vi.resetModules();
+
+    const { default: app } = await import('../api/app');
+    const response = await app.request('/api/health/live', {
+      headers: { Origin: 'http://tauri.localhost' },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('access-control-allow-origin')).toBe('http://tauri.localhost');
+    const csp = response.headers.get('content-security-policy') || '';
+    expect(csp).toContain('http://127.0.0.1:41234');
+    expect(csp).toContain('ws://127.0.0.1:41234');
+    expect(csp).toContain('http://tauri.localhost');
+    expect(csp).toContain('tauri:');
+  });
+});

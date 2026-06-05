@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { getResourceRoot } from '../../runtime/paths';
 import type { WorkerToolName } from '../tool-policy/types';
 
 export const jobTypes = [
@@ -546,7 +547,7 @@ export function loadFlatSkill(jobType: JobType, directory = defaultFlatSkillDire
 }
 
 export function defaultFlatSkillDirectory(): string {
-  return path.join(process.cwd(), 'api/services/supervisor/skills/flat');
+  return path.join(getResourceRoot(), 'api/services/supervisor/skills/flat');
 }
 
 export function buildRound1JobTypePrompt(projectRoot: string): string {

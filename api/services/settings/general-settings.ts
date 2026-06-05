@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { getRuntimePaths } from '../../runtime/paths';
 
-const RUNTIME_SETTINGS_DIR = path.resolve(process.cwd(), 'api/.runtime');
+const RUNTIME_SETTINGS_DIR = getRuntimePaths().settingsDir;
 const GENERAL_SETTINGS_PATH =
   process.env.NIGHTWORKERS_GENERAL_SETTINGS_PATH ||
   path.join(RUNTIME_SETTINGS_DIR, 'general-settings.json');

@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { client } from '../lib/api';
+import { apiPath } from '../lib/api-base';
 import { useAuth } from '../lib/auth';
 
 export const Route = createFileRoute('/login')({
@@ -47,7 +48,7 @@ function Login() {
 
     const loadAuthMethods = async () => {
       try {
-        const res = await fetch('/api/auth/methods', { credentials: 'include' });
+        const res = await fetch(apiPath('/api/auth/methods'), { credentials: 'include' });
         if (!res.ok || !active) return;
         const data = (await res.json()) as {
           apiAuthRequired: boolean;
@@ -129,14 +130,14 @@ function Login() {
       {authMethods.oauth.enabled ? (
         <div className="flex flex-col gap-4">
           {authMethods.oauth.providers.google ? (
-            <a href="/api/auth/oauth/google">
+            <a href={apiPath('/api/auth/oauth/google')}>
               <button type="button" className="w-full rounded border border-border px-3 py-2">
                 Login with Google
               </button>
             </a>
           ) : null}
           {authMethods.oauth.providers.github ? (
-            <a href="/api/auth/oauth/github">
+            <a href={apiPath('/api/auth/oauth/github')}>
               <button type="button" className="w-full rounded border border-border px-3 py-2">
                 Login with GitHub
               </button>

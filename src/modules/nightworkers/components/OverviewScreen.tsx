@@ -3,6 +3,7 @@ import { AlertTriangle, BarChart3, CircleDollarSign, Database, RefreshCw } from 
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { apiFetch } from '../../../lib/api-base';
 import { formatCurrency, formatDateTime, formatTokenCount } from '../i18n/format';
 import type { NightWorkersCurrency, OverviewDashboard, Repository } from '../types';
 
@@ -76,7 +77,7 @@ export function OverviewScreen({
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/overview?${query}`);
+      const res = await apiFetch(`/api/overview?${query}`);
       if (!res.ok) throw new Error(`Overview API failed: ${res.status}`);
       const data = (await res.json()) as OverviewDashboard;
       setDashboard(data);

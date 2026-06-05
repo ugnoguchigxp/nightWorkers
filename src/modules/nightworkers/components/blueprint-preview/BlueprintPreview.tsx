@@ -2,6 +2,7 @@ import { CheckCircle2, Database, Palette, SlidersHorizontal, XCircle } from 'luc
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { apiFetch } from '../../../../lib/api-base';
 import { BlueprintDbDesignPanel } from './BlueprintDbDesignPanel';
 import './blueprintPreview.css';
 import {
@@ -66,7 +67,7 @@ export function BlueprintPreview({
     setSettings(initialSettings);
     if (!sessionId) return;
     const controller = new AbortController();
-    fetch(`/api/tasks/${sessionId}/blueprint-design-settings`, { signal: controller.signal })
+    apiFetch(`/api/tasks/${sessionId}/blueprint-design-settings`, { signal: controller.signal })
       .then(async (res) => {
         if (!res.ok) return null;
         return (await res.json()) as { settings?: unknown };
@@ -104,7 +105,7 @@ export function BlueprintPreview({
       setSettings(next);
       if (!sessionId) return;
       const requestSeq = ++saveRequestSeqRef.current;
-      fetch(`/api/tasks/${sessionId}/blueprint-design-settings`, {
+      apiFetch(`/api/tasks/${sessionId}/blueprint-design-settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(next),
@@ -266,7 +267,7 @@ function useBlueprintAdoption({
     setAdopted(false);
     if (!sessionId || !messageId) return;
     const controller = new AbortController();
-    fetch(`/api/tasks/${sessionId}/${endpoint}?messageId=${encodeURIComponent(messageId)}`, {
+    apiFetch(`/api/tasks/${sessionId}/${endpoint}?messageId=${encodeURIComponent(messageId)}`, {
       signal: controller.signal,
     })
       .then(async (res) => {
@@ -290,7 +291,7 @@ function useBlueprintAdoption({
     const next = !adopted;
     setAdopted(next);
     setSaving(true);
-    fetch(`/api/tasks/${sessionId}/${endpoint}`, {
+    apiFetch(`/api/tasks/${sessionId}/${endpoint}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messageId, adopted: next }),

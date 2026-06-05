@@ -1,14 +1,20 @@
 import { config as dotenvConfig } from 'dotenv';
 import { z } from 'zod';
+import { ensureDesktopRuntimeBootstrap } from './runtime/bootstrap';
 
-dotenvConfig(); // ensure env is loaded in Node.js, Bun might auto-load
+dotenvConfig({ quiet: true }); // ensure env is loaded in Node.js, Bun might auto-load
+ensureDesktopRuntimeBootstrap();
 
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     PORT: z.coerce.number().default(39173),
-    DATABASE_URL: z.string(),
-    JWT_SECRET: z.string().min(32),
+    NIGHTWORKERS_DESKTOP: z.enum(['1', 'true', '0', 'false']).optional(),
+    NIGHTWORKERS_RUNTIME_DIR: z.string().trim().optional(),
+    NIGHTWORKERS_RESOURCE_DIR: z.string().trim().optional(),
+    NIGHTWORKERS_API_ORIGIN: z.string().url().optional(),
+    DATABASE_URL: z.string().optional(),
+    JWT_SECRET: z.string().min(32).optional(),
     JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
     JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
     AUTH_MODE: z.enum(['local', 'oauth', 'both']).default('both'),
@@ -31,6 +37,26 @@ const envSchema = z
     LOG_LEVEL: z.string().default('info'),
   })
   .superRefine((env, ctx) => {
+    const desktopMode = env.NIGHTWORKERS_DESKTOP === '1' || env.NIGHTWORKERS_DESKTOP === 'true';
+    if (!env.DATABASE_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['DATABASE_URL'],
+        message: desktopMode
+          ? 'DATABASE_URL should be generated during desktop runtime bootstrap.'
+          : 'DATABASE_URL is required.',
+      });
+    }
+    if (!env.JWT_SECRET) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['JWT_SECRET'],
+        message: desktopMode
+          ? 'JWT_SECRET should be generated during desktop runtime bootstrap.'
+          : 'JWT_SECRET is required.',
+      });
+    }
+
     const hasGoogleId = Boolean(env.GOOGLE_CLIENT_ID);
     const hasGoogleSecret = Boolean(env.GOOGLE_CLIENT_SECRET);
     const hasGithubId = Boolean(env.GITHUB_CLIENT_ID);
@@ -101,8 +127,18 @@ if (corsOrigins.length === 0 || corsOrigins.includes('*')) {
   process.exit(1);
 }
 
+const databaseUrl = result.data.DATABASE_URL;
+const jwtSecret = result.data.JWT_SECRET;
+
+if (!databaseUrl || !jwtSecret) {
+  console.error('❌ Invalid environment variables: DATABASE_URL and JWT_SECRET are required.');
+  process.exit(1);
+}
+
 export const config = {
   ...result.data,
+  DATABASE_URL: databaseUrl,
+  JWT_SECRET: jwtSecret,
   API_AUTH_REQUIRED: result.data.API_AUTH_REQUIRED ?? false,
   CORS_ORIGINS: corsOrigins,
 };

@@ -1,53 +1,28 @@
-import { serve } from '@hono/node-server';
-import app, { nodeWebSocket } from './app';
 import { config } from './config';
-import { ensureNightWorkersSchema } from './db/bootstrap';
-import { client } from './db/client';
 import { logEvent } from './lib/logger';
-import { nightWorkersRealtimeBroker } from './services/realtime/nightworkers-ws';
+import { createNightWorkersServer } from './server';
 
-const port = config.PORT;
 const shutdownTimeoutMs = 10_000;
 
-await ensureNightWorkersSchema();
-
-const server = serve({
-  fetch: app.fetch,
-  port,
+void main().catch((error) => {
+  logEvent({
+    channel: 'api',
+    level: 'error',
+    message: 'server startup failed',
+    meta: { errorMessage: error instanceof Error ? error.message : String(error) },
+  });
+  process.exit(1);
 });
-nodeWebSocket.injectWebSocket(server);
-
-logEvent({ channel: 'api', level: 'info', message: 'server started', meta: { port } });
 
 let shuttingDown = false;
-
-const closeHttpServer = () =>
-  new Promise<void>((resolve, reject) => {
-    server.close((error) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve();
-    });
-  });
-
-const closeWebSocketServer = () =>
-  new Promise<void>((resolve, reject) => {
-    nodeWebSocket.wss.close((error) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve();
-    });
-  });
+let server: Awaited<ReturnType<typeof createNightWorkersServer>> | null = null;
 
 const shutdown = async (signal: NodeJS.Signals) => {
   if (shuttingDown) return;
   shuttingDown = true;
-
-  logEvent({ channel: 'api', level: 'info', message: 'shutting down', meta: { signal } });
+  if (!server) {
+    process.exit(0);
+  }
 
   const forceExitTimer = setTimeout(() => {
     logEvent({
@@ -61,12 +36,8 @@ const shutdown = async (signal: NodeJS.Signals) => {
   forceExitTimer.unref?.();
 
   try {
-    nightWorkersRealtimeBroker.closeAll();
-    await closeWebSocketServer();
-    await closeHttpServer();
-    await Promise.resolve(client.close());
+    await server.close(signal);
     clearTimeout(forceExitTimer);
-    logEvent({ channel: 'api', level: 'info', message: 'shutdown complete', meta: { signal } });
     process.exit(0);
   } catch (error) {
     clearTimeout(forceExitTimer);
@@ -82,3 +53,10 @@ const shutdown = async (signal: NodeJS.Signals) => {
 
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
+
+async function main() {
+  server = await createNightWorkersServer({
+    port: config.PORT,
+    shutdownTimeoutMs,
+  });
+}

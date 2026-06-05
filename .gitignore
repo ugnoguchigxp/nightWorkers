@@ -6,6 +6,7 @@ node_modules/
 # Build Outputs
 dist/
 dist-api/
+dist-api-desktop/
 build/
 .vite/
 storybook-static/
@@ -60,6 +61,10 @@ github-pages/.preview/
 github-pages/reports/
 github-pages/vendor/
 scratch/test-patch/
+scripts/desktop/staged/*
+!scripts/desktop/staged/.gitkeep
+src-tauri/gen/
+src-tauri/target/
 
 # Local SQLite
 *.db

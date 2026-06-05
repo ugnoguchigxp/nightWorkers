@@ -8,6 +8,38 @@
   set `true` when intentionally exposing the app beyond localhost.
 - `APP_URL`: base URL for auth callbacks and cookie behavior
 - `TRUST_PROXY`: set `true` when proxy headers should be trusted
+- `NIGHTWORKERS_DESKTOP`: set by the Tauri shell for desktop sidecar mode
+- `NIGHTWORKERS_RUNTIME_DIR`: writable desktop runtime root for DB, settings,
+  logs, secrets, and artifacts
+- `NIGHTWORKERS_RESOURCE_DIR`: readonly bundled resource root for built assets
+  and builtin supervisor/procedure documents
+- `NIGHTWORKERS_API_ORIGIN`: selected loopback API origin passed from Tauri to
+  the sidecar and frontend
+- `NIGHTWORKERS_FRONTEND_DIST`: optional production static frontend path for the
+  backend static server
+
+## Desktop Runtime
+In desktop mode, Tauri injects the desktop variables above. If `DATABASE_URL` is
+not set, the backend uses `file:${NIGHTWORKERS_RUNTIME_DIR}/sqlite.db`. If
+`JWT_SECRET` is not set, the backend generates and stores one at
+`${NIGHTWORKERS_RUNTIME_DIR}/secrets/jwt-secret`.
+
+Desktop settings are stored under `${NIGHTWORKERS_RUNTIME_DIR}/settings`.
+Desktop logs are stored under `${NIGHTWORKERS_RUNTIME_DIR}/logs`.
+Desktop shell startup diagnostics are written to `desktop.log`, bundled Node
+sidecar stdout/stderr is written to `sidecar.log`, and API events are written to
+`api.log`.
+Development mode keeps the existing repo-local defaults, including
+`api/.runtime` and `logs`.
+
+Startup diagnostics are exposed at:
+
+```text
+GET /api/settings/preflight/startup
+```
+
+This endpoint separates app startup problems from Project execution environment
+problems.
 
 ## OAuth Variables
 Enable as needed:
@@ -35,7 +67,7 @@ Enable as needed:
 - Settings can be entered one server at a time or imported from a large JSON textarea. The import path accepts common pasted shapes such as `{ "mcpServers": { "name": { ... } } }`, `{ "servers": [ ... ] }`, `{ "server": { ... } }`, or a single server object.
 - Import runs an immediate connection test by default. Saving or switching a server ON also runs `listTools` through the MCP client manager so the UI can report whether the server is usable.
 - Each server has an ON/OFF switch. OFF keeps the config stored but excludes the server from runtime tool discovery and skips connection tests until it is turned ON again.
-- Runtime MCP Server settings are stored separately from LLM settings in `api/.runtime/mcp-servers.json`.
+- Runtime MCP Server settings are stored separately from LLM settings. In development this is `api/.runtime/mcp-servers.json`; in desktop mode it is `${NIGHTWORKERS_RUNTIME_DIR}/settings/mcp-servers.json`.
 - `NIGHTWORKERS_MCP_SETTINGS_PATH` can override that file path for tests or local experiments.
 - OAuth, bearer-token, API-key header, cookie auth, and secret-like env values are intentionally rejected in the first implementation slice.
 - Enabled MCP tools execute through the internal `mcp_call_tool` bridge so policy checks, run events, and review evidence remain in the NightWorkers runtime path.
@@ -43,7 +75,7 @@ Enable as needed:
 
 ## Agent Hooks
 - Agent Hooks can be configured from the Settings screen.
-- Runtime Agent Hook settings are stored separately from LLM and MCP settings in `api/.runtime/agent-hooks.json`.
+- Runtime Agent Hook settings are stored separately from LLM and MCP settings. In development this is `api/.runtime/agent-hooks.json`; in desktop mode it is `${NIGHTWORKERS_RUNTIME_DIR}/settings/agent-hooks.json`.
 - `NIGHTWORKERS_HOOKS_SETTINGS_PATH` can override that file path for tests or local experiments.
 - Supported events in the first implementation slice are `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, and `SessionEnd`.
 - Supported handlers are local `command` hooks and `http` hooks. Command hooks receive JSON on stdin; HTTP hooks receive the same JSON as the POST body.
@@ -106,3 +138,20 @@ pnpm db:migrate
 pnpm db:seed
 pnpm dev
 ```
+
+## Desktop Build Baseline
+```bash
+pnpm desktop:prepare-sidecar
+pnpm desktop:smoke-sidecar
+pnpm desktop:lint
+pnpm desktop:build
+pnpm desktop:smoke
+```
+
+`pnpm desktop:build` produces a macOS `.app`. `pnpm desktop:smoke` launches that
+app and checks the sidecar health endpoint, overview endpoint, implementation
+queue endpoint, WebSocket startup, desktop/sidecar log output, and shutdown.
+`pnpm verify` includes this desktop gate. `pnpm desktop:build:dmg` is kept as a
+separate release gate because DMG creation can fail on local mount/Finder state.
+`pnpm desktop:sign` requires `NIGHTWORKERS_DESKTOP_APP_PATH` and
+`APPLE_DEVELOPER_ID_APPLICATION`.
