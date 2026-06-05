@@ -18,3 +18,38 @@ export async function emitSupervisorLlmDebugEvent(
     );
   }
 }
+
+export function createSupervisorResponseDeltaEmitter(input: {
+  options: CallSupervisorOptions;
+  provider: string;
+  round?: 1 | 2;
+}) {
+  let pendingText = '';
+
+  const flush = async () => {
+    if (!pendingText) return;
+    const text = pendingText;
+    pendingText = '';
+    await emitSupervisorLlmDebugEvent(input.options, {
+      type: 'model.response_delta',
+      severity: 'debug',
+      message: 'Supervisor LLM response delta received.',
+      data: {
+        provider: input.provider,
+        round: input.round ?? null,
+        text,
+      },
+    });
+  };
+
+  return {
+    async push(text: string) {
+      if (!text) return;
+      pendingText += text;
+      if (pendingText.length >= 24 || pendingText.includes('\n')) {
+        await flush();
+      }
+    },
+    flush,
+  };
+}

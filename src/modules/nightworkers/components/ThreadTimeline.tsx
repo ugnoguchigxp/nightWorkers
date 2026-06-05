@@ -743,11 +743,18 @@ function fallbackEventText(event?: ActivityEvent) {
   return formatVisibleAssistantText(event.text || JSON.stringify(event.payloadJson || {}, null, 2));
 }
 
-function getActivityCode(event: ActivityEvent) {
+export function getActivityCode(event: ActivityEvent) {
   const payload = event.payloadJson as any;
+  const agentEventType = schemaFirstAgentEventType(event);
   const editToolDiff = getEditToolCallDiff(event);
   if (editToolDiff) return editToolDiff;
   if (isDiffActivity(event) && typeof payload?.code === 'string') return payload.code;
+  if (agentEventType === 'skill.loaded') {
+    return stringValue(payload?.payload?.skill || payload?.skill || payload?.runEvent?.data?.skill);
+  }
+  if (typeof payload?.rawContent === 'string') return payload.rawContent;
+  if (typeof payload?.systemPrompt === 'string') return payload.systemPrompt;
+  if (typeof payload?.userPrompt === 'string') return payload.userPrompt;
   if (typeof payload?.payload?.rawContent === 'string') return payload.payload.rawContent;
   if (typeof payload?.payload?.systemPrompt === 'string') return payload.payload.systemPrompt;
   if (typeof payload?.payload?.userPrompt === 'string') return payload.payload.userPrompt;
@@ -758,6 +765,9 @@ function getActivityCode(event: ActivityEvent) {
     return JSON.stringify(payload.payload, null, 2);
   }
   if (typeof payload?.code === 'string') return payload.code;
+  if (typeof payload?.text === 'string' && agentEventType === 'model.response_delta') {
+    return payload.text;
+  }
   if (typeof payload?.runEvent?.data?.text === 'string' && event.kind.includes('delta')) {
     return payload.runEvent.data.text;
   }
@@ -798,23 +808,29 @@ function formatLlmOutputJson(event: ActivityEvent, payload: unknown): string {
     return parsed ? JSON.stringify(parsed, null, 2) : event.text;
   }
   const record = payload as any;
-  const llmPayload = record?.payload || record?.runEvent?.data || {};
+  const llmPayload = record?.payload || record?.runEvent?.data || record || {};
   return JSON.stringify(llmPayload, null, 2);
 }
 
 function activityCodeFilename(event: ActivityEvent) {
   const editToolName = getEditToolCall(event)?.name;
+  const agentEventType = schemaFirstAgentEventType(event);
+  const payload = event.payloadJson as any;
   if (editToolName === 'apply_patch') return 'apply_patch.patch';
   if (editToolName === 'replace_content') return 'replace_content.diff';
+  if (agentEventType === 'skill.loaded') {
+    return stringValue(payload?.payload?.skillPath || payload?.skillPath) || 'skill.md';
+  }
   if (event.kind.includes('patch')) return 'activity.patch';
   if (event.kind.includes('diff')) return 'activity.diff';
   if (event.kind.includes('json') || event.kind.startsWith('llm.')) return 'activity.json';
-  if (schemaFirstAgentEventType(event) === 'model.response_finished') return 'raw-output.json';
-  if (schemaFirstAgentEventType(event)?.endsWith('prompt_built')) return 'prompt.txt';
+  if (agentEventType === 'model.response_finished') return 'raw-output.json';
+  if (agentEventType?.endsWith('prompt_built')) return 'prompt.txt';
   return event.kind;
 }
 
 function activityCodeLanguage(event: ActivityEvent) {
+  if (schemaFirstAgentEventType(event) === 'skill.loaded') return 'markdown';
   if (getEditToolCall(event)) return 'diff';
   if (event.kind.includes('patch') || event.kind.includes('diff')) return 'diff';
   if (event.kind.includes('json') || event.kind.startsWith('llm.')) return 'json';
@@ -946,7 +962,7 @@ function activityDisplayTitle(event: ActivityEvent, fallback: string): string {
 
 function activityDisplaySummary(event: ActivityEvent): string {
   const payload = event.payloadJson as any;
-  const data = payload?.payload || payload?.runEvent?.data || {};
+  const data = payload?.payload || payload?.runEvent?.data || payload || {};
   const agentEventType = schemaFirstAgentEventType(event);
   if (agentEventType === 'round1.parsed' && typeof data.jobType === 'string') {
     return data.jobType;
@@ -969,6 +985,9 @@ function activityDisplaySummary(event: ActivityEvent): string {
     return formatVisibleAssistantText(
       typeof data.rawContent === 'string' ? data.rawContent : event.text || ''
     );
+  }
+  if (agentEventType === 'skill.loaded') {
+    return typeof data.skillPath === 'string' ? data.skillPath : event.text || 'skill loaded';
   }
   if (agentEventType.endsWith('prompt_built')) {
     return event.text || 'prompt built';
@@ -1171,19 +1190,29 @@ function buildStreamingResponsePreview(input: {
     return buildStreamingPreviewFromRaw(input.activeStreamingResponse);
   }
   const chunks = input.events
-    .filter((event) => {
-      const payload = event.payloadJson as any;
-      return payload?.runEvent?.type === 'model.response_delta';
-    })
-    .map((event) => {
-      const payload = event.payloadJson as any;
-      return String(payload?.runEvent?.data?.text || event.message || '');
-    })
+    .filter(isStreamingResponseDeltaEvent)
+    .map(streamingResponseDeltaText)
     .filter(Boolean);
 
   if (chunks.length === 0) return null;
 
   return buildStreamingPreviewFromRaw(chunks.join(''));
+}
+
+function isStreamingResponseDeltaEvent(event: TaskEvent): boolean {
+  const payload = event.payloadJson as any;
+  return (
+    payload?.runEvent?.type === 'model.response_delta' ||
+    payload?.agentEventType === 'model.response_delta'
+  );
+}
+
+function streamingResponseDeltaText(event: TaskEvent): string {
+  const payload = event.payloadJson as any;
+  if (typeof payload?.runEvent?.data?.text === 'string') return payload.runEvent.data.text;
+  if (typeof payload?.text === 'string') return payload.text;
+  if (typeof payload?.payload?.text === 'string') return payload.payload.text;
+  return event.message || '';
 }
 
 export function buildPersistedStreamingResponsePreview(input: {

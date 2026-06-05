@@ -163,6 +163,59 @@ describe('Supervisor LLM schema-first parsing', () => {
     ).rejects.toThrow();
   });
 
+  it('emits response delta events while reading streamed OpenAI responses', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'openai';
+    process.env.OPENAI_ENABLED = 'true';
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.OPENAI_MODEL = 'gpt-test';
+    process.env.OPENAI_STREAMING_ENABLED = 'true';
+
+    const rawDecision = JSON.stringify({
+      toolCall: {
+        name: 'finalize_answer',
+        arguments: { message: 'streamed answer' },
+      },
+    });
+    const chunks = [rawDecision.slice(0, 20), rawDecision.slice(20, 48), rawDecision.slice(48)];
+    const encoder = new TextEncoder();
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            for (const chunk of chunks) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ choices: [{ delta: { content: chunk } }] })}\n\n`
+                )
+              );
+            }
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            controller.close();
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        }
+      );
+    }) as unknown as typeof fetch;
+
+    const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
+    const decision = await callSupervisorLLM('system', 'user', {
+      round: 2,
+      schemaFirst: true,
+      emitEvent: (event) => events.push({ type: event.type, data: event.data }),
+    });
+
+    expect(decision.toolCall.name).toBe('finalize_answer');
+    expect(
+      events
+        .filter((event) => event.type === 'model.response_delta')
+        .map((event) => String(event.data?.text || ''))
+        .join('')
+    ).toBe(rawDecision);
+  });
+
   it('uses configured fixture JSON instead of synthesizing a task-specific decision', async () => {
     process.env.ACTIVE_LLM_PROVIDER = 'fixture';
     process.env.SUPERVISOR_FIXTURE_ROUND1_OUTPUT = JSON.stringify({

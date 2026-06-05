@@ -1,4 +1,5 @@
 import type { CodexOptions, Thread, ThreadEvent, Usage } from '@openai/codex-sdk';
+import { createSupervisorResponseDeltaEmitter } from './events';
 import type { CallSupervisorOptions } from './types';
 
 const codexSupervisorFeatureOverrides = {
@@ -63,8 +64,6 @@ export async function readCodexStreamedTurn(input: {
   signal: AbortSignal;
   options: CallSupervisorOptions;
 }): Promise<{ content: string; usage: Usage | null }> {
-  void input.options;
-
   const { events } = await input.thread.runStreamed(input.prompt, {
     ...(input.outputSchema ? { outputSchema: input.outputSchema } : {}),
     signal: input.signal,
@@ -73,13 +72,22 @@ export async function readCodexStreamedTurn(input: {
   let usage: Usage | null = null;
   const latestAgentMessageTextById = new Map<string, string>();
   let latestAgentMessageText = '';
+  const deltaEmitter = createSupervisorResponseDeltaEmitter({
+    options: input.options,
+    provider: 'codex',
+    round: input.options.round,
+  });
 
-  const handleItemEvent = (event: Extract<ThreadEvent, { type: `item.${string}` }>) => {
+  const handleItemEvent = async (event: Extract<ThreadEvent, { type: `item.${string}` }>) => {
     const item = event.item;
     if (item.type !== 'agent_message') return;
     const current = item.text || '';
+    const previous = latestAgentMessageTextById.get(item.id) || '';
     latestAgentMessageTextById.set(item.id, current);
     if (current.trim()) latestAgentMessageText = current;
+    if (current.startsWith(previous) && current.length > previous.length) {
+      await deltaEmitter.push(current.slice(previous.length));
+    }
     if (event.type === 'item.completed') content = current;
   };
 
@@ -89,7 +97,7 @@ export async function readCodexStreamedTurn(input: {
       event.type === 'item.updated' ||
       event.type === 'item.completed'
     ) {
-      handleItemEvent(event);
+      await handleItemEvent(event);
     } else if (event.type === 'turn.completed') {
       usage = event.usage;
     } else if (event.type === 'turn.failed') {
@@ -99,6 +107,7 @@ export async function readCodexStreamedTurn(input: {
     }
   }
 
+  await deltaEmitter.flush();
   return { content: content || latestAgentMessageText, usage };
 }
 

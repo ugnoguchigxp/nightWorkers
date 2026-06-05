@@ -1,5 +1,6 @@
 import { logger } from '../../../lib/logger';
 import { buildResponseJsonSchema as buildSchemaFirstResponseJsonSchema } from '../schema-first';
+import { createSupervisorResponseDeltaEmitter } from './events';
 import type { CallSupervisorOptions } from './types';
 
 export function buildOpenAIChatCompletionBody(input: {
@@ -38,20 +39,21 @@ export async function readOpenAIChatCompletionStream(input: {
   provider: string;
   round?: 1 | 2;
 }): Promise<string> {
-  void input.options;
-  void input.provider;
-  void input.round;
-
   if (!input.response.body) {
     throw new Error('OpenAI streaming response did not include a readable body.');
   }
 
   const decoder = new TextDecoder();
   const reader = input.response.body.getReader();
+  const deltaEmitter = createSupervisorResponseDeltaEmitter({
+    options: input.options,
+    provider: input.provider,
+    round: input.round,
+  });
   let buffer = '';
   let content = '';
 
-  const processStreamRecord = (record: string) => {
+  const processStreamRecord = async (record: string) => {
     const lines = record
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -67,7 +69,10 @@ export async function readOpenAIChatCompletionStream(input: {
         continue;
       }
       const delta = parsed?.choices?.[0]?.delta?.content;
-      if (typeof delta === 'string' && delta) content += delta;
+      if (typeof delta === 'string' && delta) {
+        content += delta;
+        await deltaEmitter.push(delta);
+      }
     }
   };
 
@@ -79,11 +84,12 @@ export async function readOpenAIChatCompletionStream(input: {
     const records = buffer.split(/\r?\n\r?\n/);
     buffer = records.pop() ?? '';
     for (const record of records) {
-      processStreamRecord(record);
+      await processStreamRecord(record);
     }
   }
 
   buffer += decoder.decode();
-  if (buffer.trim()) processStreamRecord(buffer);
+  if (buffer.trim()) await processStreamRecord(buffer);
+  await deltaEmitter.flush();
   return content;
 }

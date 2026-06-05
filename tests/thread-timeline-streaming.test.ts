@@ -118,4 +118,31 @@ describe('ThreadTimeline streaming persistence', () => {
 
     expect(formatVisibleAssistantText(raw)).toBe('fizzbuzz.ts を作成しました。');
   });
+
+  it('builds persisted previews from schema-first response delta events', () => {
+    const preview = buildPersistedStreamingResponsePreview({
+      runId: 'run-1',
+      taskMessages: [] as any,
+      events: [
+        {
+          id: 'event-1',
+          runId: 'run-1',
+          seq: 1,
+          actor: 'supervisor',
+          type: 'debug',
+          eventType: 'debug',
+          message: 'Supervisor LLM response delta received.',
+          payloadJson: {
+            agentEventType: 'model.response_delta',
+            provider: 'openai',
+            round: 2,
+            text: '{"toolCall":{"name":"finalize_answer","arguments":{"message":"schema-first stream"}}}',
+          },
+          timestamp: '2026-06-04T00:00:00.000Z',
+        },
+      ] as any,
+    });
+
+    expect(preview?.visibleText).toBe('schema-first stream');
+  });
 });

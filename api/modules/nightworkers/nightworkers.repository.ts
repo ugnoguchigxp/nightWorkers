@@ -277,6 +277,7 @@ function shouldProjectRunEventToActivity(input: {
     input.agentEventType === 'round2.prompt_built' ||
     input.agentEventType === 'round1.parsed' ||
     input.agentEventType === 'round2.parsed' ||
+    input.agentEventType === 'skill.loaded' ||
     input.agentEventType === 'model.response_finished' ||
     input.agentEventType === 'tool.started' ||
     input.agentEventType === 'tool.finished' ||

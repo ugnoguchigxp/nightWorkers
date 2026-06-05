@@ -3,6 +3,7 @@ import {
   buildNormalTranscriptItems,
   buildVisibleEditDiffSummary,
   findArtifactTaskMessage,
+  getActivityCode,
   getAgentEditSummary,
   parseDiffMetadata,
 } from '../src/modules/nightworkers/components/ThreadTimeline';
@@ -196,6 +197,66 @@ describe('ThreadTimeline edit summaries', () => {
         deleted: 1,
       },
     ]);
+  });
+
+  it('extracts schema-first debug payloads for CodeBlock rendering', () => {
+    expect(
+      getActivityCode({
+        id: 'response-finished',
+        taskId: 'task-1',
+        kind: 'llm.response_final',
+        source: 'supervisor',
+        status: 'completed',
+        seq: 1,
+        text: 'Supervisor LLM response received.',
+        payloadJson: {
+          agentEventType: 'model.response_finished',
+          rawContent: '{"toolCall":{"name":"finalize_answer","arguments":{"message":"done"}}}',
+        },
+        createdAt: '2026-06-05T00:00:00.000Z',
+        visibility: 'visible',
+      } as any)
+    ).toContain('finalize_answer');
+
+    expect(
+      getActivityCode({
+        id: 'prompt-built',
+        taskId: 'task-1',
+        kind: 'llm.request',
+        source: 'supervisor',
+        status: 'completed',
+        seq: 2,
+        text: 'Round 2 prompt built.',
+        payloadJson: {
+          agentEventType: 'round2.prompt_built',
+          systemPrompt: 'システム指示',
+          userPrompt: 'ユーザー入力',
+        },
+        createdAt: '2026-06-05T00:00:01.000Z',
+        visibility: 'visible',
+      } as any)
+    ).toBe('システム指示');
+
+    expect(
+      getActivityCode({
+        id: 'skill-loaded',
+        taskId: 'task-1',
+        kind: 'runtime.state',
+        source: 'runtime',
+        status: 'completed',
+        seq: 3,
+        text: 'skills/minor_code_edit.md',
+        payloadJson: {
+          agentEventType: 'skill.loaded',
+          payload: {
+            skillPath: 'skills/minor_code_edit.md',
+            skill: '# minor_code_edit\n\n## Procedure\n1. read_file',
+          },
+        },
+        createdAt: '2026-06-05T00:00:02.000Z',
+        visibility: 'visible',
+      } as any)
+    ).toBe('# minor_code_edit\n\n## Procedure\n1. read_file');
   });
 
   it('keeps diff hunk headers out of displayed code line numbers', () => {

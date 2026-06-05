@@ -282,6 +282,27 @@ describe('NightWorkers task routes', () => {
         taskId: task.id,
         timestamp: new Date().toISOString(),
         type: 'system.info',
+        severity: 'debug',
+        actor: 'runtime',
+        message: '[SchemaFirstAgent] skill.loaded',
+      },
+      {
+        payloadJson: {
+          agentEventType: 'skill.loaded',
+          payload: {
+            skillPath: 'skills/minor_code_edit.md',
+            skill: '# minor_code_edit\n\n## Procedure\n1. read_file',
+          },
+        },
+      }
+    );
+    await repo.createRunEvent(
+      {
+        version: 1,
+        runId: run.id,
+        taskId: task.id,
+        timestamp: new Date().toISOString(),
+        type: 'system.info',
         severity: 'info',
         actor: 'runtime',
         message: '[SchemaFirstAgent] finalize.received',
@@ -307,6 +328,20 @@ describe('NightWorkers task routes', () => {
           text: expect.stringContaining('apply_patch'),
           payloadJson: expect.objectContaining({
             agentEventType: 'round2.parsed',
+          }),
+        }),
+        expect.objectContaining({
+          taskId: task.id,
+          runId: run.id,
+          kind: 'runtime.state',
+          turnId: `assistant:${run.id}`,
+          text: 'skills/minor_code_edit.md',
+          payloadJson: expect.objectContaining({
+            agentEventType: 'skill.loaded',
+            payload: expect.objectContaining({
+              skillPath: 'skills/minor_code_edit.md',
+              skill: expect.stringContaining('# minor_code_edit'),
+            }),
           }),
         }),
       ])
