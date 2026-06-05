@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   analyzeCommand,
+  applyPatchTool,
   fetchContentTool,
   findFileTool,
   gitDiffTool,
@@ -157,6 +158,68 @@ describe('Worker Tools Unit Tests', () => {
       const safety = analyzeCommand('git push origin main');
       expect(safety.allowed).toBe(false);
       expect(safety.classification).toBe('destructive');
+    });
+  });
+
+  describe('applyPatchTool', () => {
+    it('applies a Codex add-file patch envelope', async () => {
+      const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-apply-patch-'));
+      execFileSync('git', ['init'], { cwd: repoRoot });
+
+      const result = await applyPatchTool({
+        repoRoot,
+        patchContent: [
+          '*** Begin Patch',
+          '*** Add File: fizzbuzz.ts',
+          '+const fizzbuzz = (n: number): string[] => {',
+          '+  const result: string[] = [];',
+          '+  for (let i = 1; i <= n; i += 1) {',
+          '+    result.push(i % 15 === 0 ? "FizzBuzz" : String(i));',
+          '+  }',
+          '+  return result;',
+          '+};',
+          '+',
+          '+export default fizzbuzz;',
+          '*** End Patch',
+        ].join('\n'),
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.payload.changedFiles).toEqual(['fizzbuzz.ts']);
+      await expect(fs.readFile(path.join(repoRoot, 'fizzbuzz.ts'), 'utf-8')).resolves.toContain(
+        'export default fizzbuzz'
+      );
+
+      await fs.rm(repoRoot, { recursive: true, force: true });
+    });
+
+    it('applies a patch even when the hunk line count is stale', async () => {
+      const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-apply-patch-'));
+      execFileSync('git', ['init'], { cwd: repoRoot });
+
+      const result = await applyPatchTool({
+        repoRoot,
+        patchContent: [
+          '--- /dev/null',
+          '+++ b/fizzbuzz.ts',
+          '@@ -0,0 +1,17 @@',
+          '+export function fizzbuzz(n: number): string {',
+          '+  if (n % 15 === 0) return "FizzBuzz";',
+          '+  if (n % 3 === 0) return "Fizz";',
+          '+  if (n % 5 === 0) return "Buzz";',
+          '+  return String(n);',
+          '+}',
+          '',
+        ].join('\n'),
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.payload.changedFiles).toEqual(['fizzbuzz.ts']);
+      await expect(fs.readFile(path.join(repoRoot, 'fizzbuzz.ts'), 'utf-8')).resolves.toContain(
+        'FizzBuzz'
+      );
+
+      await fs.rm(repoRoot, { recursive: true, force: true });
     });
   });
 

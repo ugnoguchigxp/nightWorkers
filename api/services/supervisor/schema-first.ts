@@ -128,7 +128,7 @@ export const toolRegistry = {
   },
   apply_patch: {
     name: 'apply_patch',
-    description: 'unified diff で新規作成または構造的な変更を行う。*** Begin Patch 形式は禁止。',
+    description: 'patchContent に指定した差分で新規作成または構造的な変更を行う。',
     inputSchema: objectSchema({ patchContent: { type: 'string' } }, ['patchContent']),
   },
   replace_content: {
@@ -455,8 +455,6 @@ export function buildRound2ToolCallPrompt(input: {
     'JSON のみ。rationale、plan、phase、workflow、routingHypothesis、finalResponse、expectedEvidence は出さない。',
     '完了したと判断したら finalize_answer を返す。',
     'finalize_answer.message でプロジェクト内のファイルに触れる場合は、プロジェクトルートからの相対パスで書く。',
-    'apply_patch.patchContent は unified diff だけを入れる。*** Begin Patch / *** Add File / *** End Patch は使わない。',
-    '新規ファイル作成の patchContent は必ず次の形にする: --- /dev/null, +++ b/<path>, @@ -0,0 +1,<lineCount> @@, 追加行は + で始める。',
     'apply_patch が成功したら次は changedFiles の対象を read_file する。対象パスが分かっている場合に list_dir は使わない。',
     '',
     `プロジェクトルート: ${input.projectRoot}`,

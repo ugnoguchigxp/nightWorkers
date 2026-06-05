@@ -232,7 +232,6 @@ function runEventToActivityKind(
   }
   if (agentEventType === 'skill.loaded') return 'runtime.state';
   if (agentEventType === 'tool.validation_failed') return 'tool.error';
-  if (agentEventType === 'finalize.received') return 'assistant.message';
   if (agentEventType === 'run.started' || agentEventType === 'run.completed') return 'run.status';
   if (agentEventType === 'run.needs_human' || agentEventType === 'run.failed') {
     return agentEventType === 'run.failed' ? 'system.error' : 'run.status';
@@ -283,8 +282,7 @@ function shouldProjectRunEventToActivity(input: {
     input.agentEventType === 'tool.finished' ||
     input.agentEventType === 'tool.failed' ||
     input.agentEventType === 'tool.validation_failed' ||
-    input.agentEventType === 'job.switched' ||
-    input.agentEventType === 'finalize.received'
+    input.agentEventType === 'job.switched'
   ) {
     return true;
   }

@@ -16,8 +16,6 @@ import {
   generatePlanModeBlueprintDraft,
 } from '../../services/blueprints/llm-draft';
 import { validateAppBlueprint } from '../../services/blueprints/validation';
-import { buildFinalJudgment } from '../../services/final-judgment/build-final-judgment';
-import { renderFinalMessage } from '../../services/final-judgment/render-final-message';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
 import { buildReviewResult } from '../../services/review-results/build-review-result';
 import { collectDefaultReviewEvidence } from '../../services/review-results/evidence-collector';
@@ -37,7 +35,11 @@ import {
   callSupervisorLLM,
   type SupervisorLlmDebugEvent,
 } from '../../services/supervisor/llm-provider';
-import { buildRound1SystemPrompt } from '../../services/supervisor/prompt';
+import {
+  buildRound1JobTypePrompt,
+  type JobType,
+  type JobTypeSelection,
+} from '../../services/supervisor/schema-first';
 import type { SupervisorRoutingHypothesis } from '../../services/supervisor/skills/types';
 import { digestText } from '../../services/text-digest';
 import type { RuntimePromptSnapshot } from '../../services/todo-context';
@@ -54,25 +56,20 @@ export type BlueprintPlanningReadiness = {
 };
 
 function outcomeFromRuntimeResult(runtimeResult: AgentRuntimeResult) {
-  return runtimeResult.terminalState === 'cancelled'
-    ? {
-        status: 'cancelled' as const,
-        reason: 'human_review' as const,
-        summary: runtimeResult.summary || 'Run cancelled by runtime.',
-      }
-    : decideRunOutcome({
-        supervisor: {
-          finalReport: runtimeResult.finalReport || '',
-          terminalState: runtimeResult.terminalState,
-          summary:
-            runtimeResult.summary || `Runtime finished with status=${runtimeResult.terminalState}`,
-          stoppedBy:
-            runtimeResult.stoppedBy === 'cancelled' ? 'llm_error' : runtimeResult.stoppedBy,
-          riskLevel: runtimeResult.riskLevel,
-        },
-        budgetStopped: runtimeResult.stoppedBy === 'budget',
-        safetyViolation: runtimeResult.stoppedBy === 'policy',
-      });
+  const status = runtimeResult.terminalState;
+  const reason =
+    runtimeResult.stoppedBy === 'policy'
+      ? 'policy_violation'
+      : runtimeResult.stoppedBy === 'budget'
+        ? 'budget_exceeded'
+        : runtimeResult.stoppedBy === 'tool_failure'
+          ? 'tool_failure_limit'
+          : runtimeResult.stoppedBy;
+  return {
+    status,
+    reason,
+    summary: runtimeResult.finalReport || runtimeResult.summary || `Runtime finished: ${status}`,
+  };
 }
 
 // --- Repositories ---
@@ -547,14 +544,16 @@ async function handleWorkbenchIntakeMessage(
   const emitWorkbenchLlmDebugEvent = createWorkbenchLlmDebugEventEmitter(taskId);
 
   try {
-    const decision = await callSupervisorLLM(buildRound1SystemPrompt(projectRoot), prompt, {
+    const jobSelection = (await callSupervisorLLM(buildRound1JobTypePrompt(projectRoot), prompt, {
       round: 1,
+      schemaFirst: true,
       tolerateSchemaFailure: false,
       emitEvent: emitWorkbenchLlmDebugEvent,
-    });
-    const routing = decision.routingHypothesis;
+      workingDirectory: projectRoot,
+    })) as JobTypeSelection;
+    const routing = routingForWorkbenchJobType(jobSelection.jobType);
     const startsImmediateRun = shouldStartImmediateWorkbenchRun(
-      decision,
+      jobSelection,
       options.intent || 'intake'
     );
     if (isBlueprintRouting(routing)) {
@@ -579,7 +578,7 @@ async function handleWorkbenchIntakeMessage(
             generation,
             source: 'workbench',
             routingHypothesis: routing,
-            intakeDecision: decision,
+            intakeJobSelection: jobSelection,
           },
         });
       } catch (error) {
@@ -597,7 +596,7 @@ async function handleWorkbenchIntakeMessage(
               error: message,
               promptDiagnostics: error.promptDiagnostics,
               routingHypothesis: routing,
-              intakeDecision: decision,
+              intakeJobSelection: jobSelection,
             },
           });
         }
@@ -610,7 +609,7 @@ async function handleWorkbenchIntakeMessage(
             intent: 'blueprint_generation_failed',
             source: 'workbench',
             routingHypothesis: routing,
-            intakeDecision: decision,
+            intakeJobSelection: jobSelection,
             error: message,
             rawOutputRecorded:
               error instanceof BlueprintDraftGenerationError && Boolean(error.rawOutput?.trim()),
@@ -625,13 +624,13 @@ async function handleWorkbenchIntakeMessage(
         taskId,
         role: 'assistant',
         content:
-          renderLlmIntakeContent(decision) ||
+          renderLlmIntakeContent(jobSelection) ||
           '依頼内容を受け取りました。実行が必要な場合は作業を開始します。',
         messageType: 'text',
         payloadJson: {
           intent: 'intake',
           source: 'llm',
-          decision,
+          jobSelection,
         },
       });
     }
@@ -640,7 +639,7 @@ async function handleWorkbenchIntakeMessage(
         title,
         objective: task.objective || prompt,
         acceptanceCriteria:
-          task.acceptanceCriteria || buildAcceptanceCriteriaFromDecision(decision) || prompt,
+          task.acceptanceCriteria || buildAcceptanceCriteriaFromDecision(jobSelection) || prompt,
         status: 'ready',
       });
       await repo.createTaskMessage({
@@ -652,7 +651,7 @@ async function handleWorkbenchIntakeMessage(
           intent: 'run_started',
           source: 'workbench',
           routingHypothesis: routing,
-          intakeDecision: decision,
+          intakeJobSelection: jobSelection,
         },
       });
       const run = await startTaskRun(taskId);
@@ -666,7 +665,7 @@ async function handleWorkbenchIntakeMessage(
       title,
       objective: task.objective || prompt,
       acceptanceCriteria: isBlueprintRouting(routing)
-        ? task.acceptanceCriteria || buildAcceptanceCriteriaFromDecision(decision)
+        ? task.acceptanceCriteria || buildAcceptanceCriteriaFromDecision(jobSelection)
         : task.acceptanceCriteria,
       status: isBlueprintRouting(routing) && task.status === 'draft' ? 'ready' : task.status,
     });
@@ -739,37 +738,62 @@ async function prepareWorkbenchIntakeTask(
   return updated;
 }
 
-function renderLlmIntakeContent(decision: Awaited<ReturnType<typeof callSupervisorLLM>>): string {
-  return [decision.finalResponse, decision.instruction, decision.rationale]
+function renderLlmIntakeContent(jobSelection: JobTypeSelection): string {
+  if (jobSelection.jobType === 'minor_code_edit') return '';
+  return [`jobType: ${jobSelection.jobType}`, jobSelection.goal]
     .map((value) => value?.trim())
     .filter((value): value is string => Boolean(value))
     .join('\n\n');
 }
 
 function shouldStartImmediateWorkbenchRun(
-  decision: Awaited<ReturnType<typeof callSupervisorLLM>>,
+  jobSelection: JobTypeSelection,
   intent: WorkbenchChatIntent
 ) {
   if (intent !== 'intake') return false;
-  const routing = decision.routingHypothesis;
-  return (
-    !decision.toolCall &&
-    (decision.workflow === 'code_change' || routing?.primaryMode === 'code_edit') &&
-    (routing?.primaryMode === 'code_edit' || routing?.phase === 'execute')
-  );
+  return jobSelection.jobType === 'minor_code_edit';
 }
 
-function buildAcceptanceCriteriaFromDecision(
-  decision: Awaited<ReturnType<typeof callSupervisorLLM>>
-): string {
-  return (
-    decision.expectedEvidence
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .join('\n') ||
-    decision.instruction.trim() ||
-    decision.rationale.trim()
-  );
+function buildAcceptanceCriteriaFromDecision(jobSelection: JobTypeSelection): string {
+  return jobSelection.goal.trim();
+}
+
+function routingForWorkbenchJobType(jobType: JobType): SupervisorRoutingHypothesis {
+  if (jobType === 'minor_code_edit') {
+    return {
+      primaryMode: 'code_edit',
+      secondaryModes: [],
+      phase: 'execute',
+      workKinds: ['code'],
+      overlays: [],
+      requiredEvidence: [],
+      nextSkillFiles: [],
+      confidence: 1,
+    };
+  }
+  if (jobType === 'blueprint' || jobType === 'ui_ux') {
+    return {
+      primaryMode: 'planning',
+      secondaryModes: [],
+      phase: 'plan',
+      workKinds: ['blueprint', 'ui_ux'],
+      overlays: ['user_facing_change'],
+      subtype: 'app_blueprint',
+      requiredEvidence: [],
+      nextSkillFiles: ['references/work_kinds/blueprint.md'],
+      confidence: 1,
+    };
+  }
+  return {
+    primaryMode: jobType === 'general_answer' ? 'general_answer' : 'planning',
+    secondaryModes: [],
+    phase: jobType === 'general_answer' ? 'answer' : 'plan',
+    workKinds: [],
+    overlays: [],
+    requiredEvidence: [],
+    nextSkillFiles: [],
+    confidence: 1,
+  };
 }
 
 function isAppBlueprintMessage(message: TaskMessageRow): boolean {
@@ -1238,32 +1262,18 @@ export async function startTaskRun(taskId: string) {
         type: 'run.finalizing_started',
         severity: 'info',
         actor: 'system',
-        message: 'Runtime result captured. Building final judgment.',
+        message: 'Runtime result captured.',
         data: { terminalState: runtimeResult.terminalState },
       });
 
       const outcome = outcomeFromRuntimeResult(runtimeResult);
       const finalReport = runtimeResult.finalReport || outcome.summary;
-      const finalJudgment = buildFinalJudgment({
-        runId: run.id,
-        taskId,
-        outcomeStatus: outcome.status,
-        outcomeSummary: outcome.summary,
-        supervisor: {
-          finalReport,
-          summary: runtimeResult.summary,
-          terminalState: runtimeResult.terminalState,
-          stoppedBy: runtimeResult.stoppedBy,
-          riskLevel: runtimeResult.riskLevel,
-        },
-      });
-      const finalMessage = renderFinalMessage(finalJudgment);
       await repo.updateTaskRun(run.id, {
         status: outcome.status,
         endedAt: new Date(),
         finishedAt: new Date(),
-        finalReport: finalReport || finalJudgment.conclusion,
-        finalJudgment,
+        finalReport,
+        finalJudgment: null,
         summary: runtimeResult.summary || outcome.summary,
       });
       await repo.updateTaskStatus(taskId, outcome.status);
@@ -1272,91 +1282,40 @@ export async function startTaskRun(taskId: string) {
         void runSessionQueueForRepository(task.repositoryId);
       }
 
-      await repo.createRunEvent({
-        version: 1,
-        runId: run.id,
-        taskId,
-        timestamp: new Date().toISOString(),
-        type: 'run.final_judgment_created',
-        severity: 'checkpoint',
-        actor: 'system',
-        message: `Final judgment created: ${finalJudgment.title}`,
-        data: { finalJudgment },
-      });
-      await repo.createRunEvent(
-        {
-          version: 1,
-          runId: run.id,
-          taskId,
-          timestamp: new Date().toISOString(),
-          type: 'run.outcome_decided',
-          severity: 'info',
-          actor: 'system',
-          message: `Run outcome decided: ${outcome.status} (${outcome.reason})`,
-          data: outcome as Record<string, unknown>,
-        },
-        { legacyPayload: outcome }
-      );
-
       await repo.createTaskMessage({
         taskId,
         runId: run.id,
         role: 'assistant',
-        content: finalMessage,
+        content: finalReport,
         messageType: 'text',
         payloadJson: {
-          finalJudgment,
-          finalReport: finalReport || finalJudgment.conclusion,
+          finalReport,
           summary: runtimeResult.summary || outcome.summary,
           status: outcome.status,
         },
       });
     } catch (err: any) {
       console.error(`Error during NativeLocalRunner execution for run ${run.id}:`, err);
-      const finalJudgment = buildFinalJudgment({
-        runId: run.id,
-        taskId,
-        outcomeStatus: 'failed',
-        outcomeSummary: `Execution crashed: ${err.message}`,
-        supervisor: {
-          finalReport: `実行に失敗しました: ${err.message}`,
-          summary: `Execution crashed: ${err.message}`,
-          terminalState: 'failed',
-          stoppedBy: 'llm_error',
-          riskLevel: 'high',
-        },
-      });
+      const finalReport = `実行に失敗しました: ${err.message}`;
       await repo.updateTaskStatus(taskId, 'failed');
       await repo.updateTaskRun(run.id, {
         status: 'failed',
         endedAt: new Date(),
         finishedAt: new Date(),
         logContent: `[System Error] ${err.message}`,
-        finalReport: finalJudgment.conclusion,
-        finalJudgment,
+        finalReport,
+        finalJudgment: null,
         summary: `Execution crashed: ${err.message}`,
-      });
-      await repo.createRunEvent({
-        version: 1,
-        runId: run.id,
-        taskId,
-        timestamp: new Date().toISOString(),
-        type: 'run.final_judgment_created',
-        severity: 'checkpoint',
-        actor: 'system',
-        message: `Final judgment created after runtime crash: ${finalJudgment.title}`,
-        data: { finalJudgment },
       });
 
       await repo.createTaskMessage({
         taskId,
         runId: run.id,
         role: 'assistant',
-        content: renderFinalMessage(finalJudgment),
+        content: finalReport,
         messageType: 'text',
         payloadJson: {
-          finalJudgment,
-          finalReport: finalJudgment.conclusion,
+          finalReport,
           summary: `Execution crashed: ${err.message}`,
           status: 'failed',
         },
@@ -1618,19 +1577,7 @@ export async function recoverStaleActiveRuns(taskId: string) {
       endedAt: new Date(),
       finishedAt: new Date(),
       summary: 'Run recovered as failed after stale active-state detection.',
-      finalJudgment: buildFinalJudgment({
-        runId: activeRun.id,
-        taskId,
-        outcomeStatus: 'failed',
-        outcomeSummary: 'Run recovered as failed after stale active-state detection.',
-        supervisor: {
-          summary: activeRun.summary || undefined,
-          finalReport: activeRun.finalReport || undefined,
-          terminalState: activeRun.status,
-          stoppedBy: 'llm_error',
-          riskLevel: 'high',
-        },
-      }),
+      finalJudgment: null,
     });
     await repo.updateTaskStatus(taskId, 'failed');
     await repo.createRunEvent({

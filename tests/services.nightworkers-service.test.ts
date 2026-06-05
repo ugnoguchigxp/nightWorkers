@@ -180,19 +180,29 @@ describe('NightWorkers service', () => {
       );
     });
     await vi.waitFor(() => {
-      expect(repo.createRunEvent).toHaveBeenCalledWith(
+      expect(repo.updateTaskRun).toHaveBeenCalledWith(
+        run.id,
         expect.objectContaining({
-          type: 'run.outcome_decided',
-          data: expect.objectContaining({
-            status: 'needs_human',
-            reason: 'policy_violation',
-          }),
-        }),
-        expect.objectContaining({
-          legacyPayload: expect.objectContaining({ reason: 'policy_violation' }),
+          status: 'needs_human',
+          finalReport: 'Tool policy blocked execution.',
+          finalJudgment: null,
         })
       );
     });
+    expect(repo.createRunEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'run.outcome_decided' }),
+      expect.anything()
+    );
+    expect(repo.createTaskMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: 'assistant',
+        content: 'Tool policy blocked execution.',
+        payloadJson: expect.objectContaining({
+          finalReport: 'Tool policy blocked execution.',
+          status: 'needs_human',
+        }),
+      })
+    );
   });
 
   it('starts simple runtime once without creating planned todos', async () => {

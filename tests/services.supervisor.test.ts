@@ -38,7 +38,7 @@ describe('Schema-first supervisor loop', () => {
     } as any);
   });
 
-  it('describes minor_code_edit apply_patch file creation without git terminology', () => {
+  it('describes minor_code_edit apply_patch file creation without fragile patch formatting', () => {
     const prompt = buildRound2ToolCallPrompt({
       projectRoot: '/repo/project',
       jobType: 'minor_code_edit',
@@ -46,10 +46,8 @@ describe('Schema-first supervisor loop', () => {
       tools: getAllowedToolsForJobType('minor_code_edit'),
     });
 
-    expect(prompt).toContain('--- /dev/null');
-    expect(prompt).toContain('+++ b/<path>');
-    expect(prompt).toContain('@@ -0,0 +1,<lineCount> @@');
     expect(prompt).toContain('apply_patch が成功したら次は changedFiles の対象を read_file');
+    expect(prompt).not.toContain('<lineCount>');
     expect(prompt).not.toContain('READ_BEFORE_EDIT');
     expect(prompt).not.toContain('git apply');
     expect(prompt).not.toContain('- list_dir:');

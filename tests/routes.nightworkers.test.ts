@@ -178,7 +178,7 @@ describe('NightWorkers task routes', () => {
     expect(replay.events).toEqual([]);
   });
 
-  it('maps schema-first agent events into chat activity kinds', async () => {
+  it('maps schema-first agent events into chat activity kinds without duplicating final answers', async () => {
     const createdRepo = await repo.createRepository({
       name: `TEST: Schema-first Activity ${crypto.randomUUID()}`,
       localPath: '/Users/y.noguchi/Code/nightWorkers',
@@ -253,73 +253,11 @@ describe('NightWorkers task routes', () => {
             agentEventType: 'round2.parsed',
           }),
         }),
-        expect.objectContaining({
-          taskId: task.id,
-          runId: run.id,
-          kind: 'assistant.message',
-          turnId: `assistant:${run.id}`,
-          text: '完了しました。',
-          payloadJson: expect.objectContaining({
-            agentEventType: 'finalize.received',
-          }),
-        }),
       ])
     );
-  });
-
-  it('persists tool diff messages as file activity artifacts', async () => {
-    const createdRepo = await repo.createRepository({
-      name: `TEST: Activity Diff ${crypto.randomUUID()}`,
-      localPath: '/Users/y.noguchi/Code/nightWorkers',
-      branch: 'main',
-    });
-    const task = await repo.createTask({
-      repositoryId: createdRepo.id,
-      title: 'TEST: Activity diff target',
-      description: 'Persist activity diff',
-      status: 'draft',
-    });
-
-    await repo.createTaskMessage({
-      taskId: task.id,
-      role: 'assistant',
-      content: '*** Begin Patch\n*** End Patch',
-      messageType: 'markdown_document',
-      payloadJson: {
-        intent: 'tool_diff',
-        title: 'apply_patch diff',
-        toolName: 'apply_patch',
-        codeBlock: {
-          filename: 'apply_patch.patch',
-          language: 'diff',
-          code: '*** Begin Patch\n*** End Patch',
-        },
-      },
-    });
-
-    const res = await app.request(`http://localhost/api/tasks/${task.id}/activity-events`);
-    expect(res.status).toBe(200);
-    const replay = await res.json();
-    const events = replay.events;
-    expect(events).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          taskId: task.id,
-          kind: 'file.patch',
-          source: 'tool',
-          artifactId: expect.any(String),
-        }),
-      ])
-    );
-    expect(replay.artifacts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          taskId: task.id,
-          kind: 'patch',
-          contentText: '*** Begin Patch\n*** End Patch',
-        }),
-      ])
-    );
+    expect(
+      replay.events.some((event: any) => event.payloadJson?.agentEventType === 'finalize.received')
+    ).toBe(false);
   });
 
   it('persists Blueprint design settings per session', async () => {

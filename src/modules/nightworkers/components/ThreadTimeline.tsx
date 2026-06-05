@@ -238,7 +238,7 @@ export function ThreadTimeline({
           <ThinkingIndicator />
         </ThreadMessage>
       ) : null}
-      <FinalReportCard latestRun={latestRun} />
+      {!hasActivityTranscript ? <FinalReportCard latestRun={latestRun} /> : null}
     </div>
   );
 }

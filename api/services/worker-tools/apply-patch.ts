@@ -26,6 +26,7 @@ export async function applyPatchTool(
 ): Promise<WorkerToolResult<ApplyPatchOutput>> {
   const startedAt = new Date().toISOString();
   const { patchContent, repoRoot, allowedPaths, deniedPaths } = input;
+  const gitPatchContent = toGitApplyPatch(patchContent);
 
   const absoluteRepoRoot = path.resolve(repoRoot);
   const tempPatchFile = path.join(
@@ -35,7 +36,7 @@ export async function applyPatchTool(
 
   try {
     // 1. Write the patch content to a temp file
-    await fs.writeFile(tempPatchFile, patchContent, 'utf-8');
+    await fs.writeFile(tempPatchFile, gitPatchContent, 'utf-8');
 
     // 2. Dry run with git apply to parse target files and check if it's safe
     let targets: string[] = [];
@@ -50,7 +51,7 @@ export async function applyPatchTool(
         .filter((p) => p && p.trim().length > 0);
     } catch (_dryError: any) {
       // If git numstat fails, fallback to parsing diff header manually
-      const lines = patchContent.split('\n');
+      const lines = gitPatchContent.split('\n');
       for (const line of lines) {
         if (line.startsWith('--- a/') || line.startsWith('+++ b/')) {
           const filePart = line.substring(6).trim();
@@ -90,9 +91,12 @@ export async function applyPatchTool(
     }
 
     // 4. Apply the patch using git apply
-    const { stdout, stderr } = await execAsync(`git apply --whitespace=fix ${tempPatchFile}`, {
-      cwd: absoluteRepoRoot,
-    });
+    const { stdout, stderr } = await execAsync(
+      `git apply --recount --whitespace=fix ${tempPatchFile}`,
+      {
+        cwd: absoluteRepoRoot,
+      }
+    );
 
     // 5. Clean up temp patch file
     await fs.unlink(tempPatchFile).catch(() => {});
@@ -130,4 +134,43 @@ export async function applyPatchTool(
       },
     };
   }
+}
+
+function toGitApplyPatch(patchContent: string): string {
+  const lines = patchContent.trimEnd().split('\n');
+  if (lines[0] !== '*** Begin Patch' || lines.at(-1) !== '*** End Patch') {
+    return patchContent;
+  }
+
+  const chunks: string[] = [];
+  let index = 1;
+
+  while (index < lines.length - 1) {
+    const line = lines[index];
+    if (!line.startsWith('*** Add File: ')) {
+      return patchContent;
+    }
+
+    const filePath = line.slice('*** Add File: '.length).trim();
+    index += 1;
+    const addedLines: string[] = [];
+
+    while (index < lines.length - 1 && !lines[index].startsWith('*** ')) {
+      const contentLine = lines[index];
+      if (!contentLine.startsWith('+')) return patchContent;
+      addedLines.push(contentLine.slice(1));
+      index += 1;
+    }
+
+    chunks.push(
+      [
+        '--- /dev/null',
+        `+++ b/${filePath}`,
+        `@@ -0,0 +1,${Math.max(addedLines.length, 1)} @@`,
+        ...addedLines.map((contentLine) => `+${contentLine}`),
+      ].join('\n')
+    );
+  }
+
+  return chunks.length ? `${chunks.join('\n')}\n` : patchContent;
 }

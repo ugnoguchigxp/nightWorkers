@@ -48,6 +48,8 @@ export function buildTranscriptItems(input: {
   const userByTurn = new Map<string, Extract<TranscriptItem, { kind: 'user_turn' }>>();
 
   for (const event of events) {
+    if (isSuppressedRuntimeAssistantMessage(event)) continue;
+
     if (event.kind === 'user.message') {
       const turnId = event.turnId || event.id;
       let item = userByTurn.get(turnId);
@@ -112,13 +114,18 @@ export function buildTranscriptItems(input: {
   return items;
 }
 
+function isSuppressedRuntimeAssistantMessage(event: ActivityEvent) {
+  const payload = event.payloadJson as any;
+  const agentEventType = payload?.agentEventType || payload?.runEvent?.data?.agentEventType;
+  return event.kind === 'assistant.message' && agentEventType === 'finalize.received';
+}
+
 function isAssistantTurnEvent(event: ActivityEvent) {
   return [
     'assistant.delta',
     'assistant.message',
     'assistant.pause',
     'assistant.resume',
-    'assistant.raw_output',
     'llm.response_delta',
   ].includes(event.kind);
 }

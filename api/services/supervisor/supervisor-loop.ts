@@ -351,17 +351,6 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       };
       toolResults.push(compactResult);
       await emitAgentEvent(toolResult.ok ? 'tool.finished' : 'tool.failed', compactResult);
-
-      if (isEditTool(workerToolName) && toolResult.ok) {
-        await persistEditToolMessage({
-          runId,
-          taskId: task.id,
-          iteration: step,
-          toolName: workerToolName,
-          toolArgs: round2.toolCall.arguments,
-          toolResult,
-        });
-      }
     }
 
     if (!finalReportText) {
@@ -416,10 +405,6 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
   return { finalReport: finalReportText, terminalState, summary, stoppedBy, riskLevel };
 }
 
-function isEditTool(toolName: string): boolean {
-  return toolName === 'apply_patch' || toolName === 'replace_content';
-}
-
 function formatToolObservation(toolName: string, toolResult: any): string {
   const status = toolResult.ok ? 'ok' : 'failed';
   const header = `tool=${toolName} status=${status}`;
@@ -443,79 +428,4 @@ function formatToolObservation(toolName: string, toolResult: any): string {
     return `${header}\n${toolResult.payload?.shortStatus || 'Clean worktree'}`;
   if (toolName === 'git_diff') return `${header}\n${toolResult.payload?.diffStat || 'No changes'}`;
   return `${header}\npayload=${JSON.stringify(toolResult.payload || {}).slice(0, 3000)}`;
-}
-
-async function persistEditToolMessage(input: {
-  runId: string;
-  taskId: string;
-  iteration: number;
-  toolName: string;
-  toolArgs: unknown;
-  toolResult: any;
-}) {
-  const diff = buildEditToolDiffContent(input.toolName, input.toolArgs, input.toolResult);
-  if (!diff.trim()) return;
-
-  await repo.createTaskMessage({
-    taskId: input.taskId,
-    runId: input.runId,
-    role: 'assistant',
-    content: diff,
-    messageType: 'markdown_document',
-    payloadJson: {
-      intent: 'tool_diff',
-      title: `${input.toolName} diff`,
-      toolName: input.toolName,
-      iteration: input.iteration,
-      toolResult: {
-        ok: input.toolResult?.ok,
-        payload: input.toolResult?.payload,
-        error: input.toolResult?.error,
-      },
-      codeBlock: {
-        filename: input.toolName === 'apply_patch' ? 'apply_patch.patch' : 'replace_content.diff',
-        language: 'diff',
-        code: diff,
-      },
-    },
-  });
-}
-
-function buildEditToolDiffContent(toolName: string, toolArgs: unknown, toolResult: any): string {
-  const args = isRecord(toolArgs) ? toolArgs : {};
-  if (toolName === 'apply_patch') {
-    return typeof args.patchContent === 'string' ? args.patchContent.trimEnd() : '';
-  }
-
-  if (toolName === 'replace_content') {
-    const filePath = stringValue(args.filePath || toolResult?.payload?.filePath) || 'unknown';
-    const needle = stringValue(args.needle);
-    const replacement = stringValue(args.replacement);
-    const occurrences =
-      typeof toolResult?.payload?.occurrences === 'number'
-        ? toolResult.payload.occurrences
-        : undefined;
-    if (!needle && !replacement) return '';
-    return [
-      `--- ${filePath}`,
-      `+++ ${filePath}`,
-      typeof occurrences === 'number'
-        ? `# replace_content occurrences: ${occurrences}`
-        : '# replace_content',
-      needle ? `- ${needle}` : '',
-      replacement ? `+ ${replacement}` : '',
-    ]
-      .filter(Boolean)
-      .join('\n');
-  }
-
-  return '';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === 'string' && value.trim() ? value : '';
 }
