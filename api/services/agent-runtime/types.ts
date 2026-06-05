@@ -26,6 +26,11 @@ export interface AgentRunContext {
       stateCardIncluded: boolean;
       stateCardText?: string;
       snapshotJson?: unknown;
+      usage?: {
+        latestUserMessageTokens: number;
+        stateCardTokens: number;
+        runtimeUserPromptTokens: number;
+      };
     };
     [key: string]: unknown;
   };

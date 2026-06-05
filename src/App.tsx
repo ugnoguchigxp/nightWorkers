@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createRouter, RouterProvider } from '@tanstack/react-router';
 import { AuthProvider, useAuth } from './lib/auth';
+import { NightWorkersI18nProvider } from './modules/nightworkers/i18n/NightWorkersI18nProvider';
 // Let tanstack router generate it dynamically if not exist
 import { routeTree } from './routeTree.gen';
 
@@ -40,7 +41,9 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <InnerApp />
+        <NightWorkersI18nProvider>
+          <InnerApp />
+        </NightWorkersI18nProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

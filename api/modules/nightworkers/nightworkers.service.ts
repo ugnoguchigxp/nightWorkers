@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { AppError, NotFoundError } from '../../lib/errors';
+import { getCurrentSettings } from '../../routes/settings';
 import { createLedgerSink } from '../../services/agent-runtime/ledger-sink';
 import { resolveAgentRuntime } from '../../services/agent-runtime/registry';
 import type { AgentRuntimeResult } from '../../services/agent-runtime/types';
@@ -17,7 +18,7 @@ import {
 } from '../../services/blueprints/llm-draft';
 import { validateAppBlueprint } from '../../services/blueprints/validation';
 import {
-  buildPromptWithStateCard,
+  buildPromptWithStateCardParts,
   getLatestConversationContextForTask,
   type RefreshConversationContextInput,
   refreshConversationContextSnapshot,
@@ -26,6 +27,8 @@ import {
   isConversationContextBuildOnIdleEnabled,
   isConversationContextStateCardEnabled,
 } from '../../services/conversation-context/flags';
+import { summarizeLlmUsageForTask } from '../../services/llm-usage';
+import { buildOverviewDashboard, type OverviewRange } from '../../services/overview';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
 import { buildReviewResult } from '../../services/review-results/build-review-result';
 import { collectDefaultReviewEvidence } from '../../services/review-results/evidence-collector';
@@ -191,6 +194,37 @@ export async function listTaskMessages(taskId: string) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
   return repo.listTaskMessages(taskId);
+}
+
+export async function getTaskLlmUsageSummary(taskId: string) {
+  const task = await repo.getTask(taskId);
+  if (!task) throw new NotFoundError('Task not found');
+  return summarizeLlmUsageForTask(taskId);
+}
+
+export async function getOverviewDashboard(input: {
+  range?: OverviewRange;
+  repositoryId?: string | null;
+  timezone?: string | null;
+  currency?: 'JPY' | 'USD' | 'EUR' | null;
+}) {
+  const settings = getCurrentSettings();
+  const activeProvider = settings.ACTIVE_LLM_PROVIDER || null;
+  const activeModel =
+    activeProvider === 'openai'
+      ? settings.OPENAI_MODEL
+      : activeProvider === 'azure'
+        ? settings.AZURE_OPENAI_DEPLOYMENT_NAME
+        : activeProvider === 'bedrock'
+          ? settings.AWS_BEDROCK_MODEL
+          : activeProvider === 'codex'
+            ? settings.CODEX_MODEL
+            : null;
+  return buildOverviewDashboard({
+    ...input,
+    activeProvider,
+    activeModel: activeModel || null,
+  });
 }
 
 export async function listTaskActivityEvents(taskId: string, options?: { afterSeq?: number }) {
@@ -478,6 +512,7 @@ async function handleBlueprintDataDesignMessage(
       },
     });
     const { blueprint, validation, generation } = await generateBlueprintDataDesignDraft({
+      taskId,
       request,
       emitEvent: emitWorkbenchLlmDebugEvent,
     });
@@ -584,6 +619,8 @@ async function handleWorkbenchIntakeMessage(
       tolerateSchemaFailure: false,
       emitEvent: emitWorkbenchLlmDebugEvent,
       workingDirectory: projectRoot,
+      taskId,
+      runId: null,
     })) as JobTypeSelection;
     const routing = routingForWorkbenchJobType(jobSelection.jobType);
     const startsImmediateRun = shouldStartImmediateWorkbenchRun(
@@ -782,7 +819,7 @@ function shouldStartImmediateWorkbenchRun(
   intent: WorkbenchChatIntent
 ) {
   if (intent !== 'intake') return false;
-  return jobSelection.jobType === 'minor_code_edit';
+  return jobSelection.jobType === 'minor_code_edit' || jobSelection.jobType === 'major_code_edit';
 }
 
 function buildAcceptanceCriteriaFromDecision(jobSelection: JobTypeSelection): string {
@@ -799,6 +836,18 @@ function routingForWorkbenchJobType(jobType: JobType): SupervisorRoutingHypothes
       overlays: [],
       requiredEvidence: [],
       nextSkillFiles: [],
+      confidence: 1,
+    };
+  }
+  if (jobType === 'major_code_edit') {
+    return {
+      primaryMode: 'code_edit',
+      secondaryModes: ['planning', 'test_and_verification'],
+      phase: 'plan',
+      workKinds: ['code'],
+      overlays: ['user_facing_change'],
+      requiredEvidence: [],
+      nextSkillFiles: ['references/work_kinds/code.md', 'references/phases/plan.md'],
       confidence: 1,
     };
   }
@@ -1211,10 +1260,11 @@ export async function startTaskRun(taskId: string) {
 
   const rawLatestUserMessage = lastUserMessage?.content || compiledPromptText;
   const conversationContext = await maybeLoadConversationStateCard(taskId, lastUserMessage?.id);
-  const runtimeLatestUserMessage = buildPromptWithStateCard({
+  const runtimePromptParts = buildPromptWithStateCardParts({
     latestUserMessage: rawLatestUserMessage,
     stateCardText: conversationContext?.stateCardText,
   });
+  const runtimeLatestUserMessage = runtimePromptParts.promptText;
   const runtimeContextSnapshot: RuntimePromptSnapshot = {
     ...contextSnapshot,
     conversationContext: conversationContext
@@ -1225,8 +1275,20 @@ export async function startTaskRun(taskId: string) {
           stateCardIncluded: true,
           stateCardText: conversationContext.stateCardText,
           snapshotJson: conversationContext.snapshotJson,
+          usage: {
+            latestUserMessageTokens: runtimePromptParts.estimates.latestUserMessageTokens,
+            stateCardTokens: runtimePromptParts.estimates.stateCardTokens,
+            runtimeUserPromptTokens: runtimePromptParts.estimates.promptTokens,
+          },
         }
-      : { stateCardIncluded: false },
+      : {
+          stateCardIncluded: false,
+          usage: {
+            latestUserMessageTokens: runtimePromptParts.estimates.latestUserMessageTokens,
+            stateCardTokens: 0,
+            runtimeUserPromptTokens: runtimePromptParts.estimates.promptTokens,
+          },
+        },
   };
 
   await repo.updateTaskCompiledPrompt(taskId, compiledPromptText);

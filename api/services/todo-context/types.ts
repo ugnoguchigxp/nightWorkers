@@ -23,6 +23,11 @@ export type RuntimePromptSnapshot = {
     stateCardIncluded: boolean;
     stateCardText?: string;
     snapshotJson?: unknown;
+    usage?: {
+      latestUserMessageTokens: number;
+      stateCardTokens: number;
+      runtimeUserPromptTokens: number;
+    };
   };
 };
 

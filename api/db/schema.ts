@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 const commonColumns = {
   id: text('id')
@@ -437,6 +437,73 @@ export const conversationContextSnapshots = sqliteTable(
       table.taskId,
       table.updatedAt
     ),
+  })
+);
+
+export const llmUsageRecords = sqliteTable(
+  'llm_usage_records',
+  {
+    ...commonColumns,
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    runId: text('run_id').references(() => taskRuns.id, { onDelete: 'set null' }),
+    callId: text('call_id').notNull(),
+    provider: text('provider').notNull(),
+    model: text('model'),
+    label: text('label').notNull(),
+    round: integer('round'),
+    usageMode: text('usage_mode').notNull(),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    cachedInputTokens: integer('cached_input_tokens'),
+    reasoningOutputTokens: integer('reasoning_output_tokens'),
+    totalTokens: integer('total_tokens'),
+    systemPromptTokens: integer('system_prompt_tokens'),
+    userPromptTokens: integer('user_prompt_tokens'),
+    stateCardTokens: integer('state_card_tokens'),
+    responseTokensEstimate: integer('response_tokens_estimate'),
+    durationMs: integer('duration_ms').notNull(),
+    rawUsageJson: text('raw_usage_json', { mode: 'json' }),
+    metadataJson: text('metadata_json', { mode: 'json' }),
+  },
+  (table) => ({
+    taskCreatedIdx: index('llm_usage_records_task_created_idx').on(table.taskId, table.createdAt),
+    runCreatedIdx: index('llm_usage_records_run_created_idx').on(table.runId, table.createdAt),
+    callIdUniqueIdx: uniqueIndex('llm_usage_records_call_id_uidx').on(table.callId),
+    providerCreatedIdx: index('llm_usage_records_provider_created_idx').on(
+      table.provider,
+      table.createdAt
+    ),
+  })
+);
+
+export const llmModelPricing = sqliteTable(
+  'llm_model_pricing',
+  {
+    ...commonColumns,
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    currencyCode: text('currency_code').default('USD').notNull(),
+    inputPer1m: real('input_per_1m'),
+    cachedInputPer1m: real('cached_input_per_1m'),
+    outputPer1m: real('output_per_1m'),
+    reasoningOutputPer1m: real('reasoning_output_per_1m'),
+    sourceUrl: text('source_url'),
+    sourceLabel: text('source_label'),
+    effectiveFrom: integer('effective_from', { mode: 'timestamp' })
+      .$defaultFn(() => new Date(0))
+      .notNull(),
+    fetchedAt: integer('fetched_at', { mode: 'timestamp' }),
+    manualOverride: integer('manual_override', { mode: 'boolean' }).default(false).notNull(),
+    enabled: integer('enabled', { mode: 'boolean' }).default(true).notNull(),
+  },
+  (table) => ({
+    providerModelIdx: index('llm_model_pricing_provider_model_idx').on(table.provider, table.model),
+    enabledIdx: index('llm_model_pricing_enabled_idx').on(table.enabled),
+    providerModelCurrencyEffectiveUniqueIdx: uniqueIndex(
+      'llm_model_pricing_provider_model_currency_effective_uidx'
+    ).on(table.provider, table.model, table.currencyCode, table.effectiveFrom),
   })
 );
 

@@ -74,6 +74,8 @@ export async function generatePlanModeBlueprintDraft(input: {
       schemaName: 'app_blueprint',
       schema: z.toJSONSchema(appBlueprintSchema),
       emitEvent: input.emitEvent,
+      taskId: input.taskId,
+      runId: null,
     }
   );
 

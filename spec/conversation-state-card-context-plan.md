@@ -930,6 +930,11 @@ conversation_context_summaries
 
 The LLM summary is advisory context only. It must not replace DB/event/git truth.
 
+Runtime LLM call token usage is specified separately in
+`spec/llm-token-usage-observability-plan.md`. Keep StateCard rendering here focused on
+compact prompt context; do not overload `conversation_context_snapshots` into a call-level usage
+ledger.
+
 ## Rollback
 
 Set:

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { ModelOption, ThinkingDepth, ThinkingDepthOption } from '../types';
 
 type ModelThinkingControlsProps = {
@@ -17,10 +18,12 @@ export function ModelThinkingControls({
   onModelChange,
   onThinkingDepthChange,
 }: ModelThinkingControlsProps) {
+  const { t } = useTranslation();
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       <label className="nightworkers-control-label text-xs text-zinc-400" htmlFor="model-select">
-        Model
+        {t('modelControls.model')}
       </label>
       <select
         id="model-select"
@@ -35,7 +38,7 @@ export function ModelThinkingControls({
         ))}
       </select>
       <label className="nightworkers-control-label text-xs text-zinc-400" htmlFor="thinking-select">
-        Thinking
+        {t('modelControls.thinking')}
       </label>
       <select
         id="thinking-select"

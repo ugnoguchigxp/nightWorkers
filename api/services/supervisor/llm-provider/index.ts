@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { appendLlmTrace, appendSupervisorTrace, logger } from '../../../lib/logger';
+import { estimateTokens } from '../../conversation-context/token-budget';
+import type { NormalizedLlmUsage } from '../../llm-usage';
+import { recordLlmUsage } from '../../llm-usage';
 import {
   type AgentToolCallEnvelope,
   buildResponseJsonSchema as buildSchemaFirstResponseJsonSchema,
@@ -71,6 +74,8 @@ async function callRawJsonLLM(
   const requestSignal = createSupervisorLlmAbortSignal(options);
   let rawContent = '';
   let providerDebug: Record<string, unknown> = {};
+  let providerModel: string | null | undefined = null;
+  let providerUsage: NormalizedLlmUsage | null = null;
 
   appendLlmTrace('request', {
     callId,
@@ -109,7 +114,7 @@ async function callRawJsonLLM(
   });
 
   try {
-    rawContent = await callProvider({
+    const providerResult = await callProvider({
       provider,
       systemPrompt,
       userPrompt,
@@ -119,6 +124,11 @@ async function callRawJsonLLM(
         providerDebug = value;
       },
     });
+    rawContent = providerResult.content;
+    providerDebug = providerResult.providerDebug ?? providerDebug;
+    providerModel = providerResult.model;
+    providerUsage = providerResult.usage;
+    providerDebug = { ...providerDebug, normalizedUsage: providerUsage };
   } catch (error) {
     appendLlmTrace('provider_error', {
       callId,
@@ -143,6 +153,37 @@ async function callRawJsonLLM(
       providerDebug,
     });
     throw new Error('LLM returned an empty message response.');
+  }
+
+  if (options.taskId && providerUsage) {
+    const promptPartTokenEstimates = {
+      ...options.promptPartTokenEstimates,
+      systemPromptTokens:
+        options.promptPartTokenEstimates?.systemPromptTokens ?? estimateTokens(systemPrompt),
+      userPromptTokens:
+        options.promptPartTokenEstimates?.userPromptTokens ?? estimateTokens(userPrompt),
+    };
+    await recordLlmUsage({
+      taskId: options.taskId,
+      runId: options.runId ?? null,
+      callId,
+      provider,
+      model: providerModel ?? null,
+      label: options.label,
+      round: options.round ?? null,
+      usage: providerUsage,
+      promptPartTokenEstimates,
+      durationMs: Date.now() - startedAt,
+      metadataJson: {
+        schemaFirst: Boolean(options.schemaFirst),
+        systemPromptLength: systemPrompt.length,
+        userPromptLength: userPrompt.length,
+        systemPromptBytes: Buffer.byteLength(systemPrompt, 'utf8'),
+        userPromptBytes: Buffer.byteLength(userPrompt, 'utf8'),
+        systemPromptSha256: digestLlmText(systemPrompt),
+        userPromptSha256: digestLlmText(userPrompt),
+      },
+    });
   }
 
   appendLlmTrace('response', {

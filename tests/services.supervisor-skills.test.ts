@@ -1,7 +1,12 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import fs from 'node:fs/promises';
+import os, { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  readSupervisorSkill,
+  searchSupervisorSkills,
+} from '../api/services/supervisor/skill-tools';
 import {
   clearSupervisorSkillDocumentCache,
   listSupervisorSkillDocuments,
@@ -114,5 +119,85 @@ describe('Supervisor skill registry', () => {
     expect(() => listSupervisorSkillDocuments(directory)).toThrow(
       /Supervisor skill markdown missing/
     );
+  });
+});
+
+describe('Supervisor flat skill tools', () => {
+  it('reads a flat skill as a compact summary with a digest', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-skill-tools-'));
+    await fs.writeFile(
+      path.join(directory, 'minor_code_edit.md'),
+      [
+        '# minor_code_edit',
+        '',
+        '## Use When',
+        '小さい変更タスク。',
+        '',
+        '## Procedure',
+        '1. read_file で対象を確認する。',
+        '2. apply_patch で変更する。',
+        '',
+        '## Completion',
+        'tool result がない作業を実行済みと書かない。',
+        '',
+        '## Output',
+        'Always return only JSON.',
+        '',
+      ].join('\n')
+    );
+
+    try {
+      const skill = readSupervisorSkill({
+        jobType: 'minor_code_edit',
+        loadedAtStep: 3,
+        directory,
+      });
+
+      expect(skill).toEqual({
+        jobType: 'minor_code_edit',
+        path: 'skills/minor_code_edit.md',
+        digest: expect.stringMatching(/^sha256:/),
+        loadedAtStep: 3,
+        summary: {
+          useWhen: '小さい変更タスク。',
+          procedure: ['read_file で対象を確認する。', 'apply_patch で変更する。'],
+          requiredRules: [
+            'tool result がない作業を実行済みと書かない。',
+            'Always return only JSON.',
+          ],
+        },
+      });
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('searches available flat skills by deterministic text matching', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-skill-search-'));
+    await fs.writeFile(
+      path.join(directory, 'minor_code_edit.md'),
+      ['# minor_code_edit', '', '## Use When', 'small target path known code edit'].join('\n')
+    );
+    await fs.writeFile(
+      path.join(directory, 'review.md'),
+      ['# review', '', '## Use When', 'diff review findings'].join('\n')
+    );
+
+    try {
+      const result = searchSupervisorSkills({
+        query: 'small code edit',
+        maxResults: 5,
+        directory,
+      });
+
+      expect(result.matches[0]).toMatchObject({
+        jobType: 'minor_code_edit',
+        path: 'skills/minor_code_edit.md',
+        score: 3,
+        summary: 'small target path known code edit',
+      });
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
   });
 });

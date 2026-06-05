@@ -26,7 +26,8 @@ const PROCESSING_TASK_STATUSES = new Set([
   'timed_out',
 ]);
 const QUEUE_TASK_STATUSES = new Set(['ready', 'queued']);
-const ARCHIVE_TASK_STATUSES = new Set(['completed', 'cancelled', 'failed']);
+const ARCHIVE_TASK_STATUSES = new Set(['cancelled', 'failed']);
+const COMPLETED_SESSION_ARCHIVE_DELAY_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_RUN_STATUSES = new Set([
   'context_compiling',
   'compiling_context',
@@ -42,10 +43,21 @@ type SessionEvidence = {
   messages?: TaskMessage[];
 };
 
-export function getSessionGroup(task: Task, latestRun?: TaskRun): WorkbenchSessionGroup {
+type SessionGroupOptions = {
+  now?: unknown;
+};
+
+export function getSessionGroup(
+  task: Task,
+  latestRun?: TaskRun,
+  options: SessionGroupOptions = {}
+): WorkbenchSessionGroup {
   if (latestRun && ACTIVE_RUN_STATUSES.has(latestRun.status)) return 'processing';
   if (PROCESSING_TASK_STATUSES.has(task.status)) return 'processing';
   if (QUEUE_TASK_STATUSES.has(task.status)) return 'queue';
+  if (task.status === 'completed') {
+    return isCompletedSessionArchiveReady(task, options.now) ? 'archive' : 'processing';
+  }
   if (ARCHIVE_TASK_STATUSES.has(task.status)) return 'archive';
   return 'processing';
 }
@@ -355,6 +367,13 @@ function artifactTitleForKind(kind: WorkbenchArtifactKind, message: TaskMessage)
 function hasFailedVerification(event: TaskEvent): boolean {
   const data = event.payloadJson?.runEvent?.data || (event.payloadJson as any) || {};
   return data.passed === false || data.status === 'failed';
+}
+
+function isCompletedSessionArchiveReady(task: Task, now: unknown = Date.now()) {
+  const completedAtMs = toMs(task.updatedAt);
+  const nowMs = toMs(now);
+  if (!completedAtMs || !nowMs) return false;
+  return nowMs - completedAtMs >= COMPLETED_SESSION_ARCHIVE_DELAY_MS;
 }
 
 function toMs(value: unknown): number {

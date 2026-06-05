@@ -25,6 +25,9 @@ vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   createTaskMessage: vi.fn(),
   updateTaskRun: vi.fn(),
   updateTaskStatus: vi.fn(),
+  listTaskRunTodosForRun: vi.fn(),
+  replaceTaskRunTodosForRun: vi.fn(),
+  updateTaskRunTodo: vi.fn(),
 }));
 
 describe('Schema-first supervisor loop', () => {
@@ -36,23 +39,128 @@ describe('Schema-first supervisor loop', () => {
       objective: 'Create fizzbuzz.ts',
       acceptanceCriteria: 'File exists',
     } as any);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
   });
 
   it('describes minor_code_edit apply_patch file creation without fragile patch formatting', () => {
     const prompt = buildRound2ToolCallPrompt({
       projectRoot: '/repo/project',
       jobType: 'minor_code_edit',
-      skill: '# minor_code_edit',
       tools: getAllowedToolsForJobType('minor_code_edit'),
     });
 
-    expect(prompt).toContain('apply_patch が成功したら次は changedFiles の対象を read_file');
+    expect(prompt).toContain('[Skill Access]');
+    expect(prompt).toContain('SKILL documents are not preloaded.');
+    expect(prompt).toContain('After apply_patch succeeds');
+    expect(prompt).not.toContain('# minor_code_edit');
     expect(prompt).not.toContain('<lineCount>');
     expect(prompt).not.toContain('READ_BEFORE_EDIT');
     expect(prompt).not.toContain('git apply');
     expect(prompt).not.toContain('- list_dir:');
     expect(prompt).not.toContain('git_status');
     expect(prompt).not.toContain('git_diff');
+  });
+
+  it('allows major_code_edit to create a run-internal TodoList before edits', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-major-todos-'));
+    const createdTodos = [
+      {
+        id: 'todo-1',
+        runId: 'run-1',
+        seq: 1,
+        title: '実装対象を確認する',
+        taskType: 'investigation',
+        status: 'running',
+        procedureId: 'investigation',
+      },
+      {
+        id: 'todo-2',
+        runId: 'run-1',
+        seq: 2,
+        title: '実装を変更する',
+        taskType: 'code_edit',
+        status: 'pending',
+        procedureId: 'major_code_edit',
+      },
+    ];
+    vi.mocked(repo.replaceTaskRunTodosForRun).mockResolvedValue(createdTodos as any);
+    vi.mocked(repo.listTaskRunTodosForRun)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue(createdTodos as any);
+
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        jobType: 'major_code_edit',
+        goal: '複数ステップの実装を完了する',
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'replace_todo_list',
+          arguments: {
+            todos: [
+              {
+                seq: 1,
+                title: '実装対象を確認する',
+                taskType: 'investigation',
+                procedureId: 'investigation',
+              },
+              {
+                seq: 2,
+                title: '実装を変更する',
+                taskType: 'code_edit',
+                procedureId: 'major_code_edit',
+                dependsOn: [1],
+              },
+            ],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'finalize_answer',
+          arguments: { message: 'TodoList を作成しました。' },
+        },
+      });
+
+    try {
+      const result = await runSupervisorLoop({
+        runId: 'run-1',
+        repoRoot,
+        prompt: 'major code edit を実行して',
+        timeoutSeconds: 60,
+      });
+
+      expect(result.finalReport).toBe('TodoList を作成しました。');
+      expect(repo.replaceTaskRunTodosForRun).toHaveBeenCalledWith(
+        'run-1',
+        expect.arrayContaining([
+          expect.objectContaining({
+            seq: 1,
+            title: '実装対象を確認する',
+            taskType: 'investigation',
+            status: 'running',
+          }),
+          expect.objectContaining({
+            seq: 2,
+            title: '実装を変更する',
+            taskType: 'code_edit',
+            status: 'pending',
+          }),
+        ])
+      );
+      const secondRound2UserPrompt = JSON.parse(
+        vi.mocked(llm.callSupervisorLLM).mock.calls[2]?.[1] as string
+      );
+      expect(secondRound2UserPrompt.todoPlan).toEqual([
+        expect.objectContaining({ id: 'todo-1', seq: 1, status: 'running' }),
+        expect.objectContaining({ id: 'todo-2', seq: 2, status: 'pending' }),
+      ]);
+      expect(secondRound2UserPrompt.currentTodo).toEqual(
+        expect.objectContaining({ id: 'todo-1', seq: 1, status: 'running' })
+      );
+    } finally {
+      await fs.rm(repoRoot, { recursive: true, force: true });
+    }
   });
 
   it('runs minor_code_edit with jobType+goal Round 1 and toolCall-only Round 2', async () => {
@@ -134,6 +242,7 @@ describe('Schema-first supervisor loop', () => {
         goal: 'プロジェクトルートに fizzbuzz.ts を作成する',
         currentJobType: 'minor_code_edit',
         toolResults: [],
+        loadedSkillSummaries: [],
       });
       expect(vi.mocked(llm.callSupervisorLLM)).toHaveBeenCalledTimes(3);
       expect(vi.mocked(llm.callSupervisorLLM).mock.calls.length).toBeLessThanOrEqual(20);
@@ -205,11 +314,112 @@ describe('Schema-first supervisor loop', () => {
             rawContent: '{"jobType":"minor_code_edit","goal":"完了する"}',
           }),
           expect.objectContaining({ agentEventType: 'round1.parsed' }),
-          expect.objectContaining({ agentEventType: 'skill.loaded' }),
           expect.objectContaining({ agentEventType: 'round2.prompt_built' }),
           expect.objectContaining({ agentEventType: 'round2.parsed' }),
           expect.objectContaining({ agentEventType: 'finalize.received' }),
           expect.objectContaining({ agentEventType: 'run.completed' }),
+        ])
+      );
+    } finally {
+      await fs.rm(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('lets the supervisor read a skill on demand and reuses the loaded summary', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-read-skill-'));
+
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({ jobType: 'minor_code_edit', goal: 'skill を読んで完了する' })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'read_skill',
+          arguments: { jobType: 'minor_code_edit' },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'finalize_answer',
+          arguments: { message: '完了しました。' },
+        },
+      });
+
+    try {
+      const result = await runSupervisorLoop({
+        runId: 'run-1',
+        repoRoot,
+        prompt: 'skill を読んで完了して',
+        timeoutSeconds: 60,
+      });
+
+      expect(result.finalReport).toBe('完了しました。');
+      const secondRound2UserPrompt = JSON.parse(
+        vi.mocked(llm.callSupervisorLLM).mock.calls[2]?.[1] as string
+      );
+      expect(secondRound2UserPrompt.loadedSkillSummaries).toEqual([
+        expect.objectContaining({
+          jobType: 'minor_code_edit',
+          path: 'skills/minor_code_edit.md',
+          digest: expect.stringMatching(/^sha256:/),
+          useWhen: expect.stringContaining('小さい変更タスク'),
+          procedure: expect.arrayContaining([
+            '対象パスが分かっている場合は read_file で確認し、周辺ディレクトリ一覧は取らない。',
+          ]),
+        }),
+      ]);
+      expect(
+        vi
+          .mocked(repo.createRunEvent)
+          .mock.calls.some(
+            (call) =>
+              call[1]?.payloadJson?.agentEventType === 'skill.loaded' &&
+              call[1]?.payloadJson?.payload?.source === 'read_skill'
+          )
+      ).toBe(true);
+    } finally {
+      await fs.rm(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('handles search_skill without dispatching it to worker tools', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-search-skill-'));
+
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({ jobType: 'minor_code_edit', goal: 'skill 検索後に完了する' })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'search_skill',
+          arguments: { query: 'minor code edit target path known', maxResults: 3 },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'finalize_answer',
+          arguments: { message: '検索しました。' },
+        },
+      });
+
+    try {
+      const result = await runSupervisorLoop({
+        runId: 'run-1',
+        repoRoot,
+        prompt: 'skill を検索して',
+        timeoutSeconds: 60,
+      });
+
+      expect(result.finalReport).toBe('検索しました。');
+      const secondRound2UserPrompt = JSON.parse(
+        vi.mocked(llm.callSupervisorLLM).mock.calls[2]?.[1] as string
+      );
+      expect(secondRound2UserPrompt.toolResults[0]).toMatchObject({
+        toolName: 'search_skill',
+        ok: true,
+      });
+      expect(secondRound2UserPrompt.toolResults[0].payload.matches).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            jobType: 'minor_code_edit',
+            path: 'skills/minor_code_edit.md',
+          }),
         ])
       );
     } finally {

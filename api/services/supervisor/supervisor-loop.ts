@@ -1,5 +1,7 @@
 import { appendSupervisorTrace, logger } from '../../lib/logger';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
+import { estimateTokens } from '../conversation-context/token-budget';
+import type { LlmPromptPartTokenEstimates } from '../llm-usage';
 import type { SupervisorLoopResult } from '../run-control/types';
 import type { RunEventActor, RunEventSeverity, RunEventType } from '../run-events/types';
 import { executeWorkerTool } from '../worker-tools/dispatcher';
@@ -10,10 +12,15 @@ import {
   getAllowedToolsForJobType,
   getExecutableWorkerToolName,
   type JobType,
-  loadFlatSkill,
+  jobTypes,
   validateToolCallForJobType,
 } from './prompt';
 import type { AgentToolCallEnvelope } from './schema-first';
+import {
+  type LoadedSkillSummary,
+  readSupervisorSkill,
+  searchSupervisorSkills,
+} from './skill-tools';
 
 export interface SupervisorLoopInput {
   runId: string;
@@ -23,6 +30,7 @@ export interface SupervisorLoopInput {
   prompt: string;
   timeoutSeconds: number;
   latestUserMessage?: string;
+  promptPartTokenEstimates?: LlmPromptPartTokenEstimates;
   todoPlan?: SupervisorTodoContext[];
   currentTodo?: SupervisorTodoContext;
   maxIterations?: number;
@@ -168,10 +176,11 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
   const readFiles: string[] = [];
   const toolContext = { readFileCache: new Map() };
   const toolResults: CompactToolResult[] = [];
+  const loadedSkillSummaries = new Map<JobType, LoadedSkillSummary>();
+  let currentTodos = await repo.listTaskRunTodosForRun(runId);
   let step = 0;
   let currentJobType: JobType = 'minor_code_edit';
   let goal = userInput;
-  let loadedSkillJobType: JobType | null = null;
   let finalReportText = '';
   let terminalState: SupervisorLoopResult['terminalState'] = 'completed';
   let summary = '';
@@ -230,33 +239,45 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       schemaFirst: true,
       emitEvent: emitLlmDebugEvent,
       workingDirectory: repoRoot,
+      taskId: task.id,
+      runId,
+      promptPartTokenEstimates: {
+        ...input.promptPartTokenEstimates,
+        systemPromptTokens: estimateTokens(round1SystemPrompt),
+        userPromptTokens:
+          input.promptPartTokenEstimates?.userPromptTokens ?? estimateTokens(userInput),
+      },
     })) as { jobType: JobType; goal: string };
     currentJobType = round1.jobType;
     goal = round1.goal.trim() || userInput;
     await emitAgentEvent('round1.parsed', round1);
 
     for (step = 1; step <= maxIterations && toolResults.length < maxToolCalls; step += 1) {
-      const skill = loadFlatSkill(currentJobType);
       const allowedTools = getAllowedToolsForJobType(currentJobType);
-      if (loadedSkillJobType !== currentJobType) {
-        loadedSkillJobType = currentJobType;
-        await emitAgentEvent('skill.loaded', {
-          skillPath: `skills/${currentJobType}.md`,
-          skill,
-        });
-      }
 
       const round2SystemPrompt = buildRound2ToolCallPrompt({
         projectRoot: repoRoot,
         jobType: currentJobType,
-        skill,
         tools: allowedTools,
       });
       const round2UserPrompt = JSON.stringify({
         latestUserMessage: userInput,
         goal,
         currentJobType,
+        todoPlan: currentTodos.map(toSupervisorTodoContext),
+        currentTodo: currentTodos.find((todo) => todo.status === 'running')
+          ? toSupervisorTodoContext(currentTodos.find((todo) => todo.status === 'running') as any)
+          : null,
         toolResults: toolResults.slice(-8),
+        loadedSkillSummaries: [...loadedSkillSummaries.values()].map((skill) => ({
+          jobType: skill.jobType,
+          path: skill.path,
+          digest: skill.digest,
+          useWhen: skill.summary.useWhen,
+          procedure: skill.summary.procedure,
+          requiredRules: skill.summary.requiredRules,
+          loadedAtStep: skill.loadedAtStep,
+        })),
       });
       await emitAgentEvent('round2.prompt_built', {
         systemPrompt: round2SystemPrompt,
@@ -267,6 +288,13 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         schemaFirst: true,
         emitEvent: emitLlmDebugEvent,
         workingDirectory: repoRoot,
+        taskId: task.id,
+        runId,
+        promptPartTokenEstimates: {
+          systemPromptTokens: estimateTokens(round2SystemPrompt),
+          userPromptTokens: estimateTokens(round2UserPrompt),
+          stateCardTokens: 0,
+        },
       })) as AgentToolCallEnvelope;
       await emitAgentEvent('round2.parsed', round2);
 
@@ -297,6 +325,208 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           });
           continue;
         }
+      }
+
+      if (round2.toolCall.name === 'read_skill') {
+        const requestedJobType = normalizeJobType(round2.toolCall.arguments.jobType);
+        if (!requestedJobType) {
+          const result = {
+            step,
+            toolName: 'read_skill',
+            ok: false,
+            arguments: round2.toolCall.arguments,
+            summary: `Invalid jobType for read_skill: ${String(round2.toolCall.arguments.jobType)}`,
+          };
+          toolResults.push(result);
+          await emitAgentEvent('tool.validation_failed', result, 'warning');
+          continue;
+        }
+        try {
+          const skill = readSupervisorSkill({ jobType: requestedJobType, loadedAtStep: step });
+          loadedSkillSummaries.set(requestedJobType, skill);
+          const result = {
+            step,
+            toolName: 'read_skill',
+            ok: true,
+            arguments: round2.toolCall.arguments,
+            summary: `tool=read_skill status=ok\njobType=${requestedJobType} digest=${skill.digest}`,
+            payload: skill,
+          };
+          toolResults.push(result);
+          await emitAgentEvent('skill.loaded', {
+            source: 'read_skill',
+            jobType: requestedJobType,
+            skillPath: skill.path,
+            digest: skill.digest,
+            summary: skill.summary,
+          });
+          await emitAgentEvent('tool.finished', result);
+        } catch (err) {
+          const result = {
+            step,
+            toolName: 'read_skill',
+            ok: false,
+            arguments: round2.toolCall.arguments,
+            summary: `tool=read_skill status=failed\nerror=${formatErrorMessage(err)}`,
+            error: formatErrorMessage(err),
+          };
+          toolResults.push(result);
+          await emitAgentEvent('tool.failed', result, 'warning');
+        }
+        continue;
+      }
+
+      if (round2.toolCall.name === 'search_skill') {
+        const query = String(round2.toolCall.arguments.query || '').trim();
+        const maxResults =
+          typeof round2.toolCall.arguments.maxResults === 'number'
+            ? round2.toolCall.arguments.maxResults
+            : undefined;
+        try {
+          const matches = searchSupervisorSkills({ query, maxResults });
+          const result = {
+            step,
+            toolName: 'search_skill',
+            ok: true,
+            arguments: round2.toolCall.arguments,
+            summary: `tool=search_skill status=ok\nmatches=${matches.matches.length}`,
+            payload: matches,
+          };
+          toolResults.push(result);
+          await emitAgentEvent('tool.finished', result);
+        } catch (err) {
+          const result = {
+            step,
+            toolName: 'search_skill',
+            ok: false,
+            arguments: round2.toolCall.arguments,
+            summary: `tool=search_skill status=failed\nerror=${formatErrorMessage(err)}`,
+            error: formatErrorMessage(err),
+          };
+          toolResults.push(result);
+          await emitAgentEvent('tool.failed', result, 'warning');
+        }
+        continue;
+      }
+
+      if (round2.toolCall.name === 'replace_todo_list') {
+        try {
+          const todos = normalizeTodoListInput(round2.toolCall.arguments);
+          const startFirst = round2.toolCall.arguments.startFirst !== false;
+          const now = new Date();
+          currentTodos = await repo.replaceTaskRunTodosForRun(
+            runId,
+            todos.map((todo, index) => ({
+              ...todo,
+              status: startFirst && index === 0 ? 'running' : 'pending',
+              startedAt: startFirst && index === 0 ? now : null,
+            }))
+          );
+          const result = {
+            step,
+            toolName: 'replace_todo_list',
+            ok: true,
+            arguments: round2.toolCall.arguments,
+            summary: `tool=replace_todo_list status=ok\ntodos=${currentTodos.length}`,
+            payload: { todos: currentTodos.map(toSupervisorTodoContext) },
+          };
+          toolResults.push(result);
+          await emitAgentEvent('tool.finished', result);
+        } catch (err) {
+          const result = {
+            step,
+            toolName: 'replace_todo_list',
+            ok: false,
+            arguments: round2.toolCall.arguments,
+            summary: `tool=replace_todo_list status=failed\nerror=${formatErrorMessage(err)}`,
+            error: formatErrorMessage(err),
+          };
+          toolResults.push(result);
+          await emitAgentEvent('tool.failed', result, 'warning');
+        }
+        continue;
+      }
+
+      if (round2.toolCall.name === 'start_todo') {
+        const todo = findTodoByToolArguments(currentTodos, round2.toolCall.arguments);
+        if (!todo) {
+          const result = {
+            step,
+            toolName: 'start_todo',
+            ok: false,
+            arguments: round2.toolCall.arguments,
+            summary: 'Todo not found for start_todo.',
+          };
+          toolResults.push(result);
+          await emitAgentEvent('tool.validation_failed', result, 'warning');
+          continue;
+        }
+        const now = new Date();
+        for (const candidate of currentTodos) {
+          if (candidate.id === todo.id) {
+            await repo.updateTaskRunTodo(candidate.id, { status: 'running', startedAt: now });
+          } else if (candidate.status === 'running') {
+            await repo.updateTaskRunTodo(candidate.id, { status: 'pending' });
+          }
+        }
+        currentTodos = await repo.listTaskRunTodosForRun(runId);
+        const result = {
+          step,
+          toolName: 'start_todo',
+          ok: true,
+          arguments: round2.toolCall.arguments,
+          summary: `tool=start_todo status=ok\nseq=${todo.seq}`,
+          payload: { todos: currentTodos.map(toSupervisorTodoContext) },
+        };
+        toolResults.push(result);
+        await emitAgentEvent('tool.finished', result);
+        continue;
+      }
+
+      if (round2.toolCall.name === 'complete_todo') {
+        const todo = findTodoByToolArguments(currentTodos, round2.toolCall.arguments);
+        const status = normalizeCompletionStatus(round2.toolCall.arguments.status);
+        if (!todo || !status) {
+          const result = {
+            step,
+            toolName: 'complete_todo',
+            ok: false,
+            arguments: round2.toolCall.arguments,
+            summary: !todo ? 'Todo not found for complete_todo.' : 'Invalid completion status.',
+          };
+          toolResults.push(result);
+          await emitAgentEvent('tool.validation_failed', result, 'warning');
+          continue;
+        }
+        const now = new Date();
+        await repo.updateTaskRunTodo(todo.id, {
+          status,
+          statusReason:
+            typeof round2.toolCall.arguments.statusReason === 'string'
+              ? round2.toolCall.arguments.statusReason
+              : `Marked ${status} by Supervisor.`,
+          completedAt: now,
+          startedAt: todo.startedAt ? new Date(todo.startedAt as any) : now,
+        });
+        currentTodos = await repo.listTaskRunTodosForRun(runId);
+        if (round2.toolCall.arguments.autoStartNext !== false) {
+          const nextTodo = currentTodos.find((candidate) => candidate.status === 'pending');
+          if (nextTodo) {
+            await repo.updateTaskRunTodo(nextTodo.id, { status: 'running', startedAt: new Date() });
+            currentTodos = await repo.listTaskRunTodosForRun(runId);
+          }
+        }
+        const result = {
+          step,
+          toolName: 'complete_todo',
+          ok: true,
+          arguments: round2.toolCall.arguments,
+          summary: `tool=complete_todo status=ok\nseq=${todo.seq} todoStatus=${status}`,
+          payload: { todos: currentTodos.map(toSupervisorTodoContext) },
+        };
+        toolResults.push(result);
+        await emitAgentEvent('tool.finished', result);
+        continue;
       }
 
       if (round2.toolCall.name === 'finalize_answer') {
@@ -406,6 +636,82 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
   return { finalReport: finalReportText, terminalState, summary, stoppedBy, riskLevel };
 }
 
+function toSupervisorTodoContext(todo: {
+  id: string;
+  seq: number;
+  title: string;
+  description?: string | null;
+  taskType: string;
+  status: string;
+  procedureId?: string | null;
+  procedureSnapshot?: any;
+  contextSnapshot?: any;
+}): SupervisorTodoContext {
+  const procedureSnapshot = todo.procedureSnapshot as any;
+  const contextSnapshot = todo.contextSnapshot as any;
+  return {
+    id: todo.id,
+    seq: todo.seq,
+    title: todo.title,
+    description: todo.description,
+    taskType: todo.taskType,
+    status: todo.status,
+    procedureId: todo.procedureId,
+    procedureDigest:
+      typeof procedureSnapshot?.digest === 'string' ? procedureSnapshot.digest : undefined,
+    contextDigest: typeof contextSnapshot?.digest === 'string' ? contextSnapshot.digest : undefined,
+  };
+}
+
+function normalizeTodoListInput(args: Record<string, unknown>) {
+  if (!Array.isArray(args.todos) || args.todos.length === 0) {
+    throw new Error('replace_todo_list requires a non-empty todos array.');
+  }
+  return args.todos.map((raw, index) => {
+    if (!raw || typeof raw !== 'object') {
+      throw new Error(`Todo #${index + 1} must be an object.`);
+    }
+    const todo = raw as Record<string, unknown>;
+    const seq = typeof todo.seq === 'number' ? todo.seq : index + 1;
+    const title = typeof todo.title === 'string' ? todo.title.trim() : '';
+    const taskType = typeof todo.taskType === 'string' ? todo.taskType.trim() : '';
+    if (!title) throw new Error(`Todo #${seq} requires title.`);
+    if (!taskType) throw new Error(`Todo #${seq} requires taskType.`);
+    const dependsOn = Array.isArray(todo.dependsOn)
+      ? todo.dependsOn.filter(
+          (value): value is string | number =>
+            typeof value === 'string' || typeof value === 'number'
+        )
+      : [];
+    return {
+      seq,
+      title,
+      description: typeof todo.description === 'string' ? todo.description : null,
+      taskType,
+      procedureId: typeof todo.procedureId === 'string' ? todo.procedureId : null,
+      dependsOn,
+    };
+  });
+}
+
+function findTodoByToolArguments<TTodo extends { id: string; seq: number }>(
+  todos: TTodo[],
+  args: Record<string, unknown>
+): TTodo | null {
+  const todoId = typeof args.todoId === 'string' ? args.todoId : null;
+  if (todoId) return todos.find((todo) => todo.id === todoId) ?? null;
+  const seq = typeof args.seq === 'number' ? args.seq : null;
+  if (seq !== null) return todos.find((todo) => todo.seq === seq) ?? null;
+  return null;
+}
+
+function normalizeCompletionStatus(value: unknown) {
+  if (value === 'passed' || value === 'failed' || value === 'skipped' || value === 'needs_human') {
+    return value;
+  }
+  return null;
+}
+
 function formatToolObservation(toolName: string, toolResult: any): string {
   const status = toolResult.ok ? 'ok' : 'failed';
   const header = `tool=${toolName} status=${status}`;
@@ -429,4 +735,14 @@ function formatToolObservation(toolName: string, toolResult: any): string {
     return `${header}\n${toolResult.payload?.shortStatus || 'Clean worktree'}`;
   if (toolName === 'git_diff') return `${header}\n${toolResult.payload?.diffStat || 'No changes'}`;
   return `${header}\npayload=${JSON.stringify(toolResult.payload || {}).slice(0, 3000)}`;
+}
+
+function normalizeJobType(value: unknown): JobType | null {
+  return typeof value === 'string' && jobTypes.includes(value as JobType)
+    ? (value as JobType)
+    : null;
+}
+
+function formatErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }

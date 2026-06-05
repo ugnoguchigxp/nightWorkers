@@ -72,6 +72,7 @@ export function parseBlueprintDbDesignRequestPrompt(prompt: string): BlueprintDb
 }
 
 export async function generateBlueprintDataDesignDraft(input: {
+  taskId: string;
   request: BlueprintDbDesignRequest;
   emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
 }): Promise<GeneratedBlueprintDataDesignDraft> {
@@ -84,6 +85,8 @@ export async function generateBlueprintDataDesignDraft(input: {
       schemaName: 'app_blueprint_data_design',
       schema: z.toJSONSchema(appBlueprintSchema),
       emitEvent: input.emitEvent,
+      taskId: input.taskId,
+      runId: null,
     }
   );
 

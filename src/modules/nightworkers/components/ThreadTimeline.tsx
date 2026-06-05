@@ -1,17 +1,8 @@
-import type { CodeBlockData } from '@repo/design-system';
-import { CodeBlock } from '@repo/design-system';
-import {
-  AlertTriangle,
-  Check,
-  CheckCircle2,
-  Circle,
-  Copy,
-  LoaderCircle,
-  PanelsTopLeft,
-  PauseCircle,
-  XCircle,
-} from 'lucide-react';
+import type { CodeBlockData, CodeBlockProps } from '@repo/design-system';
+import { CodeBlock, cn } from '@repo/design-system';
+import { Check, Copy, PanelsTopLeft } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Components } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -28,8 +19,6 @@ import type {
   TaskEvent,
   TaskMessage,
   TaskRun,
-  TaskRunTodo,
-  TodoStatus,
   WorkbenchArtifactRef,
 } from '../types';
 import { formatFinishedTime } from '../utils/time';
@@ -41,6 +30,53 @@ const chatCodeBlockThemes = {
 } as const;
 const chatCodeBlockClassName =
   'nightworkers-code-block dark max-w-full rounded-[var(--radius-md)] border-[color:var(--nw-border)] bg-[var(--nw-surface)] text-[var(--nw-text)] text-xs shadow-none [&_.line]:whitespace-pre-wrap [&_code]:break-words [&_code]:whitespace-pre-wrap [&_pre]:overflow-x-hidden';
+const UNKNOWN_ACTIVITY_TITLE_KEY = 'timeline.unknownActivity';
+
+type NightWorkersCodeBlockProps = Omit<
+  CodeBlockProps,
+  'data' | 'themes' | 'className' | 'children'
+> & {
+  data?: CodeBlockData[];
+  code?: string;
+  filename?: string;
+  language?: CodeBlockData['language'];
+  className?: string;
+};
+
+function NightWorkersCodeBlock({
+  className,
+  data,
+  code,
+  filename = 'text',
+  language = 'text',
+  lineNumbers = false,
+  maxHeight = 360,
+  showHeader = true,
+  syntaxHighlighting = true,
+  ...props
+}: NightWorkersCodeBlockProps) {
+  const codeData = data ?? [
+    {
+      code: code ?? '',
+      filename,
+      language,
+    },
+  ];
+
+  return (
+    <CodeBlock
+      className={cn(chatCodeBlockClassName, className)}
+      data={codeData}
+      lineNumbers={lineNumbers}
+      maxHeight={maxHeight}
+      showHeader={showHeader}
+      syntaxHighlighting={syntaxHighlighting}
+      themes={chatCodeBlockThemes}
+      {...props}
+    />
+  );
+}
+
 const chatMarkdownRemarkPlugins = [remarkGfm];
 const chatMarkdownComponents: Components = {
   a: ({ children, ...props }) => (
@@ -62,19 +98,11 @@ const chatMarkdownComponents: Components = {
     const language = /language-(\w+)/.exec(className || '')?.[1];
     if (language) {
       return (
-        <CodeBlock
-          className={`${chatCodeBlockClassName} my-3`}
-          data={[
-            {
-              code: String(children).replace(/\n$/, ''),
-              filename: language,
-              language,
-            },
-          ]}
-          lineNumbers={false}
-          maxHeight={360}
-          showHeader={true}
-          themes={chatCodeBlockThemes}
+        <NightWorkersCodeBlock
+          className="my-3"
+          code={String(children).replace(/\n$/, '')}
+          filename={language}
+          language={language}
         />
       );
     }
@@ -129,7 +157,6 @@ type ThreadTimelineProps = {
   activityEvents: ActivityEvent[];
   activityArtifacts: ActivityArtifact[];
   activeStreamingResponse: string;
-  latestRunTodos: TaskRunTodo[];
   isAgentWorking: boolean;
   showDebugEvents: boolean;
   onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
@@ -143,7 +170,6 @@ export function ThreadTimeline({
   activityEvents,
   activityArtifacts,
   activeStreamingResponse,
-  latestRunTodos,
   isAgentWorking,
   showDebugEvents,
   onOpenArtifact,
@@ -204,7 +230,6 @@ export function ThreadTimeline({
 
   return (
     <div className="nightworkers-chat-window space-y-5 p-6">
-      <TodoProgress todos={latestRunTodos} />
       {showDebugEvents && isAgentWorking && latestEvent ? (
         <div className="rounded-lg border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-200">
           <span className="mr-2 inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
@@ -575,7 +600,7 @@ function TranscriptItemView({
     return (
       <TranscriptActivityBlock
         event={item.event}
-        title="unknown.activity"
+        title={UNKNOWN_ACTIVITY_TITLE_KEY}
         tone="warning"
         artifactText={item.artifact?.contentText}
         showJson={true}
@@ -643,7 +668,7 @@ function TranscriptChildView({ child }: { child: TranscriptChild }) {
     return (
       <TranscriptActivityBlock
         event={child.event}
-        title="unknown.activity"
+        title={UNKNOWN_ACTIVITY_TITLE_KEY}
         tone="warning"
         artifactText={child.artifact?.contentText}
         showJson={true}
@@ -679,13 +704,15 @@ function TranscriptActivityBlock({
   showSummary?: boolean;
   showJson?: boolean;
 }) {
+  const { t } = useTranslation();
   if (!event) return null;
   const borderClass =
     tone === 'warning'
       ? 'border-amber-700/60 bg-amber-950/20 text-amber-50'
       : 'border-slate-700/80 bg-slate-900/30 text-slate-100';
   const payload = event.payloadJson || {};
-  const displayTitle = activityDisplayTitle(event, title);
+  const titleText = title.startsWith('timeline.') ? t(title) : title;
+  const displayTitle = activityDisplayTitle(event, titleText);
   const summary = activityDisplaySummary(event);
   const showLlmDetails = showJson && isLlmOutputActivity(event);
   const code = codeOverride || artifactText || getActivityCode(event);
@@ -708,20 +735,7 @@ function TranscriptActivityBlock({
         {code && codeLanguage === 'diff' ? (
           <DiffCodeBlock code={code} label={codeFilename} />
         ) : code ? (
-          <CodeBlock
-            className={chatCodeBlockClassName}
-            data={[
-              {
-                code,
-                filename: codeFilename,
-                language: codeLanguage,
-              },
-            ]}
-            lineNumbers={false}
-            maxHeight={360}
-            showHeader={true}
-            themes={chatCodeBlockThemes}
-          />
+          <NightWorkersCodeBlock code={code} filename={codeFilename} language={codeLanguage} />
         ) : null}
         {showLlmDetails && !code ? (
           <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap break-all rounded bg-slate-950/40 p-2 font-mono text-[10px] text-slate-300">
@@ -1130,23 +1144,20 @@ function RuntimePromptSnapshotCard({ latestRun }: { latestRun?: TaskRun }) {
       </summary>
       <div className="grid gap-3 border-t border-slate-800 p-3">
         {typeof stateCardText === 'string' && stateCardText.trim() ? (
-          <details className="rounded border border-slate-800 bg-slate-950/40" open>
-            <summary className="cursor-pointer list-none px-3 py-2 text-[11px] font-medium text-slate-200">
-              StateCard Text
-            </summary>
-            <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap border-t border-slate-800 p-3 font-mono text-[11px] leading-5 text-slate-300">
-              {stateCardText}
-            </pre>
-          </details>
+          <NightWorkersCodeBlock
+            code={stateCardText}
+            filename="StateCard Text"
+            language="text"
+            maxHeight={280}
+            syntaxHighlighting={false}
+          />
         ) : null}
-        <details className="rounded border border-slate-800 bg-slate-950/40" open>
-          <summary className="cursor-pointer list-none px-3 py-2 text-[11px] font-medium text-slate-200">
-            Snapshot JSON
-          </summary>
-          <pre className="max-h-[360px] overflow-auto whitespace-pre-wrap border-t border-slate-800 p-3 font-mono text-[11px] leading-5 text-slate-300">
-            {JSON.stringify(snapshot, null, 2)}
-          </pre>
-        </details>
+        <NightWorkersCodeBlock
+          code={JSON.stringify(snapshot, null, 2)}
+          filename="Snapshot JSON"
+          language="json"
+          maxHeight={360}
+        />
       </div>
     </details>
   );
@@ -1159,121 +1170,6 @@ function FinalReportCard({ latestRun }: { latestRun?: TaskRun }) {
       <ChatMarkdown content={formatVisibleAssistantText(latestRun.finalReport)} />
     </ThreadMessage>
   );
-}
-
-function TodoProgress({ todos }: { todos: TaskRunTodo[] }) {
-  if (todos.length === 0) return null;
-  const completedCount = todos.filter((todo) => todo.status === 'passed').length;
-  return (
-    <section
-      className="border-slate-700/80 border-y bg-slate-950/25 py-3"
-      aria-label="Todo progress"
-    >
-      <div className="mb-2 flex items-center justify-between gap-3 px-1 text-xs text-slate-300">
-        <span className="font-medium text-slate-100">Todo progress</span>
-        <span className="shrink-0 text-slate-400">
-          {completedCount}/{todos.length}
-        </span>
-      </div>
-      <ol className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {todos.map((todo) => {
-          const style = todoStatusStyle(todo.status);
-          const Icon = style.icon;
-          return (
-            <li key={todo.id} className={`min-h-14 rounded border px-3 py-2 ${style.container}`}>
-              <div className="flex min-w-0 items-start gap-2">
-                <Icon
-                  aria-hidden="true"
-                  className={`mt-0.5 h-4 w-4 shrink-0 ${style.iconClass} ${
-                    todo.status === 'running' ? 'animate-spin' : ''
-                  }`}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="shrink-0 text-[10px] text-slate-400">#{todo.seq}</span>
-                    <span className="min-w-0 truncate text-xs font-medium text-slate-100">
-                      {todo.title}
-                    </span>
-                  </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
-                    <span className={style.textClass}>{style.label}</span>
-                    <span className="text-slate-500">{todo.taskType}</span>
-                    {todo.procedureId ? (
-                      <span className="max-w-full truncate text-slate-500">{todo.procedureId}</span>
-                    ) : null}
-                  </div>
-                  {todo.statusReason ? (
-                    <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-400">
-                      {todo.statusReason}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-    </section>
-  );
-}
-
-function todoStatusStyle(status: TodoStatus): {
-  label: string;
-  icon: typeof Circle;
-  iconClass: string;
-  textClass: string;
-  container: string;
-} {
-  switch (status) {
-    case 'passed':
-      return {
-        label: 'passed',
-        icon: CheckCircle2,
-        iconClass: 'text-emerald-300',
-        textClass: 'text-emerald-200',
-        container: 'border-emerald-500/35 bg-emerald-950/15',
-      };
-    case 'running':
-      return {
-        label: 'running',
-        icon: LoaderCircle,
-        iconClass: 'text-cyan-300',
-        textClass: 'text-cyan-200',
-        container: 'border-cyan-500/35 bg-cyan-950/15',
-      };
-    case 'failed':
-      return {
-        label: 'failed',
-        icon: XCircle,
-        iconClass: 'text-rose-300',
-        textClass: 'text-rose-200',
-        container: 'border-rose-500/35 bg-rose-950/15',
-      };
-    case 'skipped':
-      return {
-        label: 'skipped',
-        icon: PauseCircle,
-        iconClass: 'text-slate-400',
-        textClass: 'text-slate-300',
-        container: 'border-slate-600/50 bg-slate-900/25',
-      };
-    case 'needs_human':
-      return {
-        label: 'needs human',
-        icon: AlertTriangle,
-        iconClass: 'text-amber-300',
-        textClass: 'text-amber-200',
-        container: 'border-amber-500/35 bg-amber-950/15',
-      };
-    case 'pending':
-      return {
-        label: 'pending',
-        icon: Circle,
-        iconClass: 'text-slate-400',
-        textClass: 'text-slate-300',
-        container: 'border-slate-700/70 bg-slate-900/20',
-      };
-  }
 }
 
 function StreamingResponsePreview({ preview }: { preview: StreamingPreview }) {
@@ -1435,10 +1331,12 @@ function decodeJsonEscape(char: string): string {
 }
 
 export function ThinkingIndicator() {
+  const { t } = useTranslation();
+
   return (
     <div
       className="inline-flex h-[1em] items-center gap-[0.3em]"
-      aria-label="AIが返答を生成中です"
+      aria-label={t('timeline.thinking')}
       role="status"
     >
       {[0, 1, 2].map((dot) => (
@@ -1483,14 +1381,7 @@ function AgentEditSummaryCard({ event }: { event: TaskEvent }) {
           ))}
         </div>
         {summary.codeBlocks?.length ? (
-          <CodeBlock
-            className={chatCodeBlockClassName}
-            data={summary.codeBlocks}
-            lineNumbers={false}
-            maxHeight={320}
-            showHeader={true}
-            themes={chatCodeBlockThemes}
-          />
+          <NightWorkersCodeBlock data={summary.codeBlocks} maxHeight={320} />
         ) : null}
       </div>
     </details>
@@ -1550,6 +1441,7 @@ function hasAgentEditSummary(event: TaskEvent): boolean {
 }
 
 function AgentDebugEventCard({ event }: { event: TaskEvent }) {
+  const { t } = useTranslation();
   const [copiedEventId, setCopiedEventId] = useState<string | null>(null);
   const payload = event.payloadJson as any;
   const runEventType = payload?.runEvent?.type;
@@ -1573,7 +1465,7 @@ function AgentDebugEventCard({ event }: { event: TaskEvent }) {
         ) : null}
         {typeof round === 'number' ? (
           <span className="rounded border border-slate-600/80 px-1.5 py-0.5 text-slate-300">
-            round {round}
+            {t('timeline.roundLabel', { round })}
           </span>
         ) : null}
         {phase ? (
@@ -1583,7 +1475,7 @@ function AgentDebugEventCard({ event }: { event: TaskEvent }) {
         ) : null}
         {toolName ? (
           <span className="rounded border border-slate-600/80 px-1.5 py-0.5 text-slate-300">
-            tool: {toolName}
+            {t('timeline.toolLabel', { tool: toolName })}
           </span>
         ) : null}
       </div>
@@ -1628,17 +1520,17 @@ function AgentDebugEventCard({ event }: { event: TaskEvent }) {
                   1200
                 );
               }}
-              aria-label="Copy debug JSON"
+              aria-label={t('timeline.copyDebugJson')}
             >
               {copiedEventId === event.id ? (
                 <>
                   <Check className="h-3 w-3" />
-                  Copied
+                  {t('timeline.copied')}
                 </>
               ) : (
                 <>
                   <Copy className="h-3 w-3" />
-                  Copy
+                  {t('timeline.copy')}
                 </>
               )}
             </button>
@@ -1938,6 +1830,7 @@ function MessagePayload({
   message: TaskMessage;
   onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
 }) {
+  const { t } = useTranslation();
   const metadata = message.metadataJson as any;
   if (metadata?.intent === 'tool_diff') {
     const codeBlock = metadata.codeBlock || {};
@@ -1946,24 +1839,16 @@ function MessagePayload({
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
           <span className="rounded-[var(--radius-sm)] border border-border bg-muted px-1.5 py-0.5 text-card-foreground">
-            code change
+            {t('timeline.codeChange')}
           </span>
           {metadata.toolName ? <span>{String(metadata.toolName)}</span> : null}
         </div>
-        <CodeBlock
-          className={chatCodeBlockClassName}
-          data={[
-            {
-              code,
-              filename:
-                typeof codeBlock.filename === 'string' ? codeBlock.filename : 'tool-output.diff',
-              language: typeof codeBlock.language === 'string' ? codeBlock.language : 'diff',
-            },
-          ]}
-          lineNumbers={false}
-          maxHeight={360}
-          showHeader={true}
-          themes={chatCodeBlockThemes}
+        <NightWorkersCodeBlock
+          code={code}
+          filename={
+            typeof codeBlock.filename === 'string' ? codeBlock.filename : 'tool-output.diff'
+          }
+          language={typeof codeBlock.language === 'string' ? codeBlock.language : 'diff'}
         />
       </div>
     );
@@ -1976,14 +1861,17 @@ function MessagePayload({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="nightworkers-artifact-kicker text-xs font-semibold uppercase text-cyan-200">
-              Blueprint artifact
+              {t('timeline.blueprintArtifact')}
             </div>
             <div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold text-slate-100">
-              {metadata.appBlueprint.name || metadata.title || 'App Blueprint'}
+              {metadata.appBlueprint.name || metadata.title || t('timeline.appBlueprintFallback')}
             </div>
             <div className="nightworkers-artifact-meta mt-1 text-xs text-slate-400">
-              {metadata.appBlueprint.screens?.length || 0} screens /{' '}
-              {countBlueprintSections(metadata.appBlueprint)} sections / {issueCount} issues
+              {t('timeline.screensCount', { count: metadata.appBlueprint.screens?.length || 0 })} /{' '}
+              {t('timeline.sectionsCount', {
+                count: countBlueprintSections(metadata.appBlueprint),
+              })}{' '}
+              / {t('timeline.issuesCount', { count: issueCount })}
             </div>
           </div>
           <button
@@ -1995,14 +1883,16 @@ function MessagePayload({
                 taskId: message.taskId,
                 runId: message.runId || undefined,
                 kind: 'app_blueprint',
-                title: `Blueprint: ${metadata.appBlueprint.name || metadata.title || 'Draft'}`,
+                title: `Blueprint: ${
+                  metadata.appBlueprint.name || metadata.title || t('timeline.draftFallback')
+                }`,
                 summary: message.content.slice(0, 160),
                 source: { type: 'task_message', messageId: message.id },
                 createdAt: String(message.createdAt),
                 metadata,
               })
             }
-            title="Open Blueprint artifact"
+            title={t('timeline.openBlueprintArtifact')}
           >
             <PanelsTopLeft className="h-4 w-4" />
           </button>
@@ -2020,14 +1910,18 @@ function MessagePayload({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="nightworkers-artifact-kicker text-xs font-semibold uppercase text-cyan-200">
-              Component design artifact
+              {t('timeline.componentDesignArtifact')}
             </div>
             <div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold text-slate-100">
-              {componentDesign.componentName || metadata.title || 'Component Design'}
+              {componentDesign.componentName ||
+                metadata.title ||
+                t('timeline.componentDesignFallback')}
             </div>
             <div className="nightworkers-artifact-meta mt-1 text-xs text-slate-400">
-              {componentDesign.variants?.length || 0} variants /{' '}
-              {componentDesign.tokenChanges?.length || 0} token changes
+              {t('timeline.variantsCount', { count: componentDesign.variants?.length || 0 })} /{' '}
+              {t('timeline.tokenChangesCount', {
+                count: componentDesign.tokenChanges?.length || 0,
+              })}
             </div>
           </div>
           <button
@@ -2039,14 +1933,18 @@ function MessagePayload({
                 taskId: message.taskId,
                 runId: message.runId || undefined,
                 kind: 'component_design',
-                title: `Component: ${componentDesign.componentName || metadata.title || 'Design'}`,
+                title: `Component: ${
+                  componentDesign.componentName ||
+                  metadata.title ||
+                  t('timeline.componentDesignTitleFallback')
+                }`,
                 summary: message.content.slice(0, 160),
                 source: { type: 'task_message', messageId: message.id },
                 createdAt: String(message.createdAt),
                 metadata,
               })
             }
-            title="Open component design artifact"
+            title={t('timeline.openComponentDesignArtifact')}
           >
             <PanelsTopLeft className="h-4 w-4" />
           </button>
@@ -2060,7 +1958,7 @@ function MessagePayload({
   if (message.messageType === 'chart' && metadata?.chartData) {
     return (
       <div className="space-y-2">
-        <div className="text-xs font-semibold text-zinc-300">Chart</div>
+        <div className="text-xs font-semibold text-zinc-300">{t('timeline.chart')}</div>
         <pre className="whitespace-pre-wrap break-all rounded-md bg-black/30 p-2 text-xs">
           {JSON.stringify(metadata.chartData, null, 2)}
         </pre>
@@ -2070,7 +1968,7 @@ function MessagePayload({
   if (message.messageType === 'browser' && metadata?.browserFrameData?.url) {
     return (
       <div className="space-y-2">
-        <div className="text-xs font-semibold text-zinc-300">Browser</div>
+        <div className="text-xs font-semibold text-zinc-300">{t('timeline.browser')}</div>
         <a
           className="text-cyan-300 underline"
           href={metadata.browserFrameData.url}
@@ -2085,7 +1983,7 @@ function MessagePayload({
   if (message.messageType === 'flow' && metadata?.flowData) {
     return (
       <div className="space-y-2">
-        <div className="text-xs font-semibold text-zinc-300">Flow</div>
+        <div className="text-xs font-semibold text-zinc-300">{t('timeline.flow')}</div>
         <pre className="whitespace-pre-wrap break-all rounded-md bg-black/30 p-2 text-xs">
           {JSON.stringify(metadata.flowData, null, 2)}
         </pre>
@@ -2095,7 +1993,7 @@ function MessagePayload({
   if (message.messageType === 'playwright' && metadata?.playwrightResult) {
     return (
       <div className="space-y-2">
-        <div className="text-xs font-semibold text-zinc-300">Playwright</div>
+        <div className="text-xs font-semibold text-zinc-300">{t('timeline.playwright')}</div>
         <pre className="whitespace-pre-wrap break-all rounded-md bg-black/30 p-2 text-xs">
           {JSON.stringify(metadata.playwrightResult, null, 2)}
         </pre>

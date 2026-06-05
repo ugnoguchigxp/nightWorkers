@@ -23,6 +23,7 @@ export function buildOpenAIChatCompletionBody(input: {
     ],
     temperature: 0.1,
     stream: input.stream,
+    ...(input.stream ? { stream_options: { include_usage: true } } : {}),
     response_format:
       input.responseFormat === 'json_schema'
         ? {
@@ -38,7 +39,7 @@ export async function readOpenAIChatCompletionStream(input: {
   options: CallSupervisorOptions;
   provider: string;
   round?: 1 | 2;
-}): Promise<string> {
+}): Promise<{ content: string; usage: unknown | null }> {
   if (!input.response.body) {
     throw new Error('OpenAI streaming response did not include a readable body.');
   }
@@ -52,6 +53,7 @@ export async function readOpenAIChatCompletionStream(input: {
   });
   let buffer = '';
   let content = '';
+  let usage: unknown | null = null;
 
   const processStreamRecord = async (record: string) => {
     const lines = record
@@ -68,6 +70,7 @@ export async function readOpenAIChatCompletionStream(input: {
         logger.warn({ payloadPreview: payload.slice(0, 200) }, 'OpenAI stream chunk parse failed');
         continue;
       }
+      if (parsed?.usage) usage = parsed.usage;
       const delta = parsed?.choices?.[0]?.delta?.content;
       if (typeof delta === 'string' && delta) {
         content += delta;
@@ -91,5 +94,5 @@ export async function readOpenAIChatCompletionStream(input: {
   buffer += decoder.decode();
   if (buffer.trim()) await processStreamRecord(buffer);
   await deltaEmitter.flush();
-  return content;
+  return { content, usage };
 }

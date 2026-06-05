@@ -1,14 +1,50 @@
 # major_code_edit
 
 ## Use When
-複数ステップに分けるべきコード変更。初期実装では実行対象外。
+複数ステップに分けるべきコード変更。migration、command、documentation、verification が混ざる可能性がある作業。
 
 ## Tools
+- read_skill
+- search_skill
+- replace_todo_list
+- start_todo
+- complete_todo
+- list_dir
+- read_file
+- search_files
+- apply_patch
+- replace_content
+- run_command
+- run_verification
+- git_status
+- git_diff
+- select_job_type
 - finalize_answer
 
 ## Procedure
-1. 初期実装では major_code_edit を実行しない旨を finalize_answer で返す。
+1. repository edit や command 実行の前に replace_todo_list を呼び、Run 内部 TodoList を作成する。
+2. TodoList は Workbench Task や Queue item ではない。Run 内部の進行マイルストーンとして扱う。
+3. replace_todo_list は全更新で使う。通常は startFirst=true または省略にし、最初の Todo を running にする。
+4. Todo は成果物または gate 単位で分ける。例: investigation / migration / code_edit / documentation / verification。
+5. 現在の Todo に必要な read_file / search_files / apply_patch / replace_content / run_command / run_verification を実行する。
+6. Todo が完了したら、tool evidence に基づいて complete_todo を呼ぶ。実行中というだけで passed にしない。
+7. complete_todo は既定で次の pending Todo を running にする。順序を変える必要がある場合だけ start_todo を使う。
+8. すべての Todo が passed/skipped/needs_human/failed のいずれかになり、必要な最終確認が終わったら finalize_answer を呼ぶ。
+
+## TodoList Shape
+TodoList には少なくとも次の種類を必要に応じて含める。
+
+- investigation: 対象範囲や既存構造の確認。
+- migration: DB schema や migration file の追加・更新。
+- code_edit: runtime、backend、frontend などの実装変更。
+- documentation: README、spec、運用 docs の更新。
+- verification: typecheck、test、lint、smoke などの検証。
+
+## Completion
+- Todo の status は pending / running / passed / failed / skipped / needs_human。
+- UI のチェック済み表示は passed のみ。running は現在作業中を示す。
+- finalize_answer.message には、完了した Todo、未完了 Todo、検証結果、残リスクを簡潔に書く。
 
 ## Output
 Always return only:
-{ "toolCall": { "name": "finalize_answer", "arguments": { "message": "..." } } }
+{ "toolCall": { "name": "...", "arguments": { ... } } }

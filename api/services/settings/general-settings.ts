@@ -1,0 +1,172 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+const RUNTIME_SETTINGS_DIR = path.resolve(process.cwd(), 'api/.runtime');
+const GENERAL_SETTINGS_PATH =
+  process.env.NIGHTWORKERS_GENERAL_SETTINGS_PATH ||
+  path.join(RUNTIME_SETTINGS_DIR, 'general-settings.json');
+const FX_CACHE_PATH =
+  process.env.NIGHTWORKERS_FX_RATES_PATH || path.join(RUNTIME_SETTINGS_DIR, 'fx-rates.json');
+
+export type NightWorkersLanguage = 'ja' | 'en';
+export type NightWorkersCurrency = 'JPY' | 'USD' | 'EUR';
+export type FxSource = 'ecb' | 'manual';
+
+export type GeneralSettings = {
+  timezone: string;
+  language: NightWorkersLanguage;
+  currency: NightWorkersCurrency;
+  fx: {
+    source: FxSource;
+    autoRefresh: boolean;
+    lastRefreshedAt: string | null;
+  };
+};
+
+export type FxRateCache = {
+  source: FxSource;
+  baseCurrency: 'EUR';
+  validOn: string;
+  fetchedAt: string;
+  rates: Record<string, number>;
+};
+
+export const SUPPORTED_LANGUAGES: NightWorkersLanguage[] = ['ja', 'en'];
+export const SUPPORTED_CURRENCIES: NightWorkersCurrency[] = ['JPY', 'USD', 'EUR'];
+
+export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
+  timezone: 'Asia/Tokyo',
+  language: 'ja',
+  currency: 'JPY',
+  fx: {
+    source: 'ecb',
+    autoRefresh: true,
+    lastRefreshedAt: null,
+  },
+};
+
+export function readGeneralSettings(): GeneralSettings {
+  const persisted = readJsonFile<Partial<GeneralSettings>>(GENERAL_SETTINGS_PATH) ?? {};
+  return normalizeGeneralSettings(persisted);
+}
+
+export function writeGeneralSettings(input: GeneralSettings): GeneralSettings {
+  const settings = normalizeGeneralSettings(input);
+  writeJsonFile(GENERAL_SETTINGS_PATH, settings);
+  return settings;
+}
+
+export function readFxRateCache(): FxRateCache | null {
+  return readJsonFile<FxRateCache>(FX_CACHE_PATH);
+}
+
+export function writeFxRateCache(cache: FxRateCache) {
+  writeJsonFile(FX_CACHE_PATH, cache);
+  const current = readGeneralSettings();
+  writeGeneralSettings({
+    ...current,
+    fx: {
+      ...current.fx,
+      source: cache.source,
+      lastRefreshedAt: cache.fetchedAt,
+    },
+  });
+  return cache;
+}
+
+export async function refreshEcbFxRates(): Promise<FxRateCache> {
+  const res = await fetch('https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml');
+  if (!res.ok) {
+    throw new Error(`ECB FX refresh failed: ${res.status}`);
+  }
+  const xml = await res.text();
+  const validOn = xml.match(/<Cube time=['"]([^'"]+)['"]>/)?.[1] || new Date().toISOString();
+  const rates: Record<string, number> = { EUR: 1 };
+  for (const match of xml.matchAll(/<Cube currency=['"]([^'"]+)['"] rate=['"]([^'"]+)['"]\/>/g)) {
+    const rate = Number(match[2]);
+    if (match[1] && Number.isFinite(rate) && rate > 0) rates[match[1]] = rate;
+  }
+  const cache: FxRateCache = {
+    source: 'ecb',
+    baseCurrency: 'EUR',
+    validOn,
+    fetchedAt: new Date().toISOString(),
+    rates,
+  };
+  return writeFxRateCache(cache);
+}
+
+export function convertCurrency(input: {
+  amount: number;
+  from: NightWorkersCurrency;
+  to: NightWorkersCurrency;
+  cache: FxRateCache | null;
+}) {
+  if (input.from === input.to) return { amount: input.amount, rate: 1 };
+  if (!input.cache) return { amount: null, rate: null };
+  const fromRate = input.cache.rates[input.from];
+  const toRate = input.cache.rates[input.to];
+  if (!fromRate || !toRate) return { amount: null, rate: null };
+  const rate = toRate / fromRate;
+  return { amount: input.amount * rate, rate };
+}
+
+export function validateTimezone(timezone: string) {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function normalizeGeneralSettings(input: Partial<GeneralSettings>): GeneralSettings {
+  const timezone =
+    typeof input.timezone === 'string' && validateTimezone(input.timezone)
+      ? input.timezone
+      : DEFAULT_GENERAL_SETTINGS.timezone;
+  const language = SUPPORTED_LANGUAGES.includes(input.language as NightWorkersLanguage)
+    ? (input.language as NightWorkersLanguage)
+    : DEFAULT_GENERAL_SETTINGS.language;
+  const currency = SUPPORTED_CURRENCIES.includes(input.currency as NightWorkersCurrency)
+    ? (input.currency as NightWorkersCurrency)
+    : DEFAULT_GENERAL_SETTINGS.currency;
+  const source: FxSource = input.fx?.source === 'manual' ? 'manual' : 'ecb';
+  return {
+    timezone,
+    language,
+    currency,
+    fx: {
+      source,
+      autoRefresh:
+        typeof input.fx?.autoRefresh === 'boolean'
+          ? input.fx.autoRefresh
+          : DEFAULT_GENERAL_SETTINGS.fx.autoRefresh,
+      lastRefreshedAt:
+        typeof input.fx?.lastRefreshedAt === 'string' ? input.fx.lastRefreshedAt : null,
+    },
+  };
+}
+
+function readJsonFile<T>(filePath: string): T | null {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as T;
+  } catch {
+    return null;
+  }
+}
+
+function writeJsonFile(filePath: string, value: unknown) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, {
+    encoding: 'utf-8',
+    mode: 0o600,
+  });
+  try {
+    fs.chmodSync(path.dirname(filePath), 0o700);
+    fs.chmodSync(filePath, 0o600);
+  } catch {
+    // Best-effort hardening; unsupported filesystems should not block local settings updates.
+  }
+}

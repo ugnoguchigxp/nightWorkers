@@ -15,10 +15,12 @@ import type {
 import { ArtifactPane } from './ArtifactPane';
 import { FolderBrowserDialog } from './FolderBrowserDialog';
 import { ImplementationQueueScreen } from './ImplementationQueueScreen';
+import { OverviewScreen } from './OverviewScreen';
 import { ProjectSidebar } from './ProjectSidebar';
 import { SettingsButton } from './SettingsButton';
 import { SettingsScreen } from './SettingsScreen';
 import { ThreadWorkspace } from './ThreadWorkspace';
+import { TodoListPane } from './TodoListPane';
 
 type NightWorkersShellProps = {
   workspace: NightWorkersWorkspaceState;
@@ -60,10 +62,18 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const [selectedArtifact, setSelectedArtifact] = useState<WorkbenchArtifactRef | null>(null);
   const [showArtifactPane, setShowArtifactPane] = useState(false);
   const [showQueueScreen, setShowQueueScreen] = useState(false);
+  const [showOverviewScreen, setShowOverviewScreen] = useState(true);
   const [queueProjectFilterId, setQueueProjectFilterId] = useState<string | null>(null);
   const artifactPaneOpen = showArtifactPane || Boolean(selectedArtifact);
   const isBlueprintArtifactOpen = artifactPaneOpen && selectedArtifact?.kind === 'app_blueprint';
   const isDiffArtifactOpen = artifactPaneOpen && selectedArtifact?.kind === 'diff';
+  const todoPaneOpen =
+    !props.showSettings &&
+    !showOverviewScreen &&
+    !showQueueScreen &&
+    !artifactPaneOpen &&
+    Boolean(workspace.activeSession) &&
+    workspace.latestRunTodos.length > 0;
 
   useEffect(() => {
     workspaceRef.current = workspace;
@@ -128,6 +138,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     setSelectedArtifact(null);
     setShowArtifactPane(false);
     setShowQueueScreen(false);
+    setShowOverviewScreen(false);
     workspaceRef.current.setActiveSessionId(sessionId);
   }, []);
   const handleCreateSession = useCallback((repositoryId: string) => {
@@ -159,7 +170,15 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     setShowArtifactPane(false);
     setQueueProjectFilterId(projectId);
     setShowQueueScreen(true);
+    setShowOverviewScreen(false);
   }, []);
+  const handleOpenOverview = useCallback(() => {
+    setSelectedArtifact(null);
+    setShowArtifactPane(false);
+    setShowQueueScreen(false);
+    setShowOverviewScreen(true);
+    props.onCloseSettings();
+  }, [props.onCloseSettings]);
 
   return (
     <div
@@ -193,6 +212,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
             onCreateSession={handleCreateSession}
             onDeleteProject={handleDeleteProject}
             onToggleProject={handleToggleProject}
+            onOpenOverview={handleOpenOverview}
+            isOverviewActive={showOverviewScreen && !props.showSettings}
             onOpenQueue={handleOpenQueue}
             onOpenFolderBrowser={handleOpenFolderBrowser}
           />
@@ -203,10 +224,16 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         <Panel
           id="nightworkers-chat"
           defaultSize={`${initialPanelSizes.current[1]}%`}
-          minSize={artifactPaneOpen ? '28%' : '58%'}
+          minSize={artifactPaneOpen ? '28%' : todoPaneOpen ? '48%' : '58%'}
         >
           {props.showSettings ? (
             <SettingsScreen onClose={props.onCloseSettings} workspace={workspace} />
+          ) : showOverviewScreen ? (
+            <OverviewScreen
+              projects={workspace.projects}
+              initialProjectFilterId={null}
+              onOpenSession={(sessionId) => handleSelectSession(sessionId)}
+            />
           ) : showQueueScreen ? (
             <ImplementationQueueScreen
               dashboard={workspace.implementationQueue}
@@ -229,10 +256,10 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               latestRun={workspace.latestRun}
               taskMessages={workspace.taskMessages}
               latestRunEvents={workspace.latestRunEvents}
+              llmUsageSummary={workspace.llmUsageSummary}
               activityEvents={workspace.activityEvents}
               activityArtifacts={workspace.activityArtifacts}
               activeStreamingResponse={workspace.activeStreamingResponse}
-              latestRunTodos={workspace.latestRunTodos}
               artifactRefs={workspace.activeArtifactRefs}
               isAgentWorking={workspace.isAgentWorking}
               isAgentThinking={workspace.isAgentThinking}
@@ -284,6 +311,16 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
             />
           )}
         </Panel>
+        {todoPaneOpen ? (
+          <>
+            <Separator className="group relative w-1 shrink-0 bg-slate-800 outline-none transition-colors hover:bg-slate-600 focus-visible:bg-slate-500">
+              <span className="-translate-x-1/2 absolute top-1/2 left-1/2 h-12 w-1 rounded-full bg-slate-600/70 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+            </Separator>
+            <Panel id="nightworkers-todos" defaultSize="30%" minSize="24%" maxSize="38%">
+              <TodoListPane todos={workspace.latestRunTodos} />
+            </Panel>
+          </>
+        ) : null}
         {artifactPaneOpen ? (
           <>
             <Separator className="group relative w-1 shrink-0 bg-slate-800 outline-none transition-colors hover:bg-slate-600 focus-visible:bg-slate-500">

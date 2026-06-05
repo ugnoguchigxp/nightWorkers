@@ -125,6 +125,13 @@ export class NativeAgentRuntime implements AgentRuntime {
         prompt: context.compiledPrompt,
         timeoutSeconds: context.timeoutSeconds,
         latestUserMessage: context.latestUserMessage,
+        promptPartTokenEstimates: {
+          latestUserMessageTokens:
+            context.contextSnapshot.conversationContext?.usage?.latestUserMessageTokens,
+          stateCardTokens: context.contextSnapshot.conversationContext?.usage?.stateCardTokens,
+          userPromptTokens:
+            context.contextSnapshot.conversationContext?.usage?.runtimeUserPromptTokens,
+        },
         todoPlan: context.todoPlan,
         currentTodo: context.currentTodo,
         safetyPolicy: context.safetyPolicy,

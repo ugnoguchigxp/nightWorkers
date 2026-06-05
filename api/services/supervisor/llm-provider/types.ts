@@ -1,3 +1,5 @@
+import type { LlmPromptPartTokenEstimates, NormalizedLlmUsage } from '../../llm-usage/types';
+
 export type CallSupervisorOptions = {
   tolerateSchemaFailure?: boolean;
   round?: 1 | 2;
@@ -5,6 +7,16 @@ export type CallSupervisorOptions = {
   emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
   timeoutMs?: number;
   workingDirectory?: string;
+  taskId?: string;
+  runId?: string | null;
+  promptPartTokenEstimates?: LlmPromptPartTokenEstimates;
+};
+
+export type ProviderCallResult = {
+  content: string;
+  usage: NormalizedLlmUsage;
+  model?: string | null;
+  providerDebug?: Record<string, unknown>;
 };
 
 export type StructuredJsonLlmOptions = Omit<CallSupervisorOptions, 'schemaFirst' | 'round'> & {

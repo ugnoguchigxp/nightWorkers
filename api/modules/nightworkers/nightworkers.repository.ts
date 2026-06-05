@@ -52,6 +52,7 @@ const KNOWN_ACTIVITY_KINDS = new Set([
   'llm.decision_json',
   'llm.schema_result',
   'llm.error',
+  'llm.usage',
   'runtime.decision',
   'runtime.state',
   'tool.call',
@@ -1222,6 +1223,49 @@ export async function createTaskRunTodo(data: {
     })
     .returning();
   return todo;
+}
+
+export async function replaceTaskRunTodosForRun(
+  runId: string,
+  todos: Array<{
+    seq: number;
+    title: string;
+    description?: string | null;
+    taskType: string;
+    status?: string;
+    procedureId?: string | null;
+    procedureSnapshot?: any;
+    contextSnapshot?: any;
+    completionGateResult?: any;
+    dependsOn?: Array<string | number> | null;
+    statusReason?: string | null;
+    startedAt?: Date | null;
+    completedAt?: Date | null;
+  }>
+) {
+  const created = await db.transaction(async (tx) => {
+    await tx.delete(taskRunTodos).where(eq(taskRunTodos.runId, runId));
+    if (todos.length === 0) return [];
+    return tx
+      .insert(taskRunTodos)
+      .values(
+        todos.map((todo) => ({
+          ...todo,
+          runId,
+          dependsOn: todo.dependsOn ?? [],
+        }))
+      )
+      .returning();
+  });
+  const [run] = await db.select().from(taskRuns).where(eq(taskRuns.id, runId));
+  if (run) {
+    nightWorkersRealtimeBroker.publish(run.taskId, {
+      type: 'task_run_updated',
+      runId: run.id,
+      payload: { run },
+    });
+  }
+  return created;
 }
 
 export async function listTaskRunTodosForRun(runId: string) {

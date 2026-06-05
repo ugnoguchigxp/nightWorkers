@@ -31,6 +31,7 @@ import type {
   RunDetails,
   Task,
   TaskEvent,
+  TaskLlmUsageSummary,
   TaskMessage,
   TaskRun,
   TaskRunTodo,
@@ -93,6 +94,7 @@ export type NightWorkersWorkspaceState = {
   latestRun: TaskRun | undefined;
   taskMessages: TaskMessage[];
   latestRunEvents: TaskEvent[];
+  llmUsageSummary: TaskLlmUsageSummary | null;
   activityEvents: ActivityEvent[];
   activityArtifacts: ActivityArtifact[];
   activeStreamingResponse: string;
@@ -306,6 +308,19 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       const res = await fetch(`/api/tasks/${activeSessionId}/messages`);
       if (!res.ok) throw new Error('Failed to fetch task messages');
       return (await res.json()) as TaskMessage[];
+    },
+    enabled: !!activeSessionId,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
+  const { data: llmUsageSummary = null } = useQuery({
+    queryKey: ['llmUsage', activeSessionId],
+    queryFn: async () => {
+      if (!activeSessionId) return null;
+      const res = await fetch(`/api/tasks/${activeSessionId}/llm-usage`);
+      if (!res.ok) throw new Error('Failed to fetch LLM usage summary');
+      return (await res.json()) as TaskLlmUsageSummary;
     },
     enabled: !!activeSessionId,
     refetchOnWindowFocus: false,
@@ -1044,6 +1059,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
             if (incoming.artifactId) {
               void queryClient.invalidateQueries({ queryKey: ['activityReplay', incoming.taskId] });
             }
+            if (incoming.kind === 'llm.usage') {
+              void queryClient.invalidateQueries({ queryKey: ['llmUsage', incoming.taskId] });
+            }
           }
           if (msg.type === 'task_llm_delta' && activeSessionId) {
             const taskId = msg.taskId || activeSessionId;
@@ -1086,6 +1104,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
           }
           if (msg.type === 'task_message_created' && msg.payload?.message) {
             const incoming = msg.payload.message;
+            void queryClient.invalidateQueries({ queryKey: ['llmUsage', incoming.taskId] });
             queryClient.setQueryData<TaskMessage[]>(
               ['taskMessages', activeSessionId],
               (prev = []) => {
@@ -1150,6 +1169,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
           }
           if (msg.type === 'task_run_updated' && msg.payload?.run) {
             const incomingRun = msg.payload.run as TaskRun;
+            void queryClient.invalidateQueries({ queryKey: ['llmUsage', incomingRun.taskId] });
             queryClient.setQueryData<TaskRun[]>(['sessionRuns', activeSessionId], (prev = []) => {
               const next = [...prev];
               const idx = next.findIndex((r) => r.id === incomingRun.id);
@@ -1255,6 +1275,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     latestRun,
     taskMessages,
     latestRunEvents,
+    llmUsageSummary,
     activityEvents,
     activityArtifacts,
     activeStreamingResponse: activeSessionId ? streamingTextByTask[activeSessionId] || '' : '',

@@ -1,6 +1,7 @@
 import { CodeBlock } from '@repo/design-system';
 import { ChevronRight, File, Folder, GitCompare } from 'lucide-react';
 import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Components } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -113,6 +114,7 @@ export function ArtifactPane({
   onSubmitWorkbenchMessage,
   isWorkbenchMessageSubmitting = false,
 }: ArtifactPaneProps) {
+  const { t } = useTranslation();
   const showDiff = selectedArtifact?.kind === 'diff';
   const showBlueprint = selectedArtifact?.kind === 'app_blueprint';
   const showComponentDesign =
@@ -128,12 +130,14 @@ export function ArtifactPane({
     !showBlueprint &&
     !showComponentDesign &&
     Boolean(selectedMessage);
-  const artifactTitle = selectedArtifact?.title || selectedFilePath || 'Project tree';
+  const artifactTitle = selectedArtifact?.title || selectedFilePath || t('artifact.projectTree');
   return (
     <aside className="flex min-h-screen min-w-0 flex-col border-l border-[#313244] bg-[#1e1e2e]">
       <div className="flex h-10 shrink-0 items-center border-b border-[#313244] bg-[#1e1e2e] px-3 pr-12">
         <div className="flex min-w-0 items-center gap-2 text-sm">
-          <span className="truncate text-[#a6adc8]">{activeProject?.name || 'Project'}</span>
+          <span className="truncate text-[#a6adc8]">
+            {activeProject?.name || t('artifact.project')}
+          </span>
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[#6c7086]" />
           <span className="truncate font-medium text-[#cdd6f4]">{artifactTitle}</span>
         </div>
@@ -185,10 +189,10 @@ export function ArtifactPane({
           ) : selectedFile ? (
             <FileViewer file={selectedFile} />
           ) : isFileLoading ? (
-            <p className="text-xs text-slate-400">Loading file...</p>
+            <p className="text-xs text-slate-400">{t('artifact.loadingFile')}</p>
           ) : (
             <div className="flex h-full items-center justify-center text-xs text-slate-500">
-              Select a file or open the diff.
+              {t('artifact.selectFileOrDiff')}
             </div>
           )}
         </div>
@@ -220,6 +224,8 @@ function FilesOutline({
   onOpenFile: (path: string) => void;
   onShowDiff: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <>
       {latestRun?.diffPatch?.trim() ? (
@@ -229,11 +235,11 @@ function FilesOutline({
           onClick={onShowDiff}
         >
           <GitCompare className="h-3.5 w-3.5" />
-          Diff
+          {t('artifact.diff')}
         </button>
       ) : null}
       {isFilesLoading ? (
-        <div className="px-2 py-1 text-[11px] text-slate-500">Loading...</div>
+        <div className="px-2 py-1 text-[11px] text-slate-500">{t('artifact.loading')}</div>
       ) : (
         <ProjectTree
           entries={fileEntries}
@@ -266,8 +272,10 @@ function BlueprintViewer({
   isDbDesignSubmitting?: boolean;
   onSubmitDbDesignRequest?: (prompt: string) => Promise<void>;
 }) {
+  const { t } = useTranslation();
+
   if (!isObject(blueprint)) {
-    return <MarkdownViewer content={markdown || 'No Blueprint content'} />;
+    return <MarkdownViewer content={markdown || t('artifact.noBlueprintContent')} />;
   }
   const screens = toObjectArray(blueprint.screens);
   const tables =
@@ -279,7 +287,7 @@ function BlueprintViewer({
   return (
     <div className="h-full overflow-y-auto px-6 py-5 text-sm text-slate-100">
       <div className="grid gap-4">
-        <BlueprintSection title="Design Preview">
+        <BlueprintSection title={t('artifact.designPreview')}>
           <BlueprintPreview
             key={String(blueprint.id || blueprint.name || screens[0]?.id || 'draft-blueprint')}
             sessionId={sessionId}
@@ -294,7 +302,7 @@ function BlueprintViewer({
           />
         </BlueprintSection>
         <PromptDetail>
-          <BlueprintSection title="Screen Composition">
+          <BlueprintSection title={t('artifact.screenComposition')}>
             {screens.map((screen, index) => (
               <div
                 key={String(screen?.id || index)}
@@ -326,7 +334,7 @@ function BlueprintViewer({
               </div>
             ))}
           </BlueprintSection>
-          <BlueprintSection title="Validation Issues">
+          <BlueprintSection title={t('artifact.validationIssues')}>
             {issues.length > 0 ? (
               issues.map((issue, index) => (
                 <div
@@ -341,7 +349,7 @@ function BlueprintViewer({
               ))
             ) : (
               <div className="rounded border border-emerald-700/60 bg-emerald-950/20 p-2 text-xs text-emerald-100">
-                No validation issues.
+                {t('artifact.noValidationIssues')}
               </div>
             )}
           </BlueprintSection>
@@ -352,7 +360,10 @@ function BlueprintViewer({
 }
 
 function ComponentDesignViewer({ artifact, markdown }: { artifact: unknown; markdown?: string }) {
-  if (!isObject(artifact)) return <MarkdownViewer content={markdown || 'No component design'} />;
+  const { t } = useTranslation();
+
+  if (!isObject(artifact))
+    return <MarkdownViewer content={markdown || t('artifact.noComponentDesign')} />;
   const variants = toObjectArray(artifact.variants);
   const tokenChanges = toObjectArray(artifact.tokenChanges);
   const discussionPrompts = Array.isArray(artifact.discussionPrompts)
@@ -361,17 +372,19 @@ function ComponentDesignViewer({ artifact, markdown }: { artifact: unknown; mark
   return (
     <div className="h-full overflow-y-auto px-6 py-5 text-sm text-slate-100">
       <div className="mb-5 border-slate-700 border-b pb-4">
-        <div className="text-xs font-semibold uppercase text-cyan-200">Component Design</div>
+        <div className="text-xs font-semibold uppercase text-cyan-200">
+          {t('artifact.componentDesign')}
+        </div>
         <h1 className="mt-1 text-xl font-semibold text-slate-50">
-          {String(artifact.componentName || 'Component')}
+          {String(artifact.componentName || t('artifact.componentFallback'))}
         </h1>
         <div className="mt-1 text-xs text-slate-400">{String(artifact.scope || '')}</div>
         <p className="mt-3 line-clamp-3 text-xs leading-5 text-slate-300">
-          {String(artifact.summary || 'No summary')}
+          {String(artifact.summary || t('artifact.noSummary'))}
         </p>
       </div>
       <div className="grid gap-4">
-        <BlueprintSection title="Variant Preview">
+        <BlueprintSection title={t('artifact.variantPreview')}>
           <div className="grid gap-3 sm:grid-cols-2">
             {variants.map((variant, index) => (
               <div
@@ -382,13 +395,15 @@ function ComponentDesignViewer({ artifact, markdown }: { artifact: unknown; mark
                   <span className="text-xs font-medium text-slate-100">
                     {String(variant.name || 'variant')}
                   </span>
-                  <span className="text-[10px] uppercase text-slate-500">Button</span>
+                  <span className="text-[10px] uppercase text-slate-500">
+                    {t('artifact.button')}
+                  </span>
                 </div>
                 <button
                   type="button"
                   className={componentButtonClass(String(variant.name || 'primary'))}
                 >
-                  {buttonLabelForVariant(String(variant.name || 'primary'))}
+                  {buttonLabelForVariant(String(variant.name || 'primary'), t)}
                 </button>
                 <p className="mt-3 text-[11px] leading-4 text-slate-400">
                   {String(variant.purpose || '')}
@@ -407,7 +422,7 @@ function ComponentDesignViewer({ artifact, markdown }: { artifact: unknown; mark
             ))}
           </div>
         </BlueprintSection>
-        <BlueprintSection title="Token Changes">
+        <BlueprintSection title={t('artifact.tokenChanges')}>
           {tokenChanges.map((change, index) => (
             <div
               key={String(change.token || index)}
@@ -415,14 +430,14 @@ function ComponentDesignViewer({ artifact, markdown }: { artifact: unknown; mark
             >
               <div className="font-medium text-slate-100">{String(change.token || '')}</div>
               <div className="mt-2 grid gap-2 md:grid-cols-2">
-                <TokenValue label="Before" value={String(change.before || '')} />
-                <TokenValue label="Proposed" value={String(change.proposed || '')} />
+                <TokenValue label={t('artifact.before')} value={String(change.before || '')} />
+                <TokenValue label={t('artifact.proposed')} value={String(change.proposed || '')} />
               </div>
               <p className="mt-2 leading-5 text-slate-400">{String(change.rationale || '')}</p>
             </div>
           ))}
         </BlueprintSection>
-        <BlueprintSection title="Discussion">
+        <BlueprintSection title={t('artifact.discussion')}>
           {discussionPrompts.map((prompt, index) => (
             <div
               key={`${prompt}-${index}`}
@@ -456,11 +471,11 @@ function componentButtonClass(variant: string): string {
   return `${base} border-cyan-400/70 bg-cyan-500 text-slate-950`;
 }
 
-function buttonLabelForVariant(variant: string): string {
-  if (variant === 'danger') return 'Delete';
-  if (variant === 'secondary') return 'Cancel';
+function buttonLabelForVariant(variant: string, t: (key: string) => string): string {
+  if (variant === 'danger') return t('artifact.action.delete');
+  if (variant === 'secondary') return t('artifact.action.cancel');
   if (variant === 'icon-only') return '+';
-  return 'Save';
+  return t('artifact.action.save');
 }
 
 function BlueprintSection({ title, children }: { title: string; children: React.ReactNode }) {
@@ -473,10 +488,12 @@ function BlueprintSection({ title, children }: { title: string; children: React.
 }
 
 function PromptDetail({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
+
   return (
     <details className="rounded border border-slate-800 bg-slate-950/20">
       <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold uppercase text-slate-400 hover:text-slate-200">
-        Prompt Detail
+        {t('artifact.promptDetail')}
       </summary>
       <div className="grid gap-4 border-slate-800 border-t p-3">{children}</div>
     </details>
@@ -492,12 +509,13 @@ function toObjectArray(value: unknown): Array<Record<string, any>> {
 }
 
 const FileViewer = memo(function FileViewer({ file }: { file: ProjectFileContent }) {
+  const { t } = useTranslation();
   const isMarkdown = /\.(md|mdx|markdown)$/i.test(file.path);
   return (
     <div className="flex h-full min-h-0 flex-col">
       {file.truncated ? (
         <div className="shrink-0 border-b border-[#313244] bg-[#1e1e2e] px-3 py-2 text-xs text-amber-300">
-          truncated
+          {t('artifact.truncated')}
         </div>
       ) : null}
       {isMarkdown ? (
@@ -507,7 +525,7 @@ const FileViewer = memo(function FileViewer({ file }: { file: ProjectFileContent
           className="dark nightworkers-artifact-code min-h-0 flex-1 [&_.line]:whitespace-pre-wrap [&_code]:break-words [&_code]:whitespace-pre-wrap [&_pre]:overflow-x-hidden"
           data={[
             {
-              code: file.content || 'No content',
+              code: file.content || t('artifact.noContent'),
               filename: file.path,
               language: inferLanguage(file.path),
             },
@@ -522,21 +540,24 @@ const FileViewer = memo(function FileViewer({ file }: { file: ProjectFileContent
 });
 
 const MarkdownViewer = memo(function MarkdownViewer({ content }: { content: string }) {
+  const { t } = useTranslation();
+
   return (
     <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-[#1e1e2e] px-8 py-6 text-[#cdd6f4]">
       <ReactMarkdown remarkPlugins={markdownRemarkPlugins} components={markdownComponents}>
-        {content || 'No content'}
+        {content || t('artifact.noContent')}
       </ReactMarkdown>
     </div>
   );
 });
 
 function DiffViewer({ diff }: { diff: string }) {
+  const { t } = useTranslation();
   const files = getChangedFiles(diff);
   return (
     <div className="space-y-3">
       <div className="space-y-1">
-        <div className="text-xs font-medium text-slate-100">Changed files</div>
+        <div className="text-xs font-medium text-slate-100">{t('artifact.changedFiles')}</div>
         {files.length > 0 ? (
           <ul className="grid gap-1">
             {files.map((file) => (
@@ -553,11 +574,11 @@ function DiffViewer({ diff }: { diff: string }) {
             ))}
           </ul>
         ) : (
-          <p className="text-xs text-slate-500">No changed files parsed.</p>
+          <p className="text-xs text-slate-500">{t('artifact.noChangedFiles')}</p>
         )}
       </div>
       <pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950/60 p-3 font-mono text-xs leading-5 text-slate-200">
-        {diff || 'No diff'}
+        {diff || t('artifact.noDiff')}
       </pre>
     </div>
   );
@@ -617,6 +638,7 @@ function ProjectTreeNode({
   onOpenFile: (path: string) => void;
   depth?: number;
 }) {
+  const { t } = useTranslation();
   const isDirectory = entry.type === 'directory';
   const isExpanded = Boolean(expandedDirectories[entry.path]);
   const isLoading = Boolean(loadingDirectories[entry.path]);
@@ -656,7 +678,7 @@ function ProjectTreeNode({
               className="px-2 py-1 text-[11px] text-slate-500"
               style={{ paddingLeft: `${28 + (depth + 1) * 14}px` }}
             >
-              Loading...
+              {t('artifact.loading')}
             </div>
           ) : children.length > 0 ? (
             <ul className="space-y-0.5">
@@ -679,7 +701,7 @@ function ProjectTreeNode({
               className="px-2 py-1 text-[11px] text-slate-600"
               style={{ paddingLeft: `${28 + (depth + 1) * 14}px` }}
             >
-              Empty
+              {t('artifact.empty')}
             </div>
           )}
         </div>

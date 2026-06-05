@@ -101,6 +101,9 @@ Important environment variables:
 Detailed runtime configuration:
 - [Runtime Configuration Reference](./spec/docs/configuration.md)
 
+Implementation plans:
+- [LLM Token Usage Observability Plan](./spec/llm-token-usage-observability-plan.md)
+
 ## Development Commands
 | Command | Description |
 | --- | --- |

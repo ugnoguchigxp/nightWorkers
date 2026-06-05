@@ -9,9 +9,11 @@ import {
   createReviewerEvaluationRequestSchema,
   createReviewerReplayEvaluationRequestSchema,
   createTaskSchema,
+  overviewDashboardSchema,
   repositorySchema,
   reviewerEvaluationSchema,
   taskEventSchema,
+  taskLlmUsageSummarySchema,
   taskMessageSchema,
   taskRunDetailSchema,
   taskRunSchema,
@@ -20,6 +22,7 @@ import {
 import { AppError, ValidationError } from '../../lib/errors';
 import { logEvent } from '../../lib/logger';
 import { createOpenApiRouter } from '../../lib/openapi';
+import { validateTimezone } from '../../services/settings/general-settings';
 import * as service from './nightworkers.service';
 
 function queueRouteError(c: any, err: any): any {
@@ -928,6 +931,55 @@ const listTaskMessagesRoute = createRoute({
   },
 });
 
+const getTaskLlmUsageRoute = createRoute({
+  method: 'get',
+  path: '/tasks/:id/llm-usage',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'task-uuid' }),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: taskLlmUsageSummarySchema,
+        },
+      },
+      description: 'Task LLM token usage summary',
+    },
+    404: {
+      description: 'Task not found',
+    },
+  },
+});
+
+const getOverviewDashboardRoute = createRoute({
+  method: 'get',
+  path: '/overview',
+  request: {
+    query: z.object({
+      range: z.enum(['24h', '7d', '30d', 'all']).optional(),
+      repositoryId: z.string().uuid().optional(),
+      timezone: z.string().refine(validateTimezone, 'Invalid timezone').optional(),
+      currency: z.enum(['JPY', 'USD', 'EUR']).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: overviewDashboardSchema,
+        },
+      },
+      description: 'NightWorkers overview dashboard',
+    },
+    404: {
+      description: 'Repository not found',
+    },
+  },
+});
+
 const listTaskActivityEventsRoute = createRoute({
   method: 'get',
   path: '/tasks/:id/activity-events',
@@ -1180,6 +1232,20 @@ const exportTaskRunJsonlRoute = createRoute({
 });
 
 const router = createOpenApiRouter()
+  .openapi(getOverviewDashboardRoute, async (c) => {
+    try {
+      const dashboard = await service.getOverviewDashboard(c.req.valid('query'));
+      return c.json(dashboard, 200);
+    } catch (err: any) {
+      if (err?.statusCode === 404) {
+        return c.json({ error: 'Repository not found' }, 404);
+      }
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
   // Repositories
   .openapi(listRepositoriesRoute, async (c) => {
     const list = await service.listRepositories();
@@ -1624,6 +1690,18 @@ const router = createOpenApiRouter()
     try {
       const messages = await service.listTaskMessages(id);
       return c.json(messages, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(getTaskLlmUsageRoute, async (c) => {
+    const id = c.req.param('id');
+    try {
+      const summary = await service.getTaskLlmUsageSummary(id);
+      return c.json(summary, 200);
     } catch (err: any) {
       if (err instanceof AppError) {
         return c.json({ error: err.message, code: err.code }, err.statusCode as any);

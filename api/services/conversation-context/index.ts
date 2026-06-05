@@ -1,6 +1,6 @@
 import { buildConversationContextSnapshot, finalizeSnapshotTokenEstimate } from './build';
 import { getConversationContextRuntimeOptions, isConversationContextEnabled } from './flags';
-import { buildPromptWithStateCard, renderStateCard } from './render';
+import { buildPromptWithStateCard, buildPromptWithStateCardParts, renderStateCard } from './render';
 import {
   getLatestConversationContextForTask as getLatestSnapshot,
   loadConversationContextSource,
@@ -38,6 +38,7 @@ export const getLatestConversationContextForTask = getLatestSnapshot;
 export type {
   ConversationContextRefreshResult,
   ConversationContextSnapshotRecord,
+  PromptWithStateCardParts,
   RefreshConversationContextInput,
 } from './types';
-export { buildPromptWithStateCard };
+export { buildPromptWithStateCard, buildPromptWithStateCardParts };

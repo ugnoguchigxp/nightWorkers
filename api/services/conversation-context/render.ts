@@ -1,5 +1,9 @@
 import { estimateTokens } from './token-budget';
-import type { ConversationContextOptions, ConversationContextSnapshotV1 } from './types';
+import type {
+  ConversationContextOptions,
+  ConversationContextSnapshotV1,
+  PromptWithStateCardParts,
+} from './types';
 
 const CODE_EDIT_JOB_TYPES = new Set(['code_change', 'code_edit', 'minor_code_edit']);
 
@@ -7,10 +11,26 @@ export function buildPromptWithStateCard(input: {
   latestUserMessage: string;
   stateCardText?: string | null;
 }) {
+  return buildPromptWithStateCardParts(input).promptText;
+}
+
+export function buildPromptWithStateCardParts(input: {
+  latestUserMessage: string;
+  stateCardText?: string | null;
+}): PromptWithStateCardParts {
   const request = input.latestUserMessage.trim();
   const card = input.stateCardText?.trim();
-  if (!card) return request;
-  return `<USER_REQUEST>\n${request}\n</USER_REQUEST>\n\n${card}`;
+  const promptText = card ? `<USER_REQUEST>\n${request}\n</USER_REQUEST>\n\n${card}` : request;
+  return {
+    latestUserMessage: request,
+    stateCardText: card || null,
+    promptText,
+    estimates: {
+      latestUserMessageTokens: estimateTokens(request),
+      stateCardTokens: card ? estimateTokens(card) : 0,
+      promptTokens: estimateTokens(promptText),
+    },
+  };
 }
 
 export function renderStateCard(

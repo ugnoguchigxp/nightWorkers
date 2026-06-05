@@ -1,3 +1,4 @@
+import { estimateLlmUsage, normalizeProviderUsage } from '../../llm-usage';
 import {
   buildCodexSupervisorSdkOptions,
   buildCodexSupervisorThreadOptions,
@@ -7,7 +8,7 @@ import {
 import { emitSupervisorLlmDebugEvent } from './events';
 import { readSchemaFirstFixtureOutput } from './fixture';
 import { buildOpenAIChatCompletionBody, readOpenAIChatCompletionStream } from './openai';
-import type { CallSupervisorOptions } from './types';
+import type { CallSupervisorOptions, ProviderCallResult } from './types';
 
 export type RawLlmCallOptions = CallSupervisorOptions & {
   jsonSchema?: { name: string; schema: unknown };
@@ -21,7 +22,7 @@ export async function callProvider(input: {
   options: RawLlmCallOptions;
   signal: AbortSignal;
   setProviderDebug: (value: Record<string, unknown>) => void;
-}): Promise<string> {
+}): Promise<ProviderCallResult> {
   const isEnabled = (key: string, fallback: boolean) => {
     const raw = process.env[key];
     if (!raw) return fallback;
@@ -37,24 +38,48 @@ export async function callProvider(input: {
   throw new Error(`Unsupported LLM provider: ${input.provider}`);
 }
 
-function callFixtureProvider(input: Parameters<typeof callProvider>[0]): string {
+function callFixtureProvider(input: Parameters<typeof callProvider>[0]): ProviderCallResult {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('Fixture/test provider is not available in production.');
   }
-  input.setProviderDebug({ provider: input.provider, round: input.options.round ?? null });
-  if (input.options.schemaFirst) return readSchemaFirstFixtureOutput(input.options.round);
+  const providerDebug = { provider: input.provider, round: input.options.round ?? null };
+  input.setProviderDebug(providerDebug);
+  if (input.options.schemaFirst) {
+    return buildFixtureProviderResult(
+      readSchemaFirstFixtureOutput(input.options.round),
+      input,
+      providerDebug
+    );
+  }
 
   const output = process.env.SUPERVISOR_FIXTURE_OUTPUT;
   if (!output?.trim()) {
     throw new Error('Fixture provider requires SUPERVISOR_FIXTURE_OUTPUT to be set.');
   }
-  return output;
+  return buildFixtureProviderResult(output, input, providerDebug);
+}
+
+function buildFixtureProviderResult(
+  content: string,
+  input: Parameters<typeof callProvider>[0],
+  providerDebug: Record<string, unknown>
+): ProviderCallResult {
+  return {
+    content,
+    usage: estimateLlmUsage({
+      systemPrompt: input.systemPrompt,
+      userPrompt: input.userPrompt,
+      responseText: content,
+    }),
+    model: null,
+    providerDebug,
+  };
 }
 
 async function callAzureProvider(
   input: Parameters<typeof callProvider>[0],
   isEnabled: (key: string, fallback: boolean) => boolean
-): Promise<string> {
+): Promise<ProviderCallResult> {
   if (!isEnabled('AZURE_OPENAI_ENABLED', false)) {
     throw new Error('Azure provider is inactive. Enable AZURE_OPENAI_ENABLED first.');
   }
@@ -104,19 +129,34 @@ async function callAzureProvider(
     throw new Error(`Azure OpenAI call failed with status ${response.status}: ${errorText}`);
   }
   const responseData = await response.json();
-  input.setProviderDebug({
+  const providerDebug = {
     provider: 'azure',
     status: response.status,
     deploymentName,
     hasChoices: Boolean(responseData?.choices),
-  });
-  return responseData.choices?.[0]?.message?.content || '';
+  };
+  input.setProviderDebug(providerDebug);
+  const content = responseData.choices?.[0]?.message?.content || '';
+  return {
+    content,
+    usage: normalizeProviderUsage({
+      provider: 'azure',
+      rawUsage: responseData?.usage,
+      fallback: {
+        systemPrompt: input.systemPrompt,
+        userPrompt: input.userPrompt,
+        responseText: content,
+      },
+    }),
+    model: deploymentName,
+    providerDebug,
+  };
 }
 
 async function callOpenAIProvider(
   input: Parameters<typeof callProvider>[0],
   isEnabled: (key: string, fallback: boolean) => boolean
-): Promise<string> {
+): Promise<ProviderCallResult> {
   if (!isEnabled('OPENAI_ENABLED', true)) {
     throw new Error('OpenAI provider is inactive. Enable OPENAI_ENABLED first.');
   }
@@ -171,29 +211,49 @@ async function callOpenAIProvider(
     const errorText = await response.text();
     throw new Error(`OpenAI call failed with status ${response.status}: ${errorText}`);
   }
-  const responseData = streamResponses ? null : await response.json();
-  input.setProviderDebug({
-    provider: 'openai',
-    status: response.status,
-    model,
-    streamed: streamResponses,
-    responseFormat,
-    hasChoices: Boolean(responseData?.choices),
-  });
-  return streamResponses
-    ? readOpenAIChatCompletionStream({
+  const streamResult = streamResponses
+    ? await readOpenAIChatCompletionStream({
         response,
         options: input.options,
         provider: 'openai',
         round: input.options.round,
       })
+    : null;
+  const responseData = streamResponses ? null : await response.json();
+  const content = streamResponses
+    ? streamResult?.content || ''
     : responseData?.choices?.[0]?.message?.content || '';
+  const rawUsage = streamResponses ? streamResult?.usage : responseData?.usage;
+  const providerDebug = {
+    provider: 'openai',
+    status: response.status,
+    model,
+    streamed: streamResponses,
+    responseFormat,
+    hasChoices: Boolean(responseData?.choices || streamResult),
+    hasUsage: Boolean(rawUsage),
+  };
+  input.setProviderDebug(providerDebug);
+  return {
+    content,
+    usage: normalizeProviderUsage({
+      provider: 'openai',
+      rawUsage,
+      fallback: {
+        systemPrompt: input.systemPrompt,
+        userPrompt: input.userPrompt,
+        responseText: content,
+      },
+    }),
+    model,
+    providerDebug,
+  };
 }
 
 async function callBedrockProvider(
   input: Parameters<typeof callProvider>[0],
   isEnabled: (key: string, fallback: boolean) => boolean
-): Promise<string> {
+): Promise<ProviderCallResult> {
   if (!isEnabled('AWS_BEDROCK_ENABLED', false)) {
     throw new Error('Bedrock provider is inactive. Enable AWS_BEDROCK_ENABLED first.');
   }
@@ -216,14 +276,34 @@ async function callBedrockProvider(
     }),
     { abortSignal: input.signal }
   );
-  input.setProviderDebug({ provider: 'bedrock', modelId, hasOutput: Boolean(res.output) });
-  return res.output?.message?.content?.[0]?.text || '';
+  const content = res.output?.message?.content?.[0]?.text || '';
+  const providerDebug = {
+    provider: 'bedrock',
+    modelId,
+    hasOutput: Boolean(res.output),
+    hasUsage: Boolean((res as any).usage),
+  };
+  input.setProviderDebug(providerDebug);
+  return {
+    content,
+    usage: normalizeProviderUsage({
+      provider: 'bedrock',
+      rawUsage: (res as any).usage,
+      fallback: {
+        systemPrompt: input.systemPrompt,
+        userPrompt: input.userPrompt,
+        responseText: content,
+      },
+    }),
+    model: modelId,
+    providerDebug,
+  };
 }
 
 async function callCodexProvider(
   input: Parameters<typeof callProvider>[0],
   isEnabled: (key: string, fallback: boolean) => boolean
-): Promise<string> {
+): Promise<ProviderCallResult> {
   if (!isEnabled('CODEX_ENABLED', false)) {
     throw new Error('Codex provider is inactive. Enable CODEX_ENABLED first.');
   }
@@ -245,7 +325,7 @@ async function callCodexProvider(
     signal: input.signal,
     options: input.options,
   });
-  input.setProviderDebug({
+  const providerDebug = {
     provider: 'codex',
     model: configuredModel || null,
     structuredOutput: useStructuredOutput,
@@ -253,8 +333,23 @@ async function callCodexProvider(
     workingDirectory: threadOptions.workingDirectory,
     usage: turn.usage,
     hasContent: Boolean(turn.content),
-  });
-  return turn.content || '';
+  };
+  input.setProviderDebug(providerDebug);
+  const content = turn.content || '';
+  return {
+    content,
+    usage: normalizeProviderUsage({
+      provider: 'codex',
+      rawUsage: turn.usage,
+      fallback: {
+        systemPrompt: input.systemPrompt,
+        userPrompt: input.userPrompt,
+        responseText: content,
+      },
+    }),
+    model: configuredModel || null,
+    providerDebug,
+  };
 }
 
 async function emitSchemaRetryEvents(

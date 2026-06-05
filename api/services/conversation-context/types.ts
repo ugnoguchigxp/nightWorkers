@@ -19,6 +19,17 @@ export type ConversationContextOptions = {
   smallFileCharLimit?: number;
 };
 
+export type PromptWithStateCardParts = {
+  latestUserMessage: string;
+  stateCardText: string | null;
+  promptText: string;
+  estimates: {
+    latestUserMessageTokens: number;
+    stateCardTokens: number;
+    promptTokens: number;
+  };
+};
+
 export type ConversationContextSnapshotRecord = {
   id: string;
   taskId: string;

@@ -3,6 +3,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import app from '../api/app';
 import { ensureNightWorkersSchema } from '../api/db/bootstrap';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
+import { recordLlmUsage } from '../api/services/llm-usage';
+import { upsertPricingRow } from '../api/services/pricing';
 
 const sameOriginHeaders = { Origin: 'http://localhost:39174' };
 
@@ -98,6 +100,65 @@ describe('NightWorkers repositories routes', () => {
 });
 
 describe('NightWorkers task routes', () => {
+  it('returns an overview dashboard with usage, model mix, and estimated cost', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: Overview ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: Overview target',
+      description: 'Overview usage',
+      status: 'draft',
+    });
+    await upsertPricingRow({
+      provider: 'openai',
+      model: 'test-priced-model',
+      currencyCode: 'JPY',
+      inputPer1m: 100,
+      cachedInputPer1m: 10,
+      outputPer1m: 200,
+      sourceLabel: 'test',
+      manualOverride: true,
+      enabled: true,
+    });
+    await recordLlmUsage({
+      taskId: task.id,
+      callId: crypto.randomUUID(),
+      provider: 'openai',
+      model: 'test-priced-model',
+      label: 'test-call',
+      usage: {
+        inputTokens: 1000,
+        outputTokens: 500,
+        cachedInputTokens: 100,
+        reasoningOutputTokens: null,
+        totalTokens: 1500,
+        mode: 'measured',
+      },
+      durationMs: 12,
+    });
+
+    const res = await app.request(
+      `http://localhost/api/overview?range=30d&repositoryId=${createdRepo.id}&currency=JPY`
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.usage.inputTokens).toBeGreaterThanOrEqual(1000);
+    expect(body.usage.promptInputTokens).toBeGreaterThanOrEqual(0);
+    expect(body.cost.estimatedTotal).toBeGreaterThan(0);
+    expect(body.modelBreakdown).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provider: 'openai',
+          model: 'test-priced-model',
+          pricingStatus: 'manual',
+        }),
+      ])
+    );
+  });
+
   it('persists task messages into activity ledger and replays them by task cursor', async () => {
     const createdRepo = await repo.createRepository({
       name: `TEST: Activity Message ${crypto.randomUUID()}`,
@@ -738,5 +799,62 @@ describe('NightWorkers task run todo routes', () => {
 
     await repo.deleteTask(task.id);
     expect(await repo.listTaskRunTodosForRun(run.id)).toEqual([]);
+  });
+
+  it('returns task LLM token usage summary', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: LLM Usage ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: LLM usage task',
+      status: 'draft',
+    });
+
+    await recordLlmUsage({
+      taskId: task.id,
+      runId: null,
+      callId: crypto.randomUUID(),
+      provider: 'openai',
+      model: 'gpt-test',
+      label: 'supervisor',
+      round: 1,
+      usage: {
+        inputTokens: 100,
+        outputTokens: 20,
+        cachedInputTokens: 10,
+        reasoningOutputTokens: 4,
+        totalTokens: 120,
+        mode: 'measured',
+        rawUsage: { prompt_tokens: 100, completion_tokens: 20 },
+      },
+      promptPartTokenEstimates: {
+        systemPromptTokens: 30,
+        userPromptTokens: 70,
+        stateCardTokens: 12,
+      },
+      durationMs: 42,
+    });
+
+    const res = await app.request(`http://localhost/api/tasks/${task.id}/llm-usage`, {
+      headers: sameOriginHeaders,
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      taskId: task.id,
+      inputTokens: 100,
+      outputTokens: 20,
+      cachedInputTokens: 10,
+      reasoningOutputTokens: 4,
+      totalTokens: 120,
+      stateCardTokens: 12,
+      usageMode: 'mixed',
+      callCount: 1,
+      measuredCallCount: 1,
+      estimatedCallCount: 0,
+    });
   });
 });

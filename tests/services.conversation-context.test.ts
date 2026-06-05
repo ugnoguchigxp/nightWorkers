@@ -13,6 +13,7 @@ import {
 import { loadConversationGitState } from '../api/services/conversation-context/git';
 import {
   buildPromptWithStateCard,
+  buildPromptWithStateCardParts,
   renderStateCard,
 } from '../api/services/conversation-context/render';
 import type {
@@ -161,6 +162,24 @@ describe('conversation context domain', () => {
         stateCardText: '<STATE_CARD>\nTask: t\n</STATE_CARD>',
       })
     ).toContain('<USER_REQUEST>\ndo work\n</USER_REQUEST>');
+  });
+
+  it('returns StateCard prompt token estimates without changing wrapper output', () => {
+    const stateCardText = '<STATE_CARD>\nTask: t\n</STATE_CARD>';
+    const parts = buildPromptWithStateCardParts({
+      latestUserMessage: ' do work ',
+      stateCardText,
+    });
+
+    expect(parts.promptText).toBe(
+      buildPromptWithStateCard({
+        latestUserMessage: ' do work ',
+        stateCardText,
+      })
+    );
+    expect(parts.estimates.latestUserMessageTokens).toBeGreaterThan(0);
+    expect(parts.estimates.stateCardTokens).toBeGreaterThan(0);
+    expect(parts.estimates.promptTokens).toBeGreaterThan(parts.estimates.latestUserMessageTokens);
   });
 
   it('does not reintroduce pruned small-file snippets in later budget passes', () => {

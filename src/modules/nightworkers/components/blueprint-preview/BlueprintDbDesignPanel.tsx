@@ -1,5 +1,6 @@
 import { ChevronDown, Database, Loader2, Send, Table2 } from 'lucide-react';
 import { type FormEvent, type ReactNode, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   type BlueprintDbDesignTarget,
   bindingCountForTable,
@@ -32,6 +33,7 @@ export function BlueprintDbDesignPanel({
   isSubmitting = false,
   onSubmitDbDesignRequest,
 }: BlueprintDbDesignPanelProps) {
+  const { t } = useTranslation();
   const relations = useMemo(
     () =>
       blueprint.databaseSchema && Array.isArray(blueprint.databaseSchema.relations)
@@ -69,32 +71,32 @@ export function BlueprintDbDesignPanel({
         <div className="min-w-0">
           <div className="flex items-center gap-2 font-semibold text-foreground">
             <Database className="h-3.5 w-3.5 text-primary" />
-            DB Design
+            {t('blueprint.db.title')}
           </div>
-          <p className="mt-1 text-muted-foreground leading-5">
-            Design the Blueprint data contract. No SQL or physical database changes are applied.
-          </p>
+          <p className="mt-1 text-muted-foreground leading-5">{t('blueprint.db.description')}</p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-1.5">
           {adoption}
-          <Badge>{tables.length} tables</Badge>
-          <Badge>{relations.length} relations</Badge>
-          <Badge>{bindings.length} bindings</Badge>
+          <Badge>{t('blueprint.db.tablesCount', { count: tables.length })}</Badge>
+          <Badge>{t('blueprint.db.relationsCount', { count: relations.length })}</Badge>
+          <Badge>{t('blueprint.db.bindingsCount', { count: bindings.length })}</Badge>
           <Badge tone={validationIssues.length === 0 ? 'success' : 'warning'}>
-            {validationIssues.length === 0 ? 'valid' : `${validationIssues.length} issues`}
+            {validationIssues.length === 0
+              ? t('blueprint.db.valid')
+              : t('blueprint.db.issuesCount', { count: validationIssues.length })}
           </Badge>
         </div>
       </header>
 
       <section className="grid gap-2">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="font-semibold text-foreground">Tables</h3>
+          <h3 className="font-semibold text-foreground">{t('blueprint.db.tables')}</h3>
           <button
             type="button"
             className={target.kind === 'schema' ? selectedTargetClass : targetButtonClass}
             onClick={() => setTarget({ kind: 'schema' })}
           >
-            Whole schema
+            {t('blueprint.db.wholeSchema')}
           </button>
         </div>
         {tables.length > 0 ? (
@@ -118,11 +120,15 @@ export function BlueprintDbDesignPanel({
                         {String(table.label || table.name)}
                       </span>
                       <span className="mt-1 flex flex-wrap gap-1.5">
-                        <Badge>{columns.length} columns</Badge>
+                        <Badge>{t('blueprint.db.columnsCount', { count: columns.length })}</Badge>
                         <Badge>
-                          {Array.isArray(table.indexes) ? table.indexes.length : 0} indexes
+                          {t('blueprint.db.indexesCount', {
+                            count: Array.isArray(table.indexes) ? table.indexes.length : 0,
+                          })}
                         </Badge>
-                        <Badge>{tableBindingCount} bindings</Badge>
+                        <Badge>
+                          {t('blueprint.db.bindingsCount', { count: tableBindingCount })}
+                        </Badge>
                       </span>
                     </span>
                     <ChevronDown
@@ -136,7 +142,7 @@ export function BlueprintDbDesignPanel({
                       <ColumnTable columns={columns} />
                       {tableRelations.length > 0 ? (
                         <div className="grid gap-1.5">
-                          <div className="text-muted-foreground">Relations</div>
+                          <div className="text-muted-foreground">{t('blueprint.db.relations')}</div>
                           <div className="flex flex-wrap gap-1.5">
                             {tableRelations.map((relation, index) => (
                               <button
@@ -176,8 +182,7 @@ export function BlueprintDbDesignPanel({
           </div>
         ) : (
           <div className="rounded border border-dashed border-border p-3 text-muted-foreground">
-            No tables are defined yet. Select Whole schema and ask the agent to infer the first data
-            model.
+            {t('blueprint.db.noTables')}
           </div>
         )}
       </section>
@@ -188,7 +193,7 @@ export function BlueprintDbDesignPanel({
       <form className="grid gap-2 border-border border-t pt-3" onSubmit={handleSubmit}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-muted-foreground">
-            Selected target:{' '}
+            {t('blueprint.db.selectedTarget')}{' '}
             <span className="font-semibold text-foreground">{targetLabel(target)}</span>
           </div>
           <span className="text-muted-foreground">{prompt.length}/4000</span>
@@ -197,7 +202,7 @@ export function BlueprintDbDesignPanel({
           className="min-h-24 resize-none rounded border border-input bg-background px-3 py-2 leading-5 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
           maxLength={4000}
           onChange={(event) => setPrompt(event.target.value)}
-          placeholder="必要な table、column、relation、binding の変更を入力"
+          placeholder={t('blueprint.db.placeholder')}
           value={prompt}
         />
         <div className="flex justify-end">
@@ -211,7 +216,7 @@ export function BlueprintDbDesignPanel({
             ) : (
               <Send className="h-3.5 w-3.5" />
             )}
-            Ask agent
+            {t('blueprint.db.askAgent')}
           </button>
         </div>
       </form>
@@ -220,15 +225,17 @@ export function BlueprintDbDesignPanel({
 }
 
 function ColumnTable({ columns }: { columns: Array<Record<string, unknown>> }) {
+  const { t } = useTranslation();
+
   return (
     <div className="overflow-x-auto rounded border border-border bg-background">
       <table className="w-full min-w-[34rem] text-left text-[11px]">
         <thead className="text-muted-foreground">
           <tr>
-            <th className="px-2 py-1.5 font-medium">column</th>
-            <th className="px-2 py-1.5 font-medium">type</th>
-            <th className="px-2 py-1.5 font-medium">constraints</th>
-            <th className="px-2 py-1.5 font-medium">ui</th>
+            <th className="px-2 py-1.5 font-medium">{t('blueprint.db.column')}</th>
+            <th className="px-2 py-1.5 font-medium">{t('blueprint.db.type')}</th>
+            <th className="px-2 py-1.5 font-medium">{t('blueprint.db.constraints')}</th>
+            <th className="px-2 py-1.5 font-medium">{t('blueprint.db.ui')}</th>
           </tr>
         </thead>
         <tbody>
@@ -264,7 +271,7 @@ function RelatedBindings({
   onSelect: (target: BlueprintDbDesignTarget) => void;
 }) {
   if (bindings.length === 0) {
-    return <span className="text-muted-foreground">No bindings for this table.</span>;
+    return <NoBindingsForTable />;
   }
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -286,6 +293,11 @@ function RelatedBindings({
   );
 }
 
+function NoBindingsForTable() {
+  const { t } = useTranslation();
+  return <span className="text-muted-foreground">{t('blueprint.db.noBindingsForTable')}</span>;
+}
+
 function BindingSummary({
   bindings,
   selectedTarget,
@@ -295,10 +307,12 @@ function BindingSummary({
   selectedTarget: BlueprintDbDesignTarget;
   onSelect: (target: BlueprintDbDesignTarget) => void;
 }) {
+  const { t } = useTranslation();
+
   if (bindings.length === 0) return null;
   return (
     <section className="grid gap-2">
-      <h3 className="font-semibold text-foreground">Bindings</h3>
+      <h3 className="font-semibold text-foreground">{t('blueprint.db.bindings')}</h3>
       <div className="grid gap-1.5">
         {bindings.map((binding) => (
           <button
@@ -332,6 +346,7 @@ function ScreenTargets({
   selectedTarget: BlueprintDbDesignTarget;
   onSelect: (target: BlueprintDbDesignTarget) => void;
 }) {
+  const { t } = useTranslation();
   const targets = screens.flatMap((screen) =>
     Array.isArray(screen.sections)
       ? screen.sections.map((section: Record<string, unknown>) => ({
@@ -344,7 +359,7 @@ function ScreenTargets({
   if (targets.length === 0) return null;
   return (
     <section className="grid gap-2">
-      <h3 className="font-semibold text-foreground">Screen context</h3>
+      <h3 className="font-semibold text-foreground">{t('blueprint.db.screenContext')}</h3>
       <div className="flex flex-wrap gap-1.5">
         {targets.map((item) => (
           <button

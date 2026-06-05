@@ -1,6 +1,7 @@
 import { Button } from '@repo/design-system';
 import { Archive, Cpu, ListTodo, Minus, Plus, SlidersHorizontal } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import type {
   ImplementationQueueDashboard,
   ImplementationQueueItem,
@@ -24,6 +25,7 @@ type ImplementationQueueScreenProps = {
 };
 
 export function ImplementationQueueScreen(props: ImplementationQueueScreenProps) {
+  const { t } = useTranslation();
   const dashboard = props.dashboard;
   const filteredQueued = filterItems(dashboard?.queued || [], props.activeProjectFilterId);
   const filteredCompleted = filterItems(dashboard?.completed || [], props.activeProjectFilterId);
@@ -36,10 +38,8 @@ export function ImplementationQueueScreen(props: ImplementationQueueScreenProps)
     <main className="flex h-full min-h-0 flex-col bg-[#111827] text-slate-100">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-slate-800 border-b px-5 py-3">
         <div>
-          <h1 className="font-semibold text-base text-slate-100">Implementation Queue</h1>
-          <div className="mt-1 text-slate-400 text-xs">
-            Processor automation is separate from normal Session chat.
-          </div>
+          <h1 className="font-semibold text-base text-slate-100">{t('queue.title')}</h1>
+          <div className="mt-1 text-slate-400 text-xs">{t('queue.description')}</div>
         </div>
         <div className="flex items-center gap-2">
           <select
@@ -47,7 +47,7 @@ export function ImplementationQueueScreen(props: ImplementationQueueScreenProps)
             value={props.activeProjectFilterId || ''}
             onChange={(event) => props.onSetProjectFilter(event.target.value || null)}
           >
-            <option value="">All projects</option>
+            <option value="">{t('queue.allProjects')}</option>
             {props.projects.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.name}
@@ -59,18 +59,18 @@ export function ImplementationQueueScreen(props: ImplementationQueueScreenProps)
               type="button"
               className="flex h-8 w-8 items-center justify-center text-slate-300 hover:text-slate-100"
               onClick={() => props.onUpdateProcessorCount(Math.max(1, processorCount - 1))}
-              title="Decrease processors"
+              title={t('queue.decreaseProcessors')}
             >
               <Minus className="h-3.5 w-3.5" />
             </button>
             <span className="w-20 text-center font-medium text-xs">
-              {processorCount} processor{processorCount === 1 ? '' : 's'}
+              {t('queue.processorCount', { count: processorCount })}
             </span>
             <button
               type="button"
               className="flex h-8 w-8 items-center justify-center text-slate-300 hover:text-slate-100"
               onClick={() => props.onUpdateProcessorCount(Math.min(3, processorCount + 1))}
-              title="Increase processors"
+              title={t('queue.increaseProcessors')}
             >
               <Plus className="h-3.5 w-3.5" />
             </button>
@@ -79,10 +79,10 @@ export function ImplementationQueueScreen(props: ImplementationQueueScreenProps)
       </header>
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(220px,0.9fr)_minmax(280px,1.15fr)_minmax(280px,1fr)] gap-0 overflow-hidden">
         <section className="min-h-0 border-slate-800 border-r">
-          <SectionHeader icon={<Cpu className="h-4 w-4" />} label="Processors" />
+          <SectionHeader icon={<Cpu className="h-4 w-4" />} label={t('queue.processors')} />
           <div className="nightworkers-scrollbar min-h-0 space-y-3 overflow-y-auto p-3">
             {props.isLoading ? (
-              <EmptyState text="Loading processors..." />
+              <EmptyState text={t('queue.loadingProcessors')} />
             ) : (
               (dashboard?.processors || []).map((processor) => (
                 <ProcessorLane
@@ -96,10 +96,10 @@ export function ImplementationQueueScreen(props: ImplementationQueueScreenProps)
           </div>
         </section>
         <section className="min-h-0 border-slate-800 border-r">
-          <SectionHeader icon={<ListTodo className="h-4 w-4" />} label="Queue" />
+          <SectionHeader icon={<ListTodo className="h-4 w-4" />} label={t('queue.queue')} />
           <div className="nightworkers-scrollbar min-h-0 space-y-2 overflow-y-auto p-3">
             {filteredQueued.length === 0 ? (
-              <EmptyState text="No implementation tasks are waiting." />
+              <EmptyState text={t('queue.emptyWaiting')} />
             ) : (
               filteredQueued.map((entry, index) => (
                 <QueueItem
@@ -114,10 +114,10 @@ export function ImplementationQueueScreen(props: ImplementationQueueScreenProps)
         </section>
         <section className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto_minmax(0,0.85fr)]">
           <div className="min-h-0">
-            <SectionHeader icon={<Plus className="h-4 w-4" />} label="Not Queued" />
+            <SectionHeader icon={<Plus className="h-4 w-4" />} label={t('queue.notQueued')} />
             <div className="nightworkers-scrollbar min-h-0 space-y-2 overflow-y-auto p-3">
               {filteredNotQueued.length === 0 ? (
-                <EmptyState text="No plan-ready Sessions are outside the Queue." />
+                <EmptyState text={t('queue.emptyNotQueued')} />
               ) : (
                 filteredNotQueued.map((item) => (
                   <NotQueuedItem
@@ -137,10 +137,10 @@ export function ImplementationQueueScreen(props: ImplementationQueueScreenProps)
             onUpdate={props.onUpdateTodoWorkflowSettings}
           />
           <div className="min-h-0 border-slate-800 border-t">
-            <SectionHeader icon={<Archive className="h-4 w-4" />} label="Completed" />
+            <SectionHeader icon={<Archive className="h-4 w-4" />} label={t('queue.completed')} />
             <div className="nightworkers-scrollbar min-h-0 space-y-2 overflow-y-auto p-3">
               {filteredCompleted.length === 0 ? (
-                <EmptyState text="No completed queue executions need archive." />
+                <EmptyState text={t('queue.emptyCompleted')} />
               ) : (
                 filteredCompleted.map((entry) => (
                   <CompletedItem
@@ -177,11 +177,13 @@ function ProcessorLane({
   entry: ImplementationQueueItem | null;
   onOpenSession: (sessionId: string) => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="rounded-md border border-slate-700 bg-slate-950/55 p-3">
       <div className="mb-2 flex items-center justify-between text-xs">
-        <span className="font-semibold text-cyan-200">Processor {slot}</span>
-        <span className="text-slate-500">{entry ? entry.status : 'idle'}</span>
+        <span className="font-semibold text-cyan-200">{t('queue.processor', { slot })}</span>
+        <span className="text-slate-500">{entry ? entry.status : t('queue.idle')}</span>
       </div>
       {entry ? (
         <button
@@ -192,11 +194,13 @@ function ProcessorLane({
           <div className="truncate font-medium text-sm text-slate-100">{entry.task.title}</div>
           <div className="mt-1 truncate text-slate-400 text-xs">{entry.repository.name}</div>
           <div className="mt-2 text-slate-500 text-xs">
-            {entry.activeRunId ? `run ${entry.activeRunId.slice(0, 8)}` : 'claiming'}
+            {entry.activeRunId
+              ? t('queue.runShort', { id: entry.activeRunId.slice(0, 8) })
+              : t('queue.claiming')}
           </div>
         </button>
       ) : (
-        <EmptyState text="Waiting for the next queued implementation task." compact />
+        <EmptyState text={t('queue.waitingNextTask')} compact />
       )}
     </div>
   );
@@ -240,6 +244,8 @@ function NotQueuedItem({
   onOpenSession: () => void;
   onQueue: () => Promise<void>;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="rounded-md border border-slate-700 bg-slate-950/45 p-3">
       <button type="button" className="w-full text-left" onClick={onOpenSession}>
@@ -251,7 +257,7 @@ function NotQueuedItem({
       </button>
       <Button type="button" size="sm" className="mt-2 h-7 text-xs" onClick={() => void onQueue()}>
         <Plus className="mr-1 h-3.5 w-3.5" />
-        Queue
+        {t('queue.enqueue')}
       </Button>
     </div>
   );
@@ -266,6 +272,8 @@ function CompletedItem({
   onOpenSession: (sessionId: string) => void;
   onArchiveEntry: (entryId: string) => Promise<void>;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="rounded-md border border-slate-700 bg-slate-950/45 p-3">
       <button
@@ -284,7 +292,7 @@ function CompletedItem({
         onClick={() => void onArchiveEntry(entry.id)}
       >
         <Archive className="mr-1 h-3.5 w-3.5" />
-        Archive
+        {t('queue.archive')}
       </Button>
     </div>
   );
@@ -297,17 +305,18 @@ function TodoWorkflowPanel({
   settings: TodoWorkflowSettings | null;
   onUpdate: (input: Partial<TodoWorkflowSettings>) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const options: Array<{ key: keyof TodoWorkflowSettings; label: string }> = [
-    { key: 'requirePerTodoReview', label: 'review every Todo' },
-    { key: 'requirePerTodoFix', label: 'fix after review' },
-    { key: 'requireFinalVerification', label: 'final verify' },
-    { key: 'askCommitOnCompletion', label: 'commit prompt' },
+    { key: 'requirePerTodoReview', label: t('queue.todo.reviewEveryTodo') },
+    { key: 'requirePerTodoFix', label: t('queue.todo.fixAfterReview') },
+    { key: 'requireFinalVerification', label: t('queue.todo.finalVerify') },
+    { key: 'askCommitOnCompletion', label: t('queue.todo.commitPrompt') },
   ];
   return (
     <div className="border-slate-800 border-y p-3">
       <div className="mb-2 flex items-center gap-2 font-semibold text-slate-200 text-xs uppercase">
         <SlidersHorizontal className="h-4 w-4" />
-        <span>TODO Workflow</span>
+        <span>{t('queue.todoWorkflow')}</span>
       </div>
       <div className="grid grid-cols-2 gap-2">
         {options.map((option) => (

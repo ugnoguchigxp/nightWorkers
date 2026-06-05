@@ -37,6 +37,20 @@ describe('workbench selectors', () => {
     expect(getSessionGroup({ ...baseTask, status: 'queued' })).toBe('queue');
     expect(getSessionGroup({ ...baseTask, status: 'failed' })).toBe('archive');
     expect(
+      getSessionGroup(
+        { ...baseTask, status: 'completed', updatedAt: '2026-06-02T12:00:00Z' },
+        undefined,
+        { now: '2026-06-03T11:59:59Z' }
+      )
+    ).toBe('processing');
+    expect(
+      getSessionGroup(
+        { ...baseTask, status: 'completed', updatedAt: '2026-06-02T12:00:00Z' },
+        undefined,
+        { now: '2026-06-03T12:00:00Z' }
+      )
+    ).toBe('archive');
+    expect(
       getSessionGroup({ ...baseTask, status: 'draft' }, { ...baseRun, status: 'running' })
     ).toBe('processing');
   });
@@ -74,7 +88,7 @@ describe('workbench selectors', () => {
     expect(progress.blockers.map((blocker) => blocker.kind)).toContain('runtime');
   });
 
-  it('sorts queue by priority and archive by latest activity', () => {
+  it('keeps completed sessions active for 24 hours, then sorts archive by latest activity', () => {
     const grouped = groupWorkbenchSessions([
       view({
         ...baseTask,
@@ -90,9 +104,20 @@ describe('workbench selectors', () => {
         priority: 5,
         updatedAt: '2026-06-02T00:00:00Z',
       }),
-      view({ ...baseTask, id: 'c', status: 'completed', updatedAt: '2026-06-02T00:00:01Z' }),
-      view({ ...baseTask, id: 'd', status: 'completed', updatedAt: '2026-06-02T00:00:03Z' }),
+      view(
+        { ...baseTask, id: 'c', status: 'completed', updatedAt: '2026-06-02T00:00:01Z' },
+        '2026-06-03T00:00:01Z'
+      ),
+      view(
+        { ...baseTask, id: 'd', status: 'completed', updatedAt: '2026-06-02T00:00:03Z' },
+        '2026-06-03T00:00:04Z'
+      ),
+      view(
+        { ...baseTask, id: 'e', status: 'completed', updatedAt: '2026-06-03T00:00:05Z' },
+        '2026-06-03T23:59:59Z'
+      ),
     ]);
+    expect(grouped.processing.map((session) => session.task.id)).toEqual(['e']);
     expect(grouped.queue.map((session) => session.task.id)).toEqual(['b', 'a']);
     expect(grouped.archive.map((session) => session.task.id)).toEqual(['d', 'c']);
   });
@@ -253,11 +278,11 @@ const baseRun: TaskRun = {
   updatedAt: '2026-06-02T00:00:02.000Z',
 };
 
-function view(task: Task) {
+function view(task: Task, now?: unknown) {
   const progress = getSessionProgress(task);
   return {
     task,
-    group: getSessionGroup(task),
+    group: getSessionGroup(task, undefined, { now }),
     phase: progress.phase,
     progress,
     artifactCounts: {},

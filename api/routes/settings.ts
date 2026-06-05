@@ -36,6 +36,16 @@ import {
   readMcpServerSettings,
   updateMcpServer,
 } from '../services/mcp/mcp-settings';
+import { listPricingRows, seedCodexPricingRows, upsertPricingRow } from '../services/pricing';
+import {
+  readFxRateCache,
+  readGeneralSettings,
+  refreshEcbFxRates,
+  SUPPORTED_CURRENCIES,
+  SUPPORTED_LANGUAGES,
+  validateTimezone,
+  writeGeneralSettings,
+} from '../services/settings/general-settings';
 import { callSupervisorLLM } from '../services/supervisor/llm-provider';
 import { buildRound1JobTypePrompt } from '../services/supervisor/prompt';
 
@@ -83,6 +93,62 @@ const SECRET_SETTING_KEYS = [
 const llmModelsSchema = z.object({
   activeProvider: z.enum(['azure', 'openai', 'bedrock', 'codex']),
   options: z.array(z.object({ value: z.string(), label: z.string() })),
+});
+
+const generalSettingsSchema = z.object({
+  timezone: z.string().refine(validateTimezone, 'Invalid timezone'),
+  language: z.enum(SUPPORTED_LANGUAGES as [string, string]),
+  currency: z.enum(SUPPORTED_CURRENCIES as [string, string, string]),
+  fx: z.object({
+    source: z.enum(['ecb', 'manual']),
+    autoRefresh: z.boolean(),
+    lastRefreshedAt: z.string().nullable(),
+  }),
+});
+
+const fxRateCacheSchema = z
+  .object({
+    source: z.enum(['ecb', 'manual']),
+    baseCurrency: z.literal('EUR'),
+    validOn: z.string(),
+    fetchedAt: z.string(),
+    rates: z.record(z.string(), z.number()),
+  })
+  .nullable();
+
+const pricingRowSchema = z.object({
+  id: z.string(),
+  provider: z.string(),
+  model: z.string(),
+  currencyCode: z.string(),
+  inputPer1m: z.number().nullable(),
+  cachedInputPer1m: z.number().nullable(),
+  outputPer1m: z.number().nullable(),
+  reasoningOutputPer1m: z.number().nullable(),
+  sourceUrl: z.string().nullable(),
+  sourceLabel: z.string().nullable(),
+  effectiveFrom: z.any(),
+  fetchedAt: z.any().nullable(),
+  manualOverride: z.boolean(),
+  enabled: z.boolean(),
+  createdAt: z.any(),
+  updatedAt: z.any(),
+});
+
+const pricingInputSchema = z.object({
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  currencyCode: z.string().default('USD'),
+  inputPer1m: z.number().nonnegative().nullable().optional(),
+  cachedInputPer1m: z.number().nonnegative().nullable().optional(),
+  outputPer1m: z.number().nonnegative().nullable().optional(),
+  reasoningOutputPer1m: z.number().nonnegative().nullable().optional(),
+  sourceUrl: z.string().nullable().optional(),
+  sourceLabel: z.string().nullable().optional(),
+  effectiveFrom: z.string().nullable().optional(),
+  fetchedAt: z.string().nullable().optional(),
+  manualOverride: z.boolean().optional(),
+  enabled: z.boolean().optional(),
 });
 
 const getLlmSettingsRoute = createRoute({
@@ -137,6 +203,105 @@ const getLlmModelsRoute = createRoute({
         },
       },
       description: 'Get model options for active provider',
+    },
+  },
+});
+
+const getGeneralSettingsRoute = createRoute({
+  method: 'get',
+  path: '/general',
+  responses: {
+    200: {
+      content: { 'application/json': { schema: generalSettingsSchema } },
+      description: 'Get general settings',
+    },
+  },
+});
+
+const saveGeneralSettingsRoute = createRoute({
+  method: 'post',
+  path: '/general',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: generalSettingsSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: generalSettingsSchema } },
+      description: 'Save general settings',
+    },
+  },
+});
+
+const getFxRatesRoute = createRoute({
+  method: 'get',
+  path: '/fx',
+  responses: {
+    200: {
+      content: { 'application/json': { schema: fxRateCacheSchema } },
+      description: 'Get FX rate cache',
+    },
+  },
+});
+
+const refreshFxRatesRoute = createRoute({
+  method: 'post',
+  path: '/fx/refresh',
+  responses: {
+    200: {
+      content: { 'application/json': { schema: fxRateCacheSchema.unwrap() } },
+      description: 'Refresh FX rate cache',
+    },
+    500: {
+      content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      description: 'FX refresh failed',
+    },
+  },
+});
+
+const listPricingRoute = createRoute({
+  method: 'get',
+  path: '/pricing',
+  responses: {
+    200: {
+      content: { 'application/json': { schema: z.array(pricingRowSchema) } },
+      description: 'List LLM model pricing',
+    },
+  },
+});
+
+const savePricingRoute = createRoute({
+  method: 'post',
+  path: '/pricing',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: pricingInputSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: pricingRowSchema } },
+      description: 'Create or update LLM model pricing',
+    },
+  },
+});
+
+const seedCodexPricingRoute = createRoute({
+  method: 'post',
+  path: '/pricing/seed-codex',
+  responses: {
+    200: {
+      content: { 'application/json': { schema: z.array(pricingRowSchema) } },
+      description: 'Seed official Codex credit pricing rows',
     },
   },
 });
@@ -439,7 +604,7 @@ const writeRuntimeSettings = (settings: z.infer<typeof llmSettingsSchema>) => {
   }
 };
 
-const getCurrentSettings = (): z.infer<typeof llmSettingsSchema> => {
+export const getCurrentSettings = (): z.infer<typeof llmSettingsSchema> => {
   const persisted = readRuntimeSettings();
   return {
     ACTIVE_LLM_PROVIDER: (persisted.ACTIVE_LLM_PROVIDER ||
@@ -535,6 +700,36 @@ export const settingsRouter = createOpenApiRouter()
       activeProvider,
       options: options.map((value) => ({ value, label: value })),
     });
+  })
+  .openapi(getGeneralSettingsRoute, (c) => {
+    return c.json(readGeneralSettings(), 200);
+  })
+  .openapi(saveGeneralSettingsRoute, (c) => {
+    const settings = writeGeneralSettings(c.req.valid('json') as any);
+    return c.json(settings, 200);
+  })
+  .openapi(getFxRatesRoute, (c) => {
+    return c.json(readFxRateCache(), 200);
+  })
+  .openapi(refreshFxRatesRoute, async (c) => {
+    try {
+      const cache = await refreshEcbFxRates();
+      return c.json(cache, 200);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) } as any, 500);
+    }
+  })
+  .openapi(listPricingRoute, async (c) => {
+    const rows = await listPricingRows();
+    return c.json(rows, 200);
+  })
+  .openapi(savePricingRoute, async (c) => {
+    const row = await upsertPricingRow(c.req.valid('json'));
+    return c.json(row, 200);
+  })
+  .openapi(seedCodexPricingRoute, async (c) => {
+    const rows = await seedCodexPricingRows();
+    return c.json(rows, 200);
   })
   .openapi(smokeLlmRoute, async (c) => {
     const provider = process.env.ACTIVE_LLM_PROVIDER || 'azure';

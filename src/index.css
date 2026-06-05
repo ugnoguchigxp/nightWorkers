@@ -75,6 +75,92 @@
   font-size: var(--nw-font-size);
 }
 
+.nightworkers-sidebar {
+  border-color: var(--nw-border);
+  background: var(--nw-panel);
+  color: var(--nw-muted-text);
+}
+
+.nightworkers-sidebar-link,
+.nightworkers-sidebar-project,
+.nightworkers-sidebar-session-row,
+.nightworkers-sidebar-archive-toggle,
+.nightworkers-sidebar-icon-button {
+  color: var(--nw-muted-text);
+}
+
+.nightworkers-sidebar-logo {
+  color: var(--nw-text);
+}
+
+.nightworkers-sidebar-logo:hover {
+  color: var(--nw-text);
+}
+
+.nightworkers-sidebar-logo:focus-visible {
+  --tw-ring-color: var(--nw-strong-border);
+}
+
+.nightworkers-sidebar-link:hover,
+.nightworkers-sidebar-project:hover,
+.nightworkers-sidebar-session-row:hover,
+.nightworkers-sidebar-archive-toggle:hover,
+.nightworkers-sidebar-icon-button:hover {
+  background: color-mix(in srgb, var(--nw-surface-soft) 78%, transparent);
+  color: var(--nw-text);
+}
+
+.nightworkers-sidebar-link:focus-visible,
+.nightworkers-sidebar-project:focus-visible,
+.nightworkers-sidebar-session-row:focus-visible,
+.nightworkers-sidebar-archive-toggle:focus-visible,
+.nightworkers-sidebar-icon-button:focus-visible,
+.nightworkers-sidebar-danger-button:focus-visible {
+  --tw-ring-color: var(--nw-strong-border);
+}
+
+.nightworkers-sidebar-link-active,
+.nightworkers-sidebar-session-row-active {
+  background: var(--nw-surface-soft);
+  color: var(--nw-text);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--nw-text) 8%, transparent);
+}
+
+.nightworkers-sidebar-session-row-active:hover {
+  background: color-mix(in srgb, var(--nw-surface-soft) 88%, var(--nw-primary) 12%);
+}
+
+.nightworkers-sidebar-muted {
+  color: var(--nw-muted-text);
+}
+
+.nightworkers-sidebar-subtle {
+  color: var(--nw-subtle-text);
+}
+
+.nightworkers-sidebar-chip,
+.nightworkers-sidebar-done {
+  background: var(--nw-surface-soft);
+  color: var(--nw-muted-text);
+}
+
+.nightworkers-sidebar-running {
+  color: var(--nw-primary);
+}
+
+.nightworkers-sidebar-problem {
+  background: var(--nw-danger);
+}
+
+.nightworkers-sidebar-danger-button {
+  color: var(--nw-danger);
+}
+
+.nightworkers-sidebar-danger-button:hover {
+  background: color-mix(in srgb, var(--nw-danger) 12%, transparent);
+  color: var(--nw-danger);
+}
+
 .nightworkers-shell[data-theme="light"] {
   --nw-background: hsl(210 24% 96%);
   --nw-panel: hsl(0 0% 100%);
@@ -484,20 +570,37 @@
 }
 
 .nightworkers-code-block {
-  background: var(--nw-surface);
-  border-color: var(--nw-border);
-  color: var(--nw-text);
+  --nw-code-bg: #111827;
+  --nw-code-header-bg: #1f2937;
+  --nw-code-border: #334155;
+  --nw-code-text: #e5e7eb;
+  --nw-code-muted-text: #94a3b8;
+  --background: var(--nw-code-bg);
+  --foreground: var(--nw-code-text);
+  --card: var(--nw-code-bg);
+  --card-foreground: var(--nw-code-text);
+  --muted: var(--nw-code-header-bg);
+  --muted-foreground: var(--nw-code-muted-text);
+  --border: var(--nw-code-border);
+  background: var(--nw-code-bg);
+  border-color: var(--nw-code-border);
+  color: var(--nw-code-text);
 }
 
 .nightworkers-code-block > div {
-  background: var(--nw-surface);
-  color: var(--nw-text);
+  background: var(--nw-code-bg);
+  color: var(--nw-code-text);
 }
 
 .nightworkers-code-block > div:first-child {
-  background: var(--nw-surface-soft);
-  border-color: var(--nw-border);
-  color: var(--nw-muted-text);
+  background: var(--nw-code-header-bg);
+  border-color: var(--nw-code-border);
+  color: var(--nw-code-muted-text);
+}
+
+.nightworkers-code-block > div:first-child > div:first-child,
+.nightworkers-code-block > div:first-child > div:first-child :is(button, svg, span, div) {
+  color: #f8fafc;
 }
 
 .nightworkers-code-block pre,

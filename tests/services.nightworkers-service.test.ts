@@ -49,6 +49,23 @@ vi.mock('../api/services/conversation-context', () => ({
       return card ? `<USER_REQUEST>\n${request}\n</USER_REQUEST>\n\n${card}` : request;
     }
   ),
+  buildPromptWithStateCardParts: vi.fn(
+    (input: { latestUserMessage: string; stateCardText?: string | null }) => {
+      const request = input.latestUserMessage.trim();
+      const card = input.stateCardText?.trim();
+      const promptText = card ? `<USER_REQUEST>\n${request}\n</USER_REQUEST>\n\n${card}` : request;
+      return {
+        latestUserMessage: request,
+        stateCardText: card || null,
+        promptText,
+        estimates: {
+          latestUserMessageTokens: Math.ceil(request.length / 4),
+          stateCardTokens: card ? Math.ceil(card.length / 4) : 0,
+          promptTokens: Math.ceil(promptText.length / 4),
+        },
+      };
+    }
+  ),
   getLatestConversationContextForTask: vi.fn(),
   refreshConversationContextSnapshot: vi.fn(),
 }));
@@ -445,7 +462,12 @@ describe('NightWorkers service', () => {
       expect.objectContaining({
         latestUserMessage: 'foo 条件も追加してください',
         contextSnapshot: expect.objectContaining({
-          conversationContext: { stateCardIncluded: false },
+          conversationContext: expect.objectContaining({
+            stateCardIncluded: false,
+            usage: expect.objectContaining({
+              stateCardTokens: 0,
+            }),
+          }),
         }),
       })
     );
@@ -522,7 +544,12 @@ describe('NightWorkers service', () => {
       expect.objectContaining({
         latestUserMessage: 'raw request',
         contextSnapshot: expect.objectContaining({
-          conversationContext: { stateCardIncluded: false },
+          conversationContext: expect.objectContaining({
+            stateCardIncluded: false,
+            usage: expect.objectContaining({
+              stateCardTokens: 0,
+            }),
+          }),
         }),
       })
     );

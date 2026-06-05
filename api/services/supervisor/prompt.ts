@@ -29,13 +29,16 @@ export const jobTypes = [
 
 export type JobType = (typeof jobTypes)[number];
 
-export const initiallyImplementedJobTypes = ['minor_code_edit'] as const satisfies JobType[];
+export const initiallyImplementedJobTypes = [
+  'minor_code_edit',
+  'major_code_edit',
+] as const satisfies JobType[];
 
 export const jobTypeDescriptions: Record<JobType, string> = {
   general_answer: '軽い回答。実行やリポジトリ変更を伴わない場合。',
   planning: '実装前の計画、分解、方針整理。',
   minor_code_edit: '小さい修正、小さい新規作成、少数ファイルの明確な変更。',
-  major_code_edit: '複数 Todo に分解すべき大きい変更。初期実装では実行対象外。',
+  major_code_edit: '複数 Todo に分解すべき大きい変更。TodoList を作成してから段階実行する。',
   script_code_edit: '調査用の一時スクリプト。初期実装では実行対象外。',
   review: 'コード、ドキュメント、差分のレビュー。',
   investigation: '原因調査、ログ確認、事実確認。',
@@ -56,8 +59,16 @@ export const jobTypeDescriptions: Record<JobType, string> = {
   release: 'リリース分類。初期実装では直接実行しない。',
 };
 
+export type TodoToolName = 'replace_todo_list' | 'start_todo' | 'complete_todo';
+
 export type ToolDefinition = {
-  name: WorkerToolName | 'select_job_type' | 'finalize_answer';
+  name:
+    | WorkerToolName
+    | 'read_skill'
+    | 'search_skill'
+    | 'select_job_type'
+    | TodoToolName
+    | 'finalize_answer';
   description: string;
   inputSchema: Record<string, unknown>;
 };
@@ -181,6 +192,29 @@ export const toolRegistry = {
     description: '現在の差分を確認する。',
     inputSchema: objectSchema({}),
   },
+  read_skill: {
+    name: 'read_skill',
+    description:
+      '必要なときだけ jobType に対応する SKILL 要約を読む。リポジトリファイルは読み書きしない。',
+    inputSchema: objectSchema(
+      {
+        jobType: { type: 'string', enum: [...jobTypes] },
+      },
+      ['jobType']
+    ),
+  },
+  search_skill: {
+    name: 'search_skill',
+    description:
+      '適切な SKILL が不明なとき、利用可能な SKILL 名と要約を検索する。リポジトリファイルは読み書きしない。',
+    inputSchema: objectSchema(
+      {
+        query: { type: 'string' },
+        maxResults: { type: 'number' },
+      },
+      ['query']
+    ),
+  },
   select_job_type: {
     name: 'select_job_type',
     description: '別の jobType に切り替える。',
@@ -190,6 +224,61 @@ export const toolRegistry = {
         context: { type: 'string' },
       },
       ['jobType']
+    ),
+  },
+  replace_todo_list: {
+    name: 'replace_todo_list',
+    description:
+      'Run 内部 TodoList を全置換する。major_code_edit の最初に必ず使う。既定では最初の Todo を running にする。',
+    inputSchema: objectSchema(
+      {
+        todos: {
+          type: 'array',
+          minItems: 1,
+          items: {
+            type: 'object',
+            required: ['seq', 'title', 'taskType'],
+            additionalProperties: false,
+            properties: {
+              seq: { type: 'number' },
+              title: { type: 'string' },
+              description: { type: 'string' },
+              taskType: { type: 'string' },
+              procedureId: { type: 'string' },
+              dependsOn: {
+                type: 'array',
+                items: { oneOf: [{ type: 'string' }, { type: 'number' }] },
+              },
+            },
+          },
+        },
+        startFirst: { type: 'boolean' },
+      },
+      ['todos']
+    ),
+  },
+  start_todo: {
+    name: 'start_todo',
+    description:
+      '指定 Todo を running にし、他の未完了 running Todo を pending に戻す。todoId または seq を指定する。',
+    inputSchema: objectSchema({
+      todoId: { type: 'string' },
+      seq: { type: 'number' },
+    }),
+  },
+  complete_todo: {
+    name: 'complete_todo',
+    description:
+      '指定 Todo を passed / failed / skipped / needs_human のいずれかで完了させる。todoId または seq を指定する。',
+    inputSchema: objectSchema(
+      {
+        todoId: { type: 'string' },
+        seq: { type: 'number' },
+        status: { type: 'string', enum: ['passed', 'failed', 'skipped', 'needs_human'] },
+        statusReason: { type: 'string' },
+        autoStartNext: { type: 'boolean' },
+      },
+      ['status']
     ),
   },
   finalize_answer: {
@@ -203,8 +292,18 @@ export type SupervisorToolName = keyof typeof toolRegistry;
 
 const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   general_answer: ['finalize_answer'],
-  planning: ['list_dir', 'read_file', 'search_files', 'git_status', 'finalize_answer'],
+  planning: [
+    'read_skill',
+    'search_skill',
+    'list_dir',
+    'read_file',
+    'search_files',
+    'git_status',
+    'finalize_answer',
+  ],
   minor_code_edit: [
+    'read_skill',
+    'search_skill',
     'read_file',
     'search_files',
     'apply_patch',
@@ -213,10 +312,38 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'select_job_type',
     'finalize_answer',
   ],
-  major_code_edit: ['finalize_answer'],
-  script_code_edit: ['finalize_answer'],
-  review: ['git_status', 'git_diff', 'read_file', 'search_files', 'run_command', 'finalize_answer'],
+  major_code_edit: [
+    'read_skill',
+    'search_skill',
+    'replace_todo_list',
+    'start_todo',
+    'complete_todo',
+    'list_dir',
+    'read_file',
+    'search_files',
+    'apply_patch',
+    'replace_content',
+    'run_command',
+    'run_verification',
+    'git_status',
+    'git_diff',
+    'select_job_type',
+    'finalize_answer',
+  ],
+  script_code_edit: ['read_skill', 'search_skill', 'finalize_answer'],
+  review: [
+    'read_skill',
+    'search_skill',
+    'git_status',
+    'git_diff',
+    'read_file',
+    'search_files',
+    'run_command',
+    'finalize_answer',
+  ],
   investigation: [
+    'read_skill',
+    'search_skill',
     'list_dir',
     'read_file',
     'search_files',
@@ -224,16 +351,35 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'git_status',
     'finalize_answer',
   ],
-  runtime_debug: ['read_file', 'search_files', 'run_command', 'git_status', 'finalize_answer'],
+  runtime_debug: [
+    'read_skill',
+    'search_skill',
+    'read_file',
+    'search_files',
+    'run_command',
+    'git_status',
+    'finalize_answer',
+  ],
   test_and_verification: [
+    'read_skill',
+    'search_skill',
     'run_verification',
     'run_command',
     'read_file',
     'search_files',
     'finalize_answer',
   ],
-  research: ['search_web', 'fetch_content', 'read_file', 'finalize_answer'],
+  research: [
+    'read_skill',
+    'search_skill',
+    'search_web',
+    'fetch_content',
+    'read_file',
+    'finalize_answer',
+  ],
   docs: [
+    'read_skill',
+    'search_skill',
     'list_dir',
     'read_file',
     'search_files',
@@ -241,8 +387,17 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'replace_content',
     'finalize_answer',
   ],
-  git_release: ['git_status', 'git_diff', 'run_command', 'finalize_answer'],
+  git_release: [
+    'read_skill',
+    'search_skill',
+    'git_status',
+    'git_diff',
+    'run_command',
+    'finalize_answer',
+  ],
   code: [
+    'read_skill',
+    'search_skill',
     'list_dir',
     'read_file',
     'search_files',
@@ -252,6 +407,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   refactor: [
+    'read_skill',
+    'search_skill',
     'list_dir',
     'read_file',
     'search_files',
@@ -261,6 +418,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   test: [
+    'read_skill',
+    'search_skill',
     'read_file',
     'search_files',
     'apply_patch',
@@ -270,6 +429,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   config: [
+    'read_skill',
+    'search_skill',
     'list_dir',
     'read_file',
     'search_files',
@@ -279,6 +440,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   dependency: [
+    'read_skill',
+    'search_skill',
     'read_file',
     'search_files',
     'run_command',
@@ -287,6 +450,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   data_migration: [
+    'read_skill',
+    'search_skill',
     'list_dir',
     'read_file',
     'search_files',
@@ -295,10 +460,34 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'run_command',
     'finalize_answer',
   ],
-  blueprint: ['read_file', 'search_files', 'apply_patch', 'replace_content', 'finalize_answer'],
-  ui_ux: ['read_file', 'search_files', 'apply_patch', 'replace_content', 'finalize_answer'],
-  git: ['git_status', 'git_diff', 'run_command', 'finalize_answer'],
-  release: ['git_status', 'git_diff', 'run_command', 'read_file', 'finalize_answer'],
+  blueprint: [
+    'read_skill',
+    'search_skill',
+    'read_file',
+    'search_files',
+    'apply_patch',
+    'replace_content',
+    'finalize_answer',
+  ],
+  ui_ux: [
+    'read_skill',
+    'search_skill',
+    'read_file',
+    'search_files',
+    'apply_patch',
+    'replace_content',
+    'finalize_answer',
+  ],
+  git: ['read_skill', 'search_skill', 'git_status', 'git_diff', 'run_command', 'finalize_answer'],
+  release: [
+    'read_skill',
+    'search_skill',
+    'git_status',
+    'git_diff',
+    'run_command',
+    'read_file',
+    'finalize_answer',
+  ],
 };
 
 export function getAllowedToolsForJobType(jobType: JobType): ToolDefinition[] {
@@ -382,7 +571,6 @@ export function buildRound1JobTypePrompt(projectRoot: string): string {
 export function buildRound2ToolCallPrompt(input: {
   projectRoot: string;
   jobType: JobType;
-  skill: string;
   tools: ToolDefinition[];
 }): string {
   return [
@@ -391,14 +579,25 @@ export function buildRound2ToolCallPrompt(input: {
     'JSON のみ。旧 decision 形式や説明用フィールドは出さない。',
     '完了したと判断したら finalize_answer を返す。',
     'finalize_answer.message でプロジェクト内のファイルに触れる場合は、プロジェクトルートからの相対パスで書く。',
-    'ユーザー入力JSONの latestUserMessage は元の依頼です。<STATE_CARD> が含まれる場合は、Files の target と Relevant code を現在の対象文脈として使う。',
-    'apply_patch が成功したら次は changedFiles の対象を read_file する。対象パスが分かっている場合に list_dir は使わない。',
-    'search_files は対象パスが不明な場合や、横断検索が必要な場合だけ使う。',
     '',
     `プロジェクトルート: ${input.projectRoot}`,
     '',
-    '[Skill]',
-    input.skill,
+    '[Skill Access]',
+    'SKILL documents are not preloaded.',
+    'Use read_skill when procedure detail is needed.',
+    'Use search_skill when the appropriate SKILL is unclear.',
+    'If loadedSkillSummaries already contains the current jobType and digest, prefer that summary instead of reading again.',
+    '',
+    '[Minimum Execution Contract]',
+    '- latestUserMessage is the source user request; if it contains <STATE_CARD>, use its target and Relevant code as current continuity context.',
+    '- For major_code_edit, call replace_todo_list before repository edits or verification.',
+    '- TodoList is run-internal progress, not a Workbench Task or queue item.',
+    '- Mark only active work as running; use passed only after tool evidence shows that Todo is complete.',
+    '- If target path is known, read_file before editing.',
+    '- Use search_files only when target path is unknown or cross-repo search is needed.',
+    '- Do not claim tool execution without an observation in toolResults.',
+    '- Repository reads/writes must use worker tools.',
+    '- After apply_patch succeeds, inspect changed target files before finalize_answer.',
     '',
     '[Allowed Tools]',
     renderToolDefinitions(input.tools),

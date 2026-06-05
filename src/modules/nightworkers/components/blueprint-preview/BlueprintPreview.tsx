@@ -1,5 +1,6 @@
 import { CheckCircle2, Database, Palette, SlidersHorizontal, XCircle } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { BlueprintDbDesignPanel } from './BlueprintDbDesignPanel';
 import './blueprintPreview.css';
@@ -34,6 +35,7 @@ export function BlueprintPreview({
   isDbDesignSubmitting = false,
   onSubmitDbDesignRequest,
 }: BlueprintPreviewProps) {
+  const { t } = useTranslation();
   const blueprintId = String(blueprint.id || blueprint.name || screens[0]?.id || 'draft-blueprint');
   const previousBlueprintId = useRef(blueprintId);
   const initialSettings = useMemo(
@@ -125,7 +127,7 @@ export function BlueprintPreview({
   if (screens.length === 0) {
     return (
       <div className="rounded border border-slate-700/80 p-3 text-xs text-slate-400">
-        No screens defined.
+        {t('blueprint.preview.noScreens')}
       </div>
     );
   }
@@ -152,13 +154,13 @@ export function BlueprintPreview({
     >
       <div className="flex flex-wrap items-center justify-end gap-2">
         <AdoptionToggle
-          label="Blueprint"
+          label={t('blueprint.preview.blueprint')}
           adopted={blueprintAdoption.adopted}
           disabled={!blueprintAdoption.enabled || blueprintAdoption.saving}
           onToggle={blueprintAdoption.toggle}
         />
         <div className="rounded-full border border-border bg-card px-3 py-1 text-[11px] text-muted-foreground">
-          {sections.length} sections
+          {t('blueprint.preview.sectionsCount', { count: sections.length })}
         </div>
         <button
           type="button"
@@ -172,7 +174,7 @@ export function BlueprintPreview({
           onClick={() => setSettingsOpen((open) => !open)}
         >
           <Palette className="h-3.5 w-3.5" />
-          Design
+          {t('blueprint.preview.design')}
         </button>
         <button
           type="button"
@@ -186,7 +188,7 @@ export function BlueprintPreview({
           onClick={() => setDbDesignOpen((open) => !open)}
         >
           <Database className="h-3.5 w-3.5" />
-          DB Design
+          {t('blueprint.db.title')}
         </button>
       </div>
 
@@ -197,7 +199,7 @@ export function BlueprintPreview({
           designReference={designReference}
           adoption={
             <AdoptionToggle
-              label="Design Tokens"
+              label={t('blueprint.preview.designTokens')}
               adopted={designTokenAdoption.adopted}
               disabled={!designTokenAdoption.enabled || designTokenAdoption.saving}
               onToggle={designTokenAdoption.toggle}
@@ -217,7 +219,7 @@ export function BlueprintPreview({
           validationIssues={validationIssues}
           adoption={
             <AdoptionToggle
-              label="DB Design"
+              label={t('blueprint.db.title')}
               adopted={dbDesignAdoption.adopted}
               disabled={!dbDesignAdoption.enabled || dbDesignAdoption.saving}
               onToggle={dbDesignAdoption.toggle}
@@ -321,6 +323,7 @@ function AdoptionToggle({
   disabled?: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useTranslation();
   const Icon = adopted ? CheckCircle2 : XCircle;
   return (
     <button
@@ -335,7 +338,7 @@ function AdoptionToggle({
       onClick={onToggle}
     >
       <Icon className="h-3.5 w-3.5" />
-      {label}: {adopted ? 'Adopted' : 'Not adopted'}
+      {label}: {adopted ? t('blueprint.preview.adopted') : t('blueprint.preview.notAdopted')}
     </button>
   );
 }
@@ -353,35 +356,34 @@ function DesignSettingsPanel({
   adoption?: ReactNode;
   onChange: (next: BlueprintPreviewDesignSettings) => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div id={id} className="blueprint-preview-card rounded-lg border p-3 text-xs">
       <div className="mb-3 flex items-start gap-2 text-muted-foreground">
         <SlidersHorizontal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
-          <div className="font-semibold text-foreground">Design reference settings</div>
-          <div className="mt-1 leading-5">
-            Preview is a specification-review mock. These selected tokens can be attached to later
-            implementation plans.
-          </div>
+          <div className="font-semibold text-foreground">{t('blueprint.designSettings.title')}</div>
+          <div className="mt-1 leading-5">{t('blueprint.designSettings.description')}</div>
         </div>
         {adoption ? <div className="shrink-0">{adoption}</div> : null}
       </div>
       <div className="grid gap-2">
-        <SettingsGroup title="Theme" summary={value.theme}>
+        <SettingsGroup title={t('settings.appearance.theme')} summary={value.theme}>
           <OptionRow
             options={blueprintPreviewDesignOptions.theme}
             value={value.theme}
             onSelect={(theme) => onChange({ ...value, theme })}
           />
         </SettingsGroup>
-        <SettingsGroup title="Density" summary={value.density}>
+        <SettingsGroup title={t('settings.appearance.density')} summary={value.density}>
           <OptionRow
             options={blueprintPreviewDesignOptions.density}
             value={value.density}
             onSelect={(density) => onChange({ ...value, density })}
           />
         </SettingsGroup>
-        <SettingsGroup title="Shape" summary={value.shape}>
+        <SettingsGroup title={t('settings.appearance.shape')} summary={value.shape}>
           <OptionRow
             options={blueprintPreviewDesignOptions.shape}
             value={value.shape}
@@ -389,49 +391,52 @@ function DesignSettingsPanel({
           />
         </SettingsGroup>
         <SettingsGroup
-          title="Shadow"
+          title={t('settings.appearance.shadow')}
           summary={`${value.shadow} / ${labelForOption(value.shadowDirection)}`}
         >
           <div className="grid gap-3">
             <VariantRow
-              label="Strength"
+              label={t('settings.appearance.strength')}
               options={blueprintPreviewDesignOptions.shadow}
               value={value.shadow}
               onSelect={(shadow) => onChange({ ...value, shadow })}
             />
             <VariantRow
-              label="Direction"
+              label={t('settings.appearance.direction')}
               options={blueprintPreviewDesignOptions.shadowDirection}
               value={value.shadowDirection}
               onSelect={(shadowDirection) => onChange({ ...value, shadowDirection })}
             />
           </div>
         </SettingsGroup>
-        <SettingsGroup title="Font" summary={value.font}>
+        <SettingsGroup title={t('settings.appearance.font')} summary={value.font}>
           <OptionRow
             options={blueprintPreviewDesignOptions.font}
             value={value.font}
             onSelect={(font) => onChange({ ...value, font })}
           />
         </SettingsGroup>
-        <SettingsGroup title="Contrast" summary={value.contrast}>
+        <SettingsGroup title={t('settings.appearance.contrast')} summary={value.contrast}>
           <OptionRow
             options={blueprintPreviewDesignOptions.contrast}
             value={value.contrast}
             onSelect={(contrast) => onChange({ ...value, contrast })}
           />
         </SettingsGroup>
-        <SettingsGroup title="Motion" summary={value.motion}>
+        <SettingsGroup title={t('settings.appearance.motion')} summary={value.motion}>
           <OptionRow
             options={blueprintPreviewDesignOptions.motion}
             value={value.motion}
             onSelect={(motion) => onChange({ ...value, motion })}
           />
         </SettingsGroup>
-        <SettingsGroup title="Component variants" summary="button / card / table / input">
+        <SettingsGroup
+          title={t('settings.appearance.componentVariants')}
+          summary={t('settings.appearance.componentSummary')}
+        >
           <div className="grid gap-3">
             <VariantRow
-              label="Button"
+              label={t('settings.appearance.button')}
               options={blueprintPreviewDesignOptions.buttonVariant}
               value={value.componentVariants.button}
               onSelect={(button) =>
@@ -442,7 +447,7 @@ function DesignSettingsPanel({
               }
             />
             <VariantRow
-              label="Card"
+              label={t('settings.appearance.card')}
               options={blueprintPreviewDesignOptions.cardVariant}
               value={value.componentVariants.card}
               onSelect={(card) =>
@@ -453,7 +458,7 @@ function DesignSettingsPanel({
               }
             />
             <VariantRow
-              label="Table"
+              label={t('settings.appearance.table')}
               options={blueprintPreviewDesignOptions.tableVariant}
               value={value.componentVariants.table}
               onSelect={(table) =>
@@ -464,7 +469,7 @@ function DesignSettingsPanel({
               }
             />
             <VariantRow
-              label="Input"
+              label={t('settings.appearance.input')}
               options={blueprintPreviewDesignOptions.inputVariant}
               value={value.componentVariants.input}
               onSelect={(input) =>
@@ -478,7 +483,7 @@ function DesignSettingsPanel({
         </SettingsGroup>
         <details className="rounded border border-border bg-card">
           <summary className="cursor-pointer select-none px-3 py-2 font-semibold text-foreground">
-            Implementation-plan attachment
+            {t('blueprint.designSettings.implementationPlanAttachment')}
           </summary>
           <div className="border-border border-t p-3">
             <pre className="whitespace-pre-wrap rounded border border-border bg-background p-2 font-mono text-[11px] leading-5 text-foreground">
@@ -572,11 +577,12 @@ function BlueprintPreviewSection({
   table: Record<string, any> | null;
   binding: Record<string, any> | null;
 }) {
+  const { t } = useTranslation();
   const componentName = String(section.componentName || '');
   const props = isObject(section.props) ? section.props : {};
   const title = String(props.title || section.name || section.id || componentName || 'Section');
   const description = String(props.description || section.intent || section.visualIntent || '');
-  const body = renderPreviewSectionBody(componentName, props, table, binding);
+  const body = renderPreviewSectionBody(componentName, props, table, binding, t);
 
   return (
     <section className="blueprint-preview-card overflow-hidden border">
@@ -602,7 +608,8 @@ function renderPreviewSectionBody(
   componentName: string,
   props: Record<string, any>,
   table: Record<string, any> | null,
-  binding: Record<string, any> | null
+  binding: Record<string, any> | null,
+  t: ReturnType<typeof useTranslation>['t']
 ) {
   if (
     componentName === 'SplitHeroSection' ||
@@ -699,9 +706,17 @@ function renderPreviewSectionBody(
       items.length > 0
         ? items
         : [
-            { label: String(props.title || 'Primary signal'), value: '-' },
-            { label: String(binding?.name || table?.label || 'Secondary signal'), value: '-' },
-            { label: 'Next action', value: String(props.actionLabel || '-') },
+            { label: String(props.title || t('blueprint.preview.kpi.primarySignal')), value: '-' },
+            {
+              label: String(
+                binding?.name || table?.label || t('blueprint.preview.kpi.secondarySignal')
+              ),
+              value: '-',
+            },
+            {
+              label: t('blueprint.preview.kpi.nextAction'),
+              value: String(props.actionLabel || '-'),
+            },
           ];
     return (
       <div className="grid gap-[var(--blueprint-preview-gap)] sm:grid-cols-3">
@@ -819,16 +834,23 @@ function renderPreviewSectionBody(
     const links = toObjectArray(props.links).map((link) => String(link.label || link.href));
     const tabs = Array.isArray(props.tabs) ? props.tabs.map(String) : [];
     const navLabels = [...links, ...tabs];
-    const labels = navLabels.length > 0 ? navLabels : ['Primary', 'In focus', 'Follow-up'];
+    const labels =
+      navLabels.length > 0
+        ? navLabels
+        : [
+            t('blueprint.preview.nav.primary'),
+            t('blueprint.preview.nav.inFocus'),
+            t('blueprint.preview.nav.followUp'),
+          ];
     return (
       <div className="grid gap-[var(--blueprint-preview-gap)]">
         {componentName === 'MainSearchNavigationSection' ? (
           <div className="flex min-h-[var(--blueprint-preview-control-height)] overflow-hidden rounded-md border border-border bg-card">
             <div className="flex-1 px-3 py-2 text-xs text-muted-foreground">
-              {String(props.searchPlaceholder || 'Search...')}
+              {String(props.searchPlaceholder || t('blueprint.preview.searchPlaceholder'))}
             </div>
             <div className="blueprint-preview-button bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">
-              {String(props.searchButtonLabel || 'Search')}
+              {String(props.searchButtonLabel || t('blueprint.preview.search'))}
             </div>
           </div>
         ) : null}
@@ -859,7 +881,7 @@ function renderPreviewSectionBody(
     const items: Array<Record<string, any>> =
       sourceItems.length > 0
         ? sourceItems
-        : previewGenericItems(props, table, binding).map((item) => ({
+        : previewGenericItems(props, table, binding, t).map((item) => ({
             title: item.title,
             description: item.description,
           }));
@@ -902,7 +924,7 @@ function renderPreviewSectionBody(
           </div>
         ))}
         <div className="blueprint-preview-button mt-1 w-fit bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">
-          {String(props.submitLabel || 'Save')}
+          {String(props.submitLabel || t('artifact.action.save'))}
         </div>
       </div>
     );
@@ -913,11 +935,15 @@ function renderPreviewSectionBody(
     const columns =
       propColumns.length > 0
         ? propColumns
-        : ['Backlog', 'In progress', 'Done'].map((title, index) => ({
+        : [
+            t('blueprint.preview.kanban.backlog'),
+            t('blueprint.preview.kanban.inProgress'),
+            t('blueprint.preview.kanban.done'),
+          ].map((title, index) => ({
             title,
             cards: [
               {
-                title: `${title} item`,
+                title: t('blueprint.preview.kanban.itemLabel', { title }),
                 description: index === 0 ? binding?.name : table?.label || table?.name,
               },
             ],
@@ -1009,9 +1035,17 @@ function renderPreviewSectionBody(
       entries.length > 0
         ? entries
         : [
-            { title: 'Planning review', date: '2026-06-03', amount: '$1,240' },
-            { title: 'Implementation', date: '2026-06-04', amount: '$860' },
-            { title: 'Validation', date: '2026-06-05', amount: '$420' },
+            {
+              title: t('blueprint.preview.row.planningReview'),
+              date: '2026-06-03',
+              amount: '$1,240',
+            },
+            {
+              title: t('blueprint.preview.row.implementation'),
+              date: '2026-06-04',
+              amount: '$860',
+            },
+            { title: t('blueprint.preview.row.validation'), date: '2026-06-05', amount: '$420' },
           ];
     const showThumbnails = componentName === 'CheckoutSummarySection';
     return (
@@ -1056,9 +1090,21 @@ function renderPreviewSectionBody(
       items.length > 0
         ? items
         : [
-            { actor: 'System', action: 'validated', target: binding?.name || 'Blueprint' },
-            { actor: 'Agent', action: 'mapped', target: table?.label || table?.name || 'Data' },
-            { actor: 'User', action: 'reviewed', target: 'Preview' },
+            {
+              actor: t('blueprint.preview.feed.system'),
+              action: t('blueprint.preview.feed.validated'),
+              target: binding?.name || t('blueprint.preview.feed.blueprint'),
+            },
+            {
+              actor: t('blueprint.preview.feed.agent'),
+              action: t('blueprint.preview.feed.mapped'),
+              target: table?.label || table?.name || t('blueprint.preview.feed.data'),
+            },
+            {
+              actor: t('blueprint.preview.feed.user'),
+              action: t('blueprint.preview.feed.reviewed'),
+              target: t('blueprint.preview.feed.preview'),
+            },
           ];
     return (
       <div className="grid gap-2">
@@ -1088,7 +1134,7 @@ function renderPreviewSectionBody(
     componentName === 'EmptyState' ||
     componentName === 'ErrorState'
   ) {
-    const items = previewGenericItems(props, table, binding);
+    const items = previewGenericItems(props, table, binding, t);
     return (
       <div className="grid gap-2">
         {items.map((item, index) => (
@@ -1111,7 +1157,11 @@ function renderPreviewSectionBody(
     const timeline =
       steps.length > 0
         ? steps
-        : ['Draft', 'Validate', 'Implement'].map((label) => ({
+        : [
+            t('blueprint.preview.timeline.draft'),
+            t('blueprint.preview.timeline.validate'),
+            t('blueprint.preview.timeline.implement'),
+          ].map((label) => ({
             title: label,
             description: binding?.name,
           }));
@@ -1136,7 +1186,7 @@ function renderPreviewSectionBody(
 
   return (
     <div className="rounded-md border border-dashed border-border bg-muted p-3 text-xs leading-5 text-muted-foreground">
-      {String(sectionFallbackText(componentName, table, binding))}
+      {String(sectionFallbackText(componentName, table, binding, t))}
     </div>
   );
 }
@@ -1273,7 +1323,8 @@ function compactChartLabel(value: unknown) {
 function previewGenericItems(
   props: Record<string, any>,
   table: Record<string, any> | null,
-  binding: Record<string, any> | null
+  binding: Record<string, any> | null,
+  t: ReturnType<typeof useTranslation>['t']
 ) {
   const propItems = toObjectArray(
     props.items || props.columns || props.controls || props.lines || props.insights
@@ -1298,10 +1349,14 @@ function previewGenericItems(
   return [
     {
       title: String(
-        props.title || binding?.name || table?.label || table?.name || 'Blueprint section'
+        props.title ||
+          binding?.name ||
+          table?.label ||
+          table?.name ||
+          t('blueprint.preview.sectionFallbackTitle')
       ),
       description: String(
-        props.description || props.body || 'Catalog-backed section preview placeholder.'
+        props.description || props.body || t('blueprint.preview.sectionFallbackDescription')
       ),
     },
   ];
@@ -1310,13 +1365,20 @@ function previewGenericItems(
 function sectionFallbackText(
   componentName: string,
   table: Record<string, any> | null,
-  binding: Record<string, any> | null
+  binding: Record<string, any> | null,
+  t: ReturnType<typeof useTranslation>['t']
 ) {
   const source = binding
-    ? `binding "${String(binding.name || binding.id)}"`
-    : 'static blueprint data';
-  const tableName = table ? ` over "${String(table.label || table.name)}"` : '';
-  return `${componentName || 'Section'} preview uses ${source}${tableName}.`;
+    ? t('blueprint.preview.bindingSource', { name: String(binding.name || binding.id) })
+    : t('blueprint.preview.staticSource');
+  const tableName = table
+    ? t('blueprint.preview.tableContext', { name: String(table.label || table.name) })
+    : '';
+  return t('blueprint.preview.sectionFallbackText', {
+    componentName: componentName || 'Section',
+    source,
+    tableName,
+  });
 }
 
 function titleCase(value: string) {

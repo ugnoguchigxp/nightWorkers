@@ -1,5 +1,6 @@
 import { ArrowUp } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type {
   ModelOption,
   ThinkingDepth,
@@ -34,6 +35,7 @@ export function Composer({
   onThinkingDepthChange,
   onSubmit,
 }: ComposerProps) {
+  const { t } = useTranslation();
   const [prompt, setPrompt] = useState('');
   const intent: WorkbenchChatIntent = 'intake';
   const canSubmit = !disabled && !!prompt.trim();
@@ -59,7 +61,9 @@ export function Composer({
         <div className={`absolute -top-[5px] left-4 h-3 w-3 rounded-full ${wsStatusDotClass}`} />
         {diffSummary ? (
           <div className="nightworkers-composer-badge absolute -top-3 right-4 rounded-full border border-slate-600/80 bg-slate-800 px-3 py-1 text-[11px]">
-            <span className="text-slate-200">{diffSummary.files} files</span>{' '}
+            <span className="text-slate-200">
+              {t('composer.diffFiles', { count: diffSummary.files })}
+            </span>{' '}
             <span className="text-emerald-400">+{diffSummary.stats.added}</span>{' '}
             <span className="text-rose-400">-{diffSummary.stats.deleted}</span>
           </div>
@@ -80,7 +84,7 @@ export function Composer({
             }
           }}
           disabled={disabled}
-          placeholder="指示を入力（送信: Cmd+Enter / Ctrl+Enter）"
+          placeholder={t('composer.placeholder')}
           className="nightworkers-composer-input min-h-[58px] w-full resize-none border-0 bg-transparent text-sm text-slate-100 placeholder:text-slate-300/60 focus:outline-none"
         />
         <div className="nightworkers-composer-toolbar mt-3 flex flex-wrap items-center gap-2 border-t border-slate-600/50 pt-3">

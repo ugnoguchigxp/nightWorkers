@@ -1,14 +1,17 @@
 import { Button } from '@repo/design-system';
 import {
+  Archive,
   ChevronDown,
   ChevronRight,
   Folder,
+  FolderPlus,
   ListTodo,
   LoaderCircle,
   Plus,
   Trash2,
 } from 'lucide-react';
-import { memo, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ProjectSessionGroups } from '../hooks/useNightWorkersWorkspace';
 import type { Repository, WorkbenchSessionView } from '../types';
 import { getRelativeTimestamp } from '../utils/time';
@@ -23,6 +26,8 @@ type ProjectSidebarProps = {
   onCreateSession: (repositoryId: string) => void;
   onDeleteProject: (projectId: string) => void;
   onToggleProject: (projectId: string) => void;
+  onOpenOverview: () => void;
+  isOverviewActive: boolean;
   onOpenQueue: (projectId: string) => void;
   onOpenFolderBrowser: () => void;
 };
@@ -32,29 +37,64 @@ const EMPTY_PROJECT_SESSION_GROUPS: ProjectSessionGroups = {
   queue: [],
   archive: [],
 };
+const SEEN_DONE_SESSIONS_STORAGE_KEY = 'nightworkers.sidebar.seenDoneSessions.v1';
 
 export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebarProps) {
+  const { t } = useTranslation();
   const [expandedArchives, setExpandedArchives] = useState<Record<string, boolean>>({});
+  const [seenDoneSessionIds, setSeenDoneSessionIds] = useState<Set<string>>(() =>
+    readSeenDoneSessionIds()
+  );
+  const markDoneSessionSeen = useCallback((session: WorkbenchSessionView) => {
+    if (!isDoneSession(session)) return;
+    setSeenDoneSessionIds((prev) => {
+      if (prev.has(session.task.id)) return prev;
+      const next = new Set(prev);
+      next.add(session.task.id);
+      writeSeenDoneSessionIds(next);
+      return next;
+    });
+  }, []);
+  const handleSelectSession = (session: WorkbenchSessionView) => {
+    markDoneSessionSeen(session);
+    props.onSelectSession(session.task.id);
+  };
+
+  useEffect(() => {
+    const activeSession = Object.values(props.groupedSessions)
+      .flatMap((grouped) => [...grouped.processing, ...grouped.queue, ...grouped.archive])
+      .find((session) => session.task.id === props.activeSessionId);
+    if (activeSession) markDoneSessionSeen(activeSession);
+  }, [props.activeSessionId, props.groupedSessions, markDoneSessionSeen]);
+
   return (
-    <div className="flex h-screen min-h-0 w-full flex-col overflow-hidden border-r border-slate-700/70 bg-[#0f172a]">
-      <div className="flex shrink-0 items-center justify-between px-4 pb-2 pt-4">
-        <span className="text-xs font-bold uppercase tracking-wider text-slate-300/80">
-          NightWorkers
-        </span>
+    <div className="nightworkers-sidebar flex h-screen min-h-0 w-full flex-col overflow-hidden border-r">
+      <div className="flex shrink-0 items-center justify-between px-4 pb-3 pt-4">
+        <button
+          type="button"
+          onClick={props.onOpenOverview}
+          className="nightworkers-sidebar-logo inline-flex min-w-0 items-center px-1 py-1 text-left text-base transition focus-visible:outline-none focus-visible:ring-2"
+          aria-current={props.isOverviewActive ? 'page' : undefined}
+        >
+          <span className="truncate">nightWorkers</span>
+        </button>
         <button
           type="button"
           onClick={props.onOpenFolderBrowser}
-          className="flex h-6 w-6 items-center justify-center rounded-md text-slate-300 hover:bg-slate-700/40"
+          className="nightworkers-sidebar-icon-button flex h-8 w-8 items-center justify-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2"
+          title={t('sidebar.registerProjectFolder')}
         >
-          <Plus className="h-3.5 w-3.5" />
+          <FolderPlus className="h-4 w-4" />
         </button>
       </div>
-      <div className="nightworkers-scrollbar min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain py-2">
+      <div className="nightworkers-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pb-4">
         {props.isProjectsLoading ? (
-          <div className="px-4 text-xs text-slate-300/70">Loading workspaces...</div>
+          <div className="nightworkers-sidebar-muted px-4 text-xs">
+            {t('sidebar.loadingWorkspaces')}
+          </div>
         ) : props.projects.length === 0 ? (
-          <div className="px-4 text-xs italic text-slate-300/70">
-            No project folders registered. Click "+" to register a local directory.
+          <div className="nightworkers-sidebar-subtle px-4 text-xs italic">
+            {t('sidebar.emptyProjects')}
           </div>
         ) : (
           props.projects.map((project) => {
@@ -64,61 +104,67 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
             const currentSessions = [...grouped.processing, ...grouped.queue];
             return (
               <div key={project.id} className="space-y-1">
-                <div className="flex items-center justify-between px-4 py-1.5 text-slate-200/90">
+                <div className="group flex items-center justify-between px-3 py-1">
                   <button
                     type="button"
                     onClick={() => props.onToggleProject(project.id)}
-                    className="flex items-center gap-2 text-sm font-bold"
+                    className="nightworkers-sidebar-project flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1.5 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2"
+                    aria-expanded={isExpanded}
                   >
-                    <Folder className="h-4 w-4 text-slate-400" />
-                    <span>{project.name}</span>
+                    {isExpanded ? (
+                      <ChevronDown className="nightworkers-sidebar-subtle h-3.5 w-3.5 shrink-0" />
+                    ) : (
+                      <ChevronRight className="nightworkers-sidebar-subtle h-3.5 w-3.5 shrink-0" />
+                    )}
+                    <Folder className="nightworkers-sidebar-muted h-4 w-4 shrink-0" />
+                    <span className="truncate font-medium">{project.name}</span>
                   </button>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 opacity-70 transition group-hover:opacity-100">
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-6 min-w-6 px-1.5 text-[10px] text-slate-400 hover:text-cyan-100"
+                      className="nightworkers-sidebar-icon-button h-7 w-7 rounded-md p-0"
                       onClick={() => props.onOpenQueue(project.id)}
-                      title="Open Implementation Queue"
+                      title={t('sidebar.openImplementationQueue')}
                     >
                       <ListTodo className="h-3.5 w-3.5" />
-                      <span>Queue</span>
                     </Button>
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-6 w-6 p-0 text-rose-300 hover:text-rose-200"
+                      className="nightworkers-sidebar-icon-button h-7 w-7 rounded-md p-0"
+                      onClick={() => props.onCreateSession(project.id)}
+                      title={t('sidebar.createTask')}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="nightworkers-sidebar-danger-button h-7 w-7 rounded-md p-0"
                       onClick={() => {
                         const ok = window.confirm(
-                          `Project "${project.name}" を削除します。関連するSessionも削除される可能性があります。続行しますか？`
+                          t('sidebar.confirmDeleteProject', { name: project.name })
                         );
                         if (!ok) return;
                         props.onDeleteProject(project.id);
                       }}
-                      title="Delete project"
+                      title={t('sidebar.deleteProject')}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0"
-                      onClick={() => props.onCreateSession(project.id)}
-                    >
-                      <Plus className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
                 {isExpanded ? (
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     <SessionList
-                      label="Sessions"
                       sessions={currentSessions}
                       activeSessionId={props.activeSessionId}
-                      onSelectSession={props.onSelectSession}
+                      onSelectSession={handleSelectSession}
+                      seenDoneSessionIds={seenDoneSessionIds}
                     />
                     <ProjectArchive
                       sessions={isArchiveExpanded ? grouped.archive : []}
@@ -130,8 +176,9 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                           [project.id]: !isArchiveExpanded,
                         }))
                       }
-                      onSelectSession={props.onSelectSession}
+                      onSelectSession={handleSelectSession}
                       archiveExpanded={isArchiveExpanded}
+                      seenDoneSessionIds={seenDoneSessionIds}
                     />
                   </div>
                 ) : null}
@@ -144,6 +191,25 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
   );
 });
 
+function readSeenDoneSessionIds() {
+  if (typeof window === 'undefined') return new Set<string>();
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SEEN_DONE_SESSIONS_STORAGE_KEY) || '[]');
+    return new Set(Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : []);
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function writeSeenDoneSessionIds(ids: Set<string>) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(SEEN_DONE_SESSIONS_STORAGE_KEY, JSON.stringify([...ids]));
+}
+
+function isDoneSession(session: WorkbenchSessionView) {
+  return session.task.status === 'completed' || session.phase === 'Completed';
+}
+
 function ProjectArchive({
   sessions,
   count,
@@ -151,17 +217,21 @@ function ProjectArchive({
   onSelectSession,
   archiveExpanded,
   onToggleArchive,
+  seenDoneSessionIds,
 }: {
   sessions: WorkbenchSessionView[];
   count: number;
   activeSessionId: string | null;
-  onSelectSession: (sessionId: string) => void;
+  onSelectSession: (session: WorkbenchSessionView) => void;
   archiveExpanded: boolean;
   onToggleArchive: () => void;
+  seenDoneSessionIds: Set<string>;
 }) {
+  const { t } = useTranslation();
+
   return (
     <SessionSection
-      label="Archive"
+      label={t('sidebar.archive')}
       sessions={sessions}
       count={count}
       activeSessionId={activeSessionId}
@@ -169,37 +239,37 @@ function ProjectArchive({
       onToggle={onToggleArchive}
       expanded={archiveExpanded}
       showEmpty={false}
+      seenDoneSessionIds={seenDoneSessionIds}
     />
   );
 }
 
 function SessionList({
-  label,
   sessions,
   activeSessionId,
   onSelectSession,
+  seenDoneSessionIds,
 }: {
-  label: string;
   sessions: WorkbenchSessionView[];
   activeSessionId: string | null;
-  onSelectSession: (sessionId: string) => void;
+  onSelectSession: (session: WorkbenchSessionView) => void;
+  seenDoneSessionIds: Set<string>;
 }) {
+  const { t } = useTranslation();
+
   return (
     <section>
-      <div className="flex items-center justify-between px-4 py-1 text-[10px] font-semibold uppercase text-slate-400">
-        <span>{label}</span>
-        <span>{sessions.length}</span>
-      </div>
       {sessions.length === 0 ? (
-        <div className="px-8 py-1 text-[10px] text-slate-500">None</div>
+        <div className="nightworkers-sidebar-subtle px-12 py-2 text-xs">{t('sidebar.noTasks')}</div>
       ) : (
-        <ul className="space-y-0.5">
+        <ul className="space-y-1">
           {sessions.map((session) => (
             <SessionRow
               key={session.task.id}
               session={session}
               active={session.task.id === activeSessionId}
               onSelectSession={onSelectSession}
+              seenDoneSessionIds={seenDoneSessionIds}
             />
           ))}
         </ul>
@@ -217,52 +287,60 @@ function SessionSection({
   onToggle,
   expanded,
   showEmpty = true,
+  seenDoneSessionIds,
 }: {
   label: string;
   sessions: WorkbenchSessionView[];
   count?: number;
   activeSessionId: string | null;
-  onSelectSession: (sessionId: string) => void;
+  onSelectSession: (session: WorkbenchSessionView) => void;
   onToggle?: () => void;
   expanded?: boolean;
   showEmpty?: boolean;
+  seenDoneSessionIds: Set<string>;
 }) {
+  const { t } = useTranslation();
+
   return (
-    <section>
+    <section className="pt-1">
       {label ? (
         onToggle ? (
           <button
             type="button"
-            className="flex w-full items-center justify-between px-4 py-1 text-[10px] font-semibold uppercase text-slate-400 hover:text-slate-200"
+            className="nightworkers-sidebar-archive-toggle flex w-full items-center justify-between px-4 py-2 text-xs transition focus-visible:outline-none focus-visible:ring-2"
             onClick={onToggle}
           >
-            <span className="inline-flex items-center gap-1">
+            <span className="inline-flex min-w-0 items-center gap-2">
               {expanded ? (
-                <ChevronDown className="h-3 w-3" />
+                <ChevronDown className="h-3.5 w-3.5" />
               ) : (
-                <ChevronRight className="h-3 w-3" />
+                <ChevronRight className="h-3.5 w-3.5" />
               )}
+              <Archive className="h-3.5 w-3.5" />
               {label}
             </span>
-            <span>{count ?? sessions.length}</span>
+            <span className="nightworkers-sidebar-chip rounded-full px-2 py-0.5 text-[11px]">
+              {count ?? sessions.length}
+            </span>
           </button>
         ) : (
-          <div className="flex items-center justify-between px-4 py-1 text-[10px] font-semibold uppercase text-slate-400">
+          <div className="nightworkers-sidebar-subtle flex items-center justify-between px-4 py-1 text-[10px] font-semibold uppercase">
             <span>{label}</span>
             <span>{count ?? sessions.length}</span>
           </div>
         )
       ) : null}
       {sessions.length === 0 && showEmpty ? (
-        <div className="px-8 py-1 text-[10px] text-slate-500">None</div>
+        <div className="nightworkers-sidebar-subtle px-12 py-2 text-xs">{t('sidebar.none')}</div>
       ) : sessions.length > 0 ? (
-        <ul className="space-y-0.5">
+        <ul className="space-y-1">
           {sessions.map((session) => (
             <SessionRow
               key={session.task.id}
               session={session}
               active={session.task.id === activeSessionId}
               onSelectSession={onSelectSession}
+              seenDoneSessionIds={seenDoneSessionIds}
             />
           ))}
         </ul>
@@ -276,29 +354,27 @@ function SessionRow({
   queuePosition,
   active,
   onSelectSession,
+  seenDoneSessionIds,
 }: {
   session: WorkbenchSessionView;
   queuePosition?: number;
   active: boolean;
-  onSelectSession: (sessionId: string) => void;
+  onSelectSession: (session: WorkbenchSessionView) => void;
+  seenDoneSessionIds: Set<string>;
 }) {
   return (
-    <li
-      className={`mx-2 min-h-9 w-[calc(100%-1rem)] rounded-md border px-2 py-1.5 text-xs ${
-        active
-          ? 'border-slate-500/70 bg-slate-800/60 text-slate-100'
-          : 'border-slate-700/70 text-slate-300 hover:border-slate-500/60 hover:bg-slate-800/40'
-      }`}
-    >
+    <li className="px-1">
       <button
         type="button"
-        onClick={() => onSelectSession(session.task.id)}
-        className="flex w-full min-w-0 items-center gap-2 text-left"
+        onClick={() => onSelectSession(session)}
+        className={`nightworkers-sidebar-session-row flex min-h-11 w-full min-w-0 items-center gap-3 rounded-2xl px-4 py-2.5 text-left text-[15px] leading-tight transition focus-visible:outline-none focus-visible:ring-2 ${
+          active ? 'nightworkers-sidebar-session-row-active' : ''
+        }`}
       >
         <span className="min-w-0 flex-1 truncate font-medium">{session.task.title}</span>
-        <span className="flex shrink-0 items-center gap-2 text-[10px] text-slate-400">
+        <span className="nightworkers-sidebar-subtle flex shrink-0 items-center gap-2 text-xs">
           <SessionProgressLabel session={session} queuePosition={queuePosition} />
-          <SessionStateMarker session={session} />
+          <SessionStateMarker session={session} seen={seenDoneSessionIds.has(session.task.id)} />
         </span>
       </button>
     </li>
@@ -312,15 +388,20 @@ function SessionProgressLabel({
   session: WorkbenchSessionView;
   queuePosition?: number;
 }) {
+  const { t } = useTranslation();
+
   if (session.group === 'queue') {
-    if (session.task.status === 'ready') return <span className="shrink-0">ready</span>;
+    if (session.task.status === 'ready') {
+      return <span className="shrink-0">{t('sidebar.ready')}</span>;
+    }
     return <span className="shrink-0">#{queuePosition ?? session.queuePosition ?? '-'}</span>;
   }
   if (session.latestRun) return <span className="shrink-0">{session.progress.percent}%</span>;
   return null;
 }
 
-function SessionStateMarker({ session }: { session: WorkbenchSessionView }) {
+function SessionStateMarker({ session, seen }: { session: WorkbenchSessionView; seen: boolean }) {
+  const { t } = useTranslation();
   const taskStatus = session.task.status;
   const runStatus = session.latestRun?.status;
   const hasProblem =
@@ -341,14 +422,26 @@ function SessionStateMarker({ session }: { session: WorkbenchSessionView }) {
         : false));
 
   if (hasProblem) {
-    return <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500" title="問題あり" />;
+    return (
+      <span
+        className="nightworkers-sidebar-problem h-2 w-2 shrink-0 rounded-full"
+        title={t('sidebar.problem')}
+      />
+    );
   }
-  if (isComplete) {
-    return <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" title="完了" />;
+  if (isComplete && !seen) {
+    return (
+      <span className="nightworkers-sidebar-done rounded-full px-2 py-0.5 text-[11px]">
+        {t('sidebar.done')}
+      </span>
+    );
   }
   if (isRunning) {
     return (
-      <LoaderCircle className="h-3 w-3 shrink-0 animate-spin text-cyan-300" aria-label="実行中" />
+      <LoaderCircle
+        className="nightworkers-sidebar-running h-3 w-3 shrink-0 animate-spin"
+        aria-label={t('sidebar.running')}
+      />
     );
   }
   return <span className="shrink-0">{getRelativeTimestamp(session.task.updatedAt)}</span>;

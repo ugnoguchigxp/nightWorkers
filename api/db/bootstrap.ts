@@ -81,6 +81,78 @@ export async function ensureNightWorkersSchema() {
   );
 
   await client.execute(`
+    CREATE TABLE IF NOT EXISTS llm_usage_records (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      task_id text NOT NULL,
+      run_id text,
+      call_id text NOT NULL,
+      provider text NOT NULL,
+      model text,
+      label text NOT NULL,
+      round integer,
+      usage_mode text NOT NULL,
+      input_tokens integer,
+      output_tokens integer,
+      cached_input_tokens integer,
+      reasoning_output_tokens integer,
+      total_tokens integer,
+      system_prompt_tokens integer,
+      user_prompt_tokens integer,
+      state_card_tokens integer,
+      response_tokens_estimate integer,
+      duration_ms integer NOT NULL,
+      raw_usage_json text,
+      metadata_json text,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
+      FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE set null
+    )
+  `);
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS llm_usage_records_task_created_idx ON llm_usage_records (task_id, created_at)'
+  );
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS llm_usage_records_run_created_idx ON llm_usage_records (run_id, created_at)'
+  );
+  await client.execute(
+    'CREATE UNIQUE INDEX IF NOT EXISTS llm_usage_records_call_id_uidx ON llm_usage_records (call_id)'
+  );
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS llm_usage_records_provider_created_idx ON llm_usage_records (provider, created_at)'
+  );
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS llm_model_pricing (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      provider text NOT NULL,
+      model text NOT NULL,
+      currency_code text DEFAULT 'USD' NOT NULL,
+      input_per_1m real,
+      cached_input_per_1m real,
+      output_per_1m real,
+      reasoning_output_per_1m real,
+      source_url text,
+      source_label text,
+      effective_from integer DEFAULT 0 NOT NULL,
+      fetched_at integer,
+      manual_override integer DEFAULT false NOT NULL,
+      enabled integer DEFAULT true NOT NULL
+    )
+  `);
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS llm_model_pricing_provider_model_idx ON llm_model_pricing (provider, model)'
+  );
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS llm_model_pricing_enabled_idx ON llm_model_pricing (enabled)'
+  );
+  await client.execute(
+    'CREATE UNIQUE INDEX IF NOT EXISTS llm_model_pricing_provider_model_currency_effective_uidx ON llm_model_pricing (provider, model, currency_code, effective_from)'
+  );
+
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS activity_artifacts (
       id text PRIMARY KEY NOT NULL,
       task_id text NOT NULL,

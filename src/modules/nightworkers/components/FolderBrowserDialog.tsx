@@ -1,5 +1,6 @@
 import { Button } from '@repo/design-system';
 import { Folder, FolderOpen } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 type FolderBrowserDialogProps = {
   open: boolean;
@@ -15,22 +16,24 @@ type FolderBrowserDialogProps = {
 };
 
 export function FolderBrowserDialog(props: FolderBrowserDialogProps) {
+  const { t } = useTranslation();
+
   if (!props.open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="flex h-[400px] w-full max-w-md flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
         <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-950/40 px-4 py-3">
-          <span className="text-xs font-bold text-zinc-300">Browse Local Folders</span>
+          <span className="text-xs font-bold text-zinc-300">{t('folderBrowser.title')}</span>
           <button type="button" onClick={props.onClose} className="text-xs text-zinc-500">
-            Close
+            {t('folderBrowser.close')}
           </button>
         </div>
         <div className="truncate border-b border-zinc-800 bg-zinc-950/20 px-4 py-2 font-mono text-[10px] text-zinc-400">
-          Path: {props.currentPath}
+          {t('folderBrowser.path', { path: props.currentPath })}
         </div>
         <div className="flex-1 space-y-0.5 overflow-y-auto p-2">
           {props.isLoading ? (
-            <div className="px-3 py-4 text-xs text-zinc-500">Loading directories...</div>
+            <div className="px-3 py-4 text-xs text-zinc-500">{t('folderBrowser.loading')}</div>
           ) : null}
           {!props.isLoading && props.parentPath ? (
             <button
@@ -39,7 +42,7 @@ export function FolderBrowserDialog(props: FolderBrowserDialogProps) {
               className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs text-zinc-400 hover:bg-zinc-800/40"
             >
               <FolderOpen className="h-3.5 w-3.5" />
-              .. (Go Up)
+              {t('folderBrowser.goUp')}
             </button>
           ) : null}
           {!props.isLoading &&
@@ -61,7 +64,7 @@ export function FolderBrowserDialog(props: FolderBrowserDialogProps) {
                   onClick={() => props.onNavigate(dir.path)}
                   className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-cyan-400"
                 >
-                  Enter
+                  {t('folderBrowser.enter')}
                 </button>
               </div>
             ))}
@@ -74,7 +77,7 @@ export function FolderBrowserDialog(props: FolderBrowserDialogProps) {
             onClick={props.onConfirmSelection}
             disabled={!props.selectedPath && !props.currentPath}
           >
-            Select Folder
+            {t('folderBrowser.selectFolder')}
           </Button>
         </div>
       </div>
