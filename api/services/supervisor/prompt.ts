@@ -391,6 +391,7 @@ export function buildRound2ToolCallPrompt(input: {
     'JSON のみ。旧 decision 形式や説明用フィールドは出さない。',
     '完了したと判断したら finalize_answer を返す。',
     'finalize_answer.message でプロジェクト内のファイルに触れる場合は、プロジェクトルートからの相対パスで書く。',
+    'ユーザー入力JSONの latestUserMessage は元の依頼です。<STATE_CARD> が含まれる場合は、Files の target と Relevant code を現在の対象文脈として使う。',
     'apply_patch が成功したら次は changedFiles の対象を read_file する。対象パスが分かっている場合に list_dir は使わない。',
     'search_files は対象パスが不明な場合や、横断検索が必要な場合だけ使う。',
     '',

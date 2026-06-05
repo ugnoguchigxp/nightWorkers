@@ -59,6 +59,23 @@ describe('Schema-first supervisor loop', () => {
     const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-schema-first-'));
     await execFileAsync('git', ['init'], { cwd: repoRoot });
 
+    const promptWithStateCard = [
+      '<USER_REQUEST>',
+      'fizzbuzz.tsをプロジェクトルートに作ってください',
+      '</USER_REQUEST>',
+      '',
+      '<STATE_CARD>',
+      'Files:',
+      '- target: fizzbuzz.ts',
+      '',
+      'Relevant code:',
+      'File: fizzbuzz.ts (target_file_small)',
+      '```',
+      'for (let i = 1; i <= 100; i += 1) {}',
+      '```',
+      '</STATE_CARD>',
+    ].join('\n');
+
     vi.mocked(llm.callSupervisorLLM)
       .mockResolvedValueOnce({
         jobType: 'minor_code_edit',
@@ -94,7 +111,7 @@ describe('Schema-first supervisor loop', () => {
       const result = await runSupervisorLoop({
         runId: 'run-1',
         repoRoot,
-        prompt: 'fizzbuzz.tsをプロジェクトルートに作ってください',
+        prompt: promptWithStateCard,
         timeoutSeconds: 60,
       });
 
@@ -109,6 +126,15 @@ describe('Schema-first supervisor loop', () => {
         expect.objectContaining({ round: 2, schemaFirst: true }),
         expect.objectContaining({ round: 2, schemaFirst: true }),
       ]);
+      const firstRound2UserPrompt = JSON.parse(
+        vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[1] as string
+      );
+      expect(firstRound2UserPrompt).toMatchObject({
+        latestUserMessage: promptWithStateCard,
+        goal: 'プロジェクトルートに fizzbuzz.ts を作成する',
+        currentJobType: 'minor_code_edit',
+        toolResults: [],
+      });
       expect(vi.mocked(llm.callSupervisorLLM)).toHaveBeenCalledTimes(3);
       expect(vi.mocked(llm.callSupervisorLLM).mock.calls.length).toBeLessThanOrEqual(20);
       expect(repo.updateTaskRun).toHaveBeenCalledWith('run-1', {

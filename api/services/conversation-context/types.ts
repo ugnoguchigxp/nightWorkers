@@ -1,10 +1,6 @@
 export const CONVERSATION_CONTEXT_VERSION = 1 as const;
 
-export type ConversationContextBuildReason =
-  | 'intake_idle'
-  | 'run_started'
-  | 'run_finished'
-  | 'manual_refresh';
+export type ConversationContextBuildReason = 'run_finished' | 'manual_refresh';
 
 export type RefreshConversationContextInput = {
   taskId: string;
@@ -91,10 +87,6 @@ export type ConversationContextSnapshotV1 = {
   };
   files: {
     target: string[];
-    touched: string[];
-    created: string[];
-    modified: string[];
-    deleted: string[];
   };
   runState: {
     lastError: string | null;
@@ -104,7 +96,7 @@ export type ConversationContextSnapshotV1 = {
   code: {
     snippets: Array<{
       path: string;
-      reason: 'target_file_small' | 'relevant_hunk' | 'none';
+      reason: 'target_file_small' | 'none';
       content: string;
       truncated: boolean;
     }>;

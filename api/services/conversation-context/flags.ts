@@ -15,17 +15,17 @@ function readNumber(key: string, fallback: number) {
 }
 
 export function isConversationContextEnabled() {
-  return isEnabled('CONVERSATION_CONTEXT_ENABLED', false);
+  return isEnabled('CONVERSATION_CONTEXT_ENABLED', true);
 }
 
 export function isConversationContextStateCardEnabled() {
   return (
-    isConversationContextEnabled() && isEnabled('CONVERSATION_CONTEXT_STATE_CARD_ENABLED', false)
+    isConversationContextEnabled() && isEnabled('CONVERSATION_CONTEXT_STATE_CARD_ENABLED', true)
   );
 }
 
 export function isConversationContextBuildOnIdleEnabled() {
-  return isConversationContextEnabled() && isEnabled('CONVERSATION_CONTEXT_BUILD_ON_IDLE', false);
+  return isConversationContextEnabled() && isEnabled('CONVERSATION_CONTEXT_BUILD_ON_IDLE', true);
 }
 
 export function getConversationContextRuntimeOptions() {

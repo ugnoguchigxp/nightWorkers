@@ -6,7 +6,6 @@ import {
   type ConversationContextOptions,
   type ConversationContextSnapshotV1,
   type ConversationContextSource,
-  type ConversationGitState,
 } from './types';
 
 const DENIED_PATH_PREFIXES = ['logs/', 'coverage/', 'node_modules/', 'dist/', 'dist-api/', '.git/'];
@@ -15,26 +14,21 @@ const PATH_PATTERN =
 
 export async function buildConversationContextSnapshot(input: {
   source: ConversationContextSource;
-  gitState?: ConversationGitState;
   options?: ConversationContextOptions;
 }): Promise<ConversationContextSnapshotV1> {
   const latestUser = findLatestUserMessage(input.source.messages);
   const intake = findLatestIntakeJobSelection(input.source.messages);
   const previousRun = findPreviousRun(input.source.runs, input.options?.currentRunId);
   const previousSnapshot = input.source.previousSnapshot?.snapshotJson ?? null;
-  const gitState = input.gitState ?? { nameStatus: [], diffStat: null, hunks: [], errors: [] };
   const targetFiles = deriveTargetFiles({
     latestUserRequest:
       latestUser?.content ?? input.source.task.description ?? input.source.task.objective ?? '',
     intakeGoal: intake?.goal ?? null,
-    previousRunText: previousRun?.finalReport || previousRun?.summary || null,
     previousSnapshot,
-    gitState,
   });
   const snippets = await collectCodeSnippets({
     repositoryPath: input.source.task.repositoryPath,
     targetFiles,
-    gitState,
     options: input.options,
   });
   const previousAction = truncate(
@@ -45,7 +39,6 @@ export async function buildConversationContextSnapshot(input: {
     360
   );
   const lastError = extractLastError(previousRun);
-  const touched = gitState.nameStatus.map((entry) => `${entry.path} ${entry.status}`);
 
   return {
     version: CONVERSATION_CONTEXT_VERSION,
@@ -77,16 +70,6 @@ export async function buildConversationContextSnapshot(input: {
     },
     files: {
       target: targetFiles,
-      touched,
-      created: gitState.nameStatus
-        .filter((entry) => entry.status === 'added')
-        .map((entry) => entry.path),
-      modified: gitState.nameStatus
-        .filter((entry) => entry.status === 'modified' || entry.status === 'renamed')
-        .map((entry) => entry.path),
-      deleted: gitState.nameStatus
-        .filter((entry) => entry.status === 'deleted')
-        .map((entry) => entry.path),
     },
     runState: {
       lastError,
@@ -98,7 +81,7 @@ export async function buildConversationContextSnapshot(input: {
     },
     limits: {
       tokenEstimate: 0,
-      truncatedFields: gitState.errors.length ? ['git.errors'] : [],
+      truncatedFields: [],
     },
   };
 }
@@ -146,20 +129,15 @@ export function findPreviousRun(
 export function deriveTargetFiles(input: {
   latestUserRequest: string;
   intakeGoal: string | null;
-  previousRunText: string | null;
   previousSnapshot: ConversationContextSnapshotV1 | null;
-  gitState: ConversationGitState;
 }) {
+  // Conservative file hints only. This must not classify workflow, jobType, or taskType.
   const paths = new Set<string>();
   for (const value of extractConservativePaths(input.latestUserRequest)) paths.add(value);
   for (const value of extractConservativePaths(input.intakeGoal || '')) paths.add(value);
   for (const value of input.previousSnapshot?.files.target ?? []) {
     if (isAllowedRelativePath(value)) paths.add(value);
   }
-  for (const entry of input.gitState.nameStatus) {
-    if (isAllowedRelativePath(entry.path)) paths.add(entry.path);
-  }
-  for (const value of extractConservativePaths(input.previousRunText || '')) paths.add(value);
   return Array.from(paths).slice(0, 20);
 }
 
@@ -189,22 +167,11 @@ export function isAllowedRelativePath(candidate: string) {
 async function collectCodeSnippets(input: {
   repositoryPath: string;
   targetFiles: string[];
-  gitState: ConversationGitState;
   options?: ConversationContextOptions;
 }): Promise<ConversationContextSnapshotV1['code']['snippets']> {
   const options = resolveConversationContextOptions(input.options);
   const snippets: ConversationContextSnapshotV1['code']['snippets'] = [];
   for (const targetPath of input.targetFiles.slice(0, 5)) {
-    const hunk = input.gitState.hunks.find((item) => item.path === targetPath);
-    if (hunk?.content.trim()) {
-      snippets.push({
-        path: targetPath,
-        reason: 'relevant_hunk',
-        content: hunk.content,
-        truncated: hunk.truncated,
-      });
-      continue;
-    }
     if (!options.includeSmallTargetFile) continue;
     const absolutePath = path.resolve(input.repositoryPath, targetPath);
     const repoRoot = path.resolve(input.repositoryPath);

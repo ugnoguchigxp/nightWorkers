@@ -209,6 +209,32 @@ describe('workbench selectors', () => {
       }),
     ]);
   });
+
+  it('does not infer implementation plan artifacts from metadata title keywords', () => {
+    const message: TaskMessage = {
+      id: '44444444-4444-4444-8444-444444444447',
+      taskId: baseTask.id,
+      role: 'assistant',
+      content: '# Implementation Plan',
+      messageType: 'markdown_document',
+      metadataJson: {
+        title: 'Implementation Plan',
+      },
+      createdAt: '2026-06-02T00:00:01.000Z',
+    };
+
+    const refs = buildWorkbenchArtifactRefs({
+      task: baseTask,
+      messages: [message],
+    });
+
+    expect(refs).toEqual([
+      expect.objectContaining({
+        kind: 'spec',
+        title: 'Spec',
+      }),
+    ]);
+  });
 });
 
 const baseRun: TaskRun = {

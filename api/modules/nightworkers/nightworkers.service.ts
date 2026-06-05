@@ -67,10 +67,14 @@ async function safelyRefreshConversationContext(input: RefreshConversationContex
   }
 }
 
-async function maybeLoadConversationStateCard(taskId: string) {
+async function maybeLoadConversationStateCard(taskId: string, latestUserMessageId?: string | null) {
   if (!isConversationContextStateCardEnabled()) return null;
   try {
-    return await getLatestConversationContextForTask(taskId);
+    const snapshot = await getLatestConversationContextForTask(taskId);
+    if (snapshot?.latestUserMessageId && snapshot.latestUserMessageId === latestUserMessageId) {
+      return null;
+    }
+    return snapshot;
   } catch (error) {
     console.warn('conversation context load failed', { error, taskId });
     return null;
@@ -653,9 +657,7 @@ async function handleWorkbenchIntakeMessage(
       await repo.createTaskMessage({
         taskId,
         role: 'assistant',
-        content:
-          renderLlmIntakeContent(jobSelection) ||
-          '依頼内容を受け取りました。実行が必要な場合は作業を開始します。',
+        content: renderLlmIntakeContent(jobSelection) || JSON.stringify(jobSelection, null, 2),
         messageType: 'text',
         payloadJson: {
           intent: 'intake',
@@ -684,7 +686,6 @@ async function handleWorkbenchIntakeMessage(
           intakeJobSelection: jobSelection,
         },
       });
-      await safelyRefreshConversationContext({ taskId, reason: 'intake_idle' });
       const run = await startTaskRun(taskId);
       return {
         task: (await repo.getTask(taskId)) || runnable,
@@ -700,7 +701,6 @@ async function handleWorkbenchIntakeMessage(
         : task.acceptanceCriteria,
       status: isBlueprintRouting(routing) && task.status === 'draft' ? 'ready' : task.status,
     });
-    void safelyRefreshConversationContext({ taskId, reason: 'intake_idle' });
     return { task: updated, run: null, messages: await repo.listTaskMessages(taskId) };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -720,7 +720,6 @@ async function handleWorkbenchIntakeMessage(
           error: message,
         },
       });
-      void safelyRefreshConversationContext({ taskId, reason: 'intake_idle' });
       return { task: updated, run: null, messages: await repo.listTaskMessages(taskId) };
     }
     if (options.failureMode === 'record') {
@@ -772,7 +771,6 @@ async function prepareWorkbenchIntakeTask(
 }
 
 function renderLlmIntakeContent(jobSelection: JobTypeSelection): string {
-  if (jobSelection.jobType === 'minor_code_edit') return '';
   return [`jobType: ${jobSelection.jobType}`, jobSelection.goal]
     .map((value) => value?.trim())
     .filter((value): value is string => Boolean(value))
@@ -925,15 +923,9 @@ function getTaskDraftMissingFields(task: Awaited<ReturnType<typeof repo.getTask>
 function hasImplementationPlanEvidence(messages: TaskMessageRow[]) {
   return messages.some((message) => {
     if (message.messageType !== 'markdown_document') return false;
-    const metadata = (message.metadataJson || {}) as { intent?: unknown; title?: unknown };
+    const metadata = (message.metadataJson || {}) as { intent?: unknown };
     const intent = String(metadata.intent || '').toLowerCase();
-    const title = String(metadata.title || '').toLowerCase();
-    return (
-      intent === 'implementation_plan' ||
-      intent === 'draft_spec' ||
-      title.includes('implementation plan') ||
-      title.includes('plan')
-    );
+    return intent === 'implementation_plan' || intent === 'draft_spec';
   });
 }
 
@@ -1218,7 +1210,7 @@ export async function startTaskRun(taskId: string) {
   };
 
   const rawLatestUserMessage = lastUserMessage?.content || compiledPromptText;
-  const conversationContext = await maybeLoadConversationStateCard(taskId);
+  const conversationContext = await maybeLoadConversationStateCard(taskId, lastUserMessage?.id);
   const runtimeLatestUserMessage = buildPromptWithStateCard({
     latestUserMessage: rawLatestUserMessage,
     stateCardText: conversationContext?.stateCardText,
@@ -1231,6 +1223,8 @@ export async function startTaskRun(taskId: string) {
           version: conversationContext.version,
           tokenEstimate: conversationContext.tokenEstimate,
           stateCardIncluded: true,
+          stateCardText: conversationContext.stateCardText,
+          snapshotJson: conversationContext.snapshotJson,
         }
       : { stateCardIncluded: false },
   };

@@ -66,6 +66,7 @@ Token artifact should be adopted for later planning.
 - Keep provider and runtime boundaries explicit.
 - Keep run execution transport-independent: Hono, CLI, worker, and future terminal surfaces should share the same run orchestration and event ledger contracts.
 - Keep run detail and event replay separate: full run detail should remain complete, while cursor-based attach reads through the dedicated run-events surface.
+- Keep Workbench intake routing schema-first: execution path decisions should come from Round 1 `jobType`, persisted `routingHypothesis`, or explicit UI `intent`, not user-text keyword or title heuristics.
 - Keep MCP Server execution inside the native worker-tool bridge unless a later Codex SDK integration preserves equivalent policy and run-event evidence.
 - Keep Agent Hooks inside the native runtime and supervisor tool boundary; hook commands use the hook runner, while worker commands still use worker-tool policy.
 - Keep Implementation Queue execution separate from Session chat. Queue Entries

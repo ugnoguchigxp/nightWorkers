@@ -3,6 +3,7 @@ import {
   buildNormalTranscriptItems,
   buildVisibleEditDiffSummary,
   findArtifactTaskMessage,
+  findRuntimePromptSnapshotTranscriptAnchorId,
   getActivityCode,
   getAgentEditSummary,
   parseDiffMetadata,
@@ -153,6 +154,71 @@ describe('ThreadTimeline edit summaries', () => {
     ]);
 
     expect(items.map((item) => item.id)).toEqual(['user:1', 'activity:raw', 'assistant:final']);
+  });
+
+  it('anchors runtime prompt snapshots after the matching run.started activity', () => {
+    const anchorId = findRuntimePromptSnapshotTranscriptAnchorId(
+      [
+        {
+          kind: 'user_turn',
+          id: 'user:first',
+          turnId: 'user-first',
+          text: 'fizzbuzz.js をプロジェクトルートに置いてください。',
+          events: [
+            {
+              id: 'user-event',
+              taskId: 'task-1',
+              runId: null,
+              kind: 'user.message',
+              source: 'user',
+              status: 'completed',
+              seq: 1,
+              text: 'fizzbuzz.js をプロジェクトルートに置いてください。',
+              createdAt: '2026-06-05T00:00:00.000Z',
+              visibility: 'visible',
+            } as any,
+          ],
+        },
+        {
+          kind: 'activity',
+          id: 'activity:run-started',
+          event: {
+            id: 'run-started',
+            taskId: 'task-1',
+            runId: 'run-1',
+            kind: 'run.status',
+            source: 'runtime',
+            status: 'started',
+            seq: 2,
+            text: '[SchemaFirstAgent] run.started',
+            payloadJson: {
+              agentEventType: 'run.started',
+            },
+            createdAt: '2026-06-05T00:00:01.000Z',
+            visibility: 'visible',
+          } as any,
+        },
+      ],
+      {
+        id: 'run-1',
+        taskId: 'task-1',
+        status: 'running',
+        workerKind: 'native-local',
+        timeoutSeconds: 60,
+        contextSnapshot: {
+          conversationContext: {
+            stateCardIncluded: true,
+            stateCardText: '<STATE_CARD />',
+            snapshotJson: { version: 1 },
+          },
+        },
+        startedAt: '2026-06-05T00:00:01.000Z',
+        createdAt: '2026-06-05T00:00:01.000Z',
+        updatedAt: '2026-06-05T00:00:01.000Z',
+      } as any
+    );
+
+    expect(anchorId).toBe('activity:run-started');
   });
 
   it('builds a compact file stat summary for normal apply_patch display', () => {

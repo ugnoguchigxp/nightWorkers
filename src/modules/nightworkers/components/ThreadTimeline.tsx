@@ -11,7 +11,7 @@ import {
   PauseCircle,
   XCircle,
 } from 'lucide-react';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import type { Components } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -188,11 +188,23 @@ export function ThreadTimeline({
         runId: latestRun?.id,
       })
     : null;
+  const runtimeSnapshotTranscriptAnchorId =
+    showDebugEvents && hasActivityTranscript
+      ? findRuntimePromptSnapshotTranscriptAnchorId(visibleTranscriptItems, latestRun)
+      : null;
+  const runtimeSnapshotTimelineAnchorId =
+    showDebugEvents && !hasActivityTranscript
+      ? findRuntimePromptSnapshotTimelineAnchorId(timelineItems, latestRun)
+      : null;
+  const shouldRenderTrailingRuntimeSnapshot =
+    showDebugEvents &&
+    Boolean(latestRun?.contextSnapshot) &&
+    !runtimeSnapshotTranscriptAnchorId &&
+    !runtimeSnapshotTimelineAnchorId;
 
   return (
     <div className="nightworkers-chat-window space-y-5 p-6">
       <TodoProgress todos={latestRunTodos} />
-      {showDebugEvents ? <RuntimePromptSnapshotCard latestRun={latestRun} /> : null}
       {showDebugEvents && isAgentWorking && latestEvent ? (
         <div className="rounded-lg border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-200">
           <span className="mr-2 inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
@@ -202,7 +214,13 @@ export function ThreadTimeline({
       {hasActivityTranscript
         ? visibleTranscriptItems.map((item) =>
             showDebugEvents ? (
-              <TranscriptItemView key={item.id} item={item} onOpenArtifact={onOpenArtifact} />
+              <TimelineDebugFragment
+                key={item.id}
+                insertRuntimeSnapshot={item.id === runtimeSnapshotTranscriptAnchorId}
+                latestRun={latestRun}
+              >
+                <TranscriptItemView item={item} onOpenArtifact={onOpenArtifact} />
+              </TimelineDebugFragment>
             ) : (
               <NormalTranscriptItemView key={item.id} item={item} onOpenArtifact={onOpenArtifact} />
             )
@@ -225,13 +243,22 @@ export function ThreadTimeline({
             ) : showDebugEvents ||
               hasAgentEditSummary(item.event) ||
               isReviewerEvaluationEvent(item.event) ? (
-              <div key={item.id} className="space-y-2">
-                <ReviewerEvaluationCard event={item.event} />
-                <AgentEditSummaryCard event={item.event} />
-                {showDebugEvents ? <AgentDebugEventCard event={item.event} /> : null}
-              </div>
+              <TimelineDebugFragment
+                key={item.id}
+                insertRuntimeSnapshot={item.id === runtimeSnapshotTimelineAnchorId}
+                latestRun={latestRun}
+              >
+                <div className="space-y-2">
+                  <ReviewerEvaluationCard event={item.event} />
+                  <AgentEditSummaryCard event={item.event} />
+                  {showDebugEvents ? <AgentDebugEventCard event={item.event} /> : null}
+                </div>
+              </TimelineDebugFragment>
             ) : null
           )}
+      {shouldRenderTrailingRuntimeSnapshot ? (
+        <RuntimePromptSnapshotCard latestRun={latestRun} />
+      ) : null}
       {!hasActivityTranscript && streamingPreview ? (
         <ThreadMessage messageRole="assistant">
           <StreamingResponsePreview preview={streamingPreview} />
@@ -250,6 +277,73 @@ export function ThreadTimeline({
       {!hasActivityTranscript ? <FinalReportCard latestRun={latestRun} /> : null}
     </div>
   );
+}
+
+function TimelineDebugFragment({
+  children,
+  insertRuntimeSnapshot,
+  latestRun,
+}: {
+  children: ReactNode;
+  insertRuntimeSnapshot: boolean;
+  latestRun?: TaskRun;
+}) {
+  return (
+    <>
+      {children}
+      {insertRuntimeSnapshot ? <RuntimePromptSnapshotCard latestRun={latestRun} /> : null}
+    </>
+  );
+}
+
+export function findRuntimePromptSnapshotTranscriptAnchorId(
+  items: TranscriptItem[],
+  latestRun?: TaskRun
+) {
+  if (!latestRun?.contextSnapshot) return null;
+  const item = items.find((candidate) =>
+    transcriptItemEvents(candidate).some((event) =>
+      isRuntimePromptSnapshotAnchorEvent(event, latestRun)
+    )
+  );
+  return item?.id ?? null;
+}
+
+function findRuntimePromptSnapshotTimelineAnchorId(
+  items: Array<
+    | { kind: 'message'; id: string; ts: number; message: TaskMessage }
+    | { kind: 'event'; id: string; ts: number; event: TaskEvent }
+  >,
+  latestRun?: TaskRun
+) {
+  if (!latestRun?.contextSnapshot) return null;
+  const item = items.find(
+    (candidate) =>
+      candidate.kind === 'event' &&
+      isRuntimePromptSnapshotAnchorTaskEvent(candidate.event, latestRun)
+  );
+  return item?.id ?? null;
+}
+
+function transcriptItemEvents(item: TranscriptItem): ActivityEvent[] {
+  if (item.kind === 'user_turn' || item.kind === 'assistant_turn') return item.events;
+  if (item.kind === 'activity' || item.kind === 'unknown') return [item.event];
+  return [];
+}
+
+function isRuntimePromptSnapshotAnchorEvent(event: ActivityEvent, latestRun: TaskRun) {
+  return event.runId === latestRun.id && schemaFirstAgentEventType(event) === 'run.started';
+}
+
+function isRuntimePromptSnapshotAnchorTaskEvent(event: TaskEvent, latestRun: TaskRun) {
+  const agentEventType =
+    typeof event.payloadJson?.agentEventType === 'string'
+      ? event.payloadJson.agentEventType
+      : typeof event.payloadJson?.runEvent?.data?.agentEventType === 'string'
+        ? event.payloadJson.runEvent.data.agentEventType
+        : '';
+  const runId = event.runId || event.taskRunId || event.payloadJson?.runEvent?.runId;
+  return runId === latestRun.id && agentEventType === 'run.started';
 }
 
 export function buildNormalTranscriptItems(items: TranscriptItem[]): TranscriptItem[] {
@@ -1018,14 +1112,42 @@ function isHighVolumeActivity(event: ActivityEvent): boolean {
 
 function RuntimePromptSnapshotCard({ latestRun }: { latestRun?: TaskRun }) {
   if (!latestRun?.contextSnapshot) return null;
+  const snapshot = latestRun.contextSnapshot;
+  const conversationContext =
+    snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
+      ? (snapshot as { conversationContext?: unknown }).conversationContext
+      : null;
+  const stateCardText =
+    conversationContext &&
+    typeof conversationContext === 'object' &&
+    !Array.isArray(conversationContext)
+      ? (conversationContext as { stateCardText?: unknown }).stateCardText
+      : null;
   return (
-    <details className="rounded border border-slate-700/80 bg-slate-900/25">
+    <details className="rounded border border-slate-700/80 bg-slate-900/25" open>
       <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-slate-100">
         Runtime Prompt Snapshot
       </summary>
-      <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap border-t border-slate-800 p-3 font-mono text-[11px] leading-5 text-slate-300">
-        {JSON.stringify(latestRun.contextSnapshot, null, 2)}
-      </pre>
+      <div className="grid gap-3 border-t border-slate-800 p-3">
+        {typeof stateCardText === 'string' && stateCardText.trim() ? (
+          <details className="rounded border border-slate-800 bg-slate-950/40" open>
+            <summary className="cursor-pointer list-none px-3 py-2 text-[11px] font-medium text-slate-200">
+              StateCard Text
+            </summary>
+            <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap border-t border-slate-800 p-3 font-mono text-[11px] leading-5 text-slate-300">
+              {stateCardText}
+            </pre>
+          </details>
+        ) : null}
+        <details className="rounded border border-slate-800 bg-slate-950/40" open>
+          <summary className="cursor-pointer list-none px-3 py-2 text-[11px] font-medium text-slate-200">
+            Snapshot JSON
+          </summary>
+          <pre className="max-h-[360px] overflow-auto whitespace-pre-wrap border-t border-slate-800 p-3 font-mono text-[11px] leading-5 text-slate-300">
+            {JSON.stringify(snapshot, null, 2)}
+          </pre>
+        </details>
+      </div>
     </details>
   );
 }

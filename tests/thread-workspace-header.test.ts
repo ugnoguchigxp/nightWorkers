@@ -10,4 +10,20 @@ describe('ThreadWorkspace header', () => {
     expect(source).not.toContain('aria-label="実行中"');
     expect(source).toContain('Do not add a session-state spinner here');
   });
+
+  it('does not advertise missing Blueprint artifacts as a chat-backed create action', () => {
+    const workspaceSource = readFileSync(
+      'src/modules/nightworkers/components/ThreadWorkspace.tsx',
+      'utf8'
+    );
+    const shellSource = readFileSync(
+      'src/modules/nightworkers/components/NightWorkersShell.tsx',
+      'utf8'
+    );
+
+    expect(workspaceSource).not.toContain('Create Blueprint artifact');
+    expect(workspaceSource).toContain('No Blueprint artifact');
+    expect(workspaceSource).toContain('!blueprintArtifact');
+    expect(shellSource).not.toContain("sendWorkbenchMessage(session.id, prompt, 'draft_spec')");
+  });
 });

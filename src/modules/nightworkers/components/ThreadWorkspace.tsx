@@ -162,20 +162,22 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
                       : 'border-slate-600/80 bg-slate-900/30 text-slate-300 hover:border-slate-400'
                   }`}
                   onClick={() => void props.onOpenBlueprintArtifact()}
-                  disabled={props.isBlueprintActionBusy || !props.activeSession}
+                  disabled={
+                    props.isBlueprintActionBusy || !props.activeSession || !blueprintArtifact
+                  }
                   title={
                     props.isBlueprintArtifactOpen
                       ? 'Hide Blueprint artifact'
                       : blueprintArtifact
                         ? 'Open Blueprint artifact'
-                        : 'Create Blueprint artifact'
+                        : 'No Blueprint artifact'
                   }
                   aria-label={
                     props.isBlueprintArtifactOpen
                       ? 'Hide Blueprint artifact'
                       : blueprintArtifact
                         ? 'Open Blueprint artifact'
-                        : 'Create Blueprint artifact'
+                        : 'No Blueprint artifact'
                   }
                   aria-pressed={props.isBlueprintArtifactOpen}
                 >

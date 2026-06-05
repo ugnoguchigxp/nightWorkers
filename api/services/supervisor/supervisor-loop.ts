@@ -253,6 +253,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         tools: allowedTools,
       });
       const round2UserPrompt = JSON.stringify({
+        latestUserMessage: userInput,
         goal,
         currentJobType,
         toolResults: toolResults.slice(-8),

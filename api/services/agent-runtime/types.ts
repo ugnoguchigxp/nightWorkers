@@ -24,6 +24,8 @@ export interface AgentRunContext {
       version?: number;
       tokenEstimate?: number;
       stateCardIncluded: boolean;
+      stateCardText?: string;
+      snapshotJson?: unknown;
     };
     [key: string]: unknown;
   };

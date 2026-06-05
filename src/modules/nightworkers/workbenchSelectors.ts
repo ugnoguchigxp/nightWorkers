@@ -335,8 +335,6 @@ function inferDocumentArtifactKind(message: TaskMessage): WorkbenchArtifactKind 
   if (intent === 'design_delta' || message.metadataJson?.designDelta) return 'design_delta';
   if (intent === 'draft_spec') return 'spec';
   if (intent === 'implementation_plan') return 'implementation_plan';
-  const title = String(message.metadataJson?.title || '').toLowerCase();
-  if (title.includes('plan')) return 'implementation_plan';
   return 'spec';
 }
 

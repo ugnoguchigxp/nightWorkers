@@ -123,22 +123,6 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       setSelectedArtifact(existing);
       return;
     }
-    const session = current.activeSession;
-    if (!session) return;
-    const prompt = [session.objective, session.description, session.title]
-      .find((value) => value?.trim())
-      ?.trim();
-    if (!prompt) return;
-    const result = await current.sendWorkbenchMessage(session.id, prompt, 'draft_spec');
-    const blueprintMessage = [...(result?.messages || [])]
-      .reverse()
-      .find(
-        (message) =>
-          message.messageType === 'markdown_document' && message.metadataJson?.appBlueprint
-      );
-    if (!blueprintMessage) return;
-    setShowArtifactPane(true);
-    setSelectedArtifact(buildBlueprintArtifactRef(blueprintMessage));
   }, [isBlueprintArtifactOpen]);
   const handleSelectSession = useCallback((sessionId: string | null) => {
     setSelectedArtifact(null);

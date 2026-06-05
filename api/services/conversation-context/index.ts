@@ -1,10 +1,5 @@
-import {
-  buildConversationContextSnapshot,
-  deriveTargetFiles,
-  finalizeSnapshotTokenEstimate,
-} from './build';
+import { buildConversationContextSnapshot, finalizeSnapshotTokenEstimate } from './build';
 import { getConversationContextRuntimeOptions, isConversationContextEnabled } from './flags';
-import { emptyGitState, loadConversationGitState } from './git';
 import { buildPromptWithStateCard, renderStateCard } from './render';
 import {
   getLatestConversationContextForTask as getLatestSnapshot,
@@ -24,29 +19,8 @@ export async function refreshConversationContextSnapshot(
     ...getConversationContextRuntimeOptions(),
     currentRunId: input.reason === 'run_finished' ? null : (input.runId ?? null),
   };
-  const emptyState = emptyGitState();
-  const preliminary = await buildConversationContextSnapshot({
-    source,
-    gitState: emptyState,
-    options,
-  });
-  const baseGitState = await loadConversationGitState({
-    repoRoot: source.task.repositoryPath,
-  });
-  const targetPaths = deriveTargetFiles({
-    latestUserRequest: preliminary.task.latestUserRequest,
-    intakeGoal: preliminary.classification.goal,
-    previousRunText: preliminary.continuity.previousAction,
-    previousSnapshot: source.previousSnapshot?.snapshotJson ?? null,
-    gitState: baseGitState,
-  });
-  const gitState = await loadConversationGitState({
-    repoRoot: source.task.repositoryPath,
-    targetPaths,
-  });
   const snapshot = await buildConversationContextSnapshot({
     source,
-    gitState,
     options,
   });
   const stateCardText = renderStateCard(snapshot, options);

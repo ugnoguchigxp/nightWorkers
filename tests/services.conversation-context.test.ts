@@ -10,7 +10,7 @@ import {
   extractConservativePaths,
   isAllowedRelativePath,
 } from '../api/services/conversation-context/build';
-import { emptyGitState, loadConversationGitState } from '../api/services/conversation-context/git';
+import { loadConversationGitState } from '../api/services/conversation-context/git';
 import {
   buildPromptWithStateCard,
   renderStateCard,
@@ -72,10 +72,6 @@ describe('conversation context domain', () => {
 
     const snapshot = await buildConversationContextSnapshot({
       source,
-      gitState: {
-        ...emptyGitState(),
-        nameStatus: [{ path: 'fizzbuzz.ts', status: 'modified' }],
-      },
       options: { includeSmallTargetFile: true, smallFileCharLimit: 6000 },
     });
     const card = renderStateCard(snapshot, { maxTokens: 1200 });
@@ -112,7 +108,6 @@ describe('conversation context domain', () => {
     const targets = deriveTargetFiles({
       latestUserRequest: '今回は src/current.ts を直す',
       intakeGoal: null,
-      previousRunText: null,
       previousSnapshot: {
         version: 1,
         task: {
@@ -131,19 +126,31 @@ describe('conversation context domain', () => {
         },
         files: {
           target: ['src/previous.ts'],
-          touched: [],
-          created: [],
-          modified: [],
-          deleted: [],
         },
         runState: { lastError: null, lastFinalReport: null, lastToolFailure: null },
         code: { snippets: [] },
         limits: { tokenEstimate: 0, truncatedFields: [] },
       },
-      gitState: emptyGitState(),
     });
 
     expect(targets).toEqual(['src/current.ts', 'src/previous.ts']);
+  });
+
+  it('extracts file hints without classifying workflow from user text', async () => {
+    await writeFile(path.join(repoRoot, 'app.ts'), 'export const app = true;\n');
+    const snapshot = await buildConversationContextSnapshot({
+      source: buildSource(repoRoot, {
+        messages: [userMessage('u1', 'app.ts にテストを追加してください')],
+      }),
+      options: { includeSmallTargetFile: true },
+    });
+
+    expect(snapshot.files.target).toEqual(['app.ts']);
+    expect(snapshot.classification).toEqual({
+      jobType: null,
+      goal: null,
+      source: 'none',
+    });
   });
 
   it('wraps prompts only when a StateCard is present', () => {
@@ -247,10 +254,6 @@ function buildSnapshot(input: {
     },
     files: {
       target: input.target,
-      touched: Array.from({ length: 30 }, (_, index) => `src/file-${index}.ts modified`),
-      created: [],
-      modified: input.target,
-      deleted: [],
     },
     runState: {
       lastError: null,

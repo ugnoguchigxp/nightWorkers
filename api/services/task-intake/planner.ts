@@ -6,7 +6,6 @@ import type {
   TaskIntakeRawPlan,
   TaskIntakeRawTodo,
   TaskIntakeTodo,
-  TaskType,
 } from './types';
 import { taskTypes } from './types';
 
@@ -42,7 +41,7 @@ export async function planTaskIntake(
     return fallbackPlan(input, ['intake_generator_invalid']);
   }
 
-  return heuristicPlan(input, maxTodos);
+  return fallbackPlan(input, ['intake_generator_required']);
 }
 
 function parseGeneratedPlan(raw: TaskIntakeRawPlan | string | null | undefined): unknown {
@@ -79,58 +78,24 @@ function normalizeRawPlan(
 
 function normalizeRawTodo(raw: z.infer<typeof rawTodoSchema>, seq: number): TaskIntakeTodo {
   const title = normalizeTitle(raw.title);
-  const status = raw.status === 'needs_human' ? 'needs_human' : 'pending';
+  const hasExplicitTaskType = Boolean(raw.taskType);
+  const status = raw.status === 'needs_human' || !hasExplicitTaskType ? 'needs_human' : 'pending';
   const dependsOn = normalizeDependsOn(raw.dependsOn, seq);
   return {
     seq,
     title,
     description: normalizeDescription(raw.description),
-    taskType: raw.taskType || inferTaskType(`${raw.title}\n${raw.description || ''}`),
+    taskType: raw.taskType || 'investigation',
     status,
     dependsOn,
     statusReason:
-      status === 'needs_human' ? raw.statusReason || 'Needs human clarification.' : null,
+      status === 'needs_human'
+        ? raw.statusReason ||
+          (hasExplicitTaskType
+            ? 'Needs human clarification.'
+            : 'Generated todo is missing an explicit taskType.')
+        : null,
   };
-}
-
-function heuristicPlan(input: TaskIntakePlannerInput, maxTodos: number): TaskIntakePlan {
-  const prompt = input.latestUserMessage.trim();
-  if (isAmbiguousPrompt(prompt)) {
-    return {
-      todos: [
-        {
-          seq: 1,
-          title: normalizeTitle(prompt || input.taskTitle || 'Clarify request'),
-          description: prompt || input.taskDescription || null,
-          taskType: 'investigation',
-          status: 'needs_human',
-          dependsOn: [],
-          statusReason: 'Request is too ambiguous to split safely.',
-        },
-      ],
-      source: 'fallback',
-      warnings: ['ambiguous_request'],
-    };
-  }
-
-  const items = splitPromptIntoTodoCandidates(prompt);
-  const warnings: string[] = [];
-  const selected = items.slice(0, maxTodos);
-  if (items.length > maxTodos) warnings.push('todo_count_compressed');
-  const todos =
-    selected.length > 0
-      ? selected.map((item, index) => ({
-          seq: index + 1,
-          title: normalizeTitle(item),
-          description: item,
-          taskType: inferTaskType(item),
-          status: 'pending' as const,
-          dependsOn: index === 0 ? [] : [index],
-          statusReason: null,
-        }))
-      : fallbackPlan(input, [], 'heuristic').todos;
-
-  return { todos, source: 'heuristic', warnings };
 }
 
 function fallbackPlan(
@@ -145,49 +110,15 @@ function fallbackPlan(
         seq: 1,
         title: normalizeTitle(content || 'Run requested task'),
         description: content || null,
-        taskType: inferTaskType(content || ''),
-        status: 'pending',
+        taskType: 'investigation',
+        status: 'needs_human',
         dependsOn: [],
-        statusReason: null,
+        statusReason: 'Task intake requires an explicit generated plan.',
       },
     ],
     source,
     warnings,
   };
-}
-
-function splitPromptIntoTodoCandidates(prompt: string): string[] {
-  const lines = prompt
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const listItems = lines
-    .map((line) =>
-      line
-        .replace(/^[-*]\s+/, '')
-        .replace(/^\d+[.)]\s+/, '')
-        .trim()
-    )
-    .filter((line, index) => line !== lines[index] || /^[-*]\s+|^\d+[.)]\s+/.test(lines[index]));
-  if (listItems.length > 1) return listItems;
-
-  const sentenceItems = prompt
-    .split(/(?:。|\n|;|；)/)
-    .map((item) => item.trim())
-    .filter((item) => item.length >= 8);
-  if (sentenceItems.length > 1) return sentenceItems;
-
-  return prompt ? [prompt] : [];
-}
-
-function inferTaskType(text: string): TaskType {
-  const lower = text.toLowerCase();
-  if (/(test|spec|vitest|playwright|検証.*追加|テスト)/.test(lower)) return 'test_change';
-  if (/(doc|readme|spec\/|仕様|文書|ドキュメント|計画)/.test(lower)) return 'documentation';
-  if (/(review|レビュー|確認して|見て)/.test(lower)) return 'review';
-  if (/(verify|検証|動作確認|確認)/.test(lower)) return 'verification';
-  if (/(調査|investigate|調べ|原因)/.test(lower)) return 'investigation';
-  return 'code_change';
 }
 
 function normalizeTitle(value: string): string {
@@ -212,12 +143,6 @@ function normalizeDependsOn(value: TaskIntakeRawTodo['dependsOn'], seq: number):
 function normalizeMaxTodos(value: number | undefined): number {
   if (!Number.isInteger(value) || !value) return DEFAULT_MAX_TODOS;
   return Math.min(Math.max(value, 1), DEFAULT_MAX_TODOS);
-}
-
-function isAmbiguousPrompt(prompt: string): boolean {
-  const normalized = prompt.replace(/\s+/g, '');
-  if (normalized.length < 8) return true;
-  return /^(よろしく|お願いします|いい感じに|なんとかして|改善して)$/.test(normalized);
 }
 
 function extractJsonCandidate(raw: string): string | null {

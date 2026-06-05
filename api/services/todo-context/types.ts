@@ -21,6 +21,8 @@ export type RuntimePromptSnapshot = {
     version?: number;
     tokenEstimate?: number;
     stateCardIncluded: boolean;
+    stateCardText?: string;
+    snapshotJson?: unknown;
   };
 };
 

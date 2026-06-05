@@ -91,7 +91,7 @@ Important environment variables:
 - `APP_URL`: required for OAuth and secure cookie scenarios
 - `TRUST_PROXY`: set `true` behind reverse proxy
 - `SESSION_QUEUE_MAX_CONCURRENCY`: legacy Session queue default retained for migration compatibility
-- `CONVERSATION_CONTEXT_ENABLED`: disabled-by-default derived conversation context cache. When `false`, StateCard build and runtime prompt injection are off.
+- `CONVERSATION_CONTEXT_ENABLED`: enables the derived conversation context cache by default. Set `false` to disable StateCard build and runtime prompt injection.
 - `CONVERSATION_CONTEXT_STATE_CARD_ENABLED`: requires `CONVERSATION_CONTEXT_ENABLED=true`; injects the latest compact StateCard into the runtime `latestUserMessage` only, leaving `tasks.compiled_prompt` raw.
 - `CONVERSATION_CONTEXT_BUILD_ON_IDLE`: requires `CONVERSATION_CONTEXT_ENABLED=true`; refreshes the derived StateCard cache after Workbench intake and run completion.
 - `NIGHTWORKERS_MCP_SETTINGS_PATH`: optional override for the MCP Server settings JSON path

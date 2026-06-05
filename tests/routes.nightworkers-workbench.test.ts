@@ -158,6 +158,32 @@ describe('NightWorkers workbench routes', () => {
     });
   });
 
+  it('does not fall back to fixed intake prose for non-running code-edit decisions', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('minor_code_edit', '`fizzbuzz.ts` をプロジェクトルートに追加する。')
+    );
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({
+        prompt: 'fizzbuzz.tsをプロジェクトルートに作ってください',
+        intent: 'draft_spec',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.run).toBeNull();
+    expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
+    const assistantMessage = body.messages.find(
+      (message: any) => message.role === 'assistant' && message.metadataJson?.intent === 'intake'
+    );
+    expect(assistantMessage?.content).toContain('jobType: minor_code_edit');
+    expect(assistantMessage?.content).toContain('fizzbuzz.ts');
+  });
+
   it('records a visible intake message even when the LLM job selection has no goal text', async () => {
     vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(mockJobSelection('general_answer', ''));
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
@@ -488,6 +514,29 @@ describe('NightWorkers workbench routes', () => {
     const queued = await queueRes.json();
     expect(queued.status).toBe('queued');
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
+  });
+
+  it('does not treat markdown titles as implementation plan evidence for queue admission', async () => {
+    const { task } = await createWorkbenchTask();
+    await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: '# Implementation Plan',
+      messageType: 'markdown_document',
+      metadataJson: {
+        title: 'Implementation Plan',
+      },
+    });
+
+    const queueRes = await app.request(`http://localhost/api/workbench/sessions/${task.id}/queue`, {
+      method: 'POST',
+      headers: sameOriginHeaders,
+    });
+
+    expect(queueRes.status).toBe(422);
+    const body = await queueRes.json();
+    expect(body.code).toBe('IMPLEMENTATION_PLAN_REQUIRED');
+    expect((await repo.getTask(task.id))?.status).toBe('draft');
   });
 
   it('admits ready sessions to the Implementation Queue without duplicating not-queued work', async () => {

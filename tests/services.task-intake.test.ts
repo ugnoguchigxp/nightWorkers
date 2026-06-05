@@ -8,7 +8,7 @@ const baseInput = {
 };
 
 describe('TaskIntakePlanner', () => {
-  it('creates ordered heuristic todos from a numbered request', async () => {
+  it('requires an explicit generated plan instead of classifying user text heuristically', async () => {
     const plan = await planTaskIntake({
       ...baseInput,
       latestUserMessage: [
@@ -18,14 +18,14 @@ describe('TaskIntakePlanner', () => {
       ].join('\n'),
     });
 
-    expect(plan.source).toBe('heuristic');
-    expect(plan.todos).toHaveLength(3);
-    expect(plan.todos.map((todo) => todo.seq)).toEqual([1, 2, 3]);
-    expect(plan.todos.map((todo) => todo.dependsOn)).toEqual([[], [1], [2]]);
-    expect(plan.todos.map((todo) => todo.taskType)).toEqual([
-      'investigation',
-      'code_change',
-      'test_change',
+    expect(plan.source).toBe('fallback');
+    expect(plan.warnings).toEqual(['intake_generator_required']);
+    expect(plan.todos).toEqual([
+      expect.objectContaining({
+        seq: 1,
+        taskType: 'investigation',
+        status: 'needs_human',
+      }),
     ]);
   });
 
@@ -74,8 +74,31 @@ describe('TaskIntakePlanner', () => {
     expect(plan.todos[0]).toMatchObject({
       seq: 1,
       title: 'Implement the feature',
-      status: 'pending',
+      taskType: 'investigation',
+      status: 'needs_human',
     });
+  });
+
+  it('does not infer taskType from generated todo text when taskType is missing', async () => {
+    const plan = await planTaskIntake(baseInput, {
+      generatePlan: async () => ({
+        todos: [
+          {
+            title: 'テストを追加してください',
+            description: 'Vitest coverage should improve',
+          },
+        ],
+      }),
+    });
+
+    expect(plan.source).toBe('llm');
+    expect(plan.todos).toEqual([
+      expect.objectContaining({
+        taskType: 'investigation',
+        status: 'needs_human',
+        statusReason: 'Generated todo is missing an explicit taskType.',
+      }),
+    ]);
   });
 
   it('compresses generated todo plans to the maximum todo count', async () => {
@@ -98,14 +121,14 @@ describe('TaskIntakePlanner', () => {
     expect(plan.warnings).toContain('todo_count_compressed');
   });
 
-  it('marks ambiguous requests as needing human clarification', async () => {
+  it('does not special-case fixed phrases as an ambiguous request classifier', async () => {
     const plan = await planTaskIntake({
       ...baseInput,
       latestUserMessage: 'よろしく',
     });
 
     expect(plan.source).toBe('fallback');
-    expect(plan.warnings).toContain('ambiguous_request');
+    expect(plan.warnings).toContain('intake_generator_required');
     expect(plan.todos).toHaveLength(1);
     expect(plan.todos[0]).toMatchObject({
       status: 'needs_human',

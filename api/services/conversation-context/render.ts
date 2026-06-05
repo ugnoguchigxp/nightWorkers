@@ -63,13 +63,6 @@ export function renderStateCard(
     lines.push(
       `- target: ${cardSnapshot.files.target.length ? cardSnapshot.files.target.join(', ') : 'none'}`
     );
-    const touched =
-      variant === 'minimal'
-        ? cardSnapshot.files.touched.slice(0, 5)
-        : variant === 'short-action'
-          ? cardSnapshot.files.touched.slice(0, 10)
-          : cardSnapshot.files.touched;
-    lines.push(`- touched: ${touched.length ? touched.join(', ') : 'none'}`);
 
     if (variant !== 'minimal') {
       lines.push('', 'Current state:');
@@ -112,17 +105,13 @@ export function renderStateCard(
     renderSnapshot = {
       ...snapshot,
       code: {
-        snippets: snapshot.code.snippets.filter((snippet) => snippet.reason === 'relevant_hunk'),
+        snippets: [],
       },
     };
     text = build('full');
   }
   if (estimateTokens(text) > maxTokens) {
     truncated.add('continuity.previousAction');
-    text = build('short-action');
-  }
-  if (estimateTokens(text) > maxTokens) {
-    truncated.add('files.touched');
     text = build('short-action');
   }
   if (estimateTokens(text) > maxTokens) {

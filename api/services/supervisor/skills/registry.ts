@@ -155,61 +155,6 @@ export function normalizeSupervisorRoutingHypothesis(
   };
 }
 
-export function legacyWorkflowToRoutingHypothesis(workflow?: string): SupervisorRoutingHypothesis {
-  if (workflow === 'code_change') {
-    return {
-      primaryMode: 'code_edit',
-      secondaryModes: ['test_and_verification'],
-      phase: 'execute',
-      workKinds: ['code'],
-      overlays: ['evidence'],
-      requiredEvidence: ['repo inspection', 'verification result'],
-      nextSkillFiles: [
-        'SKILL.md',
-        'references/modes/code_edit.md',
-        'references/work_kinds/code.md',
-        'references/overlays/evidence.md',
-      ],
-      confidence: 0.7,
-    };
-  }
-  if (workflow === 'evidence_review') {
-    return {
-      primaryMode: 'investigation',
-      secondaryModes: ['review'],
-      phase: 'investigate',
-      workKinds: [],
-      overlays: ['evidence'],
-      requiredEvidence: ['repo evidence'],
-      nextSkillFiles: [
-        'SKILL.md',
-        'references/modes/investigation.md',
-        'references/modes/review.md',
-        'references/overlays/evidence.md',
-      ],
-      confidence: 0.7,
-    };
-  }
-  if (workflow === 'research') {
-    return {
-      primaryMode: 'research',
-      secondaryModes: [],
-      phase: 'investigate',
-      workKinds: ['research'],
-      overlays: ['external_research_required'],
-      requiredEvidence: ['source pages'],
-      nextSkillFiles: [
-        'SKILL.md',
-        'references/modes/research.md',
-        'references/work_kinds/research.md',
-        'references/overlays/external_research_required.md',
-      ],
-      confidence: 0.7,
-    };
-  }
-  return defaultSupervisorRoutingHypothesis;
-}
-
 function parseSupervisorSkillMarkdown(
   raw: string,
   metadata: {

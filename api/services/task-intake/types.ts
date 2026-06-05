@@ -31,7 +31,7 @@ export type TaskIntakeTodo = {
 
 export type TaskIntakePlan = {
   todos: TaskIntakeTodo[];
-  source: 'heuristic' | 'llm' | 'fallback';
+  source: 'llm' | 'fallback';
   warnings: string[];
 };
 

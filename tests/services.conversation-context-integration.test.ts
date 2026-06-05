@@ -107,13 +107,17 @@ describe('conversation context repository integration', () => {
     );
   });
 
-  it('includes a bounded hunk for files discovered from git name-status', async () => {
+  it('does not add git-only workspace changes to StateCard targets', async () => {
     await execFileAsync('git', ['init'], { cwd: repoRoot });
     await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: repoRoot });
     await execFileAsync('git', ['config', 'user.name', 'Test User'], { cwd: repoRoot });
     await execFileAsync('git', ['add', 'fizzbuzz.ts'], { cwd: repoRoot });
     await execFileAsync('git', ['commit', '-m', 'initial'], { cwd: repoRoot });
     await writeFile(path.join(repoRoot, 'fizzbuzz.ts'), 'export const value = 7;\n');
+    await writeFile(
+      path.join(repoRoot, 'internal-state-card-work.ts'),
+      'export const noise = true;\n'
+    );
     const project = await repo.createRepository({
       name: `TEST: Conversation Context Git ${Date.now()}`,
       localPath: repoRoot,
@@ -128,7 +132,7 @@ describe('conversation context repository integration', () => {
     await repo.createTaskMessage({
       taskId: task.id,
       role: 'user',
-      content: 'この続きで条件を調整してください',
+      content: 'この続きで fizzbuzz.ts の条件を調整してください',
       messageType: 'text',
     });
 
@@ -137,15 +141,16 @@ describe('conversation context repository integration', () => {
       reason: 'manual_refresh',
     });
 
-    expect(result.snapshot.snapshotJson.files.target).toContain('fizzbuzz.ts');
-    expect(result.snapshot.snapshotJson.code.snippets).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          path: 'fizzbuzz.ts',
-          reason: 'relevant_hunk',
-          content: expect.stringContaining('export const value = 7'),
-        }),
-      ])
+    expect(result.snapshot.snapshotJson.files.target).toEqual(['fizzbuzz.ts']);
+    expect(result.snapshot.snapshotJson.files.target).not.toContain('internal-state-card-work.ts');
+    expect(result.snapshot.stateCardText).not.toContain('internal-state-card-work.ts');
+    expect(result.snapshot.stateCardText).not.toContain('touched:');
+    expect(result.snapshot.snapshotJson.code.snippets).toContainEqual(
+      expect.objectContaining({
+        path: 'fizzbuzz.ts',
+        reason: 'target_file_small',
+        content: expect.stringContaining('export const value = 7'),
+      })
     );
   });
 });
