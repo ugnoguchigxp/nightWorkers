@@ -15,5 +15,4 @@
 
 ## Report Contract
 
-- 実行した検証コマンドと結果を finalResponse に含める。
-
+- 実行した検証コマンドと結果を finalize_answer.message に含める。

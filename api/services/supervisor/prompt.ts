@@ -1,335 +1,407 @@
-import {
-  legacyWorkflowToRoutingHypothesis,
-  normalizeSupervisorRoutingHypothesis,
-  renderSupervisorSkillDocuments,
-  resolveSupervisorSkillDocuments,
-  summarizeSupervisorSkillDocuments,
-} from './skills/registry';
-import {
-  type SupervisorRoutingHypothesis,
-  supervisorModes,
-  supervisorOverlays,
-  supervisorPhases,
-  supervisorWorkKinds,
-} from './skills/types';
+import fs from 'node:fs';
+import path from 'node:path';
+import type { WorkerToolName } from '../tool-policy/types';
 
-export type SupervisorWorkflow = 'general' | 'evidence_review' | 'code_change' | 'research';
-export type { SupervisorRoutingHypothesis };
-
-const TOOL_CATALOG = [
-  { name: 'list_dir', description: 'リポジトリ内のディレクトリを一覧する。' },
-  { name: 'find_file', description: '正確なパスが不明なとき、ファイルマスクで候補を探す。' },
-  {
-    name: 'read_file',
-    description:
-      'レビューや編集の前に、リポジトリ内のファイルを読む。デフォルトは圧縮ビュー。完全な従来出力が必要な場合だけ compressionMode="off" または行範囲を使う。',
-  },
-  {
-    name: 'inspect_structure',
-    description:
-      '大きな TypeScript/JavaScript/JSON を読む前に構造だけ確認する。TS/JS は import と symbol、JSON は値ではなくパスと型を返す。',
-  },
-  {
-    name: 'search_files',
-    description: '直接読むだけでは足りないとき、リポジトリ内の文字列を検索する。',
-  },
-  { name: 'search_web', description: '最新の外部情報が必要なとき、公開 Web を検索する。' },
-  {
-    name: 'fetch_content',
-    description: '検索で選んだ URL の本文を読む。検索結果 snippet だけを根拠にしない。',
-  },
-  { name: 'git_status', description: '作業ツリーの状態を確認する。' },
-  { name: 'git_diff', description: 'リポジトリの差分を確認する。' },
-  {
-    name: 'replace_content',
-    description:
-      '既存ファイルの編集で優先する。対象が1箇所に限定できる単純なリテラル/regex 置換を行う。',
-  },
-  {
-    name: 'apply_patch',
-    description:
-      '新規ファイル作成、複数ファイル変更、構造的な編集を unified diff で行う。既存ファイルの単純置換では replace_content を優先する。',
-  },
-  {
-    name: 'run_command',
-    description:
-      'ポリシーの範囲内で検証コマンドやリポジトリのスクリプトを実行する。巨大出力はデフォルトでエラー周辺と末尾中心に圧縮される。',
-  },
+export const jobTypes = [
+  'general_answer',
+  'planning',
+  'minor_code_edit',
+  'major_code_edit',
+  'script_code_edit',
+  'review',
+  'investigation',
+  'runtime_debug',
+  'test_and_verification',
+  'research',
+  'docs',
+  'git_release',
+  'code',
+  'refactor',
+  'test',
+  'config',
+  'dependency',
+  'data_migration',
+  'blueprint',
+  'ui_ux',
+  'git',
+  'release',
 ] as const;
 
-const TOOL_CALL_SHAPE = `toolCall: {
-  name: string,
-  arguments: object
-} | null`;
+export type JobType = (typeof jobTypes)[number];
 
-export type ExternalSupervisorToolCatalogEntry = {
-  namespacedName: string;
-  serverId: string;
-  toolName: string;
-  description?: string;
+export const initiallyImplementedJobTypes = ['minor_code_edit'] as const satisfies JobType[];
+
+export const jobTypeDescriptions: Record<JobType, string> = {
+  general_answer: '軽い回答。実行やリポジトリ変更を伴わない場合。',
+  planning: '実装前の計画、分解、方針整理。',
+  minor_code_edit: '小さい修正、小さい新規作成、少数ファイルの明確な変更。',
+  major_code_edit: '複数 Todo に分解すべき大きい変更。初期実装では実行対象外。',
+  script_code_edit: '調査用の一時スクリプト。初期実装では実行対象外。',
+  review: 'コード、ドキュメント、差分のレビュー。',
+  investigation: '原因調査、ログ確認、事実確認。',
+  runtime_debug: '実行時問題、ログ、再現、環境確認。',
+  test_and_verification: 'テスト、検証、確認コマンド実行。',
+  research: '外部情報や最新情報を伴う調査。',
+  docs: 'ドキュメント作成、修正、レビュー。',
+  git_release: 'git 状態確認、コミット、リリース準備。',
+  code: 'コード関連の補助分類。初期実装では直接実行しない。',
+  refactor: 'リファクタリング分類。初期実装では直接実行しない。',
+  test: 'テスト分類。初期実装では直接実行しない。',
+  config: '設定ファイル関連の分類。初期実装では直接実行しない。',
+  dependency: '依存関係関連の分類。初期実装では直接実行しない。',
+  data_migration: 'データ移行関連の分類。初期実装では直接実行しない。',
+  blueprint: '画面案や Blueprint 関連の分類。初期実装では直接実行しない。',
+  ui_ux: 'UI/UX 関連の分類。初期実装では直接実行しない。',
+  git: 'git 操作分類。初期実装では直接実行しない。',
+  release: 'リリース分類。初期実装では直接実行しない。',
 };
 
-export function buildToolCapabilitySummary(): string {
-  return `[Tool Capability Summary]
-Round 1 はこの要約を使って requiredEvidence / nextSkillFiles / likelyTools を提案できます。ただし tool 実行はしません。
-- repo evidence: read_file / search_files / inspect_structure
-- edit: replace_content / apply_patch
-- verification: run_command / run_verification
-- worktree evidence: git_status / git_diff
-- external evidence: search_web / fetch_content
-- external bridge: mcp_call_tool`;
+export type ToolDefinition = {
+  name: WorkerToolName | 'select_job_type' | 'finalize_answer';
+  description: string;
+  inputSchema: Record<string, unknown>;
+};
+
+const objectSchema = (properties: Record<string, unknown>, required: string[] = []) => ({
+  type: 'object',
+  required,
+  properties,
+  additionalProperties: false,
+});
+
+export const toolRegistry = {
+  list_dir: {
+    name: 'list_dir',
+    description: 'リポジトリ相対ディレクトリのファイル一覧を取得する。',
+    inputSchema: objectSchema({
+      relativePath: { type: 'string' },
+      recursive: { type: 'boolean' },
+      maxEntries: { type: 'number' },
+    }),
+  },
+  read_file: {
+    name: 'read_file',
+    description: 'リポジトリ相対パスのファイル内容を読む。',
+    inputSchema: objectSchema(
+      {
+        filePath: { type: 'string' },
+        startLine: { type: 'number' },
+        endLine: { type: 'number' },
+        compressionMode: { type: 'string', enum: ['auto', 'off'] },
+      },
+      ['filePath']
+    ),
+  },
+  search_files: {
+    name: 'search_files',
+    description: 'リポジトリ内の文字列検索を行う。',
+    inputSchema: objectSchema(
+      {
+        query: { type: 'string' },
+        glob: { type: 'string' },
+      },
+      ['query']
+    ),
+  },
+  search_web: {
+    name: 'search_web',
+    description: '最新情報や外部情報が必要な場合に Web 検索する。',
+    inputSchema: objectSchema(
+      {
+        query: { type: 'string' },
+        maxResults: { type: 'number' },
+      },
+      ['query']
+    ),
+  },
+  fetch_content: {
+    name: 'fetch_content',
+    description: 'URL の本文を取得する。',
+    inputSchema: objectSchema(
+      {
+        url: { type: 'string' },
+        maxChars: { type: 'number' },
+      },
+      ['url']
+    ),
+  },
+  apply_patch: {
+    name: 'apply_patch',
+    description: 'patchContent に指定した差分で新規作成または構造的な変更を行う。',
+    inputSchema: objectSchema({ patchContent: { type: 'string' } }, ['patchContent']),
+  },
+  replace_content: {
+    name: 'replace_content',
+    description: '既存ファイル内の限定された文字列を置換する。',
+    inputSchema: objectSchema(
+      {
+        filePath: { type: 'string' },
+        needle: { type: 'string' },
+        replacement: { type: 'string' },
+        mode: { type: 'string', enum: ['literal', 'regex'] },
+        allowMultipleOccurrences: { type: 'boolean' },
+      },
+      ['filePath', 'needle', 'replacement']
+    ),
+  },
+  run_command: {
+    name: 'run_command',
+    description: '検証や確認のためにコマンドを実行する。',
+    inputSchema: objectSchema(
+      {
+        command: { type: 'string' },
+        cwd: { type: 'string' },
+        timeoutSeconds: { type: 'number' },
+        compressionMode: { type: 'string', enum: ['auto', 'off'] },
+      },
+      ['command']
+    ),
+  },
+  run_verification: {
+    name: 'run_verification',
+    description: '明示的な検証コマンドを実行する。',
+    inputSchema: objectSchema(
+      {
+        command: { type: 'string' },
+        reason: { type: 'string' },
+        cwd: { type: 'string' },
+        timeoutSeconds: { type: 'number' },
+        compressionMode: { type: 'string', enum: ['auto', 'off'] },
+      },
+      ['command']
+    ),
+  },
+  git_status: {
+    name: 'git_status',
+    description: '作業ツリーの状態を確認する。',
+    inputSchema: objectSchema({}),
+  },
+  git_diff: {
+    name: 'git_diff',
+    description: '現在の差分を確認する。',
+    inputSchema: objectSchema({}),
+  },
+  select_job_type: {
+    name: 'select_job_type',
+    description: '別の jobType に切り替える。',
+    inputSchema: objectSchema(
+      {
+        jobType: { type: 'string', enum: [...jobTypes] },
+        context: { type: 'string' },
+      },
+      ['jobType']
+    ),
+  },
+  finalize_answer: {
+    name: 'finalize_answer',
+    description: 'ユーザーへの最終回答を確定する。',
+    inputSchema: objectSchema({ message: { type: 'string' } }, ['message']),
+  },
+} satisfies Record<string, ToolDefinition>;
+
+export type SupervisorToolName = keyof typeof toolRegistry;
+
+const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
+  general_answer: ['finalize_answer'],
+  planning: ['list_dir', 'read_file', 'search_files', 'git_status', 'finalize_answer'],
+  minor_code_edit: [
+    'read_file',
+    'search_files',
+    'apply_patch',
+    'replace_content',
+    'run_command',
+    'select_job_type',
+    'finalize_answer',
+  ],
+  major_code_edit: ['finalize_answer'],
+  script_code_edit: ['finalize_answer'],
+  review: ['git_status', 'git_diff', 'read_file', 'search_files', 'run_command', 'finalize_answer'],
+  investigation: [
+    'list_dir',
+    'read_file',
+    'search_files',
+    'run_command',
+    'git_status',
+    'finalize_answer',
+  ],
+  runtime_debug: ['read_file', 'search_files', 'run_command', 'git_status', 'finalize_answer'],
+  test_and_verification: [
+    'run_verification',
+    'run_command',
+    'read_file',
+    'search_files',
+    'finalize_answer',
+  ],
+  research: ['search_web', 'fetch_content', 'read_file', 'finalize_answer'],
+  docs: [
+    'list_dir',
+    'read_file',
+    'search_files',
+    'apply_patch',
+    'replace_content',
+    'finalize_answer',
+  ],
+  git_release: ['git_status', 'git_diff', 'run_command', 'finalize_answer'],
+  code: [
+    'list_dir',
+    'read_file',
+    'search_files',
+    'apply_patch',
+    'replace_content',
+    'run_command',
+    'finalize_answer',
+  ],
+  refactor: [
+    'list_dir',
+    'read_file',
+    'search_files',
+    'apply_patch',
+    'replace_content',
+    'run_command',
+    'finalize_answer',
+  ],
+  test: [
+    'read_file',
+    'search_files',
+    'apply_patch',
+    'replace_content',
+    'run_verification',
+    'run_command',
+    'finalize_answer',
+  ],
+  config: [
+    'list_dir',
+    'read_file',
+    'search_files',
+    'apply_patch',
+    'replace_content',
+    'run_command',
+    'finalize_answer',
+  ],
+  dependency: [
+    'read_file',
+    'search_files',
+    'run_command',
+    'apply_patch',
+    'replace_content',
+    'finalize_answer',
+  ],
+  data_migration: [
+    'list_dir',
+    'read_file',
+    'search_files',
+    'apply_patch',
+    'replace_content',
+    'run_command',
+    'finalize_answer',
+  ],
+  blueprint: ['read_file', 'search_files', 'apply_patch', 'replace_content', 'finalize_answer'],
+  ui_ux: ['read_file', 'search_files', 'apply_patch', 'replace_content', 'finalize_answer'],
+  git: ['git_status', 'git_diff', 'run_command', 'finalize_answer'],
+  release: ['git_status', 'git_diff', 'run_command', 'read_file', 'finalize_answer'],
+};
+
+export function getAllowedToolsForJobType(jobType: JobType): ToolDefinition[] {
+  return allowedToolsByJobType[jobType].map((name) => toolRegistry[name]);
 }
 
-export function buildToolContractSummary(
-  externalTools: ExternalSupervisorToolCatalogEntry[] = []
-): string {
-  const externalToolLines =
-    externalTools.length === 0
-      ? ['- なし']
-      : externalTools.map(
-          (tool) =>
-            `- ${tool.namespacedName}: ${tool.description || 'MCP server tool'}。使う場合は toolCall.name="mcp_call_tool"、arguments.serverId="${tool.serverId}"、arguments.toolName="${tool.toolName}"、arguments.arguments にそのツールの引数を入れる。`
-        );
-  return `[Tool Contract Summary]
-毎 Round 2 で守る短い worker tool 契約です。
-- 利用可能 worker tools: ${TOOL_CATALOG.map((tool) => tool.name).join(', ')}, mcp_call_tool
-- toolCall.name は必ず利用可能 worker tool 名だけを使う。
-- mcp__*, functions.*, exec_command, shell namespace を toolCall.name に入れない。
-- worker tool の実行結果が observations に無い場合、実行済み・成功済み・失敗済みとして扱わない。
-- likelyTools は分類上の候補であり、toolCall とは違う。実行要求は toolCall だけで返す。
-- phase="stop" または phase="report" の場合は toolCall を返さず、Finalize Answer に進む。
-- リポジトリの読み書きは登録済み Project の repo root を基準にした worker tool だけで行う。
-
-[Worker tool details]
-${TOOL_CATALOG.map((tool) => `- ${tool.name}: ${tool.description}`).join('\n')}
-- mcp_call_tool: 設定済み MCP Server の tool を呼び出す bridge。下の External MCP tools に listed された tool だけに使う。
-
-[External MCP tools]
-${externalToolLines.join('\n')}
-
-[toolCall スキーマ]
-${TOOL_CALL_SHAPE}
-
-toolCall.name は必ず Tool catalog にある内部 worker ツール名だけを使う。External MCP tools の名前を直接 toolCall.name に入れず、mcp_call_tool に正規化して返す。`;
-}
-
-export function buildSessionMemoryContract(): string {
-  return `[SessionMemory Contract]
-SessionMemory は現在の run 状態です。暗黙の推論ではなく、この snapshot と observations を見て次の decision を決めてください。
-- workflow は legacy 互換フィールドです。分類の本体は routingHypothesis です。
-- Round 1 の routingHypothesis は初期仮説であり、Round 2 では observations と SessionMemory に基づいて更新できます。
-- changedFiles / evidence / verification / blockers は実際の worker tool 結果または decision の明示更新だけを根拠にします。
-- decision で sessionMemoryUpdate を返すと runtime が保存します。
-- 編集成功後は必要なら verify へ、十分なら phase="stop" へ進んでください。runtime は編集成功だけで最終回答を作りません。`;
-}
-
-export function buildFinalizeContract(): string {
-  return `[Finalize Contract]
-phase="stop" は最終回答を直接返す意味ではありません。必ず Finalize Answer に進む合図です。
-phase="report" は互換目的で受けるだけです。内部では stop と同じく Finalize Answer に進みます。
-Finalize Answer は toolCall 不可です。SessionMemory、observations、final decision だけを要約し、新しい作業判断や未実行 tool の主張をしないでください。`;
-}
-
-export function buildLoopBoundsContract(): string {
-  return `[Loop Bounds Contract]
-終了判断ができない場合、runtime は maxIterations / maxToolCalls などの明示上限で停止します。
-LLM は上限回避のために推測で完了扱いしてはいけません。
-phase="stop" 以外では terminalState を返さないでください。`;
-}
-
-function buildDecisionContract(): string {
-  return `[Decision JSON 契約]
-JSON のみを返してください。markdown のコードブロックで囲まないでください。
-必須キー:
-- phase: observe | plan | act | verify | report | stop
-- workflow: general | evidence_review | code_change | research。legacy 互換フィールドです。routingHypothesis から最も近い値を入れてください。
-- routingHypothesis: object
-- likelyTools: string[]。分類上の候補です。実行要求ではありません。
-- sessionMemoryUpdate: object。必要なときだけ返す run 状態更新です。
-- instruction: string
-- rationale: string
-- finalResponse: string
-- expectedEvidence: string[]
-- riskLevel: low | medium | high
-- toolCall: ${TOOL_CALL_SHAPE}
-- terminalState: needs_review | completed | blocked | failed | timed_out | cancelled | needs_human。phase が stop のときだけ指定する。
-
-terminalState は phase="stop" のときだけキーを出してください。phase が stop 以外のときは terminalState キー自体を省略し、null を返してはいけません。
-toolCall.name を返す場合は、同じ prompt 内の Tool catalog だけを参照してください。
-利用できないツール名を返してはいけません。例: mcp__*, functions.*, exec_command, shell namespace。
-
-routingHypothesis は次の形にしてください:
-{
-  primaryMode: ${supervisorModes.join(' | ')},
-  secondaryModes: string[],
-  phase: ${supervisorPhases.join(' | ')},
-  workKinds: string[],
-  overlays: string[],
-  subtype?: string,
-  requiredEvidence: string[],
-  nextSkillFiles: string[],
-  confidence: number
-}
-
-phase / primaryMode / secondaryModes / workKinds / overlays は観測結果で変わり得ます。現在の routing が不適切なら、同じ decision 内で更新してください。`;
-}
-
-function buildBaseSystemContext(projectRoot?: string): string {
-  return `[SystemContext]
-あなたはコーディングエージェントです。ユーザーの目的を完遂するため、必要な調査、実行、検証を行い、構造化された decision を返してください。
-${projectRoot ? `プロジェクトルート: ${projectRoot}` : ''}
-
-[基本ルール]
-- 証拠が必要な場合、phase="stop" の前に必ず証拠を取得する。
-- 外部の最新情報が必要な場合、検索結果だけで判断せず本文を確認する。
-- 編集が必要な場合、対象確認、編集、検証の順で進める。
-- Round 2 の finalResponse は Finalize Answer の fallback です。通常の最終回答は Finalize Answer が作ります。
-- 判断に迷う場合は、推測で完了扱いにせず、次に必要な証拠または検証を取得する。`;
-}
-
-function buildWorkflowSelectionContext(projectRoot: string): string {
-  return `${buildBaseSystemContext(projectRoot)}
-
-[Round 1: routing hypothesis]
-単一分類を確定せず、routing hypothesis を返してください。
-- primaryMode は1つだけ選ぶ。
-- secondaryModes / workKinds / overlays は必要なら複数選ぶ。
-- phase は現在位置を表す: ${supervisorPhases.join(' | ')}
-- primaryMode / secondaryModes の候補: ${supervisorModes.join(' | ')}
-- workKinds の候補: ${supervisorWorkKinds.join(' | ')}
-- overlays の候補: ${supervisorOverlays.join(' | ')}
-
-[Blueprint routing]
-次のような依頼は Blueprint タスクとして扱ってください:
-- 「試作して」「プロトタイプを見たい」「プレビューを作って」
-- 「どんなイメージか教えて」「完成イメージを見たい」「画面案を見たい」
-- 「Blueprint を見たい」「Blueprint で作って」「Blueprint を更新して」
-- 実装前に ECサイトトップページ、ダッシュボード、管理画面などの画面構成、セクション、データ連携を確認したい依頼
-
-この場合 routingHypothesis は原則として次の形に寄せてください:
-- primaryMode: planning
-- secondaryModes: ['review'] または []
-- phase: plan
-- workKinds: ['blueprint', 'ui_ux']。ドキュメントだけが目的なら docs も追加する。
-- overlays: ['user_facing_change']
-- subtype: 'app_blueprint'
-- nextSkillFiles: ['references/work_kinds/blueprint.md'] を含める。
-
-workflow は legacy 互換のため、routing に最も近い general | evidence_review | code_change | research のどれかを入れてください。
-Round 1 は基本的に phase="plan" または phase="observe" を返してください。リポジトリ証拠や Web 証拠を本当に必要としない軽い会話だけ、phase="stop" を許可します。
-Round 1 では toolCall を原則 null にしてください。実行手段の選択は Round 2 の Tool catalog に基づいて行います。
-Round 1 は Tool Capability Summary を使って requiredEvidence / nextSkillFiles / likelyTools を提案できます。ただし tool 実行はしません。
-
-${buildToolCapabilitySummary()}
-
-${buildDecisionContract()}`;
-}
-
-export function buildRound1SystemPrompt(projectRoot: string): string {
-  return buildWorkflowSelectionContext(projectRoot);
-}
-
-export function buildRound2SystemPrompt(
-  routingOrWorkflow: SupervisorWorkflow | Partial<SupervisorRoutingHypothesis> = 'general',
-  options?: {
-    projectRoot?: string;
-    skillsDirectory?: string;
-    externalTools?: ExternalSupervisorToolCatalogEntry[];
+export function getExecutableWorkerToolName(name: string): WorkerToolName | null {
+  if (
+    name === 'list_dir' ||
+    name === 'read_file' ||
+    name === 'search_files' ||
+    name === 'search_web' ||
+    name === 'fetch_content' ||
+    name === 'apply_patch' ||
+    name === 'replace_content' ||
+    name === 'run_command' ||
+    name === 'run_verification' ||
+    name === 'git_status' ||
+    name === 'git_diff'
+  ) {
+    return name;
   }
-): string {
-  const routing =
-    typeof routingOrWorkflow === 'string'
-      ? legacyWorkflowToRoutingHypothesis(routingOrWorkflow)
-      : normalizeSupervisorRoutingHypothesis(routingOrWorkflow);
-  const skillDocuments = resolveSupervisorSkillDocuments(routing, options?.skillsDirectory);
-  const skillDocumentSummary = summarizeSupervisorSkillDocuments(skillDocuments);
-
-  return `${buildBaseSystemContext(options?.projectRoot)}
-
-[Round 2: 実行]
-Round 1 で選んだ workflow に従い、次の具体的な1手を決めてください。
-ユーザー入力は JSON で渡されます。latestUserMessage は元の依頼、round1Decision は routing hypothesis を含む Round 1 結果、todoPlan は run 内の Todo と procedure/context の要約、observations はこれまでの worker ツール実行結果です。
-sessionMemory は現在の run 状態です。observations だけでなく sessionMemory を見て、phase / routingHypothesis / nextSkillFiles を毎回再評価してください。
-todoPlan がある場合、現在の実行は Todo を順番に完了する前提で進め、未完了 Todo を finalResponse で完了扱いにしないでください。
-evidence overlay または調査・レビュー系 mode では、observations が空ならユーザー向け回答を作らず、まず toolCall で証拠を取得してください。
-証拠がある場合は、その証拠だけを根拠に finalResponse を完成させてください。
-worker tool の実行結果が observations に無い場合、cp / mv / touch / apply_patch / replace_content / run_command を実行済み、失敗済み、拒否済みだと書いてはいけません。
-リポジトリへの読み書きは必ず Tool catalog の worker toolCall で行ってください。Codex 自身のローカルファイル操作や別経路の編集を、リポジトリ変更の根拠として扱ってはいけません。
-code_edit では、編集ツールを実行していないまま read-only / 書き込み不可 / 権限不足を理由に phase="stop" を返してはいけません。
-
-${buildSessionMemoryContract()}
-
-${buildFinalizeContract()}
-
-${buildLoopBoundsContract()}
-
-[Routing Hypothesis]
-${JSON.stringify(routing, null, 2)}
-
-[Loaded Skill Documents]
-${JSON.stringify(skillDocumentSummary, null, 2)}
-
-${renderSupervisorSkillDocuments(skillDocuments)}
-
-[Re-evaluation Gate]
-toolCall または phase="stop" を返す前に、次を確認してください。
-- Is the current routing still correct?
-- Has new evidence changed the task type?
-- Do we need to load another skill file?
-- Is this now verification, review, or final answer?
-routing が変わった場合は routingHypothesis を更新し、必要な nextSkillFiles を返してください。
-
-${buildDecisionContract()}
-
-${buildToolContractSummary(options?.externalTools)}`;
+  return null;
 }
 
-export function buildFinalizeSystemPrompt(projectRoot?: string): string {
-  return `${buildBaseSystemContext(projectRoot)}
-
-[Finalize Answer]
-あなたは Supervisor run の最終回答だけを作成します。toolCall は返さないでください。
-入力 JSON には latestUserMessage、sessionMemory、observations、finalDecision、todoPlan、currentTodo が含まれます。
-SessionMemory と observations にある証拠、変更ファイル、検証結果、blocker、残リスクだけを根拠にしてください。
-内部 routing や skill 名を不要に説明しないでください。
-code change の場合、編集成功後にレビュー待ちで止めるなら terminalState="needs_review" を返せます。
-
-${buildFinalizeContract()}
-
-[Finalize JSON 契約]
-JSON のみを返してください。markdown のコードブロックで囲まないでください。
-必須キー:
-- phase: stop
-- workflow: general | evidence_review | code_change | research
-- routingHypothesis: object
-- instruction: string
-- rationale: string
-- finalResponse: string
-- expectedEvidence: string[]
-- likelyTools: []
-- sessionMemoryUpdate: null または final summary に必要な最小更新
-- terminalState: needs_review | completed | blocked | failed | timed_out | cancelled | needs_human
-- riskLevel: low | medium | high
-- toolCall: null`;
+export function validateToolCallForJobType(input: {
+  jobType: JobType;
+  toolCall: { name: string; arguments: Record<string, unknown> };
+}): { ok: true; tool: ToolDefinition } | { ok: false; message: string } {
+  const tool = Object.values(toolRegistry).find(
+    (candidate) => candidate.name === input.toolCall.name
+  );
+  if (!tool) return { ok: false, message: `Unknown tool: ${input.toolCall.name}` };
+  const allowed = getAllowedToolsForJobType(input.jobType).some(
+    (candidate) => candidate.name === tool.name
+  );
+  if (!allowed)
+    return { ok: false, message: `Tool is not allowed for ${input.jobType}: ${tool.name}` };
+  return { ok: true, tool };
 }
 
-export function buildSupervisorTurnInput(userInput: string, observations: string[]): string {
-  if (observations.length === 0) return userInput;
+export function renderToolDefinitions(tools: ToolDefinition[]): string {
+  return tools
+    .map((tool) =>
+      [
+        `- ${tool.name}: ${tool.description}`,
+        `  inputSchema: ${JSON.stringify(tool.inputSchema)}`,
+      ].join('\n')
+    )
+    .join('\n');
+}
+
+export function loadFlatSkill(jobType: JobType, directory = defaultFlatSkillDirectory()): string {
+  const filePath = path.join(directory, `${jobType}.md`);
+  return fs.readFileSync(filePath, 'utf8');
+}
+
+export function defaultFlatSkillDirectory(): string {
+  return path.join(process.cwd(), 'api/services/supervisor/skills/flat');
+}
+
+export function buildRound1JobTypePrompt(projectRoot: string): string {
   return [
-    userInput,
+    'jobType と goal を1つずつ選んでください。',
+    'goal はこの run で達成する状態を短い一文で書く。',
+    'JSON のみ。旧 decision 形式や toolCall は出さない。',
     '',
-    '[これまでに取得したリポジトリ証拠]',
-    ...observations
-      .slice(-6)
-      .map((observation, index) => `Observation ${index + 1}:\n${observation}`),
+    `プロジェクトルート: ${projectRoot}`,
     '',
-    '[停止時の回答要件]',
-    '- phase="stop" の場合、finalResponse にユーザー向けの実際の結果を書く。',
-    '- 結果を instruction や rationale だけに書かない。',
-    '- 証拠系 workflow では、使用した具体的な証拠を含める。',
+    '[Job Types]',
+    jobTypes.map((jobType) => `- ${jobType}: ${jobTypeDescriptions[jobType]}`).join('\n'),
+    '',
+    '[Tool Overview]',
+    renderToolDefinitions(Object.values(toolRegistry)),
+    '',
+    '[Output Schema]',
+    '{ "jobType": "<job type>", "goal": "<short concrete goal>" }',
   ].join('\n');
 }
 
-export function buildCodexTurnPrompt(systemPrompt: string, userPrompt: string): string {
-  return ['[システム指示]', systemPrompt, '', '[ユーザー入力]', userPrompt].join('\n');
+export function buildRound2ToolCallPrompt(input: {
+  projectRoot: string;
+  jobType: JobType;
+  skill: string;
+  tools: ToolDefinition[];
+}): string {
+  return [
+    `jobType=${input.jobType}`,
+    '次の toolCall を1つだけ返してください。',
+    'JSON のみ。旧 decision 形式や説明用フィールドは出さない。',
+    '完了したと判断したら finalize_answer を返す。',
+    'finalize_answer.message でプロジェクト内のファイルに触れる場合は、プロジェクトルートからの相対パスで書く。',
+    'apply_patch が成功したら次は changedFiles の対象を read_file する。対象パスが分かっている場合に list_dir は使わない。',
+    '',
+    `プロジェクトルート: ${input.projectRoot}`,
+    '',
+    '[Skill]',
+    input.skill,
+    '',
+    '[Allowed Tools]',
+    renderToolDefinitions(input.tools),
+    '',
+    '[Output Schema]',
+    '{ "toolCall": { "name": "<tool>", "arguments": { } } }',
+  ].join('\n');
 }

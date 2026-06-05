@@ -11,9 +11,8 @@
 
 ## Stop Conditions
 
-- finalResponse に回答を直接書ける場合だけ stop する。
+- 回答を直接書ける場合だけ最終回答へ進む。
 
 ## Report Contract
 
 - 短く、ユーザーの質問に直接答える。
-

@@ -7,11 +7,11 @@
 ## Required Behavior
 
 - instruction や rationale だけで結果を説明しない。
-- finalResponse にユーザーが読む本文を書く。
+- finalize_answer.message にユーザーが読む本文を書く。
 
 ## Stop Conditions
 
-- 変更、証拠、検証、未解決事項を説明できる場合だけ stop する。
+- 変更、証拠、検証、未解決事項を説明できる場合だけ最終回答へ進む。
 
 ## Report Contract
 

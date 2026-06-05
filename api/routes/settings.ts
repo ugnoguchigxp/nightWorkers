@@ -37,6 +37,7 @@ import {
   updateMcpServer,
 } from '../services/mcp/mcp-settings';
 import { callSupervisorLLM } from '../services/supervisor/llm-provider';
+import { buildRound1JobTypePrompt } from '../services/supervisor/prompt';
 
 const RUNTIME_SETTINGS_DIR = path.resolve(process.cwd(), 'api/.runtime');
 const RUNTIME_SETTINGS_PATH =
@@ -539,8 +540,9 @@ export const settingsRouter = createOpenApiRouter()
     const provider = process.env.ACTIVE_LLM_PROVIDER || 'azure';
     try {
       await callSupervisorLLM(
-        'You are a strict JSON generator.',
-        'Return {"phase":"stop","instruction":"smoke","rationale":"ok","expectedEvidence":[],"terminalState":"completed","riskLevel":"low"}'
+        buildRound1JobTypePrompt(process.cwd()),
+        'LLM smoke check: answer this as a general lightweight request.',
+        { round: 1, schemaFirst: true }
       );
       return c.json({ ok: true, provider, message: 'smoke ok' }, 200);
     } catch (err) {

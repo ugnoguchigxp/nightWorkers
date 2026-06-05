@@ -2,11 +2,55 @@ import { describe, expect, it } from 'vitest';
 import {
   buildNormalTranscriptItems,
   buildVisibleEditDiffSummary,
+  findArtifactTaskMessage,
   getAgentEditSummary,
   parseDiffMetadata,
 } from '../src/modules/nightworkers/components/ThreadTimeline';
 
 describe('ThreadTimeline edit summaries', () => {
+  it('recovers Blueprint artifact messages from activity transcript metadata', () => {
+    const message = {
+      id: 'message-blueprint',
+      taskId: 'task-1',
+      role: 'assistant',
+      content: '# ECサイトのトップページBlueprint\n\n## Blueprint Summary\nraw markdown',
+      messageType: 'markdown_document',
+      createdAt: '2026-06-05T00:00:00.000Z',
+    };
+    const metadata = {
+      intent: 'app_blueprint',
+      title: 'ECサイトのトップページBlueprint',
+      appBlueprint: { id: 'ec-top-page-blueprint', name: 'ECサイトのトップページBlueprint' },
+      validation: { valid: true, issues: [] },
+    };
+
+    const artifactMessage = findArtifactTaskMessage([
+      {
+        id: 'event-blueprint',
+        taskId: 'task-1',
+        kind: 'assistant.message',
+        source: 'assistant',
+        status: 'completed',
+        seq: 1,
+        text: message.content,
+        payloadJson: { message, metadata },
+        createdAt: '2026-06-05T00:00:00.000Z',
+        visibility: 'visible',
+      } as any,
+    ]);
+
+    expect(artifactMessage).toEqual(
+      expect.objectContaining({
+        id: message.id,
+        messageType: 'markdown_document',
+        metadataJson: expect.objectContaining({
+          intent: 'app_blueprint',
+          appBlueprint: expect.objectContaining({ name: 'ECサイトのトップページBlueprint' }),
+        }),
+      })
+    );
+  });
+
   it('keeps one apply_patch diff and the final assistant message in normal mode', () => {
     const patchContent = [
       '*** Begin Patch',

@@ -15,6 +15,7 @@ vi.mock('../api/services/supervisor/llm-provider', async () => {
   return {
     ...actual,
     callSupervisorLLM: vi.fn(),
+    callStructuredJsonLLM: vi.fn(),
   };
 });
 
@@ -36,11 +37,16 @@ vi.mock('../api/services/agent-runtime/registry', () => ({
 
 const sameOriginHeaders = { Origin: 'http://localhost:39174' };
 
+function mockJobSelection(jobType: string, goal: string) {
+  return { jobType, goal };
+}
+
 beforeAll(async () => {
   await ensureNightWorkersSchema();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 25));
   vi.clearAllMocks();
   vi.restoreAllMocks();
 });
@@ -69,26 +75,9 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('stores draft conversation messages without creating a run', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
-      phase: 'plan',
-      workflow: 'general',
-      routingHypothesis: {
-        primaryMode: 'planning',
-        secondaryModes: [],
-        phase: 'plan',
-        workKinds: [],
-        overlays: [],
-        requiredEvidence: [],
-        nextSkillFiles: [],
-        confidence: 0.75,
-      },
-      instruction: '相談内容を整理して次の一手を提案します。',
-      rationale: 'The user is asking for planning before implementation.',
-      finalResponse: '',
-      expectedEvidence: [],
-      riskLevel: 'low',
-      toolCall: null,
-    });
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('general_answer', '相談内容を整理して次の一手を提案します。')
+    );
     const { task } = await createWorkbenchTask();
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -108,26 +97,9 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('routes a normal prompt through LLM intake without starting a run', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
-      phase: 'plan',
-      workflow: 'code_change',
-      routingHypothesis: {
-        primaryMode: 'planning',
-        secondaryModes: [],
-        phase: 'plan',
-        workKinds: ['ui_ux'],
-        overlays: ['user_facing_change'],
-        requiredEvidence: ['current UI structure'],
-        nextSkillFiles: ['SKILL.md'],
-        confidence: 0.82,
-      },
-      instruction: 'Analyze the goal and propose the next implementation step.',
-      rationale: 'The prompt describes a user-facing UI change.',
-      finalResponse: '',
-      expectedEvidence: [],
-      riskLevel: 'medium',
-      toolCall: null,
-    });
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('docs', 'Analyze the goal and propose the next implementation step.')
+    );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -153,29 +125,9 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('starts an implementation run for code-change intake without persisting the round 1 response as chat', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
-      phase: 'stop',
-      workflow: 'code_change',
-      routingHypothesis: {
-        primaryMode: 'code_edit',
-        secondaryModes: [],
-        phase: 'execute',
-        workKinds: ['code'],
-        overlays: [],
-        subtype: 'file_addition',
-        requiredEvidence: ['project root path confirmation', 'file creation attempt result'],
-        nextSkillFiles: [],
-        confidence: 0.94,
-      },
-      instruction: '`/repo` のプロジェクトルートに `fizzbuzz.ts` を追加する。',
-      rationale: 'sandbox 制限で拒否されたため、実ファイル作成を完了できない。',
-      finalResponse:
-        '`fizzbuzz.ts` を作る実行までは行いましたが、現在の権限制約で書き込みができませんでした。',
-      expectedEvidence: ['`fizzbuzz.ts` の作成結果'],
-      terminalState: 'blocked',
-      riskLevel: 'low',
-      toolCall: null,
-    });
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('minor_code_edit', '`fizzbuzz.ts` をプロジェクトルートに追加する。')
+    );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -196,31 +148,18 @@ describe('NightWorkers workbench routes', () => {
       (message: any) => message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
     expect(systemMessage?.content).toContain('Implementation run started');
-    expect(systemMessage?.metadataJson?.intakeDecision?.finalResponse).toContain('書き込み');
+    expect(systemMessage?.metadataJson?.intakeJobSelection?.goal).toContain('fizzbuzz.ts');
     expect(body.task.status).toBe('running');
+    await vi.waitFor(async () => {
+      const runs = await repo.listTaskRunsForTask(task.id);
+      expect(runs[0]?.status).toBe('completed');
+      const messages = await repo.listTaskMessages(task.id);
+      expect(messages.some((message) => message.content === 'Runtime completed.')).toBe(true);
+    });
   });
 
-  it('records a visible intake message even when the LLM decision has no display text', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
-      phase: 'plan',
-      workflow: 'general',
-      routingHypothesis: {
-        primaryMode: 'planning',
-        secondaryModes: [],
-        phase: 'plan',
-        workKinds: [],
-        overlays: [],
-        requiredEvidence: [],
-        nextSkillFiles: [],
-        confidence: 0.75,
-      },
-      instruction: '',
-      rationale: '',
-      finalResponse: '',
-      expectedEvidence: [],
-      riskLevel: 'low',
-      toolCall: null,
-    });
+  it('records a visible intake message even when the LLM job selection has no goal text', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(mockJobSelection('general_answer', ''));
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -235,8 +174,11 @@ describe('NightWorkers workbench routes', () => {
       expect.arrayContaining([
         expect.objectContaining({
           role: 'assistant',
-          content: expect.stringContaining('"phase": "plan"'),
-          metadataJson: expect.objectContaining({ intent: 'intake' }),
+          content: expect.stringContaining('jobType: general_answer'),
+          metadataJson: expect.objectContaining({
+            intent: 'intake',
+            jobSelection: expect.objectContaining({ jobType: 'general_answer', goal: '' }),
+          }),
         }),
       ])
     );
@@ -266,45 +208,17 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('generates an app blueprint artifact when LLM intake classifies the prompt as blueprint work', async () => {
-    vi.mocked(llm.callSupervisorLLM)
-      .mockResolvedValueOnce({
-        phase: 'plan',
-        workflow: 'general',
-        routingHypothesis: {
-          primaryMode: 'planning',
-          secondaryModes: ['review'],
-          phase: 'plan',
-          workKinds: ['blueprint', 'ui_ux'],
-          overlays: ['user_facing_change'],
-          subtype: 'app_blueprint',
-          requiredEvidence: ['screen structure'],
-          nextSkillFiles: ['references/work_kinds/blueprint.md'],
-          confidence: 0.9,
-        },
-        instruction: 'Create an EC site top page Blueprint.',
-        rationale: 'The user asked to see a Blueprint before implementation.',
-        finalResponse: '',
-        expectedEvidence: [],
-        riskLevel: 'medium',
-        toolCall: null,
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('blueprint', 'Create an EC site top page Blueprint.')
+    );
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+      JSON.stringify({
+        ...representativeAppBlueprint,
+        id: 'shop-home',
+        name: 'EC Site Top Page',
+        description: 'LLM generated storefront blueprint with commerce-specific sections.',
       })
-      .mockResolvedValueOnce({
-        phase: 'stop',
-        workflow: 'general',
-        routingHypothesis: undefined,
-        instruction: '',
-        rationale: 'Generated AppBlueprint JSON.',
-        finalResponse: JSON.stringify({
-          ...representativeAppBlueprint,
-          id: 'shop-home',
-          name: 'EC Site Top Page',
-          description: 'LLM generated storefront blueprint with commerce-specific sections.',
-        }),
-        expectedEvidence: [],
-        terminalState: 'completed',
-        riskLevel: 'low',
-        toolCall: null,
-      });
+    );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -315,17 +229,18 @@ describe('NightWorkers workbench routes', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[0]).toContain(
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
       '[Skill Document: references/work_kinds/blueprint.md]'
     );
-    expect(vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[0]).toContain(
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
       '通常の Blueprint 生成では DB/DDL/data model/data binding を設計しない'
     );
-    expect(vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[0]).toContain(
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
       'databaseSchema は必ず {"tables":[],"relations":[]}'
     );
-    expect(vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[0]).toContain(
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
       'DB table/column/relation/binding/DDL の考案は DB Design workflow の担当'
     );
     expect(body.run).toBeNull();
@@ -348,73 +263,45 @@ describe('NightWorkers workbench routes', () => {
       ])
     );
     expect(blueprintMessage?.metadataJson?.routingHypothesis?.subtype).toBe('app_blueprint');
-    expect(blueprintMessage?.metadataJson?.intakeDecision?.instruction).toBe(
+    expect(blueprintMessage?.metadataJson?.intakeJobSelection?.goal).toBe(
       'Create an EC site top page Blueprint.'
     );
   });
 
   it('shows an SFA dashboard request as an app blueprint artifact', async () => {
-    vi.mocked(llm.callSupervisorLLM)
-      .mockResolvedValueOnce({
-        phase: 'plan',
-        workflow: 'general',
-        routingHypothesis: {
-          primaryMode: 'planning',
-          secondaryModes: ['review'],
-          phase: 'plan',
-          workKinds: ['blueprint', 'ui_ux'],
-          overlays: ['user_facing_change'],
-          subtype: 'app_blueprint',
-          requiredEvidence: ['SFA dashboard KPIs', 'sales activities', 'pipeline table'],
-          nextSkillFiles: ['references/work_kinds/blueprint.md'],
-          confidence: 0.96,
-        },
-        instruction: 'Create an SFA dashboard AppBlueprint artifact.',
-        rationale: 'The user asked to display the dashboard as a Blueprint.',
-        finalResponse: '',
-        expectedEvidence: [],
-        riskLevel: 'medium',
-        toolCall: null,
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('blueprint', 'Create an SFA dashboard AppBlueprint artifact.')
+    );
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+      JSON.stringify({
+        ...representativeAppBlueprint,
+        id: 'sfa-dashboard',
+        name: 'SFA Dashboard',
+        description: 'Sales force automation dashboard for pipeline, activity, and alerts.',
+        screens: [
+          {
+            ...representativeAppBlueprint.screens[0],
+            id: 'sales-dashboard',
+            name: 'Sales Dashboard',
+            componentName: 'DashboardPage',
+            sections: [
+              {
+                ...representativeAppBlueprint.screens[0].sections[0],
+                id: 'sales-kpis',
+                name: 'Sales KPIs',
+                componentName: 'KpiSummarySection',
+              },
+              {
+                ...representativeAppBlueprint.screens[0].sections[1],
+                id: 'pipeline-table',
+                name: 'Pipeline Table',
+                componentName: 'DataTableSection',
+              },
+            ],
+          },
+        ],
       })
-      .mockResolvedValueOnce({
-        phase: 'stop',
-        workflow: 'general',
-        routingHypothesis: undefined,
-        instruction: '',
-        rationale: 'Generated AppBlueprint JSON.',
-        finalResponse: JSON.stringify({
-          ...representativeAppBlueprint,
-          id: 'sfa-dashboard',
-          name: 'SFA Dashboard',
-          description: 'Sales force automation dashboard for pipeline, activity, and alerts.',
-          screens: [
-            {
-              ...representativeAppBlueprint.screens[0],
-              id: 'sales-dashboard',
-              name: 'Sales Dashboard',
-              componentName: 'DashboardPage',
-              sections: [
-                {
-                  ...representativeAppBlueprint.screens[0].sections[0],
-                  id: 'sales-kpis',
-                  name: 'Sales KPIs',
-                  componentName: 'KpiSummarySection',
-                },
-                {
-                  ...representativeAppBlueprint.screens[0].sections[1],
-                  id: 'pipeline-table',
-                  name: 'Pipeline Table',
-                  componentName: 'DataTableSection',
-                },
-              ],
-            },
-          ],
-        }),
-        expectedEvidence: [],
-        terminalState: 'completed',
-        riskLevel: 'low',
-        toolCall: null,
-      });
+    );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -425,7 +312,8 @@ describe('NightWorkers workbench routes', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(2);
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
     expect(body.messages).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ metadataJson: expect.objectContaining({ intent: 'intake' }) }),
@@ -452,40 +340,10 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('records raw LLM output when blueprint generation returns non-json', async () => {
-    vi.mocked(llm.callSupervisorLLM)
-      .mockResolvedValueOnce({
-        phase: 'plan',
-        workflow: 'general',
-        routingHypothesis: {
-          primaryMode: 'planning',
-          secondaryModes: ['review'],
-          phase: 'plan',
-          workKinds: ['blueprint', 'ui_ux'],
-          overlays: ['user_facing_change'],
-          subtype: 'app_blueprint',
-          requiredEvidence: ['screen structure'],
-          nextSkillFiles: ['references/work_kinds/blueprint.md'],
-          confidence: 0.9,
-        },
-        instruction: 'Create a Blueprint artifact.',
-        rationale: 'The request was classified as Blueprint work.',
-        finalResponse: '',
-        expectedEvidence: [],
-        riskLevel: 'medium',
-        toolCall: null,
-      })
-      .mockResolvedValueOnce({
-        phase: 'stop',
-        workflow: 'general',
-        routingHypothesis: undefined,
-        instruction: '',
-        rationale: 'Invalid generation.',
-        finalResponse: 'not json',
-        expectedEvidence: [],
-        terminalState: 'completed',
-        riskLevel: 'low',
-        toolCall: null,
-      });
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('blueprint', 'Create a Blueprint artifact.')
+    );
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce('not json');
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -495,11 +353,12 @@ describe('NightWorkers workbench routes', () => {
     });
 
     expect(res.status).toBe(502);
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[0]).toContain(
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
       '[Skill Document: references/work_kinds/blueprint.md]'
     );
-    expect(vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[0]).toContain(
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
       '[AppBlueprint JSON Schema]'
     );
     const messages = await repo.listTaskMessages(task.id);
@@ -533,43 +392,15 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('records raw LLM output when generated blueprint json fails catalog validation', async () => {
-    vi.mocked(llm.callSupervisorLLM)
-      .mockResolvedValueOnce({
-        phase: 'plan',
-        workflow: 'general',
-        routingHypothesis: {
-          primaryMode: 'planning',
-          secondaryModes: ['review'],
-          phase: 'plan',
-          workKinds: ['blueprint', 'ui_ux'],
-          overlays: ['user_facing_change'],
-          subtype: 'app_blueprint',
-          requiredEvidence: ['screen structure'],
-          nextSkillFiles: ['references/work_kinds/blueprint.md'],
-          confidence: 0.9,
-        },
-        instruction: 'Create a Blueprint artifact.',
-        rationale: 'The request was classified as Blueprint work.',
-        finalResponse: '',
-        expectedEvidence: [],
-        riskLevel: 'medium',
-        toolCall: null,
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('blueprint', 'Create a Blueprint artifact.')
+    );
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+      JSON.stringify({
+        ...representativeAppBlueprint,
+        designPreset: { ...representativeAppBlueprint.designPreset, theme: 'design_governance' },
       })
-      .mockResolvedValueOnce({
-        phase: 'stop',
-        workflow: 'general',
-        routingHypothesis: undefined,
-        instruction: '',
-        rationale: 'Invalid generation.',
-        finalResponse: JSON.stringify({
-          ...representativeAppBlueprint,
-          designPreset: { ...representativeAppBlueprint.designPreset, theme: 'design_governance' },
-        }),
-        expectedEvidence: [],
-        terminalState: 'completed',
-        riskLevel: 'low',
-        toolCall: null,
-      });
+    );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -579,7 +410,8 @@ describe('NightWorkers workbench routes', () => {
     });
 
     expect(res.status).toBe(502);
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(2);
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
     const messages = await repo.listTaskMessages(task.id);
     expect(messages).toEqual(
       expect.arrayContaining([
@@ -602,40 +434,12 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('drafts a markdown spec message and queues only after validation passes', async () => {
-    vi.mocked(llm.callSupervisorLLM)
-      .mockResolvedValueOnce({
-        phase: 'plan',
-        workflow: 'general',
-        routingHypothesis: {
-          primaryMode: 'planning',
-          secondaryModes: [],
-          phase: 'plan',
-          workKinds: ['blueprint'],
-          overlays: [],
-          subtype: 'app_blueprint',
-          requiredEvidence: ['screen structure'],
-          nextSkillFiles: ['references/work_kinds/blueprint.md'],
-          confidence: 0.86,
-        },
-        instruction: 'Create a Blueprint from the requested workbench spec.',
-        rationale: 'Round 1 classified the request as Blueprint planning.',
-        finalResponse: '',
-        expectedEvidence: [],
-        riskLevel: 'low',
-        toolCall: null,
-      })
-      .mockResolvedValueOnce({
-        phase: 'stop',
-        workflow: 'general',
-        routingHypothesis: undefined,
-        instruction: '',
-        rationale: 'Generated AppBlueprint JSON.',
-        finalResponse: JSON.stringify(representativeAppBlueprint),
-        expectedEvidence: [],
-        terminalState: 'completed',
-        riskLevel: 'low',
-        toolCall: null,
-      });
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('blueprint', 'Create a Blueprint from the requested workbench spec.')
+    );
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+      JSON.stringify(representativeAppBlueprint)
+    );
     const { task } = await createWorkbenchTask();
 
     const draftRes = await app.request(
@@ -649,7 +453,8 @@ describe('NightWorkers workbench routes', () => {
 
     expect(draftRes.status).toBe(200);
     const draftBody = await draftRes.json();
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(2);
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
     expect(draftBody.task.status).toBe('ready');
     expect(
       draftBody.messages.some((message: any) => message.messageType === 'markdown_document')
@@ -660,6 +465,20 @@ describe('NightWorkers workbench routes', () => {
     expect(blueprintMessage?.metadataJson?.appBlueprint?.screens).toHaveLength(1);
     expect(blueprintMessage?.metadataJson?.validation?.valid).toBe(true);
     expect(blueprintMessage?.metadataJson?.generation?.source).toBe('llm');
+
+    await repo.updateImplementationQueueSettings({ processorCount: 1 });
+    const { task: blockerTask } = await createWorkbenchTask({
+      title: 'Processor blocker for draft queue',
+      status: 'queued',
+    });
+    const blockerEntry = await repo.createImplementationQueueEntry({
+      taskId: blockerTask.id,
+      repositoryId: blockerTask.repositoryId,
+    });
+    await repo.updateImplementationQueueEntry(blockerEntry.id, {
+      status: 'claimed',
+      processorSlot: 1,
+    });
 
     const queueRes = await app.request(`http://localhost/api/workbench/sessions/${task.id}/queue`, {
       method: 'POST',
@@ -718,26 +537,9 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('routes design tool intent through LLM intake instead of fixed component artifacts', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
-      phase: 'plan',
-      workflow: 'general',
-      routingHypothesis: {
-        primaryMode: 'planning',
-        secondaryModes: ['review'],
-        phase: 'plan',
-        workKinds: ['ui_ux'],
-        overlays: ['user_facing_change'],
-        requiredEvidence: ['component requirements'],
-        nextSkillFiles: ['references/work_kinds/ui_ux.md'],
-        confidence: 0.8,
-      },
-      instruction: 'Analyze the requested component design.',
-      rationale: 'The user asked for design work.',
-      finalResponse: '',
-      expectedEvidence: [],
-      riskLevel: 'medium',
-      toolCall: null,
-    });
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('docs', 'Analyze the requested component design.')
+    );
     const { task } = await createWorkbenchTask({ title: 'Button design session' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -792,18 +594,7 @@ describe('NightWorkers workbench routes', () => {
         representativeAppBlueprint.dataBindings[1],
       ],
     };
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce({
-      phase: 'stop',
-      workflow: 'general',
-      routingHypothesis: undefined,
-      instruction: '',
-      rationale: 'Revised Blueprint data design.',
-      finalResponse: JSON.stringify(revisedBlueprint),
-      expectedEvidence: [],
-      terminalState: 'completed',
-      riskLevel: 'low',
-      toolCall: null,
-    });
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(JSON.stringify(revisedBlueprint));
     const { task } = await createWorkbenchTask({ title: 'DB Design task', objective: '' });
     const prompt = buildBlueprintDbDesignPrompt({
       blueprintId: representativeAppBlueprint.id,
@@ -821,8 +612,9 @@ describe('NightWorkers workbench routes', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(llm.callSupervisorLLM).mock.calls[0]?.[0]).toContain(
+    expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
       'AppBlueprint の DB Design'
     );
     const userMessage = body.messages.find(
@@ -914,40 +706,12 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('keeps plan-mode AI responses available for queued sessions without starting a run', async () => {
-    vi.mocked(llm.callSupervisorLLM)
-      .mockResolvedValueOnce({
-        phase: 'plan',
-        workflow: 'general',
-        routingHypothesis: {
-          primaryMode: 'planning',
-          secondaryModes: [],
-          phase: 'plan',
-          workKinds: ['blueprint'],
-          overlays: [],
-          subtype: 'app_blueprint',
-          requiredEvidence: ['screen structure'],
-          nextSkillFiles: ['references/work_kinds/blueprint.md'],
-          confidence: 0.84,
-        },
-        instruction: 'Update the queued plan as a Blueprint.',
-        rationale: 'Round 1 classified the queued session message as Blueprint planning.',
-        finalResponse: '',
-        expectedEvidence: [],
-        riskLevel: 'low',
-        toolCall: null,
-      })
-      .mockResolvedValueOnce({
-        phase: 'stop',
-        workflow: 'general',
-        routingHypothesis: undefined,
-        instruction: '',
-        rationale: 'Generated AppBlueprint JSON.',
-        finalResponse: JSON.stringify(representativeAppBlueprint),
-        expectedEvidence: [],
-        terminalState: 'completed',
-        riskLevel: 'low',
-        toolCall: null,
-      });
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('blueprint', 'Update the queued plan as a Blueprint.')
+    );
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+      JSON.stringify(representativeAppBlueprint)
+    );
     const { task } = await createWorkbenchTask({ status: 'queued' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -962,7 +726,8 @@ describe('NightWorkers workbench routes', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.run).toBeNull();
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(2);
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
     expect(body.task.status).toBe('queued');
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
     expect(

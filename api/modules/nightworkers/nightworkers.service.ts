@@ -35,11 +35,8 @@ import {
   callSupervisorLLM,
   type SupervisorLlmDebugEvent,
 } from '../../services/supervisor/llm-provider';
-import {
-  buildRound1JobTypePrompt,
-  type JobType,
-  type JobTypeSelection,
-} from '../../services/supervisor/schema-first';
+import { buildRound1JobTypePrompt, type JobType } from '../../services/supervisor/prompt';
+import type { JobTypeSelection } from '../../services/supervisor/schema-first';
 import type { SupervisorRoutingHypothesis } from '../../services/supervisor/skills/types';
 import { digestText } from '../../services/text-digest';
 import type { RuntimePromptSnapshot } from '../../services/todo-context';

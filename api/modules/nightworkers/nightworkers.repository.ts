@@ -543,6 +543,42 @@ export async function createTaskMessage(data: {
       dedupeKey: `task_message:${message.id}`,
       createdAt: message.createdAt,
     });
+    if (isAppBlueprintDocumentMessage(data.messageType, data.payloadJson)) {
+      const artifact = await appendActivityArtifact({
+        taskId: data.taskId,
+        runId: data.runId ?? null,
+        kind: 'app_blueprint',
+        path: `${message.id}.app-blueprint.json`,
+        contentText: JSON.stringify(data.payloadJson.appBlueprint, null, 2),
+        metadataJson: {
+          messageId: message.id,
+          intent: data.payloadJson.intent,
+          title: data.payloadJson.title,
+          appBlueprint: data.payloadJson.appBlueprint,
+          validation: data.payloadJson.validation,
+          generation: data.payloadJson.generation,
+          source: data.payloadJson.source,
+        },
+      });
+      await appendActivityEvent({
+        taskId: data.taskId,
+        runId: data.runId ?? null,
+        turnId: message.id,
+        kind: 'system.info',
+        source: 'assistant',
+        status: 'completed',
+        text: `Blueprint artifact: ${data.payloadJson.title || data.payloadJson.appBlueprint.name || 'App Blueprint'}`,
+        payloadJson: {
+          messageId: message.id,
+          messageType: data.messageType ?? null,
+          metadata: data.payloadJson,
+        },
+        artifactId: artifact?.id ?? null,
+        externalId: message.id,
+        dedupeKey: `task_message_artifact:${message.id}`,
+        createdAt: message.createdAt,
+      });
+    }
     const diffActivityKind = getToolDiffActivityKind(data.payloadJson);
     if (diffActivityKind) {
       const artifact = await appendActivityArtifact({
@@ -586,6 +622,16 @@ export async function createTaskMessage(data: {
     });
   }
   return message;
+}
+
+function isAppBlueprintDocumentMessage(messageType: string | null | undefined, payloadJson: any) {
+  return Boolean(
+    messageType === 'markdown_document' &&
+      payloadJson &&
+      typeof payloadJson === 'object' &&
+      payloadJson.intent === 'app_blueprint' &&
+      payloadJson.appBlueprint
+  );
 }
 
 export async function getTaskMessage(id: string) {

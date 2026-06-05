@@ -5,7 +5,7 @@ import {
 } from '../src/modules/nightworkers/components/ThreadTimeline';
 
 describe('ThreadTimeline streaming persistence', () => {
-  it('keeps the latest streamed finalResponse visible after a run stops', () => {
+  it('keeps the latest streamed finalize_answer message visible after a run stops', () => {
     const preview = buildPersistedStreamingResponsePreview({
       runId: 'run-1',
       taskMessages: [
@@ -27,12 +27,13 @@ describe('ThreadTimeline streaming persistence', () => {
           actor: 'supervisor',
           type: 'info',
           eventType: 'info',
-          message: '{"phase":"stop","finalResponse":"古い stream 本文","toolCall":null}',
+          message:
+            '{"toolCall":{"name":"finalize_answer","arguments":{"message":"古い stream 本文"}}}',
           payloadJson: {
             runEvent: {
               type: 'model.response_delta',
               data: {
-                text: '{"phase":"stop","finalResponse":"古い stream 本文","toolCall":null}',
+                text: '{"toolCall":{"name":"finalize_answer","arguments":{"message":"古い stream 本文"}}}',
               },
             },
           },
@@ -46,12 +47,12 @@ describe('ThreadTimeline streaming persistence', () => {
           type: 'info',
           eventType: 'info',
           message:
-            '{"phase":"stop","finalResponse":"`fizzbuzz.ts` を作成しようとしましたが、Operation not permitted で失敗しました。","toolCall":null}',
+            '{"toolCall":{"name":"finalize_answer","arguments":{"message":"`fizzbuzz.ts` を作成しようとしましたが、Operation not permitted で失敗しました。"}}}',
           payloadJson: {
             runEvent: {
               type: 'model.response_delta',
               data: {
-                text: '{"phase":"stop","finalResponse":"`fizzbuzz.ts` を作成しようとしましたが、Operation not permitted で失敗しました。","toolCall":null}',
+                text: '{"toolCall":{"name":"finalize_answer","arguments":{"message":"`fizzbuzz.ts` を作成しようとしましたが、Operation not permitted で失敗しました。"}}}',
               },
             },
           },
@@ -88,12 +89,12 @@ describe('ThreadTimeline streaming persistence', () => {
           type: 'info',
           eventType: 'info',
           message:
-            '{"phase":"stop","finalResponse":"`fizzbuzz.ts` は既に chat に残っています。","toolCall":null}',
+            '{"toolCall":{"name":"finalize_answer","arguments":{"message":"`fizzbuzz.ts` は既に chat に残っています。"}}}',
           payloadJson: {
             runEvent: {
               type: 'model.response_delta',
               data: {
-                text: '{"phase":"stop","finalResponse":"`fizzbuzz.ts` は既に chat に残っています。","toolCall":null}',
+                text: '{"toolCall":{"name":"finalize_answer","arguments":{"message":"`fizzbuzz.ts` は既に chat に残っています。"}}}',
               },
             },
           },
@@ -103,20 +104,6 @@ describe('ThreadTimeline streaming persistence', () => {
     });
 
     expect(preview).toBeNull();
-  });
-
-  it('renders legacy supervisor decision JSON as the finalResponse only', () => {
-    const raw = JSON.stringify({
-      phase: 'stop',
-      workflow: 'code_change',
-      instruction: 'プロジェクトルート直下に fizzbuzz.ts を作成しました。',
-      finalResponse: '/Users/y.noguchi/Code/nightWorkers/fizzbuzz.ts を作成しました。',
-      toolCall: null,
-    });
-
-    expect(formatVisibleAssistantText(raw)).toBe(
-      '/Users/y.noguchi/Code/nightWorkers/fizzbuzz.ts を作成しました。'
-    );
   });
 
   it('renders schema-first finalize toolCall JSON as the message only', () => {

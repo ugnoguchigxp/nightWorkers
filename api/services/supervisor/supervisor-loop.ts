@@ -5,7 +5,6 @@ import type { RunEventActor, RunEventSeverity, RunEventType } from '../run-event
 import { executeWorkerTool } from '../worker-tools/dispatcher';
 import { callSupervisorLLM, type SupervisorLlmDebugEvent } from './llm-provider';
 import {
-  type AgentToolCallEnvelope,
   buildRound1JobTypePrompt,
   buildRound2ToolCallPrompt,
   getAllowedToolsForJobType,
@@ -13,7 +12,8 @@ import {
   type JobType,
   loadFlatSkill,
   validateToolCallForJobType,
-} from './schema-first';
+} from './prompt';
+import type { AgentToolCallEnvelope } from './schema-first';
 
 export interface SupervisorLoopInput {
   runId: string;

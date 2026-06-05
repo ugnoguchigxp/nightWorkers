@@ -143,6 +143,62 @@ describe('NightWorkers task routes', () => {
     expect(await afterRes.json()).toEqual({ events: [], artifacts: [] });
   });
 
+  it('persists Blueprint document messages as activity artifacts', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: Activity Blueprint ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: Activity blueprint target',
+      description: 'Persist activity blueprint',
+      status: 'draft',
+    });
+
+    const message = await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: '# App Blueprint',
+      messageType: 'markdown_document',
+      payloadJson: {
+        intent: 'app_blueprint',
+        title: 'Inventory App',
+        appBlueprint: { id: 'inventory-app', name: 'Inventory App' },
+        validation: { valid: true, issues: [] },
+      },
+    });
+
+    const res = await app.request(`http://localhost/api/tasks/${task.id}/activity-events`);
+    expect(res.status).toBe(200);
+    const replay = await res.json();
+    expect(replay.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'app_blueprint',
+          path: `${message.id}.app-blueprint.json`,
+          metadataJson: expect.objectContaining({
+            messageId: message.id,
+            intent: 'app_blueprint',
+            appBlueprint: expect.objectContaining({ name: 'Inventory App' }),
+          }),
+        }),
+      ])
+    );
+    expect(replay.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'system.info',
+          source: 'assistant',
+          artifactId: expect.any(String),
+          payloadJson: expect.objectContaining({
+            metadata: expect.objectContaining({ intent: 'app_blueprint' }),
+          }),
+        }),
+      ])
+    );
+  });
+
   it('does not persist response deltas into the activity ledger', async () => {
     const createdRepo = await repo.createRepository({
       name: `TEST: Activity Run Event ${crypto.randomUUID()}`,

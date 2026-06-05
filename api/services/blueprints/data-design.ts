@@ -4,7 +4,7 @@ import {
   type AppBlueprint,
   appBlueprintSchema,
 } from '../../../shared/schemas/app-blueprint.schema';
-import { callSupervisorLLM, type SupervisorLlmDebugEvent } from '../supervisor/llm-provider';
+import { callStructuredJsonLLM, type SupervisorLlmDebugEvent } from '../supervisor/llm-provider';
 import { validateAppBlueprint } from './validation';
 
 const blueprintDbDesignTargetSchema = z.discriminatedUnion('kind', [
@@ -77,16 +77,15 @@ export async function generateBlueprintDataDesignDraft(input: {
 }): Promise<GeneratedBlueprintDataDesignDraft> {
   const appBlueprintJsonSchema = renderAppBlueprintJsonSchema();
   const promptDiagnostics = buildPromptDiagnostics(appBlueprintJsonSchema, input.request);
-  const decision = await callSupervisorLLM(
+  const rawOutput = await callStructuredJsonLLM(
     buildBlueprintDataDesignSystemPrompt(appBlueprintJsonSchema),
     buildBlueprintDataDesignUserPrompt(input.request),
     {
-      round: 2,
-      tolerateSchemaFailure: false,
+      schemaName: 'app_blueprint_data_design',
+      schema: z.toJSONSchema(appBlueprintSchema),
       emitEvent: input.emitEvent,
     }
   );
-  const rawOutput = decision.finalResponse || decision.instruction;
 
   try {
     const candidate = extractJsonCandidate(rawOutput);
@@ -123,7 +122,7 @@ function buildBlueprintDataDesignSystemPrompt(appBlueprintJsonSchema: string): s
     'この作業は設計契約の更新であり、SQL、migration、Drizzle schema、物理 DB 操作は作りません。',
     '',
     '[Output Contract]',
-    'finalResponse に AppBlueprint JSON だけを入れてください。markdown、説明文、コードフェンスは不要です。',
+    'AppBlueprint JSON だけを返してください。markdown、説明文、コードフェンスは不要です。',
     'JSON は下の [AppBlueprint JSON Schema] に厳密に従ってください。',
     '',
     '[Rules]',

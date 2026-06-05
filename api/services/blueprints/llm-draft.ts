@@ -6,7 +6,7 @@ import {
 } from '../../../shared/schemas/app-blueprint.schema';
 import { blueprintCatalog } from '../blueprint-catalog';
 import { defaultDesignPreset } from '../design-governance';
-import { callSupervisorLLM, type SupervisorLlmDebugEvent } from '../supervisor/llm-provider';
+import { callStructuredJsonLLM, type SupervisorLlmDebugEvent } from '../supervisor/llm-provider';
 import {
   renderSupervisorSkillDocuments,
   resolveSupervisorSkillDocuments,
@@ -64,19 +64,18 @@ export async function generatePlanModeBlueprintDraft(input: {
   const skillDocumentSummary = summarizeSupervisorSkillDocuments(skillDocuments);
   const appBlueprintJsonSchema = renderAppBlueprintJsonSchema();
   const promptDiagnostics = buildPromptDiagnostics(appBlueprintJsonSchema, skillDocumentSummary);
-  const decision = await callSupervisorLLM(
+  const rawOutput = await callStructuredJsonLLM(
     buildBlueprintSystemPrompt({
       skillContext: renderSupervisorSkillDocuments(skillDocuments),
       appBlueprintJsonSchema,
     }),
     buildBlueprintUserPrompt(input),
     {
-      round: 2,
-      tolerateSchemaFailure: false,
+      schemaName: 'app_blueprint',
+      schema: z.toJSONSchema(appBlueprintSchema),
       emitEvent: input.emitEvent,
     }
   );
-  const rawOutput = decision.finalResponse || decision.instruction;
 
   try {
     const { blueprint, validation } = parseAndValidateBlueprintOutput(rawOutput);
@@ -146,7 +145,7 @@ function buildBlueprintSystemPrompt(input: {
     'ユーザーの依頼をもとに、実装前に確認できる高品質な画面構成、主要セクション、見た目の意図、サンプル表示内容、実装タスクを作ってください。',
     '',
     '[Output Contract]',
-    'finalResponse に AppBlueprint JSON だけを入れてください。markdown、説明文、コードフェンスは不要です。',
+    'AppBlueprint JSON だけを返してください。markdown、説明文、コードフェンスは不要です。',
     'JSON は下の [AppBlueprint JSON Schema] に厳密に従ってください。',
     '',
     '[Schema Rules]',
@@ -171,9 +170,6 @@ function buildBlueprintSystemPrompt(input: {
     '',
     '[Skill Context]',
     input.skillContext,
-    '',
-    '[Decision JSON Wrapper]',
-    'この呼び出し自体は SupervisorDecision JSON で返してください。phase="stop"、workflow="general"、terminalState="completed"、toolCall=null とし、finalResponse に AppBlueprint JSON 文字列を入れてください。',
   ].join('\n');
 }
 

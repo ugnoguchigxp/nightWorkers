@@ -9,7 +9,7 @@ import * as llm from '../api/services/supervisor/llm-provider';
 import {
   buildRound2ToolCallPrompt,
   getAllowedToolsForJobType,
-} from '../api/services/supervisor/schema-first';
+} from '../api/services/supervisor/prompt';
 import { runSupervisorLoop } from '../api/services/supervisor/supervisor-loop';
 
 const execFileAsync = promisify(execFile);

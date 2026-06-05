@@ -202,9 +202,9 @@ export function ThreadTimeline({
       {hasActivityTranscript
         ? visibleTranscriptItems.map((item) =>
             showDebugEvents ? (
-              <TranscriptItemView key={item.id} item={item} />
+              <TranscriptItemView key={item.id} item={item} onOpenArtifact={onOpenArtifact} />
             ) : (
-              <NormalTranscriptItemView key={item.id} item={item} />
+              <NormalTranscriptItemView key={item.id} item={item} onOpenArtifact={onOpenArtifact} />
             )
           )
         : timelineItems.map((item) =>
@@ -306,7 +306,13 @@ function isPatchEnvelopeText(text: string): boolean {
   return trimmed.startsWith('*** Begin Patch') || trimmed.startsWith('diff --git ');
 }
 
-function NormalTranscriptItemView({ item }: { item: TranscriptItem }) {
+function NormalTranscriptItemView({
+  item,
+  onOpenArtifact,
+}: {
+  item: TranscriptItem;
+  onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
+}) {
   if (item.kind === 'user_turn') {
     const timestamp = item.events.at(-1)?.createdAt;
     return (
@@ -318,11 +324,16 @@ function NormalTranscriptItemView({ item }: { item: TranscriptItem }) {
 
   if (item.kind === 'assistant_turn') {
     const timestamp = item.events.at(-1)?.createdAt;
+    const artifactMessage = findArtifactTaskMessage(item.events);
     const visibleText = formatVisibleAssistantText(item.text);
     return (
       <ThreadMessage messageRole="assistant" timestamp={formatFinishedTime(timestamp)}>
         <div className="space-y-3">
-          {visibleText.trim() ? <ChatMarkdown content={visibleText} /> : null}
+          {artifactMessage ? (
+            <MessagePayload message={artifactMessage} onOpenArtifact={onOpenArtifact} />
+          ) : visibleText.trim() ? (
+            <ChatMarkdown content={visibleText} />
+          ) : null}
           {item.children.map((child, index) => {
             const event = transcriptChildEvent(child);
             return event ? (
@@ -427,7 +438,13 @@ function mergeEditSections(
   return [...byPath.values()].filter((section) => section.added > 0 || section.deleted > 0);
 }
 
-function TranscriptItemView({ item }: { item: TranscriptItem }) {
+function TranscriptItemView({
+  item,
+  onOpenArtifact,
+}: {
+  item: TranscriptItem;
+  onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
+}) {
   if (item.kind === 'user_turn') {
     const timestamp = item.events.at(-1)?.createdAt;
     return (
@@ -439,11 +456,16 @@ function TranscriptItemView({ item }: { item: TranscriptItem }) {
 
   if (item.kind === 'assistant_turn') {
     const timestamp = item.events.at(-1)?.createdAt;
+    const artifactMessage = findArtifactTaskMessage(item.events);
     const visibleText = formatVisibleAssistantText(item.text);
     return (
       <ThreadMessage messageRole="assistant" timestamp={formatFinishedTime(timestamp)}>
         <div className="space-y-3">
-          {visibleText.trim() ? <ChatMarkdown content={visibleText} /> : null}
+          {artifactMessage ? (
+            <MessagePayload message={artifactMessage} onOpenArtifact={onOpenArtifact} />
+          ) : visibleText.trim() ? (
+            <ChatMarkdown content={visibleText} />
+          ) : null}
           {item.children.map((child, index) => (
             <TranscriptChildView
               key={`${item.id}-child-${index}-${childEventId(child)}`}
@@ -468,6 +490,26 @@ function TranscriptItemView({ item }: { item: TranscriptItem }) {
   }
 
   return <TranscriptActivityBlock event={item.event} title={item.event.kind} showJson={true} />;
+}
+
+export function findArtifactTaskMessage(events: ActivityEvent[]): TaskMessage | null {
+  for (const event of events) {
+    const payload = event.payloadJson as any;
+    const message = payload?.message;
+    const metadata = payload?.metadata ?? message?.metadataJson;
+    if (
+      event.kind === 'assistant.message' &&
+      message &&
+      metadata?.appBlueprint &&
+      message.messageType === 'markdown_document'
+    ) {
+      return {
+        ...message,
+        metadataJson: message.metadataJson ?? metadata,
+      } as TaskMessage;
+    }
+  }
+  return null;
 }
 
 function TranscriptChildView({ child }: { child: TranscriptChild }) {
@@ -1168,10 +1210,10 @@ function buildStreamingPreviewFromRaw(raw: string): StreamingPreview {
     return { visibleText, statusText: '最終回答を組み立てています。' };
   }
 
-  const partialFinalResponse = extractLatestPartialJsonStringValue(raw, 'finalResponse');
-  if (partialFinalResponse.trim()) {
+  const partialFinalizeMessage = extractLatestPartialJsonStringValue(raw, 'message');
+  if (partialFinalizeMessage.trim()) {
     return {
-      visibleText: partialFinalResponse,
+      visibleText: partialFinalizeMessage,
       statusText: '最終回答を生成しています。',
     };
   }
@@ -1185,19 +1227,8 @@ function buildStreamingPreviewFromRaw(raw: string): StreamingPreview {
 export function formatVisibleAssistantText(raw: string): string {
   const parsed = tryParseJsonObject(raw);
   const directMessage = stringValue(parsed?.message);
-  const legacyFinalResponse = stringValue(parsed?.finalResponse);
   const finalizeToolMessage = stringValue(parsed?.toolCall?.arguments?.message);
-  const instruction = stringValue(parsed?.instruction);
-  const rationale = stringValue(parsed?.rationale);
-  return (
-    firstNonEmpty(
-      legacyFinalResponse,
-      finalizeToolMessage,
-      directMessage,
-      instruction,
-      rationale
-    ) || raw
-  );
+  return firstNonEmpty(finalizeToolMessage, directMessage) || raw;
 }
 
 function firstNonEmpty(...values: string[]): string {

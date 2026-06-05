@@ -11,9 +11,8 @@
 
 ## Stop Conditions
 
-- finalResponse だけで目的が満たせる場合に stop する。
+- finalize_answer.message だけで目的が満たせる場合に最終回答へ進む。
 
 ## Report Contract
 
 - 簡潔に答え、不要な内部説明を避ける。
-

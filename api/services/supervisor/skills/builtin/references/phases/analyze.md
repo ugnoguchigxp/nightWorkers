@@ -7,7 +7,7 @@
 ## Required Behavior
 
 - 依頼の目的、成果物、制約、リスクを分けて考える。
-- 実行が必要なら stop せず、次の toolCall または phase を選ぶ。
+- 実行が必要なら最終回答へ進まず、次の toolCall または phase を選ぶ。
 
 ## Stop Conditions
 
@@ -16,4 +16,3 @@
 ## Report Contract
 
 - 内部 decision では次の一手と根拠を明示する。
-

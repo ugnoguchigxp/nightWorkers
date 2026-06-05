@@ -13,10 +13,10 @@ Supervisor がユーザー依頼を処理するすべてのラウンドで使う
 
 ## Stop Conditions
 
-- 必要な証拠、編集、検証、または回答材料が揃ったときだけ stop または summarize に進む。
-- routing に迷う場合は stop せず、次に必要な証拠または reference を明示する。
+- 必要な証拠、編集、検証、または回答材料が揃ったときだけ summarize または最終回答へ進む。
+- routing に迷う場合は最終回答へ進まず、次に必要な証拠または reference を明示する。
 
 ## Report Contract
 
-- finalResponse にはユーザー向けの実際の結果を書く。
+- finalize_answer.message にはユーザー向けの実際の結果を書く。
 - routing や内部 skill 名の説明は、必要な場合だけ簡潔に触れる。

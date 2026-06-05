@@ -1,163 +1,12 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMcpServer } from '../api/services/mcp/mcp-settings';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildCodexSupervisorSdkOptions,
   buildCodexSupervisorThreadOptions,
+  callStructuredJsonLLM,
   callSupervisorLLM,
 } from '../api/services/supervisor/llm-provider';
-import { buildRound2SystemPrompt } from '../api/services/supervisor/prompt';
 
-describe('Supervisor LLM provider evidence fallback', () => {
-  const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
-  const originalNodeEnv = process.env.NODE_ENV;
-  const originalMcpSettingsPath = process.env.NIGHTWORKERS_MCP_SETTINGS_PATH;
-  let tempDir: string;
-
-  beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-supervisor-mcp-'));
-    process.env.NIGHTWORKERS_MCP_SETTINGS_PATH = path.join(tempDir, 'mcp-servers.json');
-    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
-    process.env.NODE_ENV = 'test';
-  });
-
-  afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-    if (originalMcpSettingsPath === undefined) {
-      delete process.env.NIGHTWORKERS_MCP_SETTINGS_PATH;
-    } else {
-      process.env.NIGHTWORKERS_MCP_SETTINGS_PATH = originalMcpSettingsPath;
-    }
-    if (originalProvider === undefined) {
-      delete process.env.ACTIVE_LLM_PROVIDER;
-    } else {
-      process.env.ACTIVE_LLM_PROVIDER = originalProvider;
-    }
-    if (originalNodeEnv === undefined) {
-      delete process.env.NODE_ENV;
-    } else {
-      process.env.NODE_ENV = originalNodeEnv;
-    }
-  });
-
-  it('keeps evidence tool selection in the prompt-driven fixture path', async () => {
-    const decision = await callSupervisorLLM(
-      buildRound2SystemPrompt(),
-      JSON.stringify({
-        latestUserMessage:
-          'spec/jsonl-replay-import-regression-implementation-plan.md のドキュメントレビューをしてください',
-        round1Decision: {
-          phase: 'plan',
-          workflow: 'evidence_review',
-          instruction: 'Review the requested specification document.',
-          rationale: 'Need repository evidence.',
-          finalResponse: '',
-          expectedEvidence: ['spec document contents'],
-          riskLevel: 'medium',
-          toolCall: null,
-        },
-        observations: [],
-      }),
-      { round: 2 }
-    );
-
-    expect(decision.phase).toBe('act');
-    expect(decision.workflow).toBe('evidence_review');
-    expect(decision.toolCall).toEqual({
-      name: 'read_file',
-      arguments: {
-        filePath: 'spec/jsonl-replay-import-regression-implementation-plan.md',
-      },
-    });
-  });
-
-  it('allows a stop decision after repository observations have been supplied', async () => {
-    const decision = await callSupervisorLLM(
-      buildRound2SystemPrompt(),
-      JSON.stringify({
-        latestUserMessage:
-          'spec/jsonl-replay-import-regression-implementation-plan.md のドキュメントレビューをしてください',
-        round1Decision: {
-          phase: 'plan',
-          workflow: 'evidence_review',
-          instruction: 'Review the requested specification document.',
-          rationale: 'Need repository evidence.',
-          finalResponse: '',
-          expectedEvidence: ['spec document contents'],
-          riskLevel: 'medium',
-          toolCall: null,
-        },
-        observations: ['tool=read_file status=ok\n# implementation plan'],
-      }),
-      { round: 2 }
-    );
-
-    expect(decision.phase).toBe('stop');
-    expect(decision.workflow).toBe('evidence_review');
-    expect(decision.toolCall).toBeNull();
-    expect(decision.finalResponse).toContain('after reading repository evidence');
-  });
-
-  it('normalizes structured expectedEvidence objects before schema validation', async () => {
-    const decision = await callSupervisorLLM(
-      buildRound2SystemPrompt(),
-      'E2E_OBJECT_EVIDENCE_FIXTURE',
-      { round: 1 }
-    );
-
-    expect(decision.phase).toBe('plan');
-    expect(decision.workflow).toBe('evidence_review');
-    expect(decision.expectedEvidence).toEqual([
-      'spec/implementation-queue-redesign-plan.md: 1-200: implementation plan consistency',
-      'api/services/supervisor/llm-provider.ts: supervisor decision parsing',
-    ]);
-  });
-
-  it('normalizes namespaced MCP tool calls into the internal bridge tool', async () => {
-    const server = createMcpServer({
-      name: 'Fixture MCP',
-      enabled: true,
-      transport: 'stdio',
-      command: 'node',
-      args: ['fixture-server.js'],
-      toolPrefix: 'fixture_server',
-    });
-
-    const decision = await callSupervisorLLM(
-      buildRound2SystemPrompt(),
-      'E2E_MCP_NAMESPACED_TOOL_FIXTURE',
-      { round: 2 }
-    );
-
-    expect(decision.toolCall).toEqual({
-      name: 'mcp_call_tool',
-      arguments: {
-        serverId: server.id,
-        toolName: 'lookup',
-        arguments: {
-          query: 'nightworkers',
-        },
-      },
-    });
-  });
-
-  it('emits supervisor LLM debug lifecycle events through the optional sink', async () => {
-    const events: Array<{ type: string; message: string }> = [];
-
-    const decision = await callSupervisorLLM(buildRound2SystemPrompt(), 'fixture smoke', {
-      round: 1,
-      emitEvent: (event) => events.push({ type: event.type, message: event.message }),
-    });
-
-    expect(decision.phase).toBe('plan');
-    expect(events.map((event) => event.type)).toEqual([
-      'model.request_started',
-      'model.response_finished',
-    ]);
-  });
-
+describe('Supervisor LLM provider', () => {
   it('isolates Codex supervisor calls from image and plugin features', () => {
     const options = buildCodexSupervisorSdkOptions('');
 
@@ -227,12 +76,15 @@ describe('Supervisor LLM provider evidence fallback', () => {
   });
 });
 
-describe('Supervisor LLM OpenAI streaming', () => {
+describe('Supervisor LLM schema-first parsing', () => {
   const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
   const originalOpenAiEnabled = process.env.OPENAI_ENABLED;
   const originalOpenAiKey = process.env.OPENAI_API_KEY;
   const originalOpenAiModel = process.env.OPENAI_MODEL;
   const originalStreaming = process.env.OPENAI_STREAMING_ENABLED;
+  const originalFixtureOutput = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+  const originalFixtureRound1Output = process.env.SUPERVISOR_FIXTURE_ROUND1_OUTPUT;
+  const originalFixtureRound2Output = process.env.SUPERVISOR_FIXTURE_ROUND2_OUTPUT;
   const originalFetch = globalThis.fetch;
 
   afterEach(() => {
@@ -246,222 +98,16 @@ describe('Supervisor LLM OpenAI streaming', () => {
     else process.env.OPENAI_MODEL = originalOpenAiModel;
     if (originalStreaming === undefined) delete process.env.OPENAI_STREAMING_ENABLED;
     else process.env.OPENAI_STREAMING_ENABLED = originalStreaming;
+    if (originalFixtureOutput === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixtureOutput;
+    if (originalFixtureRound1Output === undefined)
+      delete process.env.SUPERVISOR_FIXTURE_ROUND1_OUTPUT;
+    else process.env.SUPERVISOR_FIXTURE_ROUND1_OUTPUT = originalFixtureRound1Output;
+    if (originalFixtureRound2Output === undefined)
+      delete process.env.SUPERVISOR_FIXTURE_ROUND2_OUTPUT;
+    else process.env.SUPERVISOR_FIXTURE_ROUND2_OUTPUT = originalFixtureRound2Output;
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
-  });
-
-  it('assembles streamed Chat Completions without emitting response_delta events', async () => {
-    process.env.ACTIVE_LLM_PROVIDER = 'openai';
-    process.env.OPENAI_ENABLED = 'true';
-    process.env.OPENAI_API_KEY = 'test-key';
-    process.env.OPENAI_MODEL = 'gpt-test';
-    process.env.OPENAI_STREAMING_ENABLED = 'true';
-
-    const streamedJson =
-      '{"phase":"stop","workflow":"general","instruction":"done","rationale":"ok","finalResponse":"done","expectedEvidence":[],"terminalState":"completed","riskLevel":"low","toolCall":null}';
-    const chunks = [streamedJson.slice(0, 80), streamedJson.slice(80)];
-    const streamBody = [
-      `data: ${JSON.stringify({ choices: [{ delta: { content: chunks[0] } }] })}\n\n`,
-      `data: ${JSON.stringify({ choices: [{ delta: { content: chunks[1] } }] })}`,
-    ].join('');
-
-    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body || '{}'));
-      expect(body.stream).toBe(true);
-      return new Response(streamBody, {
-        status: 200,
-        headers: { 'Content-Type': 'text/event-stream' },
-      });
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const events: Array<{ type: string; message: string }> = [];
-    const decision = await callSupervisorLLM('system', 'user', {
-      round: 1,
-      emitEvent: (event) => events.push({ type: event.type, message: event.message }),
-    });
-
-    expect(decision.phase).toBe('stop');
-    expect(decision.finalResponse).toBe('done');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(events.some((event) => event.type === 'model.response_delta')).toBe(false);
-    expect(events.map((event) => event.type)).toContain('model.response_finished');
-  });
-
-  it('constrains finalize response schema to stop decisions without tool calls', async () => {
-    process.env.ACTIVE_LLM_PROVIDER = 'openai';
-    process.env.OPENAI_ENABLED = 'true';
-    process.env.OPENAI_API_KEY = 'test-key';
-    process.env.OPENAI_MODEL = 'gpt-test';
-    process.env.OPENAI_STREAMING_ENABLED = 'false';
-
-    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body || '{}'));
-      const schema = body.response_format?.json_schema?.schema;
-      expect(schema.properties.phase.enum).toEqual(['stop']);
-      expect(schema.properties.toolCall.anyOf).toEqual([{ type: 'null' }]);
-      return new Response(
-        JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  phase: 'stop',
-                  workflow: 'general',
-                  routingHypothesis: null,
-                  likelyTools: [],
-                  sessionMemoryUpdate: null,
-                  instruction: 'Finalized.',
-                  rationale: 'Summary only.',
-                  finalResponse: 'Done',
-                  expectedEvidence: [],
-                  terminalState: 'completed',
-                  riskLevel: 'low',
-                  toolCall: null,
-                }),
-              },
-            },
-          ],
-        }),
-        {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const decision = await callSupervisorLLM('finalize system', '{}', { round: 3 });
-
-    expect(decision.phase).toBe('stop');
-    expect(decision.toolCall).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('returns plain text supervisor output visibly instead of substituting a fallback message', async () => {
-    process.env.ACTIVE_LLM_PROVIDER = 'openai';
-    process.env.OPENAI_ENABLED = 'true';
-    process.env.OPENAI_API_KEY = 'test-key';
-    process.env.OPENAI_MODEL = 'gpt-test';
-    process.env.OPENAI_STREAMING_ENABLED = 'false';
-
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: 'read-only sandbox のため編集できませんでした。',
-              },
-            },
-          ],
-        }),
-        {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
-    }) as unknown as typeof fetch;
-
-    const events: Array<{ type: string; message: string }> = [];
-    const decision = await callSupervisorLLM(
-      buildRound2SystemPrompt('code_change'),
-      JSON.stringify({
-        latestUserMessage: 'Composer.tsx の送信ボタンを修正してください',
-        round1Decision: {
-          phase: 'plan',
-          workflow: 'code_change',
-          instruction: 'Change code',
-          rationale: 'User requested an edit.',
-          finalResponse: '',
-          expectedEvidence: [],
-          riskLevel: 'medium',
-          toolCall: null,
-        },
-        observations: [],
-      }),
-      {
-        round: 2,
-        emitEvent: (event) => events.push({ type: event.type, message: event.message }),
-      }
-    );
-
-    expect(decision).toMatchObject({
-      phase: 'stop',
-      terminalState: 'needs_human',
-      riskLevel: 'high',
-    });
-    expect(decision.finalResponse).toBe('read-only sandbox のため編集できませんでした。');
-    expect(decision.instruction).toBe('');
-    expect(decision.rationale).toBe('');
-    expect(events.some((event) => event.type === 'model.response_parse_failed')).toBe(true);
-  });
-
-  it('returns raw JSON visibly when a stop decision has no display fields', async () => {
-    process.env.ACTIVE_LLM_PROVIDER = 'openai';
-    process.env.OPENAI_ENABLED = 'true';
-    process.env.OPENAI_API_KEY = 'test-key';
-    process.env.OPENAI_MODEL = 'gpt-test';
-    process.env.OPENAI_STREAMING_ENABLED = 'false';
-
-    const rawDecision = JSON.stringify({
-      phase: 'stop',
-      workflow: 'general',
-      instruction: '',
-      rationale: '',
-      finalResponse: '',
-      expectedEvidence: [],
-      terminalState: 'completed',
-      riskLevel: 'low',
-      toolCall: null,
-    });
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(JSON.stringify({ choices: [{ message: { content: rawDecision } }] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }) as unknown as typeof fetch;
-
-    const decision = await callSupervisorLLM('system', 'user', { round: 1 });
-
-    expect(decision).toMatchObject({
-      phase: 'stop',
-      terminalState: 'needs_human',
-      riskLevel: 'high',
-    });
-    expect(decision.finalResponse).toBe(rawDecision);
-    expect(decision.instruction).toBe('');
-    expect(decision.rationale).toBe('');
-  });
-
-  it('returns schema-invalid raw output visibly without adding fixed display text', async () => {
-    process.env.ACTIVE_LLM_PROVIDER = 'openai';
-    process.env.OPENAI_ENABLED = 'true';
-    process.env.OPENAI_API_KEY = 'test-key';
-    process.env.OPENAI_MODEL = 'gpt-test';
-    process.env.OPENAI_STREAMING_ENABLED = 'false';
-
-    const rawDecision = JSON.stringify({
-      phase: 'invalid_phase',
-      finalResponse: 'LLM raw schema-invalid response',
-    });
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(JSON.stringify({ choices: [{ message: { content: rawDecision } }] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }) as unknown as typeof fetch;
-
-    const decision = await callSupervisorLLM('system', 'user', { round: 1 });
-
-    expect(decision).toMatchObject({
-      phase: 'stop',
-      terminalState: 'needs_human',
-      riskLevel: 'high',
-    });
-    expect(decision.finalResponse).toBe(rawDecision);
-    expect(decision.instruction).toBe('');
-    expect(decision.rationale).toBe('');
   });
 
   it('repairs truncated schema-first toolCall JSON before schema validation', async () => {
@@ -472,7 +118,7 @@ describe('Supervisor LLM OpenAI streaming', () => {
     process.env.OPENAI_STREAMING_ENABLED = 'false';
 
     const rawDecision =
-      '{"toolCall":{"name":"apply_patch","arguments":{"patchContent":"--- /dev/null\\n+++ b/fizzbuzz.ts\\n@@ -0,0 +1,1 @@\\n+export const fizzbuzz = true;"}}';
+      '{"toolCall":{"name":"apply_patch","arguments":{"patchContent":"--- /dev/null\\n+++ b/example.ts\\n@@ -0,0 +1,1 @@\\n+export const createdByPatch = true;"}}';
     globalThis.fetch = vi.fn(async () => {
       return new Response(JSON.stringify({ choices: [{ message: { content: rawDecision } }] }), {
         status: 200,
@@ -488,7 +134,101 @@ describe('Supervisor LLM OpenAI streaming', () => {
     });
 
     expect(decision.toolCall.name).toBe('apply_patch');
-    expect(decision.toolCall.arguments.patchContent).toContain('+++ b/fizzbuzz.ts');
+    expect(decision.toolCall.arguments.patchContent).toContain('+++ b/example.ts');
     expect(events.some((event) => event.type === 'model.response_repaired')).toBe(true);
+  });
+
+  it('rejects plain text in schema-first calls instead of wrapping it as a legacy decision', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'openai';
+    process.env.OPENAI_ENABLED = 'true';
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.OPENAI_MODEL = 'gpt-test';
+    process.env.OPENAI_STREAMING_ENABLED = 'false';
+
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'plain text response' } }] }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }) as unknown as typeof fetch;
+
+    await expect(
+      callSupervisorLLM('system', 'user', {
+        round: 2,
+        schemaFirst: true,
+      })
+    ).rejects.toThrow();
+  });
+
+  it('uses configured fixture JSON instead of synthesizing a task-specific decision', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+    process.env.SUPERVISOR_FIXTURE_ROUND1_OUTPUT = JSON.stringify({
+      jobType: 'docs',
+      goal: 'README の表記を確認する',
+    });
+
+    const decision = await callSupervisorLLM('system', 'whatever the user asked', {
+      round: 1,
+      schemaFirst: true,
+    });
+
+    expect(decision).toEqual({
+      jobType: 'docs',
+      goal: 'README の表記を確認する',
+    });
+  });
+
+  it('requires explicit fixture JSON instead of falling back to hardcoded tool calls', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+    delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    delete process.env.SUPERVISOR_FIXTURE_ROUND2_OUTPUT;
+
+    await expect(
+      callSupervisorLLM('system', JSON.stringify({ toolResults: [] }), {
+        round: 2,
+        schemaFirst: true,
+      })
+    ).rejects.toThrow(/SUPERVISOR_FIXTURE_ROUND2_OUTPUT/);
+  });
+
+  it('uses explicit fixture JSON for structured JSON calls', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+    process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+      title: 'Configured fixture output',
+      items: ['one'],
+    });
+
+    const rawOutput = await callStructuredJsonLLM('system', 'user', {
+      schemaName: 'example_schema',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['title', 'items'],
+        properties: {
+          title: { type: 'string' },
+          items: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    });
+
+    expect(JSON.parse(rawOutput)).toEqual({
+      title: 'Configured fixture output',
+      items: ['one'],
+    });
+  });
+
+  it('rejects non-JSON structured fixture output', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+    process.env.SUPERVISOR_FIXTURE_OUTPUT = 'plain fixture text';
+
+    await expect(
+      callStructuredJsonLLM('system', 'user', {
+        schemaName: 'example_schema',
+        schema: { type: 'object' },
+      })
+    ).rejects.toThrow(/response JSON parse failed/);
   });
 });
