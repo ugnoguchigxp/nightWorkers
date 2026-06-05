@@ -59,7 +59,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
     (artifact) => artifact.kind === 'app_blueprint'
   );
   const latestDiffArtifact = diffArtifacts[0];
-  const [showDebugEvents, setShowDebugEvents] = useState(false);
+  const [showDebugEvents, setShowDebugEvents] = useState(true);
   return (
     <div className="relative flex h-screen min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#111827]">
       <div className="shrink-0 border-b border-slate-700/70 bg-[#0f172a] px-6 py-3 pr-16">

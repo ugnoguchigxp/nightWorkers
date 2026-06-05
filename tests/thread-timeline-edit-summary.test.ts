@@ -1,10 +1,159 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildNormalTranscriptItems,
+  buildVisibleEditDiffSummary,
   getAgentEditSummary,
   parseDiffMetadata,
 } from '../src/modules/nightworkers/components/ThreadTimeline';
 
 describe('ThreadTimeline edit summaries', () => {
+  it('keeps one apply_patch diff and the final assistant message in normal mode', () => {
+    const patchContent = [
+      '*** Begin Patch',
+      '*** Add File: fizzbuzz.ts',
+      '+export function fizzbuzz(n: number): string {',
+      '+  return String(n);',
+      '+}',
+      '*** End Patch',
+    ].join('\n');
+    const items = buildNormalTranscriptItems([
+      {
+        kind: 'user_turn',
+        id: 'user:1',
+        turnId: 'user-1',
+        events: [],
+        text: 'fizzbuzz.tsを作ってください',
+      },
+      {
+        kind: 'activity',
+        id: 'activity:request',
+        event: {
+          id: 'request',
+          taskId: 'task-1',
+          kind: 'llm.request',
+          source: 'supervisor',
+          status: 'completed',
+          seq: 1,
+          text: 'Round 2 prompt',
+          createdAt: '2026-06-05T00:00:00.000Z',
+          visibility: 'visible',
+        } as any,
+      },
+      {
+        kind: 'activity',
+        id: 'activity:raw',
+        event: {
+          id: 'raw',
+          taskId: 'task-1',
+          kind: 'assistant.raw_output',
+          source: 'supervisor',
+          status: 'completed',
+          seq: 2,
+          text: JSON.stringify({
+            toolCall: {
+              name: 'apply_patch',
+              arguments: { patchContent },
+            },
+          }),
+          createdAt: '2026-06-05T00:00:01.000Z',
+          visibility: 'visible',
+        } as any,
+      },
+      {
+        kind: 'activity',
+        id: 'activity:schema',
+        event: {
+          id: 'schema',
+          taskId: 'task-1',
+          kind: 'llm.schema_result',
+          source: 'supervisor',
+          status: 'completed',
+          seq: 3,
+          text: '',
+          payloadJson: {
+            payload: {
+              toolCall: {
+                name: 'apply_patch',
+                arguments: { patchContent },
+              },
+            },
+          },
+          createdAt: '2026-06-05T00:00:02.000Z',
+          visibility: 'visible',
+        } as any,
+      },
+      {
+        kind: 'activity',
+        id: 'activity:tool-result',
+        event: {
+          id: 'tool-result',
+          taskId: 'task-1',
+          kind: 'tool.result',
+          source: 'worker',
+          status: 'completed',
+          seq: 4,
+          text: 'tool=apply_patch status=ok',
+          createdAt: '2026-06-05T00:00:03.000Z',
+          visibility: 'visible',
+        } as any,
+      },
+      {
+        kind: 'assistant_turn',
+        id: 'assistant:final',
+        turnId: 'assistant-final',
+        events: [],
+        text: '`fizzbuzz.ts` を作成しました。',
+        children: [],
+      },
+    ]);
+
+    expect(items.map((item) => item.id)).toEqual(['user:1', 'activity:raw', 'assistant:final']);
+  });
+
+  it('builds a compact file stat summary for normal apply_patch display', () => {
+    const patchContent = [
+      '*** Begin Patch',
+      '*** Add File: src/modules/nightworkers/components/ThreadTimeline.tsx',
+      '+first',
+      '+second',
+      '*** Update File: tests/thread-timeline-edit-summary.test.ts',
+      '@@',
+      '-old',
+      '+new',
+      '*** End Patch',
+    ].join('\n');
+
+    const summary = buildVisibleEditDiffSummary({
+      id: 'raw',
+      taskId: 'task-1',
+      kind: 'assistant.raw_output',
+      source: 'supervisor',
+      status: 'completed',
+      seq: 1,
+      text: JSON.stringify({
+        toolCall: {
+          name: 'apply_patch',
+          arguments: { patchContent },
+        },
+      }),
+      createdAt: '2026-06-05T00:00:00.000Z',
+      visibility: 'visible',
+    } as any);
+
+    expect(summary).toEqual([
+      {
+        path: 'src/modules/nightworkers/components/ThreadTimeline.tsx',
+        added: 2,
+        deleted: 0,
+      },
+      {
+        path: 'tests/thread-timeline-edit-summary.test.ts',
+        added: 1,
+        deleted: 1,
+      },
+    ]);
+  });
+
   it('keeps diff hunk headers out of displayed code line numbers', () => {
     const metadata = parseDiffMetadata(
       [

@@ -152,6 +152,9 @@ export function ThreadTimeline({
     events: activityEvents,
     artifacts: activityArtifacts,
   });
+  const visibleTranscriptItems = showDebugEvents
+    ? transcriptItems
+    : buildNormalTranscriptItems(transcriptItems);
   const hasActivityTranscript = transcriptItems.length > 0;
   const chatMessages = taskMessages.filter(
     (message) => message.role === 'user' || message.role === 'assistant'
@@ -197,7 +200,13 @@ export function ThreadTimeline({
         </div>
       ) : null}
       {hasActivityTranscript
-        ? transcriptItems.map((item) => <TranscriptItemView key={item.id} item={item} />)
+        ? visibleTranscriptItems.map((item) =>
+            showDebugEvents ? (
+              <TranscriptItemView key={item.id} item={item} />
+            ) : (
+              <NormalTranscriptItemView key={item.id} item={item} />
+            )
+          )
         : timelineItems.map((item) =>
             item.kind === 'message' ? (
               <ThreadMessage
@@ -241,6 +250,181 @@ export function ThreadTimeline({
       {!hasActivityTranscript ? <FinalReportCard latestRun={latestRun} /> : null}
     </div>
   );
+}
+
+export function buildNormalTranscriptItems(items: TranscriptItem[]): TranscriptItem[] {
+  const filtered: TranscriptItem[] = [];
+  const seenEditDiffs = new Set<string>();
+
+  for (const item of items) {
+    if (item.kind === 'user_turn') {
+      filtered.push(item);
+      continue;
+    }
+
+    if (item.kind === 'assistant_turn') {
+      const text = isPatchEnvelopeText(item.text) ? '' : item.text;
+      const children = item.children.filter((child) => {
+        const event = transcriptChildEvent(child);
+        return event ? rememberVisibleEditDiff(event, seenEditDiffs) : false;
+      });
+      if (text.trim() || children.length > 0) filtered.push({ ...item, text, children });
+      continue;
+    }
+
+    if (item.kind === 'activity' && rememberVisibleEditDiff(item.event, seenEditDiffs)) {
+      filtered.push(item);
+    }
+  }
+
+  return filtered;
+}
+
+function transcriptChildEvent(child: TranscriptChild): ActivityEvent | undefined {
+  if (child.kind === 'tool') return child.events[0];
+  return child.event;
+}
+
+function rememberVisibleEditDiff(event: ActivityEvent, seenEditDiffs: Set<string>): boolean {
+  const key = visibleEditDiffKey(event);
+  if (!key) return false;
+  if (seenEditDiffs.has(key)) return false;
+  seenEditDiffs.add(key);
+  return true;
+}
+
+function visibleEditDiffKey(event: ActivityEvent): string {
+  return getVisibleEditDiffCode(event).trim();
+}
+
+function getVisibleEditDiffCode(event: ActivityEvent): string {
+  return getEditToolCallDiff(event) || (isDiffActivity(event) ? getActivityCode(event) : '');
+}
+
+function isPatchEnvelopeText(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.startsWith('*** Begin Patch') || trimmed.startsWith('diff --git ');
+}
+
+function NormalTranscriptItemView({ item }: { item: TranscriptItem }) {
+  if (item.kind === 'user_turn') {
+    const timestamp = item.events.at(-1)?.createdAt;
+    return (
+      <ThreadMessage messageRole="user" timestamp={formatFinishedTime(timestamp)}>
+        <ChatMarkdown content={item.text || fallbackEventText(item.events.at(-1))} />
+      </ThreadMessage>
+    );
+  }
+
+  if (item.kind === 'assistant_turn') {
+    const timestamp = item.events.at(-1)?.createdAt;
+    const visibleText = formatVisibleAssistantText(item.text);
+    return (
+      <ThreadMessage messageRole="assistant" timestamp={formatFinishedTime(timestamp)}>
+        <div className="space-y-3">
+          {visibleText.trim() ? <ChatMarkdown content={visibleText} /> : null}
+          {item.children.map((child, index) => {
+            const event = transcriptChildEvent(child);
+            return event ? (
+              <NormalEditDiffBlock key={`${item.id}-diff-${index}-${event.id}`} event={event} />
+            ) : null;
+          })}
+        </div>
+      </ThreadMessage>
+    );
+  }
+
+  if (item.kind === 'activity') {
+    return <NormalEditDiffBlock event={item.event} />;
+  }
+
+  return null;
+}
+
+function NormalEditDiffBlock({ event }: { event: ActivityEvent }) {
+  const summary = buildVisibleEditDiffSummary(event);
+  const code = getVisibleEditDiffCode(event);
+  if (summary.length === 0) return null;
+  return (
+    <details className="overflow-hidden rounded-[var(--radius-md)] border border-transparent bg-[#1f2030] font-mono text-sm text-slate-200">
+      <summary className="cursor-pointer list-none px-4 py-3">
+        <NormalEditSummaryList summary={summary} />
+      </summary>
+      {code.trim() ? (
+        <div className="border-slate-700/60 border-t">
+          <DiffCodeBlock code={code} label={activityCodeFilename(event)} />
+        </div>
+      ) : null}
+    </details>
+  );
+}
+
+function NormalEditSummaryList({
+  summary,
+}: {
+  summary: Array<{ path: string; added: number; deleted: number }>;
+}) {
+  return (
+    <div className="space-y-4">
+      {summary.map((section) => (
+        <div className="flex items-baseline justify-between gap-4" key={section.path}>
+          <span className="min-w-0 truncate text-slate-300">{section.path}</span>
+          <span className="shrink-0 whitespace-nowrap text-right">
+            <span className="text-emerald-300">+{section.added}</span>
+            <span className="px-1 text-slate-500"> </span>
+            <span className="text-rose-300">-{section.deleted}</span>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function buildVisibleEditDiffSummary(
+  event: ActivityEvent
+): Array<{ path: string; added: number; deleted: number }> {
+  const toolCall = getEditToolCall(event);
+
+  if (toolCall?.name === 'apply_patch') {
+    return mergeEditSections(parseApplyPatchSections(stringValue(toolCall.arguments.patchContent)));
+  }
+
+  if (toolCall?.name === 'replace_content') {
+    const filePath = stringValue(toolCall.arguments.filePath) || 'unknown';
+    const estimate = estimateReplacementStats({
+      needle: stringValue(toolCall.arguments.needle),
+      replacement: stringValue(toolCall.arguments.replacement),
+    });
+    return [
+      {
+        path: filePath,
+        added: estimate?.added || 0,
+        deleted: estimate?.deleted || 0,
+      },
+    ];
+  }
+
+  if (isDiffActivity(event)) {
+    return mergeEditSections(parseUnifiedDiffSections(getActivityCode(event)));
+  }
+
+  return [];
+}
+
+function mergeEditSections(
+  sections: Array<{ path: string; added: number; deleted: number }>
+): Array<{ path: string; added: number; deleted: number }> {
+  const byPath = new Map<string, { path: string; added: number; deleted: number }>();
+  for (const section of sections) {
+    const current = byPath.get(section.path);
+    if (current) {
+      current.added += section.added;
+      current.deleted += section.deleted;
+    } else {
+      byPath.set(section.path, { ...section });
+    }
+  }
+  return [...byPath.values()].filter((section) => section.added > 0 || section.deleted > 0);
 }
 
 function TranscriptItemView({ item }: { item: TranscriptItem }) {
@@ -346,6 +530,8 @@ function TranscriptActivityBlock({
   tone = 'default',
   compact = false,
   artifactText,
+  codeOverride,
+  showSummary = true,
   showJson,
 }: {
   event?: ActivityEvent;
@@ -353,6 +539,8 @@ function TranscriptActivityBlock({
   tone?: 'default' | 'warning';
   compact?: boolean;
   artifactText?: string | null;
+  codeOverride?: string;
+  showSummary?: boolean;
   showJson?: boolean;
 }) {
   if (!event) return null;
@@ -364,7 +552,7 @@ function TranscriptActivityBlock({
   const displayTitle = activityDisplayTitle(event, title);
   const summary = activityDisplaySummary(event);
   const showLlmDetails = showJson && isLlmOutputActivity(event);
-  const code = artifactText || getActivityCode(event);
+  const code = codeOverride || artifactText || getActivityCode(event);
   const codeFilename = activityCodeFilename(event);
   const codeLanguage = activityCodeLanguage(event);
   const defaultOpen = !compact && !isHighVolumeActivity(event);
@@ -378,7 +566,9 @@ function TranscriptActivityBlock({
         <span className="ml-2 text-current/50">#{event.seq}</span>
       </summary>
       <div className="space-y-2 border-current/10 border-t px-3 py-2 text-xs">
-        {summary ? <div className="whitespace-pre-wrap break-words">{summary}</div> : null}
+        {showSummary && summary ? (
+          <div className="whitespace-pre-wrap break-words">{summary}</div>
+        ) : null}
         {code && codeLanguage === 'diff' ? (
           <DiffCodeBlock code={code} label={codeFilename} />
         ) : code ? (
@@ -1524,6 +1714,33 @@ function parseApplyPatchSections(
   pushSection();
 
   return sections;
+}
+
+function parseUnifiedDiffSections(
+  diffContent: string
+): Array<{ path: string; added: number; deleted: number }> {
+  const sections: Array<{ path: string; added: number; deleted: number }> = [];
+  let current: { path: string; added: number; deleted: number } | null = null;
+
+  for (const line of diffContent.split('\n')) {
+    if (line.startsWith('+++ ') && line.slice(4).trim() !== '/dev/null') {
+      if (current) sections.push(current);
+      current = { path: normalizeDiffPath(line.slice(4).trim()), added: 0, deleted: 0 };
+      continue;
+    }
+
+    if (!current) continue;
+    if (line.startsWith('+') && !line.startsWith('+++')) current.added += 1;
+    if (line.startsWith('-') && !line.startsWith('---')) current.deleted += 1;
+  }
+
+  if (current) sections.push(current);
+  return sections;
+}
+
+function normalizeDiffPath(path: string): string {
+  if (path.startsWith('a/') || path.startsWith('b/')) return path.slice(2);
+  return path;
 }
 
 function toMs(value: unknown): number {
