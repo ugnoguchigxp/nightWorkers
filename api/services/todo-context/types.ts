@@ -16,6 +16,12 @@ export type RuntimePromptSnapshot = {
     digest: string;
     charCount: number;
   };
+  conversationContext?: {
+    snapshotId?: string;
+    version?: number;
+    tokenEstimate?: number;
+    stateCardIncluded: boolean;
+  };
 };
 
 export type TodoContextInput = {

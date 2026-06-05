@@ -16,6 +16,16 @@ import {
   generatePlanModeBlueprintDraft,
 } from '../../services/blueprints/llm-draft';
 import { validateAppBlueprint } from '../../services/blueprints/validation';
+import {
+  buildPromptWithStateCard,
+  getLatestConversationContextForTask,
+  type RefreshConversationContextInput,
+  refreshConversationContextSnapshot,
+} from '../../services/conversation-context';
+import {
+  isConversationContextBuildOnIdleEnabled,
+  isConversationContextStateCardEnabled,
+} from '../../services/conversation-context/flags';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
 import { buildReviewResult } from '../../services/review-results/build-review-result';
 import { collectDefaultReviewEvidence } from '../../services/review-results/evidence-collector';
@@ -43,6 +53,29 @@ import type { RuntimePromptSnapshot } from '../../services/todo-context';
 import * as repo from './nightworkers.repository';
 
 type TaskMessageRow = Awaited<ReturnType<typeof repo.listTaskMessages>>[number];
+
+async function safelyRefreshConversationContext(input: RefreshConversationContextInput) {
+  if (!isConversationContextBuildOnIdleEnabled()) return;
+  try {
+    await refreshConversationContextSnapshot(input);
+  } catch (error) {
+    console.warn('conversation context refresh failed', {
+      error,
+      taskId: input.taskId,
+      runId: input.runId,
+    });
+  }
+}
+
+async function maybeLoadConversationStateCard(taskId: string) {
+  if (!isConversationContextStateCardEnabled()) return null;
+  try {
+    return await getLatestConversationContextForTask(taskId);
+  } catch (error) {
+    console.warn('conversation context load failed', { error, taskId });
+    return null;
+  }
+}
 
 export type BlueprintPlanningReadiness = {
   source: 'adopted' | 'latest_generated' | 'none';
@@ -651,6 +684,7 @@ async function handleWorkbenchIntakeMessage(
           intakeJobSelection: jobSelection,
         },
       });
+      await safelyRefreshConversationContext({ taskId, reason: 'intake_idle' });
       const run = await startTaskRun(taskId);
       return {
         task: (await repo.getTask(taskId)) || runnable,
@@ -666,6 +700,7 @@ async function handleWorkbenchIntakeMessage(
         : task.acceptanceCriteria,
       status: isBlueprintRouting(routing) && task.status === 'draft' ? 'ready' : task.status,
     });
+    void safelyRefreshConversationContext({ taskId, reason: 'intake_idle' });
     return { task: updated, run: null, messages: await repo.listTaskMessages(taskId) };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -685,6 +720,7 @@ async function handleWorkbenchIntakeMessage(
           error: message,
         },
       });
+      void safelyRefreshConversationContext({ taskId, reason: 'intake_idle' });
       return { task: updated, run: null, messages: await repo.listTaskMessages(taskId) };
     }
     if (options.failureMode === 'record') {
@@ -1181,10 +1217,28 @@ export async function startTaskRun(taskId: string) {
     },
   };
 
+  const rawLatestUserMessage = lastUserMessage?.content || compiledPromptText;
+  const conversationContext = await maybeLoadConversationStateCard(taskId);
+  const runtimeLatestUserMessage = buildPromptWithStateCard({
+    latestUserMessage: rawLatestUserMessage,
+    stateCardText: conversationContext?.stateCardText,
+  });
+  const runtimeContextSnapshot: RuntimePromptSnapshot = {
+    ...contextSnapshot,
+    conversationContext: conversationContext
+      ? {
+          snapshotId: conversationContext.id,
+          version: conversationContext.version,
+          tokenEstimate: conversationContext.tokenEstimate,
+          stateCardIncluded: true,
+        }
+      : { stateCardIncluded: false },
+  };
+
   await repo.updateTaskCompiledPrompt(taskId, compiledPromptText);
   const compiledRun = await repo.updateTaskRun(run.id, {
     status: 'running',
-    contextSnapshot,
+    contextSnapshot: runtimeContextSnapshot,
   });
   await repo.createRunEvent({
     version: 1,
@@ -1218,10 +1272,10 @@ export async function startTaskRun(taskId: string) {
           repositoryId: task.repositoryId,
           repoRoot: repoInfo.localPath,
           compiledPrompt: compiledPromptText,
-          latestUserMessage: lastUserMessage?.content || compiledPromptText,
+          latestUserMessage: runtimeLatestUserMessage,
           timeoutSeconds: task.timeoutSeconds ?? 3600,
           safetyPolicy: repoInfo.safetyPolicy || undefined,
-          contextSnapshot,
+          contextSnapshot: runtimeContextSnapshot,
         },
         sink
       );
@@ -1291,6 +1345,11 @@ export async function startTaskRun(taskId: string) {
           status: outcome.status,
         },
       });
+      await safelyRefreshConversationContext({
+        taskId,
+        runId: run.id,
+        reason: 'run_finished',
+      });
     } catch (err: any) {
       console.error(`Error during NativeLocalRunner execution for run ${run.id}:`, err);
       const finalReport = `実行に失敗しました: ${err.message}`;
@@ -1316,6 +1375,11 @@ export async function startTaskRun(taskId: string) {
           summary: `Execution crashed: ${err.message}`,
           status: 'failed',
         },
+      });
+      await safelyRefreshConversationContext({
+        taskId,
+        runId: run.id,
+        reason: 'run_finished',
       });
     }
   })();

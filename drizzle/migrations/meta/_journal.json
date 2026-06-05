@@ -57,6 +57,13 @@
       "when": 1780617600000,
       "tag": "0007_chat_activity_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1780704000000,
+      "tag": "0008_conversation_context_snapshots",
+      "breakpoints": true
     }
   ]
 }

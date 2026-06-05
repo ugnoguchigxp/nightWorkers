@@ -11,6 +11,7 @@ import {
   startTaskRun,
 } from '../api/modules/nightworkers/nightworkers.service';
 import * as runtimeRegistry from '../api/services/agent-runtime/registry';
+import * as conversationContext from '../api/services/conversation-context';
 
 vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   getTask: vi.fn(),
@@ -40,16 +41,33 @@ vi.mock('../api/services/agent-runtime/registry', () => ({
   resolveAgentRuntime: vi.fn(),
 }));
 
+vi.mock('../api/services/conversation-context', () => ({
+  buildPromptWithStateCard: vi.fn(
+    (input: { latestUserMessage: string; stateCardText?: string | null }) => {
+      const request = input.latestUserMessage.trim();
+      const card = input.stateCardText?.trim();
+      return card ? `<USER_REQUEST>\n${request}\n</USER_REQUEST>\n\n${card}` : request;
+    }
+  ),
+  getLatestConversationContextForTask: vi.fn(),
+  refreshConversationContextSnapshot: vi.fn(),
+}));
+
 describe('NightWorkers service', () => {
   let repoRoot: string;
 
   beforeEach(async () => {
     vi.clearAllMocks();
     repoRoot = await mkdtemp(path.join(os.tmpdir(), 'nightworkers-service-test-'));
+    vi.mocked(conversationContext.getLatestConversationContextForTask).mockResolvedValue(null);
+    vi.mocked(conversationContext.refreshConversationContextSnapshot).mockResolvedValue({} as any);
   });
 
   afterEach(async () => {
     await rm(repoRoot, { recursive: true, force: true });
+    delete process.env.CONVERSATION_CONTEXT_ENABLED;
+    delete process.env.CONVERSATION_CONTEXT_STATE_CARD_ENABLED;
+    delete process.env.CONVERSATION_CONTEXT_BUILD_ON_IDLE;
   });
 
   it('lists replay events for a run after the requested cursor', async () => {
@@ -264,6 +282,94 @@ describe('NightWorkers service', () => {
     );
     expect(repo.createTaskRunTodo).not.toHaveBeenCalled();
     expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
+  });
+
+  it('injects StateCard into runtime latestUserMessage while preserving raw compiled prompt', async () => {
+    process.env.CONVERSATION_CONTEXT_ENABLED = 'true';
+    process.env.CONVERSATION_CONTEXT_STATE_CARD_ENABLED = 'true';
+    const task = {
+      id: 'task-state-card',
+      repositoryId: 'repo-state-card',
+      title: 'StateCard task',
+      description: 'initial',
+      objective: 'initial',
+      acceptanceCriteria: 'Runtime completes',
+      timeoutSeconds: 60,
+    };
+    const run = {
+      id: 'run-state-card',
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+      status: 'running',
+    };
+    vi.mocked(repo.getTask).mockResolvedValue(task as any);
+    vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+    vi.mocked(repo.getRepository).mockResolvedValue({
+      id: task.repositoryId,
+      localPath: repoRoot,
+      safetyPolicy: {},
+    } as any);
+    vi.mocked(repo.listTaskMessages).mockResolvedValue([
+      { id: 'message-1', role: 'user', content: 'foo 条件も追加してください７で割ってください' },
+    ] as any);
+    vi.mocked(repo.createTaskRun).mockResolvedValue(run as any);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
+    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as any);
+    vi.mocked(conversationContext.getLatestConversationContextForTask).mockResolvedValue({
+      id: 'snapshot-1',
+      taskId: task.id,
+      runId: 'run-previous',
+      version: 1,
+      jobType: 'minor_code_edit',
+      latestUserMessageId: 'message-previous',
+      previousRunId: 'run-previous',
+      terminalState: 'completed',
+      tokenEstimate: 42,
+      snapshotJson: {} as any,
+      stateCardText:
+        '<STATE_CARD>\nTask: task-state-card | minor_code_edit | continuation\n</STATE_CARD>',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const runtimeStart = vi.fn().mockResolvedValue({
+      terminalState: 'completed',
+      summary: 'Runtime done',
+      finalReport: 'Runtime report',
+      stoppedBy: 'decision',
+      riskLevel: 'low',
+      diffPatch: '',
+      logContent: '',
+    });
+    vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+      kind: 'native-local',
+      start: runtimeStart,
+      stop: vi.fn(),
+    } as any);
+
+    await startTaskRun(task.id);
+
+    await vi.waitFor(() => {
+      expect(runtimeStart).toHaveBeenCalledTimes(1);
+    });
+    expect(repo.updateTaskCompiledPrompt).toHaveBeenCalledWith(
+      task.id,
+      'foo 条件も追加してください７で割ってください'
+    );
+    expect(runtimeStart.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        compiledPrompt: 'foo 条件も追加してください７で割ってください',
+        latestUserMessage: expect.stringContaining('<STATE_CARD>'),
+        contextSnapshot: expect.objectContaining({
+          compiledPrompt: 'foo 条件も追加してください７で割ってください',
+          conversationContext: expect.objectContaining({
+            snapshotId: 'snapshot-1',
+            stateCardIncluded: true,
+          }),
+        }),
+      })
+    );
   });
 
   it('starts the next queued session when project queue capacity is available', async () => {

@@ -19,6 +19,13 @@ export interface AgentRunContext {
   contextSnapshot: {
     compiledPrompt: string;
     source: 'task_prompt' | 'fallback';
+    conversationContext?: {
+      snapshotId?: string;
+      version?: number;
+      tokenEstimate?: number;
+      stateCardIncluded: boolean;
+    };
+    [key: string]: unknown;
   };
   todoPlan?: Array<{
     id: string;

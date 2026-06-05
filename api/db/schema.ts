@@ -410,6 +410,36 @@ export const taskMessages = sqliteTable(
   })
 );
 
+export const conversationContextSnapshots = sqliteTable(
+  'conversation_context_snapshots',
+  {
+    ...commonColumns,
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    runId: text('run_id').references(() => taskRuns.id, { onDelete: 'set null' }),
+    version: integer('version').notNull(),
+    sourceMessageId: text('source_message_id'),
+    sourceRunId: text('source_run_id'),
+    sourceEventCursor: text('source_event_cursor'),
+    jobType: text('job_type'),
+    latestUserMessageId: text('latest_user_message_id'),
+    previousRunId: text('previous_run_id'),
+    terminalState: text('terminal_state'),
+    tokenEstimate: integer('token_estimate').default(0).notNull(),
+    snapshotJson: text('snapshot_json', { mode: 'json' }).notNull(),
+    stateCardText: text('state_card_text').notNull(),
+  },
+  (table) => ({
+    taskIdIdx: index('conversation_context_snapshots_task_id_idx').on(table.taskId),
+    runIdIdx: index('conversation_context_snapshots_run_id_idx').on(table.runId),
+    taskUpdatedAtIdx: index('conversation_context_snapshots_task_updated_idx').on(
+      table.taskId,
+      table.updatedAt
+    ),
+  })
+);
+
 export const blueprintDesignSettings = sqliteTable(
   'blueprint_design_settings',
   {

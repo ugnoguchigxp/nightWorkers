@@ -14,10 +14,11 @@
 
 ## Procedure
 1. 対象パスが分かっている場合は read_file で確認し、周辺ディレクトリ一覧は取らない。
-2. 新規作成なら apply_patch を使う。
-3. 既存ファイルの単純置換なら replace_content を使う。
-4. apply_patch が成功したら changedFiles の対象を read_file する。
-5. 完了したら finalize_answer を呼ぶ。
+2. search_files は対象パスが不明な場合や、横断検索が必要な場合だけ使う。
+3. 新規作成なら apply_patch を使う。
+4. 既存ファイルの単純置換なら replace_content を使う。
+5. apply_patch が成功したら changedFiles の対象を read_file する。
+6. 完了したら finalize_answer を呼ぶ。
 
 ## Completion
 LLM が依頼内容を満たしたと判断したら finalize_answer を呼ぶ。runtime は完了可否を判定しない。
