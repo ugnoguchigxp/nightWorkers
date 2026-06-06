@@ -67,6 +67,40 @@ import * as repo from './nightworkers.repository';
 
 type TaskMessageRow = Awaited<ReturnType<typeof repo.listTaskMessages>>[number];
 
+function normalizeSafetyPolicyForRepository(localPath: string, safetyPolicy: any) {
+  if (!safetyPolicy || !Array.isArray(safetyPolicy.externalAllowedPaths)) return safetyPolicy;
+
+  const externalAllowedPaths = Array.from(
+    new Set(
+      safetyPolicy.externalAllowedPaths
+        .filter((candidate: unknown): candidate is string => typeof candidate === 'string')
+        .map((candidate: string) =>
+          path.isAbsolute(candidate) ? path.resolve(candidate) : path.resolve(localPath, candidate)
+        )
+    )
+  );
+
+  return {
+    ...safetyPolicy,
+    externalAllowedPaths,
+  };
+}
+
+async function completeOpenTodosForTerminalRun(runId: string, status: string, reason: string) {
+  if (!['completed', 'needs_review'].includes(status)) return;
+  const todos = await repo.listTaskRunTodosForRun(runId);
+  const now = new Date();
+  for (const todo of todos) {
+    if (!['pending', 'running'].includes(todo.status)) continue;
+    await repo.updateTaskRunTodo(todo.id, {
+      status: 'passed',
+      statusReason: reason,
+      startedAt: todo.startedAt ? new Date(todo.startedAt as any) : now,
+      completedAt: now,
+    });
+  }
+}
+
 async function safelyRefreshConversationContext(input: RefreshConversationContextInput) {
   if (!isConversationContextBuildOnIdleEnabled()) return;
   try {
@@ -129,7 +163,11 @@ export async function createRepository(data: {
   maxConcurrentSessions?: number;
   safetyPolicy?: any;
 }) {
-  return repo.createRepository({ ...data, branch: data.branch || 'main' });
+  return repo.createRepository({
+    ...data,
+    branch: data.branch || 'main',
+    safetyPolicy: normalizeSafetyPolicyForRepository(data.localPath, data.safetyPolicy),
+  });
 }
 
 export async function getRepository(id: string) {
@@ -148,8 +186,14 @@ export async function updateRepository(
     safetyPolicy?: any;
   }
 ) {
+  const existing = data.safetyPolicy !== undefined ? await repo.getRepository(id) : null;
+  if (data.safetyPolicy !== undefined && !existing) throw new NotFoundError('Repository not found');
   const normalized = {
     ...data,
+    safetyPolicy:
+      data.safetyPolicy !== undefined
+        ? normalizeSafetyPolicyForRepository(existing!.localPath, data.safetyPolicy)
+        : undefined,
     maxConcurrentSessions:
       data.maxConcurrentSessions === undefined
         ? undefined
@@ -2008,6 +2052,11 @@ export async function startTaskRun(taskId: string) {
         finalJudgment: null,
         summary: runtimeResult.summary || outcome.summary,
       });
+      await completeOpenTodosForTerminalRun(
+        run.id,
+        outcome.status,
+        'Runtime finalized successfully before explicit Todo completion.'
+      );
       await repo.updateTaskStatus(taskId, outcome.status);
       await completeImplementationQueueEntryForRun(run.id, outcome.status);
       if (shouldContinueSessionQueue(outcome.status)) {

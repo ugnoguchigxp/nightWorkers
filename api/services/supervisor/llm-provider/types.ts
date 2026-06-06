@@ -12,6 +12,57 @@ export type CallSupervisorOptions = {
   promptPartTokenEstimates?: LlmPromptPartTokenEstimates;
 };
 
+export type SupervisorProviderId =
+  | 'openai'
+  | 'azure-openai'
+  | 'azure'
+  | 'bedrock'
+  | 'codex'
+  | 'fixture'
+  | 'test';
+
+export type SupervisorProviderClass =
+  | 'chat_completion'
+  | 'converse_message'
+  | 'agent_runtime'
+  | 'fixture';
+
+export type ProviderCapabilityPolicy = {
+  allowProviderToolCalls: boolean;
+  allowProviderFileWrites: boolean;
+  allowProviderCommandExecution: boolean;
+  allowProviderNetwork: boolean;
+  requireStructuredOutput: boolean;
+  rejectUnobservedProviderActivity: boolean;
+};
+
+export type NormalizedSupervisorLlmRequest = {
+  callKind:
+    | 'supervisor_decision'
+    | 'structured_artifact'
+    | 'design_questionnaire'
+    | 'design_decision_review'
+    | 'fixture';
+  providerId: SupervisorProviderId;
+  providerClass: SupervisorProviderClass;
+  modelOrDeployment: string | null;
+  endpoint: string | null;
+  region: string | null;
+  apiVersion: string | null;
+  systemPrompt: string;
+  userPrompt: string;
+  jsonSchema?: { name: string; schema: unknown };
+  capabilityPolicy: ProviderCapabilityPolicy;
+  diagnostics: {
+    label: string;
+    round: 1 | 2 | null;
+    artifactSchemaName?: string | null;
+    sourceArtifactRef?: string | null;
+    systemPromptLength: number;
+    userPromptLength: number;
+  };
+};
+
 export type ProviderCallResult = {
   content: string;
   usage: NormalizedLlmUsage;
@@ -27,6 +78,9 @@ export type StructuredJsonLlmOptions = Omit<CallSupervisorOptions, 'schemaFirst'
 export type SupervisorLlmDebugEvent = {
   type:
     | 'model.request_started'
+    | 'model.provider_activity_detected'
+    | 'model.provider_tool_call_detected'
+    | 'model.provider_activity_rejected'
     | 'model.retry_scheduled'
     | 'model.retry_started'
     | 'model.response_delta'

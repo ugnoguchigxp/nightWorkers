@@ -216,6 +216,56 @@ describe('conversation context domain', () => {
     expect(snapshot.limits.truncatedFields).toContain('task.latestUserRequest');
   });
 
+  it('stores StateCard baseline metadata and renders compact text when unchanged', async () => {
+    const source = buildSource(repoRoot, {
+      messages: [
+        userMessage('u1', 'src/app.ts を直す'),
+        {
+          id: 's1',
+          role: 'system',
+          content: 'run started',
+          metadataJson: {
+            intakeJobSelection: {
+              jobType: 'minor_code_edit',
+              goal: 'src/app.ts を直す',
+            },
+          },
+          createdAt: new Date(2),
+        },
+      ],
+    });
+    const first = await buildConversationContextSnapshot({ source });
+    expect(first.contextBaseline?.stateCardDigest).toMatch(/^sha256:/);
+    expect(renderStateCard(first)).toContain('Continuity:');
+
+    const second = await buildConversationContextSnapshot({
+      source: {
+        ...source,
+        previousSnapshot: {
+          id: 'snapshot-1',
+          taskId: 'task-1',
+          runId: null,
+          version: 1,
+          jobType: first.classification.jobType,
+          latestUserMessageId: first.task.latestUserMessageId,
+          previousRunId: first.continuity.previousRunId,
+          terminalState: first.continuity.previousTerminalState,
+          tokenEstimate: first.limits.tokenEstimate,
+          snapshotJson: first,
+          stateCardText: renderStateCard(first),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      },
+    });
+    const compact = renderStateCard(second);
+
+    expect(second.contextBaseline?.unchangedFromPrevious).toBe(true);
+    expect(compact).toContain('unchanged continuity');
+    expect(compact).toContain(`Baseline: ${first.contextBaseline?.stateCardDigest}`);
+    expect(compact).not.toContain('Continuity:');
+  });
+
   it('includes untracked files in git state as added files', async () => {
     await execFileAsync('git', ['init'], { cwd: repoRoot });
     await writeFile(path.join(repoRoot, 'new-file.ts'), 'export const created = true;\n');

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { estimateTokens, resolveConversationContextOptions } from './token-budget';
@@ -40,7 +41,7 @@ export async function buildConversationContextSnapshot(input: {
   );
   const lastError = extractLastError(previousRun);
 
-  return {
+  const snapshot: ConversationContextSnapshotV1 = {
     version: CONVERSATION_CONTEXT_VERSION,
     task: {
       id: input.source.task.id,
@@ -84,6 +85,12 @@ export async function buildConversationContextSnapshot(input: {
       truncatedFields: [],
     },
   };
+  snapshot.contextBaseline = buildContextBaseline({
+    snapshot,
+    repoRoot: input.source.task.repositoryPath,
+    previousBaseline: previousSnapshot?.contextBaseline ?? null,
+  });
+  return snapshot;
 }
 
 export function findLatestUserMessage(messages: ConversationContextSource['messages']) {
@@ -199,6 +206,73 @@ export function finalizeSnapshotTokenEstimate(
 ) {
   snapshot.limits.tokenEstimate = estimateTokens(stateCardText);
   return snapshot;
+}
+
+function buildContextBaseline(input: {
+  snapshot: ConversationContextSnapshotV1;
+  repoRoot: string;
+  previousBaseline: ConversationContextSnapshotV1['contextBaseline'] | null;
+}): ConversationContextSnapshotV1['contextBaseline'] {
+  const relevantFilesDigest = digestValue(input.snapshot.files.target);
+  const lastRunId = input.snapshot.continuity.previousRunId;
+  const base = {
+    repoRoot: input.repoRoot,
+    jobType: input.snapshot.classification.jobType,
+    workflow: input.snapshot.classification.jobType,
+    safetyPolicyDigest: null,
+    stateCardDigest: '',
+    relevantFilesDigest,
+    adoptedArtifactDigest: null,
+    blueprintRefsDigest: null,
+    blueprintDbDesignRefsDigest: null,
+    designQuestionnaireRefsDigest: null,
+    decisionReviewRefsDigest: null,
+    contextStillRefsDigest: null,
+    workerEvidenceRefsDigest: null,
+    lastRunId,
+  };
+  const stateCardDigest = digestValue({
+    taskId: input.snapshot.task.id,
+    latestUserMessageId: input.snapshot.task.latestUserMessageId,
+    jobType: input.snapshot.classification.jobType,
+    goal: input.snapshot.classification.goal,
+    previousRunId: input.snapshot.continuity.previousRunId,
+    previousTerminalState: input.snapshot.continuity.previousTerminalState,
+    previousAction: input.snapshot.continuity.previousAction,
+    targetFiles: input.snapshot.files.target,
+    lastError: input.snapshot.runState.lastError,
+    lastFinalReport: input.snapshot.runState.lastFinalReport,
+    relevantFilesDigest,
+  });
+  const baseline = {
+    ...base,
+    stateCardDigest: stateCardDigest || 'sha256:empty',
+    unchangedFromPrevious: false,
+    changedFields: [] as string[],
+  };
+  if (input.previousBaseline) {
+    const changedFields = Object.entries(baseline)
+      .filter(([key, value]) => {
+        if (key === 'unchangedFromPrevious' || key === 'changedFields') return false;
+        return input.previousBaseline?.[key as keyof typeof baseline] !== value;
+      })
+      .map(([key]) => key);
+    baseline.changedFields = changedFields;
+    baseline.unchangedFromPrevious = changedFields.length === 0;
+  }
+  return baseline;
+}
+
+function digestValue(value: unknown) {
+  if (
+    value === null ||
+    value === undefined ||
+    (Array.isArray(value) && value.length === 0) ||
+    value === ''
+  ) {
+    return null;
+  }
+  return `sha256:${createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 }
 
 function extractLastError(run: ConversationContextSource['runs'][number] | null) {

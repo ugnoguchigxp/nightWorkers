@@ -12,6 +12,7 @@ import {
 import { emitSupervisorLlmDebugEvent } from './events';
 import { createSupervisorLlmAbortSignal, digestLlmText, jsonFixWrapper } from './json';
 import { callProvider, type RawLlmCallOptions } from './providers';
+import { buildNormalizedSupervisorLlmRequest, providerAdapterKey } from './request';
 import type { CallSupervisorOptions, StructuredJsonLlmOptions } from './types';
 
 export {
@@ -19,7 +20,19 @@ export {
   buildCodexSupervisorThreadOptions,
   buildCodexTurnPrompt,
 } from './codex';
-export type { SupervisorLlmDebugEvent } from './types';
+export { ProviderActivityRejectedError } from './events';
+export {
+  buildNormalizedSupervisorLlmRequest,
+  normalizeProviderId,
+  providerAdapterKey,
+} from './request';
+export type {
+  NormalizedSupervisorLlmRequest,
+  ProviderCapabilityPolicy,
+  SupervisorLlmDebugEvent,
+  SupervisorProviderClass,
+  SupervisorProviderId,
+} from './types';
 
 export async function callSupervisorLLM(
   systemPrompt: string,
@@ -68,10 +81,19 @@ async function callRawJsonLLM(
   userPrompt: string,
   options: RawLlmCallOptions
 ): Promise<string> {
-  const provider = process.env.ACTIVE_LLM_PROVIDER || 'azure';
+  const normalizedRequest = buildNormalizedSupervisorLlmRequest({
+    systemPrompt,
+    userPrompt,
+    jsonSchema: options.jsonSchema,
+    label: options.label,
+    round: options.round,
+    schemaFirst: options.schemaFirst,
+  });
+  const provider = providerAdapterKey(normalizedRequest.providerId);
   const startedAt = Date.now();
   const callId = randomUUID();
   const requestSignal = createSupervisorLlmAbortSignal(options);
+  const providerOptions = { ...options, normalizedRequest };
   let rawContent = '';
   let providerDebug: Record<string, unknown> = {};
   let providerModel: string | null | undefined = null;
@@ -79,9 +101,11 @@ async function callRawJsonLLM(
 
   appendLlmTrace('request', {
     callId,
-    provider,
+    provider: normalizedRequest.providerId,
+    providerClass: normalizedRequest.providerClass,
     round: options.round ?? null,
     label: options.label,
+    callKind: normalizedRequest.callKind,
     systemPrompt,
     userPrompt,
     systemPromptLength: systemPrompt.length,
@@ -93,7 +117,8 @@ async function callRawJsonLLM(
   });
   logger.debug(
     {
-      provider,
+      provider: normalizedRequest.providerId,
+      providerClass: normalizedRequest.providerClass,
       label: options.label,
       systemPromptLength: systemPrompt.length,
       userPromptLength: userPrompt.length,
@@ -103,13 +128,16 @@ async function callRawJsonLLM(
   await emitSupervisorLlmDebugEvent(options, {
     type: 'model.request_started',
     severity: 'info',
-    message: `Supervisor LLM request started. provider=${provider} round=${options.round ?? 'unknown'}`,
+    message: `Supervisor LLM request started. provider=${normalizedRequest.providerId} round=${options.round ?? 'unknown'}`,
     data: {
-      provider,
+      provider: normalizedRequest.providerId,
+      providerClass: normalizedRequest.providerClass,
+      callKind: normalizedRequest.callKind,
       round: options.round ?? null,
       label: options.label,
       systemPromptLength: systemPrompt.length,
       userPromptLength: userPrompt.length,
+      diagnostics: normalizedRequest.diagnostics,
     },
   });
 
@@ -118,7 +146,7 @@ async function callRawJsonLLM(
       provider,
       systemPrompt,
       userPrompt,
-      options,
+      options: providerOptions,
       signal: requestSignal,
       setProviderDebug: (value) => {
         providerDebug = value;
@@ -132,7 +160,8 @@ async function callRawJsonLLM(
   } catch (error) {
     appendLlmTrace('provider_error', {
       callId,
-      provider,
+      provider: normalizedRequest.providerId,
+      providerClass: normalizedRequest.providerClass,
       round: options.round ?? null,
       label: options.label,
       durationMs: Date.now() - startedAt,
@@ -146,7 +175,8 @@ async function callRawJsonLLM(
   if (!rawContent) {
     appendLlmTrace('empty_response', {
       callId,
-      provider,
+      provider: normalizedRequest.providerId,
+      providerClass: normalizedRequest.providerClass,
       round: options.round ?? null,
       label: options.label,
       durationMs: Date.now() - startedAt,
@@ -167,7 +197,7 @@ async function callRawJsonLLM(
       taskId: options.taskId,
       runId: options.runId ?? null,
       callId,
-      provider,
+      provider: normalizedRequest.providerId,
       model: providerModel ?? null,
       label: options.label,
       round: options.round ?? null,
@@ -176,6 +206,10 @@ async function callRawJsonLLM(
       durationMs: Date.now() - startedAt,
       metadataJson: {
         schemaFirst: Boolean(options.schemaFirst),
+        providerClass: normalizedRequest.providerClass,
+        callKind: normalizedRequest.callKind,
+        diagnostics: normalizedRequest.diagnostics,
+        jsonSchemaName: normalizedRequest.jsonSchema?.name ?? null,
         systemPromptLength: systemPrompt.length,
         userPromptLength: userPrompt.length,
         systemPromptBytes: Buffer.byteLength(systemPrompt, 'utf8'),
@@ -188,7 +222,8 @@ async function callRawJsonLLM(
 
   appendLlmTrace('response', {
     callId,
-    provider,
+    provider: normalizedRequest.providerId,
+    providerClass: normalizedRequest.providerClass,
     round: options.round ?? null,
     label: options.label,
     durationMs: Date.now() - startedAt,
@@ -201,9 +236,11 @@ async function callRawJsonLLM(
   await emitSupervisorLlmDebugEvent(options, {
     type: 'model.response_finished',
     severity: 'info',
-    message: `Supervisor LLM response received. provider=${provider} bytes=${Buffer.byteLength(rawContent, 'utf8')}`,
+    message: `Supervisor LLM response received. provider=${normalizedRequest.providerId} bytes=${Buffer.byteLength(rawContent, 'utf8')}`,
     data: {
-      provider,
+      provider: normalizedRequest.providerId,
+      providerClass: normalizedRequest.providerClass,
+      callKind: normalizedRequest.callKind,
       round: options.round ?? null,
       label: options.label,
       rawContentLength: rawContent.length,

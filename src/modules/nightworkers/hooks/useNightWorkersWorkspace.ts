@@ -516,9 +516,21 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       if (!res.ok) throw new Error('Failed to start run');
       return (await res.json()) as TaskRun;
     },
-    onSuccess: () => {
+    onSuccess: (run) => {
+      queryClient.setQueryData<TaskRun[]>(['sessionRuns', run.taskId], (prev = []) => {
+        const next = [...prev];
+        const idx = next.findIndex((candidate) => candidate.id === run.id);
+        if (idx >= 0) next[idx] = run;
+        else next.unshift(run);
+        return next;
+      });
+      queryClient.setQueryData<Task[]>(['sessions'], (prev = []) =>
+        prev.map((session) =>
+          session.id === run.taskId ? { ...session, status: 'running' } : session
+        )
+      );
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
-      queryClient.invalidateQueries({ queryKey: ['sessionRuns', activeSessionId] });
+      queryClient.invalidateQueries({ queryKey: ['sessionRuns', run.taskId] });
     },
   });
 
@@ -872,6 +884,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const isAgentThinking =
     isInitialSessionCreating ||
     isChatSubmitting ||
+    startRunMutation.isPending ||
     Boolean(pendingChatRunId) ||
     Boolean(activeSessionId && pendingAssistantTaskId === activeSessionId) ||
     isActiveRunStatus(latestRun?.status) ||
@@ -1291,6 +1304,13 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
             });
             queryClient.invalidateQueries({ queryKey: ['runDetails', incomingRun.id] });
             queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
+            if (isTerminalRunStatus(incomingRun.status) && incomingRun.repositoryId) {
+              setProjectFileEntriesByDirectory({});
+              queryClient.invalidateQueries({
+                queryKey: ['projectFiles', incomingRun.repositoryId],
+              });
+              queryClient.removeQueries({ queryKey: ['projectFile', incomingRun.repositoryId] });
+            }
           }
           if (msg.type === 'task_status_updated' && msg.payload?.task) {
             const incomingTask = msg.payload.task as Task;
@@ -1710,6 +1730,18 @@ function isActiveRunStatus(status: string | undefined): boolean {
     status === 'context_compiling' ||
     status === 'compiling_context' ||
     status === 'finalizing'
+  );
+}
+
+function isTerminalRunStatus(status: string | undefined): boolean {
+  return (
+    status === 'completed' ||
+    status === 'needs_review' ||
+    status === 'needs_human' ||
+    status === 'failed' ||
+    status === 'blocked' ||
+    status === 'timed_out' ||
+    status === 'cancelled'
   );
 }
 

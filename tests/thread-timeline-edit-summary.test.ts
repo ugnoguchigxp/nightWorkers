@@ -6,6 +6,7 @@ import {
   findRuntimePromptSnapshotTranscriptAnchorId,
   getActivityCode,
   getAgentEditSummary,
+  getVisibleCliCommandSummary,
   parseDiffMetadata,
 } from '../src/modules/nightworkers/components/ThreadTimeline';
 
@@ -154,6 +155,103 @@ describe('ThreadTimeline edit summaries', () => {
     ]);
 
     expect(items.map((item) => item.id)).toEqual(['user:1', 'activity:raw', 'assistant:final']);
+  });
+
+  it('keeps CLI command tool calls in normal mode', () => {
+    const items = buildNormalTranscriptItems([
+      {
+        kind: 'user_turn',
+        id: 'user:1',
+        turnId: 'user-1',
+        events: [],
+        text: 'テストを実行してください',
+      },
+      {
+        kind: 'activity',
+        id: 'activity:command',
+        event: {
+          id: 'command',
+          taskId: 'task-1',
+          kind: 'tool.result',
+          source: 'worker',
+          status: 'completed',
+          seq: 1,
+          runId: 'run-1',
+          text: 'tool=run_command status=ok',
+          payloadJson: {
+            runEvent: {
+              runId: 'run-1',
+              type: 'tool.call_finished',
+              data: {
+                iteration: 1,
+                toolName: 'run_command',
+                arguments: { command: 'pnpm test -- --runInBand' },
+                result: {
+                  ok: true,
+                  toolName: 'run_command',
+                  payload: { exitCode: 0, command: 'pnpm test -- --runInBand' },
+                },
+              },
+            },
+          },
+          createdAt: '2026-06-05T00:00:00.000Z',
+          visibility: 'visible',
+        } as any,
+      },
+      {
+        kind: 'activity',
+        id: 'activity:command-again',
+        event: {
+          id: 'command-again',
+          taskId: 'task-1',
+          runId: 'run-1',
+          kind: 'tool.result',
+          source: 'worker',
+          status: 'completed',
+          seq: 2,
+          text: 'tool=run_command status=ok',
+          payloadJson: {
+            runEvent: {
+              runId: 'run-1',
+              type: 'tool.call_finished',
+              data: {
+                iteration: 2,
+                toolName: 'run_command',
+                arguments: { command: 'pnpm test -- --runInBand' },
+                result: {
+                  ok: true,
+                  toolName: 'run_command',
+                  payload: { exitCode: 0, command: 'pnpm test -- --runInBand' },
+                },
+              },
+            },
+          },
+          createdAt: '2026-06-05T00:00:01.000Z',
+          visibility: 'visible',
+        } as any,
+      },
+      {
+        kind: 'activity',
+        id: 'activity:status',
+        event: {
+          id: 'status',
+          taskId: 'task-1',
+          kind: 'run.status',
+          source: 'runtime',
+          status: 'completed',
+          seq: 3,
+          text: 'run.completed',
+          createdAt: '2026-06-05T00:00:02.000Z',
+          visibility: 'visible',
+        } as any,
+      },
+    ]);
+
+    expect(items.map((item) => item.id)).toEqual([
+      'user:1',
+      'activity:command',
+      'activity:command-again',
+    ]);
   });
 
   it('anchors runtime prompt snapshots after the matching run.started activity', () => {
@@ -407,6 +505,68 @@ describe('ThreadTimeline edit summaries', () => {
         },
       ],
     });
+  });
+
+  it('builds a CLI command summary from a persisted run_command event', () => {
+    const summary = getVisibleCliCommandSummary({
+      id: 'event-run-command-finished',
+      taskId: 'task-1',
+      kind: 'tool.result',
+      source: 'worker',
+      status: 'completed',
+      seq: 1,
+      text: '[Worker Tool Result] Tool run_command execution SUCCESS.',
+      payloadJson: {
+        runEvent: {
+          type: 'tool.call_finished',
+          data: {
+            toolName: 'run_command',
+            arguments: { command: 'pnpm test' },
+            result: {
+              ok: true,
+              toolName: 'run_command',
+              payload: { command: 'pnpm test', exitCode: 0 },
+            },
+          },
+        },
+      },
+      createdAt: '2026-06-05T00:00:00.000Z',
+      visibility: 'visible',
+    } as any);
+
+    expect(summary).toEqual({ toolName: 'run_command', command: 'pnpm test' });
+  });
+
+  it('builds a CLI command summary from a schema-first tool.started event', () => {
+    const summary = getVisibleCliCommandSummary({
+      id: 'event-run-verification-started',
+      taskId: 'task-1',
+      runId: 'run-1',
+      kind: 'tool.call',
+      source: 'worker',
+      status: 'started',
+      seq: 1,
+      text: 'run_verification started',
+      payloadJson: {
+        runEvent: {
+          runId: 'run-1',
+          type: 'tool.call_started',
+          data: {
+            agentEventType: 'tool.started',
+            iteration: 3,
+          },
+        },
+        agentEventType: 'tool.started',
+        payload: {
+          toolName: 'run_verification',
+          arguments: { command: 'pnpm typecheck', reason: 'type safety' },
+        },
+      },
+      createdAt: '2026-06-05T00:00:00.000Z',
+      visibility: 'visible',
+    } as any);
+
+    expect(summary).toEqual({ toolName: 'run_verification', command: 'pnpm typecheck' });
   });
 
   it('builds an apply_patch summary from a custom tool call shaped payload', () => {

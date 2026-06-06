@@ -1,7 +1,7 @@
 # major_code_edit
 
 ## Use When
-複数ステップに分けるべきコード変更。migration、command、documentation、verification が混ざる可能性がある作業。
+複数ステップに分けるべきコード変更。外部ディレクトリテンプレートのコピー、外部リポジトリーの clone や fork、migration、command、documentation、verification が混ざる可能性がある作業。
 
 ## Tools
 - read_skill
@@ -31,10 +31,13 @@
 6. 空の Project root は有効な作業対象として扱う。空であることを理由に作業不能と判断しない。
 7. `../template` や絶対パスなど Project root 外のコピー元は、ユーザー許可により safetyPolicy.externalAllowedPaths に含まれている場合だけ読む。未許可なら needs_human として許可を求める。
 8. 外部テンプレートを取り込む場合は、許可後に copy_directory を優先する。shell の cp で代替しない。
-9. CLI コマンドは run_command / run_verification 経由で、command policy が許可する単一コマンドだけ使う。`&&`、`;`、pipe、command substitution を含む chained shell は使わない。
-10. Todo が完了したら、tool evidence に基づいて complete_todo を呼ぶ。実行中というだけで passed にしない。
-11. complete_todo は既定で次の pending Todo を running にする。順序を変える必要がある場合だけ start_todo を使う。
-12. すべての Todo が passed/skipped/needs_human/failed のいずれかになり、必要な最終確認が終わったら finalize_answer を呼ぶ。
+9. 外部テンプレートを取り込む TodoList には、copy_directory だけでなく package.json inspection と package-script verification を必ず含める。
+10. copy_directory 後は read_file で package.json を読み、scripts から build / lint / typecheck / test / verify など利用可能な検証を選ぶ。
+11. 選んだ検証は run_verification で実行する。依存関係が未導入で検証不能な場合は、理由と次アクションを Todo / final report に残す。
+12. CLI コマンドは run_command / run_verification 経由で、command policy が許可する単一コマンドだけ使う。`&&`、`;`、pipe、command substitution を含む chained shell は使わない。
+13. Todo が完了したら、tool evidence に基づいて complete_todo を呼ぶ。実行中というだけで passed にしない。
+14. complete_todo は既定で次の pending Todo を running にする。順序を変える必要がある場合だけ start_todo を使う。
+15. すべての Todo が passed/skipped/needs_human/failed のいずれかになり、必要な最終確認が終わったら finalize_answer を呼ぶ。
 
 ## TodoList Shape
 TodoList には少なくとも次の種類を必要に応じて含める。
@@ -44,6 +47,13 @@ TodoList には少なくとも次の種類を必要に応じて含める。
 - code_edit: runtime、backend、frontend などの実装変更。
 - documentation: README、spec、運用 docs の更新。
 - verification: typecheck、test、lint、smoke などの検証。
+
+外部テンプレート取り込みでは少なくとも次を含める。
+
+- copy: 許可済み外部テンプレートを copy_directory で Project root にコピーする。
+- inspection: コピー後の package.json と主要構成を確認する。
+- verification: package.json scripts に基づき build / lint / typecheck / test / verify などを run_verification で実行する。
+- finalize: Todo と検証結果を確認し、残リスクをまとめる。
 
 ## Completion
 - Todo の status は pending / running / passed / failed / skipped / needs_human。

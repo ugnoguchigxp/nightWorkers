@@ -289,10 +289,14 @@
 .nightworkers-workbench-group,
 .nightworkers-workbench-group > div,
 #nightworkers-chat > div {
-  overflow: visible !important;
+  overflow: visible;
 }
 
 .nightworkers-thread-layout {
+  min-height: calc(100vh - 3.3125rem);
+}
+
+.nightworkers-thread-split-layout {
   min-height: calc(100vh - 3.3125rem);
 }
 
@@ -380,11 +384,9 @@
 }
 
 .nightworkers-artifact-pane {
-  height: calc(100% - 0.75rem);
-  border: 1px solid color-mix(in srgb, var(--nw-border) 52%, transparent);
-  border-radius: var(--nw-radius);
-  background: color-mix(in srgb, var(--nw-panel) 82%, var(--nw-background) 18%);
-  box-shadow: var(--nw-shadow);
+  height: calc(100vh - 3.3125rem);
+  border-left: 1px solid color-mix(in srgb, var(--nw-border) 60%, transparent);
+  background: color-mix(in srgb, var(--nw-panel) 88%, var(--nw-background) 12%);
 }
 
 .nightworkers-shell[data-theme="light"] {

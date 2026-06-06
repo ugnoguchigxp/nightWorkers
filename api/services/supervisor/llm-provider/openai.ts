@@ -1,7 +1,7 @@
 import { logger } from '../../../lib/logger';
 import { buildResponseJsonSchema as buildSchemaFirstResponseJsonSchema } from '../schema-first';
-import { createSupervisorResponseDeltaEmitter } from './events';
-import type { CallSupervisorOptions } from './types';
+import { createSupervisorResponseDeltaEmitter, rejectProviderActivity } from './events';
+import type { CallSupervisorOptions, NormalizedSupervisorLlmRequest } from './types';
 
 export function buildOpenAIChatCompletionBody(input: {
   model: string;
@@ -37,6 +37,7 @@ export function buildOpenAIChatCompletionBody(input: {
 export async function readOpenAIChatCompletionStream(input: {
   response: Response;
   options: CallSupervisorOptions;
+  normalizedRequest?: NormalizedSupervisorLlmRequest;
   provider: string;
   round?: 1 | 2;
 }): Promise<{ content: string; usage: unknown | null }> {
@@ -71,6 +72,16 @@ export async function readOpenAIChatCompletionStream(input: {
         continue;
       }
       if (parsed?.usage) usage = parsed.usage;
+      const toolCalls = parsed?.choices?.[0]?.delta?.tool_calls;
+      if (toolCalls && input.normalizedRequest) {
+        await rejectProviderActivity({
+          options: input.options,
+          request: input.normalizedRequest,
+          activityType: 'tool_call',
+          toolName: toolCalls?.[0]?.function?.name ?? null,
+          preview: JSON.stringify(toolCalls),
+        });
+      }
       const delta = parsed?.choices?.[0]?.delta?.content;
       if (typeof delta === 'string' && delta) {
         content += delta;

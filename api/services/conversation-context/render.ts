@@ -39,6 +39,20 @@ export function renderStateCard(
 ) {
   const maxTokens = options?.maxTokens ?? 1200;
   const truncated = new Set(snapshot.limits.truncatedFields);
+  if (snapshot.contextBaseline?.unchangedFromPrevious) {
+    const lines = [
+      '<STATE_CARD>',
+      `Task: ${snapshot.task.id} | ${snapshot.classification.jobType || 'unknown'} | unchanged continuity`,
+      `Baseline: ${snapshot.contextBaseline.stateCardDigest}`,
+      `Source refs: files=${snapshot.contextBaseline.relevantFilesDigest || 'none'} workerEvidence=${
+        snapshot.contextBaseline.workerEvidenceRefsDigest || 'none'
+      }`,
+      '</STATE_CARD>',
+    ];
+    const text = lines.join('\n');
+    snapshot.limits.tokenEstimate = estimateTokens(text);
+    return text;
+  }
   let renderSnapshot = snapshot;
   const build = (
     variant: 'full' | 'short-action' | 'no-next' | 'minimal',

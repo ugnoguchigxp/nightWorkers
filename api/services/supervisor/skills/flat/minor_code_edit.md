@@ -25,7 +25,7 @@ LLM が依頼内容を満たしたと判断したら finalize_answer を呼ぶ�
 finalize_answer.message でプロジェクト内のファイルに触れる場合は、プロジェクトルートからの相対パスで書く。
 
 ## Switch Job Type
-初期実装では原則として minor_code_edit の中で完結させる。
+外部ディレクトリテンプレートのコピー、外部リポジトリーの clone や fork、または複数ステップの検証を伴う作業だと分かった場合は select_job_type で major_code_edit に切り替える。
 
 ## Output
 Always return only:

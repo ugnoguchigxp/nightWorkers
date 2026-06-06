@@ -5,6 +5,12 @@ import type { LlmPromptPartTokenEstimates } from '../llm-usage';
 import type { SupervisorLoopResult } from '../run-control/types';
 import type { RunEventActor, RunEventSeverity, RunEventType } from '../run-events/types';
 import { executeWorkerTool } from '../worker-tools/dispatcher';
+import type { SupervisorArtifactContextRef } from './artifact-contract';
+import {
+  buildExecutionReviewChecklist,
+  checklistItemCanProveWorkerEvidence,
+  type ExecutionReviewChecklistItem,
+} from './execution-review';
 import { callSupervisorLLM, type SupervisorLlmDebugEvent } from './llm-provider';
 import {
   buildRound1JobTypePrompt,
@@ -21,6 +27,7 @@ import {
   readSupervisorSkill,
   searchSupervisorSkills,
 } from './skill-tools';
+import { renderRound2UserContext } from './user-context';
 
 export interface SupervisorLoopInput {
   runId: string;
@@ -44,6 +51,7 @@ export interface SupervisorLoopInput {
     blockedCommands?: string[];
     maxCommandSeconds?: number;
   };
+  artifactContextRefs?: SupervisorArtifactContextRef[];
 }
 
 export type SupervisorTodoContext = {
@@ -164,6 +172,26 @@ function buildUserInput(input: SupervisorLoopInput): string {
   return (input.prompt || '').trim();
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function buildExecutionReviewContextSnapshot(input: {
+  existingContextSnapshot: unknown;
+  checklist: ExecutionReviewChecklistItem[];
+  artifactContextRefs?: SupervisorArtifactContextRef[];
+}) {
+  const base = isRecord(input.existingContextSnapshot) ? { ...input.existingContextSnapshot } : {};
+  return {
+    ...base,
+    executionReview: {
+      checklist: input.checklist,
+      artifactContextRefs: input.artifactContextRefs || [],
+      workerEvidenceItemCount: input.checklist.filter(checklistItemCanProveWorkerEvidence).length,
+    },
+  };
+}
+
 export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<SupervisorLoopResult> {
   const { runId, repoRoot } = input;
   const maxToolCalls = input.maxToolCalls ?? 20;
@@ -187,6 +215,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
   let summary = '';
   let stoppedBy: SupervisorLoopResult['stoppedBy'] = 'decision';
   let riskLevel: SupervisorLoopResult['riskLevel'] = 'low';
+  let reviewChecklist: ExecutionReviewChecklistItem[] = [];
 
   const emitAgentEvent = async (
     type: AgentEventType,
@@ -260,25 +289,30 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         projectRoot: repoRoot,
         jobType: currentJobType,
         tools: allowedTools,
+        externalAllowedPaths: input.safetyPolicy?.externalAllowedPaths,
       });
-      const round2UserPrompt = JSON.stringify({
+      const loadedSkillSummaryContext = [...loadedSkillSummaries.values()].map((skill) => ({
+        jobType: skill.jobType,
+        path: skill.path,
+        digest: skill.digest,
+        useWhen: skill.summary.useWhen,
+        procedure: skill.summary.procedure,
+        requiredRules: skill.summary.requiredRules,
+        loadedAtStep: skill.loadedAtStep,
+      }));
+      const round2UserPrompt = renderRound2UserContext({
         latestUserMessage: userInput,
         goal,
         currentJobType,
+        workflow: currentJobType,
+        safetyPolicy: input.safetyPolicy || null,
         todoPlan: currentTodos.map(toSupervisorTodoContext),
         currentTodo: currentTodos.find((todo) => todo.status === 'running')
           ? toSupervisorTodoContext(currentTodos.find((todo) => todo.status === 'running') as any)
           : null,
         toolResults: toolResults.slice(-8),
-        loadedSkillSummaries: [...loadedSkillSummaries.values()].map((skill) => ({
-          jobType: skill.jobType,
-          path: skill.path,
-          digest: skill.digest,
-          useWhen: skill.summary.useWhen,
-          procedure: skill.summary.procedure,
-          requiredRules: skill.summary.requiredRules,
-          loadedAtStep: skill.loadedAtStep,
-        })),
+        loadedSkillSummaries: loadedSkillSummaryContext,
+        artifactContextRefs: input.artifactContextRefs || [],
       });
       await emitAgentEvent('round2.prompt_built', {
         systemPrompt: round2SystemPrompt,
@@ -531,14 +565,50 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       }
 
       if (round2.toolCall.name === 'finalize_answer') {
+        const openTodos = currentTodos.filter((todo) =>
+          ['pending', 'running'].includes(todo.status)
+        );
+        if (openTodos.length > 0) {
+          const result = {
+            step,
+            toolName: 'finalize_answer',
+            ok: false,
+            arguments: round2.toolCall.arguments,
+            summary: `Cannot finalize while TodoList has open items: ${openTodos
+              .map((todo) => `#${todo.seq} ${todo.status}`)
+              .join(', ')}. Use complete_todo first.`,
+            payload: { todos: currentTodos.map(toSupervisorTodoContext) },
+          };
+          toolResults.push(result);
+          await emitAgentEvent('tool.validation_failed', result, 'warning');
+          continue;
+        }
+        const templateVerificationGap = getTemplateImportVerificationGap(toolResults);
+        if (templateVerificationGap) {
+          const result = {
+            step,
+            toolName: 'finalize_answer',
+            ok: false,
+            arguments: round2.toolCall.arguments,
+            summary: templateVerificationGap,
+            payload: { todos: currentTodos.map(toSupervisorTodoContext) },
+          };
+          toolResults.push(result);
+          await emitAgentEvent('tool.validation_failed', result, 'warning');
+          continue;
+        }
         const message = String(round2.toolCall.arguments.message || '').trim();
         finalReportText = message || '';
         summary = finalReportText.slice(0, 200) || 'Completed';
         terminalState = 'completed';
         stoppedBy = 'decision';
         riskLevel = 'low';
+        reviewChecklist = buildExecutionReviewChecklist({
+          toolResults,
+          artifactContextRefs: input.artifactContextRefs,
+        });
         await emitAgentEvent('finalize.received', { message: finalReportText });
-        await emitAgentEvent('run.completed', { finalReport: finalReportText });
+        await emitAgentEvent('run.completed', { finalReport: finalReportText, reviewChecklist });
         break;
       }
 
@@ -631,6 +701,17 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     finalReport: finalReportText,
     summary,
     status: terminalState,
+    contextSnapshot: buildExecutionReviewContextSnapshot({
+      existingContextSnapshot: run.contextSnapshot,
+      checklist:
+        reviewChecklist.length > 0
+          ? reviewChecklist
+          : buildExecutionReviewChecklist({
+              toolResults,
+              artifactContextRefs: input.artifactContextRefs,
+            }),
+      artifactContextRefs: input.artifactContextRefs,
+    }),
   });
   await repo.updateTaskStatus(run.taskId, terminalState);
   appendSupervisorTrace('schema_first_loop_finished', {
@@ -731,6 +812,35 @@ function normalizeCompletionStatus(value: unknown) {
   if (value === 'passed' || value === 'failed' || value === 'skipped' || value === 'needs_human') {
     return value;
   }
+  return null;
+}
+
+function getTemplateImportVerificationGap(toolResults: CompactToolResult[]): string | null {
+  const copiedTemplate = toolResults.some(
+    (result) => result.ok && result.toolName === 'copy_directory'
+  );
+  if (!copiedTemplate) return null;
+
+  const readPackageJson = toolResults.some((result) => {
+    if (!result.ok || result.toolName !== 'read_file') return false;
+    const filePath = String(result.arguments.filePath || '');
+    return filePath === 'package.json' || filePath.endsWith('/package.json');
+  });
+  if (!readPackageJson) {
+    return 'Cannot finalize after copy_directory before reading package.json to identify available verification scripts.';
+  }
+
+  const ranVerification = toolResults.some(
+    (result) =>
+      result.ok &&
+      (result.toolName === 'run_verification' ||
+        (result.toolName === 'run_command' &&
+          /\b(build|lint|typecheck|test|verify)\b/.test(String(result.arguments.command || ''))))
+  );
+  if (!ranVerification) {
+    return 'Cannot finalize after copy_directory before running package.json-based verification such as build, lint, typecheck, test, or verify.';
+  }
+
   return null;
 }
 

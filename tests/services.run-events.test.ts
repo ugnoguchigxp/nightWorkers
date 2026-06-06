@@ -20,6 +20,38 @@ describe('run-events normalizer', () => {
     expect(normalized.type).toBe('error');
     expect(normalized.payloadJson.runEvent.type).toBe('tool.call_finished');
   });
+
+  it('maps provider activity to warning/error without tool-result semantics', () => {
+    const detected = normalizeRunEventToLegacy({
+      event: {
+        version: 1,
+        runId: 'run-1',
+        timestamp: new Date('2026-06-02T00:00:00.000Z').toISOString(),
+        type: 'model.provider_tool_call_detected',
+        severity: 'warning',
+        actor: 'supervisor',
+        message: 'provider tool call detected',
+      },
+    });
+    const rejected = normalizeRunEventToLegacy({
+      event: {
+        version: 1,
+        runId: 'run-1',
+        timestamp: new Date('2026-06-02T00:00:01.000Z').toISOString(),
+        type: 'model.provider_activity_rejected',
+        severity: 'error',
+        actor: 'supervisor',
+        message: 'provider activity rejected',
+      },
+    });
+
+    expect(detected.eventType).toBe('warning');
+    expect(detected.type).toBe('warning');
+    expect(rejected.eventType).toBe('error');
+    expect(rejected.type).toBe('error');
+    expect(detected.eventType).not.toBe('tool_result');
+    expect(rejected.eventType).not.toBe('tool_result');
+  });
 });
 
 describe('run-events jsonl serializer', () => {

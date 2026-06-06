@@ -57,6 +57,7 @@ const KNOWN_ACTIVITY_KINDS = new Set([
   'llm.schema_result',
   'llm.error',
   'llm.usage',
+  'llm.provider_activity',
   'runtime.decision',
   'runtime.state',
   'tool.call',
@@ -245,6 +246,13 @@ function runEventToActivityKind(
   if (eventType === 'model.response_delta') return 'assistant.delta';
   if (eventType === 'model.response_finished') return 'llm.response_final';
   if (eventType === 'model.request_started') return 'llm.request';
+  if (
+    eventType === 'model.provider_activity_detected' ||
+    eventType === 'model.provider_tool_call_detected' ||
+    eventType === 'model.provider_activity_rejected'
+  ) {
+    return 'llm.provider_activity';
+  }
   if (eventType === 'model.response_parse_failed') return 'llm.error';
   if (eventType === 'supervisor.decision') return 'llm.decision_json';
   if (eventType === 'tool.call_started' || eventType === 'tool.call_progress') return 'tool.call';

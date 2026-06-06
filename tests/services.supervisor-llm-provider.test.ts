@@ -1,7 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildCodexSupervisorSdkOptions,
   buildCodexSupervisorThreadOptions,
+  buildNormalizedSupervisorLlmRequest,
   callStructuredJsonLLM,
   callSupervisorLLM,
 } from '../api/services/supervisor/llm-provider';
@@ -85,7 +89,14 @@ describe('Supervisor LLM schema-first parsing', () => {
   const originalFixtureOutput = process.env.SUPERVISOR_FIXTURE_OUTPUT;
   const originalFixtureRound1Output = process.env.SUPERVISOR_FIXTURE_ROUND1_OUTPUT;
   const originalFixtureRound2Output = process.env.SUPERVISOR_FIXTURE_ROUND2_OUTPUT;
+  const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
   const originalFetch = globalThis.fetch;
+  let tempDir: string | null = null;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-llm-provider-'));
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = path.join(tempDir, 'llm-settings.json');
+  });
 
   afterEach(() => {
     if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
@@ -106,8 +117,71 @@ describe('Supervisor LLM schema-first parsing', () => {
     if (originalFixtureRound2Output === undefined)
       delete process.env.SUPERVISOR_FIXTURE_ROUND2_OUTPUT;
     else process.env.SUPERVISOR_FIXTURE_ROUND2_OUTPUT = originalFixtureRound2Output;
+    if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+    if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+    tempDir = null;
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
+  });
+
+  it('normalizes provider request diagnostics without changing prompt text', () => {
+    const request = buildNormalizedSupervisorLlmRequest({
+      systemPrompt: 'system text',
+      userPrompt: 'user text',
+      jsonSchema: { name: 'example_schema', schema: { type: 'object' } },
+      label: 'example_schema',
+      settings: {
+        ACTIVE_LLM_PROVIDER: 'azure',
+        AZURE_OPENAI_ENDPOINT: 'https://example.openai.azure.com',
+        AZURE_OPENAI_DEPLOYMENT_NAME: 'gpt-deployment',
+        AZURE_OPENAI_API_VERSION: '2024-05-01-preview',
+      },
+    });
+
+    expect(request).toMatchObject({
+      callKind: 'structured_artifact',
+      providerId: 'azure-openai',
+      providerClass: 'chat_completion',
+      modelOrDeployment: 'gpt-deployment',
+      endpoint: 'https://example.openai.azure.com',
+      apiVersion: '2024-05-01-preview',
+      diagnostics: {
+        label: 'example_schema',
+        artifactSchemaName: 'example_schema',
+        systemPromptLength: 'system text'.length,
+        userPromptLength: 'user text'.length,
+      },
+    });
+    expect(request.systemPrompt).toBe('system text');
+    expect(request.userPrompt).toBe('user text');
+    expect(request.capabilityPolicy).toMatchObject({
+      allowProviderToolCalls: false,
+      allowProviderFileWrites: false,
+      allowProviderCommandExecution: false,
+      allowProviderNetwork: false,
+      requireStructuredOutput: true,
+    });
+  });
+
+  it('uses runtime provider settings ahead of environment fallback', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'openai';
+    process.env.OPENAI_ENABLED = 'false';
+    fs.writeFileSync(
+      process.env.NIGHTWORKERS_LLM_SETTINGS_PATH!,
+      JSON.stringify({
+        ACTIVE_LLM_PROVIDER: 'fixture',
+        SUPERVISOR_FIXTURE_OUTPUT: 'ignored',
+      })
+    );
+    process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({ ok: true });
+
+    const rawOutput = await callStructuredJsonLLM('system', 'user', {
+      schemaName: 'example_schema',
+      schema: { type: 'object' },
+    });
+
+    expect(JSON.parse(rawOutput)).toEqual({ ok: true });
   });
 
   it('repairs truncated schema-first toolCall JSON before schema validation', async () => {
@@ -163,6 +237,56 @@ describe('Supervisor LLM schema-first parsing', () => {
     ).rejects.toThrow();
   });
 
+  it('rejects OpenAI non-stream provider tool calls before parsing content', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'openai';
+    process.env.OPENAI_ENABLED = 'true';
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.OPENAI_MODEL = 'gpt-test';
+    process.env.OPENAI_STREAMING_ENABLED = 'false';
+
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: '',
+                tool_calls: [
+                  { type: 'function', function: { name: 'write_file', arguments: '{}' } },
+                ],
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }) as unknown as typeof fetch;
+
+    const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
+    await expect(
+      callSupervisorLLM('system', 'user', {
+        round: 2,
+        schemaFirst: true,
+        emitEvent: (event) => events.push({ type: event.type, data: event.data }),
+      })
+    ).rejects.toThrow(/Provider activity rejected/);
+
+    expect(events.map((event) => event.type)).toEqual([
+      'model.request_started',
+      'model.provider_tool_call_detected',
+      'model.provider_activity_rejected',
+    ]);
+    expect(events.at(-1)?.data).toMatchObject({
+      providerId: 'openai',
+      providerClass: 'chat_completion',
+      activityType: 'tool_call',
+      toolName: 'write_file',
+    });
+  });
+
   it('emits response delta events while reading streamed OpenAI responses', async () => {
     process.env.ACTIVE_LLM_PROVIDER = 'openai';
     process.env.OPENAI_ENABLED = 'true';
@@ -214,6 +338,61 @@ describe('Supervisor LLM schema-first parsing', () => {
         .map((event) => String(event.data?.text || ''))
         .join('')
     ).toBe(rawDecision);
+  });
+
+  it('rejects OpenAI streaming provider tool calls', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'openai';
+    process.env.OPENAI_ENABLED = 'true';
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.OPENAI_MODEL = 'gpt-test';
+    process.env.OPENAI_STREAMING_ENABLED = 'true';
+
+    const encoder = new TextEncoder();
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  choices: [
+                    {
+                      delta: {
+                        tool_calls: [
+                          { type: 'function', function: { name: 'run_command', arguments: '{}' } },
+                        ],
+                      },
+                    },
+                  ],
+                })}\n\n`
+              )
+            );
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            controller.close();
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        }
+      );
+    }) as unknown as typeof fetch;
+
+    const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
+    await expect(
+      callSupervisorLLM('system', 'user', {
+        round: 2,
+        schemaFirst: true,
+        emitEvent: (event) => events.push({ type: event.type, data: event.data }),
+      })
+    ).rejects.toThrow(/Provider activity rejected/);
+
+    expect(events.some((event) => event.type === 'model.provider_activity_rejected')).toBe(true);
+    expect(events.at(-1)?.data).toMatchObject({
+      providerId: 'openai',
+      activityType: 'tool_call',
+      toolName: 'run_command',
+    });
   });
 
   it('uses configured fixture JSON instead of synthesizing a task-specific decision', async () => {

@@ -99,6 +99,7 @@ describe('NightWorkers repositories routes', () => {
   });
 
   it('updates project external path grants through safety policy', async () => {
+    const localPath = '/Users/y.noguchi/Code/todolist';
     const createRes = await app.request('http://localhost/api/repositories', {
       method: 'POST',
       headers: {
@@ -106,7 +107,7 @@ describe('NightWorkers repositories routes', () => {
       },
       body: JSON.stringify({
         name: `TEST: External grant ${crypto.randomUUID()}`,
-        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        localPath,
         branch: 'main',
       }),
     });
@@ -120,7 +121,7 @@ describe('NightWorkers repositories routes', () => {
       },
       body: JSON.stringify({
         safetyPolicy: {
-          externalAllowedPaths: ['/Users/y.noguchi/Code/hono-standard'],
+          externalAllowedPaths: ['../hono-standard'],
         },
       }),
     });

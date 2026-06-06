@@ -190,9 +190,9 @@ export function OverviewScreen({
               />
               <KpiCard
                 label={t('overview.kpi.input')}
-                value={formatTokenCount(dashboard.usage.promptInputTokens)}
-                sub={t('overview.kpi.providerTokens', {
-                  provider: formatTokenCount(dashboard.usage.inputTokens),
+                value={formatTokenCount(dashboard.usage.inputTokens)}
+                sub={t('overview.kpi.inputDetails', {
+                  prompt: formatTokenCount(dashboard.usage.promptInputTokens),
                   cached: formatTokenCount(dashboard.usage.cachedInputTokens),
                 })}
               />

@@ -352,9 +352,10 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                 });
               }}
               sidePanel={
-                todoPaneOpen ? (
-                  <TodoListPane todos={workspace.latestRunTodos} />
-                ) : artifactPaneOpen ? (
+                todoPaneOpen ? <TodoListPane todos={workspace.latestRunTodos} /> : undefined
+              }
+              splitPanel={
+                artifactPaneOpen ? (
                   <ArtifactPane
                     activeProject={workspace.activeProject}
                     activeSessionId={workspace.activeSessionId}

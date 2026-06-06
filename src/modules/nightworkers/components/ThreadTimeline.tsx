@@ -198,6 +198,7 @@ export function ThreadTimeline({
 }: ThreadTimelineProps) {
   const [isGrantingExternalPath, setIsGrantingExternalPath] = useState(false);
   const [dismissedPermissionPath, setDismissedPermissionPath] = useState<string | null>(null);
+  const [grantExternalPathError, setGrantExternalPathError] = useState<string | null>(null);
   const transcriptItems = buildTranscriptItems({
     events: activityEvents,
     artifacts: activityArtifacts,
@@ -260,11 +261,11 @@ export function ThreadTimeline({
   return (
     <div className="nightworkers-chat-window space-y-5 p-6">
       {showPermissionDialog && permissionPath ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-lg rounded-lg border border-slate-700 bg-slate-950 p-4 shadow-xl">
-            <div className="text-sm font-semibold text-slate-100">External Folder Access</div>
+        <ThreadMessage messageRole="assistant">
+          <div className="max-w-2xl rounded-lg border border-slate-700 bg-slate-950/80 p-4">
+            <div className="text-sm font-semibold text-slate-100">外部フォルダへのアクセス許可</div>
             <div className="mt-2 text-xs leading-5 text-slate-300">
-              The worker needs permission to read this folder before continuing.
+              続行するには、このフォルダの読み取り許可が必要です。
             </div>
             <div className="mt-3 break-all rounded-md border border-slate-800 bg-slate-900 px-3 py-2 font-mono text-[11px] text-slate-200">
               {permissionPath}
@@ -276,7 +277,7 @@ export function ThreadTimeline({
                 size="sm"
                 onClick={() => setDismissedPermissionPath(permissionPath)}
               >
-                Dismiss
+                閉じる
               </Button>
               <Button
                 type="button"
@@ -285,19 +286,29 @@ export function ThreadTimeline({
                 onClick={async () => {
                   if (!onGrantExternalPath) return;
                   setIsGrantingExternalPath(true);
+                  setGrantExternalPathError(null);
                   try {
                     await onGrantExternalPath(permissionPath);
                     setDismissedPermissionPath(permissionPath);
+                  } catch (error) {
+                    setGrantExternalPathError(
+                      error instanceof Error ? error.message : '外部フォルダの許可に失敗しました。'
+                    );
                   } finally {
                     setIsGrantingExternalPath(false);
                   }
                 }}
               >
-                Allow Folder
+                フォルダを許可
               </Button>
             </div>
+            {grantExternalPathError ? (
+              <div className="mt-3 rounded-md border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-200">
+                {grantExternalPathError}
+              </div>
+            ) : null}
           </div>
-        </div>
+        </ThreadMessage>
       ) : null}
       {showDebugEvents && isAgentWorking && latestEvent ? (
         <div className="rounded-lg border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-200">
@@ -443,6 +454,7 @@ function isRuntimePromptSnapshotAnchorTaskEvent(event: TaskEvent, latestRun: Tas
 export function buildNormalTranscriptItems(items: TranscriptItem[]): TranscriptItem[] {
   const filtered: TranscriptItem[] = [];
   const seenEditDiffs = new Set<string>();
+  const seenCliCommands = new Set<string>();
 
   for (const item of items) {
     if (item.kind === 'user_turn') {
@@ -454,13 +466,20 @@ export function buildNormalTranscriptItems(items: TranscriptItem[]): TranscriptI
       const text = isPatchEnvelopeText(item.text) ? '' : item.text;
       const children = item.children.filter((child) => {
         const event = transcriptChildEvent(child);
-        return event ? rememberVisibleEditDiff(event, seenEditDiffs) : false;
+        return event
+          ? rememberVisibleEditDiff(event, seenEditDiffs) ||
+              rememberVisibleCliCommand(event, seenCliCommands)
+          : false;
       });
       if (text.trim() || children.length > 0) filtered.push({ ...item, text, children });
       continue;
     }
 
-    if (item.kind === 'activity' && rememberVisibleEditDiff(item.event, seenEditDiffs)) {
+    if (
+      item.kind === 'activity' &&
+      (rememberVisibleEditDiff(item.event, seenEditDiffs) ||
+        rememberVisibleCliCommand(item.event, seenCliCommands))
+    ) {
       filtered.push(item);
     }
   }
@@ -479,6 +498,27 @@ function rememberVisibleEditDiff(event: ActivityEvent, seenEditDiffs: Set<string
   if (seenEditDiffs.has(key)) return false;
   seenEditDiffs.add(key);
   return true;
+}
+
+function rememberVisibleCliCommand(event: ActivityEvent, seenCliCommands: Set<string>): boolean {
+  const summary = getVisibleCliCommandSummary(event);
+  if (!summary) return false;
+  const key = visibleCliCommandKey(event, summary);
+  if (seenCliCommands.has(key)) return false;
+  seenCliCommands.add(key);
+  return true;
+}
+
+function visibleCliCommandKey(event: ActivityEvent, summary: VisibleCliCommandSummary): string {
+  const payload = event.payloadJson as any;
+  const step =
+    asNumber(payload?.runEvent?.data?.iteration) ||
+    asNumber(payload?.runEvent?.data?.step) ||
+    asNumber(payload?.payload?.step);
+  if (typeof step === 'number') {
+    return `${event.runId || payload?.runEvent?.runId || 'run'}:${step}:${summary.toolName}:${summary.command}`;
+  }
+  return `${summary.toolName}:${summary.command}`;
 }
 
 function visibleEditDiffKey(event: ActivityEvent): string {
@@ -525,7 +565,10 @@ function NormalTranscriptItemView({
           {item.children.map((child, index) => {
             const event = transcriptChildEvent(child);
             return event ? (
-              <NormalEditDiffBlock key={`${item.id}-diff-${index}-${event.id}`} event={event} />
+              <NormalVisibleActivityBlock
+                key={`${item.id}-activity-${index}-${event.id}`}
+                event={event}
+              />
             ) : null;
           })}
         </div>
@@ -534,10 +577,19 @@ function NormalTranscriptItemView({
   }
 
   if (item.kind === 'activity') {
-    return <NormalEditDiffBlock event={item.event} />;
+    return <NormalVisibleActivityBlock event={item.event} />;
   }
 
   return null;
+}
+
+function NormalVisibleActivityBlock({ event }: { event: ActivityEvent }) {
+  return (
+    <>
+      <NormalEditDiffBlock event={event} />
+      <NormalCliCommandBlock event={event} />
+    </>
+  );
 }
 
 function NormalEditDiffBlock({ event }: { event: ActivityEvent }) {
@@ -554,6 +606,33 @@ function NormalEditDiffBlock({ event }: { event: ActivityEvent }) {
           <DiffCodeBlock code={code} label={activityCodeFilename(event)} />
         </div>
       ) : null}
+    </details>
+  );
+}
+
+function NormalCliCommandBlock({ event }: { event: ActivityEvent }) {
+  const summary = getVisibleCliCommandSummary(event);
+  if (!summary) return null;
+
+  return (
+    <details className="overflow-hidden rounded-[var(--radius-md)] border border-transparent bg-[#1f2030] font-mono text-sm text-slate-200">
+      <summary className="cursor-pointer list-none px-4 py-3">
+        <div className="flex items-baseline justify-between gap-4">
+          <span className="min-w-0 truncate text-slate-300">{summary.command}</span>
+          <span className="shrink-0 whitespace-nowrap text-right text-slate-400">
+            {summary.toolName}
+          </span>
+        </div>
+      </summary>
+      <div className="border-slate-700/60 border-t">
+        <NightWorkersCodeBlock
+          code={summary.command}
+          filename="command.sh"
+          language="shell"
+          maxHeight={160}
+          syntaxHighlighting={false}
+        />
+      </div>
     </details>
   );
 }
@@ -608,6 +687,27 @@ export function buildVisibleEditDiffSummary(
   }
 
   return [];
+}
+
+export type VisibleCliCommandSummary = {
+  toolName: 'run_command' | 'run_verification';
+  command: string;
+};
+
+export function getVisibleCliCommandSummary(event: ActivityEvent): VisibleCliCommandSummary | null {
+  const payload = event.payloadJson as any;
+  const toolName = getToolName(payload);
+  if (toolName !== 'run_command' && toolName !== 'run_verification') return null;
+
+  const args = getToolArguments(payload);
+  const result = getToolResult(payload);
+  const command =
+    asString(args?.command) ||
+    asString(result?.payload?.command) ||
+    asString(payload?.runEvent?.data?.command) ||
+    asString(payload?.payload?.command);
+  if (!command.trim()) return null;
+  return { toolName, command };
 }
 
 function mergeEditSections(
@@ -1728,6 +1828,7 @@ function getToolArguments(payload: any): any {
     payload?.args ||
     payload?.toolCall?.arguments ||
     payload?.decision?.toolCall?.arguments ||
+    payload?.payload?.arguments ||
     payload?.runEvent?.data?.arguments ||
     payload?.runEvent?.data?.toolCall?.arguments ||
     payload?.runEvent?.data?.toolArgs ||
@@ -1739,6 +1840,7 @@ function getToolResult(payload: any): any {
   if (payload?.result) return payload.result;
   if (payload?.runEvent?.data?.result) return payload.runEvent.data.result;
   if (payload?.runEvent?.data?.toolResult) return payload.runEvent.data.toolResult;
+  if (typeof payload?.payload?.ok === 'boolean' && payload.payload.payload) return payload.payload;
   if (typeof payload?.ok === 'boolean' && payload?.payload) return payload;
   return null;
 }

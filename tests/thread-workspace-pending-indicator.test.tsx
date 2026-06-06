@@ -10,6 +10,8 @@ const baseProps = {
   latestRun: undefined,
   taskMessages: [],
   latestRunEvents: [],
+  activityEvents: [],
+  activityArtifacts: [],
   activeStreamingResponse: '',
   latestRunTodos: [],
   artifactRefs: [],
@@ -47,5 +49,52 @@ describe('ThreadWorkspace pending indicator', () => {
 
     expect(markup).toContain('AIが返答を生成中です');
     expect(markup).toContain('nightworkers-thinking-dot');
+  });
+
+  it('shows the assistant thinking indicator at the end of an active running session', () => {
+    const now = new Date().toISOString();
+    const markup = renderToStaticMarkup(
+      <ThreadWorkspace
+        {...baseProps}
+        activeProject={{
+          id: 'repo-1',
+          name: 'todolist',
+          localPath: '/Users/y.noguchi/Code/todolist',
+          branch: 'main',
+          allowed: true,
+          queueEnabled: false,
+          maxConcurrentSessions: 1,
+          createdAt: now,
+          updatedAt: now,
+        }}
+        activeSession={{
+          id: 'task-1',
+          repositoryId: 'repo-1',
+          title: 'Copy template',
+          status: 'running',
+          timeoutSeconds: 3600,
+          priority: 0,
+          createdAt: now,
+          updatedAt: now,
+        }}
+        latestRun={{
+          id: 'run-1',
+          taskId: 'task-1',
+          repositoryId: 'repo-1',
+          status: 'running',
+          workerKind: 'native-local',
+          timeoutSeconds: 3600,
+          startedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        }}
+        isAgentWorking={false}
+        isAgentThinking={true}
+      />
+    );
+
+    expect(markup).toContain('AIが返答を生成中です');
+    expect(markup).toContain('nightworkers-thinking-dot');
+    expect(markup).not.toContain('AIが作業中');
   });
 });

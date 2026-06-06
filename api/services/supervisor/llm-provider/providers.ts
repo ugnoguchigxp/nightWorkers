@@ -5,14 +5,25 @@ import {
   buildCodexTurnPrompt,
   readCodexStreamedTurn,
 } from './codex';
-import { emitSupervisorLlmDebugEvent } from './events';
+import { emitSupervisorLlmDebugEvent, rejectProviderActivity } from './events';
 import { readSchemaFirstFixtureOutput } from './fixture';
 import { buildOpenAIChatCompletionBody, readOpenAIChatCompletionStream } from './openai';
-import type { CallSupervisorOptions, ProviderCallResult } from './types';
+import { providerAdapterKey } from './request';
+import {
+  getSupervisorLlmBoolSetting,
+  getSupervisorLlmSetting,
+  readSupervisorLlmProviderSettings,
+} from './settings';
+import type {
+  CallSupervisorOptions,
+  NormalizedSupervisorLlmRequest,
+  ProviderCallResult,
+} from './types';
 
 export type RawLlmCallOptions = CallSupervisorOptions & {
   jsonSchema?: { name: string; schema: unknown };
   label: string;
+  normalizedRequest?: NormalizedSupervisorLlmRequest;
 };
 
 export async function callProvider(input: {
@@ -23,17 +34,18 @@ export async function callProvider(input: {
   signal: AbortSignal;
   setProviderDebug: (value: Record<string, unknown>) => void;
 }): Promise<ProviderCallResult> {
-  const isEnabled = (key: string, fallback: boolean) => {
-    const raw = process.env[key];
-    if (!raw) return fallback;
-    return raw.toLowerCase() === 'true';
-  };
+  const settings = readSupervisorLlmProviderSettings();
+  const isEnabled = (key: Parameters<typeof getSupervisorLlmBoolSetting>[1], fallback: boolean) =>
+    getSupervisorLlmBoolSetting(settings, key, fallback);
+  const provider = providerAdapterKey(
+    input.options.normalizedRequest?.providerId ?? input.provider
+  );
 
-  if (input.provider === 'azure') return callAzureProvider(input, isEnabled);
-  if (input.provider === 'openai') return callOpenAIProvider(input, isEnabled);
-  if (input.provider === 'bedrock') return callBedrockProvider(input, isEnabled);
-  if (input.provider === 'codex') return callCodexProvider(input, isEnabled);
-  if (input.provider === 'fixture' || input.provider === 'test') return callFixtureProvider(input);
+  if (provider === 'azure') return callAzureProvider(input, isEnabled, settings);
+  if (provider === 'openai') return callOpenAIProvider(input, isEnabled, settings);
+  if (provider === 'bedrock') return callBedrockProvider(input, isEnabled, settings);
+  if (provider === 'codex') return callCodexProvider(input, isEnabled, settings);
+  if (provider === 'fixture' || provider === 'test') return callFixtureProvider(input);
 
   throw new Error(`Unsupported LLM provider: ${input.provider}`);
 }
@@ -78,15 +90,24 @@ function buildFixtureProviderResult(
 
 async function callAzureProvider(
   input: Parameters<typeof callProvider>[0],
-  isEnabled: (key: string, fallback: boolean) => boolean
+  isEnabled: (key: Parameters<typeof getSupervisorLlmBoolSetting>[1], fallback: boolean) => boolean,
+  settings: ReturnType<typeof readSupervisorLlmProviderSettings>
 ): Promise<ProviderCallResult> {
   if (!isEnabled('AZURE_OPENAI_ENABLED', false)) {
     throw new Error('Azure provider is inactive. Enable AZURE_OPENAI_ENABLED first.');
   }
-  const apiKey = process.env.AZURE_OPENAI_API_KEY;
-  const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-  const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME || 'gpt-5-mini';
-  const apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2024-05-01-preview';
+  const apiKey = getSupervisorLlmSetting(settings, 'AZURE_OPENAI_API_KEY');
+  const endpoint = getSupervisorLlmSetting(settings, 'AZURE_OPENAI_ENDPOINT');
+  const deploymentName = getSupervisorLlmSetting(
+    settings,
+    'AZURE_OPENAI_DEPLOYMENT_NAME',
+    'gpt-5-mini'
+  );
+  const apiVersion = getSupervisorLlmSetting(
+    settings,
+    'AZURE_OPENAI_API_VERSION',
+    '2024-05-01-preview'
+  );
   if (!apiKey || !endpoint) {
     throw new Error('Azure OpenAI credentials are not configured in environment variables.');
   }
@@ -129,10 +150,21 @@ async function callAzureProvider(
     throw new Error(`Azure OpenAI call failed with status ${response.status}: ${errorText}`);
   }
   const responseData = await response.json();
+  const message = responseData?.choices?.[0]?.message;
+  if (message?.tool_calls && input.options.normalizedRequest) {
+    await rejectProviderActivity({
+      options: input.options,
+      request: input.options.normalizedRequest,
+      activityType: 'tool_call',
+      toolName: message.tool_calls?.[0]?.function?.name ?? null,
+      preview: JSON.stringify(message.tool_calls),
+    });
+  }
   const providerDebug = {
-    provider: 'azure',
+    provider: 'azure-openai',
     status: response.status,
     deploymentName,
+    apiVersion,
     hasChoices: Boolean(responseData?.choices),
   };
   input.setProviderDebug(providerDebug);
@@ -140,7 +172,7 @@ async function callAzureProvider(
   return {
     content,
     usage: normalizeProviderUsage({
-      provider: 'azure',
+      provider: 'azure-openai',
       rawUsage: responseData?.usage,
       fallback: {
         systemPrompt: input.systemPrompt,
@@ -155,14 +187,15 @@ async function callAzureProvider(
 
 async function callOpenAIProvider(
   input: Parameters<typeof callProvider>[0],
-  isEnabled: (key: string, fallback: boolean) => boolean
+  isEnabled: (key: Parameters<typeof getSupervisorLlmBoolSetting>[1], fallback: boolean) => boolean,
+  settings: ReturnType<typeof readSupervisorLlmProviderSettings>
 ): Promise<ProviderCallResult> {
   if (!isEnabled('OPENAI_ENABLED', true)) {
     throw new Error('OpenAI provider is inactive. Enable OPENAI_ENABLED first.');
   }
-  const apiKey = process.env.OPENAI_API_KEY;
-  const baseURL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
-  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  const apiKey = getSupervisorLlmSetting(settings, 'OPENAI_API_KEY');
+  const baseURL = getSupervisorLlmSetting(settings, 'OPENAI_BASE_URL', 'https://api.openai.com/v1');
+  const model = getSupervisorLlmSetting(settings, 'OPENAI_MODEL', 'gpt-4o-mini');
   const streamResponses = isEnabled('OPENAI_STREAMING_ENABLED', true);
   if (!apiKey) throw new Error('OpenAI API key is not configured in environment variables.');
 
@@ -215,11 +248,22 @@ async function callOpenAIProvider(
     ? await readOpenAIChatCompletionStream({
         response,
         options: input.options,
+        normalizedRequest: input.options.normalizedRequest,
         provider: 'openai',
         round: input.options.round,
       })
     : null;
   const responseData = streamResponses ? null : await response.json();
+  const message = responseData?.choices?.[0]?.message;
+  if (message?.tool_calls && input.options.normalizedRequest) {
+    await rejectProviderActivity({
+      options: input.options,
+      request: input.options.normalizedRequest,
+      activityType: 'tool_call',
+      toolName: message.tool_calls?.[0]?.function?.name ?? null,
+      preview: JSON.stringify(message.tool_calls),
+    });
+  }
   const content = streamResponses
     ? streamResult?.content || ''
     : responseData?.choices?.[0]?.message?.content || '';
@@ -252,19 +296,24 @@ async function callOpenAIProvider(
 
 async function callBedrockProvider(
   input: Parameters<typeof callProvider>[0],
-  isEnabled: (key: string, fallback: boolean) => boolean
+  isEnabled: (key: Parameters<typeof getSupervisorLlmBoolSetting>[1], fallback: boolean) => boolean,
+  settings: ReturnType<typeof readSupervisorLlmProviderSettings>
 ): Promise<ProviderCallResult> {
   if (!isEnabled('AWS_BEDROCK_ENABLED', false)) {
     throw new Error('Bedrock provider is inactive. Enable AWS_BEDROCK_ENABLED first.');
   }
   const { BedrockRuntimeClient, ConverseCommand } = await import('@aws-sdk/client-bedrock-runtime');
-  const region = process.env.AWS_REGION || 'us-east-1';
-  const modelId = process.env.AWS_BEDROCK_MODEL || 'anthropic.claude-3-5-sonnet-20241022-v2:0';
+  const region = getSupervisorLlmSetting(settings, 'AWS_REGION', 'us-east-1');
+  const modelId = getSupervisorLlmSetting(
+    settings,
+    'AWS_BEDROCK_MODEL',
+    'anthropic.claude-3-5-sonnet-20241022-v2:0'
+  );
   const client = new BedrockRuntimeClient({
     region,
     credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+      accessKeyId: getSupervisorLlmSetting(settings, 'AWS_ACCESS_KEY_ID'),
+      secretAccessKey: getSupervisorLlmSetting(settings, 'AWS_SECRET_ACCESS_KEY'),
     },
   });
   const res = await client.send(
@@ -276,6 +325,16 @@ async function callBedrockProvider(
     }),
     { abortSignal: input.signal }
   );
+  const toolUse = res.output?.message?.content?.find((block: any) => block?.toolUse);
+  if (toolUse && input.options.normalizedRequest) {
+    await rejectProviderActivity({
+      options: input.options,
+      request: input.options.normalizedRequest,
+      activityType: 'tool_use',
+      toolName: toolUse.toolUse?.name ?? null,
+      preview: JSON.stringify(toolUse),
+    });
+  }
   const content = res.output?.message?.content?.[0]?.text || '';
   const providerDebug = {
     provider: 'bedrock',
@@ -302,14 +361,15 @@ async function callBedrockProvider(
 
 async function callCodexProvider(
   input: Parameters<typeof callProvider>[0],
-  isEnabled: (key: string, fallback: boolean) => boolean
+  isEnabled: (key: Parameters<typeof getSupervisorLlmBoolSetting>[1], fallback: boolean) => boolean,
+  settings: ReturnType<typeof readSupervisorLlmProviderSettings>
 ): Promise<ProviderCallResult> {
   if (!isEnabled('CODEX_ENABLED', false)) {
     throw new Error('Codex provider is inactive. Enable CODEX_ENABLED first.');
   }
   const { Codex } = await import('@openai/codex-sdk');
-  const accessToken = process.env.CODEX_ACCESS_TOKEN || '';
-  const configuredModel = process.env.CODEX_MODEL || undefined;
+  const accessToken = getSupervisorLlmSetting(settings, 'CODEX_ACCESS_TOKEN');
+  const configuredModel = getSupervisorLlmSetting(settings, 'CODEX_MODEL') || undefined;
   const sdkOptions = buildCodexSupervisorSdkOptions(accessToken);
   const codex = new Codex(sdkOptions);
   const threadOptions = buildCodexSupervisorThreadOptions(
@@ -324,6 +384,7 @@ async function callCodexProvider(
     outputSchema: useStructuredOutput ? input.options.jsonSchema?.schema : undefined,
     signal: input.signal,
     options: input.options,
+    normalizedRequest: input.options.normalizedRequest,
   });
   const providerDebug = {
     provider: 'codex',

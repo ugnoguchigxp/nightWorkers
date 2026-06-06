@@ -11,6 +11,7 @@ import {
   getAllowedToolsForJobType,
 } from '../api/services/supervisor/prompt';
 import { runSupervisorLoop } from '../api/services/supervisor/supervisor-loop';
+import { parseRound2UserContextJsonSection } from '../api/services/supervisor/user-context';
 
 const execFileAsync = promisify(execFile);
 
@@ -61,6 +62,182 @@ describe('Schema-first supervisor loop', () => {
     expect(prompt).not.toContain('git_diff');
   });
 
+  it('shows approved external paths in the round2 tool prompt', () => {
+    const prompt = buildRound2ToolCallPrompt({
+      projectRoot: '/Users/y.noguchi/Code/todolist',
+      jobType: 'major_code_edit',
+      tools: getAllowedToolsForJobType('major_code_edit'),
+      externalAllowedPaths: ['/Users/y.noguchi/Code/hono-standard'],
+    });
+
+    expect(prompt).toContain('許可済み外部パス: /Users/y.noguchi/Code/hono-standard');
+    expect(prompt).toContain('treat it as approved');
+    expect(prompt).toContain('copy_directory');
+  });
+
+  it('persists execution review evidence into the run context snapshot', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-review-context-'));
+    vi.mocked(repo.getTaskRun).mockResolvedValue({
+      id: 'run-1',
+      taskId: 'task-1',
+      contextSnapshot: { compiledPrompt: '既存プロンプト' },
+    } as any);
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        jobType: 'minor_code_edit',
+        goal: '完了する',
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'finalize_answer',
+          arguments: { message: '完了しました。' },
+        },
+      });
+
+    try {
+      await runSupervisorLoop({
+        runId: 'run-1',
+        repoRoot,
+        prompt: '完了する',
+        timeoutSeconds: 60,
+        artifactContextRefs: [
+          {
+            kind: 'contextstill_context_pack',
+            refId: 'ctx-pack-1',
+            status: 'evidence_only',
+            digest: 'sha256:abc',
+          },
+        ],
+      });
+
+      expect(repo.updateTaskRun).toHaveBeenCalledWith(
+        'run-1',
+        expect.objectContaining({
+          contextSnapshot: expect.objectContaining({
+            compiledPrompt: '既存プロンプト',
+            executionReview: expect.objectContaining({
+              artifactContextRefs: [
+                expect.objectContaining({
+                  kind: 'contextstill_context_pack',
+                  refId: 'ctx-pack-1',
+                }),
+              ],
+              checklist: [
+                expect.objectContaining({
+                  source: 'contextstill_context_pack',
+                  evidenceRef: 'sha256:abc',
+                }),
+              ],
+              workerEvidenceItemCount: 0,
+            }),
+          }),
+        })
+      );
+    } finally {
+      await fs.rm(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('requires package.json inspection and verification after template copy before finalize', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-template-target-'));
+    const sourceRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-template-source-'));
+    await fs.writeFile(
+      path.join(sourceRoot, 'package.json'),
+      JSON.stringify(
+        {
+          scripts: {
+            typecheck: 'node -e "process.exit(0)"',
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        jobType: 'major_code_edit',
+        goal: 'テンプレートをコピーして検証する',
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'copy_directory',
+          arguments: { sourcePath: sourceRoot, targetPath: '.', overwrite: true },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'finalize_answer',
+          arguments: { message: 'コピーしました。' },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'read_file',
+          arguments: { filePath: 'package.json' },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'finalize_answer',
+          arguments: { message: 'コピーしました。' },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'run_verification',
+          arguments: { command: 'pnpm typecheck', reason: 'package.json script verification' },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'finalize_answer',
+          arguments: { message: 'コピーして検証しました。' },
+        },
+      });
+
+    try {
+      const result = await runSupervisorLoop({
+        runId: 'run-1',
+        repoRoot,
+        prompt: 'テンプレートをコピーして',
+        timeoutSeconds: 60,
+        safetyPolicy: { externalAllowedPaths: [sourceRoot] },
+      });
+
+      expect(result.finalReport).toBe('コピーして検証しました。');
+      const afterCopyToolEvidence = parseRound2UserContextJsonSection<any[]>(
+        vi.mocked(llm.callSupervisorLLM).mock.calls[3]?.[1] as string,
+        'Recent Tool Evidence'
+      );
+      expect(afterCopyToolEvidence).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            toolName: 'finalize_answer',
+            ok: false,
+            summary: expect.stringContaining('before reading package.json'),
+          }),
+        ])
+      );
+      const afterPackageToolEvidence = parseRound2UserContextJsonSection<any[]>(
+        vi.mocked(llm.callSupervisorLLM).mock.calls[5]?.[1] as string,
+        'Recent Tool Evidence'
+      );
+      expect(afterPackageToolEvidence).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            toolName: 'finalize_answer',
+            ok: false,
+            summary: expect.stringContaining('before running package.json-based verification'),
+          }),
+        ])
+      );
+    } finally {
+      await fs.rm(repoRoot, { recursive: true, force: true });
+      await fs.rm(sourceRoot, { recursive: true, force: true });
+    }
+  });
+
   it('allows major_code_edit to create a run-internal TodoList before edits', async () => {
     const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-major-todos-'));
     const createdTodos = [
@@ -83,10 +260,19 @@ describe('Schema-first supervisor loop', () => {
         procedureId: 'major_code_edit',
       },
     ];
+    let currentTodos = [] as any[];
     vi.mocked(repo.replaceTaskRunTodosForRun).mockResolvedValue(createdTodos as any);
-    vi.mocked(repo.listTaskRunTodosForRun)
-      .mockResolvedValueOnce([])
-      .mockResolvedValue(createdTodos as any);
+    vi.mocked(repo.replaceTaskRunTodosForRun).mockImplementation(async () => {
+      currentTodos = createdTodos;
+      return currentTodos as any;
+    });
+    vi.mocked(repo.listTaskRunTodosForRun).mockImplementation(async () => currentTodos as any);
+    vi.mocked(repo.updateTaskRunTodo).mockImplementation(async (todoId, patch) => {
+      currentTodos = currentTodos.map((todo) =>
+        todo.id === todoId ? { ...todo, ...patch } : todo
+      );
+      return currentTodos.find((todo) => todo.id === todoId) as any;
+    });
 
     vi.mocked(llm.callSupervisorLLM)
       .mockResolvedValueOnce({
@@ -113,6 +299,24 @@ describe('Schema-first supervisor loop', () => {
               },
             ],
           },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'finalize_answer',
+          arguments: { message: 'TodoList を作成しました。' },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'complete_todo',
+          arguments: { seq: 1, status: 'passed', autoStartNext: true },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'complete_todo',
+          arguments: { seq: 2, status: 'passed', autoStartNext: false },
         },
       })
       .mockResolvedValueOnce({
@@ -148,15 +352,37 @@ describe('Schema-first supervisor loop', () => {
           }),
         ])
       );
-      const secondRound2UserPrompt = JSON.parse(
-        vi.mocked(llm.callSupervisorLLM).mock.calls[2]?.[1] as string
+      const secondRound2ExecutionState = parseRound2UserContextJsonSection<any>(
+        vi.mocked(llm.callSupervisorLLM).mock.calls[2]?.[1] as string,
+        'Current Execution State'
       );
-      expect(secondRound2UserPrompt.todoPlan).toEqual([
+      expect(secondRound2ExecutionState.todoPlan).toEqual([
         expect.objectContaining({ id: 'todo-1', seq: 1, status: 'running' }),
         expect.objectContaining({ id: 'todo-2', seq: 2, status: 'pending' }),
       ]);
-      expect(secondRound2UserPrompt.currentTodo).toEqual(
+      expect(secondRound2ExecutionState.currentTodo).toEqual(
         expect.objectContaining({ id: 'todo-1', seq: 1, status: 'running' })
+      );
+      const thirdRound2ToolEvidence = parseRound2UserContextJsonSection<any[]>(
+        vi.mocked(llm.callSupervisorLLM).mock.calls[3]?.[1] as string,
+        'Recent Tool Evidence'
+      );
+      expect(thirdRound2ToolEvidence).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            toolName: 'finalize_answer',
+            ok: false,
+            summary: expect.stringContaining('Cannot finalize while TodoList has open items'),
+          }),
+        ])
+      );
+      expect(repo.updateTaskRunTodo).toHaveBeenCalledWith(
+        'todo-1',
+        expect.objectContaining({ status: 'passed' })
+      );
+      expect(repo.updateTaskRunTodo).toHaveBeenCalledWith(
+        'todo-2',
+        expect.objectContaining({ status: 'passed' })
       );
     } finally {
       await fs.rm(repoRoot, { recursive: true, force: true });
@@ -234,23 +460,42 @@ describe('Schema-first supervisor loop', () => {
         expect.objectContaining({ round: 2, schemaFirst: true }),
         expect.objectContaining({ round: 2, schemaFirst: true }),
       ]);
-      const firstRound2UserPrompt = JSON.parse(
-        vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[1] as string
+      const firstRound2UserPrompt = vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[1] as string;
+      expect(firstRound2UserPrompt).toContain('[Latest User Request]');
+      expect(firstRound2UserPrompt).toContain(promptWithStateCard);
+      expect(firstRound2UserPrompt).toContain(
+        '[Goal]\nプロジェクトルートに fizzbuzz.ts を作成する'
       );
-      expect(firstRound2UserPrompt).toMatchObject({
-        latestUserMessage: promptWithStateCard,
-        goal: 'プロジェクトルートに fizzbuzz.ts を作成する',
-        currentJobType: 'minor_code_edit',
-        toolResults: [],
-        loadedSkillSummaries: [],
-      });
+      expect(
+        parseRound2UserContextJsonSection(firstRound2UserPrompt, 'Continuity Context')
+      ).toMatchObject({ currentJobType: 'minor_code_edit' });
+      expect(
+        parseRound2UserContextJsonSection(firstRound2UserPrompt, 'Recent Tool Evidence')
+      ).toEqual([]);
+      expect(
+        parseRound2UserContextJsonSection(firstRound2UserPrompt, 'Loaded Skill Summaries')
+      ).toEqual([]);
       expect(vi.mocked(llm.callSupervisorLLM)).toHaveBeenCalledTimes(3);
       expect(vi.mocked(llm.callSupervisorLLM).mock.calls.length).toBeLessThanOrEqual(20);
-      expect(repo.updateTaskRun).toHaveBeenCalledWith('run-1', {
-        finalReport: 'プロジェクトルートに `fizzbuzz.ts` を作成しました。',
-        summary: 'プロジェクトルートに `fizzbuzz.ts` を作成しました。',
-        status: 'completed',
-      });
+      expect(repo.updateTaskRun).toHaveBeenCalledWith(
+        'run-1',
+        expect.objectContaining({
+          finalReport: 'プロジェクトルートに `fizzbuzz.ts` を作成しました。',
+          summary: 'プロジェクトルートに `fizzbuzz.ts` を作成しました。',
+          status: 'completed',
+          contextSnapshot: expect.objectContaining({
+            executionReview: expect.objectContaining({
+              checklist: [
+                expect.objectContaining({
+                  source: 'worker_tool',
+                  evidenceRef: 'tool:1:apply_patch',
+                }),
+              ],
+              workerEvidenceItemCount: 1,
+            }),
+          }),
+        })
+      );
     } finally {
       await fs.rm(repoRoot, { recursive: true, force: true });
     }
@@ -352,10 +597,11 @@ describe('Schema-first supervisor loop', () => {
       });
 
       expect(result.finalReport).toBe('完了しました。');
-      const secondRound2UserPrompt = JSON.parse(
-        vi.mocked(llm.callSupervisorLLM).mock.calls[2]?.[1] as string
+      const loadedSkillSummaries = parseRound2UserContextJsonSection<any[]>(
+        vi.mocked(llm.callSupervisorLLM).mock.calls[2]?.[1] as string,
+        'Loaded Skill Summaries'
       );
-      expect(secondRound2UserPrompt.loadedSkillSummaries).toEqual([
+      expect(loadedSkillSummaries).toEqual([
         expect.objectContaining({
           jobType: 'minor_code_edit',
           path: 'skills/minor_code_edit.md',
@@ -407,14 +653,15 @@ describe('Schema-first supervisor loop', () => {
       });
 
       expect(result.finalReport).toBe('検索しました。');
-      const secondRound2UserPrompt = JSON.parse(
-        vi.mocked(llm.callSupervisorLLM).mock.calls[2]?.[1] as string
+      const secondRound2ToolEvidence = parseRound2UserContextJsonSection<any[]>(
+        vi.mocked(llm.callSupervisorLLM).mock.calls[2]?.[1] as string,
+        'Recent Tool Evidence'
       );
-      expect(secondRound2UserPrompt.toolResults[0]).toMatchObject({
+      expect(secondRound2ToolEvidence[0]).toMatchObject({
         toolName: 'search_skill',
         ok: true,
       });
-      expect(secondRound2UserPrompt.toolResults[0].payload.matches).toEqual(
+      expect(secondRound2ToolEvidence[0].payload.matches).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             jobType: 'minor_code_edit',

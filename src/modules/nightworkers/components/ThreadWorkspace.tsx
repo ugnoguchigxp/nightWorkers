@@ -1,6 +1,7 @@
 import { Bug, FolderTree, GitCompare, LoaderCircle, PanelsTopLeft, Trash2 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Group, Panel, Separator } from 'react-resizable-panels';
 import type {
   ActivityArtifact,
   ActivityEvent,
@@ -61,6 +62,7 @@ type ThreadWorkspaceProps = {
   onOpenDiffArtifact: (artifact: WorkbenchArtifactRef) => void;
   onGrantExternalPath: (path: string) => Promise<void>;
   sidePanel?: ReactNode;
+  splitPanel?: ReactNode;
 };
 
 export function ThreadWorkspace(props: ThreadWorkspaceProps) {
@@ -244,61 +246,177 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
           </div>
         )}
       </div>
-      <div className="nightworkers-thread-layout flex flex-1 items-start">
-        <div className="nightworkers-thread-main relative flex min-w-0 flex-1 flex-col">
-          <div className="nightworkers-thread-scroll pb-44">
-            {props.activeSession ? (
-              <>
-                {workbenchBanner}
-                <ThreadTimeline
-                  session={props.activeSession}
-                  runs={props.runs}
-                  latestRun={props.latestRun}
-                  taskMessages={props.taskMessages}
-                  latestRunEvents={props.latestRunEvents}
-                  activityEvents={props.activityEvents}
-                  activityArtifacts={props.activityArtifacts}
-                  activeStreamingResponse={props.activeStreamingResponse}
-                  isAgentWorking={props.isAgentThinking}
-                  showDebugEvents={showDebugEvents}
-                  onOpenArtifact={props.onOpenArtifact}
-                  onGrantExternalPath={props.onGrantExternalPath}
-                />
-              </>
-            ) : props.isAgentThinking ? (
-              <div className="nightworkers-chat-window space-y-5 p-6">
-                <ThreadMessage messageRole="assistant">
-                  <ThinkingIndicator />
-                </ThreadMessage>
-              </div>
-            ) : (
-              <div className="h-[40vh]" />
-            )}
-          </div>
-          <div className="sticky bottom-0 z-20">
-            <Composer
-              disabled={props.isAgentWorking}
+      {props.splitPanel ? (
+        <Group
+          className="nightworkers-thread-split-layout"
+          defaultLayout={{ 'nightworkers-thread-main': 62, 'nightworkers-artifact': 38 }}
+          orientation="horizontal"
+        >
+          <Panel id="nightworkers-thread-main" minSize="38%">
+            <ThreadBody
+              activeSession={props.activeSession}
+              activeStreamingResponse={props.activeStreamingResponse}
+              activityArtifacts={props.activityArtifacts}
+              activityEvents={props.activityEvents}
+              isAgentThinking={props.isAgentThinking}
+              isAgentWorking={props.isAgentWorking}
+              latestRun={props.latestRun}
+              latestRunEvents={props.latestRunEvents}
               model={props.model}
-              thinkingDepth={props.thinkingDepth}
               modelOptions={props.modelOptions}
-              latestDiffPatch={props.latestRun?.diffPatch || ''}
-              realtimeStatus={props.realtimeStatus}
-              thinkingDepthOptions={THINKING_DEPTH_OPTIONS}
+              onGrantExternalPath={props.onGrantExternalPath}
               onModelChange={props.onModelChange}
+              onOpenArtifact={props.onOpenArtifact}
+              onSubmitInitialPrompt={props.onSubmitInitialPrompt}
+              onSubmitWorkbenchMessage={props.onSubmitWorkbenchMessage}
               onThinkingDepthChange={props.onThinkingDepthChange}
-              onSubmit={async (prompt, intent) => {
-                if (!props.activeSession) {
-                  await props.onSubmitInitialPrompt(prompt);
-                  return;
-                }
-                await props.onSubmitWorkbenchMessage(prompt, intent);
-              }}
+              realtimeStatus={props.realtimeStatus}
+              runs={props.runs}
+              showDebugEvents={showDebugEvents}
+              taskMessages={props.taskMessages}
+              thinkingDepth={props.thinkingDepth}
+              workbenchBanner={workbenchBanner}
             />
-          </div>
+          </Panel>
+          <Separator className="nightworkers-panel-resize-handle" />
+          <Panel id="nightworkers-artifact" minSize="28%">
+            {props.splitPanel}
+          </Panel>
+        </Group>
+      ) : (
+        <div className="nightworkers-thread-layout flex flex-1 items-start">
+          <ThreadBody
+            activeSession={props.activeSession}
+            activeStreamingResponse={props.activeStreamingResponse}
+            activityArtifacts={props.activityArtifacts}
+            activityEvents={props.activityEvents}
+            isAgentThinking={props.isAgentThinking}
+            isAgentWorking={props.isAgentWorking}
+            latestRun={props.latestRun}
+            latestRunEvents={props.latestRunEvents}
+            model={props.model}
+            modelOptions={props.modelOptions}
+            onGrantExternalPath={props.onGrantExternalPath}
+            onModelChange={props.onModelChange}
+            onOpenArtifact={props.onOpenArtifact}
+            onSubmitInitialPrompt={props.onSubmitInitialPrompt}
+            onSubmitWorkbenchMessage={props.onSubmitWorkbenchMessage}
+            onThinkingDepthChange={props.onThinkingDepthChange}
+            realtimeStatus={props.realtimeStatus}
+            runs={props.runs}
+            showDebugEvents={showDebugEvents}
+            taskMessages={props.taskMessages}
+            thinkingDepth={props.thinkingDepth}
+            workbenchBanner={workbenchBanner}
+          />
+          {props.sidePanel ? (
+            <aside className="nightworkers-thread-side-panel">{props.sidePanel}</aside>
+          ) : null}
         </div>
-        {props.sidePanel ? (
-          <aside className="nightworkers-thread-side-panel">{props.sidePanel}</aside>
-        ) : null}
+      )}
+    </div>
+  );
+}
+
+function ThreadBody({
+  activeSession,
+  activeStreamingResponse,
+  activityArtifacts,
+  activityEvents,
+  isAgentThinking,
+  isAgentWorking,
+  latestRun,
+  latestRunEvents,
+  model,
+  modelOptions,
+  onGrantExternalPath,
+  onModelChange,
+  onOpenArtifact,
+  onSubmitInitialPrompt,
+  onSubmitWorkbenchMessage,
+  onThinkingDepthChange,
+  realtimeStatus,
+  runs,
+  showDebugEvents,
+  taskMessages,
+  thinkingDepth,
+  workbenchBanner,
+}: Pick<
+  ThreadWorkspaceProps,
+  | 'activeSession'
+  | 'activeStreamingResponse'
+  | 'activityArtifacts'
+  | 'activityEvents'
+  | 'isAgentThinking'
+  | 'isAgentWorking'
+  | 'latestRun'
+  | 'latestRunEvents'
+  | 'model'
+  | 'modelOptions'
+  | 'onGrantExternalPath'
+  | 'onModelChange'
+  | 'onOpenArtifact'
+  | 'onSubmitInitialPrompt'
+  | 'onSubmitWorkbenchMessage'
+  | 'onThinkingDepthChange'
+  | 'realtimeStatus'
+  | 'runs'
+  | 'taskMessages'
+  | 'thinkingDepth'
+> & {
+  showDebugEvents: boolean;
+  workbenchBanner: ReactNode;
+}) {
+  return (
+    <div className="nightworkers-thread-main relative flex min-w-0 flex-1 flex-col">
+      <div className="nightworkers-thread-scroll pb-44">
+        {activeSession ? (
+          <>
+            {workbenchBanner}
+            <ThreadTimeline
+              session={activeSession}
+              runs={runs}
+              latestRun={latestRun}
+              taskMessages={taskMessages}
+              latestRunEvents={latestRunEvents}
+              activityEvents={activityEvents}
+              activityArtifacts={activityArtifacts}
+              activeStreamingResponse={activeStreamingResponse}
+              isAgentWorking={isAgentThinking}
+              showDebugEvents={showDebugEvents}
+              onOpenArtifact={onOpenArtifact}
+              onGrantExternalPath={onGrantExternalPath}
+            />
+          </>
+        ) : isAgentThinking ? (
+          <div className="nightworkers-chat-window space-y-5 p-6">
+            <ThreadMessage messageRole="assistant">
+              <ThinkingIndicator />
+            </ThreadMessage>
+          </div>
+        ) : (
+          <div className="h-[40vh]" />
+        )}
+      </div>
+      <div className="sticky bottom-0 z-20">
+        <Composer
+          disabled={isAgentWorking}
+          model={model}
+          thinkingDepth={thinkingDepth}
+          modelOptions={modelOptions}
+          latestDiffPatch={latestRun?.diffPatch || ''}
+          realtimeStatus={realtimeStatus}
+          thinkingDepthOptions={THINKING_DEPTH_OPTIONS}
+          onModelChange={onModelChange}
+          onThinkingDepthChange={onThinkingDepthChange}
+          onSubmit={async (prompt, intent) => {
+            if (!activeSession) {
+              await onSubmitInitialPrompt(prompt);
+              return;
+            }
+            await onSubmitWorkbenchMessage(prompt, intent);
+          }}
+        />
       </div>
     </div>
   );
@@ -536,14 +654,14 @@ function stateLabel(sessionView: WorkbenchSessionView) {
 }
 
 function formatUsageBadge(summary: TaskLlmUsageSummary | null) {
-  return `i:${formatTokenCount(summary?.promptInputTokens ?? summary?.inputTokens ?? 0)} / o:${formatTokenCount(
+  return `i:${formatTokenCount(summary?.inputTokens ?? 0)} / o:${formatTokenCount(
     summary?.outputTokens ?? 0
   )}`;
 }
 
 function formatUsageTitle(summary: TaskLlmUsageSummary | null) {
   if (!summary) return 'input 0 / output 0 / StateCard 0 / mode unavailable';
-  return `prompt input ${summary.promptInputTokens.toLocaleString()} / provider input ${summary.inputTokens.toLocaleString()} / output ${summary.outputTokens.toLocaleString()} / StateCard ${summary.stateCardTokens.toLocaleString()} / mode ${summary.usageMode}`;
+  return `provider input ${summary.inputTokens.toLocaleString()} / output ${summary.outputTokens.toLocaleString()} / prompt estimate ${summary.promptInputTokens.toLocaleString()} / StateCard ${summary.stateCardTokens.toLocaleString()} / mode ${summary.usageMode}`;
 }
 
 function formatTokenCount(value: number) {

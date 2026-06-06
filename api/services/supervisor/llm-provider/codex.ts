@@ -1,6 +1,6 @@
 import type { CodexOptions, Thread, ThreadEvent, Usage } from '@openai/codex-sdk';
-import { createSupervisorResponseDeltaEmitter } from './events';
-import type { CallSupervisorOptions } from './types';
+import { createSupervisorResponseDeltaEmitter, rejectProviderActivity } from './events';
+import type { CallSupervisorOptions, NormalizedSupervisorLlmRequest } from './types';
 
 const codexSupervisorFeatureOverrides = {
   image_generation: false,
@@ -63,6 +63,7 @@ export async function readCodexStreamedTurn(input: {
   outputSchema?: unknown;
   signal: AbortSignal;
   options: CallSupervisorOptions;
+  normalizedRequest?: NormalizedSupervisorLlmRequest;
 }): Promise<{ content: string; usage: Usage | null }> {
   const { events } = await input.thread.runStreamed(input.prompt, {
     ...(input.outputSchema ? { outputSchema: input.outputSchema } : {}),
@@ -80,7 +81,17 @@ export async function readCodexStreamedTurn(input: {
 
   const handleItemEvent = async (event: Extract<ThreadEvent, { type: `item.${string}` }>) => {
     const item = event.item;
-    if (item.type !== 'agent_message') return;
+    if (item.type !== 'agent_message') {
+      if (input.normalizedRequest) {
+        await rejectProviderActivity({
+          options: input.options,
+          request: input.normalizedRequest,
+          activityType: `codex.${item.type}`,
+          preview: JSON.stringify(item),
+        });
+      }
+      return;
+    }
     const current = item.text || '';
     const previous = latestAgentMessageTextById.get(item.id) || '';
     latestAgentMessageTextById.set(item.id, current);

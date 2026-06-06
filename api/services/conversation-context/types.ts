@@ -116,6 +116,26 @@ export type ConversationContextSnapshotV1 = {
     tokenEstimate: number;
     truncatedFields: string[];
   };
+  contextBaseline?: ConversationContextBaseline;
+};
+
+export type ConversationContextBaseline = {
+  repoRoot: string;
+  jobType: string | null;
+  workflow: string | null;
+  safetyPolicyDigest: string | null;
+  stateCardDigest: string;
+  relevantFilesDigest: string | null;
+  adoptedArtifactDigest: string | null;
+  blueprintRefsDigest: string | null;
+  blueprintDbDesignRefsDigest: string | null;
+  designQuestionnaireRefsDigest: string | null;
+  decisionReviewRefsDigest: string | null;
+  contextStillRefsDigest: string | null;
+  workerEvidenceRefsDigest: string | null;
+  lastRunId: string | null;
+  unchangedFromPrevious?: boolean;
+  changedFields?: string[];
 };
 
 export type ConversationGitState = {
