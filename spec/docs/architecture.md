@@ -96,4 +96,5 @@ WebSocket URLs. Browser development keeps the existing Vite `/api` proxy path.
   intent and persistence path when it changes the model's scope.
 - Prefer additive, test-backed schema changes.
 
-Related plan: [Runtime Worker and CLI Implementation Plan](./runtime-worker-cli-implementation-plan.md).
+Related implementation plans are kept under `spec/` when they are still active
+planning artifacts.
