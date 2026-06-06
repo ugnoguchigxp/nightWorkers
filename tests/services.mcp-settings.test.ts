@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import app from '../api/app';
+import { readEffectiveMcpServerSettings } from '../api/services/mcp/mcp-effective-settings';
 import {
   createMcpServer,
   deleteMcpServer,
@@ -12,15 +13,22 @@ import {
 } from '../api/services/mcp/mcp-settings';
 
 let tempDir: string;
+let codexHome: string;
+const originalCodexHome = process.env.NIGHTWORKERS_CODEX_HOME;
 
 beforeEach(() => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-mcp-settings-'));
+  codexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-codex-home-'));
   process.env.NIGHTWORKERS_MCP_SETTINGS_PATH = path.join(tempDir, 'mcp-servers.json');
+  process.env.NIGHTWORKERS_CODEX_HOME = codexHome;
 });
 
 afterEach(() => {
   delete process.env.NIGHTWORKERS_MCP_SETTINGS_PATH;
+  if (originalCodexHome === undefined) delete process.env.NIGHTWORKERS_CODEX_HOME;
+  else process.env.NIGHTWORKERS_CODEX_HOME = originalCodexHome;
   fs.rmSync(tempDir, { recursive: true, force: true });
+  fs.rmSync(codexHome, { recursive: true, force: true });
 });
 
 describe('MCP server settings', () => {
@@ -151,6 +159,86 @@ describe('MCP server settings', () => {
       url: 'http://localhost:8787/mcp',
       toolPrefix: 'local_http',
     });
+  });
+
+  it('exposes Codex global MCP servers through the effective settings list', () => {
+    fs.writeFileSync(
+      path.join(codexHome, 'config.toml'),
+      [
+        '[mcp_servers.context-still]',
+        `command = "${process.execPath}"`,
+        'args = ["server.js"]',
+        'cwd = "/tmp"',
+        '',
+        '[mcp_servers.local-http]',
+        'url = "http://localhost:8787/mcp"',
+        '',
+      ].join('\n')
+    );
+
+    const settings = readEffectiveMcpServerSettings(process.cwd());
+
+    expect(settings.diagnostics).toEqual([]);
+    expect(settings.servers).toMatchObject([
+      {
+        name: 'context-still',
+        source: 'codex_global',
+        transport: 'stdio',
+        command: process.execPath,
+        toolPrefix: 'context_still',
+      },
+      {
+        name: 'local-http',
+        source: 'codex_global',
+        transport: 'streamable_http',
+        url: 'http://localhost:8787/mcp',
+        toolPrefix: 'local_http',
+      },
+    ]);
+  });
+
+  it('prefers NightWorkers MCP settings over Codex global toolPrefix conflicts', () => {
+    createMcpServer({
+      name: 'Local context',
+      enabled: true,
+      transport: 'stdio',
+      command: 'node',
+      toolPrefix: 'context_still',
+    });
+    fs.writeFileSync(
+      path.join(codexHome, 'config.toml'),
+      ['[mcp_servers.context-still]', `command = "${process.execPath}"`].join('\n')
+    );
+
+    const settings = readEffectiveMcpServerSettings(process.cwd());
+
+    expect(settings.servers).toHaveLength(1);
+    expect(settings.servers[0]).toMatchObject({
+      name: 'Local context',
+      source: 'nightworkers_settings',
+    });
+    expect(settings.diagnostics.map((diagnostic) => diagnostic.message).join('\n')).toMatch(
+      /conflicts with NightWorkers settings/i
+    );
+  });
+
+  it('reports unsupported authenticated Codex global MCP servers without leaking secrets', () => {
+    fs.writeFileSync(
+      path.join(codexHome, 'config.toml'),
+      [
+        '[mcp_servers.secret-docs]',
+        'url = "https://example.com/mcp"',
+        'headers = { Authorization = "Bearer should-not-leak" }',
+        '',
+      ].join('\n')
+    );
+
+    const settings = readEffectiveMcpServerSettings(process.cwd());
+
+    expect(settings.servers).toEqual([]);
+    const diagnosticsText = JSON.stringify(settings.diagnostics);
+    expect(diagnosticsText).toMatch(/authenticated|unsupported|not supported/i);
+    expect(diagnosticsText).not.toContain('should-not-leak');
   });
 
   it('does not persist partial pasted config when a later server is invalid', () => {

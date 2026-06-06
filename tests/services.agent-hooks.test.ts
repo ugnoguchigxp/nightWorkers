@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import app from '../api/app';
+import { readEffectiveAgentHooksSettings } from '../api/services/hooks/hooks-effective-settings';
 import { matcherMatchesTool } from '../api/services/hooks/hooks-matcher';
 import { runAgentHooks } from '../api/services/hooks/hooks-runner';
 import {
@@ -15,6 +16,8 @@ import {
 import type { AgentHookInput } from '../api/services/hooks/types';
 
 let tempDir: string;
+let codexHome: string;
+const originalCodexHome = process.env.NIGHTWORKERS_CODEX_HOME;
 
 const baseToolInput: AgentHookInput = {
   hook_event_name: 'PreToolUse',
@@ -31,12 +34,17 @@ const baseToolInput: AgentHookInput = {
 
 beforeEach(() => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-agent-hooks-'));
+  codexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-codex-home-'));
   process.env.NIGHTWORKERS_HOOKS_SETTINGS_PATH = path.join(tempDir, 'agent-hooks.json');
+  process.env.NIGHTWORKERS_CODEX_HOME = codexHome;
 });
 
 afterEach(() => {
   delete process.env.NIGHTWORKERS_HOOKS_SETTINGS_PATH;
+  if (originalCodexHome === undefined) delete process.env.NIGHTWORKERS_CODEX_HOME;
+  else process.env.NIGHTWORKERS_CODEX_HOME = originalCodexHome;
   fs.rmSync(tempDir, { recursive: true, force: true });
+  fs.rmSync(codexHome, { recursive: true, force: true });
 });
 
 describe('Agent Hooks settings', () => {
@@ -90,6 +98,62 @@ describe('Agent Hooks settings', () => {
         },
       })
     ).toThrow(/secret-like/i);
+  });
+
+  it('exposes compatible Codex global hooks through effective settings', () => {
+    fs.writeFileSync(
+      path.join(codexHome, 'config.toml'),
+      [
+        'notify = ["node", "notify.js"]',
+        '',
+        '[hooks.block-run-command]',
+        'event = "PreToolUse"',
+        'matcher = "run_command"',
+        'command = "node"',
+        'args = ["hook.js"]',
+        '',
+      ].join('\n')
+    );
+
+    const settings = readEffectiveAgentHooksSettings(process.cwd());
+
+    expect(settings.diagnostics).toEqual([]);
+    expect(settings.hooks).toMatchObject([
+      {
+        name: 'block-run-command',
+        source: 'codex_global',
+        event: 'PreToolUse',
+        matcher: 'run_command',
+        handler: { type: 'command', command: 'node', args: ['hook.js'] },
+      },
+      {
+        name: 'Codex notify',
+        source: 'codex_global',
+        event: 'SessionEnd',
+        handler: { type: 'command', command: 'node', args: ['notify.js'] },
+      },
+    ]);
+  });
+
+  it('runs Codex global hooks through the NightWorkers hook runner', async () => {
+    fs.writeFileSync(
+      path.join(codexHome, 'config.toml'),
+      [
+        '[hooks.global-deny]',
+        'event = "PreToolUse"',
+        'matcher = "run_command"',
+        `command = "${process.execPath}"`,
+        'args = ["-e", "console.log(JSON.stringify({hookSpecificOutput:{permissionDecision:\\"deny\\", permissionDecisionReason:\\"global hook\\"}}))"]',
+        '',
+      ].join('\n')
+    );
+
+    const result = await runAgentHooks({ input: baseToolInput, repoRoot: process.cwd() });
+
+    expect(result.decision).toBe('deny');
+    expect(result.reason).toBe('global hook');
+    expect(result.runs[0]).toMatchObject({ hookName: 'global-deny' });
+    expect(fs.existsSync(process.env.NIGHTWORKERS_HOOKS_SETTINGS_PATH as string)).toBe(false);
   });
 });
 

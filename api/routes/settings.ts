@@ -11,12 +11,12 @@ import {
   agentHookUpdateInputSchema,
   buildSampleHookInput,
 } from '../services/hooks/hooks-config-schema';
+import { readEffectiveAgentHooksSettings } from '../services/hooks/hooks-effective-settings';
 import { runSingleAgentHookForTest } from '../services/hooks/hooks-runner';
 import {
   createAgentHook,
   deleteAgentHook,
   getAgentHook,
-  listAgentHooks,
   updateAgentHook,
 } from '../services/hooks/hooks-settings';
 import { mcpClientManager } from '../services/mcp/mcp-client-manager';
@@ -30,11 +30,13 @@ import {
   mcpServerUpdateInputSchema,
 } from '../services/mcp/mcp-config-schema';
 import {
+  getEffectiveMcpServer,
+  readEffectiveMcpServerSettings,
+} from '../services/mcp/mcp-effective-settings';
+import {
   createMcpServer,
   deleteMcpServer,
-  getMcpServer,
   importMcpServersFromText,
-  readMcpServerSettings,
   updateMcpServer,
 } from '../services/mcp/mcp-settings';
 import { runStartupPreflight } from '../services/preflight/preflight';
@@ -776,7 +778,7 @@ export const settingsRouter = createOpenApiRouter()
     }
   })
   .openapi(getMcpServersRoute, (c) => {
-    const settings = readMcpServerSettings();
+    const settings = readEffectiveMcpServerSettings();
     return c.json({ servers: settings.servers, diagnostics: settings.diagnostics || [] }, 200);
   })
   .openapi(createMcpServerRoute, (c) => {
@@ -824,7 +826,7 @@ export const settingsRouter = createOpenApiRouter()
     return c.json(removed, 200);
   })
   .openapi(testMcpServerRoute, async (c) => {
-    const server = getMcpServer(c.req.param('id'));
+    const server = getEffectiveMcpServer(c.req.param('id'));
     if (!server)
       return c.json({ error: { code: 'NOT_FOUND', message: 'MCP server not found' } }, 404);
     const status = await mcpClientManager.testServer(server);
@@ -838,7 +840,7 @@ export const settingsRouter = createOpenApiRouter()
     );
   })
   .openapi(getAgentHooksRoute, (c) => {
-    return c.json({ hooks: listAgentHooks() }, 200);
+    return c.json(readEffectiveAgentHooksSettings(), 200);
   })
   .openapi(createAgentHookRoute, (c) => {
     const hook = createAgentHook(c.req.valid('json'));

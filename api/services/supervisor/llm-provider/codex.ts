@@ -1,8 +1,12 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { CodexOptions, Thread, ThreadEvent, Usage } from '@openai/codex-sdk';
 import { createSupervisorResponseDeltaEmitter, rejectProviderActivity } from './events';
 import type { CallSupervisorOptions, NormalizedSupervisorLlmRequest } from './types';
 
 const codexSupervisorFeatureOverrides = {
+  mcp: false,
   image_generation: false,
   plugins: false,
   computer_use: false,
@@ -22,21 +26,49 @@ export function buildCodexSupervisorSdkOptions(accessToken: string): CodexOption
   const sdkOptions: CodexOptions = {
     config: {
       features: codexSupervisorFeatureOverrides,
+      mcp_servers: {},
     },
   };
-  if (!accessToken) return sdkOptions;
-
-  const mergedEnv = Object.fromEntries(
+  const sanitizedEnv = Object.fromEntries(
     Object.entries(process.env).filter((entry): entry is [string, string] => {
-      const [, value] = entry;
-      return typeof value === 'string';
+      const [key, value] = entry;
+      return typeof value === 'string' && !isCodexParentSessionEnv(key);
     })
   );
   sdkOptions.env = {
-    ...mergedEnv,
-    CODEX_ACCESS_TOKEN: accessToken,
+    ...sanitizedEnv,
+    CODEX_HOME: prepareCodexSupervisorHome(),
+    ...(accessToken ? { CODEX_ACCESS_TOKEN: accessToken } : {}),
   };
   return sdkOptions;
+}
+
+function isCodexParentSessionEnv(key: string) {
+  return (
+    key === 'CODEX_THREAD_ID' ||
+    key === 'CODEX_INTERNAL_ORIGINATOR_OVERRIDE' ||
+    key === 'CODEX_SHELL' ||
+    key === 'CODEX_CI'
+  );
+}
+
+function prepareCodexSupervisorHome() {
+  const targetHome =
+    process.env.NIGHTWORKERS_CODEX_SUPERVISOR_HOME ||
+    path.join(os.tmpdir(), 'nightworkers-codex-supervisor-home');
+  fs.mkdirSync(targetHome, { recursive: true, mode: 0o700 });
+
+  const sourceHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+  copyCodexAuthFile(sourceHome, targetHome, 'auth.json');
+  return targetHome;
+}
+
+function copyCodexAuthFile(sourceHome: string, targetHome: string, fileName: string) {
+  const sourcePath = path.join(sourceHome, fileName);
+  if (!fs.existsSync(sourcePath)) return;
+  const targetPath = path.join(targetHome, fileName);
+  fs.copyFileSync(sourcePath, targetPath);
+  fs.chmodSync(targetPath, 0o600);
 }
 
 export function buildCodexSupervisorThreadOptions(
@@ -87,6 +119,7 @@ export async function readCodexStreamedTurn(input: {
           options: input.options,
           request: input.normalizedRequest,
           activityType: `codex.${item.type}`,
+          toolName: item.type === 'mcp_tool_call' ? item.tool : null,
           preview: JSON.stringify(item),
         });
       }

@@ -180,7 +180,7 @@ function assertNoUnsupportedAuthFields(nameHint: string, raw: Record<string, unk
   }
 }
 
-function inputFromRawServer(nameHint: string, rawValue: unknown): McpServerInput {
+export function inputFromRawMcpServer(nameHint: string, rawValue: unknown): McpServerInput {
   if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
     throw new ValidationError(`Invalid MCP server config for ${nameHint}.`);
   }
@@ -222,22 +222,22 @@ export function parseMcpServerPaste(text: string): McpServerInput[] {
   }
 
   if (Array.isArray(parsed)) {
-    return parsed.map((item, index) => inputFromRawServer(`server_${index + 1}`, item));
+    return parsed.map((item, index) => inputFromRawMcpServer(`server_${index + 1}`, item));
   }
 
   const root = parsed as Record<string, unknown>;
   if (root.mcpServers && typeof root.mcpServers === 'object' && !Array.isArray(root.mcpServers)) {
     return Object.entries(root.mcpServers as Record<string, unknown>).map(([name, value]) =>
-      inputFromRawServer(name, value)
+      inputFromRawMcpServer(name, value)
     );
   }
   if (Array.isArray(root.servers)) {
-    return root.servers.map((item, index) => inputFromRawServer(`server_${index + 1}`, item));
+    return root.servers.map((item, index) => inputFromRawMcpServer(`server_${index + 1}`, item));
   }
   if (root.server && typeof root.server === 'object' && !Array.isArray(root.server)) {
-    return [inputFromRawServer('server', root.server)];
+    return [inputFromRawMcpServer('server', root.server)];
   }
-  return [inputFromRawServer('server', root)];
+  return [inputFromRawMcpServer('server', root)];
 }
 
 export function importMcpServersFromText(text: string): McpServerConfig[] {

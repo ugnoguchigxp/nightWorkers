@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { getResourceRoot } from '../../runtime/paths';
+import { renderCodexAgentsGuidance } from '../codex-global-config/agents-guidance';
 import type { WorkerToolName } from '../tool-policy/types';
 import {
   type Round2PromptPacketInput,
@@ -578,6 +579,7 @@ export function buildRound1JobTypePrompt(projectRoot: string): string {
 }
 
 export function buildRound1PromptPacket(projectRoot: string): SupervisorPromptPacket {
+  const codexGuidance = renderCodexAgentsGuidance(projectRoot).text;
   return {
     basePolicy: [
       'jobType と goal を1つずつ選んでください。',
@@ -588,6 +590,7 @@ export function buildRound1PromptPacket(projectRoot: string): SupervisorPromptPa
     roundPolicy: [],
     projectContext: [`プロジェクトルート: ${projectRoot}`, ''],
     runtimeContext: [
+      ...(codexGuidance ? [codexGuidance] : []),
       '[Job Types]',
       jobTypes.map((jobType) => `- ${jobType}: ${jobTypeDescriptions[jobType]}`).join('\n'),
       '',
@@ -614,6 +617,7 @@ export function buildRound2ToolCallPrompt(input: Round2PromptPacketInput): strin
 
 export function buildRound2PromptPacket(input: Round2PromptPacketInput): SupervisorPromptPacket {
   const externalAllowedPaths = input.externalAllowedPaths || [];
+  const codexGuidance = renderCodexAgentsGuidance(input.projectRoot).text;
   return {
     basePolicy: [
       `jobType=${input.jobType}`,
@@ -632,6 +636,7 @@ export function buildRound2PromptPacket(input: Round2PromptPacketInput): Supervi
       '',
     ],
     runtimeContext: [
+      ...(codexGuidance ? [codexGuidance] : []),
       '[Skill Access]',
       'SKILL documents are not preloaded.',
       'Use read_skill when procedure detail is needed.',

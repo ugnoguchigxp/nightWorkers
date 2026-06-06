@@ -7,7 +7,8 @@ import {
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { McpServerConfig } from './mcp-config-schema';
-import { getMcpServer, listMcpServers, updateMcpServerStatus } from './mcp-settings';
+import { getEffectiveMcpServer, listEffectiveMcpServers } from './mcp-effective-settings';
+import { updateMcpServerStatus } from './mcp-settings';
 
 export type McpToolSummary = {
   serverId: string;
@@ -126,7 +127,7 @@ class McpClientManager {
   }
 
   async listAvailableTools(): Promise<McpToolSummary[]> {
-    const enabledServers = listMcpServers().filter((server) => server.enabled);
+    const enabledServers = listEffectiveMcpServers().filter((server) => server.enabled);
     const toolLists = await Promise.allSettled(
       enabledServers.map((server) => this.listToolsForServer(server))
     );
@@ -162,7 +163,7 @@ class McpClientManager {
   }
 
   async callTool(serverId: string, toolName: string, args: Record<string, unknown>) {
-    const server = getMcpServer(serverId);
+    const server = getEffectiveMcpServer(serverId);
     if (!server) throw new Error(`MCP server is not configured: ${serverId}`);
     if (!server.enabled) throw new Error(`MCP server is disabled: ${server.name}`);
     const tools = await this.listToolsForServer(server);

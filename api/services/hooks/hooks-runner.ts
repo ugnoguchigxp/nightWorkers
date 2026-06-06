@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
+import { listEffectiveAgentHooks } from './hooks-effective-settings';
 import { hookMatchesInput } from './hooks-matcher';
 import { parseHookOutput } from './hooks-output';
-import { listAgentHooks, updateAgentHookLastRun } from './hooks-settings';
+import { updateAgentHookLastRun } from './hooks-settings';
 import type {
   AgentHookConfig,
   AgentHookInput,
@@ -24,7 +25,7 @@ export type RunAgentHooksOptions = {
 };
 
 export async function runAgentHooks(options: RunAgentHooksOptions): Promise<AgentHookRunResult> {
-  const hooks = (options.hooks ?? listAgentHooks()).filter((hook) =>
+  const hooks = (options.hooks ?? listEffectiveAgentHooks(options.repoRoot)).filter((hook) =>
     hookMatchesInput(hook, options.input)
   );
   const summaries: AgentHookRunSummary[] = [];
@@ -70,7 +71,9 @@ export async function runAgentHooks(options: RunAgentHooksOptions): Promise<Agen
       message: sanitizeHookMessage(message).slice(0, 500),
       durationMs,
     };
-    updateAgentHookLastRun(hook.id, lastRun);
+    if (shouldPersistHookLastRun(hook)) {
+      updateAgentHookLastRun(hook.id, lastRun);
+    }
     const summary = {
       hookId: hook.id,
       hookName: hook.name,
@@ -150,6 +153,10 @@ function failClosedDecision(
 function isFailClosed(hook: AgentHookConfig, input: AgentHookInput): boolean {
   if (typeof hook.handler.failClosed === 'boolean') return hook.handler.failClosed;
   return hook.handler.type === 'command' && input.hook_event_name === 'PreToolUse';
+}
+
+function shouldPersistHookLastRun(hook: AgentHookConfig): boolean {
+  return (hook as { source?: string }).source !== 'codex_global';
 }
 
 function buildHookEvent(
