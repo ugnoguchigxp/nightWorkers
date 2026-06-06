@@ -19,25 +19,25 @@ export function TodoListPane({ todos }: TodoListPaneProps) {
   const currentTodo = todos.find((todo) => todo.status === 'running');
 
   return (
-    <aside className="flex h-full min-h-0 flex-col border-l border-slate-800 bg-slate-950/80">
-      <div className="shrink-0 border-b border-slate-800 px-4 py-3">
+    <aside className="nightworkers-todo-pane flex flex-col">
+      <div className="nightworkers-todo-pane-header shrink-0 px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-slate-100">
+            <h2 className="nightworkers-todo-pane-title truncate text-sm font-semibold">
               {t('timeline.todoProgress')}
             </h2>
-            <p className="mt-1 truncate text-xs text-slate-500">
+            <p className="nightworkers-todo-pane-subtitle mt-1 truncate text-xs">
               {currentTodo
                 ? `#${currentTodo.seq} ${currentTodo.title}`
                 : t('todoPane.noActiveTodo')}
             </p>
           </div>
-          <span className="shrink-0 rounded border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-xs text-slate-300">
+          <span className="nightworkers-todo-pane-count shrink-0 rounded px-2 py-1 font-mono text-xs">
             {completedCount}/{todos.length}
           </span>
         </div>
       </div>
-      <div className="nightworkers-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="p-3">
         <ol className="space-y-2">
           {todos.map((todo) => {
             const style = todoStatusStyle(todo.status);
@@ -53,24 +53,24 @@ export function TodoListPane({ todos }: TodoListPaneProps) {
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-start gap-2">
-                      <span className="shrink-0 pt-0.5 text-[10px] text-slate-500">
+                      <span className="nightworkers-todo-pane-subtitle shrink-0 pt-0.5 text-[10px]">
                         #{todo.seq}
                       </span>
-                      <span className="min-w-0 text-xs font-medium leading-5 text-slate-100">
+                      <span className="nightworkers-todo-pane-title min-w-0 text-xs font-medium leading-5">
                         {todo.title}
                       </span>
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
                       <span className={style.textClass}>{style.label}</span>
-                      <span className="text-slate-500">{todo.taskType}</span>
+                      <span className="nightworkers-todo-pane-subtitle">{todo.taskType}</span>
                       {todo.procedureId ? (
-                        <span className="max-w-full truncate text-slate-500">
+                        <span className="nightworkers-todo-pane-subtitle max-w-full truncate">
                           {todo.procedureId}
                         </span>
                       ) : null}
                     </div>
                     {todo.statusReason ? (
-                      <p className="mt-1 line-clamp-3 text-[10px] leading-4 text-slate-400">
+                      <p className="nightworkers-todo-pane-muted mt-1 line-clamp-3 text-[10px] leading-4">
                         {todo.statusReason}
                       </p>
                     ) : null}
@@ -97,49 +97,49 @@ function todoStatusStyle(status: TodoStatus): {
       return {
         label: 'passed',
         icon: CheckCircle2,
-        iconClass: 'text-emerald-300',
-        textClass: 'text-emerald-200',
-        container: 'border-emerald-500/35 bg-emerald-950/15',
+        iconClass: 'nightworkers-todo-status-success',
+        textClass: 'nightworkers-todo-status-success',
+        container: 'nightworkers-todo-item nightworkers-todo-item-success',
       };
     case 'running':
       return {
         label: 'running',
         icon: LoaderCircle,
-        iconClass: 'text-cyan-300',
-        textClass: 'text-cyan-200',
-        container: 'border-cyan-500/35 bg-cyan-950/15',
+        iconClass: 'nightworkers-todo-status-running',
+        textClass: 'nightworkers-todo-status-running',
+        container: 'nightworkers-todo-item nightworkers-todo-item-running',
       };
     case 'failed':
       return {
         label: 'failed',
         icon: XCircle,
-        iconClass: 'text-rose-300',
-        textClass: 'text-rose-200',
-        container: 'border-rose-500/35 bg-rose-950/15',
+        iconClass: 'nightworkers-todo-status-danger',
+        textClass: 'nightworkers-todo-status-danger',
+        container: 'nightworkers-todo-item nightworkers-todo-item-danger',
       };
     case 'skipped':
       return {
         label: 'skipped',
         icon: PauseCircle,
-        iconClass: 'text-slate-400',
-        textClass: 'text-slate-300',
-        container: 'border-slate-600/50 bg-slate-900/25',
+        iconClass: 'nightworkers-todo-pane-muted',
+        textClass: 'nightworkers-todo-pane-muted',
+        container: 'nightworkers-todo-item',
       };
     case 'needs_human':
       return {
         label: 'needs human',
         icon: AlertTriangle,
-        iconClass: 'text-amber-300',
-        textClass: 'text-amber-200',
-        container: 'border-amber-500/35 bg-amber-950/15',
+        iconClass: 'nightworkers-todo-status-warning',
+        textClass: 'nightworkers-todo-status-warning',
+        container: 'nightworkers-todo-item nightworkers-todo-item-warning',
       };
     case 'pending':
       return {
         label: 'pending',
         icon: Circle,
-        iconClass: 'text-slate-400',
-        textClass: 'text-slate-300',
-        container: 'border-slate-700/70 bg-slate-900/20',
+        iconClass: 'nightworkers-todo-pane-muted',
+        textClass: 'nightworkers-todo-pane-muted',
+        container: 'nightworkers-todo-item',
       };
   }
 }

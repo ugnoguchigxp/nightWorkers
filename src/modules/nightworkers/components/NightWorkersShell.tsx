@@ -7,6 +7,7 @@ import {
 } from '../contexts/WorkspaceLayoutContext';
 import type { NightWorkersWorkspaceState } from '../hooks/useNightWorkersWorkspace';
 import type {
+  ProjectSafetyPolicy,
   TaskMessage,
   ThinkingDepth,
   WorkbenchArtifactRef,
@@ -49,6 +50,11 @@ function buildBlueprintArtifactRef(message: TaskMessage): WorkbenchArtifactRef {
   };
 }
 
+function asProjectSafetyPolicy(value: unknown): ProjectSafetyPolicy {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as ProjectSafetyPolicy;
+}
+
 export function NightWorkersShell(props: NightWorkersShellProps) {
   const { workspace } = props;
   const { attributes: appearanceAttributes } = useWorkspaceAppearanceState();
@@ -64,6 +70,9 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const [showQueueScreen, setShowQueueScreen] = useState(false);
   const [showOverviewScreen, setShowOverviewScreen] = useState(true);
   const [queueProjectFilterId, setQueueProjectFilterId] = useState<string | null>(null);
+  const isOverviewActive = showOverviewScreen && !props.showSettings;
+  const visibleActiveSessionId =
+    props.showSettings || isOverviewActive ? null : workspace.activeSessionId;
   const artifactPaneOpen = showArtifactPane || Boolean(selectedArtifact);
   const isBlueprintArtifactOpen =
     artifactPaneOpen &&
@@ -178,11 +187,11 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 
   return (
     <div
-      className="nightworkers-shell h-screen overflow-hidden bg-[#111827] text-slate-100"
+      className="nightworkers-shell h-screen overflow-x-hidden overflow-y-auto bg-[#111827] text-slate-100"
       {...appearanceAttributes}
     >
       <Group
-        className="h-screen min-h-0"
+        className="nightworkers-workbench-group h-screen min-h-0"
         defaultLayout={{
           'nightworkers-sidebar': initialPanelSizes.current[0],
           'nightworkers-chat': initialPanelSizes.current[1],
@@ -202,26 +211,24 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
             projects={workspace.projects}
             groupedSessions={workspace.groupedSessionViews}
             isProjectsLoading={workspace.isProjectsLoading}
-            activeSessionId={workspace.activeSessionId}
+            activeSessionId={visibleActiveSessionId}
             expandedProjects={workspace.expandedProjects}
             onSelectSession={handleSelectSession}
             onCreateSession={handleCreateSession}
             onDeleteProject={handleDeleteProject}
             onToggleProject={handleToggleProject}
             onOpenOverview={handleOpenOverview}
-            isOverviewActive={showOverviewScreen && !props.showSettings}
+            isOverviewActive={isOverviewActive}
             onQueueSession={workspace.createImplementationQueueEntry}
             onRemoveQueueEntry={workspace.removeImplementationQueueEntry}
             onOpenFolderBrowser={handleOpenFolderBrowser}
           />
         </Panel>
-        <Separator className="group relative w-1 shrink-0 bg-slate-800 outline-none transition-colors hover:bg-slate-600 focus-visible:bg-slate-500">
-          <span className="-translate-x-1/2 absolute top-1/2 left-1/2 h-12 w-1 rounded-full bg-slate-600/70 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
-        </Separator>
+        <Separator className="nightworkers-panel-resize-handle" />
         <Panel
           id="nightworkers-chat"
           defaultSize={`${initialPanelSizes.current[1]}%`}
-          minSize={artifactPaneOpen ? '28%' : todoPaneOpen ? '48%' : '58%'}
+          minSize="58%"
         >
           {props.showSettings ? (
             <SettingsScreen onClose={props.onCloseSettings} workspace={workspace} />
@@ -330,81 +337,77 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                 setShowArtifactPane(true);
                 setSelectedArtifact(artifact);
               }}
+              onGrantExternalPath={async (externalPath) => {
+                const project = workspace.activeProject;
+                if (!project) return;
+                const currentPolicy = asProjectSafetyPolicy(project.safetyPolicy);
+                const externalAllowedPaths = Array.from(
+                  new Set([...(currentPolicy.externalAllowedPaths || []), externalPath])
+                );
+                await workspace.updateProject(project.id, {
+                  safetyPolicy: {
+                    ...currentPolicy,
+                    externalAllowedPaths,
+                  },
+                });
+              }}
+              sidePanel={
+                todoPaneOpen ? (
+                  <TodoListPane todos={workspace.latestRunTodos} />
+                ) : artifactPaneOpen ? (
+                  <ArtifactPane
+                    activeProject={workspace.activeProject}
+                    activeSessionId={workspace.activeSessionId}
+                    selectedArtifact={selectedArtifact}
+                    taskMessages={workspace.taskMessages}
+                    latestRun={workspace.latestRun}
+                    fileEntries={workspace.projectFileEntries}
+                    fileEntriesByDirectory={workspace.projectFileEntriesByDirectory}
+                    expandedDirectories={workspace.expandedProjectDirectories}
+                    loadingDirectories={workspace.loadingProjectDirectories}
+                    selectedFile={workspace.selectedProjectFile}
+                    selectedFilePath={workspace.selectedProjectFilePath}
+                    isFilesLoading={workspace.isProjectFilesLoading}
+                    isFileLoading={workspace.isProjectFileLoading}
+                    onToggleDirectory={workspace.toggleProjectDirectory}
+                    onOpenFile={(path) => {
+                      setSelectedArtifact(null);
+                      workspace.openProjectFile(path);
+                    }}
+                    onShowDiff={() => {
+                      const diffArtifact = workspace.activeArtifactRefs.find(
+                        (artifact) => artifact.kind === 'diff'
+                      );
+                      if (diffArtifact) setSelectedArtifact(diffArtifact);
+                    }}
+                    isWorkbenchMessageSubmitting={workspace.isChatSubmitting}
+                    onSubmitWorkbenchMessage={async (prompt, intent) => {
+                      if (workspace.activeSession) {
+                        const result = await workspace.sendWorkbenchMessage(
+                          workspace.activeSession.id,
+                          prompt,
+                          intent
+                        );
+                        const latestBlueprintMessage = [...(result?.messages || [])]
+                          .reverse()
+                          .find(
+                            (message) =>
+                              message.messageType === 'markdown_document' &&
+                              message.metadataJson?.appBlueprint
+                          );
+                        if (latestBlueprintMessage) {
+                          setSelectedArtifact(buildBlueprintArtifactRef(latestBlueprintMessage));
+                        }
+                        return;
+                      }
+                      await submitPrompt(prompt, intent);
+                    }}
+                  />
+                ) : undefined
+              }
             />
           )}
         </Panel>
-        {todoPaneOpen ? (
-          <>
-            <Separator className="group relative w-1 shrink-0 bg-slate-800 outline-none transition-colors hover:bg-slate-600 focus-visible:bg-slate-500">
-              <span className="-translate-x-1/2 absolute top-1/2 left-1/2 h-12 w-1 rounded-full bg-slate-600/70 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
-            </Separator>
-            <Panel id="nightworkers-todos" defaultSize="30%" minSize="24%" maxSize="38%">
-              <TodoListPane todos={workspace.latestRunTodos} />
-            </Panel>
-          </>
-        ) : null}
-        {artifactPaneOpen ? (
-          <>
-            <Separator className="group relative w-1 shrink-0 bg-slate-800 outline-none transition-colors hover:bg-slate-600 focus-visible:bg-slate-500">
-              <span className="-translate-x-1/2 absolute top-1/2 left-1/2 h-12 w-1 rounded-full bg-slate-600/70 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
-            </Separator>
-            <Panel
-              id="nightworkers-artifact"
-              defaultSize={isBlueprintArtifactOpen ? '100%' : '42%'}
-              minSize="32%"
-              maxSize="55%"
-            >
-              <ArtifactPane
-                activeProject={workspace.activeProject}
-                activeSessionId={workspace.activeSessionId}
-                selectedArtifact={selectedArtifact}
-                taskMessages={workspace.taskMessages}
-                latestRun={workspace.latestRun}
-                fileEntries={workspace.projectFileEntries}
-                fileEntriesByDirectory={workspace.projectFileEntriesByDirectory}
-                expandedDirectories={workspace.expandedProjectDirectories}
-                loadingDirectories={workspace.loadingProjectDirectories}
-                selectedFile={workspace.selectedProjectFile}
-                selectedFilePath={workspace.selectedProjectFilePath}
-                isFilesLoading={workspace.isProjectFilesLoading}
-                isFileLoading={workspace.isProjectFileLoading}
-                onToggleDirectory={workspace.toggleProjectDirectory}
-                onOpenFile={(path) => {
-                  setSelectedArtifact(null);
-                  workspace.openProjectFile(path);
-                }}
-                onShowDiff={() => {
-                  const diffArtifact = workspace.activeArtifactRefs.find(
-                    (artifact) => artifact.kind === 'diff'
-                  );
-                  if (diffArtifact) setSelectedArtifact(diffArtifact);
-                }}
-                isWorkbenchMessageSubmitting={workspace.isChatSubmitting}
-                onSubmitWorkbenchMessage={async (prompt, intent) => {
-                  if (workspace.activeSession) {
-                    const result = await workspace.sendWorkbenchMessage(
-                      workspace.activeSession.id,
-                      prompt,
-                      intent
-                    );
-                    const latestBlueprintMessage = [...(result?.messages || [])]
-                      .reverse()
-                      .find(
-                        (message) =>
-                          message.messageType === 'markdown_document' &&
-                          message.metadataJson?.appBlueprint
-                      );
-                    if (latestBlueprintMessage) {
-                      setSelectedArtifact(buildBlueprintArtifactRef(latestBlueprintMessage));
-                    }
-                    return;
-                  }
-                  await submitPrompt(prompt, intent);
-                }}
-              />
-            </Panel>
-          </>
-        ) : null}
       </Group>
       {!props.showSettings ? <SettingsButton onClick={props.onOpenSettings} /> : null}
       <FolderBrowserDialog
@@ -421,6 +424,12 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         }}
         onSelectPath={(path) => {
           setSelectedPath(path);
+        }}
+        onCreateFolder={async (name) => {
+          const parentPath = workspace.currentBrowserPath || undefined;
+          const folder = await workspace.createFolder({ parentPath, name });
+          await workspace.fetchDirectories(parentPath);
+          setSelectedPath(folder.path);
         }}
         onConfirmSelection={() => {
           const selected = selectedPath || workspace.currentBrowserPath;

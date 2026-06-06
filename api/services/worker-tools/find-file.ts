@@ -10,6 +10,7 @@ export interface FindFileInput {
   recursive?: boolean;
   maxResults?: number;
   allowedPaths?: string[];
+  externalAllowedPaths?: string[];
   deniedPaths?: string[];
 }
 
@@ -37,13 +38,14 @@ export async function findFileTool(
     recursive = true,
     maxResults = 200,
     allowedPaths,
+    externalAllowedPaths,
     deniedPaths,
   } = input;
 
   const absoluteRepoRoot = path.resolve(repoRoot);
   const startDir = path.resolve(absoluteRepoRoot, relativePath);
 
-  if (!isPathSafe(startDir, absoluteRepoRoot, allowedPaths, deniedPaths)) {
+  if (!isPathSafe(startDir, absoluteRepoRoot, allowedPaths, deniedPaths, externalAllowedPaths)) {
     return {
       ok: false,
       toolName: 'find_file',
@@ -65,7 +67,10 @@ export async function findFileTool(
       const entries = await fs.readdir(dir, { withFileTypes: true });
       for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
-        if (!isPathSafe(fullPath, absoluteRepoRoot, allowedPaths, deniedPaths)) continue;
+        if (
+          !isPathSafe(fullPath, absoluteRepoRoot, allowedPaths, deniedPaths, externalAllowedPaths)
+        )
+          continue;
 
         if (entry.isDirectory()) {
           if (DEFAULT_IGNORED_DIRS.has(entry.name)) continue;

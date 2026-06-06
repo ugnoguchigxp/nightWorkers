@@ -138,7 +138,7 @@ export function ArtifactPane({
     Boolean(selectedMessage);
   const artifactTitle = selectedArtifact?.title || selectedFilePath || t('artifact.projectTree');
   return (
-    <aside className="flex min-h-screen min-w-0 flex-col border-l border-[#313244] bg-[#1e1e2e]">
+    <aside className="nightworkers-artifact-pane flex min-h-0 min-w-0 flex-col overflow-hidden">
       <div className="flex h-10 shrink-0 items-center border-b border-[#313244] bg-[#1e1e2e] px-3 pr-12">
         <div className="flex min-w-0 items-center gap-2 text-sm">
           <span className="truncate text-[#a6adc8]">

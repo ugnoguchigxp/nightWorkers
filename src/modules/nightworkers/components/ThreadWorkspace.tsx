@@ -1,5 +1,5 @@
 import { Bug, FolderTree, GitCompare, LoaderCircle, PanelsTopLeft, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
   ActivityArtifact,
@@ -59,6 +59,8 @@ type ThreadWorkspaceProps = {
   isProjectFilesOpen: boolean;
   onOpenProjectFiles: () => void;
   onOpenDiffArtifact: (artifact: WorkbenchArtifactRef) => void;
+  onGrantExternalPath: (path: string) => Promise<void>;
+  sidePanel?: ReactNode;
 };
 
 export function ThreadWorkspace(props: ThreadWorkspaceProps) {
@@ -86,7 +88,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
     />
   ) : null;
   return (
-    <div className="relative flex h-screen min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#111827]">
+    <div className="relative flex h-screen min-h-0 min-w-0 flex-1 flex-col overflow-visible bg-[#111827]">
       <div className="shrink-0 border-b border-slate-700/70 bg-[#0f172a] px-6 py-3 pr-16">
         {props.activeSession ? (
           <div className="space-y-2">
@@ -242,53 +244,61 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
           </div>
         )}
       </div>
-      <div className="nightworkers-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pb-44">
-        {props.activeSession ? (
-          <>
-            {workbenchBanner}
-            <ThreadTimeline
-              session={props.activeSession}
-              runs={props.runs}
-              latestRun={props.latestRun}
-              taskMessages={props.taskMessages}
-              latestRunEvents={props.latestRunEvents}
-              activityEvents={props.activityEvents}
-              activityArtifacts={props.activityArtifacts}
-              activeStreamingResponse={props.activeStreamingResponse}
-              isAgentWorking={props.isAgentThinking}
-              showDebugEvents={showDebugEvents}
-              onOpenArtifact={props.onOpenArtifact}
-            />
-          </>
-        ) : props.isAgentThinking ? (
-          <div className="nightworkers-chat-window space-y-5 p-6">
-            <ThreadMessage messageRole="assistant">
-              <ThinkingIndicator />
-            </ThreadMessage>
+      <div className="nightworkers-thread-layout flex flex-1 items-start">
+        <div className="nightworkers-thread-main relative flex min-w-0 flex-1 flex-col">
+          <div className="nightworkers-thread-scroll pb-44">
+            {props.activeSession ? (
+              <>
+                {workbenchBanner}
+                <ThreadTimeline
+                  session={props.activeSession}
+                  runs={props.runs}
+                  latestRun={props.latestRun}
+                  taskMessages={props.taskMessages}
+                  latestRunEvents={props.latestRunEvents}
+                  activityEvents={props.activityEvents}
+                  activityArtifacts={props.activityArtifacts}
+                  activeStreamingResponse={props.activeStreamingResponse}
+                  isAgentWorking={props.isAgentThinking}
+                  showDebugEvents={showDebugEvents}
+                  onOpenArtifact={props.onOpenArtifact}
+                  onGrantExternalPath={props.onGrantExternalPath}
+                />
+              </>
+            ) : props.isAgentThinking ? (
+              <div className="nightworkers-chat-window space-y-5 p-6">
+                <ThreadMessage messageRole="assistant">
+                  <ThinkingIndicator />
+                </ThreadMessage>
+              </div>
+            ) : (
+              <div className="h-[40vh]" />
+            )}
           </div>
-        ) : (
-          <div className="h-[40vh]" />
-        )}
-      </div>
-      <div className="absolute right-0 bottom-0 left-0 z-20">
-        <Composer
-          disabled={props.isAgentWorking}
-          model={props.model}
-          thinkingDepth={props.thinkingDepth}
-          modelOptions={props.modelOptions}
-          latestDiffPatch={props.latestRun?.diffPatch || ''}
-          realtimeStatus={props.realtimeStatus}
-          thinkingDepthOptions={THINKING_DEPTH_OPTIONS}
-          onModelChange={props.onModelChange}
-          onThinkingDepthChange={props.onThinkingDepthChange}
-          onSubmit={async (prompt, intent) => {
-            if (!props.activeSession) {
-              await props.onSubmitInitialPrompt(prompt);
-              return;
-            }
-            await props.onSubmitWorkbenchMessage(prompt, intent);
-          }}
-        />
+          <div className="sticky bottom-0 z-20">
+            <Composer
+              disabled={props.isAgentWorking}
+              model={props.model}
+              thinkingDepth={props.thinkingDepth}
+              modelOptions={props.modelOptions}
+              latestDiffPatch={props.latestRun?.diffPatch || ''}
+              realtimeStatus={props.realtimeStatus}
+              thinkingDepthOptions={THINKING_DEPTH_OPTIONS}
+              onModelChange={props.onModelChange}
+              onThinkingDepthChange={props.onThinkingDepthChange}
+              onSubmit={async (prompt, intent) => {
+                if (!props.activeSession) {
+                  await props.onSubmitInitialPrompt(prompt);
+                  return;
+                }
+                await props.onSubmitWorkbenchMessage(prompt, intent);
+              }}
+            />
+          </div>
+        </div>
+        {props.sidePanel ? (
+          <aside className="nightworkers-thread-side-panel">{props.sidePanel}</aside>
+        ) : null}
       </div>
     </div>
   );

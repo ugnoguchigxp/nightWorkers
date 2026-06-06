@@ -139,6 +139,7 @@ export async function updateRepository(
   data: {
     queueEnabled?: boolean;
     maxConcurrentSessions?: number;
+    safetyPolicy?: any;
   }
 ) {
   const [repo] = await db

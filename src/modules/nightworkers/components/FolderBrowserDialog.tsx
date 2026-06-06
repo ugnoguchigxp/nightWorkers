@@ -1,5 +1,6 @@
 import { Button } from '@repo/design-system';
-import { Folder, FolderOpen } from 'lucide-react';
+import { Folder, FolderOpen, FolderPlus } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 type FolderBrowserDialogProps = {
@@ -12,11 +13,32 @@ type FolderBrowserDialogProps = {
   onClose: () => void;
   onNavigate: (path: string) => void;
   onSelectPath: (path: string, name: string) => void;
+  onCreateFolder: (name: string) => Promise<void>;
   onConfirmSelection: () => void;
 };
 
 export function FolderBrowserDialog(props: FolderBrowserDialogProps) {
   const { t } = useTranslation();
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [isCreateSubmitting, setIsCreateSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const handleCreateFolder = async () => {
+    const folderName = newFolderName.trim();
+    if (!folderName) return;
+    setIsCreateSubmitting(true);
+    setCreateError(null);
+    try {
+      await props.onCreateFolder(folderName);
+      setNewFolderName('');
+      setIsCreatingFolder(false);
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsCreateSubmitting(false);
+    }
+  };
 
   if (!props.open) return null;
   return (
@@ -69,7 +91,50 @@ export function FolderBrowserDialog(props: FolderBrowserDialogProps) {
               </div>
             ))}
         </div>
-        <div className="flex items-center justify-end border-t border-zinc-800 bg-zinc-950/40 px-4 py-3">
+        {isCreatingFolder ? (
+          <div className="border-t border-zinc-800 bg-zinc-950/30 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <input
+                value={newFolderName}
+                onChange={(event) => setNewFolderName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void handleCreateFolder();
+                  if (event.key === 'Escape') {
+                    setIsCreatingFolder(false);
+                    setCreateError(null);
+                  }
+                }}
+                placeholder={t('folderBrowser.newFolderPlaceholder')}
+                className="h-8 min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-500 focus:outline-none"
+              />
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 px-3 text-xs"
+                onClick={() => void handleCreateFolder()}
+                disabled={!newFolderName.trim() || isCreateSubmitting}
+              >
+                {t('folderBrowser.createFolderConfirm')}
+              </Button>
+            </div>
+            {createError ? (
+              <div className="mt-2 break-all text-[10px] text-red-300">{createError}</div>
+            ) : null}
+          </div>
+        ) : null}
+        <div className="flex items-center justify-between border-t border-zinc-800 bg-zinc-950/40 px-4 py-3">
+          <button
+            type="button"
+            onClick={() => {
+              setIsCreatingFolder((current) => !current);
+              setCreateError(null);
+            }}
+            className="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100"
+            disabled={!props.currentPath}
+          >
+            <FolderPlus className="h-3.5 w-3.5" />
+            {t('folderBrowser.createFolder')}
+          </button>
           <Button
             type="button"
             size="sm"

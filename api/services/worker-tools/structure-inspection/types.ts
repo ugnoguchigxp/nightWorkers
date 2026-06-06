@@ -7,6 +7,7 @@ export interface InspectStructureInput {
   previewPrimitives?: boolean;
   maxPaths?: number;
   allowedPaths?: string[];
+  externalAllowedPaths?: string[];
   deniedPaths?: string[];
 }
 

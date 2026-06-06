@@ -18,6 +18,7 @@ const serviceMocks = vi.hoisted(() => ({
   getTaskRun: vi.fn(),
   getTaskRunsForTask: vi.fn(),
   browseLocalFolders: vi.fn(),
+  createLocalFolder: vi.fn(),
   exportTaskRunJsonl: vi.fn(),
 }));
 
@@ -57,5 +58,35 @@ describe('nightworkers export route', () => {
     const res = await app.request(`/api/runs/${runId}/export.jsonl`);
 
     expect(res.status).toBe(404);
+  });
+});
+
+describe('nightworkers folder utility routes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('POST /api/utils/create-folder creates a local folder', async () => {
+    serviceMocks.createLocalFolder.mockResolvedValueOnce({
+      name: 'new-project',
+      path: '/tmp/new-project',
+    });
+
+    const app = createApp();
+    const res = await app.request('/api/utils/create-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parentPath: '/tmp', name: 'new-project' }),
+    });
+
+    expect(res.status).toBe(201);
+    await expect(res.json()).resolves.toEqual({
+      name: 'new-project',
+      path: '/tmp/new-project',
+    });
+    expect(serviceMocks.createLocalFolder).toHaveBeenCalledWith({
+      parentPath: '/tmp',
+      name: 'new-project',
+    });
   });
 });

@@ -12,6 +12,7 @@
 - list_dir
 - read_file
 - search_files
+- copy_directory
 - apply_patch
 - replace_content
 - run_command
@@ -26,10 +27,14 @@
 2. TodoList は Workbench Task や Queue item ではない。Run 内部の進行マイルストーンとして扱う。
 3. replace_todo_list は全更新で使う。通常は startFirst=true または省略にし、最初の Todo を running にする。
 4. Todo は成果物または gate 単位で分ける。例: investigation / migration / code_edit / documentation / verification。
-5. 現在の Todo に必要な read_file / search_files / apply_patch / replace_content / run_command / run_verification を実行する。
-6. Todo が完了したら、tool evidence に基づいて complete_todo を呼ぶ。実行中というだけで passed にしない。
-7. complete_todo は既定で次の pending Todo を running にする。順序を変える必要がある場合だけ start_todo を使う。
-8. すべての Todo が passed/skipped/needs_human/failed のいずれかになり、必要な最終確認が終わったら finalize_answer を呼ぶ。
+5. 現在の Todo に必要な list_dir / read_file / search_files / copy_directory / apply_patch / replace_content / run_command / run_verification を実行する。
+6. 空の Project root は有効な作業対象として扱う。空であることを理由に作業不能と判断しない。
+7. `../template` や絶対パスなど Project root 外のコピー元は、ユーザー許可により safetyPolicy.externalAllowedPaths に含まれている場合だけ読む。未許可なら needs_human として許可を求める。
+8. 外部テンプレートを取り込む場合は、許可後に copy_directory を優先する。shell の cp で代替しない。
+9. CLI コマンドは run_command / run_verification 経由で、command policy が許可する単一コマンドだけ使う。`&&`、`;`、pipe、command substitution を含む chained shell は使わない。
+10. Todo が完了したら、tool evidence に基づいて complete_todo を呼ぶ。実行中というだけで passed にしない。
+11. complete_todo は既定で次の pending Todo を running にする。順序を変える必要がある場合だけ start_todo を使う。
+12. すべての Todo が passed/skipped/needs_human/failed のいずれかになり、必要な最終確認が終わったら finalize_answer を呼ぶ。
 
 ## TodoList Shape
 TodoList には少なくとも次の種類を必要に応じて含める。

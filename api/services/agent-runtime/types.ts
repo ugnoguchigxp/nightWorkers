@@ -2,6 +2,7 @@ export type AgentRuntimeKind = 'native-local' | 'external-process' | 'future-ada
 
 export interface AgentSafetyPolicy {
   allowedPaths?: string[];
+  externalAllowedPaths?: string[];
   deniedPaths?: string[];
   blockedCommands?: string[];
   maxCommandSeconds?: number;

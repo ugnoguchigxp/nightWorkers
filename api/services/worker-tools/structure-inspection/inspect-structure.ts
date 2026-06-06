@@ -14,7 +14,7 @@ export async function inspectStructureTool(
   input: InspectStructureInput
 ): Promise<WorkerToolResult<InspectStructureOutput>> {
   const startedAt = new Date().toISOString();
-  const { filePath, repoRoot, allowedPaths, deniedPaths } = input;
+  const { filePath, repoRoot, allowedPaths, externalAllowedPaths, deniedPaths } = input;
   const absoluteRepoRoot = path.resolve(repoRoot);
   const targetPath = path.isAbsolute(filePath)
     ? filePath
@@ -23,6 +23,7 @@ export async function inspectStructureTool(
   const pathDecision = enforcePathPolicy(targetPath, {
     repoRoot: absoluteRepoRoot,
     allowedPaths,
+    externalAllowedPaths,
     deniedPaths,
   });
   if (!pathDecision.allowed) {

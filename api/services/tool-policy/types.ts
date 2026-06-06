@@ -9,6 +9,7 @@ export type WorkerToolName =
   | 'search_files'
   | 'search_web'
   | 'fetch_content'
+  | 'copy_directory'
   | 'apply_patch'
   | 'replace_content'
   | 'run_command'

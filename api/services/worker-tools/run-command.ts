@@ -103,6 +103,7 @@ export interface RunCommandInput {
   compressionMode?: 'auto' | 'off';
   blockedCommands?: string[];
   allowedPaths?: string[];
+  externalAllowedPaths?: string[];
   deniedPaths?: string[];
 }
 
@@ -133,6 +134,7 @@ export async function runCommandTool(
     compressionMode = 'auto',
     blockedCommands = [],
     allowedPaths,
+    externalAllowedPaths,
     deniedPaths,
   } = input;
 
@@ -143,6 +145,7 @@ export async function runCommandTool(
   const pathDecision = enforcePathPolicy(targetCwd, {
     repoRoot: absoluteRepoRoot,
     allowedPaths,
+    externalAllowedPaths,
     deniedPaths,
   });
   if (!pathDecision.allowed) {
@@ -172,6 +175,7 @@ export async function runCommandTool(
   const cmdDecision = enforceCommandPolicy(command, {
     repoRoot: absoluteRepoRoot,
     blockedCommands,
+    externalAllowedPaths,
   });
   const safety = analyzeCommand(command, blockedCommands);
   if (!cmdDecision.allowed) {
@@ -199,6 +203,7 @@ export async function runCommandTool(
     repoRoot: absoluteRepoRoot,
     blockedCommands,
     allowedPaths,
+    externalAllowedPaths,
     deniedPaths,
     maxCommandSeconds,
   });

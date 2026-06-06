@@ -137,6 +137,20 @@ export const toolRegistry = {
       ['url']
     ),
   },
+  copy_directory: {
+    name: 'copy_directory',
+    description:
+      '許可済みのディレクトリからプロジェクト内へテンプレートや骨格をコピーする。コピー元がプロジェクト外の場合は事前に externalAllowedPaths で許可されている必要がある。',
+    inputSchema: objectSchema(
+      {
+        sourcePath: { type: 'string' },
+        targetPath: { type: 'string' },
+        overwrite: { type: 'boolean' },
+        exclude: { type: 'array', items: { type: 'string' } },
+      },
+      ['sourcePath']
+    ),
+  },
   apply_patch: {
     name: 'apply_patch',
     description: 'patchContent に指定した差分で新規作成または構造的な変更を行う。',
@@ -307,6 +321,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'search_skill',
     'read_file',
     'search_files',
+    'copy_directory',
     'apply_patch',
     'replace_content',
     'run_command',
@@ -322,6 +337,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'list_dir',
     'read_file',
     'search_files',
+    'copy_directory',
     'apply_patch',
     'replace_content',
     'run_command',
@@ -502,6 +518,7 @@ export function getExecutableWorkerToolName(name: string): WorkerToolName | null
     name === 'search_files' ||
     name === 'search_web' ||
     name === 'fetch_content' ||
+    name === 'copy_directory' ||
     name === 'apply_patch' ||
     name === 'replace_content' ||
     name === 'run_command' ||
@@ -595,9 +612,12 @@ export function buildRound2ToolCallPrompt(input: {
     '- TodoList is run-internal progress, not a Workbench Task or queue item.',
     '- Mark only active work as running; use passed only after tool evidence shows that Todo is complete.',
     '- If target path is known, read_file before editing.',
-    '- Use search_files only when target path is unknown or cross-repo search is needed.',
+    '- Use search_files only when target path is unknown or repository-local search is needed.',
+    '- The project root itself is the current workspace even when it is empty.',
+    '- Paths outside the project root require explicit user approval in safetyPolicy.externalAllowedPaths before list_dir/read_file/copy_directory/run_command can use them.',
+    '- For template imports from an approved external directory, prefer copy_directory over shell cp.',
     '- Do not claim tool execution without an observation in toolResults.',
-    '- Repository reads/writes must use worker tools.',
+    '- Repository reads/writes must use worker tools. CLI commands are allowed only through run_command/run_verification and only when the command policy accepts the single command.',
     '- After apply_patch succeeds, inspect changed target files before finalize_answer.',
     '',
     '[Allowed Tools]',

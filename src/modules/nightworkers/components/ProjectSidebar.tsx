@@ -6,6 +6,7 @@ import {
   Folder,
   FolderPlus,
   LoaderCircle,
+  MessageCircleQuestion,
   Plus,
   Trash2,
 } from 'lucide-react';
@@ -73,7 +74,9 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
         <button
           type="button"
           onClick={props.onOpenOverview}
-          className="nightworkers-sidebar-logo inline-flex min-w-0 items-center px-1 py-1 text-left text-base transition focus-visible:outline-none focus-visible:ring-2"
+          className={`nightworkers-sidebar-logo inline-flex min-w-0 items-center px-1 py-1 text-left text-base transition focus-visible:outline-none focus-visible:ring-2 ${
+            props.isOverviewActive ? 'nightworkers-sidebar-link-active rounded-lg' : ''
+          }`}
           aria-current={props.isOverviewActive ? 'page' : undefined}
         >
           <span className="truncate">nightWorkers</span>
@@ -87,7 +90,7 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
           <FolderPlus className="h-4 w-4" />
         </button>
       </div>
-      <div className="nightworkers-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pb-4">
+      <div className="nightworkers-scrollbar min-h-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto overscroll-contain pb-4">
         {props.isProjectsLoading ? (
           <div className="nightworkers-sidebar-muted px-4 text-xs">
             {t('sidebar.loadingWorkspaces')}
@@ -151,10 +154,17 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                 </div>
                 {isExpanded ? (
                   <div className="space-y-1">
-                    <div className="nightworkers-sidebar-subtle px-12 pb-1 text-[11px] leading-relaxed">
-                      NightShift: {summary.queued} queued · {summary.running} running ·{' '}
-                      {summary.reviewNeeded} review needed · {summary.needsInput} needs input
-                    </div>
+                    <NightShiftSummary
+                      summary={summary}
+                      archiveCount={grouped.archive.length}
+                      archiveExpanded={isArchiveExpanded}
+                      onToggleArchive={() =>
+                        setExpandedArchives((prev) => ({
+                          ...prev,
+                          [project.id]: !isArchiveExpanded,
+                        }))
+                      }
+                    />
                     <SessionList
                       sessions={currentSessions}
                       activeSessionId={props.activeSessionId}
@@ -163,22 +173,16 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                       onRemoveQueueEntry={props.onRemoveQueueEntry}
                       seenDoneSessionIds={seenDoneSessionIds}
                     />
-                    <ProjectArchive
-                      sessions={isArchiveExpanded ? grouped.archive : []}
-                      count={grouped.archive.length}
-                      activeSessionId={props.activeSessionId}
-                      onToggleArchive={() =>
-                        setExpandedArchives((prev) => ({
-                          ...prev,
-                          [project.id]: !isArchiveExpanded,
-                        }))
-                      }
-                      onSelectSession={handleSelectSession}
-                      onQueueSession={props.onQueueSession}
-                      onRemoveQueueEntry={props.onRemoveQueueEntry}
-                      archiveExpanded={isArchiveExpanded}
-                      seenDoneSessionIds={seenDoneSessionIds}
-                    />
+                    {isArchiveExpanded ? (
+                      <SessionList
+                        sessions={grouped.archive}
+                        activeSessionId={props.activeSessionId}
+                        onSelectSession={handleSelectSession}
+                        onQueueSession={props.onQueueSession}
+                        onRemoveQueueEntry={props.onRemoveQueueEntry}
+                        seenDoneSessionIds={seenDoneSessionIds}
+                      />
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -205,48 +209,66 @@ function writeSeenDoneSessionIds(ids: Set<string>) {
   window.localStorage.setItem(SEEN_DONE_SESSIONS_STORAGE_KEY, JSON.stringify([...ids]));
 }
 
-function isDoneSession(session: WorkbenchSessionView) {
-  return session.task.status === 'completed' || session.phase === 'Completed';
-}
-
-function ProjectArchive({
-  sessions,
-  count,
-  activeSessionId,
-  onSelectSession,
-  onQueueSession,
-  onRemoveQueueEntry,
+function NightShiftSummary({
+  summary,
+  archiveCount,
   archiveExpanded,
   onToggleArchive,
-  seenDoneSessionIds,
 }: {
-  sessions: WorkbenchSessionView[];
-  count: number;
-  activeSessionId: string | null;
-  onSelectSession: (session: WorkbenchSessionView) => void;
-  onQueueSession: (sessionId: string) => void;
-  onRemoveQueueEntry: (entryId: string) => void;
+  summary: ReturnType<typeof buildNightShiftSummary>;
+  archiveCount: number;
   archiveExpanded: boolean;
   onToggleArchive: () => void;
-  seenDoneSessionIds: Set<string>;
 }) {
   const { t } = useTranslation();
 
   return (
-    <SessionSection
-      label={t('sidebar.archive')}
-      sessions={sessions}
-      count={count}
-      activeSessionId={activeSessionId}
-      onSelectSession={onSelectSession}
-      onQueueSession={onQueueSession}
-      onRemoveQueueEntry={onRemoveQueueEntry}
-      onToggle={onToggleArchive}
-      expanded={archiveExpanded}
-      showEmpty={false}
-      seenDoneSessionIds={seenDoneSessionIds}
-    />
+    <div className="nightworkers-sidebar-subtle flex min-w-0 items-center gap-3 overflow-hidden px-12 pb-1 text-[11px]">
+      <span className="inline-flex shrink-0 items-center gap-1" title="Queued">
+        <Archive className="h-3 w-3" />
+        {summary.queued}
+      </span>
+      <span className="inline-flex shrink-0 items-center gap-1" title="Running">
+        <LoaderCircle className="h-3 w-3" />
+        {summary.running}
+      </span>
+      <span
+        className="inline-flex shrink-0 items-center gap-1 text-emerald-600"
+        title="Review required"
+      >
+        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+        {summary.reviewNeeded}
+      </span>
+      <span
+        className="inline-flex shrink-0 items-center gap-1 text-red-600"
+        title="Needs human input"
+      >
+        <MessageCircleQuestion className="h-3 w-3" />
+        {summary.needsInput}
+      </span>
+      <button
+        type="button"
+        className={`nightworkers-sidebar-icon-button inline-flex h-5 shrink-0 items-center gap-1 rounded px-1 transition focus-visible:outline-none focus-visible:ring-2 ${
+          archiveExpanded ? 'nightworkers-sidebar-link-active' : ''
+        }`}
+        onClick={onToggleArchive}
+        title={t('sidebar.archive')}
+        aria-label={`${t('sidebar.archive')} ${archiveCount}`}
+        aria-pressed={archiveExpanded}
+      >
+        <Archive className="h-3 w-3" />
+        <span>{archiveCount}</span>
+      </button>
+      <span className="sr-only">
+        NightShift: {summary.queued} queued, {summary.running} running, {summary.reviewNeeded}{' '}
+        review required, {summary.needsInput} needs input, {archiveCount} archived
+      </span>
+    </div>
   );
+}
+
+function isDoneSession(session: WorkbenchSessionView) {
+  return session.task.status === 'completed' || session.phase === 'Completed';
 }
 
 function SessionList({
@@ -271,7 +293,7 @@ function SessionList({
       {sessions.length === 0 ? (
         <div className="nightworkers-sidebar-subtle px-12 py-2 text-xs">{t('sidebar.noTasks')}</div>
       ) : (
-        <ul className="space-y-1">
+        <ul className="min-w-0 space-y-1 overflow-hidden">
           {sessions.map((session) => (
             <SessionRow
               key={session.task.id}
@@ -285,83 +307,6 @@ function SessionList({
           ))}
         </ul>
       )}
-    </section>
-  );
-}
-
-function SessionSection({
-  label,
-  sessions,
-  count,
-  activeSessionId,
-  onSelectSession,
-  onQueueSession,
-  onRemoveQueueEntry,
-  onToggle,
-  expanded,
-  showEmpty = true,
-  seenDoneSessionIds,
-}: {
-  label: string;
-  sessions: WorkbenchSessionView[];
-  count?: number;
-  activeSessionId: string | null;
-  onSelectSession: (session: WorkbenchSessionView) => void;
-  onQueueSession: (sessionId: string) => void;
-  onRemoveQueueEntry: (entryId: string) => void;
-  onToggle?: () => void;
-  expanded?: boolean;
-  showEmpty?: boolean;
-  seenDoneSessionIds: Set<string>;
-}) {
-  const { t } = useTranslation();
-
-  return (
-    <section className="pt-1">
-      {label ? (
-        onToggle ? (
-          <button
-            type="button"
-            className="nightworkers-sidebar-archive-toggle flex w-full items-center justify-between px-4 py-2 text-xs transition focus-visible:outline-none focus-visible:ring-2"
-            onClick={onToggle}
-          >
-            <span className="inline-flex min-w-0 items-center gap-2">
-              {expanded ? (
-                <ChevronDown className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronRight className="h-3.5 w-3.5" />
-              )}
-              <Archive className="h-3.5 w-3.5" />
-              {label}
-            </span>
-            <span className="nightworkers-sidebar-chip rounded-full px-2 py-0.5 text-[11px]">
-              {count ?? sessions.length}
-            </span>
-          </button>
-        ) : (
-          <div className="nightworkers-sidebar-subtle flex items-center justify-between px-4 py-1 text-[10px] font-semibold uppercase">
-            <span>{label}</span>
-            <span>{count ?? sessions.length}</span>
-          </div>
-        )
-      ) : null}
-      {sessions.length === 0 && showEmpty ? (
-        <div className="nightworkers-sidebar-subtle px-12 py-2 text-xs">{t('sidebar.none')}</div>
-      ) : sessions.length > 0 ? (
-        <ul className="space-y-1">
-          {sessions.map((session) => (
-            <SessionRow
-              key={session.task.id}
-              session={session}
-              active={session.task.id === activeSessionId}
-              onSelectSession={onSelectSession}
-              onQueueSession={onQueueSession}
-              onRemoveQueueEntry={onRemoveQueueEntry}
-              seenDoneSessionIds={seenDoneSessionIds}
-            />
-          ))}
-        </ul>
-      ) : null}
     </section>
   );
 }
@@ -384,22 +329,19 @@ function SessionRow({
   const { t } = useTranslation();
   const action = getRowAction(session);
   return (
-    <li className="group flex items-stretch gap-1 px-1">
+    <li className="group flex min-w-0 items-stretch gap-1 overflow-hidden px-1">
       <button
         type="button"
         onClick={() => onSelectSession(session)}
-        className={`nightworkers-sidebar-session-row min-h-[72px] flex-1 rounded-lg px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 ${
+        className={`nightworkers-sidebar-session-row min-h-[56px] min-w-0 flex-1 overflow-hidden rounded-lg px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 ${
           active ? 'nightworkers-sidebar-session-row-active' : ''
         }`}
       >
         <span className="flex min-w-0 items-center justify-between gap-2">
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+          <span className="block min-w-0 flex-1 truncate text-[13px] font-medium">
             {session.task.title}
           </span>
           <SessionStateBadge session={session} />
-        </span>
-        <span className="nightworkers-sidebar-subtle mt-1 block truncate text-[11px]">
-          {buildSessionRowPreview(session)}
         </span>
         <span className="nightworkers-sidebar-subtle mt-1 flex min-w-0 items-center gap-2 text-[11px]">
           <SessionProgressLabel session={session} />
@@ -441,6 +383,24 @@ function SessionProgressLabel({ session }: { session: WorkbenchSessionView }) {
 }
 
 function SessionStateBadge({ session }: { session: WorkbenchSessionView }) {
+  if (session.emailState === 'review_needed') {
+    return (
+      <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" title="Review required">
+        <span className="sr-only">Review required</span>
+      </span>
+    );
+  }
+  if (session.emailState === 'failed' || session.emailState === 'needs_input') {
+    const label = session.emailState === 'needs_input' ? 'Needs human input' : 'Error';
+    return (
+      <span
+        className="nightworkers-sidebar-problem h-2.5 w-2.5 shrink-0 rounded-full"
+        title={label}
+      >
+        <span className="sr-only">{label}</span>
+      </span>
+    );
+  }
   return (
     <span className="nightworkers-sidebar-chip shrink-0 rounded-full px-2 py-0.5 text-[10px]">
       {stateLabel(session)}
@@ -503,13 +463,6 @@ function buildNightShiftSummary(grouped: ProjectSessionGroups) {
     reviewNeeded: sessions.filter((session) => session.emailState === 'review_needed').length,
     needsInput: sessions.filter((session) => session.emailState === 'needs_input').length,
   };
-}
-
-function buildSessionRowPreview(session: WorkbenchSessionView) {
-  if (session.latestEventSummary) return session.latestEventSummary;
-  if (session.latestRun?.summary) return session.latestRun.summary;
-  if (session.task.description?.trim()) return session.task.description;
-  return `updated ${getRelativeTimestamp(session.task.updatedAt)}`;
 }
 
 function getRowAction(

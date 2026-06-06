@@ -24,7 +24,8 @@ export function isPathSafe(
   targetPath: string,
   repoRoot: string,
   allowedPaths?: string[],
-  deniedPaths?: string[]
+  deniedPaths?: string[],
+  externalAllowedPaths?: string[]
 ): boolean {
   const absoluteRepoRoot = resolveExistingPath(path.resolve(repoRoot));
   let absoluteTargetPath = path.resolve(targetPath);
@@ -40,7 +41,28 @@ export function isPathSafe(
   const isInside = relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 
   if (!isInside) {
-    return false;
+    if (!externalAllowedPaths || externalAllowedPaths.length === 0) return false;
+    const isExternalAllowed = externalAllowedPaths.some((allowed) => {
+      const absAllowed = resolveExistingPath(path.resolve(allowed));
+      const relToAllowed = path.relative(absAllowed, absoluteTargetPath);
+      return (
+        relToAllowed === '' || (!relToAllowed.startsWith('..') && !path.isAbsolute(relToAllowed))
+      );
+    });
+    if (!isExternalAllowed) return false;
+    if (deniedPaths && deniedPaths.length > 0) {
+      const isDenied = deniedPaths.some((denied) => {
+        const absDenied = path.isAbsolute(denied)
+          ? resolveExistingPath(path.resolve(denied))
+          : resolveExistingPath(path.resolve(absoluteRepoRoot, denied));
+        const relToDenied = path.relative(absDenied, absoluteTargetPath);
+        return (
+          relToDenied === '' || (!relToDenied.startsWith('..') && !path.isAbsolute(relToDenied))
+        );
+      });
+      if (isDenied) return false;
+    }
+    return true;
   }
 
   // If there's an allowedPaths list, check if the path matches at least one pattern

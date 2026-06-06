@@ -1,5 +1,5 @@
 import type { CodeBlockData, CodeBlockProps } from '@repo/design-system';
-import { CodeBlock, cn } from '@repo/design-system';
+import { Button, CodeBlock, cn } from '@repo/design-system';
 import { Check, Copy, PanelsTopLeft } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -160,7 +160,28 @@ type ThreadTimelineProps = {
   isAgentWorking: boolean;
   showDebugEvents: boolean;
   onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
+  onGrantExternalPath?: (path: string) => Promise<void>;
 };
+
+function findExternalPathPermissionRequest(events: TaskEvent[]): string | null {
+  for (const event of [...events].reverse()) {
+    const payload = event.payloadJson as any;
+    if (payload?.agentEventType !== 'run.needs_human') continue;
+    const data = payload.payload || {};
+    if (data.reason !== 'path_access_denied') continue;
+    const args = data.arguments || {};
+    const candidate =
+      typeof args.sourcePath === 'string'
+        ? args.sourcePath
+        : typeof args.filePath === 'string'
+          ? args.filePath
+          : typeof args.relativePath === 'string'
+            ? args.relativePath
+            : null;
+    if (candidate && (candidate.startsWith('/') || candidate.startsWith('..'))) return candidate;
+  }
+  return null;
+}
 
 export function ThreadTimeline({
   runs,
@@ -173,7 +194,10 @@ export function ThreadTimeline({
   isAgentWorking,
   showDebugEvents,
   onOpenArtifact,
+  onGrantExternalPath,
 }: ThreadTimelineProps) {
+  const [isGrantingExternalPath, setIsGrantingExternalPath] = useState(false);
+  const [dismissedPermissionPath, setDismissedPermissionPath] = useState<string | null>(null);
   const transcriptItems = buildTranscriptItems({
     events: activityEvents,
     artifacts: activityArtifacts,
@@ -227,9 +251,54 @@ export function ThreadTimeline({
     Boolean(latestRun?.contextSnapshot) &&
     !runtimeSnapshotTranscriptAnchorId &&
     !runtimeSnapshotTimelineAnchorId;
+  const permissionPath = findExternalPathPermissionRequest(latestRunEvents);
+  const showPermissionDialog =
+    Boolean(permissionPath) &&
+    permissionPath !== dismissedPermissionPath &&
+    Boolean(onGrantExternalPath);
 
   return (
     <div className="nightworkers-chat-window space-y-5 p-6">
+      {showPermissionDialog && permissionPath ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg rounded-lg border border-slate-700 bg-slate-950 p-4 shadow-xl">
+            <div className="text-sm font-semibold text-slate-100">External Folder Access</div>
+            <div className="mt-2 text-xs leading-5 text-slate-300">
+              The worker needs permission to read this folder before continuing.
+            </div>
+            <div className="mt-3 break-all rounded-md border border-slate-800 bg-slate-900 px-3 py-2 font-mono text-[11px] text-slate-200">
+              {permissionPath}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setDismissedPermissionPath(permissionPath)}
+              >
+                Dismiss
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={isGrantingExternalPath}
+                onClick={async () => {
+                  if (!onGrantExternalPath) return;
+                  setIsGrantingExternalPath(true);
+                  try {
+                    await onGrantExternalPath(permissionPath);
+                    setDismissedPermissionPath(permissionPath);
+                  } finally {
+                    setIsGrantingExternalPath(false);
+                  }
+                }}
+              >
+                Allow Folder
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {showDebugEvents && isAgentWorking && latestEvent ? (
         <div className="rounded-lg border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-200">
           <span className="mr-2 inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-400" />

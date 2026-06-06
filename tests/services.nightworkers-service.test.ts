@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import {
+  createLocalFolder,
   getTaskRun as getTaskRunDetail,
   listTaskRunEvents,
   listTaskRunEventsForReplay,
@@ -104,6 +105,23 @@ describe('NightWorkers service', () => {
 
     expect(events).toHaveLength(1);
     expect(repo.listTaskEventsForRun).toHaveBeenCalledWith('run-replay', { afterSeq: 2 });
+  });
+
+  it('creates a local folder under the selected parent directory', async () => {
+    const folder = await createLocalFolder({ parentPath: repoRoot, name: 'new-project' });
+
+    expect(folder).toEqual({
+      name: 'new-project',
+      path: path.join(repoRoot, 'new-project'),
+    });
+  });
+
+  it('rejects nested folder names when creating a local folder', async () => {
+    await expect(
+      createLocalFolder({ parentPath: repoRoot, name: '../outside' })
+    ).rejects.toMatchObject({
+      code: 'INVALID_FOLDER_NAME',
+    });
   });
 
   it('applies the event cursor when listing run events', async () => {

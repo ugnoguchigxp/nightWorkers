@@ -52,6 +52,12 @@ export const TOOL_MANIFEST: Record<WorkerToolName, ToolManifestEntry> = {
     requiresReadBeforeEdit: false,
     pathArgs: [],
   },
+  copy_directory: {
+    name: 'copy_directory',
+    mutatesWorkspace: true,
+    requiresReadBeforeEdit: false,
+    pathArgs: ['sourcePath', 'targetPath'],
+  },
   apply_patch: {
     name: 'apply_patch',
     mutatesWorkspace: true,

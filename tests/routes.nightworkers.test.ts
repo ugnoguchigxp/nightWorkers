@@ -97,6 +97,40 @@ describe('NightWorkers repositories routes', () => {
     });
     expect(getRes.status).toBe(404);
   });
+
+  it('updates project external path grants through safety policy', async () => {
+    const createRes = await app.request('http://localhost/api/repositories', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: `TEST: External grant ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = await createRes.json();
+
+    const patchRes = await app.request(`http://localhost/api/repositories/${created.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        safetyPolicy: {
+          externalAllowedPaths: ['/Users/y.noguchi/Code/hono-standard'],
+        },
+      }),
+    });
+
+    expect(patchRes.status).toBe(200);
+    const patched = await patchRes.json();
+    expect(patched.safetyPolicy.externalAllowedPaths).toContain(
+      '/Users/y.noguchi/Code/hono-standard'
+    );
+  });
 });
 
 describe('NightWorkers task routes', () => {

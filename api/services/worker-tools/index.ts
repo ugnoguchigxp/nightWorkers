@@ -1,5 +1,6 @@
 export * from './apply-patch';
 export * from './command-policy';
+export * from './copy-directory';
 export * from './fetch-content';
 export * from './find-file';
 export * from './git';

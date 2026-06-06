@@ -39,6 +39,7 @@ export interface SupervisorLoopInput {
   deadlineAt?: string;
   safetyPolicy?: {
     allowedPaths?: string[];
+    externalAllowedPaths?: string[];
     deniedPaths?: string[];
     blockedCommands?: string[];
     maxCommandSeconds?: number;
@@ -582,6 +583,27 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       };
       toolResults.push(compactResult);
       await emitAgentEvent(toolResult.ok ? 'tool.finished' : 'tool.failed', compactResult);
+      if (!toolResult.ok && toolResult.error?.code === 'ACCESS_DENIED') {
+        terminalState = 'needs_human';
+        stoppedBy = 'policy';
+        riskLevel = 'medium';
+        const deniedMessage =
+          toolResult.error?.message ||
+          'Worker tool access was denied by the project safety policy.';
+        finalReportText = [
+          '外部パスまたは制限されたパスへのアクセス許可が必要です。',
+          deniedMessage,
+          'コピー元テンプレートなどプロジェクト外のフォルダを使う場合は、そのパスを明示的に許可してから再実行してください。',
+        ].join('\n');
+        summary = finalReportText.slice(0, 200);
+        await emitAgentEvent('run.needs_human', {
+          reason: 'path_access_denied',
+          toolName: workerToolName,
+          arguments: round2.toolCall.arguments,
+          message: deniedMessage,
+        });
+        break;
+      }
     }
 
     if (!finalReportText) {

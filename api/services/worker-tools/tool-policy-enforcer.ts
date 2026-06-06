@@ -5,6 +5,7 @@ import { isPathSafe } from './path-policy';
 export type ToolPolicyContext = {
   repoRoot: string;
   allowedPaths?: string[];
+  externalAllowedPaths?: string[];
   deniedPaths?: string[];
   blockedCommands?: string[];
   maxCommandSeconds?: number;
@@ -21,7 +22,15 @@ export function enforcePathPolicy(targetPath: string, context: ToolPolicyContext
   const absTarget = path.isAbsolute(targetPath)
     ? path.resolve(targetPath)
     : path.resolve(absRoot, targetPath);
-  if (!isPathSafe(absTarget, absRoot, context.allowedPaths, context.deniedPaths)) {
+  if (
+    !isPathSafe(
+      absTarget,
+      absRoot,
+      context.allowedPaths,
+      context.deniedPaths,
+      context.externalAllowedPaths
+    )
+  ) {
     return {
       allowed: false,
       code: 'ACCESS_DENIED',

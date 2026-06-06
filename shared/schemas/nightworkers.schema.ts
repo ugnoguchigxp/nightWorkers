@@ -126,6 +126,7 @@ export const runEventJsonlLineSchema = z.discriminatedUnion('type', [
 export const safetyPolicySchema = z
   .object({
     allowedPaths: z.array(z.string()).optional(),
+    externalAllowedPaths: z.array(z.string()).optional(),
     deniedPaths: z.array(z.string()).optional(),
     blockedCommands: z.array(z.string()).optional(),
     maxCommandSeconds: z.number().optional(),

@@ -30,6 +30,7 @@ function isDeniedPath(relPath: string, request: ToolCallRequest): boolean {
   const decision = enforcePathPolicy(relPath, {
     repoRoot: request.repoRoot,
     allowedPaths: request.safetyPolicy?.allowedPaths,
+    externalAllowedPaths: request.safetyPolicy?.externalAllowedPaths,
     deniedPaths: request.safetyPolicy?.deniedPaths,
   });
   return !decision.allowed;
@@ -61,6 +62,7 @@ export class DefaultToolPolicyGate implements ToolPolicyGate {
       const pathDecision = enforcePathPolicy(value, {
         repoRoot: request.repoRoot,
         allowedPaths: request.safetyPolicy?.allowedPaths,
+        externalAllowedPaths: request.safetyPolicy?.externalAllowedPaths,
         deniedPaths: request.safetyPolicy?.deniedPaths,
       });
       if (!pathDecision.allowed) {
@@ -87,6 +89,7 @@ export class DefaultToolPolicyGate implements ToolPolicyGate {
         const pathDecision = enforcePathPolicy(target, {
           repoRoot: request.repoRoot,
           allowedPaths: request.safetyPolicy?.allowedPaths,
+          externalAllowedPaths: request.safetyPolicy?.externalAllowedPaths,
           deniedPaths: request.safetyPolicy?.deniedPaths,
         });
         if (!pathDecision.allowed) {
@@ -126,6 +129,7 @@ export class DefaultToolPolicyGate implements ToolPolicyGate {
       const cwdDecision = enforcePathPolicy(cwd, {
         repoRoot: request.repoRoot,
         allowedPaths: request.safetyPolicy?.allowedPaths,
+        externalAllowedPaths: request.safetyPolicy?.externalAllowedPaths,
         deniedPaths: request.safetyPolicy?.deniedPaths,
       });
       if (!cwdDecision.allowed) {

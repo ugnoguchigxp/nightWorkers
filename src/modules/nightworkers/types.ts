@@ -11,6 +11,16 @@ export type Repository = {
   updatedAt: unknown;
 };
 
+export type ProjectSafetyPolicy = {
+  allowedPaths?: string[];
+  externalAllowedPaths?: string[];
+  deniedPaths?: string[];
+  blockedCommands?: string[];
+  maxCommandSeconds?: number;
+  requireReadBeforeEdit?: boolean;
+  maxTimeSeconds?: number;
+};
+
 export type Task = {
   id: string;
   repositoryId: string;
@@ -689,11 +699,13 @@ export type CreateProjectInput = {
   name: string;
   localPath: string;
   branch?: string;
+  safetyPolicy?: ProjectSafetyPolicy;
 };
 
 export type UpdateProjectInput = {
   queueEnabled?: boolean;
   maxConcurrentSessions?: number;
+  safetyPolicy?: ProjectSafetyPolicy;
 };
 
 export type CreateSessionInput = {

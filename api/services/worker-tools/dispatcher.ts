@@ -2,6 +2,7 @@ import type { AgentSafetyPolicy } from '../agent-runtime/types';
 import type { WorkerToolName } from '../tool-policy/types';
 import {
   applyPatchTool,
+  copyDirectoryTool,
   fetchContentTool,
   findFileTool,
   gitDiffTool,
@@ -47,6 +48,7 @@ export async function executeWorkerTool(
         maxEntries: args.maxEntries as number | undefined,
         repoRoot,
         allowedPaths: safetyPolicy?.allowedPaths,
+        externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
         deniedPaths: safetyPolicy?.deniedPaths,
       }),
     };
@@ -61,6 +63,7 @@ export async function executeWorkerTool(
         maxResults: args.maxResults as number | undefined,
         repoRoot,
         allowedPaths: safetyPolicy?.allowedPaths,
+        externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
         deniedPaths: safetyPolicy?.deniedPaths,
       }),
     };
@@ -76,6 +79,7 @@ export async function executeWorkerTool(
       compressionMode: args.compressionMode as 'auto' | 'off' | undefined,
       readCache: toolContext?.readFileCache,
       allowedPaths: safetyPolicy?.allowedPaths,
+      externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
       deniedPaths: safetyPolicy?.deniedPaths,
     });
     const filePath = args.filePath as string;
@@ -94,6 +98,7 @@ export async function executeWorkerTool(
         previewPrimitives: args.previewPrimitives as boolean | undefined,
         maxPaths: args.maxPaths as number | undefined,
         allowedPaths: safetyPolicy?.allowedPaths,
+        externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
         deniedPaths: safetyPolicy?.deniedPaths,
       }),
     };
@@ -106,6 +111,7 @@ export async function executeWorkerTool(
         repoRoot,
         glob: args.glob as string | undefined,
         allowedPaths: safetyPolicy?.allowedPaths,
+        externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
         deniedPaths: safetyPolicy?.deniedPaths,
       }),
     };
@@ -129,12 +135,28 @@ export async function executeWorkerTool(
     };
   }
 
+  if (toolName === 'copy_directory') {
+    return {
+      result: await copyDirectoryTool({
+        sourcePath: args.sourcePath as string,
+        targetPath: args.targetPath as string | undefined,
+        overwrite: args.overwrite as boolean | undefined,
+        exclude: args.exclude as string[] | undefined,
+        repoRoot,
+        allowedPaths: safetyPolicy?.allowedPaths,
+        externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
+        deniedPaths: safetyPolicy?.deniedPaths,
+      }),
+    };
+  }
+
   if (toolName === 'apply_patch') {
     return {
       result: await applyPatchTool({
         patchContent: args.patchContent as string,
         repoRoot,
         allowedPaths: safetyPolicy?.allowedPaths,
+        externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
         deniedPaths: safetyPolicy?.deniedPaths,
       }),
     };
@@ -150,6 +172,7 @@ export async function executeWorkerTool(
         allowMultipleOccurrences: args.allowMultipleOccurrences as boolean | undefined,
         repoRoot,
         allowedPaths: safetyPolicy?.allowedPaths,
+        externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
         deniedPaths: safetyPolicy?.deniedPaths,
       }),
     };
@@ -163,6 +186,7 @@ export async function executeWorkerTool(
         cwd: args.cwd as string | undefined,
         blockedCommands: safetyPolicy?.blockedCommands,
         allowedPaths: safetyPolicy?.allowedPaths,
+        externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
         deniedPaths: safetyPolicy?.deniedPaths,
         timeoutSeconds: args.timeoutSeconds as number | undefined,
         compressionMode: args.compressionMode as 'auto' | 'off' | undefined,
@@ -180,6 +204,7 @@ export async function executeWorkerTool(
         cwd: args.cwd as string | undefined,
         blockedCommands: safetyPolicy?.blockedCommands,
         allowedPaths: safetyPolicy?.allowedPaths,
+        externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
         deniedPaths: safetyPolicy?.deniedPaths,
         timeoutSeconds: args.timeoutSeconds as number | undefined,
         compressionMode: args.compressionMode as 'auto' | 'off' | undefined,

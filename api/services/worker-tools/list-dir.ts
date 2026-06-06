@@ -11,6 +11,7 @@ export interface ListDirInput {
   skipIgnored?: boolean;
   maxEntries?: number;
   allowedPaths?: string[];
+  externalAllowedPaths?: string[];
   deniedPaths?: string[];
 }
 
@@ -31,6 +32,7 @@ export async function listDirTool(input: ListDirInput): Promise<WorkerToolResult
     skipIgnored = true,
     maxEntries = 1000,
     allowedPaths,
+    externalAllowedPaths,
     deniedPaths,
   } = input;
 
@@ -40,6 +42,7 @@ export async function listDirTool(input: ListDirInput): Promise<WorkerToolResult
   const targetDecision = enforcePathPolicy(targetPath, {
     repoRoot: absoluteRepoRoot,
     allowedPaths,
+    externalAllowedPaths,
     deniedPaths,
   });
   if (!targetDecision.allowed) {
@@ -81,7 +84,10 @@ export async function listDirTool(input: ListDirInput): Promise<WorkerToolResult
       const entries = await fs.readdir(dir, { withFileTypes: true });
       for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
-        if (!isPathSafe(fullPath, absoluteRepoRoot, allowedPaths, deniedPaths)) continue;
+        if (
+          !isPathSafe(fullPath, absoluteRepoRoot, allowedPaths, deniedPaths, externalAllowedPaths)
+        )
+          continue;
 
         if (entry.isDirectory()) {
           if (skipIgnored && DEFAULT_IGNORED_DIRS.has(entry.name)) continue;

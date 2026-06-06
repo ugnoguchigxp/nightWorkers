@@ -20,6 +20,7 @@ export interface ReadFileInput {
   compressionMode?: 'auto' | 'off';
   readCache?: Map<string, ReadFileCacheEntry>;
   allowedPaths?: string[];
+  externalAllowedPaths?: string[];
   deniedPaths?: string[];
 }
 
@@ -48,6 +49,7 @@ export async function readFileTool(
     compressionMode = 'auto',
     readCache,
     allowedPaths,
+    externalAllowedPaths,
     deniedPaths,
   } = input;
 
@@ -59,6 +61,7 @@ export async function readFileTool(
   const pathDecision = enforcePathPolicy(targetPath, {
     repoRoot,
     allowedPaths,
+    externalAllowedPaths,
     deniedPaths,
   });
   if (!pathDecision.allowed) {

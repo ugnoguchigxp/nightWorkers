@@ -163,6 +163,7 @@ export type NightWorkersWorkspaceState = {
   browserDirectories: FolderDir[];
   isBrowserLoading: boolean;
   fetchDirectories: (targetPath?: string) => Promise<void>;
+  createFolder: (input: { parentPath?: string; name: string }) => Promise<FolderDir>;
   llmSettings: LlmSettings | null;
   activeProvider: LlmProvider;
   providerModelOptions: Array<{ value: string; label: string }>;
@@ -249,6 +250,16 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     } finally {
       setIsBrowserLoading(false);
     }
+  };
+
+  const createFolder = async (input: { parentPath?: string; name: string }) => {
+    const res = await apiFetch('/api/utils/create-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return (await res.json()) as FolderDir;
   };
 
   const { data: projects = [], isLoading: isProjectsLoading } = useQuery({
@@ -1534,6 +1545,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     browserDirectories,
     isBrowserLoading,
     fetchDirectories,
+    createFolder,
     llmSettings,
     activeProvider,
     providerModelOptions,

@@ -111,6 +111,7 @@ export const repositories = sqliteTable('repositories', {
   maxConcurrentSessions: integer('max_concurrent_sessions').default(1).notNull(),
   safetyPolicy: text('safety_policy', { mode: 'json' }).$type<{
     allowedPaths?: string[];
+    externalAllowedPaths?: string[];
     deniedPaths?: string[];
     blockedCommands?: string[];
     maxCommandSeconds?: number;

@@ -15,6 +15,7 @@ export interface SearchFilesInput {
   maxResults?: number;
   caseSensitive?: boolean;
   allowedPaths?: string[];
+  externalAllowedPaths?: string[];
   deniedPaths?: string[];
 }
 
@@ -41,6 +42,7 @@ export async function searchFilesTool(
     maxResults = 100,
     caseSensitive = false,
     allowedPaths,
+    externalAllowedPaths,
     deniedPaths,
   } = input;
 
@@ -72,6 +74,7 @@ export async function searchFilesTool(
             const policy = enforcePathPolicy(absolutePath, {
               repoRoot: absoluteRepoRoot,
               allowedPaths,
+              externalAllowedPaths,
               deniedPaths,
             });
             if (policy.allowed) {
@@ -138,6 +141,7 @@ export async function searchFilesTool(
           const policy = enforcePathPolicy(fullPath, {
             repoRoot: absoluteRepoRoot,
             allowedPaths,
+            externalAllowedPaths,
             deniedPaths,
           });
           if (!policy.allowed) {

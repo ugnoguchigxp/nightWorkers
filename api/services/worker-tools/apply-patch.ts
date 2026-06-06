@@ -11,6 +11,7 @@ export interface ApplyPatchInput {
   patchContent: string;
   repoRoot: string;
   allowedPaths?: string[];
+  externalAllowedPaths?: string[];
   deniedPaths?: string[];
 }
 
@@ -25,7 +26,7 @@ export async function applyPatchTool(
   input: ApplyPatchInput
 ): Promise<WorkerToolResult<ApplyPatchOutput>> {
   const startedAt = new Date().toISOString();
-  const { patchContent, repoRoot, allowedPaths, deniedPaths } = input;
+  const { patchContent, repoRoot, allowedPaths, externalAllowedPaths, deniedPaths } = input;
   const gitPatchContent = toGitApplyPatch(patchContent);
 
   const absoluteRepoRoot = path.resolve(repoRoot);
@@ -70,6 +71,7 @@ export async function applyPatchTool(
       const policy = enforcePathPolicy(absolutePath, {
         repoRoot: absoluteRepoRoot,
         allowedPaths,
+        externalAllowedPaths,
         deniedPaths,
       });
       if (!policy.allowed) {

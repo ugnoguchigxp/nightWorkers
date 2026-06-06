@@ -11,6 +11,7 @@ export interface ReplaceContentInput {
   mode: 'literal' | 'regex';
   allowMultipleOccurrences?: boolean;
   allowedPaths?: string[];
+  externalAllowedPaths?: string[];
   deniedPaths?: string[];
 }
 
@@ -36,6 +37,7 @@ export async function replaceContentTool(
     mode,
     allowMultipleOccurrences = false,
     allowedPaths,
+    externalAllowedPaths,
     deniedPaths,
   } = input;
 
@@ -47,6 +49,7 @@ export async function replaceContentTool(
   const policy = enforcePathPolicy(targetPath, {
     repoRoot: absoluteRepoRoot,
     allowedPaths,
+    externalAllowedPaths,
     deniedPaths,
   });
   if (!policy.allowed) {

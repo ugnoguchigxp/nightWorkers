@@ -145,6 +145,7 @@ export async function updateRepository(
   data: {
     queueEnabled?: boolean;
     maxConcurrentSessions?: number;
+    safetyPolicy?: any;
   }
 ) {
   const normalized = {
@@ -2612,6 +2613,37 @@ export async function browseLocalFolders(targetPath?: string) {
       error: err.message,
     };
   }
+}
+
+export async function createLocalFolder(input: { parentPath?: string; name: string }) {
+  const parentPath = path.resolve(input.parentPath || os.homedir());
+  const folderName = input.name.trim();
+
+  if (!folderName) throw new AppError(400, 'EMPTY_FOLDER_NAME', 'Folder name is required');
+  if (
+    folderName === '.' ||
+    folderName === '..' ||
+    folderName.includes('/') ||
+    folderName.includes('\\')
+  ) {
+    throw new AppError(400, 'INVALID_FOLDER_NAME', 'Folder name must be a single directory name');
+  }
+
+  const targetPath = path.resolve(parentPath, folderName);
+  if (path.dirname(targetPath) !== parentPath) {
+    throw new AppError(
+      400,
+      'INVALID_FOLDER_NAME',
+      'Folder name must stay inside the current directory'
+    );
+  }
+
+  await fs.mkdir(targetPath);
+
+  return {
+    name: folderName,
+    path: targetPath,
+  };
 }
 
 const PROJECT_TREE_EXCLUDED_DIRS = new Set([

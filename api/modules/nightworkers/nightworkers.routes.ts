@@ -22,6 +22,7 @@ import {
   reviewerEvaluationSchema,
   reviewFindingSchema,
   reviewResultSchema,
+  safetyPolicySchema,
   taskEventSchema,
   taskLlmUsageSummarySchema,
   taskMessageSchema,
@@ -117,6 +118,7 @@ const updateRepositoryRoute = createRoute({
           schema: z.object({
             queueEnabled: z.boolean().optional(),
             maxConcurrentSessions: z.number().int().positive().optional(),
+            safetyPolicy: safetyPolicySchema.optional(),
           }),
         },
       },
@@ -2193,10 +2195,56 @@ const browseFoldersRoute = createRoute({
   },
 });
 
+const createFolderRoute = createRoute({
+  method: 'post',
+  path: '/utils/create-folder',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            parentPath: z.string().optional(),
+            name: z.string().min(1),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            name: z.string(),
+            path: z.string(),
+          }),
+        },
+      },
+      description: 'Create a directory under the selected path',
+    },
+    400: {
+      description: 'Invalid folder name',
+    },
+  },
+});
+
 router.openapi(browseFoldersRoute, async (c) => {
   const queryPath = c.req.query('path');
   const result = await service.browseLocalFolders(queryPath);
   return c.json(result, 200);
+});
+
+router.openapi(createFolderRoute, async (c) => {
+  const request = c.req.valid('json');
+  try {
+    const result = await service.createLocalFolder(request);
+    return c.json(result, 201);
+  } catch (err: any) {
+    if (err instanceof AppError) {
+      return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+    }
+    return c.json({ error: String(err?.message || err) }, 500);
+  }
 });
 
 export const nightworkersRouter = router;
