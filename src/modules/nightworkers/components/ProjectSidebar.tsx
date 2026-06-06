@@ -5,7 +5,6 @@ import {
   ChevronRight,
   Folder,
   FolderPlus,
-  ListTodo,
   LoaderCircle,
   Plus,
   Trash2,
@@ -28,7 +27,8 @@ type ProjectSidebarProps = {
   onToggleProject: (projectId: string) => void;
   onOpenOverview: () => void;
   isOverviewActive: boolean;
-  onOpenQueue: (projectId: string) => void;
+  onQueueSession: (sessionId: string) => void;
+  onRemoveQueueEntry: (entryId: string) => void;
   onOpenFolderBrowser: () => void;
 };
 
@@ -102,6 +102,7 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
             const isExpanded = props.expandedProjects[project.id] ?? true;
             const isArchiveExpanded = expandedArchives[project.id] ?? false;
             const currentSessions = [...grouped.processing, ...grouped.queue];
+            const summary = buildNightShiftSummary(grouped);
             return (
               <div key={project.id} className="space-y-1">
                 <div className="group flex items-center justify-between px-3 py-1">
@@ -120,16 +121,6 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                     <span className="truncate font-medium">{project.name}</span>
                   </button>
                   <div className="flex items-center gap-1 opacity-70 transition group-hover:opacity-100">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="nightworkers-sidebar-icon-button h-7 w-7 rounded-md p-0"
-                      onClick={() => props.onOpenQueue(project.id)}
-                      title={t('sidebar.openImplementationQueue')}
-                    >
-                      <ListTodo className="h-3.5 w-3.5" />
-                    </Button>
                     <Button
                       type="button"
                       variant="ghost"
@@ -160,10 +151,16 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                 </div>
                 {isExpanded ? (
                   <div className="space-y-1">
+                    <div className="nightworkers-sidebar-subtle px-12 pb-1 text-[11px] leading-relaxed">
+                      NightShift: {summary.queued} queued · {summary.running} running ·{' '}
+                      {summary.reviewNeeded} review needed · {summary.needsInput} needs input
+                    </div>
                     <SessionList
                       sessions={currentSessions}
                       activeSessionId={props.activeSessionId}
                       onSelectSession={handleSelectSession}
+                      onQueueSession={props.onQueueSession}
+                      onRemoveQueueEntry={props.onRemoveQueueEntry}
                       seenDoneSessionIds={seenDoneSessionIds}
                     />
                     <ProjectArchive
@@ -177,6 +174,8 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                         }))
                       }
                       onSelectSession={handleSelectSession}
+                      onQueueSession={props.onQueueSession}
+                      onRemoveQueueEntry={props.onRemoveQueueEntry}
                       archiveExpanded={isArchiveExpanded}
                       seenDoneSessionIds={seenDoneSessionIds}
                     />
@@ -215,6 +214,8 @@ function ProjectArchive({
   count,
   activeSessionId,
   onSelectSession,
+  onQueueSession,
+  onRemoveQueueEntry,
   archiveExpanded,
   onToggleArchive,
   seenDoneSessionIds,
@@ -223,6 +224,8 @@ function ProjectArchive({
   count: number;
   activeSessionId: string | null;
   onSelectSession: (session: WorkbenchSessionView) => void;
+  onQueueSession: (sessionId: string) => void;
+  onRemoveQueueEntry: (entryId: string) => void;
   archiveExpanded: boolean;
   onToggleArchive: () => void;
   seenDoneSessionIds: Set<string>;
@@ -236,6 +239,8 @@ function ProjectArchive({
       count={count}
       activeSessionId={activeSessionId}
       onSelectSession={onSelectSession}
+      onQueueSession={onQueueSession}
+      onRemoveQueueEntry={onRemoveQueueEntry}
       onToggle={onToggleArchive}
       expanded={archiveExpanded}
       showEmpty={false}
@@ -248,11 +253,15 @@ function SessionList({
   sessions,
   activeSessionId,
   onSelectSession,
+  onQueueSession,
+  onRemoveQueueEntry,
   seenDoneSessionIds,
 }: {
   sessions: WorkbenchSessionView[];
   activeSessionId: string | null;
   onSelectSession: (session: WorkbenchSessionView) => void;
+  onQueueSession: (sessionId: string) => void;
+  onRemoveQueueEntry: (entryId: string) => void;
   seenDoneSessionIds: Set<string>;
 }) {
   const { t } = useTranslation();
@@ -269,6 +278,8 @@ function SessionList({
               session={session}
               active={session.task.id === activeSessionId}
               onSelectSession={onSelectSession}
+              onQueueSession={onQueueSession}
+              onRemoveQueueEntry={onRemoveQueueEntry}
               seenDoneSessionIds={seenDoneSessionIds}
             />
           ))}
@@ -284,6 +295,8 @@ function SessionSection({
   count,
   activeSessionId,
   onSelectSession,
+  onQueueSession,
+  onRemoveQueueEntry,
   onToggle,
   expanded,
   showEmpty = true,
@@ -294,6 +307,8 @@ function SessionSection({
   count?: number;
   activeSessionId: string | null;
   onSelectSession: (session: WorkbenchSessionView) => void;
+  onQueueSession: (sessionId: string) => void;
+  onRemoveQueueEntry: (entryId: string) => void;
   onToggle?: () => void;
   expanded?: boolean;
   showEmpty?: boolean;
@@ -340,6 +355,8 @@ function SessionSection({
               session={session}
               active={session.task.id === activeSessionId}
               onSelectSession={onSelectSession}
+              onQueueSession={onQueueSession}
+              onRemoveQueueEntry={onRemoveQueueEntry}
               seenDoneSessionIds={seenDoneSessionIds}
             />
           ))}
@@ -351,53 +368,84 @@ function SessionSection({
 
 function SessionRow({
   session,
-  queuePosition,
   active,
   onSelectSession,
+  onQueueSession,
+  onRemoveQueueEntry,
   seenDoneSessionIds,
 }: {
   session: WorkbenchSessionView;
-  queuePosition?: number;
   active: boolean;
   onSelectSession: (session: WorkbenchSessionView) => void;
+  onQueueSession: (sessionId: string) => void;
+  onRemoveQueueEntry: (entryId: string) => void;
   seenDoneSessionIds: Set<string>;
 }) {
+  const { t } = useTranslation();
+  const action = getRowAction(session);
   return (
-    <li className="px-1">
+    <li className="group flex items-stretch gap-1 px-1">
       <button
         type="button"
         onClick={() => onSelectSession(session)}
-        className={`nightworkers-sidebar-session-row flex min-h-11 w-full min-w-0 items-center gap-3 rounded-2xl px-4 py-2.5 text-left text-[15px] leading-tight transition focus-visible:outline-none focus-visible:ring-2 ${
+        className={`nightworkers-sidebar-session-row min-h-[72px] flex-1 rounded-lg px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 ${
           active ? 'nightworkers-sidebar-session-row-active' : ''
         }`}
       >
-        <span className="min-w-0 flex-1 truncate font-medium">{session.task.title}</span>
-        <span className="nightworkers-sidebar-subtle flex shrink-0 items-center gap-2 text-xs">
-          <SessionProgressLabel session={session} queuePosition={queuePosition} />
+        <span className="flex min-w-0 items-center justify-between gap-2">
+          <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+            {session.task.title}
+          </span>
+          <SessionStateBadge session={session} />
+        </span>
+        <span className="nightworkers-sidebar-subtle mt-1 block truncate text-[11px]">
+          {buildSessionRowPreview(session)}
+        </span>
+        <span className="nightworkers-sidebar-subtle mt-1 flex min-w-0 items-center gap-2 text-[11px]">
+          <SessionProgressLabel session={session} />
+          <span className="truncate">{action.label}</span>
           <SessionStateMarker session={session} seen={seenDoneSessionIds.has(session.task.id)} />
         </span>
       </button>
+      {action.kind === 'button' ? (
+        <button
+          type="button"
+          className="nightworkers-sidebar-icon-button my-2 w-14 shrink-0 rounded-md px-2 text-[11px] opacity-80 transition hover:opacity-100 focus-visible:outline-none focus-visible:ring-2"
+          onClick={() => {
+            if (action.command === 'queue') onQueueSession(session.task.id);
+            if (action.command === 'remove' && session.queueEntry) {
+              onRemoveQueueEntry(session.queueEntry.id);
+            }
+          }}
+          disabled={action.command === 'remove' && !session.queueEntry}
+          title={action.command === 'queue' ? t('sidebar.queueSession') : t('sidebar.removeQueue')}
+        >
+          {action.text}
+        </button>
+      ) : null}
     </li>
   );
 }
 
-function SessionProgressLabel({
-  session,
-  queuePosition,
-}: {
-  session: WorkbenchSessionView;
-  queuePosition?: number;
-}) {
+function SessionProgressLabel({ session }: { session: WorkbenchSessionView }) {
   const { t } = useTranslation();
 
-  if (session.group === 'queue') {
-    if (session.task.status === 'ready') {
-      return <span className="shrink-0">{t('sidebar.ready')}</span>;
-    }
-    return <span className="shrink-0">#{queuePosition ?? session.queuePosition ?? '-'}</span>;
+  if (session.emailState === 'plan_ready') {
+    return <span className="shrink-0">{t('sidebar.ready')}</span>;
+  }
+  if (session.emailState === 'queued') {
+    return <span className="shrink-0">Queue #{session.queuePosition ?? '-'}</span>;
   }
   if (session.latestRun) return <span className="shrink-0">{session.progress.percent}%</span>;
   return null;
+}
+
+function SessionStateBadge({ session }: { session: WorkbenchSessionView }) {
+  return (
+    <span className="nightworkers-sidebar-chip shrink-0 rounded-full px-2 py-0.5 text-[10px]">
+      {stateLabel(session)}
+    </span>
+  );
 }
 
 function SessionStateMarker({ session, seen }: { session: WorkbenchSessionView; seen: boolean }) {
@@ -445,4 +493,49 @@ function SessionStateMarker({ session, seen }: { session: WorkbenchSessionView; 
     );
   }
   return <span className="shrink-0">{getRelativeTimestamp(session.task.updatedAt)}</span>;
+}
+
+function buildNightShiftSummary(grouped: ProjectSessionGroups) {
+  const sessions = [...grouped.processing, ...grouped.queue, ...grouped.archive];
+  return {
+    queued: sessions.filter((session) => session.emailState === 'queued').length,
+    running: sessions.filter((session) => session.emailState === 'running').length,
+    reviewNeeded: sessions.filter((session) => session.emailState === 'review_needed').length,
+    needsInput: sessions.filter((session) => session.emailState === 'needs_input').length,
+  };
+}
+
+function buildSessionRowPreview(session: WorkbenchSessionView) {
+  if (session.latestEventSummary) return session.latestEventSummary;
+  if (session.latestRun?.summary) return session.latestRun.summary;
+  if (session.task.description?.trim()) return session.task.description;
+  return `updated ${getRelativeTimestamp(session.task.updatedAt)}`;
+}
+
+function getRowAction(
+  session: WorkbenchSessionView
+):
+  | { kind: 'button'; command: 'queue' | 'remove'; text: string; label: string }
+  | { kind: 'text'; label: string } {
+  if (session.primaryAction === 'queue') {
+    return { kind: 'button', command: 'queue', text: 'Queue', label: 'Queue · Open' };
+  }
+  if (session.primaryAction === 'remove') {
+    return { kind: 'button', command: 'remove', text: 'Remove', label: 'Remove · Open' };
+  }
+  if (session.primaryAction === 'review') return { kind: 'text', label: 'Review · Requeue' };
+  if (session.primaryAction === 'respond') return { kind: 'text', label: 'Respond · Open' };
+  if (session.primaryAction === 'inspect') return { kind: 'text', label: 'Inspect · Open' };
+  return { kind: 'text', label: 'Open' };
+}
+
+function stateLabel(session: WorkbenchSessionView) {
+  if (session.emailState === 'plan_ready') return 'Plan ready';
+  if (session.emailState === 'queued') return `Queued #${session.queuePosition ?? '-'}`;
+  if (session.emailState === 'running') return 'Running';
+  if (session.emailState === 'needs_input') return 'Needs input';
+  if (session.emailState === 'review_needed') return 'Review needed';
+  if (session.emailState === 'done') return 'Done';
+  if (session.emailState === 'failed') return 'Failed';
+  return 'Draft';
 }

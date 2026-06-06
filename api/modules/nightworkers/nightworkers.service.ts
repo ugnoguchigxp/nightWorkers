@@ -1138,11 +1138,16 @@ export async function patchImplementationQueueEntry(
   const entry = await repo.getImplementationQueueEntry(id);
   if (!entry) throw new NotFoundError('Queue Entry not found');
   if (input.action === 'cancel') {
-    return repo.updateImplementationQueueEntry(id, {
+    const cancelled = await repo.updateImplementationQueueEntry(id, {
       status: 'cancelled',
       statusReason: 'Cancelled by user.',
       processorSlot: null,
     });
+    const task = await repo.getTask(entry.taskId);
+    if (task?.status === 'queued') {
+      await repo.updateTask(entry.taskId, { status: 'ready' });
+    }
+    return cancelled;
   }
   if (input.action === 'resume') {
     if (entry.status !== 'needs_human') {
@@ -1181,6 +1186,59 @@ export async function archiveImplementationQueueEntry(id: string) {
   });
   void runImplementationQueue();
   return archived;
+}
+
+export async function requeueImplementationQueueEntry(id: string, input: { note?: string } = {}) {
+  const entry = await repo.getImplementationQueueEntry(id);
+  if (!entry) throw new NotFoundError('Queue Entry not found');
+  if (['queued', 'claimed', 'processing', 'awaiting_commit_decision'].includes(entry.status)) {
+    throw new AppError(
+      409,
+      'QUEUE_ENTRY_ALREADY_ACTIVE',
+      'Active Queue Entries cannot be requeued.'
+    );
+  }
+  const task = await repo.getTask(entry.taskId);
+  if (!task) throw new NotFoundError('Task not found');
+  if (task.status === 'cancelled') {
+    throw new AppError(409, 'TASK_CANCELLED', 'Cancelled sessions cannot be requeued.');
+  }
+
+  if (entry.status !== 'execution_archived') {
+    await repo.updateImplementationQueueEntry(id, {
+      status: 'execution_archived',
+      processorSlot: null,
+      archivedAt: new Date(),
+      statusReason: input.note?.trim() || entry.statusReason,
+    });
+  }
+
+  const queuedTask =
+    task.status === 'queued' ? task : await repo.updateTask(entry.taskId, { status: 'queued' });
+  if (!queuedTask) throw new NotFoundError('Task not found');
+  const nextEntry = await repo.createImplementationQueueEntry({
+    taskId: entry.taskId,
+    repositoryId: entry.repositoryId,
+    priority: entry.priority,
+    queuePosition: entry.queuePosition,
+  });
+  await repo.createTaskMessage({
+    taskId: entry.taskId,
+    role: 'system',
+    content: 'Implementation Queue entry requeued with preserved priority.',
+    messageType: 'text',
+    payloadJson: {
+      source: 'implementation_queue',
+      status: 'requeued',
+      previousQueueEntryId: entry.id,
+      queueEntryId: nextEntry.id,
+      priority: nextEntry.priority,
+      queuePosition: nextEntry.queuePosition,
+      note: input.note?.trim() || undefined,
+    },
+  });
+  void runImplementationQueue();
+  return nextEntry;
 }
 
 // --- Execution Orchestration (Runner Integration) ---
@@ -1544,6 +1602,20 @@ async function completeImplementationQueueEntryForRun(runId: string, status: str
   }
 }
 
+async function archiveImplementationQueueEntryForRun(runId: string) {
+  try {
+    const entry = await repo.getImplementationQueueEntryForRun(runId);
+    if (!entry || !['execution_completed', 'failed', 'cancelled'].includes(entry.status)) return;
+    await repo.updateImplementationQueueEntry(entry.id, {
+      status: 'execution_archived',
+      processorSlot: null,
+      archivedAt: new Date(),
+    });
+  } catch {
+    // Queue archive bookkeeping must not change the review outcome.
+  }
+}
+
 const pendingSessionQueueRepositoryIds = new Set<string>();
 let sessionQueueDrainPromise: Promise<void> | null = null;
 
@@ -1824,6 +1896,9 @@ export async function reviewTaskRun(runId: string, request: ReviewRunRequest) {
 
   await repo.updateTaskStatus(run.taskId, finalTaskStatus);
   await completeImplementationQueueEntryForRun(runId, finalTaskStatus);
+  if (finalTaskStatus === 'completed') {
+    await archiveImplementationQueueEntryForRun(runId);
+  }
   if (shouldContinueSessionQueue(finalTaskStatus)) {
     const reviewedTask = run.repositoryId ? null : await repo.getTask(run.taskId);
     const repositoryId = run.repositoryId || reviewedTask?.repositoryId;

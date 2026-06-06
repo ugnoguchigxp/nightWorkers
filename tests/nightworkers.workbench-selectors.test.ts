@@ -9,6 +9,8 @@ import type {
 } from '../src/modules/nightworkers/types';
 import {
   buildWorkbenchArtifactRefs,
+  buildWorkbenchSessionView,
+  getSessionEmailState,
   getSessionGroup,
   getSessionProgress,
   groupWorkbenchSessions,
@@ -206,6 +208,66 @@ describe('workbench selectors', () => {
     ]);
   });
 
+  it('derives email workbench state from queue entries and review evidence', () => {
+    const queued = buildWorkbenchSessionView(
+      { ...baseTask, status: 'ready' },
+      {
+        queueEntry: {
+          id: '88888888-8888-4888-8888-888888888888',
+          taskId: baseTask.id,
+          repositoryId: baseTask.repositoryId,
+          status: 'queued',
+          priority: 0,
+          queuePosition: 3,
+          createdAt: '2026-06-02T00:00:00.000Z',
+          updatedAt: '2026-06-02T00:00:00.000Z',
+        },
+      }
+    );
+    expect(queued.emailState).toBe('queued');
+    expect(queued.primaryAction).toBe('remove');
+
+    const reviewNeeded = buildWorkbenchSessionView(
+      { ...baseTask, status: 'completed' },
+      { latestRun: baseRun }
+    );
+    expect(reviewNeeded.emailState).toBe('review_needed');
+    expect(reviewNeeded.primaryAction).toBe('review');
+
+    const accepted = buildWorkbenchSessionView(
+      { ...baseTask, status: 'completed' },
+      { latestRun: baseRun, reviews: [approvedReview] }
+    );
+    expect(accepted.emailState).toBe('done');
+  });
+
+  it('treats implementation plan documents as plan-ready without keyword routing', () => {
+    const state = getSessionEmailState(
+      { ...baseTask, status: 'draft' },
+      {
+        messages: [
+          {
+            id: '99999999-9999-4999-8999-999999999999',
+            taskId: baseTask.id,
+            role: 'assistant',
+            content: '# Plan',
+            messageType: 'markdown_document',
+            metadataJson: { intent: 'implementation_plan' },
+            createdAt: '2026-06-02T00:00:01.000Z',
+          },
+        ],
+      }
+    );
+
+    expect(state).toBe('plan_ready');
+  });
+
+  it('uses queue dashboard plan-ready evidence without requiring inactive message hydration', () => {
+    expect(getSessionEmailState({ ...baseTask, status: 'draft' }, { planReady: true })).toBe(
+      'plan_ready'
+    );
+  });
+
   it('builds component design artifact refs from design tool messages', () => {
     const message: TaskMessage = {
       id: '44444444-4444-4444-8444-444444444446',
@@ -276,6 +338,25 @@ const baseRun: TaskRun = {
   startedAt: '2026-06-02T00:00:01.000Z',
   createdAt: '2026-06-02T00:00:01.000Z',
   updatedAt: '2026-06-02T00:00:02.000Z',
+};
+
+const approvedReview: ReviewResult = {
+  version: 1,
+  id: '66666666-6666-4666-8666-666666666667',
+  runId: baseRun.id,
+  taskId: baseTask.id,
+  reviewer: { type: 'human' },
+  action: 'complete',
+  verdict: 'approved',
+  statusBefore: 'needs_review',
+  statusAfter: 'completed',
+  outcome: { status: 'completed', reason: 'human_review', summary: 'Approved' },
+  evidenceRefs: [],
+  findings: [],
+  humanCallouts: [],
+  agentFollowUps: [],
+  suggestedNextTasks: [],
+  createdAt: '2026-06-02T00:00:03.000Z',
 };
 
 function view(task: Task, now?: unknown) {

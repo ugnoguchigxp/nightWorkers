@@ -133,6 +133,12 @@ export type NightWorkersWorkspaceState = {
   queueSession: (sessionId: string) => Promise<Task>;
   createImplementationQueueEntry: (sessionId: string) => Promise<void>;
   archiveImplementationQueueEntry: (entryId: string) => Promise<void>;
+  removeImplementationQueueEntry: (entryId: string) => Promise<void>;
+  requeueImplementationQueueEntry: (entryId: string, note?: string) => Promise<void>;
+  submitRunReview: (
+    runId: string,
+    input: { action: 'complete' | 'cancel'; note?: string }
+  ) => Promise<void>;
   updateImplementationQueueProcessorCount: (processorCount: number) => Promise<void>;
   updateTodoWorkflowSettings: (input: Partial<TodoWorkflowSettings>) => Promise<void>;
   updateSessionStatus: (sessionId: string, status: 'draft' | 'ready') => Promise<Task>;
@@ -552,6 +558,70 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     },
   });
 
+  const removeImplementationQueueEntryMutation = useMutation({
+    mutationFn: async (entryId: string) => {
+      const cancelRes = await apiFetch(`/api/implementation-queue/entries/${entryId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      });
+      if (!cancelRes.ok) throw new Error(await cancelRes.text());
+      const archiveRes = await apiFetch(`/api/implementation-queue/entries/${entryId}/archive`, {
+        method: 'POST',
+      });
+      if (!archiveRes.ok) throw new Error(await archiveRes.text());
+      return archiveRes.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+  });
+
+  const submitRunReviewMutation = useMutation({
+    mutationFn: async (input: {
+      runId: string;
+      data: { action: 'complete' | 'cancel'; note?: string };
+    }) => {
+      const res = await apiFetch(`/api/runs/${input.runId}/reviews`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input.data),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: (_result, input) => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
+      queryClient.invalidateQueries({ queryKey: ['sessionRuns'] });
+      queryClient.invalidateQueries({ queryKey: ['runDetails', input.runId] });
+      if (activeSessionId) {
+        queryClient.invalidateQueries({ queryKey: ['sessionRuns', activeSessionId] });
+      }
+    },
+  });
+
+  const requeueImplementationQueueEntryMutation = useMutation({
+    mutationFn: async (input: { entryId: string; note?: string }) => {
+      const res = await apiFetch(`/api/implementation-queue/entries/${input.entryId}/requeue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: input.note }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
+      queryClient.invalidateQueries({ queryKey: ['sessionRuns'] });
+      if (activeSessionId) {
+        queryClient.invalidateQueries({ queryKey: ['sessionRuns', activeSessionId] });
+      }
+    },
+  });
+
   const updateImplementationQueueProcessorCountMutation = useMutation({
     mutationFn: async (processorCount: number) => {
       const res = await apiFetch('/api/implementation-queue/settings', {
@@ -828,27 +898,60 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
         : [],
     [activeSession, latestRun, latestRunEvents, latestRunReviews, latestRunTodos, taskMessages]
   );
+  const queueEntryByTaskId = useMemo(() => {
+    const map = new Map<string, ImplementationQueueDashboard['queued'][number]>();
+    if (!implementationQueue) return map;
+    const processorEntries = implementationQueue.processors
+      .map((processor) => processor.entry)
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+    for (const entry of [
+      ...implementationQueue.queued,
+      ...processorEntries,
+      ...implementationQueue.completed,
+    ]) {
+      map.set(entry.taskId, entry);
+    }
+    return map;
+  }, [implementationQueue]);
+  const planReadyTaskIds = useMemo(
+    () => new Set((implementationQueue?.notQueued || []).map((item) => item.task.id)),
+    [implementationQueue]
+  );
   const activeSessionView = useMemo(
     () =>
       activeSession
         ? buildWorkbenchSessionView(activeSession, {
             latestRun,
+            queueEntry: queueEntryByTaskId.get(activeSession.id),
+            planReady: planReadyTaskIds.has(activeSession.id),
             todos: latestRunTodos,
             events: latestRunEvents,
             reviews: latestRunReviews,
             messages: taskMessages,
           })
         : null,
-    [activeSession, latestRun, latestRunEvents, latestRunReviews, latestRunTodos, taskMessages]
+    [
+      activeSession,
+      latestRun,
+      latestRunEvents,
+      latestRunReviews,
+      latestRunTodos,
+      planReadyTaskIds,
+      queueEntryByTaskId,
+      taskMessages,
+    ]
   );
   const sessionViews = useMemo(
     () =>
       sessions.map((session) =>
         session.id === activeSession?.id && activeSessionView
           ? activeSessionView
-          : buildWorkbenchSessionView(session)
+          : buildWorkbenchSessionView(session, {
+              queueEntry: queueEntryByTaskId.get(session.id),
+              planReady: planReadyTaskIds.has(session.id),
+            })
       ),
-    [activeSession?.id, activeSessionView, sessions]
+    [activeSession?.id, activeSessionView, planReadyTaskIds, queueEntryByTaskId, sessions]
   );
   const groupedSessionViews = useMemo(() => {
     const grouped: Record<string, ProjectSessionGroups> = {};
@@ -869,9 +972,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       let queuePosition = 0;
       groups.processing = sorted.processing;
       groups.queue = sorted.queue.map((session) => {
-        if (session.task.status !== 'queued') return { ...session, queuePosition: undefined };
+        if (session.emailState !== 'queued') return { ...session, queuePosition: undefined };
         queuePosition += 1;
-        return { ...session, queuePosition };
+        return { ...session, queuePosition: session.queueEntry?.queuePosition ?? queuePosition };
       });
       groups.archive = sorted.archive;
     }
@@ -1311,6 +1414,15 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     },
     archiveImplementationQueueEntry: async (entryId) => {
       await archiveImplementationQueueEntryMutation.mutateAsync(entryId);
+    },
+    removeImplementationQueueEntry: async (entryId) => {
+      await removeImplementationQueueEntryMutation.mutateAsync(entryId);
+    },
+    requeueImplementationQueueEntry: async (entryId, note) => {
+      await requeueImplementationQueueEntryMutation.mutateAsync({ entryId, note });
+    },
+    submitRunReview: async (runId, input) => {
+      await submitRunReviewMutation.mutateAsync({ runId, data: input });
     },
     updateImplementationQueueProcessorCount: async (processorCount) => {
       await updateImplementationQueueProcessorCountMutation.mutateAsync(processorCount);

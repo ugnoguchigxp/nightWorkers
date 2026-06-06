@@ -1,4 +1,5 @@
 import type {
+  ImplementationQueueEntry,
   ReviewResult,
   Task,
   TaskEvent,
@@ -37,6 +38,8 @@ const ACTIVE_RUN_STATUSES = new Set([
 
 type SessionEvidence = {
   latestRun?: TaskRun;
+  queueEntry?: ImplementationQueueEntry;
+  planReady?: boolean;
   todos?: TaskRunTodo[];
   events?: TaskEvent[];
   reviews?: ReviewResult[];
@@ -74,9 +77,11 @@ export function getSessionPhase(task: Task, evidence: SessionEvidence = {}): Wor
   if (latestRun && ['needs_human', 'blocked', 'timed_out'].includes(latestRun.status)) {
     return 'Needs Human';
   }
+  if (isReviewNeededSession(task, evidence)) return 'Reviewing';
   if (task.status === 'completed') return 'Completed';
   if (task.status === 'cancelled' || task.status === 'failed') return 'Archived';
   if (task.status === 'queued' || task.status === 'ready') return 'Queued';
+  if (evidence.queueEntry?.status === 'queued') return 'Queued';
   if (task.status === 'context_compiling' || latestRun?.status === 'context_compiling') {
     return 'Prompt Preparing';
   }
@@ -97,6 +102,62 @@ export function getSessionPhase(task: Task, evidence: SessionEvidence = {}): Wor
     return 'Implementing';
   }
   return 'Analyzing';
+}
+
+export function getSessionEmailState(
+  task: Task,
+  evidence: SessionEvidence = {}
+): WorkbenchSessionView['emailState'] {
+  const latestRun = evidence.latestRun;
+  const queueStatus = evidence.queueEntry?.status;
+  if (
+    task.status === 'needs_human' ||
+    task.status === 'blocked' ||
+    task.status === 'timed_out' ||
+    ['needs_human', 'blocked', 'timed_out'].includes(latestRun?.status || '') ||
+    queueStatus === 'needs_human'
+  ) {
+    return 'needs_input';
+  }
+  if (
+    task.status === 'failed' ||
+    task.status === 'cancelled' ||
+    latestRun?.status === 'failed' ||
+    queueStatus === 'failed' ||
+    queueStatus === 'cancelled'
+  ) {
+    return 'failed';
+  }
+  if (isReviewNeededSession(task, evidence)) return 'review_needed';
+  if (task.status === 'completed' || queueStatus === 'execution_archived') return 'done';
+  if (
+    ACTIVE_RUN_STATUSES.has(latestRun?.status || '') ||
+    PROCESSING_TASK_STATUSES.has(task.status) ||
+    ['claimed', 'processing', 'awaiting_commit_decision'].includes(queueStatus || '')
+  ) {
+    return 'running';
+  }
+  if (task.status === 'queued' || queueStatus === 'queued') return 'queued';
+  if (
+    task.status === 'ready' ||
+    evidence.planReady ||
+    hasImplementationPlanEvidence(evidence.messages || [])
+  ) {
+    return 'plan_ready';
+  }
+  return 'draft';
+}
+
+export function getSessionPrimaryAction(
+  state: WorkbenchSessionView['emailState']
+): WorkbenchSessionView['primaryAction'] {
+  if (state === 'plan_ready') return 'queue';
+  if (state === 'queued') return 'remove';
+  if (state === 'running') return 'open_run';
+  if (state === 'needs_input') return 'respond';
+  if (state === 'review_needed') return 'review';
+  if (state === 'failed') return 'inspect';
+  return 'open';
 }
 
 export function getSessionProgress(
@@ -223,9 +284,13 @@ export function buildWorkbenchSessionView(
 ): WorkbenchSessionView {
   const progress = getSessionProgress(task, evidence);
   const latestEvent = (evidence.events || []).at(-1);
+  const emailState = getSessionEmailState(task, evidence);
   return {
     task,
     group: getSessionGroup(task, evidence.latestRun),
+    emailState,
+    primaryAction: getSessionPrimaryAction(emailState),
+    queueEntry: evidence.queueEntry,
     phase: progress.phase,
     progress,
     latestRun: evidence.latestRun,
@@ -348,6 +413,39 @@ function inferDocumentArtifactKind(message: TaskMessage): WorkbenchArtifactKind 
   if (intent === 'draft_spec') return 'spec';
   if (intent === 'implementation_plan') return 'implementation_plan';
   return 'spec';
+}
+
+function hasImplementationPlanEvidence(messages: TaskMessage[]) {
+  return messages.some((message) => {
+    if (message.messageType !== 'markdown_document') return false;
+    const intent = message.metadataJson?.intent;
+    return (
+      intent === 'implementation_plan' || intent === 'draft_spec' || intent === 'app_blueprint'
+    );
+  });
+}
+
+function isReviewNeededSession(task: Task, evidence: SessionEvidence = {}) {
+  const latestRun = evidence.latestRun;
+  const queueStatus = evidence.queueEntry?.status;
+  if (!latestRun) return task.status === 'needs_review' || queueStatus === 'execution_completed';
+  const runTerminal = ['completed', 'needs_review'].includes(latestRun.status);
+  const hasFinalReport = Boolean(latestRun.finalReport?.trim());
+  const hasEvidence = Boolean(
+    latestRun.diffPatch?.trim() ||
+      latestRun.testResults ||
+      evidence.events?.length ||
+      latestRun.finalReport?.trim()
+  );
+  const accepted = (evidence.reviews || []).some(
+    (review) => review.verdict === 'approved' || review.statusAfter === 'completed'
+  );
+  return (
+    !accepted &&
+    (task.status === 'needs_review' ||
+      queueStatus === 'execution_completed' ||
+      (runTerminal && hasFinalReport && hasEvidence))
+  );
 }
 
 function artifactTitleForKind(kind: WorkbenchArtifactKind, message: TaskMessage): string {

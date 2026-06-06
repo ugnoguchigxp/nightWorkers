@@ -11,7 +11,11 @@ import {
   createTaskSchema,
   overviewDashboardSchema,
   repositorySchema,
+  reviewActionSchema,
+  reviewEvidenceRefSchema,
   reviewerEvaluationSchema,
+  reviewFindingSchema,
+  reviewResultSchema,
   taskEventSchema,
   taskLlmUsageSummarySchema,
   taskMessageSchema,
@@ -775,6 +779,29 @@ const archiveImplementationQueueEntryRoute = createRoute({
   },
 });
 
+const requeueImplementationQueueEntryRoute = createRoute({
+  method: 'post',
+  path: '/implementation-queue/entries/:id/requeue',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            note: z.string().optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      content: { 'application/json': { schema: implementationQueueEntrySchema } },
+      description: 'Implementation Queue Entry requeued with preserved priority',
+    },
+  },
+});
+
 const drainImplementationQueueRoute = createRoute({
   method: 'post',
   path: '/implementation-queue/drain',
@@ -1158,6 +1185,49 @@ const createReviewerEvaluationRoute = createRoute({
         },
       },
       description: 'Reviewer evaluation created successfully',
+    },
+    404: {
+      description: 'Run not found',
+    },
+  },
+});
+
+const createRunReviewRoute = createRoute({
+  method: 'post',
+  path: '/runs/:id/reviews',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'run-uuid' }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            action: reviewActionSchema,
+            note: z.string().optional(),
+            evidenceRefs: z.array(reviewEvidenceRefSchema).optional(),
+            findings: z.array(reviewFindingSchema).optional(),
+            humanCallouts: z.array(reviewFindingSchema).optional(),
+            agentFollowUps: z.array(z.string()).optional(),
+            suggestedNextTasks: z.array(z.string()).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            ok: z.boolean(),
+            status: z.string(),
+            outcome: z.unknown(),
+            reviewResult: reviewResultSchema,
+          }),
+        },
+      },
+      description: 'Human run review saved',
     },
     404: {
       description: 'Run not found',
@@ -1610,6 +1680,17 @@ const router = createOpenApiRouter()
       return queueRouteError(c, err);
     }
   })
+  .openapi(requeueImplementationQueueEntryRoute, async (c) => {
+    try {
+      const entry = await service.requeueImplementationQueueEntry(
+        c.req.param('id'),
+        c.req.valid('json')
+      );
+      return c.json(entry, 201);
+    } catch (err: any) {
+      return queueRouteError(c, err);
+    }
+  })
   .openapi(drainImplementationQueueRoute, async (c) => {
     try {
       const started = await service.runImplementationQueue();
@@ -1757,6 +1838,19 @@ const router = createOpenApiRouter()
     try {
       const events = await service.listTaskRunActivityEvents(id, c.req.valid('query'));
       return c.json(events, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(createRunReviewRoute, async (c) => {
+    const id = c.req.param('id');
+    const request = c.req.valid('json');
+    try {
+      const result = await service.reviewTaskRun(id, request);
+      return c.json(result, 200);
     } catch (err: any) {
       if (err instanceof AppError) {
         return c.json({ error: err.message, code: err.code }, err.statusCode as any);

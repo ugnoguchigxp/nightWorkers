@@ -1,5 +1,53 @@
 # NightShift Email Workbench Implementation Plan
 
+## 実装ステータス
+
+Status: **MVP implemented / Future phases deferred**
+
+この設計書のうち、NightShift Email Workbench として必要な最小運用ループは実装済み。
+
+```text
+Session で実装計画を作る
+  -> NightShift に追加する
+    -> Queue Entry として実行する
+      -> Review needed として朝レビューする
+        -> 満足なら Accept
+        -> 不満なら元の priority / queue position を尊重して優先再投入する
+        -> 採用しない場合は Queue execution を Archive する
+```
+
+実装済み範囲:
+
+- Project / Session の親子関係を維持した Email ライクな Session list。
+- Session row の `plan_ready` / `queued` / `running` / `needs_input` / `review_needed` / `done` / `failed` 表示。
+- Project 内 NightShift summary。
+- Right Workbench の plan-ready / queued / review-needed banner。
+- NightShift admission と `implementation_queue_entries` 作成の統合。
+- Queue から外しても Session を保持する処理。
+- completed run を `review_needed` として扱う derived state。
+- human review submit API。
+- Accept 後の Queue execution archive。
+- stopped Queue Entry の requeue API。
+- requeue 時に元の `priority` / `queuePosition` を維持する処理。
+- contextStill 未接続を前提にした軽量 Decision support UI。
+
+明示的に後続へ回す範囲:
+
+- Phase 5: phase-based Model Routing の global defaults。
+- Phase 6: Session / Queue Entry model override。
+- Phase 7: Attention 補助ビュー。
+- reviewChecklist の重い永続化。
+- request fix を専用 workflow として保存・再投入する詳細導線。
+- contextStill への decision packet / feedback 送信本体。
+
+後続へ回す理由:
+
+- MVP の価値は、実装計画から夜間実行、朝レビュー、優先再投入までの一本線が動くことにある。
+- Model Routing と override は provider/model 解決、Settings UI、usage evidence、migration を伴う別の設計判断である。
+- Attention は Project / Session 主構造を壊さない read model 設計が必要であり、急いで入れると専用 Queue board に戻りやすい。
+- reviewChecklist は、人間レビューを重くしない方針と衝突しやすいため、軽量 review result と将来の自動コードレビュー結果の関係を先に整理する。
+- contextStill 連携は contextStill 側の decision advice 機能が未実装であり、現時点では UI / service 境界だけを準備する。
+
 ## 目的
 
 NightWorkers の Workbench を、Project と Session の親子関係を維持した Email ライクな UI に寄せる。
@@ -282,6 +330,39 @@ review 結果:
 | Requeue | 同じ Session を新しい Queue Entry として再投入 |
 | Archive | Queue execution を archive し、Session は保持 |
 
+### Decision Support / contextStill 連携準備
+
+contextStill に実行結果の判断を委ねる機能はまだ存在しない。そのため初期実装では、
+判断そのものは人間が行う。ただし UI と service 境界は、将来 contextStill advice を差し込める
+形にしておく。
+
+右側 Workbench には軽量な Decision support panel を置く。
+
+```text
+Decision support
+contextStill advice は未接続です。いまは人間が結果を確認し、満足なら Accept、
+修正が必要なら優先再投入を選びます。
+
+state: review_needed · queue: execution_completed · priority: 9 · position: #2
+[Accept] [優先再投入] [Archive]
+```
+
+この panel は重い review checklist ではない。AI によるコードレビューや Todo 検証は
+実行プロセス側で行い、ユーザーは成果物を見て「満足 / 不満 / 採用しない / 再投入」
+程度の最終判断を行う。
+
+将来 contextStill 連携を追加する場合は、次の情報を decision packet として渡す。
+
+- Session / Queue Entry / Run の状態。
+- final report、diff、test result、human note の参照。
+- 現在止まっている理由。
+- 選択可能な action: accept、request_fix、requeue、archive。
+- 依存 Queue がある可能性と、requeue は元の priority / queue position を尊重する方針。
+
+contextStill の回答は pros / cons / recommended action として panel に表示する。最終的な
+accept / failure / user satisfaction は review result として保存し、後続で contextStill に
+feedback できるようにする。
+
 ## フェーズ別 LLM Model Routing
 
 NightWorkers は単一 active model だけではなく、フェーズ別モデル routing を持つ。
@@ -440,6 +521,8 @@ reviewChecklist は計画の一部として扱い、UI と persistence の両方
 
 ### Phase 0: 現状差分と用語を固定する
 
+Status: **implemented**
+
 目的: 既存 Queue 計画と今回の Email Workbench 方針の差分を明文化する。
 
 作業:
@@ -460,6 +543,8 @@ Exit:
 - 用語の衝突が整理されている。
 
 ### Phase 1: Project / Session Pane を Email ライクに整理する
+
+Status: **implemented**
 
 目的: Project と Session の親子関係を維持したまま、Session list に Queue state を統合する。
 
@@ -486,6 +571,8 @@ Exit:
 
 ### Phase 2: Right Workbench を永続主面として固定する
 
+Status: **implemented**
+
 目的: AI と会話して実装計画へ到達する導線を維持する。
 
 作業:
@@ -508,6 +595,8 @@ Exit:
 - Chat と Prompt Composer が Queue / NightShift 操作で潰れない。
 
 ### Phase 3: NightShift admission と Queue state を統合する
+
+Status: **implemented**
 
 目的: Session を NightShift に入れる操作を、Queue Entry 作成と対応させる。
 
@@ -534,16 +623,19 @@ Exit:
 
 ### Phase 4: 未レビュー完了タスクを Review needed として扱う
 
+Status: **implemented as lightweight MVP**
+
 目的: 夜間実行完了後、朝レビューの対象を明確にする。
 
 作業:
 
 1. completed / failed / needs_human などの terminal run から、review-needed に出す対象を derived state として定義する。
-2. final report / diff / verification evidence を reviewChecklist に変換する。
+2. final report / diff / verification evidence を軽量 Decision support と review result の evidence として扱う。
 3. Workbench に review-needed banner を出す。
 4. Session row に `Review needed` と primary action `Review` を出す。
 5. accept / request fix / requeue / archive の処理を整理する。
-6. review result の保存先を、専用 table 追加または既存 review-results service への統合として決める。
+6. review result は既存 review-results service へ統合する。
+7. request fix は初期実装では「優先再投入」として扱い、専用 workflow 化は後続に回す。
 
 検証:
 
@@ -558,6 +650,8 @@ Exit:
 - review action 後の状態遷移が一貫している。
 
 ### Phase 5: フェーズ別 Model Routing の global defaults を追加する
+
+Status: **deferred**
 
 目的: 計画作成、夜間実装、テスト実装、最終レビューでモデルを使い分ける。
 
@@ -584,7 +678,13 @@ Exit:
 - phase ごとに provider/model が解決される。
 - usage evidence から phase と routing source が追える。
 
+Deferred reason:
+
+- provider/model 解決、Settings UI、usage evidence、prompt/workflow phase の責務境界を同時に変更するため、Email Workbench MVP とは別の設計単位として扱う。
+
 ### Phase 6: Session / Queue Entry override を追加する
+
+Status: **deferred**
 
 目的: global default を基本にしつつ、個別 Session / Queue Entry だけモデル設定を変えられるようにする。
 
@@ -609,7 +709,13 @@ Exit:
 
 - Queue Entry override > Session override > Project override > Global default > fallback が守られる。
 
+Deferred reason:
+
+- 保存先と migration 方針を決める必要があり、Model Routing global defaults の後に実装する方が安全。
+
 ### Phase 7: Attention 補助ビューを検討する
+
+Status: **deferred**
 
 目的: Project / Session 構造を壊さず、人間の目が必要なものを横断的に集める。
 
@@ -631,6 +737,10 @@ Exit:
 
 - Attention が Project / Session 主構造を壊さない。
 
+Deferred reason:
+
+- Attention は便利だが、Project / Session 主構造を弱めるリスクがあるため、read model と遷移設計を別途固定してから入れる。
+
 ## 実装上の注意
 
 - Queue state と Session state を同じ enum に潰さない。
@@ -643,12 +753,21 @@ Exit:
 
 ## 完了条件
 
+### MVP 完了条件
+
 - Project / Session の親子関係が UI 上で維持されている。
 - Session list が Email ライクに圧縮され、Queue state を表示できる。
 - NightShift が Project 内 Session view / operation として扱われている。
 - 右側 Workbench の Chat と Prompt Composer が常時維持されている。
 - 未レビュー完了タスクが `review_needed` として朝レビュー対象になる。
-- reviewChecklist が共通 shape で persistence できる。
-- phase-based model routing の global default が定義されている。
-- Session / Queue Entry override の優先順位が明記されている。
+- review action 後の Accept / Archive / 優先再投入が一貫して動く。
+- contextStill 未接続を明示した Decision support UI がある。
 - `pnpm lint` と対象 test が通る。
+
+### Future phase 完了条件
+
+- phase-based model routing の global default が定義されている。
+- Session / Queue Entry override の優先順位が実装・検証されている。
+- reviewChecklist または自動コードレビュー結果の永続化方針が、人間レビューを重くしない形で定義されている。
+- Attention が Project / Session 主構造を壊さずに実装されている。
+- contextStill decision advice と user feedback が連携されている。

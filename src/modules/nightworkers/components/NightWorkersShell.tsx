@@ -165,13 +165,6 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     props.onOpenFolderBrowser();
     void workspaceRef.current.fetchDirectories(selectedPath || undefined);
   }, [props.onOpenFolderBrowser, selectedPath]);
-  const handleOpenQueue = useCallback((projectId: string) => {
-    setSelectedArtifact(null);
-    setShowArtifactPane(false);
-    setQueueProjectFilterId(projectId);
-    setShowQueueScreen(true);
-    setShowOverviewScreen(false);
-  }, []);
   const handleOpenOverview = useCallback(() => {
     setSelectedArtifact(null);
     setShowArtifactPane(false);
@@ -214,7 +207,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
             onToggleProject={handleToggleProject}
             onOpenOverview={handleOpenOverview}
             isOverviewActive={showOverviewScreen && !props.showSettings}
-            onOpenQueue={handleOpenQueue}
+            onQueueSession={workspace.createImplementationQueueEntry}
+            onRemoveQueueEntry={workspace.removeImplementationQueueEntry}
             onOpenFolderBrowser={handleOpenFolderBrowser}
           />
         </Panel>
@@ -251,6 +245,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
           ) : (
             <ThreadWorkspace
               activeSession={workspace.activeSession}
+              sessionView={workspace.activeSessionView}
               activeProject={workspace.activeProject}
               runs={workspace.activeSessionRuns}
               latestRun={workspace.latestRun}
@@ -287,6 +282,30 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               onDeleteSession={() => {
                 if (!workspace.activeSession) return;
                 workspace.deleteSession(workspace.activeSession.id);
+              }}
+              onQueueSession={() => {
+                if (!workspace.activeSession) return;
+                void workspace.createImplementationQueueEntry(workspace.activeSession.id);
+              }}
+              onRemoveQueueEntry={() => {
+                const entryId = workspace.activeSessionView?.queueEntry?.id;
+                if (!entryId) return;
+                void workspace.removeImplementationQueueEntry(entryId);
+              }}
+              onSubmitReview={(action, note) => {
+                const runId = workspace.latestRun?.id;
+                if (!runId) return;
+                void workspace.submitRunReview(runId, { action, note });
+              }}
+              onRequeueQueueEntry={(note) => {
+                const entryId = workspace.activeSessionView?.queueEntry?.id;
+                if (!entryId) return;
+                void workspace.requeueImplementationQueueEntry(entryId, note);
+              }}
+              onArchiveQueueExecution={() => {
+                const entryId = workspace.activeSessionView?.queueEntry?.id;
+                if (!entryId) return;
+                void workspace.archiveImplementationQueueEntry(entryId);
               }}
               onOpenArtifact={setSelectedArtifact}
               isProjectFilesOpen={artifactPaneOpen && showArtifactPane && !selectedArtifact}

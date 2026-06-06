@@ -200,7 +200,18 @@ export type WorkbenchArtifactRef = {
 export type WorkbenchSessionView = {
   task: Task;
   group: WorkbenchSessionGroup;
+  emailState:
+    | 'draft'
+    | 'plan_ready'
+    | 'queued'
+    | 'running'
+    | 'needs_input'
+    | 'review_needed'
+    | 'done'
+    | 'failed';
+  primaryAction: 'open' | 'queue' | 'remove' | 'open_run' | 'respond' | 'review' | 'inspect';
   queuePosition?: number;
+  queueEntry?: ImplementationQueueEntry;
   phase: WorkbenchPhase;
   progress: WorkbenchProgressSnapshot;
   latestRun?: TaskRun;

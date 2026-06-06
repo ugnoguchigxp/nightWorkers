@@ -1339,6 +1339,7 @@ export function ThinkingIndicator() {
       aria-label={t('timeline.thinking')}
       role="status"
     >
+      <span className="sr-only">AIが返答を生成中です</span>
       {[0, 1, 2].map((dot) => (
         <span
           key={dot}

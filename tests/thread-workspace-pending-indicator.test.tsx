@@ -4,6 +4,7 @@ import { ThreadWorkspace } from '../src/modules/nightworkers/components/ThreadWo
 
 const baseProps = {
   activeSession: null,
+  sessionView: null,
   activeProject: null,
   runs: [],
   latestRun: undefined,
@@ -25,7 +26,13 @@ const baseProps = {
   onOpenBlueprintArtifact: vi.fn(),
   isBlueprintArtifactOpen: false,
   isBlueprintActionBusy: false,
+  isDiffArtifactOpen: false,
   onDeleteSession: vi.fn(),
+  onQueueSession: vi.fn(),
+  onRemoveQueueEntry: vi.fn(),
+  onSubmitReview: vi.fn(),
+  onRequeueQueueEntry: vi.fn(),
+  onArchiveQueueExecution: vi.fn(),
   onOpenArtifact: vi.fn(),
   isProjectFilesOpen: false,
   onOpenProjectFiles: vi.fn(),

@@ -585,6 +585,122 @@ describe('NightWorkers workbench routes', () => {
     expect((await duplicateRes.json()).code).toBe('QUEUE_ENTRY_EXISTS');
   });
 
+  it('removes a queued Implementation Queue Entry without leaving the Session queued', async () => {
+    const { task } = await createWorkbenchTask({ status: 'ready' });
+    const createRes = await app.request('http://localhost/api/implementation-queue/entries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ taskId: task.id }),
+    });
+    expect(createRes.status).toBe(201);
+    const entry = await createRes.json();
+
+    const cancelRes = await app.request(
+      `http://localhost/api/implementation-queue/entries/${entry.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+        body: JSON.stringify({ action: 'cancel' }),
+      }
+    );
+    expect(cancelRes.status).toBe(200);
+    expect((await cancelRes.json()).status).toBe('cancelled');
+    expect((await repo.getTask(task.id))?.status).toBe('ready');
+
+    const archiveRes = await app.request(
+      `http://localhost/api/implementation-queue/entries/${entry.id}/archive`,
+      {
+        method: 'POST',
+        headers: sameOriginHeaders,
+      }
+    );
+    expect(archiveRes.status).toBe(200);
+    expect((await archiveRes.json()).status).toBe('execution_archived');
+
+    const dashboardRes = await app.request('http://localhost/api/implementation-queue', {
+      headers: sameOriginHeaders,
+    });
+    expect(dashboardRes.status).toBe(200);
+    const dashboard = await dashboardRes.json();
+    expect(dashboard.queued.map((queueEntry: any) => queueEntry.task.id)).not.toContain(task.id);
+    expect(dashboard.notQueued.map((item: any) => item.task.id)).toContain(task.id);
+  });
+
+  it('accepts a reviewed queue execution and archives the Queue Entry', async () => {
+    const { task } = await createWorkbenchTask({ status: 'needs_review' });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+      status: 'needs_review',
+      workerKind: 'native-local',
+      summary: 'Runtime result captured.',
+      finalReport: 'Final report ready.',
+      startedAt: new Date(),
+      endedAt: new Date(),
+      finishedAt: new Date(),
+    });
+    await repo.updateTaskRun(run.id, {
+      diffPatch: 'diff --git a/file.ts b/file.ts',
+      testResults: { passed: true },
+    });
+    const entry = await repo.createImplementationQueueEntry({
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+    });
+    await repo.updateImplementationQueueEntry(entry.id, {
+      status: 'execution_completed',
+      activeRunId: run.id,
+    });
+
+    const reviewRes = await app.request(`http://localhost/api/runs/${run.id}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ action: 'complete', note: 'Accepted from test.' }),
+    });
+
+    expect(reviewRes.status).toBe(200);
+    const reviewBody = await reviewRes.json();
+    expect(reviewBody.reviewResult.verdict).toBe('approved');
+    expect((await repo.getTask(task.id))?.status).toBe('completed');
+    expect((await repo.getImplementationQueueEntry(entry.id))?.status).toBe('execution_archived');
+  });
+
+  it('requeues a stopped Queue Entry with its original priority', async () => {
+    const { task } = await createWorkbenchTask({ status: 'needs_human' });
+    await repo.updateTask(task.id, { priority: 9 });
+    const entry = await repo.createImplementationQueueEntry({
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+      priority: 9,
+      queuePosition: 2,
+    });
+    await repo.updateImplementationQueueEntry(entry.id, {
+      status: 'needs_human',
+      statusReason: 'Need human answer.',
+    });
+
+    const res = await app.request(
+      `http://localhost/api/implementation-queue/entries/${entry.id}/requeue`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+        body: JSON.stringify({ note: 'Answered by human.' }),
+      }
+    );
+
+    expect(res.status).toBe(201);
+    const nextEntry = await res.json();
+    expect(nextEntry.id).not.toBe(entry.id);
+    expect(nextEntry).toMatchObject({
+      taskId: task.id,
+      status: 'queued',
+      priority: 9,
+      queuePosition: 2,
+    });
+    expect((await repo.getImplementationQueueEntry(entry.id))?.status).toBe('execution_archived');
+    expect((await repo.getTask(task.id))?.status).toBe('queued');
+  });
+
   it('routes design tool intent through LLM intake instead of fixed component artifacts', async () => {
     vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
       mockJobSelection('docs', 'Analyze the requested component design.')
