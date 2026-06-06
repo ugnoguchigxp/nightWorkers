@@ -340,6 +340,23 @@ export function buildWorkbenchArtifactRefs(input: {
 }): WorkbenchArtifactRef[] {
   const refs: WorkbenchArtifactRef[] = [];
   const run = input.latestRun;
+  const blueprintMessages = (input.messages || []).filter(
+    (message) =>
+      message.messageType === 'markdown_document' &&
+      (message.metadataJson?.intent === 'app_blueprint' || message.metadataJson?.appBlueprint)
+  );
+  if (blueprintMessages.length > 0) {
+    refs.push({
+      id: `blueprint-workspace-${input.task.id}`,
+      taskId: input.task.id,
+      kind: 'blueprint_workspace',
+      title: 'Blueprint Specification',
+      summary: `${blueprintMessages.length} Blueprint artifact${blueprintMessages.length === 1 ? '' : 's'}`,
+      source: { type: 'task_message', messageId: blueprintMessages.at(-1)?.id || '' },
+      createdAt: String(blueprintMessages.at(-1)?.createdAt || input.task.updatedAt),
+      metadata: { blueprintCount: blueprintMessages.length },
+    });
+  }
   for (const message of input.messages || []) {
     if (message.messageType !== 'markdown_document') continue;
     const kind = inferDocumentArtifactKind(message);
@@ -451,10 +468,12 @@ function isReviewNeededSession(task: Task, evidence: SessionEvidence = {}) {
 function artifactTitleForKind(kind: WorkbenchArtifactKind, message: TaskMessage): string {
   const metadataTitle = message.metadataJson?.title;
   if (typeof metadataTitle === 'string' && metadataTitle.trim()) {
+    if (kind === 'blueprint_workspace') return `Blueprint Specification: ${metadataTitle}`;
     if (kind === 'app_blueprint') return `Blueprint: ${metadataTitle}`;
     if (kind === 'component_design') return `Component: ${metadataTitle}`;
     if (kind === 'design_delta') return `Design Delta: ${metadataTitle}`;
   }
+  if (kind === 'blueprint_workspace') return 'Blueprint Specification';
   if (kind === 'app_blueprint') return 'App Blueprint';
   if (kind === 'component_design') return 'Component Design';
   if (kind === 'design_delta') return 'Design Delta';

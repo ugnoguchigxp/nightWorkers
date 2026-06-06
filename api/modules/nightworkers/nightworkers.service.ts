@@ -1,6 +1,15 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import {
+  type BlueprintSpecificationWorkspace,
+  type DesignDecisionReview,
+  type DesignQuestionnaire,
+  type DesignQuestionnaireAnswer,
+  designDecisionReviewSchema,
+  designQuestionnaireAnswerSchema,
+  designQuestionnaireSchema,
+} from '../../../shared/schemas/design-questionnaire.schema';
 import { AppError, NotFoundError } from '../../lib/errors';
 import { getCurrentSettings } from '../../routes/settings';
 import { createLedgerSink } from '../../services/agent-runtime/ledger-sink';
@@ -45,6 +54,7 @@ import { decideRunOutcome } from '../../services/run-control/run-outcome-gate';
 import { serializeRunToJsonl } from '../../services/run-events/jsonl-export';
 import { nativeLocalRunner } from '../../services/runner/NativeLocalRunner';
 import {
+  callStructuredJsonLLM,
   callSupervisorLLM,
   type SupervisorLlmDebugEvent,
 } from '../../services/supervisor/llm-provider';
@@ -405,6 +415,256 @@ export async function saveBlueprintDesignTokenAdoption(
   adopted: boolean
 ) {
   return saveBlueprintAdoption('designTokens', taskId, messageId, adopted);
+}
+
+export async function createDesignQuestionnaire(taskId: string, sourceBlueprintMessageId: string) {
+  const { task, sourceBlueprintMessage } = await getQuestionnaireTaskAndBlueprint(
+    taskId,
+    sourceBlueprintMessageId
+  );
+  const session = await repo.createDesignQuestionnaireSession({
+    taskId,
+    repositoryId: task.repositoryId,
+    sourceBlueprintMessageId,
+    status: 'draft',
+  });
+  const rawOutput = await generateDesignQuestionnaireRawOutput({
+    taskId,
+    repositoryId: task.repositoryId,
+    sourceBlueprintMessage,
+  }).catch(async (error) => {
+    const rawContent = (error as Error & { rawContent?: string }).rawContent;
+    if (rawContent?.trim()) return rawContent;
+    throw error;
+  });
+  const parsed = parseDesignQuestionnaireRaw(rawOutput);
+  if (parsed.ok) {
+    await repo.createDesignQuestionnaireQuestionSet({
+      sessionId: session.id,
+      sequence: 1,
+      questionnaireJson: parsed.value,
+      rawOutput,
+      validationStatus: 'valid',
+    });
+    await repo.updateDesignQuestionnaireSessionStatus(session.id, 'answering');
+  } else {
+    await repo.createDesignQuestionnaireQuestionSet({
+      sessionId: session.id,
+      sequence: 1,
+      rawOutput,
+      validationStatus: 'invalid',
+    });
+    await repo.updateDesignQuestionnaireSessionStatus(session.id, 'needs_edit');
+  }
+  return getDesignQuestionnaireSession(taskId, session.id);
+}
+
+export async function listDesignQuestionnaires(taskId: string) {
+  const task = await repo.getTask(taskId);
+  if (!task) throw new NotFoundError('Task not found');
+  const sessions = await repo.listDesignQuestionnaireSessionsForTask(taskId);
+  return Promise.all(sessions.map((session) => buildDesignQuestionnaireSessionView(session.id)));
+}
+
+export async function getDesignQuestionnaireSession(taskId: string, sessionId: string) {
+  const session = await buildDesignQuestionnaireSessionView(sessionId);
+  if (session.taskId !== taskId) throw new NotFoundError('Questionnaire session not found');
+  return session;
+}
+
+export async function saveDesignQuestionnaireAnswers(
+  taskId: string,
+  sessionId: string,
+  answers: DesignQuestionnaireAnswer[]
+) {
+  const session = await getDesignQuestionnaireSession(taskId, sessionId);
+  const questionIds = new Set(getSessionQuestions(session).map((question: any) => question.id));
+  for (const answer of answers) {
+    const parsed = designQuestionnaireAnswerSchema.parse(answer);
+    if (!questionIds.has(parsed.questionId)) {
+      throw new AppError(422, 'UNKNOWN_QUESTION', `Unknown question id: ${parsed.questionId}`);
+    }
+    await repo.upsertDesignQuestionnaireAnswer({
+      sessionId,
+      questionId: parsed.questionId,
+      answerJson: parsed,
+    });
+  }
+  const updatedAnswers = await repo.listDesignQuestionnaireAnswers(sessionId);
+  const updatedAnswerViews = updatedAnswers.map((answer) => ({
+    questionId: answer.questionId,
+    answer: designQuestionnaireAnswerSchema.parse(answer.answerJson),
+  }));
+  const requiredQuestionIds = getAnswerableSessionQuestions(session, updatedAnswerViews).map(
+    (question: any) => question.id
+  );
+  const answeredQuestionIds = new Set(updatedAnswerViews.map((answer) => answer.questionId));
+  const nextStatus =
+    requiredQuestionIds.length > 0 &&
+    requiredQuestionIds.every((questionId: string) => answeredQuestionIds.has(questionId))
+      ? 'review_ready'
+      : 'answering';
+  await repo.updateDesignQuestionnaireSessionStatus(sessionId, nextStatus);
+  return getDesignQuestionnaireSession(taskId, sessionId);
+}
+
+export async function generateDesignQuestionnaireFollowUp(taskId: string, sessionId: string) {
+  const session = await getDesignQuestionnaireSession(taskId, sessionId);
+  const rawOutput = await generateDesignQuestionnaireFollowUpRawOutput(session);
+  const parsed = parseDesignQuestionnaireRaw(rawOutput);
+  const nextSequence =
+    session.questionSets.reduce((max, set) => Math.max(max, set.sequence), 0) + 1;
+  await repo.createDesignQuestionnaireQuestionSet({
+    sessionId,
+    sequence: nextSequence,
+    questionnaireJson: parsed.ok ? parsed.value : undefined,
+    rawOutput,
+    validationStatus: parsed.ok ? 'valid' : 'invalid',
+  });
+  await repo.updateDesignQuestionnaireSessionStatus(
+    sessionId,
+    parsed.ok ? 'answering' : 'needs_edit'
+  );
+  return getDesignQuestionnaireSession(taskId, sessionId);
+}
+
+export async function generateDesignQuestionnaireReview(taskId: string, sessionId: string) {
+  const session = await getDesignQuestionnaireSession(taskId, sessionId);
+  const rawOutput = await generateDesignQuestionnaireReviewRawOutput(session);
+  const parsed = parseDesignDecisionReviewRaw(rawOutput);
+  const review = await repo.createDesignQuestionnaireReview({
+    sessionId,
+    reviewJson: parsed.ok ? parsed.value : null,
+    status: parsed.ok ? 'draft' : 'needs_edit',
+  });
+  await repo.updateDesignQuestionnaireSessionStatus(
+    sessionId,
+    parsed.ok ? 'review_ready' : 'needs_edit'
+  );
+  return {
+    session: await getDesignQuestionnaireSession(taskId, sessionId),
+    reviewId: review.id,
+    rawOutput,
+    validationStatus: parsed.ok ? 'valid' : 'invalid',
+  };
+}
+
+export async function acceptDesignQuestionnaireReview(taskId: string, sessionId: string) {
+  const session = await getDesignQuestionnaireSession(taskId, sessionId);
+  const latestDraft = session.reviews.find((review) => review.status === 'draft' && review.review);
+  if (!latestDraft?.review) {
+    throw new AppError(422, 'NO_REVIEW_DRAFT', 'A draft Decision Review is required.');
+  }
+  const message = await repo.createTaskMessage({
+    taskId,
+    role: 'assistant',
+    content: renderDesignDecisionReviewMarkdown(latestDraft.review),
+    messageType: 'markdown_document',
+    payloadJson: {
+      intent: 'design_decision_review',
+      title: latestDraft.review.title,
+      designDecisionReview: latestDraft.review,
+      source: 'design-questionnaire',
+      sourceBlueprintMessageId: session.sourceBlueprintMessageId,
+      questionnaireSessionId: session.id,
+    },
+  });
+  await repo.updateDesignQuestionnaireReview(latestDraft.id, {
+    status: 'accepted',
+    publishedMessageId: message.id,
+  });
+  await repo.updateDesignQuestionnaireSessionStatus(sessionId, 'accepted');
+  return getDesignQuestionnaireSession(taskId, sessionId);
+}
+
+export async function leaveDesignQuestionnaireReviewUnadopted(taskId: string, sessionId: string) {
+  const session = await getDesignQuestionnaireSession(taskId, sessionId);
+  const latestReview = session.reviews[0];
+  if (latestReview) {
+    await repo.updateDesignQuestionnaireReview(latestReview.id, { status: 'left_unadopted' });
+  }
+  await repo.updateDesignQuestionnaireSessionStatus(sessionId, 'needs_edit');
+  return getDesignQuestionnaireSession(taskId, sessionId);
+}
+
+export async function getBlueprintSpecificationWorkspace(
+  taskId: string
+): Promise<BlueprintSpecificationWorkspace> {
+  const task = await repo.getTask(taskId);
+  if (!task) throw new NotFoundError('Task not found');
+  const messages = await repo.listTaskMessages(taskId);
+  const sessions = await Promise.all(
+    (await repo.listDesignQuestionnaireSessionsForTask(taskId)).map((session) =>
+      buildDesignQuestionnaireSessionView(session.id)
+    )
+  );
+  const blueprintArtifacts = [];
+  const dbDesignArtifacts = [];
+  const decisionReviews = [];
+  const implementationReferences = [];
+  for (const message of messages) {
+    if (message.messageType !== 'markdown_document') continue;
+    const metadata = (message.metadataJson || {}) as Record<string, any>;
+    if (metadata.intent === 'app_blueprint' && metadata.appBlueprint) {
+      const isDbDesign = Boolean(
+        metadata.source === 'blueprint-db-design' || metadata.dbDesignTarget
+      );
+      const adoption = isDbDesign
+        ? await repo.getBlueprintDbDesignAdoption(taskId, message.id)
+        : await repo.getBlueprintArtifactAdoption(taskId, message.id);
+      const artifact = {
+        id: `${isDbDesign ? 'db-design' : 'blueprint'}-${message.id}`,
+        kind: isDbDesign ? ('db-design' as const) : ('blueprint' as const),
+        title: String(metadata.title || metadata.appBlueprint?.name || 'App Blueprint'),
+        sourceMessageId: message.id,
+        createdAt: message.createdAt,
+        adoptionState: adoption
+          ? adoption.adopted
+            ? ('adopted' as const)
+            : ('not_adopted' as const)
+          : ('unknown' as const),
+        sourceBlueprintMessageId: metadata.parentBlueprintId ? undefined : undefined,
+      };
+      if (isDbDesign) dbDesignArtifacts.push(artifact);
+      else blueprintArtifacts.push(artifact);
+    }
+    if (metadata.intent === 'design_decision_review' && metadata.designDecisionReview) {
+      decisionReviews.push({
+        id: `decision-review-${message.id}`,
+        kind: 'decision-review' as const,
+        title: String(metadata.title || 'Decision Review'),
+        sourceMessageId: message.id,
+        createdAt: message.createdAt,
+        sourceBlueprintMessageId: metadata.sourceBlueprintMessageId,
+      });
+    }
+    if (metadata.intent === 'implementation_plan' || metadata.intent === 'draft_spec') {
+      implementationReferences.push({
+        id: `implementation-reference-${message.id}`,
+        kind: 'implementation-plan' as const,
+        title: String(metadata.title || 'Implementation Plan'),
+        sourceMessageId: message.id,
+        taskId,
+      });
+    }
+  }
+  return {
+    taskId,
+    repositoryId: task.repositoryId,
+    generatedAt: new Date().toISOString(),
+    blueprintArtifacts,
+    dbDesignArtifacts,
+    questionnaireSessions: sessions.map((session) => ({
+      id: session.id,
+      sourceBlueprintMessageId: session.sourceBlueprintMessageId,
+      status: session.status,
+      answeredCount: session.answers.length,
+      totalQuestionCount: getAnswerableSessionQuestions(session, session.answers).length,
+      latestReviewId: session.reviews[0]?.id,
+    })),
+    decisionReviews,
+    implementationReferences,
+  };
 }
 
 export async function appendTaskMessage(id: string, prompt: string) {
@@ -886,6 +1146,312 @@ function isAppBlueprintMessage(message: TaskMessageRow): boolean {
       (metadata as { appBlueprint?: unknown }).appBlueprint
   );
 }
+
+async function getQuestionnaireTaskAndBlueprint(taskId: string, sourceBlueprintMessageId: string) {
+  const task = await repo.getTask(taskId);
+  if (!task) throw new NotFoundError('Task not found');
+  const sourceBlueprintMessage = await repo.getTaskMessage(sourceBlueprintMessageId);
+  if (!sourceBlueprintMessage || sourceBlueprintMessage.taskId !== taskId) {
+    throw new AppError(422, 'SOURCE_BLUEPRINT_NOT_FOUND', 'Source Blueprint message not found.');
+  }
+  if (!isAppBlueprintMessage(sourceBlueprintMessage)) {
+    throw new AppError(
+      422,
+      'SOURCE_BLUEPRINT_REQUIRED',
+      'Source message must be an App Blueprint.'
+    );
+  }
+  return { task, sourceBlueprintMessage };
+}
+
+async function generateDesignQuestionnaireRawOutput(input: {
+  taskId: string;
+  repositoryId: string;
+  sourceBlueprintMessage: TaskMessageRow;
+}) {
+  const metadata = input.sourceBlueprintMessage.metadataJson as { appBlueprint?: unknown };
+  return callStructuredJsonLLM(
+    buildDesignQuestionnaireSystemPrompt(),
+    [
+      '次の App Blueprint artifact を入力に、未決定仕様をカテゴリ別質問票として生成してください。',
+      `taskId: ${input.taskId}`,
+      `repositoryId: ${input.repositoryId}`,
+      `blueprintMessageId: ${input.sourceBlueprintMessage.id}`,
+      '',
+      JSON.stringify(metadata.appBlueprint, null, 2),
+    ].join('\n'),
+    {
+      schemaName: 'design_questionnaire',
+      schema: designQuestionnaireJsonSchema,
+      taskId: input.taskId,
+    }
+  );
+}
+
+async function generateDesignQuestionnaireFollowUpRawOutput(session: any) {
+  return callStructuredJsonLLM(
+    buildDesignQuestionnaireSystemPrompt(),
+    [
+      '次の質問票と回答をもとに、追加確認が必要な質問だけを follow-up question set として返してください。',
+      '既に十分に回答された質問を繰り返さないでください。',
+      JSON.stringify(
+        {
+          sessionId: session.id,
+          taskId: session.taskId,
+          repositoryId: session.repositoryId,
+          sourceBlueprintMessageId: session.sourceBlueprintMessageId,
+          questionSets: session.questionSets.map((set: any) => set.questionnaire),
+          answers: session.answers.map((answer: any) => answer.answer),
+        },
+        null,
+        2
+      ),
+    ].join('\n'),
+    {
+      schemaName: 'design_questionnaire_follow_up',
+      schema: designQuestionnaireJsonSchema,
+      taskId: session.taskId,
+    }
+  );
+}
+
+async function generateDesignQuestionnaireReviewRawOutput(session: any) {
+  return callStructuredJsonLLM(
+    [
+      'あなたは NightWorkers の Design Questionnaire review synthesizer です。',
+      '回答を設計判断、後回し事項、未解決事項、DB Design handoff note に整理してください。',
+      'DB table、column、relation、DDL の具体案は作らず、DB Design へ渡す制約・論点だけを書いてください。',
+      'sourceQuestionIds と unresolvedQuestionIds を必ず保持してください。',
+    ].join('\n'),
+    JSON.stringify(
+      {
+        sessionId: session.id,
+        sourceBlueprintMessageId: session.sourceBlueprintMessageId,
+        questionSets: session.questionSets.map((set: any) => set.questionnaire),
+        answers: session.answers.map((answer: any) => answer.answer),
+      },
+      null,
+      2
+    ),
+    {
+      schemaName: 'design_decision_review',
+      schema: designDecisionReviewJsonSchema,
+      taskId: session.taskId,
+    }
+  );
+}
+
+function buildDesignQuestionnaireSystemPrompt() {
+  return [
+    'あなたは NightWorkers の Design Questionnaire generator です。',
+    'Blueprint 後に残る DB Design 以外の仕様未決定事項を、複数質問のフォームとして生成してください。',
+    '質問は上位 5 から 10 件の blocking issue に絞り、カテゴリごとにまとめてください。',
+    '各質問には why、blocks、outputSection、推奨回答、選択肢、短い tradeoff を含めてください。',
+    'DB schema の具体化は質問本文に混ぜず、dbDesignHandoffNotes に制約・論点として分離してください。',
+    'ID は lowercase kebab-case にしてください。',
+    '回答は JSON のみで返してください。',
+  ].join('\n');
+}
+
+function parseDesignQuestionnaireRaw(
+  rawOutput: string
+): { ok: true; value: DesignQuestionnaire } | { ok: false; error: unknown } {
+  try {
+    return { ok: true, value: designQuestionnaireSchema.parse(JSON.parse(rawOutput)) };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+function parseDesignDecisionReviewRaw(
+  rawOutput: string
+): { ok: true; value: DesignDecisionReview } | { ok: false; error: unknown } {
+  try {
+    return { ok: true, value: designDecisionReviewSchema.parse(JSON.parse(rawOutput)) };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+async function buildDesignQuestionnaireSessionView(sessionId: string) {
+  const session = await repo.getDesignQuestionnaireSession(sessionId);
+  if (!session) throw new NotFoundError('Questionnaire session not found');
+  const [questionSets, answers, reviews] = await Promise.all([
+    repo.listDesignQuestionnaireQuestionSets(sessionId),
+    repo.listDesignQuestionnaireAnswers(sessionId),
+    repo.listDesignQuestionnaireReviews(sessionId),
+  ]);
+  return {
+    id: session.id,
+    taskId: session.taskId,
+    repositoryId: session.repositoryId,
+    sourceBlueprintMessageId: session.sourceBlueprintMessageId,
+    status: session.status as any,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    questionSets: questionSets.map((set) => ({
+      id: set.id,
+      sequence: set.sequence,
+      questionnaire: set.questionnaireJson
+        ? designQuestionnaireSchema.safeParse(set.questionnaireJson).success
+          ? designQuestionnaireSchema.parse(set.questionnaireJson)
+          : null
+        : null,
+      rawOutput: set.rawOutput,
+      validationStatus: set.validationStatus as 'valid' | 'invalid',
+      createdAt: set.createdAt,
+    })),
+    answers: answers.map((answer) => ({
+      id: answer.id,
+      questionId: answer.questionId,
+      answer: designQuestionnaireAnswerSchema.parse(answer.answerJson),
+      answeredAt: answer.answeredAt,
+    })),
+    reviews: reviews.map((review) => ({
+      id: review.id,
+      review: review.reviewJson
+        ? designDecisionReviewSchema.safeParse(review.reviewJson).success
+          ? designDecisionReviewSchema.parse(review.reviewJson)
+          : null
+        : null,
+      publishedMessageId: review.publishedMessageId,
+      status: review.status as 'draft' | 'accepted' | 'needs_edit' | 'left_unadopted',
+      createdAt: review.createdAt,
+      updatedAt: review.updatedAt,
+    })),
+  };
+}
+
+function getSessionQuestions(session: any) {
+  return session.questionSets.flatMap((set: any) =>
+    (set.questionnaire?.questionSets || []).flatMap((questionSet: any) => questionSet.questions)
+  );
+}
+
+function getAnswerableSessionQuestions(
+  session: any,
+  answers: Array<{ questionId: string; answer: DesignQuestionnaireAnswer }>
+) {
+  const answerByQuestionId = new Map(answers.map((answer) => [answer.questionId, answer.answer]));
+  return getSessionQuestions(session).filter((question: any) =>
+    isDesignQuestionDependencySatisfied(question, answerByQuestionId)
+  );
+}
+
+function isDesignQuestionDependencySatisfied(
+  question: any,
+  answerByQuestionId: Map<string, DesignQuestionnaireAnswer>
+) {
+  const dependencies = Array.isArray(question.dependsOn) ? question.dependsOn : [];
+  return dependencies.every((dependency: any) => {
+    const answer = answerByQuestionId.get(String(dependency.questionId));
+    if (!answer) return false;
+    return evaluateDesignQuestionDependency(answer, dependency);
+  });
+}
+
+function evaluateDesignQuestionDependency(answer: DesignQuestionnaireAnswer, dependency: any) {
+  const expected = dependency.value;
+  const values = [
+    ...answer.selectedOptionIds,
+    ...answer.rankedOptionIds,
+    ...(answer.freeText?.trim() ? [answer.freeText.trim()] : []),
+  ];
+  const hasExpectedString = Array.isArray(expected)
+    ? expected.some((value) => values.includes(String(value)))
+    : values.includes(String(expected));
+  if (typeof expected === 'boolean') {
+    if (dependency.operator === 'equals') return answer.booleanValue === expected;
+    if (dependency.operator === 'not_equals') return answer.booleanValue !== expected;
+    return false;
+  }
+  if (dependency.operator === 'equals' || dependency.operator === 'includes') {
+    return hasExpectedString;
+  }
+  if (dependency.operator === 'not_equals' || dependency.operator === 'excludes') {
+    return !hasExpectedString;
+  }
+  return false;
+}
+
+function renderDesignDecisionReviewMarkdown(review: DesignDecisionReview) {
+  const lines = [`# ${review.title}`, '', review.summary, ''];
+  lines.push('## Decisions');
+  if (review.decisions.length === 0) lines.push('- No decisions yet.');
+  for (const decision of review.decisions) {
+    lines.push(`- **${decision.outputSection}**: ${decision.decision}`);
+    lines.push(`  - Rationale: ${decision.rationale}`);
+    if (decision.tradeoffs.length > 0)
+      lines.push(`  - Tradeoffs: ${decision.tradeoffs.join('; ')}`);
+    lines.push(`  - Source questions: ${decision.sourceQuestionIds.join(', ')}`);
+  }
+  lines.push('', '## Deferred');
+  if (review.deferredItems.length === 0) lines.push('- None.');
+  for (const item of review.deferredItems) {
+    lines.push(`- ${item.topic}: ${item.reason}`);
+  }
+  lines.push('', '## Unresolved');
+  if (review.unresolvedQuestions.length === 0) lines.push('- None.');
+  for (const item of review.unresolvedQuestions) {
+    lines.push(`- ${item.topic}: ${item.reason}`);
+  }
+  lines.push('', '## DB Design Handoff');
+  if (review.dbDesignHandoffNotes.length === 0) lines.push('- None.');
+  for (const note of review.dbDesignHandoffNotes) {
+    lines.push(`- ${note.summary}: ${note.constraint}`);
+  }
+  return lines.join('\n');
+}
+
+const designQuestionnaireJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'version',
+    'source',
+    'title',
+    'summary',
+    'questionSets',
+    'openQuestions',
+    'dbDesignHandoffNotes',
+  ],
+  properties: {
+    version: { const: 1 },
+    source: { type: 'object' },
+    title: { type: 'string' },
+    summary: { type: 'string' },
+    questionSets: { type: 'array' },
+    openQuestions: { type: 'array' },
+    dbDesignHandoffNotes: { type: 'array' },
+  },
+};
+
+const designDecisionReviewJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'version',
+    'sessionId',
+    'sourceBlueprintMessageId',
+    'title',
+    'summary',
+    'decisions',
+    'deferredItems',
+    'unresolvedQuestions',
+    'dbDesignHandoffNotes',
+  ],
+  properties: {
+    version: { const: 1 },
+    sessionId: { type: 'string' },
+    sourceBlueprintMessageId: { type: 'string' },
+    title: { type: 'string' },
+    summary: { type: 'string' },
+    decisions: { type: 'array' },
+    deferredItems: { type: 'array' },
+    unresolvedQuestions: { type: 'array' },
+    dbDesignHandoffNotes: { type: 'array' },
+  },
+};
 
 function buildBlueprintPlanningReadiness(
   source: 'adopted' | 'latest_generated',

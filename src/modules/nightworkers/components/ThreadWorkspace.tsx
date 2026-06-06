@@ -64,9 +64,9 @@ type ThreadWorkspaceProps = {
 export function ThreadWorkspace(props: ThreadWorkspaceProps) {
   const { t } = useTranslation();
   const diffArtifacts = props.artifactRefs.filter((artifact) => artifact.kind === 'diff');
-  const blueprintArtifact = props.artifactRefs.find(
-    (artifact) => artifact.kind === 'app_blueprint'
-  );
+  const blueprintArtifact =
+    props.artifactRefs.find((artifact) => artifact.kind === 'blueprint_workspace') ||
+    props.artifactRefs.find((artifact) => artifact.kind === 'app_blueprint');
   const latestDiffArtifact = diffArtifacts[0];
   const [showDebugEvents, setShowDebugEvents] = useState(true);
   const noBlueprintArtifactLabel = 'No Blueprint artifact';

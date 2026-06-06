@@ -65,7 +65,10 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const [showOverviewScreen, setShowOverviewScreen] = useState(true);
   const [queueProjectFilterId, setQueueProjectFilterId] = useState<string | null>(null);
   const artifactPaneOpen = showArtifactPane || Boolean(selectedArtifact);
-  const isBlueprintArtifactOpen = artifactPaneOpen && selectedArtifact?.kind === 'app_blueprint';
+  const isBlueprintArtifactOpen =
+    artifactPaneOpen &&
+    (selectedArtifact?.kind === 'blueprint_workspace' ||
+      selectedArtifact?.kind === 'app_blueprint');
   const isDiffArtifactOpen = artifactPaneOpen && selectedArtifact?.kind === 'diff';
   const todoPaneOpen =
     !props.showSettings &&
@@ -125,9 +128,9 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       return;
     }
     const current = workspaceRef.current;
-    const existing = current.activeArtifactRefs.find(
-      (artifact) => artifact.kind === 'app_blueprint'
-    );
+    const existing =
+      current.activeArtifactRefs.find((artifact) => artifact.kind === 'blueprint_workspace') ||
+      current.activeArtifactRefs.find((artifact) => artifact.kind === 'app_blueprint');
     if (existing) {
       setShowArtifactPane(true);
       setSelectedArtifact(existing);

@@ -539,6 +539,304 @@ describe('NightWorkers task routes', () => {
     expect(await getDesignTokenRes.json()).toMatchObject({ adopted: false });
   });
 
+  it('creates a Design Questionnaire, saves answers, accepts a Decision Review, and aggregates workspace refs', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+
+    try {
+      const createdRepo = await repo.createRepository({
+        name: `TEST: Design Questionnaire ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: createdRepo.id,
+        title: 'TEST: Questionnaire target',
+        description: 'Generate questionnaire',
+        status: 'draft',
+      });
+      const blueprintMessage = await repo.createTaskMessage({
+        taskId: task.id,
+        role: 'assistant',
+        content: '# Blueprint',
+        messageType: 'markdown_document',
+        payloadJson: {
+          intent: 'app_blueprint',
+          title: 'Support Desk',
+          appBlueprint: {
+            id: 'support-desk',
+            name: 'Support Desk',
+            screens: [{ id: 'inbox', name: 'Inbox', sections: [] }],
+          },
+          validation: { valid: true, issues: [] },
+        },
+      });
+      const dbDesignMessage = await repo.createTaskMessage({
+        taskId: task.id,
+        role: 'assistant',
+        content: '# DB Design Blueprint',
+        messageType: 'markdown_document',
+        payloadJson: {
+          intent: 'app_blueprint',
+          title: 'Support Desk DB Design',
+          source: 'blueprint-db-design',
+          dbDesignTarget: 'full',
+          appBlueprint: {
+            id: 'support-desk-db-design',
+            name: 'Support Desk DB Design',
+            screens: [{ id: 'inbox', name: 'Inbox', sections: [] }],
+          },
+          validation: { valid: true, issues: [] },
+        },
+      });
+      await repo.upsertBlueprintDbDesignAdoption(task.id, dbDesignMessage.id, true);
+
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+        version: 1,
+        source: {
+          taskId: task.id,
+          repositoryId: createdRepo.id,
+          blueprintMessageId: blueprintMessage.id,
+        },
+        title: 'Support Desk Design Questionnaire',
+        summary: 'Resolve support workflow choices before implementation.',
+        questionSets: [
+          {
+            id: 'workflow',
+            title: 'Workflow',
+            category: 'Operations',
+            purpose: 'Decide how agents process tickets.',
+            questions: [
+              {
+                id: 'triage-mode',
+                topic: 'Triage',
+                question: 'How should incoming tickets be triaged?',
+                why: 'The inbox layout and queue labels depend on this.',
+                answerType: 'single_choice',
+                recommendedAnswerId: 'manual-first',
+                options: [
+                  {
+                    id: 'manual-first',
+                    label: 'Manual first',
+                    tradeoff: 'Lower automation risk, more agent effort.',
+                    recommended: true,
+                  },
+                  {
+                    id: 'auto-priority',
+                    label: 'Auto priority',
+                    tradeoff: 'Faster sorting, requires policy review.',
+                  },
+                ],
+                allowsCustomAnswer: true,
+                blocks: ['Inbox interaction design'],
+                outputSection: 'Support workflow',
+              },
+              {
+                id: 'automation-policy',
+                topic: 'Automation',
+                question: 'What policy should automatic priority use?',
+                why: 'Automation needs a reviewed policy before implementation.',
+                answerType: 'free_text',
+                blocks: ['Automation policy'],
+                outputSection: 'Support workflow',
+                dependsOn: [
+                  {
+                    questionId: 'triage-mode',
+                    operator: 'equals',
+                    value: 'auto-priority',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        openQuestions: [],
+        dbDesignHandoffNotes: [
+          {
+            id: 'ticket-state-constraint',
+            summary: 'Ticket state history must be traceable.',
+            sourceQuestionIds: ['triage-mode'],
+            constraint: 'DB Design should model state changes without committing table names here.',
+          },
+        ],
+      });
+
+      const createRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sourceBlueprintMessageId: blueprintMessage.id }),
+        }
+      );
+      expect(createRes.status).toBe(201);
+      const session = await createRes.json();
+      expect(session.status).toBe('answering');
+      expect(session.questionSets[0].questionnaire.questionSets[0].questions[0].id).toBe(
+        'triage-mode'
+      );
+      expect(session.questionSets[0].rawOutput).toContain('Support Desk Design Questionnaire');
+
+      const answersRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/answers`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            answers: [
+              {
+                questionId: 'triage-mode',
+                selectedOptionIds: ['manual-first'],
+                rankedOptionIds: [],
+                freeText: 'Start with manual triage.',
+                deferred: false,
+              },
+            ],
+          }),
+        }
+      );
+      expect(answersRes.status).toBe(200);
+      expect((await answersRes.json()).status).toBe('review_ready');
+
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+        version: 1,
+        sessionId: session.id,
+        sourceBlueprintMessageId: blueprintMessage.id,
+        title: 'Support Desk Decision Review',
+        summary: 'Manual triage is selected for the first implementation slice.',
+        decisions: [
+          {
+            id: 'manual-triage',
+            outputSection: 'Support workflow',
+            decision: 'Use manual-first triage for incoming tickets.',
+            rationale: 'It reduces automation policy risk for v1.',
+            alternativesConsidered: ['Auto priority'],
+            tradeoffs: ['More agent effort'],
+            sourceQuestionIds: ['triage-mode'],
+            unresolvedQuestionIds: [],
+          },
+        ],
+        deferredItems: [],
+        unresolvedQuestions: [],
+        dbDesignHandoffNotes: [
+          {
+            id: 'ticket-state-constraint',
+            summary: 'Ticket state history must be traceable.',
+            sourceQuestionIds: ['triage-mode'],
+            constraint: 'DB Design should model state changes without committing table names here.',
+          },
+        ],
+      });
+
+      const reviewRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/review`,
+        { method: 'POST', headers: sameOriginHeaders }
+      );
+      expect(reviewRes.status).toBe(200);
+      expect((await reviewRes.json()).validationStatus).toBe('valid');
+
+      const acceptRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/review/accept`,
+        { method: 'POST', headers: sameOriginHeaders }
+      );
+      expect(acceptRes.status).toBe(200);
+      expect((await acceptRes.json()).status).toBe('accepted');
+
+      const workspaceRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/blueprint-specification-workspace`,
+        { headers: sameOriginHeaders }
+      );
+      expect(workspaceRes.status).toBe(200);
+      const workspace = await workspaceRes.json();
+      expect(workspace.blueprintArtifacts).toEqual(
+        expect.arrayContaining([expect.objectContaining({ sourceMessageId: blueprintMessage.id })])
+      );
+      expect(workspace.dbDesignArtifacts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            sourceMessageId: dbDesignMessage.id,
+            adoptionState: 'adopted',
+          }),
+        ])
+      );
+      expect(workspace.questionnaireSessions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: session.id,
+            status: 'accepted',
+            answeredCount: 1,
+            totalQuestionCount: 1,
+          }),
+        ])
+      );
+      expect(workspace.decisionReviews).toEqual(
+        expect.arrayContaining([expect.objectContaining({ title: 'Support Desk Decision Review' })])
+      );
+    } finally {
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+      else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+    }
+  });
+
+  it('stores schema-invalid Design Questionnaire raw output without replacing it', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+
+    try {
+      const createdRepo = await repo.createRepository({
+        name: `TEST: Invalid Design Questionnaire ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: createdRepo.id,
+        title: 'TEST: Invalid questionnaire target',
+        description: 'Generate invalid questionnaire',
+        status: 'draft',
+      });
+      const blueprintMessage = await repo.createTaskMessage({
+        taskId: task.id,
+        role: 'assistant',
+        content: '# Blueprint',
+        messageType: 'markdown_document',
+        payloadJson: {
+          intent: 'app_blueprint',
+          title: 'Invalid Output App',
+          appBlueprint: { id: 'invalid-output-app', name: 'Invalid Output App' },
+        },
+      });
+      process.env.SUPERVISOR_FIXTURE_OUTPUT =
+        '質問票を作れませんでしたが、ここに未決定事項の説明があります。';
+
+      const createRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sourceBlueprintMessageId: blueprintMessage.id }),
+        }
+      );
+      expect(createRes.status).toBe(201);
+      const session = await createRes.json();
+      expect(session.status).toBe('needs_edit');
+      expect(session.questionSets).toHaveLength(1);
+      expect(session.questionSets[0]).toMatchObject({
+        validationStatus: 'invalid',
+        questionnaire: null,
+        rawOutput: '質問票を作れませんでしたが、ここに未決定事項の説明があります。',
+      });
+    } finally {
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+      else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+    }
+  });
+
   it('deletes a task and its dependent workbench data', async () => {
     const createdRepo = await repo.createRepository({
       name: `TEST: Task Delete Workspace ${crypto.randomUUID()}`,

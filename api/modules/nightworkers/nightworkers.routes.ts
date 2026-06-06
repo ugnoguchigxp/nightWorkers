@@ -1,5 +1,11 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
+  blueprintSpecificationWorkspaceSchema,
+  createDesignQuestionnaireRequestSchema,
+  designQuestionnaireSessionSchema,
+  saveDesignQuestionnaireAnswersSchema,
+} from '../../../shared/schemas/design-questionnaire.schema';
+import {
   activityReplaySchema,
   blueprintAdoptionRequestSchema,
   blueprintAdoptionSchema,
@@ -633,6 +639,146 @@ const appendWorkbenchMessageRoute = createRoute({
       description: 'Workbench message handled',
     },
     404: { description: 'Task not found' },
+  },
+});
+
+const createDesignQuestionnaireRoute = createRoute({
+  method: 'post',
+  path: '/tasks/:id/design-questionnaire',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: createDesignQuestionnaireRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      content: { 'application/json': { schema: designQuestionnaireSessionSchema } },
+      description: 'Design Questionnaire session created',
+    },
+  },
+});
+
+const listDesignQuestionnairesRoute = createRoute({
+  method: 'get',
+  path: '/tasks/:id/design-questionnaire',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: z.array(designQuestionnaireSessionSchema) } },
+      description: 'Design Questionnaire sessions',
+    },
+  },
+});
+
+const getDesignQuestionnaireRoute = createRoute({
+  method: 'get',
+  path: '/tasks/:id/design-questionnaire/:sessionId',
+  request: {
+    params: z.object({ id: z.string().uuid(), sessionId: z.string().uuid() }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: designQuestionnaireSessionSchema } },
+      description: 'Design Questionnaire session',
+    },
+  },
+});
+
+const saveDesignQuestionnaireAnswersRoute = createRoute({
+  method: 'post',
+  path: '/tasks/:id/design-questionnaire/:sessionId/answers',
+  request: {
+    params: z.object({ id: z.string().uuid(), sessionId: z.string().uuid() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: saveDesignQuestionnaireAnswersSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: designQuestionnaireSessionSchema } },
+      description: 'Design Questionnaire answers saved',
+    },
+  },
+});
+
+const generateDesignQuestionnaireFollowUpRoute = createRoute({
+  method: 'post',
+  path: '/tasks/:id/design-questionnaire/:sessionId/follow-up',
+  request: {
+    params: z.object({ id: z.string().uuid(), sessionId: z.string().uuid() }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: designQuestionnaireSessionSchema } },
+      description: 'Design Questionnaire follow-up generated',
+    },
+  },
+});
+
+const generateDesignQuestionnaireReviewRoute = createRoute({
+  method: 'post',
+  path: '/tasks/:id/design-questionnaire/:sessionId/review',
+  request: {
+    params: z.object({ id: z.string().uuid(), sessionId: z.string().uuid() }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: z.any() } },
+      description: 'Design Questionnaire review generated',
+    },
+  },
+});
+
+const acceptDesignQuestionnaireReviewRoute = createRoute({
+  method: 'post',
+  path: '/tasks/:id/design-questionnaire/:sessionId/review/accept',
+  request: {
+    params: z.object({ id: z.string().uuid(), sessionId: z.string().uuid() }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: designQuestionnaireSessionSchema } },
+      description: 'Design Questionnaire review accepted',
+    },
+  },
+});
+
+const leaveDesignQuestionnaireReviewUnadoptedRoute = createRoute({
+  method: 'post',
+  path: '/tasks/:id/design-questionnaire/:sessionId/review/leave-unadopted',
+  request: {
+    params: z.object({ id: z.string().uuid(), sessionId: z.string().uuid() }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: designQuestionnaireSessionSchema } },
+      description: 'Design Questionnaire review left unadopted',
+    },
+  },
+});
+
+const getBlueprintSpecificationWorkspaceRoute = createRoute({
+  method: 'get',
+  path: '/tasks/:id/blueprint-specification-workspace',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: blueprintSpecificationWorkspaceSchema } },
+      description: 'Blueprint Specification Workspace read model',
+    },
   },
 });
 
@@ -1795,6 +1941,122 @@ const router = createOpenApiRouter()
     try {
       const events = await service.listTaskActivityEvents(id, c.req.valid('query'));
       return c.json(events, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(createDesignQuestionnaireRoute, async (c): Promise<any> => {
+    const id = c.req.param('id');
+    const request = c.req.valid('json');
+    try {
+      const session = await service.createDesignQuestionnaire(id, request.sourceBlueprintMessageId);
+      return c.json(session, 201);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(listDesignQuestionnairesRoute, async (c): Promise<any> => {
+    const id = c.req.param('id');
+    try {
+      const sessions = await service.listDesignQuestionnaires(id);
+      return c.json(sessions, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(getDesignQuestionnaireRoute, async (c): Promise<any> => {
+    const id = c.req.param('id');
+    const sessionId = c.req.param('sessionId');
+    try {
+      const session = await service.getDesignQuestionnaireSession(id, sessionId);
+      return c.json(session, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(saveDesignQuestionnaireAnswersRoute, async (c): Promise<any> => {
+    const id = c.req.param('id');
+    const sessionId = c.req.param('sessionId');
+    const request = c.req.valid('json');
+    try {
+      const session = await service.saveDesignQuestionnaireAnswers(id, sessionId, request.answers);
+      return c.json(session, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(generateDesignQuestionnaireFollowUpRoute, async (c): Promise<any> => {
+    const id = c.req.param('id');
+    const sessionId = c.req.param('sessionId');
+    try {
+      const session = await service.generateDesignQuestionnaireFollowUp(id, sessionId);
+      return c.json(session, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(generateDesignQuestionnaireReviewRoute, async (c): Promise<any> => {
+    const id = c.req.param('id');
+    const sessionId = c.req.param('sessionId');
+    try {
+      const result = await service.generateDesignQuestionnaireReview(id, sessionId);
+      return c.json(result, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(acceptDesignQuestionnaireReviewRoute, async (c): Promise<any> => {
+    const id = c.req.param('id');
+    const sessionId = c.req.param('sessionId');
+    try {
+      const session = await service.acceptDesignQuestionnaireReview(id, sessionId);
+      return c.json(session, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(leaveDesignQuestionnaireReviewUnadoptedRoute, async (c): Promise<any> => {
+    const id = c.req.param('id');
+    const sessionId = c.req.param('sessionId');
+    try {
+      const session = await service.leaveDesignQuestionnaireReviewUnadopted(id, sessionId);
+      return c.json(session, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(getBlueprintSpecificationWorkspaceRoute, async (c): Promise<any> => {
+    const id = c.req.param('id');
+    try {
+      const workspace = await service.getBlueprintSpecificationWorkspace(id);
+      return c.json(workspace, 200);
     } catch (err: any) {
       if (err instanceof AppError) {
         return c.json({ error: err.message, code: err.code }, err.statusCode as any);

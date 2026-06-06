@@ -230,7 +230,9 @@ async function parseJsonContent(rawContent: string, options: CallSupervisorOptio
       errorMessage: 'JSON parse failed and automatic repair did not produce JSON',
       rawContentPreview: rawContent.slice(0, 1000),
     });
-    throw new Error(`${label} response JSON parse failed.`);
+    const error = new Error(`${label} response JSON parse failed.`);
+    (error as Error & { rawContent?: string }).rawContent = rawContent;
+    throw error;
   }
   if (jsonFix.repaired) {
     await emitSupervisorLlmDebugEvent(options, {

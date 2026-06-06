@@ -151,6 +151,7 @@ export type WorkbenchProgressSnapshot = {
 };
 
 export type WorkbenchArtifactKind =
+  | 'blueprint_workspace'
   | 'app_blueprint'
   | 'component_design'
   | 'design_delta'
@@ -260,6 +261,81 @@ export type TaskMessage = {
   messageType?: 'text' | 'chart' | 'browser' | 'playwright' | 'flow' | 'markdown_document' | null;
   metadataJson?: any;
   createdAt: unknown;
+};
+
+export type DesignQuestionnaireAnswer = {
+  questionId: string;
+  selectedOptionIds: string[];
+  booleanValue?: boolean;
+  freeText?: string;
+  rankedOptionIds: string[];
+  deferred: boolean;
+};
+
+export type DesignQuestionnaireSession = {
+  id: string;
+  taskId: string;
+  repositoryId: string;
+  sourceBlueprintMessageId: string;
+  status: 'draft' | 'answering' | 'review_ready' | 'accepted' | 'needs_edit' | 'abandoned';
+  createdAt: unknown;
+  updatedAt: unknown;
+  questionSets: Array<{
+    id: string;
+    sequence: number;
+    questionnaire: any | null;
+    rawOutput: string | null;
+    validationStatus: 'valid' | 'invalid';
+    createdAt: unknown;
+  }>;
+  answers: Array<{
+    id: string;
+    questionId: string;
+    answer: DesignQuestionnaireAnswer;
+    answeredAt: unknown;
+  }>;
+  reviews: Array<{
+    id: string;
+    review: any | null;
+    publishedMessageId?: string | null;
+    status: 'draft' | 'accepted' | 'needs_edit' | 'left_unadopted';
+    createdAt: unknown;
+    updatedAt: unknown;
+  }>;
+};
+
+export type BlueprintWorkspaceArtifact = {
+  id: string;
+  kind: 'blueprint' | 'db-design' | 'decision-review';
+  title: string;
+  sourceMessageId: string;
+  createdAt: unknown;
+  adoptionState?: 'adopted' | 'not_adopted' | 'unknown';
+  sourceBlueprintMessageId?: string;
+};
+
+export type BlueprintSpecificationWorkspace = {
+  taskId: string;
+  repositoryId: string;
+  generatedAt: string;
+  blueprintArtifacts: BlueprintWorkspaceArtifact[];
+  dbDesignArtifacts: BlueprintWorkspaceArtifact[];
+  questionnaireSessions: Array<{
+    id: string;
+    sourceBlueprintMessageId: string;
+    status: DesignQuestionnaireSession['status'];
+    answeredCount: number;
+    totalQuestionCount: number;
+    latestReviewId?: string;
+  }>;
+  decisionReviews: BlueprintWorkspaceArtifact[];
+  implementationReferences: Array<{
+    id: string;
+    kind: 'implementation-plan' | 'queue-candidate';
+    title: string;
+    sourceMessageId?: string;
+    taskId: string;
+  }>;
 };
 
 export type TaskLlmUsageSummary = {
