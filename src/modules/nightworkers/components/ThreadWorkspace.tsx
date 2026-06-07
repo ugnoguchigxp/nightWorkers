@@ -73,7 +73,8 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
     props.artifactRefs.find((artifact) => artifact.kind === 'app_blueprint');
   const latestDiffArtifact = diffArtifacts[0];
   const [showDebugEvents, setShowDebugEvents] = useState(true);
-  const noBlueprintArtifactLabel = 'No Blueprint artifact';
+  const specificationWorkspaceLabel = t('thread.specificationWorkspace');
+  const noSpecificationWorkspaceLabel = t('thread.noSpecificationWorkspace');
   const workbenchBanner = props.activeSession ? (
     <WorkbenchStateBanner
       sessionView={props.sessionView}
@@ -203,18 +204,10 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
                     props.isBlueprintActionBusy || !props.activeSession || !blueprintArtifact
                   }
                   title={
-                    props.isBlueprintArtifactOpen
-                      ? t('thread.hideBlueprintArtifact')
-                      : blueprintArtifact
-                        ? t('thread.openBlueprintArtifact')
-                        : noBlueprintArtifactLabel
+                    blueprintArtifact ? specificationWorkspaceLabel : noSpecificationWorkspaceLabel
                   }
                   aria-label={
-                    props.isBlueprintArtifactOpen
-                      ? t('thread.hideBlueprintArtifact')
-                      : blueprintArtifact
-                        ? t('thread.openBlueprintArtifact')
-                        : noBlueprintArtifactLabel
+                    blueprintArtifact ? specificationWorkspaceLabel : noSpecificationWorkspaceLabel
                   }
                   aria-pressed={props.isBlueprintArtifactOpen}
                 >

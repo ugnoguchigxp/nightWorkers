@@ -345,16 +345,31 @@ export function buildWorkbenchArtifactRefs(input: {
       message.messageType === 'markdown_document' &&
       (message.metadataJson?.intent === 'app_blueprint' || message.metadataJson?.appBlueprint)
   );
-  if (blueprintMessages.length > 0) {
+  const decisionReviewMessages = (input.messages || []).filter(
+    (message) =>
+      message.messageType === 'markdown_document' &&
+      message.metadataJson?.intent === 'design_decision_review'
+  );
+  if (blueprintMessages.length > 0 || decisionReviewMessages.length > 0) {
+    const latestWorkspaceMessage =
+      [...blueprintMessages, ...decisionReviewMessages].sort(
+        (a, b) => toMs(b.createdAt) - toMs(a.createdAt)
+      )[0] || blueprintMessages.at(-1);
     refs.push({
       id: `blueprint-workspace-${input.task.id}`,
       taskId: input.task.id,
       kind: 'blueprint_workspace',
-      title: 'Blueprint Specification',
-      summary: `${blueprintMessages.length} Blueprint artifact${blueprintMessages.length === 1 ? '' : 's'}`,
-      source: { type: 'task_message', messageId: blueprintMessages.at(-1)?.id || '' },
-      createdAt: String(blueprintMessages.at(-1)?.createdAt || input.task.updatedAt),
-      metadata: { blueprintCount: blueprintMessages.length },
+      title: 'Specification Workspace',
+      summary: [
+        `${blueprintMessages.length} Blueprint artifact${blueprintMessages.length === 1 ? '' : 's'}`,
+        `${decisionReviewMessages.length} Decision Review${decisionReviewMessages.length === 1 ? '' : 's'}`,
+      ].join(' · '),
+      source: { type: 'task_message', messageId: latestWorkspaceMessage?.id || '' },
+      createdAt: String(latestWorkspaceMessage?.createdAt || input.task.updatedAt),
+      metadata: {
+        blueprintCount: blueprintMessages.length,
+        decisionReviewCount: decisionReviewMessages.length,
+      },
     });
   }
   for (const message of input.messages || []) {
@@ -468,12 +483,14 @@ function isReviewNeededSession(task: Task, evidence: SessionEvidence = {}) {
 function artifactTitleForKind(kind: WorkbenchArtifactKind, message: TaskMessage): string {
   const metadataTitle = message.metadataJson?.title;
   if (typeof metadataTitle === 'string' && metadataTitle.trim()) {
-    if (kind === 'blueprint_workspace') return `Blueprint Specification: ${metadataTitle}`;
+    if (kind === 'blueprint_workspace') return `Specification Workspace: ${metadataTitle}`;
     if (kind === 'app_blueprint') return `Blueprint: ${metadataTitle}`;
     if (kind === 'component_design') return `Component: ${metadataTitle}`;
     if (kind === 'design_delta') return `Design Delta: ${metadataTitle}`;
+    if (kind === 'spec' && message.metadataJson?.intent === 'design_decision_review')
+      return metadataTitle;
   }
-  if (kind === 'blueprint_workspace') return 'Blueprint Specification';
+  if (kind === 'blueprint_workspace') return 'Specification Workspace';
   if (kind === 'app_blueprint') return 'App Blueprint';
   if (kind === 'component_design') return 'Component Design';
   if (kind === 'design_delta') return 'Design Delta';

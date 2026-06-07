@@ -16,6 +16,7 @@ import type {
   AgentHookConfig,
   AgentHookInput,
   AgentHookTestResult,
+  BlueprintSpecificationWorkspace,
   CreateProjectInput,
   CreateSessionInput,
   ImplementationQueueDashboard,
@@ -66,6 +67,26 @@ type TaskPatchInput = {
 };
 
 const emptyActivityReplay: ActivityReplay = { events: [], artifacts: [] };
+
+function hasSpecificationWorkspaceEvidence(workspace: BlueprintSpecificationWorkspace) {
+  return Boolean(
+    workspace.blueprintArtifacts.length ||
+      workspace.dbDesignArtifacts.length ||
+      workspace.questionnaireSessions.length ||
+      workspace.decisionReviews.length ||
+      workspace.implementationReferences.length
+  );
+}
+
+function summarizeSpecificationWorkspace(workspace: BlueprintSpecificationWorkspace) {
+  return [
+    `${workspace.blueprintArtifacts.length} Blueprint`,
+    `${workspace.dbDesignArtifacts.length} DB Design`,
+    `${workspace.questionnaireSessions.length} Questionnaire`,
+    `${workspace.decisionReviews.length} Decision Review`,
+    `${workspace.implementationReferences.length} Implementation`,
+  ].join(' · ');
+}
 
 async function patchTask(sessionId: string, input: TaskPatchInput) {
   const res = await apiFetch(`/api/tasks/${sessionId}`, {
@@ -326,6 +347,19 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       const res = await apiFetch(`/api/tasks/${activeSessionId}/messages`);
       if (!res.ok) throw new Error('Failed to fetch task messages');
       return (await res.json()) as TaskMessage[];
+    },
+    enabled: !!activeSessionId,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
+  const { data: activeSpecificationWorkspace = null } = useQuery({
+    queryKey: ['specificationWorkspace', activeSessionId],
+    queryFn: async () => {
+      if (!activeSessionId) return null;
+      const res = await apiFetch(`/api/tasks/${activeSessionId}/specification-workspace`);
+      if (!res.ok) throw new Error('Failed to fetch specification workspace');
+      return (await res.json()) as BlueprintSpecificationWorkspace;
     },
     enabled: !!activeSessionId,
     refetchOnWindowFocus: false,
@@ -908,20 +942,51 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       afterSeq: runBelongsToActiveSession ? maxSeq : undefined,
     };
   }, [activeSessionId, latestRun?.id, latestRun?.taskId, latestRunEvents]);
-  const activeArtifactRefs = useMemo(
-    () =>
-      activeSession
-        ? buildWorkbenchArtifactRefs({
-            task: activeSession,
-            latestRun,
-            todos: latestRunTodos,
-            events: latestRunEvents,
-            reviews: latestRunReviews,
-            messages: taskMessages,
-          })
-        : [],
-    [activeSession, latestRun, latestRunEvents, latestRunReviews, latestRunTodos, taskMessages]
-  );
+  const activeArtifactRefs = useMemo(() => {
+    if (!activeSession) return [];
+    const refs = buildWorkbenchArtifactRefs({
+      task: activeSession,
+      latestRun,
+      todos: latestRunTodos,
+      events: latestRunEvents,
+      reviews: latestRunReviews,
+      messages: taskMessages,
+    });
+    if (
+      activeSpecificationWorkspace &&
+      hasSpecificationWorkspaceEvidence(activeSpecificationWorkspace) &&
+      !refs.some((artifact) => artifact.kind === 'blueprint_workspace')
+    ) {
+      refs.unshift({
+        id: `blueprint-workspace-${activeSession.id}`,
+        taskId: activeSession.id,
+        kind: 'blueprint_workspace',
+        title: 'Specification Workspace',
+        summary: summarizeSpecificationWorkspace(activeSpecificationWorkspace),
+        source: {
+          type: 'task_message',
+          messageId:
+            activeSpecificationWorkspace.decisionReviews[0]?.sourceMessageId ||
+            activeSpecificationWorkspace.blueprintArtifacts[0]?.sourceMessageId ||
+            activeSpecificationWorkspace.dbDesignArtifacts[0]?.sourceMessageId ||
+            activeSpecificationWorkspace.questionnaireSessions[0]?.sourceBlueprintMessageId ||
+            activeSpecificationWorkspace.implementationReferences[0]?.sourceMessageId ||
+            '',
+        },
+        createdAt: activeSpecificationWorkspace.generatedAt || String(activeSession.updatedAt),
+        metadata: { specificationWorkspace: activeSpecificationWorkspace },
+      });
+    }
+    return refs;
+  }, [
+    activeSession,
+    activeSpecificationWorkspace,
+    latestRun,
+    latestRunEvents,
+    latestRunReviews,
+    latestRunTodos,
+    taskMessages,
+  ]);
   const queueEntryByTaskId = useMemo(() => {
     const map = new Map<string, ImplementationQueueDashboard['queued'][number]>();
     if (!implementationQueue) return map;

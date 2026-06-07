@@ -199,10 +199,51 @@ describe('workbench selectors', () => {
       messages: [message],
     });
 
+    expect(refs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'blueprint_workspace',
+          title: 'Specification Workspace',
+          source: { type: 'task_message', messageId: message.id },
+        }),
+        expect.objectContaining({
+          kind: 'app_blueprint',
+          title: 'Blueprint: Inventory App',
+          source: { type: 'task_message', messageId: message.id },
+        }),
+      ])
+    );
+  });
+
+  it('builds Specification Workspace refs from accepted Decision Review messages', () => {
+    const message: TaskMessage = {
+      id: '44444444-4444-4444-8444-444444444446',
+      taskId: baseTask.id,
+      role: 'assistant',
+      content: '# Decision Review',
+      messageType: 'markdown_document',
+      metadataJson: {
+        intent: 'design_decision_review',
+        title: 'Inventory Decision Review',
+        designDecisionReview: { title: 'Inventory Decision Review' },
+      },
+      createdAt: '2026-06-02T00:00:01.000Z',
+    };
+
+    const refs = buildWorkbenchArtifactRefs({
+      task: baseTask,
+      messages: [message],
+    });
+
     expect(refs).toEqual([
       expect.objectContaining({
-        kind: 'app_blueprint',
-        title: 'Blueprint: Inventory App',
+        kind: 'blueprint_workspace',
+        title: 'Specification Workspace',
+        source: { type: 'task_message', messageId: message.id },
+      }),
+      expect.objectContaining({
+        kind: 'spec',
+        title: 'Inventory Decision Review',
         source: { type: 'task_message', messageId: message.id },
       }),
     ]);

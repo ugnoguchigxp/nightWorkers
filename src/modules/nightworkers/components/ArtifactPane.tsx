@@ -298,9 +298,7 @@ function BlueprintSpecificationWorkspaceViewer({
 
   const refresh = useCallback(async () => {
     if (!sessionId) return;
-    const workspaceRes = await apiFetch(
-      `/api/tasks/${sessionId}/blueprint-specification-workspace`
-    );
+    const workspaceRes = await apiFetch(`/api/tasks/${sessionId}/specification-workspace`);
     if (workspaceRes.ok)
       setWorkspace((await workspaceRes.json()) as BlueprintSpecificationWorkspace);
     const sessionsRes = await apiFetch(`/api/tasks/${sessionId}/design-questionnaire`);
@@ -412,7 +410,7 @@ function BlueprintSpecificationWorkspaceViewer({
     <div className="flex h-full min-h-0 flex-col bg-[#1e1e2e] text-slate-100">
       <div className="shrink-0 border-slate-800 border-b px-5 py-3">
         <div className="text-[11px] font-semibold uppercase text-cyan-200">
-          Blueprint Specification Workspace
+          Specification Workspace
         </div>
         <div className="mt-2 flex flex-wrap gap-1">
           {[

@@ -645,6 +645,8 @@ describe('NightWorkers task routes', () => {
   it('creates a Design Questionnaire, saves answers, accepts a Decision Review, and aggregates workspace refs', async () => {
     const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
     const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
     process.env.ACTIVE_LLM_PROVIDER = 'fixture';
 
     try {
@@ -876,17 +878,39 @@ describe('NightWorkers task routes', () => {
       expect(workspace.decisionReviews).toEqual(
         expect.arrayContaining([expect.objectContaining({ title: 'Support Desk Decision Review' })])
       );
+
+      const specificationWorkspaceRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/specification-workspace`,
+        { headers: sameOriginHeaders }
+      );
+      expect(specificationWorkspaceRes.status).toBe(200);
+      const specificationWorkspace = await specificationWorkspaceRes.json();
+      expect(specificationWorkspace.questionnaireSessions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: session.id,
+            status: 'accepted',
+          }),
+        ])
+      );
+      expect(specificationWorkspace.decisionReviews).toEqual(
+        expect.arrayContaining([expect.objectContaining({ title: 'Support Desk Decision Review' })])
+      );
     } finally {
       if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
       else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
       if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
       else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
     }
   });
 
   it('stores schema-invalid Design Questionnaire raw output without replacing it', async () => {
     const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
     const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
     process.env.ACTIVE_LLM_PROVIDER = 'fixture';
 
     try {
@@ -937,6 +961,8 @@ describe('NightWorkers task routes', () => {
       else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
       if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
       else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
     }
   });
 

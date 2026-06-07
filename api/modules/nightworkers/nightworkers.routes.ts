@@ -784,6 +784,20 @@ const getBlueprintSpecificationWorkspaceRoute = createRoute({
   },
 });
 
+const getSpecificationWorkspaceRoute = createRoute({
+  method: 'get',
+  path: '/tasks/:id/specification-workspace',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: blueprintSpecificationWorkspaceSchema } },
+      description: 'Specification Workspace read model',
+    },
+  },
+});
+
 const createWorkbenchSessionRoute = createRoute({
   method: 'post',
   path: '/workbench/sessions',
@@ -2058,6 +2072,18 @@ const router = createOpenApiRouter()
     const id = c.req.param('id');
     try {
       const workspace = await service.getBlueprintSpecificationWorkspace(id);
+      return c.json(workspace, 200);
+    } catch (err: any) {
+      if (err instanceof AppError) {
+        return c.json({ error: err.message, code: err.code }, err.statusCode as any);
+      }
+      return c.json({ error: String(err?.message || err) }, 500);
+    }
+  })
+  .openapi(getSpecificationWorkspaceRoute, async (c): Promise<any> => {
+    const id = c.req.param('id');
+    try {
+      const workspace = await service.getSpecificationWorkspace(id);
       return c.json(workspace, 200);
     } catch (err: any) {
       if (err instanceof AppError) {

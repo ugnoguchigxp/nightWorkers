@@ -669,7 +669,12 @@ export async function getBlueprintSpecificationWorkspace(
             ? ('adopted' as const)
             : ('not_adopted' as const)
           : ('unknown' as const),
-        sourceBlueprintMessageId: metadata.parentBlueprintId ? undefined : undefined,
+        sourceBlueprintMessageId:
+          typeof metadata.sourceBlueprintMessageId === 'string'
+            ? metadata.sourceBlueprintMessageId
+            : typeof metadata.dbDesignTarget?.sourceBlueprintMessageId === 'string'
+              ? metadata.dbDesignTarget.sourceBlueprintMessageId
+              : undefined,
       };
       if (isDbDesign) dbDesignArtifacts.push(artifact);
       else blueprintArtifacts.push(artifact);
@@ -711,6 +716,10 @@ export async function getBlueprintSpecificationWorkspace(
     decisionReviews,
     implementationReferences,
   };
+}
+
+export async function getSpecificationWorkspace(taskId: string) {
+  return getBlueprintSpecificationWorkspace(taskId);
 }
 
 export async function appendTaskMessage(id: string, prompt: string) {
