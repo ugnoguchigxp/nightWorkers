@@ -1,4 +1,8 @@
-export type AgentRuntimeKind = 'native-local' | 'external-process' | 'future-adapter';
+export type AgentRuntimeKind =
+  | 'native-local'
+  | 'codex-agent'
+  | 'external-process'
+  | 'future-adapter';
 
 export interface AgentSafetyPolicy {
   allowedPaths?: string[];

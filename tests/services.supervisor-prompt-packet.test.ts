@@ -59,7 +59,7 @@ describe('supervisor prompt packet', () => {
     expect(rendered).not.toContain('"diagnostics"');
   });
 
-  it('renders AGENTS.md as NightWorkers runtime guidance without enabling provider activity', () => {
+  it('renders safe AGENTS.md guidance without raw native tool directives', () => {
     fs.writeFileSync(
       path.join(codexHome, 'AGENTS.md'),
       [
@@ -71,8 +71,10 @@ describe('supervisor prompt packet', () => {
     const rendered = buildRound1JobTypePrompt('/repo');
 
     expect(rendered).toContain('[Codex Runtime Guidance]');
-    expect(rendered).toContain('Codex provider subprocess では実行しません');
-    expect(rendered).toContain('initial_instructions MCP tool');
+    expect(rendered).toContain('runtime が安全に分離した guidance');
+    expect(rendered).toContain('Global Codex AGENTS.md: 1/2 guidance lines applied');
     expect(rendered).toContain('Supervisor の実行方針は prompt 側で定義してください。');
+    expect(rendered).toContain('1 lifecycle/native directive lines withheld');
+    expect(rendered).not.toContain('initial_instructions MCP tool');
   });
 });

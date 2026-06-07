@@ -1,12 +1,20 @@
 import type { ProcedureSnapshot } from '../procedures';
 import type { TaskType } from '../task-intake';
 
+export type RuntimeLaneSnapshot = {
+  workerKind: 'native-local' | 'codex-agent';
+  source: 'task' | 'queue' | 'settings' | 'env_default';
+  diagnostics?: Array<{ level: 'info' | 'warning'; message: string }>;
+};
+
 export type RuntimePromptSnapshot = {
   compiledPrompt: string;
   source: 'task_prompt' | 'fallback';
   degraded: boolean;
   degradedReason?: string;
   blueprintPlanning?: unknown;
+  runtimeLane?: 'native-supervisor' | 'codex-agent';
+  runtimeLaneResolution?: RuntimeLaneSnapshot;
   request: {
     repositoryPath: string;
     taskTitle: string;

@@ -9,7 +9,7 @@ import {
   type JobTypeSelection,
   parseSupervisorOutput,
 } from '../schema-first';
-import { emitSupervisorLlmDebugEvent } from './events';
+import { emitSupervisorLlmDebugEvent, ProviderActivityRejectedError } from './events';
 import { createSupervisorLlmAbortSignal, digestLlmText, jsonFixWrapper } from './json';
 import { callProvider, type RawLlmCallOptions } from './providers';
 import { buildNormalizedSupervisorLlmRequest, providerAdapterKey } from './request';
@@ -158,6 +158,14 @@ async function callRawJsonLLM(
     providerUsage = providerResult.usage;
     providerDebug = { ...providerDebug, normalizedUsage: providerUsage };
   } catch (error) {
+    const rejectedActivity =
+      error instanceof ProviderActivityRejectedError
+        ? {
+            activityType: error.activityType,
+            toolName: error.toolName,
+            preview: error.preview.slice(0, 500),
+          }
+        : null;
     appendLlmTrace('provider_error', {
       callId,
       provider: normalizedRequest.providerId,
@@ -167,7 +175,10 @@ async function callRawJsonLLM(
       durationMs: Date.now() - startedAt,
       errorName: error instanceof Error ? error.name : null,
       errorMessage: error instanceof Error ? error.message : String(error),
-      providerDebug,
+      providerDebug: {
+        ...providerDebug,
+        ...(rejectedActivity ? { rejectedActivity } : {}),
+      },
     });
     throw error;
   }

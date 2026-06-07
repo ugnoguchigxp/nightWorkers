@@ -86,6 +86,7 @@ describe('NightWorkers service', () => {
     delete process.env.CONVERSATION_CONTEXT_ENABLED;
     delete process.env.CONVERSATION_CONTEXT_STATE_CARD_ENABLED;
     delete process.env.CONVERSATION_CONTEXT_BUILD_ON_IDLE;
+    delete process.env.NIGHTWORKERS_RUNTIME_LANE;
   });
 
   it('lists replay events for a run after the requested cursor', async () => {
@@ -256,6 +257,81 @@ describe('NightWorkers service', () => {
         }),
       })
     );
+  });
+
+  it('uses the codex-agent runtime lane when the env override is set', async () => {
+    process.env.NIGHTWORKERS_RUNTIME_LANE = 'codex-agent';
+    const task = {
+      id: 'task-codex-lane',
+      repositoryId: 'repo-codex-lane',
+      title: 'Codex lane task',
+      description: 'Use Codex lane',
+      objective: 'Use Codex lane',
+      acceptanceCriteria: 'Codex lane starts',
+      timeoutSeconds: 60,
+    };
+    const run = {
+      id: 'run-codex-lane',
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+      status: 'running',
+    };
+
+    vi.mocked(repo.getTask).mockResolvedValue(task as any);
+    vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+    vi.mocked(repo.getRepository).mockResolvedValue({
+      id: task.repositoryId,
+      localPath: repoRoot,
+      safetyPolicy: {},
+    } as any);
+    vi.mocked(repo.listTaskMessages).mockResolvedValue([
+      { role: 'user', content: 'Use Codex lane' },
+    ] as any);
+    vi.mocked(repo.createTaskRun).mockResolvedValue(run as any);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
+    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as any);
+    const runtimeStart = vi.fn().mockResolvedValue({
+      terminalState: 'completed',
+      summary: 'Codex done',
+      finalReport: 'Codex done',
+      stoppedBy: 'decision',
+      riskLevel: 'medium',
+      diffPatch: '',
+      logContent: '',
+    });
+    vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+      kind: 'codex-agent',
+      start: runtimeStart,
+      stop: vi.fn(),
+    } as any);
+
+    await startTaskRun(task.id);
+
+    expect(repo.createTaskRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workerKind: 'codex-agent',
+        contextSnapshot: expect.objectContaining({
+          runtimeLane: 'codex-agent',
+          runtimeLaneResolution: expect.objectContaining({
+            workerKind: 'codex-agent',
+            source: 'env_default',
+          }),
+        }),
+      })
+    );
+    expect(runtimeRegistry.resolveAgentRuntime).toHaveBeenCalledWith('codex-agent');
+    await vi.waitFor(() => {
+      expect(runtimeStart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runtimeOptions: expect.objectContaining({
+            runtimeLane: 'codex-agent',
+          }),
+        }),
+        expect.anything()
+      );
+    });
   });
 
   it('starts simple runtime once without creating planned todos', async () => {

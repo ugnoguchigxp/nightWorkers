@@ -14,6 +14,7 @@ import { AppError, NotFoundError } from '../../lib/errors';
 import { getCurrentSettings } from '../../routes/settings';
 import { createLedgerSink } from '../../services/agent-runtime/ledger-sink';
 import { resolveAgentRuntime } from '../../services/agent-runtime/registry';
+import { resolveRuntimeLane } from '../../services/agent-runtime/runtime-lane';
 import type { AgentRuntimeResult } from '../../services/agent-runtime/types';
 import {
   BlueprintDataDesignGenerationError,
@@ -1887,13 +1888,23 @@ export async function startTaskRun(taskId: string) {
     throw new AppError(400, 'EMPTY_PROMPT', 'No user message found to start a run');
   }
   const blueprintReadiness = await resolveBlueprintPlanningReadiness(taskId);
+  const runtimeLaneResolution = resolveRuntimeLane();
   const run = await repo.createTaskRun({
     taskId,
     repositoryId: task.repositoryId,
     status: 'running',
-    workerKind: 'native-local',
+    workerKind: runtimeLaneResolution.workerKind,
     timeoutSeconds: task.timeoutSeconds,
-    contextSnapshot: { compiledPrompt: compiledPromptText, blueprintPlanning: blueprintReadiness },
+    contextSnapshot: {
+      compiledPrompt: compiledPromptText,
+      blueprintPlanning: blueprintReadiness,
+      runtimeLane: runtimeLaneResolution.lane,
+      runtimeLaneResolution: {
+        workerKind: runtimeLaneResolution.workerKind,
+        source: runtimeLaneResolution.source,
+        diagnostics: runtimeLaneResolution.diagnostics,
+      },
+    },
     startedAt: new Date(),
   });
 
@@ -1906,7 +1917,13 @@ export async function startTaskRun(taskId: string) {
     severity: 'info',
     actor: 'system',
     message: 'Task run created. Runtime prompt is being prepared.',
-    data: { contextSource: 'task_prompt', blueprintPlanning: blueprintReadiness },
+    data: {
+      contextSource: 'task_prompt',
+      blueprintPlanning: blueprintReadiness,
+      runtimeLane: runtimeLaneResolution.lane,
+      workerKind: runtimeLaneResolution.workerKind,
+      runtimeLaneResolution,
+    },
   });
 
   const contextSnapshot: RuntimePromptSnapshot = {
@@ -1914,6 +1931,12 @@ export async function startTaskRun(taskId: string) {
     source: 'task_prompt',
     degraded: false,
     blueprintPlanning: blueprintReadiness,
+    runtimeLane: runtimeLaneResolution.lane,
+    runtimeLaneResolution: {
+      workerKind: runtimeLaneResolution.workerKind,
+      source: runtimeLaneResolution.source,
+      diagnostics: runtimeLaneResolution.diagnostics,
+    },
     request: {
       repositoryPath: repoInfo.localPath,
       taskTitle: task.title,
@@ -1979,11 +2002,14 @@ export async function startTaskRun(taskId: string) {
       degraded: false,
       digest: contextSnapshot.result.digest,
       charCount: contextSnapshot.result.charCount,
+      runtimeLane: runtimeLaneResolution.lane,
+      workerKind: runtimeLaneResolution.workerKind,
+      runtimeLaneResolution,
     },
   });
 
   // Track logs in memory and create database event entries
-  const runtime = resolveAgentRuntime('native-local');
+  const runtime = resolveAgentRuntime(runtimeLaneResolution.workerKind);
   const sink = createLedgerSink(run.id);
 
   // Asynchronously execute runner so that startTaskRun returns immediately
@@ -2001,6 +2027,10 @@ export async function startTaskRun(taskId: string) {
           timeoutSeconds: task.timeoutSeconds ?? 3600,
           safetyPolicy: repoInfo.safetyPolicy || undefined,
           contextSnapshot: runtimeContextSnapshot,
+          runtimeOptions: {
+            runtimeLane: runtimeLaneResolution.lane,
+            runtimeLaneResolution,
+          },
         },
         sink
       );
