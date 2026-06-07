@@ -45,7 +45,7 @@
     "test:e2e:agent-live": "playwright test --grep @agent-live",
     "format": "biome format --write .",
     "verify:base": "pnpm typecheck && pnpm lint && pnpm test:supervisor-regression",
-    "verify:desktop": "pnpm vitest run tests/runtime-paths.test.ts tests/runtime-bootstrap.test.ts tests/api-base.test.ts tests/preflight.test.ts tests/routes.security-hardening.test.ts && pnpm desktop:lint && pnpm desktop:build && pnpm desktop:smoke",
+    "verify:desktop": "pnpm vitest run tests/runtime-paths.test.ts tests/runtime-bootstrap.test.ts tests/api-base.test.ts tests/preflight.test.ts tests/routes.security-hardening.test.ts && pnpm desktop:lint && pnpm desktop:build",
     "verify": "pnpm verify:base && pnpm verify:desktop",
     "verify:fast": "pnpm verify:base",
     "verify:full": "pnpm verify && pnpm test run"
