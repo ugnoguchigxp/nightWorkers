@@ -1,0 +1,214 @@
+import { PanelsTopLeft } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import type { TaskMessage, WorkbenchArtifactRef } from '../types';
+import { ChatMarkdown, NightWorkersCodeBlock } from './ThreadTimelineMarkdown';
+
+export function MessagePayload({
+  message,
+  onOpenArtifact,
+}: {
+  message: TaskMessage;
+  onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
+}) {
+  const { t } = useTranslation();
+  const metadata = message.metadataJson as any;
+  if (metadata?.intent === 'tool_diff') {
+    const codeBlock = metadata.codeBlock || {};
+    const code = typeof codeBlock.code === 'string' ? codeBlock.code : message.content;
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+          <span className="rounded-[var(--radius-sm)] border border-border bg-muted px-1.5 py-0.5 text-card-foreground">
+            {t('timeline.codeChange')}
+          </span>
+          {metadata.toolName ? <span>{String(metadata.toolName)}</span> : null}
+        </div>
+        <NightWorkersCodeBlock
+          code={code}
+          filename={
+            typeof codeBlock.filename === 'string' ? codeBlock.filename : 'tool-output.diff'
+          }
+          language={typeof codeBlock.language === 'string' ? codeBlock.language : 'diff'}
+        />
+      </div>
+    );
+  }
+  if (message.messageType === 'markdown_document' && metadata?.appBlueprint) {
+    const validation = metadata.validation;
+    const issueCount = Array.isArray(validation?.issues) ? validation.issues.length : 0;
+    return (
+      <div className="nightworkers-artifact-message space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="nightworkers-artifact-kicker text-xs font-semibold uppercase text-cyan-200">
+              {t('timeline.blueprintArtifact')}
+            </div>
+            <div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold text-slate-100">
+              {metadata.appBlueprint.name || metadata.title || t('timeline.appBlueprintFallback')}
+            </div>
+            <div className="nightworkers-artifact-meta mt-1 text-xs text-slate-400">
+              {t('timeline.screensCount', { count: metadata.appBlueprint.screens?.length || 0 })} /{' '}
+              {t('timeline.sectionsCount', {
+                count: countBlueprintSections(metadata.appBlueprint),
+              })}{' '}
+              / {t('timeline.issuesCount', { count: issueCount })}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="nightworkers-artifact-open-button inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-cyan-500/60 text-cyan-100 hover:bg-cyan-950/30"
+            onClick={() =>
+              onOpenArtifact({
+                id: `message-${message.id}`,
+                taskId: message.taskId,
+                runId: message.runId || undefined,
+                kind: 'app_blueprint',
+                title: `Blueprint: ${
+                  metadata.appBlueprint.name || metadata.title || t('timeline.draftFallback')
+                }`,
+                summary: message.content.slice(0, 160),
+                source: { type: 'task_message', messageId: message.id },
+                createdAt: String(message.createdAt),
+                metadata,
+              })
+            }
+            title={t('timeline.openBlueprintArtifact')}
+          >
+            <PanelsTopLeft className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="nightworkers-artifact-summary line-clamp-3 text-xs leading-5 text-slate-300">
+          {summarizeBlueprintCard(metadata.appBlueprint, message.content)}
+        </p>
+      </div>
+    );
+  }
+  if (message.messageType === 'markdown_document' && metadata?.componentDesign) {
+    const componentDesign = metadata.componentDesign;
+    return (
+      <div className="nightworkers-artifact-message space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="nightworkers-artifact-kicker text-xs font-semibold uppercase text-cyan-200">
+              {t('timeline.componentDesignArtifact')}
+            </div>
+            <div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold text-slate-100">
+              {componentDesign.componentName ||
+                metadata.title ||
+                t('timeline.componentDesignFallback')}
+            </div>
+            <div className="nightworkers-artifact-meta mt-1 text-xs text-slate-400">
+              {t('timeline.variantsCount', { count: componentDesign.variants?.length || 0 })} /{' '}
+              {t('timeline.tokenChangesCount', {
+                count: componentDesign.tokenChanges?.length || 0,
+              })}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="nightworkers-artifact-open-button inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-cyan-500/60 text-cyan-100 hover:bg-cyan-950/30"
+            onClick={() =>
+              onOpenArtifact({
+                id: `message-${message.id}`,
+                taskId: message.taskId,
+                runId: message.runId || undefined,
+                kind: 'component_design',
+                title: `Component: ${
+                  componentDesign.componentName ||
+                  metadata.title ||
+                  t('timeline.componentDesignTitleFallback')
+                }`,
+                summary: message.content.slice(0, 160),
+                source: { type: 'task_message', messageId: message.id },
+                createdAt: String(message.createdAt),
+                metadata,
+              })
+            }
+            title={t('timeline.openComponentDesignArtifact')}
+          >
+            <PanelsTopLeft className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="nightworkers-artifact-summary line-clamp-3 text-xs leading-5 text-slate-300">
+          {componentDesign.summary || message.content}
+        </p>
+      </div>
+    );
+  }
+  if (message.messageType === 'chart' && metadata?.chartData) {
+    return (
+      <div className="space-y-2">
+        <div className="text-xs font-semibold text-zinc-300">{t('timeline.chart')}</div>
+        <pre className="whitespace-pre-wrap break-all rounded-md bg-black/30 p-2 text-xs">
+          {JSON.stringify(metadata.chartData, null, 2)}
+        </pre>
+      </div>
+    );
+  }
+  if (message.messageType === 'browser' && metadata?.browserFrameData?.url) {
+    return (
+      <div className="space-y-2">
+        <div className="text-xs font-semibold text-zinc-300">{t('timeline.browser')}</div>
+        <a
+          className="text-cyan-300 underline"
+          href={metadata.browserFrameData.url}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {metadata.browserFrameData.url}
+        </a>
+      </div>
+    );
+  }
+  if (message.messageType === 'flow' && metadata?.flowData) {
+    return (
+      <div className="space-y-2">
+        <div className="text-xs font-semibold text-zinc-300">{t('timeline.flow')}</div>
+        <pre className="whitespace-pre-wrap break-all rounded-md bg-black/30 p-2 text-xs">
+          {JSON.stringify(metadata.flowData, null, 2)}
+        </pre>
+      </div>
+    );
+  }
+  if (message.messageType === 'playwright' && metadata?.playwrightResult) {
+    return (
+      <div className="space-y-2">
+        <div className="text-xs font-semibold text-zinc-300">{t('timeline.playwright')}</div>
+        <pre className="whitespace-pre-wrap break-all rounded-md bg-black/30 p-2 text-xs">
+          {JSON.stringify(metadata.playwrightResult, null, 2)}
+        </pre>
+      </div>
+    );
+  }
+  if (message.messageType === 'markdown_document' && metadata?.markdownDocumentData?.content) {
+    return <ChatMarkdown content={metadata.markdownDocumentData.content} />;
+  }
+  if (message.role === 'assistant') {
+    return <ChatMarkdown content={message.content} />;
+  }
+  return <>{message.content}</>;
+}
+
+function summarizeBlueprintCard(blueprint: any, fallback: string) {
+  if (!blueprint || typeof blueprint !== 'object') return fallback;
+  const screens = Array.isArray(blueprint.screens) ? blueprint.screens : [];
+  const sectionNames = screens
+    .flatMap((screen: any) => (Array.isArray(screen?.sections) ? screen.sections : []))
+    .map((section: any) => String(section?.name || section?.id || '').trim())
+    .filter(Boolean)
+    .slice(0, 4);
+  const description = String(blueprint.description || '').trim();
+  const details = [sectionNames.length > 0 ? `Sections: ${sectionNames.join(', ')}` : ''].filter(
+    Boolean
+  );
+  return [description, ...details].filter(Boolean).join(' ');
+}
+
+function countBlueprintSections(blueprint: any) {
+  const screens = Array.isArray(blueprint?.screens) ? blueprint.screens : [];
+  return screens.reduce(
+    (total: number, screen: any) =>
+      total + (Array.isArray(screen?.sections) ? screen.sections.length : 0),
+    0
+  );
+}

@@ -8,6 +8,10 @@ import { blueprintCatalog } from '../blueprint-catalog';
 import { defaultDesignPreset } from '../design-governance';
 import { callStructuredJsonLLM, type SupervisorLlmDebugEvent } from '../supervisor/llm-provider';
 import {
+  type JsonFixWrapperResult,
+  parseRepairedJsonWithSchema,
+} from '../supervisor/llm-provider/json';
+import {
   renderSupervisorSkillDocuments,
   resolveSupervisorSkillDocuments,
   summarizeSupervisorSkillDocuments,
@@ -33,9 +37,15 @@ export type GeneratedBlueprintDraft = {
     source: 'llm';
     degradedReasons: string[];
     rawOutput?: string;
+    jsonRepair?: BlueprintJsonRepairDiagnostics;
     skillDocuments: BlueprintSkillDocumentsSummary;
     promptDiagnostics: BlueprintPromptDiagnostics;
   };
+};
+
+export type BlueprintJsonRepairDiagnostics = {
+  repaired: boolean;
+  repairKind: JsonFixWrapperResult['repairKind'];
 };
 
 export class BlueprintDraftGenerationError extends Error {
@@ -80,7 +90,7 @@ export async function generatePlanModeBlueprintDraft(input: {
   );
 
   try {
-    const { blueprint, validation } = parseAndValidateBlueprintOutput(rawOutput);
+    const { blueprint, validation, jsonRepair } = parseAndValidateBlueprintOutput(rawOutput);
     return {
       blueprint,
       validation,
@@ -88,6 +98,7 @@ export async function generatePlanModeBlueprintDraft(input: {
         source: 'llm',
         degradedReasons: [],
         rawOutput,
+        jsonRepair,
         skillDocuments: skillDocumentSummary,
         promptDiagnostics,
       },
@@ -98,13 +109,14 @@ export async function generatePlanModeBlueprintDraft(input: {
   }
 }
 
-function parseAndValidateBlueprintOutput(rawOutput: string): {
+export function parseAndValidateBlueprintOutput(rawOutput: string): {
   blueprint: AppBlueprint;
   validation: ReturnType<typeof validateAppBlueprint>;
+  jsonRepair: BlueprintJsonRepairDiagnostics;
 } {
-  const candidate = extractJsonCandidate(rawOutput);
-  if (!candidate) throw new Error('Blueprint LLM output did not contain JSON.');
-  const blueprint = appBlueprintSchema.parse(JSON.parse(candidate));
+  const parsed = parseRepairedJsonWithSchema(rawOutput, appBlueprintSchema);
+  if (!parsed.ok) throw new Error('Blueprint LLM output did not contain valid JSON.');
+  const blueprint = parsed.value;
   const validation = validateAppBlueprint(blueprint);
   if (!validation.valid) {
     throw new Error(
@@ -113,16 +125,11 @@ function parseAndValidateBlueprintOutput(rawOutput: string): {
         .join(', ')}`
     );
   }
-  return { blueprint, validation };
-}
-
-function extractJsonCandidate(raw: string): string | null {
-  const fenced = raw.match(/```json\s*([\s\S]*?)\s*```/i) || raw.match(/```\s*([\s\S]*?)\s*```/i);
-  if (fenced?.[1]) return fenced[1].trim();
-  const first = raw.indexOf('{');
-  const last = raw.lastIndexOf('}');
-  if (first >= 0 && last > first) return raw.slice(first, last + 1).trim();
-  return null;
+  return {
+    blueprint,
+    validation,
+    jsonRepair: { repaired: parsed.repaired, repairKind: parsed.repairKind },
+  };
 }
 
 const blueprintRoutingFallback: SupervisorRoutingHypothesis = {

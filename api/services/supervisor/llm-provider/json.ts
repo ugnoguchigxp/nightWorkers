@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { ZodType } from 'zod';
 import type { CallSupervisorOptions } from './types';
 
 export type JsonFixWrapperResult = {
@@ -41,6 +42,41 @@ export function jsonFixWrapper(raw: string): JsonFixWrapperResult | null {
   }
 
   return null;
+}
+
+export function parseRepairedJsonWithSchema<T>(
+  raw: string,
+  schema: ZodType<T>
+):
+  | {
+      ok: true;
+      value: T;
+      sourceText: string;
+      repaired: boolean;
+      repairKind: JsonFixWrapperResult['repairKind'];
+    }
+  | {
+      ok: false;
+      error: unknown;
+      rawOutput: string;
+    } {
+  const jsonFix = jsonFixWrapper(raw);
+  if (!jsonFix) {
+    return {
+      ok: false,
+      error: new Error('LLM output did not contain repairable JSON.'),
+      rawOutput: raw,
+    };
+  }
+  const parsed = schema.safeParse(jsonFix.parsedJson);
+  if (!parsed.success) return { ok: false, error: parsed.error, rawOutput: raw };
+  return {
+    ok: true,
+    value: parsed.data,
+    sourceText: jsonFix.sourceText,
+    repaired: jsonFix.repaired,
+    repairKind: jsonFix.repairKind,
+  };
 }
 
 export function createSupervisorLlmAbortSignal(options: CallSupervisorOptions): AbortSignal {

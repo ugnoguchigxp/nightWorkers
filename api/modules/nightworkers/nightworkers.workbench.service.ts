@@ -1,0 +1,563 @@
+import { AppError, NotFoundError } from '../../lib/errors';
+import {
+  BlueprintDataDesignGenerationError,
+  generateBlueprintDataDesignDraft,
+  parseBlueprintDbDesignRequestPrompt,
+} from '../../services/blueprints/data-design';
+import { renderBlueprintMarkdown } from '../../services/blueprints/draft';
+import {
+  BlueprintDraftGenerationError,
+  generatePlanModeBlueprintDraft,
+} from '../../services/blueprints/llm-draft';
+import { validateAppBlueprint } from '../../services/blueprints/validation';
+import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
+import {
+  callSupervisorLLM,
+  type SupervisorLlmDebugEvent,
+} from '../../services/supervisor/llm-provider';
+import { buildRound1JobTypePrompt, type JobType } from '../../services/supervisor/prompt';
+import type { JobTypeSelection } from '../../services/supervisor/schema-first';
+import type { SupervisorRoutingHypothesis } from '../../services/supervisor/skills/types';
+import { createDesignQuestionnaire } from './nightworkers.design-questionnaire.service';
+import {
+  assertRunnableWorkbenchTask,
+  isBlueprintRouting,
+} from './nightworkers.planning-helpers.service';
+import { queueTask } from './nightworkers.queue-management.service';
+import * as repo from './nightworkers.repository';
+import { startTaskRun } from './nightworkers.run-orchestration.service';
+
+export async function createPlanningArtifactMessageIfNeeded(input: {
+  taskId: string;
+  runId: string;
+  finalReport: string;
+}) {
+  const messages = await repo.listTaskMessages(input.taskId);
+  const runStartedMessage = [...messages].reverse().find((message) => {
+    const metadata = (message.metadataJson || {}) as Record<string, any>;
+    return (
+      message.role === 'system' &&
+      metadata.intent === 'run_started' &&
+      metadata.source === 'workbench'
+    );
+  });
+  const runStartedMetadata = (runStartedMessage?.metadataJson || {}) as Record<string, any>;
+  const intakeJobSelection = runStartedMetadata.intakeJobSelection;
+  if (intakeJobSelection?.jobType !== 'planning') return;
+  const alreadyPublished = messages.some((message) => {
+    const metadata = (message.metadataJson || {}) as Record<string, any>;
+    return (
+      message.messageType === 'markdown_document' &&
+      metadata.intent === 'implementation_plan' &&
+      metadata.sourceRunId === input.runId
+    );
+  });
+  if (alreadyPublished) return;
+  await repo.createTaskMessage({
+    taskId: input.taskId,
+    runId: input.runId,
+    role: 'assistant',
+    content: input.finalReport,
+    messageType: 'markdown_document',
+    payloadJson: {
+      intent: 'implementation_plan',
+      title: 'Implementation Plan',
+      source: 'workbench-planning-run',
+      sourceRunId: input.runId,
+      routingHypothesis: runStartedMetadata.routingHypothesis,
+      intakeJobSelection,
+      markdownDocumentData: {
+        title: 'Implementation Plan',
+        content: input.finalReport,
+      },
+    },
+  });
+}
+
+export async function appendTaskMessage(id: string, prompt: string) {
+  const task = await repo.getTask(id);
+  if (!task) throw new NotFoundError('Task not found');
+  const trimmed = prompt.trim();
+  if (!trimmed) throw new AppError(400, 'EMPTY_PROMPT', 'Prompt must not be empty');
+  const existingMessages = await repo.listTaskMessages(id);
+  const hasAnyUserMessage = existingMessages.some((message) => message.role === 'user');
+  await repo.createTaskMessage({
+    taskId: id,
+    role: 'user',
+    content: trimmed,
+    messageType: 'text',
+  });
+  if (task.title === 'New Session' && !hasAnyUserMessage) {
+    const firstPromptTitle = trimmed.replace(/\s+/g, ' ').slice(0, 40);
+    await repo.updateTask(id, { title: firstPromptTitle });
+  }
+  const latestTask = await repo.getTask(id);
+  if (!latestTask) throw new NotFoundError('Task not found');
+  return latestTask;
+}
+
+export type WorkbenchChatIntent =
+  | 'intake'
+  | 'draft'
+  | 'draft_spec'
+  | 'create_task'
+  | 'queue'
+  | 'run_task'
+  | 'adjust_running'
+  | 'review_followup'
+  | 'learning_capture'
+  | 'design_component'
+  | 'design_blueprint_data';
+
+export async function appendWorkbenchMessage(
+  id: string,
+  input: { prompt: string; intent?: WorkbenchChatIntent; waitForIntake?: boolean }
+) {
+  const intent = input.intent || 'intake';
+  const task = await repo.getTask(id);
+  if (!task) throw new NotFoundError('Task not found');
+  const prompt = input.prompt.trim();
+  if (!prompt) throw new AppError(400, 'EMPTY_PROMPT', 'Prompt must not be empty');
+
+  if (intent === 'run_task') {
+    assertRunnableWorkbenchTask(task);
+    await appendTaskMessage(id, prompt);
+    const run = await startTaskRun(id);
+    return {
+      task: await repo.getTask(id),
+      run,
+      messages: await repo.listTaskMessages(id),
+    };
+  }
+
+  if (intent === 'design_blueprint_data') {
+    return handleBlueprintDataDesignMessage(id, task, prompt);
+  }
+
+  await appendTaskMessage(id, prompt);
+
+  if (intent === 'queue' || intent === 'create_task') {
+    const queued = await queueTask(id);
+    return { task: queued, run: null, messages: await repo.listTaskMessages(id) };
+  }
+
+  const waitForIntake = input.waitForIntake ?? process.env.NODE_ENV === 'test';
+  if (waitForIntake) {
+    return handleWorkbenchIntakeMessage(id, task, prompt, { failureMode: 'throw', intent });
+  }
+
+  const updated = await prepareWorkbenchIntakeTask(id, task, prompt);
+  void handleWorkbenchIntakeMessage(id, task, prompt, { failureMode: 'record', intent });
+  return { task: updated, run: null, messages: await repo.listTaskMessages(id) };
+}
+
+async function handleBlueprintDataDesignMessage(
+  taskId: string,
+  task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>,
+  prompt: string
+) {
+  const emitWorkbenchLlmDebugEvent = createWorkbenchLlmDebugEventEmitter(taskId);
+  try {
+    const parsedRequest = parseBlueprintDbDesignRequestPrompt(prompt);
+    const currentValidation = validateAppBlueprint(parsedRequest.currentBlueprint);
+    const request = {
+      ...parsedRequest,
+      validationIssues: currentValidation.issues,
+    };
+    await repo.createTaskMessage({
+      taskId,
+      role: 'user',
+      content: renderBlueprintDataDesignRequestContent(request),
+      messageType: 'text',
+      payloadJson: {
+        intent: 'design_blueprint_data',
+        source: 'blueprint-preview',
+        blueprintId: request.blueprintId,
+        dbDesignTarget: request.target,
+        prompt: request.prompt,
+        validation: currentValidation,
+      },
+    });
+    const { blueprint, validation, generation } = await generateBlueprintDataDesignDraft({
+      taskId,
+      request,
+      emitEvent: emitWorkbenchLlmDebugEvent,
+    });
+    await repo.createTaskMessage({
+      taskId,
+      role: 'assistant',
+      content: renderBlueprintMarkdown(blueprint),
+      messageType: 'markdown_document',
+      payloadJson: {
+        intent: 'app_blueprint',
+        title: blueprint.name || task.title,
+        appBlueprint: blueprint,
+        validation,
+        generation,
+        source: 'blueprint-db-design',
+        parentBlueprintId: request.blueprintId,
+        dbDesignTarget: request.target,
+      },
+    });
+    const updated = await repo.updateTask(taskId, {
+      objective: task.objective || request.prompt,
+      status: task.status === 'draft' ? 'ready' : task.status,
+    });
+    return { task: updated, run: null, messages: await repo.listTaskMessages(taskId) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof BlueprintDataDesignGenerationError && error.rawOutput?.trim()) {
+      await repo.createTaskMessage({
+        taskId,
+        role: 'assistant',
+        content: error.rawOutput.trim(),
+        messageType: 'text',
+        payloadJson: {
+          intent: 'blueprint_db_design_raw_output',
+          source: 'blueprint-db-design',
+          validationStatus: 'failed',
+          error: message,
+          promptDiagnostics: error.promptDiagnostics,
+        },
+      });
+    }
+    await repo.createTaskMessage({
+      taskId,
+      role: 'system',
+      content: `Blueprint DB Design generation failed: ${message}`,
+      messageType: 'text',
+      payloadJson: {
+        intent: 'blueprint_db_design_failed',
+        source: 'blueprint-db-design',
+        error: message,
+        rawOutputRecorded:
+          error instanceof BlueprintDataDesignGenerationError && Boolean(error.rawOutput?.trim()),
+        promptDiagnostics:
+          error instanceof BlueprintDataDesignGenerationError ? error.promptDiagnostics : undefined,
+      },
+    });
+    throw new AppError(
+      502,
+      'BLUEPRINT_DB_DESIGN_FAILED',
+      `Blueprint DB Design generation failed: ${message}`
+    );
+  }
+}
+
+function renderBlueprintDataDesignRequestContent(
+  request: ReturnType<typeof parseBlueprintDbDesignRequestPrompt>
+) {
+  return [
+    'Blueprint DB Design request',
+    `Target: ${blueprintDataDesignTargetLabel(request.target)}`,
+    `Instruction: ${request.prompt}`,
+  ].join('\n');
+}
+
+function blueprintDataDesignTargetLabel(
+  target: ReturnType<typeof parseBlueprintDbDesignRequestPrompt>['target']
+) {
+  if (target.kind === 'schema') return 'Schema';
+  if (target.kind === 'table') return `Table ${target.tableName}`;
+  if (target.kind === 'relation') return `Relation ${target.relationId}`;
+  if (target.kind === 'binding') return `Binding ${target.bindingId}`;
+  if (target.sectionId) return `Screen ${target.screenId} / section ${target.sectionId}`;
+  return `Screen ${target.screenId}`;
+}
+
+async function handleWorkbenchIntakeMessage(
+  taskId: string,
+  task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>,
+  prompt: string,
+  options: { failureMode: 'throw' | 'record'; intent?: WorkbenchChatIntent } = {
+    failureMode: 'throw',
+  }
+) {
+  const title =
+    task.title === 'New Session' ? prompt.replace(/\s+/g, ' ').slice(0, 60) : task.title;
+  const repository = await repo.getRepository(task.repositoryId);
+  const projectRoot = repository?.localPath || process.cwd();
+  const emitWorkbenchLlmDebugEvent = createWorkbenchLlmDebugEventEmitter(taskId);
+
+  try {
+    const jobSelection = (await callSupervisorLLM(buildRound1JobTypePrompt(projectRoot), prompt, {
+      round: 1,
+      schemaFirst: true,
+      tolerateSchemaFailure: false,
+      emitEvent: emitWorkbenchLlmDebugEvent,
+      workingDirectory: projectRoot,
+      taskId,
+      runId: null,
+    })) as JobTypeSelection;
+    const routing = routingForWorkbenchJobType(jobSelection.jobType);
+    const startsImmediateRun = shouldStartImmediateWorkbenchRun(
+      jobSelection,
+      options.intent || 'intake'
+    );
+    if (jobSelection.jobType === 'planning') {
+      await createDesignQuestionnaire(taskId, null, prompt);
+    } else if (isBlueprintRouting(routing)) {
+      try {
+        const { blueprint, validation, generation } = await generatePlanModeBlueprintDraft({
+          taskId,
+          title,
+          prompt,
+          routing,
+          emitEvent: emitWorkbenchLlmDebugEvent,
+        });
+        await repo.createTaskMessage({
+          taskId,
+          role: 'assistant',
+          content: renderBlueprintMarkdown(blueprint),
+          messageType: 'markdown_document',
+          payloadJson: {
+            intent: 'app_blueprint',
+            title,
+            appBlueprint: blueprint,
+            validation,
+            generation,
+            source: 'workbench',
+            routingHypothesis: routing,
+            intakeJobSelection: jobSelection,
+          },
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (error instanceof BlueprintDraftGenerationError && error.rawOutput?.trim()) {
+          await repo.createTaskMessage({
+            taskId,
+            role: 'assistant',
+            content: error.rawOutput.trim(),
+            messageType: 'text',
+            payloadJson: {
+              intent: 'blueprint_raw_output',
+              source: 'llm',
+              validationStatus: 'failed',
+              error: message,
+              promptDiagnostics: error.promptDiagnostics,
+              routingHypothesis: routing,
+              intakeJobSelection: jobSelection,
+            },
+          });
+        }
+        await repo.createTaskMessage({
+          taskId,
+          role: 'system',
+          content: `Blueprint artifact generation failed: ${message}`,
+          messageType: 'text',
+          payloadJson: {
+            intent: 'blueprint_generation_failed',
+            source: 'workbench',
+            routingHypothesis: routing,
+            intakeJobSelection: jobSelection,
+            error: message,
+            rawOutputRecorded:
+              error instanceof BlueprintDraftGenerationError && Boolean(error.rawOutput?.trim()),
+            promptDiagnostics:
+              error instanceof BlueprintDraftGenerationError ? error.promptDiagnostics : undefined,
+          },
+        });
+        throw new BlueprintArtifactGenerationError(message);
+      }
+    } else if (!startsImmediateRun) {
+      await repo.createTaskMessage({
+        taskId,
+        role: 'assistant',
+        content: renderLlmIntakeContent(jobSelection) || JSON.stringify(jobSelection, null, 2),
+        messageType: 'text',
+        payloadJson: {
+          intent: 'intake',
+          source: 'llm',
+          jobSelection,
+        },
+      });
+    }
+    if (startsImmediateRun) {
+      const runnable = await repo.updateTask(taskId, {
+        title,
+        objective: task.objective || prompt,
+        acceptanceCriteria:
+          task.acceptanceCriteria || buildAcceptanceCriteriaFromDecision(jobSelection) || prompt,
+        status: 'ready',
+      });
+      await repo.createTaskMessage({
+        taskId,
+        role: 'system',
+        content: 'Implementation run started from Workbench intake.',
+        messageType: 'text',
+        payloadJson: {
+          intent: 'run_started',
+          source: 'workbench',
+          routingHypothesis: routing,
+          intakeJobSelection: jobSelection,
+        },
+      });
+      const run = await startTaskRun(taskId);
+      return {
+        task: (await repo.getTask(taskId)) || runnable,
+        run,
+        messages: await repo.listTaskMessages(taskId),
+      };
+    }
+    const updated = await repo.updateTask(taskId, {
+      title,
+      objective: task.objective || prompt,
+      acceptanceCriteria: isBlueprintRouting(routing)
+        ? task.acceptanceCriteria || buildAcceptanceCriteriaFromDecision(jobSelection)
+        : task.acceptanceCriteria,
+      status: isBlueprintRouting(routing) && task.status === 'draft' ? 'ready' : task.status,
+    });
+    return { task: updated, run: null, messages: await repo.listTaskMessages(taskId) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const updated = await repo.updateTask(taskId, {
+      title,
+      objective: task.objective || prompt,
+    });
+    if (options.failureMode === 'record' && !(error instanceof BlueprintArtifactGenerationError)) {
+      await repo.createTaskMessage({
+        taskId,
+        role: 'system',
+        content: `LLM intake failed: ${message}`,
+        messageType: 'text',
+        payloadJson: {
+          intent: 'intake_failed',
+          source: 'workbench',
+          error: message,
+        },
+      });
+      return { task: updated, run: null, messages: await repo.listTaskMessages(taskId) };
+    }
+    if (options.failureMode === 'record') {
+      return { task: updated, run: null, messages: await repo.listTaskMessages(taskId) };
+    }
+    throw new AppError(
+      502,
+      'LLM_RESPONSE_REQUIRED',
+      `LLM response is required but generation failed: ${message}`,
+      { task: updated }
+    );
+  }
+}
+
+class BlueprintArtifactGenerationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BlueprintArtifactGenerationError';
+  }
+}
+
+function createWorkbenchLlmDebugEventEmitter(taskId: string) {
+  return async (event: SupervisorLlmDebugEvent) => {
+    if (event.type !== 'model.response_delta') return;
+    const text = typeof event.data?.text === 'string' ? event.data.text : event.message;
+    if (!text) return;
+    nightWorkersRealtimeBroker.publish(taskId, {
+      type: 'task_llm_delta',
+      payload: {
+        text,
+        event,
+      },
+    });
+  };
+}
+
+async function prepareWorkbenchIntakeTask(
+  taskId: string,
+  task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>,
+  prompt: string
+) {
+  const title =
+    task.title === 'New Session' ? prompt.replace(/\s+/g, ' ').slice(0, 60) : task.title;
+  const updated = await repo.updateTask(taskId, {
+    title,
+    objective: task.objective || prompt,
+  });
+  return updated;
+}
+
+function renderLlmIntakeContent(jobSelection: JobTypeSelection): string {
+  return [`jobType: ${jobSelection.jobType}`, jobSelection.goal]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .join('\n\n');
+}
+
+function shouldStartImmediateWorkbenchRun(
+  jobSelection: JobTypeSelection,
+  intent: WorkbenchChatIntent
+) {
+  if (intent !== 'intake') return false;
+  return (
+    jobSelection.jobType === 'minor_code_edit' ||
+    jobSelection.jobType === 'major_code_edit' ||
+    jobSelection.jobType === 'docs'
+  );
+}
+
+function buildAcceptanceCriteriaFromDecision(jobSelection: JobTypeSelection): string {
+  return jobSelection.goal.trim();
+}
+
+function routingForWorkbenchJobType(jobType: JobType): SupervisorRoutingHypothesis {
+  if (jobType === 'minor_code_edit') {
+    return {
+      primaryMode: 'code_edit',
+      secondaryModes: [],
+      phase: 'execute',
+      workKinds: ['code'],
+      overlays: [],
+      requiredEvidence: [],
+      nextSkillFiles: [],
+      confidence: 1,
+    };
+  }
+  if (jobType === 'major_code_edit') {
+    return {
+      primaryMode: 'code_edit',
+      secondaryModes: ['planning', 'test_and_verification'],
+      phase: 'plan',
+      workKinds: ['code'],
+      overlays: ['user_facing_change'],
+      requiredEvidence: [],
+      nextSkillFiles: ['references/work_kinds/code.md', 'references/phases/plan.md'],
+      confidence: 1,
+    };
+  }
+  if (jobType === 'blueprint' || jobType === 'ui_ux') {
+    return {
+      primaryMode: 'planning',
+      secondaryModes: [],
+      phase: 'plan',
+      workKinds: ['blueprint', 'ui_ux'],
+      overlays: ['user_facing_change'],
+      subtype: 'app_blueprint',
+      requiredEvidence: [],
+      nextSkillFiles: ['references/work_kinds/blueprint.md'],
+      confidence: 1,
+    };
+  }
+  if (jobType === 'planning') {
+    return {
+      primaryMode: 'planning',
+      secondaryModes: [],
+      phase: 'plan',
+      workKinds: [],
+      overlays: [],
+      subtype: 'design_questionnaire',
+      requiredEvidence: [],
+      nextSkillFiles: [],
+      confidence: 1,
+    };
+  }
+  return {
+    primaryMode: jobType === 'general_answer' ? 'general_answer' : 'planning',
+    secondaryModes: [],
+    phase: jobType === 'general_answer' ? 'answer' : 'plan',
+    workKinds: [],
+    overlays: [],
+    requiredEvidence: [],
+    nextSkillFiles: [],
+    confidence: 1,
+  };
+}

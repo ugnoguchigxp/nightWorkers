@@ -2,6 +2,17 @@ import { z } from '@hono/zod-openapi';
 
 const kebabIdSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 
+export const questionnaireChoiceQuestionSchema = z.object({
+  text: z.string().min(1),
+  type: z.enum(['radio', 'checkbox']),
+  options: z.array(z.string().min(1)).min(2).max(6),
+});
+
+export const questionnaireChoiceFormSchema = z.object({
+  title: z.string().min(1).default('実装前に決めたいこと'),
+  questions: z.array(questionnaireChoiceQuestionSchema).min(1).max(10),
+});
+
 export const designQuestionOptionSchema = z.object({
   id: kebabIdSchema,
   label: z.string().min(1),
@@ -208,6 +219,7 @@ export const blueprintSpecificationWorkspaceSchema = z.object({
 });
 
 export type DesignQuestionnaire = z.infer<typeof designQuestionnaireSchema>;
+export type QuestionnaireChoiceForm = z.infer<typeof questionnaireChoiceFormSchema>;
 export type DesignQuestionnaireAnswer = z.infer<typeof designQuestionnaireAnswerSchema>;
 export type DesignDecisionReview = z.infer<typeof designDecisionReviewSchema>;
 export type DesignQuestionnaireSession = z.infer<typeof designQuestionnaireSessionSchema>;

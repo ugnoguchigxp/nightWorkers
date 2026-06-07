@@ -5,6 +5,10 @@ import {
   appBlueprintSchema,
 } from '../../../shared/schemas/app-blueprint.schema';
 import { callStructuredJsonLLM, type SupervisorLlmDebugEvent } from '../supervisor/llm-provider';
+import {
+  type JsonFixWrapperResult,
+  parseRepairedJsonWithSchema,
+} from '../supervisor/llm-provider/json';
 import { validateAppBlueprint } from './validation';
 
 const blueprintDbDesignTargetSchema = z.discriminatedUnion('kind', [
@@ -35,6 +39,7 @@ export type GeneratedBlueprintDataDesignDraft = {
   generation: {
     source: 'blueprint-db-design';
     rawOutput?: string;
+    jsonRepair?: BlueprintDataDesignJsonRepairDiagnostics;
     promptDiagnostics: {
       schemaIncluded: boolean;
       schemaDigest: string;
@@ -44,6 +49,11 @@ export type GeneratedBlueprintDataDesignDraft = {
       target: BlueprintDbDesignRequest['target'];
     };
   };
+};
+
+export type BlueprintDataDesignJsonRepairDiagnostics = {
+  repaired: boolean;
+  repairKind: JsonFixWrapperResult['repairKind'];
 };
 
 export class BlueprintDataDesignGenerationError extends Error {
@@ -91,23 +101,15 @@ export async function generateBlueprintDataDesignDraft(input: {
   );
 
   try {
-    const candidate = extractJsonCandidate(rawOutput);
-    if (!candidate) throw new Error('Blueprint DB Design LLM output did not contain JSON.');
-    const blueprint = appBlueprintSchema.parse(JSON.parse(candidate));
-    const validation = validateAppBlueprint(blueprint);
-    if (!validation.valid) {
-      throw new Error(
-        `LLM-generated DB Design Blueprint failed validation: ${validation.issues
-          .map((issue) => `${issue.path}:${issue.code}`)
-          .join(', ')}`
-      );
-    }
+    const { blueprint, validation, jsonRepair } =
+      parseAndValidateBlueprintDataDesignOutput(rawOutput);
     return {
       blueprint,
       validation,
       generation: {
         source: 'blueprint-db-design',
         rawOutput,
+        jsonRepair,
         promptDiagnostics,
       },
     };
@@ -115,6 +117,29 @@ export async function generateBlueprintDataDesignDraft(input: {
     const message = error instanceof Error ? error.message : String(error);
     throw new BlueprintDataDesignGenerationError(message, { rawOutput, promptDiagnostics });
   }
+}
+
+export function parseAndValidateBlueprintDataDesignOutput(rawOutput: string): {
+  blueprint: AppBlueprint;
+  validation: ReturnType<typeof validateAppBlueprint>;
+  jsonRepair: BlueprintDataDesignJsonRepairDiagnostics;
+} {
+  const parsed = parseRepairedJsonWithSchema(rawOutput, appBlueprintSchema);
+  if (!parsed.ok) throw new Error('Blueprint DB Design LLM output did not contain valid JSON.');
+  const blueprint = parsed.value;
+  const validation = validateAppBlueprint(blueprint);
+  if (!validation.valid) {
+    throw new Error(
+      `LLM-generated DB Design Blueprint failed validation: ${validation.issues
+        .map((issue) => `${issue.path}:${issue.code}`)
+        .join(', ')}`
+    );
+  }
+  return {
+    blueprint,
+    validation,
+    jsonRepair: { repaired: parsed.repaired, repairKind: parsed.repairKind },
+  };
 }
 
 function buildBlueprintDataDesignSystemPrompt(appBlueprintJsonSchema: string): string {

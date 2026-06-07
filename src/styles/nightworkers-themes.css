@@ -1,0 +1,100 @@
+.nightworkers-artifact-pane {
+  height: calc(100vh - 3.3125rem);
+  border-left: 1px solid color-mix(in srgb, var(--nw-border) 60%, transparent);
+  background: color-mix(in srgb, var(--nw-panel) 88%, var(--nw-background) 12%);
+}
+
+.nightworkers-shell[data-theme="light"] {
+  --nw-background: hsl(210 24% 96%);
+  --nw-panel: hsl(0 0% 100%);
+  --nw-surface: hsl(210 24% 98%);
+  --nw-surface-soft: hsl(210 24% 93%);
+  --nw-text: hsl(215 25% 14%);
+  --nw-muted-text: hsl(215 13% 42%);
+  --nw-subtle-text: hsl(215 11% 54%);
+  --nw-primary: hsl(210 62% 49%);
+  --nw-primary-foreground: hsl(0 0% 100%);
+  --nw-border: hsl(214 18% 78% / 0.9);
+  --nw-strong-border: hsl(214 18% 64% / 0.95);
+  color-scheme: light;
+}
+
+.nightworkers-shell[data-theme="eclipse"] {
+  --nw-background: hsl(245 46% 90%);
+  --nw-panel: hsl(245 44% 84%);
+  --nw-surface: hsl(245 42% 80%);
+  --nw-surface-soft: hsl(245 38% 76%);
+  --nw-text: hsl(241 62% 16%);
+  --nw-muted-text: hsl(240 23% 32%);
+  --nw-primary: hsl(248 30% 45%);
+  --nw-primary-foreground: hsl(0 0% 100%);
+  --nw-border: hsl(245 26% 64% / 0.9);
+  color-scheme: light;
+}
+
+.nightworkers-shell[data-theme="macosclassic"] {
+  --nw-background: hsl(0 0% 89%);
+  --nw-panel: hsl(0 0% 96%);
+  --nw-surface: hsl(0 0% 92%);
+  --nw-surface-soft: hsl(0 0% 86%);
+  --nw-text: hsl(215 20% 12%);
+  --nw-muted-text: hsl(215 12% 38%);
+  --nw-primary: hsl(210 85% 45%);
+  --nw-primary-foreground: hsl(0 0% 100%);
+  --nw-border: hsl(0 0% 68% / 0.95);
+  color-scheme: light;
+}
+
+.nightworkers-shell[data-theme="campfire"] {
+  --nw-background: hsl(24 38% 8%);
+  --nw-panel: hsl(24 34% 13%);
+  --nw-surface: hsl(25 30% 18%);
+  --nw-surface-soft: hsl(25 28% 22%);
+  --nw-text: hsl(35 68% 96%);
+  --nw-muted-text: hsl(34 36% 82%);
+  --nw-subtle-text: hsl(32 16% 58%);
+  --nw-primary: hsl(25 96% 58%);
+  --nw-primary-foreground: hsl(24 42% 8%);
+  --nw-border: hsl(25 30% 30% / 0.9);
+  --nw-strong-border: hsl(25 34% 42% / 0.92);
+  color-scheme: dark;
+}
+
+.nightworkers-shell[data-theme="mint"] {
+  --nw-background: hsl(154 30% 96%);
+  --nw-panel: hsl(150 34% 91%);
+  --nw-surface: hsl(152 30% 92%);
+  --nw-surface-soft: hsl(156 34% 82%);
+  --nw-text: hsl(160 38% 18%);
+  --nw-muted-text: hsl(158 22% 42%);
+  --nw-primary: hsl(158 42% 40%);
+  --nw-primary-foreground: hsl(0 0% 100%);
+  --nw-border: hsl(153 24% 72% / 0.9);
+  color-scheme: light;
+}
+
+.nightworkers-shell[data-theme="bloom"] {
+  --nw-background: hsl(344 76% 96%);
+  --nw-panel: hsl(337 68% 92%);
+  --nw-surface: hsl(333 52% 91%);
+  --nw-surface-soft: hsl(350 84% 87%);
+  --nw-text: hsl(327 34% 18%);
+  --nw-muted-text: hsl(325 18% 45%);
+  --nw-primary: hsl(338 68% 63%);
+  --nw-primary-foreground: hsl(0 0% 100%);
+  --nw-border: hsl(334 38% 74% / 0.9);
+  color-scheme: light;
+}
+
+.nightworkers-shell[data-theme="mocha"] {
+  --nw-background: hsl(38 38% 94%);
+  --nw-panel: hsl(34 34% 88%);
+  --nw-surface: hsl(36 30% 86%);
+  --nw-surface-soft: hsl(31 34% 80%);
+  --nw-text: hsl(24 32% 18%);
+  --nw-muted-text: hsl(24 18% 42%);
+  --nw-primary: hsl(188 58% 36%);
+  --nw-primary-foreground: hsl(38 54% 96%);
+  --nw-border: hsl(28 28% 68% / 0.9);
+  color-scheme: light;
+}

@@ -1,10 +1,61 @@
 import { describe, expect, it } from 'vitest';
 import { blueprintCatalog } from '../api/services/blueprint-catalog';
+import { parseAndValidateBlueprintOutput } from '../api/services/blueprints/llm-draft';
 import { validateAppBlueprint } from '../api/services/blueprints/validation';
 import { representativeAppBlueprint } from './fixtures/app-blueprint';
 import { canonicalBadAppBlueprint } from './fixtures/bad-app-blueprint';
 
 describe('Blueprint validation service', () => {
+  it('parses fenced Blueprint JSON through shared repair and keeps regular Blueprint data empty', () => {
+    const regularBlueprint = {
+      ...representativeAppBlueprint,
+      databaseSchema: { tables: [], relations: [] },
+      dataBindings: [],
+      screens: [
+        {
+          ...representativeAppBlueprint.screens[0],
+          sections: [
+            {
+              id: 'priority-signals',
+              name: 'Priority Signals',
+              componentName: 'StatsTrendCardsSection',
+              source: 'static',
+              props: {
+                title: 'Priority Signals',
+                description: 'Shows sample operational cues before data design exists.',
+                items: [{ label: 'Ready to review', value: '12' }],
+              },
+              actions: [],
+            },
+          ],
+        },
+      ],
+    };
+
+    const parsed = parseAndValidateBlueprintOutput(
+      `Here is the JSON:\n\n\`\`\`json\n${JSON.stringify(regularBlueprint)}\n\`\`\``
+    );
+
+    expect(parsed.jsonRepair).toEqual({
+      repaired: true,
+      repairKind: 'extracted_candidate',
+    });
+    expect(parsed.blueprint.databaseSchema).toEqual({ tables: [], relations: [] });
+    expect(parsed.blueprint.dataBindings).toEqual([]);
+    expect(parsed.validation.valid).toBe(true);
+  });
+
+  it('still fails validation after repair when Blueprint contracts are violated', () => {
+    const invalidBlueprint = {
+      ...representativeAppBlueprint,
+      screens: [],
+    };
+
+    expect(() =>
+      parseAndValidateBlueprintOutput(`\`\`\`json\n${JSON.stringify(invalidBlueprint)}\n\`\`\``)
+    ).toThrow(/valid JSON|failed validation/);
+  });
+
   it('accepts a representative valid blueprint', () => {
     const result = validateAppBlueprint(representativeAppBlueprint);
 

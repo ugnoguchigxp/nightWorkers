@@ -1,12 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import {
   blueprintDbDesignRequestSchema,
+  parseAndValidateBlueprintDataDesignOutput,
   parseBlueprintDbDesignRequestPrompt,
 } from '../api/services/blueprints/data-design';
 import { buildBlueprintDbDesignPrompt } from '../src/modules/nightworkers/components/blueprint-preview/dbDesignModel';
 import { representativeAppBlueprint } from './fixtures/app-blueprint';
 
 describe('Blueprint data-design service helpers', () => {
+  it('parses fenced DB Design Blueprint JSON through shared repair', () => {
+    const parsed = parseAndValidateBlueprintDataDesignOutput(
+      `\`\`\`json\n${JSON.stringify(representativeAppBlueprint)}\n\`\`\``
+    );
+
+    expect(parsed.jsonRepair).toEqual({
+      repaired: true,
+      repairKind: 'extracted_candidate',
+    });
+    expect(parsed.blueprint.databaseSchema.tables.length).toBeGreaterThan(0);
+    expect(parsed.blueprint.dataBindings.length).toBeGreaterThan(0);
+    expect(parsed.validation.valid).toBe(true);
+  });
+
   it('parses the structured DB Design request embedded in a workbench prompt', () => {
     const prompt = buildBlueprintDbDesignPrompt({
       blueprintId: representativeAppBlueprint.id,

@@ -1,0 +1,470 @@
+import crypto from 'node:crypto';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import app from '../../api/app';
+import { ensureNightWorkersSchema } from '../../api/db/bootstrap';
+import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
+import * as llm from '../../api/services/supervisor/llm-provider';
+import { representativeAppBlueprint } from '../fixtures/app-blueprint';
+
+vi.mock('../api/services/supervisor/llm-provider', async () => {
+  const actual = await vi.importActual<typeof import('../api/services/supervisor/llm-provider')>(
+    '../api/services/supervisor/llm-provider'
+  );
+  return {
+    ...actual,
+    callSupervisorLLM: vi.fn(),
+    callStructuredJsonLLM: vi.fn(),
+  };
+});
+
+vi.mock('../api/services/agent-runtime/registry', () => ({
+  resolveAgentRuntime: vi.fn(() => ({
+    kind: 'native-local',
+    start: vi.fn(async () => ({
+      terminalState: 'completed',
+      summary: 'Runtime completed.',
+      finalReport: 'Runtime completed.',
+      stoppedBy: 'decision',
+      riskLevel: 'low',
+      diffPatch: '',
+      logContent: '',
+    })),
+    stop: vi.fn(),
+  })),
+}));
+
+const sameOriginHeaders = { Origin: 'http://localhost:39174' };
+
+function mockJobSelection(jobType: string, goal: string) {
+  return { jobType, goal };
+}
+
+function _expectStrictObjectSchemas(schema: unknown, path = 'schema') {
+  if (!schema || typeof schema !== 'object') return;
+  const node = schema as Record<string, any>;
+  if (node.type === 'object') {
+    expect(node.additionalProperties, `${path}.additionalProperties`).toBe(false);
+  }
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'properties' && value && typeof value === 'object') {
+      for (const [propertyName, propertySchema] of Object.entries(value)) {
+        _expectStrictObjectSchemas(propertySchema, `${path}.properties.${propertyName}`);
+      }
+      continue;
+    }
+    if (key === 'items') {
+      _expectStrictObjectSchemas(value, `${path}.items`);
+      continue;
+    }
+    if ((key === 'anyOf' || key === 'oneOf' || key === 'allOf') && Array.isArray(value)) {
+      value.forEach((item, index) => {
+        _expectStrictObjectSchemas(item, `${path}.${key}.${index}`);
+      });
+    }
+  }
+}
+
+beforeAll(async () => {
+  await ensureNightWorkersSchema();
+});
+
+afterEach(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  vi.clearAllMocks();
+  vi.restoreAllMocks();
+});
+
+describe('NightWorkers workbench routes', () => {
+  it('returns immediately when workbench intake is not explicitly awaited', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockImplementationOnce(() => new Promise(() => {}));
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const startedAt = Date.now();
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({
+        prompt: '同期で待たずに受付してください',
+        waitForIntake: false,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Date.now() - startedAt).toBeLessThan(100);
+    expect(body.run).toBeNull();
+    expect(body.messages.some((message: any) => message.role === 'user')).toBe(true);
+    expect(body.messages.some((message: any) => message.role === 'assistant')).toBe(false);
+    expect(body.task.objective).toBe('同期で待たずに受付してください');
+  });
+
+  it('generates an app blueprint artifact when LLM intake classifies the prompt as blueprint work', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('blueprint', 'Create an EC site top page Blueprint.')
+    );
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+      JSON.stringify({
+        ...representativeAppBlueprint,
+        id: 'shop-home',
+        name: 'EC Site Top Page',
+        description: 'LLM generated storefront blueprint with commerce-specific sections.',
+      })
+    );
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'ECサイトのトップページをBlueprintで作って見てください' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
+      '[Skill Document: references/work_kinds/blueprint.md]'
+    );
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
+      '通常の Blueprint 生成では DB/DDL/data model/data binding を設計しない'
+    );
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
+      'databaseSchema は必ず {"tables":[],"relations":[]}'
+    );
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
+      'DB table/column/relation/binding/DDL の考案は DB Design workflow の担当'
+    );
+    expect(body.run).toBeNull();
+    expect(body.task.status).toBe('ready');
+    const intakeMessage = body.messages.find(
+      (message: any) => message.role === 'assistant' && message.metadataJson?.intent === 'intake'
+    );
+    expect(intakeMessage).toBeUndefined();
+    const blueprintMessage = body.messages.find(
+      (message: any) => message.metadataJson?.intent === 'app_blueprint'
+    );
+    expect(blueprintMessage?.messageType).toBe('markdown_document');
+    expect(blueprintMessage?.metadataJson?.appBlueprint?.screens).toHaveLength(1);
+    expect(blueprintMessage?.metadataJson?.appBlueprint?.name).toBe('EC Site Top Page');
+    expect(blueprintMessage?.metadataJson?.validation?.valid).toBe(true);
+    expect(blueprintMessage?.metadataJson?.generation?.source).toBe('llm');
+    expect(blueprintMessage?.metadataJson?.generation?.skillDocuments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ relativePath: 'references/work_kinds/blueprint.md' }),
+      ])
+    );
+    expect(blueprintMessage?.metadataJson?.routingHypothesis?.subtype).toBe('app_blueprint');
+    expect(blueprintMessage?.metadataJson?.intakeJobSelection?.goal).toBe(
+      'Create an EC site top page Blueprint.'
+    );
+  });
+
+  it('shows an SFA dashboard request as an app blueprint artifact', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('blueprint', 'Create an SFA dashboard AppBlueprint artifact.')
+    );
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+      JSON.stringify({
+        ...representativeAppBlueprint,
+        id: 'sfa-dashboard',
+        name: 'SFA Dashboard',
+        description: 'Sales force automation dashboard for pipeline, activity, and alerts.',
+        screens: [
+          {
+            ...representativeAppBlueprint.screens[0],
+            id: 'sales-dashboard',
+            name: 'Sales Dashboard',
+            componentName: 'DashboardPage',
+            sections: [
+              {
+                ...representativeAppBlueprint.screens[0].sections[0],
+                id: 'sales-kpis',
+                name: 'Sales KPIs',
+                componentName: 'KpiSummarySection',
+              },
+              {
+                ...representativeAppBlueprint.screens[0].sections[1],
+                id: 'pipeline-table',
+                name: 'Pipeline Table',
+                componentName: 'DataTableSection',
+              },
+            ],
+          },
+        ],
+      })
+    );
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'SFAのダッシュボードをblueprintで表示してください。' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
+    expect(body.messages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ metadataJson: expect.objectContaining({ intent: 'intake' }) }),
+      ])
+    );
+    const blueprintMessage = body.messages.find(
+      (message: any) => message.metadataJson?.intent === 'app_blueprint'
+    );
+    expect(blueprintMessage?.messageType).toBe('markdown_document');
+    expect(blueprintMessage?.metadataJson?.appBlueprint?.id).toBe('sfa-dashboard');
+    expect(blueprintMessage?.metadataJson?.appBlueprint?.screens[0]?.componentName).toBe(
+      'DashboardPage'
+    );
+    expect(blueprintMessage?.content).toContain('Sales KPIs');
+    expect(blueprintMessage?.content).toContain('Pipeline Table');
+    expect(blueprintMessage?.metadataJson?.validation?.valid).toBe(true);
+    expect(blueprintMessage?.metadataJson?.generation?.promptDiagnostics).toEqual(
+      expect.objectContaining({
+        schemaIncluded: true,
+        catalogComponentCount: expect.any(Number),
+        skillDocumentCount: expect.any(Number),
+      })
+    );
+  });
+
+  it('records raw LLM output when blueprint generation returns non-json', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('blueprint', 'Create a Blueprint artifact.')
+    );
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce('not json');
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'SFAのダッシュボードをblueprintで表示してください。' }),
+    });
+
+    expect(res.status).toBe(502);
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
+      '[Skill Document: references/work_kinds/blueprint.md]'
+    );
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
+      '[AppBlueprint JSON Schema]'
+    );
+    const messages = await repo.listTaskMessages(task.id);
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'assistant',
+          content: 'not json',
+          metadataJson: expect.objectContaining({
+            intent: 'blueprint_raw_output',
+            promptDiagnostics: expect.objectContaining({
+              schemaIncluded: true,
+              skillDocumentCount: expect.any(Number),
+            }),
+          }),
+        }),
+        expect.objectContaining({
+          role: 'system',
+          metadataJson: expect.objectContaining({
+            intent: 'blueprint_generation_failed',
+            rawOutputRecorded: true,
+          }),
+        }),
+      ])
+    );
+    expect(messages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ metadataJson: expect.objectContaining({ intent: 'intake' }) }),
+      ])
+    );
+  });
+
+  it('records raw LLM output when generated blueprint json fails catalog validation', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('blueprint', 'Create a Blueprint artifact.')
+    );
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+      JSON.stringify({
+        ...representativeAppBlueprint,
+        designPreset: { ...representativeAppBlueprint.designPreset, theme: 'design_governance' },
+      })
+    );
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'SFAのダッシュボードをblueprintで表示してください。' }),
+    });
+
+    expect(res.status).toBe(502);
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
+    const messages = await repo.listTaskMessages(task.id);
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'assistant',
+          metadataJson: expect.objectContaining({
+            intent: 'blueprint_raw_output',
+            validationStatus: 'failed',
+          }),
+        }),
+        expect.objectContaining({
+          role: 'system',
+          metadataJson: expect.objectContaining({
+            intent: 'blueprint_generation_failed',
+            error: expect.stringContaining('designPreset.theme:design_governance'),
+          }),
+        }),
+      ])
+    );
+  });
+
+  it('drafts a markdown spec message and queues only after validation passes', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('blueprint', 'Create a Blueprint from the requested workbench spec.')
+    );
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+      JSON.stringify(representativeAppBlueprint)
+    );
+    const { task } = await createWorkbenchTask();
+
+    const draftRes = await app.request(
+      `http://localhost/api/workbench/sessions/${task.id}/messages`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+        body: JSON.stringify({ prompt: 'チャット中心の作業台を仕様にして', intent: 'draft_spec' }),
+      }
+    );
+
+    expect(draftRes.status).toBe(200);
+    const draftBody = await draftRes.json();
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
+    expect(draftBody.task.status).toBe('ready');
+    expect(
+      draftBody.messages.some((message: any) => message.messageType === 'markdown_document')
+    ).toBe(true);
+    const blueprintMessage = draftBody.messages.find(
+      (message: any) => message.metadataJson?.intent === 'app_blueprint'
+    );
+    expect(blueprintMessage?.metadataJson?.appBlueprint?.screens).toHaveLength(1);
+    expect(blueprintMessage?.metadataJson?.validation?.valid).toBe(true);
+    expect(blueprintMessage?.metadataJson?.generation?.source).toBe('llm');
+
+    await repo.updateImplementationQueueSettings({ processorCount: 1 });
+    const { task: blockerTask } = await createWorkbenchTask({
+      title: 'Processor blocker for draft queue',
+      status: 'queued',
+    });
+    const blockerEntry = await repo.createImplementationQueueEntry({
+      taskId: blockerTask.id,
+      repositoryId: blockerTask.repositoryId,
+    });
+    await repo.updateImplementationQueueEntry(blockerEntry.id, {
+      status: 'claimed',
+      processorSlot: 1,
+    });
+
+    const queueRes = await app.request(`http://localhost/api/workbench/sessions/${task.id}/queue`, {
+      method: 'POST',
+      headers: sameOriginHeaders,
+    });
+    expect(queueRes.status).toBe(200);
+    const queued = await queueRes.json();
+    expect(queued.status).toBe('queued');
+    expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
+  });
+
+  it('does not treat markdown titles as implementation plan evidence for queue admission', async () => {
+    const { task } = await createWorkbenchTask();
+    await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: '# Implementation Plan',
+      messageType: 'markdown_document',
+      metadataJson: {
+        title: 'Implementation Plan',
+      },
+    });
+
+    const queueRes = await app.request(`http://localhost/api/workbench/sessions/${task.id}/queue`, {
+      method: 'POST',
+      headers: sameOriginHeaders,
+    });
+
+    expect(queueRes.status).toBe(422);
+    const body = await queueRes.json();
+    expect(body.code).toBe('IMPLEMENTATION_PLAN_REQUIRED');
+    expect((await repo.getTask(task.id))?.status).toBe('draft');
+  });
+
+  it('admits ready sessions to the Implementation Queue without duplicating not-queued work', async () => {
+    await repo.updateImplementationQueueSettings({ processorCount: 1 });
+    const { task: blockerTask } = await createWorkbenchTask({
+      title: 'Processor blocker',
+      status: 'queued',
+    });
+    const blockerEntry = await repo.createImplementationQueueEntry({
+      taskId: blockerTask.id,
+      repositoryId: blockerTask.repositoryId,
+    });
+    await repo.updateImplementationQueueEntry(blockerEntry.id, {
+      status: 'claimed',
+      processorSlot: 1,
+    });
+    const { task } = await createWorkbenchTask({ status: 'ready' });
+
+    const res = await app.request('http://localhost/api/implementation-queue/entries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ taskId: task.id }),
+    });
+
+    expect(res.status).toBe(201);
+    const entry = await res.json();
+    expect(entry).toMatchObject({ taskId: task.id, status: 'queued' });
+    expect((await repo.getTask(task.id))?.status).toBe('queued');
+
+    const dashboardRes = await app.request('http://localhost/api/implementation-queue', {
+      headers: sameOriginHeaders,
+    });
+    expect(dashboardRes.status).toBe(200);
+    const dashboard = await dashboardRes.json();
+    expect(dashboard.queued.map((queueEntry: any) => queueEntry.task.id)).toContain(task.id);
+    expect(dashboard.notQueued.map((item: any) => item.task.id)).not.toContain(task.id);
+
+    const duplicateRes = await app.request(
+      `http://localhost/api/workbench/sessions/${task.id}/queue`,
+      {
+        method: 'POST',
+        headers: sameOriginHeaders,
+      }
+    );
+    expect(duplicateRes.status).toBe(409);
+    expect((await duplicateRes.json()).code).toBe('QUEUE_ENTRY_EXISTS');
+  });
+});
+
+async function createWorkbenchTask(
+  input: { title?: string; status?: string; objective?: string } = {}
+) {
+  const project = await repo.createRepository({
+    name: `TEST: Workbench Project ${crypto.randomUUID()}`,
+    localPath: '/Users/y.noguchi/Code/nightWorkers',
+    branch: 'main',
+  });
+  const task = await repo.createTask({
+    repositoryId: project.id,
+    title: input.title || 'Workbench task',
+    objective: input.objective ?? 'Implement chat-first workbench',
+    acceptanceCriteria: 'Draft conversation, queue, and run are separate task-queue steps',
+    status: input.status || 'draft',
+  });
+  return { project, task };
+}

@@ -24,7 +24,7 @@
     "desktop:sign": "node scripts/release/desktop-sign-notarize.mjs",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:supervisor-regression": "vitest run tests/services.supervisor.test.ts tests/services.supervisor-llm-provider.test.ts",
+    "test:supervisor-regression": "vitest run tests/supervisor/services-supervisor-01-part01.test.ts tests/supervisor/services-supervisor-01-part02.test.ts tests/supervisor/services-supervisor-02.test.ts tests/supervisor-llm-provider/services-supervisor-llm-provider-01.test.ts tests/supervisor-llm-provider/services-supervisor-llm-provider-02.test.ts tests/supervisor-llm-provider/services-supervisor-llm-provider-03.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "lint:all": "biome check .",

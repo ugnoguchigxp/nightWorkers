@@ -1,0 +1,115 @@
+import type { ImplementationQueueEntry, Task, TaskRun } from './core';
+
+export type WorkbenchSessionGroup = 'processing' | 'queue' | 'archive';
+
+export type WorkbenchMovableSessionGroup = 'processing' | 'queue' | 'archive';
+
+export type WorkbenchPhase =
+  | 'Analyzing'
+  | 'Prompt Preparing'
+  | 'Queued'
+  | 'Implementing'
+  | 'Verifying'
+  | 'Reviewing'
+  | 'Improving'
+  | 'Needs Human'
+  | 'Completed'
+  | 'Archived';
+
+export type WorkbenchProgressBasisKind =
+  | 'task_status'
+  | 'run_status'
+  | 'todo_status'
+  | 'run_event'
+  | 'review_result'
+  | 'prompt_snapshot'
+  | 'artifact';
+
+export type WorkbenchProgressBlocker = {
+  kind: 'needs_human' | 'policy' | 'verification' | 'timeout' | 'review' | 'runtime';
+  message: string;
+  evidenceRef?: string;
+};
+
+export type WorkbenchProgressSnapshot = {
+  percent: number;
+  phase: WorkbenchPhase;
+  basis: Array<{
+    kind: WorkbenchProgressBasisKind;
+    refId?: string;
+    label: string;
+  }>;
+  blockers: WorkbenchProgressBlocker[];
+};
+
+export type WorkbenchArtifactKind =
+  | 'blueprint_workspace'
+  | 'app_blueprint'
+  | 'component_design'
+  | 'design_delta'
+  | 'spec'
+  | 'implementation_plan'
+  | 'context_pack'
+  | 'diff'
+  | 'source_preview'
+  | 'test_result'
+  | 'review_result'
+  | 'run_ledger'
+  | 'todo_plan'
+  | 'final_report'
+  | 'pr_reference';
+
+export type ProjectFileEntry = {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  size?: number;
+};
+
+export type ProjectFileContent = {
+  path: string;
+  content: string;
+  size: number;
+  truncated: boolean;
+};
+
+export type WorkbenchArtifactRef = {
+  id: string;
+  taskId: string;
+  runId?: string;
+  kind: WorkbenchArtifactKind;
+  title: string;
+  summary?: string;
+  source:
+    | { type: 'artifact_row'; artifactId: string }
+    | { type: 'run_field'; runId: string; field: string }
+    | { type: 'task_message'; messageId: string }
+    | { type: 'run_event'; eventId: string }
+    | { type: 'review_result'; reviewId: string };
+  createdAt: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type WorkbenchSessionView = {
+  task: Task;
+  group: WorkbenchSessionGroup;
+  emailState:
+    | 'draft'
+    | 'plan_ready'
+    | 'queued'
+    | 'running'
+    | 'needs_input'
+    | 'review_needed'
+    | 'done'
+    | 'failed';
+  primaryAction: 'open' | 'queue' | 'remove' | 'open_run' | 'respond' | 'review' | 'inspect';
+  queuePosition?: number;
+  queueEntry?: ImplementationQueueEntry;
+  phase: WorkbenchPhase;
+  progress: WorkbenchProgressSnapshot;
+  latestRun?: TaskRun;
+  latestEventSummary?: string;
+  reviewNeed?: string;
+  artifactCounts: Partial<Record<WorkbenchArtifactKind, number>>;
+  badges: string[];
+};

@@ -1,0 +1,107 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { replaceContentTool, runCommandTool } from '../../api/services/worker-tools';
+
+describe('Worker Tools Unit Tests', () => {
+  it('replaces a single literal occurrence safely', async () => {
+    const target = path.join(dummyRepoDir, 'hello.txt');
+    await fs.writeFile(target, 'alpha\nbeta\n', 'utf-8');
+
+    const result = await replaceContentTool({
+      repoRoot: dummyRepoDir,
+      filePath: 'hello.txt',
+      needle: 'alpha',
+      replacement: 'ALPHA',
+      mode: 'literal',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.payload.occurrences).toBe(1);
+
+    const updated = await fs.readFile(target, 'utf-8');
+    expect(updated).toContain('ALPHA');
+  });
+
+  it('rejects empty needle', async () => {
+    const result = await replaceContentTool({
+      repoRoot: dummyRepoDir,
+      filePath: 'hello.txt',
+      needle: '',
+      replacement: 'X',
+      mode: 'literal',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('EMPTY_NEEDLE');
+  });
+
+  it('returns no_match when target text is missing', async () => {
+    await fs.writeFile(path.join(dummyRepoDir, 'hello.txt'), 'foo\nbar\n', 'utf-8');
+    const result = await replaceContentTool({
+      repoRoot: dummyRepoDir,
+      filePath: 'hello.txt',
+      needle: 'not-found',
+      replacement: 'X',
+      mode: 'literal',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('NO_MATCH');
+  });
+
+  it('returns multiple_matches when more than one occurrence exists', async () => {
+    await fs.writeFile(path.join(dummyRepoDir, 'hello.txt'), 'dup\ndup\n', 'utf-8');
+    const result = await replaceContentTool({
+      repoRoot: dummyRepoDir,
+      filePath: 'hello.txt',
+      needle: 'dup',
+      replacement: 'X',
+      mode: 'literal',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('MULTIPLE_MATCHES');
+  });
+
+  it('applies replacement without read-before-edit gating', async () => {
+    await fs.writeFile(path.join(dummyRepoDir, 'hello.txt'), 'read-me\n', 'utf-8');
+    const result = await replaceContentTool({
+      repoRoot: dummyRepoDir,
+      filePath: 'hello.txt',
+      needle: 'read-me',
+      replacement: 'READ',
+      mode: 'literal',
+    });
+    expect(result.ok).toBe(true);
+    expect(await fs.readFile(path.join(dummyRepoDir, 'hello.txt'), 'utf-8')).toBe('READ\n');
+  });
+});
+
+describe('runCommandTool', () => {
+  it('runs safe commands successfully', async () => {
+    const result = await runCommandTool({
+      command: 'echo "hello"',
+      repoRoot: dummyRepoDir,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.payload.stdout.trim()).toBe('hello');
+  });
+
+  it('blocks destructive commands from running', async () => {
+    const result = await runCommandTool({
+      command: 'rm -rf *',
+      repoRoot: dummyRepoDir,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('DESTRUCTIVE_COMMAND');
+  });
+
+  it('blocks unknown commands by default', async () => {
+    const result = await runCommandTool({
+      command: 'custom-unknown-cmd',
+      repoRoot: dummyRepoDir,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('DESTRUCTIVE_COMMAND');
+  });
+});

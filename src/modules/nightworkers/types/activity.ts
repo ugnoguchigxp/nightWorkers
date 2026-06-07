@@ -1,0 +1,90 @@
+import type { TaskRunTodo } from './blueprint';
+import type { TaskRun } from './core';
+import type { ReviewResult } from './review';
+
+export type ActivityArtifact = {
+  id: string;
+  taskId: string;
+  runId?: string | null;
+  kind: string;
+  path?: string | null;
+  contentText?: string | null;
+  metadataJson?: any;
+  createdAt: unknown;
+};
+
+export type ActivityEvent = {
+  id: string;
+  taskId: string;
+  runId?: string | null;
+  turnId?: string | null;
+  parentEventId?: string | null;
+  seq: number;
+  runSeq?: number | null;
+  kind: string;
+  source: string;
+  status?: string | null;
+  text?: string | null;
+  payloadJson?: any;
+  artifactId?: string | null;
+  clientTempId?: string | null;
+  externalId?: string | null;
+  dedupeKey?: string | null;
+  ingestError?: string | null;
+  visibility: string;
+  createdAt: unknown;
+};
+
+export type ActivityReplay = {
+  events: ActivityEvent[];
+  artifacts: ActivityArtifact[];
+};
+
+export type WorkbenchChatIntent =
+  | 'intake'
+  | 'draft'
+  | 'draft_spec'
+  | 'create_task'
+  | 'queue'
+  | 'run_task'
+  | 'adjust_running'
+  | 'review_followup'
+  | 'learning_capture'
+  | 'design_component'
+  | 'design_blueprint_data';
+
+export type RunDetails = TaskRun & {
+  todos: TaskRunTodo[];
+  events: TaskEvent[];
+  reviews: ReviewResult[];
+};
+
+export type TaskEvent = {
+  id: string;
+  taskRunId?: string;
+  runId?: string;
+  seq?: number;
+  type?: string;
+  actor?: string;
+  eventType?: string | null;
+  message: string;
+  payloadJson?: {
+    runEvent?: {
+      version: 1;
+      id?: string;
+      runId: string;
+      taskId?: string;
+      seq?: number;
+      timestamp: string;
+      type: string;
+      severity: 'debug' | 'info' | 'warning' | 'error' | 'checkpoint';
+      actor: 'system' | 'runtime' | 'supervisor' | 'worker' | 'tool' | 'verifier' | 'human';
+      message: string;
+      data?: Record<string, unknown>;
+    };
+    legacyPayload?: unknown;
+    [key: string]: unknown;
+  };
+  timestamp?: unknown;
+  createdAt?: unknown;
+};

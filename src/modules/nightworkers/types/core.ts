@@ -1,0 +1,123 @@
+import type { TaskEvent } from './activity';
+import type { TaskRunTodo } from './blueprint';
+import type { ReviewResult } from './review';
+
+export type Repository = {
+  id: string;
+  name: string;
+  localPath: string;
+  branch: string;
+  allowed: boolean;
+  queueEnabled: boolean;
+  maxConcurrentSessions: number;
+  safetyPolicy?: unknown | null;
+  createdAt: unknown;
+  updatedAt: unknown;
+};
+
+export type ProjectSafetyPolicy = {
+  allowedPaths?: string[];
+  externalAllowedPaths?: string[];
+  deniedPaths?: string[];
+  blockedCommands?: string[];
+  maxCommandSeconds?: number;
+  requireReadBeforeEdit?: boolean;
+  maxTimeSeconds?: number;
+};
+
+export type Task = {
+  id: string;
+  repositoryId: string;
+  title: string;
+  description?: string | null;
+  objective?: string | null;
+  acceptanceCriteria?: string | null;
+  status: string;
+  compiledPrompt?: string | null;
+  timeoutSeconds: number;
+  priority: number;
+  createdBy?: string | null;
+  createdAt: unknown;
+  updatedAt: unknown;
+};
+
+export type TaskRun = {
+  id: string;
+  taskId: string;
+  repositoryId?: string | null;
+  status: string;
+  workerKind: string;
+  timeoutSeconds: number;
+  contextSnapshot?: unknown | null;
+  summary?: string | null;
+  finalReport?: string | null;
+  finalJudgment?: unknown | null;
+  startedAt: unknown;
+  endedAt?: unknown | null;
+  finishedAt?: unknown | null;
+  logContent?: string | null;
+  diffPatch?: string | null;
+  testResults?: unknown | null;
+  createdAt: unknown;
+  updatedAt: unknown;
+  events?: TaskEvent[];
+  reviews?: ReviewResult[];
+  todos?: TaskRunTodo[];
+};
+
+export type ImplementationQueueEntryStatus =
+  | 'queued'
+  | 'claimed'
+  | 'processing'
+  | 'needs_human'
+  | 'awaiting_commit_decision'
+  | 'execution_completed'
+  | 'execution_archived'
+  | 'failed'
+  | 'cancelled';
+
+export type ImplementationQueueEntry = {
+  id: string;
+  taskId: string;
+  repositoryId: string;
+  status: ImplementationQueueEntryStatus;
+  priority: number;
+  queuePosition?: number | null;
+  processorSlot?: number | null;
+  activeRunId?: string | null;
+  claimedAt?: unknown | null;
+  lastHeartbeatAt?: unknown | null;
+  archivedAt?: unknown | null;
+  statusReason?: string | null;
+  createdAt: unknown;
+  updatedAt: unknown;
+};
+
+export type ImplementationQueueItem = ImplementationQueueEntry & {
+  task: Task;
+  repository: Repository;
+};
+
+export type ImplementationProcessorLane = {
+  slot: number;
+  entry: ImplementationQueueItem | null;
+};
+
+export type ImplementationQueueDashboard = {
+  settings: { processorCount: number };
+  processors: ImplementationProcessorLane[];
+  queued: ImplementationQueueItem[];
+  completed: ImplementationQueueItem[];
+  notQueued: Array<{ task: Task; repository: Repository }>;
+};
+
+export type TodoWorkflowSettings = {
+  id: string;
+  requirePerTodoReview: boolean;
+  requirePerTodoFix: boolean;
+  requireFinalVerification: boolean;
+  askCommitOnCompletion: boolean;
+  hookPolicyJson?: unknown | null;
+  createdAt: unknown;
+  updatedAt: unknown;
+};
