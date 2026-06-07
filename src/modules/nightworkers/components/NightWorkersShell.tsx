@@ -187,7 +187,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 
   return (
     <div
-      className="nightworkers-shell h-screen overflow-x-hidden overflow-y-auto bg-[#111827] text-slate-100"
+      className="nightworkers-shell h-screen overflow-hidden bg-[#111827] text-slate-100"
       {...appearanceAttributes}
     >
       <Group

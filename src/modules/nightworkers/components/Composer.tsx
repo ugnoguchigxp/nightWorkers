@@ -56,8 +56,8 @@ export function Composer({
           : 'bg-orange-400';
 
   return (
-    <div className="bg-transparent p-4">
-      <div className="nightworkers-composer relative mx-auto max-w-4xl rounded-2xl border border-slate-600/70 bg-[#1e293b] p-4 shadow-[0_0_0_1px_rgba(148,163,184,0.08)]">
+    <div className="bg-transparent px-3 py-2">
+      <div className="nightworkers-composer relative mx-auto max-w-4xl rounded-2xl border border-slate-600/55 bg-[#1e293b] p-4 shadow-[0_16px_40px_rgba(0,0,0,0.28)]">
         <div className={`absolute -top-[5px] left-4 h-3 w-3 rounded-full ${wsStatusDotClass}`} />
         {diffSummary ? (
           <div className="nightworkers-composer-badge absolute -top-3 right-4 rounded-full border border-slate-600/80 bg-slate-800 px-3 py-1 text-[11px]">
@@ -69,7 +69,7 @@ export function Composer({
           </div>
         ) : null}
         <textarea
-          rows={3}
+          rows={2}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={async (e) => {
@@ -87,7 +87,7 @@ export function Composer({
           placeholder={t('composer.placeholder')}
           className="nightworkers-composer-input min-h-[58px] w-full resize-none border-0 bg-transparent text-sm text-slate-100 placeholder:text-slate-300/60 focus:outline-none"
         />
-        <div className="nightworkers-composer-toolbar mt-3 flex flex-wrap items-center gap-2 border-t border-slate-600/50 pt-3">
+        <div className="nightworkers-composer-toolbar mt-3 flex flex-wrap items-center gap-2 border-t border-slate-600/35 pt-3">
           <div className="flex shrink-0 items-center gap-2">
             <ModelThinkingControls
               model={model}

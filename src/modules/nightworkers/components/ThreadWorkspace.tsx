@@ -90,7 +90,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
     />
   ) : null;
   return (
-    <div className="relative flex h-screen min-h-0 min-w-0 flex-1 flex-col overflow-visible bg-[#111827]">
+    <div className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#111827]">
       <div className="shrink-0 border-b border-slate-700/70 bg-[#0f172a] px-6 py-3 pr-16">
         {props.activeSession ? (
           <div className="space-y-2">
@@ -248,7 +248,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
       </div>
       {props.splitPanel ? (
         <Group
-          className="nightworkers-thread-split-layout"
+          className="nightworkers-thread-split-layout min-h-0 flex-1"
           defaultLayout={{ 'nightworkers-thread-main': 62, 'nightworkers-artifact': 38 }}
           orientation="horizontal"
         >
@@ -284,7 +284,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
           </Panel>
         </Group>
       ) : (
-        <div className="nightworkers-thread-layout flex flex-1 items-start">
+        <div className="nightworkers-thread-layout flex min-h-0 flex-1 items-start overflow-hidden">
           <ThreadBody
             activeSession={props.activeSession}
             activeStreamingResponse={props.activeStreamingResponse}
@@ -368,8 +368,8 @@ function ThreadBody({
   workbenchBanner: ReactNode;
 }) {
   return (
-    <div className="nightworkers-thread-main relative flex min-w-0 flex-1 flex-col">
-      <div className="nightworkers-thread-scroll pb-44">
+    <div className="nightworkers-thread-main relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="nightworkers-thread-scroll nightworkers-scrollbar min-h-0 flex-1 overflow-y-auto pb-40">
         {activeSession ? (
           <>
             {workbenchBanner}
@@ -398,25 +398,27 @@ function ThreadBody({
           <div className="h-[40vh]" />
         )}
       </div>
-      <div className="sticky bottom-0 z-20">
-        <Composer
-          disabled={isAgentWorking}
-          model={model}
-          thinkingDepth={thinkingDepth}
-          modelOptions={modelOptions}
-          latestDiffPatch={latestRun?.diffPatch || ''}
-          realtimeStatus={realtimeStatus}
-          thinkingDepthOptions={THINKING_DEPTH_OPTIONS}
-          onModelChange={onModelChange}
-          onThinkingDepthChange={onThinkingDepthChange}
-          onSubmit={async (prompt, intent) => {
-            if (!activeSession) {
-              await onSubmitInitialPrompt(prompt);
-              return;
-            }
-            await onSubmitWorkbenchMessage(prompt, intent);
-          }}
-        />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-transparent">
+        <div className="pointer-events-auto">
+          <Composer
+            disabled={isAgentWorking}
+            model={model}
+            thinkingDepth={thinkingDepth}
+            modelOptions={modelOptions}
+            latestDiffPatch={latestRun?.diffPatch || ''}
+            realtimeStatus={realtimeStatus}
+            thinkingDepthOptions={THINKING_DEPTH_OPTIONS}
+            onModelChange={onModelChange}
+            onThinkingDepthChange={onThinkingDepthChange}
+            onSubmit={async (prompt, intent) => {
+              if (!activeSession) {
+                await onSubmitInitialPrompt(prompt);
+                return;
+              }
+              await onSubmitWorkbenchMessage(prompt, intent);
+            }}
+          />
+        </div>
       </div>
     </div>
   );

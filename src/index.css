@@ -266,33 +266,24 @@
   background: var(--nw-primary);
 }
 
-.nightworkers-thread-scroll {
-  scrollbar-width: none;
-}
-
-.nightworkers-thread-scroll::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
-}
-
 .nightworkers-workbench-group,
 .nightworkers-workbench-group > div,
 #nightworkers-chat > div {
-  overflow: visible;
+  overflow: hidden;
 }
 
 .nightworkers-thread-layout {
-  min-height: calc(100vh - 3.3125rem);
+  height: calc(100vh - 3.3125rem);
 }
 
 .nightworkers-thread-split-layout {
-  min-height: calc(100vh - 3.3125rem);
+  height: calc(100vh - 3.3125rem);
 }
 
 .nightworkers-thread-main {
   min-width: 0;
-  min-height: calc(100vh - 3.3125rem);
+  min-height: 0;
+  height: 100%;
 }
 
 .nightworkers-thread-side-panel {
@@ -731,8 +722,8 @@
 }
 
 .nightworkers-composer {
-  background: color-mix(in srgb, var(--nw-panel) 88%, var(--nw-primary) 12%);
-  border-color: var(--nw-strong-border);
+  background: color-mix(in srgb, var(--nw-panel) 92%, var(--nw-primary) 8%);
+  border-color: color-mix(in srgb, var(--nw-strong-border) 72%, transparent);
   border-radius: var(--nw-radius);
   box-shadow: var(--nw-shadow);
   color: var(--nw-text);
@@ -972,8 +963,8 @@
 }
 
 .nightworkers-shell .nightworkers-composer {
-  background: color-mix(in srgb, var(--nw-panel) 88%, var(--nw-primary) 12%);
-  border-color: var(--nw-strong-border);
+  background: color-mix(in srgb, var(--nw-panel) 92%, var(--nw-primary) 8%);
+  border-color: color-mix(in srgb, var(--nw-strong-border) 72%, transparent);
   border-radius: var(--nw-radius);
   box-shadow: var(--nw-shadow);
   color: var(--nw-text);
@@ -988,6 +979,11 @@
   border-color: var(--nw-border);
   border-radius: var(--nw-control-radius);
   color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-composer .nightworkers-control-select {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--nw-border) 70%, transparent);
 }
 
 .nightworkers-shell .nightworkers-composer-submit {
