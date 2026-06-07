@@ -96,7 +96,7 @@ describe('NightWorkers workbench routes', () => {
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
   });
 
-  it('routes a normal prompt through LLM intake without starting a run', async () => {
+  it('starts a docs run for normal intake without persisting the round 1 response as chat', async () => {
     vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
       mockJobSelection('docs', 'Analyze the goal and propose the next implementation step.')
     );
@@ -111,17 +111,55 @@ describe('NightWorkers workbench routes', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
-    expect(body.run).toBeNull();
-    expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
+    expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
+    expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(1);
     const assistantMessage = body.messages.find(
       (message: any) => message.role === 'assistant' && message.metadataJson?.intent === 'intake'
     );
-    expect(assistantMessage?.metadataJson?.source).toBe('llm');
-    expect(assistantMessage?.content).toContain(
-      'Analyze the goal and propose the next implementation step.'
+    expect(assistantMessage).toBeUndefined();
+    const systemMessage = body.messages.find(
+      (message: any) => message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
-    expect(assistantMessage?.content).not.toContain('GOAL分析を受け取りました');
+    expect(systemMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('docs');
     expect(body.task.objective).toBe('ECサイトのトップページを作ってください');
+    await vi.waitFor(async () => {
+      const runs = await repo.listTaskRunsForTask(task.id);
+      expect(runs[0]?.status).toBe('completed');
+    });
+  });
+
+  it('starts a planning run instead of exposing the intake classification', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('planning', 'kanbanアプリの実装方針を整理し、主要機能と作業順を決める')
+    );
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'kanbanアプリの実装計画を作ってください' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
+    expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(1);
+    expect(
+      body.messages.some(
+        (message: any) => message.role === 'assistant' && message.content.includes('jobType:')
+      )
+    ).toBe(false);
+    const systemMessage = body.messages.find(
+      (message: any) => message.role === 'system' && message.metadataJson?.intent === 'run_started'
+    );
+    expect(systemMessage?.metadataJson?.intakeJobSelection).toMatchObject({
+      jobType: 'planning',
+      goal: 'kanbanアプリの実装方針を整理し、主要機能と作業順を決める',
+    });
+    await vi.waitFor(async () => {
+      const runs = await repo.listTaskRunsForTask(task.id);
+      expect(runs[0]?.status).toBe('completed');
+    });
   });
 
   it('starts an implementation run for code-change intake without persisting the round 1 response as chat', async () => {

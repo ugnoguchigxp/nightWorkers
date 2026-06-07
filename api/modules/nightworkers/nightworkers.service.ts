@@ -1125,7 +1125,12 @@ function shouldStartImmediateWorkbenchRun(
   intent: WorkbenchChatIntent
 ) {
   if (intent !== 'intake') return false;
-  return jobSelection.jobType === 'minor_code_edit' || jobSelection.jobType === 'major_code_edit';
+  return (
+    jobSelection.jobType === 'minor_code_edit' ||
+    jobSelection.jobType === 'major_code_edit' ||
+    jobSelection.jobType === 'planning' ||
+    jobSelection.jobType === 'docs'
+  );
 }
 
 function buildAcceptanceCriteriaFromDecision(jobSelection: JobTypeSelection): string {
