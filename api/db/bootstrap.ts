@@ -1,9 +1,69 @@
 import { client } from './client';
 
+async function ensureNullableDesignQuestionnaireBlueprintSource() {
+  const columns = await client.execute('PRAGMA table_info(design_questionnaire_sessions)');
+  const sourceColumn = columns.rows.find((row) => row.name === 'source_blueprint_message_id');
+  if (!sourceColumn || sourceColumn.notnull !== 1) return;
+
+  await client.execute('PRAGMA foreign_keys = OFF');
+  try {
+    await client.execute(`
+      CREATE TABLE IF NOT EXISTS design_questionnaire_sessions_next (
+        id text PRIMARY KEY NOT NULL,
+        created_at integer NOT NULL,
+        updated_at integer NOT NULL,
+        task_id text NOT NULL,
+        repository_id text NOT NULL,
+        source_blueprint_message_id text,
+        status text DEFAULT 'draft' NOT NULL,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
+        FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade,
+        FOREIGN KEY (source_blueprint_message_id) REFERENCES task_messages(id) ON DELETE cascade
+      )
+    `);
+    await client.execute(`
+      INSERT INTO design_questionnaire_sessions_next (
+        id,
+        created_at,
+        updated_at,
+        task_id,
+        repository_id,
+        source_blueprint_message_id,
+        status
+      )
+      SELECT
+        id,
+        created_at,
+        updated_at,
+        task_id,
+        repository_id,
+        source_blueprint_message_id,
+        status
+      FROM design_questionnaire_sessions
+    `);
+    await client.execute('DROP TABLE design_questionnaire_sessions');
+    await client.execute(
+      'ALTER TABLE design_questionnaire_sessions_next RENAME TO design_questionnaire_sessions'
+    );
+    await client.execute(
+      'CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_task_idx ON design_questionnaire_sessions (task_id)'
+    );
+    await client.execute(
+      'CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_repository_idx ON design_questionnaire_sessions (repository_id)'
+    );
+    await client.execute(
+      'CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_source_blueprint_idx ON design_questionnaire_sessions (source_blueprint_message_id)'
+    );
+  } finally {
+    await client.execute('PRAGMA foreign_keys = ON');
+  }
+}
+
 export async function ensureNightWorkersSchema() {
   await client.execute('PRAGMA foreign_keys = ON');
   await client.execute('PRAGMA busy_timeout = 5000');
   await ensureBaseNightWorkersTables();
+  await ensureNullableDesignQuestionnaireBlueprintSource();
 
   const taskRunColumns = await client.execute('PRAGMA table_info(task_runs)');
   const hasFinalJudgmentColumn = taskRunColumns.rows.some((row) => row.name === 'final_judgment');
@@ -405,7 +465,7 @@ export async function ensureNightWorkersSchema() {
       updated_at integer NOT NULL,
       task_id text NOT NULL,
       repository_id text NOT NULL,
-      source_blueprint_message_id text NOT NULL,
+      source_blueprint_message_id text,
       status text DEFAULT 'draft' NOT NULL,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
       FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade,

@@ -697,7 +697,7 @@ export async function getTaskMessage(id: string) {
 export async function createDesignQuestionnaireSession(data: {
   taskId: string;
   repositoryId: string;
-  sourceBlueprintMessageId: string;
+  sourceBlueprintMessageId?: string | null;
   status?: string;
 }) {
   const [session] = await db

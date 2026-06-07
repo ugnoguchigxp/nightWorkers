@@ -249,6 +249,39 @@ describe('workbench selectors', () => {
     ]);
   });
 
+  it('builds Specification Workspace refs from implementation plan documents', () => {
+    const message: TaskMessage = {
+      id: '44444444-4444-4444-8444-444444444447',
+      taskId: baseTask.id,
+      role: 'assistant',
+      content: '# Implementation Plan',
+      messageType: 'markdown_document',
+      metadataJson: {
+        intent: 'implementation_plan',
+        title: 'Kanban Implementation Plan',
+      },
+      createdAt: '2026-06-02T00:00:01.000Z',
+    };
+
+    const refs = buildWorkbenchArtifactRefs({
+      task: baseTask,
+      messages: [message],
+    });
+
+    expect(refs).toEqual([
+      expect.objectContaining({
+        kind: 'blueprint_workspace',
+        title: 'Specification Workspace',
+        source: { type: 'task_message', messageId: message.id },
+      }),
+      expect.objectContaining({
+        kind: 'implementation_plan',
+        title: 'Kanban Implementation Plan',
+        source: { type: 'task_message', messageId: message.id },
+      }),
+    ]);
+  });
+
   it('derives email workbench state from queue entries and review evidence', () => {
     const queued = buildWorkbenchSessionView(
       { ...baseTask, status: 'ready' },

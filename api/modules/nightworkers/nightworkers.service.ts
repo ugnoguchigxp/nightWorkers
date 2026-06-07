@@ -463,27 +463,39 @@ export async function saveBlueprintDesignTokenAdoption(
   return saveBlueprintAdoption('designTokens', taskId, messageId, adopted);
 }
 
-export async function createDesignQuestionnaire(taskId: string, sourceBlueprintMessageId: string) {
-  const { task, sourceBlueprintMessage } = await getQuestionnaireTaskAndBlueprint(
-    taskId,
-    sourceBlueprintMessageId
-  );
-  const session = await repo.createDesignQuestionnaireSession({
-    taskId,
-    repositoryId: task.repositoryId,
-    sourceBlueprintMessageId,
-    status: 'draft',
-  });
+export async function createDesignQuestionnaire(
+  taskId: string,
+  sourceBlueprintMessageId?: string | null,
+  sourcePrompt?: string
+) {
+  const task = await repo.getTask(taskId);
+  if (!task) throw new NotFoundError('Task not found');
+  const sourceBlueprintMessage = sourceBlueprintMessageId
+    ? (await getQuestionnaireTaskAndBlueprint(taskId, sourceBlueprintMessageId))
+        .sourceBlueprintMessage
+    : null;
   const rawOutput = await generateDesignQuestionnaireRawOutput({
     taskId,
     repositoryId: task.repositoryId,
     sourceBlueprintMessage,
+    taskPrompt: sourcePrompt || task.objective || task.description || task.title,
   }).catch(async (error) => {
     const rawContent = (error as Error & { rawContent?: string }).rawContent;
     if (rawContent?.trim()) return rawContent;
     throw error;
   });
-  const parsed = parseDesignQuestionnaireRaw(rawOutput);
+  const parsed = parseDesignQuestionnaireRaw(rawOutput, {
+    taskId,
+    repositoryId: task.repositoryId,
+    sourceBlueprintMessageId: sourceBlueprintMessage?.id ?? null,
+    sourceKind: sourceBlueprintMessage ? 'blueprint' : 'plan_mode_intake',
+  });
+  const session = await repo.createDesignQuestionnaireSession({
+    taskId,
+    repositoryId: task.repositoryId,
+    sourceBlueprintMessageId: sourceBlueprintMessageId || null,
+    status: 'draft',
+  });
   if (parsed.ok) {
     await repo.createDesignQuestionnaireQuestionSet({
       sessionId: session.id,
@@ -557,7 +569,12 @@ export async function saveDesignQuestionnaireAnswers(
 export async function generateDesignQuestionnaireFollowUp(taskId: string, sessionId: string) {
   const session = await getDesignQuestionnaireSession(taskId, sessionId);
   const rawOutput = await generateDesignQuestionnaireFollowUpRawOutput(session);
-  const parsed = parseDesignQuestionnaireRaw(rawOutput);
+  const parsed = parseDesignQuestionnaireRaw(rawOutput, {
+    taskId: session.taskId,
+    repositoryId: session.repositoryId,
+    sourceBlueprintMessageId: session.sourceBlueprintMessageId,
+    sourceKind: session.sourceBlueprintMessageId ? 'blueprint' : 'plan_mode_intake',
+  });
   const nextSequence =
     session.questionSets.reduce((max, set) => Math.max(max, set.sequence), 0) + 1;
   await repo.createDesignQuestionnaireQuestionSet({
@@ -720,6 +737,53 @@ export async function getBlueprintSpecificationWorkspace(
 
 export async function getSpecificationWorkspace(taskId: string) {
   return getBlueprintSpecificationWorkspace(taskId);
+}
+
+async function createPlanningArtifactMessageIfNeeded(input: {
+  taskId: string;
+  runId: string;
+  finalReport: string;
+}) {
+  const messages = await repo.listTaskMessages(input.taskId);
+  const runStartedMessage = [...messages].reverse().find((message) => {
+    const metadata = (message.metadataJson || {}) as Record<string, any>;
+    return (
+      message.role === 'system' &&
+      metadata.intent === 'run_started' &&
+      metadata.source === 'workbench'
+    );
+  });
+  const runStartedMetadata = (runStartedMessage?.metadataJson || {}) as Record<string, any>;
+  const intakeJobSelection = runStartedMetadata.intakeJobSelection;
+  if (intakeJobSelection?.jobType !== 'planning') return;
+  const alreadyPublished = messages.some((message) => {
+    const metadata = (message.metadataJson || {}) as Record<string, any>;
+    return (
+      message.messageType === 'markdown_document' &&
+      metadata.intent === 'implementation_plan' &&
+      metadata.sourceRunId === input.runId
+    );
+  });
+  if (alreadyPublished) return;
+  await repo.createTaskMessage({
+    taskId: input.taskId,
+    runId: input.runId,
+    role: 'assistant',
+    content: input.finalReport,
+    messageType: 'markdown_document',
+    payloadJson: {
+      intent: 'implementation_plan',
+      title: 'Implementation Plan',
+      source: 'workbench-planning-run',
+      sourceRunId: input.runId,
+      routingHypothesis: runStartedMetadata.routingHypothesis,
+      intakeJobSelection,
+      markdownDocumentData: {
+        title: 'Implementation Plan',
+        content: input.finalReport,
+      },
+    },
+  });
 }
 
 export async function appendTaskMessage(id: string, prompt: string) {
@@ -942,7 +1006,9 @@ async function handleWorkbenchIntakeMessage(
       jobSelection,
       options.intent || 'intake'
     );
-    if (isBlueprintRouting(routing)) {
+    if (jobSelection.jobType === 'planning') {
+      await createDesignQuestionnaire(taskId, null, prompt);
+    } else if (isBlueprintRouting(routing)) {
       try {
         const { blueprint, validation, generation } = await generatePlanModeBlueprintDraft({
           taskId,
@@ -1137,7 +1203,6 @@ function shouldStartImmediateWorkbenchRun(
   return (
     jobSelection.jobType === 'minor_code_edit' ||
     jobSelection.jobType === 'major_code_edit' ||
-    jobSelection.jobType === 'planning' ||
     jobSelection.jobType === 'docs'
   );
 }
@@ -1184,6 +1249,19 @@ function routingForWorkbenchJobType(jobType: JobType): SupervisorRoutingHypothes
       confidence: 1,
     };
   }
+  if (jobType === 'planning') {
+    return {
+      primaryMode: 'planning',
+      secondaryModes: [],
+      phase: 'plan',
+      workKinds: [],
+      overlays: [],
+      subtype: 'design_questionnaire',
+      requiredEvidence: [],
+      nextSkillFiles: [],
+      confidence: 1,
+    };
+  }
   return {
     primaryMode: jobType === 'general_answer' ? 'general_answer' : 'planning',
     secondaryModes: [],
@@ -1227,18 +1305,31 @@ async function getQuestionnaireTaskAndBlueprint(taskId: string, sourceBlueprintM
 async function generateDesignQuestionnaireRawOutput(input: {
   taskId: string;
   repositoryId: string;
-  sourceBlueprintMessage: TaskMessageRow;
+  sourceBlueprintMessage: TaskMessageRow | null;
+  taskPrompt: string;
 }) {
-  const metadata = input.sourceBlueprintMessage.metadataJson as { appBlueprint?: unknown };
+  const metadata = (input.sourceBlueprintMessage?.metadataJson || {}) as { appBlueprint?: unknown };
+  const source = input.sourceBlueprintMessage
+    ? {
+        sourceKind: 'blueprint',
+        blueprintMessageId: input.sourceBlueprintMessage.id,
+        blueprint: metadata.appBlueprint,
+      }
+    : {
+        sourceKind: 'plan_mode_intake',
+        prompt: input.taskPrompt,
+      };
   return callStructuredJsonLLM(
     buildDesignQuestionnaireSystemPrompt(),
     [
-      '次の App Blueprint artifact を入力に、未決定仕様をカテゴリ別質問票として生成してください。',
+      input.sourceBlueprintMessage
+        ? '次の App Blueprint artifact を入力に、未決定仕様をカテゴリ別質問票として生成してください。'
+        : '次の Plan mode intake を入力に、まだ決まっていない仕様を尋問するつもりでカテゴリ別質問票として生成してください。',
       `taskId: ${input.taskId}`,
       `repositoryId: ${input.repositoryId}`,
-      `blueprintMessageId: ${input.sourceBlueprintMessage.id}`,
+      input.sourceBlueprintMessage ? `blueprintMessageId: ${input.sourceBlueprintMessage.id}` : '',
       '',
-      JSON.stringify(metadata.appBlueprint, null, 2),
+      JSON.stringify(source, null, 2),
     ].join('\n'),
     {
       schemaName: 'design_questionnaire',
@@ -1304,23 +1395,210 @@ async function generateDesignQuestionnaireReviewRawOutput(session: any) {
 function buildDesignQuestionnaireSystemPrompt() {
   return [
     'あなたは NightWorkers の Design Questionnaire generator です。',
-    'Blueprint 後に残る DB Design 以外の仕様未決定事項を、複数質問のフォームとして生成してください。',
+    'Plan mode の最初の仕事として、まだ決まっていない仕様を尋問するつもりで、複数質問のフォームを生成してください。',
+    'ユーザーの最初の説明を完成仕様として扱わず、曖昧な用語、未指定の業務ルール、画面状態、権限、例外、非機能要件を具体的に問い詰めてください。',
+    'Blueprint 入力がある場合は Blueprint 後に残る未決定事項を、Blueprint 入力がない場合は Plan mode intake から未決定事項を抽出してください。',
     '質問は上位 5 から 10 件の blocking issue に絞り、カテゴリごとにまとめてください。',
-    '各質問には why、blocks、outputSection、推奨回答、選択肢、短い tradeoff を含めてください。',
+    '必ず次の JSON root 形にしてください: {version, source, title, summary, questionSets, openQuestions, dbDesignHandoffNotes}。',
+    'source は taskId、repositoryId、sourceKind、blueprintMessageId または promptMessageId を持ちます。',
+    'questionSets は category ごとの配列で、各 set は id、title、category、purpose、questions を持ちます。',
+    '各 question は id、topic、question、why、answerType、blocks、outputSection を必ず持ちます。',
+    'answerType は single_choice、multi_choice、boolean、free_text、ranked のいずれかです。',
+    '選択式の question には options を必ず付け、各 option は id、label、tradeoff、必要なら recommended を持ちます。',
+    '推奨回答は recommendedAnswerId に option id として入れ、自然文の recommendedAnswer や choices は使わないでください。',
+    'dbDesignHandoffNotes は文字列配列ではなく、id、summary、sourceQuestionIds、constraint を持つ object 配列にしてください。',
     'DB schema の具体化は質問本文に混ぜず、dbDesignHandoffNotes に制約・論点として分離してください。',
+    '質問は一度で完璧に終わらせなくてよいです。回答後に follow-up で複数回に分けて深掘りできる粒度にしてください。',
     'ID は lowercase kebab-case にしてください。',
     '回答は JSON のみで返してください。',
   ].join('\n');
 }
 
+type DesignQuestionnaireSourceFallback = {
+  taskId: string;
+  repositoryId: string;
+  sourceBlueprintMessageId?: string | null;
+  sourceKind: 'blueprint' | 'plan_mode_intake';
+};
+
 function parseDesignQuestionnaireRaw(
-  rawOutput: string
+  rawOutput: string,
+  fallbackSource?: DesignQuestionnaireSourceFallback
 ): { ok: true; value: DesignQuestionnaire } | { ok: false; error: unknown } {
   try {
-    return { ok: true, value: designQuestionnaireSchema.parse(JSON.parse(rawOutput)) };
+    const parsedJson = JSON.parse(rawOutput);
+    const parsed = designQuestionnaireSchema.safeParse(parsedJson);
+    if (parsed.success) return { ok: true, value: parsed.data };
+    const normalized = normalizeLegacyDesignQuestionnaireOutput(parsedJson, fallbackSource);
+    if (normalized) return { ok: true, value: designQuestionnaireSchema.parse(normalized) };
+    return { ok: false, error: parsed.error };
   } catch (error) {
     return { ok: false, error };
   }
+}
+
+function normalizeLegacyDesignQuestionnaireOutput(
+  value: unknown,
+  fallbackSource?: DesignQuestionnaireSourceFallback
+): unknown | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, any>;
+  const questions = Array.isArray(raw.questions) ? raw.questions.filter(isRecord) : [];
+  if (questions.length === 0) return null;
+  const source = isRecord(raw.source) ? raw.source : {};
+  const taskId = stringOrNull(source.taskId) || stringOrNull(raw.taskId) || fallbackSource?.taskId;
+  const repositoryId =
+    stringOrNull(source.repositoryId) ||
+    stringOrNull(raw.repositoryId) ||
+    fallbackSource?.repositoryId;
+  if (!taskId || !repositoryId) return null;
+
+  const grouped = new Map<string, Record<string, any>[]>();
+  for (const question of questions) {
+    const category = firstNonEmptyString(question.category, question.outputSection, '仕様確認');
+    const key = toKebabId(category, `section-${grouped.size + 1}`);
+    grouped.set(key, [...(grouped.get(key) || []), question]);
+  }
+
+  return {
+    version: 1,
+    source: {
+      taskId,
+      repositoryId,
+      sourceKind:
+        stringOrNull(source.sourceKind) || fallbackSource?.sourceKind || 'plan_mode_intake',
+      blueprintMessageId:
+        stringOrNull(source.blueprintMessageId) || fallbackSource?.sourceBlueprintMessageId || null,
+    },
+    title: firstNonEmptyString(raw.title, 'Design Questionnaire'),
+    summary: firstNonEmptyString(raw.summary, '実装前に未決定仕様を確認します。'),
+    questionSets: [...grouped.entries()].map(([id, group], index) => {
+      const category = firstNonEmptyString(
+        group[0]?.category,
+        group[0]?.outputSection,
+        `Section ${index + 1}`
+      );
+      return {
+        id,
+        title: category,
+        category,
+        purpose: `Resolve ${category} decisions before implementation.`,
+        questions: group.map((question, questionIndex) =>
+          normalizeLegacyQuestion(question, questionIndex)
+        ),
+      };
+    }),
+    openQuestions: [],
+    dbDesignHandoffNotes: normalizeLegacyDbDesignHandoffNotes(raw.dbDesignHandoffNotes, questions),
+  };
+}
+
+function normalizeLegacyQuestion(question: Record<string, any>, index: number) {
+  const choices = Array.isArray(question.choices) ? question.choices.filter(isRecord) : [];
+  const options = choices.map((choice, choiceIndex) => {
+    const label = firstNonEmptyString(choice.label, choice.title, `Option ${choiceIndex + 1}`);
+    const recommended =
+      stringOrNull(question.recommendedAnswer) === label ||
+      stringOrNull(question.recommendedAnswerId) === stringOrNull(choice.id) ||
+      Boolean(choice.recommended);
+    return {
+      id: toKebabId(firstNonEmptyString(choice.id, label), `option-${choiceIndex + 1}`),
+      label,
+      tradeoff: firstNonEmptyString(
+        choice.tradeoff,
+        choice.description,
+        '選択時の影響を確認してください。'
+      ),
+      ...(recommended ? { recommended: true } : {}),
+    };
+  });
+  const recommendedOption = options.find((option) => option.recommended);
+  const answerType = options.length > 0 ? 'single_choice' : 'free_text';
+  return {
+    id: toKebabId(
+      firstNonEmptyString(question.id, question.topic, `question-${index + 1}`),
+      `question-${index + 1}`
+    ),
+    topic: firstNonEmptyString(
+      question.topic,
+      question.category,
+      question.outputSection,
+      `Question ${index + 1}`
+    ),
+    question: firstNonEmptyString(question.question, question.title, `Question ${index + 1}`),
+    why: firstNonEmptyString(question.why, question.reason, '実装前に仕様判断が必要です。'),
+    answerType,
+    ...(recommendedOption ? { recommendedAnswerId: recommendedOption.id } : {}),
+    ...(options.length > 0 ? { options } : {}),
+    allowsCustomAnswer: true,
+    blocks: normalizeStringArray(question.blocks, ['実装方針']),
+    outputSection: firstNonEmptyString(question.outputSection, question.category, 'specification'),
+  };
+}
+
+function normalizeLegacyDbDesignHandoffNotes(value: unknown, questions: Record<string, any>[]) {
+  const notes = Array.isArray(value) ? value : [];
+  const firstQuestionId = toKebabId(
+    firstNonEmptyString(questions[0]?.id, 'question-1'),
+    'question-1'
+  );
+  return notes.map((note, index) => {
+    if (isRecord(note)) {
+      return {
+        id: toKebabId(
+          firstNonEmptyString(note.id, note.summary, `db-note-${index + 1}`),
+          `db-note-${index + 1}`
+        ),
+        summary: firstNonEmptyString(note.summary, note.constraint, `DB Design note ${index + 1}`),
+        sourceQuestionIds: normalizeStringArray(note.sourceQuestionIds, [firstQuestionId]).map(
+          (id, idIndex) => toKebabId(id, `question-${idIndex + 1}`)
+        ),
+        constraint: firstNonEmptyString(
+          note.constraint,
+          note.summary,
+          `DB Design note ${index + 1}`
+        ),
+      };
+    }
+    return {
+      id: `db-note-${index + 1}`,
+      summary: String(note || `DB Design note ${index + 1}`),
+      sourceQuestionIds: [firstQuestionId],
+      constraint: String(note || `DB Design note ${index + 1}`),
+    };
+  });
+}
+
+function firstNonEmptyString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function normalizeStringArray(value: unknown, fallback: string[]) {
+  if (!Array.isArray(value)) return fallback;
+  const strings = value.filter(
+    (item): item is string => typeof item === 'string' && Boolean(item.trim())
+  );
+  return strings.length > 0 ? strings : fallback;
+}
+
+function toKebabId(value: string, fallback: string) {
+  const normalized = value
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function parseDesignDecisionReviewRaw(
@@ -1476,13 +1754,125 @@ const designQuestionnaireJsonSchema = {
     'dbDesignHandoffNotes',
   ],
   properties: {
-    version: { const: 1 },
-    source: { type: 'object' },
+    version: { type: 'integer', const: 1 },
+    source: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['taskId', 'repositoryId', 'sourceKind'],
+      properties: {
+        taskId: { type: 'string' },
+        repositoryId: { type: 'string' },
+        sourceKind: { type: 'string', enum: ['blueprint', 'plan_mode_intake'] },
+        blueprintMessageId: { type: ['string', 'null'] },
+        promptMessageId: { type: ['string', 'null'] },
+      },
+    },
     title: { type: 'string' },
     summary: { type: 'string' },
-    questionSets: { type: 'array' },
-    openQuestions: { type: 'array' },
-    dbDesignHandoffNotes: { type: 'array' },
+    questionSets: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'title', 'category', 'purpose', 'questions'],
+        properties: {
+          id: { type: 'string' },
+          title: { type: 'string' },
+          category: { type: 'string' },
+          purpose: { type: 'string' },
+          questions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['id', 'topic', 'question', 'why', 'answerType', 'blocks', 'outputSection'],
+              properties: {
+                id: { type: 'string' },
+                topic: { type: 'string' },
+                question: { type: 'string' },
+                why: { type: 'string' },
+                answerType: {
+                  type: 'string',
+                  enum: ['single_choice', 'multi_choice', 'boolean', 'free_text', 'ranked'],
+                },
+                recommendedAnswerId: { type: 'string' },
+                options: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['id', 'label', 'tradeoff'],
+                    properties: {
+                      id: { type: 'string' },
+                      label: { type: 'string' },
+                      tradeoff: { type: 'string' },
+                      recommended: { type: 'boolean' },
+                    },
+                  },
+                },
+                allowsCustomAnswer: { type: 'boolean' },
+                blocks: { type: 'array', items: { type: 'string' } },
+                outputSection: { type: 'string' },
+                dependsOn: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['questionId', 'operator', 'value'],
+                    properties: {
+                      questionId: { type: 'string' },
+                      operator: {
+                        type: 'string',
+                        enum: ['equals', 'not_equals', 'includes', 'excludes'],
+                      },
+                      value: {
+                        anyOf: [
+                          { type: 'string' },
+                          { type: 'boolean' },
+                          { type: 'array', items: { type: 'string' } },
+                        ],
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    openQuestions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'topic', 'reason', 'blocks'],
+        properties: {
+          id: { type: 'string' },
+          topic: { type: 'string' },
+          reason: { type: 'string' },
+          blocks: { type: 'array', items: { type: 'string' } },
+          suggestedOwner: {
+            type: 'string',
+            enum: ['user', 'designer', 'engineer', 'db-design', 'later'],
+          },
+        },
+      },
+    },
+    dbDesignHandoffNotes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'summary', 'sourceQuestionIds', 'constraint'],
+        properties: {
+          id: { type: 'string' },
+          summary: { type: 'string' },
+          sourceQuestionIds: { type: 'array', items: { type: 'string' } },
+          constraint: { type: 'string' },
+        },
+      },
+    },
   },
 };
 
@@ -1501,15 +1891,88 @@ const designDecisionReviewJsonSchema = {
     'dbDesignHandoffNotes',
   ],
   properties: {
-    version: { const: 1 },
+    version: { type: 'integer', const: 1 },
     sessionId: { type: 'string' },
-    sourceBlueprintMessageId: { type: 'string' },
+    sourceBlueprintMessageId: { type: ['string', 'null'] },
     title: { type: 'string' },
     summary: { type: 'string' },
-    decisions: { type: 'array' },
-    deferredItems: { type: 'array' },
-    unresolvedQuestions: { type: 'array' },
-    dbDesignHandoffNotes: { type: 'array' },
+    decisions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'id',
+          'outputSection',
+          'decision',
+          'rationale',
+          'alternativesConsidered',
+          'tradeoffs',
+          'sourceQuestionIds',
+          'unresolvedQuestionIds',
+        ],
+        properties: {
+          id: { type: 'string' },
+          outputSection: { type: 'string' },
+          decision: { type: 'string' },
+          rationale: { type: 'string' },
+          alternativesConsidered: { type: 'array', items: { type: 'string' } },
+          tradeoffs: { type: 'array', items: { type: 'string' } },
+          sourceQuestionIds: { type: 'array', items: { type: 'string' } },
+          unresolvedQuestionIds: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+    deferredItems: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'topic', 'reason', 'blocks'],
+        properties: {
+          id: { type: 'string' },
+          topic: { type: 'string' },
+          reason: { type: 'string' },
+          blocks: { type: 'array', items: { type: 'string' } },
+          suggestedOwner: {
+            type: 'string',
+            enum: ['user', 'designer', 'engineer', 'db-design', 'later'],
+          },
+        },
+      },
+    },
+    unresolvedQuestions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'topic', 'reason', 'blocks'],
+        properties: {
+          id: { type: 'string' },
+          topic: { type: 'string' },
+          reason: { type: 'string' },
+          blocks: { type: 'array', items: { type: 'string' } },
+          suggestedOwner: {
+            type: 'string',
+            enum: ['user', 'designer', 'engineer', 'db-design', 'later'],
+          },
+        },
+      },
+    },
+    dbDesignHandoffNotes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'summary', 'sourceQuestionIds', 'constraint'],
+        properties: {
+          id: { type: 'string' },
+          summary: { type: 'string' },
+          sourceQuestionIds: { type: 'array', items: { type: 'string' } },
+          constraint: { type: 'string' },
+        },
+      },
+    },
   },
 };
 
@@ -2111,6 +2574,11 @@ export async function startTaskRun(taskId: string) {
         void runSessionQueueForRepository(task.repositoryId);
       }
 
+      await createPlanningArtifactMessageIfNeeded({
+        taskId,
+        runId: run.id,
+        finalReport,
+      });
       await repo.createTaskMessage({
         taskId,
         runId: run.id,

@@ -242,7 +242,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
       {props.splitPanel ? (
         <Group
           className="nightworkers-thread-split-layout min-h-0 flex-1"
-          defaultLayout={{ 'nightworkers-thread-main': 62, 'nightworkers-artifact': 38 }}
+          defaultLayout={{ 'nightworkers-thread-main': 50, 'nightworkers-artifact': 50 }}
           orientation="horizontal"
         >
           <Panel id="nightworkers-thread-main" minSize="38%">

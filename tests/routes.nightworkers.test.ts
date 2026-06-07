@@ -966,6 +966,103 @@ describe('NightWorkers task routes', () => {
     }
   });
 
+  it('normalizes legacy flat Design Questionnaire output into grouped question sets', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+
+    try {
+      const createdRepo = await repo.createRepository({
+        name: `TEST: Legacy Design Questionnaire ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: createdRepo.id,
+        title: 'TEST: Legacy questionnaire target',
+        description: 'Generate legacy questionnaire',
+        status: 'draft',
+      });
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+        taskId: task.id,
+        repositoryId: createdRepo.id,
+        questions: [
+          {
+            id: 'product-scope-and-users',
+            category: 'プロダクト範囲',
+            question: 'この Kanban システムの対象ユーザーと利用範囲はどこまでですか？',
+            why: '利用者の前提で必要な画面、権限、データモデル、認証有無が変わるためです。',
+            blocks: ['認証方式の設計', '初期 MVP の機能範囲'],
+            outputSection: 'scope',
+            recommendedAnswer: '個人利用から始める',
+            choices: [
+              {
+                label: '個人利用',
+                description: '最小構成で始めやすい。',
+              },
+              {
+                label: 'チーム利用',
+                description: '共有や権限設計が必要になる。',
+              },
+            ],
+            tradeoff: '共有を入れるほど初期実装は重くなります。',
+          },
+        ],
+        dbDesignHandoffNotes: ['ボード、列、カードの正規化方針を DB Design で決める。'],
+      });
+
+      const createRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+
+      expect(createRes.status).toBe(201);
+      const session = await createRes.json();
+      expect(session.status).toBe('answering');
+      expect(session.questionSets[0]).toMatchObject({
+        validationStatus: 'valid',
+      });
+      const questionnaire = session.questionSets[0].questionnaire;
+      expect(questionnaire.source).toMatchObject({
+        taskId: task.id,
+        repositoryId: createdRepo.id,
+        sourceKind: 'plan_mode_intake',
+      });
+      expect(questionnaire.questionSets[0].questions[0]).toMatchObject({
+        id: 'product-scope-and-users',
+        topic: 'プロダクト範囲',
+        answerType: 'single_choice',
+        recommendedAnswerId: 'option-1',
+      });
+      expect(questionnaire.questionSets[0].questions[0].options).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'option-1',
+            label: '個人利用',
+            recommended: true,
+          }),
+        ])
+      );
+      expect(questionnaire.dbDesignHandoffNotes[0]).toMatchObject({
+        id: 'db-note-1',
+        sourceQuestionIds: ['product-scope-and-users'],
+      });
+    } finally {
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+      else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+    }
+  });
+
   it('deletes a task and its dependent workbench data', async () => {
     const createdRepo = await repo.createRepository({
       name: `TEST: Task Delete Workspace ${crypto.randomUUID()}`,

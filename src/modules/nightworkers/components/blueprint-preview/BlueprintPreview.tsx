@@ -747,8 +747,13 @@ function renderPreviewSectionBody(
     const chartItems = chartPreviewItems(props, table, binding);
     return (
       <div className="grid gap-[var(--blueprint-preview-gap)] md:grid-cols-[minmax(0,1fr)_12rem]">
-        <div className="h-44 rounded-md border border-border bg-muted p-2">
-          <ResponsiveContainer height="100%" width="100%">
+        <div className="min-h-44 overflow-x-auto rounded-md border border-border bg-muted p-2">
+          <ResponsiveContainer
+            height={PREVIEW_CHART_HEIGHT}
+            minHeight={PREVIEW_CHART_HEIGHT}
+            minWidth={PREVIEW_CHART_MIN_WIDTH}
+            width="100%"
+          >
             <BarChart data={chartItems} margin={{ top: 8, right: 8, bottom: 4, left: -12 }}>
               <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
               <XAxis
@@ -782,10 +787,10 @@ function renderPreviewSectionBody(
           </ResponsiveContainer>
         </div>
         <div className="grid content-start gap-2">
-          {chartItems.slice(0, 4).map((item) => (
+          {chartItems.slice(0, 4).map((item, index) => (
             <div
               className="flex items-center justify-between gap-3 rounded border border-border bg-card px-2 py-1.5 text-xs"
-              key={item.label}
+              key={`${item.label}-${index}`}
             >
               <span className="truncate text-muted-foreground">{item.label}</span>
               <span className="font-medium text-foreground">{item.value}</span>
@@ -1251,6 +1256,9 @@ function previewRows(props: Record<string, any>, columns: Array<{ key: string; l
 }
 
 type PreviewImageSize = 'small' | 'large';
+
+const PREVIEW_CHART_HEIGHT = 176;
+const PREVIEW_CHART_MIN_WIDTH = 280;
 
 const PREVIEW_IMAGE_SIZES: Record<PreviewImageSize, { width: number; height: number }> = {
   small: { width: 240, height: 135 },

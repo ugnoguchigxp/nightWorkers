@@ -99,7 +99,8 @@ export const blueprintCatalog: BlueprintComponentDefinition[] = [
     'KanbanSection',
     'section',
     ['table', 'app', 'api', 'postgres'],
-    'Show workflow columns.'
+    'Show workflow columns.',
+    ['kanban-board']
   ),
   component(
     'CalendarSection',

@@ -70,7 +70,9 @@ export const designQuestionnaireSchema = z.object({
   source: z.object({
     taskId: z.string().uuid(),
     repositoryId: z.string().uuid(),
-    blueprintMessageId: z.string().uuid(),
+    blueprintMessageId: z.string().uuid().nullable().optional(),
+    promptMessageId: z.string().uuid().nullable().optional(),
+    sourceKind: z.enum(['blueprint', 'plan_mode_intake']).optional(),
     blueprintVersion: z.number().int().positive().optional(),
   }),
   title: z.string().min(1),
@@ -107,7 +109,7 @@ export const designDecisionDraftSchema = z.object({
 export const designDecisionReviewSchema = z.object({
   version: z.literal(1),
   sessionId: z.string().uuid(),
-  sourceBlueprintMessageId: z.string().uuid(),
+  sourceBlueprintMessageId: z.string().uuid().nullable(),
   title: z.string().min(1),
   summary: z.string().min(1),
   decisions: z.array(designDecisionDraftSchema).default([]),
@@ -117,7 +119,7 @@ export const designDecisionReviewSchema = z.object({
 });
 
 export const createDesignQuestionnaireRequestSchema = z.object({
-  sourceBlueprintMessageId: z.string().uuid(),
+  sourceBlueprintMessageId: z.string().uuid().nullable().optional(),
 });
 
 export const designQuestionnaireSessionStatusSchema = z.enum([
@@ -133,7 +135,7 @@ export const designQuestionnaireSessionSchema = z.object({
   id: z.string().uuid(),
   taskId: z.string().uuid(),
   repositoryId: z.string().uuid(),
-  sourceBlueprintMessageId: z.string().uuid(),
+  sourceBlueprintMessageId: z.string().uuid().nullable(),
   status: designQuestionnaireSessionStatusSchema,
   createdAt: z.any(),
   updatedAt: z.any(),
@@ -179,7 +181,7 @@ export const blueprintWorkspaceArtifactSchema = z.object({
 
 export const blueprintWorkspaceQuestionnaireSchema = z.object({
   id: z.string().uuid(),
-  sourceBlueprintMessageId: z.string().uuid(),
+  sourceBlueprintMessageId: z.string().uuid().nullable(),
   status: designQuestionnaireSessionStatusSchema,
   answeredCount: z.number().int().nonnegative(),
   totalQuestionCount: z.number().int().nonnegative(),

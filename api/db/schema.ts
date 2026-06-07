@@ -595,9 +595,12 @@ export const designQuestionnaireSessions = sqliteTable(
     repositoryId: text('repository_id')
       .notNull()
       .references(() => repositories.id, { onDelete: 'cascade' }),
-    sourceBlueprintMessageId: text('source_blueprint_message_id')
-      .notNull()
-      .references(() => taskMessages.id, { onDelete: 'cascade' }),
+    sourceBlueprintMessageId: text('source_blueprint_message_id').references(
+      () => taskMessages.id,
+      {
+        onDelete: 'cascade',
+      }
+    ),
     status: text('status').default('draft').notNull(),
   },
   (table) => ({

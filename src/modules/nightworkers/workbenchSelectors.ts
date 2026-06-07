@@ -350,9 +350,19 @@ export function buildWorkbenchArtifactRefs(input: {
       message.messageType === 'markdown_document' &&
       message.metadataJson?.intent === 'design_decision_review'
   );
-  if (blueprintMessages.length > 0 || decisionReviewMessages.length > 0) {
+  const implementationPlanMessages = (input.messages || []).filter(
+    (message) =>
+      message.messageType === 'markdown_document' &&
+      (message.metadataJson?.intent === 'implementation_plan' ||
+        message.metadataJson?.intent === 'draft_spec')
+  );
+  if (
+    blueprintMessages.length > 0 ||
+    decisionReviewMessages.length > 0 ||
+    implementationPlanMessages.length > 0
+  ) {
     const latestWorkspaceMessage =
-      [...blueprintMessages, ...decisionReviewMessages].sort(
+      [...blueprintMessages, ...decisionReviewMessages, ...implementationPlanMessages].sort(
         (a, b) => toMs(b.createdAt) - toMs(a.createdAt)
       )[0] || blueprintMessages.at(-1);
     refs.push({
@@ -363,12 +373,14 @@ export function buildWorkbenchArtifactRefs(input: {
       summary: [
         `${blueprintMessages.length} Blueprint artifact${blueprintMessages.length === 1 ? '' : 's'}`,
         `${decisionReviewMessages.length} Decision Review${decisionReviewMessages.length === 1 ? '' : 's'}`,
+        `${implementationPlanMessages.length} Implementation Plan${implementationPlanMessages.length === 1 ? '' : 's'}`,
       ].join(' · '),
       source: { type: 'task_message', messageId: latestWorkspaceMessage?.id || '' },
       createdAt: String(latestWorkspaceMessage?.createdAt || input.task.updatedAt),
       metadata: {
         blueprintCount: blueprintMessages.length,
         decisionReviewCount: decisionReviewMessages.length,
+        implementationPlanCount: implementationPlanMessages.length,
       },
     });
   }
@@ -487,6 +499,7 @@ function artifactTitleForKind(kind: WorkbenchArtifactKind, message: TaskMessage)
     if (kind === 'app_blueprint') return `Blueprint: ${metadataTitle}`;
     if (kind === 'component_design') return `Component: ${metadataTitle}`;
     if (kind === 'design_delta') return `Design Delta: ${metadataTitle}`;
+    if (kind === 'implementation_plan') return metadataTitle;
     if (kind === 'spec' && message.metadataJson?.intent === 'design_decision_review')
       return metadataTitle;
   }

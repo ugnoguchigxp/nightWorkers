@@ -61,7 +61,7 @@ AppBlueprint JSON は次の root 形にする。
 - `version` は positive integer。新規 Blueprint は原則 `1`。
 - `screens` は最低1件。screen は `id`、`name`、`path`、`componentName`、`sections`、必要なら `actions` を持つ。
 - `path` は `/` から始め、英数字、`/`、`_`、`-` だけを使う。例: `/`, `/products`, `/account/orders`。
-- `componentName` は `blueprint-catalog.schema.ts` の enum から選ぶ。トップページなら `SidebarPage`、`ListPage`、`ArticleFeedPage`、`DashboardPage` などの汎用 page を、section には `SplitHeroSection`、`CarouselSection`、`CardGridSection`、`DataTableSection`、`CheckoutSummarySection` などを目的に応じて使う。
+- `componentName` は `blueprint-catalog.schema.ts` の enum から選ぶ。トップページなら `SidebarPage`、`ListPage`、`ArticleFeedPage`、`DashboardPage` などの汎用 page を、section には `SplitHeroSection`、`CarouselSection`、`CardGridSection`、`DataTableSection`、`KanbanSection`、`CheckoutSummarySection` などを目的に応じて使う。
 - section は `id`、`name`、`componentName`、`source`、`intent`、`visualIntent`、`props`、必要なら `actions` を持つ。通常 Blueprint では `dataBindingId` を使わない。
 - `source` は `none`、`static`、`computed`、`app`、`summary`、`rss`、`markdown`、`navigation` を優先する。`table`、`record`、`postgres`、`api` は DB Design 後に binding が採用された Blueprint 更新で扱う。
 - 通常 Blueprint では `databaseSchema.tables`、`databaseSchema.relations`、`dataBindings` を空にする。DB table/column/relation/binding/DDL の考案は DB Design button からの workflow だけで実行する。

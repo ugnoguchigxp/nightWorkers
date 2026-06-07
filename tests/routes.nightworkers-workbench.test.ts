@@ -41,6 +41,31 @@ function mockJobSelection(jobType: string, goal: string) {
   return { jobType, goal };
 }
 
+function expectStrictObjectSchemas(schema: unknown, path = 'schema') {
+  if (!schema || typeof schema !== 'object') return;
+  const node = schema as Record<string, any>;
+  if (node.type === 'object') {
+    expect(node.additionalProperties, `${path}.additionalProperties`).toBe(false);
+  }
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'properties' && value && typeof value === 'object') {
+      for (const [propertyName, propertySchema] of Object.entries(value)) {
+        expectStrictObjectSchemas(propertySchema, `${path}.properties.${propertyName}`);
+      }
+      continue;
+    }
+    if (key === 'items') {
+      expectStrictObjectSchemas(value, `${path}.items`);
+      continue;
+    }
+    if ((key === 'anyOf' || key === 'oneOf' || key === 'allOf') && Array.isArray(value)) {
+      value.forEach((item, index) => {
+        expectStrictObjectSchemas(item, `${path}.${key}.${index}`);
+      });
+    }
+  }
+}
+
 beforeAll(async () => {
   await ensureNightWorkersSchema();
 });
@@ -128,11 +153,60 @@ describe('NightWorkers workbench routes', () => {
     });
   });
 
-  it('starts a planning run instead of exposing the intake classification', async () => {
+  it('starts Plan mode artifacts and questionnaire for planning intake', async () => {
     vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
       mockJobSelection('planning', 'kanbanアプリの実装方針を整理し、主要機能と作業順を決める')
     );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+      JSON.stringify({
+        version: 1,
+        source: {
+          taskId: task.id,
+          repositoryId: task.repositoryId,
+          blueprintMessageId: null,
+          sourceKind: 'plan_mode_intake',
+        },
+        title: 'Kanban Design Questionnaire',
+        summary: 'Clarify Kanban workflow decisions before implementation.',
+        questionSets: [
+          {
+            id: 'workflow',
+            title: 'Workflow',
+            category: 'workflow',
+            purpose: 'Kanban workflow decisions.',
+            questions: [
+              {
+                id: 'lane-model',
+                topic: 'Lane model',
+                question: 'Which lane model should the first version support?',
+                why: 'The lane model affects UI and DB design.',
+                answerType: 'single_choice',
+                options: [
+                  {
+                    id: 'fixed-lanes',
+                    label: 'Fixed lanes',
+                    description: 'Start with todo, doing, done.',
+                    tradeoff: 'Simple first release.',
+                  },
+                ],
+                blocks: ['Board UI', 'Task schema'],
+                outputSection: 'Kanban workflow',
+              },
+            ],
+          },
+        ],
+        openQuestions: [],
+        dbDesignHandoffNotes: [
+          {
+            id: 'card-lane-history',
+            summary: 'Card lane transitions may need history.',
+            sourceQuestionIds: ['lane-model'],
+            constraint: 'DB Design should decide whether lane transition history is stored.',
+          },
+        ],
+      })
+    );
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
       method: 'POST',
@@ -142,24 +216,58 @@ describe('NightWorkers workbench routes', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
-    expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(1);
+    expect(body.run).toBeNull();
+    expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[2]?.schema).toMatchObject({
+      properties: {
+        version: { type: 'integer', const: 1 },
+      },
+    });
+    expectStrictObjectSchemas(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[2]?.schema);
     expect(
       body.messages.some(
         (message: any) => message.role === 'assistant' && message.content.includes('jobType:')
       )
     ).toBe(false);
-    const systemMessage = body.messages.find(
-      (message: any) => message.role === 'system' && message.metadataJson?.intent === 'run_started'
+    expect(
+      body.messages.some((message: any) => message.metadataJson?.intent === 'app_blueprint')
+    ).toBe(false);
+    const workspaceRes = await app.request(
+      `http://localhost/api/tasks/${task.id}/specification-workspace`,
+      { headers: sameOriginHeaders }
     );
-    expect(systemMessage?.metadataJson?.intakeJobSelection).toMatchObject({
-      jobType: 'planning',
-      goal: 'kanbanアプリの実装方針を整理し、主要機能と作業順を決める',
+    expect(workspaceRes.status).toBe(200);
+    const workspace = await workspaceRes.json();
+    expect(workspace.blueprintArtifacts).toHaveLength(0);
+    expect(workspace.questionnaireSessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceBlueprintMessageId: null,
+          status: 'answering',
+          totalQuestionCount: 1,
+        }),
+      ])
+    );
+  });
+
+  it('does not leave an empty questionnaire draft when planning questionnaire generation fails', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('planning', 'kanbanアプリの実装方針を整理する')
+    );
+    vi.mocked(llm.callStructuredJsonLLM).mockRejectedValueOnce(
+      new Error('invalid_json_schema: version schema must have a type key')
+    );
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'kanbanアプリの実装計画を作ってください' }),
     });
-    await vi.waitFor(async () => {
-      const runs = await repo.listTaskRunsForTask(task.id);
-      expect(runs[0]?.status).toBe('completed');
-    });
+
+    expect(res.status).toBe(502);
+    expect(await repo.listDesignQuestionnaireSessionsForTask(task.id)).toHaveLength(0);
   });
 
   it('starts an implementation run for code-change intake without persisting the round 1 response as chat', async () => {

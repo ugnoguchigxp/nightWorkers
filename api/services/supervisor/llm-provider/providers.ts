@@ -377,19 +377,50 @@ async function callCodexProvider(
     input.options.workingDirectory
   );
   const thread = codex.startThread(threadOptions);
-  const useStructuredOutput = isEnabled('CODEX_STRUCTURED_OUTPUT_ENABLED', false);
-  const turn = await readCodexStreamedTurn({
-    thread,
-    prompt: buildCodexTurnPrompt(input.systemPrompt, input.userPrompt),
-    outputSchema: useStructuredOutput ? input.options.jsonSchema?.schema : undefined,
-    signal: input.signal,
-    options: input.options,
-    normalizedRequest: input.options.normalizedRequest,
-  });
+  const structuredOutputRequired =
+    input.options.normalizedRequest?.capabilityPolicy.requireStructuredOutput ??
+    Boolean(input.options.jsonSchema);
+  const useStructuredOutput =
+    structuredOutputRequired && isEnabled('CODEX_STRUCTURED_OUTPUT_ENABLED', true);
+  let structuredOutputRetried = false;
+  let turn: Awaited<ReturnType<typeof readCodexStreamedTurn>>;
+  try {
+    turn = await readCodexStreamedTurn({
+      thread,
+      prompt: buildCodexTurnPrompt(input.systemPrompt, input.userPrompt),
+      outputSchema: useStructuredOutput ? input.options.jsonSchema?.schema : undefined,
+      signal: input.signal,
+      options: input.options,
+      normalizedRequest: input.options.normalizedRequest,
+    });
+  } catch (error) {
+    if (!useStructuredOutput || !isInvalidJsonSchemaProviderError(error)) throw error;
+    structuredOutputRetried = true;
+    await emitSupervisorLlmDebugEvent(input.options, {
+      type: 'model.retry_scheduled',
+      severity: 'warning',
+      message: 'Codex structured output schema was rejected; retrying without outputSchema.',
+      data: { round: input.options.round ?? null },
+    });
+    await emitSupervisorLlmDebugEvent(input.options, {
+      type: 'model.retry_started',
+      severity: 'info',
+      message: 'Codex outputSchema-free retry started.',
+      data: { round: input.options.round ?? null },
+    });
+    turn = await readCodexStreamedTurn({
+      thread,
+      prompt: buildCodexTurnPrompt(input.systemPrompt, input.userPrompt),
+      signal: input.signal,
+      options: input.options,
+      normalizedRequest: input.options.normalizedRequest,
+    });
+  }
   const providerDebug = {
     provider: 'codex',
     model: configuredModel || null,
     structuredOutput: useStructuredOutput,
+    structuredOutputRetried,
     modelReasoningEffort: threadOptions.modelReasoningEffort,
     workingDirectory: threadOptions.workingDirectory,
     usage: turn.usage,
@@ -411,6 +442,11 @@ async function callCodexProvider(
     model: configuredModel || null,
     providerDebug,
   };
+}
+
+function isInvalidJsonSchemaProviderError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('invalid_json_schema') || message.includes('Invalid schema');
 }
 
 async function emitSchemaRetryEvents(

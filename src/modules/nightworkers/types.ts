@@ -286,7 +286,7 @@ export type DesignQuestionnaireSession = {
   id: string;
   taskId: string;
   repositoryId: string;
-  sourceBlueprintMessageId: string;
+  sourceBlueprintMessageId: string | null;
   status: 'draft' | 'answering' | 'review_ready' | 'accepted' | 'needs_edit' | 'abandoned';
   createdAt: unknown;
   updatedAt: unknown;
@@ -332,7 +332,7 @@ export type BlueprintSpecificationWorkspace = {
   dbDesignArtifacts: BlueprintWorkspaceArtifact[];
   questionnaireSessions: Array<{
     id: string;
-    sourceBlueprintMessageId: string;
+    sourceBlueprintMessageId: string | null;
     status: DesignQuestionnaireSession['status'];
     answeredCount: number;
     totalQuestionCount: number;
