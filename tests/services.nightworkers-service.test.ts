@@ -87,6 +87,8 @@ describe('NightWorkers service', () => {
     delete process.env.CONVERSATION_CONTEXT_STATE_CARD_ENABLED;
     delete process.env.CONVERSATION_CONTEXT_BUILD_ON_IDLE;
     delete process.env.NIGHTWORKERS_RUNTIME_LANE;
+    delete process.env.ACTIVE_LLM_PROVIDER;
+    delete process.env.CODEX_ENABLED;
   });
 
   it('lists replay events for a run after the requested cursor', async () => {
@@ -332,6 +334,72 @@ describe('NightWorkers service', () => {
         expect.anything()
       );
     });
+  });
+
+  it('uses the codex-agent runtime lane when Codex is the active enabled provider', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'codex';
+    process.env.CODEX_ENABLED = 'true';
+    const task = {
+      id: 'task-codex-provider',
+      repositoryId: 'repo-codex-provider',
+      title: 'Codex provider task',
+      description: 'Use Codex provider',
+      objective: 'Use Codex provider',
+      acceptanceCriteria: 'Codex provider starts runtime lane',
+      timeoutSeconds: 60,
+    };
+    const run = {
+      id: 'run-codex-provider',
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+      status: 'running',
+    };
+
+    vi.mocked(repo.getTask).mockResolvedValue(task as any);
+    vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+    vi.mocked(repo.getRepository).mockResolvedValue({
+      id: task.repositoryId,
+      localPath: repoRoot,
+      safetyPolicy: {},
+    } as any);
+    vi.mocked(repo.listTaskMessages).mockResolvedValue([
+      { role: 'user', content: 'Use Codex provider' },
+    ] as any);
+    vi.mocked(repo.createTaskRun).mockResolvedValue(run as any);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
+    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as any);
+    const runtimeStart = vi.fn().mockResolvedValue({
+      terminalState: 'completed',
+      summary: 'Codex provider done',
+      finalReport: 'Codex provider done',
+      stoppedBy: 'decision',
+      riskLevel: 'medium',
+      diffPatch: '',
+      logContent: '',
+    });
+    vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+      kind: 'codex-agent',
+      start: runtimeStart,
+      stop: vi.fn(),
+    } as any);
+
+    await startTaskRun(task.id);
+
+    expect(repo.createTaskRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workerKind: 'codex-agent',
+        contextSnapshot: expect.objectContaining({
+          runtimeLane: 'codex-agent',
+          runtimeLaneResolution: expect.objectContaining({
+            workerKind: 'codex-agent',
+            source: 'settings',
+          }),
+        }),
+      })
+    );
+    expect(runtimeRegistry.resolveAgentRuntime).toHaveBeenCalledWith('codex-agent');
   });
 
   it('starts simple runtime once without creating planned todos', async () => {

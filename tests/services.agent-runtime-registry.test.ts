@@ -25,4 +25,32 @@ describe('agent runtime registry', () => {
       }
     );
   });
+
+  it('routes active enabled Codex provider settings to the Codex agent lane', () => {
+    expect(
+      resolveRuntimeLane({
+        activeLlmProvider: 'codex',
+        codexEnabled: true,
+        env: {},
+      })
+    ).toMatchObject({
+      lane: 'codex-agent',
+      workerKind: 'codex-agent',
+      source: 'settings',
+    });
+  });
+
+  it('keeps disabled Codex provider settings on the native supervisor lane', () => {
+    expect(
+      resolveRuntimeLane({
+        activeLlmProvider: 'codex',
+        codexEnabled: false,
+        env: {},
+      })
+    ).toMatchObject({
+      lane: 'native-supervisor',
+      workerKind: 'native-local',
+      source: 'env_default',
+    });
+  });
 });

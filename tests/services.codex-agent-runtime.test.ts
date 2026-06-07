@@ -1,3 +1,8 @@
+import { execFile } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { promisify } from 'node:util';
 import type { ThreadEvent } from '@openai/codex-sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { CodexAgentRuntime } from '../api/services/agent-runtime/CodexAgentRuntime';
@@ -6,6 +11,8 @@ import {
   mapCodexThreadEvent,
   redactProviderEvent,
 } from '../api/services/agent-runtime/codex-event-mapper';
+
+const execFileAsync = promisify(execFile);
 
 describe('CodexAgentRuntime', () => {
   it('maps a fake assistant turn into runtime ledger events', async () => {
@@ -122,7 +129,7 @@ describe('CodexAgentRuntime', () => {
 
     expect(commandEvents[0]).toMatchObject({
       type: 'tool_call_finished',
-      payload: { command: 'pnpm test', exitCode: 0 },
+      payload: { command: 'pnpm test', aggregatedOutput: 'ok', exitCode: 0 },
     });
     expect(mcpEvents[0]).toMatchObject({
       type: 'tool_call_finished',
@@ -172,6 +179,72 @@ describe('CodexAgentRuntime', () => {
     });
   });
 
+  it('maps file changes with normalized changed file paths', () => {
+    const events = mapCodexThreadEvent({
+      type: 'item.completed',
+      item: {
+        id: 'file-change-1',
+        type: 'file_change',
+        status: 'completed',
+        changes: [{ path: 'src/fizzbuzz.ts' }, 'README.md'],
+      },
+    } as any);
+
+    expect(events[0]).toMatchObject({
+      type: 'diff_collected',
+      payload: {
+        changedFiles: ['src/fizzbuzz.ts', 'README.md'],
+        status: 'completed',
+      },
+    });
+  });
+
+  it('collects post-run workspace file creation as a diff event', async () => {
+    const repoRoot = await mkdtemp(path.join(os.tmpdir(), 'nightworkers-codex-diff-'));
+    try {
+      await git(repoRoot, ['init']);
+      await git(repoRoot, ['config', 'user.email', 'test@example.com']);
+      await git(repoRoot, ['config', 'user.name', 'Test User']);
+      await writeFile(path.join(repoRoot, 'README.md'), 'baseline\n');
+      await git(repoRoot, ['add', 'README.md']);
+      await git(repoRoot, ['commit', '-m', 'baseline']);
+      await writeFile(path.join(repoRoot, 'fizzbuzz.ts'), 'export const fizzbuzz = true;\n');
+      const runtime = new CodexAgentRuntime({
+        collectWorkspaceDiff: true,
+        threadFactory: () =>
+          fakeThread([
+            { type: 'turn.started' },
+            {
+              type: 'item.completed',
+              item: { id: 'item-1', type: 'agent_message', text: 'done' },
+            },
+          ]),
+      });
+      const events: any[] = [];
+
+      const result = await runtime.start(buildContext({ repoRoot }), {
+        emit: async (event) => {
+          events.push(event);
+        },
+      });
+
+      expect(result.diffPatch).toContain('diff --git a/fizzbuzz.ts b/fizzbuzz.ts');
+      expect(events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'diff_collected',
+            payload: expect.objectContaining({
+              source: 'post_run_git_diff',
+              changedFiles: ['fizzbuzz.ts'],
+            }),
+          }),
+        ])
+      );
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true });
+    }
+  });
+
   it('redacts secret-like provider event fields', () => {
     expect(
       redactProviderEvent({
@@ -185,12 +258,12 @@ describe('CodexAgentRuntime', () => {
   });
 });
 
-function buildContext() {
+function buildContext(input: { repoRoot?: string } = {}) {
   return {
     runId: 'run-codex',
     taskId: 'task-codex',
     repositoryId: 'repo-codex',
-    repoRoot: process.cwd(),
+    repoRoot: input.repoRoot ?? process.cwd(),
     compiledPrompt: 'do work',
     latestUserMessage: 'do work',
     timeoutSeconds: 60,
@@ -209,4 +282,8 @@ function fakeThread(events: ThreadEvent[]) {
       })(),
     })),
   } as any;
+}
+
+async function git(cwd: string, args: string[]) {
+  await execFileAsync('git', args, { cwd });
 }

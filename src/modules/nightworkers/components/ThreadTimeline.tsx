@@ -526,7 +526,7 @@ function visibleEditDiffKey(event: ActivityEvent): string {
 }
 
 function getVisibleEditDiffCode(event: ActivityEvent): string {
-  return getEditToolCallDiff(event) || (isDiffActivity(event) ? getActivityCode(event) : '');
+  return getEditToolCallDiff(event) || (isDiffActivity(event) ? getActivityDiffCode(event) : '');
 }
 
 function isPatchEnvelopeText(text: string): boolean {
@@ -626,7 +626,11 @@ function NormalCliCommandBlock({ event }: { event: ActivityEvent }) {
       </summary>
       <div className="border-slate-700/60 border-t">
         <NightWorkersCodeBlock
-          code={summary.command}
+          code={
+            summary.output
+              ? [`$ ${summary.command}`, '', summary.output].join('\n')
+              : summary.command
+          }
           filename="command.sh"
           language="shell"
           maxHeight={160}
@@ -637,30 +641,35 @@ function NormalCliCommandBlock({ event }: { event: ActivityEvent }) {
   );
 }
 
-function NormalEditSummaryList({
-  summary,
-}: {
-  summary: Array<{ path: string; added: number; deleted: number }>;
-}) {
+function NormalEditSummaryList({ summary }: { summary: VisibleEditDiffSummary }) {
   return (
     <div className="space-y-4">
       {summary.map((section) => (
         <div className="flex items-baseline justify-between gap-4" key={section.path}>
           <span className="min-w-0 truncate text-slate-300">{section.path}</span>
-          <span className="shrink-0 whitespace-nowrap text-right">
-            <span className="text-emerald-300">+{section.added}</span>
-            <span className="px-1 text-slate-500"> </span>
-            <span className="text-rose-300">-{section.deleted}</span>
-          </span>
+          {section.changedOnly ? (
+            <span className="shrink-0 whitespace-nowrap text-right text-slate-400">changed</span>
+          ) : (
+            <span className="shrink-0 whitespace-nowrap text-right">
+              <span className="text-emerald-300">+{section.added}</span>
+              <span className="px-1 text-slate-500"> </span>
+              <span className="text-rose-300">-{section.deleted}</span>
+            </span>
+          )}
         </div>
       ))}
     </div>
   );
 }
 
-export function buildVisibleEditDiffSummary(
-  event: ActivityEvent
-): Array<{ path: string; added: number; deleted: number }> {
+export type VisibleEditDiffSummary = Array<{
+  path: string;
+  added: number;
+  deleted: number;
+  changedOnly?: boolean;
+}>;
+
+export function buildVisibleEditDiffSummary(event: ActivityEvent): VisibleEditDiffSummary {
   const toolCall = getEditToolCall(event);
 
   if (toolCall?.name === 'apply_patch') {
@@ -683,21 +692,36 @@ export function buildVisibleEditDiffSummary(
   }
 
   if (isDiffActivity(event)) {
-    return mergeEditSections(parseUnifiedDiffSections(getActivityCode(event)));
+    const diff = getVisibleEditDiffCode(event);
+    const sections = diff ? mergeEditSections(parseUnifiedDiffSections(diff)) : [];
+    if (sections.length > 0) return sections;
+    return getActivityChangedFiles(event).map((path) => ({
+      path,
+      added: 0,
+      deleted: 0,
+      changedOnly: true,
+    }));
   }
 
   return [];
 }
 
 export type VisibleCliCommandSummary = {
-  toolName: 'run_command' | 'run_verification';
+  toolName: 'run_command' | 'run_verification' | 'command_execution';
   command: string;
+  output?: string;
 };
 
 export function getVisibleCliCommandSummary(event: ActivityEvent): VisibleCliCommandSummary | null {
   const payload = event.payloadJson as any;
   const toolName = getToolName(payload);
-  if (toolName !== 'run_command' && toolName !== 'run_verification') return null;
+  if (
+    toolName !== 'run_command' &&
+    toolName !== 'run_verification' &&
+    toolName !== 'command_execution'
+  ) {
+    return null;
+  }
 
   const args = getToolArguments(payload);
   const result = getToolResult(payload);
@@ -707,7 +731,8 @@ export function getVisibleCliCommandSummary(event: ActivityEvent): VisibleCliCom
     asString(payload?.runEvent?.data?.command) ||
     asString(payload?.payload?.command);
   if (!command.trim()) return null;
-  return { toolName, command };
+  const output = getCodexCommandOutput(event);
+  return output ? { toolName, command, output } : { toolName, command };
 }
 
 function mergeEditSections(
@@ -1025,7 +1050,7 @@ export function getActivityCode(event: ActivityEvent) {
   const agentEventType = schemaFirstAgentEventType(event);
   const editToolDiff = getEditToolCallDiff(event);
   if (editToolDiff) return editToolDiff;
-  if (isDiffActivity(event) && typeof payload?.code === 'string') return payload.code;
+  if (isDiffActivity(event)) return getActivityDiffCode(event);
   if (agentEventType === 'skill.loaded') {
     return stringValue(payload?.payload?.skill || payload?.skill || payload?.runEvent?.data?.skill);
   }
@@ -1057,6 +1082,18 @@ export function getActivityCode(event: ActivityEvent) {
   if (typeof payload?.runEvent?.data?.result?.payload?.stderr === 'string') {
     return payload.runEvent.data.result.payload.stderr;
   }
+  const codexOutput = getCodexCommandOutput(event);
+  if (codexOutput) return codexOutput;
+  return '';
+}
+
+function getActivityDiffCode(event: ActivityEvent) {
+  const payload = event.payloadJson as any;
+  const data = payload?.payload || payload?.runEvent?.data || payload || {};
+  if (typeof data.diff === 'string') return data.diff;
+  if (typeof payload?.code === 'string') return payload.code;
+  if (typeof payload?.payload?.diff === 'string') return payload.payload.diff;
+  if (typeof payload?.runEvent?.data?.diff === 'string') return payload.runEvent.data.diff;
   return '';
 }
 
@@ -1262,6 +1299,15 @@ function activityDisplaySummary(event: ActivityEvent): string {
     return formatVisibleAssistantText(
       typeof data.rawContent === 'string' ? data.rawContent : event.text || ''
     );
+  }
+  if (event.kind === 'tool.call' || event.kind === 'tool.result') {
+    return formatCodexToolActivitySummary(event);
+  }
+  if (event.kind === 'file.diff') {
+    const changedFiles = getActivityChangedFiles(event);
+    if (changedFiles.length > 0) {
+      return [`Changed files (${changedFiles.length})`, ...changedFiles].join('\n');
+    }
   }
   if (agentEventType === 'skill.loaded') {
     return typeof data.skillPath === 'string' ? data.skillPath : event.text || 'skill loaded';
@@ -1848,6 +1894,42 @@ function getToolResult(payload: any): any {
 function getChangedFilesFromResult(result: any): string[] {
   const changedFiles = result?.payload?.changedFiles;
   return Array.isArray(changedFiles) ? changedFiles.filter((file) => typeof file === 'string') : [];
+}
+
+function formatCodexToolActivitySummary(event: ActivityEvent): string {
+  const payload = event.payloadJson as any;
+  const data = payload?.payload || payload?.runEvent?.data || payload || {};
+  const toolName = asString(data.toolName) || event.kind;
+  const command = asString(data.command);
+  const status = asString(data.status) || event.status || '';
+  const exitCode =
+    typeof data.exitCode === 'number' || data.exitCode === null
+      ? `exit=${data.exitCode ?? 'pending'}`
+      : '';
+  const output = getCodexCommandOutput(event);
+  const header = [toolName, command, status, exitCode].filter(Boolean).join(' | ');
+  return output
+    ? [header || event.text || toolName, output].join('\n')
+    : header || event.text || toolName;
+}
+
+function getCodexCommandOutput(event: ActivityEvent): string {
+  const payload = event.payloadJson as any;
+  const data = payload?.payload || payload?.runEvent?.data || payload || {};
+  return asString(data.aggregatedOutput).trim();
+}
+
+function getActivityChangedFiles(event: ActivityEvent): string[] {
+  const payload = event.payloadJson as any;
+  const data = payload?.payload || payload?.runEvent?.data || payload || {};
+  if (Array.isArray(data.changedFiles)) {
+    return data.changedFiles.filter((file: unknown): file is string => typeof file === 'string');
+  }
+  const resultFiles = data.result?.payload?.changedFiles;
+  if (Array.isArray(resultFiles)) {
+    return resultFiles.filter((file: unknown): file is string => typeof file === 'string');
+  }
+  return [];
 }
 
 function buildApplyPatchCodeBlockData(patchContent: string): CodeBlockData[] {

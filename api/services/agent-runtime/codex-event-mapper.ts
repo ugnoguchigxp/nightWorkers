@@ -135,6 +135,7 @@ function mapCodexItemEvent(
       providerItemId: item.id,
       toolName: 'command_execution',
       command: item.command,
+      aggregatedOutput: item.aggregated_output,
       exitCode: item.exit_code,
       status: item.status,
       providerEvent: redactProviderEvent(rawEvent),
@@ -176,7 +177,8 @@ function mapCodexItemEvent(
           provider: 'codex',
           providerEventType: eventType,
           providerItemId: item.id,
-          changedFiles: item.changes,
+          changedFiles: normalizeChangedFiles(item.changes),
+          changes: item.changes,
           status: item.status,
           providerEvent: redactProviderEvent(rawEvent),
         },
@@ -221,6 +223,26 @@ function normalizeUsage(usage: Usage) {
     outputTokens: usage.output_tokens,
     reasoningOutputTokens: usage.reasoning_output_tokens,
   };
+}
+
+function normalizeChangedFiles(changes: unknown): string[] {
+  if (!Array.isArray(changes)) return [];
+  return changes
+    .map((change) => {
+      if (typeof change === 'string') return change;
+      if (!change || typeof change !== 'object') return null;
+      const record = change as Record<string, unknown>;
+      const path =
+        typeof record.path === 'string'
+          ? record.path
+          : typeof record.filePath === 'string'
+            ? record.filePath
+            : typeof record.relativePath === 'string'
+              ? record.relativePath
+              : null;
+      return path;
+    })
+    .filter((path): path is string => Boolean(path));
 }
 
 function mapToolLifecycleEventType(

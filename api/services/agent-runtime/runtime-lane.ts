@@ -14,6 +14,8 @@ export type RuntimeLaneInput = {
   taskRuntimeLane?: unknown;
   queueRuntimeLane?: unknown;
   settingsRuntimeLane?: unknown;
+  activeLlmProvider?: unknown;
+  codexEnabled?: unknown;
   env?: NodeJS.ProcessEnv;
 };
 
@@ -44,6 +46,25 @@ export function resolveRuntimeLane(input: RuntimeLaneInput = {}): RuntimeLaneRes
       level: 'warning',
       message: `Ignoring unsupported runtime lane from ${candidate.source}: ${String(candidate.value)}`,
     });
+  }
+
+  const activeProvider =
+    typeof input.activeLlmProvider === 'string'
+      ? input.activeLlmProvider
+      : typeof env.ACTIVE_LLM_PROVIDER === 'string'
+        ? env.ACTIVE_LLM_PROVIDER
+        : null;
+  const codexEnabled =
+    typeof input.codexEnabled === 'boolean'
+      ? input.codexEnabled
+      : String(env.CODEX_ENABLED || '').toLowerCase() === 'true';
+  if (activeProvider === 'codex' && codexEnabled) {
+    return {
+      lane: 'codex-agent',
+      workerKind: 'codex-agent',
+      source: 'settings',
+      diagnostics,
+    };
   }
 
   return {

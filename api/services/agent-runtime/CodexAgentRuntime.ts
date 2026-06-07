@@ -3,6 +3,7 @@ import {
   buildCodexSupervisorSdkOptions,
   buildCodexSupervisorThreadOptions,
 } from '../supervisor/llm-provider';
+import { gitDiffTool } from '../worker-tools/git';
 import { createCodexEventMapperState, mapCodexThreadEvent } from './codex-event-mapper';
 import type { AgentRunContext, AgentRuntime, AgentRuntimeResult, AgentRuntimeSink } from './types';
 
@@ -20,9 +21,11 @@ export class CodexAgentRuntime implements AgentRuntime {
   readonly kind = 'codex-agent' as const;
   private cancelledRunIds = new Set<string>();
   private readonly threadFactory?: CodexThreadFactory;
+  private readonly collectWorkspaceDiff: boolean;
 
-  constructor(input: { threadFactory?: CodexThreadFactory } = {}) {
+  constructor(input: { threadFactory?: CodexThreadFactory; collectWorkspaceDiff?: boolean } = {}) {
     this.threadFactory = input.threadFactory;
+    this.collectWorkspaceDiff = input.collectWorkspaceDiff ?? !input.threadFactory;
   }
 
   async start(
@@ -73,6 +76,7 @@ export class CodexAgentRuntime implements AgentRuntime {
         }
       }
 
+      const diffPatch = await this.collectDiff(context, sink, logs);
       const result: AgentRuntimeResult = {
         terminalState,
         summary:
@@ -84,6 +88,7 @@ export class CodexAgentRuntime implements AgentRuntime {
         stoppedBy,
         riskLevel: terminalState === 'completed' ? 'medium' : 'high',
         logContent: logs.join('\n'),
+        diffPatch,
       };
       await sink.emit({
         type: 'runtime_finished',
@@ -140,6 +145,41 @@ export class CodexAgentRuntime implements AgentRuntime {
       logContent,
     };
   }
+
+  private async collectDiff(
+    context: AgentRunContext,
+    sink: AgentRuntimeSink,
+    logs: string[]
+  ): Promise<string> {
+    if (!this.collectWorkspaceDiff) return '';
+    const result = await gitDiffTool({ repoRoot: context.repoRoot });
+    if (!result.ok || !result.payload.hasChanges) return '';
+    const changedFiles = changedFilesFromDiff(result.payload.diff);
+    const message = `[Codex] Workspace diff collected: ${changedFiles.length || 'unknown'} file(s).`;
+    logs.push(message);
+    await sink.emit({
+      type: 'diff_collected',
+      message,
+      payload: {
+        provider: 'codex',
+        source: 'post_run_git_diff',
+        changedFiles,
+        diff: result.payload.diff,
+        diffStat: result.payload.diffStat,
+        hasChanges: result.payload.hasChanges,
+      },
+    });
+    return result.payload.diff;
+  }
+}
+
+function changedFilesFromDiff(diff: string): string[] {
+  const files = new Set<string>();
+  for (const line of diff.split('\n')) {
+    const match = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
+    if (match?.[2]) files.add(match[2]);
+  }
+  return [...files];
 }
 
 function buildCodexRuntimeThreadOptions(context: AgentRunContext): ThreadOptions {

@@ -1888,7 +1888,11 @@ export async function startTaskRun(taskId: string) {
     throw new AppError(400, 'EMPTY_PROMPT', 'No user message found to start a run');
   }
   const blueprintReadiness = await resolveBlueprintPlanningReadiness(taskId);
-  const runtimeLaneResolution = resolveRuntimeLane();
+  const settings = getCurrentSettings();
+  const runtimeLaneResolution = resolveRuntimeLane({
+    activeLlmProvider: settings.ACTIVE_LLM_PROVIDER,
+    codexEnabled: settings.CODEX_ENABLED,
+  });
   const run = await repo.createTaskRun({
     taskId,
     repositoryId: task.repositoryId,

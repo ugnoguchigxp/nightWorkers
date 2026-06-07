@@ -537,6 +537,84 @@ describe('ThreadTimeline edit summaries', () => {
     expect(summary).toEqual({ toolName: 'run_command', command: 'pnpm test' });
   });
 
+  it('builds a visible command summary from Codex command_execution activity', () => {
+    const summary = getVisibleCliCommandSummary({
+      id: 'activity-codex-command',
+      taskId: 'task-1',
+      kind: 'tool.call',
+      source: 'worker',
+      seq: 1,
+      text: 'command_execution | pnpm test | in_progress',
+      payloadJson: {
+        payload: {
+          provider: 'codex',
+          toolName: 'command_execution',
+          command: 'pnpm test',
+          status: 'in_progress',
+          aggregatedOutput: 'running tests',
+        },
+      },
+    } as any);
+
+    expect(summary).toEqual({
+      toolName: 'command_execution',
+      command: 'pnpm test',
+      output: 'running tests',
+    });
+  });
+
+  it('shows changed file paths without rendering a fake diff when no diff is available', () => {
+    const event = {
+      id: 'activity-file-change',
+      taskId: 'task-1',
+      kind: 'file.diff',
+      source: 'worker',
+      seq: 1,
+      text: 'Changed files (1)\nsrc/fizzbuzz.ts',
+      payloadJson: {
+        payload: {
+          provider: 'codex',
+          changedFiles: ['src/fizzbuzz.ts'],
+        },
+      },
+    } as any;
+
+    expect(buildVisibleEditDiffSummary(event)).toEqual([
+      { path: 'src/fizzbuzz.ts', added: 0, deleted: 0, changedOnly: true },
+    ]);
+    expect(getActivityCode(event)).toBe('');
+  });
+
+  it('keeps rendering collected git diff when it is available', () => {
+    const diff = [
+      'diff --git a/src/fizzbuzz.ts b/src/fizzbuzz.ts',
+      'new file mode 100644',
+      '--- /dev/null',
+      '+++ b/src/fizzbuzz.ts',
+      '@@ -0,0 +1 @@',
+      '+export const fizzbuzz = true;',
+    ].join('\n');
+    const event = {
+      id: 'activity-file-diff',
+      taskId: 'task-1',
+      kind: 'file.diff',
+      source: 'worker',
+      seq: 1,
+      payloadJson: {
+        payload: {
+          provider: 'codex',
+          changedFiles: ['src/fizzbuzz.ts'],
+          diff,
+        },
+      },
+    } as any;
+
+    expect(buildVisibleEditDiffSummary(event)).toEqual([
+      { path: 'src/fizzbuzz.ts', added: 1, deleted: 0 },
+    ]);
+    expect(getActivityCode(event)).toBe(diff);
+  });
+
   it('builds a CLI command summary from a schema-first tool.started event', () => {
     const summary = getVisibleCliCommandSummary({
       id: 'event-run-verification-started',

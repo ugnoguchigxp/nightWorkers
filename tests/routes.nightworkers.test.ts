@@ -330,6 +330,74 @@ describe('NightWorkers task routes', () => {
     expect(replay.events).toEqual([]);
   });
 
+  it('projects Codex runtime progress and file changes into activity replay', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: Codex Activity ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: Codex activity target',
+      description: 'Persist Codex activity',
+      status: 'draft',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+      workerKind: 'codex-agent',
+    });
+
+    await repo.createRunEvent({
+      version: 1,
+      runId: run.id,
+      taskId: task.id,
+      timestamp: new Date().toISOString(),
+      type: 'tool.call_progress',
+      severity: 'info',
+      actor: 'worker',
+      message: '[Codex] Command progress: pnpm test',
+      data: {
+        provider: 'codex',
+        toolName: 'command_execution',
+        command: 'pnpm test',
+        status: 'in_progress',
+        aggregatedOutput: 'running tests',
+      },
+    });
+    await repo.createRunEvent({
+      version: 1,
+      runId: run.id,
+      taskId: task.id,
+      timestamp: new Date().toISOString(),
+      type: 'git.diff_collected',
+      severity: 'checkpoint',
+      actor: 'worker',
+      message: '[Codex] File change completed: 1 file(s).',
+      data: {
+        provider: 'codex',
+        changedFiles: ['src/fizzbuzz.ts'],
+      },
+    });
+
+    const res = await app.request(`http://localhost/api/runs/${run.id}/activity-events`);
+    expect(res.status).toBe(200);
+    const replay = await res.json();
+    expect(replay.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'tool.call',
+          text: expect.stringContaining('running tests'),
+        }),
+        expect.objectContaining({
+          kind: 'file.diff',
+          text: expect.stringContaining('src/fizzbuzz.ts'),
+        }),
+      ])
+    );
+  });
+
   it('maps schema-first agent events into chat activity kinds without duplicating final answers', async () => {
     const createdRepo = await repo.createRepository({
       name: `TEST: Schema-first Activity ${crypto.randomUUID()}`,

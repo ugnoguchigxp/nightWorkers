@@ -258,6 +258,7 @@ function runEventToActivityKind(
   if (eventType === 'tool.call_started' || eventType === 'tool.call_progress') return 'tool.call';
   if (eventType === 'tool.call_finished') return 'tool.result';
   if (eventType === 'tool.policy_blocked') return 'tool.error';
+  if (eventType === 'git.diff_collected') return 'file.diff';
   if (eventType === 'verification.started' || eventType === 'verification.finished') {
     return 'verification.output';
   }
@@ -307,8 +308,14 @@ function shouldProjectRunEventToActivity(input: {
     input.eventType === 'model.response_parse_failed' ||
     input.eventType === 'supervisor.decision' ||
     input.eventType === 'tool.call_started' ||
+    input.eventType === 'tool.call_progress' ||
     input.eventType === 'tool.call_finished' ||
-    input.eventType === 'tool.policy_blocked'
+    input.eventType === 'tool.policy_blocked' ||
+    input.eventType === 'git.diff_collected' ||
+    input.eventType === 'run.runtime_started' ||
+    input.eventType === 'run.runtime_finished' ||
+    input.eventType === 'turn.started' ||
+    input.eventType === 'turn.finished'
   );
 }
 
@@ -345,6 +352,16 @@ function runEventToActivityText(input: {
   if (input.agentEventType === 'tool.finished' || input.agentEventType === 'tool.failed') {
     return String(payload.summary || input.message || input.agentEventType);
   }
+  if (
+    input.eventType === 'tool.call_started' ||
+    input.eventType === 'tool.call_progress' ||
+    input.eventType === 'tool.call_finished'
+  ) {
+    return formatToolRunEventActivityText(input.message, payload);
+  }
+  if (input.eventType === 'git.diff_collected') {
+    return formatDiffRunEventActivityText(input.message, payload);
+  }
   if (input.agentEventType === 'job.switched') {
     return `jobType -> ${String(payload.nextJobType || '')}`;
   }
@@ -361,6 +378,29 @@ function runEventToActivityText(input: {
     );
   }
   return input.message;
+}
+
+function formatToolRunEventActivityText(message: string, payload: any) {
+  const toolName = String(payload.toolName || 'tool');
+  const command = typeof payload.command === 'string' ? payload.command : '';
+  const status = typeof payload.status === 'string' ? payload.status : '';
+  const exitCode =
+    typeof payload.exitCode === 'number' || payload.exitCode === null
+      ? `exit=${payload.exitCode ?? 'pending'}`
+      : '';
+  const output =
+    typeof payload.aggregatedOutput === 'string' ? payload.aggregatedOutput.trim() : '';
+  const header = [toolName, command, status, exitCode].filter(Boolean).join(' | ');
+  if (output) return [header || message, output].filter(Boolean).join('\n');
+  return header || message;
+}
+
+function formatDiffRunEventActivityText(message: string, payload: any) {
+  const changedFiles = Array.isArray(payload.changedFiles)
+    ? payload.changedFiles.filter((file: unknown): file is string => typeof file === 'string')
+    : [];
+  if (!changedFiles.length) return message;
+  return [`Changed files (${changedFiles.length})`, ...changedFiles].join('\n');
 }
 
 function runEventToActivityStatus(input: {
