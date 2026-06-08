@@ -29,9 +29,9 @@ export async function listImplementationQueueDashboard() {
   for (const task of tasks) {
     if (activeQueuedTaskIds.has(task.id)) continue;
     if (['completed', 'cancelled', 'failed', 'timed_out'].includes(task.status)) continue;
-    if (getTaskDraftMissingFields(task).length > 0) continue;
     const messages = await repo.listTaskMessages(task.id);
     const hasPlanEvidence = hasImplementationPlanEvidence(messages);
+    if (getTaskDraftMissingFields(task).length > 0 && !hasPlanEvidence) continue;
     if (!hasPlanEvidence && !['ready', 'queued'].includes(task.status)) continue;
     const repository = repositoryById.get(task.repositoryId);
     if (!repository) continue;
@@ -84,7 +84,8 @@ export async function createImplementationQueueEntry(taskId: string) {
       'Terminal sessions cannot enter the Implementation Queue.'
     );
   }
-  assertTaskDraftComplete(task);
+  const messages = await repo.listTaskMessages(taskId);
+  assertTaskDraftComplete(task, messages);
   if (await repo.hasActiveImplementationQueueEntry(taskId)) {
     throw new AppError(
       409,
@@ -92,7 +93,6 @@ export async function createImplementationQueueEntry(taskId: string) {
       'This session already has an active Queue Entry.'
     );
   }
-  const messages = await repo.listTaskMessages(taskId);
   if (!hasImplementationPlanEvidence(messages) && !['ready', 'queued'].includes(task.status)) {
     throw new AppError(
       422,

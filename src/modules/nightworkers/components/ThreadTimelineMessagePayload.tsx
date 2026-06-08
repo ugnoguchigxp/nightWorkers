@@ -33,9 +33,16 @@ export function MessagePayload({
       </div>
     );
   }
-  if (message.messageType === 'markdown_document' && metadata?.appBlueprint) {
+  if (
+    message.messageType === 'markdown_document' &&
+    (metadata?.appBlueprint || metadata?.artifactRef)
+  ) {
+    const appBlueprint = metadata?.appBlueprint || {};
+    const display = metadata?.display || {};
     const validation = metadata.validation;
     const issueCount = Array.isArray(validation?.issues) ? validation.issues.length : 0;
+    const title =
+      appBlueprint.name || display.title || metadata.title || t('timeline.appBlueprintFallback');
     return (
       <div className="nightworkers-artifact-message space-y-3">
         <div className="flex items-start justify-between gap-3">
@@ -44,12 +51,12 @@ export function MessagePayload({
               {t('timeline.blueprintArtifact')}
             </div>
             <div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold text-slate-100">
-              {metadata.appBlueprint.name || metadata.title || t('timeline.appBlueprintFallback')}
+              {title}
             </div>
             <div className="nightworkers-artifact-meta mt-1 text-xs text-slate-400">
-              {t('timeline.screensCount', { count: metadata.appBlueprint.screens?.length || 0 })} /{' '}
+              {t('timeline.screensCount', { count: appBlueprint.screens?.length || 0 })} /{' '}
               {t('timeline.sectionsCount', {
-                count: countBlueprintSections(metadata.appBlueprint),
+                count: countBlueprintSections(appBlueprint),
               })}{' '}
               / {t('timeline.issuesCount', { count: issueCount })}
             </div>
@@ -63,11 +70,12 @@ export function MessagePayload({
                 taskId: message.taskId,
                 runId: message.runId || undefined,
                 kind: 'app_blueprint',
-                title: `Blueprint: ${
-                  metadata.appBlueprint.name || metadata.title || t('timeline.draftFallback')
-                }`,
-                summary: message.content.slice(0, 160),
-                source: { type: 'task_message', messageId: message.id },
+                title: `Blueprint: ${title || t('timeline.draftFallback')}`,
+                summary: String(display.summary || message.content.slice(0, 160)),
+                source:
+                  typeof metadata?.artifactRef?.artifactId === 'string'
+                    ? { type: 'artifact_row', artifactId: metadata.artifactRef.artifactId }
+                    : { type: 'task_message', messageId: message.id },
                 createdAt: String(message.createdAt),
                 metadata,
               })
@@ -78,7 +86,7 @@ export function MessagePayload({
           </button>
         </div>
         <p className="nightworkers-artifact-summary line-clamp-3 text-xs leading-5 text-slate-300">
-          {summarizeBlueprintCard(metadata.appBlueprint, message.content)}
+          {summarizeBlueprintCard(appBlueprint, String(display.summary || message.content))}
         </p>
       </div>
     );

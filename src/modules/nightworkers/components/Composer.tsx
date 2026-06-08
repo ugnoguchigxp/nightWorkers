@@ -1,4 +1,4 @@
-import { ArrowUp } from 'lucide-react';
+import { ArrowUp, CircleStop, LoaderCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
@@ -18,9 +18,12 @@ type ComposerProps = {
   thinkingDepthOptions: ThinkingDepthOption[];
   latestDiffPatch?: string;
   realtimeStatus?: 'initializing' | 'connecting' | 'connected' | 'disconnected';
+  isStopMode?: boolean;
+  isStopping?: boolean;
   onModelChange: (model: string) => void;
   onThinkingDepthChange: (depth: ThinkingDepth) => void;
   onSubmit: (prompt: string, intent: WorkbenchChatIntent) => Promise<void>;
+  onStop?: () => Promise<void>;
 };
 
 export function Composer({
@@ -31,14 +34,18 @@ export function Composer({
   thinkingDepthOptions,
   latestDiffPatch = '',
   realtimeStatus = 'initializing',
+  isStopMode = false,
+  isStopping = false,
   onModelChange,
   onThinkingDepthChange,
   onSubmit,
+  onStop,
 }: ComposerProps) {
   const { t } = useTranslation();
   const [prompt, setPrompt] = useState('');
   const intent: WorkbenchChatIntent = 'intake';
   const canSubmit = !disabled && !!prompt.trim();
+  const canStop = isStopMode && !!onStop && !isStopping;
   const diffSummary = useMemo(() => {
     if (!latestDiffPatch.trim()) return null;
     return {
@@ -101,19 +108,38 @@ export function Composer({
           <button
             type="button"
             onClick={async () => {
+              if (isStopMode) {
+                if (!canStop || !onStop) return;
+                await onStop();
+                return;
+              }
               if (!canSubmit) return;
               const text = prompt.trim();
               setPrompt('');
               await onSubmit(text, intent);
             }}
-            disabled={!canSubmit}
+            disabled={isStopMode ? !canStop : !canSubmit}
+            aria-label={isStopMode ? t('composer.stop') : t('composer.send')}
+            title={isStopMode ? t('composer.stop') : t('composer.send')}
             className={`nightworkers-composer-submit ml-auto flex h-8 w-8 items-center justify-center rounded-full ${
-              canSubmit
-                ? 'nightworkers-composer-submit-ready bg-slate-200 text-slate-900'
-                : 'nightworkers-composer-submit-idle bg-slate-700 text-slate-400'
+              isStopMode
+                ? canStop
+                  ? 'nightworkers-composer-stop bg-rose-500 text-white hover:bg-rose-400'
+                  : 'nightworkers-composer-stop-idle bg-rose-900/50 text-rose-200'
+                : canSubmit
+                  ? 'nightworkers-composer-submit-ready bg-slate-200 text-slate-900'
+                  : 'nightworkers-composer-submit-idle bg-slate-700 text-slate-400'
             }`}
           >
-            <ArrowUp className="h-4 w-4" />
+            {isStopMode ? (
+              isStopping ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <CircleStop className="h-4 w-4" />
+              )
+            ) : (
+              <ArrowUp className="h-4 w-4" />
+            )}
           </button>
         </div>
       </div>

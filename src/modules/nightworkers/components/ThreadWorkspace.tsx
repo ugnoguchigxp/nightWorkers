@@ -48,6 +48,8 @@ type ThreadWorkspaceProps = {
   onThinkingDepthChange: (depth: ThinkingDepth) => void;
   onSubmitInitialPrompt: (prompt: string) => Promise<void>;
   onSubmitWorkbenchMessage: (prompt: string, intent: WorkbenchChatIntent) => Promise<void>;
+  canStopActiveRun?: boolean;
+  onStopActiveRun?: () => Promise<void>;
   onOpenBlueprintArtifact: () => Promise<void>;
   isBlueprintArtifactOpen: boolean;
   isBlueprintActionBusy: boolean;
@@ -262,8 +264,10 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
               onGrantExternalPath={props.onGrantExternalPath}
               onModelChange={props.onModelChange}
               onOpenArtifact={props.onOpenArtifact}
+              canStopActiveRun={props.canStopActiveRun}
               onSubmitInitialPrompt={props.onSubmitInitialPrompt}
               onSubmitWorkbenchMessage={props.onSubmitWorkbenchMessage}
+              onStopActiveRun={props.onStopActiveRun}
               onThinkingDepthChange={props.onThinkingDepthChange}
               realtimeStatus={props.realtimeStatus}
               runs={props.runs}
@@ -294,8 +298,10 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
             onGrantExternalPath={props.onGrantExternalPath}
             onModelChange={props.onModelChange}
             onOpenArtifact={props.onOpenArtifact}
+            canStopActiveRun={props.canStopActiveRun}
             onSubmitInitialPrompt={props.onSubmitInitialPrompt}
             onSubmitWorkbenchMessage={props.onSubmitWorkbenchMessage}
+            onStopActiveRun={props.onStopActiveRun}
             onThinkingDepthChange={props.onThinkingDepthChange}
             realtimeStatus={props.realtimeStatus}
             runs={props.runs}
@@ -327,8 +333,10 @@ function ThreadBody({
   onGrantExternalPath,
   onModelChange,
   onOpenArtifact,
+  canStopActiveRun,
   onSubmitInitialPrompt,
   onSubmitWorkbenchMessage,
+  onStopActiveRun,
   onThinkingDepthChange,
   realtimeStatus,
   runs,
@@ -351,8 +359,10 @@ function ThreadBody({
   | 'onGrantExternalPath'
   | 'onModelChange'
   | 'onOpenArtifact'
+  | 'canStopActiveRun'
   | 'onSubmitInitialPrompt'
   | 'onSubmitWorkbenchMessage'
+  | 'onStopActiveRun'
   | 'onThinkingDepthChange'
   | 'realtimeStatus'
   | 'runs'
@@ -402,9 +412,11 @@ function ThreadBody({
             modelOptions={modelOptions}
             latestDiffPatch={latestRun?.diffPatch || ''}
             realtimeStatus={realtimeStatus}
+            isStopMode={canStopActiveRun}
             thinkingDepthOptions={THINKING_DEPTH_OPTIONS}
             onModelChange={onModelChange}
             onThinkingDepthChange={onThinkingDepthChange}
+            onStop={onStopActiveRun}
             onSubmit={async (prompt, intent) => {
               if (!activeSession) {
                 await onSubmitInitialPrompt(prompt);

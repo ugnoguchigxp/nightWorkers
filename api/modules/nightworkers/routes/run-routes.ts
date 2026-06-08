@@ -138,6 +138,29 @@ export const getTaskRunRoute = createRoute({
   },
 });
 
+export const stopTaskRunRoute = createRoute({
+  method: 'post',
+  path: '/runs/:id/stop',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'run-uuid' }),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: taskRunSchema,
+        },
+      },
+      description: 'Task run stop requested successfully',
+    },
+    404: {
+      description: 'Run not found',
+    },
+  },
+});
+
 export const listTaskRunEventsRoute = createRoute({
   method: 'get',
   path: '/runs/:id/events',

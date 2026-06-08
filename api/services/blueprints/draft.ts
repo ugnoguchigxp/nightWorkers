@@ -7,10 +7,10 @@ export function renderBlueprintMarkdown(blueprint: AppBlueprint): string {
     `- Path: \`${screen.path}\``,
     `- Component: \`${screen.componentName}\``,
     ...screen.sections.flatMap((section) => [
-      `- Section: ${section.name} (\`${section.componentName}\`, source: \`${section.source}\`${section.dataBindingId ? `, binding: \`${section.dataBindingId}\`` : ''})`,
-      ...(section.intent ? [`  - Intent: ${section.intent}`] : []),
-      ...(section.visualIntent ? [`  - Visual: ${section.visualIntent}`] : []),
-      ...summarizeProps(section.props).map((line) => `  - ${line}`),
+      `- Section: ${sectionTitle(section)} (${sectionContractLabel(section)})`,
+      ...sectionIntentLines(section),
+      ...summarizeProps('props' in section ? section.props : {}).map((line) => `  - ${line}`),
+      ...summarizeComposition(section).map((line) => `  - ${line}`),
     ]),
     ...(screen.actions.length > 0
       ? [
@@ -44,6 +44,70 @@ export function renderBlueprintMarkdown(blueprint: AppBlueprint): string {
     ...(tasks.length > 0 ? tasks : ['- No implementation tasks defined.']),
     ...(hooks.length > 0 ? ['', '## Learning Hooks', ...hooks] : []),
   ].join('\n');
+}
+
+function sectionTitle(section: AppBlueprint['screens'][number]['sections'][number]): string {
+  return String(
+    ('name' in section && section.name) ||
+      ('title' in section && section.title) ||
+      section.id ||
+      'Section'
+  );
+}
+
+function sectionContractLabel(
+  section: AppBlueprint['screens'][number]['sections'][number]
+): string {
+  if (section.kind === 'preset_section') return `preset: \`${section.preset}\``;
+  if (section.kind === 'custom_section') return '`custom_section`';
+  return `\`${section.componentName}\`, source: \`${section.source}\`${section.dataBindingId ? `, binding: \`${section.dataBindingId}\`` : ''}`;
+}
+
+function sectionIntentLines(
+  section: AppBlueprint['screens'][number]['sections'][number]
+): string[] {
+  if (section.kind === 'preset_section' || section.kind === 'custom_section') return [];
+  return [
+    ...(section.intent ? [`  - Intent: ${section.intent}`] : []),
+    ...(section.visualIntent ? [`  - Visual: ${section.visualIntent}`] : []),
+  ];
+}
+
+function summarizeComposition(
+  section: AppBlueprint['screens'][number]['sections'][number]
+): string[] {
+  if (section.kind === 'preset_section') {
+    return section.overrides.length > 0
+      ? [
+          `Overrides: ${section.overrides
+            .slice(0, 4)
+            .map((override) => override.target)
+            .join(', ')}`,
+        ]
+      : [];
+  }
+  if (section.kind === 'custom_section') {
+    return [`Root: ${summarizeNode(section.root)}`];
+  }
+  return [];
+}
+
+function summarizeNode(node: unknown): string {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return 'unknown';
+  const record = node as Record<string, unknown>;
+  const kind = stringValue(record.kind) || 'node';
+  const id = stringValue(record.id);
+  const component = stringValue(record.component);
+  const layout = stringValue(record.layout);
+  const children = arrayValue(record.children)?.length || 0;
+  return [
+    kind,
+    id ? `#${id}` : '',
+    component || layout ? `(${component || layout})` : '',
+    `${children} children`,
+  ]
+    .filter(Boolean)
+    .join(' ');
 }
 
 function summarizeProps(props: Record<string, unknown>): string[] {

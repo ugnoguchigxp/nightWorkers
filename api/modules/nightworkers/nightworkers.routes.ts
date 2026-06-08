@@ -25,6 +25,7 @@ import {
   listTaskRunsHandler,
   saveDesignQuestionnaireAnswersHandler,
   startTaskRunHandler,
+  stopTaskRunHandler,
 } from './nightworkers.route-handlers';
 import { queueRouteError } from './nightworkers.route-utils';
 import * as service from './nightworkers.service';
@@ -66,6 +67,7 @@ import {
   listTaskRunActivityEventsRoute,
   listTaskRunEventsRoute,
   listTaskRunsRoute,
+  stopTaskRunRoute,
 } from './routes/run-routes';
 import {
   acceptDesignQuestionnaireReviewRoute,
@@ -548,6 +550,7 @@ const router = createOpenApiRouter()
   )
   .openapi(startTaskRunRoute, startTaskRunHandler)
   .openapi(getTaskRunRoute, getTaskRunHandler)
+  .openapi(stopTaskRunRoute, stopTaskRunHandler)
   .openapi(listTaskRunEventsRoute, listTaskRunEventsHandler)
   .openapi(listTaskRunActivityEventsRoute, listTaskRunActivityEventsHandler)
   .openapi(createRunReviewRoute, createRunReviewHandler)

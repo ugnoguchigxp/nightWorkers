@@ -1,5 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { createPresetBlueprintNodeTree } from '../../../../../shared/blueprint-composition-catalog';
+import {
+  applyBlueprintSectionOverridesToNode,
+  normalizeBlueprintSectionForPreview,
+} from '../../../../../shared/blueprint-section-composition';
 import { renderAdditionalPreviewSectionBody } from './BlueprintPreviewSectionMore';
 import {
   chartPreviewItems,
@@ -16,21 +21,29 @@ import {
   toObjectArray,
 } from './previewModel';
 
-export function BlueprintPreviewSection({
-  section,
-  table,
-  binding,
-}: {
-  section: Record<string, any>;
-  table: Record<string, any> | null;
-  binding: Record<string, any> | null;
-}) {
+export function BlueprintPreviewSection({ section }: { section: Record<string, any> }) {
   const { t } = useTranslation();
-  const componentName = String(section.componentName || '');
-  const props = isObject(section.props) ? section.props : {};
-  const title = String(props.title || section.name || section.id || componentName || 'Section');
-  const description = String(props.description || section.intent || section.visualIntent || '');
-  const body = renderPreviewSectionBody(componentName, props, table, binding, t);
+  const previewSection = normalizeBlueprintSectionForPreview(section as any) as Record<string, any>;
+  const isComposableSection =
+    previewSection.kind === 'preset_section' || previewSection.kind === 'custom_section';
+  const componentName = isComposableSection
+    ? String(previewSection.preset || previewSection.kind || '')
+    : String(previewSection.componentName || '');
+  const props = isObject(previewSection.props) ? previewSection.props : {};
+  const title = String(
+    props.title ||
+      previewSection.title ||
+      previewSection.name ||
+      previewSection.id ||
+      componentName ||
+      'Section'
+  );
+  const description = String(
+    props.description || previewSection.intent || previewSection.visualIntent || ''
+  );
+  const body = isComposableSection
+    ? renderComposableSection(previewSection, t)
+    : renderPreviewSectionBody(componentName, props, t);
 
   return (
     <section className="blueprint-preview-card overflow-hidden border">
@@ -52,11 +65,215 @@ export function BlueprintPreviewSection({
   );
 }
 
+function renderComposableSection(
+  section: Record<string, any>,
+  t: ReturnType<typeof useTranslation>['t']
+) {
+  const root =
+    section.kind === 'custom_section' && isObject(section.root)
+      ? section.root
+      : expandPresetSection(section, t);
+  const resolvedRoot = applyBlueprintSectionOverridesToNode(root as any, section.overrides || []);
+  return resolvedRoot ? renderBlueprintNode(resolvedRoot, t) : null;
+}
+
+function expandPresetSection(
+  section: Record<string, any>,
+  t: ReturnType<typeof useTranslation>['t']
+): Record<string, any> {
+  return createPresetBlueprintNodeTree({
+    preset: String(section.preset || ''),
+    sectionId: String(section.id || ''),
+    sectionName: typeof section.name === 'string' ? section.name : undefined,
+    props: isObject(section.props) ? section.props : {},
+    labels: {
+      searchPlaceholder: t('blueprint.preview.searchPlaceholder'),
+      primarySignal: t('blueprint.preview.kpi.primarySignal'),
+      secondarySignal: t('blueprint.preview.kpi.secondarySignal'),
+      nextAction: t('blueprint.preview.kpi.nextAction'),
+    },
+  }) as Record<string, any>;
+}
+
+function renderBlueprintNode(node: Record<string, any>, t: ReturnType<typeof useTranslation>['t']) {
+  if (node.kind === 'layout') return renderLayoutNode(node, t);
+  if (node.kind === 'component') return renderComponentNode(node, t);
+  return null;
+}
+
+function renderLayoutNode(node: Record<string, any>, t: ReturnType<typeof useTranslation>['t']) {
+  const layout = String(node.layout || 'stack');
+  const props = isObject(node.props) ? node.props : {};
+  const children = toObjectArray(node.children);
+  const className =
+    layout === 'row'
+      ? 'flex flex-wrap items-center gap-[var(--blueprint-preview-gap)]'
+      : layout === 'grid'
+        ? 'grid gap-[var(--blueprint-preview-gap)]'
+        : layout === 'split'
+          ? 'grid gap-[var(--blueprint-preview-gap)] md:grid-cols-2'
+          : 'grid gap-[var(--blueprint-preview-gap)]';
+  const style =
+    layout === 'grid' && Number(props.columns) > 0
+      ? { gridTemplateColumns: `repeat(${Math.min(Number(props.columns), 4)}, minmax(0, 1fr))` }
+      : undefined;
+  return (
+    <div className={className} style={style}>
+      {children.map((child, index) => (
+        <div className={layoutWidthClass(child.layout)} key={String(child.id || index)}>
+          {renderBlueprintNode(child, t)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function renderComponentNode(node: Record<string, any>, t: ReturnType<typeof useTranslation>['t']) {
+  const component = String(node.component || '');
+  const props = isObject(node.props) ? node.props : {};
+  const label = String(props.label || props.title || props.name || component);
+  const description = String(props.description || props.body || props.content || '');
+
+  if (component === 'Text') {
+    return (
+      <div className="min-w-0">
+        <div className="font-semibold text-foreground">{label}</div>
+        {description ? (
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (component === 'Button' || component === 'IconButton') {
+    return (
+      <span className="blueprint-preview-button inline-flex items-center justify-center bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">
+        {label}
+      </span>
+    );
+  }
+
+  if (component === 'Input' || component === 'InputGroup' || component === 'Select') {
+    return (
+      <span className="blueprint-preview-field block w-full border border-input bg-background px-3 py-2 text-xs text-muted-foreground">
+        {String(props.placeholder || label)}
+      </span>
+    );
+  }
+
+  if (component === 'DataTable' || component === 'Table') {
+    const columns = previewColumns(props);
+    const rows = previewRows(props, columns);
+    return (
+      <div className="overflow-hidden rounded-md border border-border bg-card">
+        <table className="blueprint-preview-table w-full min-w-[32rem] border-collapse text-left text-xs">
+          <thead className="bg-secondary text-muted-foreground">
+            <tr>
+              {columns.map((column) => (
+                <th className="px-3 py-2 font-semibold uppercase" key={column.key}>
+                  {column.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, rowIndex) => (
+              <tr className="border-border border-t odd:bg-muted/50" key={rowIndex}>
+                {columns.map((column) => (
+                  <td className="px-3 py-2 text-foreground" key={column.key}>
+                    {String(row[column.key] || '')}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  if (component === 'List') {
+    const items = toObjectArray(props.items);
+    return (
+      <div className="blueprint-preview-card rounded-md border border-border bg-card p-3">
+        <div className="font-semibold text-foreground">{label}</div>
+        <div className="mt-2 grid gap-2">
+          {(items.length > 0 ? items : [{ title: t('blueprint.preview.sectionFallbackTitle') }])
+            .slice(0, 5)
+            .map((item, index) => (
+              <div
+                className="rounded border border-border bg-muted px-2 py-1.5 text-xs"
+                key={String(item.id || index)}
+              >
+                <div className="font-medium text-foreground">
+                  {String(item.title || item.label || `Item ${index + 1}`)}
+                </div>
+                {item.description ? (
+                  <div className="mt-1 text-muted-foreground">{String(item.description)}</div>
+                ) : null}
+              </div>
+            ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (component === 'Badge') {
+    return (
+      <span className="rounded-full border border-border px-2 py-1 text-xs text-foreground">
+        {label}
+      </span>
+    );
+  }
+
+  if (component === 'Alert') {
+    return (
+      <div className="rounded-md border border-border bg-muted p-3 text-xs">
+        <div className="font-semibold text-foreground">{label}</div>
+        {description ? (
+          <div className="mt-1 leading-5 text-muted-foreground">{description}</div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (component === 'Progress') {
+    const value = Math.max(0, Math.min(100, Number(props.value) || 0));
+    return (
+      <div className="grid gap-1 text-xs">
+        <div className="flex justify-between text-muted-foreground">
+          <span>{label}</span>
+          <span>{value}%</span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full bg-primary" style={{ width: `${value}%` }} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="blueprint-preview-card rounded-md border border-border bg-card p-3">
+      <div className="font-semibold text-foreground">{label}</div>
+      {description ? (
+        <div className="mt-1 text-xs leading-5 text-muted-foreground">{description}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function layoutWidthClass(layout: unknown) {
+  if (!isObject(layout)) return 'min-w-0';
+  if (layout.width === '1/2') return 'min-w-0 basis-full md:basis-1/2';
+  if (layout.width === '1/3') return 'min-w-0 basis-full md:basis-1/3';
+  if (layout.width === '2/3') return 'min-w-0 basis-full md:basis-2/3';
+  if (layout.width === 'auto') return 'min-w-fit';
+  return 'min-w-0 flex-1';
+}
+
 function renderPreviewSectionBody(
   componentName: string,
   props: Record<string, any>,
-  table: Record<string, any> | null,
-  binding: Record<string, any> | null,
   t: ReturnType<typeof useTranslation>['t']
 ) {
   if (
@@ -155,12 +372,7 @@ function renderPreviewSectionBody(
         ? items
         : [
             { label: String(props.title || t('blueprint.preview.kpi.primarySignal')), value: '-' },
-            {
-              label: String(
-                binding?.name || table?.label || t('blueprint.preview.kpi.secondarySignal')
-              ),
-              value: '-',
-            },
+            { label: String(t('blueprint.preview.kpi.secondarySignal')), value: '-' },
             {
               label: t('blueprint.preview.kpi.nextAction'),
               value: String(props.actionLabel || '-'),
@@ -186,7 +398,7 @@ function renderPreviewSectionBody(
   }
 
   if (componentName === 'StatsTrendCardsSection') {
-    const items = chartPreviewItems(props, table, binding);
+    const items = chartPreviewItems(props);
     return (
       <div className="grid gap-[var(--blueprint-preview-gap)] sm:grid-cols-2 lg:grid-cols-4">
         {items.slice(0, 4).map((item, index) => (
@@ -203,7 +415,7 @@ function renderPreviewSectionBody(
   }
 
   if (componentName === 'ProgressListSection') {
-    const items = chartPreviewItems(props, table, binding);
+    const items = chartPreviewItems(props);
     const maxValue = Math.max(...items.map((item) => Number(item.value) || 0), 1);
     return (
       <div className="grid gap-2">
@@ -232,7 +444,7 @@ function renderPreviewSectionBody(
   }
 
   if (componentName === 'ChartSection' || componentName === 'ChartInsightSection') {
-    const chartItems = chartPreviewItems(props, table, binding);
+    const chartItems = chartPreviewItems(props);
     return (
       <div className="grid gap-[var(--blueprint-preview-gap)] md:grid-cols-[minmax(0,1fr)_12rem]">
         <div className="min-h-44 overflow-x-auto rounded-md border border-border bg-muted p-2">
@@ -290,7 +502,7 @@ function renderPreviewSectionBody(
   }
 
   if (componentName === 'DataTableSection') {
-    const columns = previewColumns(props, table, binding);
+    const columns = previewColumns(props);
     const rows = previewRows(props, columns);
     return (
       <div className="overflow-hidden rounded-md border border-border bg-card">
@@ -390,7 +602,7 @@ function renderPreviewSectionBody(
     const items: Array<Record<string, any>> =
       sourceItems.length > 0
         ? sourceItems
-        : previewGenericItems(props, table, binding, t).map((item) => ({
+        : previewGenericItems(props, t).map((item) => ({
             title: item.title,
             description: item.description,
           }));
@@ -421,7 +633,7 @@ function renderPreviewSectionBody(
   }
 
   if (componentName === 'FormSection') {
-    const fields = previewColumns(props, table, binding).slice(0, 4);
+    const fields = previewColumns(props).slice(0, 4);
     return (
       <div className="grid gap-[var(--blueprint-preview-gap)]">
         {fields.map((field) => (
@@ -442,15 +654,13 @@ function renderPreviewSectionBody(
   const additionalSectionBody = renderAdditionalPreviewSectionBody({
     componentName,
     props,
-    table,
-    binding,
     t,
   });
   if (additionalSectionBody) return additionalSectionBody;
 
   return (
     <div className="rounded-md border border-dashed border-border bg-muted p-3 text-xs leading-5 text-muted-foreground">
-      {String(sectionFallbackText(componentName, table, binding, t))}
+      {String(sectionFallbackText(componentName, t))}
     </div>
   );
 }

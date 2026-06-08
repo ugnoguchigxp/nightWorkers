@@ -7,6 +7,7 @@ export * from './git';
 export * from './list-dir';
 export * from './mcp-call-tool';
 export * from './path-policy';
+export * from './read-current-specification';
 export * from './read-file';
 export * from './replace-content';
 export * from './run-command';

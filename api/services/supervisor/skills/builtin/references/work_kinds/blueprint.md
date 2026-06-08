@@ -14,7 +14,7 @@
 - section は必要なものだけを選ぶ。見栄えのために hero、画像、KPI、chart、activity、marketing section を自動追加しない。
 - workflow / CRUD / kanban / admin などの作業画面では、見た目の優先度だけでなく、実際の操作順序、使用感、作業前に必要な入力、画面上の視線移動を考えて section と props を決める。
 - Kanban なら KanbanSection を主役にし、検索・フィルタ・表示切替は KanbanSection.props.filters / views / segments としてボード上部の toolbar に出す。ボードを操作する前に使う controls をボード下に置かない。
-- KanbanSection の props は Backlog / In Progress / Done 相当の3列 `columns: [{id,title,cards:[{id,title,description,assignee,priority,dueDate}]}]` を基本形にする。`boardLabel`、`boardDescription`、`filters` を必要に応じて入れる。ボード、列、カード、検索、フィルタの確認が目的なら DataTableSection を使わない。
+- KanbanSection の props は Backlog / In Progress / Done 相当の3列 `columns: [{id,title,cards:[{id,title,description,assignee,priority,dueDate}]}]` を基本形にする。各 column には、画面イメージを確認できる sample card を最低1件入れる。`boardLabel`、`boardDescription`、`filters` を必要に応じて入れる。ボード、列、カード、検索、フィルタの確認が目的なら DataTableSection を使わない。
 - Kanban では QuickActionsSection、EmptyState、FormSection、DataTableSection を自動追加しない。ユーザーが明示的に「新規作成導線」「空状態」「編集フォーム」「表形式一覧」を求めた場合だけ使う。
 - SplitHeroSection / ImageSection / CarouselSection は landing、marketing、media-heavy な画面、またはユーザーが明示的に hero / visual / campaign を求めた場合だけ使う。
 - ChartSection / ChartInsightSection / KpiSummarySection / StatsTrendCardsSection / ProgressListSection は、ユーザーが metrics / KPI / analytics / dashboard / trend / chart を明示した場合だけ使う。
@@ -68,13 +68,17 @@ AppBlueprint JSON は次の root 形にする。
 - `version` は positive integer。新規 Blueprint は原則 `1`。
 - `screens` は最低1件。screen は `id`、`name`、`path`、`componentName`、`sections`、必要なら `actions` を持つ。
 - `path` は `/` から始め、英数字、`/`、`_`、`-` だけを使う。例: `/`, `/products`, `/account/orders`。
-- `componentName` は `blueprint-catalog.schema.ts` の enum から選ぶ。トップページなら `SidebarPage`、`ListPage`、`ArticleFeedPage`、`DashboardPage` などの汎用 page を、section には `SplitHeroSection`、`CarouselSection`、`CardGridSection`、`DataTableSection`、`KanbanSection`、`CheckoutSummarySection` などを目的に応じて使う。
-- section は `id`、`name`、`componentName`、`source`、`intent`、`visualIntent`、`props`、必要なら `actions` を持つ。通常 Blueprint では `dataBindingId` を使わない。
+- `componentName` は `blueprint-catalog.schema.ts` の enum から選ぶ。トップページなら `SidebarPage`、`ListPage`、`ArticleFeedPage`、`DashboardPage` などの汎用 page を使う。
+- section は、短く済む場合は従来の `componentName` section を使ってよい。ただし検索 header、table workspace、metrics overview、chart insight、kanban board のように内部構成を調整したい領域は `kind: "preset_section"` を優先する。
+- `preset_section` は `id`、必要なら `name`、`preset`、`props`、`overrides`、`actions` を持つ。`preset` は `search_header`、`table_workspace`、`metrics_overview`、`chart_insight`、`kanban_board` から選ぶ。
+- `custom_section` は preset で表現できない時だけ使い、`root` の BlueprintNode tree は `Text`、`Button`、`Input`、`Card`、`DataTable`、`List`、`Alert` など既知 component と `stack` / `row` / `grid` / `split` layout token だけで構成する。任意 HTML、className、CSS は作らない。
+- 従来 section は `id`、`name`、`componentName`、`source`、`intent`、`visualIntent`、`props`、必要なら `actions` を持つ。通常 Blueprint では `dataBindingId` を使わない。
 - `source` は `none`、`static`、`computed`、`app`、`summary`、`rss`、`markdown`、`navigation` を優先する。`table`、`record`、`postgres`、`api` は DB Design 後に binding が採用された Blueprint 更新で扱う。
 - 通常 Blueprint では `databaseSchema.tables`、`databaseSchema.relations`、`dataBindings` を空にする。DB table/column/relation/binding/DDL の考案は DB Design button からの workflow だけで実行する。
 - データ構造が必要そうな場合も、通常 Blueprint では DDL や table/column を書かず、`implementationTasks` に DB Design で検討する作業を残す。
 - `implementationTasks[].affectedDomains` は schema の enum から選ぶ。Blueprint JSON の構造や生成なら `blueprint-ui`、`blueprint-data`、`blueprint-binding`、`blueprints`、`blueprint-task-planning` を優先する。
 - `props` は component-specific な自由領域だが、画面の意味を埋めるために使い、schema root の代替として使わない。
+- ユーザーが「検索バーを半分にして右にボタン」など局所修正を求めた場合は、画面全体を書き直さず `BlueprintSectionPatch` 相当の `target` / `op` / `path` / `node` を考え、artifact には `overrides` または更新後の section として反映する。
 
 ### Blueprint Quality Bar
 

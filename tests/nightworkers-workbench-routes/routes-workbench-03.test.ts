@@ -339,6 +339,53 @@ describe('NightWorkers workbench routes', () => {
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
   });
 
+  it('starts a run from a ready specification artifact even when draft fields are empty', async () => {
+    const { task } = await createWorkbenchTask({ status: 'ready' });
+    await repo.updateTask(task.id, { objective: '', acceptanceCriteria: '' });
+    await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: '# Specification\n\nImplement this specification.',
+      messageType: 'markdown_document',
+      payloadJson: { intent: 'draft_spec', source: 'status' },
+    });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({
+        prompt: '現在のSpecification artifactを読み込み、この設計書の実装を開始してください。',
+        intent: 'run_task',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.run?.taskId).toBe(task.id);
+    const messages = await repo.listTaskMessages(task.id);
+    expect(messages.some((message) => message.role === 'user')).toBe(true);
+  });
+
+  it('queues a ready specification artifact even when draft fields are empty', async () => {
+    const { task } = await createWorkbenchTask({ status: 'ready' });
+    await repo.updateTask(task.id, { objective: '', acceptanceCriteria: '' });
+    await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: '# Specification\n\nImplement this specification.',
+      messageType: 'markdown_document',
+      payloadJson: { intent: 'draft_spec', source: 'status' },
+    });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/queue`, {
+      method: 'POST',
+      headers: sameOriginHeaders,
+    });
+
+    expect(res.status).toBe(200);
+    expect((await repo.getTask(task.id))?.status).toBe('queued');
+  });
+
   it('allows workbench run requests for queued tasks through the runtime path', async () => {
     const { task } = await createWorkbenchTask({ status: 'queued' });
     const startSpy = vi.spyOn(service, 'startWorkbenchTaskRun').mockResolvedValue({

@@ -5,6 +5,7 @@ export type WorkerToolName =
   | 'list_dir'
   | 'find_file'
   | 'read_file'
+  | 'read_current_specification'
   | 'inspect_structure'
   | 'search_files'
   | 'search_web'

@@ -91,6 +91,7 @@ function validateScreens(blueprint: AppBlueprint): BlueprintValidationIssue[] {
 
     screen.sections.forEach((section, sectionIndex) => {
       const sectionPath = `${screenPath}.sections.${sectionIndex}`;
+      if (section.kind === 'preset_section' || section.kind === 'custom_section') return;
       const definition = getBlueprintComponentDefinition(section.componentName);
       if (!definition) {
         issues.push(

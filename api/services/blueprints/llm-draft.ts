@@ -1,9 +1,14 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import {
+  blueprintPreviewComponentCatalog,
+  blueprintSectionPresetCatalog,
+} from '../../../shared/blueprint-composition-catalog';
+import {
   type AppBlueprint,
   appBlueprintSchema,
 } from '../../../shared/schemas/app-blueprint.schema';
+import type { BlueprintDataSourceKind } from '../../../shared/schemas/blueprint-catalog.schema';
 import {
   blueprintCatalog,
   getBlueprintComponentDefinition,
@@ -188,8 +193,15 @@ function repairMisplacedRootActions(rawOutput: string): string | null {
 }
 
 function normalizeBlueprintCandidate(candidate: unknown): unknown {
-  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return candidate;
-  const blueprint = { ...(candidate as Record<string, unknown>) };
+  const unwrappedCandidate = unwrapDelimitedBlueprintArrayCandidate(candidate);
+  if (
+    !unwrappedCandidate ||
+    typeof unwrappedCandidate !== 'object' ||
+    Array.isArray(unwrappedCandidate)
+  ) {
+    return unwrappedCandidate;
+  }
+  const blueprint = { ...(unwrappedCandidate as Record<string, unknown>) };
   delete blueprint.actions;
   if (!Array.isArray(blueprint.screens)) return blueprint;
   blueprint.screens = blueprint.screens.map((screen, screenIndex) => {
@@ -212,6 +224,36 @@ function normalizeBlueprintCandidate(candidate: unknown): unknown {
     return screenRecord;
   });
   return blueprint;
+}
+
+function unwrapDelimitedBlueprintArrayCandidate(candidate: unknown): unknown {
+  if (!Array.isArray(candidate)) return candidate;
+  if (candidate.length === 1) return candidate[0];
+  const [head, ...tail] = candidate;
+  if (!head || typeof head !== 'object' || Array.isArray(head)) return candidate;
+
+  const blueprint = { ...(head as Record<string, unknown>) };
+  for (let index = 0; index < tail.length; index += 1) {
+    const key = tail[index];
+    if (typeof key !== 'string' || !isAppBlueprintRootKey(key)) continue;
+    if (tail[index + 1] === ':' && index + 2 < tail.length) {
+      blueprint[key] = tail[index + 2];
+      index += 2;
+    } else if (index + 1 < tail.length) {
+      blueprint[key] = tail[index + 1];
+      index += 1;
+    }
+  }
+  return blueprint;
+}
+
+function isAppBlueprintRootKey(key: string): key is keyof AppBlueprint {
+  return (
+    key === 'databaseSchema' ||
+    key === 'dataBindings' ||
+    key === 'implementationTasks' ||
+    key === 'learningHooks'
+  );
 }
 
 function normalizeBlueprintActions(actions: unknown, scope: string): unknown {
@@ -256,9 +298,14 @@ function normalizeRegularBlueprintBindings(blueprint: AppBlueprint): AppBlueprin
     ...blueprint,
     screens: blueprint.screens.map((screen) => ({
       ...screen,
+      componentName: pickRegularBlueprintPageComponent(screen.componentName),
       sections: screen.sections.map((section) => {
+        if (section.kind === 'preset_section' || section.kind === 'custom_section') return section;
         const sectionWithoutBinding = { ...section };
         delete sectionWithoutBinding.dataBindingId;
+        if (!isBlueprintPlacement(sectionWithoutBinding.componentName, 'section')) {
+          sectionWithoutBinding.componentName = 'EmptyState';
+        }
         if (
           !isAllowedBlueprintSource(
             sectionWithoutBinding.componentName,
@@ -275,9 +322,23 @@ function normalizeRegularBlueprintBindings(blueprint: AppBlueprint): AppBlueprin
   };
 }
 
-function pickRegularBlueprintSource(
+function pickRegularBlueprintPageComponent(
   componentName: string
-): AppBlueprint['screens'][number]['sections'][number]['source'] {
+): AppBlueprint['screens'][number]['componentName'] {
+  if (isBlueprintPlacement(componentName, 'page')) {
+    return componentName as AppBlueprint['screens'][number]['componentName'];
+  }
+  return 'SidebarPage';
+}
+
+function isBlueprintPlacement(
+  componentName: string,
+  placement: NonNullable<ReturnType<typeof getBlueprintComponentDefinition>>['placement']
+): boolean {
+  return getBlueprintComponentDefinition(componentName)?.placement === placement;
+}
+
+function pickRegularBlueprintSource(componentName: string): BlueprintDataSourceKind {
   const definition = getBlueprintComponentDefinition(componentName);
   const preferredSources = [
     'static',
@@ -326,11 +387,14 @@ function buildBlueprintSystemPrompt(input: {
     '- componentName は blueprint-catalog.schema.ts の enum から選ぶ。',
     `- designPreset はこの既知presetをそのまま使う: ${JSON.stringify(defaultDesignPreset)}。`,
     '- componentName/source は下の Catalog の組み合わせだけを使う。未掲載のcomponent/source/themeを作らない。',
+    '- section は従来の componentName section に加えて、必要に応じて kind:"preset_section" または kind:"custom_section" を使ってよい。',
+    '- preset_section は preset に search_header / table_workspace / metrics_overview / chart_insight / kanban_board のいずれかを選び、props と overrides で内部 node/slot を局所調整する。',
+    '- custom_section は preset で表現できない場合だけ使い、root の BlueprintNode tree は既知 component catalog と layout token だけで構成する。任意 HTML、className、CSS は作らない。',
     '- 画面名、セクション名、コンポーネント選択、余白感、情報密度、サンプル表示内容は、ユーザー依頼の業務・ユーザー・利用シーンに合わせて自律的に決める。',
     '- section は「必要なものだけ」を選ぶ。見栄えのための hero、画像、KPI、chart、activity、marketing section は入れない。',
     '- workflow / CRUD / kanban / admin などの作業画面では、見た目の優先度だけでなく、実際の操作順序、使用感、作業前に必要な入力、画面上の視線移動を考えて section と props を決める。',
     '- Kanban なら KanbanSection を主役にし、検索・フィルタ・表示切替は KanbanSection.props.filters / views / segments としてボード上部の toolbar に出す。ボードを操作する前に使う controls をボード下に置かない。',
-    '- KanbanSection の props は Backlog / In Progress / Done 相当の3列 columns: [{id,title,cards:[{id,title,description,assignee,priority,dueDate}]}] を基本形にする。boardLabel、boardDescription、filters を必要に応じて入れる。ボード、列、カード、検索、フィルタの確認が目的なら DataTableSection を使わない。',
+    '- KanbanSection の props は Backlog / In Progress / Done 相当の3列 columns: [{id,title,cards:[{id,title,description,assignee,priority,dueDate}]}] を基本形にする。各 column には、画面イメージを確認できる sample card を最低1件入れる。boardLabel、boardDescription、filters を必要に応じて入れる。ボード、列、カード、検索、フィルタの確認が目的なら DataTableSection を使わない。',
     '- Kanban では QuickActionsSection、EmptyState、FormSection、DataTableSection を自動追加しない。ユーザーが明示的に「新規作成導線」「空状態」「編集フォーム」「表形式一覧」を求めた場合だけ使う。',
     '- SplitHeroSection、ImageSection、CarouselSection は landing page、marketing page、media-heavy page、またはユーザーが明示的に hero / visual / campaign を求めた場合だけ使う。',
     '- ChartSection、ChartInsightSection、KpiSummarySection、StatsTrendCardsSection、ProgressListSection は、ユーザーが metrics / KPI / analytics / dashboard / trend / chart を明示した場合だけ使う。Kanban、フォーム、CRUD、一覧管理の初期画面に自動追加しない。',
@@ -344,6 +408,12 @@ function buildBlueprintSystemPrompt(input: {
     '',
     '[Catalog]',
     renderBlueprintCatalogPrompt(),
+    '',
+    '[Preview Component Catalog]',
+    renderPreviewComponentCatalogPrompt(),
+    '',
+    '[Section Preset Catalog]',
+    renderSectionPresetCatalogPrompt(),
     '',
     '[AppBlueprint JSON Schema]',
     input.appBlueprintJsonSchema,
@@ -380,6 +450,32 @@ function renderBlueprintCatalogPrompt(): string {
         `placement=${definition.placement}`,
         `sources=${definition.allowedSources.join('|')}`,
         `variants=${definition.variants.join('|')}`,
+      ].join(' ')
+    )
+    .join('\n');
+}
+
+function renderPreviewComponentCatalogPrompt(): string {
+  return blueprintPreviewComponentCatalog
+    .map((definition) =>
+      [
+        definition.name,
+        `category=${definition.category}`,
+        `children=${definition.allowedChildren?.join('|') || '-'}`,
+      ].join(' ')
+    )
+    .join('\n');
+}
+
+function renderSectionPresetCatalogPrompt(): string {
+  return blueprintSectionPresetCatalog
+    .map((preset) =>
+      [
+        preset.name,
+        `legacy=${preset.legacyComponents.join('|') || '-'}`,
+        `slots=${preset.slots
+          .map((slot) => `${slot.name}:${slot.cardinality}:${slot.accepts.join('|')}`)
+          .join(',')}`,
       ].join(' ')
     )
     .join('\n');

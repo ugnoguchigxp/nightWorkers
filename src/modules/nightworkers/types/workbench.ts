@@ -99,8 +99,10 @@ export type WorkbenchArtifactContext = {
   metadata?: {
     intent?: string;
     appBlueprintName?: string;
+    artifactType?: string;
     screenNames?: string[];
     sectionNames?: string[];
+    tableNames?: string[];
     initialTab?: string;
   };
 };

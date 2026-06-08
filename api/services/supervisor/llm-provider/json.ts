@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { jsonrepair } from 'jsonrepair';
 import type { ZodType } from 'zod';
 import type { CallSupervisorOptions } from './types';
 
@@ -6,7 +7,13 @@ export type JsonFixWrapperResult = {
   parsedJson: unknown;
   sourceText: string;
   repaired: boolean;
-  repairKind: 'none' | 'extracted_candidate' | 'balanced_json' | 'extracted_and_balanced_json';
+  repairKind:
+    | 'none'
+    | 'extracted_candidate'
+    | 'balanced_json'
+    | 'extracted_and_balanced_json'
+    | 'jsonrepair'
+    | 'extracted_and_jsonrepair';
 };
 
 export function jsonFixWrapper(raw: string): JsonFixWrapperResult | null {
@@ -26,14 +33,45 @@ export function jsonFixWrapper(raw: string): JsonFixWrapperResult | null {
         repairKind: candidate.extracted ? 'extracted_candidate' : 'none',
       };
     } catch {
+      // Try the broader repair passes after direct/extracted JSON parsing has been exhausted.
+    }
+  }
+
+  for (const candidate of candidates) {
+    const balanced = balanceJsonCandidate(candidate.text);
+    if (!balanced || balanced === candidate.text) continue;
+    try {
+      return {
+        parsedJson: JSON.parse(balanced),
+        sourceText: balanced,
+        repaired: true,
+        repairKind: candidate.extracted ? 'extracted_and_balanced_json' : 'balanced_json',
+      };
+    } catch {
+      // Try jsonrepair next.
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (!canAttemptJsonRepair(candidate.text)) continue;
+    try {
+      const repaired = jsonrepair(candidate.text);
+      return {
+        parsedJson: JSON.parse(repaired),
+        sourceText: repaired,
+        repaired: true,
+        repairKind: candidate.extracted ? 'extracted_and_jsonrepair' : 'jsonrepair',
+      };
+    } catch {
       const balanced = balanceJsonCandidate(candidate.text);
       if (!balanced || balanced === candidate.text) continue;
       try {
+        const repaired = jsonrepair(balanced);
         return {
-          parsedJson: JSON.parse(balanced),
-          sourceText: balanced,
+          parsedJson: JSON.parse(repaired),
+          sourceText: repaired,
           repaired: true,
-          repairKind: candidate.extracted ? 'extracted_and_balanced_json' : 'balanced_json',
+          repairKind: candidate.extracted ? 'extracted_and_jsonrepair' : 'jsonrepair',
         };
       } catch {
         // Try the next candidate.
@@ -42,6 +80,11 @@ export function jsonFixWrapper(raw: string): JsonFixWrapperResult | null {
   }
 
   return null;
+}
+
+function canAttemptJsonRepair(input: string): boolean {
+  const trimmed = input.trim();
+  return trimmed.startsWith('{') || trimmed.startsWith('[');
 }
 
 export function parseRepairedJsonWithSchema<T>(

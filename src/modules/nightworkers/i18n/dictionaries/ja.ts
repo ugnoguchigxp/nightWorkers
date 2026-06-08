@@ -176,6 +176,8 @@ export const jaDictionary = {
   'settings.appearance.input': 'Input',
   'composer.diffFiles': '{{count}} files',
   'composer.placeholder': '指示を入力（送信: Cmd+Enter / Ctrl+Enter）',
+  'composer.send': '送信',
+  'composer.stop': '停止',
   'queue.title': 'Implementation Queue',
   'queue.description': 'Processor automation は通常の Session chat とは分離されています。',
   'queue.allProjects': 'All projects',
@@ -323,11 +325,8 @@ export const jaDictionary = {
   'blueprint.preview.timeline.implement': '実装',
   'blueprint.preview.sectionFallbackTitle': 'Blueprint セクション',
   'blueprint.preview.sectionFallbackDescription': 'Catalog に基づく section preview placeholder.',
-  'blueprint.preview.bindingSource': 'binding "{{name}}"',
-  'blueprint.preview.staticSource': '静的 Blueprint data',
-  'blueprint.preview.tableContext': ' / table "{{name}}"',
   'blueprint.preview.sectionFallbackText':
-    '{{componentName}} preview は {{source}}{{tableName}} を使います。',
+    '{{componentName}} preview は mock Blueprint data を使います。',
   'blueprint.designSettings.title': 'Design reference settings',
   'blueprint.designSettings.description':
     'Preview は specification-review mock です。選択した token は後続の implementation plan に添付できます。',

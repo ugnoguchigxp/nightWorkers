@@ -73,7 +73,8 @@ export {
 
 export async function startWorkbenchTaskRun(taskId: string) {
   const task = await repo.getTask(taskId);
-  assertRunnableWorkbenchTask(task);
+  const messages = await repo.listTaskMessages(taskId);
+  assertRunnableWorkbenchTask(task, messages);
   return startTaskRun(taskId);
 }
 
@@ -132,6 +133,7 @@ export {
   runSessionQueueForRepository,
   shouldContinueSessionQueue,
   startTaskRun,
+  stopTaskRun,
 } from './nightworkers.run-orchestration.service';
 
 export {

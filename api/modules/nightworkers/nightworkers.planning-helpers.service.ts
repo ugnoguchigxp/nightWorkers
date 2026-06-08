@@ -56,7 +56,10 @@ export function isBlueprintRouting(routing: SupervisorRoutingHypothesis | undefi
   );
 }
 
-export function assertRunnableWorkbenchTask(task: Awaited<ReturnType<typeof repo.getTask>>) {
+export function assertRunnableWorkbenchTask(
+  task: Awaited<ReturnType<typeof repo.getTask>>,
+  messages: TaskMessageRow[] = []
+) {
   if (!task) throw new NotFoundError('Task not found');
   if (!['queued', 'ready'].includes(task.status))
     throw new AppError(
@@ -64,12 +67,16 @@ export function assertRunnableWorkbenchTask(task: Awaited<ReturnType<typeof repo
       'TASK_NOT_READY_TO_RUN',
       'Workbench runs require a ready or queued task. Draft the task first, then queue or run it.'
     );
-  assertTaskDraftComplete(task);
+  assertTaskDraftComplete(task, messages);
 }
 
-export function assertTaskDraftComplete(task: Awaited<ReturnType<typeof repo.getTask>>) {
+export function assertTaskDraftComplete(
+  task: Awaited<ReturnType<typeof repo.getTask>>,
+  messages: TaskMessageRow[] = []
+) {
   if (!task) throw new NotFoundError('Task not found');
   const missing = getTaskDraftMissingFields(task);
+  if (missing.length > 0 && hasImplementationPlanEvidence(messages)) return;
   if (missing.length > 0)
     throw new AppError(422, 'TASK_DRAFT_INCOMPLETE', `Missing draft fields: ${missing.join(', ')}`);
 }

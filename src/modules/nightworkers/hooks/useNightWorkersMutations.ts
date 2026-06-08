@@ -175,6 +175,32 @@ export function useNightWorkersMutations({
     },
   });
 
+  const stopRunMutation = useMutation({
+    mutationFn: async (runId: string) => {
+      const res = await apiFetch(`/api/runs/${runId}/stop`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as TaskRun;
+    },
+    onSuccess: (run) => {
+      queryClient.setQueryData<TaskRun[]>(['sessionRuns', run.taskId], (prev = []) => {
+        const next = [...prev];
+        const idx = next.findIndex((candidate) => candidate.id === run.id);
+        if (idx >= 0) next[idx] = run;
+        else next.unshift(run);
+        return next;
+      });
+      queryClient.setQueryData<Task[]>(['sessions'], (prev = []) =>
+        prev.map((session) =>
+          session.id === run.taskId ? { ...session, status: 'ready' } : session
+        )
+      );
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
+      queryClient.invalidateQueries({ queryKey: ['sessionRuns', run.taskId] });
+      queryClient.invalidateQueries({ queryKey: ['runDetails', run.id] });
+    },
+  });
+
   const queueSessionMutation = useMutation({
     mutationFn: async (sessionId: string) => {
       const res = await apiFetch(`/api/workbench/sessions/${sessionId}/queue`, { method: 'POST' });
@@ -458,6 +484,7 @@ export function useNightWorkersMutations({
     createSessionMutation,
     deleteSessionMutation,
     startRunMutation,
+    stopRunMutation,
     queueSessionMutation,
     createImplementationQueueEntryMutation,
     archiveImplementationQueueEntryMutation,

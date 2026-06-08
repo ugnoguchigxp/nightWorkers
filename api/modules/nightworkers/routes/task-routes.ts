@@ -388,8 +388,10 @@ const workbenchArtifactContextSchema = z.object({
     .object({
       intent: z.string().optional(),
       appBlueprintName: z.string().optional(),
+      artifactType: z.string().optional(),
       screenNames: z.array(z.string()).optional(),
       sectionNames: z.array(z.string()).optional(),
+      tableNames: z.array(z.string()).optional(),
       initialTab: z.string().optional(),
     })
     .optional(),
@@ -600,7 +602,7 @@ export const generateSpecificationStatusBlueprintRoute = createRoute({
   responses: {
     200: {
       content: { 'application/json': { schema: z.any() } },
-      description: 'Blueprint generated from Specification Status',
+      description: 'Blueprint generated from Status',
     },
   },
 });
@@ -620,7 +622,7 @@ export const generateSpecificationStatusDbDesignRoute = createRoute({
   responses: {
     200: {
       content: { 'application/json': { schema: z.any() } },
-      description: 'DB Design generated from Specification Status',
+      description: 'DB Design generated from Status',
     },
   },
 });
@@ -640,7 +642,7 @@ export const generateSpecificationStatusDesignDocumentRoute = createRoute({
   responses: {
     200: {
       content: { 'application/json': { schema: z.any() } },
-      description: 'Specification generated from Specification Status',
+      description: 'Specification generated from Status',
     },
   },
 });

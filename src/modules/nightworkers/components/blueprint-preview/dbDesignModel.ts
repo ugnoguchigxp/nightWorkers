@@ -1,9 +1,7 @@
 export type BlueprintDbDesignTarget =
   | { kind: 'schema' }
   | { kind: 'table'; tableName: string }
-  | { kind: 'relation'; relationId: string }
-  | { kind: 'binding'; bindingId: string }
-  | { kind: 'screen'; screenId: string; sectionId?: string };
+  | { kind: 'relation'; relationId: string };
 
 export type BlueprintDbDesignRequest = {
   blueprintId: string;
@@ -16,10 +14,7 @@ export type BlueprintDbDesignRequest = {
 export function targetLabel(target: BlueprintDbDesignTarget): string {
   if (target.kind === 'schema') return 'Schema';
   if (target.kind === 'table') return `Table ${target.tableName}`;
-  if (target.kind === 'relation') return `Relation ${target.relationId}`;
-  if (target.kind === 'binding') return `Binding ${target.bindingId}`;
-  if (target.sectionId) return `Screen ${target.screenId} / section ${target.sectionId}`;
-  return `Screen ${target.screenId}`;
+  return `Relation ${target.relationId}`;
 }
 
 export function buildBlueprintDbDesignPrompt(request: BlueprintDbDesignRequest): string {
@@ -33,13 +28,6 @@ export function buildBlueprintDbDesignPrompt(request: BlueprintDbDesignRequest):
     JSON.stringify(request, null, 2),
     '```',
   ].join('\n');
-}
-
-export function bindingCountForTable(
-  tableName: string,
-  bindings: Array<Record<string, unknown>>
-): number {
-  return bindings.filter((binding) => binding.table === tableName).length;
 }
 
 export function relationsForTable(

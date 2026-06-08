@@ -74,6 +74,24 @@ export async function rejectProviderActivity(input: {
   throw new ProviderActivityRejectedError(input);
 }
 
+export async function traceProviderActivity(input: {
+  options: CallSupervisorOptions;
+  request: NormalizedSupervisorLlmRequest;
+  activityType: string;
+  toolName?: string | null;
+  preview?: string;
+}) {
+  await emitSupervisorLlmDebugEvent(input.options, {
+    type:
+      input.activityType === 'tool_call' || input.activityType === 'tool_use'
+        ? 'model.provider_tool_call_detected'
+        : 'model.provider_activity_detected',
+    severity: 'info',
+    message: `Provider activity observed. type=${input.activityType}`,
+    data: providerActivityEventData(input),
+  });
+}
+
 function providerActivityEventData(input: {
   request: NormalizedSupervisorLlmRequest;
   activityType: string;

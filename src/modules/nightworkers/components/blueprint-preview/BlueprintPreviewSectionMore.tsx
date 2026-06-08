@@ -10,20 +10,16 @@ import {
 type AdditionalPreviewInput = {
   componentName: string;
   props: Record<string, any>;
-  table: Record<string, any> | null;
-  binding: Record<string, any> | null;
   t: TFunction;
 };
 
 export function renderAdditionalPreviewSectionBody({
   componentName,
   props,
-  table,
-  binding,
   t,
 }: AdditionalPreviewInput) {
   if (componentName === 'KanbanSection') {
-    const columns = buildKanbanColumns(props, table, binding, t);
+    const columns = buildKanbanColumns(props, t);
     const maxVisibleColumns = toObjectArray(props.columns || props.lanes || props.statuses).length
       ? 5
       : 3;
@@ -134,12 +130,12 @@ export function renderAdditionalPreviewSectionBody({
     const cards =
       items.length > 0
         ? items
-        : previewColumns(props, table, binding)
+        : previewColumns(props)
             .slice(0, 3)
             .map((column) => ({
               title: column.label,
-              description: `Bound to ${column.key}`,
-              badge: table ? String(table.label || table.name) : 'Blueprint',
+              description: `Sample ${column.key}`,
+              badge: 'Blueprint',
             }));
     return (
       <div className="grid gap-[var(--blueprint-preview-gap)] sm:grid-cols-2 xl:grid-cols-3">
@@ -237,12 +233,12 @@ export function renderAdditionalPreviewSectionBody({
             {
               actor: t('blueprint.preview.feed.system'),
               action: t('blueprint.preview.feed.validated'),
-              target: binding?.name || t('blueprint.preview.feed.blueprint'),
+              target: t('blueprint.preview.feed.blueprint'),
             },
             {
               actor: t('blueprint.preview.feed.agent'),
               action: t('blueprint.preview.feed.mapped'),
-              target: table?.label || table?.name || t('blueprint.preview.feed.data'),
+              target: t('blueprint.preview.feed.data'),
             },
             {
               actor: t('blueprint.preview.feed.user'),
@@ -278,7 +274,7 @@ export function renderAdditionalPreviewSectionBody({
     componentName === 'EmptyState' ||
     componentName === 'ErrorState'
   ) {
-    const items = previewGenericItems(props, table, binding, t);
+    const items = previewGenericItems(props, t);
     return (
       <div className="grid gap-2">
         {items.map((item, index) => (
@@ -307,7 +303,7 @@ export function renderAdditionalPreviewSectionBody({
             t('blueprint.preview.timeline.implement'),
           ].map((label) => ({
             title: label,
-            description: binding?.name,
+            description: '',
           }));
     return (
       <div className="grid gap-[var(--blueprint-preview-gap)]">
@@ -333,14 +329,12 @@ export function renderAdditionalPreviewSectionBody({
 
 function buildKanbanColumns(
   props: Record<string, any>,
-  table: Record<string, any> | null,
-  binding: Record<string, any> | null,
   t: TFunction
 ): Array<Record<string, any> & { cards: Array<Record<string, any>> }> {
   const propColumns = toObjectArray(props.columns || props.lanes || props.statuses);
   const topLevelCards = toObjectArray(props.cards || props.items || props.tasks || props.data);
   if (propColumns.length > 0) {
-    return propColumns.map((column, index) => {
+    const columns = propColumns.map((column, index) => {
       const cards = toObjectArray(column.cards || column.items || column.tasks);
       return {
         ...column,
@@ -350,6 +344,11 @@ function buildKanbanColumns(
             : topLevelCards.filter((card) => cardBelongsToColumn(card, column, index)),
       };
     });
+    if (columns.some((column) => column.cards.length > 0)) return columns;
+    return columns.map((column, index) => ({
+      ...column,
+      cards: [defaultKanbanCard(column, index, t)],
+    }));
   }
 
   const defaultColumns: Array<Record<string, any>> = [
@@ -366,14 +365,28 @@ function buildKanbanColumns(
 
   return defaultColumns.map((column, index) => ({
     ...column,
-    cards: [
-      {
-        title: t('blueprint.preview.kanban.itemLabel', { title: column.title }),
-        description: index === 0 ? binding?.name : table?.label || table?.name,
-        badge: index === 0 ? 'Draft' : index === 1 ? 'Active' : 'Done',
-      },
-    ] satisfies Array<Record<string, any>>,
+    cards: [defaultKanbanCard(column, index, t)],
   }));
+}
+
+function defaultKanbanCard(
+  column: Record<string, any>,
+  index: number,
+  t: TFunction
+): Record<string, any> {
+  const columnTitle = String(column.title || column.label || column.name || `Column ${index + 1}`);
+  const descriptions = [
+    '最初に作成するカードの内容を確認する',
+    '担当者や優先度を見ながら作業中の状態を確認する',
+    '完了したカードの見え方と履歴に残す情報を確認する',
+  ];
+  return {
+    title: t('blueprint.preview.kanban.itemLabel', { title: columnTitle }),
+    description: descriptions[index] || descriptions[0],
+    badge: index === 0 ? 'Draft' : index === 1 ? 'Active' : 'Done',
+    assignee: index === 0 ? 'Product' : index === 1 ? 'Design' : 'QA',
+    dueDate: index === 0 ? '今週' : index === 1 ? '次回レビュー' : '確認済み',
+  };
 }
 
 function cardBelongsToColumn(

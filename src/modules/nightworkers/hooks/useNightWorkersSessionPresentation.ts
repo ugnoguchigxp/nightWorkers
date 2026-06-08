@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type {
+  ActivityArtifact,
   BlueprintSpecificationWorkspace,
   ImplementationQueueDashboard,
   Repository,
@@ -46,6 +47,7 @@ type UseNightWorkersSessionPresentationInput = {
   latestRunReviews: ReviewResult[];
   latestRunTodos: TaskRunTodo[];
   taskMessages: TaskMessage[];
+  activityArtifacts: ActivityArtifact[];
   sessions: Task[];
   projects: Repository[];
 };
@@ -59,6 +61,7 @@ export function useNightWorkersSessionPresentation({
   latestRunReviews,
   latestRunTodos,
   taskMessages,
+  activityArtifacts,
   sessions,
   projects,
 }: UseNightWorkersSessionPresentationInput) {
@@ -71,6 +74,7 @@ export function useNightWorkersSessionPresentation({
       events: latestRunEvents,
       reviews: latestRunReviews,
       messages: taskMessages,
+      activityArtifacts,
     });
     if (
       activeSpecificationWorkspace &&
@@ -106,6 +110,7 @@ export function useNightWorkersSessionPresentation({
     latestRunReviews,
     latestRunTodos,
     taskMessages,
+    activityArtifacts,
   ]);
   const queueEntryByTaskId = useMemo(() => {
     const map = new Map<string, ImplementationQueueDashboard['queued'][number]>();

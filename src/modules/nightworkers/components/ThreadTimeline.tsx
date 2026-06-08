@@ -36,6 +36,12 @@ import {
   ThinkingIndicator,
 } from './ThreadTimelineStreaming';
 
+export {
+  buildPersistedStreamingResponsePreview,
+  buildStreamingResponsePreview,
+  formatVisibleAssistantText,
+} from './ThreadTimelineStreaming';
+
 type ThreadTimelineProps = {
   session: Task;
   runs: TaskRun[];
@@ -95,9 +101,7 @@ export function ThreadTimeline({
     ? transcriptItems
     : buildNormalTranscriptItems(transcriptItems);
   const hasActivityTranscript = transcriptItems.length > 0;
-  const chatMessages = taskMessages.filter(
-    (message) => message.role === 'user' || message.role === 'assistant'
-  );
+  const chatMessages = taskMessages.filter(isUserVisibleChatMessage);
   const timelineItems = [
     ...chatMessages.map((message) => ({
       kind: 'message' as const,
@@ -464,6 +468,16 @@ export function buildReplaceContentCodeBlockData(input: {
       language: 'diff',
     },
   ];
+}
+
+export function isUserVisibleChatMessage(message: TaskMessage): boolean {
+  if (message.role !== 'user' && message.role !== 'assistant') return false;
+  const intent = (message.metadataJson as any)?.intent;
+  return (
+    intent !== 'blueprint_raw_output' &&
+    intent !== 'blueprint_db_design_raw_output' &&
+    intent !== 'draft_spec'
+  );
 }
 
 export function estimateReplacementStats(input: {

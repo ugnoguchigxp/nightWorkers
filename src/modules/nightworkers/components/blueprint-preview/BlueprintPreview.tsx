@@ -11,21 +11,13 @@ import {
   createBlueprintPreviewDesignSettings,
   designReferenceSummary,
 } from './designSettings';
-import {
-  bindingForSection,
-  labelForOption,
-  labelForOptionA11y,
-  tableForSection,
-  toObjectArray,
-} from './previewModel';
+import { labelForOption, labelForOptionA11y, toObjectArray } from './previewModel';
 
 type BlueprintPreviewProps = {
   sessionId?: string | null;
   messageId?: string | null;
   blueprint: Record<string, any>;
   screens: Array<Record<string, any>>;
-  tables: Array<Record<string, any>>;
-  bindings: Array<Record<string, any>>;
   validationIssues?: Array<Record<string, any>>;
 };
 
@@ -34,8 +26,6 @@ export function BlueprintPreview({
   messageId,
   blueprint,
   screens,
-  tables,
-  bindings,
   validationIssues = [],
 }: BlueprintPreviewProps) {
   const { t } = useTranslation();
@@ -193,12 +183,7 @@ export function BlueprintPreview({
 
       <div className="grid gap-[var(--blueprint-preview-gap)]">
         {sections.map((section, index) => (
-          <BlueprintPreviewSection
-            key={String(section.id || index)}
-            section={section}
-            table={tableForSection(section, bindings, tables)}
-            binding={bindingForSection(section, bindings)}
-          />
+          <BlueprintPreviewSection key={String(section.id || index)} section={section} />
         ))}
       </div>
     </div>

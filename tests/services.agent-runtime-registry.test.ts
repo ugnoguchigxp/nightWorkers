@@ -26,7 +26,7 @@ describe('agent runtime registry', () => {
     );
   });
 
-  it('routes active enabled Codex provider settings to the Codex agent lane', () => {
+  it('keeps active enabled Codex provider settings on the native supervisor lane', () => {
     expect(
       resolveRuntimeLane({
         activeLlmProvider: 'codex',
@@ -34,9 +34,9 @@ describe('agent runtime registry', () => {
         env: {},
       })
     ).toMatchObject({
-      lane: 'codex-agent',
-      workerKind: 'codex-agent',
-      source: 'settings',
+      lane: 'native-supervisor',
+      workerKind: 'native-local',
+      source: 'env_default',
     });
   });
 

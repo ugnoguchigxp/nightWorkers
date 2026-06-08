@@ -219,6 +219,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     createSessionMutation,
     deleteSessionMutation,
     startRunMutation,
+    stopRunMutation,
     queueSessionMutation,
     createImplementationQueueEntryMutation,
     archiveImplementationQueueEntryMutation,
@@ -303,6 +304,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     latestRunReviews,
     latestRunTodos,
     taskMessages,
+    activityArtifacts,
     sessions,
     projects,
   });
@@ -450,6 +452,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     deleteSession: (id) => deleteSessionMutation.mutate(id),
     createSession: (input) => createSessionMutation.mutateAsync(input),
     startRun: (sessionId) => startRunMutation.mutateAsync(sessionId),
+    stopRun: (runId) => stopRunMutation.mutateAsync(runId),
     queueSession: (sessionId) => queueSessionMutation.mutateAsync(sessionId),
     createImplementationQueueEntry: async (sessionId) => {
       await createImplementationQueueEntryMutation.mutateAsync(sessionId);

@@ -215,6 +215,147 @@ describe('workbench selectors', () => {
     );
   });
 
+  it('prefers activity artifact rows over embedded Blueprint message payloads', () => {
+    const message: TaskMessage = {
+      id: '44444444-4444-4444-8444-444444444445',
+      taskId: baseTask.id,
+      role: 'assistant',
+      content: '# App Blueprint',
+      messageType: 'markdown_document',
+      metadataJson: {
+        intent: 'app_blueprint',
+        title: 'Legacy Inventory App',
+        artifactRef: { artifactId: 'artifact-blueprint-1', kind: 'app_blueprint', version: 1 },
+        appBlueprint: { name: 'Legacy Inventory App' },
+        validation: { valid: true, issues: [] },
+      },
+      createdAt: '2026-06-02T00:00:01.000Z',
+    };
+
+    const refs = buildWorkbenchArtifactRefs({
+      task: baseTask,
+      messages: [message],
+      activityArtifacts: [
+        {
+          id: 'artifact-blueprint-1',
+          taskId: baseTask.id,
+          runId: null,
+          kind: 'app_blueprint',
+          path: 'artifact-blueprint-1.app-blueprint.json',
+          contentText: JSON.stringify({ name: 'Canonical Inventory App', screens: [] }),
+          metadataJson: {
+            schemaName: 'app_blueprint',
+            title: 'Canonical Inventory App',
+            appBlueprint: { name: 'Canonical Inventory App', screens: [] },
+            validation: { valid: true, issues: [] },
+          },
+          createdAt: '2026-06-02T00:00:02.000Z',
+        },
+      ],
+    });
+
+    const blueprintRefs = refs.filter((ref) => ref.kind === 'app_blueprint');
+    expect(blueprintRefs).toHaveLength(1);
+    expect(blueprintRefs[0]).toMatchObject({
+      title: 'Blueprint: Canonical Inventory App',
+      source: { type: 'artifact_row', artifactId: 'artifact-blueprint-1' },
+    });
+  });
+
+  it('routes DB Design blueprint messages to the Specification Workspace DB Design tab', () => {
+    const message: TaskMessage = {
+      id: '44444444-4444-4444-8444-444444447777',
+      taskId: baseTask.id,
+      role: 'assistant',
+      content: '# DB Design',
+      messageType: 'markdown_document',
+      metadataJson: {
+        intent: 'app_blueprint',
+        artifactType: 'blueprint_db_design',
+        source: 'blueprint-db-design',
+        title: 'Kanban DB Design',
+        appBlueprint: { name: 'Kanban DB Design' },
+        validation: { valid: true, issues: [] },
+      },
+      createdAt: '2026-06-02T00:00:01.000Z',
+    };
+
+    const refs = buildWorkbenchArtifactRefs({
+      task: baseTask,
+      messages: [message],
+    });
+
+    expect(refs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'blueprint_workspace',
+          title: 'DB Design: Kanban DB Design',
+          source: { type: 'task_message', messageId: message.id },
+          metadata: expect.objectContaining({ initialTab: 'db-design' }),
+        }),
+      ])
+    );
+    expect(refs).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'app_blueprint' })])
+    );
+  });
+
+  it('does not promote DB Design activity artifacts into App Blueprint refs', () => {
+    const message: TaskMessage = {
+      id: '44444444-4444-4444-8444-444444447777',
+      taskId: baseTask.id,
+      role: 'assistant',
+      content: '# DB Design',
+      messageType: 'markdown_document',
+      metadataJson: {
+        intent: 'app_blueprint',
+        artifactType: 'blueprint_db_design',
+        source: 'blueprint-db-design',
+        title: 'Kanban DB Design',
+        appBlueprint: { name: 'Kanban DB Design' },
+        validation: { valid: true, issues: [] },
+      },
+      createdAt: '2026-06-02T00:00:01.000Z',
+    };
+
+    const refs = buildWorkbenchArtifactRefs({
+      task: baseTask,
+      messages: [message],
+      activityArtifacts: [
+        {
+          id: 'artifact-db-design-1',
+          taskId: baseTask.id,
+          runId: null,
+          kind: 'app_blueprint',
+          path: 'artifact-db-design-1.app-blueprint.json',
+          contentText: JSON.stringify({ name: 'Kanban DB Design' }),
+          metadataJson: {
+            messageId: message.id,
+            intent: 'app_blueprint',
+            artifactType: 'blueprint_db_design',
+            source: 'blueprint-db-design',
+            title: 'Kanban DB Design',
+            appBlueprint: { name: 'Kanban DB Design' },
+          },
+          createdAt: '2026-06-02T00:00:02.000Z',
+        },
+      ],
+    });
+
+    expect(refs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'blueprint_workspace',
+          title: 'DB Design: Kanban DB Design',
+          metadata: expect.objectContaining({ initialTab: 'db-design' }),
+        }),
+      ])
+    );
+    expect(refs).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'app_blueprint' })])
+    );
+  });
+
   it('builds Specification Workspace refs from accepted Decision Review messages', () => {
     const message: TaskMessage = {
       id: '44444444-4444-4444-8444-444444444446',

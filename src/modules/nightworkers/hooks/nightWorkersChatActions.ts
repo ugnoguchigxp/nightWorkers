@@ -1,7 +1,13 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { MutableRefObject } from 'react';
 import { apiFetch } from '../../../lib/api-base';
-import type { Task, TaskMessage, WorkbenchArtifactContext, WorkbenchChatIntent } from '../types';
+import type {
+  Task,
+  TaskMessage,
+  TaskRun,
+  WorkbenchArtifactContext,
+  WorkbenchChatIntent,
+} from '../types';
 import type { WorkbenchMessageResult } from './nightWorkersWorkspaceState';
 
 type ChatActionsInput = {
@@ -137,6 +143,13 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
         if (result.run) {
           pendingChatRunIdRef.current = result.run.id;
           setPendingChatRunId(result.run.id);
+          queryClient.setQueryData<TaskRun[]>(['sessionRuns', result.run.taskId], (prev = []) => {
+            const next = [...prev];
+            const idx = next.findIndex((run) => run.id === result.run?.id);
+            if (idx >= 0) next[idx] = result.run as TaskRun;
+            else next.unshift(result.run as TaskRun);
+            return next;
+          });
         }
         const latestMessage = result.messages?.[result.messages.length - 1];
         shouldClearPendingAssistant =

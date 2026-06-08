@@ -1,6 +1,7 @@
 import { ChevronRight, GitCompare } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type {
+  ActivityArtifact,
   ProjectFileContent,
   ProjectFileEntry,
   Repository,
@@ -20,6 +21,7 @@ type ArtifactPaneProps = {
   focusType: 'project_tree' | 'artifact';
   selectedArtifact: WorkbenchArtifactRef | null;
   taskMessages: TaskMessage[];
+  activityArtifacts: ActivityArtifact[];
   fileEntries: ProjectFileEntry[];
   fileEntriesByDirectory: Record<string, ProjectFileEntry[]>;
   expandedDirectories: Record<string, boolean>;
@@ -31,19 +33,31 @@ type ArtifactPaneProps = {
   onToggleDirectory: (path: string) => Promise<void>;
   onOpenFile: (path: string) => void;
   onShowDiff: () => void;
+  onQueueSession?: () => Promise<void>;
+  onStartImplementation?: () => Promise<void>;
   onSubmitWorkbenchMessage?: (prompt: string, intent: WorkbenchChatIntent) => Promise<void>;
   isWorkbenchMessageSubmitting?: boolean;
 };
 
 function workspaceInitialTab(value: unknown) {
   if (value === 'design-doc') return 'specification';
+  if (value === 'specification-status') return 'status';
   return value === 'blueprints' ||
     value === 'db-design' ||
     value === 'questionnaire' ||
-    value === 'specification-status' ||
+    value === 'status' ||
     value === 'specification'
     ? value
     : undefined;
+}
+
+function parseArtifactContentJson(content: string | null | undefined): any {
+  if (!content?.trim()) return null;
+  try {
+    return JSON.parse(content);
+  } catch {
+    return null;
+  }
 }
 
 export function ArtifactPane({
@@ -53,6 +67,7 @@ export function ArtifactPane({
   focusType,
   selectedArtifact,
   taskMessages,
+  activityArtifacts,
   fileEntries,
   fileEntriesByDirectory,
   expandedDirectories,
@@ -64,6 +79,8 @@ export function ArtifactPane({
   onToggleDirectory,
   onOpenFile,
   onShowDiff,
+  onQueueSession,
+  onStartImplementation,
   onSubmitWorkbenchMessage,
   isWorkbenchMessageSubmitting = false,
 }: ArtifactPaneProps) {
@@ -79,6 +96,15 @@ export function ArtifactPane({
   const selectedMessage = taskMessageId
     ? taskMessages.find((message) => message.id === taskMessageId)
     : null;
+  const artifactRowId =
+    selectedArtifact?.source.type === 'artifact_row' ? selectedArtifact.source.artifactId : null;
+  const selectedActivityArtifact = artifactRowId
+    ? activityArtifacts.find((artifact) => artifact.id === artifactRowId)
+    : null;
+  const artifactBlueprint =
+    selectedActivityArtifact?.metadataJson?.appBlueprint ||
+    parseArtifactContentJson(selectedActivityArtifact?.contentText);
+  const artifactValidation = selectedActivityArtifact?.metadataJson?.validation;
   const showDocument =
     Boolean(selectedArtifact) &&
     !showDiff &&
@@ -125,15 +151,20 @@ export function ArtifactPane({
             <BlueprintSpecificationWorkspaceViewer
               sessionId={activeSessionId}
               taskMessages={taskMessages}
+              activityArtifacts={activityArtifacts}
               initialTab={workspaceInitialTab(selectedArtifact?.metadata?.initialTab)}
+              onQueueSession={onQueueSession}
+              onStartImplementation={onStartImplementation}
             />
           ) : showBlueprint ? (
             <BlueprintViewer
               sessionId={activeSessionId}
               messageId={taskMessageId}
-              blueprint={selectedArtifact?.metadata?.appBlueprint}
-              validation={selectedArtifact?.metadata?.validation}
-              markdown={selectedMessage?.content}
+              blueprint={artifactBlueprint || selectedArtifact?.metadata?.appBlueprint}
+              validation={artifactValidation || selectedArtifact?.metadata?.validation}
+              markdown={
+                selectedMessage?.content || selectedActivityArtifact?.contentText || undefined
+              }
             />
           ) : showComponentDesign ? (
             <ComponentDesignViewer
@@ -237,11 +268,6 @@ function BlueprintViewer({
     return <MarkdownViewer content={markdown || t('artifact.noBlueprintContent')} />;
   }
   const screens = toObjectArray(blueprint.screens);
-  const tables =
-    isObject(blueprint.databaseSchema) && Array.isArray(blueprint.databaseSchema.tables)
-      ? toObjectArray(blueprint.databaseSchema.tables)
-      : [];
-  const bindings = toObjectArray(blueprint.dataBindings);
   const issues = isObject(validation) ? toObjectArray(validation.issues) : [];
   return (
     <div className="h-full overflow-y-auto px-6 py-5 text-sm text-slate-100">
@@ -253,8 +279,6 @@ function BlueprintViewer({
             messageId={messageId}
             blueprint={blueprint}
             screens={screens}
-            tables={tables}
-            bindings={bindings}
             validationIssues={issues}
           />
         </BlueprintSection>

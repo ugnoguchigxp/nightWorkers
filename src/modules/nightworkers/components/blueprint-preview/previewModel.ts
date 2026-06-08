@@ -1,30 +1,6 @@
 import type { TFunction } from 'i18next';
 
-export function bindingForSection(
-  section: Record<string, any>,
-  bindings: Array<Record<string, any>>
-) {
-  return (
-    bindings.find((binding) => binding.id && binding.id === section.dataBindingId) ||
-    bindings.find((binding) => binding.mode === section.source) ||
-    null
-  );
-}
-
-export function tableForSection(
-  section: Record<string, any>,
-  bindings: Array<Record<string, any>>,
-  tables: Array<Record<string, any>>
-) {
-  const binding = bindingForSection(section, bindings);
-  return tables.find((table) => table.name && table.name === binding?.table) || tables[0] || null;
-}
-
-export function previewColumns(
-  props: Record<string, any>,
-  table: Record<string, any> | null,
-  binding: Record<string, any> | null
-) {
+export function previewColumns(props: Record<string, any>) {
   const propColumns = toObjectArray(props.columns);
   if (propColumns.length > 0) {
     return propColumns.map((column, index) => ({
@@ -33,18 +9,11 @@ export function previewColumns(
     }));
   }
 
-  const tableColumns = toObjectArray(table?.columns);
-  const bindingFields = Array.isArray(binding?.fields) ? binding.fields.map(String) : [];
-  const visibleColumns =
-    bindingFields.length > 0
-      ? tableColumns.filter((column) => bindingFields.includes(String(column.name)))
-      : tableColumns;
-
-  const columns = visibleColumns.length > 0 ? visibleColumns : tableColumns;
-  return columns.slice(0, 5).map((column, index) => ({
-    key: String(column.name || index),
-    label: titleCase(String(column.label || column.name || `Column ${index + 1}`)),
-  }));
+  return [
+    { key: 'name', label: 'Name' },
+    { key: 'status', label: 'Status' },
+    { key: 'owner', label: 'Owner' },
+  ];
 }
 
 export function previewRows(
@@ -108,11 +77,7 @@ function firstString(...values: unknown[]) {
   return '';
 }
 
-export function chartPreviewItems(
-  props: Record<string, any>,
-  table: Record<string, any> | null,
-  binding: Record<string, any> | null
-) {
+export function chartPreviewItems(props: Record<string, any>) {
   const sourceItems = toObjectArray(props.data || props.items || props.cards);
   if (sourceItems.length > 0) {
     return sourceItems.slice(0, 6).map((item, index) => ({
@@ -121,7 +86,7 @@ export function chartPreviewItems(
     }));
   }
 
-  const columns = previewColumns(props, table, binding);
+  const columns = previewColumns(props);
   return columns.slice(0, 5).map((column, index) => ({
     label: column.label,
     value: 24 + index * 14,
@@ -138,12 +103,7 @@ export function compactChartLabel(value: unknown) {
   return label.length > 9 ? `${label.slice(0, 8)}...` : label;
 }
 
-export function previewGenericItems(
-  props: Record<string, any>,
-  table: Record<string, any> | null,
-  binding: Record<string, any> | null,
-  t: TFunction
-) {
+export function previewGenericItems(props: Record<string, any>, t: TFunction) {
   const propItems = toObjectArray(
     props.items || props.columns || props.controls || props.lines || props.insights
   );
@@ -154,25 +114,17 @@ export function previewGenericItems(
     }));
   }
 
-  const columns = previewColumns(props, table, binding);
+  const columns = previewColumns(props);
   if (columns.length > 0) {
     return columns.slice(0, 4).map((column) => ({
       title: column.label,
-      description: binding
-        ? `Mapped from ${String(binding.name || binding.id)}`
-        : `Field ${column.key}`,
+      description: `Sample ${column.key}`,
     }));
   }
 
   return [
     {
-      title: String(
-        props.title ||
-          binding?.name ||
-          table?.label ||
-          table?.name ||
-          t('blueprint.preview.sectionFallbackTitle')
-      ),
+      title: String(props.title || t('blueprint.preview.sectionFallbackTitle')),
       description: String(
         props.description || props.body || t('blueprint.preview.sectionFallbackDescription')
       ),
@@ -180,22 +132,9 @@ export function previewGenericItems(
   ];
 }
 
-export function sectionFallbackText(
-  componentName: string,
-  table: Record<string, any> | null,
-  binding: Record<string, any> | null,
-  t: TFunction
-) {
-  const source = binding
-    ? t('blueprint.preview.bindingSource', { name: String(binding.name || binding.id) })
-    : t('blueprint.preview.staticSource');
-  const tableName = table
-    ? t('blueprint.preview.tableContext', { name: String(table.label || table.name) })
-    : '';
+export function sectionFallbackText(componentName: string, t: TFunction) {
   return t('blueprint.preview.sectionFallbackText', {
     componentName: componentName || 'Section',
-    source,
-    tableName,
   });
 }
 

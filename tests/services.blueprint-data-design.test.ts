@@ -18,7 +18,59 @@ describe('Blueprint data-design service helpers', () => {
       repairKind: 'extracted_candidate',
     });
     expect(parsed.blueprint.databaseSchema.tables.length).toBeGreaterThan(0);
-    expect(parsed.blueprint.dataBindings.length).toBeGreaterThan(0);
+    expect(parsed.blueprint.dataBindings).toEqual([]);
+    expect(parsed.validation.valid).toBe(true);
+  });
+
+  it('repairs common DB Design JSON syntax drift before validation', () => {
+    const raw = JSON.stringify(representativeAppBlueprint)
+      .replace('"id"', 'id')
+      .replace('"name"', 'name')
+      .replace('"bp-fixture"', "'bp-fixture'")
+      .replace(/"learningHooks":\[\]/, '"learningHooks":[] ,');
+
+    const parsed = parseAndValidateBlueprintDataDesignOutput(raw);
+
+    expect(parsed.jsonRepair).toMatchObject({
+      repaired: true,
+      repairKind: 'jsonrepair',
+    });
+    expect(parsed.blueprint.id).toBe(representativeAppBlueprint.id);
+    expect(parsed.blueprint.dataBindings).toEqual([]);
+    expect(parsed.validation.valid).toBe(true);
+  });
+
+  it('drops DB Design bindings and section dataBindingId values before validation', () => {
+    const blueprintWithBindings = {
+      ...representativeAppBlueprint,
+      dataBindings: [
+        {
+          id: 'stale-binding',
+          name: 'Stale Binding',
+          table: 'missing-table',
+          mode: 'list',
+          fields: ['missing-field'],
+          filters: [],
+          sort: [],
+        },
+      ],
+      screens: [
+        {
+          ...representativeAppBlueprint.screens[0],
+          sections: [
+            {
+              ...representativeAppBlueprint.screens[0].sections[0],
+              dataBindingId: 'stale-binding',
+            },
+          ],
+        },
+      ],
+    };
+
+    const parsed = parseAndValidateBlueprintDataDesignOutput(JSON.stringify(blueprintWithBindings));
+
+    expect(parsed.blueprint.dataBindings).toEqual([]);
+    expect(parsed.blueprint.screens[0]?.sections[0]?.dataBindingId).toBeUndefined();
     expect(parsed.validation.valid).toBe(true);
   });
 

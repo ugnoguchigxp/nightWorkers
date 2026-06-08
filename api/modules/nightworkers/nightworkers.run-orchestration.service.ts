@@ -249,6 +249,10 @@ export async function startTaskRun(taskId: string) {
         },
         sink
       );
+      const latestRunBeforeFinalize = await repo.getTaskRun(run.id);
+      const stopWasRequested =
+        latestRunBeforeFinalize?.status === 'cancelled' ||
+        runtimeResult.terminalState === 'cancelled';
 
       await repo.createRunEvent({
         version: 1,
@@ -265,6 +269,42 @@ export async function startTaskRun(taskId: string) {
           riskLevel: runtimeResult.riskLevel,
         },
       });
+
+      if (stopWasRequested) {
+        const outcome = outcomeFromRuntimeResult(runtimeResult);
+        const finalReport = runtimeResult.finalReport || outcome.summary;
+        await repo.updateTaskRun(run.id, {
+          status: 'cancelled',
+          endedAt: new Date(),
+          finishedAt: new Date(),
+          logContent: runtimeResult.logContent,
+          diffPatch: runtimeResult.diffPatch,
+          testResults: runtimeResult.testResults,
+          finalReport,
+          finalJudgment: null,
+          summary: runtimeResult.summary || outcome.summary,
+        });
+        await repo.updateTaskStatus(taskId, 'ready');
+        await completeImplementationQueueEntryForRun(run.id, 'cancelled');
+        await repo.createTaskMessage({
+          taskId,
+          runId: run.id,
+          role: 'assistant',
+          content: finalReport,
+          messageType: 'text',
+          payloadJson: {
+            finalReport,
+            summary: runtimeResult.summary || outcome.summary,
+            status: 'cancelled',
+          },
+        });
+        await safelyRefreshConversationContext({
+          taskId,
+          runId: run.id,
+          reason: 'run_finished',
+        });
+        return;
+      }
 
       await repo.updateTaskRun(run.id, {
         status: 'finalizing',
@@ -365,6 +405,43 @@ export async function startTaskRun(taskId: string) {
   })();
 
   return compiledRun ?? run;
+}
+
+export async function stopTaskRun(runId: string) {
+  const run = await repo.getTaskRun(runId);
+  if (!run) {
+    throw new NotFoundError('Run not found');
+  }
+  if (!['running', 'context_compiling', 'compiling_context', 'finalizing'].includes(run.status)) {
+    return run;
+  }
+
+  const runtime = resolveAgentRuntime(run.workerKind as any);
+  await runtime.stop(runId);
+  await repo.createRunEvent({
+    version: 1,
+    runId,
+    taskId: run.taskId,
+    timestamp: new Date().toISOString(),
+    type: 'run.stop_requested',
+    severity: 'warning',
+    actor: 'human',
+    message: 'User requested run stop from the composer.',
+    data: {
+      workerKind: run.workerKind,
+      previousStatus: run.status,
+    },
+  });
+  const stoppedRun = await repo.updateTaskRun(runId, {
+    status: 'cancelled',
+    endedAt: new Date(),
+    finishedAt: new Date(),
+    summary: run.summary || 'Run stop requested by user.',
+    finalReport: run.finalReport || 'Run stop requested by user.',
+  });
+  await repo.updateTaskStatus(run.taskId, 'ready');
+  await completeImplementationQueueEntryForRun(runId, 'cancelled');
+  return stoppedRun ?? run;
 }
 
 function getSessionQueueMaxConcurrency() {

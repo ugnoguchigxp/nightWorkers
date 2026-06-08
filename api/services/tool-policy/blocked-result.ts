@@ -5,6 +5,18 @@ function emptyPayloadByTool(toolName: ToolCallRequest['toolName']): Record<strin
   if (toolName === 'list_dir') return { dirs: [], files: [] };
   if (toolName === 'find_file') return { files: [], count: 0 };
   if (toolName === 'read_file') return { content: '', filePath: '', totalLines: 0 };
+  if (toolName === 'read_current_specification') {
+    return {
+      taskId: '',
+      found: false,
+      messageId: null,
+      title: null,
+      content: '',
+      generatedAt: null,
+      digest: null,
+      sources: {},
+    };
+  }
   if (toolName === 'inspect_structure') {
     return { kind: 'json', filePath: '', paths: [], truncated: false };
   }

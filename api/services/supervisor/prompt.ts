@@ -95,11 +95,12 @@ export function buildRound2PromptPacket(input: Round2PromptPacketInput): Supervi
     roundPolicy: [],
     projectContext: [
       `プロジェクトルート: ${input.projectRoot}`,
+      input.taskId ? `現在のTask ID: ${input.taskId}` : null,
       externalAllowedPaths.length > 0
         ? `許可済み外部パス: ${externalAllowedPaths.join(', ')}`
         : '許可済み外部パス: なし',
       '',
-    ],
+    ].filter((line): line is string => line !== null),
     runtimeContext: [
       ...(codexGuidance ? [codexGuidance] : []),
       '[Skill Access]',

@@ -18,6 +18,7 @@ export type SupervisorPromptPacket = {
 
 export type Round2PromptPacketInput = {
   projectRoot: string;
+  taskId?: string;
   jobType: JobType;
   tools: ToolDefinition[];
   externalAllowedPaths?: string[];

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { appBlueprintSchema } from '../shared/schemas/app-blueprint.schema';
+import {
+  blueprintNodeSchema,
+  blueprintSectionOverrideSchema,
+  blueprintSectionPatchSchema,
+} from '../shared/schemas/app-blueprint-ui.schema';
 import { blueprintComponentNameSchema } from '../shared/schemas/blueprint-catalog.schema';
 import { representativeAppBlueprint } from './fixtures/app-blueprint';
 
@@ -22,6 +27,99 @@ describe('App Blueprint schemas', () => {
 
   it('rejects low-level component names', () => {
     expect(() => blueprintComponentNameSchema.parse('Button')).toThrow();
+  });
+
+  it('accepts preset and custom section composition contracts', () => {
+    const parsed = appBlueprintSchema.parse({
+      ...representativeAppBlueprint,
+      databaseSchema: { tables: [], relations: [] },
+      dataBindings: [],
+      screens: [
+        {
+          ...representativeAppBlueprint.screens[0],
+          sections: [
+            {
+              kind: 'preset_section',
+              id: 'customers-search',
+              preset: 'search_header',
+              props: {
+                title: 'Customers',
+                placeholder: 'Search customers...',
+              },
+              overrides: [
+                {
+                  target: 'searchInput',
+                  set: { layout: { width: '1/2' } },
+                },
+                {
+                  target: 'actions',
+                  insert: {
+                    kind: 'component',
+                    id: 'add-customer',
+                    component: 'Button',
+                    props: { label: 'Add customer', variant: 'default' },
+                  },
+                },
+              ],
+            },
+            {
+              kind: 'custom_section',
+              id: 'operations-overview',
+              root: {
+                kind: 'layout',
+                layout: 'grid',
+                props: { columns: 2 },
+                children: [
+                  {
+                    kind: 'component',
+                    id: 'open-incidents',
+                    component: 'Card',
+                    props: { title: 'Open incidents', description: 'Needs attention' },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(parsed.screens[0]?.sections[0]?.kind).toBe('preset_section');
+    expect(parsed.screens[0]?.sections[1]?.kind).toBe('custom_section');
+  });
+
+  it('allows low-level components only inside Blueprint nodes', () => {
+    expect(
+      blueprintNodeSchema.parse({
+        kind: 'component',
+        id: 'primary-action',
+        component: 'Button',
+        props: { label: 'Create' },
+      }).component
+    ).toBe('Button');
+  });
+
+  it('accepts the section patch refinement contract', () => {
+    const patch = blueprintSectionPatchSchema.parse({
+      op: 'insert',
+      target: 'actions',
+      node: {
+        kind: 'component',
+        id: 'add-customer',
+        component: 'Button',
+        props: { label: 'Add customer' },
+      },
+    });
+
+    expect(patch.position).toBe('end');
+  });
+
+  it('rejects no-op section overrides', () => {
+    expect(() =>
+      blueprintSectionOverrideSchema.parse({
+        target: 'searchInput',
+      })
+    ).toThrow(/Override must define/);
   });
 
   it('accepts the Composia-derived catalog component vocabulary', () => {

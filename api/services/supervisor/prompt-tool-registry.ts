@@ -102,6 +102,14 @@ export const toolRegistry = {
       ['filePath']
     ),
   },
+  read_current_specification: {
+    name: 'read_current_specification',
+    description:
+      'NightWorkers内蔵の現在タスク仕様書を読む。taskId を省略すると現在のTask IDを使う。git上のファイルではなく、Specification Artifact の最新 draft_spec Markdown だけを返す。Questionnaire / Blueprint / DB Design は直接返さない。',
+    inputSchema: objectSchema({
+      taskId: { type: 'string' },
+    }),
+  },
   search_files: {
     name: 'search_files',
     description: 'リポジトリ内の文字列検索を行う。',
@@ -308,6 +316,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   planning: [
     'read_skill',
     'search_skill',
+    'read_current_specification',
     'list_dir',
     'read_file',
     'search_files',
@@ -317,6 +326,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   minor_code_edit: [
     'read_skill',
     'search_skill',
+    'read_current_specification',
     'read_file',
     'search_files',
     'copy_directory',
@@ -329,6 +339,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   major_code_edit: [
     'read_skill',
     'search_skill',
+    'read_current_specification',
     'replace_todo_list',
     'start_todo',
     'complete_todo',
@@ -349,6 +360,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   review: [
     'read_skill',
     'search_skill',
+    'read_current_specification',
     'git_status',
     'git_diff',
     'read_file',
@@ -359,6 +371,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   investigation: [
     'read_skill',
     'search_skill',
+    'read_current_specification',
     'list_dir',
     'read_file',
     'search_files',
@@ -369,6 +382,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   runtime_debug: [
     'read_skill',
     'search_skill',
+    'read_current_specification',
     'read_file',
     'search_files',
     'run_command',
@@ -378,6 +392,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   test_and_verification: [
     'read_skill',
     'search_skill',
+    'read_current_specification',
     'run_verification',
     'run_command',
     'read_file',
@@ -395,6 +410,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   docs: [
     'read_skill',
     'search_skill',
+    'read_current_specification',
     'list_dir',
     'read_file',
     'search_files',
@@ -413,6 +429,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   code: [
     'read_skill',
     'search_skill',
+    'read_current_specification',
     'list_dir',
     'read_file',
     'search_files',
@@ -424,6 +441,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   refactor: [
     'read_skill',
     'search_skill',
+    'read_current_specification',
     'list_dir',
     'read_file',
     'search_files',
@@ -435,6 +453,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   test: [
     'read_skill',
     'search_skill',
+    'read_current_specification',
     'read_file',
     'search_files',
     'apply_patch',
@@ -446,6 +465,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   config: [
     'read_skill',
     'search_skill',
+    'read_current_specification',
     'list_dir',
     'read_file',
     'search_files',
@@ -457,6 +477,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   dependency: [
     'read_skill',
     'search_skill',
+    'read_current_specification',
     'read_file',
     'search_files',
     'run_command',
@@ -467,6 +488,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   data_migration: [
     'read_skill',
     'search_skill',
+    'read_current_specification',
     'list_dir',
     'read_file',
     'search_files',
@@ -478,6 +500,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   blueprint: [
     'read_skill',
     'search_skill',
+    'read_current_specification',
     'read_file',
     'search_files',
     'apply_patch',
@@ -487,6 +510,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   ui_ux: [
     'read_skill',
     'search_skill',
+    'read_current_specification',
     'read_file',
     'search_files',
     'apply_patch',
@@ -513,6 +537,7 @@ export function getExecutableWorkerToolName(name: string): WorkerToolName | null
   if (
     name === 'list_dir' ||
     name === 'read_file' ||
+    name === 'read_current_specification' ||
     name === 'search_files' ||
     name === 'search_web' ||
     name === 'fetch_content' ||

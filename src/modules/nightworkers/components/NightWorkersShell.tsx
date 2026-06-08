@@ -38,15 +38,19 @@ type NightWorkersShellProps = {
 function buildBlueprintArtifactRef(message: TaskMessage): WorkbenchArtifactRef {
   const metadata = message.metadataJson || {};
   const blueprint = metadata.appBlueprint || {};
-  const title = blueprint.name || metadata.title || 'App Blueprint';
+  const title = blueprint.name || metadata.display?.title || metadata.title || 'App Blueprint';
+  const artifactId = metadata.artifactRef?.artifactId;
   return {
-    id: `message-${message.id}`,
+    id: typeof artifactId === 'string' ? `artifact-${artifactId}` : `message-${message.id}`,
     taskId: message.taskId,
     runId: message.runId || undefined,
     kind: 'app_blueprint',
     title: `Blueprint: ${title}`,
-    summary: message.content.slice(0, 160),
-    source: { type: 'task_message', messageId: message.id },
+    summary: String(metadata.display?.summary || message.content.slice(0, 160)),
+    source:
+      typeof artifactId === 'string'
+        ? { type: 'artifact_row', artifactId }
+        : { type: 'task_message', messageId: message.id },
     createdAt: String(message.createdAt),
     metadata,
   };
@@ -107,6 +111,15 @@ function buildArtifactContext(
     )
     .filter(Boolean)
     .slice(0, 10);
+  const tables = Array.isArray(toRecord(appBlueprint?.databaseSchema)?.tables)
+    ? (toRecord(appBlueprint?.databaseSchema)?.tables as unknown[])
+    : [];
+  const tableNames = tables
+    .map((table) => toRecord(table))
+    .filter((table): table is Record<string, any> => Boolean(table))
+    .map((table) => String(table.label || table.name || ''))
+    .filter(Boolean)
+    .slice(0, 10);
   return {
     artifactId: artifact.id,
     kind: artifact.kind,
@@ -115,9 +128,11 @@ function buildArtifactContext(
     source: artifact.source,
     metadata: {
       intent: typeof metadata.intent === 'string' ? metadata.intent : undefined,
+      artifactType: typeof metadata.artifactType === 'string' ? metadata.artifactType : undefined,
       appBlueprintName: String(appBlueprint?.name || appBlueprint?.id || '') || undefined,
       screenNames: screenNames.length ? screenNames : undefined,
       sectionNames: sectionNames.length ? sectionNames : undefined,
+      tableNames: tableNames.length ? tableNames : undefined,
       initialTab: typeof metadata.initialTab === 'string' ? metadata.initialTab : undefined,
     },
   };
@@ -423,6 +438,17 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                 }
                 await submitPrompt(prompt, intent);
               }}
+              canStopActiveRun={Boolean(
+                workspace.latestRun &&
+                  ['running', 'context_compiling', 'compiling_context', 'finalizing'].includes(
+                    workspace.latestRun.status
+                  )
+              )}
+              onStopActiveRun={async () => {
+                const runId = workspace.latestRun?.id;
+                if (!runId) return;
+                await workspace.stopRun(runId);
+              }}
               onOpenBlueprintArtifact={handleOpenBlueprintArtifact}
               isBlueprintArtifactOpen={isBlueprintArtifactOpen}
               isBlueprintActionBusy={workspace.isChatSubmitting}
@@ -496,6 +522,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                     focusType={artifactFocus.type === 'project_tree' ? 'project_tree' : 'artifact'}
                     selectedArtifact={selectedArtifact}
                     taskMessages={workspace.taskMessages}
+                    activityArtifacts={workspace.activityArtifacts}
                     latestRun={workspace.latestRun}
                     fileEntries={workspace.projectFileEntries}
                     fileEntriesByDirectory={workspace.projectFileEntriesByDirectory}
@@ -517,6 +544,23 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                       if (diffArtifact)
                         setArtifactFocus({ type: 'artifact', artifact: diffArtifact });
                     }}
+                    onQueueSession={async () => {
+                      if (!workspace.activeSession) return;
+                      await workspace.createImplementationQueueEntry(workspace.activeSession.id);
+                    }}
+                    onStartImplementation={async () => {
+                      if (!workspace.activeSession) return;
+                      setArtifactFocus({ type: 'closed' });
+                      await workspace.sendWorkbenchMessage(
+                        workspace.activeSession.id,
+                        [
+                          '現在のSpecification artifactを読み込み、この設計書の実装を開始してください。',
+                          '実装前に read_current_specification で最新の仕様書を確認し、仕様書に沿って必要な変更を進めてください。',
+                        ].join('\n'),
+                        'run_task',
+                        selectedArtifactContext
+                      );
+                    }}
                     isWorkbenchMessageSubmitting={workspace.isChatSubmitting}
                     onSubmitWorkbenchMessage={async (prompt, intent) => {
                       if (workspace.activeSession) {
@@ -531,7 +575,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                           .find(
                             (message) =>
                               message.messageType === 'markdown_document' &&
-                              message.metadataJson?.appBlueprint
+                              (message.metadataJson?.appBlueprint ||
+                                message.metadataJson?.artifactRef?.artifactId)
                           );
                         if (latestBlueprintMessage) {
                           setArtifactFocus({

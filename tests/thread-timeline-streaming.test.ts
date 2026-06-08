@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildPersistedStreamingResponsePreview,
   formatVisibleAssistantText,
+  isUserVisibleChatMessage,
 } from '../src/modules/nightworkers/components/ThreadTimeline';
 
 describe('ThreadTimeline streaming persistence', () => {
@@ -144,5 +145,43 @@ describe('ThreadTimeline streaming persistence', () => {
     });
 
     expect(preview?.visibleText).toBe('schema-first stream');
+  });
+
+  it('keeps blueprint raw diagnostics out of the normal chat timeline', () => {
+    expect(
+      isUserVisibleChatMessage({
+        id: 'msg-raw',
+        taskId: 'task-1',
+        role: 'assistant',
+        content: '{"id":"raw-blueprint"}',
+        messageType: 'text',
+        metadataJson: { intent: 'blueprint_raw_output' },
+        createdAt: '2026-06-08T00:00:00.000Z',
+      } as any)
+    ).toBe(false);
+
+    expect(
+      isUserVisibleChatMessage({
+        id: 'msg-normal',
+        taskId: 'task-1',
+        role: 'assistant',
+        content: 'Blueprint を作成しました。',
+        messageType: 'text',
+        metadataJson: { intent: 'blueprint_created' },
+        createdAt: '2026-06-08T00:00:01.000Z',
+      } as any)
+    ).toBe(true);
+
+    expect(
+      isUserVisibleChatMessage({
+        id: 'msg-spec',
+        taskId: 'task-1',
+        role: 'assistant',
+        content: '# Specification',
+        messageType: 'markdown_document',
+        metadataJson: { intent: 'draft_spec' },
+        createdAt: '2026-06-08T00:00:02.000Z',
+      } as any)
+    ).toBe(false);
   });
 });

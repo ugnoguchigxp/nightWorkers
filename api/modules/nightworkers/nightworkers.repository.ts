@@ -210,7 +210,28 @@ export async function createTaskMessage(data: {
       dedupeKey: `task_message:${message.id}`,
       createdAt: message.createdAt,
     });
-    if (isAppBlueprintDocumentMessage(data.messageType, data.payloadJson)) {
+    if (isAppBlueprintProjectionMessage(data.messageType, data.payloadJson)) {
+      await appendActivityEvent({
+        taskId: data.taskId,
+        runId: data.runId ?? null,
+        turnId: message.id,
+        kind: 'system.info',
+        source: 'assistant',
+        status: 'completed',
+        text: `Blueprint artifact: ${data.payloadJson.display?.title || data.payloadJson.title || data.payloadJson.appBlueprint?.name || 'App Blueprint'}`,
+        payloadJson: {
+          messageId: message.id,
+          messageType: data.messageType ?? null,
+          artifactRef: data.payloadJson.artifactRef,
+          display: data.payloadJson.display ?? null,
+          metadata: data.payloadJson,
+        },
+        artifactId: data.payloadJson.artifactRef.artifactId,
+        externalId: message.id,
+        dedupeKey: `task_message_artifact:${message.id}`,
+        createdAt: message.createdAt,
+      });
+    } else if (isAppBlueprintDocumentMessage(data.messageType, data.payloadJson)) {
       const artifact = await appendActivityArtifact({
         taskId: data.taskId,
         runId: data.runId ?? null,
@@ -291,6 +312,39 @@ export async function createTaskMessage(data: {
   return message;
 }
 
+export async function createBlueprintActivityArtifact(data: {
+  taskId: string;
+  runId?: string | null;
+  messageId?: string | null;
+  title: string;
+  appBlueprint: any;
+  validation?: any;
+  generation?: any;
+  source?: string | null;
+  metadataJson?: Record<string, unknown>;
+}) {
+  return appendActivityArtifact({
+    taskId: data.taskId,
+    runId: data.runId ?? null,
+    kind: 'app_blueprint',
+    path: `${data.messageId || crypto.randomUUID()}.app-blueprint.json`,
+    contentText: JSON.stringify(data.appBlueprint, null, 2),
+    metadataJson: {
+      messageId: data.messageId ?? null,
+      intent: 'app_blueprint',
+      title: data.title,
+      appBlueprint: data.appBlueprint,
+      validation: data.validation,
+      generation: data.generation,
+      source: data.source,
+      schemaName: 'app_blueprint',
+      schemaVersion: 1,
+      status: data.validation?.valid === false ? 'invalid' : 'valid',
+      ...(data.metadataJson || {}),
+    },
+  });
+}
+
 function isAppBlueprintDocumentMessage(messageType: string | null | undefined, payloadJson: any) {
   return Boolean(
     messageType === 'markdown_document' &&
@@ -298,6 +352,17 @@ function isAppBlueprintDocumentMessage(messageType: string | null | undefined, p
       typeof payloadJson === 'object' &&
       payloadJson.intent === 'app_blueprint' &&
       payloadJson.appBlueprint
+  );
+}
+
+function isAppBlueprintProjectionMessage(messageType: string | null | undefined, payloadJson: any) {
+  return Boolean(
+    messageType === 'markdown_document' &&
+      payloadJson &&
+      typeof payloadJson === 'object' &&
+      payloadJson.intent === 'app_blueprint' &&
+      payloadJson.artifactRef &&
+      typeof payloadJson.artifactRef.artifactId === 'string'
   );
 }
 

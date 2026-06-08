@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import {
   type BlueprintSpecificationWorkspace,
   type DesignQuestionnaireAnswer,
@@ -16,6 +17,21 @@ import { isAppBlueprintMessage } from './nightworkers.planning-helpers.service';
 import * as repo from './nightworkers.repository';
 
 type TaskMessageRow = Awaited<ReturnType<typeof repo.listTaskMessages>>[number];
+
+type SpecificationDecision = {
+  question: string;
+  answer: string;
+  why: string;
+  section: string;
+  deferred: boolean;
+};
+
+const specificationDocumentDraftSchema = z.object({
+  title: z.string().min(1),
+  content: z.string().min(1),
+});
+
+const MAX_DESIGN_QUESTIONNAIRE_PAGES = 4;
 
 import {
   buildDesignQuestionnaireSessionView,
@@ -239,6 +255,10 @@ function normalizeQuestionText(value: unknown) {
 
 export async function generateDesignQuestionnaireFollowUp(taskId: string, sessionId: string) {
   const session = await getDesignQuestionnaireSession(taskId, sessionId);
+  if (session.questionSets.length >= MAX_DESIGN_QUESTIONNAIRE_PAGES) {
+    await repo.updateDesignQuestionnaireSessionStatus(sessionId, 'review_ready');
+    return getDesignQuestionnaireSession(taskId, sessionId);
+  }
   const rawOutput = await generateDesignQuestionnaireFollowUpRawOutput(session);
   const parsed = parseDesignQuestionnaireRaw(rawOutput, {
     taskId: session.taskId,
@@ -263,6 +283,10 @@ export async function generateDesignQuestionnaireFollowUp(taskId: string, sessio
 }
 
 async function assessDesignQuestionnaireNextStep(taskId: string, session: any) {
+  if (session.questionSets.length >= MAX_DESIGN_QUESTIONNAIRE_PAGES) {
+    await repo.updateDesignQuestionnaireSessionStatus(session.id, 'review_ready');
+    return getDesignQuestionnaireSession(taskId, session.id);
+  }
   const nextSequence =
     session.questionSets.reduce((max: number, set: any) => Math.max(max, set.sequence), 0) + 1;
   const rawOutput = await generateDesignQuestionnaireFollowUpDecisionRawOutput(session);
@@ -481,6 +505,18 @@ export async function generateSpecificationStatusBlueprint(
       title: task.title || 'App Blueprint',
       prompt,
     });
+    const artifact = await repo.createBlueprintActivityArtifact({
+      taskId,
+      title: blueprint.name || task.title || 'App Blueprint',
+      appBlueprint: blueprint,
+      validation,
+      generation,
+      source: 'status',
+      metadataJson: {
+        questionnaireSessionId: session.id,
+      },
+    });
+    if (!artifact) throw new Error('Blueprint artifact persistence failed.');
     const message = await repo.createTaskMessage({
       taskId,
       role: 'assistant',
@@ -489,10 +525,21 @@ export async function generateSpecificationStatusBlueprint(
       payloadJson: {
         intent: 'app_blueprint',
         title: blueprint.name || task.title || 'App Blueprint',
+        artifactType: 'app_blueprint',
+        artifactRef: {
+          artifactId: artifact.id,
+          kind: 'app_blueprint',
+          version: 1,
+        },
+        display: {
+          title: blueprint.name || task.title || 'App Blueprint',
+          summary: blueprint.description || renderBlueprintMarkdown(blueprint).slice(0, 160),
+          cardKind: 'app_blueprint',
+        },
         appBlueprint: blueprint,
         validation,
         generation,
-        source: 'specification-status',
+        source: 'status',
         questionnaireSessionId: session.id,
       },
     });
@@ -511,7 +558,7 @@ export async function generateSpecificationStatusBlueprint(
         messageType: 'text',
         payloadJson: {
           intent: 'blueprint_raw_output',
-          source: 'specification-status',
+          source: 'status',
           validationStatus: 'failed',
           error: message,
           questionnaireSessionId: session.id,
@@ -563,6 +610,7 @@ export async function generateSpecificationStatusDbDesign(
     payloadJson: {
       intent: 'app_blueprint',
       title: blueprint.name || `${task.title} DB Design`,
+      artifactType: 'blueprint_db_design',
       appBlueprint: blueprint,
       validation: nextValidation,
       generation,
@@ -585,12 +633,15 @@ export async function generateSpecificationStatusDesignDocument(
   const session = await resolveReadyQuestionnaireSession(taskId, input.questionnaireSessionId);
   const workspace = await getSpecificationWorkspace(taskId);
   const messages = await repo.listTaskMessages(taskId);
-  const content = renderSpecificationDesignDocument({
+  const context = buildSpecificationDocumentContext({
     task,
     session,
     workspace,
     messages,
   });
+  const rawOutput = await generateSpecificationDesignDocumentRawOutput(taskId, context);
+  const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
+  const content = parsed.content;
   const message = await repo.createTaskMessage({
     taskId,
     role: 'assistant',
@@ -598,11 +649,18 @@ export async function generateSpecificationStatusDesignDocument(
     messageType: 'markdown_document',
     payloadJson: {
       intent: 'draft_spec',
-      title: 'Specification',
-      source: 'specification-status',
+      title: parsed.title || 'Specification',
+      source: 'status',
       questionnaireSessionId: session.id,
+      generation: {
+        source: 'llm',
+        context: {
+          blueprintSummaryIncluded: Boolean(context.blueprintSummary.trim()),
+          dbDdlReferenceIncluded: Boolean(context.dbDesignDdl.trim()),
+        },
+      },
       markdownDocumentData: {
-        title: 'Specification',
+        title: parsed.title || 'Specification',
         content,
       },
     },
@@ -692,63 +750,471 @@ function renderQuestionnaireDbDesignPrompt(session: any, currentBlueprint: any) 
     `Blueprint: ${currentBlueprint?.name || currentBlueprint?.id || 'current blueprint'}`,
     '',
     '## Output Focus',
-    '- databaseSchema と dataBindings を具体化する。',
+    '- databaseSchema の table / column / relation を具体化する。',
     '- SQL、DDL、migration、Drizzle schema は作らない。',
-    '- UI の screen/section と data binding が整合するようにする。',
+    '- dataBindings や screen.sections[].dataBindingId は扱わない。',
   ].join('\n');
 }
 
-function renderSpecificationDesignDocument(input: {
+function buildSpecificationDocumentContext(input: {
   task: any;
   session: any;
   workspace: BlueprintSpecificationWorkspace;
   messages: TaskMessageRow[];
 }) {
-  const latestBlueprint = [...input.messages].reverse().find((message) => {
-    const metadata = (message.metadataJson || {}) as Record<string, any>;
-    return (
-      metadata.intent === 'app_blueprint' &&
-      metadata.appBlueprint &&
-      metadata.source !== 'blueprint-db-design' &&
-      !metadata.dbDesignTarget
+  const latestBlueprint = findLatestBlueprintMessage(input.messages, 'blueprint');
+  const latestDbDesign = findLatestBlueprintMessage(input.messages, 'db-design');
+  const blueprint = getMessageBlueprint(latestBlueprint);
+  const dbDesignBlueprint = getMessageBlueprint(latestDbDesign);
+  return {
+    task: [
+      `Title: ${input.task.title || 'Untitled'}`,
+      input.task.description ? `Description: ${input.task.description}` : null,
+      input.task.objective ? `Objective: ${input.task.objective}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    questionnaireDecisions: renderQuestionnaireAnswerMarkdown(input.session),
+    blueprintSummary: renderCompressedBlueprintNaturalLanguage(blueprint),
+    dbDesignDdl: renderDbDesignDdlReference(dbDesignBlueprint),
+    traceability: [
+      `Questionnaire session: ${input.session.id}`,
+      latestBlueprint
+        ? `Blueprint message: ${latestBlueprint.id}`
+        : 'Blueprint message: not generated',
+      latestDbDesign
+        ? `DB Design message: ${latestDbDesign.id}`
+        : 'DB Design message: not generated',
+      `Workspace counts: blueprint=${input.workspace.blueprintArtifacts.length}, dbDesign=${input.workspace.dbDesignArtifacts.length}`,
+    ].join('\n'),
+  };
+}
+
+function renderCompressedBlueprintNaturalLanguage(blueprint: Record<string, any> | null) {
+  if (!blueprint) return 'Blueprint は未生成です。';
+  const lines = [
+    `Blueprint "${String(blueprint.name || blueprint.id || 'App Blueprint')}" を採用しています。`,
+  ];
+  if (blueprint.description) {
+    lines.push(`全体方針: ${compactText(String(blueprint.description), 280)}`);
+  }
+  const screens = toRecordArray(blueprint.screens).slice(0, 4);
+  for (const screen of screens) {
+    const screenName = String(screen.name || screen.id || 'Unnamed screen');
+    const path = screen.path ? ` (${String(screen.path)})` : '';
+    lines.push(
+      `画面: ${screenName}${path}。画面種別は ${String(screen.componentName || 'Page')}。`
     );
-  });
-  const latestDbDesign = [...input.messages].reverse().find((message) => {
-    const metadata = (message.metadataJson || {}) as Record<string, any>;
-    return (
-      metadata.intent === 'app_blueprint' &&
-      metadata.appBlueprint &&
-      (metadata.source === 'blueprint-db-design' || metadata.dbDesignTarget)
-    );
-  });
+    const sections = toRecordArray(screen.sections).slice(0, 8);
+    for (const section of sections) {
+      const props = isRecord(section.props) ? section.props : {};
+      const label = String(section.name || props.title || section.id || 'Unnamed section');
+      const component = String(section.componentName || 'Section');
+      const description = compactText(
+        String(props.description || section.visualIntent || section.intent || '').trim(),
+        220
+      );
+      const details = summarizeSectionProps(section);
+      lines.push(
+        `- 採用 section: ${label}。component は ${component}。${description || 'この画面の主要確認対象です。'}${details ? ` ${details}` : ''}`
+      );
+    }
+  }
+  const tasks = toRecordArray(blueprint.implementationTasks).slice(0, 6);
+  if (tasks.length > 0) {
+    lines.push('実装時に意識する作業:');
+    for (const task of tasks) {
+      lines.push(
+        `- ${compactText(String(task.title || task.id || ''), 90)}: ${compactText(String(task.description || ''), 180)}`
+      );
+    }
+  }
+  return lines.join('\n');
+}
+
+function summarizeSectionProps(section: Record<string, any>) {
+  const props = isRecord(section.props) ? section.props : {};
+  const parts: string[] = [];
+  if (Array.isArray(props.columns)) {
+    const columns = props.columns
+      .map((column: unknown) =>
+        isRecord(column) ? String(column.title || column.name || column.id || '') : ''
+      )
+      .filter(Boolean)
+      .slice(0, 5);
+    if (columns.length) parts.push(`列は ${columns.join(' / ')}。`);
+  }
+  if (Array.isArray(props.items)) {
+    const items = props.items
+      .map((item: unknown) =>
+        isRecord(item) ? String(item.label || item.title || item.name || '') : ''
+      )
+      .filter(Boolean)
+      .slice(0, 5);
+    if (items.length) parts.push(`表示項目は ${items.join(' / ')}。`);
+  }
+  if (Array.isArray(props.tabs)) {
+    const tabs = props.tabs
+      .map((item: unknown) =>
+        isRecord(item) ? String(item.label || item.title || item.id || '') : String(item)
+      )
+      .filter(Boolean)
+      .slice(0, 5);
+    if (tabs.length) parts.push(`タブは ${tabs.join(' / ')}。`);
+  }
+  if (Array.isArray(props.filters)) {
+    const filters = props.filters
+      .map((item: unknown) =>
+        isRecord(item) ? String(item.label || item.name || item.id || '') : String(item)
+      )
+      .filter(Boolean)
+      .slice(0, 5);
+    if (filters.length) parts.push(`フィルターは ${filters.join(' / ')}。`);
+  }
+  return parts.join(' ');
+}
+
+function renderDbDesignDdlReference(blueprint: Record<string, any> | null) {
+  if (!blueprint) return 'DB Design は未生成です。';
+  const schema = isRecord(blueprint.databaseSchema) ? blueprint.databaseSchema : {};
+  const tables = toRecordArray(schema.tables);
+  const relations = toRecordArray(schema.relations);
+  if (tables.length === 0) return 'DB Design には table が定義されていません。';
+  const lines: string[] = [];
+  for (const table of tables) {
+    const tableName = safeSqlIdentifier(String(table.name || table.id || 'table'));
+    const columns = toRecordArray(table.columns);
+    lines.push(`CREATE TABLE ${tableName} (`);
+    if (columns.length === 0) {
+      lines.push('  -- columns are not defined');
+    } else {
+      columns.forEach((column, index) => {
+        const columnName = safeSqlIdentifier(
+          String(column.name || column.id || `column_${index + 1}`)
+        );
+        const type = ddlType(column.type);
+        const constraints = [
+          column.primaryKey ? 'PRIMARY KEY' : null,
+          column.nullable === false ? 'NOT NULL' : null,
+          column.unique ? 'UNIQUE' : null,
+        ].filter(Boolean);
+        const suffix = index === columns.length - 1 ? '' : ',';
+        lines.push(
+          `  ${columnName} ${type}${constraints.length ? ` ${constraints.join(' ')}` : ''}${suffix}`
+        );
+      });
+    }
+    lines.push(');');
+    if (Array.isArray(table.indexes)) {
+      for (const index of table.indexes.slice(0, 4)) {
+        const fields = Array.isArray(index)
+          ? index.map((field) => safeSqlIdentifier(String(field)))
+          : [];
+        if (fields.length > 0) {
+          lines.push(
+            `CREATE INDEX idx_${tableName}_${fields.join('_')} ON ${tableName} (${fields.join(', ')});`
+          );
+        }
+      }
+    }
+    lines.push('');
+  }
+  for (const relation of relations) {
+    const fromTable = safeSqlIdentifier(String(relation.fromTable || ''));
+    const fromColumn = safeSqlIdentifier(String(relation.fromColumn || ''));
+    const toTable = safeSqlIdentifier(String(relation.toTable || ''));
+    const toColumn = safeSqlIdentifier(String(relation.toColumn || ''));
+    if (fromTable && fromColumn && toTable && toColumn) {
+      lines.push(
+        `ALTER TABLE ${fromTable} ADD FOREIGN KEY (${fromColumn}) REFERENCES ${toTable} (${toColumn});`
+      );
+    }
+  }
+  return lines.join('\n').trim();
+}
+
+function ddlType(value: unknown) {
+  if (value === 'number' || value === 'integer') return 'INTEGER';
+  if (value === 'boolean') return 'BOOLEAN';
+  if (value === 'date' || value === 'datetime' || value === 'timestamp') return 'DATETIME';
+  if (value === 'json') return 'JSON';
+  return 'TEXT';
+}
+
+function safeSqlIdentifier(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function compactText(value: string, limit: number) {
+  const text = value.replace(/\s+/g, ' ').trim();
+  if (text.length <= limit) return text;
+  return `${text.slice(0, Math.max(0, limit - 1)).trim()}…`;
+}
+
+function _renderSpecificationDesignDocument(input: {
+  task: any;
+  session: any;
+  workspace: BlueprintSpecificationWorkspace;
+  messages: TaskMessageRow[];
+}) {
+  const latestBlueprint = findLatestBlueprintMessage(input.messages, 'blueprint');
+  const latestDbDesign = findLatestBlueprintMessage(input.messages, 'db-design');
+  const blueprint = getMessageBlueprint(latestBlueprint);
+  const dbDesignBlueprint = getMessageBlueprint(latestDbDesign);
+  const decisionRows = collectQuestionnaireDecisions(input.session);
+  const screens = toRecordArray(blueprint?.screens);
+  const implementationTasks = toRecordArray(blueprint?.implementationTasks);
+  const dataSource = dbDesignBlueprint || blueprint;
+  const tables = toRecordArray(dataSource?.databaseSchema?.tables);
+  const relations = toRecordArray(dataSource?.databaseSchema?.relations);
+  const bindings = toRecordArray(dataSource?.dataBindings);
   return [
     `# ${input.task.title || 'Specification'}`,
     '',
-    '## Status',
+    '## 1. 目的',
+    renderSpecificationPurpose(input.task, blueprint),
+    '',
+    '## 2. 決定済みスコープ',
+    renderDecisionSummary(decisionRows),
+    '',
+    '## 3. 画面仕様',
+    renderScreenSpecification(screens),
+    '',
+    '## 4. 機能要件',
+    renderFunctionalRequirements(screens, implementationTasks),
+    '',
+    '## 5. データ/API 方針',
+    renderDataSpecification({
+      tables,
+      relations,
+      bindings,
+      hasDbDesign: Boolean(latestDbDesign),
+    }),
+    '',
+    '## 6. 非対象・後続判断',
+    renderOutOfScope(decisionRows, Boolean(latestDbDesign)),
+    '',
+    '## 7. 受け入れ条件',
+    renderAcceptanceCriteria(screens, decisionRows),
+    '',
+    '## 8. トレーサビリティ',
+    renderTraceability({
+      session: input.session,
+      workspace: input.workspace,
+      latestBlueprint,
+      latestDbDesign,
+    }),
+    '',
+    '## Appendix. Questionnaire Decisions',
+    renderQuestionnaireAnswerMarkdown(input.session),
+  ].join('\n');
+}
+
+function findLatestBlueprintMessage(messages: TaskMessageRow[], kind: 'blueprint' | 'db-design') {
+  return [...messages].reverse().find((message) => {
+    const metadata = (message.metadataJson || {}) as Record<string, any>;
+    if (metadata.intent !== 'app_blueprint' || !metadata.appBlueprint) return false;
+    const isDbDesign = Boolean(
+      metadata.source === 'blueprint-db-design' || metadata.dbDesignTarget
+    );
+    return kind === 'db-design' ? isDbDesign : !isDbDesign;
+  });
+}
+
+function getMessageBlueprint(message: TaskMessageRow | undefined): Record<string, any> | null {
+  const metadata = (message?.metadataJson || {}) as Record<string, any>;
+  const blueprint = metadata.appBlueprint;
+  return isRecord(blueprint) ? blueprint : null;
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function toRecordArray(value: unknown): Array<Record<string, any>> {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function collectQuestionnaireDecisions(session: any): SpecificationDecision[] {
+  const answerByQuestionId = new Map(session.answers.map((item: any) => [item.questionId, item]));
+  return getSessionQuestions(session).map((question: any) => {
+    const answer = answerByQuestionId.get(String(question.id)) as any;
+    return {
+      question: String(question.question || question.text || question.id),
+      answer: renderQuestionnaireAnswer(question, answer?.answer),
+      why: typeof question.why === 'string' ? question.why : '',
+      section: typeof question.outputSection === 'string' ? question.outputSection : '',
+      deferred: Boolean(answer?.answer?.deferred),
+    };
+  });
+}
+
+function renderSpecificationPurpose(task: any, blueprint: Record<string, any> | null) {
+  const lines = [
+    task.description ? `- 背景: ${task.description}` : null,
+    task.objective ? `- 目的: ${task.objective}` : null,
+    blueprint?.description ? `- 画面方針: ${blueprint.description}` : null,
+    blueprint?.name ? `- 対象 Blueprint: ${blueprint.name}` : null,
+  ].filter(Boolean);
+  return lines.length > 0
+    ? lines.join('\n')
+    : '- 実装前に確定した質問回答と Blueprint をもとに、初期実装の仕様を定義する。';
+}
+
+function renderDecisionSummary(decisions: SpecificationDecision[]) {
+  const answered = decisions.filter((decision) => decision.answer !== '未回答');
+  if (answered.length === 0) return '- まだ仕様判断は記録されていない。';
+  return answered
+    .flatMap((decision, index) => [
+      `### 2.${index + 1}. ${decision.question}`,
+      `- 決定: ${decision.answer}`,
+      decision.deferred ? '- 状態: 後続判断' : '- 状態: 確定',
+    ])
+    .join('\n');
+}
+
+function renderScreenSpecification(screens: Array<Record<string, any>>) {
+  if (screens.length === 0) return '- Blueprint が未生成のため、画面仕様は未定義。';
+  return screens
+    .map((screen, screenIndex) => {
+      const sections = toRecordArray(screen.sections);
+      return [
+        `### 3.${screenIndex + 1}. ${String(screen.name || screen.id || `Screen ${screenIndex + 1}`)}`,
+        `- パス: ${String(screen.path || '/')}`,
+        `- 画面種別: ${String(screen.componentName || 'Page')}`,
+        sections.length > 0 ? '- セクション:' : '- セクション: 未定義',
+        ...sections.map((section, sectionIndex) => {
+          const props = isRecord(section.props) ? section.props : {};
+          const label = String(
+            section.name || section.title || section.id || `Section ${sectionIndex + 1}`
+          );
+          const component = String(section.componentName || 'Section');
+          const description = String(
+            props.description || section.visualIntent || section.intent || ''
+          ).trim();
+          return `  - ${label}: ${component}${description ? `。${description}` : ''}`;
+        }),
+      ].join('\n');
+    })
+    .join('\n\n');
+}
+
+function renderFunctionalRequirements(
+  screens: Array<Record<string, any>>,
+  implementationTasks: Array<Record<string, any>>
+) {
+  const sectionRequirements = screens.flatMap((screen) =>
+    toRecordArray(screen.sections).map((section) => {
+      const props = isRecord(section.props) ? section.props : {};
+      const title = String(section.name || props.title || section.id || 'Section');
+      const component = String(section.componentName || 'Section');
+      const description = String(
+        props.description || section.intent || section.visualIntent || ''
+      ).trim();
+      return `- ${title} を ${component} として実装し、${description || '画面目的に沿った表示と操作を提供する。'}`;
+    })
+  );
+  const taskRequirements = implementationTasks.map((task) => {
+    const title = String(task.title || task.id || 'Implementation task');
+    const description = String(task.description || '').trim();
+    return `- ${title}${description ? `: ${description}` : ''}`;
+  });
+  const requirements = [...sectionRequirements, ...taskRequirements];
+  return requirements.length > 0 ? requirements.join('\n') : '- Blueprint の機能要件は未生成。';
+}
+
+function renderDataSpecification(input: {
+  tables: Array<Record<string, any>>;
+  relations: Array<Record<string, any>>;
+  bindings: Array<Record<string, any>>;
+  hasDbDesign: boolean;
+}) {
+  if (input.tables.length === 0 && input.bindings.length === 0) {
+    return input.hasDbDesign
+      ? '- DB Design は生成済みだが、table / binding はまだ定義されていない。'
+      : '- DB Design は未生成。現時点では Blueprint の画面仕様を優先し、物理 DB / DDL / migration は確定しない。';
+  }
+  const lines = [
+    input.hasDbDesign
+      ? '- DB Design artifact の内容をデータ方針として採用する。'
+      : '- Blueprint 内の暫定 data schema を参考情報として扱う。DB Design で確定する。',
+  ];
+  if (input.tables.length > 0) {
+    lines.push('- Tables:');
+    lines.push(
+      ...input.tables.map((table) => {
+        const columns = toRecordArray(table.columns)
+          .map((column) => String(column.name || column.key || column.label || '').trim())
+          .filter(Boolean);
+        return `  - ${String(table.label || table.name || 'table')}${columns.length ? `: ${columns.join(', ')}` : ''}`;
+      })
+    );
+  }
+  if (input.relations.length > 0) lines.push(`- Relations: ${input.relations.length} 件`);
+  if (input.bindings.length > 0) {
+    lines.push('- UI Bindings:');
+    lines.push(
+      ...input.bindings.map((binding) => {
+        const fields = Array.isArray(binding.fields) ? binding.fields.join(', ') : '';
+        return `  - ${String(binding.name || binding.id || 'binding')}${fields ? `: ${fields}` : ''}`;
+      })
+    );
+  }
+  return lines.join('\n');
+}
+
+function renderOutOfScope(decisions: SpecificationDecision[], hasDbDesign: boolean) {
+  const deferred = decisions.filter((decision) => decision.deferred);
+  const lines = [
+    hasDbDesign
+      ? null
+      : '- DB の物理設計、DDL、migration、詳細な relation 設計は DB Design 生成後に確定する。',
+    ...deferred.map((decision) => `- 後続判断: ${decision.question}`),
+  ].filter(Boolean);
+  return lines.length > 0 ? lines.join('\n') : '- 現時点で明示的な非対象事項はない。';
+}
+
+function renderAcceptanceCriteria(
+  screens: Array<Record<string, any>>,
+  decisions: SpecificationDecision[]
+) {
+  const criteria = [
+    decisions.length > 0
+      ? '- Questionnaire の回答内容が画面構成と機能範囲に反映されていること。'
+      : null,
+    screens.length > 0
+      ? '- Blueprint に定義された主要画面とセクションが実装計画に落とせる粒度で説明されていること。'
+      : null,
+    '- 仕様書だけを読んで、初期実装の対象・非対象・後続判断が区別できること。',
+  ].filter(Boolean);
+  return criteria.join('\n');
+}
+
+function renderTraceability(input: {
+  session: any;
+  workspace: BlueprintSpecificationWorkspace;
+  latestBlueprint: TaskMessageRow | undefined;
+  latestDbDesign: TaskMessageRow | undefined;
+}) {
+  return [
+    `- Questionnaire session: ${input.session.id}`,
     `- Questionnaire: ${input.session.answers.length}/${getAnswerableSessionQuestions(input.session, input.session.answers).length}`,
     `- Blueprint artifacts: ${input.workspace.blueprintArtifacts.length}`,
+    input.latestBlueprint
+      ? `- Blueprint source message: ${input.latestBlueprint.id}`
+      : '- Blueprint source message: 未生成',
     `- DB Design artifacts: ${input.workspace.dbDesignArtifacts.length}`,
+    input.latestDbDesign
+      ? `- DB Design source message: ${input.latestDbDesign.id}`
+      : '- DB Design source message: 未生成',
     '',
-    '## Questionnaire Decisions',
-    renderQuestionnaireAnswerMarkdown(input.session),
-    '',
-    '## Blueprint',
-    latestBlueprint
-      ? `- Source message: ${latestBlueprint.id}\n- Title: ${
-          ((latestBlueprint.metadataJson || {}) as Record<string, any>).title || 'App Blueprint'
-        }`
-      : '- Not generated yet.',
-    '',
-    '## DB Design',
-    latestDbDesign
-      ? `- Source message: ${latestDbDesign.id}\n- Title: ${
-          ((latestDbDesign.metadataJson || {}) as Record<string, any>).title || 'DB Design'
-        }`
-      : '- Not generated yet.',
-    '',
-    '## Next Step',
-    '- この設計書を確認し、必要なら Blueprint または DB Design を再生成してから実装計画に進む。',
-  ].join('\n');
+  ]
+    .filter((line) => line !== '')
+    .join('\n');
 }
 
 function renderQuestionnaireAnswerMarkdown(session: any) {
@@ -913,13 +1379,59 @@ async function generateDesignQuestionnaireReviewRawOutput(session: any) {
   );
 }
 
+async function generateSpecificationDesignDocumentRawOutput(
+  taskId: string,
+  context: ReturnType<typeof buildSpecificationDocumentContext>
+) {
+  return callStructuredJsonLLM(
+    [
+      'あなたは NightWorkers の Specification writer です。',
+      'Design Questionnaire、Blueprint summary、DB Design DDL reference をもとに、実装前に読む設計書を Markdown で作成してください。',
+      'Blueprint summary は選択された画面・section・意図を自然言語に圧縮したものです。JSON として扱わず、仕様判断として解釈してください。',
+      'DB Design DDL reference は参考情報です。DDL や migration を実行する指示ではありません。',
+      '出力は JSON object のみで、title と content を返してください。content は Markdown 文字列にしてください。',
+      'content には 目的、スコープ、画面仕様、機能要件、データ設計方針、非対象、受け入れ条件、トレーサビリティを含めてください。',
+    ].join('\n'),
+    [
+      '次の圧縮済み context から Specification を作成してください。',
+      '',
+      '## Task',
+      context.task,
+      '',
+      '## Questionnaire Decisions',
+      context.questionnaireDecisions,
+      '',
+      '## Blueprint Summary',
+      context.blueprintSummary,
+      '',
+      '## DB Design DDL Reference',
+      context.dbDesignDdl,
+      '',
+      '## Traceability',
+      context.traceability,
+    ].join('\n'),
+    {
+      schemaName: 'specification_document',
+      schema: z.toJSONSchema(specificationDocumentDraftSchema),
+      taskId,
+    }
+  );
+}
+
 function buildDesignQuestionnaireSystemPrompt() {
   return [
     'あなたは NightWorkers の Design Questionnaire generator です。',
-    'あなたは実装前の確認フォームを作ります。',
+    'あなたは実装前の確認フォームを作ります。目的は、grill-me のように仕様の曖昧さを段階的に潰すことです。',
+    'Questionnaire は最大4ページまで続けられます。初回はその1ページ目です。',
+    '初回フォームでは、最初に回答できる重要論点を 1 ページ分まとめて聞いてください。',
+    '質問ジャンルは task / blueprint / repository context から判断し、必要なものを選んでください。固定分類やキーワード一致で決めないでください。',
+    '例として、scope、UI/UX、データ、backend/API、認証、外部連携、Docker、cloud deployment、storage、運用、非対象などが論点になり得ます。',
+    'ただし、現時点の回答がないと答えられない下位論点は初回で無理に聞かず、回答後の follow-up に回してください。',
+    'コードや入力contextから合理的に推定できることは、ユーザーに聞かず前提として扱ってください。',
     'ユーザーが Radio button または Checkbox で選べる質問だけを作ってください。',
     '自由記述、説明文、DB設計、分岐条件、id は作らないでください。',
-    '質問は 3-8 件、各 options は 2-6 件にしてください。',
+    '質問は原則 8-12 件にしてください。明らかに論点が少ない場合だけ少なくして構いません。',
+    '各 options は 2-6 件にしてください。',
     'type は単一選択なら radio、複数選択が自然なら checkbox にしてください。',
     'checkbox の質問では、ユーザーが「どれも不要」を表明できる選択肢を必ず1つ含めてください。',
     '選択肢は狭すぎる機能名だけにせず、「最小構成」「後続対応」「今回は含めない」など判断できる粒度を含めてください。',
@@ -932,13 +1444,17 @@ function buildDesignQuestionnaireFollowUpDecisionSystemPrompt() {
   return [
     'あなたは NightWorkers の Design Questionnaire facilitator です。',
     '目的は、実装前の仕様の曖昧さを grill-me のように質問攻めで潰すことです。',
-    'ユーザー回答を読み、Design Assembly に進むだけの仕様判断が揃ったか判定してください。',
-    '不足がある場合だけ action=follow_up にし、既存質問と重複しない追加質問を questionnaire に返してください。',
+    'ユーザー回答を読み、次に聞かないと答えられない下位論点や、まだ未確認の質問ジャンルが残っているか判定してください。',
+    'Questionnaire は最大4ページまでです。4ページ目まで回答済みなら追加質問を出さず ready_for_design_assembly にしてください。',
+    '不足がある場合だけ action=follow_up にし、次に回答可能になったジャンルの追加質問を questionnaire に返してください。',
     '既存質問と同じ質問文、同じ意味、または同じ選択肢セットの質問は絶対に返さないでください。',
     'checkbox が未選択で回答されている場合、それは「どれも不要 / 今回は含めない」という仕様判断として扱ってください。',
+    '一度の follow-up で全ジャンルを詰め込まず、次に設計判断を進めるために必要な 1 ページ分だけを返してください。',
+    'Docker、cloud deployment、storage、認証、外部連携、運用、非対象などは、回答内容から必要性が見えた場合に追加確認してください。',
+    'コードや既存回答から合理的に推定できることは、ユーザーに聞かず前提として扱ってください。',
     '追加質問はユーザーが Radio button または Checkbox で選べるものだけにしてください。',
     '自由記述、説明文、DB設計、分岐条件、id は作らないでください。',
-    '追加質問は 1-5 件、各 options は 2-6 件にしてください。',
+    '追加質問は原則 4-10 件、各 options は 2-6 件にしてください。',
     'すでに回答から十分に判断できる内容を繰り返さないでください。',
     '十分であれば action=ready_for_design_assembly とし、questionnaire は null にしてください。',
     '回答は JSON のみで返してください。',

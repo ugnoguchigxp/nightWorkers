@@ -17,26 +17,20 @@ export function RuntimePromptSnapshotCard({ latestRun }: { latestRun?: TaskRun }
     !Array.isArray(conversationContext)
       ? (conversationContext as { stateCardText?: unknown }).stateCardText
       : null;
+  if (typeof stateCardText !== 'string' || !stateCardText.trim()) return null;
+
   return (
     <details className="rounded border border-slate-700/80 bg-slate-900/25" open>
       <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-slate-100">
         Runtime Prompt Snapshot
       </summary>
       <div className="grid gap-3 border-t border-slate-800 p-3">
-        {typeof stateCardText === 'string' && stateCardText.trim() ? (
-          <NightWorkersCodeBlock
-            code={stateCardText}
-            filename="StateCard Text"
-            language="text"
-            maxHeight={280}
-            syntaxHighlighting={false}
-          />
-        ) : null}
         <NightWorkersCodeBlock
-          code={JSON.stringify(snapshot, null, 2)}
-          filename="Snapshot JSON"
-          language="json"
-          maxHeight={360}
+          code={stateCardText}
+          filename="StateCard Text"
+          language="text"
+          maxHeight={280}
+          syntaxHighlighting={false}
         />
       </div>
     </details>

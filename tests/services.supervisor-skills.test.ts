@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os, { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { getAllowedToolsForJobType } from '../api/services/supervisor/prompt';
 import {
   readSupervisorSkill,
   searchSupervisorSkills,
@@ -10,6 +11,7 @@ import {
 import {
   clearSupervisorSkillDocumentCache,
   listSupervisorSkillDocuments,
+  renderSupervisorSkillDocuments,
   resolveSupervisorSkillDocuments,
 } from '../api/services/supervisor/skills/registry';
 
@@ -51,6 +53,53 @@ describe('Supervisor skill registry', () => {
     expect(paths).toContain('references/work_kinds/code.md');
     expect(paths).toContain('references/overlays/evidence.md');
     expect(paths).not.toContain('references/overlays/security.md');
+  });
+
+  it('covers minor_code_edit routing with code-edit references and narrow edit tool policy', () => {
+    const documents = resolveSupervisorSkillDocuments({
+      primaryMode: 'code_edit',
+      secondaryModes: [],
+      phase: 'execute',
+      workKinds: ['code'],
+      overlays: ['evidence'],
+      requiredEvidence: ['target file inspection'],
+      nextSkillFiles: [],
+      confidence: 0.9,
+    });
+    const paths = documents.map((document) => document.relativePath);
+    const rendered = renderSupervisorSkillDocuments(documents);
+    const toolNames = getAllowedToolsForJobType('minor_code_edit').map((tool) => tool.name);
+
+    expect(paths).toEqual([
+      'SKILL.md',
+      'references/router.md',
+      'references/phases/execute.md',
+      'references/modes/code_edit.md',
+      'references/work_kinds/code.md',
+      'references/overlays/evidence.md',
+    ]);
+    expect(rendered).toContain('編集前に既存コードを確認する');
+    expect(rendered).toContain('変更前に関連ファイルを読む');
+    expect(rendered).toContain('code edit 後は verify に進む');
+    expect(rendered).toContain('observations が空の場合、最終回答へ進まず');
+
+    expect(toolNames).toEqual([
+      'read_skill',
+      'search_skill',
+      'read_current_specification',
+      'read_file',
+      'search_files',
+      'copy_directory',
+      'apply_patch',
+      'replace_content',
+      'run_command',
+      'select_job_type',
+      'finalize_answer',
+    ]);
+    expect(toolNames).not.toContain('list_dir');
+    expect(toolNames).not.toContain('git_status');
+    expect(toolNames).not.toContain('git_diff');
+    expect(toolNames).not.toContain('run_verification');
   });
 
   it('resolves blueprint references from app blueprint routing', () => {

@@ -161,6 +161,49 @@ describe('NightWorkers workbench routes', () => {
     expect(llmPrompt).toContain('検索とフィルターはボードの上に置いてください');
   });
 
+  it('passes DB Design artifact context with table names to workbench intake', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('general_answer', 'DB Design artifact を前提に修正方針を返します。')
+    );
+    const { task } = await createWorkbenchTask();
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({
+        prompt: 'カード履歴テーブルは不要です',
+        intent: 'draft',
+        artifactContext: {
+          artifactId: 'message-db-design-1',
+          kind: 'blueprint_workspace',
+          title: 'DB Design: Kanban DB Design',
+          summary: 'Kanban DB schema',
+          source: { type: 'task_message', messageId: crypto.randomUUID() },
+          metadata: {
+            intent: 'app_blueprint',
+            artifactType: 'blueprint_db_design',
+            appBlueprintName: 'Kanban DB Design',
+            tableNames: ['boards', 'columns', 'cards'],
+            initialTab: 'db-design',
+          },
+        },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const userMessage = body.messages.find((message: any) => message.role === 'user');
+    expect(userMessage.content).toBe('カード履歴テーブルは不要です');
+    expect(userMessage.metadataJson.artifactContext.metadata.artifactType).toBe(
+      'blueprint_db_design'
+    );
+    const llmPrompt = vi.mocked(llm.callSupervisorLLM).mock.calls[0]?.[1] as string;
+    expect(llmPrompt).toContain('Artifact type: blueprint_db_design');
+    expect(llmPrompt).toContain('Workspace tab: db-design');
+    expect(llmPrompt).toContain('Tables: boards, columns, cards');
+    expect(llmPrompt).toContain('カード履歴テーブルは不要です');
+  });
+
   it('starts a docs run for normal intake without persisting the round 1 response as chat', async () => {
     vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
       mockJobSelection('docs', 'Analyze the goal and propose the next implementation step.')

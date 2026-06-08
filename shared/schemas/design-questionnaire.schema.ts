@@ -10,7 +10,7 @@ export const questionnaireChoiceQuestionSchema = z.object({
 
 export const questionnaireChoiceFormSchema = z.object({
   title: z.string().min(1).default('実装前に決めたいこと'),
-  questions: z.array(questionnaireChoiceQuestionSchema).min(1).max(10),
+  questions: z.array(questionnaireChoiceQuestionSchema).min(1).max(15),
 });
 
 export const designQuestionnaireFollowUpDecisionSchema = z

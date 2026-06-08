@@ -1,4 +1,5 @@
 import type {
+  ActivityArtifact,
   ImplementationQueueEntry,
   ReviewResult,
   Task,
@@ -337,13 +338,32 @@ export function buildWorkbenchArtifactRefs(input: {
   events?: TaskEvent[];
   reviews?: ReviewResult[];
   messages?: TaskMessage[];
+  activityArtifacts?: ActivityArtifact[];
 }): WorkbenchArtifactRef[] {
   const refs: WorkbenchArtifactRef[] = [];
   const run = input.latestRun;
+  const blueprintArtifactRows = (input.activityArtifacts || []).filter(isBlueprintActivityArtifact);
+  const blueprintArtifactMessageIds = new Set(
+    blueprintArtifactRows
+      .map((artifact) => activityArtifactMetadata(artifact).messageId)
+      .filter(
+        (messageId): messageId is string => typeof messageId === 'string' && messageId.length > 0
+      )
+  );
+  const blueprintArtifactIds = new Set(blueprintArtifactRows.map((artifact) => artifact.id));
   const blueprintMessages = (input.messages || []).filter(
     (message) =>
       message.messageType === 'markdown_document' &&
-      (message.metadataJson?.intent === 'app_blueprint' || message.metadataJson?.appBlueprint)
+      isBlueprintArtifactMessage(message) &&
+      !isMessageCoveredByActivityArtifact(
+        message,
+        blueprintArtifactMessageIds,
+        blueprintArtifactIds
+      )
+  );
+  const dbDesignMessages = (input.messages || []).filter(
+    (message) =>
+      message.messageType === 'markdown_document' && isBlueprintDbDesignArtifactMessage(message)
   );
   const decisionReviewMessages = (input.messages || []).filter(
     (message) =>
@@ -357,35 +377,64 @@ export function buildWorkbenchArtifactRefs(input: {
         message.metadataJson?.intent === 'draft_spec')
   );
   if (
+    blueprintArtifactRows.length > 0 ||
     blueprintMessages.length > 0 ||
+    dbDesignMessages.length > 0 ||
     decisionReviewMessages.length > 0 ||
     implementationPlanMessages.length > 0
   ) {
     const latestWorkspaceMessage =
-      [...blueprintMessages, ...decisionReviewMessages, ...implementationPlanMessages].sort(
-        (a, b) => toMs(b.createdAt) - toMs(a.createdAt)
-      )[0] || blueprintMessages.at(-1);
+      [
+        ...blueprintMessages,
+        ...dbDesignMessages,
+        ...decisionReviewMessages,
+        ...implementationPlanMessages,
+      ].sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt))[0] || blueprintMessages.at(-1);
+    const latestBlueprintArtifactRow = [...blueprintArtifactRows].sort(
+      (a, b) => toMs(b.createdAt) - toMs(a.createdAt)
+    )[0];
+    const workspaceSource = latestWorkspaceMessage
+      ? { type: 'task_message' as const, messageId: latestWorkspaceMessage.id }
+      : latestBlueprintArtifactRow
+        ? { type: 'artifact_row' as const, artifactId: latestBlueprintArtifactRow.id }
+        : { type: 'task_message' as const, messageId: '' };
     refs.push({
       id: `blueprint-workspace-${input.task.id}`,
       taskId: input.task.id,
       kind: 'blueprint_workspace',
       title: 'Specification Workspace',
       summary: [
-        `${blueprintMessages.length} Blueprint artifact${blueprintMessages.length === 1 ? '' : 's'}`,
+        `${blueprintArtifactRows.length + blueprintMessages.length} Blueprint artifact${
+          blueprintArtifactRows.length + blueprintMessages.length === 1 ? '' : 's'
+        }`,
         `${decisionReviewMessages.length} Decision Review${decisionReviewMessages.length === 1 ? '' : 's'}`,
         `${implementationPlanMessages.length} Implementation Plan${implementationPlanMessages.length === 1 ? '' : 's'}`,
       ].join(' · '),
-      source: { type: 'task_message', messageId: latestWorkspaceMessage?.id || '' },
-      createdAt: String(latestWorkspaceMessage?.createdAt || input.task.updatedAt),
+      source: workspaceSource,
+      createdAt: String(
+        latestWorkspaceMessage?.createdAt ||
+          latestBlueprintArtifactRow?.createdAt ||
+          input.task.updatedAt
+      ),
       metadata: {
-        blueprintCount: blueprintMessages.length,
+        blueprintCount: blueprintArtifactRows.length + blueprintMessages.length,
+        dbDesignCount: dbDesignMessages.length,
         decisionReviewCount: decisionReviewMessages.length,
         implementationPlanCount: implementationPlanMessages.length,
       },
     });
   }
+  for (const artifact of blueprintArtifactRows) {
+    refs.push(activityArtifactRef(input.task.id, artifact));
+  }
   for (const message of input.messages || []) {
     if (message.messageType !== 'markdown_document') continue;
+    if (
+      isBlueprintArtifactMessage(message) &&
+      isMessageCoveredByActivityArtifact(message, blueprintArtifactMessageIds, blueprintArtifactIds)
+    ) {
+      continue;
+    }
     const kind = inferDocumentArtifactKind(message);
     refs.push({
       id: `message-${message.id}`,
@@ -396,7 +445,9 @@ export function buildWorkbenchArtifactRefs(input: {
       summary: message.content.slice(0, 160),
       source: { type: 'task_message', messageId: message.id },
       createdAt: String(message.createdAt),
-      metadata: message.metadataJson || undefined,
+      metadata: isBlueprintDbDesignArtifactMessage(message)
+        ? { ...(message.metadataJson || {}), initialTab: 'db-design' }
+        : message.metadataJson || undefined,
     });
   }
   if (run?.diffPatch?.trim())
@@ -417,6 +468,65 @@ export function buildWorkbenchArtifactRefs(input: {
     });
   }
   return refs.sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
+}
+
+function activityArtifactRef(taskId: string, artifact: ActivityArtifact): WorkbenchArtifactRef {
+  const metadata = activityArtifactMetadata(artifact);
+  const appBlueprint = metadata.appBlueprint || parseArtifactContentJson(artifact.contentText);
+  const title = String(appBlueprint?.name || metadata.title || 'App Blueprint');
+  return {
+    id: `artifact-${artifact.id}`,
+    taskId,
+    runId: artifact.runId || undefined,
+    kind: 'app_blueprint',
+    title: `Blueprint: ${title}`,
+    summary:
+      typeof appBlueprint?.description === 'string'
+        ? appBlueprint.description
+        : (artifact.contentText || '').slice(0, 160),
+    source: { type: 'artifact_row', artifactId: artifact.id },
+    createdAt: String(artifact.createdAt),
+    metadata: {
+      ...metadata,
+      appBlueprint,
+      artifactRef: { artifactId: artifact.id, kind: 'app_blueprint', version: 1 },
+    },
+  };
+}
+
+function isBlueprintActivityArtifact(artifact: ActivityArtifact): boolean {
+  const metadata = activityArtifactMetadata(artifact);
+  return (
+    (artifact.kind === 'app_blueprint' || metadata.schemaName === 'app_blueprint') &&
+    !isBlueprintDbDesignMetadata(metadata)
+  );
+}
+
+function activityArtifactMetadata(artifact: ActivityArtifact): Record<string, any> {
+  return artifact.metadataJson && typeof artifact.metadataJson === 'object'
+    ? artifact.metadataJson
+    : {};
+}
+
+function parseArtifactContentJson(content: string | null | undefined): any {
+  if (!content?.trim()) return null;
+  try {
+    return JSON.parse(content);
+  } catch {
+    return null;
+  }
+}
+
+function isMessageCoveredByActivityArtifact(
+  message: TaskMessage,
+  artifactMessageIds: Set<string>,
+  artifactIds: Set<string>
+): boolean {
+  const artifactId = message.metadataJson?.artifactRef?.artifactId;
+  return (
+    artifactMessageIds.has(message.id) ||
+    (typeof artifactId === 'string' && artifactIds.has(artifactId))
+  );
 }
 
 export function getRunEventType(event: TaskEvent): string {
@@ -450,13 +560,35 @@ function countArtifacts(refs: WorkbenchArtifactRef[]) {
 
 function inferDocumentArtifactKind(message: TaskMessage): WorkbenchArtifactKind {
   const intent = message.metadataJson?.intent;
-  if (intent === 'app_blueprint' || message.metadataJson?.appBlueprint) return 'app_blueprint';
+  if (isBlueprintDbDesignArtifactMessage(message)) return 'blueprint_workspace';
+  if (isBlueprintArtifactMessage(message)) return 'app_blueprint';
   if (intent === 'component_design' || message.metadataJson?.componentDesign)
     return 'component_design';
   if (intent === 'design_delta' || message.metadataJson?.designDelta) return 'design_delta';
   if (intent === 'draft_spec') return 'spec';
   if (intent === 'implementation_plan') return 'implementation_plan';
   return 'spec';
+}
+
+function isBlueprintArtifactMessage(message: TaskMessage): boolean {
+  const metadata = message.metadataJson || {};
+  return (
+    (metadata.intent === 'app_blueprint' || metadata.appBlueprint) &&
+    !isBlueprintDbDesignArtifactMessage(message)
+  );
+}
+
+function isBlueprintDbDesignArtifactMessage(message: TaskMessage): boolean {
+  const metadata = message.metadataJson || {};
+  return isBlueprintDbDesignMetadata(metadata);
+}
+
+function isBlueprintDbDesignMetadata(metadata: Record<string, any>): boolean {
+  return (
+    metadata.artifactType === 'blueprint_db_design' ||
+    metadata.source === 'blueprint-db-design' ||
+    Boolean(metadata.dbDesignTarget)
+  );
 }
 
 function hasImplementationPlanEvidence(messages: TaskMessage[]) {
@@ -495,6 +627,7 @@ function isReviewNeededSession(task: Task, evidence: SessionEvidence = {}) {
 function artifactTitleForKind(kind: WorkbenchArtifactKind, message: TaskMessage): string {
   const metadataTitle = message.metadataJson?.title;
   if (typeof metadataTitle === 'string' && metadataTitle.trim()) {
+    if (isBlueprintDbDesignArtifactMessage(message)) return `DB Design: ${metadataTitle}`;
     if (kind === 'blueprint_workspace') return `Specification Workspace: ${metadataTitle}`;
     if (kind === 'app_blueprint') return `Blueprint: ${metadataTitle}`;
     if (kind === 'component_design') return `Component: ${metadataTitle}`;

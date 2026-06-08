@@ -88,6 +88,7 @@ export type NightWorkersWorkspaceState = {
   deleteSession: (id: string) => void;
   createSession: (input: CreateSessionInput) => Promise<Task>;
   startRun: (sessionId: string) => Promise<TaskRun>;
+  stopRun: (runId: string) => Promise<TaskRun>;
   queueSession: (sessionId: string) => Promise<Task>;
   createImplementationQueueEntry: (sessionId: string) => Promise<void>;
   archiveImplementationQueueEntry: (entryId: string) => Promise<void>;

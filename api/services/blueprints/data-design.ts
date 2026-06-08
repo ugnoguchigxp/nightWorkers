@@ -15,12 +15,6 @@ const blueprintDbDesignTargetSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('schema') }),
   z.object({ kind: z.literal('table'), tableName: z.string().min(1) }),
   z.object({ kind: z.literal('relation'), relationId: z.string().min(1) }),
-  z.object({ kind: z.literal('binding'), bindingId: z.string().min(1) }),
-  z.object({
-    kind: z.literal('screen'),
-    screenId: z.string().min(1),
-    sectionId: z.string().min(1).optional(),
-  }),
 ]);
 
 export const blueprintDbDesignRequestSchema = z.object({
@@ -126,7 +120,7 @@ export function parseAndValidateBlueprintDataDesignOutput(rawOutput: string): {
 } {
   const parsed = parseRepairedJsonWithSchema(rawOutput, appBlueprintSchema);
   if (!parsed.ok) throw new Error('Blueprint DB Design LLM output did not contain valid JSON.');
-  const blueprint = parsed.value;
+  const blueprint = removeDbDesignBindings(parsed.value);
   const validation = validateAppBlueprint(blueprint);
   if (!validation.valid) {
     throw new Error(
@@ -142,11 +136,27 @@ export function parseAndValidateBlueprintDataDesignOutput(rawOutput: string): {
   };
 }
 
+function removeDbDesignBindings(blueprint: AppBlueprint): AppBlueprint {
+  return {
+    ...blueprint,
+    dataBindings: [],
+    screens: blueprint.screens.map((screen) => ({
+      ...screen,
+      sections: screen.sections.map((section) => {
+        if (section.kind === 'preset_section' || section.kind === 'custom_section') return section;
+        const next = { ...section };
+        delete next.dataBindingId;
+        return next;
+      }),
+    })),
+  };
+}
+
 function buildBlueprintDataDesignSystemPrompt(appBlueprintJsonSchema: string): string {
   return [
     '[SystemContext]',
     'あなたは AppBlueprint の DB Design を改善するデータ設計エージェントです。',
-    '現在の Blueprint をもとに databaseSchema と dataBindings を再設計してください。',
+    '現在の Blueprint をもとに databaseSchema だけを再設計してください。',
     'この作業は設計契約の更新であり、SQL、migration、Drizzle schema、物理 DB 操作は作りません。',
     '',
     '[Output Contract]',
@@ -156,10 +166,8 @@ function buildBlueprintDataDesignSystemPrompt(appBlueprintJsonSchema: string): s
     '[Rules]',
     '- 完全な revised AppBlueprint を返してください。patch や diff は返さない。',
     '- id/name/version/designPreset/screens は、DB 設計や binding 整合に必要な場合だけ変更してください。',
-    '- databaseSchema.tables、databaseSchema.relations、dataBindings を相互整合させてください。',
-    '- screen.sections[].dataBindingId を使う場合、その binding は dataBindings[] に存在させてください。',
-    '- dataBindings[].table は databaseSchema.tables[].name に一致させてください。',
-    '- dataBindings[].fields と sort は対象 table の columns[].name だけを使ってください。',
+    '- dataBindings は設計対象外です。必ず [] を返してください。',
+    '- screen.sections[].dataBindingId は使わないでください。',
     '- table/column/relation/binding id は ^[a-z][a-z0-9-]*$ に合わせてください。',
     '- 各 table には primaryKey な column を最低1つ含めてください。',
     '- SQL、DDL、migration、runtime DB call、Drizzle code は返さないでください。',

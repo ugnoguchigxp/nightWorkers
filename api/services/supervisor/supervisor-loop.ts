@@ -143,6 +143,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
 
       const round2SystemPrompt = buildRound2ToolCallPrompt({
         projectRoot: repoRoot,
+        taskId: task.id,
         jobType: currentJobType,
         tools: allowedTools,
         externalAllowedPaths: input.safetyPolicy?.externalAllowedPaths,
@@ -490,6 +491,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         toolName: workerToolName,
         args: round2.toolCall.arguments,
         repoRoot,
+        taskId: task.id,
         safetyPolicy: input.safetyPolicy,
         readFiles,
         toolContext,

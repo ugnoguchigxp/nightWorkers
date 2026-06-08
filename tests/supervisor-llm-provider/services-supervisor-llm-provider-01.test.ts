@@ -39,6 +39,28 @@ describe('Supervisor LLM provider', () => {
     if (parsed.ok) expect(parsed.value.questions[0]?.options).toEqual(['A', 'B']);
   });
 
+  it('repairs common LLM JSON syntax drift before Zod schema validation', () => {
+    const parsed = parseRepairedJsonWithSchema(
+      `{
+        title: '実装前に決めたいこと',
+        questions: [
+          { text: '範囲は？', type: 'radio', options: ['A', 'B',], },
+        ],
+      }`,
+      questionnaireChoiceFormSchema
+    );
+
+    expect(parsed).toMatchObject({
+      ok: true,
+      repaired: true,
+      repairKind: 'jsonrepair',
+    });
+    if (parsed.ok) {
+      expect(parsed.value.title).toBe('実装前に決めたいこと');
+      expect(parsed.value.questions[0]?.options).toEqual(['A', 'B']);
+    }
+  });
+
   it('keeps raw output when repaired JSON fails schema validation', () => {
     const parsed = parseRepairedJsonWithSchema(
       '{"title":"x","questions":[]}',
@@ -173,7 +195,7 @@ describe('Supervisor LLM provider', () => {
     expect(options.workingDirectory).toBe('/repo/project');
   });
 
-  it('rejects Codex MCP tool calls with server and tool diagnostics', async () => {
+  it('traces Codex MCP tool calls without blocking supervisor content', async () => {
     async function* events() {
       yield {
         type: 'item.started',
@@ -184,6 +206,14 @@ describe('Supervisor LLM provider', () => {
           tool: 'context_compile',
           arguments: { goal: 'classify' },
           status: 'in_progress',
+        },
+      };
+      yield {
+        type: 'item.completed',
+        item: {
+          id: 'message-1',
+          type: 'agent_message',
+          text: '{"toolCall":{"name":"finalize_answer","arguments":{"message":"done"}}}',
         },
       };
     }
@@ -197,28 +227,32 @@ describe('Supervisor LLM provider', () => {
       settings: { ACTIVE_LLM_PROVIDER: 'codex' },
     });
 
-    await expect(
-      readCodexStreamedTurn({
-        thread: {
-          runStreamed: async () => ({ events: events() as any }),
-        } as any,
-        prompt: 'prompt',
-        signal: new AbortController().signal,
-        options: {
-          round: 1,
-          schemaFirst: true,
-          emitEvent: (event) => emitted.push({ type: event.type, data: event.data }),
-        },
-        normalizedRequest: request,
-      })
-    ).rejects.toThrow(/Provider activity rejected: codex.mcp_tool_call/);
+    const result = await readCodexStreamedTurn({
+      thread: {
+        runStreamed: async () => ({ events: events() as any }),
+      } as any,
+      prompt: 'prompt',
+      signal: new AbortController().signal,
+      options: {
+        round: 1,
+        schemaFirst: true,
+        emitEvent: (event) => emitted.push({ type: event.type, data: event.data }),
+      },
+      normalizedRequest: request,
+    });
 
-    expect(emitted.at(-1)?.data).toMatchObject({
+    expect(result.content).toBe(
+      '{"toolCall":{"name":"finalize_answer","arguments":{"message":"done"}}}'
+    );
+    const activityEvent = emitted.find(
+      (event) => event.type === 'model.provider_activity_detected'
+    );
+    expect(activityEvent?.data).toMatchObject({
       providerId: 'codex',
       providerClass: 'agent_runtime',
       activityType: 'codex.mcp_tool_call',
       toolName: 'context_compile',
     });
-    expect(String(emitted.at(-1)?.data?.preview || '')).toContain('context_still');
+    expect(String(activityEvent?.data?.preview || '')).toContain('context_still');
   });
 });

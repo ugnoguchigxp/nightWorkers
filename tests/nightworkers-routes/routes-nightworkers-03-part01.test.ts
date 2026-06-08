@@ -11,6 +11,77 @@ beforeAll(async () => {
   await ensureNightWorkersSchema();
 });
 
+function buildMechanicalQuestionnaireAnswers(session: any) {
+  const answerByQuestionId = new Map(
+    (session.answers || []).map((answer: any) => [answer.questionId, answer.answer])
+  );
+  const questions = session.questionSets.flatMap((set: any) =>
+    (set.questionnaire?.questionSets || []).flatMap((questionSet: any) => questionSet.questions)
+  );
+  const answers = [];
+  for (const question of questions) {
+    if (answerByQuestionId.has(question.id)) continue;
+    if (!areQuestionDependenciesSatisfied(question, answerByQuestionId)) continue;
+    const answer = buildMechanicalQuestionnaireAnswer(question);
+    answerByQuestionId.set(question.id, answer);
+    answers.push(answer);
+  }
+  return answers;
+}
+
+function buildMechanicalQuestionnaireAnswer(question: any) {
+  const options = Array.isArray(question.options) ? question.options : [];
+  const optionIds = options.map((option: any) => String(option.id)).filter(Boolean);
+  const preferredOptionId =
+    question.recommendedAnswerId && optionIds.includes(question.recommendedAnswerId)
+      ? question.recommendedAnswerId
+      : optionIds[0];
+  return {
+    questionId: question.id,
+    selectedOptionIds:
+      question.answerType === 'single_choice' && preferredOptionId
+        ? [preferredOptionId]
+        : question.answerType === 'multi_choice' && preferredOptionId
+          ? [preferredOptionId]
+          : [],
+    booleanValue: question.answerType === 'boolean' ? true : undefined,
+    freeText:
+      question.answerType === 'free_text' ? `E2E synthetic answer for ${question.id}` : undefined,
+    rankedOptionIds: question.answerType === 'ranked' ? optionIds : [],
+    deferred: false,
+  };
+}
+
+function areQuestionDependenciesSatisfied(question: any, answerByQuestionId: Map<string, any>) {
+  const dependencies = Array.isArray(question.dependsOn) ? question.dependsOn : [];
+  return dependencies.every((dependency: any) => {
+    const answer = answerByQuestionId.get(String(dependency.questionId));
+    if (!answer) return false;
+    return doesAnswerSatisfyDependency(answer, dependency);
+  });
+}
+
+function doesAnswerSatisfyDependency(answer: any, dependency: any) {
+  const expected = dependency.value;
+  if (typeof expected === 'boolean') {
+    if (dependency.operator === 'equals') return answer.booleanValue === expected;
+    if (dependency.operator === 'not_equals') return answer.booleanValue !== expected;
+    return false;
+  }
+  const selectedValues = [
+    ...(answer.selectedOptionIds || []),
+    ...(answer.rankedOptionIds || []),
+    ...(answer.freeText?.trim() ? [answer.freeText.trim()] : []),
+  ];
+  const hasExpected = Array.isArray(expected)
+    ? expected.some((value) => selectedValues.includes(String(value)))
+    : selectedValues.includes(String(expected));
+  if (dependency.operator === 'equals' || dependency.operator === 'includes') return hasExpected;
+  if (dependency.operator === 'not_equals' || dependency.operator === 'excludes')
+    return !hasExpected;
+  return false;
+}
+
 describe('NightWorkers task routes', () => {
   it('creates a Design Questionnaire, saves answers, accepts a Decision Review, and aggregates workspace refs', async () => {
     const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
@@ -610,6 +681,142 @@ describe('NightWorkers task routes', () => {
     }
   });
 
+  it('stops Design Questionnaire follow-up after four pages', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+
+    try {
+      const createdRepo = await repo.createRepository({
+        name: `TEST: Four Page Questionnaire ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: createdRepo.id,
+        title: 'TEST: Four page questionnaire target',
+        description: 'Generate follow-up questionnaire until the page limit',
+        status: 'draft',
+      });
+
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+        title: '実装前に決めたいこと',
+        questions: [
+          {
+            text: '初期スコープはどれですか？',
+            type: 'radio',
+            options: ['最小構成', '標準構成', '拡張構成'],
+          },
+        ],
+      });
+
+      const createRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+      expect(createRes.status).toBe(201);
+      const session = await createRes.json();
+
+      async function answerAndRequestFollowUp(questionId: string, optionId: string, page: number) {
+        const options = [`${page}-A`, `${page}-B`, `${page}-C`];
+        process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+          action: 'follow_up',
+          rationale: `Page ${page} still leaves another dependent decision open.`,
+          questionnaire: {
+            title: `追加確認 ${page}`,
+            questions: [
+              {
+                text: `追加確認 ${page} はどれですか？`,
+                type: 'radio',
+                options,
+              },
+            ],
+          },
+        });
+        const res = await app.request(
+          `http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/answers`,
+          {
+            method: 'POST',
+            headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              answers: [
+                {
+                  questionId,
+                  selectedOptionIds: [optionId],
+                  rankedOptionIds: [],
+                  deferred: false,
+                },
+              ],
+            }),
+          }
+        );
+        expect(res.status).toBe(200);
+        return res.json();
+      }
+
+      let currentSession = await answerAndRequestFollowUp('q1', 'q1-o1', 2);
+      expect(currentSession.status).toBe('answering');
+      expect(currentSession.questionSets).toHaveLength(2);
+
+      currentSession = await answerAndRequestFollowUp('follow-up-2-q1', 'follow-up-2-q1-o1', 3);
+      expect(currentSession.status).toBe('answering');
+      expect(currentSession.questionSets).toHaveLength(3);
+
+      currentSession = await answerAndRequestFollowUp('follow-up-3-q1', 'follow-up-3-q1-o1', 4);
+      expect(currentSession.status).toBe('answering');
+      expect(currentSession.questionSets).toHaveLength(4);
+
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+        action: 'follow_up',
+        rationale: 'This should be ignored because the page limit is reached.',
+        questionnaire: {
+          title: '追加確認 5',
+          questions: [
+            {
+              text: '5ページ目の質問は作られますか？',
+              type: 'radio',
+              options: ['はい', 'いいえ'],
+            },
+          ],
+        },
+      });
+      const limitRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/answers`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            answers: [
+              {
+                questionId: 'follow-up-4-q1',
+                selectedOptionIds: ['follow-up-4-q1-o1'],
+                rankedOptionIds: [],
+                deferred: false,
+              },
+            ],
+          }),
+        }
+      );
+      expect(limitRes.status).toBe(200);
+      currentSession = await limitRes.json();
+      expect(currentSession.status).toBe('review_ready');
+      expect(currentSession.questionSets).toHaveLength(4);
+    } finally {
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+      else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+    }
+  });
+
   it('treats empty checkbox answers as none-needed and blocks duplicate follow-up questions', async () => {
     const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
     const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
@@ -696,7 +903,7 @@ describe('NightWorkers task routes', () => {
     }
   });
 
-  it('generates Blueprint, DB Design, and Specification from Specification Status', async () => {
+  it('generates Blueprint, DB Design, and Specification from Status', async () => {
     const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
     const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
     const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
@@ -705,7 +912,7 @@ describe('NightWorkers task routes', () => {
 
     try {
       const createdRepo = await repo.createRepository({
-        name: `TEST: Specification Status ${crypto.randomUUID()}`,
+        name: `TEST: Status ${crypto.randomUUID()}`,
         localPath: '/Users/y.noguchi/Code/nightWorkers',
         branch: 'main',
       });
@@ -775,9 +982,11 @@ describe('NightWorkers task routes', () => {
       const blueprintBody = await blueprintRes.json();
       expect(blueprintBody.message.metadataJson).toMatchObject({
         intent: 'app_blueprint',
-        source: 'specification-status',
+        source: 'status',
         questionnaireSessionId: session.id,
       });
+      let messages = await repo.listTaskMessages(task.id);
+      expect(messages.some((message) => message.metadataJson?.intent === 'draft_spec')).toBe(false);
 
       process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(representativeAppBlueprint);
       const dbDesignRes = await app.request(
@@ -797,7 +1006,30 @@ describe('NightWorkers task routes', () => {
         source: 'blueprint-db-design',
         questionnaireSessionId: session.id,
       });
+      messages = await repo.listTaskMessages(task.id);
+      expect(messages.some((message) => message.metadataJson?.intent === 'draft_spec')).toBe(false);
 
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+        title: 'Kanban Specification',
+        content: [
+          '# Kanban Specification',
+          '',
+          '## 1. 目的',
+          'Operations Command Center を初期実装する。',
+          '',
+          '## 3. 画面仕様',
+          'Operations Command Center',
+          '',
+          '## 4. 機能要件',
+          'カード操作を提供する。',
+          '',
+          '## 5. データ/API 方針',
+          'CREATE TABLE decision_items (id TEXT PRIMARY KEY);',
+          '',
+          '## Appendix. Questionnaire Decisions',
+          '最初に作る画面はどれですか？',
+        ].join('\n'),
+      });
       const docRes = await app.request(
         `http://localhost/api/tasks/${task.id}/specification-workspace/design-doc`,
         {
@@ -812,11 +1044,297 @@ describe('NightWorkers task routes', () => {
         messageType: 'markdown_document',
         metadataJson: {
           intent: 'draft_spec',
-          source: 'specification-status',
+          source: 'status',
           questionnaireSessionId: session.id,
         },
       });
-      expect(docBody.message.content).toContain('## Questionnaire Decisions');
+      expect(docBody.message.content).toContain('## 1. 目的');
+      expect(docBody.message.content).toContain('## 3. 画面仕様');
+      expect(docBody.message.content).toContain('Operations Command Center');
+      expect(docBody.message.content).toContain('## 4. 機能要件');
+      expect(docBody.message.content).toContain('## 5. データ/API 方針');
+      expect(docBody.message.content).toContain('## Appendix. Questionnaire Decisions');
+      expect(docBody.message.metadataJson.generation).toMatchObject({
+        source: 'llm',
+        context: {
+          blueprintSummaryIncluded: true,
+          dbDdlReferenceIncluded: true,
+        },
+      });
+    } finally {
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+      else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+    }
+  });
+
+  it('mechanically answers generated questionnaire pages 1-4 before assembling a design document', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+
+    try {
+      const createdRepo = await repo.createRepository({
+        name: `TEST: Mechanical Design Flow ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: createdRepo.id,
+        title: 'TEST: Mechanical design document flow',
+        description: 'Generate a design document after mechanically answering LLM questions',
+        status: 'draft',
+      });
+
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+        version: 1,
+        source: {
+          taskId: task.id,
+          repositoryId: createdRepo.id,
+          sourceKind: 'plan_mode_intake',
+        },
+        title: 'Mechanical Flow Questionnaire',
+        summary: 'Synthetic questionnaire with all supported answer types.',
+        questionSets: [
+          {
+            id: 'page-one',
+            title: 'Page 1',
+            category: 'Scope',
+            purpose: 'Cover answer generation without semantic accuracy.',
+            questions: [
+              {
+                id: 'primary-screen',
+                topic: 'Screen',
+                question: 'Which screen should be designed first?',
+                why: 'The first screen drives the design document outline.',
+                answerType: 'single_choice',
+                recommendedAnswerId: 'dashboard',
+                options: [
+                  { id: 'dashboard', label: 'Dashboard', tradeoff: 'Fast overview.' },
+                  { id: 'form', label: 'Form', tradeoff: 'More input detail.' },
+                ],
+                blocks: ['Initial screen specification'],
+                outputSection: 'Screen design',
+              },
+              {
+                id: 'included-features',
+                topic: 'Features',
+                question: 'Which supporting features should be included?',
+                why: 'Feature selection affects scope.',
+                answerType: 'multi_choice',
+                options: [
+                  { id: 'search', label: 'Search', tradeoff: 'Adds filtering work.' },
+                  { id: 'archive', label: 'Archive', tradeoff: 'Adds lifecycle state.' },
+                ],
+                blocks: ['Feature list'],
+                outputSection: 'Functional requirements',
+              },
+              {
+                id: 'needs-auth',
+                topic: 'Auth',
+                question: 'Does the first version need authentication?',
+                why: 'Authentication changes routes and data model assumptions.',
+                answerType: 'boolean',
+                blocks: ['Auth policy'],
+                outputSection: 'Non-functional requirements',
+              },
+              {
+                id: 'success-copy',
+                topic: 'Copy',
+                question: 'What short success copy should be shown?',
+                why: 'Copy helps verify free text answers are accepted.',
+                answerType: 'free_text',
+                blocks: ['UI copy'],
+                outputSection: 'UI details',
+              },
+              {
+                id: 'priority-order',
+                topic: 'Priority',
+                question: 'Rank implementation priorities.',
+                why: 'The sequence shapes the implementation section.',
+                answerType: 'ranked',
+                options: [
+                  { id: 'model', label: 'Data model', tradeoff: 'Stabilizes API.' },
+                  { id: 'ui', label: 'UI', tradeoff: 'Validates workflow.' },
+                ],
+                blocks: ['Implementation order'],
+                outputSection: 'Implementation plan',
+              },
+            ],
+          },
+        ],
+        openQuestions: [],
+        dbDesignHandoffNotes: [],
+      });
+      const createRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+      expect(createRes.status).toBe(201);
+      let session = await createRes.json();
+      expect(session.status).toBe('answering');
+      expect(session.questionSets).toHaveLength(1);
+
+      async function answerCurrentPageWith(nextFixture: unknown) {
+        process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(nextFixture);
+        const answers = buildMechanicalQuestionnaireAnswers(session);
+        expect(answers.length).toBeGreaterThan(0);
+        const res = await app.request(
+          `http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/answers`,
+          {
+            method: 'POST',
+            headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ answers }),
+          }
+        );
+        expect(res.status).toBe(200);
+        session = await res.json();
+        return session;
+      }
+
+      await answerCurrentPageWith({
+        action: 'follow_up',
+        rationale: 'Page 2 is needed to cover a generated follow-up.',
+        questionnaire: {
+          title: 'Page 2',
+          questions: [
+            {
+              text: 'Which density should the design use?',
+              type: 'radio',
+              options: ['Compact', 'Comfortable', 'Spacious'],
+            },
+          ],
+        },
+      });
+      expect(session.status).toBe('answering');
+      expect(session.questionSets).toHaveLength(2);
+
+      await answerCurrentPageWith({
+        action: 'follow_up',
+        rationale: 'Page 3 is needed for another generated follow-up.',
+        questionnaire: {
+          title: 'Page 3',
+          questions: [
+            {
+              text: 'Which states should be visible?',
+              type: 'checkbox',
+              options: ['Empty', 'Loading', 'Error', 'Success'],
+            },
+          ],
+        },
+      });
+      expect(session.status).toBe('answering');
+      expect(session.questionSets).toHaveLength(3);
+
+      await answerCurrentPageWith({
+        action: 'follow_up',
+        rationale: 'Page 4 is the final follow-up page.',
+        questionnaire: {
+          title: 'Page 4',
+          questions: [
+            {
+              text: 'Which implementation risk should the document mention?',
+              type: 'radio',
+              options: ['Data drift', 'Slow loading', 'Permission mismatch'],
+            },
+          ],
+        },
+      });
+      expect(session.status).toBe('answering');
+      expect(session.questionSets).toHaveLength(4);
+
+      await answerCurrentPageWith({
+        action: 'ready_for_design_assembly',
+        rationale: 'The synthetic answers are enough for design assembly.',
+        questionnaire: null,
+      });
+      expect(session.status).toBe('review_ready');
+      expect(session.answers.length).toBeGreaterThanOrEqual(8);
+
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(representativeAppBlueprint);
+      const blueprintRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/specification-workspace/blueprint`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ questionnaireSessionId: session.id }),
+        }
+      );
+      expect(blueprintRes.status).toBe(200);
+      const blueprintBody = await blueprintRes.json();
+      expect(blueprintBody.message.metadataJson).toMatchObject({
+        intent: 'app_blueprint',
+        questionnaireSessionId: session.id,
+      });
+
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(representativeAppBlueprint);
+      const dbDesignRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/specification-workspace/db-design`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            questionnaireSessionId: session.id,
+            sourceBlueprintMessageId: blueprintBody.message.id,
+          }),
+        }
+      );
+      expect(dbDesignRes.status).toBe(200);
+      expect((await dbDesignRes.json()).message.metadataJson).toMatchObject({
+        source: 'blueprint-db-design',
+        questionnaireSessionId: session.id,
+      });
+
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+        title: 'Mechanical Design Document',
+        content: [
+          '# Mechanical Design Document',
+          '',
+          '## 1. 目的',
+          'Generated questionnaire answers are enough to assemble the first design document.',
+          '',
+          '## 2. 決定事項',
+          'Mechanically selected answers are treated as provisional decisions.',
+          '',
+          '## 3. 画面仕様',
+          'Operations Command Center',
+          '',
+          '## 4. 機能要件',
+          'Search and lifecycle controls are included.',
+          '',
+          '## Appendix. Questionnaire Decisions',
+          'Which screen should be designed first?',
+        ].join('\n'),
+      });
+      const docRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/specification-workspace/design-doc`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ questionnaireSessionId: session.id }),
+        }
+      );
+      expect(docRes.status).toBe(200);
+      const docBody = await docRes.json();
+      expect(docBody.message).toMatchObject({
+        messageType: 'markdown_document',
+        metadataJson: {
+          intent: 'draft_spec',
+          questionnaireSessionId: session.id,
+        },
+      });
+      expect(docBody.message.content).toContain('## 1. 目的');
+      expect(docBody.message.content).toContain('## 4. 機能要件');
+      expect(docBody.message.content).toContain('## Appendix. Questionnaire Decisions');
     } finally {
       if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
       else process.env.ACTIVE_LLM_PROVIDER = originalProvider;

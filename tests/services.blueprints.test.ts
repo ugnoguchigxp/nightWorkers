@@ -63,6 +63,38 @@ describe('Blueprint validation service', () => {
     expect(parsed.validation.valid).toBe(true);
   });
 
+  it('unwraps Codex-delimited Blueprint arrays before schema validation', () => {
+    const regularBlueprint = {
+      ...representativeAppBlueprint,
+      databaseSchema: { tables: [], relations: [] },
+      dataBindings: [],
+    };
+    const { databaseSchema, dataBindings, implementationTasks, learningHooks, ...head } =
+      regularBlueprint;
+    const delimitedOutput = JSON.stringify([
+      head,
+      'databaseSchema',
+      ':',
+      databaseSchema,
+      'dataBindings',
+      ':',
+      dataBindings,
+      'implementationTasks',
+      ':',
+      implementationTasks,
+      'learningHooks',
+      ':',
+      learningHooks,
+    ]);
+
+    const parsed = parseAndValidateBlueprintOutput(delimitedOutput);
+
+    expect(parsed.blueprint.databaseSchema).toEqual({ tables: [], relations: [] });
+    expect(parsed.blueprint.dataBindings).toEqual([]);
+    expect(parsed.blueprint.implementationTasks).toEqual(implementationTasks);
+    expect(parsed.validation.valid).toBe(true);
+  });
+
   it('adds stable ids to LLM section actions before Blueprint schema validation', () => {
     const regularBlueprint = {
       ...representativeAppBlueprint,
@@ -122,6 +154,42 @@ describe('Blueprint validation service', () => {
     const parsed = parseAndValidateBlueprintOutput(JSON.stringify(regularBlueprint));
 
     expect(parsed.blueprint.screens[0]?.sections[0]?.source).toBe('app');
+    expect(parsed.validation.valid).toBe(true);
+  });
+
+  it('normalizes section components accidentally used as regular Blueprint screens', () => {
+    const regularBlueprint = {
+      ...representativeAppBlueprint,
+      databaseSchema: { tables: [], relations: [] },
+      dataBindings: [],
+      screens: [
+        {
+          id: 'board-empty',
+          name: 'Empty Board State',
+          path: '/boards/empty',
+          componentName: 'EmptyState',
+          sections: [
+            {
+              id: 'empty-board',
+              name: 'Empty Board',
+              componentName: 'EmptyState',
+              source: 'none',
+              props: {
+                title: 'Empty Board',
+                description: 'No cards have been created yet.',
+              },
+              actions: [],
+            },
+          ],
+          actions: [],
+        },
+      ],
+    };
+
+    const parsed = parseAndValidateBlueprintOutput(JSON.stringify(regularBlueprint));
+
+    expect(parsed.blueprint.screens[0]?.componentName).toBe('SidebarPage');
+    expect(parsed.blueprint.screens[0]?.sections[0]?.componentName).toBe('EmptyState');
     expect(parsed.validation.valid).toBe(true);
   });
 
@@ -322,6 +390,65 @@ describe('Blueprint validation service', () => {
                 description: 'Clarifies delivery, returns, and payment reassurance.',
               },
               actions: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.issues).toEqual([]);
+  });
+
+  it('accepts preset and custom section composition without legacy component validation', () => {
+    const result = validateAppBlueprint({
+      ...representativeAppBlueprint,
+      databaseSchema: { tables: [], relations: [] },
+      dataBindings: [],
+      screens: [
+        {
+          ...representativeAppBlueprint.screens[0],
+          sections: [
+            {
+              kind: 'preset_section',
+              id: 'customers-search',
+              preset: 'search_header',
+              props: {
+                title: 'Customers',
+                placeholder: 'Search customers...',
+              },
+              overrides: [
+                {
+                  target: 'searchInput',
+                  set: { layout: { width: '1/2' } },
+                },
+                {
+                  target: 'actions',
+                  insert: {
+                    kind: 'component',
+                    id: 'add-customer',
+                    component: 'Button',
+                    props: { label: 'Add customer' },
+                  },
+                },
+              ],
+            },
+            {
+              kind: 'custom_section',
+              id: 'operations-overview',
+              root: {
+                kind: 'layout',
+                layout: 'grid',
+                props: { columns: 2 },
+                children: [
+                  {
+                    kind: 'component',
+                    id: 'open-incidents',
+                    component: 'Card',
+                    props: { title: 'Open incidents' },
+                  },
+                ],
+              },
             },
           ],
         },

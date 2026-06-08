@@ -10,6 +10,48 @@ beforeAll(async () => {
 });
 
 describe('NightWorkers reviewer evaluation routes', () => {
+  it('stops an active task run and returns the task to ready', async () => {
+    const createdRepo = await repo.createRepository({
+      name: 'TEST: Stop Run Workspace',
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: Stop run task',
+      description: 'Stop run task description',
+      status: 'running',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+      workerKind: 'native-local',
+      timeoutSeconds: 60,
+      summary: 'running',
+      startedAt: new Date('2026-06-02T00:00:00.000Z'),
+    });
+
+    const stopRes = await app.request(`http://localhost/api/runs/${run.id}/stop`, {
+      method: 'POST',
+      headers: _sameOriginHeaders,
+    });
+
+    expect(stopRes.status).toBe(200);
+    const body = await stopRes.json();
+    expect(body.id).toBe(run.id);
+    expect(body.status).toBe('cancelled');
+
+    const stoppedRun = await repo.getTaskRun(run.id);
+    expect(stoppedRun?.status).toBe('cancelled');
+    const updatedTask = await repo.getTask(task.id);
+    expect(updatedTask?.status).toBe('ready');
+    const events = await repo.listTaskEventsForRun(run.id);
+    expect(
+      events.some((event) => (event.payloadJson as any)?.runEvent?.type === 'run.stop_requested')
+    ).toBe(true);
+  });
+
   it('persists agent reviewer evaluations without changing run status', async () => {
     const createdRepo = await repo.createRepository({
       name: 'TEST: Reviewer Route Workspace',

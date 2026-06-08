@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
 import {
   runSessionQueueForRepository,
@@ -7,7 +7,9 @@ import {
 import * as runtimeRegistry from '../../api/services/agent-runtime/registry';
 import * as conversationContext from '../../api/services/conversation-context';
 
-vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
+const repoRoot = '/Users/y.noguchi/Code/nightWorkers';
+
+vi.mock('../../api/modules/nightworkers/nightworkers.repository', () => ({
   getTask: vi.fn(),
   updateRepository: vi.fn(),
   countActiveTaskRuns: vi.fn(),
@@ -31,11 +33,11 @@ vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   updateImplementationQueueEntry: vi.fn(),
 }));
 
-vi.mock('../api/services/agent-runtime/registry', () => ({
+vi.mock('../../api/services/agent-runtime/registry', () => ({
   resolveAgentRuntime: vi.fn(),
 }));
 
-vi.mock('../api/services/conversation-context', () => ({
+vi.mock('../../api/services/conversation-context', () => ({
   buildPromptWithStateCard: vi.fn(
     (input: { latestUserMessage: string; stateCardText?: string | null }) => {
       const request = input.latestUserMessage.trim();
@@ -65,7 +67,13 @@ vi.mock('../api/services/conversation-context', () => ({
 }));
 
 describe('NightWorkers service', () => {
-  it('uses the codex-agent runtime lane when Codex is the active enabled provider', async () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.ACTIVE_LLM_PROVIDER;
+    delete process.env.CODEX_ENABLED;
+  });
+
+  it('keeps Codex provider execution on the native supervisor lane unless explicitly overridden', async () => {
     process.env.ACTIVE_LLM_PROVIDER = 'codex';
     process.env.CODEX_ENABLED = 'true';
     const task = {
@@ -74,7 +82,7 @@ describe('NightWorkers service', () => {
       title: 'Codex provider task',
       description: 'Use Codex provider',
       objective: 'Use Codex provider',
-      acceptanceCriteria: 'Codex provider starts runtime lane',
+      acceptanceCriteria: 'Codex provider keeps native supervisor lane',
       timeoutSeconds: 60,
     };
     const run = {
@@ -109,7 +117,7 @@ describe('NightWorkers service', () => {
       logContent: '',
     });
     vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
-      kind: 'codex-agent',
+      kind: 'native-local',
       start: runtimeStart,
       stop: vi.fn(),
     } as any);
@@ -118,17 +126,17 @@ describe('NightWorkers service', () => {
 
     expect(repo.createTaskRun).toHaveBeenCalledWith(
       expect.objectContaining({
-        workerKind: 'codex-agent',
+        workerKind: 'native-local',
         contextSnapshot: expect.objectContaining({
-          runtimeLane: 'codex-agent',
+          runtimeLane: 'native-supervisor',
           runtimeLaneResolution: expect.objectContaining({
-            workerKind: 'codex-agent',
-            source: 'settings',
+            workerKind: 'native-local',
+            source: 'env_default',
           }),
         }),
       })
     );
-    expect(runtimeRegistry.resolveAgentRuntime).toHaveBeenCalledWith('codex-agent');
+    expect(runtimeRegistry.resolveAgentRuntime).toHaveBeenCalledWith('native-local');
   });
 
   it('starts simple runtime once without creating planned todos', async () => {

@@ -59,12 +59,11 @@ export function resolveRuntimeLane(input: RuntimeLaneInput = {}): RuntimeLaneRes
       ? input.codexEnabled
       : String(env.CODEX_ENABLED || '').toLowerCase() === 'true';
   if (activeProvider === 'codex' && codexEnabled) {
-    return {
-      lane: 'codex-agent',
-      workerKind: 'codex-agent',
-      source: 'settings',
-      diagnostics,
-    };
+    diagnostics.push({
+      level: 'info',
+      message:
+        'Codex provider selected for supervisor LLM calls; runtime lane remains native-supervisor unless explicitly overridden.',
+    });
   }
 
   return {

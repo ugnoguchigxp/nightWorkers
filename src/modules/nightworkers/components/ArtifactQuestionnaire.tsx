@@ -22,9 +22,7 @@ export function QuestionnaireForm({
         const questions = (Array.isArray(group.questions) ? group.questions : []).filter(
           (question: any) => isQuestionDependencySatisfied(question, answers)
         );
-        const unanswered = questions.filter(
-          (question: any) => !isAnswered(answers[question.id])
-        ).length;
+        const unanswered = getUnansweredQuestions([group], answers).length;
         return (
           <section key={String(group.id)} className="grid gap-2">
             <div className="flex items-center justify-between gap-3 border-slate-800 border-b pb-1">
@@ -124,11 +122,13 @@ export function ActionButton({
   label,
   icon,
   busy,
+  disabled,
   onClick,
 }: {
   label: string;
   icon?: 'send';
   busy?: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -136,7 +136,7 @@ export function ActionButton({
       type="button"
       className="inline-flex items-center gap-1.5 rounded border border-slate-700 bg-slate-950/20 px-2 py-1 text-xs text-slate-200 hover:border-slate-500 disabled:cursor-wait disabled:opacity-60"
       onClick={onClick}
-      disabled={busy}
+      disabled={busy || disabled}
     >
       {busy ? (
         <LoaderCircle className="h-3 w-3 animate-spin" />
@@ -167,15 +167,37 @@ export function isAnswered(answer?: DesignQuestionnaireAnswer) {
   );
 }
 
-export function buildSubmittableQuestionnaireAnswers(
+export function isQuestionAnswered(question: any, answer?: DesignQuestionnaireAnswer) {
+  if (answer?.deferred) return true;
+  if (question.answerType === 'multi_choice') return true;
+  return isAnswered(answer);
+}
+
+export function getVisibleQuestionnaireQuestions(
   questionGroups: any[],
   answers: Record<string, DesignQuestionnaireAnswer>
 ) {
-  const visibleQuestions = questionGroups.flatMap((group) =>
+  return questionGroups.flatMap((group) =>
     (Array.isArray(group.questions) ? group.questions : []).filter((question: any) =>
       isQuestionDependencySatisfied(question, answers)
     )
   );
+}
+
+export function getUnansweredQuestions(
+  questionGroups: any[],
+  answers: Record<string, DesignQuestionnaireAnswer>
+) {
+  return getVisibleQuestionnaireQuestions(questionGroups, answers).filter(
+    (question: any) => !isQuestionAnswered(question, answers[question.id])
+  );
+}
+
+export function buildSubmittableQuestionnaireAnswers(
+  questionGroups: any[],
+  answers: Record<string, DesignQuestionnaireAnswer>
+) {
+  const visibleQuestions = getVisibleQuestionnaireQuestions(questionGroups, answers);
   const merged = { ...answers };
   for (const question of visibleQuestions) {
     if (!merged[question.id] && question.answerType === 'multi_choice') {
@@ -189,13 +211,9 @@ export function getAnswerProgress(
   questionGroups: any[],
   answers: Record<string, DesignQuestionnaireAnswer>
 ) {
-  const questions = questionGroups.flatMap((group) =>
-    (Array.isArray(group.questions) ? group.questions : []).filter((question: any) =>
-      isQuestionDependencySatisfied(question, answers)
-    )
-  );
+  const questions = getVisibleQuestionnaireQuestions(questionGroups, answers);
   const answeredCount = questions.filter((question: any) =>
-    isAnswered(answers[question.id])
+    isQuestionAnswered(question, answers[question.id])
   ).length;
   return {
     answeredCount,

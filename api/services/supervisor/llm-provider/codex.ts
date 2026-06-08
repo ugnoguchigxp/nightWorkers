@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { CodexOptions, Thread, ThreadEvent, Usage } from '@openai/codex-sdk';
-import { createSupervisorResponseDeltaEmitter, rejectProviderActivity } from './events';
+import { createSupervisorResponseDeltaEmitter, traceProviderActivity } from './events';
 import type { CallSupervisorOptions, NormalizedSupervisorLlmRequest } from './types';
 
 const codexSupervisorFeatureOverrides = {
@@ -115,7 +115,7 @@ export async function readCodexStreamedTurn(input: {
     const item = event.item;
     if (item.type !== 'agent_message') {
       if (input.normalizedRequest) {
-        await rejectProviderActivity({
+        await traceProviderActivity({
           options: input.options,
           request: input.normalizedRequest,
           activityType: `codex.${item.type}`,

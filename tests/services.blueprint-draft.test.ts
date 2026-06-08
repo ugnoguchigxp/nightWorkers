@@ -35,4 +35,48 @@ describe('Blueprint draft rendering', () => {
     expect(markdown).toContain('## Implementation Tasks');
     expect(markdown).toContain('Implement command center');
   });
+
+  it('renders preset overrides and custom section roots for review', () => {
+    const markdown = renderBlueprintMarkdown({
+      ...representativeAppBlueprint,
+      databaseSchema: { tables: [], relations: [] },
+      dataBindings: [],
+      screens: [
+        {
+          ...representativeAppBlueprint.screens[0],
+          sections: [
+            {
+              kind: 'preset_section',
+              id: 'customers-search',
+              preset: 'search_header',
+              props: { title: 'Customers' },
+              overrides: [
+                {
+                  target: 'searchInput',
+                  set: { layout: { width: '1/2' } },
+                },
+              ],
+              actions: [],
+            },
+            {
+              kind: 'custom_section',
+              id: 'operations-overview',
+              root: {
+                kind: 'layout',
+                id: 'root',
+                layout: 'grid',
+                props: {},
+                children: [],
+              },
+              actions: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(markdown).toContain('preset: `search_header`');
+    expect(markdown).toContain('Overrides: searchInput');
+    expect(markdown).toContain('Root: layout #root (grid) 0 children');
+  });
 });

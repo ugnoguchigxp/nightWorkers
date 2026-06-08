@@ -3,6 +3,7 @@ export const RUN_EVENT_TYPES = [
   'run.prompt_prepared',
   'run.runtime_started',
   'run.runtime_finished',
+  'run.stop_requested',
   'run.outcome_decided',
   'run.finalizing_started',
   'run.final_judgment_created',

@@ -83,8 +83,10 @@ type WorkbenchArtifactContext = {
   metadata?: {
     intent?: string;
     appBlueprintName?: string;
+    artifactType?: string;
     screenNames?: string[];
     sectionNames?: string[];
+    tableNames?: string[];
     initialTab?: string;
   };
 };
@@ -144,6 +146,7 @@ export async function appendWorkbenchMessage(
   const prompt = input.prompt.trim();
   if (!prompt) throw new AppError(400, 'EMPTY_PROMPT', 'Prompt must not be empty');
   const artifactContext = input.artifactContext || null;
+  const existingMessages = await repo.listTaskMessages(id);
   const messageMetadata = artifactContext
     ? {
         intent: 'artifact_context_instruction',
@@ -153,7 +156,7 @@ export async function appendWorkbenchMessage(
     : undefined;
 
   if (intent === 'run_task') {
-    assertRunnableWorkbenchTask(task);
+    assertRunnableWorkbenchTask(task, existingMessages);
     await appendTaskMessage(id, prompt, messageMetadata);
     const run = await startTaskRun(id);
     return {
@@ -300,10 +303,7 @@ function blueprintDataDesignTargetLabel(
 ) {
   if (target.kind === 'schema') return 'Schema';
   if (target.kind === 'table') return `Table ${target.tableName}`;
-  if (target.kind === 'relation') return `Relation ${target.relationId}`;
-  if (target.kind === 'binding') return `Binding ${target.bindingId}`;
-  if (target.sectionId) return `Screen ${target.screenId} / section ${target.sectionId}`;
-  return `Screen ${target.screenId}`;
+  return `Relation ${target.relationId}`;
 }
 
 function renderArtifactContextualPrompt(
@@ -326,10 +326,12 @@ function renderArtifactContextualPrompt(
     `Kind: ${artifactContext.kind}`,
     sourceParts.length ? `Source: ${sourceParts.join(', ')}` : null,
     metadata.intent ? `Intent: ${metadata.intent}` : null,
+    metadata.artifactType ? `Artifact type: ${metadata.artifactType}` : null,
     metadata.appBlueprintName ? `Blueprint: ${metadata.appBlueprintName}` : null,
     metadata.initialTab ? `Workspace tab: ${metadata.initialTab}` : null,
     metadata.screenNames?.length ? `Screens: ${metadata.screenNames.join(', ')}` : null,
     metadata.sectionNames?.length ? `Sections: ${metadata.sectionNames.join(', ')}` : null,
+    metadata.tableNames?.length ? `Tables: ${metadata.tableNames.join(', ')}` : null,
     artifactContext.summary ? `Summary: ${artifactContext.summary}` : null,
     '',
     '[User Instruction]',
@@ -412,6 +414,19 @@ async function handleWorkbenchIntakeMessage(
           routing,
           emitEvent: emitWorkbenchLlmDebugEvent,
         });
+        const artifact = await repo.createBlueprintActivityArtifact({
+          taskId,
+          title,
+          appBlueprint: blueprint,
+          validation,
+          generation,
+          source: 'workbench',
+          metadataJson: {
+            routingHypothesis: routing,
+            intakeJobSelection: jobSelection,
+          },
+        });
+        if (!artifact) throw new Error('Blueprint artifact persistence failed.');
         await repo.createTaskMessage({
           taskId,
           role: 'assistant',
@@ -420,6 +435,16 @@ async function handleWorkbenchIntakeMessage(
           payloadJson: {
             intent: 'app_blueprint',
             title,
+            artifactRef: {
+              artifactId: artifact.id,
+              kind: 'app_blueprint',
+              version: 1,
+            },
+            display: {
+              title: blueprint.name || title,
+              summary: blueprint.description || renderBlueprintMarkdown(blueprint).slice(0, 160),
+              cardKind: 'app_blueprint',
+            },
             appBlueprint: blueprint,
             validation,
             generation,

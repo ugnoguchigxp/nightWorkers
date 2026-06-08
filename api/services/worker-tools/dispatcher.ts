@@ -10,6 +10,7 @@ import {
   inspectStructureTool,
   listDirTool,
   mcpCallTool,
+  readCurrentSpecificationTool,
   readFileTool,
   replaceContentTool,
   runCommandTool,
@@ -24,6 +25,7 @@ export type WorkerToolDispatchInput = {
   toolName: WorkerToolName;
   args: Record<string, unknown>;
   repoRoot: string;
+  taskId?: string;
   safetyPolicy?: AgentSafetyPolicy;
   readFiles: string[];
   toolContext?: WorkerToolExecutionContext;
@@ -87,6 +89,14 @@ export async function executeWorkerTool(
       return { result, readFilesChanged: [...readFiles, filePath] };
     }
     return { result };
+  }
+
+  if (toolName === 'read_current_specification') {
+    return {
+      result: await readCurrentSpecificationTool({
+        taskId: (args.taskId as string | undefined) || input.taskId || '',
+      }),
+    };
   }
 
   if (toolName === 'inspect_structure') {

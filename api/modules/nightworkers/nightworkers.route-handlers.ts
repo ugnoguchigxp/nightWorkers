@@ -159,6 +159,16 @@ export async function getTaskRunHandler(c: any) {
   return c.json(run, 200);
 }
 
+export async function stopTaskRunHandler(c: any) {
+  const id = c.req.param('id');
+  try {
+    const run = await service.stopTaskRun(id);
+    return c.json(run, 200);
+  } catch (err: any) {
+    return queueRouteError(c, err);
+  }
+}
+
 export async function listTaskRunEventsHandler(c: any) {
   const id = c.req.param('id');
   try {

@@ -176,6 +176,8 @@ export const enDictionary = {
   'settings.appearance.input': 'Input',
   'composer.diffFiles': '{{count}} files',
   'composer.placeholder': 'Enter instructions (send: Cmd+Enter / Ctrl+Enter)',
+  'composer.send': 'Send',
+  'composer.stop': 'Stop',
   'queue.title': 'Implementation Queue',
   'queue.description': 'Processor automation is separate from normal Session chat.',
   'queue.allProjects': 'All projects',
@@ -323,11 +325,7 @@ export const enDictionary = {
   'blueprint.preview.timeline.implement': 'Implement',
   'blueprint.preview.sectionFallbackTitle': 'Blueprint section',
   'blueprint.preview.sectionFallbackDescription': 'Catalog-backed section preview placeholder.',
-  'blueprint.preview.bindingSource': 'binding "{{name}}"',
-  'blueprint.preview.staticSource': 'static blueprint data',
-  'blueprint.preview.tableContext': ' over "{{name}}"',
-  'blueprint.preview.sectionFallbackText':
-    '{{componentName}} preview uses {{source}}{{tableName}}.',
+  'blueprint.preview.sectionFallbackText': '{{componentName}} preview uses mock blueprint data.',
   'blueprint.designSettings.title': 'Design reference settings',
   'blueprint.designSettings.description':
     'Preview is a specification-review mock. These selected tokens can be attached to later implementation plans.',
