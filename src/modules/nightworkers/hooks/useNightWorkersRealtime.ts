@@ -210,6 +210,11 @@ export function useNightWorkersRealtime({
           if (msg.type === 'task_message_created' && msg.payload?.message) {
             const incoming = msg.payload.message;
             void queryClient.invalidateQueries({ queryKey: ['llmUsage', incoming.taskId] });
+            if (incoming.metadataJson?.intent === 'design_questionnaire_ready') {
+              void queryClient.invalidateQueries({
+                queryKey: ['specificationWorkspace', incoming.taskId],
+              });
+            }
             queryClient.setQueryData<TaskMessage[]>(
               ['taskMessages', activeSessionId],
               (prev = []) => {

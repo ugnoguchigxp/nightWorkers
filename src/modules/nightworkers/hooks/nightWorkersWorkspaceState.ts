@@ -26,6 +26,7 @@ import type {
   TaskRunTodo,
   TodoWorkflowSettings,
   UpdateProjectInput,
+  WorkbenchArtifactContext,
   WorkbenchArtifactRef,
   WorkbenchChatIntent,
   WorkbenchMovableSessionGroup,
@@ -112,7 +113,8 @@ export type NightWorkersWorkspaceState = {
   sendWorkbenchMessage: (
     sessionId: string,
     prompt: string,
-    intent: WorkbenchChatIntent
+    intent: WorkbenchChatIntent,
+    artifactContext?: WorkbenchArtifactContext | null
   ) => Promise<WorkbenchMessageResult | undefined>;
   refreshWorkspace: () => void;
   currentBrowserPath: string | null;

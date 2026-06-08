@@ -10,6 +10,9 @@ import {
   exportTaskRunJsonlHandler,
   generateDesignQuestionnaireFollowUpHandler,
   generateDesignQuestionnaireReviewHandler,
+  generateSpecificationStatusBlueprintHandler,
+  generateSpecificationStatusDbDesignHandler,
+  generateSpecificationStatusDesignDocumentHandler,
   getBlueprintSpecificationWorkspaceHandler,
   getDesignQuestionnaireHandler,
   getSpecificationWorkspaceHandler,
@@ -74,6 +77,9 @@ import {
   deleteTaskRoute,
   generateDesignQuestionnaireFollowUpRoute,
   generateDesignQuestionnaireReviewRoute,
+  generateSpecificationStatusBlueprintRoute,
+  generateSpecificationStatusDbDesignRoute,
+  generateSpecificationStatusDesignDocumentRoute,
   getBlueprintArtifactAdoptionRoute,
   getBlueprintDbDesignAdoptionRoute,
   getBlueprintDesignSettingsRoute,
@@ -534,6 +540,12 @@ const router = createOpenApiRouter()
   )
   .openapi(getBlueprintSpecificationWorkspaceRoute, getBlueprintSpecificationWorkspaceHandler)
   .openapi(getSpecificationWorkspaceRoute, getSpecificationWorkspaceHandler)
+  .openapi(generateSpecificationStatusBlueprintRoute, generateSpecificationStatusBlueprintHandler)
+  .openapi(generateSpecificationStatusDbDesignRoute, generateSpecificationStatusDbDesignHandler)
+  .openapi(
+    generateSpecificationStatusDesignDocumentRoute,
+    generateSpecificationStatusDesignDocumentHandler
+  )
   .openapi(startTaskRunRoute, startTaskRunHandler)
   .openapi(getTaskRunRoute, getTaskRunHandler)
   .openapi(listTaskRunEventsRoute, listTaskRunEventsHandler)

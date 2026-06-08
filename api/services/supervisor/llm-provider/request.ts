@@ -91,7 +91,11 @@ function resolveCallKind(
 ): NormalizedSupervisorLlmRequest['callKind'] {
   if (providerClass === 'fixture') return 'fixture';
   if (label === 'supervisor') return 'supervisor_decision';
-  if (label === 'design_questionnaire' || label === 'design_questionnaire_follow_up') {
+  if (
+    label === 'design_questionnaire' ||
+    label === 'design_questionnaire_follow_up' ||
+    label === 'design_questionnaire_follow_up_decision'
+  ) {
     return 'design_questionnaire';
   }
   if (label === 'design_decision_review') return 'design_decision_review';

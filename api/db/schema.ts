@@ -584,5 +584,3 @@ export const blueprintDesignTokenAdoptions = sqliteTable(
     ),
   })
 );
-
-export * from './design-questionnaire-schema';

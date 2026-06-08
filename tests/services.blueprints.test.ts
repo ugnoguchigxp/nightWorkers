@@ -45,6 +45,86 @@ describe('Blueprint validation service', () => {
     expect(parsed.validation.valid).toBe(true);
   });
 
+  it('repairs misplaced root actions from LLM Blueprint JSON output', () => {
+    const regularBlueprint = {
+      ...representativeAppBlueprint,
+      databaseSchema: { tables: [], relations: [] },
+      dataBindings: [],
+    };
+    const malformedBlueprint = JSON.stringify(regularBlueprint).replace(
+      ',"databaseSchema"',
+      ',"actions":[{"id":"create-card-global","label":"カード追加","type":"open","target":"board-card-form"}]}],"databaseSchema"'
+    );
+
+    const parsed = parseAndValidateBlueprintOutput(malformedBlueprint);
+
+    expect(parsed.blueprint.databaseSchema).toEqual({ tables: [], relations: [] });
+    expect(parsed.blueprint.dataBindings).toEqual([]);
+    expect(parsed.validation.valid).toBe(true);
+  });
+
+  it('adds stable ids to LLM section actions before Blueprint schema validation', () => {
+    const regularBlueprint = {
+      ...representativeAppBlueprint,
+      databaseSchema: { tables: [], relations: [] },
+      dataBindings: [],
+      screens: [
+        {
+          ...representativeAppBlueprint.screens[0],
+          sections: [
+            {
+              id: 'quick-actions',
+              name: 'Quick Actions',
+              componentName: 'QuickActionsSection',
+              source: 'static',
+              props: {
+                title: 'Quick Actions',
+                actions: [{ label: 'Create Card', type: 'open', target: 'create-card' }],
+              },
+              actions: [{ label: 'Create Card', type: 'open', target: 'create-card' }],
+            },
+          ],
+        },
+      ],
+    };
+
+    const parsed = parseAndValidateBlueprintOutput(JSON.stringify(regularBlueprint));
+
+    expect(parsed.blueprint.screens[0]?.sections[0]?.actions[0]?.id).toBe('quick-actions-action-1');
+    expect(parsed.validation.valid).toBe(true);
+  });
+
+  it('normalizes invalid regular Blueprint section sources before validation', () => {
+    const regularBlueprint = {
+      ...representativeAppBlueprint,
+      databaseSchema: { tables: [], relations: [] },
+      dataBindings: [],
+      screens: [
+        {
+          ...representativeAppBlueprint.screens[0],
+          sections: [
+            {
+              id: 'card-form',
+              name: 'Card Form',
+              componentName: 'FormSection',
+              source: 'static',
+              props: {
+                title: 'Card Form',
+                fields: [{ name: 'title', label: 'Title', type: 'text' }],
+              },
+              actions: [],
+            },
+          ],
+        },
+      ],
+    };
+
+    const parsed = parseAndValidateBlueprintOutput(JSON.stringify(regularBlueprint));
+
+    expect(parsed.blueprint.screens[0]?.sections[0]?.source).toBe('app');
+    expect(parsed.validation.valid).toBe(true);
+  });
+
   it('still fails validation after repair when Blueprint contracts are violated', () => {
     const invalidBlueprint = {
       ...representativeAppBlueprint,

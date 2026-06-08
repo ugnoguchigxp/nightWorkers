@@ -5,8 +5,8 @@ import {
   designQuestionnaireQuestionSets,
   designQuestionnaireReviews,
   designQuestionnaireSessions,
-  taskMessages,
-} from '../../db/schema';
+} from '../../db/design-questionnaire-schema';
+import { taskMessages } from '../../db/schema';
 
 function _isAppBlueprintDocumentMessage(messageType: string | null | undefined, payloadJson: any) {
   return Boolean(

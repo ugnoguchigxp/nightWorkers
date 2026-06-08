@@ -11,6 +11,13 @@
 - 通常 Blueprint は screen、section、props に入るサンプル表示、implementation task を一貫した単位として扱う。data model、binding、DDL は DB Design workflow で扱う。
 - 既存の Blueprint artifact がある場合は、現在の user request を反映して更新・差分化する前提で考える。
 - e-commerce、dashboard、admin、content、workflow などのドメインらしさを、generic overview ではなく実際の画面構成とコンポーネント選定に反映する。
+- section は必要なものだけを選ぶ。見栄えのために hero、画像、KPI、chart、activity、marketing section を自動追加しない。
+- workflow / CRUD / kanban / admin などの作業画面では、見た目の優先度だけでなく、実際の操作順序、使用感、作業前に必要な入力、画面上の視線移動を考えて section と props を決める。
+- Kanban なら KanbanSection を主役にし、検索・フィルタ・表示切替は KanbanSection.props.filters / views / segments としてボード上部の toolbar に出す。ボードを操作する前に使う controls をボード下に置かない。
+- KanbanSection の props は Backlog / In Progress / Done 相当の3列 `columns: [{id,title,cards:[{id,title,description,assignee,priority,dueDate}]}]` を基本形にする。`boardLabel`、`boardDescription`、`filters` を必要に応じて入れる。ボード、列、カード、検索、フィルタの確認が目的なら DataTableSection を使わない。
+- Kanban では QuickActionsSection、EmptyState、FormSection、DataTableSection を自動追加しない。ユーザーが明示的に「新規作成導線」「空状態」「編集フォーム」「表形式一覧」を求めた場合だけ使う。
+- SplitHeroSection / ImageSection / CarouselSection は landing、marketing、media-heavy な画面、またはユーザーが明示的に hero / visual / campaign を求めた場合だけ使う。
+- ChartSection / ChartInsightSection / KpiSummarySection / StatsTrendCardsSection / ProgressListSection は、ユーザーが metrics / KPI / analytics / dashboard / trend / chart を明示した場合だけ使う。
 - AppBlueprint JSON を作る場合は、下記の Schema Reference と JSON Contract に従う。schema にない自由なキーを主要構造へ追加せず、必要な補足は description、intent、visualIntent、props、implementationTasks、learningHooks の中に収める。
 
 ### Schema Reference
@@ -72,8 +79,10 @@ AppBlueprint JSON は次の root 形にする。
 ### Blueprint Quality Bar
 
 - EC サイトなら hero、campaign、category navigation、featured products、trust/support、cart/checkout への導線など、トップページらしい section を入れる。
-- Dashboard なら KPI、trend、activity、table/action、alert/notification など、運用画面らしい section を入れる。
-- Admin なら filters、bulk action、status、audit/history、detail/edit 導線など、管理作業に必要な section を入れる。
+- Dashboard なら、ユーザーが metrics や monitoring を求めた場合だけ KPI、trend、activity、alert/notification を入れる。通常の作業画面を dashboard っぽく盛らない。
+- Admin なら filters、bulk action、status、audit/history、detail/edit 導線など、管理作業に直接必要な section だけを入れる。
+- Kanban なら KanbanSection を中心にし、必要なら MainSearchNavigationSection を添える。QuickActionsSection、EmptyState、FormSection、DataTableSection に逃がさない。SplitHeroSection、画像、棒グラフ、KPI summary は通常不要。
+- 「最小構成」「シンプル」「基本操作」「画面だけ」の場合、screen あたり 1-3 section を基本にし、中心操作に直結しない section は削る。
 - どのドメインでも、section 名、componentName、props のサンプル表示内容が画面目的に対応していることを確認する。table/column の具体化は DB Design workflow に渡す。
 
 ## Stop Conditions
@@ -95,6 +104,8 @@ AppBlueprint JSON は次の root 形にする。
 ## Verification Guidance
 
 - Blueprint が generic dashboard に偏っていないか確認する。
+- ユーザーが求めていない hero、画像、KPI、chart、activity が混ざっていないか確認する。
+- Kanban / CRUD / form / list などの作業画面で、主役 section が最初に来ているか確認する。
 - ユーザーのドメイン語彙が screen/section/props のサンプル表示に反映されているか確認する。
 - AppBlueprint JSON が schema の root keys、required fields、enum、ID regex に従っているか確認する。
 - 通常 Blueprint で `databaseSchema.tables`、`databaseSchema.relations`、`dataBindings`、`section.dataBindingId` が空のままか確認する。DB Design workflow では相互参照の整合性を別途確認する。

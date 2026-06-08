@@ -17,6 +17,7 @@ type ArtifactPaneProps = {
   activeProject: Repository | null;
   activeSessionId: string | null;
   latestRun?: TaskRun;
+  focusType: 'project_tree' | 'artifact';
   selectedArtifact: WorkbenchArtifactRef | null;
   taskMessages: TaskMessage[];
   fileEntries: ProjectFileEntry[];
@@ -34,10 +35,22 @@ type ArtifactPaneProps = {
   isWorkbenchMessageSubmitting?: boolean;
 };
 
+function workspaceInitialTab(value: unknown) {
+  if (value === 'design-doc') return 'specification';
+  return value === 'blueprints' ||
+    value === 'db-design' ||
+    value === 'questionnaire' ||
+    value === 'specification-status' ||
+    value === 'specification'
+    ? value
+    : undefined;
+}
+
 export function ArtifactPane({
   activeProject,
   activeSessionId,
   latestRun,
+  focusType,
   selectedArtifact,
   taskMessages,
   fileEntries,
@@ -55,6 +68,7 @@ export function ArtifactPane({
   isWorkbenchMessageSubmitting = false,
 }: ArtifactPaneProps) {
   const { t } = useTranslation();
+  const showProjectTree = focusType === 'project_tree';
   const showDiff = selectedArtifact?.kind === 'diff';
   const showBlueprintWorkspace = selectedArtifact?.kind === 'blueprint_workspace';
   const showBlueprint = selectedArtifact?.kind === 'app_blueprint';
@@ -72,7 +86,10 @@ export function ArtifactPane({
     !showBlueprint &&
     !showComponentDesign &&
     Boolean(selectedMessage);
-  const artifactTitle = selectedArtifact?.title || selectedFilePath || t('artifact.projectTree');
+  const artifactTitle =
+    showProjectTree || !selectedArtifact
+      ? selectedFilePath || t('artifact.projectTree')
+      : selectedArtifact.title;
   return (
     <aside className="nightworkers-artifact-pane flex min-h-0 min-w-0 flex-col overflow-hidden">
       <div className="flex h-10 shrink-0 items-center border-b border-[#313244] bg-[#1e1e2e] px-3 pr-12">
@@ -85,7 +102,7 @@ export function ArtifactPane({
         </div>
       </div>
       <div className="flex min-h-0 flex-1">
-        {!selectedArtifact ? (
+        {showProjectTree ? (
           <div className="min-h-0 w-56 shrink-0 overflow-auto border-r border-slate-800 p-2">
             <FilesOutline
               latestRun={latestRun}
@@ -108,6 +125,7 @@ export function ArtifactPane({
             <BlueprintSpecificationWorkspaceViewer
               sessionId={activeSessionId}
               taskMessages={taskMessages}
+              initialTab={workspaceInitialTab(selectedArtifact?.metadata?.initialTab)}
             />
           ) : showBlueprint ? (
             <BlueprintViewer
@@ -116,12 +134,6 @@ export function ArtifactPane({
               blueprint={selectedArtifact?.metadata?.appBlueprint}
               validation={selectedArtifact?.metadata?.validation}
               markdown={selectedMessage?.content}
-              isDbDesignSubmitting={isWorkbenchMessageSubmitting}
-              onSubmitDbDesignRequest={
-                onSubmitWorkbenchMessage
-                  ? (prompt) => onSubmitWorkbenchMessage(prompt, 'design_blueprint_data')
-                  : undefined
-              }
             />
           ) : showComponentDesign ? (
             <ComponentDesignViewer
@@ -133,13 +145,17 @@ export function ArtifactPane({
             />
           ) : showDocument ? (
             <MarkdownViewer content={selectedMessage?.content || ''} />
-          ) : selectedFile ? (
+          ) : showProjectTree && selectedFile ? (
             <FileViewer file={selectedFile} />
-          ) : isFileLoading ? (
+          ) : showProjectTree && isFileLoading ? (
             <p className="text-xs text-slate-400">{t('artifact.loadingFile')}</p>
-          ) : (
+          ) : showProjectTree ? (
             <div className="flex h-full items-center justify-center text-xs text-slate-500">
               {t('artifact.selectFileOrDiff')}
+            </div>
+          ) : (
+            <div className="flex h-full items-center justify-center text-xs text-slate-500">
+              Artifact target is not available.
             </div>
           )}
         </div>
@@ -208,16 +224,12 @@ function BlueprintViewer({
   blueprint,
   validation,
   markdown,
-  isDbDesignSubmitting,
-  onSubmitDbDesignRequest,
 }: {
   sessionId: string | null;
   messageId: string | null;
   blueprint: unknown;
   validation: unknown;
   markdown?: string;
-  isDbDesignSubmitting?: boolean;
-  onSubmitDbDesignRequest?: (prompt: string) => Promise<void>;
 }) {
   const { t } = useTranslation();
 
@@ -244,8 +256,6 @@ function BlueprintViewer({
             tables={tables}
             bindings={bindings}
             validationIssues={issues}
-            isDbDesignSubmitting={isDbDesignSubmitting}
-            onSubmitDbDesignRequest={onSubmitDbDesignRequest}
           />
         </BlueprintSection>
         <PromptDetail>

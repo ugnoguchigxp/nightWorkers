@@ -109,6 +109,39 @@ export async function getSpecificationWorkspaceHandler(c: any): Promise<any> {
   }
 }
 
+export async function generateSpecificationStatusBlueprintHandler(c: any): Promise<any> {
+  const id = c.req.param('id');
+  const request = c.req.valid('json');
+  try {
+    const result = await service.generateSpecificationStatusBlueprint(id, request);
+    return c.json(result, 200);
+  } catch (err: any) {
+    return queueRouteError(c, err);
+  }
+}
+
+export async function generateSpecificationStatusDbDesignHandler(c: any): Promise<any> {
+  const id = c.req.param('id');
+  const request = c.req.valid('json');
+  try {
+    const result = await service.generateSpecificationStatusDbDesign(id, request);
+    return c.json(result, 200);
+  } catch (err: any) {
+    return queueRouteError(c, err);
+  }
+}
+
+export async function generateSpecificationStatusDesignDocumentHandler(c: any): Promise<any> {
+  const id = c.req.param('id');
+  const request = c.req.valid('json');
+  try {
+    const result = await service.generateSpecificationStatusDesignDocument(id, request);
+    return c.json(result, 200);
+  } catch (err: any) {
+    return queueRouteError(c, err);
+  }
+}
+
 export async function startTaskRunHandler(c: any) {
   const id = c.req.param('id');
   try {

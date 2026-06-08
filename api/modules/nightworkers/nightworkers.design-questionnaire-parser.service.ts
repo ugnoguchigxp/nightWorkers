@@ -3,8 +3,10 @@ import {
   type DesignDecisionReview,
   type DesignQuestionnaire,
   type DesignQuestionnaireAnswer,
+  type DesignQuestionnaireFollowUpDecision,
   designDecisionReviewSchema,
   designQuestionnaireAnswerSchema,
+  designQuestionnaireFollowUpDecisionSchema,
   designQuestionnaireSchema,
   type QuestionnaireChoiceForm,
   questionnaireChoiceFormSchema,
@@ -52,11 +54,21 @@ export function parseDesignQuestionnaireRaw(
 
 function adaptQuestionnaireChoiceForm(
   form: QuestionnaireChoiceForm,
-  fallbackSource?: DesignQuestionnaireSourceFallback
+  fallbackSource?: DesignQuestionnaireSourceFallback,
+  options?: {
+    questionSetId?: string;
+    questionIdPrefix?: string;
+    category?: string;
+    purpose?: string;
+    summary?: string;
+  }
 ): DesignQuestionnaire {
   if (!fallbackSource?.taskId || !fallbackSource.repositoryId) {
     throw new Error('Questionnaire choice form requires server-side source fallback.');
   }
+  const questionSetId = options?.questionSetId || 'choice-form';
+  const questionIdPrefix = options?.questionIdPrefix || 'q';
+  const category = options?.category || '実装前確認';
   return {
     version: 1,
     source: {
@@ -66,15 +78,18 @@ function adaptQuestionnaireChoiceForm(
       blueprintMessageId: fallbackSource.sourceBlueprintMessageId || null,
     },
     title: form.title,
-    summary: '実装前に決めたい項目を選択式で確認します。',
+    summary: options?.summary || '実装前に決めたい項目を選択式で確認します。',
     questionSets: [
       {
-        id: 'choice-form',
+        id: questionSetId,
         title: form.title,
-        category: '実装前確認',
-        purpose: '実装に入る前に、未決定の仕様判断を選択式で確定します。',
+        category,
+        purpose: options?.purpose || '実装に入る前に、未決定の仕様判断を選択式で確定します。',
         questions: form.questions.map((question, questionIndex) => {
-          const questionId = `q${questionIndex + 1}`;
+          const questionId =
+            questionIdPrefix === 'q'
+              ? `q${questionIndex + 1}`
+              : `${questionIdPrefix}-q${questionIndex + 1}`;
           return {
             id: questionId,
             topic: `Question ${questionIndex + 1}`,
@@ -271,6 +286,42 @@ export function parseDesignDecisionReviewRaw(
   }
 }
 
+export function parseDesignQuestionnaireFollowUpDecisionRaw(
+  rawOutput: string,
+  fallbackSource: DesignQuestionnaireSourceFallback,
+  nextSequence: number
+):
+  | {
+      ok: true;
+      value: {
+        action: DesignQuestionnaireFollowUpDecision['action'];
+        rationale: string;
+        questionnaire: DesignQuestionnaire | null;
+      };
+    }
+  | { ok: false; error: unknown } {
+  const decision = parseRepairedJsonWithSchema(
+    rawOutput,
+    designQuestionnaireFollowUpDecisionSchema
+  );
+  if (!decision.ok) return { ok: false, error: decision.error };
+  return {
+    ok: true,
+    value: {
+      ...decision.value,
+      questionnaire: decision.value.questionnaire
+        ? adaptQuestionnaireChoiceForm(decision.value.questionnaire, fallbackSource, {
+            questionSetId: `follow-up-${nextSequence}`,
+            questionIdPrefix: `follow-up-${nextSequence}`,
+            category: '追質問',
+            purpose: '回答内容から残った仕様の曖昧さを追加確認します。',
+            summary: '回答後に残った未決定事項を選択式で追加確認します。',
+          })
+        : null,
+    },
+  };
+}
+
 export async function buildDesignQuestionnaireSessionView(sessionId: string) {
   const session = await repo.getDesignQuestionnaireSession(sessionId);
   if (!session) throw new NotFoundError('Questionnaire session not found');
@@ -402,6 +453,9 @@ export function renderDesignDecisionReviewMarkdown(review: DesignDecisionReview)
 }
 
 export const questionnaireChoiceFormJsonSchema = z.toJSONSchema(questionnaireChoiceFormSchema);
+export const designQuestionnaireFollowUpDecisionJsonSchema = z.toJSONSchema(
+  designQuestionnaireFollowUpDecisionSchema
+);
 
 export const designDecisionReviewJsonSchema = {
   type: 'object',

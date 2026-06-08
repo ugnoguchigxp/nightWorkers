@@ -5,9 +5,9 @@ import { ensureNightWorkersSchema } from '../../api/db/bootstrap';
 import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
 import * as llm from '../../api/services/supervisor/llm-provider';
 
-vi.mock('../api/services/supervisor/llm-provider', async () => {
-  const actual = await vi.importActual<typeof import('../api/services/supervisor/llm-provider')>(
-    '../api/services/supervisor/llm-provider'
+vi.mock('../../api/services/supervisor/llm-provider', async () => {
+  const actual = await vi.importActual<typeof import('../../api/services/supervisor/llm-provider')>(
+    '../../api/services/supervisor/llm-provider'
   );
   return {
     ...actual,
@@ -16,7 +16,7 @@ vi.mock('../api/services/supervisor/llm-provider', async () => {
   };
 });
 
-vi.mock('../api/services/agent-runtime/registry', () => ({
+vi.mock('../../api/services/agent-runtime/registry', () => ({
   resolveAgentRuntime: vi.fn(() => ({
     kind: 'native-local',
     start: vi.fn(async () => ({
@@ -116,6 +116,49 @@ describe('NightWorkers workbench routes', () => {
     expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
     expect(body.messages.some((message: any) => message.role === 'assistant')).toBe(true);
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
+  });
+
+  it('passes the active artifact context to workbench intake without rewriting the user message', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('general_answer', '現在の Artifact を前提に修正方針を返します。')
+    );
+    const { task } = await createWorkbenchTask();
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({
+        prompt: '検索とフィルターはボードの上に置いてください',
+        intent: 'draft',
+        artifactContext: {
+          artifactId: 'message-blueprint-1',
+          kind: 'app_blueprint',
+          title: 'Blueprint: Kanban System Blueprint',
+          summary: 'KanbanSection を含む Blueprint Preview',
+          source: { type: 'task_message', messageId: crypto.randomUUID() },
+          metadata: {
+            intent: 'app_blueprint',
+            appBlueprintName: 'Kanban System Blueprint',
+            screenNames: ['Kanban Workspace'],
+            sectionNames: ['Kanban Workspace', 'Boards and Filters'],
+          },
+        },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const userMessage = body.messages.find((message: any) => message.role === 'user');
+    expect(userMessage.content).toBe('検索とフィルターはボードの上に置いてください');
+    expect(userMessage.metadataJson.artifactContext.title).toBe(
+      'Blueprint: Kanban System Blueprint'
+    );
+    const llmPrompt = vi.mocked(llm.callSupervisorLLM).mock.calls[0]?.[1] as string;
+    expect(llmPrompt).toContain('[Current Artifact Context]');
+    expect(llmPrompt).toContain('Blueprint: Kanban System Blueprint');
+    expect(llmPrompt).toContain('Sections: Kanban Workspace, Boards and Filters');
+    expect(llmPrompt).toContain('[User Instruction]');
+    expect(llmPrompt).toContain('検索とフィルターはボードの上に置いてください');
   });
 
   it('starts a docs run for normal intake without persisting the round 1 response as chat', async () => {
@@ -230,6 +273,18 @@ describe('NightWorkers workbench routes', () => {
         (message: any) => message.role === 'assistant' && message.content.includes('jobType:')
       )
     ).toBe(false);
+    const questionnaireReadyMessage = body.messages.find(
+      (message: any) => message.metadataJson?.intent === 'design_questionnaire_ready'
+    );
+    expect(questionnaireReadyMessage).toMatchObject({
+      role: 'system',
+      metadataJson: expect.objectContaining({
+        questionnaireStatus: 'answering',
+        totalQuestionCount: 1,
+        intakeJobSelection: expect.objectContaining({ jobType: 'planning' }),
+      }),
+    });
+    expect(questionnaireReadyMessage.content).toContain('Design Questionnaire を生成しました');
     expect(
       body.messages.some((message: any) => message.metadataJson?.intent === 'app_blueprint')
     ).toBe(false);

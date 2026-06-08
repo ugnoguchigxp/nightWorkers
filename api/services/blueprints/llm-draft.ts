@@ -4,11 +4,16 @@ import {
   type AppBlueprint,
   appBlueprintSchema,
 } from '../../../shared/schemas/app-blueprint.schema';
-import { blueprintCatalog } from '../blueprint-catalog';
+import {
+  blueprintCatalog,
+  getBlueprintComponentDefinition,
+  isAllowedBlueprintSource,
+} from '../blueprint-catalog';
 import { defaultDesignPreset } from '../design-governance';
 import { callStructuredJsonLLM, type SupervisorLlmDebugEvent } from '../supervisor/llm-provider';
 import {
   type JsonFixWrapperResult,
+  jsonFixWrapper,
   parseRepairedJsonWithSchema,
 } from '../supervisor/llm-provider/json';
 import {
@@ -114,9 +119,9 @@ export function parseAndValidateBlueprintOutput(rawOutput: string): {
   validation: ReturnType<typeof validateAppBlueprint>;
   jsonRepair: BlueprintJsonRepairDiagnostics;
 } {
-  const parsed = parseRepairedJsonWithSchema(rawOutput, appBlueprintSchema);
+  const parsed = parseBlueprintJsonOutput(rawOutput);
   if (!parsed.ok) throw new Error('Blueprint LLM output did not contain valid JSON.');
-  const blueprint = parsed.value;
+  const blueprint = normalizeRegularBlueprintBindings(parsed.value);
   const validation = validateAppBlueprint(blueprint);
   if (!validation.valid) {
     throw new Error(
@@ -130,6 +135,164 @@ export function parseAndValidateBlueprintOutput(rawOutput: string): {
     validation,
     jsonRepair: { repaired: parsed.repaired, repairKind: parsed.repairKind },
   };
+}
+
+function parseBlueprintJsonOutput(rawOutput: string) {
+  const parsed = parseRepairedJsonWithSchema(rawOutput, appBlueprintSchema);
+  if (parsed.ok) return parsed;
+
+  const normalized = parseNormalizedBlueprintCandidate(rawOutput);
+  if (normalized) return normalized;
+
+  const repairedRootActions = repairMisplacedRootActions(rawOutput);
+  if (!repairedRootActions) return parsed;
+  const normalizedRepairedRootActions = parseNormalizedBlueprintCandidate(repairedRootActions);
+  if (normalizedRepairedRootActions) return normalizedRepairedRootActions;
+  const repaired = parseRepairedJsonWithSchema(repairedRootActions, appBlueprintSchema);
+  if (!repaired.ok) return repaired;
+  return {
+    ...repaired,
+    repaired: true,
+    repairKind: repaired.repaired ? 'extracted_and_balanced_json' : 'balanced_json',
+  } as const;
+}
+
+function parseNormalizedBlueprintCandidate(rawOutput: string) {
+  const jsonFix = jsonFixWrapper(rawOutput);
+  if (!jsonFix) return null;
+  const normalized = normalizeBlueprintCandidate(jsonFix.parsedJson);
+  const parsed = appBlueprintSchema.safeParse(normalized);
+  if (!parsed.success) return null;
+  return {
+    ok: true,
+    value: parsed.data,
+    sourceText: jsonFix.sourceText,
+    repaired: true,
+    repairKind: jsonFix.repaired ? 'extracted_and_balanced_json' : 'balanced_json',
+  } as const;
+}
+
+function repairMisplacedRootActions(rawOutput: string): string | null {
+  const candidate = extractBlueprintJsonCandidate(rawOutput);
+  if (!candidate) return null;
+  const databaseMarker = ',"databaseSchema"';
+  const databaseIndex = candidate.indexOf(databaseMarker);
+  if (databaseIndex < 0) return null;
+
+  const prefix = candidate.slice(0, databaseIndex);
+  const misplacedActionsIndex = prefix.lastIndexOf('],"actions":[');
+  if (misplacedActionsIndex < 0) return null;
+
+  const keepScreensCloseIndex = misplacedActionsIndex + 1;
+  return `${prefix.slice(0, keepScreensCloseIndex)}${candidate.slice(databaseIndex)}`;
+}
+
+function normalizeBlueprintCandidate(candidate: unknown): unknown {
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return candidate;
+  const blueprint = { ...(candidate as Record<string, unknown>) };
+  delete blueprint.actions;
+  if (!Array.isArray(blueprint.screens)) return blueprint;
+  blueprint.screens = blueprint.screens.map((screen, screenIndex) => {
+    if (!screen || typeof screen !== 'object' || Array.isArray(screen)) return screen;
+    const screenRecord = { ...(screen as Record<string, unknown>) };
+    const screenScope = stableBlueprintId(screenRecord.id, `screen-${screenIndex + 1}`);
+    screenRecord.actions = normalizeBlueprintActions(screenRecord.actions, screenScope);
+    if (Array.isArray(screenRecord.sections)) {
+      screenRecord.sections = screenRecord.sections.map((section, sectionIndex) => {
+        if (!section || typeof section !== 'object' || Array.isArray(section)) return section;
+        const sectionRecord = { ...(section as Record<string, unknown>) };
+        const sectionScope = stableBlueprintId(
+          sectionRecord.id,
+          `${screenScope}-section-${sectionIndex + 1}`
+        );
+        sectionRecord.actions = normalizeBlueprintActions(sectionRecord.actions, sectionScope);
+        return sectionRecord;
+      });
+    }
+    return screenRecord;
+  });
+  return blueprint;
+}
+
+function normalizeBlueprintActions(actions: unknown, scope: string): unknown {
+  if (!Array.isArray(actions)) return actions;
+  return actions.map((action, actionIndex) => {
+    if (!action || typeof action !== 'object' || Array.isArray(action)) return action;
+    const actionRecord = { ...(action as Record<string, unknown>) };
+    if (typeof actionRecord.id !== 'string' || actionRecord.id.trim().length === 0) {
+      actionRecord.id = `${scope}-action-${actionIndex + 1}`;
+    }
+    return actionRecord;
+  });
+}
+
+function stableBlueprintId(value: unknown, fallback: string): string {
+  const raw = typeof value === 'string' && value.trim().length > 0 ? value : fallback;
+  const normalized = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
+  if (/^[a-z][a-z0-9-]*$/.test(normalized)) return normalized;
+  return `item-${fallback}`.replace(/[^a-z0-9-]+/g, '-');
+}
+
+function extractBlueprintJsonCandidate(rawOutput: string): string | null {
+  const direct = rawOutput.trim();
+  if (direct.startsWith('{') && direct.endsWith('}')) return direct;
+  const fenced =
+    rawOutput.match(/```json\s*([\s\S]*?)\s*```/i) || rawOutput.match(/```\s*([\s\S]*?)\s*```/i);
+  if (fenced?.[1]) return fenced[1].trim();
+  const first = rawOutput.indexOf('{');
+  const last = rawOutput.lastIndexOf('}');
+  if (first >= 0 && last > first) return rawOutput.slice(first, last + 1).trim();
+  return null;
+}
+
+function normalizeRegularBlueprintBindings(blueprint: AppBlueprint): AppBlueprint {
+  if (blueprint.dataBindings.length > 0) return blueprint;
+  return {
+    ...blueprint,
+    screens: blueprint.screens.map((screen) => ({
+      ...screen,
+      sections: screen.sections.map((section) => {
+        const sectionWithoutBinding = { ...section };
+        delete sectionWithoutBinding.dataBindingId;
+        if (
+          !isAllowedBlueprintSource(
+            sectionWithoutBinding.componentName,
+            sectionWithoutBinding.source
+          )
+        ) {
+          sectionWithoutBinding.source = pickRegularBlueprintSource(
+            sectionWithoutBinding.componentName
+          );
+        }
+        return sectionWithoutBinding;
+      }),
+    })),
+  };
+}
+
+function pickRegularBlueprintSource(
+  componentName: string
+): AppBlueprint['screens'][number]['sections'][number]['source'] {
+  const definition = getBlueprintComponentDefinition(componentName);
+  const preferredSources = [
+    'static',
+    'computed',
+    'app',
+    'summary',
+    'none',
+    'markdown',
+    'navigation',
+    'api',
+    'table',
+    'record',
+    'postgres',
+  ] as const;
+  return preferredSources.find((source) => definition?.allowedSources.includes(source)) || 'app';
 }
 
 const blueprintRoutingFallback: SupervisorRoutingHypothesis = {
@@ -164,6 +327,14 @@ function buildBlueprintSystemPrompt(input: {
     `- designPreset はこの既知presetをそのまま使う: ${JSON.stringify(defaultDesignPreset)}。`,
     '- componentName/source は下の Catalog の組み合わせだけを使う。未掲載のcomponent/source/themeを作らない。',
     '- 画面名、セクション名、コンポーネント選択、余白感、情報密度、サンプル表示内容は、ユーザー依頼の業務・ユーザー・利用シーンに合わせて自律的に決める。',
+    '- section は「必要なものだけ」を選ぶ。見栄えのための hero、画像、KPI、chart、activity、marketing section は入れない。',
+    '- workflow / CRUD / kanban / admin などの作業画面では、見た目の優先度だけでなく、実際の操作順序、使用感、作業前に必要な入力、画面上の視線移動を考えて section と props を決める。',
+    '- Kanban なら KanbanSection を主役にし、検索・フィルタ・表示切替は KanbanSection.props.filters / views / segments としてボード上部の toolbar に出す。ボードを操作する前に使う controls をボード下に置かない。',
+    '- KanbanSection の props は Backlog / In Progress / Done 相当の3列 columns: [{id,title,cards:[{id,title,description,assignee,priority,dueDate}]}] を基本形にする。boardLabel、boardDescription、filters を必要に応じて入れる。ボード、列、カード、検索、フィルタの確認が目的なら DataTableSection を使わない。',
+    '- Kanban では QuickActionsSection、EmptyState、FormSection、DataTableSection を自動追加しない。ユーザーが明示的に「新規作成導線」「空状態」「編集フォーム」「表形式一覧」を求めた場合だけ使う。',
+    '- SplitHeroSection、ImageSection、CarouselSection は landing page、marketing page、media-heavy page、またはユーザーが明示的に hero / visual / campaign を求めた場合だけ使う。',
+    '- ChartSection、ChartInsightSection、KpiSummarySection、StatsTrendCardsSection、ProgressListSection は、ユーザーが metrics / KPI / analytics / dashboard / trend / chart を明示した場合だけ使う。Kanban、フォーム、CRUD、一覧管理の初期画面に自動追加しない。',
+    '- ユーザー回答で「最小構成」「シンプル」「基本操作」「画面だけ」と判断された場合は、screen あたり 1-3 section を基本にし、中心操作に直結しない section は削る。',
     '- 通常の Blueprint 生成では DB/DDL/data model/data binding を設計しない。databaseSchema は必ず {"tables":[],"relations":[]}、dataBindings は必ず [] にする。',
     '- 通常の Blueprint 生成では section.dataBindingId を使わない。デザイン確認に必要なサンプル表示は section.props の title、description、items、columns、rows、links、actions、data に入れる。',
     '- DB table/column/relation/binding/DDL の考案は DB Design workflow の担当。必要性がある場合も implementationTasks に「DB Design で検討する」作業として残すだけにする。',

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
+import { apiFetch } from '../../../lib/api-base';
 import { useWorkspaceAppearanceState } from '../contexts/WorkspaceAppearanceContext';
 import {
   useWorkspaceLayoutActions,
@@ -10,6 +11,7 @@ import type {
   ProjectSafetyPolicy,
   TaskMessage,
   ThinkingDepth,
+  WorkbenchArtifactContext,
   WorkbenchArtifactRef,
   WorkbenchChatIntent,
 } from '../types';
@@ -50,10 +52,81 @@ function buildBlueprintArtifactRef(message: TaskMessage): WorkbenchArtifactRef {
   };
 }
 
+function buildQuestionnaireWorkspaceArtifactRef(message: TaskMessage): WorkbenchArtifactRef {
+  return {
+    id: `blueprint-workspace-${message.taskId}`,
+    taskId: message.taskId,
+    runId: message.runId || undefined,
+    kind: 'blueprint_workspace',
+    title: 'Specification Workspace',
+    summary: message.content.slice(0, 160),
+    source: { type: 'task_message', messageId: message.id },
+    createdAt: String(message.createdAt),
+    metadata: {
+      specificationSource: 'design_questionnaire_ready',
+      questionnaireSessionId: message.metadataJson?.questionnaireSessionId,
+      initialTab: 'questionnaire',
+    },
+  };
+}
+
 function asProjectSafetyPolicy(value: unknown): ProjectSafetyPolicy {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return value as ProjectSafetyPolicy;
 }
+
+function toRecord(value: unknown): Record<string, any> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : null;
+}
+
+function buildArtifactContext(
+  artifact: WorkbenchArtifactRef | null,
+  activeSessionId: string | null
+): WorkbenchArtifactContext | null {
+  if (!artifact || artifact.taskId !== activeSessionId) return null;
+  const metadata = artifact.metadata || {};
+  const appBlueprint = toRecord(metadata.appBlueprint);
+  const screens = Array.isArray(appBlueprint?.screens) ? appBlueprint.screens : [];
+  const screenNames = screens
+    .map((screen) => toRecord(screen))
+    .filter((screen): screen is Record<string, any> => Boolean(screen))
+    .map((screen) => String(screen.name || screen.id || ''))
+    .filter(Boolean)
+    .slice(0, 6);
+  const sectionNames = screens
+    .flatMap((screen) => {
+      const record = toRecord(screen);
+      return Array.isArray(record?.sections) ? record.sections : [];
+    })
+    .map((section) => toRecord(section))
+    .filter((section): section is Record<string, any> => Boolean(section))
+    .map((section) =>
+      String(section.name || section.title || section.componentName || section.id || '')
+    )
+    .filter(Boolean)
+    .slice(0, 10);
+  return {
+    artifactId: artifact.id,
+    kind: artifact.kind,
+    title: artifact.title,
+    summary: artifact.summary,
+    source: artifact.source,
+    metadata: {
+      intent: typeof metadata.intent === 'string' ? metadata.intent : undefined,
+      appBlueprintName: String(appBlueprint?.name || appBlueprint?.id || '') || undefined,
+      screenNames: screenNames.length ? screenNames : undefined,
+      sectionNames: sectionNames.length ? sectionNames : undefined,
+      initialTab: typeof metadata.initialTab === 'string' ? metadata.initialTab : undefined,
+    },
+  };
+}
+
+type ArtifactPaneFocus =
+  | { type: 'closed' }
+  | { type: 'project_tree' }
+  | { type: 'artifact'; artifact: WorkbenchArtifactRef };
 
 export function NightWorkersShell(props: NightWorkersShellProps) {
   const { workspace } = props;
@@ -62,18 +135,21 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const { setPanelSizes } = useWorkspaceLayoutActions();
   const initialPanelSizes = useRef(panelSizes);
   const workspaceRef = useRef(workspace);
+  const openedQuestionnaireMessageIdsRef = useRef<Set<string>>(new Set());
+  const openingQuestionnaireMessageIdsRef = useRef<Set<string>>(new Set());
   const [selectedPath, setSelectedPath] = useState('');
   const [model, setModel] = useState('gpt-5.5');
   const [thinkingDepth, setThinkingDepth] = useState<ThinkingDepth>('medium');
-  const [selectedArtifact, setSelectedArtifact] = useState<WorkbenchArtifactRef | null>(null);
-  const [showArtifactPane, setShowArtifactPane] = useState(false);
+  const [artifactFocus, setArtifactFocus] = useState<ArtifactPaneFocus>({ type: 'closed' });
   const [showQueueScreen, setShowQueueScreen] = useState(false);
   const [showOverviewScreen, setShowOverviewScreen] = useState(true);
   const [queueProjectFilterId, setQueueProjectFilterId] = useState<string | null>(null);
   const isOverviewActive = showOverviewScreen && !props.showSettings;
   const visibleActiveSessionId =
     props.showSettings || isOverviewActive ? null : workspace.activeSessionId;
-  const artifactPaneOpen = showArtifactPane || Boolean(selectedArtifact);
+  const selectedArtifact = artifactFocus.type === 'artifact' ? artifactFocus.artifact : null;
+  const selectedArtifactContext = buildArtifactContext(selectedArtifact, workspace.activeSessionId);
+  const artifactPaneOpen = artifactFocus.type !== 'closed';
   const isBlueprintArtifactOpen =
     artifactPaneOpen &&
     (selectedArtifact?.kind === 'blueprint_workspace' ||
@@ -93,10 +169,11 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 
   useEffect(() => {
     if (!selectedArtifact) return;
+    if (selectedArtifact.kind === 'blueprint_workspace') return;
     const stillAvailable = workspace.activeArtifactRefs.some(
       (artifact) => artifact.id === selectedArtifact.id
     );
-    if (!stillAvailable && selectedArtifact.kind !== 'diff') setSelectedArtifact(null);
+    if (!stillAvailable && selectedArtifact.kind !== 'diff') setArtifactFocus({ type: 'closed' });
   }, [selectedArtifact, workspace.activeArtifactRefs]);
 
   const currentProviderModel =
@@ -132,8 +209,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   };
   const handleOpenBlueprintArtifact = useCallback(async () => {
     if (isBlueprintArtifactOpen) {
-      setSelectedArtifact(null);
-      setShowArtifactPane(false);
+      setArtifactFocus({ type: 'closed' });
       return;
     }
     const current = workspaceRef.current;
@@ -141,14 +217,12 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       current.activeArtifactRefs.find((artifact) => artifact.kind === 'blueprint_workspace') ||
       current.activeArtifactRefs.find((artifact) => artifact.kind === 'app_blueprint');
     if (existing) {
-      setShowArtifactPane(true);
-      setSelectedArtifact(existing);
+      setArtifactFocus({ type: 'artifact', artifact: existing });
       return;
     }
   }, [isBlueprintArtifactOpen]);
   const handleSelectSession = useCallback((sessionId: string | null) => {
-    setSelectedArtifact(null);
-    setShowArtifactPane(false);
+    setArtifactFocus({ type: 'closed' });
     setShowQueueScreen(false);
     setShowOverviewScreen(false);
     workspaceRef.current.setActiveSessionId(sessionId);
@@ -178,12 +252,63 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     void workspaceRef.current.fetchDirectories(selectedPath || undefined);
   }, [props.onOpenFolderBrowser, selectedPath]);
   const handleOpenOverview = useCallback(() => {
-    setSelectedArtifact(null);
-    setShowArtifactPane(false);
+    setArtifactFocus({ type: 'closed' });
     setShowQueueScreen(false);
     setShowOverviewScreen(true);
     props.onCloseSettings();
   }, [props.onCloseSettings]);
+
+  const waitForQuestionnaireWorkspaceReady = useCallback(async (message: TaskMessage) => {
+    const sessionId = String(message.metadataJson?.questionnaireSessionId || '');
+    if (!sessionId) return false;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const [workspaceRes, sessionRes] = await Promise.all([
+        apiFetch(`/api/tasks/${message.taskId}/specification-workspace`),
+        apiFetch(`/api/tasks/${message.taskId}/design-questionnaire/${sessionId}`),
+      ]);
+      if (workspaceRes.ok && sessionRes.ok) {
+        const questionnaireSession = await sessionRes.json();
+        if (questionnaireSession?.questionSets?.length) return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return false;
+  }, []);
+
+  const openQuestionnaireWorkspace = useCallback(
+    async (message: TaskMessage) => {
+      if (openingQuestionnaireMessageIdsRef.current.has(message.id)) return;
+      openingQuestionnaireMessageIdsRef.current.add(message.id);
+      try {
+        const ready = await waitForQuestionnaireWorkspaceReady(message);
+        if (!ready) return;
+        openedQuestionnaireMessageIdsRef.current.add(message.id);
+        setShowOverviewScreen(false);
+        props.onCloseSettings();
+        setArtifactFocus({
+          type: 'artifact',
+          artifact: buildQuestionnaireWorkspaceArtifactRef(message),
+        });
+      } finally {
+        openingQuestionnaireMessageIdsRef.current.delete(message.id);
+      }
+    },
+    [props.onCloseSettings, waitForQuestionnaireWorkspaceReady]
+  );
+
+  useEffect(() => {
+    if (!workspace.activeSessionId) return;
+    const latestQuestionnaireMessage = [...workspace.taskMessages]
+      .reverse()
+      .find(
+        (message) =>
+          message.taskId === workspace.activeSessionId &&
+          message.metadataJson?.intent === 'design_questionnaire_ready'
+      );
+    if (!latestQuestionnaireMessage) return;
+    if (openedQuestionnaireMessageIdsRef.current.has(latestQuestionnaireMessage.id)) return;
+    void openQuestionnaireWorkspace(latestQuestionnaireMessage);
+  }, [openQuestionnaireWorkspace, workspace.activeSessionId, workspace.taskMessages]);
 
   return (
     <div
@@ -280,7 +405,20 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               onSubmitInitialPrompt={submitPrompt}
               onSubmitWorkbenchMessage={async (prompt, intent) => {
                 if (workspace.activeSession) {
-                  await workspace.sendWorkbenchMessage(workspace.activeSession.id, prompt, intent);
+                  const result = await workspace.sendWorkbenchMessage(
+                    workspace.activeSession.id,
+                    prompt,
+                    intent,
+                    selectedArtifactContext
+                  );
+                  const latestQuestionnaireMessage = [...(result?.messages || [])]
+                    .reverse()
+                    .find(
+                      (message) => message.metadataJson?.intent === 'design_questionnaire_ready'
+                    );
+                  if (latestQuestionnaireMessage) {
+                    void openQuestionnaireWorkspace(latestQuestionnaireMessage);
+                  }
                   return;
                 }
                 await submitPrompt(prompt, intent);
@@ -317,25 +455,21 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                 if (!entryId) return;
                 void workspace.archiveImplementationQueueEntry(entryId);
               }}
-              onOpenArtifact={setSelectedArtifact}
-              isProjectFilesOpen={artifactPaneOpen && showArtifactPane && !selectedArtifact}
+              onOpenArtifact={(artifact) => setArtifactFocus({ type: 'artifact', artifact })}
+              isProjectFilesOpen={artifactFocus.type === 'project_tree'}
               onOpenProjectFiles={() => {
-                if (artifactPaneOpen && showArtifactPane && !selectedArtifact) {
-                  setSelectedArtifact(null);
-                  setShowArtifactPane(false);
+                if (artifactFocus.type === 'project_tree') {
+                  setArtifactFocus({ type: 'closed' });
                   return;
                 }
-                setShowArtifactPane(true);
-                setSelectedArtifact(null);
+                setArtifactFocus({ type: 'project_tree' });
               }}
               onOpenDiffArtifact={(artifact) => {
                 if (artifactPaneOpen && selectedArtifact?.id === artifact.id) {
-                  setSelectedArtifact(null);
-                  setShowArtifactPane(false);
+                  setArtifactFocus({ type: 'closed' });
                   return;
                 }
-                setShowArtifactPane(true);
-                setSelectedArtifact(artifact);
+                setArtifactFocus({ type: 'artifact', artifact });
               }}
               onGrantExternalPath={async (externalPath) => {
                 const project = workspace.activeProject;
@@ -359,6 +493,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                   <ArtifactPane
                     activeProject={workspace.activeProject}
                     activeSessionId={workspace.activeSessionId}
+                    focusType={artifactFocus.type === 'project_tree' ? 'project_tree' : 'artifact'}
                     selectedArtifact={selectedArtifact}
                     taskMessages={workspace.taskMessages}
                     latestRun={workspace.latestRun}
@@ -372,14 +507,15 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                     isFileLoading={workspace.isProjectFileLoading}
                     onToggleDirectory={workspace.toggleProjectDirectory}
                     onOpenFile={(path) => {
-                      setSelectedArtifact(null);
+                      setArtifactFocus({ type: 'project_tree' });
                       workspace.openProjectFile(path);
                     }}
                     onShowDiff={() => {
                       const diffArtifact = workspace.activeArtifactRefs.find(
                         (artifact) => artifact.kind === 'diff'
                       );
-                      if (diffArtifact) setSelectedArtifact(diffArtifact);
+                      if (diffArtifact)
+                        setArtifactFocus({ type: 'artifact', artifact: diffArtifact });
                     }}
                     isWorkbenchMessageSubmitting={workspace.isChatSubmitting}
                     onSubmitWorkbenchMessage={async (prompt, intent) => {
@@ -387,7 +523,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                         const result = await workspace.sendWorkbenchMessage(
                           workspace.activeSession.id,
                           prompt,
-                          intent
+                          intent,
+                          selectedArtifactContext
                         );
                         const latestBlueprintMessage = [...(result?.messages || [])]
                           .reverse()
@@ -397,7 +534,10 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                               message.metadataJson?.appBlueprint
                           );
                         if (latestBlueprintMessage) {
-                          setSelectedArtifact(buildBlueprintArtifactRef(latestBlueprintMessage));
+                          setArtifactFocus({
+                            type: 'artifact',
+                            artifact: buildBlueprintArtifactRef(latestBlueprintMessage),
+                          });
                         }
                         return;
                       }

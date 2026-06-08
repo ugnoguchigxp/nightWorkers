@@ -23,52 +23,104 @@ export function renderAdditionalPreviewSectionBody({
   t,
 }: AdditionalPreviewInput) {
   if (componentName === 'KanbanSection') {
-    const propColumns = toObjectArray(props.columns);
-    const columns =
-      propColumns.length > 0
-        ? propColumns
-        : [
-            t('blueprint.preview.kanban.backlog'),
-            t('blueprint.preview.kanban.inProgress'),
-            t('blueprint.preview.kanban.done'),
-          ].map((title, index) => ({
-            title,
-            cards: [
-              {
-                title: t('blueprint.preview.kanban.itemLabel', { title }),
-                description: index === 0 ? binding?.name : table?.label || table?.name,
-              },
-            ],
-          }));
+    const columns = buildKanbanColumns(props, table, binding, t);
+    const maxVisibleColumns = toObjectArray(props.columns || props.lanes || props.statuses).length
+      ? 5
+      : 3;
+    const filters = toObjectArray(props.filters || props.views || props.segments).slice(0, 4);
     return (
-      <div className="grid gap-[var(--blueprint-preview-gap)] md:grid-cols-3">
-        {columns.slice(0, 4).map((column, index) => (
-          <div
-            className="rounded-md border border-border bg-muted p-3"
-            key={String(column.title || index)}
-          >
-            <div className="mb-3 text-xs font-semibold uppercase text-muted-foreground">
-              {String(column.title || `Column ${index + 1}`)}
+      <div className="grid gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-foreground">
+              {String(props.boardLabel || props.boardName || props.title || 'Kanban board')}
             </div>
-            <div className="grid gap-2">
-              {toObjectArray(column.cards)
-                .slice(0, 3)
-                .map((card, cardIndex) => (
-                  <div
-                    className="blueprint-preview-card rounded border p-2"
-                    key={String(card.title || cardIndex)}
-                  >
-                    <div className="text-xs font-medium text-foreground">
-                      {String(card.title || 'Card')}
-                    </div>
-                    <div className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
-                      {String(card.description || '')}
-                    </div>
-                  </div>
-                ))}
+            <div className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
+              {String(
+                props.boardDescription ||
+                  props.description ||
+                  'Cards move across columns as work progresses.'
+              )}
             </div>
           </div>
-        ))}
+          <div className="flex shrink-0 flex-wrap gap-1.5 text-[10px] text-muted-foreground">
+            {(filters.length > 0
+              ? filters
+              : [{ label: 'Search' }, { label: 'Filter' }, { label: 'Sort' }]
+            ).map((filter, index) => (
+              <span
+                className="rounded-full border border-border bg-muted px-2 py-0.5"
+                key={String(filter.label || filter.title || index)}
+              >
+                {String(filter.label || filter.title || filter.name || `Filter ${index + 1}`)}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          {columns.slice(0, maxVisibleColumns).map((column, index) => (
+            <div
+              className="min-w-[220px] rounded-md border border-border bg-muted/70"
+              key={String(column.id || column.title || index)}
+            >
+              <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${kanbanAccentClass(index)}`}
+                    aria-hidden="true"
+                  />
+                  <div className="truncate text-xs font-semibold text-foreground">
+                    {String(column.title || column.label || column.name || `Column ${index + 1}`)}
+                  </div>
+                </div>
+                <span className="rounded-full border border-border bg-card px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  {column.cards.length}
+                </span>
+              </div>
+              <div className="grid min-h-32 gap-2 p-2">
+                {column.cards.slice(0, 4).map((card, cardIndex) => (
+                  <article
+                    className="blueprint-preview-card rounded-md border p-2.5"
+                    key={String(card.id || card.title || cardIndex)}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 text-xs font-medium text-foreground">
+                        {String(card.title || card.label || card.name || `Card ${cardIndex + 1}`)}
+                      </div>
+                      {card.priority || card.badge || card.tag ? (
+                        <span className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          {String(card.priority || card.badge || card.tag)}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-1 line-clamp-2 text-[11px] leading-5 text-muted-foreground">
+                      {String(card.description || card.body || card.summary || '')}
+                    </div>
+                    {card.assignee || card.dueDate || card.updatedAt ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-muted-foreground">
+                        {card.assignee ? (
+                          <span className="rounded border border-border px-1.5 py-0.5">
+                            {String(card.assignee)}
+                          </span>
+                        ) : null}
+                        {card.dueDate || card.updatedAt ? (
+                          <span className="rounded border border-border px-1.5 py-0.5">
+                            {String(card.dueDate || card.updatedAt)}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </article>
+                ))}
+                {column.cards.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-border px-3 py-6 text-center text-[11px] text-muted-foreground">
+                    No cards
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -277,4 +329,72 @@ export function renderAdditionalPreviewSectionBody({
   }
 
   return null;
+}
+
+function buildKanbanColumns(
+  props: Record<string, any>,
+  table: Record<string, any> | null,
+  binding: Record<string, any> | null,
+  t: TFunction
+): Array<Record<string, any> & { cards: Array<Record<string, any>> }> {
+  const propColumns = toObjectArray(props.columns || props.lanes || props.statuses);
+  const topLevelCards = toObjectArray(props.cards || props.items || props.tasks || props.data);
+  if (propColumns.length > 0) {
+    return propColumns.map((column, index) => {
+      const cards = toObjectArray(column.cards || column.items || column.tasks);
+      return {
+        ...column,
+        cards:
+          cards.length > 0
+            ? cards
+            : topLevelCards.filter((card) => cardBelongsToColumn(card, column, index)),
+      };
+    });
+  }
+
+  const defaultColumns: Array<Record<string, any>> = [
+    { id: 'backlog', title: t('blueprint.preview.kanban.backlog') },
+    { id: 'in-progress', title: t('blueprint.preview.kanban.inProgress') },
+    { id: 'done', title: t('blueprint.preview.kanban.done') },
+  ];
+  if (topLevelCards.length > 0) {
+    return defaultColumns.map((column, index) => ({
+      ...column,
+      cards: topLevelCards.filter((card) => cardBelongsToColumn(card, column, index)),
+    }));
+  }
+
+  return defaultColumns.map((column, index) => ({
+    ...column,
+    cards: [
+      {
+        title: t('blueprint.preview.kanban.itemLabel', { title: column.title }),
+        description: index === 0 ? binding?.name : table?.label || table?.name,
+        badge: index === 0 ? 'Draft' : index === 1 ? 'Active' : 'Done',
+      },
+    ] satisfies Array<Record<string, any>>,
+  }));
+}
+
+function cardBelongsToColumn(
+  card: Record<string, any>,
+  column: Record<string, any>,
+  fallbackIndex: number
+) {
+  const cardColumn = String(
+    card.columnId || card.column || card.statusId || card.status || card.stage || ''
+  )
+    .trim()
+    .toLowerCase();
+  if (!cardColumn) return fallbackIndex === 0;
+  const columnKeys = [column.id, column.key, column.title, column.label, column.name]
+    .filter(Boolean)
+    .map((value) => String(value).trim().toLowerCase());
+  return columnKeys.includes(cardColumn);
+}
+
+function kanbanAccentClass(index: number) {
+  return ['bg-cyan-400', 'bg-amber-300', 'bg-emerald-400', 'bg-fuchsia-400', 'bg-sky-300'][
+    index % 5
+  ];
 }

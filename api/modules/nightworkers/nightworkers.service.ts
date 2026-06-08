@@ -48,6 +48,9 @@ export {
   createDesignQuestionnaire,
   generateDesignQuestionnaireFollowUp,
   generateDesignQuestionnaireReview,
+  generateSpecificationStatusBlueprint,
+  generateSpecificationStatusDbDesign,
+  generateSpecificationStatusDesignDocument,
   getBlueprintSpecificationWorkspace,
   getDesignQuestionnaireSession,
   getSpecificationWorkspace,
@@ -61,11 +64,11 @@ export {
   isAppBlueprintMessage,
   isBlueprintRouting,
 } from './nightworkers.planning-helpers.service';
+export type { WorkbenchChatIntent } from './nightworkers.workbench.service';
 export {
   appendTaskMessage,
   appendWorkbenchMessage,
   createPlanningArtifactMessageIfNeeded,
-  WorkbenchChatIntent,
 } from './nightworkers.workbench.service';
 
 export async function startWorkbenchTaskRun(taskId: string) {

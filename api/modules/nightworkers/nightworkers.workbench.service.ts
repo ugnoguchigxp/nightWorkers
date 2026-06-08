@@ -74,7 +74,26 @@ export async function createPlanningArtifactMessageIfNeeded(input: {
   });
 }
 
-export async function appendTaskMessage(id: string, prompt: string) {
+type WorkbenchArtifactContext = {
+  artifactId: string;
+  kind: string;
+  title: string;
+  summary?: string;
+  source?: { type?: string; messageId?: string; artifactId?: string; runId?: string };
+  metadata?: {
+    intent?: string;
+    appBlueprintName?: string;
+    screenNames?: string[];
+    sectionNames?: string[];
+    initialTab?: string;
+  };
+};
+
+export async function appendTaskMessage(
+  id: string,
+  prompt: string,
+  metadata?: Record<string, unknown>
+) {
   const task = await repo.getTask(id);
   if (!task) throw new NotFoundError('Task not found');
   const trimmed = prompt.trim();
@@ -86,6 +105,7 @@ export async function appendTaskMessage(id: string, prompt: string) {
     role: 'user',
     content: trimmed,
     messageType: 'text',
+    payloadJson: metadata,
   });
   if (task.title === 'New Session' && !hasAnyUserMessage) {
     const firstPromptTitle = trimmed.replace(/\s+/g, ' ').slice(0, 40);
@@ -111,17 +131,30 @@ export type WorkbenchChatIntent =
 
 export async function appendWorkbenchMessage(
   id: string,
-  input: { prompt: string; intent?: WorkbenchChatIntent; waitForIntake?: boolean }
+  input: {
+    prompt: string;
+    intent?: WorkbenchChatIntent;
+    waitForIntake?: boolean;
+    artifactContext?: WorkbenchArtifactContext | null;
+  }
 ) {
   const intent = input.intent || 'intake';
   const task = await repo.getTask(id);
   if (!task) throw new NotFoundError('Task not found');
   const prompt = input.prompt.trim();
   if (!prompt) throw new AppError(400, 'EMPTY_PROMPT', 'Prompt must not be empty');
+  const artifactContext = input.artifactContext || null;
+  const messageMetadata = artifactContext
+    ? {
+        intent: 'artifact_context_instruction',
+        source: 'workbench',
+        artifactContext,
+      }
+    : undefined;
 
   if (intent === 'run_task') {
     assertRunnableWorkbenchTask(task);
-    await appendTaskMessage(id, prompt);
+    await appendTaskMessage(id, prompt, messageMetadata);
     const run = await startTaskRun(id);
     return {
       task: await repo.getTask(id),
@@ -134,7 +167,7 @@ export async function appendWorkbenchMessage(
     return handleBlueprintDataDesignMessage(id, task, prompt);
   }
 
-  await appendTaskMessage(id, prompt);
+  await appendTaskMessage(id, prompt, messageMetadata);
 
   if (intent === 'queue' || intent === 'create_task') {
     const queued = await queueTask(id);
@@ -143,11 +176,19 @@ export async function appendWorkbenchMessage(
 
   const waitForIntake = input.waitForIntake ?? process.env.NODE_ENV === 'test';
   if (waitForIntake) {
-    return handleWorkbenchIntakeMessage(id, task, prompt, { failureMode: 'throw', intent });
+    return handleWorkbenchIntakeMessage(id, task, prompt, {
+      failureMode: 'throw',
+      intent,
+      artifactContext,
+    });
   }
 
   const updated = await prepareWorkbenchIntakeTask(id, task, prompt);
-  void handleWorkbenchIntakeMessage(id, task, prompt, { failureMode: 'record', intent });
+  void handleWorkbenchIntakeMessage(id, task, prompt, {
+    failureMode: 'record',
+    intent,
+    artifactContext,
+  });
   return { task: updated, run: null, messages: await repo.listTaskMessages(id) };
 }
 
@@ -265,11 +306,48 @@ function blueprintDataDesignTargetLabel(
   return `Screen ${target.screenId}`;
 }
 
+function renderArtifactContextualPrompt(
+  prompt: string,
+  artifactContext: WorkbenchArtifactContext | null
+) {
+  if (!artifactContext) return prompt;
+  const metadata = artifactContext.metadata || {};
+  const sourceParts = [
+    artifactContext.source?.type ? `sourceType=${artifactContext.source.type}` : null,
+    artifactContext.source?.messageId ? `messageId=${artifactContext.source.messageId}` : null,
+    artifactContext.source?.artifactId ? `artifactId=${artifactContext.source.artifactId}` : null,
+  ].filter(Boolean);
+  return [
+    '[Current Artifact Context]',
+    'ユーザーは現在この Artifact を見ながら左側のチャット欄で指示しています。',
+    '指示が「この画面」「これ」「今の artifact」を参照する場合は、この Artifact への修正指示として扱ってください。',
+    'ただし、ユーザー本文で別対象が明示された場合はユーザー本文を優先してください。',
+    `Artifact: ${artifactContext.title}`,
+    `Kind: ${artifactContext.kind}`,
+    sourceParts.length ? `Source: ${sourceParts.join(', ')}` : null,
+    metadata.intent ? `Intent: ${metadata.intent}` : null,
+    metadata.appBlueprintName ? `Blueprint: ${metadata.appBlueprintName}` : null,
+    metadata.initialTab ? `Workspace tab: ${metadata.initialTab}` : null,
+    metadata.screenNames?.length ? `Screens: ${metadata.screenNames.join(', ')}` : null,
+    metadata.sectionNames?.length ? `Sections: ${metadata.sectionNames.join(', ')}` : null,
+    artifactContext.summary ? `Summary: ${artifactContext.summary}` : null,
+    '',
+    '[User Instruction]',
+    prompt,
+  ]
+    .filter((line): line is string => line !== null && line !== undefined)
+    .join('\n');
+}
+
 async function handleWorkbenchIntakeMessage(
   taskId: string,
   task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>,
   prompt: string,
-  options: { failureMode: 'throw' | 'record'; intent?: WorkbenchChatIntent } = {
+  options: {
+    failureMode: 'throw' | 'record';
+    intent?: WorkbenchChatIntent;
+    artifactContext?: WorkbenchArtifactContext | null;
+  } = {
     failureMode: 'throw',
   }
 ) {
@@ -278,30 +356,59 @@ async function handleWorkbenchIntakeMessage(
   const repository = await repo.getRepository(task.repositoryId);
   const projectRoot = repository?.localPath || process.cwd();
   const emitWorkbenchLlmDebugEvent = createWorkbenchLlmDebugEventEmitter(taskId);
+  const llmPrompt = renderArtifactContextualPrompt(prompt, options.artifactContext || null);
 
   try {
-    const jobSelection = (await callSupervisorLLM(buildRound1JobTypePrompt(projectRoot), prompt, {
-      round: 1,
-      schemaFirst: true,
-      tolerateSchemaFailure: false,
-      emitEvent: emitWorkbenchLlmDebugEvent,
-      workingDirectory: projectRoot,
-      taskId,
-      runId: null,
-    })) as JobTypeSelection;
+    const jobSelection = (await callSupervisorLLM(
+      buildRound1JobTypePrompt(projectRoot),
+      llmPrompt,
+      {
+        round: 1,
+        schemaFirst: true,
+        tolerateSchemaFailure: false,
+        emitEvent: emitWorkbenchLlmDebugEvent,
+        workingDirectory: projectRoot,
+        taskId,
+        runId: null,
+      }
+    )) as JobTypeSelection;
     const routing = routingForWorkbenchJobType(jobSelection.jobType);
     const startsImmediateRun = shouldStartImmediateWorkbenchRun(
       jobSelection,
       options.intent || 'intake'
     );
     if (jobSelection.jobType === 'planning') {
-      await createDesignQuestionnaire(taskId, null, prompt);
+      const questionnaireSession = await createDesignQuestionnaire(taskId, null, llmPrompt);
+      const totalQuestionCount = questionnaireSession.questionSets.reduce(
+        (total: number, set: any) =>
+          total +
+          ((set.questionnaire?.questionSets || []) as any[]).reduce(
+            (setTotal: number, questionSet: any) => setTotal + (questionSet.questions || []).length,
+            0
+          ),
+        0
+      );
+      await repo.createTaskMessage({
+        taskId,
+        role: 'system',
+        content: `Design Questionnaire を生成しました。${totalQuestionCount} 件の質問に回答できます。`,
+        messageType: 'text',
+        payloadJson: {
+          intent: 'design_questionnaire_ready',
+          source: 'workbench',
+          questionnaireSessionId: questionnaireSession.id,
+          questionnaireStatus: questionnaireSession.status,
+          totalQuestionCount,
+          routingHypothesis: routing,
+          intakeJobSelection: jobSelection,
+        },
+      });
     } else if (isBlueprintRouting(routing)) {
       try {
         const { blueprint, validation, generation } = await generatePlanModeBlueprintDraft({
           taskId,
           title,
-          prompt,
+          prompt: llmPrompt,
           routing,
           emitEvent: emitWorkbenchLlmDebugEvent,
         });

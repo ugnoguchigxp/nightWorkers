@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { MutableRefObject } from 'react';
 import { apiFetch } from '../../../lib/api-base';
-import type { Task, TaskMessage, WorkbenchChatIntent } from '../types';
+import type { Task, TaskMessage, WorkbenchArtifactContext, WorkbenchChatIntent } from '../types';
 import type { WorkbenchMessageResult } from './nightWorkersWorkspaceState';
 
 type ChatActionsInput = {
@@ -91,7 +91,8 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
     sendWorkbenchMessage: async (
       sessionId: string,
       prompt: string,
-      intent: WorkbenchChatIntent
+      intent: WorkbenchChatIntent,
+      artifactContext?: WorkbenchArtifactContext | null
     ) => {
       const content = prompt.trim();
       if (!content) return;
@@ -114,7 +115,12 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
         const res = await apiFetch(`/api/workbench/sessions/${sessionId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: content, intent }),
+          body: JSON.stringify({
+            prompt: content,
+            intent,
+            waitForIntake: true,
+            ...(artifactContext ? { artifactContext } : {}),
+          }),
         });
         if (!res.ok) throw new Error(await res.text());
         const result = (await res.json()) as WorkbenchMessageResult;
@@ -139,6 +145,7 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
           latestMessage?.role === 'system';
         queryClient.invalidateQueries({ queryKey: ['sessions'] });
         queryClient.invalidateQueries({ queryKey: ['sessionRuns', sessionId] });
+        queryClient.invalidateQueries({ queryKey: ['specificationWorkspace', sessionId] });
         return result;
       } catch (error) {
         shouldClearPendingAssistant = true;

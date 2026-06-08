@@ -1,8 +1,7 @@
-import { CheckCircle2, Database, Palette, SlidersHorizontal, XCircle } from 'lucide-react';
+import { CheckCircle2, Palette, SlidersHorizontal, XCircle } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiFetch } from '../../../../lib/api-base';
-import { BlueprintDbDesignPanel } from './BlueprintDbDesignPanel';
 import { BlueprintPreviewSection } from './BlueprintPreviewSection';
 import './blueprintPreview.css';
 import {
@@ -28,8 +27,6 @@ type BlueprintPreviewProps = {
   tables: Array<Record<string, any>>;
   bindings: Array<Record<string, any>>;
   validationIssues?: Array<Record<string, any>>;
-  isDbDesignSubmitting?: boolean;
-  onSubmitDbDesignRequest?: (prompt: string) => Promise<void>;
 };
 
 export function BlueprintPreview({
@@ -40,8 +37,6 @@ export function BlueprintPreview({
   tables,
   bindings,
   validationIssues = [],
-  isDbDesignSubmitting = false,
-  onSubmitDbDesignRequest,
 }: BlueprintPreviewProps) {
   const { t } = useTranslation();
   const blueprintId = String(blueprint.id || blueprint.name || screens[0]?.id || 'draft-blueprint');
@@ -52,16 +47,10 @@ export function BlueprintPreview({
   );
   const [settings, setSettings] = useState<BlueprintPreviewDesignSettings>(initialSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [dbDesignOpen, setDbDesignOpen] = useState(false);
   const blueprintAdoption = useBlueprintAdoption({
     sessionId,
     messageId,
     endpoint: 'blueprint-adoption',
-  });
-  const dbDesignAdoption = useBlueprintAdoption({
-    sessionId,
-    messageId,
-    endpoint: 'blueprint-db-design-adoption',
   });
   const designTokenAdoption = useBlueprintAdoption({
     sessionId,
@@ -95,7 +84,6 @@ export function BlueprintPreview({
     if (previousBlueprintId.current === blueprintId) return;
     previousBlueprintId.current = blueprintId;
     setSettingsOpen(false);
-    setDbDesignOpen(false);
   }, [blueprintId]);
 
   const designReference = useMemo(
@@ -184,20 +172,6 @@ export function BlueprintPreview({
           <Palette className="h-3.5 w-3.5" />
           {t('blueprint.preview.design')}
         </button>
-        <button
-          type="button"
-          aria-expanded={dbDesignOpen}
-          aria-controls="blueprint-db-design"
-          className={`blueprint-preview-button inline-flex h-8 items-center gap-2 border border-border px-3 text-xs font-semibold transition ${
-            dbDesignOpen
-              ? 'bg-primary text-primary-foreground hover:opacity-90'
-              : 'bg-card text-foreground hover:bg-background'
-          }`}
-          onClick={() => setDbDesignOpen((open) => !open)}
-        >
-          <Database className="h-3.5 w-3.5" />
-          {t('blueprint.db.title')}
-        </button>
       </div>
 
       {settingsOpen ? (
@@ -214,27 +188,6 @@ export function BlueprintPreview({
             />
           }
           onChange={updateSettings}
-        />
-      ) : null}
-
-      {dbDesignOpen ? (
-        <BlueprintDbDesignPanel
-          id="blueprint-db-design"
-          blueprint={blueprint}
-          screens={screens}
-          tables={tables}
-          bindings={bindings}
-          validationIssues={validationIssues}
-          adoption={
-            <AdoptionToggle
-              label={t('blueprint.db.title')}
-              adopted={dbDesignAdoption.adopted}
-              disabled={!dbDesignAdoption.enabled || dbDesignAdoption.saving}
-              onToggle={dbDesignAdoption.toggle}
-            />
-          }
-          isSubmitting={isDbDesignSubmitting}
-          onSubmitDbDesignRequest={onSubmitDbDesignRequest}
         />
       ) : null}
 

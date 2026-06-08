@@ -378,6 +378,22 @@ export const appendTaskMessageRoute = createRoute({
     },
   },
 });
+const workbenchArtifactContextSchema = z.object({
+  artifactId: z.string(),
+  kind: z.string(),
+  title: z.string(),
+  summary: z.string().optional(),
+  source: z.object({ type: z.string() }).passthrough(),
+  metadata: z
+    .object({
+      intent: z.string().optional(),
+      appBlueprintName: z.string().optional(),
+      screenNames: z.array(z.string()).optional(),
+      sectionNames: z.array(z.string()).optional(),
+      initialTab: z.string().optional(),
+    })
+    .optional(),
+});
 export const appendWorkbenchMessageRoute = createRoute({
   method: 'post',
   path: '/workbench/sessions/:id/messages',
@@ -391,6 +407,7 @@ export const appendWorkbenchMessageRoute = createRoute({
           schema: z.object({
             prompt: z.string().min(1),
             waitForIntake: z.boolean().optional(),
+            artifactContext: workbenchArtifactContextSchema.nullable().optional(),
             intent: z
               .enum([
                 'intake',
@@ -560,6 +577,70 @@ export const getSpecificationWorkspaceRoute = createRoute({
     200: {
       content: { 'application/json': { schema: blueprintSpecificationWorkspaceSchema } },
       description: 'Specification Workspace read model',
+    },
+  },
+});
+const specificationStatusGenerateRequestSchema = z.object({
+  questionnaireSessionId: z.string().uuid().nullable().optional(),
+  sourceBlueprintMessageId: z.string().uuid().nullable().optional(),
+});
+export const generateSpecificationStatusBlueprintRoute = createRoute({
+  method: 'post',
+  path: '/tasks/:id/specification-workspace/blueprint',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: specificationStatusGenerateRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: z.any() } },
+      description: 'Blueprint generated from Specification Status',
+    },
+  },
+});
+export const generateSpecificationStatusDbDesignRoute = createRoute({
+  method: 'post',
+  path: '/tasks/:id/specification-workspace/db-design',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: specificationStatusGenerateRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: z.any() } },
+      description: 'DB Design generated from Specification Status',
+    },
+  },
+});
+export const generateSpecificationStatusDesignDocumentRoute = createRoute({
+  method: 'post',
+  path: '/tasks/:id/specification-workspace/design-doc',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: specificationStatusGenerateRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: z.any() } },
+      description: 'Specification generated from Specification Status',
     },
   },
 });

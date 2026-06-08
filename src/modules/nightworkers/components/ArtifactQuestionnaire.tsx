@@ -1,4 +1,4 @@
-import { Check, LoaderCircle, Save } from 'lucide-react';
+import { LoaderCircle, Send } from 'lucide-react';
 import type { DesignQuestionnaireAnswer, DesignQuestionnaireSession } from '../types';
 
 export function QuestionnaireForm({
@@ -120,81 +120,6 @@ function QuestionCard({
   );
 }
 
-export function DecisionReviewView({
-  review,
-  onAccept,
-  busy,
-}: {
-  review: any | null;
-  onAccept: () => void;
-  busy: boolean;
-}) {
-  if (!review) return <p className="text-xs text-slate-500">No Decision Review draft.</p>;
-  return (
-    <div className="grid gap-4 text-xs">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold text-slate-100">{String(review.title)}</h2>
-          <p className="mt-1 text-slate-400">{String(review.summary || '')}</p>
-        </div>
-        <ActionButton label="Accept" icon="check" busy={busy} onClick={onAccept} />
-      </div>
-      <ReviewSection
-        title="Decisions"
-        items={review.decisions}
-        render={(item) => `${item.outputSection}: ${item.decision}`}
-      />
-      <ReviewSection
-        title="Deferred"
-        items={review.deferredItems}
-        render={(item) => `${item.topic}: ${item.reason}`}
-      />
-      <ReviewSection
-        title="Unresolved"
-        items={review.unresolvedQuestions}
-        render={(item) => `${item.topic}: ${item.reason}`}
-      />
-      <ReviewSection
-        title="DB Design Handoff"
-        items={review.dbDesignHandoffNotes}
-        render={(item) => `${item.summary}: ${item.constraint}`}
-      />
-    </div>
-  );
-}
-
-function ReviewSection({
-  title,
-  items,
-  render,
-}: {
-  title: string;
-  items: any[];
-  render: (item: any) => string;
-}) {
-  return (
-    <section>
-      <h3 className="mb-2 text-[11px] font-semibold uppercase text-slate-400">{title}</h3>
-      <div className="grid gap-2">
-        {Array.isArray(items) && items.length > 0 ? (
-          items.map((item, index) => (
-            <div
-              key={`${title}-${index}`}
-              className="rounded border border-slate-800 bg-slate-950/20 p-2 text-slate-300"
-            >
-              {render(item)}
-            </div>
-          ))
-        ) : (
-          <div className="rounded border border-slate-800 bg-slate-950/20 p-2 text-slate-500">
-            None
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
 export function ActionButton({
   label,
   icon,
@@ -202,7 +127,7 @@ export function ActionButton({
   onClick,
 }: {
   label: string;
-  icon?: 'save' | 'check';
+  icon?: 'send';
   busy?: boolean;
   onClick: () => void;
 }) {
@@ -215,10 +140,8 @@ export function ActionButton({
     >
       {busy ? (
         <LoaderCircle className="h-3 w-3 animate-spin" />
-      ) : icon === 'save' ? (
-        <Save className="h-3 w-3" />
-      ) : icon === 'check' ? (
-        <Check className="h-3 w-3" />
+      ) : icon === 'send' ? (
+        <Send className="h-3 w-3" />
       ) : null}
       {label}
     </button>
@@ -234,7 +157,7 @@ function emptyAnswer(questionId: string): DesignQuestionnaireAnswer {
   };
 }
 
-function isAnswered(answer?: DesignQuestionnaireAnswer) {
+export function isAnswered(answer?: DesignQuestionnaireAnswer) {
   return Boolean(
     answer?.deferred ||
       answer?.selectedOptionIds.length ||
@@ -242,6 +165,43 @@ function isAnswered(answer?: DesignQuestionnaireAnswer) {
       answer?.booleanValue !== undefined ||
       answer?.freeText?.trim()
   );
+}
+
+export function buildSubmittableQuestionnaireAnswers(
+  questionGroups: any[],
+  answers: Record<string, DesignQuestionnaireAnswer>
+) {
+  const visibleQuestions = questionGroups.flatMap((group) =>
+    (Array.isArray(group.questions) ? group.questions : []).filter((question: any) =>
+      isQuestionDependencySatisfied(question, answers)
+    )
+  );
+  const merged = { ...answers };
+  for (const question of visibleQuestions) {
+    if (!merged[question.id] && question.answerType === 'multi_choice') {
+      merged[question.id] = emptyAnswer(question.id);
+    }
+  }
+  return Object.values(merged);
+}
+
+export function getAnswerProgress(
+  questionGroups: any[],
+  answers: Record<string, DesignQuestionnaireAnswer>
+) {
+  const questions = questionGroups.flatMap((group) =>
+    (Array.isArray(group.questions) ? group.questions : []).filter((question: any) =>
+      isQuestionDependencySatisfied(question, answers)
+    )
+  );
+  const answeredCount = questions.filter((question: any) =>
+    isAnswered(answers[question.id])
+  ).length;
+  return {
+    answeredCount,
+    totalCount: questions.length,
+    unansweredCount: Math.max(questions.length - answeredCount, 0),
+  };
 }
 
 export function getQuestionCount(session: DesignQuestionnaireSession) {

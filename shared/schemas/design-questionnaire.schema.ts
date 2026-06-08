@@ -13,6 +13,29 @@ export const questionnaireChoiceFormSchema = z.object({
   questions: z.array(questionnaireChoiceQuestionSchema).min(1).max(10),
 });
 
+export const designQuestionnaireFollowUpDecisionSchema = z
+  .object({
+    action: z.enum(['follow_up', 'ready_for_design_assembly']),
+    rationale: z.string().min(1),
+    questionnaire: questionnaireChoiceFormSchema.nullable().default(null),
+  })
+  .superRefine((decision, ctx) => {
+    if (decision.action === 'follow_up' && !decision.questionnaire) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['questionnaire'],
+        message: 'follow_up requires a questionnaire.',
+      });
+    }
+    if (decision.action === 'ready_for_design_assembly' && decision.questionnaire) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['questionnaire'],
+        message: 'ready_for_design_assembly must not include a questionnaire.',
+      });
+    }
+  });
+
 export const designQuestionOptionSchema = z.object({
   id: kebabIdSchema,
   label: z.string().min(1),
@@ -220,6 +243,9 @@ export const blueprintSpecificationWorkspaceSchema = z.object({
 
 export type DesignQuestionnaire = z.infer<typeof designQuestionnaireSchema>;
 export type QuestionnaireChoiceForm = z.infer<typeof questionnaireChoiceFormSchema>;
+export type DesignQuestionnaireFollowUpDecision = z.infer<
+  typeof designQuestionnaireFollowUpDecisionSchema
+>;
 export type DesignQuestionnaireAnswer = z.infer<typeof designQuestionnaireAnswerSchema>;
 export type DesignDecisionReview = z.infer<typeof designDecisionReviewSchema>;
 export type DesignQuestionnaireSession = z.infer<typeof designQuestionnaireSessionSchema>;

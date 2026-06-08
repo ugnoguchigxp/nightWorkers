@@ -185,12 +185,53 @@ function renderPreviewSectionBody(
     );
   }
 
-  if (
-    componentName === 'ChartSection' ||
-    componentName === 'ChartInsightSection' ||
-    componentName === 'ProgressListSection' ||
-    componentName === 'StatsTrendCardsSection'
-  ) {
+  if (componentName === 'StatsTrendCardsSection') {
+    const items = chartPreviewItems(props, table, binding);
+    return (
+      <div className="grid gap-[var(--blueprint-preview-gap)] sm:grid-cols-2 lg:grid-cols-4">
+        {items.slice(0, 4).map((item, index) => (
+          <div
+            className="blueprint-preview-card rounded-md border border-border bg-card p-3"
+            key={`${item.label}-${index}`}
+          >
+            <div className="text-[11px] text-muted-foreground">{item.label}</div>
+            <div className="mt-2 text-2xl font-semibold text-foreground">{item.value}</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (componentName === 'ProgressListSection') {
+    const items = chartPreviewItems(props, table, binding);
+    const maxValue = Math.max(...items.map((item) => Number(item.value) || 0), 1);
+    return (
+      <div className="grid gap-2">
+        {items.slice(0, 5).map((item, index) => {
+          const value = Number(item.value) || 0;
+          return (
+            <div
+              className="grid gap-1 rounded-md border border-border bg-card p-2 text-xs"
+              key={`${item.label}-${index}`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="truncate text-muted-foreground">{item.label}</span>
+                <span className="font-medium text-foreground">{item.value}</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary"
+                  style={{ width: `${Math.min(100, Math.round((value / maxValue) * 100))}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (componentName === 'ChartSection' || componentName === 'ChartInsightSection') {
     const chartItems = chartPreviewItems(props, table, binding);
     return (
       <div className="grid gap-[var(--blueprint-preview-gap)] md:grid-cols-[minmax(0,1fr)_12rem]">
@@ -284,8 +325,23 @@ function renderPreviewSectionBody(
     componentName === 'NavigationPanel' ||
     componentName === 'HoldingsListSection'
   ) {
-    const links = toObjectArray(props.links).map((link) => String(link.label || link.href));
-    const tabs = Array.isArray(props.tabs) ? props.tabs.map(String) : [];
+    const links = toObjectArray(props.links).map((link) =>
+      String(link.label || link.title || link.name || link.href)
+    );
+    const tabs = Array.isArray(props.tabs)
+      ? props.tabs
+          .map((tab) =>
+            tab && typeof tab === 'object'
+              ? String(
+                  (tab as Record<string, any>).label ||
+                    (tab as Record<string, any>).title ||
+                    (tab as Record<string, any>).name ||
+                    ''
+                )
+              : String(tab)
+          )
+          .filter(Boolean)
+      : [];
     const navLabels = [...links, ...tabs];
     const labels =
       navLabels.length > 0

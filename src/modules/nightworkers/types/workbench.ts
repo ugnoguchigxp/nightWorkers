@@ -90,6 +90,21 @@ export type WorkbenchArtifactRef = {
   metadata?: Record<string, unknown>;
 };
 
+export type WorkbenchArtifactContext = {
+  artifactId: string;
+  kind: WorkbenchArtifactKind;
+  title: string;
+  summary?: string;
+  source: WorkbenchArtifactRef['source'];
+  metadata?: {
+    intent?: string;
+    appBlueprintName?: string;
+    screenNames?: string[];
+    sectionNames?: string[];
+    initialTab?: string;
+  };
+};
+
 export type WorkbenchSessionView = {
   task: Task;
   group: WorkbenchSessionGroup;
