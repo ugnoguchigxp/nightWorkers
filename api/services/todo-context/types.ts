@@ -3,7 +3,7 @@ import type { TaskType } from '../task-intake';
 
 export type RuntimeLaneSnapshot = {
   workerKind: 'native-local' | 'codex-agent';
-  source: 'task' | 'queue' | 'settings' | 'env_default';
+  source: 'task' | 'queue' | 'settings' | 'env' | 'provider_default';
   diagnostics?: Array<{ level: 'info' | 'warning'; message: string }>;
 };
 

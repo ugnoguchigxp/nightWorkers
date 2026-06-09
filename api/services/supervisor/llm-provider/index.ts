@@ -16,8 +16,8 @@ import { buildNormalizedSupervisorLlmRequest, providerAdapterKey } from './reque
 import type { CallSupervisorOptions, StructuredJsonLlmOptions } from './types';
 
 export {
-  buildCodexSupervisorSdkOptions,
-  buildCodexSupervisorThreadOptions,
+  buildCodexStructuredProviderSdkOptions,
+  buildCodexStructuredProviderThreadOptions,
   buildCodexTurnPrompt,
 } from './codex';
 export { ProviderActivityRejectedError } from './events';

@@ -1,5 +1,7 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
 import {
   createLocalFolder,
@@ -10,7 +12,13 @@ import {
 } from '../../api/modules/nightworkers/nightworkers.service';
 import * as runtimeRegistry from '../../api/services/agent-runtime/registry';
 
-vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
+const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-service-01-'));
+
+afterAll(() => {
+  fs.rmSync(repoRoot, { recursive: true, force: true });
+});
+
+vi.mock('../../api/modules/nightworkers/nightworkers.repository', () => ({
   getTask: vi.fn(),
   updateRepository: vi.fn(),
   countActiveTaskRuns: vi.fn(),
@@ -34,11 +42,11 @@ vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   updateImplementationQueueEntry: vi.fn(),
 }));
 
-vi.mock('../api/services/agent-runtime/registry', () => ({
+vi.mock('../../api/services/agent-runtime/registry', () => ({
   resolveAgentRuntime: vi.fn(),
 }));
 
-vi.mock('../api/services/conversation-context', () => ({
+vi.mock('../../api/services/conversation-context', () => ({
   buildPromptWithStateCard: vi.fn(
     (input: { latestUserMessage: string; stateCardText?: string | null }) => {
       const request = input.latestUserMessage.trim();
@@ -68,6 +76,10 @@ vi.mock('../api/services/conversation-context', () => ({
 }));
 
 describe('NightWorkers service', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('lists replay events for a run after the requested cursor', async () => {
     vi.mocked(repo.getTaskRun).mockResolvedValue({
       id: 'run-replay',
@@ -295,7 +307,7 @@ describe('NightWorkers service', () => {
           runtimeLane: 'codex-agent',
           runtimeLaneResolution: expect.objectContaining({
             workerKind: 'codex-agent',
-            source: 'env_default',
+            source: 'env',
           }),
         }),
       })

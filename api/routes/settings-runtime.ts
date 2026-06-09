@@ -34,6 +34,10 @@ export const llmSettingsSchema = z.object({
   CODEX_ENABLED: z.boolean().default(false).openapi({ example: false }),
   CODEX_ACCESS_TOKEN: z.string().default('').openapi({ example: 'your-codex-token' }),
   CODEX_MODEL: z.string().default('').openapi({ example: 'gpt-5.3-codex' }),
+  IMPLEMENTATION_RUNTIME_LANE: z
+    .enum(['', 'native-supervisor', 'codex-agent'])
+    .default('')
+    .openapi({ example: 'codex-agent' }),
   SESSION_QUEUE_MAX_CONCURRENCY: z.number().int().positive().default(2).openapi({ example: 2 }),
 });
 
@@ -55,6 +59,11 @@ const getBoolEnv = (key: string, fallback: boolean) => {
   const value = process.env[key];
   if (!value) return fallback;
   return value.toLowerCase() === 'true';
+};
+
+const getRuntimeLaneSetting = (value: unknown): '' | 'native-supervisor' | 'codex-agent' => {
+  if (value === 'native-supervisor' || value === 'codex-agent') return value;
+  return '';
 };
 
 const readRuntimeSettings = (): Partial<z.infer<typeof llmSettingsSchema>> => {
@@ -120,6 +129,9 @@ export const getCurrentSettings = (): z.infer<typeof llmSettingsSchema> => {
         : getBoolEnv('CODEX_ENABLED', false),
     CODEX_ACCESS_TOKEN: persisted.CODEX_ACCESS_TOKEN ?? process.env.CODEX_ACCESS_TOKEN ?? '',
     CODEX_MODEL: persisted.CODEX_MODEL ?? process.env.CODEX_MODEL ?? '',
+    IMPLEMENTATION_RUNTIME_LANE: getRuntimeLaneSetting(
+      persisted.IMPLEMENTATION_RUNTIME_LANE ?? process.env.IMPLEMENTATION_RUNTIME_LANE
+    ),
     SESSION_QUEUE_MAX_CONCURRENCY:
       typeof persisted.SESSION_QUEUE_MAX_CONCURRENCY === 'number'
         ? persisted.SESSION_QUEUE_MAX_CONCURRENCY

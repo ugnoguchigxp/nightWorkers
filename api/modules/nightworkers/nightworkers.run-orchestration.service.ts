@@ -101,6 +101,7 @@ export async function startTaskRun(taskId: string) {
   const blueprintReadiness = await resolveBlueprintPlanningReadiness(taskId);
   const settings = getCurrentSettings();
   const runtimeLaneResolution = resolveRuntimeLane({
+    settingsRuntimeLane: settings.IMPLEMENTATION_RUNTIME_LANE,
     activeLlmProvider: settings.ACTIVE_LLM_PROVIDER,
     codexEnabled: settings.CODEX_ENABLED,
   });

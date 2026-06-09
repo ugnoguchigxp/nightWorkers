@@ -3,8 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  buildCodexSupervisorSdkOptions,
-  buildCodexSupervisorThreadOptions,
+  buildCodexStructuredProviderSdkOptions,
+  buildCodexStructuredProviderThreadOptions,
   buildNormalizedSupervisorLlmRequest,
 } from '../../api/services/supervisor/llm-provider';
 import { readCodexStreamedTurn } from '../../api/services/supervisor/llm-provider/codex';
@@ -87,7 +87,7 @@ describe('Supervisor LLM provider', () => {
     process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE = 'Codex Desktop';
     process.env.CODEX_HOME = codexHome;
     process.env.NIGHTWORKERS_CODEX_SUPERVISOR_HOME = supervisorHome;
-    const options = buildCodexSupervisorSdkOptions('');
+    const options = buildCodexStructuredProviderSdkOptions('');
 
     try {
       expect(options.config).toEqual({
@@ -139,7 +139,7 @@ describe('Supervisor LLM provider', () => {
     process.env.NIGHTWORKERS_CODEX_SUPERVISOR_HOME = supervisorHome;
 
     try {
-      const options = buildCodexSupervisorSdkOptions('codex-token');
+      const options = buildCodexStructuredProviderSdkOptions('codex-token');
 
       expect(options.config).toEqual({
         features: {
@@ -181,7 +181,7 @@ describe('Supervisor LLM provider', () => {
   });
 
   it('runs Codex supervisor calls from the repository workspace', () => {
-    const options = buildCodexSupervisorThreadOptions('gpt-5.4-mini', '/repo/project');
+    const options = buildCodexStructuredProviderThreadOptions('gpt-5.4-mini', '/repo/project');
 
     expect(options).toMatchObject({
       model: 'gpt-5.4-mini',

@@ -5,7 +5,7 @@ import type { CodexOptions, Thread, ThreadEvent, Usage } from '@openai/codex-sdk
 import { createSupervisorResponseDeltaEmitter, traceProviderActivity } from './events';
 import type { CallSupervisorOptions, NormalizedSupervisorLlmRequest } from './types';
 
-const codexSupervisorFeatureOverrides = {
+const codexStructuredProviderFeatureOverrides = {
   mcp: false,
   image_generation: false,
   plugins: false,
@@ -22,10 +22,10 @@ export function buildCodexTurnPrompt(systemPrompt: string, userPrompt: string): 
   return ['[システム指示]', systemPrompt, '', '[ユーザー入力]', userPrompt].join('\n');
 }
 
-export function buildCodexSupervisorSdkOptions(accessToken: string): CodexOptions {
+export function buildCodexStructuredProviderSdkOptions(accessToken: string): CodexOptions {
   const sdkOptions: CodexOptions = {
     config: {
-      features: codexSupervisorFeatureOverrides,
+      features: codexStructuredProviderFeatureOverrides,
       mcp_servers: {},
     },
   };
@@ -37,7 +37,7 @@ export function buildCodexSupervisorSdkOptions(accessToken: string): CodexOption
   );
   sdkOptions.env = {
     ...sanitizedEnv,
-    CODEX_HOME: prepareCodexSupervisorHome(),
+    CODEX_HOME: prepareCodexStructuredProviderHome(),
     ...(accessToken ? { CODEX_ACCESS_TOKEN: accessToken } : {}),
   };
   return sdkOptions;
@@ -52,7 +52,7 @@ function isCodexParentSessionEnv(key: string) {
   );
 }
 
-function prepareCodexSupervisorHome() {
+function prepareCodexStructuredProviderHome() {
   const targetHome =
     process.env.NIGHTWORKERS_CODEX_SUPERVISOR_HOME ||
     path.join(os.tmpdir(), 'nightworkers-codex-supervisor-home');
@@ -71,7 +71,7 @@ function copyCodexAuthFile(sourceHome: string, targetHome: string, fileName: str
   fs.chmodSync(targetPath, 0o600);
 }
 
-export function buildCodexSupervisorThreadOptions(
+export function buildCodexStructuredProviderThreadOptions(
   model?: string,
   workingDirectory = process.cwd()
 ) {

@@ -12,7 +12,7 @@ describe('agent runtime registry', () => {
     expect(resolveRuntimeLane({ env: {} })).toMatchObject({
       lane: 'native-supervisor',
       workerKind: 'native-local',
-      source: 'env_default',
+      source: 'provider_default',
     });
   });
 
@@ -21,12 +21,12 @@ describe('agent runtime registry', () => {
       {
         lane: 'codex-agent',
         workerKind: 'codex-agent',
-        source: 'env_default',
+        source: 'env',
       }
     );
   });
 
-  it('keeps active enabled Codex provider settings on the native supervisor lane', () => {
+  it('uses codex-agent as the provider-derived default when Codex is active and enabled', () => {
     expect(
       resolveRuntimeLane({
         activeLlmProvider: 'codex',
@@ -34,9 +34,24 @@ describe('agent runtime registry', () => {
         env: {},
       })
     ).toMatchObject({
+      lane: 'codex-agent',
+      workerKind: 'codex-agent',
+      source: 'provider_default',
+    });
+  });
+
+  it('lets explicit settings keep Codex provider execution on the native supervisor lane', () => {
+    expect(
+      resolveRuntimeLane({
+        settingsRuntimeLane: 'native-supervisor',
+        activeLlmProvider: 'codex',
+        codexEnabled: true,
+        env: {},
+      })
+    ).toMatchObject({
       lane: 'native-supervisor',
       workerKind: 'native-local',
-      source: 'env_default',
+      source: 'settings',
     });
   });
 
@@ -50,7 +65,7 @@ describe('agent runtime registry', () => {
     ).toMatchObject({
       lane: 'native-supervisor',
       workerKind: 'native-local',
-      source: 'env_default',
+      source: 'provider_default',
     });
   });
 });

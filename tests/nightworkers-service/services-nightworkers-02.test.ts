@@ -71,9 +71,10 @@ describe('NightWorkers service', () => {
     vi.clearAllMocks();
     delete process.env.ACTIVE_LLM_PROVIDER;
     delete process.env.CODEX_ENABLED;
+    delete process.env.IMPLEMENTATION_RUNTIME_LANE;
   });
 
-  it('keeps Codex provider execution on the native supervisor lane unless explicitly overridden', async () => {
+  it('routes enabled Codex provider implementation runs to the codex-agent lane', async () => {
     process.env.ACTIVE_LLM_PROVIDER = 'codex';
     process.env.CODEX_ENABLED = 'true';
     const task = {
@@ -82,7 +83,7 @@ describe('NightWorkers service', () => {
       title: 'Codex provider task',
       description: 'Use Codex provider',
       objective: 'Use Codex provider',
-      acceptanceCriteria: 'Codex provider keeps native supervisor lane',
+      acceptanceCriteria: 'Codex provider uses codex-agent lane',
       timeoutSeconds: 60,
     };
     const run = {
@@ -117,7 +118,7 @@ describe('NightWorkers service', () => {
       logContent: '',
     });
     vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
-      kind: 'native-local',
+      kind: 'codex-agent',
       start: runtimeStart,
       stop: vi.fn(),
     } as any);
@@ -126,17 +127,17 @@ describe('NightWorkers service', () => {
 
     expect(repo.createTaskRun).toHaveBeenCalledWith(
       expect.objectContaining({
-        workerKind: 'native-local',
+        workerKind: 'codex-agent',
         contextSnapshot: expect.objectContaining({
-          runtimeLane: 'native-supervisor',
+          runtimeLane: 'codex-agent',
           runtimeLaneResolution: expect.objectContaining({
-            workerKind: 'native-local',
-            source: 'env_default',
+            workerKind: 'codex-agent',
+            source: 'provider_default',
           }),
         }),
       })
     );
-    expect(runtimeRegistry.resolveAgentRuntime).toHaveBeenCalledWith('native-local');
+    expect(runtimeRegistry.resolveAgentRuntime).toHaveBeenCalledWith('codex-agent');
   });
 
   it('starts simple runtime once without creating planned todos', async () => {

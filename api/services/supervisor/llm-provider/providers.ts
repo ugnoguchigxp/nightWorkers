@@ -1,7 +1,7 @@
 import { estimateLlmUsage, normalizeProviderUsage } from '../../llm-usage';
 import {
-  buildCodexSupervisorSdkOptions,
-  buildCodexSupervisorThreadOptions,
+  buildCodexStructuredProviderSdkOptions,
+  buildCodexStructuredProviderThreadOptions,
   buildCodexTurnPrompt,
   readCodexStreamedTurn,
 } from './codex';
@@ -370,9 +370,9 @@ async function callCodexProvider(
   const { Codex } = await import('@openai/codex-sdk');
   const accessToken = getSupervisorLlmSetting(settings, 'CODEX_ACCESS_TOKEN');
   const configuredModel = getSupervisorLlmSetting(settings, 'CODEX_MODEL') || undefined;
-  const sdkOptions = buildCodexSupervisorSdkOptions(accessToken);
+  const sdkOptions = buildCodexStructuredProviderSdkOptions(accessToken);
   const codex = new Codex(sdkOptions);
-  const threadOptions = buildCodexSupervisorThreadOptions(
+  const threadOptions = buildCodexStructuredProviderThreadOptions(
     configuredModel,
     input.options.workingDirectory
   );
@@ -418,6 +418,11 @@ async function callCodexProvider(
   }
   const providerDebug = {
     provider: 'codex',
+    providerMode: 'legacy_structured_provider',
+    diagnostic:
+      input.options.normalizedRequest?.diagnostics.label === 'supervisor'
+        ? 'Codex is being used as a legacy structured Supervisor provider. Use the codex-agent runtime lane for implementation Runs.'
+        : undefined,
     model: configuredModel || null,
     structuredOutput: useStructuredOutput,
     structuredOutputRetried,

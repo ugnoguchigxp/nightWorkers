@@ -1,10 +1,10 @@
-import type { Thread, ThreadEvent, ThreadOptions } from '@openai/codex-sdk';
-import {
-  buildCodexSupervisorSdkOptions,
-  buildCodexSupervisorThreadOptions,
-} from '../supervisor/llm-provider';
+import type { Thread, ThreadEvent } from '@openai/codex-sdk';
 import { gitDiffTool } from '../worker-tools/git';
 import { createCodexEventMapperState, mapCodexThreadEvent } from './codex-event-mapper';
+import {
+  buildCodexRuntimeSdkOptions,
+  buildCodexRuntimeThreadOptions,
+} from './codex-runtime-config';
 import type { AgentRunContext, AgentRuntime, AgentRuntimeResult, AgentRuntimeSink } from './types';
 
 export type CodexThreadFactory = (context: AgentRunContext) => Promise<Thread> | Thread;
@@ -129,7 +129,9 @@ export class CodexAgentRuntime implements AgentRuntime {
   private async createThread(context: AgentRunContext): Promise<Thread> {
     if (this.threadFactory) return this.threadFactory(context);
     const { Codex } = await import('@openai/codex-sdk');
-    const codexOptions = buildCodexSupervisorSdkOptions(process.env.CODEX_ACCESS_TOKEN || '');
+    const codexOptions = buildCodexRuntimeSdkOptions({
+      accessToken: process.env.CODEX_ACCESS_TOKEN || '',
+    });
     const codex = new Codex(codexOptions);
     const threadOptions = buildCodexRuntimeThreadOptions(context);
     return codex.startThread(threadOptions);
@@ -180,17 +182,4 @@ function changedFilesFromDiff(diff: string): string[] {
     if (match?.[2]) files.add(match[2]);
   }
   return [...files];
-}
-
-function buildCodexRuntimeThreadOptions(context: AgentRunContext): ThreadOptions {
-  const codexOptions =
-    context.runtimeOptions?.codex && typeof context.runtimeOptions.codex === 'object'
-      ? (context.runtimeOptions.codex as Record<string, unknown>)
-      : {};
-  const model = typeof codexOptions.model === 'string' ? codexOptions.model : undefined;
-  const base = buildCodexSupervisorThreadOptions(model, context.repoRoot);
-  return {
-    ...base,
-    workingDirectory: context.repoRoot,
-  };
 }

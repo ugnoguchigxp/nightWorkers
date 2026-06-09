@@ -1,7 +1,7 @@
 import type { AgentRuntimeKind } from './types';
 
 export type RuntimeLane = 'native-supervisor' | 'codex-agent';
-export type RuntimeLaneSource = 'task' | 'queue' | 'settings' | 'env_default';
+export type RuntimeLaneSource = 'task' | 'queue' | 'settings' | 'env' | 'provider_default';
 
 export type RuntimeLaneResolution = {
   lane: RuntimeLane;
@@ -26,7 +26,7 @@ export function resolveRuntimeLane(input: RuntimeLaneInput = {}): RuntimeLaneRes
     { source: 'task', value: input.taskRuntimeLane },
     { source: 'queue', value: input.queueRuntimeLane },
     { source: 'settings', value: input.settingsRuntimeLane },
-    { source: 'env_default', value: env.NIGHTWORKERS_RUNTIME_LANE },
+    { source: 'env', value: env.NIGHTWORKERS_RUNTIME_LANE },
   ];
 
   for (const candidate of candidates) {
@@ -62,14 +62,20 @@ export function resolveRuntimeLane(input: RuntimeLaneInput = {}): RuntimeLaneRes
     diagnostics.push({
       level: 'info',
       message:
-        'Codex provider selected for supervisor LLM calls; runtime lane remains native-supervisor unless explicitly overridden.',
+        'Codex provider is enabled; implementation Runs default to the codex-agent runtime lane.',
     });
+    return {
+      lane: 'codex-agent',
+      workerKind: 'codex-agent',
+      source: 'provider_default',
+      diagnostics,
+    };
   }
 
   return {
     lane: 'native-supervisor',
     workerKind: 'native-local',
-    source: 'env_default',
+    source: 'provider_default',
     diagnostics,
   };
 }

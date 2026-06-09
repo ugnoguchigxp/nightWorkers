@@ -8,6 +8,8 @@ Plan mode の現在の使用感は維持する。計画・仕様策定では既�
 
 Codex には NightWorkers builtin capability を MCP tool guidance として渡す。Codex は必要に応じてその MCP tool を使い、NightWorkers は tool call / command / diff / verification / evidence report を run_events に保存する。
 
+この計画の主目的は provider/runtime 分離である。Codex が実際に行ったファイル変更・コマンド実行・MCP tool call の監査は、実装 Run を Codex native runtime に逃がした後に必ず必要になるため、後続フェーズとして分けて計画する。
+
 ## Current Problem
 
 最新ログでは `provider=codex`, `providerClass=agent_runtime`, `label=supervisor`, `round=2` が `callSupervisorLLM(...)` から繰り返し呼ばれていた。つまり Codex SDK は自由な coding-agent runtime ではなく、schema-first Supervisor の JSON tool-call provider として使われている。
@@ -72,6 +74,26 @@ Codex 由来の実装 Run では Round1 判定は不要にする。
 - NightWorkers は `runId`, `taskId`, `repoRoot`, latest user message, Specification Workspace summary, active Blueprint / DB Design / Decision Review refs, NightWorkers MCP guidance を渡す。
 - Codex は native tools と NightWorkers MCP tools を自由に使う。
 - NightWorkers は Codex の stream events を `run_events` に保存し、completion は evidence gate で判定する。
+
+## Auditability Findings
+
+Codex native runtime に寄せると、NightWorkers の Round2 tool loop ではなく Codex 側の tool/thinking/runtime に実作業が移る。これは実装能力の面では望ましいが、何を変更し、どのコマンドを実行し、どの MCP tool を使ったかが NightWorkers から見えなくなる危険がある。
+
+2026-06-09 時点の確認:
+
+- OpenAI の Codex manual は、Codex CLI / Codex SDK / Codex App Server / Skills / Universal cloud environment を open-source components として挙げている。
+- 同じ表では IDE extension と Codex web は open source ではない扱いになっている。Desktop app 全体の source を安定 API として参照できる根拠は確認できなかった。
+- ローカルには `codex-cli 0.130.0` が `/Users/y.noguchi/.local/share/mise/installs/node/24.11.1/bin/codex` として入っている。npm package は `@openai/codex@0.130.0`, Apache-2.0, repository `github.com/openai/codex`。
+- `codex exec --json` は JSONL event output を持つ。`codex debug app-server` もあるため、CLI / SDK / app-server の observable event を比較できる。
+- `~/.codex/sessions/.../*.jsonl` には `session_meta`, `agent_reasoning`, `function_call`, `function_call_output`, `custom_tool_call`, `custom_tool_call_output` などが残る。ただしこれは Codex Desktop / CLI の内部保存形式であり、NightWorkers の安定依存先にはしない。
+- Codex hooks は `PreToolUse`, `PostToolUse`, `PermissionRequest`, `Stop` などで Bash / apply_patch / MCP tool を matcher にできる。Codex 側の補助監査として使える可能性はあるが、NightWorkers の canonical audit source は SDK/app-server stream event と post-run workspace evidence に置く。
+
+方針:
+
+- Desktop app の private implementation には依存しない。
+- Local Codex CLI / open-source `openai/codex` は、event shape と hook/app-server behavior の調査対象にする。
+- NightWorkers 側には Codex event をそのまま保存する raw event layer と、UI/判定用の normalized audit event layer を分けて持つ。
+- `~/.codex/sessions` は regression fixture / manual recovery の参考に留め、通常 runtime の primary source にはしない。
 
 ## Builtin MCP Capability Direction
 
@@ -315,7 +337,165 @@ Acceptance:
 - MCP-reported blocker becomes `blocked`.
 - non-git target workspace can complete if file-change/evidence exists.
 
-### Slice 7: UI and Settings
+### Slice 7: Codex Audit Discovery
+
+Purpose: define what can be traced from public/local Codex surfaces before building durable audit UX.
+
+Files:
+
+- new `spec/codex-auditability-discovery.md`
+- `api/services/agent-runtime/CodexAgentRuntime.ts`
+- `api/services/agent-runtime/codex-event-mapper.ts`
+- tests/fixtures under `tests/fixtures/codex-events/*`
+
+Actions:
+
+1. Inspect local `codex exec --json` event output with a tiny read-only task, a file-edit task, and a command-running task.
+2. Inspect Codex SDK/app-server event stream for the same task shapes.
+3. Compare with local `~/.codex/sessions` JSONL only as evidence of extra event types, not as a contract.
+4. Inspect open-source `openai/codex` CLI / SDK / app-server source for documented event names, hook payloads, and stability notes.
+5. Document which fields are stable enough for NightWorkers:
+   - command execution
+   - apply_patch / file edit
+   - MCP tool call
+   - final response
+   - failure / cancellation
+   - sandbox / approval status
+6. Capture raw fixtures with secrets redacted.
+
+Acceptance:
+
+- Discovery doc separates stable SDK/app-server events from private session-log observations.
+- Fixtures cover at least one file edit, one shell command, one MCP call, one failure, and one no-change completion.
+- No implementation code depends on Desktop app private files.
+
+### Slice 8: Runtime Event Capture
+
+Purpose: persist Codex work as audit events while keeping raw events available for future parser fixes.
+
+Files:
+
+- new `api/services/agent-runtime/codex-audit-event-store.ts`
+- `api/services/agent-runtime/codex-event-mapper.ts`
+- `api/services/agent-runtime/CodexAgentRuntime.ts`
+- DB migration for `run_events` payload extensions or a dedicated audit artifact table
+- tests for redaction and event mapping
+
+Actions:
+
+1. Store every Codex SDK/app-server stream event as a raw event with `runId`, sequence number, timestamp, event type, and redacted payload.
+2. Normalize known events into:
+   - `codex.command.started`
+   - `codex.command.finished`
+   - `codex.file_change.detected`
+   - `codex.mcp.started`
+   - `codex.mcp.finished`
+   - `codex.final_response`
+   - `codex.runtime.failed`
+3. Preserve unknown events as `codex.raw_event` with a digest and preview.
+4. Redact env vars, auth tokens, large stdout/stderr, and MCP arguments according to existing artifact redaction policy.
+5. Add event sequence integrity checks so UI can show gaps.
+
+Acceptance:
+
+- A Codex implementation Run has a complete raw event chain.
+- Normalized events are enough for timeline display and outcome gate decisions.
+- Unknown event types do not crash the run.
+
+### Slice 9: File Change Audit
+
+Purpose: prove what Codex changed without trusting Codex prose or Desktop private logs.
+
+Files:
+
+- new `api/services/agent-runtime/workspace-change-auditor.ts`
+- `api/services/agent-runtime/codex-outcome-gate.ts`
+- tests for git and non-git workspaces
+
+Actions:
+
+1. Record pre-run workspace snapshot:
+   - git `HEAD` and `git status --porcelain=v1` when inside a git repo
+   - fallback file manifest for non-git target roots
+2. Record post-run snapshot and derive changed files.
+3. For git repos, store `git diff --name-status` and a bounded patch artifact.
+4. For non-git roots, store path-level changes plus hashes / sizes / mtimes; store content diff only for safe text files under size limits.
+5. Treat ignored/generated files according to project ignore rules.
+6. Attach file-change evidence to outcome gate.
+
+Acceptance:
+
+- Git workspaces produce file list and patch evidence.
+- Non-git workspaces can still produce reliable file-change evidence.
+- `git diff` failure in a non-git directory cannot poison the Codex prompt loop.
+
+### Slice 10: Command and MCP Tool Audit
+
+Purpose: make Codex-side actions reviewable even when Codex chooses native tools.
+
+Files:
+
+- `api/services/agent-runtime/codex-event-mapper.ts`
+- new `api/services/agent-runtime/codex-command-audit.ts`
+- new `api/services/agent-runtime/codex-mcp-audit.ts`
+- tests for command/MCP event redaction
+
+Actions:
+
+1. For commands, record:
+   - command text or argv
+   - cwd
+   - start/end timestamps
+   - exit code/status
+   - stdout/stderr digest and bounded preview
+   - timeout/sandbox/approval metadata when available
+2. For MCP calls, record:
+   - server name
+   - tool name
+   - redacted args digest/preview
+   - result digest/preview
+   - duration
+   - status/error
+3. If SDK/app-server event lacks a required field, mark it `unknown` rather than inventing values.
+4. Optionally test Codex hooks as a secondary command/MCP observer, but do not make hooks the only audit path.
+
+Acceptance:
+
+- Timeline can show which commands and MCP tools Codex used.
+- Sensitive args and outputs are redacted.
+- Missing fields are visible as missing, not silently normalized away.
+
+### Slice 11: Audit UI, Export, and Replay
+
+Purpose: make Codex implementation Runs explainable after the fact.
+
+Files:
+
+- run/timeline UI
+- artifact/export service
+- replay/import service if reused
+- tests for timeline event rendering and export shape
+
+Actions:
+
+1. Add Codex audit timeline groups:
+   - model/turn events
+   - file changes
+   - commands
+   - MCP tool calls
+   - verification/evidence
+2. Collapse noisy raw events by default, with a raw JSON drawer for debugging.
+3. Add run export JSONL containing raw Codex events, normalized audit events, file-change evidence, and final outcome.
+4. Add replay/import fixture support so event mapper regressions can be tested without re-running Codex.
+5. Surface audit gaps explicitly, for example `command output unavailable` or `unknown event type`.
+
+Acceptance:
+
+- A reviewer can answer "what files changed?", "what commands ran?", and "which MCP tools were called?" from the NightWorkers UI/export.
+- Replay fixtures can reproduce timeline and outcome gate decisions.
+- UI does not imply NightWorkers worker tools performed actions that Codex performed natively.
+
+### Slice 12: UI and Settings
 
 Purpose: make the split understandable without changing Plan mode UX.
 
@@ -369,6 +549,8 @@ Manual smoke:
 4. Confirm Codex can call `nightworkers.get_specification_workspace`.
 5. Confirm file changes and verification evidence are visible.
 6. Confirm final status is evidence-derived.
+7. After audit phases, confirm command execution, MCP tool calls, raw Codex events, and file-change evidence are exportable from a run JSONL.
+8. Confirm a replay fixture can rebuild the same timeline and outcome without re-running Codex.
 
 ## Non-Goals
 
@@ -385,3 +567,5 @@ Manual smoke:
 - Whether runtime lane setting should live in global settings, per project, per queue entry, or all three.
 - Whether write-capable NightWorkers MCP tools should be enabled by default or require an explicit project trust toggle.
 - Whether Codex runtime should update project AGENTS.md or receive thread-scoped guidance only.
+- Whether Codex hooks should be officially supported as a secondary audit source, or kept as operator-local instrumentation only.
+- Whether raw Codex events should stay in `run_events` or move to a dedicated append-only audit artifact table.

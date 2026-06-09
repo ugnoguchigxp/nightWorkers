@@ -11,10 +11,59 @@ import {
   mapCodexThreadEvent,
   redactProviderEvent,
 } from '../api/services/agent-runtime/codex-event-mapper';
+import {
+  buildCodexRuntimeSdkOptions,
+  buildCodexRuntimeThreadOptions,
+} from '../api/services/agent-runtime/codex-runtime-config';
 
 const execFileAsync = promisify(execFile);
 
 describe('CodexAgentRuntime', () => {
+  it('builds runtime Codex options without structured provider feature suppression', () => {
+    const options = buildCodexRuntimeSdkOptions({
+      accessToken: 'runtime-token',
+      env: {
+        PATH: '/usr/bin',
+        CODEX_THREAD_ID: 'parent-thread',
+        CODEX_SHELL: '1',
+        NIGHTWORKERS_CODEX_MCP_COMMAND: '/bin/nightworkers-mcp',
+        NIGHTWORKERS_CODEX_MCP_ARGS: '--stdio',
+      } as any,
+    });
+
+    expect(options.config).toMatchObject({
+      features: { mcp: true },
+      mcp_servers: {
+        nightworkers: {
+          command: '/bin/nightworkers-mcp',
+          args: ['--stdio'],
+        },
+      },
+    });
+    expect(options.env).toMatchObject({
+      PATH: '/usr/bin',
+      CODEX_ACCESS_TOKEN: 'runtime-token',
+    });
+    expect(options.env?.CODEX_THREAD_ID).toBeUndefined();
+    expect(options.env?.CODEX_SHELL).toBeUndefined();
+  });
+
+  it('builds runtime thread options from the repository root', () => {
+    const options = buildCodexRuntimeThreadOptions(
+      buildContext({ repoRoot: '/repo/project', codex: { model: 'gpt-5.3-codex' } })
+    );
+
+    expect(options).toMatchObject({
+      model: 'gpt-5.3-codex',
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'never',
+      networkAccessEnabled: false,
+      webSearchMode: 'disabled',
+      skipGitRepoCheck: true,
+      workingDirectory: '/repo/project',
+    });
+  });
+
   it('maps a fake assistant turn into runtime ledger events', async () => {
     const runtime = new CodexAgentRuntime({
       threadFactory: () =>
@@ -258,7 +307,7 @@ describe('CodexAgentRuntime', () => {
   });
 });
 
-function buildContext(input: { repoRoot?: string } = {}) {
+function buildContext(input: { repoRoot?: string; codex?: Record<string, unknown> } = {}) {
   return {
     runId: 'run-codex',
     taskId: 'task-codex',
@@ -271,6 +320,7 @@ function buildContext(input: { repoRoot?: string } = {}) {
       compiledPrompt: 'do work',
       source: 'fallback' as const,
     },
+    runtimeOptions: input.codex ? { codex: input.codex } : undefined,
   };
 }
 
