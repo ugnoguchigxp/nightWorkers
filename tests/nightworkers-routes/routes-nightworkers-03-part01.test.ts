@@ -1061,6 +1061,18 @@ describe('NightWorkers task routes', () => {
           dbDdlReferenceIncluded: true,
         },
       });
+      expect(docBody.reviewedMessage).toMatchObject({
+        messageType: 'markdown_document',
+        metadataJson: {
+          intent: 'draft_spec',
+          source: 'status_document_review',
+          reviewedSourceMessageId: docBody.message.id,
+          questionnaireSessionId: session.id,
+        },
+      });
+      expect(docBody.reviewedMessage.metadataJson.generation.reviewPrompt).toBe(
+        'ドキュメントレビューをしてください。改善するべき点が無くなるまで改善してください'
+      );
     } finally {
       if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
       else process.env.ACTIVE_LLM_PROVIDER = originalProvider;

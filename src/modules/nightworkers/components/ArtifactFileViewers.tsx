@@ -1,10 +1,10 @@
-import { CodeBlock } from '@repo/design-system';
 import { ChevronRight, File, Folder } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Components } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { CodeBlock } from '@/components/ui/CodeBlock';
 import type { ProjectFileContent, ProjectFileEntry } from '../types';
 import { getChangedFiles } from '../utils/diff';
 

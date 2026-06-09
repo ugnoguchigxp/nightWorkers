@@ -88,7 +88,7 @@ export function runEventToActivityKind(
   if (agentEventType === 'round1.prompt_built' || agentEventType === 'round2.prompt_built') {
     return 'llm.request';
   }
-  if (agentEventType === 'skill.loaded') return 'runtime.state';
+  if (agentEventType === 'procedure.loaded') return 'runtime.state';
   if (agentEventType === 'tool.validation_failed') return 'tool.error';
   if (agentEventType === 'run.started' || agentEventType === 'run.completed') return 'run.status';
   if (agentEventType === 'run.needs_human' || agentEventType === 'run.failed') {
@@ -143,7 +143,7 @@ export function shouldProjectRunEventToActivity(input: {
     input.agentEventType === 'round2.prompt_built' ||
     input.agentEventType === 'round1.parsed' ||
     input.agentEventType === 'round2.parsed' ||
-    input.agentEventType === 'skill.loaded' ||
+    input.agentEventType === 'procedure.loaded' ||
     input.agentEventType === 'model.response_finished' ||
     input.agentEventType === 'tool.started' ||
     input.agentEventType === 'tool.finished' ||
@@ -191,8 +191,8 @@ export function runEventToActivityText(input: {
   ) {
     return String(payload.systemPrompt || input.message || '');
   }
-  if (input.agentEventType === 'skill.loaded') {
-    return String(payload.skillPath || 'skill.loaded');
+  if (input.agentEventType === 'procedure.loaded') {
+    return String(payload.procedurePath || 'procedure.loaded');
   }
   if (input.agentEventType === 'tool.validation_failed') {
     return String(payload.summary || input.message || 'tool validation failed');

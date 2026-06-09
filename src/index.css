@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "../designSystem/src/styles/index.css";
+@import "./styles/ui-tokens.css";
 @import "@fontsource-variable/geist";
 @import "./styles/nightworkers-base.css";
 @import "./styles/nightworkers-shell.css";

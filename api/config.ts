@@ -33,6 +33,7 @@ const envSchema = z
       .enum(['true', 'false'])
       .optional()
       .transform((value) => (value === undefined ? undefined : value === 'true')),
+    SUPERVISOR_REFERENCES_DIR: z.string().trim().optional(),
     SUPERVISOR_SKILLS_DIR: z.string().trim().optional(),
     LOG_LEVEL: z.string().default('info'),
   })

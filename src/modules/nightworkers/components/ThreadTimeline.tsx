@@ -1,6 +1,6 @@
-import type { CodeBlockData } from '@repo/design-system';
-import { Button } from '@repo/design-system';
 import { type ReactNode, useState } from 'react';
+import { Button } from '@/components/ui/Button';
+import type { CodeBlockData } from '@/components/ui/CodeBlock';
 import { buildTranscriptItems, type TranscriptItem } from '../activityTranscript';
 import type {
   ActivityArtifact,
@@ -36,6 +36,15 @@ import {
   ThinkingIndicator,
 } from './ThreadTimelineStreaming';
 
+export {
+  findArtifactTaskMessage,
+  getActivityCode,
+  parseDiffMetadata,
+} from './ThreadTimelineActivityTranscript';
+export {
+  buildNormalTranscriptItems,
+  buildVisibleEditDiffSummary,
+} from './ThreadTimelineNormalTranscript';
 export {
   buildPersistedStreamingResponsePreview,
   buildStreamingResponsePreview,

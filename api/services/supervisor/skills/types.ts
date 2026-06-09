@@ -61,11 +61,11 @@ export type SupervisorRoutingHypothesis = {
   overlays: SupervisorOverlay[];
   subtype?: string;
   requiredEvidence: string[];
-  nextSkillFiles: string[];
+  nextReferenceFiles: string[];
   confidence: number;
 };
 
-export type SupervisorSkillSectionName =
+export type SupervisorReferenceSectionName =
   | 'Use When'
   | 'Required Behavior'
   | 'Stop Conditions'
@@ -74,7 +74,7 @@ export type SupervisorSkillSectionName =
   | 'Verification Guidance'
   | 'Risk Notes';
 
-export type SupervisorSkillDocumentKind =
+export type SupervisorReferenceDocumentKind =
   | 'root'
   | 'router'
   | 'phase'
@@ -82,15 +82,15 @@ export type SupervisorSkillDocumentKind =
   | 'work_kind'
   | 'overlay';
 
-export type SupervisorSkillDocument = {
+export type SupervisorReferenceDocument = {
   id: string;
-  kind: SupervisorSkillDocumentKind;
+  kind: SupervisorReferenceDocumentKind;
   title: string;
   version: 1;
   source: 'builtin' | 'configured';
   relativePath: string;
   digest: string;
-  sections: Partial<Record<SupervisorSkillSectionName, string>>;
+  sections: Partial<Record<SupervisorReferenceSectionName, string>>;
 };
 
 export const defaultSupervisorRoutingHypothesis: SupervisorRoutingHypothesis = {
@@ -100,6 +100,6 @@ export const defaultSupervisorRoutingHypothesis: SupervisorRoutingHypothesis = {
   workKinds: [],
   overlays: [],
   requiredEvidence: [],
-  nextSkillFiles: ['SKILL.md', 'references/modes/general_answer.md'],
+  nextReferenceFiles: ['SKILL.md', 'references/modes/general_answer.md'],
   confidence: 0.5,
 };

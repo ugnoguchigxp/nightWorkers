@@ -46,6 +46,51 @@ function activityArtifactToTaskMessage(artifact: ActivityArtifact): TaskMessage 
   };
 }
 
+function taskMessageArtifactId(message: TaskMessage): string | null {
+  const artifactRef = message.metadataJson?.artifactRef;
+  return typeof artifactRef?.artifactId === 'string' ? artifactRef.artifactId : null;
+}
+
+export function mergeWorkspaceTaskMessages({
+  taskMessages,
+  activityArtifacts,
+  generatedMessages,
+}: {
+  taskMessages: TaskMessage[];
+  activityArtifacts: ActivityArtifact[];
+  generatedMessages: TaskMessage[];
+}) {
+  const existingMessageIds = new Set(taskMessages.map((message) => message.id));
+  const existingArtifactIds = new Set(
+    taskMessages.map(taskMessageArtifactId).filter((id): id is string => Boolean(id))
+  );
+  const syntheticArtifactMessages = activityArtifacts
+    .filter(
+      (artifact) => artifact.kind === 'app_blueprint' && !existingArtifactIds.has(artifact.id)
+    )
+    .map(activityArtifactToTaskMessage)
+    .filter((message) => !existingMessageIds.has(message.id));
+  const nextIds = new Set([
+    ...existingMessageIds,
+    ...syntheticArtifactMessages.map((message) => message.id),
+  ]);
+  return [
+    ...taskMessages,
+    ...syntheticArtifactMessages,
+    ...generatedMessages.filter((message) => !nextIds.has(message.id)),
+  ];
+}
+
+export function isReviewedSpecificationMessage(message: TaskMessage) {
+  const metadata = message.metadataJson || {};
+  return (
+    message.messageType === 'markdown_document' &&
+    metadata.intent === 'draft_spec' &&
+    metadata.source === 'status_document_review' &&
+    typeof metadata.reviewedSourceMessageId === 'string'
+  );
+}
+
 function parseArtifactContentJson(content: string | null | undefined): any {
   if (!content?.trim()) return null;
   try {
@@ -78,17 +123,10 @@ export function BlueprintSpecificationWorkspaceViewer({
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [assemblyReadySessionIds, setAssemblyReadySessionIds] = useState<Set<string>>(new Set());
   const [generatedMessages, setGeneratedMessages] = useState<TaskMessage[]>([]);
-  const combinedTaskMessages = useMemo(() => {
-    const existingIds = new Set(taskMessages.map((message) => message.id));
-    return [
-      ...taskMessages,
-      ...activityArtifacts
-        .filter((artifact) => artifact.kind === 'app_blueprint')
-        .map(activityArtifactToTaskMessage)
-        .filter((message) => !existingIds.has(message.id)),
-      ...generatedMessages.filter((message) => !existingIds.has(message.id)),
-    ];
-  }, [activityArtifacts, generatedMessages, taskMessages]);
+  const combinedTaskMessages = useMemo(
+    () => mergeWorkspaceTaskMessages({ taskMessages, activityArtifacts, generatedMessages }),
+    [activityArtifacts, generatedMessages, taskMessages]
+  );
   const blueprintMessages = useMemo(
     () =>
       combinedTaskMessages.filter((message) => {
@@ -126,8 +164,17 @@ export function BlueprintSpecificationWorkspaceViewer({
       ),
     [combinedTaskMessages]
   );
+  const reviewedDesignDocMessages = useMemo(
+    () => designDocMessages.filter(isReviewedSpecificationMessage),
+    [designDocMessages]
+  );
   const activeBlueprintMessage = blueprintMessages.at(-1) || null;
   const activeDbDesignMessage = dbDesignMessages.at(-1) || null;
+  const latestWorkspaceBlueprintMessageId =
+    workspace?.blueprintArtifacts.at(-1)?.sourceMessageId || null;
+  const activeBlueprintSourceMessageId = activeBlueprintMessage?.id?.startsWith('artifact-')
+    ? latestWorkspaceBlueprintMessageId
+    : activeBlueprintMessage?.id || latestWorkspaceBlueprintMessageId;
 
   const refresh = useCallback(async () => {
     if (!sessionId) return;
@@ -247,16 +294,18 @@ export function BlueprintSpecificationWorkspaceViewer({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           questionnaireSessionId: activeQuestionnaireSession.id,
-          sourceBlueprintMessageId: activeBlueprintMessage?.id || null,
+          sourceBlueprintMessageId: activeBlueprintSourceMessageId || null,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
       const result = (await res.json()) as {
         message?: TaskMessage;
+        reviewedMessage?: TaskMessage;
         workspace?: BlueprintSpecificationWorkspace;
       };
-      if (result.message) {
-        setGeneratedMessages((prev) => [...prev, result.message as TaskMessage]);
+      const generatedMessage = result.reviewedMessage || result.message;
+      if (generatedMessage) {
+        setGeneratedMessages((prev) => [...prev, generatedMessage]);
       }
       if (result.workspace) setWorkspace(result.workspace);
       setActiveTab(nextTab);
@@ -399,9 +448,9 @@ export function BlueprintSpecificationWorkspaceViewer({
             questionnaireSession={activeQuestionnaireSession}
             busyAction={busyAction}
             canGenerateDbDesign={Boolean(
-              activeBlueprintMessage || workspace?.blueprintArtifacts.length
+              activeBlueprintSourceMessageId || workspace?.blueprintArtifacts.length
             )}
-            hasSpecification={designDocMessages.length > 0}
+            hasSpecification={reviewedDesignDocMessages.length > 0}
             onOpenQuestionnaire={() => setActiveTab('questionnaire')}
             onGenerateBlueprint={() => generateSpecificationArtifact('blueprint', 'blueprints')}
             onGenerateDbDesign={() => generateSpecificationArtifact('db-design', 'db-design')}
@@ -419,7 +468,10 @@ export function BlueprintSpecificationWorkspaceViewer({
           />
         ) : (
           <MarkdownViewer
-            content={designDocMessages.at(-1)?.content || 'No Specification artifact.'}
+            content={
+              (reviewedDesignDocMessages.at(-1) || designDocMessages.at(-1))?.content ||
+              'No Specification artifact.'
+            }
           />
         )}
       </div>

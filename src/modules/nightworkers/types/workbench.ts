@@ -104,6 +104,7 @@ export type WorkbenchArtifactContext = {
     sectionNames?: string[];
     tableNames?: string[];
     initialTab?: string;
+    blueprintCount?: number;
   };
 };
 

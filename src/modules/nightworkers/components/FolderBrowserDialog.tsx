@@ -1,7 +1,7 @@
-import { Button } from '@repo/design-system';
 import { Folder, FolderOpen, FolderPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/Button';
 
 type FolderBrowserDialogProps = {
   open: boolean;

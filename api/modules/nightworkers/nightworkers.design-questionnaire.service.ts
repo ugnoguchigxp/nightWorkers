@@ -626,7 +626,7 @@ export async function generateSpecificationStatusDbDesign(
 
 export async function generateSpecificationStatusDesignDocument(
   taskId: string,
-  input: { questionnaireSessionId?: string | null } = {}
+  input: { questionnaireSessionId?: string | null; reviewAfterGenerate?: boolean } = {}
 ) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
@@ -665,7 +665,18 @@ export async function generateSpecificationStatusDesignDocument(
       },
     },
   });
-  return { message, workspace: await getSpecificationWorkspace(taskId) };
+  if (input.reviewAfterGenerate === false) {
+    return { message, workspace: await getSpecificationWorkspace(taskId) };
+  }
+  const reviewedMessage = await reviewAndImproveSpecificationDocument({
+    taskId,
+    sourceMessageId: message.id,
+    title: parsed.title || 'Specification',
+    content,
+    context,
+    questionnaireSessionId: session.id,
+  });
+  return { message, reviewedMessage, workspace: await getSpecificationWorkspace(taskId) };
 }
 
 async function resolveReadyQuestionnaireSession(taskId: string, sessionId?: string | null) {
@@ -1416,6 +1427,82 @@ async function generateSpecificationDesignDocumentRawOutput(
       taskId,
     }
   );
+}
+
+async function reviewAndImproveSpecificationDocument(input: {
+  taskId: string;
+  sourceMessageId: string;
+  title: string;
+  content: string;
+  context: ReturnType<typeof buildSpecificationDocumentContext>;
+  questionnaireSessionId: string;
+}) {
+  const rawOutput = await callStructuredJsonLLM(
+    [
+      'あなたは NightWorkers の Specification reviewer / editor です。',
+      'ユーザー依頼: ドキュメントレビューをしてください。改善するべき点が無くなるまで改善してください。',
+      '対象は直前に生成された Specification Markdown です。',
+      'レビュー結果を別コメントとして返すのではなく、改善済みの最終 Markdown を返してください。',
+      '改善点がない場合も、読みやすさと実装着手可能性を確認したうえで同等以上の最終版を返してください。',
+      '実装済み事実、今回の仕様、将来候補を混ぜないでください。',
+      '非対象、受け入れ条件、未解決事項、トレーサビリティを落とさないでください。',
+      '出力は JSON object のみで、title と content を返してください。content は Markdown 文字列にしてください。',
+    ].join('\n'),
+    [
+      '次の Specification をレビューし、改善するべき点がなくなるまで改善した最終版を作成してください。',
+      '',
+      '## Current Specification',
+      input.content,
+      '',
+      '## Task',
+      input.context.task,
+      '',
+      '## Questionnaire Decisions',
+      input.context.questionnaireDecisions,
+      '',
+      '## Blueprint Summary',
+      input.context.blueprintSummary,
+      '',
+      '## DB Design DDL Reference',
+      input.context.dbDesignDdl,
+      '',
+      '## Traceability',
+      input.context.traceability,
+    ].join('\n'),
+    {
+      schemaName: 'specification_document_review',
+      schema: z.toJSONSchema(specificationDocumentDraftSchema),
+      taskId: input.taskId,
+    }
+  );
+  const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
+  const title = parsed.title || input.title;
+  return repo.createTaskMessage({
+    taskId: input.taskId,
+    role: 'assistant',
+    content: parsed.content,
+    messageType: 'markdown_document',
+    payloadJson: {
+      intent: 'draft_spec',
+      title,
+      source: 'status_document_review',
+      reviewedSourceMessageId: input.sourceMessageId,
+      questionnaireSessionId: input.questionnaireSessionId,
+      generation: {
+        source: 'llm',
+        reviewPrompt:
+          'ドキュメントレビューをしてください。改善するべき点が無くなるまで改善してください',
+        context: {
+          blueprintSummaryIncluded: Boolean(input.context.blueprintSummary.trim()),
+          dbDdlReferenceIncluded: Boolean(input.context.dbDesignDdl.trim()),
+        },
+      },
+      markdownDocumentData: {
+        title,
+        content: parsed.content,
+      },
+    },
+  });
 }
 
 function buildDesignQuestionnaireSystemPrompt() {

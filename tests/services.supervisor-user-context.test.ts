@@ -16,7 +16,7 @@ describe('supervisor Round 2 user context', () => {
       todoPlan: [{ seq: 1, status: 'running' }],
       currentTodo: { seq: 1, status: 'running' },
       toolResults: [{ step: 1, toolName: 'read_file', ok: true }],
-      loadedSkillSummaries: [{ jobType: 'minor_code_edit', digest: 'sha256:abc' }],
+      loadedProcedureSummaries: [{ jobType: 'minor_code_edit', digest: 'sha256:abc' }],
       artifactContextRefs: [
         { kind: 'contextstill_context_pack', refId: 'ctx-1', status: 'evidence_only' },
       ],

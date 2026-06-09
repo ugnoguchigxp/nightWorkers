@@ -83,7 +83,7 @@ export async function generateBlueprintDataDesignDraft(input: {
   const appBlueprintJsonSchema = renderAppBlueprintJsonSchema();
   const promptDiagnostics = buildPromptDiagnostics(appBlueprintJsonSchema, input.request);
   const rawOutput = await callStructuredJsonLLM(
-    buildBlueprintDataDesignSystemPrompt(appBlueprintJsonSchema),
+    buildBlueprintDataDesignPrompt(appBlueprintJsonSchema),
     buildBlueprintDataDesignUserPrompt(input.request),
     {
       schemaName: 'app_blueprint_data_design',
@@ -152,7 +152,7 @@ function removeDbDesignBindings(blueprint: AppBlueprint): AppBlueprint {
   };
 }
 
-function buildBlueprintDataDesignSystemPrompt(appBlueprintJsonSchema: string): string {
+function buildBlueprintDataDesignPrompt(appBlueprintJsonSchema: string): string {
   return [
     '[SystemContext]',
     'あなたは AppBlueprint の DB Design を改善するデータ設計エージェントです。',

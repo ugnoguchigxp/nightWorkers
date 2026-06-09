@@ -1,1 +1,0 @@
-export { AdaptiveText } from './AdaptiveText';

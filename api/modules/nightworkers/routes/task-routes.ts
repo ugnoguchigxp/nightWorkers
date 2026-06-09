@@ -393,6 +393,7 @@ const workbenchArtifactContextSchema = z.object({
       sectionNames: z.array(z.string()).optional(),
       tableNames: z.array(z.string()).optional(),
       initialTab: z.string().optional(),
+      blueprintCount: z.number().optional(),
     })
     .optional(),
 });
@@ -585,6 +586,7 @@ export const getSpecificationWorkspaceRoute = createRoute({
 const specificationStatusGenerateRequestSchema = z.object({
   questionnaireSessionId: z.string().uuid().nullable().optional(),
   sourceBlueprintMessageId: z.string().uuid().nullable().optional(),
+  reviewAfterGenerate: z.boolean().optional(),
 });
 export const generateSpecificationStatusBlueprintRoute = createRoute({
   method: 'post',

@@ -1,8 +1,9 @@
-import type { CodeBlockData, CodeBlockProps } from '@repo/design-system';
-import { CodeBlock, cn } from '@repo/design-system';
 import type { Components } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import type { CodeBlockData, CodeBlockProps } from '@/components/ui/CodeBlock';
+import { CodeBlock } from '@/components/ui/CodeBlock';
+import { cn } from '@/lib/utils';
 
 const chatCodeBlockThemes = {
   light: 'github-dark-default',

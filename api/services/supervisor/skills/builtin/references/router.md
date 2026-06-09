@@ -18,5 +18,5 @@ Round 1 と各ラウンドの行動前に、現在の routing hypothesis を作�
 
 ## Report Contract
 
-- routing hypothesis には primaryMode、secondaryModes、phase、workKinds、overlays、requiredEvidence、nextSkillFiles、confidence を含める。
+- routing hypothesis には primaryMode、secondaryModes、phase、workKinds、overlays、requiredEvidence、nextReferenceFiles、confidence を含める。
 

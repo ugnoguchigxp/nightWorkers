@@ -3,21 +3,21 @@ import fs from 'node:fs/promises';
 import os, { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  readSupervisorProcedure,
+  searchSupervisorProcedures,
+} from '../api/services/supervisor/procedure-tools';
 import { getAllowedToolsForJobType } from '../api/services/supervisor/prompt';
 import {
-  readSupervisorSkill,
-  searchSupervisorSkills,
-} from '../api/services/supervisor/skill-tools';
-import {
-  clearSupervisorSkillDocumentCache,
-  listSupervisorSkillDocuments,
-  renderSupervisorSkillDocuments,
-  resolveSupervisorSkillDocuments,
+  clearSupervisorReferenceDocumentCache,
+  listSupervisorReferenceDocuments,
+  renderSupervisorReferenceDocuments,
+  resolveSupervisorReferenceDocuments,
 } from '../api/services/supervisor/skills/registry';
 
-describe('Supervisor skill registry', () => {
+describe('Supervisor reference registry', () => {
   it('loads the complete built-in routing document set', () => {
-    const documents = listSupervisorSkillDocuments();
+    const documents = listSupervisorReferenceDocuments();
 
     expect(documents.some((document) => document.relativePath === 'SKILL.md')).toBe(true);
     expect(
@@ -33,14 +33,14 @@ describe('Supervisor skill registry', () => {
   });
 
   it('resolves only references needed by the routing hypothesis', () => {
-    const documents = resolveSupervisorSkillDocuments({
+    const documents = resolveSupervisorReferenceDocuments({
       primaryMode: 'code_edit',
       secondaryModes: ['test_and_verification'],
       phase: 'execute',
       workKinds: ['code'],
       overlays: ['evidence'],
       requiredEvidence: ['repo inspection'],
-      nextSkillFiles: [],
+      nextReferenceFiles: [],
       confidence: 0.8,
     });
     const paths = documents.map((document) => document.relativePath);
@@ -56,18 +56,18 @@ describe('Supervisor skill registry', () => {
   });
 
   it('covers minor_code_edit routing with code-edit references and narrow edit tool policy', () => {
-    const documents = resolveSupervisorSkillDocuments({
+    const documents = resolveSupervisorReferenceDocuments({
       primaryMode: 'code_edit',
       secondaryModes: [],
       phase: 'execute',
       workKinds: ['code'],
       overlays: ['evidence'],
       requiredEvidence: ['target file inspection'],
-      nextSkillFiles: [],
+      nextReferenceFiles: [],
       confidence: 0.9,
     });
     const paths = documents.map((document) => document.relativePath);
-    const rendered = renderSupervisorSkillDocuments(documents);
+    const rendered = renderSupervisorReferenceDocuments(documents);
     const toolNames = getAllowedToolsForJobType('minor_code_edit').map((tool) => tool.name);
 
     expect(paths).toEqual([
@@ -84,8 +84,8 @@ describe('Supervisor skill registry', () => {
     expect(rendered).toContain('observations が空の場合、最終回答へ進まず');
 
     expect(toolNames).toEqual([
-      'read_skill',
-      'search_skill',
+      'read_procedure',
+      'search_procedure',
       'read_current_specification',
       'read_file',
       'search_files',
@@ -103,7 +103,7 @@ describe('Supervisor skill registry', () => {
   });
 
   it('resolves blueprint references from app blueprint routing', () => {
-    const documents = resolveSupervisorSkillDocuments({
+    const documents = resolveSupervisorReferenceDocuments({
       primaryMode: 'planning',
       secondaryModes: ['review'],
       phase: 'plan',
@@ -111,7 +111,7 @@ describe('Supervisor skill registry', () => {
       overlays: ['user_facing_change'],
       subtype: 'app_blueprint',
       requiredEvidence: ['latest user request'],
-      nextSkillFiles: ['references/work_kinds/blueprint.md'],
+      nextReferenceFiles: ['references/work_kinds/blueprint.md'],
       confidence: 0.85,
     });
     const paths = documents.map((document) => document.relativePath);
@@ -126,15 +126,15 @@ describe('Supervisor skill registry', () => {
     expect(paths).toContain('references/overlays/user_facing_change.md');
   });
 
-  it('ignores unknown nextSkillFiles while allowing known extra references', () => {
-    const documents = resolveSupervisorSkillDocuments({
+  it('ignores unknown nextReferenceFiles while allowing known extra references', () => {
+    const documents = resolveSupervisorReferenceDocuments({
       primaryMode: 'general_answer',
       secondaryModes: [],
       phase: 'answer',
       workKinds: [],
       overlays: [],
       requiredEvidence: [],
-      nextSkillFiles: ['../../secret.md', 'references/overlays/security.md'],
+      nextReferenceFiles: ['../../secret.md', 'references/overlays/security.md'],
       confidence: 0.6,
     });
     const paths = documents.map((document) => document.relativePath);
@@ -144,7 +144,7 @@ describe('Supervisor skill registry', () => {
   });
 
   it('rejects configured directories that do not provide the full markdown set', () => {
-    const directory = mkdtempSync(path.join(tmpdir(), 'supervisor-skills-'));
+    const directory = mkdtempSync(path.join(tmpdir(), 'supervisor-references-'));
     writeFileSync(
       path.join(directory, 'SKILL.md'),
       [
@@ -164,16 +164,16 @@ describe('Supervisor skill registry', () => {
       ].join('\n')
     );
 
-    clearSupervisorSkillDocumentCache();
-    expect(() => listSupervisorSkillDocuments(directory)).toThrow(
-      /Supervisor skill markdown missing/
+    clearSupervisorReferenceDocumentCache();
+    expect(() => listSupervisorReferenceDocuments(directory)).toThrow(
+      /Supervisor reference markdown missing/
     );
   });
 });
 
-describe('Supervisor flat skill tools', () => {
-  it('reads a flat skill as a compact summary with a digest', async () => {
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-skill-tools-'));
+describe('Supervisor flat procedure tools', () => {
+  it('reads a flat procedure as a compact summary with a digest', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-procedure-tools-'));
     await fs.writeFile(
       path.join(directory, 'minor_code_edit.md'),
       [
@@ -196,15 +196,15 @@ describe('Supervisor flat skill tools', () => {
     );
 
     try {
-      const skill = readSupervisorSkill({
+      const procedure = readSupervisorProcedure({
         jobType: 'minor_code_edit',
         loadedAtStep: 3,
         directory,
       });
 
-      expect(skill).toEqual({
+      expect(procedure).toEqual({
         jobType: 'minor_code_edit',
-        path: 'skills/minor_code_edit.md',
+        path: 'procedures/minor_code_edit.md',
         digest: expect.stringMatching(/^sha256:/),
         loadedAtStep: 3,
         summary: {
@@ -221,8 +221,8 @@ describe('Supervisor flat skill tools', () => {
     }
   });
 
-  it('searches available flat skills by deterministic text matching', async () => {
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-skill-search-'));
+  it('searches available flat procedures by deterministic text matching', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-procedure-search-'));
     await fs.writeFile(
       path.join(directory, 'minor_code_edit.md'),
       ['# minor_code_edit', '', '## Use When', 'small target path known code edit'].join('\n')
@@ -233,7 +233,7 @@ describe('Supervisor flat skill tools', () => {
     );
 
     try {
-      const result = searchSupervisorSkills({
+      const result = searchSupervisorProcedures({
         query: 'small code edit',
         maxResults: 5,
         directory,
@@ -241,7 +241,7 @@ describe('Supervisor flat skill tools', () => {
 
       expect(result.matches[0]).toMatchObject({
         jobType: 'minor_code_edit',
-        path: 'skills/minor_code_edit.md',
+        path: 'procedures/minor_code_edit.md',
         score: 3,
         summary: 'small target path known code edit',
       });

@@ -1,1 +1,0 @@
-export { SimpleSearchInput } from './SimpleSearchInput';

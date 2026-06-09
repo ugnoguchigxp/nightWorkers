@@ -11,6 +11,11 @@ import {
 import type { SupervisorLlmDebugEvent } from './llm-provider';
 import { callSupervisorLLM } from './llm-provider';
 import {
+  type LoadedProcedureSummary,
+  readSupervisorProcedure,
+  searchSupervisorProcedures,
+} from './procedure-tools';
+import {
   buildRound1JobTypePrompt,
   buildRound2ToolCallPrompt,
   getAllowedToolsForJobType,
@@ -19,11 +24,6 @@ import {
   validateToolCallForJobType,
 } from './prompt';
 import type { AgentToolCallEnvelope } from './schema-first';
-import {
-  type LoadedSkillSummary,
-  readSupervisorSkill,
-  searchSupervisorSkills,
-} from './skill-tools';
 import {
   type AgentEventType,
   createSupervisorLlmRunEvent,
@@ -61,7 +61,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
   const readFiles: string[] = [];
   const toolContext = { readFileCache: new Map() };
   const toolResults: CompactToolResult[] = [];
-  const loadedSkillSummaries = new Map<JobType, LoadedSkillSummary>();
+  const loadedProcedureSummaries = new Map<JobType, LoadedProcedureSummary>();
   let currentTodos = await repo.listTaskRunTodosForRun(runId);
   let step = 0;
   let currentJobType: JobType = 'minor_code_edit';
@@ -136,6 +136,17 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     })) as { jobType: JobType; goal: string };
     currentJobType = round1.jobType;
     goal = round1.goal.trim() || userInput;
+    if (currentJobType === 'major_code_edit') {
+      const procedure = readSupervisorProcedure({ jobType: currentJobType, loadedAtStep: 0 });
+      loadedProcedureSummaries.set(currentJobType, procedure);
+      await emitAgentEvent('procedure.loaded', {
+        source: 'auto',
+        jobType: currentJobType,
+        procedurePath: procedure.path,
+        digest: procedure.digest,
+        summary: procedure.summary,
+      });
+    }
     await emitAgentEvent('round1.parsed', round1);
 
     for (step = 1; step <= maxIterations && toolResults.length < maxToolCalls; step += 1) {
@@ -148,15 +159,17 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         tools: allowedTools,
         externalAllowedPaths: input.safetyPolicy?.externalAllowedPaths,
       });
-      const loadedSkillSummaryContext = [...loadedSkillSummaries.values()].map((skill) => ({
-        jobType: skill.jobType,
-        path: skill.path,
-        digest: skill.digest,
-        useWhen: skill.summary.useWhen,
-        procedure: skill.summary.procedure,
-        requiredRules: skill.summary.requiredRules,
-        loadedAtStep: skill.loadedAtStep,
-      }));
+      const loadedProcedureSummaryContext = [...loadedProcedureSummaries.values()].map(
+        (procedure) => ({
+          jobType: procedure.jobType,
+          path: procedure.path,
+          digest: procedure.digest,
+          useWhen: procedure.summary.useWhen,
+          procedure: procedure.summary.procedure,
+          requiredRules: procedure.summary.requiredRules,
+          loadedAtStep: procedure.loadedAtStep,
+        })
+      );
       const round2UserPrompt = renderRound2UserContext({
         latestUserMessage: userInput,
         goal,
@@ -168,7 +181,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           ? toSupervisorTodoContext(currentTodos.find((todo) => todo.status === 'running') as any)
           : null,
         toolResults: toolResults.slice(-8),
-        loadedSkillSummaries: loadedSkillSummaryContext,
+        loadedProcedureSummaries: loadedProcedureSummaryContext,
         artifactContextRefs: input.artifactContextRefs || [],
       });
       await emitAgentEvent('round2.prompt_built', {
@@ -219,47 +232,50 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         }
       }
 
-      if (round2.toolCall.name === 'read_skill') {
+      if (round2.toolCall.name === 'read_procedure') {
         const requestedJobType = normalizeJobType(round2.toolCall.arguments.jobType);
         if (!requestedJobType) {
           const result = {
             step,
-            toolName: 'read_skill',
+            toolName: 'read_procedure',
             ok: false,
             arguments: round2.toolCall.arguments,
-            summary: `Invalid jobType for read_skill: ${String(round2.toolCall.arguments.jobType)}`,
+            summary: `Invalid jobType for read_procedure: ${String(round2.toolCall.arguments.jobType)}`,
           };
           toolResults.push(result);
           await emitAgentEvent('tool.validation_failed', result, 'warning');
           continue;
         }
         try {
-          const skill = readSupervisorSkill({ jobType: requestedJobType, loadedAtStep: step });
-          loadedSkillSummaries.set(requestedJobType, skill);
+          const procedure = readSupervisorProcedure({
+            jobType: requestedJobType,
+            loadedAtStep: step,
+          });
+          loadedProcedureSummaries.set(requestedJobType, procedure);
           const result = {
             step,
-            toolName: 'read_skill',
+            toolName: 'read_procedure',
             ok: true,
             arguments: round2.toolCall.arguments,
-            summary: `tool=read_skill status=ok\njobType=${requestedJobType} digest=${skill.digest}`,
-            payload: skill,
+            summary: `tool=read_procedure status=ok\njobType=${requestedJobType} digest=${procedure.digest}`,
+            payload: procedure,
           };
           toolResults.push(result);
-          await emitAgentEvent('skill.loaded', {
-            source: 'read_skill',
+          await emitAgentEvent('procedure.loaded', {
+            source: 'read_procedure',
             jobType: requestedJobType,
-            skillPath: skill.path,
-            digest: skill.digest,
-            summary: skill.summary,
+            procedurePath: procedure.path,
+            digest: procedure.digest,
+            summary: procedure.summary,
           });
           await emitAgentEvent('tool.finished', result);
         } catch (err) {
           const result = {
             step,
-            toolName: 'read_skill',
+            toolName: 'read_procedure',
             ok: false,
             arguments: round2.toolCall.arguments,
-            summary: `tool=read_skill status=failed\nerror=${formatErrorMessage(err)}`,
+            summary: `tool=read_procedure status=failed\nerror=${formatErrorMessage(err)}`,
             error: formatErrorMessage(err),
           };
           toolResults.push(result);
@@ -268,20 +284,20 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         continue;
       }
 
-      if (round2.toolCall.name === 'search_skill') {
+      if (round2.toolCall.name === 'search_procedure') {
         const query = String(round2.toolCall.arguments.query || '').trim();
         const maxResults =
           typeof round2.toolCall.arguments.maxResults === 'number'
             ? round2.toolCall.arguments.maxResults
             : undefined;
         try {
-          const matches = searchSupervisorSkills({ query, maxResults });
+          const matches = searchSupervisorProcedures({ query, maxResults });
           const result = {
             step,
-            toolName: 'search_skill',
+            toolName: 'search_procedure',
             ok: true,
             arguments: round2.toolCall.arguments,
-            summary: `tool=search_skill status=ok\nmatches=${matches.matches.length}`,
+            summary: `tool=search_procedure status=ok\nmatches=${matches.matches.length}`,
             payload: matches,
           };
           toolResults.push(result);
@@ -289,10 +305,10 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         } catch (err) {
           const result = {
             step,
-            toolName: 'search_skill',
+            toolName: 'search_procedure',
             ok: false,
             arguments: round2.toolCall.arguments,
-            summary: `tool=search_skill status=failed\nerror=${formatErrorMessage(err)}`,
+            summary: `tool=search_procedure status=failed\nerror=${formatErrorMessage(err)}`,
             error: formatErrorMessage(err),
           };
           toolResults.push(result);
@@ -457,15 +473,30 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         const message = String(round2.toolCall.arguments.message || '').trim();
         finalReportText = message || '';
         summary = finalReportText.slice(0, 200) || 'Completed';
-        terminalState = 'completed';
+        const failedTodos = currentTodos.filter((todo) => todo.status === 'failed');
+        const needsHumanTodos = currentTodos.filter((todo) => todo.status === 'needs_human');
+        terminalState =
+          failedTodos.length > 0
+            ? 'failed'
+            : needsHumanTodos.length > 0
+              ? 'needs_human'
+              : 'completed';
         stoppedBy = 'decision';
-        riskLevel = 'low';
+        riskLevel = terminalState === 'completed' ? 'low' : 'medium';
         reviewChecklist = buildExecutionReviewChecklist({
           toolResults,
           artifactContextRefs: input.artifactContextRefs,
         });
         await emitAgentEvent('finalize.received', { message: finalReportText });
-        await emitAgentEvent('run.completed', { finalReport: finalReportText, reviewChecklist });
+        await emitAgentEvent(
+          terminalState === 'completed' ? 'run.completed' : 'run.needs_human',
+          {
+            finalReport: finalReportText,
+            reviewChecklist,
+            unresolvedTodos: [...failedTodos, ...needsHumanTodos].map(toSupervisorTodoContext),
+          },
+          terminalState === 'completed' ? 'info' : 'warning'
+        );
         break;
       }
 

@@ -46,9 +46,9 @@ describe('Blueprint section composition helpers', () => {
       },
     });
 
-    expect(root.children?.[1]?.id).toBe('controls');
-    expect(root.children?.[1]?.children?.[0]?.id).toBe('searchInput');
-    expect(root.children?.[1]?.children?.[1]?.id).toBe('actions');
+    expect(root.children?.[0]?.id).toBe('controls');
+    expect(root.children?.[0]?.children?.[0]?.id).toBe('searchInput');
+    expect(root.children?.[0]?.children?.[1]?.id).toBe('actions');
   });
 
   it('adapts legacy search, table, and metric sections to preset sections', () => {
@@ -175,7 +175,7 @@ describe('Blueprint section composition helpers', () => {
       },
     ]);
 
-    expect(patched?.children?.[1]?.children?.map((child) => child.id)).toEqual([
+    expect(patched?.children?.[0]?.children?.map((child) => child.id)).toEqual([
       'searchInput',
       'quick-filter',
       'actions',

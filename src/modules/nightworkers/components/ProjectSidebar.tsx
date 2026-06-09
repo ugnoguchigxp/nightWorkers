@@ -1,4 +1,3 @@
-import { Button } from '@repo/design-system';
 import {
   Archive,
   ChevronDown,
@@ -12,6 +11,7 @@ import {
 } from 'lucide-react';
 import { memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/Button';
 import type { ProjectSessionGroups } from '../hooks/useNightWorkersWorkspace';
 import type { Repository, WorkbenchSessionView } from '../types';
 import { getRelativeTimestamp } from '../utils/time';

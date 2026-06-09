@@ -134,7 +134,6 @@ export function createPresetBlueprintNodeTree(input: {
 
   if (input.preset === 'search_header') {
     return layoutNode('root', 'stack', { gap: 'md' }, [
-      componentNode('title', 'Text', { title, description }),
       layoutNode('controls', 'row', { gap: 'sm', align: 'stretch' }, [
         componentNode(
           'searchInput',

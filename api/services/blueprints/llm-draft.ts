@@ -22,22 +22,22 @@ import {
   parseRepairedJsonWithSchema,
 } from '../supervisor/llm-provider/json';
 import {
-  renderSupervisorSkillDocuments,
-  resolveSupervisorSkillDocuments,
-  summarizeSupervisorSkillDocuments,
+  renderSupervisorReferenceDocuments,
+  resolveSupervisorReferenceDocuments,
+  summarizeSupervisorReferenceDocuments,
 } from '../supervisor/skills/registry';
 import type { SupervisorRoutingHypothesis } from '../supervisor/skills/types';
 import { validateAppBlueprint } from './validation';
 
-type BlueprintSkillDocumentsSummary = ReturnType<typeof summarizeSupervisorSkillDocuments>;
+type BlueprintReferenceDocumentsSummary = ReturnType<typeof summarizeSupervisorReferenceDocuments>;
 
 export type BlueprintPromptDiagnostics = {
   schemaIncluded: boolean;
   schemaDigest: string;
   schemaBytes: number;
   catalogComponentCount: number;
-  skillDocumentCount: number;
-  skillDocuments: BlueprintSkillDocumentsSummary;
+  referenceDocumentCount: number;
+  referenceDocuments: BlueprintReferenceDocumentsSummary;
 };
 
 export type GeneratedBlueprintDraft = {
@@ -48,7 +48,7 @@ export type GeneratedBlueprintDraft = {
     degradedReasons: string[];
     rawOutput?: string;
     jsonRepair?: BlueprintJsonRepairDiagnostics;
-    skillDocuments: BlueprintSkillDocumentsSummary;
+    referenceDocuments: BlueprintReferenceDocumentsSummary;
     promptDiagnostics: BlueprintPromptDiagnostics;
   };
 };
@@ -80,13 +80,18 @@ export async function generatePlanModeBlueprintDraft(input: {
   routing?: SupervisorRoutingHypothesis;
   emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
 }): Promise<GeneratedBlueprintDraft> {
-  const skillDocuments = resolveSupervisorSkillDocuments(input.routing || blueprintRoutingFallback);
-  const skillDocumentSummary = summarizeSupervisorSkillDocuments(skillDocuments);
+  const referenceDocuments = resolveSupervisorReferenceDocuments(
+    input.routing || blueprintRoutingFallback
+  );
+  const referenceDocumentSummary = summarizeSupervisorReferenceDocuments(referenceDocuments);
   const appBlueprintJsonSchema = renderAppBlueprintJsonSchema();
-  const promptDiagnostics = buildPromptDiagnostics(appBlueprintJsonSchema, skillDocumentSummary);
+  const promptDiagnostics = buildPromptDiagnostics(
+    appBlueprintJsonSchema,
+    referenceDocumentSummary
+  );
   const rawOutput = await callStructuredJsonLLM(
     buildBlueprintSystemPrompt({
-      skillContext: renderSupervisorSkillDocuments(skillDocuments),
+      referenceContext: renderSupervisorReferenceDocuments(referenceDocuments),
       appBlueprintJsonSchema,
     }),
     buildBlueprintUserPrompt(input),
@@ -109,7 +114,7 @@ export async function generatePlanModeBlueprintDraft(input: {
         degradedReasons: [],
         rawOutput,
         jsonRepair,
-        skillDocuments: skillDocumentSummary,
+        referenceDocuments: referenceDocumentSummary,
         promptDiagnostics,
       },
     };
@@ -364,12 +369,12 @@ const blueprintRoutingFallback: SupervisorRoutingHypothesis = {
   overlays: ['user_facing_change'],
   subtype: 'app_blueprint',
   requiredEvidence: ['latest user request'],
-  nextSkillFiles: ['references/work_kinds/blueprint.md'],
+  nextReferenceFiles: ['references/work_kinds/blueprint.md'],
   confidence: 0.7,
 };
 
 function buildBlueprintSystemPrompt(input: {
-  skillContext: string;
+  referenceContext: string;
   appBlueprintJsonSchema: string;
 }): string {
   return [
@@ -418,8 +423,8 @@ function buildBlueprintSystemPrompt(input: {
     '[AppBlueprint JSON Schema]',
     input.appBlueprintJsonSchema,
     '',
-    '[Skill Context]',
-    input.skillContext,
+    '[Procedure Reference Context]',
+    input.referenceContext,
   ].join('\n');
 }
 
@@ -487,14 +492,14 @@ function renderAppBlueprintJsonSchema(): string {
 
 function buildPromptDiagnostics(
   schema: string,
-  skillDocuments: BlueprintSkillDocumentsSummary
+  referenceDocuments: BlueprintReferenceDocumentsSummary
 ): BlueprintPromptDiagnostics {
   return {
     schemaIncluded: true,
     schemaDigest: createHash('sha256').update(schema).digest('hex'),
     schemaBytes: Buffer.byteLength(schema, 'utf8'),
     catalogComponentCount: blueprintCatalog.length,
-    skillDocumentCount: skillDocuments.length,
-    skillDocuments,
+    referenceDocumentCount: referenceDocuments.length,
+    referenceDocuments,
   };
 }

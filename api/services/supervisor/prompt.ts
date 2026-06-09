@@ -30,12 +30,15 @@ export {
   validateToolCallForJobType,
 } from './prompt-tool-registry';
 
-export function loadFlatSkill(jobType: JobType, directory = defaultFlatSkillDirectory()): string {
+export function loadFlatProcedure(
+  jobType: JobType,
+  directory = defaultFlatProcedureDirectory()
+): string {
   const filePath = path.join(directory, `${jobType}.md`);
   return fs.readFileSync(filePath, 'utf8');
 }
 
-export function defaultFlatSkillDirectory(): string {
+export function defaultFlatProcedureDirectory(): string {
   return path.join(getResourceRoot(), 'api/services/supervisor/skills/flat');
 }
 
@@ -103,11 +106,11 @@ export function buildRound2PromptPacket(input: Round2PromptPacketInput): Supervi
     ].filter((line): line is string => line !== null),
     runtimeContext: [
       ...(codexGuidance ? [codexGuidance] : []),
-      '[Skill Access]',
-      'SKILL documents are not preloaded.',
-      'Use read_skill when procedure detail is needed.',
-      'Use search_skill when the appropriate SKILL is unclear.',
-      'If loadedSkillSummaries already contains the current jobType and digest, prefer that summary instead of reading again.',
+      '[Procedure Access]',
+      'Procedure documents are not preloaded.',
+      'Use read_procedure when procedure detail is needed.',
+      'Use search_procedure when the appropriate procedure is unclear.',
+      'If loadedProcedureSummaries already contains the current jobType and digest, prefer that summary instead of reading again.',
       '',
     ],
     userRequest: [],
@@ -120,6 +123,8 @@ export function buildRound2PromptPacket(input: Round2PromptPacketInput): Supervi
       '- If target path is known, read_file before editing.',
       '- Use search_files only when target path is unknown or repository-local search is needed.',
       '- The project root itself is the current workspace even when it is empty.',
+      '- Empty project roots are valid starting points for new-project or new-file requests; do not mark needs_human solely because no existing files or entry points are present.',
+      '- When a project root is empty and the requested output can be created from the specification, continue with apply_patch or an approved template import.',
       '- Paths outside the project root require explicit user approval in safetyPolicy.externalAllowedPaths before list_dir/read_file/copy_directory/run_command can use them.',
       '- If the requested external source is listed in 許可済み外部パス, treat it as approved and call the appropriate worker tool instead of asking for the same permission again.',
       '- For template imports from an approved external directory, prefer copy_directory over shell cp.',

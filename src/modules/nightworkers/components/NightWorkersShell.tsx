@@ -134,6 +134,8 @@ function buildArtifactContext(
       sectionNames: sectionNames.length ? sectionNames : undefined,
       tableNames: tableNames.length ? tableNames : undefined,
       initialTab: typeof metadata.initialTab === 'string' ? metadata.initialTab : undefined,
+      blueprintCount:
+        typeof metadata.blueprintCount === 'number' ? metadata.blueprintCount : undefined,
     },
   };
 }

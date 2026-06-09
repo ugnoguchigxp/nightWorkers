@@ -88,6 +88,7 @@ type WorkbenchArtifactContext = {
     sectionNames?: string[];
     tableNames?: string[];
     initialTab?: string;
+    blueprintCount?: number;
   };
 };
 
@@ -361,10 +362,13 @@ async function handleWorkbenchIntakeMessage(
   const llmPrompt = renderArtifactContextualPrompt(prompt, options.artifactContext || null);
 
   try {
-    const jobSelection = (await callSupervisorLLM(
-      buildRound1JobTypePrompt(projectRoot),
-      llmPrompt,
-      {
+    const artifactFocusedSelection = resolveArtifactFocusedJobSelection(
+      options.artifactContext || null,
+      prompt
+    );
+    const jobSelection =
+      artifactFocusedSelection ||
+      ((await callSupervisorLLM(buildRound1JobTypePrompt(projectRoot), llmPrompt, {
         round: 1,
         schemaFirst: true,
         tolerateSchemaFailure: false,
@@ -372,9 +376,10 @@ async function handleWorkbenchIntakeMessage(
         workingDirectory: projectRoot,
         taskId,
         runId: null,
-      }
-    )) as JobTypeSelection;
-    const routing = routingForWorkbenchJobType(jobSelection.jobType);
+      })) as JobTypeSelection);
+    const routing = artifactFocusedSelection
+      ? routingForArtifactFocusedJobSelection(artifactFocusedSelection)
+      : routingForWorkbenchJobType(jobSelection.jobType);
     const startsImmediateRun = shouldStartImmediateWorkbenchRun(
       jobSelection,
       options.intent || 'intake'
@@ -627,6 +632,46 @@ function shouldStartImmediateWorkbenchRun(
   );
 }
 
+function resolveArtifactFocusedJobSelection(
+  artifactContext: WorkbenchArtifactContext | null,
+  prompt: string
+): JobTypeSelection | null {
+  if (!artifactContext || !isAppBlueprintArtifactFocus(artifactContext)) return null;
+  return {
+    jobType: 'blueprint',
+    goal:
+      prompt.replace(/\s+/g, ' ').trim().slice(0, 160) || '現在の Blueprint artifact を更新する',
+  };
+}
+
+function isAppBlueprintArtifactFocus(artifactContext: WorkbenchArtifactContext): boolean {
+  const metadata = artifactContext.metadata || {};
+  const rawMetadata = metadata as Record<string, any>;
+  if (
+    metadata.artifactType === 'blueprint_db_design' ||
+    rawMetadata.source === 'blueprint-db-design' ||
+    rawMetadata.dbDesignTarget
+  ) {
+    return false;
+  }
+  if (metadata.intent === 'app_blueprint') return true;
+  if (metadata.artifactType === 'app_blueprint') return true;
+  if (artifactContext.kind === 'app_blueprint') return true;
+  if (artifactContext.kind !== 'blueprint_workspace') return false;
+  return (
+    metadata.initialTab === 'questionnaire' ||
+    metadata.initialTab === 'blueprints' ||
+    Boolean(metadata.blueprintCount && metadata.blueprintCount > 0)
+  );
+}
+
+function routingForArtifactFocusedJobSelection(
+  jobSelection: JobTypeSelection
+): SupervisorRoutingHypothesis {
+  if (jobSelection.jobType === 'blueprint') return routingForWorkbenchJobType('blueprint');
+  return routingForWorkbenchJobType(jobSelection.jobType);
+}
+
 function buildAcceptanceCriteriaFromDecision(jobSelection: JobTypeSelection): string {
   return jobSelection.goal.trim();
 }
@@ -640,7 +685,7 @@ function routingForWorkbenchJobType(jobType: JobType): SupervisorRoutingHypothes
       workKinds: ['code'],
       overlays: [],
       requiredEvidence: [],
-      nextSkillFiles: [],
+      nextReferenceFiles: [],
       confidence: 1,
     };
   }
@@ -652,7 +697,7 @@ function routingForWorkbenchJobType(jobType: JobType): SupervisorRoutingHypothes
       workKinds: ['code'],
       overlays: ['user_facing_change'],
       requiredEvidence: [],
-      nextSkillFiles: ['references/work_kinds/code.md', 'references/phases/plan.md'],
+      nextReferenceFiles: ['references/work_kinds/code.md', 'references/phases/plan.md'],
       confidence: 1,
     };
   }
@@ -665,7 +710,7 @@ function routingForWorkbenchJobType(jobType: JobType): SupervisorRoutingHypothes
       overlays: ['user_facing_change'],
       subtype: 'app_blueprint',
       requiredEvidence: [],
-      nextSkillFiles: ['references/work_kinds/blueprint.md'],
+      nextReferenceFiles: ['references/work_kinds/blueprint.md'],
       confidence: 1,
     };
   }
@@ -678,7 +723,7 @@ function routingForWorkbenchJobType(jobType: JobType): SupervisorRoutingHypothes
       overlays: [],
       subtype: 'design_questionnaire',
       requiredEvidence: [],
-      nextSkillFiles: [],
+      nextReferenceFiles: [],
       confidence: 1,
     };
   }
@@ -689,7 +734,7 @@ function routingForWorkbenchJobType(jobType: JobType): SupervisorRoutingHypothes
     workKinds: [],
     overlays: [],
     requiredEvidence: [],
-    nextSkillFiles: [],
+    nextReferenceFiles: [],
     confidence: 1,
   };
 }

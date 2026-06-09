@@ -401,18 +401,18 @@ describe('ThreadTimeline edit summaries', () => {
 
     expect(
       getActivityCode({
-        id: 'skill-loaded',
+        id: 'procedure-loaded',
         taskId: 'task-1',
         kind: 'runtime.state',
         source: 'runtime',
         status: 'completed',
         seq: 3,
-        text: 'skills/minor_code_edit.md',
+        text: 'procedures/minor_code_edit.md',
         payloadJson: {
-          agentEventType: 'skill.loaded',
+          agentEventType: 'procedure.loaded',
           payload: {
-            skillPath: 'skills/minor_code_edit.md',
-            skill: '# minor_code_edit\n\n## Procedure\n1. read_file',
+            procedurePath: 'procedures/minor_code_edit.md',
+            procedure: '# minor_code_edit\n\n## Procedure\n1. read_file',
           },
         },
         createdAt: '2026-06-05T00:00:02.000Z',

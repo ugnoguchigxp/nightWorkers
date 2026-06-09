@@ -39,14 +39,14 @@ describe('Schema-first supervisor loop', () => {
     vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
   });
 
-  it('handles search_skill without dispatching it to worker tools', async () => {
-    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-search-skill-'));
+  it('handles search_procedure without dispatching it to worker tools', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-search-procedure-'));
 
     vi.mocked(llm.callSupervisorLLM)
-      .mockResolvedValueOnce({ jobType: 'minor_code_edit', goal: 'skill 検索後に完了する' })
+      .mockResolvedValueOnce({ jobType: 'minor_code_edit', goal: 'procedure 検索後に完了する' })
       .mockResolvedValueOnce({
         toolCall: {
-          name: 'search_skill',
+          name: 'search_procedure',
           arguments: { query: 'minor code edit target path known', maxResults: 3 },
         },
       })
@@ -61,7 +61,7 @@ describe('Schema-first supervisor loop', () => {
       const result = await runSupervisorLoop({
         runId: 'run-1',
         repoRoot,
-        prompt: 'skill を検索して',
+        prompt: 'procedure を検索して',
         timeoutSeconds: 60,
       });
 
@@ -71,14 +71,14 @@ describe('Schema-first supervisor loop', () => {
         'Recent Tool Evidence'
       );
       expect(secondRound2ToolEvidence[0]).toMatchObject({
-        toolName: 'search_skill',
+        toolName: 'search_procedure',
         ok: true,
       });
       expect(secondRound2ToolEvidence[0].payload.matches).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             jobType: 'minor_code_edit',
-            path: 'skills/minor_code_edit.md',
+            path: 'procedures/minor_code_edit.md',
           }),
         ])
       );

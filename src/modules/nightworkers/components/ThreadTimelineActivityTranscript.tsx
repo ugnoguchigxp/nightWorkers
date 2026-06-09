@@ -227,8 +227,10 @@ export function getActivityCode(event: ActivityEvent) {
   const editToolDiff = getEditToolCallDiff(event);
   if (editToolDiff) return editToolDiff;
   if (isDiffActivity(event)) return getActivityDiffCode(event);
-  if (agentEventType === 'skill.loaded') {
-    return stringValue(payload?.payload?.skill || payload?.skill || payload?.runEvent?.data?.skill);
+  if (agentEventType === 'procedure.loaded') {
+    return stringValue(
+      payload?.payload?.procedure || payload?.procedure || payload?.runEvent?.data?.procedure
+    );
   }
   if (typeof payload?.rawContent === 'string') return payload.rawContent;
   if (typeof payload?.systemPrompt === 'string') return payload.systemPrompt;
@@ -308,8 +310,8 @@ export function activityCodeFilename(event: ActivityEvent) {
   const payload = event.payloadJson as any;
   if (editToolName === 'apply_patch') return 'apply_patch.patch';
   if (editToolName === 'replace_content') return 'replace_content.diff';
-  if (agentEventType === 'skill.loaded') {
-    return stringValue(payload?.payload?.skillPath || payload?.skillPath) || 'skill.md';
+  if (agentEventType === 'procedure.loaded') {
+    return stringValue(payload?.payload?.procedurePath || payload?.procedurePath) || 'procedure.md';
   }
   if (event.kind.includes('patch')) return 'activity.patch';
   if (event.kind.includes('diff')) return 'activity.diff';
@@ -320,7 +322,7 @@ export function activityCodeFilename(event: ActivityEvent) {
 }
 
 function activityCodeLanguage(event: ActivityEvent) {
-  if (schemaFirstAgentEventType(event) === 'skill.loaded') return 'markdown';
+  if (schemaFirstAgentEventType(event) === 'procedure.loaded') return 'markdown';
   if (getEditToolCall(event)) return 'diff';
   if (event.kind.includes('patch') || event.kind.includes('diff')) return 'diff';
   if (event.kind.includes('json') || event.kind.startsWith('llm.')) return 'json';
@@ -415,8 +417,8 @@ function activityDisplayTitle(event: ActivityEvent, fallback: string): string {
       return 'Round 1 prompt';
     case 'round1.parsed':
       return 'Round 1 jobType';
-    case 'skill.loaded':
-      return 'Skill loaded';
+    case 'procedure.loaded':
+      return 'Procedure loaded';
     case 'round2.prompt_built':
       return 'Round 2 prompt';
     case 'round2.parsed':
@@ -485,8 +487,10 @@ function activityDisplaySummary(event: ActivityEvent): string {
       return [`Changed files (${changedFiles.length})`, ...changedFiles].join('\n');
     }
   }
-  if (agentEventType === 'skill.loaded') {
-    return typeof data.skillPath === 'string' ? data.skillPath : event.text || 'skill loaded';
+  if (agentEventType === 'procedure.loaded') {
+    return typeof data.procedurePath === 'string'
+      ? data.procedurePath
+      : event.text || 'procedure loaded';
   }
   if (agentEventType.endsWith('prompt_built')) {
     return event.text || 'prompt built';

@@ -1,4 +1,4 @@
-# Supervisor Routing Skill
+# Supervisor Routing Procedure
 
 ## Use When
 
@@ -19,4 +19,4 @@ Supervisor がユーザー依頼を処理するすべてのラウンドで使う
 ## Report Contract
 
 - finalize_answer.message にはユーザー向けの実際の結果を書く。
-- routing や内部 skill 名の説明は、必要な場合だけ簡潔に触れる。
+- routing や内部 procedure/reference 名の説明は、必要な場合だけ簡潔に触れる。

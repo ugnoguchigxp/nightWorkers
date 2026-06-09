@@ -10,11 +10,8 @@
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "paths": {
-      "@/*": ["./src/*", "./designSystem/src/*"],
-      "@api/*": ["./api/*"],
-      "@repo/design-system": ["./designSystem/src"],
-      "@repo/design-system/*": ["./designSystem/src/*"],
-      "@repo/design-system/pencil": ["./designSystem/pencil"]
+      "@/*": ["./src/*"],
+      "@api/*": ["./api/*"]
     },
     "types": ["node", "vite/client"]
   },

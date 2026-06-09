@@ -118,9 +118,49 @@ describe('NightWorkers workbench routes', () => {
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
   });
 
-  it('passes the active artifact context to workbench intake without rewriting the user message', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('general_answer', '現在の Artifact を前提に修正方針を返します。')
+  it('routes active Blueprint artifact instructions without round 1 intake or rewriting the user message', async () => {
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+      JSON.stringify({
+        id: 'kanban-system-blueprint',
+        name: 'Kanban System Blueprint',
+        version: 1,
+        description: 'KanbanSection を含む Blueprint Preview',
+        designPreset: {
+          id: 'nightworkers-default',
+          name: 'NightWorkers Default',
+          mode: 'hybrid',
+          theme: 'nightworkers-dark',
+          density: 'compact',
+          radius: 'default',
+          shadow: 'subtle',
+          fontScale: 'default',
+          contrast: 'standard',
+          motion: 'standard',
+        },
+        screens: [
+          {
+            id: 'kanban-workspace',
+            name: 'Kanban Workspace',
+            path: '/',
+            componentName: 'DashboardPage',
+            sections: [
+              {
+                id: 'boards-and-filters',
+                name: 'Boards and Filters',
+                componentName: 'DataTableSection',
+                source: 'static',
+                intent: '検索とフィルターをボードの上に置く',
+                visualIntent: '検索とフィルターを先に確認できる配置',
+                props: {},
+              },
+            ],
+          },
+        ],
+        databaseSchema: { tables: [], relations: [] },
+        dataBindings: [],
+        implementationTasks: [],
+        learningHooks: [],
+      })
     );
     const { task } = await createWorkbenchTask();
 
@@ -153,12 +193,19 @@ describe('NightWorkers workbench routes', () => {
     expect(userMessage.metadataJson.artifactContext.title).toBe(
       'Blueprint: Kanban System Blueprint'
     );
-    const llmPrompt = vi.mocked(llm.callSupervisorLLM).mock.calls[0]?.[1] as string;
+    expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
+    const llmPrompt = vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[1] as string;
     expect(llmPrompt).toContain('[Current Artifact Context]');
     expect(llmPrompt).toContain('Blueprint: Kanban System Blueprint');
     expect(llmPrompt).toContain('Sections: Kanban Workspace, Boards and Filters');
     expect(llmPrompt).toContain('[User Instruction]');
     expect(llmPrompt).toContain('検索とフィルターはボードの上に置いてください');
+    expect(
+      body.messages.some(
+        (message: any) => message.metadataJson?.intent === 'design_questionnaire_ready'
+      )
+    ).toBe(false);
   });
 
   it('passes DB Design artifact context with table names to workbench intake', async () => {

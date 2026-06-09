@@ -50,8 +50,8 @@ describe('Schema-first supervisor loop', () => {
       tools: getAllowedToolsForJobType('minor_code_edit'),
     });
 
-    expect(prompt).toContain('[Skill Access]');
-    expect(prompt).toContain('SKILL documents are not preloaded.');
+    expect(prompt).toContain('[Procedure Access]');
+    expect(prompt).toContain('Procedure documents are not preloaded.');
     expect(prompt).toContain('After apply_patch succeeds');
     expect(prompt).not.toContain('# minor_code_edit');
     expect(prompt).not.toContain('<lineCount>');

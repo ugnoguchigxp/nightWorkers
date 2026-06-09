@@ -2,6 +2,11 @@ import { CheckCircle2, Palette, SlidersHorizontal, XCircle } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiFetch } from '../../../../lib/api-base';
+import {
+  PreviewActionButton,
+  PreviewCard,
+  PreviewOptionButton,
+} from './BlueprintPreviewPrimitives';
 import { BlueprintPreviewSection } from './BlueprintPreviewSection';
 import './blueprintPreview.css';
 import {
@@ -148,20 +153,15 @@ export function BlueprintPreview({
         <div className="rounded-full border border-border bg-card px-3 py-1 text-[11px] text-muted-foreground">
           {t('blueprint.preview.sectionsCount', { count: sections.length })}
         </div>
-        <button
-          type="button"
+        <PreviewActionButton
           aria-expanded={settingsOpen}
           aria-controls="blueprint-design-settings"
-          className={`blueprint-preview-button inline-flex h-8 items-center gap-2 border border-border px-3 text-xs font-semibold transition ${
-            settingsOpen
-              ? 'bg-primary text-primary-foreground hover:opacity-90'
-              : 'bg-card text-foreground hover:bg-background'
-          }`}
+          tone={settingsOpen ? 'primary' : 'secondary'}
           onClick={() => setSettingsOpen((open) => !open)}
         >
           <Palette className="h-3.5 w-3.5" />
           {t('blueprint.preview.design')}
-        </button>
+        </PreviewActionButton>
       </div>
 
       {settingsOpen ? (
@@ -272,20 +272,15 @@ function AdoptionToggle({
   const { t } = useTranslation();
   const Icon = adopted ? CheckCircle2 : XCircle;
   return (
-    <button
-      type="button"
+    <PreviewActionButton
       aria-pressed={adopted}
-      className={`blueprint-preview-button inline-flex h-8 items-center gap-2 border px-3 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
-        adopted
-          ? 'border-primary bg-primary text-primary-foreground hover:opacity-90'
-          : 'border-border bg-card text-foreground hover:bg-background'
-      }`}
+      tone={adopted ? 'primary' : 'secondary'}
       disabled={disabled}
       onClick={onToggle}
     >
       <Icon className="h-3.5 w-3.5" />
       {label}: {adopted ? t('blueprint.preview.adopted') : t('blueprint.preview.notAdopted')}
-    </button>
+    </PreviewActionButton>
   );
 }
 
@@ -305,7 +300,7 @@ function DesignSettingsPanel({
   const { t } = useTranslation();
 
   return (
-    <div id={id} className="blueprint-preview-card rounded-lg border p-3 text-xs">
+    <PreviewCard id={id} className="rounded-lg p-3 text-xs">
       <div className="mb-3 flex items-start gap-2 text-muted-foreground">
         <SlidersHorizontal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
@@ -438,7 +433,7 @@ function DesignSettingsPanel({
           </div>
         </details>
       </div>
-    </div>
+    </PreviewCard>
   );
 }
 
@@ -495,20 +490,14 @@ function OptionRow<const T extends readonly string[]>({
   return (
     <div className="flex flex-wrap gap-1.5">
       {options.map((option) => (
-        <button
-          type="button"
+        <PreviewOptionButton
           key={option}
           aria-label={labelForOptionA11y(option)}
-          className={`blueprint-preview-option rounded border px-2.5 py-1 text-[11px] font-semibold transition ${
-            option === value
-              ? 'border-primary bg-primary text-primary-foreground'
-              : 'border-border bg-background text-foreground hover:bg-secondary'
-          }`}
-          aria-pressed={option === value}
+          selected={option === value}
           onClick={() => onSelect(option)}
         >
           {labelForOption(option)}
-        </button>
+        </PreviewOptionButton>
       ))}
     </div>
   );

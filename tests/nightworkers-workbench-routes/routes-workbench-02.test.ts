@@ -6,9 +6,9 @@ import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
 import * as llm from '../../api/services/supervisor/llm-provider';
 import { representativeAppBlueprint } from '../fixtures/app-blueprint';
 
-vi.mock('../api/services/supervisor/llm-provider', async () => {
-  const actual = await vi.importActual<typeof import('../api/services/supervisor/llm-provider')>(
-    '../api/services/supervisor/llm-provider'
+vi.mock('../../api/services/supervisor/llm-provider', async () => {
+  const actual = await vi.importActual<typeof import('../../api/services/supervisor/llm-provider')>(
+    '../../api/services/supervisor/llm-provider'
   );
   return {
     ...actual,
@@ -123,7 +123,7 @@ describe('NightWorkers workbench routes', () => {
     expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
     expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
     expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
-      '[Skill Document: references/work_kinds/blueprint.md]'
+      '[Procedure Reference: references/work_kinds/blueprint.md]'
     );
     expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
       '通常の Blueprint 生成では DB/DDL/data model/data binding を設計しない'
@@ -148,7 +148,7 @@ describe('NightWorkers workbench routes', () => {
     expect(blueprintMessage?.metadataJson?.appBlueprint?.name).toBe('EC Site Top Page');
     expect(blueprintMessage?.metadataJson?.validation?.valid).toBe(true);
     expect(blueprintMessage?.metadataJson?.generation?.source).toBe('llm');
-    expect(blueprintMessage?.metadataJson?.generation?.skillDocuments).toEqual(
+    expect(blueprintMessage?.metadataJson?.generation?.referenceDocuments).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ relativePath: 'references/work_kinds/blueprint.md' }),
       ])
@@ -157,6 +157,97 @@ describe('NightWorkers workbench routes', () => {
     expect(blueprintMessage?.metadataJson?.intakeJobSelection?.goal).toBe(
       'Create an EC site top page Blueprint.'
     );
+  });
+
+  it('routes active Blueprint workspace instructions to Blueprint generation without round 1 intake', async () => {
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+      JSON.stringify({
+        ...representativeAppBlueprint,
+        id: 'todo-minimal-blueprint',
+        name: 'Todo Minimal Blueprint',
+        description: 'TODO登録と一覧だけに絞った Blueprint。',
+      })
+    );
+    const { task } = await createWorkbenchTask({ title: 'todo listを作りたいです。' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({
+        prompt:
+          '駄目ですね。TODO登録と、一覧があればそれだけで十分だと思いますが。余計なセクション追加しなくていいです',
+        artifactContext: {
+          artifactId: `blueprint-workspace-${task.id}`,
+          kind: 'blueprint_workspace',
+          title: 'Specification Workspace',
+          summary: 'Design Questionnaire を生成しました。10 件の質問に回答できます。',
+          source: { type: 'task_message', messageId: crypto.randomUUID() },
+          metadata: {
+            initialTab: 'questionnaire',
+          },
+        },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
+    expect(
+      body.messages.some(
+        (message: any) => message.metadataJson?.intent === 'design_questionnaire_ready'
+      )
+    ).toBe(false);
+    const blueprintMessage = body.messages.find(
+      (message: any) => message.metadataJson?.intent === 'app_blueprint'
+    );
+    expect(blueprintMessage?.metadataJson?.appBlueprint?.id).toBe('todo-minimal-blueprint');
+    expect(blueprintMessage?.metadataJson?.routingHypothesis?.subtype).toBe('app_blueprint');
+    expect(blueprintMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('blueprint');
+    expect(blueprintMessage?.metadataJson?.intakeJobSelection?.goal).toContain('TODO登録と、一覧');
+  });
+
+  it('keeps generic Specification Workspace instructions on round 1 when no Blueprint focus is present', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('general_answer', 'Specification Workspace の内容を確認して返答する。')
+    );
+    const { task } = await createWorkbenchTask({ title: 'Implementation plan only' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({
+        prompt: 'この仕様を見て次に何をすべきか教えてください',
+        artifactContext: {
+          artifactId: `blueprint-workspace-${task.id}`,
+          kind: 'blueprint_workspace',
+          title: 'Specification Workspace',
+          summary: '1 Implementation Plan',
+          source: { type: 'task_message', messageId: crypto.randomUUID() },
+          metadata: {},
+        },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callStructuredJsonLLM).not.toHaveBeenCalled();
+    expect(
+      body.messages.some((message: any) => message.metadataJson?.intent === 'app_blueprint')
+    ).toBe(false);
+    expect(
+      body.messages.some(
+        (message: any) => message.metadataJson?.intent === 'design_questionnaire_ready'
+      )
+    ).toBe(false);
+    expect(
+      body.messages.some(
+        (message: any) =>
+          message.metadataJson?.intent === 'intake' &&
+          message.metadataJson?.jobSelection?.jobType === 'general_answer'
+      )
+    ).toBe(true);
   });
 
   it('shows an SFA dashboard request as an app blueprint artifact', async () => {
@@ -225,7 +316,7 @@ describe('NightWorkers workbench routes', () => {
       expect.objectContaining({
         schemaIncluded: true,
         catalogComponentCount: expect.any(Number),
-        skillDocumentCount: expect.any(Number),
+        referenceDocumentCount: expect.any(Number),
       })
     );
   });
@@ -247,7 +338,7 @@ describe('NightWorkers workbench routes', () => {
     expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
     expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
     expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
-      '[Skill Document: references/work_kinds/blueprint.md]'
+      '[Procedure Reference: references/work_kinds/blueprint.md]'
     );
     expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
       '[AppBlueprint JSON Schema]'
@@ -262,7 +353,7 @@ describe('NightWorkers workbench routes', () => {
             intent: 'blueprint_raw_output',
             promptDiagnostics: expect.objectContaining({
               schemaIncluded: true,
-              skillDocumentCount: expect.any(Number),
+              referenceDocumentCount: expect.any(Number),
             }),
           }),
         }),

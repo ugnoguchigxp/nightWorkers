@@ -7,10 +7,10 @@ import {
   type SupervisorMode,
   type SupervisorOverlay,
   type SupervisorPhase,
+  type SupervisorReferenceDocument,
+  type SupervisorReferenceDocumentKind,
+  type SupervisorReferenceSectionName,
   type SupervisorRoutingHypothesis,
-  type SupervisorSkillDocument,
-  type SupervisorSkillDocumentKind,
-  type SupervisorSkillSectionName,
   type SupervisorWorkKind,
   supervisorModes,
   supervisorOverlays,
@@ -18,14 +18,14 @@ import {
   supervisorWorkKinds,
 } from './types';
 
-const requiredSections: SupervisorSkillSectionName[] = [
+const requiredSections: SupervisorReferenceSectionName[] = [
   'Use When',
   'Required Behavior',
   'Stop Conditions',
   'Report Contract',
 ];
 
-const optionalSections: SupervisorSkillSectionName[] = [
+const optionalSections: SupervisorReferenceSectionName[] = [
   'Tool Guidance',
   'Verification Guidance',
   'Risk Notes',
@@ -33,36 +33,44 @@ const optionalSections: SupervisorSkillSectionName[] = [
 
 const allowedSections = [...requiredSections, ...optionalSections];
 
-export const defaultSupervisorSkillsDirectory = path.join(
+export const defaultSupervisorReferencesDirectory = path.join(
   getResourceRoot(),
   'api/services/supervisor/skills/builtin'
 );
 
-const cache = new Map<string, SupervisorSkillDocument[]>();
+const cache = new Map<string, SupervisorReferenceDocument[]>();
 
-export function getSupervisorSkillsDirectory(directory?: string): string {
-  return directory || process.env.SUPERVISOR_SKILLS_DIR || defaultSupervisorSkillsDirectory;
+export function getSupervisorReferencesDirectory(directory?: string): string {
+  return (
+    directory ||
+    process.env.SUPERVISOR_REFERENCES_DIR ||
+    process.env.SUPERVISOR_SKILLS_DIR ||
+    defaultSupervisorReferencesDirectory
+  );
 }
 
-export function clearSupervisorSkillDocumentCache(): void {
+export function clearSupervisorReferenceDocumentCache(): void {
   cache.clear();
 }
 
-export function listSupervisorSkillDocuments(directory?: string): SupervisorSkillDocument[] {
-  const resolvedDirectory = getSupervisorSkillsDirectory(directory);
+export function listSupervisorReferenceDocuments(
+  directory?: string
+): SupervisorReferenceDocument[] {
+  const resolvedDirectory = getSupervisorReferencesDirectory(directory);
   const cached = cache.get(resolvedDirectory);
   if (cached) return cached;
 
-  const source = resolvedDirectory === defaultSupervisorSkillsDirectory ? 'builtin' : 'configured';
-  const documents = expectedSkillPaths().map((entry) => {
+  const source =
+    resolvedDirectory === defaultSupervisorReferencesDirectory ? 'builtin' : 'configured';
+  const documents = expectedReferencePaths().map((entry) => {
     const filePath = path.join(resolvedDirectory, entry.relativePath);
     if (!fs.existsSync(filePath)) {
       throw new Error(
-        `Supervisor skill markdown missing: directory=${resolvedDirectory} relativePath=${entry.relativePath} axis=${entry.kind}`
+        `Supervisor reference markdown missing: directory=${resolvedDirectory} relativePath=${entry.relativePath} axis=${entry.kind}`
       );
     }
     const raw = fs.readFileSync(filePath, 'utf8');
-    return parseSupervisorSkillMarkdown(raw, {
+    return parseSupervisorReferenceMarkdown(raw, {
       id: entry.id,
       kind: entry.kind,
       relativePath: entry.relativePath,
@@ -73,12 +81,12 @@ export function listSupervisorSkillDocuments(directory?: string): SupervisorSkil
   return documents;
 }
 
-export function resolveSupervisorSkillDocuments(
+export function resolveSupervisorReferenceDocuments(
   routing: Partial<SupervisorRoutingHypothesis> | null | undefined,
   directory?: string
-): SupervisorSkillDocument[] {
+): SupervisorReferenceDocument[] {
   const normalized = normalizeSupervisorRoutingHypothesis(routing);
-  const documents = listSupervisorSkillDocuments(directory);
+  const documents = listSupervisorReferenceDocuments(directory);
   const byPath = new Map(documents.map((document) => [document.relativePath, document]));
   const selectedPaths = new Set<string>([
     'SKILL.md',
@@ -89,20 +97,22 @@ export function resolveSupervisorSkillDocuments(
     ...normalized.workKinds.map((workKind) => `references/work_kinds/${workKind}.md`),
     ...normalized.overlays.map((overlay) => `references/overlays/${overlay}.md`),
   ]);
-  for (const relativePath of normalized.nextSkillFiles) {
+  for (const relativePath of normalized.nextReferenceFiles) {
     if (byPath.has(relativePath)) selectedPaths.add(relativePath);
   }
 
   return [...selectedPaths].map((relativePath) => {
     const document = byPath.get(relativePath);
     if (!document) {
-      throw new Error(`Supervisor skill reference is not allowed or missing: ${relativePath}`);
+      throw new Error(`Supervisor reference is not allowed or missing: ${relativePath}`);
     }
     return document;
   });
 }
 
-export function renderSupervisorSkillDocuments(documents: SupervisorSkillDocument[]): string {
+export function renderSupervisorReferenceDocuments(
+  documents: SupervisorReferenceDocument[]
+): string {
   return documents
     .map((document) => {
       const sections = allowedSections
@@ -110,7 +120,7 @@ export function renderSupervisorSkillDocuments(documents: SupervisorSkillDocumen
         .map((section) => `## ${section}\n\n${document.sections[section]}`)
         .join('\n\n');
       return [
-        `[Skill Document: ${document.relativePath}]`,
+        `[Procedure Reference: ${document.relativePath}]`,
         `id=${document.id} kind=${document.kind} source=${document.source} digest=${document.digest}`,
         `# ${document.title}`,
         sections,
@@ -119,7 +129,7 @@ export function renderSupervisorSkillDocuments(documents: SupervisorSkillDocumen
     .join('\n\n---\n\n');
 }
 
-export function summarizeSupervisorSkillDocuments(documents: SupervisorSkillDocument[]) {
+export function summarizeSupervisorReferenceDocuments(documents: SupervisorReferenceDocument[]) {
   return documents.map((document) => ({
     id: document.id,
     kind: document.kind,
@@ -148,7 +158,7 @@ export function normalizeSupervisorRoutingHypothesis(
     subtype:
       typeof routing.subtype === 'string' && routing.subtype.trim() ? routing.subtype : undefined,
     requiredEvidence: normalizeArray(routing.requiredEvidence),
-    nextSkillFiles: normalizeArray(routing.nextSkillFiles),
+    nextReferenceFiles: normalizeArray(routing.nextReferenceFiles),
     confidence:
       typeof routing.confidence === 'number' && Number.isFinite(routing.confidence)
         ? Math.max(0, Math.min(1, routing.confidence))
@@ -156,15 +166,15 @@ export function normalizeSupervisorRoutingHypothesis(
   };
 }
 
-function parseSupervisorSkillMarkdown(
+function parseSupervisorReferenceMarkdown(
   raw: string,
   metadata: {
     id: string;
-    kind: SupervisorSkillDocumentKind;
+    kind: SupervisorReferenceDocumentKind;
     relativePath: string;
     source: 'builtin' | 'configured';
   }
-): SupervisorSkillDocument {
+): SupervisorReferenceDocument {
   const normalized = raw.replace(/\r\n/g, '\n').trim();
   const title = normalized.match(/^#\s+(.+)$/m)?.[1]?.trim() || titleFromId(metadata.id);
   const sections = extractSections(normalized, metadata.relativePath);
@@ -190,8 +200,8 @@ function parseSupervisorSkillMarkdown(
 function extractSections(
   body: string,
   relativePath: string
-): Partial<Record<SupervisorSkillSectionName, string>> {
-  const sections: Partial<Record<SupervisorSkillSectionName, string>> = {};
+): Partial<Record<SupervisorReferenceSectionName, string>> {
+  const sections: Partial<Record<SupervisorReferenceSectionName, string>> = {};
   const headingPattern = /^##\s+(.+)$/gm;
   const headings: Array<{ name: string; index: number; contentStart: number }> = [];
   let match = headingPattern.exec(body);
@@ -214,16 +224,16 @@ function extractSections(
   for (const section of requiredSections) {
     if (!sections[section]) {
       throw new Error(
-        `Supervisor skill markdown missing section: ${section}. relativePath=${relativePath}`
+        `Supervisor reference markdown missing section: ${section}. relativePath=${relativePath}`
       );
     }
   }
   return sections;
 }
 
-function expectedSkillPaths(): Array<{
+function expectedReferencePaths(): Array<{
   id: string;
-  kind: SupervisorSkillDocumentKind;
+  kind: SupervisorReferenceDocumentKind;
   relativePath: string;
 }> {
   return [
@@ -273,8 +283,8 @@ function isSupervisorOverlay(value: unknown): value is SupervisorOverlay {
   return typeof value === 'string' && supervisorOverlays.includes(value as SupervisorOverlay);
 }
 
-function isAllowedSection(value: string): value is SupervisorSkillSectionName {
-  return allowedSections.includes(value as SupervisorSkillSectionName);
+function isAllowedSection(value: string): value is SupervisorReferenceSectionName {
+  return allowedSections.includes(value as SupervisorReferenceSectionName);
 }
 
 function titleFromId(value: string): string {

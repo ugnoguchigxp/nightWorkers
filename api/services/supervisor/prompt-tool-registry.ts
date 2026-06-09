@@ -63,8 +63,8 @@ export type TodoToolName = 'replace_todo_list' | 'start_todo' | 'complete_todo';
 export type ToolDefinition = {
   name:
     | WorkerToolName
-    | 'read_skill'
-    | 'search_skill'
+    | 'read_procedure'
+    | 'search_procedure'
     | 'select_job_type'
     | TodoToolName
     | 'finalize_answer';
@@ -213,10 +213,10 @@ export const toolRegistry = {
     description: '現在の差分を確認する。',
     inputSchema: objectSchema({}),
   },
-  read_skill: {
-    name: 'read_skill',
+  read_procedure: {
+    name: 'read_procedure',
     description:
-      '必要なときだけ jobType に対応する SKILL 要約を読む。リポジトリファイルは読み書きしない。',
+      '必要なときだけ jobType に対応する procedure 要約を読む。リポジトリファイルは読み書きしない。',
     inputSchema: objectSchema(
       {
         jobType: { type: 'string', enum: [...jobTypes] },
@@ -224,10 +224,10 @@ export const toolRegistry = {
       ['jobType']
     ),
   },
-  search_skill: {
-    name: 'search_skill',
+  search_procedure: {
+    name: 'search_procedure',
     description:
-      '適切な SKILL が不明なとき、利用可能な SKILL 名と要約を検索する。リポジトリファイルは読み書きしない。',
+      '適切な procedure が不明なとき、利用可能な procedure 名と要約を検索する。リポジトリファイルは読み書きしない。',
     inputSchema: objectSchema(
       {
         query: { type: 'string' },
@@ -314,8 +314,8 @@ export type SupervisorToolName = keyof typeof toolRegistry;
 const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
   general_answer: ['finalize_answer'],
   planning: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'read_current_specification',
     'list_dir',
     'read_file',
@@ -324,8 +324,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   minor_code_edit: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'read_current_specification',
     'read_file',
     'search_files',
@@ -337,8 +337,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   major_code_edit: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'read_current_specification',
     'replace_todo_list',
     'start_todo',
@@ -356,10 +356,10 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'select_job_type',
     'finalize_answer',
   ],
-  script_code_edit: ['read_skill', 'search_skill', 'finalize_answer'],
+  script_code_edit: ['read_procedure', 'search_procedure', 'finalize_answer'],
   review: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'read_current_specification',
     'git_status',
     'git_diff',
@@ -369,8 +369,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   investigation: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'read_current_specification',
     'list_dir',
     'read_file',
@@ -380,8 +380,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   runtime_debug: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'read_current_specification',
     'read_file',
     'search_files',
@@ -390,8 +390,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   test_and_verification: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'read_current_specification',
     'run_verification',
     'run_command',
@@ -400,16 +400,16 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   research: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'search_web',
     'fetch_content',
     'read_file',
     'finalize_answer',
   ],
   docs: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'read_current_specification',
     'list_dir',
     'read_file',
@@ -419,16 +419,16 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   git_release: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'git_status',
     'git_diff',
     'run_command',
     'finalize_answer',
   ],
   code: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'read_current_specification',
     'list_dir',
     'read_file',
@@ -439,8 +439,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   refactor: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'read_current_specification',
     'list_dir',
     'read_file',
@@ -451,8 +451,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   test: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'read_current_specification',
     'read_file',
     'search_files',
@@ -463,8 +463,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   config: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'read_current_specification',
     'list_dir',
     'read_file',
@@ -475,8 +475,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   dependency: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'read_current_specification',
     'read_file',
     'search_files',
@@ -486,8 +486,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   data_migration: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'read_current_specification',
     'list_dir',
     'read_file',
@@ -498,8 +498,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   blueprint: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'read_current_specification',
     'read_file',
     'search_files',
@@ -508,8 +508,8 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'finalize_answer',
   ],
   ui_ux: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'read_current_specification',
     'read_file',
     'search_files',
@@ -517,10 +517,17 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'replace_content',
     'finalize_answer',
   ],
-  git: ['read_skill', 'search_skill', 'git_status', 'git_diff', 'run_command', 'finalize_answer'],
+  git: [
+    'read_procedure',
+    'search_procedure',
+    'git_status',
+    'git_diff',
+    'run_command',
+    'finalize_answer',
+  ],
   release: [
-    'read_skill',
-    'search_skill',
+    'read_procedure',
+    'search_procedure',
     'git_status',
     'git_diff',
     'run_command',

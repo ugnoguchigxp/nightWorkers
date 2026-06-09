@@ -1,7 +1,7 @@
-import { Button } from '@repo/design-system';
 import { Archive, Cpu, ListTodo, Minus, Plus, SlidersHorizontal } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/Button';
 import type {
   ImplementationQueueDashboard,
   ImplementationQueueItem,

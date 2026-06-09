@@ -1,7 +1,7 @@
-import type { CodeBlockData } from '@repo/design-system';
 import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { CodeBlockData } from '@/components/ui/CodeBlock';
 import type { ReviewResult, TaskEvent } from '../types';
 import {
   asNumber,

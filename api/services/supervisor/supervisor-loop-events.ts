@@ -6,7 +6,7 @@ export type AgentEventType =
   | 'run.started'
   | 'round1.prompt_built'
   | 'round1.parsed'
-  | 'skill.loaded'
+  | 'procedure.loaded'
   | 'round2.prompt_built'
   | 'round2.parsed'
   | 'round2.invalid'

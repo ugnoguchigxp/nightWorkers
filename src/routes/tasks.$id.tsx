@@ -1,4 +1,3 @@
-import { Button } from '@repo/design-system';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import {
@@ -12,6 +11,7 @@ import {
   Terminal,
 } from 'lucide-react';
 import { useState } from 'react';
+import { Button } from '@/components/ui/Button';
 import { client } from '../lib/api';
 import { apiPath } from '../lib/api-base';
 

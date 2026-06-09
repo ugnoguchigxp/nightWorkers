@@ -1,1 +1,0 @@
-export { CopyClipButton } from './CopyClipButton';

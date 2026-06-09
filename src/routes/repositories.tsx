@@ -1,8 +1,8 @@
-import { Button } from '@repo/design-system';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { FolderGit2, GitBranch, Plus, Shield, Terminal, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { Button } from '@/components/ui/Button';
 import { client } from '../lib/api';
 
 export const Route = createFileRoute('/repositories')({

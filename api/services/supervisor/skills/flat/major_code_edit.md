@@ -4,8 +4,8 @@
 複数ステップに分けるべきコード変更。外部ディレクトリテンプレートのコピー、外部リポジトリーの clone や fork、migration、command、documentation、verification が混ざる可能性がある作業。
 
 ## Tools
-- read_skill
-- search_skill
+- read_procedure
+- search_procedure
 - replace_todo_list
 - start_todo
 - complete_todo
@@ -28,7 +28,7 @@
 3. replace_todo_list は全更新で使う。通常は startFirst=true または省略にし、最初の Todo を running にする。
 4. Todo は成果物または gate 単位で分ける。例: investigation / migration / code_edit / documentation / verification。
 5. 現在の Todo に必要な list_dir / read_file / search_files / copy_directory / apply_patch / replace_content / run_command / run_verification を実行する。
-6. 空の Project root は有効な作業対象として扱う。空であることを理由に作業不能と判断しない。
+6. 空の Project root は有効な作業対象として扱う。空であることを理由に作業不能と判断しない。新規プロジェクト / 新規ファイル作成依頼なら、仕様書から必要な初期ファイルを apply_patch で作成する。
 7. `../template` や絶対パスなど Project root 外のコピー元は、ユーザー許可により safetyPolicy.externalAllowedPaths に含まれている場合だけ読む。未許可なら needs_human として許可を求める。
 8. 外部テンプレートを取り込む場合は、許可後に copy_directory を優先する。shell の cp で代替しない。
 9. 外部テンプレートを取り込む TodoList には、copy_directory だけでなく package.json inspection と package-script verification を必ず含める。

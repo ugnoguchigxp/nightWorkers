@@ -10,7 +10,7 @@ export type Round2UserContextInput = {
   todoPlan: unknown[];
   currentTodo: unknown | null;
   toolResults: unknown[];
-  loadedSkillSummaries: unknown[];
+  loadedProcedureSummaries: unknown[];
   artifactContextRefs: SupervisorArtifactContextRef[];
 };
 
@@ -45,8 +45,8 @@ export function renderRound2UserContext(input: Round2UserContextInput) {
     '[Recent Tool Evidence]',
     JSON.stringify(input.toolResults, null, 2),
     '',
-    '[Loaded Skill Summaries]',
-    JSON.stringify(input.loadedSkillSummaries, null, 2),
+    '[Loaded Procedure Summaries]',
+    JSON.stringify(input.loadedProcedureSummaries, null, 2),
     '',
     '[Artifact and Source References]',
     input.artifactContextRefs.length
@@ -80,7 +80,7 @@ function round2SectionBoundaryPattern(currentSection: string) {
     'Continuity Context',
     'Current Execution State',
     'Recent Tool Evidence',
-    'Loaded Skill Summaries',
+    'Loaded Procedure Summaries',
     'Artifact and Source References',
     'Safety Context',
   ].filter((section) => section !== currentSection);

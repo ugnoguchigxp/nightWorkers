@@ -1,6 +1,6 @@
-import { Button } from '@repo/design-system';
 import { ExternalLink, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/Button';
 import type { LlmProvider, LlmSettings } from '../types';
 import { PROVIDER_MODEL_OPTIONS } from '../types';
 import { Field, SelectField } from './SettingsFields';

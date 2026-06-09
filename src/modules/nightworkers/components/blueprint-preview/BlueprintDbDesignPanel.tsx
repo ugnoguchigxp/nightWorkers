@@ -1,6 +1,7 @@
 import { ChevronDown, Database, Table2 } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PreviewBadge, PreviewCard } from './BlueprintPreviewPrimitives';
 import { columnsForTable, relationsForTable } from './dbDesignModel';
 
 type BlueprintDbDesignPanelProps = {
@@ -32,7 +33,7 @@ export function BlueprintDbDesignPanel({
   const [openTable, setOpenTable] = useState<string | null>(tables[0]?.name || null);
 
   return (
-    <div id={id} className="blueprint-preview-card grid gap-3 rounded-lg border p-3 text-xs">
+    <PreviewCard id={id} className="grid gap-3 rounded-lg p-3 text-xs">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 font-semibold text-foreground">
@@ -43,13 +44,13 @@ export function BlueprintDbDesignPanel({
         </div>
         <div className="flex flex-wrap items-center justify-end gap-1.5">
           {adoption}
-          <Badge>{t('blueprint.db.tablesCount', { count: tables.length })}</Badge>
-          <Badge>{t('blueprint.db.relationsCount', { count: relations.length })}</Badge>
-          <Badge tone={validationIssues.length === 0 ? 'success' : 'warning'}>
+          <DbBadge>{t('blueprint.db.tablesCount', { count: tables.length })}</DbBadge>
+          <DbBadge>{t('blueprint.db.relationsCount', { count: relations.length })}</DbBadge>
+          <DbBadge tone={validationIssues.length === 0 ? 'success' : 'warning'}>
             {validationIssues.length === 0
               ? t('blueprint.db.valid')
               : t('blueprint.db.issuesCount', { count: validationIssues.length })}
-          </Badge>
+          </DbBadge>
         </div>
       </header>
 
@@ -77,12 +78,14 @@ export function BlueprintDbDesignPanel({
                         {String(table.label || table.name)}
                       </span>
                       <span className="mt-1 flex flex-wrap gap-1.5">
-                        <Badge>{t('blueprint.db.columnsCount', { count: columns.length })}</Badge>
-                        <Badge>
+                        <DbBadge>
+                          {t('blueprint.db.columnsCount', { count: columns.length })}
+                        </DbBadge>
+                        <DbBadge>
                           {t('blueprint.db.indexesCount', {
                             count: Array.isArray(table.indexes) ? table.indexes.length : 0,
                           })}
-                        </Badge>
+                        </DbBadge>
                       </span>
                     </span>
                     <ChevronDown
@@ -118,7 +121,7 @@ export function BlueprintDbDesignPanel({
           </div>
         )}
       </section>
-    </div>
+    </PreviewCard>
   );
 }
 
@@ -159,20 +162,18 @@ function ColumnTable({ columns }: { columns: Array<Record<string, unknown>> }) {
   );
 }
 
-function Badge({
+function DbBadge({
   children,
   tone = 'default',
 }: {
   children: React.ReactNode;
   tone?: 'default' | 'success' | 'warning';
 }) {
-  const toneClass =
-    tone === 'success'
-      ? 'bg-emerald-500/10 text-emerald-700'
-      : tone === 'warning'
-        ? 'bg-amber-500/10 text-amber-700'
-        : 'bg-muted text-muted-foreground';
-  return <span className={`rounded px-2 py-1 ${toneClass}`}>{children}</span>;
+  return (
+    <PreviewBadge className="rounded px-2 py-1" tone={tone}>
+      {children}
+    </PreviewBadge>
+  );
 }
 
 const targetBadgeClass =

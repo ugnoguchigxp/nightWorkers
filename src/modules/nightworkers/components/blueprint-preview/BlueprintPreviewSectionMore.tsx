@@ -1,4 +1,5 @@
 import type { TFunction } from 'i18next';
+import { PreviewBadge, PreviewCard } from './BlueprintPreviewPrimitives';
 import {
   previewColumns,
   previewGenericItems,
@@ -75,8 +76,9 @@ export function renderAdditionalPreviewSectionBody({
               </div>
               <div className="grid min-h-32 gap-2 p-2">
                 {column.cards.slice(0, 4).map((card, cardIndex) => (
-                  <article
-                    className="blueprint-preview-card rounded-md border p-2.5"
+                  <PreviewCard
+                    as="article"
+                    className="p-2.5"
                     key={String(card.id || card.title || cardIndex)}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -84,9 +86,9 @@ export function renderAdditionalPreviewSectionBody({
                         {String(card.title || card.label || card.name || `Card ${cardIndex + 1}`)}
                       </div>
                       {card.priority || card.badge || card.tag ? (
-                        <span className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        <PreviewBadge className="shrink-0 px-1.5 py-0.5 text-[10px]">
                           {String(card.priority || card.badge || card.tag)}
-                        </span>
+                        </PreviewBadge>
                       ) : null}
                     </div>
                     <div className="mt-1 line-clamp-2 text-[11px] leading-5 text-muted-foreground">
@@ -106,7 +108,7 @@ export function renderAdditionalPreviewSectionBody({
                         ) : null}
                       </div>
                     ) : null}
-                  </article>
+                  </PreviewCard>
                 ))}
                 {column.cards.length === 0 ? (
                   <div className="rounded-md border border-dashed border-border px-3 py-6 text-center text-[11px] text-muted-foreground">
@@ -140,10 +142,7 @@ export function renderAdditionalPreviewSectionBody({
     return (
       <div className="grid gap-[var(--blueprint-preview-gap)] sm:grid-cols-2 xl:grid-cols-3">
         {cards.map((card, index) => (
-          <article
-            key={String(card.title || index)}
-            className="blueprint-preview-card rounded-md border p-3"
-          >
+          <PreviewCard as="article" key={String(card.title || index)} className="p-3">
             <img
               alt={previewImageAlt(card, `Card ${index + 1}`)}
               className="mb-3 aspect-video w-full rounded border border-border object-cover"
@@ -155,11 +154,11 @@ export function renderAdditionalPreviewSectionBody({
               {String(card.description || '')}
             </p>
             {card.badge ? (
-              <div className="mt-3 w-fit rounded border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+              <PreviewBadge className="mt-3 w-fit py-0.5 text-[10px]">
                 {String(card.badge)}
-              </div>
+              </PreviewBadge>
             ) : null}
-          </article>
+          </PreviewCard>
         ))}
       </div>
     );
@@ -249,7 +248,7 @@ export function renderAdditionalPreviewSectionBody({
     return (
       <div className="grid gap-2">
         {feed.slice(0, 5).map((item, index) => (
-          <div className="blueprint-preview-card rounded-md border p-3" key={index}>
+          <PreviewCard className="p-3" key={index}>
             <div className="text-xs font-medium text-foreground">
               {String(item.title || item.author || item.actor || `Update ${index + 1}`)}
             </div>
@@ -258,7 +257,7 @@ export function renderAdditionalPreviewSectionBody({
                 item.body || item.content || `${item.action || 'updated'} ${item.target || ''}`
               )}
             </div>
-          </div>
+          </PreviewCard>
         ))}
       </div>
     );

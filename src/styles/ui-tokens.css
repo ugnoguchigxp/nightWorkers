@@ -1,0 +1,130 @@
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-text: var(--info-text);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-lg: var(--radius);
+  --radius-md: max(0px, calc(var(--radius) - 2px));
+  --radius-sm: max(0px, calc(var(--radius) - 4px));
+
+  --spacing-ui: var(--ui-component-height);
+  --spacing-ui-x: var(--ui-component-padding-x);
+  --spacing-ui-y: var(--ui-component-padding-y);
+  --spacing-ui-button: var(--ui-button-padding-x);
+  --spacing-ui-button-x: var(--ui-button-padding-x);
+  --spacing-ui-button-y: var(--ui-button-padding-y);
+  --spacing-ui-gap: var(--ui-gap-base);
+}
+
+:root {
+  --background: hsl(210 20% 10%);
+  --foreground: hsl(210 30% 96%);
+  --card: hsl(210 20% 16%);
+  --card-foreground: hsl(210 30% 96%);
+  --popover: hsl(210 20% 10%);
+  --popover-foreground: hsl(210 30% 96%);
+  --primary: hsl(200 95% 42%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(210 20% 22%);
+  --secondary-foreground: hsl(210 30% 96%);
+  --muted: hsl(210 20% 22%);
+  --muted-foreground: hsl(210 15% 60%);
+  --accent: hsl(210 85% 42%);
+  --accent-foreground: hsl(210 30% 96%);
+  --destructive: hsl(0 50% 55%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --success: hsl(135 65% 40%);
+  --success-foreground: hsl(0 0% 100%);
+  --warning: hsl(40 70% 48%);
+  --warning-foreground: hsl(0 0% 100%);
+  --info: hsl(200 95% 42%);
+  --info-text: hsl(0 0% 100%);
+  --border: hsl(210 20% 30%);
+  --input: hsl(210 20% 30%);
+  --ring: hsl(200 95% 42%);
+  --radius: 0.5rem;
+  --ui-component-height: 2.5rem;
+  --ui-component-padding-x: 0.75rem;
+  --ui-component-padding-y: 0.5rem;
+  --ui-button-padding-x: 1rem;
+  --ui-button-padding-y: 0.5rem;
+  --ui-gap-base: 0.5rem;
+  --ui-font-size-base: 0.875rem;
+  --ui-touch-target-min: 0px;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+    outline-color: var(--ring);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+}
+
+button,
+input,
+select,
+textarea {
+  color: inherit;
+}
+
+@layer utilities {
+  .px-ui {
+    padding-left: var(--ui-component-padding-x);
+    padding-right: var(--ui-component-padding-x);
+  }
+
+  .py-ui {
+    padding-top: var(--ui-component-padding-y);
+    padding-bottom: var(--ui-component-padding-y);
+  }
+
+  .px-ui-button {
+    padding-left: var(--ui-button-padding-x);
+    padding-right: var(--ui-button-padding-x);
+  }
+
+  .py-ui-button {
+    padding-top: var(--ui-button-padding-y);
+    padding-bottom: var(--ui-button-padding-y);
+  }
+
+  .text-ui {
+    font-size: var(--ui-font-size-base);
+    line-height: 1.5;
+  }
+
+  .h-ui {
+    height: var(--ui-component-height);
+  }
+
+  .min-h-ui-touch {
+    min-height: var(--ui-touch-target-min);
+  }
+}

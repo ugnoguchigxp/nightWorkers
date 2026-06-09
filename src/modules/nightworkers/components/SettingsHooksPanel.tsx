@@ -1,7 +1,7 @@
-import { Button } from '@repo/design-system';
 import { RefreshCw, Trash2, Workflow } from 'lucide-react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/Button';
 import type { NightWorkersWorkspaceState } from '../hooks/useNightWorkersWorkspace';
 import type { AgentHookEvent } from '../types';
 import { Field, NumberField, SelectField } from './SettingsFields';

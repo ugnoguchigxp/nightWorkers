@@ -1,7 +1,7 @@
-import { Button } from '@repo/design-system';
 import { PlugZap, RefreshCw, Trash2 } from 'lucide-react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/Button';
 import type { NightWorkersWorkspaceState } from '../hooks/useNightWorkersWorkspace';
 import type { McpServerConfig, McpServerTransport } from '../types';
 import { Field, SelectField } from './SettingsFields';

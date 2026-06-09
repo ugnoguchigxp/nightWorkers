@@ -1,6 +1,3 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@repo/design-system';
-import { useTranslation } from 'react-i18next';
-
 type FieldProps = {
   id: string;
   label: string;
@@ -61,33 +58,23 @@ type SelectFieldProps = {
 };
 
 export function SelectField({ id, label, value, options, onChange }: SelectFieldProps) {
-  const { t } = useTranslation();
-
   return (
     <div className="space-y-1.5">
       <label htmlFor={id} className="block text-[11px] font-semibold text-zinc-400">
         {label}
       </label>
-      <Select
+      <select
+        id={id}
         value={value}
-        onValueChange={(next) => {
-          if (next) onChange(next);
-        }}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs text-zinc-100"
       >
-        <SelectTrigger
-          id={id}
-          className="w-full rounded-lg border-zinc-800 bg-zinc-900 text-xs text-zinc-100"
-        >
-          <SelectValue placeholder={t('settings.selectPlaceholder')} />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

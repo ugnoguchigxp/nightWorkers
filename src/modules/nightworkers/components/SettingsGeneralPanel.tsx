@@ -1,6 +1,6 @@
-import { Button } from '@repo/design-system';
 import { Globe, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/Button';
 import { applyNightWorkersLanguage } from '../i18n/NightWorkersI18nProvider';
 import type { GeneralSettings } from '../types';
 import { SelectField } from './SettingsFields';

@@ -326,14 +326,14 @@ describe('NightWorkers task routes', () => {
         type: 'system.info',
         severity: 'debug',
         actor: 'runtime',
-        message: '[SchemaFirstAgent] skill.loaded',
+        message: '[SchemaFirstAgent] procedure.loaded',
       },
       {
         payloadJson: {
-          agentEventType: 'skill.loaded',
+          agentEventType: 'procedure.loaded',
           payload: {
-            skillPath: 'skills/minor_code_edit.md',
-            skill: '# minor_code_edit\n\n## Procedure\n1. read_file',
+            procedurePath: 'procedures/minor_code_edit.md',
+            procedure: '# minor_code_edit\n\n## Procedure\n1. read_file',
           },
         },
       }
@@ -377,12 +377,12 @@ describe('NightWorkers task routes', () => {
           runId: run.id,
           kind: 'runtime.state',
           turnId: `assistant:${run.id}`,
-          text: 'skills/minor_code_edit.md',
+          text: 'procedures/minor_code_edit.md',
           payloadJson: expect.objectContaining({
-            agentEventType: 'skill.loaded',
+            agentEventType: 'procedure.loaded',
             payload: expect.objectContaining({
-              skillPath: 'skills/minor_code_edit.md',
-              skill: expect.stringContaining('# minor_code_edit'),
+              procedurePath: 'procedures/minor_code_edit.md',
+              procedure: expect.stringContaining('# minor_code_edit'),
             }),
           }),
         }),

@@ -1,8 +1,8 @@
-import { Button } from '@repo/design-system';
 import { AlertTriangle, BarChart3, CircleDollarSign, Database, RefreshCw } from 'lucide-react';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/Button';
 import { apiFetch } from '../../../lib/api-base';
 import { formatCurrency, formatDateTime, formatTokenCount } from '../i18n/format';
 import type { NightWorkersCurrency, OverviewDashboard, Repository } from '../types';

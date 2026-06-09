@@ -1,1 +1,0 @@
-export { MiniTable } from './MiniTable';

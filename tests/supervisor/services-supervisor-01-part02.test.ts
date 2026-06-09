@@ -157,6 +157,20 @@ describe('Schema-first supervisor loop', () => {
         vi.mocked(llm.callSupervisorLLM).mock.calls[2]?.[1] as string,
         'Current Execution State'
       );
+      const firstRound2ProcedureSummaries = parseRound2UserContextJsonSection<any[]>(
+        vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[1] as string,
+        'Loaded Procedure Summaries'
+      );
+      expect(firstRound2ProcedureSummaries).toEqual([
+        expect.objectContaining({
+          jobType: 'major_code_edit',
+          path: 'procedures/major_code_edit.md',
+          procedure: expect.arrayContaining([
+            expect.stringContaining('空の Project root は有効な作業対象'),
+          ]),
+          loadedAtStep: 0,
+        }),
+      ]);
       expect(secondRound2ExecutionState.todoPlan).toEqual([
         expect.objectContaining({ id: 'todo-1', seq: 1, status: 'running' }),
         expect.objectContaining({ id: 'todo-2', seq: 2, status: 'pending' }),
@@ -274,7 +288,7 @@ describe('Schema-first supervisor loop', () => {
         parseRound2UserContextJsonSection(firstRound2UserPrompt, 'Recent Tool Evidence')
       ).toEqual([]);
       expect(
-        parseRound2UserContextJsonSection(firstRound2UserPrompt, 'Loaded Skill Summaries')
+        parseRound2UserContextJsonSection(firstRound2UserPrompt, 'Loaded Procedure Summaries')
       ).toEqual([]);
       expect(vi.mocked(llm.callSupervisorLLM)).toHaveBeenCalledTimes(3);
       expect(vi.mocked(llm.callSupervisorLLM).mock.calls.length).toBeLessThanOrEqual(20);
@@ -297,6 +311,55 @@ describe('Schema-first supervisor loop', () => {
           }),
         })
       );
+    } finally {
+      await fs.rm(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('does not mark a finalized run completed when TodoList contains needs_human work', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-needs-human-todo-'));
+    const needsHumanTodos = [
+      {
+        id: 'todo-1',
+        runId: 'run-1',
+        seq: 1,
+        title: '実装対象を確認する',
+        taskType: 'investigation',
+        status: 'needs_human',
+        statusReason: 'Project root is empty.',
+      },
+    ];
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue(needsHumanTodos as any);
+
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        jobType: 'major_code_edit',
+        goal: '仕様書に沿って実装する',
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'finalize_answer',
+          arguments: { message: '既存ファイルがないため対応できません。' },
+        },
+      });
+
+    try {
+      const result = await runSupervisorLoop({
+        runId: 'run-1',
+        repoRoot,
+        prompt: '現在のSpecification artifactを実装して',
+        timeoutSeconds: 60,
+      });
+
+      expect(result.terminalState).toBe('needs_human');
+      expect(repo.updateTaskRun).toHaveBeenCalledWith(
+        'run-1',
+        expect.objectContaining({
+          status: 'needs_human',
+          finalReport: '既存ファイルがないため対応できません。',
+        })
+      );
+      expect(repo.updateTaskStatus).toHaveBeenCalledWith('task-1', 'needs_human');
     } finally {
       await fs.rm(repoRoot, { recursive: true, force: true });
     }
@@ -371,14 +434,14 @@ describe('Schema-first supervisor loop', () => {
     }
   });
 
-  it('lets the supervisor read a skill on demand and reuses the loaded summary', async () => {
-    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-read-skill-'));
+  it('lets the supervisor read a procedure on demand and reuses the loaded summary', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-read-procedure-'));
 
     vi.mocked(llm.callSupervisorLLM)
-      .mockResolvedValueOnce({ jobType: 'minor_code_edit', goal: 'skill を読んで完了する' })
+      .mockResolvedValueOnce({ jobType: 'minor_code_edit', goal: 'procedure を読んで完了する' })
       .mockResolvedValueOnce({
         toolCall: {
-          name: 'read_skill',
+          name: 'read_procedure',
           arguments: { jobType: 'minor_code_edit' },
         },
       })
@@ -393,19 +456,19 @@ describe('Schema-first supervisor loop', () => {
       const result = await runSupervisorLoop({
         runId: 'run-1',
         repoRoot,
-        prompt: 'skill を読んで完了して',
+        prompt: 'procedure を読んで完了して',
         timeoutSeconds: 60,
       });
 
       expect(result.finalReport).toBe('完了しました。');
-      const loadedSkillSummaries = parseRound2UserContextJsonSection<any[]>(
+      const loadedProcedureSummaries = parseRound2UserContextJsonSection<any[]>(
         vi.mocked(llm.callSupervisorLLM).mock.calls[2]?.[1] as string,
-        'Loaded Skill Summaries'
+        'Loaded Procedure Summaries'
       );
-      expect(loadedSkillSummaries).toEqual([
+      expect(loadedProcedureSummaries).toEqual([
         expect.objectContaining({
           jobType: 'minor_code_edit',
-          path: 'skills/minor_code_edit.md',
+          path: 'procedures/minor_code_edit.md',
           digest: expect.stringMatching(/^sha256:/),
           useWhen: expect.stringContaining('小さい変更タスク'),
           procedure: expect.arrayContaining([
@@ -418,8 +481,8 @@ describe('Schema-first supervisor loop', () => {
           .mocked(repo.createRunEvent)
           .mock.calls.some(
             (call) =>
-              call[1]?.payloadJson?.agentEventType === 'skill.loaded' &&
-              call[1]?.payloadJson?.payload?.source === 'read_skill'
+              call[1]?.payloadJson?.agentEventType === 'procedure.loaded' &&
+              call[1]?.payloadJson?.payload?.source === 'read_procedure'
           )
       ).toBe(true);
     } finally {

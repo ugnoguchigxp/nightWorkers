@@ -52,7 +52,7 @@ export function isBlueprintRouting(routing: SupervisorRoutingHypothesis | undefi
   return (
     routing.subtype === 'app_blueprint' ||
     routing.workKinds.includes('blueprint') ||
-    routing.nextSkillFiles.includes('references/work_kinds/blueprint.md')
+    routing.nextReferenceFiles.includes('references/work_kinds/blueprint.md')
   );
 }
 
