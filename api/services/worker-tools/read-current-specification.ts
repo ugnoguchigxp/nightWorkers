@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { desc, eq } from 'drizzle-orm';
+import { db } from '../../db/client';
+import { taskMessages, tasks } from '../../db/schema';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import type { WorkerToolResult } from './types';
 
@@ -19,6 +22,24 @@ export interface ReadCurrentSpecificationOutput {
     blueprintSummaryIncluded?: boolean;
     dbDdlReferenceIncluded?: boolean;
   };
+}
+
+export interface ListRecentSpecificationsInput {
+  limit?: number;
+}
+
+export interface RecentSpecificationSummary {
+  taskId: string;
+  taskTitle: string;
+  messageId: string;
+  title: string;
+  generatedAt: string;
+  digest: string;
+  contentPreview: string;
+}
+
+export interface ListRecentSpecificationsOutput {
+  specifications: RecentSpecificationSummary[];
 }
 
 export async function readCurrentSpecificationTool(
@@ -110,6 +131,79 @@ export async function readCurrentSpecificationTool(
   }
 }
 
+export async function listRecentSpecificationsTool(
+  input: ListRecentSpecificationsInput = {}
+): Promise<WorkerToolResult<ListRecentSpecificationsOutput>> {
+  const startedAt = new Date().toISOString();
+  const limit = normalizeLimit(input.limit);
+
+  try {
+    const rows = await db
+      .select({
+        messageId: taskMessages.id,
+        taskId: taskMessages.taskId,
+        taskTitle: tasks.title,
+        content: taskMessages.content,
+        metadataJson: taskMessages.metadataJson,
+        createdAt: taskMessages.createdAt,
+        messageType: taskMessages.messageType,
+      })
+      .from(taskMessages)
+      .innerJoin(tasks, eq(taskMessages.taskId, tasks.id))
+      .orderBy(desc(taskMessages.createdAt))
+      .limit(Math.max(limit * 4, 20));
+
+    const specifications: RecentSpecificationSummary[] = [];
+    for (const row of rows) {
+      if (specifications.length >= limit) break;
+      const metadata = toRecord(row.metadataJson);
+      if (row.messageType !== 'markdown_document' || metadata.intent !== 'draft_spec') continue;
+      const markdownDocumentData = isRecord(metadata.markdownDocumentData)
+        ? metadata.markdownDocumentData
+        : {};
+      const content =
+        typeof markdownDocumentData.content === 'string'
+          ? markdownDocumentData.content
+          : row.content;
+      const title =
+        typeof markdownDocumentData.title === 'string'
+          ? markdownDocumentData.title
+          : typeof metadata.title === 'string'
+            ? metadata.title
+            : 'Specification';
+      specifications.push({
+        taskId: row.taskId,
+        taskTitle: row.taskTitle,
+        messageId: row.messageId,
+        title,
+        generatedAt: String(row.createdAt),
+        digest: `sha256:${createHash('sha256').update(content).digest('hex')}`,
+        contentPreview: content.slice(0, 500),
+      });
+    }
+
+    return {
+      ok: true,
+      toolName: 'list_recent_specifications',
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      payload: { specifications },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      toolName: 'list_recent_specifications',
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      payload: { specifications: [] },
+      error: {
+        code: 'LIST_SPECIFICATIONS_FAILED',
+        message: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
+}
+
 function failedReadCurrentSpecification(
   startedAt: string,
   code: string,
@@ -140,4 +234,9 @@ function isRecord(value: unknown): value is Record<string, any> {
 
 function toRecord(value: unknown): Record<string, any> {
   return isRecord(value) ? value : {};
+}
+
+function normalizeLimit(value: number | undefined) {
+  if (!Number.isFinite(value)) return 10;
+  return Math.min(Math.max(Math.trunc(value as number), 1), 50);
 }

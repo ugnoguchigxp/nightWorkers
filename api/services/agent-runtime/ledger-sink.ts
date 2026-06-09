@@ -1,3 +1,4 @@
+import { logEvent } from '../../lib/logger';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import type { AgentRuntimeEvent, AgentRuntimeSink } from './types';
 
@@ -76,16 +77,29 @@ export function createLedgerSink(taskRunId: string): AgentRuntimeSink {
   return {
     async emit(event: AgentRuntimeEvent) {
       const mapped = EVENT_MAPPING[event.type];
-      await repo.createRunEvent({
-        version: 1,
-        runId: taskRunId,
-        timestamp: new Date().toISOString(),
-        type: mapped.canonicalType,
-        severity: mapped.severity,
-        actor: mapped.actor,
-        message: event.message.slice(0, 1000),
-        data: (event.payload as Record<string, unknown>) || {},
-      });
+      try {
+        await repo.createRunEvent({
+          version: 1,
+          runId: taskRunId,
+          timestamp: new Date().toISOString(),
+          type: mapped.canonicalType,
+          severity: mapped.severity,
+          actor: mapped.actor,
+          message: event.message.slice(0, 1000),
+          data: (event.payload as Record<string, unknown>) || {},
+        });
+      } catch (error) {
+        logEvent({
+          channel: 'agent-runtime',
+          level: 'error',
+          message: 'failed to persist runtime ledger event',
+          meta: {
+            runId: taskRunId,
+            eventType: event.type,
+            errorMessage: error instanceof Error ? error.message : String(error),
+          },
+        });
+      }
     },
   };
 }

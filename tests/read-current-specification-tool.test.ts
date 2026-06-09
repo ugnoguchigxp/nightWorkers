@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import { getAllowedToolsForJobType } from '../api/services/supervisor/prompt';
 import { executeWorkerTool } from '../api/services/worker-tools/dispatcher';
+import { listRecentSpecificationsTool } from '../api/services/worker-tools/read-current-specification';
 
 describe('read_current_specification worker tool', () => {
   it('reads the latest draft_spec markdown for a task without external MCP settings', async () => {
@@ -112,6 +113,47 @@ describe('read_current_specification worker tool', () => {
       content: '',
       messageId: null,
     });
+  });
+
+  it('lists recent draft specifications for Codex MCP discovery', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: list specs ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: listed current specification',
+      status: 'draft',
+    });
+
+    const specMessage = await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: '# Listed Specification\n\nUse this document.',
+      messageType: 'markdown_document',
+      payloadJson: {
+        intent: 'draft_spec',
+        markdownDocumentData: {
+          title: 'Listed Specification',
+          content: '# Listed Specification\n\nUse this document.',
+        },
+      },
+    });
+
+    const result = await listRecentSpecificationsTool({ limit: 20 });
+
+    expect(result.ok).toBe(true);
+    expect(result.payload.specifications).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          taskId: task.id,
+          taskTitle: 'TEST: listed current specification',
+          messageId: specMessage.id,
+          title: 'Listed Specification',
+        }),
+      ])
+    );
   });
 
   it('is available to implementation-oriented supervisor jobs', () => {

@@ -2,6 +2,7 @@ import { type ReactNode, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import type { CodeBlockData } from '@/components/ui/CodeBlock';
 import { buildTranscriptItems, type TranscriptItem } from '../activityTranscript';
+import { isUserVisibleChatMessage } from '../messageVisibility';
 import type {
   ActivityArtifact,
   ActivityEvent,
@@ -36,6 +37,7 @@ import {
   ThinkingIndicator,
 } from './ThreadTimelineStreaming';
 
+export { isUserVisibleChatMessage } from '../messageVisibility';
 export {
   findArtifactTaskMessage,
   getActivityCode,
@@ -477,16 +479,6 @@ export function buildReplaceContentCodeBlockData(input: {
       language: 'diff',
     },
   ];
-}
-
-export function isUserVisibleChatMessage(message: TaskMessage): boolean {
-  if (message.role !== 'user' && message.role !== 'assistant') return false;
-  const intent = (message.metadataJson as any)?.intent;
-  return (
-    intent !== 'blueprint_raw_output' &&
-    intent !== 'blueprint_db_design_raw_output' &&
-    intent !== 'draft_spec'
-  );
 }
 
 export function estimateReplacementStats(input: {

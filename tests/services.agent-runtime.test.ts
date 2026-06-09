@@ -49,6 +49,19 @@ describe('AgentRuntime', () => {
     );
   });
 
+  it('does not fail runtime execution when ledger persistence fails', async () => {
+    vi.mocked(repo.createRunEvent).mockRejectedValueOnce(new Error('database is locked'));
+    const sink = createLedgerSink('run-123');
+
+    await expect(
+      sink.emit({
+        type: 'tool_call_started',
+        message: 'tool started',
+        payload: { toolName: 'nightworkers.list_recent_specifications' },
+      })
+    ).resolves.toBeUndefined();
+  });
+
   it('normalizes runtime crash to failed result and runtime_error event', async () => {
     vi.mocked(supervisor.runSupervisorLoop).mockRejectedValue(new Error('supervisor exploded'));
 

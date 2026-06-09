@@ -10,14 +10,18 @@ type CodexRuntimeConfigInput = {
 export function buildCodexRuntimeSdkOptions(input: CodexRuntimeConfigInput = {}): CodexOptions {
   const env = input.env ?? process.env;
   const mcpServers = input.enableNightworkersMcp === false ? {} : buildNightWorkersMcpServers(env);
-  const sdkOptions: CodexOptions = {
-    config: {
-      features: {
-        mcp: Object.keys(mcpServers).length > 0,
-      },
+  const sdkOptions: CodexOptions = {};
+  if (input.enableNightworkersMcp === false) {
+    sdkOptions.config = {
+      features: { mcp: false },
+      mcp_servers: {},
+    };
+  } else if (Object.keys(mcpServers).length > 0) {
+    sdkOptions.config = {
+      features: { mcp: true },
       mcp_servers: mcpServers as any,
-    },
-  };
+    };
+  }
   const sanitizedEnv = Object.fromEntries(
     Object.entries(env).filter((entry): entry is [string, string] => {
       const [key, value] = entry;
@@ -58,8 +62,10 @@ function buildNightWorkersMcpServers(env: NodeJS.ProcessEnv): Record<string, unk
   if (!command) return {};
   const args = splitArgs(env.NIGHTWORKERS_CODEX_MCP_ARGS || '');
   const serverEnv: Record<string, string> = {};
-  if (env.NIGHTWORKERS_TASK_ID) serverEnv.NIGHTWORKERS_TASK_ID = env.NIGHTWORKERS_TASK_ID;
-  if (env.NIGHTWORKERS_RUN_ID) serverEnv.NIGHTWORKERS_RUN_ID = env.NIGHTWORKERS_RUN_ID;
+  for (const key of NIGHTWORKERS_MCP_ENV_KEYS) {
+    const value = env[key];
+    if (typeof value === 'string') serverEnv[key] = value;
+  }
   return {
     nightworkers: {
       command,
@@ -68,6 +74,19 @@ function buildNightWorkersMcpServers(env: NodeJS.ProcessEnv): Record<string, unk
     },
   };
 }
+
+const NIGHTWORKERS_MCP_ENV_KEYS = [
+  'DATABASE_URL',
+  'JWT_SECRET',
+  'NODE_ENV',
+  'PORT',
+  'LOG_LEVEL',
+  'NIGHTWORKERS_DESKTOP',
+  'NIGHTWORKERS_RUNTIME_DIR',
+  'NIGHTWORKERS_RESOURCE_DIR',
+  'NIGHTWORKERS_TASK_ID',
+  'NIGHTWORKERS_RUN_ID',
+];
 
 function splitArgs(value: string): string[] {
   return value

@@ -1,4 +1,9 @@
 import { AppError, NotFoundError } from '../../lib/errors';
+import { getCurrentSettings } from '../../routes/settings';
+import {
+  type RuntimeLaneResolution,
+  resolveRuntimeLane,
+} from '../../services/agent-runtime/runtime-lane';
 import {
   BlueprintDataDesignGenerationError,
   generateBlueprintDataDesignDraft,
@@ -184,6 +189,7 @@ export async function appendWorkbenchMessage(
       failureMode: 'throw',
       intent,
       artifactContext,
+      hasPriorMessages: existingMessages.length > 0,
     });
   }
 
@@ -192,6 +198,7 @@ export async function appendWorkbenchMessage(
     failureMode: 'record',
     intent,
     artifactContext,
+    hasPriorMessages: existingMessages.length > 0,
   });
   return { task: updated, run: null, messages: await repo.listTaskMessages(id) };
 }
@@ -350,6 +357,7 @@ async function handleWorkbenchIntakeMessage(
     failureMode: 'throw' | 'record';
     intent?: WorkbenchChatIntent;
     artifactContext?: WorkbenchArtifactContext | null;
+    hasPriorMessages?: boolean;
   } = {
     failureMode: 'throw',
   }
@@ -362,6 +370,42 @@ async function handleWorkbenchIntakeMessage(
   const llmPrompt = renderArtifactContextualPrompt(prompt, options.artifactContext || null);
 
   try {
+    const codexAgentIntake = resolveCodexAgentWorkbenchIntake(
+      options.intent || 'intake',
+      options.artifactContext || null,
+      Boolean(options.hasPriorMessages)
+    );
+    if (codexAgentIntake) {
+      const runnable = await repo.updateTask(taskId, {
+        title,
+        objective: task.objective || prompt,
+        acceptanceCriteria: task.acceptanceCriteria || prompt,
+        status: 'ready',
+      });
+      await repo.createTaskMessage({
+        taskId,
+        role: 'system',
+        content: 'Codex agent run started from Workbench intake.',
+        messageType: 'text',
+        payloadJson: {
+          intent: 'run_started',
+          source: 'workbench',
+          runtimeLane: codexAgentIntake.lane,
+          runtimeLaneResolution: codexAgentIntake,
+          intakeBypass: {
+            reason: 'codex-agent-runtime',
+            skippedRound1: true,
+          },
+        },
+      });
+      const run = await startTaskRun(taskId);
+      return {
+        task: (await repo.getTask(taskId)) || runnable,
+        run,
+        messages: await repo.listTaskMessages(taskId),
+      };
+    }
+
     const artifactFocusedSelection = resolveArtifactFocusedJobSelection(
       options.artifactContext || null,
       prompt
@@ -577,6 +621,23 @@ async function handleWorkbenchIntakeMessage(
   }
 }
 
+function resolveCodexAgentWorkbenchIntake(
+  intent: WorkbenchChatIntent,
+  artifactContext: WorkbenchArtifactContext | null,
+  hasPriorMessages: boolean
+): RuntimeLaneResolution | null {
+  if (intent !== 'intake') return null;
+  if (artifactContext) return null;
+  if (!hasPriorMessages) return null;
+  const settings = getCurrentSettings();
+  const runtimeLaneResolution = resolveRuntimeLane({
+    settingsRuntimeLane: settings.IMPLEMENTATION_RUNTIME_LANE,
+    activeLlmProvider: settings.ACTIVE_LLM_PROVIDER,
+    codexEnabled: settings.CODEX_ENABLED,
+  });
+  return runtimeLaneResolution.workerKind === 'codex-agent' ? runtimeLaneResolution : null;
+}
+
 class BlueprintArtifactGenerationError extends Error {
   constructor(message: string) {
     super(message);
@@ -628,7 +689,8 @@ function shouldStartImmediateWorkbenchRun(
   return (
     jobSelection.jobType === 'minor_code_edit' ||
     jobSelection.jobType === 'major_code_edit' ||
-    jobSelection.jobType === 'docs'
+    jobSelection.jobType === 'docs' ||
+    jobSelection.jobType === 'runtime_debug'
   );
 }
 
@@ -724,6 +786,18 @@ function routingForWorkbenchJobType(jobType: JobType): SupervisorRoutingHypothes
       subtype: 'design_questionnaire',
       requiredEvidence: [],
       nextReferenceFiles: [],
+      confidence: 1,
+    };
+  }
+  if (jobType === 'runtime_debug') {
+    return {
+      primaryMode: 'runtime_debug',
+      secondaryModes: ['investigation', 'test_and_verification'],
+      phase: 'investigate',
+      workKinds: [],
+      overlays: ['evidence'],
+      requiredEvidence: ['runtime logs or command output'],
+      nextReferenceFiles: ['references/modes/runtime_debug.md'],
       confidence: 1,
     };
   }

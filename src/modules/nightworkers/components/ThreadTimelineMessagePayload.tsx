@@ -1,5 +1,6 @@
 import { PanelsTopLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { isWorkspaceOnlyTaskMessage } from '../messageVisibility';
 import type { TaskMessage, WorkbenchArtifactRef } from '../types';
 import { ChatMarkdown, NightWorkersCodeBlock } from './ThreadTimelineMarkdown';
 
@@ -12,6 +13,7 @@ export function MessagePayload({
 }) {
   const { t } = useTranslation();
   const metadata = message.metadataJson as any;
+  if (isWorkspaceOnlyTaskMessage(message)) return null;
   if (metadata?.intent === 'tool_diff') {
     const codeBlock = metadata.codeBlock || {};
     const code = typeof codeBlock.code === 'string' ? codeBlock.code : message.content;

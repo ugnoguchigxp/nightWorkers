@@ -5,7 +5,10 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import type { ThreadEvent } from '@openai/codex-sdk';
 import { describe, expect, it, vi } from 'vitest';
-import { CodexAgentRuntime } from '../api/services/agent-runtime/CodexAgentRuntime';
+import {
+  buildCodexRuntimePrompt,
+  CodexAgentRuntime,
+} from '../api/services/agent-runtime/CodexAgentRuntime';
 import {
   createCodexEventMapperState,
   mapCodexThreadEvent,
@@ -28,6 +31,12 @@ describe('CodexAgentRuntime', () => {
         CODEX_SHELL: '1',
         NIGHTWORKERS_CODEX_MCP_COMMAND: '/bin/nightworkers-mcp',
         NIGHTWORKERS_CODEX_MCP_ARGS: '--stdio',
+        NIGHTWORKERS_TASK_ID: 'task-codex',
+        NIGHTWORKERS_RUN_ID: 'run-codex',
+        DATABASE_URL: 'file:/tmp/nightworkers.sqlite',
+        JWT_SECRET: 'secret-with-enough-length-for-tests',
+        NIGHTWORKERS_DESKTOP: '1',
+        NIGHTWORKERS_RUNTIME_DIR: '/tmp/nightworkers-runtime',
       } as any,
     });
 
@@ -37,6 +46,14 @@ describe('CodexAgentRuntime', () => {
         nightworkers: {
           command: '/bin/nightworkers-mcp',
           args: ['--stdio'],
+          env: {
+            DATABASE_URL: 'file:/tmp/nightworkers.sqlite',
+            JWT_SECRET: 'secret-with-enough-length-for-tests',
+            NIGHTWORKERS_DESKTOP: '1',
+            NIGHTWORKERS_RUNTIME_DIR: '/tmp/nightworkers-runtime',
+            NIGHTWORKERS_TASK_ID: 'task-codex',
+            NIGHTWORKERS_RUN_ID: 'run-codex',
+          },
         },
       },
     });
@@ -46,6 +63,35 @@ describe('CodexAgentRuntime', () => {
     });
     expect(options.env?.CODEX_THREAD_ID).toBeUndefined();
     expect(options.env?.CODEX_SHELL).toBeUndefined();
+  });
+
+  it('leaves global Codex MCP settings available when no inline NightWorkers MCP command is configured', () => {
+    const options = buildCodexRuntimeSdkOptions({
+      accessToken: 'runtime-token',
+      env: {
+        PATH: '/usr/bin',
+        CODEX_THREAD_ID: 'parent-thread',
+      } as any,
+    });
+
+    expect(options.config).toBeUndefined();
+    expect(options.env).toMatchObject({
+      PATH: '/usr/bin',
+      CODEX_ACCESS_TOKEN: 'runtime-token',
+    });
+    expect(options.env?.CODEX_THREAD_ID).toBeUndefined();
+  });
+
+  it('can explicitly disable MCP for Codex runtime', () => {
+    const options = buildCodexRuntimeSdkOptions({
+      enableNightworkersMcp: false,
+      env: { PATH: '/usr/bin' } as any,
+    });
+
+    expect(options.config).toMatchObject({
+      features: { mcp: false },
+      mcp_servers: {},
+    });
   });
 
   it('builds runtime thread options from the repository root', () => {
@@ -62,6 +108,40 @@ describe('CodexAgentRuntime', () => {
       skipGitRepoCheck: true,
       workingDirectory: '/repo/project',
     });
+  });
+
+  it('adds NightWorkers MCP planning guidance to the Codex runtime prompt', () => {
+    const prompt = buildCodexRuntimePrompt(
+      buildContext({
+        latestUserMessage: '実装計画書を作ってください',
+      })
+    );
+
+    expect(prompt).toContain('実装計画書を作ってください');
+    expect(prompt).toContain('[NightWorkers Runtime Contract]');
+    expect(prompt).toContain('taskId: task-codex');
+    expect(prompt).toContain('runId: run-codex');
+    expect(prompt).toContain('nightworkers.read_current_specification');
+    expect(prompt).toContain('nightworkers.list_recent_specifications');
+  });
+
+  it('passes the composed runtime prompt to Codex threads', async () => {
+    const thread = fakeThread([
+      { type: 'turn.started' },
+      { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+    ]);
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () => thread,
+    });
+
+    await runtime.start(buildContext({ latestUserMessage: '仕様に沿って計画して' }), {
+      emit: async () => {},
+    });
+
+    expect(thread.runStreamed).toHaveBeenCalledWith(
+      expect.stringContaining('nightworkers.read_current_specification'),
+      expect.any(Object)
+    );
   });
 
   it('maps a fake assistant turn into runtime ledger events', async () => {
@@ -307,14 +387,16 @@ describe('CodexAgentRuntime', () => {
   });
 });
 
-function buildContext(input: { repoRoot?: string; codex?: Record<string, unknown> } = {}) {
+function buildContext(
+  input: { repoRoot?: string; codex?: Record<string, unknown>; latestUserMessage?: string } = {}
+) {
   return {
     runId: 'run-codex',
     taskId: 'task-codex',
     repositoryId: 'repo-codex',
     repoRoot: input.repoRoot ?? process.cwd(),
     compiledPrompt: 'do work',
-    latestUserMessage: 'do work',
+    latestUserMessage: input.latestUserMessage ?? 'do work',
     timeoutSeconds: 60,
     contextSnapshot: {
       compiledPrompt: 'do work',

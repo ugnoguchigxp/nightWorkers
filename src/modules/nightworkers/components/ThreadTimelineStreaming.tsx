@@ -126,6 +126,12 @@ export function buildPersistedStreamingResponsePreview(input: {
 }
 
 function buildStreamingPreviewFromRaw(raw: string): StreamingPreview {
+  if (isStructuredArtifactJson(raw)) {
+    return {
+      visibleText: '',
+      statusText: 'Artifact を生成しています。',
+    };
+  }
   const visibleText = formatVisibleAssistantText(raw);
   if (visibleText !== raw && visibleText.trim()) {
     return { visibleText, statusText: '最終回答を組み立てています。' };
@@ -147,9 +153,24 @@ function buildStreamingPreviewFromRaw(raw: string): StreamingPreview {
 
 export function formatVisibleAssistantText(raw: string): string {
   const parsed = tryParseJsonObject(raw);
+  if (isStructuredArtifactJsonObject(parsed)) return '';
   const directMessage = stringValue(parsed?.message);
   const finalizeToolMessage = stringValue(parsed?.toolCall?.arguments?.message);
   return firstNonEmpty(finalizeToolMessage, directMessage) || raw;
+}
+
+function isStructuredArtifactJson(raw: string): boolean {
+  return isStructuredArtifactJsonObject(tryParseJsonObject(raw));
+}
+
+function isStructuredArtifactJsonObject(parsed: any | null): boolean {
+  return Boolean(
+    parsed &&
+      typeof parsed.title === 'string' &&
+      typeof parsed.content === 'string' &&
+      !parsed.message &&
+      !parsed.toolCall
+  );
 }
 
 function firstNonEmpty(...values: string[]): string {

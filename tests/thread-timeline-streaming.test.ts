@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPersistedStreamingResponsePreview,
+  buildStreamingResponsePreview,
   formatVisibleAssistantText,
   isUserVisibleChatMessage,
 } from '../src/modules/nightworkers/components/ThreadTimeline';
@@ -120,6 +121,21 @@ describe('ThreadTimeline streaming persistence', () => {
     expect(formatVisibleAssistantText(raw)).toBe('fizzbuzz.ts を作成しました。');
   });
 
+  it('does not render structured artifact JSON as assistant chat text', () => {
+    const raw = JSON.stringify({
+      title: 'Specification',
+      content: '# Specification\n\nWorkspace-only artifact.',
+    });
+
+    expect(formatVisibleAssistantText(raw)).toBe('');
+    expect(
+      buildStreamingResponsePreview({
+        events: [],
+        activeStreamingResponse: raw,
+      })?.visibleText
+    ).toBe('');
+  });
+
   it('builds persisted previews from schema-first response delta events', () => {
     const preview = buildPersistedStreamingResponsePreview({
       runId: 'run-1',
@@ -181,6 +197,22 @@ describe('ThreadTimeline streaming persistence', () => {
         messageType: 'markdown_document',
         metadataJson: { intent: 'draft_spec' },
         createdAt: '2026-06-08T00:00:02.000Z',
+      } as any)
+    ).toBe(false);
+
+    expect(
+      isUserVisibleChatMessage({
+        id: 'msg-reviewed-spec',
+        taskId: 'task-1',
+        role: 'assistant',
+        content: '# Reviewed Specification',
+        messageType: 'markdown_document',
+        metadataJson: {
+          intent: 'draft_spec',
+          source: 'status_document_review',
+          reviewedSourceMessageId: 'msg-spec',
+        },
+        createdAt: '2026-06-08T00:00:03.000Z',
       } as any)
     ).toBe(false);
   });

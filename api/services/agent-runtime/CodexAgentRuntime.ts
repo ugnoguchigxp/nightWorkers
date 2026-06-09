@@ -49,12 +49,9 @@ export class CodexAgentRuntime implements AgentRuntime {
       }
 
       const thread = await this.createThread(context);
-      const { events } = await thread.runStreamed(
-        context.latestUserMessage || context.compiledPrompt,
-        {
-          signal: controller.signal,
-        }
-      );
+      const { events } = await thread.runStreamed(buildCodexRuntimePrompt(context), {
+        signal: controller.signal,
+      });
 
       for await (const event of events as AsyncGenerator<ThreadEvent>) {
         if (this.cancelledRunIds.has(context.runId)) {
@@ -131,6 +128,11 @@ export class CodexAgentRuntime implements AgentRuntime {
     const { Codex } = await import('@openai/codex-sdk');
     const codexOptions = buildCodexRuntimeSdkOptions({
       accessToken: process.env.CODEX_ACCESS_TOKEN || '',
+      env: {
+        ...process.env,
+        NIGHTWORKERS_TASK_ID: context.taskId,
+        NIGHTWORKERS_RUN_ID: context.runId,
+      },
     });
     const codex = new Codex(codexOptions);
     const threadOptions = buildCodexRuntimeThreadOptions(context);
@@ -173,6 +175,23 @@ export class CodexAgentRuntime implements AgentRuntime {
     });
     return result.payload.diff;
   }
+}
+
+export function buildCodexRuntimePrompt(context: AgentRunContext): string {
+  const request = (context.latestUserMessage || context.compiledPrompt).trim();
+  const contract = [
+    '[NightWorkers Runtime Contract]',
+    `taskId: ${context.taskId}`,
+    `runId: ${context.runId}`,
+    `repoRoot: ${context.repoRoot}`,
+    '',
+    'NightWorkers MCP:',
+    '- MCP server name: nightworkers',
+    '- For planning, implementation-plan, specification, design-doc, or requirement-check work, use nightworkers.read_current_specification first.',
+    '- If the current task specification is not found, use nightworkers.list_recent_specifications to locate the relevant task, then read it by taskId.',
+    '- Ground plans and verification steps in the MCP specification content when it is available.',
+  ].join('\n');
+  return request ? `${request}\n\n${contract}` : contract;
 }
 
 function changedFilesFromDiff(diff: string): string[] {
