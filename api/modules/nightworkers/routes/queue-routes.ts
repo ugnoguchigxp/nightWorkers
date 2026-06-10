@@ -5,6 +5,9 @@ import {
   taskSchema,
 } from '../../../../shared/schemas/nightworkers.schema';
 
+const dateLikeSchema = z.union([z.string(), z.date()]);
+const jsonValueSchema = z.unknown();
+
 export const implementationQueueEntrySchema = z.object({
   id: z.string().uuid(),
   taskId: z.string().uuid(),
@@ -14,12 +17,12 @@ export const implementationQueueEntrySchema = z.object({
   queuePosition: z.number().nullable().optional(),
   processorSlot: z.number().nullable().optional(),
   activeRunId: z.string().uuid().nullable().optional(),
-  claimedAt: z.any().nullable().optional(),
-  lastHeartbeatAt: z.any().nullable().optional(),
-  archivedAt: z.any().nullable().optional(),
+  claimedAt: dateLikeSchema.nullable().optional(),
+  lastHeartbeatAt: dateLikeSchema.nullable().optional(),
+  archivedAt: dateLikeSchema.nullable().optional(),
   statusReason: z.string().nullable().optional(),
-  createdAt: z.any(),
-  updatedAt: z.any(),
+  createdAt: dateLikeSchema,
+  updatedAt: dateLikeSchema,
 });
 
 export const implementationQueueDashboardRoute = createRoute({
@@ -190,9 +193,9 @@ export const todoWorkflowSettingsSchema = z.object({
   requirePerTodoFix: z.boolean(),
   requireFinalVerification: z.boolean(),
   askCommitOnCompletion: z.boolean(),
-  hookPolicyJson: z.any().nullable().optional(),
-  createdAt: z.any(),
-  updatedAt: z.any(),
+  hookPolicyJson: jsonValueSchema.nullable().optional(),
+  createdAt: dateLikeSchema,
+  updatedAt: dateLikeSchema,
 });
 
 export const todoWorkflowSettingsInputSchema = z.object({
@@ -200,7 +203,7 @@ export const todoWorkflowSettingsInputSchema = z.object({
   requirePerTodoFix: z.boolean().optional(),
   requireFinalVerification: z.boolean().optional(),
   askCommitOnCompletion: z.boolean().optional(),
-  hookPolicyJson: z.any().optional(),
+  hookPolicyJson: jsonValueSchema.optional(),
 });
 
 export const getTodoWorkflowSettingsRoute = createRoute({

@@ -1,7 +1,15 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { client } from '../../../lib/api';
-import { apiFetch } from '../../../lib/api-base';
+import {
+  fetchBackgroundProcessesForTask,
+  fetchImplementationQueue,
+  fetchSpecificationWorkspace,
+  fetchTaskActivityEvents,
+  fetchTaskLlmUsage,
+  fetchTaskMessages,
+  fetchTodoWorkflowSettings,
+} from '../nightWorkersCommands';
 import { mergeRunEvents } from '../realtimeEvents';
 import type {
   ActivityEvent,
@@ -112,7 +120,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const { data: implementationQueue = null, isLoading: isImplementationQueueLoading } = useQuery({
     queryKey: ['implementationQueue'],
     queryFn: async () => {
-      const res = await apiFetch('/api/implementation-queue');
+      const res = await fetchImplementationQueue();
       if (!res.ok) throw new Error('Failed to fetch implementation queue');
       return (await res.json()) as ImplementationQueueDashboard;
     },
@@ -123,7 +131,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const { data: todoWorkflowSettings = null } = useQuery({
     queryKey: ['todoWorkflowSettings'],
     queryFn: async () => {
-      const res = await apiFetch('/api/todo-workflow/settings');
+      const res = await fetchTodoWorkflowSettings();
       if (!res.ok) throw new Error('Failed to fetch Todo Workflow settings');
       return (await res.json()) as TodoWorkflowSettings;
     },
@@ -148,7 +156,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     queryKey: ['taskMessages', activeSessionId],
     queryFn: async () => {
       if (!activeSessionId) return [];
-      const res = await apiFetch(`/api/tasks/${activeSessionId}/messages`);
+      const res = await fetchTaskMessages(activeSessionId);
       if (!res.ok) throw new Error('Failed to fetch task messages');
       return (await res.json()) as TaskMessage[];
     },
@@ -161,7 +169,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     queryKey: ['specificationWorkspace', activeSessionId],
     queryFn: async () => {
       if (!activeSessionId) return null;
-      const res = await apiFetch(`/api/tasks/${activeSessionId}/specification-workspace`);
+      const res = await fetchSpecificationWorkspace(activeSessionId);
       if (!res.ok) throw new Error('Failed to fetch specification workspace');
       return (await res.json()) as BlueprintSpecificationWorkspace;
     },
@@ -174,7 +182,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     queryKey: ['llmUsage', activeSessionId],
     queryFn: async () => {
       if (!activeSessionId) return null;
-      const res = await apiFetch(`/api/tasks/${activeSessionId}/llm-usage`);
+      const res = await fetchTaskLlmUsage(activeSessionId);
       if (!res.ok) throw new Error('Failed to fetch LLM usage summary');
       return (await res.json()) as TaskLlmUsageSummary;
     },
@@ -187,7 +195,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     queryKey: ['activityReplay', activeSessionId],
     queryFn: async () => {
       if (!activeSessionId) return emptyActivityReplay;
-      const res = await apiFetch(`/api/tasks/${activeSessionId}/activity-events`);
+      const res = await fetchTaskActivityEvents(activeSessionId);
       if (!res.ok) throw new Error('Failed to fetch activity events');
       return normalizeActivityReplay(await res.json());
     },
@@ -202,7 +210,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     queryKey: ['backgroundProcesses', activeSessionId],
     queryFn: async () => {
       if (!activeSessionId) return [];
-      const res = await apiFetch(`/api/background-processes?taskId=${activeSessionId}`);
+      const res = await fetchBackgroundProcessesForTask(activeSessionId);
       if (!res.ok) throw new Error('Failed to fetch background processes');
       return (await res.json()) as BackgroundProcess[];
     },

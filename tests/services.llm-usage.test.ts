@@ -26,6 +26,36 @@ describe('LLM usage normalization', () => {
       cachedInputTokens: 20,
       reasoningOutputTokens: 7,
       mode: 'measured',
+      rawUsage: {
+        prompt_tokens: 123,
+        completion_tokens: 45,
+        total_tokens: 168,
+      },
+    });
+  });
+
+  it('keeps provider raw usage separate from fallback prompt estimates', () => {
+    const rawUsage = {
+      input_tokens: 10,
+      output_tokens: 3,
+      total_tokens: 13,
+    };
+    const usage = normalizeProviderUsage({
+      provider: 'openai',
+      rawUsage,
+      fallback: {
+        systemPrompt: 'this fallback prompt is only for estimates',
+        userPrompt: 'do not merge this text into raw usage',
+        responseText: 'fallback response estimate',
+      },
+    });
+
+    expect(usage).toMatchObject({
+      inputTokens: 10,
+      outputTokens: 3,
+      totalTokens: 13,
+      mode: 'measured',
+      rawUsage,
     });
   });
 

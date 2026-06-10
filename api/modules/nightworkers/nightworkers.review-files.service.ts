@@ -127,13 +127,13 @@ export async function browseLocalFolders(targetPath?: string) {
       parentPath,
       directories,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     const parentPath = baseDir === '/' ? null : path.dirname(baseDir);
     return {
       currentPath: baseDir,
       parentPath,
       directories: [],
-      error: err.message,
+      error: err instanceof Error ? err.message : String(err),
     };
   }
 }

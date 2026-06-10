@@ -1,11 +1,58 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { blueprintCatalog } from '../api/services/blueprint-catalog';
-import { parseAndValidateBlueprintOutput } from '../api/services/blueprints/llm-draft';
+import {
+  buildPlanModeBlueprintRequestContract,
+  parseAndValidateBlueprintOutput,
+} from '../api/services/blueprints/llm-draft';
 import { validateAppBlueprint } from '../api/services/blueprints/validation';
 import { representativeAppBlueprint } from './fixtures/app-blueprint';
 import { canonicalBadAppBlueprint } from './fixtures/bad-app-blueprint';
 
 describe('Blueprint validation service', () => {
+  it('keeps regular Blueprint generation request contract separate from DB Design', () => {
+    const contract = buildPlanModeBlueprintRequestContract({
+      taskId: 'task-blueprint-contract',
+      title: 'Kanban preview',
+      prompt: 'カード管理の完成イメージを見たい',
+    });
+
+    expect(contract).toMatchObject({
+      schemaName: 'app_blueprint',
+      requiredArtifact: 'AppBlueprint JSON',
+      regularBlueprintDataContract: {
+        databaseSchema: { tables: [], relations: [] },
+        dataBindings: [],
+        sectionDataBindingId: 'forbidden',
+        dbDesignWorkflowOnly: true,
+      },
+      userRequest: {
+        taskId: 'task-blueprint-contract',
+        title: 'Kanban preview',
+        userRequest: 'カード管理の完成イメージを見たい',
+        requiredArtifact: 'AppBlueprint JSON',
+      },
+    });
+    expect(contract.referenceDocuments.map((document) => document.relativePath)).toContain(
+      'references/work_kinds/blueprint.md'
+    );
+  });
+
+  it('documents the regular Blueprint and DB Design boundary in the work-kind reference', () => {
+    const reference = readFileSync(
+      join(
+        process.cwd(),
+        'api/services/supervisor/skills/builtin/references/work_kinds/blueprint.md'
+      ),
+      'utf8'
+    );
+
+    expect(reference).toContain('通常 Blueprint では `databaseSchema.tables`');
+    expect(reference).toContain('DB Design workflow');
+    expect(reference).toContain('`dataBindings`');
+  });
+
   it('parses fenced Blueprint JSON through shared repair and keeps regular Blueprint data empty', () => {
     const regularBlueprint = {
       ...representativeAppBlueprint,

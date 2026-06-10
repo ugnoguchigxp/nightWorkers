@@ -94,7 +94,7 @@ export const runEventJsonlLineSchema = z.discriminatedUnion('type', [
     runId: z.string().uuid(),
     seq: z.number().int(),
     event: runEventSchema,
-    reviewResult: z.any().optional(),
+    reviewResult: z.unknown().optional(),
   }),
   z.object({
     type: z.literal('run_summary'),
@@ -103,7 +103,7 @@ export const runEventJsonlLineSchema = z.discriminatedUnion('type', [
     status: z.string(),
     summary: z.string().nullable().optional(),
     finalReport: z.string().nullable().optional(),
-    finalJudgment: z.any().nullable().optional(),
+    finalJudgment: z.unknown().nullable().optional(),
     todos: z
       .array(
         z.object({
@@ -114,7 +114,7 @@ export const runEventJsonlLineSchema = z.discriminatedUnion('type', [
           status: z.string(),
           procedureId: z.string().nullable().optional(),
           statusReason: z.string().nullable().optional(),
-          completionGateResult: z.any().nullable().optional(),
+          completionGateResult: z.unknown().nullable().optional(),
         })
       )
       .optional(),

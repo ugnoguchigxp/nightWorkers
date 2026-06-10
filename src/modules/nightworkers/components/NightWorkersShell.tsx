@@ -1,20 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
-import { apiFetch } from '../../../lib/api-base';
 import { useWorkspaceAppearanceState } from '../contexts/WorkspaceAppearanceContext';
 import {
   useWorkspaceLayoutActions,
   useWorkspaceLayoutState,
 } from '../contexts/WorkspaceLayoutContext';
 import type { NightWorkersWorkspaceState } from '../hooks/useNightWorkersWorkspace';
+import {
+  fetchDesignQuestionnaireSession,
+  fetchSpecificationWorkspace,
+} from '../nightWorkersCommands';
 import type {
   ProjectSafetyPolicy,
   TaskMessage,
   ThinkingDepth,
-  WorkbenchArtifactContext,
   WorkbenchArtifactRef,
   WorkbenchChatIntent,
 } from '../types';
+import {
+  buildArtifactContext,
+  buildBlueprintArtifactRef,
+  buildQuestionnaireWorkspaceArtifactRef,
+} from '../workbenchSelectors';
 import { ArtifactPane } from './ArtifactPane';
 import { FolderBrowserDialog } from './FolderBrowserDialog';
 import { ImplementationQueueScreen } from './ImplementationQueueScreen';
@@ -35,109 +42,9 @@ type NightWorkersShellProps = {
   onCloseFolderBrowser: () => void;
 };
 
-function buildBlueprintArtifactRef(message: TaskMessage): WorkbenchArtifactRef {
-  const metadata = message.metadataJson || {};
-  const blueprint = metadata.appBlueprint || {};
-  const title = blueprint.name || metadata.display?.title || metadata.title || 'App Blueprint';
-  const artifactId = metadata.artifactRef?.artifactId;
-  return {
-    id: typeof artifactId === 'string' ? `artifact-${artifactId}` : `message-${message.id}`,
-    taskId: message.taskId,
-    runId: message.runId || undefined,
-    kind: 'app_blueprint',
-    title: `Blueprint: ${title}`,
-    summary: String(metadata.display?.summary || message.content.slice(0, 160)),
-    source:
-      typeof artifactId === 'string'
-        ? { type: 'artifact_row', artifactId }
-        : { type: 'task_message', messageId: message.id },
-    createdAt: String(message.createdAt),
-    metadata,
-  };
-}
-
-function buildQuestionnaireWorkspaceArtifactRef(message: TaskMessage): WorkbenchArtifactRef {
-  return {
-    id: `blueprint-workspace-${message.taskId}`,
-    taskId: message.taskId,
-    runId: message.runId || undefined,
-    kind: 'blueprint_workspace',
-    title: 'Specification Workspace',
-    summary: message.content.slice(0, 160),
-    source: { type: 'task_message', messageId: message.id },
-    createdAt: String(message.createdAt),
-    metadata: {
-      specificationSource: 'design_questionnaire_ready',
-      questionnaireSessionId: message.metadataJson?.questionnaireSessionId,
-      initialTab: 'questionnaire',
-    },
-  };
-}
-
 function asProjectSafetyPolicy(value: unknown): ProjectSafetyPolicy {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return value as ProjectSafetyPolicy;
-}
-
-function toRecord(value: unknown): Record<string, any> | null {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, any>)
-    : null;
-}
-
-function buildArtifactContext(
-  artifact: WorkbenchArtifactRef | null,
-  activeSessionId: string | null
-): WorkbenchArtifactContext | null {
-  if (!artifact || artifact.taskId !== activeSessionId) return null;
-  const metadata = artifact.metadata || {};
-  const appBlueprint = toRecord(metadata.appBlueprint);
-  const screens = Array.isArray(appBlueprint?.screens) ? appBlueprint.screens : [];
-  const screenNames = screens
-    .map((screen) => toRecord(screen))
-    .filter((screen): screen is Record<string, any> => Boolean(screen))
-    .map((screen) => String(screen.name || screen.id || ''))
-    .filter(Boolean)
-    .slice(0, 6);
-  const sectionNames = screens
-    .flatMap((screen) => {
-      const record = toRecord(screen);
-      return Array.isArray(record?.sections) ? record.sections : [];
-    })
-    .map((section) => toRecord(section))
-    .filter((section): section is Record<string, any> => Boolean(section))
-    .map((section) =>
-      String(section.name || section.title || section.componentName || section.id || '')
-    )
-    .filter(Boolean)
-    .slice(0, 10);
-  const tables = Array.isArray(toRecord(appBlueprint?.databaseSchema)?.tables)
-    ? (toRecord(appBlueprint?.databaseSchema)?.tables as unknown[])
-    : [];
-  const tableNames = tables
-    .map((table) => toRecord(table))
-    .filter((table): table is Record<string, any> => Boolean(table))
-    .map((table) => String(table.label || table.name || ''))
-    .filter(Boolean)
-    .slice(0, 10);
-  return {
-    artifactId: artifact.id,
-    kind: artifact.kind,
-    title: artifact.title,
-    summary: artifact.summary,
-    source: artifact.source,
-    metadata: {
-      intent: typeof metadata.intent === 'string' ? metadata.intent : undefined,
-      artifactType: typeof metadata.artifactType === 'string' ? metadata.artifactType : undefined,
-      appBlueprintName: String(appBlueprint?.name || appBlueprint?.id || '') || undefined,
-      screenNames: screenNames.length ? screenNames : undefined,
-      sectionNames: sectionNames.length ? sectionNames : undefined,
-      tableNames: tableNames.length ? tableNames : undefined,
-      initialTab: typeof metadata.initialTab === 'string' ? metadata.initialTab : undefined,
-      blueprintCount:
-        typeof metadata.blueprintCount === 'number' ? metadata.blueprintCount : undefined,
-    },
-  };
 }
 
 type ArtifactPaneFocus =
@@ -285,8 +192,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     if (!sessionId) return false;
     for (let attempt = 0; attempt < 6; attempt += 1) {
       const [workspaceRes, sessionRes] = await Promise.all([
-        apiFetch(`/api/tasks/${message.taskId}/specification-workspace`),
-        apiFetch(`/api/tasks/${message.taskId}/design-questionnaire/${sessionId}`),
+        fetchSpecificationWorkspace(message.taskId),
+        fetchDesignQuestionnaireSession(message.taskId, sessionId),
       ]);
       if (workspaceRes.ok && sessionRes.ok) {
         const questionnaireSession = await sessionRes.json();

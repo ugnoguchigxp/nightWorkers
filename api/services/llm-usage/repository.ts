@@ -104,7 +104,7 @@ export async function summarizeLlmUsageForTask(taskId: string) {
   const callCount = Number(row?.callCount ?? 0);
   const measuredCallCount = Number(row?.measuredCallCount ?? 0);
   const estimatedCallCount = Number(row?.estimatedCallCount ?? 0);
-  const mixedCallCount = Number((row as any)?.mixedCallCount ?? 0);
+  const mixedCallCount = Number(row?.mixedCallCount ?? 0);
   const usageMode =
     callCount === 0
       ? 'unavailable'

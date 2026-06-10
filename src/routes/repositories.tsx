@@ -4,6 +4,7 @@ import { FolderGit2, GitBranch, Plus, Shield, Terminal, Trash2 } from 'lucide-re
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { client } from '../lib/api';
+import type { CreateProjectInput } from '../modules/nightworkers/types';
 
 export const Route = createFileRoute('/repositories')({
   component: RepositoriesPage,
@@ -32,13 +33,8 @@ function RepositoriesPage() {
 
   // Create Repository Mutation
   const createRepoMutation = useMutation({
-    mutationFn: async (data: {
-      name: string;
-      localPath: string;
-      branch: string;
-      safetyPolicy?: any;
-    }) => {
-      const res = await client.repositories.$post({ json: data as any });
+    mutationFn: async (data: CreateProjectInput) => {
+      const res = await client.repositories.$post({ json: data });
       if (!res.ok) throw new Error('Failed to create repository');
       return res.json();
     },

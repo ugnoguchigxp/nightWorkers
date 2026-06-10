@@ -2,6 +2,7 @@ import { and, eq, gt, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { activityArtifacts, activityEvents } from '../../db/schema';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
+import { activityPayloadJson, isJsonRecord, type JsonRecord } from './nightworkers.json-adapters';
 import type { ActivitySource, ActivityStatus } from './nightworkers.repository';
 
 const KNOWN_ACTIVITY_KINDS = new Set([
@@ -51,22 +52,11 @@ export function taskMessageRoleToActivityKind(role: string) {
   return 'system.info';
 }
 
-export function getToolDiffActivityKind(payload: any) {
-  if (payload?.intent !== 'tool_diff') return null;
-  if (payload?.toolName === 'apply_patch') return 'file.patch';
-  if (payload?.toolName === 'replace_content') return 'file.diff';
+export function getToolDiffActivityKind(payload: unknown) {
+  if (!isJsonRecord(payload) || payload.intent !== 'tool_diff') return null;
+  if (payload.toolName === 'apply_patch') return 'file.patch';
+  if (payload.toolName === 'replace_content') return 'file.diff';
   return 'file.diff';
-}
-
-export function activityPayloadJson(payload: any, normalizedKind: string, originalKind: string) {
-  const base =
-    payload && typeof payload === 'object' && !Array.isArray(payload)
-      ? payload
-      : payload === undefined
-        ? {}
-        : { rawPayload: payload };
-  if (normalizedKind === originalKind) return base;
-  return { ...base, originalKind, rawPayload: payload };
 }
 
 export function taskMessageRoleToActivitySource(role: string): ActivitySource {
@@ -122,16 +112,27 @@ export function runEventToActivityKind(
   return 'unknown.activity';
 }
 
-export function schemaFirstAgentEventType(payload: any): string | null {
-  const direct = payload?.agentEventType;
+export function schemaFirstAgentEventType(payload: unknown): string | null {
+  if (!isJsonRecord(payload)) return null;
+  const direct = payload.agentEventType;
   if (typeof direct === 'string') return direct;
-  const dataEventType = payload?.runEvent?.data?.agentEventType;
+  const runEvent = isJsonRecord(payload.runEvent) ? payload.runEvent : {};
+  const runEventData = isJsonRecord(runEvent.data) ? runEvent.data : {};
+  const dataEventType = runEventData.agentEventType;
   if (typeof dataEventType === 'string') return dataEventType;
   return null;
 }
 
-export function schemaFirstPayload(payload: any): any {
-  return payload?.payload ?? payload?.runEvent?.data?.payload ?? payload?.runEvent?.data ?? {};
+export function schemaFirstPayload(payload: unknown): JsonRecord {
+  if (!isJsonRecord(payload)) return {};
+  const runEvent = isJsonRecord(payload.runEvent) ? payload.runEvent : {};
+  const runEventData = isJsonRecord(runEvent.data) ? runEvent.data : {};
+  const nestedPayload = isJsonRecord(payload.payload)
+    ? payload.payload
+    : isJsonRecord(runEventData.payload)
+      ? runEventData.payload
+      : null;
+  return nestedPayload ?? runEventData;
 }
 
 export function shouldProjectRunEventToActivity(input: {
@@ -174,13 +175,14 @@ export function runEventToActivityText(input: {
   eventType?: string | null;
   agentEventType?: string | null;
   message: string;
-  payload: any;
+  payload: unknown;
 }) {
   const payload = schemaFirstPayload(input.payload);
+  const inputPayload = isJsonRecord(input.payload) ? input.payload : {};
+  const runEvent = isJsonRecord(inputPayload.runEvent) ? inputPayload.runEvent : {};
+  const runEventData = isJsonRecord(runEvent.data) ? runEvent.data : {};
   if (input.agentEventType === 'model.response_finished') {
-    return String(
-      input.payload?.rawContent || input.payload?.runEvent?.data?.rawContent || input.message || ''
-    );
+    return String(inputPayload.rawContent || runEventData.rawContent || input.message || '');
   }
   if (input.agentEventType === 'round1.parsed' || input.agentEventType === 'round2.parsed') {
     return JSON.stringify(payload, null, 2);
@@ -231,7 +233,7 @@ export function runEventToActivityText(input: {
   return input.message;
 }
 
-function formatToolRunEventActivityText(message: string, payload: any) {
+function formatToolRunEventActivityText(message: string, payload: JsonRecord) {
   const toolName = String(payload.toolName || 'tool');
   const command = typeof payload.command === 'string' ? payload.command : '';
   const status = typeof payload.status === 'string' ? payload.status : '';
@@ -246,7 +248,7 @@ function formatToolRunEventActivityText(message: string, payload: any) {
   return header || message;
 }
 
-function formatDiffRunEventActivityText(message: string, payload: any) {
+function formatDiffRunEventActivityText(message: string, payload: JsonRecord) {
   const changedFiles = Array.isArray(payload.changedFiles)
     ? payload.changedFiles.filter((file: unknown): file is string => typeof file === 'string')
     : [];
@@ -288,7 +290,7 @@ export async function appendActivityArtifact(data: {
   kind: string;
   path?: string | null;
   contentText?: string | null;
-  metadataJson?: any;
+  metadataJson?: unknown;
 }) {
   const [artifact] = await db
     .insert(activityArtifacts)
@@ -314,7 +316,7 @@ export async function appendActivityEvent(data: {
   source: ActivitySource | string;
   status?: ActivityStatus | string | null;
   text?: string | null;
-  payloadJson?: any;
+  payloadJson?: unknown;
   artifactId?: string | null;
   clientTempId?: string | null;
   externalId?: string | null;

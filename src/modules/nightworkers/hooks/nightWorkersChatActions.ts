@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { MutableRefObject } from 'react';
-import { apiFetch } from '../../../lib/api-base';
+import { appendWorkbenchMessage } from '../nightWorkersCommands';
 import type {
   Task,
   TaskMessage,
@@ -138,15 +138,11 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
         setPendingAssistantTaskId(null);
       }
       try {
-        const res = await apiFetch(`/api/workbench/sessions/${sessionId}/messages`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: content,
-            intent,
-            waitForIntake: true,
-            ...(artifactContext ? { artifactContext } : {}),
-          }),
+        const res = await appendWorkbenchMessage(sessionId, {
+          prompt: content,
+          intent,
+          waitForIntake: true,
+          ...(artifactContext ? { artifactContext } : {}),
         });
         if (!res.ok) throw new Error(await res.text());
         const result = (await res.json()) as WorkbenchMessageResult;

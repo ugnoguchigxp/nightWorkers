@@ -5,6 +5,7 @@ import type { CodeBlockData } from '@/components/ui/CodeBlock';
 import type { ReviewResult, TaskEvent } from '../types';
 import {
   asNumber,
+  asRecord,
   asString,
   buildApplyPatchCodeBlockData,
   buildReplaceContentCodeBlockData,
@@ -57,11 +58,11 @@ export function AgentEditSummaryCard({ event }: { event: TaskEvent }) {
 }
 
 export function ReviewerEvaluationCard({ event }: { event: TaskEvent }) {
-  const payload = event.payloadJson as any;
-  const runEvent = payload?.runEvent;
+  const payload = asRecord(event.payloadJson);
+  const runEvent = asRecord(payload.runEvent);
   if (!isReviewerEvaluationEvent(event)) return null;
-  const data = runEvent?.data || {};
-  const eventType = runEvent?.type || event.eventType || event.type;
+  const data = asRecord(runEvent.data);
+  const eventType = runEvent.type || event.eventType || event.type;
   const status = data.status || (eventType === 'review.evaluation_started' ? 'started' : 'loaded');
   const verdict = data.finalReviewerVerdict || data.deterministicVerdict;
   const blockingCount = data.blockingFindingCount;
@@ -93,8 +94,9 @@ export function ReviewerEvaluationCard({ event }: { event: TaskEvent }) {
 }
 
 export function isReviewerEvaluationEvent(event: TaskEvent): boolean {
-  const payload = event.payloadJson as any;
-  const type = payload?.runEvent?.type || event.eventType || event.type;
+  const payload = asRecord(event.payloadJson);
+  const runEvent = asRecord(payload.runEvent);
+  const type = runEvent.type || event.eventType || event.type;
   return (
     type === 'review.rubric_loaded' ||
     type === 'review.evaluation_started' ||
@@ -111,13 +113,15 @@ export function hasAgentEditSummary(event: TaskEvent): boolean {
 export function AgentDebugEventCard({ event }: { event: TaskEvent }) {
   const { t } = useTranslation();
   const [copiedEventId, setCopiedEventId] = useState<string | null>(null);
-  const payload = event.payloadJson as any;
-  const runEventType = payload?.runEvent?.type;
-  const reviewResult = payload?.reviewResult;
-  const toolName = payload?.toolName || payload?.toolCall?.name;
+  const payload = asRecord(event.payloadJson);
+  const runEvent = asRecord(payload.runEvent);
+  const toolCall = asRecord(payload.toolCall);
+  const runEventType = asString(runEvent.type);
+  const reviewResult = asRecord(payload.reviewResult) as ReviewResult | null;
+  const toolName = asString(payload.toolName || toolCall.name);
   const patchContent = getApplyPatchContent(payload);
-  const round = payload?.round;
-  const phase = payload?.phase;
+  const round = payload.round;
+  const phase = asString(payload.phase);
   const patchLines = typeof patchContent === 'string' ? patchContent.split('\n') : [];
 
   return (
@@ -238,10 +242,11 @@ export type AgentEditSummary = {
 };
 
 export function getAgentEditSummary(event: TaskEvent): AgentEditSummary | null {
-  const payload = event.payloadJson as any;
+  const payload = event.payloadJson;
   const toolName = getToolName(payload);
-  const args = getToolArguments(payload);
-  const result = getToolResult(payload);
+  const args = asRecord(getToolArguments(payload));
+  const result = asRecord(getToolResult(payload));
+  const resultPayload = asRecord(result.payload);
 
   if (toolName === 'apply_patch') {
     const patchContent = asString(args?.patchContent || getApplyPatchContent(payload));
@@ -255,16 +260,16 @@ export function getAgentEditSummary(event: TaskEvent): AgentEditSummary | null {
     if (changedFiles.length > 0) {
       return {
         toolName,
-        sections: changedFiles.map((path) => ({ path, detail: result?.ok ? 'applied' : 'failed' })),
+        sections: changedFiles.map((path) => ({ path, detail: result.ok ? 'applied' : 'failed' })),
       };
     }
     return null;
   }
 
   if (toolName === 'replace_content') {
-    const filePath = asString(args?.filePath || result?.payload?.filePath);
+    const filePath = asString(args.filePath || resultPayload.filePath);
     if (!filePath.trim()) return null;
-    const occurrences = asNumber(result?.payload?.occurrences);
+    const occurrences = asNumber(resultPayload.occurrences);
     const estimate = estimateReplacementStats({
       needle: asString(args?.needle),
       replacement: asString(args?.replacement),

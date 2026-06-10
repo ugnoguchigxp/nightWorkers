@@ -37,6 +37,8 @@ artifacts, diffs, todos, settings, and provider usage records.
 - Structured run lifecycle with task/run/event persistence, so run outcomes do
   not depend on a live chat connection
 - Model-provider aware LLM settings (OpenAI, Azure OpenAI, Bedrock, Codex SDK)
+- Explicit separation between structured LLM providers and the implementation
+  runtime lane such as `codex-agent`
 - Non-authenticated MCP Server settings for the coding agent
 - Agent Hooks settings for lifecycle command / HTTP automation
 - Chat-first workbench flow with explicit Implementation Queue admission and run execution
@@ -158,10 +160,11 @@ desktop resource directory.
 
 Provider calls can include the current user request, supervisor prompt context,
 StateCard continuity context when enabled, tool/result summaries, and relevant
-artifact or task context. Usage records are normalized and stored locally. MCP
-servers and Agent Hooks are configured locally, reject secret-like auth inputs
-in the current implementation slice, and run through NightWorkers evidence
-paths instead of bypassing the ledger.
+artifact or task context. Usage records are normalized and stored locally.
+Structured providers handle schema-first reasoning and generation; the runtime
+lane handles repository execution. MCP servers and Agent Hooks are configured
+locally, reject secret-like auth inputs in the current implementation slice,
+and run through NightWorkers evidence paths instead of bypassing the ledger.
 
 Read [Trust Model](./spec/docs/trust-model.md) before connecting provider
 credentials, MCP servers, hooks, or a repository that contains sensitive data.

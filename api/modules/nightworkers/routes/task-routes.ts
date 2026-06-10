@@ -433,7 +433,7 @@ export const appendWorkbenchMessageRoute = createRoute({
   },
   responses: {
     200: {
-      content: { 'application/json': { schema: z.any() } },
+      content: { 'application/json': { schema: z.unknown() } },
       description: 'Workbench message handled',
     },
     404: { description: 'Task not found' },
@@ -526,7 +526,7 @@ export const generateDesignQuestionnaireReviewRoute = createRoute({
   },
   responses: {
     200: {
-      content: { 'application/json': { schema: z.any() } },
+      content: { 'application/json': { schema: z.unknown() } },
       description: 'Design Questionnaire review generated',
     },
   },
@@ -603,7 +603,7 @@ export const generateSpecificationStatusBlueprintRoute = createRoute({
   },
   responses: {
     200: {
-      content: { 'application/json': { schema: z.any() } },
+      content: { 'application/json': { schema: z.unknown() } },
       description: 'Blueprint generated from Status',
     },
   },
@@ -623,7 +623,7 @@ export const generateSpecificationStatusDbDesignRoute = createRoute({
   },
   responses: {
     200: {
-      content: { 'application/json': { schema: z.any() } },
+      content: { 'application/json': { schema: z.unknown() } },
       description: 'DB Design generated from Status',
     },
   },
@@ -643,7 +643,7 @@ export const generateSpecificationStatusDesignDocumentRoute = createRoute({
   },
   responses: {
     200: {
-      content: { 'application/json': { schema: z.any() } },
+      content: { 'application/json': { schema: z.unknown() } },
       description: 'Specification generated from Status',
     },
   },

@@ -290,7 +290,7 @@ export const createReviewerReplayEvaluationRequestSchema = z
     rubricId: z.string().default('basic-coding-run'),
     mode: z.enum(['deterministic_only', 'llm_assisted']).default('deterministic_only'),
     jsonl: z.string().optional(),
-    parsedJsonl: z.any().optional(),
-    replayResult: z.any().optional(),
+    parsedJsonl: z.unknown().optional(),
+    replayResult: z.unknown().optional(),
   })
   .openapi('CreateReviewerReplayEvaluationRequest');

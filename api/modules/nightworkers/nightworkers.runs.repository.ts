@@ -14,6 +14,7 @@ import {
   schemaFirstPayload,
   shouldProjectRunEventToActivity,
 } from './nightworkers.activity.repository';
+import { type JsonRecord, readRunEventPayload } from './nightworkers.json-adapters';
 
 export async function createTaskRun(data: {
   taskId: string;
@@ -23,10 +24,10 @@ export async function createTaskRun(data: {
   baseRef?: string | null;
   worktreePath?: string | null;
   timeoutSeconds?: number;
-  contextSnapshot?: any;
+  contextSnapshot?: unknown;
   summary?: string | null;
   finalReport?: string | null;
-  finalJudgment?: any;
+  finalJudgment?: unknown;
   startedAt?: Date;
   endedAt?: Date;
   finishedAt?: Date;
@@ -115,15 +116,15 @@ export async function updateTaskRun(
     finishedAt?: Date;
     logContent?: string;
     diffPatch?: string;
-    testResults?: any;
+    testResults?: unknown;
     workerKind?: string;
     baseRef?: string | null;
     worktreePath?: string | null;
     timeoutSeconds?: number;
-    contextSnapshot?: any;
+    contextSnapshot?: unknown;
     summary?: string | null;
     finalReport?: string | null;
-    finalJudgment?: any;
+    finalJudgment?: unknown;
   }
 ) {
   const [run] = await db
@@ -150,9 +151,9 @@ export async function createTaskRunTodo(data: {
   taskType: string;
   status?: string;
   procedureId?: string | null;
-  procedureSnapshot?: any;
-  contextSnapshot?: any;
-  completionGateResult?: any;
+  procedureSnapshot?: unknown;
+  contextSnapshot?: unknown;
+  completionGateResult?: unknown;
   dependsOn?: Array<string | number> | null;
   statusReason?: string | null;
   startedAt?: Date | null;
@@ -177,9 +178,9 @@ export async function replaceTaskRunTodosForRun(
     taskType: string;
     status?: string;
     procedureId?: string | null;
-    procedureSnapshot?: any;
-    contextSnapshot?: any;
-    completionGateResult?: any;
+    procedureSnapshot?: unknown;
+    contextSnapshot?: unknown;
+    completionGateResult?: unknown;
     dependsOn?: Array<string | number> | null;
     statusReason?: string | null;
     startedAt?: Date | null;
@@ -227,9 +228,9 @@ export async function updateTaskRunTodo(
     taskType?: string;
     status?: string;
     procedureId?: string | null;
-    procedureSnapshot?: any;
-    contextSnapshot?: any;
-    completionGateResult?: any;
+    procedureSnapshot?: unknown;
+    contextSnapshot?: unknown;
+    completionGateResult?: unknown;
     dependsOn?: Array<string | number> | null;
     statusReason?: string | null;
     startedAt?: Date | null;
@@ -266,7 +267,7 @@ export async function createTaskEvent(data: {
   seq?: number;
   actor?: string;
   eventType?: string | null;
-  payloadJson?: any;
+  payloadJson?: unknown;
   timestamp?: Date;
 }) {
   let seq = data.seq;
@@ -306,8 +307,7 @@ export async function createRunEvent(
   });
   if (!created) return created;
 
-  const payload = (created.payloadJson || {}) as any;
-  const currentRunEvent = payload.runEvent;
+  const { payload, runEvent: currentRunEvent } = readRunEventPayload(created.payloadJson);
   if (!currentRunEvent) return created;
 
   const patchedPayload = {
@@ -327,7 +327,12 @@ export async function createRunEvent(
     .where(eq(taskEvents.id, created.id))
     .returning();
   const finalEvent = updated ?? { ...created, payloadJson: patchedPayload };
-  let taskId = event.taskId || (patchedPayload.runEvent as any)?.taskId;
+  const patchedRunEvent =
+    patchedPayload.runEvent && typeof patchedPayload.runEvent === 'object'
+      ? (patchedPayload.runEvent as JsonRecord)
+      : {};
+  let taskId =
+    event.taskId || (typeof patchedRunEvent.taskId === 'string' ? patchedRunEvent.taskId : null);
   if (!taskId) {
     const [run] = await db.select().from(taskRuns).where(eq(taskRuns.id, event.runId));
     taskId = run?.taskId;
@@ -416,7 +421,7 @@ export async function createArtifact(data: {
   runId: string;
   kind: string;
   path: string;
-  metadataJson?: any;
+  metadataJson?: unknown;
 }) {
   const [artifact] = await db.insert(artifacts).values(data).returning();
   return artifact;

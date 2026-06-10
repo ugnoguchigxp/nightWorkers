@@ -269,8 +269,16 @@ function TaskConsolePage() {
                 </div>
 
                 {runDetails?.events && runDetails.events.length > 0 ? (
-                  runDetails.events.map((evt: any) => {
-                    const runEventType = evt.payloadJson?.runEvent?.type;
+                  runDetails.events.map((evt) => {
+                    const payload = isRecord(evt.payloadJson) ? evt.payloadJson : {};
+                    const runEvent = isRecord(payload.runEvent) ? payload.runEvent : {};
+                    const runEventData = isRecord(runEvent.data) ? runEvent.data : {};
+                    const nestedPayload = isRecord(payload.payload) ? payload.payload : {};
+                    const payloadError = isRecord(payload.error) ? payload.error : null;
+                    const expectedEvidence = Array.isArray(payload.expectedEvidence)
+                      ? payload.expectedEvidence
+                      : [];
+                    const runEventType = runEvent.type;
                     const isResponseDelta = runEventType === 'model.response_delta';
                     const isSupervisor =
                       evt.actor === 'supervisor' || evt.eventType === 'supervisor_decision';
@@ -280,9 +288,7 @@ function TaskConsolePage() {
                     const isError = evt.type === 'error' || evt.eventType === 'error';
 
                     if (isResponseDelta) {
-                      const text = String(
-                        evt.payloadJson?.runEvent?.data?.text || evt.message || ''
-                      );
+                      const text = String(runEventData.text || evt.message || '');
                       return (
                         <div
                           key={evt.id}
@@ -301,7 +307,6 @@ function TaskConsolePage() {
                     }
 
                     if (isSupervisor) {
-                      const payload = evt.payloadJson;
                       return (
                         <div
                           key={evt.id}
@@ -309,7 +314,7 @@ function TaskConsolePage() {
                         >
                           <div className="flex items-center gap-2 text-amber-400 font-bold">
                             <Shield className="h-4 w-4" />
-                            <span>Supervisor: Phase {payload?.phase || 'Plan'}</span>
+                            <span>Supervisor: Phase {String(payload.phase || 'Plan')}</span>
                             <span className="text-[10px] text-zinc-500 font-mono">
                               [{new Date(evt.timestamp).toLocaleTimeString()}]
                             </span>
@@ -317,15 +322,15 @@ function TaskConsolePage() {
                           <p className="text-zinc-200 font-medium">
                             {evt.message.replace(/\[Supervisor Decision\]\s*/, '')}
                           </p>
-                          {payload?.rationale && (
+                          {payload.rationale && (
                             <p className="text-[11px] text-amber-300/80 italic font-sans">
-                              Rationale: {payload.rationale}
+                              Rationale: {String(payload.rationale)}
                             </p>
                           )}
-                          {payload?.expectedEvidence && payload.expectedEvidence.length > 0 && (
+                          {expectedEvidence.length > 0 && (
                             <div className="text-[10px] text-zinc-400 font-sans">
                               Expected Evidence:{' '}
-                              {payload.expectedEvidence.map((e: string) => `"${e}"`).join(', ')}
+                              {expectedEvidence.map((e) => `"${String(e)}"`).join(', ')}
                             </div>
                           )}
                         </div>
@@ -333,7 +338,6 @@ function TaskConsolePage() {
                     }
 
                     if (isToolCall) {
-                      const payload = evt.payloadJson;
                       return (
                         <div
                           key={evt.id}
@@ -341,12 +345,12 @@ function TaskConsolePage() {
                         >
                           <div className="flex items-center gap-2 text-blue-400 font-semibold">
                             <Terminal className="h-3.5 w-3.5" />
-                            <span>Worker: Running tool "{payload?.toolName}"</span>
+                            <span>Worker: Running tool "{String(payload.toolName || '')}"</span>
                             <span className="text-[10px] text-zinc-500 font-mono">
                               [{new Date(evt.timestamp).toLocaleTimeString()}]
                             </span>
                           </div>
-                          {payload?.arguments && (
+                          {payload.arguments && (
                             <pre className="text-[10px] text-zinc-400 bg-zinc-950 p-2 rounded border border-zinc-900 overflow-x-auto max-w-full">
                               {JSON.stringify(payload.arguments, null, 2)}
                             </pre>
@@ -356,8 +360,7 @@ function TaskConsolePage() {
                     }
 
                     if (isToolResult) {
-                      const payload = evt.payloadJson;
-                      const isSuccess = payload?.ok;
+                      const isSuccess = Boolean(payload.ok);
                       return (
                         <div
                           key={evt.id}
@@ -374,30 +377,31 @@ function TaskConsolePage() {
                           >
                             <Check className="h-3.5 w-3.5" />
                             <span>
-                              Worker: Tool "{payload?.toolName}" {isSuccess ? 'success' : 'failed'}
+                              Worker: Tool "{String(payload.toolName || '')}"{' '}
+                              {isSuccess ? 'success' : 'failed'}
                             </span>
                             <span className="text-[10px] text-zinc-500 font-mono">
                               [{new Date(evt.timestamp).toLocaleTimeString()}]
                             </span>
                           </div>
-                          {payload?.payload?.content && (
+                          {Boolean(nestedPayload.content) && (
                             <pre className="text-[10px] text-zinc-300 bg-zinc-950/80 p-2 rounded border border-zinc-900/50 overflow-y-auto max-h-[120px] whitespace-pre-wrap">
-                              {payload.payload.content}
+                              {String(nestedPayload.content)}
                             </pre>
                           )}
-                          {payload?.payload?.stdout && (
+                          {Boolean(nestedPayload.stdout) && (
                             <pre className="text-[10px] text-zinc-300 bg-zinc-950/80 p-2 rounded border border-zinc-900/50 overflow-y-auto max-h-[120px] whitespace-pre-wrap font-mono">
-                              {payload.payload.stdout}
+                              {String(nestedPayload.stdout)}
                             </pre>
                           )}
-                          {payload?.payload?.stderr && (
+                          {Boolean(nestedPayload.stderr) && (
                             <pre className="text-[10px] text-rose-300 bg-zinc-950/80 p-2 rounded border border-zinc-900/50 overflow-y-auto max-h-[120px] whitespace-pre-wrap font-mono">
-                              {payload.payload.stderr}
+                              {String(nestedPayload.stderr)}
                             </pre>
                           )}
-                          {payload?.error && (
+                          {payloadError && (
                             <p className="text-[11px] text-rose-300 font-sans">
-                              Error: {payload.error.message}
+                              Error: {String(payloadError.message || '')}
                             </p>
                           )}
                         </div>
@@ -405,7 +409,6 @@ function TaskConsolePage() {
                     }
 
                     if (isFinalReport) {
-                      const payload = evt.payloadJson;
                       return (
                         <div
                           key={evt.id}
@@ -419,15 +422,15 @@ function TaskConsolePage() {
                             </span>
                           </div>
                           <p className="text-zinc-200 text-sm whitespace-pre-wrap font-sans">
-                            {payload?.finalReport || evt.message}
+                            {String(payload.finalReport || evt.message)}
                           </p>
-                          {payload?.diffStat && (
+                          {payload.diffStat && (
                             <div>
                               <span className="text-xs text-purple-300 font-bold">
                                 Change stats:
                               </span>
                               <pre className="text-[10px] text-zinc-300 bg-zinc-950 p-2 rounded border border-zinc-900 overflow-x-auto max-w-full font-mono mt-1">
-                                {payload.diffStat}
+                                {String(payload.diffStat)}
                               </pre>
                             </div>
                           )}
@@ -530,4 +533,8 @@ function TaskConsolePage() {
       </div>
     </div>
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { resolveAgentRuntime } from '../api/services/agent-runtime/registry';
-import { resolveRuntimeLane } from '../api/services/agent-runtime/runtime-lane';
+import {
+  readRuntimeLaneConfigFromEnv,
+  resolveRuntimeLane,
+} from '../api/services/agent-runtime/runtime-lane';
 
 describe('agent runtime registry', () => {
   it('resolves native-local and codex-agent runtimes', () => {
@@ -9,7 +12,7 @@ describe('agent runtime registry', () => {
   });
 
   it('defaults runtime lane resolution to native supervisor', () => {
-    expect(resolveRuntimeLane({ env: {} })).toMatchObject({
+    expect(resolveRuntimeLane()).toMatchObject({
       lane: 'native-supervisor',
       workerKind: 'native-local',
       source: 'provider_default',
@@ -17,13 +20,43 @@ describe('agent runtime registry', () => {
   });
 
   it('allows env override for codex-agent without changing the default path', () => {
-    expect(resolveRuntimeLane({ env: { NIGHTWORKERS_RUNTIME_LANE: 'codex-agent' } })).toMatchObject(
-      {
-        lane: 'codex-agent',
-        workerKind: 'codex-agent',
-        source: 'env',
-      }
-    );
+    expect(
+      resolveRuntimeLane(readRuntimeLaneConfigFromEnv({ NIGHTWORKERS_RUNTIME_LANE: 'codex-agent' }))
+    ).toMatchObject({
+      lane: 'codex-agent',
+      workerKind: 'codex-agent',
+      source: 'env',
+    });
+  });
+
+  it('keeps the runtime lane priority at task, queue, settings, env, provider default', () => {
+    expect(
+      resolveRuntimeLane({
+        taskRuntimeLane: 'native-supervisor',
+        queueRuntimeLane: 'codex-agent',
+        settingsRuntimeLane: 'codex-agent',
+        envRuntimeLane: 'codex-agent',
+        activeLlmProvider: 'codex',
+        codexEnabled: true,
+      })
+    ).toMatchObject({ lane: 'native-supervisor', source: 'task' });
+
+    expect(
+      resolveRuntimeLane({
+        queueRuntimeLane: 'codex-agent',
+        settingsRuntimeLane: 'native-supervisor',
+        envRuntimeLane: 'native-supervisor',
+      })
+    ).toMatchObject({ lane: 'codex-agent', source: 'queue' });
+
+    expect(
+      resolveRuntimeLane({
+        settingsRuntimeLane: 'native-supervisor',
+        envRuntimeLane: 'codex-agent',
+        activeLlmProvider: 'codex',
+        codexEnabled: true,
+      })
+    ).toMatchObject({ lane: 'native-supervisor', source: 'settings' });
   });
 
   it('uses codex-agent as the provider-derived default when Codex is active and enabled', () => {
@@ -31,7 +64,6 @@ describe('agent runtime registry', () => {
       resolveRuntimeLane({
         activeLlmProvider: 'codex',
         codexEnabled: true,
-        env: {},
       })
     ).toMatchObject({
       lane: 'codex-agent',
@@ -46,7 +78,6 @@ describe('agent runtime registry', () => {
         settingsRuntimeLane: 'native-supervisor',
         activeLlmProvider: 'codex',
         codexEnabled: true,
-        env: {},
       })
     ).toMatchObject({
       lane: 'native-supervisor',
@@ -60,7 +91,6 @@ describe('agent runtime registry', () => {
       resolveRuntimeLane({
         activeLlmProvider: 'codex',
         codexEnabled: false,
-        env: {},
       })
     ).toMatchObject({
       lane: 'native-supervisor',

@@ -31,6 +31,25 @@ import { validateAppBlueprint } from './validation';
 
 type BlueprintReferenceDocumentsSummary = ReturnType<typeof summarizeSupervisorReferenceDocuments>;
 
+export type PlanModeBlueprintRequestContract = {
+  schemaName: 'app_blueprint';
+  requiredArtifact: 'AppBlueprint JSON';
+  regularBlueprintDataContract: {
+    databaseSchema: { tables: []; relations: [] };
+    dataBindings: [];
+    sectionDataBindingId: 'forbidden';
+    dbDesignWorkflowOnly: true;
+  };
+  referenceDocuments: BlueprintReferenceDocumentsSummary;
+  userRequest: {
+    taskId: string;
+    title: string;
+    userRequest: string;
+    routingHypothesis: SupervisorRoutingHypothesis | null;
+    requiredArtifact: 'AppBlueprint JSON';
+  };
+};
+
 export type BlueprintPromptDiagnostics = {
   schemaIncluded: boolean;
   schemaDigest: string;
@@ -84,6 +103,7 @@ export async function generatePlanModeBlueprintDraft(input: {
     input.routing || blueprintRoutingFallback
   );
   const referenceDocumentSummary = summarizeSupervisorReferenceDocuments(referenceDocuments);
+  const requestContract = buildPlanModeBlueprintRequestContract(input, referenceDocumentSummary);
   const appBlueprintJsonSchema = renderAppBlueprintJsonSchema();
   const promptDiagnostics = buildPromptDiagnostics(
     appBlueprintJsonSchema,
@@ -94,9 +114,9 @@ export async function generatePlanModeBlueprintDraft(input: {
       referenceContext: renderSupervisorReferenceDocuments(referenceDocuments),
       appBlueprintJsonSchema,
     }),
-    buildBlueprintUserPrompt(input),
+    JSON.stringify(requestContract.userRequest, null, 2),
     {
-      schemaName: 'app_blueprint',
+      schemaName: requestContract.schemaName,
       schema: z.toJSONSchema(appBlueprintSchema),
       emitEvent: input.emitEvent,
       taskId: input.taskId,
@@ -122,6 +142,37 @@ export async function generatePlanModeBlueprintDraft(input: {
     const message = error instanceof Error ? error.message : String(error);
     throw new BlueprintDraftGenerationError(message, { rawOutput, promptDiagnostics });
   }
+}
+
+export function buildPlanModeBlueprintRequestContract(
+  input: {
+    taskId: string;
+    title: string;
+    prompt: string;
+    routing?: SupervisorRoutingHypothesis;
+  },
+  referenceDocuments: BlueprintReferenceDocumentsSummary = summarizeSupervisorReferenceDocuments(
+    resolveSupervisorReferenceDocuments(input.routing || blueprintRoutingFallback)
+  )
+): PlanModeBlueprintRequestContract {
+  return {
+    schemaName: 'app_blueprint',
+    requiredArtifact: 'AppBlueprint JSON',
+    regularBlueprintDataContract: {
+      databaseSchema: { tables: [], relations: [] },
+      dataBindings: [],
+      sectionDataBindingId: 'forbidden',
+      dbDesignWorkflowOnly: true,
+    },
+    referenceDocuments,
+    userRequest: {
+      taskId: input.taskId,
+      title: input.title,
+      userRequest: input.prompt,
+      routingHypothesis: input.routing || null,
+      requiredArtifact: 'AppBlueprint JSON',
+    },
+  };
 }
 
 export function parseAndValidateBlueprintOutput(rawOutput: string): {
@@ -426,25 +477,6 @@ function buildBlueprintSystemPrompt(input: {
     '[Procedure Reference Context]',
     input.referenceContext,
   ].join('\n');
-}
-
-function buildBlueprintUserPrompt(input: {
-  taskId: string;
-  title: string;
-  prompt: string;
-  routing?: SupervisorRoutingHypothesis;
-}): string {
-  return JSON.stringify(
-    {
-      taskId: input.taskId,
-      title: input.title,
-      userRequest: input.prompt,
-      routingHypothesis: input.routing || null,
-      requiredArtifact: 'AppBlueprint JSON',
-    },
-    null,
-    2
-  );
 }
 
 function renderBlueprintCatalogPrompt(): string {

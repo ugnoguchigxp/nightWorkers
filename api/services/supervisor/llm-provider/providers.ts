@@ -325,7 +325,7 @@ async function callBedrockProvider(
     }),
     { abortSignal: input.signal }
   );
-  const toolUse = res.output?.message?.content?.find((block: any) => block?.toolUse);
+  const toolUse = res.output?.message?.content?.find((block) => Boolean(block.toolUse));
   if (toolUse && input.options.normalizedRequest) {
     await rejectProviderActivity({
       options: input.options,
@@ -336,18 +336,19 @@ async function callBedrockProvider(
     });
   }
   const content = res.output?.message?.content?.[0]?.text || '';
+  const usage = readProviderUsage(res);
   const providerDebug = {
     provider: 'bedrock',
     modelId,
     hasOutput: Boolean(res.output),
-    hasUsage: Boolean((res as any).usage),
+    hasUsage: Boolean(usage),
   };
   input.setProviderDebug(providerDebug);
   return {
     content,
     usage: normalizeProviderUsage({
       provider: 'bedrock',
-      rawUsage: (res as any).usage,
+      rawUsage: usage,
       fallback: {
         systemPrompt: input.systemPrompt,
         userPrompt: input.userPrompt,
@@ -357,6 +358,12 @@ async function callBedrockProvider(
     model: modelId,
     providerDebug,
   };
+}
+
+function readProviderUsage(value: unknown): unknown {
+  return value && typeof value === 'object' && 'usage' in value
+    ? (value as { usage?: unknown }).usage
+    : null;
 }
 
 async function callCodexProvider(

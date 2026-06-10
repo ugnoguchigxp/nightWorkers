@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { apiFetch } from '../../../lib/api-base';
 import {
   useWorkspaceAppearanceActions,
   useWorkspaceAppearanceState,
 } from '../contexts/WorkspaceAppearanceContext';
 import type { NightWorkersWorkspaceState } from '../hooks/useNightWorkersWorkspace';
 import { applyNightWorkersLanguage } from '../i18n/NightWorkersI18nProvider';
+import {
+  fetchGeneralSettings,
+  fetchLlmSettings,
+  refreshFxRates as refreshFxRatesCommand,
+  saveGeneralSettings as saveGeneralSettingsCommand,
+  saveLlmSettings,
+} from '../nightWorkersCommands';
 import type { GeneralSettings, LlmProvider, LlmSettings, McpServerConfig } from '../types';
 import { AppearanceSettings } from './SettingsAppearancePanel';
 import { GeneralSettingsPanel } from './SettingsGeneralPanel';
@@ -87,8 +93,8 @@ export function SettingsScreen({
 
   useEffect(() => {
     Promise.all([
-      apiFetch('/api/settings/llm').then((res) => res.json()),
-      apiFetch('/api/settings/general').then((res) => res.json()),
+      fetchLlmSettings().then((res) => res.json()),
+      fetchGeneralSettings().then((res) => res.json()),
     ])
       .then(([llmData, generalData]: [Partial<LlmSettings>, Partial<GeneralSettings>]) => {
         setSettings({ ...defaultSettings, ...llmData });
@@ -107,11 +113,7 @@ export function SettingsScreen({
       ...settings,
       ACTIVE_LLM_PROVIDER: providerOverride ?? settings.ACTIVE_LLM_PROVIDER,
     };
-    const res = await apiFetch('/api/settings/llm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updated),
-    });
+    const res = await saveLlmSettings(updated);
     if (res.ok) {
       setSettings(updated);
     } else {
@@ -128,11 +130,7 @@ export function SettingsScreen({
       ACTIVE_LLM_PROVIDER: provider,
     };
     try {
-      const saveRes = await apiFetch('/api/settings/llm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated),
-      });
+      const saveRes = await saveLlmSettings(updated);
       if (!saveRes.ok) throw new Error('設定の保存に失敗しました');
       setSettings(updated);
       const result = await workspace.runLlmSmokeTest();
@@ -156,11 +154,7 @@ export function SettingsScreen({
 
   const saveGeneralSettings = async () => {
     setGeneralMessage('');
-    const res = await apiFetch('/api/settings/general', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(generalSettings),
-    });
+    const res = await saveGeneralSettingsCommand(generalSettings);
     if (!res.ok) {
       setGeneralMessage(t('settings.general.saveFailed'));
       return;
@@ -175,7 +169,7 @@ export function SettingsScreen({
     setIsRefreshingFx(true);
     setGeneralMessage('');
     try {
-      const res = await apiFetch('/api/settings/fx/refresh', { method: 'POST' });
+      const res = await refreshFxRatesCommand();
       if (!res.ok) {
         throw new Error(t('settings.general.exchangeRefreshFailed', { status: res.status }));
       }

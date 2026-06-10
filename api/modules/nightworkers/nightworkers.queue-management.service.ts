@@ -1,4 +1,5 @@
 import { AppError, NotFoundError } from '../../lib/errors';
+import { isAutoQueueDrainEnabled } from '../../services/runtime-env';
 import {
   assertTaskDraftComplete,
   getTaskDraftMissingFields,
@@ -7,8 +8,16 @@ import {
 import * as repo from './nightworkers.repository';
 import { runImplementationQueue } from './nightworkers.run-orchestration.service';
 
-export async function queueTask(id: string) {
-  await createImplementationQueueEntry(id);
+type QueueSideEffectOptions = {
+  autoDrain?: boolean;
+};
+
+function shouldAutoDrain(options: QueueSideEffectOptions = {}) {
+  return options.autoDrain ?? isAutoQueueDrainEnabled();
+}
+
+export async function queueTask(id: string, options: QueueSideEffectOptions = {}) {
+  await createImplementationQueueEntry(id, options);
   const task = await repo.getTask(id);
   if (!task) throw new NotFoundError('Task not found');
   return task;
@@ -58,9 +67,12 @@ export async function listImplementationQueueDashboard() {
   };
 }
 
-export async function updateImplementationQueueSettings(data: { processorCount: number }) {
+export async function updateImplementationQueueSettings(
+  data: { processorCount: number },
+  options: QueueSideEffectOptions = {}
+) {
   const settings = await repo.updateImplementationQueueSettings(data);
-  void runImplementationQueue();
+  runImplementationQueueWhenEnabled(options);
   return { processorCount: settings.processorCount };
 }
 
@@ -74,7 +86,10 @@ export async function updateTodoWorkflowSettings(
   return repo.updateTodoWorkflowSettings(data);
 }
 
-export async function createImplementationQueueEntry(taskId: string) {
+export async function createImplementationQueueEntry(
+  taskId: string,
+  options: QueueSideEffectOptions = {}
+) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
   if (['completed', 'cancelled', 'failed', 'timed_out'].includes(task.status)) {
@@ -115,13 +130,14 @@ export async function createImplementationQueueEntry(taskId: string) {
     messageType: 'text',
     payloadJson: { source: 'implementation_queue', status: 'queued', queueEntryId: entry.id },
   });
-  runImplementationQueueWhenEnabled();
+  runImplementationQueueWhenEnabled(options);
   return entry;
 }
 
 export async function patchImplementationQueueEntry(
   id: string,
-  input: { action?: 'cancel' | 'resume'; priority?: number; queuePosition?: number | null }
+  input: { action?: 'cancel' | 'resume'; priority?: number; queuePosition?: number | null },
+  options: QueueSideEffectOptions = {}
 ) {
   const entry = await repo.getImplementationQueueEntry(id);
   if (!entry) throw new NotFoundError('Queue Entry not found');
@@ -145,7 +161,7 @@ export async function patchImplementationQueueEntry(
       status: 'processing',
       statusReason: null,
     });
-    void runImplementationQueue();
+    runImplementationQueueWhenEnabled(options);
     return resumed;
   }
   if (entry.status !== 'queued') {
@@ -157,7 +173,10 @@ export async function patchImplementationQueueEntry(
   });
 }
 
-export async function archiveImplementationQueueEntry(id: string) {
+export async function archiveImplementationQueueEntry(
+  id: string,
+  options: QueueSideEffectOptions = {}
+) {
   const entry = await repo.getImplementationQueueEntry(id);
   if (!entry) throw new NotFoundError('Queue Entry not found');
   if (!['execution_completed', 'failed', 'cancelled'].includes(entry.status)) {
@@ -172,11 +191,15 @@ export async function archiveImplementationQueueEntry(id: string) {
     processorSlot: null,
     archivedAt: new Date(),
   });
-  runImplementationQueueWhenEnabled();
+  runImplementationQueueWhenEnabled(options);
   return archived;
 }
 
-export async function requeueImplementationQueueEntry(id: string, input: { note?: string } = {}) {
+export async function requeueImplementationQueueEntry(
+  id: string,
+  input: { note?: string } = {},
+  options: QueueSideEffectOptions = {}
+) {
   const entry = await repo.getImplementationQueueEntry(id);
   if (!entry) throw new NotFoundError('Queue Entry not found');
   if (['queued', 'claimed', 'processing', 'awaiting_commit_decision'].includes(entry.status)) {
@@ -225,11 +248,11 @@ export async function requeueImplementationQueueEntry(id: string, input: { note?
       note: input.note?.trim() || undefined,
     },
   });
-  runImplementationQueueWhenEnabled();
+  runImplementationQueueWhenEnabled(options);
   return nextEntry;
 }
 
-function runImplementationQueueWhenEnabled() {
-  if (process.env.NIGHTWORKERS_DISABLE_AUTO_QUEUE_DRAIN === 'true') return;
+function runImplementationQueueWhenEnabled(options: QueueSideEffectOptions = {}) {
+  if (!shouldAutoDrain(options)) return;
   void runImplementationQueue();
 }

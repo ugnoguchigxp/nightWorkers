@@ -1,3 +1,4 @@
+import { readNightWorkersRuntimeEnv } from '../runtime-env';
 import type { AgentRuntimeKind } from './types';
 
 export type RuntimeLane = 'native-supervisor' | 'codex-agent';
@@ -16,17 +17,27 @@ export type RuntimeLaneInput = {
   settingsRuntimeLane?: unknown;
   activeLlmProvider?: unknown;
   codexEnabled?: unknown;
-  env?: NodeJS.ProcessEnv;
+  envRuntimeLane?: unknown;
+  envActiveLlmProvider?: unknown;
+  envCodexEnabled?: unknown;
 };
+
+export function readRuntimeLaneConfigFromEnv(env: NodeJS.ProcessEnv = process.env) {
+  const runtimeEnv = readNightWorkersRuntimeEnv(env);
+  return {
+    envRuntimeLane: runtimeEnv.NIGHTWORKERS_RUNTIME_LANE,
+    envActiveLlmProvider: runtimeEnv.ACTIVE_LLM_PROVIDER,
+    envCodexEnabled: runtimeEnv.CODEX_ENABLED,
+  } satisfies Pick<RuntimeLaneInput, 'envRuntimeLane' | 'envActiveLlmProvider' | 'envCodexEnabled'>;
+}
 
 export function resolveRuntimeLane(input: RuntimeLaneInput = {}): RuntimeLaneResolution {
   const diagnostics: RuntimeLaneResolution['diagnostics'] = [];
-  const env = input.env ?? process.env;
   const candidates: Array<{ source: RuntimeLaneSource; value: unknown }> = [
     { source: 'task', value: input.taskRuntimeLane },
     { source: 'queue', value: input.queueRuntimeLane },
     { source: 'settings', value: input.settingsRuntimeLane },
-    { source: 'env', value: env.NIGHTWORKERS_RUNTIME_LANE },
+    { source: 'env', value: input.envRuntimeLane },
   ];
 
   for (const candidate of candidates) {
@@ -51,13 +62,13 @@ export function resolveRuntimeLane(input: RuntimeLaneInput = {}): RuntimeLaneRes
   const activeProvider =
     typeof input.activeLlmProvider === 'string'
       ? input.activeLlmProvider
-      : typeof env.ACTIVE_LLM_PROVIDER === 'string'
-        ? env.ACTIVE_LLM_PROVIDER
+      : typeof input.envActiveLlmProvider === 'string'
+        ? input.envActiveLlmProvider
         : null;
   const codexEnabled =
     typeof input.codexEnabled === 'boolean'
       ? input.codexEnabled
-      : String(env.CODEX_ENABLED || '').toLowerCase() === 'true';
+      : String(input.envCodexEnabled || '').toLowerCase() === 'true';
   if (activeProvider === 'codex' && codexEnabled) {
     diagnostics.push({
       level: 'info',

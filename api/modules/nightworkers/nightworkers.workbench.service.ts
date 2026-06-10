@@ -2,6 +2,7 @@ import { AppError, NotFoundError } from '../../lib/errors';
 import { getCurrentSettings } from '../../routes/settings';
 import {
   type RuntimeLaneResolution,
+  readRuntimeLaneConfigFromEnv,
   resolveRuntimeLane,
 } from '../../services/agent-runtime/runtime-lane';
 import {
@@ -16,13 +17,13 @@ import {
 } from '../../services/blueprints/llm-draft';
 import { validateAppBlueprint } from '../../services/blueprints/validation';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
+import { shouldWaitForWorkbenchIntakeInTests } from '../../services/runtime-env';
 import {
   callSupervisorLLM,
   type SupervisorLlmDebugEvent,
 } from '../../services/supervisor/llm-provider';
-import { buildRound1JobTypePrompt, type JobType } from '../../services/supervisor/prompt';
+import { buildRound1JobTypePrompt } from '../../services/supervisor/prompt';
 import type { JobTypeSelection } from '../../services/supervisor/schema-first';
-import type { SupervisorRoutingHypothesis } from '../../services/supervisor/skills/types';
 import { createDesignQuestionnaire } from './nightworkers.design-questionnaire.service';
 import {
   assertRunnableWorkbenchTask,
@@ -31,6 +32,15 @@ import {
 import { queueTask } from './nightworkers.queue-management.service';
 import * as repo from './nightworkers.repository';
 import { startTaskRun } from './nightworkers.run-orchestration.service';
+import {
+  buildAcceptanceCriteriaFromDecision,
+  renderLlmIntakeContent,
+  resolveArtifactFocusedJobSelection,
+  routingForArtifactFocusedJobSelection,
+  routingForWorkbenchJobType,
+  shouldStartImmediateWorkbenchRun,
+  type WorkbenchArtifactContext,
+} from './nightworkers.workbench-routing';
 
 export async function createPlanningArtifactMessageIfNeeded(input: {
   taskId: string;
@@ -78,24 +88,6 @@ export async function createPlanningArtifactMessageIfNeeded(input: {
     },
   });
 }
-
-type WorkbenchArtifactContext = {
-  artifactId: string;
-  kind: string;
-  title: string;
-  summary?: string;
-  source?: { type?: string; messageId?: string; artifactId?: string; runId?: string };
-  metadata?: {
-    intent?: string;
-    appBlueprintName?: string;
-    artifactType?: string;
-    screenNames?: string[];
-    sectionNames?: string[];
-    tableNames?: string[];
-    initialTab?: string;
-    blueprintCount?: number;
-  };
-};
 
 export async function appendTaskMessage(
   id: string,
@@ -183,7 +175,7 @@ export async function appendWorkbenchMessage(
     return { task: queued, run: null, messages: await repo.listTaskMessages(id) };
   }
 
-  const waitForIntake = input.waitForIntake ?? process.env.NODE_ENV === 'test';
+  const waitForIntake = input.waitForIntake ?? shouldWaitForWorkbenchIntakeInTests();
   if (waitForIntake) {
     return handleWorkbenchIntakeMessage(id, task, prompt, {
       failureMode: 'throw',
@@ -634,6 +626,7 @@ function resolveCodexAgentWorkbenchIntake(
     settingsRuntimeLane: settings.IMPLEMENTATION_RUNTIME_LANE,
     activeLlmProvider: settings.ACTIVE_LLM_PROVIDER,
     codexEnabled: settings.CODEX_ENABLED,
+    ...readRuntimeLaneConfigFromEnv(),
   });
   return runtimeLaneResolution.workerKind === 'codex-agent' ? runtimeLaneResolution : null;
 }
@@ -672,143 +665,4 @@ async function prepareWorkbenchIntakeTask(
     objective: task.objective || prompt,
   });
   return updated;
-}
-
-function renderLlmIntakeContent(jobSelection: JobTypeSelection): string {
-  return [`jobType: ${jobSelection.jobType}`, jobSelection.goal]
-    .map((value) => value?.trim())
-    .filter((value): value is string => Boolean(value))
-    .join('\n\n');
-}
-
-function shouldStartImmediateWorkbenchRun(
-  jobSelection: JobTypeSelection,
-  intent: WorkbenchChatIntent
-) {
-  if (intent !== 'intake') return false;
-  return (
-    jobSelection.jobType === 'minor_code_edit' ||
-    jobSelection.jobType === 'major_code_edit' ||
-    jobSelection.jobType === 'docs' ||
-    jobSelection.jobType === 'runtime_debug'
-  );
-}
-
-function resolveArtifactFocusedJobSelection(
-  artifactContext: WorkbenchArtifactContext | null,
-  prompt: string
-): JobTypeSelection | null {
-  if (!artifactContext || !isAppBlueprintArtifactFocus(artifactContext)) return null;
-  return {
-    jobType: 'blueprint',
-    goal:
-      prompt.replace(/\s+/g, ' ').trim().slice(0, 160) || '現在の Blueprint artifact を更新する',
-  };
-}
-
-function isAppBlueprintArtifactFocus(artifactContext: WorkbenchArtifactContext): boolean {
-  const metadata = artifactContext.metadata || {};
-  const rawMetadata = metadata as Record<string, any>;
-  if (
-    metadata.artifactType === 'blueprint_db_design' ||
-    rawMetadata.source === 'blueprint-db-design' ||
-    rawMetadata.dbDesignTarget
-  ) {
-    return false;
-  }
-  if (metadata.intent === 'app_blueprint') return true;
-  if (metadata.artifactType === 'app_blueprint') return true;
-  if (artifactContext.kind === 'app_blueprint') return true;
-  if (artifactContext.kind !== 'blueprint_workspace') return false;
-  return (
-    metadata.initialTab === 'questionnaire' ||
-    metadata.initialTab === 'blueprints' ||
-    Boolean(metadata.blueprintCount && metadata.blueprintCount > 0)
-  );
-}
-
-function routingForArtifactFocusedJobSelection(
-  jobSelection: JobTypeSelection
-): SupervisorRoutingHypothesis {
-  if (jobSelection.jobType === 'blueprint') return routingForWorkbenchJobType('blueprint');
-  return routingForWorkbenchJobType(jobSelection.jobType);
-}
-
-function buildAcceptanceCriteriaFromDecision(jobSelection: JobTypeSelection): string {
-  return jobSelection.goal.trim();
-}
-
-function routingForWorkbenchJobType(jobType: JobType): SupervisorRoutingHypothesis {
-  if (jobType === 'minor_code_edit') {
-    return {
-      primaryMode: 'code_edit',
-      secondaryModes: [],
-      phase: 'execute',
-      workKinds: ['code'],
-      overlays: [],
-      requiredEvidence: [],
-      nextReferenceFiles: [],
-      confidence: 1,
-    };
-  }
-  if (jobType === 'major_code_edit') {
-    return {
-      primaryMode: 'code_edit',
-      secondaryModes: ['planning', 'test_and_verification'],
-      phase: 'plan',
-      workKinds: ['code'],
-      overlays: ['user_facing_change'],
-      requiredEvidence: [],
-      nextReferenceFiles: ['references/work_kinds/code.md', 'references/phases/plan.md'],
-      confidence: 1,
-    };
-  }
-  if (jobType === 'blueprint' || jobType === 'ui_ux') {
-    return {
-      primaryMode: 'planning',
-      secondaryModes: [],
-      phase: 'plan',
-      workKinds: ['blueprint', 'ui_ux'],
-      overlays: ['user_facing_change'],
-      subtype: 'app_blueprint',
-      requiredEvidence: [],
-      nextReferenceFiles: ['references/work_kinds/blueprint.md'],
-      confidence: 1,
-    };
-  }
-  if (jobType === 'planning') {
-    return {
-      primaryMode: 'planning',
-      secondaryModes: [],
-      phase: 'plan',
-      workKinds: [],
-      overlays: [],
-      subtype: 'design_questionnaire',
-      requiredEvidence: [],
-      nextReferenceFiles: [],
-      confidence: 1,
-    };
-  }
-  if (jobType === 'runtime_debug') {
-    return {
-      primaryMode: 'runtime_debug',
-      secondaryModes: ['investigation', 'test_and_verification'],
-      phase: 'investigate',
-      workKinds: [],
-      overlays: ['evidence'],
-      requiredEvidence: ['runtime logs or command output'],
-      nextReferenceFiles: ['references/modes/runtime_debug.md'],
-      confidence: 1,
-    };
-  }
-  return {
-    primaryMode: jobType === 'general_answer' ? 'general_answer' : 'planning',
-    secondaryModes: [],
-    phase: jobType === 'general_answer' ? 'answer' : 'plan',
-    workKinds: [],
-    overlays: [],
-    requiredEvidence: [],
-    nextReferenceFiles: [],
-    confidence: 1,
-  };
 }

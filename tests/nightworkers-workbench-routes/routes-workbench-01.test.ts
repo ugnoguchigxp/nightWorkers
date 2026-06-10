@@ -4,6 +4,7 @@ import app from '../../api/app';
 import { ensureNightWorkersSchema } from '../../api/db/bootstrap';
 import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
 import * as llm from '../../api/services/supervisor/llm-provider';
+import { flushPendingWorkbenchTasks } from '../helpers/nightworkers-test-controls';
 
 vi.mock('../../api/services/supervisor/llm-provider', async () => {
   const actual = await vi.importActual<typeof import('../../api/services/supervisor/llm-provider')>(
@@ -72,7 +73,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  await new Promise((resolve) => setTimeout(resolve, 25));
+  await flushPendingWorkbenchTasks();
   process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-supervisor';
   vi.clearAllMocks();
   vi.restoreAllMocks();

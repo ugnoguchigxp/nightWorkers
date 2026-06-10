@@ -1,7 +1,13 @@
 import { CheckCircle2, Palette, SlidersHorizontal, XCircle } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { apiFetch } from '../../../../lib/api-base';
+import {
+  type BlueprintAdoptionEndpoint,
+  fetchBlueprintAdoption,
+  fetchBlueprintDesignSettings,
+  saveBlueprintAdoption,
+  saveBlueprintDesignSettings,
+} from '../../nightWorkersCommands';
 import {
   PreviewActionButton,
   PreviewCard,
@@ -21,9 +27,9 @@ import { labelForOption, labelForOptionA11y, toObjectArray } from './previewMode
 type BlueprintPreviewProps = {
   sessionId?: string | null;
   messageId?: string | null;
-  blueprint: Record<string, any>;
-  screens: Array<Record<string, any>>;
-  validationIssues?: Array<Record<string, any>>;
+  blueprint: Record<string, unknown>;
+  screens: Array<Record<string, unknown>>;
+  validationIssues?: Array<Record<string, unknown>>;
 };
 
 export function BlueprintPreview({
@@ -58,7 +64,7 @@ export function BlueprintPreview({
     setSettings(initialSettings);
     if (!sessionId) return;
     const controller = new AbortController();
-    apiFetch(`/api/tasks/${sessionId}/blueprint-design-settings`, { signal: controller.signal })
+    fetchBlueprintDesignSettings(sessionId, { signal: controller.signal })
       .then(async (res) => {
         if (!res.ok) return null;
         return (await res.json()) as { settings?: unknown };
@@ -95,11 +101,7 @@ export function BlueprintPreview({
       setSettings(next);
       if (!sessionId) return;
       const requestSeq = ++saveRequestSeqRef.current;
-      apiFetch(`/api/tasks/${sessionId}/blueprint-design-settings`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
-      })
+      saveBlueprintDesignSettings(sessionId, next)
         .then((res) => {
           if (!res.ok) throw new Error(`Failed to save Blueprint design settings: ${res.status}`);
           return res.json();
@@ -190,11 +192,6 @@ export function BlueprintPreview({
   );
 }
 
-type BlueprintAdoptionEndpoint =
-  | 'blueprint-adoption'
-  | 'blueprint-db-design-adoption'
-  | 'blueprint-design-token-adoption';
-
 function useBlueprintAdoption({
   sessionId,
   messageId,
@@ -212,9 +209,7 @@ function useBlueprintAdoption({
     setAdopted(false);
     if (!sessionId || !messageId) return;
     const controller = new AbortController();
-    apiFetch(`/api/tasks/${sessionId}/${endpoint}?messageId=${encodeURIComponent(messageId)}`, {
-      signal: controller.signal,
-    })
+    fetchBlueprintAdoption(sessionId, endpoint, messageId, { signal: controller.signal })
       .then(async (res) => {
         if (!res.ok) return null;
         return (await res.json()) as { adopted?: boolean };
@@ -236,11 +231,7 @@ function useBlueprintAdoption({
     const next = !adopted;
     setAdopted(next);
     setSaving(true);
-    apiFetch(`/api/tasks/${sessionId}/${endpoint}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messageId, adopted: next }),
-    })
+    saveBlueprintAdoption(sessionId, endpoint, { messageId, adopted: next })
       .then((res) => {
         if (!res.ok) throw new Error(`Failed to save Blueprint adoption: ${res.status}`);
         return res.json();

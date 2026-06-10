@@ -1,4 +1,4 @@
-import { ValidationError } from '../../lib/errors';
+import { AppError, ValidationError } from '../../lib/errors';
 import { logEvent } from '../../lib/logger';
 import { createOpenApiRouter } from '../../lib/openapi';
 import {
@@ -31,7 +31,7 @@ import {
   stopBackgroundProcessHandler,
   stopTaskRunHandler,
 } from './nightworkers.route-handlers';
-import { queueRouteError } from './nightworkers.route-utils';
+import { routeErrorResponse, withOpenApiRouteError } from './nightworkers.route-utils';
 import * as service from './nightworkers.service';
 import {
   archiveImplementationQueueEntryRoute,
@@ -112,22 +112,22 @@ import {
 import { browseFoldersRoute, createFolderRoute } from './routes/util-routes';
 
 const router = createOpenApiRouter()
-  .openapi(getOverviewDashboardRoute, async (c: any) => {
+  .openapi(getOverviewDashboardRoute, async (c) => {
     try {
       const dashboard = await service.getOverviewDashboard(c.req.valid('query'));
       return c.json(dashboard, 200);
-    } catch (err: any) {
-      if (err?.statusCode === 404) {
+    } catch (err) {
+      if (err instanceof AppError && err.statusCode === 404) {
         return c.json({ error: 'Repository not found' }, 404);
       }
-      return queueRouteError(c, err);
+      return routeErrorResponse(c, err);
     }
   })
-  .openapi(listRepositoriesRoute, async (c: any) => {
+  .openapi(listRepositoriesRoute, async (c) => {
     const list = await service.listRepositories();
     return c.json(list, 200);
   })
-  .openapi(createRepositoryRoute, async (c: any) => {
+  .openapi(createRepositoryRoute, async (c) => {
     let data = c.req.valid('json');
     if (!data?.name || !data.localPath) {
       try {
@@ -168,49 +168,46 @@ const router = createOpenApiRouter()
     const repo = await service.createRepository(data);
     return c.json(repo, 201);
   })
-  .openapi(getRepositoryRoute, async (c: any) => {
+  .openapi(getRepositoryRoute, async (c) => {
     const id = c.req.param('id');
     const repo = await service.getRepository(id);
     if (!repo) return c.json({ error: 'Repository not found' }, 404);
     return c.json(repo, 200);
   })
-  .openapi(updateRepositoryRoute, async (c: any) => {
-    try {
+  .openapi(
+    updateRepositoryRoute,
+    withOpenApiRouteError(updateRepositoryRoute, async (c) => {
       const repo = await service.updateRepository(c.req.param('id'), c.req.valid('json'));
       return c.json(repo, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(listProjectFilesRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    listProjectFilesRoute,
+    withOpenApiRouteError(listProjectFilesRoute, async (c) => {
       const entries = await service.listProjectFiles(c.req.param('id'), c.req.query('path'));
       return c.json(entries, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(readProjectFileRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    readProjectFileRoute,
+    withOpenApiRouteError(readProjectFileRoute, async (c) => {
       const filePath = c.req.query('path');
       if (!filePath) return c.json({ error: 'path is required' }, 400);
       const file = await service.readProjectFile(c.req.param('id'), filePath);
       return c.json(file, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(deleteRepositoryRoute, async (c: any) => {
+    })
+  )
+  .openapi(deleteRepositoryRoute, async (c) => {
     const id = c.req.param('id');
     const repo = await service.deleteRepository(id);
     if (!repo) return c.json({ error: 'Repository not found' }, 404);
     return c.json(repo, 200);
   })
-  .openapi(listTasksRoute, async (c: any) => {
+  .openapi(listTasksRoute, async (c) => {
     const list = await service.listTasks();
     return c.json(list, 200);
   })
-  .openapi(createTaskRoute, async (c: any) => {
+  .openapi(createTaskRoute, async (c) => {
     let data = c.req.valid('json');
     if (!data?.repositoryId || !data.title) {
       try {
@@ -253,19 +250,19 @@ const router = createOpenApiRouter()
     const task = await service.createTask(data);
     return c.json(task, 201);
   })
-  .openapi(getTaskRoute, async (c: any) => {
+  .openapi(getTaskRoute, async (c) => {
     const id = c.req.param('id');
     const task = await service.getTask(id);
     if (!task) return c.json({ error: 'Task not found' }, 404);
     return c.json(task, 200);
   })
-  .openapi(deleteTaskRoute, async (c: any) => {
+  .openapi(deleteTaskRoute, async (c) => {
     const id = c.req.param('id');
     const task = await service.deleteTask(id);
     if (!task) return c.json({ error: 'Task not found' }, 404);
     return c.json(task, 200);
   })
-  .openapi(updateTaskRoute, async (c: any) => {
+  .openapi(updateTaskRoute, async (c) => {
     const id = c.req.param('id');
     const data = c.req.valid('json');
     logEvent({
@@ -282,38 +279,36 @@ const router = createOpenApiRouter()
     if (!task) return c.json({ error: 'Task not found' }, 404);
     return c.json(task, 200);
   })
-  .openapi(getBlueprintDesignSettingsRoute, async (c: any) => {
-    try {
+  .openapi(
+    getBlueprintDesignSettingsRoute,
+    withOpenApiRouteError(getBlueprintDesignSettingsRoute, async (c) => {
       const settings = await service.getBlueprintDesignSettings(c.req.param('id'));
       return c.json(settings, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(saveBlueprintDesignSettingsRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    saveBlueprintDesignSettingsRoute,
+    withOpenApiRouteError(saveBlueprintDesignSettingsRoute, async (c) => {
       const settings = await service.saveBlueprintDesignSettings(
         c.req.param('id'),
         c.req.valid('json')
       );
       return c.json(settings, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(getBlueprintArtifactAdoptionRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    getBlueprintArtifactAdoptionRoute,
+    withOpenApiRouteError(getBlueprintArtifactAdoptionRoute, async (c) => {
       const adoption = await service.getBlueprintArtifactAdoption(
         c.req.param('id'),
         c.req.valid('query').messageId
       );
       return c.json(adoption, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(saveBlueprintArtifactAdoptionRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    saveBlueprintArtifactAdoptionRoute,
+    withOpenApiRouteError(saveBlueprintArtifactAdoptionRoute, async (c) => {
       const body = c.req.valid('json');
       const adoption = await service.saveBlueprintArtifactAdoption(
         c.req.param('id'),
@@ -321,23 +316,21 @@ const router = createOpenApiRouter()
         body.adopted
       );
       return c.json(adoption, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(getBlueprintDbDesignAdoptionRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    getBlueprintDbDesignAdoptionRoute,
+    withOpenApiRouteError(getBlueprintDbDesignAdoptionRoute, async (c) => {
       const adoption = await service.getBlueprintDbDesignAdoption(
         c.req.param('id'),
         c.req.valid('query').messageId
       );
       return c.json(adoption, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(saveBlueprintDbDesignAdoptionRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    saveBlueprintDbDesignAdoptionRoute,
+    withOpenApiRouteError(saveBlueprintDbDesignAdoptionRoute, async (c) => {
       const body = c.req.valid('json');
       const adoption = await service.saveBlueprintDbDesignAdoption(
         c.req.param('id'),
@@ -345,23 +338,21 @@ const router = createOpenApiRouter()
         body.adopted
       );
       return c.json(adoption, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(getBlueprintDesignTokenAdoptionRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    getBlueprintDesignTokenAdoptionRoute,
+    withOpenApiRouteError(getBlueprintDesignTokenAdoptionRoute, async (c) => {
       const adoption = await service.getBlueprintDesignTokenAdoption(
         c.req.param('id'),
         c.req.valid('query').messageId
       );
       return c.json(adoption, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(saveBlueprintDesignTokenAdoptionRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    saveBlueprintDesignTokenAdoptionRoute,
+    withOpenApiRouteError(saveBlueprintDesignTokenAdoptionRoute, async (c) => {
       const body = c.req.valid('json');
       const adoption = await service.saveBlueprintDesignTokenAdoption(
         c.req.param('id'),
@@ -369,174 +360,154 @@ const router = createOpenApiRouter()
         body.adopted
       );
       return c.json(adoption, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(appendTaskMessageRoute, async (c: any) => {
-    const id = c.req.param('id');
-    const { prompt } = c.req.valid('json');
-    try {
+    })
+  )
+  .openapi(
+    appendTaskMessageRoute,
+    withOpenApiRouteError(appendTaskMessageRoute, async (c) => {
+      const id = c.req.param('id');
+      const { prompt } = c.req.valid('json');
       const task = await service.appendTaskMessage(id, prompt);
       return c.json(task, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(createWorkbenchSessionRoute, async (c: any) => {
+    })
+  )
+  .openapi(createWorkbenchSessionRoute, async (c) => {
     const data = c.req.valid('json');
     const task = await service.createWorkbenchSession(data);
     return c.json(task, 201);
   })
-  .openapi(appendWorkbenchMessageRoute, async (c: any) => {
-    const id = c.req.param('id');
-    const body = c.req.valid('json');
-    try {
+  .openapi(
+    appendWorkbenchMessageRoute,
+    withOpenApiRouteError(appendWorkbenchMessageRoute, async (c) => {
+      const id = c.req.param('id');
+      const body = c.req.valid('json');
       const result = await service.appendWorkbenchMessage(id, body);
       return c.json(result, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
+    })
+  )
 
-  .openapi(implementationQueueDashboardRoute, async (c: any) => {
-    try {
+  .openapi(
+    implementationQueueDashboardRoute,
+    withOpenApiRouteError(implementationQueueDashboardRoute, async (c) => {
       const result = await service.listImplementationQueueDashboard();
       return c.json(result, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(createImplementationQueueEntryRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    createImplementationQueueEntryRoute,
+    withOpenApiRouteError(createImplementationQueueEntryRoute, async (c) => {
       const body = c.req.valid('json');
       const entry = await service.createImplementationQueueEntry(body.taskId);
       return c.json(entry, 201);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(patchImplementationQueueEntryRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    patchImplementationQueueEntryRoute,
+    withOpenApiRouteError(patchImplementationQueueEntryRoute, async (c) => {
       const body = c.req.valid('json');
       const entry = await service.patchImplementationQueueEntry(c.req.param('id'), body);
       return c.json(entry, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(archiveImplementationQueueEntryRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    archiveImplementationQueueEntryRoute,
+    withOpenApiRouteError(archiveImplementationQueueEntryRoute, async (c) => {
       const entry = await service.archiveImplementationQueueEntry(c.req.param('id'));
       return c.json(entry, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(requeueImplementationQueueEntryRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    requeueImplementationQueueEntryRoute,
+    withOpenApiRouteError(requeueImplementationQueueEntryRoute, async (c) => {
       const entry = await service.requeueImplementationQueueEntry(
         c.req.param('id'),
         c.req.valid('json')
       );
       return c.json(entry, 201);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(drainImplementationQueueRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    drainImplementationQueueRoute,
+    withOpenApiRouteError(drainImplementationQueueRoute, async (c) => {
       const started = await service.runImplementationQueue();
       return c.json({ started: started.length }, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(getImplementationQueueSettingsRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    getImplementationQueueSettingsRoute,
+    withOpenApiRouteError(getImplementationQueueSettingsRoute, async (c) => {
       const result = await service.listImplementationQueueDashboard();
       return c.json(result.settings, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(patchImplementationQueueSettingsRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    patchImplementationQueueSettingsRoute,
+    withOpenApiRouteError(patchImplementationQueueSettingsRoute, async (c) => {
       const body = c.req.valid('json');
       const settings = await service.updateImplementationQueueSettings(body);
       return c.json(settings, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(getTodoWorkflowSettingsRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    getTodoWorkflowSettingsRoute,
+    withOpenApiRouteError(getTodoWorkflowSettingsRoute, async (c) => {
       const settings = await service.getTodoWorkflowSettings();
       return c.json(settings, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(patchTodoWorkflowSettingsRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    patchTodoWorkflowSettingsRoute,
+    withOpenApiRouteError(patchTodoWorkflowSettingsRoute, async (c) => {
       const body = c.req.valid('json');
       const settings = await service.updateTodoWorkflowSettings(body);
       return c.json(settings, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(queueWorkbenchSessionRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    queueWorkbenchSessionRoute,
+    withOpenApiRouteError(queueWorkbenchSessionRoute, async (c) => {
       const task = await service.queueTask(c.req.param('id'));
       return c.json(task, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(runWorkbenchSessionRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    runWorkbenchSessionRoute,
+    withOpenApiRouteError(runWorkbenchSessionRoute, async (c) => {
       const run = await service.startWorkbenchTaskRun(c.req.param('id'));
       return c.json(run, 201);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(archiveWorkbenchSessionRoute, async (c: any) => {
-    try {
+    })
+  )
+  .openapi(
+    archiveWorkbenchSessionRoute,
+    withOpenApiRouteError(archiveWorkbenchSessionRoute, async (c) => {
       const task = await service.archiveTask(c.req.param('id'));
       return c.json(task, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(listTaskMessagesRoute, async (c: any) => {
-    const id = c.req.param('id');
-    try {
+    })
+  )
+  .openapi(
+    listTaskMessagesRoute,
+    withOpenApiRouteError(listTaskMessagesRoute, async (c) => {
+      const id = c.req.param('id');
       const messages = await service.listTaskMessages(id);
       return c.json(messages, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(getTaskLlmUsageRoute, async (c: any) => {
-    const id = c.req.param('id');
-    try {
+    })
+  )
+  .openapi(
+    getTaskLlmUsageRoute,
+    withOpenApiRouteError(getTaskLlmUsageRoute, async (c) => {
+      const id = c.req.param('id');
       const summary = await service.getTaskLlmUsageSummary(id);
       return c.json(summary, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
-  .openapi(listTaskActivityEventsRoute, async (c: any) => {
-    const id = c.req.param('id');
-    try {
+    })
+  )
+  .openapi(
+    listTaskActivityEventsRoute,
+    withOpenApiRouteError(listTaskActivityEventsRoute, async (c) => {
+      const id = c.req.param('id');
       const events = await service.listTaskActivityEvents(id, c.req.valid('query'));
       return c.json(events, 200);
-    } catch (err: any) {
-      return queueRouteError(c, err);
-    }
-  })
+    })
+  )
   .openapi(createDesignQuestionnaireRoute, createDesignQuestionnaireHandler)
   .openapi(listDesignQuestionnairesRoute, listDesignQuestionnairesHandler)
   .openapi(getDesignQuestionnaireRoute, getDesignQuestionnaireHandler)
@@ -578,14 +549,13 @@ router.openapi(browseFoldersRoute, async (c) => {
   return c.json(result, 200);
 });
 
-router.openapi(createFolderRoute, async (c) => {
-  const request = c.req.valid('json');
-  try {
+router.openapi(
+  createFolderRoute,
+  withOpenApiRouteError(createFolderRoute, async (c) => {
+    const request = c.req.valid('json');
     const result = await service.createLocalFolder(request);
     return c.json(result, 201);
-  } catch (err: any) {
-    return queueRouteError(c, err);
-  }
-});
+  })
+);
 
 export const nightworkersRouter = router;

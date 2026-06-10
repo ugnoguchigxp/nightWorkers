@@ -70,11 +70,11 @@ type ThreadTimelineProps = {
 
 function findExternalPathPermissionRequest(events: TaskEvent[]): string | null {
   for (const event of [...events].reverse()) {
-    const payload = event.payloadJson as any;
-    if (payload?.agentEventType !== 'run.needs_human') continue;
-    const data = payload.payload || {};
+    const payload = asRecord(event.payloadJson);
+    if (payload.agentEventType !== 'run.needs_human') continue;
+    const data = asRecord(payload.payload);
     if (data.reason !== 'path_access_denied') continue;
-    const args = data.arguments || {};
+    const args = asRecord(data.arguments);
     const candidate =
       typeof args.sourcePath === 'string'
         ? args.sourcePath
@@ -354,62 +354,63 @@ function isRuntimePromptSnapshotAnchorTaskEvent(event: TaskEvent, latestRun: Tas
   return runId === latestRun.id && agentEventType === 'run.started';
 }
 
-export function getApplyPatchContent(payload: any): string | null {
-  return (
-    payload?.arguments?.patchContent ||
-    payload?.args?.patchContent ||
-    payload?.toolCall?.arguments?.patchContent ||
-    payload?.decision?.toolCall?.arguments?.patchContent ||
-    payload?.runEvent?.data?.arguments?.patchContent ||
-    payload?.runEvent?.data?.toolCall?.arguments?.patchContent ||
-    null
+export function getApplyPatchContent(payload: unknown): string | null {
+  return firstString(
+    nestedValue(payload, ['arguments', 'patchContent']),
+    nestedValue(payload, ['args', 'patchContent']),
+    nestedValue(payload, ['toolCall', 'arguments', 'patchContent']),
+    nestedValue(payload, ['decision', 'toolCall', 'arguments', 'patchContent']),
+    nestedValue(payload, ['runEvent', 'data', 'arguments', 'patchContent']),
+    nestedValue(payload, ['runEvent', 'data', 'toolCall', 'arguments', 'patchContent'])
   );
 }
 
-export function getToolName(payload: any): string | null {
-  return (
-    payload?.toolName ||
-    payload?.toolCall?.name ||
-    payload?.decision?.toolCall?.name ||
-    payload?.runEvent?.data?.toolName ||
-    payload?.runEvent?.data?.result?.toolName ||
-    payload?.result?.toolName ||
-    payload?.payload?.toolName ||
-    null
+export function getToolName(payload: unknown): string | null {
+  return firstString(
+    nestedValue(payload, ['toolName']),
+    nestedValue(payload, ['toolCall', 'name']),
+    nestedValue(payload, ['decision', 'toolCall', 'name']),
+    nestedValue(payload, ['runEvent', 'data', 'toolName']),
+    nestedValue(payload, ['runEvent', 'data', 'result', 'toolName']),
+    nestedValue(payload, ['result', 'toolName']),
+    nestedValue(payload, ['payload', 'toolName'])
   );
 }
 
-export function getToolArguments(payload: any): any {
-  return (
-    payload?.arguments ||
-    payload?.args ||
-    payload?.toolCall?.arguments ||
-    payload?.decision?.toolCall?.arguments ||
-    payload?.payload?.arguments ||
-    payload?.runEvent?.data?.arguments ||
-    payload?.runEvent?.data?.toolCall?.arguments ||
-    payload?.runEvent?.data?.toolArgs ||
-    null
+export function getToolArguments(payload: unknown): unknown {
+  return firstDefined(
+    nestedValue(payload, ['arguments']),
+    nestedValue(payload, ['args']),
+    nestedValue(payload, ['toolCall', 'arguments']),
+    nestedValue(payload, ['decision', 'toolCall', 'arguments']),
+    nestedValue(payload, ['payload', 'arguments']),
+    nestedValue(payload, ['runEvent', 'data', 'arguments']),
+    nestedValue(payload, ['runEvent', 'data', 'toolCall', 'arguments']),
+    nestedValue(payload, ['runEvent', 'data', 'toolArgs'])
   );
 }
 
-export function getToolResult(payload: any): any {
-  if (payload?.result) return payload.result;
-  if (payload?.runEvent?.data?.result) return payload.runEvent.data.result;
-  if (payload?.runEvent?.data?.toolResult) return payload.runEvent.data.toolResult;
-  if (typeof payload?.payload?.ok === 'boolean' && payload.payload.payload) return payload.payload;
-  if (typeof payload?.ok === 'boolean' && payload?.payload) return payload;
+export function getToolResult(payload: unknown): unknown {
+  const directResult = nestedValue(payload, ['result']);
+  if (directResult) return directResult;
+  const runResult = nestedValue(payload, ['runEvent', 'data', 'result']);
+  if (runResult) return runResult;
+  const runToolResult = nestedValue(payload, ['runEvent', 'data', 'toolResult']);
+  if (runToolResult) return runToolResult;
+  const record = asRecord(payload);
+  const nestedPayload = asRecord(record.payload);
+  if (typeof nestedPayload.ok === 'boolean' && nestedPayload.payload) return nestedPayload;
+  if (typeof record.ok === 'boolean' && record.payload) return record;
   return null;
 }
 
-export function getChangedFilesFromResult(result: any): string[] {
-  const changedFiles = result?.payload?.changedFiles;
+export function getChangedFilesFromResult(result: unknown): string[] {
+  const changedFiles = nestedValue(result, ['payload', 'changedFiles']);
   return Array.isArray(changedFiles) ? changedFiles.filter((file) => typeof file === 'string') : [];
 }
 
 export function formatCodexToolActivitySummary(event: ActivityEvent): string {
-  const payload = event.payloadJson as any;
-  const data = payload?.payload || payload?.runEvent?.data || payload || {};
+  const data = codexActivityData(event.payloadJson);
   const toolName = asString(data.toolName) || event.kind;
   const command = asString(data.command);
   const status = asString(data.status) || event.status || '';
@@ -425,22 +426,57 @@ export function formatCodexToolActivitySummary(event: ActivityEvent): string {
 }
 
 export function getCodexCommandOutput(event: ActivityEvent): string {
-  const payload = event.payloadJson as any;
-  const data = payload?.payload || payload?.runEvent?.data || payload || {};
+  const data = codexActivityData(event.payloadJson);
   return asString(data.aggregatedOutput).trim();
 }
 
 export function getActivityChangedFiles(event: ActivityEvent): string[] {
-  const payload = event.payloadJson as any;
-  const data = payload?.payload || payload?.runEvent?.data || payload || {};
+  const data = codexActivityData(event.payloadJson);
   if (Array.isArray(data.changedFiles)) {
     return data.changedFiles.filter((file: unknown): file is string => typeof file === 'string');
   }
-  const resultFiles = data.result?.payload?.changedFiles;
+  const result = asRecord(data.result);
+  const resultPayload = asRecord(result.payload);
+  const resultFiles = resultPayload.changedFiles;
   if (Array.isArray(resultFiles)) {
     return resultFiles.filter((file: unknown): file is string => typeof file === 'string');
   }
   return [];
+}
+
+function codexActivityData(payloadJson: unknown): Record<string, unknown> {
+  const payload = asRecord(payloadJson);
+  if (isRecord(payload.payload)) return payload.payload;
+  const runEvent = asRecord(payload.runEvent);
+  if (isRecord(runEvent.data)) return runEvent.data;
+  return payload;
+}
+
+function firstString(...values: unknown[]) {
+  const found = values.find((value) => typeof value === 'string' && value.length > 0);
+  return typeof found === 'string' ? found : null;
+}
+
+function firstDefined(...values: unknown[]) {
+  return values.find((value) => value !== undefined && value !== null) ?? null;
+}
+
+function nestedValue(value: unknown, path: string[]): unknown {
+  let current: unknown = value;
+  for (const key of path) {
+    const record = asRecord(current);
+    if (!record) return undefined;
+    current = record[key];
+  }
+  return current;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+export function asRecord(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
 }
 
 export function buildApplyPatchCodeBlockData(patchContent: string): CodeBlockData[] {

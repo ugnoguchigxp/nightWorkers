@@ -1,5 +1,8 @@
 import { z } from '@hono/zod-openapi';
 
+const jsonValueSchema = z.unknown();
+const dateLikeSchema = z.union([z.string(), z.date()]);
+
 export const taskRunSchema = z
   .object({
     id: z.string().uuid(),
@@ -10,18 +13,18 @@ export const taskRunSchema = z
     baseRef: z.string().nullable().optional(),
     worktreePath: z.string().nullable().optional(),
     timeoutSeconds: z.number(),
-    contextSnapshot: z.any().nullable().optional(),
+    contextSnapshot: jsonValueSchema.nullable().optional(),
     summary: z.string().nullable().optional(),
     finalReport: z.string().nullable().optional(),
-    finalJudgment: z.any().nullable().optional(),
-    startedAt: z.any(),
-    endedAt: z.any().nullable().optional(),
-    finishedAt: z.any().nullable().optional(),
+    finalJudgment: jsonValueSchema.nullable().optional(),
+    startedAt: dateLikeSchema,
+    endedAt: dateLikeSchema.nullable().optional(),
+    finishedAt: dateLikeSchema.nullable().optional(),
     logContent: z.string().nullable().optional(),
     diffPatch: z.string().nullable().optional(),
-    testResults: z.any().nullable().optional(),
-    createdAt: z.any(),
-    updatedAt: z.any(),
+    testResults: jsonValueSchema.nullable().optional(),
+    createdAt: dateLikeSchema,
+    updatedAt: dateLikeSchema,
   })
   .openapi('TaskRun');
 
@@ -53,18 +56,18 @@ export const taskRunTodoSchema = z
     taskType: taskTypeSchema,
     status: todoStatusSchema,
     procedureId: z.string().nullable().optional(),
-    procedureSnapshot: z.any().nullable().optional(),
-    contextSnapshot: z.any().nullable().optional(),
-    completionGateResult: z.any().nullable().optional(),
+    procedureSnapshot: jsonValueSchema.nullable().optional(),
+    contextSnapshot: jsonValueSchema.nullable().optional(),
+    completionGateResult: jsonValueSchema.nullable().optional(),
     dependsOn: z
       .array(z.union([z.string(), z.number()]))
       .nullable()
       .optional(),
     statusReason: z.string().nullable().optional(),
-    startedAt: z.any().nullable().optional(),
-    completedAt: z.any().nullable().optional(),
-    createdAt: z.any(),
-    updatedAt: z.any(),
+    startedAt: dateLikeSchema.nullable().optional(),
+    completedAt: dateLikeSchema.nullable().optional(),
+    createdAt: dateLikeSchema,
+    updatedAt: dateLikeSchema,
   })
   .openapi('TaskRunTodo');
 

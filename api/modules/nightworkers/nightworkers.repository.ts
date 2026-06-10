@@ -9,6 +9,10 @@ import {
   taskMessageRoleToActivityKind,
   taskMessageRoleToActivitySource,
 } from './nightworkers.activity.repository';
+import { isJsonRecord, toJsonRecord } from './nightworkers.json-adapters';
+
+type RepositoryInsert = typeof repositories.$inferInsert;
+type RepositorySafetyPolicy = RepositoryInsert['safetyPolicy'];
 
 const _ACTIVE_IMPLEMENTATION_QUEUE_STATUSES = [
   'queued',
@@ -104,7 +108,7 @@ export async function createRepository(data: {
   allowed?: boolean;
   queueEnabled?: boolean;
   maxConcurrentSessions?: number;
-  safetyPolicy?: any;
+  safetyPolicy?: RepositorySafetyPolicy;
 }) {
   const [repo] = await db.insert(repositories).values(data).returning();
   return repo;
@@ -124,7 +128,7 @@ export async function updateRepository(
   data: {
     queueEnabled?: boolean;
     maxConcurrentSessions?: number;
-    safetyPolicy?: any;
+    safetyPolicy?: RepositorySafetyPolicy;
   }
 ) {
   const [repo] = await db
@@ -179,8 +183,9 @@ export async function createTaskMessage(data: {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   messageType?: string | null;
-  payloadJson?: any;
+  payloadJson?: unknown;
 }) {
+  const metadata = toJsonRecord(data.payloadJson);
   const [message] = await db
     .insert(taskMessages)
     .values({
@@ -210,7 +215,7 @@ export async function createTaskMessage(data: {
       dedupeKey: `task_message:${message.id}`,
       createdAt: message.createdAt,
     });
-    if (isAppBlueprintProjectionMessage(data.messageType, data.payloadJson)) {
+    if (isAppBlueprintProjectionMessage(data.messageType, metadata)) {
       await appendActivityEvent({
         taskId: data.taskId,
         runId: data.runId ?? null,
@@ -218,34 +223,34 @@ export async function createTaskMessage(data: {
         kind: 'system.info',
         source: 'assistant',
         status: 'completed',
-        text: `Blueprint artifact: ${data.payloadJson.display?.title || data.payloadJson.title || data.payloadJson.appBlueprint?.name || 'App Blueprint'}`,
+        text: `Blueprint artifact: ${getBlueprintProjectionTitle(metadata)}`,
         payloadJson: {
           messageId: message.id,
           messageType: data.messageType ?? null,
-          artifactRef: data.payloadJson.artifactRef,
-          display: data.payloadJson.display ?? null,
-          metadata: data.payloadJson,
+          artifactRef: metadata.artifactRef,
+          display: metadata.display ?? null,
+          metadata,
         },
-        artifactId: data.payloadJson.artifactRef.artifactId,
+        artifactId: getArtifactRefId(metadata),
         externalId: message.id,
         dedupeKey: `task_message_artifact:${message.id}`,
         createdAt: message.createdAt,
       });
-    } else if (isAppBlueprintDocumentMessage(data.messageType, data.payloadJson)) {
+    } else if (isAppBlueprintDocumentMessage(data.messageType, metadata)) {
       const artifact = await appendActivityArtifact({
         taskId: data.taskId,
         runId: data.runId ?? null,
         kind: 'app_blueprint',
         path: `${message.id}.app-blueprint.json`,
-        contentText: JSON.stringify(data.payloadJson.appBlueprint, null, 2),
+        contentText: JSON.stringify(metadata.appBlueprint, null, 2),
         metadataJson: {
           messageId: message.id,
-          intent: data.payloadJson.intent,
-          title: data.payloadJson.title,
-          appBlueprint: data.payloadJson.appBlueprint,
-          validation: data.payloadJson.validation,
-          generation: data.payloadJson.generation,
-          source: data.payloadJson.source,
+          intent: metadata.intent,
+          title: metadata.title,
+          appBlueprint: metadata.appBlueprint,
+          validation: metadata.validation,
+          generation: metadata.generation,
+          source: metadata.source,
         },
       });
       await appendActivityEvent({
@@ -255,11 +260,11 @@ export async function createTaskMessage(data: {
         kind: 'system.info',
         source: 'assistant',
         status: 'completed',
-        text: `Blueprint artifact: ${data.payloadJson.title || data.payloadJson.appBlueprint.name || 'App Blueprint'}`,
+        text: `Blueprint artifact: ${getBlueprintDocumentTitle(metadata)}`,
         payloadJson: {
           messageId: message.id,
           messageType: data.messageType ?? null,
-          metadata: data.payloadJson,
+          metadata,
         },
         artifactId: artifact?.id ?? null,
         externalId: message.id,
@@ -267,21 +272,25 @@ export async function createTaskMessage(data: {
         createdAt: message.createdAt,
       });
     }
-    const diffActivityKind = getToolDiffActivityKind(data.payloadJson);
+    const diffActivityKind = getToolDiffActivityKind(metadata);
     if (diffActivityKind) {
+      const codeBlock = isJsonRecord(metadata.codeBlock) ? metadata.codeBlock : {};
+      const toolResult = isJsonRecord(metadata.toolResult) ? metadata.toolResult : {};
       const artifact = await appendActivityArtifact({
         taskId: data.taskId,
         runId: data.runId ?? null,
         kind: diffActivityKind === 'file.patch' ? 'patch' : 'diff',
         path:
-          data.payloadJson?.codeBlock?.filename ?? `${data.payloadJson?.toolName || 'tool'}.diff`,
-        contentText: data.payloadJson?.codeBlock?.code ?? data.content,
+          typeof codeBlock.filename === 'string'
+            ? codeBlock.filename
+            : `${String(metadata.toolName || 'tool')}.diff`,
+        contentText: typeof codeBlock.code === 'string' ? codeBlock.code : data.content,
         metadataJson: {
           messageId: message.id,
-          toolName: data.payloadJson?.toolName,
-          title: data.payloadJson?.title,
-          iteration: data.payloadJson?.iteration,
-          toolResult: data.payloadJson?.toolResult,
+          toolName: metadata.toolName,
+          title: metadata.title,
+          iteration: metadata.iteration,
+          toolResult,
         },
       });
       await appendActivityEvent({
@@ -290,12 +299,12 @@ export async function createTaskMessage(data: {
         turnId: message.id,
         kind: diffActivityKind,
         source: 'tool',
-        status: data.payloadJson?.toolResult?.ok === false ? 'failed' : 'completed',
-        text: data.payloadJson?.title ?? message.content.slice(0, 240),
+        status: toolResult.ok === false ? 'failed' : 'completed',
+        text: typeof metadata.title === 'string' ? metadata.title : message.content.slice(0, 240),
         payloadJson: {
           messageId: message.id,
-          toolName: data.payloadJson?.toolName,
-          toolResult: data.payloadJson?.toolResult,
+          toolName: metadata.toolName,
+          toolResult,
         },
         artifactId: artifact?.id ?? null,
         externalId: message.id,
@@ -317,9 +326,9 @@ export async function createBlueprintActivityArtifact(data: {
   runId?: string | null;
   messageId?: string | null;
   title: string;
-  appBlueprint: any;
-  validation?: any;
-  generation?: any;
+  appBlueprint: unknown;
+  validation?: unknown;
+  generation?: unknown;
   source?: string | null;
   metadataJson?: Record<string, unknown>;
 }) {
@@ -339,31 +348,50 @@ export async function createBlueprintActivityArtifact(data: {
       source: data.source,
       schemaName: 'app_blueprint',
       schemaVersion: 1,
-      status: data.validation?.valid === false ? 'invalid' : 'valid',
+      status:
+        isJsonRecord(data.validation) && data.validation.valid === false ? 'invalid' : 'valid',
       ...(data.metadataJson || {}),
     },
   });
 }
 
-function isAppBlueprintDocumentMessage(messageType: string | null | undefined, payloadJson: any) {
+function isAppBlueprintDocumentMessage(
+  messageType: string | null | undefined,
+  payloadJson: Record<string, unknown>
+) {
   return Boolean(
     messageType === 'markdown_document' &&
-      payloadJson &&
-      typeof payloadJson === 'object' &&
       payloadJson.intent === 'app_blueprint' &&
       payloadJson.appBlueprint
   );
 }
 
-function isAppBlueprintProjectionMessage(messageType: string | null | undefined, payloadJson: any) {
+function isAppBlueprintProjectionMessage(
+  messageType: string | null | undefined,
+  payloadJson: Record<string, unknown>
+) {
+  const artifactRef = isJsonRecord(payloadJson.artifactRef) ? payloadJson.artifactRef : {};
   return Boolean(
     messageType === 'markdown_document' &&
-      payloadJson &&
-      typeof payloadJson === 'object' &&
       payloadJson.intent === 'app_blueprint' &&
-      payloadJson.artifactRef &&
-      typeof payloadJson.artifactRef.artifactId === 'string'
+      typeof artifactRef.artifactId === 'string'
   );
+}
+
+function getArtifactRefId(payloadJson: Record<string, unknown>) {
+  const artifactRef = isJsonRecord(payloadJson.artifactRef) ? payloadJson.artifactRef : {};
+  return typeof artifactRef.artifactId === 'string' ? artifactRef.artifactId : null;
+}
+
+function getBlueprintProjectionTitle(payloadJson: Record<string, unknown>) {
+  const display = isJsonRecord(payloadJson.display) ? payloadJson.display : {};
+  const appBlueprint = isJsonRecord(payloadJson.appBlueprint) ? payloadJson.appBlueprint : {};
+  return String(display.title || payloadJson.title || appBlueprint.name || 'App Blueprint');
+}
+
+function getBlueprintDocumentTitle(payloadJson: Record<string, unknown>) {
+  const appBlueprint = isJsonRecord(payloadJson.appBlueprint) ? payloadJson.appBlueprint : {};
+  return String(payloadJson.title || appBlueprint.name || 'App Blueprint');
 }
 
 export async function updateTaskStatus(id: string, status: string) {

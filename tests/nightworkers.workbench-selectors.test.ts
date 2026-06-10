@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type {
   ReviewResult,
-  Task,
   TaskEvent,
   TaskMessage,
-  TaskRun,
   TaskRunTodo,
 } from '../src/modules/nightworkers/types';
 import {
+  buildArtifactContext,
+  buildBlueprintArtifactRef,
+  buildQuestionnaireWorkspaceArtifactRef,
   buildWorkbenchArtifactRefs,
   buildWorkbenchSessionView,
   getSessionEmailState,
@@ -15,8 +16,9 @@ import {
   getSessionProgress,
   groupWorkbenchSessions,
 } from '../src/modules/nightworkers/workbenchSelectors';
+import { buildTask, buildTaskRun } from './helpers/nightworkers-fixtures';
 
-const baseTask: Task = {
+const baseTask = buildTask({
   id: '11111111-1111-4111-8111-111111111111',
   repositoryId: '22222222-2222-4222-8222-222222222222',
   title: 'Implement workbench',
@@ -29,7 +31,7 @@ const baseTask: Task = {
   priority: 0,
   createdAt: '2026-06-02T00:00:00.000Z',
   updatedAt: '2026-06-02T00:00:00.000Z',
-};
+});
 
 describe('workbench selectors', () => {
   it('groups task status into processing queue and archive deterministically', () => {
@@ -537,9 +539,113 @@ describe('workbench selectors', () => {
       }),
     ]);
   });
+
+  it('builds a focused Blueprint artifact ref for shell auto-open behavior', () => {
+    const message: TaskMessage = {
+      id: '44444444-4444-4444-8444-444444441234',
+      taskId: baseTask.id,
+      runId: baseRun.id,
+      role: 'assistant',
+      content: '# App Blueprint',
+      messageType: 'markdown_document',
+      metadataJson: {
+        title: 'Legacy title',
+        display: { title: 'Display Inventory', summary: 'Generated app blueprint' },
+        artifactRef: { artifactId: 'artifact-blueprint-2', kind: 'app_blueprint', version: 1 },
+        appBlueprint: { name: 'Canonical Inventory' },
+      },
+      createdAt: '2026-06-02T00:00:01.000Z',
+    };
+
+    expect(buildBlueprintArtifactRef(message)).toMatchObject({
+      id: 'artifact-artifact-blueprint-2',
+      taskId: baseTask.id,
+      runId: baseRun.id,
+      kind: 'app_blueprint',
+      title: 'Blueprint: Canonical Inventory',
+      summary: 'Generated app blueprint',
+      source: { type: 'artifact_row', artifactId: 'artifact-blueprint-2' },
+    });
+  });
+
+  it('builds questionnaire workspace refs with questionnaire tab metadata', () => {
+    const message: TaskMessage = {
+      id: '44444444-4444-4444-8444-444444441235',
+      taskId: baseTask.id,
+      role: 'assistant',
+      content: '# Questionnaire ready',
+      messageType: 'markdown_document',
+      metadataJson: {
+        intent: 'design_questionnaire_ready',
+        questionnaireSessionId: 'questionnaire-1',
+      },
+      createdAt: '2026-06-02T00:00:01.000Z',
+    };
+
+    expect(buildQuestionnaireWorkspaceArtifactRef(message)).toMatchObject({
+      id: `blueprint-workspace-${baseTask.id}`,
+      taskId: baseTask.id,
+      kind: 'blueprint_workspace',
+      title: 'Specification Workspace',
+      source: { type: 'task_message', messageId: message.id },
+      metadata: {
+        specificationSource: 'design_questionnaire_ready',
+        questionnaireSessionId: 'questionnaire-1',
+        initialTab: 'questionnaire',
+      },
+    });
+  });
+
+  it('derives artifact context from typed Blueprint metadata and active session', () => {
+    const artifact = {
+      id: 'artifact-blueprint-3',
+      taskId: baseTask.id,
+      kind: 'app_blueprint' as const,
+      title: 'Blueprint: Inventory',
+      summary: 'Inventory app',
+      source: { type: 'task_message' as const, messageId: 'message-1' },
+      createdAt: '2026-06-02T00:00:01.000Z',
+      metadata: {
+        intent: 'app_blueprint',
+        artifactType: 'app_blueprint',
+        initialTab: 'preview',
+        blueprintCount: 2,
+        appBlueprint: {
+          name: 'Inventory Ops',
+          screens: [
+            {
+              name: 'Dashboard',
+              sections: [{ title: 'Open Orders' }, { componentName: 'InventoryTable' }],
+            },
+            { id: 'settings', sections: [{ id: 'rules' }] },
+          ],
+          databaseSchema: {
+            tables: [{ label: 'Products' }, { name: 'Orders' }],
+          },
+        },
+      },
+    };
+
+    expect(buildArtifactContext(artifact, 'other-task')).toBeNull();
+    expect(buildArtifactContext(artifact, baseTask.id)).toMatchObject({
+      artifactId: 'artifact-blueprint-3',
+      kind: 'app_blueprint',
+      title: 'Blueprint: Inventory',
+      metadata: {
+        intent: 'app_blueprint',
+        artifactType: 'app_blueprint',
+        appBlueprintName: 'Inventory Ops',
+        screenNames: ['Dashboard', 'settings'],
+        sectionNames: ['Open Orders', 'InventoryTable', 'rules'],
+        tableNames: ['Products', 'Orders'],
+        initialTab: 'preview',
+        blueprintCount: 2,
+      },
+    });
+  });
 });
 
-const baseRun: TaskRun = {
+const baseRun = buildTaskRun({
   id: '77777777-7777-4777-8777-777777777777',
   taskId: baseTask.id,
   repositoryId: baseTask.repositoryId,
@@ -553,7 +659,7 @@ const baseRun: TaskRun = {
   startedAt: '2026-06-02T00:00:01.000Z',
   createdAt: '2026-06-02T00:00:01.000Z',
   updatedAt: '2026-06-02T00:00:02.000Z',
-};
+});
 
 const approvedReview: ReviewResult = {
   version: 1,

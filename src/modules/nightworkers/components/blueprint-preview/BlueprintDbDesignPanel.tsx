@@ -6,9 +6,9 @@ import { columnsForTable, relationsForTable } from './dbDesignModel';
 
 type BlueprintDbDesignPanelProps = {
   id?: string;
-  blueprint: Record<string, any>;
-  tables: Array<Record<string, any>>;
-  validationIssues: Array<Record<string, any>>;
+  blueprint: Record<string, unknown>;
+  tables: Array<Record<string, unknown>>;
+  validationIssues: Array<Record<string, unknown>>;
   adoption?: ReactNode;
 };
 
@@ -20,17 +20,13 @@ export function BlueprintDbDesignPanel({
   adoption,
 }: BlueprintDbDesignPanelProps) {
   const { t } = useTranslation();
-  const relations = useMemo(
-    () =>
-      blueprint.databaseSchema && Array.isArray(blueprint.databaseSchema.relations)
-        ? blueprint.databaseSchema.relations.filter(
-            (relation: unknown): relation is Record<string, any> =>
-              Boolean(relation && typeof relation === 'object' && !Array.isArray(relation))
-          )
-        : [],
-    [blueprint.databaseSchema]
+  const relations = useMemo(() => {
+    const databaseSchema = isRecord(blueprint.databaseSchema) ? blueprint.databaseSchema : {};
+    return Array.isArray(databaseSchema.relations) ? databaseSchema.relations.filter(isRecord) : [];
+  }, [blueprint.databaseSchema]);
+  const [openTable, setOpenTable] = useState<string | null>(
+    tables[0]?.name ? String(tables[0].name) : null
   );
-  const [openTable, setOpenTable] = useState<string | null>(tables[0]?.name || null);
 
   return (
     <PreviewCard id={id} className="grid gap-3 rounded-lg p-3 text-xs">
@@ -160,6 +156,10 @@ function ColumnTable({ columns }: { columns: Array<Record<string, unknown>> }) {
       </table>
     </div>
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function DbBadge({

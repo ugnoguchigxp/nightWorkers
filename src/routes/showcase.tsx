@@ -11,7 +11,7 @@ import {
   PreviewTable,
 } from '../modules/nightworkers/components/blueprint-preview/BlueprintPreviewPrimitives';
 
-export const Route = createFileRoute('/showcase' as any)({
+export const Route = createFileRoute('/showcase')({
   component: ShowcasePage,
 });
 

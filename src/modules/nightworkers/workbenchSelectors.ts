@@ -7,6 +7,7 @@ import type {
   TaskMessage,
   TaskRun,
   TaskRunTodo,
+  WorkbenchArtifactContext,
   WorkbenchArtifactKind,
   WorkbenchArtifactRef,
   WorkbenchPhase,
@@ -50,6 +51,175 @@ type SessionEvidence = {
 type SessionGroupOptions = {
   now?: unknown;
 };
+
+export function activityArtifactToTaskMessage(artifact: ActivityArtifact): TaskMessage {
+  const metadata = activityArtifactMetadata(artifact);
+  const appBlueprint = metadata.appBlueprint || parseArtifactContentJson(artifact.contentText);
+  return {
+    id: `artifact-${artifact.id}`,
+    taskId: artifact.taskId,
+    runId: artifact.runId || null,
+    role: 'assistant',
+    content: artifact.contentText || '',
+    messageType: 'markdown_document',
+    metadataJson: {
+      ...metadata,
+      intent: metadata.intent || 'app_blueprint',
+      artifactRef: { artifactId: artifact.id, kind: 'app_blueprint', version: 1 },
+      appBlueprint,
+    },
+    createdAt: artifact.createdAt,
+  };
+}
+
+export function mergeWorkspaceTaskMessages({
+  taskMessages,
+  activityArtifacts,
+  generatedMessages,
+}: {
+  taskMessages: TaskMessage[];
+  activityArtifacts: ActivityArtifact[];
+  generatedMessages: TaskMessage[];
+}) {
+  const existingMessageIds = new Set(taskMessages.map((message) => message.id));
+  const existingArtifactIds = new Set(
+    taskMessages.map(taskMessageArtifactId).filter((id): id is string => Boolean(id))
+  );
+  const syntheticArtifactMessages = activityArtifacts
+    .filter(
+      (artifact) => artifact.kind === 'app_blueprint' && !existingArtifactIds.has(artifact.id)
+    )
+    .map(activityArtifactToTaskMessage)
+    .filter((message) => !existingMessageIds.has(message.id));
+  const nextIds = new Set([
+    ...existingMessageIds,
+    ...syntheticArtifactMessages.map((message) => message.id),
+  ]);
+  return [
+    ...taskMessages,
+    ...syntheticArtifactMessages,
+    ...generatedMessages.filter((message) => !nextIds.has(message.id)),
+  ];
+}
+
+export function isReviewedSpecificationMessage(message: TaskMessage) {
+  const metadata = message.metadataJson || {};
+  return (
+    message.messageType === 'markdown_document' &&
+    metadata.intent === 'draft_spec' &&
+    metadata.source === 'status_document_review' &&
+    typeof metadata.reviewedSourceMessageId === 'string'
+  );
+}
+
+export function isNormalBlueprintMessage(message: TaskMessage): boolean {
+  const metadata = isRecord(message.metadataJson) ? message.metadataJson : {};
+  return (
+    message.messageType === 'markdown_document' &&
+    hasAppBlueprintMetadata(metadata) &&
+    !isDbDesignBlueprintMessage(message)
+  );
+}
+
+export function isDbDesignBlueprintMessage(message: TaskMessage): boolean {
+  const metadata = isRecord(message.metadataJson) ? message.metadataJson : {};
+  return message.messageType === 'markdown_document' && isBlueprintDbDesignMetadata(metadata);
+}
+
+export function buildBlueprintArtifactRef(message: TaskMessage): WorkbenchArtifactRef {
+  const metadata = taskMessageMetadata(message);
+  const blueprint = isRecord(metadata.appBlueprint) ? metadata.appBlueprint : {};
+  const display = isRecord(metadata.display) ? metadata.display : {};
+  const artifactRef = isRecord(metadata.artifactRef) ? metadata.artifactRef : {};
+  const title = String(blueprint.name || display.title || metadata.title || 'App Blueprint');
+  const artifactId = artifactRef.artifactId;
+  return {
+    id: typeof artifactId === 'string' ? `artifact-${artifactId}` : `message-${message.id}`,
+    taskId: message.taskId,
+    runId: message.runId || undefined,
+    kind: 'app_blueprint',
+    title: `Blueprint: ${title}`,
+    summary: String(display.summary || message.content.slice(0, 160)),
+    source:
+      typeof artifactId === 'string'
+        ? { type: 'artifact_row', artifactId }
+        : { type: 'task_message', messageId: message.id },
+    createdAt: String(message.createdAt),
+    metadata,
+  };
+}
+
+export function buildQuestionnaireWorkspaceArtifactRef(message: TaskMessage): WorkbenchArtifactRef {
+  return {
+    id: `blueprint-workspace-${message.taskId}`,
+    taskId: message.taskId,
+    runId: message.runId || undefined,
+    kind: 'blueprint_workspace',
+    title: 'Specification Workspace',
+    summary: message.content.slice(0, 160),
+    source: { type: 'task_message', messageId: message.id },
+    createdAt: String(message.createdAt),
+    metadata: {
+      specificationSource: 'design_questionnaire_ready',
+      questionnaireSessionId: message.metadataJson?.questionnaireSessionId,
+      initialTab: 'questionnaire',
+    },
+  };
+}
+
+export function buildArtifactContext(
+  artifact: WorkbenchArtifactRef | null,
+  activeSessionId: string | null
+): WorkbenchArtifactContext | null {
+  if (!artifact || artifact.taskId !== activeSessionId) return null;
+  const metadata = artifact.metadata || {};
+  const appBlueprint = isRecord(metadata.appBlueprint) ? metadata.appBlueprint : {};
+  const screens = Array.isArray(appBlueprint.screens) ? appBlueprint.screens : [];
+  const screenNames = screens
+    .map((screen) => (isRecord(screen) ? screen : null))
+    .filter((screen): screen is Record<string, unknown> => Boolean(screen))
+    .map((screen) => String(screen.name || screen.id || ''))
+    .filter(Boolean)
+    .slice(0, 6);
+  const sectionNames = screens
+    .flatMap((screen) => {
+      const record = isRecord(screen) ? screen : {};
+      return Array.isArray(record.sections) ? record.sections : [];
+    })
+    .map((section) => (isRecord(section) ? section : null))
+    .filter((section): section is Record<string, unknown> => Boolean(section))
+    .map((section) =>
+      String(section.name || section.title || section.componentName || section.id || '')
+    )
+    .filter(Boolean)
+    .slice(0, 10);
+  const databaseSchema = isRecord(appBlueprint.databaseSchema) ? appBlueprint.databaseSchema : {};
+  const tables = Array.isArray(databaseSchema.tables) ? databaseSchema.tables : [];
+  const tableNames = tables
+    .map((table) => (isRecord(table) ? table : null))
+    .filter((table): table is Record<string, unknown> => Boolean(table))
+    .map((table) => String(table.label || table.name || ''))
+    .filter(Boolean)
+    .slice(0, 10);
+  return {
+    artifactId: artifact.id,
+    kind: artifact.kind,
+    title: artifact.title,
+    summary: artifact.summary,
+    source: artifact.source,
+    metadata: {
+      intent: typeof metadata.intent === 'string' ? metadata.intent : undefined,
+      artifactType: typeof metadata.artifactType === 'string' ? metadata.artifactType : undefined,
+      appBlueprintName: String(appBlueprint.name || appBlueprint.id || '') || undefined,
+      screenNames: screenNames.length ? screenNames : undefined,
+      sectionNames: sectionNames.length ? sectionNames : undefined,
+      tableNames: tableNames.length ? tableNames : undefined,
+      initialTab: typeof metadata.initialTab === 'string' ? metadata.initialTab : undefined,
+      blueprintCount:
+        typeof metadata.blueprintCount === 'number' ? metadata.blueprintCount : undefined,
+    },
+  };
+}
 
 export function getSessionGroup(
   task: Task,
@@ -473,7 +643,8 @@ export function buildWorkbenchArtifactRefs(input: {
 function activityArtifactRef(taskId: string, artifact: ActivityArtifact): WorkbenchArtifactRef {
   const metadata = activityArtifactMetadata(artifact);
   const appBlueprint = metadata.appBlueprint || parseArtifactContentJson(artifact.contentText);
-  const title = String(appBlueprint?.name || metadata.title || 'App Blueprint');
+  const appBlueprintRecord = isRecord(appBlueprint) ? appBlueprint : null;
+  const title = String(appBlueprintRecord?.name || metadata.title || 'App Blueprint');
   return {
     id: `artifact-${artifact.id}`,
     taskId,
@@ -481,8 +652,8 @@ function activityArtifactRef(taskId: string, artifact: ActivityArtifact): Workbe
     kind: 'app_blueprint',
     title: `Blueprint: ${title}`,
     summary:
-      typeof appBlueprint?.description === 'string'
-        ? appBlueprint.description
+      typeof appBlueprintRecord?.description === 'string'
+        ? appBlueprintRecord.description
         : (artifact.contentText || '').slice(0, 160),
     source: { type: 'artifact_row', artifactId: artifact.id },
     createdAt: String(artifact.createdAt),
@@ -502,19 +673,27 @@ function isBlueprintActivityArtifact(artifact: ActivityArtifact): boolean {
   );
 }
 
-function activityArtifactMetadata(artifact: ActivityArtifact): Record<string, any> {
-  return artifact.metadataJson && typeof artifact.metadataJson === 'object'
-    ? artifact.metadataJson
-    : {};
+function activityArtifactMetadata(artifact: ActivityArtifact): Record<string, unknown> {
+  return isRecord(artifact.metadataJson) ? artifact.metadataJson : {};
 }
 
-function parseArtifactContentJson(content: string | null | undefined): any {
+function parseArtifactContentJson(content: string | null | undefined): unknown {
   if (!content?.trim()) return null;
   try {
     return JSON.parse(content);
   } catch {
     return null;
   }
+}
+
+function taskMessageArtifactId(message: TaskMessage): string | null {
+  const metadata = taskMessageMetadata(message);
+  const artifactRef = isRecord(metadata.artifactRef) ? metadata.artifactRef : null;
+  return typeof artifactRef?.artifactId === 'string' ? artifactRef.artifactId : null;
+}
+
+function taskMessageMetadata(message: TaskMessage): Record<string, unknown> {
+  return isRecord(message.metadataJson) ? message.metadataJson : {};
 }
 
 function isMessageCoveredByActivityArtifact(
@@ -571,24 +750,27 @@ function inferDocumentArtifactKind(message: TaskMessage): WorkbenchArtifactKind 
 }
 
 function isBlueprintArtifactMessage(message: TaskMessage): boolean {
-  const metadata = message.metadataJson || {};
-  return (
-    (metadata.intent === 'app_blueprint' || metadata.appBlueprint) &&
-    !isBlueprintDbDesignArtifactMessage(message)
-  );
+  return isNormalBlueprintMessage(message);
 }
 
 function isBlueprintDbDesignArtifactMessage(message: TaskMessage): boolean {
-  const metadata = message.metadataJson || {};
-  return isBlueprintDbDesignMetadata(metadata);
+  return isDbDesignBlueprintMessage(message);
 }
 
-function isBlueprintDbDesignMetadata(metadata: Record<string, any>): boolean {
+function isBlueprintDbDesignMetadata(metadata: Record<string, unknown>): boolean {
   return (
     metadata.artifactType === 'blueprint_db_design' ||
     metadata.source === 'blueprint-db-design' ||
     Boolean(metadata.dbDesignTarget)
   );
+}
+
+function hasAppBlueprintMetadata(metadata: Record<string, unknown>): boolean {
+  return metadata.intent === 'app_blueprint' || Boolean(metadata.appBlueprint);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function hasImplementationPlanEvidence(messages: TaskMessage[]) {
@@ -645,7 +827,10 @@ function artifactTitleForKind(kind: WorkbenchArtifactKind, message: TaskMessage)
 }
 
 function hasFailedVerification(event: TaskEvent): boolean {
-  const data = event.payloadJson?.runEvent?.data || (event.payloadJson as any) || {};
+  const payload: Record<string, unknown> = isRecord(event.payloadJson) ? event.payloadJson : {};
+  const runEvent: Record<string, unknown> = isRecord(payload.runEvent) ? payload.runEvent : {};
+  const runEventData: Record<string, unknown> = isRecord(runEvent.data) ? runEvent.data : {};
+  const data = Object.keys(runEventData).length > 0 ? runEventData : payload;
   return data.passed === false || data.status === 'failed';
 }
 
@@ -659,7 +844,7 @@ function isCompletedSessionArchiveReady(task: Task, now: unknown = Date.now()) {
 function toMs(value: unknown): number {
   if (!value) return 0;
   if (value instanceof Date) return value.getTime();
-  const date = new Date(value as any);
+  const date = new Date(String(value));
   const ms = date.getTime();
   return Number.isFinite(ms) ? ms : 0;
 }

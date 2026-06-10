@@ -1,5 +1,8 @@
 import { z } from '@hono/zod-openapi';
 
+const jsonValueSchema = z.unknown();
+const dateLikeSchema = z.union([z.string(), z.date()]);
+
 export const taskEventSchema = z
   .object({
     id: z.string().uuid(),
@@ -9,8 +12,8 @@ export const taskEventSchema = z
     eventType: z.string().nullable().optional(),
     type: z.string(),
     message: z.string(),
-    payloadJson: z.any().nullable().optional(),
-    timestamp: z.any(),
+    payloadJson: jsonValueSchema.nullable().optional(),
+    timestamp: dateLikeSchema,
   })
   .openapi('TaskEvent');
 
@@ -20,8 +23,8 @@ export const artifactSchema = z
     runId: z.string().uuid(),
     kind: z.string(),
     path: z.string(),
-    metadataJson: z.any().nullable().optional(),
-    createdAt: z.any(),
+    metadataJson: jsonValueSchema.nullable().optional(),
+    createdAt: dateLikeSchema,
   })
   .openapi('Artifact');
 
@@ -33,8 +36,8 @@ export const activityArtifactSchema = z
     kind: z.string(),
     path: z.string().nullable().optional(),
     contentText: z.string().nullable().optional(),
-    metadataJson: z.any().nullable().optional(),
-    createdAt: z.any(),
+    metadataJson: jsonValueSchema.nullable().optional(),
+    createdAt: dateLikeSchema,
   })
   .openapi('ActivityArtifact');
 
@@ -51,14 +54,14 @@ export const activityEventSchema = z
     source: z.string(),
     status: z.string().nullable().optional(),
     text: z.string().nullable().optional(),
-    payloadJson: z.any().nullable().optional(),
+    payloadJson: jsonValueSchema.nullable().optional(),
     artifactId: z.string().uuid().nullable().optional(),
     clientTempId: z.string().nullable().optional(),
     externalId: z.string().nullable().optional(),
     dedupeKey: z.string().nullable().optional(),
     ingestError: z.string().nullable().optional(),
     visibility: z.string(),
-    createdAt: z.any(),
+    createdAt: dateLikeSchema,
   })
   .openapi('ActivityEvent');
 
@@ -81,14 +84,14 @@ export const backgroundProcessSchema = z
     pid: z.number().int().nullable().optional(),
     exitCode: z.number().int().nullable().optional(),
     signal: z.string().nullable().optional(),
-    startedAt: z.any(),
-    endedAt: z.any().nullable().optional(),
+    startedAt: dateLikeSchema,
+    endedAt: dateLikeSchema.nullable().optional(),
     stopReason: z.string().nullable().optional(),
     latestOutput: z.string(),
     outputArtifactId: z.string().uuid().nullable().optional(),
-    metadataJson: z.any().nullable().optional(),
-    createdAt: z.any(),
-    updatedAt: z.any(),
+    metadataJson: jsonValueSchema.nullable().optional(),
+    createdAt: dateLikeSchema,
+    updatedAt: dateLikeSchema,
   })
   .openapi('BackgroundProcess');
 
@@ -110,8 +113,8 @@ export const taskMessageSchema = z
     role: z.enum(['user', 'assistant', 'system', 'tool']),
     content: z.string(),
     messageType: z.string().nullable().optional(),
-    metadataJson: z.any().nullable().optional(),
-    createdAt: z.any(),
+    metadataJson: jsonValueSchema.nullable().optional(),
+    createdAt: dateLikeSchema,
   })
   .openapi('TaskMessage');
 

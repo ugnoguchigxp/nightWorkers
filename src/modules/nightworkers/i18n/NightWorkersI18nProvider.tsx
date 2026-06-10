@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
-import { apiFetch } from '../../../lib/api-base';
+import { fetchGeneralSettings } from '../nightWorkersCommands';
 import { i18next } from './setup';
 
 type GeneralSettingsResponse = {
@@ -13,7 +13,7 @@ export function NightWorkersI18nProvider({ children }: { children: ReactNode }) 
 
     async function loadLanguage() {
       try {
-        const res = await apiFetch('/api/settings/general');
+        const res = await fetchGeneralSettings();
         if (!res.ok) return;
         const settings = (await res.json()) as GeneralSettingsResponse;
         if (cancelled || !settings.language) return;

@@ -4,6 +4,7 @@ import { formatFinishedTime } from '../utils/time';
 import { ThreadMessage } from './ThreadMessage';
 import {
   asNumber,
+  asRecord,
   asString,
   estimateReplacementStats,
   getActivityChangedFiles,
@@ -87,13 +88,14 @@ function rememberVisibleCliCommand(event: ActivityEvent, seenCliCommands: Set<st
 }
 
 function visibleCliCommandKey(event: ActivityEvent, summary: VisibleCliCommandSummary): string {
-  const payload = event.payloadJson as any;
+  const payload = asRecord(event.payloadJson);
+  const runEvent = asRecord(payload.runEvent);
+  const runEventData = asRecord(runEvent.data);
+  const nestedPayload = asRecord(payload.payload);
   const step =
-    asNumber(payload?.runEvent?.data?.iteration) ||
-    asNumber(payload?.runEvent?.data?.step) ||
-    asNumber(payload?.payload?.step);
+    asNumber(runEventData.iteration) || asNumber(runEventData.step) || asNumber(nestedPayload.step);
   if (typeof step === 'number') {
-    return `${event.runId || payload?.runEvent?.runId || 'run'}:${step}:${summary.toolName}:${summary.command}`;
+    return `${event.runId || runEvent.runId || 'run'}:${step}:${summary.toolName}:${summary.command}`;
   }
   return `${summary.toolName}:${summary.command}`;
 }
@@ -290,7 +292,7 @@ export type VisibleCliCommandSummary = {
 };
 
 export function getVisibleCliCommandSummary(event: ActivityEvent): VisibleCliCommandSummary | null {
-  const payload = event.payloadJson as any;
+  const payload = asRecord(event.payloadJson);
   const toolName = getToolName(payload);
   if (
     toolName !== 'run_command' &&
@@ -300,13 +302,17 @@ export function getVisibleCliCommandSummary(event: ActivityEvent): VisibleCliCom
     return null;
   }
 
-  const args = getToolArguments(payload);
-  const result = getToolResult(payload);
+  const args = asRecord(getToolArguments(payload));
+  const result = asRecord(getToolResult(payload));
+  const resultPayload = asRecord(result.payload);
+  const runEvent = asRecord(payload.runEvent);
+  const runEventData = asRecord(runEvent.data);
+  const payloadPayload = asRecord(payload.payload);
   const command =
-    asString(args?.command) ||
-    asString(result?.payload?.command) ||
-    asString(payload?.runEvent?.data?.command) ||
-    asString(payload?.payload?.command);
+    asString(args.command) ||
+    asString(resultPayload.command) ||
+    asString(runEventData.command) ||
+    asString(payloadPayload.command);
   if (!command.trim()) return null;
   const output = getCodexCommandOutput(event);
   return output ? { toolName, command, output } : { toolName, command };

@@ -140,6 +140,26 @@ Failure flow:
 - Keep only `artifactRef` and display summary.
 - Retain raw diagnostics outside normal user-visible timeline.
 
+## Fallback Reduction Work Items
+
+各 fallback は `migration` / `read-only compatibility` / `removal` のどれかに分類する。新規実装では `migration` か `removal` だけを増やし、`read-only compatibility` は既存データ表示のためだけに使う。
+
+| ID | Fallback | Current location | Classification | Action | Test owner | Removal condition |
+| --- | --- | --- | --- | --- | --- | --- |
+| AF-01 | `activity_artifacts` から synthetic `TaskMessage` を作る | `workbenchSelectors.activityArtifactToTaskMessage`, `mergeWorkspaceTaskMessages` | read-only compatibility | persisted message がない既存 artifact row だけを message projection に変換する。新規 generation は `artifactRef` 付き projection message を必ず保存する。 | `tests/artifact-workspace-viewer.test.ts`, `tests/nightworkers.workbench-selectors.test.ts` | `task_artifacts` または canonical artifact read model が導入され、artifact row から直接 preview できること。 |
+| AF-02 | embedded `metadataJson.appBlueprint` を preview 入力にする | `ArtifactWorkspaceViewer`, `ArtifactPane`, timeline payload components | migration | preview は `artifactRef.artifactId` を優先し、embedded payload は old message の fallback と明示する。新規 projection message では full Blueprint payload を compatibility-only にする。 | `tests/nightworkers.workbench-selectors.test.ts`, route tests for Blueprint generation | projection-only message で preview が開く regression test が通り、旧 embedded message test が read-only fixture に移ったこと。 |
+| AF-03 | DB Design を `kind: app_blueprint` + metadata で識別する | `isDbDesignBlueprintMessage`, `isBlueprintActivityArtifact`, DB Design workspace filters | migration | DB Design artifact kind/schema を分けるまでは typed helper に閉じ込める。UI や route が `source === "blueprint-db-design"` を手書きしない状態を維持する。 | `tests/nightworkers.workbench-selectors.test.ts`, `tests/services.blueprint-data-design.test.ts` | canonical artifact kind に `blueprint_db_design` が追加され、旧 metadata 判定が read-only fixture のみに残ること。 |
+| AF-04 | raw invalid JSON / parse error を chat content に残す | generation error handlers in workbench/questionnaire services | removal | failure projection は user-visible summary と diagnostic ref だけにし、raw output は diagnostic/admin surface へ移す。 | workbench route tests, questionnaire route tests | diagnostic record/read API が追加され、normal timeline に raw output が表示されない regression test が通ること。 |
+| AF-05 | activity replay が legacy run-event payload を primary として読む | run-events normalizer, activity repository, replay UI | read-only compatibility | canonical `runEvent` がある場合は必ず canonical を読む。legacy payload は imported/old event だけに限定する。 | `tests/services.run-events.test.ts`, replay/export tests | persisted run events が canonical schema を持ち、legacy import fixture 以外で `legacyPayload` が不要になること。 |
+| AF-06 | planning/readiness が assistant prose or metadata intent を primary evidence にする | planning helpers, workbench selectors | migration | readiness は artifact/projection/reference existence を見る。message prose は fallback evidence として扱う。 | planning helper tests, workbench route tests | implementation plan / Blueprint / DB Design の persisted artifact refs が readiness query で取得できること。 |
+
+Compatibility を残す場合も、次の制約を守る。
+
+- fallback は selector/helper/repository adapter に閉じ込め、component や route handler に条件を増やさない。
+- fallback path には focused regression test を置き、新規 write path の仕様と同じ test に混ぜない。
+- fallback を削除する前に、対象 fixture が old-data compatibility か active write path かを test 名で分ける。
+- `legacy` という名前は historical input の read-only 表示に限定し、現在の canonical flow の別名として使わない。
+
 ## Guardrails
 
 - Provider/parser compatibility belongs only in artifact parsing services.

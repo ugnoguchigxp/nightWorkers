@@ -1,6 +1,7 @@
 import { z } from '@hono/zod-openapi';
 
 const kebabIdSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+const dateLikeSchema = z.union([z.string(), z.date()]);
 
 export const questionnaireChoiceQuestionSchema = z.object({
   text: z.string().min(1),
@@ -171,8 +172,8 @@ export const designQuestionnaireSessionSchema = z.object({
   repositoryId: z.string().uuid(),
   sourceBlueprintMessageId: z.string().uuid().nullable(),
   status: designQuestionnaireSessionStatusSchema,
-  createdAt: z.any(),
-  updatedAt: z.any(),
+  createdAt: dateLikeSchema,
+  updatedAt: dateLikeSchema,
   questionSets: z.array(
     z.object({
       id: z.string().uuid(),
@@ -180,7 +181,7 @@ export const designQuestionnaireSessionSchema = z.object({
       questionnaire: designQuestionnaireSchema.nullable(),
       rawOutput: z.string().nullable(),
       validationStatus: z.enum(['valid', 'invalid']),
-      createdAt: z.any(),
+      createdAt: dateLikeSchema,
     })
   ),
   answers: z.array(
@@ -188,7 +189,7 @@ export const designQuestionnaireSessionSchema = z.object({
       id: z.string().uuid(),
       questionId: kebabIdSchema,
       answer: designQuestionnaireAnswerSchema,
-      answeredAt: z.any(),
+      answeredAt: dateLikeSchema,
     })
   ),
   reviews: z.array(
@@ -197,8 +198,8 @@ export const designQuestionnaireSessionSchema = z.object({
       review: designDecisionReviewSchema.nullable(),
       publishedMessageId: z.string().uuid().nullable().optional(),
       status: z.enum(['draft', 'accepted', 'needs_edit', 'left_unadopted']),
-      createdAt: z.any(),
-      updatedAt: z.any(),
+      createdAt: dateLikeSchema,
+      updatedAt: dateLikeSchema,
     })
   ),
 });
@@ -208,7 +209,7 @@ export const blueprintWorkspaceArtifactSchema = z.object({
   kind: z.enum(['blueprint', 'db-design', 'decision-review']),
   title: z.string(),
   sourceMessageId: z.string().uuid(),
-  createdAt: z.any(),
+  createdAt: dateLikeSchema,
   adoptionState: z.enum(['adopted', 'not_adopted', 'unknown']).optional(),
   sourceBlueprintMessageId: z.string().uuid().optional(),
 });

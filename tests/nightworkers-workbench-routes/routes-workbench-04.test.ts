@@ -6,6 +6,7 @@ import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
 import * as service from '../../api/modules/nightworkers/nightworkers.service';
 import * as llm from '../../api/services/supervisor/llm-provider';
 import { representativeAppBlueprint } from '../fixtures/app-blueprint';
+import { flushPendingWorkbenchTasks } from '../helpers/nightworkers-test-controls';
 
 vi.mock('../../api/services/supervisor/llm-provider', async () => {
   const actual = await vi.importActual<typeof import('../../api/services/supervisor/llm-provider')>(
@@ -70,7 +71,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
-  await new Promise((resolve) => setTimeout(resolve, 25));
+  await flushPendingWorkbenchTasks();
   vi.clearAllMocks();
 });
 

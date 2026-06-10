@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 
-export function previewColumns(props: Record<string, any>) {
+export function previewColumns(props: Record<string, unknown>) {
   const propColumns = toObjectArray(props.columns);
   if (propColumns.length > 0) {
     return propColumns.map((column, index) => ({
@@ -17,7 +17,7 @@ export function previewColumns(props: Record<string, any>) {
 }
 
 export function previewRows(
-  props: Record<string, any>,
+  props: Record<string, unknown>,
   columns: Array<{ key: string; label: string }>
 ) {
   const rows = toObjectArray(props.rows);
@@ -43,7 +43,11 @@ const PREVIEW_IMAGE_SIZES: Record<PreviewImageSize, { width: number; height: num
   large: { width: 768, height: 432 },
 };
 
-export function previewImageFor(item: Record<string, any>, size: PreviewImageSize, seed: string) {
+export function previewImageFor(
+  item: Record<string, unknown>,
+  size: PreviewImageSize,
+  seed: string
+) {
   const image = firstString(
     item.imageUrl,
     item.thumbnailUrl,
@@ -61,7 +65,7 @@ export function previewImageFor(item: Record<string, any>, size: PreviewImageSiz
   return `https://picsum.photos/seed/${encodeURIComponent(seed)}/${dimensions.width}/${dimensions.height}.webp`;
 }
 
-export function previewImageAlt(item: Record<string, any>, fallback: string) {
+export function previewImageAlt(item: Record<string, unknown>, fallback: string) {
   return firstString(item.alt, item.title, item.label, item.name, item.caption) || fallback;
 }
 
@@ -77,7 +81,7 @@ function firstString(...values: unknown[]) {
   return '';
 }
 
-export function chartPreviewItems(props: Record<string, any>) {
+export function chartPreviewItems(props: Record<string, unknown>) {
   const sourceItems = toObjectArray(props.data || props.items || props.cards);
   if (sourceItems.length > 0) {
     return sourceItems.slice(0, 6).map((item, index) => ({
@@ -103,7 +107,7 @@ export function compactChartLabel(value: unknown) {
   return label.length > 9 ? `${label.slice(0, 8)}...` : label;
 }
 
-export function previewGenericItems(props: Record<string, any>, t: TFunction) {
+export function previewGenericItems(props: Record<string, unknown>, t: TFunction) {
   const propItems = toObjectArray(
     props.items || props.columns || props.controls || props.lines || props.insights
   );
@@ -182,10 +186,10 @@ const shadowDirectionA11yLabels: Record<string, string> = {
   '315deg': 'down left',
 };
 
-export function isObject(value: unknown): value is Record<string, any> {
+export function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
-export function toObjectArray(value: unknown): Array<Record<string, any>> {
+export function toObjectArray(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? value.filter(isObject) : [];
 }

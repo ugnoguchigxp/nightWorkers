@@ -24,12 +24,16 @@ event sequence cursor so page navigation or WebSocket reconnect can replay
 missed events from the database instead of relying only on in-memory broker
 history.
 
-Blueprint review lives inside the same Workbench lifecycle. A generated
-App Blueprint is stored as a `markdown_document` task message with structured
-`metadataJson.appBlueprint`. The Artifact Pane renders that artifact through
-Blueprint Preview, where users can adjust governed preview design settings,
-request DB Design revisions, and mark which Blueprint, DB Design, or Design
-Token artifact should be adopted for later planning.
+Blueprint review lives inside the same Workbench lifecycle. The current read
+model prefers persisted artifact rows and `artifactRef` projections, then falls
+back to legacy `markdown_document` messages with structured
+`metadataJson.appBlueprint` for old data. Synthetic IDs such as
+`artifact-<activityArtifactId>` are frontend projection IDs; the server
+resolvable ID is the raw `artifactId` inside `artifactRef` or an artifact-row
+source. The Artifact Pane renders App Blueprint artifacts through Blueprint
+Preview, where users can adjust governed preview design settings, request DB
+Design revisions, and mark which Blueprint, DB Design, or Design Token artifact
+should be adopted for later planning.
 
 ## Desktop Packaging Boundary
 The desktop app keeps the existing Node backend boundary. The Tauri shell owns
@@ -80,6 +84,43 @@ WebSocket URLs. Browser development keeps the existing Vite `/api` proxy path.
 - Adoption state is persistence, not artifact content. Blueprint, DB Design,
   and Design Token adoption decisions are stored separately and keyed by
   session/task ID plus source message ID.
+
+## Artifact Projection Rules
+- Canonical artifact rows outrank embedded task message payloads. Selectors
+  should prefer `artifact_row` sources and use `task_message` sources only when
+  no artifact row exists.
+- Activity artifacts may be projected into synthetic task messages for read-only
+  compatibility. New write paths should persist a projection message with
+  `metadataJson.artifactRef` instead of relying on synthetic IDs.
+- DB Design is classified through shared helpers, not by scattering checks for
+  `source === "blueprint-db-design"` or `dbDesignTarget` across UI components.
+  Until DB Design receives a dedicated artifact kind, those metadata checks stay
+  isolated in selector/model helpers.
+- `artifact-*` IDs in the frontend are display/projection IDs. Code that needs
+  to fetch persisted content must use `artifactRef.artifactId` or an
+  `artifact_row` source.
+
+## Queue And Run Lifecycle Rules
+- Session chat and Implementation Queue automation are separate. A Session can
+  continue normal Workbench chat while queue entries represent explicit,
+  user-approved automation work.
+- Queue admission creates or updates an `implementation_queue_entries` row and
+  moves the Session status to `queued`. Removing a queued entry returns the
+  Session to `ready` unless the run has already advanced into execution.
+- Queue side effects are controlled by service input: queue mutations may pass
+  `{ autoDrain: false }` for deterministic tests or maintenance flows. The
+  production default still drains unless `NIGHTWORKERS_DISABLE_AUTO_QUEUE_DRAIN`
+  disables it.
+- Run orchestration status changes are governed by
+  `runStatusTransitionTable` in
+  `api/modules/nightworkers/nightworkers.run-orchestration.service.ts`.
+  Important transitions include `ready -> queued/running`,
+  `running -> finalizing/cancelled/failed/needs_human`,
+  `finalizing -> needs_review/completed/failed/needs_human/cancelled`, and
+  terminal `completed` / `failed` states.
+- Queue completion follows run finalization: update the run, update the Session
+  task status, then complete/archive the queue entry. Tests should cover both
+  the run transition and queue dashboard state when this order changes.
 
 ## Design Rule
 - Keep provider and runtime boundaries explicit.

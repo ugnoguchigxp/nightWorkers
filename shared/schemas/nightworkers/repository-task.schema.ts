@@ -1,5 +1,7 @@
 import { z } from '@hono/zod-openapi';
 
+const dateLikeSchema = z.union([z.string(), z.date()]);
+
 export const safetyPolicySchema = z
   .object({
     allowedPaths: z.array(z.string()).optional(),
@@ -22,8 +24,8 @@ export const repositorySchema = z
     queueEnabled: z.boolean().default(false),
     maxConcurrentSessions: z.number().int().positive().default(1),
     safetyPolicy: safetyPolicySchema.nullable().optional(),
-    createdAt: z.any(),
-    updatedAt: z.any(),
+    createdAt: dateLikeSchema,
+    updatedAt: dateLikeSchema,
   })
   .openapi('Repository');
 
@@ -52,8 +54,8 @@ export const taskSchema = z
     timeoutSeconds: z.number(),
     priority: z.number(),
     createdBy: z.string().nullable().optional(),
-    createdAt: z.any(),
-    updatedAt: z.any(),
+    createdAt: dateLikeSchema,
+    updatedAt: dateLikeSchema,
   })
   .openapi('Task');
 
@@ -111,8 +113,8 @@ export const blueprintSessionDesignSettingsSchema = z
   .object({
     sessionId: z.string().uuid(),
     settings: blueprintPreviewDesignSettingsSchema.nullable(),
-    createdAt: z.any().optional(),
-    updatedAt: z.any().optional(),
+    createdAt: dateLikeSchema.optional(),
+    updatedAt: dateLikeSchema.optional(),
   })
   .openapi('BlueprintSessionDesignSettings');
 
@@ -128,7 +130,7 @@ export const blueprintAdoptionSchema = z
     sessionId: z.string().uuid(),
     messageId: z.string().uuid(),
     adopted: z.boolean(),
-    createdAt: z.any().optional(),
-    updatedAt: z.any().optional(),
+    createdAt: dateLikeSchema.optional(),
+    updatedAt: dateLikeSchema.optional(),
   })
   .openapi('BlueprintAdoption');

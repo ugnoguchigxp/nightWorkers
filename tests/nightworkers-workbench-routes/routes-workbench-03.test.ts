@@ -7,6 +7,11 @@ import * as service from '../../api/modules/nightworkers/nightworkers.service';
 import * as llm from '../../api/services/supervisor/llm-provider';
 import { buildBlueprintDbDesignPrompt } from '../../src/modules/nightworkers/components/blueprint-preview/dbDesignModel';
 import { representativeAppBlueprint } from '../fixtures/app-blueprint';
+import {
+  disableAutoQueueDrainForTest,
+  flushPendingWorkbenchTasks,
+  restoreAutoQueueDrainForTest,
+} from '../helpers/nightworkers-test-controls';
 
 vi.mock('../../api/services/supervisor/llm-provider', async () => {
   const actual = await vi.importActual<typeof import('../../api/services/supervisor/llm-provider')>(
@@ -71,12 +76,12 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-  process.env.NIGHTWORKERS_DISABLE_AUTO_QUEUE_DRAIN = 'true';
+  disableAutoQueueDrainForTest();
 });
 
 afterEach(async () => {
-  await new Promise((resolve) => setTimeout(resolve, 25));
-  delete process.env.NIGHTWORKERS_DISABLE_AUTO_QUEUE_DRAIN;
+  await flushPendingWorkbenchTasks();
+  restoreAutoQueueDrainForTest();
   vi.clearAllMocks();
 });
 

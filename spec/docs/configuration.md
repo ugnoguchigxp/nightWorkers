@@ -32,6 +32,18 @@ sidecar stdout/stderr is written to `sidecar.log`, and API events are written to
 Development mode keeps the existing repo-local defaults, including
 `api/.runtime` and `logs`.
 
+Runtime hygiene:
+
+- Production API/service code should use `api/lib/logger.ts` for warning/error
+  output. Direct `console.*` is reserved for startup fatal validation, CLI
+  scripts, and browser-only diagnostics where no server logger exists.
+- Environment variables that affect NightWorkers runtime behavior should be
+  read through focused config helpers such as `api/services/runtime-env.ts` or
+  the domain settings modules. Service code should prefer injected options or
+  settings objects over direct `process.env` reads.
+- Generated/local artifacts must stay out of tracked source. `pnpm
+  check:tracked-artifacts` fails if known temporary output paths are tracked.
+
 Startup diagnostics are exposed at:
 
 ```text
@@ -51,6 +63,16 @@ Enable as needed:
 ## LLM Providers
 - Provider/model settings are managed from the Settings screen and exposed under
   `/api/settings/llm/*`.
+- Structured providers are used for schema-first reasoning tasks such as
+  Workbench intake classification, Blueprint JSON generation, Design
+  Questionnaire decisions, reviews, and smoke tests. They are not the same as
+  the implementation runtime.
+- The implementation runtime lane decides how code-changing work runs after a
+  Session is started or claimed by the Queue. It can use the native local
+  runtime or the Codex agent lane depending on settings and availability.
+- Codex SDK in provider settings means schema-first provider access for
+  structured decisions. `codex-agent` is the runtime lane for repository work
+  execution. Do not document or expose them as interchangeable choices.
 - Runtime settings can override environment defaults for local development
   without requiring `.env` edits.
 - Secret fields are masked in `GET /api/settings/llm` responses. Saving a masked
@@ -60,6 +82,22 @@ Enable as needed:
   file path for tests or local experiments.
 - The smoke-test API validates whether the selected provider configuration can
   complete a small model request before it is used by Workbench runs.
+- Advanced or legacy runtime fallbacks should stay behind runtime settings and
+  diagnostics. The normal setup path is: choose a structured provider, smoke
+  test it, then choose the implementation runtime lane only when direct run
+  execution behavior needs to change.
+- Provider request boundaries are intentionally narrow:
+  `api/services/supervisor/llm-provider/request.ts` owns provider selection,
+  normalized request diagnostics, capability policy, and schema/request
+  classification; `providers.ts` owns provider calls and raw response
+  extraction; `index.ts` owns JSON extraction, schema-first validation, tracing,
+  and passing normalized usage to `llm-usage`.
+- Usage recording is separate from provider calls:
+  `api/services/llm-usage/normalize.ts` converts provider raw usage shapes into
+  `NormalizedLlmUsage`, while `repository.ts` persists usage records and
+  projects them into the activity ledger. Fallback prompt text is used only when
+  provider usage is missing and should not be mixed into provider raw usage
+  metadata.
 
 ## MCP Servers
 - Non-authenticated MCP Servers can be configured from the Settings screen.

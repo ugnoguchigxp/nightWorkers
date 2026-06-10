@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 
 const baseTasks = [
+  { label: 'tracked artifact check', command: 'pnpm', args: ['--silent', 'check:tracked-artifacts'] },
   { label: 'typecheck', command: 'pnpm', args: ['--silent', 'typecheck'] },
   { label: 'lint', command: 'pnpm', args: ['--silent', 'lint'] },
   {

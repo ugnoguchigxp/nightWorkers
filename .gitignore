@@ -33,6 +33,7 @@ coverage/
 playwright-report/
 test-results/
 blob-report/
+.tanstack/tmp/
 
 # TypeScript
 *.tsbuildinfo
@@ -60,7 +61,8 @@ api/.runtime/
 github-pages/.preview/
 github-pages/reports/
 github-pages/vendor/
-scratch/test-patch/
+scratch/
+!scratch/.gitkeep
 scripts/desktop/staged/*
 !scripts/desktop/staged/.gitkeep
 src-tauri/gen/

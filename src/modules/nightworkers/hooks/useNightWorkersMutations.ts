@@ -1,7 +1,23 @@
 import { type QueryClient, useMutation } from '@tanstack/react-query';
 import type { Dispatch, SetStateAction } from 'react';
 import { client } from '../../../lib/api';
-import { apiFetch } from '../../../lib/api-base';
+import {
+  archiveImplementationQueueEntry,
+  archiveWorkbenchSession,
+  cancelImplementationQueueEntry,
+  createImplementationQueueEntry,
+  createWorkbenchSession,
+  deleteTask,
+  patchTask as patchTaskCommand,
+  queueWorkbenchSession,
+  requeueImplementationQueueEntry,
+  startWorkbenchRun,
+  stopBackgroundProcess,
+  stopRun,
+  submitRunReview,
+  updateImplementationQueueSettings,
+  updateTodoWorkflowSettings,
+} from '../nightWorkersCommands';
 import type {
   BackgroundProcess,
   CreateProjectInput,
@@ -30,11 +46,7 @@ type UseNightWorkersMutationsInput = {
 };
 
 async function patchTask(sessionId: string, input: TaskPatchInput) {
-  const res = await apiFetch(`/api/tasks/${sessionId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
+  const res = await patchTaskCommand(sessionId, input);
   if (!res.ok) throw new Error(await res.text());
   return (await res.json()) as Task;
 }
@@ -111,11 +123,7 @@ export function useNightWorkersMutations({
 
   const createSessionMutation = useMutation({
     mutationFn: async (data: CreateSessionInput) => {
-      const res = await apiFetch('/api/workbench/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
+      const res = await createWorkbenchSession(data);
       if (!res.ok) throw new Error('Failed to create session');
       return (await res.json()) as Task;
     },
@@ -134,7 +142,7 @@ export function useNightWorkersMutations({
 
   const deleteSessionMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await apiFetch(`/api/tasks/${id}`, { method: 'DELETE' });
+      const res = await deleteTask(id);
       if (!res.ok) throw new Error('Failed to delete session');
       return res.json();
     },
@@ -154,7 +162,7 @@ export function useNightWorkersMutations({
 
   const startRunMutation = useMutation({
     mutationFn: async (sessionId: string) => {
-      const res = await apiFetch(`/api/workbench/sessions/${sessionId}/run`, { method: 'POST' });
+      const res = await startWorkbenchRun(sessionId);
       if (!res.ok) throw new Error('Failed to start run');
       return (await res.json()) as TaskRun;
     },
@@ -178,7 +186,7 @@ export function useNightWorkersMutations({
 
   const stopRunMutation = useMutation({
     mutationFn: async (runId: string) => {
-      const res = await apiFetch(`/api/runs/${runId}/stop`, { method: 'POST' });
+      const res = await stopRun(runId);
       if (!res.ok) throw new Error(await res.text());
       return (await res.json()) as TaskRun;
     },
@@ -204,9 +212,7 @@ export function useNightWorkersMutations({
 
   const stopBackgroundProcessMutation = useMutation({
     mutationFn: async (processId: string) => {
-      const res = await apiFetch(`/api/background-processes/${processId}/stop`, {
-        method: 'POST',
-      });
+      const res = await stopBackgroundProcess(processId);
       if (!res.ok) throw new Error(await res.text());
       return (await res.json()) as BackgroundProcess;
     },
@@ -225,7 +231,7 @@ export function useNightWorkersMutations({
 
   const queueSessionMutation = useMutation({
     mutationFn: async (sessionId: string) => {
-      const res = await apiFetch(`/api/workbench/sessions/${sessionId}/queue`, { method: 'POST' });
+      const res = await queueWorkbenchSession(sessionId);
       if (!res.ok) throw new Error(await res.text());
       return (await res.json()) as Task;
     },
@@ -243,11 +249,7 @@ export function useNightWorkersMutations({
 
   const createImplementationQueueEntryMutation = useMutation({
     mutationFn: async (sessionId: string) => {
-      const res = await apiFetch('/api/implementation-queue/entries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId: sessionId }),
-      });
+      const res = await createImplementationQueueEntry(sessionId);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
@@ -259,9 +261,7 @@ export function useNightWorkersMutations({
 
   const archiveImplementationQueueEntryMutation = useMutation({
     mutationFn: async (entryId: string) => {
-      const res = await apiFetch(`/api/implementation-queue/entries/${entryId}/archive`, {
-        method: 'POST',
-      });
+      const res = await archiveImplementationQueueEntry(entryId);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
@@ -272,15 +272,9 @@ export function useNightWorkersMutations({
 
   const removeImplementationQueueEntryMutation = useMutation({
     mutationFn: async (entryId: string) => {
-      const cancelRes = await apiFetch(`/api/implementation-queue/entries/${entryId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'cancel' }),
-      });
+      const cancelRes = await cancelImplementationQueueEntry(entryId);
       if (!cancelRes.ok) throw new Error(await cancelRes.text());
-      const archiveRes = await apiFetch(`/api/implementation-queue/entries/${entryId}/archive`, {
-        method: 'POST',
-      });
+      const archiveRes = await archiveImplementationQueueEntry(entryId);
       if (!archiveRes.ok) throw new Error(await archiveRes.text());
       return archiveRes.json();
     },
@@ -295,11 +289,7 @@ export function useNightWorkersMutations({
       runId: string;
       data: { action: 'complete' | 'cancel'; note?: string };
     }) => {
-      const res = await apiFetch(`/api/runs/${input.runId}/reviews`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input.data),
-      });
+      const res = await submitRunReview(input.runId, input.data);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
@@ -316,11 +306,7 @@ export function useNightWorkersMutations({
 
   const requeueImplementationQueueEntryMutation = useMutation({
     mutationFn: async (input: { entryId: string; note?: string }) => {
-      const res = await apiFetch(`/api/implementation-queue/entries/${input.entryId}/requeue`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ note: input.note }),
-      });
+      const res = await requeueImplementationQueueEntry(input.entryId, { note: input.note });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
@@ -336,11 +322,7 @@ export function useNightWorkersMutations({
 
   const updateImplementationQueueProcessorCountMutation = useMutation({
     mutationFn: async (processorCount: number) => {
-      const res = await apiFetch('/api/implementation-queue/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ processorCount }),
-      });
+      const res = await updateImplementationQueueSettings({ processorCount });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
@@ -351,11 +333,7 @@ export function useNightWorkersMutations({
 
   const updateTodoWorkflowSettingsMutation = useMutation({
     mutationFn: async (input: Partial<TodoWorkflowSettings>) => {
-      const res = await apiFetch('/api/todo-workflow/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-      });
+      const res = await updateTodoWorkflowSettings(input);
       if (!res.ok) throw new Error(await res.text());
       return (await res.json()) as TodoWorkflowSettings;
     },
@@ -444,14 +422,10 @@ export function useNightWorkersMutations({
       if (input.sourceGroup === 'queue' && input.targetGroup === 'processing') {
         await patchTask(input.sessionId, { status: 'draft' });
       } else if (input.sourceGroup === 'processing' && input.targetGroup === 'queue') {
-        const res = await apiFetch(`/api/workbench/sessions/${input.sessionId}/queue`, {
-          method: 'POST',
-        });
+        const res = await queueWorkbenchSession(input.sessionId);
         if (!res.ok) throw new Error(await res.text());
       } else if (input.targetGroup === 'archive') {
-        const res = await apiFetch(`/api/workbench/sessions/${input.sessionId}/archive`, {
-          method: 'PATCH',
-        });
+        const res = await archiveWorkbenchSession(input.sessionId);
         if (!res.ok) throw new Error(await res.text());
       }
 

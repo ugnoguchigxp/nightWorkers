@@ -1,6 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { apiFetch } from '../../../lib/api-base';
+import {
+  browseFolders,
+  createFolder as createFolderCommand,
+  fetchRepositoryFile,
+  fetchRepositoryFiles,
+} from '../nightWorkersCommands';
 import type { ProjectFileContent, ProjectFileEntry } from '../types';
 import type { FolderDir } from './nightWorkersWorkspaceState';
 
@@ -25,10 +30,7 @@ export function useNightWorkersProjectFiles(activeProjectId: string | undefined)
   const fetchDirectories = async (targetPath?: string) => {
     setIsBrowserLoading(true);
     try {
-      const url = targetPath
-        ? `/api/utils/browse-folders?path=${encodeURIComponent(targetPath)}`
-        : '/api/utils/browse-folders';
-      const res = await apiFetch(url);
+      const res = await browseFolders(targetPath);
       if (!res.ok) return;
       const data = (await res.json()) as {
         currentPath: string | null;
@@ -44,11 +46,7 @@ export function useNightWorkersProjectFiles(activeProjectId: string | undefined)
   };
 
   const createFolder = async (input: { parentPath?: string; name: string }) => {
-    const res = await apiFetch('/api/utils/create-folder', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-    });
+    const res = await createFolderCommand(input);
     if (!res.ok) throw new Error(await res.text());
     return (await res.json()) as FolderDir;
   };
@@ -57,12 +55,7 @@ export function useNightWorkersProjectFiles(activeProjectId: string | undefined)
     queryKey: ['projectFiles', activeProjectId, rootProjectDirectory],
     queryFn: async () => {
       if (!activeProjectId) return [];
-      const params = new URLSearchParams();
-      if (rootProjectDirectory) params.set('path', rootProjectDirectory);
-      const query = params.toString();
-      const res = await apiFetch(
-        `/api/repositories/${activeProjectId}/files${query ? `?${query}` : ''}`
-      );
+      const res = await fetchRepositoryFiles(activeProjectId, rootProjectDirectory);
       if (!res.ok) throw new Error('Failed to fetch project files');
       return (await res.json()) as ProjectFileEntry[];
     },
@@ -80,8 +73,7 @@ export function useNightWorkersProjectFiles(activeProjectId: string | undefined)
     queryKey: ['projectFile', activeProjectId, selectedProjectFilePath],
     queryFn: async () => {
       if (!activeProjectId || !selectedProjectFilePath) return null;
-      const params = new URLSearchParams({ path: selectedProjectFilePath });
-      const res = await apiFetch(`/api/repositories/${activeProjectId}/file?${params.toString()}`);
+      const res = await fetchRepositoryFile(activeProjectId, selectedProjectFilePath);
       if (!res.ok) throw new Error('Failed to fetch project file');
       return (await res.json()) as ProjectFileContent;
     },
@@ -96,8 +88,7 @@ export function useNightWorkersProjectFiles(activeProjectId: string | undefined)
     if (!nextExpanded || mergedProjectFileEntriesByDirectory[path] || !activeProjectId) return;
     setLoadingProjectDirectories((prev) => ({ ...prev, [path]: true }));
     try {
-      const params = new URLSearchParams({ path });
-      const res = await apiFetch(`/api/repositories/${activeProjectId}/files?${params.toString()}`);
+      const res = await fetchRepositoryFiles(activeProjectId, path);
       if (!res.ok) throw new Error('Failed to fetch project files');
       const entries = (await res.json()) as ProjectFileEntry[];
       setProjectFileEntriesByDirectory((prev) => ({ ...prev, [path]: entries }));

@@ -1,9 +1,14 @@
 import fs from 'node:fs/promises';
 import { AppError, NotFoundError } from '../../lib/errors';
+import { logger } from '../../lib/logger';
 import { getCurrentSettings } from '../../routes/settings';
 import { createLedgerSink } from '../../services/agent-runtime/ledger-sink';
 import { resolveAgentRuntime } from '../../services/agent-runtime/registry';
-import { resolveRuntimeLane } from '../../services/agent-runtime/runtime-lane';
+import {
+  readRuntimeLaneConfigFromEnv,
+  resolveRuntimeLane,
+} from '../../services/agent-runtime/runtime-lane';
+import type { AgentRuntimeKind } from '../../services/agent-runtime/types';
 import {
   buildPromptWithStateCardParts,
   getLatestConversationContextForTask,
@@ -14,6 +19,7 @@ import {
   isConversationContextBuildOnIdleEnabled,
   isConversationContextStateCardEnabled,
 } from '../../services/conversation-context/flags';
+import { getSessionQueueMaxConcurrencyFromEnv } from '../../services/runtime-env';
 import { digestText } from '../../services/text-digest';
 import type { RuntimePromptSnapshot } from '../../services/todo-context';
 import {
@@ -22,6 +28,32 @@ import {
 } from './nightworkers.basic.service';
 import * as repo from './nightworkers.repository';
 import { createPlanningArtifactMessageIfNeeded } from './nightworkers.workbench.service';
+
+export const runStatusTransitionTable = {
+  ready: ['queued', 'running'],
+  queued: ['running', 'ready', 'cancelled'],
+  running: ['finalizing', 'needs_human', 'failed', 'cancelled'],
+  finalizing: ['needs_review', 'completed', 'failed', 'needs_human', 'cancelled'],
+  needs_review: ['completed', 'failed', 'needs_human'],
+  completed: [],
+  failed: [],
+  needs_human: ['queued', 'running', 'failed', 'cancelled'],
+  cancelled: ['queued', 'running'],
+  timed_out: ['queued', 'running', 'failed'],
+} as const satisfies Record<string, readonly string[]>;
+
+export function assertRunStatusTransition(from: string, to: string) {
+  if (from === to) return;
+  const transitionTable: Record<string, readonly string[]> = runStatusTransitionTable;
+  const allowed = transitionTable[from];
+  if (!allowed?.includes(to)) {
+    throw new AppError(
+      409,
+      'INVALID_RUN_STATUS_TRANSITION',
+      `Invalid run status transition: ${from} -> ${to}`
+    );
+  }
+}
 
 async function completeOpenTodosForTerminalRun(runId: string, status: string, reason: string) {
   if (!['completed', 'needs_review'].includes(status)) return;
@@ -32,7 +64,7 @@ async function completeOpenTodosForTerminalRun(runId: string, status: string, re
     await repo.updateTaskRunTodo(todo.id, {
       status: 'passed',
       statusReason: reason,
-      startedAt: todo.startedAt ? new Date(todo.startedAt as any) : now,
+      startedAt: todo.startedAt ? new Date(String(todo.startedAt)) : now,
       completedAt: now,
     });
   }
@@ -43,11 +75,14 @@ async function safelyRefreshConversationContext(input: RefreshConversationContex
   try {
     await refreshConversationContextSnapshot(input);
   } catch (error) {
-    console.warn('conversation context refresh failed', {
-      error,
-      taskId: input.taskId,
-      runId: input.runId,
-    });
+    logger.warn(
+      {
+        error: toErrorMessage(error),
+        taskId: input.taskId,
+        runId: input.runId,
+      },
+      'conversation context refresh failed'
+    );
   }
 }
 
@@ -60,7 +95,13 @@ async function maybeLoadConversationStateCard(taskId: string, latestUserMessageI
     }
     return snapshot;
   } catch (error) {
-    console.warn('conversation context load failed', { error, taskId });
+    logger.warn(
+      {
+        error: toErrorMessage(error),
+        taskId,
+      },
+      'conversation context load failed'
+    );
     return null;
   }
 }
@@ -104,6 +145,7 @@ export async function startTaskRun(taskId: string) {
     settingsRuntimeLane: settings.IMPLEMENTATION_RUNTIME_LANE,
     activeLlmProvider: settings.ACTIVE_LLM_PROVIDER,
     codexEnabled: settings.CODEX_ENABLED,
+    ...readRuntimeLaneConfigFromEnv(),
   });
   const run = await repo.createTaskRun({
     taskId,
@@ -274,6 +316,7 @@ export async function startTaskRun(taskId: string) {
       if (stopWasRequested) {
         const outcome = outcomeFromRuntimeResult(runtimeResult);
         const finalReport = runtimeResult.finalReport || outcome.summary;
+        assertRunStatusTransition(latestRunBeforeFinalize?.status || 'running', 'cancelled');
         await repo.updateTaskRun(run.id, {
           status: 'cancelled',
           endedAt: new Date(),
@@ -307,6 +350,7 @@ export async function startTaskRun(taskId: string) {
         return;
       }
 
+      assertRunStatusTransition(latestRunBeforeFinalize?.status || 'running', 'finalizing');
       await repo.updateTaskRun(run.id, {
         status: 'finalizing',
         logContent: runtimeResult.logContent,
@@ -330,6 +374,7 @@ export async function startTaskRun(taskId: string) {
 
       const outcome = outcomeFromRuntimeResult(runtimeResult);
       const finalReport = runtimeResult.finalReport || outcome.summary;
+      assertRunStatusTransition('finalizing', outcome.status);
       await repo.updateTaskRun(run.id, {
         status: outcome.status,
         endedAt: new Date(),
@@ -371,18 +416,20 @@ export async function startTaskRun(taskId: string) {
         runId: run.id,
         reason: 'run_finished',
       });
-    } catch (err: any) {
-      console.error(`Error during NativeLocalRunner execution for run ${run.id}:`, err);
-      const finalReport = `実行に失敗しました: ${err.message}`;
+    } catch (err: unknown) {
+      const errorMessage = toErrorMessage(err);
+      logger.error({ error: errorMessage, runId: run.id }, 'NativeLocalRunner execution failed');
+      const finalReport = `実行に失敗しました: ${errorMessage}`;
       await repo.updateTaskStatus(taskId, 'failed');
+      assertRunStatusTransition('running', 'failed');
       await repo.updateTaskRun(run.id, {
         status: 'failed',
         endedAt: new Date(),
         finishedAt: new Date(),
-        logContent: `[System Error] ${err.message}`,
+        logContent: `[System Error] ${errorMessage}`,
         finalReport,
         finalJudgment: null,
-        summary: `Execution crashed: ${err.message}`,
+        summary: `Execution crashed: ${errorMessage}`,
       });
 
       await repo.createTaskMessage({
@@ -393,7 +440,7 @@ export async function startTaskRun(taskId: string) {
         messageType: 'text',
         payloadJson: {
           finalReport,
-          summary: `Execution crashed: ${err.message}`,
+          summary: `Execution crashed: ${errorMessage}`,
           status: 'failed',
         },
       });
@@ -417,7 +464,7 @@ export async function stopTaskRun(runId: string) {
     return run;
   }
 
-  const runtime = resolveAgentRuntime(run.workerKind as any);
+  const runtime = resolveAgentRuntime(normalizeAgentRuntimeKind(run.workerKind));
   await runtime.stop(runId);
   await repo.createRunEvent({
     version: 1,
@@ -433,6 +480,7 @@ export async function stopTaskRun(runId: string) {
       previousStatus: run.status,
     },
   });
+  assertRunStatusTransition(run.status, 'cancelled');
   const stoppedRun = await repo.updateTaskRun(runId, {
     status: 'cancelled',
     endedAt: new Date(),
@@ -445,10 +493,24 @@ export async function stopTaskRun(runId: string) {
   return stoppedRun ?? run;
 }
 
+function toErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function getSessionQueueMaxConcurrency() {
-  const parsed = Number(process.env.SESSION_QUEUE_MAX_CONCURRENCY || 2);
-  if (!Number.isFinite(parsed)) return 2;
-  return Math.max(1, Math.floor(parsed));
+  return getSessionQueueMaxConcurrencyFromEnv();
+}
+
+function normalizeAgentRuntimeKind(value: unknown): AgentRuntimeKind {
+  if (
+    value === 'native-local' ||
+    value === 'codex-agent' ||
+    value === 'external-process' ||
+    value === 'future-adapter'
+  ) {
+    return value;
+  }
+  return 'native-local';
 }
 
 export function shouldContinueSessionQueue(status: string) {

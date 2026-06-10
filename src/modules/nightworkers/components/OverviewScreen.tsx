@@ -3,8 +3,8 @@ import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
-import { apiFetch } from '../../../lib/api-base';
 import { formatCurrency, formatDateTime, formatTokenCount } from '../i18n/format';
+import { fetchOverview } from '../nightWorkersCommands';
 import type { NightWorkersCurrency, OverviewDashboard, Repository } from '../types';
 
 type OverviewRange = '24h' | '7d' | '30d' | 'all';
@@ -77,7 +77,7 @@ export function OverviewScreen({
     setIsLoading(true);
     setError(null);
     try {
-      const res = await apiFetch(`/api/overview?${query}`);
+      const res = await fetchOverview(query);
       if (!res.ok) throw new Error(`Overview API failed: ${res.status}`);
       const data = (await res.json()) as OverviewDashboard;
       setDashboard(data);

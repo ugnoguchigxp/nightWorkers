@@ -1,5 +1,21 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiFetch } from '../../../lib/api-base';
+import {
+  createAgentHook,
+  createMcpServer,
+  deleteAgentHook,
+  deleteMcpServer,
+  fetchAgentHooks,
+  fetchLlmModelOptions,
+  fetchLlmSettings,
+  fetchMcpServers,
+  importMcpServers,
+  runLlmSmokeTest,
+  saveLlmSettings,
+  testAgentHook,
+  testMcpServer,
+  updateAgentHook,
+  updateMcpServer,
+} from '../nightWorkersCommands';
 import type {
   AgentHookConfig,
   AgentHookInput,
@@ -17,7 +33,7 @@ export function useNightWorkersSettings() {
   const { data: llmSettings = null } = useQuery({
     queryKey: ['llmSettings'],
     queryFn: async () => {
-      const res = await apiFetch('/api/settings/llm');
+      const res = await fetchLlmSettings();
       if (!res.ok) throw new Error('Failed to fetch llm settings');
       return (await res.json()) as LlmSettings;
     },
@@ -28,7 +44,7 @@ export function useNightWorkersSettings() {
   const { data: providerModelOptions = [] } = useQuery({
     queryKey: ['llmModelOptions', activeProvider],
     queryFn: async () => {
-      const res = await apiFetch('/api/settings/llm/models');
+      const res = await fetchLlmModelOptions();
       if (!res.ok) throw new Error('Failed to fetch model options');
       const data = (await res.json()) as { options: Array<{ value: string; label: string }> };
       return data.options;
@@ -39,7 +55,7 @@ export function useNightWorkersSettings() {
   const { data: mcpServers = [] } = useQuery({
     queryKey: ['mcpServers'],
     queryFn: async () => {
-      const res = await apiFetch('/api/settings/mcp/servers');
+      const res = await fetchMcpServers();
       if (!res.ok) throw new Error('Failed to fetch MCP servers');
       const data = (await res.json()) as { servers: McpServerConfig[] };
       return data.servers;
@@ -50,7 +66,7 @@ export function useNightWorkersSettings() {
   const { data: agentHooks = [] } = useQuery({
     queryKey: ['agentHooks'],
     queryFn: async () => {
-      const res = await apiFetch('/api/settings/hooks');
+      const res = await fetchAgentHooks();
       if (!res.ok) throw new Error('Failed to fetch Agent Hooks');
       const data = (await res.json()) as { hooks: AgentHookConfig[] };
       return data.hooks;
@@ -66,79 +82,59 @@ export function useNightWorkersSettings() {
     mcpServers,
     agentHooks,
     createMcpServer: async (input: McpServerInput) => {
-      const res = await apiFetch('/api/settings/mcp/servers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-      });
+      const res = await createMcpServer(input);
       if (!res.ok) throw new Error(await res.text());
       const server = (await res.json()) as McpServerConfig;
       queryClient.invalidateQueries({ queryKey: ['mcpServers'] });
       return server;
     },
     importMcpServers: async (text: string, testAfterImport = true) => {
-      const res = await apiFetch('/api/settings/mcp/servers/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, testAfterImport }),
-      });
+      const res = await importMcpServers({ text, testAfterImport });
       if (!res.ok) throw new Error(await res.text());
       const result = (await res.json()) as McpServerImportResult;
       queryClient.invalidateQueries({ queryKey: ['mcpServers'] });
       return result;
     },
     updateMcpServer: async (id: string, input: Partial<McpServerInput>) => {
-      const res = await apiFetch(`/api/settings/mcp/servers/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-      });
+      const res = await updateMcpServer(id, input);
       if (!res.ok) throw new Error(await res.text());
       const server = (await res.json()) as McpServerConfig;
       queryClient.invalidateQueries({ queryKey: ['mcpServers'] });
       return server;
     },
     deleteMcpServer: async (id: string) => {
-      const res = await apiFetch(`/api/settings/mcp/servers/${id}`, { method: 'DELETE' });
+      const res = await deleteMcpServer(id);
       if (!res.ok) throw new Error(await res.text());
       queryClient.invalidateQueries({ queryKey: ['mcpServers'] });
     },
     testMcpServer: async (id: string) => {
-      const res = await apiFetch(`/api/settings/mcp/servers/${id}/test`, { method: 'POST' });
+      const res = await testMcpServer(id);
       if (!res.ok) throw new Error(await res.text());
       const result = (await res.json()) as McpServerTestResult;
       queryClient.invalidateQueries({ queryKey: ['mcpServers'] });
       return result;
     },
     createAgentHook: async (input: AgentHookInput) => {
-      const res = await apiFetch('/api/settings/hooks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-      });
+      const res = await createAgentHook(input);
       if (!res.ok) throw new Error(await res.text());
       const hook = (await res.json()) as AgentHookConfig;
       queryClient.invalidateQueries({ queryKey: ['agentHooks'] });
       return hook;
     },
     updateAgentHook: async (id: string, input: Partial<AgentHookInput>) => {
-      const res = await apiFetch(`/api/settings/hooks/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-      });
+      const res = await updateAgentHook(id, input);
       if (!res.ok) throw new Error(await res.text());
       const hook = (await res.json()) as AgentHookConfig;
       queryClient.invalidateQueries({ queryKey: ['agentHooks'] });
       return hook;
     },
     deleteAgentHook: async (id: string) => {
-      const res = await apiFetch(`/api/settings/hooks/${id}`, { method: 'DELETE' });
+      const res = await deleteAgentHook(id);
       if (!res.ok) throw new Error(await res.text());
       queryClient.invalidateQueries({ queryKey: ['agentHooks'] });
     },
     testAgentHook: async (id: string) => {
-      const res = await apiFetch(`/api/settings/hooks/${id}/test`, { method: 'POST' });
+      const res = await testAgentHook(id);
       if (!res.ok) throw new Error(await res.text());
       const result = (await res.json()) as AgentHookTestResult;
       queryClient.invalidateQueries({ queryKey: ['agentHooks'] });
@@ -146,11 +142,7 @@ export function useNightWorkersSettings() {
     },
     setActiveProvider: async (provider: LlmProvider) => {
       const merged = { ...(llmSettings || {}), ACTIVE_LLM_PROVIDER: provider } as LlmSettings;
-      const res = await apiFetch('/api/settings/llm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(merged),
-      });
+      const res = await saveLlmSettings(merged);
       if (!res.ok) throw new Error('Failed to save llm settings');
       queryClient.invalidateQueries({ queryKey: ['llmSettings'] });
       queryClient.invalidateQueries({ queryKey: ['llmModelOptions'] });
@@ -164,11 +156,7 @@ export function useNightWorkersSettings() {
         codex: 'CODEX_ENABLED',
       };
       const merged = { ...llmSettings, [flagKey[provider]]: enabled };
-      const res = await apiFetch('/api/settings/llm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(merged),
-      });
+      const res = await saveLlmSettings(merged);
       if (!res.ok) throw new Error('Failed to save llm settings');
       queryClient.invalidateQueries({ queryKey: ['llmSettings'] });
     },
@@ -181,17 +169,13 @@ export function useNightWorkersSettings() {
         codex: 'CODEX_MODEL',
       };
       const merged = { ...llmSettings, [modelKey[activeProvider]]: model };
-      const res = await apiFetch('/api/settings/llm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(merged),
-      });
+      const res = await saveLlmSettings(merged);
       if (!res.ok) throw new Error('Failed to save model settings');
       queryClient.invalidateQueries({ queryKey: ['llmSettings'] });
       queryClient.invalidateQueries({ queryKey: ['llmModelOptions'] });
     },
     runLlmSmokeTest: async () => {
-      const res = await apiFetch('/api/settings/llm/smoke', { method: 'POST' });
+      const res = await runLlmSmokeTest();
       if (!res.ok) throw new Error('Failed to run smoke');
       return (await res.json()) as { ok: boolean; provider: string; message: string };
     },

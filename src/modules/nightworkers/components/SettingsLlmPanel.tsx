@@ -153,7 +153,7 @@ export function SettingsLlmPanel({
       <section className="space-y-4 rounded-2xl border border-zinc-800/60 bg-[#16161a] p-6">
         <ProviderSectionHeader
           provider="codex"
-          title="Codex SDK"
+          title="Codex SDK structured provider"
           active={settings.ACTIVE_LLM_PROVIDER === 'codex'}
           enabled={settings.CODEX_ENABLED}
           isSaving={isSaving}

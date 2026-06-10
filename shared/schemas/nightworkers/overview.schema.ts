@@ -15,6 +15,14 @@ const overviewUsageSummarySchema = z.object({
   unavailableCallCount: z.number().int().nonnegative(),
 });
 
+const overviewWarningSchema = z
+  .object({
+    code: z.string().optional(),
+    message: z.string().optional(),
+    severity: z.enum(['info', 'warning', 'error']).optional(),
+  })
+  .passthrough();
+
 export const overviewDashboardSchema = z
   .object({
     generatedAt: z.string(),
@@ -82,6 +90,6 @@ export const overviewDashboardSchema = z
         createdAt: z.string(),
       })
     ),
-    warnings: z.array(z.any()),
+    warnings: z.array(overviewWarningSchema),
   })
   .openapi('OverviewDashboard');
