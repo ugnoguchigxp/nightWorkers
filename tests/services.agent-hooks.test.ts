@@ -413,4 +413,27 @@ describe('Agent Hooks settings routes', () => {
     });
     expect(deleteRes.status).toBe(200);
   });
+
+  it('returns 404 for non-existent hook operations', async () => {
+    const nonexistentId = '00000000-0000-0000-0000-000000000000';
+
+    const updateRes = await app.request(`http://localhost/api/settings/hooks/${nonexistentId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(updateRes.status).toBe(404);
+
+    const testRes = await app.request(`http://localhost/api/settings/hooks/${nonexistentId}/test`, {
+      method: 'POST',
+      headers: { Origin: 'http://localhost:39174' },
+    });
+    expect(testRes.status).toBe(404);
+
+    const deleteRes = await app.request(`http://localhost/api/settings/hooks/${nonexistentId}`, {
+      method: 'DELETE',
+      headers: { Origin: 'http://localhost:39174' },
+    });
+    expect(deleteRes.status).toBe(404);
+  });
 });
