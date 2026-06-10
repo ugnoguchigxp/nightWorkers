@@ -1,12 +1,27 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   fetchContentTool,
   findFileTool,
   listDirTool,
   searchWebTool,
 } from '../../api/services/worker-tools';
+
+let dummyRepoDir: string;
+
+beforeEach(async () => {
+  dummyRepoDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-worker-tools-'));
+  await fs.mkdir(path.join(dummyRepoDir, 'src'), { recursive: true });
+  await fs.writeFile(path.join(dummyRepoDir, 'hello.txt'), 'hello\n', 'utf-8');
+  await fs.writeFile(path.join(dummyRepoDir, 'src/main.js'), 'console.log("ok");\n', 'utf-8');
+});
+
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await fs.rm(dummyRepoDir, { recursive: true, force: true });
+});
 
 describe('Worker Tools Unit Tests', () => {
   it('parses DuckDuckGo search results', async () => {
@@ -65,8 +80,8 @@ describe('fetchContentTool', () => {
     const result = await fetchContentTool({ url: 'https://example.com/docs' });
 
     expect(fetchSpy).toHaveBeenCalled();
-    const [calledUrl, calledInit] = fetchSpy.mock.calls[0] as [URL, RequestInit];
-    expect(calledUrl.href).toBe('https://example.com/docs');
+    const [calledUrl, calledInit] = fetchSpy.mock.calls[0] as [URL | string, RequestInit];
+    expect(String(calledUrl)).toBe('https://example.com/docs');
     expect(calledInit).toEqual(
       expect.objectContaining({
         headers: expect.objectContaining({
@@ -145,5 +160,3 @@ describe('findFileTool', () => {
     expect(result.error?.code).toBe('ACCESS_DENIED');
   });
 });
-
-describe('replaceContentTool', () => {});

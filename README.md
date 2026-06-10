@@ -77,7 +77,7 @@ artifacts, diffs, todos, settings, and provider usage records.
 - Frontend: React + Vite + TanStack Router (`src/`)
 - Database: Drizzle ORM + SQLite/libSQL (`drizzle/`, `sqlite.db`)
 - Shared schemas: Zod (`shared/schemas`)
-- Design System: local workspace package (`designSystem/`)
+- UI primitives: NightWorkers-owned components under `src/components/ui`
 
 Details: [Architecture and Module Boundaries](./spec/docs/architecture.md)
 
@@ -247,7 +247,6 @@ Detailed runtime configuration:
 | `pnpm db:seed` | Seed local development data |
 | `pnpm cleanup:test-data:dry-run` | Preview cleanup of TEST-prefixed local data |
 | `pnpm cleanup:test-data` | Delete TEST-prefixed local data |
-| `pnpm design-system:storybook` | Start the design system Storybook |
 | `pnpm verify:base` | Run the base gate: TypeScript, Biome, and supervisor regression tests |
 | `pnpm verify:desktop` | Run Tauri/Rust checks, build the `.app`, and smoke-test it |
 | `pnpm verify` | Run `verify:base` and `verify:desktop` |

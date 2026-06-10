@@ -17,7 +17,7 @@ vi.mock('../../api/services/supervisor/llm-provider', async () => {
   };
 });
 
-vi.mock('../api/services/agent-runtime/registry', () => ({
+vi.mock('../../api/services/agent-runtime/registry', () => ({
   resolveAgentRuntime: vi.fn(() => ({
     kind: 'native-local',
     start: vi.fn(async () => ({
@@ -71,7 +71,6 @@ beforeAll(async () => {
 afterEach(async () => {
   await new Promise((resolve) => setTimeout(resolve, 25));
   vi.clearAllMocks();
-  vi.restoreAllMocks();
 });
 
 describe('NightWorkers workbench routes', () => {

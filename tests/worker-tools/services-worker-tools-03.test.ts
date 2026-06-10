@@ -1,12 +1,48 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   inspectStructureTool,
   readFileTool,
   searchFilesTool,
 } from '../../api/services/worker-tools';
+
+let dummyRepoDir: string;
+
+beforeEach(async () => {
+  dummyRepoDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-worker-tools-'));
+  await fs.mkdir(path.join(dummyRepoDir, 'src'), { recursive: true });
+  await fs.writeFile(path.join(dummyRepoDir, 'hello.txt'), 'hello\n', 'utf-8');
+  await fs.writeFile(
+    path.join(dummyRepoDir, 'large.ts'),
+    Array.from({ length: 400 }, (_, index) =>
+      index === 200 ? 'export function important() { return 1; }' : `const line${index} = ${index};`
+    ).join('\n'),
+    'utf-8'
+  );
+  await fs.writeFile(
+    path.join(dummyRepoDir, 'src/tool.ts'),
+    [
+      "import fs from 'node:fs';",
+      'export type ToolInput = { path: string };',
+      'export interface Runner { execute(): void }',
+      'export class RunnerImpl implements Runner { execute() {} }',
+      'export function readFileTool() { return fs.readFileSync; }',
+      'export function loadTool() { return readFileTool; }',
+    ].join('\n'),
+    'utf-8'
+  );
+  await fs.writeFile(
+    path.join(dummyRepoDir, 'config.json'),
+    JSON.stringify({ scripts: { verify: 'pnpm verify' }, items: [1, 2] }),
+    'utf-8'
+  );
+});
+
+afterEach(async () => {
+  await fs.rm(dummyRepoDir, { recursive: true, force: true });
+});
 
 describe('Worker Tools Unit Tests', () => {
   it('blocks symlinks that resolve outside repo root', async () => {
@@ -27,16 +63,6 @@ describe('Worker Tools Unit Tests', () => {
   });
 
   it('uses compressed context by default for large full-file reads', async () => {
-    await fs.writeFile(
-      path.join(dummyRepoDir, 'large.ts'),
-      Array.from({ length: 400 }, (_, index) =>
-        index === 200
-          ? 'export function important() { return 1; }'
-          : `const line${index} = ${index};`
-      ).join('\n'),
-      'utf-8'
-    );
-
     const result = await readFileTool({
       filePath: 'large.ts',
       repoRoot: dummyRepoDir,
@@ -145,5 +171,3 @@ describe('searchFilesTool', () => {
     expect(result.payload.matches[0].excerpt).toContain('hello');
   });
 });
-
-describe('searchWebTool', () => {});

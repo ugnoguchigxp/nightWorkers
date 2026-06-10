@@ -25,7 +25,6 @@ export const blueprintImplementationTaskSchema = z
         'blueprint-task-planning',
         'nightworkers-runtime',
         'contextstill-feedback',
-        'designSystem',
       ])
     ),
   })

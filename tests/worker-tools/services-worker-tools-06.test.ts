@@ -1,8 +1,19 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { analyzeCommand, gitDiffTool, runCommandTool } from '../../api/services/worker-tools';
+
+let dummyRepoDir: string;
+
+beforeEach(async () => {
+  dummyRepoDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-worker-tools-'));
+});
+
+afterEach(async () => {
+  await fs.rm(dummyRepoDir, { recursive: true, force: true });
+});
 
 describe('Worker Tools Unit Tests', () => {
   it('blocks chained commands', async () => {

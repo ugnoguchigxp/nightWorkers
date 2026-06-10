@@ -144,7 +144,7 @@ Actions:
 
 1. Commit this plan as a dedicated planning commit.
 2. Do not stage the unrelated current dirty tree.
-3. Before implementation, either start a clean branch/worktree or explicitly decide whether the existing design system/UI changes belong to the next implementation snapshot.
+3. Before implementation, either start a clean branch/worktree or explicitly decide whether the existing UI primitive changes belong to the next implementation snapshot.
 
 Acceptance:
 

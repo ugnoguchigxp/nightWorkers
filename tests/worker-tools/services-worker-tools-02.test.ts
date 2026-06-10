@@ -2,8 +2,19 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { analyzeCommand, applyPatchTool, readFileTool } from '../../api/services/worker-tools';
+
+let dummyRepoDir: string;
+
+beforeEach(async () => {
+  dummyRepoDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-worker-tools-'));
+  await fs.writeFile(path.join(dummyRepoDir, 'hello.txt'), 'line 1: hello\nline 2\nline 3\nline 4');
+});
+
+afterEach(async () => {
+  await fs.rm(dummyRepoDir, { recursive: true, force: true });
+});
 
 describe('Worker Tools Unit Tests', () => {
   it('blocks custom blocked commands', () => {

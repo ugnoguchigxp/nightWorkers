@@ -7,9 +7,9 @@ import * as service from '../../api/modules/nightworkers/nightworkers.service';
 import * as llm from '../../api/services/supervisor/llm-provider';
 import { representativeAppBlueprint } from '../fixtures/app-blueprint';
 
-vi.mock('../api/services/supervisor/llm-provider', async () => {
-  const actual = await vi.importActual<typeof import('../api/services/supervisor/llm-provider')>(
-    '../api/services/supervisor/llm-provider'
+vi.mock('../../api/services/supervisor/llm-provider', async () => {
+  const actual = await vi.importActual<typeof import('../../api/services/supervisor/llm-provider')>(
+    '../../api/services/supervisor/llm-provider'
   );
   return {
     ...actual,
@@ -18,7 +18,7 @@ vi.mock('../api/services/supervisor/llm-provider', async () => {
   };
 });
 
-vi.mock('../api/services/agent-runtime/registry', () => ({
+vi.mock('../../api/services/agent-runtime/registry', () => ({
   resolveAgentRuntime: vi.fn(() => ({
     kind: 'native-local',
     start: vi.fn(async () => ({
@@ -72,7 +72,6 @@ beforeAll(async () => {
 afterEach(async () => {
   await new Promise((resolve) => setTimeout(resolve, 25));
   vi.clearAllMocks();
-  vi.restoreAllMocks();
 });
 
 describe('NightWorkers workbench routes', () => {

@@ -115,7 +115,7 @@ export async function createImplementationQueueEntry(taskId: string) {
     messageType: 'text',
     payloadJson: { source: 'implementation_queue', status: 'queued', queueEntryId: entry.id },
   });
-  void runImplementationQueue();
+  runImplementationQueueWhenEnabled();
   return entry;
 }
 
@@ -172,7 +172,7 @@ export async function archiveImplementationQueueEntry(id: string) {
     processorSlot: null,
     archivedAt: new Date(),
   });
-  void runImplementationQueue();
+  runImplementationQueueWhenEnabled();
   return archived;
 }
 
@@ -225,6 +225,11 @@ export async function requeueImplementationQueueEntry(id: string, input: { note?
       note: input.note?.trim() || undefined,
     },
   });
-  void runImplementationQueue();
+  runImplementationQueueWhenEnabled();
   return nextEntry;
+}
+
+function runImplementationQueueWhenEnabled() {
+  if (process.env.NIGHTWORKERS_DISABLE_AUTO_QUEUE_DRAIN === 'true') return;
+  void runImplementationQueue();
 }

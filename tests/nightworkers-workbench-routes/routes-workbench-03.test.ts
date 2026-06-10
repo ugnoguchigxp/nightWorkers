@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import app from '../../api/app';
 import { ensureNightWorkersSchema } from '../../api/db/bootstrap';
 import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
@@ -8,9 +8,9 @@ import * as llm from '../../api/services/supervisor/llm-provider';
 import { buildBlueprintDbDesignPrompt } from '../../src/modules/nightworkers/components/blueprint-preview/dbDesignModel';
 import { representativeAppBlueprint } from '../fixtures/app-blueprint';
 
-vi.mock('../api/services/supervisor/llm-provider', async () => {
-  const actual = await vi.importActual<typeof import('../api/services/supervisor/llm-provider')>(
-    '../api/services/supervisor/llm-provider'
+vi.mock('../../api/services/supervisor/llm-provider', async () => {
+  const actual = await vi.importActual<typeof import('../../api/services/supervisor/llm-provider')>(
+    '../../api/services/supervisor/llm-provider'
   );
   return {
     ...actual,
@@ -19,7 +19,7 @@ vi.mock('../api/services/supervisor/llm-provider', async () => {
   };
 });
 
-vi.mock('../api/services/agent-runtime/registry', () => ({
+vi.mock('../../api/services/agent-runtime/registry', () => ({
   resolveAgentRuntime: vi.fn(() => ({
     kind: 'native-local',
     start: vi.fn(async () => ({
@@ -70,10 +70,14 @@ beforeAll(async () => {
   await ensureNightWorkersSchema();
 });
 
+beforeEach(() => {
+  process.env.NIGHTWORKERS_DISABLE_AUTO_QUEUE_DRAIN = 'true';
+});
+
 afterEach(async () => {
   await new Promise((resolve) => setTimeout(resolve, 25));
+  delete process.env.NIGHTWORKERS_DISABLE_AUTO_QUEUE_DRAIN;
   vi.clearAllMocks();
-  vi.restoreAllMocks();
 });
 
 describe('NightWorkers workbench routes', () => {

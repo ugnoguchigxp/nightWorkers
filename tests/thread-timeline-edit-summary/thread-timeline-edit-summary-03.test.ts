@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getAgentEditSummary } from '../../src/modules/nightworkers/components/ThreadTimeline';
+import { getAgentEditSummary } from '../../src/modules/nightworkers/components/ThreadTimelineAgentCards';
 
 describe('ThreadTimeline edit summaries', () => {
   it('builds a replace_content summary from a tool result event with arguments', () => {

@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   buildVisibleEditDiffSummary,
   getActivityCode,
-  getAgentEditSummary,
-  getVisibleCliCommandSummary,
 } from '../../src/modules/nightworkers/components/ThreadTimeline';
+import { getAgentEditSummary } from '../../src/modules/nightworkers/components/ThreadTimelineAgentCards';
+import { getVisibleCliCommandSummary } from '../../src/modules/nightworkers/components/ThreadTimelineNormalTranscript';
 
 describe('ThreadTimeline edit summaries', () => {
   it('builds an apply_patch summary from a tool call start event', () => {

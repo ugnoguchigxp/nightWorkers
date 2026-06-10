@@ -6,7 +6,7 @@
 - `src-tauri/`: macOS Tauri shell and desktop sidecar lifecycle
 - `shared/`: shared schemas and type contracts
 - `drizzle/`: database schema migrations and seed data
-- `designSystem/`: reusable UI primitives and stories
+- `src/components/ui/`: NightWorkers-owned reusable UI primitives
 
 ## Runtime Model
 NightWorkers manages Project Folder sessions through a chat-first task lifecycle:
