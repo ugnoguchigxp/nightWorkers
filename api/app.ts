@@ -16,7 +16,6 @@ import { authMiddleware } from './middleware/auth';
 import { errorHandler } from './middleware/error-handler';
 import { loggerMiddleware } from './middleware/logger';
 import { rateLimiter } from './middleware/rate-limiter';
-import { bbsRouter } from './modules/bbs/bbs.routes';
 import { nightworkersRouter } from './modules/nightworkers/nightworkers.routes';
 import * as nightworkersService from './modules/nightworkers/nightworkers.service';
 import { authRouter } from './routes/auth';
@@ -30,7 +29,6 @@ const apiRoutes = createOpenApiRouter()
   .route('/health', healthRouter)
   .route('/auth/oauth', oauthRouter)
   .route('/auth', authRouter)
-  .route('/bbs', bbsRouter)
   .route('/settings', settingsRouter)
   .route('/', nightworkersRouter);
 

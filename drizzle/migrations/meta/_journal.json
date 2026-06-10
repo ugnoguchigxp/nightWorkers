@@ -85,6 +85,27 @@
       "when": 1780963200000,
       "tag": "0011_design_questionnaire",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1781049600000,
+      "tag": "0012_plan_mode_questionnaire_intake",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1781136000000,
+      "tag": "0013_background_processes",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1781222400000,
+      "tag": "0014_drop_bbs",
+      "breakpoints": true
     }
   ]
 }

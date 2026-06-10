@@ -67,40 +67,6 @@ export const userExternalAccounts = sqliteTable(
   })
 );
 
-export const threads = sqliteTable(
-  'threads',
-  {
-    ...commonColumns,
-    title: text('title').notNull(),
-    content: text('content').notNull(),
-    authorId: text('author_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-  },
-  (table) => ({
-    authorIdIdx: index('threads_author_id_idx').on(table.authorId),
-  })
-);
-
-export const comments = sqliteTable(
-  'comments',
-  {
-    ...commonColumns,
-    threadId: text('thread_id')
-      .notNull()
-      .references(() => threads.id, { onDelete: 'cascade' }),
-    parentId: text('parent_id').references((): any => comments.id, { onDelete: 'cascade' }),
-    content: text('content').notNull(),
-    authorId: text('author_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-  },
-  (table) => ({
-    threadIdIdx: index('comments_thread_id_idx').on(table.threadId),
-    authorIdIdx: index('comments_author_id_idx').on(table.authorId),
-  })
-);
-
 export const repositories = sqliteTable('repositories', {
   ...commonColumns,
   name: text('name').notNull(),

@@ -63,6 +63,11 @@ async function ensureNullableDesignQuestionnaireBlueprintSource() {
 export async function ensureNightWorkersSchema() {
   await client.execute('PRAGMA foreign_keys = ON');
   await client.execute('PRAGMA busy_timeout = 5000');
+
+  // Drop legacy BBS tables if they exist
+  await client.execute('DROP TABLE IF EXISTS comments');
+  await client.execute('DROP TABLE IF EXISTS threads');
+
   await ensureBaseNightWorkersTables();
   await ensureNullableDesignQuestionnaireBlueprintSource();
 

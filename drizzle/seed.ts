@@ -1,6 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { users, threads, comments } from '../api/db/schema';
+import { users } from '../api/db/schema';
 import { hashPassword } from '../api/lib/password';
 import { config } from '../api/config';
 
@@ -22,22 +22,6 @@ async function main() {
       }).returning();
 
       console.log('Created test user:', user.email);
-
-      const [thread] = await db.insert(threads).values({
-        title: 'Welcome to Hono Standard BBS',
-        content: 'This is a sample thread to get you started.',
-        authorId: user.id
-      }).returning();
-
-      console.log('Created sample thread');
-
-      await db.insert(comments).values({
-        threadId: thread.id,
-        content: 'And this is a sample comment!',
-        authorId: user.id
-      });
-
-      console.log('Created sample comment');
     } else {
       console.log('Database already has data. Skipping seed.');
     }

@@ -38,31 +38,6 @@ export const mockAuthMeUnauthorized = async (page: Page) => {
   });
 };
 
-export const mockBbsThreads = async (
-  page: Page,
-  threads: Array<{
-    id: string;
-    title: string;
-    content: string;
-    authorId: string;
-    createdAt: string;
-    updatedAt: string;
-    comments?: unknown[];
-  }>
-) => {
-  await page.route('**/api/bbs/threads', async (route) => {
-    if (route.request().method() !== 'GET') {
-      await route.fallback();
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ threads }),
-    });
-  });
-};
-
 export async function pollUntil<T>(
   fn: () => Promise<T>,
   predicate: (value: T) => boolean,
