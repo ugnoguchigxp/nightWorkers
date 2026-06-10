@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { client } from '../../../lib/api';
 import { apiFetch } from '../../../lib/api-base';
 import type {
+  BackgroundProcess,
   CreateProjectInput,
   CreateSessionInput,
   Repository,
@@ -198,6 +199,27 @@ export function useNightWorkersMutations({
       queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
       queryClient.invalidateQueries({ queryKey: ['sessionRuns', run.taskId] });
       queryClient.invalidateQueries({ queryKey: ['runDetails', run.id] });
+    },
+  });
+
+  const stopBackgroundProcessMutation = useMutation({
+    mutationFn: async (processId: string) => {
+      const res = await apiFetch(`/api/background-processes/${processId}/stop`, {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as BackgroundProcess;
+    },
+    onSuccess: (processRecord) => {
+      queryClient.setQueryData<BackgroundProcess[]>(
+        ['backgroundProcesses', activeSessionId],
+        (prev = []) =>
+          prev.map((candidate) => (candidate.id === processRecord.id ? processRecord : candidate))
+      );
+      queryClient.invalidateQueries({ queryKey: ['backgroundProcesses'] });
+      if (processRecord.taskId) {
+        queryClient.invalidateQueries({ queryKey: ['activityReplay', processRecord.taskId] });
+      }
     },
   });
 
@@ -485,6 +507,7 @@ export function useNightWorkersMutations({
     deleteSessionMutation,
     startRunMutation,
     stopRunMutation,
+    stopBackgroundProcessMutation,
     queueSessionMutation,
     createImplementationQueueEntryMutation,
     archiveImplementationQueueEntryMutation,

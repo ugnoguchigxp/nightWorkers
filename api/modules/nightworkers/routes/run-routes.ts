@@ -1,6 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   activityReplaySchema,
+  backgroundProcessSchema,
   createReviewerEvaluationRequestSchema,
   createReviewerReplayEvaluationRequestSchema,
   overviewDashboardSchema,
@@ -9,6 +10,7 @@ import {
   reviewerEvaluationSchema,
   reviewFindingSchema,
   reviewResultSchema,
+  startBackgroundProcessRequestSchema,
   taskEventSchema,
   taskLlmUsageSummarySchema,
   taskMessageSchema,
@@ -210,6 +212,94 @@ export const listTaskRunActivityEventsRoute = createRoute({
     404: {
       description: 'Run not found',
     },
+  },
+});
+
+export const startBackgroundProcessRoute = createRoute({
+  method: 'post',
+  path: '/background-processes',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: startBackgroundProcessRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      content: {
+        'application/json': {
+          schema: backgroundProcessSchema,
+        },
+      },
+      description: 'Background process started',
+    },
+  },
+});
+
+export const listBackgroundProcessesRoute = createRoute({
+  method: 'get',
+  path: '/background-processes',
+  request: {
+    query: z.object({
+      repositoryId: z.string().uuid().optional(),
+      taskId: z.string().uuid().optional(),
+      runId: z.string().uuid().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.array(backgroundProcessSchema),
+        },
+      },
+      description: 'Background process list',
+    },
+  },
+});
+
+export const getBackgroundProcessRoute = createRoute({
+  method: 'get',
+  path: '/background-processes/:id',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'background-process-uuid' }),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: backgroundProcessSchema,
+        },
+      },
+      description: 'Background process detail',
+    },
+    404: { description: 'Background process not found' },
+  },
+});
+
+export const stopBackgroundProcessRoute = createRoute({
+  method: 'post',
+  path: '/background-processes/:id/stop',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'background-process-uuid' }),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: backgroundProcessSchema,
+        },
+      },
+      description: 'Background process stopped',
+    },
+    404: { description: 'Background process not found' },
   },
 });
 

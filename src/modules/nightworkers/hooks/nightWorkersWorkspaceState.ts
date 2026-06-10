@@ -5,6 +5,7 @@ import type {
   AgentHookConfig,
   AgentHookInput,
   AgentHookTestResult,
+  BackgroundProcess,
   CreateProjectInput,
   CreateSessionInput,
   ImplementationQueueDashboard,
@@ -56,6 +57,7 @@ export type NightWorkersWorkspaceState = {
   llmUsageSummary: TaskLlmUsageSummary | null;
   activityEvents: ActivityEvent[];
   activityArtifacts: ActivityArtifact[];
+  backgroundProcesses: BackgroundProcess[];
   activeStreamingResponse: string;
   latestRunTodos: TaskRunTodo[];
   latestRunReviews: ReviewResult[];
@@ -89,6 +91,7 @@ export type NightWorkersWorkspaceState = {
   createSession: (input: CreateSessionInput) => Promise<Task>;
   startRun: (sessionId: string) => Promise<TaskRun>;
   stopRun: (runId: string) => Promise<TaskRun>;
+  stopBackgroundProcess: (processId: string) => Promise<BackgroundProcess>;
   queueSession: (sessionId: string) => Promise<Task>;
   createImplementationQueueEntry: (sessionId: string) => Promise<void>;
   archiveImplementationQueueEntry: (entryId: string) => Promise<void>;

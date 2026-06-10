@@ -46,9 +46,6 @@ export function BlueprintPreviewSection({ section }: { section: Record<string, a
       componentName ||
       'Section'
   );
-  const description = String(
-    props.description || previewSection.intent || previewSection.visualIntent || ''
-  );
   const body = isComposableSection
     ? renderComposableSection(previewSection, t)
     : renderPreviewSectionBody(componentName, props, t);
@@ -58,11 +55,6 @@ export function BlueprintPreviewSection({ section }: { section: Record<string, a
       <header className="flex items-start justify-between gap-3 border-border border-b bg-secondary px-[var(--blueprint-preview-section-padding)] py-3">
         <div className="min-w-0">
           <h3 className="truncate font-semibold text-card-foreground">{title}</h3>
-          {description ? (
-            <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-              {description}
-            </p>
-          ) : null}
         </div>
         <span className="shrink-0 rounded border border-border bg-background px-2 py-1 text-[10px] text-muted-foreground">
           {componentName}

@@ -1,8 +1,21 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { analyzeCommand, copyDirectoryTool, isPathSafe } from '../../api/services/worker-tools';
+
+let dummyRepoDir: string;
+
+beforeEach(async () => {
+  dummyRepoDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-worker-tools-'));
+  await fs.mkdir(path.join(dummyRepoDir, 'src'), { recursive: true });
+  await fs.writeFile(path.join(dummyRepoDir, 'hello.txt'), 'hello\n', 'utf-8');
+  await fs.writeFile(path.join(dummyRepoDir, 'src/main.js'), 'console.log("ok");\n', 'utf-8');
+});
+
+afterEach(async () => {
+  await fs.rm(dummyRepoDir, { recursive: true, force: true });
+});
 
 describe('Worker Tools Unit Tests', () => {
   it('allows valid paths inside repo root', () => {
@@ -91,6 +104,24 @@ describe('Command safety Policy', () => {
     const safety = analyzeCommand('git status');
     expect(safety.allowed).toBe(true);
     expect(safety.classification).toBe('read_only');
+  });
+
+  it('classifies dev servers as background commands', () => {
+    const result = analyzeCommand('pnpm dev');
+    expect(result.allowed).toBe(true);
+    expect(result.classification).toBe('background');
+  });
+
+  it('allows log-follow pipelines as background commands', () => {
+    const result = analyzeCommand('tail -f logs/api.log | rg error');
+    expect(result.allowed).toBe(true);
+    expect(result.classification).toBe('background');
+  });
+
+  it('handles custom blocklist entries with regex characters literally', () => {
+    const result = analyzeCommand('pnpm dev', ['pnpm dev [prod]']);
+    expect(result.allowed).toBe(true);
+    expect(result.classification).toBe('background');
   });
 
   it('blocks destructive commands', () => {

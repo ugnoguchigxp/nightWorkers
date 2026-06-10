@@ -116,7 +116,11 @@ export class DefaultToolPolicyGate implements ToolPolicyGate {
       return { allowed: true, normalizedArgs: args, preflight: { targetFile: target } };
     }
 
-    if (request.toolName === 'run_command' || request.toolName === 'run_verification') {
+    if (
+      request.toolName === 'run_command' ||
+      request.toolName === 'run_background_command' ||
+      request.toolName === 'run_verification'
+    ) {
       const command = args.command;
       if (typeof command !== 'string' || command.trim().length === 0) {
         return {
@@ -157,6 +161,26 @@ export class DefaultToolPolicyGate implements ToolPolicyGate {
               ? 'UNKNOWN_COMMAND'
               : 'COMMAND_BLOCKED',
           message: reason,
+          evidence: { command, classification: analyzed.classification },
+        };
+      }
+      const analyzed = analyzeCommand(command, request.safetyPolicy?.blockedCommands);
+      if (request.toolName === 'run_command' && analyzed.classification === 'background') {
+        return {
+          allowed: false,
+          code: 'COMMAND_BLOCKED',
+          message: 'Long-running commands must use run_background_command.',
+          evidence: { command, classification: analyzed.classification },
+        };
+      }
+      if (
+        request.toolName === 'run_background_command' &&
+        analyzed.classification !== 'background'
+      ) {
+        return {
+          allowed: false,
+          code: 'COMMAND_BLOCKED',
+          message: 'run_background_command only accepts background-safe commands.',
           evidence: { command, classification: analyzed.classification },
         };
       }

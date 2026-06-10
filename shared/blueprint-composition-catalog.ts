@@ -130,7 +130,6 @@ export function createPresetBlueprintNodeTree(input: {
 }): BlueprintNode {
   const props = input.props || {};
   const title = String(props.title || input.sectionName || input.sectionId || 'Section');
-  const description = String(props.description || '');
 
   if (input.preset === 'search_header') {
     return layoutNode('root', 'stack', { gap: 'md' }, [
@@ -160,7 +159,7 @@ export function createPresetBlueprintNodeTree(input: {
   if (input.preset === 'table_workspace') {
     return layoutNode('root', 'stack', { gap: 'md' }, [
       layoutNode('toolbar', 'row', { gap: 'sm', align: 'center' }, [
-        componentNode('title', 'Text', { title, description }),
+        componentNode('title', 'Text', { title }),
         layoutNode(
           'actions',
           'row',
@@ -195,11 +194,12 @@ export function createPresetBlueprintNodeTree(input: {
   }
 
   if (input.preset === 'chart_insight') {
+    const insight = String(props.insight || props.summary || props.note || '');
     return layoutNode('root', 'split', { gap: 'md' }, [
       componentNode('chart', 'DataTable', props),
       componentNode('insight', 'Alert', {
         title,
-        description: description || String(props.insight || ''),
+        ...(insight ? { description: insight } : {}),
       }),
     ]);
   }
@@ -218,9 +218,7 @@ export function createPresetBlueprintNodeTree(input: {
     );
   }
 
-  return layoutNode('root', 'stack', { gap: 'md' }, [
-    componentNode('fallback', 'Card', { title, description }),
-  ]);
+  return layoutNode('root', 'stack', { gap: 'md' }, [componentNode('fallback', 'Card', { title })]);
 }
 
 function component(

@@ -51,6 +51,36 @@ describe('Blueprint section composition helpers', () => {
     expect(root.children?.[0]?.children?.[1]?.id).toBe('actions');
   });
 
+  it('does not copy section descriptions into preset body components', () => {
+    const labels = {
+      searchPlaceholder: 'Search...',
+      primarySignal: 'Primary',
+      secondarySignal: 'Secondary',
+      nextAction: 'Next',
+    };
+    const description = 'Section-level description should not repeat in the body.';
+
+    const tableRoot = createPresetBlueprintNodeTree({
+      preset: 'table_workspace',
+      sectionId: 'todos',
+      sectionName: 'Todo の一覧',
+      props: { title: 'Todo の一覧', description },
+      labels,
+    });
+
+    expect(tableRoot.children?.[0]?.children?.[0]?.props).toEqual({ title: 'Todo の一覧' });
+
+    const chartRoot = createPresetBlueprintNodeTree({
+      preset: 'chart_insight',
+      sectionId: 'todo-chart',
+      sectionName: 'Todo の一覧',
+      props: { title: 'Todo の一覧', description },
+      labels,
+    });
+
+    expect(chartRoot.children?.[1]?.props).toEqual({ title: 'Todo の一覧' });
+  });
+
   it('adapts legacy search, table, and metric sections to preset sections', () => {
     const cases: Array<
       [LegacyBlueprintSection['componentName'], PresetBlueprintSection['preset']]

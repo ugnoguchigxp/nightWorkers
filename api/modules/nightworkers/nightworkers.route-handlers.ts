@@ -189,6 +189,40 @@ export async function listTaskRunActivityEventsHandler(c: any) {
   }
 }
 
+export async function startBackgroundProcessHandler(c: any) {
+  const request = c.req.valid('json');
+  try {
+    const processRecord = await service.startTaskBackgroundProcess(request);
+    return c.json(processRecord, 201);
+  } catch (err: any) {
+    return queueRouteError(c, err);
+  }
+}
+
+export async function listBackgroundProcessesHandler(c: any) {
+  try {
+    const processes = await service.listTaskBackgroundProcesses(c.req.valid('query'));
+    return c.json(processes, 200);
+  } catch (err: any) {
+    return queueRouteError(c, err);
+  }
+}
+
+export async function getBackgroundProcessHandler(c: any) {
+  const processRecord = await service.getTaskBackgroundProcess(c.req.param('id'));
+  if (!processRecord) return c.json({ error: 'Background process not found' }, 404);
+  return c.json(processRecord, 200);
+}
+
+export async function stopBackgroundProcessHandler(c: any) {
+  try {
+    const processRecord = await service.stopTaskBackgroundProcess(c.req.param('id'));
+    return c.json(processRecord, 200);
+  } catch (err: any) {
+    return queueRouteError(c, err);
+  }
+}
+
 export async function createRunReviewHandler(c: any) {
   const id = c.req.param('id');
   const request = c.req.valid('json');

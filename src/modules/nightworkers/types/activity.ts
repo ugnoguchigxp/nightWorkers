@@ -40,6 +40,27 @@ export type ActivityReplay = {
   artifacts: ActivityArtifact[];
 };
 
+export type BackgroundProcess = {
+  id: string;
+  repositoryId: string;
+  taskId?: string | null;
+  runId?: string | null;
+  command: string;
+  cwd: string;
+  status: string;
+  pid?: number | null;
+  exitCode?: number | null;
+  signal?: string | null;
+  startedAt: unknown;
+  endedAt?: unknown | null;
+  stopReason?: string | null;
+  latestOutput: string;
+  outputArtifactId?: string | null;
+  metadataJson?: any;
+  createdAt: unknown;
+  updatedAt: unknown;
+};
+
 export type WorkbenchChatIntent =
   | 'intake'
   | 'draft'

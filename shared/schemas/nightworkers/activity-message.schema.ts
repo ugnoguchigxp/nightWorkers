@@ -69,6 +69,39 @@ export const activityReplaySchema = z
   })
   .openapi('ActivityReplay');
 
+export const backgroundProcessSchema = z
+  .object({
+    id: z.string().uuid(),
+    repositoryId: z.string().uuid(),
+    taskId: z.string().uuid().nullable().optional(),
+    runId: z.string().uuid().nullable().optional(),
+    command: z.string(),
+    cwd: z.string(),
+    status: z.string(),
+    pid: z.number().int().nullable().optional(),
+    exitCode: z.number().int().nullable().optional(),
+    signal: z.string().nullable().optional(),
+    startedAt: z.any(),
+    endedAt: z.any().nullable().optional(),
+    stopReason: z.string().nullable().optional(),
+    latestOutput: z.string(),
+    outputArtifactId: z.string().uuid().nullable().optional(),
+    metadataJson: z.any().nullable().optional(),
+    createdAt: z.any(),
+    updatedAt: z.any(),
+  })
+  .openapi('BackgroundProcess');
+
+export const startBackgroundProcessRequestSchema = z
+  .object({
+    command: z.string().min(1),
+    cwd: z.string().optional(),
+    repositoryId: z.string().uuid().optional(),
+    taskId: z.string().uuid().optional(),
+    runId: z.string().uuid().optional(),
+  })
+  .openapi('StartBackgroundProcessRequest');
+
 export const taskMessageSchema = z
   .object({
     id: z.string().uuid(),

@@ -84,6 +84,14 @@ export const TOOL_MANIFEST: Record<WorkerToolName, ToolManifestEntry> = {
     commandArg: 'command',
     cwdArg: 'cwd',
   },
+  run_background_command: {
+    name: 'run_background_command',
+    mutatesWorkspace: true,
+    requiresReadBeforeEdit: false,
+    pathArgs: [],
+    commandArg: 'command',
+    cwdArg: 'cwd',
+  },
   run_verification: {
     name: 'run_verification',
     mutatesWorkspace: false,

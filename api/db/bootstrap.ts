@@ -287,6 +287,42 @@ export async function ensureNightWorkersSchema() {
   );
 
   await client.execute(`
+    CREATE TABLE IF NOT EXISTS background_processes (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      repository_id text NOT NULL,
+      task_id text,
+      run_id text,
+      command text NOT NULL,
+      cwd text NOT NULL,
+      status text DEFAULT 'running' NOT NULL,
+      pid integer,
+      exit_code integer,
+      signal text,
+      started_at integer NOT NULL,
+      ended_at integer,
+      stop_reason text,
+      latest_output text DEFAULT '' NOT NULL,
+      output_artifact_id text,
+      metadata_json text,
+      FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE set null,
+      FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE set null,
+      FOREIGN KEY (output_artifact_id) REFERENCES activity_artifacts(id) ON DELETE set null
+    )
+  `);
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS background_processes_repository_status_idx ON background_processes (repository_id, status)'
+  );
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS background_processes_task_status_idx ON background_processes (task_id, status)'
+  );
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS background_processes_run_status_idx ON background_processes (run_id, status)'
+  );
+
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS task_run_todos (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,

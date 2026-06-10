@@ -1,10 +1,19 @@
-import { Bug, FolderTree, GitCompare, LoaderCircle, PanelsTopLeft, Trash2 } from 'lucide-react';
+import {
+  Bug,
+  FolderTree,
+  GitCompare,
+  LoaderCircle,
+  PanelsTopLeft,
+  Square,
+  Trash2,
+} from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import type {
   ActivityArtifact,
   ActivityEvent,
+  BackgroundProcess,
   ModelOption,
   Repository,
   Task,
@@ -13,6 +22,7 @@ import type {
   TaskMessage,
   TaskRun,
   ThinkingDepth,
+  WorkbenchArtifactContext,
   WorkbenchArtifactRef,
   WorkbenchChatIntent,
   WorkbenchSessionView,
@@ -37,7 +47,9 @@ type ThreadWorkspaceProps = {
   activityEvents: ActivityEvent[];
   activityArtifacts: ActivityArtifact[];
   activeStreamingResponse: string;
+  backgroundProcesses?: BackgroundProcess[];
   artifactRefs: WorkbenchArtifactRef[];
+  activeArtifactContext?: WorkbenchArtifactContext | null;
   isAgentWorking: boolean;
   isAgentThinking: boolean;
   realtimeStatus: 'initializing' | 'connecting' | 'connected' | 'disconnected';
@@ -50,6 +62,7 @@ type ThreadWorkspaceProps = {
   onSubmitWorkbenchMessage: (prompt: string, intent: WorkbenchChatIntent) => Promise<void>;
   canStopActiveRun?: boolean;
   onStopActiveRun?: () => Promise<void>;
+  onStopBackgroundProcess?: (processId: string) => Promise<BackgroundProcess>;
   onOpenBlueprintArtifact: () => Promise<void>;
   isBlueprintArtifactOpen: boolean;
   isBlueprintActionBusy: boolean;
@@ -61,6 +74,7 @@ type ThreadWorkspaceProps = {
   onRequeueQueueEntry: (note?: string) => void;
   onArchiveQueueExecution: () => void;
   onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
+  onClearArtifactContext?: () => void;
   isProjectFilesOpen: boolean;
   onOpenProjectFiles: () => void;
   onOpenDiffArtifact: (artifact: WorkbenchArtifactRef) => void;
@@ -254,7 +268,9 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
               activeSession={props.activeSession}
               activeStreamingResponse={props.activeStreamingResponse}
               activityArtifacts={props.activityArtifacts}
+              activeArtifactContext={props.activeArtifactContext}
               activityEvents={props.activityEvents}
+              backgroundProcesses={props.backgroundProcesses}
               isAgentThinking={props.isAgentThinking}
               isAgentWorking={props.isAgentWorking}
               latestRun={props.latestRun}
@@ -264,10 +280,12 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
               onGrantExternalPath={props.onGrantExternalPath}
               onModelChange={props.onModelChange}
               onOpenArtifact={props.onOpenArtifact}
+              onClearArtifactContext={props.onClearArtifactContext}
               canStopActiveRun={props.canStopActiveRun}
               onSubmitInitialPrompt={props.onSubmitInitialPrompt}
               onSubmitWorkbenchMessage={props.onSubmitWorkbenchMessage}
               onStopActiveRun={props.onStopActiveRun}
+              onStopBackgroundProcess={props.onStopBackgroundProcess}
               onThinkingDepthChange={props.onThinkingDepthChange}
               realtimeStatus={props.realtimeStatus}
               runs={props.runs}
@@ -288,7 +306,9 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
             activeSession={props.activeSession}
             activeStreamingResponse={props.activeStreamingResponse}
             activityArtifacts={props.activityArtifacts}
+            activeArtifactContext={props.activeArtifactContext}
             activityEvents={props.activityEvents}
+            backgroundProcesses={props.backgroundProcesses}
             isAgentThinking={props.isAgentThinking}
             isAgentWorking={props.isAgentWorking}
             latestRun={props.latestRun}
@@ -298,10 +318,12 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
             onGrantExternalPath={props.onGrantExternalPath}
             onModelChange={props.onModelChange}
             onOpenArtifact={props.onOpenArtifact}
+            onClearArtifactContext={props.onClearArtifactContext}
             canStopActiveRun={props.canStopActiveRun}
             onSubmitInitialPrompt={props.onSubmitInitialPrompt}
             onSubmitWorkbenchMessage={props.onSubmitWorkbenchMessage}
             onStopActiveRun={props.onStopActiveRun}
+            onStopBackgroundProcess={props.onStopBackgroundProcess}
             onThinkingDepthChange={props.onThinkingDepthChange}
             realtimeStatus={props.realtimeStatus}
             runs={props.runs}
@@ -319,11 +341,90 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
   );
 }
 
+function BackgroundProcessesStrip({
+  processes,
+  onStopBackgroundProcess,
+}: {
+  processes: BackgroundProcess[];
+  onStopBackgroundProcess?: (processId: string) => Promise<BackgroundProcess>;
+}) {
+  const [stoppingId, setStoppingId] = useState<string | null>(null);
+  const visible = processes.filter((processRecord) =>
+    ['running', 'stopped', 'failed', 'lost'].includes(processRecord.status)
+  );
+  if (visible.length === 0) return null;
+
+  return (
+    <div className="mx-6 mt-4 space-y-2 rounded border border-slate-700/70 bg-slate-950/35 p-3 text-xs text-slate-200">
+      <div className="flex items-center justify-between gap-3">
+        <div className="font-medium text-slate-100">Background processes</div>
+        <div className="text-slate-500">{visible.length}</div>
+      </div>
+      <div className="space-y-2">
+        {visible.map((processRecord) => {
+          const isRunning = processRecord.status === 'running';
+          return (
+            <div
+              key={processRecord.id}
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 rounded border border-slate-800 bg-slate-900/50 p-2"
+            >
+              <div className="min-w-0 space-y-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${
+                      isRunning ? 'bg-emerald-400' : 'bg-slate-500'
+                    }`}
+                  />
+                  <span className="truncate font-mono text-slate-100">{processRecord.command}</span>
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-slate-400">
+                  <span>{processRecord.status}</span>
+                  <span>{getRelativeTimestamp(processRecord.startedAt)}</span>
+                  {processRecord.stopReason ? <span>{processRecord.stopReason}</span> : null}
+                </div>
+                {processRecord.latestOutput.trim() ? (
+                  <pre className="max-h-20 overflow-auto whitespace-pre-wrap rounded bg-slate-950/60 p-2 font-mono text-[11px] text-slate-300">
+                    {processRecord.latestOutput.trim()}
+                  </pre>
+                ) : null}
+              </div>
+              {isRunning && onStopBackgroundProcess ? (
+                <button
+                  className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+                  disabled={stoppingId === processRecord.id}
+                  onClick={async () => {
+                    setStoppingId(processRecord.id);
+                    try {
+                      await onStopBackgroundProcess(processRecord.id);
+                    } finally {
+                      setStoppingId(null);
+                    }
+                  }}
+                  title="Stop background process"
+                  type="button"
+                >
+                  {stoppingId === processRecord.id ? (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Square className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ThreadBody({
   activeSession,
   activeStreamingResponse,
   activityArtifacts,
+  activeArtifactContext,
   activityEvents,
+  backgroundProcesses = [],
   isAgentThinking,
   isAgentWorking,
   latestRun,
@@ -333,10 +434,12 @@ function ThreadBody({
   onGrantExternalPath,
   onModelChange,
   onOpenArtifact,
+  onClearArtifactContext,
   canStopActiveRun,
   onSubmitInitialPrompt,
   onSubmitWorkbenchMessage,
   onStopActiveRun,
+  onStopBackgroundProcess,
   onThinkingDepthChange,
   realtimeStatus,
   runs,
@@ -349,7 +452,9 @@ function ThreadBody({
   | 'activeSession'
   | 'activeStreamingResponse'
   | 'activityArtifacts'
+  | 'activeArtifactContext'
   | 'activityEvents'
+  | 'backgroundProcesses'
   | 'isAgentThinking'
   | 'isAgentWorking'
   | 'latestRun'
@@ -359,10 +464,12 @@ function ThreadBody({
   | 'onGrantExternalPath'
   | 'onModelChange'
   | 'onOpenArtifact'
+  | 'onClearArtifactContext'
   | 'canStopActiveRun'
   | 'onSubmitInitialPrompt'
   | 'onSubmitWorkbenchMessage'
   | 'onStopActiveRun'
+  | 'onStopBackgroundProcess'
   | 'onThinkingDepthChange'
   | 'realtimeStatus'
   | 'runs'
@@ -378,6 +485,10 @@ function ThreadBody({
         {activeSession ? (
           <>
             {workbenchBanner}
+            <BackgroundProcessesStrip
+              processes={backgroundProcesses}
+              onStopBackgroundProcess={onStopBackgroundProcess}
+            />
             <ThreadTimeline
               session={activeSession}
               runs={runs}
@@ -406,7 +517,13 @@ function ThreadBody({
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-transparent">
         <div className="pointer-events-auto">
           <Composer
-            disabled={isAgentWorking}
+            disabled={!activeSession && isAgentWorking}
+            draftStorageKey={
+              activeSession
+                ? `nightworkers:composer:${activeSession.id}`
+                : 'nightworkers:composer:new'
+            }
+            artifactContext={activeArtifactContext}
             model={model}
             thinkingDepth={thinkingDepth}
             modelOptions={modelOptions}
@@ -416,6 +533,7 @@ function ThreadBody({
             thinkingDepthOptions={THINKING_DEPTH_OPTIONS}
             onModelChange={onModelChange}
             onThinkingDepthChange={onThinkingDepthChange}
+            onClearArtifactContext={onClearArtifactContext}
             onStop={onStopActiveRun}
             onSubmit={async (prompt, intent) => {
               if (!activeSession) {

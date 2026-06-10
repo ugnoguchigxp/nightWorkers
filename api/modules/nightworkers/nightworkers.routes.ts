@@ -13,18 +13,22 @@ import {
   generateSpecificationStatusBlueprintHandler,
   generateSpecificationStatusDbDesignHandler,
   generateSpecificationStatusDesignDocumentHandler,
+  getBackgroundProcessHandler,
   getBlueprintSpecificationWorkspaceHandler,
   getDesignQuestionnaireHandler,
   getSpecificationWorkspaceHandler,
   getTaskRunHandler,
   leaveDesignQuestionnaireReviewUnadoptedHandler,
+  listBackgroundProcessesHandler,
   listDesignQuestionnairesHandler,
   listReviewRubricsHandler,
   listTaskRunActivityEventsHandler,
   listTaskRunEventsHandler,
   listTaskRunsHandler,
   saveDesignQuestionnaireAnswersHandler,
+  startBackgroundProcessHandler,
   startTaskRunHandler,
+  stopBackgroundProcessHandler,
   stopTaskRunHandler,
 } from './nightworkers.route-handlers';
 import { queueRouteError } from './nightworkers.route-utils';
@@ -58,15 +62,19 @@ import {
   createReviewerReplayEvaluationRoute,
   createRunReviewRoute,
   exportTaskRunJsonlRoute,
+  getBackgroundProcessRoute,
   getOverviewDashboardRoute,
   getTaskLlmUsageRoute,
   getTaskRunRoute,
+  listBackgroundProcessesRoute,
   listReviewRubricsRoute,
   listTaskActivityEventsRoute,
   listTaskMessagesRoute,
   listTaskRunActivityEventsRoute,
   listTaskRunEventsRoute,
   listTaskRunsRoute,
+  startBackgroundProcessRoute,
+  stopBackgroundProcessRoute,
   stopTaskRunRoute,
 } from './routes/run-routes';
 import {
@@ -553,6 +561,10 @@ const router = createOpenApiRouter()
   .openapi(stopTaskRunRoute, stopTaskRunHandler)
   .openapi(listTaskRunEventsRoute, listTaskRunEventsHandler)
   .openapi(listTaskRunActivityEventsRoute, listTaskRunActivityEventsHandler)
+  .openapi(startBackgroundProcessRoute, startBackgroundProcessHandler)
+  .openapi(listBackgroundProcessesRoute, listBackgroundProcessesHandler)
+  .openapi(getBackgroundProcessRoute, getBackgroundProcessHandler)
+  .openapi(stopBackgroundProcessRoute, stopBackgroundProcessHandler)
   .openapi(createRunReviewRoute, createRunReviewHandler)
   .openapi(listTaskRunsRoute, listTaskRunsHandler)
   .openapi(listReviewRubricsRoute, listReviewRubricsHandler)

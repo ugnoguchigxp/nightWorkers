@@ -14,6 +14,25 @@ export function MessagePayload({
   const { t } = useTranslation();
   const metadata = message.metadataJson as any;
   if (isWorkspaceOnlyTaskMessage(message)) return null;
+  if (message.role === 'user' && metadata?.artifactContext) {
+    const artifactContext = metadata.artifactContext;
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-950/20 px-2.5 py-1.5 text-[11px] text-cyan-50">
+          <span className="font-semibold">{t('timeline.referencedArtifact')}</span>
+          <span className="min-w-0 max-w-[26rem] truncate text-cyan-100/90">
+            {String(artifactContext.title || artifactContext.artifactId || '')}
+          </span>
+          {artifactContext.kind ? (
+            <span className="rounded border border-cyan-500/30 px-1.5 py-0.5 text-[10px] uppercase text-cyan-100/70">
+              {String(artifactContext.kind)}
+            </span>
+          ) : null}
+        </div>
+        <div>{message.content}</div>
+      </div>
+    );
+  }
   if (metadata?.intent === 'tool_diff') {
     const codeBlock = metadata.codeBlock || {};
     const code = typeof codeBlock.code === 'string' ? codeBlock.code : message.content;

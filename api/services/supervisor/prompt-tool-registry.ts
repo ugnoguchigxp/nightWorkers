@@ -189,6 +189,18 @@ export const toolRegistry = {
       ['command']
     ),
   },
+  run_background_command: {
+    name: 'run_background_command',
+    description:
+      '開発サーバー、watch、ログ監視など、起動したまま別作業へ進むための背景コマンドを開始する。',
+    inputSchema: objectSchema(
+      {
+        command: { type: 'string' },
+        cwd: { type: 'string' },
+      },
+      ['command']
+    ),
+  },
   run_verification: {
     name: 'run_verification',
     description: '明示的な検証コマンドを実行する。',
@@ -350,6 +362,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'apply_patch',
     'replace_content',
     'run_command',
+    'run_background_command',
     'run_verification',
     'git_status',
     'git_diff',
@@ -376,6 +389,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'read_file',
     'search_files',
     'run_command',
+    'run_background_command',
     'git_status',
     'finalize_answer',
   ],
@@ -386,6 +400,7 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'read_file',
     'search_files',
     'run_command',
+    'run_background_command',
     'git_status',
     'finalize_answer',
   ],
@@ -552,6 +567,7 @@ export function getExecutableWorkerToolName(name: string): WorkerToolName | null
     name === 'apply_patch' ||
     name === 'replace_content' ||
     name === 'run_command' ||
+    name === 'run_background_command' ||
     name === 'run_verification' ||
     name === 'git_status' ||
     name === 'git_diff'

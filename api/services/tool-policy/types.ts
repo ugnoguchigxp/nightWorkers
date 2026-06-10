@@ -14,6 +14,7 @@ export type WorkerToolName =
   | 'apply_patch'
   | 'replace_content'
   | 'run_command'
+  | 'run_background_command'
   | 'run_verification'
   | 'mcp_call_tool'
   | 'git_status'

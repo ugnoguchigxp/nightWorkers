@@ -158,6 +158,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const [model, setModel] = useState('gpt-5.5');
   const [thinkingDepth, setThinkingDepth] = useState<ThinkingDepth>('medium');
   const [artifactFocus, setArtifactFocus] = useState<ArtifactPaneFocus>({ type: 'closed' });
+  const [clearedArtifactContextId, setClearedArtifactContextId] = useState<string | null>(null);
   const [showQueueScreen, setShowQueueScreen] = useState(false);
   const [showOverviewScreen, setShowOverviewScreen] = useState(true);
   const [queueProjectFilterId, setQueueProjectFilterId] = useState<string | null>(null);
@@ -165,7 +166,10 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const visibleActiveSessionId =
     props.showSettings || isOverviewActive ? null : workspace.activeSessionId;
   const selectedArtifact = artifactFocus.type === 'artifact' ? artifactFocus.artifact : null;
-  const selectedArtifactContext = buildArtifactContext(selectedArtifact, workspace.activeSessionId);
+  const selectedArtifactContext =
+    selectedArtifact && selectedArtifact.id !== clearedArtifactContextId
+      ? buildArtifactContext(selectedArtifact, workspace.activeSessionId)
+      : null;
   const artifactPaneOpen = artifactFocus.type !== 'closed';
   const isBlueprintArtifactOpen =
     artifactPaneOpen &&
@@ -234,6 +238,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       current.activeArtifactRefs.find((artifact) => artifact.kind === 'blueprint_workspace') ||
       current.activeArtifactRefs.find((artifact) => artifact.kind === 'app_blueprint');
     if (existing) {
+      setClearedArtifactContextId(null);
       setArtifactFocus({ type: 'artifact', artifact: existing });
       return;
     }
@@ -302,6 +307,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         openedQuestionnaireMessageIdsRef.current.add(message.id);
         setShowOverviewScreen(false);
         props.onCloseSettings();
+        setClearedArtifactContextId(null);
         setArtifactFocus({
           type: 'artifact',
           artifact: buildQuestionnaireWorkspaceArtifactRef(message),
@@ -406,8 +412,10 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               llmUsageSummary={workspace.llmUsageSummary}
               activityEvents={workspace.activityEvents}
               activityArtifacts={workspace.activityArtifacts}
+              backgroundProcesses={workspace.backgroundProcesses}
               activeStreamingResponse={workspace.activeStreamingResponse}
               artifactRefs={workspace.activeArtifactRefs}
+              activeArtifactContext={selectedArtifactContext}
               isAgentWorking={workspace.isAgentWorking}
               isAgentThinking={workspace.isAgentThinking}
               realtimeStatus={workspace.realtimeStatus}
@@ -451,6 +459,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                 if (!runId) return;
                 await workspace.stopRun(runId);
               }}
+              onStopBackgroundProcess={workspace.stopBackgroundProcess}
               onOpenBlueprintArtifact={handleOpenBlueprintArtifact}
               isBlueprintArtifactOpen={isBlueprintArtifactOpen}
               isBlueprintActionBusy={workspace.isChatSubmitting}
@@ -483,13 +492,20 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                 if (!entryId) return;
                 void workspace.archiveImplementationQueueEntry(entryId);
               }}
-              onOpenArtifact={(artifact) => setArtifactFocus({ type: 'artifact', artifact })}
+              onOpenArtifact={(artifact) => {
+                setClearedArtifactContextId(null);
+                setArtifactFocus({ type: 'artifact', artifact });
+              }}
+              onClearArtifactContext={() => {
+                if (selectedArtifact) setClearedArtifactContextId(selectedArtifact.id);
+              }}
               isProjectFilesOpen={artifactFocus.type === 'project_tree'}
               onOpenProjectFiles={() => {
                 if (artifactFocus.type === 'project_tree') {
                   setArtifactFocus({ type: 'closed' });
                   return;
                 }
+                setClearedArtifactContextId(null);
                 setArtifactFocus({ type: 'project_tree' });
               }}
               onOpenDiffArtifact={(artifact) => {
@@ -497,6 +513,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                   setArtifactFocus({ type: 'closed' });
                   return;
                 }
+                setClearedArtifactContextId(null);
                 setArtifactFocus({ type: 'artifact', artifact });
               }}
               onGrantExternalPath={async (externalPath) => {
@@ -585,6 +602,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                             type: 'artifact',
                             artifact: buildBlueprintArtifactRef(latestBlueprintMessage),
                           });
+                          setClearedArtifactContextId(null);
                         }
                         return;
                       }

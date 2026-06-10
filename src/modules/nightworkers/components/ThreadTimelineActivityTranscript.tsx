@@ -409,6 +409,12 @@ export function schemaFirstAgentEventType(event: ActivityEvent): string {
 }
 
 function activityDisplayTitle(event: ActivityEvent, fallback: string): string {
+  const workRecordCard = getWorkRecordCard(event);
+  if (workRecordCard?.type === 'command') {
+    return workRecordCard.executionMode === 'background' ? 'Background command' : 'Command';
+  }
+  if (workRecordCard?.type === 'file') return 'File edit';
+  if (workRecordCard?.type === 'failure') return 'Needs attention';
   const agentEventType = schemaFirstAgentEventType(event);
   switch (agentEventType) {
     case 'run.started':
@@ -455,6 +461,21 @@ function activityDisplayTitle(event: ActivityEvent, fallback: string): string {
 function activityDisplaySummary(event: ActivityEvent): string {
   const payload = event.payloadJson as any;
   const data = payload?.payload || payload?.runEvent?.data || payload || {};
+  const workRecordCard = getWorkRecordCard(event);
+  if (workRecordCard) {
+    const command = stringValue(data.command || payload.command);
+    const status = stringValue(data.status || payload.status || event.status);
+    const cwd = stringValue(data.cwd || payload.cwd);
+    const exitCode =
+      typeof data.exitCode === 'number' || typeof payload.exitCode === 'number'
+        ? `exit=${data.exitCode ?? payload.exitCode}`
+        : '';
+    const stopReason = stringValue(data.stopReason || payload.stopReason);
+    const outputSummary = stringValue(data.outputSummary || payload.outputSummary);
+    return [command, [status, exitCode, cwd, stopReason].filter(Boolean).join(' · '), outputSummary]
+      .filter(Boolean)
+      .join('\n');
+  }
   const agentEventType = schemaFirstAgentEventType(event);
   if (agentEventType === 'round1.parsed' && typeof data.jobType === 'string') {
     return data.jobType;
@@ -496,6 +517,16 @@ function activityDisplaySummary(event: ActivityEvent): string {
     return event.text || 'prompt built';
   }
   return event.text || event.ingestError || event.status || event.kind;
+}
+
+function getWorkRecordCard(event: ActivityEvent): { type?: string; executionMode?: string } | null {
+  const payload = event.payloadJson as any;
+  const candidate =
+    payload?.workRecordCard ||
+    payload?.payload?.workRecordCard ||
+    payload?.runEvent?.data?.workRecordCard;
+  if (!candidate || typeof candidate !== 'object') return null;
+  return candidate;
 }
 
 function toolCallSummary(toolCall: any): string {

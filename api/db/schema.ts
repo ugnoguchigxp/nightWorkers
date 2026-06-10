@@ -387,6 +387,42 @@ export const activityEvents = sqliteTable(
   })
 );
 
+export const backgroundProcesses = sqliteTable(
+  'background_processes',
+  {
+    ...commonColumns,
+    repositoryId: text('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    runId: text('run_id').references(() => taskRuns.id, { onDelete: 'set null' }),
+    command: text('command').notNull(),
+    cwd: text('cwd').notNull(),
+    status: text('status').default('running').notNull(),
+    pid: integer('pid'),
+    exitCode: integer('exit_code'),
+    signal: text('signal'),
+    startedAt: integer('started_at', { mode: 'timestamp' })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    endedAt: integer('ended_at', { mode: 'timestamp' }),
+    stopReason: text('stop_reason'),
+    latestOutput: text('latest_output').default('').notNull(),
+    outputArtifactId: text('output_artifact_id').references(() => activityArtifacts.id, {
+      onDelete: 'set null',
+    }),
+    metadataJson: text('metadata_json', { mode: 'json' }),
+  },
+  (table) => ({
+    repositoryStatusIdx: index('background_processes_repository_status_idx').on(
+      table.repositoryId,
+      table.status
+    ),
+    taskStatusIdx: index('background_processes_task_status_idx').on(table.taskId, table.status),
+    runStatusIdx: index('background_processes_run_status_idx').on(table.runId, table.status),
+  })
+);
+
 export const taskMessages = sqliteTable(
   'task_messages',
   {

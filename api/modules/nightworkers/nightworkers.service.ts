@@ -14,6 +14,12 @@ import {
   startTaskRun,
 } from './nightworkers.run-orchestration.service';
 
+export {
+  getTaskBackgroundProcess,
+  listTaskBackgroundProcesses,
+  startTaskBackgroundProcess,
+  stopTaskBackgroundProcess,
+} from './nightworkers.background-process.service';
 export type { BlueprintPlanningReadiness } from './nightworkers.basic.service';
 export {
   createRepository,

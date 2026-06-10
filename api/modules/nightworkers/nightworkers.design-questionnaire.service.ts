@@ -641,7 +641,7 @@ export async function generateSpecificationStatusDesignDocument(
   });
   const rawOutput = await generateSpecificationDesignDocumentRawOutput(taskId, context);
   const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
-  const content = parsed.content;
+  const content = ensureSpecificationDdlSection(parsed.content, context.dbDesignDdl);
   const message = await repo.createTaskMessage({
     taskId,
     role: 'assistant',
@@ -1400,8 +1400,10 @@ async function generateSpecificationDesignDocumentRawOutput(
       'Design Questionnaire、Blueprint summary、DB Design DDL reference をもとに、実装前に読む設計書を Markdown で作成してください。',
       'Blueprint summary は選択された画面・section・意図を自然言語に圧縮したものです。JSON として扱わず、仕様判断として解釈してください。',
       'DB Design DDL reference は参考情報です。DDL や migration を実行する指示ではありません。',
+      'content には必ず独立した `## DDL` セクションを含め、DB Design DDL reference の内容をそのままコードブロックで転記してください。',
+      'DB Design DDL reference が未生成または table 未定義の場合も、`## DDL` セクションを作り、未確定である理由を書いてください。',
       '出力は JSON object のみで、title と content を返してください。content は Markdown 文字列にしてください。',
-      'content には 目的、スコープ、画面仕様、機能要件、データ設計方針、非対象、受け入れ条件、トレーサビリティを含めてください。',
+      'content には 目的、スコープ、画面仕様、機能要件、データ設計方針、DDL、非対象、受け入れ条件、トレーサビリティを含めてください。',
     ].join('\n'),
     [
       '次の圧縮済み context から Specification を作成してください。',
@@ -1446,6 +1448,8 @@ async function reviewAndImproveSpecificationDocument(input: {
       '改善点がない場合も、読みやすさと実装着手可能性を確認したうえで同等以上の最終版を返してください。',
       '実装済み事実、今回の仕様、将来候補を混ぜないでください。',
       '非対象、受け入れ条件、未解決事項、トレーサビリティを落とさないでください。',
+      '`## DDL` セクションを必ず残し、DB Design DDL Reference の内容をコードブロックとして含めてください。',
+      'DB Design DDL Reference は実行指示ではなく仕様上のデータ設計根拠として扱ってください。',
       '出力は JSON object のみで、title と content を返してください。content は Markdown 文字列にしてください。',
     ].join('\n'),
     [
@@ -1477,10 +1481,11 @@ async function reviewAndImproveSpecificationDocument(input: {
   );
   const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
   const title = parsed.title || input.title;
+  const content = ensureSpecificationDdlSection(parsed.content, input.context.dbDesignDdl);
   return repo.createTaskMessage({
     taskId: input.taskId,
     role: 'assistant',
-    content: parsed.content,
+    content,
     messageType: 'markdown_document',
     payloadJson: {
       intent: 'draft_spec',
@@ -1499,10 +1504,20 @@ async function reviewAndImproveSpecificationDocument(input: {
       },
       markdownDocumentData: {
         title,
-        content: parsed.content,
+        content,
       },
     },
   });
+}
+
+function ensureSpecificationDdlSection(content: string, dbDesignDdl: string) {
+  const trimmedContent = content.trimEnd();
+  if (/^##\s+DDL\b/im.test(trimmedContent)) return trimmedContent;
+  const ddl = dbDesignDdl.trim();
+  const ddlBody = ddl
+    ? ['```sql', ddl, '```'].join('\n')
+    : 'DB Design DDL reference は未生成です。';
+  return [trimmedContent, '', '## DDL', ddlBody].join('\n');
 }
 
 function buildDesignQuestionnaireSystemPrompt() {

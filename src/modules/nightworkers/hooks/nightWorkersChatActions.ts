@@ -13,7 +13,12 @@ import type { WorkbenchMessageResult } from './nightWorkersWorkspaceState';
 type ChatActionsInput = {
   queryClient: QueryClient;
   wsRef: MutableRefObject<WebSocket | null>;
-  lastSubmitRef: MutableRefObject<{ taskId: string; prompt: string; at: number } | null>;
+  lastSubmitRef: MutableRefObject<{
+    taskId: string;
+    prompt: string;
+    contextKey: string;
+    at: number;
+  } | null>;
   pendingChatQueueRef: MutableRefObject<Array<{ taskId: string; prompt: string }>>;
   chatSubmitStartedAtRef: MutableRefObject<number | null>;
   chatSubmitTransportRef: MutableRefObject<'http' | 'websocket' | null>;
@@ -28,24 +33,30 @@ function appendOptimisticUserMessage(
   sessionId: string,
   content: string,
   lastSubmitRef: ChatActionsInput['lastSubmitRef'],
-  queryClient: QueryClient
+  queryClient: QueryClient,
+  artifactContext?: WorkbenchArtifactContext | null
 ): boolean {
   const now = Date.now();
   const lastSubmit = lastSubmitRef.current;
+  const contextKey = artifactContext ? `${artifactContext.kind}:${artifactContext.artifactId}` : '';
   if (
     lastSubmit &&
     lastSubmit.taskId === sessionId &&
     lastSubmit.prompt === content &&
+    lastSubmit.contextKey === contextKey &&
     now - lastSubmit.at < 1500
   )
     return false;
-  lastSubmitRef.current = { taskId: sessionId, prompt: content, at: now };
+  lastSubmitRef.current = { taskId: sessionId, prompt: content, contextKey, at: now };
   const optimisticUserMessage: TaskMessage = {
     id: `optimistic-user-${Date.now()}`,
     taskId: sessionId,
     role: 'user',
     content,
     messageType: 'text',
+    metadataJson: artifactContext
+      ? { intent: 'artifact_context_instruction', source: 'workbench', artifactContext }
+      : undefined,
     createdAt: new Date().toISOString(),
   };
   queryClient.setQueryData<TaskMessage[]>(['taskMessages', sessionId], (prev = []) => [
@@ -102,7 +113,16 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
     ) => {
       const content = prompt.trim();
       if (!content) return;
-      if (!appendOptimisticUserMessage(sessionId, content, lastSubmitRef, queryClient)) return;
+      if (
+        !appendOptimisticUserMessage(
+          sessionId,
+          content,
+          lastSubmitRef,
+          queryClient,
+          artifactContext
+        )
+      )
+        return;
       setIsChatSubmitting(true);
       chatSubmitStartedAtRef.current = Date.now();
       chatSubmitTransportRef.current = 'http';

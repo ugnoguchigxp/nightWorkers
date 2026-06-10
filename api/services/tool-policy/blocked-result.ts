@@ -35,6 +35,15 @@ function emptyPayloadByTool(toolName: ToolCallRequest['toolName']): Record<strin
   }
   if (toolName === 'apply_patch') return { applied: false, changedFiles: [] };
   if (toolName === 'replace_content') return { applied: false, occurrences: 0, filePath: '' };
+  if (toolName === 'run_background_command') {
+    return {
+      backgroundProcessId: '',
+      command: '',
+      cwd: '',
+      status: 'failed',
+      pid: null,
+    };
+  }
   if (toolName === 'run_command' || toolName === 'run_verification') {
     return {
       command: '',

@@ -1,4 +1,13 @@
-import { ChevronRight, GitCompare } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Download,
+  GitCompare,
+  Maximize2,
+  Minimize2,
+} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
   ActivityArtifact,
@@ -85,21 +94,38 @@ export function ArtifactPane({
   isWorkbenchMessageSubmitting = false,
 }: ArtifactPaneProps) {
   const { t } = useTranslation();
+  const [versionArtifactId, setVersionArtifactId] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const showProjectTree = focusType === 'project_tree';
-  const showDiff = selectedArtifact?.kind === 'diff';
-  const showBlueprintWorkspace = selectedArtifact?.kind === 'blueprint_workspace';
-  const showBlueprint = selectedArtifact?.kind === 'app_blueprint';
+  const artifactVersions = useMemo(
+    () => buildArtifactVersions(selectedArtifact, taskMessages, activityArtifacts),
+    [activityArtifacts, selectedArtifact, taskMessages]
+  );
+  useEffect(() => {
+    setVersionArtifactId(selectedArtifact?.id || null);
+    setIsFullscreen(false);
+  }, [selectedArtifact?.id]);
+  const currentVersionIndex = Math.max(
+    0,
+    artifactVersions.findIndex(
+      (artifact) => artifact.id === (versionArtifactId || selectedArtifact?.id)
+    )
+  );
+  const displayArtifact = artifactVersions[currentVersionIndex] || selectedArtifact;
+  const showDiff = displayArtifact?.kind === 'diff';
+  const showBlueprintWorkspace = displayArtifact?.kind === 'blueprint_workspace';
+  const showBlueprint = displayArtifact?.kind === 'app_blueprint';
   const showComponentDesign =
-    selectedArtifact?.kind === 'component_design' || selectedArtifact?.kind === 'design_delta';
+    displayArtifact?.kind === 'component_design' || displayArtifact?.kind === 'design_delta';
   const taskMessageId =
-    selectedArtifact?.source.type === 'task_message' ? selectedArtifact.source.messageId : null;
+    displayArtifact?.source.type === 'task_message' ? displayArtifact.source.messageId : null;
   const selectedMessage = taskMessageId
-    ? taskMessages.find((message) => message.id === taskMessageId)
+    ? taskMessages.find((message) => message.id === taskMessageId) || null
     : null;
   const artifactRowId =
-    selectedArtifact?.source.type === 'artifact_row' ? selectedArtifact.source.artifactId : null;
+    displayArtifact?.source.type === 'artifact_row' ? displayArtifact.source.artifactId : null;
   const selectedActivityArtifact = artifactRowId
-    ? activityArtifacts.find((artifact) => artifact.id === artifactRowId)
+    ? activityArtifacts.find((artifact) => artifact.id === artifactRowId) || null
     : null;
   const artifactBlueprint =
     selectedActivityArtifact?.metadataJson?.appBlueprint ||
@@ -115,10 +141,21 @@ export function ArtifactPane({
   const artifactTitle =
     showProjectTree || !selectedArtifact
       ? selectedFilePath || t('artifact.projectTree')
-      : selectedArtifact.title;
+      : displayArtifact?.title || selectedArtifact.title;
+  const exportedContent = buildExportedArtifactContent({
+    showDiff,
+    latestRun,
+    selectedMessage,
+    selectedActivityArtifact,
+    selectedFile,
+    selectedArtifact: displayArtifact,
+  });
+  const artifactFrameClass = isFullscreen
+    ? 'fixed inset-3 z-50 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-slate-700 bg-[#1e1e2e] shadow-2xl'
+    : 'nightworkers-artifact-pane flex min-h-0 min-w-0 flex-col overflow-hidden';
   return (
-    <aside className="nightworkers-artifact-pane flex min-h-0 min-w-0 flex-col overflow-hidden">
-      <div className="flex h-10 shrink-0 items-center border-b border-[#313244] bg-[#1e1e2e] px-3 pr-12">
+    <aside className={artifactFrameClass}>
+      <div className="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-[#313244] bg-[#1e1e2e] px-3 pr-12">
         <div className="flex min-w-0 items-center gap-2 text-sm">
           <span className="truncate text-[#a6adc8]">
             {activeProject?.name || t('artifact.project')}
@@ -126,6 +163,22 @@ export function ArtifactPane({
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[#6c7086]" />
           <span className="truncate font-medium text-[#cdd6f4]">{artifactTitle}</span>
         </div>
+        {!showProjectTree && displayArtifact ? (
+          <ArtifactHeaderActions
+            currentVersionIndex={currentVersionIndex}
+            versionCount={artifactVersions.length || 1}
+            isFullscreen={isFullscreen}
+            onPrevious={() =>
+              setVersionArtifactId(artifactVersions[currentVersionIndex - 1]?.id || null)
+            }
+            onNext={() =>
+              setVersionArtifactId(artifactVersions[currentVersionIndex + 1]?.id || null)
+            }
+            onCopy={() => void copyText(exportedContent)}
+            onSave={() => saveTextFile(exportedContent, artifactFileName(displayArtifact))}
+            onToggleFullscreen={() => setIsFullscreen((value) => !value)}
+          />
+        ) : null}
       </div>
       <div className="flex min-h-0 flex-1">
         {showProjectTree ? (
@@ -152,7 +205,7 @@ export function ArtifactPane({
               sessionId={activeSessionId}
               taskMessages={taskMessages}
               activityArtifacts={activityArtifacts}
-              initialTab={workspaceInitialTab(selectedArtifact?.metadata?.initialTab)}
+              initialTab={workspaceInitialTab(displayArtifact?.metadata?.initialTab)}
               onQueueSession={onQueueSession}
               onStartImplementation={onStartImplementation}
             />
@@ -160,8 +213,8 @@ export function ArtifactPane({
             <BlueprintViewer
               sessionId={activeSessionId}
               messageId={taskMessageId}
-              blueprint={artifactBlueprint || selectedArtifact?.metadata?.appBlueprint}
-              validation={artifactValidation || selectedArtifact?.metadata?.validation}
+              blueprint={artifactBlueprint || displayArtifact?.metadata?.appBlueprint}
+              validation={artifactValidation || displayArtifact?.metadata?.validation}
               markdown={
                 selectedMessage?.content || selectedActivityArtifact?.contentText || undefined
               }
@@ -169,8 +222,7 @@ export function ArtifactPane({
           ) : showComponentDesign ? (
             <ComponentDesignViewer
               artifact={
-                selectedArtifact?.metadata?.componentDesign ||
-                selectedArtifact?.metadata?.designDelta
+                displayArtifact?.metadata?.componentDesign || displayArtifact?.metadata?.designDelta
               }
               markdown={selectedMessage?.content}
             />
@@ -193,6 +245,222 @@ export function ArtifactPane({
       </div>
     </aside>
   );
+}
+
+function ArtifactHeaderActions({
+  currentVersionIndex,
+  versionCount,
+  isFullscreen,
+  onPrevious,
+  onNext,
+  onCopy,
+  onSave,
+  onToggleFullscreen,
+}: {
+  currentVersionIndex: number;
+  versionCount: number;
+  isFullscreen: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+  onCopy: () => void;
+  onSave: () => void;
+  onToggleFullscreen: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <button
+        type="button"
+        className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 text-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
+        disabled={currentVersionIndex <= 0}
+        onClick={onPrevious}
+        aria-label={t('artifact.previousVersion')}
+        title={t('artifact.previousVersion')}
+      >
+        <ChevronLeft className="h-3.5 w-3.5" />
+      </button>
+      <span className="min-w-[4.5rem] text-center text-[11px] text-slate-400">
+        {t('artifact.versionLabel', {
+          current: currentVersionIndex + 1,
+          total: Math.max(versionCount, 1),
+        })}
+      </span>
+      <button
+        type="button"
+        className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 text-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
+        disabled={currentVersionIndex >= versionCount - 1}
+        onClick={onNext}
+        aria-label={t('artifact.nextVersion')}
+        title={t('artifact.nextVersion')}
+      >
+        <ChevronRight className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 text-slate-300 hover:border-slate-500"
+        onClick={onCopy}
+        aria-label={t('artifact.copyVersion')}
+        title={t('artifact.copyVersion')}
+      >
+        <Copy className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 text-slate-300 hover:border-slate-500"
+        onClick={onSave}
+        aria-label={t('artifact.saveVersion')}
+        title={t('artifact.saveVersion')}
+      >
+        <Download className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 text-slate-300 hover:border-slate-500"
+        onClick={onToggleFullscreen}
+        aria-label={isFullscreen ? t('artifact.exitFullscreen') : t('artifact.fullscreen')}
+        title={isFullscreen ? t('artifact.exitFullscreen') : t('artifact.fullscreen')}
+      >
+        {isFullscreen ? (
+          <Minimize2 className="h-3.5 w-3.5" />
+        ) : (
+          <Maximize2 className="h-3.5 w-3.5" />
+        )}
+      </button>
+    </div>
+  );
+}
+
+function buildArtifactVersions(
+  selectedArtifact: WorkbenchArtifactRef | null,
+  taskMessages: TaskMessage[],
+  activityArtifacts: ActivityArtifact[]
+): WorkbenchArtifactRef[] {
+  if (!selectedArtifact) return [];
+  if (selectedArtifact.kind === 'diff') return [selectedArtifact];
+  const messageRefs = taskMessages
+    .map((message) => taskMessageToArtifactRef(message, selectedArtifact.kind))
+    .filter((artifact): artifact is WorkbenchArtifactRef => Boolean(artifact));
+  const activityRefs = activityArtifacts
+    .map((artifact) => activityArtifactToArtifactRef(artifact, selectedArtifact.kind))
+    .filter((artifact): artifact is WorkbenchArtifactRef => Boolean(artifact));
+  const byId = new Map<string, WorkbenchArtifactRef>();
+  for (const artifact of [...messageRefs, ...activityRefs, selectedArtifact]) {
+    byId.set(artifact.id, artifact);
+  }
+  return [...byId.values()].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+}
+
+function taskMessageToArtifactRef(
+  message: TaskMessage,
+  selectedKind: WorkbenchArtifactRef['kind']
+): WorkbenchArtifactRef | null {
+  const metadata = message.metadataJson || {};
+  const kind = resolveMessageArtifactKind(message);
+  if (kind !== selectedKind) return null;
+  const title =
+    metadata.title ||
+    metadata.display?.title ||
+    metadata.appBlueprint?.name ||
+    metadata.componentDesign?.componentName ||
+    'Artifact';
+  return {
+    id: `message-${message.id}`,
+    taskId: message.taskId,
+    runId: message.runId || undefined,
+    kind,
+    title: String(title),
+    summary: String(metadata.display?.summary || message.content.slice(0, 160)),
+    source:
+      typeof metadata.artifactRef?.artifactId === 'string'
+        ? { type: 'artifact_row', artifactId: metadata.artifactRef.artifactId }
+        : { type: 'task_message', messageId: message.id },
+    createdAt: String(message.createdAt),
+    metadata,
+  };
+}
+
+function activityArtifactToArtifactRef(
+  artifact: ActivityArtifact,
+  selectedKind: WorkbenchArtifactRef['kind']
+): WorkbenchArtifactRef | null {
+  const kind = artifact.kind as WorkbenchArtifactRef['kind'];
+  if (kind !== selectedKind) return null;
+  const metadata = artifact.metadataJson || {};
+  return {
+    id: `artifact-${artifact.id}`,
+    taskId: artifact.taskId,
+    runId: artifact.runId || undefined,
+    kind,
+    title: String(metadata.title || metadata.appBlueprint?.name || artifact.path || artifact.kind),
+    summary: String(metadata.summary || artifact.contentText?.slice(0, 160) || ''),
+    source: { type: 'artifact_row', artifactId: artifact.id },
+    createdAt: String(artifact.createdAt),
+    metadata,
+  };
+}
+
+function resolveMessageArtifactKind(message: TaskMessage): WorkbenchArtifactRef['kind'] | null {
+  const metadata = message.metadataJson || {};
+  if (metadata.componentDesign) return 'component_design';
+  if (metadata.designDelta) return 'design_delta';
+  if (metadata.markdownDocumentData || metadata.intent === 'draft_spec') return 'spec';
+  if (metadata.appBlueprint || metadata.artifactRef) return 'app_blueprint';
+  if (message.messageType === 'markdown_document') return 'spec';
+  return null;
+}
+
+function buildExportedArtifactContent(input: {
+  showDiff: boolean;
+  latestRun?: TaskRun;
+  selectedMessage: TaskMessage | null;
+  selectedActivityArtifact: ActivityArtifact | null;
+  selectedFile: ProjectFileContent | null;
+  selectedArtifact: WorkbenchArtifactRef | null;
+}) {
+  if (input.showDiff) return input.latestRun?.diffPatch || '';
+  if (input.selectedActivityArtifact?.contentText)
+    return input.selectedActivityArtifact.contentText;
+  if (input.selectedMessage?.content) return input.selectedMessage.content;
+  if (input.selectedFile?.content) return input.selectedFile.content;
+  return input.selectedArtifact
+    ? JSON.stringify(input.selectedArtifact.metadata || {}, null, 2)
+    : '';
+}
+
+async function copyText(content: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(content);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = content;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
+}
+
+function saveTextFile(content: string, filename: string) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function artifactFileName(artifact: WorkbenchArtifactRef) {
+  const slug = artifact.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  return `${slug || 'artifact'}.md`;
 }
 
 function FilesOutline({

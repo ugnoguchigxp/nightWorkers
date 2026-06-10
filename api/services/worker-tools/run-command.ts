@@ -198,6 +198,26 @@ export async function runCommandTool(
       },
     };
   }
+  if (safety.classification === 'background') {
+    return {
+      ok: false,
+      toolName: 'run_command',
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      payload: {
+        command,
+        exitCode: -1,
+        stdout: '',
+        stderr: '',
+        classification: safety.classification,
+        truncated: false,
+      },
+      error: {
+        code: 'BACKGROUND_COMMAND_REQUIRED',
+        message: `Long-running command must be started with run_background_command: ${command}`,
+      },
+    };
+  }
 
   const effectiveTimeoutSeconds = resolveCommandTimeout(timeoutSeconds, {
     repoRoot: absoluteRepoRoot,

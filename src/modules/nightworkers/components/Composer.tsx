@@ -1,10 +1,11 @@
-import { ArrowUp, CircleStop, LoaderCircle } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { ArrowUp, CircleStop, LoaderCircle, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
   ModelOption,
   ThinkingDepth,
   ThinkingDepthOption,
+  WorkbenchArtifactContext,
   WorkbenchChatIntent,
 } from '../types';
 import { getChangedFiles, getDiffStats } from '../utils/diff';
@@ -17,12 +18,15 @@ type ComposerProps = {
   modelOptions: ModelOption[];
   thinkingDepthOptions: ThinkingDepthOption[];
   latestDiffPatch?: string;
+  draftStorageKey?: string;
+  artifactContext?: WorkbenchArtifactContext | null;
   realtimeStatus?: 'initializing' | 'connecting' | 'connected' | 'disconnected';
   isStopMode?: boolean;
   isStopping?: boolean;
   onModelChange: (model: string) => void;
   onThinkingDepthChange: (depth: ThinkingDepth) => void;
   onSubmit: (prompt: string, intent: WorkbenchChatIntent) => Promise<void>;
+  onClearArtifactContext?: () => void;
   onStop?: () => Promise<void>;
 };
 
@@ -33,12 +37,15 @@ export function Composer({
   modelOptions,
   thinkingDepthOptions,
   latestDiffPatch = '',
+  draftStorageKey,
+  artifactContext = null,
   realtimeStatus = 'initializing',
   isStopMode = false,
   isStopping = false,
   onModelChange,
   onThinkingDepthChange,
   onSubmit,
+  onClearArtifactContext,
   onStop,
 }: ComposerProps) {
   const { t } = useTranslation();
@@ -62,6 +69,35 @@ export function Composer({
           ? 'bg-red-500'
           : 'bg-orange-400';
 
+  useEffect(() => {
+    if (!draftStorageKey) {
+      setPrompt('');
+      return;
+    }
+    try {
+      setPrompt(window.localStorage.getItem(draftStorageKey) || '');
+    } catch {
+      setPrompt('');
+    }
+  }, [draftStorageKey]);
+
+  useEffect(() => {
+    if (!draftStorageKey) return;
+    try {
+      if (prompt) window.localStorage.setItem(draftStorageKey, prompt);
+      else window.localStorage.removeItem(draftStorageKey);
+    } catch {
+      // localStorage can be unavailable in private contexts; the in-memory draft still works.
+    }
+  }, [draftStorageKey, prompt]);
+
+  async function submitCurrentPrompt() {
+    if (!canSubmit) return;
+    const text = prompt.trim();
+    await onSubmit(text, intent);
+    setPrompt('');
+  }
+
   return (
     <div className="bg-transparent px-3 py-2">
       <div className="nightworkers-composer relative mx-auto max-w-4xl rounded-2xl border border-slate-600/55 bg-[#1e293b] p-4 shadow-[0_16px_40px_rgba(0,0,0,0.28)]">
@@ -75,6 +111,28 @@ export function Composer({
             <span className="text-rose-400">-{diffSummary.stats.deleted}</span>
           </div>
         ) : null}
+        {artifactContext ? (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-cyan-500/40 bg-cyan-950/20 px-3 py-2 text-xs text-cyan-50">
+            <span className="font-semibold">{t('composer.contextLabel')}</span>
+            <span className="min-w-0 flex-1 truncate text-cyan-100/90">
+              {artifactContext.title}
+            </span>
+            <span className="rounded border border-cyan-500/40 px-1.5 py-0.5 text-[10px] uppercase text-cyan-100/70">
+              {artifactContext.kind}
+            </span>
+            {onClearArtifactContext ? (
+              <button
+                type="button"
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-cyan-500/40 text-cyan-100 hover:bg-cyan-900/40"
+                onClick={onClearArtifactContext}
+                aria-label={t('composer.clearContext')}
+                title={t('composer.clearContext')}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <textarea
           rows={2}
           value={prompt}
@@ -85,9 +143,7 @@ export function Composer({
             const isComposing = (e.nativeEvent as KeyboardEvent).isComposing;
             if (isSubmitShortcut && !isComposing && canSubmit) {
               e.preventDefault();
-              const text = prompt.trim();
-              setPrompt('');
-              await onSubmit(text, intent);
+              await submitCurrentPrompt();
             }
           }}
           disabled={disabled}
@@ -113,10 +169,7 @@ export function Composer({
                 await onStop();
                 return;
               }
-              if (!canSubmit) return;
-              const text = prompt.trim();
-              setPrompt('');
-              await onSubmit(text, intent);
+              await submitCurrentPrompt();
             }}
             disabled={isStopMode ? !canStop : !canSubmit}
             aria-label={isStopMode ? t('composer.stop') : t('composer.send')}

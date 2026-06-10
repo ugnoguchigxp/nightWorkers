@@ -13,6 +13,7 @@ import {
   readCurrentSpecificationTool,
   readFileTool,
   replaceContentTool,
+  runBackgroundCommandTool,
   runCommandTool,
   runVerificationTool,
   searchFilesTool,
@@ -201,6 +202,23 @@ export async function executeWorkerTool(
         timeoutSeconds: args.timeoutSeconds as number | undefined,
         compressionMode: args.compressionMode as 'auto' | 'off' | undefined,
         maxCommandSeconds: safetyPolicy?.maxCommandSeconds,
+      }),
+    };
+  }
+
+  if (toolName === 'run_background_command') {
+    return {
+      result: await runBackgroundCommandTool({
+        command: args.command as string,
+        repoRoot,
+        cwd: args.cwd as string | undefined,
+        taskId: input.taskId,
+        runId: args.runId as string | undefined,
+        repositoryId: args.repositoryId as string | undefined,
+        blockedCommands: safetyPolicy?.blockedCommands,
+        allowedPaths: safetyPolicy?.allowedPaths,
+        externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
+        deniedPaths: safetyPolicy?.deniedPaths,
       }),
     };
   }

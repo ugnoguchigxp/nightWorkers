@@ -6,6 +6,7 @@ import { mergeRunEvents } from '../realtimeEvents';
 import type {
   ActivityEvent,
   ActivityReplay,
+  BackgroundProcess,
   BlueprintSpecificationWorkspace,
   ImplementationQueueDashboard,
   Repository,
@@ -67,7 +68,12 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const [pendingChatRunId, setPendingChatRunId] = useState<string | null>(null);
   const [pendingAssistantTaskId, setPendingAssistantTaskId] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const lastSubmitRef = useRef<{ taskId: string; prompt: string; at: number } | null>(null);
+  const lastSubmitRef = useRef<{
+    taskId: string;
+    prompt: string;
+    contextKey: string;
+    at: number;
+  } | null>(null);
   const pendingChatQueueRef = useRef<Array<{ taskId: string; prompt: string }>>([]);
   const chatSubmitStartedAtRef = useRef<number | null>(null);
   const chatSubmitTransportRef = useRef<'http' | 'websocket' | null>(null);
@@ -192,6 +198,20 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const activityEvents = activityReplay.events;
   const activityArtifacts = activityReplay.artifacts;
 
+  const { data: backgroundProcesses = [] } = useQuery({
+    queryKey: ['backgroundProcesses', activeSessionId],
+    queryFn: async () => {
+      if (!activeSessionId) return [];
+      const res = await apiFetch(`/api/background-processes?taskId=${activeSessionId}`);
+      if (!res.ok) throw new Error('Failed to fetch background processes');
+      return (await res.json()) as BackgroundProcess[];
+    },
+    enabled: !!activeSessionId,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
   const settingsState = useNightWorkersSettings();
   const chatActions = createNightWorkersChatActions({
     queryClient,
@@ -220,6 +240,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     deleteSessionMutation,
     startRunMutation,
     stopRunMutation,
+    stopBackgroundProcessMutation,
     queueSessionMutation,
     createImplementationQueueEntryMutation,
     archiveImplementationQueueEntryMutation,
@@ -420,6 +441,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     llmUsageSummary,
     activityEvents,
     activityArtifacts,
+    backgroundProcesses,
     activeStreamingResponse: activeSessionId ? streamingTextByTask[activeSessionId] || '' : '',
     latestRunTodos,
     latestRunReviews,
@@ -453,6 +475,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     createSession: (input) => createSessionMutation.mutateAsync(input),
     startRun: (sessionId) => startRunMutation.mutateAsync(sessionId),
     stopRun: (runId) => stopRunMutation.mutateAsync(runId),
+    stopBackgroundProcess: (processId) => stopBackgroundProcessMutation.mutateAsync(processId),
     queueSession: (sessionId) => queueSessionMutation.mutateAsync(sessionId),
     createImplementationQueueEntry: async (sessionId) => {
       await createImplementationQueueEntryMutation.mutateAsync(sessionId);
@@ -485,6 +508,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
       queryClient.invalidateQueries({ queryKey: ['sessionRuns', activeSessionId] });
       queryClient.invalidateQueries({ queryKey: ['runDetails', latestRun?.id] });
+      queryClient.invalidateQueries({ queryKey: ['backgroundProcesses', activeSessionId] });
     },
     currentBrowserPath: projectFilesState.currentBrowserPath,
     browserParentPath: projectFilesState.browserParentPath,
