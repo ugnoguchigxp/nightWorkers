@@ -5,15 +5,20 @@ const blueprintIdSchema = z
   .min(1)
   .regex(/^[a-z][a-z0-9-]*$/);
 
+const blueprintDataIdentifierSchema = z
+  .string()
+  .min(1)
+  .regex(/^[a-z][a-z0-9_-]*$/);
+
 export const blueprintDataBindingSchema = z
   .object({
     id: blueprintIdSchema,
     name: z.string().min(1),
-    table: blueprintIdSchema,
+    table: blueprintDataIdentifierSchema,
     mode: z.enum(['list', 'detail', 'form', 'summary']),
-    fields: z.array(blueprintIdSchema).min(1),
+    fields: z.array(blueprintDataIdentifierSchema).min(1),
     filters: z.array(z.string().min(1)).default([]),
-    sort: z.array(blueprintIdSchema).default([]),
+    sort: z.array(blueprintDataIdentifierSchema).default([]),
   })
   .openapi('BlueprintDataBinding');
 

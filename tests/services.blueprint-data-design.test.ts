@@ -74,6 +74,54 @@ describe('Blueprint data-design service helpers', () => {
     expect(parsed.validation.valid).toBe(true);
   });
 
+  it('accepts snake_case DB table, column, relation, and index identifiers', () => {
+    const dbDesignBlueprint = {
+      ...representativeAppBlueprint,
+      databaseSchema: {
+        tables: [
+          {
+            name: 'todo_events',
+            label: 'Todo Events',
+            columns: [
+              { name: 'id', type: 'string', nullable: false, primaryKey: true, unique: true },
+              {
+                name: 'todo_id',
+                type: 'string',
+                nullable: false,
+                primaryKey: false,
+                unique: false,
+              },
+              {
+                name: 'occurred_at',
+                type: 'datetime',
+                nullable: false,
+                primaryKey: false,
+                unique: false,
+              },
+            ],
+            indexes: [['todo_id', 'occurred_at']],
+          },
+        ],
+        relations: [
+          {
+            id: 'todo_events_todo',
+            fromTable: 'todo_events',
+            fromColumn: 'todo_id',
+            toTable: 'todo_events',
+            toColumn: 'id',
+            cardinality: 'many_to_one',
+          },
+        ],
+      },
+      dataBindings: [],
+    };
+
+    const parsed = parseAndValidateBlueprintDataDesignOutput(JSON.stringify(dbDesignBlueprint));
+
+    expect(parsed.blueprint.databaseSchema.tables[0]?.name).toBe('todo_events');
+    expect(parsed.validation.valid).toBe(true);
+  });
+
   it('parses the structured DB Design request embedded in a workbench prompt', () => {
     const prompt = buildBlueprintDbDesignPrompt({
       blueprintId: representativeAppBlueprint.id,

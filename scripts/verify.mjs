@@ -2,30 +2,30 @@ import { spawn } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 
 const baseTasks = [
-  { label: 'tracked artifact check', command: 'pnpm', args: ['--silent', 'check:tracked-artifacts'] },
-  { label: 'typecheck', command: 'pnpm', args: ['--silent', 'typecheck'] },
-  { label: 'lint', command: 'pnpm', args: ['--silent', 'lint'] },
+  { label: 'tracked artifact check', command: 'bun', args: ['--silent', 'run', 'check:tracked-artifacts'] },
+  { label: 'typecheck', command: 'bun', args: ['--silent', 'run', 'typecheck'] },
+  { label: 'lint', command: 'bun', args: ['--silent', 'run', 'lint'] },
   {
     label: 'supervisor regression tests',
-    command: 'pnpm',
-    args: ['--silent', 'test:supervisor-regression'],
+    command: 'bun',
+    args: ['--silent', 'run', 'test:supervisor-regression'],
   },
 ];
 
 const desktopTasks = [
   {
     label: 'desktop runtime tests',
-    command: 'pnpm',
-    args: ['--silent', 'test:desktop-runtime'],
+    command: 'bun',
+    args: ['--silent', 'run', 'test:desktop-runtime'],
   },
-  { label: 'desktop lint', command: 'pnpm', args: ['--silent', 'desktop:lint'] },
-  { label: 'desktop build', command: 'pnpm', args: ['--silent', 'desktop:build'] },
+  { label: 'desktop lint', command: 'bun', args: ['--silent', 'run', 'desktop:lint'] },
+  { label: 'desktop build', command: 'bun', args: ['--silent', 'run', 'desktop:build'] },
 ];
 
 const allTestsTask = {
   label: 'all vitest tests',
-  command: 'pnpm',
-  args: ['--silent', 'test', 'run'],
+  command: 'bun',
+  args: ['--silent', 'run', 'test', 'run'],
 };
 
 const taskSets = {

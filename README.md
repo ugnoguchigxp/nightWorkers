@@ -70,7 +70,7 @@ artifacts, diffs, todos, settings, and provider usage records.
 - No automatic PR creation/merge/deploy
 - No multi-agent orchestration in parallel
 - No mandatory external memory service requirement
-- No bundled sample Project Folder, fixed demo seed data, or `pnpm demo:*`
+- No bundled sample Project Folder, fixed demo seed data, or `demo:*`
   workflow yet
 - No hosted demo GIF/video in the repository docs yet
 
@@ -84,14 +84,15 @@ artifacts, diffs, todos, settings, and provider usage records.
 Details: [Architecture and Module Boundaries](./spec/docs/architecture.md)
 
 ## Requirements
-- Node.js 20+
-- pnpm 10+
+- Bun 1.3+
+- Node.js 20+ only for the packaged desktop sidecar and Node-based tooling
+- pnpm 10+ is supported as a fallback during the eventual Node.js/pnpm migration, but Bun is the primary development path today
 - Rust toolchain and macOS build tools for desktop packaging
 
 ## Quick Start
 1. Install dependencies
 ```bash
-pnpm install
+bun install
 ```
 2. Create local environment file
 ```bash
@@ -99,12 +100,12 @@ cp .env.example .env
 ```
 3. Apply migrations and seed data
 ```bash
-pnpm db:migrate
-pnpm db:seed
+bun run db:migrate
+bun run db:seed
 ```
 4. Start the app
 ```bash
-pnpm dev
+bun run dev
 ```
 
 Default URL: `http://localhost:39174`
@@ -174,8 +175,8 @@ NightWorkers can also be built as a macOS Tauri app. The desktop shell launches
 the Vite frontend in a WebView and manages the Node backend as a sidecar.
 
 ```bash
-pnpm desktop:build
-pnpm desktop:smoke
+bun run desktop:build
+bun run desktop:smoke
 ```
 
 The generated app is written to:
@@ -202,9 +203,9 @@ for the bundled Node process stdout/stderr, and `api.log` for API request and
 runtime events.
 
 The desktop build currently produces a verified `.app` artifact. DMG creation is
-kept as a separate release gate via `pnpm desktop:build:dmg` because create-dmg
+kept as a separate release gate via `bun run desktop:build:dmg` because create-dmg
 can fail on local mount/Finder state. Signing requires Developer ID credentials
-and is run separately with `pnpm desktop:sign`.
+and is run separately with `bun run desktop:sign`.
 
 ## Configuration
 Important environment variables:
@@ -227,51 +228,51 @@ Detailed runtime configuration:
 ## Development Commands
 | Command | Description |
 | --- | --- |
-| `pnpm dev` | Start API + web in watch mode |
-| `pnpm build` | Build frontend and backend |
-| `pnpm start` | Start production backend bundle |
-| `pnpm desktop:dev` | Start the Tauri desktop app in development mode |
-| `pnpm desktop:build` | Build the macOS `.app` desktop artifact |
-| `pnpm desktop:build:dmg` | Build a DMG release artifact as a separate gate |
-| `pnpm desktop:lint` | Run Rust format and Clippy checks for the Tauri shell |
-| `pnpm desktop:prepare-sidecar` | Stage the Node sidecar runtime resources |
-| `pnpm desktop:smoke-sidecar` | Smoke-test the staged sidecar health endpoint |
-| `pnpm desktop:smoke` | Launch the packaged `.app` and verify API, WebSocket, logs, and shutdown |
-| `pnpm desktop:sign` | Sign/verify an app path when Developer ID credentials are available |
-| `pnpm lint` | Run Biome checks |
-| `pnpm typecheck` | Run TypeScript checks |
-| `pnpm test` | Run Vitest |
-| `pnpm test:e2e` | Run Playwright E2E |
-| `pnpm test:e2e:agent-outcome` | Run deterministic agent outcome E2E |
-| `pnpm test:e2e:agent-live` | Run optional live-provider agent E2E |
-| `pnpm db:generate` | Generate Drizzle migrations from schema changes |
-| `pnpm db:migrate` | Apply Drizzle migrations |
-| `pnpm db:studio` | Open Drizzle Studio |
-| `pnpm db:seed` | Seed local development data |
-| `pnpm cleanup:test-data:dry-run` | Preview cleanup of TEST-prefixed local data |
-| `pnpm cleanup:test-data` | Delete TEST-prefixed local data |
-| `pnpm verify:base` | Run the base gate: TypeScript, Biome, and supervisor regression tests |
-| `pnpm verify:desktop` | Run Tauri/Rust checks, build the `.app`, and smoke-test it |
-| `pnpm verify` | Run `verify:base` and `verify:desktop` |
-| `pnpm verify:fast` | Run only `verify:base` |
-| `pnpm verify:full` | Run `verify` plus the full Vitest suite |
+| `bun run dev` | Start API + web in watch mode |
+| `bun run build` | Build frontend and backend |
+| `bun run start` | Start production backend bundle |
+| `bun run desktop:dev` | Start the Tauri desktop app in development mode |
+| `bun run desktop:build` | Build the macOS `.app` desktop artifact |
+| `bun run desktop:build:dmg` | Build a DMG release artifact as a separate gate |
+| `bun run desktop:lint` | Run Rust format and Clippy checks for the Tauri shell |
+| `bun run desktop:prepare-sidecar` | Stage the Node sidecar runtime resources |
+| `bun run desktop:smoke-sidecar` | Smoke-test the staged sidecar health endpoint |
+| `bun run desktop:smoke` | Launch the packaged `.app` and verify API, WebSocket, logs, and shutdown |
+| `bun run desktop:sign` | Sign/verify an app path when Developer ID credentials are available |
+| `bun run lint` | Run Biome checks |
+| `bun run typecheck` | Run TypeScript checks |
+| `bun run test` | Run Vitest |
+| `bun run test:e2e` | Run Playwright E2E |
+| `bun run test:e2e:agent-outcome` | Run deterministic agent outcome E2E |
+| `bun run test:e2e:agent-live` | Run optional live-provider agent E2E |
+| `bun run db:generate` | Generate Drizzle migrations from schema changes |
+| `bun run db:migrate` | Apply Drizzle migrations |
+| `bun run db:studio` | Open Drizzle Studio |
+| `bun run db:seed` | Seed local development data |
+| `bun run cleanup:test-data:dry-run` | Preview cleanup of TEST-prefixed local data |
+| `bun run cleanup:test-data` | Delete TEST-prefixed local data |
+| `bun run verify:base` | Run the base gate: TypeScript, Biome, and supervisor regression tests |
+| `bun run verify:desktop` | Run Tauri/Rust checks, build the `.app`, and smoke-test it |
+| `bun run verify` | Run `verify:base` and `verify:desktop` |
+| `bun run verify:fast` | Run only `verify:base` |
+| `bun run verify:full` | Run `verify` plus the full Vitest suite |
 
 ## Testing
-- Default gate: `pnpm verify` runs TypeScript, Biome, supervisor regression tests, Rust format/Clippy checks, Tauri `.app` build, and packaged app smoke.
-- Fast gate: `pnpm verify:fast` runs only the TypeScript/Biome/supervisor regression base gate.
-- Full gate: `pnpm verify:full` runs the default gate plus the full Vitest suite. Use it when a change touches runtime behavior, API contracts, schemas, or user-visible flows.
-- Smoke E2E: `pnpm test:e2e:smoke` remains separate until local app/server prerequisites are explicitly available.
-- Husky hooks: `pre-commit` and `pre-push` both run `pnpm verify`.
+- Default gate: `bun run verify` runs TypeScript, Biome, supervisor regression tests, Rust format/Clippy checks, Tauri `.app` build, and packaged app smoke.
+- Fast gate: `bun run verify:fast` runs only the TypeScript/Biome/supervisor regression base gate.
+- Full gate: `bun run verify:full` runs the default gate plus the full Vitest suite. Use it when a change touches runtime behavior, API contracts, schemas, or user-visible flows.
+- Smoke E2E: `bun run test:e2e:smoke` remains separate until local app/server prerequisites are explicitly available.
+- Husky hooks: `pre-commit` and `pre-push` both run `bun run verify`.
 - Unit/integration: Vitest
 - End-to-end: Playwright (`@smoke`, `@regression` tags)
-- Agent outcome E2E: `pnpm test:e2e:agent-outcome` uses the deterministic `test` provider, scratch git workspaces, real API/DB/run event paths, and requires no provider credentials. Set `KEEP_E2E_WORKSPACE=1` to keep the scratch workspace after a failure.
-- Live agent E2E: `pnpm test:e2e:agent-live` is optional and skips unless provider credentials are configured.
-- If validation fails, first identify the phase that failed: TypeScript (`pnpm typecheck`), Biome (`pnpm lint`), Rust/Tauri (`pnpm desktop:lint` / `pnpm desktop:build`), packaged smoke (`pnpm desktop:smoke`), Vitest (`pnpm test run`), or Playwright (`pnpm test:e2e:smoke`).
+- Agent outcome E2E: `bun run test:e2e:agent-outcome` uses the deterministic `test` provider, scratch git workspaces, real API/DB/run event paths, and requires no provider credentials. Set `KEEP_E2E_WORKSPACE=1` to keep the scratch workspace after a failure.
+- Live agent E2E: `bun run test:e2e:agent-live` is optional and skips unless provider credentials are configured.
+- If validation fails, first identify the phase that failed: TypeScript (`bun run typecheck`), Biome (`bun run lint`), Rust/Tauri (`bun run desktop:lint` / `bun run desktop:build`), packaged smoke (`bun run desktop:smoke`), Vitest (`bun run test run`), or Playwright (`bun run test:e2e:smoke`).
 - Recommended pre-PR validation:
 ```bash
-pnpm verify
-pnpm verify:full
-pnpm test:e2e:smoke
+bun run verify
+bun run verify:full
+bun run test:e2e:smoke
 ```
 
 ## Documentation Map

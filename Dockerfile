@@ -1,13 +1,10 @@
-FROM node:20-alpine AS base
-
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@10.24.0 --activate
+FROM oven/bun:1.3.14-alpine AS base
 
 # Dependencies Stage
 FROM base AS deps
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 
 # Builder Stage
 FROM base AS builder
@@ -15,8 +12,8 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Build both frontend and backend
-RUN pnpm run build
-RUN pnpm install --prod --frozen-lockfile
+RUN bun run build
+RUN bun install --production --frozen-lockfile
 
 # Runner Stage
 FROM base AS runner
@@ -27,12 +24,12 @@ ENV PORT=39173
 
 COPY --from=builder /app/package.json ./
 # Only production dependencies needed
-COPY --from=builder --chown=node:node /app/node_modules ./node_modules
-COPY --from=builder --chown=node:node /app/dist-api ./dist-api
-COPY --from=builder --chown=node:node /app/dist ./dist
+COPY --from=builder --chown=bun:bun /app/node_modules ./node_modules
+COPY --from=builder --chown=bun:bun /app/dist-api ./dist-api
+COPY --from=builder --chown=bun:bun /app/dist ./dist
 
 EXPOSE 39173
 
-USER node
+USER bun
 
-CMD ["node", "dist-api/index.js"]
+CMD ["bun", "dist-api/index.js"]

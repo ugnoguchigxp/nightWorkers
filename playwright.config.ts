@@ -58,7 +58,7 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'cross-env NIGHTWORKERS_E2E=1 pnpm dev',
+    command: 'cross-env NIGHTWORKERS_E2E=1 bun run dev',
     url: 'http://localhost:39174',
     reuseExistingServer: !process.env.CI,
   },

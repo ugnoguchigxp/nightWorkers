@@ -6,11 +6,11 @@ or a provider-backed demo transcript.
 
 ## 1. Install and Start
 ```bash
-pnpm install
+bun install
 cp .env.example .env
-pnpm db:migrate
-pnpm db:seed
-pnpm dev
+bun run db:migrate
+bun run db:seed
+bun run dev
 ```
 
 Open `http://localhost:39174`.

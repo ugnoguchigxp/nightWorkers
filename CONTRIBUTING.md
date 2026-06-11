@@ -11,8 +11,8 @@ Contributions are welcome for runtime reliability, developer experience, docs qu
 
 Recommended checks:
 ```bash
-pnpm verify
-pnpm test:e2e:smoke
+bun run verify
+bun run test:e2e:smoke
 ```
 
 ## Pull Request Guidelines
@@ -30,5 +30,5 @@ pnpm test:e2e:smoke
 Please include:
 - Reproduction steps
 - Expected vs actual behavior
-- Environment (`node -v`, `pnpm -v`, OS)
+- Environment (`bun --version`, `node -v` if desktop sidecar work is involved, OS)
 - Logs or screenshots when available

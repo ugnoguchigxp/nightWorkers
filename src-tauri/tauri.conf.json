@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "dev.nightworkers.desktop",
   "build": {
-    "beforeDevCommand": "pnpm build:backend && pnpm dev:web -- --host 127.0.0.1",
-    "beforeBuildCommand": "pnpm build:frontend && pnpm desktop:prepare-sidecar",
+    "beforeDevCommand": "bun run build:backend && bun run dev:web -- --host 127.0.0.1",
+    "beforeBuildCommand": "bun run build:frontend && bun run desktop:prepare-sidecar",
     "devUrl": "http://127.0.0.1:39174",
     "frontendDist": "../dist"
   },

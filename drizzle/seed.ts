@@ -1,13 +1,9 @@
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
 import { users } from '../api/db/schema';
+import { client, db } from '../api/db/client';
 import { hashPassword } from '../api/lib/password';
-import { config } from '../api/config';
 
 async function main() {
   console.log('Seeding database...');
-  const client = postgres(config.DATABASE_URL, { max: 1 });
-  const db = drizzle(client);
 
   try {
     // Check if user already exists
@@ -28,7 +24,7 @@ async function main() {
   } catch (err) {
     console.error('Error seeding DB:', err);
   } finally {
-    await client.end();
+    client.close();
   }
 }
 

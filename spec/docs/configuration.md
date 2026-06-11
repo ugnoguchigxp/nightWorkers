@@ -41,7 +41,7 @@ Runtime hygiene:
   read through focused config helpers such as `api/services/runtime-env.ts` or
   the domain settings modules. Service code should prefer injected options or
   settings objects over direct `process.env` reads.
-- Generated/local artifacts must stay out of tracked source. `pnpm
+- Generated/local artifacts must stay out of tracked source. `bun run
   check:tracked-artifacts` fails if known temporary output paths are tracked.
 
 Startup diagnostics are exposed at:
@@ -172,24 +172,24 @@ Use these inputs to demonstrate rejected or recoverable extension paths without 
 ## Local Startup Baseline
 ```bash
 cp .env.example .env
-pnpm db:migrate
-pnpm db:seed
-pnpm dev
+bun run db:migrate
+bun run db:seed
+bun run dev
 ```
 
 ## Desktop Build Baseline
 ```bash
-pnpm desktop:prepare-sidecar
-pnpm desktop:smoke-sidecar
-pnpm desktop:lint
-pnpm desktop:build
-pnpm desktop:smoke
+bun run desktop:prepare-sidecar
+bun run desktop:smoke-sidecar
+bun run desktop:lint
+bun run desktop:build
+bun run desktop:smoke
 ```
 
-`pnpm desktop:build` produces a macOS `.app`. `pnpm desktop:smoke` launches that
+`bun run desktop:build` produces a macOS `.app`. `bun run desktop:smoke` launches that
 app and checks the sidecar health endpoint, overview endpoint, implementation
 queue endpoint, WebSocket startup, desktop/sidecar log output, and shutdown.
-`pnpm verify` includes this desktop gate. `pnpm desktop:build:dmg` is kept as a
+`bun run verify` includes this desktop gate. `bun run desktop:build:dmg` is kept as a
 separate release gate because DMG creation can fail on local mount/Finder state.
-`pnpm desktop:sign` requires `NIGHTWORKERS_DESKTOP_APP_PATH` and
+`bun run desktop:sign` requires `NIGHTWORKERS_DESKTOP_APP_PATH` and
 `APPLE_DEVELOPER_ID_APPLICATION`.

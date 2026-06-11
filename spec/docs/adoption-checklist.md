@@ -4,10 +4,10 @@ Use this checklist before trying NightWorkers on a repository that matters.
 
 ## Local-Only Personal Use
 - Confirm you can run:
-  - `pnpm install`
-  - `pnpm db:migrate`
-  - `pnpm db:seed`
-  - `pnpm dev`
+  - `bun install`
+  - `bun run db:migrate`
+  - `bun run db:seed`
+  - `bun run dev`
 - Keep `API_AUTH_REQUIRED=false` only for local personal use.
 - Start with a throwaway Project Folder or a repository where changes can be
   reviewed before commit.
@@ -45,8 +45,8 @@ Use this checklist before trying NightWorkers on a repository that matters.
 
 ## Desktop Artifact Use
 - Build and smoke-test the desktop app before using it for real work:
-  - `pnpm desktop:build`
-  - `pnpm desktop:smoke`
+  - `bun run desktop:build`
+  - `bun run desktop:smoke`
 - Remember desktop runtime state is under the macOS app data directory, not the
   repo checkout.
 - Check `desktop.log`, `sidecar.log`, and `api.log` when the packaged app does
@@ -69,4 +69,4 @@ Use this checklist before trying NightWorkers on a repository that matters.
   current implementation.
 - An external memory service is not required for baseline local use.
 - The repository does not currently include a fixed sample Project Folder, demo
-  seed transcript, demo GIF/video, or `pnpm demo:*` workflow.
+  seed transcript, demo GIF/video, or `demo:*` workflow.

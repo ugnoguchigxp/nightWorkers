@@ -216,7 +216,7 @@ What it does:
   the Node backend as a sidecar.
 
 Where to find it:
-- Use `pnpm desktop:build` and `pnpm desktop:smoke`.
+- Use `bun run desktop:build` and `bun run desktop:smoke`.
 
 Why it matters:
 - Lets NightWorkers run as a local desktop app while preserving the backend

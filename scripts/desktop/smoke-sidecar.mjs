@@ -13,7 +13,7 @@ const nodeBinary = path.join(stagedRoot, 'node/bin/node');
 const backendEntry = path.join(stagedRoot, 'dist-api-desktop/index.cjs');
 
 if (!fs.existsSync(nodeBinary) || !fs.existsSync(backendEntry)) {
-  throw new Error('Desktop sidecar staging is missing. Run pnpm desktop:prepare-sidecar first.');
+  throw new Error('Desktop sidecar staging is missing. Run bun run desktop:prepare-sidecar first.');
 }
 
 const port = await pickFreePort();

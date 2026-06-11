@@ -210,10 +210,10 @@ run event timeline とは別に、Project Folder の意思決定だけを抽出�
 7. 既存詳細画面への link をつなぐ。
 
 ## 検証計画
-- `pnpm test run tests/services.project-intelligence.test.ts`
-- `pnpm test run tests/routes.nightworkers.test.ts tests/routes.nightworkers-workbench.test.ts`
-- `pnpm test run tests/nightworkers.workbench-selectors.test.ts`
-- `pnpm verify`
+- `bun run test run tests/services.project-intelligence.test.ts`
+- `bun run test run tests/routes.nightworkers.test.ts tests/routes.nightworkers-workbench.test.ts`
+- `bun run test run tests/nightworkers.workbench-selectors.test.ts`
+- `bun run verify`
 
 ## 完了条件
 - Overview Dashboard が Project Health Snapshot、Decision Timeline、Drift Radar の 3 section だけを表示する。

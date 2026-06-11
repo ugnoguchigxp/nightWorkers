@@ -18,7 +18,7 @@ const appPath =
 
 if (!appPath || !fs.existsSync(appPath)) {
   throw new Error(
-    `Packaged NightWorkers.app was not found. Run pnpm desktop:build first or set NIGHTWORKERS_DESKTOP_APP_PATH. Searched: ${bundleDir}`
+    `Packaged NightWorkers.app was not found. Run bun run desktop:build first or set NIGHTWORKERS_DESKTOP_APP_PATH. Searched: ${bundleDir}`
   );
 }
 

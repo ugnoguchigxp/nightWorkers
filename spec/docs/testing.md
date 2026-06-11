@@ -4,7 +4,7 @@
 
 - Do not leave parent placeholder suites after splitting a large test file. The
   parent file should be deleted once the split files can run independently.
-- Split files must be directly runnable with `pnpm test run <file>`.
+- Split files must be directly runnable with `bun run test run <file>`.
 - Shared setup belongs in a nearby `helpers.ts` or `tests/helpers/*` module, not
   in a parent test file that contains no suite.
 - Avoid comments such as `Split into ...` or placeholder tests such as `No test

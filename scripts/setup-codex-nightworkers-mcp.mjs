@@ -14,8 +14,8 @@ const configPath = process.env.CODEX_CONFIG_PATH || path.join(codexHome, 'config
 const nextBlock = [
   '# NightWorkers MCP registration managed by scripts/setup-codex-nightworkers-mcp.mjs',
   '[mcp_servers.nightworkers]',
-  `command = "${tomlString(path.join(repoRoot, 'node_modules', '.bin', 'tsx'))}"`,
-  `args = ["${tomlString(path.join(repoRoot, 'api', 'mcp', 'nightworkers-codex-server.ts'))}"]`,
+  'command = "bun"',
+  'args = ["run", "codex:mcp"]',
   `cwd = "${tomlString(repoRoot)}"`,
   'enabled = true',
   '',

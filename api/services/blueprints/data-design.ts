@@ -168,7 +168,7 @@ function buildBlueprintDataDesignPrompt(appBlueprintJsonSchema: string): string 
     '- id/name/version/designPreset/screens は、DB 設計や binding 整合に必要な場合だけ変更してください。',
     '- dataBindings は設計対象外です。必ず [] を返してください。',
     '- screen.sections[].dataBindingId は使わないでください。',
-    '- table/column/relation/binding id は ^[a-z][a-z0-9-]*$ に合わせてください。',
+    '- table/column/relation id は ^[a-z][a-z0-9_-]*$ に合わせてください。SQL/table/column 名は snake_case を優先して構いません。',
     '- 各 table には primaryKey な column を最低1つ含めてください。',
     '- SQL、DDL、migration、runtime DB call、Drizzle code は返さないでください。',
     '',
