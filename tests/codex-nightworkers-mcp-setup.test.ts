@@ -36,8 +36,9 @@ describe('Codex NightWorkers MCP setup script', () => {
     const installed = fs.readFileSync(configPath, 'utf8');
     expect(installed).toContain('[mcp_servers.context-still]');
     expect(installed).toContain('[mcp_servers.nightworkers]');
-    expect(installed).toContain('nightworkers-codex-server.ts');
+    expect(installed).toContain('args = ["run", "codex:mcp"]');
     expect(installed).toContain('[mcp_servers.nightworkers.tools.read_current_specification]');
+    expect(installed).toContain('[mcp_servers.nightworkers.tools.replace_todo_list]');
     expect(installed).not.toContain('apply_patch');
 
     await execFileAsync(
@@ -51,6 +52,6 @@ describe('Codex NightWorkers MCP setup script', () => {
     const removed = fs.readFileSync(configPath, 'utf8');
     expect(removed).toContain('[mcp_servers.context-still]');
     expect(removed).not.toContain('[mcp_servers.nightworkers]');
-    expect(removed).not.toContain('nightworkers-codex-server.ts');
+    expect(removed).not.toContain('args = ["run", "codex:mcp"]');
   });
 });

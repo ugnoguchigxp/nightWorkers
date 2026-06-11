@@ -7,6 +7,7 @@ import {
   listRecentSpecificationsTool,
   readCurrentSpecificationTool,
 } from '../services/worker-tools/read-current-specification';
+import { replaceTodoListTool } from '../services/worker-tools/replace-todo-list';
 import type { WorkerToolResult } from '../services/worker-tools/types';
 
 const server = new McpServer({
@@ -47,6 +48,49 @@ server.registerTool(
     }),
   },
   async ({ limit }) => toolResultToMcp(await listRecentSpecificationsTool({ limit }))
+);
+
+server.registerTool(
+  'replace_todo_list',
+  {
+    title: 'Replace Todo List',
+    description:
+      'Replace the current run TodoList. Pass only the implementation Todos decomposed by the LLM; NightWorkers automatically adds initial_instructions, context_compile, code review, verify, and knowledge-capture gates.',
+    inputSchema: z.object({
+      runId: z
+        .string()
+        .trim()
+        .optional()
+        .describe('NightWorkers run id. Defaults to NIGHTWORKERS_RUN_ID when available.'),
+      todos: z
+        .array(
+          z.object({
+            seq: z.number().int().positive().optional(),
+            title: z.string().trim().min(1),
+            description: z.string().optional(),
+            taskType: z.string().trim().min(1),
+            procedureId: z.string().trim().optional(),
+            dependsOn: z.array(z.union([z.string(), z.number()])).optional(),
+          })
+        )
+        .optional()
+        .describe(
+          'Implementation Todos decomposed by the LLM. Fixed quality gates are added automatically.'
+        ),
+      startFirst: z
+        .boolean()
+        .optional()
+        .describe('Whether the first fixed gate starts as running. Default: true.'),
+    }),
+  },
+  async ({ runId, todos, startFirst }) =>
+    toolResultToMcp(
+      await replaceTodoListTool({
+        runId: runId || process.env.NIGHTWORKERS_RUN_ID || '',
+        todos,
+        startFirst,
+      })
+    )
 );
 
 export async function startNightWorkersCodexMcpServer() {

@@ -24,6 +24,9 @@ const nextBlock = [
   '',
   '[mcp_servers.nightworkers.tools.list_recent_specifications]',
   'approval_mode = "approve"',
+  '',
+  '[mcp_servers.nightworkers.tools.replace_todo_list]',
+  'approval_mode = "approve"',
   '# End NightWorkers MCP registration',
 ].join('\n');
 

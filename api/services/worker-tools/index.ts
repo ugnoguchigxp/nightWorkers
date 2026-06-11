@@ -10,6 +10,7 @@ export * from './path-policy';
 export * from './read-current-specification';
 export * from './read-file';
 export * from './replace-content';
+export * from './replace-todo-list';
 export * from './run-background-command';
 export * from './run-command';
 export * from './run-verification';

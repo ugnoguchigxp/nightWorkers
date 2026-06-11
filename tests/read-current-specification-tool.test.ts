@@ -3,6 +3,7 @@ import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import { getAllowedToolsForJobType } from '../api/services/supervisor/prompt';
 import { executeWorkerTool } from '../api/services/worker-tools/dispatcher';
 import { listRecentSpecificationsTool } from '../api/services/worker-tools/read-current-specification';
+import { replaceTodoListTool } from '../api/services/worker-tools/replace-todo-list';
 
 describe('read_current_specification worker tool', () => {
   it('reads the latest draft_spec markdown for a task without external MCP settings', async () => {
@@ -162,6 +163,57 @@ describe('read_current_specification worker tool', () => {
     );
     expect(getAllowedToolsForJobType('major_code_edit').map((tool) => tool.name)).toContain(
       'read_current_specification'
+    );
+  });
+});
+
+describe('replace_todo_list worker tool', () => {
+  it('persists LLM-decomposed implementation Todos with fixed NightWorkers gates', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: replace todos ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: replace TodoList',
+      description: 'Create a standard implementation TodoList',
+      status: 'running',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+    });
+
+    const result = await replaceTodoListTool({
+      runId: run.id,
+      todos: [
+        {
+          title: 'Implement MCP TodoList tool',
+          taskType: 'code_edit',
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.payload).toMatchObject({
+      runId: run.id,
+      taskId: task.id,
+    });
+    expect(result.payload.todos.map((todo) => todo.taskType)).toEqual([
+      'initial_instructions',
+      'context_compile',
+      'code_edit',
+      'review',
+      'verification',
+      'knowledge_capture',
+    ]);
+    expect(result.payload.todos[0]).toMatchObject({ seq: 1, status: 'running' });
+
+    const persisted = await repo.listTaskRunTodosForRun(run.id);
+    expect(persisted.map((todo) => todo.taskType)).toEqual(
+      result.payload.todos.map((todo) => todo.taskType)
     );
   });
 });
