@@ -3,7 +3,7 @@ import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import { getAllowedToolsForJobType } from '../api/services/supervisor/prompt';
 import { executeWorkerTool } from '../api/services/worker-tools/dispatcher';
 import { listRecentSpecificationsTool } from '../api/services/worker-tools/read-current-specification';
-import { replaceTodoListTool } from '../api/services/worker-tools/replace-todo-list';
+import { todoListTool } from '../api/services/worker-tools/todo-list';
 
 describe('read_current_specification worker tool', () => {
   it('reads the latest draft_spec markdown for a task without external MCP settings', async () => {
@@ -158,16 +158,18 @@ describe('read_current_specification worker tool', () => {
   });
 
   it('is available to implementation-oriented supervisor jobs', () => {
+    const majorTools = getAllowedToolsForJobType('major_code_edit').map((tool) => tool.name);
     expect(getAllowedToolsForJobType('minor_code_edit').map((tool) => tool.name)).toContain(
       'read_current_specification'
     );
-    expect(getAllowedToolsForJobType('major_code_edit').map((tool) => tool.name)).toContain(
-      'read_current_specification'
-    );
+    expect(majorTools).toContain('read_current_specification');
+    expect(majorTools).toContain('import_project');
+    expect(majorTools).toContain('todo_list');
+    expect(majorTools.filter((tool) => tool.startsWith('todo_'))).toEqual(['todo_list']);
   });
 });
 
-describe('replace_todo_list worker tool', () => {
+describe('todo_list worker tool', () => {
   it('persists LLM-decomposed implementation Todos with fixed NightWorkers gates', async () => {
     const createdRepo = await repo.createRepository({
       name: `TEST: replace todos ${crypto.randomUUID()}`,
@@ -186,12 +188,13 @@ describe('replace_todo_list worker tool', () => {
       status: 'running',
     });
 
-    const result = await replaceTodoListTool({
+    const result = await todoListTool({
       runId: run.id,
+      operation: 'replace',
       todos: [
         {
+          seq: 1,
           title: 'Implement MCP TodoList tool',
-          taskType: 'code_edit',
         },
       ],
     });
@@ -200,11 +203,13 @@ describe('replace_todo_list worker tool', () => {
     expect(result.payload).toMatchObject({
       runId: run.id,
       taskId: task.id,
+      action: 'todo_list',
+      operation: 'replace',
     });
     expect(result.payload.todos.map((todo) => todo.taskType)).toEqual([
       'initial_instructions',
       'context_compile',
-      'code_edit',
+      'implementation',
       'review',
       'verification',
       'knowledge_capture',
@@ -215,5 +220,85 @@ describe('replace_todo_list worker tool', () => {
     expect(persisted.map((todo) => todo.taskType)).toEqual(
       result.payload.todos.map((todo) => todo.taskType)
     );
+  });
+
+  it('replaces and advances persisted NightWorkers Todos', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: todo list ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: persisted TodoList',
+      description: 'Advance a standard implementation TodoList',
+      status: 'running',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+    });
+
+    const replaced = await todoListTool({
+      runId: run.id,
+      operation: 'replace',
+      todos: [{ seq: 1, title: 'Inspect implementation' }],
+    });
+
+    expect(replaced.ok).toBe(true);
+    expect(replaced.payload.todos[0]).toMatchObject({
+      seq: 1,
+      taskType: 'initial_instructions',
+      status: 'running',
+    });
+
+    const completed = await todoListTool({
+      runId: run.id,
+      operation: 'done',
+      seq: 1,
+    });
+
+    expect(completed.ok).toBe(true);
+    expect(completed.payload.todos[0]).toMatchObject({
+      seq: 1,
+      status: 'passed',
+    });
+    expect(completed.payload.todos[1]).toMatchObject({
+      seq: 2,
+      taskType: 'context_compile',
+      status: 'running',
+    });
+
+    const persisted = await repo.listTaskRunTodosForRun(run.id);
+    expect(persisted[0]).toMatchObject({ seq: 1, status: 'passed' });
+    expect(persisted[0].completedAt).toBeTruthy();
+    expect(persisted[1]).toMatchObject({ seq: 2, status: 'running' });
+    expect(persisted[1].startedAt).toBeTruthy();
+  });
+
+  it('returns attempted todo diagnostics when complete fails', async () => {
+    const failed = await todoListTool({
+      runId: 'missing-run',
+      operation: 'done',
+      seq: 1,
+    });
+
+    expect(failed.ok).toBe(false);
+    expect(failed.error).toMatchObject({ code: 'RUN_NOT_FOUND' });
+    expect(failed.payload).toMatchObject({
+      runId: 'missing-run',
+      taskId: '',
+      action: 'todo_list',
+      operation: 'done',
+      diagnostics: {
+        errorCode: 'RUN_NOT_FOUND',
+        attemptedAction: {
+          action: 'todo_list',
+          operation: 'done',
+          seq: 1,
+        },
+      },
+    });
   });
 });

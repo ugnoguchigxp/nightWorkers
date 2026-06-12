@@ -237,6 +237,9 @@ function formatToolRunEventActivityText(message: string, payload: JsonRecord) {
   const toolName = String(payload.toolName || 'tool');
   const command = typeof payload.command === 'string' ? payload.command : '';
   const status = typeof payload.status === 'string' ? payload.status : '';
+  const argumentsPreview = previewToolArguments(payload.arguments);
+  const error = typeof payload.error === 'string' ? payload.error.trim() : '';
+  const resultPreview = previewToolResult(payload.result);
   const exitCode =
     typeof payload.exitCode === 'number' || payload.exitCode === null
       ? `exit=${payload.exitCode ?? 'pending'}`
@@ -244,8 +247,51 @@ function formatToolRunEventActivityText(message: string, payload: JsonRecord) {
   const output =
     typeof payload.aggregatedOutput === 'string' ? payload.aggregatedOutput.trim() : '';
   const header = [toolName, command, status, exitCode].filter(Boolean).join(' | ');
-  if (output) return [header || message, output].filter(Boolean).join('\n');
+  const details = [argumentsPreview, error ? `error: ${error}` : '', resultPreview].filter(Boolean);
+  if (output || details.length > 0) {
+    return [header || message, ...details, output].filter(Boolean).join('\n');
+  }
   return header || message;
+}
+
+function previewToolArguments(value: unknown) {
+  if (!value || typeof value !== 'object') return '';
+  const record = value as JsonRecord;
+  if (
+    typeof record.runId === 'string' &&
+    typeof record.operation === 'string' &&
+    (typeof record.seq === 'number' ||
+      typeof record.todoId === 'string' ||
+      typeof record.title === 'string')
+  ) {
+    const parts = [
+      `runId=${record.runId}`,
+      `operation=${String(record.operation)}`,
+      typeof record.seq === 'number' ? `seq=${record.seq}` : '',
+      typeof record.todoId === 'string' ? `todoId=${record.todoId}` : '',
+      typeof record.title === 'string' ? `title=${record.title}` : '',
+      typeof record.status === 'string' ? `status=${record.status}` : '',
+      typeof record.autoStartNext === 'boolean' ? `autoStartNext=${record.autoStartNext}` : '',
+    ].filter(Boolean);
+    return parts.length > 0 ? `args: ${parts.join(' ')}` : '';
+  }
+  return `args: ${stringifyPreview(value, 280)}`;
+}
+
+function previewToolResult(value: unknown) {
+  if (!value || typeof value !== 'object') return '';
+  const preview = stringifyPreview(value, 320);
+  return preview ? `result: ${preview}` : '';
+}
+
+function stringifyPreview(value: unknown, limit: number) {
+  try {
+    const text = JSON.stringify(value);
+    if (!text) return '';
+    return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+  } catch {
+    return '';
+  }
 }
 
 function formatDiffRunEventActivityText(message: string, payload: JsonRecord) {

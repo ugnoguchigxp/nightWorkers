@@ -228,4 +228,4 @@ Evidence it creates:
 
 Current limits:
 - DMG creation and signing are separate release gates.
-- Desktop state is local to the app data directory, not the repository checkout.
+- Desktop state is local to repo-local `data` by default.

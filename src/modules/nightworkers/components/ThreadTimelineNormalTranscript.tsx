@@ -25,6 +25,10 @@ import {
   getEditToolCallDiff,
   isDiffActivity,
 } from './ThreadTimelineActivityTranscript';
+import {
+  getContextStillToolCardModel,
+  NormalContextStillToolCard,
+} from './ThreadTimelineContextStillCards';
 import { ChatMarkdown, NightWorkersCodeBlock } from './ThreadTimelineMarkdown';
 import { MessagePayload } from './ThreadTimelineMessagePayload';
 import { formatVisibleAssistantText, stringValue } from './ThreadTimelineStreaming';
@@ -33,6 +37,7 @@ export function buildNormalTranscriptItems(items: TranscriptItem[]): TranscriptI
   const filtered: TranscriptItem[] = [];
   const seenEditDiffs = new Set<string>();
   const seenCliCommands = new Set<string>();
+  const seenContextStillCards = new Set<string>();
 
   for (const item of items) {
     if (item.kind === 'user_turn') {
@@ -46,7 +51,8 @@ export function buildNormalTranscriptItems(items: TranscriptItem[]): TranscriptI
         const event = transcriptChildEvent(child);
         return event
           ? rememberVisibleEditDiff(event, seenEditDiffs) ||
-              rememberVisibleCliCommand(event, seenCliCommands)
+              rememberVisibleCliCommand(event, seenCliCommands) ||
+              rememberVisibleContextStillCard(event, seenContextStillCards)
           : false;
       });
       if (text.trim() || children.length > 0) filtered.push({ ...item, text, children });
@@ -56,7 +62,8 @@ export function buildNormalTranscriptItems(items: TranscriptItem[]): TranscriptI
     if (
       item.kind === 'activity' &&
       (rememberVisibleEditDiff(item.event, seenEditDiffs) ||
-        rememberVisibleCliCommand(item.event, seenCliCommands))
+        rememberVisibleCliCommand(item.event, seenCliCommands) ||
+        rememberVisibleContextStillCard(item.event, seenContextStillCards))
     ) {
       filtered.push(item);
     }
@@ -87,6 +94,18 @@ function rememberVisibleCliCommand(event: ActivityEvent, seenCliCommands: Set<st
   return true;
 }
 
+function rememberVisibleContextStillCard(
+  event: ActivityEvent,
+  seenContextStillCards: Set<string>
+): boolean {
+  const card = getContextStillToolCardModel(event);
+  if (!card) return false;
+  const key = visibleContextStillCardKey(event, card.kind);
+  if (seenContextStillCards.has(key)) return false;
+  seenContextStillCards.add(key);
+  return true;
+}
+
 function visibleCliCommandKey(event: ActivityEvent, summary: VisibleCliCommandSummary): string {
   const payload = asRecord(event.payloadJson);
   const runEvent = asRecord(payload.runEvent);
@@ -98,6 +117,15 @@ function visibleCliCommandKey(event: ActivityEvent, summary: VisibleCliCommandSu
     return `${event.runId || runEvent.runId || 'run'}:${step}:${summary.toolName}:${summary.command}`;
   }
   return `${summary.toolName}:${summary.command}`;
+}
+
+function visibleContextStillCardKey(event: ActivityEvent, kind: string): string {
+  const payload = asRecord(event.payloadJson);
+  const runEvent = asRecord(payload.runEvent);
+  const runEventData = asRecord(runEvent.data);
+  const providerItemId = asString(runEventData.providerItemId);
+  if (providerItemId) return `${providerItemId}:${kind}`;
+  return `${event.runId || 'run'}:${event.seq}:${kind}`;
 }
 
 function visibleEditDiffKey(event: ActivityEvent): string {
@@ -167,6 +195,7 @@ function NormalVisibleActivityBlock({ event }: { event: ActivityEvent }) {
     <>
       <NormalEditDiffBlock event={event} />
       <NormalCliCommandBlock event={event} />
+      <NormalContextStillToolCard event={event} />
     </>
   );
 }

@@ -8,12 +8,12 @@ primary runtime ledger is local.
 - Development mode uses the repo-local defaults, including SQLite/libSQL at
   `DATABASE_URL` or `sqlite.db`, runtime settings under `api/.runtime`, and
   logs under `logs`.
-- Desktop mode writes runtime state under
-  `~/Library/Application Support/dev.nightworkers.desktop/runtime` by default.
+- Desktop mode writes runtime state under the repo-local `data` directory by default.
 - Desktop settings are stored under `${NIGHTWORKERS_RUNTIME_DIR}/settings`.
 - Desktop logs are stored under `${NIGHTWORKERS_RUNTIME_DIR}/logs`.
-- The desktop shell and sidecar use the app data directory for NightWorkers
-  state, but registered Project work still uses the Project repo root.
+- The desktop shell and sidecar use `NIGHTWORKERS_RUNTIME_DIR` for NightWorkers
+  state, defaulting to repo-local `data`, while registered Project work still
+  uses the Project repo root.
 
 ## Provider Data Flow
 LLM provider calls can include:
@@ -73,7 +73,7 @@ based on the registered Project Folder.
 - Failure summaries are redacted before they are stored for display.
 
 ## Desktop Boundary
-- The Tauri shell owns window lifecycle, app data path resolution, loopback API
+- The Tauri shell owns window lifecycle, runtime path resolution, loopback API
   port allocation, Node sidecar startup, readiness, and shutdown.
 - The Node sidecar owns the same backend boundary as development mode: Hono
   routes, SQLite/libSQL, supervisor/worker execution, MCP, hooks, and provider

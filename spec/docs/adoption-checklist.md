@@ -47,8 +47,7 @@ Use this checklist before trying NightWorkers on a repository that matters.
 - Build and smoke-test the desktop app before using it for real work:
   - `bun run desktop:build`
   - `bun run desktop:smoke`
-- Remember desktop runtime state is under the macOS app data directory, not the
-  repo checkout.
+- Remember desktop runtime state is under repo-local `data` by default.
 - Check `desktop.log`, `sidecar.log`, and `api.log` when the packaged app does
   not start cleanly.
 - Treat DMG creation and signing as separate release gates.

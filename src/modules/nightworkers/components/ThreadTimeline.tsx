@@ -22,6 +22,10 @@ import {
   isReviewerEvaluationEvent,
   ReviewerEvaluationCard,
 } from './ThreadTimelineAgentCards';
+import {
+  hasContextStillToolCard,
+  NormalContextStillToolCard,
+} from './ThreadTimelineContextStillCards';
 import { MessagePayload } from './ThreadTimelineMessagePayload';
 import {
   buildNormalTranscriptItems,
@@ -250,7 +254,8 @@ export function ThreadTimeline({
               </ThreadMessage>
             ) : showDebugEvents ||
               hasAgentEditSummary(item.event) ||
-              isReviewerEvaluationEvent(item.event) ? (
+              isReviewerEvaluationEvent(item.event) ||
+              hasContextStillToolCard(item.event) ? (
               <TimelineDebugFragment
                 key={item.id}
                 insertRuntimeSnapshot={item.id === runtimeSnapshotTimelineAnchorId}
@@ -259,6 +264,7 @@ export function ThreadTimeline({
                 <div className="space-y-2">
                   <ReviewerEvaluationCard event={item.event} />
                   <AgentEditSummaryCard event={item.event} />
+                  {!showDebugEvents ? <NormalContextStillToolCard event={item.event} /> : null}
                   {showDebugEvents ? <AgentDebugEventCard event={item.event} /> : null}
                 </div>
               </TimelineDebugFragment>

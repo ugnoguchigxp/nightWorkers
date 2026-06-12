@@ -33,6 +33,24 @@ function emptyPayloadByTool(toolName: ToolCallRequest['toolName']): Record<strin
       truncated: false,
     };
   }
+  if (toolName === 'import_project') {
+    return {
+      mode: '',
+      template: null,
+      git: null,
+    };
+  }
+  if (toolName === 'clone_git_repo') {
+    return {
+      repoUrl: '',
+      ref: null,
+      commit: null,
+      targetPath: '',
+      copiedFiles: 0,
+      copiedDirectories: 0,
+      strippedGitDir: true,
+    };
+  }
   if (toolName === 'apply_patch') return { applied: false, changedFiles: [] };
   if (toolName === 'replace_content') return { applied: false, occurrences: 0, filePath: '' };
   if (toolName === 'run_background_command') {

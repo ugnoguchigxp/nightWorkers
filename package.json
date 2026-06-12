@@ -35,6 +35,8 @@
     "db:studio": "drizzle-kit studio",
     "db:push": "drizzle-kit push",
     "db:seed": "bun drizzle/seed.ts",
+    "db:seed:current": "bun api/scripts/seed-current-state.ts",
+    "db:reset": "bun api/scripts/reset-db.ts",
     "cleanup:test-data": "bun api/scripts/cleanup-test-data.ts --execute",
     "cleanup:test-data:dry-run": "bun api/scripts/cleanup-test-data.ts --dry-run",
     "cleanup:test-data:all": "bun api/scripts/cleanup-test-data.ts --all --execute",

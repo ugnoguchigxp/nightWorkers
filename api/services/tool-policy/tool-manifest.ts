@@ -58,11 +58,29 @@ export const TOOL_MANIFEST: Record<WorkerToolName, ToolManifestEntry> = {
     requiresReadBeforeEdit: false,
     pathArgs: [],
   },
+  import_project: {
+    name: 'import_project',
+    mutatesWorkspace: true,
+    requiresReadBeforeEdit: false,
+    pathArgs: ['targetPath'],
+  },
+  clone_git_repo: {
+    name: 'clone_git_repo',
+    mutatesWorkspace: true,
+    requiresReadBeforeEdit: false,
+    pathArgs: ['targetPath'],
+  },
   copy_directory: {
     name: 'copy_directory',
     mutatesWorkspace: true,
     requiresReadBeforeEdit: false,
     pathArgs: ['sourcePath', 'targetPath'],
+  },
+  materialize_template: {
+    name: 'materialize_template',
+    mutatesWorkspace: true,
+    requiresReadBeforeEdit: false,
+    pathArgs: ['targetPath'],
   },
   apply_patch: {
     name: 'apply_patch',

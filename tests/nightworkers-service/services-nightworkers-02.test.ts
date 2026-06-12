@@ -21,6 +21,7 @@ vi.mock('../../api/modules/nightworkers/nightworkers.repository', () => ({
   createTaskRun: vi.fn(),
   getTaskRun: vi.fn(),
   createTaskRunTodo: vi.fn(),
+  replaceTaskRunTodosForRun: vi.fn(),
   listTaskRunTodosForRun: vi.fn(),
   updateTaskRunTodo: vi.fn(),
   createRunEvent: vi.fn(),
@@ -140,7 +141,7 @@ describe('NightWorkers service', () => {
     expect(runtimeRegistry.resolveAgentRuntime).toHaveBeenCalledWith('codex-agent');
   });
 
-  it('starts simple runtime once without creating planned todos', async () => {
+  it('starts simple runtime once and precreates a visible TodoList', async () => {
     const task = {
       id: 'task-sequential',
       repositoryId: 'repo-sequential',
@@ -197,8 +198,131 @@ describe('NightWorkers service', () => {
         latestUserMessage: task.description,
       })
     );
-    expect(repo.createTaskRunTodo).not.toHaveBeenCalled();
+    expect(repo.replaceTaskRunTodosForRun).toHaveBeenCalledWith(
+      run.id,
+      expect.arrayContaining([
+        expect.objectContaining({
+          seq: 1,
+          title: 'initial_instructions を実行する',
+          status: 'running',
+        }),
+        expect.objectContaining({
+          title: '仕様と既存構成を確認する',
+          taskType: 'inspection',
+        }),
+        expect.objectContaining({
+          title: '対象画面を仕様に沿って実装する',
+          taskType: 'implementation',
+        }),
+      ])
+    );
     expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-close unfinished Todos when runtime completes', async () => {
+    const task = {
+      id: 'task-open-todos',
+      repositoryId: 'repo-open-todos',
+      title: 'Open Todo task',
+      description: 'Complete with open todos',
+      objective: 'Complete with open todos',
+      acceptanceCriteria: 'Runtime completes',
+      timeoutSeconds: 60,
+    };
+    const run = {
+      id: 'run-open-todos',
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+      status: 'running',
+    };
+    vi.mocked(repo.getTask).mockResolvedValue(task as any);
+    vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+    vi.mocked(repo.getRepository).mockResolvedValue({
+      id: task.repositoryId,
+      localPath: repoRoot,
+      safetyPolicy: {},
+    } as any);
+    vi.mocked(repo.listTaskMessages).mockResolvedValue([
+      { role: 'user', content: task.description },
+    ] as any);
+    vi.mocked(repo.createTaskRun).mockResolvedValue(run as any);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([
+      {
+        id: 'todo-running',
+        runId: run.id,
+        seq: 1,
+        title: 'Running Todo',
+        taskType: 'implementation',
+        status: 'running',
+        startedAt: new Date('2026-06-12T00:00:00.000Z'),
+      },
+      {
+        id: 'todo-pending',
+        runId: run.id,
+        seq: 2,
+        title: 'Pending Todo',
+        taskType: 'verification',
+        status: 'pending',
+      },
+      {
+        id: 'todo-passed',
+        runId: run.id,
+        seq: 3,
+        title: 'Passed Todo',
+        taskType: 'review',
+        status: 'passed',
+      },
+    ] as any);
+    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as any);
+    const runtimeStart = vi.fn().mockResolvedValue({
+      terminalState: 'completed',
+      summary: 'Runtime done',
+      finalReport: 'Runtime report',
+      stoppedBy: 'decision',
+      riskLevel: 'low',
+      diffPatch: '',
+      logContent: '',
+    });
+    vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+      kind: 'native-local',
+      start: runtimeStart,
+      stop: vi.fn(),
+    } as any);
+
+    await startTaskRun(task.id);
+
+    await vi.waitFor(() => {
+      expect(repo.updateTaskRun).toHaveBeenCalledWith(
+        run.id,
+        expect.objectContaining({
+          status: 'needs_human',
+          summary: 'Runtime finished without explicitly closing all open Todos.',
+          finalReport: expect.stringContaining(
+            'Todo closeout incomplete: #1 Running Todo (running), #2 Pending Todo (pending)'
+          ),
+        })
+      );
+    });
+    expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
+    expect(repo.updateTaskStatus).toHaveBeenCalledWith(task.id, 'needs_human');
+    expect(repo.createRunEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: run.id,
+        taskId: task.id,
+        type: 'run.outcome_decided',
+        message: 'Runtime finished before explicit Todo closeout; run cannot be marked completed.',
+        data: expect.objectContaining({
+          terminalState: 'completed',
+          nextStatus: 'needs_human',
+          openTodos: expect.arrayContaining([
+            expect.objectContaining({ id: 'todo-running', seq: 1, status: 'running' }),
+            expect.objectContaining({ id: 'todo-pending', seq: 2, status: 'pending' }),
+          ]),
+        }),
+      })
+    );
   });
 
   it('injects StateCard into runtime latestUserMessage while preserving raw compiled prompt', async () => {

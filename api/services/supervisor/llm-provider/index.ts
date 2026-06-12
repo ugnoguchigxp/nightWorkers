@@ -92,7 +92,8 @@ async function callRawJsonLLM(
   const provider = providerAdapterKey(normalizedRequest.providerId);
   const startedAt = Date.now();
   const callId = randomUUID();
-  const requestSignal = createSupervisorLlmAbortSignal(options);
+  const requestAbortHandle = createSupervisorLlmAbortSignal(options);
+  const requestSignal = requestAbortHandle.signal;
   const providerOptions = { ...options, normalizedRequest };
   let rawContent = '';
   let providerDebug: Record<string, unknown> = {};
@@ -181,6 +182,8 @@ async function callRawJsonLLM(
       },
     });
     throw error;
+  } finally {
+    requestAbortHandle.dispose();
   }
 
   if (!rawContent) {

@@ -7,7 +7,7 @@ import {
   Square,
   Trash2,
 } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import type {
@@ -83,6 +83,137 @@ type ThreadWorkspaceProps = {
   splitPanel?: ReactNode;
 };
 
+const SCROLL_BOTTOM_LOCK_THRESHOLD = 48;
+const SCROLL_STATE_STORAGE_KEY_PREFIX = 'nightworkers:thread-scroll:v1:';
+
+type ScrollSnapshot = {
+  scrollTop: number;
+  maxScrollTop: number;
+  distanceFromBottom: number;
+  wasNearBottom: boolean;
+};
+
+type PersistedScrollState =
+  | {
+      mode: 'bottom';
+    }
+  | {
+      mode: 'manual';
+      snapshot: ScrollSnapshot;
+    };
+
+function clampScrollTop(value: number, maxScrollTop: number) {
+  return Math.max(0, Math.min(value, maxScrollTop));
+}
+
+export function createScrollSnapshot(metrics: {
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+}): ScrollSnapshot {
+  const maxScrollTop = Math.max(0, metrics.scrollHeight - metrics.clientHeight);
+  const scrollTop = clampScrollTop(metrics.scrollTop, maxScrollTop);
+  const distanceFromBottom = Math.max(0, maxScrollTop - scrollTop);
+  return {
+    scrollTop,
+    maxScrollTop,
+    distanceFromBottom,
+    wasNearBottom: distanceFromBottom <= SCROLL_BOTTOM_LOCK_THRESHOLD,
+  };
+}
+
+export function resolveRestoredScrollTop(
+  snapshot: ScrollSnapshot,
+  metrics: { scrollHeight: number; clientHeight: number }
+) {
+  const maxScrollTop = Math.max(0, metrics.scrollHeight - metrics.clientHeight);
+  if (snapshot.wasNearBottom) return maxScrollTop;
+  if (snapshot.maxScrollTop <= 0 || maxScrollTop <= 0) return 0;
+  const progress = snapshot.scrollTop / snapshot.maxScrollTop;
+  return clampScrollTop(Math.round(maxScrollTop * progress), maxScrollTop);
+}
+
+export function shouldKeepPendingRestore(
+  state: PersistedScrollState,
+  metrics: { scrollHeight: number; clientHeight: number }
+) {
+  if (state.mode === 'bottom') return true;
+  return metrics.scrollHeight < state.snapshot.maxScrollTop + metrics.clientHeight;
+}
+
+function buildPersistedScrollState(snapshot: ScrollSnapshot): PersistedScrollState {
+  return snapshot.wasNearBottom
+    ? { mode: 'bottom' }
+    : {
+        mode: 'manual',
+        snapshot,
+      };
+}
+
+function scrollStateStorageKey(sessionId: string) {
+  return `${SCROLL_STATE_STORAGE_KEY_PREFIX}${sessionId}`;
+}
+
+function loadPersistedScrollState(sessionId: string): PersistedScrollState | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(scrollStateStorageKey(sessionId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, unknown> | null;
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (parsed.mode === 'bottom') return { mode: 'bottom' };
+    const snapshotCandidate =
+      parsed.snapshot && typeof parsed.snapshot === 'object'
+        ? (parsed.snapshot as Record<string, unknown>)
+        : parsed;
+    if (
+      typeof snapshotCandidate.scrollTop !== 'number' ||
+      typeof snapshotCandidate.maxScrollTop !== 'number' ||
+      typeof snapshotCandidate.distanceFromBottom !== 'number' ||
+      typeof snapshotCandidate.wasNearBottom !== 'boolean'
+    ) {
+      return { mode: 'bottom' };
+    }
+    const snapshot: ScrollSnapshot = {
+      scrollTop: snapshotCandidate.scrollTop,
+      maxScrollTop: snapshotCandidate.maxScrollTop,
+      distanceFromBottom: snapshotCandidate.distanceFromBottom,
+      wasNearBottom: snapshotCandidate.wasNearBottom,
+    };
+    return {
+      mode: snapshot.wasNearBottom ? 'bottom' : 'manual',
+      snapshot,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function persistScrollState(sessionId: string, state: PersistedScrollState) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(scrollStateStorageKey(sessionId), JSON.stringify(state));
+}
+
+function readScrollSnapshot(element: HTMLDivElement): ScrollSnapshot {
+  return createScrollSnapshot({
+    scrollTop: element.scrollTop,
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+  });
+}
+
+function restoreScrollState(element: HTMLDivElement, state: PersistedScrollState) {
+  const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+  if (state.mode === 'bottom') {
+    element.scrollTop = maxScrollTop;
+    return;
+  }
+  element.scrollTop = resolveRestoredScrollTop(state.snapshot, {
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+  });
+}
+
 export function ThreadWorkspace(props: ThreadWorkspaceProps) {
   const { t } = useTranslation();
   const diffArtifacts = props.artifactRefs.filter((artifact) => artifact.kind === 'diff');
@@ -91,13 +222,118 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
     props.artifactRefs.find((artifact) => artifact.kind === 'app_blueprint');
   const latestDiffArtifact = diffArtifacts[0];
   const [showDebugEvents, setShowDebugEvents] = useState(true);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const scrollStateRef = useRef<PersistedScrollState>({ mode: 'bottom' });
+  const pendingRestoreStateRef = useRef<PersistedScrollState | null>(null);
+  const suppressedScrollTopRef = useRef<number | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const resizeMetricsRef = useRef<{ clientHeight: number; scrollHeight: number } | null>(null);
+  const layoutMode = props.splitPanel ? 'split' : props.sidePanel ? 'side' : 'single';
+  const previousLayoutModeRef = useRef(layoutMode);
+  const activeSessionId = props.activeSession?.id ?? null;
   const specificationWorkspaceLabel = t('thread.specificationWorkspace');
   const noSpecificationWorkspaceLabel = t('thread.noSpecificationWorkspace');
+  const commitScrollState = useCallback(
+    (snapshot: ScrollSnapshot) => {
+      const state = buildPersistedScrollState(snapshot);
+      scrollStateRef.current = state;
+      if (activeSessionId) persistScrollState(activeSessionId, state);
+    },
+    [activeSessionId]
+  );
+  const applyBestEffortRestore = useCallback(
+    (node: HTMLDivElement) => {
+      const state = pendingRestoreStateRef.current || scrollStateRef.current;
+      restoreScrollState(node, state);
+      suppressedScrollTopRef.current = node.scrollTop;
+      const nextSnapshot = readScrollSnapshot(node);
+      scrollStateRef.current = buildPersistedScrollState(nextSnapshot);
+      if (activeSessionId) persistScrollState(activeSessionId, scrollStateRef.current);
+      if (
+        pendingRestoreStateRef.current &&
+        !shouldKeepPendingRestore(pendingRestoreStateRef.current, {
+          scrollHeight: node.scrollHeight,
+          clientHeight: node.clientHeight,
+        })
+      ) {
+        pendingRestoreStateRef.current = null;
+      }
+    },
+    [activeSessionId]
+  );
+  const handleScrollContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      resizeObserverRef.current?.disconnect();
+      scrollContainerRef.current = node;
+      resizeObserverRef.current = null;
+      resizeMetricsRef.current = node
+        ? {
+            clientHeight: node.clientHeight,
+            scrollHeight: node.scrollHeight,
+          }
+        : null;
+      if (!node || typeof ResizeObserver === 'undefined') return;
+      resizeObserverRef.current = new ResizeObserver(() => {
+        const currentNode = scrollContainerRef.current;
+        const previousMetrics = resizeMetricsRef.current;
+        if (!currentNode || !previousMetrics) return;
+        const nextMetrics = {
+          clientHeight: currentNode.clientHeight,
+          scrollHeight: currentNode.scrollHeight,
+        };
+        if (
+          previousMetrics.clientHeight === nextMetrics.clientHeight &&
+          previousMetrics.scrollHeight === nextMetrics.scrollHeight
+        ) {
+          return;
+        }
+        applyBestEffortRestore(currentNode);
+        resizeMetricsRef.current = nextMetrics;
+      });
+      resizeObserverRef.current.observe(node);
+    },
+    [applyBestEffortRestore]
+  );
+  const handleScroll = useCallback(() => {
+    if (!scrollContainerRef.current) return;
+    if (
+      suppressedScrollTopRef.current !== null &&
+      Math.abs(scrollContainerRef.current.scrollTop - suppressedScrollTopRef.current) < 1
+    ) {
+      suppressedScrollTopRef.current = null;
+      return;
+    }
+    suppressedScrollTopRef.current = null;
+    pendingRestoreStateRef.current = null;
+    commitScrollState(readScrollSnapshot(scrollContainerRef.current));
+  }, [commitScrollState]);
+
+  useLayoutEffect(() => {
+    const node = scrollContainerRef.current;
+    if (!activeSessionId || !node) {
+      scrollStateRef.current = { mode: 'bottom' };
+      pendingRestoreStateRef.current = null;
+      return;
+    }
+    const persistedState = loadPersistedScrollState(activeSessionId) || { mode: 'bottom' };
+    scrollStateRef.current = persistedState;
+    pendingRestoreStateRef.current = persistedState;
+    applyBestEffortRestore(node);
+  }, [activeSessionId, applyBestEffortRestore]);
+
+  useLayoutEffect(() => {
+    const node = scrollContainerRef.current;
+    if (!node) return;
+    if (previousLayoutModeRef.current !== layoutMode) {
+      applyBestEffortRestore(node);
+      previousLayoutModeRef.current = layoutMode;
+    }
+  }, [applyBestEffortRestore, layoutMode]);
+
   const workbenchBanner = props.activeSession ? (
     <WorkbenchStateBanner
       sessionView={props.sessionView}
       model={props.model}
-      onQueueSession={props.onQueueSession}
       onRemoveQueueEntry={props.onRemoveQueueEntry}
       onSubmitReview={props.onSubmitReview}
       onRequeueQueueEntry={props.onRequeueQueueEntry}
@@ -289,6 +525,8 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
               onThinkingDepthChange={props.onThinkingDepthChange}
               realtimeStatus={props.realtimeStatus}
               runs={props.runs}
+              onScroll={handleScroll}
+              scrollContainerRef={handleScrollContainerRef}
               showDebugEvents={showDebugEvents}
               taskMessages={props.taskMessages}
               thinkingDepth={props.thinkingDepth}
@@ -327,6 +565,8 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
             onThinkingDepthChange={props.onThinkingDepthChange}
             realtimeStatus={props.realtimeStatus}
             runs={props.runs}
+            onScroll={handleScroll}
+            scrollContainerRef={handleScrollContainerRef}
             showDebugEvents={showDebugEvents}
             taskMessages={props.taskMessages}
             thinkingDepth={props.thinkingDepth}
@@ -443,6 +683,8 @@ function ThreadBody({
   onThinkingDepthChange,
   realtimeStatus,
   runs,
+  onScroll,
+  scrollContainerRef,
   showDebugEvents,
   taskMessages,
   thinkingDepth,
@@ -476,12 +718,50 @@ function ThreadBody({
   | 'taskMessages'
   | 'thinkingDepth'
 > & {
+  onScroll: () => void;
+  scrollContainerRef: (node: HTMLDivElement | null) => void;
   showDebugEvents: boolean;
   workbenchBanner: ReactNode;
 }) {
+  const composerResizeObserverRef = useRef<ResizeObserver | null>(null);
+  const [composerReservedHeight, setComposerReservedHeight] = useState(176);
+
+  const updateComposerReservedHeight = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return;
+    const nextHeight = Math.ceil(node.getBoundingClientRect().height) + 16;
+    setComposerReservedHeight((current) => (current === nextHeight ? current : nextHeight));
+  }, []);
+
+  const handleComposerContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      composerResizeObserverRef.current?.disconnect();
+      composerResizeObserverRef.current = null;
+      if (!node) return;
+      updateComposerReservedHeight(node);
+      if (typeof ResizeObserver === 'undefined') return;
+      composerResizeObserverRef.current = new ResizeObserver(() => {
+        updateComposerReservedHeight(node);
+      });
+      composerResizeObserverRef.current.observe(node);
+    },
+    [updateComposerReservedHeight]
+  );
+
+  useLayoutEffect(
+    () => () => {
+      composerResizeObserverRef.current?.disconnect();
+    },
+    []
+  );
+
   return (
     <div className="nightworkers-thread-main relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <div className="nightworkers-thread-scroll nightworkers-scrollbar min-h-0 flex-1 overflow-y-auto pb-40">
+      <div
+        ref={scrollContainerRef}
+        className="nightworkers-thread-scroll nightworkers-scrollbar min-h-0 flex-1 overflow-y-auto"
+        style={{ paddingBottom: `${composerReservedHeight}px` }}
+        onScroll={onScroll}
+      >
         {activeSession ? (
           <>
             {workbenchBanner}
@@ -515,7 +795,7 @@ function ThreadBody({
         )}
       </div>
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-transparent">
-        <div className="pointer-events-auto">
+        <div ref={handleComposerContainerRef} className="pointer-events-auto">
           <Composer
             disabled={!activeSession && isAgentWorking}
             draftStorageKey={

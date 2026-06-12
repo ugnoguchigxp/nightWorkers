@@ -2,7 +2,7 @@ export type ImplementationTodoInput = {
   seq?: number;
   title: string;
   description?: string | null;
-  taskType: string;
+  taskType?: string;
   procedureId?: string | null;
   dependsOn?: Array<string | number> | null;
 };
@@ -57,9 +57,9 @@ const FINAL_GATES: StandardGate[] = [
     dependsOn: [],
   },
   {
-    title: '知識登録・decision・compile_eval を実行する',
+    title: '知識登録と closeout を実施する',
     description:
-      '再利用可能な知識を register_candidates で登録し、必要な context_decision と compile_eval 採点を保存してから完了する。',
+      '再利用可能な知識を register_candidates で登録し、必要な context_decision を処理してから closeout に進む。compile_eval は完了報告直前の closeout でのみ実行する。',
     taskType: 'knowledge_capture',
     procedureId: 'contextstill_closeout',
     dependsOn: [],
@@ -100,9 +100,11 @@ function normalizeImplementationTodos(
       throw new Error(`Todo #${index + 1} must be an object.`);
     }
     const title = typeof todo.title === 'string' ? todo.title.trim() : '';
-    const taskType = typeof todo.taskType === 'string' ? todo.taskType.trim() : '';
+    const taskType =
+      typeof todo.taskType === 'string' && todo.taskType.trim().length > 0
+        ? todo.taskType.trim()
+        : 'implementation';
     if (!title) throw new Error(`Todo #${index + 1} requires title.`);
-    if (!taskType) throw new Error(`Todo #${index + 1} requires taskType.`);
     return {
       title,
       description: typeof todo.description === 'string' ? todo.description : null,

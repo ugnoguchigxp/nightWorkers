@@ -121,8 +121,21 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain('[NightWorkers Runtime Contract]');
     expect(prompt).toContain('taskId: task-codex');
     expect(prompt).toContain('runId: run-codex');
+    expect(prompt).toContain('context-still.initial_instructions');
+    expect(prompt).toContain('nightworkers.todo_list');
+    expect(prompt).toContain('operation=replace');
+    expect(prompt).toContain('operation=done');
+    expect(prompt).toContain('A Todo tracking failure is tracking failure, not task completion');
+    expect(prompt).toContain('Do not call context-still.compile_eval during planning');
     expect(prompt).toContain('nightworkers.read_current_specification');
     expect(prompt).toContain('nightworkers.list_recent_specifications');
+    expect(prompt).toContain('nightworkers.import_project');
+    expect(prompt).not.toContain('nightworkers.materialize_template');
+    expect(prompt).not.toContain('nightworkers.clone_git_repo');
+    expect(prompt).toContain('templateId=hono-standard');
+    expect(prompt).toContain('default SQLite variant');
+    expect(prompt).toContain('run_command and run_verification keep full stdout/stderr by default');
+    expect(prompt).toContain('Do not create a fallback static app');
   });
 
   it('passes the composed runtime prompt to Codex threads', async () => {
@@ -190,6 +203,67 @@ describe('CodexAgentRuntime', () => {
     );
   });
 
+  it('records Codex turn usage through the shared LLM usage recorder', async () => {
+    const usageRecorder = vi.fn(async (input) => ({ id: 'usage-record', ...input }) as any);
+    const runtime = new CodexAgentRuntime({
+      persistRuntimeUsage: true,
+      usageRecorder,
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'turn.completed',
+            usage: {
+              input_tokens: 1200,
+              cached_input_tokens: 300,
+              output_tokens: 45,
+              reasoning_output_tokens: 6,
+            },
+          },
+        ]),
+    });
+
+    await runtime.start(
+      buildContext({
+        codex: { model: 'gpt-5.3-codex' },
+        conversationContextUsage: {
+          latestUserMessageTokens: 10,
+          stateCardTokens: 20,
+          runtimeUserPromptTokens: 30,
+        },
+      }),
+      { emit: async () => {} }
+    );
+
+    expect(usageRecorder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'task-codex',
+        runId: 'run-codex',
+        provider: 'codex',
+        model: 'gpt-5.3-codex',
+        label: 'codex-runtime',
+        usage: expect.objectContaining({
+          inputTokens: 1200,
+          outputTokens: 45,
+          cachedInputTokens: 300,
+          reasoningOutputTokens: 6,
+          totalTokens: 1245,
+          mode: 'measured',
+          rawUsage: {
+            input_tokens: 1200,
+            cached_input_tokens: 300,
+            output_tokens: 45,
+            reasoning_output_tokens: 6,
+          },
+        }),
+        promptPartTokenEstimates: {
+          latestUserMessageTokens: 10,
+          stateCardTokens: 20,
+          userPromptTokens: 30,
+        },
+      })
+    );
+  });
+
   it('returns cancelled when the run is stopped before the stream starts', async () => {
     const runtime = new CodexAgentRuntime({
       threadFactory: () => fakeThread([{ type: 'turn.started' }]),
@@ -220,6 +294,106 @@ describe('CodexAgentRuntime', () => {
         expect.objectContaining({
           type: 'runtime_error',
           payload: expect.objectContaining({ error: 'boom' }),
+        }),
+      ])
+    );
+  });
+
+  it('treats provider-cancelled project import as a tool failure', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'mcp-template',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'import_project',
+              arguments: { templateId: 'hono-standard', variant: 'sqlite' },
+              status: 'failed',
+              error: { message: 'user cancelled MCP tool call' },
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'file-after-template-failure',
+              type: 'file_change',
+              status: 'completed',
+              changes: [{ path: 'index.html' }],
+            },
+          },
+        ] as any),
+    });
+    const events: any[] = [];
+
+    const result = await runtime.start(buildContext(), {
+      emit: async (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(result.terminalState).toBe('needs_human');
+    expect(result.stoppedBy).toBe('tool_failure');
+    expect(result.finalReport).toContain('Project import failed: user cancelled MCP tool call');
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'runtime_finished',
+          payload: expect.objectContaining({
+            terminalState: 'needs_human',
+            stoppedBy: 'tool_failure',
+          }),
+        }),
+      ])
+    );
+    expect(events).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'diff_collected',
+          payload: expect.objectContaining({ changedFiles: ['index.html'] }),
+        }),
+      ])
+    );
+  });
+
+  it('treats explicit cancelled project import status as cancelled', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'mcp-template',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'import_project',
+              arguments: { templateId: 'hono-standard', variant: 'sqlite' },
+              status: 'cancelled',
+            },
+          },
+        ] as any),
+    });
+    const events: any[] = [];
+
+    const result = await runtime.start(buildContext(), {
+      emit: async (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(result.terminalState).toBe('cancelled');
+    expect(result.stoppedBy).toBe('cancelled');
+    expect(result.finalReport).toContain('Project import was cancelled');
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'runtime_finished',
+          payload: expect.objectContaining({
+            terminalState: 'cancelled',
+            stoppedBy: 'cancelled',
+          }),
         }),
       ])
     );
@@ -262,7 +436,12 @@ describe('CodexAgentRuntime', () => {
     });
     expect(mcpEvents[0]).toMatchObject({
       type: 'tool_call_finished',
-      payload: { toolName: 'nightworkers.get_task_context' },
+      payload: {
+        toolName: 'nightworkers.get_task_context',
+        mcpServer: 'nightworkers',
+        mcpTool: 'get_task_context',
+        arguments: { taskId: 'task-1', Authorization: '[REDACTED]' },
+      },
     });
   });
 
@@ -388,7 +567,16 @@ describe('CodexAgentRuntime', () => {
 });
 
 function buildContext(
-  input: { repoRoot?: string; codex?: Record<string, unknown>; latestUserMessage?: string } = {}
+  input: {
+    repoRoot?: string;
+    codex?: Record<string, unknown>;
+    latestUserMessage?: string;
+    conversationContextUsage?: {
+      latestUserMessageTokens: number;
+      stateCardTokens: number;
+      runtimeUserPromptTokens: number;
+    };
+  } = {}
 ) {
   return {
     runId: 'run-codex',
@@ -401,6 +589,14 @@ function buildContext(
     contextSnapshot: {
       compiledPrompt: 'do work',
       source: 'fallback' as const,
+      ...(input.conversationContextUsage
+        ? {
+            conversationContext: {
+              stateCardIncluded: true,
+              usage: input.conversationContextUsage,
+            },
+          }
+        : {}),
     },
     runtimeOptions: input.codex ? { codex: input.codex } : undefined,
   };

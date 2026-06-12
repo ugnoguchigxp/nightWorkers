@@ -122,8 +122,22 @@ export function parseRepairedJsonWithSchema<T>(
   };
 }
 
-export function createSupervisorLlmAbortSignal(options: CallSupervisorOptions): AbortSignal {
-  return AbortSignal.timeout(getSupervisorLlmTimeoutMs(options));
+export type SupervisorLlmAbortHandle = {
+  signal: AbortSignal;
+  dispose: () => void;
+};
+
+export function createSupervisorLlmAbortSignal(
+  options: CallSupervisorOptions
+): SupervisorLlmAbortHandle {
+  const controller = new AbortController();
+  const timeoutMs = getSupervisorLlmTimeoutMs(options);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  timer.unref?.();
+  return {
+    signal: controller.signal,
+    dispose: () => clearTimeout(timer),
+  };
 }
 
 export function digestLlmText(value: string): string {

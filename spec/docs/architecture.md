@@ -37,13 +37,13 @@ should be adopted for later planning.
 
 ## Desktop Packaging Boundary
 The desktop app keeps the existing Node backend boundary. The Tauri shell owns
-window lifecycle, app data path resolution, dynamic loopback port allocation,
+window lifecycle, runtime path resolution, dynamic loopback port allocation,
 Node sidecar startup, health readiness, and shutdown. The backend still owns
 Hono routes, SQLite/libSQL, supervisor/worker execution, MCP, hooks, and Codex
 SDK integration.
 
 Writable desktop state is rooted at `NIGHTWORKERS_RUNTIME_DIR`, which Tauri sets
-to the app data directory. Bundled readonly resources are rooted at
+to the repo-local `data` directory by default. Bundled readonly resources are rooted at
 `NIGHTWORKERS_RESOURCE_DIR`, which points to the packaged resource directory.
 Registered Project work still uses the Project repo root and must not use the
 Tauri temporary/resource directory as a workspace.
@@ -51,6 +51,18 @@ Tauri temporary/resource directory as a workspace.
 The frontend receives the sidecar API origin through the Tauri
 `get_desktop_config` command and uses `src/lib/api-base.ts` to build REST and
 WebSocket URLs. Browser development keeps the existing Vite `/api` proxy path.
+
+## Worker Runtime Boundary
+- The current native worker is an in-process async runtime owned by the API
+  process. `startTaskRun` returns after run setup and then executes the runtime
+  loop asynchronously, but it is not a separate worker daemon or OS process.
+- The native runtime is appropriate for the current single-user local desktop
+  scope. If API responsiveness, crash isolation, or sustained parallel run
+  execution becomes a bottleneck, introduce a separate worker executor after the
+  run ownership and queue lease model are explicit.
+- The Codex Agent runtime may create external Codex/MCP subprocesses, but
+  NightWorkers-owned run state still flows through the same persisted run ledger
+  and task/activity artifact model.
 
 ## API Surface (high level)
 - `/api/repositories`: Project Folder registration and listing
@@ -104,6 +116,11 @@ WebSocket URLs. Browser development keeps the existing Vite `/api` proxy path.
 - Session chat and Implementation Queue automation are separate. A Session can
   continue normal Workbench chat while queue entries represent explicit,
   user-approved automation work.
+- Queue draining is currently process-local. The Implementation Queue uses an
+  in-memory drain promise to avoid duplicate drains inside one API process, and
+  queue claims assume the single desktop API process model.
+- Do not scale the API into multiple queue-draining processes without moving
+  claim ownership to a database lease or equivalent durable owner record.
 - Queue admission creates or updates an `implementation_queue_entries` row and
   moves the Session status to `queued`. Removing a queued entry returns the
   Session to `ready` unless the run has already advanced into execution.
@@ -121,6 +138,25 @@ WebSocket URLs. Browser development keeps the existing Vite `/api` proxy path.
 - Queue completion follows run finalization: update the run, update the Session
   task status, then complete/archive the queue entry. Tests should cover both
   the run transition and queue dashboard state when this order changes.
+- A normal Session currently has at most one active run. Future multi-agent work
+  should model concurrent attempts as candidate/proposal records or artifacts
+  under a parent task/run, not as multiple agents racing to update the same
+  shared run status and Todo rows.
+
+## Write Tool And Proposal Boundary
+- Direct repository writes are centralized in worker tools such as
+  `apply_patch`, `replace_content`, and `copy_directory`, reached through the
+  worker-tool dispatcher. Keep new write capabilities behind this boundary.
+- Future multi-agent proposal runs should be read-only against the real Project
+  repo. They should persist planned changes, diffs, generated files, reasoning,
+  and verification plans as artifacts instead of mutating the worktree.
+- Adoption is the only step that should apply a selected proposal to the real
+  worktree. Adoption should revalidate that the proposal still applies against
+  the current repo state before calling write tools.
+- Proposal metadata can initially live in the existing run `contextSnapshot`,
+  `diffPatch`, and activity/artifact ledger. Add dedicated candidate/proposal
+  tables only when the review and adoption workflow needs queryable state that
+  artifacts cannot provide cleanly.
 
 ## Design Rule
 - Keep provider and runtime boundaries explicit.

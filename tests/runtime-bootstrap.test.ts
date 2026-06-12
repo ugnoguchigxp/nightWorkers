@@ -41,6 +41,24 @@ describe('desktop runtime bootstrap', () => {
     expect(fs.existsSync(path.join(paths.secretsDir, 'jwt-secret'))).toBe(true);
   });
 
+  it('defaults desktop runtime files under the resource root data directory', () => {
+    const resourceDir = makeRuntimeDir();
+    const env: NodeJS.ProcessEnv = {
+      NIGHTWORKERS_DESKTOP: '1',
+      NIGHTWORKERS_RESOURCE_DIR: resourceDir,
+      PORT: '40124',
+    };
+
+    ensureDesktopRuntimeBootstrap(env);
+    const paths = getRuntimePaths(env);
+
+    expect(paths.runtimeRoot).toBe(path.join(resourceDir, 'data'));
+    expect(env.DATABASE_URL).toBe(`file:${path.join(resourceDir, 'data/sqlite.db')}`);
+    expect(fs.existsSync(paths.runtimeRoot)).toBe(true);
+    expect(fs.existsSync(paths.settingsDir)).toBe(true);
+    expect(fs.existsSync(paths.logsDir)).toBe(true);
+  });
+
   it('reuses a generated JWT secret on the next bootstrap', () => {
     const runtimeDir = makeRuntimeDir();
     const firstEnv: NodeJS.ProcessEnv = {

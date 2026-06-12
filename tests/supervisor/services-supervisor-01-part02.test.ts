@@ -41,6 +41,7 @@ describe('Schema-first supervisor loop', () => {
 
   it('allows major_code_edit to create a run-internal TodoList before edits', async () => {
     const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-major-todos-'));
+    await fs.writeFile(path.join(repoRoot, 'README.md'), 'existing workspace\n');
     const createdTodos = [
       {
         id: 'todo-1',
@@ -82,21 +83,17 @@ describe('Schema-first supervisor loop', () => {
       })
       .mockResolvedValueOnce({
         toolCall: {
-          name: 'replace_todo_list',
+          name: 'todo_list',
           arguments: {
+            operation: 'replace',
             todos: [
               {
                 seq: 1,
                 title: '実装対象を確認する',
-                taskType: 'investigation',
-                procedureId: 'investigation',
               },
               {
                 seq: 2,
                 title: '実装を変更する',
-                taskType: 'code_edit',
-                procedureId: 'major_code_edit',
-                dependsOn: [1],
               },
             ],
           },
@@ -110,14 +107,14 @@ describe('Schema-first supervisor loop', () => {
       })
       .mockResolvedValueOnce({
         toolCall: {
-          name: 'complete_todo',
-          arguments: { seq: 1, status: 'passed', autoStartNext: true },
+          name: 'todo_list',
+          arguments: { operation: 'done' },
         },
       })
       .mockResolvedValueOnce({
         toolCall: {
-          name: 'complete_todo',
-          arguments: { seq: 2, status: 'passed', autoStartNext: false },
+          name: 'todo_list',
+          arguments: { operation: 'done' },
         },
       })
       .mockResolvedValueOnce({
@@ -142,13 +139,11 @@ describe('Schema-first supervisor loop', () => {
           expect.objectContaining({
             seq: 1,
             title: '実装対象を確認する',
-            taskType: 'investigation',
             status: 'running',
           }),
           expect.objectContaining({
             seq: 2,
             title: '実装を変更する',
-            taskType: 'code_edit',
             status: 'pending',
           }),
         ])
@@ -311,6 +306,134 @@ describe('Schema-first supervisor loop', () => {
           }),
         })
       );
+    } finally {
+      await fs.rm(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects an empty-root major_code_edit todo list that hides the bootstrap step', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-empty-bootstrap-'));
+
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        jobType: 'major_code_edit',
+        goal: 'React と Hono の TODO アプリを新規作成する',
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'todo_list',
+          arguments: {
+            operation: 'replace',
+            todos: [
+              {
+                seq: 1,
+                title: 'TODO アプリを実装する',
+              },
+              {
+                seq: 2,
+                title: '検証する',
+              },
+            ],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'todo_list',
+          arguments: {
+            operation: 'replace',
+            todos: [
+              {
+                seq: 1,
+                title: 'import_project で hono-standard を取り込む',
+                description: 'import_project を使って React/Hono/SQLite の土台を作る',
+              },
+              {
+                seq: 2,
+                title: 'TODO アプリを実装する',
+              },
+              {
+                seq: 3,
+                title: '検証する',
+              },
+            ],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'todo_list',
+          arguments: { operation: 'done' },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'todo_list',
+          arguments: { operation: 'done' },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'todo_list',
+          arguments: { operation: 'done' },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'finalize_answer',
+          arguments: { message: 'bootstrap を含む TodoList を作成しました。' },
+        },
+      });
+
+    let currentTodos = [] as any[];
+    vi.mocked(repo.replaceTaskRunTodosForRun).mockImplementation(async (_runId, todos) => {
+      currentTodos = todos.map((todo: any, index: number) => ({
+        id: `todo-${index + 1}`,
+        runId: 'run-1',
+        ...todo,
+      }));
+      return currentTodos as any;
+    });
+    vi.mocked(repo.listTaskRunTodosForRun).mockImplementation(async () => currentTodos as any);
+    vi.mocked(repo.updateTaskRunTodo).mockImplementation(async (todoId, patch) => {
+      currentTodos = currentTodos.map((todo) =>
+        todo.id === todoId ? { ...todo, ...patch } : todo
+      );
+      return currentTodos.find((todo) => todo.id === todoId) as any;
+    });
+
+    try {
+      const result = await runSupervisorLoop({
+        runId: 'run-1',
+        repoRoot,
+        prompt: 'React と Hono と SQLite で新しい TODO アプリを作って',
+        timeoutSeconds: 60,
+      });
+
+      expect(result.finalReport).toBe('bootstrap を含む TodoList を作成しました。');
+      expect(repo.replaceTaskRunTodosForRun).toHaveBeenCalledTimes(1);
+      const retryToolEvidence = parseRound2UserContextJsonSection<any[]>(
+        vi.mocked(llm.callSupervisorLLM).mock.calls[2]?.[1] as string,
+        'Recent Tool Evidence'
+      );
+      expect(retryToolEvidence).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            toolName: 'todo_list',
+            ok: false,
+            summary: expect.stringContaining('dedicated bootstrap Todo'),
+          }),
+        ])
+      );
+      const initialWorkspaceSnapshot = parseRound2UserContextJsonSection<any>(
+        vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[1] as string,
+        'Workspace Snapshot'
+      );
+      expect(initialWorkspaceSnapshot).toMatchObject({
+        isEmpty: true,
+        topLevelDirs: [],
+        topLevelFiles: [],
+      });
     } finally {
       await fs.rm(repoRoot, { recursive: true, force: true });
     }

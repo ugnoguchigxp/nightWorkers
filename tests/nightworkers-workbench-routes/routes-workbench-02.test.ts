@@ -129,6 +129,12 @@ describe('NightWorkers workbench routes', () => {
       '通常の Blueprint 生成では DB/DDL/data model/data binding を設計しない'
     );
     expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
+      '複数件の比較、状態確認、一括操作、ソート、絞り込み、更新対象の見極めが主目的なら table_workspace または DataTableSection を第一候補にする'
+    );
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
+      '単なる task / todo / record 一覧を自動で card 化しない'
+    );
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
       'databaseSchema は必ず {"tables":[],"relations":[]}'
     );
     expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(

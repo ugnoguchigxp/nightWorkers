@@ -44,14 +44,12 @@ export function BlueprintSpecificationWorkspaceViewer({
   activityArtifacts = [],
   initialTab,
   onQueueSession,
-  onStartImplementation,
 }: {
   sessionId: string | null;
   taskMessages: TaskMessage[];
   activityArtifacts?: ActivityArtifact[];
   initialTab?: WorkspaceTab;
   onQueueSession?: () => Promise<void>;
-  onStartImplementation?: () => Promise<void>;
 }) {
   const [workspace, setWorkspace] = useState<BlueprintSpecificationWorkspace | null>(null);
   const [sessions, setSessions] = useState<DesignQuestionnaireSession[]>([]);
@@ -366,11 +364,6 @@ export function BlueprintSpecificationWorkspaceViewer({
             }
             onQueueSession={
               onQueueSession ? () => runSessionAction('queue-session', onQueueSession) : undefined
-            }
-            onStartImplementation={
-              onStartImplementation
-                ? () => runSessionAction('start-implementation', onStartImplementation)
-                : undefined
             }
           />
         ) : (

@@ -37,8 +37,8 @@ describe('Codex NightWorkers MCP setup script', () => {
     expect(installed).toContain('[mcp_servers.context-still]');
     expect(installed).toContain('[mcp_servers.nightworkers]');
     expect(installed).toContain('args = ["run", "codex:mcp"]');
-    expect(installed).toContain('[mcp_servers.nightworkers.tools.read_current_specification]');
-    expect(installed).toContain('[mcp_servers.nightworkers.tools.replace_todo_list]');
+    expect(installed).not.toContain('[mcp_servers.nightworkers.tools.');
+    expect(installed).not.toContain('approval_mode = "approve"');
     expect(installed).not.toContain('apply_patch');
 
     await execFileAsync(

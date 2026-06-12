@@ -64,10 +64,17 @@ describe('standard implementation TodoList builder', () => {
         todos: [{ title: '   ', taskType: 'code_edit' }],
       })
     ).toThrow('Todo #1 requires title.');
-    expect(() =>
-      buildStandardImplementationTodoList({
-        todos: [{ title: 'Implement feature', taskType: '   ' }],
-      })
-    ).toThrow('Todo #1 requires taskType.');
+  });
+
+  it('fills the public Todo contract with internal defaults', () => {
+    const todos = buildStandardImplementationTodoList({
+      todos: [{ seq: 1, title: 'Implement feature' }],
+    });
+
+    expect(todos[2]).toMatchObject({
+      seq: 3,
+      title: 'Implement feature',
+      taskType: 'implementation',
+    });
   });
 });

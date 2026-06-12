@@ -30,6 +30,7 @@ vi.mock('../../api/modules/nightworkers/nightworkers.repository', () => ({
   createTaskRun: vi.fn(),
   getTaskRun: vi.fn(),
   createTaskRunTodo: vi.fn(),
+  replaceTaskRunTodosForRun: vi.fn(),
   listTaskRunTodosForRun: vi.fn(),
   updateTaskRunTodo: vi.fn(),
   createRunEvent: vi.fn(),

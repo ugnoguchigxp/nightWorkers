@@ -19,7 +19,6 @@ import type {
 } from '../types';
 import {
   buildArtifactContext,
-  buildBlueprintArtifactRef,
   buildQuestionnaireWorkspaceArtifactRef,
 } from '../workbenchSelectors';
 import { ArtifactPane } from './ArtifactPane';
@@ -473,47 +472,6 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                     onQueueSession={async () => {
                       if (!workspace.activeSession) return;
                       await workspace.createImplementationQueueEntry(workspace.activeSession.id);
-                    }}
-                    onStartImplementation={async () => {
-                      if (!workspace.activeSession) return;
-                      setArtifactFocus({ type: 'closed' });
-                      await workspace.sendWorkbenchMessage(
-                        workspace.activeSession.id,
-                        [
-                          '現在のSpecification artifactを読み込み、この設計書の実装を開始してください。',
-                          '実装前に read_current_specification で最新の仕様書を確認し、仕様書に沿って必要な変更を進めてください。',
-                        ].join('\n'),
-                        'run_task',
-                        selectedArtifactContext
-                      );
-                    }}
-                    isWorkbenchMessageSubmitting={workspace.isChatSubmitting}
-                    onSubmitWorkbenchMessage={async (prompt, intent) => {
-                      if (workspace.activeSession) {
-                        const result = await workspace.sendWorkbenchMessage(
-                          workspace.activeSession.id,
-                          prompt,
-                          intent,
-                          selectedArtifactContext
-                        );
-                        const latestBlueprintMessage = [...(result?.messages || [])]
-                          .reverse()
-                          .find(
-                            (message) =>
-                              message.messageType === 'markdown_document' &&
-                              (message.metadataJson?.appBlueprint ||
-                                message.metadataJson?.artifactRef?.artifactId)
-                          );
-                        if (latestBlueprintMessage) {
-                          setArtifactFocus({
-                            type: 'artifact',
-                            artifact: buildBlueprintArtifactRef(latestBlueprintMessage),
-                          });
-                          setClearedArtifactContextId(null);
-                        }
-                        return;
-                      }
-                      await submitPrompt(prompt, intent);
                     }}
                   />
                 ) : undefined

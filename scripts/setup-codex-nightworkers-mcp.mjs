@@ -18,15 +18,6 @@ const nextBlock = [
   'args = ["run", "codex:mcp"]',
   `cwd = "${tomlString(repoRoot)}"`,
   'enabled = true',
-  '',
-  '[mcp_servers.nightworkers.tools.read_current_specification]',
-  'approval_mode = "approve"',
-  '',
-  '[mcp_servers.nightworkers.tools.list_recent_specifications]',
-  'approval_mode = "approve"',
-  '',
-  '[mcp_servers.nightworkers.tools.replace_todo_list]',
-  'approval_mode = "approve"',
   '# End NightWorkers MCP registration',
 ].join('\n');
 

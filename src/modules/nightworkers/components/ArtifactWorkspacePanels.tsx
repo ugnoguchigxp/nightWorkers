@@ -141,7 +141,6 @@ export function SpecificationStatusView({
   onGenerateDbDesign,
   onGenerateSpecification,
   onQueueSession,
-  onStartImplementation,
 }: {
   workspace: BlueprintSpecificationWorkspace | null;
   questionnaireSession: DesignQuestionnaireSession | null;
@@ -153,7 +152,6 @@ export function SpecificationStatusView({
   onGenerateDbDesign: () => void;
   onGenerateSpecification: () => void;
   onQueueSession?: () => void;
-  onStartImplementation?: () => void;
 }) {
   const answeredCount = questionnaireSession?.answers.length || 0;
   const questionCount = questionnaireSession ? getQuestionCount(questionnaireSession) : 0;
@@ -267,13 +265,6 @@ export function SpecificationStatusView({
             busy={busyAction === 'queue-session'}
             disabled={!onQueueSession}
             onClick={() => onQueueSession?.()}
-            size="lg"
-          />
-          <StatusActionButton
-            label="今すぐ実装開始"
-            busy={busyAction === 'start-implementation'}
-            disabled={!onStartImplementation}
-            onClick={() => onStartImplementation?.()}
             size="lg"
           />
         </div>

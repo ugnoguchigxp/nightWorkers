@@ -17,7 +17,6 @@ import type {
   TaskMessage,
   TaskRun,
   WorkbenchArtifactRef,
-  WorkbenchChatIntent,
 } from '../types';
 import { DiffViewer, FileViewer, MarkdownViewer, ProjectTree } from './ArtifactFileViewers';
 import { BlueprintSpecificationWorkspaceViewer } from './ArtifactWorkspaceViewer';
@@ -43,9 +42,6 @@ type ArtifactPaneProps = {
   onOpenFile: (path: string) => void;
   onShowDiff: () => void;
   onQueueSession?: () => Promise<void>;
-  onStartImplementation?: () => Promise<void>;
-  onSubmitWorkbenchMessage?: (prompt: string, intent: WorkbenchChatIntent) => Promise<void>;
-  isWorkbenchMessageSubmitting?: boolean;
 };
 
 function workspaceInitialTab(value: unknown) {
@@ -89,9 +85,6 @@ export function ArtifactPane({
   onOpenFile,
   onShowDiff,
   onQueueSession,
-  onStartImplementation,
-  onSubmitWorkbenchMessage,
-  isWorkbenchMessageSubmitting = false,
 }: ArtifactPaneProps) {
   const { t } = useTranslation();
   const [versionArtifactId, setVersionArtifactId] = useState<string | null>(null);
@@ -207,7 +200,6 @@ export function ArtifactPane({
               activityArtifacts={activityArtifacts}
               initialTab={workspaceInitialTab(displayArtifact?.metadata?.initialTab)}
               onQueueSession={onQueueSession}
-              onStartImplementation={onStartImplementation}
             />
           ) : showBlueprint ? (
             <BlueprintViewer

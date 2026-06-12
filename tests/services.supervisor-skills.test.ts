@@ -102,6 +102,15 @@ describe('Supervisor reference registry', () => {
     expect(toolNames).not.toContain('run_verification');
   });
 
+  it('exposes the hono-standard rag variant in the import_project schema', () => {
+    const importProject = getAllowedToolsForJobType('major_code_edit').find(
+      (tool) => tool.name === 'import_project'
+    );
+
+    expect(importProject).toBeTruthy();
+    expect(JSON.stringify(importProject?.inputSchema)).toContain('"rag"');
+  });
+
   it('resolves blueprint references from app blueprint routing', () => {
     const documents = resolveSupervisorReferenceDocuments({
       primaryMode: 'planning',

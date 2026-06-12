@@ -4,16 +4,6 @@ import { createNightWorkersServer } from './server';
 
 const shutdownTimeoutMs = 10_000;
 
-void main().catch((error) => {
-  logEvent({
-    channel: 'api',
-    level: 'error',
-    message: 'server startup failed',
-    meta: { errorMessage: error instanceof Error ? error.message : String(error) },
-  });
-  process.exit(1);
-});
-
 let shuttingDown = false;
 let server: Awaited<ReturnType<typeof createNightWorkersServer>> | null = null;
 
@@ -60,3 +50,13 @@ async function main() {
     shutdownTimeoutMs,
   });
 }
+
+void main().catch((error) => {
+  logEvent({
+    channel: 'api',
+    level: 'error',
+    message: 'server startup failed',
+    meta: { errorMessage: error instanceof Error ? error.message : String(error) },
+  });
+  process.exit(1);
+});

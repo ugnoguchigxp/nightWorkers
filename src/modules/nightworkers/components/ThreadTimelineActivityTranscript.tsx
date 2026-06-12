@@ -8,6 +8,7 @@ import {
   getActivityChangedFiles,
   getCodexCommandOutput,
 } from './ThreadTimeline';
+import { ContextStillToolCard, hasContextStillToolCard } from './ThreadTimelineContextStillCards';
 import { DiffCodeBlock } from './ThreadTimelineDiffView';
 import { ChatMarkdown, NightWorkersCodeBlock } from './ThreadTimelineMarkdown';
 import { MessagePayload } from './ThreadTimelineMessagePayload';
@@ -183,6 +184,9 @@ function TranscriptActivityBlock({
   const codeFilename = activityCodeFilename(event);
   const codeLanguage = activityCodeLanguage(event);
   const defaultOpen = !compact && !isHighVolumeActivity(event);
+  if (hasContextStillToolCard(event)) {
+    return <ContextStillToolCard event={event} />;
+  }
 
   return (
     <details className={`rounded border ${borderClass}`} open={defaultOpen}>

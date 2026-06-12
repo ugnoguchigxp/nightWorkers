@@ -109,7 +109,7 @@ LP は短い価値訴求と GitHub / README / Trust Model への導線に集中�
    - SQLite/libSQL
    - runtime settings
    - logs
-   - desktop app data path
+   - desktop runtime data path
 2. Provider data flow
    - LLM provider に送る prompt / StateCard / tool summaries
    - ローカル DB に残る usage record
@@ -128,7 +128,7 @@ LP は短い価値訴求と GitHub / README / Trust Model への導線に集中�
 6. Desktop boundary
    - Tauri shell
    - Node sidecar
-   - app data path
+   - runtime data path
 7. Known trust limits
    - user-provided Project repo の command はローカルで動く。
    - provider credential と外部 MCP server はユーザー管理。

@@ -28,14 +28,7 @@ export const taskRunSchema = z
   })
   .openapi('TaskRun');
 
-export const taskTypeSchema = z.enum([
-  'code_change',
-  'test_change',
-  'documentation',
-  'review',
-  'investigation',
-  'verification',
-]);
+export const taskTypeSchema = z.string().min(1);
 
 export const todoStatusSchema = z.enum([
   'pending',

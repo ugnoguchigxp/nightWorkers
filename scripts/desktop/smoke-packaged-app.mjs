@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -27,10 +26,7 @@ if (!fs.existsSync(executablePath)) {
   throw new Error(`Packaged app executable was not found: ${executablePath}`);
 }
 
-const runtimeRoot = path.join(
-  os.homedir(),
-  'Library/Application Support/dev.nightworkers.desktop/runtime'
-);
+const runtimeRoot = path.join(repoRoot, 'data');
 const logsDir = path.join(runtimeRoot, 'logs');
 const desktopLogPath = path.join(logsDir, 'desktop.log');
 const sidecarLogPath = path.join(logsDir, 'sidecar.log');

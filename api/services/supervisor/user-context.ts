@@ -1,5 +1,6 @@
 import { describeArtifactContextRef, type SupervisorArtifactContextRef } from './artifact-contract';
 import type { JobType } from './prompt';
+import type { SupervisorWorkspaceSnapshot } from './supervisor-loop-types';
 
 export type Round2UserContextInput = {
   latestUserMessage: string;
@@ -12,6 +13,7 @@ export type Round2UserContextInput = {
   toolResults: unknown[];
   loadedProcedureSummaries: unknown[];
   artifactContextRefs: SupervisorArtifactContextRef[];
+  workspaceSnapshot: SupervisorWorkspaceSnapshot;
 };
 
 export function renderRound2UserContext(input: Round2UserContextInput) {
@@ -31,6 +33,9 @@ export function renderRound2UserContext(input: Round2UserContextInput) {
       null,
       2
     ),
+    '',
+    '[Workspace Snapshot]',
+    JSON.stringify(input.workspaceSnapshot, null, 2),
     '',
     '[Current Execution State]',
     JSON.stringify(
@@ -78,6 +83,7 @@ function round2SectionBoundaryPattern(currentSection: string) {
     'Latest User Request',
     'Goal',
     'Continuity Context',
+    'Workspace Snapshot',
     'Current Execution State',
     'Recent Tool Evidence',
     'Loaded Procedure Summaries',

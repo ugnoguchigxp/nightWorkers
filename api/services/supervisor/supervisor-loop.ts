@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import { appendSupervisorTrace, logger } from '../../lib/logger';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import { estimateTokens } from '../conversation-context/token-budget';
@@ -38,10 +39,11 @@ import {
   findTodoByToolArguments,
   formatErrorMessage,
   formatToolObservation,
+  getBootstrapTodoGap,
   getTemplateImportVerificationGap,
-  normalizeCompletionStatus,
   normalizeJobType,
   normalizeTodoListInput,
+  resolveCurrentTodo,
   toSupervisorTodoContext,
 } from './supervisor-loop-helpers';
 import type { CompactToolResult, SupervisorLoopInput } from './supervisor-loop-types';
@@ -150,6 +152,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     await emitAgentEvent('round1.parsed', round1);
 
     for (step = 1; step <= maxIterations && toolResults.length < maxToolCalls; step += 1) {
+      const workspaceSnapshot = await readWorkspaceSnapshot(repoRoot);
       const allowedTools = getAllowedToolsForJobType(currentJobType);
 
       const round2SystemPrompt = buildRound2ToolCallPrompt({
@@ -183,6 +186,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         toolResults: toolResults.slice(-8),
         loadedProcedureSummaries: loadedProcedureSummaryContext,
         artifactContextRefs: input.artifactContextRefs || [],
+        workspaceSnapshot,
       });
       await emitAgentEvent('round2.prompt_built', {
         systemPrompt: round2SystemPrompt,
@@ -317,123 +321,181 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         continue;
       }
 
-      if (round2.toolCall.name === 'replace_todo_list') {
-        try {
-          const todos = normalizeTodoListInput(round2.toolCall.arguments);
-          const startFirst = round2.toolCall.arguments.startFirst !== false;
-          const now = new Date();
-          currentTodos = await repo.replaceTaskRunTodosForRun(
-            runId,
-            todos.map((todo, index) => ({
-              ...todo,
-              status: startFirst && index === 0 ? 'running' : 'pending',
-              startedAt: startFirst && index === 0 ? now : null,
-            }))
-          );
+      if (round2.toolCall.name === 'todo_list') {
+        const operation = String(round2.toolCall.arguments.operation || '').trim();
+        if (operation === 'list') {
           const result = {
             step,
-            toolName: 'replace_todo_list',
+            toolName: 'todo_list',
             ok: true,
             arguments: round2.toolCall.arguments,
-            summary: `tool=replace_todo_list status=ok\ntodos=${currentTodos.length}`,
+            summary: `tool=todo_list operation=list status=ok\ntodos=${currentTodos.length}`,
             payload: { todos: currentTodos.map(toSupervisorTodoContext) },
           };
           toolResults.push(result);
           await emitAgentEvent('tool.finished', result);
-        } catch (err) {
-          const result = {
-            step,
-            toolName: 'replace_todo_list',
-            ok: false,
-            arguments: round2.toolCall.arguments,
-            summary: `tool=replace_todo_list status=failed\nerror=${formatErrorMessage(err)}`,
-            error: formatErrorMessage(err),
-          };
-          toolResults.push(result);
-          await emitAgentEvent('tool.failed', result, 'warning');
-        }
-        continue;
-      }
-
-      if (round2.toolCall.name === 'start_todo') {
-        const todo = findTodoByToolArguments(currentTodos, round2.toolCall.arguments);
-        if (!todo) {
-          const result = {
-            step,
-            toolName: 'start_todo',
-            ok: false,
-            arguments: round2.toolCall.arguments,
-            summary: 'Todo not found for start_todo.',
-          };
-          toolResults.push(result);
-          await emitAgentEvent('tool.validation_failed', result, 'warning');
           continue;
         }
-        const now = new Date();
-        for (const candidate of currentTodos) {
-          if (candidate.id === todo.id) {
-            await repo.updateTaskRunTodo(candidate.id, { status: 'running', startedAt: now });
-          } else if (candidate.status === 'running') {
-            await repo.updateTaskRunTodo(candidate.id, { status: 'pending' });
-          }
-        }
-        currentTodos = await repo.listTaskRunTodosForRun(runId);
-        const result = {
-          step,
-          toolName: 'start_todo',
-          ok: true,
-          arguments: round2.toolCall.arguments,
-          summary: `tool=start_todo status=ok\nseq=${todo.seq}`,
-          payload: { todos: currentTodos.map(toSupervisorTodoContext) },
-        };
-        toolResults.push(result);
-        await emitAgentEvent('tool.finished', result);
-        continue;
-      }
 
-      if (round2.toolCall.name === 'complete_todo') {
-        const todo = findTodoByToolArguments(currentTodos, round2.toolCall.arguments);
-        const status = normalizeCompletionStatus(round2.toolCall.arguments.status);
-        if (!todo || !status) {
-          const result = {
-            step,
-            toolName: 'complete_todo',
-            ok: false,
-            arguments: round2.toolCall.arguments,
-            summary: !todo ? 'Todo not found for complete_todo.' : 'Invalid completion status.',
-          };
-          toolResults.push(result);
-          await emitAgentEvent('tool.validation_failed', result, 'warning');
+        if (operation === 'replace') {
+          try {
+            const todos = normalizeTodoListInput(round2.toolCall.arguments);
+            const bootstrapGap = getBootstrapTodoGap({
+              workspaceSnapshot,
+              currentJobType,
+              todos,
+            });
+            if (bootstrapGap) {
+              const result = {
+                step,
+                toolName: 'todo_list',
+                ok: false,
+                arguments: round2.toolCall.arguments,
+                summary: `tool=todo_list operation=replace status=failed\nerror=${bootstrapGap}`,
+                error: bootstrapGap,
+              };
+              toolResults.push(result);
+              await emitAgentEvent('tool.validation_failed', result, 'warning');
+              continue;
+            }
+            const startFirst = round2.toolCall.arguments.startFirst !== false;
+            const now = new Date();
+            currentTodos = await repo.replaceTaskRunTodosForRun(
+              runId,
+              todos.map((todo, index) => ({
+                ...todo,
+                taskType: 'implementation',
+                procedureId: null,
+                dependsOn: [],
+                status: startFirst && index === 0 ? 'running' : 'pending',
+                startedAt: startFirst && index === 0 ? now : null,
+              }))
+            );
+            const result = {
+              step,
+              toolName: 'todo_list',
+              ok: true,
+              arguments: round2.toolCall.arguments,
+              summary: `tool=todo_list operation=replace status=ok\ntodos=${currentTodos.length}`,
+              payload: { todos: currentTodos.map(toSupervisorTodoContext) },
+            };
+            toolResults.push(result);
+            await emitAgentEvent('tool.finished', result);
+          } catch (err) {
+            const result = {
+              step,
+              toolName: 'todo_list',
+              ok: false,
+              arguments: round2.toolCall.arguments,
+              summary: `tool=todo_list operation=replace status=failed\nerror=${formatErrorMessage(err)}`,
+              error: formatErrorMessage(err),
+            };
+            toolResults.push(result);
+            await emitAgentEvent('tool.failed', result, 'warning');
+          }
           continue;
         }
-        const now = new Date();
-        await repo.updateTaskRunTodo(todo.id, {
-          status,
-          statusReason:
-            typeof round2.toolCall.arguments.statusReason === 'string'
-              ? round2.toolCall.arguments.statusReason
-              : `Marked ${status} by Supervisor.`,
-          completedAt: now,
-          startedAt: todo.startedAt ? new Date(todo.startedAt as any) : now,
-        });
-        currentTodos = await repo.listTaskRunTodosForRun(runId);
-        if (round2.toolCall.arguments.autoStartNext !== false) {
-          const nextTodo = currentTodos.find((candidate) => candidate.status === 'pending');
-          if (nextTodo) {
-            await repo.updateTaskRunTodo(nextTodo.id, { status: 'running', startedAt: new Date() });
-            currentTodos = await repo.listTaskRunTodosForRun(runId);
+
+        if (operation === 'start') {
+          const todo = findTodoByToolArguments(currentTodos, round2.toolCall.arguments);
+          if (!todo) {
+            const result = {
+              step,
+              toolName: 'todo_list',
+              ok: false,
+              arguments: round2.toolCall.arguments,
+              summary: 'Todo seq not found for todo_list operation=start.',
+            };
+            toolResults.push(result);
+            await emitAgentEvent('tool.validation_failed', result, 'warning');
+            continue;
           }
+          const now = new Date();
+          for (const candidate of currentTodos) {
+            if (candidate.id === todo.id) {
+              await repo.updateTaskRunTodo(candidate.id, { status: 'running', startedAt: now });
+            } else if (candidate.status === 'running') {
+              await repo.updateTaskRunTodo(candidate.id, { status: 'pending' });
+            }
+          }
+          currentTodos = await repo.listTaskRunTodosForRun(runId);
+          const result = {
+            step,
+            toolName: 'todo_list',
+            ok: true,
+            arguments: round2.toolCall.arguments,
+            summary: `tool=todo_list operation=start status=ok\nseq=${todo.seq}`,
+            payload: { todos: currentTodos.map(toSupervisorTodoContext) },
+          };
+          toolResults.push(result);
+          await emitAgentEvent('tool.finished', result);
+          continue;
         }
+
+        if (operation === 'done' || operation === 'block' || operation === 'fail') {
+          const seqTarget = findTodoByToolArguments(currentTodos, round2.toolCall.arguments);
+          const currentResolution = seqTarget
+            ? seqTarget.status === 'running'
+              ? { ok: true as const, todo: seqTarget }
+              : { ok: false as const, errorCode: 'CURRENT_TODO_MISSING' }
+            : resolveCurrentTodo(currentTodos);
+          const status =
+            operation === 'done' ? 'passed' : operation === 'block' ? 'needs_human' : 'failed';
+          if (!currentResolution.ok) {
+            const result = {
+              step,
+              toolName: 'todo_list',
+              ok: false,
+              arguments: round2.toolCall.arguments,
+              summary:
+                currentResolution.errorCode === 'CURRENT_TODO_MISSING'
+                  ? 'No running Todo exists for the current run.'
+                  : 'Multiple running Todos exist; current Todo is not unique.',
+            };
+            toolResults.push(result);
+            await emitAgentEvent('tool.validation_failed', result, 'warning');
+            continue;
+          }
+          const todo = currentResolution.todo;
+          const now = new Date();
+          await repo.updateTaskRunTodo(todo.id, {
+            status,
+            completedAt: now,
+            startedAt: todo.startedAt ? new Date(todo.startedAt as any) : now,
+          });
+          currentTodos = await repo.listTaskRunTodosForRun(runId);
+          if (operation === 'done') {
+            const nextTodo = currentTodos.find((candidate) => candidate.status === 'pending');
+            if (nextTodo) {
+              await repo.updateTaskRunTodo(nextTodo.id, {
+                status: 'running',
+                startedAt: new Date(),
+              });
+              currentTodos = await repo.listTaskRunTodosForRun(runId);
+            }
+          }
+          const result = {
+            step,
+            toolName: 'todo_list',
+            ok: true,
+            arguments: round2.toolCall.arguments,
+            summary: `tool=todo_list operation=${operation} status=ok\nseq=${todo.seq} todoStatus=${status}`,
+            payload: { todos: currentTodos.map(toSupervisorTodoContext) },
+          };
+          toolResults.push(result);
+          await emitAgentEvent('tool.finished', result);
+          continue;
+        }
+
         const result = {
           step,
-          toolName: 'complete_todo',
-          ok: true,
+          toolName: 'todo_list',
+          ok: false,
           arguments: round2.toolCall.arguments,
-          summary: `tool=complete_todo status=ok\nseq=${todo.seq} todoStatus=${status}`,
-          payload: { todos: currentTodos.map(toSupervisorTodoContext) },
+          summary: `tool=todo_list status=failed\nerror=Invalid operation: ${operation || '(empty)'}`,
         };
         toolResults.push(result);
-        await emitAgentEvent('tool.finished', result);
+        await emitAgentEvent('tool.validation_failed', result, 'warning');
         continue;
       }
 
@@ -449,7 +511,9 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             arguments: round2.toolCall.arguments,
             summary: `Cannot finalize while TodoList has open items: ${openTodos
               .map((todo) => `#${todo.seq} ${todo.status}`)
-              .join(', ')}. Use complete_todo first.`,
+              .join(
+                ', '
+              )}. Use todo_list operation=done, operation=block, or operation=fail first.`,
             payload: { todos: currentTodos.map(toSupervisorTodoContext) },
           };
           toolResults.push(result);
@@ -626,4 +690,26 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     'Schema-first supervisor loop finished'
   );
   return { finalReport: finalReportText, terminalState, summary, stoppedBy, riskLevel };
+}
+
+async function readWorkspaceSnapshot(repoRoot: string) {
+  const entries = await fs.readdir(repoRoot, { withFileTypes: true }).catch((error: any) => {
+    if (error?.code === 'ENOENT') return [];
+    throw error;
+  });
+  const visible = entries.filter((entry) => entry.name !== '.DS_Store' && entry.name !== '.git');
+  const topLevelDirs = visible
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .slice(0, 20);
+  const topLevelFiles = visible
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .slice(0, 20);
+  return {
+    isEmpty: visible.length === 0,
+    topLevelDirs,
+    topLevelFiles,
+    truncated: visible.length > topLevelDirs.length + topLevelFiles.length,
+  };
 }

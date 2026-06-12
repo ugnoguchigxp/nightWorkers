@@ -13,6 +13,9 @@
 - e-commerce、dashboard、admin、content、workflow などのドメインらしさを、generic overview ではなく実際の画面構成とコンポーネント選定に反映する。
 - section は必要なものだけを選ぶ。見栄えのために hero、画像、KPI、chart、activity、marketing section を自動追加しない。
 - workflow / CRUD / kanban / admin などの作業画面では、見た目の優先度だけでなく、実際の操作順序、使用感、作業前に必要な入力、画面上の視線移動を考えて section と props を決める。
+- 一覧系 section は、見た目の好みで cards に寄せず、主操作に合わせて公平に選ぶ。複数件の比較、状態確認、一括操作、ソート、絞り込み、更新対象の見極めが主目的なら `table_workspace` または `DataTableSection` を第一候補にする。
+- `CardGridSection` は、アイテムごとの要約、視覚的な分類、候補ブラウズ、テンプレート選択、リッチなカード単位アクションが主目的のときに使う。単なる task / todo / record 一覧を自動で card 化しない。
+- TODO / task / issue / order / customer などの CRUD・運用一覧で、ユーザーが「一覧」「管理」「最小構成」「登録と一覧だけ」を求める場合は、検索 header と table workspace、または compact form と table workspace を基本形として考える。board/card/gallery を明示された場合だけ card や kanban を主役にする。
 - Kanban なら KanbanSection を主役にし、検索・フィルタ・表示切替は KanbanSection.props.filters / views / segments としてボード上部の toolbar に出す。ボードを操作する前に使う controls をボード下に置かない。
 - KanbanSection の props は Backlog / In Progress / Done 相当の3列 `columns: [{id,title,cards:[{id,title,description,assignee,priority,dueDate}]}]` を基本形にする。各 column には、画面イメージを確認できる sample card を最低1件入れる。`boardLabel`、`boardDescription`、`filters` を必要に応じて入れる。ボード、列、カード、検索、フィルタの確認が目的なら DataTableSection を使わない。
 - Kanban では QuickActionsSection、EmptyState、FormSection、DataTableSection を自動追加しない。ユーザーが明示的に「新規作成導線」「空状態」「編集フォーム」「表形式一覧」を求めた場合だけ使う。
@@ -86,6 +89,7 @@ AppBlueprint JSON は次の root 形にする。
 - Dashboard なら、ユーザーが metrics や monitoring を求めた場合だけ KPI、trend、activity、alert/notification を入れる。通常の作業画面を dashboard っぽく盛らない。
 - Admin なら filters、bulk action、status、audit/history、detail/edit 導線など、管理作業に直接必要な section だけを入れる。
 - Kanban なら KanbanSection を中心にし、必要なら MainSearchNavigationSection を添える。QuickActionsSection、EmptyState、FormSection、DataTableSection に逃がさない。SplitHeroSection、画像、棒グラフ、KPI summary は通常不要。
+- CRUD / task management / admin list では、主役が record collection なのに card grid を先に置いていないか確認する。比較や更新のしやすさが主目的なら table 系を優先する。
 - 「最小構成」「シンプル」「基本操作」「画面だけ」の場合、screen あたり 1-3 section を基本にし、中心操作に直結しない section は削る。
 - どのドメインでも、section 名、componentName、props のサンプル表示内容が画面目的に対応していることを確認する。table/column の具体化は DB Design workflow に渡す。
 

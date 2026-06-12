@@ -5,7 +5,11 @@ import {
 } from './execution-review';
 import type { JobType } from './prompt';
 import { jobTypes } from './prompt';
-import type { SupervisorLoopInput, SupervisorTodoContext } from './supervisor-loop-types';
+import type {
+  SupervisorLoopInput,
+  SupervisorTodoContext,
+  SupervisorWorkspaceSnapshot,
+} from './supervisor-loop-types';
 
 type CompactToolResult = {
   step: number;
@@ -46,7 +50,7 @@ export function toSupervisorTodoContext(todo: {
 
 export function normalizeTodoListInput(args: Record<string, unknown>) {
   if (!Array.isArray(args.todos) || args.todos.length === 0) {
-    throw new Error('replace_todo_list requires a non-empty todos array.');
+    throw new Error('todo_list operation=replace requires a non-empty todos array.');
   }
   return args.todos.map((raw, index) => {
     if (!raw || typeof raw !== 'object') {
@@ -55,57 +59,68 @@ export function normalizeTodoListInput(args: Record<string, unknown>) {
     const todo = raw as Record<string, unknown>;
     const seq = typeof todo.seq === 'number' ? todo.seq : index + 1;
     const title = typeof todo.title === 'string' ? todo.title.trim() : '';
-    const taskType = typeof todo.taskType === 'string' ? todo.taskType.trim() : '';
     if (!title) throw new Error(`Todo #${seq} requires title.`);
-    if (!taskType) throw new Error(`Todo #${seq} requires taskType.`);
-    const dependsOn = Array.isArray(todo.dependsOn)
-      ? todo.dependsOn.filter(
-          (value): value is string | number =>
-            typeof value === 'string' || typeof value === 'number'
-        )
-      : [];
     return {
       seq,
       title,
       description: typeof todo.description === 'string' ? todo.description : null,
-      taskType,
-      procedureId: typeof todo.procedureId === 'string' ? todo.procedureId : null,
-      dependsOn,
     };
   });
+}
+
+const BOOTSTRAP_TOOL_NAMES = ['import_project', 'copy_directory', 'apply_patch'] as const;
+
+export function getBootstrapTodoGap(input: {
+  workspaceSnapshot: SupervisorWorkspaceSnapshot;
+  currentJobType: JobType;
+  todos: Array<{ title: string; description?: string | null; procedureId?: string | null }>;
+}): string | null {
+  if (input.currentJobType !== 'major_code_edit' || !input.workspaceSnapshot.isEmpty) return null;
+  const hasExplicitBootstrapTodo = input.todos.some((todo) => {
+    const haystack = [todo.title, todo.description, todo.procedureId]
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .join('\n');
+    return BOOTSTRAP_TOOL_NAMES.some((toolName) => haystack.includes(toolName));
+  });
+  if (hasExplicitBootstrapTodo) return null;
+  return 'Empty project roots require a dedicated bootstrap Todo that explicitly names the first workspace-creation tool, such as import_project, copy_directory, or apply_patch.';
 }
 
 export function findTodoByToolArguments<TTodo extends { id: string; seq: number }>(
   todos: TTodo[],
   args: Record<string, unknown>
 ): TTodo | null {
-  const todoId = typeof args.todoId === 'string' ? args.todoId : null;
-  if (todoId) return todos.find((todo) => todo.id === todoId) ?? null;
   const seq = typeof args.seq === 'number' ? args.seq : null;
   if (seq !== null) return todos.find((todo) => todo.seq === seq) ?? null;
   return null;
 }
 
-export function normalizeCompletionStatus(value: unknown) {
-  if (value === 'passed' || value === 'failed' || value === 'skipped' || value === 'needs_human') {
-    return value;
-  }
-  return null;
+export function resolveCurrentTodo<TTodo extends { status: string }>(todos: TTodo[]) {
+  const running = todos.filter((todo) => todo.status === 'running');
+  if (running.length === 0) return { ok: false as const, errorCode: 'CURRENT_TODO_MISSING' };
+  if (running.length > 1) return { ok: false as const, errorCode: 'CURRENT_TODO_NOT_UNIQUE' };
+  return { ok: true as const, todo: running[0] };
 }
 
 export function getTemplateImportVerificationGap(toolResults: CompactToolResult[]): string | null {
-  const copiedTemplate = toolResults.some(
-    (result) => result.ok && result.toolName === 'copy_directory'
+  const importedTemplate = toolResults.some(
+    (result) =>
+      result.ok && (result.toolName === 'copy_directory' || result.toolName === 'import_project')
   );
-  if (!copiedTemplate) return null;
+  if (!importedTemplate) return null;
 
-  const readPackageJson = toolResults.some((result) => {
+  const readProjectManifest = toolResults.some((result) => {
     if (!result.ok || result.toolName !== 'read_file') return false;
     const filePath = String(result.arguments.filePath || '');
-    return filePath === 'package.json' || filePath.endsWith('/package.json');
+    return (
+      filePath === 'package.json' ||
+      filePath.endsWith('/package.json') ||
+      filePath === 'pyproject.toml' ||
+      filePath.endsWith('/pyproject.toml')
+    );
   });
-  if (!readPackageJson) {
-    return 'Cannot finalize after copy_directory before reading package.json to identify available verification scripts.';
+  if (!readProjectManifest) {
+    return 'Cannot finalize after template import before reading package.json or pyproject.toml to identify available verification scripts.';
   }
 
   const ranVerification = toolResults.some(
@@ -113,10 +128,12 @@ export function getTemplateImportVerificationGap(toolResults: CompactToolResult[
       result.ok &&
       (result.toolName === 'run_verification' ||
         (result.toolName === 'run_command' &&
-          /\b(build|lint|typecheck|test|verify)\b/.test(String(result.arguments.command || ''))))
+          /\b(build|lint|typecheck|test|verify|pytest|ruff|pyright)\b/.test(
+            String(result.arguments.command || '')
+          )))
   );
   if (!ranVerification) {
-    return 'Cannot finalize after copy_directory before running package.json-based verification such as build, lint, typecheck, test, or verify.';
+    return 'Cannot finalize after template import before running manifest-based verification such as build, lint, typecheck, test, verify, pytest, ruff, or pyright.';
   }
 
   return null;

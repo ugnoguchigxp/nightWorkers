@@ -155,7 +155,7 @@ path and current limits.
 ## Trust and Local-First Model
 NightWorkers stores its primary runtime state locally. Development mode uses the
 repo-local database/settings/log defaults; desktop mode writes runtime state
-under the macOS app data directory. Registered Project work is still performed
+under the repo-local `data` directory by default. Registered Project work is still performed
 relative to the registered Project repo root, not a temporary provider or
 desktop resource directory.
 
@@ -185,17 +185,16 @@ The generated app is written to:
 src-tauri/target/release/bundle/macos/NightWorkers.app
 ```
 
-Desktop runtime state is stored under the macOS app data directory, not the repo
-checkout. On this platform the default identifier path is:
+Desktop runtime state is stored under the repo-local `data` directory by default:
 
 ```text
-~/Library/Application Support/dev.nightworkers.desktop/runtime
+data
 ```
 
 Desktop diagnostics are written under:
 
 ```text
-~/Library/Application Support/dev.nightworkers.desktop/runtime/logs
+data/logs
 ```
 
 The main files are `desktop.log` for the Tauri shell startup path, `sidecar.log`

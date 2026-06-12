@@ -4,7 +4,8 @@ export type TaskType =
   | 'documentation'
   | 'review'
   | 'investigation'
-  | 'verification';
+  | 'verification'
+  | string;
 
 export type TodoStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'needs_human';
 

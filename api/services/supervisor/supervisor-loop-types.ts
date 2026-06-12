@@ -26,6 +26,13 @@ export interface SupervisorLoopInput {
   artifactContextRefs?: SupervisorArtifactContextRef[];
 }
 
+export type SupervisorWorkspaceSnapshot = {
+  isEmpty: boolean;
+  topLevelDirs: string[];
+  topLevelFiles: string[];
+  truncated: boolean;
+};
+
 export type SupervisorTodoContext = {
   id: string;
   seq: number;

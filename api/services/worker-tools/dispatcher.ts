@@ -2,13 +2,16 @@ import type { AgentSafetyPolicy } from '../agent-runtime/types';
 import type { WorkerToolName } from '../tool-policy/types';
 import {
   applyPatchTool,
+  cloneGitRepoTool,
   copyDirectoryTool,
   fetchContentTool,
   findFileTool,
   gitDiffTool,
   gitStatusTool,
+  importProjectTool,
   inspectStructureTool,
   listDirTool,
+  materializeTemplateTool,
   mcpCallTool,
   readCurrentSpecificationTool,
   readFileTool,
@@ -146,6 +149,8 @@ export async function executeWorkerTool(
     };
   }
 
+  // Keep all direct workspace writes behind this dispatcher so future proposal/dry-run
+  // runs can capture planned changes here before any tool mutates the real repo.
   if (toolName === 'copy_directory') {
     return {
       result: await copyDirectoryTool({
@@ -156,6 +161,58 @@ export async function executeWorkerTool(
         repoRoot,
         allowedPaths: safetyPolicy?.allowedPaths,
         externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
+        deniedPaths: safetyPolicy?.deniedPaths,
+      }),
+    };
+  }
+
+  if (toolName === 'import_project') {
+    return {
+      result: await importProjectTool({
+        repoUrl: args.repoUrl as string | undefined,
+        templateId: args.templateId as string | undefined,
+        variant: args.variant as string | undefined,
+        overlays: args.overlays as string[] | undefined,
+        targetPath: args.targetPath as string | undefined,
+        ref: args.ref as string | undefined,
+        depth: args.depth as number | undefined,
+        overwrite: args.overwrite as boolean | undefined,
+        stripGitDir: args.stripGitDir as boolean | undefined,
+        exclude: args.exclude as string[] | undefined,
+        repoRoot,
+        allowedPaths: safetyPolicy?.allowedPaths,
+        deniedPaths: safetyPolicy?.deniedPaths,
+      }),
+    };
+  }
+
+  if (toolName === 'clone_git_repo') {
+    return {
+      result: await cloneGitRepoTool({
+        repoUrl: args.repoUrl as string,
+        targetPath: args.targetPath as string | undefined,
+        ref: args.ref as string | undefined,
+        depth: args.depth as number | undefined,
+        overwrite: args.overwrite as boolean | undefined,
+        stripGitDir: args.stripGitDir as boolean | undefined,
+        repoRoot,
+        allowedPaths: safetyPolicy?.allowedPaths,
+        deniedPaths: safetyPolicy?.deniedPaths,
+      }),
+    };
+  }
+
+  if (toolName === 'materialize_template') {
+    return {
+      result: await materializeTemplateTool({
+        templateId: args.templateId as string,
+        variant: args.variant as string | undefined,
+        overlays: args.overlays as string[] | undefined,
+        targetPath: args.targetPath as string | undefined,
+        overwrite: args.overwrite as boolean | undefined,
+        exclude: args.exclude as string[] | undefined,
+        repoRoot,
+        allowedPaths: safetyPolicy?.allowedPaths,
         deniedPaths: safetyPolicy?.deniedPaths,
       }),
     };

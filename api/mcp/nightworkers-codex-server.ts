@@ -3,11 +3,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { ensureNightWorkersSchema } from '../db/bootstrap';
+import * as repo from '../modules/nightworkers/nightworkers.repository';
+import { importProjectTool } from '../services/worker-tools/import-project';
 import {
   listRecentSpecificationsTool,
   readCurrentSpecificationTool,
 } from '../services/worker-tools/read-current-specification';
-import { replaceTodoListTool } from '../services/worker-tools/replace-todo-list';
+import { todoListTool } from '../services/worker-tools/todo-list';
 import type { WorkerToolResult } from '../services/worker-tools/types';
 
 const server = new McpServer({
@@ -51,26 +53,34 @@ server.registerTool(
 );
 
 server.registerTool(
-  'replace_todo_list',
+  'todo_list',
   {
-    title: 'Replace Todo List',
+    title: 'Todo List',
     description:
-      'Replace the current run TodoList. Pass only the implementation Todos decomposed by the LLM; NightWorkers automatically adds initial_instructions, context_compile, code review, verify, and knowledge-capture gates.',
+      'Maintain the current run TodoList with one JSON operation. Use operation=list, replace, start, done, block, or fail. done automatically starts the next pending Todo.',
     inputSchema: z.object({
       runId: z
         .string()
         .trim()
         .optional()
         .describe('NightWorkers run id. Defaults to NIGHTWORKERS_RUN_ID when available.'),
+      operation: z
+        .enum(['list', 'replace', 'start', 'done', 'block', 'fail'])
+        .describe('Todo operation to perform.'),
+      seq: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          'Todo seq for start/done/block/fail. done may omit seq to complete the current running Todo.'
+        ),
       todos: z
         .array(
           z.object({
-            seq: z.number().int().positive().optional(),
+            seq: z.number().int().positive(),
             title: z.string().trim().min(1),
             description: z.string().optional(),
-            taskType: z.string().trim().min(1),
-            procedureId: z.string().trim().optional(),
-            dependsOn: z.array(z.union([z.string(), z.number()])).optional(),
           })
         )
         .optional()
@@ -83,14 +93,114 @@ server.registerTool(
         .describe('Whether the first fixed gate starts as running. Default: true.'),
     }),
   },
-  async ({ runId, todos, startFirst }) =>
+  async ({ runId, operation, seq, todos, startFirst }) =>
     toolResultToMcp(
-      await replaceTodoListTool({
+      await todoListTool({
         runId: runId || process.env.NIGHTWORKERS_RUN_ID || '',
+        operation,
+        seq,
         todos,
         startFirst,
       })
     )
+);
+
+server.registerTool(
+  'import_project',
+  {
+    title: 'Import Project',
+    description:
+      'Single import entrypoint for NightWorkers projects. Pass templateId for registered standard templates such as hono-standard, or repoUrl for arbitrary Git repositories.',
+    inputSchema: z.object({
+      taskId: z
+        .string()
+        .trim()
+        .optional()
+        .describe('NightWorkers task id. Defaults to NIGHTWORKERS_TASK_ID when available.'),
+      templateId: z
+        .enum(['hono-standard', 'python-standard'])
+        .optional()
+        .describe('Registered standard template id.'),
+      repoUrl: z.string().trim().optional().describe('Git repository URL or local git path.'),
+      variant: z.string().trim().optional().describe('Template variant, e.g. sqlite or postgres.'),
+      overlays: z
+        .array(z.string().trim().min(1))
+        .optional()
+        .describe('Optional overlay refs such as ssr or ssg.'),
+      targetPath: z
+        .string()
+        .trim()
+        .optional()
+        .describe('Project-root-relative target path. Defaults to the Project root.'),
+      overwrite: z
+        .boolean()
+        .optional()
+        .describe('Allow writing into a non-empty target only when replacement is intended.'),
+      exclude: z.array(z.string().trim().min(1)).optional().describe('Extra paths to exclude.'),
+      ref: z
+        .string()
+        .trim()
+        .optional()
+        .describe('Optional Git branch, tag, or commit when repoUrl is used.'),
+      depth: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe('Shallow clone depth when repoUrl is used and ref is omitted.'),
+      stripGitDir: z
+        .boolean()
+        .optional()
+        .describe('Remove nested .git metadata when repoUrl is used. Default: true.'),
+    }),
+  },
+  async ({
+    taskId,
+    templateId,
+    repoUrl,
+    variant,
+    overlays,
+    targetPath,
+    overwrite,
+    exclude,
+    ref,
+    depth,
+    stripGitDir,
+  }) => {
+    const resolvedTaskId = taskId || process.env.NIGHTWORKERS_TASK_ID || '';
+    const task = resolvedTaskId ? await repo.getTask(resolvedTaskId) : null;
+    const repository = task ? await repo.getRepository(task.repositoryId) : null;
+    if (!task || !repository) {
+      return toolResultToMcp({
+        ok: false,
+        toolName: 'import_project',
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        payload: { mode: '', template: null, git: null },
+        error: {
+          code: 'TASK_REPOSITORY_NOT_FOUND',
+          message: 'Cannot resolve the current NightWorkers task repository.',
+        },
+      });
+    }
+    return toolResultToMcp(
+      await importProjectTool({
+        templateId,
+        repoUrl,
+        variant,
+        overlays,
+        targetPath,
+        overwrite,
+        exclude,
+        ref,
+        depth,
+        stripGitDir,
+        repoRoot: repository.localPath,
+        allowedPaths: repository.safetyPolicy?.allowedPaths,
+        deniedPaths: repository.safetyPolicy?.deniedPaths,
+      })
+    );
+  }
 );
 
 export async function startNightWorkersCodexMcpServer() {

@@ -15,6 +15,7 @@ import type { WorkerToolResult } from './types';
 
 const execAsync = promisify(exec);
 const MAX_OUTPUT_CHARS = 20000;
+const MAX_EXEC_BUFFER_BYTES = 10 * 1024 * 1024;
 
 async function writeCommandOutputArtifact(input: {
   command: string;
@@ -131,7 +132,7 @@ export async function runCommandTool(
     cwd = '',
     timeoutSeconds = 60,
     maxCommandSeconds,
-    compressionMode = 'auto',
+    compressionMode = 'off',
     blockedCommands = [],
     allowedPaths,
     externalAllowedPaths,
@@ -232,7 +233,7 @@ export async function runCommandTool(
     const promise = execAsync(command, {
       cwd: targetCwd,
       timeout: effectiveTimeoutSeconds * 1000,
-      maxBuffer: 50 * 1024 * 1024, // 50MB buffer
+      maxBuffer: MAX_EXEC_BUFFER_BYTES,
     });
 
     const { stdout, stderr } = await promise;

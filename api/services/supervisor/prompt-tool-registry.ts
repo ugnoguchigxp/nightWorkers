@@ -58,7 +58,7 @@ export const jobTypeDescriptions: Record<JobType, string> = {
   release: 'リリース分類。初期実装では直接実行しない。',
 };
 
-export type TodoToolName = 'replace_todo_list' | 'start_todo' | 'complete_todo';
+export type TodoToolName = 'todo_list';
 
 export type ToolDefinition = {
   name:
@@ -143,6 +143,45 @@ export const toolRegistry = {
       ['url']
     ),
   },
+  import_project: {
+    name: 'import_project',
+    description:
+      'Project import の単一入口。登録済み標準テンプレートは templateId、任意の Git repository は repoUrl を渡す。run_command git clone で代替しない。',
+    inputSchema: objectSchema(
+      {
+        templateId: { type: 'string', enum: ['hono-standard', 'python-standard'] },
+        repoUrl: { type: 'string' },
+        variant: {
+          type: 'string',
+          enum: [
+            'sqlite',
+            'baseline',
+            'postgres',
+            'pgvector',
+            'rag',
+            'turso',
+            'cloudflare',
+            'api-only',
+            'auth',
+          ],
+        },
+        overlays: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: ['ssr', 'ssg', 'celery', 'opentelemetry'],
+          },
+        },
+        targetPath: { type: 'string' },
+        ref: { type: 'string' },
+        depth: { type: 'number' },
+        overwrite: { type: 'boolean' },
+        stripGitDir: { type: 'boolean' },
+        exclude: { type: 'array', items: { type: 'string' } },
+      },
+      []
+    ),
+  },
   copy_directory: {
     name: 'copy_directory',
     description:
@@ -178,7 +217,8 @@ export const toolRegistry = {
   },
   run_command: {
     name: 'run_command',
-    description: '検証や確認のためにコマンドを実行する。',
+    description:
+      '検証や確認のためにコマンドを実行する。stdout/stderr は既定で全文を返す。出力が大きすぎる場合だけ compressionMode=auto を指定する。',
     inputSchema: objectSchema(
       {
         command: { type: 'string' },
@@ -203,7 +243,8 @@ export const toolRegistry = {
   },
   run_verification: {
     name: 'run_verification',
-    description: '明示的な検証コマンドを実行する。',
+    description:
+      '明示的な検証コマンドを実行する。stdout/stderr は既定で全文を返す。出力が大きすぎる場合だけ compressionMode=auto を指定する。',
     inputSchema: objectSchema(
       {
         command: { type: 'string' },
@@ -259,59 +300,33 @@ export const toolRegistry = {
       ['jobType']
     ),
   },
-  replace_todo_list: {
-    name: 'replace_todo_list',
+  todo_list: {
+    name: 'todo_list',
     description:
-      'Run 内部 TodoList を全置換する。major_code_edit の最初に必ず使う。既定では最初の Todo を running にする。',
+      'Run 内部 TodoList を単一 JSON operation で管理する。operation=list/replace/start/done/block/fail。done は次の pending Todo を自動で running にする。',
     inputSchema: objectSchema(
       {
+        operation: {
+          type: 'string',
+          enum: ['list', 'replace', 'start', 'done', 'block', 'fail'],
+        },
+        seq: { type: 'number' },
         todos: {
           type: 'array',
-          minItems: 1,
           items: {
             type: 'object',
-            required: ['seq', 'title', 'taskType'],
+            required: ['seq', 'title'],
             additionalProperties: false,
             properties: {
               seq: { type: 'number' },
               title: { type: 'string' },
               description: { type: 'string' },
-              taskType: { type: 'string' },
-              procedureId: { type: 'string' },
-              dependsOn: {
-                type: 'array',
-                items: { oneOf: [{ type: 'string' }, { type: 'number' }] },
-              },
             },
           },
         },
         startFirst: { type: 'boolean' },
       },
-      ['todos']
-    ),
-  },
-  start_todo: {
-    name: 'start_todo',
-    description:
-      '指定 Todo を running にし、他の未完了 running Todo を pending に戻す。todoId または seq を指定する。',
-    inputSchema: objectSchema({
-      todoId: { type: 'string' },
-      seq: { type: 'number' },
-    }),
-  },
-  complete_todo: {
-    name: 'complete_todo',
-    description:
-      '指定 Todo を passed / failed / skipped / needs_human のいずれかで完了させる。todoId または seq を指定する。',
-    inputSchema: objectSchema(
-      {
-        todoId: { type: 'string' },
-        seq: { type: 'number' },
-        status: { type: 'string', enum: ['passed', 'failed', 'skipped', 'needs_human'] },
-        statusReason: { type: 'string' },
-        autoStartNext: { type: 'boolean' },
-      },
-      ['status']
+      ['operation']
     ),
   },
   finalize_answer: {
@@ -352,12 +367,11 @@ const allowedToolsByJobType: Record<JobType, SupervisorToolName[]> = {
     'read_procedure',
     'search_procedure',
     'read_current_specification',
-    'replace_todo_list',
-    'start_todo',
-    'complete_todo',
+    'todo_list',
     'list_dir',
     'read_file',
     'search_files',
+    'import_project',
     'copy_directory',
     'apply_patch',
     'replace_content',
@@ -563,6 +577,7 @@ export function getExecutableWorkerToolName(name: string): WorkerToolName | null
     name === 'search_files' ||
     name === 'search_web' ||
     name === 'fetch_content' ||
+    name === 'import_project' ||
     name === 'copy_directory' ||
     name === 'apply_patch' ||
     name === 'replace_content' ||

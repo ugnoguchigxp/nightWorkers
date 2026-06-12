@@ -21,6 +21,17 @@ describe('runtime paths', () => {
     expect(paths.databasePath).toBe('/tmp/nightworkers-app/sqlite.db');
   });
 
+  it('defaults desktop runtime state to project data when no runtime dir is set', () => {
+    const paths = getRuntimePaths({
+      NIGHTWORKERS_DESKTOP: '1',
+      NIGHTWORKERS_RESOURCE_DIR: '/repo/nightWorkers',
+    });
+    expect(paths.runtimeRoot).toBe('/repo/nightWorkers/data');
+    expect(paths.settingsDir).toBe('/repo/nightWorkers/data/settings');
+    expect(paths.logsDir).toBe('/repo/nightWorkers/data/logs');
+    expect(paths.databasePath).toBe('/repo/nightWorkers/data/sqlite.db');
+  });
+
   it('keeps bundled resources separate from runtime state', () => {
     expect(isDesktopMode({ NIGHTWORKERS_DESKTOP: 'true' })).toBe(true);
     expect(getResourceRoot({ NIGHTWORKERS_RESOURCE_DIR: '/tmp/resources' })).toBe('/tmp/resources');

@@ -3,7 +3,6 @@ import type { TaskLlmUsageSummary, WorkbenchSessionView } from '../types';
 export function WorkbenchStateBanner({
   sessionView,
   model,
-  onQueueSession,
   onRemoveQueueEntry,
   onSubmitReview,
   onRequeueQueueEntry,
@@ -13,7 +12,6 @@ export function WorkbenchStateBanner({
 }: {
   sessionView: WorkbenchSessionView | null;
   model: string;
-  onQueueSession: () => void;
   onRemoveQueueEntry: () => void;
   onSubmitReview: (action: 'complete' | 'cancel', note?: string) => void;
   onRequeueQueueEntry: (note?: string) => void;
@@ -22,35 +20,7 @@ export function WorkbenchStateBanner({
   hasDiff: boolean;
 }) {
   if (!sessionView) return null;
-  if (sessionView.emailState === 'plan_ready') {
-    return (
-      <div className="border-b border-emerald-500/20 bg-emerald-950/20 px-6 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-sm font-semibold text-emerald-100">実装計画が作成されました</div>
-            <div className="mt-1 text-xs text-emerald-200/80">
-              この Session を NightShift に追加できます。Model profile: {model}
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              className="rounded bg-emerald-400 px-3 py-1.5 text-xs font-semibold text-emerald-950 hover:bg-emerald-300"
-              onClick={onQueueSession}
-            >
-              NightShift に追加
-            </button>
-            <button
-              type="button"
-              className="rounded border border-emerald-300/40 px-3 py-1.5 text-xs text-emerald-100 hover:bg-emerald-900/40"
-            >
-              計画を編集
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (sessionView.emailState === 'plan_ready') return null;
   if (sessionView.emailState === 'queued') {
     return (
       <div className="border-b border-sky-500/20 bg-sky-950/20 px-6 py-3">

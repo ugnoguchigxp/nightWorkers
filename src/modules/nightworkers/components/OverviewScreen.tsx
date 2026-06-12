@@ -95,6 +95,7 @@ export function OverviewScreen({
   }, [loadOverview]);
 
   const maxBucketTokens = Math.max(1, ...(dashboard?.dailyUsage || []).map((p) => p.totalTokens));
+  const hasDailyUsageData = (dashboard?.dailyUsage || []).some((bucket) => bucket.totalTokens > 0);
 
   return (
     <div
@@ -224,7 +225,7 @@ export function OverviewScreen({
                   icon={<BarChart3 className="h-4 w-4" />}
                   title={t('overview.section.daily')}
                 />
-                {dashboard.dailyUsage.length === 0 ? (
+                {!hasDailyUsageData ? (
                   <EmptyState text={t('overview.empty')} />
                 ) : (
                   <div className="mt-4 flex h-48 items-end gap-1">

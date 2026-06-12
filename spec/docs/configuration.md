@@ -20,17 +20,18 @@
 
 ## Desktop Runtime
 In desktop mode, Tauri injects the desktop variables above. If `DATABASE_URL` is
-not set, the backend uses `file:${NIGHTWORKERS_RUNTIME_DIR}/sqlite.db`. If
-`JWT_SECRET` is not set, the backend generates and stores one at
-`${NIGHTWORKERS_RUNTIME_DIR}/secrets/jwt-secret`.
+not set, the backend uses `file:${NIGHTWORKERS_RUNTIME_DIR}/sqlite.db`.
+When `NIGHTWORKERS_RUNTIME_DIR` is not explicitly set, it defaults to
+`${NIGHTWORKERS_RESOURCE_DIR}/data`. If `JWT_SECRET` is not set, the backend
+generates and stores one at `${NIGHTWORKERS_RUNTIME_DIR}/secrets/jwt-secret`.
 
 Desktop settings are stored under `${NIGHTWORKERS_RUNTIME_DIR}/settings`.
 Desktop logs are stored under `${NIGHTWORKERS_RUNTIME_DIR}/logs`.
 Desktop shell startup diagnostics are written to `desktop.log`, bundled Node
 sidecar stdout/stderr is written to `sidecar.log`, and API events are written to
 `api.log`.
-Development mode keeps the existing repo-local defaults, including
-`api/.runtime` and `logs`.
+Development mode keeps the existing repo-local defaults, including `api/.runtime`
+and `logs`; desktop sidecar mode uses `data` by default.
 
 Runtime hygiene:
 

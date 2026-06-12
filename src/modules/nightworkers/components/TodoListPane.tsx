@@ -17,6 +17,15 @@ export function TodoListPane({ todos }: TodoListPaneProps) {
   const { t } = useTranslation();
   const completedCount = todos.filter((todo) => todo.status === 'passed').length;
   const currentTodo = todos.find((todo) => todo.status === 'running');
+  const nextTodo = todos.find((todo) => todo.status === 'pending');
+  const blockedTodo = todos.find((todo) => todo.status === 'needs_human');
+  const headerSubtitle = currentTodo
+    ? `#${currentTodo.seq} ${currentTodo.title}`
+    : blockedTodo
+      ? `blocked: #${blockedTodo.seq} ${blockedTodo.title}`
+      : nextTodo
+        ? `next: #${nextTodo.seq} ${nextTodo.title}`
+        : t('todoPane.noActiveTodo');
 
   return (
     <aside className="nightworkers-todo-pane flex flex-col">
@@ -27,9 +36,7 @@ export function TodoListPane({ todos }: TodoListPaneProps) {
               {t('timeline.todoProgress')}
             </h2>
             <p className="nightworkers-todo-pane-subtitle mt-1 truncate text-xs">
-              {currentTodo
-                ? `#${currentTodo.seq} ${currentTodo.title}`
-                : t('todoPane.noActiveTodo')}
+              {headerSubtitle}
             </p>
           </div>
           <span className="nightworkers-todo-pane-count shrink-0 rounded px-2 py-1 font-mono text-xs">
@@ -63,6 +70,9 @@ export function TodoListPane({ todos }: TodoListPaneProps) {
                     <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
                       <span className={style.textClass}>{style.label}</span>
                       <span className="nightworkers-todo-pane-subtitle">{todo.taskType}</span>
+                      {todo.status === 'pending' && nextTodo?.id === todo.id ? (
+                        <span className="nightworkers-todo-status-running">next</span>
+                      ) : null}
                       {todo.procedureId ? (
                         <span className="nightworkers-todo-pane-subtitle max-w-full truncate">
                           {todo.procedureId}

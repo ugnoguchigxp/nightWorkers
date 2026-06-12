@@ -51,6 +51,8 @@ describe('Blueprint validation service', () => {
     expect(reference).toContain('通常 Blueprint では `databaseSchema.tables`');
     expect(reference).toContain('DB Design workflow');
     expect(reference).toContain('`dataBindings`');
+    expect(reference).toContain('`table_workspace` または `DataTableSection` を第一候補');
+    expect(reference).toContain('単なる task / todo / record 一覧を自動で card 化しない');
   });
 
   it('parses fenced Blueprint JSON through shared repair and keeps regular Blueprint data empty', () => {

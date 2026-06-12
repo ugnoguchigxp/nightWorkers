@@ -9,6 +9,7 @@ import {
 } from '../../api/services/supervisor/llm-provider';
 import { readCodexStreamedTurn } from '../../api/services/supervisor/llm-provider/codex';
 import {
+  createSupervisorLlmAbortSignal,
   jsonFixWrapper,
   parseRepairedJsonWithSchema,
 } from '../../api/services/supervisor/llm-provider/json';
@@ -69,6 +70,15 @@ describe('Supervisor LLM provider', () => {
 
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) expect(parsed.rawOutput).toBe('{"title":"x","questions":[]}');
+  });
+
+  it('disposes supervisor timeout signals after use', async () => {
+    const handle = createSupervisorLlmAbortSignal({ timeoutMs: 20 });
+    handle.dispose();
+
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    expect(handle.signal.aborted).toBe(false);
   });
 
   it('isolates Codex supervisor calls from image and plugin features', () => {
@@ -254,5 +264,57 @@ describe('Supervisor LLM provider', () => {
       toolName: 'context_compile',
     });
     expect(String(activityEvent?.data?.preview || '')).toContain('context_still');
+  });
+
+  it('keeps completed Codex content when the stream aborts after the final message', async () => {
+    async function* events() {
+      yield {
+        type: 'item.completed',
+        item: {
+          id: 'message-1',
+          type: 'agent_message',
+          text: '{"toolCall":{"name":"finalize_answer","arguments":{"message":"done"}}}',
+        },
+      };
+      const error = new Error('The operation was aborted.');
+      error.name = 'AbortError';
+      throw error;
+    }
+
+    const result = await readCodexStreamedTurn({
+      thread: {
+        runStreamed: async () => ({ events: events() as any }),
+      } as any,
+      prompt: 'prompt',
+      signal: new AbortController().signal,
+      options: { round: 2, schemaFirst: true },
+    });
+
+    expect(result.content).toContain('"done"');
+  });
+
+  it('still rejects aborts when no Codex content was received', async () => {
+    const events = {
+      [Symbol.asyncIterator]() {
+        const error = new Error('The operation was aborted.');
+        error.name = 'AbortError';
+        return {
+          next: async () => {
+            throw error;
+          },
+        };
+      },
+    };
+
+    await expect(
+      readCodexStreamedTurn({
+        thread: {
+          runStreamed: async () => ({ events: events as any }),
+        } as any,
+        prompt: 'prompt',
+        signal: new AbortController().signal,
+        options: { round: 2, schemaFirst: true },
+      })
+    ).rejects.toThrow('The operation was aborted.');
   });
 });

@@ -135,24 +135,35 @@ export async function readCodexStreamedTurn(input: {
     if (event.type === 'item.completed') content = current;
   };
 
-  for await (const event of events) {
-    if (
-      event.type === 'item.started' ||
-      event.type === 'item.updated' ||
-      event.type === 'item.completed'
-    ) {
-      await handleItemEvent(event);
-    } else if (event.type === 'turn.completed') {
-      usage = event.usage;
-    } else if (event.type === 'turn.failed') {
-      throw new Error(event.error.message);
-    } else if (event.type === 'error') {
-      throw new Error(event.message);
+  try {
+    for await (const event of events) {
+      if (
+        event.type === 'item.started' ||
+        event.type === 'item.updated' ||
+        event.type === 'item.completed'
+      ) {
+        await handleItemEvent(event);
+      } else if (event.type === 'turn.completed') {
+        usage = event.usage;
+      } else if (event.type === 'turn.failed') {
+        throw new Error(event.error.message);
+      } else if (event.type === 'error') {
+        throw new Error(event.message);
+      }
     }
+  } catch (error) {
+    if (!isAbortError(error) || !(content || latestAgentMessageText)) throw error;
   }
 
   await deltaEmitter.flush();
   return { content: content || latestAgentMessageText, usage };
+}
+
+function isAbortError(error: unknown) {
+  return (
+    error instanceof Error &&
+    (error.name === 'AbortError' || error.message === 'The operation was aborted.')
+  );
 }
 
 function isCodexReasoningEffort(

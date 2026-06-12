@@ -23,6 +23,10 @@ import { getSessionQueueMaxConcurrencyFromEnv } from '../../services/runtime-env
 import { digestText } from '../../services/text-digest';
 import type { RuntimePromptSnapshot } from '../../services/todo-context';
 import {
+  buildStandardImplementationTodoList,
+  type ImplementationTodoInput,
+} from '../../services/todo-runtime';
+import {
   outcomeFromRuntimeResult,
   resolveBlueprintPlanningReadiness,
 } from './nightworkers.basic.service';
@@ -55,19 +59,63 @@ export function assertRunStatusTransition(from: string, to: string) {
   }
 }
 
-async function completeOpenTodosForTerminalRun(runId: string, status: string, reason: string) {
-  if (!['completed', 'needs_review'].includes(status)) return;
-  const todos = await repo.listTaskRunTodosForRun(runId);
-  const now = new Date();
-  for (const todo of todos) {
-    if (!['pending', 'running'].includes(todo.status)) continue;
-    await repo.updateTaskRunTodo(todo.id, {
-      status: 'passed',
-      statusReason: reason,
-      startedAt: todo.startedAt ? new Date(String(todo.startedAt)) : now,
-      completedAt: now,
-    });
-  }
+function listOpenTodos<TTodo extends { status: string }>(todos: TTodo[]) {
+  return todos.filter((todo) => todo.status === 'pending' || todo.status === 'running');
+}
+
+function isPlanningOnlyRun<TTodo extends { taskType: string }>(todos: TTodo[]) {
+  return todos.length === 0;
+}
+
+function buildInitialRunTodos(compiledPromptText: string): ImplementationTodoInput[] {
+  const screenPath = extractFirstMatch(compiledPromptText, /画面パス:\s*`([^`]+)`/);
+  const featureSummary = extractFeatureSummary(compiledPromptText);
+  const target = screenPath ? `${screenPath} 画面` : '対象画面';
+
+  return [
+    {
+      title: '仕様と既存構成を確認する',
+      description:
+        '最新仕様、リポジトリ構成、既存の package scripts、ルーティング、保存方式を確認し、実装方針を決める。',
+      taskType: 'inspection',
+    },
+    {
+      title: `${target}の実装準備を行う`,
+      description:
+        '既存プロジェクト構成に合わせて、必要なテンプレート、依存関係、ルート、ファイル配置を準備する。',
+      taskType: 'scaffold',
+      dependsOn: [1],
+    },
+    {
+      title: `${target}を仕様に沿って実装する`,
+      description: featureSummary
+        ? `${featureSummary} を実装する。`
+        : '仕様に沿って主要 UI、状態管理、保存処理、操作導線を実装する。',
+      taskType: 'implementation',
+      dependsOn: [2],
+    },
+    {
+      title: '受け入れ条件を検証する',
+      description:
+        'ビルド、テスト、必要なブラウザ確認を実行し、仕様の受け入れ条件を満たすことを確認する。',
+      taskType: 'verification',
+      dependsOn: [3],
+    },
+  ];
+}
+
+function extractFeatureSummary(text: string) {
+  const requirementsBlock = text.match(/## 機能要件\s*([\s\S]*?)(?:\n## |$)/)?.[1] ?? '';
+  const requirements = requirementsBlock
+    .split('\n')
+    .map((line) => line.replace(/^\s*\d+\.\s*/, '').trim())
+    .filter(Boolean)
+    .slice(0, 6);
+  return requirements.length > 0 ? requirements.join('、') : null;
+}
+
+function extractFirstMatch(text: string, pattern: RegExp) {
+  return text.match(pattern)?.[1]?.trim() || null;
 }
 
 async function safelyRefreshConversationContext(input: RefreshConversationContextInput) {
@@ -165,6 +213,13 @@ export async function startTaskRun(taskId: string) {
     },
     startedAt: new Date(),
   });
+  await repo.replaceTaskRunTodosForRun(
+    run.id,
+    buildStandardImplementationTodoList({
+      todos: buildInitialRunTodos(compiledPromptText),
+      startFirst: true,
+    })
+  );
 
   await repo.createRunEvent({
     version: 1,
@@ -373,24 +428,57 @@ export async function startTaskRun(taskId: string) {
       });
 
       const outcome = outcomeFromRuntimeResult(runtimeResult);
-      const finalReport = runtimeResult.finalReport || outcome.summary;
-      assertRunStatusTransition('finalizing', outcome.status);
+      const finalTodos = await repo.listTaskRunTodosForRun(run.id);
+      const openTodos = listOpenTodos(finalTodos);
+      const todoFinalizationBlocked =
+        outcome.status === 'completed' && openTodos.length > 0 && !isPlanningOnlyRun(finalTodos);
+      const guardedStatus = todoFinalizationBlocked ? 'needs_human' : outcome.status;
+      const finalReport = todoFinalizationBlocked
+        ? [
+            runtimeResult.finalReport || outcome.summary,
+            '',
+            `Todo closeout incomplete: ${openTodos.map((todo) => `#${todo.seq} ${todo.title} (${todo.status})`).join(', ')}`,
+          ]
+            .filter(Boolean)
+            .join('\n')
+        : runtimeResult.finalReport || outcome.summary;
+      assertRunStatusTransition('finalizing', guardedStatus);
       await repo.updateTaskRun(run.id, {
-        status: outcome.status,
+        status: guardedStatus,
         endedAt: new Date(),
         finishedAt: new Date(),
         finalReport,
         finalJudgment: null,
-        summary: runtimeResult.summary || outcome.summary,
+        summary: todoFinalizationBlocked
+          ? 'Runtime finished without explicitly closing all open Todos.'
+          : runtimeResult.summary || outcome.summary,
       });
-      await completeOpenTodosForTerminalRun(
-        run.id,
-        outcome.status,
-        'Runtime finalized successfully before explicit Todo completion.'
-      );
-      await repo.updateTaskStatus(taskId, outcome.status);
-      await completeImplementationQueueEntryForRun(run.id, outcome.status);
-      if (shouldContinueSessionQueue(outcome.status)) {
+      if (todoFinalizationBlocked) {
+        await repo.createRunEvent({
+          version: 1,
+          runId: run.id,
+          taskId,
+          timestamp: new Date().toISOString(),
+          type: 'run.outcome_decided',
+          severity: 'warning',
+          actor: 'system',
+          message:
+            'Runtime finished before explicit Todo closeout; run cannot be marked completed.',
+          data: {
+            terminalState: outcome.status,
+            nextStatus: guardedStatus,
+            openTodos: openTodos.map((todo) => ({
+              id: todo.id,
+              seq: todo.seq,
+              title: todo.title,
+              status: todo.status,
+            })),
+          },
+        });
+      }
+      await repo.updateTaskStatus(taskId, guardedStatus);
+      await completeImplementationQueueEntryForRun(run.id, guardedStatus);
+      if (shouldContinueSessionQueue(guardedStatus)) {
         void runSessionQueueForRepository(task.repositoryId);
       }
 
@@ -408,7 +496,7 @@ export async function startTaskRun(taskId: string) {
         payloadJson: {
           finalReport,
           summary: runtimeResult.summary || outcome.summary,
-          status: outcome.status,
+          status: guardedStatus,
         },
       });
       await safelyRefreshConversationContext({

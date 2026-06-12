@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
+import { withSqliteBusyRetry } from '../../db/retry';
 import { artifacts, taskEvents, taskRuns, taskRunTodos, tasks } from '../../db/schema';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
 import { normalizeRunEventToLegacy } from '../../services/run-events/normalizer';
@@ -187,21 +188,25 @@ export async function replaceTaskRunTodosForRun(
     completedAt?: Date | null;
   }>
 ) {
-  const created = await db.transaction(async (tx) => {
-    await tx.delete(taskRunTodos).where(eq(taskRunTodos.runId, runId));
-    if (todos.length === 0) return [];
-    return tx
-      .insert(taskRunTodos)
-      .values(
-        todos.map((todo) => ({
-          ...todo,
-          runId,
-          dependsOn: todo.dependsOn ?? [],
-        }))
-      )
-      .returning();
-  });
-  const [run] = await db.select().from(taskRuns).where(eq(taskRuns.id, runId));
+  const created = await withSqliteBusyRetry(() =>
+    db.transaction(async (tx) => {
+      await tx.delete(taskRunTodos).where(eq(taskRunTodos.runId, runId));
+      if (todos.length === 0) return [];
+      return tx
+        .insert(taskRunTodos)
+        .values(
+          todos.map((todo) => ({
+            ...todo,
+            runId,
+            dependsOn: todo.dependsOn ?? [],
+          }))
+        )
+        .returning();
+    })
+  );
+  const [run] = await withSqliteBusyRetry(() =>
+    db.select().from(taskRuns).where(eq(taskRuns.id, runId))
+  );
   if (run) {
     nightWorkersRealtimeBroker.publish(run.taskId, {
       type: 'task_run_updated',
@@ -213,11 +218,9 @@ export async function replaceTaskRunTodosForRun(
 }
 
 export async function listTaskRunTodosForRun(runId: string) {
-  return db
-    .select()
-    .from(taskRunTodos)
-    .where(eq(taskRunTodos.runId, runId))
-    .orderBy(taskRunTodos.seq);
+  return withSqliteBusyRetry(() =>
+    db.select().from(taskRunTodos).where(eq(taskRunTodos.runId, runId)).orderBy(taskRunTodos.seq)
+  );
 }
 
 export async function updateTaskRunTodo(
@@ -235,25 +238,40 @@ export async function updateTaskRunTodo(
     statusReason?: string | null;
     startedAt?: Date | null;
     completedAt?: Date | null;
-  }
+  },
+  options: { notifyTaskId?: string; notifyRunId?: string } = {}
 ) {
-  const [todo] = await db
-    .update(taskRunTodos)
-    .set({
-      ...data,
-      dependsOn: data.dependsOn === undefined ? undefined : (data.dependsOn ?? []),
-      updatedAt: new Date(),
-    })
-    .where(eq(taskRunTodos.id, id))
-    .returning();
+  const [todo] = await withSqliteBusyRetry(() =>
+    db
+      .update(taskRunTodos)
+      .set({
+        ...data,
+        dependsOn: data.dependsOn === undefined ? undefined : (data.dependsOn ?? []),
+        updatedAt: new Date(),
+      })
+      .where(eq(taskRunTodos.id, id))
+      .returning()
+  );
   if (todo) {
-    const [run] = await db.select().from(taskRuns).where(eq(taskRuns.id, todo.runId));
-    if (run) {
-      nightWorkersRealtimeBroker.publish(run.taskId, {
+    if (options.notifyTaskId) {
+      nightWorkersRealtimeBroker.publish(options.notifyTaskId, {
         type: 'task_run_updated',
-        runId: run.id,
-        payload: { run },
+        runId: options.notifyRunId ?? todo.runId,
+        payload: { todo },
       });
+    } else {
+      try {
+        const [run] = await db.select().from(taskRuns).where(eq(taskRuns.id, todo.runId));
+        if (run) {
+          nightWorkersRealtimeBroker.publish(run.taskId, {
+            type: 'task_run_updated',
+            runId: run.id,
+            payload: { run },
+          });
+        }
+      } catch {
+        // Todo persistence succeeded. Realtime notification must not turn it into a failed tool call.
+      }
     }
   }
   return todo;
@@ -270,19 +288,21 @@ export async function createTaskEvent(data: {
   payloadJson?: unknown;
   timestamp?: Date;
 }) {
-  let seq = data.seq;
-  if (seq === undefined) {
-    const result = await db
-      .select({ maxSeq: sql<number>`coalesce(max(${taskEvents.seq}), 0)` })
-      .from(taskEvents)
-      .where(eq(taskEvents.taskRunId, data.taskRunId));
-    seq = (result[0]?.maxSeq || 0) + 1;
-  }
-  const [event] = await db
-    .insert(taskEvents)
-    .values({ ...data, seq })
-    .returning();
-  return event;
+  return withSqliteBusyRetry(async () => {
+    let seq = data.seq;
+    if (seq === undefined) {
+      const result = await db
+        .select({ maxSeq: sql<number>`coalesce(max(${taskEvents.seq}), 0)` })
+        .from(taskEvents)
+        .where(eq(taskEvents.taskRunId, data.taskRunId));
+      seq = (result[0]?.maxSeq || 0) + 1;
+    }
+    const [event] = await db
+      .insert(taskEvents)
+      .values({ ...data, seq })
+      .returning();
+    return event;
+  });
 }
 
 export async function createRunEvent(
@@ -321,11 +341,13 @@ export async function createRunEvent(
     },
   };
 
-  const [updated] = await db
-    .update(taskEvents)
-    .set({ payloadJson: patchedPayload })
-    .where(eq(taskEvents.id, created.id))
-    .returning();
+  const [updated] = await withSqliteBusyRetry(() =>
+    db
+      .update(taskEvents)
+      .set({ payloadJson: patchedPayload })
+      .where(eq(taskEvents.id, created.id))
+      .returning()
+  );
   const finalEvent = updated ?? { ...created, payloadJson: patchedPayload };
   const patchedRunEvent =
     patchedPayload.runEvent && typeof patchedPayload.runEvent === 'object'
@@ -334,7 +356,9 @@ export async function createRunEvent(
   let taskId =
     event.taskId || (typeof patchedRunEvent.taskId === 'string' ? patchedRunEvent.taskId : null);
   if (!taskId) {
-    const [run] = await db.select().from(taskRuns).where(eq(taskRuns.id, event.runId));
+    const [run] = await withSqliteBusyRetry(() =>
+      db.select().from(taskRuns).where(eq(taskRuns.id, event.runId))
+    );
     taskId = run?.taskId;
   }
   if (taskId) {

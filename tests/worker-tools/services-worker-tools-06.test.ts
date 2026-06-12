@@ -35,6 +35,7 @@ describe('Worker Tools Unit Tests', () => {
     const longOutput = 'x'.repeat(21000);
     const result = await runCommandTool({
       command: `echo "${longOutput}"`,
+      compressionMode: 'auto',
       repoRoot: dummyRepoDir,
     });
 

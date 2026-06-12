@@ -72,8 +72,8 @@ fn start_backend_sidecar(app: tauri::AppHandle) -> Result<(), Box<dyn std::error
     let state = app.state::<SidecarState>();
     let port = pick_free_port()?;
     let api_origin = format!("http://127.0.0.1:{port}");
-    let app_data_dir = app.path().app_data_dir()?;
-    let runtime_dir = app_data_dir.join("runtime");
+    let resource_root = resolve_resource_root(&app)?;
+    let runtime_dir = resolve_runtime_dir(&app)?;
     let logs_dir = runtime_dir.join("logs");
     std::fs::create_dir_all(&logs_dir)?;
     desktop_log(
@@ -81,7 +81,6 @@ fn start_backend_sidecar(app: tauri::AppHandle) -> Result<(), Box<dyn std::error
         &format!("runtime dir resolved: {}", runtime_dir.display()),
     );
 
-    let resource_root = resolve_resource_root(&app)?;
     let backend_entry = resolve_backend_entry(&resource_root)?;
     let node_binary = resolve_node_binary(&resource_root);
     let frontend_dist = resolve_frontend_dist(&resource_root);
@@ -211,7 +210,7 @@ fn desktop_log(app: &tauri::AppHandle, message: &str) {
 }
 
 fn desktop_log_path(app: &tauri::AppHandle) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let logs_dir = app.path().app_data_dir()?.join("runtime/logs");
+    let logs_dir = resolve_runtime_dir(app)?.join("logs");
     std::fs::create_dir_all(&logs_dir)?;
     Ok(logs_dir.join("desktop.log"))
 }
@@ -268,6 +267,15 @@ fn resolve_resource_root(app: &tauri::AppHandle) -> Result<PathBuf, Box<dyn std:
         return Ok(up_dir);
     }
     Ok(resource_dir)
+}
+
+fn resolve_runtime_dir(app: &tauri::AppHandle) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if let Ok(value) = env::var("NIGHTWORKERS_RUNTIME_DIR") {
+        if !value.trim().is_empty() {
+            return Ok(PathBuf::from(value));
+        }
+    }
+    Ok(resolve_resource_root(app)?.join("data"))
 }
 
 fn resolve_backend_entry(resource_root: &Path) -> Result<PathBuf, String> {

@@ -228,7 +228,7 @@ describe('Schema-first supervisor loop', () => {
           expect.objectContaining({
             toolName: 'finalize_answer',
             ok: false,
-            summary: expect.stringContaining('before running package.json-based verification'),
+            summary: expect.stringContaining('before running manifest-based verification'),
           }),
         ])
       );
