@@ -355,6 +355,8 @@ export function buildCodexRuntimePrompt(context: AgentRunContext): string {
     '- Use operation=block for approval or input waits, and operation=fail for concrete implementation or verification failures.',
     '- A Todo tracking failure is tracking failure, not task completion. Do not jump to closeout or final completion just because Todo tracking failed.',
     '- If a Todo-tracking MCP call fails but the actual implementation tool to run next is still clear, continue with the implementation work instead of stopping just to report the Todo-tracking failure.',
+    '- After an implementation, scaffold, or verification Todo becomes running, do not stop with a plan-only answer, "next steps", or "実装へ進めるなら" style summary. Continue by calling the concrete NightWorkers tools for that Todo.',
+    '- If you truly cannot continue, explicitly close the current Todo with operation=block or operation=fail and explain the blocker. Never leave open implementation Todos behind a planning-only final answer.',
     '- Do not call context-still.compile_eval during planning, Todo registration, or immediately after a Todo tracking failure. compile_eval is a closeout action only after implementation and verification are genuinely finished.',
     '- For planning, implementation-plan, specification, design-doc, or requirement-check work, use nightworkers.read_current_specification first.',
     '- If the current task specification is not found, use nightworkers.list_recent_specifications to locate the relevant task, then read it by taskId.',

@@ -136,6 +136,10 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain('default SQLite variant');
     expect(prompt).toContain('run_command and run_verification keep full stdout/stderr by default');
     expect(prompt).toContain('Do not create a fallback static app');
+    expect(prompt).toContain('do not stop with a plan-only answer');
+    expect(prompt).toContain(
+      'Never leave open implementation Todos behind a planning-only final answer'
+    );
   });
 
   it('passes the composed runtime prompt to Codex threads', async () => {

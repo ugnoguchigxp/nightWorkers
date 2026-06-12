@@ -4,7 +4,7 @@ import { repositories, taskMessages, tasks } from '../../db/schema';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
 import {
   appendActivityArtifact,
-  appendActivityEvent,
+  enqueueActivityEvent,
   getToolDiffActivityKind,
   taskMessageRoleToActivityKind,
   taskMessageRoleToActivitySource,
@@ -198,7 +198,7 @@ export async function createTaskMessage(data: {
     })
     .returning();
   if (message) {
-    await appendActivityEvent({
+    await enqueueActivityEvent({
       taskId: data.taskId,
       runId: data.runId ?? null,
       turnId: message.id,
@@ -216,7 +216,7 @@ export async function createTaskMessage(data: {
       createdAt: message.createdAt,
     });
     if (isAppBlueprintProjectionMessage(data.messageType, metadata)) {
-      await appendActivityEvent({
+      await enqueueActivityEvent({
         taskId: data.taskId,
         runId: data.runId ?? null,
         turnId: message.id,
@@ -253,7 +253,7 @@ export async function createTaskMessage(data: {
           source: metadata.source,
         },
       });
-      await appendActivityEvent({
+      await enqueueActivityEvent({
         taskId: data.taskId,
         runId: data.runId ?? null,
         turnId: message.id,
@@ -293,7 +293,7 @@ export async function createTaskMessage(data: {
           toolResult,
         },
       });
-      await appendActivityEvent({
+      await enqueueActivityEvent({
         taskId: data.taskId,
         runId: data.runId ?? null,
         turnId: message.id,

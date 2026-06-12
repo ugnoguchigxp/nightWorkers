@@ -6,7 +6,7 @@ import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers
 import { normalizeRunEventToLegacy } from '../../services/run-events/normalizer';
 import type { RunEventBase } from '../../services/run-events/types';
 import {
-  appendActivityEvent,
+  enqueueActivityEvent,
   runEventToActivityKind,
   runEventToActivityStatus,
   runEventToActivityText,
@@ -375,7 +375,7 @@ export async function createRunEvent(
       });
       return finalEvent;
     }
-    await appendActivityEvent({
+    await enqueueActivityEvent({
       taskId,
       runId: event.runId,
       turnId: runEventToActivityTurnId({

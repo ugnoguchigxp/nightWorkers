@@ -4,6 +4,8 @@ import { config } from './config';
 import { ensureNightWorkersSchema } from './db/bootstrap';
 import { client } from './db/client';
 import { logEvent } from './lib/logger';
+import { flushActivityEventQueue } from './modules/nightworkers/nightworkers.activity.repository';
+import { mcpClientManager } from './services/mcp/mcp-client-manager';
 import { nightWorkersRealtimeBroker } from './services/realtime/nightworkers-ws';
 
 export type NightWorkersServerOptions = {
@@ -21,6 +23,10 @@ export type NightWorkersServerHandle = {
 };
 
 const defaultShutdownTimeoutMs = 10_000;
+
+type ServerWithCloseAllConnections = ReturnType<typeof serve> & {
+  closeAllConnections?: () => void;
+};
 
 function closeHttpServer(server: ReturnType<typeof serve>) {
   return new Promise<void>((resolve, reject) => {
@@ -44,6 +50,14 @@ function closeWebSocketServer() {
       resolve();
     });
   });
+}
+
+function collectCleanupError(errors: Error[], scope: string, result: PromiseSettledResult<void>) {
+  if (result.status === 'fulfilled') return;
+  const reason = result.reason;
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  error.message = `${scope}: ${error.message}`;
+  errors.push(error);
 }
 
 export async function createNightWorkersServer(
@@ -70,6 +84,7 @@ export async function createNightWorkersServer(
     closed = true;
     logEvent({ channel: 'api', level: 'info', message: 'shutting down', meta: { signal } });
 
+    const httpClosePromise = closeHttpServer(server);
     const forceCloseTimer = setTimeout(() => {
       logEvent({
         channel: 'api',
@@ -77,15 +92,45 @@ export async function createNightWorkersServer(
         message: 'graceful shutdown timed out',
         meta: { signal, timeoutMs: shutdownTimeoutMs },
       });
+      (server as ServerWithCloseAllConnections).closeAllConnections?.();
+      nodeWebSocket.wss.clients.forEach((socket) => {
+        socket.terminate();
+      });
     }, shutdownTimeoutMs);
     forceCloseTimer.unref?.();
 
     try {
+      const errors: Error[] = [];
+      collectCleanupError(
+        errors,
+        'HTTP server close',
+        await Promise.allSettled([httpClosePromise]).then(([result]) => result)
+      );
       nightWorkersRealtimeBroker.closeAll();
-      await closeWebSocketServer();
-      await closeHttpServer(server);
-      await Promise.resolve(client.close());
+      collectCleanupError(
+        errors,
+        'Activity event queue flush',
+        await Promise.allSettled([flushActivityEventQueue()]).then(([result]) => result)
+      );
+      collectCleanupError(
+        errors,
+        'WebSocket server close',
+        await Promise.allSettled([closeWebSocketServer()]).then(([result]) => result)
+      );
+      collectCleanupError(
+        errors,
+        'MCP client disconnect',
+        await Promise.allSettled([mcpClientManager.disconnectAll()]).then(([result]) => result)
+      );
+      collectCleanupError(
+        errors,
+        'DB client close',
+        await Promise.allSettled([Promise.resolve(client.close())]).then(([result]) => result)
+      );
       clearTimeout(forceCloseTimer);
+      if (errors.length > 0) {
+        throw new AggregateError(errors, 'One or more shutdown steps failed');
+      }
       logEvent({ channel: 'api', level: 'info', message: 'shutdown complete', meta: { signal } });
     } catch (error) {
       clearTimeout(forceCloseTimer);
@@ -93,7 +138,14 @@ export async function createNightWorkersServer(
         channel: 'api',
         level: 'error',
         message: 'shutdown failed',
-        meta: { signal, errorMessage: error instanceof Error ? error.message : String(error) },
+        meta: {
+          signal,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          errors:
+            error instanceof AggregateError
+              ? error.errors.map((item) => (item instanceof Error ? item.message : String(item)))
+              : undefined,
+        },
       });
       throw error;
     }
