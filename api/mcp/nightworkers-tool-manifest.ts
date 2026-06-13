@@ -98,6 +98,12 @@ export const nightWorkersImportProjectInputSchema = z.object({
     .boolean()
     .optional()
     .describe('Remove nested .git metadata when repoUrl is used. Default: true.'),
+  initialize: z
+    .boolean()
+    .optional()
+    .describe(
+      'Run dependency initialization after import when package.json is present. Default: true.'
+    ),
 });
 
 export const nightWorkersCodexToolManifest = {

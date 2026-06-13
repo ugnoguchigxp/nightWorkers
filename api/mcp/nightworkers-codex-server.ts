@@ -73,6 +73,7 @@ server.registerTool(
     ref,
     depth,
     stripGitDir,
+    initialize,
   }) => {
     const resolvedTaskId = taskId || process.env.NIGHTWORKERS_TASK_ID || '';
     const task = resolvedTaskId ? await repo.getTask(resolvedTaskId) : null;
@@ -83,7 +84,7 @@ server.registerTool(
         toolName: 'import_project',
         startedAt: new Date().toISOString(),
         finishedAt: new Date().toISOString(),
-        payload: { mode: '', template: null, git: null },
+        payload: { mode: '', template: null, git: null, postImport: null },
         error: {
           code: 'TASK_REPOSITORY_NOT_FOUND',
           message: 'Cannot resolve the current NightWorkers task repository.',
@@ -103,6 +104,7 @@ server.registerTool(
         ref,
         depth,
         stripGitDir,
+        initialize,
         repoRoot: repository.localPath,
         allowedPaths: repository.safetyPolicy?.allowedPaths,
         deniedPaths: repository.safetyPolicy?.deniedPaths,

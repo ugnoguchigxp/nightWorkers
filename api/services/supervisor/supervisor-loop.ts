@@ -410,6 +410,34 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             await emitAgentEvent('tool.validation_failed', result, 'warning');
             continue;
           }
+          if (!['pending', 'running'].includes(todo.status)) {
+            const result = {
+              step,
+              toolName: 'todo_list',
+              ok: false,
+              arguments: round2.toolCall.arguments,
+              summary: 'Requested Todo is already closed and cannot be started.',
+            };
+            toolResults.push(result);
+            await emitAgentEvent('tool.validation_failed', result, 'warning');
+            continue;
+          }
+          const earlierOpenTodo = currentTodos.find(
+            (candidate) =>
+              candidate.seq < todo.seq && ['pending', 'running'].includes(candidate.status)
+          );
+          if (earlierOpenTodo) {
+            const result = {
+              step,
+              toolName: 'todo_list',
+              ok: false,
+              arguments: round2.toolCall.arguments,
+              summary: `Previous Todo #${earlierOpenTodo.seq} is still ${earlierOpenTodo.status}; close it before starting #${todo.seq}.`,
+            };
+            toolResults.push(result);
+            await emitAgentEvent('tool.validation_failed', result, 'warning');
+            continue;
+          }
           const now = new Date();
           for (const candidate of currentTodos) {
             if (candidate.id === todo.id) {
@@ -465,7 +493,9 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           });
           currentTodos = await repo.listTaskRunTodosForRun(runId);
           if (operation === 'done') {
-            const nextTodo = currentTodos.find((candidate) => candidate.status === 'pending');
+            const nextTodo = currentTodos.find(
+              (candidate) => candidate.status === 'pending' && candidate.seq > todo.seq
+            );
             if (nextTodo) {
               await repo.updateTaskRunTodo(nextTodo.id, {
                 status: 'running',

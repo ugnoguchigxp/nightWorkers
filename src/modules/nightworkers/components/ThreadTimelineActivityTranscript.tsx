@@ -10,6 +10,7 @@ import {
 } from './ThreadTimeline';
 import { ContextStillToolCard, hasContextStillToolCard } from './ThreadTimelineContextStillCards';
 import { DiffCodeBlock } from './ThreadTimelineDiffView';
+import { hasImportProjectToolCard, ImportProjectToolCard } from './ThreadTimelineImportProjectCard';
 import { ChatMarkdown, NightWorkersCodeBlock } from './ThreadTimelineMarkdown';
 import { MessagePayload } from './ThreadTimelineMessagePayload';
 import {
@@ -184,6 +185,9 @@ function TranscriptActivityBlock({
   const codeFilename = activityCodeFilename(event);
   const codeLanguage = activityCodeLanguage(event);
   const defaultOpen = !compact && !isHighVolumeActivity(event);
+  if (hasImportProjectToolCard(event)) {
+    return <ImportProjectToolCard event={event} />;
+  }
   if (hasContextStillToolCard(event)) {
     return <ContextStillToolCard event={event} />;
   }

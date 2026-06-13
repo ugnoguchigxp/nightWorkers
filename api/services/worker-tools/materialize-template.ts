@@ -64,7 +64,16 @@ export interface MaterializeTemplateOutput {
   skippedFiles: number;
   copiedDirectories: number;
   overlays: string[];
+  gitOperations: MaterializeTemplateGitOperationOutput[];
 }
+
+export type MaterializeTemplateGitOperationOutput = {
+  command: string;
+  cwd: string | null;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+};
 
 function emptyPayload(input: MaterializeTemplateInput, targetPath: string) {
   return {
@@ -78,6 +87,7 @@ function emptyPayload(input: MaterializeTemplateInput, targetPath: string) {
     skippedFiles: 0,
     copiedDirectories: 0,
     overlays: input.overlays || [],
+    gitOperations: [],
   };
 }
 
@@ -88,6 +98,9 @@ async function runGit(args: string[], cwd?: string) {
     maxBuffer: 5 * 1024 * 1024,
   });
   return {
+    command: ['git', ...args].join(' '),
+    cwd: cwd ?? null,
+    exitCode: 0,
     stdout: String(result.stdout || '').trim(),
     stderr: String(result.stderr || '').trim(),
   };
@@ -237,13 +250,16 @@ export async function materializeTemplateTool(
     }
 
     const cloneDir = path.join(tempDir, 'repo');
-    await runGit(
-      ['clone', '--depth', '1', '--branch', selectedRef, resolved.template.repoUrl, cloneDir],
-      tempDir
+    const gitOperations: MaterializeTemplateGitOperationOutput[] = [];
+    gitOperations.push(
+      await runGit(
+        ['clone', '--depth', '1', '--branch', selectedRef, resolved.template.repoUrl, cloneDir],
+        tempDir
+      )
     );
-    const commit = await runGit(['rev-parse', 'HEAD'], cloneDir).then(
-      (result) => result.stdout || null
-    );
+    const revParseResult = await runGit(['rev-parse', 'HEAD'], cloneDir);
+    gitOperations.push(revParseResult);
+    const commit = revParseResult.stdout || null;
 
     const excludes = new Set([...DEFAULT_EXCLUDES, ...(input.exclude || [])]);
     let copiedFiles = 0;
@@ -294,6 +310,7 @@ export async function materializeTemplateTool(
         skippedFiles,
         copiedDirectories,
         overlays: normalizedOverlays,
+        gitOperations,
       },
     };
   } catch (error: any) {

@@ -34,17 +34,18 @@
 10. import_project を Project import の単一入口として使う。新規雛形は source=starter と stack/variant、任意の外部 Git repository は source=git と repoUrl を渡す。
 11. import_project で扱える取り込みは run_command git clone で代替しない。
 12. 外部ディレクトリテンプレートを取り込む場合は、許可後に copy_directory を優先する。shell の cp で代替しない。
-13. テンプレートを取り込む TodoList には、import_project / copy_directory だけでなく package.json / pyproject.toml inspection と manifest-based verification を必ず含める。
-14. テンプレート取り込み後は read_file で package.json や pyproject.toml を読み、scripts / tool config から build / lint / typecheck / test / verify / pytest / ruff / pyright など利用可能な検証を選ぶ。
-15. 選んだ検証は run_verification で実行する。依存関係が未導入で検証不能な場合は、理由と次アクションを Todo / final report に残す。
-16. CLI コマンドは run_command / run_verification 経由で、command policy が許可する単一コマンドだけ使う。`&&`、`;`、pipe、command substitution を含む chained shell は使わない。
-17. 実行順序は specification 確認 -> Todo 実行 -> verification -> closeout とする。planning は closeout ではない。
-18. Todo が完了したら、tool evidence に基づいて todo_list operation=done を呼ぶ。実行中というだけで passed にしない。
-19. todo_list operation=done は既定で次の pending Todo を running にする。順序を変える必要がある場合だけ operation=start を使う。
-20. 外部承認や追加情報待ちでは todo_list operation=block、実装や verification の確定失敗では operation=fail を使う。どちらも次 Todo を自動開始しない。
-21. Todo tracking failure は task completion ではない。tracking に失敗しても次アクションが明確なら実装を継続し、closeout へ逃げない。
-22. compile_eval は planning や Todo 登録直後ではなく、implementation と verification が終わり、実装 Todo が pending/running で残っていない closeout でのみ扱う。
-23. すべての Todo が passed/skipped/needs_human/failed のいずれかになり、必要な最終確認が終わったら finalize_answer を呼ぶ。
+13. テンプレートを取り込む TodoList には、import_project / copy_directory だけでなく manifest inspection と manifest-based verification を必ず含める。
+14. import_project 後は postImport.llmContext があれば使い、あわせて postImport.manifest、postImport.initialization の実出力を先に使う。payload が欠落している、または修復対象の失敗がある場合を除き、LLM_CONTEXT.md や package.json の再読込、install 再実行をしない。
+15. copy_directory 後は read_file で package.json や pyproject.toml を読み、scripts / tool config から build / lint / typecheck / test / verify / pytest / ruff / pyright など利用可能な検証を選ぶ。
+16. 選んだ検証は run_verification で実行する。依存関係が未導入で検証不能な場合は、理由と次アクションを Todo / final report に残す。
+17. CLI コマンドは run_command / run_verification 経由で、command policy が許可する単一コマンドだけ使う。`&&`、`;`、pipe、command substitution を含む chained shell は使わない。
+18. 実行順序は specification 確認 -> Todo 実行 -> verification -> closeout とする。planning は closeout ではない。
+19. Todo が完了したら、tool evidence に基づいて todo_list operation=done を呼ぶ。実行中というだけで passed にしない。
+20. todo_list operation=done は既定で次の pending Todo を running にする。順序を変える必要がある場合だけ operation=start を使う。
+21. 外部承認や追加情報待ちでは todo_list operation=block、実装や verification の確定失敗では operation=fail を使う。どちらも次 Todo を自動開始しない。
+22. Todo tracking failure は task completion ではない。tracking に失敗しても次アクションが明確なら実装を継続し、closeout へ逃げない。
+23. compile_eval は planning や Todo 登録直後ではなく、implementation と verification が終わり、実装 Todo が pending/running で残っていない closeout でのみ扱う。
+24. すべての Todo が passed/skipped/needs_human/failed のいずれかになり、必要な最終確認が終わったら finalize_answer を呼ぶ。
 
 ## TodoList Shape
 TodoList には少なくとも次の種類を必要に応じて含める。

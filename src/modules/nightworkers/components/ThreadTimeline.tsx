@@ -26,6 +26,10 @@ import {
   hasContextStillToolCard,
   NormalContextStillToolCard,
 } from './ThreadTimelineContextStillCards';
+import {
+  hasImportProjectToolCard,
+  NormalImportProjectToolCard,
+} from './ThreadTimelineImportProjectCard';
 import { MessagePayload } from './ThreadTimelineMessagePayload';
 import {
   buildNormalTranscriptItems,
@@ -255,7 +259,8 @@ export function ThreadTimeline({
             ) : showDebugEvents ||
               hasAgentEditSummary(item.event) ||
               isReviewerEvaluationEvent(item.event) ||
-              hasContextStillToolCard(item.event) ? (
+              hasContextStillToolCard(item.event) ||
+              hasImportProjectToolCard(item.event) ? (
               <TimelineDebugFragment
                 key={item.id}
                 insertRuntimeSnapshot={item.id === runtimeSnapshotTimelineAnchorId}
@@ -265,6 +270,7 @@ export function ThreadTimeline({
                   <ReviewerEvaluationCard event={item.event} />
                   <AgentEditSummaryCard event={item.event} />
                   {!showDebugEvents ? <NormalContextStillToolCard event={item.event} /> : null}
+                  {!showDebugEvents ? <NormalImportProjectToolCard event={item.event} /> : null}
                   {showDebugEvents ? <AgentDebugEventCard event={item.event} /> : null}
                 </div>
               </TimelineDebugFragment>

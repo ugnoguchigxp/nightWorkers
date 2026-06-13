@@ -29,6 +29,10 @@ import {
   getContextStillToolCardModel,
   NormalContextStillToolCard,
 } from './ThreadTimelineContextStillCards';
+import {
+  getImportProjectToolCardModel,
+  NormalImportProjectToolCard,
+} from './ThreadTimelineImportProjectCard';
 import { ChatMarkdown, NightWorkersCodeBlock } from './ThreadTimelineMarkdown';
 import { MessagePayload } from './ThreadTimelineMessagePayload';
 import { formatVisibleAssistantText, stringValue } from './ThreadTimelineStreaming';
@@ -38,6 +42,7 @@ export function buildNormalTranscriptItems(items: TranscriptItem[]): TranscriptI
   const seenEditDiffs = new Set<string>();
   const seenCliCommands = new Set<string>();
   const seenContextStillCards = new Set<string>();
+  const seenImportProjectCards = new Set<string>();
 
   for (const item of items) {
     if (item.kind === 'user_turn') {
@@ -52,7 +57,8 @@ export function buildNormalTranscriptItems(items: TranscriptItem[]): TranscriptI
         return event
           ? rememberVisibleEditDiff(event, seenEditDiffs) ||
               rememberVisibleCliCommand(event, seenCliCommands) ||
-              rememberVisibleContextStillCard(event, seenContextStillCards)
+              rememberVisibleContextStillCard(event, seenContextStillCards) ||
+              rememberVisibleImportProjectCard(event, seenImportProjectCards)
           : false;
       });
       if (text.trim() || children.length > 0) filtered.push({ ...item, text, children });
@@ -63,7 +69,8 @@ export function buildNormalTranscriptItems(items: TranscriptItem[]): TranscriptI
       item.kind === 'activity' &&
       (rememberVisibleEditDiff(item.event, seenEditDiffs) ||
         rememberVisibleCliCommand(item.event, seenCliCommands) ||
-        rememberVisibleContextStillCard(item.event, seenContextStillCards))
+        rememberVisibleContextStillCard(item.event, seenContextStillCards) ||
+        rememberVisibleImportProjectCard(item.event, seenImportProjectCards))
     ) {
       filtered.push(item);
     }
@@ -106,6 +113,18 @@ function rememberVisibleContextStillCard(
   return true;
 }
 
+function rememberVisibleImportProjectCard(
+  event: ActivityEvent,
+  seenImportProjectCards: Set<string>
+): boolean {
+  const card = getImportProjectToolCardModel(event);
+  if (!card) return false;
+  const key = visibleImportProjectCardKey(event, card.targetPath || card.sourceSummary);
+  if (seenImportProjectCards.has(key)) return false;
+  seenImportProjectCards.add(key);
+  return true;
+}
+
 function visibleCliCommandKey(event: ActivityEvent, summary: VisibleCliCommandSummary): string {
   const payload = asRecord(event.payloadJson);
   const runEvent = asRecord(payload.runEvent);
@@ -126,6 +145,15 @@ function visibleContextStillCardKey(event: ActivityEvent, kind: string): string 
   const providerItemId = asString(runEventData.providerItemId);
   if (providerItemId) return `${providerItemId}:${kind}`;
   return `${event.runId || 'run'}:${event.seq}:${kind}`;
+}
+
+function visibleImportProjectCardKey(event: ActivityEvent, target: string): string {
+  const payload = asRecord(event.payloadJson);
+  const runEvent = asRecord(payload.runEvent);
+  const runEventData = asRecord(runEvent.data);
+  const providerItemId = asString(runEventData.providerItemId);
+  if (providerItemId) return `${providerItemId}:import_project`;
+  return `${event.runId || 'run'}:${event.seq}:import_project:${target}`;
 }
 
 function visibleEditDiffKey(event: ActivityEvent): string {
@@ -196,6 +224,7 @@ function NormalVisibleActivityBlock({ event }: { event: ActivityEvent }) {
       <NormalEditDiffBlock event={event} />
       <NormalCliCommandBlock event={event} />
       <NormalContextStillToolCard event={event} />
+      <NormalImportProjectToolCard event={event} />
     </>
   );
 }

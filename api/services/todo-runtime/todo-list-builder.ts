@@ -57,11 +57,18 @@ const FINAL_GATES: StandardGate[] = [
     dependsOn: [],
   },
   {
-    title: '知識登録と closeout を実施する',
+    title: '知識登録を行う',
     description:
-      '再利用可能な知識を register_candidates で登録し、必要な context_decision を処理してから closeout に進む。compile_eval は完了報告直前の closeout でのみ実行する。',
+      '再利用可能な知識を register_candidates で登録し、必要な context_decision と compile_eval を処理する。',
     taskType: 'knowledge_capture',
-    procedureId: 'contextstill_closeout',
+    procedureId: 'contextstill.register_candidates',
+    dependsOn: [],
+  },
+  {
+    title: '完了報告を行う',
+    description: '実装内容、検証結果、残存リスクをユーザーに簡潔に報告する。',
+    taskType: 'completion_report',
+    procedureId: 'final_completion_report',
     dependsOn: [],
   },
 ];
@@ -95,10 +102,19 @@ function normalizeImplementationTodos(
   todos: ImplementationTodoInput[],
   seqOffset: number
 ): StandardGate[] {
-  return todos.map((todo, index) => {
-    if (!todo || typeof todo !== 'object') {
-      throw new Error(`Todo #${index + 1} must be an object.`);
-    }
+  const eligibleTodos = todos
+    .map((todo, index) => {
+      if (!todo || typeof todo !== 'object') {
+        throw new Error(`Todo #${index + 1} must be an object.`);
+      }
+      return { todo, originalSeq: resolveOriginalSeq(todo, index) };
+    })
+    .filter(({ todo }) => !isReservedFinalGateTodo(todo));
+  const seqMap = new Map(
+    eligibleTodos.map(({ originalSeq }, index) => [originalSeq, seqOffset + index + 1])
+  );
+
+  return eligibleTodos.map(({ todo }, index) => {
     const title = typeof todo.title === 'string' ? todo.title.trim() : '';
     const taskType =
       typeof todo.taskType === 'string' && todo.taskType.trim().length > 0
@@ -110,18 +126,72 @@ function normalizeImplementationTodos(
       description: typeof todo.description === 'string' ? todo.description : null,
       taskType,
       procedureId: typeof todo.procedureId === 'string' ? todo.procedureId : null,
-      dependsOn: normalizeDependsOn(todo.dependsOn, seqOffset),
+      dependsOn: normalizeDependsOn(todo.dependsOn, seqMap),
     };
   });
 }
 
-function normalizeDependsOn(dependsOn: ImplementationTodoInput['dependsOn'], seqOffset: number) {
-  return Array.isArray(dependsOn)
-    ? dependsOn
-        .filter(
-          (value): value is string | number =>
-            typeof value === 'string' || typeof value === 'number'
-        )
-        .map((value) => (typeof value === 'number' ? value + seqOffset : value))
-    : [];
+function isReservedFinalGateTodo(todo: ImplementationTodoInput) {
+  return isReservedCloseoutTodo(todo) || isReservedBroadVerificationTodo(todo);
+}
+
+function isReservedCloseoutTodo(todo: ImplementationTodoInput) {
+  const title = typeof todo.title === 'string' ? todo.title.trim().toLowerCase() : '';
+  const taskType = typeof todo.taskType === 'string' ? todo.taskType.trim() : '';
+  const procedureId = typeof todo.procedureId === 'string' ? todo.procedureId.trim() : '';
+
+  return (
+    title === 'closeout' ||
+    title === 'close out' ||
+    title === 'クローズアウト' ||
+    title === '知識登録を行う' ||
+    title === '完了報告を行う' ||
+    taskType === 'closeout' ||
+    taskType === 'knowledge_capture' ||
+    taskType === 'completion_report' ||
+    procedureId === 'contextstill.register_candidates' ||
+    procedureId === 'final_completion_report' ||
+    procedureId === 'contextstill_closeout'
+  );
+}
+
+function isReservedBroadVerificationTodo(todo: ImplementationTodoInput) {
+  const title = typeof todo.title === 'string' ? todo.title.trim().toLowerCase() : '';
+  const taskType = typeof todo.taskType === 'string' ? todo.taskType.trim() : '';
+  const procedureId = typeof todo.procedureId === 'string' ? todo.procedureId.trim() : '';
+
+  return (
+    title === 'verify' ||
+    title === 'verification' ||
+    title === '検証コマンドを実行する' ||
+    title === '品質ゲート verify を実施する' ||
+    taskType === 'verification' ||
+    procedureId === 'quality_gate_verify'
+  );
+}
+
+function resolveOriginalSeq(todo: ImplementationTodoInput, index: number) {
+  return typeof todo.seq === 'number' && Number.isInteger(todo.seq) && todo.seq > 0
+    ? todo.seq
+    : index + 1;
+}
+
+function normalizeDependsOn(
+  dependsOn: ImplementationTodoInput['dependsOn'],
+  seqMap: Map<number, number>
+) {
+  if (!Array.isArray(dependsOn)) return [];
+
+  const normalized: Array<string | number> = [];
+  for (const value of dependsOn) {
+    if (typeof value === 'string') {
+      normalized.push(value);
+      continue;
+    }
+    if (typeof value !== 'number') continue;
+
+    const mapped = seqMap.get(value);
+    if (mapped) normalized.push(mapped);
+  }
+  return normalized;
 }

@@ -146,6 +146,261 @@ describe('AgentRuntime', () => {
     );
   });
 
+  it('auto-closes the quality gate but leaves closeout gates pending after successful broad verify', async () => {
+    (repo.getTaskRun as any).mockResolvedValue({
+      id: 'run-123',
+      taskId: 'task-123',
+    } as any);
+    (repo.listTaskRunTodosForRun as any)
+      .mockResolvedValueOnce([
+        {
+          id: 'todo-8',
+          runId: 'run-123',
+          seq: 8,
+          title: '品質ゲート verify を実施する',
+          taskType: 'verification',
+          status: 'running',
+          procedureId: 'quality_gate_verify',
+          startedAt: new Date('2026-06-13T00:00:00.000Z'),
+        },
+        {
+          id: 'todo-9',
+          runId: 'run-123',
+          seq: 9,
+          title: '知識登録を行う',
+          taskType: 'knowledge_capture',
+          status: 'pending',
+          procedureId: 'contextstill.register_candidates',
+        },
+        {
+          id: 'todo-10',
+          runId: 'run-123',
+          seq: 10,
+          title: '完了報告を行う',
+          taskType: 'completion_report',
+          status: 'pending',
+          procedureId: 'final_completion_report',
+        },
+      ] as any)
+      .mockResolvedValueOnce([
+        {
+          id: 'todo-8',
+          runId: 'run-123',
+          seq: 8,
+          title: '品質ゲート verify を実施する',
+          taskType: 'verification',
+          status: 'passed',
+          procedureId: 'quality_gate_verify',
+          startedAt: new Date('2026-06-13T00:00:00.000Z'),
+          completedAt: new Date('2026-06-13T00:00:01.000Z'),
+        },
+        {
+          id: 'todo-9',
+          runId: 'run-123',
+          seq: 9,
+          title: '知識登録を行う',
+          taskType: 'knowledge_capture',
+          status: 'pending',
+          procedureId: 'contextstill.register_candidates',
+        },
+        {
+          id: 'todo-10',
+          runId: 'run-123',
+          seq: 10,
+          title: '完了報告を行う',
+          taskType: 'completion_report',
+          status: 'pending',
+          procedureId: 'final_completion_report',
+        },
+      ] as any);
+
+    const sink = createLedgerSink('run-123');
+    await sink.emit({
+      type: 'tool_call_finished',
+      message: 'command finished',
+      payload: {
+        toolName: 'command_execution',
+        command: 'bun scripts/verify.ts',
+        exitCode: 0,
+        status: 'completed',
+      },
+    });
+
+    expect(repo.updateTaskRunTodo).toHaveBeenNthCalledWith(
+      1,
+      'todo-8',
+      expect.objectContaining({
+        status: 'passed',
+        completedAt: expect.any(Date),
+      }),
+      { notifyTaskId: 'task-123', notifyRunId: 'run-123' }
+    );
+    expect(repo.updateTaskRunTodo).toHaveBeenCalledTimes(1);
+  });
+
+  it('auto-closes only the knowledge registration gate after successful register_candidates', async () => {
+    (repo.getTaskRun as any).mockResolvedValue({
+      id: 'run-123',
+      taskId: 'task-123',
+    } as any);
+    (repo.listTaskRunTodosForRun as any).mockResolvedValueOnce([
+      {
+        id: 'todo-8',
+        runId: 'run-123',
+        seq: 8,
+        title: '知識登録を行う',
+        taskType: 'knowledge_capture',
+        status: 'pending',
+        procedureId: 'contextstill.register_candidates',
+      },
+      {
+        id: 'todo-9',
+        runId: 'run-123',
+        seq: 9,
+        title: '完了報告を行う',
+        taskType: 'completion_report',
+        status: 'pending',
+        procedureId: 'final_completion_report',
+      },
+    ] as any);
+
+    const sink = createLedgerSink('run-123');
+    await sink.emit({
+      type: 'tool_call_finished',
+      message: 'register candidates finished',
+      payload: {
+        toolName: 'context-still.register_candidates',
+        status: 'completed',
+      },
+    });
+
+    expect(repo.updateTaskRunTodo).toHaveBeenCalledWith(
+      'todo-8',
+      expect.objectContaining({
+        status: 'passed',
+        startedAt: expect.any(Date),
+        completedAt: expect.any(Date),
+      }),
+      { notifyTaskId: 'task-123', notifyRunId: 'run-123' }
+    );
+    expect(repo.updateTaskRunTodo).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not auto-close knowledge registration when register_candidates fails', async () => {
+    const sink = createLedgerSink('run-123');
+    await sink.emit({
+      type: 'tool_call_finished',
+      message: 'register candidates finished',
+      payload: {
+        toolName: 'context-still.register_candidates',
+        status: 'failed',
+        error: 'user cancelled MCP tool call',
+      },
+    });
+
+    expect(repo.getTaskRun).not.toHaveBeenCalled();
+    expect(repo.listTaskRunTodosForRun).not.toHaveBeenCalled();
+    expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
+  });
+
+  it('auto-closes the final completion report after the final assistant response', async () => {
+    (repo.getTaskRun as any).mockResolvedValue({
+      id: 'run-123',
+      taskId: 'task-123',
+    } as any);
+    (repo.listTaskRunTodosForRun as any).mockResolvedValueOnce([
+      {
+        id: 'todo-8',
+        runId: 'run-123',
+        seq: 8,
+        title: '知識登録を行う',
+        taskType: 'knowledge_capture',
+        status: 'passed',
+        procedureId: 'contextstill.register_candidates',
+      },
+      {
+        id: 'todo-9',
+        runId: 'run-123',
+        seq: 9,
+        title: '完了報告を行う',
+        taskType: 'completion_report',
+        status: 'pending',
+        procedureId: 'final_completion_report',
+      },
+    ] as any);
+
+    const sink = createLedgerSink('run-123');
+    await sink.emit({
+      type: 'model_response_finished',
+      message: 'assistant message completed',
+      payload: { text: '完了しました。' },
+    });
+
+    expect(repo.updateTaskRunTodo).toHaveBeenCalledWith(
+      'todo-9',
+      expect.objectContaining({
+        status: 'passed',
+        startedAt: expect.any(Date),
+        completedAt: expect.any(Date),
+      }),
+      { notifyTaskId: 'task-123', notifyRunId: 'run-123' }
+    );
+  });
+
+  it('does not auto-close the final completion report while knowledge registration is open', async () => {
+    (repo.getTaskRun as any).mockResolvedValue({
+      id: 'run-123',
+      taskId: 'task-123',
+    } as any);
+    (repo.listTaskRunTodosForRun as any).mockResolvedValueOnce([
+      {
+        id: 'todo-8',
+        runId: 'run-123',
+        seq: 8,
+        title: '知識登録を行う',
+        taskType: 'knowledge_capture',
+        status: 'pending',
+        procedureId: 'contextstill.register_candidates',
+      },
+      {
+        id: 'todo-9',
+        runId: 'run-123',
+        seq: 9,
+        title: '完了報告を行う',
+        taskType: 'completion_report',
+        status: 'pending',
+        procedureId: 'final_completion_report',
+      },
+    ] as any);
+
+    const sink = createLedgerSink('run-123');
+    await sink.emit({
+      type: 'model_response_finished',
+      message: 'assistant message completed',
+      payload: { text: 'まだ途中です。' },
+    });
+
+    expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-close the quality gate for focused checks', async () => {
+    const sink = createLedgerSink('run-123');
+    await sink.emit({
+      type: 'tool_call_finished',
+      message: 'command finished',
+      payload: {
+        toolName: 'command_execution',
+        command: 'bun run typecheck',
+        exitCode: 0,
+        status: 'completed',
+      },
+    });
+
+    expect(repo.getTaskRun).not.toHaveBeenCalled();
+    expect(repo.listTaskRunTodosForRun).not.toHaveBeenCalled();
+    expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
+  });
+
   it('normalizes runtime crash to failed result and runtime_error event', async () => {
     (supervisor.runSupervisorLoop as any).mockRejectedValue(new Error('supervisor exploded'));
 

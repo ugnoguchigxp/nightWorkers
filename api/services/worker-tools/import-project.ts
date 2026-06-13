@@ -1,6 +1,10 @@
 import { type CloneGitRepoOutput, cloneGitRepoTool } from './clone-git-repo';
 import { type MaterializeTemplateOutput, materializeTemplateTool } from './materialize-template';
 import {
+  inspectAndInitializeImportedProject,
+  type ProjectPostImportOutput,
+} from './project-post-import';
+import {
   resolveStarterTemplate,
   type StarterStack,
   type TemplateRegistry,
@@ -21,6 +25,7 @@ export interface ImportProjectInput {
   overwrite?: boolean;
   stripGitDir?: boolean;
   exclude?: string[];
+  initialize?: boolean;
   allowedPaths?: string[];
   deniedPaths?: string[];
   registry?: TemplateRegistry;
@@ -30,6 +35,7 @@ export interface ImportProjectOutput {
   mode: 'template' | 'git' | '';
   template?: MaterializeTemplateOutput | null;
   git?: CloneGitRepoOutput | null;
+  postImport?: ProjectPostImportOutput | null;
 }
 
 export async function importProjectTool(
@@ -100,12 +106,19 @@ export async function importProjectTool(
       deniedPaths: input.deniedPaths,
       registry: input.registry,
     });
+    const postImport =
+      result.ok && result.payload?.targetPath
+        ? await inspectAndInitializeImportedProject({
+            targetPath: result.payload.targetPath,
+            initialize: input.initialize,
+          })
+        : null;
     return {
       ok: result.ok,
       toolName: 'import_project',
       startedAt,
-      finishedAt: result.finishedAt,
-      payload: { mode: 'template', template: result.payload, git: null },
+      finishedAt: new Date().toISOString(),
+      payload: { mode: 'template', template: result.payload, git: null, postImport },
       error: result.error,
       artifactIds: result.artifactIds,
     };
@@ -122,12 +135,19 @@ export async function importProjectTool(
     allowedPaths: input.allowedPaths,
     deniedPaths: input.deniedPaths,
   });
+  const postImport =
+    result.ok && result.payload?.targetPath
+      ? await inspectAndInitializeImportedProject({
+          targetPath: result.payload.targetPath,
+          initialize: input.initialize,
+        })
+      : null;
   return {
     ok: result.ok,
     toolName: 'import_project',
     startedAt,
-    finishedAt: result.finishedAt,
-    payload: { mode: 'git', template: null, git: result.payload },
+    finishedAt: new Date().toISOString(),
+    payload: { mode: 'git', template: null, git: result.payload, postImport },
     error: result.error,
     artifactIds: result.artifactIds,
   };
@@ -143,7 +163,7 @@ function failedImportProject(
     toolName: 'import_project',
     startedAt,
     finishedAt: new Date().toISOString(),
-    payload: { mode: '', template: null, git: null },
+    payload: { mode: '', template: null, git: null, postImport: null },
     error: { code, message },
   };
 }

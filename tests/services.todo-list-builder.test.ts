@@ -20,7 +20,7 @@ describe('standard implementation TodoList builder', () => {
       ],
     });
 
-    expect(todos.map((todo) => todo.seq)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(todos.map((todo) => todo.seq)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(todos.map((todo) => todo.taskType)).toEqual([
       'initial_instructions',
       'context_compile',
@@ -29,6 +29,7 @@ describe('standard implementation TodoList builder', () => {
       'review',
       'verification',
       'knowledge_capture',
+      'completion_report',
     ]);
     expect(todos[0]).toMatchObject({
       status: 'running',
@@ -40,9 +41,18 @@ describe('standard implementation TodoList builder', () => {
       dependsOn: [1],
     });
     expect(todos[3]).toMatchObject({ title: 'Add tests', dependsOn: [3] });
-    expect(todos.at(-3)).toMatchObject({ taskType: 'review', dependsOn: [4] });
-    expect(todos.at(-2)).toMatchObject({ taskType: 'verification', dependsOn: [5] });
-    expect(todos.at(-1)).toMatchObject({ taskType: 'knowledge_capture', dependsOn: [6] });
+    expect(todos.at(-4)).toMatchObject({ taskType: 'review', dependsOn: [4] });
+    expect(todos.at(-3)).toMatchObject({ taskType: 'verification', dependsOn: [5] });
+    expect(todos.at(-2)).toMatchObject({
+      title: '知識登録を行う',
+      taskType: 'knowledge_capture',
+      dependsOn: [6],
+    });
+    expect(todos.at(-1)).toMatchObject({
+      title: '完了報告を行う',
+      taskType: 'completion_report',
+      dependsOn: [7],
+    });
   });
 
   it('can create only the fixed gates when the LLM has no middle implementation Todos', () => {
@@ -54,6 +64,7 @@ describe('standard implementation TodoList builder', () => {
       'review',
       'verification',
       'knowledge_capture',
+      'completion_report',
     ]);
     expect(todos.every((todo) => todo.status === 'pending')).toBe(true);
   });
@@ -76,5 +87,56 @@ describe('standard implementation TodoList builder', () => {
       title: 'Implement feature',
       taskType: 'implementation',
     });
+  });
+
+  it('merges LLM-generated closeout Todos into the fixed final closeout gate', () => {
+    const todos = buildStandardImplementationTodoList({
+      todos: [
+        { seq: 1, title: 'Implement feature' },
+        { seq: 2, title: 'closeout', description: 'Summarize the completed work.' },
+        { seq: 3, title: 'Add focused tests', taskType: 'test', dependsOn: [1] },
+      ],
+    });
+
+    expect(todos.map((todo) => `${todo.seq}:${todo.taskType}:${todo.title}`)).toEqual([
+      '1:initial_instructions:initial_instructions を実行する',
+      '2:context_compile:context_compile を実行する',
+      '3:implementation:Implement feature',
+      '4:test:Add focused tests',
+      '5:review:LLM コードレビューを実施する',
+      '6:verification:品質ゲート verify を実施する',
+      '7:knowledge_capture:知識登録を行う',
+      '8:completion_report:完了報告を行う',
+    ]);
+    expect(todos[3]).toMatchObject({ title: 'Add focused tests', dependsOn: [3] });
+    expect(todos.filter((todo) => todo.title.toLowerCase() === 'closeout')).toHaveLength(0);
+    expect(
+      todos.filter((todo) => todo.procedureId === 'contextstill.register_candidates')
+    ).toHaveLength(1);
+    expect(todos.filter((todo) => todo.procedureId === 'final_completion_report')).toHaveLength(1);
+  });
+
+  it('merges LLM-generated broad verification Todos into the fixed quality gate', () => {
+    const todos = buildStandardImplementationTodoList({
+      todos: [
+        { seq: 1, title: 'Implement feature' },
+        { seq: 2, title: '検証コマンドを実行する', taskType: 'verification' },
+        { seq: 3, title: 'Add focused tests', taskType: 'test', dependsOn: [1] },
+      ],
+    });
+
+    expect(todos.map((todo) => `${todo.seq}:${todo.taskType}:${todo.title}`)).toEqual([
+      '1:initial_instructions:initial_instructions を実行する',
+      '2:context_compile:context_compile を実行する',
+      '3:implementation:Implement feature',
+      '4:test:Add focused tests',
+      '5:review:LLM コードレビューを実施する',
+      '6:verification:品質ゲート verify を実施する',
+      '7:knowledge_capture:知識登録を行う',
+      '8:completion_report:完了報告を行う',
+    ]);
+    expect(todos[3]).toMatchObject({ title: 'Add focused tests', dependsOn: [3] });
+    expect(todos.filter((todo) => todo.title === '検証コマンドを実行する')).toHaveLength(0);
+    expect(todos.filter((todo) => todo.procedureId === 'quality_gate_verify')).toHaveLength(1);
   });
 });

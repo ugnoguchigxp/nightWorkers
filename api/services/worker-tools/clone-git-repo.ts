@@ -30,7 +30,16 @@ export interface CloneGitRepoOutput {
   copiedFiles: number;
   copiedDirectories: number;
   strippedGitDir: boolean;
+  gitOperations: CloneGitOperationOutput[];
 }
+
+export type CloneGitOperationOutput = {
+  command: string;
+  cwd: string | null;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+};
 
 function emptyPayload(input: CloneGitRepoInput, targetPath: string): CloneGitRepoOutput {
   return {
@@ -41,6 +50,7 @@ function emptyPayload(input: CloneGitRepoInput, targetPath: string): CloneGitRep
     copiedFiles: 0,
     copiedDirectories: 0,
     strippedGitDir: input.stripGitDir !== false,
+    gitOperations: [],
   };
 }
 
@@ -51,6 +61,9 @@ async function runGit(args: string[], cwd?: string) {
     maxBuffer: 5 * 1024 * 1024,
   });
   return {
+    command: ['git', ...args].join(' '),
+    cwd: cwd ?? null,
+    exitCode: 0,
     stdout: String(result.stdout || '').trim(),
     stderr: String(result.stderr || '').trim(),
   };
@@ -180,13 +193,14 @@ export async function cloneGitRepoTool(
     const cloneArgs = input.ref
       ? ['clone', repoUrl, cloneDir]
       : ['clone', '--depth', String(depth), repoUrl, cloneDir];
-    await runGit(cloneArgs, tempDir);
+    const gitOperations: CloneGitOperationOutput[] = [];
+    gitOperations.push(await runGit(cloneArgs, tempDir));
 
     const normalizedRef = input.ref?.trim();
-    if (normalizedRef) await runGit(['checkout', normalizedRef], cloneDir);
-    const commit = await runGit(['rev-parse', 'HEAD'], cloneDir).then(
-      (result) => result.stdout || null
-    );
+    if (normalizedRef) gitOperations.push(await runGit(['checkout', normalizedRef], cloneDir));
+    const revParseResult = await runGit(['rev-parse', 'HEAD'], cloneDir);
+    gitOperations.push(revParseResult);
+    const commit = revParseResult.stdout || null;
     if (stripGitDir) {
       await fs.rm(path.join(cloneDir, '.git'), { recursive: true, force: true });
     }
@@ -224,6 +238,7 @@ export async function cloneGitRepoTool(
         copiedFiles,
         copiedDirectories,
         strippedGitDir: stripGitDir,
+        gitOperations,
       },
     };
   } catch (error: any) {

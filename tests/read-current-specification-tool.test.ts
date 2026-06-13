@@ -213,6 +213,7 @@ describe('todo_list worker tool', () => {
       'review',
       'verification',
       'knowledge_capture',
+      'completion_report',
     ]);
     expect(result.payload.todos[0]).toMatchObject({ seq: 1, status: 'running' });
 
@@ -277,6 +278,56 @@ describe('todo_list worker tool', () => {
     expect(persisted[1].startedAt).toBeTruthy();
   });
 
+  it('leaves the final knowledge registration and completion report Todos pending without running them', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: todo final closeout ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: final closeout TodoList',
+      description: 'Auto-complete final closeout',
+      status: 'running',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+    });
+
+    await todoListTool({
+      runId: run.id,
+      operation: 'replace',
+      todos: [{ seq: 1, title: 'Implement feature' }],
+    });
+    for (const seq of [1, 2, 3, 4, 5]) {
+      const result = await todoListTool({ runId: run.id, operation: 'done', seq });
+      expect(result.ok).toBe(true);
+    }
+
+    const persisted = await repo.listTaskRunTodosForRun(run.id);
+    expect(persisted.at(-2)).toMatchObject({
+      seq: 6,
+      title: '知識登録を行う',
+      taskType: 'knowledge_capture',
+      procedureId: 'contextstill.register_candidates',
+      status: 'pending',
+    });
+    expect(persisted.at(-1)).toMatchObject({
+      seq: 7,
+      title: '完了報告を行う',
+      taskType: 'completion_report',
+      procedureId: 'final_completion_report',
+      status: 'pending',
+    });
+    expect(persisted.some((todo) => todo.status === 'running')).toBe(false);
+    expect(persisted.at(-2)?.startedAt).toBeFalsy();
+    expect(persisted.at(-2)?.completedAt).toBeFalsy();
+    expect(persisted.at(-1)?.startedAt).toBeFalsy();
+    expect(persisted.at(-1)?.completedAt).toBeFalsy();
+  });
+
   it('returns attempted todo diagnostics when complete fails', async () => {
     const failed = await todoListTool({
       runId: 'missing-run',
@@ -300,5 +351,119 @@ describe('todo_list worker tool', () => {
         },
       },
     });
+  });
+
+  it('does not start a later Todo while an earlier Todo is still open', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: todo order ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: ordered TodoList',
+      description: 'Do not skip open todos',
+      status: 'running',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+    });
+
+    await todoListTool({ runId: run.id, operation: 'replace', todos: [{ title: 'Implement' }] });
+    await todoListTool({ runId: run.id, operation: 'done', seq: 1 });
+    await todoListTool({ runId: run.id, operation: 'done', seq: 2 });
+
+    const result = await todoListTool({ runId: run.id, operation: 'start', seq: 6 });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatchObject({ code: 'PREVIOUS_TODO_OPEN' });
+    const persisted = await repo.listTaskRunTodosForRun(run.id);
+    expect(persisted[2]).toMatchObject({ seq: 3, status: 'running' });
+    expect(persisted[5]).toMatchObject({ seq: 6, status: 'pending' });
+  });
+
+  it('does not auto-start an earlier pending Todo after completing a later Todo', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: todo no rewind ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: no backward auto-start',
+      description: 'Complete a later todo',
+      status: 'running',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+    });
+    await repo.createTaskRunTodo({
+      runId: run.id,
+      seq: 1,
+      title: 'Already done',
+      taskType: 'implementation',
+      status: 'passed',
+    });
+    await repo.createTaskRunTodo({
+      runId: run.id,
+      seq: 2,
+      title: 'Earlier pending',
+      taskType: 'verification',
+      status: 'pending',
+    });
+    await repo.createTaskRunTodo({
+      runId: run.id,
+      seq: 3,
+      title: 'Later running',
+      taskType: 'knowledge_capture',
+      status: 'running',
+    });
+
+    const result = await todoListTool({ runId: run.id, operation: 'done', seq: 3 });
+
+    expect(result.ok).toBe(true);
+    const persisted = await repo.listTaskRunTodosForRun(run.id);
+    expect(persisted.map((todo) => ({ seq: todo.seq, status: todo.status }))).toEqual([
+      { seq: 1, status: 'passed' },
+      { seq: 2, status: 'pending' },
+      { seq: 3, status: 'passed' },
+    ]);
+  });
+
+  it('does not restart a terminal Todo', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: terminal todo ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: terminal TodoList',
+      description: 'Terminal todos stay closed',
+      status: 'running',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+    });
+    await repo.createTaskRunTodo({
+      runId: run.id,
+      seq: 1,
+      title: 'Failed verification',
+      taskType: 'verification',
+      status: 'failed',
+    });
+
+    const result = await todoListTool({ runId: run.id, operation: 'start', seq: 1 });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatchObject({ code: 'TODO_NOT_STARTABLE' });
+    const persisted = await repo.listTaskRunTodosForRun(run.id);
+    expect(persisted[0]).toMatchObject({ seq: 1, status: 'failed' });
   });
 });

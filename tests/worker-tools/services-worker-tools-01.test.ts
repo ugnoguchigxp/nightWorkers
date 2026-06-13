@@ -90,7 +90,14 @@ describe('Worker Tools Unit Tests', () => {
     const templateRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-template-repo-'));
     const targetDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-template-target-'));
     try {
-      await fs.writeFile(path.join(templateRepo, 'package.json'), '{"scripts":{"test":"vitest"}}');
+      await fs.writeFile(
+        path.join(templateRepo, 'package.json'),
+        '{"name":"template-app","packageManager":"bun@1.3.14","scripts":{"test":"vitest","build":"vite build"}}'
+      );
+      await fs.writeFile(
+        path.join(templateRepo, 'LLM_CONTEXT.md'),
+        '# LLM Context\n\nUse src/index.ts as the implementation entrypoint.\n'
+      );
       await fs.mkdir(path.join(templateRepo, 'src'));
       await fs.writeFile(path.join(templateRepo, 'src/index.ts'), 'export const ok = true;\n');
       await fs.mkdir(path.join(templateRepo, 'node_modules'));
@@ -147,7 +154,14 @@ describe('Worker Tools Unit Tests', () => {
     const templateRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-template-repo-'));
     const targetDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-template-target-'));
     try {
-      await fs.writeFile(path.join(templateRepo, 'package.json'), '{"scripts":{"test":"vitest"}}');
+      await fs.writeFile(
+        path.join(templateRepo, 'package.json'),
+        '{"name":"template-app","packageManager":"bun@1.3.14","scripts":{"test":"vitest","build":"vite build"}}'
+      );
+      await fs.writeFile(
+        path.join(templateRepo, 'LLM_CONTEXT.md'),
+        '# LLM Context\n\nUse src/index.ts as the implementation entrypoint.\n'
+      );
       await fs.mkdir(path.join(templateRepo, 'src'));
       await fs.writeFile(path.join(templateRepo, 'src/index.ts'), 'export const ok = true;\n');
       await execFileAsync('git', ['init'], { cwd: templateRepo });
@@ -190,6 +204,37 @@ describe('Worker Tools Unit Tests', () => {
       expect(result.toolName).toBe('import_project');
       expect(result.payload?.mode).toBe('template');
       expect(result.payload?.template?.ref).toBe('sqlite-v1.0.0');
+      expect(result.payload?.template?.gitOperations[0]).toMatchObject({
+        command: expect.stringContaining('git clone'),
+        exitCode: 0,
+      });
+      expect(result.payload?.postImport?.targetPath).toBe(targetDir);
+      expect(result.payload?.postImport?.manifest).toMatchObject({
+        status: 'found',
+        detectedPackageManager: 'bun',
+        installCommand: ['bun', 'install'],
+        packageJson: {
+          name: 'template-app',
+          packageManager: 'bun@1.3.14',
+          scripts: {
+            test: 'vitest',
+            build: 'vite build',
+          },
+        },
+        recommendedVerificationCommands: ['bun run test', 'bun run build'],
+      });
+      expect(result.payload?.postImport?.manifest.rawContent).toContain('"template-app"');
+      expect(result.payload?.postImport?.llmContext).toMatchObject({
+        status: 'found',
+        path: path.join(targetDir, 'LLM_CONTEXT.md'),
+        rawContent: '# LLM Context\n\nUse src/index.ts as the implementation entrypoint.\n',
+      });
+      expect(result.payload?.postImport?.initialization).toMatchObject({
+        status: 'passed',
+        cwd: targetDir,
+        command: ['bun', 'install'],
+        exitCode: 0,
+      });
       await expect(fs.readFile(path.join(targetDir, 'src/index.ts'), 'utf-8')).resolves.toContain(
         'ok = true'
       );
@@ -317,6 +362,16 @@ describe('Worker Tools Unit Tests', () => {
       expect(result.toolName).toBe('import_project');
       expect(result.payload?.mode).toBe('git');
       expect(result.payload?.git?.repoUrl).toBe(sourceRepo);
+      expect(result.payload?.git?.gitOperations[0]).toMatchObject({
+        command: expect.stringContaining('git clone'),
+        exitCode: 0,
+      });
+      expect(result.payload?.postImport).toMatchObject({
+        targetPath: path.join(targetDir, 'vendor/imported-repo'),
+        manifest: { status: 'missing' },
+        initialization: { status: 'skipped', skippedReason: 'manifest_missing' },
+      });
+      expect(result.payload?.postImport).not.toHaveProperty('llmContext');
       await expect(
         fs.readFile(path.join(targetDir, 'vendor/imported-repo/README.md'), 'utf-8')
       ).resolves.toContain('imported');

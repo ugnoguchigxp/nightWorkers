@@ -1,0 +1,303 @@
+import { execFile } from 'node:child_process';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+const INSTALL_TIMEOUT_MS = 180_000;
+const INSTALL_MAX_BUFFER = 10 * 1024 * 1024;
+const PACKAGE_MANAGER_LOCKFILES = [
+  { file: 'bun.lock', packageManager: 'bun' },
+  { file: 'bun.lockb', packageManager: 'bun' },
+  { file: 'pnpm-lock.yaml', packageManager: 'pnpm' },
+  { file: 'yarn.lock', packageManager: 'yarn' },
+  { file: 'package-lock.json', packageManager: 'npm' },
+] as const;
+const VERIFICATION_SCRIPT_ORDER = ['verify', 'typecheck', 'lint', 'test', 'build'] as const;
+
+type PackageManager = 'bun' | 'npm' | 'pnpm' | 'yarn';
+
+export type ProjectManifestInspection = {
+  status: 'found' | 'missing' | 'parse_failed';
+  path: string;
+  rawContent: string | null;
+  parseError?: string;
+  packageJson: {
+    name?: string;
+    packageManager?: string;
+    scripts: Record<string, string>;
+    dependencies: Record<string, string>;
+    devDependencies: Record<string, string>;
+  } | null;
+  lockfiles: string[];
+  detectedPackageManager: PackageManager | null;
+  installCommand: string[] | null;
+  recommendedVerificationCommands: string[];
+};
+
+export type ProjectInitializationResult = {
+  status: 'passed' | 'failed' | 'skipped';
+  skippedReason?:
+    | 'disabled'
+    | 'manifest_missing'
+    | 'manifest_parse_failed'
+    | 'unsupported_manifest';
+  cwd: string;
+  command: string[] | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
+  exitCode: number | null;
+  signal: string | null;
+  stdout: string;
+  stderr: string;
+  errorMessage?: string;
+};
+
+export type ProjectLlmContextInspection = {
+  status: 'found' | 'read_failed';
+  path: string;
+  rawContent: string | null;
+  errorMessage?: string;
+};
+
+export type ProjectPostImportOutput = {
+  targetPath: string;
+  manifest: ProjectManifestInspection;
+  llmContext?: ProjectLlmContextInspection;
+  initialization: ProjectInitializationResult;
+};
+
+export async function inspectAndInitializeImportedProject(input: {
+  targetPath: string;
+  initialize?: boolean;
+}): Promise<ProjectPostImportOutput> {
+  const targetPath = path.resolve(input.targetPath);
+  const manifest = await inspectPackageManifest(targetPath);
+  const llmContext = await inspectLlmContext(targetPath);
+  const initialization = await initializeProject({
+    targetPath,
+    manifest,
+    enabled: input.initialize !== false,
+  });
+  return {
+    targetPath,
+    manifest,
+    ...(llmContext ? { llmContext } : {}),
+    initialization,
+  };
+}
+
+async function inspectPackageManifest(targetPath: string): Promise<ProjectManifestInspection> {
+  const packageJsonPath = path.join(targetPath, 'package.json');
+  const lockfiles = await findLockfiles(targetPath);
+  const missingBase: ProjectManifestInspection = {
+    status: 'missing',
+    path: packageJsonPath,
+    rawContent: null,
+    packageJson: null,
+    lockfiles,
+    detectedPackageManager: null,
+    installCommand: null,
+    recommendedVerificationCommands: [],
+  };
+
+  let rawContent = '';
+  try {
+    rawContent = await fs.readFile(packageJsonPath, 'utf8');
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') return missingBase;
+    throw error;
+  }
+
+  try {
+    const parsed = JSON.parse(rawContent) as Record<string, unknown>;
+    const scripts = stringRecord(parsed.scripts);
+    const detectedPackageManager = detectPackageManager({
+      packageManagerField: typeof parsed.packageManager === 'string' ? parsed.packageManager : '',
+      lockfiles,
+    });
+    return {
+      status: 'found',
+      path: packageJsonPath,
+      rawContent,
+      packageJson: {
+        name: typeof parsed.name === 'string' ? parsed.name : undefined,
+        packageManager:
+          typeof parsed.packageManager === 'string' ? parsed.packageManager : undefined,
+        scripts,
+        dependencies: stringRecord(parsed.dependencies),
+        devDependencies: stringRecord(parsed.devDependencies),
+      },
+      lockfiles,
+      detectedPackageManager,
+      installCommand: detectedPackageManager ? installCommandFor(detectedPackageManager) : null,
+      recommendedVerificationCommands: buildRecommendedVerificationCommands(
+        detectedPackageManager,
+        scripts
+      ),
+    };
+  } catch (error) {
+    return {
+      ...missingBase,
+      status: 'parse_failed',
+      rawContent,
+      parseError: error instanceof Error ? error.message : String(error),
+      detectedPackageManager: detectPackageManager({ packageManagerField: '', lockfiles }),
+    };
+  }
+}
+
+async function findLockfiles(targetPath: string) {
+  const entries: string[] = await fs.readdir(targetPath).catch((error: any) => {
+    if (error?.code === 'ENOENT') return [];
+    throw error;
+  });
+  return PACKAGE_MANAGER_LOCKFILES.map((candidate) => candidate.file).filter((file) =>
+    entries.includes(file)
+  );
+}
+
+async function inspectLlmContext(
+  targetPath: string
+): Promise<ProjectLlmContextInspection | undefined> {
+  const contextPath = path.join(targetPath, 'LLM_CONTEXT.md');
+  try {
+    return {
+      status: 'found',
+      path: contextPath,
+      rawContent: await fs.readFile(contextPath, 'utf8'),
+    };
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') {
+      return undefined;
+    }
+    return {
+      status: 'read_failed',
+      path: contextPath,
+      rawContent: null,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function detectPackageManager(input: {
+  packageManagerField: string;
+  lockfiles: string[];
+}): PackageManager {
+  const packageManagerMatch = /^(bun|pnpm|npm|yarn)(?:@|$)/.exec(input.packageManagerField);
+  if (packageManagerMatch) return packageManagerMatch[1] as PackageManager;
+  for (const candidate of PACKAGE_MANAGER_LOCKFILES) {
+    if (input.lockfiles.includes(candidate.file)) return candidate.packageManager;
+  }
+  return 'bun';
+}
+
+function installCommandFor(packageManager: PackageManager) {
+  if (packageManager === 'bun') return ['bun', 'install'];
+  if (packageManager === 'pnpm') return ['pnpm', 'install'];
+  if (packageManager === 'yarn') return ['yarn', 'install'];
+  return ['npm', 'install'];
+}
+
+function runCommandFor(packageManager: PackageManager, script: string) {
+  if (packageManager === 'bun') return `bun run ${script}`;
+  if (packageManager === 'pnpm') return `pnpm run ${script}`;
+  if (packageManager === 'yarn') return `yarn ${script}`;
+  return `npm run ${script}`;
+}
+
+function buildRecommendedVerificationCommands(
+  packageManager: PackageManager | null,
+  scripts: Record<string, string>
+) {
+  if (!packageManager) return [];
+  return VERIFICATION_SCRIPT_ORDER.filter((script) => typeof scripts[script] === 'string').map(
+    (script) => runCommandFor(packageManager, script)
+  );
+}
+
+async function initializeProject(input: {
+  targetPath: string;
+  manifest: ProjectManifestInspection;
+  enabled: boolean;
+}): Promise<ProjectInitializationResult> {
+  const base = {
+    cwd: input.targetPath,
+    command: input.manifest.installCommand,
+    startedAt: null,
+    finishedAt: null,
+    durationMs: null,
+    exitCode: null,
+    signal: null,
+    stdout: '',
+    stderr: '',
+  };
+  if (!input.enabled) return { ...base, status: 'skipped', skippedReason: 'disabled' };
+  if (input.manifest.status === 'missing') {
+    return { ...base, status: 'skipped', skippedReason: 'manifest_missing' };
+  }
+  if (input.manifest.status === 'parse_failed') {
+    return { ...base, status: 'skipped', skippedReason: 'manifest_parse_failed' };
+  }
+  if (!input.manifest.installCommand) {
+    return { ...base, status: 'skipped', skippedReason: 'unsupported_manifest' };
+  }
+
+  const startedAt = new Date();
+  const result = await runInstallCommand(input.manifest.installCommand, input.targetPath);
+  const finishedAt = new Date();
+  return {
+    ...base,
+    status: result.exitCode === 0 ? 'passed' : 'failed',
+    startedAt: startedAt.toISOString(),
+    finishedAt: finishedAt.toISOString(),
+    durationMs: finishedAt.getTime() - startedAt.getTime(),
+    exitCode: result.exitCode,
+    signal: result.signal,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    errorMessage: result.errorMessage,
+  };
+}
+
+function runInstallCommand(command: string[], cwd: string) {
+  const [file, ...args] = command;
+  return new Promise<{
+    exitCode: number | null;
+    signal: string | null;
+    stdout: string;
+    stderr: string;
+    errorMessage?: string;
+  }>((resolve) => {
+    execFile(
+      file,
+      args,
+      {
+        cwd,
+        timeout: INSTALL_TIMEOUT_MS,
+        maxBuffer: INSTALL_MAX_BUFFER,
+      },
+      (error, stdout, stderr) => {
+        const execError = error as
+          | (Error & { code?: string | number; signal?: string | null })
+          | null;
+        const exitCode = typeof execError?.code === 'number' ? execError.code : error ? null : 0;
+        resolve({
+          exitCode,
+          signal: execError?.signal ?? null,
+          stdout: String(stdout || ''),
+          stderr: String(stderr || ''),
+          errorMessage: error ? error.message : undefined,
+        });
+      }
+    );
+  });
+}
+
+function stringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string'
+    )
+  );
+}

@@ -179,6 +179,7 @@ export async function executeWorkerTool(
         overwrite: args.overwrite as boolean | undefined,
         stripGitDir: args.stripGitDir as boolean | undefined,
         exclude: args.exclude as string[] | undefined,
+        initialize: args.initialize as boolean | undefined,
         repoRoot,
         allowedPaths: safetyPolicy?.allowedPaths,
         deniedPaths: safetyPolicy?.deniedPaths,

@@ -107,6 +107,7 @@ describe('NightWorkers Codex MCP integration', () => {
               stack: 'hono',
               targetPath: '.',
               overwrite: false,
+              initialize: false,
             },
           },
           undefined,
@@ -125,6 +126,16 @@ describe('NightWorkers Codex MCP integration', () => {
           template: expect.objectContaining({
             templateId: 'hono-standard',
             variant: 'sqlite',
+          }),
+          postImport: expect.objectContaining({
+            targetPath: repoRoot,
+            manifest: expect.objectContaining({
+              status: 'found',
+            }),
+            initialization: expect.objectContaining({
+              status: 'skipped',
+              skippedReason: 'disabled',
+            }),
           }),
         },
       });

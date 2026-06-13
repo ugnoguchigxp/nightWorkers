@@ -168,6 +168,36 @@ async function startTodo(input: {
           seq: input.seq,
         });
       }
+      if (!['pending', 'running'].includes(target.status)) {
+        return failedTodoAction(context, input.action, input.operation, 'TODO_NOT_STARTABLE', {
+          seq: input.seq,
+        });
+      }
+      const earlierOpenTodo = context.todos.find(
+        (todo) => todo.seq < target.seq && ['pending', 'running'].includes(todo.status)
+      );
+      if (earlierOpenTodo) {
+        return failedTodoAction(context, input.action, input.operation, 'PREVIOUS_TODO_OPEN', {
+          seq: input.seq,
+        });
+      }
+
+      if (isFinalCloseoutTodo(target)) {
+        return okTodoAction(
+          input.action,
+          input.operation,
+          context.runId,
+          context.taskId,
+          context.todos,
+          {
+            transition: {
+              previousCurrentSeq: currentSeqOrNull(context.todos),
+              completedSeq: null,
+              nextCurrentSeq: null,
+            },
+          }
+        );
+      }
 
       const now = new Date();
       for (const candidate of context.todos) {
@@ -239,8 +269,10 @@ async function completeTodo(input: {
       let nextSeq: number | null = null;
       let updated = await repo.listTaskRunTodosForRun(context.runId);
       if (input.startNext) {
-        const nextTodo = updated.find((todo) => todo.status === 'pending');
-        if (nextTodo) {
+        const nextTodo = updated.find(
+          (todo) => todo.status === 'pending' && todo.seq > current.seq
+        );
+        if (nextTodo && !isFinalCloseoutTodo(nextTodo)) {
           await repo.updateTaskRunTodo(
             nextTodo.id,
             { status: 'running', startedAt: new Date(), completedAt: null },
@@ -440,6 +472,10 @@ function buildErrorMessage(action: TodoToolName, errorCode: string) {
   if (errorCode === 'CURRENT_TODO_NOT_UNIQUE')
     return 'Multiple running Todos exist; current Todo is not unique.';
   if (errorCode === 'TODO_SEQ_NOT_FOUND') return 'Requested Todo seq was not found.';
+  if (errorCode === 'TODO_NOT_STARTABLE')
+    return 'Requested Todo is already closed and cannot be started.';
+  if (errorCode === 'PREVIOUS_TODO_OPEN')
+    return 'Previous Todo is still pending or running; close it before starting a later Todo.';
   return `${action} failed.`;
 }
 
@@ -471,6 +507,17 @@ function resolveTargetTodo(
 function currentSeqOrNull(todos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>) {
   const current = todos.find((todo) => todo.status === 'running');
   return current?.seq ?? null;
+}
+
+function isFinalCloseoutTodo(
+  todo: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>[number]
+) {
+  return (
+    (todo.taskType === 'knowledge_capture' &&
+      todo.procedureId === 'contextstill.register_candidates') ||
+    (todo.taskType === 'completion_report' && todo.procedureId === 'final_completion_report') ||
+    todo.procedureId === 'contextstill_closeout'
+  );
 }
 
 function toPayloadTodo(
