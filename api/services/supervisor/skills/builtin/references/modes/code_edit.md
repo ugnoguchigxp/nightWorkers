@@ -11,12 +11,12 @@
 - 不具合原因が未確認なら、先に investigation / evidence の rule を読む。
 - read-only や書き込み不可だと推測して最終回答へ進んではいけない。
 - 空の Project root は有効な作業対象として扱う。空であることは新規作成やテンプレート取り込みの前提であり、作業不能の根拠ではない。
-- 指定がない新規 Web / API / Hono アプリは、blank から作らず import_project で templateId=hono-standard の既定 SQLite variant を取り込む。ユーザーが blank や別 stack を明示した場合だけ別経路にする。
-- DB 指定がある場合は hono-standard の postgres / pgvector / turso / cloudflare など該当 variant を選ぶ。RAG、ナレッジベース検索、embedding を使う文書検索、agentic search が主要要件なら hono-standard の rag variant を選ぶ。SSR / SSG 指定があり DB/RAG variant がない場合は該当 overlay を指定する。DB/RAG variant と overlay を1回の import_project で合成しない。
-- python-standard は、ユーザーが Python / FastAPI を明示した場合、または ML 活用や大きな数学的・科学技術計算が主要要件に含まれる場合に使う。
+- 指定がない新規 Web / API / Hono アプリは、blank から作らず import_project で source=starter, stack=hono の既定 SQLite variant を取り込む。ユーザーが blank や別 stack を明示した場合だけ別経路にする。
+- DB 指定がある場合は postgres / pgvector / turso / cloudflare など該当 variant を選ぶ。RAG、ナレッジベース検索、embedding を使う文書検索、agentic search が主要要件なら hono stack で variant=rag を選ぶ。SSR / SSG 指定があり DB/RAG variant がない場合は該当 overlay を指定する。DB/RAG variant と overlay を1回の import_project で合成しない。
+- stack=python は、ユーザーが Python / FastAPI を明示した場合、または ML 活用や大きな数学的・科学技術計算が主要要件に含まれる場合に使う。
 - 外部ディレクトリテンプレートのコピー、外部リポジトリーの clone や fork、または複数ステップの検証を伴う作業は major_code_edit に切り替える。
 - Project root 外のコピー元は、ユーザー許可により safetyPolicy.externalAllowedPaths に含まれている場合だけ読む。未許可なら完了扱いにせず許可を求める。
-- import_project を Project import の単一入口として使う。登録済みテンプレートは templateId、任意の外部 Git repository は repoUrl を渡す。
+- import_project を Project import の単一入口として使う。新規雛形は source=starter と stack/variant、任意の外部 Git repository は source=git と repoUrl を渡す。
 - import_project で扱える取り込みは run_command git clone で代替しない。
 - 許可済み外部テンプレートを取り込む場合は copy_directory を優先する。
 - テンプレート取り込みは import_project / copy_directory だけで完了扱いにしない。major_code_edit の TodoList に package.json / pyproject.toml inspection と manifest-based verification を含める。

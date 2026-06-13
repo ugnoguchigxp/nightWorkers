@@ -1,4 +1,5 @@
 export type StandardTemplateId = 'hono-standard' | 'python-standard';
+export type StarterStack = 'hono' | 'python';
 
 export type TemplateRef = {
   name: string;
@@ -187,4 +188,62 @@ export function resolveStandardTemplate(input: {
     template,
     variant,
   };
+}
+
+export function resolveStarterTemplate(input: {
+  stack?: unknown;
+  variant?: unknown;
+  registry?: TemplateRegistry;
+}) {
+  const registry = input.registry || standardTemplateRegistry;
+  const normalizedStack = normalizeTemplateKey(input.stack) as StarterStack | null;
+  const normalizedVariant = normalizeTemplateKey(input.variant);
+
+  if (normalizedStack && normalizedStack !== 'hono' && normalizedStack !== 'python') {
+    return {
+      ok: false as const,
+      code: 'UNKNOWN_STARTER_STACK',
+      message: `Unknown starter stack: ${input.stack}`,
+    };
+  }
+
+  const candidateTemplateIds: StandardTemplateId[] =
+    normalizedStack === 'python'
+      ? ['python-standard']
+      : normalizedStack === 'hono'
+        ? ['hono-standard']
+        : ['hono-standard', 'python-standard'];
+
+  if (normalizedVariant) {
+    const matchingTemplateIds = candidateTemplateIds.filter((templateId) =>
+      Boolean(registry[templateId]?.variants[normalizedVariant])
+    );
+    if (matchingTemplateIds.length === 1) {
+      return resolveStandardTemplate({
+        templateId: matchingTemplateIds[0],
+        variant: normalizedVariant,
+        registry,
+      });
+    }
+    if (matchingTemplateIds.length > 1 && !normalizedStack) {
+      return resolveStandardTemplate({
+        templateId: 'hono-standard',
+        variant: normalizedVariant,
+        registry,
+      });
+    }
+    if (normalizedStack) {
+      return {
+        ok: false as const,
+        code: 'UNKNOWN_TEMPLATE_VARIANT',
+        message: `Unknown ${normalizedStack} starter variant: ${input.variant}`,
+      };
+    }
+  }
+
+  return resolveStandardTemplate({
+    templateId: normalizedStack === 'python' ? 'python-standard' : 'hono-standard',
+    variant: normalizedVariant || undefined,
+    registry,
+  });
 }

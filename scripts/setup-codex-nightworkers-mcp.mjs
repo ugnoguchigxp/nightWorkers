@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildNightWorkersCodexToolConfigLines } from '../api/mcp/nightworkers-tool-manifest.ts';
 
 const args = new Set(process.argv.slice(2));
 const remove = args.has('--remove') || args.has('remove') || args.has('uninstall');
@@ -18,6 +19,7 @@ const nextBlock = [
   'args = ["run", "codex:mcp"]',
   `cwd = "${tomlString(repoRoot)}"`,
   'enabled = true',
+  ...buildNightWorkersCodexToolConfigLines(),
   '# End NightWorkers MCP registration',
 ].join('\n');
 

@@ -1,3 +1,9 @@
+import {
+  nightWorkersImportProjectInputSchema,
+  nightWorkersReadCurrentSpecificationInputSchema,
+  nightWorkersTodoListInputSchema,
+  toNightWorkersJsonSchema,
+} from '../../mcp/nightworkers-tool-manifest';
 import type { WorkerToolName } from '../tool-policy/types';
 
 export const jobTypes = [
@@ -106,9 +112,7 @@ export const toolRegistry = {
     name: 'read_current_specification',
     description:
       'NightWorkers内蔵の現在タスク仕様書を読む。taskId を省略すると現在のTask IDを使う。git上のファイルではなく、Specification Artifact の最新 draft_spec Markdown だけを返す。Questionnaire / Blueprint / DB Design は直接返さない。',
-    inputSchema: objectSchema({
-      taskId: { type: 'string' },
-    }),
+    inputSchema: toNightWorkersJsonSchema(nightWorkersReadCurrentSpecificationInputSchema),
   },
   search_files: {
     name: 'search_files',
@@ -146,41 +150,8 @@ export const toolRegistry = {
   import_project: {
     name: 'import_project',
     description:
-      'Project import の単一入口。登録済み標準テンプレートは templateId、任意の Git repository は repoUrl を渡す。run_command git clone で代替しない。',
-    inputSchema: objectSchema(
-      {
-        templateId: { type: 'string', enum: ['hono-standard', 'python-standard'] },
-        repoUrl: { type: 'string' },
-        variant: {
-          type: 'string',
-          enum: [
-            'sqlite',
-            'baseline',
-            'postgres',
-            'pgvector',
-            'rag',
-            'turso',
-            'cloudflare',
-            'api-only',
-            'auth',
-          ],
-        },
-        overlays: {
-          type: 'array',
-          items: {
-            type: 'string',
-            enum: ['ssr', 'ssg', 'celery', 'opentelemetry'],
-          },
-        },
-        targetPath: { type: 'string' },
-        ref: { type: 'string' },
-        depth: { type: 'number' },
-        overwrite: { type: 'boolean' },
-        stripGitDir: { type: 'boolean' },
-        exclude: { type: 'array', items: { type: 'string' } },
-      },
-      []
-    ),
+      'Project import の単一入口。新規雛形は source=starter と stack/variant、任意の Git repository 取り込みは source=git と repoUrl を渡す。run_command git clone で代替しない。',
+    inputSchema: toNightWorkersJsonSchema(nightWorkersImportProjectInputSchema),
   },
   copy_directory: {
     name: 'copy_directory',
@@ -304,30 +275,7 @@ export const toolRegistry = {
     name: 'todo_list',
     description:
       'Run 内部 TodoList を単一 JSON operation で管理する。operation=list/replace/start/done/block/fail。done は次の pending Todo を自動で running にする。',
-    inputSchema: objectSchema(
-      {
-        operation: {
-          type: 'string',
-          enum: ['list', 'replace', 'start', 'done', 'block', 'fail'],
-        },
-        seq: { type: 'number' },
-        todos: {
-          type: 'array',
-          items: {
-            type: 'object',
-            required: ['seq', 'title'],
-            additionalProperties: false,
-            properties: {
-              seq: { type: 'number' },
-              title: { type: 'string' },
-              description: { type: 'string' },
-            },
-          },
-        },
-        startFirst: { type: 'boolean' },
-      },
-      ['operation']
-    ),
+    inputSchema: toNightWorkersJsonSchema(nightWorkersTodoListInputSchema),
   },
   finalize_answer: {
     name: 'finalize_answer',

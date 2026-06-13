@@ -108,7 +108,7 @@ describe('Supervisor reference registry', () => {
     );
 
     expect(importProject).toBeTruthy();
-    expect(JSON.stringify(importProject?.inputSchema)).toContain('"rag"');
+    expect(JSON.stringify(importProject?.inputSchema)).toContain('sqlite, postgres, rag, or auth');
   });
 
   it('resolves blueprint references from app blueprint routing', () => {

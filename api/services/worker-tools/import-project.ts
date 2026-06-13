@@ -1,10 +1,16 @@
 import { type CloneGitRepoOutput, cloneGitRepoTool } from './clone-git-repo';
 import { type MaterializeTemplateOutput, materializeTemplateTool } from './materialize-template';
-import type { TemplateRegistry } from './template-registry';
+import {
+  resolveStarterTemplate,
+  type StarterStack,
+  type TemplateRegistry,
+} from './template-registry';
 import type { WorkerToolResult } from './types';
 
 export interface ImportProjectInput {
   repoRoot: string;
+  source?: 'starter' | 'git';
+  stack?: StarterStack;
   repoUrl?: string;
   templateId?: string;
   variant?: string;
@@ -30,27 +36,60 @@ export async function importProjectTool(
   input: ImportProjectInput
 ): Promise<WorkerToolResult<ImportProjectOutput>> {
   const startedAt = new Date().toISOString();
+  const source = input.source?.trim();
+  const stack = input.stack?.trim() as StarterStack | undefined;
   const repoUrl = input.repoUrl?.trim();
   const templateId = input.templateId?.trim();
+  const importMode =
+    source === 'git' ? 'git' : source === 'starter' ? 'starter' : repoUrl ? 'git' : 'starter';
 
-  if (repoUrl && templateId) {
+  if (source && source !== 'starter' && source !== 'git') {
     return failedImportProject(
       startedAt,
-      'INVALID_IMPORT_PROJECT_ARGS',
-      'import_project accepts either repoUrl or templateId, not both.'
-    );
-  }
-  if (!repoUrl && !templateId) {
-    return failedImportProject(
-      startedAt,
-      'INVALID_IMPORT_PROJECT_ARGS',
-      'import_project requires repoUrl for arbitrary Git imports or templateId for standard templates.'
+      'INVALID_IMPORT_PROJECT_SOURCE',
+      `Unknown import_project source: ${input.source}`
     );
   }
 
-  if (templateId) {
+  if (importMode === 'git' && templateId) {
+    return failedImportProject(
+      startedAt,
+      'INVALID_IMPORT_PROJECT_ARGS',
+      'import_project cannot use templateId when source=git.'
+    );
+  }
+  if (importMode === 'git' && stack) {
+    return failedImportProject(
+      startedAt,
+      'INVALID_IMPORT_PROJECT_ARGS',
+      'import_project cannot use stack when source=git.'
+    );
+  }
+  if (importMode === 'git' && !repoUrl) {
+    return failedImportProject(
+      startedAt,
+      'INVALID_IMPORT_PROJECT_ARGS',
+      'import_project requires repoUrl when source=git.'
+    );
+  }
+
+  if (importMode === 'starter') {
+    const resolved = templateId
+      ? resolveStarterTemplate({
+          stack: templateId === 'python-standard' ? 'python' : 'hono',
+          variant: input.variant,
+          registry: input.registry,
+        })
+      : resolveStarterTemplate({
+          stack,
+          variant: input.variant,
+          registry: input.registry,
+        });
+    if (!resolved.ok) {
+      return failedImportProject(startedAt, resolved.code, resolved.message);
+    }
     const result = await materializeTemplateTool({
-      templateId,
+      templateId: resolved.template.id,
       variant: input.variant,
       overlays: input.overlays,
       targetPath: input.targetPath,

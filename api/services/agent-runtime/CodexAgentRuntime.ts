@@ -27,6 +27,8 @@ const DEFAULT_RESULT: AgentRuntimeResult = {
   riskLevel: 'high',
 };
 
+const RETRYABLE_IMPORT_CANCEL_ERROR = 'user cancelled MCP tool call';
+
 export class CodexAgentRuntime implements AgentRuntime {
   readonly kind = 'codex-agent' as const;
   private cancelledRunIds = new Set<string>();
@@ -84,7 +86,7 @@ export class CodexAgentRuntime implements AgentRuntime {
           logs.push(mapped.message);
           await sink.emit(mapped);
           const importOutcome = getProjectImportOutcome(mapped);
-          if (importOutcome === 'cancelled') {
+          if (importOutcome?.kind === 'cancelled') {
             return this.finishRun(context, sink, logs, {
               terminalState: 'cancelled',
               finalReport: 'Project import was cancelled by the user.',
@@ -93,13 +95,24 @@ export class CodexAgentRuntime implements AgentRuntime {
               collectDiff: false,
             });
           }
-          if (importOutcome === 'failed') {
-            const payload = readEventPayload(mapped);
-            const error =
-              typeof payload.error === 'string'
-                ? payload.error
-                : 'nightworkers.import_project failed';
-            finalText = `Project import failed: ${error}. Stopping without fallback implementation.`;
+          if (importOutcome?.kind === 'failed') {
+            if (importOutcome.retryableTransportCancel) {
+              const diagnosticMessage =
+                '[System] nightworkers.import_project was cancelled before the MCP server returned a tool result. Automatic retry is disabled.';
+              logs.push(diagnosticMessage);
+              await sink.emit({
+                type: 'runtime_error',
+                message: diagnosticMessage,
+                payload: {
+                  provider: 'codex',
+                  toolName: importOutcome.toolName,
+                  error: importOutcome.error,
+                  reason: 'project_import_transport_cancelled',
+                  providerItemId: importOutcome.providerItemId,
+                },
+              });
+            }
+            finalText = buildProjectImportFailureReport(importOutcome);
             return this.finishRun(context, sink, logs, {
               terminalState: 'needs_human',
               finalReport: finalText,
@@ -285,18 +298,71 @@ function readEventPayload(event: AgentRuntimeEvent): Record<string, unknown> {
     : {};
 }
 
-function getProjectImportOutcome(event: AgentRuntimeEvent): 'failed' | 'cancelled' | null {
+type ProjectImportOutcome =
+  | {
+      kind: 'cancelled';
+      toolName: string;
+      providerItemId: string | null;
+    }
+  | {
+      kind: 'failed';
+      toolName: string;
+      providerItemId: string | null;
+      error: string;
+      retryableTransportCancel: boolean;
+    };
+
+function getProjectImportOutcome(event: AgentRuntimeEvent): ProjectImportOutcome | null {
   if (event.type !== 'tool_call_finished') return null;
   const payload = readEventPayload(event);
-  if (
-    payload.toolName !== 'nightworkers.import_project' &&
-    payload.toolName !== 'nightworkers.materialize_template'
-  ) {
+  const toolName =
+    payload.toolName === 'nightworkers.import_project' ||
+    payload.toolName === 'nightworkers.materialize_template'
+      ? payload.toolName
+      : null;
+  if (!toolName) {
     return null;
   }
-  if (payload.status === 'cancelled') return 'cancelled';
-  if (payload.status === 'failed' || typeof payload.error === 'string') return 'failed';
+  const providerItemId = typeof payload.providerItemId === 'string' ? payload.providerItemId : null;
+  if (payload.status === 'cancelled') {
+    return {
+      kind: 'cancelled',
+      toolName,
+      providerItemId,
+    };
+  }
+  if (payload.status === 'failed' || typeof payload.error === 'string') {
+    const error =
+      typeof payload.error === 'string' ? payload.error : 'nightworkers.import_project failed';
+    return {
+      kind: 'failed',
+      toolName,
+      providerItemId,
+      error,
+      retryableTransportCancel: isRetryableProjectImportTransportCancel(payload, error),
+    };
+  }
   return null;
+}
+
+function isRetryableProjectImportTransportCancel(
+  payload: Record<string, unknown>,
+  error: string
+): boolean {
+  return (
+    error === RETRYABLE_IMPORT_CANCEL_ERROR &&
+    payload.status === 'failed' &&
+    (payload.result === null || typeof payload.result === 'undefined')
+  );
+}
+
+function buildProjectImportFailureReport(
+  outcome: Extract<ProjectImportOutcome, { kind: 'failed' }>
+): string {
+  if (outcome.retryableTransportCancel) {
+    return `Project import failed before the MCP server returned a tool result: ${outcome.error}. Stopping without retry or fallback implementation.`;
+  }
+  return `Project import failed: ${outcome.error}. Stopping without fallback implementation.`;
 }
 
 function normalizeRuntimeUsage(usageValue: unknown, rawUsage: unknown): NormalizedLlmUsage | null {
@@ -345,29 +411,26 @@ export function buildCodexRuntimePrompt(context: AgentRunContext): string {
     '',
     'NightWorkers MCP:',
     '- MCP server name: nightworkers',
-    '- Run context-still.initial_instructions before other task work and follow its current procedure guidance.',
-    '- Treat the nightworkers MCP tools as the required execution interface. When a named NightWorkers tool fits the job, call it directly instead of describing equivalent shell steps.',
+    '- Run context-still.initial_instructions before other task work and follow it.',
+    '- Treat nightworkers MCP tools as the execution interface. When a named NightWorkers tool fits, call it directly instead of describing equivalent shell steps.',
+    '- Execution order: specification -> Todo execution -> verification -> closeout.',
+    '- Planning is not closeout. During planning or Todo setup, do not call context-still.compile_eval.',
+    '- closeout starts only after implementation and verification are genuinely finished and no implementation Todo remains pending or running.',
     '- Use nightworkers.todo_list as the single Todo control tool.',
-    '- For multi-step implementation work, call nightworkers.todo_list with operation=replace once near the start to register the implementation Todos for this run.',
-    '- operation=replace only defines or resets the Todo plan. It does not mean the first implementation Todo is already finished.',
-    '- Use operation=start only when you must change which Todo is currently running.',
-    '- Use operation=done only after the current Todo has concrete execution evidence such as a successful MCP tool call, file change, or verification result. done automatically starts the next pending Todo.',
-    '- Use operation=block for approval or input waits, and operation=fail for concrete implementation or verification failures.',
-    '- A Todo tracking failure is tracking failure, not task completion. Do not jump to closeout or final completion just because Todo tracking failed.',
-    '- If a Todo-tracking MCP call fails but the actual implementation tool to run next is still clear, continue with the implementation work instead of stopping just to report the Todo-tracking failure.',
-    '- After an implementation, scaffold, or verification Todo becomes running, do not stop with a plan-only answer, "next steps", or "実装へ進めるなら" style summary. Continue by calling the concrete NightWorkers tools for that Todo.',
-    '- If you truly cannot continue, explicitly close the current Todo with operation=block or operation=fail and explain the blocker. Never leave open implementation Todos behind a planning-only final answer.',
-    '- Do not call context-still.compile_eval during planning, Todo registration, or immediately after a Todo tracking failure. compile_eval is a closeout action only after implementation and verification are genuinely finished.',
-    '- For planning, implementation-plan, specification, design-doc, or requirement-check work, use nightworkers.read_current_specification first.',
-    '- If the current task specification is not found, use nightworkers.list_recent_specifications to locate the relevant task, then read it by taskId.',
-    '- Ground plans and verification steps in the MCP specification content when it is available.',
-    '- Use nightworkers.import_project as the single Project import entrypoint. Pass templateId for registered templates, or repoUrl for arbitrary Git imports.',
-    '- For unspecified new Web/API apps in an empty or near-empty Project root, call nightworkers.import_project with templateId=hono-standard before custom implementation. Use the default SQLite variant unless the user explicitly asks for another stack, a blank project, or a DB/RAG/SSR/SSG variant.',
-    '- If the user specifies a DB, choose the matching hono-standard variant such as postgres, pgvector, turso, or cloudflare. If the user asks for RAG, knowledge-base search, embeddings-backed document search, or agentic search, choose the hono-standard rag variant. If the user specifies SSR or SSG without a DB/RAG variant, pass the matching overlay. Do not combine a DB/RAG variant and an overlay in one import_project call.',
+    '- For multi-step work, call nightworkers.todo_list operation=replace once near the start. This only defines the Todo plan; it does not complete any Todo.',
+    '- Use operation=done only after concrete evidence exists for the current Todo. done auto-starts the next pending Todo.',
+    '- Use operation=block for approval/input waits and operation=fail for concrete implementation or verification failures.',
+    '- If a Todo-tracking MCP call fails but the next implementation action is still clear, continue the implementation work. Tracking failure is not task completion.',
+    '- After an implementation, scaffold, or verification Todo is running, do not stop with a plan-only answer or next-steps summary. Continue the concrete work, or close the current Todo with block/fail and explain the blocker.',
+    '- For planning, implementation-plan, specification, design-doc, or requirement-check work, call nightworkers.read_current_specification first. If missing, use nightworkers.list_recent_specifications and then read by taskId.',
+    '- Ground plans and verification steps in the specification content when available.',
+    '- Use nightworkers.import_project as the single Project import entrypoint. For new scaffolds, pass source=starter with stack/variant. For arbitrary Git imports, pass source=git with repoUrl.',
+    '- For unspecified new Web/API apps in an empty or near-empty Project root, use source=starter, stack=hono, and the default SQLite variant unless the user explicitly asks for another stack, blank project, or a DB/RAG/SSR/SSG variant.',
+    '- If the user specifies a DB, choose the matching starter variant such as postgres, pgvector, turso, or cloudflare. If the user asks for RAG or embeddings-backed search, choose variant=rag on the hono stack. If the user specifies SSR or SSG without a DB/RAG variant, pass the matching overlay. Do not combine a DB/RAG variant and an overlay in one call.',
     '- Do not use shell git clone when nightworkers.import_project covers the task.',
-    '- If nightworkers.import_project fails, is cancelled, or is not approved, stop and report the tool failure. Do not create a fallback static app or alternative implementation.',
-    '- After nightworkers.import_project succeeds, inspect package.json, adapt the scaffold to the specification, and run manifest-based verification before reporting completion.',
-    '- For CLI evidence, prefer NightWorkers worker-tool results. run_command and run_verification keep full stdout/stderr by default, so do not summarize away exact git/build/test output unless it is truly excessive.',
+    '- If nightworkers.import_project fails, is cancelled, or is not approved, stop and report the tool failure. Do not create a fallback static app or alternate implementation.',
+    '- After import_project succeeds, inspect package.json, adapt the scaffold to the specification, and run manifest-based verification before reporting completion.',
+    '- For CLI evidence, prefer NightWorkers worker-tool results. run_command and run_verification keep full stdout/stderr by default, so preserve exact git/build/test output unless it is truly excessive.',
   ].join('\n');
   return request ? `${request}\n\n${contract}` : contract;
 }

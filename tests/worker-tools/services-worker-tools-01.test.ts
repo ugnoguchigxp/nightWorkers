@@ -12,7 +12,10 @@ import {
   isPathSafe,
   materializeTemplateTool,
 } from '../../api/services/worker-tools';
-import { resolveStandardTemplate } from '../../api/services/worker-tools/template-registry';
+import {
+  resolveStandardTemplate,
+  resolveStarterTemplate,
+} from '../../api/services/worker-tools/template-registry';
 
 let dummyRepoDir: string;
 const execFileAsync = promisify(execFile);
@@ -157,7 +160,8 @@ describe('Worker Tools Unit Tests', () => {
       await execFileAsync('git', ['tag', 'sqlite-v1.0.0'], { cwd: templateRepo });
 
       const result = await importProjectTool({
-        templateId: 'hono-standard',
+        source: 'starter',
+        stack: 'hono',
         variant: 'sqlite',
         repoRoot: targetDir,
         registry: {
@@ -414,6 +418,18 @@ describe('Worker Tools Unit Tests', () => {
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) throw new Error('expected rag variant to resolve');
     expect(resolved.variant.ref).toBe('rag-v1.0.0');
+  });
+
+  it('resolves a starter stack and variant into the internal template registry', () => {
+    const resolved = resolveStarterTemplate({
+      stack: 'python',
+      variant: 'auth',
+    });
+
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) throw new Error('expected auth starter variant to resolve');
+    expect(resolved.template.id).toBe('python-standard');
+    expect(resolved.variant.ref).toBe('auth-v1.0.0');
   });
 
   it('materializes a single registered overlay ref', async () => {

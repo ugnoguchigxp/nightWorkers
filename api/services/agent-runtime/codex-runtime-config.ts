@@ -1,4 +1,5 @@
 import type { CodexOptions, ThreadOptions } from '@openai/codex-sdk';
+import { buildNightWorkersCodexToolApprovalConfig } from '../../mcp/nightworkers-tool-manifest';
 import type { AgentRunContext } from './types';
 
 type CodexRuntimeConfigInput = {
@@ -71,6 +72,7 @@ function buildNightWorkersMcpServers(env: NodeJS.ProcessEnv): Record<string, unk
       command,
       args,
       env: serverEnv,
+      tools: buildNightWorkersCodexToolApprovalConfig(),
     },
   };
 }

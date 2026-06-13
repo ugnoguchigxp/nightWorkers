@@ -46,6 +46,12 @@ describe('CodexAgentRuntime', () => {
         nightworkers: {
           command: '/bin/nightworkers-mcp',
           args: ['--stdio'],
+          tools: {
+            read_current_specification: { approval_mode: 'approve' },
+            list_recent_specifications: { approval_mode: 'approve' },
+            todo_list: { approval_mode: 'approve' },
+            import_project: { approval_mode: 'approve' },
+          },
           env: {
             DATABASE_URL: 'file:/tmp/nightworkers.sqlite',
             JWT_SECRET: 'secret-with-enough-length-for-tests',
@@ -125,21 +131,24 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain('nightworkers.todo_list');
     expect(prompt).toContain('operation=replace');
     expect(prompt).toContain('operation=done');
-    expect(prompt).toContain('A Todo tracking failure is tracking failure, not task completion');
-    expect(prompt).toContain('Do not call context-still.compile_eval during planning');
+    expect(prompt).toContain(
+      'Execution order: specification -> Todo execution -> verification -> closeout.'
+    );
+    expect(prompt).toContain('Planning is not closeout');
+    expect(prompt).toContain('do not call context-still.compile_eval');
+    expect(prompt).toContain(
+      'closeout starts only after implementation and verification are genuinely finished'
+    );
     expect(prompt).toContain('nightworkers.read_current_specification');
     expect(prompt).toContain('nightworkers.list_recent_specifications');
     expect(prompt).toContain('nightworkers.import_project');
     expect(prompt).not.toContain('nightworkers.materialize_template');
     expect(prompt).not.toContain('nightworkers.clone_git_repo');
-    expect(prompt).toContain('templateId=hono-standard');
+    expect(prompt).toContain('source=starter, stack=hono');
     expect(prompt).toContain('default SQLite variant');
     expect(prompt).toContain('run_command and run_verification keep full stdout/stderr by default');
     expect(prompt).toContain('Do not create a fallback static app');
-    expect(prompt).toContain('do not stop with a plan-only answer');
-    expect(prompt).toContain(
-      'Never leave open implementation Todos behind a planning-only final answer'
-    );
+    expect(prompt).toContain('do not stop with a plan-only answer or next-steps summary');
   });
 
   it('passes the composed runtime prompt to Codex threads', async () => {
@@ -303,18 +312,18 @@ describe('CodexAgentRuntime', () => {
     );
   });
 
-  it('treats provider-cancelled project import as a tool failure', async () => {
+  it('fails once for provider-cancelled project import and records transport diagnostics', async () => {
     const runtime = new CodexAgentRuntime({
-      threadFactory: () =>
+      threadFactory: vi.fn().mockReturnValue(
         fakeThread([
           {
             type: 'item.completed',
             item: {
-              id: 'mcp-template',
+              id: 'mcp-template-1',
               type: 'mcp_tool_call',
               server: 'nightworkers',
               tool: 'import_project',
-              arguments: { templateId: 'hono-standard', variant: 'sqlite' },
+              arguments: { source: 'starter', stack: 'hono', variant: 'sqlite' },
               status: 'failed',
               error: { message: 'user cancelled MCP tool call' },
             },
@@ -328,7 +337,8 @@ describe('CodexAgentRuntime', () => {
               changes: [{ path: 'index.html' }],
             },
           },
-        ] as any),
+        ] as any)
+      ),
     });
     const events: any[] = [];
 
@@ -340,9 +350,18 @@ describe('CodexAgentRuntime', () => {
 
     expect(result.terminalState).toBe('needs_human');
     expect(result.stoppedBy).toBe('tool_failure');
-    expect(result.finalReport).toContain('Project import failed: user cancelled MCP tool call');
+    expect(result.finalReport).toContain(
+      'Project import failed before the MCP server returned a tool result: user cancelled MCP tool call'
+    );
     expect(events).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          type: 'runtime_error',
+          payload: expect.objectContaining({
+            providerItemId: 'mcp-template-1',
+            reason: 'project_import_transport_cancelled',
+          }),
+        }),
         expect.objectContaining({
           type: 'runtime_finished',
           payload: expect.objectContaining({
@@ -373,7 +392,7 @@ describe('CodexAgentRuntime', () => {
               type: 'mcp_tool_call',
               server: 'nightworkers',
               tool: 'import_project',
-              arguments: { templateId: 'hono-standard', variant: 'sqlite' },
+              arguments: { source: 'starter', stack: 'hono', variant: 'sqlite' },
               status: 'cancelled',
             },
           },
