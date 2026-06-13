@@ -2,7 +2,13 @@ import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import { runAgentHooks } from '../hooks/hooks-runner';
 import type { AgentHookInput, AgentHookRunEvent } from '../hooks/types';
 import { runSupervisorLoop } from '../supervisor/supervisor-loop';
-import type { AgentRunContext, AgentRuntime, AgentRuntimeResult, AgentRuntimeSink } from './types';
+import type {
+  AgentRunContext,
+  AgentRuntime,
+  AgentRuntimeEvent,
+  AgentRuntimeResult,
+  AgentRuntimeSink,
+} from './types';
 
 const DEFAULT_RESULT: AgentRuntimeResult = {
   terminalState: 'failed',
@@ -41,10 +47,11 @@ export class NativeAgentRuntime implements AgentRuntime {
         event.payload && typeof event.payload === 'object' && !Array.isArray(event.payload)
           ? { ...currentTodoData, ...(event.payload as Record<string, unknown>) }
           : { ...currentTodoData, payload: event.payload };
-      await sink.emit({
+      const enrichedEvent = {
         ...event,
         payload: Object.keys(currentTodoData).length > 0 ? payload : event.payload,
-      });
+      } as AgentRuntimeEvent;
+      await sink.emit(enrichedEvent);
     };
     const emitHookEvent = async (event: AgentHookRunEvent) => {
       await repo.createRunEvent(

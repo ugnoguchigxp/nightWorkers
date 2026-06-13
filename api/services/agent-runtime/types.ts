@@ -63,6 +63,20 @@ export interface AgentRunContext {
 
 type AgentEventPayload = unknown;
 
+export type CodexContractWarningSeverity = 'info' | 'warning' | 'error';
+
+export interface CodexContractWarning {
+  code: string;
+  severity: CodexContractWarningSeverity;
+  message: string;
+  providerItemId?: string | null;
+  toolName?: string | null;
+  todoId?: string | null;
+  todoSeq?: number | null;
+  changedFiles?: string[];
+  command?: string | null;
+}
+
 export type AgentRuntimeEvent =
   | { type: 'runtime_started'; message: string; payload?: AgentEventPayload }
   | { type: 'turn_started'; message: string; payload?: AgentEventPayload }
@@ -81,6 +95,7 @@ export type AgentRuntimeEvent =
   | { type: 'verification_finished'; message: string; payload?: AgentEventPayload }
   | { type: 'diff_collected'; message: string; payload?: AgentEventPayload }
   | { type: 'runtime_finished'; message: string; payload?: AgentEventPayload }
+  | { type: 'runtime_warning'; message: string; payload?: CodexContractWarning }
   | { type: 'runtime_error'; message: string; payload?: AgentEventPayload };
 
 export interface AgentRuntimeSink {
@@ -112,6 +127,7 @@ export interface AgentRuntimeResult {
   diffPatch?: string;
   testResults?: unknown;
   usage?: unknown;
+  contractWarnings?: CodexContractWarning[];
 }
 
 export interface AgentRuntime {

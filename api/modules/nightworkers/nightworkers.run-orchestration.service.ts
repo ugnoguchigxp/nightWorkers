@@ -8,7 +8,7 @@ import {
   readRuntimeLaneConfigFromEnv,
   resolveRuntimeLane,
 } from '../../services/agent-runtime/runtime-lane';
-import type { AgentRuntimeKind } from '../../services/agent-runtime/types';
+import type { AgentRuntimeKind, CodexContractWarning } from '../../services/agent-runtime/types';
 import {
   buildPromptWithStateCardParts,
   getLatestConversationContextForTask,
@@ -65,6 +65,88 @@ function listOpenTodos<TTodo extends { status: string }>(todos: TTodo[]) {
 
 function isPlanningOnlyRun<TTodo extends { taskType: string }>(todos: TTodo[]) {
   return todos.length === 0;
+}
+
+function normalizeCodexContractWarnings(value: unknown): CodexContractWarning[] {
+  if (!Array.isArray(value)) return [];
+  const warnings: CodexContractWarning[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    if (typeof record.code !== 'string' || typeof record.message !== 'string') continue;
+    const severity =
+      record.severity === 'info' || record.severity === 'warning' || record.severity === 'error'
+        ? record.severity
+        : 'warning';
+    warnings.push({
+      code: record.code,
+      severity,
+      message: record.message,
+      providerItemId: typeof record.providerItemId === 'string' ? record.providerItemId : null,
+      toolName: typeof record.toolName === 'string' ? record.toolName : null,
+      todoId: typeof record.todoId === 'string' ? record.todoId : null,
+      todoSeq: typeof record.todoSeq === 'number' ? record.todoSeq : null,
+      changedFiles: Array.isArray(record.changedFiles)
+        ? record.changedFiles.filter((file): file is string => typeof file === 'string')
+        : undefined,
+      command: typeof record.command === 'string' ? record.command : null,
+    });
+  }
+  return warnings;
+}
+
+function mergeCodexContractSnapshot(snapshot: unknown, warnings: CodexContractWarning[]) {
+  const base =
+    snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
+      ? (snapshot as Record<string, unknown>)
+      : {};
+  const existingContract =
+    base.codexContract &&
+    typeof base.codexContract === 'object' &&
+    !Array.isArray(base.codexContract)
+      ? (base.codexContract as Record<string, unknown>)
+      : {};
+  const existingWarnings = normalizeCodexContractWarnings(existingContract.warnings);
+  const mergedWarnings = dedupeCodexContractWarnings([...existingWarnings, ...warnings]);
+  return {
+    ...base,
+    codexContract: {
+      ...existingContract,
+      warnings: mergedWarnings,
+    },
+  };
+}
+
+function dedupeCodexContractWarnings(warnings: CodexContractWarning[]) {
+  const seen = new Set<string>();
+  return warnings.filter((warning) => {
+    const key = [
+      warning.code,
+      warning.providerItemId ?? '',
+      warning.toolName ?? '',
+      warning.todoId ?? '',
+      warning.todoSeq ?? '',
+      warning.command ?? '',
+      (warning.changedFiles ?? []).join(','),
+    ].join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildOpenTodoContractWarning<TTodo extends { id: string; seq: number; title: string }>(
+  openTodos: TTodo[]
+): CodexContractWarning {
+  return {
+    code: 'codex_open_todos_before_completion',
+    severity: 'warning',
+    message: 'Runtime reported completion while DB Todo state still had pending or running Todos.',
+    providerItemId: null,
+    toolName: null,
+    todoId: openTodos[0]?.id ?? null,
+    todoSeq: openTodos[0]?.seq ?? null,
+  };
 }
 
 const IMPLEMENTATION_PHASE_PREAMBLE = [
@@ -367,6 +449,11 @@ export async function startTaskRun(taskId: string) {
       const stopWasRequested =
         latestRunBeforeFinalize?.status === 'cancelled' ||
         runtimeResult.terminalState === 'cancelled';
+      const runtimeContractWarnings = normalizeCodexContractWarnings(
+        runtimeResult.contractWarnings
+      );
+      const contextSnapshotBeforeFinalize =
+        latestRunBeforeFinalize?.contextSnapshot ?? runtimeContextSnapshot;
 
       await repo.createRunEvent({
         version: 1,
@@ -381,6 +468,7 @@ export async function startTaskRun(taskId: string) {
           terminalState: runtimeResult.terminalState,
           stoppedBy: runtimeResult.stoppedBy,
           riskLevel: runtimeResult.riskLevel,
+          contractWarnings: runtimeContractWarnings,
         },
       });
 
@@ -395,6 +483,10 @@ export async function startTaskRun(taskId: string) {
           logContent: runtimeResult.logContent,
           diffPatch: runtimeResult.diffPatch,
           testResults: runtimeResult.testResults,
+          contextSnapshot: mergeCodexContractSnapshot(
+            contextSnapshotBeforeFinalize,
+            runtimeContractWarnings
+          ),
           finalReport,
           finalJudgment: null,
           summary: runtimeResult.summary || outcome.summary,
@@ -448,12 +540,19 @@ export async function startTaskRun(taskId: string) {
       const openTodos = listOpenTodos(finalTodos);
       const todoFinalizationBlocked =
         outcome.status === 'completed' && openTodos.length > 0 && !isPlanningOnlyRun(finalTodos);
+      const openTodoWarning = todoFinalizationBlocked
+        ? buildOpenTodoContractWarning(openTodos)
+        : null;
+      const finalContractWarnings = openTodoWarning
+        ? [...runtimeContractWarnings, openTodoWarning]
+        : runtimeContractWarnings;
       const guardedStatus = todoFinalizationBlocked ? 'needs_human' : outcome.status;
       const finalReport = todoFinalizationBlocked
         ? [
             runtimeResult.finalReport || outcome.summary,
             '',
             `Todo closeout incomplete: ${openTodos.map((todo) => `#${todo.seq} ${todo.title} (${todo.status})`).join(', ')}`,
+            'Codex contract warning: codex_open_todos_before_completion.',
           ]
             .filter(Boolean)
             .join('\n')
@@ -463,6 +562,10 @@ export async function startTaskRun(taskId: string) {
         status: guardedStatus,
         endedAt: new Date(),
         finishedAt: new Date(),
+        contextSnapshot: mergeCodexContractSnapshot(
+          contextSnapshotBeforeFinalize,
+          finalContractWarnings
+        ),
         finalReport,
         finalJudgment: null,
         summary: todoFinalizationBlocked
@@ -481,6 +584,8 @@ export async function startTaskRun(taskId: string) {
           message:
             'Runtime finished before explicit Todo closeout; run cannot be marked completed.',
           data: {
+            warningCode: 'codex_open_todos_before_completion',
+            contractWarning: openTodoWarning,
             terminalState: outcome.status,
             nextStatus: guardedStatus,
             openTodos: openTodos.map((todo) => ({

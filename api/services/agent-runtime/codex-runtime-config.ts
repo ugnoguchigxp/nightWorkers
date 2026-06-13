@@ -1,5 +1,8 @@
 import type { CodexOptions, ThreadOptions } from '@openai/codex-sdk';
-import { buildNightWorkersCodexToolApprovalConfig } from '../../mcp/nightworkers-tool-manifest';
+import {
+  buildNightWorkersCodexToolApprovalConfig,
+  nightWorkersCodexToolManifest,
+} from '../../mcp/nightworkers-tool-manifest';
 import type { AgentRunContext } from './types';
 
 type CodexRuntimeConfigInput = {
@@ -7,6 +10,17 @@ type CodexRuntimeConfigInput = {
   env?: NodeJS.ProcessEnv;
   enableNightworkersMcp?: boolean;
 };
+
+export type CodexRuntimeMcpConfigSource = 'inline_configured' | 'global_inherited' | 'disabled';
+
+export type CodexRuntimeMcpConfigState = {
+  source: CodexRuntimeMcpConfigSource;
+  expectedTools: string[];
+  hasInlineNightWorkersMcp: boolean;
+  serverName: 'nightworkers' | null;
+};
+
+const NIGHTWORKERS_MCP_SERVER_NAME = 'nightworkers';
 
 export function buildCodexRuntimeSdkOptions(input: CodexRuntimeConfigInput = {}): CodexOptions {
   const env = input.env ?? process.env;
@@ -34,6 +48,30 @@ export function buildCodexRuntimeSdkOptions(input: CodexRuntimeConfigInput = {})
     ...(input.accessToken ? { CODEX_ACCESS_TOKEN: input.accessToken } : {}),
   };
   return sdkOptions;
+}
+
+export function resolveCodexRuntimeMcpConfigState(
+  input: Pick<CodexRuntimeConfigInput, 'env' | 'enableNightworkersMcp'> = {}
+): CodexRuntimeMcpConfigState {
+  const env = input.env ?? process.env;
+  const expectedTools = Object.keys(nightWorkersCodexToolManifest).map(
+    (tool) => `${NIGHTWORKERS_MCP_SERVER_NAME}.${tool}`
+  );
+  if (input.enableNightworkersMcp === false) {
+    return {
+      source: 'disabled',
+      expectedTools,
+      hasInlineNightWorkersMcp: false,
+      serverName: null,
+    };
+  }
+  const hasInlineNightWorkersMcp = Boolean(env.NIGHTWORKERS_CODEX_MCP_COMMAND);
+  return {
+    source: hasInlineNightWorkersMcp ? 'inline_configured' : 'global_inherited',
+    expectedTools,
+    hasInlineNightWorkersMcp,
+    serverName: hasInlineNightWorkersMcp ? NIGHTWORKERS_MCP_SERVER_NAME : null,
+  };
 }
 
 export function buildCodexRuntimeThreadOptions(context: AgentRunContext): ThreadOptions {
@@ -68,7 +106,7 @@ function buildNightWorkersMcpServers(env: NodeJS.ProcessEnv): Record<string, unk
     if (typeof value === 'string') serverEnv[key] = value;
   }
   return {
-    nightworkers: {
+    [NIGHTWORKERS_MCP_SERVER_NAME]: {
       command,
       args,
       env: serverEnv,

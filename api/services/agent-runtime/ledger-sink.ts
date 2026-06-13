@@ -1,5 +1,6 @@
 import { logEvent } from '../../lib/logger';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
+import { classifyCodexCommand } from './codex-event-mapper';
 import type { AgentRuntimeEvent, AgentRuntimeSink } from './types';
 
 type EventMapping = {
@@ -70,6 +71,7 @@ const EVENT_MAPPING: Record<AgentRuntimeEvent['type'], EventMapping> = {
     severity: 'checkpoint',
     canonicalType: 'run.runtime_finished',
   },
+  runtime_warning: { actor: 'system', severity: 'warning', canonicalType: 'system.warning' },
   runtime_error: { actor: 'system', severity: 'error', canonicalType: 'system.error' },
 };
 
@@ -262,16 +264,7 @@ function isSuccessfulBroadVerificationCommand(
         ? payload.name
         : '';
   if (!command) return false;
-  return isBroadVerificationCommand(command);
-}
-
-function isBroadVerificationCommand(command: string) {
-  const normalized = command.replace(/\s+/g, ' ').trim();
-  return (
-    /\bbun\s+(?:run\s+)?(?:scripts\/verify\.(?:ts|js|mjs)|verify(?::[\w-]+)?)\b/.test(normalized) ||
-    /\bnpm\s+run\s+verify(?::[\w-]+)?\b/.test(normalized) ||
-    /\b(?:pnpm|yarn)\s+(?:run\s+)?verify(?::[\w-]+)?\b/.test(normalized)
-  );
+  return classifyCodexCommand(command) === 'broad_verification';
 }
 
 function isFinalCloseoutTodo(todo: { taskType?: string | null; procedureId?: string | null }) {

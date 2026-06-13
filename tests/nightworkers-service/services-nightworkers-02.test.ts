@@ -313,6 +313,17 @@ describe('NightWorkers service', () => {
           finalReport: expect.stringContaining(
             'Todo closeout incomplete: #1 Running Todo (running), #2 Pending Todo (pending)'
           ),
+          contextSnapshot: expect.objectContaining({
+            codexContract: expect.objectContaining({
+              warnings: expect.arrayContaining([
+                expect.objectContaining({
+                  code: 'codex_open_todos_before_completion',
+                  todoId: 'todo-running',
+                  todoSeq: 1,
+                }),
+              ]),
+            }),
+          }),
         })
       );
     });
@@ -325,6 +336,10 @@ describe('NightWorkers service', () => {
         type: 'run.outcome_decided',
         message: 'Runtime finished before explicit Todo closeout; run cannot be marked completed.',
         data: expect.objectContaining({
+          warningCode: 'codex_open_todos_before_completion',
+          contractWarning: expect.objectContaining({
+            code: 'codex_open_todos_before_completion',
+          }),
           terminalState: 'completed',
           nextStatus: 'needs_human',
           openTodos: expect.arrayContaining([

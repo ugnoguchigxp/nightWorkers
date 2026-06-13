@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Thread, ThreadEvent } from '@openai/codex-sdk';
+import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import type { NormalizedLlmUsage } from '../llm-usage';
 import { recordLlmUsage } from '../llm-usage';
 import { gitDiffTool } from '../worker-tools/git';
@@ -7,6 +8,8 @@ import { createCodexEventMapperState, mapCodexThreadEvent } from './codex-event-
 import {
   buildCodexRuntimeSdkOptions,
   buildCodexRuntimeThreadOptions,
+  type CodexRuntimeMcpConfigState,
+  resolveCodexRuntimeMcpConfigState,
 } from './codex-runtime-config';
 import type {
   AgentRunContext,
@@ -14,6 +17,7 @@ import type {
   AgentRuntimeEvent,
   AgentRuntimeResult,
   AgentRuntimeSink,
+  CodexContractWarning,
 } from './types';
 
 export type CodexThreadFactory = (context: AgentRunContext) => Promise<Thread> | Thread;
@@ -28,6 +32,34 @@ const DEFAULT_RESULT: AgentRuntimeResult = {
 };
 
 const RETRYABLE_IMPORT_CANCEL_ERROR = 'user cancelled MCP tool call';
+const NIGHTWORKERS_EXPECTED_CODEX_TOOLS = new Set([
+  'nightworkers.read_current_specification',
+  'nightworkers.list_recent_specifications',
+  'nightworkers.todo_list',
+  'nightworkers.import_project',
+]);
+
+type RuntimeTodoEvidence = {
+  id: string;
+  seq: number;
+  title: string;
+  procedureId?: string | null;
+};
+
+type CodexRuntimeAuditState = {
+  sawNightworkersTodoReplace: boolean;
+  sawAnyNightworkersTodo: boolean;
+  sawNightworkersImportProjectSuccess: boolean;
+  sawNightworkersImportProjectFailure: boolean;
+  mcpDegraded: boolean;
+  observedNightWorkersTools: Set<string>;
+  contractWarnings: CodexContractWarning[];
+  lastCurrentTodo: RuntimeTodoEvidence | null;
+  importProjectProviderItemId: string | null;
+  recommendedVerificationCommands: string[];
+  verificationEvidenceSeen: boolean;
+  mcpConfig: CodexRuntimeMcpConfigState;
+};
 
 export class CodexAgentRuntime implements AgentRuntime {
   readonly kind = 'codex-agent' as const;
@@ -64,6 +96,7 @@ export class CodexAgentRuntime implements AgentRuntime {
     let terminalState: AgentRuntimeResult['terminalState'] = 'completed';
     let stoppedBy: AgentRuntimeResult['stoppedBy'] = 'decision';
     const mapperState = createCodexEventMapperState();
+    const auditState = createCodexRuntimeAuditState();
 
     try {
       if (signal?.aborted || this.cancelledRunIds.has(context.runId)) {
@@ -83,19 +116,38 @@ export class CodexAgentRuntime implements AgentRuntime {
         }
         const mappedEvents = mapCodexThreadEvent(event, mapperState);
         for (const mapped of mappedEvents) {
-          logs.push(mapped.message);
-          await sink.emit(mapped);
+          const auditedEvents = await this.auditMappedEvent(context, auditState, mapped);
+          for (const audited of auditedEvents) {
+            logs.push(audited.message);
+            await sink.emit(audited);
+          }
           const importOutcome = getProjectImportOutcome(mapped);
           if (importOutcome?.kind === 'cancelled') {
+            addContractWarning(auditState, {
+              code: 'codex_import_project_cancelled',
+              severity: 'error',
+              message:
+                'nightworkers.import_project was cancelled. Fallback implementation is forbidden.',
+              providerItemId: importOutcome.providerItemId,
+              toolName: importOutcome.toolName,
+            });
             return this.finishRun(context, sink, logs, {
               terminalState: 'cancelled',
-              finalReport: 'Project import was cancelled by the user.',
+              finalReport: buildProjectImportCancelledReport(importOutcome),
               stoppedBy: 'cancelled',
               riskLevel: 'medium',
               collectDiff: false,
+              auditState,
             });
           }
           if (importOutcome?.kind === 'failed') {
+            addContractWarning(auditState, {
+              code: 'codex_import_project_failed',
+              severity: 'error',
+              message: 'nightworkers.import_project failed. Fallback implementation is forbidden.',
+              providerItemId: importOutcome.providerItemId,
+              toolName: importOutcome.toolName,
+            });
             if (importOutcome.retryableTransportCancel) {
               const diagnosticMessage =
                 '[System] nightworkers.import_project was cancelled before the MCP server returned a tool result. Automatic retry is disabled.';
@@ -119,6 +171,7 @@ export class CodexAgentRuntime implements AgentRuntime {
               stoppedBy: 'tool_failure',
               riskLevel: 'high',
               collectDiff: false,
+              auditState,
             });
           }
           if (mapped.type === 'model_response_finished') {
@@ -133,11 +186,13 @@ export class CodexAgentRuntime implements AgentRuntime {
         }
       }
 
+      await this.emitMissingImportVerificationWarningIfNeeded(sink, logs, auditState);
       return this.finishRun(context, sink, logs, {
         terminalState,
         finalReport: finalText,
         stoppedBy,
         riskLevel: terminalState === 'completed' ? 'medium' : 'high',
+        auditState,
       });
     } catch (err) {
       if (controller.signal.aborted || this.cancelledRunIds.has(context.runId)) {
@@ -153,6 +208,7 @@ export class CodexAgentRuntime implements AgentRuntime {
         ...DEFAULT_RESULT,
         summary: `Codex Agent Runtime failed: ${message}`,
         logContent: [...logs, message].join('\n'),
+        contractWarnings: auditState.contractWarnings,
       };
     } finally {
       signal?.removeEventListener('abort', abort);
@@ -161,6 +217,224 @@ export class CodexAgentRuntime implements AgentRuntime {
 
   async stop(runId: string): Promise<void> {
     this.cancelledRunIds.add(runId);
+  }
+
+  private async auditMappedEvent(
+    context: AgentRunContext,
+    auditState: CodexRuntimeAuditState,
+    event: AgentRuntimeEvent
+  ): Promise<AgentRuntimeEvent[]> {
+    let auditedEvent = event;
+    const payload = readEventPayload(event);
+    if (event.type === 'runtime_started') {
+      auditedEvent = {
+        ...event,
+        payload: {
+          ...payload,
+          codexContract: buildCodexContractSnapshot(auditState),
+        },
+      };
+    }
+
+    const warnings: CodexContractWarning[] = [];
+    const toolName = typeof payload.toolName === 'string' ? payload.toolName : null;
+    if (toolName?.startsWith('nightworkers.')) {
+      auditState.observedNightWorkersTools.add(toolName);
+      if (toolName === 'nightworkers.todo_list') {
+        auditState.sawAnyNightworkersTodo = true;
+        if (event.type === 'tool_call_finished' && readToolOperation(payload) === 'replace') {
+          auditState.sawNightworkersTodoReplace = true;
+        }
+      }
+      if (event.type === 'tool_call_finished' && !NIGHTWORKERS_EXPECTED_CODEX_TOOLS.has(toolName)) {
+        warnings.push({
+          code: 'codex_unexpected_nightworkers_mcp_tool',
+          severity: 'warning',
+          message: `Unexpected NightWorkers MCP tool observed: ${toolName}.`,
+          providerItemId: readString(payload.providerItemId),
+          toolName,
+        });
+      }
+      if (event.type === 'tool_call_finished' && isFailedToolPayload(payload)) {
+        auditState.mcpDegraded = true;
+        warnings.push({
+          code: 'codex_mcp_degraded',
+          severity: 'warning',
+          message: `NightWorkers MCP tool did not complete successfully: ${toolName}.`,
+          providerItemId: readString(payload.providerItemId),
+          toolName,
+        });
+      }
+    } else if (event.type === 'tool_call_finished' && isMcpToolPayload(payload)) {
+      warnings.push({
+        code: 'codex_global_mcp_tool_observed',
+        severity: 'warning',
+        message: `Non-NightWorkers MCP tool observed: ${toolName || 'unknown'}.`,
+        providerItemId: readString(payload.providerItemId),
+        toolName,
+      });
+    }
+
+    if (event.type === 'tool_call_finished' && toolName === 'command_execution') {
+      const command = readString(payload.command);
+      const commandClass = readString(payload.commandClass);
+      if (commandClass === 'verification' || commandClass === 'broad_verification') {
+        if (readExitCode(payload) === 0) auditState.verificationEvidenceSeen = true;
+      }
+      warnings.push({
+        code: 'codex_native_command_execution',
+        severity: 'warning',
+        message: `Codex native command_execution observed (${commandClass || 'other'}).`,
+        providerItemId: readString(payload.providerItemId),
+        toolName,
+        command,
+      });
+      if (commandClass === 'git_clone_or_import') {
+        warnings.push({
+          code: 'codex_import_project_alternative_command',
+          severity: 'warning',
+          message:
+            'Codex native command looks like a project import alternative; use nightworkers.import_project for project imports.',
+          providerItemId: readString(payload.providerItemId),
+          toolName,
+          command,
+        });
+      }
+    }
+
+    if (event.type === 'tool_call_finished' && toolName === 'nightworkers.import_project') {
+      const importPayload = readImportProjectSuccessPayload(payload);
+      if (importPayload) {
+        auditState.sawNightworkersImportProjectSuccess = true;
+        auditState.importProjectProviderItemId = readString(payload.providerItemId);
+        auditState.recommendedVerificationCommands = importPayload.recommendedVerificationCommands;
+      } else if (isFailedToolPayload(payload)) {
+        auditState.sawNightworkersImportProjectFailure = true;
+      }
+    }
+
+    if (event.type === 'diff_collected' && isCodexFileChangeEvent(payload)) {
+      const currentTodo = await this.readCurrentTodoEvidence(context);
+      if (currentTodo) {
+        auditState.lastCurrentTodo = currentTodo;
+        auditedEvent = {
+          ...auditedEvent,
+          payload: {
+            ...readEventPayload(auditedEvent),
+            ...todoPayload(currentTodo),
+          },
+        } as AgentRuntimeEvent;
+      } else {
+        warnings.push({
+          code: 'codex_file_change_without_current_todo',
+          severity: 'warning',
+          message: 'Codex file_change occurred while no current running Todo was found.',
+          providerItemId: readString(payload.providerItemId),
+          changedFiles: readChangedFiles(payload),
+        });
+      }
+      if (!auditState.sawNightworkersTodoReplace) {
+        warnings.push({
+          code: 'codex_file_change_before_todo_replace',
+          severity: 'warning',
+          message: 'Codex file_change occurred before nightworkers.todo_list operation=replace.',
+          providerItemId: readString(payload.providerItemId),
+          todoId: currentTodo?.id ?? null,
+          todoSeq: currentTodo?.seq ?? null,
+          changedFiles: readChangedFiles(payload),
+        });
+      }
+      if (auditState.mcpDegraded) {
+        warnings.push({
+          code: 'codex_file_change_while_mcp_degraded',
+          severity: 'warning',
+          message: 'Codex file_change occurred after NightWorkers MCP degradation was observed.',
+          providerItemId: readString(payload.providerItemId),
+          todoId: currentTodo?.id ?? null,
+          todoSeq: currentTodo?.seq ?? null,
+          changedFiles: readChangedFiles(payload),
+        });
+      }
+    }
+
+    const warningEvents = warnings.map((warning) =>
+      this.toContractWarningEvent(auditState, warning)
+    );
+    return [...warningEvents, auditedEvent];
+  }
+
+  private async readCurrentTodoEvidence(
+    context: AgentRunContext
+  ): Promise<RuntimeTodoEvidence | null> {
+    if (context.currentTodo?.status === 'running') {
+      return {
+        id: context.currentTodo.id,
+        seq: context.currentTodo.seq,
+        title: context.currentTodo.title,
+        procedureId: context.currentTodo.procedureId ?? null,
+      };
+    }
+    if (context.todoPlan?.length) {
+      const current = context.todoPlan
+        .filter((todo) => todo.status === 'running')
+        .sort((a, b) => a.seq - b.seq)[0];
+      if (current) {
+        return {
+          id: current.id,
+          seq: current.seq,
+          title: current.title,
+          procedureId: current.procedureId ?? null,
+        };
+      }
+    }
+    try {
+      const todos = await repo.listTaskRunTodosForRun(context.runId);
+      const current = todos
+        .filter((todo) => todo.status === 'running')
+        .sort((a, b) => a.seq - b.seq)[0];
+      if (!current) return null;
+      return {
+        id: current.id,
+        seq: current.seq,
+        title: current.title,
+        procedureId: current.procedureId ?? null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private toContractWarningEvent(
+    auditState: CodexRuntimeAuditState,
+    warning: CodexContractWarning
+  ): AgentRuntimeEvent {
+    const normalized = normalizeContractWarning(warning);
+    addContractWarning(auditState, normalized);
+    return {
+      type: 'runtime_warning',
+      message: `[Codex Contract Warning] ${normalized.message}`,
+      payload: normalized,
+    };
+  }
+
+  private async emitMissingImportVerificationWarningIfNeeded(
+    sink: AgentRuntimeSink,
+    logs: string[],
+    auditState: CodexRuntimeAuditState
+  ) {
+    if (!auditState.sawNightworkersImportProjectSuccess) return;
+    if (auditState.recommendedVerificationCommands.length === 0) return;
+    if (auditState.verificationEvidenceSeen) return;
+    const warning = this.toContractWarningEvent(auditState, {
+      code: 'codex_import_project_verification_missing',
+      severity: 'warning',
+      message:
+        'nightworkers.import_project succeeded with recommended verification commands, but no successful verification command evidence was observed.',
+      providerItemId: auditState.importProjectProviderItemId,
+      toolName: 'nightworkers.import_project',
+    });
+    logs.push(warning.message);
+    await sink.emit(warning);
   }
 
   private async createThread(context: AgentRunContext): Promise<Thread> {
@@ -234,10 +508,14 @@ export class CodexAgentRuntime implements AgentRuntime {
       stoppedBy: AgentRuntimeResult['stoppedBy'];
       riskLevel: AgentRuntimeResult['riskLevel'];
       collectDiff?: boolean;
+      auditState: CodexRuntimeAuditState;
     }
   ): Promise<AgentRuntimeResult> {
     const diffPatch =
-      input.collectDiff === false ? '' : await this.collectDiff(context, sink, logs);
+      input.collectDiff === false
+        ? ''
+        : await this.collectDiff(context, sink, logs, input.auditState);
+    const contractWarnings = [...input.auditState.contractWarnings];
     const result: AgentRuntimeResult = {
       terminalState: input.terminalState,
       summary:
@@ -250,6 +528,7 @@ export class CodexAgentRuntime implements AgentRuntime {
       riskLevel: input.riskLevel,
       logContent: logs.join('\n'),
       diffPatch,
+      contractWarnings,
     };
     await sink.emit({
       type: 'runtime_finished',
@@ -260,6 +539,8 @@ export class CodexAgentRuntime implements AgentRuntime {
         stoppedBy: result.stoppedBy,
         finalReport: result.finalReport,
         summary: result.summary,
+        contractWarnings,
+        codexContract: buildCodexContractSnapshot(input.auditState),
       },
     });
     return result;
@@ -268,7 +549,8 @@ export class CodexAgentRuntime implements AgentRuntime {
   private async collectDiff(
     context: AgentRunContext,
     sink: AgentRuntimeSink,
-    logs: string[]
+    logs: string[],
+    auditState: CodexRuntimeAuditState
   ): Promise<string> {
     if (!this.collectWorkspaceDiff) return '';
     const result = await gitDiffTool({ repoRoot: context.repoRoot });
@@ -283,6 +565,7 @@ export class CodexAgentRuntime implements AgentRuntime {
         provider: 'codex',
         source: 'post_run_git_diff',
         changedFiles,
+        ...todoPayload(auditState.lastCurrentTodo),
         diff: result.payload.diff,
         diffStat: result.payload.diffStat,
         hasChanges: result.payload.hasChanges,
@@ -296,6 +579,203 @@ function readEventPayload(event: AgentRuntimeEvent): Record<string, unknown> {
   return event.payload && typeof event.payload === 'object'
     ? (event.payload as Record<string, unknown>)
     : {};
+}
+
+function createCodexRuntimeAuditState(): CodexRuntimeAuditState {
+  return {
+    sawNightworkersTodoReplace: false,
+    sawAnyNightworkersTodo: false,
+    sawNightworkersImportProjectSuccess: false,
+    sawNightworkersImportProjectFailure: false,
+    mcpDegraded: false,
+    observedNightWorkersTools: new Set(),
+    contractWarnings: [],
+    lastCurrentTodo: null,
+    importProjectProviderItemId: null,
+    recommendedVerificationCommands: [],
+    verificationEvidenceSeen: false,
+    mcpConfig: resolveCodexRuntimeMcpConfigState(),
+  };
+}
+
+function buildCodexContractSnapshot(state: CodexRuntimeAuditState) {
+  return {
+    warnings: state.contractWarnings,
+    mcp: {
+      configSource: state.mcpConfig.source,
+      expectedTools: state.mcpConfig.expectedTools,
+      hasInlineNightWorkersMcp: state.mcpConfig.hasInlineNightWorkersMcp,
+      serverName: state.mcpConfig.serverName,
+      observedNightWorkersTools: [...state.observedNightWorkersTools],
+      degraded: state.mcpDegraded,
+    },
+  };
+}
+
+function addContractWarning(state: CodexRuntimeAuditState, warning: CodexContractWarning) {
+  const normalized = normalizeContractWarning(warning);
+  const key = [
+    normalized.code,
+    normalized.providerItemId ?? '',
+    normalized.toolName ?? '',
+    normalized.command ?? '',
+    normalized.todoId ?? '',
+    normalized.todoSeq ?? '',
+    (normalized.changedFiles ?? []).join(','),
+  ].join('|');
+  const exists = state.contractWarnings.some(
+    (existing) =>
+      [
+        existing.code,
+        existing.providerItemId ?? '',
+        existing.toolName ?? '',
+        existing.command ?? '',
+        existing.todoId ?? '',
+        existing.todoSeq ?? '',
+        (existing.changedFiles ?? []).join(','),
+      ].join('|') === key
+  );
+  if (!exists) state.contractWarnings.push(normalized);
+}
+
+function normalizeContractWarning(warning: CodexContractWarning): CodexContractWarning {
+  return {
+    code: warning.code,
+    severity: warning.severity,
+    message: warning.message,
+    providerItemId: warning.providerItemId ?? null,
+    toolName: warning.toolName ?? null,
+    todoId: warning.todoId ?? null,
+    todoSeq: warning.todoSeq ?? null,
+    ...(warning.changedFiles ? { changedFiles: warning.changedFiles } : {}),
+    command: warning.command ?? null,
+  };
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function readExitCode(payload: Record<string, unknown>): number | null {
+  if (typeof payload.exitCode === 'number') return payload.exitCode;
+  if (typeof payload.exit_code === 'number') return payload.exit_code;
+  return null;
+}
+
+function readChangedFiles(payload: Record<string, unknown>): string[] {
+  return Array.isArray(payload.changedFiles)
+    ? payload.changedFiles.filter((file): file is string => typeof file === 'string')
+    : [];
+}
+
+function readToolOperation(payload: Record<string, unknown>): string | null {
+  const args = payload.arguments;
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return null;
+  const operation = (args as Record<string, unknown>).operation;
+  return typeof operation === 'string' ? operation : null;
+}
+
+function isFailedToolPayload(payload: Record<string, unknown>) {
+  return (
+    payload.status === 'failed' ||
+    payload.status === 'error' ||
+    payload.status === 'cancelled' ||
+    typeof payload.error === 'string' ||
+    readMcpResultError(payload.result) !== null
+  );
+}
+
+function isMcpToolPayload(payload: Record<string, unknown>) {
+  return typeof payload.mcpServer === 'string' && typeof payload.mcpTool === 'string';
+}
+
+function isCodexFileChangeEvent(payload: Record<string, unknown>) {
+  return payload.provider === 'codex' && Array.isArray(payload.changedFiles);
+}
+
+function todoPayload(todo: RuntimeTodoEvidence | null) {
+  if (!todo) return {};
+  return {
+    todoId: todo.id,
+    todoSeq: todo.seq,
+    todoTitle: todo.title,
+    todoProcedureId: todo.procedureId ?? null,
+  };
+}
+
+function readImportProjectSuccessPayload(payload: Record<string, unknown>): {
+  recommendedVerificationCommands: string[];
+} | null {
+  if (isFailedToolPayload(payload)) return null;
+  const resultRecord = readMcpPayloadRecord(payload.result);
+  if (!resultRecord) return null;
+  const postImport = readRecord(resultRecord.postImport);
+  const manifest = readRecord(postImport?.manifest);
+  const commands = Array.isArray(manifest?.recommendedVerificationCommands)
+    ? manifest.recommendedVerificationCommands.filter(
+        (command): command is string => typeof command === 'string' && command.trim().length > 0
+      )
+    : [];
+  return { recommendedVerificationCommands: commands };
+}
+
+function readMcpPayloadRecord(value: unknown): Record<string, unknown> | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  if (isImportProjectPayloadRecord(record)) return record;
+  const payload = readRecord(record.payload);
+  if (payload && isImportProjectPayloadRecord(payload)) return payload;
+  const structuredPayload = readRecord(readRecord(record.structuredContent)?.payload);
+  if (structuredPayload && isImportProjectPayloadRecord(structuredPayload)) {
+    return structuredPayload;
+  }
+  const content = Array.isArray(record.content) ? record.content : [];
+  for (const item of content) {
+    const text = readString(readRecord(item)?.text);
+    if (!text) continue;
+    const parsed = parseJsonRecord(text);
+    if (!parsed) continue;
+    if (isImportProjectPayloadRecord(parsed)) return parsed;
+    const parsedPayload = readRecord(parsed.payload);
+    if (parsedPayload && isImportProjectPayloadRecord(parsedPayload)) return parsedPayload;
+  }
+  return null;
+}
+
+function readMcpResultError(value: unknown): string | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  const directError = readRecord(record.error);
+  const structuredError = readRecord(readRecord(record.structuredContent)?.error);
+  const message = readString(directError?.message) ?? readString(structuredError?.message);
+  if (message) return message;
+  const content = Array.isArray(record.content) ? record.content : [];
+  for (const item of content) {
+    const text = readString(readRecord(item)?.text);
+    if (!text) continue;
+    const parsedError = readRecord(parseJsonRecord(text)?.error);
+    const parsedMessage = readString(parsedError?.message);
+    if (parsedMessage) return parsedMessage;
+  }
+  return record.isError === true ? 'NightWorkers MCP tool returned an error result.' : null;
+}
+
+function isImportProjectPayloadRecord(value: Record<string, unknown>) {
+  return 'postImport' in value || ('template' in value && 'git' in value);
+}
+
+function parseJsonRecord(text: string): Record<string, unknown> | null {
+  try {
+    return readRecord(JSON.parse(text));
+  } catch {
+    return null;
+  }
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 type ProjectImportOutcome =
@@ -315,11 +795,7 @@ type ProjectImportOutcome =
 function getProjectImportOutcome(event: AgentRuntimeEvent): ProjectImportOutcome | null {
   if (event.type !== 'tool_call_finished') return null;
   const payload = readEventPayload(event);
-  const toolName =
-    payload.toolName === 'nightworkers.import_project' ||
-    payload.toolName === 'nightworkers.materialize_template'
-      ? payload.toolName
-      : null;
+  const toolName = payload.toolName === 'nightworkers.import_project' ? payload.toolName : null;
   if (!toolName) {
     return null;
   }
@@ -331,9 +807,12 @@ function getProjectImportOutcome(event: AgentRuntimeEvent): ProjectImportOutcome
       providerItemId,
     };
   }
-  if (payload.status === 'failed' || typeof payload.error === 'string') {
+  const resultError = readMcpResultError(payload.result);
+  if (payload.status === 'failed' || typeof payload.error === 'string' || resultError) {
     const error =
-      typeof payload.error === 'string' ? payload.error : 'nightworkers.import_project failed';
+      typeof payload.error === 'string'
+        ? payload.error
+        : resultError || 'nightworkers.import_project failed';
     return {
       kind: 'failed',
       toolName,
@@ -359,10 +838,18 @@ function isRetryableProjectImportTransportCancel(
 function buildProjectImportFailureReport(
   outcome: Extract<ProjectImportOutcome, { kind: 'failed' }>
 ): string {
+  const providerItem = outcome.providerItemId ? ` providerItemId=${outcome.providerItemId}.` : '';
   if (outcome.retryableTransportCancel) {
-    return `Project import failed before the MCP server returned a tool result: ${outcome.error}. Stopping without retry or fallback implementation.`;
+    return `Project import failed before the MCP server returned a tool result: ${outcome.error}.${providerItem} Stopping without retry or fallback implementation.`;
   }
-  return `Project import failed: ${outcome.error}. Stopping without fallback implementation.`;
+  return `Project import failed: ${outcome.error}.${providerItem} Stopping without fallback implementation.`;
+}
+
+function buildProjectImportCancelledReport(
+  outcome: Extract<ProjectImportOutcome, { kind: 'cancelled' }>
+): string {
+  const providerItem = outcome.providerItemId ? ` providerItemId=${outcome.providerItemId}.` : '';
+  return `Project import was cancelled by the user.${providerItem} Stopping without fallback implementation.`;
 }
 
 function normalizeRuntimeUsage(usageValue: unknown, rawUsage: unknown): NormalizedLlmUsage | null {
@@ -411,7 +898,8 @@ export function buildCodexRuntimePrompt(context: AgentRunContext): string {
     '',
     'NightWorkers MCP:',
     '- MCP server name: nightworkers',
-    '- Run context-still.initial_instructions before other task work and follow it.',
+    '- Available NightWorkers MCP tools in this lane: nightworkers.read_current_specification, nightworkers.list_recent_specifications, nightworkers.todo_list, nightworkers.import_project.',
+    '- If context-still.initial_instructions has not run in this NightWorkers run, run it before other task work and follow it.',
     '- Treat nightworkers MCP tools as the execution interface. When a named NightWorkers tool fits, call it directly instead of describing equivalent shell steps.',
     '- Execution order: specification -> Todo execution -> verification -> closeout.',
     '- Planning is not closeout. During planning or Todo setup, do not call context-still.compile_eval.',
@@ -437,7 +925,7 @@ export function buildCodexRuntimePrompt(context: AgentRunContext): string {
     '- If nightworkers.import_project fails, is cancelled, or is not approved, stop and report the tool failure. Do not create a fallback static app or alternate implementation.',
     '- After import_project succeeds, first use postImport.llmContext when present, plus postImport.manifest and postImport.initialization. Do not re-read LLM_CONTEXT.md, package.json, or re-run install unless that payload is missing, truncated, or failed for a reason you are actively fixing.',
     '- Use postImport.manifest.recommendedVerificationCommands when choosing manifest-based verification before reporting completion.',
-    '- For CLI evidence, prefer NightWorkers worker-tool results. run_command and run_verification keep full stdout/stderr by default, so preserve exact git/build/test output unless it is truly excessive.',
+    '- CLI checks appear as Codex native command_execution events, not NightWorkers MCP tools. Preserve important command, exit code, stdout, and stderr evidence in the final report.',
   ].join('\n');
   return request ? `${request}\n\n${contract}` : contract;
 }

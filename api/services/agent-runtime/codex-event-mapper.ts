@@ -3,6 +3,14 @@ import type { AgentRuntimeEvent } from './types';
 
 const SECRET_KEY_PATTERN = /(authorization|cookie|token|secret|api[_-]?key|password)/i;
 
+export type CodexCommandClass =
+  | 'verification'
+  | 'broad_verification'
+  | 'git_clone_or_import'
+  | 'install'
+  | 'inspection'
+  | 'other';
+
 type MapperState = {
   agentTextById: Map<string, string>;
 };
@@ -130,12 +138,14 @@ function mapCodexItemEvent(
   }
 
   if (item.type === 'command_execution') {
+    const commandClass = classifyCodexCommand(item.command);
     const payload = {
       provider: 'codex',
       providerEventType: eventType,
       providerItemId: item.id,
       toolName: 'command_execution',
       command: item.command,
+      commandClass,
       aggregatedOutput: item.aggregated_output,
       exitCode: item.exit_code,
       status: item.status,
@@ -248,6 +258,55 @@ function normalizeChangedFiles(changes: unknown): string[] {
       return path;
     })
     .filter((path): path is string => Boolean(path));
+}
+
+export function classifyCodexCommand(command: string): CodexCommandClass {
+  const normalized = command.replace(/\s+/g, ' ').trim();
+  if (!normalized) return 'other';
+  if (isBroadVerificationCommand(normalized)) return 'broad_verification';
+  if (isGitCloneOrImportCommand(normalized)) return 'git_clone_or_import';
+  if (isInstallCommand(normalized)) return 'install';
+  if (isVerificationCommand(normalized)) return 'verification';
+  if (isInspectionCommand(normalized)) return 'inspection';
+  return 'other';
+}
+
+function isBroadVerificationCommand(command: string) {
+  return (
+    /\bbun\s+(?:run\s+)?(?:scripts\/verify\.(?:ts|js|mjs)|verify(?::[\w-]+)?)\b/.test(command) ||
+    /\bnpm\s+run\s+verify(?::[\w-]+)?\b/.test(command) ||
+    /\b(?:pnpm|yarn)\s+(?:run\s+)?verify(?::[\w-]+)?\b/.test(command)
+  );
+}
+
+function isVerificationCommand(command: string) {
+  return (
+    /\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|typecheck|lint|build)(?::[\w-]+)?\b/.test(
+      command
+    ) || /\b(?:vitest|jest|playwright|tsc|eslint)\b/.test(command)
+  );
+}
+
+function isGitCloneOrImportCommand(command: string) {
+  return (
+    /\bgit\s+clone\b/.test(command) ||
+    /\b(?:npx|pnpm\s+dlx|bunx)\s+(?:degit|create-[\w-]+)\b/.test(command) ||
+    /\b(?:npm|pnpm|yarn|bun)\s+create\b/.test(command)
+  );
+}
+
+function isInstallCommand(command: string) {
+  return /\b(?:npm\s+(?:install|i|ci)|pnpm\s+(?:install|i)|yarn\s+(?:install|add)|bun\s+(?:install|add))\b/.test(
+    command
+  );
+}
+
+function isInspectionCommand(command: string) {
+  return (
+    /^(?:pwd|ls|find|tree|wc)\b/.test(command) ||
+    /^(?:rg|grep|cat|sed|awk|head|tail|nl)\b/.test(command) ||
+    /^git\s+(?:status|diff|log|show|branch|rev-parse)\b/.test(command)
+  );
 }
 
 function mapToolLifecycleEventType(

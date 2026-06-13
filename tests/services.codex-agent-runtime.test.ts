@@ -17,6 +17,7 @@ import {
 import {
   buildCodexRuntimeSdkOptions,
   buildCodexRuntimeThreadOptions,
+  resolveCodexRuntimeMcpConfigState,
 } from '../api/services/agent-runtime/codex-runtime-config';
 
 const execFileAsync = promisify(execFile);
@@ -88,6 +89,32 @@ describe('CodexAgentRuntime', () => {
     expect(options.env?.CODEX_THREAD_ID).toBeUndefined();
   });
 
+  it('resolves Codex MCP config source without disabling global inheritance', () => {
+    expect(
+      resolveCodexRuntimeMcpConfigState({
+        env: { NIGHTWORKERS_CODEX_MCP_COMMAND: '/bin/nightworkers-mcp' } as any,
+      })
+    ).toMatchObject({
+      source: 'inline_configured',
+      hasInlineNightWorkersMcp: true,
+      serverName: 'nightworkers',
+      expectedTools: [
+        'nightworkers.read_current_specification',
+        'nightworkers.list_recent_specifications',
+        'nightworkers.todo_list',
+        'nightworkers.import_project',
+      ],
+    });
+    expect(resolveCodexRuntimeMcpConfigState({ env: {} as any })).toMatchObject({
+      source: 'global_inherited',
+      hasInlineNightWorkersMcp: false,
+    });
+    expect(resolveCodexRuntimeMcpConfigState({ enableNightworkersMcp: false })).toMatchObject({
+      source: 'disabled',
+      hasInlineNightWorkersMcp: false,
+    });
+  });
+
   it('can explicitly disable MCP for Codex runtime', () => {
     const options = buildCodexRuntimeSdkOptions({
       enableNightworkersMcp: false,
@@ -128,6 +155,9 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain('taskId: task-codex');
     expect(prompt).toContain('runId: run-codex');
     expect(prompt).toContain('context-still.initial_instructions');
+    expect(prompt).toContain(
+      'nightworkers.read_current_specification, nightworkers.list_recent_specifications, nightworkers.todo_list, nightworkers.import_project'
+    );
     expect(prompt).toContain('nightworkers.todo_list');
     expect(prompt).toContain('operation=replace');
     expect(prompt).toContain('operation=done');
@@ -144,9 +174,11 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain('nightworkers.import_project');
     expect(prompt).not.toContain('nightworkers.materialize_template');
     expect(prompt).not.toContain('nightworkers.clone_git_repo');
+    expect(prompt).not.toContain('nightworkers.run_command');
+    expect(prompt).not.toContain('nightworkers.run_verification');
     expect(prompt).toContain('source=starter, stack=hono');
     expect(prompt).toContain('default SQLite variant');
-    expect(prompt).toContain('run_command and run_verification keep full stdout/stderr by default');
+    expect(prompt).toContain('Codex native command_execution events');
     expect(prompt).toContain('Do not create a fallback static app');
     expect(prompt).toContain('do not stop with a plan-only answer or next-steps summary');
   });
@@ -212,6 +244,136 @@ describe('CodexAgentRuntime', () => {
         'model_response_delta',
         'model_response_finished',
         'runtime_finished',
+      ])
+    );
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'runtime_started',
+          payload: expect.objectContaining({
+            codexContract: expect.objectContaining({
+              mcp: expect.objectContaining({
+                configSource: expect.any(String),
+                expectedTools: expect.arrayContaining(['nightworkers.import_project']),
+              }),
+            }),
+          }),
+        }),
+      ])
+    );
+  });
+
+  it('emits contract warning and Todo evidence for file_change before Todo replace', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'file-before-todo',
+              type: 'file_change',
+              status: 'completed',
+              changes: [{ path: 'src/app.ts' }],
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+    const events: any[] = [];
+
+    const result = await runtime.start(
+      buildContext({
+        currentTodo: {
+          id: 'todo-1',
+          seq: 1,
+          title: '実装する',
+          taskType: 'implementation',
+          status: 'running',
+          procedureId: 'implementation',
+        },
+      }),
+      {
+        emit: async (event) => {
+          events.push(event);
+        },
+      }
+    );
+
+    expect(result.contractWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'codex_file_change_before_todo_replace',
+          providerItemId: 'file-before-todo',
+          todoId: 'todo-1',
+          todoSeq: 1,
+          changedFiles: ['src/app.ts'],
+        }),
+      ])
+    );
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'runtime_warning',
+          payload: expect.objectContaining({ code: 'codex_file_change_before_todo_replace' }),
+        }),
+        expect.objectContaining({
+          type: 'diff_collected',
+          payload: expect.objectContaining({
+            changedFiles: ['src/app.ts'],
+            todoId: 'todo-1',
+            todoSeq: 1,
+            todoTitle: '実装する',
+          }),
+        }),
+      ])
+    );
+  });
+
+  it('does not emit the pre-replace file_change warning after todo_list replace', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'todo-replace',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'todo_list',
+              arguments: { operation: 'replace', todos: [{ seq: 1, title: '実装' }] },
+              status: 'completed',
+              result: { ok: true },
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'file-after-todo',
+              type: 'file_change',
+              status: 'completed',
+              changes: [{ path: 'src/app.ts' }],
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(
+      buildContext({
+        currentTodo: {
+          id: 'todo-1',
+          seq: 1,
+          title: '実装',
+          taskType: 'implementation',
+          status: 'running',
+        },
+      }),
+      { emit: async () => {} }
+    );
+
+    expect(result.contractWarnings ?? []).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'codex_file_change_before_todo_replace' }),
       ])
     );
   });
@@ -422,6 +584,202 @@ describe('CodexAgentRuntime', () => {
     );
   });
 
+  it('warns when import_project succeeds with recommended verification but no evidence', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'import-1',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'import_project',
+              arguments: { source: 'starter', stack: 'hono' },
+              status: 'completed',
+              result: {
+                ok: true,
+                postImport: {
+                  manifest: {
+                    recommendedVerificationCommands: ['bun run verify:base'],
+                  },
+                  initialization: { ok: true },
+                  llmContext: 'Use Hono starter',
+                },
+              },
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.contractWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'codex_import_project_verification_missing',
+          providerItemId: 'import-1',
+          toolName: 'nightworkers.import_project',
+        }),
+      ])
+    );
+  });
+
+  it('reads import_project verification recommendations from MCP structuredContent payload', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'import-structured',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'import_project',
+              arguments: { source: 'starter', stack: 'hono' },
+              status: 'completed',
+              result: {
+                structuredContent: {
+                  payload: {
+                    mode: 'template',
+                    template: { templateId: 'hono-standard' },
+                    git: null,
+                    postImport: {
+                      manifest: {
+                        recommendedVerificationCommands: ['bun run verify:base'],
+                      },
+                    },
+                  },
+                },
+                content: [{ type: 'text', text: '{"ignored":true}' }],
+              },
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.contractWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'codex_import_project_verification_missing',
+          providerItemId: 'import-structured',
+        }),
+      ])
+    );
+  });
+
+  it('hard-gates import_project MCP error results even when item status is completed', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'import-error-content',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'import_project',
+              arguments: { source: 'starter', stack: 'hono' },
+              status: 'completed',
+              result: {
+                isError: true,
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      error: {
+                        code: 'TASK_REPOSITORY_NOT_FOUND',
+                        message: 'Cannot resolve repository.',
+                      },
+                      payload: { mode: '', template: null, git: null, postImport: null },
+                    }),
+                  },
+                ],
+              },
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'file-after-import-error',
+              type: 'file_change',
+              status: 'completed',
+              changes: [{ path: 'index.html' }],
+            },
+          },
+        ] as any),
+    });
+    const events: any[] = [];
+
+    const result = await runtime.start(buildContext(), {
+      emit: async (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(result.terminalState).toBe('needs_human');
+    expect(result.finalReport).toContain('Cannot resolve repository.');
+    expect(events).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'diff_collected',
+          payload: expect.objectContaining({ changedFiles: ['index.html'] }),
+        }),
+      ])
+    );
+  });
+
+  it('accepts successful verification command evidence after import_project', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'import-1',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'import_project',
+              arguments: { source: 'starter', stack: 'hono' },
+              status: 'completed',
+              result: {
+                ok: true,
+                postImport: {
+                  manifest: {
+                    recommendedVerificationCommands: ['bun run verify:base'],
+                  },
+                },
+              },
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'cmd-verify',
+              type: 'command_execution',
+              command: 'bun run verify:base',
+              aggregated_output: 'ok',
+              exit_code: 0,
+              status: 'completed',
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.contractWarnings ?? []).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'codex_import_project_verification_missing' }),
+      ])
+    );
+  });
+
   it('maps command and MCP activity without rejecting provider activity', () => {
     const state = createCodexEventMapperState();
     const commandEvents = mapCodexThreadEvent(
@@ -455,7 +813,12 @@ describe('CodexAgentRuntime', () => {
 
     expect(commandEvents[0]).toMatchObject({
       type: 'tool_call_finished',
-      payload: { command: 'pnpm test', aggregatedOutput: 'ok', exitCode: 0 },
+      payload: {
+        command: 'pnpm test',
+        commandClass: 'verification',
+        aggregatedOutput: 'ok',
+        exitCode: 0,
+      },
     });
     expect(mcpEvents[0]).toMatchObject({
       type: 'tool_call_finished',
@@ -466,6 +829,37 @@ describe('CodexAgentRuntime', () => {
         arguments: { taskId: 'task-1', Authorization: '[REDACTED]' },
       },
     });
+  });
+
+  it('classifies Codex native command_execution events for audit evidence', () => {
+    const state = createCodexEventMapperState();
+    const cases = [
+      ['pnpm verify', 'broad_verification'],
+      ['bun run verify:base', 'broad_verification'],
+      ['npm run typecheck', 'verification'],
+      ['git clone https://example.test/repo.git', 'git_clone_or_import'],
+      ['pnpm install', 'install'],
+      ['git status --short', 'inspection'],
+      ['node custom-script.js', 'other'],
+    ] as const;
+
+    for (const [command, commandClass] of cases) {
+      const [event] = mapCodexThreadEvent(
+        {
+          type: 'item.completed',
+          item: {
+            id: `cmd-${commandClass}`,
+            type: 'command_execution',
+            command,
+            status: 'completed',
+          },
+        } as any,
+        state
+      );
+      expect(event).toMatchObject({
+        payload: { command, commandClass },
+      });
+    }
   });
 
   it('maps in-progress command and MCP updates as tool progress', () => {
@@ -599,6 +993,14 @@ function buildContext(
       stateCardTokens: number;
       runtimeUserPromptTokens: number;
     };
+    currentTodo?: {
+      id: string;
+      seq: number;
+      title: string;
+      taskType: string;
+      status: string;
+      procedureId?: string | null;
+    };
   } = {}
 ) {
   return {
@@ -622,6 +1024,7 @@ function buildContext(
         : {}),
     },
     runtimeOptions: input.codex ? { codex: input.codex } : undefined,
+    currentTodo: input.currentTodo,
   };
 }
 
