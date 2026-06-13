@@ -37,6 +37,13 @@ export type ImportProjectToolCardModel = {
   installStdout: string;
   installStderr: string;
   installErrorMessage: string;
+  gitInitializationStatus: string;
+  gitInitializationCommand: string;
+  gitInitializationCwd: string;
+  gitInitializationExitCode?: number;
+  gitInitializationStdout: string;
+  gitInitializationStderr: string;
+  gitInitializationErrorMessage: string;
   verificationCommands: string[];
   llmContextStatus: string;
   llmContextPath: string;
@@ -71,6 +78,7 @@ export function getImportProjectToolCardModel(
   const manifest = asRecord(postImport.manifest);
   const manifestPackage = asRecord(manifest.packageJson);
   const initialization = asRecord(postImport.initialization);
+  const gitInitialization = asRecord(postImport.gitInitialization);
   const llmContext = asRecord(postImport.llmContext);
   const mode = asString(importPayload.mode);
   const source = mode === 'git' ? asRecord(importPayload.git) : asRecord(importPayload.template);
@@ -79,6 +87,7 @@ export function getImportProjectToolCardModel(
   const installCommand =
     commandText(initialization.command) || commandText(manifest.installCommand);
   const installExitCode = asNumber(initialization.exitCode);
+  const gitInitializationExitCode = asNumber(gitInitialization.exitCode);
   const manifestStatus = asString(manifest.status);
   const packageManager =
     asString(manifest.detectedPackageManager) || asString(manifestPackage.packageManager);
@@ -105,6 +114,13 @@ export function getImportProjectToolCardModel(
     installStdout: asString(initialization.stdout),
     installStderr: asString(initialization.stderr),
     installErrorMessage: asString(initialization.errorMessage),
+    gitInitializationStatus: asString(gitInitialization.status),
+    gitInitializationCommand: commandText(gitInitialization.command),
+    gitInitializationCwd: asString(gitInitialization.cwd),
+    gitInitializationExitCode,
+    gitInitializationStdout: asString(gitInitialization.stdout),
+    gitInitializationStderr: asString(gitInitialization.stderr),
+    gitInitializationErrorMessage: asString(gitInitialization.errorMessage),
     verificationCommands,
     llmContextStatus: asString(llmContext.status),
     llmContextPath: asString(llmContext.path),
@@ -170,6 +186,7 @@ function ImportProjectCardBody({
   maxHeight: number;
 }) {
   const installOutput = buildInstallOutput(card);
+  const gitInitializationOutput = buildGitInitializationOutput(card);
   return (
     <div className="space-y-3 border-t border-slate-700/60 p-3 text-xs text-slate-100">
       <dl className="grid gap-2 sm:grid-cols-2">
@@ -179,6 +196,7 @@ function ImportProjectCardBody({
         <SummaryItem label="package" value={card.packageName} />
         <SummaryItem label="manager" value={card.packageManager} />
         <SummaryItem label="manifest" value={card.manifestStatus} />
+        <SummaryItem label="git init" value={gitInitializationSummary(card)} />
         <SummaryItem label="install" value={installSummary(card)} />
         <SummaryItem
           label="LLM_CONTEXT"
@@ -208,6 +226,15 @@ function ImportProjectCardBody({
             ))}
           </div>
         </details>
+      ) : null}
+      {gitInitializationOutput ? (
+        <NightWorkersCodeBlock
+          code={gitInitializationOutput}
+          filename="git-init.sh"
+          language="shell"
+          maxHeight={maxHeight}
+          syntaxHighlighting={false}
+        />
       ) : null}
       {installOutput ? (
         <NightWorkersCodeBlock
@@ -370,6 +397,16 @@ function extractGitOperations(source: Record<string, unknown>): CommandOutput[] 
     .filter((operation) => operation.command);
 }
 
+function gitInitializationSummary(card: ImportProjectToolCardModel) {
+  return [
+    card.gitInitializationStatus,
+    card.gitInitializationCommand,
+    exitCodeText(card.gitInitializationExitCode),
+  ]
+    .filter(Boolean)
+    .join(' | ');
+}
+
 function installSummary(card: ImportProjectToolCardModel) {
   return [card.installStatus, card.installCommand, exitCodeText(card.installExitCode)]
     .filter(Boolean)
@@ -387,6 +424,17 @@ function buildInstallOutput(card: ImportProjectToolCardModel) {
     exitCode: card.installExitCode,
     stdout: card.installStdout,
     stderr: card.installStderr || card.installErrorMessage,
+  });
+  return output.trim() ? output : '';
+}
+
+function buildGitInitializationOutput(card: ImportProjectToolCardModel) {
+  const output = formatCommandOutput({
+    command: card.gitInitializationCommand,
+    cwd: card.gitInitializationCwd,
+    exitCode: card.gitInitializationExitCode,
+    stdout: card.gitInitializationStdout,
+    stderr: card.gitInitializationStderr || card.gitInitializationErrorMessage,
   });
   return output.trim() ? output : '';
 }

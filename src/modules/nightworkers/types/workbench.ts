@@ -42,6 +42,29 @@ export type WorkbenchProgressSnapshot = {
   blockers: WorkbenchProgressBlocker[];
 };
 
+export type CodexContractWarningSummary = {
+  totalCount: number;
+  warningCount: number;
+  errorCount: number;
+  items: Array<{
+    code: string;
+    severity: 'info' | 'warning' | 'error';
+    count: number;
+    changedFiles: string[];
+    command?: string | null;
+    occurredAt?: string;
+  }>;
+};
+
+export type CodexMcpDiagnosticsSummary = {
+  configSource: string | null;
+  observedNightWorkersTools: string[];
+  expectedTools: string[];
+  degraded: boolean;
+  tone: 'neutral' | 'info' | 'warning';
+  label: string;
+};
+
 export type WorkbenchArtifactKind =
   | 'blueprint_workspace'
   | 'app_blueprint'
@@ -130,4 +153,6 @@ export type WorkbenchSessionView = {
   reviewNeed?: string;
   artifactCounts: Partial<Record<WorkbenchArtifactKind, number>>;
   badges: string[];
+  codexContractWarnings?: CodexContractWarningSummary;
+  codexMcpDiagnostics?: CodexMcpDiagnosticsSummary;
 };

@@ -220,12 +220,12 @@ async function autoAdvanceNextTodo(
   if (!nextTodo) return;
   if (isFinalCloseoutTodo(nextTodo)) return;
 
-  await repo.updateTaskRunTodo(
-    nextTodo.id,
+  await repo.startTaskRunTodoIfStillPendingAndNoEarlierOpen(
     {
-      status: 'running',
+      id: nextTodo.id,
+      runId: taskRunId,
+      afterSeq,
       startedAt: now,
-      completedAt: null,
     },
     { notifyTaskId: run.taskId, notifyRunId: run.id }
   );

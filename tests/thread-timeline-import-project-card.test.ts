@@ -48,6 +48,20 @@ const importProjectPayload = {
       path: '/Users/y.noguchi/Code/todolist/LLM_CONTEXT.md',
       rawContent: '# LLM Context\nUse Bun.',
     },
+    gitInitialization: {
+      status: 'passed',
+      cwd: '/Users/y.noguchi/Code/todolist',
+      command: ['git', 'init'],
+      gitDirPath: '/Users/y.noguchi/Code/todolist/.git',
+      removedExistingGitDir: true,
+      startedAt: '2026-06-13T00:00:00.000Z',
+      finishedAt: '2026-06-13T00:00:01.000Z',
+      durationMs: 1000,
+      exitCode: 0,
+      signal: null,
+      stdout: 'Initialized empty Git repository',
+      stderr: '',
+    },
     initialization: {
       status: 'failed',
       cwd: '/Users/y.noguchi/Code/todolist',
@@ -87,6 +101,10 @@ describe('ThreadTimeline import_project cards', () => {
     expect(card?.installCommand).toBe('bun install');
     expect(card?.installExitCode).toBe(1);
     expect(card?.installStderr).toBe('PermissionDenied');
+    expect(card?.gitInitializationStatus).toBe('passed');
+    expect(card?.gitInitializationCommand).toBe('git init');
+    expect(card?.gitInitializationExitCode).toBe(0);
+    expect(card?.gitInitializationStdout).toContain('Initialized');
     expect(card?.llmContextRawContent).toContain('Use Bun');
     expect(card?.gitOperations[0]?.stderr).toBe('Cloning into repo...');
     expect(card?.verificationCommands).toEqual(['bun run typecheck']);

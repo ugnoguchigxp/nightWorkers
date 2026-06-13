@@ -1,5 +1,7 @@
 import type {
   ActivityArtifact,
+  CodexContractWarningSummary,
+  CodexMcpDiagnosticsSummary,
   ImplementationQueueEntry,
   ReviewResult,
   Task,
@@ -443,11 +445,21 @@ export function getSessionBadges(input: {
   task: Task;
   progress: WorkbenchProgressSnapshot;
   latestRun?: TaskRun;
+  contractWarnings?: CodexContractWarningSummary;
+  mcpDiagnostics?: CodexMcpDiagnosticsSummary;
 }): string[] {
   const badges: string[] = [];
   if (input.progress.blockers.length > 0) badges.push(input.progress.blockers[0].kind);
   if (input.latestRun?.testResults) badges.push('tests');
   if (input.latestRun?.diffPatch?.trim()) badges.push('diff');
+  if (input.contractWarnings?.totalCount) {
+    badges.push(
+      input.contractWarnings.errorCount > 0
+        ? `contract:${input.contractWarnings.errorCount} error`
+        : `contract:${input.contractWarnings.warningCount} warning`
+    );
+  }
+  if (input.mcpDiagnostics?.degraded) badges.push('mcp:degraded');
   if (input.task.priority > 0) badges.push(`P${input.task.priority}`);
   return badges;
 }
@@ -459,6 +471,11 @@ export function buildWorkbenchSessionView(
   const progress = getSessionProgress(task, evidence);
   const latestEvent = (evidence.events || []).at(-1);
   const emailState = getSessionEmailState(task, evidence);
+  const codexContractWarnings = getCodexContractWarningSummary(
+    evidence.latestRun,
+    evidence.events || []
+  );
+  const codexMcpDiagnostics = getCodexMcpDiagnosticsSummary(evidence.latestRun);
   return {
     task,
     group: getSessionGroup(task, evidence.latestRun),
@@ -480,7 +497,97 @@ export function buildWorkbenchSessionView(
         messages: evidence.messages || [],
       })
     ),
-    badges: getSessionBadges({ task, progress, latestRun: evidence.latestRun }),
+    badges: getSessionBadges({
+      task,
+      progress,
+      latestRun: evidence.latestRun,
+      contractWarnings: codexContractWarnings,
+      mcpDiagnostics: codexMcpDiagnostics,
+    }),
+    codexContractWarnings,
+    codexMcpDiagnostics,
+  };
+}
+
+export function getCodexContractWarningSummary(
+  latestRun?: TaskRun,
+  events: TaskEvent[] = []
+): CodexContractWarningSummary | undefined {
+  const warnings = [
+    ...readCodexContractSnapshotWarnings(latestRun),
+    ...readCodexContractEventWarnings(events),
+  ];
+  if (warnings.length === 0) return undefined;
+  const byCode = new Map<string, CodexContractWarningSummary['items'][number]>();
+  for (const warning of warnings) {
+    const code = readNonEmptyString(warning.code);
+    if (!code) continue;
+    const severity = readWarningSeverity(warning.severity);
+    const count = readPositiveInteger(warning.count) ?? 1;
+    const existing = byCode.get(code);
+    const changedFiles = readStringArray(warning.changedFiles);
+    if (existing) {
+      existing.count += count;
+      existing.severity = higherWarningSeverity(existing.severity, severity);
+      existing.changedFiles = [...new Set([...existing.changedFiles, ...changedFiles])];
+      existing.command ||= readNonEmptyString(warning.command);
+      existing.occurredAt ||= readNonEmptyString(warning.occurredAt) || undefined;
+    } else {
+      byCode.set(code, {
+        code,
+        severity,
+        count,
+        changedFiles,
+        command: readNonEmptyString(warning.command),
+        occurredAt: readNonEmptyString(warning.occurredAt) || undefined,
+      });
+    }
+  }
+  const items = [...byCode.values()].sort(
+    (a, b) => warningSeverityRank(b.severity) - warningSeverityRank(a.severity) || b.count - a.count
+  );
+  const totalCount = items.reduce((sum, item) => sum + item.count, 0);
+  return {
+    totalCount,
+    warningCount: items
+      .filter((item) => item.severity === 'warning')
+      .reduce((sum, item) => sum + item.count, 0),
+    errorCount: items
+      .filter((item) => item.severity === 'error')
+      .reduce((sum, item) => sum + item.count, 0),
+    items,
+  };
+}
+
+export function getCodexMcpDiagnosticsSummary(
+  latestRun?: TaskRun
+): CodexMcpDiagnosticsSummary | undefined {
+  const codexContract = readRecord(readRecord(latestRun?.contextSnapshot)?.codexContract);
+  const mcp = readRecord(codexContract?.mcp);
+  if (!mcp) return undefined;
+  const configSource = readNonEmptyString(mcp.configSource);
+  const degraded = mcp.degraded === true;
+  const observedNightWorkersTools = readStringArray(mcp.observedNightWorkersTools);
+  const expectedTools = readStringArray(mcp.expectedTools);
+  const tone: CodexMcpDiagnosticsSummary['tone'] = degraded
+    ? 'warning'
+    : configSource === 'global_inherited'
+      ? 'info'
+      : 'neutral';
+  const label = degraded
+    ? 'MCP degraded'
+    : configSource === 'global_inherited'
+      ? 'MCP global inherited'
+      : configSource
+        ? `MCP ${configSource}`
+        : 'MCP diagnostics';
+  return {
+    configSource,
+    observedNightWorkersTools,
+    expectedTools,
+    degraded,
+    tone,
+    label,
   };
 }
 
@@ -738,6 +845,61 @@ function countArtifacts(refs: WorkbenchArtifactRef[]) {
     acc[ref.kind] = (acc[ref.kind] || 0) + 1;
     return acc;
   }, {});
+}
+
+function readCodexContractSnapshotWarnings(latestRun?: TaskRun): Record<string, unknown>[] {
+  const codexContract = readRecord(readRecord(latestRun?.contextSnapshot)?.codexContract);
+  return readRecordArray(codexContract?.warnings);
+}
+
+function readCodexContractEventWarnings(events: TaskEvent[]): Record<string, unknown>[] {
+  return events.flatMap((event) => {
+    if (getRunEventType(event) !== 'system.warning') return [];
+    const payload = isRecord(event.payloadJson) ? event.payloadJson : {};
+    const runEvent = readRecord(payload.runEvent);
+    const data = readRecord(runEvent?.data) || payload;
+    const contractWarning = readRecord(data.contractWarning);
+    if (contractWarning) return [contractWarning];
+    return readNonEmptyString(data.code) ? [data] : [];
+  });
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null;
+}
+
+function readRecordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+    : [];
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function readPositiveInteger(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
+  return Math.floor(value);
+}
+
+function readWarningSeverity(value: unknown): 'info' | 'warning' | 'error' {
+  if (value === 'info' || value === 'warning' || value === 'error') return value;
+  return 'warning';
+}
+
+function higherWarningSeverity(a: 'info' | 'warning' | 'error', b: 'info' | 'warning' | 'error') {
+  return warningSeverityRank(a) >= warningSeverityRank(b) ? a : b;
+}
+
+function warningSeverityRank(severity: 'info' | 'warning' | 'error') {
+  if (severity === 'error') return 3;
+  if (severity === 'warning') return 2;
+  return 1;
 }
 
 function inferDocumentArtifactKind(message: TaskMessage): WorkbenchArtifactKind {

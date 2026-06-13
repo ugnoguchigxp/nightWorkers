@@ -11,12 +11,14 @@ import {
   buildQuestionnaireWorkspaceArtifactRef,
   buildWorkbenchArtifactRefs,
   buildWorkbenchSessionView,
+  getCodexContractWarningSummary,
+  getCodexMcpDiagnosticsSummary,
   getSessionEmailState,
   getSessionGroup,
   getSessionProgress,
   groupWorkbenchSessions,
 } from '../src/modules/nightworkers/workbenchSelectors';
-import { buildTask, buildTaskRun } from './helpers/nightworkers-fixtures';
+import { buildTask, buildTaskEvent, buildTaskRun } from './helpers/nightworkers-fixtures';
 
 const baseTask = buildTask({
   id: '11111111-1111-4111-8111-111111111111',
@@ -177,6 +179,105 @@ describe('workbench selectors', () => {
     );
     expect(refs.map((ref) => ref.kind)).not.toEqual(
       expect.arrayContaining(['context_pack', 'todo_plan', 'run_ledger', 'final_report'])
+    );
+  });
+
+  it('summarizes Codex contract warnings from run snapshot and warning events', () => {
+    const run = buildTaskRun({
+      contextSnapshot: {
+        codexContract: {
+          warnings: [
+            {
+              code: 'codex_file_change_before_todo_replace',
+              severity: 'warning',
+              count: 2,
+              changedFiles: ['src/app.ts'],
+              occurredAt: '2026-06-02T00:00:01.000Z',
+            },
+          ],
+        },
+      },
+    });
+    const event = buildTaskEvent({
+      eventType: 'system.warning',
+      payloadJson: {
+        runEvent: {
+          type: 'system.warning',
+          data: {
+            contractWarning: {
+              code: 'codex_open_todos_before_completion',
+              severity: 'error',
+              count: 1,
+            },
+          },
+        },
+      },
+    });
+
+    const summary = getCodexContractWarningSummary(run, [event]);
+    const sessionView = buildWorkbenchSessionView(baseTask, {
+      latestRun: run,
+      events: [event],
+    });
+
+    expect(summary).toMatchObject({
+      totalCount: 3,
+      warningCount: 2,
+      errorCount: 1,
+    });
+    expect(summary?.items.map((item) => item.code)).toEqual([
+      'codex_open_todos_before_completion',
+      'codex_file_change_before_todo_replace',
+    ]);
+    expect(sessionView.badges).toContain('contract:1 error');
+    expect(sessionView.codexContractWarnings?.items[1]).toMatchObject({
+      code: 'codex_file_change_before_todo_replace',
+      changedFiles: ['src/app.ts'],
+    });
+  });
+
+  it('summarizes Codex MCP diagnostics without treating global inheritance as warning', () => {
+    const inheritedRun = buildTaskRun({
+      contextSnapshot: {
+        codexContract: {
+          mcp: {
+            configSource: 'global_inherited',
+            expectedTools: ['nightworkers.import_project'],
+            observedNightWorkersTools: [],
+            degraded: false,
+          },
+        },
+      },
+    });
+    const degradedRun = buildTaskRun({
+      contextSnapshot: {
+        codexContract: {
+          mcp: {
+            configSource: 'inline_configured',
+            expectedTools: ['nightworkers.import_project'],
+            observedNightWorkersTools: ['nightworkers.todo_list'],
+            degraded: true,
+          },
+        },
+      },
+    });
+
+    expect(getCodexMcpDiagnosticsSummary(inheritedRun)).toMatchObject({
+      configSource: 'global_inherited',
+      tone: 'info',
+      degraded: false,
+    });
+    expect(buildWorkbenchSessionView(baseTask, { latestRun: inheritedRun }).badges).not.toContain(
+      'mcp:degraded'
+    );
+    expect(getCodexMcpDiagnosticsSummary(degradedRun)).toMatchObject({
+      configSource: 'inline_configured',
+      tone: 'warning',
+      degraded: true,
+      observedNightWorkersTools: ['nightworkers.todo_list'],
+    });
+    expect(buildWorkbenchSessionView(baseTask, { latestRun: degradedRun }).badges).toContain(
+      'mcp:degraded'
     );
   });
 

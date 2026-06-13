@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -11,6 +11,7 @@ import {
   buildCodexRuntimePrompt,
   CodexAgentRuntime,
 } from '../api/services/agent-runtime/CodexAgentRuntime';
+import { CODEX_CONTRACT_WARNING_CATALOG } from '../api/services/agent-runtime/codex-contract-warning-catalog';
 import {
   createCodexEventMapperState,
   mapCodexThreadEvent,
@@ -483,7 +484,7 @@ describe('CodexAgentRuntime', () => {
     });
     const events: any[] = [];
 
-    await runtime.start(
+    const result = await runtime.start(
       buildContext({
         currentTodo: {
           id: 'todo-1',
@@ -500,6 +501,11 @@ describe('CodexAgentRuntime', () => {
       }
     );
 
+    expect(result.contractWarnings ?? []).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'codex_todo_evidence_db_read_failed' }),
+      ])
+    );
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -554,6 +560,11 @@ describe('CodexAgentRuntime', () => {
         }),
       ])
     );
+    expect(result.contractWarnings ?? []).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'codex_todo_evidence_db_read_failed' }),
+      ])
+    );
   });
 
   it('falls back to runtime Todo context only when DB Todo evidence cannot be read', async () => {
@@ -575,7 +586,7 @@ describe('CodexAgentRuntime', () => {
     });
     const events: any[] = [];
 
-    await runtime.start(
+    const result = await runtime.start(
       buildContext({
         currentTodo: {
           id: 'todo-fallback',
@@ -592,6 +603,17 @@ describe('CodexAgentRuntime', () => {
       }
     );
 
+    expect(result.contractWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'codex_todo_evidence_db_read_failed',
+          providerItemId: 'file-db-throw',
+          todoId: 'todo-fallback',
+          todoSeq: 3,
+          todoEvidenceSource: 'context',
+        }),
+      ])
+    );
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -1189,6 +1211,167 @@ describe('CodexAgentRuntime', () => {
     expect(result.contractWarnings ?? []).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: 'codex_import_project_verification_missing' }),
+        expect.objectContaining({
+          code: 'codex_import_project_recommended_verification_mismatch',
+        }),
+      ])
+    );
+  });
+
+  it('accepts same-runner shorthand verification command evidence after import_project', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'import-1',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'import_project',
+              arguments: { source: 'starter', stack: 'hono' },
+              status: 'completed',
+              result: {
+                ok: true,
+                postImport: {
+                  manifest: {
+                    recommendedVerificationCommands: ['bun run verify:base'],
+                  },
+                },
+              },
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'cmd-verify',
+              type: 'command_execution',
+              command: 'bun verify:base',
+              aggregated_output: 'ok',
+              exit_code: 0,
+              status: 'completed',
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.contractWarnings ?? []).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'codex_import_project_verification_missing' }),
+        expect.objectContaining({
+          code: 'codex_import_project_recommended_verification_mismatch',
+        }),
+      ])
+    );
+  });
+
+  it('warns when successful post-import verification does not match recommended commands', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'import-1',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'import_project',
+              arguments: { source: 'starter', stack: 'hono' },
+              status: 'completed',
+              result: {
+                ok: true,
+                postImport: {
+                  manifest: {
+                    recommendedVerificationCommands: ['bun run verify:base'],
+                  },
+                },
+              },
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'cmd-typecheck',
+              type: 'command_execution',
+              command: 'bun run typecheck',
+              aggregated_output: 'ok',
+              exit_code: 0,
+              status: 'completed',
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.terminalState).toBe('completed');
+    expect(result.contractWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'codex_import_project_recommended_verification_mismatch',
+          severity: 'warning',
+          providerItemId: 'import-1',
+          command: 'bun run typecheck',
+        }),
+      ])
+    );
+    expect(result.contractWarnings ?? []).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'codex_import_project_verification_missing' }),
+      ])
+    );
+  });
+
+  it('accepts any one recommended verification command match after import_project', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'import-1',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'import_project',
+              arguments: { source: 'starter', stack: 'hono' },
+              status: 'completed',
+              result: {
+                ok: true,
+                postImport: {
+                  manifest: {
+                    recommendedVerificationCommands: ['bun run verify:base', 'bun run typecheck'],
+                  },
+                },
+              },
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'cmd-typecheck',
+              type: 'command_execution',
+              command: 'bun run typecheck',
+              aggregated_output: 'ok',
+              exit_code: 0,
+              status: 'completed',
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.contractWarnings ?? []).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'codex_import_project_verification_missing' }),
+        expect.objectContaining({
+          code: 'codex_import_project_recommended_verification_mismatch',
+        }),
       ])
     );
   });
@@ -1378,6 +1561,18 @@ describe('CodexAgentRuntime', () => {
 
     expect(prompt).toContain(`Available NightWorkers MCP tools in this lane: ${tools.join(', ')}.`);
     expect(mcpConfig.expectedTools).toEqual(tools);
+  });
+
+  it('keeps emitted Codex contract warning codes documented in the read-only catalog', async () => {
+    const source = await readFile('api/services/agent-runtime/CodexAgentRuntime.ts', 'utf8');
+    const emittedCodes = [...source.matchAll(/code: '(codex_[^']+)'/g)].map((match) => match[1]);
+
+    expect(new Set(emittedCodes)).toEqual(new Set(Object.keys(CODEX_CONTRACT_WARNING_CATALOG)));
+    expect(
+      Object.values(CODEX_CONTRACT_WARNING_CATALOG).every(
+        (entry) => entry.description.length > 0 && entry.terminalPolicy.length > 0
+      )
+    ).toBe(true);
   });
 
   it('warns for NightWorkers MCP tools outside the manifest helper list', async () => {

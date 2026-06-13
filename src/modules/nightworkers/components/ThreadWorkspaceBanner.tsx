@@ -95,6 +95,7 @@ export function WorkbenchStateBanner({
           onRequeueQueueEntry={onRequeueQueueEntry}
           tone="amber"
         />
+        <CodexDiagnosticsPanel sessionView={sessionView} tone="amber" />
       </div>
     );
   }
@@ -135,12 +136,16 @@ export function WorkbenchStateBanner({
             tone="slate"
           />
         ) : null}
+        <CodexDiagnosticsPanel sessionView={sessionView} tone="slate" />
       </div>
     );
   }
   return (
     <div className="border-b border-slate-700/60 bg-slate-950/20 px-6 py-2 text-xs text-slate-300">
-      Session state: {stateLabel(sessionView)} · Model profile: {model}
+      <div>
+        Session state: {stateLabel(sessionView)} · Model profile: {model}
+      </div>
+      <CodexDiagnosticsPanel sessionView={sessionView} tone="slate" compact />
     </div>
   );
 }
@@ -188,6 +193,73 @@ function DecisionSupportPanel({
           </button>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function CodexDiagnosticsPanel({
+  sessionView,
+  tone,
+  compact = false,
+}: {
+  sessionView: WorkbenchSessionView;
+  tone: 'amber' | 'slate';
+  compact?: boolean;
+}) {
+  const warnings = sessionView.codexContractWarnings;
+  const mcp = sessionView.codexMcpDiagnostics;
+  if (!warnings?.totalCount && !mcp) return null;
+  const borderClass = tone === 'amber' ? 'border-amber-300/25' : 'border-slate-600';
+  const textClass = tone === 'amber' ? 'text-amber-100' : 'text-slate-100';
+  const subTextClass = tone === 'amber' ? 'text-amber-200/75' : 'text-slate-300';
+  const mcpToneClass =
+    mcp?.tone === 'warning'
+      ? 'border-amber-300/40 text-amber-100'
+      : mcp?.tone === 'info'
+        ? 'border-sky-300/35 text-sky-100'
+        : 'border-slate-500 text-slate-200';
+  return (
+    <div
+      className={`${compact ? 'mt-2' : 'mt-3 rounded border px-3 py-2'} ${compact ? '' : borderClass}`}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        {warnings?.totalCount ? (
+          <span
+            className={`rounded border px-2 py-0.5 text-[11px] ${
+              warnings.errorCount > 0
+                ? 'border-red-300/45 text-red-100'
+                : 'border-amber-300/40 text-amber-100'
+            }`}
+          >
+            Contract warnings: {warnings.warningCount} warning / {warnings.errorCount} error
+          </span>
+        ) : null}
+        {mcp ? (
+          <span className={`rounded border px-2 py-0.5 text-[11px] ${mcpToneClass}`}>
+            {mcp.label}
+            {mcp.observedNightWorkersTools.length > 0
+              ? ` · observed ${mcp.observedNightWorkersTools.length}`
+              : ''}
+          </span>
+        ) : null}
+      </div>
+      {warnings?.items.length ? (
+        <div className={`mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] ${subTextClass}`}>
+          {warnings.items.slice(0, 4).map((item) => (
+            <span key={item.code} title={item.changedFiles.join(', ')}>
+              {item.code} x{item.count}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {!compact && mcp?.expectedTools.length ? (
+        <div className={`mt-1 text-[11px] ${subTextClass}`}>
+          MCP expected tools: {mcp.expectedTools.length}
+        </div>
+      ) : null}
+      {!compact && warnings?.totalCount ? (
+        <div className={`mt-1 text-[11px] ${textClass}`}>Codex contract diagnostics</div>
+      ) : null}
     </div>
   );
 }

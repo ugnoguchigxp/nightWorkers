@@ -282,9 +282,9 @@ pnpm verify
 
 ## 12. 実装開始前チェックリスト
 
-- [ ] codex-agent lane が Supervisor Round 1 / jobType 分類を通らないことを前提にしている。
-- [ ] Todo、LLM コードレビュー、品質ゲート verify を削らない。
-- [ ] Plan mode questionnaire / Blueprint / DB Design routing に触らない。
-- [ ] native lane の初期 Todo を変えない。
-- [ ] 小さい修正で仕様 artifact がないことだけを理由に停止しない文言になっている。
-- [ ] 明示的な planning / spec / implementation-plan 要求は引き続き尊重する。
+- [x] codex-agent lane が Supervisor Round 1 / jobType 分類を通らないことを前提にしている。
+- [x] Todo、LLM コードレビュー、品質ゲート verify を削らない。
+- [x] Plan mode questionnaire / Blueprint / DB Design routing に触らない。
+- [x] native lane の初期 Todo を変えない。
+- [x] 小さい修正で仕様 artifact がないことだけを理由に停止しない文言になっている。
+- [x] 明示的な planning / spec / implementation-plan 要求は引き続き尊重する。

@@ -466,4 +466,177 @@ describe('todo_list worker tool', () => {
     const persisted = await repo.listTaskRunTodosForRun(run.id);
     expect(persisted[0]).toMatchObject({ seq: 1, status: 'failed' });
   });
+
+  it('treats done for an already passed Todo as idempotent success', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: todo idempotent done ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: idempotent done',
+      description: 'Repeated done should not fail',
+      status: 'running',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+    });
+
+    await todoListTool({ runId: run.id, operation: 'replace', todos: [{ title: 'Implement' }] });
+    const firstDone = await todoListTool({ runId: run.id, operation: 'done', seq: 1 });
+    const secondDone = await todoListTool({ runId: run.id, operation: 'done', seq: 1 });
+
+    expect(firstDone.ok).toBe(true);
+    expect(secondDone.ok).toBe(true);
+    expect(secondDone.payload.transition).toMatchObject({
+      completedSeq: 1,
+      nextCurrentSeq: 2,
+    });
+    const persisted = await repo.listTaskRunTodosForRun(run.id);
+    expect(persisted[0]).toMatchObject({ seq: 1, status: 'passed' });
+    expect(persisted[1]).toMatchObject({ seq: 2, status: 'running' });
+  });
+
+  it('does not let stale auto-advance reopen a passed Todo', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: stale auto advance ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: stale auto advance',
+      description: 'Completed todos stay terminal',
+      status: 'running',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+    });
+    const todo7 = await repo.createTaskRunTodo({
+      runId: run.id,
+      seq: 7,
+      title: 'LLM コードレビューを実施する',
+      taskType: 'review',
+      procedureId: 'llm_code_review',
+      status: 'passed',
+      startedAt: new Date('2026-06-13T11:37:14.000Z'),
+      completedAt: new Date('2026-06-13T11:37:53.000Z'),
+    });
+    await repo.createTaskRunTodo({
+      runId: run.id,
+      seq: 8,
+      title: '品質ゲート verify を実施する',
+      taskType: 'verification',
+      procedureId: 'quality_gate_verify',
+      status: 'running',
+      startedAt: new Date('2026-06-13T11:37:53.000Z'),
+    });
+
+    const staleStart = await repo.startTaskRunTodoIfStillPendingAndNoEarlierOpen({
+      id: todo7.id,
+      runId: run.id,
+      afterSeq: 6,
+      startedAt: new Date('2026-06-13T11:40:29.000Z'),
+    });
+
+    expect(staleStart).toBeNull();
+    const persisted = await repo.listTaskRunTodosForRun(run.id);
+    expect(persisted.map((todo) => ({ seq: todo.seq, status: todo.status }))).toEqual([
+      { seq: 7, status: 'passed' },
+      { seq: 8, status: 'running' },
+    ]);
+    expect(persisted[0].completedAt).toBeTruthy();
+  });
+
+  it('does not auto-start a later pending Todo when an earlier Todo is still open', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: guarded auto advance ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: guarded auto advance',
+      description: 'Earlier open todos block later auto-start',
+      status: 'running',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+    });
+    await repo.createTaskRunTodo({
+      runId: run.id,
+      seq: 7,
+      title: 'Earlier pending',
+      taskType: 'review',
+      status: 'pending',
+    });
+    await repo.createTaskRunTodo({
+      runId: run.id,
+      seq: 8,
+      title: 'Current verification',
+      taskType: 'verification',
+      status: 'running',
+    });
+    await repo.createTaskRunTodo({
+      runId: run.id,
+      seq: 9,
+      title: 'Later implementation',
+      taskType: 'implementation',
+      status: 'pending',
+    });
+
+    const result = await todoListTool({ runId: run.id, operation: 'done', seq: 8 });
+
+    expect(result.ok).toBe(true);
+    const persisted = await repo.listTaskRunTodosForRun(run.id);
+    expect(persisted.map((todo) => ({ seq: todo.seq, status: todo.status }))).toEqual([
+      { seq: 7, status: 'pending' },
+      { seq: 8, status: 'passed' },
+      { seq: 9, status: 'pending' },
+    ]);
+  });
+});
+
+describe('task_events sequencing', () => {
+  it('allocates unique run-local seq values for concurrent event creation', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: event seq ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: event seq',
+      status: 'running',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+    });
+
+    const events = await Promise.all(
+      Array.from({ length: 12 }, (_, index) =>
+        repo.createTaskEvent({
+          taskRunId: run.id,
+          type: 'info',
+          eventType: 'test_event',
+          actor: 'system',
+          message: `event ${index}`,
+          timestamp: new Date(),
+        })
+      )
+    );
+
+    const seqs = events.map((event) => event.seq).sort((a, b) => a - b);
+    expect(seqs).toEqual(Array.from({ length: 12 }, (_, index) => index + 1));
+    expect(new Set(seqs).size).toBe(12);
+  });
 });

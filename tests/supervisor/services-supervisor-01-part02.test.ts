@@ -25,6 +25,7 @@ vi.mock('../../api/modules/nightworkers/nightworkers.repository', () => ({
   listTaskRunTodosForRun: vi.fn(),
   replaceTaskRunTodosForRun: vi.fn(),
   updateTaskRunTodo: vi.fn(),
+  startTaskRunTodoIfStillPendingAndNoEarlierOpen: vi.fn(),
 }));
 
 describe('Schema-first supervisor loop', () => {
@@ -75,7 +76,19 @@ describe('Schema-first supervisor loop', () => {
       );
       return currentTodos.find((todo) => todo.id === todoId) as any;
     });
-
+    vi.mocked(repo.startTaskRunTodoIfStillPendingAndNoEarlierOpen).mockImplementation(
+      async ({ id, afterSeq, startedAt }) => {
+        const target = currentTodos.find((todo) => todo.id === id && todo.status === 'pending');
+        const earlierOpen = currentTodos.find(
+          (todo) => todo.seq <= afterSeq && ['pending', 'running'].includes(todo.status)
+        );
+        if (!target || earlierOpen) return null as any;
+        currentTodos = currentTodos.map((todo) =>
+          todo.id === id ? { ...todo, status: 'running', startedAt, completedAt: null } : todo
+        );
+        return currentTodos.find((todo) => todo.id === id) as any;
+      }
+    );
     vi.mocked(llm.callSupervisorLLM)
       .mockResolvedValueOnce({
         jobType: 'major_code_edit',
@@ -401,6 +414,19 @@ describe('Schema-first supervisor loop', () => {
       );
       return currentTodos.find((todo) => todo.id === todoId) as any;
     });
+    vi.mocked(repo.startTaskRunTodoIfStillPendingAndNoEarlierOpen).mockImplementation(
+      async ({ id, afterSeq, startedAt }) => {
+        const target = currentTodos.find((todo) => todo.id === id && todo.status === 'pending');
+        const earlierOpen = currentTodos.find(
+          (todo) => todo.seq <= afterSeq && ['pending', 'running'].includes(todo.status)
+        );
+        if (!target || earlierOpen) return null as any;
+        currentTodos = currentTodos.map((todo) =>
+          todo.id === id ? { ...todo, status: 'running', startedAt, completedAt: null } : todo
+        );
+        return currentTodos.find((todo) => todo.id === id) as any;
+      }
+    );
 
     try {
       const result = await runSupervisorLoop({

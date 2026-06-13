@@ -20,7 +20,7 @@
 - import_project で扱える取り込みは run_command git clone で代替しない。
 - 許可済み外部テンプレートを取り込む場合は copy_directory を優先する。
 - テンプレート取り込みは import_project / copy_directory だけで完了扱いにしない。major_code_edit の TodoList に manifest inspection と manifest-based verification を含める。
-- import_project 後は postImport.llmContext があれば使い、あわせて postImport.manifest、postImport.initialization の実出力を先に使う。payload が欠落している、または修復対象の失敗がある場合を除き、LLM_CONTEXT.md や package.json の再読込、install 再実行をしない。
+- import_project 後は postImport.gitInitialization、postImport.llmContext があればそれ、あわせて postImport.manifest、postImport.initialization の実出力を先に使う。payload が欠落している、または修復対象の失敗がある場合を除き、LLM_CONTEXT.md や package.json の再読込、install 再実行をしない。
 - copy_directory 後は package.json や pyproject.toml を読み、scripts / tool config から build / lint / typecheck / test / verify / pytest / ruff / pyright など実行可能な検証を選び、run_verification で実行する。
 - CLI コマンドは run_command / run_verification 経由で、command policy が許可する単一コマンドだけ使う。
 - 既存ファイルの単純な変更では replace_content を第一選択にする。

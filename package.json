@@ -49,13 +49,14 @@
     "test:e2e:smoke": "playwright test --grep @smoke",
     "test:e2e:regression": "playwright test --grep @regression",
     "test:e2e:agent-outcome": "playwright test tests/e2e/nightworkers-agent.spec.ts",
-    "test:e2e:agent-live": "playwright test --grep @agent-live",
+    "test:e2e:agent-live": "playwright test tests/e2e/nightworkers-agent.spec.ts --grep @agent-live",
     "format": "biome format --write .",
     "verify:base": "bun scripts/verify.mjs base",
     "verify:desktop": "bun scripts/verify.mjs desktop",
     "verify": "bun scripts/verify.mjs verify",
     "verify:fast": "bun run verify:base",
-    "verify:full": "bun scripts/verify.mjs full"
+    "verify:full": "bun scripts/verify.mjs full",
+    "verify:live": "bun run verify && bun run test:e2e:agent-live"
   },
   "type": "module",
   "keywords": [],

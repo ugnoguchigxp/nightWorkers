@@ -497,8 +497,10 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
               (candidate) => candidate.status === 'pending' && candidate.seq > todo.seq
             );
             if (nextTodo) {
-              await repo.updateTaskRunTodo(nextTodo.id, {
-                status: 'running',
+              await repo.startTaskRunTodoIfStillPendingAndNoEarlierOpen({
+                id: nextTodo.id,
+                runId,
+                afterSeq: todo.seq,
                 startedAt: new Date(),
               });
               currentTodos = await repo.listTaskRunTodosForRun(runId);

@@ -129,6 +129,9 @@ export async function ensureBaseNightWorkersTables() {
   await client.execute(
     'CREATE INDEX IF NOT EXISTS task_events_task_run_id_idx ON task_events (task_run_id)'
   );
+  await client.execute(
+    'CREATE UNIQUE INDEX IF NOT EXISTS task_events_task_run_seq_uidx ON task_events (task_run_id, seq)'
+  );
 
   await client.execute(`
     CREATE TABLE IF NOT EXISTS artifacts (

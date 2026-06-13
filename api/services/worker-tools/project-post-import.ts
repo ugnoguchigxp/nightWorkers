@@ -4,6 +4,8 @@ import path from 'node:path';
 
 const INSTALL_TIMEOUT_MS = 180_000;
 const INSTALL_MAX_BUFFER = 10 * 1024 * 1024;
+const GIT_INIT_TIMEOUT_MS = 120_000;
+const GIT_INIT_MAX_BUFFER = 5 * 1024 * 1024;
 const PACKAGE_MANAGER_LOCKFILES = [
   { file: 'bun.lock', packageManager: 'bun' },
   { file: 'bun.lockb', packageManager: 'bun' },
@@ -52,6 +54,22 @@ export type ProjectInitializationResult = {
   errorMessage?: string;
 };
 
+export type ProjectGitInitializationResult = {
+  status: 'passed' | 'failed';
+  cwd: string;
+  command: string[];
+  gitDirPath: string;
+  removedExistingGitDir: boolean;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  exitCode: number | null;
+  signal: string | null;
+  stdout: string;
+  stderr: string;
+  errorMessage?: string;
+};
+
 export type ProjectLlmContextInspection = {
   status: 'found' | 'read_failed';
   path: string;
@@ -63,6 +81,7 @@ export type ProjectPostImportOutput = {
   targetPath: string;
   manifest: ProjectManifestInspection;
   llmContext?: ProjectLlmContextInspection;
+  gitInitialization: ProjectGitInitializationResult;
   initialization: ProjectInitializationResult;
 };
 
@@ -71,6 +90,7 @@ export async function inspectAndInitializeImportedProject(input: {
   initialize?: boolean;
 }): Promise<ProjectPostImportOutput> {
   const targetPath = path.resolve(input.targetPath);
+  const gitInitialization = await initializeFreshGitRepository(targetPath);
   const manifest = await inspectPackageManifest(targetPath);
   const llmContext = await inspectLlmContext(targetPath);
   const initialization = await initializeProject({
@@ -82,8 +102,68 @@ export async function inspectAndInitializeImportedProject(input: {
     targetPath,
     manifest,
     ...(llmContext ? { llmContext } : {}),
+    gitInitialization,
     initialization,
   };
+}
+
+async function initializeFreshGitRepository(
+  targetPath: string
+): Promise<ProjectGitInitializationResult> {
+  const gitDirPath = path.join(targetPath, '.git');
+  const command = ['git', 'init'];
+  const startedAt = new Date();
+  let removedExistingGitDir = false;
+
+  try {
+    removedExistingGitDir = await pathExists(gitDirPath);
+    await fs.rm(gitDirPath, { recursive: true, force: true });
+  } catch (error) {
+    const finishedAt = new Date();
+    return {
+      status: 'failed',
+      cwd: targetPath,
+      command,
+      gitDirPath,
+      removedExistingGitDir,
+      startedAt: startedAt.toISOString(),
+      finishedAt: finishedAt.toISOString(),
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+      exitCode: null,
+      signal: null,
+      stdout: '',
+      stderr: '',
+      errorMessage: `.git removal failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+
+  const result = await runGitInitCommand(command, targetPath);
+  const finishedAt = new Date();
+  return {
+    status: result.exitCode === 0 ? 'passed' : 'failed',
+    cwd: targetPath,
+    command,
+    gitDirPath,
+    removedExistingGitDir,
+    startedAt: startedAt.toISOString(),
+    finishedAt: finishedAt.toISOString(),
+    durationMs: finishedAt.getTime() - startedAt.getTime(),
+    exitCode: result.exitCode,
+    signal: result.signal,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    errorMessage: result.errorMessage,
+  };
+}
+
+async function pathExists(targetPath: string) {
+  return fs
+    .stat(targetPath)
+    .then(() => true)
+    .catch((error: any) => {
+      if (error?.code === 'ENOENT') return false;
+      throw error;
+    });
 }
 
 async function inspectPackageManifest(targetPath: string): Promise<ProjectManifestInspection> {
@@ -275,6 +355,40 @@ function runInstallCommand(command: string[], cwd: string) {
         cwd,
         timeout: INSTALL_TIMEOUT_MS,
         maxBuffer: INSTALL_MAX_BUFFER,
+      },
+      (error, stdout, stderr) => {
+        const execError = error as
+          | (Error & { code?: string | number; signal?: string | null })
+          | null;
+        const exitCode = typeof execError?.code === 'number' ? execError.code : error ? null : 0;
+        resolve({
+          exitCode,
+          signal: execError?.signal ?? null,
+          stdout: String(stdout || ''),
+          stderr: String(stderr || ''),
+          errorMessage: error ? error.message : undefined,
+        });
+      }
+    );
+  });
+}
+
+function runGitInitCommand(command: string[], cwd: string) {
+  const [file, ...args] = command;
+  return new Promise<{
+    exitCode: number | null;
+    signal: string | null;
+    stdout: string;
+    stderr: string;
+    errorMessage?: string;
+  }>((resolve) => {
+    execFile(
+      file,
+      args,
+      {
+        cwd,
+        timeout: GIT_INIT_TIMEOUT_MS,
+        maxBuffer: GIT_INIT_MAX_BUFFER,
       },
       (error, stdout, stderr) => {
         const execError = error as

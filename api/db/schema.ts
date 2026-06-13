@@ -256,6 +256,10 @@ export const taskEvents = sqliteTable(
   },
   (table) => ({
     taskRunIdIdx: index('task_events_task_run_id_idx').on(table.taskRunId),
+    taskRunSeqUniqueIdx: uniqueIndex('task_events_task_run_seq_uidx').on(
+      table.taskRunId,
+      table.seq
+    ),
   })
 );
 

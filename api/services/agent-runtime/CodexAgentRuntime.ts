@@ -42,6 +42,12 @@ type RuntimeTodoEvidence = {
   procedureId?: string | null;
 };
 
+type RuntimeTodoEvidenceReadResult = {
+  todo: RuntimeTodoEvidence | null;
+  source: 'db' | 'context' | 'none';
+  dbReadFailed: boolean;
+};
+
 type CodexRuntimeAuditState = {
   sawNightworkersTodoReplace: boolean;
   sawAnyNightworkersTodo: boolean;
@@ -55,10 +61,10 @@ type CodexRuntimeAuditState = {
   importProjectSuccessSequence: number | null;
   importProjectProviderItemId: string | null;
   recommendedVerificationCommands: string[];
-  postImportVerificationEvidenceSeen: boolean;
   verificationEvidence: Array<{
     sequence: number;
     command: string | null;
+    normalizedCommand: string | null;
     commandClass: string | null;
     exitCode: number | null;
   }>;
@@ -298,16 +304,10 @@ export class CodexAgentRuntime implements AgentRuntime {
         auditState.verificationEvidence.push({
           sequence,
           command,
+          normalizedCommand: normalizeVerificationCommand(command),
           commandClass,
           exitCode,
         });
-        if (
-          exitCode === 0 &&
-          auditState.importProjectSuccessSequence !== null &&
-          sequence > auditState.importProjectSuccessSequence
-        ) {
-          auditState.postImportVerificationEvidenceSeen = true;
-        }
       }
       warnings.push({
         code: 'codex_native_command_execution',
@@ -355,7 +355,8 @@ export class CodexAgentRuntime implements AgentRuntime {
     }
 
     if (event.type === 'diff_collected' && isCodexFileChangeEvent(payload)) {
-      const currentTodo = await this.readCurrentTodoEvidence(context);
+      const todoEvidence = await this.readCurrentTodoEvidence(context);
+      const currentTodo = todoEvidence.todo;
       if (currentTodo) {
         auditState.lastCurrentTodo = currentTodo;
         auditedEvent = {
@@ -372,6 +373,19 @@ export class CodexAgentRuntime implements AgentRuntime {
           message: 'Codex file_change occurred while no current running Todo was found.',
           providerItemId: readString(payload.providerItemId),
           changedFiles: readChangedFiles(payload),
+        });
+      }
+      if (todoEvidence.dbReadFailed) {
+        warnings.push({
+          code: 'codex_todo_evidence_db_read_failed',
+          severity: 'warning',
+          message:
+            'Codex file_change Todo evidence DB read failed; runtime Todo context fallback was used when available.',
+          providerItemId: readString(payload.providerItemId),
+          todoId: currentTodo?.id ?? null,
+          todoSeq: currentTodo?.seq ?? null,
+          changedFiles: readChangedFiles(payload),
+          todoEvidenceSource: todoEvidence.source,
         });
       }
       if (!auditState.sawNightworkersTodoReplace) {
@@ -406,26 +420,34 @@ export class CodexAgentRuntime implements AgentRuntime {
 
   private async readCurrentTodoEvidence(
     context: AgentRunContext
-  ): Promise<RuntimeTodoEvidence | null> {
+  ): Promise<RuntimeTodoEvidenceReadResult> {
     try {
       const todos = await repo.listTaskRunTodosForRun(context.runId);
       const current = todos
         .filter((todo) => todo.status === 'running')
         .sort((a, b) => a.seq - b.seq)[0];
-      if (!current) return null;
+      if (!current) return { todo: null, source: 'none', dbReadFailed: false };
       return {
-        id: current.id,
-        seq: current.seq,
-        title: current.title,
-        procedureId: current.procedureId ?? null,
+        todo: {
+          id: current.id,
+          seq: current.seq,
+          title: current.title,
+          procedureId: current.procedureId ?? null,
+        },
+        source: 'db',
+        dbReadFailed: false,
       };
     } catch {
       if (context.currentTodo?.status === 'running') {
         return {
-          id: context.currentTodo.id,
-          seq: context.currentTodo.seq,
-          title: context.currentTodo.title,
-          procedureId: context.currentTodo.procedureId ?? null,
+          todo: {
+            id: context.currentTodo.id,
+            seq: context.currentTodo.seq,
+            title: context.currentTodo.title,
+            procedureId: context.currentTodo.procedureId ?? null,
+          },
+          source: 'context',
+          dbReadFailed: true,
         };
       }
       if (context.todoPlan?.length) {
@@ -434,14 +456,18 @@ export class CodexAgentRuntime implements AgentRuntime {
           .sort((a, b) => a.seq - b.seq)[0];
         if (current) {
           return {
-            id: current.id,
-            seq: current.seq,
-            title: current.title,
-            procedureId: current.procedureId ?? null,
+            todo: {
+              id: current.id,
+              seq: current.seq,
+              title: current.title,
+              procedureId: current.procedureId ?? null,
+            },
+            source: 'context',
+            dbReadFailed: true,
           };
         }
       }
-      return null;
+      return { todo: null, source: 'none', dbReadFailed: true };
     }
   }
 
@@ -470,7 +496,36 @@ export class CodexAgentRuntime implements AgentRuntime {
   ) {
     if (!auditState.sawNightworkersImportProjectSuccess) return;
     if (auditState.recommendedVerificationCommands.length === 0) return;
-    if (auditState.postImportVerificationEvidenceSeen) return;
+    const postImportSuccessfulVerificationEvidence = auditState.verificationEvidence.filter(
+      (evidence) =>
+        evidence.exitCode === 0 &&
+        auditState.importProjectSuccessSequence !== null &&
+        evidence.sequence > auditState.importProjectSuccessSequence
+    );
+    const recommendedCommands = auditState.recommendedVerificationCommands
+      .map((command) => normalizeVerificationCommand(command))
+      .filter((command): command is string => command !== null);
+    const hasRecommendedMatch = postImportSuccessfulVerificationEvidence.some((evidence) =>
+      recommendedCommands.some((recommended) =>
+        verificationCommandsMatch(evidence.normalizedCommand, recommended)
+      )
+    );
+    if (hasRecommendedMatch) return;
+    if (postImportSuccessfulVerificationEvidence.length > 0) {
+      const firstEvidence = postImportSuccessfulVerificationEvidence[0];
+      const warning = this.toContractWarningEvent(auditState, {
+        code: 'codex_import_project_recommended_verification_mismatch',
+        severity: 'warning',
+        message:
+          'nightworkers.import_project recommended verification commands were present, but successful post-import verification did not match a recommended command.',
+        providerItemId: auditState.importProjectProviderItemId,
+        toolName: 'nightworkers.import_project',
+        command: firstEvidence.command,
+      });
+      logs.push(warning.message);
+      await sink.emit(warning);
+      return;
+    }
     const warning = this.toContractWarningEvent(auditState, {
       code: 'codex_import_project_verification_missing',
       severity: 'warning',
@@ -683,7 +738,6 @@ function createCodexRuntimeAuditState(): CodexRuntimeAuditState {
     importProjectSuccessSequence: null,
     importProjectProviderItemId: null,
     recommendedVerificationCommands: [],
-    postImportVerificationEvidenceSeen: false,
     verificationEvidence: [],
     sawHighRiskNativeImportCommand: false,
     highRiskNativeImportCommand: null,
@@ -747,6 +801,7 @@ function normalizeContractWarning(warning: CodexContractWarning): CodexContractW
     todoSeq: warning.todoSeq ?? null,
     ...(warning.changedFiles ? { changedFiles: warning.changedFiles } : {}),
     command: warning.command ?? null,
+    ...(warning.todoEvidenceSource ? { todoEvidenceSource: warning.todoEvidenceSource } : {}),
     ...(typeof warning.sequence === 'number' && Number.isFinite(warning.sequence)
       ? { sequence: Math.max(0, Math.floor(warning.sequence)) }
       : {}),
@@ -767,6 +822,31 @@ function readExitCode(payload: Record<string, unknown>): number | null {
   if (typeof payload.exitCode === 'number') return payload.exitCode;
   if (typeof payload.exit_code === 'number') return payload.exit_code;
   return null;
+}
+
+function normalizeVerificationCommand(command: string | null): string | null {
+  if (!command) return null;
+  const normalized = command.trim().replace(/\s+/g, ' ');
+  return normalized.length > 0 ? normalized : null;
+}
+
+function verificationCommandsMatch(actual: string | null, recommended: string | null): boolean {
+  if (!actual || !recommended) return false;
+  if (actual === recommended) return true;
+  return verificationCommandEquivalentKey(actual) === verificationCommandEquivalentKey(recommended);
+}
+
+function verificationCommandEquivalentKey(command: string): string {
+  const parts = command.split(' ');
+  const runner = parts[0];
+  if (
+    (runner === 'bun' || runner === 'pnpm' || runner === 'yarn') &&
+    parts[1] === 'run' &&
+    parts[2]
+  ) {
+    return [runner, ...parts.slice(2)].join(' ');
+  }
+  return command;
 }
 
 function readChangedFiles(payload: Record<string, unknown>): string[] {
@@ -1037,7 +1117,7 @@ export function buildCodexRuntimePrompt(context: AgentRunContext): string {
     '- If the user specifies a DB, choose the matching starter variant such as postgres, pgvector, turso, or cloudflare. If the user asks for RAG or embeddings-backed search, choose variant=rag on the hono stack. If the user specifies SSR or SSG without a DB/RAG variant, pass the matching overlay. Do not combine a DB/RAG variant and an overlay in one call.',
     '- Do not use shell git clone when nightworkers.import_project covers the task.',
     '- If nightworkers.import_project fails, is cancelled, or is not approved, stop and report the tool failure. Do not create a fallback static app or alternate implementation.',
-    '- After import_project succeeds, first use postImport.llmContext when present, plus postImport.manifest and postImport.initialization. Do not re-read LLM_CONTEXT.md, package.json, or re-run install unless that payload is missing, truncated, or failed for a reason you are actively fixing.',
+    '- After import_project succeeds, first use postImport.gitInitialization, postImport.llmContext when present, plus postImport.manifest and postImport.initialization. Do not re-read LLM_CONTEXT.md, package.json, or re-run install unless that payload is missing, truncated, or failed for a reason you are actively fixing.',
     '- Use postImport.manifest.recommendedVerificationCommands when choosing manifest-based verification before reporting completion.',
     '- CLI checks appear as Codex native command_execution events, not NightWorkers MCP tools. Preserve important command, exit code, stdout, and stderr evidence in the final report.',
   ].join('\n');

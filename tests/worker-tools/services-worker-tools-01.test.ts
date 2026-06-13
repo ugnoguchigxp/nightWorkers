@@ -173,6 +173,25 @@ describe('Worker Tools Unit Tests', () => {
       );
       await execFileAsync('git', ['tag', 'sqlite-v1.0.0'], { cwd: templateRepo });
 
+      await execFileAsync('git', ['init'], { cwd: targetDir });
+      await execFileAsync(
+        'git',
+        [
+          '-c',
+          'user.name=Test User',
+          '-c',
+          'user.email=test@example.com',
+          'commit',
+          '--allow-empty',
+          '-m',
+          'stale target metadata',
+        ],
+        { cwd: targetDir }
+      );
+      await execFileAsync('git', ['remote', 'add', 'origin', 'https://example.invalid/stale.git'], {
+        cwd: targetDir,
+      });
+
       const result = await importProjectTool({
         source: 'starter',
         stack: 'hono',
@@ -229,6 +248,14 @@ describe('Worker Tools Unit Tests', () => {
         path: path.join(targetDir, 'LLM_CONTEXT.md'),
         rawContent: '# LLM Context\n\nUse src/index.ts as the implementation entrypoint.\n',
       });
+      expect(result.payload?.postImport?.gitInitialization).toMatchObject({
+        status: 'passed',
+        cwd: targetDir,
+        command: ['git', 'init'],
+        gitDirPath: path.join(targetDir, '.git'),
+        removedExistingGitDir: true,
+        exitCode: 0,
+      });
       expect(result.payload?.postImport?.initialization).toMatchObject({
         status: 'passed',
         cwd: targetDir,
@@ -238,6 +265,15 @@ describe('Worker Tools Unit Tests', () => {
       await expect(fs.readFile(path.join(targetDir, 'src/index.ts'), 'utf-8')).resolves.toContain(
         'ok = true'
       );
+      const workTree = await execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], {
+        cwd: targetDir,
+      });
+      expect(workTree.stdout.trim()).toBe('true');
+      await expect(
+        execFileAsync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: targetDir })
+      ).rejects.toBeTruthy();
+      const remotes = await execFileAsync('git', ['remote', '-v'], { cwd: targetDir });
+      expect(remotes.stdout.trim()).toBe('');
     } finally {
       await fs.rm(templateRepo, { recursive: true, force: true });
       await fs.rm(targetDir, { recursive: true, force: true });
@@ -355,6 +391,7 @@ describe('Worker Tools Unit Tests', () => {
       const result = await importProjectTool({
         repoUrl: sourceRepo,
         targetPath: 'vendor/imported-repo',
+        stripGitDir: false,
         repoRoot: targetDir,
       });
 
@@ -369,12 +406,33 @@ describe('Worker Tools Unit Tests', () => {
       expect(result.payload?.postImport).toMatchObject({
         targetPath: path.join(targetDir, 'vendor/imported-repo'),
         manifest: { status: 'missing' },
+        gitInitialization: {
+          status: 'passed',
+          cwd: path.join(targetDir, 'vendor/imported-repo'),
+          command: ['git', 'init'],
+          gitDirPath: path.join(targetDir, 'vendor/imported-repo/.git'),
+          removedExistingGitDir: true,
+          exitCode: 0,
+        },
         initialization: { status: 'skipped', skippedReason: 'manifest_missing' },
       });
       expect(result.payload?.postImport).not.toHaveProperty('llmContext');
       await expect(
         fs.readFile(path.join(targetDir, 'vendor/imported-repo/README.md'), 'utf-8')
       ).resolves.toContain('imported');
+      const importedWorkTree = await execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], {
+        cwd: path.join(targetDir, 'vendor/imported-repo'),
+      });
+      expect(importedWorkTree.stdout.trim()).toBe('true');
+      await expect(
+        execFileAsync('git', ['rev-parse', '--verify', 'HEAD'], {
+          cwd: path.join(targetDir, 'vendor/imported-repo'),
+        })
+      ).rejects.toBeTruthy();
+      const importedRemotes = await execFileAsync('git', ['remote', '-v'], {
+        cwd: path.join(targetDir, 'vendor/imported-repo'),
+      });
+      expect(importedRemotes.stdout.trim()).toBe('');
     } finally {
       await fs.rm(sourceRepo, { recursive: true, force: true });
       await fs.rm(targetDir, { recursive: true, force: true });

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, not, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { withSqliteBusyRetry } from '../../db/retry';
 import { artifacts, taskEvents, taskRuns, taskRunTodos, tasks } from '../../db/schema';
@@ -16,6 +16,18 @@ import {
   shouldProjectRunEventToActivity,
 } from './nightworkers.activity.repository';
 import { type JsonRecord, readRunEventPayload } from './nightworkers.json-adapters';
+
+const TERMINAL_TODO_STATUSES = ['passed', 'failed', 'needs_human', 'skipped'] as const;
+const OPEN_TODO_STATUSES = ['pending', 'running'] as const;
+
+function isOpenTodoStatus(status: string) {
+  return (OPEN_TODO_STATUSES as readonly string[]).includes(status);
+}
+
+function isSqliteUniqueConstraintError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('SQLITE_CONSTRAINT') || message.includes('UNIQUE constraint failed');
+}
 
 export async function createTaskRun(data: {
   taskId: string;
@@ -241,6 +253,7 @@ export async function updateTaskRunTodo(
   },
   options: { notifyTaskId?: string; notifyRunId?: string } = {}
 ) {
+  const blocksTerminalReopen = data.status !== undefined && isOpenTodoStatus(data.status);
   const [todo] = await withSqliteBusyRetry(() =>
     db
       .update(taskRunTodos)
@@ -249,9 +262,22 @@ export async function updateTaskRunTodo(
         dependsOn: data.dependsOn === undefined ? undefined : (data.dependsOn ?? []),
         updatedAt: new Date(),
       })
-      .where(eq(taskRunTodos.id, id))
+      .where(
+        blocksTerminalReopen
+          ? and(
+              eq(taskRunTodos.id, id),
+              not(inArray(taskRunTodos.status, [...TERMINAL_TODO_STATUSES]))
+            )
+          : eq(taskRunTodos.id, id)
+      )
       .returning()
   );
+  if (!todo && blocksTerminalReopen) {
+    const [current] = await withSqliteBusyRetry(() =>
+      db.select().from(taskRunTodos).where(eq(taskRunTodos.id, id))
+    );
+    return current;
+  }
   if (todo) {
     if (options.notifyTaskId) {
       nightWorkersRealtimeBroker.publish(options.notifyTaskId, {
@@ -277,6 +303,50 @@ export async function updateTaskRunTodo(
   return todo;
 }
 
+export async function startTaskRunTodoIfStillPendingAndNoEarlierOpen(
+  input: {
+    id: string;
+    runId: string;
+    afterSeq: number;
+    startedAt: Date;
+  },
+  options: { notifyTaskId?: string; notifyRunId?: string } = {}
+) {
+  const [todo] = await withSqliteBusyRetry(() =>
+    db
+      .update(taskRunTodos)
+      .set({
+        status: 'running',
+        startedAt: input.startedAt,
+        completedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(taskRunTodos.id, input.id),
+          eq(taskRunTodos.runId, input.runId),
+          eq(taskRunTodos.status, 'pending'),
+          sql`not exists (
+            select 1
+            from task_run_todos earlier
+            where earlier.run_id = ${input.runId}
+              and earlier.seq <= ${input.afterSeq}
+              and earlier.status in ('pending', 'running')
+          )`
+        )
+      )
+      .returning()
+  );
+  if (todo && options.notifyTaskId) {
+    nightWorkersRealtimeBroker.publish(options.notifyTaskId, {
+      type: 'task_run_updated',
+      runId: options.notifyRunId ?? todo.runId,
+      payload: { todo },
+    });
+  }
+  return todo ?? null;
+}
+
 // --- Task Events ---
 export async function createTaskEvent(data: {
   taskRunId: string;
@@ -288,21 +358,33 @@ export async function createTaskEvent(data: {
   payloadJson?: unknown;
   timestamp?: Date;
 }) {
-  return withSqliteBusyRetry(async () => {
-    let seq = data.seq;
-    if (seq === undefined) {
-      const result = await db
-        .select({ maxSeq: sql<number>`coalesce(max(${taskEvents.seq}), 0)` })
-        .from(taskEvents)
-        .where(eq(taskEvents.taskRunId, data.taskRunId));
-      seq = (result[0]?.maxSeq || 0) + 1;
+  const maxAttempts = data.seq === undefined ? 5 : 1;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      return await withSqliteBusyRetry(() =>
+        db.transaction(async (tx) => {
+          let seq = data.seq;
+          if (seq === undefined) {
+            const result = await tx
+              .select({ maxSeq: sql<number>`coalesce(max(${taskEvents.seq}), 0)` })
+              .from(taskEvents)
+              .where(eq(taskEvents.taskRunId, data.taskRunId));
+            seq = (result[0]?.maxSeq || 0) + 1;
+          }
+          const [event] = await tx
+            .insert(taskEvents)
+            .values({ ...data, seq })
+            .returning();
+          return event;
+        })
+      );
+    } catch (error) {
+      lastError = error;
+      if (data.seq !== undefined || !isSqliteUniqueConstraintError(error)) throw error;
     }
-    const [event] = await db
-      .insert(taskEvents)
-      .values({ ...data, seq })
-      .returning();
-    return event;
-  });
+  }
+  throw lastError;
 }
 
 export async function createRunEvent(

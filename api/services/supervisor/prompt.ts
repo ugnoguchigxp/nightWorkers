@@ -151,7 +151,7 @@ export function buildRound2PromptPacket(input: Round2PromptPacketInput): Supervi
       '- Do not use run_command git clone when import_project covers the task; import_project owns provenance, target-path policy, and nested .git handling for both standard templates and arbitrary Git imports.',
       '- For template imports from an approved external directory, prefer copy_directory over shell cp.',
       '- For template imports, TodoList must include manifest inspection and verification tasks before finalize_answer.',
-      '- After import_project succeeds, first use postImport.llmContext when present, plus postImport.manifest and postImport.initialization. Do not re-read LLM_CONTEXT.md, package.json, or re-run install unless that payload is missing, truncated, or failed for a reason you are actively fixing.',
+      '- After import_project succeeds, first use postImport.gitInitialization, postImport.llmContext when present, plus postImport.manifest and postImport.initialization. Do not re-read LLM_CONTEXT.md, package.json, or re-run install unless that payload is missing, truncated, or failed for a reason you are actively fixing.',
       '- Use postImport.manifest.recommendedVerificationCommands when choosing manifest-based verification before reporting completion.',
       '- After copy_directory succeeds, read package.json and/or pyproject.toml, choose relevant checks such as build/lint/typecheck/test/verify/pytest/ruff/pyright, and run them via run_verification when present.',
       '- Do not call finalize_answer while any Todo is pending or running; close the current Todo with todo_list operation=done, operation=block, or operation=fail first.',

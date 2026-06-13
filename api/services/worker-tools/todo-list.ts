@@ -243,6 +243,26 @@ async function completeTodo(input: {
     async (context) => {
       const currentValidation = resolveTargetTodo(context.todos, input.seq);
       if (!currentValidation.ok) {
+        const idempotentPassedTodo =
+          input.status === 'passed' && input.seq !== undefined
+            ? context.todos.find((todo) => todo.seq === input.seq && todo.status === 'passed')
+            : null;
+        if (idempotentPassedTodo) {
+          return okTodoAction(
+            input.action,
+            input.operation,
+            context.runId,
+            context.taskId,
+            context.todos,
+            {
+              transition: {
+                previousCurrentSeq: currentSeqOrNull(context.todos),
+                completedSeq: idempotentPassedTodo.seq,
+                nextCurrentSeq: currentSeqOrNull(context.todos),
+              },
+            }
+          );
+        }
         return failedTodoAction(
           context,
           input.action,
@@ -273,12 +293,16 @@ async function completeTodo(input: {
           (todo) => todo.status === 'pending' && todo.seq > current.seq
         );
         if (nextTodo && !isFinalCloseoutTodo(nextTodo)) {
-          await repo.updateTaskRunTodo(
-            nextTodo.id,
-            { status: 'running', startedAt: new Date(), completedAt: null },
+          const started = await repo.startTaskRunTodoIfStillPendingAndNoEarlierOpen(
+            {
+              id: nextTodo.id,
+              runId: context.runId,
+              afterSeq: current.seq,
+              startedAt: new Date(),
+            },
             { notifyTaskId: context.taskId, notifyRunId: context.runId }
           );
-          nextSeq = nextTodo.seq;
+          nextSeq = started?.seq ?? null;
           updated = await repo.listTaskRunTodosForRun(context.runId);
         }
       }

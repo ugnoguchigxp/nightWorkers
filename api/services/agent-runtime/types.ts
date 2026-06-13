@@ -75,6 +75,7 @@ export interface CodexContractWarning {
   todoSeq?: number | null;
   changedFiles?: string[];
   command?: string | null;
+  todoEvidenceSource?: 'db' | 'context' | 'none';
   sequence?: number;
   occurredAt?: string;
   count?: number;

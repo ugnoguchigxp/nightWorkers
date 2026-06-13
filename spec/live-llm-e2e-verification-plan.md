@@ -1,6 +1,6 @@
 # Live LLM E2E Verification 計画
 
-Status: planned
+Status: evidence-contract-split
 
 ## 目的
 
@@ -22,7 +22,7 @@ LLM を使った実装で、過去に成立していた実行ロジックが新�
 - `verify`: `verify:base` と `verify:desktop`。
 - `verify:full`: `verify` と `pnpm test run`。
 
-`tests/e2e/nightworkers-agent.spec.ts` の `@agent-live` は、現時点では provider credentials がある場合にトップ画面が開くことだけを確認しており、LLM が実装を完了したかは検証していない。
+`tests/e2e/nightworkers-agent.spec.ts` の `@agent-live` は、`NIGHTWORKERS_LIVE_LLM_E2E=1` と provider credentials がある場合だけ disposable workspace で real run を開始し、run / workspace / Todo / verification evidence を確認する。通常 verify には含めない。
 
 `playwright.config.ts` は `NIGHTWORKERS_E2E=1 pnpm dev` で API / web を起動し、`x-nightworkers-e2e: 1` header を付ける。E2E 専用の非 production bypass は既に使える。
 
@@ -166,6 +166,15 @@ UI 経由だけにこだわらない。初期は API で repository/task/run を
 
 `verify` へ `verify:live` は入れない。入れるなら、local config で opt-in できる `VERIFY_LIVE_LLM=1` のような gate を追加してからにする。
 
+現在の repository scripts では bun を使うため、実行名は次の通り。
+
+```bash
+bun run test:e2e:agent-live
+bun run verify:live
+```
+
+`verify:live` は明示実行用であり、`verify` / `verify:base` には含めない。
+
 ### 8. 実装完了時の運用定義
 
 通常の実装完了:
@@ -222,19 +231,20 @@ pnpm verify:live
 
 ### Phase 2: live LLM E2E
 
-- `@agent-live` を real provider run に置き換える。
-- provider credentials が無い場合は skip し、skip 理由を明確にする。
-- credentials がある場合は disposable workspace で実装依頼を出し、run terminal evidence と file diff を確認する。
+- [x] `@agent-live` を real provider run に置き換える。
+- [x] provider credentials が無い場合は skip し、skip 理由を明確にする。
+- [x] credentials と `NIGHTWORKERS_LIVE_LLM_E2E=1` がある場合は disposable workspace で実装依頼を出し、run terminal evidence と file diff を確認する。
 
 完了条件:
 
-- `pnpm test:e2e:agent-live` が、LLM 応答待ちを含む実経路で合否を出す。
+- `bun run test:e2e:agent-live` が、LLM 応答待ちを含む実経路で合否を出す。
 
 ### Phase 3: verify integration
 
-- `verify:e2e` と `verify:live` を追加する。
-- `verify:full` に deterministic E2E を入れるか決める。
-- `verify` 本体には live LLM を入れない。ただし provider/runtime 境界の変更では `verify:live` を必須運用にする。
+- [ ] `verify:e2e` を追加する。
+- [x] `verify:live` を追加する。
+- [ ] `verify:full` に deterministic E2E を入れるか決める。
+- [x] `verify` 本体には live LLM を入れない。ただし provider/runtime 境界の変更では `verify:live` を必須運用にする。
 
 完了条件:
 
