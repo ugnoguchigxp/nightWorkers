@@ -295,6 +295,22 @@ describe('NightWorkers service', () => {
       riskLevel: 'low',
       diffPatch: '',
       logContent: '',
+      contractWarnings: [
+        {
+          code: 'codex_file_change_before_todo_replace',
+          severity: 'warning',
+          message: 'File changed before Todo replace.',
+          providerItemId: 'file-1',
+          toolName: null,
+          todoId: 'todo-running',
+          todoSeq: 1,
+          changedFiles: ['src/app.ts'],
+          command: null,
+          sequence: 4,
+          occurredAt: '2026-06-12T00:00:00.000Z',
+          count: 2,
+        },
+      ],
     });
     vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
       kind: 'native-local',
@@ -316,6 +332,12 @@ describe('NightWorkers service', () => {
           contextSnapshot: expect.objectContaining({
             codexContract: expect.objectContaining({
               warnings: expect.arrayContaining([
+                expect.objectContaining({
+                  code: 'codex_file_change_before_todo_replace',
+                  sequence: 4,
+                  occurredAt: '2026-06-12T00:00:00.000Z',
+                  count: 2,
+                }),
                 expect.objectContaining({
                   code: 'codex_open_todos_before_completion',
                   todoId: 'todo-running',

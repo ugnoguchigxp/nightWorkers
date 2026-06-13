@@ -449,7 +449,12 @@ export class CodexAgentRuntime implements AgentRuntime {
     auditState: CodexRuntimeAuditState,
     warning: CodexContractWarning
   ): AgentRuntimeEvent {
-    const normalized = normalizeContractWarning(warning);
+    const normalized = normalizeContractWarning({
+      ...warning,
+      sequence: warning.sequence ?? auditState.eventSequence,
+      occurredAt: warning.occurredAt ?? new Date().toISOString(),
+      count: warning.count ?? 1,
+    });
     addContractWarning(auditState, normalized);
     return {
       type: 'runtime_warning',
@@ -712,19 +717,23 @@ function addContractWarning(state: CodexRuntimeAuditState, warning: CodexContrac
     normalized.todoSeq ?? '',
     (normalized.changedFiles ?? []).join(','),
   ].join('|');
-  const exists = state.contractWarnings.some(
-    (existing) =>
+  const existing = state.contractWarnings.find(
+    (item) =>
       [
-        existing.code,
-        existing.providerItemId ?? '',
-        existing.toolName ?? '',
-        existing.command ?? '',
-        existing.todoId ?? '',
-        existing.todoSeq ?? '',
-        (existing.changedFiles ?? []).join(','),
+        item.code,
+        item.providerItemId ?? '',
+        item.toolName ?? '',
+        item.command ?? '',
+        item.todoId ?? '',
+        item.todoSeq ?? '',
+        (item.changedFiles ?? []).join(','),
       ].join('|') === key
   );
-  if (!exists) state.contractWarnings.push(normalized);
+  if (existing) {
+    existing.count = Math.max(1, existing.count ?? 1) + Math.max(1, normalized.count ?? 1);
+    return;
+  }
+  state.contractWarnings.push(normalized);
 }
 
 function normalizeContractWarning(warning: CodexContractWarning): CodexContractWarning {
@@ -738,6 +747,15 @@ function normalizeContractWarning(warning: CodexContractWarning): CodexContractW
     todoSeq: warning.todoSeq ?? null,
     ...(warning.changedFiles ? { changedFiles: warning.changedFiles } : {}),
     command: warning.command ?? null,
+    ...(typeof warning.sequence === 'number' && Number.isFinite(warning.sequence)
+      ? { sequence: Math.max(0, Math.floor(warning.sequence)) }
+      : {}),
+    ...(typeof warning.occurredAt === 'string' && warning.occurredAt.length > 0
+      ? { occurredAt: warning.occurredAt }
+      : {}),
+    ...(typeof warning.count === 'number' && Number.isFinite(warning.count)
+      ? { count: Math.max(1, Math.floor(warning.count)) }
+      : {}),
   };
 }
 

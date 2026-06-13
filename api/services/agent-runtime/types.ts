@@ -75,6 +75,9 @@ export interface CodexContractWarning {
   todoSeq?: number | null;
   changedFiles?: string[];
   command?: string | null;
+  sequence?: number;
+  occurredAt?: string;
+  count?: number;
 }
 
 export type AgentRuntimeEvent =

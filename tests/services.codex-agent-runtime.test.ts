@@ -333,6 +333,112 @@ describe('CodexAgentRuntime', () => {
     );
   });
 
+  it('aggregates repeated contract warnings while preserving first occurrence metadata', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'file-repeat',
+              type: 'file_change',
+              status: 'completed',
+              changes: [{ path: 'src/app.ts' }],
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'file-repeat',
+              type: 'file_change',
+              status: 'completed',
+              changes: [{ path: 'src/app.ts' }],
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(
+      buildContext({
+        currentTodo: {
+          id: 'todo-1',
+          seq: 1,
+          title: '実装する',
+          taskType: 'implementation',
+          status: 'running',
+          procedureId: 'implementation',
+        },
+      }),
+      { emit: async () => {} }
+    );
+
+    const warning = result.contractWarnings?.find(
+      (item) => item.code === 'codex_file_change_before_todo_replace'
+    );
+    expect(warning).toEqual(
+      expect.objectContaining({
+        providerItemId: 'file-repeat',
+        changedFiles: ['src/app.ts'],
+        sequence: expect.any(Number),
+        occurredAt: expect.any(String),
+        count: 2,
+      })
+    );
+  });
+
+  it('keeps repeated contract warnings separate when changed files differ', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'file-repeat',
+              type: 'file_change',
+              status: 'completed',
+              changes: [{ path: 'src/app.ts' }],
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'file-repeat',
+              type: 'file_change',
+              status: 'completed',
+              changes: [{ path: 'src/other.ts' }],
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(
+      buildContext({
+        currentTodo: {
+          id: 'todo-1',
+          seq: 1,
+          title: '実装する',
+          taskType: 'implementation',
+          status: 'running',
+          procedureId: 'implementation',
+        },
+      }),
+      { emit: async () => {} }
+    );
+
+    const warnings =
+      result.contractWarnings?.filter(
+        (item) => item.code === 'codex_file_change_before_todo_replace'
+      ) ?? [];
+    expect(warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ changedFiles: ['src/app.ts'], count: 1 }),
+        expect.objectContaining({ changedFiles: ['src/other.ts'], count: 1 }),
+      ])
+    );
+  });
+
   it('prefers DB running Todo evidence over stale runtime context for file_change', async () => {
     vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([
       {

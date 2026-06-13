@@ -90,6 +90,15 @@ function normalizeCodexContractWarnings(value: unknown): CodexContractWarning[] 
         ? record.changedFiles.filter((file): file is string => typeof file === 'string')
         : undefined,
       command: typeof record.command === 'string' ? record.command : null,
+      sequence:
+        typeof record.sequence === 'number' && Number.isFinite(record.sequence)
+          ? Math.max(0, Math.floor(record.sequence))
+          : undefined,
+      occurredAt: typeof record.occurredAt === 'string' ? record.occurredAt : undefined,
+      count:
+        typeof record.count === 'number' && Number.isFinite(record.count)
+          ? Math.max(1, Math.floor(record.count))
+          : undefined,
     });
   }
   return warnings;
@@ -118,8 +127,9 @@ function mergeCodexContractSnapshot(snapshot: unknown, warnings: CodexContractWa
 }
 
 function dedupeCodexContractWarnings(warnings: CodexContractWarning[]) {
-  const seen = new Set<string>();
-  return warnings.filter((warning) => {
+  const merged: CodexContractWarning[] = [];
+  const seen = new Map<string, CodexContractWarning>();
+  for (const warning of warnings) {
     const key = [
       warning.code,
       warning.providerItemId ?? '',
@@ -129,10 +139,15 @@ function dedupeCodexContractWarnings(warnings: CodexContractWarning[]) {
       warning.command ?? '',
       (warning.changedFiles ?? []).join(','),
     ].join('|');
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+    const existing = seen.get(key);
+    if (existing) {
+      existing.count = Math.max(1, existing.count ?? 1) + Math.max(1, warning.count ?? 1);
+      continue;
+    }
+    seen.set(key, warning);
+    merged.push(warning);
+  }
+  return merged;
 }
 
 function buildOpenTodoContractWarning<TTodo extends { id: string; seq: number; title: string }>(
