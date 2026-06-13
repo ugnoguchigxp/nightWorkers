@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createScrollSnapshot,
+  resolveEffectiveScrollState,
   resolveRestoredScrollTop,
   shouldKeepPendingRestore,
 } from '../src/modules/nightworkers/components/ThreadWorkspace';
@@ -83,5 +84,19 @@ describe('ThreadWorkspace scroll restoration', () => {
         }
       )
     ).toBe(true);
+  });
+
+  it('forces latest focus over a persisted manual position while the agent is active', () => {
+    const manualState = {
+      mode: 'manual' as const,
+      snapshot: createScrollSnapshot({
+        scrollTop: 240,
+        scrollHeight: 1200,
+        clientHeight: 400,
+      }),
+    };
+
+    expect(resolveEffectiveScrollState(manualState, true)).toEqual({ mode: 'bottom' });
+    expect(resolveEffectiveScrollState(manualState, false)).toBe(manualState);
   });
 });

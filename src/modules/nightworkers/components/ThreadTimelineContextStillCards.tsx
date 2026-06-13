@@ -5,7 +5,9 @@ type ContextStillCardKind =
   | 'initial_instructions_result'
   | 'context_compile_input'
   | 'context_compile_output'
-  | 'compile_eval_input';
+  | 'compile_eval_input'
+  | 'register_candidates_input'
+  | 'register_candidates_output';
 
 export type ContextStillToolCardModel = {
   kind: ContextStillCardKind;
@@ -91,6 +93,10 @@ export function getContextStillToolCardModel(
       format: 'json',
       summary: asString(args.title) || asString(args.outcome),
     };
+  }
+
+  if (toolName === 'context-still.register_candidates') {
+    return buildRegisterCandidatesCard(toolName, lifecycle, args, result);
   }
 
   return null;
@@ -191,6 +197,105 @@ function extractResultBody(result: Record<string, unknown>): string {
     .trim();
   if (text) return text;
   return stringifyJson(result);
+}
+
+function buildRegisterCandidatesCard(
+  toolName: string,
+  lifecycle: 'started' | 'result' | 'other',
+  args: Record<string, unknown>,
+  result: Record<string, unknown>
+): ContextStillToolCardModel | null {
+  const inputItems = normalizeCandidateItems(args.items);
+  if (lifecycle === 'started') {
+    return {
+      kind: 'register_candidates_input',
+      title: 'register_candidates input',
+      toolName,
+      body: formatCandidateItems(inputItems, '送信候補'),
+      format: 'markdown',
+      summary: `${inputItems.length} candidate${inputItems.length === 1 ? '' : 's'}`,
+    };
+  }
+
+  if (lifecycle !== 'result') return null;
+
+  const resultJson = parseResultJson(result);
+  const resultItems = normalizeCandidateItems(resultJson.items);
+  const registeredCount = asNumber(resultJson.registeredCount) ?? countItemsByStatus(resultItems);
+  const failedCount = asNumber(resultJson.failedCount) ?? 0;
+  const displayItems = resultItems.length > 0 ? resultItems : inputItems;
+  const header = [
+    `登録: ${registeredCount}`,
+    `失敗: ${failedCount}`,
+    `候補: ${displayItems.length}`,
+  ].join(' / ');
+  return {
+    kind: 'register_candidates_output',
+    title: 'register_candidates result',
+    toolName,
+    body: [header, formatCandidateItems(displayItems, '登録結果')].filter(Boolean).join('\n\n'),
+    format: 'markdown',
+    summary: header,
+  };
+}
+
+type CandidateItemSummary = {
+  title: string;
+  type: string;
+  status: string;
+};
+
+function normalizeCandidateItems(value: unknown): CandidateItemSummary[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index) => {
+    const record = asRecord(item);
+    const title = asString(record.title) || `candidate ${index + 1}`;
+    return [
+      {
+        title,
+        type: asString(record.type) || 'unknown',
+        status: asString(record.status) || '',
+      },
+    ];
+  });
+}
+
+function formatCandidateItems(items: CandidateItemSummary[], heading: string): string {
+  if (items.length === 0) return `### ${heading}\n\n登録候補はありません。`;
+  const lines = items.map((item, index) => {
+    const meta = [item.status, item.type].filter(Boolean).join(' / ') || 'candidate';
+    return `${index + 1}. **${escapeMarkdown(item.title)}** (${escapeMarkdown(meta)})`;
+  });
+  return [`### ${heading}`, '', ...lines].join('\n');
+}
+
+function countItemsByStatus(items: CandidateItemSummary[]): number {
+  return items.filter((item) => item.status === 'candidate_registered').length;
+}
+
+function parseResultJson(result: Record<string, unknown>): Record<string, unknown> {
+  const structured = asRecord(result.structured_content);
+  if (Object.keys(structured).length > 0) return structured;
+
+  const content = Array.isArray(result.content) ? result.content : [];
+  for (const item of content) {
+    const text = asString(asRecord(item).text).trim();
+    if (!text) continue;
+    try {
+      return asRecord(JSON.parse(text));
+    } catch {
+      // Result text may be a non-JSON tool error.
+    }
+  }
+  return {};
+}
+
+function asNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function escapeMarkdown(value: string): string {
+  return value.replace(/([\\`*_{}[\]()#+\-.!|>])/g, '\\$1');
 }
 
 function stringifyJson(value: unknown): string {

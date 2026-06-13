@@ -141,6 +141,13 @@ export function shouldKeepPendingRestore(
   return metrics.scrollHeight < state.snapshot.maxScrollTop + metrics.clientHeight;
 }
 
+export function resolveEffectiveScrollState(
+  state: PersistedScrollState,
+  forceLatestFocus: boolean
+): PersistedScrollState {
+  return forceLatestFocus ? { mode: 'bottom' } : state;
+}
+
 function buildPersistedScrollState(snapshot: ScrollSnapshot): PersistedScrollState {
   return snapshot.wasNearBottom
     ? { mode: 'bottom' }
@@ -231,6 +238,18 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
   const layoutMode = props.splitPanel ? 'split' : props.sidePanel ? 'side' : 'single';
   const previousLayoutModeRef = useRef(layoutMode);
   const activeSessionId = props.activeSession?.id ?? null;
+  const forceLatestFocus = props.isAgentThinking;
+  const latestRunEvent = props.latestRunEvents[props.latestRunEvents.length - 1];
+  const latestTaskMessage = props.taskMessages[props.taskMessages.length - 1];
+  const latestActivityEvent = props.activityEvents[props.activityEvents.length - 1];
+  const latestFocusSignal = [
+    activeSessionId || '',
+    props.latestRun?.id || '',
+    latestRunEvent?.id || latestRunEvent?.seq || props.latestRunEvents.length,
+    latestTaskMessage?.id || props.taskMessages.length,
+    latestActivityEvent?.id || props.activityEvents.length,
+    props.activeStreamingResponse.length,
+  ].join(':');
   const specificationWorkspaceLabel = t('thread.specificationWorkspace');
   const noSpecificationWorkspaceLabel = t('thread.noSpecificationWorkspace');
   const commitScrollState = useCallback(
@@ -243,12 +262,19 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
   );
   const applyBestEffortRestore = useCallback(
     (node: HTMLDivElement) => {
-      const state = pendingRestoreStateRef.current || scrollStateRef.current;
+      const state = resolveEffectiveScrollState(
+        pendingRestoreStateRef.current || scrollStateRef.current,
+        forceLatestFocus
+      );
       restoreScrollState(node, state);
       suppressedScrollTopRef.current = node.scrollTop;
       const nextSnapshot = readScrollSnapshot(node);
       scrollStateRef.current = buildPersistedScrollState(nextSnapshot);
       if (activeSessionId) persistScrollState(activeSessionId, scrollStateRef.current);
+      if (forceLatestFocus) {
+        pendingRestoreStateRef.current = null;
+        return;
+      }
       if (
         pendingRestoreStateRef.current &&
         !shouldKeepPendingRestore(pendingRestoreStateRef.current, {
@@ -259,7 +285,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
         pendingRestoreStateRef.current = null;
       }
     },
-    [activeSessionId]
+    [activeSessionId, forceLatestFocus]
   );
   const handleScrollContainerRef = useCallback(
     (node: HTMLDivElement | null) => {
@@ -305,8 +331,13 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
     }
     suppressedScrollTopRef.current = null;
     pendingRestoreStateRef.current = null;
+    if (forceLatestFocus) {
+      scrollStateRef.current = { mode: 'bottom' };
+      if (activeSessionId) persistScrollState(activeSessionId, scrollStateRef.current);
+      return;
+    }
     commitScrollState(readScrollSnapshot(scrollContainerRef.current));
-  }, [commitScrollState]);
+  }, [activeSessionId, commitScrollState, forceLatestFocus]);
 
   useLayoutEffect(() => {
     const node = scrollContainerRef.current;
@@ -315,11 +346,29 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
       pendingRestoreStateRef.current = null;
       return;
     }
-    const persistedState = loadPersistedScrollState(activeSessionId) || { mode: 'bottom' };
+    const persistedState = forceLatestFocus
+      ? { mode: 'bottom' as const }
+      : loadPersistedScrollState(activeSessionId) || { mode: 'bottom' as const };
     scrollStateRef.current = persistedState;
     pendingRestoreStateRef.current = persistedState;
     applyBestEffortRestore(node);
-  }, [activeSessionId, applyBestEffortRestore]);
+  }, [activeSessionId, applyBestEffortRestore, forceLatestFocus]);
+
+  useLayoutEffect(() => {
+    // Rerun when timeline content changes, even if the scroll container size is stable.
+    void latestFocusSignal;
+    const node = scrollContainerRef.current;
+    if (!node || !forceLatestFocus) return;
+    scrollStateRef.current = { mode: 'bottom' };
+    pendingRestoreStateRef.current = null;
+    restoreScrollState(node, scrollStateRef.current);
+    suppressedScrollTopRef.current = node.scrollTop;
+    if (activeSessionId) persistScrollState(activeSessionId, scrollStateRef.current);
+    resizeMetricsRef.current = {
+      clientHeight: node.clientHeight,
+      scrollHeight: node.scrollHeight,
+    };
+  }, [activeSessionId, forceLatestFocus, latestFocusSignal]);
 
   useLayoutEffect(() => {
     const node = scrollContainerRef.current;

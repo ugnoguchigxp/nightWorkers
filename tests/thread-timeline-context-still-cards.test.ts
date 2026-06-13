@@ -100,6 +100,86 @@ describe('ThreadTimeline ContextStill cards', () => {
     expect(card?.body).toContain('"outcome": "useful"');
   });
 
+  it('shows register_candidates input candidate titles and types', () => {
+    const card = getContextStillToolCardModel({
+      kind: 'tool.call',
+      payloadJson: {
+        runEvent: {
+          type: 'tool.call_started',
+          data: {
+            toolName: 'context-still.register_candidates',
+            arguments: {
+              items: [
+                {
+                  title: 'Todo closeout は空登録しない',
+                  type: 'rule',
+                },
+                {
+                  title: '画面内 Todo の検証手順',
+                  type: 'procedure',
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    expect(card?.kind).toBe('register_candidates_input');
+    expect(card?.summary).toBe('2 candidates');
+    expect(card?.body).toContain('Todo closeout は空登録しない');
+    expect(card?.body).toContain('(rule)');
+    expect(card?.body).toContain('画面内 Todo の検証手順');
+    expect(card?.body).toContain('(procedure)');
+  });
+
+  it('shows register_candidates result counts and registered candidates', () => {
+    const card = getContextStillToolCardModel({
+      kind: 'tool.result',
+      payloadJson: {
+        runEvent: {
+          type: 'tool.call_finished',
+          data: {
+            toolName: 'context-still.register_candidates',
+            arguments: {
+              items: [
+                {
+                  title: '送信時の候補タイトル',
+                  type: 'rule',
+                },
+              ],
+            },
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    status: 'bulk_candidates_registered',
+                    registeredCount: 1,
+                    failedCount: 0,
+                    items: [
+                      {
+                        index: 0,
+                        status: 'candidate_registered',
+                        title: '登録済み候補タイトル',
+                        type: 'rule',
+                      },
+                    ],
+                  }),
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    expect(card?.kind).toBe('register_candidates_output');
+    expect(card?.summary).toBe('登録: 1 / 失敗: 0 / 候補: 1');
+    expect(card?.body).toContain('登録済み候補タイトル');
+    expect(card?.body).toContain('candidate\\_registered / rule');
+  });
+
   it('keeps context-still cards visible in normal transcript mode', () => {
     const items = buildNormalTranscriptItems([
       {
