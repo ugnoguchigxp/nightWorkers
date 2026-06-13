@@ -78,10 +78,11 @@ describe('NightWorkers service', () => {
     vi.clearAllMocks();
     delete process.env.ACTIVE_LLM_PROVIDER;
     delete process.env.CODEX_ENABLED;
-    delete process.env.IMPLEMENTATION_RUNTIME_LANE;
+    process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-supervisor';
   });
 
   it('routes enabled Codex provider implementation runs to the codex-agent lane', async () => {
+    delete process.env.NIGHTWORKERS_RUNTIME_LANE;
     process.env.ACTIVE_LLM_PROVIDER = 'codex';
     process.env.CODEX_ENABLED = 'true';
     const task = {
@@ -143,6 +144,41 @@ describe('NightWorkers service', () => {
           }),
         }),
       })
+    );
+    const todos = vi.mocked(repo.replaceTaskRunTodosForRun).mock.calls[0]?.[1] || [];
+    expect(todos).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: 'initial_instructions を実行する',
+          status: 'running',
+        }),
+        expect.objectContaining({
+          title: 'context_compile を実行する',
+        }),
+        expect.objectContaining({
+          title: '対象変更を確認して実装する',
+          taskType: 'implementation',
+        }),
+        expect.objectContaining({
+          title: '必要最小限の動作確認を行う',
+          taskType: 'focused_verification',
+        }),
+        expect.objectContaining({
+          title: 'LLM コードレビューを実施する',
+          taskType: 'review',
+        }),
+        expect.objectContaining({
+          title: '品質ゲート verify を実施する',
+          taskType: 'verification',
+        }),
+      ])
+    );
+    expect(todos).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: '仕様と既存構成を確認する',
+        }),
+      ])
     );
     expect(runtimeRegistry.resolveAgentRuntime).toHaveBeenCalledWith('codex-agent');
   });

@@ -165,6 +165,11 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain('nightworkers.todo_list');
     expect(prompt).toContain('operation=replace');
     expect(prompt).toContain('operation=done');
+    expect(prompt).toContain('Minimal implementation behavior:');
+    expect(prompt).toContain('計画文書で止まらず、必要最小限の確認後に実装へ進む');
+    expect(prompt).toContain('詳細な implementation-plan artifact を作らない');
+    expect(prompt).toContain('LLM コードレビュー、品質ゲート verify、closeout は省略しない');
+    expect(prompt).toContain('小さいコード変更で仕様 artifact がないことだけを理由に停止しない');
     expect(prompt).toContain(
       'Execution order: specification -> Todo execution -> verification -> closeout.'
     );
@@ -175,6 +180,8 @@ describe('CodexAgentRuntime', () => {
     );
     expect(prompt).toContain('nightworkers.read_current_specification');
     expect(prompt).toContain('nightworkers.list_recent_specifications');
+    expect(prompt).toContain('For explicit planning, implementation-plan, specification');
+    expect(prompt).toContain('implementation work grounded in an existing specification');
     expect(prompt).toContain('nightworkers.import_project');
     expect(prompt).not.toContain('nightworkers.materialize_template');
     expect(prompt).not.toContain('nightworkers.clone_git_repo');

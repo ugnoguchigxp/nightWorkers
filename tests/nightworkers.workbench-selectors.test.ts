@@ -568,7 +568,7 @@ describe('workbench selectors', () => {
     });
   });
 
-  it('builds questionnaire workspace refs with questionnaire tab metadata', () => {
+  it('builds questionnaire workspace refs with questionnaire tab metadata by default', () => {
     const message: TaskMessage = {
       id: '44444444-4444-4444-8444-444444441235',
       taskId: baseTask.id,
@@ -592,6 +592,29 @@ describe('workbench selectors', () => {
         specificationSource: 'design_questionnaire_ready',
         questionnaireSessionId: 'questionnaire-1',
         initialTab: 'questionnaire',
+      },
+    });
+  });
+
+  it('can build questionnaire workspace refs that open on the status tab', () => {
+    const message: TaskMessage = {
+      id: '44444444-4444-4444-8444-444444441236',
+      taskId: baseTask.id,
+      role: 'assistant',
+      content: '# Questionnaire ready',
+      messageType: 'markdown_document',
+      metadataJson: {
+        intent: 'design_questionnaire_ready',
+        questionnaireSessionId: 'questionnaire-1',
+      },
+      createdAt: '2026-06-02T00:00:01.000Z',
+    };
+
+    expect(buildQuestionnaireWorkspaceArtifactRef(message, 'status')).toMatchObject({
+      metadata: {
+        specificationSource: 'design_questionnaire_ready',
+        questionnaireSessionId: 'questionnaire-1',
+        initialTab: 'status',
       },
     });
   });

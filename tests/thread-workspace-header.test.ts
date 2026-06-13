@@ -42,4 +42,18 @@ describe('ThreadWorkspace header', () => {
     expect(workspaceSource).toContain('onOpenTodoArtifact');
     expect(workspaceSource).not.toContain('nightworkers-thread-side-panel');
   });
+
+  it('opens restored questionnaire workspaces on Status instead of Questionnaire', () => {
+    const shellSource = readFileSync(
+      'src/modules/nightworkers/components/NightWorkersShell.tsx',
+      'utf8'
+    );
+
+    expect(shellSource).toContain(
+      "void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'status');"
+    );
+    expect(shellSource).toContain(
+      "void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'questionnaire');"
+    );
+  });
 });

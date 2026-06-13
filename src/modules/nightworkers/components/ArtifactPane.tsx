@@ -42,6 +42,7 @@ type ArtifactPaneProps = {
   onOpenFile: (path: string) => void;
   onShowDiff: () => void;
   onQueueSession?: () => Promise<void>;
+  onAddToQueue?: () => Promise<void>;
 };
 
 function workspaceInitialTab(value: unknown) {
@@ -85,6 +86,7 @@ export function ArtifactPane({
   onOpenFile,
   onShowDiff,
   onQueueSession,
+  onAddToQueue,
 }: ArtifactPaneProps) {
   const { t } = useTranslation();
   const [versionArtifactId, setVersionArtifactId] = useState<string | null>(null);
@@ -200,6 +202,7 @@ export function ArtifactPane({
               activityArtifacts={activityArtifacts}
               initialTab={workspaceInitialTab(displayArtifact?.metadata?.initialTab)}
               onQueueSession={onQueueSession}
+              onAddToQueue={onAddToQueue}
             />
           ) : showBlueprint ? (
             <BlueprintViewer

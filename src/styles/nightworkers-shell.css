@@ -68,8 +68,7 @@
 .nightworkers-sidebar-link,
 .nightworkers-sidebar-project,
 .nightworkers-sidebar-session-row,
-.nightworkers-sidebar-archive-toggle,
-.nightworkers-sidebar-icon-button {
+.nightworkers-sidebar-control {
   color: var(--nw-muted-text);
 }
 
@@ -88,8 +87,7 @@
 .nightworkers-sidebar-link:hover,
 .nightworkers-sidebar-project:hover,
 .nightworkers-sidebar-session-row:hover,
-.nightworkers-sidebar-archive-toggle:hover,
-.nightworkers-sidebar-icon-button:hover {
+.nightworkers-sidebar-control:hover {
   background: color-mix(in srgb, var(--nw-surface-soft) 78%, transparent);
   color: var(--nw-text);
 }
@@ -97,8 +95,7 @@
 .nightworkers-sidebar-link:focus-visible,
 .nightworkers-sidebar-project:focus-visible,
 .nightworkers-sidebar-session-row:focus-visible,
-.nightworkers-sidebar-archive-toggle:focus-visible,
-.nightworkers-sidebar-icon-button:focus-visible,
+.nightworkers-sidebar-control:focus-visible,
 .nightworkers-sidebar-danger-button:focus-visible {
   --tw-ring-color: var(--nw-strong-border);
 }
@@ -122,14 +119,16 @@
   color: var(--nw-subtle-text);
 }
 
-.nightworkers-sidebar-chip,
-.nightworkers-sidebar-done {
-  background: var(--nw-surface-soft);
-  color: var(--nw-muted-text);
-}
-
 .nightworkers-sidebar-running {
   color: var(--nw-primary);
+}
+
+.nightworkers-sidebar-review-dot {
+  background: hsl(151 72% 45%);
+}
+
+.nightworkers-sidebar-ready-dot {
+  background: hsl(210 90% 56%);
 }
 
 .nightworkers-sidebar-problem {

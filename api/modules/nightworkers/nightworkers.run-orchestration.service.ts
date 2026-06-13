@@ -212,6 +212,29 @@ function buildInitialRunTodos(compiledPromptText: string): ImplementationTodoInp
   ];
 }
 
+function buildCodexInitialRunTodos(compiledPromptText: string): ImplementationTodoInput[] {
+  const summary = compiledPromptText.replace(/\s+/g, ' ').trim().slice(0, 160);
+  const requestSummary = summary ? `ユーザー依頼: ${summary}` : 'ユーザー依頼に基づく対象変更。';
+
+  return [
+    {
+      title: '対象変更を確認して実装する',
+      description: [
+        requestSummary,
+        'ユーザーが実装計画化を明示していない場合は、必要最小限の確認後に対象変更を実装する。',
+      ].join('\n'),
+      taskType: 'implementation',
+    },
+    {
+      title: '必要最小限の動作確認を行う',
+      description:
+        '変更範囲に応じた focused check を行う。広域 verify は追加される品質ゲート Todo で扱う。',
+      taskType: 'focused_verification',
+      dependsOn: [1],
+    },
+  ];
+}
+
 function extractFeatureSummary(text: string) {
   const requirementsBlock = text.match(/## 機能要件\s*([\s\S]*?)(?:\n## |$)/)?.[1] ?? '';
   const requirements = requirementsBlock
@@ -321,10 +344,14 @@ export async function startTaskRun(taskId: string) {
     },
     startedAt: new Date(),
   });
+  const initialTodos =
+    runtimeLaneResolution.workerKind === 'codex-agent'
+      ? buildCodexInitialRunTodos(compiledPromptText)
+      : buildInitialRunTodos(compiledPromptText);
   await repo.replaceTaskRunTodosForRun(
     run.id,
     buildStandardImplementationTodoList({
-      todos: buildInitialRunTodos(compiledPromptText),
+      todos: initialTodos,
       startFirst: true,
     })
   );

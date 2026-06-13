@@ -13,6 +13,12 @@ import {
 import * as runtimeRegistry from '../../api/services/agent-runtime/registry';
 
 const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-service-01-'));
+const implementationPhasePreamble = [
+  '実装フェーズに移行しました。',
+  'plan mode はこの時点で終了です。',
+  'ここからは計画相談ではなく、実装・検証・必要な修正・closeout まで最後までやり切ってください。',
+  'Todo を作成・更新する場合も、この実装フェーズ前提で進めてください。',
+].join('\n');
 
 afterAll(() => {
   fs.rmSync(repoRoot, { recursive: true, force: true });
@@ -79,6 +85,9 @@ vi.mock('../../api/services/conversation-context', () => ({
 describe('NightWorkers service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.ACTIVE_LLM_PROVIDER;
+    delete process.env.CODEX_ENABLED;
+    process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-supervisor';
   });
 
   it('lists replay events for a run after the requested cursor', async () => {
@@ -220,7 +229,7 @@ describe('NightWorkers service', () => {
       expect(runtimeStart).toHaveBeenCalledWith(
         expect.objectContaining({
           compiledPrompt: expect.stringContaining('Run a blocked command'),
-          latestUserMessage: 'Run a blocked command',
+          latestUserMessage: `${implementationPhasePreamble}\n\nRun a blocked command`,
         }),
         expect.anything()
       );
@@ -312,6 +321,41 @@ describe('NightWorkers service', () => {
           }),
         }),
       })
+    );
+    const todos = vi.mocked(repo.replaceTaskRunTodosForRun).mock.calls[0]?.[1] || [];
+    expect(todos).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: 'initial_instructions を実行する',
+          status: 'running',
+        }),
+        expect.objectContaining({
+          title: 'context_compile を実行する',
+        }),
+        expect.objectContaining({
+          title: '対象変更を確認して実装する',
+          taskType: 'implementation',
+        }),
+        expect.objectContaining({
+          title: '必要最小限の動作確認を行う',
+          taskType: 'focused_verification',
+        }),
+        expect.objectContaining({
+          title: 'LLM コードレビューを実施する',
+          taskType: 'review',
+        }),
+        expect.objectContaining({
+          title: '品質ゲート verify を実施する',
+          taskType: 'verification',
+        }),
+      ])
+    );
+    expect(todos).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: '仕様と既存構成を確認する',
+        }),
+      ])
     );
     expect(runtimeRegistry.resolveAgentRuntime).toHaveBeenCalledWith('codex-agent');
     await vi.waitFor(() => {

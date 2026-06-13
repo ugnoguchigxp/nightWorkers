@@ -149,7 +149,10 @@ export function buildBlueprintArtifactRef(message: TaskMessage): WorkbenchArtifa
   };
 }
 
-export function buildQuestionnaireWorkspaceArtifactRef(message: TaskMessage): WorkbenchArtifactRef {
+export function buildQuestionnaireWorkspaceArtifactRef(
+  message: TaskMessage,
+  initialTab: 'questionnaire' | 'status' = 'questionnaire'
+): WorkbenchArtifactRef {
   return {
     id: `blueprint-workspace-${message.taskId}`,
     taskId: message.taskId,
@@ -162,7 +165,7 @@ export function buildQuestionnaireWorkspaceArtifactRef(message: TaskMessage): Wo
     metadata: {
       specificationSource: 'design_questionnaire_ready',
       questionnaireSessionId: message.metadataJson?.questionnaireSessionId,
-      initialTab: 'questionnaire',
+      initialTab,
     },
   };
 }

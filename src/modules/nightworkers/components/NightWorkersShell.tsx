@@ -177,6 +177,11 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     if (!sessionId) return;
     await queueSessionAndFocusTodo(sessionId);
   }, [queueSessionAndFocusTodo]);
+  const addActiveSessionToQueue = useCallback(async () => {
+    const sessionId = workspaceRef.current.activeSession?.id;
+    if (!sessionId) return;
+    await workspaceRef.current.createImplementationQueueEntry(sessionId);
+  }, []);
   const handleSelectSession = useCallback((sessionId: string | null) => {
     setArtifactFocus({ type: 'closed' });
     setShowQueueScreen(false);
@@ -232,7 +237,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   }, []);
 
   const openQuestionnaireWorkspace = useCallback(
-    async (message: TaskMessage) => {
+    async (message: TaskMessage, initialTab: 'questionnaire' | 'status' = 'questionnaire') => {
       if (openingQuestionnaireMessageIdsRef.current.has(message.id)) return;
       openingQuestionnaireMessageIdsRef.current.add(message.id);
       try {
@@ -244,7 +249,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         setClearedArtifactContextId(null);
         setArtifactFocus({
           type: 'artifact',
-          artifact: buildQuestionnaireWorkspaceArtifactRef(message),
+          artifact: buildQuestionnaireWorkspaceArtifactRef(message, initialTab),
         });
       } finally {
         openingQuestionnaireMessageIdsRef.current.delete(message.id);
@@ -264,7 +269,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       );
     if (!latestQuestionnaireMessage) return;
     if (openedQuestionnaireMessageIdsRef.current.has(latestQuestionnaireMessage.id)) return;
-    void openQuestionnaireWorkspace(latestQuestionnaireMessage);
+    void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'status');
   }, [openQuestionnaireWorkspace, workspace.activeSessionId, workspace.taskMessages]);
 
   return (
@@ -301,8 +306,6 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
             onToggleProject={handleToggleProject}
             onOpenOverview={handleOpenOverview}
             isOverviewActive={isOverviewActive}
-            onQueueSession={queueSessionAndFocusTodo}
-            onRemoveQueueEntry={workspace.removeImplementationQueueEntry}
             onOpenFolderBrowser={handleOpenFolderBrowser}
           />
         </Panel>
@@ -376,7 +379,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                       (message) => message.metadataJson?.intent === 'design_questionnaire_ready'
                     );
                   if (latestQuestionnaireMessage) {
-                    void openQuestionnaireWorkspace(latestQuestionnaireMessage);
+                    void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'questionnaire');
                   }
                   return;
                 }
@@ -498,6 +501,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                     onQueueSession={async () => {
                       await queueActiveSessionAndFocusTodo();
                     }}
+                    onAddToQueue={addActiveSessionToQueue}
                   />
                 ) : undefined
               }

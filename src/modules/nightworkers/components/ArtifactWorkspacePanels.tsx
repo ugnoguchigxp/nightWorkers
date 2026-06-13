@@ -141,6 +141,7 @@ export function SpecificationStatusView({
   onGenerateDbDesign,
   onGenerateSpecification,
   onQueueSession,
+  onAddToQueue,
 }: {
   workspace: BlueprintSpecificationWorkspace | null;
   questionnaireSession: DesignQuestionnaireSession | null;
@@ -152,6 +153,7 @@ export function SpecificationStatusView({
   onGenerateDbDesign: () => void;
   onGenerateSpecification: () => void;
   onQueueSession?: () => void;
+  onAddToQueue?: () => void;
 }) {
   const answeredCount = questionnaireSession?.answers.length || 0;
   const questionCount = questionnaireSession ? getQuestionCount(questionnaireSession) : 0;
@@ -261,10 +263,17 @@ export function SpecificationStatusView({
       {allStepsDone ? (
         <div className="mt-4 flex flex-wrap justify-center gap-3">
           <StatusActionButton
-            label="night queueに登録"
+            label="今すぐ実装開始"
             busy={busyAction === 'queue-session'}
             disabled={!onQueueSession}
             onClick={() => onQueueSession?.()}
+            size="lg"
+          />
+          <StatusActionButton
+            label="キューに追加"
+            busy={busyAction === 'add-to-queue'}
+            disabled={!onAddToQueue}
+            onClick={() => onAddToQueue?.()}
             size="lg"
           />
         </div>
