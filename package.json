@@ -37,6 +37,8 @@
     "db:seed": "bun drizzle/seed.ts",
     "db:seed:current": "bun api/scripts/seed-current-state.ts",
     "db:reset": "bun api/scripts/reset-db.ts",
+    "db:init": "bun run db:reset && bun run db:seed:current",
+    "db:init:empty": "bun run db:reset && bun run db:seed",
     "cleanup:test-data": "bun api/scripts/cleanup-test-data.ts --execute",
     "cleanup:test-data:dry-run": "bun api/scripts/cleanup-test-data.ts --dry-run",
     "cleanup:test-data:all": "bun api/scripts/cleanup-test-data.ts --all --execute",

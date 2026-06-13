@@ -34,16 +34,6 @@ function deleteDatabaseFiles(databasePath: string) {
   removeIfExists(`${databasePath}-shm`);
 }
 
-function runMigrations(databasePath: string) {
-  execFileSync('bun', ['run', 'db:migrate'], {
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      DATABASE_URL: databasePath,
-    },
-  });
-}
-
 function clearBootstrapRows(databasePath: string) {
   execFileSync('sqlite3', [databasePath], {
     stdio: 'inherit',
@@ -54,12 +44,17 @@ function clearBootstrapRows(databasePath: string) {
   });
 }
 
-function main() {
+async function main() {
   const databasePath = resolveDatabasePath();
   deleteDatabaseFiles(databasePath);
-  runMigrations(databasePath);
+  const [{ ensureNightWorkersSchema }, { client }] = await Promise.all([
+    import('../db/bootstrap'),
+    import('../db/client'),
+  ]);
+  await ensureNightWorkersSchema();
+  await Promise.resolve(client.close());
   clearBootstrapRows(databasePath);
   console.log(`Reset local SQLite DB: ${databasePath}`);
 }
 
-main();
+void main();

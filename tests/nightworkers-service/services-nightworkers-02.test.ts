@@ -8,6 +8,12 @@ import * as runtimeRegistry from '../../api/services/agent-runtime/registry';
 import * as conversationContext from '../../api/services/conversation-context';
 
 const repoRoot = '/Users/y.noguchi/Code/nightWorkers';
+const implementationPhasePreamble = [
+  '実装フェーズに移行しました。',
+  'plan mode はこの時点で終了です。',
+  'ここからは計画相談ではなく、実装・検証・必要な修正・closeout まで最後までやり切ってください。',
+  'Todo を作成・更新する場合も、この実装フェーズ前提で進めてください。',
+].join('\n');
 
 vi.mock('../../api/modules/nightworkers/nightworkers.repository', () => ({
   getTask: vi.fn(),
@@ -195,7 +201,12 @@ describe('NightWorkers service', () => {
     expect(runtimeStart.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         compiledPrompt: expect.stringContaining('Update the code'),
-        latestUserMessage: task.description,
+        latestUserMessage: `${implementationPhasePreamble}\n\n${task.description}`,
+        contextSnapshot: expect.objectContaining({
+          executionPhase: 'implementation',
+          planModeClosed: true,
+          implementationPhasePreamble,
+        }),
       })
     );
     expect(repo.replaceTaskRunTodosForRun).toHaveBeenCalledWith(
@@ -402,6 +413,9 @@ describe('NightWorkers service', () => {
         latestUserMessage: expect.stringContaining('<STATE_CARD>'),
         contextSnapshot: expect.objectContaining({
           compiledPrompt: 'foo 条件も追加してください７で割ってください',
+          executionPhase: 'implementation',
+          planModeClosed: true,
+          implementationPhasePreamble,
           conversationContext: expect.objectContaining({
             snapshotId: 'snapshot-1',
             stateCardIncluded: true,
@@ -484,8 +498,11 @@ describe('NightWorkers service', () => {
     });
     expect(runtimeStart.mock.calls[0][0]).toEqual(
       expect.objectContaining({
-        latestUserMessage: 'foo 条件も追加してください',
+        latestUserMessage: `${implementationPhasePreamble}\n\nfoo 条件も追加してください`,
         contextSnapshot: expect.objectContaining({
+          executionPhase: 'implementation',
+          planModeClosed: true,
+          implementationPhasePreamble,
           conversationContext: expect.objectContaining({
             stateCardIncluded: false,
             usage: expect.objectContaining({
@@ -566,8 +583,11 @@ describe('NightWorkers service', () => {
     });
     expect(runtimeStart.mock.calls[0][0]).toEqual(
       expect.objectContaining({
-        latestUserMessage: 'raw request',
+        latestUserMessage: `${implementationPhasePreamble}\n\nraw request`,
         contextSnapshot: expect.objectContaining({
+          executionPhase: 'implementation',
+          planModeClosed: true,
+          implementationPhasePreamble,
           conversationContext: expect.objectContaining({
             stateCardIncluded: false,
             usage: expect.objectContaining({

@@ -10,6 +10,9 @@ import * as supervisor from '../api/services/supervisor/supervisor-loop';
 
 vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   createRunEvent: vi.fn(),
+  getTaskRun: vi.fn(),
+  listTaskRunTodosForRun: vi.fn(),
+  updateTaskRunTodo: vi.fn(),
 }));
 
 vi.mock('../api/services/supervisor/supervisor-loop', () => ({
@@ -50,7 +53,7 @@ describe('AgentRuntime', () => {
   });
 
   it('does not fail runtime execution when ledger persistence fails', async () => {
-    vi.mocked(repo.createRunEvent).mockRejectedValueOnce(new Error('database is locked'));
+    (repo.createRunEvent as any).mockRejectedValueOnce(new Error('database is locked'));
     const sink = createLedgerSink('run-123');
 
     await expect(
@@ -62,8 +65,89 @@ describe('AgentRuntime', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('auto-closes initial gate Todos after successful matching MCP tool completion', async () => {
+    (repo.getTaskRun as any).mockResolvedValue({
+      id: 'run-123',
+      taskId: 'task-123',
+    } as any);
+    (repo.listTaskRunTodosForRun as any)
+      .mockResolvedValueOnce([
+        {
+          id: 'todo-1',
+          runId: 'run-123',
+          seq: 1,
+          title: 'initial_instructions を実行する',
+          taskType: 'initial_instructions',
+          status: 'running',
+          procedureId: 'contextstill.initial_instructions',
+          startedAt: new Date('2026-06-13T00:00:00.000Z'),
+        },
+        {
+          id: 'todo-2',
+          runId: 'run-123',
+          seq: 2,
+          title: 'context_compile を実行する',
+          taskType: 'context_compile',
+          status: 'pending',
+          procedureId: 'contextstill.context_compile',
+        },
+      ] as any)
+      .mockResolvedValueOnce([
+        {
+          id: 'todo-1',
+          runId: 'run-123',
+          seq: 1,
+          title: 'initial_instructions を実行する',
+          taskType: 'initial_instructions',
+          status: 'passed',
+          procedureId: 'contextstill.initial_instructions',
+          startedAt: new Date('2026-06-13T00:00:00.000Z'),
+          completedAt: new Date('2026-06-13T00:00:01.000Z'),
+        },
+        {
+          id: 'todo-2',
+          runId: 'run-123',
+          seq: 2,
+          title: 'context_compile を実行する',
+          taskType: 'context_compile',
+          status: 'pending',
+          procedureId: 'contextstill.context_compile',
+        },
+      ] as any);
+
+    const sink = createLedgerSink('run-123');
+    await sink.emit({
+      type: 'tool_call_finished',
+      message: 'initial instructions finished',
+      payload: {
+        toolName: 'context-still.initial_instructions',
+        status: 'completed',
+      },
+    });
+
+    expect(repo.updateTaskRunTodo).toHaveBeenNthCalledWith(
+      1,
+      'todo-1',
+      expect.objectContaining({
+        status: 'passed',
+        completedAt: expect.any(Date),
+      }),
+      { notifyTaskId: 'task-123', notifyRunId: 'run-123' }
+    );
+    expect(repo.updateTaskRunTodo).toHaveBeenNthCalledWith(
+      2,
+      'todo-2',
+      expect.objectContaining({
+        status: 'running',
+        startedAt: expect.any(Date),
+        completedAt: null,
+      }),
+      { notifyTaskId: 'task-123', notifyRunId: 'run-123' }
+    );
+  });
+
   it('normalizes runtime crash to failed result and runtime_error event', async () => {
-    vi.mocked(supervisor.runSupervisorLoop).mockRejectedValue(new Error('supervisor exploded'));
+    (supervisor.runSupervisorLoop as any).mockRejectedValue(new Error('supervisor exploded'));
 
     const runtime = new NativeAgentRuntime();
     const events: string[] = [];
@@ -94,7 +178,7 @@ describe('AgentRuntime', () => {
   });
 
   it('runs SessionEnd hooks after runtime errors once the session has started', async () => {
-    vi.mocked(supervisor.runSupervisorLoop).mockRejectedValue(new Error('supervisor exploded'));
+    (supervisor.runSupervisorLoop as any).mockRejectedValue(new Error('supervisor exploded'));
     createAgentHook({
       name: 'Session end audit',
       enabled: true,
@@ -140,7 +224,7 @@ describe('AgentRuntime', () => {
   });
 
   it('passes current todo context into the supervisor loop', async () => {
-    vi.mocked(supervisor.runSupervisorLoop).mockResolvedValue({
+    (supervisor.runSupervisorLoop as any).mockResolvedValue({
       terminalState: 'completed',
       summary: 'done',
       finalReport: 'done',

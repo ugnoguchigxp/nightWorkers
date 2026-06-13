@@ -327,7 +327,7 @@ function SessionRow({
   seenDoneSessionIds: Set<string>;
 }) {
   const { t } = useTranslation();
-  const action = getRowAction(session);
+  const action = getRowAction(t, session);
   return (
     <li className="group flex min-w-0 items-stretch gap-1 overflow-hidden px-1">
       <button
@@ -466,12 +466,18 @@ function buildNightShiftSummary(grouped: ProjectSessionGroups) {
 }
 
 function getRowAction(
+  t: (key: string) => string,
   session: WorkbenchSessionView
 ):
   | { kind: 'button'; command: 'queue' | 'remove'; text: string; label: string }
   | { kind: 'text'; label: string } {
   if (session.primaryAction === 'queue') {
-    return { kind: 'button', command: 'queue', text: 'Queue', label: 'Queue · Open' };
+    return {
+      kind: 'button',
+      command: 'queue',
+      text: t('queue.enqueue'),
+      label: t('sidebar.queueSessionLabel'),
+    };
   }
   if (session.primaryAction === 'remove') {
     return { kind: 'button', command: 'remove', text: 'Remove', label: 'Remove · Open' };

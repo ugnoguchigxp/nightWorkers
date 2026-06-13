@@ -23,6 +23,7 @@ async function main() {
     }
   } catch (err) {
     console.error('Error seeding DB:', err);
+    process.exitCode = 1;
   } finally {
     client.close();
   }

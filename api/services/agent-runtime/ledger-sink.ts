@@ -73,6 +73,11 @@ const EVENT_MAPPING: Record<AgentRuntimeEvent['type'], EventMapping> = {
   runtime_error: { actor: 'system', severity: 'error', canonicalType: 'system.error' },
 };
 
+const AUTO_CLOSE_PROCEDURE_BY_TOOL_NAME: Record<string, string> = {
+  'context-still.initial_instructions': 'contextstill.initial_instructions',
+  'context-still.context_compile': 'contextstill.context_compile',
+};
+
 export function createLedgerSink(taskRunId: string): AgentRuntimeSink {
   return {
     async emit(event: AgentRuntimeEvent) {
@@ -88,6 +93,7 @@ export function createLedgerSink(taskRunId: string): AgentRuntimeSink {
           message: event.message.slice(0, 1000),
           data: (event.payload as Record<string, unknown>) || {},
         });
+        await maybeAutoCloseGateTodo(taskRunId, event);
       } catch (error) {
         logEvent({
           channel: 'agent-runtime',
@@ -102,4 +108,65 @@ export function createLedgerSink(taskRunId: string): AgentRuntimeSink {
       }
     },
   };
+}
+
+async function maybeAutoCloseGateTodo(taskRunId: string, event: AgentRuntimeEvent) {
+  if (event.type !== 'tool_call_finished') return;
+  const payload =
+    event.payload && typeof event.payload === 'object'
+      ? (event.payload as Record<string, unknown>)
+      : null;
+  if (!payload || isFailedToolCompletion(payload)) return;
+  const toolName = resolveToolName(payload);
+  if (!toolName) return;
+  const procedureId = AUTO_CLOSE_PROCEDURE_BY_TOOL_NAME[toolName];
+  if (!procedureId) return;
+
+  const [run, todos] = await Promise.all([
+    repo.getTaskRun(taskRunId),
+    repo.listTaskRunTodosForRun(taskRunId),
+  ]);
+  if (!run) return;
+  const currentTodo = todos.find(
+    (todo) => todo.status === 'running' && todo.procedureId === procedureId
+  );
+  if (!currentTodo) return;
+
+  const now = new Date();
+  await repo.updateTaskRunTodo(
+    currentTodo.id,
+    {
+      status: 'passed',
+      completedAt: now,
+      startedAt: currentTodo.startedAt ? new Date(String(currentTodo.startedAt)) : now,
+    },
+    { notifyTaskId: run.taskId, notifyRunId: run.id }
+  );
+
+  const refreshedTodos = await repo.listTaskRunTodosForRun(taskRunId);
+  const nextTodo = refreshedTodos.find((todo) => todo.status === 'pending');
+  if (!nextTodo) return;
+  await repo.updateTaskRunTodo(
+    nextTodo.id,
+    {
+      status: 'running',
+      startedAt: now,
+      completedAt: null,
+    },
+    { notifyTaskId: run.taskId, notifyRunId: run.id }
+  );
+}
+
+function resolveToolName(payload: Record<string, unknown>) {
+  if (typeof payload.toolName === 'string' && payload.toolName.length > 0) {
+    return payload.toolName;
+  }
+  if (typeof payload.mcpServer === 'string' && typeof payload.mcpTool === 'string') {
+    return `${payload.mcpServer}.${payload.mcpTool}`;
+  }
+  return null;
+}
+
+function isFailedToolCompletion(payload: Record<string, unknown>) {
+  return payload.status === 'failed' || payload.status === 'error';
 }

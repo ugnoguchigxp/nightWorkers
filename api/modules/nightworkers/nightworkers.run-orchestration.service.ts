@@ -67,6 +67,17 @@ function isPlanningOnlyRun<TTodo extends { taskType: string }>(todos: TTodo[]) {
   return todos.length === 0;
 }
 
+const IMPLEMENTATION_PHASE_PREAMBLE = [
+  '実装フェーズに移行しました。',
+  'plan mode はこの時点で終了です。',
+  'ここからは計画相談ではなく、実装・検証・必要な修正・closeout まで最後までやり切ってください。',
+  'Todo を作成・更新する場合も、この実装フェーズ前提で進めてください。',
+].join('\n');
+
+function injectImplementationPhaseContext(latestUserMessage: string) {
+  return `${IMPLEMENTATION_PHASE_PREAMBLE}\n\n${latestUserMessage}`.trim();
+}
+
 function buildInitialRunTodos(compiledPromptText: string): ImplementationTodoInput[] {
   const screenPath = extractFirstMatch(compiledPromptText, /画面パス:\s*`([^`]+)`/);
   const featureSummary = extractFeatureSummary(compiledPromptText);
@@ -263,7 +274,9 @@ export async function startTaskRun(taskId: string) {
     },
   };
 
-  const rawLatestUserMessage = lastUserMessage?.content || compiledPromptText;
+  const rawLatestUserMessage = injectImplementationPhaseContext(
+    lastUserMessage?.content || compiledPromptText
+  );
   const conversationContext = await maybeLoadConversationStateCard(taskId, lastUserMessage?.id);
   const runtimePromptParts = buildPromptWithStateCardParts({
     latestUserMessage: rawLatestUserMessage,
@@ -272,6 +285,9 @@ export async function startTaskRun(taskId: string) {
   const runtimeLatestUserMessage = runtimePromptParts.promptText;
   const runtimeContextSnapshot: RuntimePromptSnapshot = {
     ...contextSnapshot,
+    executionPhase: 'implementation',
+    planModeClosed: true,
+    implementationPhasePreamble: IMPLEMENTATION_PHASE_PREAMBLE,
     conversationContext: conversationContext
       ? {
           snapshotId: conversationContext.id,

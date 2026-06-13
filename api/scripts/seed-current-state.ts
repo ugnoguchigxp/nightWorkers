@@ -38,6 +38,17 @@ const RESET_TABLES = [
   'repositories',
 ] as const;
 
+async function listExistingTables() {
+  const result = await client.execute(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+  );
+  return new Set(
+    result.rows
+      .map((row) => (typeof row.name === 'string' ? row.name : null))
+      .filter((name): name is string => Boolean(name))
+  );
+}
+
 function resolveDatabasePath() {
   const databaseUrl = process.env.DATABASE_URL?.trim();
   if (!databaseUrl) {
@@ -56,10 +67,12 @@ function resolveDatabasePath() {
   return path.resolve(process.cwd(), rawPath);
 }
 
-function buildSeedSql() {
+function buildSeedSql(existingTables: Set<string>) {
   const snapshotPath = path.resolve(process.cwd(), SNAPSHOT_RELATIVE_PATH);
   const snapshotSql = readFileSync(snapshotPath, 'utf8');
-  const deleteSql = RESET_TABLES.map((table) => `DELETE FROM ${table};`).join('\n');
+  const deleteSql = RESET_TABLES.filter((table) => existingTables.has(table))
+    .map((table) => `DELETE FROM ${table};`)
+    .join('\n');
   return [
     '.timeout 10000',
     'PRAGMA foreign_keys=OFF;',
@@ -75,8 +88,9 @@ function buildSeedSql() {
 async function main() {
   const databasePath = resolveDatabasePath();
   await ensureNightWorkersSchema();
+  const existingTables = await listExistingTables();
   await Promise.resolve(client.close());
-  const sql = buildSeedSql();
+  const sql = buildSeedSql(existingTables);
   const output = execFileSync('sqlite3', [databasePath], {
     input: sql,
     encoding: 'utf8',

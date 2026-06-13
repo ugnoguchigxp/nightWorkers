@@ -2,6 +2,52 @@ import { client } from './client';
 
 export async function ensureBaseNightWorkersTables() {
   await client.execute(`
+    CREATE TABLE IF NOT EXISTS users (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      email text NOT NULL,
+      password_hash text,
+      name text NOT NULL,
+      is_active integer DEFAULT true NOT NULL
+    )
+  `);
+  await client.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users (email)');
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      id text PRIMARY KEY NOT NULL,
+      token text NOT NULL,
+      user_id text NOT NULL,
+      expires_at integer NOT NULL,
+      created_at integer NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE cascade
+    )
+  `);
+  await client.execute(
+    'CREATE UNIQUE INDEX IF NOT EXISTS refresh_tokens_token_unique ON refresh_tokens (token)'
+  );
+  await client.execute('CREATE INDEX IF NOT EXISTS rt_user_id_idx ON refresh_tokens (user_id)');
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS user_external_accounts (
+      id text PRIMARY KEY NOT NULL,
+      user_id text NOT NULL,
+      provider text NOT NULL,
+      external_id text NOT NULL,
+      email text,
+      created_at integer NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE cascade
+    )
+  `);
+  await client.execute(
+    'CREATE UNIQUE INDEX IF NOT EXISTS uex_provider_ext_uidx ON user_external_accounts (provider, external_id)'
+  );
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS uex_user_id_idx ON user_external_accounts (user_id)'
+  );
+
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS repositories (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,

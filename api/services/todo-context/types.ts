@@ -12,6 +12,9 @@ export type RuntimePromptSnapshot = {
   source: 'task_prompt' | 'fallback';
   degraded: boolean;
   degradedReason?: string;
+  executionPhase?: 'implementation';
+  planModeClosed?: boolean;
+  implementationPhasePreamble?: string;
   blueprintPlanning?: unknown;
   runtimeLane?: 'native-supervisor' | 'codex-agent';
   runtimeLaneResolution?: RuntimeLaneSnapshot;
