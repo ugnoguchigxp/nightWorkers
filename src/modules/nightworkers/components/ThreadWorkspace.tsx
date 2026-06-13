@@ -1,7 +1,7 @@
 import {
   Bug,
   FolderTree,
-  GitCompare,
+  ListTodo,
   LoaderCircle,
   PanelsTopLeft,
   Square,
@@ -66,9 +66,11 @@ type ThreadWorkspaceProps = {
   onOpenBlueprintArtifact: () => Promise<void>;
   isBlueprintArtifactOpen: boolean;
   isBlueprintActionBusy: boolean;
-  isDiffArtifactOpen: boolean;
+  onOpenTodoArtifact: () => void;
+  isTodoArtifactOpen: boolean;
+  hasTodoArtifact: boolean;
   onDeleteSession: () => void;
-  onQueueSession: () => void;
+  onQueueSession: () => Promise<void> | void;
   onRemoveQueueEntry: () => void;
   onSubmitReview: (action: 'complete' | 'cancel', note?: string) => void;
   onRequeueQueueEntry: (note?: string) => void;
@@ -79,7 +81,6 @@ type ThreadWorkspaceProps = {
   onOpenProjectFiles: () => void;
   onOpenDiffArtifact: (artifact: WorkbenchArtifactRef) => void;
   onGrantExternalPath: (path: string) => Promise<void>;
-  sidePanel?: ReactNode;
   splitPanel?: ReactNode;
 };
 
@@ -235,7 +236,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
   const suppressedScrollTopRef = useRef<number | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const resizeMetricsRef = useRef<{ clientHeight: number; scrollHeight: number } | null>(null);
-  const layoutMode = props.splitPanel ? 'split' : props.sidePanel ? 'side' : 'single';
+  const layoutMode = props.splitPanel ? 'split' : 'single';
   const previousLayoutModeRef = useRef(layoutMode);
   const activeSessionId = props.activeSession?.id ?? null;
   const forceLatestFocus = props.isAgentThinking;
@@ -468,35 +469,6 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
                 </button>
                 <button
                   type="button"
-                  className={`inline-flex h-7 w-7 items-center justify-center rounded border disabled:cursor-not-allowed disabled:opacity-40 ${
-                    props.isDiffArtifactOpen
-                      ? 'border-cyan-400/70 bg-cyan-950/30 text-cyan-100 hover:bg-cyan-900/30'
-                      : 'border-slate-600/80 bg-slate-900/30 text-slate-300 hover:border-slate-400'
-                  }`}
-                  onClick={() => {
-                    if (latestDiffArtifact) props.onOpenDiffArtifact(latestDiffArtifact);
-                  }}
-                  disabled={!latestDiffArtifact}
-                  title={
-                    props.isDiffArtifactOpen
-                      ? t('thread.hideCodeDiffArtifact')
-                      : latestDiffArtifact
-                        ? t('thread.openCodeDiffArtifact')
-                        : t('thread.noCodeDiffArtifact')
-                  }
-                  aria-label={
-                    props.isDiffArtifactOpen
-                      ? t('thread.hideCodeDiffArtifact')
-                      : latestDiffArtifact
-                        ? t('thread.openCodeDiffArtifact')
-                        : t('thread.noCodeDiffArtifact')
-                  }
-                  aria-pressed={props.isDiffArtifactOpen}
-                >
-                  <GitCompare className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
                   className={`inline-flex h-7 w-7 items-center justify-center rounded border disabled:cursor-wait disabled:opacity-60 ${
                     props.isBlueprintArtifactOpen
                       ? 'border-cyan-400/70 bg-cyan-950/30 text-cyan-100 hover:bg-cyan-900/30'
@@ -519,6 +491,25 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
                   ) : (
                     <PanelsTopLeft className="h-3.5 w-3.5" />
                   )}
+                </button>
+                <button
+                  type="button"
+                  className={`inline-flex h-7 w-7 items-center justify-center rounded border disabled:cursor-not-allowed disabled:opacity-40 ${
+                    props.isTodoArtifactOpen
+                      ? 'border-cyan-400/70 bg-cyan-950/30 text-cyan-100'
+                      : 'border-slate-600/80 bg-slate-900/30 text-slate-200 hover:border-slate-400'
+                  }`}
+                  aria-pressed={props.isTodoArtifactOpen}
+                  disabled={!props.hasTodoArtifact}
+                  onClick={props.onOpenTodoArtifact}
+                  title={
+                    props.hasTodoArtifact ? t('thread.todoArtifact') : t('thread.noTodoArtifact')
+                  }
+                  aria-label={
+                    props.hasTodoArtifact ? t('thread.todoArtifact') : t('thread.noTodoArtifact')
+                  }
+                >
+                  <ListTodo className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
@@ -621,9 +612,6 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
             thinkingDepth={props.thinkingDepth}
             workbenchBanner={workbenchBanner}
           />
-          {props.sidePanel ? (
-            <aside className="nightworkers-thread-side-panel">{props.sidePanel}</aside>
-          ) : null}
         </div>
       )}
     </div>

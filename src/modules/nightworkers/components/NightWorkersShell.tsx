@@ -49,6 +49,7 @@ function asProjectSafetyPolicy(value: unknown): ProjectSafetyPolicy {
 type ArtifactPaneFocus =
   | { type: 'closed' }
   | { type: 'project_tree' }
+  | { type: 'todo' }
   | { type: 'artifact'; artifact: WorkbenchArtifactRef };
 
 export function NightWorkersShell(props: NightWorkersShellProps) {
@@ -77,18 +78,12 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       ? buildArtifactContext(selectedArtifact, workspace.activeSessionId)
       : null;
   const artifactPaneOpen = artifactFocus.type !== 'closed';
+  const isTodoArtifactOpen = artifactFocus.type === 'todo';
   const isBlueprintArtifactOpen =
     artifactPaneOpen &&
     (selectedArtifact?.kind === 'blueprint_workspace' ||
       selectedArtifact?.kind === 'app_blueprint');
-  const isDiffArtifactOpen = artifactPaneOpen && selectedArtifact?.kind === 'diff';
-  const todoPaneOpen =
-    !props.showSettings &&
-    !showOverviewScreen &&
-    !showQueueScreen &&
-    !artifactPaneOpen &&
-    Boolean(workspace.activeSession) &&
-    workspace.latestRunTodos.length > 0;
+  const hasTodoArtifact = Boolean(workspace.activeSession);
 
   useEffect(() => {
     workspaceRef.current = workspace;
@@ -149,6 +144,39 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       return;
     }
   }, [isBlueprintArtifactOpen]);
+  const focusTodoArtifact = useCallback(() => {
+    setShowOverviewScreen(false);
+    setShowQueueScreen(false);
+    props.onCloseSettings();
+    setClearedArtifactContextId(null);
+    setArtifactFocus({ type: 'todo' });
+  }, [props.onCloseSettings]);
+  const handleOpenTodoArtifact = useCallback(() => {
+    if (!workspaceRef.current.activeSession) return;
+    if (artifactFocus.type === 'todo') {
+      setArtifactFocus({ type: 'closed' });
+      return;
+    }
+    focusTodoArtifact();
+  }, [artifactFocus.type, focusTodoArtifact]);
+  const queueSessionAndFocusTodo = useCallback(
+    async (sessionId: string) => {
+      setShowOverviewScreen(false);
+      setShowQueueScreen(false);
+      props.onCloseSettings();
+      workspaceRef.current.setActiveSessionId(sessionId);
+      setClearedArtifactContextId(null);
+      setArtifactFocus({ type: 'todo' });
+      await workspaceRef.current.createImplementationQueueEntry(sessionId);
+      setArtifactFocus({ type: 'todo' });
+    },
+    [props.onCloseSettings]
+  );
+  const queueActiveSessionAndFocusTodo = useCallback(async () => {
+    const sessionId = workspaceRef.current.activeSession?.id;
+    if (!sessionId) return;
+    await queueSessionAndFocusTodo(sessionId);
+  }, [queueSessionAndFocusTodo]);
   const handleSelectSession = useCallback((sessionId: string | null) => {
     setArtifactFocus({ type: 'closed' });
     setShowQueueScreen(false);
@@ -273,7 +301,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
             onToggleProject={handleToggleProject}
             onOpenOverview={handleOpenOverview}
             isOverviewActive={isOverviewActive}
-            onQueueSession={workspace.createImplementationQueueEntry}
+            onQueueSession={queueSessionAndFocusTodo}
             onRemoveQueueEntry={workspace.removeImplementationQueueEntry}
             onOpenFolderBrowser={handleOpenFolderBrowser}
           />
@@ -301,7 +329,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               isLoading={workspace.isImplementationQueueLoading}
               onSetProjectFilter={setQueueProjectFilterId}
               onOpenSession={(sessionId) => handleSelectSession(sessionId)}
-              onQueueSession={workspace.createImplementationQueueEntry}
+              onQueueSession={queueSessionAndFocusTodo}
               onArchiveEntry={workspace.archiveImplementationQueueEntry}
               onUpdateProcessorCount={workspace.updateImplementationQueueProcessorCount}
               onUpdateTodoWorkflowSettings={workspace.updateTodoWorkflowSettings}
@@ -369,15 +397,14 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               onOpenBlueprintArtifact={handleOpenBlueprintArtifact}
               isBlueprintArtifactOpen={isBlueprintArtifactOpen}
               isBlueprintActionBusy={workspace.isChatSubmitting}
-              isDiffArtifactOpen={isDiffArtifactOpen}
+              onOpenTodoArtifact={handleOpenTodoArtifact}
+              isTodoArtifactOpen={isTodoArtifactOpen}
+              hasTodoArtifact={hasTodoArtifact}
               onDeleteSession={() => {
                 if (!workspace.activeSession) return;
                 workspace.deleteSession(workspace.activeSession.id);
               }}
-              onQueueSession={() => {
-                if (!workspace.activeSession) return;
-                void workspace.createImplementationQueueEntry(workspace.activeSession.id);
-              }}
+              onQueueSession={queueActiveSessionAndFocusTodo}
               onRemoveQueueEntry={() => {
                 const entryId = workspace.activeSessionView?.queueEntry?.id;
                 if (!entryId) return;
@@ -436,11 +463,10 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                   },
                 });
               }}
-              sidePanel={
-                todoPaneOpen ? <TodoListPane todos={workspace.latestRunTodos} /> : undefined
-              }
               splitPanel={
-                artifactPaneOpen ? (
+                isTodoArtifactOpen ? (
+                  <TodoListPane todos={workspace.latestRunTodos} />
+                ) : artifactPaneOpen ? (
                   <ArtifactPane
                     activeProject={workspace.activeProject}
                     activeSessionId={workspace.activeSessionId}
@@ -470,8 +496,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                         setArtifactFocus({ type: 'artifact', artifact: diffArtifact });
                     }}
                     onQueueSession={async () => {
-                      if (!workspace.activeSession) return;
-                      await workspace.createImplementationQueueEntry(workspace.activeSession.id);
+                      await queueActiveSessionAndFocusTodo();
                     }}
                   />
                 ) : undefined

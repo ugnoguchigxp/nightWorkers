@@ -27,18 +27,19 @@ describe('ThreadWorkspace header', () => {
     expect(shellSource).not.toContain("sendWorkbenchMessage(session.id, prompt, 'draft_spec')");
   });
 
-  it('starts Status implementation through an LLM run-task message', () => {
+  it('focuses the TODO artifact when implementation is queued', () => {
     const shellSource = readFileSync(
       'src/modules/nightworkers/components/NightWorkersShell.tsx',
       'utf8'
     );
-
-    expect(shellSource).toContain('この設計書の実装を開始してください');
-    expect(shellSource).toContain('read_current_specification');
-    expect(shellSource).toContain("'run_task'");
-    expect(shellSource).toContain("setArtifactFocus({ type: 'closed' });");
-    expect(shellSource).not.toContain(
-      'onStartImplementation={async () => {\n                      if (!workspace.activeSession) return;\n                      await workspace.startRun'
+    const workspaceSource = readFileSync(
+      'src/modules/nightworkers/components/ThreadWorkspace.tsx',
+      'utf8'
     );
+
+    expect(shellSource).toContain("setArtifactFocus({ type: 'todo' });");
+    expect(shellSource).toContain('queueSessionAndFocusTodo');
+    expect(workspaceSource).toContain('onOpenTodoArtifact');
+    expect(workspaceSource).not.toContain('nightworkers-thread-side-panel');
   });
 });

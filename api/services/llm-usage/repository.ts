@@ -17,7 +17,8 @@ export async function recordLlmUsage(input: {
   durationMs: number;
   metadataJson?: Record<string, unknown>;
 }) {
-  const usageMode = resolveStoredUsageMode(input.usage.mode, input.promptPartTokenEstimates);
+  const promptPartTokenEstimates = resolveStoredPromptPartTokenEstimates(input);
+  const usageMode = resolveStoredUsageMode(input.usage.mode, promptPartTokenEstimates);
   const [record] = await db
     .insert(llmUsageRecords)
     .values({
@@ -34,9 +35,9 @@ export async function recordLlmUsage(input: {
       cachedInputTokens: input.usage.cachedInputTokens,
       reasoningOutputTokens: input.usage.reasoningOutputTokens,
       totalTokens: input.usage.totalTokens,
-      systemPromptTokens: normalizeOptionalInt(input.promptPartTokenEstimates?.systemPromptTokens),
-      userPromptTokens: normalizeOptionalInt(input.promptPartTokenEstimates?.userPromptTokens),
-      stateCardTokens: normalizeOptionalInt(input.promptPartTokenEstimates?.stateCardTokens),
+      systemPromptTokens: normalizeOptionalInt(promptPartTokenEstimates?.systemPromptTokens),
+      userPromptTokens: normalizeOptionalInt(promptPartTokenEstimates?.userPromptTokens),
+      stateCardTokens: normalizeOptionalInt(promptPartTokenEstimates?.stateCardTokens),
       responseTokensEstimate: null,
       durationMs: Math.max(0, Math.floor(input.durationMs)),
       rawUsageJson: input.usage.rawUsage ?? null,
@@ -152,4 +153,13 @@ function resolveStoredUsageMode(
     return 'mixed';
   }
   return usageMode;
+}
+
+function resolveStoredPromptPartTokenEstimates(input: {
+  provider: string;
+  usage: NormalizedLlmUsage;
+  promptPartTokenEstimates?: LlmPromptPartTokenEstimates;
+}) {
+  if (input.provider === 'codex' && input.usage.mode === 'measured') return undefined;
+  return input.promptPartTokenEstimates;
 }

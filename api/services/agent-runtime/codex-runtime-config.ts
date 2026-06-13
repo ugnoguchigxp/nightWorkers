@@ -1,7 +1,7 @@
 import type { CodexOptions, ThreadOptions } from '@openai/codex-sdk';
 import {
   buildNightWorkersCodexToolApprovalConfig,
-  nightWorkersCodexToolManifest,
+  getNightWorkersCodexToolNames,
 } from '../../mcp/nightworkers-tool-manifest';
 import type { AgentRunContext } from './types';
 
@@ -54,9 +54,7 @@ export function resolveCodexRuntimeMcpConfigState(
   input: Pick<CodexRuntimeConfigInput, 'env' | 'enableNightworkersMcp'> = {}
 ): CodexRuntimeMcpConfigState {
   const env = input.env ?? process.env;
-  const expectedTools = Object.keys(nightWorkersCodexToolManifest).map(
-    (tool) => `${NIGHTWORKERS_MCP_SERVER_NAME}.${tool}`
-  );
+  const expectedTools = getNightWorkersCodexToolNames();
   if (input.enableNightworkersMcp === false) {
     return {
       source: 'disabled',

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Thread, ThreadEvent } from '@openai/codex-sdk';
+import { getNightWorkersCodexToolNames } from '../../mcp/nightworkers-tool-manifest';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import type { NormalizedLlmUsage } from '../llm-usage';
 import { recordLlmUsage } from '../llm-usage';
@@ -32,12 +33,7 @@ const DEFAULT_RESULT: AgentRuntimeResult = {
 };
 
 const RETRYABLE_IMPORT_CANCEL_ERROR = 'user cancelled MCP tool call';
-const NIGHTWORKERS_EXPECTED_CODEX_TOOLS = new Set([
-  'nightworkers.read_current_specification',
-  'nightworkers.list_recent_specifications',
-  'nightworkers.todo_list',
-  'nightworkers.import_project',
-]);
+const NIGHTWORKERS_EXPECTED_CODEX_TOOLS = new Set(getNightWorkersCodexToolNames());
 
 type RuntimeTodoEvidence = {
   id: string;
@@ -55,9 +51,20 @@ type CodexRuntimeAuditState = {
   observedNightWorkersTools: Set<string>;
   contractWarnings: CodexContractWarning[];
   lastCurrentTodo: RuntimeTodoEvidence | null;
+  eventSequence: number;
+  importProjectSuccessSequence: number | null;
   importProjectProviderItemId: string | null;
   recommendedVerificationCommands: string[];
-  verificationEvidenceSeen: boolean;
+  postImportVerificationEvidenceSeen: boolean;
+  verificationEvidence: Array<{
+    sequence: number;
+    command: string | null;
+    commandClass: string | null;
+    exitCode: number | null;
+  }>;
+  sawHighRiskNativeImportCommand: boolean;
+  highRiskNativeImportCommand: string | null;
+  highRiskNativeImportProviderItemId: string | null;
   mcpConfig: CodexRuntimeMcpConfigState;
 };
 
@@ -187,11 +194,17 @@ export class CodexAgentRuntime implements AgentRuntime {
       }
 
       await this.emitMissingImportVerificationWarningIfNeeded(sink, logs, auditState);
-      return this.finishRun(context, sink, logs, {
+      const terminalPolicy = await this.resolveCodexTerminalPolicy(sink, logs, auditState, {
         terminalState,
         finalReport: finalText,
         stoppedBy,
         riskLevel: terminalState === 'completed' ? 'medium' : 'high',
+      });
+      return this.finishRun(context, sink, logs, {
+        terminalState: terminalPolicy.terminalState,
+        finalReport: terminalPolicy.finalReport,
+        stoppedBy: terminalPolicy.stoppedBy,
+        riskLevel: terminalPolicy.riskLevel,
         auditState,
       });
     } catch (err) {
@@ -224,6 +237,8 @@ export class CodexAgentRuntime implements AgentRuntime {
     auditState: CodexRuntimeAuditState,
     event: AgentRuntimeEvent
   ): Promise<AgentRuntimeEvent[]> {
+    auditState.eventSequence += 1;
+    const sequence = auditState.eventSequence;
     let auditedEvent = event;
     const payload = readEventPayload(event);
     if (event.type === 'runtime_started') {
@@ -278,8 +293,21 @@ export class CodexAgentRuntime implements AgentRuntime {
     if (event.type === 'tool_call_finished' && toolName === 'command_execution') {
       const command = readString(payload.command);
       const commandClass = readString(payload.commandClass);
+      const exitCode = readExitCode(payload);
       if (commandClass === 'verification' || commandClass === 'broad_verification') {
-        if (readExitCode(payload) === 0) auditState.verificationEvidenceSeen = true;
+        auditState.verificationEvidence.push({
+          sequence,
+          command,
+          commandClass,
+          exitCode,
+        });
+        if (
+          exitCode === 0 &&
+          auditState.importProjectSuccessSequence !== null &&
+          sequence > auditState.importProjectSuccessSequence
+        ) {
+          auditState.postImportVerificationEvidenceSeen = true;
+        }
       }
       warnings.push({
         code: 'codex_native_command_execution',
@@ -290,6 +318,18 @@ export class CodexAgentRuntime implements AgentRuntime {
         command,
       });
       if (commandClass === 'git_clone_or_import') {
+        auditState.sawHighRiskNativeImportCommand = true;
+        auditState.highRiskNativeImportCommand = command;
+        auditState.highRiskNativeImportProviderItemId = readString(payload.providerItemId);
+        warnings.push({
+          code: 'codex_high_risk_native_import_command',
+          severity: 'error',
+          message:
+            'Codex native command looks like a high-risk project import alternative; use nightworkers.import_project for project imports.',
+          providerItemId: readString(payload.providerItemId),
+          toolName,
+          command,
+        });
         warnings.push({
           code: 'codex_import_project_alternative_command',
           severity: 'warning',
@@ -306,6 +346,7 @@ export class CodexAgentRuntime implements AgentRuntime {
       const importPayload = readImportProjectSuccessPayload(payload);
       if (importPayload) {
         auditState.sawNightworkersImportProjectSuccess = true;
+        auditState.importProjectSuccessSequence = sequence;
         auditState.importProjectProviderItemId = readString(payload.providerItemId);
         auditState.recommendedVerificationCommands = importPayload.recommendedVerificationCommands;
       } else if (isFailedToolPayload(payload)) {
@@ -366,27 +407,6 @@ export class CodexAgentRuntime implements AgentRuntime {
   private async readCurrentTodoEvidence(
     context: AgentRunContext
   ): Promise<RuntimeTodoEvidence | null> {
-    if (context.currentTodo?.status === 'running') {
-      return {
-        id: context.currentTodo.id,
-        seq: context.currentTodo.seq,
-        title: context.currentTodo.title,
-        procedureId: context.currentTodo.procedureId ?? null,
-      };
-    }
-    if (context.todoPlan?.length) {
-      const current = context.todoPlan
-        .filter((todo) => todo.status === 'running')
-        .sort((a, b) => a.seq - b.seq)[0];
-      if (current) {
-        return {
-          id: current.id,
-          seq: current.seq,
-          title: current.title,
-          procedureId: current.procedureId ?? null,
-        };
-      }
-    }
     try {
       const todos = await repo.listTaskRunTodosForRun(context.runId);
       const current = todos
@@ -400,6 +420,27 @@ export class CodexAgentRuntime implements AgentRuntime {
         procedureId: current.procedureId ?? null,
       };
     } catch {
+      if (context.currentTodo?.status === 'running') {
+        return {
+          id: context.currentTodo.id,
+          seq: context.currentTodo.seq,
+          title: context.currentTodo.title,
+          procedureId: context.currentTodo.procedureId ?? null,
+        };
+      }
+      if (context.todoPlan?.length) {
+        const current = context.todoPlan
+          .filter((todo) => todo.status === 'running')
+          .sort((a, b) => a.seq - b.seq)[0];
+        if (current) {
+          return {
+            id: current.id,
+            seq: current.seq,
+            title: current.title,
+            procedureId: current.procedureId ?? null,
+          };
+        }
+      }
       return null;
     }
   }
@@ -424,7 +465,7 @@ export class CodexAgentRuntime implements AgentRuntime {
   ) {
     if (!auditState.sawNightworkersImportProjectSuccess) return;
     if (auditState.recommendedVerificationCommands.length === 0) return;
-    if (auditState.verificationEvidenceSeen) return;
+    if (auditState.postImportVerificationEvidenceSeen) return;
     const warning = this.toContractWarningEvent(auditState, {
       code: 'codex_import_project_verification_missing',
       severity: 'warning',
@@ -435,6 +476,48 @@ export class CodexAgentRuntime implements AgentRuntime {
     });
     logs.push(warning.message);
     await sink.emit(warning);
+  }
+
+  private async resolveCodexTerminalPolicy(
+    sink: AgentRuntimeSink,
+    logs: string[],
+    auditState: CodexRuntimeAuditState,
+    input: {
+      terminalState: AgentRuntimeResult['terminalState'];
+      finalReport: string;
+      stoppedBy: AgentRuntimeResult['stoppedBy'];
+      riskLevel: AgentRuntimeResult['riskLevel'];
+    }
+  ): Promise<typeof input> {
+    if (
+      !auditState.sawHighRiskNativeImportCommand ||
+      auditState.sawNightworkersImportProjectSuccess ||
+      input.terminalState !== 'completed'
+    ) {
+      return input;
+    }
+    const warning = this.toContractWarningEvent(auditState, {
+      code: 'codex_native_import_without_import_project',
+      severity: 'error',
+      message:
+        'Codex native project import command completed without nightworkers.import_project success. Human review is required before treating the run as complete.',
+      providerItemId: auditState.highRiskNativeImportProviderItemId,
+      toolName: 'command_execution',
+      command: auditState.highRiskNativeImportCommand,
+    });
+    logs.push(warning.message);
+    await sink.emit(warning);
+    const finalReportSuffix =
+      'Codex native project import command was observed without nightworkers.import_project success; stopping for human review.';
+    const finalReport = input.finalReport
+      ? `${input.finalReport}\n\n${finalReportSuffix}`
+      : finalReportSuffix;
+    return {
+      terminalState: 'needs_human',
+      finalReport,
+      stoppedBy: 'tool_failure',
+      riskLevel: 'high',
+    };
   }
 
   private async createThread(context: AgentRunContext): Promise<Thread> {
@@ -591,9 +674,15 @@ function createCodexRuntimeAuditState(): CodexRuntimeAuditState {
     observedNightWorkersTools: new Set(),
     contractWarnings: [],
     lastCurrentTodo: null,
+    eventSequence: 0,
+    importProjectSuccessSequence: null,
     importProjectProviderItemId: null,
     recommendedVerificationCommands: [],
-    verificationEvidenceSeen: false,
+    postImportVerificationEvidenceSeen: false,
+    verificationEvidence: [],
+    sawHighRiskNativeImportCommand: false,
+    highRiskNativeImportCommand: null,
+    highRiskNativeImportProviderItemId: null,
     mcpConfig: resolveCodexRuntimeMcpConfigState(),
   };
 }
@@ -890,6 +979,7 @@ function resolveRuntimeModel(context: AgentRunContext): string | null {
 
 export function buildCodexRuntimePrompt(context: AgentRunContext): string {
   const request = (context.latestUserMessage || context.compiledPrompt).trim();
+  const nightWorkersToolList = getNightWorkersCodexToolNames().join(', ');
   const contract = [
     '[NightWorkers Runtime Contract]',
     `taskId: ${context.taskId}`,
@@ -898,7 +988,7 @@ export function buildCodexRuntimePrompt(context: AgentRunContext): string {
     '',
     'NightWorkers MCP:',
     '- MCP server name: nightworkers',
-    '- Available NightWorkers MCP tools in this lane: nightworkers.read_current_specification, nightworkers.list_recent_specifications, nightworkers.todo_list, nightworkers.import_project.',
+    `- Available NightWorkers MCP tools in this lane: ${nightWorkersToolList}.`,
     '- If context-still.initial_instructions has not run in this NightWorkers run, run it before other task work and follow it.',
     '- Treat nightworkers MCP tools as the execution interface. When a named NightWorkers tool fits, call it directly instead of describing equivalent shell steps.',
     '- Execution order: specification -> Todo execution -> verification -> closeout.',

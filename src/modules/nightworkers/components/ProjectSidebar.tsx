@@ -28,7 +28,7 @@ type ProjectSidebarProps = {
   onToggleProject: (projectId: string) => void;
   onOpenOverview: () => void;
   isOverviewActive: boolean;
-  onQueueSession: (sessionId: string) => void;
+  onQueueSession: (sessionId: string) => Promise<void> | void;
   onRemoveQueueEntry: (entryId: string) => void;
   onOpenFolderBrowser: () => void;
 };
@@ -282,7 +282,7 @@ function SessionList({
   sessions: WorkbenchSessionView[];
   activeSessionId: string | null;
   onSelectSession: (session: WorkbenchSessionView) => void;
-  onQueueSession: (sessionId: string) => void;
+  onQueueSession: (sessionId: string) => Promise<void> | void;
   onRemoveQueueEntry: (entryId: string) => void;
   seenDoneSessionIds: Set<string>;
 }) {
@@ -322,7 +322,7 @@ function SessionRow({
   session: WorkbenchSessionView;
   active: boolean;
   onSelectSession: (session: WorkbenchSessionView) => void;
-  onQueueSession: (sessionId: string) => void;
+  onQueueSession: (sessionId: string) => Promise<void> | void;
   onRemoveQueueEntry: (entryId: string) => void;
   seenDoneSessionIds: Set<string>;
 }) {
@@ -354,7 +354,7 @@ function SessionRow({
           type="button"
           className="nightworkers-sidebar-icon-button my-2 w-14 shrink-0 rounded-md px-2 text-[11px] opacity-80 transition hover:opacity-100 focus-visible:outline-none focus-visible:ring-2"
           onClick={() => {
-            if (action.command === 'queue') onQueueSession(session.task.id);
+            if (action.command === 'queue') void onQueueSession(session.task.id);
             if (action.command === 'remove' && session.queueEntry) {
               onRemoveQueueEntry(session.queueEntry.id);
             }

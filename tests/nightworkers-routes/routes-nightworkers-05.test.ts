@@ -180,4 +180,67 @@ describe('NightWorkers task run todo routes', () => {
       estimatedCallCount: 0,
     });
   });
+
+  it('keeps Codex measured usage separate from prompt estimate counts', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: Codex LLM Usage ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: Codex LLM usage task',
+      status: 'draft',
+    });
+
+    await recordLlmUsage({
+      taskId: task.id,
+      runId: null,
+      callId: crypto.randomUUID(),
+      provider: 'codex',
+      model: 'gpt-5.4-mini',
+      label: 'specification_document',
+      round: null,
+      usage: {
+        inputTokens: 100,
+        outputTokens: 20,
+        cachedInputTokens: 5,
+        reasoningOutputTokens: 2,
+        totalTokens: 120,
+        mode: 'measured',
+        rawUsage: {
+          input_tokens: 100,
+          cached_input_tokens: 5,
+          output_tokens: 20,
+          reasoning_output_tokens: 2,
+        },
+      },
+      promptPartTokenEstimates: {
+        systemPromptTokens: 30,
+        userPromptTokens: 70,
+        stateCardTokens: 12,
+      },
+      durationMs: 42,
+    });
+
+    const res = await app.request(`http://localhost/api/tasks/${task.id}/llm-usage`, {
+      headers: sameOriginHeaders,
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      taskId: task.id,
+      inputTokens: 100,
+      outputTokens: 20,
+      cachedInputTokens: 5,
+      reasoningOutputTokens: 2,
+      totalTokens: 120,
+      promptInputTokens: 0,
+      stateCardTokens: 0,
+      usageMode: 'measured',
+      callCount: 1,
+      measuredCallCount: 1,
+      estimatedCallCount: 0,
+    });
+  });
 });

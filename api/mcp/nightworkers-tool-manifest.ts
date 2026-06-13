@@ -159,6 +159,10 @@ export const nightWorkersCodexToolManifest = {
 
 export type NightWorkersCodexToolName = keyof typeof nightWorkersCodexToolManifest;
 
+export function getNightWorkersCodexToolNames() {
+  return Object.keys(nightWorkersCodexToolManifest).map((tool) => `nightworkers.${tool}`);
+}
+
 export function buildNightWorkersCodexToolApprovalConfig() {
   return Object.fromEntries(
     Object.entries(nightWorkersCodexToolManifest).map(([name, definition]) => [

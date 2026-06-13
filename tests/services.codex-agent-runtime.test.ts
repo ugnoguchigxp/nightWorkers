@@ -4,7 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { ThreadEvent } from '@openai/codex-sdk';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { getNightWorkersCodexToolNames } from '../api/mcp/nightworkers-tool-manifest';
+import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import {
   buildCodexRuntimePrompt,
   CodexAgentRuntime,
@@ -22,7 +24,16 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
+  listTaskRunTodosForRun: vi.fn(),
+}));
+
 describe('CodexAgentRuntime', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(repo.listTaskRunTodosForRun).mockRejectedValue(new Error('todo db unavailable'));
+  });
+
   it('builds runtime Codex options without structured provider feature suppression', () => {
     const options = buildCodexRuntimeSdkOptions({
       accessToken: 'runtime-token',
@@ -98,12 +109,7 @@ describe('CodexAgentRuntime', () => {
       source: 'inline_configured',
       hasInlineNightWorkersMcp: true,
       serverName: 'nightworkers',
-      expectedTools: [
-        'nightworkers.read_current_specification',
-        'nightworkers.list_recent_specifications',
-        'nightworkers.todo_list',
-        'nightworkers.import_project',
-      ],
+      expectedTools: getNightWorkersCodexToolNames(),
     });
     expect(resolveCodexRuntimeMcpConfigState({ env: {} as any })).toMatchObject({
       source: 'global_inherited',
@@ -155,9 +161,7 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain('taskId: task-codex');
     expect(prompt).toContain('runId: run-codex');
     expect(prompt).toContain('context-still.initial_instructions');
-    expect(prompt).toContain(
-      'nightworkers.read_current_specification, nightworkers.list_recent_specifications, nightworkers.todo_list, nightworkers.import_project'
-    );
+    expect(prompt).toContain(getNightWorkersCodexToolNames().join(', '));
     expect(prompt).toContain('nightworkers.todo_list');
     expect(prompt).toContain('operation=replace');
     expect(prompt).toContain('operation=done');
@@ -323,6 +327,166 @@ describe('CodexAgentRuntime', () => {
             todoId: 'todo-1',
             todoSeq: 1,
             todoTitle: '実装する',
+          }),
+        }),
+      ])
+    );
+  });
+
+  it('prefers DB running Todo evidence over stale runtime context for file_change', async () => {
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([
+      {
+        id: 'todo-1',
+        runId: 'run-codex',
+        seq: 1,
+        title: '古い Todo',
+        taskType: 'implementation',
+        status: 'passed',
+      },
+      {
+        id: 'todo-2',
+        runId: 'run-codex',
+        seq: 2,
+        title: '現在の Todo',
+        taskType: 'implementation',
+        status: 'running',
+        procedureId: 'implementation',
+      },
+    ] as any);
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'file-db-todo',
+              type: 'file_change',
+              status: 'completed',
+              changes: [{ path: 'src/app.ts' }],
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+    const events: any[] = [];
+
+    await runtime.start(
+      buildContext({
+        currentTodo: {
+          id: 'todo-1',
+          seq: 1,
+          title: '古い Todo',
+          taskType: 'implementation',
+          status: 'running',
+        },
+      }),
+      {
+        emit: async (event) => {
+          events.push(event);
+        },
+      }
+    );
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'diff_collected',
+          payload: expect.objectContaining({
+            providerItemId: 'file-db-todo',
+            todoId: 'todo-2',
+            todoSeq: 2,
+            todoTitle: '現在の Todo',
+          }),
+        }),
+      ])
+    );
+  });
+
+  it('does not fall back to stale context when DB has no running Todo', async () => {
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'file-no-db-todo',
+              type: 'file_change',
+              status: 'completed',
+              changes: [{ path: 'src/app.ts' }],
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(
+      buildContext({
+        currentTodo: {
+          id: 'todo-1',
+          seq: 1,
+          title: '古い Todo',
+          taskType: 'implementation',
+          status: 'running',
+        },
+      }),
+      { emit: async () => {} }
+    );
+
+    expect(result.contractWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'codex_file_change_without_current_todo',
+          providerItemId: 'file-no-db-todo',
+        }),
+      ])
+    );
+  });
+
+  it('falls back to runtime Todo context only when DB Todo evidence cannot be read', async () => {
+    vi.mocked(repo.listTaskRunTodosForRun).mockRejectedValue(new Error('SQLITE_BUSY'));
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'file-db-throw',
+              type: 'file_change',
+              status: 'completed',
+              changes: [{ path: 'src/app.ts' }],
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+    const events: any[] = [];
+
+    await runtime.start(
+      buildContext({
+        currentTodo: {
+          id: 'todo-fallback',
+          seq: 3,
+          title: 'fallback Todo',
+          taskType: 'implementation',
+          status: 'running',
+        },
+      }),
+      {
+        emit: async (event) => {
+          events.push(event);
+        },
+      }
+    );
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'diff_collected',
+          payload: expect.objectContaining({
+            providerItemId: 'file-db-throw',
+            todoId: 'todo-fallback',
+            todoSeq: 3,
           }),
         }),
       ])
@@ -626,6 +790,142 @@ describe('CodexAgentRuntime', () => {
     );
   });
 
+  it('does not let pre-import verification evidence satisfy post-import verification', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'cmd-pre-import',
+              type: 'command_execution',
+              command: 'bun run typecheck',
+              aggregated_output: 'ok',
+              exit_code: 0,
+              status: 'completed',
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'import-1',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'import_project',
+              arguments: { source: 'starter', stack: 'hono' },
+              status: 'completed',
+              result: {
+                ok: true,
+                postImport: {
+                  manifest: {
+                    recommendedVerificationCommands: ['bun run verify:base'],
+                  },
+                },
+              },
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.contractWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'codex_import_project_verification_missing',
+          providerItemId: 'import-1',
+        }),
+      ])
+    );
+  });
+
+  it('warns when post-import verification command fails', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'import-1',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'import_project',
+              arguments: { source: 'starter', stack: 'hono' },
+              status: 'completed',
+              result: {
+                ok: true,
+                postImport: {
+                  manifest: {
+                    recommendedVerificationCommands: ['bun run verify:base'],
+                  },
+                },
+              },
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'cmd-verify',
+              type: 'command_execution',
+              command: 'bun run verify:base',
+              aggregated_output: 'failed',
+              exit_code: 1,
+              status: 'failed',
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.contractWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'codex_import_project_verification_missing',
+          providerItemId: 'import-1',
+        }),
+      ])
+    );
+  });
+
+  it('does not require post-import verification when no commands are recommended', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'import-1',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'import_project',
+              arguments: { source: 'starter', stack: 'hono' },
+              status: 'completed',
+              result: {
+                ok: true,
+                postImport: {
+                  manifest: {
+                    recommendedVerificationCommands: [],
+                  },
+                },
+              },
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.contractWarnings ?? []).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'codex_import_project_verification_missing' }),
+      ])
+    );
+  });
+
   it('reads import_project verification recommendations from MCP structuredContent payload', async () => {
     const runtime = new CodexAgentRuntime({
       threadFactory: () =>
@@ -780,6 +1080,133 @@ describe('CodexAgentRuntime', () => {
     );
   });
 
+  it('requires human review when native import completes without import_project success', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'cmd-clone',
+              type: 'command_execution',
+              command: 'git clone https://example.test/repo.git .',
+              aggregated_output: 'ok',
+              exit_code: 0,
+              status: 'completed',
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.terminalState).toBe('needs_human');
+    expect(result.stoppedBy).toBe('tool_failure');
+    expect(result.riskLevel).toBe('high');
+    expect(result.finalReport).toContain('without nightworkers.import_project success');
+    expect(result.contractWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'codex_high_risk_native_import_command',
+          severity: 'error',
+          providerItemId: 'cmd-clone',
+        }),
+        expect.objectContaining({
+          code: 'codex_native_import_without_import_project',
+          severity: 'error',
+          providerItemId: 'cmd-clone',
+        }),
+      ])
+    );
+  });
+
+  it('keeps completed terminal state when native import follows import_project success', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'import-1',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'import_project',
+              arguments: { source: 'git', repoUrl: 'https://example.test/repo.git' },
+              status: 'completed',
+              result: {
+                ok: true,
+                postImport: {
+                  manifest: {
+                    recommendedVerificationCommands: [],
+                  },
+                },
+              },
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'cmd-clone',
+              type: 'command_execution',
+              command: 'git clone https://example.test/fixture.git fixture',
+              aggregated_output: 'ok',
+              exit_code: 0,
+              status: 'completed',
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.terminalState).toBe('completed');
+    expect(result.contractWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'codex_high_risk_native_import_command',
+          severity: 'error',
+          providerItemId: 'cmd-clone',
+        }),
+      ])
+    );
+    expect(result.contractWarnings ?? []).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'codex_native_import_without_import_project' }),
+      ])
+    );
+  });
+
+  it('does not hard-gate normal verification commands as native import', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'cmd-test',
+              type: 'command_execution',
+              command: 'bun run typecheck',
+              aggregated_output: 'ok',
+              exit_code: 0,
+              status: 'completed',
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.terminalState).toBe('completed');
+    expect(result.contractWarnings ?? []).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'codex_native_import_without_import_project' }),
+      ])
+    );
+  });
+
   it('maps command and MCP activity without rejecting provider activity', () => {
     const state = createCodexEventMapperState();
     const commandEvents = mapCodexThreadEvent(
@@ -829,6 +1256,48 @@ describe('CodexAgentRuntime', () => {
         arguments: { taskId: 'task-1', Authorization: '[REDACTED]' },
       },
     });
+  });
+
+  it('keeps manifest, prompt, and MCP expected tool names in sync', () => {
+    const tools = getNightWorkersCodexToolNames();
+    const prompt = buildCodexRuntimePrompt(buildContext());
+    const mcpConfig = resolveCodexRuntimeMcpConfigState();
+
+    expect(prompt).toContain(`Available NightWorkers MCP tools in this lane: ${tools.join(', ')}.`);
+    expect(mcpConfig.expectedTools).toEqual(tools);
+  });
+
+  it('warns for NightWorkers MCP tools outside the manifest helper list', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'unexpected-tool',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'run_command',
+              arguments: { command: 'pwd' },
+              status: 'completed',
+              result: { ok: true },
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as any),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(getNightWorkersCodexToolNames()).not.toContain('nightworkers.run_command');
+    expect(result.contractWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'codex_unexpected_nightworkers_mcp_tool',
+          toolName: 'nightworkers.run_command',
+        }),
+      ])
+    );
   });
 
   it('classifies Codex native command_execution events for audit evidence', () => {
@@ -1001,6 +1470,14 @@ function buildContext(
       status: string;
       procedureId?: string | null;
     };
+    todoPlan?: Array<{
+      id: string;
+      seq: number;
+      title: string;
+      taskType: string;
+      status: string;
+      procedureId?: string | null;
+    }>;
   } = {}
 ) {
   return {
@@ -1025,6 +1502,7 @@ function buildContext(
     },
     runtimeOptions: input.codex ? { codex: input.codex } : undefined,
     currentTodo: input.currentTodo,
+    todoPlan: input.todoPlan,
   };
 }
 

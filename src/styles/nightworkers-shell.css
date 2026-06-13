@@ -205,13 +205,12 @@
 }
 
 .nightworkers-todo-pane {
-  position: sticky;
-  top: 0;
-  border: 1px solid color-mix(in srgb, var(--nw-border) 52%, transparent);
-  border-radius: var(--nw-radius);
-  background: color-mix(in srgb, var(--nw-panel) 82%, var(--nw-background) 18%);
+  height: calc(100vh - 3.3125rem);
+  border-left: 1px solid color-mix(in srgb, var(--nw-border) 60%, transparent);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--nw-panel) 88%, var(--nw-background) 12%);
   color: var(--nw-muted-text);
-  box-shadow: var(--nw-shadow);
+  box-shadow: none;
 }
 
 .nightworkers-todo-pane-header {
@@ -231,34 +230,18 @@
 }
 
 .nightworkers-todo-pane-count {
-  border: 1px solid color-mix(in srgb, var(--nw-border) 68%, transparent);
-  background: color-mix(in srgb, var(--nw-surface-soft) 78%, transparent);
-  color: var(--nw-muted-text);
+  border: 0;
+  background: transparent;
+  color: var(--nw-subtle-text);
 }
 
 .nightworkers-todo-item {
-  border-color: color-mix(in srgb, var(--nw-border) 62%, transparent);
-  background: color-mix(in srgb, var(--nw-surface) 52%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--nw-border) 42%, transparent);
+  background: transparent;
 }
 
-.nightworkers-todo-item-running {
-  border-color: color-mix(in srgb, var(--nw-primary) 48%, var(--nw-border));
-  background: color-mix(in srgb, var(--nw-primary) 10%, var(--nw-surface) 70%);
-}
-
-.nightworkers-todo-item-success {
-  border-color: color-mix(in srgb, var(--nw-primary) 38%, var(--nw-border));
-  background: color-mix(in srgb, var(--nw-primary) 7%, var(--nw-surface) 74%);
-}
-
-.nightworkers-todo-item-danger {
-  border-color: color-mix(in srgb, var(--nw-danger) 46%, var(--nw-border));
-  background: color-mix(in srgb, var(--nw-danger) 9%, var(--nw-surface) 72%);
-}
-
-.nightworkers-todo-item-warning {
-  border-color: color-mix(in srgb, var(--nw-primary) 34%, var(--nw-border));
-  background: color-mix(in srgb, var(--nw-primary) 8%, var(--nw-surface) 72%);
+.nightworkers-todo-item:last-child {
+  border-bottom: 0;
 }
 
 .nightworkers-todo-status-running,

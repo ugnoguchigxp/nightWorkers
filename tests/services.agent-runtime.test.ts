@@ -65,6 +65,60 @@ describe('AgentRuntime', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('persists runtime_warning severity from Codex contract payload', async () => {
+    const sink = createLedgerSink('run-123');
+
+    await sink.emit({
+      type: 'runtime_warning',
+      message: 'error warning',
+      payload: {
+        code: 'codex_high_risk_native_import_command',
+        severity: 'error',
+        message: 'High risk native import.',
+      },
+    });
+    await sink.emit({
+      type: 'runtime_warning',
+      message: 'info warning',
+      payload: {
+        code: 'codex_global_mcp_tool_observed',
+        severity: 'info',
+        message: 'Observed global MCP tool.',
+      },
+    });
+    await sink.emit({
+      type: 'runtime_warning',
+      message: 'invalid warning',
+      payload: {
+        code: 'codex_invalid',
+        severity: 'critical' as any,
+        message: 'Invalid severity.',
+      },
+    });
+
+    expect(repo.createRunEvent).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        type: 'system.warning',
+        severity: 'error',
+      })
+    );
+    expect(repo.createRunEvent).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        type: 'system.warning',
+        severity: 'info',
+      })
+    );
+    expect(repo.createRunEvent).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        type: 'system.warning',
+        severity: 'warning',
+      })
+    );
+  });
+
   it('auto-closes initial gate Todos after successful matching MCP tool completion', async () => {
     (repo.getTaskRun as any).mockResolvedValue({
       id: 'run-123',

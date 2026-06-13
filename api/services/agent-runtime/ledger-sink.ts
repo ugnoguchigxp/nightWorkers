@@ -1,7 +1,7 @@
 import { logEvent } from '../../lib/logger';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import { classifyCodexCommand } from './codex-event-mapper';
-import type { AgentRuntimeEvent, AgentRuntimeSink } from './types';
+import type { AgentRuntimeEvent, AgentRuntimeSink, CodexContractWarningSeverity } from './types';
 
 type EventMapping = {
   actor: 'runtime' | 'supervisor' | 'worker' | 'system';
@@ -95,7 +95,7 @@ export function createLedgerSink(taskRunId: string): AgentRuntimeSink {
           runId: taskRunId,
           timestamp: new Date().toISOString(),
           type: mapped.canonicalType,
-          severity: mapped.severity,
+          severity: resolveEventSeverity(event, mapped),
           actor: mapped.actor,
           message: event.message.slice(0, 1000),
           data: (event.payload as Record<string, unknown>) || {},
@@ -116,6 +116,17 @@ export function createLedgerSink(taskRunId: string): AgentRuntimeSink {
       }
     },
   };
+}
+
+function resolveEventSeverity(event: AgentRuntimeEvent, mapped: EventMapping) {
+  if (event.type !== 'runtime_warning') return mapped.severity;
+  const severity = event.payload?.severity;
+  if (isContractWarningSeverity(severity)) return severity;
+  return mapped.severity;
+}
+
+function isContractWarningSeverity(value: unknown): value is CodexContractWarningSeverity {
+  return value === 'info' || value === 'warning' || value === 'error';
 }
 
 async function maybeAutoCloseGateTodo(taskRunId: string, event: AgentRuntimeEvent) {
