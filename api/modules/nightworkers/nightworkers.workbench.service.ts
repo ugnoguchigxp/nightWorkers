@@ -19,6 +19,9 @@ import { validateAppBlueprint } from '../../services/blueprints/validation';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
 import { shouldWaitForWorkbenchIntakeInTests } from '../../services/runtime-env';
 import { callSupervisorLLM, type SupervisorLlmDebugEvent } from '../../services/structured-llm';
+import { resolveStructuredLlmRoleRoute } from '../../services/structured-llm/role-routing';
+import { normalizeStructuredLlmModelTarget } from '../../services/structured-llm/selection';
+import { readStructuredLlmProviderSettings } from '../../services/structured-llm/settings';
 import { buildRound1JobTypePrompt } from '../../services/supervisor/prompt';
 import type { JobTypeSelection } from '../../services/supervisor/schema-first';
 import { createDesignQuestionnaire } from './nightworkers.design-questionnaire.service';
@@ -152,6 +155,7 @@ export async function appendWorkbenchMessage(
           thinkingDepth: input.thinkingDepth || null,
         }
       : null;
+  const llmRouteOverride = normalizeStructuredLlmModelTarget(llmSelection);
   const existingMessages = await repo.listTaskMessages(id);
   const messageMetadata =
     artifactContext || llmSelection
@@ -191,6 +195,7 @@ export async function appendWorkbenchMessage(
       intent,
       artifactContext,
       hasPriorMessages: existingMessages.length > 0,
+      llmRouteOverride,
     });
   }
 
@@ -200,6 +205,7 @@ export async function appendWorkbenchMessage(
     intent,
     artifactContext,
     hasPriorMessages: existingMessages.length > 0,
+    llmRouteOverride,
   });
   return { task: updated, run: null, messages: await repo.listTaskMessages(id) };
 }
@@ -359,6 +365,7 @@ async function handleWorkbenchIntakeMessage(
     intent?: WorkbenchChatIntent;
     artifactContext?: WorkbenchArtifactContext | null;
     hasPriorMessages?: boolean;
+    llmRouteOverride?: ReturnType<typeof normalizeStructuredLlmModelTarget>;
   } = {
     failureMode: 'throw',
   }
@@ -374,7 +381,8 @@ async function handleWorkbenchIntakeMessage(
     const codexAgentIntake = resolveCodexAgentWorkbenchIntake(
       options.intent || 'intake',
       options.artifactContext || null,
-      Boolean(options.hasPriorMessages)
+      Boolean(options.hasPriorMessages),
+      options.llmRouteOverride || null
     );
     if (codexAgentIntake) {
       const runnable = await repo.updateTask(taskId, {
@@ -416,6 +424,8 @@ async function handleWorkbenchIntakeMessage(
       ((await callSupervisorLLM(buildRound1JobTypePrompt(projectRoot), llmPrompt, {
         round: 1,
         schemaFirst: true,
+        role: 'plan',
+        routeOverride: options.llmRouteOverride || null,
         tolerateSchemaFailure: false,
         emitEvent: emitWorkbenchLlmDebugEvent,
         workingDirectory: projectRoot,
@@ -430,7 +440,9 @@ async function handleWorkbenchIntakeMessage(
       options.intent || 'intake'
     );
     if (jobSelection.jobType === 'planning') {
-      const questionnaireSession = await createDesignQuestionnaire(taskId, null, llmPrompt);
+      const questionnaireSession = await createDesignQuestionnaire(taskId, null, llmPrompt, {
+        routeOverride: options.llmRouteOverride || null,
+      });
       const totalQuestionCount = questionnaireSession.questionSets.reduce(
         (total: number, set: any) =>
           total +
@@ -625,11 +637,31 @@ async function handleWorkbenchIntakeMessage(
 function resolveCodexAgentWorkbenchIntake(
   intent: WorkbenchChatIntent,
   artifactContext: WorkbenchArtifactContext | null,
-  hasPriorMessages: boolean
+  hasPriorMessages: boolean,
+  llmRouteOverride: ReturnType<typeof normalizeStructuredLlmModelTarget>
 ): RuntimeLaneResolution | null {
   if (intent !== 'intake') return null;
   if (artifactContext) return null;
   if (!hasPriorMessages) return null;
+  const implementationRoute = resolveStructuredLlmRoleRoute({
+    role: 'implementation',
+    settings: readStructuredLlmProviderSettings(),
+    override: llmRouteOverride,
+  });
+  if (implementationRoute) {
+    if (implementationRoute.providerId !== 'codex') return null;
+    return {
+      lane: 'codex-sdk',
+      workerKind: 'codex-agent',
+      source: 'role_route',
+      diagnostics: [
+        {
+          level: 'info',
+          message: `Role Routing selected Codex SDK for implementation via ${implementationRoute.source}.`,
+        },
+      ],
+    };
+  }
   const settings = getCurrentSettings();
   const runtimeLaneResolution = resolveRuntimeLane({
     settingsRuntimeLane: settings.IMPLEMENTATION_RUNTIME_LANE,

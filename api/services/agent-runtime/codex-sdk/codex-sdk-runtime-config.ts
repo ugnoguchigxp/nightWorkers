@@ -78,10 +78,11 @@ export function buildCodexRuntimeThreadOptions(context: AgentRunContext): Thread
       ? (context.runtimeOptions.codex as Record<string, unknown>)
       : {};
   const model = typeof codexOptions.model === 'string' ? codexOptions.model : undefined;
-  const configuredEffort = process.env.CODEX_MODEL_REASONING_EFFORT;
-  const modelReasoningEffort = isCodexReasoningEffort(configuredEffort)
-    ? configuredEffort
-    : 'medium';
+  const configuredEffort =
+    typeof codexOptions.thinkingDepth === 'string'
+      ? codexOptions.thinkingDepth
+      : process.env.CODEX_MODEL_REASONING_EFFORT;
+  const modelReasoningEffort = toCodexReasoningEffort(configuredEffort) ?? 'medium';
   return {
     model,
     sandboxMode: 'workspace-write',
@@ -142,14 +143,12 @@ function isCodexParentSessionEnv(key: string) {
   );
 }
 
-function isCodexReasoningEffort(
+function toCodexReasoningEffort(
   value: string | undefined
-): value is 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' {
-  return (
-    value === 'minimal' ||
-    value === 'low' ||
-    value === 'medium' ||
-    value === 'high' ||
-    value === 'xhigh'
-  );
+): 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null {
+  if (value === 'minimal' || value === 'low' || value === 'medium' || value === 'high') {
+    return value;
+  }
+  if (value === 'very_high' || value === 'xhigh') return 'xhigh';
+  return null;
 }

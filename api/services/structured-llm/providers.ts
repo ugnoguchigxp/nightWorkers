@@ -307,13 +307,17 @@ async function callOpenAIProvider(
     getStructuredLlmSetting(settings, 'OPENAI_MODEL', 'gpt-4o-mini');
   const streamResponses = isEnabled('OPENAI_STREAMING_ENABLED', true);
   const reasoningEffort = toOpenAIReasoningEffort(input.options.normalizedRequest?.thinkingDepth);
-  if (!apiKey) throw new Error('OpenAI API key is not configured in environment variables.');
+  const apiKeyRequired = !endpointConfig || endpointConfig.kind === 'openai';
+  if (apiKeyRequired && !apiKey) {
+    throw new Error('OpenAI API key is not configured in environment variables.');
+  }
+  const headers = buildOpenAICompatibleHeaders(apiKey);
 
   let responseFormat: 'json_schema' | 'json_object' = 'json_schema';
   let response = await fetch(`${baseURL.replace(/\/+$/, '')}/chat/completions`, {
     method: 'POST',
     signal: input.signal,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    headers,
     body: JSON.stringify(
       buildOpenAIChatCompletionBody({
         model,
@@ -335,7 +339,7 @@ async function callOpenAIProvider(
     response = await fetch(`${baseURL.replace(/\/+$/, '')}/chat/completions`, {
       method: 'POST',
       signal: input.signal,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      headers,
       body: JSON.stringify(
         buildOpenAIChatCompletionBody({
           model,
@@ -405,6 +409,13 @@ async function callOpenAIProvider(
     }),
     model,
     providerDebug,
+  };
+}
+
+function buildOpenAICompatibleHeaders(apiKey: string): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
   };
 }
 

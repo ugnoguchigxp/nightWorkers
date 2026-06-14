@@ -3,7 +3,7 @@ import type { TaskType } from '../task-intake';
 
 export type RuntimeLaneSnapshot = {
   workerKind: 'native-local' | 'codex-agent';
-  source: 'task' | 'queue' | 'settings' | 'env' | 'provider_default';
+  source: 'task' | 'queue' | 'settings' | 'env' | 'role_route' | 'provider_default';
   diagnostics?: Array<{ level: 'info' | 'warning'; message: string }>;
 };
 
@@ -18,6 +18,7 @@ export type RuntimePromptSnapshot = {
   blueprintPlanning?: unknown;
   runtimeLane?: 'native-supervisor' | 'codex-sdk';
   runtimeLaneResolution?: RuntimeLaneSnapshot;
+  effectiveLlmRouting?: unknown;
   request: {
     repositoryPath: string;
     taskTitle: string;

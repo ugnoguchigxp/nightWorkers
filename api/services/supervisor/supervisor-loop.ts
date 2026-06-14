@@ -4,12 +4,12 @@ import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import { estimateTokens } from '../conversation-context/token-budget';
 import type { SupervisorLoopResult } from '../run-control/types';
 import type { RunEventSeverity } from '../run-events/types';
+import { callSupervisorLLM, type SupervisorLlmDebugEvent } from '../structured-llm';
 import { executeWorkerTool } from '../worker-tools/dispatcher';
 import {
   buildExecutionReviewChecklist,
   type ExecutionReviewChecklistItem,
 } from './execution-review';
-import { callSupervisorLLM, type SupervisorLlmDebugEvent } from '../structured-llm';
 import {
   type LoadedProcedureSummary,
   readSupervisorProcedure,
@@ -124,6 +124,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     const round1 = (await callSupervisorLLM(round1SystemPrompt, userInput, {
       round: 1,
       schemaFirst: true,
+      role: 'plan',
+      routeOverride: input.llmRouteOverride || null,
       emitEvent: emitLlmDebugEvent,
       workingDirectory: repoRoot,
       taskId: task.id,
@@ -194,6 +196,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       const round2 = (await callSupervisorLLM(round2SystemPrompt, round2UserPrompt, {
         round: 2,
         schemaFirst: true,
+        role: 'implementation',
+        routeOverride: input.llmRouteOverride || null,
         emitEvent: emitLlmDebugEvent,
         workingDirectory: repoRoot,
         taskId: task.id,

@@ -3,7 +3,13 @@ import type { AgentRuntimeKind } from './types';
 
 export type RuntimeLane = 'native-supervisor' | 'codex-sdk';
 export type RuntimeLaneAlias = RuntimeLane | 'native-local' | 'codex-agent';
-export type RuntimeLaneSource = 'task' | 'queue' | 'settings' | 'env' | 'provider_default';
+export type RuntimeLaneSource =
+  | 'task'
+  | 'queue'
+  | 'settings'
+  | 'env'
+  | 'role_route'
+  | 'provider_default';
 
 export type RuntimeLaneResolution = {
   lane: RuntimeLane;

@@ -8,6 +8,7 @@ import {
   resolveRuntimeLaneDefinition,
 } from '../../services/agent-runtime/registry';
 import {
+  type RuntimeLaneResolution,
   readRuntimeLaneConfigFromEnv,
   resolveRuntimeLane,
 } from '../../services/agent-runtime/runtime-lane';
@@ -28,6 +29,15 @@ import {
   isConversationContextStateCardEnabled,
 } from '../../services/conversation-context/flags';
 import { getSessionQueueMaxConcurrencyFromEnv } from '../../services/runtime-env';
+import {
+  type ResolvedStructuredLlmRoute,
+  resolveStructuredLlmRoleRoute,
+} from '../../services/structured-llm/role-routing';
+import { normalizeStructuredLlmModelTarget } from '../../services/structured-llm/selection';
+import {
+  readStructuredLlmProviderSettings,
+  type StructuredLlmModelTarget,
+} from '../../services/structured-llm/settings';
 import { digestText } from '../../services/text-digest';
 import type { RuntimePromptSnapshot } from '../../services/todo-context';
 import {
@@ -206,6 +216,50 @@ function injectImplementationPhaseContext(latestUserMessage: string) {
   return `${IMPLEMENTATION_PHASE_PREAMBLE}\n\n${latestUserMessage}`.trim();
 }
 
+function readMessageLlmRouteOverride(
+  message: Awaited<ReturnType<typeof repo.listTaskMessages>>[number] | undefined
+): StructuredLlmModelTarget | null {
+  const metadata =
+    message?.metadataJson &&
+    typeof message.metadataJson === 'object' &&
+    !Array.isArray(message.metadataJson)
+      ? (message.metadataJson as Record<string, unknown>)
+      : {};
+  return normalizeStructuredLlmModelTarget(metadata.llmSelection);
+}
+
+function resolveRuntimeLaneForImplementationRoute(
+  fallback: RuntimeLaneResolution,
+  route: ResolvedStructuredLlmRoute | null
+): RuntimeLaneResolution {
+  if (!route) return fallback;
+  const lane = route.providerId === 'codex' ? 'codex-sdk' : 'native-supervisor';
+  return {
+    lane,
+    workerKind: lane === 'codex-sdk' ? 'codex-agent' : 'native-local',
+    source: 'role_route',
+    diagnostics: [
+      ...fallback.diagnostics,
+      {
+        level: 'info',
+        message: `Role Routing selected ${lane} for implementation via ${route.source}: ${route.providerEndpointId}/${route.model}.`,
+      },
+    ],
+  };
+}
+
+function summarizeResolvedRoute(route: ResolvedStructuredLlmRoute) {
+  return {
+    role: route.role,
+    providerEndpointId: route.providerEndpointId,
+    providerId: route.providerId,
+    model: route.model,
+    thinkingDepth: route.thinkingDepth || null,
+    source: route.source,
+    diagnostics: route.diagnostics,
+  };
+}
+
 async function safelyRefreshConversationContext(input: RefreshConversationContextInput) {
   if (!isConversationContextBuildOnIdleEnabled()) return;
   try {
@@ -271,19 +325,33 @@ export async function startTaskRun(taskId: string) {
   }
   const messages = await repo.listTaskMessages(taskId);
   const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
+  const llmRouteOverride = readMessageLlmRouteOverride(lastUserMessage);
   const compiledPromptText = lastUserMessage?.content || task.description || task.objective || '';
   if (!compiledPromptText.trim()) {
     throw new AppError(400, 'EMPTY_PROMPT', 'No user message found to start a run');
   }
   const blueprintReadiness = await resolveBlueprintPlanningReadiness(taskId);
   const settings = getCurrentSettings();
-  const runtimeLaneResolution = resolveRuntimeLane({
+  const baseRuntimeLaneResolution = resolveRuntimeLane({
     settingsRuntimeLane: settings.IMPLEMENTATION_RUNTIME_LANE,
     activeLlmProvider: settings.ACTIVE_LLM_PROVIDER,
     codexEnabled: settings.CODEX_ENABLED,
     ...readRuntimeLaneConfigFromEnv(),
   });
+  const implementationLlmRoute = resolveStructuredLlmRoleRoute({
+    role: 'implementation',
+    settings: readStructuredLlmProviderSettings(),
+    override: llmRouteOverride,
+  });
+  const runtimeLaneResolution = resolveRuntimeLaneForImplementationRoute(
+    baseRuntimeLaneResolution,
+    implementationLlmRoute
+  );
   const runtimeLaneDefinition = resolveRuntimeLaneDefinition(runtimeLaneResolution.lane);
+  const effectiveLlmRouting = {
+    implementation: implementationLlmRoute ? summarizeResolvedRoute(implementationLlmRoute) : null,
+    override: llmRouteOverride,
+  };
   const run = await repo.createTaskRun({
     taskId,
     repositoryId: task.repositoryId,
@@ -299,12 +367,15 @@ export async function startTaskRun(taskId: string) {
         source: runtimeLaneResolution.source,
         diagnostics: runtimeLaneResolution.diagnostics,
       },
+      effectiveLlmRouting,
     },
     startedAt: new Date(),
   });
   const runtimeLaneSetupInput = {
     compiledPromptText,
     runtimeLaneResolution,
+    implementationLlmRoute,
+    llmRouteOverride,
   };
   const initialTodos = runtimeLaneDefinition.buildInitialTodos(runtimeLaneSetupInput);
   await repo.replaceTaskRunTodosForRun(
@@ -330,6 +401,25 @@ export async function startTaskRun(taskId: string) {
       runtimeLane: runtimeLaneResolution.lane,
       workerKind: runtimeLaneResolution.workerKind,
       runtimeLaneResolution,
+      effectiveLlmRouting,
+    },
+  });
+  await repo.createRunEvent({
+    version: 1,
+    runId: run.id,
+    taskId,
+    timestamp: new Date().toISOString(),
+    type: 'system.info',
+    severity: 'info',
+    actor: 'system',
+    message: implementationLlmRoute
+      ? `Implementation LLM route resolved: ${implementationLlmRoute.model} (${implementationLlmRoute.providerEndpointId}).`
+      : 'Implementation LLM route was not configured; using runtime lane defaults.',
+    data: {
+      effectiveLlmRouting,
+      runtimeLane: runtimeLaneResolution.lane,
+      workerKind: runtimeLaneResolution.workerKind,
+      runtimeLaneResolution,
     },
   });
 
@@ -344,6 +434,7 @@ export async function startTaskRun(taskId: string) {
       source: runtimeLaneResolution.source,
       diagnostics: runtimeLaneResolution.diagnostics,
     },
+    effectiveLlmRouting,
     request: {
       repositoryPath: repoInfo.localPath,
       taskTitle: task.title,
@@ -417,6 +508,7 @@ export async function startTaskRun(taskId: string) {
       runtimeLane: runtimeLaneResolution.lane,
       workerKind: runtimeLaneResolution.workerKind,
       runtimeLaneResolution,
+      effectiveLlmRouting,
     },
   });
 

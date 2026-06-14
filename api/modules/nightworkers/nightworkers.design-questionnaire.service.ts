@@ -26,6 +26,7 @@ import {
   buildSpecificationReviewUserPrompt,
 } from '../../services/structured-generation/prompts/design-questionnaire';
 import { callStructuredJsonLLM } from '../../services/structured-llm';
+import type { StructuredLlmModelTarget } from '../../services/structured-llm/settings';
 import {
   buildDesignQuestionnaireSessionView,
   designDecisionReviewJsonSchema,
@@ -58,7 +59,12 @@ const specificationDocumentDraftSchema = z.object({
 });
 
 const MAX_DESIGN_QUESTIONNAIRE_PAGES = 4;
-const PLAN_MODE_READ_ONLY_TASK_STATUSES = new Set(['completed', 'cancelled', 'failed', 'timed_out']);
+const PLAN_MODE_READ_ONLY_TASK_STATUSES = new Set([
+  'completed',
+  'cancelled',
+  'failed',
+  'timed_out',
+]);
 
 function assertPlanModeMutable(task: { status: string }) {
   if (!PLAN_MODE_READ_ONLY_TASK_STATUSES.has(task.status)) return;
@@ -72,7 +78,8 @@ function assertPlanModeMutable(task: { status: string }) {
 export async function createDesignQuestionnaire(
   taskId: string,
   sourceBlueprintMessageId?: string | null,
-  sourcePrompt?: string
+  sourcePrompt?: string,
+  options: { routeOverride?: StructuredLlmModelTarget | null } = {}
 ) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
@@ -86,6 +93,7 @@ export async function createDesignQuestionnaire(
     repositoryId: task.repositoryId,
     sourceBlueprintMessage,
     taskPrompt: sourcePrompt || task.objective || task.description || task.title,
+    routeOverride: options.routeOverride || null,
   }).catch(async (error) => {
     const rawContent = (error as Error & { rawContent?: string }).rawContent;
     if (rawContent?.trim()) return rawContent;
@@ -740,6 +748,7 @@ async function generateDesignQuestionnaireRawOutput(input: {
   repositoryId: string;
   sourceBlueprintMessage: TaskMessageRow | null;
   taskPrompt: string;
+  routeOverride?: StructuredLlmModelTarget | null;
 }) {
   return callStructuredJsonLLM(
     buildDesignQuestionnaireSystemPrompt(),
@@ -749,6 +758,7 @@ async function generateDesignQuestionnaireRawOutput(input: {
       schema: questionnaireChoiceFormJsonSchema,
       taskId: input.taskId,
       role: 'plan',
+      routeOverride: input.routeOverride || null,
     }
   );
 }

@@ -1,4 +1,6 @@
 import { AppError } from '../../lib/errors';
+import type { ResolvedStructuredLlmRoute } from '../structured-llm/role-routing';
+import type { StructuredLlmModelTarget } from '../structured-llm/settings';
 import type { ImplementationTodoInput } from '../todo-runtime';
 import { CodexAgentRuntime } from './CodexAgentRuntime';
 import { NativeAgentRuntime } from './NativeAgentRuntime';
@@ -21,6 +23,8 @@ export function resolveAgentRuntime(kind: AgentRuntimeKind): AgentRuntime {
 export type RuntimeLaneSetupInput = {
   compiledPromptText: string;
   runtimeLaneResolution?: RuntimeLaneResolution;
+  implementationLlmRoute?: ResolvedStructuredLlmRoute | null;
+  llmRouteOverride?: StructuredLlmModelTarget | null;
 };
 
 export type RuntimeLaneDefinition = {
@@ -66,9 +70,36 @@ export function createRuntimeLaneAdapter(lane: RuntimeLane): AgentRuntime {
 export function buildRuntimeLaneOptions(
   input: RuntimeLaneSetupInput & { runtimeLaneResolution?: RuntimeLaneResolution }
 ): Record<string, unknown> {
+  const implementationRoute = input.implementationLlmRoute ?? null;
   return {
     runtimeLane: input.runtimeLaneResolution?.lane ?? null,
     runtimeLaneResolution: input.runtimeLaneResolution ?? null,
+    llmRouting: {
+      implementation: implementationRoute ? summarizeResolvedRoute(implementationRoute) : null,
+      override: input.llmRouteOverride ?? null,
+    },
+    ...(implementationRoute?.providerId === 'codex'
+      ? {
+          codex: {
+            providerEndpointId: implementationRoute.providerEndpointId,
+            model: implementationRoute.model,
+            thinkingDepth: implementationRoute.thinkingDepth || null,
+            routeSource: implementationRoute.source,
+          },
+        }
+      : {}),
+  };
+}
+
+function summarizeResolvedRoute(route: ResolvedStructuredLlmRoute) {
+  return {
+    role: route.role,
+    providerEndpointId: route.providerEndpointId,
+    providerId: route.providerId,
+    model: route.model,
+    thinkingDepth: route.thinkingDepth || null,
+    source: route.source,
+    diagnostics: route.diagnostics,
   };
 }
 

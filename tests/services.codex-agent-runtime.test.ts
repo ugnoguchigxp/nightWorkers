@@ -136,11 +136,15 @@ describe('CodexAgentRuntime', () => {
 
   it('builds runtime thread options from the repository root', () => {
     const options = buildCodexRuntimeThreadOptions(
-      buildContext({ repoRoot: '/repo/project', codex: { model: 'gpt-5.3-codex' } })
+      buildContext({
+        repoRoot: '/repo/project',
+        codex: { model: 'gpt-5.3-codex', thinkingDepth: 'very_high' },
+      })
     );
 
     expect(options).toMatchObject({
       model: 'gpt-5.3-codex',
+      modelReasoningEffort: 'xhigh',
       sandboxMode: 'workspace-write',
       approvalPolicy: 'never',
       networkAccessEnabled: false,

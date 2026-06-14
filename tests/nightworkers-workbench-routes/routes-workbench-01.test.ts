@@ -379,7 +379,12 @@ describe('NightWorkers workbench routes', () => {
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
-      body: JSON.stringify({ prompt: 'kanbanアプリの実装計画を作ってください' }),
+      body: JSON.stringify({
+        prompt: 'kanbanアプリの実装計画を作ってください',
+        providerEndpointId: 'local-qwen',
+        model: 'qwen3-coder',
+        thinkingDepth: 'medium',
+      }),
     });
 
     expect(res.status).toBe(200);
@@ -387,6 +392,22 @@ describe('NightWorkers workbench routes', () => {
     expect(body.run).toBeNull();
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
     expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(llm.callSupervisorLLM).mock.calls[0]?.[2]).toMatchObject({
+      role: 'plan',
+      routeOverride: {
+        providerEndpointId: 'local-qwen',
+        model: 'qwen3-coder',
+        thinkingDepth: 'medium',
+      },
+    });
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[2]).toMatchObject({
+      role: 'plan',
+      routeOverride: {
+        providerEndpointId: 'local-qwen',
+        model: 'qwen3-coder',
+        thinkingDepth: 'medium',
+      },
+    });
     expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[2]?.schema).toMatchObject({
       properties: {
         title: { type: 'string' },

@@ -1,4 +1,5 @@
 import type { LlmPromptPartTokenEstimates } from '../llm-usage';
+import type { StructuredLlmModelTarget } from '../structured-llm/settings';
 import type { SupervisorArtifactContextRef } from './artifact-contract';
 
 export interface SupervisorLoopInput {
@@ -16,6 +17,7 @@ export interface SupervisorLoopInput {
   maxToolCalls?: number;
   maxRepeatedToolPattern?: number;
   deadlineAt?: string;
+  llmRouteOverride?: StructuredLlmModelTarget | null;
   safetyPolicy?: {
     allowedPaths?: string[];
     externalAllowedPaths?: string[];

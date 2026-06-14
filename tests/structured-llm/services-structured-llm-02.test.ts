@@ -193,6 +193,115 @@ describe('Supervisor LLM schema-first parsing', () => {
     });
   });
 
+  it('uses a valid explicit route override before role primary and fallbacks', () => {
+    const request = buildNormalizedSupervisorLlmRequest({
+      systemPrompt: 'system text',
+      userPrompt: 'user text',
+      label: 'supervisor',
+      role: 'implementation',
+      routeOverride: {
+        providerEndpointId: 'local-qwen',
+        model: 'qwen3-coder',
+        thinkingDepth: 'medium',
+      },
+      settings: {
+        ACTIVE_LLM_PROVIDER: 'azure',
+        providerEndpoints: [
+          {
+            id: 'local-qwen',
+            name: 'Local Qwen',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['qwen3-coder'],
+          },
+          {
+            id: 'azure-implementation',
+            name: 'Azure Implementation',
+            kind: 'azure',
+            enabled: true,
+            endpoint: 'https://example.openai.azure.com',
+            apiVersion: '2024-05-01-preview',
+            models: ['gpt-5-mini'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'azure-implementation',
+              model: 'gpt-5-mini',
+            },
+            fallbacks: [],
+          },
+        ],
+      },
+    });
+
+    expect(request).toMatchObject({
+      providerId: 'openai',
+      providerEndpointId: 'local-qwen',
+      role: 'implementation',
+      routeSource: 'override',
+      modelOrDeployment: 'qwen3-coder',
+      endpoint: 'http://localhost:11434/v1',
+      thinkingDepth: 'medium',
+    });
+  });
+
+  it('ignores an override pointing at a disabled endpoint and uses the role route', () => {
+    const request = buildNormalizedSupervisorLlmRequest({
+      systemPrompt: 'system text',
+      userPrompt: 'user text',
+      label: 'supervisor',
+      role: 'implementation',
+      routeOverride: {
+        providerEndpointId: 'disabled-local',
+        model: 'qwen3-coder',
+      },
+      settings: {
+        ACTIVE_LLM_PROVIDER: 'azure',
+        providerEndpoints: [
+          {
+            id: 'disabled-local',
+            name: 'Disabled Local',
+            kind: 'local',
+            enabled: false,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['qwen3-coder'],
+          },
+          {
+            id: 'azure-implementation',
+            name: 'Azure Implementation',
+            kind: 'azure',
+            enabled: true,
+            endpoint: 'https://example.openai.azure.com',
+            apiVersion: '2024-05-01-preview',
+            models: ['gpt-5-mini'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'azure-implementation',
+              model: 'gpt-5-mini',
+            },
+            fallbacks: [],
+          },
+        ],
+      },
+    });
+
+    expect(request).toMatchObject({
+      providerId: 'azure-openai',
+      providerEndpointId: 'azure-implementation',
+      role: 'implementation',
+      routeSource: 'primary',
+      modelOrDeployment: 'gpt-5-mini',
+    });
+  });
+
   it('uses runtime provider settings ahead of environment fallback', async () => {
     process.env.ACTIVE_LLM_PROVIDER = 'openai';
     process.env.OPENAI_ENABLED = 'false';
@@ -211,6 +320,58 @@ describe('Supervisor LLM schema-first parsing', () => {
     });
 
     expect(JSON.parse(rawOutput)).toEqual({ ok: true });
+  });
+
+  it('allows local OpenAI-compatible endpoints without an API key', async () => {
+    delete process.env.OPENAI_API_KEY;
+    fs.writeFileSync(
+      process.env.NIGHTWORKERS_LLM_SETTINGS_PATH!,
+      JSON.stringify({
+        ACTIVE_LLM_PROVIDER: 'azure',
+        OPENAI_STREAMING_ENABLED: false,
+        providerEndpoints: [
+          {
+            id: 'local-qwen',
+            name: 'Local Qwen',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['qwen3-coder'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'local-qwen',
+              model: 'qwen3-coder',
+            },
+            fallbacks: [],
+          },
+        ],
+      })
+    );
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe('http://localhost:11434/v1/chat/completions');
+      expect((init?.headers as Record<string, string>).Authorization).toBeUndefined();
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ok: true }) } }] }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const rawOutput = await callStructuredJsonLLM('system', 'user', {
+      schemaName: 'example_schema',
+      schema: { type: 'object' },
+      role: 'implementation',
+    });
+
+    expect(JSON.parse(rawOutput)).toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('repairs truncated schema-first toolCall JSON before schema validation', async () => {

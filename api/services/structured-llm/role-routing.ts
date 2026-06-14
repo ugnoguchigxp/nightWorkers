@@ -4,7 +4,7 @@ import type {
   StructuredLlmProviderSettings,
   StructuredLlmRole,
 } from './settings';
-import type { SupervisorProviderId } from './types';
+import type { StructuredLlmRouteSource, SupervisorProviderId } from './types';
 
 export type ResolvedStructuredLlmRoute = {
   role: StructuredLlmRole;
@@ -13,15 +13,24 @@ export type ResolvedStructuredLlmRoute = {
   endpoint: StructuredLlmProviderEndpoint;
   model: string;
   thinkingDepth: StructuredLlmModelTarget['thinkingDepth'] | null;
-  source: 'primary' | 'fallback';
+  source: StructuredLlmRouteSource;
   diagnostics: string[];
 };
 
 export function resolveStructuredLlmRoleRoute(input: {
   role: StructuredLlmRole;
   settings: StructuredLlmProviderSettings;
+  override?: StructuredLlmModelTarget | null;
 }): ResolvedStructuredLlmRoute | null {
   const endpoints = input.settings.providerEndpoints || [];
+  const override = resolveRouteTarget(
+    input.role,
+    input.override ?? undefined,
+    endpoints,
+    'override'
+  );
+  if (override) return override;
+
   const route = (input.settings.roleRoutes || []).find((item) => item.role === input.role);
   if (!route) return null;
 
@@ -45,7 +54,7 @@ function resolveRouteTarget(
   role: StructuredLlmRole,
   target: StructuredLlmModelTarget | undefined,
   endpoints: StructuredLlmProviderEndpoint[],
-  source: 'primary' | 'fallback',
+  source: StructuredLlmRouteSource,
   fallbackIndex?: number
 ): ResolvedStructuredLlmRoute | null {
   if (!target?.providerEndpointId || !target.model) return null;

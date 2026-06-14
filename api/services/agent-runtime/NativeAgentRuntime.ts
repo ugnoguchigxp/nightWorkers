@@ -1,6 +1,7 @@
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import { runAgentHooks } from '../hooks/hooks-runner';
 import type { AgentHookInput, AgentHookRunEvent } from '../hooks/types';
+import { normalizeStructuredLlmModelTarget } from '../structured-llm/selection';
 import { runSupervisorLoop } from '../supervisor/supervisor-loop';
 import type {
   AgentRunContext,
@@ -141,6 +142,7 @@ export class NativeAgentRuntime implements AgentRuntime {
         },
         todoPlan: context.todoPlan,
         currentTodo: context.currentTodo,
+        llmRouteOverride: readRuntimeLlmRouteOverride(context),
         safetyPolicy: context.safetyPolicy,
       });
 
@@ -214,6 +216,16 @@ export class NativeAgentRuntime implements AgentRuntime {
       logContent,
     };
   }
+}
+
+function readRuntimeLlmRouteOverride(context: AgentRunContext) {
+  const routing =
+    context.runtimeOptions?.llmRouting &&
+    typeof context.runtimeOptions.llmRouting === 'object' &&
+    !Array.isArray(context.runtimeOptions.llmRouting)
+      ? (context.runtimeOptions.llmRouting as Record<string, unknown>)
+      : {};
+  return normalizeStructuredLlmModelTarget(routing.override);
 }
 
 function buildBaseHookInput(

@@ -3,6 +3,7 @@ import {
   getStructuredLlmSetting,
   normalizeStructuredLlmProviderSetting,
   readStructuredLlmProviderSettings,
+  type StructuredLlmModelTarget,
   type StructuredLlmProviderSettings,
 } from './settings';
 import type {
@@ -21,11 +22,12 @@ export function buildNormalizedSupervisorLlmRequest(input: {
   round?: 1 | 2;
   schemaFirst?: boolean;
   role?: StructuredLlmRole;
+  routeOverride?: StructuredLlmModelTarget | null;
   settings?: StructuredLlmProviderSettings;
 }): NormalizedSupervisorLlmRequest {
   const settings = input.settings ?? readStructuredLlmProviderSettings();
   const resolvedRoute = input.role
-    ? resolveStructuredLlmRoleRoute({ role: input.role, settings })
+    ? resolveStructuredLlmRoleRoute({ role: input.role, settings, override: input.routeOverride })
     : null;
   const rawProvider =
     resolvedRoute?.providerId ||
@@ -79,6 +81,7 @@ export function buildNormalizedSupervisorLlmRequest(input: {
       role: input.role ?? null,
       providerEndpointId: resolvedRoute?.providerEndpointId ?? null,
       routeSource: resolvedRoute?.source ?? null,
+      modelOrDeployment: resolvedRoute?.model ?? null,
       thinkingDepth: resolvedRoute?.thinkingDepth || null,
       routeDiagnostics: resolvedRoute?.diagnostics ?? [],
     },

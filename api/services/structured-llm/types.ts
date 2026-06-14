@@ -1,10 +1,14 @@
 import type { LlmPromptPartTokenEstimates, NormalizedLlmUsage } from '../llm-usage/types';
+import type { StructuredLlmModelTarget } from './settings';
+
+export type StructuredLlmRouteSource = 'override' | 'primary' | 'fallback';
 
 export type CallSupervisorOptions = {
   tolerateSchemaFailure?: boolean;
   round?: 1 | 2;
   schemaFirst?: boolean;
   role?: StructuredLlmRole;
+  routeOverride?: StructuredLlmModelTarget | null;
   emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
   timeoutMs?: number;
   workingDirectory?: string;
@@ -52,7 +56,7 @@ export type NormalizedSupervisorLlmRequest = {
   providerClass: SupervisorProviderClass;
   providerEndpointId?: string | null;
   role?: StructuredLlmRole | null;
-  routeSource?: 'primary' | 'fallback' | null;
+  routeSource?: StructuredLlmRouteSource | null;
   modelOrDeployment: string | null;
   thinkingDepth?: 'low' | 'medium' | 'high' | 'very_high' | null;
   endpoint: string | null;
@@ -71,7 +75,8 @@ export type NormalizedSupervisorLlmRequest = {
     userPromptLength: number;
     role?: StructuredLlmRole | null;
     providerEndpointId?: string | null;
-    routeSource?: 'primary' | 'fallback' | null;
+    routeSource?: StructuredLlmRouteSource | null;
+    modelOrDeployment?: string | null;
     thinkingDepth?: 'low' | 'medium' | 'high' | 'very_high' | null;
     routeDiagnostics?: string[];
   };
