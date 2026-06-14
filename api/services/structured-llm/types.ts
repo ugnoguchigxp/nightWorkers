@@ -4,6 +4,7 @@ export type CallSupervisorOptions = {
   tolerateSchemaFailure?: boolean;
   round?: 1 | 2;
   schemaFirst?: boolean;
+  role?: StructuredLlmRole;
   emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
   timeoutMs?: number;
   workingDirectory?: string;
@@ -12,11 +13,20 @@ export type CallSupervisorOptions = {
   promptPartTokenEstimates?: LlmPromptPartTokenEstimates;
 };
 
+export type StructuredLlmRole =
+  | 'plan'
+  | 'implementation'
+  | 'test'
+  | 'review'
+  | 'quality_gate'
+  | 'completion';
+
 export type SupervisorProviderId =
   | 'openai'
   | 'azure-openai'
   | 'azure'
   | 'bedrock'
+  | 'codex'
   | 'fixture'
   | 'test';
 
@@ -40,7 +50,11 @@ export type NormalizedSupervisorLlmRequest = {
     | 'fixture';
   providerId: SupervisorProviderId;
   providerClass: SupervisorProviderClass;
+  providerEndpointId?: string | null;
+  role?: StructuredLlmRole | null;
+  routeSource?: 'primary' | 'fallback' | null;
   modelOrDeployment: string | null;
+  thinkingDepth?: 'low' | 'medium' | 'high' | 'very_high' | null;
   endpoint: string | null;
   region: string | null;
   apiVersion: string | null;
@@ -55,6 +69,11 @@ export type NormalizedSupervisorLlmRequest = {
     sourceArtifactRef?: string | null;
     systemPromptLength: number;
     userPromptLength: number;
+    role?: StructuredLlmRole | null;
+    providerEndpointId?: string | null;
+    routeSource?: 'primary' | 'fallback' | null;
+    thinkingDepth?: 'low' | 'medium' | 'high' | 'very_high' | null;
+    routeDiagnostics?: string[];
   };
 };
 

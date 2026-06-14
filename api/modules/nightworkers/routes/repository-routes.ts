@@ -161,6 +161,31 @@ export const readProjectFileRoute = createRoute({
   },
 });
 
+export const readRepositoryDiffRoute = createRoute({
+  method: 'get',
+  path: '/repositories/:id/diff',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'repo-uuid' }),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            diff: z.string(),
+            diffStat: z.string(),
+            hasChanges: z.boolean(),
+          }),
+        },
+      },
+      description: 'Current repository git diff',
+    },
+    404: { description: 'Repository not found' },
+  },
+});
+
 export const deleteRepositoryRoute = createRoute({
   method: 'delete',
   path: '/repositories/:id',

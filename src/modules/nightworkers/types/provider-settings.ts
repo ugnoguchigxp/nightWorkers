@@ -10,8 +10,51 @@ export type ModelOption = {
   label: string;
 };
 
-export type LlmProvider = 'azure' | 'openai' | 'bedrock';
+export type CodexSdkStatus = {
+  loggedIn: boolean;
+  authSource: 'settings-token' | 'environment-token' | 'codex-auth-json' | 'missing';
+  codexHome: string;
+  models: ModelOption[];
+  modelSource: 'codex-models-cache' | 'settings' | 'fallback';
+  checkedAt: string;
+};
+
+export type LlmProvider = 'azure' | 'openai' | 'bedrock' | 'codex';
+export type LlmProviderEndpointKind =
+  | 'azure'
+  | 'openai'
+  | 'openai-compatible'
+  | 'bedrock'
+  | 'codex'
+  | 'local';
+export type LlmRole = 'plan' | 'implementation' | 'test' | 'review' | 'quality_gate' | 'completion';
 export type ImplementationRuntimeLane = '' | 'native-supervisor' | 'codex-sdk' | 'codex-agent';
+
+export type LlmProviderEndpoint = {
+  id: string;
+  name: string;
+  kind: LlmProviderEndpointKind;
+  enabled: boolean;
+  apiKey?: string;
+  baseUrl?: string;
+  endpoint?: string;
+  apiVersion?: string;
+  region?: string;
+  models: string[];
+  modelDisplayNames?: Record<string, string>;
+};
+
+export type LlmModelTarget = {
+  providerEndpointId: string;
+  model: string;
+  thinkingDepth?: ThinkingDepth | '';
+};
+
+export type LlmRoleRoute = {
+  role: LlmRole;
+  primary: LlmModelTarget;
+  fallbacks: LlmModelTarget[];
+};
 
 export type LlmSettings = {
   ACTIVE_LLM_PROVIDER: LlmProvider;
@@ -34,6 +77,8 @@ export type LlmSettings = {
   CODEX_MODEL: string;
   IMPLEMENTATION_RUNTIME_LANE: ImplementationRuntimeLane;
   SESSION_QUEUE_MAX_CONCURRENCY: number;
+  providerEndpoints: LlmProviderEndpoint[];
+  roleRoutes: LlmRoleRoute[];
 };
 
 export type McpServerTransport = 'stdio' | 'sse' | 'streamable_http';

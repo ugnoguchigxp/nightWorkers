@@ -121,4 +121,9 @@ export const PROVIDER_MODEL_OPTIONS: Record<LlmProvider, ModelOption[]> = {
       label: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
     },
   ],
+  codex: [
+    { value: 'gpt-5.5', label: 'gpt-5.5' },
+    { value: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
+    { value: 'gpt-5-mini', label: 'gpt-5-mini' },
+  ],
 };

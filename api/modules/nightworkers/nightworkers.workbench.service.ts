@@ -133,6 +133,9 @@ export async function appendWorkbenchMessage(
     intent?: WorkbenchChatIntent;
     waitForIntake?: boolean;
     artifactContext?: WorkbenchArtifactContext | null;
+    providerEndpointId?: string;
+    model?: string;
+    thinkingDepth?: 'low' | 'medium' | 'high' | 'very_high';
   }
 ) {
   const intent = input.intent || 'intake';
@@ -141,14 +144,23 @@ export async function appendWorkbenchMessage(
   const prompt = input.prompt.trim();
   if (!prompt) throw new AppError(400, 'EMPTY_PROMPT', 'Prompt must not be empty');
   const artifactContext = input.artifactContext || null;
+  const llmSelection =
+    input.model || input.providerEndpointId || input.thinkingDepth
+      ? {
+          model: input.model || null,
+          providerEndpointId: input.providerEndpointId || null,
+          thinkingDepth: input.thinkingDepth || null,
+        }
+      : null;
   const existingMessages = await repo.listTaskMessages(id);
-  const messageMetadata = artifactContext
-    ? {
-        intent: 'artifact_context_instruction',
-        source: 'workbench',
-        artifactContext,
-      }
-    : undefined;
+  const messageMetadata =
+    artifactContext || llmSelection
+      ? {
+          ...(artifactContext ? { intent: 'artifact_context_instruction', artifactContext } : {}),
+          source: 'workbench',
+          ...(llmSelection ? { llmSelection } : {}),
+        }
+      : undefined;
 
   if (intent === 'run_task') {
     assertRunnableWorkbenchTask(task, existingMessages);

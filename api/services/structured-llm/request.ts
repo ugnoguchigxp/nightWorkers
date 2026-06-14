@@ -1,3 +1,4 @@
+import { resolveStructuredLlmRoleRoute } from './role-routing';
 import {
   getStructuredLlmSetting,
   normalizeStructuredLlmProviderSetting,
@@ -7,6 +8,7 @@ import {
 import type {
   NormalizedSupervisorLlmRequest,
   ProviderCapabilityPolicy,
+  StructuredLlmRole,
   SupervisorProviderClass,
   SupervisorProviderId,
 } from './types';
@@ -18,13 +20,19 @@ export function buildNormalizedSupervisorLlmRequest(input: {
   label: string;
   round?: 1 | 2;
   schemaFirst?: boolean;
+  role?: StructuredLlmRole;
   settings?: StructuredLlmProviderSettings;
 }): NormalizedSupervisorLlmRequest {
   const settings = input.settings ?? readStructuredLlmProviderSettings();
+  const resolvedRoute = input.role
+    ? resolveStructuredLlmRoleRoute({ role: input.role, settings })
+    : null;
   const rawProvider =
+    resolvedRoute?.providerId ||
     normalizeStructuredLlmProviderSetting(
       getStructuredLlmSetting(settings, 'ACTIVE_LLM_PROVIDER', 'azure')
-    ) || 'azure';
+    ) ||
+    'azure';
   const providerId = normalizeProviderId(rawProvider);
   const providerClass = resolveProviderClass(providerId);
   const callKind = resolveCallKind(input.label, providerClass);
@@ -38,16 +46,25 @@ export function buildNormalizedSupervisorLlmRequest(input: {
     callKind,
     providerId,
     providerClass,
-    modelOrDeployment: resolveModelOrDeployment(providerId, settings),
-    endpoint: resolveEndpoint(providerId, settings),
+    providerEndpointId: resolvedRoute?.providerEndpointId ?? null,
+    role: input.role ?? null,
+    routeSource: resolvedRoute?.source ?? null,
+    modelOrDeployment: resolvedRoute?.model ?? resolveModelOrDeployment(providerId, settings),
+    thinkingDepth: resolvedRoute?.thinkingDepth || null,
+    endpoint:
+      resolvedRoute?.endpoint.endpoint ||
+      resolvedRoute?.endpoint.baseUrl ||
+      resolveEndpoint(providerId, settings),
     region:
-      providerId === 'bedrock'
+      resolvedRoute?.endpoint.region ||
+      (providerId === 'bedrock'
         ? getStructuredLlmSetting(settings, 'AWS_REGION', 'us-east-1')
-        : null,
+        : null),
     apiVersion:
-      providerId === 'azure-openai'
+      resolvedRoute?.endpoint.apiVersion ||
+      (providerId === 'azure-openai'
         ? getStructuredLlmSetting(settings, 'AZURE_OPENAI_API_VERSION', '2024-05-01-preview')
-        : null,
+        : null),
     systemPrompt: input.systemPrompt,
     userPrompt: input.userPrompt,
     jsonSchema: input.jsonSchema,
@@ -59,6 +76,11 @@ export function buildNormalizedSupervisorLlmRequest(input: {
       sourceArtifactRef: null,
       systemPromptLength: input.systemPrompt.length,
       userPromptLength: input.userPrompt.length,
+      role: input.role ?? null,
+      providerEndpointId: resolvedRoute?.providerEndpointId ?? null,
+      routeSource: resolvedRoute?.source ?? null,
+      thinkingDepth: resolvedRoute?.thinkingDepth || null,
+      routeDiagnostics: resolvedRoute?.diagnostics ?? [],
     },
   };
 }
@@ -69,6 +91,7 @@ export function normalizeProviderId(value: string): SupervisorProviderId {
     value === 'openai' ||
     value === 'azure-openai' ||
     value === 'bedrock' ||
+    value === 'codex' ||
     value === 'fixture' ||
     value === 'test'
   ) {
@@ -134,6 +157,9 @@ function resolveModelOrDeployment(
       'AWS_BEDROCK_MODEL',
       'anthropic.claude-3-5-sonnet-20241022-v2:0'
     );
+  }
+  if (providerId === 'codex') {
+    return getStructuredLlmSetting(settings, 'CODEX_MODEL', 'gpt-5.4-mini');
   }
   return null;
 }

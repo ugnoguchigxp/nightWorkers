@@ -11,6 +11,7 @@ import {
 } from '../../services/review-rubrics/replay-evaluation';
 import type { ReviewerEvaluationMode } from '../../services/review-rubrics/types';
 import { serializeRunToJsonl } from '../../services/run-events/jsonl-export';
+import { gitDiffTool } from '../../services/worker-tools/git';
 import * as repo from './nightworkers.repository';
 
 export function getReviewRubrics() {
@@ -237,6 +238,24 @@ export async function readProjectFile(repositoryId: string, relativePath: string
   } finally {
     await handle.close();
   }
+}
+
+export async function readRepositoryDiff(repositoryId: string) {
+  const repository = await repo.getRepository(repositoryId);
+  if (!repository) throw new NotFoundError('Repository not found');
+  const result = await gitDiffTool({ repoRoot: repository.localPath });
+  if (!result.ok) {
+    throw new AppError(
+      500,
+      result.error?.code || 'GIT_DIFF_FAILED',
+      result.error?.message || 'Failed to read repository diff'
+    );
+  }
+  return {
+    diff: result.payload.diff,
+    diffStat: result.payload.diffStat,
+    hasChanges: result.payload.hasChanges,
+  };
 }
 
 export async function exportTaskRunJsonl(runId: string) {

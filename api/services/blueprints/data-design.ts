@@ -7,6 +7,10 @@ import {
 import { buildBlueprintDataDesignPrompt } from '../structured-generation/prompts/blueprint-data-design';
 import { callStructuredJsonLLM, type SupervisorLlmDebugEvent } from '../structured-llm';
 import { type JsonFixWrapperResult, parseRepairedJsonWithSchema } from '../structured-llm/json';
+import {
+  buildAppBlueprintStructuredOutputJsonSchema,
+  renderAppBlueprintJsonSchema,
+} from './json-schema';
 import { validateAppBlueprint } from './validation';
 
 const blueprintDbDesignTargetSchema = z.discriminatedUnion('kind', [
@@ -85,10 +89,11 @@ export async function generateBlueprintDataDesignDraft(input: {
     buildBlueprintDataDesignUserPrompt(input.request),
     {
       schemaName: 'app_blueprint_data_design',
-      schema: z.toJSONSchema(appBlueprintSchema),
+      schema: buildAppBlueprintStructuredOutputJsonSchema(),
       emitEvent: input.emitEvent,
       taskId: input.taskId,
       runId: null,
+      role: 'plan',
     }
   );
 
@@ -162,10 +167,6 @@ function buildBlueprintDataDesignUserPrompt(request: BlueprintDbDesignRequest): 
     null,
     2
   );
-}
-
-function renderAppBlueprintJsonSchema(): string {
-  return JSON.stringify(z.toJSONSchema(appBlueprintSchema), null, 2);
 }
 
 function buildPromptDiagnostics(

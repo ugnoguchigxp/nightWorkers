@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { useWorkspaceAppearanceState } from '../contexts/WorkspaceAppearanceContext';
 import {
@@ -14,9 +14,11 @@ import type {
   ProjectSafetyPolicy,
   TaskMessage,
   ThinkingDepth,
+  ThinkingDepthOption,
   WorkbenchArtifactRef,
   WorkbenchChatIntent,
 } from '../types';
+import { THINKING_DEPTH_OPTIONS } from '../types';
 import {
   buildArtifactContext,
   buildQuestionnaireWorkspaceArtifactRef,
@@ -52,6 +54,42 @@ type ArtifactPaneFocus =
   | { type: 'todo' }
   | { type: 'artifact'; artifact: WorkbenchArtifactRef };
 
+type ComposerModelTarget = {
+  providerEndpointId: string;
+  model: string;
+};
+
+const modelTargetKey = (target: ComposerModelTarget) => JSON.stringify(target);
+
+function parseModelTargetKey(value: string): ComposerModelTarget | null {
+  try {
+    const parsed = JSON.parse(value) as Partial<ComposerModelTarget>;
+    if (typeof parsed.providerEndpointId === 'string' && typeof parsed.model === 'string') {
+      return { providerEndpointId: parsed.providerEndpointId, model: parsed.model };
+    }
+  } catch {
+    // Legacy model values fall through.
+  }
+  return null;
+}
+
+function isThinkingModel(modelName: string) {
+  const normalized = modelName.toLowerCase();
+  return (
+    /^gpt-5(\b|[.-])/.test(normalized) ||
+    /^o[134](\b|[.-])/.test(normalized) ||
+    normalized.includes('codex') ||
+    normalized.includes('reasoning') ||
+    normalized.includes('thinking') ||
+    normalized.includes('deepseek-r1') ||
+    normalized.includes('qwen3')
+  );
+}
+
+function isImplementationLockedStatus(status: string | undefined) {
+  return status === 'completed';
+}
+
 export function NightWorkersShell(props: NightWorkersShellProps) {
   const { workspace } = props;
   const { attributes: appearanceAttributes } = useWorkspaceAppearanceState();
@@ -84,6 +122,9 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     (selectedArtifact?.kind === 'blueprint_workspace' ||
       selectedArtifact?.kind === 'app_blueprint');
   const hasTodoArtifact = Boolean(workspace.activeSession);
+  const isActiveImplementationLocked = isImplementationLockedStatus(
+    workspace.activeSession?.status
+  );
 
   useEffect(() => {
     workspaceRef.current = workspace;
@@ -105,7 +146,64 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         ? workspace.llmSettings?.AZURE_OPENAI_DEPLOYMENT_NAME
         : workspace.activeProvider === 'bedrock'
           ? workspace.llmSettings?.AWS_BEDROCK_MODEL
-          : null;
+          : workspace.activeProvider === 'codex'
+            ? workspace.llmSettings?.CODEX_MODEL
+            : null;
+  const composerModelOptions = useMemo(() => {
+    const endpoints = workspace.llmSettings?.providerEndpoints || [];
+    const options = endpoints
+      .filter((endpoint) =>
+        endpoint.kind === 'codex' ? workspace.llmSettings?.CODEX_ENABLED : endpoint.enabled
+      )
+      .flatMap((endpoint) =>
+        endpoint.models.map((endpointModel) => ({
+          value: modelTargetKey({ providerEndpointId: endpoint.id, model: endpointModel }),
+          label:
+            endpoint.modelDisplayNames?.[endpointModel]?.trim() ||
+            `${endpointModel} (${endpoint.name})`,
+        }))
+      );
+    return options.length ? options : workspace.providerModelOptions;
+  }, [workspace.llmSettings, workspace.providerModelOptions]);
+  const selectedModelTarget = parseModelTargetKey(model);
+  const selectedComposerModel = selectedModelTarget?.model || currentProviderModel || model;
+  const selectedComposerModelSupportsThinking = isThinkingModel(selectedComposerModel);
+  const composerThinkingDepthOptions: ThinkingDepthOption[] = selectedComposerModelSupportsThinking
+    ? THINKING_DEPTH_OPTIONS
+    : [];
+
+  useEffect(() => {
+    if (!composerModelOptions.length) return;
+    if (composerModelOptions.some((option) => option.value === model)) return;
+    const preferredRouteTarget =
+      workspace.llmSettings?.roleRoutes.find((route) => route.role === 'implementation')?.primary ||
+      workspace.llmSettings?.roleRoutes.find((route) => route.role === 'plan')?.primary;
+    const preferredKey = preferredRouteTarget
+      ? modelTargetKey({
+          providerEndpointId: preferredRouteTarget.providerEndpointId,
+          model: preferredRouteTarget.model,
+        })
+      : null;
+    const preferredOption = preferredKey
+      ? composerModelOptions.find((option) => option.value === preferredKey)
+      : null;
+    setModel((preferredOption || composerModelOptions[0]).value);
+  }, [composerModelOptions, model, workspace.llmSettings?.roleRoutes]);
+
+  useEffect(() => {
+    if (selectedComposerModelSupportsThinking) return;
+    setThinkingDepth('medium');
+  }, [selectedComposerModelSupportsThinking]);
+
+  const buildComposerLlmSelection = () => {
+    const target = parseModelTargetKey(model);
+    const selected = target || { providerEndpointId: '', model: currentProviderModel || model };
+    return {
+      model: selected.model,
+      providerEndpointId: selected.providerEndpointId || undefined,
+      thinkingDepth: isThinkingModel(selected.model) ? thinkingDepth : undefined,
+    };
+  };
 
   const submitPrompt = async (prompt: string, intent: WorkbenchChatIntent = 'intake') => {
     if (!workspace.activeProject && workspace.projects[0]) {
@@ -124,10 +222,22 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         acceptanceCriteria: '',
       });
       workspace.setActiveSessionId(session.id);
-      await workspace.sendWorkbenchMessage(session.id, prompt, intent);
+      await workspace.sendWorkbenchMessage(
+        session.id,
+        prompt,
+        intent,
+        null,
+        buildComposerLlmSelection()
+      );
       return;
     }
-    await workspace.sendWorkbenchMessage(workspace.activeSession.id, prompt, intent);
+    await workspace.sendWorkbenchMessage(
+      workspace.activeSession.id,
+      prompt,
+      intent,
+      null,
+      buildComposerLlmSelection()
+    );
   };
   const handleOpenBlueprintArtifact = useCallback(async () => {
     if (isBlueprintArtifactOpen) {
@@ -161,13 +271,17 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   }, [artifactFocus.type, focusTodoArtifact]);
   const queueSessionAndFocusTodo = useCallback(
     async (sessionId: string) => {
+      const current = workspaceRef.current;
+      const targetSession =
+        current.sessions.find((session) => session.id === sessionId) || current.activeSession;
+      if (isImplementationLockedStatus(targetSession?.status)) return;
       setShowOverviewScreen(false);
       setShowQueueScreen(false);
       props.onCloseSettings();
-      workspaceRef.current.setActiveSessionId(sessionId);
+      current.setActiveSessionId(sessionId);
       setClearedArtifactContextId(null);
       setArtifactFocus({ type: 'todo' });
-      await workspaceRef.current.createImplementationQueueEntry(sessionId);
+      await current.createImplementationQueueEntry(sessionId);
       setArtifactFocus({ type: 'todo' });
     },
     [props.onCloseSettings]
@@ -178,7 +292,9 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     await queueSessionAndFocusTodo(sessionId);
   }, [queueSessionAndFocusTodo]);
   const addActiveSessionToQueue = useCallback(async () => {
-    const sessionId = workspaceRef.current.activeSession?.id;
+    const activeSession = workspaceRef.current.activeSession;
+    if (isImplementationLockedStatus(activeSession?.status)) return;
+    const sessionId = activeSession?.id;
     if (!sessionId) return;
     await workspaceRef.current.createImplementationQueueEntry(sessionId);
   }, []);
@@ -356,14 +472,12 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               isAgentWorking={workspace.isAgentWorking}
               isAgentThinking={workspace.isAgentThinking}
               realtimeStatus={workspace.realtimeStatus}
-              model={currentProviderModel || model}
-              modelOptions={workspace.providerModelOptions}
+              model={model}
+              modelOptions={composerModelOptions}
               thinkingDepth={thinkingDepth}
-              onModelChange={(nextModel) => {
-                setModel(nextModel);
-                void workspace.updateProviderModel(nextModel);
-              }}
+              onModelChange={setModel}
               onThinkingDepthChange={setThinkingDepth}
+              thinkingDepthOptions={composerThinkingDepthOptions}
               onSubmitInitialPrompt={submitPrompt}
               onSubmitWorkbenchMessage={async (prompt, intent) => {
                 if (workspace.activeSession) {
@@ -371,7 +485,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                     workspace.activeSession.id,
                     prompt,
                     intent,
-                    selectedArtifactContext
+                    selectedArtifactContext,
+                    buildComposerLlmSelection()
                   );
                   const latestQuestionnaireMessage = [...(result?.messages || [])]
                     .reverse()
@@ -486,22 +601,20 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                     selectedFilePath={workspace.selectedProjectFilePath}
                     isFilesLoading={workspace.isProjectFilesLoading}
                     isFileLoading={workspace.isProjectFileLoading}
+                    projectDiff={workspace.projectDiff}
+                    isDiffLoading={workspace.isProjectDiffLoading}
                     onToggleDirectory={workspace.toggleProjectDirectory}
                     onOpenFile={(path) => {
                       setArtifactFocus({ type: 'project_tree' });
                       workspace.openProjectFile(path);
                     }}
-                    onShowDiff={() => {
-                      const diffArtifact = workspace.activeArtifactRefs.find(
-                        (artifact) => artifact.kind === 'diff'
-                      );
-                      if (diffArtifact)
-                        setArtifactFocus({ type: 'artifact', artifact: diffArtifact });
-                    }}
+                    onRefreshFiles={workspace.refreshProjectFiles}
+                    onRefreshDiff={workspace.refreshProjectDiff}
                     onQueueSession={async () => {
                       await queueActiveSessionAndFocusTodo();
                     }}
                     onAddToQueue={addActiveSessionToQueue}
+                    isImplementationLocked={isActiveImplementationLocked}
                   />
                 ) : undefined
               }

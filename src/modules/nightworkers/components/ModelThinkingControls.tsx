@@ -14,7 +14,7 @@ export function ModelThinkingControls({
   model,
   thinkingDepth,
   modelOptions,
-  thinkingDepthOptions,
+  thinkingDepthOptions = [],
   onModelChange,
   onThinkingDepthChange,
 }: ModelThinkingControlsProps) {
@@ -37,21 +37,28 @@ export function ModelThinkingControls({
           </option>
         ))}
       </select>
-      <label className="nightworkers-control-label text-xs text-zinc-400" htmlFor="thinking-select">
-        {t('modelControls.thinking')}
-      </label>
-      <select
-        id="thinking-select"
-        className="nightworkers-control-select h-8 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100"
-        value={thinkingDepth}
-        onChange={(e) => onThinkingDepthChange(e.target.value as ThinkingDepth)}
-      >
-        {thinkingDepthOptions.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      {thinkingDepthOptions.length ? (
+        <>
+          <label
+            className="nightworkers-control-label text-xs text-zinc-400"
+            htmlFor="thinking-select"
+          >
+            {t('modelControls.thinking')}
+          </label>
+          <select
+            id="thinking-select"
+            className="nightworkers-control-select h-8 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100"
+            value={thinkingDepth}
+            onChange={(e) => onThinkingDepthChange(e.target.value as ThinkingDepth)}
+          >
+            {thinkingDepthOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </>
+      ) : null}
     </div>
   );
 }

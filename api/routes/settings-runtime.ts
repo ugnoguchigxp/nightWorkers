@@ -2,12 +2,63 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from '@hono/zod-openapi';
 import { getRuntimePaths } from '../runtime/paths';
+import { readCodexModelOptions } from '../services/codex-global-config/status';
 
 const RUNTIME_SETTINGS_DIR = getRuntimePaths().settingsDir;
 const RUNTIME_SETTINGS_PATH =
   process.env.NIGHTWORKERS_LLM_SETTINGS_PATH ||
   path.join(RUNTIME_SETTINGS_DIR, 'llm-settings.json');
 const MASKED_SECRET = '********';
+
+const providerEndpointKindSchema = z.enum([
+  'azure',
+  'openai',
+  'openai-compatible',
+  'bedrock',
+  'codex',
+  'local',
+]);
+
+export const llmRoleSchema = z.enum([
+  'plan',
+  'implementation',
+  'test',
+  'review',
+  'quality_gate',
+  'completion',
+]);
+
+const thinkingDepthSchema = z.enum(['', 'low', 'medium', 'high', 'very_high']);
+
+const llmProviderEndpointSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  kind: providerEndpointKindSchema,
+  enabled: z.boolean().default(true),
+  apiKey: z.string().optional().default(''),
+  baseUrl: z.string().optional().default(''),
+  endpoint: z.string().optional().default(''),
+  apiVersion: z.string().optional().default(''),
+  region: z.string().optional().default(''),
+  models: z.array(z.string()).default([]),
+  modelDisplayNames: z.record(z.string(), z.string()).optional().default({}),
+});
+
+const llmModelTargetSchema = z.object({
+  providerEndpointId: z.string().default(''),
+  model: z.string().default(''),
+  thinkingDepth: thinkingDepthSchema.optional().default(''),
+});
+
+const llmRoleRouteSchema = z.object({
+  role: llmRoleSchema,
+  primary: llmModelTargetSchema.optional(),
+  fallbacks: z.array(llmModelTargetSchema).default([]),
+  providerEndpointId: z.string().optional(),
+  model: z.string().optional(),
+  fallbackProviderEndpointId: z.string().optional(),
+  fallbackModel: z.string().optional(),
+});
 
 export const llmSettingsSchema = z.object({
   ACTIVE_LLM_PROVIDER: z.string().default('azure').openapi({ example: 'azure' }),
@@ -33,26 +84,55 @@ export const llmSettingsSchema = z.object({
   OPENAI_MODEL: z.string().default('').openapi({ example: 'gpt-4o' }),
   CODEX_ENABLED: z.boolean().default(false).openapi({ example: false }),
   CODEX_ACCESS_TOKEN: z.string().default('').openapi({ example: 'your-codex-token' }),
-  CODEX_MODEL: z.string().default('').openapi({ example: 'gpt-5.3-codex' }),
+  CODEX_MODEL: z.string().default('').openapi({ example: 'gpt-5.4-mini' }),
   IMPLEMENTATION_RUNTIME_LANE: z
     .enum(['', 'native-supervisor', 'codex-sdk', 'codex-agent'])
     .default('')
     .openapi({ example: 'codex-sdk' }),
   SESSION_QUEUE_MAX_CONCURRENCY: z.number().int().positive().default(2).openapi({ example: 2 }),
+  providerEndpoints: z.array(llmProviderEndpointSchema).default([]),
+  roleRoutes: z.array(llmRoleRouteSchema).default([]),
 });
+
+type RawLlmSettings = z.infer<typeof llmSettingsSchema>;
+export type LlmProviderEndpoint = RawLlmSettings['providerEndpoints'][number];
+export type LlmModelTarget = {
+  providerEndpointId: string;
+  model: string;
+  thinkingDepth: z.infer<typeof thinkingDepthSchema>;
+};
+export type LlmRole = z.infer<typeof llmRoleSchema>;
+export type LlmRoleRoute = {
+  role: LlmRole;
+  primary: LlmModelTarget;
+  fallbacks: LlmModelTarget[];
+};
+export type LlmSettings = Omit<RawLlmSettings, 'roleRoutes'> & {
+  roleRoutes: LlmRoleRoute[];
+};
 
 const SECRET_SETTING_KEYS = [
   'AZURE_OPENAI_API_KEY',
   'AWS_SECRET_ACCESS_KEY',
   'OPENAI_API_KEY',
   'CODEX_ACCESS_TOKEN',
-] as const satisfies ReadonlyArray<keyof z.infer<typeof llmSettingsSchema>>;
+] as const satisfies ReadonlyArray<keyof RawLlmSettings>;
 
 const providerModelOptions = {
   azure: ['gpt-5.5', 'gpt-5.4-mini', 'gpt-5-mini'],
   openai: ['gpt-5.5', 'gpt-5.4-mini', 'gpt-5-mini', 'gpt-4.1-mini'],
   bedrock: ['anthropic.claude-3-5-sonnet-20241022-v2:0'],
+  codex: ['gpt-5.5', 'gpt-5.4-mini', 'gpt-5-mini'],
 } as const;
+
+export const LLM_ROLE_ORDER: LlmRole[] = [
+  'plan',
+  'implementation',
+  'test',
+  'review',
+  'quality_gate',
+  'completion',
+];
 
 const getBoolEnv = (key: string, fallback: boolean) => {
   const value = process.env[key];
@@ -66,22 +146,24 @@ const getRuntimeLaneSetting = (value: unknown): '' | 'native-supervisor' | 'code
   return '';
 };
 
-const getStructuredProviderSetting = (value: unknown): 'azure' | 'openai' | 'bedrock' => {
-  if (value === 'openai' || value === 'azure' || value === 'bedrock') return value;
+const getStructuredProviderSetting = (value: unknown): 'azure' | 'openai' | 'bedrock' | 'codex' => {
+  if (value === 'openai' || value === 'azure' || value === 'bedrock' || value === 'codex') {
+    return value;
+  }
   return 'azure';
 };
 
-const readRuntimeSettings = (): Partial<z.infer<typeof llmSettingsSchema>> => {
+const readRuntimeSettings = (): Partial<RawLlmSettings> => {
   try {
     if (!fs.existsSync(RUNTIME_SETTINGS_PATH)) return {};
     const text = fs.readFileSync(RUNTIME_SETTINGS_PATH, 'utf-8');
-    return JSON.parse(text) as Partial<z.infer<typeof llmSettingsSchema>>;
+    return JSON.parse(text) as Partial<RawLlmSettings>;
   } catch {
     return {};
   }
 };
 
-const writeRuntimeSettings = (settings: z.infer<typeof llmSettingsSchema>) => {
+const writeRuntimeSettings = (settings: LlmSettings) => {
   fs.mkdirSync(path.dirname(RUNTIME_SETTINGS_PATH), { recursive: true, mode: 0o700 });
   fs.writeFileSync(RUNTIME_SETTINGS_PATH, `${JSON.stringify(settings, null, 2)}\n`, {
     encoding: 'utf-8',
@@ -95,7 +177,7 @@ const writeRuntimeSettings = (settings: z.infer<typeof llmSettingsSchema>) => {
   }
 };
 
-export const getCurrentSettings = (): z.infer<typeof llmSettingsSchema> => {
+export const getCurrentSettings = (): LlmSettings => {
   const persisted = readRuntimeSettings();
   const rawActiveProvider =
     persisted.ACTIVE_LLM_PROVIDER || process.env.ACTIVE_LLM_PROVIDER || 'azure';
@@ -107,7 +189,7 @@ export const getCurrentSettings = (): z.infer<typeof llmSettingsSchema> => {
     persisted.IMPLEMENTATION_RUNTIME_LANE ?? process.env.IMPLEMENTATION_RUNTIME_LANE
   );
   const legacyCodexRuntimeLane = rawActiveProvider === 'codex' && codexEnabled ? 'codex-sdk' : '';
-  return {
+  const legacySettings: Omit<LlmSettings, 'providerEndpoints' | 'roleRoutes'> = {
     ACTIVE_LLM_PROVIDER: getStructuredProviderSetting(rawActiveProvider),
     OPENAI_ENABLED:
       typeof persisted.OPENAI_ENABLED === 'boolean'
@@ -145,33 +227,260 @@ export const getCurrentSettings = (): z.infer<typeof llmSettingsSchema> => {
         ? persisted.SESSION_QUEUE_MAX_CONCURRENCY
         : Number(process.env.SESSION_QUEUE_MAX_CONCURRENCY || 2),
   };
+  const providerEndpoints = normalizeProviderEndpoints(persisted.providerEndpoints, legacySettings);
+  const roleRoutes = normalizeRoleRoutes(
+    persisted.roleRoutes,
+    providerEndpoints,
+    legacySettings.ACTIVE_LLM_PROVIDER
+  );
+  return {
+    ...legacySettings,
+    providerEndpoints,
+    roleRoutes,
+  };
 };
 
-const applySettingsToProcessEnv = (settings: z.infer<typeof llmSettingsSchema>) => {
+const applySettingsToProcessEnv = (settings: LlmSettings) => {
   for (const [key, val] of Object.entries(settings)) {
+    if (Array.isArray(val)) continue;
     process.env[key] = String(val);
   }
 };
 
-export function maskLlmSettings(settings: z.infer<typeof llmSettingsSchema>) {
+export function maskLlmSettings(settings: LlmSettings) {
   const masked = { ...settings };
   for (const key of SECRET_SETTING_KEYS) {
     masked[key] = settings[key] ? MASKED_SECRET : '';
   }
+  masked.providerEndpoints = (settings.providerEndpoints || []).map((endpoint) => ({
+    ...endpoint,
+    apiKey: endpoint.apiKey ? MASKED_SECRET : '',
+  }));
   return masked;
 }
 
-export function mergeMaskedSecrets(
-  incoming: z.infer<typeof llmSettingsSchema>,
-  current: z.infer<typeof llmSettingsSchema>
-) {
+export function mergeMaskedSecrets(incoming: RawLlmSettings, current: LlmSettings) {
   const merged = { ...incoming };
   for (const key of SECRET_SETTING_KEYS) {
     if (incoming[key] === MASKED_SECRET) {
       merged[key] = current[key] || '';
     }
   }
-  return merged;
+  const currentEndpoints = new Map(
+    (current.providerEndpoints || []).map((endpoint) => [endpoint.id, endpoint])
+  );
+  merged.providerEndpoints = (incoming.providerEndpoints || []).map((endpoint) => {
+    if (endpoint.apiKey !== MASKED_SECRET) return endpoint;
+    return {
+      ...endpoint,
+      apiKey: currentEndpoints.get(endpoint.id)?.apiKey || '',
+    };
+  });
+  return normalizeRawLlmSettings(merged);
+}
+
+function normalizeRawLlmSettings(input: RawLlmSettings): LlmSettings {
+  const {
+    providerEndpoints: rawProviderEndpoints,
+    roleRoutes: rawRoleRoutes,
+    ...rawLegacy
+  } = input;
+  const legacySettings: Omit<LlmSettings, 'providerEndpoints' | 'roleRoutes'> = {
+    ...rawLegacy,
+    ACTIVE_LLM_PROVIDER: getStructuredProviderSetting(rawLegacy.ACTIVE_LLM_PROVIDER),
+    IMPLEMENTATION_RUNTIME_LANE: getRuntimeLaneSetting(rawLegacy.IMPLEMENTATION_RUNTIME_LANE),
+  };
+  const providerEndpoints = normalizeProviderEndpoints(rawProviderEndpoints, legacySettings);
+  return {
+    ...legacySettings,
+    providerEndpoints,
+    roleRoutes: normalizeRoleRoutes(
+      rawRoleRoutes,
+      providerEndpoints,
+      legacySettings.ACTIVE_LLM_PROVIDER
+    ),
+  };
+}
+
+function normalizeProviderEndpoints(
+  input: unknown,
+  legacySettings: Omit<LlmSettings, 'providerEndpoints' | 'roleRoutes'>
+): LlmProviderEndpoint[] {
+  const parsed = z.array(llmProviderEndpointSchema).safeParse(input);
+  const endpoints = parsed.success ? parsed.data : [];
+  const endpointById = new Map(endpoints.map((endpoint) => [endpoint.id, endpoint]));
+  for (const endpoint of buildLegacyProviderEndpoints(legacySettings)) {
+    if (!endpointById.has(endpoint.id)) endpointById.set(endpoint.id, endpoint);
+  }
+  return [...endpointById.values()].map((endpoint) => {
+    const models = uniqueNonEmpty(endpoint.models);
+    return {
+      ...endpoint,
+      models,
+      modelDisplayNames: normalizeModelDisplayNames(endpoint.modelDisplayNames, models),
+    };
+  });
+}
+
+function buildLegacyProviderEndpoints(
+  settings: Omit<LlmSettings, 'providerEndpoints' | 'roleRoutes'>
+): LlmProviderEndpoint[] {
+  return [
+    {
+      id: 'azure-default',
+      name: 'Azure OpenAI',
+      kind: 'azure',
+      enabled: settings.AZURE_OPENAI_ENABLED,
+      apiKey: settings.AZURE_OPENAI_API_KEY,
+      baseUrl: '',
+      endpoint: settings.AZURE_OPENAI_ENDPOINT,
+      apiVersion: settings.AZURE_OPENAI_API_VERSION,
+      region: '',
+      models: uniqueNonEmpty([
+        settings.AZURE_OPENAI_DEPLOYMENT_NAME,
+        ...providerModelOptions.azure,
+      ]),
+      modelDisplayNames: {},
+    },
+    {
+      id: 'openai-default',
+      name: 'OpenAI Compatible',
+      kind: 'openai',
+      enabled: settings.OPENAI_ENABLED,
+      apiKey: settings.OPENAI_API_KEY,
+      baseUrl: settings.OPENAI_BASE_URL,
+      endpoint: '',
+      apiVersion: '',
+      region: '',
+      models: uniqueNonEmpty([settings.OPENAI_MODEL, ...providerModelOptions.openai]),
+      modelDisplayNames: {},
+    },
+    {
+      id: 'bedrock-default',
+      name: 'AWS Bedrock',
+      kind: 'bedrock',
+      enabled: settings.AWS_BEDROCK_ENABLED,
+      apiKey: '',
+      baseUrl: '',
+      endpoint: '',
+      apiVersion: '',
+      region: settings.AWS_REGION,
+      models: uniqueNonEmpty([settings.AWS_BEDROCK_MODEL, ...providerModelOptions.bedrock]),
+      modelDisplayNames: {},
+    },
+    {
+      id: 'codex-default',
+      name: 'Codex SDK',
+      kind: 'codex',
+      enabled: settings.CODEX_ENABLED,
+      apiKey: settings.CODEX_ACCESS_TOKEN,
+      baseUrl: '',
+      endpoint: '',
+      apiVersion: '',
+      region: '',
+      models: uniqueNonEmpty(
+        readCodexModelOptions({ configuredModel: settings.CODEX_MODEL }).map(
+          (option) => option.value
+        )
+      ),
+      modelDisplayNames: {},
+    },
+  ];
+}
+
+function normalizeRoleRoutes(
+  input: unknown,
+  providerEndpoints: LlmProviderEndpoint[],
+  activeProvider: string
+): LlmRoleRoute[] {
+  const parsed = z.array(llmRoleRouteSchema).safeParse(input);
+  const routesByRole = new Map<LlmRole, z.infer<typeof llmRoleRouteSchema>>();
+  if (parsed.success) {
+    for (const route of parsed.data) routesByRole.set(route.role, route);
+  }
+  const fallbackEndpoint = findDefaultEndpointForProvider(providerEndpoints, activeProvider);
+  const defaultTarget: LlmModelTarget = {
+    providerEndpointId: fallbackEndpoint?.id || '',
+    model: fallbackEndpoint?.models[0] || '',
+    thinkingDepth: '',
+  };
+  return LLM_ROLE_ORDER.map((role) => {
+    const route = routesByRole.get(role);
+    if (route) return normalizeRoleRoute(route, defaultTarget);
+    return {
+      role,
+      primary: defaultTarget,
+      fallbacks: [],
+    };
+  });
+}
+
+function normalizeRoleRoute(
+  route: z.infer<typeof llmRoleRouteSchema>,
+  defaultTarget: LlmModelTarget
+): LlmRoleRoute {
+  const primary =
+    normalizeModelTarget(route.primary) ||
+    normalizeModelTarget({
+      providerEndpointId: route.providerEndpointId,
+      model: route.model,
+    }) ||
+    defaultTarget;
+  const legacyFallback = normalizeModelTarget({
+    providerEndpointId: route.fallbackProviderEndpointId,
+    model: route.fallbackModel,
+  });
+  return {
+    role: route.role,
+    primary,
+    fallbacks: uniqueModelTargets([
+      ...route.fallbacks.map(normalizeModelTarget).filter((target) => Boolean(target)),
+      ...(legacyFallback ? [legacyFallback] : []),
+    ] as LlmModelTarget[]),
+  };
+}
+
+function normalizeModelTarget(input: unknown): LlmModelTarget | null {
+  const parsed = llmModelTargetSchema.safeParse(input);
+  if (!parsed.success) return null;
+  const providerEndpointId = parsed.data.providerEndpointId.trim();
+  const model = parsed.data.model.trim();
+  if (!providerEndpointId || !model) return null;
+  return { providerEndpointId, model, thinkingDepth: parsed.data.thinkingDepth || '' };
+}
+
+function uniqueModelTargets(targets: LlmModelTarget[]) {
+  const seen = new Set<string>();
+  return targets.filter((target) => {
+    const key = `${target.providerEndpointId}\u0000${target.model}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function findDefaultEndpointForProvider(
+  endpoints: LlmProviderEndpoint[],
+  provider: string
+): LlmProviderEndpoint | undefined {
+  const defaultId = provider === 'azure' ? 'azure-default' : `${provider}-default`;
+  return endpoints.find((endpoint) => endpoint.id === defaultId) || endpoints[0];
+}
+
+function uniqueNonEmpty(values: Array<string | undefined>) {
+  return [...new Set(values.map((value) => value?.trim()).filter(Boolean) as string[])];
+}
+
+function normalizeModelDisplayNames(
+  input: Record<string, string> | undefined,
+  models: string[]
+): Record<string, string> {
+  const modelSet = new Set(models);
+  return Object.fromEntries(
+    Object.entries(input || {})
+      .map(([model, label]) => [model.trim(), label.trim()])
+      .filter(([model, label]) => modelSet.has(model) && Boolean(label))
+  );
 }
 
 applySettingsToProcessEnv(getCurrentSettings());

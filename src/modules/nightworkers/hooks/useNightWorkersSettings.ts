@@ -153,6 +153,7 @@ export function useNightWorkersSettings() {
         openai: 'OPENAI_ENABLED',
         azure: 'AZURE_OPENAI_ENABLED',
         bedrock: 'AWS_BEDROCK_ENABLED',
+        codex: 'CODEX_ENABLED',
       };
       const merged = { ...llmSettings, [flagKey[provider]]: enabled };
       const res = await saveLlmSettings(merged);
@@ -165,6 +166,7 @@ export function useNightWorkersSettings() {
         openai: 'OPENAI_MODEL',
         azure: 'AZURE_OPENAI_DEPLOYMENT_NAME',
         bedrock: 'AWS_BEDROCK_MODEL',
+        codex: 'CODEX_MODEL',
       };
       const merged = { ...llmSettings, [modelKey[activeProvider]]: model };
       const res = await saveLlmSettings(merged);

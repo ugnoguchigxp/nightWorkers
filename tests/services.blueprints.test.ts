@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { blueprintCatalog } from '../api/services/blueprint-catalog';
+import { buildAppBlueprintStructuredOutputJsonSchema } from '../api/services/blueprints/json-schema';
 import {
   buildPlanModeBlueprintRequestContract,
   parseAndValidateBlueprintOutput,
@@ -11,6 +12,13 @@ import { representativeAppBlueprint } from './fixtures/app-blueprint';
 import { canonicalBadAppBlueprint } from './fixtures/bad-app-blueprint';
 
 describe('Blueprint validation service', () => {
+  it('uses a structured-output schema without union combinators for Blueprint generation', () => {
+    const schema = buildAppBlueprintStructuredOutputJsonSchema();
+
+    expect(findJsonSchemaCombinators(schema)).toEqual([]);
+    expect(schema.properties.screens.items.properties.sections.items).toEqual({ type: 'object' });
+  });
+
   it('keeps regular Blueprint generation request contract separate from DB Design', () => {
     const contract = buildPlanModeBlueprintRequestContract({
       taskId: 'task-blueprint-contract',
@@ -539,3 +547,15 @@ describe('Blueprint validation service', () => {
     ).toEqual(['kanban-board']);
   });
 });
+
+function findJsonSchemaCombinators(schema: unknown, path = '$'): string[] {
+  if (!schema || typeof schema !== 'object') return [];
+  const node = schema as Record<string, unknown>;
+  const hits = ['oneOf', 'anyOf', 'allOf'].filter((key) => Array.isArray(node[key]));
+  return [
+    ...hits.map((key) => `${path}.${key}`),
+    ...Object.entries(node).flatMap(([key, value]) =>
+      findJsonSchemaCombinators(value, `${path}.${key}`)
+    ),
+  ];
+}

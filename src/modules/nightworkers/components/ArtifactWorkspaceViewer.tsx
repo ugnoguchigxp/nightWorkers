@@ -45,6 +45,7 @@ export function BlueprintSpecificationWorkspaceViewer({
   initialTab,
   onQueueSession,
   onAddToQueue,
+  isImplementationLocked = false,
 }: {
   sessionId: string | null;
   taskMessages: TaskMessage[];
@@ -52,6 +53,7 @@ export function BlueprintSpecificationWorkspaceViewer({
   initialTab?: WorkspaceTab;
   onQueueSession?: () => Promise<void>;
   onAddToQueue?: () => Promise<void>;
+  isImplementationLocked?: boolean;
 }) {
   const [workspace, setWorkspace] = useState<BlueprintSpecificationWorkspace | null>(null);
   const [sessions, setSessions] = useState<DesignQuestionnaireSession[]>([]);
@@ -150,12 +152,13 @@ export function BlueprintSpecificationWorkspaceViewer({
   }
 
   async function runSessionAction(action: string, fn?: () => Promise<void>) {
-    if (!fn) return;
+    if (!fn || isImplementationLocked) return;
     await runAction(action, fn);
   }
 
   async function startQuestionnaire() {
     if (!sessionId || !activeBlueprintMessage) return;
+    if (isImplementationLocked) return;
     await runAction('start', async () => {
       const res = await startDesignQuestionnaire(sessionId, {
         sourceBlueprintMessageId: activeBlueprintMessage.id,
@@ -170,6 +173,7 @@ export function BlueprintSpecificationWorkspaceViewer({
   async function submitAnswersForNextStep() {
     if (!sessionId || !activeQuestionnaireSession) return;
     if (unansweredQuestions.length > 0) return;
+    if (isImplementationLocked) return;
     await runAction('submit-answers', async () => {
       const answersRes = await submitDesignQuestionnaireAnswers(
         sessionId,
@@ -199,6 +203,7 @@ export function BlueprintSpecificationWorkspaceViewer({
     nextTab: WorkspaceTab
   ) {
     if (!sessionId || !activeQuestionnaireSession) return;
+    if (isImplementationLocked) return;
     await runAction(action, async () => {
       const res = await generateSpecificationWorkspaceArtifact(sessionId, action, {
         questionnaireSessionId: activeQuestionnaireSession.id,
@@ -236,16 +241,16 @@ export function BlueprintSpecificationWorkspaceViewer({
             <button
               key={id}
               type="button"
-              disabled={(id === 'status' || id === 'specification') && !isDesignAssemblyReady}
+              disabled={id === 'specification' && !isDesignAssemblyReady}
               className={`rounded border px-2 py-1 text-xs ${
                 activeTab === id
                   ? 'border-cyan-400/70 bg-cyan-950/40 text-cyan-100'
-                  : (id === 'status' || id === 'specification') && !isDesignAssemblyReady
+                  : id === 'specification' && !isDesignAssemblyReady
                     ? 'cursor-not-allowed border-slate-800 bg-slate-950/10 text-slate-600'
                     : 'border-slate-700 bg-slate-950/20 text-slate-300 hover:border-slate-500'
               }`}
               onClick={() => {
-                if ((id === 'status' || id === 'specification') && !isDesignAssemblyReady) return;
+                if (id === 'specification' && !isDesignAssemblyReady) return;
                 setActiveTab(id as typeof activeTab);
               }}
             >
@@ -277,9 +282,9 @@ export function BlueprintSpecificationWorkspaceViewer({
               {activeBlueprintMessage ? (
                 <button
                   type="button"
-                  className="inline-flex items-center gap-1.5 rounded border border-cyan-500/60 bg-cyan-950/30 px-2 py-1 text-xs text-cyan-100 disabled:cursor-wait disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 rounded border border-cyan-500/60 bg-cyan-950/30 px-2 py-1 text-xs text-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
                   onClick={startQuestionnaire}
-                  disabled={Boolean(busyAction)}
+                  disabled={Boolean(busyAction) || isImplementationLocked}
                 >
                   {busyAction === 'start' ? (
                     <LoaderCircle className="h-3 w-3 animate-spin" />
@@ -325,7 +330,7 @@ export function BlueprintSpecificationWorkspaceViewer({
                     }
                     icon="send"
                     busy={busyAction === 'submit-answers'}
-                    disabled={unansweredQuestions.length > 0}
+                    disabled={unansweredQuestions.length > 0 || isImplementationLocked}
                     onClick={submitAnswersForNextStep}
                   />
                   <span
@@ -358,6 +363,7 @@ export function BlueprintSpecificationWorkspaceViewer({
               activeBlueprintSourceMessageId || workspace?.blueprintArtifacts.length
             )}
             hasSpecification={reviewedDesignDocMessages.length > 0}
+            isImplementationLocked={isImplementationLocked}
             onOpenQuestionnaire={() => setActiveTab('questionnaire')}
             onGenerateBlueprint={() => generateSpecificationArtifact('blueprint', 'blueprints')}
             onGenerateDbDesign={() => generateSpecificationArtifact('db-design', 'db-design')}

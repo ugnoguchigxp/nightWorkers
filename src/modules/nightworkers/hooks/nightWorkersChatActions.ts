@@ -8,7 +8,7 @@ import type {
   WorkbenchArtifactContext,
   WorkbenchChatIntent,
 } from '../types';
-import type { WorkbenchMessageResult } from './nightWorkersWorkspaceState';
+import type { WorkbenchLlmSelection, WorkbenchMessageResult } from './nightWorkersWorkspaceState';
 
 type ChatActionsInput = {
   queryClient: QueryClient;
@@ -109,7 +109,8 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
       sessionId: string,
       prompt: string,
       intent: WorkbenchChatIntent,
-      artifactContext?: WorkbenchArtifactContext | null
+      artifactContext?: WorkbenchArtifactContext | null,
+      llmSelection?: WorkbenchLlmSelection
     ) => {
       const content = prompt.trim();
       if (!content) return;
@@ -142,6 +143,11 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
           prompt: content,
           intent,
           waitForIntake: true,
+          ...(llmSelection?.model ? { model: llmSelection.model } : {}),
+          ...(llmSelection?.providerEndpointId
+            ? { providerEndpointId: llmSelection.providerEndpointId }
+            : {}),
+          ...(llmSelection?.thinkingDepth ? { thinkingDepth: llmSelection.thinkingDepth } : {}),
           ...(artifactContext ? { artifactContext } : {}),
         });
         if (!res.ok) throw new Error(await res.text());

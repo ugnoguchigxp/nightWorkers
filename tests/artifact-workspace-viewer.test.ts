@@ -1,4 +1,7 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { BlueprintSpecificationWorkspaceViewer } from '../src/modules/nightworkers/components/ArtifactWorkspaceViewer';
 import {
   isDbDesignBlueprintMessage,
   isNormalBlueprintMessage,
@@ -102,5 +105,22 @@ describe('Blueprint message classification', () => {
     expect(isDbDesignBlueprintMessage(normalBlueprint)).toBe(false);
     expect(isNormalBlueprintMessage(dbDesignBlueprint)).toBe(false);
     expect(isDbDesignBlueprintMessage(dbDesignBlueprint)).toBe(true);
+  });
+});
+
+describe('BlueprintSpecificationWorkspaceViewer', () => {
+  it('keeps Status selectable while an active questionnaire is still incomplete', () => {
+    const markup = renderToStaticMarkup(
+      createElement(BlueprintSpecificationWorkspaceViewer, {
+        sessionId: 'task-1',
+        taskMessages: [],
+        activityArtifacts: [],
+        initialTab: 'questionnaire',
+      })
+    );
+
+    expect(markup).toContain('>Status</button>');
+    expect(markup).not.toMatch(/<button[^>]*disabled[^>]*>Status<\/button>/);
+    expect(markup).toMatch(/<button[^>]*disabled[^>]*>Specification<\/button>/);
   });
 });

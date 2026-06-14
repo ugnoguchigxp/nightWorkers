@@ -117,6 +117,10 @@ export function fetchLlmModelOptions() {
   return apiFetch('/api/settings/llm/models');
 }
 
+export function fetchCodexSdkStatus() {
+  return apiFetch('/api/settings/codex/status');
+}
+
 export function fetchMcpServers() {
   return apiFetch('/api/settings/mcp/servers');
 }
@@ -197,6 +201,7 @@ export function appendWorkbenchMessage(
     intent?: string;
     artifactContext?: unknown;
     model?: string;
+    providerEndpointId?: string;
     thinkingDepth?: string;
     waitForIntake?: boolean;
   }
@@ -292,6 +297,10 @@ export function fetchRepositoryFiles(repositoryId: string, path?: string) {
 export function fetchRepositoryFile(repositoryId: string, path: string) {
   const params = new URLSearchParams({ path });
   return apiFetch(`/api/repositories/${repositoryId}/file?${params.toString()}`);
+}
+
+export function fetchRepositoryDiff(repositoryId: string) {
+  return apiFetch(`/api/repositories/${repositoryId}/diff`);
 }
 
 function jsonRequest(method: 'PATCH' | 'POST' | 'PUT', body: unknown): RequestInit {

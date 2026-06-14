@@ -24,6 +24,52 @@ export type StructuredLlmProviderSettings = {
   CODEX_MODEL?: string;
   CODEX_MODEL_REASONING_EFFORT?: string;
   CODEX_STRUCTURED_OUTPUT_ENABLED?: boolean;
+  providerEndpoints?: StructuredLlmProviderEndpoint[];
+  roleRoutes?: StructuredLlmRoleRoute[];
+};
+
+export type StructuredLlmProviderEndpointKind =
+  | 'azure'
+  | 'openai'
+  | 'openai-compatible'
+  | 'bedrock'
+  | 'codex'
+  | 'local';
+
+export type StructuredLlmRole =
+  | 'plan'
+  | 'implementation'
+  | 'test'
+  | 'review'
+  | 'quality_gate'
+  | 'completion';
+
+export type StructuredLlmThinkingDepth = '' | 'low' | 'medium' | 'high' | 'very_high';
+
+export type StructuredLlmProviderEndpoint = {
+  id: string;
+  name: string;
+  kind: StructuredLlmProviderEndpointKind;
+  enabled: boolean;
+  apiKey?: string;
+  baseUrl?: string;
+  endpoint?: string;
+  apiVersion?: string;
+  region?: string;
+  models: string[];
+  modelDisplayNames?: Record<string, string>;
+};
+
+export type StructuredLlmModelTarget = {
+  providerEndpointId: string;
+  model: string;
+  thinkingDepth?: StructuredLlmThinkingDepth;
+};
+
+export type StructuredLlmRoleRoute = {
+  role: StructuredLlmRole;
+  primary: StructuredLlmModelTarget;
+  fallbacks: StructuredLlmModelTarget[];
 };
 
 const boolKeys = new Set<keyof StructuredLlmProviderSettings>([
@@ -53,7 +99,6 @@ export function readStructuredLlmProviderSettings(): StructuredLlmProviderSettin
 }
 
 export function normalizeStructuredLlmProviderSetting(value?: string): string | undefined {
-  if (value === 'codex') return 'azure';
   return value;
 }
 
@@ -116,6 +161,8 @@ function defaultSettings(): Required<Record<keyof StructuredLlmProviderSettings,
     CODEX_MODEL: null,
     CODEX_MODEL_REASONING_EFFORT: null,
     CODEX_STRUCTURED_OUTPUT_ENABLED: null,
+    providerEndpoints: null,
+    roleRoutes: null,
   };
 }
 

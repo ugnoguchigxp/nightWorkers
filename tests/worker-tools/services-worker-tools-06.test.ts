@@ -82,4 +82,19 @@ describe('gitDiffTool', () => {
     expect(result.payload.diff).toContain('@@ -0,0 +1,1 @@');
     expect(result.payload.diff).toContain('+untracked evidence');
   });
+
+  it('includes untracked files when the repository has no HEAD commit yet', async () => {
+    const repoDir = path.join(dummyRepoDir, 'git-diff-unborn');
+    await fs.rm(repoDir, { recursive: true, force: true });
+    await fs.mkdir(repoDir, { recursive: true });
+    execFileSync('git', ['init'], { cwd: repoDir, stdio: 'ignore' });
+    await fs.writeFile(path.join(repoDir, 'README.md'), '# unborn\n', 'utf-8');
+
+    const result = await gitDiffTool({ repoRoot: repoDir });
+
+    expect(result.ok).toBe(true);
+    expect(result.payload.hasChanges).toBe(true);
+    expect(result.payload.diff).toContain('README.md');
+    expect(result.payload.diff).toContain('+# unborn');
+  });
 });

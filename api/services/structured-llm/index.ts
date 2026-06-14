@@ -28,6 +28,7 @@ export {
 export type {
   NormalizedSupervisorLlmRequest,
   ProviderCapabilityPolicy,
+  StructuredLlmRole,
   SupervisorLlmDebugEvent,
   SupervisorProviderClass,
   SupervisorProviderId,
@@ -87,6 +88,7 @@ async function callRawJsonLLM(
     label: options.label,
     round: options.round,
     schemaFirst: options.schemaFirst,
+    role: options.role,
   });
   const provider = providerAdapterKey(normalizedRequest.providerId);
   const startedAt = Date.now();
@@ -102,6 +104,9 @@ async function callRawJsonLLM(
   appendLlmTrace('request', {
     callId,
     provider: normalizedRequest.providerId,
+    providerEndpointId: normalizedRequest.providerEndpointId ?? null,
+    role: normalizedRequest.role ?? null,
+    routeSource: normalizedRequest.routeSource ?? null,
     providerClass: normalizedRequest.providerClass,
     round: options.round ?? null,
     label: options.label,
@@ -118,6 +123,9 @@ async function callRawJsonLLM(
   logger.debug(
     {
       provider: normalizedRequest.providerId,
+      providerEndpointId: normalizedRequest.providerEndpointId ?? null,
+      role: normalizedRequest.role ?? null,
+      routeSource: normalizedRequest.routeSource ?? null,
       providerClass: normalizedRequest.providerClass,
       label: options.label,
       systemPromptLength: systemPrompt.length,
@@ -131,6 +139,9 @@ async function callRawJsonLLM(
     message: `Supervisor LLM request started. provider=${normalizedRequest.providerId} round=${options.round ?? 'unknown'}`,
     data: {
       provider: normalizedRequest.providerId,
+      providerEndpointId: normalizedRequest.providerEndpointId ?? null,
+      role: normalizedRequest.role ?? null,
+      routeSource: normalizedRequest.routeSource ?? null,
       providerClass: normalizedRequest.providerClass,
       callKind: normalizedRequest.callKind,
       round: options.round ?? null,

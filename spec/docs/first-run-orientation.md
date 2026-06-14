@@ -82,7 +82,6 @@ Open Settings before connecting real credentials. Confirm:
 - Masked secret behavior.
 - MCP servers are OFF unless you intentionally enable them.
 - Agent Hooks are empty or disabled unless you intentionally configure them.
-- TODO Workflow gates match how much review you want before completion.
 
 ## 9. Stop, Retry, or Review
 Use the Workbench and Queue state to decide what happens next:
@@ -97,7 +96,7 @@ Use the Workbench and Queue state to decide what happens next:
 - Workbench Timeline: chat messages, intake output, execution events, and
   artifacts.
 - Implementation Queue: queued work, Processor lanes, and queue controls.
-- Settings: provider, MCP, hooks, and TODO Workflow configuration.
+- Settings: provider, MCP, hooks, and appearance configuration.
 - Logs: development logs under `logs`; desktop logs under the app data runtime
   `logs` directory.
 - Startup diagnostics: `GET /api/settings/preflight/startup`.

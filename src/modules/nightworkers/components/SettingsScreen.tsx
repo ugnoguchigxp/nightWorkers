@@ -13,13 +13,12 @@ import {
   saveGeneralSettings as saveGeneralSettingsCommand,
   saveLlmSettings,
 } from '../nightWorkersCommands';
-import type { GeneralSettings, LlmProvider, LlmSettings, McpServerConfig } from '../types';
+import type { GeneralSettings, LlmSettings, McpServerConfig } from '../types';
 import { AppearanceSettings } from './SettingsAppearancePanel';
 import { GeneralSettingsPanel } from './SettingsGeneralPanel';
 import { SettingsHooksPanel } from './SettingsHooksPanel';
 import { SettingsLlmPanel } from './SettingsLlmPanel';
 import { SettingsMcpPanel } from './SettingsMcpPanel';
-import { SettingsTodoPanel } from './SettingsTodoPanel';
 
 const defaultSettings: LlmSettings = {
   ACTIVE_LLM_PROVIDER: 'azure',
@@ -39,9 +38,11 @@ const defaultSettings: LlmSettings = {
   OPENAI_MODEL: 'gpt-4o-mini',
   CODEX_ENABLED: false,
   CODEX_ACCESS_TOKEN: '',
-  CODEX_MODEL: 'gpt-5.5',
+  CODEX_MODEL: 'gpt-5.4-mini',
   IMPLEMENTATION_RUNTIME_LANE: '',
   SESSION_QUEUE_MAX_CONCURRENCY: 2,
+  providerEndpoints: [],
+  roleRoutes: [],
 };
 
 import {
@@ -72,11 +73,6 @@ export function SettingsScreen({
   const [isSaving, setIsSaving] = useState(false);
   const [generalMessage, setGeneralMessage] = useState('');
   const [isRefreshingFx, setIsRefreshingFx] = useState(false);
-  const [smokeResult, setSmokeResult] = useState<{
-    provider: LlmProvider;
-    message: string;
-  } | null>(null);
-  const [smokingProvider, setSmokingProvider] = useState<LlmProvider | null>(null);
   const [mcpForm, setMcpForm] = useState<McpServerForm>(emptyMcpForm);
   const [mcpPasteText, setMcpPasteText] = useState('');
   const [mcpMessage, setMcpMessage] = useState<string>('');
@@ -108,45 +104,15 @@ export function SettingsScreen({
       .finally(() => setIsLoading(false));
   }, []);
 
-  const handleSave = async (providerOverride?: LlmProvider) => {
+  const handleSave = async () => {
     setIsSaving(true);
-    const updated = {
-      ...settings,
-      ACTIVE_LLM_PROVIDER: providerOverride ?? settings.ACTIVE_LLM_PROVIDER,
-    };
-    const res = await saveLlmSettings(updated);
+    const res = await saveLlmSettings(settings);
     if (res.ok) {
-      setSettings(updated);
+      setSettings(settings);
     } else {
       alert('設定の保存に失敗しました');
     }
     setIsSaving(false);
-  };
-
-  const runProviderSmokeTest = async (provider: LlmProvider) => {
-    setSmokingProvider(provider);
-    setSmokeResult(null);
-    const updated = {
-      ...settings,
-      ACTIVE_LLM_PROVIDER: provider,
-    };
-    try {
-      const saveRes = await saveLlmSettings(updated);
-      if (!saveRes.ok) throw new Error('設定の保存に失敗しました');
-      setSettings(updated);
-      const result = await workspace.runLlmSmokeTest();
-      setSmokeResult({
-        provider,
-        message: `${result.provider}: ${result.ok ? 'OK' : 'NG'} ${result.message}`,
-      });
-    } catch (err) {
-      setSmokeResult({
-        provider,
-        message: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setSmokingProvider(null);
-    }
   };
 
   const onChange = <K extends keyof LlmSettings>(key: K, value: LlmSettings[K]) => {
@@ -185,13 +151,6 @@ export function SettingsScreen({
     } finally {
       setIsRefreshingFx(false);
     }
-  };
-
-  const setProviderEnabled = (provider: LlmProvider, enabled: boolean) => {
-    if (provider === 'openai') onChange('OPENAI_ENABLED', enabled);
-    if (provider === 'azure') onChange('AZURE_OPENAI_ENABLED', enabled);
-    if (provider === 'bedrock') onChange('AWS_BEDROCK_ENABLED', enabled);
-    void workspace.toggleProviderEnabled(provider, enabled);
   };
 
   const saveMcpServer = async () => {
@@ -388,16 +347,23 @@ export function SettingsScreen({
             />
           ) : null}
 
-          {activeSettingsSection === 'llm' ? (
+          {activeSettingsSection === 'llm-providers' ? (
             <SettingsLlmPanel
+              section="providers"
               settings={settings}
               isSaving={isSaving}
-              smokingProvider={smokingProvider}
-              smokeResult={smokeResult}
               onChange={onChange}
-              setProviderEnabled={setProviderEnabled}
               handleSave={handleSave}
-              runProviderSmokeTest={runProviderSmokeTest}
+            />
+          ) : null}
+
+          {activeSettingsSection === 'llm-routing' ? (
+            <SettingsLlmPanel
+              section="routing"
+              settings={settings}
+              isSaving={isSaving}
+              onChange={onChange}
+              handleSave={handleSave}
             />
           ) : null}
 
@@ -432,8 +398,6 @@ export function SettingsScreen({
               saveMcpServer={saveMcpServer}
             />
           ) : null}
-
-          {activeSettingsSection === 'todo' ? <SettingsTodoPanel workspace={workspace} /> : null}
         </div>
       </main>
     </div>

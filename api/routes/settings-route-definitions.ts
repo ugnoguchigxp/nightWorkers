@@ -23,8 +23,17 @@ import {
 import { llmSettingsSchema } from './settings-runtime';
 
 const llmModelsSchema = z.object({
-  activeProvider: z.enum(['azure', 'openai', 'bedrock']),
+  activeProvider: z.enum(['azure', 'openai', 'bedrock', 'codex']),
   options: z.array(z.object({ value: z.string(), label: z.string() })),
+});
+
+const codexSdkStatusSchema = z.object({
+  loggedIn: z.boolean(),
+  authSource: z.enum(['settings-token', 'environment-token', 'codex-auth-json', 'missing']),
+  codexHome: z.string(),
+  models: z.array(z.object({ value: z.string(), label: z.string() })),
+  modelSource: z.enum(['codex-models-cache', 'settings', 'fallback']),
+  checkedAt: z.string(),
 });
 
 const generalSettingsSchema = z.object({
@@ -149,6 +158,21 @@ export const getLlmModelsRoute = createRoute({
         },
       },
       description: 'Get model options for active provider',
+    },
+  },
+});
+
+export const getCodexSdkStatusRoute = createRoute({
+  method: 'get',
+  path: '/codex/status',
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: codexSdkStatusSchema,
+        },
+      },
+      description: 'Get Codex SDK login status and model options',
     },
   },
 });

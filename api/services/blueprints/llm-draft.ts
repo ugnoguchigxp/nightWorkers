@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { z } from 'zod';
 import {
   type AppBlueprint,
   appBlueprintSchema,
@@ -23,6 +22,10 @@ import {
   summarizeSupervisorReferenceDocuments,
 } from '../supervisor/skills/registry';
 import type { SupervisorRoutingHypothesis } from '../supervisor/skills/types';
+import {
+  buildAppBlueprintStructuredOutputJsonSchema,
+  renderAppBlueprintJsonSchema,
+} from './json-schema';
 import { validateAppBlueprint } from './validation';
 
 type BlueprintReferenceDocumentsSummary = ReturnType<typeof summarizeSupervisorReferenceDocuments>;
@@ -113,10 +116,11 @@ export async function generatePlanModeBlueprintDraft(input: {
     JSON.stringify(requestContract.userRequest, null, 2),
     {
       schemaName: requestContract.schemaName,
-      schema: z.toJSONSchema(appBlueprintSchema),
+      schema: buildAppBlueprintStructuredOutputJsonSchema(),
       emitEvent: input.emitEvent,
       taskId: input.taskId,
       runId: null,
+      role: 'plan',
     }
   );
 
@@ -419,10 +423,6 @@ const blueprintRoutingFallback: SupervisorRoutingHypothesis = {
   nextReferenceFiles: ['references/work_kinds/blueprint.md'],
   confidence: 0.7,
 };
-
-function renderAppBlueprintJsonSchema(): string {
-  return JSON.stringify(z.toJSONSchema(appBlueprintSchema), null, 2);
-}
 
 function buildPromptDiagnostics(
   schema: string,

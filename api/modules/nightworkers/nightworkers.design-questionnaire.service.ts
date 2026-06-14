@@ -58,6 +58,16 @@ const specificationDocumentDraftSchema = z.object({
 });
 
 const MAX_DESIGN_QUESTIONNAIRE_PAGES = 4;
+const PLAN_MODE_READ_ONLY_TASK_STATUSES = new Set(['completed', 'cancelled', 'failed', 'timed_out']);
+
+function assertPlanModeMutable(task: { status: string }) {
+  if (!PLAN_MODE_READ_ONLY_TASK_STATUSES.has(task.status)) return;
+  throw new AppError(
+    409,
+    'PLAN_MODE_READ_ONLY',
+    'Terminal sessions cannot modify Plan Mode artifacts.'
+  );
+}
 
 export async function createDesignQuestionnaire(
   taskId: string,
@@ -66,6 +76,7 @@ export async function createDesignQuestionnaire(
 ) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeMutable(task);
   const sourceBlueprintMessage = sourceBlueprintMessageId
     ? (await getQuestionnaireTaskAndBlueprint(taskId, sourceBlueprintMessageId))
         .sourceBlueprintMessage
@@ -131,6 +142,9 @@ export async function saveDesignQuestionnaireAnswers(
   sessionId: string,
   answers: DesignQuestionnaireAnswer[]
 ) {
+  const task = await repo.getTask(taskId);
+  if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeMutable(task);
   const session = await getDesignQuestionnaireSession(taskId, sessionId);
   if (session.status === 'review_ready' || session.status === 'accepted') {
     return session;
@@ -176,6 +190,9 @@ export async function saveDesignQuestionnaireAnswers(
 }
 
 export async function generateDesignQuestionnaireFollowUp(taskId: string, sessionId: string) {
+  const task = await repo.getTask(taskId);
+  if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeMutable(task);
   const session = await getDesignQuestionnaireSession(taskId, sessionId);
   if (session.questionSets.length >= MAX_DESIGN_QUESTIONNAIRE_PAGES) {
     await repo.updateDesignQuestionnaireSessionStatus(sessionId, 'review_ready');
@@ -266,6 +283,9 @@ async function assessDesignQuestionnaireNextStep(taskId: string, session: any) {
 }
 
 export async function generateDesignQuestionnaireReview(taskId: string, sessionId: string) {
+  const task = await repo.getTask(taskId);
+  if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeMutable(task);
   const session = await getDesignQuestionnaireSession(taskId, sessionId);
   const rawOutput = await generateDesignQuestionnaireReviewRawOutput(session);
   const parsed = parseDesignDecisionReviewRaw(rawOutput);
@@ -287,6 +307,9 @@ export async function generateDesignQuestionnaireReview(taskId: string, sessionI
 }
 
 export async function acceptDesignQuestionnaireReview(taskId: string, sessionId: string) {
+  const task = await repo.getTask(taskId);
+  if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeMutable(task);
   const session = await getDesignQuestionnaireSession(taskId, sessionId);
   const latestDraft = session.reviews.find((review) => review.status === 'draft' && review.review);
   if (!latestDraft?.review) {
@@ -315,6 +338,9 @@ export async function acceptDesignQuestionnaireReview(taskId: string, sessionId:
 }
 
 export async function leaveDesignQuestionnaireReviewUnadopted(taskId: string, sessionId: string) {
+  const task = await repo.getTask(taskId);
+  if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeMutable(task);
   const session = await getDesignQuestionnaireSession(taskId, sessionId);
   const latestReview = session.reviews[0];
   if (latestReview) {
@@ -419,6 +445,7 @@ export async function generateSpecificationStatusBlueprint(
 ) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeMutable(task);
   const session = await resolveReadyQuestionnaireSession(taskId, input.questionnaireSessionId);
   const prompt = renderQuestionnaireBlueprintPrompt(task, session);
   try {
@@ -498,6 +525,7 @@ export async function generateSpecificationStatusDbDesign(
 ) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeMutable(task);
   const session = await resolveReadyQuestionnaireSession(taskId, input.questionnaireSessionId);
   const sourceBlueprintMessage = await resolveSourceBlueprintMessage(
     taskId,
@@ -552,6 +580,7 @@ export async function generateSpecificationStatusDesignDocument(
 ) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeMutable(task);
   const session = await resolveReadyQuestionnaireSession(taskId, input.questionnaireSessionId);
   const workspace = await getSpecificationWorkspace(taskId);
   const messages = await repo.listTaskMessages(taskId);
@@ -719,6 +748,7 @@ async function generateDesignQuestionnaireRawOutput(input: {
       schemaName: 'design_questionnaire',
       schema: questionnaireChoiceFormJsonSchema,
       taskId: input.taskId,
+      role: 'plan',
     }
   );
 }
@@ -731,6 +761,7 @@ async function generateDesignQuestionnaireFollowUpRawOutput(session: any) {
       schemaName: 'design_questionnaire_follow_up',
       schema: questionnaireChoiceFormJsonSchema,
       taskId: session.taskId,
+      role: 'plan',
     }
   );
 }
@@ -743,6 +774,7 @@ async function generateDesignQuestionnaireFollowUpDecisionRawOutput(session: any
       schemaName: 'design_questionnaire_follow_up_decision',
       schema: designQuestionnaireFollowUpDecisionJsonSchema,
       taskId: session.taskId,
+      role: 'plan',
     }
   );
 }
@@ -755,6 +787,7 @@ async function generateDesignQuestionnaireReviewRawOutput(session: any) {
       schemaName: 'design_decision_review',
       schema: designDecisionReviewJsonSchema,
       taskId: session.taskId,
+      role: 'review',
     }
   );
 }
@@ -770,6 +803,7 @@ async function generateSpecificationDesignDocumentRawOutput(
       schemaName: 'specification_document',
       schema: z.toJSONSchema(specificationDocumentDraftSchema),
       taskId,
+      role: 'plan',
     }
   );
 }
@@ -789,6 +823,7 @@ async function reviewAndImproveSpecificationDocument(input: {
       schemaName: 'specification_document_review',
       schema: z.toJSONSchema(specificationDocumentDraftSchema),
       taskId: input.taskId,
+      role: 'review',
     }
   );
   const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));

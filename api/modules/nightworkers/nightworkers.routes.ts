@@ -55,6 +55,7 @@ import {
   listProjectFilesRoute,
   listRepositoriesRoute,
   readProjectFileRoute,
+  readRepositoryDiffRoute,
   updateRepositoryRoute,
 } from './routes/repository-routes';
 import {
@@ -195,6 +196,13 @@ const router = createOpenApiRouter()
       if (!filePath) return c.json({ error: 'path is required' }, 400);
       const file = await service.readProjectFile(c.req.param('id'), filePath);
       return c.json(file, 200);
+    })
+  )
+  .openapi(
+    readRepositoryDiffRoute,
+    withOpenApiRouteError(readRepositoryDiffRoute, async (c) => {
+      const diff = await service.readRepositoryDiff(c.req.param('id'));
+      return c.json(diff, 200);
     })
   )
   .openapi(deleteRepositoryRoute, async (c) => {

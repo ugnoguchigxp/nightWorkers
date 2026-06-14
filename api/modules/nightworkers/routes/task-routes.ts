@@ -411,6 +411,9 @@ export const appendWorkbenchMessageRoute = createRoute({
             prompt: z.string().min(1),
             waitForIntake: z.boolean().optional(),
             artifactContext: workbenchArtifactContextSchema.nullable().optional(),
+            providerEndpointId: z.string().optional(),
+            model: z.string().optional(),
+            thinkingDepth: z.enum(['low', 'medium', 'high', 'very_high']).optional(),
             intent: z
               .enum([
                 'intake',

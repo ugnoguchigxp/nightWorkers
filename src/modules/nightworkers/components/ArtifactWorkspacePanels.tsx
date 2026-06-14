@@ -136,6 +136,7 @@ export function SpecificationStatusView({
   busyAction,
   canGenerateDbDesign,
   hasSpecification,
+  isImplementationLocked = false,
   onOpenQuestionnaire,
   onGenerateBlueprint,
   onGenerateDbDesign,
@@ -148,6 +149,7 @@ export function SpecificationStatusView({
   busyAction: string | null;
   canGenerateDbDesign: boolean;
   hasSpecification: boolean;
+  isImplementationLocked?: boolean;
   onOpenQuestionnaire: () => void;
   onGenerateBlueprint: () => void;
   onGenerateDbDesign: () => void;
@@ -186,7 +188,7 @@ export function SpecificationStatusView({
       done: hasBlueprint,
       buttonLabel: hasBlueprint ? 'Blueprintを再生成' : 'Blueprint作成',
       busy: busyAction === 'blueprint',
-      disabled: !questionnaireDone,
+      disabled: !questionnaireDone || isImplementationLocked,
       onClick: onGenerateBlueprint,
     },
     {
@@ -198,7 +200,7 @@ export function SpecificationStatusView({
       done: hasDbDesign,
       buttonLabel: hasDbDesign ? 'DBデザインを再生成' : 'DBデザイン作成',
       busy: busyAction === 'db-design',
-      disabled: !questionnaireDone || !canGenerateDbDesign,
+      disabled: !questionnaireDone || !canGenerateDbDesign || isImplementationLocked,
       onClick: onGenerateDbDesign,
     },
     {
@@ -210,7 +212,7 @@ export function SpecificationStatusView({
       done: hasSpecification,
       buttonLabel: hasSpecification ? '仕様書を再生成' : '仕様書作成',
       busy: busyAction === 'design-doc',
-      disabled: !questionnaireDone,
+      disabled: !questionnaireDone || isImplementationLocked,
       onClick: onGenerateSpecification,
     },
   ];
@@ -265,14 +267,14 @@ export function SpecificationStatusView({
           <StatusActionButton
             label="今すぐ実装開始"
             busy={busyAction === 'queue-session'}
-            disabled={!onQueueSession}
+            disabled={!onQueueSession || isImplementationLocked}
             onClick={() => onQueueSession?.()}
             size="lg"
           />
           <StatusActionButton
             label="キューに追加"
             busy={busyAction === 'add-to-queue'}
-            disabled={!onAddToQueue}
+            disabled={!onAddToQueue || isImplementationLocked}
             onClick={() => onAddToQueue?.()}
             size="lg"
           />

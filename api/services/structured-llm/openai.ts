@@ -12,6 +12,7 @@ export function buildOpenAIChatCompletionBody(input: {
   jsonSchema?: { name: string; schema: unknown };
   responseFormat: 'json_schema' | 'json_object';
   stream: boolean;
+  reasoningEffort?: 'low' | 'medium' | 'high';
 }) {
   const jsonSchema =
     input.jsonSchema || buildSchemaFirstResponseJsonSchema(input.round === 1 ? 1 : 2);
@@ -24,6 +25,7 @@ export function buildOpenAIChatCompletionBody(input: {
     temperature: 0.1,
     stream: input.stream,
     ...(input.stream ? { stream_options: { include_usage: true } } : {}),
+    ...(input.reasoningEffort ? { reasoning_effort: input.reasoningEffort } : {}),
     response_format:
       input.responseFormat === 'json_schema'
         ? {

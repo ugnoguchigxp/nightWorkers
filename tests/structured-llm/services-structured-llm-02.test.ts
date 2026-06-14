@@ -50,12 +50,12 @@ describe('Supervisor LLM schema-first parsing', () => {
     });
   });
 
-  it('normalizes legacy Codex active provider away from structured LLM calls', () => {
+  it('keeps Codex as a structured LLM provider when selected', () => {
     fs.writeFileSync(
       process.env.NIGHTWORKERS_LLM_SETTINGS_PATH!,
       JSON.stringify({
         ACTIVE_LLM_PROVIDER: 'codex',
-        AZURE_OPENAI_DEPLOYMENT_NAME: 'gpt-deployment',
+        CODEX_MODEL: 'gpt-5.4-mini',
       })
     );
 
@@ -73,9 +73,124 @@ describe('Supervisor LLM schema-first parsing', () => {
       settings: { ACTIVE_LLM_PROVIDER: 'codex' },
     });
 
-    expect(settings.ACTIVE_LLM_PROVIDER).toBe('azure');
-    expect(request.providerId).toBe('azure-openai');
-    expect(directRequest.providerId).toBe('azure-openai');
+    expect(settings.ACTIVE_LLM_PROVIDER).toBe('codex');
+    expect(request.providerId).toBe('codex');
+    expect(request.modelOrDeployment).toBe('gpt-5.4-mini');
+    expect(directRequest.providerId).toBe('codex');
+  });
+
+  it('resolves role routing to provider endpoint and model when role is specified', () => {
+    const request = buildNormalizedSupervisorLlmRequest({
+      systemPrompt: 'system text',
+      userPrompt: 'user text',
+      label: 'specification_document',
+      role: 'plan',
+      settings: {
+        ACTIVE_LLM_PROVIDER: 'azure',
+        providerEndpoints: [
+          {
+            id: 'codex-main',
+            name: 'Codex Main',
+            kind: 'codex',
+            enabled: true,
+            models: ['gpt-5.5', 'gpt-5.4-mini'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'plan',
+            primary: {
+              providerEndpointId: 'codex-main',
+              model: 'gpt-5.5',
+              thinkingDepth: 'very_high',
+            },
+            fallbacks: [],
+          },
+        ],
+      },
+    });
+
+    expect(request).toMatchObject({
+      providerId: 'codex',
+      providerEndpointId: 'codex-main',
+      role: 'plan',
+      routeSource: 'primary',
+      modelOrDeployment: 'gpt-5.5',
+      thinkingDepth: 'very_high',
+      diagnostics: {
+        role: 'plan',
+        providerEndpointId: 'codex-main',
+        routeSource: 'primary',
+        thinkingDepth: 'very_high',
+      },
+    });
+  });
+
+  it('uses the role route fallback when the primary endpoint is disabled', () => {
+    const request = buildNormalizedSupervisorLlmRequest({
+      systemPrompt: 'system text',
+      userPrompt: 'user text',
+      label: 'specification_document_review',
+      role: 'review',
+      settings: {
+        ACTIVE_LLM_PROVIDER: 'azure',
+        providerEndpoints: [
+          {
+            id: 'local-qwen',
+            name: 'Local Qwen',
+            kind: 'local',
+            enabled: false,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['qwen3-coder'],
+          },
+          {
+            id: 'codex-disabled',
+            name: 'Codex Disabled',
+            kind: 'codex',
+            enabled: false,
+            models: ['gpt-5.4-mini'],
+          },
+          {
+            id: 'azure-review',
+            name: 'Azure Review',
+            kind: 'azure',
+            enabled: true,
+            endpoint: 'https://example.openai.azure.com',
+            apiVersion: '2024-05-01-preview',
+            models: ['gpt-5.5'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'review',
+            primary: {
+              providerEndpointId: 'local-qwen',
+              model: 'qwen3-coder',
+            },
+            fallbacks: [
+              {
+                providerEndpointId: 'codex-disabled',
+                model: 'gpt-5.4-mini',
+              },
+              {
+                providerEndpointId: 'azure-review',
+                model: 'gpt-5.5',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(request).toMatchObject({
+      providerId: 'azure-openai',
+      providerEndpointId: 'azure-review',
+      role: 'review',
+      routeSource: 'fallback',
+      modelOrDeployment: 'gpt-5.5',
+      endpoint: 'https://example.openai.azure.com',
+      apiVersion: '2024-05-01-preview',
+    });
   });
 
   it('uses runtime provider settings ahead of environment fallback', async () => {

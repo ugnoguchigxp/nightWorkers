@@ -15,6 +15,7 @@ import type {
   McpServerImportResult,
   McpServerInput,
   McpServerTestResult,
+  ProjectDiff,
   ProjectFileContent,
   ProjectFileEntry,
   Repository,
@@ -40,6 +41,11 @@ export type WorkbenchMessageResult = {
   task?: Task;
   run?: TaskRun | null;
   messages?: TaskMessage[];
+};
+export type WorkbenchLlmSelection = {
+  model?: string;
+  providerEndpointId?: string;
+  thinkingDepth?: string;
 };
 export type NightWorkersWorkspaceState = {
   projects: Repository[];
@@ -72,6 +78,8 @@ export type NightWorkersWorkspaceState = {
   selectedProjectFilePath: string | null;
   isProjectFilesLoading: boolean;
   isProjectFileLoading: boolean;
+  projectDiff: ProjectDiff | null;
+  isProjectDiffLoading: boolean;
   isRealtimeConnected: boolean;
   realtimeStatus: RealtimeStatus;
   isChatSubmitting: boolean;
@@ -118,7 +126,8 @@ export type NightWorkersWorkspaceState = {
     sessionId: string,
     prompt: string,
     intent: WorkbenchChatIntent,
-    artifactContext?: WorkbenchArtifactContext | null
+    artifactContext?: WorkbenchArtifactContext | null,
+    llmSelection?: WorkbenchLlmSelection
   ) => Promise<WorkbenchMessageResult | undefined>;
   refreshWorkspace: () => void;
   currentBrowserPath: string | null;
@@ -127,6 +136,8 @@ export type NightWorkersWorkspaceState = {
   isBrowserLoading: boolean;
   fetchDirectories: (targetPath?: string) => Promise<void>;
   createFolder: (input: { parentPath?: string; name: string }) => Promise<FolderDir>;
+  refreshProjectFiles: () => Promise<void>;
+  refreshProjectDiff: () => Promise<void>;
   llmSettings: LlmSettings | null;
   activeProvider: LlmProvider;
   providerModelOptions: Array<{ value: string; label: string }>;

@@ -1,4 +1,5 @@
 import { createOpenApiRouter } from '../lib/openapi';
+import { readCodexSdkStatus } from '../services/codex-global-config/status';
 import { buildSampleHookInput } from '../services/hooks/hooks-config-schema';
 import { readEffectiveAgentHooksSettings } from '../services/hooks/hooks-effective-settings';
 import { runSingleAgentHookForTest } from '../services/hooks/hooks-runner';
@@ -35,6 +36,7 @@ import {
   deleteAgentHookRoute,
   deleteMcpServerRoute,
   getAgentHooksRoute,
+  getCodexSdkStatusRoute,
   getFxRatesRoute,
   getGeneralSettingsRoute,
   getLlmModelsRoute,
@@ -86,6 +88,16 @@ export const settingsRouter = createOpenApiRouter()
       activeProvider,
       options: options.map((value: string) => ({ value, label: value })),
     });
+  })
+  .openapi(getCodexSdkStatusRoute, (c) => {
+    const settings = getCurrentSettings();
+    return c.json(
+      readCodexSdkStatus({
+        accessToken: settings.CODEX_ACCESS_TOKEN,
+        configuredModel: settings.CODEX_MODEL,
+      }),
+      200
+    );
   })
   .openapi(getGeneralSettingsRoute, (c) => {
     return c.json(readGeneralSettings(), 200);

@@ -1,4 +1,4 @@
-import { Bot, Globe, ListTodo, Palette, PlugZap, type Settings, Workflow } from 'lucide-react';
+import { Bot, Globe, Palette, PlugZap, type Settings, Workflow } from 'lucide-react';
 import type {
   AgentHookConfig,
   AgentHookEvent,
@@ -39,7 +39,13 @@ export type AgentHookForm = {
   failClosed: boolean;
 };
 
-export type SettingsSectionId = 'general' | 'appearance' | 'llm' | 'hooks' | 'mcp' | 'todo';
+export type SettingsSectionId =
+  | 'general'
+  | 'appearance'
+  | 'llm-providers'
+  | 'llm-routing'
+  | 'hooks'
+  | 'mcp';
 
 export const defaultGeneralSettings: GeneralSettings = {
   timezone: 'Asia/Tokyo',
@@ -109,10 +115,16 @@ export const settingsSections: Array<{
     icon: Palette,
   },
   {
-    id: 'llm',
-    labelKey: 'settings.section.llm',
-    descriptionKey: 'settings.section.llmDescription',
+    id: 'llm-providers',
+    labelKey: 'settings.section.llmProviders',
+    descriptionKey: 'settings.section.llmProvidersDescription',
     icon: Bot,
+  },
+  {
+    id: 'llm-routing',
+    labelKey: 'settings.section.llmRouting',
+    descriptionKey: 'settings.section.llmRoutingDescription',
+    icon: Workflow,
   },
   {
     id: 'hooks',
@@ -125,12 +137,6 @@ export const settingsSections: Array<{
     labelKey: 'settings.section.mcp',
     descriptionKey: 'settings.section.mcpDescription',
     icon: PlugZap,
-  },
-  {
-    id: 'todo',
-    labelKey: 'settings.section.todo',
-    descriptionKey: 'settings.section.todoDescription',
-    icon: ListTodo,
   },
 ];
 

@@ -144,8 +144,7 @@ For a fuller step-by-step walkthrough, see
   Preview when those artifacts exist.
 - Implementation Queue: explicit user-approved automation work, separate from
   normal Session chat.
-- Settings: LLM providers, MCP servers, Agent Hooks, appearance, and TODO
-  Workflow gates.
+- Settings: LLM providers, MCP servers, Agent Hooks, and appearance.
 - Overview: repository, queue, settings, usage, and warning summaries across
   the local NightWorkers workspace.
 

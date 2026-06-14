@@ -40,6 +40,18 @@ vi.mock('../api/services/structured-llm', () => ({
   callSupervisorLLM: llmMocks.callSupervisorLLM,
 }));
 
+const codexStatusMocks = vi.hoisted(() => ({
+  readCodexSdkStatus: vi.fn(),
+  readCodexModelOptions: vi
+    .fn()
+    .mockReturnValue([{ value: 'gpt-5.4-mini', label: 'GPT-5.4-Mini' }]),
+}));
+
+vi.mock('../api/services/codex-global-config/status', () => ({
+  readCodexSdkStatus: codexStatusMocks.readCodexSdkStatus,
+  readCodexModelOptions: codexStatusMocks.readCodexModelOptions,
+}));
+
 const runtimeSettingsMocks = vi.hoisted(() => ({
   getCurrentSettings: vi.fn().mockReturnValue({
     ACTIVE_LLM_PROVIDER: 'openai',
@@ -71,6 +83,17 @@ import { settingsRouter } from '../api/routes/settings';
 describe('general and LLM settings routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    codexStatusMocks.readCodexSdkStatus.mockReturnValue({
+      loggedIn: true,
+      authSource: 'codex-auth-json',
+      codexHome: '/tmp/codex-home',
+      models: [{ value: 'gpt-5.4-mini', label: 'GPT-5.4-Mini' }],
+      modelSource: 'codex-models-cache',
+      checkedAt: '2026-06-14T00:00:00.000Z',
+    });
+    codexStatusMocks.readCodexModelOptions.mockReturnValue([
+      { value: 'gpt-5.4-mini', label: 'GPT-5.4-Mini' },
+    ]);
   });
 
   it('GET /api/settings/llm gets masked settings', async () => {
@@ -141,6 +164,28 @@ describe('general and LLM settings routes', () => {
         { value: 'gpt-4o', label: 'gpt-4o' },
         { value: 'gpt-4o-mini', label: 'gpt-4o-mini' },
       ],
+    });
+  });
+
+  it('GET /api/settings/codex/status returns Codex SDK status', async () => {
+    const app = new OpenAPIHono<AppEnv>();
+    app.onError(errorHandler);
+    app.route('/api/settings', settingsRouter);
+
+    const res = await app.request('/api/settings/codex/status', { method: 'GET' });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({
+      loggedIn: true,
+      authSource: 'codex-auth-json',
+      codexHome: '/tmp/codex-home',
+      models: [{ value: 'gpt-5.4-mini', label: 'GPT-5.4-Mini' }],
+      modelSource: 'codex-models-cache',
+      checkedAt: '2026-06-14T00:00:00.000Z',
+    });
+    expect(codexStatusMocks.readCodexSdkStatus).toHaveBeenCalledWith({
+      accessToken: undefined,
+      configuredModel: undefined,
     });
   });
 

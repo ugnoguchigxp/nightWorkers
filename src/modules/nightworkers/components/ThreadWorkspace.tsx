@@ -22,12 +22,12 @@ import type {
   TaskMessage,
   TaskRun,
   ThinkingDepth,
+  ThinkingDepthOption,
   WorkbenchArtifactContext,
   WorkbenchArtifactRef,
   WorkbenchChatIntent,
   WorkbenchSessionView,
 } from '../types';
-import { THINKING_DEPTH_OPTIONS } from '../types';
 import { getRelativeTimestamp } from '../utils/time';
 import { Composer } from './Composer';
 import { ThreadMessage } from './ThreadMessage';
@@ -55,6 +55,7 @@ type ThreadWorkspaceProps = {
   realtimeStatus: 'initializing' | 'connecting' | 'connected' | 'disconnected';
   model: string;
   thinkingDepth: ThinkingDepth;
+  thinkingDepthOptions: ThinkingDepthOption[];
   onModelChange: (model: string) => void;
   modelOptions: ModelOption[];
   onThinkingDepthChange: (depth: ThinkingDepth) => void;
@@ -570,6 +571,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
               showDebugEvents={showDebugEvents}
               taskMessages={props.taskMessages}
               thinkingDepth={props.thinkingDepth}
+              thinkingDepthOptions={props.thinkingDepthOptions}
               workbenchBanner={workbenchBanner}
             />
           </Panel>
@@ -610,6 +612,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
             showDebugEvents={showDebugEvents}
             taskMessages={props.taskMessages}
             thinkingDepth={props.thinkingDepth}
+            thinkingDepthOptions={props.thinkingDepthOptions}
             workbenchBanner={workbenchBanner}
           />
         </div>
@@ -718,6 +721,7 @@ function ThreadBody({
   onStopActiveRun,
   onStopBackgroundProcess,
   onThinkingDepthChange,
+  thinkingDepthOptions,
   realtimeStatus,
   runs,
   onScroll,
@@ -754,6 +758,7 @@ function ThreadBody({
   | 'runs'
   | 'taskMessages'
   | 'thinkingDepth'
+  | 'thinkingDepthOptions'
 > & {
   onScroll: () => void;
   scrollContainerRef: (node: HTMLDivElement | null) => void;
@@ -847,7 +852,7 @@ function ThreadBody({
             latestDiffPatch={latestRun?.diffPatch || ''}
             realtimeStatus={realtimeStatus}
             isStopMode={canStopActiveRun}
-            thinkingDepthOptions={THINKING_DEPTH_OPTIONS}
+            thinkingDepthOptions={thinkingDepthOptions}
             onModelChange={onModelChange}
             onThinkingDepthChange={onThinkingDepthChange}
             onClearArtifactContext={onClearArtifactContext}

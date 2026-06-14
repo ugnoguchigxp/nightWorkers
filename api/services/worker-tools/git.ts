@@ -163,9 +163,16 @@ export async function gitDiffTool(input: GitDiffInput): Promise<WorkerToolResult
   const absoluteRepoRoot = path.resolve(repoRoot);
 
   try {
+    const hasHead = await execAsync('git rev-parse --verify HEAD', {
+      cwd: absoluteRepoRoot,
+    })
+      .then(() => true)
+      .catch(() => false);
+    const diffCommand = hasHead ? 'git diff HEAD' : 'git diff --cached';
+    const diffStatCommand = hasHead ? 'git diff --stat HEAD' : 'git diff --cached --stat';
     const [diffResult, diffStatResult, untracked] = await Promise.all([
-      execAsync('git diff HEAD', { cwd: absoluteRepoRoot }),
-      execAsync('git diff --stat HEAD', { cwd: absoluteRepoRoot }).catch(() => ({ stdout: '' })),
+      execAsync(diffCommand, { cwd: absoluteRepoRoot }),
+      execAsync(diffStatCommand, { cwd: absoluteRepoRoot }).catch(() => ({ stdout: '' })),
       collectUntrackedDiff(absoluteRepoRoot),
     ]);
 

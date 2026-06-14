@@ -239,4 +239,5 @@ export {
   getReviewRubrics,
   listProjectFiles,
   readProjectFile,
+  readRepositoryDiff,
 } from './nightworkers.review-files.service';

@@ -3,6 +3,7 @@ import {
   ChevronRight,
   Copy,
   Download,
+  FolderTree,
   GitCompare,
   Maximize2,
   Minimize2,
@@ -11,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
   ActivityArtifact,
+  ProjectDiff,
   ProjectFileContent,
   ProjectFileEntry,
   Repository,
@@ -38,12 +40,18 @@ type ArtifactPaneProps = {
   selectedFilePath: string | null;
   isFilesLoading: boolean;
   isFileLoading: boolean;
+  projectDiff: ProjectDiff | null;
+  isDiffLoading: boolean;
   onToggleDirectory: (path: string) => Promise<void>;
   onOpenFile: (path: string) => void;
-  onShowDiff: () => void;
+  onRefreshFiles: () => Promise<void>;
+  onRefreshDiff: () => Promise<void>;
   onQueueSession?: () => Promise<void>;
   onAddToQueue?: () => Promise<void>;
+  isImplementationLocked?: boolean;
 };
+
+type ProjectArtifactMode = 'tree' | 'diff';
 
 function workspaceInitialTab(value: unknown) {
   if (value === 'design-doc') return 'specification';
@@ -82,16 +90,22 @@ export function ArtifactPane({
   selectedFilePath,
   isFilesLoading,
   isFileLoading,
+  projectDiff,
+  isDiffLoading,
   onToggleDirectory,
   onOpenFile,
-  onShowDiff,
+  onRefreshFiles,
+  onRefreshDiff,
   onQueueSession,
   onAddToQueue,
+  isImplementationLocked = false,
 }: ArtifactPaneProps) {
   const { t } = useTranslation();
   const [versionArtifactId, setVersionArtifactId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [projectArtifactMode, setProjectArtifactMode] = useState<ProjectArtifactMode>('tree');
   const showProjectTree = focusType === 'project_tree';
+  const showProjectDiff = showProjectTree && projectArtifactMode === 'diff';
   const artifactVersions = useMemo(
     () => buildArtifactVersions(selectedArtifact, taskMessages, activityArtifacts),
     [activityArtifacts, selectedArtifact, taskMessages]
@@ -100,6 +114,24 @@ export function ArtifactPane({
     setVersionArtifactId(selectedArtifact?.id || null);
     setIsFullscreen(false);
   }, [selectedArtifact?.id]);
+  useEffect(() => {
+    if (!showProjectTree) return;
+    const refreshCurrentProjectArtifact = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (projectArtifactMode === 'diff') {
+        void onRefreshDiff();
+        return;
+      }
+      void onRefreshFiles();
+    };
+    refreshCurrentProjectArtifact();
+    window.addEventListener('focus', refreshCurrentProjectArtifact);
+    document.addEventListener('visibilitychange', refreshCurrentProjectArtifact);
+    return () => {
+      window.removeEventListener('focus', refreshCurrentProjectArtifact);
+      document.removeEventListener('visibilitychange', refreshCurrentProjectArtifact);
+    };
+  }, [onRefreshDiff, onRefreshFiles, projectArtifactMode, showProjectTree]);
   const currentVersionIndex = Math.max(
     0,
     artifactVersions.findIndex(
@@ -135,7 +167,9 @@ export function ArtifactPane({
     Boolean(selectedMessage);
   const artifactTitle =
     showProjectTree || !selectedArtifact
-      ? selectedFilePath || t('artifact.projectTree')
+      ? showProjectDiff
+        ? t('artifact.gitDiff')
+        : selectedFilePath || t('artifact.projectTree')
       : displayArtifact?.title || selectedArtifact.title;
   const exportedContent = buildExportedArtifactContent({
     showDiff,
@@ -158,7 +192,14 @@ export function ArtifactPane({
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[#6c7086]" />
           <span className="truncate font-medium text-[#cdd6f4]">{artifactTitle}</span>
         </div>
-        {!showProjectTree && displayArtifact ? (
+        {showProjectTree ? (
+          <ProjectTreeHeaderActions
+            mode={projectArtifactMode}
+            isFullscreen={isFullscreen}
+            onModeChange={setProjectArtifactMode}
+            onToggleFullscreen={() => setIsFullscreen((value) => !value)}
+          />
+        ) : displayArtifact ? (
           <ArtifactHeaderActions
             currentVersionIndex={currentVersionIndex}
             versionCount={artifactVersions.length || 1}
@@ -176,10 +217,9 @@ export function ArtifactPane({
         ) : null}
       </div>
       <div className="flex min-h-0 flex-1">
-        {showProjectTree ? (
+        {showProjectTree && !showProjectDiff ? (
           <div className="min-h-0 w-56 shrink-0 overflow-auto border-r border-slate-800 p-2">
             <FilesOutline
-              latestRun={latestRun}
               isFilesLoading={isFilesLoading}
               fileEntries={fileEntries}
               fileEntriesByDirectory={fileEntriesByDirectory}
@@ -188,12 +228,16 @@ export function ArtifactPane({
               selectedFilePath={selectedFilePath}
               onToggleDirectory={onToggleDirectory}
               onOpenFile={onOpenFile}
-              onShowDiff={onShowDiff}
             />
           </div>
         ) : null}
         <div className="min-w-0 flex-1 overflow-hidden bg-[#1e1e2e]">
-          {showDiff ? (
+          {showProjectDiff ? (
+            <ProjectDiffContent
+              diff={projectDiff?.diff || ''}
+              isLoading={isDiffLoading || Boolean(activeProject && !projectDiff)}
+            />
+          ) : showDiff ? (
             <DiffViewer diff={latestRun?.diffPatch || ''} />
           ) : showBlueprintWorkspace ? (
             <BlueprintSpecificationWorkspaceViewer
@@ -203,6 +247,7 @@ export function ArtifactPane({
               initialTab={workspaceInitialTab(displayArtifact?.metadata?.initialTab)}
               onQueueSession={onQueueSession}
               onAddToQueue={onAddToQueue}
+              isImplementationLocked={isImplementationLocked}
             />
           ) : showBlueprint ? (
             <BlueprintViewer
@@ -307,6 +352,63 @@ function ArtifactHeaderActions({
         title={t('artifact.saveVersion')}
       >
         <Download className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 text-slate-300 hover:border-slate-500"
+        onClick={onToggleFullscreen}
+        aria-label={isFullscreen ? t('artifact.exitFullscreen') : t('artifact.fullscreen')}
+        title={isFullscreen ? t('artifact.exitFullscreen') : t('artifact.fullscreen')}
+      >
+        {isFullscreen ? (
+          <Minimize2 className="h-3.5 w-3.5" />
+        ) : (
+          <Maximize2 className="h-3.5 w-3.5" />
+        )}
+      </button>
+    </div>
+  );
+}
+
+function ProjectTreeHeaderActions({
+  mode,
+  isFullscreen,
+  onModeChange,
+  onToggleFullscreen,
+}: {
+  mode: ProjectArtifactMode;
+  isFullscreen: boolean;
+  onModeChange: (mode: ProjectArtifactMode) => void;
+  onToggleFullscreen: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <button
+        type="button"
+        className={`inline-flex h-7 w-7 items-center justify-center rounded border text-slate-300 ${
+          mode === 'tree'
+            ? 'border-sky-500/80 bg-sky-500/15 text-sky-100'
+            : 'border-slate-700 hover:border-slate-500'
+        }`}
+        onClick={() => onModeChange('tree')}
+        aria-label={t('artifact.showProjectTree')}
+        title={t('artifact.showProjectTree')}
+      >
+        <FolderTree className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className={`inline-flex h-7 w-7 items-center justify-center rounded border text-slate-300 ${
+          mode === 'diff'
+            ? 'border-sky-500/80 bg-sky-500/15 text-sky-100'
+            : 'border-slate-700 hover:border-slate-500'
+        }`}
+        onClick={() => onModeChange('diff')}
+        aria-label={t('artifact.showGitDiff')}
+        title={t('artifact.showGitDiff')}
+      >
+        <GitCompare className="h-3.5 w-3.5" />
       </button>
       <button
         type="button"
@@ -459,7 +561,6 @@ function artifactFileName(artifact: WorkbenchArtifactRef) {
 }
 
 function FilesOutline({
-  latestRun,
   isFilesLoading,
   fileEntries,
   fileEntriesByDirectory,
@@ -468,9 +569,7 @@ function FilesOutline({
   selectedFilePath,
   onToggleDirectory,
   onOpenFile,
-  onShowDiff,
 }: {
-  latestRun?: TaskRun;
   isFilesLoading: boolean;
   fileEntries: ProjectFileEntry[];
   fileEntriesByDirectory: Record<string, ProjectFileEntry[]>;
@@ -479,22 +578,11 @@ function FilesOutline({
   selectedFilePath: string | null;
   onToggleDirectory: (path: string) => Promise<void>;
   onOpenFile: (path: string) => void;
-  onShowDiff: () => void;
 }) {
   const { t } = useTranslation();
 
   return (
     <>
-      {latestRun?.diffPatch?.trim() ? (
-        <button
-          type="button"
-          className="mb-2 flex w-full items-center gap-2 rounded border border-slate-700/70 px-2 py-1 text-left text-[11px] text-slate-200 hover:border-slate-500"
-          onClick={onShowDiff}
-        >
-          <GitCompare className="h-3.5 w-3.5" />
-          {t('artifact.diff')}
-        </button>
-      ) : null}
       {isFilesLoading ? (
         <div className="px-2 py-1 text-[11px] text-slate-500">{t('artifact.loading')}</div>
       ) : (
@@ -509,6 +597,22 @@ function FilesOutline({
         />
       )}
     </>
+  );
+}
+
+function ProjectDiffContent({ diff, isLoading }: { diff: string; isLoading: boolean }) {
+  const { t } = useTranslation();
+  if (isLoading) {
+    return (
+      <div className="flex h-full items-center justify-center text-xs text-slate-500">
+        {t('artifact.loadingDiff')}
+      </div>
+    );
+  }
+  return (
+    <div className="h-full overflow-y-auto p-3">
+      <DiffViewer diff={diff} />
+    </div>
   );
 }
 

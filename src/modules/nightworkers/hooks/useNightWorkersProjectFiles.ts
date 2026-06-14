@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   browseFolders,
   createFolder as createFolderCommand,
+  fetchRepositoryDiff,
   fetchRepositoryFile,
   fetchRepositoryFiles,
 } from '../nightWorkersCommands';
-import type { ProjectFileContent, ProjectFileEntry } from '../types';
+import type { ProjectDiff, ProjectFileContent, ProjectFileEntry } from '../types';
 import type { FolderDir } from './nightWorkersWorkspaceState';
 
 const rootProjectDirectory = '';
@@ -51,7 +52,11 @@ export function useNightWorkersProjectFiles(activeProjectId: string | undefined)
     return (await res.json()) as FolderDir;
   };
 
-  const { data: projectFileEntries = [], isLoading: isProjectFilesLoading } = useQuery({
+  const {
+    data: projectFileEntries = [],
+    isLoading: isProjectFilesLoading,
+    refetch: refetchRootProjectFiles,
+  } = useQuery({
     queryKey: ['projectFiles', activeProjectId, rootProjectDirectory],
     queryFn: async () => {
       if (!activeProjectId) return [];
@@ -69,7 +74,11 @@ export function useNightWorkersProjectFiles(activeProjectId: string | undefined)
     [projectFileEntries, projectFileEntriesByDirectory]
   );
 
-  const { data: selectedProjectFile = null, isLoading: isProjectFileLoading } = useQuery({
+  const {
+    data: selectedProjectFile = null,
+    isLoading: isProjectFileLoading,
+    refetch: refetchSelectedProjectFile,
+  } = useQuery({
     queryKey: ['projectFile', activeProjectId, selectedProjectFilePath],
     queryFn: async () => {
       if (!activeProjectId || !selectedProjectFilePath) return null;
@@ -81,6 +90,70 @@ export function useNightWorkersProjectFiles(activeProjectId: string | undefined)
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+
+  const {
+    data: projectDiff = null,
+    isFetching: isProjectDiffLoading,
+    refetch: refetchProjectDiff,
+  } = useQuery({
+    queryKey: ['projectDiff', activeProjectId],
+    queryFn: async () => {
+      if (!activeProjectId) return null;
+      const res = await fetchRepositoryDiff(activeProjectId);
+      if (!res.ok) throw new Error('Failed to fetch repository diff');
+      return (await res.json()) as ProjectDiff;
+    },
+    enabled: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
+  const refreshProjectFiles = useCallback(async () => {
+    if (!activeProjectId) return;
+    const expandedPaths = Object.entries(expandedProjectDirectories)
+      .filter(([, expanded]) => expanded)
+      .map(([path]) => path);
+    setLoadingProjectDirectories((prev) => {
+      const next = { ...prev };
+      for (const path of expandedPaths) next[path] = true;
+      return next;
+    });
+    try {
+      const expandedResults = await Promise.all(
+        expandedPaths.map(async (path) => {
+          const res = await fetchRepositoryFiles(activeProjectId, path);
+          if (!res.ok) throw new Error('Failed to fetch project files');
+          return [path, (await res.json()) as ProjectFileEntry[]] as const;
+        })
+      );
+      await refetchRootProjectFiles();
+      if (selectedProjectFilePath) await refetchSelectedProjectFile();
+      if (expandedResults.length > 0) {
+        setProjectFileEntriesByDirectory((prev) => {
+          const next = { ...prev };
+          for (const [path, entries] of expandedResults) next[path] = entries;
+          return next;
+        });
+      }
+    } finally {
+      setLoadingProjectDirectories((prev) => {
+        const next = { ...prev };
+        for (const path of expandedPaths) next[path] = false;
+        return next;
+      });
+    }
+  }, [
+    activeProjectId,
+    expandedProjectDirectories,
+    refetchRootProjectFiles,
+    refetchSelectedProjectFile,
+    selectedProjectFilePath,
+  ]);
+
+  const refreshProjectDiff = useCallback(async () => {
+    if (!activeProjectId) return;
+    await refetchProjectDiff();
+  }, [activeProjectId, refetchProjectDiff]);
 
   const toggleProjectDirectory = async (path: string) => {
     const nextExpanded = !expandedProjectDirectories[path];
@@ -112,6 +185,10 @@ export function useNightWorkersProjectFiles(activeProjectId: string | undefined)
     selectedProjectFilePath,
     isProjectFilesLoading,
     isProjectFileLoading,
+    projectDiff,
+    isProjectDiffLoading,
+    refreshProjectFiles,
+    refreshProjectDiff,
     setProjectFileEntriesByDirectory,
     toggleProjectDirectory,
     openProjectFile: setSelectedProjectFilePath,

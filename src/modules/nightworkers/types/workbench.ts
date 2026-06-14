@@ -96,6 +96,12 @@ export type ProjectFileContent = {
   truncated: boolean;
 };
 
+export type ProjectDiff = {
+  diff: string;
+  diffStat: string;
+  hasChanges: boolean;
+};
+
 export type WorkbenchArtifactRef = {
   id: string;
   taskId: string;

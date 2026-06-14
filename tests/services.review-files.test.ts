@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => {
     runReviewReplayEvaluation: vi.fn(),
     runReviewReplayEvaluationFromJsonl: vi.fn(),
     serializeRunToJsonl: vi.fn(),
+    gitDiffTool: vi.fn(),
   };
 });
 
@@ -46,6 +47,10 @@ vi.mock('@api/services/run-events/jsonl-export', () => ({
   serializeRunToJsonl: mocks.serializeRunToJsonl,
 }));
 
+vi.mock('@api/services/worker-tools/git', () => ({
+  gitDiffTool: mocks.gitDiffTool,
+}));
+
 import {
   browseLocalFolders,
   createLocalFolder,
@@ -55,6 +60,7 @@ import {
   getReviewRubrics,
   listProjectFiles,
   readProjectFile,
+  readRepositoryDiff,
 } from '@api/modules/nightworkers/nightworkers.review-files.service';
 
 describe('review-files.service', () => {
@@ -292,6 +298,46 @@ describe('review-files.service', () => {
         size: 11,
         truncated: false,
       });
+    });
+  });
+
+  describe('readRepositoryDiff', () => {
+    it('throws NotFoundError if repository is not found', async () => {
+      mocks.getRepository.mockResolvedValue(null);
+      await expect(readRepositoryDiff('repo-1')).rejects.toThrow(NotFoundError);
+    });
+
+    it('returns the current repository diff from the git worker tool', async () => {
+      mocks.getRepository.mockResolvedValue({ localPath: tempDir });
+      mocks.gitDiffTool.mockResolvedValue({
+        ok: true,
+        payload: {
+          diff: 'diff --git a/file.txt b/file.txt\n',
+          diffStat: ' file.txt | 1 +',
+          hasChanges: true,
+        },
+      });
+
+      const result = await readRepositoryDiff('repo-1');
+      expect(mocks.gitDiffTool).toHaveBeenCalledWith({ repoRoot: tempDir });
+      expect(result).toEqual({
+        diff: 'diff --git a/file.txt b/file.txt\n',
+        diffStat: ' file.txt | 1 +',
+        hasChanges: true,
+      });
+    });
+
+    it('converts git worker tool failures into AppError responses', async () => {
+      mocks.getRepository.mockResolvedValue({ localPath: tempDir });
+      mocks.gitDiffTool.mockResolvedValue({
+        ok: false,
+        payload: { diff: '', diffStat: '', hasChanges: false },
+        error: { code: 'GIT_DIFF_FAILED', message: 'git failed' },
+      });
+
+      await expect(readRepositoryDiff('repo-1')).rejects.toThrow(
+        expect.objectContaining({ code: 'GIT_DIFF_FAILED' })
+      );
     });
   });
 
