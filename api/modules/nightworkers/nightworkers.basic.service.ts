@@ -174,9 +174,7 @@ export async function getOverviewDashboard(input: {
         ? settings.AZURE_OPENAI_DEPLOYMENT_NAME
         : activeProvider === 'bedrock'
           ? settings.AWS_BEDROCK_MODEL
-          : activeProvider === 'codex'
-            ? settings.CODEX_MODEL
-            : null;
+          : null;
   return buildOverviewDashboard({
     ...input,
     activeProvider,

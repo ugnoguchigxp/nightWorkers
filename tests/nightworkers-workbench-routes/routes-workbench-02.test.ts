@@ -3,13 +3,13 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import app from '../../api/app';
 import { ensureNightWorkersSchema } from '../../api/db/bootstrap';
 import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
-import * as llm from '../../api/services/supervisor/llm-provider';
+import * as llm from '../../api/services/structured-llm';
 import { representativeAppBlueprint } from '../fixtures/app-blueprint';
 import { flushPendingWorkbenchTasks } from '../helpers/nightworkers-test-controls';
 
-vi.mock('../../api/services/supervisor/llm-provider', async () => {
-  const actual = await vi.importActual<typeof import('../../api/services/supervisor/llm-provider')>(
-    '../../api/services/supervisor/llm-provider'
+vi.mock('../../api/services/structured-llm', async () => {
+  const actual = await vi.importActual<typeof import('../../api/services/structured-llm')>(
+    '../../api/services/structured-llm'
   );
   return {
     ...actual,
@@ -18,8 +18,8 @@ vi.mock('../../api/services/supervisor/llm-provider', async () => {
   };
 });
 
-vi.mock('../../api/services/agent-runtime/registry', () => ({
-  resolveAgentRuntime: vi.fn(() => ({
+vi.mock('../../api/services/agent-runtime/registry', () => {
+  const runtime = {
     kind: 'native-local',
     start: vi.fn(async () => ({
       terminalState: 'completed',
@@ -31,8 +31,38 @@ vi.mock('../../api/services/agent-runtime/registry', () => ({
       logContent: '',
     })),
     stop: vi.fn(),
-  })),
-}));
+  };
+  const resolveAgentRuntime = vi.fn(() => runtime);
+  const buildRuntimeLaneInitialTodos = vi.fn((lane: string) =>
+    lane === 'codex-sdk'
+      ? [
+          { title: '対象変更を確認して実装する', taskType: 'implementation' },
+          { title: '必要最小限の動作確認を行う', taskType: 'focused_verification' },
+        ]
+      : [
+          { title: '仕様と既存構成を確認する', taskType: 'inspection' },
+          { title: '対象画面の実装準備を行う', taskType: 'scaffold', dependsOn: [1] },
+          { title: '対象画面を仕様に沿って実装する', taskType: 'implementation', dependsOn: [2] },
+          { title: '受け入れ条件を検証する', taskType: 'verification', dependsOn: [3] },
+        ]
+  );
+  return {
+    buildRuntimeLaneInitialTodos,
+    resolveAgentRuntime,
+    resolveRuntimeLaneDefinition: vi.fn((lane: 'native-supervisor' | 'codex-sdk') => ({
+      kind: lane,
+      aliases: [],
+      buildInitialTodos: (input: { compiledPromptText: string }) =>
+        buildRuntimeLaneInitialTodos(lane, input),
+      buildRuntimeOptions: (input: { runtimeLaneResolution?: unknown }) => ({
+        runtimeLane: lane,
+        runtimeLaneResolution: input.runtimeLaneResolution ?? null,
+      }),
+      createAdapter: () =>
+        resolveAgentRuntime(lane === 'codex-sdk' ? 'codex-agent' : 'native-local'),
+    })),
+  };
+});
 
 const sameOriginHeaders = { Origin: 'http://localhost:39174' };
 

@@ -1,12 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import {
-  callStructuredJsonLLM,
-  callSupervisorLLM,
-} from '../../api/services/supervisor/llm-provider';
-import { installSupervisorLlmProviderEnvHooks } from './supervisor-llm-provider-test-env';
+import { callStructuredJsonLLM, callSupervisorLLM } from '../../api/services/structured-llm';
+import { installStructuredLlmEnvHooks } from './structured-llm-test-env';
 
 describe('Supervisor LLM schema-first parsing', () => {
-  installSupervisorLlmProviderEnvHooks();
+  installStructuredLlmEnvHooks();
 
   it('requires explicit fixture JSON instead of falling back to hardcoded tool calls', async () => {
     process.env.ACTIVE_LLM_PROVIDER = 'fixture';

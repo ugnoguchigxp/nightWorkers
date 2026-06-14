@@ -12,6 +12,7 @@ vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   createRunEvent: vi.fn(),
   getTaskRun: vi.fn(),
   listTaskRunTodosForRun: vi.fn(),
+  startTaskRunTodoIfStillPendingAndNoEarlierOpen: vi.fn(),
   updateTaskRunTodo: vi.fn(),
 }));
 
@@ -188,13 +189,12 @@ describe('AgentRuntime', () => {
       }),
       { notifyTaskId: 'task-123', notifyRunId: 'run-123' }
     );
-    expect(repo.updateTaskRunTodo).toHaveBeenNthCalledWith(
-      2,
-      'todo-2',
+    expect(repo.startTaskRunTodoIfStillPendingAndNoEarlierOpen).toHaveBeenCalledWith(
       expect.objectContaining({
-        status: 'running',
+        id: 'todo-2',
+        runId: 'run-123',
+        afterSeq: 1,
         startedAt: expect.any(Date),
-        completedAt: null,
       }),
       { notifyTaskId: 'task-123', notifyRunId: 'run-123' }
     );
@@ -357,7 +357,7 @@ describe('AgentRuntime', () => {
     expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
   });
 
-  it('auto-closes the final completion report after the final assistant response', async () => {
+  it('auto-closes the final completion report after runtime finishes with a final report', async () => {
     (repo.getTaskRun as any).mockResolvedValue({
       id: 'run-123',
       taskId: 'task-123',
@@ -385,9 +385,9 @@ describe('AgentRuntime', () => {
 
     const sink = createLedgerSink('run-123');
     await sink.emit({
-      type: 'model_response_finished',
-      message: 'assistant message completed',
-      payload: { text: '完了しました。' },
+      type: 'runtime_finished',
+      message: 'runtime completed',
+      payload: { finalReport: '完了しました。' },
     });
 
     expect(repo.updateTaskRunTodo).toHaveBeenCalledWith(
@@ -399,6 +399,19 @@ describe('AgentRuntime', () => {
       }),
       { notifyTaskId: 'task-123', notifyRunId: 'run-123' }
     );
+  });
+
+  it('does not auto-close the final completion report on intermediate assistant messages', async () => {
+    const sink = createLedgerSink('run-123');
+    await sink.emit({
+      type: 'model_response_finished',
+      message: 'assistant message completed',
+      payload: { text: 'まだ途中です。' },
+    });
+
+    expect(repo.getTaskRun).not.toHaveBeenCalled();
+    expect(repo.listTaskRunTodosForRun).not.toHaveBeenCalled();
+    expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
   });
 
   it('does not auto-close the final completion report while knowledge registration is open', async () => {
@@ -429,9 +442,9 @@ describe('AgentRuntime', () => {
 
     const sink = createLedgerSink('run-123');
     await sink.emit({
-      type: 'model_response_finished',
-      message: 'assistant message completed',
-      payload: { text: 'まだ途中です。' },
+      type: 'runtime_finished',
+      message: 'runtime completed',
+      payload: { finalReport: '完了しました。' },
     });
 
     expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();

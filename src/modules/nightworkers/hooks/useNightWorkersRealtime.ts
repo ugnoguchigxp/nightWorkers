@@ -3,15 +3,23 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useEffect } from 'react';
 import { devWsFallbackPath, wsPath } from '../../../lib/api-base';
 import { dedupeAndSortActivityEvents } from '../activityTranscript';
-import { dedupeAndSortRunEvents, getRealtimeMessageDedupeKey } from '../realtimeEvents';
+import {
+  dedupeAndSortRunEvents,
+  getRealtimeMessageDedupeKey,
+  mergeRealtimeRunDetails,
+  mergeRealtimeRunList,
+  mergeRealtimeTodoIntoRunDetails,
+} from '../realtimeEvents';
 import type {
   ActivityEvent,
   ActivityReplay,
   ProjectFileEntry,
+  RunDetails,
   Task,
   TaskEvent,
   TaskMessage,
   TaskRun,
+  TaskRunTodo,
 } from '../types';
 
 type RealtimeStatus = 'initializing' | 'connecting' | 'connected' | 'disconnected';
@@ -140,6 +148,7 @@ export function useNightWorkersRealtime({
               status?: string;
               task?: Task;
               text?: string;
+              todo?: TaskRunTodo;
             };
             event?: {
               id: string;
@@ -281,15 +290,12 @@ export function useNightWorkersRealtime({
             const incomingRun = msg.payload.run as TaskRun;
             void queryClient.invalidateQueries({ queryKey: ['llmUsage', incomingRun.taskId] });
             queryClient.setQueryData<TaskRun[]>(['sessionRuns', activeSessionId], (prev = []) => {
-              const next = [...prev];
-              const idx = next.findIndex((r) => r.id === incomingRun.id);
-              if (idx >= 0) {
-                next[idx] = incomingRun;
-              } else {
-                next.unshift(incomingRun);
-              }
-              return next;
+              return mergeRealtimeRunList(prev, incomingRun);
             });
+            queryClient.setQueryData<RunDetails | null>(
+              ['runDetails', incomingRun.id],
+              (prev) => mergeRealtimeRunDetails(prev, incomingRun) ?? prev
+            );
             queryClient.invalidateQueries({ queryKey: ['runDetails', incomingRun.id] });
             queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
             if (isTerminalRunStatus(incomingRun.status) && incomingRun.repositoryId) {
@@ -299,6 +305,13 @@ export function useNightWorkersRealtime({
               });
               queryClient.removeQueries({ queryKey: ['projectFile', incomingRun.repositoryId] });
             }
+          }
+          if (msg.type === 'task_run_updated' && msg.payload?.todo) {
+            const incomingTodo = msg.payload.todo as TaskRunTodo;
+            queryClient.setQueryData<RunDetails | null>(
+              ['runDetails', incomingTodo.runId],
+              (prev) => mergeRealtimeTodoIntoRunDetails(prev, incomingTodo) ?? prev
+            );
           }
           if (msg.type === 'task_status_updated' && msg.payload?.task) {
             const incomingTask = msg.payload.task as Task;

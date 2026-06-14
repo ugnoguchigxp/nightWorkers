@@ -9,8 +9,7 @@ import {
   buildExecutionReviewChecklist,
   type ExecutionReviewChecklistItem,
 } from './execution-review';
-import type { SupervisorLlmDebugEvent } from './llm-provider';
-import { callSupervisorLLM } from './llm-provider';
+import { callSupervisorLLM, type SupervisorLlmDebugEvent } from '../structured-llm';
 import {
   type LoadedProcedureSummary,
   readSupervisorProcedure,

@@ -562,8 +562,8 @@ export function getCodexContractWarningSummary(
 export function getCodexMcpDiagnosticsSummary(
   latestRun?: TaskRun
 ): CodexMcpDiagnosticsSummary | undefined {
-  const codexContract = readRecord(readRecord(latestRun?.contextSnapshot)?.codexContract);
-  const mcp = readRecord(codexContract?.mcp);
+  const contract = readRuntimeContractSnapshot(latestRun);
+  const mcp = readRecord(contract?.mcp);
   if (!mcp) return undefined;
   const configSource = readNonEmptyString(mcp.configSource);
   const degraded = mcp.degraded === true;
@@ -848,8 +848,13 @@ function countArtifacts(refs: WorkbenchArtifactRef[]) {
 }
 
 function readCodexContractSnapshotWarnings(latestRun?: TaskRun): Record<string, unknown>[] {
-  const codexContract = readRecord(readRecord(latestRun?.contextSnapshot)?.codexContract);
-  return readRecordArray(codexContract?.warnings);
+  const contract = readRuntimeContractSnapshot(latestRun);
+  return readRecordArray(contract?.warnings);
+}
+
+function readRuntimeContractSnapshot(latestRun?: TaskRun): Record<string, unknown> | null {
+  const contextSnapshot = readRecord(latestRun?.contextSnapshot);
+  return readRecord(contextSnapshot?.runtimeContract) ?? readRecord(contextSnapshot?.codexContract);
 }
 
 function readCodexContractEventWarnings(events: TaskEvent[]): Record<string, unknown>[] {

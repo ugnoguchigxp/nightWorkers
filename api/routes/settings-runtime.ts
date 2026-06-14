@@ -35,9 +35,9 @@ export const llmSettingsSchema = z.object({
   CODEX_ACCESS_TOKEN: z.string().default('').openapi({ example: 'your-codex-token' }),
   CODEX_MODEL: z.string().default('').openapi({ example: 'gpt-5.3-codex' }),
   IMPLEMENTATION_RUNTIME_LANE: z
-    .enum(['', 'native-supervisor', 'codex-agent'])
+    .enum(['', 'native-supervisor', 'codex-sdk', 'codex-agent'])
     .default('')
-    .openapi({ example: 'codex-agent' }),
+    .openapi({ example: 'codex-sdk' }),
   SESSION_QUEUE_MAX_CONCURRENCY: z.number().int().positive().default(2).openapi({ example: 2 }),
 });
 
@@ -52,7 +52,6 @@ const providerModelOptions = {
   azure: ['gpt-5.5', 'gpt-5.4-mini', 'gpt-5-mini'],
   openai: ['gpt-5.5', 'gpt-5.4-mini', 'gpt-5-mini', 'gpt-4.1-mini'],
   bedrock: ['anthropic.claude-3-5-sonnet-20241022-v2:0'],
-  codex: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.3-codex-spark'],
 } as const;
 
 const getBoolEnv = (key: string, fallback: boolean) => {
@@ -61,9 +60,15 @@ const getBoolEnv = (key: string, fallback: boolean) => {
   return value.toLowerCase() === 'true';
 };
 
-const getRuntimeLaneSetting = (value: unknown): '' | 'native-supervisor' | 'codex-agent' => {
-  if (value === 'native-supervisor' || value === 'codex-agent') return value;
+const getRuntimeLaneSetting = (value: unknown): '' | 'native-supervisor' | 'codex-sdk' => {
+  if (value === 'native-supervisor' || value === 'codex-sdk') return value;
+  if (value === 'codex-agent') return 'codex-sdk';
   return '';
+};
+
+const getStructuredProviderSetting = (value: unknown): 'azure' | 'openai' | 'bedrock' => {
+  if (value === 'openai' || value === 'azure' || value === 'bedrock') return value;
+  return 'azure';
 };
 
 const readRuntimeSettings = (): Partial<z.infer<typeof llmSettingsSchema>> => {
@@ -92,10 +97,18 @@ const writeRuntimeSettings = (settings: z.infer<typeof llmSettingsSchema>) => {
 
 export const getCurrentSettings = (): z.infer<typeof llmSettingsSchema> => {
   const persisted = readRuntimeSettings();
+  const rawActiveProvider =
+    persisted.ACTIVE_LLM_PROVIDER || process.env.ACTIVE_LLM_PROVIDER || 'azure';
+  const codexEnabled =
+    typeof persisted.CODEX_ENABLED === 'boolean'
+      ? persisted.CODEX_ENABLED
+      : getBoolEnv('CODEX_ENABLED', false);
+  const explicitRuntimeLane = getRuntimeLaneSetting(
+    persisted.IMPLEMENTATION_RUNTIME_LANE ?? process.env.IMPLEMENTATION_RUNTIME_LANE
+  );
+  const legacyCodexRuntimeLane = rawActiveProvider === 'codex' && codexEnabled ? 'codex-sdk' : '';
   return {
-    ACTIVE_LLM_PROVIDER: (persisted.ACTIVE_LLM_PROVIDER ||
-      process.env.ACTIVE_LLM_PROVIDER ||
-      'azure') as 'azure' | 'openai' | 'bedrock' | 'codex',
+    ACTIVE_LLM_PROVIDER: getStructuredProviderSetting(rawActiveProvider),
     OPENAI_ENABLED:
       typeof persisted.OPENAI_ENABLED === 'boolean'
         ? persisted.OPENAI_ENABLED
@@ -123,15 +136,10 @@ export const getCurrentSettings = (): z.infer<typeof llmSettingsSchema> => {
     OPENAI_API_KEY: persisted.OPENAI_API_KEY ?? process.env.OPENAI_API_KEY ?? '',
     OPENAI_BASE_URL: persisted.OPENAI_BASE_URL ?? process.env.OPENAI_BASE_URL ?? '',
     OPENAI_MODEL: persisted.OPENAI_MODEL ?? process.env.OPENAI_MODEL ?? '',
-    CODEX_ENABLED:
-      typeof persisted.CODEX_ENABLED === 'boolean'
-        ? persisted.CODEX_ENABLED
-        : getBoolEnv('CODEX_ENABLED', false),
+    CODEX_ENABLED: codexEnabled,
     CODEX_ACCESS_TOKEN: persisted.CODEX_ACCESS_TOKEN ?? process.env.CODEX_ACCESS_TOKEN ?? '',
     CODEX_MODEL: persisted.CODEX_MODEL ?? process.env.CODEX_MODEL ?? '',
-    IMPLEMENTATION_RUNTIME_LANE: getRuntimeLaneSetting(
-      persisted.IMPLEMENTATION_RUNTIME_LANE ?? process.env.IMPLEMENTATION_RUNTIME_LANE
-    ),
+    IMPLEMENTATION_RUNTIME_LANE: explicitRuntimeLane || legacyCodexRuntimeLane,
     SESSION_QUEUE_MAX_CONCURRENCY:
       typeof persisted.SESSION_QUEUE_MAX_CONCURRENCY === 'number'
         ? persisted.SESSION_QUEUE_MAX_CONCURRENCY

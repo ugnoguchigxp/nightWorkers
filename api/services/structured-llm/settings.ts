@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getRuntimePaths } from '../../../runtime/paths';
+import { getRuntimePaths } from '../../runtime/paths';
 
-export type SupervisorLlmProviderSettings = {
+export type StructuredLlmProviderSettings = {
   ACTIVE_LLM_PROVIDER?: string;
   OPENAI_ENABLED?: boolean;
   OPENAI_API_KEY?: string;
@@ -26,7 +26,7 @@ export type SupervisorLlmProviderSettings = {
   CODEX_STRUCTURED_OUTPUT_ENABLED?: boolean;
 };
 
-const boolKeys = new Set<keyof SupervisorLlmProviderSettings>([
+const boolKeys = new Set<keyof StructuredLlmProviderSettings>([
   'OPENAI_ENABLED',
   'OPENAI_STREAMING_ENABLED',
   'AZURE_OPENAI_ENABLED',
@@ -35,10 +35,10 @@ const boolKeys = new Set<keyof SupervisorLlmProviderSettings>([
   'CODEX_STRUCTURED_OUTPUT_ENABLED',
 ]);
 
-export function readSupervisorLlmProviderSettings(): SupervisorLlmProviderSettings {
+export function readStructuredLlmProviderSettings(): StructuredLlmProviderSettings {
   const persisted = readPersistedRuntimeSettings();
-  const merged: SupervisorLlmProviderSettings = {};
-  for (const key of Object.keys(defaultSettings()) as Array<keyof SupervisorLlmProviderSettings>) {
+  const merged: StructuredLlmProviderSettings = {};
+  for (const key of Object.keys(defaultSettings()) as Array<keyof StructuredLlmProviderSettings>) {
     const persistedValue = persisted[key];
     if (persistedValue !== undefined && persistedValue !== null && persistedValue !== '') {
       merged[key] = persistedValue as never;
@@ -48,12 +48,18 @@ export function readSupervisorLlmProviderSettings(): SupervisorLlmProviderSettin
     if (envValue === undefined) continue;
     merged[key] = normalizeSettingValue(key, envValue) as never;
   }
+  merged.ACTIVE_LLM_PROVIDER = normalizeStructuredLlmProviderSetting(merged.ACTIVE_LLM_PROVIDER);
   return merged;
 }
 
-export function getSupervisorLlmSetting(
-  settings: SupervisorLlmProviderSettings,
-  key: keyof SupervisorLlmProviderSettings,
+export function normalizeStructuredLlmProviderSetting(value?: string): string | undefined {
+  if (value === 'codex') return 'azure';
+  return value;
+}
+
+export function getStructuredLlmSetting(
+  settings: StructuredLlmProviderSettings,
+  key: keyof StructuredLlmProviderSettings,
   fallback?: string
 ): string {
   const value = settings[key];
@@ -62,9 +68,9 @@ export function getSupervisorLlmSetting(
   return fallback ?? '';
 }
 
-export function getSupervisorLlmBoolSetting(
-  settings: SupervisorLlmProviderSettings,
-  key: keyof SupervisorLlmProviderSettings,
+export function getStructuredLlmBoolSetting(
+  settings: StructuredLlmProviderSettings,
+  key: keyof StructuredLlmProviderSettings,
   fallback: boolean
 ): boolean {
   const value = settings[key];
@@ -73,7 +79,7 @@ export function getSupervisorLlmBoolSetting(
   return fallback;
 }
 
-function readPersistedRuntimeSettings(): Partial<SupervisorLlmProviderSettings> {
+function readPersistedRuntimeSettings(): Partial<StructuredLlmProviderSettings> {
   try {
     const runtimeSettingsPath =
       process.env.NIGHTWORKERS_LLM_SETTINGS_PATH ||
@@ -81,13 +87,13 @@ function readPersistedRuntimeSettings(): Partial<SupervisorLlmProviderSettings> 
     if (!fs.existsSync(runtimeSettingsPath)) return {};
     const raw = JSON.parse(fs.readFileSync(runtimeSettingsPath, 'utf-8'));
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-    return raw as Partial<SupervisorLlmProviderSettings>;
+    return raw as Partial<StructuredLlmProviderSettings>;
   } catch {
     return {};
   }
 }
 
-function defaultSettings(): Required<Record<keyof SupervisorLlmProviderSettings, null>> {
+function defaultSettings(): Required<Record<keyof StructuredLlmProviderSettings, null>> {
   return {
     ACTIVE_LLM_PROVIDER: null,
     OPENAI_ENABLED: null,
@@ -113,7 +119,7 @@ function defaultSettings(): Required<Record<keyof SupervisorLlmProviderSettings,
   };
 }
 
-function normalizeSettingValue(key: keyof SupervisorLlmProviderSettings, value: string) {
+function normalizeSettingValue(key: keyof StructuredLlmProviderSettings, value: string) {
   if (boolKeys.has(key)) return value.toLowerCase() === 'true';
   return value;
 }

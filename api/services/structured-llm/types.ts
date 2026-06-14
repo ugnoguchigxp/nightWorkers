@@ -1,4 +1,4 @@
-import type { LlmPromptPartTokenEstimates, NormalizedLlmUsage } from '../../llm-usage/types';
+import type { LlmPromptPartTokenEstimates, NormalizedLlmUsage } from '../llm-usage/types';
 
 export type CallSupervisorOptions = {
   tolerateSchemaFailure?: boolean;
@@ -17,15 +17,10 @@ export type SupervisorProviderId =
   | 'azure-openai'
   | 'azure'
   | 'bedrock'
-  | 'codex'
   | 'fixture'
   | 'test';
 
-export type SupervisorProviderClass =
-  | 'chat_completion'
-  | 'converse_message'
-  | 'agent_runtime'
-  | 'fixture';
+export type SupervisorProviderClass = 'chat_completion' | 'converse_message' | 'fixture';
 
 export type ProviderCapabilityPolicy = {
   allowProviderToolCalls: boolean;

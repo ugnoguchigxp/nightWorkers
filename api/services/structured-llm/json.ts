@@ -122,16 +122,16 @@ export function parseRepairedJsonWithSchema<T>(
   };
 }
 
-export type SupervisorLlmAbortHandle = {
+export type StructuredLlmAbortHandle = {
   signal: AbortSignal;
   dispose: () => void;
 };
 
-export function createSupervisorLlmAbortSignal(
+export function createStructuredLlmAbortSignal(
   options: CallSupervisorOptions
-): SupervisorLlmAbortHandle {
+): StructuredLlmAbortHandle {
   const controller = new AbortController();
-  const timeoutMs = getSupervisorLlmTimeoutMs(options);
+  const timeoutMs = getStructuredLlmTimeoutMs(options);
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   timer.unref?.();
   return {
@@ -187,7 +187,7 @@ function balanceJsonCandidate(input: string): string | null {
   return `${trimmed}${stringSuffix}${stack.reverse().join('')}`;
 }
 
-function getSupervisorLlmTimeoutMs(options: CallSupervisorOptions): number {
+function getStructuredLlmTimeoutMs(options: CallSupervisorOptions): number {
   if (options.timeoutMs && Number.isFinite(options.timeoutMs) && options.timeoutMs > 0) {
     return Math.floor(options.timeoutMs);
   }

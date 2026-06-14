@@ -105,7 +105,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         ? workspace.llmSettings?.AZURE_OPENAI_DEPLOYMENT_NAME
         : workspace.activeProvider === 'bedrock'
           ? workspace.llmSettings?.AWS_BEDROCK_MODEL
-          : workspace.llmSettings?.CODEX_MODEL;
+          : null;
 
   const submitPrompt = async (prompt: string, intent: WorkbenchChatIntent = 'intake') => {
     if (!workspace.activeProject && workspace.projects[0]) {

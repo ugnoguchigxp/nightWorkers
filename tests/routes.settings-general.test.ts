@@ -36,7 +36,7 @@ const llmMocks = vi.hoisted(() => ({
   callSupervisorLLM: vi.fn(),
 }));
 
-vi.mock('../api/services/supervisor/llm-provider', () => ({
+vi.mock('../api/services/structured-llm', () => ({
   callSupervisorLLM: llmMocks.callSupervisorLLM,
 }));
 
@@ -302,7 +302,7 @@ describe('general and LLM settings routes', () => {
     const json = await res.json();
     expect(json).toEqual({
       ok: true,
-      provider: process.env.ACTIVE_LLM_PROVIDER || 'openai',
+      provider: 'openai',
       message: 'smoke ok',
     });
   });
@@ -319,7 +319,7 @@ describe('general and LLM settings routes', () => {
     const json = await res.json();
     expect(json).toEqual({
       ok: false,
-      provider: process.env.ACTIVE_LLM_PROVIDER || 'openai',
+      provider: 'openai',
       message: 'API failure',
     });
   });

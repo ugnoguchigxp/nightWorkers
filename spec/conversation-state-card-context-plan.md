@@ -155,7 +155,7 @@ Do not modify:
 ```text
 api/services/supervisor/prompt.ts
 api/services/supervisor/supervisor-loop.ts
-api/services/supervisor/llm-provider/*
+api/services/structured-llm/*
 api/services/supervisor/skills/**
 ```
 

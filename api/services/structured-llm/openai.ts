@@ -1,5 +1,5 @@
-import { logger } from '../../../lib/logger';
-import { buildResponseJsonSchema as buildSchemaFirstResponseJsonSchema } from '../schema-first';
+import { logger } from '../../lib/logger';
+import { buildResponseJsonSchema as buildSchemaFirstResponseJsonSchema } from '../supervisor/schema-first';
 import { createSupervisorResponseDeltaEmitter, rejectProviderActivity } from './events';
 import type { CallSupervisorOptions, NormalizedSupervisorLlmRequest } from './types';
 

@@ -1,8 +1,13 @@
-export type AgentRuntimeKind =
-  | 'native-local'
-  | 'codex-agent'
-  | 'external-process'
-  | 'future-adapter';
+import type {
+  RuntimeContractWarning,
+  RuntimeContractWarningSeverity,
+  RuntimeLaneEvent,
+  RuntimeLaneKind,
+  RuntimeLaneResult,
+  RuntimeLaneSink,
+} from './shared';
+
+export type AgentRuntimeKind = RuntimeLaneKind;
 
 export interface AgentSafetyPolicy {
   allowedPaths?: string[];
@@ -61,78 +66,11 @@ export interface AgentRunContext {
   runtimeOptions?: Record<string, unknown>;
 }
 
-type AgentEventPayload = unknown;
-
-export type CodexContractWarningSeverity = 'info' | 'warning' | 'error';
-
-export interface CodexContractWarning {
-  code: string;
-  severity: CodexContractWarningSeverity;
-  message: string;
-  providerItemId?: string | null;
-  toolName?: string | null;
-  todoId?: string | null;
-  todoSeq?: number | null;
-  changedFiles?: string[];
-  command?: string | null;
-  todoEvidenceSource?: 'db' | 'context' | 'none';
-  sequence?: number;
-  occurredAt?: string;
-  count?: number;
-}
-
-export type AgentRuntimeEvent =
-  | { type: 'runtime_started'; message: string; payload?: AgentEventPayload }
-  | { type: 'turn_started'; message: string; payload?: AgentEventPayload }
-  | { type: 'model_response_started'; message: string; payload?: AgentEventPayload }
-  | { type: 'model_response_delta'; message: string; payload?: AgentEventPayload }
-  | { type: 'model_response_finished'; message: string; payload?: AgentEventPayload }
-  | { type: 'model_response_parse_failed'; message: string; payload?: AgentEventPayload }
-  | { type: 'model_response_repaired'; message: string; payload?: AgentEventPayload }
-  | { type: 'model_retry_scheduled'; message: string; payload?: AgentEventPayload }
-  | { type: 'model_retry_started'; message: string; payload?: AgentEventPayload }
-  | { type: 'supervisor_decision'; message: string; payload?: AgentEventPayload }
-  | { type: 'tool_call_started'; message: string; payload?: AgentEventPayload }
-  | { type: 'tool_call_progress'; message: string; payload?: AgentEventPayload }
-  | { type: 'tool_call_finished'; message: string; payload?: AgentEventPayload }
-  | { type: 'verification_started'; message: string; payload?: AgentEventPayload }
-  | { type: 'verification_finished'; message: string; payload?: AgentEventPayload }
-  | { type: 'diff_collected'; message: string; payload?: AgentEventPayload }
-  | { type: 'runtime_finished'; message: string; payload?: AgentEventPayload }
-  | { type: 'runtime_warning'; message: string; payload?: CodexContractWarning }
-  | { type: 'runtime_error'; message: string; payload?: AgentEventPayload };
-
-export interface AgentRuntimeSink {
-  emit(event: AgentRuntimeEvent): Promise<void>;
-}
-
-export interface AgentRuntimeResult {
-  terminalState:
-    | 'completed'
-    | 'needs_review'
-    | 'needs_human'
-    | 'failed'
-    | 'timed_out'
-    | 'blocked'
-    | 'cancelled';
-  summary: string;
-  finalReport: string;
-  stoppedBy:
-    | 'decision'
-    | 'budget'
-    | 'tool_failure'
-    | 'llm_error'
-    | 'missing_tool_call'
-    | 'policy'
-    | 'hook'
-    | 'cancelled';
-  riskLevel: 'low' | 'medium' | 'high';
-  logContent?: string;
-  diffPatch?: string;
-  testResults?: unknown;
-  usage?: unknown;
-  contractWarnings?: CodexContractWarning[];
-}
+export type CodexContractWarningSeverity = RuntimeContractWarningSeverity;
+export type CodexContractWarning = RuntimeContractWarning;
+export type AgentRuntimeEvent = RuntimeLaneEvent;
+export type AgentRuntimeSink = RuntimeLaneSink;
+export type AgentRuntimeResult = RuntimeLaneResult;
 
 export interface AgentRuntime {
   readonly kind: AgentRuntimeKind;

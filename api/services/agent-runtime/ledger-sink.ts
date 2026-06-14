@@ -1,7 +1,8 @@
 import { logEvent } from '../../lib/logger';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
-import { classifyCodexCommand } from './codex-event-mapper';
-import type { AgentRuntimeEvent, AgentRuntimeSink, CodexContractWarningSeverity } from './types';
+import { classifyCodexCommand } from './codex-sdk/codex-sdk-event-adapter';
+import type { RuntimeContractWarningSeverity } from './shared';
+import type { AgentRuntimeEvent, AgentRuntimeSink } from './types';
 
 type EventMapping = {
   actor: 'runtime' | 'supervisor' | 'worker' | 'system';
@@ -125,7 +126,7 @@ function resolveEventSeverity(event: AgentRuntimeEvent, mapped: EventMapping) {
   return mapped.severity;
 }
 
-function isContractWarningSeverity(value: unknown): value is CodexContractWarningSeverity {
+function isContractWarningSeverity(value: unknown): value is RuntimeContractWarningSeverity {
   return value === 'info' || value === 'warning' || value === 'error';
 }
 
@@ -169,12 +170,18 @@ async function maybeAutoCloseGateTodo(taskRunId: string, event: AgentRuntimeEven
 }
 
 async function maybeAutoCloseCompletionReportTodo(taskRunId: string, event: AgentRuntimeEvent) {
-  if (event.type !== 'model_response_finished') return;
+  if (event.type !== 'runtime_finished') return;
   const payload =
     event.payload && typeof event.payload === 'object'
       ? (event.payload as Record<string, unknown>)
       : null;
-  if (!payload || typeof payload.text !== 'string' || payload.text.trim().length === 0) return;
+  if (
+    !payload ||
+    typeof payload.finalReport !== 'string' ||
+    payload.finalReport.trim().length === 0
+  ) {
+    return;
+  }
 
   const [run, todos] = await Promise.all([
     repo.getTaskRun(taskRunId),

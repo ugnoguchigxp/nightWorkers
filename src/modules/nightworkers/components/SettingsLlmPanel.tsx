@@ -1,9 +1,8 @@
-import { ExternalLink, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import type { LlmProvider, LlmSettings } from '../types';
-import { PROVIDER_MODEL_OPTIONS } from '../types';
-import { Field, SelectField } from './SettingsFields';
+import { Field } from './SettingsFields';
 import { ProviderSectionHeader } from './SettingsProviderHeader';
 
 type SmokeResult = { provider: LlmProvider; message: string } | null;
@@ -147,56 +146,6 @@ export function SettingsLlmPanel({
             value={settings.AWS_BEDROCK_MODEL}
             onChange={(v) => onChange('AWS_BEDROCK_MODEL', v)}
           />
-        </div>
-      </section>
-
-      <section className="space-y-4 rounded-2xl border border-zinc-800/60 bg-[#16161a] p-6">
-        <ProviderSectionHeader
-          provider="codex"
-          title="Codex SDK structured provider"
-          active={settings.ACTIVE_LLM_PROVIDER === 'codex'}
-          enabled={settings.CODEX_ENABLED}
-          isSaving={isSaving}
-          onEnabledChange={(enabled) => setProviderEnabled('codex', enabled)}
-          onActivate={() => void handleSave('codex')}
-          smokeBusy={smokingProvider === 'codex'}
-          smokeResult={smokeResult?.provider === 'codex' ? smokeResult.message : ''}
-          onSmoke={() => void runProviderSmokeTest('codex')}
-        />
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Field
-            id="codex-token"
-            label={t('settings.field.codexAccessToken')}
-            type="password"
-            value={settings.CODEX_ACCESS_TOKEN}
-            onChange={(v) => onChange('CODEX_ACCESS_TOKEN', v)}
-          />
-          <SelectField
-            id="codex-model"
-            label={t('settings.field.codexModelId')}
-            value={settings.CODEX_MODEL}
-            options={PROVIDER_MODEL_OPTIONS.codex}
-            onChange={(v) => onChange('CODEX_MODEL', v)}
-          />
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
-          <div className="min-w-0">
-            <div className="text-xs font-semibold text-zinc-100">
-              {t('settings.codexLogin.title')}
-            </div>
-            <p className="mt-1 text-[10px] leading-4 text-zinc-500">
-              {t('settings.codexLogin.description')}
-            </p>
-          </div>
-          <a
-            href="https://chatgpt.com/auth/login"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex h-8 shrink-0 items-center gap-2 rounded-lg border border-zinc-700/70 bg-zinc-800 px-3 text-xs text-zinc-200 hover:border-indigo-500/70 hover:text-zinc-100"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            {t('settings.codexLogin.open')}
-          </a>
         </div>
       </section>
 

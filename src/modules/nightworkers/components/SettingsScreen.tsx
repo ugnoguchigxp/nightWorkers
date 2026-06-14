@@ -40,6 +40,7 @@ const defaultSettings: LlmSettings = {
   CODEX_ENABLED: false,
   CODEX_ACCESS_TOKEN: '',
   CODEX_MODEL: 'gpt-5.5',
+  IMPLEMENTATION_RUNTIME_LANE: '',
   SESSION_QUEUE_MAX_CONCURRENCY: 2,
 };
 
@@ -190,7 +191,6 @@ export function SettingsScreen({
     if (provider === 'openai') onChange('OPENAI_ENABLED', enabled);
     if (provider === 'azure') onChange('AZURE_OPENAI_ENABLED', enabled);
     if (provider === 'bedrock') onChange('AWS_BEDROCK_ENABLED', enabled);
-    if (provider === 'codex') onChange('CODEX_ENABLED', enabled);
     void workspace.toggleProviderEnabled(provider, enabled);
   };
 

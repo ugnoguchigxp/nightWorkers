@@ -88,7 +88,7 @@ Enable as needed:
   test it, then choose the implementation runtime lane only when direct run
   execution behavior needs to change.
 - Provider request boundaries are intentionally narrow:
-  `api/services/supervisor/llm-provider/request.ts` owns provider selection,
+  `api/services/structured-llm/request.ts` owns provider selection,
   normalized request diagnostics, capability policy, and schema/request
   classification; `providers.ts` owns provider calls and raw response
   extraction; `index.ts` owns JSON extraction, schema-first validation, tracing,

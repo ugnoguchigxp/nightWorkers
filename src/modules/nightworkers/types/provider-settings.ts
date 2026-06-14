@@ -10,7 +10,8 @@ export type ModelOption = {
   label: string;
 };
 
-export type LlmProvider = 'azure' | 'openai' | 'bedrock' | 'codex';
+export type LlmProvider = 'azure' | 'openai' | 'bedrock';
+export type ImplementationRuntimeLane = '' | 'native-supervisor' | 'codex-sdk' | 'codex-agent';
 
 export type LlmSettings = {
   ACTIVE_LLM_PROVIDER: LlmProvider;
@@ -31,6 +32,7 @@ export type LlmSettings = {
   CODEX_ENABLED: boolean;
   CODEX_ACCESS_TOKEN: string;
   CODEX_MODEL: string;
+  IMPLEMENTATION_RUNTIME_LANE: ImplementationRuntimeLane;
   SESSION_QUEUE_MAX_CONCURRENCY: number;
 };
 

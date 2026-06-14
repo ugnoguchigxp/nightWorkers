@@ -27,7 +27,7 @@ import {
   refreshEcbFxRates,
   writeGeneralSettings,
 } from '../services/settings/general-settings';
-import { callSupervisorLLM } from '../services/supervisor/llm-provider';
+import { callSupervisorLLM } from '../services/structured-llm';
 import { buildRound1JobTypePrompt } from '../services/supervisor/prompt';
 import {
   createAgentHookRoute,
@@ -121,7 +121,7 @@ export const settingsRouter = createOpenApiRouter()
     return c.json(rows, 200);
   })
   .openapi(smokeLlmRoute, async (c) => {
-    const provider = process.env.ACTIVE_LLM_PROVIDER || 'azure';
+    const provider = getCurrentSettings().ACTIVE_LLM_PROVIDER || 'azure';
     try {
       await callSupervisorLLM(
         buildRound1JobTypePrompt(process.cwd()),

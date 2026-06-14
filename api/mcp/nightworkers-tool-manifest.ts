@@ -134,7 +134,7 @@ export const nightWorkersCodexToolManifest = {
   todo_list: {
     title: 'Todo List',
     description:
-      'Maintain the current run TodoList with one JSON operation. Use operation=list, replace, start, done, block, or fail. done automatically starts the next pending Todo.',
+      'Maintain the current run TodoList with one JSON operation. Use operation=list, replace, start, done, block, or fail. replace refreshes the plan without reopening terminal Todos; done automatically starts the next pending Todo.',
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,

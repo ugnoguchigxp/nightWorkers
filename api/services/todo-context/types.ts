@@ -16,7 +16,7 @@ export type RuntimePromptSnapshot = {
   planModeClosed?: boolean;
   implementationPhasePreamble?: string;
   blueprintPlanning?: unknown;
-  runtimeLane?: 'native-supervisor' | 'codex-agent';
+  runtimeLane?: 'native-supervisor' | 'codex-sdk';
   runtimeLaneResolution?: RuntimeLaneSnapshot;
   request: {
     repositoryPath: string;

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, vi } from 'vitest';
 
-export function installSupervisorLlmProviderEnvHooks() {
+export function installStructuredLlmEnvHooks() {
   const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
   const originalOpenAiEnabled = process.env.OPENAI_ENABLED;
   const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
@@ -17,7 +17,7 @@ export function installSupervisorLlmProviderEnvHooks() {
   let tempDir: string | null = null;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-llm-provider-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-structured-llm-'));
     process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = path.join(tempDir, 'llm-settings.json');
   });
 

@@ -24,7 +24,7 @@
 ## Procedure
 1. repository edit や command 実行の前に todo_list operation=replace を呼び、Run 内部 TodoList を作成する。
 2. TodoList は Workbench Task や Queue item ではない。Run 内部の進行マイルストーンとして扱う。
-3. todo_list operation=replace は全更新で使う。通常は startFirst=true または省略にし、最初の Todo を running にする。
+3. todo_list operation=replace は全更新で使う。ただし完了済み、失敗、blocked、skipped の terminal Todo は未完了へ戻せない。通常は startFirst=true または省略にし、最初の未完了 Todo を running にする。
 4. Todo は成果物または gate 単位で分ける。例: investigation / migration / code_edit / documentation / verification。
 5. 現在の Todo に必要な list_dir / read_file / search_files / import_project / copy_directory / apply_patch / replace_content / run_command / run_verification を実行する。
 6. 空の Project root は有効な作業対象として扱う。空であることを理由に作業不能と判断しない。新規プロジェクト / 新規ファイル作成依頼では、指定がない限り標準テンプレート適用を優先し、blank 指定や小さい単体ファイル作成だけ apply_patch で作成する。

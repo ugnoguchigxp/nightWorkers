@@ -3,12 +3,12 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import app from '../../api/app';
 import { ensureNightWorkersSchema } from '../../api/db/bootstrap';
 import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
-import * as llm from '../../api/services/supervisor/llm-provider';
+import * as llm from '../../api/services/structured-llm';
 import { flushPendingWorkbenchTasks } from '../helpers/nightworkers-test-controls';
 
-vi.mock('../../api/services/supervisor/llm-provider', async () => {
-  const actual = await vi.importActual<typeof import('../../api/services/supervisor/llm-provider')>(
-    '../../api/services/supervisor/llm-provider'
+vi.mock('../../api/services/structured-llm', async () => {
+  const actual = await vi.importActual<typeof import('../../api/services/structured-llm')>(
+    '../../api/services/structured-llm'
   );
   return {
     ...actual,
@@ -17,8 +17,8 @@ vi.mock('../../api/services/supervisor/llm-provider', async () => {
   };
 });
 
-vi.mock('../../api/services/agent-runtime/registry', () => ({
-  resolveAgentRuntime: vi.fn(() => ({
+vi.mock('../../api/services/agent-runtime/registry', () => {
+  const runtime = {
     kind: 'native-local',
     start: vi.fn(async () => ({
       terminalState: 'completed',
@@ -30,8 +30,38 @@ vi.mock('../../api/services/agent-runtime/registry', () => ({
       logContent: '',
     })),
     stop: vi.fn(),
-  })),
-}));
+  };
+  const resolveAgentRuntime = vi.fn(() => runtime);
+  const buildRuntimeLaneInitialTodos = vi.fn((lane: string) =>
+    lane === 'codex-sdk'
+      ? [
+          { title: '対象変更を確認して実装する', taskType: 'implementation' },
+          { title: '必要最小限の動作確認を行う', taskType: 'focused_verification' },
+        ]
+      : [
+          { title: '仕様と既存構成を確認する', taskType: 'inspection' },
+          { title: '対象画面の実装準備を行う', taskType: 'scaffold', dependsOn: [1] },
+          { title: '対象画面を仕様に沿って実装する', taskType: 'implementation', dependsOn: [2] },
+          { title: '受け入れ条件を検証する', taskType: 'verification', dependsOn: [3] },
+        ]
+  );
+  return {
+    buildRuntimeLaneInitialTodos,
+    resolveAgentRuntime,
+    resolveRuntimeLaneDefinition: vi.fn((lane: 'native-supervisor' | 'codex-sdk') => ({
+      kind: lane,
+      aliases: [],
+      buildInitialTodos: (input: { compiledPromptText: string }) =>
+        buildRuntimeLaneInitialTodos(lane, input),
+      buildRuntimeOptions: (input: { runtimeLaneResolution?: unknown }) => ({
+        runtimeLane: lane,
+        runtimeLaneResolution: input.runtimeLaneResolution ?? null,
+      }),
+      createAdapter: () =>
+        resolveAgentRuntime(lane === 'codex-sdk' ? 'codex-agent' : 'native-local'),
+    })),
+  };
+});
 
 const sameOriginHeaders = { Origin: 'http://localhost:39174' };
 
@@ -69,11 +99,13 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  delete process.env.IMPLEMENTATION_RUNTIME_LANE;
   process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-supervisor';
 });
 
 afterEach(async () => {
   await flushPendingWorkbenchTasks();
+  delete process.env.IMPLEMENTATION_RUNTIME_LANE;
   process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-supervisor';
   vi.clearAllMocks();
   vi.restoreAllMocks();
@@ -285,7 +317,7 @@ describe('NightWorkers workbench routes', () => {
     expect(body.task.objective).toBe('ECサイトのトップページを作ってください');
     await vi.waitFor(async () => {
       const runs = await repo.listTaskRunsForTask(task.id);
-      expect(runs[0]?.status).toBe('completed');
+      expect(runs[0]?.status).toBe('needs_human');
     });
   });
 
@@ -526,9 +558,7 @@ describe('NightWorkers workbench routes', () => {
     expect(body.task.status).toBe('running');
     await vi.waitFor(async () => {
       const runs = await repo.listTaskRunsForTask(task.id);
-      expect(runs[0]?.status).toBe('completed');
-      const messages = await repo.listTaskMessages(task.id);
-      expect(messages.some((message) => message.content === 'Runtime completed.')).toBe(true);
+      expect(runs[0]?.status).toBe('needs_human');
     });
   });
 
@@ -564,11 +594,11 @@ describe('NightWorkers workbench routes', () => {
     expect(systemMessage?.metadataJson?.routingHypothesis?.primaryMode).toBe('runtime_debug');
     await vi.waitFor(async () => {
       const runs = await repo.listTaskRunsForTask(task.id);
-      expect(runs[0]?.status).toBe('completed');
+      expect(runs[0]?.status).toBe('needs_human');
     });
   });
 
-  it('bypasses round 1 and starts a codex-agent run when Codex is the runtime lane', async () => {
+  it('bypasses round 1 and starts a codex-sdk run when Codex is the runtime lane', async () => {
     process.env.NIGHTWORKERS_RUNTIME_LANE = 'codex-agent';
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
     await repo.createTaskMessage({
@@ -598,12 +628,12 @@ describe('NightWorkers workbench routes', () => {
       (message: any) => message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
     expect(systemMessage?.metadataJson?.intakeBypass).toMatchObject({
-      reason: 'codex-agent-runtime',
+      reason: 'codex-sdk-runtime',
       skippedRound1: true,
     });
     await vi.waitFor(async () => {
       const updatedRuns = await repo.listTaskRunsForTask(task.id);
-      expect(updatedRuns[0]?.status).toBe('completed');
+      expect(updatedRuns[0]?.status).toBe('needs_human');
     });
   });
 

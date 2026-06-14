@@ -5,13 +5,13 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
-import * as llm from '../../api/services/supervisor/llm-provider';
+import * as llm from '../../api/services/structured-llm';
 import { runSupervisorLoop } from '../../api/services/supervisor/supervisor-loop';
 import { parseRound2UserContextJsonSection } from '../../api/services/supervisor/user-context';
 
 const _execFileAsync = promisify(execFile);
 
-vi.mock('../../api/services/supervisor/llm-provider', () => ({
+vi.mock('../../api/services/structured-llm', () => ({
   callSupervisorLLM: vi.fn(),
 }));
 

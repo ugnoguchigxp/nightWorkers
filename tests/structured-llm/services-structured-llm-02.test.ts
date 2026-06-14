@@ -4,11 +4,12 @@ import {
   buildNormalizedSupervisorLlmRequest,
   callStructuredJsonLLM,
   callSupervisorLLM,
-} from '../../api/services/supervisor/llm-provider';
-import { installSupervisorLlmProviderEnvHooks } from './supervisor-llm-provider-test-env';
+  readStructuredLlmProviderSettings,
+} from '../../api/services/structured-llm';
+import { installStructuredLlmEnvHooks } from './structured-llm-test-env';
 
 describe('Supervisor LLM schema-first parsing', () => {
-  installSupervisorLlmProviderEnvHooks();
+  installStructuredLlmEnvHooks();
 
   it('normalizes provider request diagnostics without changing prompt text', () => {
     const request = buildNormalizedSupervisorLlmRequest({
@@ -47,6 +48,34 @@ describe('Supervisor LLM schema-first parsing', () => {
       allowProviderNetwork: false,
       requireStructuredOutput: true,
     });
+  });
+
+  it('normalizes legacy Codex active provider away from structured LLM calls', () => {
+    fs.writeFileSync(
+      process.env.NIGHTWORKERS_LLM_SETTINGS_PATH!,
+      JSON.stringify({
+        ACTIVE_LLM_PROVIDER: 'codex',
+        AZURE_OPENAI_DEPLOYMENT_NAME: 'gpt-deployment',
+      })
+    );
+
+    const settings = readStructuredLlmProviderSettings();
+    const request = buildNormalizedSupervisorLlmRequest({
+      systemPrompt: 'system text',
+      userPrompt: 'user text',
+      label: 'example_schema',
+      settings,
+    });
+    const directRequest = buildNormalizedSupervisorLlmRequest({
+      systemPrompt: 'system text',
+      userPrompt: 'user text',
+      label: 'example_schema',
+      settings: { ACTIVE_LLM_PROVIDER: 'codex' },
+    });
+
+    expect(settings.ACTIVE_LLM_PROVIDER).toBe('azure');
+    expect(request.providerId).toBe('azure-openai');
+    expect(directRequest.providerId).toBe('azure-openai');
   });
 
   it('uses runtime provider settings ahead of environment fallback', async () => {

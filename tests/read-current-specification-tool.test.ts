@@ -278,6 +278,82 @@ describe('todo_list worker tool', () => {
     expect(persisted[1].startedAt).toBeTruthy();
   });
 
+  it('preserves terminal Todos when replacing the full plan', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: todo replace preserves done ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: replace preserves completed TodoList rows',
+      description: 'A full TodoList refresh must not reopen completed work',
+      status: 'running',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+    });
+
+    await todoListTool({
+      runId: run.id,
+      operation: 'replace',
+      todos: [{ seq: 1, title: 'Inspect implementation' }],
+    });
+    await todoListTool({ runId: run.id, operation: 'done', seq: 1 });
+
+    const beforeReplace = await repo.listTaskRunTodosForRun(run.id);
+    const completedInitialInstructions = beforeReplace[0];
+    expect(completedInitialInstructions).toMatchObject({
+      seq: 1,
+      taskType: 'initial_instructions',
+      status: 'passed',
+    });
+    expect(beforeReplace[1]).toMatchObject({
+      seq: 2,
+      taskType: 'context_compile',
+      status: 'running',
+    });
+
+    const replacedAgain = await todoListTool({
+      runId: run.id,
+      operation: 'replace',
+      todos: [
+        { seq: 1, title: 'Reconsider existing implementation' },
+        { seq: 2, title: 'Apply refined implementation' },
+      ],
+    });
+
+    expect(replacedAgain.ok).toBe(true);
+    const persisted = await repo.listTaskRunTodosForRun(run.id);
+    expect(persisted[0]).toMatchObject({
+      id: completedInitialInstructions.id,
+      seq: 1,
+      title: 'initial_instructions を実行する',
+      taskType: 'initial_instructions',
+      status: 'passed',
+    });
+    expect(persisted[0].completedAt?.getTime()).toBe(
+      completedInitialInstructions.completedAt?.getTime()
+    );
+    expect(persisted[1]).toMatchObject({
+      seq: 2,
+      taskType: 'context_compile',
+      status: 'running',
+    });
+    expect(persisted.map((todo) => ({ seq: todo.seq, status: todo.status }))).toEqual([
+      { seq: 1, status: 'passed' },
+      { seq: 2, status: 'running' },
+      { seq: 3, status: 'pending' },
+      { seq: 4, status: 'pending' },
+      { seq: 5, status: 'pending' },
+      { seq: 6, status: 'pending' },
+      { seq: 7, status: 'pending' },
+      { seq: 8, status: 'pending' },
+    ]);
+  });
+
   it('leaves the final knowledge registration and completion report Todos pending without running them', async () => {
     const createdRepo = await repo.createRepository({
       name: `TEST: todo final closeout ${crypto.randomUUID()}`,

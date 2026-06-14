@@ -18,11 +18,13 @@ import {
   updateImplementationQueueSettings,
   updateTodoWorkflowSettings,
 } from '../nightWorkersCommands';
+import { mergeRealtimeRunDetails, mergeRealtimeRunList } from '../realtimeEvents';
 import type {
   BackgroundProcess,
   CreateProjectInput,
   CreateSessionInput,
   Repository,
+  RunDetails,
   Task,
   TaskRun,
   TodoWorkflowSettings,
@@ -168,11 +170,10 @@ export function useNightWorkersMutations({
     },
     onSuccess: (run) => {
       queryClient.setQueryData<TaskRun[]>(['sessionRuns', run.taskId], (prev = []) => {
-        const next = [...prev];
-        const idx = next.findIndex((candidate) => candidate.id === run.id);
-        if (idx >= 0) next[idx] = run;
-        else next.unshift(run);
-        return next;
+        return mergeRealtimeRunList(prev, run);
+      });
+      queryClient.setQueryData<RunDetails | null>(['runDetails', run.id], (prev) => {
+        return mergeRealtimeRunDetails(prev, run) ?? prev;
       });
       queryClient.setQueryData<Task[]>(['sessions'], (prev = []) =>
         prev.map((session) =>

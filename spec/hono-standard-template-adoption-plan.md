@@ -260,7 +260,7 @@ Round 1 routing hypothesis
 
 検証:
 
-- `bunx vitest run tests/services.supervisor-skills.test.ts tests/supervisor-llm-provider/services-supervisor-llm-provider-02.test.ts`
+- `bunx vitest run tests/services.supervisor-skills.test.ts tests/structured-llm/services-structured-llm-02.test.ts`
 - routing prompt snapshot / parsed user context に template reference が含まれること。
 
 ### Phase 2: Template materializer worker tool

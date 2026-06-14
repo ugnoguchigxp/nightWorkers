@@ -1,6 +1,6 @@
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import type { RunEventActor, RunEventSeverity, RunEventType } from '../run-events/types';
-import type { SupervisorLlmDebugEvent } from './llm-provider';
+import type { SupervisorLlmDebugEvent } from '../structured-llm';
 
 export type AgentEventType =
   | 'run.started'

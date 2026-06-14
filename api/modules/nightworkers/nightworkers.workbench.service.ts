@@ -18,10 +18,7 @@ import {
 import { validateAppBlueprint } from '../../services/blueprints/validation';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
 import { shouldWaitForWorkbenchIntakeInTests } from '../../services/runtime-env';
-import {
-  callSupervisorLLM,
-  type SupervisorLlmDebugEvent,
-} from '../../services/supervisor/llm-provider';
+import { callSupervisorLLM, type SupervisorLlmDebugEvent } from '../../services/structured-llm';
 import { buildRound1JobTypePrompt } from '../../services/supervisor/prompt';
 import type { JobTypeSelection } from '../../services/supervisor/schema-first';
 import { createDesignQuestionnaire } from './nightworkers.design-questionnaire.service';
@@ -385,7 +382,7 @@ async function handleWorkbenchIntakeMessage(
           runtimeLane: codexAgentIntake.lane,
           runtimeLaneResolution: codexAgentIntake,
           intakeBypass: {
-            reason: 'codex-agent-runtime',
+            reason: 'codex-sdk-runtime',
             skippedRound1: true,
           },
         },
@@ -628,7 +625,7 @@ function resolveCodexAgentWorkbenchIntake(
     codexEnabled: settings.CODEX_ENABLED,
     ...readRuntimeLaneConfigFromEnv(),
   });
-  return runtimeLaneResolution.workerKind === 'codex-agent' ? runtimeLaneResolution : null;
+  return runtimeLaneResolution.lane === 'codex-sdk' ? runtimeLaneResolution : null;
 }
 
 class BlueprintArtifactGenerationError extends Error {

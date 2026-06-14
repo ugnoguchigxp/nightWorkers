@@ -263,7 +263,8 @@ describe('CodexAgentRuntime', () => {
         expect.objectContaining({
           type: 'runtime_started',
           payload: expect.objectContaining({
-            codexContract: expect.objectContaining({
+            runtimeContract: expect.objectContaining({
+              lane: 'codex-sdk',
               mcp: expect.objectContaining({
                 configSource: expect.any(String),
                 expectedTools: expect.arrayContaining(['nightworkers.import_project']),

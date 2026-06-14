@@ -40,9 +40,52 @@ vi.mock('../../api/modules/nightworkers/nightworkers.repository', () => ({
   updateImplementationQueueEntry: vi.fn(),
 }));
 
-vi.mock('../../api/services/agent-runtime/registry', () => ({
-  resolveAgentRuntime: vi.fn(),
+vi.mock('../../api/routes/settings', () => ({
+  getCurrentSettings: vi.fn(() => {
+    const activeProvider = process.env.ACTIVE_LLM_PROVIDER || 'azure';
+    const codexEnabled = process.env.CODEX_ENABLED === 'true';
+    return {
+      ACTIVE_LLM_PROVIDER: activeProvider === 'codex' ? 'azure' : activeProvider,
+      CODEX_ENABLED: codexEnabled,
+      IMPLEMENTATION_RUNTIME_LANE:
+        process.env.IMPLEMENTATION_RUNTIME_LANE ||
+        (activeProvider === 'codex' && codexEnabled ? 'codex-sdk' : ''),
+    };
+  }),
 }));
+
+vi.mock('../../api/services/agent-runtime/registry', () => {
+  const resolveAgentRuntime = vi.fn();
+  const buildRuntimeLaneInitialTodos = vi.fn((lane: string) =>
+    lane === 'codex-sdk'
+      ? [
+          { title: '対象変更を確認して実装する', taskType: 'implementation' },
+          { title: '必要最小限の動作確認を行う', taskType: 'focused_verification' },
+        ]
+      : [
+          { title: '仕様と既存構成を確認する', taskType: 'inspection' },
+          { title: '対象画面の実装準備を行う', taskType: 'scaffold', dependsOn: [1] },
+          { title: '対象画面を仕様に沿って実装する', taskType: 'implementation', dependsOn: [2] },
+          { title: '受け入れ条件を検証する', taskType: 'verification', dependsOn: [3] },
+        ]
+  );
+  return {
+    buildRuntimeLaneInitialTodos,
+    resolveAgentRuntime,
+    resolveRuntimeLaneDefinition: vi.fn((lane: 'native-supervisor' | 'codex-sdk') => ({
+      kind: lane,
+      aliases: [],
+      buildInitialTodos: (input: { compiledPromptText: string }) =>
+        buildRuntimeLaneInitialTodos(lane, input),
+      buildRuntimeOptions: (input: { runtimeLaneResolution?: unknown }) => ({
+        runtimeLane: lane,
+        runtimeLaneResolution: input.runtimeLaneResolution ?? null,
+      }),
+      createAdapter: () =>
+        resolveAgentRuntime(lane === 'codex-sdk' ? 'codex-agent' : 'native-local'),
+    })),
+  };
+});
 
 vi.mock('../../api/services/conversation-context', () => ({
   buildPromptWithStateCard: vi.fn(
@@ -78,10 +121,11 @@ describe('NightWorkers service', () => {
     vi.clearAllMocks();
     delete process.env.ACTIVE_LLM_PROVIDER;
     delete process.env.CODEX_ENABLED;
+    delete process.env.IMPLEMENTATION_RUNTIME_LANE;
     process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-supervisor';
   });
 
-  it('routes enabled Codex provider implementation runs to the codex-agent lane', async () => {
+  it('routes enabled legacy Codex provider implementation runs to the codex-sdk lane', async () => {
     delete process.env.NIGHTWORKERS_RUNTIME_LANE;
     process.env.ACTIVE_LLM_PROVIDER = 'codex';
     process.env.CODEX_ENABLED = 'true';
@@ -91,7 +135,7 @@ describe('NightWorkers service', () => {
       title: 'Codex provider task',
       description: 'Use Codex provider',
       objective: 'Use Codex provider',
-      acceptanceCriteria: 'Codex provider uses codex-agent lane',
+      acceptanceCriteria: 'Codex provider uses codex-sdk lane',
       timeoutSeconds: 60,
     };
     const run = {
@@ -137,10 +181,10 @@ describe('NightWorkers service', () => {
       expect.objectContaining({
         workerKind: 'codex-agent',
         contextSnapshot: expect.objectContaining({
-          runtimeLane: 'codex-agent',
+          runtimeLane: 'codex-sdk',
           runtimeLaneResolution: expect.objectContaining({
             workerKind: 'codex-agent',
-            source: 'provider_default',
+            source: 'settings',
           }),
         }),
       })
@@ -366,7 +410,8 @@ describe('NightWorkers service', () => {
             'Todo closeout incomplete: #1 Running Todo (running), #2 Pending Todo (pending)'
           ),
           contextSnapshot: expect.objectContaining({
-            codexContract: expect.objectContaining({
+            runtimeContract: expect.objectContaining({
+              lane: 'native-supervisor',
               warnings: expect.arrayContaining([
                 expect.objectContaining({
                   code: 'codex_file_change_before_todo_replace',

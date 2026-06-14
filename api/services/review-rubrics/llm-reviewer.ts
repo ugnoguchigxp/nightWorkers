@@ -1,3 +1,4 @@
+import { buildReviewerSystemPrompt } from '../structured-generation/prompts/review-rubric';
 import { digestObject } from './loader';
 import type {
   LlmReviewerResult,
@@ -49,12 +50,10 @@ export function buildReviewerPrompt(
   const maxChars = rubric.llm?.maxEvidenceChars ?? 12_000;
   const evidenceJson = JSON.stringify(evidencePack, null, 2).slice(0, maxChars);
   const hints = rubric.llm?.promptHints?.join('\n') || '追加指示なし';
-  return [
-    'あなたは NightWorkers の agent reviewer です。',
-    '最終 outcome は変更せず、rubric と evidence に基づく findings / humanCallouts / follow-ups だけを返してください。',
-    'ReviewResult は直接返さず、ReviewerDraft JSON だけを返してください。',
-    `Rubric: ${rubric.title} (${rubric.id})`,
-    `Hints:\n${hints}`,
-    `EvidencePack:\n${evidenceJson}`,
-  ].join('\n\n');
+  return buildReviewerSystemPrompt({
+    rubricTitle: rubric.title,
+    rubricId: rubric.id,
+    hints,
+    evidenceJson,
+  });
 }

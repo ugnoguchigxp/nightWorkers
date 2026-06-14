@@ -530,7 +530,17 @@ describe('Worker Tools Unit Tests', () => {
 
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) throw new Error('expected rag variant to resolve');
-    expect(resolved.variant.ref).toBe('rag-v1.0.0');
+    expect(resolved.variant.ref).toBe('rag-v1.3.0');
+  });
+
+  it('resolves current hono-standard starter snapshot refs', () => {
+    const sqlite = resolveStarterTemplate({ stack: 'hono', variant: 'sqlite' });
+    const postgres = resolveStarterTemplate({ stack: 'hono', variant: 'postgres' });
+    const rag = resolveStarterTemplate({ stack: 'hono', variant: 'rag' });
+
+    expect(sqlite.ok && sqlite.variant.ref).toBe('sqlite-v1.3.0');
+    expect(postgres.ok && postgres.variant.ref).toBe('postgres-v1.2.0');
+    expect(rag.ok && rag.variant.ref).toBe('rag-v1.3.0');
   });
 
   it('resolves a starter stack and variant into the internal template registry', () => {

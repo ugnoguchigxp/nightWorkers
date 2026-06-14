@@ -3,12 +3,20 @@ import { AppError, NotFoundError } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 import { getCurrentSettings } from '../../routes/settings';
 import { createLedgerSink } from '../../services/agent-runtime/ledger-sink';
-import { resolveAgentRuntime } from '../../services/agent-runtime/registry';
+import {
+  resolveAgentRuntime,
+  resolveRuntimeLaneDefinition,
+} from '../../services/agent-runtime/registry';
 import {
   readRuntimeLaneConfigFromEnv,
   resolveRuntimeLane,
 } from '../../services/agent-runtime/runtime-lane';
-import type { AgentRuntimeKind, CodexContractWarning } from '../../services/agent-runtime/types';
+import {
+  buildOpenTodoRuntimeContractWarning,
+  mergeRuntimeContractSnapshot,
+  normalizeRuntimeContractWarnings,
+} from '../../services/agent-runtime/shared';
+import type { AgentRuntimeKind, AgentRuntimeResult } from '../../services/agent-runtime/types';
 import {
   buildPromptWithStateCardParts,
   getLatestConversationContextForTask,
@@ -24,7 +32,7 @@ import { digestText } from '../../services/text-digest';
 import type { RuntimePromptSnapshot } from '../../services/todo-context';
 import {
   buildStandardImplementationTodoList,
-  type ImplementationTodoInput,
+  evaluateTodoCompletionGate,
 } from '../../services/todo-runtime';
 import {
   outcomeFromRuntimeResult,
@@ -63,105 +71,128 @@ function listOpenTodos<TTodo extends { status: string }>(todos: TTodo[]) {
   return todos.filter((todo) => todo.status === 'pending' || todo.status === 'running');
 }
 
+async function markRunningTodosNeedsHuman(input: {
+  runId: string;
+  taskId: string;
+  todos: Array<{
+    id: string;
+    seq: number;
+    title: string;
+    description?: string | null;
+    taskType: string;
+    status: string;
+    procedureId?: string | null;
+    procedureSnapshot?: unknown;
+  }>;
+  runtimeResult: AgentRuntimeResult;
+  outcomeStatus: string;
+}) {
+  const runningTodos = input.todos.filter((todo) => todo.status === 'running');
+  if (runningTodos.length === 0) return;
+  const completedAt = new Date();
+  const statusReason = input.runtimeResult.finalReport || input.runtimeResult.summary;
+  await Promise.all(
+    runningTodos.map((todo) =>
+      repo.updateTaskRunTodo(
+        todo.id,
+        {
+          status: 'needs_human',
+          statusReason: statusReason || 'Runtime stopped and requires human review.',
+          completionGateResult: evaluateTodoCompletionGate({
+            todo,
+            runtimeResult: input.runtimeResult,
+            outcomeStatus: input.outcomeStatus,
+          }),
+          completedAt,
+        },
+        { notifyTaskId: input.taskId, notifyRunId: input.runId }
+      )
+    )
+  );
+}
+
+async function closeOpenTodosForCancelledRun(input: {
+  runId: string;
+  taskId: string;
+  todos: Array<{
+    id: string;
+    seq: number;
+    title: string;
+    taskType: string;
+    status: string;
+    procedureId?: string | null;
+    startedAt?: unknown;
+  }>;
+  evidence?: string;
+}) {
+  const openTodos = listOpenTodos(input.todos);
+  if (openTodos.length === 0) return;
+
+  const completedAt = new Date();
+  await Promise.all(
+    openTodos.map(async (todo) => {
+      const status = todo.status === 'running' ? 'failed' : 'skipped';
+      const reason =
+        status === 'failed'
+          ? 'Run was cancelled while this Todo was active.'
+          : 'Skipped because the run was cancelled before this Todo started.';
+      const completionGateResult = {
+        version: 1,
+        todoId: todo.id,
+        todoSeq: todo.seq,
+        procedureId: todo.procedureId ?? null,
+        status,
+        passed: false,
+        reason,
+        checks: [
+          {
+            id: 'run_cancelled',
+            passed: false,
+            evidence: input.evidence || 'cancelled',
+          },
+        ],
+        evidence: {
+          terminalState: 'cancelled',
+          stoppedBy: 'cancelled',
+          riskLevel: 'medium',
+          summaryDigest: digestText(reason),
+        },
+      };
+      await repo.updateTaskRunTodo(
+        todo.id,
+        {
+          status,
+          statusReason: reason,
+          completionGateResult,
+          completedAt,
+          startedAt: todo.startedAt ? new Date(String(todo.startedAt)) : completedAt,
+        },
+        { notifyTaskId: input.taskId, notifyRunId: input.runId }
+      );
+      await repo.createRunEvent({
+        version: 1,
+        runId: input.runId,
+        taskId: input.taskId,
+        timestamp: new Date().toISOString(),
+        type: 'turn.finished',
+        severity: status === 'failed' ? 'warning' : 'info',
+        actor: 'system',
+        message: `Todo #${todo.seq} ${status} because the run was cancelled: ${todo.title}`,
+        data: {
+          todoId: todo.id,
+          todoSeq: todo.seq,
+          todoTitle: todo.title,
+          taskType: todo.taskType,
+          procedureId: todo.procedureId ?? null,
+          completionGateResult,
+        },
+      });
+    })
+  );
+}
+
 function isPlanningOnlyRun<TTodo extends { taskType: string }>(todos: TTodo[]) {
   return todos.length === 0;
-}
-
-function normalizeCodexContractWarnings(value: unknown): CodexContractWarning[] {
-  if (!Array.isArray(value)) return [];
-  const warnings: CodexContractWarning[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
-    const record = item as Record<string, unknown>;
-    if (typeof record.code !== 'string' || typeof record.message !== 'string') continue;
-    const severity =
-      record.severity === 'info' || record.severity === 'warning' || record.severity === 'error'
-        ? record.severity
-        : 'warning';
-    warnings.push({
-      code: record.code,
-      severity,
-      message: record.message,
-      providerItemId: typeof record.providerItemId === 'string' ? record.providerItemId : null,
-      toolName: typeof record.toolName === 'string' ? record.toolName : null,
-      todoId: typeof record.todoId === 'string' ? record.todoId : null,
-      todoSeq: typeof record.todoSeq === 'number' ? record.todoSeq : null,
-      changedFiles: Array.isArray(record.changedFiles)
-        ? record.changedFiles.filter((file): file is string => typeof file === 'string')
-        : undefined,
-      command: typeof record.command === 'string' ? record.command : null,
-      sequence:
-        typeof record.sequence === 'number' && Number.isFinite(record.sequence)
-          ? Math.max(0, Math.floor(record.sequence))
-          : undefined,
-      occurredAt: typeof record.occurredAt === 'string' ? record.occurredAt : undefined,
-      count:
-        typeof record.count === 'number' && Number.isFinite(record.count)
-          ? Math.max(1, Math.floor(record.count))
-          : undefined,
-    });
-  }
-  return warnings;
-}
-
-function mergeCodexContractSnapshot(snapshot: unknown, warnings: CodexContractWarning[]) {
-  const base =
-    snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
-      ? (snapshot as Record<string, unknown>)
-      : {};
-  const existingContract =
-    base.codexContract &&
-    typeof base.codexContract === 'object' &&
-    !Array.isArray(base.codexContract)
-      ? (base.codexContract as Record<string, unknown>)
-      : {};
-  const existingWarnings = normalizeCodexContractWarnings(existingContract.warnings);
-  const mergedWarnings = dedupeCodexContractWarnings([...existingWarnings, ...warnings]);
-  return {
-    ...base,
-    codexContract: {
-      ...existingContract,
-      warnings: mergedWarnings,
-    },
-  };
-}
-
-function dedupeCodexContractWarnings(warnings: CodexContractWarning[]) {
-  const merged: CodexContractWarning[] = [];
-  const seen = new Map<string, CodexContractWarning>();
-  for (const warning of warnings) {
-    const key = [
-      warning.code,
-      warning.providerItemId ?? '',
-      warning.toolName ?? '',
-      warning.todoId ?? '',
-      warning.todoSeq ?? '',
-      warning.command ?? '',
-      (warning.changedFiles ?? []).join(','),
-    ].join('|');
-    const existing = seen.get(key);
-    if (existing) {
-      existing.count = Math.max(1, existing.count ?? 1) + Math.max(1, warning.count ?? 1);
-      continue;
-    }
-    seen.set(key, warning);
-    merged.push(warning);
-  }
-  return merged;
-}
-
-function buildOpenTodoContractWarning<TTodo extends { id: string; seq: number; title: string }>(
-  openTodos: TTodo[]
-): CodexContractWarning {
-  return {
-    code: 'codex_open_todos_before_completion',
-    severity: 'warning',
-    message: 'Runtime reported completion while DB Todo state still had pending or running Todos.',
-    providerItemId: null,
-    toolName: null,
-    todoId: openTodos[0]?.id ?? null,
-    todoSeq: openTodos[0]?.seq ?? null,
-  };
 }
 
 const IMPLEMENTATION_PHASE_PREAMBLE = [
@@ -173,80 +204,6 @@ const IMPLEMENTATION_PHASE_PREAMBLE = [
 
 function injectImplementationPhaseContext(latestUserMessage: string) {
   return `${IMPLEMENTATION_PHASE_PREAMBLE}\n\n${latestUserMessage}`.trim();
-}
-
-function buildInitialRunTodos(compiledPromptText: string): ImplementationTodoInput[] {
-  const screenPath = extractFirstMatch(compiledPromptText, /画面パス:\s*`([^`]+)`/);
-  const featureSummary = extractFeatureSummary(compiledPromptText);
-  const target = screenPath ? `${screenPath} 画面` : '対象画面';
-
-  return [
-    {
-      title: '仕様と既存構成を確認する',
-      description:
-        '最新仕様、リポジトリ構成、既存の package scripts、ルーティング、保存方式を確認し、実装方針を決める。',
-      taskType: 'inspection',
-    },
-    {
-      title: `${target}の実装準備を行う`,
-      description:
-        '既存プロジェクト構成に合わせて、必要なテンプレート、依存関係、ルート、ファイル配置を準備する。',
-      taskType: 'scaffold',
-      dependsOn: [1],
-    },
-    {
-      title: `${target}を仕様に沿って実装する`,
-      description: featureSummary
-        ? `${featureSummary} を実装する。`
-        : '仕様に沿って主要 UI、状態管理、保存処理、操作導線を実装する。',
-      taskType: 'implementation',
-      dependsOn: [2],
-    },
-    {
-      title: '受け入れ条件を検証する',
-      description:
-        'ビルド、テスト、必要なブラウザ確認を実行し、仕様の受け入れ条件を満たすことを確認する。',
-      taskType: 'verification',
-      dependsOn: [3],
-    },
-  ];
-}
-
-function buildCodexInitialRunTodos(compiledPromptText: string): ImplementationTodoInput[] {
-  const summary = compiledPromptText.replace(/\s+/g, ' ').trim().slice(0, 160);
-  const requestSummary = summary ? `ユーザー依頼: ${summary}` : 'ユーザー依頼に基づく対象変更。';
-
-  return [
-    {
-      title: '対象変更を確認して実装する',
-      description: [
-        requestSummary,
-        'ユーザーが実装計画化を明示していない場合は、必要最小限の確認後に対象変更を実装する。',
-      ].join('\n'),
-      taskType: 'implementation',
-    },
-    {
-      title: '必要最小限の動作確認を行う',
-      description:
-        '変更範囲に応じた focused check を行う。広域 verify は追加される品質ゲート Todo で扱う。',
-      taskType: 'focused_verification',
-      dependsOn: [1],
-    },
-  ];
-}
-
-function extractFeatureSummary(text: string) {
-  const requirementsBlock = text.match(/## 機能要件\s*([\s\S]*?)(?:\n## |$)/)?.[1] ?? '';
-  const requirements = requirementsBlock
-    .split('\n')
-    .map((line) => line.replace(/^\s*\d+\.\s*/, '').trim())
-    .filter(Boolean)
-    .slice(0, 6);
-  return requirements.length > 0 ? requirements.join('、') : null;
-}
-
-function extractFirstMatch(text: string, pattern: RegExp) {
-  return text.match(pattern)?.[1]?.trim() || null;
 }
 
 async function safelyRefreshConversationContext(input: RefreshConversationContextInput) {
@@ -326,6 +283,7 @@ export async function startTaskRun(taskId: string) {
     codexEnabled: settings.CODEX_ENABLED,
     ...readRuntimeLaneConfigFromEnv(),
   });
+  const runtimeLaneDefinition = resolveRuntimeLaneDefinition(runtimeLaneResolution.lane);
   const run = await repo.createTaskRun({
     taskId,
     repositoryId: task.repositoryId,
@@ -344,10 +302,11 @@ export async function startTaskRun(taskId: string) {
     },
     startedAt: new Date(),
   });
-  const initialTodos =
-    runtimeLaneResolution.workerKind === 'codex-agent'
-      ? buildCodexInitialRunTodos(compiledPromptText)
-      : buildInitialRunTodos(compiledPromptText);
+  const runtimeLaneSetupInput = {
+    compiledPromptText,
+    runtimeLaneResolution,
+  };
+  const initialTodos = runtimeLaneDefinition.buildInitialTodos(runtimeLaneSetupInput);
   await repo.replaceTaskRunTodosForRun(
     run.id,
     buildStandardImplementationTodoList({
@@ -462,7 +421,7 @@ export async function startTaskRun(taskId: string) {
   });
 
   // Track logs in memory and create database event entries
-  const runtime = resolveAgentRuntime(runtimeLaneResolution.workerKind);
+  const runtime = runtimeLaneDefinition.createAdapter();
   const sink = createLedgerSink(run.id);
 
   // Asynchronously execute runner so that startTaskRun returns immediately
@@ -480,10 +439,7 @@ export async function startTaskRun(taskId: string) {
           timeoutSeconds: task.timeoutSeconds ?? 3600,
           safetyPolicy: repoInfo.safetyPolicy || undefined,
           contextSnapshot: runtimeContextSnapshot,
-          runtimeOptions: {
-            runtimeLane: runtimeLaneResolution.lane,
-            runtimeLaneResolution,
-          },
+          runtimeOptions: runtimeLaneDefinition.buildRuntimeOptions(runtimeLaneSetupInput),
         },
         sink
       );
@@ -491,7 +447,7 @@ export async function startTaskRun(taskId: string) {
       const stopWasRequested =
         latestRunBeforeFinalize?.status === 'cancelled' ||
         runtimeResult.terminalState === 'cancelled';
-      const runtimeContractWarnings = normalizeCodexContractWarnings(
+      const runtimeContractWarnings = normalizeRuntimeContractWarnings(
         runtimeResult.contractWarnings
       );
       const contextSnapshotBeforeFinalize =
@@ -517,6 +473,13 @@ export async function startTaskRun(taskId: string) {
       if (stopWasRequested) {
         const outcome = outcomeFromRuntimeResult(runtimeResult);
         const finalReport = runtimeResult.finalReport || outcome.summary;
+        const todosBeforeCancelCloseout = await repo.listTaskRunTodosForRun(run.id);
+        await closeOpenTodosForCancelledRun({
+          runId: run.id,
+          taskId,
+          todos: todosBeforeCancelCloseout,
+          evidence: runtimeResult.stoppedBy || runtimeResult.terminalState,
+        });
         assertRunStatusTransition(latestRunBeforeFinalize?.status || 'running', 'cancelled');
         await repo.updateTaskRun(run.id, {
           status: 'cancelled',
@@ -525,9 +488,10 @@ export async function startTaskRun(taskId: string) {
           logContent: runtimeResult.logContent,
           diffPatch: runtimeResult.diffPatch,
           testResults: runtimeResult.testResults,
-          contextSnapshot: mergeCodexContractSnapshot(
+          contextSnapshot: mergeRuntimeContractSnapshot(
             contextSnapshotBeforeFinalize,
-            runtimeContractWarnings
+            runtimeContractWarnings,
+            { lane: runtimeLaneResolution.lane }
           ),
           finalReport,
           finalJudgment: null,
@@ -578,12 +542,22 @@ export async function startTaskRun(taskId: string) {
       });
 
       const outcome = outcomeFromRuntimeResult(runtimeResult);
-      const finalTodos = await repo.listTaskRunTodosForRun(run.id);
+      let finalTodos = await repo.listTaskRunTodosForRun(run.id);
+      if (outcome.status === 'needs_human') {
+        await markRunningTodosNeedsHuman({
+          runId: run.id,
+          taskId,
+          todos: finalTodos,
+          runtimeResult,
+          outcomeStatus: outcome.status,
+        });
+        finalTodos = await repo.listTaskRunTodosForRun(run.id);
+      }
       const openTodos = listOpenTodos(finalTodos);
       const todoFinalizationBlocked =
         outcome.status === 'completed' && openTodos.length > 0 && !isPlanningOnlyRun(finalTodos);
       const openTodoWarning = todoFinalizationBlocked
-        ? buildOpenTodoContractWarning(openTodos)
+        ? buildOpenTodoRuntimeContractWarning(openTodos)
         : null;
       const finalContractWarnings = openTodoWarning
         ? [...runtimeContractWarnings, openTodoWarning]
@@ -604,9 +578,10 @@ export async function startTaskRun(taskId: string) {
         status: guardedStatus,
         endedAt: new Date(),
         finishedAt: new Date(),
-        contextSnapshot: mergeCodexContractSnapshot(
+        contextSnapshot: mergeRuntimeContractSnapshot(
           contextSnapshotBeforeFinalize,
-          finalContractWarnings
+          finalContractWarnings,
+          { lane: runtimeLaneResolution.lane }
         ),
         finalReport,
         finalJudgment: null,
@@ -730,6 +705,13 @@ export async function stopTaskRun(runId: string) {
       workerKind: run.workerKind,
       previousStatus: run.status,
     },
+  });
+  const todosBeforeCancelCloseout = await repo.listTaskRunTodosForRun(runId);
+  await closeOpenTodosForCancelledRun({
+    runId,
+    taskId: run.taskId,
+    todos: todosBeforeCancelCloseout,
+    evidence: 'user_stop_requested',
   });
   assertRunStatusTransition(run.status, 'cancelled');
   const stoppedRun = await repo.updateTaskRun(runId, {

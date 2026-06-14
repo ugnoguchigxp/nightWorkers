@@ -12,10 +12,7 @@ import {
   questionnaireChoiceFormSchema,
 } from '../../../shared/schemas/design-questionnaire.schema';
 import { NotFoundError } from '../../lib/errors';
-import {
-  jsonFixWrapper,
-  parseRepairedJsonWithSchema,
-} from '../../services/supervisor/llm-provider/json';
+import { jsonFixWrapper, parseRepairedJsonWithSchema } from '../../services/structured-llm/json';
 import * as repo from './nightworkers.repository';
 
 export type DesignQuestionnaireSourceFallback = {

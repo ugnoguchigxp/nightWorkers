@@ -1,7 +1,8 @@
 import {
-  getSupervisorLlmSetting,
-  readSupervisorLlmProviderSettings,
-  type SupervisorLlmProviderSettings,
+  getStructuredLlmSetting,
+  normalizeStructuredLlmProviderSetting,
+  readStructuredLlmProviderSettings,
+  type StructuredLlmProviderSettings,
 } from './settings';
 import type {
   NormalizedSupervisorLlmRequest,
@@ -17,10 +18,13 @@ export function buildNormalizedSupervisorLlmRequest(input: {
   label: string;
   round?: 1 | 2;
   schemaFirst?: boolean;
-  settings?: SupervisorLlmProviderSettings;
+  settings?: StructuredLlmProviderSettings;
 }): NormalizedSupervisorLlmRequest {
-  const settings = input.settings ?? readSupervisorLlmProviderSettings();
-  const rawProvider = getSupervisorLlmSetting(settings, 'ACTIVE_LLM_PROVIDER', 'azure') || 'azure';
+  const settings = input.settings ?? readStructuredLlmProviderSettings();
+  const rawProvider =
+    normalizeStructuredLlmProviderSetting(
+      getStructuredLlmSetting(settings, 'ACTIVE_LLM_PROVIDER', 'azure')
+    ) || 'azure';
   const providerId = normalizeProviderId(rawProvider);
   const providerClass = resolveProviderClass(providerId);
   const callKind = resolveCallKind(input.label, providerClass);
@@ -38,11 +42,11 @@ export function buildNormalizedSupervisorLlmRequest(input: {
     endpoint: resolveEndpoint(providerId, settings),
     region:
       providerId === 'bedrock'
-        ? getSupervisorLlmSetting(settings, 'AWS_REGION', 'us-east-1')
+        ? getStructuredLlmSetting(settings, 'AWS_REGION', 'us-east-1')
         : null,
     apiVersion:
       providerId === 'azure-openai'
-        ? getSupervisorLlmSetting(settings, 'AZURE_OPENAI_API_VERSION', '2024-05-01-preview')
+        ? getStructuredLlmSetting(settings, 'AZURE_OPENAI_API_VERSION', '2024-05-01-preview')
         : null,
     systemPrompt: input.systemPrompt,
     userPrompt: input.userPrompt,
@@ -65,7 +69,6 @@ export function normalizeProviderId(value: string): SupervisorProviderId {
     value === 'openai' ||
     value === 'azure-openai' ||
     value === 'bedrock' ||
-    value === 'codex' ||
     value === 'fixture' ||
     value === 'test'
   ) {
@@ -80,7 +83,6 @@ export function providerAdapterKey(providerId: SupervisorProviderId | string): s
 
 function resolveProviderClass(providerId: SupervisorProviderId): SupervisorProviderClass {
   if (providerId === 'bedrock') return 'converse_message';
-  if (providerId === 'codex') return 'agent_runtime';
   if (providerId === 'fixture' || providerId === 'test') return 'fixture';
   return 'chat_completion';
 }
@@ -119,33 +121,32 @@ function buildCapabilityPolicy(input: {
 
 function resolveModelOrDeployment(
   providerId: SupervisorProviderId,
-  settings: SupervisorLlmProviderSettings
+  settings: StructuredLlmProviderSettings
 ) {
   if (providerId === 'openai')
-    return getSupervisorLlmSetting(settings, 'OPENAI_MODEL', 'gpt-4o-mini');
+    return getStructuredLlmSetting(settings, 'OPENAI_MODEL', 'gpt-4o-mini');
   if (providerId === 'azure-openai') {
-    return getSupervisorLlmSetting(settings, 'AZURE_OPENAI_DEPLOYMENT_NAME', 'gpt-5-mini');
+    return getStructuredLlmSetting(settings, 'AZURE_OPENAI_DEPLOYMENT_NAME', 'gpt-5-mini');
   }
   if (providerId === 'bedrock') {
-    return getSupervisorLlmSetting(
+    return getStructuredLlmSetting(
       settings,
       'AWS_BEDROCK_MODEL',
       'anthropic.claude-3-5-sonnet-20241022-v2:0'
     );
   }
-  if (providerId === 'codex') return getSupervisorLlmSetting(settings, 'CODEX_MODEL', '') || null;
   return null;
 }
 
 function resolveEndpoint(
   providerId: SupervisorProviderId,
-  settings: SupervisorLlmProviderSettings
+  settings: StructuredLlmProviderSettings
 ) {
   if (providerId === 'openai') {
-    return getSupervisorLlmSetting(settings, 'OPENAI_BASE_URL', 'https://api.openai.com/v1');
+    return getStructuredLlmSetting(settings, 'OPENAI_BASE_URL', 'https://api.openai.com/v1');
   }
   if (providerId === 'azure-openai') {
-    return getSupervisorLlmSetting(settings, 'AZURE_OPENAI_ENDPOINT', '');
+    return getStructuredLlmSetting(settings, 'AZURE_OPENAI_ENDPOINT', '');
   }
   return null;
 }

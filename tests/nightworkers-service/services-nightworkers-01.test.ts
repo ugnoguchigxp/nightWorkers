@@ -49,9 +49,52 @@ vi.mock('../../api/modules/nightworkers/nightworkers.repository', () => ({
   updateImplementationQueueEntry: vi.fn(),
 }));
 
-vi.mock('../../api/services/agent-runtime/registry', () => ({
-  resolveAgentRuntime: vi.fn(),
+vi.mock('../../api/routes/settings', () => ({
+  getCurrentSettings: vi.fn(() => {
+    const activeProvider = process.env.ACTIVE_LLM_PROVIDER || 'azure';
+    const codexEnabled = process.env.CODEX_ENABLED === 'true';
+    return {
+      ACTIVE_LLM_PROVIDER: activeProvider === 'codex' ? 'azure' : activeProvider,
+      CODEX_ENABLED: codexEnabled,
+      IMPLEMENTATION_RUNTIME_LANE:
+        process.env.IMPLEMENTATION_RUNTIME_LANE ||
+        (activeProvider === 'codex' && codexEnabled ? 'codex-sdk' : ''),
+    };
+  }),
 }));
+
+vi.mock('../../api/services/agent-runtime/registry', () => {
+  const resolveAgentRuntime = vi.fn();
+  const buildRuntimeLaneInitialTodos = vi.fn((lane: string) =>
+    lane === 'codex-sdk'
+      ? [
+          { title: '対象変更を確認して実装する', taskType: 'implementation' },
+          { title: '必要最小限の動作確認を行う', taskType: 'focused_verification' },
+        ]
+      : [
+          { title: '仕様と既存構成を確認する', taskType: 'inspection' },
+          { title: '対象画面の実装準備を行う', taskType: 'scaffold', dependsOn: [1] },
+          { title: '対象画面を仕様に沿って実装する', taskType: 'implementation', dependsOn: [2] },
+          { title: '受け入れ条件を検証する', taskType: 'verification', dependsOn: [3] },
+        ]
+  );
+  return {
+    buildRuntimeLaneInitialTodos,
+    resolveAgentRuntime,
+    resolveRuntimeLaneDefinition: vi.fn((lane: 'native-supervisor' | 'codex-sdk') => ({
+      kind: lane,
+      aliases: [],
+      buildInitialTodos: (input: { compiledPromptText: string }) =>
+        buildRuntimeLaneInitialTodos(lane, input),
+      buildRuntimeOptions: (input: { runtimeLaneResolution?: unknown }) => ({
+        runtimeLane: lane,
+        runtimeLaneResolution: input.runtimeLaneResolution ?? null,
+      }),
+      createAdapter: () =>
+        resolveAgentRuntime(lane === 'codex-sdk' ? 'codex-agent' : 'native-local'),
+    })),
+  };
+});
 
 vi.mock('../../api/services/conversation-context', () => ({
   buildPromptWithStateCard: vi.fn(
@@ -87,6 +130,7 @@ describe('NightWorkers service', () => {
     vi.clearAllMocks();
     delete process.env.ACTIVE_LLM_PROVIDER;
     delete process.env.CODEX_ENABLED;
+    delete process.env.IMPLEMENTATION_RUNTIME_LANE;
     process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-supervisor';
   });
 
@@ -260,7 +304,106 @@ describe('NightWorkers service', () => {
     );
   });
 
-  it('uses the codex-agent runtime lane when the env override is set', async () => {
+  it('marks running todos as needs_human when runtime stops for human review', async () => {
+    const task = {
+      id: 'task-import-failed',
+      repositoryId: 'repo-import-failed',
+      title: 'Import project',
+      description: 'Create app',
+      objective: 'Create app',
+      acceptanceCriteria: 'Import failure is surfaced',
+      timeoutSeconds: 60,
+    };
+    const run = {
+      id: 'run-import-failed',
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+      status: 'running',
+    };
+    const runningTodo = {
+      id: 'todo-running',
+      runId: run.id,
+      seq: 1,
+      title: '既存構成を確認する',
+      description: 'Import starter project',
+      taskType: 'implementation',
+      status: 'running',
+    };
+    const pendingTodo = {
+      id: 'todo-pending',
+      runId: run.id,
+      seq: 2,
+      title: '実装する',
+      description: 'Implement feature',
+      taskType: 'implementation',
+      status: 'pending',
+    };
+
+    vi.mocked(repo.getTask).mockResolvedValue(task as any);
+    vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+    vi.mocked(repo.getRepository).mockResolvedValue({
+      id: task.repositoryId,
+      localPath: repoRoot,
+    } as any);
+    vi.mocked(repo.listTaskMessages).mockResolvedValue([
+      { role: 'user', content: 'Create app' },
+    ] as any);
+    vi.mocked(repo.createTaskRun).mockResolvedValue(run as any);
+    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as any);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as any);
+    vi.mocked(repo.listTaskRunTodosForRun)
+      .mockResolvedValueOnce([runningTodo, pendingTodo] as any)
+      .mockResolvedValueOnce([{ ...runningTodo, status: 'needs_human' }, pendingTodo] as any);
+    const runtimeStart = vi.fn().mockResolvedValue({
+      terminalState: 'needs_human',
+      summary: 'Import failed',
+      finalReport: 'Project import failed.',
+      stoppedBy: 'tool_failure',
+      riskLevel: 'high',
+      diffPatch: '',
+      logContent: '',
+    });
+    vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+      kind: 'native-local',
+      start: runtimeStart,
+      stop: vi.fn(),
+    } as any);
+
+    await startTaskRun(task.id);
+
+    await vi.waitFor(() => {
+      expect(repo.updateTaskRunTodo).toHaveBeenCalledWith(
+        'todo-running',
+        expect.objectContaining({
+          status: 'needs_human',
+          statusReason: 'Project import failed.',
+          completedAt: expect.any(Date),
+          completionGateResult: expect.objectContaining({
+            status: 'needs_human',
+            passed: false,
+            todoId: 'todo-running',
+            todoSeq: 1,
+            evidence: expect.objectContaining({
+              terminalState: 'needs_human',
+              stoppedBy: 'tool_failure',
+            }),
+          }),
+        }),
+        { notifyTaskId: task.id, notifyRunId: run.id }
+      );
+    });
+    expect(repo.updateTaskRunTodo).toHaveBeenCalledTimes(1);
+    expect(repo.updateTaskRun).toHaveBeenCalledWith(
+      run.id,
+      expect.objectContaining({
+        status: 'needs_human',
+        finalReport: 'Project import failed.',
+      })
+    );
+  });
+
+  it('uses the codex-sdk runtime lane when the legacy env alias is set', async () => {
     process.env.NIGHTWORKERS_RUNTIME_LANE = 'codex-agent';
     const task = {
       id: 'task-codex-lane',
@@ -314,7 +457,7 @@ describe('NightWorkers service', () => {
       expect.objectContaining({
         workerKind: 'codex-agent',
         contextSnapshot: expect.objectContaining({
-          runtimeLane: 'codex-agent',
+          runtimeLane: 'codex-sdk',
           runtimeLaneResolution: expect.objectContaining({
             workerKind: 'codex-agent',
             source: 'env',
@@ -362,7 +505,7 @@ describe('NightWorkers service', () => {
       expect(runtimeStart).toHaveBeenCalledWith(
         expect.objectContaining({
           runtimeOptions: expect.objectContaining({
-            runtimeLane: 'codex-agent',
+            runtimeLane: 'codex-sdk',
           }),
         }),
         expect.anything()

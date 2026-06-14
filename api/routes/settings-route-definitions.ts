@@ -23,7 +23,7 @@ import {
 import { llmSettingsSchema } from './settings-runtime';
 
 const llmModelsSchema = z.object({
-  activeProvider: z.enum(['azure', 'openai', 'bedrock', 'codex']),
+  activeProvider: z.enum(['azure', 'openai', 'bedrock']),
   options: z.array(z.object({ value: z.string(), label: z.string() })),
 });
 

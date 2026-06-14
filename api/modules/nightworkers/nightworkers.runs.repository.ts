@@ -20,8 +20,54 @@ import { type JsonRecord, readRunEventPayload } from './nightworkers.json-adapte
 const TERMINAL_TODO_STATUSES = ['passed', 'failed', 'needs_human', 'skipped'] as const;
 const OPEN_TODO_STATUSES = ['pending', 'running'] as const;
 
+type TaskRunTodoRow = typeof taskRunTodos.$inferSelect;
+type ReplaceTaskRunTodoInput = {
+  seq: number;
+  title: string;
+  description?: string | null;
+  taskType: string;
+  status?: string;
+  procedureId?: string | null;
+  procedureSnapshot?: unknown;
+  contextSnapshot?: unknown;
+  completionGateResult?: unknown;
+  dependsOn?: Array<string | number> | null;
+  statusReason?: string | null;
+  startedAt?: Date | null;
+  completedAt?: Date | null;
+};
+
+function isTerminalTodoStatus(status: string) {
+  return (TERMINAL_TODO_STATUSES as readonly string[]).includes(status);
+}
+
 function isOpenTodoStatus(status: string) {
   return (OPEN_TODO_STATUSES as readonly string[]).includes(status);
+}
+
+function shouldAutoStartReplacementTodo(todo: TaskRunTodoRow) {
+  return (
+    todo.status === 'pending' && !['knowledge_capture', 'completion_report'].includes(todo.taskType)
+  );
+}
+
+function normalizeReplacementTodoInput(runId: string, todo: ReplaceTaskRunTodoInput) {
+  return {
+    runId,
+    seq: todo.seq,
+    title: todo.title,
+    description: todo.description ?? null,
+    taskType: todo.taskType,
+    status: todo.status ?? 'pending',
+    procedureId: todo.procedureId ?? null,
+    procedureSnapshot: todo.procedureSnapshot ?? null,
+    contextSnapshot: todo.contextSnapshot ?? null,
+    completionGateResult: todo.completionGateResult ?? null,
+    dependsOn: todo.dependsOn ?? [],
+    statusReason: todo.statusReason ?? null,
+    startedAt: todo.startedAt ?? null,
+    completedAt: todo.completedAt ?? null,
+  };
 }
 
 function isSqliteUniqueConstraintError(error: unknown) {
@@ -182,38 +228,68 @@ export async function createTaskRunTodo(data: {
   return todo;
 }
 
-export async function replaceTaskRunTodosForRun(
-  runId: string,
-  todos: Array<{
-    seq: number;
-    title: string;
-    description?: string | null;
-    taskType: string;
-    status?: string;
-    procedureId?: string | null;
-    procedureSnapshot?: unknown;
-    contextSnapshot?: unknown;
-    completionGateResult?: unknown;
-    dependsOn?: Array<string | number> | null;
-    statusReason?: string | null;
-    startedAt?: Date | null;
-    completedAt?: Date | null;
-  }>
-) {
-  const created = await withSqliteBusyRetry(() =>
+export async function replaceTaskRunTodosForRun(runId: string, todos: ReplaceTaskRunTodoInput[]) {
+  const replaced = await withSqliteBusyRetry(() =>
     db.transaction(async (tx) => {
-      await tx.delete(taskRunTodos).where(eq(taskRunTodos.runId, runId));
-      if (todos.length === 0) return [];
-      return tx
-        .insert(taskRunTodos)
-        .values(
-          todos.map((todo) => ({
-            ...todo,
-            runId,
-            dependsOn: todo.dependsOn ?? [],
-          }))
-        )
-        .returning();
+      const existingTodos = await tx
+        .select()
+        .from(taskRunTodos)
+        .where(eq(taskRunTodos.runId, runId))
+        .orderBy(asc(taskRunTodos.seq));
+      const existingBySeq = new Map(existingTodos.map((todo) => [todo.seq, todo]));
+      const incomingSeqs = new Set(todos.map((todo) => todo.seq));
+      const autoStartRequested = todos.some((todo) => todo.status === 'running');
+
+      for (const todo of todos) {
+        const existing = existingBySeq.get(todo.seq);
+        if (existing && isTerminalTodoStatus(existing.status)) {
+          continue;
+        }
+
+        const replacement = normalizeReplacementTodoInput(runId, todo);
+        if (existing) {
+          await tx
+            .update(taskRunTodos)
+            .set({ ...replacement, updatedAt: new Date() })
+            .where(eq(taskRunTodos.id, existing.id));
+          continue;
+        }
+
+        await tx.insert(taskRunTodos).values(replacement);
+      }
+
+      const obsoleteOpenTodoIds = existingTodos
+        .filter((todo) => !incomingSeqs.has(todo.seq) && isOpenTodoStatus(todo.status))
+        .map((todo) => todo.id);
+      if (obsoleteOpenTodoIds.length > 0) {
+        await tx.delete(taskRunTodos).where(inArray(taskRunTodos.id, obsoleteOpenTodoIds));
+      }
+
+      let currentTodos = await tx
+        .select()
+        .from(taskRunTodos)
+        .where(eq(taskRunTodos.runId, runId))
+        .orderBy(asc(taskRunTodos.seq));
+      const hasRunningTodo = currentTodos.some((todo) => todo.status === 'running');
+      if (!hasRunningTodo && autoStartRequested) {
+        const now = new Date();
+        const nextTodo = currentTodos.find(shouldAutoStartReplacementTodo);
+        if (nextTodo) {
+          const [startedTodo] = await tx
+            .update(taskRunTodos)
+            .set({
+              status: 'running',
+              startedAt: now,
+              completedAt: null,
+              updatedAt: now,
+            })
+            .where(eq(taskRunTodos.id, nextTodo.id))
+            .returning();
+          currentTodos = currentTodos.map((todo) => (todo.id === nextTodo.id ? startedTodo : todo));
+        }
+      }
+
+      return currentTodos;
     })
   );
   const [run] = await withSqliteBusyRetry(() =>
@@ -226,7 +302,7 @@ export async function replaceTaskRunTodosForRun(
       payload: { run },
     });
   }
-  return created;
+  return replaced;
 }
 
 export async function listTaskRunTodosForRun(runId: string) {

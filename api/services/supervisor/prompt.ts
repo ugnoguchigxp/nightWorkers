@@ -120,7 +120,7 @@ export function buildRound2PromptPacket(input: Round2PromptPacketInput): Supervi
       '- Execution order: specification -> Todo execution -> verification -> closeout.',
       '- For major_code_edit, call todo_list operation=replace before repository edits or verification.',
       '- TodoList is run-internal progress, not a Workbench Task or queue item.',
-      '- todo_list operation=replace only creates or resets the run-local Todo plan. It does not complete any Todo.',
+      '- todo_list operation=replace creates or refreshes the run-local Todo plan. It does not complete any Todo and cannot reopen completed, failed, blocked, or skipped Todos.',
       '- operation=replace に closeout Todo を含めない。NightWorkers が最後に「知識登録を行う」と「完了報告を行う」を別々のゲートとして追加する。',
       '- 「知識登録を行う」は start/done せず、context-still.register_candidates の成功後に自動完了される。「完了報告を行う」は最後の assistant 完了報告でのみ自動完了される。',
       '- operation=replace に広域 verify Todo を含めない。NightWorkers が最後に quality_gate_verify Todo を追加する。その Todo が current になる前は typecheck、lint、unit test、build、targeted E2E などの focused checks に留める。',

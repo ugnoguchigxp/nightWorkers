@@ -1,18 +1,12 @@
-import { estimateLlmUsage, normalizeProviderUsage } from '../../llm-usage';
-import {
-  buildCodexStructuredProviderSdkOptions,
-  buildCodexStructuredProviderThreadOptions,
-  buildCodexTurnPrompt,
-  readCodexStreamedTurn,
-} from './codex';
+import { estimateLlmUsage, normalizeProviderUsage } from '../llm-usage';
 import { emitSupervisorLlmDebugEvent, rejectProviderActivity } from './events';
 import { readSchemaFirstFixtureOutput } from './fixture';
 import { buildOpenAIChatCompletionBody, readOpenAIChatCompletionStream } from './openai';
 import { providerAdapterKey } from './request';
 import {
-  getSupervisorLlmBoolSetting,
-  getSupervisorLlmSetting,
-  readSupervisorLlmProviderSettings,
+  getStructuredLlmBoolSetting,
+  getStructuredLlmSetting,
+  readStructuredLlmProviderSettings,
 } from './settings';
 import type {
   CallSupervisorOptions,
@@ -34,9 +28,9 @@ export async function callProvider(input: {
   signal: AbortSignal;
   setProviderDebug: (value: Record<string, unknown>) => void;
 }): Promise<ProviderCallResult> {
-  const settings = readSupervisorLlmProviderSettings();
-  const isEnabled = (key: Parameters<typeof getSupervisorLlmBoolSetting>[1], fallback: boolean) =>
-    getSupervisorLlmBoolSetting(settings, key, fallback);
+  const settings = readStructuredLlmProviderSettings();
+  const isEnabled = (key: Parameters<typeof getStructuredLlmBoolSetting>[1], fallback: boolean) =>
+    getStructuredLlmBoolSetting(settings, key, fallback);
   const provider = providerAdapterKey(
     input.options.normalizedRequest?.providerId ?? input.provider
   );
@@ -44,7 +38,6 @@ export async function callProvider(input: {
   if (provider === 'azure') return callAzureProvider(input, isEnabled, settings);
   if (provider === 'openai') return callOpenAIProvider(input, isEnabled, settings);
   if (provider === 'bedrock') return callBedrockProvider(input, isEnabled, settings);
-  if (provider === 'codex') return callCodexProvider(input, isEnabled, settings);
   if (provider === 'fixture' || provider === 'test') return callFixtureProvider(input);
 
   throw new Error(`Unsupported LLM provider: ${input.provider}`);
@@ -90,20 +83,20 @@ function buildFixtureProviderResult(
 
 async function callAzureProvider(
   input: Parameters<typeof callProvider>[0],
-  isEnabled: (key: Parameters<typeof getSupervisorLlmBoolSetting>[1], fallback: boolean) => boolean,
-  settings: ReturnType<typeof readSupervisorLlmProviderSettings>
+  isEnabled: (key: Parameters<typeof getStructuredLlmBoolSetting>[1], fallback: boolean) => boolean,
+  settings: ReturnType<typeof readStructuredLlmProviderSettings>
 ): Promise<ProviderCallResult> {
   if (!isEnabled('AZURE_OPENAI_ENABLED', false)) {
     throw new Error('Azure provider is inactive. Enable AZURE_OPENAI_ENABLED first.');
   }
-  const apiKey = getSupervisorLlmSetting(settings, 'AZURE_OPENAI_API_KEY');
-  const endpoint = getSupervisorLlmSetting(settings, 'AZURE_OPENAI_ENDPOINT');
-  const deploymentName = getSupervisorLlmSetting(
+  const apiKey = getStructuredLlmSetting(settings, 'AZURE_OPENAI_API_KEY');
+  const endpoint = getStructuredLlmSetting(settings, 'AZURE_OPENAI_ENDPOINT');
+  const deploymentName = getStructuredLlmSetting(
     settings,
     'AZURE_OPENAI_DEPLOYMENT_NAME',
     'gpt-5-mini'
   );
-  const apiVersion = getSupervisorLlmSetting(
+  const apiVersion = getStructuredLlmSetting(
     settings,
     'AZURE_OPENAI_API_VERSION',
     '2024-05-01-preview'
@@ -187,15 +180,15 @@ async function callAzureProvider(
 
 async function callOpenAIProvider(
   input: Parameters<typeof callProvider>[0],
-  isEnabled: (key: Parameters<typeof getSupervisorLlmBoolSetting>[1], fallback: boolean) => boolean,
-  settings: ReturnType<typeof readSupervisorLlmProviderSettings>
+  isEnabled: (key: Parameters<typeof getStructuredLlmBoolSetting>[1], fallback: boolean) => boolean,
+  settings: ReturnType<typeof readStructuredLlmProviderSettings>
 ): Promise<ProviderCallResult> {
   if (!isEnabled('OPENAI_ENABLED', true)) {
     throw new Error('OpenAI provider is inactive. Enable OPENAI_ENABLED first.');
   }
-  const apiKey = getSupervisorLlmSetting(settings, 'OPENAI_API_KEY');
-  const baseURL = getSupervisorLlmSetting(settings, 'OPENAI_BASE_URL', 'https://api.openai.com/v1');
-  const model = getSupervisorLlmSetting(settings, 'OPENAI_MODEL', 'gpt-4o-mini');
+  const apiKey = getStructuredLlmSetting(settings, 'OPENAI_API_KEY');
+  const baseURL = getStructuredLlmSetting(settings, 'OPENAI_BASE_URL', 'https://api.openai.com/v1');
+  const model = getStructuredLlmSetting(settings, 'OPENAI_MODEL', 'gpt-4o-mini');
   const streamResponses = isEnabled('OPENAI_STREAMING_ENABLED', true);
   if (!apiKey) throw new Error('OpenAI API key is not configured in environment variables.');
 
@@ -296,15 +289,15 @@ async function callOpenAIProvider(
 
 async function callBedrockProvider(
   input: Parameters<typeof callProvider>[0],
-  isEnabled: (key: Parameters<typeof getSupervisorLlmBoolSetting>[1], fallback: boolean) => boolean,
-  settings: ReturnType<typeof readSupervisorLlmProviderSettings>
+  isEnabled: (key: Parameters<typeof getStructuredLlmBoolSetting>[1], fallback: boolean) => boolean,
+  settings: ReturnType<typeof readStructuredLlmProviderSettings>
 ): Promise<ProviderCallResult> {
   if (!isEnabled('AWS_BEDROCK_ENABLED', false)) {
     throw new Error('Bedrock provider is inactive. Enable AWS_BEDROCK_ENABLED first.');
   }
   const { BedrockRuntimeClient, ConverseCommand } = await import('@aws-sdk/client-bedrock-runtime');
-  const region = getSupervisorLlmSetting(settings, 'AWS_REGION', 'us-east-1');
-  const modelId = getSupervisorLlmSetting(
+  const region = getStructuredLlmSetting(settings, 'AWS_REGION', 'us-east-1');
+  const modelId = getStructuredLlmSetting(
     settings,
     'AWS_BEDROCK_MODEL',
     'anthropic.claude-3-5-sonnet-20241022-v2:0'
@@ -312,8 +305,8 @@ async function callBedrockProvider(
   const client = new BedrockRuntimeClient({
     region,
     credentials: {
-      accessKeyId: getSupervisorLlmSetting(settings, 'AWS_ACCESS_KEY_ID'),
-      secretAccessKey: getSupervisorLlmSetting(settings, 'AWS_SECRET_ACCESS_KEY'),
+      accessKeyId: getStructuredLlmSetting(settings, 'AWS_ACCESS_KEY_ID'),
+      secretAccessKey: getStructuredLlmSetting(settings, 'AWS_SECRET_ACCESS_KEY'),
     },
   });
   const res = await client.send(
@@ -364,101 +357,6 @@ function readProviderUsage(value: unknown): unknown {
   return value && typeof value === 'object' && 'usage' in value
     ? (value as { usage?: unknown }).usage
     : null;
-}
-
-async function callCodexProvider(
-  input: Parameters<typeof callProvider>[0],
-  isEnabled: (key: Parameters<typeof getSupervisorLlmBoolSetting>[1], fallback: boolean) => boolean,
-  settings: ReturnType<typeof readSupervisorLlmProviderSettings>
-): Promise<ProviderCallResult> {
-  if (!isEnabled('CODEX_ENABLED', false)) {
-    throw new Error('Codex provider is inactive. Enable CODEX_ENABLED first.');
-  }
-  const { Codex } = await import('@openai/codex-sdk');
-  const accessToken = getSupervisorLlmSetting(settings, 'CODEX_ACCESS_TOKEN');
-  const configuredModel = getSupervisorLlmSetting(settings, 'CODEX_MODEL') || undefined;
-  const sdkOptions = buildCodexStructuredProviderSdkOptions(accessToken);
-  const codex = new Codex(sdkOptions);
-  const threadOptions = buildCodexStructuredProviderThreadOptions(
-    configuredModel,
-    input.options.workingDirectory
-  );
-  const thread = codex.startThread(threadOptions);
-  const structuredOutputRequired =
-    input.options.normalizedRequest?.capabilityPolicy.requireStructuredOutput ??
-    Boolean(input.options.jsonSchema);
-  const useStructuredOutput =
-    structuredOutputRequired && isEnabled('CODEX_STRUCTURED_OUTPUT_ENABLED', true);
-  let structuredOutputRetried = false;
-  let turn: Awaited<ReturnType<typeof readCodexStreamedTurn>>;
-  try {
-    turn = await readCodexStreamedTurn({
-      thread,
-      prompt: buildCodexTurnPrompt(input.systemPrompt, input.userPrompt),
-      outputSchema: useStructuredOutput ? input.options.jsonSchema?.schema : undefined,
-      signal: input.signal,
-      options: input.options,
-      normalizedRequest: input.options.normalizedRequest,
-    });
-  } catch (error) {
-    if (!useStructuredOutput || !isInvalidJsonSchemaProviderError(error)) throw error;
-    structuredOutputRetried = true;
-    await emitSupervisorLlmDebugEvent(input.options, {
-      type: 'model.retry_scheduled',
-      severity: 'warning',
-      message: 'Codex structured output schema was rejected; retrying without outputSchema.',
-      data: { round: input.options.round ?? null },
-    });
-    await emitSupervisorLlmDebugEvent(input.options, {
-      type: 'model.retry_started',
-      severity: 'info',
-      message: 'Codex outputSchema-free retry started.',
-      data: { round: input.options.round ?? null },
-    });
-    turn = await readCodexStreamedTurn({
-      thread,
-      prompt: buildCodexTurnPrompt(input.systemPrompt, input.userPrompt),
-      signal: input.signal,
-      options: input.options,
-      normalizedRequest: input.options.normalizedRequest,
-    });
-  }
-  const providerDebug = {
-    provider: 'codex',
-    providerMode: 'legacy_structured_provider',
-    diagnostic:
-      input.options.normalizedRequest?.diagnostics.label === 'supervisor'
-        ? 'Codex is being used as a legacy structured Supervisor provider. Use the codex-agent runtime lane for implementation Runs.'
-        : undefined,
-    model: configuredModel || null,
-    structuredOutput: useStructuredOutput,
-    structuredOutputRetried,
-    modelReasoningEffort: threadOptions.modelReasoningEffort,
-    workingDirectory: threadOptions.workingDirectory,
-    usage: turn.usage,
-    hasContent: Boolean(turn.content),
-  };
-  input.setProviderDebug(providerDebug);
-  const content = turn.content || '';
-  return {
-    content,
-    usage: normalizeProviderUsage({
-      provider: 'codex',
-      rawUsage: turn.usage,
-      fallback: {
-        systemPrompt: input.systemPrompt,
-        userPrompt: input.userPrompt,
-        responseText: content,
-      },
-    }),
-    model: configuredModel || null,
-    providerDebug,
-  };
-}
-
-function isInvalidJsonSchemaProviderError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes('invalid_json_schema') || message.includes('Invalid schema');
 }
 
 async function emitSchemaRetryEvents(

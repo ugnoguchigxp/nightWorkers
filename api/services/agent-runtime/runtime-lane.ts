@@ -1,7 +1,8 @@
 import { readNightWorkersRuntimeEnv } from '../runtime-env';
 import type { AgentRuntimeKind } from './types';
 
-export type RuntimeLane = 'native-supervisor' | 'codex-agent';
+export type RuntimeLane = 'native-supervisor' | 'codex-sdk';
+export type RuntimeLaneAlias = RuntimeLane | 'native-local' | 'codex-agent';
 export type RuntimeLaneSource = 'task' | 'queue' | 'settings' | 'env' | 'provider_default';
 
 export type RuntimeLaneResolution = {
@@ -46,6 +47,12 @@ export function resolveRuntimeLane(input: RuntimeLaneInput = {}): RuntimeLaneRes
     }
     const lane = normalizeRuntimeLane(candidate.value);
     if (lane) {
+      if (isLegacyRuntimeLaneAlias(candidate.value, lane)) {
+        diagnostics.push({
+          level: 'info',
+          message: `Runtime lane "${String(candidate.value)}" is a compatibility alias for "${lane}".`,
+        });
+      }
       return {
         lane,
         workerKind: runtimeLaneToWorkerKind(lane),
@@ -71,12 +78,12 @@ export function resolveRuntimeLane(input: RuntimeLaneInput = {}): RuntimeLaneRes
       : String(input.envCodexEnabled || '').toLowerCase() === 'true';
   if (activeProvider === 'codex' && codexEnabled) {
     diagnostics.push({
-      level: 'info',
+      level: 'warning',
       message:
-        'Codex provider is enabled; implementation Runs default to the codex-agent runtime lane.',
+        'ACTIVE_LLM_PROVIDER=codex is a legacy implementation-lane default. Set IMPLEMENTATION_RUNTIME_LANE=codex-sdk instead.',
     });
     return {
-      lane: 'codex-agent',
+      lane: 'codex-sdk',
       workerKind: 'codex-agent',
       source: 'provider_default',
       diagnostics,
@@ -93,12 +100,19 @@ export function resolveRuntimeLane(input: RuntimeLaneInput = {}): RuntimeLaneRes
 
 export function normalizeRuntimeLane(value: unknown): RuntimeLane | null {
   if (value === 'native-supervisor' || value === 'native-local') return 'native-supervisor';
-  if (value === 'codex-agent') return 'codex-agent';
+  if (value === 'codex-sdk' || value === 'codex-agent') return 'codex-sdk';
   return null;
+}
+
+function isLegacyRuntimeLaneAlias(value: unknown, lane: RuntimeLane) {
+  return (
+    (value === 'native-local' && lane === 'native-supervisor') ||
+    (value === 'codex-agent' && lane === 'codex-sdk')
+  );
 }
 
 function runtimeLaneToWorkerKind(
   lane: RuntimeLane
 ): Extract<AgentRuntimeKind, 'native-local' | 'codex-agent'> {
-  return lane === 'codex-agent' ? 'codex-agent' : 'native-local';
+  return lane === 'codex-sdk' ? 'codex-agent' : 'native-local';
 }

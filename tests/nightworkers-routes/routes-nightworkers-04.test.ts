@@ -31,6 +31,30 @@ describe('NightWorkers reviewer evaluation routes', () => {
       summary: 'running',
       startedAt: new Date('2026-06-02T00:00:00.000Z'),
     });
+    await repo.createTaskRunTodo({
+      runId: run.id,
+      seq: 1,
+      title: 'Inspect current implementation',
+      taskType: 'implementation',
+      status: 'passed',
+      startedAt: new Date('2026-06-02T00:00:01.000Z'),
+      completedAt: new Date('2026-06-02T00:00:02.000Z'),
+    });
+    await repo.createTaskRunTodo({
+      runId: run.id,
+      seq: 2,
+      title: 'Implement active change',
+      taskType: 'implementation',
+      status: 'running',
+      startedAt: new Date('2026-06-02T00:00:03.000Z'),
+    });
+    await repo.createTaskRunTodo({
+      runId: run.id,
+      seq: 3,
+      title: 'Verify change',
+      taskType: 'verification',
+      status: 'pending',
+    });
 
     const stopRes = await app.request(`http://localhost/api/runs/${run.id}/stop`, {
       method: 'POST',
@@ -46,9 +70,22 @@ describe('NightWorkers reviewer evaluation routes', () => {
     expect(stoppedRun?.status).toBe('cancelled');
     const updatedTask = await repo.getTask(task.id);
     expect(updatedTask?.status).toBe('ready');
+    const stoppedTodos = await repo.listTaskRunTodosForRun(run.id);
+    expect(stoppedTodos.map((todo) => [todo.seq, todo.status])).toEqual([
+      [1, 'passed'],
+      [2, 'failed'],
+      [3, 'skipped'],
+    ]);
     const events = await repo.listTaskEventsForRun(run.id);
     expect(
       events.some((event) => (event.payloadJson as any)?.runEvent?.type === 'run.stop_requested')
+    ).toBe(true);
+    expect(
+      events.some(
+        (event) =>
+          (event.payloadJson as any)?.runEvent?.type === 'turn.finished' &&
+          (event.payloadJson as any)?.runEvent?.message?.includes('because the run was cancelled')
+      )
     ).toBe(true);
   });
 

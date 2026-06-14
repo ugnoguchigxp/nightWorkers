@@ -25,50 +25,50 @@ export const standardTemplateRegistry: TemplateRegistry = {
     variants: {
       sqlite: {
         name: 'sqlite',
-        ref: 'sqlite-v1.1.0',
+        ref: 'sqlite-v1.3.0',
         description: 'Hono + React/Vite baseline with SQLite.',
       },
       baseline: {
         name: 'baseline',
-        ref: 'baseline-v1.1.0',
+        ref: 'baseline-v1.3.0',
         description: 'Alias for the Hono SQLite baseline snapshot.',
       },
       postgres: {
         name: 'postgres',
-        ref: 'postgres-v1.0.0',
+        ref: 'postgres-v1.2.0',
         description: 'Hono baseline configured for PostgreSQL.',
       },
       pgvector: {
         name: 'pgvector',
-        ref: 'pgvector-v1.0.0',
+        ref: 'pgvector-v1.2.0',
         description: 'Hono baseline configured for pgvector.',
       },
       rag: {
         name: 'rag',
-        ref: 'rag-v1.0.0',
+        ref: 'rag-v1.3.0',
         description:
           'Hono RAG app template with PostgreSQL, pgvector, hybrid search, and agentic search.',
       },
       turso: {
         name: 'turso',
-        ref: 'turso-v1.0.0',
+        ref: 'turso-v1.2.0',
         description: 'Hono baseline configured for Turso/libSQL.',
       },
       cloudflare: {
         name: 'cloudflare',
-        ref: 'cloudflare-v1.0.0',
+        ref: 'cloudflare-v1.2.0',
         description: 'Hono baseline configured for Cloudflare deployment.',
       },
     },
     overlays: {
       ssr: {
         name: 'ssr',
-        ref: 'overlay-ssr-v1.0.0',
+        ref: 'overlay-ssr-v1.2.0',
         description: 'SSR overlay snapshot.',
       },
       ssg: {
         name: 'ssg',
-        ref: 'overlay-ssg-v1.0.0',
+        ref: 'overlay-ssg-v1.2.0',
         description: 'SSG overlay snapshot.',
       },
     },
