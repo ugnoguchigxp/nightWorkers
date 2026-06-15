@@ -36,6 +36,7 @@ const blueprintNodeComponentSchema = z.enum([
   'Avatar',
   'DataTable',
   'Table',
+  'KanbanTable',
   'List',
   'Tabs',
   'Accordion',
@@ -82,7 +83,6 @@ export const blueprintPresetNameSchema = z.enum([
   'search_header',
   'table_workspace',
   'metrics_overview',
-  'chart_insight',
   'kanban_board',
 ]);
 
@@ -136,9 +136,9 @@ export const blueprintSectionPatchSchema = z
   ])
   .openapi('BlueprintSectionPatch');
 
-export const legacyBlueprintSectionSchema = z
+export const componentBlueprintSectionSchema = z
   .object({
-    kind: z.literal('legacy_section').optional(),
+    kind: z.literal('component_section'),
     id: blueprintIdSchema,
     name: z.string().min(1),
     componentName: blueprintComponentNameSchema,
@@ -149,7 +149,7 @@ export const legacyBlueprintSectionSchema = z
     props: z.record(z.string(), z.unknown()).default({}),
     actions: z.array(blueprintActionSchema).default([]),
   })
-  .openapi('LegacyBlueprintSection');
+  .openapi('ComponentBlueprintSection');
 
 export const presetBlueprintSectionSchema = z
   .object({
@@ -175,7 +175,11 @@ export const customBlueprintSectionSchema = z
   .openapi('CustomBlueprintSection');
 
 export const blueprintSectionSchema = z
-  .union([legacyBlueprintSectionSchema, presetBlueprintSectionSchema, customBlueprintSectionSchema])
+  .union([
+    componentBlueprintSectionSchema,
+    presetBlueprintSectionSchema,
+    customBlueprintSectionSchema,
+  ])
   .openapi('BlueprintSection');
 
 export const blueprintScreenSchema = z
@@ -193,7 +197,7 @@ export type BlueprintAction = z.infer<typeof blueprintActionSchema>;
 export type BlueprintNode = z.infer<typeof blueprintNodeSchema>;
 export type BlueprintSectionPatch = z.infer<typeof blueprintSectionPatchSchema>;
 export type BlueprintSectionOverride = z.infer<typeof blueprintSectionOverrideSchema>;
-export type LegacyBlueprintSection = z.infer<typeof legacyBlueprintSectionSchema>;
+export type ComponentBlueprintSection = z.infer<typeof componentBlueprintSectionSchema>;
 export type PresetBlueprintSection = z.infer<typeof presetBlueprintSectionSchema>;
 export type CustomBlueprintSection = z.infer<typeof customBlueprintSectionSchema>;
 export type BlueprintSection = z.infer<typeof blueprintSectionSchema>;

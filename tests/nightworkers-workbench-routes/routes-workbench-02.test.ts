@@ -305,12 +305,14 @@ describe('NightWorkers workbench routes', () => {
             componentName: 'DashboardPage',
             sections: [
               {
+                kind: 'component_section',
                 ...representativeAppBlueprint.screens[0].sections[0],
                 id: 'sales-kpis',
                 name: 'Sales KPIs',
-                componentName: 'KpiSummarySection',
+                componentName: 'AnalyticsDashboardSection',
               },
               {
+                kind: 'component_section',
                 ...representativeAppBlueprint.screens[0].sections[1],
                 id: 'pipeline-table',
                 name: 'Pipeline Table',

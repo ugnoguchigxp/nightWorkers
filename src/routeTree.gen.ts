@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as ShowcaseRouteImport } from './routes/showcase'
 import { Route as RepositoriesRouteImport } from './routes/repositories'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as BlueprintShowcaseRouteImport } from './routes/blueprint-showcase'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TasksIdRouteImport } from './routes/tasks.$id'
 import { Route as OauthCallbackRouteImport } from './routes/oauth.callback'
@@ -29,6 +30,11 @@ const RepositoriesRoute = RepositoriesRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BlueprintShowcaseRoute = BlueprintShowcaseRouteImport.update({
+  id: '/blueprint-showcase',
+  path: '/blueprint-showcase',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -49,6 +55,7 @@ const OauthCallbackRoute = OauthCallbackRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/blueprint-showcase': typeof BlueprintShowcaseRoute
   '/login': typeof LoginRoute
   '/repositories': typeof RepositoriesRoute
   '/showcase': typeof ShowcaseRoute
@@ -57,6 +64,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/blueprint-showcase': typeof BlueprintShowcaseRoute
   '/login': typeof LoginRoute
   '/repositories': typeof RepositoriesRoute
   '/showcase': typeof ShowcaseRoute
@@ -66,6 +74,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/blueprint-showcase': typeof BlueprintShowcaseRoute
   '/login': typeof LoginRoute
   '/repositories': typeof RepositoriesRoute
   '/showcase': typeof ShowcaseRoute
@@ -76,6 +85,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/blueprint-showcase'
     | '/login'
     | '/repositories'
     | '/showcase'
@@ -84,6 +94,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/blueprint-showcase'
     | '/login'
     | '/repositories'
     | '/showcase'
@@ -92,6 +103,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/blueprint-showcase'
     | '/login'
     | '/repositories'
     | '/showcase'
@@ -101,6 +113,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BlueprintShowcaseRoute: typeof BlueprintShowcaseRoute
   LoginRoute: typeof LoginRoute
   RepositoriesRoute: typeof RepositoriesRoute
   ShowcaseRoute: typeof ShowcaseRoute
@@ -131,6 +144,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/blueprint-showcase': {
+      id: '/blueprint-showcase'
+      path: '/blueprint-showcase'
+      fullPath: '/blueprint-showcase'
+      preLoaderRoute: typeof BlueprintShowcaseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -157,6 +177,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BlueprintShowcaseRoute: BlueprintShowcaseRoute,
   LoginRoute: LoginRoute,
   RepositoriesRoute: RepositoriesRoute,
   ShowcaseRoute: ShowcaseRoute,

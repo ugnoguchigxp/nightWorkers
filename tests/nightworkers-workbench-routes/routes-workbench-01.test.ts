@@ -183,6 +183,7 @@ describe('NightWorkers workbench routes', () => {
             componentName: 'DashboardPage',
             sections: [
               {
+                kind: 'component_section',
                 id: 'boards-and-filters',
                 name: 'Boards and Filters',
                 componentName: 'DataTableSection',

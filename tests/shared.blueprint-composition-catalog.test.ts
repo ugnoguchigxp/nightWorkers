@@ -85,25 +85,6 @@ describe('blueprint-composition-catalog', () => {
     expect(result.children[2].props.label).toBe('Next Action');
   });
 
-  it('creates chart_insight preset node tree', () => {
-    const result = createPresetBlueprintNodeTree({
-      preset: 'chart_insight',
-      sectionId: 'sec-4',
-      sectionName: 'Sales Chart',
-      props: {
-        insight: 'Good progress.',
-      },
-      labels: mockLabels,
-    });
-
-    expect(result.kind).toBe('layout');
-    expect(result.layout).toBe('split');
-    expect(result.children[0].component).toBe('DataTable');
-    expect(result.children[1].component).toBe('Alert');
-    expect(result.children[1].props.description).toBe('Good progress.');
-    expect(result.children[1].props.title).toBe('Sales Chart');
-  });
-
   it('creates kanban_board preset node tree', () => {
     const result = createPresetBlueprintNodeTree({
       preset: 'kanban_board',
@@ -120,11 +101,15 @@ describe('blueprint-composition-catalog', () => {
       labels: mockLabels,
     });
 
-    expect(result.kind).toBe('layout');
-    expect(result.layout).toBe('grid');
-    expect(result.children[0].component).toBe('List');
-    expect(result.children[0].props.title).toBe('To Do');
-    expect(result.children[0].props.items).toEqual([{ title: 'Task 1' }]);
+    expect(result.kind).toBe('component');
+    expect(result.component).toBe('KanbanTable');
+    expect(result.props.columns).toEqual([
+      {
+        id: 'col-todo',
+        title: 'To Do',
+        cards: [{ title: 'Task 1' }],
+      },
+    ]);
   });
 
   it('falls back to stack and Card for unknown preset', () => {

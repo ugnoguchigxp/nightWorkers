@@ -7,7 +7,7 @@ export const canonicalBadAppBlueprint: AppBlueprint = {
     {
       ...representativeAppBlueprint.screens[0],
       id: 'operations-command-center',
-      componentName: 'KpiSummarySection',
+      componentName: 'AnalyticsDashboardSection',
       sections: [
         {
           ...representativeAppBlueprint.screens[0].sections[0],

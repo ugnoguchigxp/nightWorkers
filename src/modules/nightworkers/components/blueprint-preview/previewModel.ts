@@ -18,12 +18,13 @@ export function previewColumns(props: Record<string, unknown>) {
 
 export function previewRows(
   props: Record<string, unknown>,
-  columns: Array<{ key: string; label: string }>
+  columns: Array<{ key: string; label: string }>,
+  limit = 4
 ) {
   const rows = toObjectArray(props.rows);
-  if (rows.length > 0) return rows.slice(0, 4);
+  if (rows.length > 0) return rows.slice(0, limit);
 
-  return Array.from({ length: 3 }, (_, rowIndex) =>
+  return Array.from({ length: limit }, (_, rowIndex) =>
     Object.fromEntries(
       columns.map((column, columnIndex) => [
         column.key,

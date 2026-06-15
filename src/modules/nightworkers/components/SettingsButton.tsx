@@ -1,4 +1,4 @@
-import { Settings } from 'lucide-react';
+import { Section, Settings } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 export function SettingsButton({ onClick }: { onClick: () => void }) {
@@ -14,5 +14,19 @@ export function SettingsButton({ onClick }: { onClick: () => void }) {
     >
       <Settings className="h-5 w-5" />
     </button>
+  );
+}
+
+export function BlueprintShowcaseButton() {
+  return (
+    <a
+      href="/blueprint-showcase"
+      className="nightworkers-blueprint-showcase-button fixed bottom-3 left-16 z-[90] flex h-10 items-center gap-2 rounded-md border border-[#45475a] bg-[#1e1e2e] px-3 text-[#cdd6f4] text-xs font-semibold shadow-none transition-colors hover:bg-[#313244] hover:text-white"
+      title="Blueprint showcase"
+      aria-label="Blueprint showcase"
+    >
+      <Section className="h-4 w-4" />
+      <span>Blueprint showcase</span>
+    </a>
   );
 }

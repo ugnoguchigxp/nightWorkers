@@ -25,9 +25,10 @@ export const representativeAppBlueprint: AppBlueprint = {
       componentName: 'DashboardPage',
       sections: [
         {
+          kind: 'component_section',
           id: 'priority-signals',
           name: 'Priority Signals',
-          componentName: 'KpiSummarySection',
+          componentName: 'AnalyticsDashboardSection',
           source: 'computed',
           dataBindingId: 'signals-summary',
           props: {
@@ -42,6 +43,7 @@ export const representativeAppBlueprint: AppBlueprint = {
           actions: [],
         },
         {
+          kind: 'component_section',
           id: 'decision-queue',
           name: 'Decision Queue',
           componentName: 'DataTableSection',

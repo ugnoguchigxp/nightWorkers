@@ -29,6 +29,29 @@ describe('App Blueprint schemas', () => {
     expect(() => blueprintComponentNameSchema.parse('Button')).toThrow();
   });
 
+  it('requires explicit component section kind for catalog sections', () => {
+    expect(() =>
+      appBlueprintSchema.parse({
+        ...representativeAppBlueprint,
+        screens: [
+          {
+            ...representativeAppBlueprint.screens[0],
+            sections: [
+              {
+                id: 'missing-kind',
+                name: 'Missing Kind',
+                componentName: 'DataTableSection',
+                source: 'table',
+                props: {},
+                actions: [],
+              },
+            ],
+          },
+        ],
+      })
+    ).toThrow();
+  });
+
   it('accepts preset and custom section composition contracts', () => {
     const parsed = appBlueprintSchema.parse({
       ...representativeAppBlueprint,
@@ -130,27 +153,31 @@ describe('App Blueprint schemas', () => {
       'ArticleFeedPage',
       'SidebarPage',
       'ChartSection',
-      'ChartInsightSection',
-      'ProgressListSection',
-      'InsightPanel',
       'ImageSection',
+      'VideoSection',
       'SplitHeroSection',
+      'FullBleedHeroSection',
       'CarouselSection',
       'KanbanSection',
       'CalendarSection',
       'ScheduleSection',
-      'HoldingsListSection',
+      'MapSection',
       'AccordionSection',
       'ControlPanelSection',
-      'StatsTrendCardsSection',
-      'ActivityFeedSection',
       'NotificationCenterSection',
-      'QuickActionsSection',
       'CheckoutSummarySection',
+      'PaymentFormSection',
+      'EmailInboxSection',
+      'AnalyticsDashboardSection',
       'ChatPanelSection',
-      'EditorPreviewSection',
-      'NavigationPanel',
-      'MainSearchNavigationSection',
+      'CodeEditorSection',
+      'TopMenuSection',
+      'TabNavigationSection',
+      'SidebarMenuSection',
+      'LeftSidebarSection',
+      'ExplorerSidebarSection',
+      'RightSidebarLinksSection',
+      'FooterNavigationSection',
     ];
 
     for (const component of composiaDerivedComponents) {

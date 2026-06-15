@@ -273,6 +273,9 @@ function normalizeBlueprintCandidate(candidate: unknown): unknown {
           sectionRecord.id,
           `${screenScope}-section-${sectionIndex + 1}`
         );
+        if (!sectionRecord.kind && typeof sectionRecord.componentName === 'string') {
+          sectionRecord.kind = 'component_section';
+        }
         sectionRecord.actions = normalizeBlueprintActions(sectionRecord.actions, sectionScope);
         return sectionRecord;
       });
@@ -360,7 +363,7 @@ function normalizeRegularBlueprintBindings(blueprint: AppBlueprint): AppBlueprin
         const sectionWithoutBinding = { ...section };
         delete sectionWithoutBinding.dataBindingId;
         if (!isBlueprintPlacement(sectionWithoutBinding.componentName, 'section')) {
-          sectionWithoutBinding.componentName = 'EmptyState';
+          sectionWithoutBinding.componentName = 'CardGridSection';
         }
         if (
           !isAllowedBlueprintSource(

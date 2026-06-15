@@ -73,10 +73,11 @@ describe('Blueprint validation service', () => {
           ...representativeAppBlueprint.screens[0],
           sections: [
             {
+              kind: 'component_section',
               id: 'priority-signals',
               name: 'Priority Signals',
-              componentName: 'StatsTrendCardsSection',
-              source: 'static',
+              componentName: 'AnalyticsDashboardSection',
+              source: 'summary',
               props: {
                 title: 'Priority Signals',
                 description: 'Shows sample operational cues before data design exists.',
@@ -162,12 +163,13 @@ describe('Blueprint validation service', () => {
           ...representativeAppBlueprint.screens[0],
           sections: [
             {
-              id: 'quick-actions',
-              name: 'Quick Actions',
-              componentName: 'QuickActionsSection',
+              kind: 'component_section',
+              id: 'action-form',
+              name: 'Action Form',
+              componentName: 'FormSection',
               source: 'static',
               props: {
-                title: 'Quick Actions',
+                title: 'Action Form',
                 actions: [{ label: 'Create Card', type: 'open', target: 'create-card' }],
               },
               actions: [{ label: 'Create Card', type: 'open', target: 'create-card' }],
@@ -179,7 +181,7 @@ describe('Blueprint validation service', () => {
 
     const parsed = parseAndValidateBlueprintOutput(JSON.stringify(regularBlueprint));
 
-    expect(parsed.blueprint.screens[0]?.sections[0]?.actions[0]?.id).toBe('quick-actions-action-1');
+    expect(parsed.blueprint.screens[0]?.sections[0]?.actions[0]?.id).toBe('action-form-action-1');
     expect(parsed.validation.valid).toBe(true);
   });
 
@@ -193,6 +195,7 @@ describe('Blueprint validation service', () => {
           ...representativeAppBlueprint.screens[0],
           sections: [
             {
+              kind: 'component_section',
               id: 'card-form',
               name: 'Card Form',
               componentName: 'FormSection',
@@ -221,19 +224,20 @@ describe('Blueprint validation service', () => {
       dataBindings: [],
       screens: [
         {
-          id: 'board-empty',
-          name: 'Empty Board State',
-          path: '/boards/empty',
-          componentName: 'EmptyState',
+          id: 'board-chart',
+          name: 'Board Chart State',
+          path: '/boards/chart',
+          componentName: 'ChartSection',
           sections: [
             {
-              id: 'empty-board',
-              name: 'Empty Board',
-              componentName: 'EmptyState',
-              source: 'none',
+              kind: 'component_section',
+              id: 'board-chart-section',
+              name: 'Board Chart',
+              componentName: 'ChartSection',
+              source: 'computed',
               props: {
-                title: 'Empty Board',
-                description: 'No cards have been created yet.',
+                title: 'Board Chart',
+                data: [{ label: 'Open', value: 4 }],
               },
               actions: [],
             },
@@ -246,7 +250,7 @@ describe('Blueprint validation service', () => {
     const parsed = parseAndValidateBlueprintOutput(JSON.stringify(regularBlueprint));
 
     expect(parsed.blueprint.screens[0]?.componentName).toBe('SidebarPage');
-    expect(parsed.blueprint.screens[0]?.sections[0]?.componentName).toBe('EmptyState');
+    expect(parsed.blueprint.screens[0]?.sections[0]?.componentName).toBe('ChartSection');
     expect(parsed.validation.valid).toBe(true);
   });
 
@@ -326,8 +330,8 @@ describe('Blueprint validation service', () => {
           sections: [
             {
               ...representativeAppBlueprint.screens[0]?.sections[0],
-              componentName: 'EmptyState',
-              source: 'table',
+              componentName: 'ChartSection',
+              source: 'static',
             },
           ],
         },
@@ -424,27 +428,26 @@ describe('Blueprint validation service', () => {
           ...representativeAppBlueprint.screens[0],
           sections: [
             {
+              kind: 'component_section',
               id: 'trust-section',
               name: 'Trust Signals',
-              componentName: 'StatsTrendCardsSection',
+              componentName: 'VideoSection',
               source: 'static',
               props: {
-                title: 'Trust Signals',
-                items: [
-                  { label: 'Free shipping', value: '5,000円以上' },
-                  { label: 'Fast dispatch', value: '14時まで' },
-                ],
+                title: 'Product Overview',
+                duration: '02:10',
               },
               actions: [],
             },
             {
-              id: 'help-panel',
-              name: 'Purchase Support',
-              componentName: 'InsightPanel',
+              kind: 'component_section',
+              id: 'store-map',
+              name: 'Store Map',
+              componentName: 'MapSection',
               source: 'static',
               props: {
-                title: 'Purchase Support',
-                description: 'Clarifies delivery, returns, and payment reassurance.',
+                title: 'Store Map',
+                locations: [{ title: 'Flagship store', category: 'Retail' }],
               },
               actions: [],
             },
@@ -457,7 +460,7 @@ describe('Blueprint validation service', () => {
     expect(result.issues).toEqual([]);
   });
 
-  it('accepts preset and custom section composition without legacy component validation', () => {
+  it('accepts preset and custom section composition without component catalog placement validation', () => {
     const result = validateAppBlueprint({
       ...representativeAppBlueprint,
       databaseSchema: { tables: [], relations: [] },
@@ -522,21 +525,27 @@ describe('Blueprint validation service', () => {
     expect([...catalogNames]).toEqual(
       expect.arrayContaining([
         'ChartSection',
-        'ChartInsightSection',
-        'ProgressListSection',
         'KanbanSection',
         'CalendarSection',
         'ScheduleSection',
-        'HoldingsListSection',
+        'MapSection',
         'ControlPanelSection',
-        'StatsTrendCardsSection',
-        'ActivityFeedSection',
         'NotificationCenterSection',
-        'QuickActionsSection',
         'CheckoutSummarySection',
+        'PaymentFormSection',
+        'EmailInboxSection',
+        'AnalyticsDashboardSection',
         'ChatPanelSection',
-        'EditorPreviewSection',
-        'MainSearchNavigationSection',
+        'CodeEditorSection',
+        'VideoSection',
+        'FullBleedHeroSection',
+        'TopMenuSection',
+        'TabNavigationSection',
+        'SidebarMenuSection',
+        'LeftSidebarSection',
+        'ExplorerSidebarSection',
+        'RightSidebarLinksSection',
+        'FooterNavigationSection',
       ])
     );
     expect(

@@ -24,8 +24,9 @@ export function buildBlueprintSystemPrompt(input: {
     '- componentName は blueprint-catalog.schema.ts の enum から選ぶ。',
     `- designPreset はこの既知presetをそのまま使う: ${JSON.stringify(defaultDesignPreset)}。`,
     '- componentName/source は下の Catalog の組み合わせだけを使う。未掲載のcomponent/source/themeを作らない。',
-    '- section は従来の componentName section に加えて、必要に応じて kind:"preset_section" または kind:"custom_section" を使ってよい。',
-    '- preset_section は preset に search_header / table_workspace / metrics_overview / chart_insight / kanban_board のいずれかを選び、props と overrides で内部 node/slot を局所調整する。',
+    '- componentName で既存 section を使う場合も、section.kind は必ず "component_section" にする。',
+    '- section は component_section に加えて、必要に応じて kind:"preset_section" または kind:"custom_section" を使ってよい。',
+    '- preset_section は preset に search_header / table_workspace / metrics_overview / kanban_board のいずれかを選び、props と overrides で内部 node/slot を局所調整する。',
     '- custom_section は preset で表現できない場合だけ使い、root の BlueprintNode tree は既知 component catalog と layout token だけで構成する。任意 HTML、className、CSS は作らない。',
     '- 画面名、セクション名、コンポーネント選択、余白感、情報密度、サンプル表示内容は、ユーザー依頼の業務・ユーザー・利用シーンに合わせて自律的に決める。',
     '- section は「必要なものだけ」を選ぶ。見栄えのための hero、画像、KPI、chart、activity、marketing section は入れない。',
@@ -35,9 +36,9 @@ export function buildBlueprintSystemPrompt(input: {
     '- TODO / task / issue / order / customer などの CRUD・運用一覧で、ユーザーが「一覧」「管理」「最小構成」「登録と一覧だけ」を求める場合は、search_header と table_workspace、または compact form と table_workspace を基本形として考える。board/card/gallery を明示された場合だけ card や kanban を主役にする。',
     '- Kanban なら KanbanSection を主役にし、検索・フィルタ・表示切替は KanbanSection.props.filters / views / segments としてボード上部の toolbar に出す。ボードを操作する前に使う controls をボード下に置かない。',
     '- KanbanSection の props は Backlog / In Progress / Done 相当の3列 columns: [{id,title,cards:[{id,title,description,assignee,priority,dueDate}]}] を基本形にする。各 column には、画面イメージを確認できる sample card を最低1件入れる。boardLabel、boardDescription、filters を必要に応じて入れる。ボード、列、カード、検索、フィルタの確認が目的なら DataTableSection を使わない。',
-    '- Kanban では QuickActionsSection、EmptyState、FormSection、DataTableSection を自動追加しない。ユーザーが明示的に「新規作成導線」「空状態」「編集フォーム」「表形式一覧」を求めた場合だけ使う。',
-    '- SplitHeroSection、ImageSection、CarouselSection は landing page、marketing page、media-heavy page、またはユーザーが明示的に hero / visual / campaign を求めた場合だけ使う。',
-    '- ChartSection、ChartInsightSection、KpiSummarySection、StatsTrendCardsSection、ProgressListSection は、ユーザーが metrics / KPI / analytics / dashboard / trend / chart を明示した場合だけ使う。Kanban、フォーム、CRUD、一覧管理の初期画面に自動追加しない。',
+    '- Kanban では FormSection、DataTableSection を自動追加しない。ユーザーが明示的に「編集フォーム」「表形式一覧」を求めた場合だけ使う。',
+    '- SplitHeroSection、FullBleedHeroSection、ImageSection、CarouselSection は landing page、marketing page、media-heavy page、またはユーザーが明示的に hero / visual / campaign を求めた場合だけ使う。',
+    '- ChartSection、AnalyticsDashboardSection は、ユーザーが metrics / KPI / analytics / dashboard / trend / chart を明示した場合だけ使う。Kanban、フォーム、CRUD、一覧管理の初期画面に自動追加しない。',
     '- ユーザー回答で「最小構成」「シンプル」「基本操作」「画面だけ」と判断された場合は、screen あたり 1-3 section を基本にし、中心操作に直結しない section は削る。',
     '- 通常の Blueprint 生成では DB/DDL/data model/data binding を設計しない。databaseSchema は必ず {"tables":[],"relations":[]}、dataBindings は必ず [] にする。',
     '- 通常の Blueprint 生成では section.dataBindingId を使わない。デザイン確認に必要なサンプル表示は section.props の title、description、items、columns、rows、links、actions、data に入れる。',
@@ -93,7 +94,6 @@ function renderSectionPresetCatalogPrompt(): string {
     .map((preset) =>
       [
         preset.name,
-        `legacy=${preset.legacyComponents.join('|') || '-'}`,
         `slots=${preset.slots
           .map((slot) => `${slot.name}:${slot.cardinality}:${slot.accepts.join('|')}`)
           .join(',')}`,

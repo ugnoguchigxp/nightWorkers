@@ -13,14 +13,13 @@ export type BlueprintPreviewComponentDefinition = {
 };
 
 export type BlueprintSectionPresetDefinition = {
-  name: 'search_header' | 'table_workspace' | 'metrics_overview' | 'chart_insight' | 'kanban_board';
+  name: 'search_header' | 'table_workspace' | 'metrics_overview' | 'kanban_board';
   description: string;
   slots: Array<{
     name: string;
     accepts: string[];
     cardinality: 'one' | 'many' | 'optional';
   }>;
-  legacyComponents: string[];
 };
 
 type PresetLabels = {
@@ -50,6 +49,7 @@ export const blueprintPreviewComponentCatalog: BlueprintPreviewComponentDefiniti
     ],
   }),
   component('Table', 'display', 'Render mock columns and rows.'),
+  component('KanbanTable', 'display', 'Render workflow statuses as a task table.'),
   component('List', 'display', 'Render a vertical list of mock items.'),
   component('Tabs', 'navigation', 'Render local navigation tabs.', ['Text', 'Badge']),
   component('Accordion', 'display', 'Render collapsible detail groups.', ['Text', 'Card']),
@@ -67,7 +67,6 @@ export const blueprintSectionPresetCatalog: BlueprintSectionPresetDefinition[] =
   {
     name: 'search_header',
     description: 'Title, search input, optional filters, and action buttons.',
-    legacyComponents: ['MainSearchNavigationSection'],
     slots: [
       slot('title', ['Text'], 'one'),
       slot('searchInput', ['Input', 'InputGroup'], 'one'),
@@ -78,7 +77,6 @@ export const blueprintSectionPresetCatalog: BlueprintSectionPresetDefinition[] =
   {
     name: 'table_workspace',
     description: 'Toolbar, optional filters/actions, and a mock data table.',
-    legacyComponents: ['DataTableSection'],
     slots: [
       slot('toolbar', ['Text', 'Input', 'Select', 'Button'], 'optional'),
       slot('filters', ['Input', 'Select', 'Checkbox', 'Switch'], 'many'),
@@ -89,37 +87,20 @@ export const blueprintSectionPresetCatalog: BlueprintSectionPresetDefinition[] =
   {
     name: 'metrics_overview',
     description: 'Metric cards and optional supporting insight.',
-    legacyComponents: ['KpiSummarySection', 'StatsTrendCardsSection'],
     slots: [
       slot('metrics', ['Card', 'Badge', 'Progress'], 'many'),
       slot('insight', ['Alert', 'Card'], 'optional'),
     ],
   },
   {
-    name: 'chart_insight',
-    description: 'Chart-like mock data paired with explanatory insight.',
-    legacyComponents: ['ChartSection', 'ChartInsightSection'],
-    slots: [
-      slot('chart', ['DataTable', 'Card'], 'one'),
-      slot('insight', ['Alert', 'Card'], 'optional'),
-    ],
-  },
-  {
     name: 'kanban_board',
-    description: 'Workflow columns with mock cards.',
-    legacyComponents: ['KanbanSection'],
+    description: 'Workflow statuses rendered as a task table.',
     slots: [
       slot('toolbar', ['Text', 'Input', 'Select', 'Button'], 'optional'),
-      slot('columns', ['List', 'Card'], 'many'),
+      slot('columns', ['Table'], 'one'),
     ],
   },
 ];
-
-export const legacyBlueprintSectionPresetMap = Object.fromEntries(
-  blueprintSectionPresetCatalog.flatMap((preset) =>
-    preset.legacyComponents.map((componentName) => [componentName, preset.name])
-  )
-) as Record<string, BlueprintSectionPresetDefinition['name']>;
 
 export function createPresetBlueprintNodeTree(input: {
   preset: string;
@@ -193,29 +174,10 @@ export function createPresetBlueprintNodeTree(input: {
     );
   }
 
-  if (input.preset === 'chart_insight') {
-    const insight = String(props.insight || props.summary || props.note || '');
-    return layoutNode('root', 'split', { gap: 'md' }, [
-      componentNode('chart', 'DataTable', props),
-      componentNode('insight', 'Alert', {
-        title,
-        ...(insight ? { description: insight } : {}),
-      }),
-    ]);
-  }
-
   if (input.preset === 'kanban_board') {
-    return layoutNode(
-      'root',
-      'grid',
-      { columns: 3, gap: 'md' },
-      objectArray(props.columns).map((column, index) =>
-        componentNode(String(column.id || `column-${index + 1}`), 'List', {
-          title: String(column.title || `Column ${index + 1}`),
-          items: objectArray(column.cards),
-        })
-      )
-    );
+    return componentNode('kanban-table', 'KanbanTable', {
+      columns: objectArray(props.columns),
+    });
   }
 
   return layoutNode('root', 'stack', { gap: 'md' }, [componentNode('fallback', 'Card', { title })]);

@@ -31,7 +31,7 @@ import { FolderBrowserDialog } from './FolderBrowserDialog';
 import { ImplementationQueueScreen } from './ImplementationQueueScreen';
 import { OverviewScreen } from './OverviewScreen';
 import { ProjectSidebar } from './ProjectSidebar';
-import { SettingsButton } from './SettingsButton';
+import { BlueprintShowcaseButton, SettingsButton } from './SettingsButton';
 import { SettingsScreen } from './SettingsScreen';
 import { ThreadWorkspace } from './ThreadWorkspace';
 import { TodoListPane } from './TodoListPane';
@@ -656,7 +656,12 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
           )}
         </Panel>
       </Group>
-      {!props.showSettings ? <SettingsButton onClick={props.onOpenSettings} /> : null}
+      {!props.showSettings ? (
+        <>
+          <SettingsButton onClick={props.onOpenSettings} />
+          <BlueprintShowcaseButton />
+        </>
+      ) : null}
       <FolderBrowserDialog
         open={props.showFolderBrowser}
         currentPath={workspace.currentBrowserPath}

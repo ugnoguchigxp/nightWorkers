@@ -1,4 +1,3 @@
-import { legacyBlueprintSectionPresetMap } from './blueprint-composition-catalog';
 import type { AppBlueprint } from './schemas/app-blueprint.schema';
 import type {
   BlueprintNode,
@@ -6,7 +5,6 @@ import type {
   BlueprintSectionOverride,
   BlueprintSectionPatch,
   CustomBlueprintSection,
-  LegacyBlueprintSection,
   PresetBlueprintSection,
 } from './schemas/app-blueprint-ui.schema';
 
@@ -14,29 +12,7 @@ type AnyRecord = Record<string, unknown>;
 type PatchInsertPosition = 'start' | 'end' | 'before' | 'after' | undefined;
 
 export function normalizeBlueprintSectionForPreview(section: BlueprintSection): BlueprintSection {
-  if (section.kind === 'preset_section' || section.kind === 'custom_section') return section;
-  return legacyBlueprintSectionToPreset(section) || section;
-}
-
-export function legacyBlueprintSectionToPreset(
-  section: LegacyBlueprintSection
-): PresetBlueprintSection | null {
-  const preset = legacyBlueprintSectionPresetMap[section.componentName];
-  if (!preset) return null;
-  return {
-    kind: 'preset_section',
-    id: section.id,
-    name: section.name,
-    preset,
-    props: {
-      ...section.props,
-      title: section.props.title || section.name,
-      description: section.props.description || section.intent || section.visualIntent,
-      actions: section.props.actions || section.actions,
-    },
-    overrides: [],
-    actions: section.actions,
-  };
+  return section;
 }
 
 export function applyBlueprintSectionPatches(

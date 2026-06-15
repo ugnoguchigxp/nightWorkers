@@ -9,12 +9,11 @@ import {
   applyBlueprintSectionPatch,
   applyBlueprintSectionPatchesToBlueprint,
   blueprintSectionPatchToOverride,
-  legacyBlueprintSectionToPreset,
   normalizeBlueprintSectionForPreview,
 } from '../shared/blueprint-section-composition';
 import type {
+  ComponentBlueprintSection,
   CustomBlueprintSection,
-  LegacyBlueprintSection,
   PresetBlueprintSection,
 } from '../shared/schemas/app-blueprint-ui.schema';
 import { representativeAppBlueprint } from './fixtures/app-blueprint';
@@ -28,7 +27,6 @@ describe('Blueprint section composition helpers', () => {
       'search_header',
       'table_workspace',
       'metrics_overview',
-      'chart_insight',
       'kanban_board',
     ]);
   });
@@ -69,44 +67,11 @@ describe('Blueprint section composition helpers', () => {
     });
 
     expect(tableRoot.children?.[0]?.children?.[0]?.props).toEqual({ title: 'Todo の一覧' });
-
-    const chartRoot = createPresetBlueprintNodeTree({
-      preset: 'chart_insight',
-      sectionId: 'todo-chart',
-      sectionName: 'Todo の一覧',
-      props: { title: 'Todo の一覧', description },
-      labels,
-    });
-
-    expect(chartRoot.children?.[1]?.props).toEqual({ title: 'Todo の一覧' });
   });
 
-  it('adapts legacy search, table, and metric sections to preset sections', () => {
-    const cases: Array<
-      [LegacyBlueprintSection['componentName'], PresetBlueprintSection['preset']]
-    > = [
-      ['MainSearchNavigationSection', 'search_header'],
-      ['DataTableSection', 'table_workspace'],
-      ['StatsTrendCardsSection', 'metrics_overview'],
-    ];
-
-    for (const [componentName, preset] of cases) {
-      const adapted = legacyBlueprintSectionToPreset({
-        id: `${preset}-section`,
-        name: preset,
-        componentName,
-        source: 'static',
-        props: { title: preset },
-        actions: [],
-      });
-
-      expect(adapted?.kind).toBe('preset_section');
-      expect(adapted?.preset).toBe(preset);
-    }
-  });
-
-  it('keeps unsupported legacy sections as legacy for the existing renderer', () => {
-    const section: LegacyBlueprintSection = {
+  it('keeps component sections as component sections for the current renderer', () => {
+    const section: ComponentBlueprintSection = {
+      kind: 'component_section',
       id: 'hero',
       name: 'Hero',
       componentName: 'SplitHeroSection',
@@ -284,9 +249,27 @@ describe('Blueprint section composition helpers', () => {
   });
 
   it('applies section patches to a blueprint screen', () => {
-    const patched = applyBlueprintSectionPatchesToBlueprint(representativeAppBlueprint, {
-      screenId: representativeAppBlueprint.screens[0].id,
-      sectionId: representativeAppBlueprint.screens[0].sections[1].id,
+    const blueprint = {
+      ...representativeAppBlueprint,
+      screens: [
+        {
+          ...representativeAppBlueprint.screens[0],
+          sections: [
+            {
+              kind: 'preset_section',
+              id: 'decision-workspace',
+              preset: 'table_workspace',
+              props: { title: 'Decision Queue' },
+              overrides: [],
+              actions: [],
+            } satisfies PresetBlueprintSection,
+          ],
+        },
+      ],
+    };
+    const patched = applyBlueprintSectionPatchesToBlueprint(blueprint, {
+      screenId: blueprint.screens[0].id,
+      sectionId: blueprint.screens[0].sections[0].id,
       patches: [
         {
           op: 'insert',
@@ -301,7 +284,7 @@ describe('Blueprint section composition helpers', () => {
       ],
     });
 
-    expect(patched.screens[0].sections[1].kind).toBe('preset_section');
-    expect(patched.screens[0].sections[1].overrides).toHaveLength(1);
+    expect(patched.screens[0].sections[0].kind).toBe('preset_section');
+    expect(patched.screens[0].sections[0].overrides).toHaveLength(1);
   });
 });
