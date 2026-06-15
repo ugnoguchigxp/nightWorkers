@@ -29,7 +29,7 @@ export function buildRunJsonlHeader(run: RunRow, repository?: RepoRow | null): R
 }
 
 export function serializeRunEventForJsonl(event: EventRow, run: RunRow): string {
-  const payload = (event.payloadJson as any) || {};
+  const payload = (event.payloadJson as Record<string, unknown>) || {};
   const runEvent = canonicalizeTaskEvent(event, run);
   const line: RunEventJsonlLine = {
     type: 'run_event',

@@ -1,3 +1,4 @@
+import { toDeepRecord } from '../../../shared/json-record';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import { runAgentHooks } from '../hooks/hooks-runner';
 import type { AgentHookInput, AgentHookRunEvent } from '../hooks/types';
@@ -175,28 +176,32 @@ export class NativeAgentRuntime implements AgentRuntime {
       await runSessionEndHook();
 
       return result;
-    } catch (err: any) {
-      const message = `[System Error] Native Local Worker failed: ${err?.message ?? 'Unknown error'}`;
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : String(toDeepRecord(err).message || err);
+      const message = `[System Error] Native Local Worker failed: ${errorMessage || 'Unknown error'}`;
       await emit({
         type: 'runtime_error',
         message,
         payload: {
-          error: err?.message ?? String(err),
+          error: errorMessage,
         },
       });
       try {
         await runSessionEndHook();
-      } catch (hookErr: any) {
+      } catch (hookErr) {
+        const hookErrorMessage =
+          hookErr instanceof Error
+            ? hookErr.message
+            : String(toDeepRecord(hookErr).message || hookErr);
         appendLog(
-          `[System] SessionEnd hook failed while handling runtime error: ${
-            hookErr?.message ?? String(hookErr)
-          }`
+          `[System] SessionEnd hook failed while handling runtime error: ${hookErrorMessage}`
         );
       }
       logs.push(message);
       return {
         ...DEFAULT_RESULT,
-        summary: err?.message ? `Runtime failed: ${err.message}` : DEFAULT_RESULT.summary,
+        summary: errorMessage ? `Runtime failed: ${errorMessage}` : DEFAULT_RESULT.summary,
         logContent: logs.join('\n'),
       };
     }

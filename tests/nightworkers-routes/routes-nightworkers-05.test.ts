@@ -65,7 +65,7 @@ describe('NightWorkers task run todo routes', () => {
     });
     expect(runDetailRes.status).toBe(200);
     const runDetail = await runDetailRes.json();
-    expect(runDetail.todos.map((todo: any) => todo.id)).toEqual([first.id, second.id]);
+    expect(runDetail.todos.map((todo: unknown) => todo.id)).toEqual([first.id, second.id]);
     expect(runDetail.todos[0]).toMatchObject({
       seq: 1,
       title: 'Implement persistence',

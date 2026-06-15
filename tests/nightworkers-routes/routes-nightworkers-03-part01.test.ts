@@ -11,12 +11,12 @@ beforeAll(async () => {
   await ensureNightWorkersSchema();
 });
 
-function buildMechanicalQuestionnaireAnswers(session: any) {
+function buildMechanicalQuestionnaireAnswers(session: unknown) {
   const answerByQuestionId = new Map(
-    (session.answers || []).map((answer: any) => [answer.questionId, answer.answer])
+    (session.answers || []).map((answer: unknown) => [answer.questionId, answer.answer])
   );
-  const questions = session.questionSets.flatMap((set: any) =>
-    (set.questionnaire?.questionSets || []).flatMap((questionSet: any) => questionSet.questions)
+  const questions = session.questionSets.flatMap((set: unknown) =>
+    (set.questionnaire?.questionSets || []).flatMap((questionSet: unknown) => questionSet.questions)
   );
   const answers = [];
   for (const question of questions) {
@@ -29,9 +29,9 @@ function buildMechanicalQuestionnaireAnswers(session: any) {
   return answers;
 }
 
-function buildMechanicalQuestionnaireAnswer(question: any) {
+function buildMechanicalQuestionnaireAnswer(question: unknown) {
   const options = Array.isArray(question.options) ? question.options : [];
-  const optionIds = options.map((option: any) => String(option.id)).filter(Boolean);
+  const optionIds = options.map((option: unknown) => String(option.id)).filter(Boolean);
   const preferredOptionId =
     question.recommendedAnswerId && optionIds.includes(question.recommendedAnswerId)
       ? question.recommendedAnswerId
@@ -52,16 +52,19 @@ function buildMechanicalQuestionnaireAnswer(question: any) {
   };
 }
 
-function areQuestionDependenciesSatisfied(question: any, answerByQuestionId: Map<string, any>) {
+function areQuestionDependenciesSatisfied(
+  question: unknown,
+  answerByQuestionId: Map<string, unknown>
+) {
   const dependencies = Array.isArray(question.dependsOn) ? question.dependsOn : [];
-  return dependencies.every((dependency: any) => {
+  return dependencies.every((dependency: unknown) => {
     const answer = answerByQuestionId.get(String(dependency.questionId));
     if (!answer) return false;
     return doesAnswerSatisfyDependency(answer, dependency);
   });
 }
 
-function doesAnswerSatisfyDependency(answer: any, dependency: any) {
+function doesAnswerSatisfyDependency(answer: unknown, dependency: unknown) {
   const expected = dependency.value;
   if (typeof expected === 'boolean') {
     if (dependency.operator === 'equals') return answer.booleanValue === expected;
@@ -551,9 +554,9 @@ describe('NightWorkers task routes', () => {
       expect(answersRes.status).toBe(200);
       const answeredSession = await answersRes.json();
       expect(answeredSession.status).toBe('review_ready');
-      expect(answeredSession.answers.map((answer: any) => answer.answer.selectedOptionIds)).toEqual(
-        [['q1-o1'], ['q2-o1', 'q2-o2']]
-      );
+      expect(
+        answeredSession.answers.map((answer: unknown) => answer.answer.selectedOptionIds)
+      ).toEqual([['q1-o1'], ['q2-o1', 'q2-o2']]);
     } finally {
       if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
       else process.env.ACTIVE_LLM_PROVIDER = originalProvider;

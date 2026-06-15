@@ -23,12 +23,13 @@ export function WorkspaceBlueprintPreview({
   message: TaskMessage | null;
   empty?: string;
 }) {
-  const blueprint = message?.metadataJson?.appBlueprint;
+  const metadata = isRecord(message?.metadataJson) ? message.metadataJson : {};
+  const blueprint = metadata.appBlueprint;
   if (!isRecord(blueprint)) {
     return <MarkdownViewer content={message?.content || empty} />;
   }
   const screens = toRecordArray(blueprint.screens);
-  const validation = message?.metadataJson?.validation;
+  const validation = metadata.validation;
   const issues = isRecord(validation) ? toRecordArray(validation.issues) : [];
   return (
     <BlueprintPreview
@@ -51,7 +52,8 @@ export function WorkspaceDbDesignPanel({
   message: TaskMessage | null;
   empty?: string;
 }) {
-  const blueprint = message?.metadataJson?.appBlueprint;
+  const metadata = isRecord(message?.metadataJson) ? message.metadataJson : {};
+  const blueprint = metadata.appBlueprint;
   if (!isRecord(blueprint)) {
     return <MarkdownViewer content={message?.content || empty} />;
   }
@@ -73,7 +75,8 @@ function WorkspaceDbDesignPanelContent({
     isRecord(blueprint.databaseSchema) && Array.isArray(blueprint.databaseSchema.tables)
       ? toRecordArray(blueprint.databaseSchema.tables)
       : [];
-  const validation = message?.metadataJson?.validation;
+  const metadata = isRecord(message?.metadataJson) ? message.metadataJson : {};
+  const validation = metadata.validation;
   const issues = isRecord(validation) ? toRecordArray(validation.issues) : [];
   const initialSettings = useMemo(
     () => createBlueprintPreviewDesignSettings(blueprint.designPreset),

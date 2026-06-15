@@ -78,7 +78,7 @@ describe('MCP server settings', () => {
         url: 'https://example.com/mcp',
         toolPrefix: 'auth_server',
         authorization: 'Bearer should-not-save',
-      } as any)
+      } as never)
     ).toThrow(/Authenticated MCP server settings are not supported yet/i);
   });
 

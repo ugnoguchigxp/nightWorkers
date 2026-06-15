@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { isDeepRecord, toDeepRecord } from '../../../../shared/json-record';
 import type { TaskEvent, TaskMessage, TaskRun } from '../types';
 import { formatFinishedTime } from '../utils/time';
 import { ThreadMessage } from './ThreadMessage';
@@ -92,18 +93,21 @@ export function buildStreamingResponsePreview(input: {
 }
 
 function isStreamingResponseDeltaEvent(event: TaskEvent): boolean {
-  const payload = event.payloadJson as any;
+  const payload = toDeepRecord(event.payloadJson);
+  const runEvent = toDeepRecord(payload.runEvent);
   return (
-    payload?.runEvent?.type === 'model.response_delta' ||
-    payload?.agentEventType === 'model.response_delta'
+    String(runEvent.type) === 'model.response_delta' ||
+    String(payload.agentEventType) === 'model.response_delta'
   );
 }
 
 function streamingResponseDeltaText(event: TaskEvent): string {
-  const payload = event.payloadJson as any;
-  if (typeof payload?.runEvent?.data?.text === 'string') return payload.runEvent.data.text;
-  if (typeof payload?.text === 'string') return payload.text;
-  if (typeof payload?.payload?.text === 'string') return payload.payload.text;
+  const payload = toDeepRecord(event.payloadJson);
+  const runEventData = toDeepRecord(toDeepRecord(payload.runEvent).data);
+  const nestedPayload = toDeepRecord(payload.payload);
+  if (typeof (runEventData.text as unknown) === 'string') return String(runEventData.text);
+  if (typeof (payload.text as unknown) === 'string') return String(payload.text);
+  if (typeof (nestedPayload.text as unknown) === 'string') return String(nestedPayload.text);
   return event.message || '';
 }
 
@@ -152,7 +156,7 @@ function buildStreamingPreviewFromRaw(raw: string): StreamingPreview {
 }
 
 export function formatVisibleAssistantText(raw: string): string {
-  const parsed = tryParseJsonObject(raw);
+  const parsed = toDeepRecord(tryParseJsonObject(raw));
   if (isStructuredArtifactJsonObject(parsed)) return '';
   const directMessage = stringValue(parsed?.message);
   const finalizeToolMessage = stringValue(parsed?.toolCall?.arguments?.message);
@@ -163,9 +167,9 @@ function isStructuredArtifactJson(raw: string): boolean {
   return isStructuredArtifactJsonObject(tryParseJsonObject(raw));
 }
 
-function isStructuredArtifactJsonObject(parsed: any | null): boolean {
+function isStructuredArtifactJsonObject(parsed: unknown | null): boolean {
   return Boolean(
-    parsed &&
+    isDeepRecord(parsed) &&
       typeof parsed.title === 'string' &&
       typeof parsed.content === 'string' &&
       !parsed.message &&
@@ -181,7 +185,7 @@ export function stringValue(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-export function tryParseJsonObject(raw: string): any | null {
+export function tryParseJsonObject(raw: string): unknown | null {
   try {
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;

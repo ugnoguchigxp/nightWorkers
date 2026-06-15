@@ -10,7 +10,7 @@
         "noUnusedFunctionParameters": "off"
       },
       "suspicious": {
-        "noExplicitAny": "off",
+        "noExplicitAny": "error",
         "noArrayIndexKey": "off",
         "noUnknownAtRules": "off",
         "noNonNullAssertedOptionalChain": "off"

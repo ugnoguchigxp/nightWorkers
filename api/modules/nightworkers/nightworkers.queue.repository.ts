@@ -82,7 +82,7 @@ export async function updateTodoWorkflowSettings(data: {
   requirePerTodoFix?: boolean;
   requireFinalVerification?: boolean;
   askCommitOnCompletion?: boolean;
-  hookPolicyJson?: any;
+  hookPolicyJson?: unknown;
 }) {
   const current = await getTodoWorkflowSettings();
   const now = new Date();

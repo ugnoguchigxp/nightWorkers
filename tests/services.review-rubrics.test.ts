@@ -88,7 +88,7 @@ describe('review evidence pack builder', () => {
       diffPatch: 'diff --git a/src/a.ts b/src/a.ts\n+new',
       finalReport: 'Done with api_key=secret-value',
       summary: 'ready',
-    } as any;
+    } as never;
     const events = [
       {
         id: '33333333-3333-4333-8333-333333333333',
@@ -154,7 +154,7 @@ describe('review evidence pack builder', () => {
         },
         timestamp: new Date('2026-06-02T00:00:03.000Z'),
       },
-    ] as any[];
+    ] as unknown[];
 
     const pack = buildReviewEvidencePackFromRun(run, events);
 
@@ -176,7 +176,7 @@ describe('review evidence pack builder', () => {
       diffPatch: 'diff --git a/src/a.ts b/src/a.ts\n+new',
       finalReport: null,
       summary: 'ready',
-    } as any;
+    } as never;
     const events = [
       {
         id: '33333333-3333-4333-8333-333333333333',
@@ -202,7 +202,7 @@ describe('review evidence pack builder', () => {
         },
         timestamp: new Date('2026-06-02T00:00:01.000Z'),
       },
-    ] as any[];
+    ] as unknown[];
 
     const pack = buildReviewEvidencePackFromRun(run, events);
 

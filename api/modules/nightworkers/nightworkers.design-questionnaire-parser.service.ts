@@ -4,10 +4,12 @@ import {
   type DesignQuestionnaire,
   type DesignQuestionnaireAnswer,
   type DesignQuestionnaireFollowUpDecision,
+  type DesignQuestionnaireSession,
   designDecisionReviewSchema,
   designQuestionnaireAnswerSchema,
   designQuestionnaireFollowUpDecisionSchema,
   designQuestionnaireSchema,
+  designQuestionnaireSessionStatusSchema,
   type QuestionnaireChoiceForm,
   questionnaireChoiceFormSchema,
 } from '../../../shared/schemas/design-questionnaire.schema';
@@ -20,6 +22,12 @@ export type DesignQuestionnaireSourceFallback = {
   repositoryId: string;
   sourceBlueprintMessageId?: string | null;
   sourceKind: 'blueprint' | 'plan_mode_intake';
+};
+
+type DesignQuestion = DesignQuestionnaire['questionSets'][number]['questions'][number];
+type DesignQuestionDependency = NonNullable<DesignQuestion['dependsOn']>[number];
+type QuestionnaireQuestionSetView = {
+  questionnaire: DesignQuestionnaire | null;
 };
 
 export function parseDesignQuestionnaireRaw(
@@ -114,7 +122,7 @@ function normalizeLegacyDesignQuestionnaireOutput(
   fallbackSource?: DesignQuestionnaireSourceFallback
 ): unknown | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const raw = value as Record<string, any>;
+  const raw = value as Record<string, unknown>;
   const questions = Array.isArray(raw.questions) ? raw.questions.filter(isRecord) : [];
   if (questions.length === 0) return null;
   const source = isRecord(raw.source) ? raw.source : {};
@@ -125,7 +133,7 @@ function normalizeLegacyDesignQuestionnaireOutput(
     fallbackSource?.repositoryId;
   if (!taskId || !repositoryId) return null;
 
-  const grouped = new Map<string, Record<string, any>[]>();
+  const grouped = new Map<string, Record<string, unknown>[]>();
   for (const question of questions) {
     const category = firstNonEmptyString(question.category, question.outputSection, '仕様確認');
     const key = toKebabId(category, `section-${grouped.size + 1}`);
@@ -165,7 +173,7 @@ function normalizeLegacyDesignQuestionnaireOutput(
   };
 }
 
-function normalizeLegacyQuestion(question: Record<string, any>, index: number) {
+function normalizeLegacyQuestion(question: Record<string, unknown>, index: number) {
   const choices = Array.isArray(question.choices) ? question.choices.filter(isRecord) : [];
   const options = choices.map((choice, choiceIndex) => {
     const label = firstNonEmptyString(choice.label, choice.title, `Option ${choiceIndex + 1}`);
@@ -208,7 +216,7 @@ function normalizeLegacyQuestion(question: Record<string, any>, index: number) {
   };
 }
 
-function normalizeLegacyDbDesignHandoffNotes(value: unknown, questions: Record<string, any>[]) {
+function normalizeLegacyDbDesignHandoffNotes(value: unknown, questions: Record<string, unknown>[]) {
   const notes = Array.isArray(value) ? value : [];
   const firstQuestionId = toKebabId(
     firstNonEmptyString(questions[0]?.id, 'question-1'),
@@ -269,7 +277,7 @@ function toKebabId(value: string, fallback: string) {
   return normalized || fallback;
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
@@ -319,7 +327,9 @@ export function parseDesignQuestionnaireFollowUpDecisionRaw(
   };
 }
 
-export async function buildDesignQuestionnaireSessionView(sessionId: string) {
+export async function buildDesignQuestionnaireSessionView(
+  sessionId: string
+): Promise<DesignQuestionnaireSession> {
   const session = await repo.getDesignQuestionnaireSession(sessionId);
   if (!session) throw new NotFoundError('Questionnaire session not found');
   const [questionSets, answers, reviews] = await Promise.all([
@@ -332,7 +342,7 @@ export async function buildDesignQuestionnaireSessionView(sessionId: string) {
     taskId: session.taskId,
     repositoryId: session.repositoryId,
     sourceBlueprintMessageId: session.sourceBlueprintMessageId,
-    status: session.status as any,
+    status: designQuestionnaireSessionStatusSchema.parse(session.status),
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     questionSets: questionSets.map((set) => ({
@@ -368,35 +378,40 @@ export async function buildDesignQuestionnaireSessionView(sessionId: string) {
   };
 }
 
-export function getSessionQuestions(session: any) {
-  return session.questionSets.flatMap((set: any) =>
-    (set.questionnaire?.questionSets || []).flatMap((questionSet: any) => questionSet.questions)
+export function getSessionQuestions(session: {
+  questionSets: QuestionnaireQuestionSetView[];
+}): DesignQuestion[] {
+  return session.questionSets.flatMap((set) =>
+    (set.questionnaire?.questionSets || []).flatMap((questionSet) => questionSet.questions)
   );
 }
 
 export function getAnswerableSessionQuestions(
-  session: any,
+  session: { questionSets: QuestionnaireQuestionSetView[] },
   answers: Array<{ questionId: string; answer: DesignQuestionnaireAnswer }>
 ) {
   const answerByQuestionId = new Map(answers.map((answer) => [answer.questionId, answer.answer]));
-  return getSessionQuestions(session).filter((question: any) =>
+  return getSessionQuestions(session).filter((question) =>
     isDesignQuestionDependencySatisfied(question, answerByQuestionId)
   );
 }
 
 function isDesignQuestionDependencySatisfied(
-  question: any,
+  question: DesignQuestion,
   answerByQuestionId: Map<string, DesignQuestionnaireAnswer>
 ) {
   const dependencies = Array.isArray(question.dependsOn) ? question.dependsOn : [];
-  return dependencies.every((dependency: any) => {
+  return dependencies.every((dependency) => {
     const answer = answerByQuestionId.get(String(dependency.questionId));
     if (!answer) return false;
     return evaluateDesignQuestionDependency(answer, dependency);
   });
 }
 
-function evaluateDesignQuestionDependency(answer: DesignQuestionnaireAnswer, dependency: any) {
+function evaluateDesignQuestionDependency(
+  answer: DesignQuestionnaireAnswer,
+  dependency: DesignQuestionDependency
+) {
   const expected = dependency.value;
   const values = [
     ...answer.selectedOptionIds,

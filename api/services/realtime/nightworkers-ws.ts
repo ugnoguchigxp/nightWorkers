@@ -1,4 +1,5 @@
 import type { WebSocket } from 'ws';
+import { toDeepRecord } from '../../../shared/json-record';
 import { logEvent } from '../../lib/logger';
 
 type SocketMessage = {
@@ -113,14 +114,16 @@ export class NightWorkersRealtimeBroker {
   }
 
   publish(taskId: string, message: OutboundSocketMessage) {
-    const eventPayload = (message as { event?: any }).event;
+    const eventPayload = (message as { event?: unknown }).event;
+    const event = toDeepRecord(eventPayload);
+    const eventSeq = event.seq as unknown;
     if (message.type === 'task_event_created') {
       if (
         !taskId ||
         !message.runId ||
-        !eventPayload?.id ||
-        typeof eventPayload?.seq !== 'number' ||
-        !eventPayload?.timestamp
+        !event.id ||
+        typeof eventSeq !== 'number' ||
+        !event.timestamp
       ) {
         logEvent({
           channel: 'ws',
@@ -135,7 +138,10 @@ export class NightWorkersRealtimeBroker {
     const wire = {
       ...message,
       taskId,
-      seq: eventPayload?.seq ?? message.seq ?? this.nextTaskSeq(taskId),
+      seq:
+        (typeof eventSeq === 'number' ? eventSeq : undefined) ??
+        message.seq ??
+        this.nextTaskSeq(taskId),
       timestamp: new Date().toISOString(),
     } satisfies SocketMessage;
     if (REPLAYABLE_MESSAGE_TYPES.has(message.type)) {

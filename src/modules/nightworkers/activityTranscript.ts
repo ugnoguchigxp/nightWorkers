@@ -1,3 +1,4 @@
+import { toDeepRecord } from '../../../shared/json-record';
 import type { ActivityArtifact, ActivityEvent } from './types';
 
 export type TranscriptChild =
@@ -115,9 +116,10 @@ export function buildTranscriptItems(input: {
 }
 
 function isSuppressedRuntimeAssistantMessage(event: ActivityEvent) {
-  const payload = event.payloadJson as any;
-  const agentEventType = payload?.agentEventType || payload?.runEvent?.data?.agentEventType;
-  return event.kind === 'assistant.message' && agentEventType === 'finalize.received';
+  const payload = toDeepRecord(event.payloadJson);
+  const runEventData = toDeepRecord(toDeepRecord(payload.runEvent).data);
+  const agentEventType = payload.agentEventType || runEventData.agentEventType;
+  return event.kind === 'assistant.message' && String(agentEventType) === 'finalize.received';
 }
 
 function isAssistantTurnEvent(event: ActivityEvent) {

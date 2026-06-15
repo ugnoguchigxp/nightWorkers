@@ -41,7 +41,7 @@ describe('Health Check Endpoints', () => {
   });
 
   it('GET /api/health/ready returns 200 when DB is reachable', async () => {
-    dbMocks.run.mockResolvedValueOnce({ rowsAffected: 0 } as any);
+    dbMocks.run.mockResolvedValueOnce({ rowsAffected: 0 } as never);
     const app = createApp();
     const res = await app.request('/api/health/ready');
 
@@ -63,7 +63,7 @@ describe('Health Check Endpoints', () => {
   });
 
   it('GET /api/health (legacy) behaves as readiness endpoint', async () => {
-    dbMocks.run.mockResolvedValueOnce({ rowsAffected: 0 } as any);
+    dbMocks.run.mockResolvedValueOnce({ rowsAffected: 0 } as never);
     const app = createApp();
     const res = await app.request('/api/health');
 

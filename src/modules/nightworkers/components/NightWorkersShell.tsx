@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
+import { toDeepRecord } from '../../../../shared/json-record';
 import { useWorkspaceAppearanceState } from '../contexts/WorkspaceAppearanceContext';
 import {
   useWorkspaceLayoutActions,
@@ -367,7 +368,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   }, [props.onCloseSettings]);
 
   const waitForQuestionnaireWorkspaceReady = useCallback(async (message: TaskMessage) => {
-    const sessionId = String(message.metadataJson?.questionnaireSessionId || '');
+    const sessionId = String(toDeepRecord(message.metadataJson).questionnaireSessionId || '');
     if (!sessionId) return false;
     for (let attempt = 0; attempt < 6; attempt += 1) {
       const [workspaceRes, sessionRes] = await Promise.all([
@@ -412,7 +413,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       .find(
         (message) =>
           message.taskId === workspace.activeSessionId &&
-          message.metadataJson?.intent === 'design_questionnaire_ready'
+          String(toDeepRecord(message.metadataJson).intent) === 'design_questionnaire_ready'
       );
     if (!latestQuestionnaireMessage) return;
     if (openedQuestionnaireMessageIdsRef.current.has(latestQuestionnaireMessage.id)) return;
@@ -522,7 +523,9 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                   const latestQuestionnaireMessage = [...(result?.messages || [])]
                     .reverse()
                     .find(
-                      (message) => message.metadataJson?.intent === 'design_questionnaire_ready'
+                      (message) =>
+                        String(toDeepRecord(message.metadataJson).intent) ===
+                        'design_questionnaire_ready'
                     );
                   if (latestQuestionnaireMessage) {
                     void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'questionnaire');

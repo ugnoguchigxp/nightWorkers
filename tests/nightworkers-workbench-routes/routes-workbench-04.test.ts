@@ -73,7 +73,7 @@ function mockJobSelection(jobType: string, goal: string) {
 
 function _expectStrictObjectSchemas(schema: unknown, path = 'schema') {
   if (!schema || typeof schema !== 'object') return;
-  const node = schema as Record<string, any>;
+  const node = schema as Record<string, unknown>;
   if (node.type === 'object') {
     expect(node.additionalProperties, `${path}.additionalProperties`).toBe(false);
   }
@@ -132,7 +132,7 @@ describe('NightWorkers workbench routes', () => {
     expect(body.task.status).toBe('queued');
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
     expect(
-      body.messages.some((message: any) => message.metadataJson?.intent === 'app_blueprint')
+      body.messages.some((message: unknown) => message.metadataJson?.intent === 'app_blueprint')
     ).toBe(true);
   });
 

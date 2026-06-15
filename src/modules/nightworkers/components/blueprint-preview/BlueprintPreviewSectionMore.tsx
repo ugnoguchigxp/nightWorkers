@@ -10,7 +10,7 @@ import {
 
 type AdditionalPreviewInput = {
   componentName: string;
-  props: Record<string, any>;
+  props: Record<string, unknown>;
   t: TFunction;
 };
 
@@ -327,9 +327,9 @@ export function renderAdditionalPreviewSectionBody({
 }
 
 function buildKanbanColumns(
-  props: Record<string, any>,
+  props: Record<string, unknown>,
   t: TFunction
-): Array<Record<string, any> & { cards: Array<Record<string, any>> }> {
+): Array<Record<string, unknown> & { cards: Array<Record<string, unknown>> }> {
   const propColumns = toObjectArray(props.columns || props.lanes || props.statuses);
   const topLevelCards = toObjectArray(props.cards || props.items || props.tasks || props.data);
   if (propColumns.length > 0) {
@@ -350,7 +350,7 @@ function buildKanbanColumns(
     }));
   }
 
-  const defaultColumns: Array<Record<string, any>> = [
+  const defaultColumns: Array<Record<string, unknown>> = [
     { id: 'backlog', title: t('blueprint.preview.kanban.backlog') },
     { id: 'in-progress', title: t('blueprint.preview.kanban.inProgress') },
     { id: 'done', title: t('blueprint.preview.kanban.done') },
@@ -369,10 +369,10 @@ function buildKanbanColumns(
 }
 
 function defaultKanbanCard(
-  column: Record<string, any>,
+  column: Record<string, unknown>,
   index: number,
   t: TFunction
-): Record<string, any> {
+): Record<string, unknown> {
   const columnTitle = String(column.title || column.label || column.name || `Column ${index + 1}`);
   const descriptions = [
     '最初に作成するカードの内容を確認する',
@@ -389,8 +389,8 @@ function defaultKanbanCard(
 }
 
 function cardBelongsToColumn(
-  card: Record<string, any>,
-  column: Record<string, any>,
+  card: Record<string, unknown>,
+  column: Record<string, unknown>,
   fallbackIndex: number
 ) {
   const cardColumn = String(

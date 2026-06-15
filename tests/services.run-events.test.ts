@@ -67,7 +67,7 @@ describe('run-events jsonl serializer', () => {
       summary: 'sum',
       finalReport: 'report',
       finalJudgment: { version: 1, conclusion: 'judgment' },
-    } as any;
+    } as never;
     const events = [
       {
         id: 'evt-2',
@@ -137,12 +137,12 @@ describe('run-events jsonl serializer', () => {
         },
         timestamp: new Date('2026-06-02T00:00:03.000Z'),
       },
-    ] as any[];
+    ] as unknown[];
 
     const jsonl = serializeRunToJsonl({
       run,
       events,
-      repository: { localPath: '/tmp/repo' } as any,
+      repository: { localPath: '/tmp/repo' } as never,
     });
 
     const lines = jsonl

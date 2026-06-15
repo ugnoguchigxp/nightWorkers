@@ -1,3 +1,4 @@
+import { toDeepRecord } from '../../../shared/json-record';
 import type { ReviewEvidenceRef } from './types';
 
 type ReviewEventLike = {
@@ -6,7 +7,7 @@ type ReviewEventLike = {
   type?: string;
   eventType?: string | null;
   message?: string;
-  payloadJson?: any;
+  payloadJson?: unknown;
   timestamp?: Date;
 };
 
@@ -18,17 +19,17 @@ type ReviewRunLike = {
 };
 
 function isCanonicalEventType(event: ReviewEventLike, type: string) {
-  return (
-    event.payloadJson?.runEvent?.type === type || event.type === type || event.eventType === type
-  );
+  const runEvent = toDeepRecord(toDeepRecord(event.payloadJson).runEvent);
+  return String(runEvent.type) === type || event.type === type || event.eventType === type;
 }
 
 function getEventData(event: ReviewEventLike) {
-  return event.payloadJson?.runEvent?.data || {};
+  return toDeepRecord(toDeepRecord(event.payloadJson).runEvent).data || {};
 }
 
 function isVerificationEvent(event: ReviewEventLike) {
-  if (event.payloadJson?.runEvent?.type === 'verification.finished') return true;
+  const runEvent = toDeepRecord(toDeepRecord(event.payloadJson).runEvent);
+  if (String(runEvent.type) === 'verification.finished') return true;
   if (event.type === 'verification.finished') return true;
   if (event.eventType === 'checkpoint') {
     const data = getEventData(event);
@@ -56,7 +57,7 @@ export function collectDefaultReviewEvidence(
       kind: 'run_event',
       eventId: event.id,
       seq: event.seq,
-      eventType: eventType || event.payloadJson?.runEvent?.type || event.eventType || event.type,
+      eventType: eventType || String(runEventType(event)) || event.eventType || event.type,
     });
   };
 
@@ -141,4 +142,8 @@ export function collectDefaultReviewEvidence(
   }
 
   return refs;
+}
+
+function runEventType(event: ReviewEventLike) {
+  return toDeepRecord(toDeepRecord(event.payloadJson).runEvent).type;
 }

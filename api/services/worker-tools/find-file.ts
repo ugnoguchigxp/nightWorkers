@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { unknownErrorMessage } from '../../../shared/json-record';
 import { getRelativePath, isPathSafe } from './path-policy';
 import type { WorkerToolResult } from './types';
 
@@ -95,7 +96,7 @@ export async function findFileTool(
       finishedAt: new Date().toISOString(),
       payload: { files, count: files.length },
     };
-  } catch (err: any) {
+  } catch (err) {
     return {
       ok: false,
       toolName: 'find_file',
@@ -104,7 +105,7 @@ export async function findFileTool(
       payload: { files: [], count: 0 },
       error: {
         code: 'FIND_FILE_FAILED',
-        message: `Failed to find files: ${err.message}`,
+        message: `Failed to find files: ${unknownErrorMessage(err)}`,
       },
     };
   }

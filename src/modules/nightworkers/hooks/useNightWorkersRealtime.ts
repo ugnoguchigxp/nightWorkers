@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useEffect } from 'react';
+import { toDeepRecord } from '../../../../shared/json-record';
 import { devWsFallbackPath, wsPath } from '../../../lib/api-base';
 import { dedupeAndSortActivityEvents } from '../activityTranscript';
 import {
@@ -155,7 +156,7 @@ export function useNightWorkersRealtime({
               actor?: string;
               type?: string;
               eventType?: string | null;
-              payloadJson?: any;
+              payloadJson?: unknown;
               message: string;
               timestamp?: unknown;
             };
@@ -219,7 +220,9 @@ export function useNightWorkersRealtime({
           if (msg.type === 'task_message_created' && msg.payload?.message) {
             const incoming = msg.payload.message;
             void queryClient.invalidateQueries({ queryKey: ['llmUsage', incoming.taskId] });
-            if (incoming.metadataJson?.intent === 'design_questionnaire_ready') {
+            if (
+              String(toDeepRecord(incoming.metadataJson).intent) === 'design_questionnaire_ready'
+            ) {
               void queryClient.invalidateQueries({
                 queryKey: ['specificationWorkspace', incoming.taskId],
               });

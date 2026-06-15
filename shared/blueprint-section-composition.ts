@@ -10,7 +10,7 @@ import type {
   PresetBlueprintSection,
 } from './schemas/app-blueprint-ui.schema';
 
-type AnyRecord = Record<string, any>;
+type AnyRecord = Record<string, unknown>;
 type PatchInsertPosition = 'start' | 'end' | 'before' | 'after' | undefined;
 
 export function normalizeBlueprintSectionForPreview(section: BlueprintSection): BlueprintSection {
@@ -250,7 +250,7 @@ function setNestedValue(value: unknown, path: string, nextValue: unknown): AnyRe
   for (const part of parts.slice(0, -1)) {
     const child = cursor[part];
     cursor[part] = isRecord(child) ? { ...child } : {};
-    cursor = cursor[part];
+    cursor = cursor[part] as AnyRecord;
   }
   cursor[parts[parts.length - 1]] = nextValue;
   return root;

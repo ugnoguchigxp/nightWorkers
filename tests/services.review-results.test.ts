@@ -50,7 +50,7 @@ describe('review-results evidence collector', () => {
               data: { passed: true, command: 'pnpm test' },
             },
           },
-        } as any,
+        } as never,
         {
           id: 'evt-2',
           seq: 2,
@@ -63,7 +63,7 @@ describe('review-results evidence collector', () => {
               data: { code: 'DENY', message: 'blocked' },
             },
           },
-        } as any,
+        } as never,
       ]
     );
 

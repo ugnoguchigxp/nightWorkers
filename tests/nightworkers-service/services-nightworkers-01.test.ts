@@ -138,10 +138,10 @@ describe('NightWorkers service', () => {
     vi.mocked(repo.getTaskRun).mockResolvedValue({
       id: 'run-replay',
       taskId: 'task-replay',
-    } as any);
+    } as never);
     vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([
       { id: 'event-3', seq: 3, taskRunId: 'run-replay', message: 'after cursor' },
-    ] as any);
+    ] as never);
 
     const events = await listTaskRunEventsForReplay({
       taskId: 'task-replay',
@@ -175,10 +175,10 @@ describe('NightWorkers service', () => {
       id: 'run-detail',
       taskId: 'task-detail',
       status: 'running',
-    } as any);
+    } as never);
     vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([
       { id: 'event-8', seq: 8, taskRunId: 'run-detail', message: 'new event' },
-    ] as any);
+    ] as never);
 
     const events = await listTaskRunEvents('run-detail', { afterSeq: 7 });
 
@@ -191,11 +191,11 @@ describe('NightWorkers service', () => {
       id: 'run-detail',
       taskId: 'task-detail',
       status: 'running',
-    } as any);
+    } as never);
     vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
     vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([
       { id: 'event-1', seq: 1, taskRunId: 'run-detail', message: 'existing event' },
-    ] as any);
+    ] as never);
 
     const detail = await getTaskRunDetail('run-detail');
 
@@ -207,7 +207,7 @@ describe('NightWorkers service', () => {
     vi.mocked(repo.getTaskRun).mockResolvedValue({
       id: 'run-replay',
       taskId: 'other-task',
-    } as any);
+    } as never);
 
     await expect(
       listTaskRunEventsForReplay({
@@ -236,21 +236,21 @@ describe('NightWorkers service', () => {
       status: 'running',
     };
 
-    vi.mocked(repo.getTask).mockResolvedValue(task as any);
+    vi.mocked(repo.getTask).mockResolvedValue(task as never);
     vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
     vi.mocked(repo.getRepository).mockResolvedValue({
       id: task.repositoryId,
       localPath: repoRoot,
       safetyPolicy: { blockedCommands: ['rm'] },
-    } as any);
+    } as never);
     vi.mocked(repo.listTaskMessages).mockResolvedValue([
       { role: 'user', content: 'Run a blocked command' },
-    ] as any);
-    vi.mocked(repo.createTaskRun).mockResolvedValue(run as any);
+    ] as never);
+    vi.mocked(repo.createTaskRun).mockResolvedValue(run as never);
     vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
-    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as any);
+    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as never);
     vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
-    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as any);
+    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
     const runtimeStart = vi.fn().mockResolvedValue({
       terminalState: 'needs_human',
       summary: 'Stopped by policy block',
@@ -264,7 +264,7 @@ describe('NightWorkers service', () => {
       kind: 'native-local',
       start: runtimeStart,
       stop: vi.fn(),
-    } as any);
+    } as never);
 
     await startTaskRun(task.id);
     expect(repo.createTaskRunTodo).not.toHaveBeenCalled();
@@ -339,22 +339,22 @@ describe('NightWorkers service', () => {
       status: 'pending',
     };
 
-    vi.mocked(repo.getTask).mockResolvedValue(task as any);
+    vi.mocked(repo.getTask).mockResolvedValue(task as never);
     vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
     vi.mocked(repo.getRepository).mockResolvedValue({
       id: task.repositoryId,
       localPath: repoRoot,
-    } as any);
+    } as never);
     vi.mocked(repo.listTaskMessages).mockResolvedValue([
       { role: 'user', content: 'Create app' },
-    ] as any);
-    vi.mocked(repo.createTaskRun).mockResolvedValue(run as any);
-    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as any);
+    ] as never);
+    vi.mocked(repo.createTaskRun).mockResolvedValue(run as never);
+    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as never);
     vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
-    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as any);
+    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
     vi.mocked(repo.listTaskRunTodosForRun)
-      .mockResolvedValueOnce([runningTodo, pendingTodo] as any)
-      .mockResolvedValueOnce([{ ...runningTodo, status: 'needs_human' }, pendingTodo] as any);
+      .mockResolvedValueOnce([runningTodo, pendingTodo] as never)
+      .mockResolvedValueOnce([{ ...runningTodo, status: 'needs_human' }, pendingTodo] as never);
     const runtimeStart = vi.fn().mockResolvedValue({
       terminalState: 'needs_human',
       summary: 'Import failed',
@@ -368,7 +368,7 @@ describe('NightWorkers service', () => {
       kind: 'native-local',
       start: runtimeStart,
       stop: vi.fn(),
-    } as any);
+    } as never);
 
     await startTaskRun(task.id);
 
@@ -421,21 +421,21 @@ describe('NightWorkers service', () => {
       status: 'running',
     };
 
-    vi.mocked(repo.getTask).mockResolvedValue(task as any);
+    vi.mocked(repo.getTask).mockResolvedValue(task as never);
     vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
     vi.mocked(repo.getRepository).mockResolvedValue({
       id: task.repositoryId,
       localPath: repoRoot,
       safetyPolicy: {},
-    } as any);
+    } as never);
     vi.mocked(repo.listTaskMessages).mockResolvedValue([
       { role: 'user', content: 'Use Codex lane' },
-    ] as any);
-    vi.mocked(repo.createTaskRun).mockResolvedValue(run as any);
+    ] as never);
+    vi.mocked(repo.createTaskRun).mockResolvedValue(run as never);
     vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
-    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as any);
+    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as never);
     vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
-    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as any);
+    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
     const runtimeStart = vi.fn().mockResolvedValue({
       terminalState: 'completed',
       summary: 'Codex done',
@@ -449,7 +449,7 @@ describe('NightWorkers service', () => {
       kind: 'codex-agent',
       start: runtimeStart,
       stop: vi.fn(),
-    } as any);
+    } as never);
 
     await startTaskRun(task.id);
 

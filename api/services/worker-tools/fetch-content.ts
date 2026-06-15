@@ -1,4 +1,5 @@
 import sanitizeHtml from 'sanitize-html';
+import { unknownErrorMessage } from '../../../shared/json-record';
 import type { WorkerToolResult } from './types';
 
 export interface FetchContentInput {
@@ -146,7 +147,7 @@ export async function fetchContentTool(
   let url: URL;
   try {
     url = validateFetchContentUrl(input.url);
-  } catch (err: any) {
+  } catch (err) {
     return {
       ok: false,
       toolName: 'fetch_content',
@@ -162,7 +163,8 @@ export async function fetchContentTool(
       },
       error: {
         code: 'INVALID_TOOL_ARGS',
-        message: err?.message ?? 'fetch_content requires a valid http/https URL.',
+        message:
+          err instanceof Error ? err.message : 'fetch_content requires a valid http/https URL.',
       },
     };
   }
@@ -325,7 +327,7 @@ export async function fetchContentTool(
         truncated: truncated || text.length >= maxChars,
       },
     };
-  } catch (err: any) {
+  } catch (err) {
     return {
       ok: false,
       toolName: 'fetch_content',
@@ -341,7 +343,7 @@ export async function fetchContentTool(
       },
       error: {
         code: 'FETCH_CONTENT_FAILED',
-        message: `Failed to fetch URL: ${err?.message ?? String(err)}`,
+        message: `Failed to fetch URL: ${unknownErrorMessage(err)}`,
       },
     };
   }

@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { getDeepRecordValue, unknownErrorMessage } from '../../../shared/json-record';
 import type { ConversationGitState } from './types';
 
 const execFileAsync = promisify(execFile);
@@ -124,9 +125,10 @@ async function runGit(repoRoot: string, args: string[], maxBuffer: number) {
       timeout: 5000,
     });
     return { stdout: String(result.stdout), error: null as string | null };
-  } catch (error: any) {
-    const message = error?.message || String(error);
-    const stdout = typeof error?.stdout === 'string' ? error.stdout : '';
+  } catch (error) {
+    const message = unknownErrorMessage(error);
+    const errorStdout = getDeepRecordValue(error, 'stdout');
+    const stdout = typeof errorStdout === 'string' ? errorStdout : '';
     return { stdout, error: truncate(message, 500) };
   }
 }

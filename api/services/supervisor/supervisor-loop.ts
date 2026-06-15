@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { toDeepRecord } from '../../../shared/json-record';
 import { appendSupervisorTrace, logger } from '../../lib/logger';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import { estimateTokens } from '../conversation-context/token-budget';
@@ -174,6 +175,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           loadedAtStep: procedure.loadedAtStep,
         })
       );
+      const runningTodo = currentTodos.find((todo) => todo.status === 'running');
       const round2UserPrompt = renderRound2UserContext({
         latestUserMessage: userInput,
         goal,
@@ -181,9 +183,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         workflow: currentJobType,
         safetyPolicy: input.safetyPolicy || null,
         todoPlan: currentTodos.map(toSupervisorTodoContext),
-        currentTodo: currentTodos.find((todo) => todo.status === 'running')
-          ? toSupervisorTodoContext(currentTodos.find((todo) => todo.status === 'running') as any)
-          : null,
+        currentTodo: runningTodo ? toSupervisorTodoContext(runningTodo) : null,
         toolResults: toolResults.slice(-8),
         loadedProcedureSummaries: loadedProcedureSummaryContext,
         artifactContextRefs: input.artifactContextRefs || [],
@@ -492,7 +492,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           await repo.updateTaskRunTodo(todo.id, {
             status,
             completedAt: now,
-            startedAt: todo.startedAt ? new Date(todo.startedAt as any) : now,
+            startedAt: todo.startedAt ? new Date(todo.startedAt as string | number | Date) : now,
           });
           currentTodos = await repo.listTaskRunTodosForRun(runId);
           if (operation === 'done') {
@@ -728,8 +728,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
 }
 
 async function readWorkspaceSnapshot(repoRoot: string) {
-  const entries = await fs.readdir(repoRoot, { withFileTypes: true }).catch((error: any) => {
-    if (error?.code === 'ENOENT') return [];
+  const entries = await fs.readdir(repoRoot, { withFileTypes: true }).catch((error: unknown) => {
+    if (String(toDeepRecord(error).code) === 'ENOENT') return [];
     throw error;
   });
   const visible = entries.filter((entry) => entry.name !== '.DS_Store' && entry.name !== '.git');

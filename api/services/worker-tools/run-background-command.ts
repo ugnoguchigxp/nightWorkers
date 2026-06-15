@@ -1,3 +1,4 @@
+import { unknownErrorMessage } from '../../../shared/json-record';
 import { startBackgroundCommand } from '../background-processes';
 import type { WorkerToolResult } from './types';
 
@@ -41,7 +42,7 @@ export async function runBackgroundCommandTool(
         pid: processRecord.pid,
       },
     };
-  } catch (err: any) {
+  } catch (err) {
     return {
       ok: false,
       toolName: 'run_background_command',
@@ -56,7 +57,7 @@ export async function runBackgroundCommandTool(
       },
       error: {
         code: 'BACKGROUND_COMMAND_FAILED',
-        message: err?.message || 'Background command failed.',
+        message: unknownErrorMessage(err, 'Background command failed.'),
       },
     };
   }

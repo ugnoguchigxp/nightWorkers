@@ -232,7 +232,7 @@ describe('run-events jsonl round trip', () => {
       summary: 'ready',
       finalReport: 'report',
       finalJudgment: null,
-    } as any;
+    } as never;
     const todos = [
       {
         id: '3f0f27a7-f986-4593-9bb5-c9bc05749bc6',
@@ -244,7 +244,7 @@ describe('run-events jsonl round trip', () => {
         statusReason: 'Runtime completed this planned todo.',
         completionGateResult: { passed: true },
       },
-    ] as any[];
+    ] as unknown[];
     const events = [
       {
         id: 'd9483774-5f2a-4730-af45-6c17cbd0b801',
@@ -280,7 +280,7 @@ describe('run-events jsonl round trip', () => {
         },
         timestamp: new Date('2026-06-02T00:00:01.000Z'),
       },
-    ] as any[];
+    ] as unknown[];
 
     const parsed = parseRunJsonl(serializeRunToJsonl({ run, events, todos }));
     const replay = replayRunJsonl(parsed);

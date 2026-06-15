@@ -15,7 +15,7 @@ export async function getBlueprintDesignSettings(taskId: string) {
   return settings;
 }
 
-export async function upsertBlueprintDesignSettings(taskId: string, settingsJson: any) {
+export async function upsertBlueprintDesignSettings(taskId: string, settingsJson: unknown) {
   const now = new Date();
   const [settings] = await db
     .insert(blueprintDesignSettings)

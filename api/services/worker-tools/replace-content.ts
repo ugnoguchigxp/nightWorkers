@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { unknownErrorMessage } from '../../../shared/json-record';
 import { enforcePathPolicy } from './tool-policy-enforcer';
 import type { WorkerToolResult } from './types';
 
@@ -126,7 +127,7 @@ export async function replaceContentTool(
       finishedAt: new Date().toISOString(),
       payload: { applied: true, occurrences, filePath },
     };
-  } catch (err: any) {
+  } catch (err) {
     return {
       ok: false,
       toolName: 'replace_content',
@@ -135,7 +136,7 @@ export async function replaceContentTool(
       payload: { applied: false, occurrences: 0, filePath },
       error: {
         code: 'REPLACE_FAILED',
-        message: `Failed to replace content: ${err.message}`,
+        message: `Failed to replace content: ${unknownErrorMessage(err)}`,
       },
     };
   }

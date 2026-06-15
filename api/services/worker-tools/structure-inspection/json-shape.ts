@@ -1,3 +1,4 @@
+import { unknownErrorMessage } from '../../../../shared/json-record';
 import type { InspectStructureOutput, JsonParseDiagnostic, JsonShapeEntry } from './types';
 
 export function inspectJsonShape(input: {
@@ -22,12 +23,12 @@ export function inspectJsonShape(input: {
       paths: entries,
       truncated: state.truncated,
     };
-  } catch (err: any) {
+  } catch (err) {
     return {
       kind: 'json',
       filePath: input.filePath,
       paths: [],
-      parseError: locateJsonError(input.content, err.message || String(err)),
+      parseError: locateJsonError(input.content, unknownErrorMessage(err)),
       truncated: false,
     };
   }

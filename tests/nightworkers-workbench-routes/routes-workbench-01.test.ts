@@ -71,7 +71,7 @@ function mockJobSelection(jobType: string, goal: string) {
 
 function expectStrictObjectSchemas(schema: unknown, path = 'schema') {
   if (!schema || typeof schema !== 'object') return;
-  const node = schema as Record<string, any>;
+  const node = schema as Record<string, unknown>;
   if (node.type === 'object') {
     expect(node.additionalProperties, `${path}.additionalProperties`).toBe(false);
   }
@@ -150,9 +150,9 @@ describe('NightWorkers workbench routes', () => {
     const body = await res.json();
     expect(body.run).toBeNull();
     expect(body.task.status).toBe('draft');
-    expect(body.messages.some((message: any) => message.role === 'user')).toBe(true);
+    expect(body.messages.some((message: unknown) => message.role === 'user')).toBe(true);
     expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
-    expect(body.messages.some((message: any) => message.role === 'assistant')).toBe(true);
+    expect(body.messages.some((message: unknown) => message.role === 'assistant')).toBe(true);
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
   });
 
@@ -226,7 +226,7 @@ describe('NightWorkers workbench routes', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    const userMessage = body.messages.find((message: any) => message.role === 'user');
+    const userMessage = body.messages.find((message: unknown) => message.role === 'user');
     expect(userMessage.content).toBe('検索とフィルターはボードの上に置いてください');
     expect(userMessage.metadataJson.artifactContext.title).toBe(
       'Blueprint: Kanban System Blueprint'
@@ -241,7 +241,7 @@ describe('NightWorkers workbench routes', () => {
     expect(llmPrompt).toContain('検索とフィルターはボードの上に置いてください');
     expect(
       body.messages.some(
-        (message: any) => message.metadataJson?.intent === 'design_questionnaire_ready'
+        (message: unknown) => message.metadataJson?.intent === 'design_questionnaire_ready'
       )
     ).toBe(false);
   });
@@ -277,7 +277,7 @@ describe('NightWorkers workbench routes', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    const userMessage = body.messages.find((message: any) => message.role === 'user');
+    const userMessage = body.messages.find((message: unknown) => message.role === 'user');
     expect(userMessage.content).toBe('カード履歴テーブルは不要です');
     expect(userMessage.metadataJson.artifactContext.metadata.artifactType).toBe(
       'blueprint_db_design'
@@ -307,11 +307,13 @@ describe('NightWorkers workbench routes', () => {
     expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(1);
     const assistantMessage = body.messages.find(
-      (message: any) => message.role === 'assistant' && message.metadataJson?.intent === 'intake'
+      (message: unknown) =>
+        message.role === 'assistant' && message.metadataJson?.intent === 'intake'
     );
     expect(assistantMessage).toBeUndefined();
     const systemMessage = body.messages.find(
-      (message: any) => message.role === 'system' && message.metadataJson?.intent === 'run_started'
+      (message: unknown) =>
+        message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
     expect(systemMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('docs');
     expect(body.task.objective).toBe('ECサイトのトップページを作ってください');
@@ -419,11 +421,11 @@ describe('NightWorkers workbench routes', () => {
     expectStrictObjectSchemas(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[2]?.schema);
     expect(
       body.messages.some(
-        (message: any) => message.role === 'assistant' && message.content.includes('jobType:')
+        (message: unknown) => message.role === 'assistant' && message.content.includes('jobType:')
       )
     ).toBe(false);
     const questionnaireReadyMessage = body.messages.find(
-      (message: any) => message.metadataJson?.intent === 'design_questionnaire_ready'
+      (message: unknown) => message.metadataJson?.intent === 'design_questionnaire_ready'
     );
     expect(questionnaireReadyMessage).toMatchObject({
       role: 'system',
@@ -435,7 +437,7 @@ describe('NightWorkers workbench routes', () => {
     });
     expect(questionnaireReadyMessage.content).toContain('Design Questionnaire を生成しました');
     expect(
-      body.messages.some((message: any) => message.metadataJson?.intent === 'app_blueprint')
+      body.messages.some((message: unknown) => message.metadataJson?.intent === 'app_blueprint')
     ).toBe(false);
     const workspaceRes = await app.request(
       `http://localhost/api/tasks/${task.id}/specification-workspace`,
@@ -520,13 +522,13 @@ describe('NightWorkers workbench routes', () => {
     expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
     expect(
       body.messages.some(
-        (message: any) =>
+        (message: unknown) =>
           message.role === 'system' && message.metadataJson?.intent === 'design_questionnaire_ready'
       )
     ).toBe(true);
     expect(
       body.messages.some(
-        (message: any) =>
+        (message: unknown) =>
           message.role === 'system' && message.metadataJson?.intakeBypass?.skippedRound1
       )
     ).toBe(false);
@@ -568,11 +570,13 @@ describe('NightWorkers workbench routes', () => {
     expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(1);
     const assistantMessage = body.messages.find(
-      (message: any) => message.role === 'assistant' && message.metadataJson?.intent === 'intake'
+      (message: unknown) =>
+        message.role === 'assistant' && message.metadataJson?.intent === 'intake'
     );
     expect(assistantMessage).toBeUndefined();
     const systemMessage = body.messages.find(
-      (message: any) => message.role === 'system' && message.metadataJson?.intent === 'run_started'
+      (message: unknown) =>
+        message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
     expect(systemMessage?.content).toContain('Implementation run started');
     expect(systemMessage?.metadataJson?.intakeJobSelection?.goal).toContain('fizzbuzz.ts');
@@ -605,11 +609,13 @@ describe('NightWorkers workbench routes', () => {
     expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(1);
     const assistantMessage = body.messages.find(
-      (message: any) => message.role === 'assistant' && message.metadataJson?.intent === 'intake'
+      (message: unknown) =>
+        message.role === 'assistant' && message.metadataJson?.intent === 'intake'
     );
     expect(assistantMessage).toBeUndefined();
     const systemMessage = body.messages.find(
-      (message: any) => message.role === 'system' && message.metadataJson?.intent === 'run_started'
+      (message: unknown) =>
+        message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
     expect(systemMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('runtime_debug');
     expect(systemMessage?.metadataJson?.routingHypothesis?.primaryMode).toBe('runtime_debug');
@@ -646,7 +652,8 @@ describe('NightWorkers workbench routes', () => {
     expect(runs).toHaveLength(1);
     expect(runs[0]?.workerKind).toBe('codex-agent');
     const systemMessage = body.messages.find(
-      (message: any) => message.role === 'system' && message.metadataJson?.intent === 'run_started'
+      (message: unknown) =>
+        message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
     expect(systemMessage?.metadataJson?.intakeBypass).toMatchObject({
       reason: 'codex-sdk-runtime',
@@ -678,7 +685,8 @@ describe('NightWorkers workbench routes', () => {
     expect(body.run).toBeNull();
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
     const assistantMessage = body.messages.find(
-      (message: any) => message.role === 'assistant' && message.metadataJson?.intent === 'intake'
+      (message: unknown) =>
+        message.role === 'assistant' && message.metadataJson?.intent === 'intake'
     );
     expect(assistantMessage?.content).toContain('jobType: minor_code_edit');
     expect(assistantMessage?.content).toContain('fizzbuzz.ts');

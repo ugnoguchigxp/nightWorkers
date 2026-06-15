@@ -1,3 +1,5 @@
+import type { DesignQuestionnaireSession } from '../../../../shared/schemas/design-questionnaire.schema';
+
 type QuestionnaireSourceInput = {
   sourceBlueprintMessage?: {
     id: string;
@@ -57,7 +59,7 @@ export function buildDesignQuestionnaireInitialUserPrompt(input: QuestionnaireSo
   ].join('\n');
 }
 
-export function buildDesignQuestionnaireFollowUpUserPrompt(session: any) {
+export function buildDesignQuestionnaireFollowUpUserPrompt(session: DesignQuestionnaireSession) {
   return [
     '次の質問票と回答をもとに、追加確認が必要な質問だけを follow-up question set として返してください。',
     '既に十分に回答された質問を繰り返さないでください。',
@@ -86,7 +88,9 @@ export function buildDesignQuestionnaireFollowUpDecisionSystemPrompt() {
   ].join('\n');
 }
 
-export function buildDesignQuestionnaireFollowUpDecisionUserPrompt(session: any) {
+export function buildDesignQuestionnaireFollowUpDecisionUserPrompt(
+  session: DesignQuestionnaireSession
+) {
   return [
     '次の質問票とユーザー回答を評価し、Design Assembly に進めるか、さらに追質問が必要かを判定してください。',
     '追質問が必要な場合だけ、追加質問フォームを questionnaire に入れてください。',
@@ -104,13 +108,13 @@ export function buildDesignQuestionnaireReviewSystemPrompt() {
   ].join('\n');
 }
 
-export function buildDesignQuestionnaireReviewUserPrompt(session: any) {
+export function buildDesignQuestionnaireReviewUserPrompt(session: DesignQuestionnaireSession) {
   return JSON.stringify(
     {
       sessionId: session.id,
       sourceBlueprintMessageId: session.sourceBlueprintMessageId,
-      questionSets: session.questionSets.map((set: any) => set.questionnaire),
-      answers: session.answers.map((answer: any) => answer.answer),
+      questionSets: session.questionSets.map((set) => set.questionnaire),
+      answers: session.answers.map((answer) => answer.answer),
     },
     null,
     2
@@ -193,13 +197,13 @@ export function buildSpecificationReviewUserPrompt(input: {
   ].join('\n');
 }
 
-function buildSessionPromptPayload(session: any) {
+function buildSessionPromptPayload(session: DesignQuestionnaireSession) {
   return {
     sessionId: session.id,
     taskId: session.taskId,
     repositoryId: session.repositoryId,
     sourceBlueprintMessageId: session.sourceBlueprintMessageId,
-    questionSets: session.questionSets.map((set: any) => set.questionnaire),
-    answers: session.answers.map((answer: any) => answer.answer),
+    questionSets: session.questionSets.map((set) => set.questionnaire),
+    answers: session.answers.map((answer) => answer.answer),
   };
 }

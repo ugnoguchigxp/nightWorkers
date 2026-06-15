@@ -24,7 +24,7 @@ describe('ThreadTimeline edit summaries', () => {
           ].join('\n'),
         },
       },
-    } as any);
+    } as never);
 
     expect(summary).toEqual({
       toolName: 'apply_patch',
@@ -71,7 +71,7 @@ describe('ThreadTimeline edit summaries', () => {
       },
       createdAt: '2026-06-05T00:00:00.000Z',
       visibility: 'visible',
-    } as any);
+    } as never);
 
     expect(summary).toEqual({ toolName: 'run_command', command: 'pnpm test' });
   });
@@ -93,7 +93,7 @@ describe('ThreadTimeline edit summaries', () => {
           aggregatedOutput: 'running tests',
         },
       },
-    } as any);
+    } as never);
 
     expect(summary).toEqual({
       toolName: 'command_execution',
@@ -116,7 +116,7 @@ describe('ThreadTimeline edit summaries', () => {
           changedFiles: ['src/fizzbuzz.ts'],
         },
       },
-    } as any;
+    } as never;
 
     expect(buildVisibleEditDiffSummary(event)).toEqual([
       { path: 'src/fizzbuzz.ts', added: 0, deleted: 0, changedOnly: true },
@@ -146,7 +146,7 @@ describe('ThreadTimeline edit summaries', () => {
           diff,
         },
       },
-    } as any;
+    } as never;
 
     expect(buildVisibleEditDiffSummary(event)).toEqual([
       { path: 'src/fizzbuzz.ts', added: 1, deleted: 0 },
@@ -181,7 +181,7 @@ describe('ThreadTimeline edit summaries', () => {
       },
       createdAt: '2026-06-05T00:00:00.000Z',
       visibility: 'visible',
-    } as any);
+    } as never);
 
     expect(summary).toEqual({ toolName: 'run_verification', command: 'pnpm typecheck' });
   });
@@ -203,7 +203,7 @@ describe('ThreadTimeline edit summaries', () => {
           },
         },
       },
-    } as any);
+    } as never);
 
     expect(summary?.toolName).toBe('apply_patch');
     expect(summary?.sections).toEqual([{ path: 'src/new-file.txt', added: 1, deleted: 0 }]);
@@ -233,7 +233,7 @@ describe('ThreadTimeline edit summaries', () => {
           replacement: 'hello world',
         },
       },
-    } as any);
+    } as never);
 
     expect(summary).toEqual({
       toolName: 'replace_content',

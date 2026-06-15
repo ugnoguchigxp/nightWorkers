@@ -68,12 +68,12 @@ const pricingRowSchema = z.object({
   reasoningOutputPer1m: z.number().nullable(),
   sourceUrl: z.string().nullable(),
   sourceLabel: z.string().nullable(),
-  effectiveFrom: z.any(),
-  fetchedAt: z.any().nullable(),
+  effectiveFrom: z.unknown(),
+  fetchedAt: z.unknown().nullable(),
   manualOverride: z.boolean(),
   enabled: z.boolean(),
-  createdAt: z.any(),
-  updatedAt: z.any(),
+  createdAt: z.unknown(),
+  updatedAt: z.unknown(),
 });
 
 const pricingInputSchema = z.object({

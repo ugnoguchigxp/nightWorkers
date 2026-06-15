@@ -10,7 +10,7 @@ describe('SpecificationStatusView', () => {
           {
             blueprintArtifacts: [{ id: 'blueprint-1', title: 'Blueprint' }],
             dbDesignArtifacts: [{ id: 'db-design-1', title: 'DB Design' }],
-          } as any
+          } as never
         }
         questionnaireSession={
           {
@@ -18,7 +18,7 @@ describe('SpecificationStatusView', () => {
             status: 'accepted',
             answers: [],
             questionSets: [],
-          } as any
+          } as never
         }
         busyAction={null}
         canGenerateDbDesign={true}
@@ -44,7 +44,7 @@ describe('SpecificationStatusView', () => {
           {
             blueprintArtifacts: [{ id: 'blueprint-1', title: 'Blueprint' }],
             dbDesignArtifacts: [{ id: 'db-design-1', title: 'DB Design' }],
-          } as any
+          } as never
         }
         questionnaireSession={
           {
@@ -52,7 +52,7 @@ describe('SpecificationStatusView', () => {
             status: 'accepted',
             answers: [],
             questionSets: [],
-          } as any
+          } as never
         }
         busyAction={null}
         canGenerateDbDesign={true}

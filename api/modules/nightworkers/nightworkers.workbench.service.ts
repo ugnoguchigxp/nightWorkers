@@ -1,3 +1,4 @@
+import { toDeepRecord } from '../../../shared/json-record';
 import { AppError, NotFoundError } from '../../lib/errors';
 import { getCurrentSettings } from '../../routes/settings';
 import {
@@ -49,18 +50,18 @@ export async function createPlanningArtifactMessageIfNeeded(input: {
 }) {
   const messages = await repo.listTaskMessages(input.taskId);
   const runStartedMessage = [...messages].reverse().find((message) => {
-    const metadata = (message.metadataJson || {}) as Record<string, any>;
+    const metadata = (message.metadataJson || {}) as Record<string, unknown>;
     return (
       message.role === 'system' &&
       metadata.intent === 'run_started' &&
       metadata.source === 'workbench'
     );
   });
-  const runStartedMetadata = (runStartedMessage?.metadataJson || {}) as Record<string, any>;
-  const intakeJobSelection = runStartedMetadata.intakeJobSelection;
-  if (intakeJobSelection?.jobType !== 'planning') return;
+  const runStartedMetadata = (runStartedMessage?.metadataJson || {}) as Record<string, unknown>;
+  const intakeJobSelection = toDeepRecord(runStartedMetadata.intakeJobSelection);
+  if (String(intakeJobSelection.jobType) !== 'planning') return;
   const alreadyPublished = messages.some((message) => {
-    const metadata = (message.metadataJson || {}) as Record<string, any>;
+    const metadata = (message.metadataJson || {}) as Record<string, unknown>;
     return (
       message.messageType === 'markdown_document' &&
       metadata.intent === 'implementation_plan' &&
@@ -444,10 +445,10 @@ async function handleWorkbenchIntakeMessage(
         routeOverride: options.llmRouteOverride || null,
       });
       const totalQuestionCount = questionnaireSession.questionSets.reduce(
-        (total: number, set: any) =>
+        (total, set) =>
           total +
-          ((set.questionnaire?.questionSets || []) as any[]).reduce(
-            (setTotal: number, questionSet: any) => setTotal + (questionSet.questions || []).length,
+          (set.questionnaire?.questionSets || []).reduce(
+            (setTotal, questionSet) => setTotal + questionSet.questions.length,
             0
           ),
         0

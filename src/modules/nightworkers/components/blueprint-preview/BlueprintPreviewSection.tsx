@@ -5,6 +5,11 @@ import {
   applyBlueprintSectionOverridesToNode,
   normalizeBlueprintSectionForPreview,
 } from '../../../../../shared/blueprint-section-composition';
+import type {
+  BlueprintNode,
+  BlueprintSection,
+  BlueprintSectionOverride,
+} from '../../../../../shared/schemas/app-blueprint-ui.schema';
 import {
   PreviewBadge,
   PreviewButton,
@@ -29,9 +34,12 @@ import {
   toObjectArray,
 } from './previewModel';
 
-export function BlueprintPreviewSection({ section }: { section: Record<string, any> }) {
+export function BlueprintPreviewSection({ section }: { section: Record<string, unknown> }) {
   const { t } = useTranslation();
-  const previewSection = normalizeBlueprintSectionForPreview(section as any) as Record<string, any>;
+  const previewSection = normalizeBlueprintSectionForPreview(section as BlueprintSection) as Record<
+    string,
+    unknown
+  >;
   const isComposableSection =
     previewSection.kind === 'preset_section' || previewSection.kind === 'custom_section';
   const componentName = isComposableSection
@@ -66,21 +74,24 @@ export function BlueprintPreviewSection({ section }: { section: Record<string, a
 }
 
 function renderComposableSection(
-  section: Record<string, any>,
+  section: Record<string, unknown>,
   t: ReturnType<typeof useTranslation>['t']
 ) {
   const root =
     section.kind === 'custom_section' && isObject(section.root)
       ? section.root
       : expandPresetSection(section, t);
-  const resolvedRoot = applyBlueprintSectionOverridesToNode(root as any, section.overrides || []);
-  return resolvedRoot ? renderBlueprintNode(resolvedRoot, t) : null;
+  const resolvedRoot = applyBlueprintSectionOverridesToNode(
+    root as BlueprintNode,
+    Array.isArray(section.overrides) ? (section.overrides as BlueprintSectionOverride[]) : []
+  );
+  return resolvedRoot ? renderBlueprintNode(resolvedRoot as Record<string, unknown>, t) : null;
 }
 
 function expandPresetSection(
-  section: Record<string, any>,
+  section: Record<string, unknown>,
   t: ReturnType<typeof useTranslation>['t']
-): Record<string, any> {
+): Record<string, unknown> {
   return createPresetBlueprintNodeTree({
     preset: String(section.preset || ''),
     sectionId: String(section.id || ''),
@@ -92,16 +103,22 @@ function expandPresetSection(
       secondarySignal: t('blueprint.preview.kpi.secondarySignal'),
       nextAction: t('blueprint.preview.kpi.nextAction'),
     },
-  }) as Record<string, any>;
+  }) as Record<string, unknown>;
 }
 
-function renderBlueprintNode(node: Record<string, any>, t: ReturnType<typeof useTranslation>['t']) {
+function renderBlueprintNode(
+  node: Record<string, unknown>,
+  t: ReturnType<typeof useTranslation>['t']
+) {
   if (node.kind === 'layout') return renderLayoutNode(node, t);
   if (node.kind === 'component') return renderComponentNode(node, t);
   return null;
 }
 
-function renderLayoutNode(node: Record<string, any>, t: ReturnType<typeof useTranslation>['t']) {
+function renderLayoutNode(
+  node: Record<string, unknown>,
+  t: ReturnType<typeof useTranslation>['t']
+) {
   const layout = String(node.layout || 'stack');
   const props = isObject(node.props) ? node.props : {};
   const children = toObjectArray(node.children);
@@ -128,7 +145,10 @@ function renderLayoutNode(node: Record<string, any>, t: ReturnType<typeof useTra
   );
 }
 
-function renderComponentNode(node: Record<string, any>, t: ReturnType<typeof useTranslation>['t']) {
+function renderComponentNode(
+  node: Record<string, unknown>,
+  t: ReturnType<typeof useTranslation>['t']
+) {
   const component = String(node.component || '');
   const props = isObject(node.props) ? node.props : {};
   const label = String(props.label || props.title || props.name || component);
@@ -226,7 +246,7 @@ function layoutWidthClass(layout: unknown) {
 
 function renderPreviewSectionBody(
   componentName: string,
-  props: Record<string, any>,
+  props: Record<string, unknown>,
   t: ReturnType<typeof useTranslation>['t']
 ) {
   if (
@@ -458,9 +478,9 @@ function renderPreviewSectionBody(
           .map((tab) =>
             tab && typeof tab === 'object'
               ? String(
-                  (tab as Record<string, any>).label ||
-                    (tab as Record<string, any>).title ||
-                    (tab as Record<string, any>).name ||
+                  (tab as Record<string, unknown>).label ||
+                    (tab as Record<string, unknown>).title ||
+                    (tab as Record<string, unknown>).name ||
                     ''
                 )
               : String(tab)
@@ -512,7 +532,7 @@ function renderPreviewSectionBody(
     componentName === 'ThumbnailCarouselSection'
   ) {
     const sourceItems = toObjectArray(props.items || props.slides || props.cards || props.products);
-    const items: Array<Record<string, any>> =
+    const items: Array<Record<string, unknown>> =
       sourceItems.length > 0
         ? sourceItems
         : previewGenericItems(props, t).map((item) => ({

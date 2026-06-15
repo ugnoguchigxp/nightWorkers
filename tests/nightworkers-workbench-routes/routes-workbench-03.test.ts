@@ -78,7 +78,7 @@ function mockJobSelection(jobType: string, goal: string) {
 
 function _expectStrictObjectSchemas(schema: unknown, path = 'schema') {
   if (!schema || typeof schema !== 'object') return;
-  const node = schema as Record<string, any>;
+  const node = schema as Record<string, unknown>;
   if (node.type === 'object') {
     expect(node.additionalProperties, `${path}.additionalProperties`).toBe(false);
   }
@@ -155,8 +155,10 @@ describe('NightWorkers workbench routes', () => {
     });
     expect(dashboardRes.status).toBe(200);
     const dashboard = await dashboardRes.json();
-    expect(dashboard.queued.map((queueEntry: any) => queueEntry.task.id)).not.toContain(task.id);
-    expect(dashboard.notQueued.map((item: any) => item.task.id)).toContain(task.id);
+    expect(dashboard.queued.map((queueEntry: unknown) => queueEntry.task.id)).not.toContain(
+      task.id
+    );
+    expect(dashboard.notQueued.map((item: unknown) => item.task.id)).toContain(task.id);
   });
 
   it('accepts a reviewed queue execution and archives the Queue Entry', async () => {
@@ -252,10 +254,11 @@ describe('NightWorkers workbench routes', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(
-      body.messages.some((message: any) => message.metadataJson?.intent === 'component_design')
+      body.messages.some((message: unknown) => message.metadataJson?.intent === 'component_design')
     ).toBe(false);
     const intakeMessage = body.messages.find(
-      (message: any) => message.role === 'assistant' && message.metadataJson?.intent === 'intake'
+      (message: unknown) =>
+        message.role === 'assistant' && message.metadataJson?.intent === 'intake'
     );
     expect(intakeMessage?.content).toContain('Analyze the requested component design.');
   });
@@ -316,7 +319,7 @@ describe('NightWorkers workbench routes', () => {
       'AppBlueprint の DB Design'
     );
     const userMessage = body.messages.find(
-      (message: any) =>
+      (message: unknown) =>
         message.role === 'user' && message.metadataJson?.intent === 'design_blueprint_data'
     );
     expect(userMessage?.content).toContain('Target: Table decision-items');
@@ -324,7 +327,7 @@ describe('NightWorkers workbench routes', () => {
     expect(userMessage?.content).not.toContain('currentBlueprint');
     expect(userMessage?.metadataJson?.validation?.valid).toBe(true);
     const blueprintMessage = body.messages.find(
-      (message: any) =>
+      (message: unknown) =>
         message.messageType === 'markdown_document' &&
         message.metadataJson?.source === 'blueprint-db-design'
     );
@@ -439,7 +442,7 @@ describe('NightWorkers workbench routes', () => {
       startedAt: new Date(),
       createdAt: new Date(),
       updatedAt: new Date(),
-    } as any);
+    } as never);
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/run`, {
       method: 'POST',

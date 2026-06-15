@@ -50,7 +50,7 @@ describe('CodexAgentRuntime', () => {
         JWT_SECRET: 'secret-with-enough-length-for-tests',
         NIGHTWORKERS_DESKTOP: '1',
         NIGHTWORKERS_RUNTIME_DIR: '/tmp/nightworkers-runtime',
-      } as any,
+      } as never,
     });
 
     expect(options.config).toMatchObject({
@@ -90,7 +90,7 @@ describe('CodexAgentRuntime', () => {
       env: {
         PATH: '/usr/bin',
         CODEX_THREAD_ID: 'parent-thread',
-      } as any,
+      } as never,
     });
 
     expect(options.config).toBeUndefined();
@@ -104,7 +104,7 @@ describe('CodexAgentRuntime', () => {
   it('resolves Codex MCP config source without disabling global inheritance', () => {
     expect(
       resolveCodexRuntimeMcpConfigState({
-        env: { NIGHTWORKERS_CODEX_MCP_COMMAND: '/bin/nightworkers-mcp' } as any,
+        env: { NIGHTWORKERS_CODEX_MCP_COMMAND: '/bin/nightworkers-mcp' } as never,
       })
     ).toMatchObject({
       source: 'inline_configured',
@@ -112,7 +112,7 @@ describe('CodexAgentRuntime', () => {
       serverName: 'nightworkers',
       expectedTools: getNightWorkersCodexToolNames(),
     });
-    expect(resolveCodexRuntimeMcpConfigState({ env: {} as any })).toMatchObject({
+    expect(resolveCodexRuntimeMcpConfigState({ env: {} as never })).toMatchObject({
       source: 'global_inherited',
       hasInlineNightWorkersMcp: false,
     });
@@ -125,7 +125,7 @@ describe('CodexAgentRuntime', () => {
   it('can explicitly disable MCP for Codex runtime', () => {
     const options = buildCodexRuntimeSdkOptions({
       enableNightworkersMcp: false,
-      env: { PATH: '/usr/bin' } as any,
+      env: { PATH: '/usr/bin' } as never,
     });
 
     expect(options.config).toMatchObject({
@@ -243,7 +243,7 @@ describe('CodexAgentRuntime', () => {
           },
         ]),
     });
-    const events: any[] = [];
+    const events: unknown[] = [];
 
     const result = await runtime.start(buildContext(), {
       emit: async (event) => {
@@ -294,9 +294,9 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
-    const events: any[] = [];
+    const events: unknown[] = [];
 
     const result = await runtime.start(
       buildContext({
@@ -369,7 +369,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(
@@ -423,7 +423,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(
@@ -471,7 +471,7 @@ describe('CodexAgentRuntime', () => {
         status: 'running',
         procedureId: 'implementation',
       },
-    ] as any);
+    ] as never);
     const runtime = new CodexAgentRuntime({
       threadFactory: () =>
         fakeThread([
@@ -485,9 +485,9 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
-    const events: any[] = [];
+    const events: unknown[] = [];
 
     const result = await runtime.start(
       buildContext({
@@ -541,7 +541,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(
@@ -587,9 +587,9 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
-    const events: any[] = [];
+    const events: unknown[] = [];
 
     const result = await runtime.start(
       buildContext({
@@ -659,7 +659,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(
@@ -683,7 +683,7 @@ describe('CodexAgentRuntime', () => {
   });
 
   it('records Codex turn usage through the shared LLM usage recorder', async () => {
-    const usageRecorder = vi.fn(async (input) => ({ id: 'usage-record', ...input }) as any);
+    const usageRecorder = vi.fn(async (input) => ({ id: 'usage-record', ...input }) as never);
     const runtime = new CodexAgentRuntime({
       persistRuntimeUsage: true,
       usageRecorder,
@@ -759,7 +759,7 @@ describe('CodexAgentRuntime', () => {
     const runtime = new CodexAgentRuntime({
       threadFactory: () => fakeThread([{ type: 'turn.failed', error: { message: 'boom' } }]),
     });
-    const events: any[] = [];
+    const events: unknown[] = [];
 
     const result = await runtime.start(buildContext(), {
       emit: async (event) => {
@@ -803,10 +803,10 @@ describe('CodexAgentRuntime', () => {
               changes: [{ path: 'index.html' }],
             },
           },
-        ] as any)
+        ] as never)
       ),
     });
-    const events: any[] = [];
+    const events: unknown[] = [];
 
     const result = await runtime.start(buildContext(), {
       emit: async (event) => {
@@ -862,9 +862,9 @@ describe('CodexAgentRuntime', () => {
               status: 'cancelled',
             },
           },
-        ] as any),
+        ] as never),
     });
-    const events: any[] = [];
+    const events: unknown[] = [];
 
     const result = await runtime.start(buildContext(), {
       emit: async (event) => {
@@ -914,7 +914,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(buildContext(), { emit: async () => {} });
@@ -965,7 +965,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(buildContext(), { emit: async () => {} });
@@ -1015,7 +1015,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(buildContext(), { emit: async () => {} });
@@ -1054,7 +1054,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(buildContext(), { emit: async () => {} });
@@ -1097,7 +1097,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(buildContext(), { emit: async () => {} });
@@ -1151,9 +1151,9 @@ describe('CodexAgentRuntime', () => {
               changes: [{ path: 'index.html' }],
             },
           },
-        ] as any),
+        ] as never),
     });
-    const events: any[] = [];
+    const events: unknown[] = [];
 
     const result = await runtime.start(buildContext(), {
       emit: async (event) => {
@@ -1208,7 +1208,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(buildContext(), { emit: async () => {} });
@@ -1258,7 +1258,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(buildContext(), { emit: async () => {} });
@@ -1308,7 +1308,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(buildContext(), { emit: async () => {} });
@@ -1366,7 +1366,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(buildContext(), { emit: async () => {} });
@@ -1397,7 +1397,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(buildContext(), { emit: async () => {} });
@@ -1457,7 +1457,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(buildContext(), { emit: async () => {} });
@@ -1495,7 +1495,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(buildContext(), { emit: async () => {} });
@@ -1597,7 +1597,7 @@ describe('CodexAgentRuntime', () => {
             },
           },
           { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
-        ] as any),
+        ] as never),
     });
 
     const result = await runtime.start(buildContext(), { emit: async () => {} });
@@ -1635,7 +1635,7 @@ describe('CodexAgentRuntime', () => {
             command,
             status: 'completed',
           },
-        } as any,
+        } as never,
         state
       );
       expect(event).toMatchObject({
@@ -1695,7 +1695,7 @@ describe('CodexAgentRuntime', () => {
         status: 'completed',
         changes: [{ path: 'src/fizzbuzz.ts' }, 'README.md'],
       },
-    } as any);
+    } as never);
 
     expect(events[0]).toMatchObject({
       type: 'diff_collected',
@@ -1727,7 +1727,7 @@ describe('CodexAgentRuntime', () => {
             },
           ]),
       });
-      const events: any[] = [];
+      const events: unknown[] = [];
 
       const result = await runtime.start(buildContext({ repoRoot }), {
         emit: async (event) => {
@@ -1826,7 +1826,7 @@ function fakeThread(events: ThreadEvent[]) {
         for (const event of events) yield event;
       })(),
     })),
-  } as any;
+  } as never;
 }
 
 async function git(cwd: string, args: string[]) {

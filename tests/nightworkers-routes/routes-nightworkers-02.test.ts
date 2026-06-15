@@ -389,7 +389,9 @@ describe('NightWorkers task routes', () => {
       ])
     );
     expect(
-      replay.events.some((event: any) => event.payloadJson?.agentEventType === 'finalize.received')
+      replay.events.some(
+        (event: unknown) => event.payloadJson?.agentEventType === 'finalize.received'
+      )
     ).toBe(false);
   });
 

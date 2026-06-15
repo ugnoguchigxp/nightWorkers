@@ -69,7 +69,7 @@ describe('user.service', () => {
         }),
       };
 
-      const result = await findById('user-1', txMocks as any);
+      const result = await findById('user-1', txMocks as never);
       expect(txMocks.select).toHaveBeenCalled();
       expect(mocks.db.select).not.toHaveBeenCalled();
       expect(result).toEqual({ id: 'user-1' });

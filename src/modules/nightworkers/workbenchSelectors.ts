@@ -1,3 +1,4 @@
+import { isDeepRecord, toDeepRecord } from '../../../shared/json-record';
 import type {
   ActivityArtifact,
   CodexContractWarningSummary,
@@ -105,11 +106,11 @@ export function mergeWorkspaceTaskMessages({
 }
 
 export function isReviewedSpecificationMessage(message: TaskMessage) {
-  const metadata = message.metadataJson || {};
+  const metadata = taskMessageMetadata(message);
   return (
     message.messageType === 'markdown_document' &&
-    metadata.intent === 'draft_spec' &&
-    metadata.source === 'status_document_review' &&
+    String(metadata.intent) === 'draft_spec' &&
+    String(metadata.source) === 'status_document_review' &&
     typeof metadata.reviewedSourceMessageId === 'string'
   );
 }
@@ -166,7 +167,7 @@ export function buildQuestionnaireWorkspaceArtifactRef(
     createdAt: String(message.createdAt),
     metadata: {
       specificationSource: 'design_questionnaire_ready',
-      questionnaireSessionId: message.metadataJson?.questionnaireSessionId,
+      questionnaireSessionId: taskMessageMetadata(message).questionnaireSessionId,
       initialTab,
     },
   };
@@ -182,7 +183,7 @@ export function buildArtifactContext(
   const screens = Array.isArray(appBlueprint.screens) ? appBlueprint.screens : [];
   const screenNames = screens
     .map((screen) => (isRecord(screen) ? screen : null))
-    .filter((screen): screen is Record<string, unknown> => Boolean(screen))
+    .filter(isRecord)
     .map((screen) => String(screen.name || screen.id || ''))
     .filter(Boolean)
     .slice(0, 6);
@@ -192,7 +193,7 @@ export function buildArtifactContext(
       return Array.isArray(record.sections) ? record.sections : [];
     })
     .map((section) => (isRecord(section) ? section : null))
-    .filter((section): section is Record<string, unknown> => Boolean(section))
+    .filter(isRecord)
     .map((section) =>
       String(section.name || section.title || section.componentName || section.id || '')
     )
@@ -202,7 +203,7 @@ export function buildArtifactContext(
   const tables = Array.isArray(databaseSchema.tables) ? databaseSchema.tables : [];
   const tableNames = tables
     .map((table) => (isRecord(table) ? table : null))
-    .filter((table): table is Record<string, unknown> => Boolean(table))
+    .filter(isRecord)
     .map((table) => String(table.label || table.name || ''))
     .filter(Boolean)
     .slice(0, 10);
@@ -648,13 +649,13 @@ export function buildWorkbenchArtifactRefs(input: {
   const decisionReviewMessages = (input.messages || []).filter(
     (message) =>
       message.messageType === 'markdown_document' &&
-      message.metadataJson?.intent === 'design_decision_review'
+      String(taskMessageMetadata(message).intent) === 'design_decision_review'
   );
   const implementationPlanMessages = (input.messages || []).filter(
     (message) =>
       message.messageType === 'markdown_document' &&
-      (message.metadataJson?.intent === 'implementation_plan' ||
-        message.metadataJson?.intent === 'draft_spec')
+      (String(taskMessageMetadata(message).intent) === 'implementation_plan' ||
+        String(taskMessageMetadata(message).intent) === 'draft_spec')
   );
   if (
     blueprintArtifactRows.length > 0 ||
@@ -726,8 +727,8 @@ export function buildWorkbenchArtifactRefs(input: {
       source: { type: 'task_message', messageId: message.id },
       createdAt: String(message.createdAt),
       metadata: isBlueprintDbDesignArtifactMessage(message)
-        ? { ...(message.metadataJson || {}), initialTab: 'db-design' }
-        : message.metadataJson || undefined,
+        ? { ...taskMessageMetadata(message), initialTab: 'db-design' }
+        : taskMessageMetadata(message),
     });
   }
   if (run?.diffPatch?.trim())
@@ -802,8 +803,8 @@ function taskMessageArtifactId(message: TaskMessage): string | null {
   return typeof artifactRef?.artifactId === 'string' ? artifactRef.artifactId : null;
 }
 
-function taskMessageMetadata(message: TaskMessage): Record<string, unknown> {
-  return isRecord(message.metadataJson) ? message.metadataJson : {};
+function taskMessageMetadata(message: TaskMessage) {
+  return toDeepRecord(message.metadataJson);
 }
 
 function isMessageCoveredByActivityArtifact(
@@ -811,7 +812,7 @@ function isMessageCoveredByActivityArtifact(
   artifactMessageIds: Set<string>,
   artifactIds: Set<string>
 ): boolean {
-  const artifactId = message.metadataJson?.artifactRef?.artifactId;
+  const artifactId = toDeepRecord(taskMessageMetadata(message).artifactRef).artifactId;
   return (
     artifactMessageIds.has(message.id) ||
     (typeof artifactId === 'string' && artifactIds.has(artifactId))
@@ -908,12 +909,12 @@ function warningSeverityRank(severity: 'info' | 'warning' | 'error') {
 }
 
 function inferDocumentArtifactKind(message: TaskMessage): WorkbenchArtifactKind {
-  const intent = message.metadataJson?.intent;
+  const metadata = taskMessageMetadata(message);
+  const intent = String(metadata.intent);
   if (isBlueprintDbDesignArtifactMessage(message)) return 'blueprint_workspace';
   if (isBlueprintArtifactMessage(message)) return 'app_blueprint';
-  if (intent === 'component_design' || message.metadataJson?.componentDesign)
-    return 'component_design';
-  if (intent === 'design_delta' || message.metadataJson?.designDelta) return 'design_delta';
+  if (intent === 'component_design' || metadata.componentDesign) return 'component_design';
+  if (intent === 'design_delta' || metadata.designDelta) return 'design_delta';
   if (intent === 'draft_spec') return 'spec';
   if (intent === 'implementation_plan') return 'implementation_plan';
   return 'spec';
@@ -939,14 +940,14 @@ function hasAppBlueprintMetadata(metadata: Record<string, unknown>): boolean {
   return metadata.intent === 'app_blueprint' || Boolean(metadata.appBlueprint);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+function isRecord(value: unknown) {
+  return isDeepRecord(value);
 }
 
 function hasImplementationPlanEvidence(messages: TaskMessage[]) {
   return messages.some((message) => {
     if (message.messageType !== 'markdown_document') return false;
-    const intent = message.metadataJson?.intent;
+    const intent = String(taskMessageMetadata(message).intent);
     return (
       intent === 'implementation_plan' || intent === 'draft_spec' || intent === 'app_blueprint'
     );
@@ -977,15 +978,16 @@ function isReviewNeededSession(task: Task, evidence: SessionEvidence = {}) {
 }
 
 function artifactTitleForKind(kind: WorkbenchArtifactKind, message: TaskMessage): string {
-  const metadataTitle = message.metadataJson?.title;
-  if (typeof metadataTitle === 'string' && metadataTitle.trim()) {
+  const metadata = taskMessageMetadata(message);
+  const metadataTitle = String(metadata.title || '');
+  if (metadataTitle.trim()) {
     if (isBlueprintDbDesignArtifactMessage(message)) return `DB Design: ${metadataTitle}`;
     if (kind === 'blueprint_workspace') return `Specification Workspace: ${metadataTitle}`;
     if (kind === 'app_blueprint') return `Blueprint: ${metadataTitle}`;
     if (kind === 'component_design') return `Component: ${metadataTitle}`;
     if (kind === 'design_delta') return `Design Delta: ${metadataTitle}`;
     if (kind === 'implementation_plan') return metadataTitle;
-    if (kind === 'spec' && message.metadataJson?.intent === 'design_decision_review')
+    if (kind === 'spec' && String(metadata.intent) === 'design_decision_review')
       return metadataTitle;
   }
   if (kind === 'blueprint_workspace') return 'Specification Workspace';

@@ -285,9 +285,9 @@ function extractLastError(run: ConversationContextSource['runs'][number] | null)
   return null;
 }
 
-function asRecord(value: unknown): Record<string, any> | null {
+function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, any>)
+    ? (value as Record<string, unknown>)
     : null;
 }
 

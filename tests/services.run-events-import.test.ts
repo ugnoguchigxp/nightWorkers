@@ -26,7 +26,7 @@ function sourceJsonl() {
     summary: 'ready',
     finalReport: null,
     finalJudgment: null,
-  } as any;
+  } as never;
   const events = [
     {
       id: '33333333-3333-4333-8333-333333333371',
@@ -78,7 +78,7 @@ function sourceJsonl() {
       },
       timestamp: new Date('2026-06-02T00:00:02.000Z'),
     },
-  ] as any[];
+  ] as unknown[];
 
   return serializeRunToJsonl({ run: sourceRun, events });
 }

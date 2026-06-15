@@ -11,6 +11,7 @@ import {
 } from '../../services/review-rubrics/replay-evaluation';
 import type { ReviewerEvaluationMode } from '../../services/review-rubrics/types';
 import { serializeRunToJsonl } from '../../services/run-events/jsonl-export';
+import type { ParsedRunJsonl, ReplayResult } from '../../services/run-events/types';
 import { gitDiffTool } from '../../services/worker-tools/git';
 import * as repo from './nightworkers.repository';
 
@@ -70,8 +71,8 @@ export async function createReviewerReplayEvaluation(
     rubricId?: string;
     mode?: ReviewerEvaluationMode;
     jsonl?: string;
-    parsedJsonl?: any;
-    replayResult?: any;
+    parsedJsonl?: unknown;
+    replayResult?: unknown;
   }
 ) {
   const rubricId = request.rubricId || 'basic-coding-run';
@@ -87,8 +88,8 @@ export async function createReviewerReplayEvaluation(
 
   if (request.parsedJsonl || request.replayResult) {
     return runReviewReplayEvaluation({
-      parsedJsonl: request.parsedJsonl,
-      replayResult: request.replayResult,
+      parsedJsonl: request.parsedJsonl as ParsedRunJsonl | undefined,
+      replayResult: request.replayResult as ReplayResult | undefined,
       rubricId,
       mode,
     });

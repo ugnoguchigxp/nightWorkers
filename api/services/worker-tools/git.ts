@@ -2,6 +2,7 @@ import { exec } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { toDeepRecord } from '../../../shared/json-record';
 import type { WorkerToolResult } from './types';
 
 const execAsync = promisify(exec);
@@ -63,12 +64,14 @@ export async function gitStatusTool(
         shortStatus,
       },
     };
-  } catch (err: any) {
+  } catch (err) {
+    const error = toDeepRecord(err);
+    const errorMessage = String(error.message || '');
     const isNotRepo =
-      err.message?.includes('not a git repository') ||
-      err.message?.includes('not a git command') ||
-      err.message?.includes('git: command not found') ||
-      err.message?.includes('ENOENT');
+      errorMessage.includes('not a git repository') ||
+      errorMessage.includes('not a git command') ||
+      errorMessage.includes('git: command not found') ||
+      errorMessage.includes('ENOENT');
 
     if (isNotRepo) {
       return {
@@ -100,7 +103,7 @@ export async function gitStatusTool(
       },
       error: {
         code: 'GIT_STATUS_FAILED',
-        message: `Failed to check git status: ${err.message}`,
+        message: `Failed to check git status: ${errorMessage || String(err)}`,
       },
     };
   }
@@ -210,12 +213,14 @@ export async function gitDiffTool(input: GitDiffInput): Promise<WorkerToolResult
         hasChanges,
       },
     };
-  } catch (err: any) {
+  } catch (err) {
+    const error = toDeepRecord(err);
+    const errorMessage = String(error.message || '');
     const isNotRepo =
-      err.message?.includes('not a git repository') ||
-      err.message?.includes('not a git command') ||
-      err.message?.includes('git: command not found') ||
-      err.message?.includes('ENOENT');
+      errorMessage.includes('not a git repository') ||
+      errorMessage.includes('not a git command') ||
+      errorMessage.includes('git: command not found') ||
+      errorMessage.includes('ENOENT');
 
     if (isNotRepo) {
       return {
@@ -243,7 +248,7 @@ export async function gitDiffTool(input: GitDiffInput): Promise<WorkerToolResult
       },
       error: {
         code: 'GIT_DIFF_FAILED',
-        message: `Failed to check git diff: ${err.message}`,
+        message: `Failed to check git diff: ${errorMessage || String(err)}`,
       },
     };
   }

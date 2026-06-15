@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { toDeepRecord } from '../../../../shared/json-record';
 import type { TranscriptChild, TranscriptItem } from '../activityTranscript';
 import type { ActivityEvent, TaskMessage, WorkbenchArtifactRef } from '../types';
 import { formatFinishedTime } from '../utils/time';
@@ -79,14 +80,14 @@ export function TranscriptItemView({
 
 export function findArtifactTaskMessage(events: ActivityEvent[]): TaskMessage | null {
   for (const event of events) {
-    const payload = event.payloadJson as any;
+    const payload = toDeepRecord(event.payloadJson);
     const message = payload?.message;
-    const metadata = payload?.metadata ?? message?.metadataJson;
+    const metadata = toDeepRecord(payload?.metadata ?? message?.metadataJson);
     if (
       event.kind === 'assistant.message' &&
       message &&
       (metadata?.appBlueprint || metadata?.artifactRef) &&
-      message.messageType === 'markdown_document'
+      String(message.messageType) === 'markdown_document'
     ) {
       return {
         ...message,
@@ -230,7 +231,7 @@ export function fallbackEventText(event?: ActivityEvent) {
 }
 
 export function getActivityCode(event: ActivityEvent) {
-  const payload = event.payloadJson as any;
+  const payload = toDeepRecord(event.payloadJson);
   const agentEventType = schemaFirstAgentEventType(event);
   const editToolDiff = getEditToolCallDiff(event);
   if (editToolDiff) return editToolDiff;
@@ -274,7 +275,7 @@ export function getActivityCode(event: ActivityEvent) {
 }
 
 export function getActivityDiffCode(event: ActivityEvent) {
-  const payload = event.payloadJson as any;
+  const payload = toDeepRecord(event.payloadJson);
   const data = payload?.payload || payload?.runEvent?.data || payload || {};
   if (typeof data.diff === 'string') return data.diff;
   if (typeof payload?.code === 'string') return payload.code;
@@ -307,7 +308,7 @@ function formatLlmOutputJson(event: ActivityEvent, payload: unknown): string {
     const parsed = tryParseJsonObject(event.text);
     return parsed ? JSON.stringify(parsed, null, 2) : event.text;
   }
-  const record = payload as any;
+  const record = toDeepRecord(payload);
   const llmPayload = record?.payload || record?.runEvent?.data || record || {};
   return JSON.stringify(llmPayload, null, 2);
 }
@@ -315,7 +316,7 @@ function formatLlmOutputJson(event: ActivityEvent, payload: unknown): string {
 export function activityCodeFilename(event: ActivityEvent) {
   const editToolName = getEditToolCall(event)?.name;
   const agentEventType = schemaFirstAgentEventType(event);
-  const payload = event.payloadJson as any;
+  const payload = toDeepRecord(event.payloadJson);
   if (editToolName === 'apply_patch') return 'apply_patch.patch';
   if (editToolName === 'replace_content') return 'replace_content.diff';
   if (agentEventType === 'procedure.loaded') {
@@ -343,7 +344,7 @@ type EditToolCall = {
 };
 
 export function getEditToolCall(event: ActivityEvent): EditToolCall | null {
-  const payload = event.payloadJson as any;
+  const payload = toDeepRecord(event.payloadJson);
   const candidates = [
     payload?.payload?.toolCall,
     payload?.runEvent?.data?.payload?.toolCall,
@@ -351,18 +352,19 @@ export function getEditToolCall(event: ActivityEvent): EditToolCall | null {
   ];
 
   if (event.text?.trim()) {
-    candidates.push(tryParseJsonObject(event.text)?.toolCall);
+    candidates.push(toDeepRecord(tryParseJsonObject(event.text)).toolCall);
   }
 
   for (const candidate of candidates) {
     if (!candidate || typeof candidate !== 'object') continue;
-    const name = candidate.name;
+    const candidateRecord = toDeepRecord(candidate);
+    const name = String(candidateRecord.name);
     if (name !== 'apply_patch' && name !== 'replace_content') continue;
     const args =
-      candidate.arguments &&
-      typeof candidate.arguments === 'object' &&
-      !Array.isArray(candidate.arguments)
-        ? candidate.arguments
+      candidateRecord.arguments &&
+      typeof candidateRecord.arguments === 'object' &&
+      !Array.isArray(candidateRecord.arguments)
+        ? candidateRecord.arguments
         : {};
     return { name, arguments: args };
   }
@@ -412,7 +414,7 @@ function formatApplyPatchDiff(patchContent: string): string {
 }
 
 export function schemaFirstAgentEventType(event: ActivityEvent): string {
-  const payload = event.payloadJson as any;
+  const payload = toDeepRecord(event.payloadJson);
   return typeof payload?.agentEventType === 'string' ? payload.agentEventType : '';
 }
 
@@ -467,7 +469,7 @@ function activityDisplayTitle(event: ActivityEvent, fallback: string): string {
 }
 
 function activityDisplaySummary(event: ActivityEvent): string {
-  const payload = event.payloadJson as any;
+  const payload = toDeepRecord(event.payloadJson);
   const data = payload?.payload || payload?.runEvent?.data || payload || {};
   const workRecordCard = getWorkRecordCard(event);
   if (workRecordCard) {
@@ -528,7 +530,7 @@ function activityDisplaySummary(event: ActivityEvent): string {
 }
 
 function getWorkRecordCard(event: ActivityEvent): { type?: string; executionMode?: string } | null {
-  const payload = event.payloadJson as any;
+  const payload = toDeepRecord(event.payloadJson);
   const candidate =
     payload?.workRecordCard ||
     payload?.payload?.workRecordCard ||
@@ -537,11 +539,14 @@ function getWorkRecordCard(event: ActivityEvent): { type?: string; executionMode
   return candidate;
 }
 
-function toolCallSummary(toolCall: any): string {
+function toolCallSummary(toolCall: unknown): string {
   if (!toolCall || typeof toolCall !== 'object') return '';
-  const name = typeof toolCall.name === 'string' ? toolCall.name : 'toolCall';
+  const toolCallRecord = toDeepRecord(toolCall);
+  const name = typeof toolCallRecord.name === 'string' ? toolCallRecord.name : 'toolCall';
   const args =
-    toolCall.arguments && typeof toolCall.arguments === 'object' ? toolCall.arguments : {};
+    toolCallRecord.arguments && typeof toolCallRecord.arguments === 'object'
+      ? toDeepRecord(toolCallRecord.arguments)
+      : {};
   const filePath = typeof args.filePath === 'string' ? args.filePath : '';
   const command = typeof args.command === 'string' ? args.command : '';
   const query = typeof args.query === 'string' ? args.query : '';

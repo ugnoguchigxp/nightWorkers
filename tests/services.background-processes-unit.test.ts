@@ -14,9 +14,9 @@ import {
 } from '../api/services/background-processes/index';
 
 let dummyRepoDir: string;
-let project: any;
-let task: any;
-let run: any;
+let project: unknown;
+let task: unknown;
+let run: unknown;
 
 beforeAll(async () => {
   await ensureNightWorkersSchema();

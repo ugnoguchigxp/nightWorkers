@@ -64,7 +64,7 @@ const runtimeSettingsMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../api/routes/settings-runtime', async (importOriginal) => {
-  const actual = (await importOriginal()) as any;
+  const actual = (await importOriginal()) as never;
   return {
     ...actual,
     getCurrentSettings: runtimeSettingsMocks.getCurrentSettings,

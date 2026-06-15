@@ -1,4 +1,5 @@
 import { NotFoundError } from '../../lib/errors';
+import type { RuntimeLaneResult } from '../../services/agent-runtime/shared/contracts';
 import { buildReviewResult } from '../../services/review-results/build-review-result';
 import { collectDefaultReviewEvidence } from '../../services/review-results/evidence-collector';
 import type { ReviewRunRequest } from '../../services/review-results/types';
@@ -161,7 +162,7 @@ export async function reviewTaskRun(runId: string, request: ReviewRunRequest) {
   const outcome = decideRunOutcome({
     supervisor: {
       finalReport: run.finalReport || '',
-      terminalState: (run.status as any) || 'needs_review',
+      terminalState: toRuntimeTerminalState(run.status),
       summary: run.summary || `Review action: ${request.action}`,
       stoppedBy: 'decision',
       riskLevel: 'medium',
@@ -228,6 +229,22 @@ export async function reviewTaskRun(runId: string, request: ReviewRunRequest) {
   );
 
   return { ok: true, status: finalTaskStatus, outcome, reviewResult };
+}
+
+function toRuntimeTerminalState(
+  value: string
+): Exclude<RuntimeLaneResult['terminalState'], 'cancelled'> {
+  const allowed: Array<Exclude<RuntimeLaneResult['terminalState'], 'cancelled'>> = [
+    'completed',
+    'needs_review',
+    'needs_human',
+    'failed',
+    'timed_out',
+    'blocked',
+  ];
+  return allowed.includes(value as Exclude<RuntimeLaneResult['terminalState'], 'cancelled'>)
+    ? (value as Exclude<RuntimeLaneResult['terminalState'], 'cancelled'>)
+    : 'needs_review';
 }
 
 export {

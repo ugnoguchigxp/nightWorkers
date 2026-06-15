@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toDeepRecord } from '../../../../shared/json-record';
 import type {
   ActivityArtifact,
   ProjectDiff,
@@ -65,7 +66,7 @@ function workspaceInitialTab(value: unknown) {
     : undefined;
 }
 
-function parseArtifactContentJson(content: string | null | undefined): any {
+function parseArtifactContentJson(content: string | null | undefined): unknown {
   if (!content?.trim()) return null;
   try {
     return JSON.parse(content);
@@ -154,10 +155,11 @@ export function ArtifactPane({
   const selectedActivityArtifact = artifactRowId
     ? activityArtifacts.find((artifact) => artifact.id === artifactRowId) || null
     : null;
+  const activityArtifactMetadata = toDeepRecord(selectedActivityArtifact?.metadataJson);
   const artifactBlueprint =
-    selectedActivityArtifact?.metadataJson?.appBlueprint ||
+    activityArtifactMetadata.appBlueprint ||
     parseArtifactContentJson(selectedActivityArtifact?.contentText);
-  const artifactValidation = selectedActivityArtifact?.metadataJson?.validation;
+  const artifactValidation = activityArtifactMetadata.validation;
   const showDocument =
     Boolean(selectedArtifact) &&
     !showDiff &&
@@ -453,14 +455,18 @@ function taskMessageToArtifactRef(
   message: TaskMessage,
   selectedKind: WorkbenchArtifactRef['kind']
 ): WorkbenchArtifactRef | null {
-  const metadata = message.metadataJson || {};
+  const metadata = toDeepRecord(message.metadataJson);
+  const display = toDeepRecord(metadata.display);
+  const appBlueprint = toDeepRecord(metadata.appBlueprint);
+  const componentDesign = toDeepRecord(metadata.componentDesign);
+  const artifactRef = toDeepRecord(metadata.artifactRef);
   const kind = resolveMessageArtifactKind(message);
   if (kind !== selectedKind) return null;
   const title =
     metadata.title ||
-    metadata.display?.title ||
-    metadata.appBlueprint?.name ||
-    metadata.componentDesign?.componentName ||
+    display.title ||
+    appBlueprint.name ||
+    componentDesign.componentName ||
     'Artifact';
   return {
     id: `message-${message.id}`,
@@ -468,10 +474,10 @@ function taskMessageToArtifactRef(
     runId: message.runId || undefined,
     kind,
     title: String(title),
-    summary: String(metadata.display?.summary || message.content.slice(0, 160)),
+    summary: String(display.summary || message.content.slice(0, 160)),
     source:
-      typeof metadata.artifactRef?.artifactId === 'string'
-        ? { type: 'artifact_row', artifactId: metadata.artifactRef.artifactId }
+      typeof artifactRef.artifactId === 'string'
+        ? { type: 'artifact_row', artifactId: artifactRef.artifactId }
         : { type: 'task_message', messageId: message.id },
     createdAt: String(message.createdAt),
     metadata,
@@ -484,13 +490,14 @@ function activityArtifactToArtifactRef(
 ): WorkbenchArtifactRef | null {
   const kind = artifact.kind as WorkbenchArtifactRef['kind'];
   if (kind !== selectedKind) return null;
-  const metadata = artifact.metadataJson || {};
+  const metadata = toDeepRecord(artifact.metadataJson);
+  const appBlueprint = toDeepRecord(metadata.appBlueprint);
   return {
     id: `artifact-${artifact.id}`,
     taskId: artifact.taskId,
     runId: artifact.runId || undefined,
     kind,
-    title: String(metadata.title || metadata.appBlueprint?.name || artifact.path || artifact.kind),
+    title: String(metadata.title || appBlueprint.name || artifact.path || artifact.kind),
     summary: String(metadata.summary || artifact.contentText?.slice(0, 160) || ''),
     source: { type: 'artifact_row', artifactId: artifact.id },
     createdAt: String(artifact.createdAt),
@@ -499,10 +506,10 @@ function activityArtifactToArtifactRef(
 }
 
 function resolveMessageArtifactKind(message: TaskMessage): WorkbenchArtifactRef['kind'] | null {
-  const metadata = message.metadataJson || {};
+  const metadata = toDeepRecord(message.metadataJson);
   if (metadata.componentDesign) return 'component_design';
   if (metadata.designDelta) return 'design_delta';
-  if (metadata.markdownDocumentData || metadata.intent === 'draft_spec') return 'spec';
+  if (metadata.markdownDocumentData || String(metadata.intent) === 'draft_spec') return 'spec';
   if (metadata.appBlueprint || metadata.artifactRef) return 'app_blueprint';
   if (message.messageType === 'markdown_document') return 'spec';
   return null;
@@ -848,10 +855,10 @@ function PromptDetail({ children }: { children: React.ReactNode }) {
   );
 }
 
-function isObject(value: unknown): value is Record<string, any> {
+function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
-function toObjectArray(value: unknown): Array<Record<string, any>> {
+function toObjectArray(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? value.filter(isObject) : [];
 }

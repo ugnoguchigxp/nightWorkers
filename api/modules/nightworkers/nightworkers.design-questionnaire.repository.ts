@@ -8,14 +8,20 @@ import {
 } from '../../db/design-questionnaire-schema';
 import { taskMessages } from '../../db/schema';
 
-function _isAppBlueprintDocumentMessage(messageType: string | null | undefined, payloadJson: any) {
+function _isAppBlueprintDocumentMessage(
+  messageType: string | null | undefined,
+  payloadJson: unknown
+) {
+  const payload = isRecord(payloadJson) ? payloadJson : {};
   return Boolean(
     messageType === 'markdown_document' &&
-      payloadJson &&
-      typeof payloadJson === 'object' &&
-      payloadJson.intent === 'app_blueprint' &&
-      payloadJson.appBlueprint
+      payload.intent === 'app_blueprint' &&
+      payload.appBlueprint
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 export async function getTaskMessage(id: string) {
@@ -67,7 +73,7 @@ export async function getDesignQuestionnaireSession(id: string) {
 export async function createDesignQuestionnaireQuestionSet(data: {
   sessionId: string;
   sequence: number;
-  questionnaireJson?: any;
+  questionnaireJson?: unknown;
   rawOutput?: string | null;
   validationStatus: 'valid' | 'invalid';
 }) {
@@ -95,7 +101,7 @@ export async function listDesignQuestionnaireQuestionSets(sessionId: string) {
 export async function upsertDesignQuestionnaireAnswer(data: {
   sessionId: string;
   questionId: string;
-  answerJson: any;
+  answerJson: unknown;
 }) {
   const now = new Date();
   const [answer] = await db
@@ -130,7 +136,7 @@ export async function listDesignQuestionnaireAnswers(sessionId: string) {
 
 export async function createDesignQuestionnaireReview(data: {
   sessionId: string;
-  reviewJson?: any;
+  reviewJson?: unknown;
   publishedMessageId?: string | null;
   status?: string;
 }) {
@@ -148,7 +154,7 @@ export async function createDesignQuestionnaireReview(data: {
 
 export async function updateDesignQuestionnaireReview(
   id: string,
-  data: { status?: string; publishedMessageId?: string | null; reviewJson?: any }
+  data: { status?: string; publishedMessageId?: string | null; reviewJson?: unknown }
 ) {
   const [review] = await db
     .update(designQuestionnaireReviews)

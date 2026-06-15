@@ -1,3 +1,4 @@
+import { unknownErrorMessage } from '../../../shared/json-record';
 import { NativeAgentRuntime } from '../agent-runtime/NativeAgentRuntime';
 import { gitDiffTool } from '../worker-tools';
 import type { IRunner, RunnerOptions, RunnerStatus } from './types';
@@ -43,11 +44,11 @@ export class NativeLocalRunner implements IRunner {
           status: result.terminalState,
           exitCode: isSuccessLike ? 0 : 1,
         });
-      } catch (err: any) {
+      } catch (err) {
         this.statuses.set(runId, { status: 'failed' });
         this.emitLog(
           runId,
-          `[System Error] Native Local Worker failed: ${err?.message ?? 'Unknown error'}`
+          `[System Error] Native Local Worker failed: ${unknownErrorMessage(err)}`
         );
       }
     })();

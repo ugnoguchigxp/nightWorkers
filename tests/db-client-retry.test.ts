@@ -18,7 +18,7 @@ describe('wrapClientWithBusyRetry', () => {
       reconnect: vi.fn(),
       closed: false,
       protocol: 'file',
-    } as any);
+    } as never);
 
     const result = await client.execute('select 1');
 
@@ -55,7 +55,7 @@ describe('wrapClientWithBusyRetry', () => {
       reconnect: vi.fn(),
       closed: false,
       protocol: 'file',
-    } as any);
+    } as never);
 
     const wrappedTx = await client.transaction('write');
     await wrappedTx.execute('insert into test values (1)');
@@ -91,7 +91,7 @@ describe('wrapClientWithBusyRetry', () => {
       reconnect: vi.fn(),
       closed: false,
       protocol: 'file',
-    } as any);
+    } as never);
 
     const firstWrite = client.execute('insert into items values (1)');
     const read = client.execute('select * from items');

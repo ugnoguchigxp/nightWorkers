@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { NightWorkersRealtimeBroker } from '../api/services/realtime/nightworkers-ws';
 
 function createSocket() {
-  const sent: any[] = [];
+  const sent: unknown[] = [];
   const socket = {
     OPEN: 1,
     readyState: 1,
@@ -10,7 +10,7 @@ function createSocket() {
       sent.push(JSON.parse(wire));
     },
   };
-  return { socket: socket as any, sent };
+  return { socket: socket as never, sent };
 }
 
 describe('NightWorkersRealtimeBroker', () => {

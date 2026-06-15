@@ -25,19 +25,21 @@ describe('supervisor Round 2 user context', () => {
     expect(extractRound2UserContextSection(rendered, 'Latest User Request')).toBe(
       'src/app.ts を直して'
     );
-    expect(parseRound2UserContextJsonSection<any>(rendered, 'Current Execution State')).toEqual({
-      todoPlan: [{ seq: 1, status: 'running' }],
-      currentTodo: { seq: 1, status: 'running' },
-    });
+    expect(parseRound2UserContextJsonSection<unknown>(rendered, 'Current Execution State')).toEqual(
+      {
+        todoPlan: [{ seq: 1, status: 'running' }],
+        currentTodo: { seq: 1, status: 'running' },
+      }
+    );
     expect(
-      parseRound2UserContextJsonSection<any[]>(rendered, 'Recent Tool Evidence')[0]
+      parseRound2UserContextJsonSection<unknown[]>(rendered, 'Recent Tool Evidence')[0]
     ).toMatchObject({
       toolName: 'read_file',
     });
     expect(extractRound2UserContextSection(rendered, 'Artifact and Source References')).toContain(
       'kind=contextstill_context_pack status=evidence_only refId=ctx-1'
     );
-    expect(parseRound2UserContextJsonSection<any>(rendered, 'Safety Context')).toEqual({
+    expect(parseRound2UserContextJsonSection<unknown>(rendered, 'Safety Context')).toEqual({
       externalAllowedPaths: ['/template'],
     });
   });

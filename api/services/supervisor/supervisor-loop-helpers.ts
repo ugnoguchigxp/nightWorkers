@@ -1,3 +1,4 @@
+import { toDeepRecord } from '../../../shared/json-record';
 import type { SupervisorArtifactContextRef } from './artifact-contract';
 import {
   checklistItemCanProveWorkerEvidence,
@@ -29,11 +30,11 @@ export function toSupervisorTodoContext(todo: {
   taskType: string;
   status: string;
   procedureId?: string | null;
-  procedureSnapshot?: any;
-  contextSnapshot?: any;
+  procedureSnapshot?: unknown;
+  contextSnapshot?: unknown;
 }): SupervisorTodoContext {
-  const procedureSnapshot = todo.procedureSnapshot as any;
-  const contextSnapshot = todo.contextSnapshot as any;
+  const procedureSnapshot = toDeepRecord(todo.procedureSnapshot);
+  const contextSnapshot = toDeepRecord(todo.contextSnapshot);
   return {
     id: todo.id,
     seq: todo.seq,
@@ -139,16 +140,16 @@ export function getTemplateImportVerificationGap(toolResults: CompactToolResult[
   return null;
 }
 
-export function formatToolObservation(toolName: string, toolResult: any): string {
-  const status = toolResult.ok ? 'ok' : 'failed';
+export function formatToolObservation(toolName: string, toolResult: unknown): string {
+  const result = toDeepRecord(toolResult);
+  const status = result.ok ? 'ok' : 'failed';
   const header = `tool=${toolName} status=${status}`;
-  if (!toolResult.ok) {
-    return `${header}\nerror=${toolResult.error?.code || 'UNKNOWN'}: ${
-      toolResult.error?.message || 'Unknown tool error'
-    }`;
+  if (!result.ok) {
+    const error = toDeepRecord(result.error);
+    return `${header}\nerror=${error.code || 'UNKNOWN'}: ${error.message || 'Unknown tool error'}`;
   }
   if (toolName === 'read_file') {
-    const payload = toolResult.payload || {};
+    const payload = toDeepRecord(result.payload);
     const content = typeof payload.content === 'string' ? payload.content : '';
     return [
       header,
@@ -159,9 +160,10 @@ export function formatToolObservation(toolName: string, toolResult: any): string
       .join('\n');
   }
   if (toolName === 'git_status')
-    return `${header}\n${toolResult.payload?.shortStatus || 'Clean worktree'}`;
-  if (toolName === 'git_diff') return `${header}\n${toolResult.payload?.diffStat || 'No changes'}`;
-  return `${header}\npayload=${JSON.stringify(toolResult.payload || {}).slice(0, 3000)}`;
+    return `${header}\n${toDeepRecord(result.payload).shortStatus || 'Clean worktree'}`;
+  if (toolName === 'git_diff')
+    return `${header}\n${toDeepRecord(result.payload).diffStat || 'No changes'}`;
+  return `${header}\npayload=${JSON.stringify(result.payload || {}).slice(0, 3000)}`;
 }
 
 export function normalizeJobType(value: unknown): JobType | null {

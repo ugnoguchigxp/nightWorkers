@@ -218,7 +218,7 @@ describe('Agent Hooks runner', () => {
   });
 
   it('redacts secret-like command hook failure output from summaries and events', async () => {
-    const events: any[] = [];
+    const events: unknown[] = [];
     createAgentHook({
       name: 'Secret crashing pre hook',
       enabled: true,

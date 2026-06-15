@@ -31,12 +31,12 @@ vi.mock('../../api/modules/nightworkers/nightworkers.repository', () => ({
 describe('Schema-first supervisor loop', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.mocked(repo.getTaskRun).mockResolvedValue({ id: 'run-1', taskId: 'task-1' } as any);
+    vi.mocked(repo.getTaskRun).mockResolvedValue({ id: 'run-1', taskId: 'task-1' } as never);
     vi.mocked(repo.getTask).mockResolvedValue({
       id: 'task-1',
       objective: 'Create fizzbuzz.ts',
       acceptanceCriteria: 'File exists',
-    } as any);
+    } as never);
     vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
   });
 
@@ -63,18 +63,18 @@ describe('Schema-first supervisor loop', () => {
         procedureId: 'major_code_edit',
       },
     ];
-    let currentTodos = [] as any[];
-    vi.mocked(repo.replaceTaskRunTodosForRun).mockResolvedValue(createdTodos as any);
+    let currentTodos = [] as unknown[];
+    vi.mocked(repo.replaceTaskRunTodosForRun).mockResolvedValue(createdTodos as never);
     vi.mocked(repo.replaceTaskRunTodosForRun).mockImplementation(async () => {
       currentTodos = createdTodos;
-      return currentTodos as any;
+      return currentTodos as never;
     });
-    vi.mocked(repo.listTaskRunTodosForRun).mockImplementation(async () => currentTodos as any);
+    vi.mocked(repo.listTaskRunTodosForRun).mockImplementation(async () => currentTodos as never);
     vi.mocked(repo.updateTaskRunTodo).mockImplementation(async (todoId, patch) => {
       currentTodos = currentTodos.map((todo) =>
         todo.id === todoId ? { ...todo, ...patch } : todo
       );
-      return currentTodos.find((todo) => todo.id === todoId) as any;
+      return currentTodos.find((todo) => todo.id === todoId) as never;
     });
     vi.mocked(repo.startTaskRunTodoIfStillPendingAndNoEarlierOpen).mockImplementation(
       async ({ id, afterSeq, startedAt }) => {
@@ -82,11 +82,11 @@ describe('Schema-first supervisor loop', () => {
         const earlierOpen = currentTodos.find(
           (todo) => todo.seq <= afterSeq && ['pending', 'running'].includes(todo.status)
         );
-        if (!target || earlierOpen) return null as any;
+        if (!target || earlierOpen) return null as never;
         currentTodos = currentTodos.map((todo) =>
           todo.id === id ? { ...todo, status: 'running', startedAt, completedAt: null } : todo
         );
-        return currentTodos.find((todo) => todo.id === id) as any;
+        return currentTodos.find((todo) => todo.id === id) as never;
       }
     );
     vi.mocked(llm.callSupervisorLLM)
@@ -161,11 +161,11 @@ describe('Schema-first supervisor loop', () => {
           }),
         ])
       );
-      const secondRound2ExecutionState = parseRound2UserContextJsonSection<any>(
+      const secondRound2ExecutionState = parseRound2UserContextJsonSection<unknown>(
         vi.mocked(llm.callSupervisorLLM).mock.calls[2]?.[1] as string,
         'Current Execution State'
       );
-      const firstRound2ProcedureSummaries = parseRound2UserContextJsonSection<any[]>(
+      const firstRound2ProcedureSummaries = parseRound2UserContextJsonSection<unknown[]>(
         vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[1] as string,
         'Loaded Procedure Summaries'
       );
@@ -186,7 +186,7 @@ describe('Schema-first supervisor loop', () => {
       expect(secondRound2ExecutionState.currentTodo).toEqual(
         expect.objectContaining({ id: 'todo-1', seq: 1, status: 'running' })
       );
-      const thirdRound2ToolEvidence = parseRound2UserContextJsonSection<any[]>(
+      const thirdRound2ToolEvidence = parseRound2UserContextJsonSection<unknown[]>(
         vi.mocked(llm.callSupervisorLLM).mock.calls[3]?.[1] as string,
         'Recent Tool Evidence'
       );
@@ -398,21 +398,21 @@ describe('Schema-first supervisor loop', () => {
         },
       });
 
-    let currentTodos = [] as any[];
+    let currentTodos = [] as unknown[];
     vi.mocked(repo.replaceTaskRunTodosForRun).mockImplementation(async (_runId, todos) => {
-      currentTodos = todos.map((todo: any, index: number) => ({
+      currentTodos = todos.map((todo: unknown, index: number) => ({
         id: `todo-${index + 1}`,
         runId: 'run-1',
         ...todo,
       }));
-      return currentTodos as any;
+      return currentTodos as never;
     });
-    vi.mocked(repo.listTaskRunTodosForRun).mockImplementation(async () => currentTodos as any);
+    vi.mocked(repo.listTaskRunTodosForRun).mockImplementation(async () => currentTodos as never);
     vi.mocked(repo.updateTaskRunTodo).mockImplementation(async (todoId, patch) => {
       currentTodos = currentTodos.map((todo) =>
         todo.id === todoId ? { ...todo, ...patch } : todo
       );
-      return currentTodos.find((todo) => todo.id === todoId) as any;
+      return currentTodos.find((todo) => todo.id === todoId) as never;
     });
     vi.mocked(repo.startTaskRunTodoIfStillPendingAndNoEarlierOpen).mockImplementation(
       async ({ id, afterSeq, startedAt }) => {
@@ -420,11 +420,11 @@ describe('Schema-first supervisor loop', () => {
         const earlierOpen = currentTodos.find(
           (todo) => todo.seq <= afterSeq && ['pending', 'running'].includes(todo.status)
         );
-        if (!target || earlierOpen) return null as any;
+        if (!target || earlierOpen) return null as never;
         currentTodos = currentTodos.map((todo) =>
           todo.id === id ? { ...todo, status: 'running', startedAt, completedAt: null } : todo
         );
-        return currentTodos.find((todo) => todo.id === id) as any;
+        return currentTodos.find((todo) => todo.id === id) as never;
       }
     );
 
@@ -438,7 +438,7 @@ describe('Schema-first supervisor loop', () => {
 
       expect(result.finalReport).toBe('bootstrap を含む TodoList を作成しました。');
       expect(repo.replaceTaskRunTodosForRun).toHaveBeenCalledTimes(1);
-      const retryToolEvidence = parseRound2UserContextJsonSection<any[]>(
+      const retryToolEvidence = parseRound2UserContextJsonSection<unknown[]>(
         vi.mocked(llm.callSupervisorLLM).mock.calls[2]?.[1] as string,
         'Recent Tool Evidence'
       );
@@ -451,7 +451,7 @@ describe('Schema-first supervisor loop', () => {
           }),
         ])
       );
-      const initialWorkspaceSnapshot = parseRound2UserContextJsonSection<any>(
+      const initialWorkspaceSnapshot = parseRound2UserContextJsonSection<unknown>(
         vi.mocked(llm.callSupervisorLLM).mock.calls[1]?.[1] as string,
         'Workspace Snapshot'
       );
@@ -478,7 +478,7 @@ describe('Schema-first supervisor loop', () => {
         statusReason: 'Project root is empty.',
       },
     ];
-    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue(needsHumanTodos as any);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue(needsHumanTodos as never);
 
     vi.mocked(llm.callSupervisorLLM)
       .mockResolvedValueOnce({
@@ -531,7 +531,7 @@ describe('Schema-first supervisor loop', () => {
           message: 'round1 raw',
           data: { rawContent: '{"jobType":"minor_code_edit","goal":"完了する"}' },
         });
-        return { jobType: 'minor_code_edit', goal: '完了する' } as any;
+        return { jobType: 'minor_code_edit', goal: '完了する' } as never;
       })
       .mockImplementationOnce(async (_system, _user, options) => {
         await options?.emitEvent?.({
@@ -548,7 +548,7 @@ describe('Schema-first supervisor loop', () => {
             name: 'finalize_answer',
             arguments: { message: '完了しました。' },
           },
-        } as any;
+        } as never;
       });
 
     try {
@@ -610,7 +610,7 @@ describe('Schema-first supervisor loop', () => {
       });
 
       expect(result.finalReport).toBe('完了しました。');
-      const loadedProcedureSummaries = parseRound2UserContextJsonSection<any[]>(
+      const loadedProcedureSummaries = parseRound2UserContextJsonSection<unknown[]>(
         vi.mocked(llm.callSupervisorLLM).mock.calls[2]?.[1] as string,
         'Loaded Procedure Summaries'
       );

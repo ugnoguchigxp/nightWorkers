@@ -2,6 +2,7 @@ import { exec } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { getDeepRecordValue, toDeepRecord, unknownErrorMessage } from '../../../shared/json-record';
 import { getRelativePath } from './path-policy';
 import { enforcePathPolicy } from './tool-policy-enforcer';
 import type { WorkerToolResult } from './types';
@@ -82,8 +83,9 @@ export async function searchFilesTool(
                 filePath: getRelativePath(absolutePath, absoluteRepoRoot),
                 lineNumber: data.line_number,
                 excerpt:
-                  data.submatches.map((sm: any) => sm.match.text).join(', ') ||
-                  data.lines.text.trim(),
+                  data.submatches
+                    .map((sm: unknown) => String(toDeepRecord(toDeepRecord(sm).match).text || ''))
+                    .join(', ') || data.lines.text.trim(),
               });
             }
           }
@@ -105,10 +107,12 @@ export async function searchFilesTool(
           engine: 'ripgrep',
         },
       };
-    } catch (rgError: any) {
-      if (rgError.code === 127 || rgError.message.includes('not found')) {
+    } catch (rgError) {
+      const rgErrorCode = getDeepRecordValue(rgError, 'code');
+      const rgErrorMessage = unknownErrorMessage(rgError);
+      if (rgErrorCode === 127 || rgErrorMessage.includes('not found')) {
         console.warn('ripgrep (rg) not found in system path, falling back to manual scan');
-      } else if (rgError.code === 1) {
+      } else if (rgErrorCode === 1) {
         return {
           ok: true,
           toolName: 'search_files',
@@ -192,7 +196,7 @@ export async function searchFilesTool(
         engine: 'fallback',
       },
     };
-  } catch (err: any) {
+  } catch (err) {
     return {
       ok: false,
       toolName: 'search_files',
@@ -205,7 +209,7 @@ export async function searchFilesTool(
       },
       error: {
         code: 'SEARCH_FAILED',
-        message: `Failed to search workspace files: ${err.message}`,
+        message: `Failed to search workspace files: ${unknownErrorMessage(err)}`,
       },
     };
   }

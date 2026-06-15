@@ -11,7 +11,12 @@ import {
 import * as repo from './nightworkers.repository';
 import { runSessionQueueForRepository } from './nightworkers.run-orchestration.service';
 
-function normalizeSafetyPolicyForRepository(localPath: string, safetyPolicy: any) {
+type RepositorySafetyPolicy = Parameters<typeof repo.createRepository>[0]['safetyPolicy'];
+
+function normalizeSafetyPolicyForRepository(
+  localPath: string,
+  safetyPolicy: RepositorySafetyPolicy
+): RepositorySafetyPolicy {
   if (!safetyPolicy || !Array.isArray(safetyPolicy.externalAllowedPaths)) return safetyPolicy;
 
   const externalAllowedPaths = Array.from(
@@ -63,7 +68,7 @@ export async function createRepository(data: {
   allowed?: boolean;
   queueEnabled?: boolean;
   maxConcurrentSessions?: number;
-  safetyPolicy?: any;
+  safetyPolicy?: RepositorySafetyPolicy;
 }) {
   return repo.createRepository({
     ...data,
@@ -85,7 +90,7 @@ export async function updateRepository(
   data: {
     queueEnabled?: boolean;
     maxConcurrentSessions?: number;
-    safetyPolicy?: any;
+    safetyPolicy?: RepositorySafetyPolicy;
   }
 ) {
   const existing = data.safetyPolicy !== undefined ? await repo.getRepository(id) : null;
@@ -256,7 +261,7 @@ export async function getBlueprintDesignSettings(taskId: string) {
   };
 }
 
-export async function saveBlueprintDesignSettings(taskId: string, settings: any) {
+export async function saveBlueprintDesignSettings(taskId: string, settings: unknown) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
   const row = await repo.upsertBlueprintDesignSettings(taskId, settings);

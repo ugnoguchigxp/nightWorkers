@@ -72,7 +72,7 @@ function mockJobSelection(jobType: string, goal: string) {
 
 function _expectStrictObjectSchemas(schema: unknown, path = 'schema') {
   if (!schema || typeof schema !== 'object') return;
-  const node = schema as Record<string, any>;
+  const node = schema as Record<string, unknown>;
   if (node.type === 'object') {
     expect(node.additionalProperties, `${path}.additionalProperties`).toBe(false);
   }
@@ -123,8 +123,8 @@ describe('NightWorkers workbench routes', () => {
     const body = await res.json();
     expect(Date.now() - startedAt).toBeLessThan(100);
     expect(body.run).toBeNull();
-    expect(body.messages.some((message: any) => message.role === 'user')).toBe(true);
-    expect(body.messages.some((message: any) => message.role === 'assistant')).toBe(false);
+    expect(body.messages.some((message: unknown) => message.role === 'user')).toBe(true);
+    expect(body.messages.some((message: unknown) => message.role === 'assistant')).toBe(false);
     expect(body.task.objective).toBe('同期で待たずに受付してください');
   });
 
@@ -173,11 +173,12 @@ describe('NightWorkers workbench routes', () => {
     expect(body.run).toBeNull();
     expect(body.task.status).toBe('ready');
     const intakeMessage = body.messages.find(
-      (message: any) => message.role === 'assistant' && message.metadataJson?.intent === 'intake'
+      (message: unknown) =>
+        message.role === 'assistant' && message.metadataJson?.intent === 'intake'
     );
     expect(intakeMessage).toBeUndefined();
     const blueprintMessage = body.messages.find(
-      (message: any) => message.metadataJson?.intent === 'app_blueprint'
+      (message: unknown) => message.metadataJson?.intent === 'app_blueprint'
     );
     expect(blueprintMessage?.messageType).toBe('markdown_document');
     expect(blueprintMessage?.metadataJson?.appBlueprint?.screens).toHaveLength(1);
@@ -231,11 +232,11 @@ describe('NightWorkers workbench routes', () => {
     expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
     expect(
       body.messages.some(
-        (message: any) => message.metadataJson?.intent === 'design_questionnaire_ready'
+        (message: unknown) => message.metadataJson?.intent === 'design_questionnaire_ready'
       )
     ).toBe(false);
     const blueprintMessage = body.messages.find(
-      (message: any) => message.metadataJson?.intent === 'app_blueprint'
+      (message: unknown) => message.metadataJson?.intent === 'app_blueprint'
     );
     expect(blueprintMessage?.metadataJson?.appBlueprint?.id).toBe('todo-minimal-blueprint');
     expect(blueprintMessage?.metadataJson?.routingHypothesis?.subtype).toBe('app_blueprint');
@@ -270,16 +271,16 @@ describe('NightWorkers workbench routes', () => {
     expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
     expect(llm.callStructuredJsonLLM).not.toHaveBeenCalled();
     expect(
-      body.messages.some((message: any) => message.metadataJson?.intent === 'app_blueprint')
+      body.messages.some((message: unknown) => message.metadataJson?.intent === 'app_blueprint')
     ).toBe(false);
     expect(
       body.messages.some(
-        (message: any) => message.metadataJson?.intent === 'design_questionnaire_ready'
+        (message: unknown) => message.metadataJson?.intent === 'design_questionnaire_ready'
       )
     ).toBe(false);
     expect(
       body.messages.some(
-        (message: any) =>
+        (message: unknown) =>
           message.metadataJson?.intent === 'intake' &&
           message.metadataJson?.jobSelection?.jobType === 'general_answer'
       )
@@ -338,7 +339,7 @@ describe('NightWorkers workbench routes', () => {
       ])
     );
     const blueprintMessage = body.messages.find(
-      (message: any) => message.metadataJson?.intent === 'app_blueprint'
+      (message: unknown) => message.metadataJson?.intent === 'app_blueprint'
     );
     expect(blueprintMessage?.messageType).toBe('markdown_document');
     expect(blueprintMessage?.metadataJson?.appBlueprint?.id).toBe('sfa-dashboard');
@@ -475,10 +476,10 @@ describe('NightWorkers workbench routes', () => {
     expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
     expect(draftBody.task.status).toBe('ready');
     expect(
-      draftBody.messages.some((message: any) => message.messageType === 'markdown_document')
+      draftBody.messages.some((message: unknown) => message.messageType === 'markdown_document')
     ).toBe(true);
     const blueprintMessage = draftBody.messages.find(
-      (message: any) => message.metadataJson?.intent === 'app_blueprint'
+      (message: unknown) => message.metadataJson?.intent === 'app_blueprint'
     );
     expect(blueprintMessage?.metadataJson?.appBlueprint?.screens).toHaveLength(1);
     expect(blueprintMessage?.metadataJson?.validation?.valid).toBe(true);
@@ -563,8 +564,8 @@ describe('NightWorkers workbench routes', () => {
     });
     expect(dashboardRes.status).toBe(200);
     const dashboard = await dashboardRes.json();
-    expect(dashboard.queued.map((queueEntry: any) => queueEntry.task.id)).toContain(task.id);
-    expect(dashboard.notQueued.map((item: any) => item.task.id)).not.toContain(task.id);
+    expect(dashboard.queued.map((queueEntry: unknown) => queueEntry.task.id)).toContain(task.id);
+    expect(dashboard.notQueued.map((item: unknown) => item.task.id)).not.toContain(task.id);
 
     const duplicateRes = await app.request(
       `http://localhost/api/workbench/sessions/${task.id}/queue`,

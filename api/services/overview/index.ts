@@ -13,6 +13,23 @@ export type OverviewRange = '24h' | '7d' | '30d' | 'all';
 
 export type OverviewDashboard = Awaited<ReturnType<typeof buildOverviewDashboard>>;
 
+type UsageAggregateRow = {
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  cachedInputTokens?: number | null;
+  reasoningOutputTokens?: number | null;
+  systemPromptTokens?: number | null;
+  userPromptTokens?: number | null;
+  stateCardTokens?: number | null;
+  totalTokens?: number | null;
+  usageMode?: string | null;
+};
+
+type OverviewWarning = Record<string, unknown> & {
+  code: string;
+  callCount?: number;
+};
+
 export async function buildOverviewDashboard(input: {
   range?: OverviewRange;
   repositoryId?: string | null;
@@ -35,7 +52,7 @@ export async function buildOverviewDashboard(input: {
       .limit(1);
     if (!repo) {
       const error = new Error('Repository not found');
-      (error as any).statusCode = 404;
+      (error as Error & { statusCode?: number }).statusCode = 404;
       throw error;
     }
   }
@@ -73,7 +90,7 @@ export async function buildOverviewDashboard(input: {
   const usage = emptyUsageSummary();
   const buckets = new Map<string, ReturnType<typeof emptyBucket>>();
   const modelMap = new Map<string, ReturnType<typeof emptyModelUsage>>();
-  const warningsMap = new Map<string, any>();
+  const warningsMap = new Map<string, OverviewWarning>();
   const fxCache = readFxRateCache();
   const recentCalls = [];
   let estimatedTotal = 0;
@@ -266,7 +283,7 @@ function emptyModelUsage(provider: string, model: string | null) {
   };
 }
 
-function addUsage(target: ReturnType<typeof emptyUsageSummary>, row: any) {
+function addUsage(target: ReturnType<typeof emptyUsageSummary>, row: UsageAggregateRow) {
   target.inputTokens += row.inputTokens ?? 0;
   target.promptInputTokens +=
     (row.systemPromptTokens ?? 0) + (row.userPromptTokens ?? 0) + (row.stateCardTokens ?? 0);
@@ -282,7 +299,7 @@ function addUsage(target: ReturnType<typeof emptyUsageSummary>, row: any) {
   else target.unavailableCallCount += 1;
 }
 
-function normalizeTotal(row: any) {
+function normalizeTotal(row: UsageAggregateRow) {
   return row.totalTokens ?? (row.inputTokens ?? 0) + (row.outputTokens ?? 0);
 }
 

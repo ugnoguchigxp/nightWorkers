@@ -1,5 +1,6 @@
 import { LoaderCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { toDeepRecord } from '../../../../shared/json-record';
 import {
   fetchDesignQuestionnaireSessions,
   fetchSpecificationWorkspace,
@@ -80,7 +81,7 @@ export function BlueprintSpecificationWorkspaceViewer({
       combinedTaskMessages.filter(
         (message) =>
           message.messageType === 'markdown_document' &&
-          message.metadataJson?.intent === 'draft_spec'
+          String(toDeepRecord(message.metadataJson).intent) === 'draft_spec'
       ),
     [combinedTaskMessages]
   );
@@ -345,7 +346,9 @@ export function BlueprintSpecificationWorkspaceViewer({
                   {unansweredQuestions.length > 0 ? (
                     <span className="text-[11px] text-amber-300" aria-live="polite">
                       未回答:{' '}
-                      {unansweredQuestions.map((question: any) => question.question).join(' / ')}
+                      {unansweredQuestions
+                        .map((question: unknown) => String(toDeepRecord(question).question || ''))
+                        .join(' / ')}
                     </span>
                   ) : null}
                 </div>

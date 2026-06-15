@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { unknownErrorMessage } from '../../../shared/json-record';
 import { getRelativePath, isPathSafe } from './path-policy';
 import { enforcePathPolicy } from './tool-policy-enforcer';
 import type { WorkerToolResult } from './types';
@@ -119,7 +120,7 @@ export async function listDirTool(input: ListDirInput): Promise<WorkerToolResult
       finishedAt: new Date().toISOString(),
       payload: { dirs, files, truncated },
     };
-  } catch (err: any) {
+  } catch (err) {
     return {
       ok: false,
       toolName: 'list_dir',
@@ -128,7 +129,7 @@ export async function listDirTool(input: ListDirInput): Promise<WorkerToolResult
       payload: { dirs: [], files: [], truncated: false },
       error: {
         code: 'LIST_DIR_FAILED',
-        message: `Failed to list directory: ${err.message}`,
+        message: `Failed to list directory: ${unknownErrorMessage(err)}`,
       },
     };
   }

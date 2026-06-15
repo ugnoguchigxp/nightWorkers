@@ -9,7 +9,7 @@ export type ActivityArtifact = {
   kind: string;
   path?: string | null;
   contentText?: string | null;
-  metadataJson?: any;
+  metadataJson?: unknown;
   createdAt: unknown;
 };
 
@@ -25,7 +25,7 @@ export type ActivityEvent = {
   source: string;
   status?: string | null;
   text?: string | null;
-  payloadJson?: any;
+  payloadJson?: unknown;
   artifactId?: string | null;
   clientTempId?: string | null;
   externalId?: string | null;
@@ -56,7 +56,7 @@ export type BackgroundProcess = {
   stopReason?: string | null;
   latestOutput: string;
   outputArtifactId?: string | null;
-  metadataJson?: any;
+  metadataJson?: unknown;
   createdAt: unknown;
   updatedAt: unknown;
 };

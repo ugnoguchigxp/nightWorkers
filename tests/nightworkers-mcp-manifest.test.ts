@@ -17,7 +17,7 @@ describe('nightworkers MCP manifest', () => {
         PATH: '/usr/bin',
         NIGHTWORKERS_CODEX_MCP_COMMAND: '/bin/nightworkers-mcp',
         NIGHTWORKERS_CODEX_MCP_ARGS: '--stdio',
-      } as any,
+      } as never,
     });
 
     expect(options.config).toMatchObject({

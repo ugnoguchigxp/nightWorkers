@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { toDeepRecord } from '../../../shared/json-record';
 import { analyzeCommand } from './command-policy';
 import { compressCommandStream, type ToolOutputCompressionMetadata } from './output-compression';
 import {
@@ -255,15 +256,16 @@ export async function runCommandTool(
         compressionMode,
       }),
     };
-  } catch (err: any) {
-    const exitCode = err.code ?? 1;
-    const stdout = err.stdout ?? '';
-    const stderr = err.stderr ?? '';
+  } catch (err) {
+    const error = toDeepRecord(err);
+    const exitCode = typeof error.code === 'number' ? error.code : 1;
+    const stdout = typeof error.stdout === 'string' ? error.stdout : '';
+    const stderr = typeof error.stderr === 'string' ? error.stderr : '';
     const finishedAt = new Date().toISOString();
 
-    const message = err.killed
+    const message = error.killed
       ? `Command timed out after ${effectiveTimeoutSeconds}s`
-      : `Command failed: ${err.message}`;
+      : `Command failed: ${String(error.message || err)}`;
 
     return {
       ok: false,
@@ -281,7 +283,7 @@ export async function runCommandTool(
         compressionMode,
       }),
       error: {
-        code: err.killed ? 'COMMAND_TIMEOUT' : 'COMMAND_FAILED',
+        code: error.killed ? 'COMMAND_TIMEOUT' : 'COMMAND_FAILED',
         message,
       },
     };

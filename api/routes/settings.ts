@@ -23,6 +23,7 @@ import {
 import { runStartupPreflight } from '../services/preflight/preflight';
 import { listPricingRows, seedCodexPricingRows, upsertPricingRow } from '../services/pricing';
 import {
+  type GeneralSettings,
   readFxRateCache,
   readGeneralSettings,
   refreshEcbFxRates,
@@ -103,7 +104,7 @@ export const settingsRouter = createOpenApiRouter()
     return c.json(readGeneralSettings(), 200);
   })
   .openapi(saveGeneralSettingsRoute, (c) => {
-    const settings = writeGeneralSettings(c.req.valid('json') as any);
+    const settings = writeGeneralSettings(c.req.valid('json') as GeneralSettings);
     return c.json(settings, 200);
   })
   .openapi(getFxRatesRoute, (c) => {
@@ -114,7 +115,7 @@ export const settingsRouter = createOpenApiRouter()
       const cache = await refreshEcbFxRates();
       return c.json(cache, 200);
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) } as any, 500);
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
     }
   })
   .openapi(getStartupPreflightRoute, (c) => {

@@ -1,4 +1,10 @@
 import { LoaderCircle, Send } from 'lucide-react';
+import type {
+  DesignQuestion,
+  DesignQuestionDependency,
+  DesignQuestionOption,
+  DesignQuestionSet,
+} from '../../../../shared/schemas/design-questionnaire.schema';
 import type { DesignQuestionnaireAnswer, DesignQuestionnaireSession } from '../types';
 
 export function QuestionnaireForm({
@@ -6,7 +12,7 @@ export function QuestionnaireForm({
   answers,
   onChange,
 }: {
-  questionGroups: any[];
+  questionGroups: DesignQuestionSet[];
   answers: Record<string, DesignQuestionnaireAnswer>;
   onChange: (answers: Record<string, DesignQuestionnaireAnswer>) => void;
 }) {
@@ -20,7 +26,7 @@ export function QuestionnaireForm({
     <div className="grid gap-4">
       {questionGroups.map((group) => {
         const questions = (Array.isArray(group.questions) ? group.questions : []).filter(
-          (question: any) => isQuestionDependencySatisfied(question, answers)
+          (question) => isQuestionDependencySatisfied(question, answers)
         );
         const unanswered = getUnansweredQuestions([group], answers).length;
         return (
@@ -36,7 +42,7 @@ export function QuestionnaireForm({
                 {unanswered} unanswered
               </span>
             </div>
-            {questions.map((question: any) => (
+            {questions.map((question) => (
               <QuestionCard
                 key={String(question.id)}
                 question={question}
@@ -56,7 +62,7 @@ function QuestionCard({
   answer,
   onChange,
 }: {
-  question: any;
+  question: DesignQuestion;
   answer: DesignQuestionnaireAnswer;
   onChange: (patch: Partial<DesignQuestionnaireAnswer>) => void;
 }) {
@@ -79,7 +85,7 @@ function QuestionCard({
       </div>
       {options.length > 0 ? (
         <div className="mt-3 grid gap-2">
-          {options.map((option: any) => {
+          {options.map((option: DesignQuestionOption) => {
             const selected = answer.selectedOptionIds.includes(option.id);
             return (
               <label
@@ -167,34 +173,34 @@ export function isAnswered(answer?: DesignQuestionnaireAnswer) {
   );
 }
 
-export function isQuestionAnswered(question: any, answer?: DesignQuestionnaireAnswer) {
+export function isQuestionAnswered(question: DesignQuestion, answer?: DesignQuestionnaireAnswer) {
   if (answer?.deferred) return true;
   if (question.answerType === 'multi_choice') return true;
   return isAnswered(answer);
 }
 
 export function getVisibleQuestionnaireQuestions(
-  questionGroups: any[],
+  questionGroups: DesignQuestionSet[],
   answers: Record<string, DesignQuestionnaireAnswer>
 ) {
   return questionGroups.flatMap((group) =>
-    (Array.isArray(group.questions) ? group.questions : []).filter((question: any) =>
+    (Array.isArray(group.questions) ? group.questions : []).filter((question) =>
       isQuestionDependencySatisfied(question, answers)
     )
   );
 }
 
 export function getUnansweredQuestions(
-  questionGroups: any[],
+  questionGroups: DesignQuestionSet[],
   answers: Record<string, DesignQuestionnaireAnswer>
 ) {
   return getVisibleQuestionnaireQuestions(questionGroups, answers).filter(
-    (question: any) => !isQuestionAnswered(question, answers[question.id])
+    (question) => !isQuestionAnswered(question, answers[question.id])
   );
 }
 
 export function buildSubmittableQuestionnaireAnswers(
-  questionGroups: any[],
+  questionGroups: DesignQuestionSet[],
   answers: Record<string, DesignQuestionnaireAnswer>
 ) {
   const visibleQuestions = getVisibleQuestionnaireQuestions(questionGroups, answers);
@@ -208,11 +214,11 @@ export function buildSubmittableQuestionnaireAnswers(
 }
 
 export function getAnswerProgress(
-  questionGroups: any[],
+  questionGroups: DesignQuestionSet[],
   answers: Record<string, DesignQuestionnaireAnswer>
 ) {
   const questions = getVisibleQuestionnaireQuestions(questionGroups, answers);
-  const answeredCount = questions.filter((question: any) =>
+  const answeredCount = questions.filter((question) =>
     isQuestionAnswered(question, answers[question.id])
   ).length;
   return {
@@ -230,12 +236,11 @@ export function getQuestionCount(session: DesignQuestionnaireSession) {
     return (
       total +
       groups.reduce(
-        (sum: number, group: any) =>
+        (sum, group) =>
           sum +
           (Array.isArray(group.questions)
-            ? group.questions.filter((question: any) =>
-                isQuestionDependencySatisfied(question, answers)
-              ).length
+            ? group.questions.filter((question) => isQuestionDependencySatisfied(question, answers))
+                .length
             : 0),
         0
       )
@@ -244,18 +249,21 @@ export function getQuestionCount(session: DesignQuestionnaireSession) {
 }
 
 function isQuestionDependencySatisfied(
-  question: any,
+  question: DesignQuestion,
   answers: Record<string, DesignQuestionnaireAnswer>
 ) {
   const dependencies = Array.isArray(question.dependsOn) ? question.dependsOn : [];
-  return dependencies.every((dependency: any) => {
+  return dependencies.every((dependency) => {
     const answer = answers[String(dependency.questionId)];
     if (!answer) return false;
     return evaluateQuestionDependency(answer, dependency);
   });
 }
 
-function evaluateQuestionDependency(answer: DesignQuestionnaireAnswer, dependency: any) {
+function evaluateQuestionDependency(
+  answer: DesignQuestionnaireAnswer,
+  dependency: DesignQuestionDependency
+) {
   const expected = dependency.value;
   const values = [
     ...answer.selectedOptionIds,

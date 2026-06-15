@@ -1,3 +1,8 @@
+import type {
+  DesignDecisionReview,
+  DesignQuestionnaire,
+} from '../../../../shared/schemas/design-questionnaire.schema';
+
 export type TaskType =
   | 'code_change'
   | 'test_change'
@@ -36,7 +41,7 @@ export type TaskMessage = {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   messageType?: 'text' | 'chart' | 'browser' | 'playwright' | 'flow' | 'markdown_document' | null;
-  metadataJson?: any;
+  metadataJson?: unknown;
   createdAt: unknown;
 };
 
@@ -60,7 +65,7 @@ export type DesignQuestionnaireSession = {
   questionSets: Array<{
     id: string;
     sequence: number;
-    questionnaire: any | null;
+    questionnaire: DesignQuestionnaire | null;
     rawOutput: string | null;
     validationStatus: 'valid' | 'invalid';
     createdAt: unknown;
@@ -73,7 +78,7 @@ export type DesignQuestionnaireSession = {
   }>;
   reviews: Array<{
     id: string;
-    review: any | null;
+    review: DesignDecisionReview | null;
     publishedMessageId?: string | null;
     status: 'draft' | 'accepted' | 'needs_edit' | 'left_unadopted';
     createdAt: unknown;

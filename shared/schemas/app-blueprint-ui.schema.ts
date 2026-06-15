@@ -58,7 +58,7 @@ export const blueprintNodeLayoutSchema = z
   })
   .openapi('BlueprintNodeLayout');
 
-export const blueprintNodeSchema: z.ZodType<any> = z.lazy(() =>
+export const blueprintNodeSchema: z.ZodType<unknown> = z.lazy(() =>
   z.discriminatedUnion('kind', [
     z.object({
       kind: z.literal('layout'),

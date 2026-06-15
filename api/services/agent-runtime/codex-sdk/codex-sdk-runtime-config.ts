@@ -11,6 +11,11 @@ type CodexRuntimeConfigInput = {
   enableNightworkersMcp?: boolean;
 };
 
+type CodexConfigValue = string | number | boolean | CodexConfigValue[] | CodexConfigObject;
+type CodexConfigObject = {
+  [key: string]: CodexConfigValue;
+};
+
 export type CodexRuntimeMcpConfigSource = 'inline_configured' | 'global_inherited' | 'disabled';
 
 export type CodexRuntimeMcpConfigState = {
@@ -34,7 +39,7 @@ export function buildCodexRuntimeSdkOptions(input: CodexRuntimeConfigInput = {})
   } else if (Object.keys(mcpServers).length > 0) {
     sdkOptions.config = {
       features: { mcp: true },
-      mcp_servers: mcpServers as any,
+      mcp_servers: mcpServers,
     };
   }
   const sanitizedEnv = Object.fromEntries(
@@ -95,7 +100,7 @@ export function buildCodexRuntimeThreadOptions(context: AgentRunContext): Thread
   };
 }
 
-function buildNightWorkersMcpServers(env: NodeJS.ProcessEnv): Record<string, unknown> {
+function buildNightWorkersMcpServers(env: NodeJS.ProcessEnv): CodexConfigObject {
   const command = env.NIGHTWORKERS_CODEX_MCP_COMMAND;
   if (!command) return {};
   const args = splitArgs(env.NIGHTWORKERS_CODEX_MCP_ARGS || '');

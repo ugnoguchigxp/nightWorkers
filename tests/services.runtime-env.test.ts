@@ -19,7 +19,7 @@ describe('runtime-env', () => {
         OTHER_VAR: 'unused',
       };
 
-      const result = readNightWorkersRuntimeEnv(mockEnv as any);
+      const result = readNightWorkersRuntimeEnv(mockEnv as never);
       expect(result).toEqual({
         ACTIVE_LLM_PROVIDER: 'openai',
         CODEX_ENABLED: 'true',

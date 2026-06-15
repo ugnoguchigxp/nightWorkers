@@ -338,23 +338,34 @@ app.get(
                 })
               );
             }
-          } catch (err: any) {
+          } catch (err) {
+            const errorRecord =
+              err && typeof err === 'object' && !Array.isArray(err)
+                ? (err as Record<string, unknown>)
+                : {};
+            const errorMessage =
+              err instanceof Error
+                ? err.message
+                : typeof errorRecord.message === 'string'
+                  ? errorRecord.message
+                  : 'Invalid websocket payload';
+            const errorCode = typeof errorRecord.code === 'string' ? errorRecord.code : undefined;
             logEvent({
               channel: 'ws',
               level: 'error',
               message: 'message handling failed',
               meta: {
                 requestId,
-                errorMessage: err?.message,
-                errorCode: err?.code,
-                stack: err?.stack,
+                errorMessage,
+                errorCode,
+                stack: err instanceof Error ? err.stack : undefined,
               },
             });
             ws.send(
               JSON.stringify({
                 type: 'error',
-                message: err?.message || 'Invalid websocket payload',
-                code: err?.code,
+                message: errorMessage,
+                code: errorCode,
                 timestamp: new Date().toISOString(),
               })
             );

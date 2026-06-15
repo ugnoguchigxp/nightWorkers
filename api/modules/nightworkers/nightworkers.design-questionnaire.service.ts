@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import {
+  type AppBlueprint,
+  appBlueprintSchema,
+} from '../../../shared/schemas/app-blueprint.schema';
+import {
   type BlueprintSpecificationWorkspace,
   type DesignQuestionnaireAnswer,
+  type DesignQuestionnaireSession,
   designQuestionnaireAnswerSchema,
 } from '../../../shared/schemas/design-questionnaire.schema';
 import { AppError, NotFoundError } from '../../lib/errors';
@@ -52,6 +57,7 @@ import {
 } from './nightworkers.spec-document-renderer';
 
 type TaskMessageRow = Awaited<ReturnType<typeof repo.listTaskMessages>>[number];
+type TaskRow = NonNullable<Awaited<ReturnType<typeof repo.getTask>>>;
 
 const specificationDocumentDraftSchema = z.object({
   title: z.string().min(1),
@@ -158,7 +164,7 @@ export async function saveDesignQuestionnaireAnswers(
     return session;
   }
   const questionById = new Map(
-    getSessionQuestions(session).map((question: any) => [String(question.id), question])
+    getSessionQuestions(session).map((question) => [String(question.id), question])
   );
   for (const answer of answers) {
     const parsed = designQuestionnaireAnswerSchema.parse(answer);
@@ -184,7 +190,7 @@ export async function saveDesignQuestionnaireAnswers(
   );
   const nextStatus =
     requiredQuestions.length > 0 &&
-    requiredQuestions.every((question: any) =>
+    requiredQuestions.every((question) =>
       isDesignQuestionnaireAnswerComplete(question, answerByQuestionId.get(String(question.id)))
     )
       ? 'review_ready'
@@ -229,13 +235,16 @@ export async function generateDesignQuestionnaireFollowUp(taskId: string, sessio
   return getDesignQuestionnaireSession(taskId, sessionId);
 }
 
-async function assessDesignQuestionnaireNextStep(taskId: string, session: any) {
+async function assessDesignQuestionnaireNextStep(
+  taskId: string,
+  session: DesignQuestionnaireSession
+) {
   if (session.questionSets.length >= MAX_DESIGN_QUESTIONNAIRE_PAGES) {
     await repo.updateDesignQuestionnaireSessionStatus(session.id, 'review_ready');
     return getDesignQuestionnaireSession(taskId, session.id);
   }
   const nextSequence =
-    session.questionSets.reduce((max: number, set: any) => Math.max(max, set.sequence), 0) + 1;
+    session.questionSets.reduce((max, set) => Math.max(max, set.sequence), 0) + 1;
   const rawOutput = await generateDesignQuestionnaireFollowUpDecisionRawOutput(session);
   const parsed = parseDesignQuestionnaireFollowUpDecisionRaw(
     rawOutput,
@@ -375,8 +384,10 @@ export async function getBlueprintSpecificationWorkspace(
   const implementationReferences = [];
   for (const message of messages) {
     if (message.messageType !== 'markdown_document') continue;
-    const metadata = (message.metadataJson || {}) as Record<string, any>;
+    const metadata = (message.metadataJson || {}) as Record<string, unknown>;
     if (metadata.intent === 'app_blueprint' && metadata.appBlueprint) {
+      const appBlueprint = isRecord(metadata.appBlueprint) ? metadata.appBlueprint : {};
+      const dbDesignTarget = isRecord(metadata.dbDesignTarget) ? metadata.dbDesignTarget : {};
       const isDbDesign = Boolean(
         metadata.source === 'blueprint-db-design' || metadata.dbDesignTarget
       );
@@ -386,7 +397,7 @@ export async function getBlueprintSpecificationWorkspace(
       const artifact = {
         id: `${isDbDesign ? 'db-design' : 'blueprint'}-${message.id}`,
         kind: isDbDesign ? ('db-design' as const) : ('blueprint' as const),
-        title: String(metadata.title || metadata.appBlueprint?.name || 'App Blueprint'),
+        title: String(metadata.title || appBlueprint.name || 'App Blueprint'),
         sourceMessageId: message.id,
         createdAt: message.createdAt,
         adoptionState: adoption
@@ -397,8 +408,8 @@ export async function getBlueprintSpecificationWorkspace(
         sourceBlueprintMessageId:
           typeof metadata.sourceBlueprintMessageId === 'string'
             ? metadata.sourceBlueprintMessageId
-            : typeof metadata.dbDesignTarget?.sourceBlueprintMessageId === 'string'
-              ? metadata.dbDesignTarget.sourceBlueprintMessageId
+            : typeof dbDesignTarget.sourceBlueprintMessageId === 'string'
+              ? dbDesignTarget.sourceBlueprintMessageId
               : undefined,
       };
       if (isDbDesign) dbDesignArtifacts.push(artifact);
@@ -411,7 +422,10 @@ export async function getBlueprintSpecificationWorkspace(
         title: String(metadata.title || 'Decision Review'),
         sourceMessageId: message.id,
         createdAt: message.createdAt,
-        sourceBlueprintMessageId: metadata.sourceBlueprintMessageId,
+        sourceBlueprintMessageId:
+          typeof metadata.sourceBlueprintMessageId === 'string'
+            ? metadata.sourceBlueprintMessageId
+            : undefined,
       });
     }
     if (metadata.intent === 'implementation_plan' || metadata.intent === 'draft_spec') {
@@ -542,8 +556,8 @@ export async function generateSpecificationStatusDbDesign(
   if (!sourceBlueprintMessage) {
     throw new AppError(422, 'BLUEPRINT_REQUIRED', 'Blueprint generation is required first.');
   }
-  const metadata = (sourceBlueprintMessage.metadataJson || {}) as Record<string, any>;
-  const currentBlueprint = metadata.appBlueprint;
+  const metadata = (sourceBlueprintMessage.metadataJson || {}) as Record<string, unknown>;
+  const currentBlueprint = appBlueprintSchema.parse(metadata.appBlueprint);
   const validation = validateAppBlueprint(currentBlueprint);
   const request = {
     blueprintId: String(currentBlueprint.id || sourceBlueprintMessage.id),
@@ -673,7 +687,7 @@ async function resolveSourceBlueprintMessage(taskId: string, messageId?: string 
   }
   return (
     [...messages].reverse().find((message) => {
-      const metadata = (message.metadataJson || {}) as Record<string, any>;
+      const metadata = (message.metadataJson || {}) as Record<string, unknown>;
       return (
         isAppBlueprintMessage(message) &&
         metadata.source !== 'blueprint-db-design' &&
@@ -681,14 +695,14 @@ async function resolveSourceBlueprintMessage(taskId: string, messageId?: string 
       );
     }) ||
     [...messages].reverse().find((message) => {
-      const metadata = (message.metadataJson || {}) as Record<string, any>;
+      const metadata = (message.metadataJson || {}) as Record<string, unknown>;
       return isAppBlueprintMessage(message) && metadata.source !== 'blueprint-db-design';
     }) ||
     null
   );
 }
 
-function renderQuestionnaireBlueprintPrompt(task: any, session: any) {
+function renderQuestionnaireBlueprintPrompt(task: TaskRow, session: DesignQuestionnaireSession) {
   return [
     'Design Questionnaire の回答から App Blueprint を生成してください。',
     '',
@@ -709,7 +723,10 @@ function renderQuestionnaireBlueprintPrompt(task: any, session: any) {
     .join('\n');
 }
 
-function renderQuestionnaireDbDesignPrompt(session: any, currentBlueprint: any) {
+function renderQuestionnaireDbDesignPrompt(
+  session: DesignQuestionnaireSession,
+  currentBlueprint: AppBlueprint
+) {
   return [
     'Design Questionnaire の回答と現在の App Blueprint をもとに DB Design を提案してください。',
     '',
@@ -763,7 +780,7 @@ async function generateDesignQuestionnaireRawOutput(input: {
   );
 }
 
-async function generateDesignQuestionnaireFollowUpRawOutput(session: any) {
+async function generateDesignQuestionnaireFollowUpRawOutput(session: DesignQuestionnaireSession) {
   return callStructuredJsonLLM(
     buildDesignQuestionnaireSystemPrompt(),
     buildDesignQuestionnaireFollowUpUserPrompt(session),
@@ -776,7 +793,9 @@ async function generateDesignQuestionnaireFollowUpRawOutput(session: any) {
   );
 }
 
-async function generateDesignQuestionnaireFollowUpDecisionRawOutput(session: any) {
+async function generateDesignQuestionnaireFollowUpDecisionRawOutput(
+  session: DesignQuestionnaireSession
+) {
   return callStructuredJsonLLM(
     buildDesignQuestionnaireFollowUpDecisionSystemPrompt(),
     buildDesignQuestionnaireFollowUpDecisionUserPrompt(session),
@@ -789,7 +808,7 @@ async function generateDesignQuestionnaireFollowUpDecisionRawOutput(session: any
   );
 }
 
-async function generateDesignQuestionnaireReviewRawOutput(session: any) {
+async function generateDesignQuestionnaireReviewRawOutput(session: DesignQuestionnaireSession) {
   return callStructuredJsonLLM(
     buildDesignQuestionnaireReviewSystemPrompt(),
     buildDesignQuestionnaireReviewUserPrompt(session),
@@ -875,4 +894,8 @@ function ensureSpecificationDdlSection(content: string, dbDesignDdl: string) {
     ? ['```sql', ddl, '```'].join('\n')
     : 'DB Design DDL reference は未生成です。';
   return [trimmedContent, '', '## DDL', ddlBody].join('\n');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }

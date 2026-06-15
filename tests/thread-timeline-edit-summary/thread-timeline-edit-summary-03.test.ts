@@ -21,7 +21,7 @@ describe('ThreadTimeline edit summaries', () => {
           filePath: 'src/greeting.txt',
         },
       },
-    } as any);
+    } as never);
 
     expect(summary).toEqual({
       toolName: 'replace_content',
@@ -74,7 +74,7 @@ describe('ThreadTimeline edit summaries', () => {
           },
         },
       },
-    } as any);
+    } as never);
 
     expect(summary).toEqual({
       toolName: 'apply_patch',

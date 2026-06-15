@@ -2,6 +2,7 @@ import { exec } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { getDeepRecordString, unknownErrorMessage } from '../../../shared/json-record';
 import { enforcePathPolicy } from './tool-policy-enforcer';
 import type { WorkerToolResult } from './types';
 
@@ -50,7 +51,7 @@ export async function applyPatchTool(
         .split('\n')
         .map((line) => line.split('\t')[2])
         .filter((p) => p && p.trim().length > 0);
-    } catch (_dryError: any) {
+    } catch (_dryError) {
       // If git numstat fails, fallback to parsing diff header manually
       const lines = gitPatchContent.split('\n');
       for (const line of lines) {
@@ -115,7 +116,7 @@ export async function applyPatchTool(
         stderr,
       },
     };
-  } catch (err: any) {
+  } catch (err) {
     // Clean up temp patch file on failure
     await fs.unlink(tempPatchFile).catch(() => {});
 
@@ -128,11 +129,11 @@ export async function applyPatchTool(
         applied: false,
         changedFiles: [],
         stdout: '',
-        stderr: err.stderr || '',
+        stderr: getDeepRecordString(err, 'stderr') || '',
       },
       error: {
         code: 'PATCH_FAILED',
-        message: `Failed to apply patch: ${err.message}`,
+        message: `Failed to apply patch: ${unknownErrorMessage(err)}`,
       },
     };
   }

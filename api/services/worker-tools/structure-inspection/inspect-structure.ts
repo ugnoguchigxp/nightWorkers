@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { unknownErrorMessage } from '../../../../shared/json-record';
 import { buildCompressionMetadata } from '../output-compression';
 import { enforcePathPolicy } from '../tool-policy-enforcer';
 import type { WorkerToolResult } from '../types';
@@ -52,10 +53,10 @@ export async function inspectStructureTool(
       finishedAt: new Date().toISOString(),
       payload: withCompression(content, output),
     };
-  } catch (err: any) {
+  } catch (err) {
     return failure(startedAt, {
       code: 'INSPECT_STRUCTURE_FAILED',
-      message: `Failed to inspect structure: ${err.message}`,
+      message: `Failed to inspect structure: ${unknownErrorMessage(err)}`,
     });
   }
 }

@@ -284,8 +284,8 @@ describe('general-settings service', () => {
     it('resets invalid timezone, language, currency to defaults', () => {
       const res = normalizeGeneralSettings({
         timezone: 'Bad/Timezone',
-        language: 'fr' as any,
-        currency: 'CAD' as any,
+        language: 'fr' as never,
+        currency: 'CAD' as never,
       });
       expect(res.timezone).toBe(DEFAULT_GENERAL_SETTINGS.timezone);
       expect(res.language).toBe(DEFAULT_GENERAL_SETTINGS.language);
@@ -308,9 +308,9 @@ describe('general-settings service', () => {
 
       const res2 = normalizeGeneralSettings({
         fx: {
-          source: 'invalid-source' as any,
-          autoRefresh: 'not-a-boolean' as any,
-          lastRefreshedAt: 12345 as any,
+          source: 'invalid-source' as never,
+          autoRefresh: 'not-a-boolean' as never,
+          lastRefreshedAt: 12345 as never,
         },
       });
       expect(res2.fx).toEqual({

@@ -20,7 +20,7 @@ describe('ThreadTimeline streaming persistence', () => {
           messageType: 'text',
           createdAt: '2026-06-04T00:00:00.000Z',
         },
-      ] as any,
+      ] as never,
       events: [
         {
           id: 'event-1',
@@ -60,7 +60,7 @@ describe('ThreadTimeline streaming persistence', () => {
           },
           timestamp: '2026-06-04T00:00:01.000Z',
         },
-      ] as any,
+      ] as never,
     });
 
     expect(preview?.visibleText).toContain('fizzbuzz.ts');
@@ -81,7 +81,7 @@ describe('ThreadTimeline streaming persistence', () => {
           messageType: 'text',
           createdAt: '2026-06-04T00:00:00.000Z',
         },
-      ] as any,
+      ] as never,
       events: [
         {
           id: 'event-1',
@@ -102,7 +102,7 @@ describe('ThreadTimeline streaming persistence', () => {
           },
           timestamp: '2026-06-04T00:00:00.000Z',
         },
-      ] as any,
+      ] as never,
     });
 
     expect(preview).toBeNull();
@@ -139,7 +139,7 @@ describe('ThreadTimeline streaming persistence', () => {
   it('builds persisted previews from schema-first response delta events', () => {
     const preview = buildPersistedStreamingResponsePreview({
       runId: 'run-1',
-      taskMessages: [] as any,
+      taskMessages: [] as never,
       events: [
         {
           id: 'event-1',
@@ -157,7 +157,7 @@ describe('ThreadTimeline streaming persistence', () => {
           },
           timestamp: '2026-06-04T00:00:00.000Z',
         },
-      ] as any,
+      ] as never,
     });
 
     expect(preview?.visibleText).toBe('schema-first stream');
@@ -173,7 +173,7 @@ describe('ThreadTimeline streaming persistence', () => {
         messageType: 'text',
         metadataJson: { intent: 'blueprint_raw_output' },
         createdAt: '2026-06-08T00:00:00.000Z',
-      } as any)
+      } as never)
     ).toBe(false);
 
     expect(
@@ -185,7 +185,7 @@ describe('ThreadTimeline streaming persistence', () => {
         messageType: 'text',
         metadataJson: { intent: 'blueprint_created' },
         createdAt: '2026-06-08T00:00:01.000Z',
-      } as any)
+      } as never)
     ).toBe(true);
 
     expect(
@@ -197,7 +197,7 @@ describe('ThreadTimeline streaming persistence', () => {
         messageType: 'markdown_document',
         metadataJson: { intent: 'draft_spec' },
         createdAt: '2026-06-08T00:00:02.000Z',
-      } as any)
+      } as never)
     ).toBe(false);
 
     expect(
@@ -213,7 +213,7 @@ describe('ThreadTimeline streaming persistence', () => {
           reviewedSourceMessageId: 'msg-spec',
         },
         createdAt: '2026-06-08T00:00:03.000Z',
-      } as any)
+      } as never)
     ).toBe(false);
   });
 });

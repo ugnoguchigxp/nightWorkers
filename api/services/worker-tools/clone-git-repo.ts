@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { getDeepRecordString, unknownErrorMessage } from '../../../shared/json-record';
 import { enforcePathPolicy } from './tool-policy-enforcer';
 import type { WorkerToolResult } from './types';
 
@@ -70,16 +71,16 @@ async function runGit(args: string[], cwd?: string) {
 }
 
 async function targetHasMaterialContent(targetPath: string) {
-  const entries = await fs.readdir(targetPath, { withFileTypes: true }).catch((error: any) => {
-    if (error?.code === 'ENOENT') return [];
+  const entries = await fs.readdir(targetPath, { withFileTypes: true }).catch((error: unknown) => {
+    if (getDeepRecordString(error, 'code') === 'ENOENT') return [];
     throw error;
   });
   return entries.some((entry) => !EMPTY_TARGET_IGNORES.has(entry.name));
 }
 
 async function clearDirectoryContents(targetPath: string) {
-  const entries = await fs.readdir(targetPath, { withFileTypes: true }).catch((error: any) => {
-    if (error?.code === 'ENOENT') return [];
+  const entries = await fs.readdir(targetPath, { withFileTypes: true }).catch((error: unknown) => {
+    if (getDeepRecordString(error, 'code') === 'ENOENT') return [];
     throw error;
   });
   for (const entry of entries) {
@@ -241,7 +242,7 @@ export async function cloneGitRepoTool(
         gitOperations,
       },
     };
-  } catch (error: any) {
+  } catch (error) {
     return {
       ok: false,
       toolName: 'clone_git_repo',
@@ -250,7 +251,7 @@ export async function cloneGitRepoTool(
       payload: failedPayload,
       error: {
         code: 'CLONE_GIT_REPO_FAILED',
-        message: `Git clone failed: ${error.message}`,
+        message: `Git clone failed: ${unknownErrorMessage(error)}`,
       },
     };
   } finally {

@@ -228,11 +228,11 @@ function failedReadCurrentSpecification(
   };
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
-function toRecord(value: unknown): Record<string, any> {
+function toRecord(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
 }
 

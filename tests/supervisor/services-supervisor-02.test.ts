@@ -30,12 +30,12 @@ vi.mock('../../api/modules/nightworkers/nightworkers.repository', () => ({
 describe('Schema-first supervisor loop', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.mocked(repo.getTaskRun).mockResolvedValue({ id: 'run-1', taskId: 'task-1' } as any);
+    vi.mocked(repo.getTaskRun).mockResolvedValue({ id: 'run-1', taskId: 'task-1' } as never);
     vi.mocked(repo.getTask).mockResolvedValue({
       id: 'task-1',
       objective: 'Create fizzbuzz.ts',
       acceptanceCriteria: 'File exists',
-    } as any);
+    } as never);
     vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
   });
 
@@ -66,7 +66,7 @@ describe('Schema-first supervisor loop', () => {
       });
 
       expect(result.finalReport).toBe('検索しました。');
-      const secondRound2ToolEvidence = parseRound2UserContextJsonSection<any[]>(
+      const secondRound2ToolEvidence = parseRound2UserContextJsonSection<unknown[]>(
         vi.mocked(llm.callSupervisorLLM).mock.calls[2]?.[1] as string,
         'Recent Tool Evidence'
       );

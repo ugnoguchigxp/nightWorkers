@@ -78,13 +78,13 @@ describe('NightWorkers reviewer evaluation routes', () => {
     ]);
     const events = await repo.listTaskEventsForRun(run.id);
     expect(
-      events.some((event) => (event.payloadJson as any)?.runEvent?.type === 'run.stop_requested')
+      events.some((event) => (event.payloadJson as never)?.runEvent?.type === 'run.stop_requested')
     ).toBe(true);
     expect(
       events.some(
         (event) =>
-          (event.payloadJson as any)?.runEvent?.type === 'turn.finished' &&
-          (event.payloadJson as any)?.runEvent?.message?.includes('because the run was cancelled')
+          (event.payloadJson as never)?.runEvent?.type === 'turn.finished' &&
+          (event.payloadJson as never)?.runEvent?.message?.includes('because the run was cancelled')
       )
     ).toBe(true);
   });
@@ -128,7 +128,9 @@ describe('NightWorkers reviewer evaluation routes', () => {
 
     const listRes = await app.request('http://localhost/api/review-rubrics');
     expect(listRes.status).toBe(200);
-    expect((await listRes.json()).map((rubric: any) => rubric.id)).toContain('basic-coding-run');
+    expect((await listRes.json()).map((rubric: unknown) => rubric.id)).toContain(
+      'basic-coding-run'
+    );
 
     const reviewRes = await app.request(
       `http://localhost/api/runs/${run.id}/reviewer-evaluations`,
@@ -155,7 +157,7 @@ describe('NightWorkers reviewer evaluation routes', () => {
     const events = await repo.listTaskEventsForRun(run.id);
     expect(
       events.some(
-        (event) => (event.payloadJson as any)?.runEvent?.type === 'review.evaluation_finished'
+        (event) => (event.payloadJson as never)?.runEvent?.type === 'review.evaluation_finished'
       )
     ).toBe(true);
 

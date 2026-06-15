@@ -243,6 +243,10 @@ export const blueprintSpecificationWorkspaceSchema = z.object({
 });
 
 export type DesignQuestionnaire = z.infer<typeof designQuestionnaireSchema>;
+export type DesignQuestion = z.infer<typeof designQuestionSchema>;
+export type DesignQuestionDependency = z.infer<typeof designQuestionDependencySchema>;
+export type DesignQuestionOption = z.infer<typeof designQuestionOptionSchema>;
+export type DesignQuestionSet = z.infer<typeof designQuestionSetSchema>;
 export type QuestionnaireChoiceForm = z.infer<typeof questionnaireChoiceFormSchema>;
 export type DesignQuestionnaireFollowUpDecision = z.infer<
   typeof designQuestionnaireFollowUpDecisionSchema

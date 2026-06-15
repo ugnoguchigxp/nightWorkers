@@ -125,7 +125,7 @@ export function createPresetBlueprintNodeTree(input: {
   preset: string;
   sectionId?: string;
   sectionName?: string;
-  props?: Record<string, any>;
+  props?: Record<string, unknown>;
   labels: PresetLabels;
 }): BlueprintNode {
   const props = input.props || {};
@@ -264,9 +264,9 @@ function componentNode(
   } as BlueprintNode;
 }
 
-function objectArray(value: unknown): Array<Record<string, any>> {
+function objectArray(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value)
-    ? value.filter((item): item is Record<string, any> =>
+    ? value.filter((item): item is Record<string, unknown> =>
         Boolean(item && typeof item === 'object' && !Array.isArray(item))
       )
     : [];

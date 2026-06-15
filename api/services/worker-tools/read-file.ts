@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { unknownErrorMessage } from '../../../shared/json-record';
 import {
   buildReadCacheMarker,
   compressReadFileContent,
@@ -193,7 +194,7 @@ export async function readFileTool(
         contentHash,
       },
     };
-  } catch (err: any) {
+  } catch (err) {
     return {
       ok: false,
       toolName: 'read_file',
@@ -209,7 +210,7 @@ export async function readFileTool(
       },
       error: {
         code: 'READ_FAILED',
-        message: `Failed to read file: ${err.message}`,
+        message: `Failed to read file: ${unknownErrorMessage(err)}`,
       },
     };
   }

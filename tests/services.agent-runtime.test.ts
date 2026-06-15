@@ -54,7 +54,7 @@ describe('AgentRuntime', () => {
   });
 
   it('does not fail runtime execution when ledger persistence fails', async () => {
-    (repo.createRunEvent as any).mockRejectedValueOnce(new Error('database is locked'));
+    (repo.createRunEvent as never).mockRejectedValueOnce(new Error('database is locked'));
     const sink = createLedgerSink('run-123');
 
     await expect(
@@ -92,7 +92,7 @@ describe('AgentRuntime', () => {
       message: 'invalid warning',
       payload: {
         code: 'codex_invalid',
-        severity: 'critical' as any,
+        severity: 'critical' as never,
         message: 'Invalid severity.',
       },
     });
@@ -121,11 +121,11 @@ describe('AgentRuntime', () => {
   });
 
   it('auto-closes initial gate Todos after successful matching MCP tool completion', async () => {
-    (repo.getTaskRun as any).mockResolvedValue({
+    (repo.getTaskRun as never).mockResolvedValue({
       id: 'run-123',
       taskId: 'task-123',
-    } as any);
-    (repo.listTaskRunTodosForRun as any)
+    } as never);
+    (repo.listTaskRunTodosForRun as never)
       .mockResolvedValueOnce([
         {
           id: 'todo-1',
@@ -146,7 +146,7 @@ describe('AgentRuntime', () => {
           status: 'pending',
           procedureId: 'contextstill.context_compile',
         },
-      ] as any)
+      ] as never)
       .mockResolvedValueOnce([
         {
           id: 'todo-1',
@@ -168,7 +168,7 @@ describe('AgentRuntime', () => {
           status: 'pending',
           procedureId: 'contextstill.context_compile',
         },
-      ] as any);
+      ] as never);
 
     const sink = createLedgerSink('run-123');
     await sink.emit({
@@ -201,11 +201,11 @@ describe('AgentRuntime', () => {
   });
 
   it('auto-closes the quality gate but leaves closeout gates pending after successful broad verify', async () => {
-    (repo.getTaskRun as any).mockResolvedValue({
+    (repo.getTaskRun as never).mockResolvedValue({
       id: 'run-123',
       taskId: 'task-123',
-    } as any);
-    (repo.listTaskRunTodosForRun as any)
+    } as never);
+    (repo.listTaskRunTodosForRun as never)
       .mockResolvedValueOnce([
         {
           id: 'todo-8',
@@ -235,7 +235,7 @@ describe('AgentRuntime', () => {
           status: 'pending',
           procedureId: 'final_completion_report',
         },
-      ] as any)
+      ] as never)
       .mockResolvedValueOnce([
         {
           id: 'todo-8',
@@ -266,7 +266,7 @@ describe('AgentRuntime', () => {
           status: 'pending',
           procedureId: 'final_completion_report',
         },
-      ] as any);
+      ] as never);
 
     const sink = createLedgerSink('run-123');
     await sink.emit({
@@ -293,11 +293,11 @@ describe('AgentRuntime', () => {
   });
 
   it('auto-closes only the knowledge registration gate after successful register_candidates', async () => {
-    (repo.getTaskRun as any).mockResolvedValue({
+    (repo.getTaskRun as never).mockResolvedValue({
       id: 'run-123',
       taskId: 'task-123',
-    } as any);
-    (repo.listTaskRunTodosForRun as any).mockResolvedValueOnce([
+    } as never);
+    (repo.listTaskRunTodosForRun as never).mockResolvedValueOnce([
       {
         id: 'todo-8',
         runId: 'run-123',
@@ -316,7 +316,7 @@ describe('AgentRuntime', () => {
         status: 'pending',
         procedureId: 'final_completion_report',
       },
-    ] as any);
+    ] as never);
 
     const sink = createLedgerSink('run-123');
     await sink.emit({
@@ -358,11 +358,11 @@ describe('AgentRuntime', () => {
   });
 
   it('auto-closes the final completion report after runtime finishes with a final report', async () => {
-    (repo.getTaskRun as any).mockResolvedValue({
+    (repo.getTaskRun as never).mockResolvedValue({
       id: 'run-123',
       taskId: 'task-123',
-    } as any);
-    (repo.listTaskRunTodosForRun as any).mockResolvedValueOnce([
+    } as never);
+    (repo.listTaskRunTodosForRun as never).mockResolvedValueOnce([
       {
         id: 'todo-8',
         runId: 'run-123',
@@ -381,7 +381,7 @@ describe('AgentRuntime', () => {
         status: 'pending',
         procedureId: 'final_completion_report',
       },
-    ] as any);
+    ] as never);
 
     const sink = createLedgerSink('run-123');
     await sink.emit({
@@ -415,11 +415,11 @@ describe('AgentRuntime', () => {
   });
 
   it('does not auto-close the final completion report while knowledge registration is open', async () => {
-    (repo.getTaskRun as any).mockResolvedValue({
+    (repo.getTaskRun as never).mockResolvedValue({
       id: 'run-123',
       taskId: 'task-123',
-    } as any);
-    (repo.listTaskRunTodosForRun as any).mockResolvedValueOnce([
+    } as never);
+    (repo.listTaskRunTodosForRun as never).mockResolvedValueOnce([
       {
         id: 'todo-8',
         runId: 'run-123',
@@ -438,7 +438,7 @@ describe('AgentRuntime', () => {
         status: 'pending',
         procedureId: 'final_completion_report',
       },
-    ] as any);
+    ] as never);
 
     const sink = createLedgerSink('run-123');
     await sink.emit({
@@ -469,7 +469,7 @@ describe('AgentRuntime', () => {
   });
 
   it('normalizes runtime crash to failed result and runtime_error event', async () => {
-    (supervisor.runSupervisorLoop as any).mockRejectedValue(new Error('supervisor exploded'));
+    (supervisor.runSupervisorLoop as never).mockRejectedValue(new Error('supervisor exploded'));
 
     const runtime = new NativeAgentRuntime();
     const events: string[] = [];
@@ -500,7 +500,7 @@ describe('AgentRuntime', () => {
   });
 
   it('runs SessionEnd hooks after runtime errors once the session has started', async () => {
-    (supervisor.runSupervisorLoop as any).mockRejectedValue(new Error('supervisor exploded'));
+    (supervisor.runSupervisorLoop as never).mockRejectedValue(new Error('supervisor exploded'));
     createAgentHook({
       name: 'Session end audit',
       enabled: true,
@@ -546,7 +546,7 @@ describe('AgentRuntime', () => {
   });
 
   it('passes current todo context into the supervisor loop', async () => {
-    (supervisor.runSupervisorLoop as any).mockResolvedValue({
+    (supervisor.runSupervisorLoop as never).mockResolvedValue({
       terminalState: 'completed',
       summary: 'done',
       finalReport: 'done',
@@ -555,7 +555,7 @@ describe('AgentRuntime', () => {
     });
 
     const runtime = new NativeAgentRuntime();
-    const emitted: any[] = [];
+    const emitted: unknown[] = [];
     await runtime.start(
       {
         runId: 'run-1',

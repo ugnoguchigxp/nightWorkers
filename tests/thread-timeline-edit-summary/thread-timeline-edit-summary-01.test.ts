@@ -37,7 +37,7 @@ describe('ThreadTimeline edit summaries', () => {
         payloadJson: { message, metadata },
         createdAt: '2026-06-05T00:00:00.000Z',
         visibility: 'visible',
-      } as any,
+      } as never,
     ]);
 
     expect(artifactMessage).toEqual(
@@ -82,7 +82,7 @@ describe('ThreadTimeline edit summaries', () => {
           text: 'Round 2 prompt',
           createdAt: '2026-06-05T00:00:00.000Z',
           visibility: 'visible',
-        } as any,
+        } as never,
       },
       {
         kind: 'activity',
@@ -102,7 +102,7 @@ describe('ThreadTimeline edit summaries', () => {
           }),
           createdAt: '2026-06-05T00:00:01.000Z',
           visibility: 'visible',
-        } as any,
+        } as never,
       },
       {
         kind: 'activity',
@@ -125,7 +125,7 @@ describe('ThreadTimeline edit summaries', () => {
           },
           createdAt: '2026-06-05T00:00:02.000Z',
           visibility: 'visible',
-        } as any,
+        } as never,
       },
       {
         kind: 'activity',
@@ -140,7 +140,7 @@ describe('ThreadTimeline edit summaries', () => {
           text: 'tool=apply_patch status=ok',
           createdAt: '2026-06-05T00:00:03.000Z',
           visibility: 'visible',
-        } as any,
+        } as never,
       },
       {
         kind: 'assistant_turn',
@@ -194,7 +194,7 @@ describe('ThreadTimeline edit summaries', () => {
           },
           createdAt: '2026-06-05T00:00:00.000Z',
           visibility: 'visible',
-        } as any,
+        } as never,
       },
       {
         kind: 'activity',
@@ -226,7 +226,7 @@ describe('ThreadTimeline edit summaries', () => {
           },
           createdAt: '2026-06-05T00:00:01.000Z',
           visibility: 'visible',
-        } as any,
+        } as never,
       },
       {
         kind: 'activity',
@@ -241,7 +241,7 @@ describe('ThreadTimeline edit summaries', () => {
           text: 'run.completed',
           createdAt: '2026-06-05T00:00:02.000Z',
           visibility: 'visible',
-        } as any,
+        } as never,
       },
     ]);
 
@@ -272,7 +272,7 @@ describe('ThreadTimeline edit summaries', () => {
               text: 'fizzbuzz.js をプロジェクトルートに置いてください。',
               createdAt: '2026-06-05T00:00:00.000Z',
               visibility: 'visible',
-            } as any,
+            } as never,
           ],
         },
         {
@@ -292,7 +292,7 @@ describe('ThreadTimeline edit summaries', () => {
             },
             createdAt: '2026-06-05T00:00:01.000Z',
             visibility: 'visible',
-          } as any,
+          } as never,
         },
       ],
       {
@@ -311,7 +311,7 @@ describe('ThreadTimeline edit summaries', () => {
         startedAt: '2026-06-05T00:00:01.000Z',
         createdAt: '2026-06-05T00:00:01.000Z',
         updatedAt: '2026-06-05T00:00:01.000Z',
-      } as any
+      } as never
     );
 
     expect(anchorId).toBe('activity:run-started');
@@ -345,7 +345,7 @@ describe('ThreadTimeline edit summaries', () => {
       }),
       createdAt: '2026-06-05T00:00:00.000Z',
       visibility: 'visible',
-    } as any);
+    } as never);
 
     expect(summary).toEqual([
       {
@@ -377,7 +377,7 @@ describe('ThreadTimeline edit summaries', () => {
         },
         createdAt: '2026-06-05T00:00:00.000Z',
         visibility: 'visible',
-      } as any)
+      } as never)
     ).toContain('finalize_answer');
 
     expect(
@@ -396,7 +396,7 @@ describe('ThreadTimeline edit summaries', () => {
         },
         createdAt: '2026-06-05T00:00:01.000Z',
         visibility: 'visible',
-      } as any)
+      } as never)
     ).toBe('システム指示');
 
     expect(
@@ -417,7 +417,7 @@ describe('ThreadTimeline edit summaries', () => {
         },
         createdAt: '2026-06-05T00:00:02.000Z',
         visibility: 'visible',
-      } as any)
+      } as never)
     ).toBe('# minor_code_edit\n\n## Procedure\n1. read_file');
   });
 

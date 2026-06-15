@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { unknownErrorMessage } from '../../../shared/json-record';
 import { enforcePathPolicy } from './tool-policy-enforcer';
 import type { WorkerToolResult } from './types';
 
@@ -165,7 +166,7 @@ export async function copyDirectoryTool(
       finishedAt: new Date().toISOString(),
       payload: { sourcePath, targetPath, copiedFiles, skippedFiles, copiedDirectories },
     };
-  } catch (error: any) {
+  } catch (error) {
     return {
       ok: false,
       toolName: 'copy_directory',
@@ -174,7 +175,7 @@ export async function copyDirectoryTool(
       payload: emptyPayload,
       error: {
         code: 'COPY_DIRECTORY_FAILED',
-        message: `Directory copy failed: ${error.message}`,
+        message: `Directory copy failed: ${unknownErrorMessage(error)}`,
       },
     };
   }

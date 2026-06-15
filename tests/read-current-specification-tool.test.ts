@@ -84,7 +84,7 @@ describe('read_current_specification worker tool', () => {
         dbDdlReferenceIncluded: true,
       },
     });
-    expect(String((dispatch.result.payload as any).digest)).toMatch(/^sha256:/);
+    expect(String((dispatch.result.payload as never).digest)).toMatch(/^sha256:/);
   });
 
   it('returns found=false when no specification has been generated', async () => {

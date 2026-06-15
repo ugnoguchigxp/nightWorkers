@@ -1,4 +1,7 @@
-import type { DesignQuestionnaireAnswer } from '../../../shared/schemas/design-questionnaire.schema';
+import type {
+  DesignQuestionnaire,
+  DesignQuestionnaireAnswer,
+} from '../../../shared/schemas/design-questionnaire.schema';
 import { AppError } from '../../lib/errors';
 import { getSessionQuestions } from './nightworkers.design-questionnaire-parser.service';
 
@@ -51,7 +54,10 @@ export function isDesignQuestionnaireAnswerComplete(
   return answer.selectedOptionIds.length > 0;
 }
 
-export function removeDuplicateFollowUpQuestions(session: unknown, questionnaire: JsonRecord) {
+export function removeDuplicateFollowUpQuestions(
+  session: { questionSets: Array<{ questionnaire: DesignQuestionnaire | null }> },
+  questionnaire: DesignQuestionnaire
+) {
   const existingQuestions = toRecordArray(getSessionQuestions(session));
   const next = structuredClone(questionnaire) as JsonRecord;
   let keptCount = 0;

@@ -64,7 +64,9 @@ export async function recoverStaleActiveRuns(taskId: string) {
         statusReason: reason,
         completionGateResult,
         completedAt: recoveredAt,
-        startedAt: todo.startedAt ? new Date(todo.startedAt as any) : recoveredAt,
+        startedAt: todo.startedAt
+          ? new Date(todo.startedAt as string | number | Date)
+          : recoveredAt,
       });
       await repo.createRunEvent({
         version: 1,

@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { getDeepRecordString, unknownErrorMessage } from '../../../shared/json-record';
 import {
   resolveStandardTemplate,
   standardTemplateRegistry,
@@ -107,8 +108,8 @@ async function runGit(args: string[], cwd?: string) {
 }
 
 async function targetHasMaterialContent(targetPath: string) {
-  const entries = await fs.readdir(targetPath, { withFileTypes: true }).catch((error: any) => {
-    if (error?.code === 'ENOENT') return [];
+  const entries = await fs.readdir(targetPath, { withFileTypes: true }).catch((error: unknown) => {
+    if (getDeepRecordString(error, 'code') === 'ENOENT') return [];
     throw error;
   });
   return entries.some((entry) => !EMPTY_TARGET_IGNORES.has(entry.name));
@@ -313,7 +314,7 @@ export async function materializeTemplateTool(
         gitOperations,
       },
     };
-  } catch (error: any) {
+  } catch (error) {
     return {
       ok: false,
       toolName: 'materialize_template',
@@ -322,7 +323,7 @@ export async function materializeTemplateTool(
       payload: { ...failedPayload, repoUrl: resolved.template.repoUrl, ref: selectedRef },
       error: {
         code: 'MATERIALIZE_TEMPLATE_FAILED',
-        message: `Template materialization failed: ${error.message}`,
+        message: `Template materialization failed: ${unknownErrorMessage(error)}`,
       },
     };
   } finally {

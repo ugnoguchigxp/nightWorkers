@@ -34,12 +34,12 @@ vi.mock('../../api/modules/nightworkers/nightworkers.repository', () => ({
 describe('Schema-first supervisor loop', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.mocked(repo.getTaskRun).mockResolvedValue({ id: 'run-1', taskId: 'task-1' } as any);
+    vi.mocked(repo.getTaskRun).mockResolvedValue({ id: 'run-1', taskId: 'task-1' } as never);
     vi.mocked(repo.getTask).mockResolvedValue({
       id: 'task-1',
       objective: 'Create fizzbuzz.ts',
       acceptanceCriteria: 'File exists',
-    } as any);
+    } as never);
     vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
   });
 
@@ -81,7 +81,7 @@ describe('Schema-first supervisor loop', () => {
       id: 'run-1',
       taskId: 'task-1',
       contextSnapshot: { compiledPrompt: '既存プロンプト' },
-    } as any);
+    } as never);
     vi.mocked(llm.callSupervisorLLM)
       .mockResolvedValueOnce({
         jobType: 'minor_code_edit',
@@ -206,7 +206,7 @@ describe('Schema-first supervisor loop', () => {
       });
 
       expect(result.finalReport).toBe('コピーして検証しました。');
-      const afterCopyToolEvidence = parseRound2UserContextJsonSection<any[]>(
+      const afterCopyToolEvidence = parseRound2UserContextJsonSection<unknown[]>(
         vi.mocked(llm.callSupervisorLLM).mock.calls[3]?.[1] as string,
         'Recent Tool Evidence'
       );
@@ -219,7 +219,7 @@ describe('Schema-first supervisor loop', () => {
           }),
         ])
       );
-      const afterPackageToolEvidence = parseRound2UserContextJsonSection<any[]>(
+      const afterPackageToolEvidence = parseRound2UserContextJsonSection<unknown[]>(
         vi.mocked(llm.callSupervisorLLM).mock.calls[5]?.[1] as string,
         'Recent Tool Evidence'
       );

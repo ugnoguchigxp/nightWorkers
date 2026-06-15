@@ -1,5 +1,6 @@
 import type {
   BlueprintSpecificationWorkspace,
+  DesignQuestionnaire,
   DesignQuestionnaireAnswer,
 } from '../../../shared/schemas/design-questionnaire.schema';
 import {
@@ -20,6 +21,7 @@ type QuestionnaireAnswerRow = {
 };
 type QuestionnaireSessionLike = {
   id: string;
+  questionSets: Array<{ questionnaire: DesignQuestionnaire | null }>;
   answers: QuestionnaireAnswerRow[];
 };
 

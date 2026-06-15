@@ -20,7 +20,7 @@ vi.mock('../api/services/auth.service', () => ({
 
 vi.mock('../api/middleware/auth', () => ({
   authMiddleware: () => {
-    return async (c: any, next: any) => {
+    return async (c, next) => {
       const mockHandler = authServiceMocks.authMiddlewareMock;
       if (mockHandler.getMockName) {
         // it is a mock
@@ -45,7 +45,7 @@ const readSetCookies = (res: Response): string[] => {
 describe('auth routes cookie flow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    authServiceMocks.authMiddlewareMock.mockImplementation(async (c: any, next: any) => {
+    authServiceMocks.authMiddlewareMock.mockImplementation(async (c, next) => {
       await next();
     });
   });

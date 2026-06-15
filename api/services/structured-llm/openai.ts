@@ -1,3 +1,4 @@
+import { toDeepRecord } from '../../../shared/json-record';
 import { logger } from '../../lib/logger';
 import { buildResponseJsonSchema as buildSchemaFirstResponseJsonSchema } from '../supervisor/schema-first';
 import { createSupervisorResponseDeltaEmitter, rejectProviderActivity } from './events';
@@ -66,25 +67,36 @@ export async function readOpenAIChatCompletionStream(input: {
     for (const line of lines) {
       const payload = line.slice('data:'.length).trim();
       if (!payload || payload === '[DONE]') continue;
-      let parsed: any;
+      let parsed: unknown;
       try {
         parsed = JSON.parse(payload);
       } catch {
         logger.warn({ payloadPreview: payload.slice(0, 200) }, 'OpenAI stream chunk parse failed');
         continue;
       }
-      if (parsed?.usage) usage = parsed.usage;
-      const toolCalls = parsed?.choices?.[0]?.delta?.tool_calls;
+      const parsedRecord = toDeepRecord(parsed);
+      if (parsedRecord.usage) usage = parsedRecord.usage;
+      const firstChoice = Array.isArray(parsedRecord.choices)
+        ? toDeepRecord(parsedRecord.choices[0])
+        : toDeepRecord(null);
+      const deltaRecord = toDeepRecord(firstChoice.delta);
+      const toolCalls = deltaRecord.tool_calls;
       if (toolCalls && input.normalizedRequest) {
+        const firstToolCall = Array.isArray(toolCalls)
+          ? toDeepRecord(toolCalls[0])
+          : toDeepRecord(null);
+        const toolFunction = toDeepRecord(firstToolCall.function);
+        const toolName =
+          typeof (toolFunction.name as unknown) === 'string' ? String(toolFunction.name) : null;
         await rejectProviderActivity({
           options: input.options,
           request: input.normalizedRequest,
           activityType: 'tool_call',
-          toolName: toolCalls?.[0]?.function?.name ?? null,
+          toolName,
           preview: JSON.stringify(toolCalls),
         });
       }
-      const delta = parsed?.choices?.[0]?.delta?.content;
+      const delta = deltaRecord.content;
       if (typeof delta === 'string' && delta) {
         content += delta;
         await deltaEmitter.push(delta);

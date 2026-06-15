@@ -1,3 +1,4 @@
+import { unknownErrorMessage } from '../../../shared/json-record';
 import type { WorkerToolResult } from './types';
 
 export interface SearchWebInput {
@@ -187,7 +188,7 @@ export async function searchWebTool(
         truncated: results.length >= maxResults,
       },
     };
-  } catch (err: any) {
+  } catch (err) {
     return {
       ok: false,
       toolName: 'search_web',
@@ -201,7 +202,7 @@ export async function searchWebTool(
       },
       error: {
         code: 'SEARCH_WEB_FAILED',
-        message: `Failed to search the web: ${err?.message ?? String(err)}`,
+        message: `Failed to search the web: ${unknownErrorMessage(err)}`,
       },
     };
   }

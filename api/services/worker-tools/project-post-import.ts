@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { getDeepRecordString } from '../../../shared/json-record';
 
 const INSTALL_TIMEOUT_MS = 180_000;
 const INSTALL_MAX_BUFFER = 10 * 1024 * 1024;
@@ -160,8 +161,8 @@ async function pathExists(targetPath: string) {
   return fs
     .stat(targetPath)
     .then(() => true)
-    .catch((error: any) => {
-      if (error?.code === 'ENOENT') return false;
+    .catch((error: unknown) => {
+      if (getDeepRecordString(error, 'code') === 'ENOENT') return false;
       throw error;
     });
 }
@@ -183,8 +184,8 @@ async function inspectPackageManifest(targetPath: string): Promise<ProjectManife
   let rawContent = '';
   try {
     rawContent = await fs.readFile(packageJsonPath, 'utf8');
-  } catch (error: any) {
-    if (error?.code === 'ENOENT') return missingBase;
+  } catch (error) {
+    if (getDeepRecordString(error, 'code') === 'ENOENT') return missingBase;
     throw error;
   }
 
@@ -227,8 +228,8 @@ async function inspectPackageManifest(targetPath: string): Promise<ProjectManife
 }
 
 async function findLockfiles(targetPath: string) {
-  const entries: string[] = await fs.readdir(targetPath).catch((error: any) => {
-    if (error?.code === 'ENOENT') return [];
+  const entries: string[] = await fs.readdir(targetPath).catch((error: unknown) => {
+    if (getDeepRecordString(error, 'code') === 'ENOENT') return [];
     throw error;
   });
   return PACKAGE_MANAGER_LOCKFILES.map((candidate) => candidate.file).filter((file) =>
@@ -246,8 +247,8 @@ async function inspectLlmContext(
       path: contextPath,
       rawContent: await fs.readFile(contextPath, 'utf8'),
     };
-  } catch (error: any) {
-    if (error?.code === 'ENOENT') {
+  } catch (error) {
+    if (getDeepRecordString(error, 'code') === 'ENOENT') {
       return undefined;
     }
     return {
