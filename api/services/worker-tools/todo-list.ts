@@ -61,7 +61,7 @@ export async function todoListTool(input: {
   runId: string;
   operation: TodoListOperation;
   seq?: number;
-  todos?: Array<Pick<ImplementationTodoInput, 'seq' | 'title' | 'description'>>;
+  todos?: ImplementationTodoInput[];
   startFirst?: boolean;
 }): Promise<WorkerToolResult<TodoActionPayload>> {
   if (input.operation === 'list') {

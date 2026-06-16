@@ -45,6 +45,7 @@ import {
   formatErrorMessage,
   formatToolObservation,
   getBootstrapTodoGap,
+  getRedundantTodoListGap,
   getRedundantTodoReplaceGap,
   getTemplateImportVerificationGap,
   getTodoDoneEvidenceGap,
@@ -190,6 +191,18 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     if (!input.maxIterations && currentJobType === 'major_code_edit') {
       maxIterations = MAJOR_CODE_EDIT_MAX_ITERATIONS;
     }
+    await emitAgentEvent('run.limits_resolved', {
+      maxIterations,
+      maxToolCalls,
+      jobType: currentJobType,
+    });
+    appendSupervisorTrace('schema_first_loop_limits_resolved', {
+      runId,
+      repoRoot,
+      jobType: currentJobType,
+      maxIterations,
+      maxToolCalls,
+    });
     if (currentJobType === 'major_code_edit') {
       const procedure = readSupervisorProcedure({ jobType: currentJobType, loadedAtStep: 0 });
       loadedProcedureSummaries.set(currentJobType, procedure);
@@ -501,6 +514,25 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         const operation = String(round2.toolCall.arguments.operation || '').trim();
         currentTodos = await repo.listTaskRunTodosForRun(runId);
         if (operation === 'list') {
+          const runningTodoForList = currentTodos.find((todo) => todo.status === 'running');
+          const redundantListGap = getRedundantTodoListGap({
+            currentTodo: runningTodoForList ? toSupervisorTodoContext(runningTodoForList) : null,
+            toolResults,
+          });
+          if (redundantListGap) {
+            const result = {
+              step,
+              toolName: 'todo_list',
+              ok: false,
+              arguments: round2.toolCall.arguments,
+              summary: `tool=todo_list operation=list status=failed\nerror=${redundantListGap}`,
+              error: redundantListGap,
+              payload: { todos: currentTodos.map(toSupervisorTodoContext) },
+            };
+            toolResults.push(result);
+            await emitAgentEvent('tool.validation_failed', result, 'warning');
+            continue;
+          }
           const result = {
             step,
             toolName: 'todo_list',
@@ -557,12 +589,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             currentTodos = await repo.replaceTaskRunTodosForRun(
               runId,
               buildStandardImplementationTodoList({
-                todos: todos.map((todo) => ({
-                  ...todo,
-                  taskType: 'implementation',
-                  procedureId: null,
-                  dependsOn: [],
-                })),
+                todos,
                 startFirst,
               })
             );
@@ -1216,10 +1243,7 @@ async function markCurrentTodoPassedAndAdvance(
   );
 }
 
-function isFinalCloseoutTodo(todo: {
-  taskType: string;
-  procedureId?: string | null;
-}) {
+function isFinalCloseoutTodo(todo: { taskType: string; procedureId?: string | null }) {
   return (
     (todo.taskType === 'knowledge_capture' &&
       todo.procedureId === 'contextstill.register_candidates') ||

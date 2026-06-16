@@ -4,6 +4,7 @@ import type { SupervisorLlmDebugEvent } from '../structured-llm';
 
 export type AgentEventType =
   | 'run.started'
+  | 'run.limits_resolved'
   | 'round1.prompt_built'
   | 'round1.parsed'
   | 'procedure.loaded'

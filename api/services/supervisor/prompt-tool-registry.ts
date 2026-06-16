@@ -85,6 +85,24 @@ const objectSchema = (properties: Record<string, unknown>, required: string[] = 
   additionalProperties: false,
 });
 
+function buildSupervisorTodoListInputSchema() {
+  const schema = toNightWorkersJsonSchema(nightWorkersTodoListInputSchema);
+  const properties =
+    typeof schema.properties === 'object' && schema.properties !== null
+      ? (schema.properties as Record<string, unknown>)
+      : {};
+  const operation =
+    typeof properties.operation === 'object' && properties.operation !== null
+      ? (properties.operation as Record<string, unknown>)
+      : null;
+  if (operation && Array.isArray(operation.enum)) {
+    operation.enum = operation.enum.filter((value) => value !== 'list');
+    operation.description =
+      'Progress operation to perform. Use replace/start/done/block/fail. list is diagnostic-only and is not exposed to native Supervisor progress decisions.';
+  }
+  return schema;
+}
+
 export const toolRegistry = {
   list_dir: {
     name: 'list_dir',
@@ -275,8 +293,8 @@ export const toolRegistry = {
   todo_list: {
     name: 'todo_list',
     description:
-      'Run 内部 TodoList を単一 JSON operation で管理する。operation=list/replace/start/done/block/fail。done は次の pending Todo を自動で running にする。',
-    inputSchema: toNightWorkersJsonSchema(nightWorkersTodoListInputSchema),
+      'Run 内部 TodoList を進行用 JSON operation で管理する。operation=replace/start/done/block/fail。list は診断専用であり、native Supervisor の進捗決定では使わない。done は次の pending Todo を自動で running にする。',
+    inputSchema: buildSupervisorTodoListInputSchema(),
   },
   finalize_answer: {
     name: 'finalize_answer',

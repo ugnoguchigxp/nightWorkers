@@ -194,7 +194,8 @@ describe('todo_list worker tool', () => {
       todos: [
         {
           seq: 1,
-          title: 'Implement MCP TodoList tool',
+          title: 'Inspect current implementation',
+          taskType: 'inspection',
         },
       ],
     });
@@ -209,7 +210,7 @@ describe('todo_list worker tool', () => {
     expect(result.payload.todos.map((todo) => todo.taskType)).toEqual([
       'initial_instructions',
       'context_compile',
-      'implementation',
+      'inspection',
       'review',
       'verification',
       'knowledge_capture',

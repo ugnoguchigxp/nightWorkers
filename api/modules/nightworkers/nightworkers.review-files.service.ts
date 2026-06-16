@@ -183,6 +183,12 @@ const PROJECT_TREE_EXCLUDED_DIRS = new Set([
 ]);
 const PROJECT_FILE_READ_LIMIT = 256 * 1024;
 
+function isNoEntryError(error: unknown) {
+  return (
+    error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT'
+  );
+}
+
 function resolveProjectPath(rootPath: string, relativePath?: string) {
   const root = path.resolve(rootPath);
   const target = path.resolve(root, relativePath || '.');
@@ -196,7 +202,12 @@ export async function listProjectFiles(repositoryId: string, relativePath?: stri
   const repository = await repo.getRepository(repositoryId);
   if (!repository) throw new NotFoundError('Repository not found');
   const { root, target } = resolveProjectPath(repository.localPath, relativePath);
-  const entries = await fs.readdir(target, { withFileTypes: true });
+  const entries = await fs.readdir(target, { withFileTypes: true }).catch((error: unknown) => {
+    if (isNoEntryError(error)) {
+      throw new NotFoundError('Project path not found');
+    }
+    throw error;
+  });
   const result = await Promise.all(
     entries
       .filter((entry) => !entry.name.startsWith('.') || entry.name === '.env.example')
@@ -223,7 +234,12 @@ export async function readProjectFile(repositoryId: string, relativePath: string
   const repository = await repo.getRepository(repositoryId);
   if (!repository) throw new NotFoundError('Repository not found');
   const { root, target } = resolveProjectPath(repository.localPath, relativePath);
-  const stat = await fs.stat(target);
+  const stat = await fs.stat(target).catch((error: unknown) => {
+    if (isNoEntryError(error)) {
+      throw new NotFoundError('Project file not found');
+    }
+    throw error;
+  });
   if (!stat.isFile()) throw new AppError(400, 'NOT_A_FILE', 'Path is not a file');
   const handle = await fs.open(target, 'r');
   try {

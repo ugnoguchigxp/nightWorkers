@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getRedundantTodoListGap,
   getRedundantTodoReplaceGap,
   getTodoDoneEvidenceGap,
+  normalizeTodoListInput,
 } from '../api/services/supervisor/supervisor-loop-helpers';
 
 describe('supervisor loop Todo helpers', () => {
@@ -55,6 +57,21 @@ describe('supervisor loop Todo helpers', () => {
     expect(gap).toContain('Finalize the run');
   });
 
+  it('rejects TodoList list as a native Supervisor progress operation immediately', () => {
+    const gap = getRedundantTodoListGap({
+      currentTodo: {
+        seq: 4,
+        title: 'Todo List 画面の UI コンポーネントを実装する',
+        taskType: 'implementation',
+        status: 'running',
+      },
+      toolResults: [],
+    });
+
+    expect(gap).toContain('TodoList も作業状態も変更しません');
+    expect(gap).toContain('現在 Todo を進める worker tool');
+  });
+
   it('requires implementation evidence before an implementation Todo can be done', () => {
     const todo = {
       seq: 3,
@@ -106,6 +123,62 @@ describe('supervisor loop Todo helpers', () => {
         ],
       })
     ).toBeNull();
+  });
+
+  it('allows read-only evidence to complete an inspection Todo', () => {
+    const todo = {
+      seq: 3,
+      title: '仕様と既存構成を確認する',
+      taskType: 'inspection',
+      procedureId: null,
+    };
+
+    expect(
+      getTodoDoneEvidenceGap({
+        todo,
+        toolResults: [
+          {
+            step: 1,
+            toolName: 'todo_list',
+            ok: true,
+            arguments: { operation: 'replace' },
+            summary: 'tool=todo_list operation=replace status=ok',
+          },
+          {
+            step: 2,
+            toolName: 'read_file',
+            ok: true,
+            arguments: { filePath: 'web/src/routes/root-route.tsx' },
+            summary: 'tool=read_file status=ok',
+          },
+        ],
+      })
+    ).toBeNull();
+  });
+
+  it('preserves explicit Todo task metadata from replace input', () => {
+    expect(
+      normalizeTodoListInput({
+        todos: [
+          {
+            seq: 1,
+            title: '仕様と既存構成を確認する',
+            taskType: 'inspection',
+            procedureId: 'investigation',
+            dependsOn: [1, 'spec'],
+          },
+        ],
+      })
+    ).toEqual([
+      {
+        seq: 1,
+        title: '仕様と既存構成を確認する',
+        description: null,
+        taskType: 'inspection',
+        procedureId: 'investigation',
+        dependsOn: [1, 'spec'],
+      },
+    ]);
   });
 
   it('requires verification evidence after the latest Todo transition', () => {

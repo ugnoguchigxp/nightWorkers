@@ -254,6 +254,11 @@ describe('review-files.service', () => {
       );
     });
 
+    it('throws NotFoundError if relativePath does not exist', async () => {
+      mocks.getRepository.mockResolvedValue({ localPath: tempDir });
+      await expect(listProjectFiles('repo-1', 'missing')).rejects.toThrow(NotFoundError);
+    });
+
     it('lists directories and files excluding default patterns', async () => {
       mocks.getRepository.mockResolvedValue({ localPath: tempDir });
 
@@ -284,6 +289,11 @@ describe('review-files.service', () => {
       await expect(readProjectFile('repo-1', 'subdir')).rejects.toThrow(
         expect.objectContaining({ code: 'NOT_A_FILE' })
       );
+    });
+
+    it('throws NotFoundError if file does not exist', async () => {
+      mocks.getRepository.mockResolvedValue({ localPath: tempDir });
+      await expect(readProjectFile('repo-1', 'missing.txt')).rejects.toThrow(NotFoundError);
     });
 
     it('reads small file contents successfully', async () => {

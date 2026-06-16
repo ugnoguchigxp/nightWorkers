@@ -17,6 +17,19 @@ import type {
   ProviderCallResult,
 } from './types';
 
+type OpenAIResponseFormat = 'json_schema' | 'json_object';
+type OpenAIChatCompletionResponse = {
+  choices?: Array<{
+    message?: {
+      content?: string;
+      tool_calls?: Array<{ function?: { name?: string | null } }>;
+    };
+  }>;
+  usage?: unknown;
+};
+
+const OPENAI_TRANSIENT_RETRY_DELAY_MS = process.env.NODE_ENV === 'test' ? 0 : 1500;
+
 export type RawLlmCallOptions = CallSupervisorOptions & {
   jsonSchema?: { name: string; schema: unknown };
   label: string;
@@ -305,38 +318,31 @@ async function callOpenAIProvider(
     input.options.normalizedRequest?.modelOrDeployment ||
     endpointConfig?.models[0] ||
     getStructuredLlmSetting(settings, 'OPENAI_MODEL', 'gpt-4o-mini');
-  const streamResponses = isEnabled('OPENAI_STREAMING_ENABLED', true);
+  const localCompatibleEndpoint =
+    endpointConfig?.kind === 'local' || endpointConfig?.kind === 'openai-compatible';
+  const streamResponses =
+    typeof settings.OPENAI_STREAMING_ENABLED === 'boolean'
+      ? settings.OPENAI_STREAMING_ENABLED
+      : !localCompatibleEndpoint && isEnabled('OPENAI_STREAMING_ENABLED', true);
   const reasoningEffort = toOpenAIReasoningEffort(input.options.normalizedRequest?.thinkingDepth);
   const apiKeyRequired = !endpointConfig || endpointConfig.kind === 'openai';
   if (apiKeyRequired && !apiKey) {
     throw new Error('OpenAI API key is not configured in environment variables.');
   }
   const headers = buildOpenAICompatibleHeaders(apiKey);
-
-  let responseFormat: 'json_schema' | 'json_object' = 'json_schema';
-  let response = await fetch(`${baseURL.replace(/\/+$/, '')}/chat/completions`, {
-    method: 'POST',
-    signal: input.signal,
-    headers,
-    body: JSON.stringify(
-      buildOpenAIChatCompletionBody({
-        model,
-        systemPrompt: input.systemPrompt,
-        userPrompt: input.userPrompt,
-        round: input.options.round,
-        schemaFirst: input.options.schemaFirst,
-        jsonSchema: input.options.jsonSchema,
-        responseFormat,
-        stream: streamResponses,
-        reasoningEffort,
-      })
-    ),
-  });
-
-  if (!response.ok && response.status === 400) {
-    await emitSchemaRetryEvents(input.options, 'OpenAI', response.status);
-    responseFormat = 'json_object';
-    response = await fetch(`${baseURL.replace(/\/+$/, '')}/chat/completions`, {
+  const url = `${baseURL.replace(/\/+$/, '')}/chat/completions`;
+  const attempts: Array<{
+    responseFormat: OpenAIResponseFormat;
+    stream: boolean;
+    reason: string;
+  }> = [];
+  const fetchCompletion = async (inputOverride: {
+    responseFormat: OpenAIResponseFormat;
+    stream: boolean;
+    reason: string;
+  }) => {
+    attempts.push(inputOverride);
+    return fetch(url, {
       method: 'POST',
       signal: input.signal,
       headers,
@@ -348,11 +354,58 @@ async function callOpenAIProvider(
           round: input.options.round,
           schemaFirst: input.options.schemaFirst,
           jsonSchema: input.options.jsonSchema,
-          responseFormat,
-          stream: streamResponses,
+          responseFormat: inputOverride.responseFormat,
+          stream: inputOverride.stream,
           reasoningEffort,
         })
       ),
+    });
+  };
+
+  let responseFormat: OpenAIResponseFormat = 'json_schema';
+  let activeStreamResponses = streamResponses;
+  let response: Response;
+  try {
+    response = await fetchCompletion({
+      responseFormat,
+      stream: activeStreamResponses,
+      reason: 'initial',
+    });
+  } catch (error) {
+    if (!localCompatibleEndpoint) throw error;
+    await emitOpenAICompatibilityRetryEvents(input.options, {
+      reason: 'transport_error',
+      errorMessage: error instanceof Error ? error.message : String(error),
+      fromResponseFormat: responseFormat,
+      fromStream: activeStreamResponses,
+    });
+    responseFormat = 'json_object';
+    activeStreamResponses = false;
+    response = await fetchCompletion({
+      responseFormat,
+      stream: activeStreamResponses,
+      reason: 'local_transport_compatibility_retry',
+    });
+  }
+
+  if (!response.ok && response.status === 400) {
+    await emitSchemaRetryEvents(input.options, 'OpenAI', response.status);
+    responseFormat = 'json_object';
+    if (localCompatibleEndpoint) activeStreamResponses = false;
+    response = await fetchCompletion({
+      responseFormat,
+      stream: activeStreamResponses,
+      reason: 'schema_400_retry',
+    });
+  }
+
+  if (!response.ok) {
+    response = await retryOpenAITransientUnavailableOnce({
+      response,
+      input,
+      fetchCompletion,
+      responseFormat,
+      stream: activeStreamResponses,
     });
   }
 
@@ -360,16 +413,50 @@ async function callOpenAIProvider(
     const errorText = await response.text();
     throw new Error(`OpenAI call failed with status ${response.status}: ${errorText}`);
   }
-  const streamResult = streamResponses
-    ? await readOpenAIChatCompletionStream({
+  let streamResult: { content: string; usage: unknown | null } | null = null;
+  let responseData: OpenAIChatCompletionResponse | null = null;
+  if (activeStreamResponses) {
+    try {
+      streamResult = await readOpenAIChatCompletionStream({
         response,
         options: input.options,
         normalizedRequest: input.options.normalizedRequest,
         provider: 'openai',
         round: input.options.round,
-      })
-    : null;
-  const responseData = streamResponses ? null : await response.json();
+      });
+    } catch (error) {
+      if (!localCompatibleEndpoint) throw error;
+      await emitOpenAICompatibilityRetryEvents(input.options, {
+        reason: 'stream_read_error',
+        errorMessage: error instanceof Error ? error.message : String(error),
+        fromResponseFormat: responseFormat,
+        fromStream: activeStreamResponses,
+      });
+      responseFormat = 'json_object';
+      activeStreamResponses = false;
+      response = await fetchCompletion({
+        responseFormat,
+        stream: activeStreamResponses,
+        reason: 'local_stream_compatibility_retry',
+      });
+      if (!response.ok) {
+        response = await retryOpenAITransientUnavailableOnce({
+          response,
+          input,
+          fetchCompletion,
+          responseFormat,
+          stream: activeStreamResponses,
+        });
+      }
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OpenAI call failed with status ${response.status}: ${errorText}`);
+      }
+      responseData = await response.json();
+    }
+  } else {
+    responseData = await response.json();
+  }
   const message = responseData?.choices?.[0]?.message;
   if (message?.tool_calls && input.options.normalizedRequest) {
     await rejectProviderActivity({
@@ -380,20 +467,21 @@ async function callOpenAIProvider(
       preview: JSON.stringify(message.tool_calls),
     });
   }
-  const content = streamResponses
+  const content = activeStreamResponses
     ? streamResult?.content || ''
     : responseData?.choices?.[0]?.message?.content || '';
-  const rawUsage = streamResponses ? streamResult?.usage : responseData?.usage;
+  const rawUsage = activeStreamResponses ? streamResult?.usage : responseData?.usage;
   const providerDebug = {
     provider: 'openai',
     providerEndpointId: endpointConfig?.id ?? null,
     status: response.status,
     model,
-    streamed: streamResponses,
+    streamed: activeStreamResponses,
     responseFormat,
     reasoningEffort,
     hasChoices: Boolean(responseData?.choices || streamResult),
     hasUsage: Boolean(rawUsage),
+    attempts,
   };
   input.setProviderDebug(providerDebug);
   return {
@@ -410,6 +498,43 @@ async function callOpenAIProvider(
     model,
     providerDebug,
   };
+}
+
+async function retryOpenAITransientUnavailableOnce(input: {
+  response: Response;
+  input: Parameters<typeof callProvider>[0];
+  fetchCompletion: (override: {
+    responseFormat: OpenAIResponseFormat;
+    stream: boolean;
+    reason: string;
+  }) => Promise<Response>;
+  responseFormat: OpenAIResponseFormat;
+  stream: boolean;
+}): Promise<Response> {
+  const errorText = await input.response.text();
+  if (!isOpenAITransientUnavailable(input.response.status, errorText)) {
+    return new Response(errorText, {
+      status: input.response.status,
+      statusText: input.response.statusText,
+      headers: input.response.headers,
+    });
+  }
+
+  await emitOpenAITransientRetryEvents(input.input.options, {
+    status: input.response.status,
+    errorText,
+    responseFormat: input.responseFormat,
+    stream: input.stream,
+    retryDelayMs: OPENAI_TRANSIENT_RETRY_DELAY_MS,
+  });
+  if (OPENAI_TRANSIENT_RETRY_DELAY_MS > 0) {
+    await sleep(OPENAI_TRANSIENT_RETRY_DELAY_MS, input.input.signal);
+  }
+  return input.fetchCompletion({
+    responseFormat: input.responseFormat,
+    stream: input.stream,
+    reason: 'transient_unavailable_retry',
+  });
 }
 
 function buildOpenAICompatibleHeaders(apiKey: string): Record<string, string> {
@@ -526,6 +651,33 @@ function readProviderUsage(value: unknown): unknown {
     : null;
 }
 
+function isOpenAITransientUnavailable(status: number, errorText: string) {
+  if (status !== 503) return false;
+  return /loading model|unavailable_error/i.test(errorText);
+}
+
+function truncateProviderErrorText(value: string) {
+  return value.length > 500 ? `${value.slice(0, 500)}...` : value;
+}
+
+async function sleep(ms: number, signal: AbortSignal) {
+  await new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const timeout = setTimeout(resolve, ms);
+    signal.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timeout);
+        reject(signal.reason);
+      },
+      { once: true }
+    );
+  });
+}
+
 async function emitSchemaRetryEvents(
   options: CallSupervisorOptions,
   providerLabel: string,
@@ -542,5 +694,69 @@ async function emitSchemaRetryEvents(
     severity: 'info',
     message: `${providerLabel} json_object retry started.`,
     data: { round: options.round ?? null },
+  });
+}
+
+async function emitOpenAITransientRetryEvents(
+  options: CallSupervisorOptions,
+  input: {
+    status: number;
+    errorText: string;
+    responseFormat: OpenAIResponseFormat;
+    stream: boolean;
+    retryDelayMs: number;
+  }
+) {
+  await emitSupervisorLlmDebugEvent(options, {
+    type: 'model.retry_scheduled',
+    severity: 'warning',
+    message: `OpenAI provider returned transient ${input.status}; retrying the same request.`,
+    data: {
+      round: options.round ?? null,
+      status: input.status,
+      reason: 'transient_unavailable',
+      errorText: truncateProviderErrorText(input.errorText),
+      responseFormat: input.responseFormat,
+      stream: input.stream,
+      retryDelayMs: input.retryDelayMs,
+    },
+  });
+  await emitSupervisorLlmDebugEvent(options, {
+    type: 'model.retry_started',
+    severity: 'info',
+    message: 'OpenAI transient unavailable retry started.',
+    data: { round: options.round ?? null, reason: 'transient_unavailable' },
+  });
+}
+
+async function emitOpenAICompatibilityRetryEvents(
+  options: CallSupervisorOptions,
+  input: {
+    reason: 'transport_error' | 'stream_read_error';
+    errorMessage: string;
+    fromResponseFormat: OpenAIResponseFormat;
+    fromStream: boolean;
+  }
+) {
+  await emitSupervisorLlmDebugEvent(options, {
+    type: 'model.retry_scheduled',
+    severity: 'warning',
+    message:
+      'OpenAI-compatible local endpoint failed during structured chat completion; retrying with non-stream json_object.',
+    data: {
+      round: options.round ?? null,
+      reason: input.reason,
+      errorMessage: input.errorMessage,
+      fromResponseFormat: input.fromResponseFormat,
+      fromStream: input.fromStream,
+      retryResponseFormat: 'json_object',
+      retryStream: false,
+    },
+  });
+  await emitSupervisorLlmDebugEvent(options, {
+    type: 'model.retry_started',
+    severity: 'info',
+    message: 'OpenAI-compatible local json_object non-stream retry started.',
+    data: { round: options.round ?? null, reason: input.reason },
   });
 }

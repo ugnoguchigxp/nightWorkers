@@ -26,6 +26,7 @@ export function buildCodexRuntimePrompt(context: AgentRunContext): string {
     '- closeout starts only after implementation and verification are genuinely finished and no implementation Todo remains pending or running.',
     '- Use nightworkers.todo_list as the single Todo control tool.',
     '- For multi-step work, call nightworkers.todo_list operation=replace once near the start. This defines or refreshes the Todo plan; it does not complete any Todo and cannot reopen completed, failed, blocked, or skipped Todos.',
+    '- Do not call nightworkers.todo_list operation=list to make progress. list is read-only diagnostics and does not change TodoList or task state.',
     '- operation=replace に closeout Todo を含めない。NightWorkers が最後に「知識登録を行う」と「完了報告を行う」を別々のゲートとして追加する。',
     '- 「知識登録を行う」は start/done せず、context-still.register_candidates の成功後に自動完了される。「完了報告を行う」は最後の assistant 完了報告でのみ自動完了される。',
     '- operation=replace に広域 verify Todo を含めない。NightWorkers が最後に quality_gate_verify Todo を追加する。その Todo が current になる前は typecheck、lint、unit test、build、targeted E2E などの focused checks に留める。',

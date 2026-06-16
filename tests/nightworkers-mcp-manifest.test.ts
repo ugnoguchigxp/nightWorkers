@@ -53,8 +53,20 @@ describe('nightworkers MCP manifest', () => {
     expect(importProject?.inputSchema).toEqual(
       toNightWorkersJsonSchema(nightWorkersImportProjectInputSchema)
     );
-    expect(todoList?.inputSchema).toEqual(
-      toNightWorkersJsonSchema(nightWorkersTodoListInputSchema)
-    );
+    const sharedTodoSchema = toNightWorkersJsonSchema(nightWorkersTodoListInputSchema);
+    expect(
+      (
+        (todoList?.inputSchema.properties as Record<string, unknown> | undefined)?.operation as
+          | { enum?: unknown[] }
+          | undefined
+      )?.enum ?? []
+    ).toEqual(['replace', 'start', 'done', 'block', 'fail']);
+    expect(
+      (
+        (sharedTodoSchema.properties as Record<string, unknown> | undefined)?.operation as
+          | { enum?: unknown[] }
+          | undefined
+      )?.enum ?? []
+    ).toContain('list');
   });
 });

@@ -423,6 +423,175 @@ describe('Supervisor LLM schema-first parsing', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('retries local OpenAI-compatible transport failures with non-stream json_object', async () => {
+    delete process.env.OPENAI_API_KEY;
+    fs.writeFileSync(
+      process.env.NIGHTWORKERS_LLM_SETTINGS_PATH!,
+      JSON.stringify({
+        ACTIVE_LLM_PROVIDER: 'azure',
+        OPENAI_STREAMING_ENABLED: true,
+        providerEndpoints: [
+          {
+            id: 'local-qwen',
+            name: 'Local Qwen',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['qwen3-coder'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'local-qwen',
+              model: 'qwen3-coder',
+            },
+            fallbacks: [],
+          },
+        ],
+      })
+    );
+    const requestBodies: Array<Record<string, unknown>> = [];
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      requestBodies.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>);
+      if (requestBodies.length === 1) {
+        throw new Error('The socket connection was closed unexpectedly.');
+      }
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  toolCall: {
+                    name: 'finalize_answer',
+                    arguments: { message: 'ok' },
+                  },
+                }),
+              },
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 4, total_tokens: 14 },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
+    const decision = await callSupervisorLLM('system', 'user', {
+      round: 2,
+      schemaFirst: true,
+      role: 'implementation',
+      emitEvent: (event) => events.push({ type: event.type, data: event.data }),
+    });
+
+    expect(decision).toMatchObject({
+      toolCall: {
+        name: 'finalize_answer',
+        arguments: { message: 'ok' },
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(requestBodies[0]).toMatchObject({
+      stream: true,
+      response_format: { type: 'json_schema' },
+    });
+    expect(requestBodies[1]).toMatchObject({
+      stream: false,
+      response_format: { type: 'json_object' },
+    });
+    expect(events.some((event) => event.type === 'model.retry_scheduled')).toBe(true);
+    expect(events.some((event) => event.type === 'model.retry_started')).toBe(true);
+  });
+
+  it('retries transient OpenAI loading-model 503 responses once', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'openai';
+    process.env.OPENAI_ENABLED = 'true';
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.OPENAI_MODEL = 'gpt-test';
+    process.env.OPENAI_STREAMING_ENABLED = 'false';
+
+    const requestBodies: Array<Record<string, unknown>> = [];
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      requestBodies.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>);
+      if (requestBodies.length === 1) {
+        return new Response(
+          JSON.stringify({
+            error: { message: 'Loading model', type: 'unavailable_error', code: 503 },
+          }),
+          {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  toolCall: {
+                    name: 'finalize_answer',
+                    arguments: { message: 'ok after retry' },
+                  },
+                }),
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
+    const decision = await callSupervisorLLM('system', 'user', {
+      round: 2,
+      schemaFirst: true,
+      role: 'implementation',
+      emitEvent: (event) => events.push({ type: event.type, data: event.data }),
+    });
+
+    expect(decision).toMatchObject({
+      toolCall: {
+        name: 'finalize_answer',
+        arguments: { message: 'ok after retry' },
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(requestBodies[0]).toMatchObject({
+      stream: false,
+      response_format: { type: 'json_schema' },
+    });
+    expect(requestBodies[1]).toMatchObject({
+      stream: false,
+      response_format: { type: 'json_schema' },
+    });
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'model.retry_scheduled' &&
+          event.data?.reason === 'transient_unavailable' &&
+          event.data?.status === 503
+      )
+    ).toBe(true);
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'model.retry_started' && event.data?.reason === 'transient_unavailable'
+      )
+    ).toBe(true);
+  });
+
   it('repairs truncated schema-first toolCall JSON before schema validation', async () => {
     process.env.ACTIVE_LLM_PROVIDER = 'openai';
     process.env.OPENAI_ENABLED = 'true';

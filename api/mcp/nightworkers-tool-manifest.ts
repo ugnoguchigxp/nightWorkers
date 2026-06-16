@@ -1,5 +1,30 @@
 import { z } from 'zod';
 
+export const nightWorkersTodoTaskTypes = [
+  'implementation',
+  'inspection',
+  'investigation',
+  'scaffold',
+  'focused_verification',
+  'verification',
+  'review',
+  'code_edit',
+  'code_change',
+  'test',
+  'test_change',
+  'documentation',
+  'docs',
+  'migration',
+  'data_migration',
+  'config',
+  'dependency',
+  'refactor',
+  'import',
+  'copy',
+  'git',
+  'release',
+] as const;
+
 export const nightWorkersReadCurrentSpecificationInputSchema = z.object({
   taskId: z
     .string()
@@ -20,7 +45,9 @@ export const nightWorkersTodoListInputSchema = z.object({
     .describe('NightWorkers run id. Defaults to NIGHTWORKERS_RUN_ID when available.'),
   operation: z
     .enum(['list', 'replace', 'start', 'done', 'block', 'fail'])
-    .describe('Todo operation to perform.'),
+    .describe(
+      'Todo operation to perform. list is read-only diagnostics and does not advance progress; use replace/start/done/block/fail for progress.'
+    ),
   seq: z
     .number()
     .int()
@@ -35,11 +62,17 @@ export const nightWorkersTodoListInputSchema = z.object({
         seq: z.number().int().positive(),
         title: z.string().trim().min(1),
         description: z.string().optional(),
+        taskType: z.enum(nightWorkersTodoTaskTypes).optional(),
+        procedureId: z.string().trim().min(1).nullable().optional(),
+        dependsOn: z
+          .array(z.union([z.number().int().positive(), z.string().trim().min(1)]))
+          .nullable()
+          .optional(),
       })
     )
     .optional()
     .describe(
-      'Implementation Todos decomposed by the LLM. Fixed quality gates are added automatically.'
+      'Run Todos decomposed by the LLM. Use taskType to distinguish inspection, implementation, and focused verification work. Fixed quality gates are added automatically.'
     ),
   startFirst: z
     .boolean()
@@ -134,7 +167,7 @@ export const nightWorkersCodexToolManifest = {
   todo_list: {
     title: 'Todo List',
     description:
-      'Maintain the current run TodoList with one JSON operation. Use operation=list, replace, start, done, block, or fail. replace refreshes the plan without reopening terminal Todos; done automatically starts the next pending Todo.',
+      'Maintain the current run TodoList with one JSON operation. Use operation=replace, start, done, block, or fail for progress. operation=list is read-only diagnostics and does not advance progress. replace refreshes the plan without reopening terminal Todos; done automatically starts the next pending Todo.',
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,

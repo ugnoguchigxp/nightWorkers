@@ -466,6 +466,7 @@ describe('Schema-first supervisor loop', () => {
               {
                 seq: 1,
                 title: '実装を変更する',
+                taskType: 'code_edit',
               },
             ],
           },
@@ -574,6 +575,7 @@ describe('Schema-first supervisor loop', () => {
           expect.objectContaining({
             seq: 3,
             title: '実装を変更する',
+            taskType: 'code_edit',
             status: 'pending',
           }),
           expect.objectContaining({
@@ -1028,6 +1030,97 @@ describe('Schema-first supervisor loop', () => {
           }),
         ])
       );
+    } finally {
+      await fs.rm(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects repeated TodoList list calls while an implementation Todo is running', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-redundant-todo-list-'));
+    let currentTodos = [
+      {
+        id: 'todo-1',
+        runId: 'run-1',
+        seq: 1,
+        title: 'Todo List 画面を実装する',
+        description: null,
+        taskType: 'implementation',
+        status: 'running',
+        procedureId: null,
+        startedAt: new Date('2026-06-16T00:00:00.000Z'),
+        completedAt: null,
+      },
+    ];
+    vi.mocked(repo.listTaskRunTodosForRun).mockImplementation(async () => currentTodos as never);
+    vi.mocked(repo.updateTaskRunTodo).mockImplementation(async (todoId, patch) => {
+      currentTodos = currentTodos.map((todo) =>
+        todo.id === todoId ? { ...todo, ...patch } : todo
+      );
+      return currentTodos.find((todo) => todo.id === todoId) as never;
+    });
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        jobType: 'major_code_edit',
+        goal: 'Todo List 画面を実装する',
+      })
+      .mockResolvedValueOnce({
+        toolCall: { name: 'todo_list', arguments: { operation: 'list' } },
+      })
+      .mockResolvedValueOnce({
+        toolCall: { name: 'todo_list', arguments: { operation: 'list' } },
+      })
+      .mockResolvedValueOnce({
+        toolCall: { name: 'todo_list', arguments: { operation: 'list' } },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'apply_patch',
+          arguments: {
+            patchContent: [
+              '--- /dev/null',
+              '+++ b/todo-list.txt',
+              '@@ -0,0 +1 @@',
+              '+implemented',
+              '',
+            ].join('\n'),
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'todo_list',
+          arguments: { operation: 'done' },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'finalize_answer',
+          arguments: { message: '完了しました。' },
+        },
+      });
+
+    try {
+      const result = await runSupervisorLoop({
+        runId: 'run-1',
+        repoRoot,
+        prompt: 'Todo List 画面を実装してください',
+        timeoutSeconds: 60,
+      });
+
+      expect(result.terminalState).toBe('completed');
+      expect(result.finalReport).toBe('完了しました。');
+      const validationFailure = vi
+        .mocked(repo.createRunEvent)
+        .mock.calls.find(
+          ([, options]) =>
+            options?.payloadJson?.agentEventType === 'tool.validation_failed' &&
+            options.payloadJson.payload?.toolName === 'todo_list'
+        );
+      expect(validationFailure?.[1]?.payloadJson?.payload).toMatchObject({
+        ok: false,
+        arguments: { operation: 'list' },
+        summary: expect.stringContaining('TodoList も作業状態も変更しません'),
+      });
     } finally {
       await fs.rm(repoRoot, { recursive: true, force: true });
     }

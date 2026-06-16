@@ -1,4 +1,5 @@
 import { toDeepRecord } from '../../../shared/json-record';
+import { nightWorkersTodoTaskTypes } from '../../mcp/nightworkers-tool-manifest';
 import type { SupervisorArtifactContextRef } from './artifact-contract';
 import {
   checklistItemCanProveWorkerEvidence,
@@ -61,12 +62,51 @@ export function normalizeTodoListInput(args: Record<string, unknown>) {
     const seq = typeof todo.seq === 'number' ? todo.seq : index + 1;
     const title = typeof todo.title === 'string' ? todo.title.trim() : '';
     if (!title) throw new Error(`Todo #${seq} requires title.`);
+    const taskType = normalizeTodoTaskType(todo.taskType, seq);
+    const procedureId = normalizeOptionalString(todo.procedureId);
     return {
       seq,
       title,
       description: typeof todo.description === 'string' ? todo.description : null,
+      ...(taskType ? { taskType } : {}),
+      ...(procedureId !== undefined ? { procedureId } : {}),
+      ...(Array.isArray(todo.dependsOn)
+        ? { dependsOn: normalizeTodoDependsOn(todo.dependsOn) }
+        : {}),
     };
   });
+}
+
+function normalizeTodoTaskType(value: unknown, seq: number) {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string') throw new Error(`Todo #${seq} taskType must be a string.`);
+  const taskType = value.trim();
+  if (!TODO_TASK_TYPES.has(taskType)) {
+    throw new Error(`Todo #${seq} has unsupported taskType: ${taskType}.`);
+  }
+  return taskType;
+}
+
+function normalizeOptionalString(value: unknown) {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function normalizeTodoDependsOn(dependsOn: unknown[]) {
+  const normalized: Array<string | number> = [];
+  for (const value of dependsOn) {
+    if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+      normalized.push(value);
+      continue;
+    }
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed) normalized.push(trimmed);
+  }
+  return normalized;
 }
 
 const BOOTSTRAP_TOOL_NAMES = ['import_project', 'copy_directory', 'apply_patch'] as const;
@@ -115,6 +155,16 @@ export function getRedundantTodoReplaceGap(input: {
 }
 
 const TODO_TRANSITION_OPERATIONS = new Set(['replace', 'start', 'done', 'block', 'fail']);
+const TODO_TASK_TYPES = new Set<string>(nightWorkersTodoTaskTypes);
+const READ_ONLY_EVIDENCE_TOOLS = new Set([
+  'read_current_specification',
+  'list_dir',
+  'read_file',
+  'search_files',
+  'git_status',
+  'git_diff',
+  'run_command',
+]);
 const IMPLEMENTATION_EVIDENCE_TOOLS = new Set([
   'apply_patch',
   'replace_content',
@@ -122,6 +172,27 @@ const IMPLEMENTATION_EVIDENCE_TOOLS = new Set([
   'copy_directory',
   'run_command',
 ]);
+const READ_ONLY_TASK_TYPES = new Set(['inspection', 'investigation']);
+const MUTATION_TASK_TYPES = new Set([
+  'implementation',
+  'code_edit',
+  'code_change',
+  'scaffold',
+  'import',
+  'copy',
+  'migration',
+  'data_migration',
+  'documentation',
+  'docs',
+  'config',
+  'dependency',
+  'refactor',
+  'test',
+  'test_change',
+  'git',
+  'release',
+]);
+const VERIFICATION_TASK_TYPES = new Set(['verification', 'focused_verification']);
 const VERIFICATION_COMMAND_PATTERN = /\b(build|lint|typecheck|test|verify|pytest|ruff|pyright)\b/;
 
 export function getTodoDoneEvidenceGap(input: {
@@ -146,17 +217,30 @@ export function getTodoDoneEvidenceGap(input: {
   ].join(' ');
 }
 
-function resolveTodoEvidenceRequirement(todo: {
-  taskType: string;
-  procedureId?: string | null;
-}):
-  | {
-      label: string;
-      nextAction: string;
-      matches: (result: CompactToolResult) => boolean;
-    }
-  | null {
-  if (todo.procedureId === 'quality_gate_verify' || todo.taskType === 'verification') {
+export function getRedundantTodoListGap(input: {
+  currentTodo: { seq: number; title: string; taskType: string; status: string } | null;
+  toolResults: CompactToolResult[];
+}): string | null {
+  if (input.currentTodo?.taskType === 'implementation') {
+    return [
+      `Todo #${input.currentTodo.seq}「${input.currentTodo.title}」は running のままです。`,
+      'todo_list operation=list は native Supervisor の進捗操作ではなく、TodoList も作業状態も変更しません。',
+      '次は read_file / list_dir / apply_patch / replace_content / run_command など、現在 Todo を進める worker tool を実行してください。',
+    ].join(' ');
+  }
+
+  return [
+    'todo_list operation=list は native Supervisor の進捗操作ではなく、TodoList も作業状態も変更しません。',
+    'Todo 状態の再確認ではなく、現在の Todo を進める worker tool、または done/block/fail/finalize_answer を選んでください。',
+  ].join(' ');
+}
+
+function resolveTodoEvidenceRequirement(todo: { taskType: string; procedureId?: string | null }): {
+  label: string;
+  nextAction: string;
+  matches: (result: CompactToolResult) => boolean;
+} | null {
+  if (todo.procedureId === 'quality_gate_verify' || VERIFICATION_TASK_TYPES.has(todo.taskType)) {
     return {
       label: 'verification',
       nextAction: 'run_verification または検証系 run_command',
@@ -168,7 +252,16 @@ function resolveTodoEvidenceRequirement(todo: {
     };
   }
 
-  if (todo.taskType === 'implementation' && !todo.procedureId) {
+  if (READ_ONLY_TASK_TYPES.has(todo.taskType)) {
+    return {
+      label: 'inspection',
+      nextAction:
+        'read_current_specification / list_dir / read_file / search_files などの確認 tool',
+      matches: (result) => result.ok && READ_ONLY_EVIDENCE_TOOLS.has(result.toolName),
+    };
+  }
+
+  if (MUTATION_TASK_TYPES.has(todo.taskType)) {
     return {
       label: 'implementation',
       nextAction: 'apply_patch / replace_content / import_project / copy_directory などの実装 tool',
@@ -230,6 +323,20 @@ export function buildProgressContext(input: {
   const hasSpecificationEvidence = input.toolResults.some(
     (result) => result.ok && result.toolName === 'read_current_specification'
   );
+  const missingPathResults = input.toolResults.filter(
+    (result) =>
+      !result.ok &&
+      ['list_dir', 'read_file'].includes(result.toolName) &&
+      typeof (result.arguments.relativePath || result.arguments.filePath) === 'string'
+  );
+  const recentTodoListCount = input.toolResults
+    .slice(-4)
+    .filter(
+      (result) =>
+        result.ok &&
+        result.toolName === 'todo_list' &&
+        String(result.arguments.operation || '') === 'list'
+    ).length;
   const hasMissingComponentLookup = input.toolResults.some(
     (result) =>
       !result.ok &&
@@ -266,6 +373,13 @@ export function buildProgressContext(input: {
       hasSpecificationEvidence
         ? '仕様書は既に読み込み済み。read_current_specification を繰り返さず、現在 Todo の実作業へ進む。'
         : null,
+      recentTodoListCount >= 2
+        ? `todo_list operation=list が直近で ${recentTodoListCount} 回続いている。Todo 状態確認を繰り返さず、現在 Todo を進める worker tool を実行する。`
+        : null,
+      ...missingPathResults.slice(-3).map((result) => {
+        const pathValue = String(result.arguments.relativePath || result.arguments.filePath);
+        return `${result.toolName} の ${pathValue} は存在しないことを確認済み。同じパスを繰り返さず、成功済みの一覧結果にある実在パスを使う。`;
+      }),
       hasMissingComponentLookup
         ? 'web/src/components が存在しないことは確認済み。さらに探索せず、必要なディレクトリ/ファイルを apply_patch で作成する。'
         : null,
