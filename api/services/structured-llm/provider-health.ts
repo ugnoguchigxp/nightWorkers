@@ -1,0 +1,120 @@
+import type { StructuredLlmProviderEndpoint } from './settings';
+
+export type StructuredLlmProviderHealthResult = {
+  ok: boolean;
+  reachable: boolean;
+  providerEndpointId: string;
+  providerKind: StructuredLlmProviderEndpoint['kind'];
+  url: string | null;
+  status: number | null;
+  durationMs: number;
+  checkedAt: string;
+  message: string;
+};
+
+const DEFAULT_TIMEOUT_MS = 3000;
+
+export async function checkStructuredLlmProviderHealth(
+  endpoint: StructuredLlmProviderEndpoint,
+  options: { timeoutMs?: number; fetchImpl?: typeof fetch } = {}
+): Promise<StructuredLlmProviderHealthResult> {
+  const started = Date.now();
+  const checkedAt = new Date().toISOString();
+  const urlResult = buildProviderHealthUrl(endpoint);
+  if (!urlResult.ok) {
+    return {
+      ok: false,
+      reachable: false,
+      providerEndpointId: endpoint.id,
+      providerKind: endpoint.kind,
+      url: null,
+      status: null,
+      durationMs: Date.now() - started,
+      checkedAt,
+      message: urlResult.message,
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const fetchImpl = options.fetchImpl ?? fetch;
+  try {
+    const res = await fetchImpl(urlResult.url, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: { Accept: 'application/json,text/plain,*/*' },
+    });
+    const durationMs = Date.now() - started;
+    return {
+      ok: res.ok,
+      reachable: true,
+      providerEndpointId: endpoint.id,
+      providerKind: endpoint.kind,
+      url: urlResult.url,
+      status: res.status,
+      durationMs,
+      checkedAt,
+      message: res.ok ? `HTTP ${res.status}` : `HTTP ${res.status}: ${res.statusText}`,
+    };
+  } catch (err) {
+    const durationMs = Date.now() - started;
+    return {
+      ok: false,
+      reachable: false,
+      providerEndpointId: endpoint.id,
+      providerKind: endpoint.kind,
+      url: urlResult.url,
+      status: null,
+      durationMs,
+      checkedAt,
+      message: err instanceof Error ? err.message : String(err),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export function buildProviderHealthUrl(
+  endpoint: Pick<StructuredLlmProviderEndpoint, 'kind' | 'baseUrl' | 'endpoint' | 'region'>
+): { ok: true; url: string } | { ok: false; message: string } {
+  if (endpoint.kind === 'codex') {
+    return { ok: false, message: 'Codex SDK does not expose an HTTP /health endpoint.' };
+  }
+
+  if (endpoint.kind === 'bedrock') {
+    if (!endpoint.region?.trim()) {
+      return { ok: false, message: 'AWS region is required to build a Bedrock health URL.' };
+    }
+    return {
+      ok: true,
+      url: `https://bedrock-runtime.${endpoint.region.trim()}.amazonaws.com/health`,
+    };
+  }
+
+  const rawBase = endpoint.kind === 'azure' ? endpoint.endpoint?.trim() : endpoint.baseUrl?.trim();
+  if (!rawBase) {
+    return { ok: false, message: 'Endpoint URL or Base URL is required.' };
+  }
+
+  let url: URL;
+  try {
+    url = new URL(rawBase);
+  } catch {
+    return { ok: false, message: 'Endpoint URL or Base URL is invalid.' };
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return { ok: false, message: 'Only http and https health URLs are supported.' };
+  }
+
+  url.pathname = `${stripKnownApiSuffix(url.pathname)}/health`.replace(/\/{2,}/g, '/');
+  url.search = '';
+  url.hash = '';
+  return { ok: true, url: url.toString() };
+}
+
+function stripKnownApiSuffix(pathname: string) {
+  const normalized = pathname.replace(/\/+$/, '');
+  if (!normalized || normalized === '/') return '';
+  if (normalized === '/v1' || normalized === '/api') return '';
+  return normalized;
+}

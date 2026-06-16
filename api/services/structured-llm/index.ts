@@ -17,6 +17,10 @@ import type { CallSupervisorOptions, StructuredJsonLlmOptions } from './types';
 
 export { ProviderActivityRejectedError } from './events';
 export {
+  type ResolvedStructuredLlmModelCapability,
+  resolveStructuredLlmModelCapability,
+} from './model-capability';
+export {
   buildNormalizedSupervisorLlmRequest,
   normalizeProviderId,
   providerAdapterKey,
@@ -122,6 +126,7 @@ async function callRawJsonLLM(
     userPromptBytes: Buffer.byteLength(userPrompt, 'utf8'),
     systemPromptSha256: digestLlmText(systemPrompt),
     userPromptSha256: digestLlmText(userPrompt),
+    promptBudgetMetadata: options.promptBudgetMetadata ?? null,
   });
   logger.debug(
     {
@@ -135,6 +140,7 @@ async function callRawJsonLLM(
       label: options.label,
       systemPromptLength: systemPrompt.length,
       userPromptLength: userPrompt.length,
+      promptBudgetMetadata: options.promptBudgetMetadata ?? null,
     },
     'Supervisor LLM call start'
   );
@@ -155,6 +161,7 @@ async function callRawJsonLLM(
       label: options.label,
       systemPromptLength: systemPrompt.length,
       userPromptLength: userPrompt.length,
+      promptBudgetMetadata: options.promptBudgetMetadata ?? null,
       diagnostics: normalizedRequest.diagnostics,
     },
   });
@@ -260,6 +267,7 @@ async function callRawJsonLLM(
         userPromptBytes: Buffer.byteLength(userPrompt, 'utf8'),
         systemPromptSha256: digestLlmText(systemPrompt),
         userPromptSha256: digestLlmText(userPrompt),
+        promptBudgetMetadata: options.promptBudgetMetadata ?? null,
       },
     });
   }

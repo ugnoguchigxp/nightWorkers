@@ -30,6 +30,7 @@ import {
   writeGeneralSettings,
 } from '../services/settings/general-settings';
 import { callSupervisorLLM } from '../services/structured-llm';
+import { checkStructuredLlmProviderHealth } from '../services/structured-llm/provider-health';
 import { buildRound1JobTypePrompt } from '../services/supervisor/prompt';
 import {
   createAgentHookRoute,
@@ -53,12 +54,14 @@ import {
   seedCodexPricingRoute,
   smokeLlmRoute,
   testAgentHookRoute,
+  testLlmProviderHealthRoute,
   testMcpServerRoute,
   updateAgentHookRoute,
   updateMcpServerRoute,
 } from './settings-route-definitions';
 import {
   applySettingsToProcessEnv,
+  llmProviderEndpointSchema,
   maskLlmSettings,
   mergeMaskedSecrets,
   providerModelOptions,
@@ -146,6 +149,27 @@ export const settingsRouter = createOpenApiRouter()
       const message = err instanceof Error ? err.message : String(err);
       return c.json({ ok: false, provider, message }, 200);
     }
+  })
+  .openapi(testLlmProviderHealthRoute, async (c) => {
+    const settings = getCurrentSettings();
+    const body = await c.req.json().catch(() => null);
+    const parsedBodyEndpoint = llmProviderEndpointSchema.safeParse(
+      body && typeof body === 'object' && 'endpoint' in body ? body.endpoint : null
+    );
+    const bodyEndpoint =
+      parsedBodyEndpoint.success && parsedBodyEndpoint.data.id === c.req.param('id')
+        ? parsedBodyEndpoint.data
+        : null;
+    const endpoint =
+      bodyEndpoint ||
+      (settings.providerEndpoints || []).find((item) => item.id === c.req.param('id'));
+    if (!endpoint)
+      return c.json(
+        { error: { code: 'NOT_FOUND', message: 'LLM provider endpoint not found' } },
+        404
+      );
+    const result = await checkStructuredLlmProviderHealth(endpoint);
+    return c.json(result, 200);
   })
   .openapi(getMcpServersRoute, (c) => {
     const settings = readEffectiveMcpServerSettings();

@@ -68,6 +68,7 @@ export type AgentHookInput =
   | (AgentHookInputBase & {
       hook_event_name: 'SessionStart' | 'SessionEnd';
       source: 'run_start' | 'run_end';
+      payload?: Record<string, unknown>;
     })
   | (AgentHookInputBase & {
       hook_event_name: 'UserPromptSubmit';

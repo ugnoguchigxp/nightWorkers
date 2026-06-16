@@ -1,13 +1,14 @@
-import { Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Activity, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
-import { fetchCodexSdkStatus } from '../nightWorkersCommands';
+import { fetchCodexSdkStatus, testLlmProviderHealth } from '../nightWorkersCommands';
 import type {
   CodexSdkStatus,
   LlmModelTarget,
   LlmProviderEndpoint,
   LlmProviderEndpointKind,
+  LlmProviderHealthResult,
   LlmRole,
   LlmRoleRoute,
   LlmSettings,
@@ -182,6 +183,8 @@ export function SettingsLlmPanel({
   const { t } = useTranslation();
   const [codexStatus, setCodexStatus] = useState<CodexSdkStatus | null>(null);
   const [codexStatusLoading, setCodexStatusLoading] = useState(false);
+  const [healthBusyEndpointId, setHealthBusyEndpointId] = useState<string | null>(null);
+  const [healthResults, setHealthResults] = useState<Record<string, LlmProviderHealthResult>>({});
   const genericProviderEndpoints = settings.providerEndpoints.filter(
     (endpoint) => endpoint.kind !== 'codex'
   );
@@ -278,6 +281,33 @@ export function SettingsLlmPanel({
     );
   };
 
+  const checkEndpointHealth = async (endpoint: LlmProviderEndpoint) => {
+    setHealthBusyEndpointId(endpoint.id);
+    try {
+      const res = await testLlmProviderHealth(endpoint.id, endpoint);
+      if (!res.ok) throw new Error(await res.text());
+      const result = (await res.json()) as LlmProviderHealthResult;
+      setHealthResults((current) => ({ ...current, [endpoint.id]: result }));
+    } catch (err) {
+      setHealthResults((current) => ({
+        ...current,
+        [endpoint.id]: {
+          ok: false,
+          reachable: false,
+          providerEndpointId: endpoint.id,
+          providerKind: endpoint.kind,
+          url: null,
+          status: null,
+          durationMs: 0,
+          checkedAt: new Date().toISOString(),
+          message: err instanceof Error ? err.message : String(err),
+        },
+      }));
+    } finally {
+      setHealthBusyEndpointId(null);
+    }
+  };
+
   const updateRoleRoute = (role: LlmRole, patch: Partial<LlmRoleRoute>) => {
     onChange(
       'roleRoutes',
@@ -337,133 +367,170 @@ export function SettingsLlmPanel({
             </Button>
           </div>
           <div className="grid gap-3">
-            {genericProviderEndpoints.map((endpoint) => (
-              <div
-                key={endpoint.id}
-                className="grid gap-4 rounded-xl border border-zinc-800 bg-zinc-950/30 p-4"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <label className="inline-flex items-center gap-2 text-xs text-zinc-300">
-                    <input
-                      type="checkbox"
-                      checked={endpoint.enabled}
-                      onChange={(event) =>
-                        updateEndpoint(endpoint.id, { enabled: event.target.checked })
-                      }
-                    />
-                    Enabled
-                  </label>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    title="Remove endpoint"
-                    onClick={() => removeEndpoint(endpoint.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <Field
-                    id={`${endpoint.id}-name`}
-                    label="Name"
-                    value={endpoint.name}
-                    onChange={(value) => updateEndpoint(endpoint.id, { name: value })}
-                  />
-                  <SelectField
-                    id={`${endpoint.id}-kind`}
-                    label="Kind"
-                    value={endpoint.kind}
-                    options={endpointKindOptions}
-                    onChange={(value) =>
-                      updateEndpoint(endpoint.id, {
-                        kind: value as LlmProviderEndpointKind,
-                      })
-                    }
-                  />
-                  {endpoint.kind === 'azure' ? (
-                    <>
-                      <Field
-                        id={`${endpoint.id}-endpoint`}
-                        label="Endpoint"
-                        value={endpoint.endpoint || ''}
-                        onChange={(value) => updateEndpoint(endpoint.id, { endpoint: value })}
+            {genericProviderEndpoints.map((endpoint) => {
+              const healthResult = healthResults[endpoint.id];
+              const healthBusy = healthBusyEndpointId === endpoint.id;
+              return (
+                <div
+                  key={endpoint.id}
+                  className="grid gap-4 rounded-xl border border-zinc-800 bg-zinc-950/30 p-4"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="inline-flex items-center gap-2 text-xs text-zinc-300">
+                      <input
+                        type="checkbox"
+                        checked={endpoint.enabled}
+                        onChange={(event) =>
+                          updateEndpoint(endpoint.id, { enabled: event.target.checked })
+                        }
                       />
-                      <Field
-                        id={`${endpoint.id}-api-version`}
-                        label="API Version"
-                        value={endpoint.apiVersion || ''}
-                        onChange={(value) => updateEndpoint(endpoint.id, { apiVersion: value })}
-                      />
-                    </>
-                  ) : null}
-                  {endpoint.kind === 'openai' ||
-                  endpoint.kind === 'openai-compatible' ||
-                  endpoint.kind === 'local' ? (
-                    <Field
-                      id={`${endpoint.id}-base-url`}
-                      label="Base URL"
-                      value={endpoint.baseUrl || ''}
-                      onChange={(value) => updateEndpoint(endpoint.id, { baseUrl: value })}
-                    />
-                  ) : null}
-                  {endpoint.kind === 'bedrock' ? (
-                    <Field
-                      id={`${endpoint.id}-region`}
-                      label="Region"
-                      value={endpoint.region || ''}
-                      onChange={(value) => updateEndpoint(endpoint.id, { region: value })}
-                    />
-                  ) : null}
-                  {endpoint.kind !== 'bedrock' ? (
-                    <Field
-                      id={`${endpoint.id}-api-key`}
-                      label="API Key"
-                      type="password"
-                      value={endpoint.apiKey || ''}
-                      onChange={(value) => updateEndpoint(endpoint.id, { apiKey: value })}
-                    />
-                  ) : null}
-                  <Field
-                    id={`${endpoint.id}-models`}
-                    label="Models"
-                    value={endpoint.models.join(', ')}
-                    onChange={(value) => {
-                      const models = value
-                        .split(',')
-                        .map((model) => model.trim())
-                        .filter(Boolean);
-                      updateEndpoint(endpoint.id, {
-                        models,
-                        modelDisplayNames: pruneModelDisplayNames(
-                          endpoint.modelDisplayNames,
-                          models
-                        ),
-                      });
-                    }}
-                  />
-                  <div className="space-y-1.5 md:col-span-2">
-                    <label
-                      htmlFor={`${endpoint.id}-model-display-names`}
-                      className="block text-[11px] font-semibold text-zinc-400"
-                    >
-                      Model Select Labels
+                      Enabled
                     </label>
-                    <textarea
-                      id={`${endpoint.id}-model-display-names`}
-                      value={formatModelDisplayNames(endpoint.modelDisplayNames)}
-                      onChange={(event) =>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        icon={Activity}
+                        loading={healthBusy}
+                        onClick={() => void checkEndpointHealth(endpoint)}
+                      >
+                        Health
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        title="Remove endpoint"
+                        onClick={() => removeEndpoint(endpoint.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  {healthResult ? (
+                    <div
+                      className={`grid gap-1 rounded-lg border px-3 py-2 text-xs ${
+                        healthResult.ok
+                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                          : healthResult.reachable
+                            ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+                            : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                      }`}
+                    >
+                      <div>
+                        {healthResult.reachable ? 'Reachable' : 'Unreachable'} /{' '}
+                        {healthResult.message}
+                      </div>
+                      {healthResult.url ? (
+                        <div className="truncate text-[11px] opacity-80">
+                          {healthResult.url} ({healthResult.durationMs}ms)
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <Field
+                      id={`${endpoint.id}-name`}
+                      label="Name"
+                      value={endpoint.name}
+                      onChange={(value) => updateEndpoint(endpoint.id, { name: value })}
+                    />
+                    <SelectField
+                      id={`${endpoint.id}-kind`}
+                      label="Kind"
+                      value={endpoint.kind}
+                      options={endpointKindOptions}
+                      onChange={(value) =>
                         updateEndpoint(endpoint.id, {
-                          modelDisplayNames: parseModelDisplayNames(event.target.value),
+                          kind: value as LlmProviderEndpointKind,
                         })
                       }
-                      placeholder="gpt-5.5=Plan High (Codex)"
-                      className="min-h-20 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs text-zinc-100"
                     />
+                    {endpoint.kind === 'azure' ? (
+                      <>
+                        <Field
+                          id={`${endpoint.id}-endpoint`}
+                          label="Endpoint"
+                          value={endpoint.endpoint || ''}
+                          onChange={(value) => updateEndpoint(endpoint.id, { endpoint: value })}
+                        />
+                        <Field
+                          id={`${endpoint.id}-api-version`}
+                          label="API Version"
+                          value={endpoint.apiVersion || ''}
+                          onChange={(value) => updateEndpoint(endpoint.id, { apiVersion: value })}
+                        />
+                      </>
+                    ) : null}
+                    {endpoint.kind === 'openai' ||
+                    endpoint.kind === 'openai-compatible' ||
+                    endpoint.kind === 'local' ? (
+                      <Field
+                        id={`${endpoint.id}-base-url`}
+                        label="Base URL"
+                        value={endpoint.baseUrl || ''}
+                        onChange={(value) => updateEndpoint(endpoint.id, { baseUrl: value })}
+                      />
+                    ) : null}
+                    {endpoint.kind === 'bedrock' ? (
+                      <Field
+                        id={`${endpoint.id}-region`}
+                        label="Region"
+                        value={endpoint.region || ''}
+                        onChange={(value) => updateEndpoint(endpoint.id, { region: value })}
+                      />
+                    ) : null}
+                    {endpoint.kind !== 'bedrock' ? (
+                      <Field
+                        id={`${endpoint.id}-api-key`}
+                        label="API Key"
+                        type="password"
+                        value={endpoint.apiKey || ''}
+                        onChange={(value) => updateEndpoint(endpoint.id, { apiKey: value })}
+                      />
+                    ) : null}
+                    <Field
+                      id={`${endpoint.id}-models`}
+                      label="Models"
+                      value={endpoint.models.join(', ')}
+                      onChange={(value) => {
+                        const models = value
+                          .split(',')
+                          .map((model) => model.trim())
+                          .filter(Boolean);
+                        updateEndpoint(endpoint.id, {
+                          models,
+                          modelDisplayNames: pruneModelDisplayNames(
+                            endpoint.modelDisplayNames,
+                            models
+                          ),
+                        });
+                      }}
+                    />
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label
+                        htmlFor={`${endpoint.id}-model-display-names`}
+                        className="block text-[11px] font-semibold text-zinc-400"
+                      >
+                        Model Select Labels
+                      </label>
+                      <textarea
+                        id={`${endpoint.id}-model-display-names`}
+                        value={formatModelDisplayNames(endpoint.modelDisplayNames)}
+                        onChange={(event) =>
+                          updateEndpoint(endpoint.id, {
+                            modelDisplayNames: parseModelDisplayNames(event.target.value),
+                          })
+                        }
+                        placeholder="gpt-5.5=Plan High (Codex)"
+                        className="min-h-20 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs text-zinc-100"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       ) : null}

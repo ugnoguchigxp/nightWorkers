@@ -111,6 +111,20 @@ describe('Supervisor reference registry', () => {
     expect(JSON.stringify(importProject?.inputSchema)).toContain('sqlite, postgres, rag, or auth');
   });
 
+  it('exposes fresh reads in the read_file schema', () => {
+    const readFile = getAllowedToolsForJobType('major_code_edit').find(
+      (tool) => tool.name === 'read_file'
+    );
+
+    expect(readFile).toBeTruthy();
+    expect(readFile?.inputSchema).toMatchObject({
+      properties: {
+        filePath: { type: 'string' },
+        fresh: { type: 'boolean' },
+      },
+    });
+  });
+
   it('resolves blueprint references from app blueprint routing', () => {
     const documents = resolveSupervisorReferenceDocuments({
       primaryMode: 'planning',

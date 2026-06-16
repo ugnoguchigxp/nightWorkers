@@ -15,11 +15,24 @@ describe('supervisor Round 2 user context', () => {
       safetyPolicy: { externalAllowedPaths: ['/template'] },
       todoPlan: [{ seq: 1, status: 'running' }],
       currentTodo: { seq: 1, status: 'running' },
+      progressContext: {
+        objective: 'minor_code_edit の現在作業を進める',
+        nextConcreteAction: 'read_file で対象ファイルを読む',
+        todoGuidance: 'Todo は記録であり作業そのものではない。',
+        doNotRepeat: [],
+        safeguards: [],
+      },
       toolResults: [{ step: 1, toolName: 'read_file', ok: true }],
       loadedProcedureSummaries: [{ jobType: 'minor_code_edit', digest: 'sha256:abc' }],
       artifactContextRefs: [
         { kind: 'contextstill_context_pack', refId: 'ctx-1', status: 'evidence_only' },
       ],
+      workspaceSnapshot: {
+        isEmpty: false,
+        topLevelDirs: ['src'],
+        topLevelFiles: ['package.json'],
+        truncated: false,
+      },
     });
 
     expect(extractRound2UserContextSection(rendered, 'Latest User Request')).toBe(
@@ -35,6 +48,9 @@ describe('supervisor Round 2 user context', () => {
       parseRound2UserContextJsonSection<unknown[]>(rendered, 'Recent Tool Evidence')[0]
     ).toMatchObject({
       toolName: 'read_file',
+    });
+    expect(parseRound2UserContextJsonSection<unknown>(rendered, 'Progress Context')).toMatchObject({
+      nextConcreteAction: 'read_file で対象ファイルを読む',
     });
     expect(extractRound2UserContextSection(rendered, 'Artifact and Source References')).toContain(
       'kind=contextstill_context_pack status=evidence_only refId=ctx-1'

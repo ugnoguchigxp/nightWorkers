@@ -121,6 +121,81 @@ async function markRunningTodosNeedsHuman(input: {
   );
 }
 
+async function closePendingTodosForNeedsHumanRun(input: {
+  runId: string;
+  taskId: string;
+  todos: Array<{
+    id: string;
+    seq: number;
+    title: string;
+    taskType: string;
+    status: string;
+    procedureId?: string | null;
+    startedAt?: unknown;
+  }>;
+  evidence: string;
+}) {
+  const pendingTodos = input.todos.filter((todo) => todo.status === 'pending');
+  if (pendingTodos.length === 0) return;
+
+  const completedAt = new Date();
+  await Promise.all(
+    pendingTodos.map(async (todo) => {
+      const reason = `Run requires human review before this Todo could start: ${input.evidence}`;
+      const completionGateResult = {
+        version: 1,
+        todoId: todo.id,
+        todoSeq: todo.seq,
+        procedureId: todo.procedureId ?? null,
+        status: 'needs_human',
+        passed: false,
+        reason,
+        checks: [
+          {
+            id: 'run_needs_human',
+            passed: false,
+            evidence: input.evidence,
+          },
+        ],
+        evidence: {
+          terminalState: 'needs_human',
+          riskLevel: 'medium',
+          summaryDigest: digestText(reason),
+        },
+      };
+      await repo.updateTaskRunTodo(
+        todo.id,
+        {
+          status: 'needs_human',
+          statusReason: reason,
+          completionGateResult,
+          completedAt,
+          startedAt: todo.startedAt ? new Date(String(todo.startedAt)) : completedAt,
+        },
+        { notifyTaskId: input.taskId, notifyRunId: input.runId }
+      );
+      await repo.createRunEvent({
+        version: 1,
+        runId: input.runId,
+        taskId: input.taskId,
+        timestamp: completedAt.toISOString(),
+        type: 'turn.finished',
+        severity: 'warning',
+        actor: 'system',
+        message: `Todo #${todo.seq} needs human review because the run stopped: ${todo.title}`,
+        data: {
+          todoId: todo.id,
+          todoSeq: todo.seq,
+          todoTitle: todo.title,
+          taskType: todo.taskType,
+          procedureId: todo.procedureId ?? null,
+          completionGateResult,
+        },
+      });
+    })
+  );
+}
+
 async function closeOpenTodosForCancelledRun(input: {
   runId: string;
   taskId: string;
@@ -201,8 +276,109 @@ async function closeOpenTodosForCancelledRun(input: {
   );
 }
 
+async function closeOpenTodosForFailedRun(input: {
+  runId: string;
+  taskId: string;
+  todos: Array<{
+    id: string;
+    seq: number;
+    title: string;
+    taskType: string;
+    status: string;
+    procedureId?: string | null;
+    startedAt?: unknown;
+  }>;
+  evidence: string;
+}) {
+  const openTodos = listOpenTodos(input.todos);
+  if (openTodos.length === 0) return;
+
+  const completedAt = new Date();
+  await Promise.all(
+    openTodos.map(async (todo) => {
+      const status =
+        todo.status === 'running' || isContextStillMcpGateTodo(todo) ? 'failed' : 'skipped';
+      const reason =
+        status === 'failed'
+          ? todo.status === 'running'
+            ? `Runtime crashed while this Todo was active: ${input.evidence}`
+            : `Runtime crashed before this required contextStill MCP gate could run: ${input.evidence}`
+          : `Skipped because the runtime crashed before this Todo started: ${input.evidence}`;
+      const completionGateResult = {
+        version: 1,
+        todoId: todo.id,
+        todoSeq: todo.seq,
+        procedureId: todo.procedureId ?? null,
+        status,
+        passed: false,
+        reason,
+        checks: [
+          {
+            id: 'run_failed',
+            passed: false,
+            evidence: input.evidence,
+          },
+        ],
+        evidence: {
+          terminalState: 'failed',
+          stoppedBy: 'llm_error',
+          riskLevel: 'high',
+          summaryDigest: digestText(reason),
+        },
+      };
+      await repo.updateTaskRunTodo(
+        todo.id,
+        {
+          status,
+          statusReason: reason,
+          completionGateResult,
+          completedAt,
+          startedAt: todo.startedAt ? new Date(String(todo.startedAt)) : completedAt,
+        },
+        { notifyTaskId: input.taskId, notifyRunId: input.runId }
+      );
+      await repo.createRunEvent({
+        version: 1,
+        runId: input.runId,
+        taskId: input.taskId,
+        timestamp: completedAt.toISOString(),
+        type: 'turn.finished',
+        severity: status === 'failed' ? 'error' : 'warning',
+        actor: 'system',
+        message: `Todo #${todo.seq} ${status} because the runtime crashed: ${todo.title}`,
+        data: {
+          todoId: todo.id,
+          todoSeq: todo.seq,
+          todoTitle: todo.title,
+          taskType: todo.taskType,
+          procedureId: todo.procedureId ?? null,
+          completionGateResult,
+        },
+      });
+    })
+  );
+}
+
+function isContextStillMcpGateTodo(todo: { procedureId?: string | null }) {
+  return todo.procedureId?.startsWith('contextstill.') === true;
+}
+
 function isPlanningOnlyRun<TTodo extends { taskType: string }>(todos: TTodo[]) {
   return todos.length === 0;
+}
+
+function toAgentRuntimeTodoContext(
+  todo: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>[number]
+) {
+  return {
+    id: todo.id,
+    seq: todo.seq,
+    title: todo.title,
+    description: todo.description,
+    taskType: todo.taskType,
+    status: todo.status,
+    procedureId: todo.procedureId,
+  };
 }
 
 const IMPLEMENTATION_PHASE_PREAMBLE = [
@@ -413,8 +589,8 @@ export async function startTaskRun(taskId: string) {
     severity: 'info',
     actor: 'system',
     message: implementationLlmRoute
-      ? `Implementation LLM route resolved: ${implementationLlmRoute.model} (${implementationLlmRoute.providerEndpointId}).`
-      : 'Implementation LLM route was not configured; using runtime lane defaults.',
+      ? `Implementation LLM route resolved: ${implementationLlmRoute.model} (${implementationLlmRoute.providerEndpointId}); runtime lane=${runtimeLaneResolution.lane} worker=${runtimeLaneResolution.workerKind}.`
+      : `Implementation LLM route was not configured; runtime lane=${runtimeLaneResolution.lane} worker=${runtimeLaneResolution.workerKind}.`,
     data: {
       effectiveLlmRouting,
       runtimeLane: runtimeLaneResolution.lane,
@@ -422,7 +598,6 @@ export async function startTaskRun(taskId: string) {
       runtimeLaneResolution,
     },
   });
-
   const contextSnapshot: RuntimePromptSnapshot = {
     compiledPrompt: compiledPromptText,
     source: 'task_prompt',
@@ -520,6 +695,7 @@ export async function startTaskRun(taskId: string) {
   (async () => {
     try {
       await repo.updateTaskStatus(taskId, 'running');
+      const runtimeTodosBeforeStart = await repo.listTaskRunTodosForRun(run.id);
       const runtimeResult = await runtime.start(
         {
           runId: run.id,
@@ -532,6 +708,11 @@ export async function startTaskRun(taskId: string) {
           safetyPolicy: repoInfo.safetyPolicy || undefined,
           contextSnapshot: runtimeContextSnapshot,
           runtimeOptions: runtimeLaneDefinition.buildRuntimeOptions(runtimeLaneSetupInput),
+          todoPlan: runtimeTodosBeforeStart.map(toAgentRuntimeTodoContext),
+          currentTodo: runtimeTodosBeforeStart
+            .filter((todo) => todo.status === 'running')
+            .sort((a, b) => a.seq - b.seq)
+            .map(toAgentRuntimeTodoContext)[0],
         },
         sink
       );
@@ -611,16 +792,33 @@ export async function startTaskRun(taskId: string) {
         return;
       }
 
-      assertRunStatusTransition(latestRunBeforeFinalize?.status || 'running', 'finalizing');
-      await repo.updateTaskRun(run.id, {
-        status: 'finalizing',
-        logContent: runtimeResult.logContent,
-        diffPatch: runtimeResult.diffPatch,
-        testResults: runtimeResult.testResults,
-        finalReport: runtimeResult.finalReport,
-        summary: runtimeResult.summary,
-      });
-      await repo.updateTaskStatus(taskId, 'finalizing');
+      const statusBeforeFinalize = latestRunBeforeFinalize?.status || 'running';
+      const transitionTable: Record<string, readonly string[]> = runStatusTransitionTable;
+      const canEnterFinalizing =
+        statusBeforeFinalize === 'finalizing' ||
+        transitionTable[statusBeforeFinalize]?.includes('finalizing') === true;
+      const enteredFinalizing = canEnterFinalizing;
+
+      if (statusBeforeFinalize !== 'finalizing' && canEnterFinalizing) {
+        assertRunStatusTransition(statusBeforeFinalize, 'finalizing');
+        await repo.updateTaskRun(run.id, {
+          status: 'finalizing',
+          logContent: runtimeResult.logContent,
+          diffPatch: runtimeResult.diffPatch,
+          testResults: runtimeResult.testResults,
+          finalReport: runtimeResult.finalReport,
+          summary: runtimeResult.summary,
+        });
+        await repo.updateTaskStatus(taskId, 'finalizing');
+      } else {
+        await repo.updateTaskRun(run.id, {
+          logContent: runtimeResult.logContent,
+          diffPatch: runtimeResult.diffPatch,
+          testResults: runtimeResult.testResults,
+          finalReport: runtimeResult.finalReport,
+          summary: runtimeResult.summary,
+        });
+      }
       await repo.createRunEvent({
         version: 1,
         runId: run.id,
@@ -630,7 +828,11 @@ export async function startTaskRun(taskId: string) {
         severity: 'info',
         actor: 'system',
         message: 'Runtime result captured.',
-        data: { terminalState: runtimeResult.terminalState },
+        data: {
+          terminalState: runtimeResult.terminalState,
+          previousStatus: statusBeforeFinalize,
+          finalizingTransitionApplied: enteredFinalizing,
+        },
       });
 
       const outcome = outcomeFromRuntimeResult(runtimeResult);
@@ -642,6 +844,13 @@ export async function startTaskRun(taskId: string) {
           todos: finalTodos,
           runtimeResult,
           outcomeStatus: outcome.status,
+        });
+        finalTodos = await repo.listTaskRunTodosForRun(run.id);
+        await closePendingTodosForNeedsHumanRun({
+          runId: run.id,
+          taskId,
+          todos: finalTodos,
+          evidence: runtimeResult.finalReport || runtimeResult.summary || outcome.summary,
         });
         finalTodos = await repo.listTaskRunTodosForRun(run.id);
       }
@@ -665,7 +874,8 @@ export async function startTaskRun(taskId: string) {
             .filter(Boolean)
             .join('\n')
         : runtimeResult.finalReport || outcome.summary;
-      assertRunStatusTransition('finalizing', guardedStatus);
+      const statusBeforeOutcome = enteredFinalizing ? 'finalizing' : statusBeforeFinalize;
+      assertRunStatusTransition(statusBeforeOutcome, guardedStatus);
       await repo.updateTaskRun(run.id, {
         status: guardedStatus,
         endedAt: new Date(),
@@ -738,6 +948,13 @@ export async function startTaskRun(taskId: string) {
       const errorMessage = toErrorMessage(err);
       logger.error({ error: errorMessage, runId: run.id }, 'NativeLocalRunner execution failed');
       const finalReport = `実行に失敗しました: ${errorMessage}`;
+      const todosBeforeFailedCloseout = await repo.listTaskRunTodosForRun(run.id);
+      await closeOpenTodosForFailedRun({
+        runId: run.id,
+        taskId,
+        todos: todosBeforeFailedCloseout,
+        evidence: errorMessage,
+      });
       await repo.updateTaskStatus(taskId, 'failed');
       assertRunStatusTransition('running', 'failed');
       await repo.updateTaskRun(run.id, {
@@ -749,6 +966,10 @@ export async function startTaskRun(taskId: string) {
         finalJudgment: null,
         summary: `Execution crashed: ${errorMessage}`,
       });
+      await completeImplementationQueueEntryForRun(run.id, 'failed');
+      if (shouldContinueSessionQueue('failed')) {
+        void runSessionQueueForRepository(task.repositoryId);
+      }
 
       await repo.createTaskMessage({
         taskId,

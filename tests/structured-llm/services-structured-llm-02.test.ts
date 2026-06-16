@@ -5,6 +5,7 @@ import {
   callStructuredJsonLLM,
   callSupervisorLLM,
   readStructuredLlmProviderSettings,
+  resolveStructuredLlmModelCapability,
 } from '../../api/services/structured-llm';
 import { installStructuredLlmEnvHooks } from './structured-llm-test-env';
 
@@ -299,6 +300,54 @@ describe('Supervisor LLM schema-first parsing', () => {
       role: 'implementation',
       routeSource: 'primary',
       modelOrDeployment: 'gpt-5-mini',
+    });
+  });
+
+  it('resolves configured model capability metadata for routed local models', () => {
+    const capability = resolveStructuredLlmModelCapability({
+      role: 'implementation',
+      settings: {
+        ACTIVE_LLM_PROVIDER: 'azure',
+        providerEndpoints: [
+          {
+            id: 'local-qwen-large',
+            name: 'Local Qwen Large',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['qwen3-coder-176k'],
+            modelCapabilities: {
+              'qwen3-coder-176k': {
+                contextWindowTokens: 180_000,
+                safePromptBudgetTokens: 176_000,
+                reservedOutputTokens: 4_000,
+                supportsProviderSideCompression: true,
+                compressionProfile: 'balanced',
+              },
+            },
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'local-qwen-large',
+              model: 'qwen3-coder-176k',
+            },
+            fallbacks: [],
+          },
+        ],
+      },
+    });
+
+    expect(capability).toMatchObject({
+      providerEndpointId: 'local-qwen-large',
+      model: 'qwen3-coder-176k',
+      contextWindowTokens: 180_000,
+      safePromptBudgetTokens: 176_000,
+      reservedOutputTokens: 4_000,
+      supportsProviderSideCompression: true,
+      compressionProfile: 'balanced',
     });
   });
 

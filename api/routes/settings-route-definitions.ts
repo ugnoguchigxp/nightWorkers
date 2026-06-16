@@ -20,11 +20,23 @@ import {
   SUPPORTED_LANGUAGES,
   validateTimezone,
 } from '../services/settings/general-settings';
-import { llmSettingsSchema } from './settings-runtime';
+import { llmProviderEndpointSchema, llmSettingsSchema } from './settings-runtime';
 
 const llmModelsSchema = z.object({
   activeProvider: z.enum(['azure', 'openai', 'bedrock', 'codex']),
   options: z.array(z.object({ value: z.string(), label: z.string() })),
+});
+
+const llmProviderHealthSchema = z.object({
+  ok: z.boolean(),
+  reachable: z.boolean(),
+  providerEndpointId: z.string(),
+  providerKind: z.enum(['azure', 'openai', 'openai-compatible', 'bedrock', 'codex', 'local']),
+  url: z.string().nullable(),
+  status: z.number().nullable(),
+  durationMs: z.number(),
+  checkedAt: z.string(),
+  message: z.string(),
 });
 
 const codexSdkStatusSchema = z.object({
@@ -302,6 +314,35 @@ export const smokeLlmRoute = createRoute({
         },
       },
       description: 'Run LLM smoke test with active provider',
+    },
+  },
+});
+
+export const testLlmProviderHealthRoute = createRoute({
+  method: 'post',
+  path: '/llm/providers/{id}/health',
+  request: {
+    params: z.object({ id: z.string().min(1) }),
+    body: {
+      required: false,
+      content: {
+        'application/json': {
+          schema: z.object({ endpoint: llmProviderEndpointSchema.optional() }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: llmProviderHealthSchema,
+        },
+      },
+      description: 'Check provider endpoint /health reachability',
+    },
+    404: {
+      description: 'LLM provider endpoint not found',
     },
   },
 });

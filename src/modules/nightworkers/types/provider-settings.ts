@@ -30,6 +30,14 @@ export type LlmProviderEndpointKind =
 export type LlmRole = 'plan' | 'implementation' | 'test' | 'review' | 'quality_gate' | 'completion';
 export type ImplementationRuntimeLane = '' | 'native-supervisor' | 'codex-sdk' | 'codex-agent';
 
+export type LlmModelCapability = {
+  contextWindowTokens?: number;
+  safePromptBudgetTokens?: number;
+  reservedOutputTokens?: number;
+  supportsProviderSideCompression?: boolean;
+  compressionProfile?: string;
+};
+
 export type LlmProviderEndpoint = {
   id: string;
   name: string;
@@ -42,6 +50,20 @@ export type LlmProviderEndpoint = {
   region?: string;
   models: string[];
   modelDisplayNames?: Record<string, string>;
+  defaultModelCapability?: LlmModelCapability;
+  modelCapabilities?: Record<string, LlmModelCapability>;
+};
+
+export type LlmProviderHealthResult = {
+  ok: boolean;
+  reachable: boolean;
+  providerEndpointId: string;
+  providerKind: LlmProviderEndpointKind;
+  url: string | null;
+  status: number | null;
+  durationMs: number;
+  checkedAt: string;
+  message: string;
 };
 
 export type LlmModelTarget = {

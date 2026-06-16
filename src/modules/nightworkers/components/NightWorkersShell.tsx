@@ -94,7 +94,7 @@ function resolveComposerRouteTarget(
   routes: LlmRoleRoute[] | undefined,
   availableModelKeys: Set<string>
 ): LlmModelTarget | null {
-  const roles = ['implementation', 'plan'] as const;
+  const roles = ['plan', 'implementation'] as const;
   for (const role of roles) {
     const route = routes?.find((item) => item.role === role);
     if (!route) continue;
@@ -119,6 +119,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const workspaceRef = useRef(workspace);
   const openedQuestionnaireMessageIdsRef = useRef<Set<string>>(new Set());
   const openingQuestionnaireMessageIdsRef = useRef<Set<string>>(new Set());
+  const previousActiveSessionIdRef = useRef<string | null>(null);
   const userSelectedComposerModelRef = useRef(false);
   const [selectedPath, setSelectedPath] = useState('');
   const [model, setModel] = useState('gpt-5.5');
@@ -146,6 +147,12 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const isActiveImplementationLocked = isImplementationLockedStatus(
     workspace.activeSession?.status
   );
+  const activeSessionId = workspace.activeSessionId;
+
+  if (previousActiveSessionIdRef.current !== activeSessionId) {
+    previousActiveSessionIdRef.current = activeSessionId;
+    userSelectedComposerModelRef.current = false;
+  }
 
   useEffect(() => {
     workspaceRef.current = workspace;
@@ -229,6 +236,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   }, [selectedComposerModelSupportsThinking]);
 
   const buildComposerLlmSelection = () => {
+    if (!userSelectedComposerModelRef.current) return undefined;
     const target = parseModelTargetKey(model);
     const selected = target || { providerEndpointId: '', model: currentProviderModel || model };
     return {
@@ -259,6 +267,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         acceptanceCriteria: '',
       });
       workspace.setActiveSessionId(session.id);
+      userSelectedComposerModelRef.current = false;
       await workspace.sendWorkbenchMessage(
         session.id,
         prompt,

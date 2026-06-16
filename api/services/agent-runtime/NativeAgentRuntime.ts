@@ -2,8 +2,11 @@ import { toDeepRecord } from '../../../shared/json-record';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import { runAgentHooks } from '../hooks/hooks-runner';
 import type { AgentHookInput, AgentHookRunEvent } from '../hooks/types';
+import { type McpToolSummary, mcpClientManager } from '../mcp/mcp-client-manager';
 import { normalizeStructuredLlmModelTarget } from '../structured-llm/selection';
 import { runSupervisorLoop } from '../supervisor/supervisor-loop';
+import { executeWorkerTool } from '../worker-tools/dispatcher';
+import type { WorkerToolResult } from '../worker-tools/types';
 import type {
   AgentRunContext,
   AgentRuntime,
@@ -19,6 +22,22 @@ const DEFAULT_RESULT: AgentRuntimeResult = {
   stoppedBy: 'llm_error',
   riskLevel: 'high',
 };
+
+type NativeContextStillGate = {
+  procedureId: string;
+  mcpTool: 'initial_instructions';
+  eventToolName: 'context-still.initial_instructions';
+  arguments: (context: AgentRunContext) => Record<string, unknown>;
+};
+
+const NATIVE_CONTEXT_STILL_GATES: NativeContextStillGate[] = [
+  {
+    procedureId: 'contextstill.initial_instructions',
+    mcpTool: 'initial_instructions',
+    eventToolName: 'context-still.initial_instructions',
+    arguments: () => ({}),
+  },
+];
 
 export class NativeAgentRuntime implements AgentRuntime {
   readonly kind = 'native-local' as const;
@@ -73,11 +92,11 @@ export class NativeAgentRuntime implements AgentRuntime {
     };
     let sessionHookOpened = false;
     let sessionHookClosed = false;
-    const runSessionEndHook = async () => {
+    const runSessionEndHook = async (result?: AgentRuntimeResult) => {
       if (!sessionHookOpened || sessionHookClosed) return;
       sessionHookClosed = true;
       await runAgentHooks({
-        input: buildSessionHookInput('SessionEnd', context),
+        input: buildSessionHookInput('SessionEnd', context, result),
         repoRoot: context.repoRoot,
         onEvent: emitHookEvent,
       });
@@ -118,6 +137,19 @@ export class NativeAgentRuntime implements AgentRuntime {
           finalReport,
           stoppedBy: 'hook',
           riskLevel: 'medium',
+          logContent: logs.join('\n'),
+        };
+      }
+
+      const gateFailure = await runNativeContextStillGates(context, emit);
+      if (gateFailure) {
+        await runSessionEndHook();
+        return {
+          terminalState: 'needs_human',
+          summary: gateFailure.summary,
+          finalReport: gateFailure.finalReport,
+          stoppedBy: 'tool_failure',
+          riskLevel: 'high',
           logContent: logs.join('\n'),
         };
       }
@@ -173,7 +205,7 @@ export class NativeAgentRuntime implements AgentRuntime {
         },
       });
 
-      await runSessionEndHook();
+      await runSessionEndHook(result);
 
       return result;
     } catch (err) {
@@ -223,6 +255,113 @@ export class NativeAgentRuntime implements AgentRuntime {
   }
 }
 
+async function runNativeContextStillGates(
+  context: AgentRunContext,
+  emit: (event: AgentRuntimeEvent) => Promise<void>
+): Promise<{ summary: string; finalReport: string } | null> {
+  if (!hasContextStillGate(context)) return null;
+
+  for (const gate of NATIVE_CONTEXT_STILL_GATES) {
+    const currentTodo = await readCurrentTodo(context.runId);
+    if (!currentTodo || currentTodo.procedureId !== gate.procedureId) continue;
+
+    const tool = await resolveContextStillTool(gate.mcpTool);
+    if (!tool) {
+      return {
+        summary: `contextStill MCP tool is not available: ${gate.mcpTool}`,
+        finalReport: `contextStill MCP gate を実行できません。MCP server に ${gate.mcpTool} が見つかりません。`,
+      };
+    }
+
+    await emit({
+      type: 'tool_call_started',
+      message: `[MCP] ${gate.eventToolName} started.`,
+      payload: {
+        toolName: gate.eventToolName,
+        mcpServer: tool.serverName,
+        mcpTool: gate.mcpTool,
+        serverId: tool.serverId,
+        todoId: currentTodo.id,
+        todoSeq: currentTodo.seq,
+      },
+    });
+
+    const dispatch = await executeWorkerTool({
+      toolName: 'mcp_call_tool',
+      args: {
+        serverId: tool.serverId,
+        toolName: gate.mcpTool,
+        arguments: gate.arguments(context),
+      },
+      repoRoot: context.repoRoot,
+      taskId: context.taskId,
+      safetyPolicy: context.safetyPolicy,
+      readFiles: [],
+    });
+    const result = dispatch.result as WorkerToolResult<unknown>;
+    await emit({
+      type: 'tool_call_finished',
+      message: `[MCP] ${gate.eventToolName} ${result.ok ? 'finished' : 'failed'}.`,
+      payload: {
+        toolName: gate.eventToolName,
+        mcpServer: tool.serverName,
+        mcpTool: gate.mcpTool,
+        serverId: tool.serverId,
+        status: result.ok ? 'completed' : 'failed',
+        ok: result.ok,
+        todoId: currentTodo.id,
+        todoSeq: currentTodo.seq,
+        result: result.payload,
+        error: result.error,
+      },
+    });
+
+    if (!result.ok) {
+      const message =
+        result.error?.message || `contextStill MCP tool failed: ${gate.eventToolName}`;
+      return {
+        summary: message,
+        finalReport: `contextStill MCP gate の実行に失敗しました: ${message}`,
+      };
+    }
+  }
+
+  return null;
+}
+
+function hasContextStillGate(context: AgentRunContext) {
+  const procedureIds = new Set(NATIVE_CONTEXT_STILL_GATES.map((gate) => gate.procedureId));
+  if (context.currentTodo?.procedureId && procedureIds.has(context.currentTodo.procedureId)) {
+    return true;
+  }
+  return Boolean(context.todoPlan?.some((todo) => procedureIds.has(todo.procedureId ?? '')));
+}
+
+async function readCurrentTodo(runId: string) {
+  const todos = await repo.listTaskRunTodosForRun(runId);
+  return todos.filter((todo) => todo.status === 'running').sort((a, b) => a.seq - b.seq)[0];
+}
+
+async function resolveContextStillTool(toolName: NativeContextStillGate['mcpTool']) {
+  const tools = await mcpClientManager.listAvailableTools();
+  return (
+    tools.find((tool) => tool.name === toolName && isContextStillTool(tool)) ??
+    tools.find((tool) => tool.name === toolName) ??
+    null
+  );
+}
+
+function isContextStillTool(tool: McpToolSummary) {
+  const serverName = tool.serverName.toLowerCase();
+  const prefix = tool.toolPrefix.toLowerCase();
+  return (
+    serverName === 'context-still' ||
+    serverName === 'contextstill' ||
+    prefix === 'context_still' ||
+    prefix === 'contextstill'
+  );
+}
+
 function readRuntimeLlmRouteOverride(context: AgentRunContext) {
   const routing =
     context.runtimeOptions?.llmRouting &&
@@ -252,11 +391,25 @@ function buildBaseHookInput(
 
 function buildSessionHookInput(
   event: 'SessionStart' | 'SessionEnd',
-  context: AgentRunContext
+  context: AgentRunContext,
+  result?: AgentRuntimeResult
 ): AgentHookInput {
   return {
     ...buildBaseHookInput(event, context),
     hook_event_name: event,
     source: event === 'SessionStart' ? 'run_start' : 'run_end',
+    ...(result
+      ? {
+          payload: {
+            run_id: context.runId,
+            task_id: context.taskId,
+            terminal_state: result.terminalState,
+            stopped_by: result.stoppedBy,
+            risk_level: result.riskLevel,
+            summary: result.summary,
+            final_report: result.finalReport,
+          },
+        }
+      : {}),
   };
 }

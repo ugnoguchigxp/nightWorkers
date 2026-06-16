@@ -6,7 +6,9 @@ import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import { createLedgerSink } from '../api/services/agent-runtime/ledger-sink';
 import { NativeAgentRuntime } from '../api/services/agent-runtime/NativeAgentRuntime';
 import { createAgentHook } from '../api/services/hooks/hooks-settings';
+import { mcpClientManager } from '../api/services/mcp/mcp-client-manager';
 import * as supervisor from '../api/services/supervisor/supervisor-loop';
+import { executeWorkerTool } from '../api/services/worker-tools/dispatcher';
 
 vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   createRunEvent: vi.fn(),
@@ -20,11 +22,32 @@ vi.mock('../api/services/supervisor/supervisor-loop', () => ({
   runSupervisorLoop: vi.fn(),
 }));
 
+vi.mock('../api/services/mcp/mcp-client-manager', () => ({
+  mcpClientManager: {
+    listAvailableTools: vi.fn(),
+    disconnectAll: vi.fn(),
+  },
+}));
+
+vi.mock('../api/services/worker-tools/dispatcher', () => ({
+  executeWorkerTool: vi.fn(),
+}));
+
 describe('AgentRuntime', () => {
   let tempDir: string;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(mcpClientManager.listAvailableTools).mockResolvedValue([]);
+    vi.mocked(executeWorkerTool).mockResolvedValue({
+      result: {
+        ok: true,
+        toolName: 'mcp_call_tool',
+        startedAt: new Date('2026-06-13T00:00:00.000Z').toISOString(),
+        finishedAt: new Date('2026-06-13T00:00:01.000Z').toISOString(),
+        payload: {},
+      },
+    });
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-agent-runtime-'));
     process.env.NIGHTWORKERS_HOOKS_SETTINGS_PATH = path.join(tempDir, 'agent-hooks.json');
   });
@@ -448,6 +471,119 @@ describe('AgentRuntime', () => {
     });
 
     expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
+  });
+
+  it('runs native initial_instructions before entering the supervisor loop', async () => {
+    const currentTodos = [
+      {
+        id: 'todo-1',
+        runId: 'run-1',
+        seq: 1,
+        title: 'initial_instructions を実行する',
+        taskType: 'initial_instructions',
+        status: 'running',
+        procedureId: 'contextstill.initial_instructions',
+        startedAt: new Date('2026-06-13T00:00:00.000Z'),
+      },
+      {
+        id: 'todo-2',
+        runId: 'run-1',
+        seq: 2,
+        title: 'context_compile を実行する',
+        taskType: 'context_compile',
+        status: 'pending',
+        procedureId: 'contextstill.context_compile',
+      },
+      {
+        id: 'todo-3',
+        runId: 'run-1',
+        seq: 3,
+        title: '実装する',
+        taskType: 'implementation',
+        status: 'pending',
+        procedureId: null,
+      },
+    ];
+    let todos = currentTodos;
+    vi.mocked(repo.getTaskRun).mockResolvedValue({ id: 'run-1', taskId: 'task-1' } as never);
+    vi.mocked(repo.listTaskRunTodosForRun).mockImplementation(async () => todos as never);
+    vi.mocked(repo.updateTaskRunTodo).mockImplementation(async (todoId, patch) => {
+      todos = todos.map((todo) => (todo.id === todoId ? { ...todo, ...patch } : todo));
+      return todos.find((todo) => todo.id === todoId) as never;
+    });
+    vi.mocked(repo.startTaskRunTodoIfStillPendingAndNoEarlierOpen).mockImplementation(
+      async ({ id, startedAt }) => {
+        const target = todos.find((todo) => todo.id === id && todo.status === 'pending');
+        if (!target) return null as never;
+        todos = todos.map((todo) =>
+          todo.id === id ? { ...todo, status: 'running', startedAt } : todo
+        );
+        return todos.find((todo) => todo.id === id) as never;
+      }
+    );
+    vi.mocked(mcpClientManager.listAvailableTools).mockResolvedValue([
+      {
+        serverId: 'server-1',
+        serverName: 'context-still',
+        toolPrefix: 'context_still',
+        name: 'initial_instructions',
+        namespacedName: 'mcp__context_still__initial_instructions',
+      },
+      {
+        serverId: 'server-1',
+        serverName: 'context-still',
+        toolPrefix: 'context_still',
+        name: 'context_compile',
+        namespacedName: 'mcp__context_still__context_compile',
+      },
+    ]);
+    vi.mocked(supervisor.runSupervisorLoop).mockResolvedValue({
+      terminalState: 'completed',
+      summary: 'done',
+      finalReport: 'done',
+      stoppedBy: 'decision',
+      riskLevel: 'low',
+    });
+
+    const runtime = new NativeAgentRuntime();
+    const result = await runtime.start(
+      {
+        runId: 'run-1',
+        taskId: 'task-1',
+        repositoryId: 'repo-1',
+        repoRoot: process.cwd(),
+        compiledPrompt: 'do work',
+        latestUserMessage: 'do work',
+        timeoutSeconds: 60,
+        contextSnapshot: {
+          compiledPrompt: 'do work',
+          source: 'fallback',
+        },
+        todoPlan: currentTodos,
+        currentTodo: currentTodos[0],
+      },
+      createLedgerSink('run-1')
+    );
+
+    expect(result.terminalState).toBe('completed');
+    expect(executeWorkerTool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolName: 'mcp_call_tool',
+        args: expect.objectContaining({
+          serverId: 'server-1',
+          toolName: 'initial_instructions',
+        }),
+      })
+    );
+    expect(executeWorkerTool).toHaveBeenCalledTimes(1);
+    expect(todos).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'todo-1', status: 'passed' }),
+        expect.objectContaining({ id: 'todo-2', status: 'running' }),
+        expect.objectContaining({ id: 'todo-3', status: 'pending' }),
+      ])
+    );
+    expect(supervisor.runSupervisorLoop).toHaveBeenCalled();
   });
 
   it('does not auto-close the quality gate for focused checks', async () => {

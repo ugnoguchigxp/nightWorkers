@@ -56,4 +56,15 @@ describe('ThreadWorkspace header', () => {
       "void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'questionnaire');"
     );
   });
+
+  it('shows the plan route before implementation in the composer model selector', () => {
+    const shellSource = readFileSync(
+      'src/modules/nightworkers/components/NightWorkersShell.tsx',
+      'utf8'
+    );
+
+    const rolePriority = shellSource.indexOf("const roles = ['plan', 'implementation'] as const;");
+    expect(rolePriority).toBeGreaterThanOrEqual(0);
+    expect(rolePriority).toBeLessThan(shellSource.indexOf('for (const role of roles)'));
+  });
 });

@@ -44,7 +44,14 @@ export type BudgetDecision = {
 
 export type SupervisorLoopResult = {
   finalReport: string;
-  terminalState: 'completed' | 'needs_review' | 'needs_human' | 'failed' | 'timed_out' | 'blocked';
+  terminalState:
+    | 'completed'
+    | 'needs_review'
+    | 'needs_human'
+    | 'failed'
+    | 'timed_out'
+    | 'blocked'
+    | 'cancelled';
   summary: string;
   stoppedBy:
     | 'decision'
@@ -53,7 +60,8 @@ export type SupervisorLoopResult = {
     | 'llm_error'
     | 'missing_tool_call'
     | 'policy'
-    | 'hook';
+    | 'hook'
+    | 'cancelled';
   riskLevel: 'low' | 'medium' | 'high';
 };
 

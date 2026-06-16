@@ -139,4 +139,28 @@ describe('standard implementation TodoList builder', () => {
     expect(todos.filter((todo) => todo.title === '検証コマンドを実行する')).toHaveLength(0);
     expect(todos.filter((todo) => todo.procedureId === 'quality_gate_verify')).toHaveLength(1);
   });
+
+  it('merges LLM-generated review Todos into the fixed LLM review gate', () => {
+    const todos = buildStandardImplementationTodoList({
+      todos: [
+        { seq: 1, title: 'Implement feature' },
+        { seq: 2, title: 'LLM コードレビューを実施する' },
+        { seq: 3, title: 'Add focused tests', taskType: 'test', dependsOn: [1] },
+      ],
+    });
+
+    expect(todos.map((todo) => `${todo.seq}:${todo.taskType}:${todo.title}`)).toEqual([
+      '1:initial_instructions:initial_instructions を実行する',
+      '2:context_compile:context_compile を実行する',
+      '3:implementation:Implement feature',
+      '4:test:Add focused tests',
+      '5:review:LLM コードレビューを実施する',
+      '6:verification:品質ゲート verify を実施する',
+      '7:knowledge_capture:知識登録を行う',
+      '8:completion_report:完了報告を行う',
+    ]);
+    expect(todos[3]).toMatchObject({ title: 'Add focused tests', dependsOn: [3] });
+    expect(todos.filter((todo) => todo.title === 'LLM コードレビューを実施する')).toHaveLength(1);
+    expect(todos.filter((todo) => todo.procedureId === 'llm_code_review')).toHaveLength(1);
+  });
 });

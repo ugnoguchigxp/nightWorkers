@@ -46,6 +46,16 @@ export type StructuredLlmRole =
 
 export type StructuredLlmThinkingDepth = '' | 'low' | 'medium' | 'high' | 'very_high';
 
+export type StructuredLlmCompressionProfile = 'none' | 'light' | 'balanced' | 'aggressive' | string;
+
+export type StructuredLlmModelCapability = {
+  contextWindowTokens?: number;
+  safePromptBudgetTokens?: number;
+  reservedOutputTokens?: number;
+  supportsProviderSideCompression?: boolean;
+  compressionProfile?: StructuredLlmCompressionProfile;
+};
+
 export type StructuredLlmProviderEndpoint = {
   id: string;
   name: string;
@@ -58,6 +68,8 @@ export type StructuredLlmProviderEndpoint = {
   region?: string;
   models: string[];
   modelDisplayNames?: Record<string, string>;
+  defaultModelCapability?: StructuredLlmModelCapability;
+  modelCapabilities?: Record<string, StructuredLlmModelCapability>;
 };
 
 export type StructuredLlmModelTarget = {

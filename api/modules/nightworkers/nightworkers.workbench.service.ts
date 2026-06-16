@@ -1,11 +1,5 @@
 import { toDeepRecord } from '../../../shared/json-record';
 import { AppError, NotFoundError } from '../../lib/errors';
-import { getCurrentSettings } from '../../routes/settings';
-import {
-  type RuntimeLaneResolution,
-  readRuntimeLaneConfigFromEnv,
-  resolveRuntimeLane,
-} from '../../services/agent-runtime/runtime-lane';
 import {
   BlueprintDataDesignGenerationError,
   generateBlueprintDataDesignDraft,
@@ -20,9 +14,7 @@ import { validateAppBlueprint } from '../../services/blueprints/validation';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
 import { shouldWaitForWorkbenchIntakeInTests } from '../../services/runtime-env';
 import { callSupervisorLLM, type SupervisorLlmDebugEvent } from '../../services/structured-llm';
-import { resolveStructuredLlmRoleRoute } from '../../services/structured-llm/role-routing';
 import { normalizeStructuredLlmModelTarget } from '../../services/structured-llm/selection';
-import { readStructuredLlmProviderSettings } from '../../services/structured-llm/settings';
 import { buildRound1JobTypePrompt } from '../../services/supervisor/prompt';
 import type { JobTypeSelection } from '../../services/supervisor/schema-first';
 import { createDesignQuestionnaire } from './nightworkers.design-questionnaire.service';
@@ -195,7 +187,6 @@ export async function appendWorkbenchMessage(
       failureMode: 'throw',
       intent,
       artifactContext,
-      hasPriorMessages: existingMessages.length > 0,
       llmRouteOverride,
     });
   }
@@ -205,7 +196,6 @@ export async function appendWorkbenchMessage(
     failureMode: 'record',
     intent,
     artifactContext,
-    hasPriorMessages: existingMessages.length > 0,
     llmRouteOverride,
   });
   return { task: updated, run: null, messages: await repo.listTaskMessages(id) };
@@ -365,7 +355,6 @@ async function handleWorkbenchIntakeMessage(
     failureMode: 'throw' | 'record';
     intent?: WorkbenchChatIntent;
     artifactContext?: WorkbenchArtifactContext | null;
-    hasPriorMessages?: boolean;
     llmRouteOverride?: ReturnType<typeof normalizeStructuredLlmModelTarget>;
   } = {
     failureMode: 'throw',
@@ -379,43 +368,6 @@ async function handleWorkbenchIntakeMessage(
   const llmPrompt = renderArtifactContextualPrompt(prompt, options.artifactContext || null);
 
   try {
-    const codexAgentIntake = resolveCodexAgentWorkbenchIntake(
-      options.intent || 'intake',
-      options.artifactContext || null,
-      Boolean(options.hasPriorMessages),
-      options.llmRouteOverride || null
-    );
-    if (codexAgentIntake) {
-      const runnable = await repo.updateTask(taskId, {
-        title,
-        objective: task.objective || prompt,
-        acceptanceCriteria: task.acceptanceCriteria || prompt,
-        status: 'ready',
-      });
-      await repo.createTaskMessage({
-        taskId,
-        role: 'system',
-        content: 'Codex agent run started from Workbench intake.',
-        messageType: 'text',
-        payloadJson: {
-          intent: 'run_started',
-          source: 'workbench',
-          runtimeLane: codexAgentIntake.lane,
-          runtimeLaneResolution: codexAgentIntake,
-          intakeBypass: {
-            reason: 'codex-sdk-runtime',
-            skippedRound1: true,
-          },
-        },
-      });
-      const run = await startTaskRun(taskId);
-      return {
-        task: (await repo.getTask(taskId)) || runnable,
-        run,
-        messages: await repo.listTaskMessages(taskId),
-      };
-    }
-
     const artifactFocusedSelection = resolveArtifactFocusedJobSelection(
       options.artifactContext || null,
       prompt
@@ -633,44 +585,6 @@ async function handleWorkbenchIntakeMessage(
       { task: updated }
     );
   }
-}
-
-function resolveCodexAgentWorkbenchIntake(
-  intent: WorkbenchChatIntent,
-  artifactContext: WorkbenchArtifactContext | null,
-  hasPriorMessages: boolean,
-  llmRouteOverride: ReturnType<typeof normalizeStructuredLlmModelTarget>
-): RuntimeLaneResolution | null {
-  if (intent !== 'intake') return null;
-  if (artifactContext) return null;
-  if (!hasPriorMessages) return null;
-  const implementationRoute = resolveStructuredLlmRoleRoute({
-    role: 'implementation',
-    settings: readStructuredLlmProviderSettings(),
-    override: llmRouteOverride,
-  });
-  if (implementationRoute) {
-    if (implementationRoute.providerId !== 'codex') return null;
-    return {
-      lane: 'codex-sdk',
-      workerKind: 'codex-agent',
-      source: 'role_route',
-      diagnostics: [
-        {
-          level: 'info',
-          message: `Role Routing selected Codex SDK for implementation via ${implementationRoute.source}.`,
-        },
-      ],
-    };
-  }
-  const settings = getCurrentSettings();
-  const runtimeLaneResolution = resolveRuntimeLane({
-    settingsRuntimeLane: settings.IMPLEMENTATION_RUNTIME_LANE,
-    activeLlmProvider: settings.ACTIVE_LLM_PROVIDER,
-    codexEnabled: settings.CODEX_ENABLED,
-    ...readRuntimeLaneConfigFromEnv(),
-  });
-  return runtimeLaneResolution.lane === 'codex-sdk' ? runtimeLaneResolution : null;
 }
 
 class BlueprintArtifactGenerationError extends Error {

@@ -26,6 +26,7 @@ vi.mock('../../api/modules/nightworkers/nightworkers.repository', () => ({
   createTaskMessage: vi.fn(),
   updateTaskRun: vi.fn(),
   updateTaskStatus: vi.fn(),
+  listTaskMessages: vi.fn(),
   listTaskRunTodosForRun: vi.fn(),
   replaceTaskRunTodosForRun: vi.fn(),
   updateTaskRunTodo: vi.fn(),
@@ -40,6 +41,7 @@ describe('Schema-first supervisor loop', () => {
       objective: 'Create fizzbuzz.ts',
       acceptanceCriteria: 'File exists',
     } as never);
+    vi.mocked(repo.listTaskMessages).mockResolvedValue([] as never);
     vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
   });
 

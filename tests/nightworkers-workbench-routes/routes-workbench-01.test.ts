@@ -626,8 +626,11 @@ describe('NightWorkers workbench routes', () => {
     });
   });
 
-  it('bypasses round 1 and starts a codex-sdk run when Codex is the runtime lane', async () => {
+  it('keeps prior-message intake on round 1 instead of using the Codex intake bypass', async () => {
     process.env.NIGHTWORKERS_RUNTIME_LANE = 'codex-agent';
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('runtime_debug', '実際に使われているポート番号を確認する')
+    );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
     await repo.createTaskMessage({
       taskId: task.id,
@@ -647,19 +650,17 @@ describe('NightWorkers workbench routes', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
+    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
     expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
     const runs = await repo.listTaskRunsForTask(task.id);
     expect(runs).toHaveLength(1);
-    expect(runs[0]?.workerKind).toBe('codex-agent');
     const systemMessage = body.messages.find(
       (message: unknown) =>
         message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
-    expect(systemMessage?.metadataJson?.intakeBypass).toMatchObject({
-      reason: 'codex-sdk-runtime',
-      skippedRound1: true,
-    });
+    expect(systemMessage?.metadataJson?.intakeBypass).toBeUndefined();
+    expect(systemMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('runtime_debug');
+    expect(systemMessage?.metadataJson?.routingHypothesis?.primaryMode).toBe('runtime_debug');
     await vi.waitFor(async () => {
       const updatedRuns = await repo.listTaskRunsForTask(task.id);
       expect(updatedRuns[0]?.status).toBe('needs_human');

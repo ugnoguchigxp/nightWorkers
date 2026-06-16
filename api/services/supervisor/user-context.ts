@@ -10,6 +10,7 @@ export type Round2UserContextInput = {
   safetyPolicy: unknown | null;
   todoPlan: unknown[];
   currentTodo: unknown | null;
+  progressContext: unknown;
   toolResults: unknown[];
   loadedProcedureSummaries: unknown[];
   artifactContextRefs: SupervisorArtifactContextRef[];
@@ -46,6 +47,9 @@ export function renderRound2UserContext(input: Round2UserContextInput) {
       null,
       2
     ),
+    '',
+    '[Progress Context]',
+    JSON.stringify(input.progressContext, null, 2),
     '',
     '[Recent Tool Evidence]',
     JSON.stringify(input.toolResults, null, 2),
@@ -85,6 +89,7 @@ function round2SectionBoundaryPattern(currentSection: string) {
     'Continuity Context',
     'Workspace Snapshot',
     'Current Execution State',
+    'Progress Context',
     'Recent Tool Evidence',
     'Loaded Procedure Summaries',
     'Artifact and Source References',

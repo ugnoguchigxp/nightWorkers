@@ -140,7 +140,8 @@ describe('NightWorkers Codex MCP integration', () => {
         },
       });
       expect(fs.existsSync(path.join(repoRoot, 'package.json'))).toBe(true);
-      expect(fs.existsSync(path.join(repoRoot, 'src'))).toBe(true);
+      expect(fs.existsSync(path.join(repoRoot, 'api'))).toBe(true);
+      expect(fs.existsSync(path.join(repoRoot, 'web', 'src'))).toBe(true);
       expect(buildNightWorkersCodexToolApprovalConfig()).toMatchObject({
         import_project: { approval_mode: 'approve' },
       });

@@ -103,6 +103,7 @@ export const toolRegistry = {
         filePath: { type: 'string' },
         startLine: { type: 'number' },
         endLine: { type: 'number' },
+        fresh: { type: 'boolean' },
         compressionMode: { type: 'string', enum: ['auto', 'off'] },
       },
       ['filePath']

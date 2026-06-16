@@ -40,6 +40,14 @@ vi.mock('../api/services/structured-llm', () => ({
   callSupervisorLLM: llmMocks.callSupervisorLLM,
 }));
 
+const providerHealthMocks = vi.hoisted(() => ({
+  checkStructuredLlmProviderHealth: vi.fn(),
+}));
+
+vi.mock('../api/services/structured-llm/provider-health', () => ({
+  checkStructuredLlmProviderHealth: providerHealthMocks.checkStructuredLlmProviderHealth,
+}));
+
 const codexStatusMocks = vi.hoisted(() => ({
   readCodexSdkStatus: vi.fn(),
   readCodexModelOptions: vi
@@ -94,6 +102,17 @@ describe('general and LLM settings routes', () => {
     codexStatusMocks.readCodexModelOptions.mockReturnValue([
       { value: 'gpt-5.4-mini', label: 'GPT-5.4-Mini' },
     ]);
+    providerHealthMocks.checkStructuredLlmProviderHealth.mockResolvedValue({
+      ok: true,
+      reachable: true,
+      providerEndpointId: 'local-qwen',
+      providerKind: 'local',
+      url: 'http://localhost:11434/health',
+      status: 200,
+      durationMs: 12,
+      checkedAt: '2026-06-16T00:00:00.000Z',
+      message: 'HTTP 200',
+    });
   });
 
   it('GET /api/settings/llm gets masked settings', async () => {
@@ -141,12 +160,65 @@ describe('general and LLM settings routes', () => {
         CODEX_MODEL: '',
         IMPLEMENTATION_RUNTIME_LANE: '',
         SESSION_QUEUE_MAX_CONCURRENCY: 2,
+        providerEndpoints: [
+          {
+            id: 'local-qwen',
+            name: 'Local Qwen',
+            kind: 'local',
+            enabled: true,
+            apiKey: '',
+            baseUrl: 'http://localhost:11434/v1',
+            endpoint: '',
+            apiVersion: '',
+            region: '',
+            models: ['qwen3-coder-176k'],
+            modelDisplayNames: {
+              'qwen3-coder-176k': 'Qwen Coder 176K',
+            },
+            defaultModelCapability: {
+              contextWindowTokens: 180000,
+              safePromptBudgetTokens: 176000,
+              reservedOutputTokens: 4000,
+              supportsProviderSideCompression: true,
+              compressionProfile: 'balanced',
+            },
+            modelCapabilities: {
+              'qwen3-coder-176k': {
+                contextWindowTokens: 180000,
+                safePromptBudgetTokens: 176000,
+                reservedOutputTokens: 4000,
+                supportsProviderSideCompression: true,
+                compressionProfile: 'balanced',
+              },
+            },
+          },
+        ],
+        roleRoutes: [],
       }),
     });
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json).toEqual({ success: true });
     expect(runtimeSettingsMocks.writeRuntimeSettings).toHaveBeenCalled();
+    expect(runtimeSettingsMocks.writeRuntimeSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerEndpoints: [
+          expect.objectContaining({
+            id: 'local-qwen',
+            defaultModelCapability: expect.objectContaining({
+              contextWindowTokens: 180000,
+              safePromptBudgetTokens: 176000,
+            }),
+            modelCapabilities: {
+              'qwen3-coder-176k': expect.objectContaining({
+                contextWindowTokens: 180000,
+                safePromptBudgetTokens: 176000,
+              }),
+            },
+          }),
+        ],
+      })
+    );
     expect(runtimeSettingsMocks.applySettingsToProcessEnv).toHaveBeenCalled();
   });
 
@@ -367,5 +439,88 @@ describe('general and LLM settings routes', () => {
       provider: 'openai',
       message: 'API failure',
     });
+  });
+
+  it('POST /api/settings/llm/providers/:id/health checks provider endpoint health', async () => {
+    runtimeSettingsMocks.getCurrentSettings.mockReturnValueOnce({
+      ACTIVE_LLM_PROVIDER: 'openai',
+      providerEndpoints: [
+        {
+          id: 'local-qwen',
+          name: 'Local Qwen',
+          kind: 'local',
+          enabled: true,
+          baseUrl: 'http://localhost:11434/v1',
+          models: ['qwen3-coder'],
+        },
+      ],
+    });
+
+    const app = new OpenAPIHono<AppEnv>();
+    app.onError(errorHandler);
+    app.route('/api/settings', settingsRouter);
+
+    const res = await app.request('/api/settings/llm/providers/local-qwen/health', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toMatchObject({
+      ok: true,
+      reachable: true,
+      providerEndpointId: 'local-qwen',
+      providerKind: 'local',
+      status: 200,
+    });
+    expect(providerHealthMocks.checkStructuredLlmProviderHealth).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'local-qwen', kind: 'local' })
+    );
+  });
+
+  it('POST /api/settings/llm/providers/:id/health can check request body endpoint values', async () => {
+    runtimeSettingsMocks.getCurrentSettings.mockReturnValueOnce({
+      ACTIVE_LLM_PROVIDER: 'openai',
+      providerEndpoints: [],
+    });
+
+    const app = new OpenAPIHono<AppEnv>();
+    app.onError(errorHandler);
+    app.route('/api/settings', settingsRouter);
+
+    const res = await app.request('/api/settings/llm/providers/unsaved-local/health', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: {
+          id: 'unsaved-local',
+          name: 'Unsaved Local',
+          kind: 'local',
+          enabled: true,
+          baseUrl: 'http://localhost:11434/v1',
+          models: ['qwen3-coder'],
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(providerHealthMocks.checkStructuredLlmProviderHealth).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'unsaved-local', baseUrl: 'http://localhost:11434/v1' })
+    );
+  });
+
+  it('POST /api/settings/llm/providers/:id/health returns 404 for unknown endpoint', async () => {
+    runtimeSettingsMocks.getCurrentSettings.mockReturnValueOnce({
+      ACTIVE_LLM_PROVIDER: 'openai',
+      providerEndpoints: [],
+    });
+
+    const app = new OpenAPIHono<AppEnv>();
+    app.onError(errorHandler);
+    app.route('/api/settings', settingsRouter);
+
+    const res = await app.request('/api/settings/llm/providers/missing/health', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(404);
+    expect(providerHealthMocks.checkStructuredLlmProviderHealth).not.toHaveBeenCalled();
   });
 });

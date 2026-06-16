@@ -2,6 +2,7 @@ import { apiFetch } from '../../lib/api-base';
 import type {
   AgentHookInput,
   GeneralSettings,
+  LlmProviderEndpoint,
   LlmSettings,
   McpServerInput,
   TodoWorkflowSettings,
@@ -167,6 +168,15 @@ export function testAgentHook(id: string) {
 
 export function runLlmSmokeTest() {
   return apiFetch('/api/settings/llm/smoke', { method: 'POST' });
+}
+
+export function testLlmProviderHealth(id: string, endpoint?: LlmProviderEndpoint) {
+  return apiFetch(`/api/settings/llm/providers/${encodeURIComponent(id)}/health`, {
+    method: 'POST',
+    ...(endpoint
+      ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint }) }
+      : {}),
+  });
 }
 
 export function fetchImplementationQueue() {

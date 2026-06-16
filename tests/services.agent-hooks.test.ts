@@ -198,6 +198,35 @@ describe('Agent Hooks runner', () => {
     expect(result.runs[0]).toMatchObject({ ok: true, hookName: 'Deny run command' });
   });
 
+  it('passes Codex global notify SessionEnd payload as a positional argument', async () => {
+    fs.writeFileSync(
+      path.join(codexHome, 'config.toml'),
+      [
+        `notify = ["${process.execPath}", "-e", "const payload = JSON.parse(process.argv[1]); if (payload.terminal_state !== 'completed') process.exit(7); console.log('{}')"]`,
+      ].join('\n')
+    );
+
+    const result = await runAgentHooks({
+      input: {
+        hook_event_name: 'SessionEnd',
+        session_id: 'task-1',
+        run_id: 'run-1',
+        task_id: 'task-1',
+        repository_id: 'repo-1',
+        cwd: process.cwd(),
+        timestamp: new Date().toISOString(),
+        source: 'run_end',
+        payload: {
+          terminal_state: 'completed',
+          summary: 'done',
+        },
+      },
+      repoRoot: process.cwd(),
+    });
+
+    expect(result.runs).toMatchObject([{ ok: true, hookName: 'Codex notify' }]);
+  });
+
   it('defaults command PreToolUse failures to fail-closed', async () => {
     createAgentHook({
       name: 'Crashing pre hook',

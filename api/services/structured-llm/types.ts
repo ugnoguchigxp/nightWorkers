@@ -15,6 +15,23 @@ export type CallSupervisorOptions = {
   taskId?: string;
   runId?: string | null;
   promptPartTokenEstimates?: LlmPromptPartTokenEstimates;
+  promptBudgetMetadata?: StructuredLlmPromptBudgetMetadata;
+};
+
+export type StructuredLlmPromptBudgetMetadata = {
+  modelContextWindowTokens: number;
+  safePromptBudgetTokens: number;
+  reservedOutputTokens: number;
+  estimatedPromptTokensBefore: number;
+  estimatedPromptTokensAfter: number;
+  systemPromptLengthBefore: number;
+  systemPromptLengthAfter: number;
+  userPromptLengthBefore: number;
+  userPromptLengthAfter: number;
+  compressedSections: string[];
+  droppedFields: string[];
+  compressionProfile: string;
+  budgetExceeded: boolean;
 };
 
 export type StructuredLlmRole =

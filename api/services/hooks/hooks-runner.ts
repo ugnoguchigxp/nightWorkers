@@ -206,12 +206,25 @@ async function runCommandHook(
   const cwd = hook.handler.cwd || repoRoot || input.cwd || process.cwd();
   const env = { ...process.env, ...(hook.handler.env || {}) };
   const stdin = `${JSON.stringify(input)}\n`;
-  const args = hook.handler.args || [];
+  const args = buildCommandHookArgs(hook, input);
   const child =
     args.length > 0
       ? spawn(hook.handler.command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
       : spawn(hook.handler.command, { cwd, env, shell: true, stdio: ['pipe', 'pipe', 'pipe'] });
   return await collectChildProcess(child, stdin, timeoutSeconds);
+}
+
+function buildCommandHookArgs(hook: AgentHookConfig, input: AgentHookInput): string[] {
+  const args = hook.handler.type === 'command' ? [...(hook.handler.args || [])] : [];
+  const source = (hook as { source?: string }).source;
+  if (
+    source === 'codex_global' &&
+    hook.name === 'Codex notify' &&
+    input.hook_event_name === 'SessionEnd'
+  ) {
+    args.push(JSON.stringify(input.payload ?? input));
+  }
+  return args;
 }
 
 async function runHttpHook(

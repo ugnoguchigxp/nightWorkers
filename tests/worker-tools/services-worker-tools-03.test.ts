@@ -100,6 +100,21 @@ describe('Worker Tools Unit Tests', () => {
     expect(secondRead.payload.content).toContain('"status": "cached"');
     expect(secondRead.payload.compression?.strategy).toBe('read_cache_marker');
   });
+
+  it('allows fresh reads to bypass the unchanged-file cache marker', async () => {
+    const readCache = new Map();
+    await readFileTool({ filePath: 'hello.txt', repoRoot: dummyRepoDir, readCache });
+    const freshRead = await readFileTool({
+      filePath: 'hello.txt',
+      repoRoot: dummyRepoDir,
+      readCache,
+      fresh: true,
+    });
+
+    expect(freshRead.ok).toBe(true);
+    expect(freshRead.payload.cached).toBe(false);
+    expect(freshRead.payload.content).toContain('1: hello');
+  });
 });
 
 describe('inspectStructureTool', () => {

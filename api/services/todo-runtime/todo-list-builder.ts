@@ -132,7 +132,25 @@ function normalizeImplementationTodos(
 }
 
 function isReservedFinalGateTodo(todo: ImplementationTodoInput) {
-  return isReservedCloseoutTodo(todo) || isReservedBroadVerificationTodo(todo);
+  return (
+    isReservedReviewTodo(todo) ||
+    isReservedCloseoutTodo(todo) ||
+    isReservedBroadVerificationTodo(todo)
+  );
+}
+
+function isReservedReviewTodo(todo: ImplementationTodoInput) {
+  const title = typeof todo.title === 'string' ? todo.title.trim().toLowerCase() : '';
+  const normalizedTitle = title.replace(/\s+/g, '');
+  const taskType = typeof todo.taskType === 'string' ? todo.taskType.trim() : '';
+  const procedureId = typeof todo.procedureId === 'string' ? todo.procedureId.trim() : '';
+
+  return (
+    title === 'llm code review' ||
+    normalizedTitle === 'llmコードレビューを実施する' ||
+    taskType === 'review' ||
+    procedureId === 'llm_code_review'
+  );
 }
 
 function isReservedCloseoutTodo(todo: ImplementationTodoInput) {

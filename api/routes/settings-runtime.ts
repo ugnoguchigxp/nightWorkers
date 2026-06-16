@@ -30,7 +30,15 @@ export const llmRoleSchema = z.enum([
 
 const thinkingDepthSchema = z.enum(['', 'low', 'medium', 'high', 'very_high']);
 
-const llmProviderEndpointSchema = z.object({
+const llmModelCapabilitySchema = z.object({
+  contextWindowTokens: z.number().int().positive().optional(),
+  safePromptBudgetTokens: z.number().int().positive().optional(),
+  reservedOutputTokens: z.number().int().positive().optional(),
+  supportsProviderSideCompression: z.boolean().optional(),
+  compressionProfile: z.string().optional(),
+});
+
+export const llmProviderEndpointSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   kind: providerEndpointKindSchema,
@@ -42,6 +50,8 @@ const llmProviderEndpointSchema = z.object({
   region: z.string().optional().default(''),
   models: z.array(z.string()).default([]),
   modelDisplayNames: z.record(z.string(), z.string()).optional().default({}),
+  defaultModelCapability: llmModelCapabilitySchema.optional(),
+  modelCapabilities: z.record(z.string(), llmModelCapabilitySchema).optional(),
 });
 
 const llmModelTargetSchema = z.object({
