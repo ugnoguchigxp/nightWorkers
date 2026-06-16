@@ -1,6 +1,7 @@
 import type { BlueprintComponentName } from '../../../../../shared/schemas/blueprint-catalog.schema';
 import { accordionSectionSample } from './accordionSection';
 import { analyticsDashboardSectionSample } from './analyticsDashboardSection';
+import { blogPostSectionSample } from './blogPostSection';
 import { calendarSectionSample } from './calendarSection';
 import { cardGridSectionSample } from './cardGridSection';
 import { carouselSectionSample } from './carouselSection';
@@ -20,6 +21,7 @@ import { imageSectionSample } from './imageSection';
 import { kanbanSectionSample } from './kanbanSection';
 import { leftSidebarSectionSample } from './leftSidebarSection';
 import { mapSectionSample } from './mapSection';
+import { mediaTextSectionSample } from './mediaTextSection';
 import { notificationCenterSectionSample } from './notificationCenterSection';
 import { paymentFormSectionSample } from './paymentFormSection';
 import { rightSidebarLinksSectionSample } from './rightSidebarLinksSection';
@@ -37,6 +39,8 @@ const sectionSamples: SectionSampleDefinition[] = [
   dataTableSectionSample,
   imageSectionSample,
   videoSectionSample,
+  blogPostSectionSample,
+  mediaTextSectionSample,
   splitHeroSectionSample,
   fullBleedHeroSectionSample,
   carouselSectionSample,

@@ -127,6 +127,8 @@ export function BlueprintPreview({
 
   const firstScreen = screens[0];
   const sections = toObjectArray(firstScreen?.sections);
+  const screenLayout = resolveScreenLayout(firstScreen);
+  const arrangedSections = arrangeSectionsByRegion(sections);
 
   return (
     <div
@@ -183,13 +185,157 @@ export function BlueprintPreview({
         />
       ) : null}
 
-      <div className="grid gap-[var(--blueprint-preview-gap)]">
-        {sections.map((section, index) => (
-          <BlueprintPreviewSection key={String(section.id || index)} section={section} />
-        ))}
-      </div>
+      <BlueprintScreenSectionLayout layout={screenLayout} sections={arrangedSections} />
     </div>
   );
+}
+
+type BlueprintScreenLayoutTemplate =
+  | 'single_column'
+  | 'two_column'
+  | 'three_column'
+  | 'sidebar_left'
+  | 'sidebar_right'
+  | 'article_with_sidebar';
+
+type BlueprintSectionRegion = 'header' | 'main' | 'sidebar' | 'aside' | 'full_width' | 'footer';
+
+type ArrangedBlueprintSections = Record<BlueprintSectionRegion, Array<Record<string, unknown>>>;
+
+function BlueprintScreenSectionLayout({
+  layout,
+  sections,
+}: {
+  layout: BlueprintScreenLayoutTemplate;
+  sections: ArrangedBlueprintSections;
+}) {
+  const hasColumns =
+    sections.sidebar.length > 0 || sections.aside.length > 0 || layout !== 'single_column';
+
+  return (
+    <div className="grid gap-[var(--blueprint-preview-gap)]">
+      <BlueprintRegionSections sections={sections.header} />
+      <BlueprintRegionSections sections={sections.full_width} />
+      {hasColumns ? (
+        <div className={screenGridClassName(layout, sections)}>
+          {sections.sidebar.length > 0 || layout === 'three_column' || layout === 'sidebar_left' ? (
+            <aside className="grid content-start gap-[var(--blueprint-preview-gap)]">
+              <BlueprintRegionSections sections={sections.sidebar} />
+            </aside>
+          ) : null}
+          <main className="grid min-w-0 content-start gap-[var(--blueprint-preview-gap)]">
+            <BlueprintRegionSections sections={sections.main} />
+          </main>
+          {sections.aside.length > 0 ||
+          layout === 'three_column' ||
+          layout === 'two_column' ||
+          layout === 'sidebar_right' ||
+          layout === 'article_with_sidebar' ? (
+            <aside className="grid content-start gap-[var(--blueprint-preview-gap)]">
+              <BlueprintRegionSections sections={sections.aside} />
+            </aside>
+          ) : null}
+        </div>
+      ) : (
+        <BlueprintRegionSections sections={sections.main} />
+      )}
+      <BlueprintRegionSections sections={sections.footer} />
+    </div>
+  );
+}
+
+function BlueprintRegionSections({ sections }: { sections: Array<Record<string, unknown>> }) {
+  if (sections.length === 0) return null;
+  return (
+    <>
+      {sections.map((section, index) => (
+        <BlueprintPreviewSection
+          key={String(section.id || `${section.region || 'main'}-${index}`)}
+          section={section}
+        />
+      ))}
+    </>
+  );
+}
+
+function resolveScreenLayout(screen: Record<string, unknown>): BlueprintScreenLayoutTemplate {
+  const layout = screen.layout;
+  if (!layout || typeof layout !== 'object' || Array.isArray(layout)) return 'single_column';
+  const template = String((layout as Record<string, unknown>).template || 'single_column');
+  if (
+    template === 'two_column' ||
+    template === 'three_column' ||
+    template === 'sidebar_left' ||
+    template === 'sidebar_right' ||
+    template === 'article_with_sidebar'
+  ) {
+    return template;
+  }
+  return 'single_column';
+}
+
+function arrangeSectionsByRegion(
+  sections: Array<Record<string, unknown>>
+): ArrangedBlueprintSections {
+  const arranged: ArrangedBlueprintSections = {
+    header: [],
+    main: [],
+    sidebar: [],
+    aside: [],
+    full_width: [],
+    footer: [],
+  };
+  for (const section of sections) {
+    arranged[sectionRegion(section)].push(section);
+  }
+  return arranged;
+}
+
+function sectionRegion(section: Record<string, unknown>): BlueprintSectionRegion {
+  const explicitRegion = String(section.region || '');
+  if (isBlueprintSectionRegion(explicitRegion)) return explicitRegion;
+  const componentName = String(section.componentName || '');
+  if (componentName === 'TopMenuSection' || componentName === 'TabNavigationSection') {
+    return 'header';
+  }
+  if (componentName === 'FooterNavigationSection') return 'footer';
+  if (
+    componentName === 'LeftSidebarSection' ||
+    componentName === 'SidebarMenuSection' ||
+    componentName === 'ExplorerSidebarSection'
+  ) {
+    return 'sidebar';
+  }
+  if (componentName === 'RightSidebarLinksSection') return 'aside';
+  if (componentName === 'FullBleedHeroSection') return 'full_width';
+  return 'main';
+}
+
+function isBlueprintSectionRegion(value: string): value is BlueprintSectionRegion {
+  return (
+    value === 'header' ||
+    value === 'main' ||
+    value === 'sidebar' ||
+    value === 'aside' ||
+    value === 'full_width' ||
+    value === 'footer'
+  );
+}
+
+function screenGridClassName(
+  layout: BlueprintScreenLayoutTemplate,
+  sections: ArrangedBlueprintSections
+) {
+  if (layout === 'three_column') {
+    return 'grid gap-[var(--blueprint-preview-gap)] lg:grid-cols-[15rem_minmax(0,1fr)_15rem]';
+  }
+  if (layout === 'sidebar_left' || sections.sidebar.length > 0) {
+    return 'grid gap-[var(--blueprint-preview-gap)] lg:grid-cols-[16rem_minmax(0,1fr)]';
+  }
+  if (layout === 'article_with_sidebar') {
+    return 'grid gap-[var(--blueprint-preview-gap)] lg:grid-cols-[minmax(0,1fr)_18rem]';
+  }
+  return 'grid gap-[var(--blueprint-preview-gap)] lg:grid-cols-[minmax(0,1fr)_18rem]';
 }
 
 function useBlueprintAdoption({

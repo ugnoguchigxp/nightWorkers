@@ -1,5 +1,6 @@
 import { renderAccordionSection } from './section-renderers/AccordionSection';
 import { renderAnalyticsDashboardSection } from './section-renderers/AnalyticsDashboardSection';
+import { renderBlogPostSection } from './section-renderers/BlogPostSection';
 import { renderCalendarSection } from './section-renderers/CalendarSection';
 import { renderCardGridSection } from './section-renderers/CardGridSection';
 import { renderCarouselSection } from './section-renderers/CarouselSection';
@@ -19,6 +20,7 @@ import { renderImageSection } from './section-renderers/ImageSection';
 import { renderKanbanSection } from './section-renderers/KanbanSection';
 import { renderLeftSidebarSection } from './section-renderers/LeftSidebarSection';
 import { renderMapSection } from './section-renderers/MapSection';
+import { renderMediaTextSection } from './section-renderers/MediaTextSection';
 import { renderNotificationCenterSection } from './section-renderers/NotificationCenterSection';
 import { renderPaymentFormSection } from './section-renderers/PaymentFormSection';
 import { renderRightSidebarLinksSection } from './section-renderers/RightSidebarLinksSection';
@@ -36,6 +38,8 @@ const additionalSectionRenderers: Record<string, SectionRenderer> = {
   DataTableSection: renderDataTableSection,
   ImageSection: renderImageSection,
   VideoSection: renderVideoSection,
+  BlogPostSection: renderBlogPostSection,
+  MediaTextSection: renderMediaTextSection,
   SplitHeroSection: renderSplitHeroSection,
   FullBleedHeroSection: renderFullBleedHeroSection,
   CarouselSection: renderCarouselSection,

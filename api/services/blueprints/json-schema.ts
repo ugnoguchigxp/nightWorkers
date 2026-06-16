@@ -37,6 +37,7 @@ export function buildAppBlueprintStructuredOutputJsonSchema() {
             name: { type: 'string' },
             path: { type: 'string' },
             componentName: { type: 'string' },
+            layout: { type: 'object' },
             sections: {
               type: 'array',
               minItems: 1,

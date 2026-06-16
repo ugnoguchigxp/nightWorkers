@@ -22,6 +22,22 @@ const blueprintLayoutWidthSchema = z.enum(['auto', 'full', '1/2', '1/3', '2/3'])
 const blueprintLayoutAlignSchema = z.enum(['start', 'center', 'end', 'stretch']);
 const blueprintLayoutGapSchema = z.enum(['none', 'xs', 'sm', 'md', 'lg']);
 const blueprintLayoutKindSchema = z.enum(['stack', 'row', 'grid', 'split', 'tabs']);
+export const blueprintSectionRegionSchema = z.enum([
+  'header',
+  'main',
+  'sidebar',
+  'aside',
+  'full_width',
+  'footer',
+]);
+export const blueprintScreenLayoutTemplateSchema = z.enum([
+  'single_column',
+  'two_column',
+  'three_column',
+  'sidebar_left',
+  'sidebar_right',
+  'article_with_sidebar',
+]);
 const blueprintNodeComponentSchema = z.enum([
   'Text',
   'Button',
@@ -142,6 +158,7 @@ export const componentBlueprintSectionSchema = z
     id: blueprintIdSchema,
     name: z.string().min(1),
     componentName: blueprintComponentNameSchema,
+    region: blueprintSectionRegionSchema.optional(),
     source: blueprintDataSourceKindSchema.default('none'),
     dataBindingId: blueprintIdSchema.optional(),
     intent: z.string().min(1).optional(),
@@ -156,6 +173,7 @@ export const presetBlueprintSectionSchema = z
     kind: z.literal('preset_section'),
     id: blueprintIdSchema,
     name: z.string().min(1).optional(),
+    region: blueprintSectionRegionSchema.optional(),
     preset: blueprintPresetNameSchema,
     props: z.record(z.string(), z.unknown()).default({}),
     overrides: z.array(blueprintSectionOverrideSchema).default([]),
@@ -167,6 +185,7 @@ export const customBlueprintSectionSchema = z
   .object({
     kind: z.literal('custom_section'),
     id: blueprintIdSchema,
+    region: blueprintSectionRegionSchema.optional(),
     title: z.string().min(1).optional(),
     name: z.string().min(1).optional(),
     root: blueprintNodeSchema,
@@ -182,12 +201,20 @@ export const blueprintSectionSchema = z
   ])
   .openapi('BlueprintSection');
 
+export const blueprintScreenLayoutSchema = z
+  .object({
+    template: blueprintScreenLayoutTemplateSchema.default('single_column'),
+    mainMaxWidth: z.enum(['narrow', 'default', 'wide', 'full']).default('default'),
+  })
+  .openapi('BlueprintScreenLayout');
+
 export const blueprintScreenSchema = z
   .object({
     id: blueprintIdSchema,
     name: z.string().min(1),
     path: z.string().regex(/^\/[a-zA-Z0-9/_-]*$/),
     componentName: blueprintComponentNameSchema,
+    layout: blueprintScreenLayoutSchema.optional(),
     sections: z.array(blueprintSectionSchema).min(1),
     actions: z.array(blueprintActionSchema).default([]),
   })
@@ -197,6 +224,8 @@ export type BlueprintAction = z.infer<typeof blueprintActionSchema>;
 export type BlueprintNode = z.infer<typeof blueprintNodeSchema>;
 export type BlueprintSectionPatch = z.infer<typeof blueprintSectionPatchSchema>;
 export type BlueprintSectionOverride = z.infer<typeof blueprintSectionOverrideSchema>;
+export type BlueprintSectionRegion = z.infer<typeof blueprintSectionRegionSchema>;
+export type BlueprintScreenLayout = z.infer<typeof blueprintScreenLayoutSchema>;
 export type ComponentBlueprintSection = z.infer<typeof componentBlueprintSectionSchema>;
 export type PresetBlueprintSection = z.infer<typeof presetBlueprintSectionSchema>;
 export type CustomBlueprintSection = z.infer<typeof customBlueprintSectionSchema>;

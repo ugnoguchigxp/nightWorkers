@@ -14,6 +14,8 @@ export const blueprintComponentNameSchema = z.enum([
   'DataTableSection',
   'ImageSection',
   'VideoSection',
+  'BlogPostSection',
+  'MediaTextSection',
   'SplitHeroSection',
   'FullBleedHeroSection',
   'CarouselSection',
@@ -66,7 +68,6 @@ export const blueprintComponentDefinitionSchema = z
     placement: blueprintComponentPlacementSchema,
     allowedSources: z.array(blueprintDataSourceKindSchema).min(1),
     variants: z.array(z.string().min(1)).default([]),
-    promptGuidance: z.string().min(1),
     propsSchema: z.record(z.string(), z.unknown()).optional(),
   })
   .openapi('BlueprintComponentDefinition');

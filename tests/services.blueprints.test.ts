@@ -538,6 +538,8 @@ describe('Blueprint validation service', () => {
         'ChatPanelSection',
         'CodeEditorSection',
         'VideoSection',
+        'BlogPostSection',
+        'MediaTextSection',
         'FullBleedHeroSection',
         'TopMenuSection',
         'TabNavigationSection',

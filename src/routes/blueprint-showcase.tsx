@@ -1,10 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { ArrowLeft, Boxes, Section } from 'lucide-react';
 import { blueprintCatalog } from '../../shared/blueprint-catalog';
-import {
-  blueprintSectionReference,
-  getBlueprintSectionReference,
-} from '../../shared/blueprint-section-reference';
 import type { BlueprintComponentDefinition } from '../../shared/schemas/blueprint-catalog.schema';
 import { sampleSectionProps } from '../modules/nightworkers/blueprint-showcase/section-samples';
 import { BlueprintPreviewSection } from '../modules/nightworkers/components/blueprint-preview/BlueprintPreviewSection';
@@ -15,16 +11,14 @@ export const Route = createFileRoute('/blueprint-showcase')({
   errorComponent: BlueprintShowcaseError,
 });
 
-const navigationComponentNames = new Set(
-  blueprintSectionReference
-    .filter((entry) => entry.category === 'navigation')
-    .map((entry) => entry.name)
-);
-
-const removedComponentNames = new Set([
-  'ChartInsightSection',
-  'StepperSection',
-  'ActivityFeedSection',
+const navigationComponentNames = new Set([
+  'TopMenuSection',
+  'TabNavigationSection',
+  'SidebarMenuSection',
+  'LeftSidebarSection',
+  'ExplorerSidebarSection',
+  'RightSidebarLinksSection',
+  'FooterNavigationSection',
 ]);
 
 const navigationDefinitions = blueprintCatalog.filter(
@@ -34,9 +28,7 @@ const navigationDefinitions = blueprintCatalog.filter(
 
 const sectionDefinitions = blueprintCatalog.filter(
   (definition) =>
-    definition.placement === 'section' &&
-    !navigationComponentNames.has(definition.name) &&
-    !removedComponentNames.has(definition.name)
+    definition.placement === 'section' && !navigationComponentNames.has(definition.name)
 );
 
 const sampleImage =
@@ -144,19 +136,10 @@ function SectionComponentCard({ definition }: { definition: BlueprintComponentDe
             {sectionDisplayName(definition.name)}
           </h2>
         </div>
-        <p className="text-sm leading-6 text-zinc-400">{definition.promptGuidance}</p>
       </div>
       <div className="blueprint-preview min-w-0 overflow-x-auto rounded-md border border-zinc-800 bg-zinc-950 p-3 text-ui">
         <BlueprintPreviewSection section={sampleSection} />
       </div>
-      <details className="text-xs text-zinc-400">
-        <summary className="cursor-pointer text-zinc-500">metadata</summary>
-        <div className="mt-2 grid gap-2">
-          <MetadataRow label="sample props" values={Object.keys(sampleSection.props)} />
-          <MetadataRow label="sources" values={definition.allowedSources} />
-          <MetadataRow label="variants" values={definition.variants} />
-        </div>
-      </details>
     </article>
   );
 }
@@ -178,26 +161,6 @@ function SectionHeading({
       <div>
         <h2 className="font-semibold text-xl text-white">{title}</h2>
         <p className="mt-1 text-sm leading-6 text-zinc-400">{description}</p>
-      </div>
-    </div>
-  );
-}
-
-function MetadataRow({ label, values }: { label: string; values: readonly string[] }) {
-  return (
-    <div className="grid gap-1">
-      <div className="text-[11px] font-semibold uppercase tracking-normal text-zinc-500">
-        {label}
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {values.map((value) => (
-          <span
-            key={value}
-            className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[11px] text-zinc-300"
-          >
-            {value}
-          </span>
-        ))}
       </div>
     </div>
   );
@@ -288,5 +251,5 @@ function sampleCards() {
 }
 
 function sectionDisplayName(componentName: string) {
-  return getBlueprintSectionReference(componentName)?.displayName || componentName;
+  return componentName.replace(/Section$/, '').replace(/([a-z])([A-Z])/g, '$1 $2');
 }

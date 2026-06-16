@@ -111,6 +111,47 @@ describe('App Blueprint schemas', () => {
     expect(parsed.screens[0]?.sections[1]?.kind).toBe('custom_section');
   });
 
+  it('accepts screen layout and section regions for page-level composition', () => {
+    const parsed = appBlueprintSchema.parse({
+      ...representativeAppBlueprint,
+      screens: [
+        {
+          ...representativeAppBlueprint.screens[0],
+          layout: {
+            template: 'three_column',
+            mainMaxWidth: 'wide',
+          },
+          sections: [
+            {
+              ...representativeAppBlueprint.screens[0].sections[0],
+              region: 'header',
+              id: 'top-menu',
+              componentName: 'TopMenuSection',
+              source: 'navigation',
+            },
+            {
+              ...representativeAppBlueprint.screens[0].sections[1],
+              region: 'main',
+            },
+            {
+              kind: 'component_section',
+              id: 'related-links',
+              name: 'Related Links',
+              componentName: 'RightSidebarLinksSection',
+              region: 'aside',
+              source: 'navigation',
+              props: { links: [{ label: 'Docs', href: '/docs' }] },
+              actions: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(parsed.screens[0]?.layout?.template).toBe('three_column');
+    expect(parsed.screens[0]?.sections[0]?.region).toBe('header');
+  });
+
   it('allows low-level components only inside Blueprint nodes', () => {
     expect(
       blueprintNodeSchema.parse({
@@ -155,6 +196,8 @@ describe('App Blueprint schemas', () => {
       'ChartSection',
       'ImageSection',
       'VideoSection',
+      'BlogPostSection',
+      'MediaTextSection',
       'SplitHeroSection',
       'FullBleedHeroSection',
       'CarouselSection',

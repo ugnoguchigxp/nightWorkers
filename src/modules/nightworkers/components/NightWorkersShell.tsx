@@ -11,6 +11,7 @@ import {
   fetchDesignQuestionnaireSession,
   fetchSpecificationWorkspace,
 } from '../nightWorkersCommands';
+import { shouldAutoOpenPlanArtifact } from '../planArtifactVisibility';
 import type {
   LlmModelTarget,
   LlmRoleRoute,
@@ -152,12 +153,16 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 
   useEffect(() => {
     if (!selectedArtifact) return;
+    if (selectedArtifact.taskId !== workspace.activeSessionId) {
+      setArtifactFocus({ type: 'closed' });
+      return;
+    }
     if (selectedArtifact.kind === 'blueprint_workspace') return;
     const stillAvailable = workspace.activeArtifactRefs.some(
       (artifact) => artifact.id === selectedArtifact.id
     );
     if (!stillAvailable && selectedArtifact.kind !== 'diff') setArtifactFocus({ type: 'closed' });
-  }, [selectedArtifact, workspace.activeArtifactRefs]);
+  }, [selectedArtifact, workspace.activeArtifactRefs, workspace.activeSessionId]);
 
   const currentProviderModel =
     workspace.activeProvider === 'openai'
@@ -416,9 +421,28 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
           String(toDeepRecord(message.metadataJson).intent) === 'design_questionnaire_ready'
       );
     if (!latestQuestionnaireMessage) return;
+    if (
+      !shouldAutoOpenPlanArtifact({
+        activeSession: workspace.activeSession,
+        sessionView: workspace.activeSessionView,
+        latestRun: workspace.latestRun,
+        isChatSubmitting: workspace.isChatSubmitting,
+        hasPlanArtifact: true,
+      })
+    ) {
+      return;
+    }
     if (openedQuestionnaireMessageIdsRef.current.has(latestQuestionnaireMessage.id)) return;
     void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'status');
-  }, [openQuestionnaireWorkspace, workspace.activeSessionId, workspace.taskMessages]);
+  }, [
+    openQuestionnaireWorkspace,
+    workspace.activeSession,
+    workspace.activeSessionId,
+    workspace.activeSessionView,
+    workspace.isChatSubmitting,
+    workspace.latestRun,
+    workspace.taskMessages,
+  ]);
 
   return (
     <div
