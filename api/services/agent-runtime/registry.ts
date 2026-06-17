@@ -4,6 +4,7 @@ import type { StructuredLlmModelTarget } from '../structured-llm/settings';
 import type { ImplementationTodoInput } from '../todo-runtime';
 import { CodexAgentRuntime } from './CodexAgentRuntime';
 import { NativeAgentRuntime } from './NativeAgentRuntime';
+import type { NativeApiExecutionMode } from './native-api-runner/native-api-mode';
 import type { RuntimeLane, RuntimeLaneAlias, RuntimeLaneResolution } from './runtime-lane';
 import type { AgentRuntime, AgentRuntimeKind } from './types';
 
@@ -22,6 +23,7 @@ export function resolveAgentRuntime(kind: AgentRuntimeKind): AgentRuntime {
 
 export type RuntimeLaneSetupInput = {
   compiledPromptText: string;
+  executionMode?: NativeApiExecutionMode;
   runtimeLaneResolution?: RuntimeLaneResolution;
   implementationLlmRoute?: ResolvedStructuredLlmRoute | null;
   llmRouteOverride?: StructuredLlmModelTarget | null;
@@ -70,12 +72,15 @@ export function createRuntimeLaneAdapter(lane: RuntimeLane): AgentRuntime {
 export function buildRuntimeLaneOptions(
   input: RuntimeLaneSetupInput & { runtimeLaneResolution?: RuntimeLaneResolution }
 ): Record<string, unknown> {
-  const implementationRoute = input.implementationLlmRoute ?? null;
+  const activeRoute = input.implementationLlmRoute ?? null;
   const nativeApiRoute =
     input.runtimeLaneResolution?.lane === 'native-api-runner' &&
-    implementationRoute !== null &&
-    implementationRoute.providerId !== 'codex';
+    activeRoute !== null &&
+    activeRoute.providerId !== 'codex';
+  const activeRole =
+    activeRoute?.role ?? (input.executionMode === 'planning' ? 'plan' : 'implementation');
   return {
+    executionMode: input.executionMode ?? 'implementation',
     runtimeLane: input.runtimeLaneResolution?.lane ?? null,
     runtimeLaneResolution: input.runtimeLaneResolution ?? null,
     ...(nativeApiRoute
@@ -87,16 +92,22 @@ export function buildRuntimeLaneOptions(
         }
       : {}),
     llmRouting: {
-      implementation: implementationRoute ? summarizeResolvedRoute(implementationRoute) : null,
+      activeRole,
+      executionMode: input.executionMode ?? 'implementation',
+      active: activeRoute ? summarizeResolvedRoute(activeRoute) : null,
+      implementation:
+        activeRoute?.role === 'implementation' ? summarizeResolvedRoute(activeRoute) : null,
+      plan: activeRoute?.role === 'plan' ? summarizeResolvedRoute(activeRoute) : null,
+      review: activeRoute?.role === 'review' ? summarizeResolvedRoute(activeRoute) : null,
       override: input.llmRouteOverride ?? null,
     },
-    ...(implementationRoute?.providerId === 'codex'
+    ...(activeRoute?.providerId === 'codex'
       ? {
           codex: {
-            providerEndpointId: implementationRoute.providerEndpointId,
-            model: implementationRoute.model,
-            thinkingDepth: implementationRoute.thinkingDepth || null,
-            routeSource: implementationRoute.source,
+            providerEndpointId: activeRoute.providerEndpointId,
+            model: activeRoute.model,
+            thinkingDepth: activeRoute.thinkingDepth || null,
+            routeSource: activeRoute.source,
           },
         }
       : {}),
@@ -118,6 +129,8 @@ function summarizeResolvedRoute(route: ResolvedStructuredLlmRoute) {
 function buildNativeSupervisorInitialRunTodos(
   input: RuntimeLaneSetupInput
 ): ImplementationTodoInput[] {
+  if (input.executionMode === 'planning') return [];
+
   const screenPath = extractFirstMatch(input.compiledPromptText, /画面パス:\s*`([^`]+)`/);
   const featureSummary = extractFeatureSummary(input.compiledPromptText);
   const target = screenPath ? `${screenPath} 画面` : '対象画面';
@@ -155,6 +168,8 @@ function buildNativeSupervisorInitialRunTodos(
 }
 
 function buildCodexSdkInitialRunTodos(input: RuntimeLaneSetupInput): ImplementationTodoInput[] {
+  if (input.executionMode === 'planning') return [];
+
   const summary = input.compiledPromptText.replace(/\s+/g, ' ').trim().slice(0, 160);
   const requestSummary = summary ? `ユーザー依頼: ${summary}` : 'ユーザー依頼に基づく対象変更。';
 

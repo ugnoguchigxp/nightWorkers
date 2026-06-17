@@ -1,5 +1,6 @@
 import type { ProviderToolCall, ProviderToolMessage } from '../../structured-llm/tool-calls';
 import type { AgentRunContext } from '../types';
+import { readNativeApiExecutionMode } from './native-api-mode';
 
 export type NativeApiUserSource = 'user' | 'runtime' | 'todo' | 'state_card';
 
@@ -91,12 +92,20 @@ export function extractLatestNativeApiUserPrompt(history: readonly NativeApiHist
 }
 
 function buildNativeApiSystemPrompt(context: AgentRunContext) {
+  const executionMode = readNativeApiExecutionMode(context);
   return [
     'あなたは NightWorkers の native/API lane coding agent runtime です。',
+    `executionMode: ${executionMode}`,
     'Codex 型の turn lifecycle / tool dispatch / cancellation discipline に従って実行します。',
     'Codex SDK lane へ fallback せず、SchemaFirst supervisor loop へ fallback しません。',
     'new_context tool は、会話履歴を要約せず次の provider turn から新しい context window を開始します。',
     'リポジトリの読み書きは登録済み Project の repo root を基準にし、worker tool handler 経由で行います。',
+    ...(executionMode === 'planning'
+      ? [
+          'Plan mode では実装・ファイル変更・コマンド実行・project import を行わず、調査結果に基づく実装計画を finalize_answer で返します。',
+          'Planning is not closeout. Plan mode では context-still.compile_eval を呼びません。',
+        ]
+      : []),
     `repoRoot: ${context.repoRoot}`,
   ].join('\n');
 }

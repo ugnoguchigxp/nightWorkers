@@ -9,6 +9,7 @@ import {
   NativeApiCloseoutController,
   type NativeApiCloseoutControllerLike,
 } from './native-api-closeout-controller';
+import { isNativeApiPlanningMode, readNativeApiExecutionMode } from './native-api-mode';
 import { buildNativeApiProviderRequest } from './native-api-request-adapter';
 import { NativeApiSessionStore } from './native-api-session-store';
 import {
@@ -84,6 +85,7 @@ export class NativeApiRunner {
     };
     let lastTodoSnapshotContent: string | null = null;
     let lastPostImportHistoryToolCallId: string | null = null;
+    const executionMode = readNativeApiExecutionMode(context);
     const routeOverride = readRuntimeLlmRouteOverride(context);
     const runController = new AbortController();
     this.activeRunControllers.set(context.runId, runController);
@@ -117,7 +119,7 @@ export class NativeApiRunner {
         const providerRequest = buildNativeApiProviderRequest({
           context,
           history,
-          tools: getNativeApiToolDefinitions(),
+          tools: getNativeApiToolDefinitions({ executionMode }),
           routeOverride,
           routePolicy: {
             disallowedProviderIds: ['codex'],
@@ -138,6 +140,7 @@ export class NativeApiRunner {
           message: `[NativeApiRunner] provider-native turn ${turnIndex} started.`,
           payload: {
             runtime: 'native_api_runner',
+            executionMode,
             turnId: turn.id,
             turnIndex,
             provider: providerRequest.provider,
@@ -220,6 +223,7 @@ export class NativeApiRunner {
 
         await recordNativeApiTurnUsage({
           context,
+          executionMode,
           providerResult,
           providerDebug,
           systemPrompt: providerRequest.systemPrompt,
@@ -336,16 +340,18 @@ export class NativeApiRunner {
             modelVisibleOutput: dispatch.toolResult.content,
           });
           if (dispatch.kind === 'final') {
-            const closeout = await this.closeoutController.runCompileEval({
-              context,
-              sink,
-              turnId: turn.id,
-              state,
-              finalReport: dispatch.finalReport,
-            });
-            state = closeout.state;
-            if (!closeout.skipped) {
-              history = [...history, closeout.historyItem];
+            if (!isNativeApiPlanningMode(executionMode)) {
+              const closeout = await this.closeoutController.runCompileEval({
+                context,
+                sink,
+                turnId: turn.id,
+                state,
+                finalReport: dispatch.finalReport,
+              });
+              state = closeout.state;
+              if (!closeout.skipped) {
+                history = [...history, closeout.historyItem];
+              }
             }
             await this.store.finishTurn({
               turnId: turn.id,
@@ -505,6 +511,7 @@ function buildPostImportHistoryItem(
 
 async function recordNativeApiTurnUsage(input: {
   context: AgentRunContext;
+  executionMode: ReturnType<typeof readNativeApiExecutionMode>;
   providerResult: Extract<ProviderToolTurnResult, { type: 'supported' }>;
   providerDebug: Record<string, unknown>;
   systemPrompt: string;
@@ -536,6 +543,7 @@ async function recordNativeApiTurnUsage(input: {
     durationMs: input.durationMs,
     metadataJson: {
       mode: 'native_api_runner',
+      executionMode: input.executionMode,
       toolCallCount: input.providerResult.toolCalls.length,
       providerDebug: input.providerDebug,
     },

@@ -466,6 +466,30 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
     });
   });
 
+  it('restricts model-visible tools in planning mode', () => {
+    const toolNames = getNativeApiToolDefinitions({ executionMode: 'planning' }).map(
+      (tool) => tool.name
+    );
+
+    expect(toolNames).toEqual(
+      expect.arrayContaining([
+        'read_current_specification',
+        'list_dir',
+        'read_file',
+        'search_files',
+        'git_status',
+        'context_compile',
+        'new_context',
+        'finalize_answer',
+      ])
+    );
+    expect(toolNames).not.toContain('apply_patch');
+    expect(toolNames).not.toContain('replace_content');
+    expect(toolNames).not.toContain('import_project');
+    expect(toolNames).not.toContain('run_verification');
+    expect(toolNames).not.toContain('todo_list');
+  });
+
   it('exposes Codex-style new_context as an empty model-visible tool', () => {
     const newContextTool = getNativeApiToolDefinitions().find(
       (tool) => tool.name === 'new_context'
@@ -499,6 +523,27 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
       ok: true,
       payload: {
         newContextWindowRequested: true,
+      },
+    });
+  });
+
+  it('rejects mutating tools in planning mode even if the provider asks for them', async () => {
+    const result = await dispatchNativeApiToolCall({
+      toolCall: {
+        id: 'call-patch',
+        name: 'apply_patch',
+        arguments: { patchContent: '*** Begin Patch\n*** End Patch\n' },
+      },
+      context: buildContext({ runtimeOptions: { executionMode: 'planning' } }),
+      sink: createSink(),
+      state: { readFiles: [], specificationRead: true },
+    });
+
+    expect(result.kind).toBe('continue');
+    expect(result.toolResult).toMatchObject({
+      ok: false,
+      error: {
+        code: 'TOOL_NOT_ALLOWED_FOR_MODE',
       },
     });
   });

@@ -92,6 +92,34 @@ describe('NativeApiRunner request adapter', () => {
     );
     expect(request.tools).toHaveLength(1);
   });
+
+  it('routes native/API planning mode through the plan role', () => {
+    const context = buildContext({
+      runtimeOptions: { executionMode: 'planning' },
+    });
+    const history = buildInitialNativeApiHistory(context);
+
+    const request = buildNativeApiProviderRequest({
+      context,
+      history,
+      tools: [],
+      routePolicy: {
+        disallowedProviderIds: ['codex'],
+        synthesizeFallbacksFromEnabledEndpoints: true,
+      },
+    });
+
+    expect(request.options).toMatchObject({
+      role: 'plan',
+      normalizedRequest: expect.objectContaining({
+        role: 'plan',
+      }),
+    });
+    expect(request.messages[0]).toMatchObject({
+      role: 'system',
+      content: expect.stringContaining('executionMode: planning'),
+    });
+  });
 });
 
 function buildContext(overrides: Partial<AgentRunContext> = {}): AgentRunContext {

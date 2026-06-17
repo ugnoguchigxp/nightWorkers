@@ -1,6 +1,7 @@
 import { type McpToolSummary, mcpClientManager } from '../../mcp/mcp-client-manager';
 import { executeWorkerTool } from '../../worker-tools/dispatcher';
 import type { AgentRunContext, AgentRuntimeSink } from '../types';
+import { isNativeApiPlanningMode, readNativeApiExecutionMode } from './native-api-mode';
 import type { NativeApiSessionStore } from './native-api-session-store';
 import type { NativeApiDispatchState } from './native-api-tool-dispatcher';
 import type { NativeApiHistoryItem, NativeApiToolResult } from './native-api-tool-history';
@@ -27,6 +28,17 @@ export class NativeApiCloseoutController {
     state: NativeApiDispatchState;
     skipped: boolean;
   }> {
+    if (isNativeApiPlanningMode(readNativeApiExecutionMode(input.context))) {
+      return {
+        historyItem: {
+          type: 'user',
+          source: 'runtime',
+          content: '[Closeout Compile Eval]\nskipped: planning mode',
+        },
+        state: input.state,
+        skipped: true,
+      };
+    }
     if (!input.state.contextCompiled || input.state.compileEvalCompleted) {
       return {
         historyItem: {

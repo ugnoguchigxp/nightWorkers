@@ -77,7 +77,11 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
       aliases: [],
       buildInitialTodos: (input: { compiledPromptText: string }) =>
         buildRuntimeLaneInitialTodos(lane, input),
-      buildRuntimeOptions: (input: { runtimeLaneResolution?: unknown }) => ({
+      buildRuntimeOptions: (input: {
+        runtimeLaneResolution?: unknown;
+        executionMode?: string;
+      }) => ({
+        executionMode: input.executionMode ?? 'implementation',
         runtimeLane: lane,
         runtimeLaneResolution: input.runtimeLaneResolution ?? null,
       }),
@@ -305,6 +309,88 @@ describe('NightWorkers service', () => {
       ])
     );
     expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
+  });
+
+  it('starts native/API planning mode without implementation Todos or preamble', async () => {
+    const task = {
+      id: 'task-plan-mode',
+      repositoryId: 'repo-plan-mode',
+      title: 'Planning task',
+      description: '実装計画を作ってください',
+      objective: '実装計画を作ってください',
+      acceptanceCriteria: 'Plan is produced',
+      timeoutSeconds: 60,
+    };
+    const run = {
+      id: 'run-plan-mode',
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+      status: 'running',
+    };
+    vi.mocked(repo.getTask).mockResolvedValue(task as never);
+    vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+    vi.mocked(repo.getRepository).mockResolvedValue({
+      id: task.repositoryId,
+      localPath: repoRoot,
+      safetyPolicy: {},
+    } as never);
+    vi.mocked(repo.listTaskMessages).mockResolvedValue([
+      { id: 'message-user', role: 'user', content: task.description },
+      {
+        id: 'message-run-started',
+        role: 'system',
+        content: 'Planning run started from Workbench intake.',
+        metadataJson: {
+          intent: 'run_started',
+          source: 'workbench',
+          intakeJobSelection: {
+            jobType: 'planning',
+            goal: task.description,
+          },
+        },
+      },
+    ] as never);
+    vi.mocked(repo.createTaskRun).mockResolvedValue(run as never);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
+    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as never);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
+    const runtimeStart = vi.fn().mockResolvedValue({
+      terminalState: 'completed',
+      summary: 'Plan done',
+      finalReport: 'Implementation plan',
+      stoppedBy: 'decision',
+      riskLevel: 'low',
+      diffPatch: '',
+      logContent: '',
+    });
+    vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+      kind: 'native-local',
+      start: runtimeStart,
+      stop: vi.fn(),
+    } as never);
+
+    await startTaskRun(task.id);
+
+    await vi.waitFor(() => {
+      expect(runtimeStart).toHaveBeenCalledTimes(1);
+    });
+    expect(repo.replaceTaskRunTodosForRun).toHaveBeenCalledWith(run.id, []);
+    expect(runtimeStart.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        latestUserMessage: task.description,
+        runtimeOptions: expect.objectContaining({
+          executionMode: 'planning',
+        }),
+        contextSnapshot: expect.objectContaining({
+          executionPhase: 'planning',
+          planModeClosed: false,
+        }),
+      })
+    );
+    expect(runtimeStart.mock.calls[0][0].latestUserMessage).not.toContain(
+      'plan mode はこの時点で終了です。'
+    );
   });
 
   it('does not auto-close unfinished Todos when runtime completes', async () => {

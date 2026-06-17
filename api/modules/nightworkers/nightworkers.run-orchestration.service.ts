@@ -4,6 +4,11 @@ import { logger } from '../../lib/logger';
 import { getCurrentSettings } from '../../routes/settings';
 import { createLedgerSink } from '../../services/agent-runtime/ledger-sink';
 import {
+  type NativeApiExecutionMode,
+  nativeApiRoleForExecutionMode,
+  stateCardRoleForExecutionMode,
+} from '../../services/agent-runtime/native-api-runner/native-api-mode';
+import {
   resolveAgentRuntime,
   resolveRuntimeLaneDefinition,
 } from '../../services/agent-runtime/registry';
@@ -28,6 +33,7 @@ import {
   isConversationContextBuildOnIdleEnabled,
   isConversationContextStateCardEnabled,
 } from '../../services/conversation-context/flags';
+import { projectConversationStateCardForRuntime } from '../../services/conversation-context/state-card-projection';
 import { getSessionQueueMaxConcurrencyFromEnv } from '../../services/runtime-env';
 import {
   type ResolvedStructuredLlmRoute,
@@ -392,6 +398,12 @@ function injectImplementationPhaseContext(latestUserMessage: string) {
   return `${IMPLEMENTATION_PHASE_PREAMBLE}\n\n${latestUserMessage}`.trim();
 }
 
+function executionPhasePreambleForMode(mode: NativeApiExecutionMode, latestUserMessage: string) {
+  return mode === 'implementation'
+    ? injectImplementationPhaseContext(latestUserMessage)
+    : latestUserMessage.trim();
+}
+
 function readMessageLlmRouteOverride(
   message: Awaited<ReturnType<typeof repo.listTaskMessages>>[number] | undefined
 ): StructuredLlmModelTarget | null {
@@ -404,12 +416,14 @@ function readMessageLlmRouteOverride(
   return normalizeStructuredLlmModelTarget(metadata.llmSelection);
 }
 
-function resolveRuntimeLaneForImplementationRoute(
+function resolveRuntimeLaneForRoleRoute(
   fallback: RuntimeLaneResolution,
-  route: ResolvedStructuredLlmRoute | null
+  route: ResolvedStructuredLlmRoute | null,
+  executionMode: NativeApiExecutionMode
 ): RuntimeLaneResolution {
   if (!route) return fallback;
   const lane = route.providerId === 'codex' ? 'codex-sdk' : 'native-api-runner';
+  const roleLabel = route.role === 'implementation' ? 'Implementation' : `${route.role}`;
   return {
     lane,
     workerKind: lane === 'codex-sdk' ? 'codex-agent' : 'native-local',
@@ -418,14 +432,19 @@ function resolveRuntimeLaneForImplementationRoute(
       ...fallback.diagnostics,
       {
         level: 'info',
-        message: `Implementation role route selected ${lane} for ${route.providerEndpointId}/${route.model} via ${route.source}.`,
+        message:
+          route.role === 'implementation'
+            ? `Implementation role route selected ${lane} for ${route.providerEndpointId}/${route.model} via ${route.source}.`
+            : `${roleLabel} role route selected ${lane} for ${route.providerEndpointId}/${route.model} via ${route.source}.`,
       },
       ...(route.providerId !== 'codex' && fallback.lane === 'codex-sdk'
         ? [
             {
               level: 'warning' as const,
               message:
-                'IMPLEMENTATION_RUNTIME_LANE requested codex-sdk, but the implementation role route is an API provider. Native/API implementation uses native-api-runner for this run.',
+                executionMode === 'implementation'
+                  ? 'IMPLEMENTATION_RUNTIME_LANE requested codex-sdk, but the implementation role route is an API provider. Native/API implementation uses native-api-runner for this run.'
+                  : 'IMPLEMENTATION_RUNTIME_LANE requested codex-sdk, but the routed API provider requires native-api-runner for this run.',
             },
           ]
         : []),
@@ -490,6 +509,27 @@ async function maybeLoadConversationStateCard(taskId: string, latestUserMessageI
   }
 }
 
+function resolveExecutionModeFromMessages(
+  messages: Awaited<ReturnType<typeof repo.listTaskMessages>>
+): NativeApiExecutionMode {
+  for (const message of [...messages].reverse()) {
+    const metadata = toRecord(message.metadataJson);
+    const selection = toRecord(metadata?.intakeJobSelection) ?? toRecord(metadata?.jobSelection);
+    const jobType = typeof selection?.jobType === 'string' ? selection.jobType : null;
+    if (jobType) {
+      if (jobType === 'planning' || jobType === 'blueprint' || jobType === 'ui_ux') {
+        return 'planning';
+      }
+      if (jobType === 'review') return 'review';
+      if (jobType === 'runtime_debug') return 'runtime_debug';
+      if (jobType === 'general_answer') return 'general_answer';
+      return 'implementation';
+    }
+    if (message.role === 'user') return 'implementation';
+  }
+  return 'implementation';
+}
+
 export async function startTaskRun(taskId: string) {
   const task = await repo.getTask(taskId);
   if (!task) {
@@ -524,6 +564,8 @@ export async function startTaskRun(taskId: string) {
   if (!compiledPromptText.trim()) {
     throw new AppError(400, 'EMPTY_PROMPT', 'No user message found to start a run');
   }
+  const executionMode = resolveExecutionModeFromMessages(messages);
+  const runtimeRole = nativeApiRoleForExecutionMode(executionMode);
   const blueprintReadiness = await resolveBlueprintPlanningReadiness(taskId);
   const settings = getCurrentSettings();
   const baseRuntimeLaneResolution = resolveRuntimeLane({
@@ -532,18 +574,28 @@ export async function startTaskRun(taskId: string) {
     codexEnabled: settings.CODEX_ENABLED,
     ...readRuntimeLaneConfigFromEnv(),
   });
-  const implementationLlmRoute = resolveStructuredLlmRoleRoute({
-    role: 'implementation',
+  const runtimeLlmRoute = resolveStructuredLlmRoleRoute({
+    role: runtimeRole,
     settings: readStructuredLlmProviderSettings(),
     override: llmRouteOverride,
   });
-  const runtimeLaneResolution = resolveRuntimeLaneForImplementationRoute(
+  const runtimeLaneResolution = resolveRuntimeLaneForRoleRoute(
     baseRuntimeLaneResolution,
-    implementationLlmRoute
+    runtimeLlmRoute,
+    executionMode
   );
   const runtimeLaneDefinition = resolveRuntimeLaneDefinition(runtimeLaneResolution.lane);
   const effectiveLlmRouting = {
-    implementation: implementationLlmRoute ? summarizeResolvedRoute(implementationLlmRoute) : null,
+    activeRole: runtimeRole,
+    executionMode,
+    implementation:
+      runtimeRole === 'implementation' && runtimeLlmRoute
+        ? summarizeResolvedRoute(runtimeLlmRoute)
+        : null,
+    plan:
+      runtimeRole === 'plan' && runtimeLlmRoute ? summarizeResolvedRoute(runtimeLlmRoute) : null,
+    review:
+      runtimeRole === 'review' && runtimeLlmRoute ? summarizeResolvedRoute(runtimeLlmRoute) : null,
     override: llmRouteOverride,
   };
   const run = await repo.createTaskRun({
@@ -554,6 +606,7 @@ export async function startTaskRun(taskId: string) {
     timeoutSeconds: task.timeoutSeconds,
     contextSnapshot: {
       compiledPrompt: compiledPromptText,
+      executionMode,
       blueprintPlanning: blueprintReadiness,
       runtimeLane: runtimeLaneResolution.lane,
       runtimeLaneResolution: {
@@ -567,17 +620,20 @@ export async function startTaskRun(taskId: string) {
   });
   const runtimeLaneSetupInput = {
     compiledPromptText,
+    executionMode,
     runtimeLaneResolution,
-    implementationLlmRoute,
+    implementationLlmRoute: runtimeLlmRoute,
     llmRouteOverride,
   };
   const initialTodos = runtimeLaneDefinition.buildInitialTodos(runtimeLaneSetupInput);
   await repo.replaceTaskRunTodosForRun(
     run.id,
-    buildStandardImplementationTodoList({
-      todos: initialTodos,
-      startFirst: true,
-    })
+    executionMode === 'planning'
+      ? []
+      : buildStandardImplementationTodoList({
+          todos: initialTodos,
+          startFirst: true,
+        })
   );
 
   await repo.createRunEvent({
@@ -591,6 +647,8 @@ export async function startTaskRun(taskId: string) {
     message: 'Task run created. Runtime prompt is being prepared.',
     data: {
       contextSource: 'task_prompt',
+      executionMode,
+      runtimeRole,
       blueprintPlanning: blueprintReadiness,
       runtimeLane: runtimeLaneResolution.lane,
       workerKind: runtimeLaneResolution.workerKind,
@@ -606,11 +664,13 @@ export async function startTaskRun(taskId: string) {
     type: 'system.info',
     severity: 'info',
     actor: 'system',
-    message: implementationLlmRoute
-      ? `Implementation LLM route resolved: ${implementationLlmRoute.model} (${implementationLlmRoute.providerEndpointId}); runtime lane=${runtimeLaneResolution.lane} worker=${runtimeLaneResolution.workerKind}.`
-      : `Implementation LLM route was not configured; runtime lane=${runtimeLaneResolution.lane} worker=${runtimeLaneResolution.workerKind}.`,
+    message: runtimeLlmRoute
+      ? `${runtimeRole === 'implementation' ? 'Implementation' : runtimeRole} LLM route resolved: ${runtimeLlmRoute.model} (${runtimeLlmRoute.providerEndpointId}); runtime lane=${runtimeLaneResolution.lane} worker=${runtimeLaneResolution.workerKind}.`
+      : `${runtimeRole === 'implementation' ? 'Implementation' : runtimeRole} LLM route was not configured; runtime lane=${runtimeLaneResolution.lane} worker=${runtimeLaneResolution.workerKind}.`,
     data: {
       effectiveLlmRouting,
+      executionMode,
+      runtimeRole,
       runtimeLane: runtimeLaneResolution.lane,
       workerKind: runtimeLaneResolution.workerKind,
       runtimeLaneResolution,
@@ -620,6 +680,8 @@ export async function startTaskRun(taskId: string) {
     compiledPrompt: compiledPromptText,
     source: 'task_prompt',
     degraded: false,
+    executionPhase: executionMode,
+    planModeClosed: executionMode === 'implementation',
     blueprintPlanning: blueprintReadiness,
     runtimeLane: runtimeLaneResolution.lane,
     runtimeLaneResolution: {
@@ -641,28 +703,39 @@ export async function startTaskRun(taskId: string) {
     },
   };
 
-  const rawLatestUserMessage = injectImplementationPhaseContext(
+  const rawLatestUserMessage = executionPhasePreambleForMode(
+    executionMode,
     lastUserMessage?.content || compiledPromptText
   );
   const conversationContext = await maybeLoadConversationStateCard(taskId, lastUserMessage?.id);
+  const projectedStateCard = projectConversationStateCardForRuntime({
+    snapshot: conversationContext,
+    role: stateCardRoleForExecutionMode(executionMode),
+    workKind: runtimeRole,
+  });
   const runtimePromptParts = buildPromptWithStateCardParts({
     latestUserMessage: rawLatestUserMessage,
-    stateCardText: conversationContext?.stateCardText,
+    stateCardText: projectedStateCard.stateCardText,
   });
   const runtimeLatestUserMessage = runtimePromptParts.promptText;
   const runtimeContextSnapshot: RuntimePromptSnapshot = {
     ...contextSnapshot,
-    executionPhase: 'implementation',
-    planModeClosed: true,
-    implementationPhasePreamble: IMPLEMENTATION_PHASE_PREAMBLE,
+    executionPhase: executionMode,
+    planModeClosed: executionMode === 'implementation',
+    ...(executionMode === 'implementation'
+      ? { implementationPhasePreamble: IMPLEMENTATION_PHASE_PREAMBLE }
+      : {}),
     conversationContext: conversationContext
       ? {
           snapshotId: conversationContext.id,
           version: conversationContext.version,
           tokenEstimate: conversationContext.tokenEstimate,
-          stateCardIncluded: true,
-          stateCardText: conversationContext.stateCardText,
+          stateCardIncluded: Boolean(projectedStateCard.stateCardText),
+          ...(projectedStateCard.stateCardText
+            ? { stateCardText: projectedStateCard.stateCardText }
+            : {}),
           snapshotJson: conversationContext.snapshotJson,
+          projection: projectedStateCard.projection,
           usage: {
             latestUserMessageTokens: runtimePromptParts.estimates.latestUserMessageTokens,
             stateCardTokens: runtimePromptParts.estimates.stateCardTokens,
@@ -671,6 +744,7 @@ export async function startTaskRun(taskId: string) {
         }
       : {
           stateCardIncluded: false,
+          projection: projectedStateCard.projection,
           usage: {
             latestUserMessageTokens: runtimePromptParts.estimates.latestUserMessageTokens,
             stateCardTokens: 0,
@@ -702,6 +776,8 @@ export async function startTaskRun(taskId: string) {
       workerKind: runtimeLaneResolution.workerKind,
       runtimeLaneResolution,
       effectiveLlmRouting,
+      executionMode,
+      runtimeRole,
     },
   });
 
@@ -1059,6 +1135,12 @@ export async function stopTaskRun(runId: string) {
 
 function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function getSessionQueueMaxConcurrency() {

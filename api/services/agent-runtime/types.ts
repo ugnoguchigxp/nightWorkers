@@ -8,6 +8,12 @@ import type {
 } from './shared';
 
 export type AgentRuntimeKind = RuntimeLaneKind;
+export type AgentExecutionMode =
+  | 'planning'
+  | 'implementation'
+  | 'review'
+  | 'runtime_debug'
+  | 'general_answer';
 
 export interface AgentSafetyPolicy {
   allowedPaths?: string[];
@@ -36,6 +42,12 @@ export interface AgentRunContext {
       stateCardIncluded: boolean;
       stateCardText?: string;
       snapshotJson?: unknown;
+      projection?: {
+        role: 'plan' | 'implementation' | 'review' | 'runtime_debug' | 'general_answer';
+        workKind?: string | null;
+        source: 'role_projection' | 'raw_snapshot' | 'omitted';
+        omittedSections: string[];
+      };
       usage?: {
         latestUserMessageTokens: number;
         stateCardTokens: number;

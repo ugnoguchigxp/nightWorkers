@@ -38,6 +38,15 @@ describe('agent runtime registry', () => {
     ]);
   });
 
+  it('does not create implementation Todos for planning mode', () => {
+    expect(
+      buildRuntimeLaneInitialTodos('native-api-runner', {
+        compiledPromptText: '実装計画を作ってください。',
+        executionMode: 'planning',
+      })
+    ).toEqual([]);
+  });
+
   it('defaults runtime lane resolution to native api runner', () => {
     expect(resolveRuntimeLane()).toMatchObject({
       lane: 'native-api-runner',

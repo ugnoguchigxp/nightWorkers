@@ -79,6 +79,28 @@ describe('NativeApiCloseoutController', () => {
       ])
     );
   });
+
+  it('skips compile_eval for planning mode', async () => {
+    const store = createFakeStore();
+    const executeTool = vi.fn();
+    const controller = new NativeApiCloseoutController({
+      store: store.instance,
+      executeTool: executeTool as never,
+      listAvailableMcpTools: async () => [],
+    });
+
+    const result = await controller.runCompileEval({
+      context: buildContext({ runtimeOptions: { executionMode: 'planning' } }),
+      sink: createSink(),
+      turnId: 'turn-1',
+      state: initialState(),
+      finalReport: 'Plan only.',
+    });
+
+    expect(result.skipped).toBe(true);
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(store.toolCalls).toHaveLength(0);
+  });
 });
 
 function createFakeStore() {

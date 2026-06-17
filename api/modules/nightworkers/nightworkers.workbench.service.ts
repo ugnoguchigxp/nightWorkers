@@ -51,7 +51,16 @@ export async function createPlanningArtifactMessageIfNeeded(input: {
   });
   const runStartedMetadata = (runStartedMessage?.metadataJson || {}) as Record<string, unknown>;
   const intakeJobSelection = toDeepRecord(runStartedMetadata.intakeJobSelection);
-  if (String(intakeJobSelection.jobType) !== 'planning') return;
+  if (String(intakeJobSelection.jobType) !== 'planning') {
+    const run = await repo.getTaskRun(input.runId);
+    const runContext =
+      run?.contextSnapshot &&
+      typeof run.contextSnapshot === 'object' &&
+      !Array.isArray(run.contextSnapshot)
+        ? (run.contextSnapshot as Record<string, unknown>)
+        : {};
+    if (runContext.executionMode !== 'planning') return;
+  }
   const alreadyPublished = messages.some((message) => {
     const metadata = (message.metadataJson || {}) as Record<string, unknown>;
     return (

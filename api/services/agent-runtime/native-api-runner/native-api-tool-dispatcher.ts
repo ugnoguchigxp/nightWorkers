@@ -5,8 +5,12 @@ import { executeWorkerTool } from '../../worker-tools/dispatcher';
 import { type TodoListOperation, todoListTool } from '../../worker-tools/todo-list';
 import type { WorkerToolResult } from '../../worker-tools/types';
 import type { AgentRunContext, AgentRuntimeSink } from '../types';
+import { readNativeApiExecutionMode } from './native-api-mode';
 import type { NativeApiToolResult } from './native-api-tool-history';
-import { getNativeApiToolRegistration } from './native-api-tool-registry';
+import {
+  getNativeApiToolRegistration,
+  isNativeApiToolAllowedForMode,
+} from './native-api-tool-registry';
 
 export type NativeApiDispatchState = {
   readFiles: string[];
@@ -56,10 +60,20 @@ export async function dispatchNativeApiToolCall(input: {
   sink: AgentRuntimeSink;
   state: NativeApiDispatchState;
 }): Promise<NativeApiDispatchResult> {
+  const executionMode = readNativeApiExecutionMode(input.context);
   const registration = getNativeApiToolRegistration(input.toolCall.name);
   if (!registration) {
     return continueWith(
       failedToolResult('UNKNOWN_TOOL', `Unknown tool: ${input.toolCall.name}`),
+      input.state
+    );
+  }
+  if (!isNativeApiToolAllowedForMode(input.toolCall.name, executionMode)) {
+    return continueWith(
+      failedToolResult(
+        'TOOL_NOT_ALLOWED_FOR_MODE',
+        `${input.toolCall.name} is not allowed in native/API ${executionMode} mode.`
+      ),
       input.state
     );
   }

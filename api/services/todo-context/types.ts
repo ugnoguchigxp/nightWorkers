@@ -17,7 +17,7 @@ export type RuntimePromptSnapshot = {
   source: 'task_prompt' | 'fallback';
   degraded: boolean;
   degradedReason?: string;
-  executionPhase?: 'implementation';
+  executionPhase?: 'planning' | 'implementation' | 'review' | 'runtime_debug' | 'general_answer';
   planModeClosed?: boolean;
   implementationPhasePreamble?: string;
   blueprintPlanning?: unknown;
@@ -40,6 +40,12 @@ export type RuntimePromptSnapshot = {
     stateCardIncluded: boolean;
     stateCardText?: string;
     snapshotJson?: unknown;
+    projection?: {
+      role: 'plan' | 'implementation' | 'review' | 'runtime_debug' | 'general_answer';
+      workKind?: string | null;
+      source: 'role_projection' | 'raw_snapshot' | 'omitted';
+      omittedSections: string[];
+    };
     usage?: {
       latestUserMessageTokens: number;
       stateCardTokens: number;

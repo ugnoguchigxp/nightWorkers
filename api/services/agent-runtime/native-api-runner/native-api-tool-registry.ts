@@ -1,5 +1,6 @@
 import type { ProviderToolDefinition } from '../../structured-llm/tool-calls';
 import type { WorkerToolName } from '../../tool-policy/types';
+import type { NativeApiExecutionMode } from './native-api-mode';
 
 export type NativeApiRuntimeToolName =
   | WorkerToolName
@@ -164,6 +165,16 @@ const workerToolDefinitions: NativeApiToolRegistration[] = [
     },
   },
   {
+    name: 'git_status',
+    kind: 'worker',
+    workerToolName: 'git_status',
+    definition: {
+      name: 'git_status',
+      description: 'Inspect the current repository git status without mutating files.',
+      inputSchema: objectSchema({}),
+    },
+  },
+  {
     name: 'git_diff',
     kind: 'worker',
     workerToolName: 'git_diff',
@@ -227,7 +238,7 @@ const nativeApiToolRegistrations: NativeApiToolRegistration[] = [
     definition: {
       name: 'finalize_answer',
       description:
-        'Finalize the native API runner after all Todos and required gates are complete.',
+        'Finalize the native API runner after all required gates for the current mode are complete.',
       inputSchema: objectSchema(
         {
           finalReport: { type: 'string' },
@@ -239,10 +250,61 @@ const nativeApiToolRegistrations: NativeApiToolRegistration[] = [
   },
 ];
 
-export function getNativeApiToolDefinitions(): ProviderToolDefinition[] {
-  return nativeApiToolRegistrations.map((registration) => registration.definition);
+const nativeApiToolNamesByMode: Record<NativeApiExecutionMode, Set<NativeApiRuntimeToolName>> = {
+  planning: new Set([
+    'read_current_specification',
+    'list_dir',
+    'read_file',
+    'search_files',
+    'git_status',
+    'context_compile',
+    'new_context',
+    'finalize_answer',
+  ]),
+  implementation: new Set(nativeApiToolRegistrations.map((registration) => registration.name)),
+  review: new Set([
+    'read_current_specification',
+    'list_dir',
+    'read_file',
+    'search_files',
+    'git_status',
+    'git_diff',
+    'run_verification',
+    'context_compile',
+    'new_context',
+    'finalize_answer',
+  ]),
+  runtime_debug: new Set([
+    'read_current_specification',
+    'list_dir',
+    'read_file',
+    'search_files',
+    'git_status',
+    'git_diff',
+    'context_compile',
+    'new_context',
+    'finalize_answer',
+  ]),
+  general_answer: new Set(['finalize_answer', 'new_context']),
+};
+
+export function getNativeApiToolDefinitions(
+  input: { executionMode?: NativeApiExecutionMode } = {}
+): ProviderToolDefinition[] {
+  const allowed = allowedNativeApiToolNames(input.executionMode ?? 'implementation');
+  return nativeApiToolRegistrations
+    .filter((registration) => allowed.has(registration.name))
+    .map((registration) => registration.definition);
 }
 
 export function getNativeApiToolRegistration(name: string): NativeApiToolRegistration | undefined {
   return nativeApiToolRegistrations.find((registration) => registration.name === name);
+}
+
+export function isNativeApiToolAllowedForMode(name: string, mode: NativeApiExecutionMode): boolean {
+  return allowedNativeApiToolNames(mode).has(name as NativeApiRuntimeToolName);
+}
+
+function allowedNativeApiToolNames(mode: NativeApiExecutionMode) {
+  return nativeApiToolNamesByMode[mode] ?? nativeApiToolNamesByMode.implementation;
 }
