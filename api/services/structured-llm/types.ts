@@ -3,12 +3,18 @@ import type { StructuredLlmModelTarget } from './settings';
 
 export type StructuredLlmRouteSource = 'override' | 'primary' | 'fallback';
 
+export type StructuredLlmRoutePolicy = {
+  disallowedProviderIds?: SupervisorProviderId[];
+  synthesizeFallbacksFromEnabledEndpoints?: boolean;
+};
+
 export type CallSupervisorOptions = {
   tolerateSchemaFailure?: boolean;
   round?: 1 | 2;
   schemaFirst?: boolean;
   role?: StructuredLlmRole;
   routeOverride?: StructuredLlmModelTarget | null;
+  routePolicy?: StructuredLlmRoutePolicy;
   emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
   timeoutMs?: number;
   workingDirectory?: string;
@@ -32,6 +38,9 @@ export type StructuredLlmPromptBudgetMetadata = {
   droppedFields: string[];
   compressionProfile: string;
   budgetExceeded: boolean;
+  criticalEvidencePreserved?: number;
+  criticalEvidenceDropped?: number;
+  recoveryDirectiveCount?: number;
 };
 
 export type StructuredLlmRole =
@@ -119,6 +128,9 @@ export type SupervisorLlmDebugEvent = {
     | 'model.provider_activity_rejected'
     | 'model.retry_scheduled'
     | 'model.retry_started'
+    | 'model.route_fallback_scheduled'
+    | 'model.route_fallback_started'
+    | 'model.route_fallback_unavailable'
     | 'model.response_delta'
     | 'model.response_finished'
     | 'model.response_parse_failed'

@@ -127,6 +127,63 @@ describe('Supervisor LLM schema-first parsing', () => {
     });
   });
 
+  it('excludes Codex role routes when a native/API policy is active', () => {
+    const request = buildNormalizedSupervisorLlmRequest({
+      systemPrompt: 'system text',
+      userPrompt: 'user text',
+      label: 'supervisor',
+      role: 'plan',
+      routePolicy: {
+        disallowedProviderIds: ['codex'],
+        synthesizeFallbacksFromEnabledEndpoints: true,
+      },
+      settings: {
+        ACTIVE_LLM_PROVIDER: 'azure',
+        providerEndpoints: [
+          {
+            id: 'codex-plan',
+            name: 'Codex Plan',
+            kind: 'codex',
+            enabled: true,
+            models: ['gpt-5.4-mini'],
+          },
+          {
+            id: 'local-plan',
+            name: 'Local Plan',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['qwen3-coder'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'plan',
+            primary: {
+              providerEndpointId: 'codex-plan',
+              model: 'gpt-5.4-mini',
+            },
+            fallbacks: [],
+          },
+        ],
+      },
+    });
+
+    expect(request).toMatchObject({
+      providerId: 'openai',
+      providerEndpointId: 'local-plan',
+      role: 'plan',
+      routeSource: 'fallback',
+      modelOrDeployment: 'qwen3-coder',
+    });
+    expect(request.diagnostics.routeDiagnostics).toEqual(
+      expect.arrayContaining([
+        'routePolicy.synthesizedFallback=true',
+        'routePolicy.disallowed=codex',
+      ])
+    );
+  });
+
   it('uses the role route fallback when the primary endpoint is disabled', () => {
     const request = buildNormalizedSupervisorLlmRequest({
       systemPrompt: 'system text',
@@ -351,6 +408,45 @@ describe('Supervisor LLM schema-first parsing', () => {
     });
   });
 
+  it('defaults local provider capability to the local-llm context budget when unset', () => {
+    const capability = resolveStructuredLlmModelCapability({
+      role: 'implementation',
+      settings: {
+        ACTIVE_LLM_PROVIDER: 'azure',
+        providerEndpoints: [
+          {
+            id: 'local-qwen-default',
+            name: 'Local Qwen Default',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['qwen3-coder'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'local-qwen-default',
+              model: 'qwen3-coder',
+            },
+            fallbacks: [],
+          },
+        ],
+      },
+    });
+
+    expect(capability).toMatchObject({
+      providerEndpointId: 'local-qwen-default',
+      model: 'qwen3-coder',
+      contextWindowTokens: 176_000,
+      safePromptBudgetTokens: 176_000,
+      reservedOutputTokens: 1024,
+      supportsProviderSideCompression: true,
+      compressionProfile: 'none',
+    });
+  });
+
   it('uses runtime provider settings ahead of environment fallback', async () => {
     process.env.ACTIVE_LLM_PROVIDER = 'openai';
     process.env.OPENAI_ENABLED = 'false';
@@ -507,6 +603,221 @@ describe('Supervisor LLM schema-first parsing', () => {
     });
     expect(events.some((event) => event.type === 'model.retry_scheduled')).toBe(true);
     expect(events.some((event) => event.type === 'model.retry_started')).toBe(true);
+  });
+
+  it('uses the next role route fallback when the primary provider fails at runtime', async () => {
+    delete process.env.OPENAI_API_KEY;
+    fs.writeFileSync(
+      process.env.NIGHTWORKERS_LLM_SETTINGS_PATH!,
+      JSON.stringify({
+        ACTIVE_LLM_PROVIDER: 'azure',
+        OPENAI_STREAMING_ENABLED: false,
+        providerEndpoints: [
+          {
+            id: 'local-primary',
+            name: 'Local Primary',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['qwen3-coder'],
+          },
+          {
+            id: 'local-fallback',
+            name: 'Local Fallback',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11435/v1',
+            models: ['gemma-fallback'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'local-primary',
+              model: 'qwen3-coder',
+            },
+            fallbacks: [
+              {
+                providerEndpointId: 'local-fallback',
+                model: 'gemma-fallback',
+              },
+            ],
+          },
+        ],
+      })
+    );
+    const urls: string[] = [];
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+      urls.push(url);
+      if (url.startsWith('http://localhost:11434')) {
+        throw new Error('The operation was aborted.');
+      }
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  toolCall: {
+                    name: 'finalize_answer',
+                    arguments: { message: 'fallback ok' },
+                  },
+                }),
+              },
+            },
+          ],
+          usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
+    const decision = await callSupervisorLLM('system', 'user', {
+      round: 2,
+      schemaFirst: true,
+      role: 'implementation',
+      emitEvent: (event) => events.push({ type: event.type, data: event.data }),
+    });
+
+    expect(decision).toMatchObject({
+      toolCall: {
+        name: 'finalize_answer',
+        arguments: { message: 'fallback ok' },
+      },
+    });
+    expect(urls).toEqual([
+      'http://localhost:11434/v1/chat/completions',
+      'http://localhost:11434/v1/chat/completions',
+      'http://localhost:11435/v1/chat/completions',
+    ]);
+    expect(events.some((event) => event.type === 'model.route_fallback_scheduled')).toBe(true);
+    expect(events.some((event) => event.type === 'model.route_fallback_started')).toBe(true);
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'model.request_started' &&
+          event.data?.providerEndpointId === 'local-fallback'
+      )
+    ).toBe(true);
+  });
+
+  it('uses a synthesized non-Codex fallback when the native/API primary fails at runtime', async () => {
+    delete process.env.OPENAI_API_KEY;
+    fs.writeFileSync(
+      process.env.NIGHTWORKERS_LLM_SETTINGS_PATH!,
+      JSON.stringify({
+        ACTIVE_LLM_PROVIDER: 'azure',
+        OPENAI_STREAMING_ENABLED: false,
+        providerEndpoints: [
+          {
+            id: 'local-primary',
+            name: 'Local Primary',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['qwen3-coder'],
+          },
+          {
+            id: 'codex-fallback',
+            name: 'Codex Fallback',
+            kind: 'codex',
+            enabled: true,
+            models: ['gpt-5.4-mini'],
+          },
+          {
+            id: 'local-synthesized',
+            name: 'Local Synthesized',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11435/v1',
+            models: ['gemma-fallback'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'local-primary',
+              model: 'qwen3-coder',
+            },
+            fallbacks: [],
+          },
+        ],
+      })
+    );
+    const urls: string[] = [];
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+      urls.push(url);
+      if (url.startsWith('http://localhost:11434')) {
+        throw new Error('The operation was aborted.');
+      }
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  toolCall: {
+                    name: 'finalize_answer',
+                    arguments: { message: 'synthesized fallback ok' },
+                  },
+                }),
+              },
+            },
+          ],
+          usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
+    const decision = await callSupervisorLLM('system', 'user', {
+      round: 2,
+      schemaFirst: true,
+      role: 'implementation',
+      routePolicy: {
+        disallowedProviderIds: ['codex'],
+        synthesizeFallbacksFromEnabledEndpoints: true,
+      },
+      emitEvent: (event) => events.push({ type: event.type, data: event.data }),
+    });
+
+    expect(decision).toMatchObject({
+      toolCall: {
+        name: 'finalize_answer',
+        arguments: { message: 'synthesized fallback ok' },
+      },
+    });
+    expect(urls).toEqual([
+      'http://localhost:11434/v1/chat/completions',
+      'http://localhost:11434/v1/chat/completions',
+      'http://localhost:11435/v1/chat/completions',
+    ]);
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'model.request_started' &&
+          event.data?.providerEndpointId === 'local-synthesized'
+      )
+    ).toBe(true);
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'model.request_started' &&
+          event.data?.providerEndpointId === 'codex-fallback'
+      )
+    ).toBe(false);
   });
 
   it('retries transient OpenAI loading-model 503 responses once', async () => {

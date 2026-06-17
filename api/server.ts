@@ -23,33 +23,70 @@ export type NightWorkersServerHandle = {
 };
 
 const defaultShutdownTimeoutMs = 10_000;
+const serverCloseCallbackGraceMs = 250;
+const webSocketServerCloseGraceMs = 250;
 
 type ServerWithCloseAllConnections = ReturnType<typeof serve> & {
   closeAllConnections?: () => void;
+  closeIdleConnections?: () => void;
 };
 
 function closeHttpServer(server: ReturnType<typeof serve>) {
   return new Promise<void>((resolve, reject) => {
-    server.close((error) => {
+    let settled = false;
+    const settle = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(fallbackTimer);
       if (error) {
         reject(error);
         return;
       }
       resolve();
+    };
+    const fallbackTimer = setTimeout(() => settle(), serverCloseCallbackGraceMs);
+    server.close((error) => {
+      if (error) {
+        settle(error);
+        return;
+      }
+      settle();
     });
   });
 }
 
 function closeWebSocketServer() {
   return new Promise<void>((resolve, reject) => {
-    nodeWebSocket.wss.close((error) => {
+    let settled = false;
+    const settle = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(fallbackTimer);
       if (error) {
         reject(error);
         return;
       }
       resolve();
+    };
+    const fallbackTimer = setTimeout(() => settle(), webSocketServerCloseGraceMs);
+    nodeWebSocket.wss.close((error) => {
+      if (error) {
+        settle(error);
+        return;
+      }
+      settle();
     });
   });
+}
+
+function closeActiveWebSocketClients(code = 1001, reason = 'server shutting down') {
+  const clients = [...nodeWebSocket.wss.clients];
+  for (const socket of clients) {
+    if (socket.readyState === socket.OPEN || socket.readyState === socket.CONNECTING) {
+      socket.close(code, reason);
+    }
+  }
+  return clients.length;
 }
 
 function collectCleanupError(errors: Error[], scope: string, result: PromiseSettledResult<void>) {
@@ -84,7 +121,17 @@ export async function createNightWorkersServer(
     closed = true;
     logEvent({ channel: 'api', level: 'info', message: 'shutting down', meta: { signal } });
 
+    nightWorkersRealtimeBroker.closeAll();
+    const activeWebSocketClients = closeActiveWebSocketClients();
+    logEvent({
+      channel: 'ws',
+      level: 'info',
+      message: 'closing websocket server clients',
+      meta: { sockets: activeWebSocketClients },
+    });
+    (server as ServerWithCloseAllConnections).closeIdleConnections?.();
     const httpClosePromise = closeHttpServer(server);
+    const webSocketClosePromise = closeWebSocketServer();
     const forceCloseTimer = setTimeout(() => {
       logEvent({
         channel: 'api',
@@ -106,7 +153,6 @@ export async function createNightWorkersServer(
         'HTTP server close',
         await Promise.allSettled([httpClosePromise]).then(([result]) => result)
       );
-      nightWorkersRealtimeBroker.closeAll();
       collectCleanupError(
         errors,
         'Activity event queue flush',
@@ -115,7 +161,7 @@ export async function createNightWorkersServer(
       collectCleanupError(
         errors,
         'WebSocket server close',
-        await Promise.allSettled([closeWebSocketServer()]).then(([result]) => result)
+        await Promise.allSettled([webSocketClosePromise]).then(([result]) => result)
       );
       collectCleanupError(
         errors,

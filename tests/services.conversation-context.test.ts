@@ -128,7 +128,12 @@ describe('conversation context domain', () => {
         files: {
           target: ['src/previous.ts'],
         },
-        runState: { lastError: null, lastFinalReport: null, lastToolFailure: null },
+        runState: {
+          lastError: null,
+          lastFinalReport: null,
+          lastToolFailure: null,
+          workerEvidence: null,
+        },
         code: { snippets: [] },
         limits: { tokenEstimate: 0, truncatedFields: [] },
       },
@@ -160,6 +165,52 @@ describe('conversation context domain', () => {
 
     expect(snapshot.runState.lastToolFailure).toBe('read_file: FILE_NOT_FOUND: src/missing.ts');
     expect(renderStateCard(snapshot)).toContain('read_file: FILE_NOT_FOUND');
+  });
+
+  it('carries previous run worker recovery evidence into the StateCard snapshot', async () => {
+    const snapshot = await buildConversationContextSnapshot({
+      source: buildSource(repoRoot, {
+        messages: [userMessage('u1', 'src/app.ts を直してください')],
+        runs: [
+          {
+            id: 'run-1',
+            status: 'failed',
+            summary: 'failed',
+            finalReport: null,
+            finalJudgment: null,
+            contextSnapshot: null,
+            lastToolFailure: 'apply_patch: PATCH_DOES_NOT_APPLY: src/app.ts',
+            lastWorkerEvidence: {
+              lastFailure: 'apply_patch: PATCH_DOES_NOT_APPLY: src/app.ts',
+              recoveryDirective: {
+                kind: 'read_target_once',
+                targetPath: 'src/app.ts',
+                reason: 'Read current content before building corrected patch.',
+                maxRepeats: 1,
+              },
+              criticalEvidence: [
+                {
+                  toolName: 'apply_patch',
+                  failureKind: 'patch_mismatch',
+                  targetPath: 'src/app.ts',
+                  reason: 'Patch did not match current content.',
+                },
+              ],
+              targets: ['src/app.ts'],
+            },
+            startedAt: new Date(3),
+            finishedAt: new Date(4),
+            endedAt: new Date(4),
+          },
+        ],
+      }),
+    });
+
+    const card = renderStateCard(snapshot);
+    expect(snapshot.runState.workerEvidence?.recoveryDirective?.targetPath).toBe('src/app.ts');
+    expect(snapshot.files.target).toContain('src/app.ts');
+    expect(card).toContain('recovery: read_target_once | src/app.ts');
+    expect(card).toContain('evidence: apply_patch | patch_mismatch | src/app.ts');
   });
 
   it('extracts file hints without classifying workflow from user text', async () => {
@@ -316,12 +367,63 @@ describe('conversation context domain', () => {
       changedFields: [],
     };
     snapshot.runState.lastToolFailure = 'FILE_NOT_FOUND: src/missing.ts';
+    snapshot.runState.workerEvidence = {
+      lastFailure: 'FILE_NOT_FOUND: src/missing.ts',
+      recoveryDirective: {
+        kind: 'choose_existing_path',
+        targetPath: 'src/missing.ts',
+        reason: 'Use an existing path.',
+      },
+      criticalEvidence: [],
+      targets: ['src/missing.ts'],
+    };
 
     const card = renderStateCard(snapshot);
 
     expect(card).toContain('unchanged continuity');
     expect(card).toContain('Last problem: FILE_NOT_FOUND: src/missing.ts');
+    expect(card).toContain('Recovery: choose_existing_path | src/missing.ts');
     expect(card).toContain('Targets: src/app.ts');
+  });
+
+  it('keeps recovery evidence when StateCard falls back to minimal rendering', () => {
+    const snapshot = buildSnapshot({
+      latestUserRequest: 'src/app.ts を続けて直す '.repeat(50),
+      target: ['src/app.ts'],
+      snippets: [
+        {
+          path: 'src/app.ts',
+          reason: 'target_file_small',
+          content: 'export const value = true;\n'.repeat(200),
+          truncated: false,
+        },
+      ],
+    });
+    snapshot.runState.lastToolFailure = 'apply_patch: PATCH_DOES_NOT_APPLY: src/app.ts';
+    snapshot.runState.workerEvidence = {
+      lastFailure: 'apply_patch: PATCH_DOES_NOT_APPLY: src/app.ts',
+      recoveryDirective: {
+        kind: 'read_target_once',
+        targetPath: 'src/app.ts',
+        reason: 'Read current content before corrected patch.',
+        maxRepeats: 1,
+      },
+      criticalEvidence: [
+        {
+          toolName: 'apply_patch',
+          failureKind: 'patch_mismatch',
+          targetPath: 'src/app.ts',
+          reason: 'Patch did not match current content.',
+        },
+      ],
+      targets: ['src/app.ts'],
+    };
+
+    const card = renderStateCard(snapshot, { maxTokens: 40 });
+
+    expect(snapshot.limits.truncatedFields).toContain('minimal');
+    expect(card).toContain('- recovery: read_target_once | src/app.ts');
+    expect(card).toContain('- evidence: apply_patch | patch_mismatch | src/app.ts');
   });
 
   it('includes untracked files in git state as added files', async () => {
@@ -386,6 +488,7 @@ function buildSnapshot(input: {
       lastError: null,
       lastFinalReport: 'final report '.repeat(80),
       lastToolFailure: null,
+      workerEvidence: null,
     },
     code: { snippets: input.snippets },
     limits: { tokenEstimate: 0, truncatedFields: [] },

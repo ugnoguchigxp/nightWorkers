@@ -71,9 +71,22 @@ export function buildRuntimeLaneOptions(
   input: RuntimeLaneSetupInput & { runtimeLaneResolution?: RuntimeLaneResolution }
 ): Record<string, unknown> {
   const implementationRoute = input.implementationLlmRoute ?? null;
+  const nativeApiRoute =
+    input.runtimeLaneResolution?.lane === 'native-supervisor' &&
+    implementationRoute !== null &&
+    implementationRoute.providerId !== 'codex';
   return {
     runtimeLane: input.runtimeLaneResolution?.lane ?? null,
     runtimeLaneResolution: input.runtimeLaneResolution ?? null,
+    ...(nativeApiRoute
+      ? {
+          experimentalNativeToolRuntime: true,
+          structuredLlmRoutePolicy: {
+            disallowedProviderIds: ['codex'],
+            synthesizeFallbacksFromEnabledEndpoints: true,
+          },
+        }
+      : {}),
     llmRouting: {
       implementation: implementationRoute ? summarizeResolvedRoute(implementationRoute) : null,
       override: input.llmRouteOverride ?? null,

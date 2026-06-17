@@ -13,6 +13,9 @@ type CompressionMode = 'balanced' | 'aggressive';
 type CompressionStats = {
   compressedSections: Set<string>;
   droppedFields: Set<string>;
+  criticalEvidencePreserved: number;
+  criticalEvidenceDropped: number;
+  recoveryDirectiveCount: number;
 };
 
 const ROUND2_SECTIONS = [
@@ -73,6 +76,9 @@ export function buildPromptBudget(input: {
     droppedFields: [...baseStats.droppedFields].sort(),
     compressionProfile,
     budgetExceeded: after > input.modelCapability.safePromptBudgetTokens,
+    criticalEvidencePreserved: baseStats.criticalEvidencePreserved,
+    criticalEvidenceDropped: baseStats.criticalEvidenceDropped,
+    recoveryDirectiveCount: baseStats.recoveryDirectiveCount,
   };
 
   return { systemPrompt: input.systemPrompt, userPrompt, metadata };
@@ -179,8 +185,15 @@ function compactProgressContext(value: unknown, mode: CompressionMode, stats: Co
   const maxItems = mode === 'aggressive' ? 3 : 5;
   const doNotRepeat = Array.isArray(record.doNotRepeat) ? record.doNotRepeat : [];
   const safeguards = Array.isArray(record.safeguards) ? record.safeguards : [];
+  const criticalEvidence = Array.isArray(record.criticalEvidence) ? record.criticalEvidence : [];
+  if (record.recoveryDirective) stats.recoveryDirectiveCount += 1;
+  stats.criticalEvidencePreserved += criticalEvidence.length;
   if (doNotRepeat.length > maxItems) stats.droppedFields.add('progressContext.doNotRepeat.tail');
   if (safeguards.length > maxItems) stats.droppedFields.add('progressContext.safeguards.tail');
+  if (criticalEvidence.length > maxItems) {
+    stats.droppedFields.add('progressContext.criticalEvidence.tail');
+    stats.criticalEvidenceDropped += criticalEvidence.length - maxItems;
+  }
   return {
     objective:
       typeof record.objective === 'string'
@@ -197,6 +210,10 @@ function compactProgressContext(value: unknown, mode: CompressionMode, stats: Co
     doNotRepeat: prioritizeDoNotRepeat(doNotRepeat, maxItems).map((item) =>
       typeof item === 'string' ? truncateText(item, mode === 'aggressive' ? 180 : 300) : item
     ),
+    recoveryDirective: compactRecoveryDirective(record.recoveryDirective, mode),
+    criticalEvidence: criticalEvidence
+      .slice(-maxItems)
+      .map((item) => compactNativeToolEvidence(item, mode)),
     safeguards: safeguards
       .slice(0, maxItems)
       .map((item) =>
@@ -217,8 +234,52 @@ function prioritizeDoNotRepeat(items: unknown[], maxItems: number) {
 function compactToolEvidence(value: unknown, mode: CompressionMode, stats: CompressionStats) {
   const items = Array.isArray(value) ? value : [];
   const maxItems = mode === 'aggressive' ? 4 : 8;
-  if (items.length > maxItems) stats.droppedFields.add('toolEvidence.olderItems');
-  return items.slice(-maxItems).map((item) => compactToolEvidenceItem(item, mode, stats));
+  const selected = selectToolEvidenceItems(items, maxItems, stats);
+  if (items.length > selected.length) stats.droppedFields.add('toolEvidence.olderItems');
+  return selected.map((item) => compactToolEvidenceItem(item, mode, stats));
+}
+
+function selectToolEvidenceItems(items: unknown[], maxItems: number, stats: CompressionStats) {
+  const selected: unknown[] = [];
+  const add = (item: unknown) => {
+    if (!selected.includes(item)) selected.push(item);
+  };
+  const critical = items.filter(isRecoveryCriticalToolEvidence);
+  for (const item of critical) add(item);
+  for (const item of items.slice(-maxItems)) add(item);
+
+  if (selected.length <= maxItems) {
+    stats.criticalEvidencePreserved += critical.length;
+    return selected.sort(compareToolEvidenceStep);
+  }
+
+  const criticalSet = new Set(critical);
+  const criticalSelected = selected.filter((item) => criticalSet.has(item));
+  if (criticalSelected.length >= maxItems) {
+    stats.criticalEvidencePreserved += maxItems;
+    stats.criticalEvidenceDropped += criticalSelected.length - maxItems;
+    return criticalSelected.slice(-maxItems).sort(compareToolEvidenceStep);
+  }
+
+  const tail = selected
+    .filter((item) => !criticalSet.has(item))
+    .slice(-(maxItems - criticalSelected.length));
+  stats.criticalEvidencePreserved += criticalSelected.length;
+  return [...criticalSelected, ...tail].sort(compareToolEvidenceStep);
+}
+
+function isRecoveryCriticalToolEvidence(item: unknown) {
+  const record = asRecord(item);
+  const evidence = asRecord(record.evidence);
+  return (
+    record.ok === false || Boolean(evidence.recoveryDirective) || Boolean(evidence.criticalEvidence)
+  );
+}
+
+function compareToolEvidenceStep(a: unknown, b: unknown) {
+  const left = asRecord(a).step;
+  const right = asRecord(b).step;
+  return (typeof left === 'number' ? left : 0) - (typeof right === 'number' ? right : 0);
 }
 
 function compactToolEvidenceItem(value: unknown, mode: CompressionMode, stats: CompressionStats) {
@@ -235,13 +296,81 @@ function compactToolEvidenceItem(value: unknown, mode: CompressionMode, stats: C
         : record.summary,
   };
   const payload = compactToolPayload(toolName, record.payload, mode, stats);
-  if (payload !== undefined) compacted.payload = payload;
+  if (payload !== undefined) {
+    const args = asRecord(record.arguments);
+    compacted.payload =
+      toolName === 'read_file' && typeof args.filePath === 'string'
+        ? { ...(asRecord(payload) || {}), filePath: args.filePath }
+        : payload;
+  }
   const error = compactToolError(record.error, mode);
   if (error) compacted.error = error;
+  const evidence = compactNativeToolEvidence(record.evidence, mode);
+  if (evidence) {
+    compacted.evidence = evidence;
+    if (asRecord(evidence).recoveryDirective) stats.recoveryDirectiveCount += 1;
+    if (asRecord(evidence).criticalEvidence) stats.criticalEvidencePreserved += 1;
+  }
   if (record.payload !== undefined && payload === undefined) {
     stats.droppedFields.add(`toolEvidence.${toolName || 'unknown'}.payload`);
   }
   return compacted;
+}
+
+function compactNativeToolEvidence(value: unknown, mode: CompressionMode) {
+  const record = asRecord(value);
+  if (!Object.keys(record).length) return undefined;
+  const criticalEvidence = asRecord(record.criticalEvidence);
+  return {
+    step: record.step,
+    toolName: record.toolName,
+    ok: record.ok,
+    targetPath: record.targetPath,
+    failureKind: record.failureKind,
+    reason:
+      typeof record.reason === 'string'
+        ? truncateText(record.reason, mode === 'aggressive' ? 180 : 300)
+        : record.reason,
+    recoveryDirective: compactRecoveryDirective(record.recoveryDirective, mode),
+    doNotRepeat: compactDoNotRepeatDirective(record.doNotRepeat, mode),
+    criticalEvidence: Object.keys(criticalEvidence).length
+      ? {
+          kind: criticalEvidence.kind,
+          summary:
+            typeof criticalEvidence.summary === 'string'
+              ? truncateText(criticalEvidence.summary, mode === 'aggressive' ? 180 : 300)
+              : criticalEvidence.summary,
+        }
+      : undefined,
+  };
+}
+
+function compactRecoveryDirective(value: unknown, mode: CompressionMode) {
+  const record = asRecord(value);
+  if (!Object.keys(record).length) return undefined;
+  return {
+    kind: record.kind,
+    targetPath: record.targetPath,
+    reason:
+      typeof record.reason === 'string'
+        ? truncateText(record.reason, mode === 'aggressive' ? 180 : 300)
+        : record.reason,
+    maxRepeats: record.maxRepeats,
+  };
+}
+
+function compactDoNotRepeatDirective(value: unknown, mode: CompressionMode) {
+  const record = asRecord(value);
+  if (!Object.keys(record).length) return undefined;
+  return {
+    toolName: record.toolName,
+    targetPath: record.targetPath,
+    reason:
+      typeof record.reason === 'string'
+        ? truncateText(record.reason, mode === 'aggressive' ? 160 : 260)
+        : record.reason,
+    maxRepeats: record.maxRepeats,
+  };
 }
 
 function compactToolArguments(value: unknown) {
@@ -312,6 +441,7 @@ function compactToolPayload(
   if (toolName === 'read_file') {
     const compression = asRecord(record.compression);
     return {
+      filePath: record.filePath,
       totalLines: record.totalLines,
       linesReturned: record.linesReturned,
       startLine: record.startLine,
@@ -452,10 +582,19 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function createStats(): CompressionStats {
-  return { compressedSections: new Set(), droppedFields: new Set() };
+  return {
+    compressedSections: new Set(),
+    droppedFields: new Set(),
+    criticalEvidencePreserved: 0,
+    criticalEvidenceDropped: 0,
+    recoveryDirectiveCount: 0,
+  };
 }
 
 function mergeStats(target: CompressionStats, source: CompressionStats) {
   for (const section of source.compressedSections) target.compressedSections.add(section);
   for (const field of source.droppedFields) target.droppedFields.add(field);
+  target.criticalEvidencePreserved += source.criticalEvidencePreserved;
+  target.criticalEvidenceDropped += source.criticalEvidenceDropped;
+  target.recoveryDirectiveCount += source.recoveryDirectiveCount;
 }

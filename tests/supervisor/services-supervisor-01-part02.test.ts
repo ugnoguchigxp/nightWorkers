@@ -1120,6 +1120,15 @@ describe('Schema-first supervisor loop', () => {
         ok: false,
         arguments: { operation: 'list' },
         summary: expect.stringContaining('TodoList も作業状態も変更しません'),
+        evidence: {
+          failureKind: 'todo_tracking_noop',
+          recoveryDirective: {
+            kind: 'advance_current_todo',
+          },
+          criticalEvidence: {
+            kind: 'todo_tracking_noop',
+          },
+        },
       });
     } finally {
       await fs.rm(repoRoot, { recursive: true, force: true });
@@ -1356,27 +1365,10 @@ describe('Schema-first supervisor loop', () => {
     }
   });
 
-  it('emits an actionable final report when reserving closeout budget', async () => {
-    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-closeout-reserve-'));
-    const todos = [
-      {
-        id: 'todo-1',
-        runId: 'run-1',
-        seq: 1,
-        title: '実装する',
-        taskType: 'implementation',
-        status: 'running',
-        procedureId: null,
-      },
-    ];
-    let currentTodos = todos;
+  it('does not stop early when maxToolCalls is smaller than the tool result count', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-no-tool-limit-'));
+    let currentTodos: never[] = [];
     vi.mocked(repo.listTaskRunTodosForRun).mockImplementation(async () => currentTodos as never);
-    vi.mocked(repo.updateTaskRunTodo).mockImplementation(async (todoId, patch) => {
-      currentTodos = currentTodos.map((todo) =>
-        todo.id === todoId ? { ...todo, ...patch } : todo
-      );
-      return currentTodos.find((todo) => todo.id === todoId) as never;
-    });
     vi.mocked(llm.callSupervisorLLM)
       .mockResolvedValueOnce({
         jobType: 'major_code_edit',
@@ -1387,6 +1379,12 @@ describe('Schema-first supervisor loop', () => {
           name: 'search_procedure',
           arguments: { query: 'implementation', maxResults: 1 },
         },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'finalize_answer',
+          arguments: { message: '完了しました。' },
+        },
       });
 
     try {
@@ -1395,13 +1393,12 @@ describe('Schema-first supervisor loop', () => {
         repoRoot,
         prompt: '実装してください',
         timeoutSeconds: 60,
-        maxToolCalls: 3,
+        maxToolCalls: 1,
       });
 
-      expect(result.terminalState).toBe('needs_human');
-      expect(result.finalReport).toContain('Supervisor の tool call 予算');
-      expect(result.finalReport).toContain('最後の tool: search_procedure');
-      expect(result.finalReport).toContain('#1 needs_human: 実装する');
+      expect(result.terminalState).toBe('completed');
+      expect(result.finalReport).toBe('完了しました。');
+      expect(vi.mocked(llm.callSupervisorLLM)).toHaveBeenCalledTimes(3);
     } finally {
       await fs.rm(repoRoot, { recursive: true, force: true });
     }

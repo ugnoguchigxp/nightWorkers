@@ -3,6 +3,7 @@ import { logEvent } from './lib/logger';
 import { createNightWorkersServer } from './server';
 
 const shutdownTimeoutMs = 10_000;
+const forceExitTimeoutMs = shutdownTimeoutMs + 2_000;
 
 let shuttingDown = false;
 let server: Awaited<ReturnType<typeof createNightWorkersServer>> | null = null;
@@ -19,10 +20,10 @@ const shutdown = async (signal: NodeJS.Signals) => {
       channel: 'api',
       level: 'error',
       message: 'graceful shutdown timed out',
-      meta: { signal, timeoutMs: shutdownTimeoutMs },
+      meta: { signal, timeoutMs: forceExitTimeoutMs },
     });
     process.exit(1);
-  }, shutdownTimeoutMs);
+  }, forceExitTimeoutMs);
   forceExitTimer.unref?.();
 
   try {

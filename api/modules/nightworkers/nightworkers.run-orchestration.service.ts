@@ -418,8 +418,26 @@ function resolveRuntimeLaneForImplementationRoute(
       ...fallback.diagnostics,
       {
         level: 'info',
-        message: `Role Routing selected ${lane} for implementation via ${route.source}: ${route.providerEndpointId}/${route.model}.`,
+        message: `Implementation role route selected ${lane} for ${route.providerEndpointId}/${route.model} via ${route.source}.`,
       },
+      ...(route.providerId !== 'codex' && fallback.lane === 'codex-sdk'
+        ? [
+            {
+              level: 'warning' as const,
+              message:
+                'IMPLEMENTATION_RUNTIME_LANE requested codex-sdk, but the implementation role route is an API provider. Native/API implementation uses native-supervisor for this run.',
+            },
+          ]
+        : []),
+      ...(route.providerId === 'codex' && fallback.lane !== 'codex-sdk'
+        ? [
+            {
+              level: 'warning' as const,
+              message:
+                'Implementation role route points at a Codex provider endpoint. Use a non-Codex implementation route to stay on native/API lane.',
+            },
+          ]
+        : []),
     ],
   };
 }

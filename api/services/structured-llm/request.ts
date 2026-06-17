@@ -1,4 +1,8 @@
-import { resolveStructuredLlmRoleRoute } from './role-routing';
+import {
+  type ResolvedStructuredLlmRoute,
+  resolveStructuredLlmRoleRoute,
+  resolveStructuredLlmRoleRouteCandidates,
+} from './role-routing';
 import {
   getStructuredLlmSetting,
   normalizeStructuredLlmProviderSetting,
@@ -10,6 +14,7 @@ import type {
   NormalizedSupervisorLlmRequest,
   ProviderCapabilityPolicy,
   StructuredLlmRole,
+  StructuredLlmRoutePolicy,
   SupervisorProviderClass,
   SupervisorProviderId,
 } from './types';
@@ -23,12 +28,22 @@ export function buildNormalizedSupervisorLlmRequest(input: {
   schemaFirst?: boolean;
   role?: StructuredLlmRole;
   routeOverride?: StructuredLlmModelTarget | null;
+  routePolicy?: StructuredLlmRoutePolicy;
   settings?: StructuredLlmProviderSettings;
+  resolvedRoute?: ResolvedStructuredLlmRoute | null;
 }): NormalizedSupervisorLlmRequest {
   const settings = input.settings ?? readStructuredLlmProviderSettings();
-  const resolvedRoute = input.role
-    ? resolveStructuredLlmRoleRoute({ role: input.role, settings, override: input.routeOverride })
-    : null;
+  const resolvedRoute =
+    input.resolvedRoute !== undefined
+      ? input.resolvedRoute
+      : input.role
+        ? resolveStructuredLlmRoleRoute({
+            role: input.role,
+            settings,
+            override: input.routeOverride,
+            policy: input.routePolicy,
+          })
+        : null;
   const rawProvider =
     resolvedRoute?.providerId ||
     normalizeStructuredLlmProviderSetting(
@@ -86,6 +101,36 @@ export function buildNormalizedSupervisorLlmRequest(input: {
       routeDiagnostics: resolvedRoute?.diagnostics ?? [],
     },
   };
+}
+
+export function buildNormalizedSupervisorLlmRequestCandidates(input: {
+  systemPrompt: string;
+  userPrompt: string;
+  jsonSchema?: { name: string; schema: unknown };
+  label: string;
+  round?: 1 | 2;
+  schemaFirst?: boolean;
+  role?: StructuredLlmRole;
+  routeOverride?: StructuredLlmModelTarget | null;
+  routePolicy?: StructuredLlmRoutePolicy;
+  settings?: StructuredLlmProviderSettings;
+}): NormalizedSupervisorLlmRequest[] {
+  const settings = input.settings ?? readStructuredLlmProviderSettings();
+  if (!input.role) {
+    return [buildNormalizedSupervisorLlmRequest({ ...input, settings, resolvedRoute: null })];
+  }
+  const routeCandidates = resolveStructuredLlmRoleRouteCandidates({
+    role: input.role,
+    settings,
+    override: input.routeOverride,
+    policy: input.routePolicy,
+  });
+  if (routeCandidates.length === 0) {
+    return [buildNormalizedSupervisorLlmRequest({ ...input, settings, resolvedRoute: null })];
+  }
+  return routeCandidates.map((resolvedRoute) =>
+    buildNormalizedSupervisorLlmRequest({ ...input, settings, resolvedRoute })
+  );
 }
 
 export function normalizeProviderId(value: string): SupervisorProviderId {

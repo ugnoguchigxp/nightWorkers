@@ -682,6 +682,17 @@ describe('AgentRuntime', () => {
   });
 
   it('passes current todo context into the supervisor loop', async () => {
+    vi.mocked(repo.getTaskRun).mockResolvedValue(null);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([
+      {
+        id: 'todo-1',
+        seq: 1,
+        title: 'Implement feature',
+        taskType: 'code_change',
+        status: 'running',
+        procedureId: 'code-change',
+      },
+    ] as never);
     (supervisor.runSupervisorLoop as never).mockResolvedValue({
       terminalState: 'completed',
       summary: 'done',

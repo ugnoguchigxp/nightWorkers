@@ -86,10 +86,28 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
       aliases: [],
       buildInitialTodos: (input: { compiledPromptText: string }) =>
         buildRuntimeLaneInitialTodos(lane, input),
-      buildRuntimeOptions: (input: { runtimeLaneResolution?: unknown }) => ({
-        runtimeLane: lane,
-        runtimeLaneResolution: input.runtimeLaneResolution ?? null,
-      }),
+      buildRuntimeOptions: (input: {
+        runtimeLaneResolution?: unknown;
+        implementationLlmRoute?: { providerId?: string } | null;
+      }) => {
+        const nativeApiRoute =
+          lane === 'native-supervisor' &&
+          Boolean(input.implementationLlmRoute) &&
+          input.implementationLlmRoute?.providerId !== 'codex';
+        return {
+          runtimeLane: lane,
+          runtimeLaneResolution: input.runtimeLaneResolution ?? null,
+          ...(nativeApiRoute
+            ? {
+                experimentalNativeToolRuntime: true,
+                structuredLlmRoutePolicy: {
+                  disallowedProviderIds: ['codex'],
+                  synthesizeFallbacksFromEnabledEndpoints: true,
+                },
+              }
+            : {}),
+        };
+      },
       createAdapter: () =>
         resolveAgentRuntime(lane === 'codex-sdk' ? 'codex-agent' : 'native-local'),
     })),
@@ -338,6 +356,8 @@ describe('NightWorkers service', () => {
       taskType: 'implementation',
       status: 'pending',
     };
+    const humanRunningTodo = { ...runningTodo, status: 'needs_human' };
+    const humanPendingTodo = { ...pendingTodo, status: 'needs_human' };
 
     vi.mocked(repo.getTask).mockResolvedValue(task as never);
     vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
@@ -354,7 +374,10 @@ describe('NightWorkers service', () => {
     vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
     vi.mocked(repo.listTaskRunTodosForRun)
       .mockResolvedValueOnce([runningTodo, pendingTodo] as never)
-      .mockResolvedValueOnce([{ ...runningTodo, status: 'needs_human' }, pendingTodo] as never);
+      .mockResolvedValueOnce([runningTodo, pendingTodo] as never)
+      .mockResolvedValueOnce([humanRunningTodo, pendingTodo] as never)
+      .mockResolvedValueOnce([humanRunningTodo, humanPendingTodo] as never)
+      .mockResolvedValue([humanRunningTodo, humanPendingTodo] as never);
     const runtimeStart = vi.fn().mockResolvedValue({
       terminalState: 'needs_human',
       summary: 'Import failed',
@@ -393,7 +416,17 @@ describe('NightWorkers service', () => {
         { notifyTaskId: task.id, notifyRunId: run.id }
       );
     });
-    expect(repo.updateTaskRunTodo).toHaveBeenCalledTimes(1);
+    expect(repo.updateTaskRunTodo).toHaveBeenCalledWith(
+      'todo-pending',
+      expect.objectContaining({
+        status: 'needs_human',
+        statusReason:
+          'Run requires human review before this Todo could start: Project import failed.',
+        completedAt: expect.any(Date),
+      }),
+      { notifyTaskId: task.id, notifyRunId: run.id }
+    );
+    expect(repo.updateTaskRunTodo).toHaveBeenCalledTimes(2);
     expect(repo.updateTaskRun).toHaveBeenCalledWith(
       run.id,
       expect.objectContaining({
@@ -403,8 +436,37 @@ describe('NightWorkers service', () => {
     );
   });
 
-  it('uses the codex-sdk runtime lane when the legacy env alias is set', async () => {
+  it('uses the native-supervisor runtime lane for non-Codex implementation routes', async () => {
     process.env.NIGHTWORKERS_RUNTIME_LANE = 'codex-agent';
+    const previousSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    const settingsPath = path.join(repoRoot, 'llm-route-non-codex-implementation.json');
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = settingsPath;
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        ACTIVE_LLM_PROVIDER: 'azure',
+        providerEndpoints: [
+          {
+            id: 'local-implementation',
+            name: 'Local Implementation',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['qwen3-coder'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'local-implementation',
+              model: 'qwen3-coder',
+            },
+            fallbacks: [],
+          },
+        ],
+      })
+    );
     const task = {
       id: 'task-codex-lane',
       repositoryId: 'repo-codex-lane',
@@ -438,29 +500,44 @@ describe('NightWorkers service', () => {
     vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
     const runtimeStart = vi.fn().mockResolvedValue({
       terminalState: 'completed',
-      summary: 'Codex done',
-      finalReport: 'Codex done',
+      summary: 'Native done',
+      finalReport: 'Native done',
       stoppedBy: 'decision',
       riskLevel: 'medium',
       diffPatch: '',
       logContent: '',
     });
     vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
-      kind: 'codex-agent',
+      kind: 'native-local',
       start: runtimeStart,
       stop: vi.fn(),
     } as never);
 
-    await startTaskRun(task.id);
+    try {
+      await startTaskRun(task.id);
+    } finally {
+      if (previousSettingsPath === undefined) {
+        delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      } else {
+        process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = previousSettingsPath;
+      }
+    }
 
     expect(repo.createTaskRun).toHaveBeenCalledWith(
       expect.objectContaining({
-        workerKind: 'codex-agent',
+        workerKind: 'native-local',
         contextSnapshot: expect.objectContaining({
-          runtimeLane: 'codex-sdk',
+          runtimeLane: 'native-supervisor',
           runtimeLaneResolution: expect.objectContaining({
-            workerKind: 'codex-agent',
-            source: 'env',
+            workerKind: 'native-local',
+            source: 'role_route',
+            diagnostics: expect.arrayContaining([
+              expect.objectContaining({
+                message: expect.stringContaining(
+                  'Native/API implementation uses native-supervisor for this run'
+                ),
+              }),
+            ]),
           }),
         }),
       })
@@ -476,12 +553,8 @@ describe('NightWorkers service', () => {
           title: 'context_compile を実行する',
         }),
         expect.objectContaining({
-          title: '対象変更を確認して実装する',
-          taskType: 'implementation',
-        }),
-        expect.objectContaining({
-          title: '必要最小限の動作確認を行う',
-          taskType: 'focused_verification',
+          title: '仕様と既存構成を確認する',
+          taskType: 'inspection',
         }),
         expect.objectContaining({
           title: 'LLM コードレビューを実施する',
@@ -496,16 +569,21 @@ describe('NightWorkers service', () => {
     expect(todos).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          title: '仕様と既存構成を確認する',
+          title: '対象変更を確認して実装する',
         }),
       ])
     );
-    expect(runtimeRegistry.resolveAgentRuntime).toHaveBeenCalledWith('codex-agent');
+    expect(runtimeRegistry.resolveAgentRuntime).toHaveBeenCalledWith('native-local');
     await vi.waitFor(() => {
       expect(runtimeStart).toHaveBeenCalledWith(
         expect.objectContaining({
           runtimeOptions: expect.objectContaining({
-            runtimeLane: 'codex-sdk',
+            runtimeLane: 'native-supervisor',
+            experimentalNativeToolRuntime: true,
+            structuredLlmRoutePolicy: {
+              disallowedProviderIds: ['codex'],
+              synthesizeFallbacksFromEnabledEndpoints: true,
+            },
           }),
         }),
         expect.anything()

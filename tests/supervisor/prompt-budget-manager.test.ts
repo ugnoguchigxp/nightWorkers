@@ -271,6 +271,131 @@ describe('PromptBudgetManager', () => {
     });
   });
 
+  it('prioritizes failed native evidence and recovery directives over older successful reads', () => {
+    const longText = 'large-context '.repeat(900);
+    const toolResults = Array.from({ length: 12 }, (_, index) => ({
+      step: index + 10,
+      toolName: 'read_file',
+      ok: true,
+      arguments: { filePath: `src/read-${index}.ts` },
+      summary: longText,
+      payload: {
+        totalLines: 20,
+        linesReturned: 20,
+        startLine: 1,
+        endLine: 20,
+        contentHash: `hash-${index}`,
+      },
+    }));
+    toolResults.unshift({
+      step: 2,
+      toolName: 'apply_patch',
+      ok: false,
+      arguments: { patchContent: 'diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts' },
+      summary: 'tool=apply_patch status=failed',
+      error: { code: 'PATCH_DOES_NOT_APPLY', message: 'Patch mismatch' },
+      evidence: {
+        step: 2,
+        toolName: 'apply_patch',
+        ok: false,
+        targetPath: 'src/app.ts',
+        failureKind: 'patch_mismatch',
+        reason: 'Patch mismatch',
+        recoveryDirective: {
+          kind: 'read_target_once',
+          targetPath: 'src/app.ts',
+          reason: 'Read current content before corrected patch.',
+          maxRepeats: 1,
+        },
+        doNotRepeat: {
+          toolName: 'apply_patch',
+          targetPath: 'src/app.ts',
+          reason: 'Do not repeat the same patch.',
+          maxRepeats: 1,
+        },
+        criticalEvidence: {
+          kind: 'mutation_failure',
+          summary: 'patch_mismatch: apply_patch src/app.ts',
+        },
+      },
+    });
+
+    const userPrompt = renderRound2UserContext({
+      latestUserMessage: `${longText}latest request`,
+      goal: `${longText}goal`,
+      currentJobType: 'major_code_edit',
+      workflow: 'major_code_edit',
+      safetyPolicy: null,
+      todoPlan: [],
+      currentTodo: null,
+      progressContext: {
+        objective: 'continue',
+        nextConcreteAction: 'src/app.ts を read_file で一度だけ読み直す',
+        todoGuidance: 'Todo is progress evidence.',
+        doNotRepeat: [],
+        safeguards: [],
+        recoveryDirective: {
+          kind: 'read_target_once',
+          targetPath: 'src/app.ts',
+          reason: 'Read current content before corrected patch.',
+          maxRepeats: 1,
+        },
+        criticalEvidence: [toolResults[0].evidence],
+      },
+      toolResults,
+      loadedProcedureSummaries: [],
+      artifactContextRefs: [],
+      workspaceSnapshot: {
+        isEmpty: false,
+        topLevelDirs: ['src'],
+        topLevelFiles: [],
+        truncated: false,
+      },
+    });
+
+    const result = buildPromptBudget({
+      systemPrompt: 'Return JSON only.'.repeat(20),
+      userPrompt,
+      modelCapability: {
+        providerEndpointId: 'local-qwen',
+        model: 'qwen3-coder',
+        contextWindowTokens: 7000,
+        safePromptBudgetTokens: 5000,
+        reservedOutputTokens: 2000,
+        supportsProviderSideCompression: true,
+        compressionProfile: 'balanced',
+      },
+    });
+
+    const toolEvidence = parseRound2UserContextJsonSection<Array<Record<string, unknown>>>(
+      result.userPrompt,
+      'Recent Tool Evidence'
+    );
+    expect(toolEvidence[0]).toMatchObject({
+      toolName: 'apply_patch',
+      evidence: {
+        recoveryDirective: {
+          kind: 'read_target_once',
+          targetPath: 'src/app.ts',
+        },
+      },
+    });
+    expect(result.metadata.criticalEvidencePreserved).toBeGreaterThan(0);
+    expect(result.metadata.recoveryDirectiveCount).toBeGreaterThan(0);
+
+    const compactRead = toolEvidence.find((item) => item.toolName === 'read_file');
+    expect(compactRead).toMatchObject({
+      payload: {
+        filePath: expect.stringMatching(/^src\/read-/),
+        totalLines: 20,
+        linesReturned: 20,
+        startLine: 1,
+        endLine: 20,
+        contentHash: expect.stringMatching(/^hash-/),
+      },
+    });
+  });
+
   it('uses configured large-window capability instead of a small global cap', () => {
     const userPrompt = renderRound2UserContext({
       latestUserMessage: 'x'.repeat(12_000),

@@ -12,6 +12,13 @@ import {
   type StructuredLlmProviderEndpoint,
 } from './settings';
 import type {
+  ProviderToolCall,
+  ProviderToolDefinition,
+  ProviderToolMessage,
+  ProviderToolTurnResult,
+  RawToolTurnCallOptions,
+} from './tool-calls';
+import type {
   CallSupervisorOptions,
   NormalizedSupervisorLlmRequest,
   ProviderCallResult,
@@ -22,10 +29,18 @@ type OpenAIChatCompletionResponse = {
   choices?: Array<{
     message?: {
       content?: string;
-      tool_calls?: Array<{ function?: { name?: string | null } }>;
+      tool_calls?: Array<OpenAIChatCompletionToolCall>;
     };
   }>;
   usage?: unknown;
+};
+type OpenAIChatCompletionToolCall = {
+  id?: string;
+  type?: string;
+  function?: {
+    name?: string | null;
+    arguments?: string | null;
+  };
 };
 
 const OPENAI_TRANSIENT_RETRY_DELAY_MS = process.env.NODE_ENV === 'test' ? 0 : 1500;
@@ -58,6 +73,39 @@ export async function callProvider(input: {
   if (provider === 'fixture' || provider === 'test') return callFixtureProvider(input);
 
   throw new Error(`Unsupported LLM provider: ${input.provider}`);
+}
+
+export async function callProviderToolTurn(input: {
+  provider: string;
+  messages: ProviderToolMessage[];
+  tools: ProviderToolDefinition[];
+  systemPrompt: string;
+  userPrompt: string;
+  options: RawToolTurnCallOptions;
+  signal: AbortSignal;
+  setProviderDebug: (value: Record<string, unknown>) => void;
+}): Promise<ProviderToolTurnResult> {
+  const settings = readStructuredLlmProviderSettings();
+  const isEnabled = (key: Parameters<typeof getStructuredLlmBoolSetting>[1], fallback: boolean) =>
+    getStructuredLlmBoolSetting(settings, key, fallback);
+  const provider = providerAdapterKey(input.options.normalizedRequest.providerId ?? input.provider);
+
+  if (provider === 'openai') {
+    return callOpenAIProviderToolTurn(input, isEnabled, settings);
+  }
+
+  const providerDebug = {
+    provider,
+    providerEndpointId: input.options.normalizedRequest.providerEndpointId ?? null,
+    mode: 'provider_native_tools',
+    supported: false,
+  };
+  input.setProviderDebug(providerDebug);
+  return {
+    type: 'unsupported',
+    reason: `Provider does not support native tool turn runtime yet: ${provider}`,
+    providerDebug,
+  };
 }
 
 function callFixtureProvider(input: Parameters<typeof callProvider>[0]): ProviderCallResult {
@@ -500,6 +548,154 @@ async function callOpenAIProvider(
   };
 }
 
+async function callOpenAIProviderToolTurn(
+  input: Parameters<typeof callProviderToolTurn>[0],
+  isEnabled: (key: Parameters<typeof getStructuredLlmBoolSetting>[1], fallback: boolean) => boolean,
+  settings: ReturnType<typeof readStructuredLlmProviderSettings>
+): Promise<ProviderToolTurnResult> {
+  const endpointConfig = getResolvedProviderEndpoint(input, settings);
+  if (!endpointConfig?.enabled && !isEnabled('OPENAI_ENABLED', true)) {
+    throw new Error('OpenAI provider is inactive. Enable OPENAI_ENABLED first.');
+  }
+  const apiKey = endpointConfig?.apiKey || getStructuredLlmSetting(settings, 'OPENAI_API_KEY');
+  const baseURL =
+    input.options.normalizedRequest.endpoint ||
+    endpointConfig?.baseUrl ||
+    getStructuredLlmSetting(settings, 'OPENAI_BASE_URL', 'https://api.openai.com/v1');
+  const model =
+    input.options.normalizedRequest.modelOrDeployment ||
+    endpointConfig?.models[0] ||
+    getStructuredLlmSetting(settings, 'OPENAI_MODEL', 'gpt-4o-mini');
+  const reasoningEffort = toOpenAIReasoningEffort(input.options.normalizedRequest.thinkingDepth);
+  const apiKeyRequired = !endpointConfig || endpointConfig.kind === 'openai';
+  if (apiKeyRequired && !apiKey) {
+    throw new Error('OpenAI API key is not configured in environment variables.');
+  }
+
+  const url = `${baseURL.replace(/\/+$/, '')}/chat/completions`;
+  const response = await fetch(url, {
+    method: 'POST',
+    signal: input.signal,
+    headers: buildOpenAICompatibleHeaders(apiKey),
+    body: JSON.stringify({
+      model,
+      messages: toOpenAIToolMessages(input.messages),
+      tools: input.tools.map(toOpenAIToolDefinition),
+      tool_choice: 'auto',
+      temperature: 0.1,
+      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenAI native tool call failed with status ${response.status}: ${errorText}`);
+  }
+
+  const responseData = (await response.json()) as OpenAIChatCompletionResponse;
+  const message = responseData.choices?.[0]?.message;
+  const content = typeof message?.content === 'string' ? message.content : '';
+  const toolCalls = (message?.tool_calls ?? []).flatMap(toProviderToolCall);
+  const providerDebug = {
+    provider: 'openai',
+    providerEndpointId: endpointConfig?.id ?? null,
+    mode: 'provider_native_tools',
+    status: response.status,
+    model,
+    reasoningEffort,
+    hasChoices: Boolean(responseData.choices),
+    hasUsage: Boolean(responseData.usage),
+    toolCallCount: toolCalls.length,
+  };
+  input.setProviderDebug(providerDebug);
+
+  return {
+    type: 'supported',
+    content,
+    toolCalls,
+    usage: normalizeProviderUsage({
+      provider: 'openai',
+      rawUsage: responseData.usage,
+      fallback: {
+        systemPrompt: input.systemPrompt,
+        userPrompt: input.userPrompt,
+        responseText: content,
+      },
+    }),
+    model,
+    providerDebug,
+  };
+}
+
+function toOpenAIToolMessages(messages: ProviderToolMessage[]) {
+  return messages.map((message) => {
+    if (message.role === 'assistant') {
+      return {
+        role: 'assistant',
+        content: message.content || null,
+        ...(message.toolCalls?.length
+          ? {
+              tool_calls: message.toolCalls.map((toolCall) => ({
+                id: toolCall.id,
+                type: 'function',
+                function: {
+                  name: toolCall.name,
+                  arguments: JSON.stringify(toolCall.arguments ?? {}),
+                },
+              })),
+            }
+          : {}),
+      };
+    }
+    if (message.role === 'tool') {
+      return {
+        role: 'tool',
+        tool_call_id: message.toolCallId,
+        content: message.content,
+      };
+    }
+    return {
+      role: message.role,
+      content: message.content,
+    };
+  });
+}
+
+function toOpenAIToolDefinition(tool: ProviderToolDefinition) {
+  return {
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.inputSchema,
+    },
+  };
+}
+
+function toProviderToolCall(call: OpenAIChatCompletionToolCall): ProviderToolCall[] {
+  const name = call.function?.name;
+  if (!name) return [];
+  return [
+    {
+      id: call.id || `call_${Date.now()}`,
+      name,
+      arguments: parseToolArguments(call.function?.arguments ?? ''),
+    },
+  ];
+}
+
+function parseToolArguments(raw: string): Record<string, unknown> {
+  if (!raw.trim()) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : { value: parsed };
+  } catch {
+    return { _raw: raw };
+  }
+}
+
 async function retryOpenAITransientUnavailableOnce(input: {
   response: Response;
   input: Parameters<typeof callProvider>[0];
@@ -619,7 +815,7 @@ async function callBedrockProvider(
 }
 
 function getResolvedProviderEndpoint(
-  input: Parameters<typeof callProvider>[0],
+  input: { options: { normalizedRequest?: NormalizedSupervisorLlmRequest } },
   settings: ReturnType<typeof readStructuredLlmProviderSettings>
 ): StructuredLlmProviderEndpoint | null {
   const endpointId = input.options.normalizedRequest?.providerEndpointId;

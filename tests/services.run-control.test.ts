@@ -89,6 +89,20 @@ describe('RunControl', () => {
   });
 
   describe('RunBudgetController', () => {
+    it('does not stop based on total tool call count', () => {
+      const c = new RunBudgetController({
+        maxIterations: 10,
+        maxToolCalls: 1,
+        maxRepeatedAction: 10,
+        maxMissingToolCalls: 3,
+        maxSchemaFallbacks: 3,
+        timeoutSeconds: 60,
+      });
+      expect(c.onToolCall('find_file', { fileMask: '*.ts' }).allowed).toBe(true);
+      expect(c.onToolCall('read_file', { path: 'a.ts' }).allowed).toBe(true);
+      expect(c.onToolCall('run_command', { command: 'npm test' }).allowed).toBe(true);
+    });
+
     it('stops after repeated same tool action', () => {
       const c = new RunBudgetController({
         maxIterations: 10,

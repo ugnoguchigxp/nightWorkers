@@ -38,6 +38,8 @@ import {
   mapAgentEventToRunEventType,
 } from './supervisor-loop-events';
 import {
+  attachNativeToolEvidence,
+  attributeToolResultToTodo,
   buildExecutionReviewContextSnapshot,
   buildProgressContext,
   buildUserInput,
@@ -65,7 +67,6 @@ const DEFAULT_MAX_ITERATIONS = 20;
 const DEFAULT_MAX_TOOL_CALLS = 20;
 const MAJOR_CODE_EDIT_MAX_ITERATIONS = 50;
 const MAJOR_CODE_EDIT_MAX_TOOL_CALLS = 50;
-const CLOSEOUT_TOOL_CALL_RESERVE = 2;
 
 export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<SupervisorLoopResult> {
   const { runId, repoRoot } = input;
@@ -128,6 +129,13 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     });
   };
 
+  const recordToolResult = (result: CompactToolResult) => {
+    const attributed = attributeToolResultToTodo(result, currentTodos.map(toSupervisorTodoContext));
+    const withEvidence = attachNativeToolEvidence(attributed);
+    toolResults.push(withEvidence);
+    return withEvidence;
+  };
+
   appendSupervisorTrace('schema_first_loop_started', {
     runId,
     repoRoot,
@@ -158,6 +166,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       schemaFirst: true,
       role: 'plan',
       routeOverride: input.llmRouteOverride || null,
+      routePolicy: input.llmRoutePolicy,
       emitEvent: emitLlmDebugEvent,
       workingDirectory: repoRoot,
       taskId: task.id,
@@ -249,11 +258,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
     }
     currentTodos = await repo.listTaskRunTodosForRun(runId);
 
-    for (
-      step = 1;
-      !finalReportText && step <= maxIterations && toolResults.length < maxToolCalls;
-      step += 1
-    ) {
+    for (step = 1; !finalReportText && step <= maxIterations; step += 1) {
       const cancelledBeforeStep = await getCancelledRunResult(runId);
       if (cancelledBeforeStep) {
         terminalState = 'cancelled';
@@ -261,33 +266,6 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         riskLevel = 'medium';
         summary = cancelledBeforeStep.summary;
         finalReportText = cancelledBeforeStep.finalReport;
-        break;
-      }
-      const remainingToolCalls = maxToolCalls - toolResults.length;
-      if (remainingToolCalls <= CLOSEOUT_TOOL_CALL_RESERVE) {
-        currentTodos = await repo.listTaskRunTodosForRun(runId);
-        const reserveReason = `tool_budget_closeout_reserved: ${toolResults.length}/${maxToolCalls} tool results were consumed before finalize_answer.`;
-        await markOpenTodosTerminalForBudget(runId, currentTodos, reserveReason);
-        currentTodos = await repo.listTaskRunTodosForRun(runId);
-        terminalState = 'needs_human';
-        stoppedBy = 'budget';
-        riskLevel = 'high';
-        summary = 'Tool call budget exhausted before finalize_answer';
-        finalReportText = buildToolBudgetFinalReport({
-          reason: reserveReason,
-          currentTodos,
-          toolResults,
-        });
-        await emitAgentEvent(
-          'run.needs_human',
-          {
-            reason: 'tool_budget_closeout_reserved',
-            toolResultCount: toolResults.length,
-            maxToolCalls,
-            todos: currentTodos.map(toSupervisorTodoContext),
-          },
-          'warning'
-        );
         break;
       }
       const workspaceSnapshot = await readWorkspaceSnapshot(repoRoot);
@@ -338,6 +316,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         modelCapability: resolveStructuredLlmModelCapability({
           role: 'implementation',
           routeOverride: input.llmRouteOverride || null,
+          routePolicy: input.llmRoutePolicy,
         }),
       });
       await emitAgentEvent('round2.prompt_built', {
@@ -375,6 +354,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         schemaFirst: true,
         role: 'implementation',
         routeOverride: input.llmRouteOverride || null,
+        routePolicy: input.llmRoutePolicy,
         emitEvent: emitLlmDebugEvent,
         workingDirectory: repoRoot,
         taskId: task.id,
@@ -413,8 +393,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           arguments: round2.toolCall.arguments,
           summary: validation.message,
         };
-        toolResults.push(result);
-        await emitAgentEvent('tool.validation_failed', result, 'warning');
+        const recorded = recordToolResult(result);
+        await emitAgentEvent('tool.validation_failed', recorded, 'warning');
         continue;
       }
 
@@ -440,8 +420,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             arguments: round2.toolCall.arguments,
             summary: `Invalid jobType for read_procedure: ${String(round2.toolCall.arguments.jobType)}`,
           };
-          toolResults.push(result);
-          await emitAgentEvent('tool.validation_failed', result, 'warning');
+          const recorded = recordToolResult(result);
+          await emitAgentEvent('tool.validation_failed', recorded, 'warning');
           continue;
         }
         try {
@@ -458,7 +438,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             summary: `tool=read_procedure status=ok\njobType=${requestedJobType} digest=${procedure.digest}`,
             payload: procedure,
           };
-          toolResults.push(result);
+          const recorded = recordToolResult(result);
           await emitAgentEvent('procedure.loaded', {
             source: 'read_procedure',
             jobType: requestedJobType,
@@ -466,7 +446,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             digest: procedure.digest,
             summary: procedure.summary,
           });
-          await emitAgentEvent('tool.finished', result);
+          await emitAgentEvent('tool.finished', recorded);
         } catch (err) {
           const result = {
             step,
@@ -476,8 +456,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             summary: `tool=read_procedure status=failed\nerror=${formatErrorMessage(err)}`,
             error: formatErrorMessage(err),
           };
-          toolResults.push(result);
-          await emitAgentEvent('tool.failed', result, 'warning');
+          const recorded = recordToolResult(result);
+          await emitAgentEvent('tool.failed', recorded, 'warning');
         }
         continue;
       }
@@ -498,8 +478,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             summary: `tool=search_procedure status=ok\nmatches=${matches.matches.length}`,
             payload: matches,
           };
-          toolResults.push(result);
-          await emitAgentEvent('tool.finished', result);
+          const recorded = recordToolResult(result);
+          await emitAgentEvent('tool.finished', recorded);
         } catch (err) {
           const result = {
             step,
@@ -509,8 +489,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             summary: `tool=search_procedure status=failed\nerror=${formatErrorMessage(err)}`,
             error: formatErrorMessage(err),
           };
-          toolResults.push(result);
-          await emitAgentEvent('tool.failed', result, 'warning');
+          const recorded = recordToolResult(result);
+          await emitAgentEvent('tool.failed', recorded, 'warning');
         }
         continue;
       }
@@ -534,8 +514,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
               error: redundantListGap,
               payload: { todos: currentTodos.map(toSupervisorTodoContext) },
             };
-            toolResults.push(result);
-            await emitAgentEvent('tool.validation_failed', result, 'warning');
+            const recorded = recordToolResult(result);
+            await emitAgentEvent('tool.validation_failed', recorded, 'warning');
             continue;
           }
           const result = {
@@ -546,8 +526,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             summary: `tool=todo_list operation=list status=ok\ntodos=${currentTodos.length}`,
             payload: { todos: currentTodos.map(toSupervisorTodoContext) },
           };
-          toolResults.push(result);
-          await emitAgentEvent('tool.finished', result);
+          const recorded = recordToolResult(result);
+          await emitAgentEvent('tool.finished', recorded);
           continue;
         }
 
@@ -568,8 +548,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
                 error: redundantReplaceGap,
                 payload: { todos: currentTodos.map(toSupervisorTodoContext) },
               };
-              toolResults.push(result);
-              await emitAgentEvent('tool.validation_failed', result, 'warning');
+              const recorded = recordToolResult(result);
+              await emitAgentEvent('tool.validation_failed', recorded, 'warning');
               continue;
             }
             const bootstrapGap = getBootstrapTodoGap({
@@ -586,8 +566,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
                 summary: `tool=todo_list operation=replace status=failed\nerror=${bootstrapGap}`,
                 error: bootstrapGap,
               };
-              toolResults.push(result);
-              await emitAgentEvent('tool.validation_failed', result, 'warning');
+              const recorded = recordToolResult(result);
+              await emitAgentEvent('tool.validation_failed', recorded, 'warning');
               continue;
             }
             const startFirst = round2.toolCall.arguments.startFirst !== false;
@@ -606,8 +586,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
               summary: `tool=todo_list operation=replace status=ok\ntodos=${currentTodos.length}`,
               payload: { todos: currentTodos.map(toSupervisorTodoContext) },
             };
-            toolResults.push(result);
-            await emitAgentEvent('tool.finished', result);
+            const recorded = recordToolResult(result);
+            await emitAgentEvent('tool.finished', recorded);
           } catch (err) {
             const result = {
               step,
@@ -617,8 +597,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
               summary: `tool=todo_list operation=replace status=failed\nerror=${formatErrorMessage(err)}`,
               error: formatErrorMessage(err),
             };
-            toolResults.push(result);
-            await emitAgentEvent('tool.failed', result, 'warning');
+            const recorded = recordToolResult(result);
+            await emitAgentEvent('tool.failed', recorded, 'warning');
           }
           continue;
         }
@@ -633,8 +613,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
               arguments: round2.toolCall.arguments,
               summary: 'Todo seq not found for todo_list operation=start.',
             };
-            toolResults.push(result);
-            await emitAgentEvent('tool.validation_failed', result, 'warning');
+            const recorded = recordToolResult(result);
+            await emitAgentEvent('tool.validation_failed', recorded, 'warning');
             continue;
           }
           if (!['pending', 'running'].includes(todo.status)) {
@@ -645,8 +625,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
               arguments: round2.toolCall.arguments,
               summary: 'Requested Todo is already closed and cannot be started.',
             };
-            toolResults.push(result);
-            await emitAgentEvent('tool.validation_failed', result, 'warning');
+            const recorded = recordToolResult(result);
+            await emitAgentEvent('tool.validation_failed', recorded, 'warning');
             continue;
           }
           const earlierOpenTodo = currentTodos.find(
@@ -661,8 +641,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
               arguments: round2.toolCall.arguments,
               summary: `Previous Todo #${earlierOpenTodo.seq} is still ${earlierOpenTodo.status}; close it before starting #${todo.seq}.`,
             };
-            toolResults.push(result);
-            await emitAgentEvent('tool.validation_failed', result, 'warning');
+            const recorded = recordToolResult(result);
+            await emitAgentEvent('tool.validation_failed', recorded, 'warning');
             continue;
           }
           if (isFinalCloseoutTodo(todo)) {
@@ -674,8 +654,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
               summary: `tool=todo_list operation=start status=ok\nseq=${todo.seq} closeoutTodo=noop`,
               payload: { todos: currentTodos.map(toSupervisorTodoContext) },
             };
-            toolResults.push(result);
-            await emitAgentEvent('tool.finished', result);
+            const recorded = recordToolResult(result);
+            await emitAgentEvent('tool.finished', recorded);
             continue;
           }
           const now = new Date();
@@ -695,8 +675,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             summary: `tool=todo_list operation=start status=ok\nseq=${todo.seq}`,
             payload: { todos: currentTodos.map(toSupervisorTodoContext) },
           };
-          toolResults.push(result);
-          await emitAgentEvent('tool.finished', result);
+          const recorded = recordToolResult(result);
+          await emitAgentEvent('tool.finished', recorded);
           continue;
         }
 
@@ -720,8 +700,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
                   ? 'No running Todo exists for the current run.'
                   : 'Multiple running Todos exist; current Todo is not unique.',
             };
-            toolResults.push(result);
-            await emitAgentEvent('tool.validation_failed', result, 'warning');
+            const recorded = recordToolResult(result);
+            await emitAgentEvent('tool.validation_failed', recorded, 'warning');
             continue;
           }
           const todo = currentResolution.todo;
@@ -737,8 +717,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
                 error: evidenceGap,
                 payload: { todos: currentTodos.map(toSupervisorTodoContext) },
               };
-              toolResults.push(result);
-              await emitAgentEvent('tool.validation_failed', result, 'warning');
+              const recorded = recordToolResult(result);
+              await emitAgentEvent('tool.validation_failed', recorded, 'warning');
               continue;
             }
           }
@@ -774,8 +754,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             summary: `tool=todo_list operation=${operation} status=ok\nseq=${todo.seq} todoStatus=${status}`,
             payload: { todos: currentTodos.map(toSupervisorTodoContext) },
           };
-          toolResults.push(result);
-          await emitAgentEvent('tool.finished', result);
+          const recorded = recordToolResult(result);
+          await emitAgentEvent('tool.finished', recorded);
           continue;
         }
 
@@ -786,8 +766,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           arguments: round2.toolCall.arguments,
           summary: `tool=todo_list status=failed\nerror=Invalid operation: ${operation || '(empty)'}`,
         };
-        toolResults.push(result);
-        await emitAgentEvent('tool.validation_failed', result, 'warning');
+        const recorded = recordToolResult(result);
+        await emitAgentEvent('tool.validation_failed', recorded, 'warning');
         continue;
       }
 
@@ -808,8 +788,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
               )}. Use todo_list operation=done, operation=block, or operation=fail first.`,
             payload: { todos: currentTodos.map(toSupervisorTodoContext) },
           };
-          toolResults.push(result);
-          await emitAgentEvent('tool.validation_failed', result, 'warning');
+          const recorded = recordToolResult(result);
+          await emitAgentEvent('tool.validation_failed', recorded, 'warning');
           continue;
         }
         await closeOpenCloseoutTodosForFinalize(runId, currentTodos);
@@ -824,8 +804,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             summary: templateVerificationGap,
             payload: { todos: currentTodos.map(toSupervisorTodoContext) },
           };
-          toolResults.push(result);
-          await emitAgentEvent('tool.validation_failed', result, 'warning');
+          const recorded = recordToolResult(result);
+          await emitAgentEvent('tool.validation_failed', recorded, 'warning');
           continue;
         }
         const message = String(round2.toolCall.arguments.message || '').trim();
@@ -867,8 +847,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
           arguments: round2.toolCall.arguments,
           summary: `Tool is not executable: ${round2.toolCall.name}`,
         };
-        toolResults.push(result);
-        await emitAgentEvent('tool.validation_failed', result, 'warning');
+        const recorded = recordToolResult(result);
+        await emitAgentEvent('tool.validation_failed', recorded, 'warning');
         continue;
       }
 
@@ -882,8 +862,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
             'tool=read_current_specification status=ok cached=true\nSpecification was already read before Round 1; continue with the current Todo instead of re-reading it.',
           payload: preRound1SpecificationPayload,
         };
-        toolResults.push(result);
-        await emitAgentEvent('tool.finished', result);
+        const recorded = recordToolResult(result);
+        await emitAgentEvent('tool.finished', recorded);
         continue;
       }
 
@@ -918,8 +898,8 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         payload: toolResult.payload,
         error: toolResult.error,
       };
-      toolResults.push(compactResult);
-      await emitAgentEvent(toolResult.ok ? 'tool.finished' : 'tool.failed', compactResult);
+      const recorded = recordToolResult(compactResult);
+      await emitAgentEvent(toolResult.ok ? 'tool.finished' : 'tool.failed', recorded);
       if (!toolResult.ok && toolResult.error?.code === 'ACCESS_DENIED') {
         terminalState = 'needs_human';
         stoppedBy = 'policy';
@@ -947,10 +927,10 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
       terminalState = 'needs_human';
       stoppedBy = 'budget';
       riskLevel = 'high';
-      summary = 'Tool call budget exhausted before finalize_answer';
+      summary = 'Iteration budget exhausted before finalize_answer';
       currentTodos = await repo.listTaskRunTodosForRun(runId);
-      finalReportText = buildToolBudgetFinalReport({
-        reason: `missing_finalize_answer: step=${step}, toolResults=${toolResults.length}/${maxToolCalls}`,
+      finalReportText = buildIterationBudgetFinalReport({
+        reason: `missing_finalize_answer: step=${step}, maxIterations=${maxIterations}, toolResults=${toolResults.length}`,
         currentTodos,
         toolResults,
       });
@@ -958,7 +938,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         reason: 'missing_finalize_answer',
         step,
         toolResultCount: toolResults.length,
-        maxToolCalls,
+        maxIterations,
       });
     }
   } catch (err) {
@@ -1335,7 +1315,7 @@ async function markOpenTodosTerminalForBudget(
   }
 }
 
-function buildToolBudgetFinalReport(input: {
+function buildIterationBudgetFinalReport(input: {
   reason: string;
   currentTodos: Array<{
     seq: number;
@@ -1351,7 +1331,7 @@ function buildToolBudgetFinalReport(input: {
     .map((todo) => `#${todo.seq} ${todo.status}: ${todo.title}`)
     .slice(0, 8);
   return [
-    'Supervisor の tool call 予算を使い切る前に実行を停止しました。',
+    'Supervisor の iteration 予算を使い切る前に実行を停止しました。',
     `理由: ${input.reason}`,
     lastTool
       ? `最後の tool: ${lastTool.toolName} (${lastTool.ok ? 'ok' : 'failed'})`

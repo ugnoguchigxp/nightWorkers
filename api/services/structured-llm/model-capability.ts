@@ -7,8 +7,10 @@ import {
   type StructuredLlmProviderSettings,
   type StructuredLlmRole,
 } from './settings';
+import type { StructuredLlmRoutePolicy } from './types';
 
 export const DEFAULT_STRUCTURED_LLM_CONTEXT_WINDOW_TOKENS = 8192;
+export const DEFAULT_LOCAL_LLM_CONTEXT_WINDOW_TOKENS = 176_000;
 export const DEFAULT_STRUCTURED_LLM_RESERVED_OUTPUT_TOKENS = 1024;
 
 export type ResolvedStructuredLlmModelCapability = Required<
@@ -28,16 +30,22 @@ export type ResolvedStructuredLlmModelCapability = Required<
 export function resolveStructuredLlmModelCapability(input: {
   role?: StructuredLlmRole;
   routeOverride?: StructuredLlmModelTarget | null;
+  routePolicy?: StructuredLlmRoutePolicy;
   settings?: StructuredLlmProviderSettings;
 }): ResolvedStructuredLlmModelCapability {
   const settings = input.settings ?? readStructuredLlmProviderSettings();
   const route = input.role
-    ? resolveStructuredLlmRoleRoute({ role: input.role, settings, override: input.routeOverride })
+    ? resolveStructuredLlmRoleRoute({
+        role: input.role,
+        settings,
+        override: input.routeOverride,
+        policy: input.routePolicy,
+      })
     : null;
   const endpoint = route?.endpoint ?? null;
   const model = route?.model ?? null;
   const configured = endpoint && model ? capabilityForEndpointModel(endpoint, model) : null;
-  return normalizeModelCapability(configured, endpoint?.id ?? null, model);
+  return normalizeModelCapability(configured, endpoint?.id ?? null, model, endpoint?.kind ?? null);
 }
 
 function capabilityForEndpointModel(
@@ -50,20 +58,25 @@ function capabilityForEndpointModel(
 function normalizeModelCapability(
   capability: StructuredLlmModelCapability | null,
   providerEndpointId: string | null,
-  model: string | null
+  model: string | null,
+  providerKind: StructuredLlmProviderEndpoint['kind'] | null
 ): ResolvedStructuredLlmModelCapability {
+  const isLocalProvider = providerKind === 'local';
   const contextWindowTokens = positiveIntegerOrDefault(
     capability?.contextWindowTokens,
-    DEFAULT_STRUCTURED_LLM_CONTEXT_WINDOW_TOKENS
+    isLocalProvider
+      ? DEFAULT_LOCAL_LLM_CONTEXT_WINDOW_TOKENS
+      : DEFAULT_STRUCTURED_LLM_CONTEXT_WINDOW_TOKENS
   );
   const reservedOutputTokens = positiveIntegerOrDefault(
     capability?.reservedOutputTokens,
     DEFAULT_STRUCTURED_LLM_RESERVED_OUTPUT_TOKENS
   );
   const derivedSafeBudget = Math.max(1, contextWindowTokens - reservedOutputTokens);
+  const defaultSafeBudget = isLocalProvider ? contextWindowTokens : derivedSafeBudget;
   const safePromptBudgetTokens = Math.min(
     contextWindowTokens,
-    positiveIntegerOrDefault(capability?.safePromptBudgetTokens, derivedSafeBudget)
+    positiveIntegerOrDefault(capability?.safePromptBudgetTokens, defaultSafeBudget)
   );
   return {
     providerEndpointId,
@@ -71,8 +84,9 @@ function normalizeModelCapability(
     contextWindowTokens,
     safePromptBudgetTokens,
     reservedOutputTokens,
-    supportsProviderSideCompression: capability?.supportsProviderSideCompression === true,
-    compressionProfile: capability?.compressionProfile || 'balanced',
+    supportsProviderSideCompression:
+      capability?.supportsProviderSideCompression === true || isLocalProvider,
+    compressionProfile: capability?.compressionProfile || (isLocalProvider ? 'none' : 'balanced'),
   };
 }
 

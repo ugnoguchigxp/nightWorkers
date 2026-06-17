@@ -21,11 +21,14 @@ export async function buildConversationContextSnapshot(input: {
   const intake = findLatestIntakeJobSelection(input.source.messages);
   const previousRun = findPreviousRun(input.source.runs, input.options?.currentRunId);
   const previousSnapshot = input.source.previousSnapshot?.snapshotJson ?? null;
+  const workerEvidence =
+    previousRun?.lastWorkerEvidence ?? previousSnapshot?.runState.workerEvidence ?? null;
   const targetFiles = deriveTargetFiles({
     latestUserRequest:
       latestUser?.content ?? input.source.task.description ?? input.source.task.objective ?? '',
     intakeGoal: intake?.goal ?? null,
     previousSnapshot,
+    workerEvidenceTargets: workerEvidence?.targets ?? [],
   });
   const snippets = await collectCodeSnippets({
     repositoryPath: input.source.task.repositoryPath,
@@ -76,6 +79,7 @@ export async function buildConversationContextSnapshot(input: {
       lastError,
       lastFinalReport: truncate(previousRun?.finalReport ?? null, 720),
       lastToolFailure: truncate(previousRun?.lastToolFailure ?? null, 500),
+      workerEvidence,
     },
     code: {
       snippets,
@@ -137,12 +141,16 @@ export function deriveTargetFiles(input: {
   latestUserRequest: string;
   intakeGoal: string | null;
   previousSnapshot: ConversationContextSnapshotV1 | null;
+  workerEvidenceTargets?: string[];
 }) {
   // Conservative file hints only. This must not classify workflow, jobType, or taskType.
   const paths = new Set<string>();
   for (const value of extractConservativePaths(input.latestUserRequest)) paths.add(value);
   for (const value of extractConservativePaths(input.intakeGoal || '')) paths.add(value);
   for (const value of input.previousSnapshot?.files.target ?? []) {
+    if (isAllowedRelativePath(value)) paths.add(value);
+  }
+  for (const value of input.workerEvidenceTargets ?? []) {
     if (isAllowedRelativePath(value)) paths.add(value);
   }
   return Array.from(paths).slice(0, 20);
@@ -214,6 +222,7 @@ function buildContextBaseline(input: {
   previousBaseline: ConversationContextSnapshotV1['contextBaseline'] | null;
 }): ConversationContextSnapshotV1['contextBaseline'] {
   const relevantFilesDigest = digestValue(input.snapshot.files.target);
+  const workerEvidenceRefsDigest = digestValue(input.snapshot.runState.workerEvidence);
   const lastRunId = input.snapshot.continuity.previousRunId;
   const base = {
     repoRoot: input.repoRoot,
@@ -228,7 +237,7 @@ function buildContextBaseline(input: {
     designQuestionnaireRefsDigest: null,
     decisionReviewRefsDigest: null,
     contextStillRefsDigest: null,
-    workerEvidenceRefsDigest: null,
+    workerEvidenceRefsDigest,
     lastRunId,
   };
   const stateCardDigest = digestValue({
@@ -242,6 +251,7 @@ function buildContextBaseline(input: {
     targetFiles: input.snapshot.files.target,
     lastError: input.snapshot.runState.lastError,
     lastFinalReport: input.snapshot.runState.lastFinalReport,
+    workerEvidence: input.snapshot.runState.workerEvidence,
     relevantFilesDigest,
   });
   const baseline = {

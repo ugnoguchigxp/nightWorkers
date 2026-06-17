@@ -29,7 +29,6 @@ export type RunBudgetConfig = {
 
 export type BudgetDecisionReason =
   | 'iteration_limit'
-  | 'tool_limit'
   | 'deadline'
   | 'repeat_action'
   | 'missing_tool_call'

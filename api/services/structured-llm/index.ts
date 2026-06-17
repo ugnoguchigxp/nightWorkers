@@ -12,14 +12,19 @@ import {
 import { emitSupervisorLlmDebugEvent, ProviderActivityRejectedError } from './events';
 import { createStructuredLlmAbortSignal, digestLlmText, jsonFixWrapper } from './json';
 import { callProvider, type RawLlmCallOptions } from './providers';
-import { buildNormalizedSupervisorLlmRequest, providerAdapterKey } from './request';
-import type { CallSupervisorOptions, StructuredJsonLlmOptions } from './types';
+import { buildNormalizedSupervisorLlmRequestCandidates, providerAdapterKey } from './request';
+import type {
+  CallSupervisorOptions,
+  NormalizedSupervisorLlmRequest,
+  StructuredJsonLlmOptions,
+} from './types';
 
 export { ProviderActivityRejectedError } from './events';
 export {
   type ResolvedStructuredLlmModelCapability,
   resolveStructuredLlmModelCapability,
 } from './model-capability';
+export { callProviderToolTurn } from './providers';
 export {
   buildNormalizedSupervisorLlmRequest,
   normalizeProviderId,
@@ -29,6 +34,12 @@ export {
   normalizeStructuredLlmProviderSetting,
   readStructuredLlmProviderSettings,
 } from './settings';
+export type {
+  ProviderToolCall,
+  ProviderToolDefinition,
+  ProviderToolMessage,
+  ProviderToolTurnResult,
+} from './tool-calls';
 export type {
   NormalizedSupervisorLlmRequest,
   ProviderCapabilityPolicy,
@@ -85,7 +96,7 @@ async function callRawJsonLLM(
   userPrompt: string,
   options: RawLlmCallOptions
 ): Promise<string> {
-  const normalizedRequest = buildNormalizedSupervisorLlmRequest({
+  const normalizedRequests = buildNormalizedSupervisorLlmRequestCandidates({
     systemPrompt,
     userPrompt,
     jsonSchema: options.jsonSchema,
@@ -94,7 +105,39 @@ async function callRawJsonLLM(
     schemaFirst: options.schemaFirst,
     role: options.role,
     routeOverride: options.routeOverride,
+    routePolicy: options.routePolicy,
   });
+
+  for (let index = 0; index < normalizedRequests.length; index += 1) {
+    const normalizedRequest = normalizedRequests[index];
+    const remainingFallbacks = normalizedRequests.slice(index + 1);
+    try {
+      return await callRawJsonLLMAttempt(systemPrompt, userPrompt, options, normalizedRequest);
+    } catch (error) {
+      if (!shouldTryStructuredLlmRouteFallback(error) || remainingFallbacks.length === 0) {
+        if (shouldTryStructuredLlmRouteFallback(error)) {
+          await emitStructuredLlmRouteFallbackUnavailable(options, normalizedRequest, error);
+        }
+        throw error;
+      }
+      await emitStructuredLlmRouteFallbackStarted(
+        options,
+        normalizedRequest,
+        remainingFallbacks[0],
+        error
+      );
+    }
+  }
+
+  throw new Error('No structured LLM route candidates were available.');
+}
+
+async function callRawJsonLLMAttempt(
+  systemPrompt: string,
+  userPrompt: string,
+  options: RawLlmCallOptions,
+  normalizedRequest: NormalizedSupervisorLlmRequest
+): Promise<string> {
   const provider = providerAdapterKey(normalizedRequest.providerId);
   const startedAt = Date.now();
   const callId = randomUUID();
@@ -313,6 +356,86 @@ async function callRawJsonLLM(
   });
 
   return rawContent;
+}
+
+function shouldTryStructuredLlmRouteFallback(error: unknown) {
+  if (error instanceof ProviderActivityRejectedError) return false;
+  if (!(error instanceof Error)) return false;
+  if (error.name === 'AbortError') return true;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('operation was aborted') ||
+    message.includes('fetch failed') ||
+    message.includes('network') ||
+    message.includes('econnreset') ||
+    message.includes('etimedout') ||
+    message.includes('econnrefused') ||
+    message.includes('socket hang up') ||
+    /status\s+(429|500|502|503|504)/i.test(error.message)
+  );
+}
+
+async function emitStructuredLlmRouteFallbackStarted(
+  options: CallSupervisorOptions,
+  from: NormalizedSupervisorLlmRequest,
+  to: NormalizedSupervisorLlmRequest,
+  error: unknown
+) {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  await emitSupervisorLlmDebugEvent(options, {
+    type: 'model.route_fallback_scheduled',
+    severity: 'warning',
+    message: `Structured LLM provider failed; retrying with role route fallback ${to.providerEndpointId ?? to.providerId}.`,
+    data: {
+      round: options.round ?? null,
+      reason: 'provider_transport_error',
+      errorMessage,
+      from: summarizeRouteForEvent(from),
+      to: summarizeRouteForEvent(to),
+    },
+  });
+  await emitSupervisorLlmDebugEvent(options, {
+    type: 'model.route_fallback_started',
+    severity: 'info',
+    message: `Structured LLM role route fallback started. provider=${to.providerId} round=${options.round ?? 'unknown'}`,
+    data: {
+      round: options.round ?? null,
+      reason: 'provider_transport_error',
+      from: summarizeRouteForEvent(from),
+      to: summarizeRouteForEvent(to),
+    },
+  });
+}
+
+async function emitStructuredLlmRouteFallbackUnavailable(
+  options: CallSupervisorOptions,
+  request: NormalizedSupervisorLlmRequest,
+  error: unknown
+) {
+  if (!request.role) return;
+  await emitSupervisorLlmDebugEvent(options, {
+    type: 'model.route_fallback_unavailable',
+    severity: 'warning',
+    message: 'Structured LLM provider failed and no role route fallback was available.',
+    data: {
+      round: options.round ?? null,
+      code: 'NO_PROVIDER_FALLBACK_CONFIGURED',
+      reason: 'provider_transport_error',
+      errorMessage: error instanceof Error ? error.message : String(error),
+      route: summarizeRouteForEvent(request),
+    },
+  });
+}
+
+function summarizeRouteForEvent(request: NormalizedSupervisorLlmRequest) {
+  return {
+    providerId: request.providerId,
+    providerEndpointId: request.providerEndpointId ?? null,
+    routeSource: request.routeSource ?? null,
+    role: request.role ?? null,
+    model: request.modelOrDeployment ?? null,
+    thinkingDepth: request.thinkingDepth ?? null,
+  };
 }
 
 async function parseJsonContent(rawContent: string, options: CallSupervisorOptions, label: string) {

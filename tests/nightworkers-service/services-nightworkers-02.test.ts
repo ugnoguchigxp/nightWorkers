@@ -125,7 +125,7 @@ describe('NightWorkers service', () => {
     process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-supervisor';
   });
 
-  it('routes enabled legacy Codex provider implementation runs to the codex-sdk lane', async () => {
+  it('keeps API implementation routes on the native-supervisor lane even when legacy Codex is enabled', async () => {
     delete process.env.NIGHTWORKERS_RUNTIME_LANE;
     process.env.ACTIVE_LLM_PROVIDER = 'codex';
     process.env.CODEX_ENABLED = 'true';
@@ -135,7 +135,7 @@ describe('NightWorkers service', () => {
       title: 'Codex provider task',
       description: 'Use Codex provider',
       objective: 'Use Codex provider',
-      acceptanceCriteria: 'Codex provider uses codex-sdk lane',
+      acceptanceCriteria: 'API implementation route stays on native-supervisor lane',
       timeoutSeconds: 60,
     };
     const run = {
@@ -179,12 +179,12 @@ describe('NightWorkers service', () => {
 
     expect(repo.createTaskRun).toHaveBeenCalledWith(
       expect.objectContaining({
-        workerKind: 'codex-agent',
+        workerKind: 'native-local',
         contextSnapshot: expect.objectContaining({
-          runtimeLane: 'codex-sdk',
+          runtimeLane: 'native-supervisor',
           runtimeLaneResolution: expect.objectContaining({
-            workerKind: 'codex-agent',
-            source: 'settings',
+            workerKind: 'native-local',
+            source: 'role_route',
           }),
         }),
       })
@@ -200,12 +200,16 @@ describe('NightWorkers service', () => {
           title: 'context_compile を実行する',
         }),
         expect.objectContaining({
-          title: '対象変更を確認して実装する',
-          taskType: 'implementation',
+          title: '仕様と既存構成を確認する',
+          taskType: 'inspection',
         }),
         expect.objectContaining({
-          title: '必要最小限の動作確認を行う',
-          taskType: 'focused_verification',
+          title: '対象画面の実装準備を行う',
+          taskType: 'scaffold',
+        }),
+        expect.objectContaining({
+          title: '対象画面を仕様に沿って実装する',
+          taskType: 'implementation',
         }),
         expect.objectContaining({
           title: 'LLM コードレビューを実施する',
@@ -217,14 +221,7 @@ describe('NightWorkers service', () => {
         }),
       ])
     );
-    expect(todos).not.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          title: '仕様と既存構成を確認する',
-        }),
-      ])
-    );
-    expect(runtimeRegistry.resolveAgentRuntime).toHaveBeenCalledWith('codex-agent');
+    expect(runtimeRegistry.resolveAgentRuntime).toHaveBeenCalledWith('native-local');
   });
 
   it('starts simple runtime once and precreates a visible TodoList', async () => {

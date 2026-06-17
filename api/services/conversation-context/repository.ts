@@ -12,6 +12,7 @@ import type {
   ConversationContextSnapshotRecord,
   ConversationContextSnapshotV1,
   ConversationContextSource,
+  ConversationWorkerEvidence,
 } from './types';
 
 export async function loadConversationContextSource(input: {
@@ -48,7 +49,7 @@ export async function loadConversationContextSource(input: {
     getLatestConversationContextForTask(input.taskId),
   ]);
 
-  const runToolFailures = await loadRunToolFailureMap(runs.slice(0, 8).map((run) => run.id));
+  const runToolEvidence = await loadRunToolEvidenceMap(runs.slice(0, 8).map((run) => run.id));
 
   return {
     task: taskRow,
@@ -66,7 +67,8 @@ export async function loadConversationContextSource(input: {
       finalReport: run.finalReport,
       finalJudgment: run.finalJudgment,
       contextSnapshot: run.contextSnapshot,
-      lastToolFailure: runToolFailures.get(run.id) ?? null,
+      lastToolFailure: runToolEvidence.get(run.id)?.lastFailure ?? null,
+      lastWorkerEvidence: runToolEvidence.get(run.id) ?? null,
       startedAt: run.startedAt,
       finishedAt: run.finishedAt,
       endedAt: run.endedAt,
@@ -75,8 +77,8 @@ export async function loadConversationContextSource(input: {
   };
 }
 
-async function loadRunToolFailureMap(runIds: string[]) {
-  const failures = new Map<string, string>();
+async function loadRunToolEvidenceMap(runIds: string[]) {
+  const failures = new Map<string, ConversationWorkerEvidence>();
   await Promise.all(
     runIds.map(async (runId) => {
       const events = await db
@@ -98,15 +100,44 @@ async function loadRunToolFailureMap(runIds: string[]) {
       const error = asRecord(toolPayload.error);
       const errorCode = typeof error.code === 'string' ? error.code : null;
       const errorMessage = typeof error.message === 'string' ? error.message : null;
-      failures.set(
-        runId,
-        truncateText(
+      const evidence = asRecord(toolPayload.evidence);
+      const recovery = asRecord(evidence.recoveryDirective);
+      const criticalEvidence = Object.keys(evidence).length
+        ? [
+            {
+              toolName: typeof evidence.toolName === 'string' ? evidence.toolName : toolName,
+              failureKind:
+                typeof evidence.failureKind === 'string' ? evidence.failureKind : undefined,
+              targetPath: typeof evidence.targetPath === 'string' ? evidence.targetPath : undefined,
+              reason:
+                typeof evidence.reason === 'string'
+                  ? truncateText(evidence.reason, 300)
+                  : truncateText(summary || failed.message, 300),
+            },
+          ]
+        : [];
+      const targetPath = typeof evidence.targetPath === 'string' ? evidence.targetPath : null;
+      failures.set(runId, {
+        lastFailure: truncateText(
           [toolName, errorCode, errorMessage || summary || failed.message]
             .filter(Boolean)
             .join(': '),
           500
-        )
-      );
+        ),
+        recoveryDirective: Object.keys(recovery).length
+          ? {
+              kind: String(recovery.kind || 'ask_user'),
+              targetPath: typeof recovery.targetPath === 'string' ? recovery.targetPath : undefined,
+              reason:
+                typeof recovery.reason === 'string'
+                  ? truncateText(recovery.reason, 300)
+                  : 'Recover from the previous worker tool failure.',
+              maxRepeats: typeof recovery.maxRepeats === 'number' ? recovery.maxRepeats : undefined,
+            }
+          : null,
+        criticalEvidence,
+        targets: targetPath ? [targetPath] : [],
+      });
     })
   );
   return failures;

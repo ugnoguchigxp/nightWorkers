@@ -47,14 +47,6 @@ export class RunBudgetController {
     this.toolCalls += 1;
     this.consecutiveMissingToolCalls = 0;
 
-    if (this.toolCalls > this.config.maxToolCalls) {
-      return {
-        allowed: false,
-        reason: 'tool_limit',
-        detail: { toolCalls: this.toolCalls, maxToolCalls: this.config.maxToolCalls },
-      };
-    }
-
     const signature = `${name}:${stableJson(args)}`;
     if (signature === this.lastSignature) {
       this.repeatedActionCount += 1;

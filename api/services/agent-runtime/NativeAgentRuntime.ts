@@ -1,12 +1,15 @@
 import { toDeepRecord } from '../../../shared/json-record';
+import { appendSupervisorTrace } from '../../lib/logger';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import { runAgentHooks } from '../hooks/hooks-runner';
 import type { AgentHookInput, AgentHookRunEvent } from '../hooks/types';
 import { type McpToolSummary, mcpClientManager } from '../mcp/mcp-client-manager';
 import { normalizeStructuredLlmModelTarget } from '../structured-llm/selection';
+import type { StructuredLlmRoutePolicy } from '../structured-llm/types';
 import { runSupervisorLoop } from '../supervisor/supervisor-loop';
 import { executeWorkerTool } from '../worker-tools/dispatcher';
 import type { WorkerToolResult } from '../worker-tools/types';
+import { runNativeToolTurnLoop } from './native-tool-runtime/native-tool-turn-loop';
 import type {
   AgentRunContext,
   AgentRuntime,
@@ -52,18 +55,9 @@ export class NativeAgentRuntime implements AgentRuntime {
     const appendLog = (line: string) => {
       logs.push(line);
     };
-    const currentTodoData = context.currentTodo
-      ? {
-          todoId: context.currentTodo.id,
-          todoSeq: context.currentTodo.seq,
-          todoTitle: context.currentTodo.title,
-          taskType: context.currentTodo.taskType,
-          procedureId: context.currentTodo.procedureId,
-        }
-      : {};
-
     const emit = async (event: Parameters<AgentRuntimeSink['emit']>[0]) => {
       appendLog(event.message);
+      const currentTodoData = await readCurrentTodoEventData(context.runId);
       const payload =
         event.payload && typeof event.payload === 'object' && !Array.isArray(event.payload)
           ? { ...currentTodoData, ...(event.payload as Record<string, unknown>) }
@@ -142,6 +136,11 @@ export class NativeAgentRuntime implements AgentRuntime {
       }
 
       const gateFailure = await runNativeContextStillGates(context, emit);
+      if (await isRunCancelled(context.runId, this.cancelledRunIds, signal)) {
+        const result = this.toCancelled(logs.join('\n'));
+        await runSessionEndHook(result);
+        return result;
+      }
       if (gateFailure) {
         await runSessionEndHook();
         return {
@@ -152,6 +151,112 @@ export class NativeAgentRuntime implements AgentRuntime {
           riskLevel: 'high',
           logContent: logs.join('\n'),
         };
+      }
+
+      const llmRouteOverride = readRuntimeLlmRouteOverride(context);
+      const llmRoutePolicy = readStructuredLlmRoutePolicy(context);
+      if (isExperimentalNativeToolRuntimeEnabled(context)) {
+        appendSupervisorTrace('native_tool_runtime_selected', {
+          runId: context.runId,
+          taskId: context.taskId,
+          repoRoot: context.repoRoot,
+          routeOverride: llmRouteOverride,
+        });
+        await emit({
+          type: 'runtime_warning',
+          message: '[NativeToolRuntime] Experimental native tool runtime selected.',
+          payload: {
+            code: 'NATIVE_TOOL_RUNTIME_SELECTED',
+            severity: 'info',
+            message: 'Experimental native tool runtime selected for this native-local run.',
+          },
+        });
+        await emit({
+          type: 'turn_started',
+          message: '[System] Handing control over to Native Tool Runtime...',
+        });
+        let nativeToolResult: Awaited<ReturnType<typeof runNativeToolTurnLoop>>;
+        try {
+          nativeToolResult = await runNativeToolTurnLoop({
+            context,
+            sink: { emit },
+            signal,
+            routeOverride: llmRouteOverride,
+          });
+        } catch (error) {
+          if (await isRunCancelled(context.runId, this.cancelledRunIds, signal)) {
+            nativeToolResult = {
+              type: 'supported',
+              result: this.toCancelled(logs.join('\n')),
+            };
+          } else {
+            const reason = error instanceof Error ? error.message : String(error);
+            nativeToolResult = {
+              type: 'unsupported',
+              reason: `Native tool runtime failed before completion: ${reason}`,
+            };
+          }
+        }
+
+        if (nativeToolResult.type === 'supported') {
+          const result: AgentRuntimeResult = {
+            ...nativeToolResult.result,
+            terminalState: this.cancelledRunIds.has(context.runId)
+              ? 'cancelled'
+              : nativeToolResult.result.terminalState,
+            stoppedBy: this.cancelledRunIds.has(context.runId)
+              ? 'cancelled'
+              : nativeToolResult.result.stoppedBy,
+            logContent: logs.join('\n'),
+          };
+
+          await emit({
+            type: 'runtime_finished',
+            message: `[System] Native Local Worker finished with terminalState=${result.terminalState}.`,
+            payload: {
+              terminalState: result.terminalState,
+              finalReport: result.finalReport,
+              summary: result.summary,
+              stoppedBy: result.stoppedBy,
+              runtime: 'native_tool_runtime',
+            },
+          });
+
+          await runSessionEndHook(result);
+          return result;
+        }
+
+        if (await isRunCancelled(context.runId, this.cancelledRunIds, signal)) {
+          const result = this.toCancelled(logs.join('\n'));
+          await emit({
+            type: 'runtime_finished',
+            message: `[System] Native Local Worker finished with terminalState=${result.terminalState}.`,
+            payload: {
+              terminalState: result.terminalState,
+              finalReport: result.finalReport,
+              summary: result.summary,
+              stoppedBy: result.stoppedBy,
+              runtime: 'native_tool_runtime',
+            },
+          });
+          await runSessionEndHook(result);
+          return result;
+        }
+
+        appendSupervisorTrace('native_tool_runtime_fallback', {
+          runId: context.runId,
+          taskId: context.taskId,
+          reason: nativeToolResult.reason,
+        });
+        await emit({
+          type: 'runtime_warning',
+          message: `[NativeToolRuntime] Falling back to Supervisor Loop: ${nativeToolResult.reason}`,
+          payload: {
+            code: 'NATIVE_TOOL_RUNTIME_UNSUPPORTED',
+            severity: 'warning',
+            message: nativeToolResult.reason,
+          },
+        });
       }
 
       await emit({
@@ -175,7 +280,8 @@ export class NativeAgentRuntime implements AgentRuntime {
         },
         todoPlan: context.todoPlan,
         currentTodo: context.currentTodo,
-        llmRouteOverride: readRuntimeLlmRouteOverride(context),
+        llmRouteOverride,
+        llmRoutePolicy,
         safetyPolicy: context.safetyPolicy,
       });
 
@@ -342,6 +448,24 @@ async function readCurrentTodo(runId: string) {
   return todos.filter((todo) => todo.status === 'running').sort((a, b) => a.seq - b.seq)[0];
 }
 
+async function readCurrentTodoEventData(runId: string) {
+  let currentTodo: Awaited<ReturnType<typeof readCurrentTodo>>;
+  try {
+    currentTodo = await readCurrentTodo(runId);
+  } catch {
+    return {};
+  }
+  return currentTodo
+    ? {
+        todoId: currentTodo.id,
+        todoSeq: currentTodo.seq,
+        todoTitle: currentTodo.title,
+        taskType: currentTodo.taskType,
+        procedureId: currentTodo.procedureId,
+      }
+    : {};
+}
+
 async function resolveContextStillTool(toolName: NativeContextStillGate['mcpTool']) {
   const tools = await mcpClientManager.listAvailableTools();
   return (
@@ -362,6 +486,20 @@ function isContextStillTool(tool: McpToolSummary) {
   );
 }
 
+async function isRunCancelled(
+  runId: string,
+  cancelledRunIds: ReadonlySet<string>,
+  signal?: AbortSignal
+) {
+  if (signal?.aborted || cancelledRunIds.has(runId)) return true;
+  try {
+    const run = await repo.getTaskRun(runId);
+    return run?.status === 'cancelled';
+  } catch {
+    return false;
+  }
+}
+
 function readRuntimeLlmRouteOverride(context: AgentRunContext) {
   const routing =
     context.runtimeOptions?.llmRouting &&
@@ -370,6 +508,32 @@ function readRuntimeLlmRouteOverride(context: AgentRunContext) {
       ? (context.runtimeOptions.llmRouting as Record<string, unknown>)
       : {};
   return normalizeStructuredLlmModelTarget(routing.override);
+}
+
+function readStructuredLlmRoutePolicy(
+  context: AgentRunContext
+): StructuredLlmRoutePolicy | undefined {
+  const raw = context.runtimeOptions?.structuredLlmRoutePolicy;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const record = raw as Record<string, unknown>;
+  const disallowedProviderIds = Array.isArray(record.disallowedProviderIds)
+    ? record.disallowedProviderIds.filter((value): value is 'codex' => value === 'codex')
+    : undefined;
+  const synthesizeFallbacksFromEnabledEndpoints =
+    record.synthesizeFallbacksFromEnabledEndpoints === true;
+  if (!disallowedProviderIds?.length && !synthesizeFallbacksFromEnabledEndpoints) {
+    return undefined;
+  }
+  return {
+    ...(disallowedProviderIds?.length ? { disallowedProviderIds } : {}),
+    ...(synthesizeFallbacksFromEnabledEndpoints ? { synthesizeFallbacksFromEnabledEndpoints } : {}),
+  };
+}
+
+function isExperimentalNativeToolRuntimeEnabled(context: AgentRunContext) {
+  if (context.runtimeOptions?.experimentalNativeToolRuntime === true) return true;
+  const raw = process.env.NIGHTWORKERS_EXPERIMENTAL_NATIVE_TOOL_RUNTIME;
+  return raw === '1' || raw === 'true';
 }
 
 function buildBaseHookInput(

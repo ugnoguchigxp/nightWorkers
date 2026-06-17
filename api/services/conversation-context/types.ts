@@ -70,6 +70,7 @@ export type ConversationContextSource = {
     finalJudgment: unknown;
     contextSnapshot: unknown;
     lastToolFailure?: string | null;
+    lastWorkerEvidence?: ConversationWorkerEvidence | null;
     startedAt: Date;
     finishedAt: Date | null;
     endedAt: Date | null;
@@ -104,6 +105,7 @@ export type ConversationContextSnapshotV1 = {
     lastError: string | null;
     lastFinalReport: string | null;
     lastToolFailure: string | null;
+    workerEvidence: ConversationWorkerEvidence | null;
   };
   code: {
     snippets: Array<{
@@ -118,6 +120,23 @@ export type ConversationContextSnapshotV1 = {
     truncatedFields: string[];
   };
   contextBaseline?: ConversationContextBaseline;
+};
+
+export type ConversationWorkerEvidence = {
+  lastFailure: string | null;
+  recoveryDirective: {
+    kind: string;
+    targetPath?: string;
+    reason: string;
+    maxRepeats?: number;
+  } | null;
+  criticalEvidence: Array<{
+    toolName: string;
+    failureKind?: string;
+    targetPath?: string;
+    reason: string;
+  }>;
+  targets: string[];
 };
 
 export type ConversationContextBaseline = {

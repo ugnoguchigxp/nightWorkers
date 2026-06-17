@@ -4,7 +4,11 @@ import type {
   StructuredLlmProviderSettings,
   StructuredLlmRole,
 } from './settings';
-import type { StructuredLlmRouteSource, SupervisorProviderId } from './types';
+import type {
+  StructuredLlmRoutePolicy,
+  StructuredLlmRouteSource,
+  SupervisorProviderId,
+} from './types';
 
 export type ResolvedStructuredLlmRoute = {
   role: StructuredLlmRole;
@@ -21,7 +25,17 @@ export function resolveStructuredLlmRoleRoute(input: {
   role: StructuredLlmRole;
   settings: StructuredLlmProviderSettings;
   override?: StructuredLlmModelTarget | null;
+  policy?: StructuredLlmRoutePolicy;
 }): ResolvedStructuredLlmRoute | null {
+  return resolveStructuredLlmRoleRouteCandidates(input)[0] ?? null;
+}
+
+export function resolveStructuredLlmRoleRouteCandidates(input: {
+  role: StructuredLlmRole;
+  settings: StructuredLlmProviderSettings;
+  override?: StructuredLlmModelTarget | null;
+  policy?: StructuredLlmRoutePolicy;
+}): ResolvedStructuredLlmRoute[] {
   const endpoints = input.settings.providerEndpoints || [];
   const override = resolveRouteTarget(
     input.role,
@@ -29,13 +43,17 @@ export function resolveStructuredLlmRoleRoute(input: {
     endpoints,
     'override'
   );
-  if (override) return override;
+  const policy = input.policy ?? {};
+  if (override) {
+    const filteredOverride = applyRoutePolicy([override], endpoints, input.role, policy);
+    if (filteredOverride.length > 0) return filteredOverride;
+  }
 
   const route = (input.settings.roleRoutes || []).find((item) => item.role === input.role);
-  if (!route) return null;
+  if (!route) return [];
 
   const primary = resolveRouteTarget(route.role, route.primary, endpoints, 'primary');
-  if (primary) return primary;
+  const candidates = primary ? [primary] : [];
 
   for (let index = 0; index < route.fallbacks.length; index += 1) {
     const fallback = resolveRouteTarget(
@@ -45,9 +63,9 @@ export function resolveStructuredLlmRoleRoute(input: {
       'fallback',
       index
     );
-    if (fallback) return fallback;
+    if (fallback) candidates.push(fallback);
   }
-  return null;
+  return applyRoutePolicy(candidates, endpoints, input.role, policy);
 }
 
 function resolveRouteTarget(
@@ -90,4 +108,58 @@ export function providerIdForEndpoint(
   if (endpoint.kind === 'azure') return 'azure-openai';
   if (endpoint.kind === 'openai-compatible' || endpoint.kind === 'local') return 'openai';
   return endpoint.kind;
+}
+
+function applyRoutePolicy(
+  candidates: ResolvedStructuredLlmRoute[],
+  endpoints: StructuredLlmProviderEndpoint[],
+  role: StructuredLlmRole,
+  policy: StructuredLlmRoutePolicy
+): ResolvedStructuredLlmRoute[] {
+  const disallowed = new Set(policy.disallowedProviderIds ?? []);
+  const allowed = candidates
+    .filter((candidate) => !disallowed.has(candidate.providerId))
+    .map((candidate) => ({
+      ...candidate,
+      diagnostics:
+        disallowed.size > 0
+          ? [...candidate.diagnostics, `routePolicy.disallowed=${[...disallowed].join(',')}`]
+          : candidate.diagnostics,
+    }));
+
+  if (!policy.synthesizeFallbacksFromEnabledEndpoints) return allowed;
+
+  const seen = new Set(allowed.map((candidate) => candidate.providerEndpointId));
+  let fallbackIndex = candidates.filter((candidate) => candidate.source === 'fallback').length;
+  for (const endpoint of endpoints) {
+    if (
+      !endpoint.enabled ||
+      disallowed.has(providerIdForEndpoint(endpoint)) ||
+      seen.has(endpoint.id)
+    ) {
+      continue;
+    }
+    const model = endpoint.models[0];
+    if (!model) continue;
+    const fallback = resolveRouteTarget(
+      role,
+      { providerEndpointId: endpoint.id, model },
+      endpoints,
+      'fallback',
+      fallbackIndex
+    );
+    fallbackIndex += 1;
+    if (!fallback || disallowed.has(fallback.providerId)) continue;
+    seen.add(fallback.providerEndpointId);
+    allowed.push({
+      ...fallback,
+      diagnostics: [
+        ...fallback.diagnostics,
+        'routePolicy.synthesizedFallback=true',
+        ...(disallowed.size > 0 ? [`routePolicy.disallowed=${[...disallowed].join(',')}`] : []),
+      ],
+    });
+  }
+
+  return allowed;
 }
