@@ -8,6 +8,7 @@ import {
   formatCodexToolActivitySummary,
   getActivityChangedFiles,
   getCodexCommandOutput,
+  getToolActivityModel,
 } from './ThreadTimeline';
 import { ContextStillToolCard, hasContextStillToolCard } from './ThreadTimelineContextStillCards';
 import { DiffCodeBlock } from './ThreadTimelineDiffView';
@@ -349,10 +350,21 @@ type EditToolCall = {
 
 export function getEditToolCall(event: ActivityEvent): EditToolCall | null {
   const payload = toDeepRecord(event.payloadJson);
+  const activity = getToolActivityModel(event);
+  if (
+    (activity?.toolName === 'apply_patch' || activity?.toolName === 'replace_content') &&
+    activity.arguments
+  ) {
+    return { name: activity.toolName, arguments: activity.arguments };
+  }
+
   const candidates = [
     payload?.payload?.toolCall,
+    payload?.payload,
     payload?.runEvent?.data?.payload?.toolCall,
     payload?.runEvent?.data?.toolCall,
+    payload?.runEvent?.data,
+    payload,
   ];
 
   if (event.text?.trim()) {

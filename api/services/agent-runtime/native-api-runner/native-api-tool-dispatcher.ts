@@ -115,6 +115,7 @@ export async function dispatchNativeApiToolCall(input: {
     payload: {
       callId: input.toolCall.id,
       toolName: workerToolName,
+      arguments: input.toolCall.arguments,
       ok: dispatch.result.ok,
       result: dispatch.result.payload,
       error: dispatch.result.error,

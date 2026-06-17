@@ -9,6 +9,7 @@ import {
   estimateReplacementStats,
   getActivityChangedFiles,
   getCodexCommandOutput,
+  getToolActivityModel,
   getToolArguments,
   getToolName,
   getToolResult,
@@ -199,7 +200,16 @@ function visibleInspectionToolCardKey(
 }
 
 function visibleEditDiffKey(event: ActivityEvent): string {
-  return getVisibleEditDiffCode(event).trim();
+  const code = getVisibleEditDiffCode(event).trim();
+  if (code) return code;
+  const summary = buildVisibleEditDiffSummary(event);
+  return summary.length > 0
+    ? summary
+        .map(
+          (section) => `${section.path}:${section.added}:${section.deleted}:${section.changedOnly}`
+        )
+        .join('|')
+    : '';
 }
 
 function getVisibleEditDiffCode(event: ActivityEvent): string {
@@ -350,14 +360,27 @@ export type VisibleEditDiffSummary = Array<{
 }>;
 
 export function buildVisibleEditDiffSummary(event: ActivityEvent): VisibleEditDiffSummary {
+  const activity = getToolActivityModel(event);
   const toolCall = getEditToolCall(event);
 
   if (toolCall?.name === 'apply_patch') {
-    return mergeEditSections(parseApplyPatchSections(stringValue(toolCall.arguments.patchContent)));
+    const sections = mergeEditSections(
+      parseApplyPatchSections(stringValue(toolCall.arguments.patchContent))
+    );
+    if (sections.length > 0) return sections;
+    return getActivityChangedFiles(event).map((path) => ({
+      path,
+      added: 0,
+      deleted: 0,
+      changedOnly: true,
+    }));
   }
 
   if (toolCall?.name === 'replace_content') {
-    const filePath = stringValue(toolCall.arguments.filePath) || 'unknown';
+    const filePath =
+      stringValue(toolCall.arguments.filePath) ||
+      stringValue(activity?.resultPayload.filePath) ||
+      'unknown';
     const estimate = estimateReplacementStats({
       needle: stringValue(toolCall.arguments.needle),
       replacement: stringValue(toolCall.arguments.replacement),
@@ -393,8 +416,9 @@ export type VisibleCliCommandSummary = {
 };
 
 export function getVisibleCliCommandSummary(event: ActivityEvent): VisibleCliCommandSummary | null {
+  const activity = getToolActivityModel(event);
   const payload = asRecord(event.payloadJson);
-  const toolName = getToolName(payload);
+  const toolName = activity?.toolName ?? getToolName(payload);
   if (
     toolName !== 'run_command' &&
     toolName !== 'run_verification' &&
@@ -403,9 +427,9 @@ export function getVisibleCliCommandSummary(event: ActivityEvent): VisibleCliCom
     return null;
   }
 
-  const args = asRecord(getToolArguments(payload));
-  const result = asRecord(getToolResult(payload));
-  const resultPayload = asRecord(result.payload);
+  const args = activity?.arguments ?? asRecord(getToolArguments(payload));
+  const result = activity?.rawResult ?? asRecord(getToolResult(payload));
+  const resultPayload = activity?.resultPayload ?? asRecord(result.payload);
   const runEvent = asRecord(payload.runEvent);
   const runEventData = asRecord(runEvent.data);
   const payloadPayload = asRecord(payload.payload);

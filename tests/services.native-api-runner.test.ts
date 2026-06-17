@@ -503,6 +503,48 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
     });
   });
 
+  it('includes original tool arguments in native/api worker tool finished events', async () => {
+    const events: AgentRuntimeEvent[] = [];
+    const result = await dispatchNativeApiToolCall({
+      toolCall: {
+        id: 'call-read-file',
+        name: 'read_file',
+        arguments: {
+          filePath: 'package.json',
+          startLine: 1,
+          endLine: 5,
+          compressionMode: 'off',
+        },
+      },
+      context: buildContext(),
+      sink: createSink(events),
+      state: { readFiles: [], specificationRead: true },
+    });
+
+    expect(result.kind).toBe('continue');
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'tool_call_finished',
+          payload: expect.objectContaining({
+            callId: 'call-read-file',
+            toolName: 'read_file',
+            arguments: expect.objectContaining({
+              filePath: 'package.json',
+              startLine: 1,
+              endLine: 5,
+            }),
+            ok: true,
+            result: expect.objectContaining({
+              totalLines: expect.any(Number),
+              linesReturned: 5,
+            }),
+          }),
+        }),
+      ])
+    );
+  });
+
   it('rejects empty context_compile input before any MCP dispatch', async () => {
     const result = await dispatchNativeApiToolCall({
       toolCall: { id: 'call-context', name: 'context_compile', arguments: {} },

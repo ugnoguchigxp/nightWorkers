@@ -12,9 +12,8 @@ import {
   estimateReplacementStats,
   getApplyPatchContent,
   getChangedFilesFromResult,
-  getToolArguments,
+  getToolActivityModel,
   getToolName,
-  getToolResult,
   parseApplyPatchSections,
 } from './ThreadTimeline';
 import { NightWorkersCodeBlock } from './ThreadTimelineMarkdown';
@@ -243,10 +242,11 @@ export type AgentEditSummary = {
 
 export function getAgentEditSummary(event: TaskEvent): AgentEditSummary | null {
   const payload = event.payloadJson;
-  const toolName = getToolName(payload);
-  const args = asRecord(getToolArguments(payload));
-  const result = asRecord(getToolResult(payload));
-  const resultPayload = asRecord(result.payload);
+  const activity = getToolActivityModel(event) ?? getToolActivityModel(payload);
+  const toolName = activity?.toolName ?? getToolName(payload);
+  const args = activity?.arguments ?? {};
+  const result = activity?.rawResult ?? {};
+  const resultPayload = activity?.resultPayload ?? {};
 
   if (toolName === 'apply_patch') {
     const patchContent = asString(args?.patchContent || getApplyPatchContent(payload));
@@ -260,7 +260,10 @@ export function getAgentEditSummary(event: TaskEvent): AgentEditSummary | null {
     if (changedFiles.length > 0) {
       return {
         toolName,
-        sections: changedFiles.map((path) => ({ path, detail: result.ok ? 'applied' : 'failed' })),
+        sections: changedFiles.map((path) => ({
+          path,
+          detail: activity?.status === 'failed' || result.ok === false ? 'failed' : 'applied',
+        })),
       };
     }
     return null;

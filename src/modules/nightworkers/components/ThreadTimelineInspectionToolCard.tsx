@@ -2,9 +2,8 @@ import {
   asNumber,
   asRecord,
   asString,
-  getToolArguments,
-  getToolName,
-  getToolResult,
+  getToolActivityModel,
+  type ToolActivityLifecycle,
 } from './ThreadTimeline';
 import { NightWorkersCodeBlock } from './ThreadTimelineMarkdown';
 
@@ -63,18 +62,18 @@ export function hasInspectionToolCard(event: InspectionToolCardEvent): boolean {
 export function getInspectionToolCardModel(
   event: InspectionToolCardEvent
 ): InspectionToolCardModel | null {
-  const payload = asRecord(event.payloadJson);
-  const toolName = getInspectionToolName(getToolName(payload));
+  const activity = getToolActivityModel(event);
+  const toolName = getInspectionToolName(activity?.toolName ?? null);
   if (!toolName) return null;
 
-  const lifecycle = getToolLifecycle(event);
+  const lifecycle = getToolLifecycle(activity?.lifecycle);
   if (lifecycle === 'other') return null;
 
-  const args = asRecord(getToolArguments(payload));
-  const result = asRecord(getToolResult(payload));
-  const resultPayload = asRecord(result.payload);
-  const error = asRecord(result.error);
-  const status = getStatus(lifecycle, result, event);
+  const args = activity?.arguments ?? {};
+  const result = activity?.rawResult ?? {};
+  const resultPayload = activity?.resultPayload ?? {};
+  const error = activity?.error ?? {};
+  const status = getStatus(lifecycle, activity?.status, event);
   const base = {
     lifecycle,
     status,
@@ -392,28 +391,23 @@ function getInspectionToolName(value: string | null): InspectionToolName | null 
     : null;
 }
 
-function getToolLifecycle(event: InspectionToolCardEvent): ToolLifecycle {
-  if (event.kind === 'tool.result' || event.eventType === 'tool_result') return 'result';
-  if (event.kind === 'tool.call') {
-    const runEvent = asRecord(asRecord(event.payloadJson).runEvent);
-    const runEventType = asString(runEvent.type);
-    return runEventType === 'tool.call_progress' ? 'other' : 'started';
-  }
-
-  const runEvent = asRecord(asRecord(event.payloadJson).runEvent);
-  const runEventType = asString(runEvent.type);
-  if (runEventType === 'tool.call_finished') return 'result';
-  if (runEventType === 'tool.call_started') return 'started';
+function getToolLifecycle(lifecycle: ToolActivityLifecycle | undefined): ToolLifecycle {
+  if (lifecycle === 'result' || lifecycle === 'failed') return 'result';
+  if (lifecycle === 'started') return 'started';
   return 'other';
 }
 
 function getStatus(
   lifecycle: ToolLifecycle,
-  result: Record<string, unknown>,
+  activityStatus: 'started' | 'running' | 'ok' | 'failed' | undefined,
   event: InspectionToolCardEvent
 ): ToolStatus {
   if (lifecycle === 'started') return 'started';
-  if (result.ok === false || event.status === 'failed' || event.eventType === 'tool_failed') {
+  if (
+    activityStatus === 'failed' ||
+    event.status === 'failed' ||
+    event.eventType === 'tool_failed'
+  ) {
     return 'failed';
   }
   return 'ok';

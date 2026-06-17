@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildNormalTranscriptItems,
   buildVisibleEditDiffSummary,
   getActivityCode,
+  getToolArguments,
+  getToolResult,
 } from '../../src/modules/nightworkers/components/ThreadTimeline';
 import { getAgentEditSummary } from '../../src/modules/nightworkers/components/ThreadTimelineAgentCards';
 import { getVisibleCliCommandSummary } from '../../src/modules/nightworkers/components/ThreadTimelineNormalTranscript';
@@ -221,6 +224,155 @@ describe('ThreadTimeline edit summaries', () => {
     ]);
   });
 
+  it('builds an apply_patch summary from native/api unified diff arguments', () => {
+    const patchContent = [
+      'diff --git a/src/app/page.tsx b/src/app/page.tsx',
+      'new file mode 100644',
+      '--- /dev/null',
+      '+++ b/src/app/page.tsx',
+      '@@ -0,0 +1,3 @@',
+      '+export default function Page() {',
+      '+  return null;',
+      '+}',
+    ].join('\n');
+    const event = {
+      id: 'native-apply-patch-started',
+      taskId: 'task-1',
+      runId: 'run-1',
+      kind: 'tool.call',
+      source: 'worker',
+      status: 'started',
+      seq: 10,
+      message: '[NativeApiRunner] apply_patch started.',
+      payloadJson: {
+        runEvent: {
+          runId: 'run-1',
+          type: 'tool.call_started',
+          data: {
+            callId: 'call-apply-patch',
+            toolName: 'apply_patch',
+            arguments: { patchContent },
+          },
+        },
+      },
+    } as never;
+
+    expect(getAgentEditSummary(event)).toMatchObject({
+      toolName: 'apply_patch',
+      sections: [{ path: 'src/app/page.tsx', added: 3, deleted: 0 }],
+    });
+    expect(buildVisibleEditDiffSummary(event)).toEqual([
+      { path: 'src/app/page.tsx', added: 3, deleted: 0 },
+    ]);
+    expect(getActivityCode(event)).toContain('+++ b/src/app/page.tsx');
+  });
+
+  it('keeps native/api apply_patch result visible from changedFiles only', () => {
+    const event = {
+      id: 'native-apply-patch-result',
+      taskId: 'task-1',
+      runId: 'run-1',
+      kind: 'tool.result',
+      source: 'worker',
+      status: 'completed',
+      seq: 11,
+      text: 'apply_patch finished',
+      message: '[NativeApiRunner] apply_patch finished.',
+      payloadJson: {
+        runEvent: {
+          runId: 'run-1',
+          type: 'tool.call_finished',
+          data: {
+            callId: 'call-apply-patch',
+            toolName: 'apply_patch',
+            ok: true,
+            result: {
+              applied: true,
+              changedFiles: ['src/app/page.tsx', 123, null, 'src/app/layout.tsx'],
+              stdout: '',
+              stderr: '',
+            },
+          },
+        },
+      },
+      createdAt: '2026-06-17T00:00:00.000Z',
+      visibility: 'visible',
+    } as never;
+
+    expect(getAgentEditSummary(event)?.sections).toEqual([
+      { path: 'src/app/page.tsx', detail: 'applied' },
+      { path: 'src/app/layout.tsx', detail: 'applied' },
+    ]);
+    expect(buildVisibleEditDiffSummary(event)).toEqual([
+      { path: 'src/app/page.tsx', added: 0, deleted: 0, changedOnly: true },
+      { path: 'src/app/layout.tsx', added: 0, deleted: 0, changedOnly: true },
+    ]);
+    expect(
+      buildNormalTranscriptItems([{ kind: 'activity', id: 'activity:native-result', event }]).map(
+        (item) => item.id
+      )
+    ).toEqual(['activity:native-result']);
+  });
+
+  it('parses native/api delete-only unified diffs', () => {
+    const event = {
+      id: 'native-apply-patch-delete',
+      taskId: 'task-1',
+      runId: 'run-1',
+      kind: 'tool.call',
+      source: 'worker',
+      status: 'started',
+      seq: 12,
+      payloadJson: {
+        runEvent: {
+          type: 'tool.call_started',
+          data: {
+            toolName: 'apply_patch',
+            arguments: {
+              patchContent: [
+                'diff --git a/src/old.ts b/src/old.ts',
+                'deleted file mode 100644',
+                '--- a/src/old.ts',
+                '+++ /dev/null',
+                '@@ -1,2 +0,0 @@',
+                '-export const old = true;',
+                '-export const stale = true;',
+              ].join('\n'),
+            },
+          },
+        },
+      },
+    } as never;
+
+    expect(buildVisibleEditDiffSummary(event)).toEqual([
+      { path: 'src/old.ts', added: 0, deleted: 2 },
+    ]);
+  });
+
+  it('preserves legacy helper null results for started events without result payloads', () => {
+    const payload = {
+      runEvent: {
+        type: 'tool.call_started',
+        data: {
+          toolName: 'read_file',
+        },
+      },
+    };
+
+    expect(getToolArguments(payload)).toBeNull();
+    expect(getToolResult(payload)).toBeNull();
+  });
+
+  it('does not mistake ordinary payload kind fields for activity event wrappers', () => {
+    expect(
+      getToolArguments({
+        toolName: 'inspect_structure',
+        kind: 'tsx',
+        arguments: { filePath: 'src/app/page.tsx' },
+      })
+    ).toEqual({ filePath: 'src/app/page.tsx' });
+  });
+
   it('builds a replace_content summary from tool arguments', () => {
     const summary = getAgentEditSummary({
       id: 'event-replace-content-start',
@@ -259,5 +411,35 @@ describe('ThreadTimeline edit summaries', () => {
         },
       ],
     });
+  });
+
+  it('uses replace_content result filePath when arguments are absent', () => {
+    const event = {
+      id: 'native-replace-content-result',
+      taskId: 'task-1',
+      runId: 'run-1',
+      kind: 'tool.result',
+      source: 'worker',
+      status: 'completed',
+      seq: 13,
+      payloadJson: {
+        runEvent: {
+          type: 'tool.call_finished',
+          data: {
+            toolName: 'replace_content',
+            ok: true,
+            result: {
+              applied: true,
+              occurrences: 1,
+              filePath: 'src/greeting.txt',
+            },
+          },
+        },
+      },
+    } as never;
+
+    expect(buildVisibleEditDiffSummary(event)).toEqual([
+      { path: 'src/greeting.txt', added: 0, deleted: 0 },
+    ]);
   });
 });

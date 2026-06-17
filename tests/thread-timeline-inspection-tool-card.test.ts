@@ -83,6 +83,47 @@ describe('ThreadTimeline inspection tool cards', () => {
     expect(card?.metrics).toContainEqual({ label: 'returned', value: '0' });
   });
 
+  it('extracts native/api read_file result payload directly from runEvent data', () => {
+    const card = getInspectionToolCardModel({
+      kind: 'tool.result',
+      status: 'completed',
+      payloadJson: {
+        runEvent: {
+          type: 'tool.call_finished',
+          data: {
+            callId: 'call-read-file',
+            toolName: 'read_file',
+            arguments: {
+              filePath: 'src/app/page.tsx',
+              startLine: 1,
+              endLine: 20,
+            },
+            ok: true,
+            result: {
+              content: '1: export default function Page() {}',
+              totalLines: 42,
+              linesReturned: 20,
+              startLine: 1,
+              endLine: 20,
+              cached: false,
+              truncated: false,
+            },
+          },
+        },
+      },
+    });
+
+    expect(card).toMatchObject({
+      lifecycle: 'result',
+      status: 'ok',
+      toolName: 'read_file',
+      target: 'src/app/page.tsx',
+    });
+    expect(card?.options).toContainEqual({ label: 'requested', value: '1-20' });
+    expect(card?.metrics).toContainEqual({ label: 'lines', value: '1-20 / total 42' });
+    expect(card?.metrics).toContainEqual({ label: 'returned', value: '20' });
+  });
+
   it('extracts list_dir result counts and preview', () => {
     const card = getInspectionToolCardModel({
       kind: 'tool.result',
