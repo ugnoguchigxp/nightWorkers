@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildProgressContext,
   getRedundantTodoListGap,
   getRedundantTodoReplaceGap,
   getTodoDoneEvidenceGap,
@@ -181,6 +182,44 @@ describe('supervisor loop Todo helpers', () => {
     ]);
   });
 
+  it('accepts product-owned fixed gate taskTypes in native replace input', () => {
+    expect(
+      normalizeTodoListInput({
+        todos: [
+          {
+            seq: 1,
+            title: 'initial_instructions を実行する',
+            taskType: 'initial_instructions',
+            procedureId: 'contextstill.initial_instructions',
+          },
+          {
+            seq: 2,
+            title: 'context_compile を実行する',
+            taskType: 'context_compile',
+            procedureId: 'contextstill.context_compile',
+          },
+          {
+            seq: 3,
+            title: '知識登録を行う',
+            taskType: 'knowledge_capture',
+            procedureId: 'contextstill.register_candidates',
+          },
+          {
+            seq: 4,
+            title: '完了報告を行う',
+            taskType: 'completion_report',
+            procedureId: 'final_completion_report',
+          },
+        ],
+      }).map((todo) => todo.taskType)
+    ).toEqual([
+      'initial_instructions',
+      'context_compile',
+      'knowledge_capture',
+      'completion_report',
+    ]);
+  });
+
   it('requires verification evidence after the latest Todo transition', () => {
     const todo = {
       seq: 6,
@@ -232,5 +271,61 @@ describe('supervisor loop Todo helpers', () => {
         ],
       })
     ).toBeNull();
+  });
+
+  it('directs implementation Todos toward mutation tools after enough read-only evidence', () => {
+    const context = buildProgressContext({
+      currentJobType: 'major_code_edit',
+      workspaceSnapshot: {
+        isEmpty: false,
+        topLevelDirs: ['web'],
+        topLevelFiles: ['package.json'],
+        truncated: false,
+      },
+      currentTodos: [
+        {
+          seq: 4,
+          title: 'Todo List 画面の UI コンポーネントを実装する',
+          taskType: 'implementation',
+          status: 'running',
+          procedureId: null,
+        },
+      ],
+      toolResults: [
+        {
+          step: 1,
+          toolName: 'todo_list',
+          ok: true,
+          arguments: { operation: 'done' },
+          summary: 'tool=todo_list operation=done status=ok',
+        },
+        {
+          step: 2,
+          toolName: 'read_file',
+          ok: true,
+          arguments: { filePath: 'web/src/routes/root-route.tsx' },
+          summary: 'tool=read_file status=ok',
+        },
+        {
+          step: 3,
+          toolName: 'list_dir',
+          ok: true,
+          arguments: { relativePath: 'web/src/routes' },
+          summary: 'tool=list_dir status=ok',
+        },
+        {
+          step: 4,
+          toolName: 'read_file',
+          ok: true,
+          arguments: { filePath: 'web/src/views/home-view.tsx' },
+          summary: 'tool=read_file status=ok',
+        },
+      ],
+    });
+
+    expect(context.nextConcreteAction).toContain('次は read_file ではなく apply_patch');
+    expect(context.doNotRepeat).toContainEqual(
+      expect.stringContaining('read-only evidence が 3 件')
+    );
   });
 });

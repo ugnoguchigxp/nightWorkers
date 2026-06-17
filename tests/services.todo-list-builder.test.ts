@@ -163,4 +163,34 @@ describe('standard implementation TodoList builder', () => {
     expect(todos.filter((todo) => todo.title === 'LLM コードレビューを実施する')).toHaveLength(1);
     expect(todos.filter((todo) => todo.procedureId === 'llm_code_review')).toHaveLength(1);
   });
+
+  it('merges LLM-echoed first gates back into the fixed first gates', () => {
+    const todos = buildStandardImplementationTodoList({
+      todos: [
+        {
+          seq: 1,
+          title: 'initial_instructions を実行する',
+          taskType: 'initial_instructions',
+          procedureId: 'contextstill.initial_instructions',
+        },
+        {
+          seq: 2,
+          title: 'context_compile を実行する',
+          taskType: 'context_compile',
+          procedureId: 'contextstill.context_compile',
+        },
+        { seq: 3, title: 'Implement feature', taskType: 'implementation' },
+      ],
+    });
+
+    expect(todos.map((todo) => `${todo.seq}:${todo.taskType}:${todo.title}`)).toEqual([
+      '1:initial_instructions:initial_instructions を実行する',
+      '2:context_compile:context_compile を実行する',
+      '3:implementation:Implement feature',
+      '4:review:LLM コードレビューを実施する',
+      '5:verification:品質ゲート verify を実施する',
+      '6:knowledge_capture:知識登録を行う',
+      '7:completion_report:完了報告を行う',
+    ]);
+  });
 });

@@ -133,9 +133,26 @@ function normalizeImplementationTodos(
 
 function isReservedFinalGateTodo(todo: ImplementationTodoInput) {
   return (
+    isReservedFirstGateTodo(todo) ||
     isReservedReviewTodo(todo) ||
     isReservedCloseoutTodo(todo) ||
     isReservedBroadVerificationTodo(todo)
+  );
+}
+
+function isReservedFirstGateTodo(todo: ImplementationTodoInput) {
+  const title = typeof todo.title === 'string' ? todo.title.trim().toLowerCase() : '';
+  const normalizedTitle = title.replace(/\s+/g, '');
+  const taskType = typeof todo.taskType === 'string' ? todo.taskType.trim() : '';
+  const procedureId = typeof todo.procedureId === 'string' ? todo.procedureId.trim() : '';
+
+  return (
+    normalizedTitle === 'initial_instructionsを実行する' ||
+    normalizedTitle === 'context_compileを実行する' ||
+    taskType === 'initial_instructions' ||
+    taskType === 'context_compile' ||
+    procedureId === 'contextstill.initial_instructions' ||
+    procedureId === 'contextstill.context_compile'
   );
 }
 

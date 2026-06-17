@@ -77,6 +77,49 @@ describe('ThreadTimeline ContextStill cards', () => {
     });
   });
 
+  it('extracts context_compile markdown from the persisted NightWorkers wrapper', () => {
+    const card = getContextStillToolCardModel({
+      kind: 'tool.result',
+      payloadJson: {
+        runEvent: {
+          type: 'tool.call_finished',
+          data: {
+            toolName: 'context-still.context_compile',
+          },
+        },
+        payload: {
+          step: 0,
+          toolName: 'context-still.context_compile',
+          ok: true,
+          summary:
+            'tool=context-still.context_compile status=ok\npayload={"result":{"content":[{"type":"text","text":"## Use when\\n- wrapper text"}]}}',
+          payload: {
+            serverId: 'context-still-server',
+            toolName: 'context_compile',
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: '## Use when\n- NightWorkers MCP が利用可能です。\n\n## Workflow\n1. 表示本文を確認する。',
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    expect(card).toEqual({
+      kind: 'context_compile_output',
+      title: 'context_compile output',
+      toolName: 'context-still.context_compile',
+      body: '## Use when\n- NightWorkers MCP が利用可能です。\n\n## Workflow\n1. 表示本文を確認する。',
+      format: 'markdown',
+    });
+    expect(card?.body).not.toContain('tool=context-still.context_compile');
+    expect(card?.body).not.toContain('payload={');
+  });
+
   it('extracts compile_eval input from a started MCP event', () => {
     const card = getContextStillToolCardModel({
       kind: 'tool.call',

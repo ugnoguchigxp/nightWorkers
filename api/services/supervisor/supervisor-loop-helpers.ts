@@ -155,7 +155,16 @@ export function getRedundantTodoReplaceGap(input: {
 }
 
 const TODO_TRANSITION_OPERATIONS = new Set(['replace', 'start', 'done', 'block', 'fail']);
-const TODO_TASK_TYPES = new Set<string>(nightWorkersTodoTaskTypes);
+const INTERNAL_TODO_TASK_TYPES = [
+  'initial_instructions',
+  'context_compile',
+  'knowledge_capture',
+  'completion_report',
+] as const;
+const TODO_TASK_TYPES = new Set<string>([
+  ...nightWorkersTodoTaskTypes,
+  ...INTERNAL_TODO_TASK_TYPES,
+]);
 const READ_ONLY_EVIDENCE_TOOLS = new Set([
   'read_current_specification',
   'list_dir',
@@ -304,10 +313,21 @@ export function buildProgressContext(input: {
   const openTodos = input.currentTodos.filter((todo) =>
     ['pending', 'running'].includes(todo.status)
   );
+  const recentToolResults = input.toolResults.slice(findLatestTodoBoundaryIndex(input.toolResults));
   const hasSuccessfulImport = input.toolResults.some(
     (result) =>
       result.ok && (result.toolName === 'import_project' || result.toolName === 'copy_directory')
   );
+  const hasImplementationEvidenceSinceLatestTodoTransition = recentToolResults.some(
+    (result) => result.ok && IMPLEMENTATION_EVIDENCE_TOOLS.has(result.toolName)
+  );
+  const recentReadOnlyEvidenceCount = recentToolResults.filter(
+    (result) => result.ok && READ_ONLY_EVIDENCE_TOOLS.has(result.toolName)
+  ).length;
+  const implementationHasEnoughReadContext =
+    currentTodo?.taskType === 'implementation' &&
+    recentReadOnlyEvidenceCount >= 3 &&
+    !hasImplementationEvidenceSinceLatestTodoTransition;
   const hasSuccessfulReplace = input.toolResults.some(
     (result) =>
       result.ok &&
@@ -360,6 +380,7 @@ export function buildProgressContext(input: {
       hasSuccessfulReplace,
       hasMissingComponentLookup,
       hasWebSrcSnapshot,
+      implementationHasEnoughReadContext,
     }),
     todoGuidance:
       'Todo は進行状況の記録であり、作業そのものではない。既存 TodoList がある場合は再 replace ではなく、現在の作業に必要な worker tool を実行する。',
@@ -375,6 +396,9 @@ export function buildProgressContext(input: {
         : null,
       recentTodoListCount >= 2
         ? `todo_list operation=list が直近で ${recentTodoListCount} 回続いている。Todo 状態確認を繰り返さず、現在 Todo を進める worker tool を実行する。`
+        : null,
+      implementationHasEnoughReadContext
+        ? `現在の implementation Todo では read-only evidence が ${recentReadOnlyEvidenceCount} 件あり、implementation evidence はまだ無い。read_file / list_dir を続けず、次は apply_patch / replace_content で実装する。`
         : null,
       ...missingPathResults.slice(-3).map((result) => {
         const pathValue = String(result.arguments.relativePath || result.arguments.filePath);
@@ -419,6 +443,7 @@ function buildNextConcreteAction(input: {
   hasSuccessfulReplace: boolean;
   hasMissingComponentLookup: boolean;
   hasWebSrcSnapshot: boolean;
+  implementationHasEnoughReadContext: boolean;
 }) {
   const current = input.currentTodo;
   if (
@@ -432,6 +457,9 @@ function buildNextConcreteAction(input: {
     return input.hasSuccessfulReplace
       ? 'TodoList は存在する。running Todo がない場合は、最初の open Todo を start するか、open Todo がなければ finalize する。'
       : '必要なら一度だけ TodoList を作り、その後は worker tool で具体作業へ進む。';
+  }
+  if (input.implementationHasEnoughReadContext) {
+    return '現在 Todo に必要な読み取り context は揃っているため、次は read_file ではなく apply_patch / replace_content で実装変更を行う。';
   }
   if (
     input.currentJobType === 'major_code_edit' &&

@@ -22,9 +22,9 @@
 - finalize_answer
 
 ## Procedure
-1. repository edit や command 実行の前に todo_list operation=replace を呼び、Run 内部 TodoList を作成する。
+1. Run 内部 TodoList がまだ無い場合だけ、repository edit や command 実行の前に todo_list operation=replace を一度呼び、Run 内部 TodoList を作成する。
 2. TodoList は Workbench Task や Queue item ではない。Run 内部の進行マイルストーンとして扱う。
-3. todo_list operation=replace は全更新で使う。ただし完了済み、失敗、blocked、skipped の terminal Todo は未完了へ戻せない。通常は startFirst=true または省略にし、最初の未完了 Todo を running にする。
+3. TodoList が既に存在し、pending または running の Todo が残っている場合は、operation=replace で作り直さない。現在の Todo に対応する worker tool を実行し、必要に応じて operation=done/block/fail で進める。
 4. Todo は成果物または gate 単位で分ける。例: investigation / migration / code_edit / documentation / verification。
 5. 現在の Todo に必要な list_dir / read_file / search_files / import_project / copy_directory / apply_patch / replace_content / run_command / run_verification を実行する。
 6. 空の Project root は有効な作業対象として扱う。空であることを理由に作業不能と判断しない。新規プロジェクト / 新規ファイル作成依頼では、指定がない限り標準テンプレート適用を優先し、blank 指定や小さい単体ファイル作成だけ apply_patch で作成する。
@@ -54,15 +54,14 @@ TodoList には少なくとも次の種類を必要に応じて含める。
 - migration: DB schema や migration file の追加・更新。
 - code_edit: runtime、backend、frontend などの実装変更。
 - documentation: README、spec、運用 docs の更新。
-- verification: typecheck、test、lint、smoke などの検証。
+- focused_verification: 現在の変更に必要な typecheck、test、lint、smoke などの局所検証。広域 verify / review / closeout は固定ゲートが追加するため operation=replace には含めない。
 
 外部テンプレート取り込みでは少なくとも次を含める。
 
 - import: import_project で登録済み標準テンプレートまたは任意 Git repository を Project root に取り込む。
 - copy: 許可済み外部ディレクトリテンプレートを copy_directory で Project root にコピーする。
 - inspection: 取り込み後の package.json / pyproject.toml と主要構成を確認する。
-- verification: manifest に基づき build / lint / typecheck / test / verify / pytest / ruff / pyright などを run_verification で実行する。
-- finalize: Todo と検証結果を確認し、残リスクをまとめる。
+- focused_verification: manifest に基づく build / lint / typecheck / test / pytest / ruff / pyright など、取り込み直後に必要な局所検証を run_verification で実行する。
 
 ## Completion
 - Todo の status は pending / running / passed / failed / skipped / needs_human。

@@ -12,6 +12,7 @@ import {
 import { ContextStillToolCard, hasContextStillToolCard } from './ThreadTimelineContextStillCards';
 import { DiffCodeBlock } from './ThreadTimelineDiffView';
 import { hasImportProjectToolCard, ImportProjectToolCard } from './ThreadTimelineImportProjectCard';
+import { hasInspectionToolCard, InspectionToolCard } from './ThreadTimelineInspectionToolCard';
 import { ChatMarkdown, NightWorkersCodeBlock } from './ThreadTimelineMarkdown';
 import { MessagePayload } from './ThreadTimelineMessagePayload';
 import {
@@ -191,6 +192,9 @@ function TranscriptActivityBlock({
   }
   if (hasContextStillToolCard(event)) {
     return <ContextStillToolCard event={event} />;
+  }
+  if (hasInspectionToolCard(event)) {
+    return <InspectionToolCard event={event} />;
   }
 
   return (

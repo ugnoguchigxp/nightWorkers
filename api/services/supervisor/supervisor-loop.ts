@@ -394,7 +394,11 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         finalReportText = cancelledAfterProvider.finalReport;
         break;
       }
-      await emitAgentEvent('round2.parsed', round2);
+      await emitAgentEvent('round2.parsed', {
+        toolName: round2.toolCall.name,
+        arguments: round2.toolCall.arguments,
+        decision: round2,
+      });
 
       const validation = validateToolCallForJobType({
         jobType: currentJobType,

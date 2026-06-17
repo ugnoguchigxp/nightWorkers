@@ -77,6 +77,68 @@ describe('Schema-first supervisor loop', () => {
     expect(prompt).toContain('copy_directory');
   });
 
+  it('does not tell major_code_edit to refresh TodoList through legacy replace updates', () => {
+    const prompt = buildRound2ToolCallPrompt({
+      projectRoot: '/Users/y.noguchi/Code/todolist',
+      jobType: 'major_code_edit',
+      tools: getAllowedToolsForJobType('major_code_edit'),
+    });
+
+    expect(prompt).toContain('If TodoList already exists');
+    expect(prompt).toContain('concrete worker tool instead of repeating replace');
+    expect(prompt).not.toContain('todo_list operation=replace は全更新で使う');
+  });
+
+  it('stores the parsed round2 tool name and arguments in run events', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-round2-event-'));
+    vi.mocked(llm.callSupervisorLLM)
+      .mockResolvedValueOnce({
+        jobType: 'minor_code_edit',
+        goal: 'ファイルを読む',
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'read_file',
+          arguments: { filePath: 'src/app.ts' },
+        },
+      })
+      .mockResolvedValueOnce({
+        toolCall: {
+          name: 'finalize_answer',
+          arguments: { message: '確認しました。' },
+        },
+      });
+
+    try {
+      await runSupervisorLoop({
+        runId: 'run-1',
+        repoRoot,
+        prompt: 'src/app.ts を確認して',
+        timeoutSeconds: 60,
+      });
+
+      expect(repo.createRunEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'supervisor.decision',
+          message: '[SchemaFirstAgent] round2.parsed',
+        }),
+        expect.objectContaining({
+          payloadJson: expect.objectContaining({
+            payload: expect.objectContaining({
+              toolName: 'read_file',
+              arguments: { filePath: 'src/app.ts' },
+              decision: expect.objectContaining({
+                toolCall: expect.objectContaining({ name: 'read_file' }),
+              }),
+            }),
+          }),
+        })
+      );
+    } finally {
+      await fs.rm(repoRoot, { recursive: true, force: true });
+    }
+  });
+
   it('persists execution review evidence into the run context snapshot', async () => {
     const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-review-context-'));
     vi.mocked(repo.getTaskRun).mockResolvedValue({

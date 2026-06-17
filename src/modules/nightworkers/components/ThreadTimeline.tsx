@@ -30,6 +30,10 @@ import {
   hasImportProjectToolCard,
   NormalImportProjectToolCard,
 } from './ThreadTimelineImportProjectCard';
+import {
+  hasInspectionToolCard,
+  NormalInspectionToolCard,
+} from './ThreadTimelineInspectionToolCard';
 import { MessagePayload } from './ThreadTimelineMessagePayload';
 import {
   buildNormalTranscriptItems,
@@ -260,7 +264,8 @@ export function ThreadTimeline({
               hasAgentEditSummary(item.event) ||
               isReviewerEvaluationEvent(item.event) ||
               hasContextStillToolCard(item.event) ||
-              hasImportProjectToolCard(item.event) ? (
+              hasImportProjectToolCard(item.event) ||
+              hasInspectionToolCard(item.event) ? (
               <TimelineDebugFragment
                 key={item.id}
                 insertRuntimeSnapshot={item.id === runtimeSnapshotTimelineAnchorId}
@@ -271,6 +276,7 @@ export function ThreadTimeline({
                   <AgentEditSummaryCard event={item.event} />
                   {!showDebugEvents ? <NormalContextStillToolCard event={item.event} /> : null}
                   {!showDebugEvents ? <NormalImportProjectToolCard event={item.event} /> : null}
+                  {!showDebugEvents ? <NormalInspectionToolCard event={item.event} /> : null}
                   {showDebugEvents ? <AgentDebugEventCard event={item.event} /> : null}
                 </div>
               </TimelineDebugFragment>

@@ -186,7 +186,7 @@ function getToolLifecycle(event: ContextStillCardEvent): 'started' | 'result' | 
 }
 
 function extractResultBody(result: Record<string, unknown>): string {
-  const content = Array.isArray(result.content) ? result.content : [];
+  const content = firstResultContent(result);
   const text = content
     .flatMap((item) => {
       const record = asRecord(item);
@@ -197,6 +197,25 @@ function extractResultBody(result: Record<string, unknown>): string {
     .trim();
   if (text) return text;
   return stringifyJson(result);
+}
+
+function firstResultContent(result: Record<string, unknown>): unknown[] {
+  const candidates = [
+    result,
+    asRecord(result.payload),
+    asRecord(asRecord(result.payload).result),
+    asRecord(asRecord(result.payload).payload),
+    asRecord(result.result),
+    asRecord(result.structuredContent),
+    asRecord(result.structured_content),
+    asRecord(asRecord(result.payload).structuredContent),
+    asRecord(asRecord(result.payload).structured_content),
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate.content)) return candidate.content;
+  }
+  return [];
 }
 
 function buildRegisterCandidatesCard(
