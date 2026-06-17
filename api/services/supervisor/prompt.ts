@@ -1,14 +1,6 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { getResourceRoot } from '../../runtime/paths';
 import { renderCodexAgentsGuidance } from '../codex-global-config/agents-guidance';
+import { renderSupervisorSystemPrompt, type SupervisorPromptPacket } from './prompt-packet';
 import {
-  type Round2PromptPacketInput,
-  renderSupervisorSystemPrompt,
-  type SupervisorPromptPacket,
-} from './prompt-packet';
-import {
-  type JobType,
   jobTypeDescriptions,
   jobTypes,
   renderToolDefinitions,
@@ -29,18 +21,6 @@ export {
   toolRegistry,
   validateToolCallForJobType,
 } from './prompt-tool-registry';
-
-export function loadFlatProcedure(
-  jobType: JobType,
-  directory = defaultFlatProcedureDirectory()
-): string {
-  const filePath = path.join(directory, `${jobType}.md`);
-  return fs.readFileSync(filePath, 'utf8');
-}
-
-export function defaultFlatProcedureDirectory(): string {
-  return path.join(getResourceRoot(), 'api/services/supervisor/skills/flat');
-}
 
 export function buildRound1JobTypePrompt(projectRoot: string): string {
   return renderSupervisorSystemPrompt(buildRound1PromptPacket(projectRoot));
@@ -75,112 +55,6 @@ export function buildRound1PromptPacket(projectRoot: string): SupervisorPromptPa
     diagnostics: {
       round: 1,
       projectRoot,
-    },
-  };
-}
-
-export function buildRound2ToolCallPrompt(input: Round2PromptPacketInput): string {
-  return renderSupervisorSystemPrompt(buildRound2PromptPacket(input));
-}
-
-export function buildRound2PromptPacket(input: Round2PromptPacketInput): SupervisorPromptPacket {
-  const externalAllowedPaths = input.externalAllowedPaths || [];
-  const codexGuidance = renderCodexAgentsGuidance(input.projectRoot).text;
-  return {
-    basePolicy: [
-      `jobType=${input.jobType}`,
-      '次の toolCall を1つだけ返してください。',
-      'JSON のみ。旧 decision 形式や説明用フィールドは出さない。',
-      '完了したと判断したら finalize_answer を返す。',
-      'finalize_answer.message でプロジェクト内のファイルに触れる場合は、プロジェクトルートからの相対パスで書く。',
-      '',
-    ],
-    roundPolicy: [],
-    projectContext: [
-      `プロジェクトルート: ${input.projectRoot}`,
-      input.taskId ? `現在のTask ID: ${input.taskId}` : null,
-      externalAllowedPaths.length > 0
-        ? `許可済み外部パス: ${externalAllowedPaths.join(', ')}`
-        : '許可済み外部パス: なし',
-      '',
-    ].filter((line): line is string => line !== null),
-    runtimeContext: [
-      ...(codexGuidance ? [codexGuidance] : []),
-      '[Procedure Access]',
-      'Procedure documents are not preloaded.',
-      'Use read_procedure when procedure detail is needed.',
-      'Use search_procedure when the appropriate procedure is unclear.',
-      'If loadedProcedureSummaries already contains the current jobType and digest, prefer that summary instead of reading again.',
-      '',
-    ],
-    userRequest: [],
-    executionEvidence: [
-      '[Minimum Execution Contract]',
-      '- latestUserMessage is the source user request; if it contains <STATE_CARD>, use its target and Relevant code as current continuity context.',
-      '- Execution order: specification -> Todo execution -> verification -> closeout.',
-      '- For major_code_edit, create or refresh TodoList once near the start only when no run-local TodoList exists or the current list does not represent the work. If TodoList already exists, continue the current Todo with a concrete worker tool instead of repeating replace.',
-      '- TodoList is run-internal progress, not a Workbench Task or queue item.',
-      '- Todo operations are progress bookkeeping, not implementation evidence. When the next action is clear, prefer the relevant worker tool for the current Todo: import_project/copy_directory for bootstrap, apply_patch/replace_content for implementation, run_verification for verification, and read_file/search_files only for investigation or the minimum pre-edit context.',
-      '- TODO 更新自体をタスクとして扱わない。TODO は進捗可視化であり、実装・調査・検証の worker tool 実行を優先する。',
-      '- Current Todo の taskType が implementation/code_edit/scaffold の場合、read_current_specification / list_dir / read_file / search_files は編集前の最小確認に限定する。十分な context がある場合は、同じ確認を続けず apply_patch / replace_content / import_project / copy_directory を返す。',
-      '- Progress Context の nextConcreteAction または doNotRepeat を最優先する。apply_patch / replace_content を指示している場合は read-only tool や todo_list replace に戻らない。直近の apply_patch / replace_content が失敗して Progress Context が read_file 復旧を指示している場合だけ、対象ファイルを読み直して正しい編集 tool call を作り直す。',
-      '- todo_list operation=list は診断専用であり、TodoList も作業状態も変更しない。native Supervisor の進捗判断では使わない。',
-      '- todo_list operation=replace creates or refreshes the run-local Todo plan. It does not complete any Todo and cannot reopen completed, failed, blocked, or skipped Todos.',
-      '- operation=replace の todos では、確認だけの Todo は taskType=inspection または investigation、実装変更は implementation/code_edit/scaffold、局所検証は focused_verification、広域品質ゲートは含めない。タイトル文言だけに頼らず taskType を明示する。',
-      '- operation=replace に closeout Todo を含めない。NightWorkers が最後に「知識登録を行う」と「完了報告を行う」を別々のゲートとして追加する。',
-      '- 「知識登録を行う」は start/done せず、context-still.register_candidates の成功後に自動完了される。「完了報告を行う」は最後の assistant 完了報告でのみ自動完了される。',
-      '- operation=replace に広域 verify Todo を含めない。NightWorkers が最後に quality_gate_verify Todo を追加する。その Todo が current になる前は typecheck、lint、unit test、build、targeted E2E などの focused checks に留める。',
-      '- リポジトリ全体の広域 verify は、追加された quality_gate_verify Todo が current のときだけ実行する。広域 verify 成功後にファイル変更がなければ、再度広域 verify を実行しない。',
-      '- After operation=replace, leave the first Todo running unless evidence says another Todo should start instead.',
-      '- Do not call todo_list operation=done immediately after operation=replace just to acknowledge setup. done requires concrete tool evidence for the current Todo.',
-      '- todo_list operation=done completes the current running Todo or the specified running seq and auto-starts the next pending Todo when one exists.',
-      '- Use todo_list operation=block for approval/input waits, and operation=fail for concrete implementation or verification failures. Neither auto-starts the next Todo.',
-      '- Do not start a later Todo while an earlier Todo is still pending or running. If verification cannot run or fails, close that verification Todo with fail or block before closeout.',
-      '- A failed, blocked, or skipped Todo is terminal. Do not restart it; continue only when no earlier Todo remains pending or running.',
-      '- Planning is not closeout. Do not call context-still.compile_eval during planning, Todo registration, or immediately after a Todo tracking failure.',
-      '- closeout starts only after implementation and verification are genuinely finished and no implementation Todo remains pending or running.',
-      '- If todo_list operation=done or operation=start fails but the next implementation action is still unambiguous, continue the implementation work and report the tracking failure separately. Tracking failure is not task completion.',
-      '- If target path is known and has not been read in this run, read_file before editing. If the target was already read or the current structure is clear, edit with apply_patch / replace_content instead of re-reading.',
-      '- If apply_patch or replace_content fails because the patch/needle does not match or the target already exists, read_file the target once, then build a corrected update patch or replacement. Do not repeat the same failing patchContent or needle.',
-      '- Use search_files only when target path is unknown or repository-local search is needed. Do not use search_files/read_file/list_dir as a substitute for implementation work.',
-      '- The project root itself is the current workspace even when it is empty.',
-      '- Empty project roots are valid starting points for new-project or new-file requests; do not mark needs_human solely because no existing files or entry points are present.',
-      '- When a project root is empty and the requested output can be created from the specification, continue with import_project, copy_directory, or apply_patch.',
-      '- For major_code_edit in an empty Project root, the first todo_list operation=replace must include a dedicated bootstrap Todo that explicitly names the workspace-creation tool you will use, such as import_project, copy_directory, or apply_patch.',
-      '- Paths outside the project root require explicit user approval in safetyPolicy.externalAllowedPaths before list_dir/read_file/copy_directory/run_command can use them.',
-      '- If the requested external source is listed in 許可済み外部パス, treat it as approved and call the appropriate worker tool instead of asking for the same permission again.',
-      '- Treat the worker tools as the execution interface, not as advisory text. When a registered tool matches the task, call that tool instead of describing shell steps that would do the same work.',
-      '- For task specification or implementation-plan work, call read_current_specification first and ground the next steps in that artifact instead of guessing from the user message alone.',
-      '- 仕様書が「画面内一時データ」「ローカル状態」「永続化や外部連携は対象外」「DDL/migration は実装対象外」などを明示している場合、DB/API/migration Todo を勝手に作らない。仕様に合わせて UI local state 実装を優先する。',
-      '- Use import_project as the single Project import entrypoint. For new scaffolds, pass source=starter with stack/variant. For arbitrary Git repository imports, pass source=git with repoUrl.',
-      '- For unspecified new Web/API apps, prefer import_project with source=starter, stack=hono, and the default SQLite variant unless the user explicitly asks for a blank project or another stack.',
-      '- If the user specifies a DB, choose the matching starter variant such as postgres, pgvector, turso, or cloudflare. If the user asks for RAG, knowledge-base search, embeddings-backed document search, or agentic search, choose variant=rag on the hono stack. If the user specifies SSR or SSG without a DB/RAG variant, pass the matching overlay. Do not combine a DB/RAG variant and an overlay in one import_project call.',
-      '- Use stack=python when the user explicitly asks for Python/FastAPI, or when the requirements need ML usage or substantial mathematical/scientific computation.',
-      '- Do not use run_command git clone when import_project covers the task; import_project owns provenance, target-path policy, and nested .git handling for both standard templates and arbitrary Git imports.',
-      '- For template imports from an approved external directory, prefer copy_directory over shell cp.',
-      '- For template imports, TodoList must include manifest inspection and verification tasks before finalize_answer.',
-      '- After import_project succeeds, first use postImport.gitInitialization, postImport.llmContext when present, plus postImport.manifest and postImport.initialization. Do not re-read LLM_CONTEXT.md, package.json, or re-run install unless that payload is missing, truncated, or failed for a reason you are actively fixing.',
-      '- Use postImport.manifest.recommendedVerificationCommands when choosing manifest-based verification before reporting completion.',
-      '- After copy_directory succeeds, read package.json and/or pyproject.toml, choose relevant checks such as build/lint/typecheck/test/verify/pytest/ruff/pyright, and run them via run_verification when present.',
-      '- Do not call finalize_answer while any Todo is pending or running; close the current Todo with todo_list operation=done, operation=block, or operation=fail first.',
-      '- Do not claim tool execution without an observation in toolResults.',
-      '- Repository reads/writes must use worker tools. CLI commands are allowed only through run_command/run_verification and only when the command policy accepts the single command.',
-      '- run_command and run_verification return full stdout/stderr by default. Keep that default when exact CLI evidence matters, especially for git, install, build, and verification commands.',
-      '- After apply_patch succeeds, inspect changed target files before finalize_answer.',
-      '',
-    ],
-    outputContract: [
-      '[Allowed Tools]',
-      renderToolDefinitions(input.tools),
-      '',
-      '[Output Schema]',
-      '{ "toolCall": { "name": "<tool>", "arguments": { } } }',
-    ],
-    diagnostics: {
-      round: 2,
-      projectRoot: input.projectRoot,
-      jobType: input.jobType,
-      allowedToolNames: input.tools.map((tool) => tool.name),
     },
   };
 }

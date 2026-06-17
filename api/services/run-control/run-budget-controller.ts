@@ -12,7 +12,6 @@ export class RunBudgetController {
   private readonly config: RunBudgetConfig;
   private readonly deadlineMs: number;
   private iteration = 0;
-  private toolCalls = 0;
   private consecutiveMissingToolCalls = 0;
   private consecutiveToolFailures = 0;
   private consecutiveSchemaFallbacks = 0;
@@ -44,7 +43,6 @@ export class RunBudgetController {
   }
 
   onToolCall(name: string, args: unknown): BudgetDecision {
-    this.toolCalls += 1;
     this.consecutiveMissingToolCalls = 0;
 
     const signature = `${name}:${stableJson(args)}`;

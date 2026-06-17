@@ -5,9 +5,15 @@ export type NativeApiRuntimeToolName =
   | WorkerToolName
   | 'todo_list'
   | 'context_compile'
+  | 'new_context'
   | 'finalize_answer';
 
-export type NativeApiToolKind = 'worker' | 'todo_control' | 'context_still' | 'terminal';
+export type NativeApiToolKind =
+  | 'worker'
+  | 'todo_control'
+  | 'context_still'
+  | 'context_window'
+  | 'terminal';
 
 export type NativeApiToolRegistration = {
   name: NativeApiRuntimeToolName;
@@ -116,6 +122,30 @@ const workerToolDefinitions: NativeApiToolRegistration[] = [
     },
   },
   {
+    name: 'import_project',
+    kind: 'worker',
+    workerToolName: 'import_project',
+    definition: {
+      name: 'import_project',
+      description:
+        'Import a starter scaffold or Git repository into the project. Use this as the only project import entrypoint.',
+      inputSchema: objectSchema({
+        source: { type: 'string', enum: ['starter', 'git'] },
+        stack: { type: 'string', enum: ['hono', 'python'] },
+        variant: { type: 'string' },
+        overlays: { type: 'array', items: { type: 'string' } },
+        repoUrl: { type: 'string' },
+        ref: { type: 'string' },
+        depth: { type: 'number' },
+        targetPath: { type: 'string' },
+        overwrite: { type: 'boolean' },
+        stripGitDir: { type: 'boolean' },
+        exclude: { type: 'array', items: { type: 'string' } },
+        initialize: { type: 'boolean' },
+      }),
+    },
+  },
+  {
     name: 'run_verification',
     kind: 'worker',
     workerToolName: 'run_verification',
@@ -163,6 +193,15 @@ const nativeApiToolRegistrations: NativeApiToolRegistration[] = [
         },
         ['goal']
       ),
+    },
+  },
+  {
+    name: 'new_context',
+    kind: 'context_window',
+    definition: {
+      name: 'new_context',
+      description: 'Start a new context window without summarizing conversation history.',
+      inputSchema: objectSchema({}),
     },
   },
   {

@@ -21,9 +21,10 @@ export type NativeApiHistoryItem =
   | { type: 'tool_result'; toolCallId: string; toolName: string; result: NativeApiToolResult };
 
 export function buildInitialNativeApiHistory(context: AgentRunContext): NativeApiHistoryItem[] {
+  const userMessage = context.latestUserMessage || context.compiledPrompt;
   const items: NativeApiHistoryItem[] = [
     { type: 'system', content: buildNativeApiSystemPrompt(context) },
-    { type: 'user', source: 'user', content: context.compiledPrompt },
+    { type: 'user', source: 'user', content: userMessage },
   ];
   const currentTodo = context.currentTodo;
   if (currentTodo) {
@@ -94,6 +95,7 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
     'あなたは NightWorkers の native/API lane coding agent runtime です。',
     'Codex 型の turn lifecycle / tool dispatch / cancellation discipline に従って実行します。',
     'Codex SDK lane へ fallback せず、SchemaFirst supervisor loop へ fallback しません。',
+    'new_context tool は、会話履歴を要約せず次の provider turn から新しい context window を開始します。',
     'リポジトリの読み書きは登録済み Project の repo root を基準にし、worker tool handler 経由で行います。',
     `repoRoot: ${context.repoRoot}`,
   ].join('\n');

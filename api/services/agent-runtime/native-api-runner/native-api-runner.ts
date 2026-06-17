@@ -5,11 +5,20 @@ import { callProviderToolTurn } from '../../structured-llm/providers';
 import { normalizeStructuredLlmModelTarget } from '../../structured-llm/selection';
 import type { ProviderToolTurnResult } from '../../structured-llm/tool-calls';
 import type { AgentRunContext, AgentRuntimeResult, AgentRuntimeSink } from '../types';
+import {
+  NativeApiCloseoutController,
+  type NativeApiCloseoutControllerLike,
+} from './native-api-closeout-controller';
 import { buildNativeApiProviderRequest } from './native-api-request-adapter';
 import { NativeApiSessionStore } from './native-api-session-store';
 import {
+  NativeApiStartupController,
+  type NativeApiStartupControllerLike,
+} from './native-api-startup-controller';
+import {
   dispatchNativeApiToolCall,
   type NativeApiDispatchState,
+  type NativeApiPostImportState,
 } from './native-api-tool-dispatcher';
 import { buildInitialNativeApiHistory, type NativeApiHistoryItem } from './native-api-tool-history';
 import { getNativeApiToolDefinitions } from './native-api-tool-registry';
@@ -23,6 +32,8 @@ export class NativeApiRunner {
   private readonly cancelledRunIds = new Set<string>();
   private readonly activeRunControllers = new Map<string, AbortController>();
   private readonly store: NativeApiSessionStore;
+  private readonly startupController: NativeApiStartupControllerLike;
+  private readonly closeoutController: NativeApiCloseoutControllerLike;
   private readonly providerTurn: NativeApiToolTurnProvider;
   private readonly usageRecorder: NativeApiUsageRecorder;
   private readonly maxTurns: number;
@@ -30,12 +41,18 @@ export class NativeApiRunner {
   constructor(
     input: {
       store?: NativeApiSessionStore;
+      startupController?: NativeApiStartupControllerLike;
+      closeoutController?: NativeApiCloseoutControllerLike;
       providerTurn?: NativeApiToolTurnProvider;
       usageRecorder?: NativeApiUsageRecorder;
       maxTurns?: number;
     } = {}
   ) {
     this.store = input.store ?? new NativeApiSessionStore();
+    this.startupController =
+      input.startupController ?? new NativeApiStartupController({ store: this.store });
+    this.closeoutController =
+      input.closeoutController ?? new NativeApiCloseoutController({ store: this.store });
     this.providerTurn = input.providerTurn ?? callProviderToolTurn;
     this.usageRecorder = input.usageRecorder ?? recordLlmUsage;
     this.maxTurns = input.maxTurns ?? DEFAULT_MAX_NATIVE_API_TURNS;
@@ -54,19 +71,48 @@ export class NativeApiRunner {
     let state: NativeApiDispatchState = {
       readFiles: [],
       specificationRead: false,
+      initialInstructionsCompleted: false,
+      contextCompiled: false,
+      todoAligned: false,
+      startupCompleted: false,
+      postImport: null,
+      importProjectSucceeded: false,
+      copyDirectorySucceeded: false,
+      manifestReadAfterImport: false,
+      successfulVerificationCommands: [],
+      compileEvalCompleted: false,
     };
     let lastTodoSnapshotContent: string | null = null;
+    let lastPostImportHistoryToolCallId: string | null = null;
     const routeOverride = readRuntimeLlmRouteOverride(context);
     const runController = new AbortController();
     this.activeRunControllers.set(context.runId, runController);
     const timeout = createTimeoutSignal(signal, runController.signal, context.timeoutSeconds);
     try {
+      const startup = await this.startupController.runStartup({
+        context,
+        sink,
+        history,
+        state,
+        signal: timeout.signal,
+      });
+      history = startup.history;
+      state = startup.state;
+      if (!startup.ok) {
+        return startup.result;
+      }
+      const contextWindowBaselineHistory = [...history];
+
       for (let turnIndex = 1; turnIndex <= this.maxTurns; turnIndex += 1) {
         if (await this.isCancelled(context.runId, timeout.signal)) return this.toCancelled();
         const todoSnapshot = await buildTodoSnapshotHistoryItem(context.runId);
         if (todoSnapshot && todoSnapshot.content !== lastTodoSnapshotContent) {
           history = [...history, todoSnapshot];
           lastTodoSnapshotContent = todoSnapshot.content;
+        }
+        if (state.postImport && state.postImport.toolCallId !== lastPostImportHistoryToolCallId) {
+          history = [...history, buildPostImportHistoryItem(state.postImport)];
+          lastPostImportHistoryToolCallId = state.postImport.toolCallId;
         }
         const providerRequest = buildNativeApiProviderRequest({
           context,
@@ -290,6 +336,17 @@ export class NativeApiRunner {
             modelVisibleOutput: dispatch.toolResult.content,
           });
           if (dispatch.kind === 'final') {
+            const closeout = await this.closeoutController.runCompileEval({
+              context,
+              sink,
+              turnId: turn.id,
+              state,
+              finalReport: dispatch.finalReport,
+            });
+            state = closeout.state;
+            if (!closeout.skipped) {
+              history = [...history, closeout.historyItem];
+            }
             await this.store.finishTurn({
               turnId: turn.id,
               status: 'completed',
@@ -314,6 +371,27 @@ export class NativeApiRunner {
           providerDebug: providerResult.providerDebug ?? providerDebug,
           model: providerResult.model ?? null,
         });
+
+        if (state.newContextWindowRequested) {
+          history = [...contextWindowBaselineHistory];
+          state = {
+            ...state,
+            newContextWindowRequested: false,
+          };
+          lastTodoSnapshotContent = null;
+          lastPostImportHistoryToolCallId = null;
+          await sink.emit({
+            type: 'tool_call_progress',
+            message:
+              '[NativeApiRunner] started a new provider context window without summarizing conversation history.',
+            payload: {
+              action: 'context_window_started',
+              runtime: 'native_api_runner',
+              turnIndex,
+              retainedHistoryItems: history.length,
+            },
+          });
+        }
       }
     } finally {
       timeout.dispose();
@@ -391,6 +469,40 @@ async function buildTodoSnapshotHistoryItem(
   }
 }
 
+function buildPostImportHistoryItem(
+  postImport: NativeApiPostImportState
+): Extract<NativeApiHistoryItem, { type: 'user' }> {
+  const manifest = toRecord(postImport.manifest);
+  const packageJson = toRecord(manifest?.packageJson);
+  const scripts = toRecord(packageJson?.scripts);
+  return {
+    type: 'user',
+    source: 'state_card',
+    content: [
+      '[Native API Runner Post Import]',
+      `toolCallId=${postImport.toolCallId}`,
+      `mode=${postImport.mode}`,
+      `templateId=${postImport.templateId ?? 'none'}`,
+      `variant=${postImport.variant ?? 'none'}`,
+      `manifestStatus=${typeof manifest?.status === 'string' ? manifest.status : 'unknown'}`,
+      `manifestPath=${typeof manifest?.path === 'string' ? manifest.path : 'unknown'}`,
+      `detectedPackageManager=${
+        typeof manifest?.detectedPackageManager === 'string'
+          ? manifest.detectedPackageManager
+          : 'unknown'
+      }`,
+      `scripts=${Object.keys(scripts ?? {}).join(', ') || 'none'}`,
+      `recommendedVerificationCommands=${
+        postImport.recommendedVerificationCommands.join(' | ') || 'none'
+      }`,
+      `verifiedCommand=${postImport.verifiedCommand ?? 'none'}`,
+      postImport.llmContext ? 'llmContext=available' : 'llmContext=missing',
+      '',
+      'Use this postImport payload before re-reading package manifests. If recommended verification commands exist, run one successfully before finalize_answer.',
+    ].join('\n'),
+  };
+}
+
 async function recordNativeApiTurnUsage(input: {
   context: AgentRunContext;
   providerResult: Extract<ProviderToolTurnResult, { type: 'supported' }>;
@@ -459,4 +571,10 @@ function createTimeoutSignal(
       runSignal.removeEventListener('abort', abortFromRun);
     },
   };
+}
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }

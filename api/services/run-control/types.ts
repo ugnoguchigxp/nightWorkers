@@ -41,7 +41,7 @@ export type BudgetDecision = {
   detail?: Record<string, unknown>;
 };
 
-export type SupervisorLoopResult = {
+export type RuntimeExecutionResult = {
   finalReport: string;
   terminalState:
     | 'completed'
@@ -65,7 +65,7 @@ export type SupervisorLoopResult = {
 };
 
 export type OutcomeGateInput = {
-  supervisor: SupervisorLoopResult;
+  runtime: RuntimeExecutionResult;
   hasDiff?: boolean;
   verificationPassed?: boolean;
   safetyViolation?: boolean;

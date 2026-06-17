@@ -36,6 +36,7 @@ describe('NativeApiRunner', () => {
     const usageRecorder = vi.fn(async () => undefined);
     const runner = new NativeApiRunner({
       store: store.instance,
+      startupController: createNoopStartup(),
       providerTurn,
       usageRecorder,
       maxTurns: 1,
@@ -77,6 +78,7 @@ describe('NativeApiRunner', () => {
     ]);
     const runner = new NativeApiRunner({
       store: store.instance,
+      startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
       maxTurns: 1,
@@ -138,6 +140,7 @@ describe('NativeApiRunner', () => {
     ]);
     const runner = new NativeApiRunner({
       store: store.instance,
+      startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
       maxTurns: 1,
@@ -168,6 +171,89 @@ describe('NativeApiRunner', () => {
           },
         }),
       })
+    );
+  });
+
+  it('starts a fresh provider history after new_context without summarizing prior turns', async () => {
+    const store = createFakeStore();
+    const providerTurn = createProvider([
+      {
+        type: 'supported',
+        content: 'the current window is too large',
+        toolCalls: [{ id: 'call-new-context', name: 'new_context', arguments: {} }],
+        usage: usage(),
+        model: 'api-model',
+      },
+      {
+        type: 'supported',
+        content: 'ready after fresh context',
+        toolCalls: [
+          {
+            id: 'call-final',
+            name: 'finalize_answer',
+            arguments: { finalReport: 'done after new context' },
+          },
+        ],
+        usage: usage(),
+        model: 'api-model',
+      },
+    ]);
+    const events: AgentRuntimeEvent[] = [];
+    const runner = new NativeApiRunner({
+      store: store.instance,
+      startupController: createNoopStartup(),
+      providerTurn,
+      usageRecorder: vi.fn(async () => undefined),
+      maxTurns: 2,
+    });
+
+    const result = await runner.run(
+      buildContext({
+        compiledPrompt: 'raw compiled prompt',
+        latestUserMessage: '<USER_REQUEST>\nimplement the requested change\n</USER_REQUEST>',
+        contextSnapshot: {
+          compiledPrompt: 'raw compiled prompt',
+          source: 'fallback',
+        },
+      }),
+      createSink(events)
+    );
+
+    expect(result).toMatchObject({
+      terminalState: 'completed',
+      finalReport: 'done after new context',
+    });
+    expect(providerTurn).toHaveBeenCalledTimes(2);
+    const firstMessages = vi.mocked(providerTurn).mock.calls[0][0].messages;
+    const secondMessages = vi.mocked(providerTurn).mock.calls[1][0].messages;
+    expect(firstMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'user',
+          content: '<USER_REQUEST>\nimplement the requested change\n</USER_REQUEST>',
+        }),
+      ])
+    );
+    expect(secondMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'user',
+          content: '<USER_REQUEST>\nimplement the requested change\n</USER_REQUEST>',
+        }),
+      ])
+    );
+    expect(JSON.stringify(secondMessages)).not.toContain('the current window is too large');
+    expect(JSON.stringify(secondMessages)).not.toContain('call-new-context');
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'tool_call_progress',
+          payload: expect.objectContaining({
+            action: 'context_window_started',
+            runtime: 'native_api_runner',
+          }),
+        }),
+      ])
     );
   });
 
@@ -217,6 +303,7 @@ describe('NativeApiRunner', () => {
     ]);
     const runner = new NativeApiRunner({
       store: store.instance,
+      startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
       maxTurns: 2,
@@ -260,6 +347,7 @@ describe('NativeApiRunner', () => {
     ]);
     const runner = new NativeApiRunner({
       store: store.instance,
+      startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
       maxTurns: 1,
@@ -305,6 +393,7 @@ describe('NativeApiRunner', () => {
     ) as unknown as NativeApiToolTurnProvider;
     const runner = new NativeApiRunner({
       store: store.instance,
+      startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
       maxTurns: 1,
@@ -346,6 +435,7 @@ describe('NativeApiRunner', () => {
     ]);
     const runner = new NativeApiRunner({
       store: store.instance,
+      startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
       maxTurns: 1,
@@ -372,6 +462,43 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
         operation: {
           enum: ['replace', 'start', 'done', 'block', 'fail'],
         },
+      },
+    });
+  });
+
+  it('exposes Codex-style new_context as an empty model-visible tool', () => {
+    const newContextTool = getNativeApiToolDefinitions().find(
+      (tool) => tool.name === 'new_context'
+    );
+
+    expect(newContextTool).toMatchObject({
+      name: 'new_context',
+      description: 'Start a new context window without summarizing conversation history.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+        required: [],
+        additionalProperties: false,
+      },
+    });
+  });
+
+  it('marks the dispatch state when new_context is called', async () => {
+    const result = await dispatchNativeApiToolCall({
+      toolCall: { id: 'call-new-context', name: 'new_context', arguments: {} },
+      context: buildContext(),
+      sink: createSink(),
+      state: { readFiles: [], specificationRead: true },
+    });
+
+    expect(result.kind).toBe('continue');
+    expect(result.state).toMatchObject({
+      newContextWindowRequested: true,
+    });
+    expect(result.toolResult).toMatchObject({
+      ok: true,
+      payload: {
+        newContextWindowRequested: true,
       },
     });
   });
@@ -463,6 +590,16 @@ function createFakeStore() {
     }),
   } as unknown as NativeApiSessionStore;
   return { instance, turns, finishedTurns, toolCalls, runningToolCalls, finishedToolCalls };
+}
+
+function createNoopStartup() {
+  return {
+    runStartup: vi.fn(async (input) => ({
+      ok: true as const,
+      history: input.history,
+      state: input.state,
+    })),
+  };
 }
 
 function createSink(events: AgentRuntimeEvent[] = []) {

@@ -1,10 +1,15 @@
-import type { ProcedureSnapshot } from '../procedures';
-import type { TaskType } from '../task-intake';
-
 export type RuntimeLaneSnapshot = {
   workerKind: 'native-local' | 'codex-agent';
   source: 'task' | 'queue' | 'settings' | 'env' | 'role_route' | 'provider_default';
   diagnostics?: Array<{ level: 'info' | 'warning'; message: string }>;
+};
+
+export type TodoProcedureSnapshot = {
+  id?: string | null;
+  source?: string | null;
+  title?: string | null;
+  digest?: string | null;
+  [key: string]: unknown;
 };
 
 export type RuntimePromptSnapshot = {
@@ -49,9 +54,9 @@ export type TodoContextInput = {
     seq: number;
     title: string;
     description?: string | null;
-    taskType: TaskType | string;
+    taskType: string;
     procedureId?: string | null;
-    procedureSnapshot?: ProcedureSnapshot | null;
+    procedureSnapshot?: TodoProcedureSnapshot | null;
   };
   runContext: RuntimePromptSnapshot;
   previousTodoSummaries?: Array<{

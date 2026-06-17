@@ -11,6 +11,29 @@ import { getNativeApiToolRegistration } from './native-api-tool-registry';
 export type NativeApiDispatchState = {
   readFiles: string[];
   specificationRead: boolean;
+  initialInstructionsCompleted?: boolean;
+  contextCompiled?: boolean;
+  todoAligned?: boolean;
+  startupCompleted?: boolean;
+  newContextWindowRequested?: boolean;
+  postImport?: NativeApiPostImportState | null;
+  importProjectSucceeded?: boolean;
+  importProjectFailed?: boolean;
+  copyDirectorySucceeded?: boolean;
+  manifestReadAfterImport?: boolean;
+  successfulVerificationCommands?: string[];
+  compileEvalCompleted?: boolean;
+};
+
+export type NativeApiPostImportState = {
+  toolCallId: string;
+  mode: 'template' | 'git';
+  templateId?: string | null;
+  variant?: string | null;
+  manifest?: unknown;
+  llmContext?: unknown;
+  recommendedVerificationCommands: string[];
+  verifiedCommand?: string | null;
 };
 
 export type NativeApiDispatchResult =
@@ -53,6 +76,13 @@ export async function dispatchNativeApiToolCall(input: {
     return continueWith(await dispatchContextCompile(input), input.state);
   }
 
+  if (registration.kind === 'context_window') {
+    return continueWith(successfulNewContextWindow(), {
+      ...input.state,
+      newContextWindowRequested: true,
+    });
+  }
+
   const workerToolName = registration.workerToolName;
   if (!workerToolName) {
     return continueWith(
@@ -90,14 +120,106 @@ export async function dispatchNativeApiToolCall(input: {
       error: dispatch.result.error,
     },
   });
-  const nextState = {
+  const nextState = updateDispatchStateAfterWorkerTool({
+    state: input.state,
+    toolCall: input.toolCall,
+    workerToolName,
+    dispatch,
+  });
+  return continueWith(result, nextState);
+}
+
+function updateDispatchStateAfterWorkerTool(input: {
+  state: NativeApiDispatchState;
+  toolCall: ProviderToolCall;
+  workerToolName: string;
+  dispatch: Awaited<ReturnType<typeof executeWorkerTool>>;
+}): NativeApiDispatchState {
+  const result = input.dispatch.result;
+  const nextState: NativeApiDispatchState = {
     ...input.state,
-    readFiles: dispatch.readFilesChanged ?? input.state.readFiles,
+    readFiles: input.dispatch.readFilesChanged ?? input.state.readFiles,
     specificationRead:
       input.state.specificationRead ||
-      (workerToolName === 'read_current_specification' && dispatch.result.ok),
+      (input.workerToolName === 'read_current_specification' && result.ok),
   };
-  return continueWith(result, nextState);
+
+  if (input.workerToolName === 'read_file' && input.state.postImport) {
+    const filePath =
+      typeof input.toolCall.arguments.filePath === 'string'
+        ? input.toolCall.arguments.filePath
+        : '';
+    if (isProjectManifestPath(filePath)) {
+      nextState.manifestReadAfterImport = true;
+    }
+  }
+
+  if (input.workerToolName === 'import_project' && result.ok) {
+    const payload = toRecord(result.payload);
+    const postImport = toRecord(payload?.postImport);
+    const manifest = postImport?.manifest;
+    const mode = payload?.mode === 'git' ? 'git' : 'template';
+    nextState.importProjectSucceeded = true;
+    nextState.importProjectFailed = false;
+    nextState.successfulVerificationCommands = [];
+    nextState.postImport = {
+      toolCallId: input.toolCall.id,
+      mode,
+      templateId:
+        typeof input.toolCall.arguments.templateId === 'string'
+          ? input.toolCall.arguments.templateId
+          : typeof input.toolCall.arguments.stack === 'string'
+            ? input.toolCall.arguments.stack
+            : null,
+      variant:
+        typeof input.toolCall.arguments.variant === 'string'
+          ? input.toolCall.arguments.variant
+          : null,
+      manifest,
+      llmContext: postImport?.llmContext,
+      recommendedVerificationCommands: readRecommendedVerificationCommands(manifest),
+      verifiedCommand: null,
+    };
+    nextState.manifestReadAfterImport = Boolean(manifest);
+  }
+
+  if (input.workerToolName === 'import_project' && !result.ok) {
+    nextState.importProjectFailed = true;
+  }
+
+  if (input.workerToolName === 'copy_directory' && result.ok) {
+    nextState.copyDirectorySucceeded = true;
+  }
+
+  if (input.workerToolName === 'run_verification' && result.ok) {
+    const command =
+      typeof input.toolCall.arguments.command === 'string'
+        ? input.toolCall.arguments.command
+        : null;
+    const normalizedCommand = normalizeVerificationCommand(command);
+    nextState.successfulVerificationCommands = [
+      ...(input.state.successfulVerificationCommands ?? []),
+      ...(normalizedCommand ? [normalizedCommand] : []),
+    ];
+    if (nextState.postImport && normalizedCommand) {
+      const recommendedCommands = nextState.postImport.recommendedVerificationCommands
+        .map((item) => normalizeVerificationCommand(item))
+        .filter((item): item is string => item !== null);
+      if (
+        recommendedCommands.length === 0 ||
+        recommendedCommands.some((recommended) =>
+          verificationCommandsMatch(normalizedCommand, recommended)
+        )
+      ) {
+        nextState.postImport = {
+          ...nextState.postImport,
+          verifiedCommand: normalizedCommand,
+        };
+      }
+    }
+  }
+
+  return nextState;
 }
 
 async function dispatchTodoTool(input: {
@@ -182,6 +304,10 @@ async function finalizeAnswer(input: {
       input.state
     );
   }
+  const guard = validateFinalizeGuard(input.state);
+  if (guard) {
+    return continueWith(failedToolResult(guard.code, guard.message), input.state);
+  }
   const finalReport =
     typeof input.toolCall.arguments.finalReport === 'string'
       ? input.toolCall.arguments.finalReport.trim()
@@ -206,6 +332,43 @@ async function finalizeAnswer(input: {
       payload: { summary, finalReport },
     },
     state: input.state,
+  };
+}
+
+function validateFinalizeGuard(
+  state: NativeApiDispatchState
+): { code: string; message: string } | null {
+  if (state.importProjectFailed && !state.importProjectSucceeded) {
+    return {
+      code: 'POST_IMPORT_FAILED',
+      message:
+        'finalize_answer is blocked because import_project failed. Do not use fallback project import or static implementation paths.',
+    };
+  }
+  const importedProject = state.importProjectSucceeded || state.copyDirectorySucceeded;
+  if (!importedProject) return null;
+  if (!state.manifestReadAfterImport && !state.postImport?.manifest) {
+    return {
+      code: 'POST_IMPORT_MANIFEST_REQUIRED',
+      message:
+        'finalize_answer is blocked after project import until package.json or pyproject.toml is read, or postImport.manifest exists.',
+    };
+  }
+  const recommendedCommands = state.postImport?.recommendedVerificationCommands ?? [];
+  if (recommendedCommands.length === 0) return null;
+  if (state.postImport?.verifiedCommand) return null;
+  const successfulCommands = state.successfulVerificationCommands ?? [];
+  if (successfulCommands.length > 0) {
+    return {
+      code: 'POST_IMPORT_RECOMMENDED_VERIFICATION_MISMATCH',
+      message:
+        'finalize_answer is blocked because successful post-import verification did not match any recommended verification command.',
+    };
+  }
+  return {
+    code: 'POST_IMPORT_VERIFICATION_REQUIRED',
+    message:
+      'finalize_answer is blocked until at least one recommended post-import verification command succeeds.',
   };
 }
 
@@ -243,6 +406,63 @@ function failedToolResult(code: string, message: string): NativeApiToolResult {
     content: JSON.stringify({ ok: false, error: { code, message } }),
     error: { code, message },
   };
+}
+
+function successfulNewContextWindow(): NativeApiToolResult {
+  const message = 'A new context window will start without summarizing conversation history.';
+  return {
+    ok: true,
+    content: message,
+    payload: {
+      newContextWindowRequested: true,
+      message,
+    },
+  };
+}
+
+function readRecommendedVerificationCommands(manifest: unknown): string[] {
+  const record = toRecord(manifest);
+  const commands = Array.isArray(record?.recommendedVerificationCommands)
+    ? record.recommendedVerificationCommands
+    : [];
+  return commands.filter(
+    (command): command is string => typeof command === 'string' && command.trim().length > 0
+  );
+}
+
+function isProjectManifestPath(filePath: string) {
+  return /(^|\/)(package\.json|pyproject\.toml)$/.test(filePath.trim());
+}
+
+function normalizeVerificationCommand(command: string | null): string | null {
+  if (!command) return null;
+  const normalized = command.trim().replace(/\s+/g, ' ');
+  return normalized.length > 0 ? normalized : null;
+}
+
+function verificationCommandsMatch(actual: string | null, recommended: string | null): boolean {
+  if (!actual || !recommended) return false;
+  if (actual === recommended) return true;
+  return verificationCommandEquivalentKey(actual) === verificationCommandEquivalentKey(recommended);
+}
+
+function verificationCommandEquivalentKey(command: string): string {
+  const parts = command.split(' ');
+  const runner = parts[0];
+  if (
+    (runner === 'bun' || runner === 'pnpm' || runner === 'yarn') &&
+    parts[1] === 'run' &&
+    parts[2]
+  ) {
+    return [runner, ...parts.slice(2)].join(' ');
+  }
+  return command;
+}
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function isTodoMutationOperation(value: unknown): value is Exclude<TodoListOperation, 'list'> {

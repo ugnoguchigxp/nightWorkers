@@ -160,7 +160,7 @@ export async function reviewTaskRun(runId: string, request: ReviewRunRequest) {
   const defaultEvidenceRefs = collectDefaultReviewEvidence(run, events);
 
   const outcome = decideRunOutcome({
-    supervisor: {
+    runtime: {
       finalReport: run.finalReport || '',
       terminalState: toRuntimeTerminalState(run.status),
       summary: run.summary || `Review action: ${request.action}`,

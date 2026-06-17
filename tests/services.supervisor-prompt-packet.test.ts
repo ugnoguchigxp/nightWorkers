@@ -5,9 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildRound1JobTypePrompt,
   buildRound1PromptPacket,
-  buildRound2PromptPacket,
-  buildRound2ToolCallPrompt,
-  getAllowedToolsForJobType,
 } from '../api/services/supervisor/prompt';
 
 const originalCodexHome = process.env.NIGHTWORKERS_CODEX_HOME;
@@ -24,33 +21,6 @@ describe('supervisor prompt packet', () => {
     if (originalCodexHome === undefined) delete process.env.NIGHTWORKERS_CODEX_HOME;
     else process.env.NIGHTWORKERS_CODEX_HOME = originalCodexHome;
     fs.rmSync(codexHome, { recursive: true, force: true });
-  });
-
-  it('keeps public prompt rendering while exposing inspectable packet sections', () => {
-    const packet = buildRound2PromptPacket({
-      projectRoot: '/repo',
-      jobType: 'minor_code_edit',
-      tools: getAllowedToolsForJobType('minor_code_edit'),
-    });
-    const rendered = buildRound2ToolCallPrompt({
-      projectRoot: '/repo',
-      jobType: 'minor_code_edit',
-      tools: getAllowedToolsForJobType('minor_code_edit'),
-    });
-
-    expect(packet.diagnostics).toMatchObject({
-      round: 2,
-      projectRoot: '/repo',
-      jobType: 'minor_code_edit',
-    });
-    expect(packet.executionEvidence.join('\n')).toContain('[Minimum Execution Contract]');
-    expect(packet.executionEvidence.join('\n')).toContain(
-      'apply_patch/replace_content for implementation'
-    );
-    expect(packet.executionEvidence.join('\n')).toContain('Progress Context の nextConcreteAction');
-    expect(packet.outputContract.join('\n')).toContain('[Allowed Tools]');
-    expect(rendered).toContain('[Minimum Execution Contract]');
-    expect(rendered).not.toContain('"diagnostics"');
   });
 
   it('renders round1 from packet without exposing diagnostics', () => {

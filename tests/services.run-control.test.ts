@@ -6,7 +6,7 @@ describe('RunControl', () => {
   describe('RunOutcomeGate', () => {
     it('keeps needs_human and never upgrades to completed automatically', () => {
       const outcome = decideRunOutcome({
-        supervisor: {
+        runtime: {
           finalReport: 'Need help',
           terminalState: 'needs_human',
           summary: 'manual step required',
@@ -19,7 +19,7 @@ describe('RunControl', () => {
 
     it('maps completed supervisor result to needs_review by default', () => {
       const outcome = decideRunOutcome({
-        supervisor: {
+        runtime: {
           finalReport: 'Done',
           terminalState: 'completed',
           summary: 'completed',
@@ -32,7 +32,7 @@ describe('RunControl', () => {
 
     it('accepts explicit human complete action', () => {
       const outcome = decideRunOutcome({
-        supervisor: {
+        runtime: {
           finalReport: 'Done',
           terminalState: 'needs_review',
           summary: 'waiting for review',
@@ -46,7 +46,7 @@ describe('RunControl', () => {
 
     it('maps policy-stopped supervisor result to policy violation', () => {
       const outcome = decideRunOutcome({
-        supervisor: {
+        runtime: {
           finalReport: 'Blocked',
           terminalState: 'needs_human',
           summary: 'Stopped by policy block',
@@ -60,7 +60,7 @@ describe('RunControl', () => {
 
     it('maps hook-stopped supervisor result to hook_blocked', () => {
       const outcome = decideRunOutcome({
-        supervisor: {
+        runtime: {
           finalReport: 'Blocked',
           terminalState: 'blocked',
           summary: 'Stopped by agent hook',
@@ -74,7 +74,7 @@ describe('RunControl', () => {
 
     it('maps budget-stopped supervisor result to budget_exceeded', () => {
       const outcome = decideRunOutcome({
-        supervisor: {
+        runtime: {
           finalReport: 'Stopped by budget',
           terminalState: 'needs_human',
           summary: 'Repeated schema fallback',
