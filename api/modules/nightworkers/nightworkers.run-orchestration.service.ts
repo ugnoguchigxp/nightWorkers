@@ -514,6 +514,9 @@ function resolveExecutionModeFromMessages(
 ): NativeApiExecutionMode {
   for (const message of [...messages].reverse()) {
     const metadata = toRecord(message.metadataJson);
+    if (isImplementationHandoffMessage(message, metadata)) {
+      return 'implementation';
+    }
     const selection = toRecord(metadata?.intakeJobSelection) ?? toRecord(metadata?.jobSelection);
     const jobType = typeof selection?.jobType === 'string' ? selection.jobType : null;
     if (jobType) {
@@ -530,7 +533,28 @@ function resolveExecutionModeFromMessages(
   return 'implementation';
 }
 
-export async function startTaskRun(taskId: string) {
+function isImplementationHandoffMessage(
+  message: Awaited<ReturnType<typeof repo.listTaskMessages>>[number],
+  metadata: Record<string, unknown> | null
+) {
+  if (message.messageType !== 'markdown_document') return false;
+  const intent = String(metadata?.intent || '').toLowerCase();
+  return intent === 'implementation_plan' || intent === 'draft_spec';
+}
+
+export type StartTaskRunOptions = {
+  executionMode?: NativeApiExecutionMode;
+  executionModeSource?:
+    | 'message_history'
+    | 'workbench_intake'
+    | 'workbench_run'
+    | 'workbench_run_task'
+    | 'implementation_queue'
+    | 'session_queue'
+    | 'explicit';
+};
+
+export async function startTaskRun(taskId: string, options: StartTaskRunOptions = {}) {
   const task = await repo.getTask(taskId);
   if (!task) {
     throw new NotFoundError('Task not found');
@@ -564,7 +588,10 @@ export async function startTaskRun(taskId: string) {
   if (!compiledPromptText.trim()) {
     throw new AppError(400, 'EMPTY_PROMPT', 'No user message found to start a run');
   }
-  const executionMode = resolveExecutionModeFromMessages(messages);
+  const executionMode = options.executionMode ?? resolveExecutionModeFromMessages(messages);
+  const executionModeSource = options.executionMode
+    ? (options.executionModeSource ?? 'explicit')
+    : 'message_history';
   const runtimeRole = nativeApiRoleForExecutionMode(executionMode);
   const blueprintReadiness = await resolveBlueprintPlanningReadiness(taskId);
   const settings = getCurrentSettings();
@@ -607,6 +634,7 @@ export async function startTaskRun(taskId: string) {
     contextSnapshot: {
       compiledPrompt: compiledPromptText,
       executionMode,
+      executionModeSource,
       blueprintPlanning: blueprintReadiness,
       runtimeLane: runtimeLaneResolution.lane,
       runtimeLaneResolution: {
@@ -648,6 +676,7 @@ export async function startTaskRun(taskId: string) {
     data: {
       contextSource: 'task_prompt',
       executionMode,
+      executionModeSource,
       runtimeRole,
       blueprintPlanning: blueprintReadiness,
       runtimeLane: runtimeLaneResolution.lane,
@@ -681,6 +710,7 @@ export async function startTaskRun(taskId: string) {
     source: 'task_prompt',
     degraded: false,
     executionPhase: executionMode,
+    executionModeSource,
     planModeClosed: executionMode === 'implementation',
     blueprintPlanning: blueprintReadiness,
     runtimeLane: runtimeLaneResolution.lane,
@@ -777,6 +807,7 @@ export async function startTaskRun(taskId: string) {
       runtimeLaneResolution,
       effectiveLlmRouting,
       executionMode,
+      executionModeSource,
       runtimeRole,
     },
   });
@@ -1184,7 +1215,10 @@ async function drainImplementationQueue(started: Awaited<ReturnType<typeof start
     const claimed = await repo.claimNextImplementationQueueEntry(settings.processorCount);
     if (!claimed) break;
     try {
-      const run = await startTaskRun(claimed.taskId);
+      const run = await startTaskRun(claimed.taskId, {
+        executionMode: 'implementation',
+        executionModeSource: 'implementation_queue',
+      });
       started.push(run);
       await repo.updateImplementationQueueEntry(claimed.id, {
         status: 'processing',
@@ -1314,7 +1348,10 @@ async function drainSessionQueueForRepository(repositoryId: string) {
     if (!nextTask) break;
 
     try {
-      const run = await startTaskRun(nextTask.id);
+      const run = await startTaskRun(nextTask.id, {
+        executionMode: 'implementation',
+        executionModeSource: 'session_queue',
+      });
       started.push(run);
     } catch (err) {
       await repo.updateTaskStatus(nextTask.id, 'failed');

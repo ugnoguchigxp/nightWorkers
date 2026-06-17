@@ -82,7 +82,10 @@ export async function startWorkbenchTaskRun(taskId: string) {
   const task = await repo.getTask(taskId);
   const messages = await repo.listTaskMessages(taskId);
   assertRunnableWorkbenchTask(task, messages);
-  return startTaskRun(taskId);
+  return startTaskRun(taskId, {
+    executionMode: 'implementation',
+    executionModeSource: 'workbench_run',
+  });
 }
 
 export async function createWorkbenchSession(data: {

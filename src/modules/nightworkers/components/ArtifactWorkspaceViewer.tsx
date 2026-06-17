@@ -374,7 +374,7 @@ export function BlueprintSpecificationWorkspaceViewer({
               generateSpecificationArtifact('design-doc', 'specification')
             }
             onQueueSession={
-              onQueueSession ? () => runSessionAction('queue-session', onQueueSession) : undefined
+              onQueueSession ? () => runSessionAction('start-session', onQueueSession) : undefined
             }
             onAddToQueue={
               onAddToQueue ? () => runSessionAction('add-to-queue', onAddToQueue) : undefined

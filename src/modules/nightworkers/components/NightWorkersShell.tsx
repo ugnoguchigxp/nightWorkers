@@ -315,6 +315,23 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     }
     focusTodoArtifact();
   }, [artifactFocus.type, focusTodoArtifact]);
+  const startSessionAndFocusTodo = useCallback(
+    async (sessionId: string) => {
+      const current = workspaceRef.current;
+      const targetSession =
+        current.sessions.find((session) => session.id === sessionId) || current.activeSession;
+      if (isImplementationLockedStatus(targetSession?.status)) return;
+      setShowOverviewScreen(false);
+      setShowQueueScreen(false);
+      props.onCloseSettings();
+      current.setActiveSessionId(sessionId);
+      setClearedArtifactContextId(null);
+      setArtifactFocus({ type: 'todo' });
+      await current.startRun(sessionId);
+      setArtifactFocus({ type: 'todo' });
+    },
+    [props.onCloseSettings]
+  );
   const queueSessionAndFocusTodo = useCallback(
     async (sessionId: string) => {
       const current = workspaceRef.current;
@@ -589,7 +606,11 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                 if (!workspace.activeSession) return;
                 workspace.deleteSession(workspace.activeSession.id);
               }}
-              onQueueSession={queueActiveSessionAndFocusTodo}
+              onQueueSession={async () => {
+                const sessionId = workspaceRef.current.activeSession?.id;
+                if (!sessionId) return;
+                await startSessionAndFocusTodo(sessionId);
+              }}
               onRemoveQueueEntry={() => {
                 const entryId = workspace.activeSessionView?.queueEntry?.id;
                 if (!entryId) return;

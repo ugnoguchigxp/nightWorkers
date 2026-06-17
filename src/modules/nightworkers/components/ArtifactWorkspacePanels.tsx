@@ -269,7 +269,7 @@ export function SpecificationStatusView({
         <div className="mt-4 flex flex-wrap justify-center gap-3">
           <StatusActionButton
             label="今すぐ実装開始"
-            busy={busyAction === 'queue-session'}
+            busy={busyAction === 'start-session'}
             disabled={!onQueueSession || isImplementationLocked}
             onClick={() => onQueueSession?.()}
             size="lg"

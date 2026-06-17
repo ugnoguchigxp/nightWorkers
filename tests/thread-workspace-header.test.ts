@@ -27,7 +27,7 @@ describe('ThreadWorkspace header', () => {
     expect(shellSource).not.toContain("sendWorkbenchMessage(session.id, prompt, 'draft_spec')");
   });
 
-  it('focuses the TODO artifact when implementation is queued', () => {
+  it('starts implementation from the TODO artifact while keeping queue add separate', () => {
     const shellSource = readFileSync(
       'src/modules/nightworkers/components/NightWorkersShell.tsx',
       'utf8'
@@ -37,8 +37,11 @@ describe('ThreadWorkspace header', () => {
       'utf8'
     );
 
+    expect(shellSource).toContain('startSessionAndFocusTodo');
+    expect(shellSource).toContain('await current.startRun(sessionId);');
     expect(shellSource).toContain("setArtifactFocus({ type: 'todo' });");
     expect(shellSource).toContain('queueSessionAndFocusTodo');
+    expect(shellSource).toContain('await current.createImplementationQueueEntry(sessionId);');
     expect(workspaceSource).toContain('onOpenTodoArtifact');
     expect(workspaceSource).not.toContain('nightworkers-thread-side-panel');
   });

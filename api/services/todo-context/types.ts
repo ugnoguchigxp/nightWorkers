@@ -18,6 +18,14 @@ export type RuntimePromptSnapshot = {
   degraded: boolean;
   degradedReason?: string;
   executionPhase?: 'planning' | 'implementation' | 'review' | 'runtime_debug' | 'general_answer';
+  executionModeSource?:
+    | 'message_history'
+    | 'workbench_intake'
+    | 'workbench_run'
+    | 'workbench_run_task'
+    | 'implementation_queue'
+    | 'session_queue'
+    | 'explicit';
   planModeClosed?: boolean;
   implementationPhasePreamble?: string;
   blueprintPlanning?: unknown;

@@ -393,6 +393,106 @@ describe('NightWorkers service', () => {
     );
   });
 
+  it('uses an explicit implementation handoff instead of stale planning intake', async () => {
+    const task = {
+      id: 'task-draft-spec-handoff',
+      repositoryId: 'repo-draft-spec-handoff',
+      title: 'Todo List',
+      description: '',
+      objective: 'todo list を作りたいです。 計画してください',
+      acceptanceCriteria: 'Todo List specification is ready for implementation',
+      timeoutSeconds: 60,
+    };
+    const run = {
+      id: 'run-draft-spec-handoff',
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+      status: 'running',
+    };
+    vi.mocked(repo.getTask).mockResolvedValue(task as never);
+    vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+    vi.mocked(repo.getRepository).mockResolvedValue({
+      id: task.repositoryId,
+      localPath: repoRoot,
+      safetyPolicy: {},
+    } as never);
+    vi.mocked(repo.listTaskMessages).mockResolvedValue([
+      {
+        id: 'message-user',
+        role: 'user',
+        content: 'todo list を作りたいです。 計画してください',
+        messageType: 'text',
+        metadataJson: null,
+      },
+      {
+        id: 'message-stale-planning-intake',
+        role: 'system',
+        content: 'Design Questionnaire を生成しました。',
+        messageType: 'text',
+        metadataJson: {
+          intent: 'design_questionnaire_ready',
+          intakeJobSelection: {
+            jobType: 'planning',
+            goal: 'todo list を作成するための実装方針と作業手順を整理する',
+          },
+        },
+      },
+      {
+        id: 'message-queue',
+        role: 'system',
+        content: 'Implementation Queue entry created.',
+        messageType: 'text',
+        metadataJson: {
+          source: 'implementation_queue',
+          status: 'queued',
+        },
+      },
+    ] as never);
+    vi.mocked(repo.createTaskRun).mockResolvedValue(run as never);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
+    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as never);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
+    const runtimeStart = vi.fn().mockResolvedValue({
+      terminalState: 'completed',
+      summary: 'Implementation done',
+      finalReport: 'Implementation report',
+      stoppedBy: 'decision',
+      riskLevel: 'low',
+      diffPatch: '',
+      logContent: '',
+    });
+    vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+      kind: 'native-local',
+      start: runtimeStart,
+      stop: vi.fn(),
+    } as never);
+
+    await startTaskRun(task.id, {
+      executionMode: 'implementation',
+      executionModeSource: 'workbench_run',
+    });
+
+    await vi.waitFor(() => {
+      expect(runtimeStart).toHaveBeenCalledTimes(1);
+    });
+    expect(repo.replaceTaskRunTodosForRun).not.toHaveBeenCalledWith(run.id, []);
+    expect(runtimeStart.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        latestUserMessage: `${implementationPhasePreamble}\n\ntodo list を作りたいです。 計画してください`,
+        runtimeOptions: expect.objectContaining({
+          executionMode: 'implementation',
+        }),
+        contextSnapshot: expect.objectContaining({
+          executionModeSource: 'workbench_run',
+          executionPhase: 'implementation',
+          planModeClosed: true,
+          implementationPhasePreamble,
+        }),
+      })
+    );
+  });
+
   it('does not auto-close unfinished Todos when runtime completes', async () => {
     const task = {
       id: 'task-open-todos',

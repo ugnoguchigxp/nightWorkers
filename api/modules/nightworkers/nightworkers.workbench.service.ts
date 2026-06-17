@@ -171,7 +171,10 @@ export async function appendWorkbenchMessage(
   if (intent === 'run_task') {
     assertRunnableWorkbenchTask(task, existingMessages);
     await appendTaskMessage(id, prompt, messageMetadata);
-    const run = await startTaskRun(id);
+    const run = await startTaskRun(id, {
+      executionMode: 'implementation',
+      executionModeSource: 'workbench_run_task',
+    });
     return {
       task: await repo.getTask(id),
       run,
@@ -548,7 +551,10 @@ async function handleWorkbenchIntakeMessage(
           intakeJobSelection: jobSelection,
         },
       });
-      const run = await startTaskRun(taskId);
+      const run = await startTaskRun(taskId, {
+        executionMode: 'implementation',
+        executionModeSource: 'workbench_intake',
+      });
       return {
         task: (await repo.getTask(taskId)) || runnable,
         run,
