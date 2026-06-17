@@ -116,6 +116,16 @@ describe('listDirTool', () => {
     expect(result.error?.code).toBe('NOT_A_DIRECTORY');
   });
 
+  it('returns directory_not_found when list target is missing', async () => {
+    const result = await listDirTool({
+      repoRoot: dummyRepoDir,
+      relativePath: 'missing-folder',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('DIRECTORY_NOT_FOUND');
+    expect(result.error?.message).toBe('Directory not found: missing-folder');
+  });
+
   it('fails when path is denied by policy', async () => {
     const result = await listDirTool({
       repoRoot: dummyRepoDir,
@@ -158,5 +168,16 @@ describe('findFileTool', () => {
     });
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe('ACCESS_DENIED');
+  });
+
+  it('returns directory_not_found when find_file start directory is missing', async () => {
+    const result = await findFileTool({
+      repoRoot: dummyRepoDir,
+      fileMask: '*.js',
+      relativePath: 'missing-folder',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('DIRECTORY_NOT_FOUND');
+    expect(result.error?.message).toBe('Directory not found: missing-folder');
   });
 });

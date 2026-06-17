@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { unknownErrorMessage } from '../../../../shared/json-record';
+import { formatFileSystemToolError } from '../fs-error';
 import { buildCompressionMetadata } from '../output-compression';
 import { enforcePathPolicy } from '../tool-policy-enforcer';
 import type { WorkerToolResult } from '../types';
@@ -54,10 +54,16 @@ export async function inspectStructureTool(
       payload: withCompression(content, output),
     };
   } catch (err) {
-    return failure(startedAt, {
-      code: 'INSPECT_STRUCTURE_FAILED',
-      message: `Failed to inspect structure: ${unknownErrorMessage(err)}`,
-    });
+    return failure(
+      startedAt,
+      formatFileSystemToolError({
+        error: err,
+        notFoundCode: 'FILE_NOT_FOUND',
+        notFoundMessage: `File not found: ${filePath}`,
+        fallbackCode: 'INSPECT_STRUCTURE_FAILED',
+        fallbackMessagePrefix: 'Failed to inspect structure',
+      })
+    );
   }
 }
 

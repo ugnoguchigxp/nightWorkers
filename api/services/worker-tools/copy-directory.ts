@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { unknownErrorMessage } from '../../../shared/json-record';
+import { formatFileSystemToolError } from './fs-error';
 import { enforcePathPolicy } from './tool-policy-enforcer';
 import type { WorkerToolResult } from './types';
 
@@ -173,10 +173,13 @@ export async function copyDirectoryTool(
       startedAt,
       finishedAt: new Date().toISOString(),
       payload: emptyPayload,
-      error: {
-        code: 'COPY_DIRECTORY_FAILED',
-        message: `Directory copy failed: ${unknownErrorMessage(error)}`,
-      },
+      error: formatFileSystemToolError({
+        error,
+        notFoundCode: 'DIRECTORY_NOT_FOUND',
+        notFoundMessage: `Directory not found: ${input.sourcePath}`,
+        fallbackCode: 'COPY_DIRECTORY_FAILED',
+        fallbackMessagePrefix: 'Directory copy failed',
+      }),
     };
   }
 }

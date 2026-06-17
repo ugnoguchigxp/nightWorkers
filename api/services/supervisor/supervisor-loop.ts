@@ -53,6 +53,7 @@ import {
   normalizeJobType,
   normalizeTodoListInput,
   resolveCurrentTodo,
+  selectToolResultsForPrompt,
   toSupervisorTodoContext,
 } from './supervisor-loop-helpers';
 import type { CompactToolResult, SupervisorLoopInput } from './supervisor-loop-types';
@@ -325,7 +326,7 @@ export async function runSupervisorLoop(input: SupervisorLoopInput): Promise<Sup
         safetyPolicy: input.safetyPolicy || null,
         todoPlan: currentTodos.map(toSupervisorTodoContext),
         currentTodo: runningTodo ? toSupervisorTodoContext(runningTodo) : null,
-        toolResults: toolResults.slice(-8),
+        toolResults: selectToolResultsForPrompt(toolResults),
         loadedProcedureSummaries: loadedProcedureSummaryContext,
         artifactContextRefs: input.artifactContextRefs || [],
         workspaceSnapshot,

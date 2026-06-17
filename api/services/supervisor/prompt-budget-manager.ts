@@ -194,17 +194,24 @@ function compactProgressContext(value: unknown, mode: CompressionMode, stats: Co
       typeof record.todoGuidance === 'string'
         ? truncateText(record.todoGuidance, mode === 'aggressive' ? 260 : 520)
         : record.todoGuidance,
-    doNotRepeat: doNotRepeat
-      .slice(0, maxItems)
-      .map((item) =>
-        typeof item === 'string' ? truncateText(item, mode === 'aggressive' ? 160 : 280) : item
-      ),
+    doNotRepeat: prioritizeDoNotRepeat(doNotRepeat, maxItems).map((item) =>
+      typeof item === 'string' ? truncateText(item, mode === 'aggressive' ? 180 : 300) : item
+    ),
     safeguards: safeguards
       .slice(0, maxItems)
       .map((item) =>
         typeof item === 'string' ? truncateText(item, mode === 'aggressive' ? 180 : 320) : item
       ),
   };
+}
+
+function prioritizeDoNotRepeat(items: unknown[], maxItems: number) {
+  const criticalPatterns = [/存在しない/, /失敗/, /read-only evidence/, /patch\/needle/, /複数回/];
+  const critical = items.filter(
+    (item) => typeof item === 'string' && criticalPatterns.some((pattern) => pattern.test(item))
+  );
+  const ordered = [...critical, ...items.filter((item) => !critical.includes(item))];
+  return ordered.filter((item, index) => ordered.indexOf(item) === index).slice(0, maxItems);
 }
 
 function compactToolEvidence(value: unknown, mode: CompressionMode, stats: CompressionStats) {
@@ -247,6 +254,13 @@ function compactToolArguments(value: unknown) {
     };
   }
   if (typeof record.filePath === 'string') return { filePath: record.filePath };
+  if (typeof record.relativePath === 'string') {
+    return {
+      relativePath: record.relativePath,
+      recursive: record.recursive,
+      maxEntries: record.maxEntries,
+    };
+  }
   if (typeof record.command === 'string') return { command: truncateText(record.command, 200) };
   if (typeof record.taskId === 'string') return { taskId: record.taskId };
   if (typeof record.query === 'string') return { query: truncateText(record.query, 200) };
@@ -283,6 +297,30 @@ function compactToolPayload(
     stats.droppedFields.add('toolEvidence.context_compile.result');
     return undefined;
   }
+  if (toolName === 'list_dir') {
+    const maxItems = mode === 'aggressive' ? 12 : 24;
+    const dirs = Array.isArray(record.dirs) ? record.dirs : [];
+    const files = Array.isArray(record.files) ? record.files : [];
+    if (dirs.length > maxItems) stats.droppedFields.add('toolEvidence.list_dir.dirs.tail');
+    if (files.length > maxItems) stats.droppedFields.add('toolEvidence.list_dir.files.tail');
+    return {
+      dirs: dirs.slice(0, maxItems),
+      files: files.slice(0, maxItems),
+      truncated: Boolean(record.truncated),
+    };
+  }
+  if (toolName === 'read_file') {
+    const compression = asRecord(record.compression);
+    return {
+      totalLines: record.totalLines,
+      linesReturned: record.linesReturned,
+      startLine: record.startLine,
+      endLine: record.endLine,
+      cached: record.cached,
+      contentHash: record.contentHash,
+      compression: compression.strategy ? { strategy: compression.strategy } : undefined,
+    };
+  }
   return undefined;
 }
 
@@ -291,6 +329,7 @@ function compactToolError(value: unknown, mode: CompressionMode) {
   const record = asRecord(value);
   return {
     name: record.name,
+    code: record.code,
     message:
       typeof record.message === 'string'
         ? truncateText(record.message, mode === 'aggressive' ? 180 : 300)

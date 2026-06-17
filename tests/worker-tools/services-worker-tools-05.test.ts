@@ -60,6 +60,20 @@ describe('Worker Tools Unit Tests', () => {
     expect(result.error?.code).toBe('NO_MATCH');
   });
 
+  it('returns file_not_found when replacement target is missing', async () => {
+    const result = await replaceContentTool({
+      repoRoot: dummyRepoDir,
+      filePath: 'missing.txt',
+      needle: 'alpha',
+      replacement: 'X',
+      mode: 'literal',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('FILE_NOT_FOUND');
+    expect(result.error?.message).toBe('File not found: missing.txt');
+  });
+
   it('returns multiple_matches when more than one occurrence exists', async () => {
     await fs.writeFile(path.join(dummyRepoDir, 'hello.txt'), 'dup\ndup\n', 'utf-8');
     const result = await replaceContentTool({
@@ -115,6 +129,30 @@ describe('runCommandTool', () => {
     });
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe('DESTRUCTIVE_COMMAND');
+  });
+
+  it('returns command_cwd_not_found when cwd is missing', async () => {
+    const result = await runCommandTool({
+      command: 'echo "hello"',
+      repoRoot: dummyRepoDir,
+      cwd: 'missing-folder',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('COMMAND_CWD_NOT_FOUND');
+    expect(result.error?.message).toBe('Command working directory not found: missing-folder');
+  });
+
+  it('returns command_cwd_not_directory when cwd points to a file', async () => {
+    const result = await runCommandTool({
+      command: 'echo "hello"',
+      repoRoot: dummyRepoDir,
+      cwd: 'hello.txt',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('COMMAND_CWD_NOT_DIRECTORY');
+    expect(result.error?.message).toBe('Command working directory is not a directory: hello.txt');
   });
 
   it('requires background execution for long-running dev commands', async () => {

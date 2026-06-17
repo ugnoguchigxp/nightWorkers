@@ -168,6 +168,109 @@ describe('PromptBudgetManager', () => {
     expect(procedures[0].procedure.length).toBeLessThanOrEqual(6);
   });
 
+  it('preserves recovery-critical missing path and directory evidence while compressing', () => {
+    const longText = 'large-context '.repeat(900);
+    const userPrompt = renderRound2UserContext({
+      latestUserMessage: `${longText}latest request`,
+      goal: `${longText}goal`,
+      currentJobType: 'major_code_edit',
+      workflow: 'major_code_edit',
+      safetyPolicy: null,
+      todoPlan: [],
+      currentTodo: {
+        id: 'todo-4',
+        seq: 4,
+        title: 'Todo List 用の型定義とストアを作成する',
+        status: 'running',
+        taskType: 'scaffold',
+        procedureId: null,
+      },
+      progressContext: {
+        objective: `${longText}objective`,
+        nextConcreteAction:
+          'read_file の web/src/routes/_authenticated/dashboard/route.tsx は存在しないことを確認済み。実在パスを使う。',
+        todoGuidance: `${longText}guidance`,
+        doNotRepeat: [
+          'TodoList は既に作成済み。',
+          '仕様書は既に読み込み済み。',
+          'read_file の web/src/routes/_authenticated/dashboard/route.tsx は存在しないことを確認済み (4 回)。同じパスを繰り返さない。',
+          'read_file の web/src/routes/root-route.tsx は直近 Todo で 5 回読んでいる。',
+          'generic tail',
+        ],
+        safeguards: [],
+      },
+      toolResults: [
+        {
+          step: 1,
+          toolName: 'list_dir',
+          ok: true,
+          arguments: { relativePath: 'web/src/routes', recursive: true },
+          summary: longText,
+          payload: {
+            dirs: [],
+            files: ['web/src/routes/root-route.tsx', 'web/src/routes/home-route.tsx'],
+            truncated: false,
+          },
+        },
+        {
+          step: 2,
+          toolName: 'read_file',
+          ok: false,
+          arguments: { filePath: 'web/src/routes/_authenticated/dashboard/route.tsx' },
+          summary: longText,
+          error: {
+            code: 'FILE_NOT_FOUND',
+            message: 'File not found: web/src/routes/_authenticated/dashboard/route.tsx',
+          },
+        },
+      ],
+      loadedProcedureSummaries: [],
+      artifactContextRefs: [],
+      workspaceSnapshot: {
+        isEmpty: false,
+        topLevelDirs: ['web'],
+        topLevelFiles: ['package.json'],
+        truncated: false,
+      },
+    });
+
+    const result = buildPromptBudget({
+      systemPrompt: 'Return JSON only.'.repeat(20),
+      userPrompt,
+      modelCapability: {
+        providerEndpointId: 'local-qwen',
+        model: 'qwen3-coder',
+        contextWindowTokens: 7000,
+        safePromptBudgetTokens: 5000,
+        reservedOutputTokens: 2000,
+        supportsProviderSideCompression: true,
+        compressionProfile: 'balanced',
+      },
+    });
+
+    const progressContext = parseRound2UserContextJsonSection<{
+      doNotRepeat: string[];
+    }>(result.userPrompt, 'Progress Context');
+    expect(progressContext.doNotRepeat[0]).toContain('_authenticated/dashboard/route.tsx');
+
+    const toolEvidence = parseRound2UserContextJsonSection<Array<Record<string, unknown>>>(
+      result.userPrompt,
+      'Recent Tool Evidence'
+    );
+    expect(toolEvidence[0]).toMatchObject({
+      toolName: 'list_dir',
+      payload: {
+        files: ['web/src/routes/root-route.tsx', 'web/src/routes/home-route.tsx'],
+      },
+    });
+    expect(toolEvidence[1]).toMatchObject({
+      toolName: 'read_file',
+      error: {
+        code: 'FILE_NOT_FOUND',
+      },
+    });
+  });
+
   it('uses configured large-window capability instead of a small global cap', () => {
     const userPrompt = renderRound2UserContext({
       latestUserMessage: 'x'.repeat(12_000),

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { unknownErrorMessage } from '../../../shared/json-record';
+import { formatFileSystemToolError } from './fs-error';
 import { getRelativePath, isPathSafe } from './path-policy';
 import { enforcePathPolicy } from './tool-policy-enforcer';
 import type { WorkerToolResult } from './types';
@@ -127,10 +127,13 @@ export async function listDirTool(input: ListDirInput): Promise<WorkerToolResult
       startedAt,
       finishedAt: new Date().toISOString(),
       payload: { dirs: [], files: [], truncated: false },
-      error: {
-        code: 'LIST_DIR_FAILED',
-        message: `Failed to list directory: ${unknownErrorMessage(err)}`,
-      },
+      error: formatFileSystemToolError({
+        error: err,
+        notFoundCode: 'DIRECTORY_NOT_FOUND',
+        notFoundMessage: `Directory not found: ${relativePath}`,
+        fallbackCode: 'LIST_DIR_FAILED',
+        fallbackMessagePrefix: 'Failed to list directory',
+      }),
     };
   }
 }

@@ -86,6 +86,17 @@ describe('Worker Tools Unit Tests', () => {
     }
   });
 
+  it('returns directory_not_found when copy source is missing inside repo', async () => {
+    const result = await copyDirectoryTool({
+      sourcePath: 'missing-template',
+      repoRoot: dummyRepoDir,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('DIRECTORY_NOT_FOUND');
+    expect(result.error?.message).toBe('Directory not found: missing-template');
+  });
+
   it('materializes a registered template variant into an empty project root', async () => {
     const templateRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-template-repo-'));
     const targetDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-template-target-'));

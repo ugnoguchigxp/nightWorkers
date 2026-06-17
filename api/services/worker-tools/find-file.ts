@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { unknownErrorMessage } from '../../../shared/json-record';
+import { formatFileSystemToolError } from './fs-error';
 import { getRelativePath, isPathSafe } from './path-policy';
 import type { WorkerToolResult } from './types';
 
@@ -103,10 +103,13 @@ export async function findFileTool(
       startedAt,
       finishedAt: new Date().toISOString(),
       payload: { files: [], count: 0 },
-      error: {
-        code: 'FIND_FILE_FAILED',
-        message: `Failed to find files: ${unknownErrorMessage(err)}`,
-      },
+      error: formatFileSystemToolError({
+        error: err,
+        notFoundCode: 'DIRECTORY_NOT_FOUND',
+        notFoundMessage: `Directory not found: ${relativePath}`,
+        fallbackCode: 'FIND_FILE_FAILED',
+        fallbackMessagePrefix: 'Failed to find files',
+      }),
     };
   }
 }

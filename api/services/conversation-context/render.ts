@@ -47,8 +47,13 @@ export function renderStateCard(
       `Source refs: files=${snapshot.contextBaseline.relevantFilesDigest || 'none'} workerEvidence=${
         snapshot.contextBaseline.workerEvidenceRefsDigest || 'none'
       }`,
-      '</STATE_CARD>',
     ];
+    const lastProblem = snapshot.runState.lastError || snapshot.runState.lastToolFailure;
+    if (lastProblem) lines.push(`Last problem: ${truncate(lastProblem, 240)}`);
+    if (snapshot.files.target.length) {
+      lines.push(`Targets: ${snapshot.files.target.slice(0, 5).join(', ')}`);
+    }
+    lines.push('</STATE_CARD>');
     const text = lines.join('\n');
     snapshot.limits.tokenEstimate = estimateTokens(text);
     return text;
@@ -101,9 +106,10 @@ export function renderStateCard(
     if (variant !== 'minimal') {
       lines.push('', 'Current state:');
       lines.push(`- previous run: ${cardSnapshot.continuity.previousTerminalState || 'unknown'}`);
-      lines.push(
-        `- last error: ${cardSnapshot.runState.lastError || cardSnapshot.runState.lastToolFailure || 'none'}`
-      );
+      lines.push(`- last error: ${cardSnapshot.runState.lastError || 'none'}`);
+      if (cardSnapshot.runState.lastToolFailure) {
+        lines.push(`- last tool failure: ${truncate(cardSnapshot.runState.lastToolFailure, 300)}`);
+      }
       if (cardSnapshot.runState.lastFinalReport) {
         lines.push(`- last final report: ${truncate(cardSnapshot.runState.lastFinalReport, 360)}`);
       }

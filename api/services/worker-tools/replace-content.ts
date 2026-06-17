@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { unknownErrorMessage } from '../../../shared/json-record';
+import { formatFileSystemToolError } from './fs-error';
 import { enforcePathPolicy } from './tool-policy-enforcer';
 import type { WorkerToolResult } from './types';
 
@@ -134,10 +134,13 @@ export async function replaceContentTool(
       startedAt,
       finishedAt: new Date().toISOString(),
       payload: { applied: false, occurrences: 0, filePath },
-      error: {
-        code: 'REPLACE_FAILED',
-        message: `Failed to replace content: ${unknownErrorMessage(err)}`,
-      },
+      error: formatFileSystemToolError({
+        error: err,
+        notFoundCode: 'FILE_NOT_FOUND',
+        notFoundMessage: `File not found: ${filePath}`,
+        fallbackCode: 'REPLACE_FAILED',
+        fallbackMessagePrefix: 'Failed to replace content',
+      }),
     };
   }
 }

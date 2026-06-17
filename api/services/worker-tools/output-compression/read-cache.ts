@@ -46,8 +46,9 @@ export function buildReadCacheMarker(input: { filePath: string; entry: ReadFileC
       status: 'cached',
       filePath: input.filePath,
       totalLines: input.entry.totalLines,
+      contentReturned: false,
       contentHash: input.entry.contentHash,
-      note: 'File is unchanged since the previous read in this run. Use fresh=true or a line range if the content is needed again.',
+      note: 'File content is unchanged and intentionally omitted from this repeated read. Use fresh=true or a line range only if exact content is needed again.',
     },
     null,
     2

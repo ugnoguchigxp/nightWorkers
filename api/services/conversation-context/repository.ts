@@ -3,6 +3,7 @@ import { db } from '../../db/client';
 import {
   conversationContextSnapshots,
   repositories,
+  taskEvents,
   taskMessages,
   taskRuns,
   tasks,
@@ -47,6 +48,8 @@ export async function loadConversationContextSource(input: {
     getLatestConversationContextForTask(input.taskId),
   ]);
 
+  const runToolFailures = await loadRunToolFailureMap(runs.slice(0, 8).map((run) => run.id));
+
   return {
     task: taskRow,
     messages: messages.map((message) => ({
@@ -63,12 +66,50 @@ export async function loadConversationContextSource(input: {
       finalReport: run.finalReport,
       finalJudgment: run.finalJudgment,
       contextSnapshot: run.contextSnapshot,
+      lastToolFailure: runToolFailures.get(run.id) ?? null,
       startedAt: run.startedAt,
       finishedAt: run.finishedAt,
       endedAt: run.endedAt,
     })),
     previousSnapshot,
   };
+}
+
+async function loadRunToolFailureMap(runIds: string[]) {
+  const failures = new Map<string, string>();
+  await Promise.all(
+    runIds.map(async (runId) => {
+      const events = await db
+        .select()
+        .from(taskEvents)
+        .where(eq(taskEvents.taskRunId, runId))
+        .orderBy(desc(taskEvents.seq))
+        .limit(80);
+      const failed = events.find((event) => {
+        const payload = asRecord(event.payloadJson);
+        const toolPayload = asRecord(payload.payload);
+        return event.eventType === 'tool_result' && toolPayload.ok === false;
+      });
+      if (!failed) return;
+      const payload = asRecord(failed.payloadJson);
+      const toolPayload = asRecord(payload.payload);
+      const toolName = typeof toolPayload.toolName === 'string' ? toolPayload.toolName : 'tool';
+      const summary = typeof toolPayload.summary === 'string' ? toolPayload.summary : '';
+      const error = asRecord(toolPayload.error);
+      const errorCode = typeof error.code === 'string' ? error.code : null;
+      const errorMessage = typeof error.message === 'string' ? error.message : null;
+      failures.set(
+        runId,
+        truncateText(
+          [toolName, errorCode, errorMessage || summary || failed.message]
+            .filter(Boolean)
+            .join(': '),
+          500
+        )
+      );
+    })
+  );
+  return failures;
 }
 
 export async function getLatestConversationContextForTask(
@@ -158,4 +199,15 @@ function toRecord(
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function truncateText(value: string, maxChars: number) {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  return normalized.length > maxChars ? normalized.slice(0, maxChars) : normalized;
 }

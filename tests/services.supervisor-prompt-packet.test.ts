@@ -44,6 +44,10 @@ describe('supervisor prompt packet', () => {
       jobType: 'minor_code_edit',
     });
     expect(packet.executionEvidence.join('\n')).toContain('[Minimum Execution Contract]');
+    expect(packet.executionEvidence.join('\n')).toContain(
+      'apply_patch/replace_content for implementation'
+    );
+    expect(packet.executionEvidence.join('\n')).toContain('Progress Context の nextConcreteAction');
     expect(packet.outputContract.join('\n')).toContain('[Allowed Tools]');
     expect(rendered).toContain('[Minimum Execution Contract]');
     expect(rendered).not.toContain('"diagnostics"');

@@ -5,6 +5,7 @@ import {
   getRedundantTodoReplaceGap,
   getTodoDoneEvidenceGap,
   normalizeTodoListInput,
+  selectToolResultsForPrompt,
 } from '../api/services/supervisor/supervisor-loop-helpers';
 
 describe('supervisor loop Todo helpers', () => {
@@ -70,7 +71,7 @@ describe('supervisor loop Todo helpers', () => {
     });
 
     expect(gap).toContain('TodoList も作業状態も変更しません');
-    expect(gap).toContain('現在 Todo を進める worker tool');
+    expect(gap).toContain('apply_patch / replace_content');
   });
 
   it('requires implementation evidence before an implementation Todo can be done', () => {
@@ -323,9 +324,281 @@ describe('supervisor loop Todo helpers', () => {
       ],
     });
 
-    expect(context.nextConcreteAction).toContain('次は read_file ではなく apply_patch');
+    expect(context.nextConcreteAction).toContain(
+      'read_current_specification / read_file / list_dir'
+    );
+    expect(context.nextConcreteAction).toContain('apply_patch / replace_content');
     expect(context.doNotRepeat).toContainEqual(
       expect.stringContaining('read-only evidence が 3 件')
     );
+  });
+
+  it('directs scaffold Todos toward mutation tools after enough read-only evidence', () => {
+    const context = buildProgressContext({
+      currentJobType: 'major_code_edit',
+      workspaceSnapshot: {
+        isEmpty: false,
+        topLevelDirs: ['web'],
+        topLevelFiles: ['package.json'],
+        truncated: false,
+      },
+      currentTodos: [
+        {
+          seq: 4,
+          title: 'Todo List 用の型定義とストアを作成する',
+          taskType: 'scaffold',
+          status: 'running',
+          procedureId: null,
+        },
+      ],
+      toolResults: [
+        {
+          step: 1,
+          toolName: 'todo_list',
+          ok: true,
+          arguments: { operation: 'done' },
+          summary: 'tool=todo_list operation=done status=ok',
+        },
+        {
+          step: 2,
+          toolName: 'read_file',
+          ok: true,
+          arguments: { filePath: 'web/src/App.tsx' },
+          summary: 'tool=read_file status=ok',
+        },
+        {
+          step: 3,
+          toolName: 'read_file',
+          ok: true,
+          arguments: { filePath: 'web/src/router.tsx' },
+          summary: 'tool=read_file status=ok',
+        },
+        {
+          step: 4,
+          toolName: 'read_file',
+          ok: true,
+          arguments: { filePath: 'web/src/routes/root-route.tsx' },
+          summary: 'tool=read_file status=ok',
+        },
+      ],
+    });
+
+    expect(context.nextConcreteAction).toContain('apply_patch / replace_content');
+    expect(context.doNotRepeat).toContainEqual(expect.stringContaining('scaffold Todo'));
+  });
+
+  it('summarizes repeated missing paths and repeated reads in progress context', () => {
+    const context = buildProgressContext({
+      currentJobType: 'major_code_edit',
+      workspaceSnapshot: {
+        isEmpty: false,
+        topLevelDirs: ['web'],
+        topLevelFiles: ['package.json'],
+        truncated: false,
+      },
+      currentTodos: [
+        {
+          seq: 4,
+          title: 'Todo List 用の型定義とストアを作成する',
+          taskType: 'scaffold',
+          status: 'running',
+          procedureId: null,
+        },
+      ],
+      toolResults: [
+        {
+          step: 1,
+          toolName: 'todo_list',
+          ok: true,
+          arguments: { operation: 'done' },
+          summary: 'tool=todo_list operation=done status=ok',
+        },
+        {
+          step: 2,
+          toolName: 'read_file',
+          ok: false,
+          arguments: { filePath: 'web/src/routes/_authenticated/dashboard/route.tsx' },
+          summary: 'tool=read_file status=failed',
+        },
+        {
+          step: 3,
+          toolName: 'read_file',
+          ok: false,
+          arguments: { filePath: 'web/src/routes/_authenticated/dashboard/route.tsx' },
+          summary: 'tool=read_file status=failed',
+        },
+        {
+          step: 4,
+          toolName: 'read_file',
+          ok: true,
+          arguments: { filePath: 'web/src/routes/root-route.tsx' },
+          summary: 'tool=read_file status=ok',
+        },
+        {
+          step: 5,
+          toolName: 'read_file',
+          ok: true,
+          arguments: { filePath: 'web/src/routes/root-route.tsx', fresh: true },
+          summary: 'tool=read_file status=ok',
+        },
+      ],
+    });
+
+    expect(context.nextConcreteAction).toContain(
+      'web/src/routes/_authenticated/dashboard/route.tsx'
+    );
+    expect(context.doNotRepeat).toContainEqual(expect.stringContaining('(2 回)'));
+    expect(context.doNotRepeat).toContainEqual(
+      expect.stringContaining('web/src/routes/root-route.tsx')
+    );
+  });
+
+  it('keeps recovery-critical tool evidence beyond the simple tail window', () => {
+    const results = Array.from({ length: 12 }, (_, index) => ({
+      step: index + 1,
+      toolName: 'read_file',
+      ok: true,
+      arguments: { filePath: `src/file-${index}.ts` },
+      summary: 'tool=read_file status=ok',
+    }));
+    results[1] = {
+      step: 2,
+      toolName: 'list_dir',
+      ok: true,
+      arguments: { relativePath: 'web/src/routes' },
+      summary: 'tool=list_dir status=ok',
+      payload: { files: ['web/src/routes/root-route.tsx'], dirs: [], truncated: false },
+    };
+    results[2] = {
+      step: 3,
+      toolName: 'read_file',
+      ok: false,
+      arguments: { filePath: 'web/src/routes/_authenticated/dashboard/route.tsx' },
+      summary: 'tool=read_file status=failed',
+    };
+
+    const selected = selectToolResultsForPrompt(results);
+
+    expect(selected.map((item) => item.step)).toContain(2);
+    expect(selected.map((item) => item.step)).toContain(3);
+    expect(selected.at(-1)?.step).toBe(12);
+  });
+
+  it('directs mutation failure recovery through a targeted read_file', () => {
+    const context = buildProgressContext({
+      currentJobType: 'major_code_edit',
+      workspaceSnapshot: {
+        isEmpty: false,
+        topLevelDirs: ['web'],
+        topLevelFiles: ['package.json'],
+        truncated: false,
+      },
+      currentTodos: [
+        {
+          seq: 4,
+          title: 'Todo List 画面の UI コンポーネントを実装する',
+          taskType: 'implementation',
+          status: 'running',
+          procedureId: null,
+        },
+      ],
+      toolResults: [
+        {
+          step: 1,
+          toolName: 'todo_list',
+          ok: true,
+          arguments: { operation: 'done' },
+          summary: 'tool=todo_list operation=done status=ok',
+        },
+        {
+          step: 2,
+          toolName: 'read_file',
+          ok: true,
+          arguments: { filePath: 'web/src/views/home-view.tsx' },
+          summary: 'tool=read_file status=ok',
+        },
+        {
+          step: 3,
+          toolName: 'apply_patch',
+          ok: false,
+          arguments: {
+            patchContent:
+              'diff --git a/web/src/views/home-view.tsx b/web/src/views/home-view.tsx\n--- a/web/src/views/home-view.tsx\n+++ b/web/src/views/home-view.tsx\n@@ -1 +1 @@\n-old\n+new',
+          },
+          summary: 'tool=apply_patch status=failed',
+        },
+      ],
+    });
+
+    expect(context.nextConcreteAction).toContain('apply_patch が失敗');
+    expect(context.nextConcreteAction).toContain('web/src/views/home-view.tsx');
+    expect(context.nextConcreteAction).toContain('read_file');
+    expect(context.doNotRepeat).toContainEqual(
+      expect.stringContaining('同じ patch/needle を繰り返さず')
+    );
+  });
+
+  it('returns to mutation guidance after a failed mutation target is reread', () => {
+    const context = buildProgressContext({
+      currentJobType: 'major_code_edit',
+      workspaceSnapshot: {
+        isEmpty: false,
+        topLevelDirs: ['web'],
+        topLevelFiles: ['package.json'],
+        truncated: false,
+      },
+      currentTodos: [
+        {
+          seq: 4,
+          title: 'Todo List 画面の UI コンポーネントを実装する',
+          taskType: 'implementation',
+          status: 'running',
+          procedureId: null,
+        },
+      ],
+      toolResults: [
+        {
+          step: 1,
+          toolName: 'todo_list',
+          ok: true,
+          arguments: { operation: 'done' },
+          summary: 'tool=todo_list operation=done status=ok',
+        },
+        {
+          step: 2,
+          toolName: 'apply_patch',
+          ok: false,
+          arguments: {
+            patchContent:
+              'diff --git a/web/src/views/home-view.tsx b/web/src/views/home-view.tsx\n--- a/web/src/views/home-view.tsx\n+++ b/web/src/views/home-view.tsx\n@@ -1 +1 @@\n-old\n+new',
+          },
+          summary: 'tool=apply_patch status=failed',
+        },
+        {
+          step: 3,
+          toolName: 'read_file',
+          ok: true,
+          arguments: { filePath: 'web/src/views/home-view.tsx' },
+          summary: 'tool=read_file status=ok',
+        },
+        {
+          step: 4,
+          toolName: 'list_dir',
+          ok: true,
+          arguments: { relativePath: 'web/src' },
+          summary: 'tool=list_dir status=ok',
+        },
+        {
+          step: 5,
+          toolName: 'read_file',
+          ok: true,
+          arguments: { filePath: 'web/src/routes.tsx' },
+          summary: 'tool=read_file status=ok',
+        },
+      ],
+    });
+
+    expect(context.nextConcreteAction).toContain('apply_patch / replace_content');
+    expect(context.nextConcreteAction).not.toContain('が失敗');
   });
 });

@@ -98,6 +98,7 @@ describe('Worker Tools Unit Tests', () => {
     expect(secondRead.ok).toBe(true);
     expect(secondRead.payload.cached).toBe(true);
     expect(secondRead.payload.content).toContain('"status": "cached"');
+    expect(secondRead.payload.content).toContain('"contentReturned": false');
     expect(secondRead.payload.compression?.strategy).toBe('read_cache_marker');
   });
 
@@ -114,6 +115,17 @@ describe('Worker Tools Unit Tests', () => {
     expect(freshRead.ok).toBe(true);
     expect(freshRead.payload.cached).toBe(false);
     expect(freshRead.payload.content).toContain('1: hello');
+  });
+
+  it('returns file_not_found when read target is missing', async () => {
+    const result = await readFileTool({
+      filePath: 'missing.txt',
+      repoRoot: dummyRepoDir,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('FILE_NOT_FOUND');
+    expect(result.error?.message).toBe('File not found: missing.txt');
   });
 });
 
@@ -136,6 +148,17 @@ describe('inspectStructureTool', () => {
       exported: true,
     });
     expect(result.payload.compression?.omittedReason).toBe('source_ast_symbols_only');
+  });
+
+  it('returns file_not_found when inspect target is missing', async () => {
+    const result = await inspectStructureTool({
+      filePath: 'missing.ts',
+      repoRoot: dummyRepoDir,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('FILE_NOT_FOUND');
+    expect(result.error?.message).toBe('File not found: missing.ts');
   });
 
   it('marks JSON shape as truncated only when maxPaths cuts traversal short', async () => {
@@ -184,5 +207,16 @@ describe('searchFilesTool', () => {
     expect(result.ok).toBe(true);
     expect(result.payload.count).toBeGreaterThanOrEqual(1);
     expect(result.payload.matches[0].excerpt).toContain('hello');
+  });
+
+  it('returns search_root_not_found when repo root is missing', async () => {
+    const result = await searchFilesTool({
+      query: 'hello',
+      repoRoot: path.join(dummyRepoDir, 'missing-root'),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('SEARCH_ROOT_NOT_FOUND');
+    expect(result.error?.message).toBe('Search root not found: .');
   });
 });

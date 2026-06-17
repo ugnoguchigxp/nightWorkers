@@ -102,6 +102,57 @@ describe('applyPatchTool', () => {
 
     await fs.rm(repoRoot, { recursive: true, force: true });
   });
+
+  it('classifies add-file patches that target an existing file', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-apply-patch-'));
+    execFileSync('git', ['init'], { cwd: repoRoot });
+    await fs.writeFile(path.join(repoRoot, 'home-view.tsx'), 'export const existing = true;\n');
+
+    const result = await applyPatchTool({
+      repoRoot,
+      patchContent: [
+        'diff --git a/home-view.tsx b/home-view.tsx',
+        'new file mode 100644',
+        'index 0000000..e69de29',
+        '--- /dev/null',
+        '+++ b/home-view.tsx',
+        '@@ -0,0 +1,1 @@',
+        '+export const created = true;',
+        '',
+      ].join('\n'),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('PATCH_TARGET_EXISTS');
+    expect(result.payload.changedFiles).toEqual(['home-view.tsx']);
+
+    await fs.rm(repoRoot, { recursive: true, force: true });
+  });
+
+  it('classifies patches that do not match current content', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-apply-patch-'));
+    execFileSync('git', ['init'], { cwd: repoRoot });
+    await fs.writeFile(path.join(repoRoot, 'home-view.tsx'), 'export const current = true;\n');
+
+    const result = await applyPatchTool({
+      repoRoot,
+      patchContent: [
+        'diff --git a/home-view.tsx b/home-view.tsx',
+        '--- a/home-view.tsx',
+        '+++ b/home-view.tsx',
+        '@@ -1 +1 @@',
+        '-export const old = true;',
+        '+export const next = true;',
+        '',
+      ].join('\n'),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('PATCH_DOES_NOT_APPLY');
+    expect(result.payload.changedFiles).toEqual(['home-view.tsx']);
+
+    await fs.rm(repoRoot, { recursive: true, force: true });
+  });
 });
 
 describe('readFileTool', () => {

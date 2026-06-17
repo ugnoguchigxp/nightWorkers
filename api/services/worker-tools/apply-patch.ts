@@ -36,12 +36,13 @@ export async function applyPatchTool(
     `.temp-patch-${Math.random().toString(36).substring(7)}.patch`
   );
 
+  let targets: string[] = [];
+
   try {
     // 1. Write the patch content to a temp file
     await fs.writeFile(tempPatchFile, gitPatchContent, 'utf-8');
 
     // 2. Dry run with git apply to parse target files and check if it's safe
-    let targets: string[] = [];
     try {
       const { stdout } = await execAsync(`git apply --numstat ${tempPatchFile}`, {
         cwd: absoluteRepoRoot,
@@ -127,16 +128,41 @@ export async function applyPatchTool(
       finishedAt: new Date().toISOString(),
       payload: {
         applied: false,
-        changedFiles: [],
+        changedFiles: targets,
         stdout: '',
         stderr: getDeepRecordString(err, 'stderr') || '',
       },
-      error: {
-        code: 'PATCH_FAILED',
-        message: `Failed to apply patch: ${unknownErrorMessage(err)}`,
-      },
+      error: classifyPatchError(err),
     };
   }
+}
+
+function classifyPatchError(err: unknown) {
+  const stderr = getDeepRecordString(err, 'stderr') || '';
+  const message = unknownErrorMessage(err);
+  const combined = `${stderr}\n${message}`;
+  if (/already exists in working directory/i.test(combined)) {
+    return {
+      code: 'PATCH_TARGET_EXISTS',
+      message: `Patch tried to create a file that already exists. Read the target file and build an update patch instead. ${message}`,
+    };
+  }
+  if (/patch does not apply|patch failed:/i.test(combined)) {
+    return {
+      code: 'PATCH_DOES_NOT_APPLY',
+      message: `Patch did not match the current file content. Read the target file and rebuild the patch from current content. ${message}`,
+    };
+  }
+  if (/No such file or directory|does not exist/i.test(combined)) {
+    return {
+      code: 'PATCH_TARGET_NOT_FOUND',
+      message: `Patch target path was not found. Confirm the parent directory with list_dir or create the target path with a new-file patch. ${message}`,
+    };
+  }
+  return {
+    code: 'PATCH_FAILED',
+    message: `Failed to apply patch: ${message}`,
+  };
 }
 
 function toGitApplyPatch(patchContent: string): string {

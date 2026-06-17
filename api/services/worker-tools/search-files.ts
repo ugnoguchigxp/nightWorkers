@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { getDeepRecordValue, toDeepRecord, unknownErrorMessage } from '../../../shared/json-record';
+import { formatFileSystemToolError, isNodeFileNotFoundError } from './fs-error';
 import { getRelativePath } from './path-policy';
 import { enforcePathPolicy } from './tool-policy-enforcer';
 import type { WorkerToolResult } from './types';
@@ -110,8 +111,13 @@ export async function searchFilesTool(
     } catch (rgError) {
       const rgErrorCode = getDeepRecordValue(rgError, 'code');
       const rgErrorMessage = unknownErrorMessage(rgError);
-      if (rgErrorCode === 127 || rgErrorMessage.includes('not found')) {
+      if (
+        rgErrorCode === 127 ||
+        (rgErrorMessage.includes('not found') && !rgErrorMessage.includes('cwd'))
+      ) {
         console.warn('ripgrep (rg) not found in system path, falling back to manual scan');
+      } else if (isNodeFileNotFoundError(rgError)) {
+        throw rgError;
       } else if (rgErrorCode === 1) {
         return {
           ok: true,
@@ -207,10 +213,13 @@ export async function searchFilesTool(
         count: 0,
         engine: 'fallback',
       },
-      error: {
-        code: 'SEARCH_FAILED',
-        message: `Failed to search workspace files: ${unknownErrorMessage(err)}`,
-      },
+      error: formatFileSystemToolError({
+        error: err,
+        notFoundCode: 'SEARCH_ROOT_NOT_FOUND',
+        notFoundMessage: 'Search root not found: .',
+        fallbackCode: 'SEARCH_FAILED',
+        fallbackMessagePrefix: 'Failed to search workspace files',
+      }),
     };
   }
 }

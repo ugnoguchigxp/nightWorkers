@@ -75,7 +75,7 @@ export async function buildConversationContextSnapshot(input: {
     runState: {
       lastError,
       lastFinalReport: truncate(previousRun?.finalReport ?? null, 720),
-      lastToolFailure: null,
+      lastToolFailure: truncate(previousRun?.lastToolFailure ?? null, 500),
     },
     code: {
       snippets,

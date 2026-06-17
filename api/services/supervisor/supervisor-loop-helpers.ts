@@ -234,7 +234,7 @@ export function getRedundantTodoListGap(input: {
     return [
       `Todo #${input.currentTodo.seq}「${input.currentTodo.title}」は running のままです。`,
       'todo_list operation=list は native Supervisor の進捗操作ではなく、TodoList も作業状態も変更しません。',
-      '次は read_file / list_dir / apply_patch / replace_content / run_command など、現在 Todo を進める worker tool を実行してください。',
+      '現在 Todo の実装を進めるには、追加確認ではなく apply_patch / replace_content などの変更系 worker tool を実行してください。',
     ].join(' ');
   }
 
@@ -314,6 +314,7 @@ export function buildProgressContext(input: {
     ['pending', 'running'].includes(todo.status)
   );
   const recentToolResults = input.toolResults.slice(findLatestTodoBoundaryIndex(input.toolResults));
+  const latestMutationFailure = findLatestMutationFailure(recentToolResults);
   const hasSuccessfulImport = input.toolResults.some(
     (result) =>
       result.ok && (result.toolName === 'import_project' || result.toolName === 'copy_directory')
@@ -324,8 +325,11 @@ export function buildProgressContext(input: {
   const recentReadOnlyEvidenceCount = recentToolResults.filter(
     (result) => result.ok && READ_ONLY_EVIDENCE_TOOLS.has(result.toolName)
   ).length;
-  const implementationHasEnoughReadContext =
-    currentTodo?.taskType === 'implementation' &&
+  const currentTodoNeedsMutation = Boolean(
+    currentTodo && MUTATION_TASK_TYPES.has(currentTodo.taskType)
+  );
+  const mutationTodoHasEnoughReadContext =
+    currentTodoNeedsMutation &&
     recentReadOnlyEvidenceCount >= 3 &&
     !hasImplementationEvidenceSinceLatestTodoTransition;
   const hasSuccessfulReplace = input.toolResults.some(
@@ -349,6 +353,8 @@ export function buildProgressContext(input: {
       ['list_dir', 'read_file'].includes(result.toolName) &&
       typeof (result.arguments.relativePath || result.arguments.filePath) === 'string'
   );
+  const missingPathSummaries = summarizeMissingPathResults(missingPathResults);
+  const repeatedReadSummaries = summarizeRepeatedReadResults(recentToolResults);
   const recentTodoListCount = input.toolResults
     .slice(-4)
     .filter(
@@ -380,10 +386,13 @@ export function buildProgressContext(input: {
       hasSuccessfulReplace,
       hasMissingComponentLookup,
       hasWebSrcSnapshot,
-      implementationHasEnoughReadContext,
+      mutationTodoHasEnoughReadContext,
+      latestMutationFailure,
+      repeatedMissingPath: missingPathSummaries[0] ?? null,
+      repeatedRead: repeatedReadSummaries[0] ?? null,
     }),
     todoGuidance:
-      'Todo は進行状況の記録であり、作業そのものではない。既存 TodoList がある場合は再 replace ではなく、現在の作業に必要な worker tool を実行する。',
+      'Todo は進行状況の記録であり、作業そのものではない。既存 TodoList がある場合は再 replace しない。implementation Todo では確認 tool を続けず、現在の作業に必要な変更系 worker tool を実行する。',
     doNotRepeat: [
       repeatedReplaceFailures.length > 0
         ? `todo_list operation=replace は直近で ${repeatedReplaceFailures.length} 回失敗している。同じ replace を繰り返さない。`
@@ -397,13 +406,20 @@ export function buildProgressContext(input: {
       recentTodoListCount >= 2
         ? `todo_list operation=list が直近で ${recentTodoListCount} 回続いている。Todo 状態確認を繰り返さず、現在 Todo を進める worker tool を実行する。`
         : null,
-      implementationHasEnoughReadContext
-        ? `現在の implementation Todo では read-only evidence が ${recentReadOnlyEvidenceCount} 件あり、implementation evidence はまだ無い。read_file / list_dir を続けず、次は apply_patch / replace_content で実装する。`
+      mutationTodoHasEnoughReadContext
+        ? `現在の ${currentTodo?.taskType} Todo では read-only evidence が ${recentReadOnlyEvidenceCount} 件あり、implementation evidence はまだ無い。read_current_specification / read_file / list_dir / search_files を続けず、次は apply_patch / replace_content で実装する。`
         : null,
-      ...missingPathResults.slice(-3).map((result) => {
-        const pathValue = String(result.arguments.relativePath || result.arguments.filePath);
-        return `${result.toolName} の ${pathValue} は存在しないことを確認済み。同じパスを繰り返さず、成功済みの一覧結果にある実在パスを使う。`;
-      }),
+      latestMutationFailure
+        ? `${latestMutationFailure.toolName} は直近で失敗している。${formatMutationFailureTarget(latestMutationFailure)}を read_file で再確認し、同じ patch/needle を繰り返さず apply_patch / replace_content を作り直す。`
+        : null,
+      ...missingPathSummaries.map(
+        (item) =>
+          `${item.toolName} の ${item.path} は存在しないことを確認済み${item.count > 1 ? ` (${item.count} 回)` : ''}。同じパスを繰り返さず、成功済みの一覧結果にある実在パスを使う。`
+      ),
+      ...repeatedReadSummaries.map(
+        (item) =>
+          `read_file の ${item.path} は直近 Todo で ${item.count} 回読んでいる。必要な内容が揃っているなら再読せず、現在 Todo の変更 tool に進む。`
+      ),
       hasMissingComponentLookup
         ? 'web/src/components が存在しないことは確認済み。さらに探索せず、必要なディレクトリ/ファイルを apply_patch で作成する。'
         : null,
@@ -443,7 +459,10 @@ function buildNextConcreteAction(input: {
   hasSuccessfulReplace: boolean;
   hasMissingComponentLookup: boolean;
   hasWebSrcSnapshot: boolean;
-  implementationHasEnoughReadContext: boolean;
+  mutationTodoHasEnoughReadContext: boolean;
+  latestMutationFailure: MutationFailure | null;
+  repeatedMissingPath: RepeatedPathSummary | null;
+  repeatedRead: RepeatedPathSummary | null;
 }) {
   const current = input.currentTodo;
   if (
@@ -458,8 +477,17 @@ function buildNextConcreteAction(input: {
       ? 'TodoList は存在する。running Todo がない場合は、最初の open Todo を start するか、open Todo がなければ finalize する。'
       : '必要なら一度だけ TodoList を作り、その後は worker tool で具体作業へ進む。';
   }
-  if (input.implementationHasEnoughReadContext) {
-    return '現在 Todo に必要な読み取り context は揃っているため、次は read_file ではなく apply_patch / replace_content で実装変更を行う。';
+  if (input.latestMutationFailure) {
+    return `直近の ${input.latestMutationFailure.toolName} が失敗している。${formatMutationFailureTarget(input.latestMutationFailure)}を read_file で再確認し、現在の内容に合う apply_patch / replace_content を作り直す。`;
+  }
+  if (input.repeatedMissingPath) {
+    return `${input.repeatedMissingPath.toolName} の ${input.repeatedMissingPath.path} は存在しないことを確認済み。既に成功した list_dir / workspace snapshot の実在パスを使い、必要なら存在する親ディレクトリに apply_patch で新規ファイルを作成する。`;
+  }
+  if (input.repeatedRead) {
+    return `${input.repeatedRead.path} は直近 Todo で複数回確認済み。再読ではなく、現在 Todo に必要な apply_patch / replace_content へ進む。`;
+  }
+  if (input.mutationTodoHasEnoughReadContext) {
+    return '現在 Todo に必要な読み取り context は揃っている。read_current_specification / read_file / list_dir / search_files に戻らず、次は apply_patch / replace_content で実装変更を行う。';
   }
   if (
     input.currentJobType === 'major_code_edit' &&
@@ -469,7 +497,7 @@ function buildNextConcreteAction(input: {
     if (input.hasMissingComponentLookup || input.hasWebSrcSnapshot) {
       return 'import_project 済み。存在しない components ディレクトリを探し続けず、web/src/routes と web/src/views/domains の既存構成に合わせて apply_patch で必要な Todo List UI ファイルを作成・更新する。';
     }
-    return 'import_project 済み。postImport payload と workspace snapshot を使い、必要最小限の read_file 後に apply_patch で現在 Todo の実装へ進む。';
+    return 'import_project 済み。postImport payload と workspace snapshot を使い、必要最小限の確認だけで止め、apply_patch / replace_content で現在 Todo の実装へ進む。';
   }
   if (current.procedureId === 'quality_gate_verify' || current.taskType === 'verification') {
     return '現在は検証段階。manifest や既存 script に基づいて run_verification を一度実行し、結果で次を判断する。';
@@ -483,7 +511,158 @@ function buildNextConcreteAction(input: {
   ) {
     return '現在は知識登録段階。再利用可能な一般知識がある場合だけ register_candidates を使う。';
   }
-  return '現在の Todo に対応する read_file / import_project / apply_patch / run_command などの worker tool を実行して実作業を進める。';
+  return '現在の Todo に対応する worker tool を実行して実作業を進める。implementation/code_edit では apply_patch / replace_content、検証では run_verification、調査では read_file / search_files を選ぶ。';
+}
+
+type MutationFailure = {
+  toolName: 'apply_patch' | 'replace_content';
+  targetPath: string | null;
+};
+
+type RepeatedPathSummary = {
+  toolName: string;
+  path: string;
+  count: number;
+  latestStep: number;
+};
+
+function summarizeMissingPathResults(toolResults: CompactToolResult[]): RepeatedPathSummary[] {
+  return summarizePathResults(
+    toolResults,
+    (result) =>
+      !result.ok &&
+      (result.toolName === 'read_file' || result.toolName === 'list_dir') &&
+      typeof (result.arguments.filePath || result.arguments.relativePath) === 'string'
+  );
+}
+
+function summarizeRepeatedReadResults(toolResults: CompactToolResult[]): RepeatedPathSummary[] {
+  return summarizePathResults(
+    toolResults,
+    (result) =>
+      result.ok && result.toolName === 'read_file' && typeof result.arguments.filePath === 'string',
+    2
+  );
+}
+
+function summarizePathResults(
+  toolResults: CompactToolResult[],
+  predicate: (result: CompactToolResult) => boolean,
+  minCount = 1
+): RepeatedPathSummary[] {
+  const byKey = new Map<string, RepeatedPathSummary>();
+  for (const result of toolResults) {
+    if (!predicate(result)) continue;
+    const pathValue = String(result.arguments.filePath || result.arguments.relativePath);
+    const key = `${result.toolName}:${pathValue}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.count += 1;
+      existing.latestStep = Math.max(existing.latestStep, result.step);
+    } else {
+      byKey.set(key, {
+        toolName: result.toolName,
+        path: pathValue,
+        count: 1,
+        latestStep: result.step,
+      });
+    }
+  }
+  return [...byKey.values()]
+    .filter((item) => item.count >= minCount)
+    .sort((a, b) => b.count - a.count || b.latestStep - a.latestStep)
+    .slice(0, 3);
+}
+
+export function selectToolResultsForPrompt(toolResults: CompactToolResult[]): CompactToolResult[] {
+  const selected: CompactToolResult[] = [];
+  const add = (result: CompactToolResult | undefined) => {
+    if (!result) return;
+    if (!selected.includes(result)) selected.push(result);
+  };
+
+  for (const result of toolResults.slice(-8)) add(result);
+
+  const latestSuccessfulDirectoryEvidence = [...toolResults]
+    .reverse()
+    .find((result) => result.ok && result.toolName === 'list_dir');
+  add(latestSuccessfulDirectoryEvidence);
+
+  for (const missing of summarizeMissingPathResults(toolResults).slice(0, 3)) {
+    add(
+      [...toolResults]
+        .reverse()
+        .find(
+          (result) =>
+            result.toolName === missing.toolName &&
+            String(result.arguments.filePath || result.arguments.relativePath) === missing.path
+        )
+    );
+  }
+
+  const latestMutationFailureIndex = toolResults.findLastIndex(
+    (item) => !item.ok && (item.toolName === 'apply_patch' || item.toolName === 'replace_content')
+  );
+  if (latestMutationFailureIndex >= 0) add(toolResults[latestMutationFailureIndex]);
+
+  return selected.sort((a, b) => a.step - b.step).slice(-12);
+}
+
+function findLatestMutationFailure(toolResults: CompactToolResult[]): MutationFailure | null {
+  const failureIndex = toolResults.findLastIndex(
+    (item) => !item.ok && (item.toolName === 'apply_patch' || item.toolName === 'replace_content')
+  );
+  if (failureIndex < 0) return null;
+
+  const result = toolResults[failureIndex];
+  if (!result) return null;
+  const targetPath = extractMutationTargetPath(result);
+  const laterResults = toolResults.slice(failureIndex + 1);
+  const hasRecoveredRead = laterResults.some(
+    (item) =>
+      item.ok &&
+      item.toolName === 'read_file' &&
+      (!targetPath || String(item.arguments.filePath || '') === targetPath)
+  );
+  if (hasRecoveredRead) return null;
+  const hasLaterImplementationEvidence = laterResults.some(
+    (item) => item.ok && IMPLEMENTATION_EVIDENCE_TOOLS.has(item.toolName)
+  );
+  if (hasLaterImplementationEvidence) return null;
+
+  if (result.toolName !== 'apply_patch' && result.toolName !== 'replace_content') {
+    return null;
+  }
+  return {
+    toolName: result.toolName,
+    targetPath,
+  };
+}
+
+function extractMutationTargetPath(result: CompactToolResult): string | null {
+  if (result.toolName === 'replace_content') {
+    return typeof result.arguments.filePath === 'string' ? result.arguments.filePath : null;
+  }
+
+  if (result.toolName !== 'apply_patch' || typeof result.arguments.patchContent !== 'string') {
+    return null;
+  }
+
+  const patchContent = result.arguments.patchContent;
+  for (const line of patchContent.split('\n')) {
+    const plusMatch = /^\+\+\+ b\/(.+)$/.exec(line);
+    if (plusMatch?.[1] && plusMatch[1] !== '/dev/null') return plusMatch[1];
+    const minusMatch = /^--- a\/(.+)$/.exec(line);
+    if (minusMatch?.[1] && minusMatch[1] !== '/dev/null') return minusMatch[1];
+    const diffMatch = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
+    if (diffMatch?.[2]) return diffMatch[2];
+  }
+
+  return null;
+}
+
+function formatMutationFailureTarget(failure: MutationFailure): string {
+  return failure.targetPath ? `${failure.targetPath} ` : '対象ファイル ';
 }
 
 export function findTodoByToolArguments<TTodo extends { id: string; seq: number }>(
@@ -548,8 +727,19 @@ export function formatToolObservation(toolName: string, toolResult: unknown): st
     return `${header}\nerror=${error.code || 'UNKNOWN'}: ${error.message || 'Unknown tool error'}`;
   }
   if (toolName === 'read_file') {
-    const payload = toDeepRecord(result.payload);
+    const payload: Record<string, unknown> = isRecord(result.payload)
+      ? (result.payload as Record<string, unknown>)
+      : {};
     const content = typeof payload.content === 'string' ? payload.content : '';
+    if (payload.cached === true) {
+      return [
+        `${header} cached=true contentReturned=false`,
+        `totalLines=${payload.totalLines ?? '?'} contentHash=${payload.contentHash ?? '?'}`,
+        content.slice(0, 12_000),
+      ]
+        .filter(Boolean)
+        .join('\n');
+    }
     return [
       header,
       `lines=${payload.startLine ?? '?'}-${payload.endLine ?? '?'} total=${payload.totalLines ?? '?'}`,

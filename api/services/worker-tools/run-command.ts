@@ -1,10 +1,11 @@
 import { exec } from 'node:child_process';
 import crypto from 'node:crypto';
+import { Stats } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { toDeepRecord } from '../../../shared/json-record';
+import { getDeepRecordString, toDeepRecord } from '../../../shared/json-record';
 import { analyzeCommand } from './command-policy';
 import { compressCommandStream, type ToolOutputCompressionMetadata } from './output-compression';
 import {
@@ -169,6 +170,52 @@ export async function runCommandTool(
         message:
           pathDecision.message ||
           `Command execution working directory is restricted by policy: ${cwd}`,
+      },
+    };
+  }
+
+  const cwdStat = await fs.stat(targetCwd).catch((error: unknown) => error);
+  if (getDeepRecordString(cwdStat, 'code') === 'ENOENT') {
+    return {
+      ok: false,
+      toolName: 'run_command',
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      payload: {
+        command,
+        exitCode: -1,
+        stdout: '',
+        stderr: '',
+        classification: 'unknown',
+        truncated: false,
+      },
+      error: {
+        code: 'COMMAND_CWD_NOT_FOUND',
+        message: `Command working directory not found: ${cwd || '.'}`,
+      },
+    };
+  }
+  if (
+    cwdStat instanceof Stats &&
+    typeof cwdStat.isDirectory === 'function' &&
+    !cwdStat.isDirectory()
+  ) {
+    return {
+      ok: false,
+      toolName: 'run_command',
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      payload: {
+        command,
+        exitCode: -1,
+        stdout: '',
+        stderr: '',
+        classification: 'unknown',
+        truncated: false,
+      },
+      error: {
+        code: 'COMMAND_CWD_NOT_DIRECTORY',
+        message: `Command working directory is not a directory: ${cwd || '.'}`,
       },
     };
   }

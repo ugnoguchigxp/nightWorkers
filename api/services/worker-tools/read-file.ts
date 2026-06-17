@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { unknownErrorMessage } from '../../../shared/json-record';
+import { formatFileSystemToolError } from './fs-error';
 import {
   buildReadCacheMarker,
   compressReadFileContent,
@@ -208,10 +208,13 @@ export async function readFileTool(
         endLine: 0,
         truncated: false,
       },
-      error: {
-        code: 'READ_FAILED',
-        message: `Failed to read file: ${unknownErrorMessage(err)}`,
-      },
+      error: formatFileSystemToolError({
+        error: err,
+        notFoundCode: 'FILE_NOT_FOUND',
+        notFoundMessage: `File not found: ${filePath}`,
+        fallbackCode: 'READ_FAILED',
+        fallbackMessagePrefix: 'Failed to read file',
+      }),
     };
   }
 }

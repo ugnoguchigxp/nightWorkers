@@ -137,6 +137,31 @@ describe('conversation context domain', () => {
     expect(targets).toEqual(['src/current.ts', 'src/previous.ts']);
   });
 
+  it('carries previous run tool failure into the StateCard snapshot', async () => {
+    const snapshot = await buildConversationContextSnapshot({
+      source: buildSource(repoRoot, {
+        messages: [userMessage('u1', 'src/app.ts を直してください')],
+        runs: [
+          {
+            id: 'run-1',
+            status: 'failed',
+            summary: 'failed',
+            finalReport: null,
+            finalJudgment: null,
+            contextSnapshot: null,
+            lastToolFailure: 'read_file: FILE_NOT_FOUND: src/missing.ts',
+            startedAt: new Date(3),
+            finishedAt: new Date(4),
+            endedAt: new Date(4),
+          },
+        ],
+      }),
+    });
+
+    expect(snapshot.runState.lastToolFailure).toBe('read_file: FILE_NOT_FOUND: src/missing.ts');
+    expect(renderStateCard(snapshot)).toContain('read_file: FILE_NOT_FOUND');
+  });
+
   it('extracts file hints without classifying workflow from user text', async () => {
     await writeFile(path.join(repoRoot, 'app.ts'), 'export const app = true;\n');
     const snapshot = await buildConversationContextSnapshot({
@@ -264,6 +289,39 @@ describe('conversation context domain', () => {
     expect(compact).toContain('unchanged continuity');
     expect(compact).toContain(`Baseline: ${first.contextBaseline?.stateCardDigest}`);
     expect(compact).not.toContain('Continuity:');
+  });
+
+  it('keeps last problem and target hints in unchanged StateCard rendering', () => {
+    const snapshot = buildSnapshot({
+      latestUserRequest: 'src/app.ts を続けて直す',
+      target: ['src/app.ts'],
+      snippets: [],
+    });
+    snapshot.contextBaseline = {
+      repoRoot,
+      jobType: 'minor_code_edit',
+      workflow: 'minor_code_edit',
+      safetyPolicyDigest: null,
+      stateCardDigest: 'sha256:baseline',
+      relevantFilesDigest: 'sha256:files',
+      adoptedArtifactDigest: null,
+      blueprintRefsDigest: null,
+      blueprintDbDesignRefsDigest: null,
+      designQuestionnaireRefsDigest: null,
+      decisionReviewRefsDigest: null,
+      contextStillRefsDigest: null,
+      workerEvidenceRefsDigest: null,
+      lastRunId: 'run-1',
+      unchangedFromPrevious: true,
+      changedFields: [],
+    };
+    snapshot.runState.lastToolFailure = 'FILE_NOT_FOUND: src/missing.ts';
+
+    const card = renderStateCard(snapshot);
+
+    expect(card).toContain('unchanged continuity');
+    expect(card).toContain('Last problem: FILE_NOT_FOUND: src/missing.ts');
+    expect(card).toContain('Targets: src/app.ts');
   });
 
   it('includes untracked files in git state as added files', async () => {

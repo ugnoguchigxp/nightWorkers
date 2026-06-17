@@ -69,6 +69,7 @@ export type ConversationContextSource = {
     finalReport: string | null;
     finalJudgment: unknown;
     contextSnapshot: unknown;
+    lastToolFailure?: string | null;
     startedAt: Date;
     finishedAt: Date | null;
     endedAt: Date | null;
