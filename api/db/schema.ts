@@ -263,6 +263,72 @@ export const taskEvents = sqliteTable(
   })
 );
 
+export const nativeApiTurns = sqliteTable(
+  'native_api_turns',
+  {
+    ...commonColumns,
+    runId: text('run_id')
+      .notNull()
+      .references(() => taskRuns.id, { onDelete: 'cascade' }),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    turnIndex: integer('turn_index').notNull(),
+    status: text('status').default('running').notNull(),
+    provider: text('provider'),
+    model: text('model'),
+    historyJson: text('history_json', { mode: 'json' }),
+    providerDebugJson: text('provider_debug_json', { mode: 'json' }),
+    errorJson: text('error_json', { mode: 'json' }),
+    startedAt: integer('started_at', { mode: 'timestamp' })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    finishedAt: integer('finished_at', { mode: 'timestamp' }),
+  },
+  (table) => ({
+    runTurnUniqueIdx: uniqueIndex('native_api_turns_run_turn_uidx').on(
+      table.runId,
+      table.turnIndex
+    ),
+    runStatusIdx: index('native_api_turns_run_status_idx').on(table.runId, table.status),
+  })
+);
+
+export const nativeApiToolCalls = sqliteTable(
+  'native_api_tool_calls',
+  {
+    ...commonColumns,
+    runId: text('run_id')
+      .notNull()
+      .references(() => taskRuns.id, { onDelete: 'cascade' }),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    turnId: text('turn_id')
+      .notNull()
+      .references(() => nativeApiTurns.id, { onDelete: 'cascade' }),
+    toolCallId: text('tool_call_id').notNull(),
+    toolName: text('tool_name').notNull(),
+    status: text('status').default('pending').notNull(),
+    argumentsJson: text('arguments_json', { mode: 'json' }),
+    resultJson: text('result_json', { mode: 'json' }),
+    errorJson: text('error_json', { mode: 'json' }),
+    modelVisibleOutput: text('model_visible_output'),
+    todoSeq: integer('todo_seq'),
+    source: text('source').default('provider_native').notNull(),
+    startedAt: integer('started_at', { mode: 'timestamp' }),
+    finishedAt: integer('finished_at', { mode: 'timestamp' }),
+  },
+  (table) => ({
+    runToolCallUniqueIdx: uniqueIndex('native_api_tool_calls_run_call_uidx').on(
+      table.runId,
+      table.toolCallId
+    ),
+    runStatusIdx: index('native_api_tool_calls_run_status_idx').on(table.runId, table.status),
+    turnIdx: index('native_api_tool_calls_turn_idx').on(table.turnId),
+  })
+);
+
 export const artifacts = sqliteTable(
   'artifacts',
   {

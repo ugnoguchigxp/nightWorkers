@@ -81,7 +81,7 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
   return {
     buildRuntimeLaneInitialTodos,
     resolveAgentRuntime,
-    resolveRuntimeLaneDefinition: vi.fn((lane: 'native-supervisor' | 'codex-sdk') => ({
+    resolveRuntimeLaneDefinition: vi.fn((lane: 'native-api-runner' | 'codex-sdk') => ({
       kind: lane,
       aliases: [],
       buildInitialTodos: (input: { compiledPromptText: string }) =>
@@ -91,7 +91,7 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
         implementationLlmRoute?: { providerId?: string } | null;
       }) => {
         const nativeApiRoute =
-          lane === 'native-supervisor' &&
+          lane === 'native-api-runner' &&
           Boolean(input.implementationLlmRoute) &&
           input.implementationLlmRoute?.providerId !== 'codex';
         return {
@@ -99,7 +99,6 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
           runtimeLaneResolution: input.runtimeLaneResolution ?? null,
           ...(nativeApiRoute
             ? {
-                experimentalNativeToolRuntime: true,
                 structuredLlmRoutePolicy: {
                   disallowedProviderIds: ['codex'],
                   synthesizeFallbacksFromEnabledEndpoints: true,
@@ -149,7 +148,7 @@ describe('NightWorkers service', () => {
     delete process.env.ACTIVE_LLM_PROVIDER;
     delete process.env.CODEX_ENABLED;
     delete process.env.IMPLEMENTATION_RUNTIME_LANE;
-    process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-supervisor';
+    process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-api-runner';
   });
 
   it('lists replay events for a run after the requested cursor', async () => {
@@ -436,7 +435,7 @@ describe('NightWorkers service', () => {
     );
   });
 
-  it('uses the native-supervisor runtime lane for non-Codex implementation routes', async () => {
+  it('uses the native-api-runner runtime lane for non-Codex implementation routes', async () => {
     process.env.NIGHTWORKERS_RUNTIME_LANE = 'codex-agent';
     const previousSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
     const settingsPath = path.join(repoRoot, 'llm-route-non-codex-implementation.json');
@@ -527,14 +526,14 @@ describe('NightWorkers service', () => {
       expect.objectContaining({
         workerKind: 'native-local',
         contextSnapshot: expect.objectContaining({
-          runtimeLane: 'native-supervisor',
+          runtimeLane: 'native-api-runner',
           runtimeLaneResolution: expect.objectContaining({
             workerKind: 'native-local',
             source: 'role_route',
             diagnostics: expect.arrayContaining([
               expect.objectContaining({
                 message: expect.stringContaining(
-                  'Native/API implementation uses native-supervisor for this run'
+                  'Native/API implementation uses native-api-runner for this run'
                 ),
               }),
             ]),
@@ -578,8 +577,7 @@ describe('NightWorkers service', () => {
       expect(runtimeStart).toHaveBeenCalledWith(
         expect.objectContaining({
           runtimeOptions: expect.objectContaining({
-            runtimeLane: 'native-supervisor',
-            experimentalNativeToolRuntime: true,
+            runtimeLane: 'native-api-runner',
             structuredLlmRoutePolicy: {
               disallowedProviderIds: ['codex'],
               synthesizeFallbacksFromEnabledEndpoints: true,

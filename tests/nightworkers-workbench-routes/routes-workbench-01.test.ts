@@ -48,7 +48,7 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
   return {
     buildRuntimeLaneInitialTodos,
     resolveAgentRuntime,
-    resolveRuntimeLaneDefinition: vi.fn((lane: 'native-supervisor' | 'codex-sdk') => ({
+    resolveRuntimeLaneDefinition: vi.fn((lane: 'native-api-runner' | 'codex-sdk') => ({
       kind: lane,
       aliases: [],
       buildInitialTodos: (input: { compiledPromptText: string }) =>
@@ -100,13 +100,13 @@ beforeAll(async () => {
 
 beforeEach(() => {
   delete process.env.IMPLEMENTATION_RUNTIME_LANE;
-  process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-supervisor';
+  process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-api-runner';
 });
 
 afterEach(async () => {
   await flushPendingWorkbenchTasks();
   delete process.env.IMPLEMENTATION_RUNTIME_LANE;
-  process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-supervisor';
+  process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-api-runner';
   vi.clearAllMocks();
   vi.restoreAllMocks();
 });

@@ -36,9 +36,9 @@ export type RuntimeLaneDefinition = {
 };
 
 const runtimeLaneDefinitions = {
-  'native-supervisor': {
-    kind: 'native-supervisor',
-    aliases: ['native-supervisor', 'native-local'],
+  'native-api-runner': {
+    kind: 'native-api-runner',
+    aliases: ['native-api-runner', 'native-supervisor', 'native-local'],
     buildInitialTodos: buildNativeSupervisorInitialRunTodos,
     buildRuntimeOptions: buildRuntimeLaneOptions,
     createAdapter: () => nativeRuntime,
@@ -72,7 +72,7 @@ export function buildRuntimeLaneOptions(
 ): Record<string, unknown> {
   const implementationRoute = input.implementationLlmRoute ?? null;
   const nativeApiRoute =
-    input.runtimeLaneResolution?.lane === 'native-supervisor' &&
+    input.runtimeLaneResolution?.lane === 'native-api-runner' &&
     implementationRoute !== null &&
     implementationRoute.providerId !== 'codex';
   return {
@@ -80,7 +80,6 @@ export function buildRuntimeLaneOptions(
     runtimeLaneResolution: input.runtimeLaneResolution ?? null,
     ...(nativeApiRoute
       ? {
-          experimentalNativeToolRuntime: true,
           structuredLlmRoutePolicy: {
             disallowedProviderIds: ['codex'],
             synthesizeFallbacksFromEnabledEndpoints: true,

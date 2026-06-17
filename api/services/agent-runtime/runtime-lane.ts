@@ -1,8 +1,8 @@
 import { readNightWorkersRuntimeEnv } from '../runtime-env';
 import type { AgentRuntimeKind } from './types';
 
-export type RuntimeLane = 'native-supervisor' | 'codex-sdk';
-export type RuntimeLaneAlias = RuntimeLane | 'native-local' | 'codex-agent';
+export type RuntimeLane = 'native-api-runner' | 'codex-sdk';
+export type RuntimeLaneAlias = RuntimeLane | 'native-supervisor' | 'native-local' | 'codex-agent';
 export type RuntimeLaneSource =
   | 'task'
   | 'queue'
@@ -97,7 +97,7 @@ export function resolveRuntimeLane(input: RuntimeLaneInput = {}): RuntimeLaneRes
   }
 
   return {
-    lane: 'native-supervisor',
+    lane: 'native-api-runner',
     workerKind: 'native-local',
     source: 'provider_default',
     diagnostics,
@@ -105,14 +105,16 @@ export function resolveRuntimeLane(input: RuntimeLaneInput = {}): RuntimeLaneRes
 }
 
 export function normalizeRuntimeLane(value: unknown): RuntimeLane | null {
-  if (value === 'native-supervisor' || value === 'native-local') return 'native-supervisor';
+  if (value === 'native-api-runner' || value === 'native-supervisor' || value === 'native-local') {
+    return 'native-api-runner';
+  }
   if (value === 'codex-sdk' || value === 'codex-agent') return 'codex-sdk';
   return null;
 }
 
 function isLegacyRuntimeLaneAlias(value: unknown, lane: RuntimeLane) {
   return (
-    (value === 'native-local' && lane === 'native-supervisor') ||
+    ((value === 'native-supervisor' || value === 'native-local') && lane === 'native-api-runner') ||
     (value === 'codex-agent' && lane === 'codex-sdk')
   );
 }

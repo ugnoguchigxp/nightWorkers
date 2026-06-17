@@ -1,5 +1,11 @@
 # Native/API Lane Tool Runtime 実装計画
 
+> Status: Superseded.
+>
+> この計画は `spec/native-api-lane-rebuild-codex-plan.md` に置き換えられた。
+> 現行方針では、native/API lane の抜本改修は Codex の runtime / protocol / tool / turn state 設計を主参照にする。
+> このファイルは過去調査の記録として残し、次の実装計画としては使わない。
+
 ## 1. 目的
 
 `native-supervisor` / API provider 経由の implementation lane で、実装力が不足する問題を改善する。

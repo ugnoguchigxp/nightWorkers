@@ -15,7 +15,7 @@ describe('agent runtime registry', () => {
   });
 
   it('owns runtime-lane initial Todo setup', () => {
-    const nativeTodos = buildRuntimeLaneInitialTodos('native-supervisor', {
+    const nativeTodos = buildRuntimeLaneInitialTodos('native-api-runner', {
       compiledPromptText: ['画面パス: `settings`', '## 機能要件', '1. 保存できる'].join('\n'),
     });
     const codexTodos = buildRuntimeLaneInitialTodos('codex-sdk', {
@@ -38,9 +38,9 @@ describe('agent runtime registry', () => {
     ]);
   });
 
-  it('defaults runtime lane resolution to native supervisor', () => {
+  it('defaults runtime lane resolution to native api runner', () => {
     expect(resolveRuntimeLane()).toMatchObject({
-      lane: 'native-supervisor',
+      lane: 'native-api-runner',
       workerKind: 'native-local',
       source: 'provider_default',
     });
@@ -65,31 +65,31 @@ describe('agent runtime registry', () => {
   it('keeps the runtime lane priority at task, queue, settings, env, provider default', () => {
     expect(
       resolveRuntimeLane({
-        taskRuntimeLane: 'native-supervisor',
+        taskRuntimeLane: 'native-api-runner',
         queueRuntimeLane: 'codex-agent',
         settingsRuntimeLane: 'codex-agent',
         envRuntimeLane: 'codex-agent',
         activeLlmProvider: 'codex',
         codexEnabled: true,
       })
-    ).toMatchObject({ lane: 'native-supervisor', source: 'task' });
+    ).toMatchObject({ lane: 'native-api-runner', source: 'task' });
 
     expect(
       resolveRuntimeLane({
         queueRuntimeLane: 'codex-agent',
-        settingsRuntimeLane: 'native-supervisor',
-        envRuntimeLane: 'native-supervisor',
+        settingsRuntimeLane: 'native-api-runner',
+        envRuntimeLane: 'native-api-runner',
       })
     ).toMatchObject({ lane: 'codex-sdk', source: 'queue' });
 
     expect(
       resolveRuntimeLane({
-        settingsRuntimeLane: 'native-supervisor',
+        settingsRuntimeLane: 'native-api-runner',
         envRuntimeLane: 'codex-agent',
         activeLlmProvider: 'codex',
         codexEnabled: true,
       })
-    ).toMatchObject({ lane: 'native-supervisor', source: 'settings' });
+    ).toMatchObject({ lane: 'native-api-runner', source: 'settings' });
   });
 
   it('uses codex-sdk as the provider-derived compatibility default when Codex is active and enabled', () => {
@@ -111,28 +111,28 @@ describe('agent runtime registry', () => {
     });
   });
 
-  it('lets explicit settings keep Codex provider execution on the native supervisor lane', () => {
+  it('lets explicit settings keep Codex provider execution on the native api runner lane', () => {
     expect(
       resolveRuntimeLane({
-        settingsRuntimeLane: 'native-supervisor',
+        settingsRuntimeLane: 'native-api-runner',
         activeLlmProvider: 'codex',
         codexEnabled: true,
       })
     ).toMatchObject({
-      lane: 'native-supervisor',
+      lane: 'native-api-runner',
       workerKind: 'native-local',
       source: 'settings',
     });
   });
 
-  it('keeps disabled Codex provider settings on the native supervisor lane', () => {
+  it('keeps disabled Codex provider settings on the native api runner lane', () => {
     expect(
       resolveRuntimeLane({
         activeLlmProvider: 'codex',
         codexEnabled: false,
       })
     ).toMatchObject({
-      lane: 'native-supervisor',
+      lane: 'native-api-runner',
       workerKind: 'native-local',
       source: 'provider_default',
     });

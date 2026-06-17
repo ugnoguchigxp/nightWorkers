@@ -5,10 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import { createLedgerSink } from '../api/services/agent-runtime/ledger-sink';
 import { NativeAgentRuntime } from '../api/services/agent-runtime/NativeAgentRuntime';
+import type { NativeApiRunner } from '../api/services/agent-runtime/native-api-runner/native-api-runner';
 import { createAgentHook } from '../api/services/hooks/hooks-settings';
-import { mcpClientManager } from '../api/services/mcp/mcp-client-manager';
-import * as supervisor from '../api/services/supervisor/supervisor-loop';
-import { executeWorkerTool } from '../api/services/worker-tools/dispatcher';
 
 vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   createRunEvent: vi.fn(),
@@ -18,36 +16,11 @@ vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   updateTaskRunTodo: vi.fn(),
 }));
 
-vi.mock('../api/services/supervisor/supervisor-loop', () => ({
-  runSupervisorLoop: vi.fn(),
-}));
-
-vi.mock('../api/services/mcp/mcp-client-manager', () => ({
-  mcpClientManager: {
-    listAvailableTools: vi.fn(),
-    disconnectAll: vi.fn(),
-  },
-}));
-
-vi.mock('../api/services/worker-tools/dispatcher', () => ({
-  executeWorkerTool: vi.fn(),
-}));
-
 describe('AgentRuntime', () => {
   let tempDir: string;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(mcpClientManager.listAvailableTools).mockResolvedValue([]);
-    vi.mocked(executeWorkerTool).mockResolvedValue({
-      result: {
-        ok: true,
-        toolName: 'mcp_call_tool',
-        startedAt: new Date('2026-06-13T00:00:00.000Z').toISOString(),
-        finishedAt: new Date('2026-06-13T00:00:01.000Z').toISOString(),
-        payload: {},
-      },
-    });
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-agent-runtime-'));
     process.env.NIGHTWORKERS_HOOKS_SETTINGS_PATH = path.join(tempDir, 'agent-hooks.json');
   });
@@ -473,141 +446,18 @@ describe('AgentRuntime', () => {
     expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
   });
 
-  it('runs native initial_instructions before entering the supervisor loop', async () => {
-    const currentTodos = [
-      {
-        id: 'todo-1',
-        runId: 'run-1',
-        seq: 1,
-        title: 'initial_instructions を実行する',
-        taskType: 'initial_instructions',
-        status: 'running',
-        procedureId: 'contextstill.initial_instructions',
-        startedAt: new Date('2026-06-13T00:00:00.000Z'),
-      },
-      {
-        id: 'todo-2',
-        runId: 'run-1',
-        seq: 2,
-        title: 'context_compile を実行する',
-        taskType: 'context_compile',
-        status: 'pending',
-        procedureId: 'contextstill.context_compile',
-      },
-      {
-        id: 'todo-3',
-        runId: 'run-1',
-        seq: 3,
-        title: '実装する',
-        taskType: 'implementation',
-        status: 'pending',
-        procedureId: null,
-      },
-    ];
-    let todos = currentTodos;
-    vi.mocked(repo.getTaskRun).mockResolvedValue({ id: 'run-1', taskId: 'task-1' } as never);
-    vi.mocked(repo.listTaskRunTodosForRun).mockImplementation(async () => todos as never);
-    vi.mocked(repo.updateTaskRunTodo).mockImplementation(async (todoId, patch) => {
-      todos = todos.map((todo) => (todo.id === todoId ? { ...todo, ...patch } : todo));
-      return todos.find((todo) => todo.id === todoId) as never;
+  it('returns needs_human from the native api runner skeleton without fallback', async () => {
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([] as never);
+
+    const runtime = new NativeAgentRuntime({
+      runner: fakeRunner({
+        terminalState: 'needs_human',
+        stoppedBy: 'missing_tool_call',
+        summary: 'NativeApiRunner implementation is pending.',
+        finalReport: 'pending',
+        riskLevel: 'high',
+      }),
     });
-    vi.mocked(repo.startTaskRunTodoIfStillPendingAndNoEarlierOpen).mockImplementation(
-      async ({ id, startedAt }) => {
-        const target = todos.find((todo) => todo.id === id && todo.status === 'pending');
-        if (!target) return null as never;
-        todos = todos.map((todo) =>
-          todo.id === id ? { ...todo, status: 'running', startedAt } : todo
-        );
-        return todos.find((todo) => todo.id === id) as never;
-      }
-    );
-    vi.mocked(mcpClientManager.listAvailableTools).mockResolvedValue([
-      {
-        serverId: 'server-1',
-        serverName: 'context-still',
-        toolPrefix: 'context_still',
-        name: 'initial_instructions',
-        namespacedName: 'mcp__context_still__initial_instructions',
-      },
-      {
-        serverId: 'server-1',
-        serverName: 'context-still',
-        toolPrefix: 'context_still',
-        name: 'context_compile',
-        namespacedName: 'mcp__context_still__context_compile',
-      },
-    ]);
-    vi.mocked(supervisor.runSupervisorLoop).mockResolvedValue({
-      terminalState: 'completed',
-      summary: 'done',
-      finalReport: 'done',
-      stoppedBy: 'decision',
-      riskLevel: 'low',
-    });
-
-    const runtime = new NativeAgentRuntime();
-    const result = await runtime.start(
-      {
-        runId: 'run-1',
-        taskId: 'task-1',
-        repositoryId: 'repo-1',
-        repoRoot: process.cwd(),
-        compiledPrompt: 'do work',
-        latestUserMessage: 'do work',
-        timeoutSeconds: 60,
-        contextSnapshot: {
-          compiledPrompt: 'do work',
-          source: 'fallback',
-        },
-        todoPlan: currentTodos,
-        currentTodo: currentTodos[0],
-      },
-      createLedgerSink('run-1')
-    );
-
-    expect(result.terminalState).toBe('completed');
-    expect(executeWorkerTool).toHaveBeenCalledWith(
-      expect.objectContaining({
-        toolName: 'mcp_call_tool',
-        args: expect.objectContaining({
-          serverId: 'server-1',
-          toolName: 'initial_instructions',
-        }),
-      })
-    );
-    expect(executeWorkerTool).toHaveBeenCalledTimes(1);
-    expect(todos).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: 'todo-1', status: 'passed' }),
-        expect.objectContaining({ id: 'todo-2', status: 'running' }),
-        expect.objectContaining({ id: 'todo-3', status: 'pending' }),
-      ])
-    );
-    expect(supervisor.runSupervisorLoop).toHaveBeenCalled();
-  });
-
-  it('does not auto-close the quality gate for focused checks', async () => {
-    const sink = createLedgerSink('run-123');
-    await sink.emit({
-      type: 'tool_call_finished',
-      message: 'command finished',
-      payload: {
-        toolName: 'command_execution',
-        command: 'bun run typecheck',
-        exitCode: 0,
-        status: 'completed',
-      },
-    });
-
-    expect(repo.getTaskRun).not.toHaveBeenCalled();
-    expect(repo.listTaskRunTodosForRun).not.toHaveBeenCalled();
-    expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
-  });
-
-  it('normalizes runtime crash to failed result and runtime_error event', async () => {
-    (supervisor.runSupervisorLoop as never).mockRejectedValue(new Error('supervisor exploded'));
-
-    const runtime = new NativeAgentRuntime();
     const events: string[] = [];
     const result = await runtime.start(
       {
@@ -630,13 +480,41 @@ describe('AgentRuntime', () => {
       }
     );
 
-    expect(result.terminalState).toBe('failed');
-    expect(result.stoppedBy).toBe('llm_error');
-    expect(events).toContain('runtime_error');
+    expect(result).toMatchObject({
+      terminalState: 'needs_human',
+      stoppedBy: 'missing_tool_call',
+      summary: 'NativeApiRunner implementation is pending.',
+    });
+    expect(events).toEqual(
+      expect.arrayContaining([
+        'runtime_started',
+        'turn_started',
+        'runtime_warning',
+        'runtime_finished',
+      ])
+    );
   });
 
-  it('runs SessionEnd hooks after runtime errors once the session has started', async () => {
-    (supervisor.runSupervisorLoop as never).mockRejectedValue(new Error('supervisor exploded'));
+  it('does not auto-close the quality gate for focused checks', async () => {
+    const sink = createLedgerSink('run-123');
+    await sink.emit({
+      type: 'tool_call_finished',
+      message: 'command finished',
+      payload: {
+        toolName: 'command_execution',
+        command: 'bun run typecheck',
+        exitCode: 0,
+        status: 'completed',
+      },
+    });
+
+    expect(repo.getTaskRun).not.toHaveBeenCalled();
+    expect(repo.listTaskRunTodosForRun).not.toHaveBeenCalled();
+    expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
+  });
+
+  it('runs SessionEnd hooks after native api runner skeleton result', async () => {
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([] as never);
     createAgentHook({
       name: 'Session end audit',
       enabled: true,
@@ -648,7 +526,15 @@ describe('AgentRuntime', () => {
       },
     });
 
-    const runtime = new NativeAgentRuntime();
+    const runtime = new NativeAgentRuntime({
+      runner: fakeRunner({
+        terminalState: 'needs_human',
+        stoppedBy: 'missing_tool_call',
+        summary: 'NativeApiRunner implementation is pending.',
+        finalReport: 'pending',
+        riskLevel: 'high',
+      }),
+    });
     const result = await runtime.start(
       {
         runId: 'run-1',
@@ -668,7 +554,7 @@ describe('AgentRuntime', () => {
       }
     );
 
-    expect(result.terminalState).toBe('failed');
+    expect(result.terminalState).toBe('needs_human');
     expect(repo.createRunEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'hook.started',
@@ -681,7 +567,7 @@ describe('AgentRuntime', () => {
     );
   });
 
-  it('passes current todo context into the supervisor loop', async () => {
+  it('adds current todo context to native api runner events', async () => {
     vi.mocked(repo.getTaskRun).mockResolvedValue(null);
     vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([
       {
@@ -693,15 +579,22 @@ describe('AgentRuntime', () => {
         procedureId: 'code-change',
       },
     ] as never);
-    (supervisor.runSupervisorLoop as never).mockResolvedValue({
-      terminalState: 'completed',
-      summary: 'done',
-      finalReport: 'done',
-      stoppedBy: 'decision',
-      riskLevel: 'low',
-    });
 
-    const runtime = new NativeAgentRuntime();
+    const runtime = new NativeAgentRuntime({
+      runner: {
+        run: async (_context, sink) => {
+          await sink.emit({ type: 'turn_started', message: 'fake native api turn' });
+          return {
+            terminalState: 'needs_human',
+            stoppedBy: 'missing_tool_call',
+            summary: 'NativeApiRunner implementation is pending.',
+            finalReport: 'pending',
+            riskLevel: 'high',
+          };
+        },
+        stop: async () => {},
+      },
+    });
     const emitted: unknown[] = [];
     await runtime.start(
       {
@@ -732,15 +625,6 @@ describe('AgentRuntime', () => {
       }
     );
 
-    expect(supervisor.runSupervisorLoop).toHaveBeenCalledWith(
-      expect.objectContaining({
-        currentTodo: expect.objectContaining({
-          id: 'todo-1',
-          seq: 1,
-          procedureId: 'code-change',
-        }),
-      })
-    );
     expect(emitted).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -763,3 +647,22 @@ describe('AgentRuntime', () => {
     );
   });
 });
+
+function fakeRunner(result: Awaited<ReturnType<NativeApiRunner['run']>>): NativeApiRunner {
+  return {
+    run: async (_context, sink) => {
+      await sink.emit({ type: 'turn_started', message: 'fake native api turn' });
+      await sink.emit({
+        type: 'runtime_warning',
+        message: 'fake native api warning',
+        payload: {
+          code: 'NATIVE_API_RUNNER_TEST',
+          severity: 'warning',
+          message: 'fake native api warning',
+        },
+      });
+      return result;
+    },
+    stop: async () => {},
+  } as NativeApiRunner;
+}

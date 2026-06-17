@@ -55,7 +55,7 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
   return {
     buildRuntimeLaneInitialTodos,
     resolveAgentRuntime,
-    resolveRuntimeLaneDefinition: vi.fn((lane: 'native-supervisor' | 'codex-sdk') => ({
+    resolveRuntimeLaneDefinition: vi.fn((lane: 'native-api-runner' | 'codex-sdk') => ({
       kind: lane,
       aliases: [],
       buildInitialTodos: (input: { compiledPromptText: string }) =>

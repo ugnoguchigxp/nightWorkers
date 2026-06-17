@@ -16,7 +16,7 @@ export type RuntimePromptSnapshot = {
   planModeClosed?: boolean;
   implementationPhasePreamble?: string;
   blueprintPlanning?: unknown;
-  runtimeLane?: 'native-supervisor' | 'codex-sdk';
+  runtimeLane?: 'native-api-runner' | 'codex-sdk';
   runtimeLaneResolution?: RuntimeLaneSnapshot;
   effectiveLlmRouting?: unknown;
   request: {

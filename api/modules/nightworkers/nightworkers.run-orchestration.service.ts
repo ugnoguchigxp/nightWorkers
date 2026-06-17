@@ -409,7 +409,7 @@ function resolveRuntimeLaneForImplementationRoute(
   route: ResolvedStructuredLlmRoute | null
 ): RuntimeLaneResolution {
   if (!route) return fallback;
-  const lane = route.providerId === 'codex' ? 'codex-sdk' : 'native-supervisor';
+  const lane = route.providerId === 'codex' ? 'codex-sdk' : 'native-api-runner';
   return {
     lane,
     workerKind: lane === 'codex-sdk' ? 'codex-agent' : 'native-local',
@@ -425,7 +425,7 @@ function resolveRuntimeLaneForImplementationRoute(
             {
               level: 'warning' as const,
               message:
-                'IMPLEMENTATION_RUNTIME_LANE requested codex-sdk, but the implementation role route is an API provider. Native/API implementation uses native-supervisor for this run.',
+                'IMPLEMENTATION_RUNTIME_LANE requested codex-sdk, but the implementation role route is an API provider. Native/API implementation uses native-api-runner for this run.',
             },
           ]
         : []),

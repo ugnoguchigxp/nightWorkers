@@ -96,7 +96,7 @@ export const llmSettingsSchema = z.object({
   CODEX_ACCESS_TOKEN: z.string().default('').openapi({ example: 'your-codex-token' }),
   CODEX_MODEL: z.string().default('').openapi({ example: 'gpt-5.4-mini' }),
   IMPLEMENTATION_RUNTIME_LANE: z
-    .enum(['', 'native-supervisor', 'codex-sdk', 'codex-agent'])
+    .enum(['', 'native-api-runner', 'native-supervisor', 'codex-sdk', 'codex-agent'])
     .default('')
     .openapi({ example: 'codex-sdk' }),
   SESSION_QUEUE_MAX_CONCURRENCY: z.number().int().positive().default(2).openapi({ example: 2 }),
@@ -150,8 +150,9 @@ const getBoolEnv = (key: string, fallback: boolean) => {
   return value.toLowerCase() === 'true';
 };
 
-const getRuntimeLaneSetting = (value: unknown): '' | 'native-supervisor' | 'codex-sdk' => {
-  if (value === 'native-supervisor' || value === 'codex-sdk') return value;
+const getRuntimeLaneSetting = (value: unknown): '' | 'native-api-runner' | 'codex-sdk' => {
+  if (value === 'native-api-runner' || value === 'codex-sdk') return value;
+  if (value === 'native-supervisor') return 'native-api-runner';
   if (value === 'codex-agent') return 'codex-sdk';
   return '';
 };

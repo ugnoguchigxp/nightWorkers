@@ -72,7 +72,7 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
   return {
     buildRuntimeLaneInitialTodos,
     resolveAgentRuntime,
-    resolveRuntimeLaneDefinition: vi.fn((lane: 'native-supervisor' | 'codex-sdk') => ({
+    resolveRuntimeLaneDefinition: vi.fn((lane: 'native-api-runner' | 'codex-sdk') => ({
       kind: lane,
       aliases: [],
       buildInitialTodos: (input: { compiledPromptText: string }) =>
@@ -122,10 +122,10 @@ describe('NightWorkers service', () => {
     delete process.env.ACTIVE_LLM_PROVIDER;
     delete process.env.CODEX_ENABLED;
     delete process.env.IMPLEMENTATION_RUNTIME_LANE;
-    process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-supervisor';
+    process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-api-runner';
   });
 
-  it('keeps API implementation routes on the native-supervisor lane even when legacy Codex is enabled', async () => {
+  it('keeps API implementation routes on the native-api-runner lane even when legacy Codex is enabled', async () => {
     delete process.env.NIGHTWORKERS_RUNTIME_LANE;
     process.env.ACTIVE_LLM_PROVIDER = 'codex';
     process.env.CODEX_ENABLED = 'true';
@@ -135,7 +135,7 @@ describe('NightWorkers service', () => {
       title: 'Codex provider task',
       description: 'Use Codex provider',
       objective: 'Use Codex provider',
-      acceptanceCriteria: 'API implementation route stays on native-supervisor lane',
+      acceptanceCriteria: 'API implementation route stays on native-api-runner lane',
       timeoutSeconds: 60,
     };
     const run = {
@@ -181,7 +181,7 @@ describe('NightWorkers service', () => {
       expect.objectContaining({
         workerKind: 'native-local',
         contextSnapshot: expect.objectContaining({
-          runtimeLane: 'native-supervisor',
+          runtimeLane: 'native-api-runner',
           runtimeLaneResolution: expect.objectContaining({
             workerKind: 'native-local',
             source: 'role_route',
@@ -408,7 +408,7 @@ describe('NightWorkers service', () => {
           ),
           contextSnapshot: expect.objectContaining({
             runtimeContract: expect.objectContaining({
-              lane: 'native-supervisor',
+              lane: 'native-api-runner',
               warnings: expect.arrayContaining([
                 expect.objectContaining({
                   code: 'codex_file_change_before_todo_replace',
