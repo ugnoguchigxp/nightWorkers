@@ -20,7 +20,7 @@ export default defineConfig({
     fileParallelism: false,
     globalSetup: ['./tests/global-cleanup-after-tests.ts'],
     include: ['tests/**/*.{test,spec}.{ts,tsx}'],
-    exclude: ['tests/e2e/**'],
+    exclude: ['tests/e2e/**', 'tests/live/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],

@@ -100,14 +100,65 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
     'Codex SDK lane へ fallback せず、SchemaFirst supervisor loop へ fallback しません。',
     'new_context tool は、会話履歴を要約せず次の provider turn から新しい context window を開始します。',
     'リポジトリの読み書きは登録済み Project の repo root を基準にし、worker tool handler 経由で行います。',
-    ...(executionMode === 'planning'
-      ? [
-          'Plan mode では実装・ファイル変更・コマンド実行・project import を行わず、調査結果に基づく実装計画を finalize_answer で返します。',
-          'Planning is not closeout. Plan mode では context-still.compile_eval を呼びません。',
-        ]
-      : []),
+    '',
+    'Tool choice guidance:',
+    '- Runtime は contextStill / MCP tools を強制実行しません。必要性を判断し、model-visible tool として自分で選択してください。',
+    '- 実作業前に context_initial_instructions が未実行なら、呼び出すことを強く推奨します。',
+    '- repo 固有の文脈、過去判断、実装境界、検証方針が必要な場合は context_compile を強く推奨します。',
+    '- 仕様書、実装計画、artifact が source of truth の場合は read_current_specification を優先してください。',
+    '- multi-step implementation では todo_list operation=replace を早い段階で使うことを強く推奨します。',
+    '- blocker、未完了 Todo、failed tests/review、ユーザー確認へ進む判断がある場合は context_decision を強く推奨します。',
+    '- closeout では、context_compile を使った場合 compile_eval を検討し、再利用可能な知識があれば register_candidates を検討してください。',
+    '- 推奨 tool を使わない場合は、finalReport でその理由を短く説明してください。',
+    '',
+    ...modeGuidance(executionMode),
     `repoRoot: ${context.repoRoot}`,
   ].join('\n');
+}
+
+function modeGuidance(executionMode: ReturnType<typeof readNativeApiExecutionMode>) {
+  if (executionMode === 'planning') {
+    return [
+      'Planning guidance:',
+      '- 原則として実装・ファイル変更・project import は避け、調査結果に基づく実装計画を返してください。',
+      '- ただし、ユーザーが実装開始を明示した場合、または計画中に実装へ進む合意が明確になった場合は、Todo を更新して implementation work に入って構いません。',
+      '- mutation tool を使う場合は、その理由と根拠を finalReport に含めてください。',
+      '- Planning is not closeout. 実装と検証が終わっていない場合、compile_eval は通常不要です。',
+      '',
+    ];
+  }
+  if (executionMode === 'review') {
+    return [
+      'Review guidance:',
+      '- 変更差分、受け入れ条件、検証結果を確認し、バグ・回帰・責務境界違反・テスト不足を優先してください。',
+      '- 必要に応じて git_diff、read_file、run_verification、context_compile を使って根拠を確認してください。',
+      '- 修正が必要で明確な場合は、Todo を更新して実装修正 tool を使って構いません。',
+      '',
+    ];
+  }
+  if (executionMode === 'runtime_debug') {
+    return [
+      'Runtime debug guidance:',
+      '- logs、DB 状態、runtime settings、直近 tool failure を優先して確認してください。',
+      '- 原因が実装バグとして明確な場合は、Todo を更新して修正 tool を使って構いません。',
+      '',
+    ];
+  }
+  if (executionMode === 'general_answer') {
+    return [
+      'General answer guidance:',
+      '- 原則として最小限の回答でよいですが、リポジトリ事実が必要な場合は read/search tools を使って確認してください。',
+      '- コード変更が必要だと判断した場合は、その理由を明示して Todo を更新してから進めてください。',
+      '',
+    ];
+  }
+  return [
+    'Implementation guidance:',
+    '- 実装 Todo が running になった後は、plan-only answer や次ステップ列挙だけで停止しないでください。',
+    '- 実装、必要な検証、必要な修正、closeout まで進めてください。明確な blocker がある場合は todo_list operation=block/fail を使って説明してください。',
+    '- import_project を使った場合は、postImport payload と recommended verification command を優先してください。',
+    '',
+  ];
 }
 
 function renderCurrentTodoContext(currentTodo: NonNullable<AgentRunContext['currentTodo']>) {

@@ -93,6 +93,9 @@ export async function callProviderToolTurn(input: {
   if (provider === 'openai') {
     return callOpenAIProviderToolTurn(input, isEnabled, settings);
   }
+  if (provider === 'azure') {
+    return callAzureProviderToolTurn(input, isEnabled, settings);
+  }
 
   const providerDebug = {
     provider,
@@ -282,7 +285,6 @@ async function callAzureProvider(
         { role: 'system', content: input.systemPrompt },
         { role: 'user', content: input.userPrompt },
       ],
-      temperature: 0.1,
       ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
       response_format: { type: 'json_schema', json_schema: input.options.jsonSchema },
     }),
@@ -299,7 +301,6 @@ async function callAzureProvider(
           { role: 'system', content: input.systemPrompt },
           { role: 'user', content: input.userPrompt },
         ],
-        temperature: 0.1,
         ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
         response_format: { type: 'json_object' },
       }),
@@ -548,6 +549,90 @@ async function callOpenAIProvider(
   };
 }
 
+async function callAzureProviderToolTurn(
+  input: Parameters<typeof callProviderToolTurn>[0],
+  isEnabled: (key: Parameters<typeof getStructuredLlmBoolSetting>[1], fallback: boolean) => boolean,
+  settings: ReturnType<typeof readStructuredLlmProviderSettings>
+): Promise<ProviderToolTurnResult> {
+  const endpointConfig = getResolvedProviderEndpoint(input, settings);
+  if (!endpointConfig?.enabled && !isEnabled('AZURE_OPENAI_ENABLED', false)) {
+    throw new Error('Azure provider is inactive. Enable AZURE_OPENAI_ENABLED first.');
+  }
+  const apiKey =
+    endpointConfig?.apiKey || getStructuredLlmSetting(settings, 'AZURE_OPENAI_API_KEY');
+  const endpoint =
+    input.options.normalizedRequest.endpoint ||
+    endpointConfig?.endpoint ||
+    getStructuredLlmSetting(settings, 'AZURE_OPENAI_ENDPOINT');
+  const deploymentName =
+    input.options.normalizedRequest.modelOrDeployment ||
+    endpointConfig?.models[0] ||
+    getStructuredLlmSetting(settings, 'AZURE_OPENAI_DEPLOYMENT_NAME', 'gpt-5-mini');
+  const apiVersion =
+    input.options.normalizedRequest.apiVersion ||
+    endpointConfig?.apiVersion ||
+    getStructuredLlmSetting(settings, 'AZURE_OPENAI_API_VERSION', '2024-05-01-preview');
+  if (!apiKey || !endpoint) {
+    throw new Error('Azure OpenAI credentials are not configured in environment variables.');
+  }
+  const reasoningEffort = toOpenAIReasoningEffort(input.options.normalizedRequest.thinkingDepth);
+  const cleanEndpoint = endpoint.replace(/\/+$/, '');
+  const url = `${cleanEndpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    signal: input.signal,
+    headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
+    body: JSON.stringify({
+      messages: toOpenAIToolMessages(input.messages),
+      tools: input.tools.map(toOpenAIToolDefinition),
+      tool_choice: 'auto',
+      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Azure OpenAI native tool call failed with status ${response.status}: ${errorText}`
+    );
+  }
+
+  const responseData = (await response.json()) as OpenAIChatCompletionResponse;
+  const message = responseData.choices?.[0]?.message;
+  const content = typeof message?.content === 'string' ? message.content : '';
+  const toolCalls = (message?.tool_calls ?? []).flatMap(toProviderToolCall);
+  const providerDebug = {
+    provider: 'azure-openai',
+    providerEndpointId: endpointConfig?.id ?? null,
+    mode: 'provider_native_tools',
+    status: response.status,
+    deploymentName,
+    apiVersion,
+    reasoningEffort,
+    hasChoices: Boolean(responseData.choices),
+    hasUsage: Boolean(responseData.usage),
+    toolCallCount: toolCalls.length,
+  };
+  input.setProviderDebug(providerDebug);
+
+  return {
+    type: 'supported',
+    content,
+    toolCalls,
+    usage: normalizeProviderUsage({
+      provider: 'azure-openai',
+      rawUsage: responseData.usage,
+      fallback: {
+        systemPrompt: input.systemPrompt,
+        userPrompt: input.userPrompt,
+        responseText: content,
+      },
+    }),
+    model: deploymentName,
+    providerDebug,
+  };
+}
+
 async function callOpenAIProviderToolTurn(
   input: Parameters<typeof callProviderToolTurn>[0],
   isEnabled: (key: Parameters<typeof getStructuredLlmBoolSetting>[1], fallback: boolean) => boolean,
@@ -582,7 +667,6 @@ async function callOpenAIProviderToolTurn(
       messages: toOpenAIToolMessages(input.messages),
       tools: input.tools.map(toOpenAIToolDefinition),
       tool_choice: 'auto',
-      temperature: 0.1,
       ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
     }),
   });
@@ -774,7 +858,6 @@ async function callBedrockProvider(
       modelId,
       messages: [{ role: 'user', content: [{ text: input.userPrompt }] }],
       system: [{ text: input.systemPrompt }],
-      inferenceConfig: { temperature: 0.1 },
     }),
     { abortSignal: input.signal }
   );

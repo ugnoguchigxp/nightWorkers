@@ -40,9 +40,10 @@ export async function checkStructuredLlmProviderHealth(
   const fetchImpl = options.fetchImpl ?? fetch;
   try {
     const res = await fetchImpl(urlResult.url, {
-      method: 'GET',
+      method: getHealthMethod(endpoint),
       signal: controller.signal,
-      headers: { Accept: 'application/json,text/plain,*/*' },
+      headers: buildHealthHeaders(endpoint),
+      body: buildHealthBody(endpoint),
     });
     const durationMs = Date.now() - started;
     return {
@@ -75,7 +76,10 @@ export async function checkStructuredLlmProviderHealth(
 }
 
 export function buildProviderHealthUrl(
-  endpoint: Pick<StructuredLlmProviderEndpoint, 'kind' | 'baseUrl' | 'endpoint' | 'region'>
+  endpoint: Pick<
+    StructuredLlmProviderEndpoint,
+    'kind' | 'baseUrl' | 'endpoint' | 'region' | 'apiVersion' | 'models'
+  >
 ): { ok: true; url: string } | { ok: false; message: string } {
   if (endpoint.kind === 'codex') {
     return { ok: false, message: 'Codex SDK does not expose an HTTP /health endpoint.' };
@@ -106,10 +110,47 @@ export function buildProviderHealthUrl(
     return { ok: false, message: 'Only http and https health URLs are supported.' };
   }
 
+  if (endpoint.kind === 'azure') {
+    const deploymentName = endpoint.models?.[0]?.trim();
+    if (!deploymentName) {
+      return { ok: false, message: 'Azure deployment name is required for health checks.' };
+    }
+    const apiVersion = endpoint.apiVersion?.trim() || '2024-05-01-preview';
+    url.pathname = `${stripKnownApiSuffix(url.pathname)}/openai/deployments/${encodeURIComponent(
+      deploymentName
+    )}/chat/completions`.replace(/\/{2,}/g, '/');
+    url.search = `?api-version=${encodeURIComponent(apiVersion)}`;
+    url.hash = '';
+    return { ok: true, url: url.toString() };
+  }
+
   url.pathname = `${stripKnownApiSuffix(url.pathname)}/health`.replace(/\/{2,}/g, '/');
   url.search = '';
   url.hash = '';
   return { ok: true, url: url.toString() };
+}
+
+function buildHealthHeaders(endpoint: StructuredLlmProviderEndpoint): HeadersInit {
+  const headers: Record<string, string> = { Accept: 'application/json,text/plain,*/*' };
+  if (endpoint.kind === 'azure') {
+    headers['Content-Type'] = 'application/json';
+    if (endpoint.apiKey?.trim()) {
+      headers['api-key'] = endpoint.apiKey.trim();
+    }
+  }
+  return headers;
+}
+
+function getHealthMethod(endpoint: StructuredLlmProviderEndpoint) {
+  return endpoint.kind === 'azure' ? 'POST' : 'GET';
+}
+
+function buildHealthBody(endpoint: StructuredLlmProviderEndpoint) {
+  if (endpoint.kind !== 'azure') return undefined;
+  return JSON.stringify({
+    messages: [{ role: 'user', content: 'Reply OK.' }],
+    max_completion_tokens: 16,
+  });
 }
 
 function stripKnownApiSuffix(pathname: string) {

@@ -8,7 +8,7 @@ const RUNTIME_SETTINGS_DIR = getRuntimePaths().settingsDir;
 const RUNTIME_SETTINGS_PATH =
   process.env.NIGHTWORKERS_LLM_SETTINGS_PATH ||
   path.join(RUNTIME_SETTINGS_DIR, 'llm-settings.json');
-const MASKED_SECRET = '********';
+export const MASKED_SECRET = '********';
 
 const providerEndpointKindSchema = z.enum([
   'azure',

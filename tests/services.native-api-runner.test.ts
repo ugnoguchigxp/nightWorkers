@@ -15,6 +15,13 @@ vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   listTaskRunTodosForRun: vi.fn(),
 }));
 
+vi.mock('../api/services/mcp/mcp-client-manager', () => ({
+  mcpClientManager: {
+    listAvailableTools: vi.fn(async () => []),
+    callTool: vi.fn(),
+  },
+}));
+
 describe('NativeApiRunner', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -22,7 +29,7 @@ describe('NativeApiRunner', () => {
     (repo.listTaskRunTodosForRun as never).mockResolvedValue([]);
   });
 
-  it('stops with needs_human when the provider returns no native tool calls', async () => {
+  it('completes with provider text when the provider returns no native tool calls', async () => {
     const store = createFakeStore();
     const providerTurn = createProvider([
       {
@@ -45,13 +52,13 @@ describe('NativeApiRunner', () => {
     const result = await runner.run(buildContext(), createSink());
 
     expect(result).toMatchObject({
-      terminalState: 'needs_human',
-      stoppedBy: 'missing_tool_call',
-      riskLevel: 'high',
+      terminalState: 'completed',
+      stoppedBy: 'decision',
+      riskLevel: 'medium',
     });
-    expect(result.finalReport).toContain('did not fall back to Codex or SchemaFirst');
+    expect(result.finalReport).toBe('I will explain instead of using tools.');
     expect(store.turns).toHaveLength(1);
-    expect(store.finishedTurns[0]).toMatchObject({ status: 'failed' });
+    expect(store.finishedTurns[0]).toMatchObject({ status: 'completed' });
     expect(store.toolCalls).toHaveLength(0);
     expect(usageRecorder).toHaveBeenCalledOnce();
   });
@@ -466,7 +473,7 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
     });
   });
 
-  it('restricts model-visible tools in planning mode', () => {
+  it('keeps the full tool surface model-visible in planning mode', () => {
     const toolNames = getNativeApiToolDefinitions({ executionMode: 'planning' }).map(
       (tool) => tool.name
     );
@@ -478,16 +485,21 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
         'read_file',
         'search_files',
         'git_status',
+        'apply_patch',
+        'replace_content',
+        'import_project',
+        'run_verification',
+        'todo_list',
+        'list_mcp_tools',
+        'context_initial_instructions',
         'context_compile',
+        'context_decision',
+        'compile_eval',
+        'register_candidates',
         'new_context',
         'finalize_answer',
       ])
     );
-    expect(toolNames).not.toContain('apply_patch');
-    expect(toolNames).not.toContain('replace_content');
-    expect(toolNames).not.toContain('import_project');
-    expect(toolNames).not.toContain('run_verification');
-    expect(toolNames).not.toContain('todo_list');
   });
 
   it('exposes Codex-style new_context as an empty model-visible tool', () => {
@@ -504,6 +516,24 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
         required: [],
         additionalProperties: false,
       },
+    });
+  });
+
+  it('exposes compile_eval with the contextStill-required closeout fields', () => {
+    const compileEvalTool = getNativeApiToolDefinitions().find(
+      (tool) => tool.name === 'compile_eval'
+    );
+
+    expect(compileEvalTool?.inputSchema).toMatchObject({
+      required: [
+        'actionability',
+        'body',
+        'clarity',
+        'coverage',
+        'outcome',
+        'relevance',
+        'specificity',
+      ],
     });
   });
 
@@ -527,7 +557,7 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
     });
   });
 
-  it('rejects mutating tools in planning mode even if the provider asks for them', async () => {
+  it('does not reject mutating tools solely because the run is in planning mode', async () => {
     const result = await dispatchNativeApiToolCall({
       toolCall: {
         id: 'call-patch',
@@ -540,12 +570,7 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
     });
 
     expect(result.kind).toBe('continue');
-    expect(result.toolResult).toMatchObject({
-      ok: false,
-      error: {
-        code: 'TOOL_NOT_ALLOWED_FOR_MODE',
-      },
-    });
+    expect(result.toolResult.error?.code).not.toBe('TOOL_NOT_ALLOWED_FOR_MODE');
   });
 
   it('includes original tool arguments in native/api worker tool finished events', async () => {
@@ -607,7 +632,24 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
     });
   });
 
-  it('blocks context_compile until read_current_specification has succeeded', async () => {
+  it('rejects empty context_decision input before any MCP dispatch', async () => {
+    const result = await dispatchNativeApiToolCall({
+      toolCall: { id: 'call-decision', name: 'context_decision', arguments: {} },
+      context: buildContext(),
+      sink: createSink(),
+      state: { readFiles: [], specificationRead: true },
+    });
+
+    expect(result.kind).toBe('continue');
+    expect(result.toolResult).toMatchObject({
+      ok: false,
+      error: {
+        code: 'INVALID_TOOL_ARGS',
+      },
+    });
+  });
+
+  it('does not require read_current_specification before context_compile dispatch', async () => {
     const result = await dispatchNativeApiToolCall({
       toolCall: {
         id: 'call-context',
@@ -620,12 +662,7 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
     });
 
     expect(result.kind).toBe('continue');
-    expect(result.toolResult).toMatchObject({
-      ok: false,
-      error: {
-        code: 'SPECIFICATION_REQUIRED',
-      },
-    });
+    expect(result.toolResult.error?.code).not.toBe('SPECIFICATION_REQUIRED');
   });
 });
 

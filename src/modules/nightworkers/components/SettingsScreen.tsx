@@ -45,6 +45,8 @@ const defaultSettings: LlmSettings = {
   roleRoutes: [],
 };
 
+type SaveFeedbackStatus = 'idle' | 'success' | 'error';
+
 import {
   type AgentHookForm,
   defaultGeneralSettings,
@@ -71,14 +73,19 @@ export function SettingsScreen({
   const [generalSettings, setGeneralSettings] = useState<GeneralSettings>(defaultGeneralSettings);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [llmSaveStatus, setLlmSaveStatus] = useState<SaveFeedbackStatus>('idle');
+  const [llmSaveMessage, setLlmSaveMessage] = useState('');
   const [generalMessage, setGeneralMessage] = useState('');
+  const [generalMessageStatus, setGeneralMessageStatus] = useState<SaveFeedbackStatus>('idle');
   const [isRefreshingFx, setIsRefreshingFx] = useState(false);
   const [mcpForm, setMcpForm] = useState<McpServerForm>(emptyMcpForm);
   const [mcpPasteText, setMcpPasteText] = useState('');
   const [mcpMessage, setMcpMessage] = useState<string>('');
+  const [mcpMessageStatus, setMcpMessageStatus] = useState<SaveFeedbackStatus>('idle');
   const [mcpBusy, setMcpBusy] = useState(false);
   const [hookForm, setHookForm] = useState<AgentHookForm>(emptyHookForm);
   const [hookMessage, setHookMessage] = useState<string>('');
+  const [hookMessageStatus, setHookMessageStatus] = useState<SaveFeedbackStatus>('idle');
   const [hookBusy, setHookBusy] = useState(false);
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>('general');
   const { settings: appearanceSettings } = useWorkspaceAppearanceState();
@@ -106,35 +113,50 @@ export function SettingsScreen({
 
   const handleSave = async () => {
     setIsSaving(true);
-    const res = await saveLlmSettings(settings);
-    if (res.ok) {
+    setLlmSaveStatus('idle');
+    setLlmSaveMessage('');
+    try {
+      const res = await saveLlmSettings(settings);
+      if (!res.ok) {
+        throw new Error(t('settings.saveFailedWithStatus', { status: res.status }));
+      }
       setSettings(settings);
-    } else {
-      alert('設定の保存に失敗しました');
+      setLlmSaveStatus('success');
+      setLlmSaveMessage(t('settings.saveSucceeded'));
+    } catch (err) {
+      setLlmSaveStatus('error');
+      setLlmSaveMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSaving(false);
     }
-    setIsSaving(false);
   };
 
   const onChange = <K extends keyof LlmSettings>(key: K, value: LlmSettings[K]) => {
+    setLlmSaveStatus('idle');
+    setLlmSaveMessage('');
     setSettings((prev) => ({ ...prev, [key]: value }));
   };
 
   const saveGeneralSettings = async () => {
     setGeneralMessage('');
+    setGeneralMessageStatus('idle');
     const res = await saveGeneralSettingsCommand(generalSettings);
     if (!res.ok) {
       setGeneralMessage(t('settings.general.saveFailed'));
+      setGeneralMessageStatus('error');
       return;
     }
     const saved = (await res.json()) as GeneralSettings;
     setGeneralSettings(saved);
     void applyNightWorkersLanguage(saved.language);
     setGeneralMessage(t('settings.general.saveSucceeded'));
+    setGeneralMessageStatus('success');
   };
 
   const refreshFxRates = async () => {
     setIsRefreshingFx(true);
     setGeneralMessage('');
+    setGeneralMessageStatus('idle');
     try {
       const res = await refreshFxRatesCommand();
       if (!res.ok) {
@@ -146,8 +168,10 @@ export function SettingsScreen({
         fx: { ...prev.fx, source: 'ecb', lastRefreshedAt: cache.fetchedAt },
       }));
       setGeneralMessage(t('settings.general.exchangeRefreshSucceeded'));
+      setGeneralMessageStatus('success');
     } catch (err) {
       setGeneralMessage(err instanceof Error ? err.message : String(err));
+      setGeneralMessageStatus('error');
     } finally {
       setIsRefreshingFx(false);
     }
@@ -156,6 +180,7 @@ export function SettingsScreen({
   const saveMcpServer = async () => {
     setMcpBusy(true);
     setMcpMessage('');
+    setMcpMessageStatus('idle');
     try {
       const input = mcpFormToInput(mcpForm);
       const saved = mcpForm.id
@@ -164,14 +189,17 @@ export function SettingsScreen({
       setMcpForm(formFromMcpServer(saved));
       if (!saved.enabled) {
         setMcpMessage('MCP Server を保存しました。OFF のため疎通テストはスキップしました');
+        setMcpMessageStatus('success');
         return;
       }
       const result = await workspace.testMcpServer(saved.id);
       setMcpMessage(
         `MCP Server を保存しました。疎通テスト: ${result.ok ? 'OK' : 'NG'} ${result.message}`
       );
+      setMcpMessageStatus('success');
     } catch (err) {
       setMcpMessage(err instanceof Error ? err.message : String(err));
+      setMcpMessageStatus('error');
     } finally {
       setMcpBusy(false);
     }
@@ -180,6 +208,7 @@ export function SettingsScreen({
   const importMcpServers = async () => {
     setMcpBusy(true);
     setMcpMessage('');
+    setMcpMessageStatus('idle');
     try {
       const result = await workspace.importMcpServers(mcpPasteText, true);
       const okCount = result.results.filter((item) => item.ok).length;
@@ -193,8 +222,10 @@ export function SettingsScreen({
           ngCount > 0 ? ` / ${ngCount} NG` : ''
         }`
       );
+      setMcpMessageStatus('success');
     } catch (err) {
       setMcpMessage(err instanceof Error ? err.message : String(err));
+      setMcpMessageStatus('error');
     } finally {
       setMcpBusy(false);
     }
@@ -203,6 +234,7 @@ export function SettingsScreen({
   const toggleMcpServer = async (server: McpServerConfig, enabled: boolean) => {
     setMcpBusy(true);
     setMcpMessage('');
+    setMcpMessageStatus('idle');
     try {
       const updated = await workspace.updateMcpServer(server.id, { enabled });
       if (mcpForm.id === server.id) {
@@ -210,14 +242,17 @@ export function SettingsScreen({
       }
       if (!updated.enabled) {
         setMcpMessage(`${updated.name} をOFFにしました`);
+        setMcpMessageStatus('success');
         return;
       }
       const result = await workspace.testMcpServer(updated.id);
       setMcpMessage(
         `${updated.name} をONにしました。疎通テスト: ${result.ok ? 'OK' : 'NG'} ${result.message}`
       );
+      setMcpMessageStatus(result.ok ? 'success' : 'error');
     } catch (err) {
       setMcpMessage(err instanceof Error ? err.message : String(err));
+      setMcpMessageStatus('error');
     } finally {
       setMcpBusy(false);
     }
@@ -226,11 +261,14 @@ export function SettingsScreen({
   const testMcpServer = async (id: string) => {
     setMcpBusy(true);
     setMcpMessage('');
+    setMcpMessageStatus('idle');
     try {
       const result = await workspace.testMcpServer(id);
       setMcpMessage(`${result.ok ? 'OK' : 'NG'} ${result.message}`);
+      setMcpMessageStatus(result.ok ? 'success' : 'error');
     } catch (err) {
       setMcpMessage(err instanceof Error ? err.message : String(err));
+      setMcpMessageStatus('error');
     } finally {
       setMcpBusy(false);
     }
@@ -239,18 +277,22 @@ export function SettingsScreen({
   const saveAgentHook = async () => {
     setHookBusy(true);
     setHookMessage('');
+    setHookMessageStatus('idle');
     try {
       const input = hookFormToInput(hookForm);
       if (hookForm.id) {
         await workspace.updateAgentHook(hookForm.id, input);
         setHookMessage('Agent Hook を更新しました');
+        setHookMessageStatus('success');
       } else {
         const created = await workspace.createAgentHook(input);
         setHookForm(formFromAgentHook(created));
         setHookMessage('Agent Hook を追加しました');
+        setHookMessageStatus('success');
       }
     } catch (err) {
       setHookMessage(err instanceof Error ? err.message : String(err));
+      setHookMessageStatus('error');
     } finally {
       setHookBusy(false);
     }
@@ -259,11 +301,14 @@ export function SettingsScreen({
   const testAgentHook = async (id: string) => {
     setHookBusy(true);
     setHookMessage('');
+    setHookMessageStatus('idle');
     try {
       const result = await workspace.testAgentHook(id);
       setHookMessage(`${result.ok ? 'OK' : 'NG'} ${result.message}`);
+      setHookMessageStatus(result.ok ? 'success' : 'error');
     } catch (err) {
       setHookMessage(err instanceof Error ? err.message : String(err));
+      setHookMessageStatus('error');
     } finally {
       setHookBusy(false);
     }
@@ -332,6 +377,7 @@ export function SettingsScreen({
             <GeneralSettingsPanel
               value={generalSettings}
               message={generalMessage}
+              messageStatus={generalMessageStatus}
               isRefreshingFx={isRefreshingFx}
               onChange={setGeneralSettings}
               onSave={() => void saveGeneralSettings()}
@@ -352,6 +398,8 @@ export function SettingsScreen({
               section="providers"
               settings={settings}
               isSaving={isSaving}
+              saveStatus={llmSaveStatus}
+              saveMessage={llmSaveMessage}
               onChange={onChange}
               handleSave={handleSave}
             />
@@ -362,6 +410,8 @@ export function SettingsScreen({
               section="routing"
               settings={settings}
               isSaving={isSaving}
+              saveStatus={llmSaveStatus}
+              saveMessage={llmSaveMessage}
               onChange={onChange}
               handleSave={handleSave}
             />
@@ -373,7 +423,9 @@ export function SettingsScreen({
               hookForm={hookForm}
               setHookForm={setHookForm}
               hookMessage={hookMessage}
+              hookMessageStatus={hookMessageStatus}
               setHookMessage={setHookMessage}
+              setHookMessageStatus={setHookMessageStatus}
               hookBusy={hookBusy}
               setHookBusy={setHookBusy}
               saveAgentHook={saveAgentHook}
@@ -387,7 +439,9 @@ export function SettingsScreen({
               mcpForm={mcpForm}
               setMcpForm={setMcpForm}
               mcpMessage={mcpMessage}
+              mcpMessageStatus={mcpMessageStatus}
               setMcpMessage={setMcpMessage}
+              setMcpMessageStatus={setMcpMessageStatus}
               mcpBusy={mcpBusy}
               setMcpBusy={setMcpBusy}
               mcpPasteText={mcpPasteText}

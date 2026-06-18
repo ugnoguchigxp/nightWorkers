@@ -1,5 +1,5 @@
 import {
-  buildNormalizedSupervisorLlmRequest,
+  buildNormalizedSupervisorLlmRequestCandidates,
   providerAdapterKey,
 } from '../../structured-llm/request';
 import type { StructuredLlmModelTarget } from '../../structured-llm/settings';
@@ -34,11 +34,21 @@ export function buildNativeApiProviderRequest(input: {
   routeOverride?: StructuredLlmModelTarget | null;
   routePolicy?: StructuredLlmRoutePolicy;
 }): NativeApiProviderRequest {
+  return buildNativeApiProviderRequests(input)[0];
+}
+
+export function buildNativeApiProviderRequests(input: {
+  context: AgentRunContext;
+  history: readonly NativeApiHistoryItem[];
+  tools?: readonly ProviderToolDefinition[];
+  routeOverride?: StructuredLlmModelTarget | null;
+  routePolicy?: StructuredLlmRoutePolicy;
+}): NativeApiProviderRequest[] {
   const executionMode = readNativeApiExecutionMode(input.context);
   const role = nativeApiRoleForExecutionMode(executionMode);
   const systemPrompt = extractNativeApiSystemPrompt(input.history);
   const userPrompt = extractLatestNativeApiUserPrompt(input.history);
-  const normalizedRequest = buildNormalizedSupervisorLlmRequest({
+  const normalizedRequests = buildNormalizedSupervisorLlmRequestCandidates({
     systemPrompt,
     userPrompt,
     label: 'native_api_runner',
@@ -47,7 +57,7 @@ export function buildNativeApiProviderRequest(input: {
     routePolicy: input.routePolicy,
   });
 
-  return {
+  return normalizedRequests.map((normalizedRequest) => ({
     provider: providerAdapterKey(normalizedRequest.providerId),
     messages: projectNativeApiHistoryToProviderMessages(input.history),
     tools: [...(input.tools ?? [])],
@@ -64,5 +74,5 @@ export function buildNativeApiProviderRequest(input: {
       workingDirectory: input.context.repoRoot,
       normalizedRequest,
     },
-  };
+  }));
 }

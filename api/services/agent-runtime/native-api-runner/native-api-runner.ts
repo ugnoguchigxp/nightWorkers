@@ -5,12 +5,11 @@ import { callProviderToolTurn } from '../../structured-llm/providers';
 import { normalizeStructuredLlmModelTarget } from '../../structured-llm/selection';
 import type { ProviderToolTurnResult } from '../../structured-llm/tool-calls';
 import type { AgentRunContext, AgentRuntimeResult, AgentRuntimeSink } from '../types';
+import { readNativeApiExecutionMode } from './native-api-mode';
 import {
-  NativeApiCloseoutController,
-  type NativeApiCloseoutControllerLike,
-} from './native-api-closeout-controller';
-import { isNativeApiPlanningMode, readNativeApiExecutionMode } from './native-api-mode';
-import { buildNativeApiProviderRequest } from './native-api-request-adapter';
+  buildNativeApiProviderRequests,
+  type NativeApiProviderRequest,
+} from './native-api-request-adapter';
 import { NativeApiSessionStore } from './native-api-session-store';
 import {
   NativeApiStartupController,
@@ -34,7 +33,6 @@ export class NativeApiRunner {
   private readonly activeRunControllers = new Map<string, AbortController>();
   private readonly store: NativeApiSessionStore;
   private readonly startupController: NativeApiStartupControllerLike;
-  private readonly closeoutController: NativeApiCloseoutControllerLike;
   private readonly providerTurn: NativeApiToolTurnProvider;
   private readonly usageRecorder: NativeApiUsageRecorder;
   private readonly maxTurns: number;
@@ -43,7 +41,6 @@ export class NativeApiRunner {
     input: {
       store?: NativeApiSessionStore;
       startupController?: NativeApiStartupControllerLike;
-      closeoutController?: NativeApiCloseoutControllerLike;
       providerTurn?: NativeApiToolTurnProvider;
       usageRecorder?: NativeApiUsageRecorder;
       maxTurns?: number;
@@ -52,8 +49,6 @@ export class NativeApiRunner {
     this.store = input.store ?? new NativeApiSessionStore();
     this.startupController =
       input.startupController ?? new NativeApiStartupController({ store: this.store });
-    this.closeoutController =
-      input.closeoutController ?? new NativeApiCloseoutController({ store: this.store });
     this.providerTurn = input.providerTurn ?? callProviderToolTurn;
     this.usageRecorder = input.usageRecorder ?? recordLlmUsage;
     this.maxTurns = input.maxTurns ?? DEFAULT_MAX_NATIVE_API_TURNS;
@@ -91,17 +86,19 @@ export class NativeApiRunner {
     this.activeRunControllers.set(context.runId, runController);
     const timeout = createTimeoutSignal(signal, runController.signal, context.timeoutSeconds);
     try {
-      const startup = await this.startupController.runStartup({
-        context,
-        sink,
-        history,
-        state,
-        signal: timeout.signal,
-      });
-      history = startup.history;
-      state = startup.state;
-      if (!startup.ok) {
-        return startup.result;
+      if (shouldForceStartupGates(context)) {
+        const startup = await this.startupController.runStartup({
+          context,
+          sink,
+          history,
+          state,
+          signal: timeout.signal,
+        });
+        history = startup.history;
+        state = startup.state;
+        if (!startup.ok) {
+          return startup.result;
+        }
       }
       const contextWindowBaselineHistory = [...history];
 
@@ -116,7 +113,7 @@ export class NativeApiRunner {
           history = [...history, buildPostImportHistoryItem(state.postImport)];
           lastPostImportHistoryToolCallId = state.postImport.toolCallId;
         }
-        const providerRequest = buildNativeApiProviderRequest({
+        const providerRequests = buildNativeApiProviderRequests({
           context,
           history,
           tools: getNativeApiToolDefinitions({ executionMode }),
@@ -126,13 +123,14 @@ export class NativeApiRunner {
             synthesizeFallbacksFromEnabledEndpoints: true,
           },
         });
+        const initialProviderRequest = providerRequests[0];
         const turn = await this.store.createTurn({
           runId: context.runId,
           taskId: context.taskId,
           turnIndex,
           history,
-          provider: providerRequest.provider,
-          model: providerRequest.options.normalizedRequest.modelOrDeployment,
+          provider: initialProviderRequest.provider,
+          model: initialProviderRequest.options.normalizedRequest.modelOrDeployment,
         });
 
         await sink.emit({
@@ -143,32 +141,121 @@ export class NativeApiRunner {
             executionMode,
             turnId: turn.id,
             turnIndex,
-            provider: providerRequest.provider,
-            providerEndpointId: providerRequest.options.normalizedRequest.providerEndpointId,
-            model: providerRequest.options.normalizedRequest.modelOrDeployment,
-            messageRoles: providerRequest.messages.map((message) => message.role),
-            toolCount: providerRequest.tools.length,
+            provider: initialProviderRequest.provider,
+            providerEndpointId: initialProviderRequest.options.normalizedRequest.providerEndpointId,
+            model: initialProviderRequest.options.normalizedRequest.modelOrDeployment,
+            routeCandidateCount: providerRequests.length,
+            messageRoles: initialProviderRequest.messages.map((message) => message.role),
+            toolCount: initialProviderRequest.tools.length,
           },
         });
 
         let providerDebug: Record<string, unknown> = {};
-        let providerResult: ProviderToolTurnResult;
-        const startedAt = Date.now();
-        try {
-          providerResult = await this.providerTurn({
-            provider: providerRequest.provider,
-            messages: providerRequest.messages,
-            tools: providerRequest.tools,
-            systemPrompt: providerRequest.systemPrompt,
-            userPrompt: providerRequest.userPrompt,
-            options: providerRequest.options,
-            signal: timeout.signal,
-            setProviderDebug: (value) => {
-              providerDebug = value;
-            },
+        let providerResult: ProviderToolTurnResult | null = null;
+        let providerRequest: NativeApiProviderRequest = initialProviderRequest;
+        let startedAt = Date.now();
+        let lastProviderFailure: {
+          message: string;
+          providerDebug: Record<string, unknown>;
+        } | null = null;
+        const routeAttempts: Array<Record<string, unknown>> = [];
+        for (let attemptIndex = 0; attemptIndex < providerRequests.length; attemptIndex += 1) {
+          providerRequest = providerRequests[attemptIndex];
+          providerDebug = {};
+          startedAt = Date.now();
+          try {
+            providerResult = await this.providerTurn({
+              provider: providerRequest.provider,
+              messages: providerRequest.messages,
+              tools: providerRequest.tools,
+              systemPrompt: providerRequest.systemPrompt,
+              userPrompt: providerRequest.userPrompt,
+              options: providerRequest.options,
+              signal: timeout.signal,
+              setProviderDebug: (value) => {
+                providerDebug = value;
+              },
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            lastProviderFailure = { message, providerDebug };
+            routeAttempts.push({
+              attemptIndex,
+              ok: false,
+              reason: 'provider_error',
+              message,
+              route: summarizeNativeApiRoute(providerRequest),
+              providerDebug,
+            });
+            if (timeout.signal.aborted || (await this.isCancelled(context.runId, timeout.signal))) {
+              providerResult = null;
+              break;
+            }
+            if (attemptIndex < providerRequests.length - 1) {
+              await emitNativeApiRouteFallback({
+                sink,
+                turnId: turn.id,
+                attemptIndex,
+                from: providerRequest,
+                to: providerRequests[attemptIndex + 1],
+                reason: 'provider_error',
+                message,
+              });
+              continue;
+            }
+            providerResult = null;
+          }
+
+          if (!providerResult) break;
+          routeAttempts.push({
+            attemptIndex,
+            ok: providerResult.type === 'supported',
+            reason:
+              providerResult.type === 'unsupported'
+                ? 'unsupported'
+                : providerResult.toolCalls.length === 0 && !providerResult.content.trim()
+                  ? 'empty_no_tool_calls'
+                  : 'accepted',
+            route: summarizeNativeApiRoute(providerRequest),
+            providerDebug: providerResult.providerDebug ?? providerDebug,
           });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          if (
+            providerResult.type === 'supported' &&
+            (providerResult.toolCalls.length > 0 || providerResult.content.trim())
+          ) {
+            break;
+          }
+          if (timeout.signal.aborted || (await this.isCancelled(context.runId, timeout.signal))) {
+            providerResult = null;
+            break;
+          }
+          if (attemptIndex < providerRequests.length - 1) {
+            await emitNativeApiRouteFallback({
+              sink,
+              turnId: turn.id,
+              attemptIndex,
+              from: providerRequest,
+              to: providerRequests[attemptIndex + 1],
+              reason:
+                providerResult.type === 'unsupported'
+                  ? 'unsupported_provider'
+                  : 'empty_no_tool_calls',
+              message:
+                providerResult.type === 'unsupported'
+                  ? providerResult.reason
+                  : 'Provider returned no native tool calls or content.',
+            });
+            continue;
+          }
+          break;
+        }
+
+        providerDebug = {
+          ...(providerResult?.providerDebug ?? providerDebug),
+          routeAttempts,
+        };
+        if (!providerResult) {
+          const message = lastProviderFailure?.message ?? 'No native API provider route succeeded.';
           const cancelled = await this.isCancelled(context.runId, timeout.signal);
           await this.store.finishTurn({
             turnId: turn.id,
@@ -246,13 +333,23 @@ export class NativeApiRunner {
         ];
 
         if (providerResult.toolCalls.length === 0) {
+          const finalText = providerResult.content.trim();
           await this.store.finishTurn({
             turnId: turn.id,
-            status: 'failed',
+            status: finalText ? 'completed' : 'failed',
             history,
             providerDebug: providerResult.providerDebug ?? providerDebug,
             model: providerResult.model ?? null,
           });
+          if (finalText) {
+            return {
+              terminalState: 'completed',
+              summary: firstLine(finalText),
+              finalReport: finalText,
+              stoppedBy: 'decision',
+              riskLevel: 'medium',
+            };
+          }
           return {
             terminalState: 'needs_human',
             summary: 'Provider returned no native tool calls.',
@@ -340,19 +437,6 @@ export class NativeApiRunner {
             modelVisibleOutput: dispatch.toolResult.content,
           });
           if (dispatch.kind === 'final') {
-            if (!isNativeApiPlanningMode(executionMode)) {
-              const closeout = await this.closeoutController.runCompileEval({
-                context,
-                sink,
-                turnId: turn.id,
-                state,
-                finalReport: dispatch.finalReport,
-              });
-              state = closeout.state;
-              if (!closeout.skipped) {
-                history = [...history, closeout.historyItem];
-              }
-            }
             await this.store.finishTurn({
               turnId: turn.id,
               status: 'completed',
@@ -441,6 +525,46 @@ export class NativeApiRunner {
     }
     return false;
   }
+}
+
+function shouldForceStartupGates(context: AgentRunContext): boolean {
+  return context.runtimeOptions?.forceStartupGates === true;
+}
+
+async function emitNativeApiRouteFallback(input: {
+  sink: AgentRuntimeSink;
+  turnId: string;
+  attemptIndex: number;
+  from: NativeApiProviderRequest;
+  to: NativeApiProviderRequest;
+  reason: string;
+  message: string;
+}) {
+  await input.sink.emit({
+    type: 'tool_call_progress',
+    message: `[NativeApiRunner] provider-native route fallback started: ${input.reason}.`,
+    payload: {
+      runtime: 'native_api_runner',
+      action: 'provider_route_fallback_started',
+      turnId: input.turnId,
+      attemptIndex: input.attemptIndex,
+      reason: input.reason,
+      message: input.message,
+      from: summarizeNativeApiRoute(input.from),
+      to: summarizeNativeApiRoute(input.to),
+    },
+  });
+}
+
+function summarizeNativeApiRoute(request: NativeApiProviderRequest) {
+  return {
+    provider: request.provider,
+    providerId: request.options.normalizedRequest.providerId,
+    providerEndpointId: request.options.normalizedRequest.providerEndpointId ?? null,
+    routeSource: request.options.normalizedRequest.routeSource ?? null,
+    model: request.options.normalizedRequest.modelOrDeployment ?? null,
+    thinkingDepth: request.options.normalizedRequest.thinkingDepth ?? null,
+  };
 }
 
 function readRuntimeLlmRouteOverride(context: AgentRunContext) {
@@ -585,4 +709,13 @@ function toRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function firstLine(value: string) {
+  return (
+    value
+      .split(/\r?\n/)
+      .find((line) => line.trim())
+      ?.trim() || value.trim()
+  );
 }

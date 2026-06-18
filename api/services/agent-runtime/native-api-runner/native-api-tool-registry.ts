@@ -1,17 +1,22 @@
 import type { ProviderToolDefinition } from '../../structured-llm/tool-calls';
 import type { WorkerToolName } from '../../tool-policy/types';
-import type { NativeApiExecutionMode } from './native-api-mode';
 
 export type NativeApiRuntimeToolName =
   | WorkerToolName
   | 'todo_list'
+  | 'list_mcp_tools'
+  | 'context_initial_instructions'
   | 'context_compile'
+  | 'context_decision'
+  | 'compile_eval'
+  | 'register_candidates'
   | 'new_context'
   | 'finalize_answer';
 
 export type NativeApiToolKind =
   | 'worker'
   | 'todo_control'
+  | 'mcp_catalog'
   | 'context_still'
   | 'context_window'
   | 'terminal';
@@ -41,7 +46,8 @@ const workerToolDefinitions: NativeApiToolRegistration[] = [
     workerToolName: 'read_current_specification',
     definition: {
       name: 'read_current_specification',
-      description: 'Read the latest NightWorkers task specification before context compilation.',
+      description:
+        'Read the latest NightWorkers task specification. Strongly recommended when a specification, plan, or artifact is the source of truth, but not required for every task.',
       inputSchema: objectSchema({}),
     },
   },
@@ -99,7 +105,8 @@ const workerToolDefinitions: NativeApiToolRegistration[] = [
     workerToolName: 'apply_patch',
     definition: {
       name: 'apply_patch',
-      description: 'Apply a unified patch to repository files.',
+      description:
+        'Apply a unified patch to repository files. In planning mode, use only when the user has clearly moved into implementation or the reason is explicit in the final report.',
       inputSchema: objectSchema({ patchContent: { type: 'string' } }, ['patchContent']),
     },
   },
@@ -165,6 +172,24 @@ const workerToolDefinitions: NativeApiToolRegistration[] = [
     },
   },
   {
+    name: 'mcp_call_tool',
+    kind: 'worker',
+    workerToolName: 'mcp_call_tool',
+    definition: {
+      name: 'mcp_call_tool',
+      description:
+        'Call an enabled MCP tool by serverId and toolName. Use list_mcp_tools first when the target server or schema is unclear.',
+      inputSchema: objectSchema(
+        {
+          serverId: { type: 'string' },
+          toolName: { type: 'string' },
+          arguments: { type: 'object' },
+        },
+        ['serverId', 'toolName']
+      ),
+    },
+  },
+  {
     name: 'git_status',
     kind: 'worker',
     workerToolName: 'git_status',
@@ -189,12 +214,32 @@ const workerToolDefinitions: NativeApiToolRegistration[] = [
 const nativeApiToolRegistrations: NativeApiToolRegistration[] = [
   ...workerToolDefinitions,
   {
+    name: 'list_mcp_tools',
+    kind: 'mcp_catalog',
+    definition: {
+      name: 'list_mcp_tools',
+      description:
+        'List enabled MCP tools available to this runtime. Use this when deciding which MCP capability to call.',
+      inputSchema: objectSchema({}),
+    },
+  },
+  {
+    name: 'context_initial_instructions',
+    kind: 'context_still',
+    definition: {
+      name: 'context_initial_instructions',
+      description:
+        'Run contextStill initial_instructions. Strongly recommended before substantive work when it has not run in this run, but failure does not automatically stop the task.',
+      inputSchema: objectSchema({}),
+    },
+  },
+  {
     name: 'context_compile',
     kind: 'context_still',
     definition: {
       name: 'context_compile',
       description:
-        'Compile task context after reading the current specification. Requires a concrete goal.',
+        'Compile task context. Strongly recommended when repo history, prior decisions, or implementation guidance would materially improve the work. Requires a concrete goal.',
       inputSchema: objectSchema(
         {
           goal: { type: 'string', minLength: 1 },
@@ -204,6 +249,57 @@ const nativeApiToolRegistrations: NativeApiToolRegistration[] = [
         },
         ['goal']
       ),
+    },
+  },
+  {
+    name: 'context_decision',
+    kind: 'context_still',
+    definition: {
+      name: 'context_decision',
+      description:
+        'Ask contextStill for a decision before escalating to the user, after failed tests/review, or when unfinished Todo/status remains. Strongly recommended at real decision points; do not use as a generic search tool.',
+      inputSchema: objectSchema(
+        {
+          decisionPoint: { type: 'string', minLength: 1 },
+          metadata: { type: 'object' },
+          retrievalHints: { type: 'object' },
+          sessionId: { type: 'string' },
+        },
+        ['decisionPoint']
+      ),
+    },
+  },
+  {
+    name: 'compile_eval',
+    kind: 'context_still',
+    definition: {
+      name: 'compile_eval',
+      description:
+        'Record a contextStill compile_eval during closeout. Recommended when context_compile was used; do not treat failure as automatic task failure.',
+      inputSchema: objectSchema(
+        {
+          title: { type: 'string' },
+          outcome: { type: 'string', enum: ['useful', 'partial', 'misleading', 'unused'] },
+          body: { type: 'string' },
+          relevance: { type: 'integer' },
+          coverage: { type: 'integer' },
+          specificity: { type: 'integer' },
+          actionability: { type: 'integer' },
+          clarity: { type: 'integer' },
+          runId: { type: 'string' },
+        },
+        ['actionability', 'body', 'clarity', 'coverage', 'outcome', 'relevance', 'specificity']
+      ),
+    },
+  },
+  {
+    name: 'register_candidates',
+    kind: 'context_still',
+    definition: {
+      name: 'register_candidates',
+      description:
+        'Register reusable lessons with contextStill. Recommended during closeout when project-independent rules or procedures were learned.',
+      inputSchema: objectSchema({ items: { type: 'array' } }, ['items']),
     },
   },
   {
@@ -250,61 +346,12 @@ const nativeApiToolRegistrations: NativeApiToolRegistration[] = [
   },
 ];
 
-const nativeApiToolNamesByMode: Record<NativeApiExecutionMode, Set<NativeApiRuntimeToolName>> = {
-  planning: new Set([
-    'read_current_specification',
-    'list_dir',
-    'read_file',
-    'search_files',
-    'git_status',
-    'context_compile',
-    'new_context',
-    'finalize_answer',
-  ]),
-  implementation: new Set(nativeApiToolRegistrations.map((registration) => registration.name)),
-  review: new Set([
-    'read_current_specification',
-    'list_dir',
-    'read_file',
-    'search_files',
-    'git_status',
-    'git_diff',
-    'run_verification',
-    'context_compile',
-    'new_context',
-    'finalize_answer',
-  ]),
-  runtime_debug: new Set([
-    'read_current_specification',
-    'list_dir',
-    'read_file',
-    'search_files',
-    'git_status',
-    'git_diff',
-    'context_compile',
-    'new_context',
-    'finalize_answer',
-  ]),
-  general_answer: new Set(['finalize_answer', 'new_context']),
-};
-
 export function getNativeApiToolDefinitions(
-  input: { executionMode?: NativeApiExecutionMode } = {}
+  _input: { executionMode?: unknown } = {}
 ): ProviderToolDefinition[] {
-  const allowed = allowedNativeApiToolNames(input.executionMode ?? 'implementation');
-  return nativeApiToolRegistrations
-    .filter((registration) => allowed.has(registration.name))
-    .map((registration) => registration.definition);
+  return nativeApiToolRegistrations.map((registration) => registration.definition);
 }
 
 export function getNativeApiToolRegistration(name: string): NativeApiToolRegistration | undefined {
   return nativeApiToolRegistrations.find((registration) => registration.name === name);
-}
-
-export function isNativeApiToolAllowedForMode(name: string, mode: NativeApiExecutionMode): boolean {
-  return allowedNativeApiToolNames(mode).has(name as NativeApiRuntimeToolName);
-}
-
-function allowedNativeApiToolNames(mode: NativeApiExecutionMode) {
-  return nativeApiToolNamesByMode[mode] ?? nativeApiToolNamesByMode.implementation;
 }

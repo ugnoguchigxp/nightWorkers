@@ -37,3 +37,24 @@
   `flushPendingWorkbenchTasks` for microtask-only cleanup.
 - E2E tests may use Playwright waits when they reflect browser behavior, but
   route/service tests should wait for persisted state or emitted events.
+
+## Live LLM/API Tests
+
+- Keep live provider tests out of the default Vitest include. Put them under
+  `tests/live/**` and run them through `bun run test:live:llm`.
+- Live tests must be opt-in. Set `NIGHTWORKERS_LIVE_LLM_VITEST=1` plus the
+  provider credentials or local base URL before running them.
+- Supported provider setup:
+  - OpenAI: `OPENAI_API_KEY` and optionally `OPENAI_MODEL` / `OPENAI_BASE_URL`.
+  - Azure OpenAI: `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`,
+    `AZURE_OPENAI_DEPLOYMENT_NAME`, and optionally `AZURE_OPENAI_API_VERSION`.
+  - Local: `NIGHTWORKERS_LIVE_LLM_PROVIDER=local` with `LOCAL_OPENAI_BASE_URL`
+    or `NIGHTWORKERS_LOCAL_LLM_BASE_URL`, and optionally `LOCAL_OPENAI_MODEL`.
+  - Other OpenAI-compatible endpoints: `NIGHTWORKERS_LIVE_LLM_PROVIDER=openai-compatible`
+    with `OPENAI_COMPATIBLE_BASE_URL` and optionally `OPENAI_COMPATIBLE_API_KEY`
+    / `OPENAI_COMPATIBLE_MODEL`.
+- Provider health probes are separate from JSON response smoke tests. Set
+  `NIGHTWORKERS_LIVE_LLM_HEALTH=1` to run health probes for providers with a
+  known health contract.
+- `bun run verify:live` runs normal verification first, then the live LLM
+  Vitest smoke, then the heavier Playwright `@agent-live` run.

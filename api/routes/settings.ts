@@ -62,6 +62,7 @@ import {
 import {
   applySettingsToProcessEnv,
   llmProviderEndpointSchema,
+  MASKED_SECRET,
   maskLlmSettings,
   mergeMaskedSecrets,
   providerModelOptions,
@@ -156,13 +157,18 @@ export const settingsRouter = createOpenApiRouter()
     const parsedBodyEndpoint = llmProviderEndpointSchema.safeParse(
       body && typeof body === 'object' && 'endpoint' in body ? body.endpoint : null
     );
-    const bodyEndpoint =
+    const parsedEndpoint =
       parsedBodyEndpoint.success && parsedBodyEndpoint.data.id === c.req.param('id')
         ? parsedBodyEndpoint.data
         : null;
-    const endpoint =
-      bodyEndpoint ||
-      (settings.providerEndpoints || []).find((item) => item.id === c.req.param('id'));
+    const savedEndpoint = (settings.providerEndpoints || []).find(
+      (item) => item.id === c.req.param('id')
+    );
+    const bodyEndpoint =
+      parsedEndpoint && parsedEndpoint.apiKey === MASKED_SECRET
+        ? { ...parsedEndpoint, apiKey: savedEndpoint?.apiKey || '' }
+        : parsedEndpoint;
+    const endpoint = bodyEndpoint || savedEndpoint;
     if (!endpoint)
       return c.json(
         { error: { code: 'NOT_FOUND', message: 'LLM provider endpoint not found' } },

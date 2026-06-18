@@ -1,4 +1,4 @@
-import { Globe, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Globe, RefreshCw, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { applyNightWorkersLanguage } from '../i18n/NightWorkersI18nProvider';
@@ -8,6 +8,7 @@ import { SelectField } from './SettingsFields';
 export function GeneralSettingsPanel({
   value,
   message,
+  messageStatus,
   isRefreshingFx,
   onChange,
   onSave,
@@ -15,6 +16,7 @@ export function GeneralSettingsPanel({
 }: {
   value: GeneralSettings;
   message: string;
+  messageStatus: 'idle' | 'success' | 'error';
   isRefreshingFx: boolean;
   onChange: (next: GeneralSettings) => void;
   onSave: () => void;
@@ -95,7 +97,23 @@ export function GeneralSettingsPanel({
           {t('settings.general.refreshFx')}
         </Button>
       </div>
-      {message ? <p className="text-xs text-zinc-400">{message}</p> : null}
+      {message ? (
+        <p
+          role={messageStatus === 'error' ? 'alert' : 'status'}
+          className={`inline-flex min-h-9 items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
+            messageStatus === 'success'
+              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+              : 'border-rose-500/40 bg-rose-500/10 text-rose-200'
+          }`}
+        >
+          {messageStatus === 'success' ? (
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+          ) : (
+            <XCircle className="h-4 w-4 shrink-0" />
+          )}
+          <span>{message}</span>
+        </p>
+      ) : null}
     </section>
   );
 }

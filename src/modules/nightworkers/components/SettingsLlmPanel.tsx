@@ -1,4 +1,4 @@
-import { Activity, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Activity, CheckCircle2, Plus, RefreshCw, Trash2, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
@@ -171,12 +171,16 @@ export function SettingsLlmPanel({
   section,
   settings,
   isSaving,
+  saveStatus,
+  saveMessage,
   onChange,
   handleSave,
 }: {
   section: 'providers' | 'routing';
   settings: LlmSettings;
   isSaving: boolean;
+  saveStatus: 'idle' | 'success' | 'error';
+  saveMessage: string;
   onChange: <K extends keyof LlmSettings>(key: K, value: LlmSettings[K]) => void;
   handleSave: () => Promise<void>;
 }) {
@@ -761,15 +765,40 @@ export function SettingsLlmPanel({
         </section>
       ) : null}
 
-      <div className="flex justify-end border-zinc-800/80 border-t pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-zinc-800/80 border-t pt-4">
+        {saveMessage ? (
+          <div
+            role={saveStatus === 'error' ? 'alert' : 'status'}
+            className={`inline-flex min-h-9 items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
+              saveStatus === 'success'
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+                : 'border-rose-500/40 bg-rose-500/10 text-rose-200'
+            }`}
+          >
+            {saveStatus === 'success' ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+            ) : (
+              <XCircle className="h-4 w-4 shrink-0" />
+            )}
+            <span>{saveMessage}</span>
+          </div>
+        ) : (
+          <span />
+        )}
         <Button
           type="button"
           onClick={() => void handleSave()}
           disabled={isSaving}
-          className="h-9 px-5 text-xs"
+          variant={saveStatus === 'success' ? 'success' : 'default'}
+          className="h-9 gap-2 px-5 text-xs"
         >
           {isSaving ? <RefreshCw className="h-3 w-3 animate-spin" /> : null}
-          {isSaving ? t('settings.saving') : t('settings.saveAll')}
+          {saveStatus === 'success' && !isSaving ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
+          {isSaving
+            ? t('settings.saving')
+            : saveStatus === 'success'
+              ? t('settings.saved')
+              : t('settings.saveAll')}
         </Button>
       </div>
     </div>

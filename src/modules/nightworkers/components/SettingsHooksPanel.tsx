@@ -1,4 +1,4 @@
-import { RefreshCw, Trash2, Workflow } from 'lucide-react';
+import { CheckCircle2, RefreshCw, Trash2, Workflow, XCircle } from 'lucide-react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
@@ -17,7 +17,9 @@ type SettingsHooksPanelProps = {
   hookForm: AgentHookForm;
   setHookForm: Dispatch<SetStateAction<AgentHookForm>>;
   hookMessage: string;
+  hookMessageStatus: 'idle' | 'success' | 'error';
   setHookMessage: Dispatch<SetStateAction<string>>;
+  setHookMessageStatus: Dispatch<SetStateAction<'idle' | 'success' | 'error'>>;
   hookBusy: boolean;
   setHookBusy: Dispatch<SetStateAction<boolean>>;
   saveAgentHook: () => Promise<void>;
@@ -29,7 +31,9 @@ export function SettingsHooksPanel({
   hookForm,
   setHookForm,
   hookMessage,
+  hookMessageStatus,
   setHookMessage,
+  setHookMessageStatus,
   hookBusy,
   setHookBusy,
   saveAgentHook,
@@ -52,6 +56,7 @@ export function SettingsHooksPanel({
           onClick={() => {
             setHookForm(emptyHookForm);
             setHookMessage('');
+            setHookMessageStatus('idle');
           }}
           className="h-9 px-4 text-xs"
         >
@@ -73,6 +78,7 @@ export function SettingsHooksPanel({
                 onClick={() => {
                   setHookForm(formFromAgentHook(hook));
                   setHookMessage('');
+                  setHookMessageStatus('idle');
                 }}
                 className={`w-full rounded-lg border p-3 text-left text-xs ${
                   hookForm.id === hook.id
@@ -255,10 +261,19 @@ export function SettingsHooksPanel({
                   onClick={async () => {
                     if (!hookForm.id) return;
                     setHookBusy(true);
-                    await workspace.deleteAgentHook(hookForm.id);
-                    setHookForm(emptyHookForm);
-                    setHookMessage('Agent Hook を削除しました');
-                    setHookBusy(false);
+                    setHookMessage('');
+                    setHookMessageStatus('idle');
+                    try {
+                      await workspace.deleteAgentHook(hookForm.id);
+                      setHookForm(emptyHookForm);
+                      setHookMessage('Agent Hook を削除しました');
+                      setHookMessageStatus('success');
+                    } catch (err) {
+                      setHookMessage(err instanceof Error ? err.message : String(err));
+                      setHookMessageStatus('error');
+                    } finally {
+                      setHookBusy(false);
+                    }
                   }}
                   disabled={hookBusy}
                   className="h-9 px-4 text-xs text-red-300"
@@ -278,7 +293,23 @@ export function SettingsHooksPanel({
               {hookForm.id ? t('settings.hooks.update') : t('settings.hooks.add')}
             </Button>
           </div>
-          {hookMessage ? <p className="text-xs text-zinc-400">{hookMessage}</p> : null}
+          {hookMessage ? (
+            <p
+              role={hookMessageStatus === 'error' ? 'alert' : 'status'}
+              className={`inline-flex min-h-9 items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
+                hookMessageStatus === 'success'
+                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+                  : 'border-rose-500/40 bg-rose-500/10 text-rose-200'
+              }`}
+            >
+              {hookMessageStatus === 'success' ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+              ) : (
+                <XCircle className="h-4 w-4 shrink-0" />
+              )}
+              <span>{hookMessage}</span>
+            </p>
+          ) : null}
         </div>
       </div>
     </div>

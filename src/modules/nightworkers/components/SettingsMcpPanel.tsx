@@ -1,4 +1,4 @@
-import { PlugZap, RefreshCw, Trash2 } from 'lucide-react';
+import { CheckCircle2, PlugZap, RefreshCw, Trash2, XCircle } from 'lucide-react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
@@ -12,7 +12,9 @@ type SettingsMcpPanelProps = {
   mcpForm: McpServerForm;
   setMcpForm: Dispatch<SetStateAction<McpServerForm>>;
   mcpMessage: string;
+  mcpMessageStatus: 'idle' | 'success' | 'error';
   setMcpMessage: Dispatch<SetStateAction<string>>;
+  setMcpMessageStatus: Dispatch<SetStateAction<'idle' | 'success' | 'error'>>;
   mcpBusy: boolean;
   setMcpBusy: Dispatch<SetStateAction<boolean>>;
   mcpPasteText: string;
@@ -28,7 +30,9 @@ export function SettingsMcpPanel({
   mcpForm,
   setMcpForm,
   mcpMessage,
+  mcpMessageStatus,
   setMcpMessage,
+  setMcpMessageStatus,
   mcpBusy,
   setMcpBusy,
   mcpPasteText,
@@ -55,6 +59,7 @@ export function SettingsMcpPanel({
           onClick={() => {
             setMcpForm(emptyMcpForm);
             setMcpMessage('');
+            setMcpMessageStatus('idle');
           }}
           className="h-9 px-4 text-xs"
         >
@@ -83,6 +88,7 @@ export function SettingsMcpPanel({
                   onClick={() => {
                     setMcpForm(formFromMcpServer(server));
                     setMcpMessage('');
+                    setMcpMessageStatus('idle');
                   }}
                   className="min-w-0 text-left"
                 >
@@ -255,12 +261,16 @@ export function SettingsMcpPanel({
                   onClick={async () => {
                     if (!mcpForm.id) return;
                     setMcpBusy(true);
+                    setMcpMessage('');
+                    setMcpMessageStatus('idle');
                     try {
                       await workspace.deleteMcpServer(mcpForm.id);
                       setMcpForm(emptyMcpForm);
                       setMcpMessage('MCP Server を削除しました');
+                      setMcpMessageStatus('success');
                     } catch (err) {
                       setMcpMessage(err instanceof Error ? err.message : String(err));
+                      setMcpMessageStatus('error');
                     } finally {
                       setMcpBusy(false);
                     }
@@ -283,7 +293,23 @@ export function SettingsMcpPanel({
               {mcpForm.id ? t('settings.mcp.update') : t('settings.mcp.add')}
             </Button>
           </div>
-          {mcpMessage ? <p className="text-xs text-zinc-400">{mcpMessage}</p> : null}
+          {mcpMessage ? (
+            <p
+              role={mcpMessageStatus === 'error' ? 'alert' : 'status'}
+              className={`inline-flex min-h-9 items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
+                mcpMessageStatus === 'success'
+                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+                  : 'border-rose-500/40 bg-rose-500/10 text-rose-200'
+              }`}
+            >
+              {mcpMessageStatus === 'success' ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+              ) : (
+                <XCircle className="h-4 w-4 shrink-0" />
+              )}
+              <span>{mcpMessage}</span>
+            </p>
+          ) : null}
         </div>
       </div>
     </div>

@@ -5,12 +5,8 @@ import { executeWorkerTool } from '../../worker-tools/dispatcher';
 import { type TodoListOperation, todoListTool } from '../../worker-tools/todo-list';
 import type { WorkerToolResult } from '../../worker-tools/types';
 import type { AgentRunContext, AgentRuntimeSink } from '../types';
-import { readNativeApiExecutionMode } from './native-api-mode';
 import type { NativeApiToolResult } from './native-api-tool-history';
-import {
-  getNativeApiToolRegistration,
-  isNativeApiToolAllowedForMode,
-} from './native-api-tool-registry';
+import { getNativeApiToolRegistration } from './native-api-tool-registry';
 
 export type NativeApiDispatchState = {
   readFiles: string[];
@@ -60,20 +56,10 @@ export async function dispatchNativeApiToolCall(input: {
   sink: AgentRuntimeSink;
   state: NativeApiDispatchState;
 }): Promise<NativeApiDispatchResult> {
-  const executionMode = readNativeApiExecutionMode(input.context);
   const registration = getNativeApiToolRegistration(input.toolCall.name);
   if (!registration) {
     return continueWith(
       failedToolResult('UNKNOWN_TOOL', `Unknown tool: ${input.toolCall.name}`),
-      input.state
-    );
-  }
-  if (!isNativeApiToolAllowedForMode(input.toolCall.name, executionMode)) {
-    return continueWith(
-      failedToolResult(
-        'TOOL_NOT_ALLOWED_FOR_MODE',
-        `${input.toolCall.name} is not allowed in native/API ${executionMode} mode.`
-      ),
       input.state
     );
   }
@@ -87,7 +73,11 @@ export async function dispatchNativeApiToolCall(input: {
   }
 
   if (registration.kind === 'context_still') {
-    return continueWith(await dispatchContextCompile(input), input.state);
+    return dispatchContextStillTool(input);
+  }
+
+  if (registration.kind === 'mcp_catalog') {
+    return continueWith(await dispatchMcpCatalog(), input.state);
   }
 
   if (registration.kind === 'context_window') {
@@ -234,6 +224,11 @@ function updateDispatchStateAfterWorkerTool(input: {
     }
   }
 
+  if (input.workerToolName === 'mcp_call_tool' && result.ok) {
+    const args = toRecord(input.toolCall.arguments);
+    nextStateFromContextStillToolResult(nextState, args?.toolName, result.ok);
+  }
+
   return nextState;
 }
 
@@ -266,31 +261,63 @@ async function dispatchTodoTool(input: {
   return projectWorkerResult(result);
 }
 
-async function dispatchContextCompile(input: {
+async function dispatchMcpCatalog(): Promise<NativeApiToolResult> {
+  try {
+    const tools = await mcpClientManager.listAvailableTools();
+    return {
+      ok: true,
+      content: JSON.stringify({ ok: true, tools }),
+      payload: { tools },
+    };
+  } catch (error) {
+    return failedToolResult(
+      'MCP_TOOL_LIST_FAILED',
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+async function dispatchContextStillTool(input: {
   toolCall: ProviderToolCall;
   context: AgentRunContext;
   sink: AgentRuntimeSink;
   state: NativeApiDispatchState;
-}) {
-  const goal = input.toolCall.arguments.goal;
-  if (typeof goal !== 'string' || goal.trim().length === 0) {
-    return failedToolResult('INVALID_TOOL_ARGS', 'context_compile requires a non-empty goal.');
-  }
-  if (!input.state.specificationRead) {
-    return failedToolResult(
-      'SPECIFICATION_REQUIRED',
-      'context_compile is blocked until read_current_specification has succeeded.'
+}): Promise<NativeApiDispatchResult> {
+  const mcpToolName = contextStillMcpToolName(input.toolCall.name);
+  if (!mcpToolName) {
+    return continueWith(
+      failedToolResult('TOOL_NOT_DISPATCHABLE', `${input.toolCall.name} is not dispatchable.`),
+      input.state
     );
   }
-  const tool = await resolveContextStillTool('context_compile');
-  if (!tool) {
-    return failedToolResult('MCP_TOOL_UNAVAILABLE', 'contextStill context_compile is unavailable.');
+  const validation = validateContextStillArguments(mcpToolName, input.toolCall.arguments);
+  if (validation) {
+    return continueWith(failedToolResult(validation.code, validation.message), input.state);
   }
+  const tool = await resolveContextStillTool(mcpToolName);
+  if (!tool) {
+    return continueWith(
+      failedToolResult('MCP_TOOL_UNAVAILABLE', `contextStill ${mcpToolName} is unavailable.`),
+      input.state
+    );
+  }
+  await input.sink.emit({
+    type: 'tool_call_started',
+    message: `[NativeApiRunner] context-still.${mcpToolName} started.`,
+    payload: {
+      callId: input.toolCall.id,
+      toolName: `context-still.${mcpToolName}`,
+      mcpTool: mcpToolName,
+      mcpServer: tool.serverName,
+      serverId: tool.serverId,
+      arguments: input.toolCall.arguments,
+    },
+  });
   const result = await executeWorkerTool({
     toolName: 'mcp_call_tool',
     args: {
       serverId: tool.serverId,
-      toolName: 'context_compile',
+      toolName: mcpToolName,
       arguments: input.toolCall.arguments,
     },
     repoRoot: input.context.repoRoot,
@@ -298,7 +325,28 @@ async function dispatchContextCompile(input: {
     safetyPolicy: input.context.safetyPolicy,
     readFiles: input.state.readFiles,
   });
-  return projectWorkerResult(result.result);
+  const toolResult = projectWorkerResult(result.result);
+  await input.sink.emit({
+    type: 'tool_call_finished',
+    message: `[NativeApiRunner] context-still.${mcpToolName} ${
+      toolResult.ok ? 'finished' : 'failed'
+    }.`,
+    payload: {
+      callId: input.toolCall.id,
+      toolName: `context-still.${mcpToolName}`,
+      mcpTool: mcpToolName,
+      mcpServer: tool.serverName,
+      serverId: tool.serverId,
+      arguments: input.toolCall.arguments,
+      ok: toolResult.ok,
+      status: toolResult.ok ? 'completed' : 'failed',
+      result: result.result.payload,
+      error: toolResult.error ?? result.result.error,
+    },
+  });
+  const nextState: NativeApiDispatchState = { ...input.state };
+  nextStateFromContextStillToolResult(nextState, mcpToolName, toolResult.ok);
+  return continueWith(toolResult, nextState);
 }
 
 async function finalizeAnswer(input: {
@@ -490,7 +538,98 @@ function isTodoMutationOperation(value: unknown): value is Exclude<TodoListOpera
   );
 }
 
-async function resolveContextStillTool(toolName: 'context_compile') {
+function contextStillMcpToolName(
+  toolName: string
+):
+  | 'initial_instructions'
+  | 'context_compile'
+  | 'context_decision'
+  | 'compile_eval'
+  | 'register_candidates'
+  | null {
+  if (toolName === 'context_initial_instructions') return 'initial_instructions';
+  if (toolName === 'context_compile') return 'context_compile';
+  if (toolName === 'context_decision') return 'context_decision';
+  if (toolName === 'compile_eval') return 'compile_eval';
+  if (toolName === 'register_candidates') return 'register_candidates';
+  return null;
+}
+
+function validateContextStillArguments(
+  toolName:
+    | 'initial_instructions'
+    | 'context_compile'
+    | 'context_decision'
+    | 'compile_eval'
+    | 'register_candidates',
+  args: Record<string, unknown>
+): { code: string; message: string } | null {
+  if (toolName === 'context_compile') {
+    const goal = args.goal;
+    if (typeof goal !== 'string' || goal.trim().length === 0) {
+      return { code: 'INVALID_TOOL_ARGS', message: 'context_compile requires a non-empty goal.' };
+    }
+  }
+  if (toolName === 'context_decision') {
+    const decisionPoint = args.decisionPoint;
+    if (typeof decisionPoint !== 'string' || decisionPoint.trim().length === 0) {
+      return {
+        code: 'INVALID_TOOL_ARGS',
+        message: 'context_decision requires a non-empty decisionPoint.',
+      };
+    }
+  }
+  if (toolName === 'compile_eval') {
+    const body = args.body;
+    if (typeof body !== 'string' || body.trim().length === 0) {
+      return { code: 'INVALID_TOOL_ARGS', message: 'compile_eval requires a non-empty body.' };
+    }
+    const outcome = args.outcome;
+    if (
+      outcome !== 'useful' &&
+      outcome !== 'partial' &&
+      outcome !== 'misleading' &&
+      outcome !== 'unused'
+    ) {
+      return { code: 'INVALID_TOOL_ARGS', message: 'compile_eval requires a valid outcome.' };
+    }
+    for (const key of [
+      'actionability',
+      'clarity',
+      'coverage',
+      'relevance',
+      'specificity',
+    ] as const) {
+      if (!Number.isInteger(args[key])) {
+        return { code: 'INVALID_TOOL_ARGS', message: `compile_eval requires integer ${key}.` };
+      }
+    }
+  }
+  if (toolName === 'register_candidates' && !Array.isArray(args.items)) {
+    return { code: 'INVALID_TOOL_ARGS', message: 'register_candidates requires items array.' };
+  }
+  return null;
+}
+
+function nextStateFromContextStillToolResult(
+  state: NativeApiDispatchState,
+  toolName: unknown,
+  ok: boolean
+) {
+  if (!ok) return;
+  if (toolName === 'initial_instructions') state.initialInstructionsCompleted = true;
+  if (toolName === 'context_compile') state.contextCompiled = true;
+  if (toolName === 'compile_eval') state.compileEvalCompleted = true;
+}
+
+async function resolveContextStillTool(
+  toolName:
+    | 'initial_instructions'
+    | 'context_compile'
+    | 'context_decision'
+    | 'compile_eval'
+    | 'register_candidates'
+) {
   const tools = await mcpClientManager.listAvailableTools();
   return (
     tools.find((tool) => tool.name === toolName && isContextStillTool(tool)) ??

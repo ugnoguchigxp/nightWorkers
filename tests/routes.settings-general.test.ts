@@ -507,6 +507,54 @@ describe('general and LLM settings routes', () => {
     );
   });
 
+  it('POST /api/settings/llm/providers/:id/health preserves masked saved endpoint API keys', async () => {
+    runtimeSettingsMocks.getCurrentSettings.mockReturnValueOnce({
+      ACTIVE_LLM_PROVIDER: 'openai',
+      providerEndpoints: [
+        {
+          id: 'azure-default',
+          name: 'Azure OpenAI',
+          kind: 'azure',
+          enabled: true,
+          apiKey: 'real-azure-key',
+          endpoint: 'https://example.openai.azure.com/',
+          apiVersion: '2025-04-01-preview',
+          models: ['gpt-5-4-mini'],
+        },
+      ],
+    });
+
+    const app = new OpenAPIHono<AppEnv>();
+    app.onError(errorHandler);
+    app.route('/api/settings', settingsRouter);
+
+    const res = await app.request('/api/settings/llm/providers/azure-default/health', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: {
+          id: 'azure-default',
+          name: 'Azure OpenAI',
+          kind: 'azure',
+          enabled: true,
+          apiKey: '********',
+          endpoint: 'https://example.openai.azure.com/',
+          apiVersion: '2025-04-01-preview',
+          models: ['gpt-5-4-mini'],
+        },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(providerHealthMocks.checkStructuredLlmProviderHealth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'azure-default',
+        apiKey: 'real-azure-key',
+        apiVersion: '2025-04-01-preview',
+      })
+    );
+  });
+
   it('POST /api/settings/llm/providers/:id/health returns 404 for unknown endpoint', async () => {
     runtimeSettingsMocks.getCurrentSettings.mockReturnValueOnce({
       ACTIVE_LLM_PROVIDER: 'openai',

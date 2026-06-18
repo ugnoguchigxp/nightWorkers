@@ -23,7 +23,6 @@ export function buildOpenAIChatCompletionBody(input: {
       { role: 'system', content: input.systemPrompt },
       { role: 'user', content: input.userPrompt },
     ],
-    temperature: 0.1,
     stream: input.stream,
     ...(input.stream ? { stream_options: { include_usage: true } } : {}),
     ...(input.reasoningEffort ? { reasoning_effort: input.reasoningEffort } : {}),

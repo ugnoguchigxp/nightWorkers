@@ -393,6 +393,85 @@ describe('NightWorkers service', () => {
     );
   });
 
+  it('passes the latest implementation handoff document into native/API implementation runs', async () => {
+    const task = {
+      id: 'task-handoff',
+      repositoryId: 'repo-handoff',
+      title: 'Implementation handoff task',
+      description: 'この計画を実装してください',
+      objective: 'Implement from handoff',
+      acceptanceCriteria: 'Runtime receives handoff content',
+      timeoutSeconds: 60,
+    };
+    const run = {
+      id: 'run-handoff',
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+      status: 'running',
+    };
+    const handoff = '# Implementation Plan\n\n- native/API tool surface を調整する';
+    vi.mocked(repo.getTask).mockResolvedValue(task as never);
+    vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+    vi.mocked(repo.getRepository).mockResolvedValue({
+      id: task.repositoryId,
+      localPath: repoRoot,
+      safetyPolicy: {},
+    } as never);
+    vi.mocked(repo.listTaskMessages).mockResolvedValue([
+      { id: 'msg-user', role: 'user', content: task.description },
+      {
+        id: 'msg-plan',
+        role: 'assistant',
+        content: handoff,
+        messageType: 'markdown_document',
+        metadataJson: { intent: 'implementation_plan' },
+      },
+    ] as never);
+    vi.mocked(repo.createTaskRun).mockResolvedValue(run as never);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
+    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as never);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
+    const runtimeStart = vi.fn().mockResolvedValue({
+      terminalState: 'completed',
+      summary: 'Runtime done',
+      finalReport: 'Runtime report',
+      stoppedBy: 'decision',
+      riskLevel: 'low',
+      diffPatch: '',
+      logContent: '',
+    });
+    vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+      kind: 'native-local',
+      start: runtimeStart,
+      stop: vi.fn(),
+    } as never);
+
+    await startTaskRun(task.id);
+
+    await vi.waitFor(() => {
+      expect(runtimeStart).toHaveBeenCalledTimes(1);
+    });
+    expect(repo.updateTaskCompiledPrompt).toHaveBeenCalledWith(
+      task.id,
+      expect.stringContaining('<IMPLEMENTATION_HANDOFF>')
+    );
+    expect(runtimeStart.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        compiledPrompt: expect.stringContaining(handoff),
+        latestUserMessage: expect.stringContaining(handoff),
+        contextSnapshot: expect.objectContaining({
+          compiledPrompt: expect.stringContaining('<IMPLEMENTATION_HANDOFF>'),
+          executionPhase: 'implementation',
+          planModeClosed: true,
+        }),
+      })
+    );
+    expect(runtimeStart.mock.calls[0][0].latestUserMessage).toContain(
+      '直近の Implementation Plan / Draft Spec を主な作業入力として扱ってください。'
+    );
+  });
+
   it('uses an explicit implementation handoff instead of stale planning intake', async () => {
     const task = {
       id: 'task-draft-spec-handoff',

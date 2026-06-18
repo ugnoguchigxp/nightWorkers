@@ -542,6 +542,66 @@ function isImplementationHandoffMessage(
   return intent === 'implementation_plan' || intent === 'draft_spec';
 }
 
+function findLatestImplementationHandoffMessage(
+  messages: Awaited<ReturnType<typeof repo.listTaskMessages>>
+) {
+  return [...messages].reverse().find((message) => {
+    const metadata = toRecord(message.metadataJson);
+    return isImplementationHandoffMessage(message, metadata);
+  });
+}
+
+function buildCompiledPromptText(input: {
+  task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>;
+  lastUserMessage?: Awaited<ReturnType<typeof repo.listTaskMessages>>[number];
+  implementationHandoffMessage?: Awaited<ReturnType<typeof repo.listTaskMessages>>[number];
+}) {
+  const userRequest =
+    input.lastUserMessage?.content || input.task.description || input.task.objective || '';
+  const handoff = input.implementationHandoffMessage?.content?.trim();
+  if (!handoff) return userRequest;
+  if (!userRequest.trim()) return handoff;
+  return [
+    '<USER_REQUEST>',
+    userRequest.trim(),
+    '</USER_REQUEST>',
+    '',
+    '<IMPLEMENTATION_HANDOFF>',
+    handoff,
+    '</IMPLEMENTATION_HANDOFF>',
+  ].join('\n');
+}
+
+function buildLatestRuntimeUserMessage(input: {
+  fallback: string;
+  lastUserMessage?: Awaited<ReturnType<typeof repo.listTaskMessages>>[number];
+  implementationHandoffMessage?: Awaited<ReturnType<typeof repo.listTaskMessages>>[number];
+  executionMode: NativeApiExecutionMode;
+}) {
+  const latestUserText = input.lastUserMessage?.content?.trim() || input.fallback.trim();
+  const handoff = input.implementationHandoffMessage?.content?.trim();
+  if (input.executionMode !== 'implementation' || !handoff) {
+    return executionPhasePreambleForMode(input.executionMode, latestUserText);
+  }
+  const hasDistinctUserRequest =
+    Boolean(input.lastUserMessage?.content?.trim()) || latestUserText !== handoff;
+  const userRequestSection = hasDistinctUserRequest
+    ? ['<USER_REQUEST>', latestUserText, '</USER_REQUEST>', '']
+    : [];
+  return executionPhasePreambleForMode(
+    input.executionMode,
+    [
+      ...userRequestSection,
+      '<IMPLEMENTATION_HANDOFF>',
+      '直近の Implementation Plan / Draft Spec を主な作業入力として扱ってください。',
+      '計画に不足や矛盾がある場合は、必要な確認・調査 tool を使ってから実装してください。',
+      '',
+      handoff,
+      '</IMPLEMENTATION_HANDOFF>',
+    ].join('\n')
+  );
+}
+
 export type StartTaskRunOptions = {
   executionMode?: NativeApiExecutionMode;
   executionModeSource?:
@@ -583,8 +643,13 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
   }
   const messages = await repo.listTaskMessages(taskId);
   const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
+  const implementationHandoffMessage = findLatestImplementationHandoffMessage(messages);
   const llmRouteOverride = readMessageLlmRouteOverride(lastUserMessage);
-  const compiledPromptText = lastUserMessage?.content || task.description || task.objective || '';
+  const compiledPromptText = buildCompiledPromptText({
+    task,
+    lastUserMessage,
+    implementationHandoffMessage,
+  });
   if (!compiledPromptText.trim()) {
     throw new AppError(400, 'EMPTY_PROMPT', 'No user message found to start a run');
   }
@@ -733,10 +798,12 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
     },
   };
 
-  const rawLatestUserMessage = executionPhasePreambleForMode(
+  const rawLatestUserMessage = buildLatestRuntimeUserMessage({
+    fallback: lastUserMessage?.content || task.description || task.objective || compiledPromptText,
+    lastUserMessage,
+    implementationHandoffMessage,
     executionMode,
-    lastUserMessage?.content || compiledPromptText
-  );
+  });
   const conversationContext = await maybeLoadConversationStateCard(taskId, lastUserMessage?.id);
   const projectedStateCard = projectConversationStateCardForRuntime({
     snapshot: conversationContext,
