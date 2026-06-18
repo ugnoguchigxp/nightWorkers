@@ -42,8 +42,7 @@ describe('CodexAgentRuntime', () => {
         PATH: '/usr/bin',
         CODEX_THREAD_ID: 'parent-thread',
         CODEX_SHELL: '1',
-        NIGHTWORKERS_CODEX_MCP_COMMAND: '/bin/nightworkers-mcp',
-        NIGHTWORKERS_CODEX_MCP_ARGS: '--stdio',
+        NIGHTWORKERS_CODEX_MCP_URL: 'http://127.0.0.1:39173/mcp/nightworkers',
         NIGHTWORKERS_TASK_ID: 'task-codex',
         NIGHTWORKERS_RUN_ID: 'run-codex',
         DATABASE_URL: 'file:/tmp/nightworkers.sqlite',
@@ -57,21 +56,13 @@ describe('CodexAgentRuntime', () => {
       features: { mcp: true },
       mcp_servers: {
         nightworkers: {
-          command: '/bin/nightworkers-mcp',
-          args: ['--stdio'],
+          transport: 'streamable_http',
+          url: 'http://127.0.0.1:39173/mcp/nightworkers',
           tools: {
             read_current_specification: { approval_mode: 'approve' },
             list_recent_specifications: { approval_mode: 'approve' },
             todo_list: { approval_mode: 'approve' },
             import_project: { approval_mode: 'approve' },
-          },
-          env: {
-            DATABASE_URL: 'file:/tmp/nightworkers.sqlite',
-            JWT_SECRET: 'secret-with-enough-length-for-tests',
-            NIGHTWORKERS_DESKTOP: '1',
-            NIGHTWORKERS_RUNTIME_DIR: '/tmp/nightworkers-runtime',
-            NIGHTWORKERS_TASK_ID: 'task-codex',
-            NIGHTWORKERS_RUN_ID: 'run-codex',
           },
         },
       },
@@ -84,16 +75,25 @@ describe('CodexAgentRuntime', () => {
     expect(options.env?.CODEX_SHELL).toBeUndefined();
   });
 
-  it('leaves global Codex MCP settings available when no inline NightWorkers MCP command is configured', () => {
+  it('configures the Hono-hosted NightWorkers MCP by default', () => {
     const options = buildCodexRuntimeSdkOptions({
       accessToken: 'runtime-token',
       env: {
         PATH: '/usr/bin',
         CODEX_THREAD_ID: 'parent-thread',
+        PORT: '49200',
       } as never,
     });
 
-    expect(options.config).toBeUndefined();
+    expect(options.config).toMatchObject({
+      features: { mcp: true },
+      mcp_servers: {
+        nightworkers: {
+          transport: 'streamable_http',
+          url: 'http://127.0.0.1:49200/mcp/nightworkers',
+        },
+      },
+    });
     expect(options.env).toMatchObject({
       PATH: '/usr/bin',
       CODEX_ACCESS_TOKEN: 'runtime-token',
@@ -101,10 +101,38 @@ describe('CodexAgentRuntime', () => {
     expect(options.env?.CODEX_THREAD_ID).toBeUndefined();
   });
 
-  it('resolves Codex MCP config source without disabling global inheritance', () => {
+  it('derives the Hono-hosted NightWorkers MCP URL from the API origin', () => {
+    const originOptions = buildCodexRuntimeSdkOptions({
+      env: {
+        NIGHTWORKERS_API_ORIGIN: 'http://127.0.0.1:49300',
+      } as never,
+    });
+    expect(originOptions.config).toMatchObject({
+      mcp_servers: {
+        nightworkers: {
+          url: 'http://127.0.0.1:49300/mcp/nightworkers',
+        },
+      },
+    });
+
+    const explicitPathOptions = buildCodexRuntimeSdkOptions({
+      env: {
+        NIGHTWORKERS_API_ORIGIN: 'http://127.0.0.1:49300/mcp/nightworkers',
+      } as never,
+    });
+    expect(explicitPathOptions.config).toMatchObject({
+      mcp_servers: {
+        nightworkers: {
+          url: 'http://127.0.0.1:49300/mcp/nightworkers',
+        },
+      },
+    });
+  });
+
+  it('resolves Codex MCP config source to the Hono-hosted inline server', () => {
     expect(
       resolveCodexRuntimeMcpConfigState({
-        env: { NIGHTWORKERS_CODEX_MCP_COMMAND: '/bin/nightworkers-mcp' } as never,
+        env: { NIGHTWORKERS_CODEX_MCP_URL: 'http://127.0.0.1:39173/mcp/nightworkers' } as never,
       })
     ).toMatchObject({
       source: 'inline_configured',
@@ -113,8 +141,9 @@ describe('CodexAgentRuntime', () => {
       expectedTools: getNightWorkersCodexToolNames(),
     });
     expect(resolveCodexRuntimeMcpConfigState({ env: {} as never })).toMatchObject({
-      source: 'global_inherited',
-      hasInlineNightWorkersMcp: false,
+      source: 'inline_configured',
+      hasInlineNightWorkersMcp: true,
+      serverName: 'nightworkers',
     });
     expect(resolveCodexRuntimeMcpConfigState({ enableNightworkersMcp: false })).toMatchObject({
       source: 'disabled',
@@ -183,6 +212,12 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain(
       'closeout starts only after implementation and verification are genuinely finished'
     );
+    expect(prompt).toContain('「完了報告を行う」closeout gate の final assistant report');
+    expect(prompt).toContain('Todo 作成結果、計画共有、途中経過');
+    expect(prompt).toContain(
+      'open Todo が completion_report だけになった final assistant report 直前'
+    );
+    expect(prompt).toContain('todo_list replace 直後や context_compile 直後');
     expect(prompt).toContain('nightworkers.read_current_specification');
     expect(prompt).toContain('nightworkers.list_recent_specifications');
     expect(prompt).toContain('For explicit planning, implementation-plan, specification');

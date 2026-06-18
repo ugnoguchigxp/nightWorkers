@@ -58,7 +58,6 @@ export function buildCodexRuntimeSdkOptions(input: CodexRuntimeConfigInput = {})
 export function resolveCodexRuntimeMcpConfigState(
   input: Pick<CodexRuntimeConfigInput, 'env' | 'enableNightworkersMcp'> = {}
 ): CodexRuntimeMcpConfigState {
-  const env = input.env ?? process.env;
   const expectedTools = getNightWorkersCodexToolNames();
   if (input.enableNightworkersMcp === false) {
     return {
@@ -68,12 +67,11 @@ export function resolveCodexRuntimeMcpConfigState(
       serverName: null,
     };
   }
-  const hasInlineNightWorkersMcp = Boolean(env.NIGHTWORKERS_CODEX_MCP_COMMAND);
   return {
-    source: hasInlineNightWorkersMcp ? 'inline_configured' : 'global_inherited',
+    source: 'inline_configured',
     expectedTools,
-    hasInlineNightWorkersMcp,
-    serverName: hasInlineNightWorkersMcp ? NIGHTWORKERS_MCP_SERVER_NAME : null,
+    hasInlineNightWorkersMcp: true,
+    serverName: NIGHTWORKERS_MCP_SERVER_NAME,
   };
 }
 
@@ -101,42 +99,29 @@ export function buildCodexRuntimeThreadOptions(context: AgentRunContext): Thread
 }
 
 function buildNightWorkersMcpServers(env: NodeJS.ProcessEnv): CodexConfigObject {
-  const command = env.NIGHTWORKERS_CODEX_MCP_COMMAND;
-  if (!command) return {};
-  const args = splitArgs(env.NIGHTWORKERS_CODEX_MCP_ARGS || '');
-  const serverEnv: Record<string, string> = {};
-  for (const key of NIGHTWORKERS_MCP_ENV_KEYS) {
-    const value = env[key];
-    if (typeof value === 'string') serverEnv[key] = value;
-  }
+  const url = resolveNightWorkersMcpUrl(env);
   return {
     [NIGHTWORKERS_MCP_SERVER_NAME]: {
-      command,
-      args,
-      env: serverEnv,
+      transport: 'streamable_http',
+      url,
       tools: buildNightWorkersCodexToolApprovalConfig(),
     },
   };
 }
 
-const NIGHTWORKERS_MCP_ENV_KEYS = [
-  'DATABASE_URL',
-  'JWT_SECRET',
-  'NODE_ENV',
-  'PORT',
-  'LOG_LEVEL',
-  'NIGHTWORKERS_DESKTOP',
-  'NIGHTWORKERS_RUNTIME_DIR',
-  'NIGHTWORKERS_RESOURCE_DIR',
-  'NIGHTWORKERS_TASK_ID',
-  'NIGHTWORKERS_RUN_ID',
-];
+function resolveNightWorkersMcpUrl(env: NodeJS.ProcessEnv) {
+  const explicitUrl = env.NIGHTWORKERS_CODEX_MCP_URL?.trim();
+  if (explicitUrl) return explicitUrl;
+  const apiOrigin = env.NIGHTWORKERS_API_ORIGIN?.trim();
+  if (apiOrigin) return appendNightWorkersMcpPath(apiOrigin);
+  const port = env.PORT?.trim() || '39173';
+  return `http://127.0.0.1:${port}/mcp/nightworkers`;
+}
 
-function splitArgs(value: string): string[] {
-  return value
-    .split(' ')
-    .map((part) => part.trim())
-    .filter(Boolean);
+function appendNightWorkersMcpPath(origin: string) {
+  const trimmed = origin.replace(/\/+$/, '');
+  if (trimmed.endsWith('/mcp/nightworkers')) return trimmed;
+  return `${trimmed}/mcp/nightworkers`;
 }
 
 function isCodexParentSessionEnv(key: string) {

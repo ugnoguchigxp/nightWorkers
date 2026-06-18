@@ -59,7 +59,7 @@ const FINAL_GATES: StandardGate[] = [
   {
     title: '知識登録を行う',
     description:
-      '再利用可能な知識を register_candidates で登録し、必要な context_decision と compile_eval を処理する。',
+      '再利用可能な知識を register_candidates で登録し、必要な context_decision を処理する。compile_eval は完了報告直前の closeout 評価でのみ処理する。',
     taskType: 'knowledge_capture',
     procedureId: 'contextstill.register_candidates',
     dependsOn: [],

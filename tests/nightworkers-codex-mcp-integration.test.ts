@@ -6,12 +6,9 @@ import {
   Client,
   type ListToolsResult,
 } from '@modelcontextprotocol/sdk/client/index.js';
-import {
-  getDefaultEnvironment,
-  StdioClientTransport,
-} from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { config } from '../api/config';
+import app from '../api/app';
 import {
   buildNightWorkersCodexToolApprovalConfig,
   nightWorkersCodexToolManifest,
@@ -37,6 +34,23 @@ afterEach(async () => {
 });
 
 describe('NightWorkers Codex MCP integration', () => {
+  it('rejects non-loopback hosts', async () => {
+    const response = await app.fetch(
+      new Request('http://example.com/mcp/nightworkers', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+      })
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        message: 'NightWorkers MCP is only available from loopback hosts.',
+      },
+    });
+  });
+
   it('lists the manifest tools and imports a starter project into an empty repository', async () => {
     const repoRoot = path.join(tempDir, 'repo');
     fs.mkdirSync(repoRoot, { recursive: true });
@@ -56,31 +70,24 @@ describe('NightWorkers Codex MCP integration', () => {
 
     let client: Client | null = null;
     try {
-      const stderrChunks: string[] = [];
       client = new Client(
         { name: 'nightworkers-codex-mcp-integration-test', version: '0.1.0' },
         { capabilities: {} }
       );
-      const transport = new StdioClientTransport({
-        command: '/Users/y.noguchi/.bun/bin/bun',
-        args: ['api/mcp/nightworkers-codex-server.ts'],
-        cwd: process.cwd(),
-        env: {
-          ...getDefaultEnvironment(),
-          DATABASE_URL: config.DATABASE_URL,
-          JWT_SECRET: config.JWT_SECRET,
-          NODE_ENV: 'test',
-        },
-        stderr: 'pipe',
-      });
-      transport.stderr?.on('data', (chunk) => {
-        stderrChunks.push(String(chunk));
-      });
+      const transport = new StreamableHTTPClientTransport(
+        new URL('http://127.0.0.1/mcp/nightworkers'),
+        {
+          fetch: async (input, init) => {
+            const request = input instanceof Request ? input : new Request(input, init);
+            return app.fetch(request);
+          },
+        }
+      );
       try {
         await client.connect(transport);
       } catch (error) {
         throw new Error(
-          `Failed to connect to NightWorkers MCP server: ${error instanceof Error ? error.message : String(error)}\n${stderrChunks.join('')}`
+          `Failed to connect to NightWorkers MCP server: ${error instanceof Error ? error.message : String(error)}`
         );
       }
 
@@ -89,7 +96,7 @@ describe('NightWorkers Codex MCP integration', () => {
         listResult = await client.listTools(undefined, { timeout: 30_000 });
       } catch (error) {
         throw new Error(
-          `Failed to list NightWorkers MCP tools: ${error instanceof Error ? error.message : String(error)}\n${stderrChunks.join('')}`
+          `Failed to list NightWorkers MCP tools: ${error instanceof Error ? error.message : String(error)}`
         );
       }
       expect(listResult.tools.map((tool) => tool.name).sort()).toEqual(
@@ -115,7 +122,7 @@ describe('NightWorkers Codex MCP integration', () => {
         );
       } catch (error) {
         throw new Error(
-          `Failed to call import_project over MCP: ${error instanceof Error ? error.message : String(error)}\n${stderrChunks.join('')}`
+          `Failed to call import_project over MCP: ${error instanceof Error ? error.message : String(error)}`
         );
       }
 

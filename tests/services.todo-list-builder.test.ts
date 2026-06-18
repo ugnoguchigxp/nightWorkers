@@ -48,6 +48,9 @@ describe('standard implementation TodoList builder', () => {
       taskType: 'knowledge_capture',
       dependsOn: [6],
     });
+    expect(todos.at(-2)?.description).toContain(
+      'compile_eval は完了報告直前の closeout 評価でのみ処理する'
+    );
     expect(todos.at(-1)).toMatchObject({
       title: '完了報告を行う',
       taskType: 'completion_report',

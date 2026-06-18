@@ -645,7 +645,9 @@ function buildContextCompileArguments(
   const title = typeof spec.title === 'string' && spec.title.trim() ? spec.title.trim() : null;
   const digest = typeof spec.digest === 'string' && spec.digest.trim() ? spec.digest.trim() : null;
   const specContent =
-    typeof spec.content === 'string' && spec.content.trim() ? summarizeText(spec.content, 240) : null;
+    typeof spec.content === 'string' && spec.content.trim()
+      ? summarizeText(spec.content, 240)
+      : null;
   const request = summarizeText(context.latestUserMessage || context.compiledPrompt, 280);
   const executionMode = readNativeApiExecutionMode(context);
   const goalParts = [
@@ -688,8 +690,7 @@ function resolveStartupWorkTodo(
       )
       .sort(
         (a, b) =>
-          startupWorkTodoStatusRank(a.status) - startupWorkTodoStatusRank(b.status) ||
-          a.seq - b.seq
+          startupWorkTodoStatusRank(a.status) - startupWorkTodoStatusRank(b.status) || a.seq - b.seq
       )
       .map((todo) => ({
         seq: todo.seq,

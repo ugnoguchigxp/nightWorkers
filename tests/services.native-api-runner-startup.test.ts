@@ -27,7 +27,8 @@ describe('NativeApiStartupController', () => {
           found: true,
           messageId: 'message-1',
           title: 'Todo List Specification',
-          content: '# Todo List Specification\nImplement persisted Todo filtering and keyboard flow.',
+          content:
+            '# Todo List Specification\nImplement persisted Todo filtering and keyboard flow.',
           generatedAt: '2026-06-17T00:00:00.000Z',
           digest: 'sha256:todo-list',
           sources: {},

@@ -26,6 +26,7 @@ import {
   getEditToolCallDiff,
   isDiffActivity,
 } from './ThreadTimelineActivityTranscript';
+import { getCodexToolCardModel, NormalCodexToolCard } from './ThreadTimelineCodexToolCard';
 import {
   getContextStillToolCardModel,
   NormalContextStillToolCard,
@@ -49,6 +50,7 @@ export function buildNormalTranscriptItems(items: TranscriptItem[]): TranscriptI
   const seenContextStillCards = new Set<string>();
   const seenImportProjectCards = new Set<string>();
   const seenInspectionToolCards = new Set<string>();
+  const seenCodexToolCards = new Set<string>();
 
   for (const item of items) {
     if (item.kind === 'user_turn') {
@@ -61,11 +63,14 @@ export function buildNormalTranscriptItems(items: TranscriptItem[]): TranscriptI
       const children = item.children.filter((child) => {
         const event = transcriptChildEvent(child);
         return event
-          ? rememberVisibleEditDiff(event, seenEditDiffs) ||
-              rememberVisibleCliCommand(event, seenCliCommands) ||
-              rememberVisibleContextStillCard(event, seenContextStillCards) ||
-              rememberVisibleImportProjectCard(event, seenImportProjectCards) ||
-              rememberVisibleInspectionToolCard(event, seenInspectionToolCards)
+          ? rememberVisibleActivityEvent(event, {
+              seenEditDiffs,
+              seenCliCommands,
+              seenContextStillCards,
+              seenImportProjectCards,
+              seenInspectionToolCards,
+              seenCodexToolCards,
+            })
           : false;
       });
       if (text.trim() || children.length > 0) filtered.push({ ...item, text, children });
@@ -74,11 +79,14 @@ export function buildNormalTranscriptItems(items: TranscriptItem[]): TranscriptI
 
     if (
       item.kind === 'activity' &&
-      (rememberVisibleEditDiff(item.event, seenEditDiffs) ||
-        rememberVisibleCliCommand(item.event, seenCliCommands) ||
-        rememberVisibleContextStillCard(item.event, seenContextStillCards) ||
-        rememberVisibleImportProjectCard(item.event, seenImportProjectCards) ||
-        rememberVisibleInspectionToolCard(item.event, seenInspectionToolCards))
+      rememberVisibleActivityEvent(item.event, {
+        seenEditDiffs,
+        seenCliCommands,
+        seenContextStillCards,
+        seenImportProjectCards,
+        seenInspectionToolCards,
+        seenCodexToolCards,
+      })
     ) {
       filtered.push(item);
     }
@@ -90,6 +98,30 @@ export function buildNormalTranscriptItems(items: TranscriptItem[]): TranscriptI
 function transcriptChildEvent(child: TranscriptChild): ActivityEvent | undefined {
   if (child.kind === 'tool') return child.events[0];
   return child.event;
+}
+
+function rememberVisibleActivityEvent(
+  event: ActivityEvent,
+  seen: {
+    seenEditDiffs: Set<string>;
+    seenCliCommands: Set<string>;
+    seenContextStillCards: Set<string>;
+    seenImportProjectCards: Set<string>;
+    seenInspectionToolCards: Set<string>;
+    seenCodexToolCards: Set<string>;
+  }
+): boolean {
+  const codexCard = getCodexToolCardModel(event);
+  if (codexCard) {
+    return rememberVisibleCodexToolCard(event, codexCard, seen.seenCodexToolCards);
+  }
+  return (
+    rememberVisibleEditDiff(event, seen.seenEditDiffs) ||
+    rememberVisibleCliCommand(event, seen.seenCliCommands) ||
+    rememberVisibleContextStillCard(event, seen.seenContextStillCards) ||
+    rememberVisibleImportProjectCard(event, seen.seenImportProjectCards) ||
+    rememberVisibleInspectionToolCard(event, seen.seenInspectionToolCards)
+  );
 }
 
 function rememberVisibleEditDiff(event: ActivityEvent, seenEditDiffs: Set<string>): boolean {
@@ -150,6 +182,17 @@ function rememberVisibleInspectionToolCard(
   return true;
 }
 
+function rememberVisibleCodexToolCard(
+  event: ActivityEvent,
+  card: NonNullable<ReturnType<typeof getCodexToolCardModel>>,
+  seenCodexToolCards: Set<string>
+): boolean {
+  const key = visibleCodexToolCardKey(event, card);
+  if (seenCodexToolCards.has(key)) return false;
+  seenCodexToolCards.add(key);
+  return true;
+}
+
 function visibleCliCommandKey(event: ActivityEvent, summary: VisibleCliCommandSummary): string {
   const payload = asRecord(event.payloadJson);
   const runEvent = asRecord(payload.runEvent);
@@ -197,6 +240,14 @@ function visibleInspectionToolCardKey(
     return `${event.runId || runEvent.runId || 'run'}:${step}:${toolName}:${lifecycle}:${target}`;
   }
   return `${event.runId || 'run'}:${event.seq}:${toolName}:${lifecycle}:${target}`;
+}
+
+function visibleCodexToolCardKey(
+  event: ActivityEvent,
+  card: NonNullable<ReturnType<typeof getCodexToolCardModel>>
+): string {
+  if (card.providerItemId) return `${card.providerItemId}:${card.lifecycle}:${card.toolName}`;
+  return `${event.runId || 'run'}:${event.seq}:${card.lifecycle}:${card.toolName}:${card.summary}`;
 }
 
 function visibleEditDiffKey(event: ActivityEvent): string {
@@ -274,7 +325,8 @@ function NormalVisibleActivityBlock({ event }: { event: ActivityEvent }) {
   return (
     <>
       <NormalEditDiffBlock event={event} />
-      <NormalCliCommandBlock event={event} />
+      <NormalCodexToolCard event={event} />
+      {!getCodexToolCardModel(event) ? <NormalCliCommandBlock event={event} /> : null}
       <NormalContextStillToolCard event={event} />
       <NormalImportProjectToolCard event={event} />
       <NormalInspectionToolCard event={event} />

@@ -45,6 +45,7 @@
     "ignoreUnknown": true,
     "includes": [
       "api/**",
+      "!api/.runtime",
       "src/**",
       "!**/src/routeTree.gen.ts",
       "shared/**",

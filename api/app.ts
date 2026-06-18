@@ -12,6 +12,7 @@ import { config } from './config';
 import { isPublicApiPath } from './lib/api-auth-boundary';
 import { logEvent, logHttpEvent } from './lib/logger';
 import { createOpenApiRouter } from './lib/openapi';
+import { handleNightWorkersCodexMcpRequest } from './mcp/nightworkers-codex-mcp';
 import { authMiddleware } from './middleware/auth';
 import { errorHandler } from './middleware/error-handler';
 import { loggerMiddleware } from './middleware/logger';
@@ -161,6 +162,8 @@ app.doc('/api/doc', {
     version: '1.0.0',
   },
 });
+
+app.all('/mcp/nightworkers', async (c) => handleNightWorkersCodexMcpRequest(c.req.raw));
 
 app.get(
   '/api/ui',

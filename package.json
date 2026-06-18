@@ -43,8 +43,6 @@
     "cleanup:test-data": "bun api/scripts/cleanup-test-data.ts --execute",
     "cleanup:test-data:dry-run": "bun api/scripts/cleanup-test-data.ts --dry-run",
     "cleanup:test-data:all": "bun api/scripts/cleanup-test-data.ts --all --execute",
-    "codex:mcp": "bun api/mcp/nightworkers-codex-server.ts",
-    "codex:mcp:install": "node scripts/setup-codex-nightworkers-mcp.mjs",
     "codex:mcp:remove": "node scripts/setup-codex-nightworkers-mcp.mjs --remove",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test --grep @smoke",

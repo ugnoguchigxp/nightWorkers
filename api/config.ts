@@ -13,6 +13,7 @@ const envSchema = z
     NIGHTWORKERS_RUNTIME_DIR: z.string().trim().optional(),
     NIGHTWORKERS_RESOURCE_DIR: z.string().trim().optional(),
     NIGHTWORKERS_API_ORIGIN: z.string().url().optional(),
+    NIGHTWORKERS_CODEX_MCP_URL: z.string().url().optional(),
     DATABASE_URL: z.string().optional(),
     JWT_SECRET: z.string().min(32).optional(),
     JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),

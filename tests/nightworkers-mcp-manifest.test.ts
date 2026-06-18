@@ -15,14 +15,15 @@ describe('nightworkers MCP manifest', () => {
     const options = buildCodexRuntimeSdkOptions({
       env: {
         PATH: '/usr/bin',
-        NIGHTWORKERS_CODEX_MCP_COMMAND: '/bin/nightworkers-mcp',
-        NIGHTWORKERS_CODEX_MCP_ARGS: '--stdio',
+        NIGHTWORKERS_CODEX_MCP_URL: 'http://127.0.0.1:39173/mcp/nightworkers',
       } as never,
     });
 
     expect(options.config).toMatchObject({
       mcp_servers: {
         nightworkers: {
+          transport: 'streamable_http',
+          url: 'http://127.0.0.1:39173/mcp/nightworkers',
           tools: buildNightWorkersCodexToolApprovalConfig(),
         },
       },

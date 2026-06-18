@@ -23,6 +23,11 @@ import {
   ReviewerEvaluationCard,
 } from './ThreadTimelineAgentCards';
 import {
+  CodexToolCard,
+  hasCodexToolCard,
+  NormalCodexToolCard,
+} from './ThreadTimelineCodexToolCard';
+import {
   hasContextStillToolCard,
   NormalContextStillToolCard,
 } from './ThreadTimelineContextStillCards';
@@ -265,7 +270,8 @@ export function ThreadTimeline({
               isReviewerEvaluationEvent(item.event) ||
               hasContextStillToolCard(item.event) ||
               hasImportProjectToolCard(item.event) ||
-              hasInspectionToolCard(item.event) ? (
+              hasInspectionToolCard(item.event) ||
+              hasCodexToolCard(item.event) ? (
               <TimelineDebugFragment
                 key={item.id}
                 insertRuntimeSnapshot={item.id === runtimeSnapshotTimelineAnchorId}
@@ -277,6 +283,8 @@ export function ThreadTimeline({
                   {!showDebugEvents ? <NormalContextStillToolCard event={item.event} /> : null}
                   {!showDebugEvents ? <NormalImportProjectToolCard event={item.event} /> : null}
                   {!showDebugEvents ? <NormalInspectionToolCard event={item.event} /> : null}
+                  {!showDebugEvents ? <NormalCodexToolCard event={item.event} /> : null}
+                  {showDebugEvents ? <CodexToolCard event={item.event} /> : null}
                   {showDebugEvents ? <AgentDebugEventCard event={item.event} /> : null}
                 </div>
               </TimelineDebugFragment>
