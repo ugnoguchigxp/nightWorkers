@@ -5,8 +5,12 @@ import { executeWorkerTool } from '../../worker-tools/dispatcher';
 import { type TodoListOperation, todoListTool } from '../../worker-tools/todo-list';
 import type { WorkerToolResult } from '../../worker-tools/types';
 import type { AgentRunContext, AgentRuntimeSink } from '../types';
+import { readNativeApiExecutionMode } from './native-api-mode';
 import type { NativeApiToolResult } from './native-api-tool-history';
-import { getNativeApiToolRegistration } from './native-api-tool-registry';
+import {
+  getNativeApiToolRegistration,
+  isNativeApiToolAllowedForMode,
+} from './native-api-tool-registry';
 
 export type NativeApiDispatchState = {
   readFiles: string[];
@@ -56,10 +60,20 @@ export async function dispatchNativeApiToolCall(input: {
   sink: AgentRuntimeSink;
   state: NativeApiDispatchState;
 }): Promise<NativeApiDispatchResult> {
+  const executionMode = readNativeApiExecutionMode(input.context);
   const registration = getNativeApiToolRegistration(input.toolCall.name);
   if (!registration) {
     return continueWith(
       failedToolResult('UNKNOWN_TOOL', `Unknown tool: ${input.toolCall.name}`),
+      input.state
+    );
+  }
+  if (!isNativeApiToolAllowedForMode(input.toolCall.name, executionMode)) {
+    return continueWith(
+      failedToolResult(
+        'TOOL_NOT_ALLOWED_FOR_MODE',
+        `${input.toolCall.name} is not allowed in native/API ${executionMode} mode.`
+      ),
       input.state
     );
   }
@@ -294,6 +308,10 @@ async function dispatchContextStillTool(input: {
   if (validation) {
     return continueWith(failedToolResult(validation.code, validation.message), input.state);
   }
+  const prerequisite = validateContextStillPrerequisites(mcpToolName, input.state);
+  if (prerequisite) {
+    return continueWith(failedToolResult(prerequisite.code, prerequisite.message), input.state);
+  }
   const tool = await resolveContextStillTool(mcpToolName);
   if (!tool) {
     return continueWith(
@@ -359,13 +377,7 @@ async function finalizeAnswer(input: {
     ['pending', 'running'].includes(todo.status)
   );
   if (openTodos.length > 0) {
-    return continueWith(
-      failedToolResult(
-        'OPEN_TODOS_REMAIN',
-        `finalize_answer is blocked because open Todos remain: ${openTodos.map((todo) => todo.seq).join(', ')}`
-      ),
-      input.state
-    );
+    return continueWith(openTodosRemainToolResult(openTodos), input.state);
   }
   const guard = validateFinalizeGuard(input.state);
   if (guard) {
@@ -468,6 +480,66 @@ function failedToolResult(code: string, message: string): NativeApiToolResult {
     ok: false,
     content: JSON.stringify({ ok: false, error: { code, message } }),
     error: { code, message },
+  };
+}
+
+function openTodosRemainToolResult(
+  openTodos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>
+): NativeApiToolResult {
+  const openTodoSummaries = [...openTodos]
+    .sort((a, b) => a.seq - b.seq)
+    .map((todo) => ({
+      seq: todo.seq,
+      title: todo.title,
+      status: todo.status,
+      taskType: todo.taskType,
+      procedureId: todo.procedureId ?? null,
+    }));
+  const running = openTodoSummaries.find((todo) => todo.status === 'running');
+  const pending = openTodoSummaries.find((todo) => todo.status === 'pending');
+  const nextAction = running
+    ? {
+        operation: 'done',
+        seq: running.seq,
+        example: `todo_list operation=done seq=${running.seq}`,
+        alternatives: ['block', 'fail'],
+      }
+    : pending
+      ? {
+          operation: 'start',
+          seq: pending.seq,
+          example: `todo_list operation=start seq=${pending.seq}`,
+          alternatives: ['block', 'fail'],
+        }
+      : null;
+  const message = [
+    `finalize_answer is blocked because open Todos remain: ${openTodoSummaries
+      .map((todo) => todo.seq)
+      .join(', ')}`,
+    nextAction
+      ? `Next Todo action hint: call ${nextAction.example}. Use block/fail instead if the Todo cannot be completed.`
+      : 'Use todo_list done/block/fail to close the remaining open Todos before finalize_answer.',
+  ].join(' ');
+  return {
+    ok: false,
+    content: JSON.stringify({
+      ok: false,
+      error: { code: 'OPEN_TODOS_REMAIN', message },
+      openTodos: openTodoSummaries,
+      nextAction,
+    }),
+    payload: {
+      openTodos: openTodoSummaries,
+      nextAction,
+    },
+    error: {
+      code: 'OPEN_TODOS_REMAIN',
+      message,
+      details: {
+        openTodos: openTodoSummaries,
+        nextAction,
+      },
+    },
   };
 }
 
@@ -607,6 +679,28 @@ function validateContextStillArguments(
   }
   if (toolName === 'register_candidates' && !Array.isArray(args.items)) {
     return { code: 'INVALID_TOOL_ARGS', message: 'register_candidates requires items array.' };
+  }
+  return null;
+}
+
+function validateContextStillPrerequisites(
+  toolName:
+    | 'initial_instructions'
+    | 'context_compile'
+    | 'context_decision'
+    | 'compile_eval'
+    | 'register_candidates',
+  state: NativeApiDispatchState
+): { code: string; message: string } | null {
+  if (
+    (toolName === 'initial_instructions' || toolName === 'context_compile') &&
+    !state.specificationRead
+  ) {
+    return {
+      code: 'SPECIFICATION_REQUIRED',
+      message:
+        'read_current_specification must succeed before contextStill initial_instructions or context_compile so the compiled context is grounded in the current task specification.',
+    };
   }
   return null;
 }

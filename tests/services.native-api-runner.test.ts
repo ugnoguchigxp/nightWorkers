@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import {
@@ -25,11 +28,14 @@ vi.mock('../api/services/mcp/mcp-client-manager', () => ({
 describe('NativeApiRunner', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (repo.getTaskRun as never).mockResolvedValue({ id: 'run-1', status: 'running' });
+    (repo.getTaskRun as never).mockResolvedValue({
+      id: 'run-1',
+      status: 'running',
+    });
     (repo.listTaskRunTodosForRun as never).mockResolvedValue([]);
   });
 
-  it('completes with provider text when the provider returns no native tool calls', async () => {
+  it('stops with needs_human when implementation provider returns text but no native tool calls', async () => {
     const store = createFakeStore();
     const providerTurn = createProvider([
       {
@@ -52,15 +58,47 @@ describe('NativeApiRunner', () => {
     const result = await runner.run(buildContext(), createSink());
 
     expect(result).toMatchObject({
-      terminalState: 'completed',
-      stoppedBy: 'decision',
-      riskLevel: 'medium',
+      terminalState: 'needs_human',
+      stoppedBy: 'missing_tool_call',
+      riskLevel: 'high',
     });
-    expect(result.finalReport).toBe('I will explain instead of using tools.');
+    expect(result.finalReport).toContain('requires tool calls/finalize_answer');
     expect(store.turns).toHaveLength(1);
-    expect(store.finishedTurns[0]).toMatchObject({ status: 'completed' });
+    expect(store.finishedTurns[0]).toMatchObject({ status: 'failed' });
     expect(store.toolCalls).toHaveLength(0);
     expect(usageRecorder).toHaveBeenCalledOnce();
+  });
+
+  it('allows text-only completion for general answers', async () => {
+    const store = createFakeStore();
+    const providerTurn = createProvider([
+      {
+        type: 'supported',
+        content: 'Here is the answer.',
+        toolCalls: [],
+        usage: usage(),
+        model: 'api-model',
+      },
+    ]);
+    const runner = new NativeApiRunner({
+      store: store.instance,
+      startupController: createNoopStartup(),
+      providerTurn,
+      usageRecorder: vi.fn(async () => undefined),
+      maxTurns: 1,
+    });
+
+    const result = await runner.run(
+      buildContext({ runtimeOptions: { executionMode: 'general_answer' } }),
+      createSink()
+    );
+
+    expect(result).toMatchObject({
+      terminalState: 'completed',
+      stoppedBy: 'decision',
+    });
+    expect(result.finalReport).toBe('Here is the answer.');
+    expect(store.finishedTurns[0]).toMatchObject({ status: 'completed' });
   });
 
   it('persists provider-native tool lifecycle and completes on finalize_answer', async () => {
@@ -179,6 +217,133 @@ describe('NativeApiRunner', () => {
         }),
       })
     );
+  });
+
+  it('classifies required tool-call failures and falls back to the next native/API route', async () => {
+    const restoreSettings = installRuntimeLlmSettings({
+      ACTIVE_LLM_PROVIDER: 'azure',
+      providerEndpoints: [
+        {
+          id: 'local-gemma',
+          name: 'Local Gemma',
+          kind: 'local',
+          enabled: true,
+          baseUrl: 'http://localhost:11434/v1',
+          models: ['gemma-4-12b-it-4bit'],
+        },
+        {
+          id: 'azure-implementation',
+          name: 'Azure Implementation',
+          kind: 'azure',
+          enabled: true,
+          endpoint: 'https://example.openai.azure.com',
+          apiVersion: '2024-05-01-preview',
+          models: ['gpt-5-mini'],
+        },
+      ],
+      roleRoutes: [
+        {
+          role: 'implementation',
+          primary: {
+            providerEndpointId: 'local-gemma',
+            model: 'gemma-4-12b-it-4bit',
+          },
+          fallbacks: [
+            {
+              providerEndpointId: 'local-gemma',
+              model: 'gemma-4-12b-it-4bit',
+            },
+            {
+              providerEndpointId: 'azure-implementation',
+              model: 'gpt-5-mini',
+            },
+          ],
+        },
+      ],
+    });
+    try {
+      const store = createFakeStore();
+      const providerTurn = vi
+        .fn()
+        .mockRejectedValueOnce(
+          new Error(
+            'OpenAI native tool call failed with status 400: {"error":{"code":"required_tool_call_missing"}}'
+          )
+        )
+        .mockResolvedValueOnce({
+          type: 'supported',
+          content: 'ready to finalize',
+          toolCalls: [
+            {
+              id: 'call-final',
+              name: 'finalize_answer',
+              arguments: { finalReport: 'fallback done' },
+            },
+          ],
+          usage: usage(),
+          model: 'gpt-5-mini',
+          providerDebug: { provider: 'azure-openai' },
+        } satisfies ProviderToolTurnResult);
+      const events: AgentRuntimeEvent[] = [];
+      const runner = new NativeApiRunner({
+        store: store.instance,
+        startupController: createNoopStartup(),
+        providerTurn: providerTurn as unknown as NativeApiToolTurnProvider,
+        usageRecorder: vi.fn(async () => undefined),
+        maxTurns: 1,
+      });
+
+      const result = await runner.run(buildContext({ timeoutSeconds: 200 }), createSink(events));
+
+      expect(result).toMatchObject({
+        terminalState: 'completed',
+        finalReport: 'fallback done',
+      });
+      expect(providerTurn).toHaveBeenCalledTimes(2);
+      expect(
+        providerTurn.mock.calls.map((call) => ({
+          providerEndpointId: call[0].options.normalizedRequest.providerEndpointId,
+          attemptTimeoutMs: call[0].options.attemptTimeoutMs,
+        }))
+      ).toEqual([
+        { providerEndpointId: 'local-gemma', attemptTimeoutMs: 90000 },
+        {
+          providerEndpointId: 'azure-implementation',
+          attemptTimeoutMs: 120000,
+        },
+      ]);
+      expect(events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'tool_call_progress',
+            payload: expect.objectContaining({
+              action: 'provider_route_fallback_started',
+              reason: 'tool_required_missing',
+            }),
+          }),
+        ])
+      );
+      expect(store.finishedTurns[0].providerDebug).toMatchObject({
+        routeAttempts: [
+          expect.objectContaining({
+            ok: false,
+            reason: 'tool_required_missing',
+            route: expect.objectContaining({
+              providerEndpointId: 'local-gemma',
+            }),
+          }),
+          expect.objectContaining({
+            ok: true,
+            reason: 'accepted',
+            route: expect.objectContaining({
+              providerEndpointId: 'azure-implementation',
+            }),
+          }),
+        ],
+      });
+    } finally {
+      restoreSettings();
+    }
   });
 
   it('starts a fresh provider history after new_context without summarizing prior turns', async () => {
@@ -332,6 +497,78 @@ describe('NativeApiRunner', () => {
     );
   });
 
+  it('records provider tool calls against the latest running Todo instead of stale startup context', async () => {
+    (repo.listTaskRunTodosForRun as never).mockResolvedValue([
+      {
+        seq: 1,
+        title: 'initial_instructions を実行する',
+        taskType: 'initial_instructions',
+        status: 'passed',
+        procedureId: 'contextstill.initial_instructions',
+      },
+      {
+        seq: 2,
+        title: 'context_compile を実行する',
+        taskType: 'context_compile',
+        status: 'passed',
+        procedureId: 'contextstill.context_compile',
+      },
+      {
+        seq: 3,
+        title: 'Implement Todo list UI',
+        taskType: 'implementation',
+        status: 'running',
+        procedureId: null,
+      },
+    ]);
+    const store = createFakeStore();
+    const providerTurn = createProvider([
+      {
+        type: 'supported',
+        content: 'inspect unknown path',
+        toolCalls: [{ id: 'call-unknown', name: 'unknown_tool', arguments: {} }],
+        usage: usage(),
+        model: 'api-model',
+      },
+    ]);
+    const runner = new NativeApiRunner({
+      store: store.instance,
+      startupController: createNoopStartup(),
+      providerTurn,
+      usageRecorder: vi.fn(async () => undefined),
+      maxTurns: 1,
+    });
+
+    await runner.run(
+      buildContext({
+        currentTodo: {
+          id: 'todo-1',
+          seq: 1,
+          title: 'initial_instructions を実行する',
+          taskType: 'initial_instructions',
+          status: 'running',
+          procedureId: 'contextstill.initial_instructions',
+        },
+      }),
+      createSink()
+    );
+
+    expect(store.toolCalls[0]).toMatchObject({
+      toolName: 'unknown_tool',
+      todoSeq: 3,
+    });
+    expect(providerTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: 'user',
+            content: expect.stringContaining('title=Implement Todo list UI'),
+          }),
+        ]),
+      })
+    );
+  });
+
   it('records dispatcher exceptions as failed tool results instead of leaving running records', async () => {
     (repo.listTaskRunTodosForRun as never)
       .mockResolvedValueOnce([])
@@ -473,10 +710,10 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
     });
   });
 
-  it('keeps the full tool surface model-visible in planning mode', () => {
-    const toolNames = getNativeApiToolDefinitions({ executionMode: 'planning' }).map(
-      (tool) => tool.name
-    );
+  it('restricts model-visible tools in planning mode', () => {
+    const toolNames = getNativeApiToolDefinitions({
+      executionMode: 'planning',
+    }).map((tool) => tool.name);
 
     expect(toolNames).toEqual(
       expect.arrayContaining([
@@ -485,21 +722,19 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
         'read_file',
         'search_files',
         'git_status',
-        'apply_patch',
-        'replace_content',
-        'import_project',
-        'run_verification',
-        'todo_list',
         'list_mcp_tools',
         'context_initial_instructions',
         'context_compile',
         'context_decision',
-        'compile_eval',
-        'register_candidates',
         'new_context',
         'finalize_answer',
       ])
     );
+    expect(toolNames).not.toContain('apply_patch');
+    expect(toolNames).not.toContain('replace_content');
+    expect(toolNames).not.toContain('import_project');
+    expect(toolNames).not.toContain('run_verification');
+    expect(toolNames).not.toContain('todo_list');
   });
 
   it('exposes Codex-style new_context as an empty model-visible tool', () => {
@@ -557,7 +792,7 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
     });
   });
 
-  it('does not reject mutating tools solely because the run is in planning mode', async () => {
+  it('rejects mutating tools in planning mode even if the provider asks for them', async () => {
     const result = await dispatchNativeApiToolCall({
       toolCall: {
         id: 'call-patch',
@@ -570,7 +805,12 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
     });
 
     expect(result.kind).toBe('continue');
-    expect(result.toolResult.error?.code).not.toBe('TOOL_NOT_ALLOWED_FOR_MODE');
+    expect(result.toolResult).toMatchObject({
+      ok: false,
+      error: {
+        code: 'TOOL_NOT_ALLOWED_FOR_MODE',
+      },
+    });
   });
 
   it('includes original tool arguments in native/api worker tool finished events', async () => {
@@ -634,7 +874,11 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
 
   it('rejects empty context_decision input before any MCP dispatch', async () => {
     const result = await dispatchNativeApiToolCall({
-      toolCall: { id: 'call-decision', name: 'context_decision', arguments: {} },
+      toolCall: {
+        id: 'call-decision',
+        name: 'context_decision',
+        arguments: {},
+      },
       context: buildContext(),
       sink: createSink(),
       state: { readFiles: [], specificationRead: true },
@@ -649,7 +893,28 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
     });
   });
 
-  it('does not require read_current_specification before context_compile dispatch', async () => {
+  it('blocks context_initial_instructions until read_current_specification has succeeded', async () => {
+    const result = await dispatchNativeApiToolCall({
+      toolCall: {
+        id: 'call-initial',
+        name: 'context_initial_instructions',
+        arguments: {},
+      },
+      context: buildContext(),
+      sink: createSink(),
+      state: { readFiles: [], specificationRead: false },
+    });
+
+    expect(result.kind).toBe('continue');
+    expect(result.toolResult).toMatchObject({
+      ok: false,
+      error: {
+        code: 'SPECIFICATION_REQUIRED',
+      },
+    });
+  });
+
+  it('blocks context_compile until read_current_specification has succeeded', async () => {
     const result = await dispatchNativeApiToolCall({
       toolCall: {
         id: 'call-context',
@@ -662,7 +927,70 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
     });
 
     expect(result.kind).toBe('continue');
-    expect(result.toolResult.error?.code).not.toBe('SPECIFICATION_REQUIRED');
+    expect(result.toolResult).toMatchObject({
+      ok: false,
+      error: {
+        code: 'SPECIFICATION_REQUIRED',
+      },
+    });
+  });
+
+  it('returns actionable Todo recovery hints when finalize_answer is blocked by open Todos', async () => {
+    (repo.listTaskRunTodosForRun as never).mockResolvedValue([
+      {
+        seq: 3,
+        title: 'Implement Todo list UI',
+        taskType: 'implementation',
+        status: 'running',
+        procedureId: null,
+      },
+      {
+        seq: 4,
+        title: 'Verify Todo list UI',
+        taskType: 'verification',
+        status: 'pending',
+        procedureId: 'quality_gate_verify',
+      },
+    ]);
+
+    const result = await dispatchNativeApiToolCall({
+      toolCall: {
+        id: 'call-final',
+        name: 'finalize_answer',
+        arguments: { finalReport: 'done' },
+      },
+      context: buildContext(),
+      sink: createSink(),
+      state: { readFiles: [], specificationRead: true },
+    });
+
+    expect(result.kind).toBe('continue');
+    expect(result.toolResult).toMatchObject({
+      ok: false,
+      error: {
+        code: 'OPEN_TODOS_REMAIN',
+        details: {
+          nextAction: {
+            operation: 'done',
+            seq: 3,
+            example: 'todo_list operation=done seq=3',
+          },
+        },
+      },
+      payload: {
+        openTodos: [
+          expect.objectContaining({
+            seq: 3,
+            title: 'Implement Todo list UI',
+          }),
+          expect.objectContaining({
+            seq: 4,
+            title: 'Verify Todo list UI',
+          }),
+        ],
+      },
+    });
+    expect(result.toolResult.content).toContain('todo_list operation=done seq=3');
   });
 });
 
@@ -713,7 +1041,14 @@ function createFakeStore() {
       return input;
     }),
   } as unknown as NativeApiSessionStore;
-  return { instance, turns, finishedTurns, toolCalls, runningToolCalls, finishedToolCalls };
+  return {
+    instance,
+    turns,
+    finishedTurns,
+    toolCalls,
+    runningToolCalls,
+    finishedToolCalls,
+  };
 }
 
 function createNoopStartup() {
@@ -759,5 +1094,21 @@ function buildContext(overrides: Partial<AgentRunContext> = {}): AgentRunContext
       source: 'fallback',
     },
     ...overrides,
+  };
+}
+
+function installRuntimeLlmSettings(settings: Record<string, unknown>) {
+  const previousPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-llm-settings-'));
+  const settingsPath = path.join(dir, 'llm-settings.json');
+  fs.writeFileSync(settingsPath, JSON.stringify(settings));
+  process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = settingsPath;
+  return () => {
+    if (previousPath === undefined) {
+      delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    } else {
+      process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = previousPath;
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
   };
 }

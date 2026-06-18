@@ -23,6 +23,7 @@ export class NativeApiCloseoutController {
     turnId: string;
     state: NativeApiDispatchState;
     finalReport: string;
+    todoSeq?: number | null;
   }): Promise<{
     historyItem: NativeApiHistoryItem;
     state: NativeApiDispatchState;
@@ -65,7 +66,7 @@ export class NativeApiCloseoutController {
       taskId: input.context.taskId,
       turnId: input.turnId,
       toolCall,
-      todoSeq: input.context.currentTodo?.seq ?? null,
+      todoSeq: input.todoSeq ?? input.context.currentTodo?.seq ?? null,
       source: 'runtime_gate',
     });
     await this.input.store.markToolCallRunning({ id: record.id });

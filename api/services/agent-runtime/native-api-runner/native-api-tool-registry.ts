@@ -1,5 +1,6 @@
 import type { ProviderToolDefinition } from '../../structured-llm/tool-calls';
 import type { WorkerToolName } from '../../tool-policy/types';
+import type { NativeApiExecutionMode } from './native-api-mode';
 
 export type NativeApiRuntimeToolName =
   | WorkerToolName
@@ -346,12 +347,82 @@ const nativeApiToolRegistrations: NativeApiToolRegistration[] = [
   },
 ];
 
+const nativeApiToolNamesByMode: Record<NativeApiExecutionMode, Set<NativeApiRuntimeToolName>> = {
+  planning: new Set([
+    'read_current_specification',
+    'list_dir',
+    'read_file',
+    'search_files',
+    'git_status',
+    'git_diff',
+    'list_mcp_tools',
+    'context_initial_instructions',
+    'context_compile',
+    'context_decision',
+    'new_context',
+    'finalize_answer',
+  ]),
+  implementation: new Set(nativeApiToolRegistrations.map((registration) => registration.name)),
+  review: new Set([
+    'read_current_specification',
+    'list_dir',
+    'read_file',
+    'search_files',
+    'git_status',
+    'git_diff',
+    'run_verification',
+    'list_mcp_tools',
+    'context_initial_instructions',
+    'context_compile',
+    'context_decision',
+    'compile_eval',
+    'register_candidates',
+    'new_context',
+    'finalize_answer',
+  ]),
+  runtime_debug: new Set([
+    'read_current_specification',
+    'list_dir',
+    'read_file',
+    'search_files',
+    'git_status',
+    'git_diff',
+    'run_verification',
+    'list_mcp_tools',
+    'context_initial_instructions',
+    'context_compile',
+    'context_decision',
+    'new_context',
+    'finalize_answer',
+  ]),
+  general_answer: new Set([
+    'list_dir',
+    'read_file',
+    'search_files',
+    'git_status',
+    'context_compile',
+    'new_context',
+    'finalize_answer',
+  ]),
+};
+
 export function getNativeApiToolDefinitions(
-  _input: { executionMode?: unknown } = {}
+  input: { executionMode?: NativeApiExecutionMode } = {}
 ): ProviderToolDefinition[] {
-  return nativeApiToolRegistrations.map((registration) => registration.definition);
+  const allowed = allowedNativeApiToolNames(input.executionMode ?? 'implementation');
+  return nativeApiToolRegistrations
+    .filter((registration) => allowed.has(registration.name))
+    .map((registration) => registration.definition);
 }
 
 export function getNativeApiToolRegistration(name: string): NativeApiToolRegistration | undefined {
   return nativeApiToolRegistrations.find((registration) => registration.name === name);
+}
+
+export function isNativeApiToolAllowedForMode(name: string, mode: NativeApiExecutionMode): boolean {
+  return allowedNativeApiToolNames(mode).has(name as NativeApiRuntimeToolName);
+}
+
+function allowedNativeApiToolNames(mode: NativeApiExecutionMode) {
+  return nativeApiToolNamesByMode[mode] ?? nativeApiToolNamesByMode.implementation;
 }

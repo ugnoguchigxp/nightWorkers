@@ -8,6 +8,7 @@ import {
   readStructuredLlmProviderSettings,
   resolveStructuredLlmModelCapability,
 } from '../../api/services/structured-llm';
+import { buildNormalizedSupervisorLlmRequestCandidates } from '../../api/services/structured-llm/request';
 import { installStructuredLlmEnvHooks } from './structured-llm-test-env';
 
 describe('Supervisor LLM schema-first parsing', () => {
@@ -183,6 +184,180 @@ describe('Supervisor LLM schema-first parsing', () => {
         'routePolicy.disallowed=codex',
       ])
     );
+  });
+
+  it('dedupes native/API route candidates by endpoint, model, and provider', () => {
+    const requests = buildNormalizedSupervisorLlmRequestCandidates({
+      systemPrompt: 'system text',
+      userPrompt: 'user text',
+      label: 'native_api_runner',
+      role: 'implementation',
+      routePolicy: {
+        disallowedProviderIds: ['codex'],
+        synthesizeFallbacksFromEnabledEndpoints: true,
+      },
+      settings: {
+        ACTIVE_LLM_PROVIDER: 'azure',
+        providerEndpoints: [
+          {
+            id: 'local-gemma',
+            name: 'Local Gemma',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['gemma-4-12b-it-4bit'],
+          },
+          {
+            id: 'azure-implementation',
+            name: 'Azure Implementation',
+            kind: 'azure',
+            enabled: true,
+            endpoint: 'https://example.openai.azure.com',
+            apiVersion: '2024-05-01-preview',
+            models: ['gpt-5-mini'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'local-gemma',
+              model: 'gemma-4-12b-it-4bit',
+            },
+            fallbacks: [
+              {
+                providerEndpointId: 'local-gemma',
+                model: 'gemma-4-12b-it-4bit',
+              },
+              {
+                providerEndpointId: 'azure-implementation',
+                model: 'gpt-5-mini',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(requests.map((request) => request.providerEndpointId)).toEqual([
+      'local-gemma',
+      'azure-implementation',
+    ]);
+  });
+
+  it('skips unreachable native/API route candidates when readiness policy is active', () => {
+    const requests = buildNormalizedSupervisorLlmRequestCandidates({
+      systemPrompt: 'system text',
+      userPrompt: 'user text',
+      label: 'native_api_runner',
+      role: 'implementation',
+      routePolicy: {
+        disallowedProviderIds: ['codex'],
+        synthesizeFallbacksFromEnabledEndpoints: true,
+        skipUnreachableEndpoints: true,
+        endpointReadiness: {
+          'local-qwen': {
+            reachable: false,
+            ok: false,
+            checkedAt: '2026-06-18T00:00:00.000Z',
+            message: 'connect ECONNREFUSED',
+          },
+        },
+      },
+      settings: {
+        ACTIVE_LLM_PROVIDER: 'azure',
+        providerEndpoints: [
+          {
+            id: 'local-qwen',
+            name: 'Local Qwen',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['qwen3-coder'],
+          },
+          {
+            id: 'azure-implementation',
+            name: 'Azure Implementation',
+            kind: 'azure',
+            enabled: true,
+            endpoint: 'https://example.openai.azure.com',
+            apiVersion: '2024-05-01-preview',
+            models: ['gpt-5-mini'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'local-qwen',
+              model: 'qwen3-coder',
+            },
+            fallbacks: [
+              {
+                providerEndpointId: 'azure-implementation',
+                model: 'gpt-5-mini',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      providerId: 'azure-openai',
+      providerEndpointId: 'azure-implementation',
+      routeSource: 'fallback',
+      modelOrDeployment: 'gpt-5-mini',
+    });
+  });
+
+  it('does not fall back to the default provider when native/API readiness removes all routes', () => {
+    const requests = buildNormalizedSupervisorLlmRequestCandidates({
+      systemPrompt: 'system text',
+      userPrompt: 'user text',
+      label: 'native_api_runner',
+      role: 'implementation',
+      routePolicy: {
+        disallowedProviderIds: ['codex'],
+        synthesizeFallbacksFromEnabledEndpoints: true,
+        skipUnreachableEndpoints: true,
+        endpointReadiness: {
+          'local-qwen': {
+            reachable: false,
+            ok: false,
+            checkedAt: '2026-06-18T00:00:00.000Z',
+            message: 'connect ECONNREFUSED',
+          },
+        },
+      },
+      settings: {
+        ACTIVE_LLM_PROVIDER: 'codex',
+        CODEX_MODEL: 'gpt-5.4-mini',
+        providerEndpoints: [
+          {
+            id: 'local-qwen',
+            name: 'Local Qwen',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['qwen3-coder'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'local-qwen',
+              model: 'qwen3-coder',
+            },
+            fallbacks: [],
+          },
+        ],
+      },
+    });
+
+    expect(requests).toEqual([]);
   });
 
   it('uses the role route fallback when the primary endpoint is disabled', () => {
@@ -501,7 +676,9 @@ describe('Supervisor LLM schema-first parsing', () => {
       expect(url).toBe('http://localhost:11434/v1/chat/completions');
       expect((init?.headers as Record<string, string>).Authorization).toBeUndefined();
       return new Response(
-        JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ok: true }) } }] }),
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({ ok: true }) } }],
+        }),
         {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -557,7 +734,9 @@ describe('Supervisor LLM schema-first parsing', () => {
       );
       requestBodies.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>);
       return new Response(
-        JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ok: true }) } }] }),
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({ ok: true }) } }],
+        }),
         {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -628,7 +807,9 @@ describe('Supervisor LLM schema-first parsing', () => {
                     type: 'function',
                     function: {
                       name: 'finalize_answer',
-                      arguments: JSON.stringify({ finalReport: 'done through azure tools' }),
+                      arguments: JSON.stringify({
+                        finalReport: 'done through azure tools',
+                      }),
                     },
                   },
                 ],
@@ -676,6 +857,7 @@ describe('Supervisor LLM schema-first parsing', () => {
         label: 'supervisor',
         role: 'implementation',
         normalizedRequest,
+        toolChoice: 'required',
       },
       signal: AbortSignal.timeout(1000),
       setProviderDebug: (value) => providerDebug.push(value),
@@ -710,7 +892,7 @@ describe('Supervisor LLM schema-first parsing', () => {
         { role: 'system', content: 'system text' },
         { role: 'user', content: 'user text' },
       ],
-      tool_choice: 'auto',
+      tool_choice: 'required',
       reasoning_effort: 'low',
     });
     expect(requestBodies[0]).not.toHaveProperty('temperature');
@@ -1045,7 +1227,11 @@ describe('Supervisor LLM schema-first parsing', () => {
       if (requestBodies.length === 1) {
         return new Response(
           JSON.stringify({
-            error: { message: 'Loading model', type: 'unavailable_error', code: 503 },
+            error: {
+              message: 'Loading model',
+              type: 'unavailable_error',
+              code: 503,
+            },
           }),
           {
             status: 503,
@@ -1152,7 +1338,9 @@ describe('Supervisor LLM schema-first parsing', () => {
 
     globalThis.fetch = vi.fn(async () => {
       return new Response(
-        JSON.stringify({ choices: [{ message: { content: 'plain text response' } }] }),
+        JSON.stringify({
+          choices: [{ message: { content: 'plain text response' } }],
+        }),
         {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -1183,7 +1371,10 @@ describe('Supervisor LLM schema-first parsing', () => {
               message: {
                 content: '',
                 tool_calls: [
-                  { type: 'function', function: { name: 'write_file', arguments: '{}' } },
+                  {
+                    type: 'function',
+                    function: { name: 'write_file', arguments: '{}' },
+                  },
                 ],
               },
             },
@@ -1290,7 +1481,10 @@ describe('Supervisor LLM schema-first parsing', () => {
                     {
                       delta: {
                         tool_calls: [
-                          { type: 'function', function: { name: 'run_command', arguments: '{}' } },
+                          {
+                            type: 'function',
+                            function: { name: 'run_command', arguments: '{}' },
+                          },
                         ],
                       },
                     },

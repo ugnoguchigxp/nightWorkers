@@ -15,7 +15,13 @@ describe('NativeApiRunner request adapter', () => {
       {
         type: 'assistant',
         content: 'calling tool',
-        toolCalls: [{ id: 'call-1', name: 'read_file', arguments: { filePath: 'README.md' } }],
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'read_file',
+            arguments: { filePath: 'README.md' },
+          },
+        ],
       },
       {
         type: 'tool_result',
@@ -29,7 +35,10 @@ describe('NativeApiRunner request adapter', () => {
 
     const messages = projectNativeApiHistoryToProviderMessages(history);
 
-    expect(messages[0]).toEqual({ role: 'system', content: 'system a\n\nsystem b' });
+    expect(messages[0]).toEqual({
+      role: 'system',
+      content: 'system a\n\nsystem b',
+    });
     expect(messages.slice(1).some((message) => message.role === 'system')).toBe(false);
     expect(messages.map((message) => message.role)).toEqual([
       'system',
@@ -60,7 +69,11 @@ describe('NativeApiRunner request adapter', () => {
         {
           name: 'read_current_specification',
           description: 'Read latest NightWorkers specification.',
-          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+          inputSchema: {
+            type: 'object',
+            properties: {},
+            additionalProperties: false,
+          },
         },
       ],
       routePolicy: {
@@ -75,6 +88,8 @@ describe('NativeApiRunner request adapter', () => {
       taskId: 'task-1',
       runId: 'run-1',
       workingDirectory: '/repo',
+      toolChoice: 'required',
+      attemptTimeoutMs: 60000,
       routePolicy: {
         disallowedProviderIds: ['codex'],
         synthesizeFallbacksFromEnabledEndpoints: true,
@@ -111,6 +126,7 @@ describe('NativeApiRunner request adapter', () => {
 
     expect(request.options).toMatchObject({
       role: 'plan',
+      toolChoice: 'auto',
       normalizedRequest: expect.objectContaining({
         role: 'plan',
       }),

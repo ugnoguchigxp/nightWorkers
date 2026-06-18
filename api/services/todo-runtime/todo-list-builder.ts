@@ -32,7 +32,7 @@ const FIRST_GATES: StandardGate[] = [
   {
     title: 'context_compile を実行する',
     description:
-      'initial_instructions の後に context_compile MCP tool を実行し、今回の実装に必要な最小コンテキストを取得する。',
+      'read_current_specification と initial_instructions の後に context_compile MCP tool を実行し、仕様書と実作業 Todo に基づく最小コンテキストを取得する。',
     taskType: 'context_compile',
     procedureId: 'contextstill.context_compile',
     dependsOn: [1],

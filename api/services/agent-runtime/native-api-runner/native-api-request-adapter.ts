@@ -4,6 +4,7 @@ import {
 } from '../../structured-llm/request';
 import type { StructuredLlmModelTarget } from '../../structured-llm/settings';
 import type {
+  ProviderToolChoice,
   ProviderToolDefinition,
   ProviderToolMessage,
   RawToolTurnCallOptions,
@@ -73,6 +74,43 @@ export function buildNativeApiProviderRequests(input: {
       runId: input.context.runId,
       workingDirectory: input.context.repoRoot,
       normalizedRequest,
+      toolChoice: nativeApiToolChoiceForExecutionMode(executionMode),
+      attemptTimeoutMs: nativeApiAttemptTimeoutMs({
+        timeoutMs: input.context.timeoutSeconds * 1000,
+        providerEndpointId: normalizedRequest.providerEndpointId,
+        providerId: normalizedRequest.providerId,
+        routeSource: normalizedRequest.routeSource,
+      }),
     },
   }));
+}
+
+function nativeApiAttemptTimeoutMs(input: {
+  timeoutMs: number;
+  providerEndpointId?: string | null;
+  providerId: string;
+  routeSource?: string | null;
+}) {
+  const routeDefault =
+    input.providerId === 'azure-openai'
+      ? 120_000
+      : input.routeSource === 'fallback'
+        ? 60_000
+        : 90_000;
+  const timeoutMs =
+    Number.isFinite(input.timeoutMs) && input.timeoutMs > 0 ? input.timeoutMs : routeDefault;
+  return Math.max(1_000, Math.min(timeoutMs, routeDefault));
+}
+
+function nativeApiToolChoiceForExecutionMode(
+  executionMode: ReturnType<typeof readNativeApiExecutionMode>
+): ProviderToolChoice {
+  if (
+    executionMode === 'implementation' ||
+    executionMode === 'review' ||
+    executionMode === 'runtime_debug'
+  ) {
+    return 'required';
+  }
+  return 'auto';
 }

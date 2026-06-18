@@ -21,6 +21,12 @@ export type ResolvedStructuredLlmRoute = {
   diagnostics: string[];
 };
 
+export function structuredLlmRouteKey(
+  route: Pick<ResolvedStructuredLlmRoute, 'providerEndpointId' | 'model' | 'providerId'>
+): string {
+  return `${route.providerEndpointId}::${route.model}::${route.providerId}`;
+}
+
 export function resolveStructuredLlmRoleRoute(input: {
   role: StructuredLlmRole;
   settings: StructuredLlmProviderSettings;
@@ -117,30 +123,42 @@ function applyRoutePolicy(
   policy: StructuredLlmRoutePolicy
 ): ResolvedStructuredLlmRoute[] {
   const disallowed = new Set(policy.disallowedProviderIds ?? []);
-  const allowed = candidates
-    .filter((candidate) => !disallowed.has(candidate.providerId))
-    .map((candidate) => ({
-      ...candidate,
-      diagnostics:
-        disallowed.size > 0
-          ? [...candidate.diagnostics, `routePolicy.disallowed=${[...disallowed].join(',')}`]
-          : candidate.diagnostics,
-    }));
+  const allowed = dedupeResolvedRoutes(
+    candidates
+      .filter((candidate) => !disallowed.has(candidate.providerId))
+      .filter((candidate) => isRouteReady(candidate, policy))
+      .map((candidate) => ({
+        ...candidate,
+        diagnostics:
+          disallowed.size > 0
+            ? [...candidate.diagnostics, `routePolicy.disallowed=${[...disallowed].join(',')}`]
+            : candidate.diagnostics,
+      }))
+  );
 
   if (!policy.synthesizeFallbacksFromEnabledEndpoints) return allowed;
 
-  const seen = new Set(allowed.map((candidate) => candidate.providerEndpointId));
+  const seen = new Set(allowed.map(structuredLlmRouteKey));
   let fallbackIndex = candidates.filter((candidate) => candidate.source === 'fallback').length;
   for (const endpoint of endpoints) {
+    const providerId = providerIdForEndpoint(endpoint);
+    const model = endpoint.models[0];
+    const routeKey = model
+      ? structuredLlmRouteKey({
+          providerEndpointId: endpoint.id,
+          model,
+          providerId,
+        })
+      : null;
     if (
       !endpoint.enabled ||
-      disallowed.has(providerIdForEndpoint(endpoint)) ||
-      seen.has(endpoint.id)
+      disallowed.has(providerId) ||
+      !model ||
+      (routeKey !== null && seen.has(routeKey)) ||
+      !isEndpointReady(endpoint.id, policy)
     ) {
       continue;
     }
-    const model = endpoint.models[0];
-    if (!model) continue;
     const fallback = resolveRouteTarget(
       role,
       { providerEndpointId: endpoint.id, model },
@@ -150,7 +168,9 @@ function applyRoutePolicy(
     );
     fallbackIndex += 1;
     if (!fallback || disallowed.has(fallback.providerId)) continue;
-    seen.add(fallback.providerEndpointId);
+    const fallbackKey = structuredLlmRouteKey(fallback);
+    if (seen.has(fallbackKey)) continue;
+    seen.add(fallbackKey);
     allowed.push({
       ...fallback,
       diagnostics: [
@@ -162,4 +182,27 @@ function applyRoutePolicy(
   }
 
   return allowed;
+}
+
+function dedupeResolvedRoutes(candidates: ResolvedStructuredLlmRoute[]) {
+  const seen = new Set<string>();
+  const deduped: ResolvedStructuredLlmRoute[] = [];
+  for (const candidate of candidates) {
+    const key = structuredLlmRouteKey(candidate);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(candidate);
+  }
+  return deduped;
+}
+
+function isRouteReady(route: ResolvedStructuredLlmRoute, policy: StructuredLlmRoutePolicy) {
+  return route.source === 'override' || isEndpointReady(route.providerEndpointId, policy);
+}
+
+function isEndpointReady(endpointId: string, policy: StructuredLlmRoutePolicy) {
+  if (!policy.skipUnreachableEndpoints) return true;
+  const readiness = policy.endpointReadiness?.[endpointId];
+  if (!readiness) return true;
+  return readiness.reachable !== false;
 }

@@ -13,6 +13,14 @@ export type ProviderToolCall = {
   arguments: Record<string, unknown>;
 };
 
+export type ProviderToolChoice =
+  | 'auto'
+  | 'required'
+  | {
+      type: 'function';
+      function: { name: string };
+    };
+
 export type ProviderToolMessage =
   | { role: 'system'; content: string }
   | { role: 'user'; content: string }
@@ -37,4 +45,6 @@ export type ProviderToolTurnResult =
 export type RawToolTurnCallOptions = Omit<CallSupervisorOptions, 'schemaFirst' | 'round'> & {
   label: string;
   normalizedRequest: NormalizedSupervisorLlmRequest;
+  toolChoice?: ProviderToolChoice;
+  attemptTimeoutMs?: number;
 };

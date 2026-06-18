@@ -1,10 +1,20 @@
 import * as repo from '../../../modules/nightworkers/nightworkers.repository';
 import { estimateTokens } from '../../conversation-context/token-budget';
 import { recordLlmUsage } from '../../llm-usage';
+import { getCachedStructuredLlmProviderHealth } from '../../structured-llm/provider-health';
 import { callProviderToolTurn } from '../../structured-llm/providers';
 import { normalizeStructuredLlmModelTarget } from '../../structured-llm/selection';
+import {
+  readStructuredLlmProviderSettings,
+  type StructuredLlmProviderEndpoint,
+} from '../../structured-llm/settings';
 import type { ProviderToolTurnResult } from '../../structured-llm/tool-calls';
+import type { StructuredLlmRoutePolicy } from '../../structured-llm/types';
 import type { AgentRunContext, AgentRuntimeResult, AgentRuntimeSink } from '../types';
+import {
+  NativeApiCloseoutController,
+  type NativeApiCloseoutControllerLike,
+} from './native-api-closeout-controller';
 import { readNativeApiExecutionMode } from './native-api-mode';
 import {
   buildNativeApiProviderRequests,
@@ -33,6 +43,7 @@ export class NativeApiRunner {
   private readonly activeRunControllers = new Map<string, AbortController>();
   private readonly store: NativeApiSessionStore;
   private readonly startupController: NativeApiStartupControllerLike;
+  private readonly closeoutController: NativeApiCloseoutControllerLike;
   private readonly providerTurn: NativeApiToolTurnProvider;
   private readonly usageRecorder: NativeApiUsageRecorder;
   private readonly maxTurns: number;
@@ -41,6 +52,7 @@ export class NativeApiRunner {
     input: {
       store?: NativeApiSessionStore;
       startupController?: NativeApiStartupControllerLike;
+      closeoutController?: NativeApiCloseoutControllerLike;
       providerTurn?: NativeApiToolTurnProvider;
       usageRecorder?: NativeApiUsageRecorder;
       maxTurns?: number;
@@ -49,6 +61,8 @@ export class NativeApiRunner {
     this.store = input.store ?? new NativeApiSessionStore();
     this.startupController =
       input.startupController ?? new NativeApiStartupController({ store: this.store });
+    this.closeoutController =
+      input.closeoutController ?? new NativeApiCloseoutController({ store: this.store });
     this.providerTurn = input.providerTurn ?? callProviderToolTurn;
     this.usageRecorder = input.usageRecorder ?? recordLlmUsage;
     this.maxTurns = input.maxTurns ?? DEFAULT_MAX_NATIVE_API_TURNS;
@@ -79,6 +93,7 @@ export class NativeApiRunner {
       compileEvalCompleted: false,
     };
     let lastTodoSnapshotContent: string | null = null;
+    let lastCurrentTodoContent: string | null = null;
     let lastPostImportHistoryToolCallId: string | null = null;
     const executionMode = readNativeApiExecutionMode(context);
     const routeOverride = readRuntimeLlmRouteOverride(context);
@@ -104,25 +119,61 @@ export class NativeApiRunner {
 
       for (let turnIndex = 1; turnIndex <= this.maxTurns; turnIndex += 1) {
         if (await this.isCancelled(context.runId, timeout.signal)) return this.toCancelled();
-        const todoSnapshot = await buildTodoSnapshotHistoryItem(context.runId);
-        if (todoSnapshot && todoSnapshot.content !== lastTodoSnapshotContent) {
-          history = [...history, todoSnapshot];
-          lastTodoSnapshotContent = todoSnapshot.content;
+        const todoSnapshot = await buildTodoSnapshotHistory(context.runId);
+        const currentTodo = todoSnapshot?.currentTodo ?? null;
+        if (
+          todoSnapshot?.snapshotItem &&
+          todoSnapshot.snapshotItem.content !== lastTodoSnapshotContent
+        ) {
+          history = [...history, todoSnapshot.snapshotItem];
+          lastTodoSnapshotContent = todoSnapshot.snapshotItem.content;
+        }
+        if (
+          todoSnapshot?.currentTodoItem &&
+          todoSnapshot.currentTodoItem.content !== lastCurrentTodoContent
+        ) {
+          history = [...history, todoSnapshot.currentTodoItem];
+          lastCurrentTodoContent = todoSnapshot.currentTodoItem.content;
         }
         if (state.postImport && state.postImport.toolCallId !== lastPostImportHistoryToolCallId) {
           history = [...history, buildPostImportHistoryItem(state.postImport)];
           lastPostImportHistoryToolCallId = state.postImport.toolCallId;
         }
+        const routePolicy = await buildNativeApiRoutePolicy({
+          sink,
+          runId: context.runId,
+          taskId: context.taskId,
+          basePolicy: {
+            disallowedProviderIds: ['codex'],
+            synthesizeFallbacksFromEnabledEndpoints: true,
+          },
+        });
         const providerRequests = buildNativeApiProviderRequests({
           context,
           history,
           tools: getNativeApiToolDefinitions({ executionMode }),
           routeOverride,
-          routePolicy: {
-            disallowedProviderIds: ['codex'],
-            synthesizeFallbacksFromEnabledEndpoints: true,
-          },
+          routePolicy,
         });
+        if (providerRequests.length === 0) {
+          await sink.emit({
+            type: 'runtime_error',
+            message: '[NativeApiRunner] no native/API provider route candidates were available.',
+            payload: {
+              runtime: 'native_api_runner',
+              executionMode,
+              reason: 'no_native_api_provider_route_candidates',
+            },
+          });
+          return {
+            terminalState: 'needs_human',
+            summary: 'No native/API provider route candidates were available.',
+            finalReport:
+              'No native/API provider route candidates were available. NativeApiRunner did not fall back to Codex or SchemaFirst.',
+            stoppedBy: 'llm_error',
+            riskLevel: 'high',
+          };
+        }
         const initialProviderRequest = providerRequests[0];
         const turn = await this.store.createTurn({
           runId: context.runId,
@@ -163,6 +214,8 @@ export class NativeApiRunner {
           providerRequest = providerRequests[attemptIndex];
           providerDebug = {};
           startedAt = Date.now();
+          const attemptTimeoutMs = providerRequest.options.attemptTimeoutMs;
+          const attemptSignal = createAttemptTimeoutSignal(timeout.signal, attemptTimeoutMs);
           try {
             providerResult = await this.providerTurn({
               provider: providerRequest.provider,
@@ -171,19 +224,26 @@ export class NativeApiRunner {
               systemPrompt: providerRequest.systemPrompt,
               userPrompt: providerRequest.userPrompt,
               options: providerRequest.options,
-              signal: timeout.signal,
+              signal: attemptSignal.signal,
               setProviderDebug: (value) => {
                 providerDebug = value;
               },
             });
           } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
+            const durationMs = Date.now() - startedAt;
+            const classified = classifyNativeApiProviderError(error, {
+              attemptTimedOut: attemptSignal.didTimeout(),
+              attemptTimeoutMs,
+            });
+            const message = classified.message;
             lastProviderFailure = { message, providerDebug };
             routeAttempts.push({
               attemptIndex,
               ok: false,
-              reason: 'provider_error',
+              reason: classified.reason,
               message,
+              durationMs,
+              attemptTimeoutMs: attemptTimeoutMs ?? null,
               route: summarizeNativeApiRoute(providerRequest),
               providerDebug,
             });
@@ -198,12 +258,14 @@ export class NativeApiRunner {
                 attemptIndex,
                 from: providerRequest,
                 to: providerRequests[attemptIndex + 1],
-                reason: 'provider_error',
+                reason: classified.reason,
                 message,
               });
               continue;
             }
             providerResult = null;
+          } finally {
+            attemptSignal.dispose();
           }
 
           if (!providerResult) break;
@@ -216,8 +278,10 @@ export class NativeApiRunner {
                 : providerResult.toolCalls.length === 0 && !providerResult.content.trim()
                   ? 'empty_no_tool_calls'
                   : 'accepted',
+            durationMs: Date.now() - startedAt,
+            attemptTimeoutMs: attemptTimeoutMs ?? null,
             route: summarizeNativeApiRoute(providerRequest),
-            providerDebug: providerResult.providerDebug ?? providerDebug,
+            providerDebug,
           });
           if (
             providerResult.type === 'supported' &&
@@ -284,7 +348,7 @@ export class NativeApiRunner {
             turnId: turn.id,
             status: 'cancelled',
             history,
-            providerDebug: providerResult.providerDebug ?? providerDebug,
+            providerDebug,
             error: { message: 'Run cancelled after provider turn.' },
             model: providerResult.type === 'supported' ? (providerResult.model ?? null) : null,
           });
@@ -296,7 +360,7 @@ export class NativeApiRunner {
             turnId: turn.id,
             status: 'failed',
             history,
-            providerDebug: providerResult.providerDebug ?? providerDebug,
+            providerDebug,
             error: { message: providerResult.reason },
           });
           return {
@@ -334,14 +398,15 @@ export class NativeApiRunner {
 
         if (providerResult.toolCalls.length === 0) {
           const finalText = providerResult.content.trim();
+          const canComplete = canCompleteWithTextOnly(executionMode, finalText);
           await this.store.finishTurn({
             turnId: turn.id,
-            status: finalText ? 'completed' : 'failed',
+            status: canComplete ? 'completed' : 'failed',
             history,
-            providerDebug: providerResult.providerDebug ?? providerDebug,
+            providerDebug,
             model: providerResult.model ?? null,
           });
-          if (finalText) {
+          if (canComplete) {
             return {
               terminalState: 'completed',
               summary: firstLine(finalText),
@@ -353,8 +418,9 @@ export class NativeApiRunner {
           return {
             terminalState: 'needs_human',
             summary: 'Provider returned no native tool calls.',
-            finalReport:
-              'Provider returned no native tool calls. NativeApiRunner requires finalize_answer and did not fall back to Codex or SchemaFirst.',
+            finalReport: finalText
+              ? 'Provider returned text without native tool calls. NativeApiRunner requires tool calls/finalize_answer for this execution mode and did not fall back to Codex or SchemaFirst.'
+              : 'Provider returned no native tool calls. NativeApiRunner requires finalize_answer and did not fall back to Codex or SchemaFirst.',
             stoppedBy: 'missing_tool_call',
             riskLevel: 'high',
           };
@@ -362,7 +428,11 @@ export class NativeApiRunner {
 
         for (const toolCall of providerResult.toolCalls) {
           if (await this.isCancelled(context.runId, timeout.signal)) {
-            await this.store.finishTurn({ turnId: turn.id, status: 'cancelled', history });
+            await this.store.finishTurn({
+              turnId: turn.id,
+              status: 'cancelled',
+              history,
+            });
             return this.toCancelled();
           }
           const record = await this.store.recordToolCallPending({
@@ -370,7 +440,7 @@ export class NativeApiRunner {
             taskId: context.taskId,
             turnId: turn.id,
             toolCall,
-            todoSeq: context.currentTodo?.seq ?? null,
+            todoSeq: currentTodo?.seq ?? context.currentTodo?.seq ?? null,
           });
           if (await this.isCancelled(context.runId, timeout.signal)) {
             await this.store.finishToolCall({
@@ -379,10 +449,17 @@ export class NativeApiRunner {
               error: { message: 'Run cancelled before tool execution.' },
               modelVisibleOutput: JSON.stringify({
                 ok: false,
-                error: { code: 'RUN_CANCELLED', message: 'Run cancelled before tool execution.' },
+                error: {
+                  code: 'RUN_CANCELLED',
+                  message: 'Run cancelled before tool execution.',
+                },
               }),
             });
-            await this.store.finishTurn({ turnId: turn.id, status: 'cancelled', history });
+            await this.store.finishTurn({
+              turnId: turn.id,
+              status: 'cancelled',
+              history,
+            });
             return this.toCancelled();
           }
           await this.store.markToolCallRunning({ id: record.id });
@@ -393,10 +470,17 @@ export class NativeApiRunner {
               error: { message: 'Run cancelled before tool execution.' },
               modelVisibleOutput: JSON.stringify({
                 ok: false,
-                error: { code: 'RUN_CANCELLED', message: 'Run cancelled before tool execution.' },
+                error: {
+                  code: 'RUN_CANCELLED',
+                  message: 'Run cancelled before tool execution.',
+                },
               }),
             });
-            await this.store.finishTurn({ turnId: turn.id, status: 'cancelled', history });
+            await this.store.finishTurn({
+              turnId: turn.id,
+              status: 'cancelled',
+              history,
+            });
             return this.toCancelled();
           }
           const dispatch = await dispatchNativeApiToolCall({
@@ -437,11 +521,23 @@ export class NativeApiRunner {
             modelVisibleOutput: dispatch.toolResult.content,
           });
           if (dispatch.kind === 'final') {
+            const closeout = await this.closeoutController.runCompileEval({
+              context,
+              sink,
+              turnId: turn.id,
+              state,
+              finalReport: dispatch.finalReport,
+              todoSeq: currentTodo?.seq ?? context.currentTodo?.seq ?? null,
+            });
+            state = closeout.state;
+            if (!closeout.skipped) {
+              history = [...history, closeout.historyItem];
+            }
             await this.store.finishTurn({
               turnId: turn.id,
               status: 'completed',
               history,
-              providerDebug: providerResult.providerDebug ?? providerDebug,
+              providerDebug,
               model: providerResult.model ?? null,
             });
             return {
@@ -458,7 +554,7 @@ export class NativeApiRunner {
           turnId: turn.id,
           status: 'completed',
           history,
-          providerDebug: providerResult.providerDebug ?? providerDebug,
+          providerDebug,
           model: providerResult.model ?? null,
         });
 
@@ -469,6 +565,7 @@ export class NativeApiRunner {
             newContextWindowRequested: false,
           };
           lastTodoSnapshotContent = null;
+          lastCurrentTodoContent = null;
           lastPostImportHistoryToolCallId = null;
           await sink.emit({
             type: 'tool_call_progress',
@@ -528,7 +625,21 @@ export class NativeApiRunner {
 }
 
 function shouldForceStartupGates(context: AgentRunContext): boolean {
-  return context.runtimeOptions?.forceStartupGates === true;
+  if (context.runtimeOptions?.forceStartupGates === false) return false;
+  const executionMode = readNativeApiExecutionMode(context);
+  return (
+    executionMode === 'implementation' ||
+    executionMode === 'review' ||
+    executionMode === 'runtime_debug'
+  );
+}
+
+function canCompleteWithTextOnly(
+  executionMode: ReturnType<typeof readNativeApiExecutionMode>,
+  content: string
+) {
+  if (!content.trim()) return false;
+  return executionMode === 'planning' || executionMode === 'general_answer';
 }
 
 async function emitNativeApiRouteFallback(input: {
@@ -567,6 +678,96 @@ function summarizeNativeApiRoute(request: NativeApiProviderRequest) {
   };
 }
 
+async function buildNativeApiRoutePolicy(input: {
+  sink: AgentRuntimeSink;
+  runId: string;
+  taskId: string;
+  basePolicy: StructuredLlmRoutePolicy;
+}): Promise<StructuredLlmRoutePolicy> {
+  if (
+    process.env.NODE_ENV === 'test' &&
+    process.env.NIGHTWORKERS_NATIVE_API_READINESS_PROBE !== '1'
+  ) {
+    return input.basePolicy;
+  }
+  const settings = readStructuredLlmProviderSettings();
+  const endpoints = settings.providerEndpoints ?? [];
+  const endpointReadiness: NonNullable<StructuredLlmRoutePolicy['endpointReadiness']> = {};
+  await Promise.all(
+    endpoints.filter(shouldProbeNativeApiEndpointReadiness).map(async (endpoint) => {
+      const result = await getCachedStructuredLlmProviderHealth(endpoint, {
+        timeoutMs: 1000,
+        cacheTtlMs: 30_000,
+      });
+      endpointReadiness[endpoint.id] = {
+        reachable: result.reachable,
+        ok: result.ok,
+        checkedAt: result.checkedAt,
+        message: result.message,
+      };
+      if (result.reachable === false) {
+        await input.sink.emit({
+          type: 'tool_call_progress',
+          message: `[NativeApiRunner] provider endpoint skipped by readiness: ${endpoint.id}.`,
+          payload: {
+            runtime: 'native_api_runner',
+            action: 'provider_readiness_skip',
+            runId: input.runId,
+            taskId: input.taskId,
+            providerEndpointId: endpoint.id,
+            providerKind: endpoint.kind,
+            message: result.message,
+          },
+        });
+      }
+    })
+  );
+  return {
+    ...input.basePolicy,
+    skipUnreachableEndpoints: true,
+    endpointReadiness,
+  };
+}
+
+function shouldProbeNativeApiEndpointReadiness(endpoint: StructuredLlmProviderEndpoint) {
+  return (
+    endpoint.enabled &&
+    (endpoint.kind === 'local' || endpoint.kind === 'openai-compatible') &&
+    Boolean(endpoint.baseUrl?.trim())
+  );
+}
+
+function classifyNativeApiProviderError(
+  error: unknown,
+  input: { attemptTimedOut: boolean; attemptTimeoutMs?: number }
+) {
+  if (input.attemptTimedOut) {
+    const timeoutMs = input.attemptTimeoutMs ?? 0;
+    return {
+      reason: 'provider_route_attempt_timeout',
+      message: `Provider route attempt timed out after ${timeoutMs}ms.`,
+    };
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  if (/required_tool_call_missing/i.test(message)) {
+    return { reason: 'tool_required_missing', message };
+  }
+  if (
+    /ECONNREFUSED|Unable to connect|ENOTFOUND|EHOSTUNREACH|network error|fetch failed/i.test(
+      message
+    )
+  ) {
+    return { reason: 'endpoint_unreachable', message };
+  }
+  if (/loading model|unavailable_error|temporarily unavailable/i.test(message)) {
+    return { reason: 'transient_model_loading', message };
+  }
+  if (/abort/i.test(message)) {
+    return { reason: 'provider_aborted', message };
+  }
+  return { reason: 'provider_error', message };
+}
+
 function readRuntimeLlmRouteOverride(context: AgentRunContext) {
   const routing =
     context.runtimeOptions?.llmRouting &&
@@ -577,9 +778,19 @@ function readRuntimeLlmRouteOverride(context: AgentRunContext) {
   return normalizeStructuredLlmModelTarget(routing.override);
 }
 
-async function buildTodoSnapshotHistoryItem(
-  runId: string
-): Promise<Extract<NativeApiHistoryItem, { type: 'user' }> | null> {
+type NativeApiRuntimeTodoSnapshot = {
+  seq: number;
+  title: string;
+  taskType: string;
+  status: string;
+  procedureId?: string | null;
+};
+
+async function buildTodoSnapshotHistory(runId: string): Promise<{
+  snapshotItem: Extract<NativeApiHistoryItem, { type: 'user' }> | null;
+  currentTodoItem: Extract<NativeApiHistoryItem, { type: 'user' }> | null;
+  currentTodo: NativeApiRuntimeTodoSnapshot | null;
+} | null> {
   try {
     const todos = await repo.listTaskRunTodosForRun(runId);
     if (todos.length === 0) return null;
@@ -589,14 +800,46 @@ async function buildTodoSnapshotHistoryItem(
         const title = todo.title.replace(/\s+/g, ' ').trim();
         return `seq=${todo.seq} status=${todo.status} taskType=${todo.taskType} procedureId=${todo.procedureId ?? 'none'} title=${title}`;
       });
+    const currentTodo =
+      todos
+        .filter((todo) => todo.status === 'running')
+        .sort((a, b) => a.seq - b.seq)
+        .map((todo) => ({
+          seq: todo.seq,
+          title: todo.title,
+          taskType: todo.taskType,
+          status: todo.status,
+          procedureId: todo.procedureId,
+        }))[0] ?? null;
     return {
-      type: 'user',
-      source: 'todo',
-      content: ['[Native API Runner Todo Snapshot]', ...lines].join('\n'),
+      snapshotItem: {
+        type: 'user',
+        source: 'todo',
+        content: ['[Native API Runner Todo Snapshot]', ...lines].join('\n'),
+      },
+      currentTodoItem: currentTodo
+        ? {
+            type: 'user',
+            source: 'todo',
+            content: renderRuntimeTodoContext(currentTodo),
+          }
+        : null,
+      currentTodo,
     };
   } catch {
     return null;
   }
+}
+
+function renderRuntimeTodoContext(currentTodo: NativeApiRuntimeTodoSnapshot) {
+  return [
+    '[Current Native API Runner Todo]',
+    `seq=${currentTodo.seq}`,
+    `title=${currentTodo.title}`,
+    `taskType=${currentTodo.taskType}`,
+    `procedureId=${currentTodo.procedureId ?? 'none'}`,
+    `status=${currentTodo.status}`,
+  ].join('\n');
 }
 
 function buildPostImportHistoryItem(
@@ -701,6 +944,38 @@ function createTimeoutSignal(
       clearTimeout(timeout);
       parent?.removeEventListener('abort', abortFromParent);
       runSignal.removeEventListener('abort', abortFromRun);
+    },
+  };
+}
+
+function createAttemptTimeoutSignal(parent: AbortSignal, timeoutMs?: number) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const effectiveTimeoutMs =
+    Number.isFinite(timeoutMs) && (timeoutMs ?? 0) > 0 ? Math.floor(timeoutMs ?? 0) : 0;
+  const timeout =
+    effectiveTimeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          controller.abort(
+            new Error(
+              `NativeApiRunner provider route attempt timed out after ${effectiveTimeoutMs}ms`
+            )
+          );
+        }, effectiveTimeoutMs)
+      : null;
+  const abortFromParent = () => controller.abort(parent.reason);
+  if (parent.aborted) {
+    abortFromParent();
+  } else {
+    parent.addEventListener('abort', abortFromParent, { once: true });
+  }
+  return {
+    signal: controller.signal,
+    didTimeout: () => timedOut,
+    dispose: () => {
+      if (timeout) clearTimeout(timeout);
+      parent.removeEventListener('abort', abortFromParent);
     },
   };
 }

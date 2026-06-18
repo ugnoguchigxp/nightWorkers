@@ -26,10 +26,10 @@ describe('NativeApiStartupController', () => {
           taskId: 'task-1',
           found: true,
           messageId: 'message-1',
-          title: 'NativeApiRunner Fixed Startup Flow',
-          content: '# Fixed startup flow\nImplement it.',
+          title: 'Todo List Specification',
+          content: '# Todo List Specification\nImplement persisted Todo filtering and keyboard flow.',
           generatedAt: '2026-06-17T00:00:00.000Z',
-          digest: 'sha256:spec',
+          digest: 'sha256:todo-list',
           sources: {},
         }),
       })
@@ -62,22 +62,31 @@ describe('NativeApiStartupController', () => {
       .mockResolvedValueOnce([
         todo(1, 'running', 'contextstill.initial_instructions', 'initial_instructions'),
         todo(2, 'pending', 'contextstill.context_compile', 'context_compile'),
-        todo(3, 'pending', null, 'implementation'),
+        { ...todo(3, 'pending', null, 'implementation'), title: 'Implement Todo list UI' },
       ] as never)
       .mockResolvedValueOnce([
         todo(1, 'passed', 'contextstill.initial_instructions', 'initial_instructions'),
         todo(2, 'running', 'contextstill.context_compile', 'context_compile'),
-        todo(3, 'pending', null, 'implementation'),
+        { ...todo(3, 'pending', null, 'verification'), title: 'Pending follow-up check' },
+        {
+          ...todo(4, 'running', null, 'implementation'),
+          title: 'Continue active Todo list implementation',
+        },
+      ] as never)
+      .mockResolvedValueOnce([
+        todo(1, 'passed', 'contextstill.initial_instructions', 'initial_instructions'),
+        todo(2, 'running', 'contextstill.context_compile', 'context_compile'),
+        { ...todo(3, 'pending', null, 'implementation'), title: 'Implement Todo list UI' },
       ] as never)
       .mockResolvedValueOnce([
         todo(1, 'passed', 'contextstill.initial_instructions', 'initial_instructions'),
         todo(2, 'passed', 'contextstill.context_compile', 'context_compile'),
-        todo(3, 'pending', null, 'implementation'),
+        { ...todo(3, 'pending', null, 'implementation'), title: 'Implement Todo list UI' },
       ] as never)
       .mockResolvedValueOnce([
         todo(1, 'passed', 'contextstill.initial_instructions', 'initial_instructions'),
         todo(2, 'passed', 'contextstill.context_compile', 'context_compile'),
-        todo(3, 'running', null, 'implementation'),
+        { ...todo(3, 'running', null, 'implementation'), title: 'Implement Todo list UI' },
       ] as never);
 
     const controller = new NativeApiStartupController({
@@ -137,11 +146,25 @@ describe('NativeApiStartupController', () => {
         args: expect.objectContaining({
           toolName: 'context_compile',
           arguments: expect.objectContaining({
-            goal: expect.stringContaining('NativeApiRunner Fixed Startup Flow'),
+            goal: expect.stringContaining('Todo List Specification'),
           }),
         }),
       })
     );
+    const contextCompileArgs = executeTool.mock.calls[2][0].args.arguments as Record<
+      string,
+      unknown
+    >;
+    expect(contextCompileArgs.goal).toContain('Continue active Todo list implementation');
+    expect(contextCompileArgs.goal).not.toContain('Pending follow-up check');
+    expect(contextCompileArgs.goal).toContain('persisted Todo filtering');
+    expect(contextCompileArgs.goal).not.toContain('Native/API runner の fixed startup flow');
+    expect(contextCompileArgs.goal).not.toContain('initial_instructions を実行する');
+    expect(contextCompileArgs).toMatchObject({
+      domains: ['nightWorkers'],
+      technologies: ['typescript', 'bun'],
+      changeTypes: ['implementation', 'verification'],
+    });
     expect(mutateTodos).toHaveBeenLastCalledWith({
       runId: 'run-1',
       operation: 'start',
@@ -246,8 +269,8 @@ describe('NativeApiStartupController', () => {
         taskId: 'task-1',
         found: true,
         messageId: 'message-1',
-        title: 'NativeApiRunner Fixed Startup Flow',
-        content: '# Fixed startup flow\nImplement it.',
+        title: 'Todo List Specification',
+        content: '# Todo List Specification\nImplement persisted Todo filtering.',
         generatedAt: '2026-06-17T00:00:00.000Z',
         digest: 'sha256:spec',
         sources: {},

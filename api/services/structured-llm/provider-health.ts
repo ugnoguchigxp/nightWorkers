@@ -13,6 +13,8 @@ export type StructuredLlmProviderHealthResult = {
 };
 
 const DEFAULT_TIMEOUT_MS = 3000;
+const DEFAULT_CACHE_TTL_MS = 30_000;
+const healthCache = new Map<string, StructuredLlmProviderHealthResult>();
 
 export async function checkStructuredLlmProviderHealth(
   endpoint: StructuredLlmProviderEndpoint,
@@ -75,6 +77,29 @@ export async function checkStructuredLlmProviderHealth(
   }
 }
 
+export async function getCachedStructuredLlmProviderHealth(
+  endpoint: StructuredLlmProviderEndpoint,
+  options: {
+    timeoutMs?: number;
+    cacheTtlMs?: number;
+    fetchImpl?: typeof fetch;
+  } = {}
+): Promise<StructuredLlmProviderHealthResult> {
+  const cacheKey = buildProviderHealthCacheKey(endpoint);
+  const cached = healthCache.get(cacheKey);
+  const ttlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
+  if (cached && Date.now() - Date.parse(cached.checkedAt) < ttlMs) {
+    return cached;
+  }
+  const result = await checkStructuredLlmProviderHealth(endpoint, options);
+  healthCache.set(cacheKey, result);
+  return result;
+}
+
+export function clearStructuredLlmProviderHealthCache() {
+  healthCache.clear();
+}
+
 export function buildProviderHealthUrl(
   endpoint: Pick<
     StructuredLlmProviderEndpoint,
@@ -82,12 +107,18 @@ export function buildProviderHealthUrl(
   >
 ): { ok: true; url: string } | { ok: false; message: string } {
   if (endpoint.kind === 'codex') {
-    return { ok: false, message: 'Codex SDK does not expose an HTTP /health endpoint.' };
+    return {
+      ok: false,
+      message: 'Codex SDK does not expose an HTTP /health endpoint.',
+    };
   }
 
   if (endpoint.kind === 'bedrock') {
     if (!endpoint.region?.trim()) {
-      return { ok: false, message: 'AWS region is required to build a Bedrock health URL.' };
+      return {
+        ok: false,
+        message: 'AWS region is required to build a Bedrock health URL.',
+      };
     }
     return {
       ok: true,
@@ -107,13 +138,19 @@ export function buildProviderHealthUrl(
     return { ok: false, message: 'Endpoint URL or Base URL is invalid.' };
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    return { ok: false, message: 'Only http and https health URLs are supported.' };
+    return {
+      ok: false,
+      message: 'Only http and https health URLs are supported.',
+    };
   }
 
   if (endpoint.kind === 'azure') {
     const deploymentName = endpoint.models?.[0]?.trim();
     if (!deploymentName) {
-      return { ok: false, message: 'Azure deployment name is required for health checks.' };
+      return {
+        ok: false,
+        message: 'Azure deployment name is required for health checks.',
+      };
     }
     const apiVersion = endpoint.apiVersion?.trim() || '2024-05-01-preview';
     url.pathname = `${stripKnownApiSuffix(url.pathname)}/openai/deployments/${encodeURIComponent(
@@ -131,7 +168,9 @@ export function buildProviderHealthUrl(
 }
 
 function buildHealthHeaders(endpoint: StructuredLlmProviderEndpoint): HeadersInit {
-  const headers: Record<string, string> = { Accept: 'application/json,text/plain,*/*' };
+  const headers: Record<string, string> = {
+    Accept: 'application/json,text/plain,*/*',
+  };
   if (endpoint.kind === 'azure') {
     headers['Content-Type'] = 'application/json';
     if (endpoint.apiKey?.trim()) {
@@ -158,4 +197,15 @@ function stripKnownApiSuffix(pathname: string) {
   if (!normalized || normalized === '/') return '';
   if (normalized === '/v1' || normalized === '/api') return '';
   return normalized;
+}
+
+function buildProviderHealthCacheKey(endpoint: StructuredLlmProviderEndpoint) {
+  return [
+    endpoint.id,
+    endpoint.kind,
+    endpoint.baseUrl ?? '',
+    endpoint.endpoint ?? '',
+    endpoint.apiVersion ?? '',
+    endpoint.models.join(','),
+  ].join('|');
 }

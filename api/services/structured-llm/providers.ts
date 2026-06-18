@@ -585,7 +585,7 @@ async function callAzureProviderToolTurn(
     body: JSON.stringify({
       messages: toOpenAIToolMessages(input.messages),
       tools: input.tools.map(toOpenAIToolDefinition),
-      tool_choice: 'auto',
+      tool_choice: input.options.toolChoice ?? 'auto',
       ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
     }),
   });
@@ -666,7 +666,7 @@ async function callOpenAIProviderToolTurn(
       model,
       messages: toOpenAIToolMessages(input.messages),
       tools: input.tools.map(toOpenAIToolDefinition),
-      tool_choice: 'auto',
+      tool_choice: input.options.toolChoice ?? 'auto',
       ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
     }),
   });

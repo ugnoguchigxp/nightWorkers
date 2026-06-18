@@ -6,6 +6,15 @@ export type StructuredLlmRouteSource = 'override' | 'primary' | 'fallback';
 export type StructuredLlmRoutePolicy = {
   disallowedProviderIds?: SupervisorProviderId[];
   synthesizeFallbacksFromEnabledEndpoints?: boolean;
+  skipUnreachableEndpoints?: boolean;
+  endpointReadiness?: Record<string, StructuredLlmEndpointReadiness | undefined>;
+};
+
+export type StructuredLlmEndpointReadiness = {
+  reachable: boolean | null;
+  ok?: boolean | null;
+  checkedAt?: string | null;
+  message?: string | null;
 };
 
 export type CallSupervisorOptions = {

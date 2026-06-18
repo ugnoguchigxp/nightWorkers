@@ -37,11 +37,21 @@ describe('NativeApiCloseoutController', () => {
     });
 
     const result = await controller.runCompileEval({
-      context: buildContext(),
+      context: buildContext({
+        currentTodo: {
+          id: 'todo-1',
+          seq: 1,
+          title: 'initial_instructions を実行する',
+          taskType: 'initial_instructions',
+          status: 'running',
+          procedureId: 'contextstill.initial_instructions',
+        },
+      }),
       sink: createSink(events),
       turnId: 'turn-1',
       state: initialState(),
       finalReport: 'Implemented fixed startup flow.\nVerified with tests.',
+      todoSeq: 3,
     });
 
     expect(result.skipped).toBe(false);
@@ -49,6 +59,7 @@ describe('NativeApiCloseoutController', () => {
     expect(store.toolCalls[0]).toMatchObject({
       source: 'runtime_gate',
       toolName: 'context-still.compile_eval',
+      todoSeq: 3,
     });
     expect(store.finishedToolCalls[0]).toMatchObject({
       status: 'completed',

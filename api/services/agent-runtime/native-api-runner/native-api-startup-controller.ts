@@ -4,6 +4,7 @@ import { executeWorkerTool } from '../../worker-tools/dispatcher';
 import { type TodoActionPayload, todoListTool } from '../../worker-tools/todo-list';
 import type { WorkerToolResult } from '../../worker-tools/types';
 import type { AgentRunContext, AgentRuntimeResult, AgentRuntimeSink } from '../types';
+import { readNativeApiExecutionMode } from './native-api-mode';
 import type { NativeApiSessionStore } from './native-api-session-store';
 import type { NativeApiDispatchState } from './native-api-tool-dispatcher';
 import type { NativeApiHistoryItem, NativeApiToolResult } from './native-api-tool-history';
@@ -153,10 +154,12 @@ export class NativeApiStartupController {
       );
     }
     await this.completeProcedureTodo(input.context.runId, 'contextstill.initial_instructions');
+    const workTodo = await this.resolveStartupWorkTodo(input.context.runId);
 
     const contextCompileArgs = buildContextCompileArguments(
       input.context,
-      specification.toolResult.payload
+      specification.toolResult.payload,
+      workTodo
     );
     const contextCompile = await this.runMcpGate({
       phase: 'startup_context_compile',
@@ -608,6 +611,11 @@ export class NativeApiStartupController {
     await this.mutateTodos({ runId, operation: 'done', seq: target.seq });
   }
 
+  private async resolveStartupWorkTodo(runId: string) {
+    const todos = await repo.listTaskRunTodosForRun(runId);
+    return resolveStartupWorkTodo(todos);
+  }
+
   private executeTool(input: Parameters<typeof executeWorkerTool>[0]) {
     return (this.input.executeTool ?? executeWorkerTool)(input);
   }
@@ -628,26 +636,98 @@ export class NativeApiStartupController {
   }
 }
 
-function buildContextCompileArguments(context: AgentRunContext, specification: unknown) {
+function buildContextCompileArguments(
+  context: AgentRunContext,
+  specification: unknown,
+  workTodo: StartupWorkTodo | null
+) {
   const spec = toRecord(specification);
   const title = typeof spec.title === 'string' && spec.title.trim() ? spec.title.trim() : null;
   const digest = typeof spec.digest === 'string' && spec.digest.trim() ? spec.digest.trim() : null;
-  const currentTodo = context.currentTodo;
+  const specContent =
+    typeof spec.content === 'string' && spec.content.trim() ? summarizeText(spec.content, 240) : null;
+  const request = summarizeText(context.latestUserMessage || context.compiledPrompt, 280);
+  const executionMode = readNativeApiExecutionMode(context);
   const goalParts = [
-    'NightWorkers native/API runner の fixed startup flow を実装する。',
-    currentTodo
-      ? `Todo #${currentTodo.seq}「${currentTodo.title}」を現在の作業単位にする。`
-      : `ユーザー依頼「${context.latestUserMessage || context.compiledPrompt}」を現在の作業単位にする。`,
+    `ユーザー依頼「${request}」に対応する。`,
+    workTodo
+      ? `実作業 Todo #${workTodo.seq}「${workTodo.title}」(${workTodo.taskType}) を現在の作業単位にする。`
+      : 'startup gate ではなく、ユーザー依頼と仕様書を現在の作業単位にする。',
     title || digest
-      ? `仕様書 ${title ? `「${title}」` : ''}${digest ? ` (${digest})` : ''} を前提に、既存 runner / Todo runtime / contextStill gate の関連コードを確認する。`
-      : '仕様書の内容と既存 runner / Todo runtime / contextStill gate の関連コードを確認する。',
+      ? `仕様書 ${title ? `「${title}」` : ''}${digest ? ` (${digest})` : ''} を前提にする。`
+      : '読了済み仕様書を前提にする。',
+    specContent ? `仕様書要点: ${specContent}` : '',
+    `executionMode=${executionMode} として、必要な実装・検証・closeout まで進める。`,
   ];
   return {
-    goal: goalParts.join(' '),
-    domains: ['nightWorkers', 'native-api-runner', 'supervisor'],
-    technologies: ['typescript', 'bun', 'sqlite'],
-    changeTypes: ['implementation', 'runtime', 'verification'],
+    goal: goalParts.filter(Boolean).join(' '),
+    domains: ['nightWorkers'],
+    technologies: ['typescript', 'bun'],
+    changeTypes: changeTypesForExecutionMode(executionMode),
   };
+}
+
+type StartupWorkTodo = {
+  seq: number;
+  title: string;
+  taskType: string;
+  status: string;
+  procedureId?: string | null;
+};
+
+function resolveStartupWorkTodo(
+  todos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>
+): StartupWorkTodo | null {
+  return (
+    todos
+      .filter(
+        (todo) =>
+          ['pending', 'running'].includes(todo.status) &&
+          !isStartupGateTodo(todo) &&
+          !isFinalCloseoutTodo(todo)
+      )
+      .sort(
+        (a, b) =>
+          startupWorkTodoStatusRank(a.status) - startupWorkTodoStatusRank(b.status) ||
+          a.seq - b.seq
+      )
+      .map((todo) => ({
+        seq: todo.seq,
+        title: todo.title,
+        taskType: todo.taskType,
+        status: todo.status,
+        procedureId: todo.procedureId,
+      }))[0] ?? null
+  );
+}
+
+function startupWorkTodoStatusRank(status: string) {
+  if (status === 'running') return 0;
+  if (status === 'pending') return 1;
+  return 2;
+}
+
+function isStartupGateTodo(todo: { taskType?: string | null; procedureId?: string | null }) {
+  return (
+    todo.procedureId === 'contextstill.initial_instructions' ||
+    todo.procedureId === 'contextstill.context_compile' ||
+    todo.taskType === 'initial_instructions' ||
+    todo.taskType === 'context_compile'
+  );
+}
+
+function changeTypesForExecutionMode(mode: ReturnType<typeof readNativeApiExecutionMode>) {
+  if (mode === 'review') return ['review', 'verification'];
+  if (mode === 'runtime_debug') return ['investigation', 'implementation', 'verification'];
+  if (mode === 'planning') return ['planning'];
+  if (mode === 'general_answer') return ['investigation'];
+  return ['implementation', 'verification'];
+}
+
+function summarizeText(value: string, maxLength: number) {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength - 3)}...`;
 }
 
 function projectWorkerResult(result: WorkerToolResult<unknown>): NativeApiToolResult {
