@@ -129,15 +129,14 @@ describe('Supervisor LLM schema-first parsing', () => {
     });
   });
 
-  it('excludes Codex role routes when a native/API policy is active', () => {
-    const request = buildNormalizedSupervisorLlmRequest({
+  it('does not synthesize enabled endpoints when a native/API route policy is explicit-only', () => {
+    const requests = buildNormalizedSupervisorLlmRequestCandidates({
       systemPrompt: 'system text',
       userPrompt: 'user text',
-      label: 'supervisor',
+      label: 'native_api_runner',
       role: 'plan',
       routePolicy: {
         disallowedProviderIds: ['codex'],
-        synthesizeFallbacksFromEnabledEndpoints: true,
       },
       settings: {
         ACTIVE_LLM_PROVIDER: 'azure',
@@ -171,19 +170,7 @@ describe('Supervisor LLM schema-first parsing', () => {
       },
     });
 
-    expect(request).toMatchObject({
-      providerId: 'openai',
-      providerEndpointId: 'local-plan',
-      role: 'plan',
-      routeSource: 'fallback',
-      modelOrDeployment: 'qwen3-coder',
-    });
-    expect(request.diagnostics.routeDiagnostics).toEqual(
-      expect.arrayContaining([
-        'routePolicy.synthesizedFallback=true',
-        'routePolicy.disallowed=codex',
-      ])
-    );
+    expect(requests).toEqual([]);
   });
 
   it('dedupes native/API route candidates by endpoint, model, and provider', () => {

@@ -317,13 +317,26 @@ const nativeApiToolRegistrations: NativeApiToolRegistration[] = [
     kind: 'todo_control',
     definition: {
       name: 'todo_list',
-      description: 'Mutate Todo progress. Listing Todos is internal and not model-visible.',
+      description:
+        'Control the NightWorkers TodoList. Use todo_list operation=replace only for structural replanning; use todo_list operation=start/done/block/fail for existing Todo state transitions.',
       inputSchema: objectSchema(
         {
           operation: { type: 'string', enum: ['replace', 'start', 'done', 'block', 'fail'] },
           seq: { type: 'number' },
           todos: { type: 'array' },
           startFirst: { type: 'boolean' },
+          todoListReplaceReason: {
+            type: 'string',
+            enum: [
+              'initial_plan',
+              'scope_changed',
+              'estimate_changed',
+              'newly_required_work',
+              'blocked_replan',
+            ],
+            description:
+              'Required with todo_list operation=replace when a Todo is already running. Do not provide this for start/done/block/fail.',
+          },
         },
         ['operation']
       ),

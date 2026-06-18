@@ -217,7 +217,9 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain(
       'open Todo が completion_report だけになった final assistant report 直前'
     );
-    expect(prompt).toContain('todo_list replace 直後や context_compile 直後');
+    expect(prompt).toContain(
+      'nightworkers.todo_list operation=replace 直後や context_compile 直後'
+    );
     expect(prompt).toContain('nightworkers.read_current_specification');
     expect(prompt).toContain('nightworkers.list_recent_specifications');
     expect(prompt).toContain('For explicit planning, implementation-plan, specification');

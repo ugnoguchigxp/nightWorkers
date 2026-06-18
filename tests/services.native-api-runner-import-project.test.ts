@@ -128,7 +128,6 @@ describe('NativeApiRunner import_project flow', () => {
       startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
-      maxTurns: 4,
     });
 
     const result = await runner.run(buildContext(), createSink());
@@ -206,20 +205,26 @@ describe('NativeApiRunner import_project flow', () => {
         usage: usage(),
         model: 'api-model',
       },
+      {
+        type: 'supported',
+        content: 'blocked import requires human follow-up',
+        toolCalls: [],
+        usage: usage(),
+        model: 'api-model',
+      },
     ]);
     const runner = new NativeApiRunner({
       store: store.instance,
       startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
-      maxTurns: 2,
     });
 
     const result = await runner.run(buildContext(), createSink());
 
     expect(result).toMatchObject({
       terminalState: 'needs_human',
-      stoppedBy: 'budget',
+      stoppedBy: 'missing_tool_call',
     });
     expect(store.finishedToolCalls).toEqual(
       expect.arrayContaining([

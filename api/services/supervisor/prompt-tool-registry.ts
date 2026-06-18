@@ -92,7 +92,7 @@ function buildSupervisorTodoListInputSchema() {
   if (operation && Array.isArray(operation.enum)) {
     operation.enum = operation.enum.filter((value) => value !== 'list');
     operation.description =
-      'Progress operation to perform. Use replace/start/done/block/fail. list is diagnostic-only and is not exposed to native Supervisor progress decisions.';
+      'Todo operation to perform. todo_list operation=replace structurally replans the TodoList. todo_list operation=start/done/block/fail transitions existing Todo state. list is diagnostic-only and is not exposed to native Supervisor progress decisions.';
   }
   return schema;
 }
@@ -264,7 +264,7 @@ export const toolRegistry = {
   todo_list: {
     name: 'todo_list',
     description:
-      'Run 内部 TodoList を進行用 JSON operation で管理する。operation=replace/start/done/block/fail。list は診断専用であり、native Supervisor の進捗決定では使わない。done は次の pending Todo を自動で running にする。',
+      'Run 内部 TodoList を JSON operation で管理する。todo_list operation=replace は TodoList の構造を再定義する再計画操作。todo_list operation=start/done/block/fail は既存 Todo の状態遷移。list は診断専用であり、native Supervisor の進捗決定では使わない。todo_list operation=done は次の pending Todo を自動で running にする。',
     inputSchema: buildSupervisorTodoListInputSchema(),
   },
   finalize_answer: {

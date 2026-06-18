@@ -5,6 +5,12 @@ import type { WorkerToolResult } from './types';
 export type TodoToolName = 'todo_list';
 
 export type TodoListOperation = 'list' | 'replace' | 'start' | 'done' | 'block' | 'fail';
+export type TodoListReplaceReason =
+  | 'initial_plan'
+  | 'scope_changed'
+  | 'estimate_changed'
+  | 'newly_required_work'
+  | 'blocked_replan';
 
 export type TodoListPayloadTodo = {
   id: string;
@@ -25,6 +31,7 @@ export type TodoActionDiagnostics = {
     action: TodoToolName;
     operation?: TodoListOperation;
     seq?: number;
+    todoListReplaceReason?: TodoListReplaceReason;
   };
   currentSnapshot?: {
     runningCount: number;
@@ -63,6 +70,7 @@ export async function todoListTool(input: {
   seq?: number;
   todos?: ImplementationTodoInput[];
   startFirst?: boolean;
+  todoListReplaceReason?: TodoListReplaceReason;
 }): Promise<WorkerToolResult<TodoActionPayload>> {
   if (input.operation === 'list') {
     return withTodoMutationContext('todo_list', input.runId, input.operation, {}, async (context) =>
@@ -71,12 +79,25 @@ export async function todoListTool(input: {
   }
 
   if (input.operation === 'replace') {
-    return withRunContext(
+    return withTodoMutationContext(
       'todo_list',
       input.runId,
       input.operation,
-      {},
-      async ({ runId, taskId }) => {
+      { todoListReplaceReason: input.todoListReplaceReason },
+      async ({ runId, taskId, todos: currentTodos }) => {
+        const reasonValidation = validateTodoListReplaceReason({
+          currentTodos,
+          todoListReplaceReason: input.todoListReplaceReason,
+        });
+        if (!reasonValidation.ok) {
+          return failedTodoAction(
+            { runId, taskId, todos: currentTodos },
+            'todo_list',
+            input.operation,
+            reasonValidation.errorCode,
+            { todoListReplaceReason: input.todoListReplaceReason }
+          );
+        }
         const todos = buildStandardImplementationTodoList({
           todos: input.todos ?? [],
           startFirst: input.startFirst,
@@ -324,6 +345,7 @@ async function withRunContext(
   operation: TodoListOperation,
   attemptedAction: {
     seq?: number;
+    todoListReplaceReason?: TodoListReplaceReason;
   },
   fn: (context: { runId: string; taskId: string }) => Promise<WorkerToolResult<TodoActionPayload>>
 ) {
@@ -386,6 +408,7 @@ async function withTodoMutationContext(
   operation: TodoListOperation,
   attemptedAction: {
     seq?: number;
+    todoListReplaceReason?: TodoListReplaceReason;
   },
   fn: (context: TodoMutationContext) => Promise<WorkerToolResult<TodoActionPayload>>
 ) {
@@ -432,6 +455,7 @@ function failedTodoAction(
   errorCode: string,
   attemptedAction: {
     seq?: number;
+    todoListReplaceReason?: TodoListReplaceReason;
   }
 ): WorkerToolResult<TodoActionPayload> {
   return failedTodoActionResult(
@@ -456,6 +480,7 @@ function failedTodoActionResult(
   todos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>> = [],
   attemptedAction: {
     seq?: number;
+    todoListReplaceReason?: TodoListReplaceReason;
   } = {}
 ): WorkerToolResult<TodoActionPayload> {
   const runningTodos = todos.filter((todo) => todo.status === 'running');
@@ -500,7 +525,40 @@ function buildErrorMessage(action: TodoToolName, errorCode: string) {
     return 'Requested Todo is already closed and cannot be started.';
   if (errorCode === 'PREVIOUS_TODO_OPEN')
     return 'Previous Todo is still pending or running; close it before starting a later Todo.';
+  if (errorCode === 'TODO_LIST_REPLACE_REASON_REQUIRED')
+    return 'todo_list operation=replace is structural replanning. A running Todo exists, so provide todoListReplaceReason. If the current Todo is complete, use todo_list operation=done seq=<current>.';
+  if (errorCode === 'INVALID_TODO_LIST_REPLACE_REASON')
+    return 'todoListReplaceReason must be one of initial_plan, scope_changed, estimate_changed, newly_required_work, or blocked_replan.';
   return `${action} failed.`;
+}
+
+function validateTodoListReplaceReason(input: {
+  currentTodos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>;
+  todoListReplaceReason?: TodoListReplaceReason;
+}): { ok: true } | { ok: false; errorCode: string } {
+  if (
+    input.todoListReplaceReason !== undefined &&
+    !isTodoListReplaceReason(input.todoListReplaceReason)
+  ) {
+    return { ok: false, errorCode: 'INVALID_TODO_LIST_REPLACE_REASON' };
+  }
+
+  const hasRunningTodo = input.currentTodos.some((todo) => todo.status === 'running');
+  if (hasRunningTodo && !input.todoListReplaceReason) {
+    return { ok: false, errorCode: 'TODO_LIST_REPLACE_REASON_REQUIRED' };
+  }
+
+  return { ok: true };
+}
+
+function isTodoListReplaceReason(value: unknown): value is TodoListReplaceReason {
+  return (
+    value === 'initial_plan' ||
+    value === 'scope_changed' ||
+    value === 'estimate_changed' ||
+    value === 'newly_required_work' ||
+    value === 'blocked_replan'
+  );
 }
 
 function resolveCurrentTodo(todos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>) {

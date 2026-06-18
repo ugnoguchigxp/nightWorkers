@@ -15,6 +15,15 @@ import {
   NativeApiCloseoutController,
   type NativeApiCloseoutControllerLike,
 } from './native-api-closeout-controller';
+import {
+  estimateNativeApiContextBudget,
+  type NativeApiContextBudget,
+  renderNativeApiContextBudgetHint,
+} from './native-api-context-budget';
+import {
+  compactNativeApiHistoryToBaseline,
+  type NativeApiBaselineCompactionResult,
+} from './native-api-context-compaction';
 import { readNativeApiExecutionMode } from './native-api-mode';
 import {
   buildNativeApiProviderRequests,
@@ -33,8 +42,6 @@ import {
 import { buildInitialNativeApiHistory, type NativeApiHistoryItem } from './native-api-tool-history';
 import { getNativeApiToolDefinitions } from './native-api-tool-registry';
 
-const DEFAULT_MAX_NATIVE_API_TURNS = 20;
-
 export type NativeApiToolTurnProvider = typeof callProviderToolTurn;
 type NativeApiUsageRecorder = typeof recordLlmUsage;
 
@@ -46,7 +53,6 @@ export class NativeApiRunner {
   private readonly closeoutController: NativeApiCloseoutControllerLike;
   private readonly providerTurn: NativeApiToolTurnProvider;
   private readonly usageRecorder: NativeApiUsageRecorder;
-  private readonly maxTurns: number;
 
   constructor(
     input: {
@@ -55,7 +61,6 @@ export class NativeApiRunner {
       closeoutController?: NativeApiCloseoutControllerLike;
       providerTurn?: NativeApiToolTurnProvider;
       usageRecorder?: NativeApiUsageRecorder;
-      maxTurns?: number;
     } = {}
   ) {
     this.store = input.store ?? new NativeApiSessionStore();
@@ -65,7 +70,6 @@ export class NativeApiRunner {
       input.closeoutController ?? new NativeApiCloseoutController({ store: this.store });
     this.providerTurn = input.providerTurn ?? callProviderToolTurn;
     this.usageRecorder = input.usageRecorder ?? recordLlmUsage;
-    this.maxTurns = input.maxTurns ?? DEFAULT_MAX_NATIVE_API_TURNS;
   }
 
   async run(
@@ -116,8 +120,10 @@ export class NativeApiRunner {
         }
       }
       const contextWindowBaselineHistory = [...history];
+      let contextBudgetHintInserted = false;
+      let runtimeBaselineCompactionCount = 0;
 
-      for (let turnIndex = 1; turnIndex <= this.maxTurns; turnIndex += 1) {
+      for (let turnIndex = 1; ; turnIndex += 1) {
         if (await this.isCancelled(context.runId, timeout.signal)) return this.toCancelled();
         const todoSnapshot = await buildTodoSnapshotHistory(context.runId);
         const currentTodo = todoSnapshot?.currentTodo ?? null;
@@ -145,13 +151,13 @@ export class NativeApiRunner {
           taskId: context.taskId,
           basePolicy: {
             disallowedProviderIds: ['codex'],
-            synthesizeFallbacksFromEnabledEndpoints: true,
           },
         });
-        const providerRequests = buildNativeApiProviderRequests({
+        const tools = getNativeApiToolDefinitions({ executionMode });
+        let providerRequests = buildNativeApiProviderRequests({
           context,
           history,
-          tools: getNativeApiToolDefinitions({ executionMode }),
+          tools,
           routeOverride,
           routePolicy,
         });
@@ -173,6 +179,140 @@ export class NativeApiRunner {
             stoppedBy: 'llm_error',
             riskLevel: 'high',
           };
+        }
+        let contextBudget = estimateNativeApiContextBudget(providerRequests[0]);
+        let contextCompaction: NativeApiBaselineCompactionResult | null = null;
+        if (contextBudget.warningThresholdExceeded && !contextBudgetHintInserted) {
+          await emitNativeApiContextBudgetEvent({
+            sink,
+            context,
+            action: 'context_budget_warning',
+            turnIndex,
+            budget: contextBudget,
+            message: '[NativeApiRunner] context budget warning threshold exceeded.',
+          });
+          history = [
+            ...history,
+            {
+              type: 'user',
+              source: 'runtime',
+              content: renderNativeApiContextBudgetHint(contextBudget),
+            },
+          ];
+          contextBudgetHintInserted = true;
+          providerRequests = buildNativeApiProviderRequests({
+            context,
+            history,
+            tools,
+            routeOverride,
+            routePolicy,
+          });
+          if (providerRequests.length === 0) {
+            await sink.emit({
+              type: 'runtime_error',
+              message: '[NativeApiRunner] no native/API provider route candidates were available.',
+              payload: {
+                runtime: 'native_api_runner',
+                executionMode,
+                reason: 'no_native_api_provider_route_candidates',
+              },
+            });
+            return {
+              terminalState: 'needs_human',
+              summary: 'No native/API provider route candidates were available.',
+              finalReport:
+                'No native/API provider route candidates were available. NativeApiRunner did not fall back to Codex or SchemaFirst.',
+              stoppedBy: 'llm_error',
+              riskLevel: 'high',
+            };
+          }
+          contextBudget = estimateNativeApiContextBudget(providerRequests[0]);
+        }
+        if (contextBudget.compactLimitExceeded) {
+          if (runtimeBaselineCompactionCount >= MAX_RUNTIME_BASELINE_COMPACTIONS) {
+            await emitNativeApiContextBudgetEvent({
+              sink,
+              context,
+              action: 'context_compaction_failed',
+              turnIndex,
+              budget: contextBudget,
+              message:
+                '[NativeApiRunner] context compaction loop guard stopped provider-native execution.',
+            });
+            return contextBudgetFailureResult(contextBudget, 'context_compaction_loop_guard');
+          }
+          await emitNativeApiContextBudgetEvent({
+            sink,
+            context,
+            action: 'context_compaction_started',
+            turnIndex,
+            budget: contextBudget,
+            message: '[NativeApiRunner] context compaction started before provider call.',
+          });
+          contextCompaction = compactNativeApiHistoryToBaseline({
+            baselineHistory: contextWindowBaselineHistory,
+            previousHistory: history,
+            reason: contextBudget.hardLimitExceeded
+              ? 'hard_limit_exceeded_before_provider_call'
+              : 'auto_compact_limit_exceeded_before_provider_call',
+            todoSnapshotItem: todoSnapshot?.snapshotItem,
+            currentTodoItem: todoSnapshot?.currentTodoItem,
+            postImportHistoryItem: state.postImport
+              ? buildPostImportHistoryItem(state.postImport)
+              : null,
+          });
+          runtimeBaselineCompactionCount += 1;
+          history = contextCompaction.history;
+          providerRequests = buildNativeApiProviderRequests({
+            context,
+            history,
+            tools,
+            routeOverride,
+            routePolicy,
+          });
+          if (providerRequests.length === 0) {
+            await emitNativeApiContextBudgetEvent({
+              sink,
+              context,
+              action: 'context_compaction_failed',
+              turnIndex,
+              budget: contextBudget,
+              message:
+                '[NativeApiRunner] context compaction finished but no native/API provider route candidates remained.',
+              compaction: contextCompaction,
+            });
+            return {
+              terminalState: 'needs_human',
+              summary: 'No native/API provider route candidates were available after compaction.',
+              finalReport:
+                'Context compaction completed, but no native/API provider route candidates remained. NativeApiRunner did not fall back to Codex or SchemaFirst.',
+              stoppedBy: 'llm_error',
+              riskLevel: 'high',
+            };
+          }
+          contextBudget = estimateNativeApiContextBudget(providerRequests[0]);
+          await emitNativeApiContextBudgetEvent({
+            sink,
+            context,
+            action: 'context_compaction_finished',
+            turnIndex,
+            budget: contextBudget,
+            message: '[NativeApiRunner] context compaction finished before provider call.',
+            compaction: contextCompaction,
+          });
+          if (contextBudget.compactLimitExceeded || contextBudget.hardLimitExceeded) {
+            await emitNativeApiContextBudgetEvent({
+              sink,
+              context,
+              action: 'context_compaction_failed',
+              turnIndex,
+              budget: contextBudget,
+              message:
+                '[NativeApiRunner] context compaction did not reduce the provider request below the compact limit.',
+              compaction: contextCompaction,
+            });
+            return contextBudgetFailureResult(contextBudget, 'context_compaction_insufficient');
+          }
         }
         const initialProviderRequest = providerRequests[0];
         const turn = await this.store.createTurn({
@@ -201,7 +341,13 @@ export class NativeApiRunner {
           },
         });
 
-        let providerDebug: Record<string, unknown> = {};
+        let contextPreflightDebug = {
+          contextBudget,
+          ...(contextCompaction
+            ? { contextCompaction: summarizeNativeApiContextCompaction(contextCompaction) }
+            : {}),
+        };
+        let providerDebug: Record<string, unknown> = { ...contextPreflightDebug };
         let providerResult: ProviderToolTurnResult | null = null;
         let providerRequest: NativeApiProviderRequest = initialProviderRequest;
         let startedAt = Date.now();
@@ -212,7 +358,131 @@ export class NativeApiRunner {
         const routeAttempts: Array<Record<string, unknown>> = [];
         for (let attemptIndex = 0; attemptIndex < providerRequests.length; attemptIndex += 1) {
           providerRequest = providerRequests[attemptIndex];
-          providerDebug = {};
+          contextBudget = estimateNativeApiContextBudget(providerRequest);
+          if (contextBudget.compactLimitExceeded) {
+            if (runtimeBaselineCompactionCount >= MAX_RUNTIME_BASELINE_COMPACTIONS) {
+              const message =
+                'Context compaction loop guard stopped provider-native route attempt before provider call.';
+              await emitNativeApiContextBudgetEvent({
+                sink,
+                context,
+                action: 'context_compaction_failed',
+                turnIndex,
+                budget: contextBudget,
+                message: `[NativeApiRunner] ${message}`,
+              });
+              lastProviderFailure = { message, providerDebug };
+              routeAttempts.push({
+                attemptIndex,
+                ok: false,
+                reason: 'context_compaction_loop_guard',
+                message,
+                durationMs: 0,
+                attemptTimeoutMs: providerRequest.options.attemptTimeoutMs ?? null,
+                route: summarizeNativeApiRoute(providerRequest),
+                providerDebug,
+              });
+              providerResult = null;
+              break;
+            }
+            await emitNativeApiContextBudgetEvent({
+              sink,
+              context,
+              action: 'context_compaction_started',
+              turnIndex,
+              budget: contextBudget,
+              message:
+                '[NativeApiRunner] context compaction started before provider route attempt.',
+            });
+            contextCompaction = compactNativeApiHistoryToBaseline({
+              baselineHistory: contextWindowBaselineHistory,
+              previousHistory: history,
+              reason: contextBudget.hardLimitExceeded
+                ? 'hard_limit_exceeded_before_provider_call'
+                : 'auto_compact_limit_exceeded_before_provider_call',
+              todoSnapshotItem: todoSnapshot?.snapshotItem,
+              currentTodoItem: todoSnapshot?.currentTodoItem,
+              postImportHistoryItem: state.postImport
+                ? buildPostImportHistoryItem(state.postImport)
+                : null,
+            });
+            runtimeBaselineCompactionCount += 1;
+            history = contextCompaction.history;
+            providerRequests = buildNativeApiProviderRequests({
+              context,
+              history,
+              tools,
+              routeOverride,
+              routePolicy,
+            });
+            providerRequest = providerRequests[attemptIndex];
+            if (!providerRequest) {
+              const message =
+                'Context compaction finished but the native/API route attempt disappeared.';
+              await emitNativeApiContextBudgetEvent({
+                sink,
+                context,
+                action: 'context_compaction_failed',
+                turnIndex,
+                budget: contextBudget,
+                message: `[NativeApiRunner] ${message}`,
+                compaction: contextCompaction,
+              });
+              lastProviderFailure = { message, providerDebug };
+              providerResult = null;
+              break;
+            }
+            contextBudget = estimateNativeApiContextBudget(providerRequest);
+            contextPreflightDebug = {
+              contextBudget,
+              contextCompaction: summarizeNativeApiContextCompaction(contextCompaction),
+            };
+            await emitNativeApiContextBudgetEvent({
+              sink,
+              context,
+              action: 'context_compaction_finished',
+              turnIndex,
+              budget: contextBudget,
+              message:
+                '[NativeApiRunner] context compaction finished before provider route attempt.',
+              compaction: contextCompaction,
+            });
+            if (contextBudget.compactLimitExceeded || contextBudget.hardLimitExceeded) {
+              const message =
+                'Context compaction did not reduce the provider route attempt below the compact limit.';
+              await emitNativeApiContextBudgetEvent({
+                sink,
+                context,
+                action: 'context_compaction_failed',
+                turnIndex,
+                budget: contextBudget,
+                message: `[NativeApiRunner] ${message}`,
+                compaction: contextCompaction,
+              });
+              providerDebug = { ...contextPreflightDebug };
+              lastProviderFailure = { message, providerDebug };
+              routeAttempts.push({
+                attemptIndex,
+                ok: false,
+                reason: 'context_budget_exceeded_before_provider_call',
+                message,
+                durationMs: 0,
+                attemptTimeoutMs: providerRequest.options.attemptTimeoutMs ?? null,
+                route: summarizeNativeApiRoute(providerRequest),
+                providerDebug,
+              });
+              providerResult = null;
+              break;
+            }
+          } else {
+            contextPreflightDebug = {
+              contextBudget,
+              ...(contextCompaction
+                ? { contextCompaction: summarizeNativeApiContextCompaction(contextCompaction) }
+                : {}),
+            };
+          }
+          providerDebug = { ...contextPreflightDebug };
           startedAt = Date.now();
           const attemptTimeoutMs = providerRequest.options.attemptTimeoutMs;
           const attemptSignal = createAttemptTimeoutSignal(timeout.signal, attemptTimeoutMs);
@@ -315,6 +585,7 @@ export class NativeApiRunner {
         }
 
         providerDebug = {
+          ...contextPreflightDebug,
           ...(providerResult?.providerDebug ?? providerDebug),
           routeAttempts,
         };
@@ -584,14 +855,6 @@ export class NativeApiRunner {
       timeout.dispose();
       this.activeRunControllers.delete(context.runId);
     }
-
-    return {
-      terminalState: 'needs_human',
-      summary: 'NativeApiRunner reached its maximum provider-native turns.',
-      finalReport: 'NativeApiRunner reached its maximum provider-native turns.',
-      stoppedBy: 'budget',
-      riskLevel: 'high',
-    };
   }
 
   async stop(runId: string): Promise<void> {
@@ -640,6 +903,97 @@ function canCompleteWithTextOnly(
 ) {
   if (!content.trim()) return false;
   return executionMode === 'planning' || executionMode === 'general_answer';
+}
+
+const MAX_RUNTIME_BASELINE_COMPACTIONS = 3;
+
+async function emitNativeApiContextBudgetEvent(input: {
+  sink: AgentRuntimeSink;
+  context: AgentRunContext;
+  action:
+    | 'context_budget_warning'
+    | 'context_compaction_started'
+    | 'context_compaction_finished'
+    | 'context_compaction_failed';
+  turnIndex: number;
+  budget: NativeApiContextBudget;
+  message: string;
+  compaction?: NativeApiBaselineCompactionResult | null;
+}) {
+  const payload = {
+    runtime: 'native_api_runner',
+    action: input.action,
+    runId: input.context.runId,
+    taskId: input.context.taskId,
+    turnIndex: input.turnIndex,
+    contextBudget: summarizeNativeApiContextBudget(input.budget),
+    ...(input.compaction
+      ? { contextCompaction: summarizeNativeApiContextCompaction(input.compaction) }
+      : {}),
+  };
+  await input.sink.emit({
+    type: 'tool_call_progress',
+    message: input.message,
+    payload,
+  });
+  try {
+    await repo.createTaskEvent({
+      taskRunId: input.context.runId,
+      type: input.action,
+      actor: 'runtime',
+      eventType: input.action,
+      message: input.message,
+      payloadJson: payload,
+    });
+  } catch {
+    // Context budget events are observability-only; do not fail the runtime if event persistence fails.
+  }
+}
+
+function summarizeNativeApiContextBudget(budget: NativeApiContextBudget) {
+  return {
+    estimatedPromptTokens: budget.estimatedPromptTokens,
+    modelContextWindowTokens: budget.modelContextWindowTokens,
+    safePromptBudgetTokens: budget.safePromptBudgetTokens,
+    reservedOutputTokens: budget.reservedOutputTokens,
+    autoCompactTokenLimit: budget.autoCompactTokenLimit,
+    remainingContextHintThreshold: budget.remainingContextHintThreshold,
+    remainingTokens: budget.remainingTokens,
+    contextUsageRatio: budget.contextUsageRatio,
+    warningThresholdExceeded: budget.warningThresholdExceeded,
+    compactLimitExceeded: budget.compactLimitExceeded,
+    hardLimitExceeded: budget.hardLimitExceeded,
+    messageTokens: budget.messageTokens,
+    toolTokens: budget.toolTokens,
+  };
+}
+
+function summarizeNativeApiContextCompaction(compaction: NativeApiBaselineCompactionResult) {
+  return {
+    reason: compaction.reason,
+    retainedHistoryItems: compaction.retainedHistoryItems,
+    previousHistoryItems: compaction.previousHistoryItems,
+  };
+}
+
+function contextBudgetFailureResult(
+  budget: NativeApiContextBudget,
+  reason: 'context_compaction_loop_guard' | 'context_compaction_insufficient'
+): AgentRuntimeResult {
+  return {
+    terminalState: 'needs_human',
+    summary: 'Native API context budget exceeded.',
+    finalReport: [
+      'Native API context budget exceeded before the provider call.',
+      `reason=${reason}`,
+      `estimatedPromptTokens=${budget.estimatedPromptTokens}`,
+      `autoCompactTokenLimit=${budget.autoCompactTokenLimit}`,
+      `modelContextWindowTokens=${budget.modelContextWindowTokens}`,
+      'NativeApiRunner did not fall back to Codex, SchemaFirst, or an unconfigured provider endpoint.',
+    ].join('\n'),
+    stoppedBy: 'llm_error',
+    riskLevel: 'high',
+  };
 }
 
 async function emitNativeApiRouteFallback(input: {

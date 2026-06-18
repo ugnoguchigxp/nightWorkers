@@ -79,8 +79,10 @@ export function useNightWorkersRealtime({
 }: UseNightWorkersRealtimeInput) {
   useEffect(() => {
     setRealtimeStatus('connecting');
-    const primaryUrl = wsPath('/api/ws/nightworkers');
-    const fallbackUrl = devWsFallbackPath('/api/ws/nightworkers');
+    const proxyUrl = wsPath('/api/ws/nightworkers');
+    const devDirectUrl = devWsFallbackPath('/api/ws/nightworkers');
+    const primaryUrl = devDirectUrl ?? proxyUrl;
+    const fallbackUrl = devDirectUrl && devDirectUrl !== proxyUrl ? proxyUrl : null;
 
     let ws: WebSocket | null = null;
     let closedManually = false;

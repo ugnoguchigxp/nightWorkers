@@ -320,6 +320,7 @@ describe('todo_list worker tool', () => {
     const replacedAgain = await todoListTool({
       runId: run.id,
       operation: 'replace',
+      todoListReplaceReason: 'estimate_changed',
       todos: [
         { seq: 1, title: 'Reconsider existing implementation' },
         { seq: 2, title: 'Apply refined implementation' },
@@ -353,6 +354,42 @@ describe('todo_list worker tool', () => {
       { seq: 7, status: 'pending' },
       { seq: 8, status: 'pending' },
     ]);
+  });
+
+  it('rejects todo_list operation=replace during a running Todo without a replanning reason', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: todo replace reason ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: replace requires reason',
+      description: 'A running Todo must not be completed by replacing the TodoList',
+      status: 'running',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+    });
+
+    await todoListTool({
+      runId: run.id,
+      operation: 'replace',
+      todos: [{ seq: 1, title: 'Implement feature' }],
+    });
+
+    const result = await todoListTool({
+      runId: run.id,
+      operation: 'replace',
+      todos: [{ seq: 1, title: 'Different implementation split' }],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatchObject({ code: 'TODO_LIST_REPLACE_REASON_REQUIRED' });
+    expect(result.error?.message).toContain('todo_list operation=replace');
+    expect(result.error?.message).toContain('todo_list operation=done');
   });
 
   it('leaves the final knowledge registration and completion report Todos pending without running them', async () => {

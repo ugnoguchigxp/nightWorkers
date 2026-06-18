@@ -256,7 +256,7 @@ async function dispatchTodoTool(input: {
   if (!isTodoMutationOperation(operation)) {
     return failedToolResult(
       'INVALID_TOOL_ARGS',
-      'todo_list operation must be one of replace/start/done/block/fail.'
+      'todo_list operation must be one of todo_list operation=replace, todo_list operation=start, todo_list operation=done, todo_list operation=block, or todo_list operation=fail.'
     );
   }
   const result = await todoListTool({
@@ -270,6 +270,10 @@ async function dispatchTodoTool(input: {
     startFirst:
       typeof input.toolCall.arguments.startFirst === 'boolean'
         ? input.toolCall.arguments.startFirst
+        : undefined,
+    todoListReplaceReason:
+      typeof input.toolCall.arguments.todoListReplaceReason === 'string'
+        ? (input.toolCall.arguments.todoListReplaceReason as never)
         : undefined,
   });
   return projectWorkerResult(result);

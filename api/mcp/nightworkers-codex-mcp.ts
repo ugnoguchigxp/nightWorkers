@@ -43,7 +43,7 @@ export function createNightWorkersCodexMcpServer() {
     {
       ...nightWorkersCodexToolManifest.todo_list,
     },
-    async ({ runId, operation, seq, todos, startFirst }) =>
+    async ({ runId, operation, seq, todos, startFirst, todoListReplaceReason }) =>
       toolResultToMcp(
         await todoListTool({
           runId: runId || process.env.NIGHTWORKERS_RUN_ID || '',
@@ -51,6 +51,7 @@ export function createNightWorkersCodexMcpServer() {
           seq,
           todos,
           startFirst,
+          todoListReplaceReason,
         })
       )
   );

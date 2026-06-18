@@ -46,7 +46,7 @@ export const nightWorkersTodoListInputSchema = z.object({
   operation: z
     .enum(['list', 'replace', 'start', 'done', 'block', 'fail'])
     .describe(
-      'Todo operation to perform. list is read-only diagnostics and does not advance progress; use replace/start/done/block/fail for progress.'
+      'Todo operation to perform. list is read-only diagnostics. todo_list operation=replace structurally replans the TodoList. todo_list operation=start/done/block/fail transitions existing Todo state.'
     ),
   seq: z
     .number()
@@ -78,6 +78,18 @@ export const nightWorkersTodoListInputSchema = z.object({
     .boolean()
     .optional()
     .describe('Whether the first fixed gate starts as running. Default: true.'),
+  todoListReplaceReason: z
+    .enum([
+      'initial_plan',
+      'scope_changed',
+      'estimate_changed',
+      'newly_required_work',
+      'blocked_replan',
+    ])
+    .optional()
+    .describe(
+      'Required with todo_list operation=replace when a Todo is already running. Do not use this with todo_list operation=start/done/block/fail.'
+    ),
 });
 
 export const nightWorkersImportProjectInputSchema = z.object({
@@ -167,7 +179,7 @@ export const nightWorkersCodexToolManifest = {
   todo_list: {
     title: 'Todo List',
     description:
-      'Maintain the current run TodoList with one JSON operation. Use operation=replace, start, done, block, or fail for progress. operation=list is read-only diagnostics and does not advance progress. replace refreshes the plan without reopening terminal Todos; done automatically starts the next pending Todo.',
+      'Maintain the current run TodoList with one JSON operation. todo_list operation=replace structurally replans the TodoList and requires todoListReplaceReason when a Todo is already running. todo_list operation=start/done/block/fail transitions existing Todo state. todo_list operation=done automatically starts the next pending Todo.',
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,

@@ -16,6 +16,7 @@ import type { ProviderToolTurnResult } from '../api/services/structured-llm/tool
 vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   getTaskRun: vi.fn(),
   listTaskRunTodosForRun: vi.fn(),
+  createTaskEvent: vi.fn(),
 }));
 
 vi.mock('../api/services/mcp/mcp-client-manager', () => ({
@@ -52,7 +53,6 @@ describe('NativeApiRunner', () => {
       startupController: createNoopStartup(),
       providerTurn,
       usageRecorder,
-      maxTurns: 1,
     });
 
     const result = await runner.run(buildContext(), createSink());
@@ -85,7 +85,6 @@ describe('NativeApiRunner', () => {
       startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
-      maxTurns: 1,
     });
 
     const result = await runner.run(
@@ -126,7 +125,6 @@ describe('NativeApiRunner', () => {
       startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
-      maxTurns: 1,
     });
     const events: AgentRuntimeEvent[] = [];
 
@@ -166,6 +164,48 @@ describe('NativeApiRunner', () => {
     );
   });
 
+  it('continues past the previous 20 provider-native turn ceiling', async () => {
+    const store = createFakeStore();
+    const providerTurn = createProvider([
+      ...Array.from({ length: 20 }, (_, index) => ({
+        type: 'supported' as const,
+        content: `continue turn ${index + 1}`,
+        toolCalls: [{ id: `call-unknown-${index + 1}`, name: 'unknown_tool', arguments: {} }],
+        usage: usage(),
+        model: 'api-model',
+      })),
+      {
+        type: 'supported',
+        content: 'finalize after old ceiling',
+        toolCalls: [
+          {
+            id: 'call-final',
+            name: 'finalize_answer',
+            arguments: { finalReport: 'completed after turn 20' },
+          },
+        ],
+        usage: usage(),
+        model: 'api-model',
+      },
+    ]);
+    const runner = new NativeApiRunner({
+      store: store.instance,
+      startupController: createNoopStartup(),
+      providerTurn,
+      usageRecorder: vi.fn(async () => undefined),
+    });
+
+    const result = await runner.run(buildContext(), createSink());
+
+    expect(result).toMatchObject({
+      terminalState: 'completed',
+      stoppedBy: 'decision',
+      finalReport: 'completed after turn 20',
+    });
+    expect(providerTurn).toHaveBeenCalledTimes(21);
+    expect(store.turns.at(-1)).toMatchObject({ turnIndex: 21 });
+  });
+
   it('passes the resolved runtime route override into provider turns', async () => {
     const store = createFakeStore();
     const providerTurn = createProvider([
@@ -188,7 +228,6 @@ describe('NativeApiRunner', () => {
       startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
-      maxTurns: 1,
     });
 
     await runner.run(
@@ -290,7 +329,6 @@ describe('NativeApiRunner', () => {
         startupController: createNoopStartup(),
         providerTurn: providerTurn as unknown as NativeApiToolTurnProvider,
         usageRecorder: vi.fn(async () => undefined),
-        maxTurns: 1,
       });
 
       const result = await runner.run(buildContext({ timeoutSeconds: 360 }), createSink(events));
@@ -346,6 +384,313 @@ describe('NativeApiRunner', () => {
     }
   });
 
+  it('does not synthesize enabled endpoints outside explicit Role Routing fallbacks', async () => {
+    const restoreSettings = installRuntimeLlmSettings({
+      ACTIVE_LLM_PROVIDER: 'azure',
+      providerEndpoints: [
+        {
+          id: 'codex-implementation',
+          name: 'Codex Implementation',
+          kind: 'codex',
+          enabled: true,
+          models: ['gpt-5.4-mini'],
+        },
+        {
+          id: 'local-qwen',
+          name: 'Local Qwen',
+          kind: 'local',
+          enabled: true,
+          baseUrl: 'http://localhost:11434/v1',
+          models: ['qwen3-coder'],
+        },
+        {
+          id: 'azure-implementation',
+          name: 'Azure Implementation',
+          kind: 'azure',
+          enabled: true,
+          endpoint: 'https://example.openai.azure.com',
+          apiVersion: '2024-05-01-preview',
+          models: ['gpt-5-mini'],
+        },
+      ],
+      roleRoutes: [
+        {
+          role: 'implementation',
+          primary: {
+            providerEndpointId: 'codex-implementation',
+            model: 'gpt-5.4-mini',
+          },
+          fallbacks: [],
+        },
+      ],
+    });
+    try {
+      const store = createFakeStore();
+      const providerTurn = createProvider([]);
+      const events: AgentRuntimeEvent[] = [];
+      const runner = new NativeApiRunner({
+        store: store.instance,
+        startupController: createNoopStartup(),
+        providerTurn,
+        usageRecorder: vi.fn(async () => undefined),
+      });
+
+      const result = await runner.run(buildContext(), createSink(events));
+
+      expect(result).toMatchObject({
+        terminalState: 'needs_human',
+        stoppedBy: 'llm_error',
+      });
+      expect(result.finalReport).toContain('No native/API provider route candidates');
+      expect(providerTurn).not.toHaveBeenCalled();
+      expect(store.turns).toHaveLength(0);
+      expect(events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'runtime_error',
+            payload: expect.objectContaining({
+              reason: 'no_native_api_provider_route_candidates',
+            }),
+          }),
+        ])
+      );
+    } finally {
+      restoreSettings();
+    }
+  });
+
+  it('runs baseline context compaction before provider call without waiting for new_context', async () => {
+    const restoreSettings = installRuntimeLlmSettings({
+      ACTIVE_LLM_PROVIDER: 'azure',
+      providerEndpoints: [
+        {
+          id: 'local-qwen',
+          name: 'Local Qwen',
+          kind: 'local',
+          enabled: true,
+          baseUrl: 'http://localhost:11434/v1',
+          models: ['qwen3-coder'],
+        },
+      ],
+      roleRoutes: [
+        {
+          role: 'implementation',
+          primary: {
+            providerEndpointId: 'local-qwen',
+            model: 'qwen3-coder',
+          },
+          fallbacks: [],
+        },
+      ],
+    });
+    try {
+      const hugeAssistantContent = `large prior turn ${'x'.repeat(540_000)}`;
+      const store = createFakeStore();
+      const providerTurn = createProvider([
+        {
+          type: 'supported',
+          content: hugeAssistantContent,
+          toolCalls: [{ id: 'call-unknown', name: 'unknown_tool', arguments: {} }],
+          usage: usage(),
+          model: 'qwen3-coder',
+        },
+        {
+          type: 'supported',
+          content: 'ready after runtime compaction',
+          toolCalls: [
+            {
+              id: 'call-final',
+              name: 'finalize_answer',
+              arguments: { finalReport: 'done after runtime compaction' },
+            },
+          ],
+          usage: usage(),
+          model: 'qwen3-coder',
+        },
+      ]);
+      const events: AgentRuntimeEvent[] = [];
+      const runner = new NativeApiRunner({
+        store: store.instance,
+        startupController: createNoopStartup(),
+        providerTurn,
+        usageRecorder: vi.fn(async () => undefined),
+      });
+
+      const result = await runner.run(buildContext({ timeoutSeconds: 360 }), createSink(events));
+
+      expect(result).toMatchObject({
+        terminalState: 'completed',
+        finalReport: 'done after runtime compaction',
+      });
+      expect(providerTurn).toHaveBeenCalledTimes(2);
+      const secondMessages = vi.mocked(providerTurn).mock.calls[1][0].messages;
+      expect(JSON.stringify(secondMessages)).not.toContain('large prior turn');
+      expect(events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'tool_call_progress',
+            payload: expect.objectContaining({
+              action: 'context_compaction_started',
+            }),
+          }),
+          expect.objectContaining({
+            type: 'tool_call_progress',
+            payload: expect.objectContaining({
+              action: 'context_compaction_finished',
+            }),
+          }),
+        ])
+      );
+      expect(store.finishedTurns[1].providerDebug).toMatchObject({
+        contextCompaction: expect.objectContaining({
+          reason: 'hard_limit_exceeded_before_provider_call',
+          retainedHistoryItems: 2,
+        }),
+      });
+    } finally {
+      restoreSettings();
+    }
+  });
+
+  it('compacts again before calling an explicit fallback with a smaller context window', async () => {
+    const restoreSettings = installRuntimeLlmSettings({
+      ACTIVE_LLM_PROVIDER: 'azure',
+      providerEndpoints: [
+        {
+          id: 'local-qwen',
+          name: 'Local Qwen',
+          kind: 'local',
+          enabled: true,
+          baseUrl: 'http://localhost:11434/v1',
+          models: ['qwen3-coder'],
+        },
+        {
+          id: 'azure-small',
+          name: 'Azure Small',
+          kind: 'azure',
+          enabled: true,
+          endpoint: 'https://example.openai.azure.com',
+          apiVersion: '2024-05-01-preview',
+          models: ['gpt-5-mini'],
+          defaultModelCapability: {
+            contextWindowTokens: 8192,
+            safePromptBudgetTokens: 8192,
+            reservedOutputTokens: 1024,
+          },
+        },
+      ],
+      roleRoutes: [
+        {
+          role: 'implementation',
+          primary: {
+            providerEndpointId: 'local-qwen',
+            model: 'qwen3-coder',
+          },
+          fallbacks: [
+            {
+              providerEndpointId: 'azure-small',
+              model: 'gpt-5-mini',
+            },
+          ],
+        },
+      ],
+    });
+    try {
+      const largePriorAssistantContent = `large prior turn ${'x'.repeat(24_000)}`;
+      const store = createFakeStore();
+      const providerTurn = vi
+        .fn()
+        .mockResolvedValueOnce({
+          type: 'supported',
+          content: largePriorAssistantContent,
+          toolCalls: [{ id: 'call-unknown', name: 'unknown_tool', arguments: {} }],
+          usage: usage(),
+          model: 'qwen3-coder',
+        } satisfies ProviderToolTurnResult)
+        .mockRejectedValueOnce(
+          new Error(
+            'OpenAI native tool call failed with status 400: {"error":{"code":"required_tool_call_missing"}}'
+          )
+        )
+        .mockResolvedValueOnce({
+          type: 'supported',
+          content: 'ready after fallback compaction',
+          toolCalls: [
+            {
+              id: 'call-final',
+              name: 'finalize_answer',
+              arguments: { finalReport: 'fallback done after compaction' },
+            },
+          ],
+          usage: usage(),
+          model: 'gpt-5-mini',
+        } satisfies ProviderToolTurnResult);
+      const events: AgentRuntimeEvent[] = [];
+      const runner = new NativeApiRunner({
+        store: store.instance,
+        startupController: createNoopStartup(),
+        providerTurn: providerTurn as unknown as NativeApiToolTurnProvider,
+        usageRecorder: vi.fn(async () => undefined),
+      });
+
+      const result = await runner.run(buildContext({ timeoutSeconds: 360 }), createSink(events));
+
+      expect(result).toMatchObject({
+        terminalState: 'completed',
+        finalReport: 'fallback done after compaction',
+      });
+      expect(providerTurn).toHaveBeenCalledTimes(3);
+      expect(
+        providerTurn.mock.calls.map((call) => ({
+          providerEndpointId: call[0].options.normalizedRequest.providerEndpointId,
+          messageText: JSON.stringify(call[0].messages),
+        }))
+      ).toEqual([
+        expect.objectContaining({
+          providerEndpointId: 'local-qwen',
+          messageText: expect.not.stringContaining('large prior turn'),
+        }),
+        expect.objectContaining({
+          providerEndpointId: 'local-qwen',
+          messageText: expect.stringContaining('large prior turn'),
+        }),
+        expect.objectContaining({
+          providerEndpointId: 'azure-small',
+          messageText: expect.not.stringContaining('large prior turn'),
+        }),
+      ]);
+      expect(events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'tool_call_progress',
+            payload: expect.objectContaining({
+              action: 'provider_route_fallback_started',
+              to: expect.objectContaining({
+                providerEndpointId: 'azure-small',
+              }),
+            }),
+          }),
+          expect.objectContaining({
+            type: 'tool_call_progress',
+            payload: expect.objectContaining({
+              action: 'context_compaction_finished',
+              contextCompaction: expect.objectContaining({
+                previousHistoryItems: expect.any(Number),
+              }),
+            }),
+          }),
+        ])
+      );
+      expect(store.finishedTurns.at(-1)?.providerDebug).toMatchObject({
+        contextCompaction: expect.objectContaining({
+          reason: 'hard_limit_exceeded_before_provider_call',
+        }),
+      });
+    } finally {
+      restoreSettings();
+    }
+  });
+
   it('starts a fresh provider history after new_context without summarizing prior turns', async () => {
     const store = createFakeStore();
     const providerTurn = createProvider([
@@ -376,7 +721,6 @@ describe('NativeApiRunner', () => {
       startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
-      maxTurns: 2,
     });
 
     const result = await runner.run(
@@ -478,7 +822,6 @@ describe('NativeApiRunner', () => {
       startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
-      maxTurns: 2,
     });
 
     const result = await runner.run(buildContext(), createSink());
@@ -536,7 +879,6 @@ describe('NativeApiRunner', () => {
       startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
-      maxTurns: 1,
     });
 
     await runner.run(
@@ -588,20 +930,26 @@ describe('NativeApiRunner', () => {
         usage: usage(),
         model: 'api-model',
       },
+      {
+        type: 'supported',
+        content: 'dispatcher failed before completion',
+        toolCalls: [],
+        usage: usage(),
+        model: 'api-model',
+      },
     ]);
     const runner = new NativeApiRunner({
       store: store.instance,
       startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
-      maxTurns: 1,
     });
 
     const result = await runner.run(buildContext(), createSink());
 
     expect(result).toMatchObject({
       terminalState: 'needs_human',
-      stoppedBy: 'budget',
+      stoppedBy: 'missing_tool_call',
     });
     expect(store.finishedToolCalls[0]).toMatchObject({
       id: 'tool-1',
@@ -640,7 +988,6 @@ describe('NativeApiRunner', () => {
       startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
-      maxTurns: 1,
     });
 
     const resultPromise = runner.run(buildContext(), createSink());
@@ -682,7 +1029,6 @@ describe('NativeApiRunner', () => {
       startupController: createNoopStartup(),
       providerTurn,
       usageRecorder: vi.fn(async () => undefined),
-      maxTurns: 1,
     });
 
     const result = await runner.run(buildContext(), createSink());
@@ -705,6 +1051,15 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
       properties: {
         operation: {
           enum: ['replace', 'start', 'done', 'block', 'fail'],
+        },
+        todoListReplaceReason: {
+          enum: [
+            'initial_plan',
+            'scope_changed',
+            'estimate_changed',
+            'newly_required_work',
+            'blocked_replan',
+          ],
         },
       },
     });

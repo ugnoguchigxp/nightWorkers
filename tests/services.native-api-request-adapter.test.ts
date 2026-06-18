@@ -78,7 +78,6 @@ describe('NativeApiRunner request adapter', () => {
       ],
       routePolicy: {
         disallowedProviderIds: ['codex'],
-        synthesizeFallbacksFromEnabledEndpoints: true,
       },
     });
 
@@ -92,7 +91,6 @@ describe('NativeApiRunner request adapter', () => {
       attemptTimeoutMs: 60000,
       routePolicy: {
         disallowedProviderIds: ['codex'],
-        synthesizeFallbacksFromEnabledEndpoints: true,
       },
     });
     expect(request.messages[0]?.role).toBe('system');
@@ -120,7 +118,6 @@ describe('NativeApiRunner request adapter', () => {
       tools: [],
       routePolicy: {
         disallowedProviderIds: ['codex'],
-        synthesizeFallbacksFromEnabledEndpoints: true,
       },
     });
 
