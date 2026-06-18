@@ -293,7 +293,7 @@ describe('NativeApiRunner', () => {
         maxTurns: 1,
       });
 
-      const result = await runner.run(buildContext({ timeoutSeconds: 200 }), createSink(events));
+      const result = await runner.run(buildContext({ timeoutSeconds: 360 }), createSink(events));
 
       expect(result).toMatchObject({
         terminalState: 'completed',
@@ -306,7 +306,7 @@ describe('NativeApiRunner', () => {
           attemptTimeoutMs: call[0].options.attemptTimeoutMs,
         }))
       ).toEqual([
-        { providerEndpointId: 'local-gemma', attemptTimeoutMs: 90000 },
+        { providerEndpointId: 'local-gemma', attemptTimeoutMs: 300000 },
         {
           providerEndpointId: 'azure-implementation',
           attemptTimeoutMs: 120000,

@@ -78,8 +78,8 @@ native/API provider turn では、run 全体 timeout とは別に route attempt 
 
 初期値:
 
-- local / openai-compatible endpoint: 90 秒
-- fallback local endpoint: 60 秒
+- local / openai-compatible endpoint: 300 秒
+- fallback local endpoint: 300 秒
 - Azure / OpenAI hosted endpoint: 120 秒
 - user task の timeoutSeconds がそれより短い場合は短い方を使う
 
@@ -381,7 +381,7 @@ local model のロード直後だけ遅い場合、成功前に切ってしま�
 
 - transient 503 / loading model は timeout とは別に扱う。
 - health probe で warming 状態を見られる場合は readiness unknown にする。
-- local first attempt は 90 秒、fallback local は 60 秒から始める。
+- local attempt は 300 秒から始める。
 
 ## 10. 完了条件
 
