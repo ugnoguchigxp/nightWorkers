@@ -658,9 +658,10 @@ async function callOpenAIProviderToolTurn(
   }
 
   const url = `${baseURL.replace(/\/+$/, '')}/chat/completions`;
-  const response = await fetch(url, {
+  const requestInit: RequestInit & { timeout: false } = {
     method: 'POST',
     signal: input.signal,
+    timeout: false,
     headers: buildOpenAICompatibleHeaders(apiKey),
     body: JSON.stringify({
       model,
@@ -669,7 +670,8 @@ async function callOpenAIProviderToolTurn(
       tool_choice: input.options.toolChoice ?? 'auto',
       ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
     }),
-  });
+  };
+  const response = await fetch(url, requestInit);
 
   if (!response.ok) {
     const errorText = await response.text();
