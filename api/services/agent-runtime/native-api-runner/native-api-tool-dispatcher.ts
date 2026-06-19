@@ -377,16 +377,6 @@ async function finalizeAnswer(input: {
   sink: AgentRuntimeSink;
   state: NativeApiDispatchState;
 }): Promise<NativeApiDispatchResult> {
-  const openTodos = (await repo.listTaskRunTodosForRun(input.context.runId)).filter((todo) =>
-    ['pending', 'running'].includes(todo.status)
-  );
-  if (openTodos.length > 0) {
-    return continueWith(openTodosRemainToolResult(openTodos), input.state);
-  }
-  const guard = validateFinalizeGuard(input.state);
-  if (guard) {
-    return continueWith(failedToolResult(guard.code, guard.message), input.state);
-  }
   const finalReport =
     typeof input.toolCall.arguments.finalReport === 'string'
       ? input.toolCall.arguments.finalReport.trim()
@@ -397,6 +387,40 @@ async function finalizeAnswer(input: {
       input.state
     );
   }
+  const guard = validateFinalizeGuard(input.state);
+  if (guard) {
+    return continueWith(failedToolResult(guard.code, guard.message), input.state);
+  }
+
+  const openTodos = (await repo.listTaskRunTodosForRun(input.context.runId)).filter((todo) =>
+    ['pending', 'running'].includes(todo.status)
+  );
+  if (openTodos.length > 0) {
+    if (!openTodos.every(isFinalCompletionReportTodo)) {
+      return continueWith(openTodosRemainToolResult(openTodos), input.state);
+    }
+
+    const now = new Date();
+    for (const todo of openTodos) {
+      await repo.updateTaskRunTodo(
+        todo.id,
+        {
+          status: 'passed',
+          startedAt: todo.startedAt ? new Date(String(todo.startedAt)) : now,
+          completedAt: now,
+        },
+        { notifyTaskId: input.context.taskId, notifyRunId: input.context.runId }
+      );
+    }
+
+    const remainingOpenTodos = (await repo.listTaskRunTodosForRun(input.context.runId)).filter(
+      (todo) => ['pending', 'running'].includes(todo.status)
+    );
+    if (remainingOpenTodos.length > 0) {
+      return continueWith(openTodosRemainToolResult(remainingOpenTodos), input.state);
+    }
+  }
+
   const summary =
     typeof input.toolCall.arguments.summary === 'string' && input.toolCall.arguments.summary.trim()
       ? input.toolCall.arguments.summary.trim()
@@ -412,6 +436,13 @@ async function finalizeAnswer(input: {
     },
     state: input.state,
   };
+}
+
+function isFinalCompletionReportTodo(todo: {
+  taskType?: string | null;
+  procedureId?: string | null;
+}) {
+  return todo.taskType === 'completion_report' && todo.procedureId === 'final_completion_report';
 }
 
 function validateFinalizeGuard(

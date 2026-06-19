@@ -626,6 +626,123 @@ describe('NightWorkers workbench routes', () => {
     });
   });
 
+  it('starts a review run from intake instead of leaving only a classifier message', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('review', '現在のコードベースの差分を確認し、レビューを開始する。')
+    );
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'コードレビューから再開できますか？' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
+    expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(1);
+    expect(
+      body.messages.find(
+        (message: unknown) =>
+          message.role === 'assistant' && message.metadataJson?.intent === 'intake'
+      )
+    ).toBeUndefined();
+    const systemMessage = body.messages.find(
+      (message: unknown) =>
+        message.role === 'system' && message.metadataJson?.intent === 'run_started'
+    );
+    expect(systemMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('review');
+    expect(systemMessage?.metadataJson?.routingHypothesis?.primaryMode).toBe('review');
+    expect(systemMessage?.metadataJson?.routingHypothesis?.phase).toBe('review');
+    const runs = await repo.listTaskRunsForTask(task.id);
+    expect(runs[0]?.contextSnapshot).toMatchObject({
+      executionPhase: 'review',
+      executionModeSource: 'workbench_intake',
+      planModeClosed: true,
+    });
+  });
+
+  it('starts an investigation run from intake without routing through planning', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('investigation', '直近ログとDB状態から停止原因を特定する。')
+    );
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: '最新ログから原因を調査してください' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
+    const systemMessage = body.messages.find(
+      (message: unknown) =>
+        message.role === 'system' && message.metadataJson?.intent === 'run_started'
+    );
+    expect(systemMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('investigation');
+    expect(systemMessage?.metadataJson?.routingHypothesis?.primaryMode).toBe('investigation');
+    expect(systemMessage?.metadataJson?.routingHypothesis?.phase).toBe('investigate');
+    expect(systemMessage?.metadataJson?.routingHypothesis?.primaryMode).not.toBe('planning');
+  });
+
+  it('starts a verification run from intake without routing through planning', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('test_and_verification', '既存テストを実行し、結果を確認する。')
+    );
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'テストを実行して確認してください' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
+    const systemMessage = body.messages.find(
+      (message: unknown) =>
+        message.role === 'system' && message.metadataJson?.intent === 'run_started'
+    );
+    expect(systemMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('test_and_verification');
+    expect(systemMessage?.metadataJson?.routingHypothesis?.primaryMode).toBe(
+      'test_and_verification'
+    );
+    expect(systemMessage?.metadataJson?.routingHypothesis?.phase).toBe('verify');
+  });
+
+  it('starts a config implementation run from intake without routing through planning', async () => {
+    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
+      mockJobSelection('config', '設定ファイルの軽微な修正を行う。')
+    );
+    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: '設定ファイルの軽微な修正をしてください' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
+    const systemMessage = body.messages.find(
+      (message: unknown) =>
+        message.role === 'system' && message.metadataJson?.intent === 'run_started'
+    );
+    expect(systemMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('config');
+    expect(systemMessage?.metadataJson?.routingHypothesis?.primaryMode).toBe('code_edit');
+    expect(systemMessage?.metadataJson?.routingHypothesis?.workKinds).toContain('config');
+    const runs = await repo.listTaskRunsForTask(task.id);
+    expect(runs[0]?.contextSnapshot).toMatchObject({
+      executionPhase: 'implementation',
+      executionModeSource: 'workbench_intake',
+    });
+  });
+
   it('keeps prior-message intake on round 1 instead of using the Codex intake bypass', async () => {
     process.env.NIGHTWORKERS_RUNTIME_LANE = 'codex-agent';
     vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(

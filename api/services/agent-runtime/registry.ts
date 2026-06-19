@@ -77,8 +77,7 @@ export function buildRuntimeLaneOptions(
     input.runtimeLaneResolution?.lane === 'native-api-runner' &&
     activeRoute !== null &&
     activeRoute.providerId !== 'codex';
-  const activeRole =
-    activeRoute?.role ?? (input.executionMode === 'planning' ? 'plan' : 'implementation');
+  const activeRole = activeRoute?.role ?? fallbackRoleForExecutionMode(input.executionMode);
   return {
     executionMode: input.executionMode ?? 'implementation',
     runtimeLane: input.runtimeLaneResolution?.lane ?? null,
@@ -125,10 +124,17 @@ function summarizeResolvedRoute(route: ResolvedStructuredLlmRoute) {
   };
 }
 
+function fallbackRoleForExecutionMode(mode: NativeApiExecutionMode | undefined) {
+  if (mode === 'planning' || mode === 'general_answer') return 'plan';
+  if (mode === 'review') return 'review';
+  return 'implementation';
+}
+
 function buildNativeSupervisorInitialRunTodos(
   input: RuntimeLaneSetupInput
 ): ImplementationTodoInput[] {
   if (input.executionMode === 'planning') return [];
+  if (input.executionMode === 'review') return buildReviewInitialRunTodos(input);
 
   const screenPath = extractFirstMatch(input.compiledPromptText, /画面パス:\s*`([^`]+)`/);
   const featureSummary = extractFeatureSummary(input.compiledPromptText);
@@ -168,6 +174,7 @@ function buildNativeSupervisorInitialRunTodos(
 
 function buildCodexSdkInitialRunTodos(input: RuntimeLaneSetupInput): ImplementationTodoInput[] {
   if (input.executionMode === 'planning') return [];
+  if (input.executionMode === 'review') return buildReviewInitialRunTodos(input);
 
   const summary = input.compiledPromptText.replace(/\s+/g, ' ').trim().slice(0, 160);
   const requestSummary = summary ? `ユーザー依頼: ${summary}` : 'ユーザー依頼に基づく対象変更。';
@@ -185,6 +192,29 @@ function buildCodexSdkInitialRunTodos(input: RuntimeLaneSetupInput): Implementat
       title: '必要最小限の動作確認を行う',
       description:
         '変更範囲に応じた focused check を行う。広域 verify は追加される品質ゲート Todo で扱う。',
+      taskType: 'focused_verification',
+      dependsOn: [1],
+    },
+  ];
+}
+
+function buildReviewInitialRunTodos(input: RuntimeLaneSetupInput): ImplementationTodoInput[] {
+  const summary = input.compiledPromptText.replace(/\s+/g, ' ').trim().slice(0, 160);
+  const requestSummary = summary ? `レビュー依頼: ${summary}` : 'ユーザーのレビュー依頼。';
+
+  return [
+    {
+      title: 'レビュー対象と差分を確認する',
+      description: [
+        requestSummary,
+        'git status / git diff / 関連ファイル / 既存仕様を確認し、レビュー対象を特定する。',
+      ].join('\n'),
+      taskType: 'inspection',
+    },
+    {
+      title: 'レビュー結果を根拠付きで整理する',
+      description:
+        'バグ、回帰、責務境界違反、テスト不足を優先し、必要な場合は明確な修正まで進める。',
       taskType: 'focused_verification',
       dependsOn: [1],
     },

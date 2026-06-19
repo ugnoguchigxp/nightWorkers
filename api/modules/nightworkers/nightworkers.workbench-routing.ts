@@ -1,3 +1,4 @@
+import type { NativeApiExecutionMode } from '../../services/agent-runtime/native-api-runner/native-api-mode';
 import type { JobType } from '../../services/supervisor/prompt';
 import type { JobTypeSelection } from '../../services/supervisor/schema-first';
 import type { SupervisorRoutingHypothesis } from '../../services/supervisor/skills/types';
@@ -47,12 +48,34 @@ export function shouldStartImmediateWorkbenchRun(
   intent: WorkbenchChatIntent
 ) {
   if (intent !== 'intake') return false;
-  return (
-    jobSelection.jobType === 'minor_code_edit' ||
-    jobSelection.jobType === 'major_code_edit' ||
-    jobSelection.jobType === 'docs' ||
-    jobSelection.jobType === 'runtime_debug'
-  );
+  return immediateWorkbenchRunJobTypes.has(jobSelection.jobType);
+}
+
+const immediateWorkbenchRunJobTypes = new Set<JobType>([
+  'minor_code_edit',
+  'major_code_edit',
+  'docs',
+  'runtime_debug',
+  'review',
+  'investigation',
+  'test_and_verification',
+  'config',
+  'refactor',
+  'test',
+  'dependency',
+  'data_migration',
+  'code',
+  'git_release',
+  'git',
+  'release',
+]);
+
+export function executionModeForWorkbenchJobType(jobType: JobType): NativeApiExecutionMode {
+  if (jobType === 'planning' || jobType === 'blueprint' || jobType === 'ui_ux') return 'planning';
+  if (jobType === 'review') return 'review';
+  if (jobType === 'runtime_debug') return 'runtime_debug';
+  if (jobType === 'general_answer') return 'general_answer';
+  return 'implementation';
 }
 
 export function resolveArtifactFocusedJobSelection(
@@ -161,14 +184,102 @@ export function routingForWorkbenchJobType(jobType: JobType): SupervisorRoutingH
       confidence: 1,
     };
   }
+  if (jobType === 'review') {
+    return {
+      primaryMode: 'review',
+      secondaryModes: [],
+      phase: 'review',
+      workKinds: [],
+      overlays: ['evidence'],
+      requiredEvidence: ['git diff, changed files, or verification evidence'],
+      nextReferenceFiles: ['references/modes/review.md'],
+      confidence: 1,
+    };
+  }
+  if (jobType === 'investigation') {
+    return {
+      primaryMode: 'investigation',
+      secondaryModes: [],
+      phase: 'investigate',
+      workKinds: [],
+      overlays: ['evidence'],
+      requiredEvidence: ['repo inspection, logs, DB state, or command output'],
+      nextReferenceFiles: ['references/modes/investigation.md'],
+      confidence: 1,
+    };
+  }
+  if (jobType === 'test_and_verification') {
+    return {
+      primaryMode: 'test_and_verification',
+      secondaryModes: [],
+      phase: 'verify',
+      workKinds: ['test'],
+      overlays: ['evidence'],
+      requiredEvidence: ['verification command output'],
+      nextReferenceFiles: ['references/modes/test_and_verification.md'],
+      confidence: 1,
+    };
+  }
+  if (jobType === 'docs') {
+    return {
+      primaryMode: 'docs',
+      secondaryModes: [],
+      phase: 'execute',
+      workKinds: ['docs'],
+      overlays: [],
+      requiredEvidence: [],
+      nextReferenceFiles: ['references/modes/docs.md', 'references/work_kinds/docs.md'],
+      confidence: 1,
+    };
+  }
+  if (jobType === 'git_release' || jobType === 'git' || jobType === 'release') {
+    return {
+      primaryMode: 'git_release',
+      secondaryModes: [],
+      phase: 'execute',
+      workKinds: jobType === 'release' ? ['release'] : ['git'],
+      overlays: ['evidence'],
+      requiredEvidence: ['git status or release command output'],
+      nextReferenceFiles: [
+        'references/modes/git_release.md',
+        jobType === 'release' ? 'references/work_kinds/release.md' : 'references/work_kinds/git.md',
+      ],
+      confidence: 1,
+    };
+  }
+  if (
+    jobType === 'code' ||
+    jobType === 'refactor' ||
+    jobType === 'test' ||
+    jobType === 'config' ||
+    jobType === 'dependency' ||
+    jobType === 'data_migration'
+  ) {
+    return {
+      primaryMode: 'code_edit',
+      secondaryModes: jobType === 'test' ? ['test_and_verification'] : [],
+      phase: 'execute',
+      workKinds: [jobType === 'code' ? 'code' : jobType],
+      overlays: jobType === 'data_migration' ? ['production_risk'] : [],
+      requiredEvidence: [],
+      nextReferenceFiles: [
+        'references/modes/code_edit.md',
+        `references/work_kinds/${jobType === 'code' ? 'code' : jobType}.md`,
+      ],
+      confidence: 1,
+    };
+  }
   return {
-    primaryMode: jobType === 'general_answer' ? 'general_answer' : 'planning',
+    primaryMode: jobType === 'general_answer' ? 'general_answer' : 'investigation',
     secondaryModes: [],
-    phase: jobType === 'general_answer' ? 'answer' : 'plan',
+    phase: jobType === 'general_answer' ? 'answer' : 'investigate',
     workKinds: [],
-    overlays: [],
+    overlays: jobType === 'general_answer' ? [] : ['evidence'],
     requiredEvidence: [],
-    nextReferenceFiles: [],
+    nextReferenceFiles:
+      jobType === 'general_answer'
+        ? ['references/modes/general_answer.md']
+        : ['references/modes/investigation.md'],
     confidence: 1,
   };
 }

@@ -834,7 +834,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
     degraded: false,
     executionPhase: executionMode,
     executionModeSource,
-    planModeClosed: executionMode === 'implementation',
+    planModeClosed: executionMode !== 'planning',
     blueprintPlanning: blueprintReadiness,
     runtimeLane: runtimeLaneResolution.lane,
     runtimeLaneResolution: {
@@ -876,7 +876,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
   let runtimeContextSnapshot: RuntimePromptSnapshot = {
     ...contextSnapshot,
     executionPhase: executionMode,
-    planModeClosed: executionMode === 'implementation',
+    planModeClosed: executionMode !== 'planning',
     ...(executionMode === 'implementation'
       ? { implementationPhasePreamble: IMPLEMENTATION_PHASE_PREAMBLE }
       : {}),

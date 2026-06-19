@@ -27,6 +27,7 @@ import * as repo from './nightworkers.repository';
 import { startTaskRun } from './nightworkers.run-orchestration.service';
 import {
   buildAcceptanceCriteriaFromDecision,
+  executionModeForWorkbenchJobType,
   renderLlmIntakeContent,
   resolveArtifactFocusedJobSelection,
   routingForArtifactFocusedJobSelection,
@@ -552,7 +553,7 @@ async function handleWorkbenchIntakeMessage(
         },
       });
       const run = await startTaskRun(taskId, {
-        executionMode: 'implementation',
+        executionMode: executionModeForWorkbenchJobType(jobSelection.jobType),
         executionModeSource: 'workbench_intake',
       });
       return {

@@ -203,23 +203,6 @@ async function startTodo(input: {
         });
       }
 
-      if (isFinalCloseoutTodo(target)) {
-        return okTodoAction(
-          input.action,
-          input.operation,
-          context.runId,
-          context.taskId,
-          context.todos,
-          {
-            transition: {
-              previousCurrentSeq: currentSeqOrNull(context.todos),
-              completedSeq: null,
-              nextCurrentSeq: null,
-            },
-          }
-        );
-      }
-
       const now = new Date();
       for (const candidate of context.todos) {
         if (candidate.id === target.id) {

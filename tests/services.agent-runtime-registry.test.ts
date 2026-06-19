@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildRuntimeLaneInitialTodos,
+  buildRuntimeLaneOptions,
   resolveAgentRuntime,
 } from '../api/services/agent-runtime/registry';
 import {
@@ -45,6 +46,30 @@ describe('agent runtime registry', () => {
         executionMode: 'planning',
       })
     ).toEqual([]);
+  });
+
+  it('creates review-specific Todos and role metadata for review mode', () => {
+    const todos = buildRuntimeLaneInitialTodos('native-api-runner', {
+      compiledPromptText: 'コードレビューから再開できますか？',
+      executionMode: 'review',
+    });
+    const runtimeOptions = buildRuntimeLaneOptions({
+      compiledPromptText: 'コードレビューから再開できますか？',
+      executionMode: 'review',
+    });
+
+    expect(todos).toMatchObject([
+      { title: 'レビュー対象と差分を確認する', taskType: 'inspection' },
+      { title: 'レビュー結果を根拠付きで整理する', taskType: 'focused_verification' },
+    ]);
+    expect(todos.some((todo) => todo.taskType === 'implementation')).toBe(false);
+    expect(runtimeOptions).toMatchObject({
+      executionMode: 'review',
+      llmRouting: {
+        activeRole: 'review',
+        executionMode: 'review',
+      },
+    });
   });
 
   it('defaults runtime lane resolution to native api runner', () => {

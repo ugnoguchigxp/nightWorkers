@@ -32,6 +32,8 @@ export function buildRound1PromptPacket(projectRoot: string): SupervisorPromptPa
     basePolicy: [
       'jobType と goal を1つずつ選んでください。',
       'goal はこの run で達成する状態を短い一文で書く。',
+      'planning は、ユーザーが計画、実装計画、設計方針、仕様策定、質問票化、事前整理を明示した場合だけ選んでください。',
+      '修正、実装、確認、調査、レビュー、テスト、設定変更、依存更新、リファクタを依頼している場合は planning ではなく、実行可能な jobType を選んでください。',
       'JSON のみ。旧 decision 形式や toolCall は出さない。',
       '',
     ],

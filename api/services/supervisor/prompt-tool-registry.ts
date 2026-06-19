@@ -40,11 +40,11 @@ export const initiallyImplementedJobTypes = [
 
 export const jobTypeDescriptions: Record<JobType, string> = {
   general_answer: '軽い回答。実行やリポジトリ変更を伴わない場合。',
-  planning: '実装前の計画、分解、方針整理。',
+  planning: 'ユーザーが明示的に求めた、実装前の計画、分解、設計方針、仕様策定、質問票化。',
   minor_code_edit: '小さい修正、小さい新規作成、少数ファイルの明確な変更。',
   major_code_edit:
     '複数 Todo に分解すべき大きい変更。外部ディレクトリテンプレートのコピー、外部リポジトリーの clone や fork、migration、command、documentation、verification が混ざる可能性がある作業。',
-  script_code_edit: '調査用の一時スクリプト。初期実装では実行対象外。',
+  script_code_edit: '調査用の一時スクリプト作成。通常のリポジトリ変更とは分けて扱う。',
   review: 'コード、ドキュメント、差分のレビュー。',
   investigation: '原因調査、ログ確認、事実確認。',
   runtime_debug: '実行時問題、ログ、再現、環境確認。',
@@ -52,16 +52,16 @@ export const jobTypeDescriptions: Record<JobType, string> = {
   research: '外部情報や最新情報を伴う調査。',
   docs: 'ドキュメント作成、修正、レビュー。',
   git_release: 'git 状態確認、コミット、リリース準備。',
-  code: 'コード関連の補助分類。初期実装では直接実行しない。',
-  refactor: 'リファクタリング分類。初期実装では直接実行しない。',
-  test: 'テスト分類。初期実装では直接実行しない。',
-  config: '設定ファイル関連の分類。初期実装では直接実行しない。',
-  dependency: '依存関係関連の分類。初期実装では直接実行しない。',
-  data_migration: 'データ移行関連の分類。初期実装では直接実行しない。',
-  blueprint: '画面案や Blueprint 関連の分類。初期実装では直接実行しない。',
-  ui_ux: 'UI/UX 関連の分類。初期実装では直接実行しない。',
-  git: 'git 操作分類。初期実装では直接実行しない。',
-  release: 'リリース分類。初期実装では直接実行しない。',
+  code: 'コード関連の確認、作成、修正。',
+  refactor: '既存挙動を維持した構造整理、重複削減、責務整理。',
+  test: 'テスト追加、テスト修正、テスト失敗の原因確認や修正。',
+  config: '設定ファイル、runtime settings、policy、manifest の確認または変更。',
+  dependency: 'package manager、lockfile、依存関係設定の確認または変更。',
+  data_migration: 'schema、migration、backfill、データ変換に関わる変更。',
+  blueprint: '画面案や Blueprint artifact の作成、更新、レビュー。',
+  ui_ux: 'UI/UX 方針、画面案、見た目や操作性の設計。',
+  git: 'git 状態確認、差分確認、branch、commit などの git 操作。',
+  release: 'リリース準備、リリース手順、versioning、公開作業。',
 };
 
 export type TodoToolName = 'todo_list';

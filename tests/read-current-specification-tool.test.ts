@@ -442,6 +442,63 @@ describe('todo_list worker tool', () => {
     expect(persisted.at(-1)?.completedAt).toBeFalsy();
   });
 
+  it('starts the final completion report Todo when explicitly requested', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: todo completion start ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: start completion report Todo',
+      description: 'Explicit final closeout start should persist',
+      status: 'running',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'running',
+    });
+
+    await todoListTool({
+      runId: run.id,
+      operation: 'replace',
+      todos: [{ seq: 1, title: 'Implement feature' }],
+    });
+    for (const seq of [1, 2, 3, 4, 5]) {
+      const result = await todoListTool({ runId: run.id, operation: 'done', seq });
+      expect(result.ok).toBe(true);
+    }
+
+    const beforeStart = await repo.listTaskRunTodosForRun(run.id);
+    const knowledgeTodo = beforeStart.find(
+      (todo) => todo.taskType === 'knowledge_capture' && todo.seq === 6
+    );
+    expect(knowledgeTodo).toBeTruthy();
+    await repo.updateTaskRunTodo(knowledgeTodo!.id, {
+      status: 'passed',
+      startedAt: new Date(),
+      completedAt: new Date(),
+    });
+
+    const started = await todoListTool({ runId: run.id, operation: 'start', seq: 7 });
+
+    expect(started.ok).toBe(true);
+    expect(started.payload.currentTodo).toMatchObject({
+      seq: 7,
+      taskType: 'completion_report',
+      procedureId: 'final_completion_report',
+      status: 'running',
+    });
+    const persisted = await repo.listTaskRunTodosForRun(run.id);
+    expect(persisted[6]).toMatchObject({
+      seq: 7,
+      taskType: 'completion_report',
+      status: 'running',
+    });
+    expect(persisted[6].startedAt).toBeTruthy();
+  });
+
   it('returns attempted todo diagnostics when complete fails', async () => {
     const failed = await todoListTool({
       runId: 'missing-run',

@@ -17,6 +17,7 @@ import type { ProviderToolTurnResult } from '../api/services/structured-llm/tool
 vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   getTaskRun: vi.fn(),
   listTaskRunTodosForRun: vi.fn(),
+  updateTaskRunTodo: vi.fn(),
   createTaskEvent: vi.fn(),
 }));
 
@@ -35,6 +36,7 @@ describe('NativeApiRunner', () => {
       status: 'running',
     });
     (repo.listTaskRunTodosForRun as never).mockResolvedValue([]);
+    (repo.updateTaskRunTodo as never).mockResolvedValue({});
   });
 
   it('stops with needs_human when implementation provider returns text but no native tool calls', async () => {
@@ -1555,6 +1557,47 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
       },
     });
     expect(result.toolResult.content).toContain('todo_list operation=done seq=3');
+  });
+
+  it('closes the final completion_report Todo when finalize_answer succeeds', async () => {
+    const completionTodo = {
+      id: 'todo-final',
+      seq: 9,
+      title: '完了報告を行う',
+      taskType: 'completion_report',
+      status: 'pending',
+      procedureId: 'final_completion_report',
+      startedAt: null,
+    };
+    vi.mocked(repo.listTaskRunTodosForRun)
+      .mockResolvedValueOnce([completionTodo] as never)
+      .mockResolvedValueOnce([] as never);
+
+    const result = await dispatchNativeApiToolCall({
+      toolCall: {
+        id: 'call-final',
+        name: 'finalize_answer',
+        arguments: { summary: 'done', finalReport: 'Todo List implementation is complete.' },
+      },
+      context: buildContext(),
+      sink: createSink(),
+      state: { readFiles: [], specificationRead: true },
+    });
+
+    expect(result).toMatchObject({
+      kind: 'final',
+      summary: 'done',
+      finalReport: 'Todo List implementation is complete.',
+    });
+    expect(repo.updateTaskRunTodo).toHaveBeenCalledWith(
+      'todo-final',
+      {
+        status: 'passed',
+        startedAt: expect.any(Date),
+        completedAt: expect.any(Date),
+      },
+      { notifyTaskId: 'task-1', notifyRunId: 'run-1' }
+    );
   });
 });
 
