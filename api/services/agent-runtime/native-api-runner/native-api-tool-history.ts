@@ -1,6 +1,7 @@
 import type { ProviderToolCall, ProviderToolMessage } from '../../structured-llm/tool-calls';
 import type { AgentRunContext } from '../types';
 import { readNativeApiExecutionMode } from './native-api-mode';
+import { readNativeApiRoleWorkingContextText } from './native-api-role-context-events';
 
 export type NativeApiUserSource = 'user' | 'runtime' | 'todo' | 'state_card';
 
@@ -33,6 +34,14 @@ export function buildInitialNativeApiHistory(context: AgentRunContext): NativeAp
       type: 'user',
       source: 'todo',
       content: renderCurrentTodoContext(currentTodo),
+    });
+  }
+  const roleWorkingContext = readNativeApiRoleWorkingContextText(context);
+  if (roleWorkingContext) {
+    items.push({
+      type: 'user',
+      source: 'runtime',
+      content: roleWorkingContext,
     });
   }
   return items;

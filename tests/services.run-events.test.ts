@@ -52,6 +52,34 @@ describe('run-events normalizer', () => {
     expect(detected.eventType).not.toBe('tool_result');
     expect(rejected.eventType).not.toBe('tool_result');
   });
+
+  it('maps role context events to legacy context events', () => {
+    const created = normalizeRunEventToLegacy({
+      event: {
+        version: 1,
+        runId: 'run-1',
+        timestamp: new Date('2026-06-02T00:00:00.000Z').toISOString(),
+        type: 'context.handoff_created',
+        severity: 'info',
+        actor: 'runtime',
+        message: 'handoff created',
+      },
+    });
+    const failed = normalizeRunEventToLegacy({
+      event: {
+        version: 1,
+        runId: 'run-1',
+        timestamp: new Date('2026-06-02T00:00:01.000Z').toISOString(),
+        type: 'context.working_context_failed',
+        severity: 'error',
+        actor: 'runtime',
+        message: 'working context failed',
+      },
+    });
+
+    expect(created).toMatchObject({ eventType: 'context', type: 'info' });
+    expect(failed).toMatchObject({ eventType: 'context', type: 'error' });
+  });
 });
 
 describe('run-events jsonl serializer', () => {

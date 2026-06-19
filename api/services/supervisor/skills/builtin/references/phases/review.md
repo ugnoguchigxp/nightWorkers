@@ -8,6 +8,7 @@
 
 - 指摘を先に出し、重大度順に並べる。
 - 証拠なしにレビュー結果を作らない。
+- completed work、evidence refs、verification status、残リスクを、handoff artifact に載せられる短い事実として整理する。
 
 ## Stop Conditions
 

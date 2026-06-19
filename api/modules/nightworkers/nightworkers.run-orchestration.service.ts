@@ -8,6 +8,7 @@ import {
   nativeApiRoleForExecutionMode,
   stateCardRoleForExecutionMode,
 } from '../../services/agent-runtime/native-api-runner/native-api-mode';
+import { buildNativeApiRoleContextSnapshot } from '../../services/agent-runtime/native-api-runner/native-api-role-context-events';
 import {
   resolveAgentRuntime,
   resolveRuntimeLaneDefinition,
@@ -774,6 +775,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
     implementationLlmRoute: runtimeLlmRoute,
     llmRouteOverride,
   };
+  const runtimeOptions = runtimeLaneDefinition.buildRuntimeOptions(runtimeLaneSetupInput);
   const initialTodos = runtimeLaneDefinition.buildInitialTodos(runtimeLaneSetupInput);
   await repo.replaceTaskRunTodosForRun(
     run.id,
@@ -871,7 +873,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
     stateCardText: projectedStateCard.stateCardText,
   });
   const runtimeLatestUserMessage = runtimePromptParts.promptText;
-  const runtimeContextSnapshot: RuntimePromptSnapshot = {
+  let runtimeContextSnapshot: RuntimePromptSnapshot = {
     ...contextSnapshot,
     executionPhase: executionMode,
     planModeClosed: executionMode === 'implementation',
@@ -905,6 +907,105 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
           },
         },
   };
+  if (runtimeLaneResolution.lane === 'native-api-runner') {
+    try {
+      const roleContextTodos = await repo.listTaskRunTodosForRun(run.id);
+      const roleContextBase = buildNativeApiRoleContextSnapshot({
+        context: {
+          runId: run.id,
+          taskId,
+          repositoryId: task.repositoryId,
+          repoRoot: repoInfo.localPath,
+          compiledPrompt: compiledPromptText,
+          latestUserMessage: runtimeLatestUserMessage,
+          timeoutSeconds: task.timeoutSeconds ?? 3600,
+          safetyPolicy: repoInfo.safetyPolicy || undefined,
+          contextSnapshot: runtimeContextSnapshot,
+          runtimeOptions,
+          todoPlan: roleContextTodos.map(toAgentRuntimeTodoContext),
+          currentTodo: roleContextTodos
+            .filter((todo) => todo.status === 'running')
+            .sort((a, b) => a.seq - b.seq)
+            .map(toAgentRuntimeTodoContext)[0],
+        },
+      });
+      const handoffEvent = await repo.createRunEvent({
+        version: 1,
+        runId: run.id,
+        taskId,
+        timestamp: roleContextBase.handoff.createdAt,
+        type: 'context.handoff_created',
+        severity: 'info',
+        actor: 'runtime',
+        message: 'Role handoff artifact created for run-start boundary.',
+        data: {
+          artifact: roleContextBase.handoff,
+          source: 'deterministic',
+        },
+      });
+      const workingContextEvent = await repo.createRunEvent({
+        version: 1,
+        runId: run.id,
+        taskId,
+        timestamp: roleContextBase.workingContext.createdAt,
+        type: 'context.working_context_created',
+        severity: 'info',
+        actor: 'runtime',
+        message: 'Role working context created for provider history.',
+        data: {
+          artifact: roleContextBase.workingContext,
+          source: 'deterministic',
+        },
+      });
+      runtimeContextSnapshot = {
+        ...runtimeContextSnapshot,
+        roleContext: {
+          ...roleContextBase.snapshot,
+          handoff: {
+            ...roleContextBase.snapshot.handoff,
+            eventSeq: handoffEvent?.seq ?? null,
+            eventId: handoffEvent?.id ?? null,
+          },
+          workingContext: {
+            ...roleContextBase.snapshot.workingContext,
+            eventSeq: workingContextEvent?.seq ?? null,
+            eventId: workingContextEvent?.id ?? null,
+          },
+        },
+      };
+    } catch (error) {
+      const errorMessage = toErrorMessage(error);
+      const failureType = /handoff/i.test(errorMessage)
+        ? 'context.handoff_failed'
+        : 'context.working_context_failed';
+      await repo.createRunEvent({
+        version: 1,
+        runId: run.id,
+        taskId,
+        timestamp: new Date().toISOString(),
+        type: failureType,
+        severity: 'error',
+        actor: 'runtime',
+        message: `Role context generation failed before provider call: ${errorMessage}`,
+        data: {
+          source: 'deterministic',
+          error: errorMessage,
+        },
+      });
+      await repo.updateTaskCompiledPrompt(taskId, compiledPromptText);
+      const failedRun = await repo.updateTaskRun(run.id, {
+        status: 'needs_human',
+        endedAt: new Date(),
+        finishedAt: new Date(),
+        contextSnapshot: runtimeContextSnapshot,
+        finalReport: `Role context generation failed before provider call: ${errorMessage}`,
+        finalJudgment: null,
+        summary: 'Role context generation failed before provider call.',
+      });
+      await repo.updateTaskStatus(taskId, 'needs_human');
+      return failedRun ?? run;
+    }
+  }
 
   await repo.updateTaskCompiledPrompt(taskId, compiledPromptText);
   const compiledRun = await repo.updateTaskRun(run.id, {
@@ -955,7 +1056,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
           timeoutSeconds: task.timeoutSeconds ?? 3600,
           safetyPolicy: repoInfo.safetyPolicy || undefined,
           contextSnapshot: runtimeContextSnapshot,
-          runtimeOptions: runtimeLaneDefinition.buildRuntimeOptions(runtimeLaneSetupInput),
+          runtimeOptions,
           todoPlan: runtimeTodosBeforeStart.map(toAgentRuntimeTodoContext),
           currentTodo: runtimeTodosBeforeStart
             .filter((todo) => todo.status === 'running')

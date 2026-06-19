@@ -9,6 +9,7 @@ import {
 } from '../api/services/agent-runtime/native-api-runner/native-api-runner';
 import type { NativeApiSessionStore } from '../api/services/agent-runtime/native-api-runner/native-api-session-store';
 import { dispatchNativeApiToolCall } from '../api/services/agent-runtime/native-api-runner/native-api-tool-dispatcher';
+import { buildInitialNativeApiHistory } from '../api/services/agent-runtime/native-api-runner/native-api-tool-history';
 import { getNativeApiToolDefinitions } from '../api/services/agent-runtime/native-api-runner/native-api-tool-registry';
 import type { AgentRunContext, AgentRuntimeEvent } from '../api/services/agent-runtime/types';
 import type { ProviderToolTurnResult } from '../api/services/structured-llm/tool-calls';
@@ -258,6 +259,38 @@ describe('NativeApiRunner', () => {
     );
   });
 
+  it('adds role working context to initial history after user request and current Todo', () => {
+    const history = buildInitialNativeApiHistory(
+      buildContext({
+        currentTodo: {
+          id: 'todo-1',
+          seq: 1,
+          title: 'Implement role context',
+          taskType: 'implementation',
+          status: 'running',
+          procedureId: 'context.role',
+        },
+        contextSnapshot: {
+          compiledPrompt: 'implement',
+          source: 'fallback',
+          roleContext: buildRoleContextSnapshot(),
+        },
+      })
+    );
+
+    expect(history.map((item) => (item.type === 'user' ? item.source : item.type))).toEqual([
+      'system',
+      'user',
+      'todo',
+      'runtime',
+    ]);
+    expect(history.at(-1)).toMatchObject({
+      type: 'user',
+      source: 'runtime',
+      content: expect.stringContaining('<ROLE_WORKING_CONTEXT version="1"'),
+    });
+  });
+
   it('classifies required tool-call failures and falls back to the next native/API route', async () => {
     const restoreSettings = installRuntimeLlmSettings({
       ACTIVE_LLM_PROVIDER: 'azure',
@@ -331,7 +364,7 @@ describe('NativeApiRunner', () => {
         usageRecorder: vi.fn(async () => undefined),
       });
 
-      const result = await runner.run(buildContext({ timeoutSeconds: 360 }), createSink(events));
+      const result = await runner.run(buildContext({ timeoutSeconds: 1_900 }), createSink(events));
 
       expect(result).toMatchObject({
         terminalState: 'completed',
@@ -344,7 +377,7 @@ describe('NativeApiRunner', () => {
           attemptTimeoutMs: call[0].options.attemptTimeoutMs,
         }))
       ).toEqual([
-        { providerEndpointId: 'local-gemma', attemptTimeoutMs: 300000 },
+        { providerEndpointId: 'local-gemma', attemptTimeoutMs: 1800000 },
         {
           providerEndpointId: 'azure-implementation',
           attemptTimeoutMs: 120000,
@@ -634,6 +667,93 @@ describe('NativeApiRunner', () => {
         contextCompaction: expect.objectContaining({
           reason: 'hard_limit_exceeded_before_provider_call',
           retainedHistoryItems: 2,
+        }),
+      });
+    } finally {
+      restoreSettings();
+    }
+  });
+
+  it('keeps role working context after baseline compaction drops prior provider turns', async () => {
+    const restoreSettings = installRuntimeLlmSettings({
+      ACTIVE_LLM_PROVIDER: 'azure',
+      providerEndpoints: [
+        {
+          id: 'local-qwen',
+          name: 'Local Qwen',
+          kind: 'local',
+          enabled: true,
+          baseUrl: 'http://localhost:11434/v1',
+          models: ['qwen3-coder'],
+        },
+      ],
+      roleRoutes: [
+        {
+          role: 'implementation',
+          primary: {
+            providerEndpointId: 'local-qwen',
+            model: 'qwen3-coder',
+          },
+          fallbacks: [],
+        },
+      ],
+    });
+    try {
+      const hugeAssistantContent = `large prior raw tool payload ${'x'.repeat(540_000)}`;
+      const store = createFakeStore();
+      const providerTurn = createProvider([
+        {
+          type: 'supported',
+          content: hugeAssistantContent,
+          toolCalls: [{ id: 'call-unknown', name: 'unknown_tool', arguments: {} }],
+          usage: usage(),
+          model: 'qwen3-coder',
+        },
+        {
+          type: 'supported',
+          content: 'ready after role context compaction',
+          toolCalls: [
+            {
+              id: 'call-final',
+              name: 'finalize_answer',
+              arguments: { finalReport: 'done with role context' },
+            },
+          ],
+          usage: usage(),
+          model: 'qwen3-coder',
+        },
+      ]);
+      const runner = new NativeApiRunner({
+        store: store.instance,
+        startupController: createNoopStartup(),
+        providerTurn,
+        usageRecorder: vi.fn(async () => undefined),
+      });
+
+      const result = await runner.run(
+        buildContext({
+          timeoutSeconds: 360,
+          contextSnapshot: {
+            compiledPrompt: 'implement',
+            source: 'fallback',
+            roleContext: buildRoleContextSnapshot(),
+          },
+        }),
+        createSink()
+      );
+
+      expect(result).toMatchObject({
+        terminalState: 'completed',
+        finalReport: 'done with role context',
+      });
+      const secondMessages = vi.mocked(providerTurn).mock.calls[1][0].messages;
+      const messageText = secondMessages.map((message) => message.content).join('\n\n');
+      expect(messageText).toContain('<ROLE_WORKING_CONTEXT version="1"');
+      expect(messageText).toContain('currentTodo=#1 Implement role context');
+      expect(messageText).not.toContain('large prior raw tool payload');
+      expect(store.finishedTurns[1].providerDebug).toMatchObject({
+        contextCompaction: expect.objectContaining({
+          retainedHistoryItems: 3,
         }),
       });
     } finally {
@@ -1538,6 +1658,33 @@ function buildContext(overrides: Partial<AgentRunContext> = {}): AgentRunContext
       source: 'fallback',
     },
     ...overrides,
+  };
+}
+
+function buildRoleContextSnapshot() {
+  return {
+    version: 1 as const,
+    source: 'deterministic' as const,
+    handoff: {
+      digest: 'sha256:handoff',
+      eventSeq: 4,
+      eventId: 'event-handoff',
+      omitted: false as const,
+    },
+    workingContext: {
+      digest: 'sha256:working',
+      eventSeq: 5,
+      eventId: 'event-working',
+      renderedText: [
+        '<ROLE_WORKING_CONTEXT version="1" source="deterministic">',
+        'executionMode=implementation',
+        'role=implementation',
+        'currentTodo=#1 Implement role context status=running',
+        'designReference path=spec/role-owned-context-compaction-plan.md section=none digest=none reason=Referenced by runtime prompt or user request.',
+        '</ROLE_WORKING_CONTEXT>',
+      ].join('\n'),
+      omitted: false as const,
+    },
   };
 }
 

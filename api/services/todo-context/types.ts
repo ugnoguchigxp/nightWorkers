@@ -60,6 +60,23 @@ export type RuntimePromptSnapshot = {
       runtimeUserPromptTokens: number;
     };
   };
+  roleContext?: {
+    version: 1;
+    source: 'deterministic';
+    handoff: {
+      digest: string;
+      eventSeq?: number | null;
+      eventId?: string | null;
+      omitted: false;
+    };
+    workingContext: {
+      digest: string;
+      eventSeq?: number | null;
+      eventId?: string | null;
+      renderedText: string;
+      omitted: false;
+    };
+  };
 };
 
 export type TodoContextInput = {

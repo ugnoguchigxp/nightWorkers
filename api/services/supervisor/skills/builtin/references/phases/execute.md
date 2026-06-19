@@ -9,6 +9,7 @@
 - 編集前に対象ファイルを確認する。
 - observations が空の場合、最終回答へ進まず、必要な読み取りや検索を行う。
 - 編集が必要な依頼では、推測で書き込み不可と判断しない。
+- current Todo、変更対象ファイル、実装制約、完了 evidence を、次 Role が working context として再水和できる粒度で残す。
 
 ## Stop Conditions
 

@@ -8,6 +8,7 @@
 
 - 既存の repo 検証コマンドを優先する。
 - 検証できない場合は、できなかった理由を証拠として残す。
+- command result、検証範囲、未検証リスクを、次 Role の working context に渡せる短い証拠として残す。
 
 ## Stop Conditions
 

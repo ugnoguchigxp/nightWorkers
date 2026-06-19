@@ -91,7 +91,7 @@ function nativeApiAttemptTimeoutMs(input: {
   providerId: string;
   routeSource?: string | null;
 }) {
-  const routeDefault = input.providerId === 'azure-openai' ? 120_000 : 300_000;
+  const routeDefault = input.providerId === 'azure-openai' ? 120_000 : 1_800_000;
   const timeoutMs =
     Number.isFinite(input.timeoutMs) && input.timeoutMs > 0 ? input.timeoutMs : routeDefault;
   return Math.max(1_000, Math.min(timeoutMs, routeDefault));

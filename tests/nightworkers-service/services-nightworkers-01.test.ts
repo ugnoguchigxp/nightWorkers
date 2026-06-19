@@ -148,6 +148,10 @@ describe('NightWorkers service', () => {
     delete process.env.CODEX_ENABLED;
     delete process.env.IMPLEMENTATION_RUNTIME_LANE;
     process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-api-runner';
+    vi.mocked(repo.createRunEvent).mockResolvedValue({
+      id: 'event-default',
+      seq: 1,
+    } as never);
   });
 
   it('lists replay events for a run after the requested cursor', async () => {
@@ -373,6 +377,7 @@ describe('NightWorkers service', () => {
     vi.mocked(repo.listTaskRunTodosForRun)
       .mockResolvedValueOnce([runningTodo, pendingTodo] as never)
       .mockResolvedValueOnce([runningTodo, pendingTodo] as never)
+      .mockResolvedValueOnce([runningTodo, pendingTodo] as never)
       .mockResolvedValueOnce([humanRunningTodo, pendingTodo] as never)
       .mockResolvedValueOnce([humanRunningTodo, humanPendingTodo] as never)
       .mockResolvedValue([humanRunningTodo, humanPendingTodo] as never);
@@ -432,6 +437,250 @@ describe('NightWorkers service', () => {
         finalReport: 'Project import failed.',
       })
     );
+  });
+
+  it('creates role handoff and working context events before starting native runtime', async () => {
+    const task = {
+      id: 'task-role-context',
+      repositoryId: 'repo-role-context',
+      title: 'Role context task',
+      description: 'Implement spec/role-owned-context-compaction-plan.md',
+      objective: 'Implement role context',
+      acceptanceCriteria: 'Role context is present',
+      timeoutSeconds: 60,
+    };
+    const run = {
+      id: 'run-role-context',
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+      status: 'running',
+    };
+    const runningTodo = {
+      id: 'todo-role-context',
+      runId: run.id,
+      seq: 1,
+      title: 'Role context を実装する',
+      description: 'Implement role context',
+      taskType: 'implementation',
+      status: 'running',
+      procedureId: 'context.role',
+    };
+    let eventSeq = 10;
+    vi.mocked(repo.createRunEvent).mockImplementation(async (event) => {
+      eventSeq += 1;
+      return { id: `event-${eventSeq}`, seq: eventSeq, payloadJson: { runEvent: event } } as never;
+    });
+    vi.mocked(repo.getTask).mockResolvedValue(task as never);
+    vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+    vi.mocked(repo.getRepository).mockResolvedValue({
+      id: task.repositoryId,
+      localPath: repoRoot,
+      safetyPolicy: {},
+    } as never);
+    vi.mocked(repo.listTaskMessages).mockResolvedValue([
+      {
+        id: 'message-role-context',
+        role: 'user',
+        content: 'Implement spec/role-owned-context-compaction-plan.md',
+      },
+    ] as never);
+    vi.mocked(repo.createTaskRun).mockResolvedValue(run as never);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([runningTodo] as never);
+    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as never);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
+    const runtimeStart = vi.fn().mockResolvedValue({
+      terminalState: 'completed',
+      summary: 'done',
+      finalReport: 'done',
+      stoppedBy: 'decision',
+      riskLevel: 'medium',
+      diffPatch: '',
+      logContent: '',
+    });
+    vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+      kind: 'native-local',
+      start: runtimeStart,
+      stop: vi.fn(),
+    } as never);
+
+    await startTaskRun(task.id);
+
+    expect(repo.createRunEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'context.handoff_created',
+        actor: 'runtime',
+        data: expect.objectContaining({
+          artifact: expect.objectContaining({
+            runId: run.id,
+            taskId: task.id,
+            currentTodo: expect.objectContaining({ id: runningTodo.id }),
+            designReferences: expect.arrayContaining([
+              expect.objectContaining({ path: 'spec/role-owned-context-compaction-plan.md' }),
+            ]),
+          }),
+        }),
+      })
+    );
+    expect(repo.createRunEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'context.working_context_created',
+        actor: 'runtime',
+        data: expect.objectContaining({
+          artifact: expect.objectContaining({
+            currentTodo: expect.objectContaining({ id: runningTodo.id }),
+            source: 'deterministic',
+          }),
+        }),
+      })
+    );
+    expect(repo.updateTaskRun).toHaveBeenCalledWith(
+      run.id,
+      expect.objectContaining({
+        status: 'running',
+        contextSnapshot: expect.objectContaining({
+          roleContext: expect.objectContaining({
+            source: 'deterministic',
+            handoff: expect.objectContaining({ eventSeq: expect.any(Number) }),
+            workingContext: expect.objectContaining({
+              eventSeq: expect.any(Number),
+              renderedText: expect.stringContaining('<ROLE_WORKING_CONTEXT version="1"'),
+            }),
+          }),
+        }),
+      })
+    );
+    await vi.waitFor(() => {
+      expect(runtimeStart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contextSnapshot: expect.objectContaining({
+            roleContext: expect.objectContaining({
+              workingContext: expect.objectContaining({
+                renderedText: expect.stringContaining(
+                  'designReference path=spec/role-owned-context-compaction-plan.md'
+                ),
+              }),
+            }),
+          }),
+        }),
+        expect.anything()
+      );
+    });
+  });
+
+  it('does not create role context events for codex-sdk runs', async () => {
+    process.env.NIGHTWORKERS_RUNTIME_LANE = 'codex-agent';
+    const previousSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    const settingsPath = path.join(repoRoot, 'llm-route-codex-role-context.json');
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = settingsPath;
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        ACTIVE_LLM_PROVIDER: 'codex',
+        CODEX_ENABLED: true,
+        providerEndpoints: [
+          {
+            id: 'codex-implementation',
+            name: 'Codex Implementation',
+            kind: 'codex',
+            enabled: true,
+            models: ['gpt-5.4-mini'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'codex-implementation',
+              model: 'gpt-5.4-mini',
+            },
+            fallbacks: [],
+          },
+        ],
+      })
+    );
+    const task = {
+      id: 'task-codex-role-context',
+      repositoryId: 'repo-codex-role-context',
+      title: 'Codex role context task',
+      description: 'Use Codex SDK lane',
+      objective: 'Use Codex SDK lane',
+      acceptanceCriteria: 'Codex SDK starts',
+      timeoutSeconds: 60,
+    };
+    const run = {
+      id: 'run-codex-role-context',
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+      status: 'running',
+    };
+
+    vi.mocked(repo.getTask).mockResolvedValue(task as never);
+    vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+    vi.mocked(repo.getRepository).mockResolvedValue({
+      id: task.repositoryId,
+      localPath: repoRoot,
+      safetyPolicy: {},
+    } as never);
+    vi.mocked(repo.listTaskMessages).mockResolvedValue([
+      { id: 'message-codex-role-context', role: 'user', content: 'Use Codex SDK lane' },
+    ] as never);
+    vi.mocked(repo.createTaskRun).mockResolvedValue(run as never);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
+    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as never);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
+    const runtimeStart = vi.fn().mockResolvedValue({
+      terminalState: 'completed',
+      summary: 'codex done',
+      finalReport: 'codex done',
+      stoppedBy: 'decision',
+      riskLevel: 'medium',
+      diffPatch: '',
+      logContent: '',
+    });
+    vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+      kind: 'codex-agent',
+      start: runtimeStart,
+      stop: vi.fn(),
+    } as never);
+
+    try {
+      await startTaskRun(task.id);
+    } finally {
+      if (previousSettingsPath === undefined) {
+        delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      } else {
+        process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = previousSettingsPath;
+      }
+    }
+
+    expect(repo.createRunEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'context.handoff_created' })
+    );
+    expect(repo.createRunEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'context.working_context_created' })
+    );
+    expect(repo.updateTaskRun).toHaveBeenCalledWith(
+      run.id,
+      expect.objectContaining({
+        status: 'running',
+        contextSnapshot: expect.not.objectContaining({
+          roleContext: expect.anything(),
+        }),
+      })
+    );
+    await vi.waitFor(() => {
+      expect(runtimeStart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runtimeOptions: expect.objectContaining({ runtimeLane: 'codex-sdk' }),
+          contextSnapshot: expect.not.objectContaining({
+            roleContext: expect.anything(),
+          }),
+        }),
+        expect.anything()
+      );
+    });
   });
 
   it('uses the native-api-runner runtime lane for non-Codex implementation routes', async () => {
