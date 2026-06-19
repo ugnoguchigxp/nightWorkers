@@ -36,16 +36,16 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
     input?.executionMode === 'general_answer'
       ? []
       : lane === 'codex-sdk'
-      ? [
-          { title: '対象変更を確認して実装する', taskType: 'implementation' },
-          { title: '必要最小限の動作確認を行う', taskType: 'focused_verification' },
-        ]
-      : [
-          { title: '仕様と既存構成を確認する', taskType: 'inspection' },
-          { title: '対象画面の実装準備を行う', taskType: 'scaffold', dependsOn: [1] },
-          { title: '対象画面を仕様に沿って実装する', taskType: 'implementation', dependsOn: [2] },
-          { title: '受け入れ条件を検証する', taskType: 'verification', dependsOn: [3] },
-        ]
+        ? [
+            { title: '対象変更を確認して実装する', taskType: 'implementation' },
+            { title: '必要最小限の動作確認を行う', taskType: 'focused_verification' },
+          ]
+        : [
+            { title: '仕様と既存構成を確認する', taskType: 'inspection' },
+            { title: '対象画面の実装準備を行う', taskType: 'scaffold', dependsOn: [1] },
+            { title: '対象画面を仕様に沿って実装する', taskType: 'implementation', dependsOn: [2] },
+            { title: '受け入れ条件を検証する', taskType: 'verification', dependsOn: [3] },
+          ]
   );
   return {
     buildRuntimeLaneInitialTodos,
@@ -289,53 +289,53 @@ describe('NightWorkers workbench routes', () => {
       .mockResolvedValueOnce(mockPlanModeGate(true, 'explicit planning request'))
       .mockResolvedValueOnce(
         JSON.stringify({
-        version: 1,
-        source: {
-          taskId: task.id,
-          repositoryId: task.repositoryId,
-          blueprintMessageId: null,
-          sourceKind: 'plan_mode_intake',
-        },
-        title: 'Kanban Design Questionnaire',
-        summary: 'Clarify Kanban workflow decisions before implementation.',
-        questionSets: [
-          {
-            id: 'workflow',
-            title: 'Workflow',
-            category: 'workflow',
-            purpose: 'Kanban workflow decisions.',
-            questions: [
-              {
-                id: 'lane-model',
-                topic: 'Lane model',
-                question: 'Which lane model should the first version support?',
-                why: 'The lane model affects UI and DB design.',
-                answerType: 'single_choice',
-                options: [
-                  {
-                    id: 'fixed-lanes',
-                    label: 'Fixed lanes',
-                    description: 'Start with todo, doing, done.',
-                    tradeoff: 'Simple first release.',
-                  },
-                ],
-                blocks: ['Board UI', 'Task schema'],
-                outputSection: 'Kanban workflow',
-              },
-            ],
+          version: 1,
+          source: {
+            taskId: task.id,
+            repositoryId: task.repositoryId,
+            blueprintMessageId: null,
+            sourceKind: 'plan_mode_intake',
           },
-        ],
-        openQuestions: [],
-        dbDesignHandoffNotes: [
-          {
-            id: 'card-lane-history',
-            summary: 'Card lane transitions may need history.',
-            sourceQuestionIds: ['lane-model'],
-            constraint: 'DB Design should decide whether lane transition history is stored.',
-          },
-        ],
-      })
-    );
+          title: 'Kanban Design Questionnaire',
+          summary: 'Clarify Kanban workflow decisions before implementation.',
+          questionSets: [
+            {
+              id: 'workflow',
+              title: 'Workflow',
+              category: 'workflow',
+              purpose: 'Kanban workflow decisions.',
+              questions: [
+                {
+                  id: 'lane-model',
+                  topic: 'Lane model',
+                  question: 'Which lane model should the first version support?',
+                  why: 'The lane model affects UI and DB design.',
+                  answerType: 'single_choice',
+                  options: [
+                    {
+                      id: 'fixed-lanes',
+                      label: 'Fixed lanes',
+                      description: 'Start with todo, doing, done.',
+                      tradeoff: 'Simple first release.',
+                    },
+                  ],
+                  blocks: ['Board UI', 'Task schema'],
+                  outputSection: 'Kanban workflow',
+                },
+              ],
+            },
+          ],
+          openQuestions: [],
+          dbDesignHandoffNotes: [
+            {
+              id: 'card-lane-history',
+              summary: 'Card lane transitions may need history.',
+              sourceQuestionIds: ['lane-model'],
+              constraint: 'DB Design should decide whether lane transition history is stored.',
+            },
+          ],
+        })
+      );
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
       method: 'POST',
@@ -431,44 +431,44 @@ describe('NightWorkers workbench routes', () => {
       .mockResolvedValueOnce(mockPlanModeGate(true, 'explicit planning request'))
       .mockResolvedValueOnce(
         JSON.stringify({
-        version: 1,
-        source: {
-          taskId: task.id,
-          repositoryId: task.repositoryId,
-          blueprintMessageId: null,
-          sourceKind: 'plan_mode_intake',
-        },
-        title: 'Todo Design Questionnaire',
-        summary: 'Clarify todo app decisions before implementation.',
-        questionSets: [
-          {
-            id: 'scope',
-            title: 'Scope',
-            category: 'product',
-            purpose: 'Todo scope decisions.',
-            questions: [
-              {
-                id: 'first-version',
-                topic: 'First version',
-                question: 'What should the first version include?',
-                why: 'This shapes the implementation plan.',
-                answerType: 'single_choice',
-                options: [
-                  {
-                    id: 'basic-crud',
-                    label: 'Basic CRUD',
-                    description: 'Add, edit, complete, delete todos.',
-                    tradeoff: 'Small first release.',
-                  },
-                ],
-                blocks: ['Todo UI', 'Todo API'],
-                outputSection: 'Scope',
-              },
-            ],
+          version: 1,
+          source: {
+            taskId: task.id,
+            repositoryId: task.repositoryId,
+            blueprintMessageId: null,
+            sourceKind: 'plan_mode_intake',
           },
-        ],
-        openQuestions: [],
-        dbDesignHandoffNotes: [],
+          title: 'Todo Design Questionnaire',
+          summary: 'Clarify todo app decisions before implementation.',
+          questionSets: [
+            {
+              id: 'scope',
+              title: 'Scope',
+              category: 'product',
+              purpose: 'Todo scope decisions.',
+              questions: [
+                {
+                  id: 'first-version',
+                  topic: 'First version',
+                  question: 'What should the first version include?',
+                  why: 'This shapes the implementation plan.',
+                  answerType: 'single_choice',
+                  options: [
+                    {
+                      id: 'basic-crud',
+                      label: 'Basic CRUD',
+                      description: 'Add, edit, complete, delete todos.',
+                      tradeoff: 'Small first release.',
+                    },
+                  ],
+                  blocks: ['Todo UI', 'Todo API'],
+                  outputSection: 'Scope',
+                },
+              ],
+            },
+          ],
+          openQuestions: [],
+          dbDesignHandoffNotes: [],
         })
       );
 
@@ -562,9 +562,9 @@ describe('NightWorkers workbench routes', () => {
     );
     expect(await repo.listTaskRunTodosForRun(runs[0]?.id || '')).toEqual([]);
     const events = await repo.listTaskEventsForRun(runs[0]?.id || '');
-    expect(events.some((event) => event.message.includes('general_answer LLM route resolved'))).toBe(
-      true
-    );
+    expect(
+      events.some((event) => event.message.includes('general_answer LLM route resolved'))
+    ).toBe(true);
   });
 
   it('rejects reopening Plan Mode artifacts after the task is completed', async () => {
@@ -833,9 +833,9 @@ describe('NightWorkers workbench routes', () => {
     const body = await res.json();
     expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
     expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
-    expect(body.messages.find((message: unknown) => message.metadataJson?.intent === 'intake')).toBe(
-      undefined
-    );
+    expect(
+      body.messages.find((message: unknown) => message.metadataJson?.intent === 'intake')
+    ).toBe(undefined);
   });
 });
 

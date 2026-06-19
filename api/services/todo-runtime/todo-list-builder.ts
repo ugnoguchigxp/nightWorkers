@@ -49,9 +49,9 @@ const FINAL_GATES: StandardGate[] = [
     dependsOn: [],
   },
   {
-    title: '品質ゲート verify を実施する',
+    title: '品質ゲート verify コマンドを通す',
     description:
-      '型、テスト、ビルド、OpenAPI など、このリポジトリの標準 verify gate を実行し、失敗があれば修正する。',
+      'package.json に verify script がある場合は、このリポジトリ標準の verify コマンドを最優先で実行する。失敗した場合は原因を修正し、verify が成功するまで再実行する。verify script が無い、または環境制約で実行不能な場合だけ、typecheck / lint / test / build などの代替検証を明記して実行する。',
     taskType: 'verification',
     procedureId: 'quality_gate_verify',
     dependsOn: [],
@@ -200,6 +200,7 @@ function isReservedBroadVerificationTodo(todo: ImplementationTodoInput) {
     title === 'verification' ||
     title === '検証コマンドを実行する' ||
     title === '品質ゲート verify を実施する' ||
+    title === '品質ゲート verify コマンドを通す' ||
     taskType === 'verification' ||
     procedureId === 'quality_gate_verify'
   );

@@ -5,6 +5,7 @@ import { executeWorkerTool } from '../../worker-tools/dispatcher';
 import { type TodoListOperation, todoListTool } from '../../worker-tools/todo-list';
 import type { WorkerToolResult } from '../../worker-tools/types';
 import type { AgentRunContext, AgentRuntimeSink } from '../types';
+import { normalizeVerificationCommand, verificationCommandsMatch } from '../verification-command';
 import { readNativeApiExecutionMode } from './native-api-mode';
 import type { NativeApiToolResult } from './native-api-tool-history';
 import {
@@ -602,31 +603,6 @@ function readRecommendedVerificationCommands(manifest: unknown): string[] {
 
 function isProjectManifestPath(filePath: string) {
   return /(^|\/)(package\.json|pyproject\.toml)$/.test(filePath.trim());
-}
-
-function normalizeVerificationCommand(command: string | null): string | null {
-  if (!command) return null;
-  const normalized = command.trim().replace(/\s+/g, ' ');
-  return normalized.length > 0 ? normalized : null;
-}
-
-function verificationCommandsMatch(actual: string | null, recommended: string | null): boolean {
-  if (!actual || !recommended) return false;
-  if (actual === recommended) return true;
-  return verificationCommandEquivalentKey(actual) === verificationCommandEquivalentKey(recommended);
-}
-
-function verificationCommandEquivalentKey(command: string): string {
-  const parts = command.split(' ');
-  const runner = parts[0];
-  if (
-    (runner === 'bun' || runner === 'pnpm' || runner === 'yarn') &&
-    parts[1] === 'run' &&
-    parts[2]
-  ) {
-    return [runner, ...parts.slice(2)].join(' ');
-  }
-  return command;
 }
 
 function toRecord(value: unknown): Record<string, unknown> | null {

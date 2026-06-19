@@ -1327,6 +1327,7 @@ function buildPostImportHistoryItem(
       postImport.llmContext ? 'llmContext=available' : 'llmContext=missing',
       '',
       'Use this postImport payload before re-reading package manifests. If recommended verification commands exist, run one successfully before finalize_answer.',
+      'When package.json contains a verify script, treat the recommended verify command as the representative final verification. Use typecheck/lint/test/build as focused checks or fallbacks only when verify is unavailable or cannot run.',
     ].join('\n'),
   };
 }

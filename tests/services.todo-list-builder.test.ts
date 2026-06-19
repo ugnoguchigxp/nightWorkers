@@ -107,7 +107,7 @@ describe('standard implementation TodoList builder', () => {
       '3:implementation:Implement feature',
       '4:test:Add focused tests',
       '5:review:LLM コードレビューを実施する',
-      '6:verification:品質ゲート verify を実施する',
+      '6:verification:品質ゲート verify コマンドを通す',
       '7:knowledge_capture:知識登録を行う',
       '8:completion_report:完了報告を行う',
     ]);
@@ -134,7 +134,7 @@ describe('standard implementation TodoList builder', () => {
       '3:implementation:Implement feature',
       '4:test:Add focused tests',
       '5:review:LLM コードレビューを実施する',
-      '6:verification:品質ゲート verify を実施する',
+      '6:verification:品質ゲート verify コマンドを通す',
       '7:knowledge_capture:知識登録を行う',
       '8:completion_report:完了報告を行う',
     ]);
@@ -158,7 +158,7 @@ describe('standard implementation TodoList builder', () => {
       '3:implementation:Implement feature',
       '4:test:Add focused tests',
       '5:review:LLM コードレビューを実施する',
-      '6:verification:品質ゲート verify を実施する',
+      '6:verification:品質ゲート verify コマンドを通す',
       '7:knowledge_capture:知識登録を行う',
       '8:completion_report:完了報告を行う',
     ]);
@@ -191,7 +191,7 @@ describe('standard implementation TodoList builder', () => {
       '2:context_compile:context_compile を実行する',
       '3:implementation:Implement feature',
       '4:review:LLM コードレビューを実施する',
-      '5:verification:品質ゲート verify を実施する',
+      '5:verification:品質ゲート verify コマンドを通す',
       '6:knowledge_capture:知識登録を行う',
       '7:completion_report:完了報告を行う',
     ]);

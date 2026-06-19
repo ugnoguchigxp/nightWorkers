@@ -31,6 +31,22 @@ describe('Worker Tools Unit Tests', () => {
     expect(safety.classification).toBe('unknown');
   });
 
+  it('allows package verify scripts as build/test commands', () => {
+    for (const command of [
+      'bun run verify',
+      'bun run verify:base',
+      'bun verify:strict',
+      'bun scripts/verify.ts',
+      'pnpm run verify',
+      'pnpm verify:full',
+      'npm run verify',
+      'yarn verify',
+    ]) {
+      const safety = analyzeCommand(command);
+      expect(safety, command).toMatchObject({ allowed: true, classification: 'build_test' });
+    }
+  });
+
   it('stores full command output as an artifact when preview is truncated', async () => {
     const longOutput = 'x'.repeat(21000);
     const result = await runCommandTool({

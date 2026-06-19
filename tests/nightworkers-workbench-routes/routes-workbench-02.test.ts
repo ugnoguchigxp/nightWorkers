@@ -36,16 +36,16 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
     input?.executionMode === 'general_answer'
       ? []
       : lane === 'codex-sdk'
-      ? [
-          { title: '対象変更を確認して実装する', taskType: 'implementation' },
-          { title: '必要最小限の動作確認を行う', taskType: 'focused_verification' },
-        ]
-      : [
-          { title: '仕様と既存構成を確認する', taskType: 'inspection' },
-          { title: '対象画面の実装準備を行う', taskType: 'scaffold', dependsOn: [1] },
-          { title: '対象画面を仕様に沿って実装する', taskType: 'implementation', dependsOn: [2] },
-          { title: '受け入れ条件を検証する', taskType: 'verification', dependsOn: [3] },
-        ]
+        ? [
+            { title: '対象変更を確認して実装する', taskType: 'implementation' },
+            { title: '必要最小限の動作確認を行う', taskType: 'focused_verification' },
+          ]
+        : [
+            { title: '仕様と既存構成を確認する', taskType: 'inspection' },
+            { title: '対象画面の実装準備を行う', taskType: 'scaffold', dependsOn: [1] },
+            { title: '対象画面を仕様に沿って実装する', taskType: 'implementation', dependsOn: [2] },
+            { title: '受け入れ条件を検証する', taskType: 'verification', dependsOn: [3] },
+          ]
   );
   return {
     buildRuntimeLaneInitialTodos,
@@ -198,7 +198,9 @@ describe('NightWorkers workbench routes', () => {
       draftBody.messages.some((message: unknown) => message.messageType === 'markdown_document')
     ).toBe(false);
     expect(
-      draftBody.messages.some((message: unknown) => message.metadataJson?.intent === 'app_blueprint')
+      draftBody.messages.some(
+        (message: unknown) => message.metadataJson?.intent === 'app_blueprint'
+      )
     ).toBe(false);
   });
 

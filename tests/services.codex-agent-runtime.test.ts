@@ -205,7 +205,9 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain('Minimal implementation behavior:');
     expect(prompt).toContain('計画文書で止まらず、必要最小限の確認後に実装へ進む');
     expect(prompt).toContain('詳細な implementation-plan artifact を作らない');
-    expect(prompt).toContain('LLM コードレビュー、品質ゲート verify、closeout は省略しない');
+    expect(prompt).toContain(
+      'LLM コードレビュー、品質ゲート verify コマンド、closeout は省略しない'
+    );
     expect(prompt).toContain('小さいコード変更で仕様 artifact がないことだけを理由に停止しない');
     expect(prompt).toContain(
       'Execution order: specification -> Todo execution -> verification -> closeout.'
@@ -266,7 +268,7 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain('Plan Mode artifact、Specification Workspace、TodoList');
     expect(prompt).not.toContain('Minimal implementation behavior:');
     expect(prompt).not.toContain('nightworkers.todo_list');
-    expect(prompt).not.toContain('LLM コードレビュー、品質ゲート verify、closeout');
+    expect(prompt).not.toContain('LLM コードレビュー、品質ゲート verify コマンド、closeout');
     expect(prompt).not.toContain('Execution order: specification -> Todo execution');
     expect(prompt).not.toContain('implementation-plan artifact を主成果物');
   });
@@ -1273,7 +1275,7 @@ describe('CodexAgentRuntime', () => {
             item: {
               id: 'cmd-verify',
               type: 'command_execution',
-              command: 'bun run verify:base',
+              command: "/bin/zsh -lc 'bun run verify:base'",
               aggregated_output: 'ok',
               exit_code: 0,
               status: 'completed',

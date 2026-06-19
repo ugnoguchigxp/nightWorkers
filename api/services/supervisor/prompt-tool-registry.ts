@@ -228,7 +228,7 @@ export const toolRegistry = {
   run_verification: {
     name: 'run_verification',
     description:
-      '明示的な検証コマンドを実行する。stdout/stderr は既定で全文を返す。出力が大きすぎる場合だけ compressionMode=auto を指定する。',
+      '明示的な検証コマンドを実行する。package.json に verify script がある場合、完了報告前の代表検証は verify command を優先する。stdout/stderr は既定で全文を返す。出力が大きすぎる場合だけ compressionMode=auto を指定する。',
     inputSchema: objectSchema(
       {
         command: { type: 'string' },

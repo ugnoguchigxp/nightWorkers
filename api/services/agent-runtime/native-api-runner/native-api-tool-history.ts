@@ -168,6 +168,7 @@ function modeGuidance(executionMode: ReturnType<typeof readNativeApiExecutionMod
     '- 実装 Todo が running になった後は、plan-only answer や次ステップ列挙だけで停止しないでください。',
     '- 実装、必要な検証、必要な修正、closeout まで進めてください。明確な blocker がある場合は todo_list operation=block/fail を使って説明してください。',
     '- import_project を使った場合は、postImport payload と recommended verification command を優先してください。',
+    '- コード変更後、package.json に verify script が存在する場合は、完了報告前の代表検証として verify command を最優先で実行してください。typecheck / lint / test / build の個別実行は、修正途中の focused check、または verify script が存在しない・実行不能な場合の fallback としてください。',
     '',
   ];
 }

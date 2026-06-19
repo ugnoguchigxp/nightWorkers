@@ -126,6 +126,7 @@ describe('NightWorkers service', () => {
     delete process.env.ACTIVE_LLM_PROVIDER;
     delete process.env.CODEX_ENABLED;
     delete process.env.IMPLEMENTATION_RUNTIME_LANE;
+    delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
     process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-api-runner';
   });
 
@@ -220,7 +221,7 @@ describe('NightWorkers service', () => {
           taskType: 'review',
         }),
         expect.objectContaining({
-          title: '品質ゲート verify を実施する',
+          title: '品質ゲート verify コマンドを通す',
           taskType: 'verification',
         }),
       ])

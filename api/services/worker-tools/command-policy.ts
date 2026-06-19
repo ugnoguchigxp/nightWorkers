@@ -79,6 +79,14 @@ function startsWithCommand(command: string, prefix: string): boolean {
   return command === prefix || command.startsWith(`${prefix} `);
 }
 
+function isPackageVerifyCommand(command: string): boolean {
+  return (
+    /^(?:bun\s+(?:run\s+)?|npm\s+run\s+|pnpm\s+(?:run\s+)?|yarn\s+(?:run\s+)?)(?:verify(?::[\w-]+)?)(?:\s|$)/.test(
+      command
+    ) || /^bun\s+(?:run\s+)?scripts\/verify\.(?:ts|js|mjs)(?:\s|$)/.test(command)
+  );
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -138,7 +146,10 @@ export function analyzeCommand(command: string, blockedCommands?: string[]): Com
 
   if (READ_ONLY_COMMANDS.some((cmd) => startsWithCommand(trimmedCmd, cmd) || baseCmd === cmd)) {
     classification = 'read_only';
-  } else if (BUILD_TEST_COMMANDS.some((cmd) => startsWithCommand(trimmedCmd, cmd))) {
+  } else if (
+    BUILD_TEST_COMMANDS.some((cmd) => startsWithCommand(trimmedCmd, cmd)) ||
+    isPackageVerifyCommand(trimmedCmd)
+  ) {
     classification = 'build_test';
   } else if (isBackgroundCommand(trimmedCmd)) {
     classification = 'background';

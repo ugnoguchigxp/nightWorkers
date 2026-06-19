@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import {
   NativeApiRunner,
@@ -20,10 +23,41 @@ vi.mock('../api/services/worker-tools/dispatcher', () => ({
 }));
 
 describe('NativeApiRunner import_project flow', () => {
+  let restoreSettings: (() => void) | null = null;
+
   beforeEach(() => {
+    restoreSettings?.();
+    restoreSettings = installRuntimeLlmSettings({
+      ACTIVE_LLM_PROVIDER: 'local',
+      providerEndpoints: [
+        {
+          id: 'local-api',
+          name: 'Local API',
+          kind: 'local',
+          enabled: true,
+          baseUrl: 'http://localhost:11434/v1',
+          models: ['api-model'],
+        },
+      ],
+      roleRoutes: [
+        {
+          role: 'implementation',
+          primary: {
+            providerEndpointId: 'local-api',
+            model: 'api-model',
+          },
+          fallbacks: [],
+        },
+      ],
+    });
     vi.clearAllMocks();
     vi.mocked(repo.getTaskRun).mockResolvedValue({ id: 'run-1', status: 'running' } as never);
     vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([] as never);
+  });
+
+  afterEach(() => {
+    restoreSettings?.();
+    restoreSettings = null;
   });
 
   it('exposes import_project without exposing materialize_template', () => {
@@ -50,9 +84,9 @@ describe('NativeApiRunner import_project flow', () => {
               manifest: {
                 status: 'found',
                 path: '/tmp/project/package.json',
-                packageJson: { scripts: { test: 'vitest' } },
+                packageJson: { scripts: { verify: 'bun scripts/verify.ts' } },
                 detectedPackageManager: 'bun',
-                recommendedVerificationCommands: ['bun run test'],
+                recommendedVerificationCommands: ['bun run verify'],
               },
               llmContext: { status: 'found', path: '/tmp/project/LLM_CONTEXT.md' },
             },
@@ -65,7 +99,7 @@ describe('NativeApiRunner import_project flow', () => {
           toolName: 'run_verification',
           startedAt: '2026-06-17T00:00:02.000Z',
           finishedAt: '2026-06-17T00:00:03.000Z',
-          payload: { command: 'bun test', exitCode: 0 },
+          payload: { command: 'bun run verify', exitCode: 0 },
         },
       } as never);
     const store = createFakeStore();
@@ -103,7 +137,7 @@ describe('NativeApiRunner import_project flow', () => {
           {
             id: 'call-verify',
             name: 'run_verification',
-            arguments: { command: 'bun test', reason: 'post-import verification' },
+            arguments: { command: 'bun run verify', reason: 'post-import verification' },
           },
         ],
         usage: usage(),
@@ -328,5 +362,21 @@ function buildContext(overrides: Partial<AgentRunContext> = {}): AgentRunContext
       source: 'fallback',
     },
     ...overrides,
+  };
+}
+
+function installRuntimeLlmSettings(settings: Record<string, unknown>) {
+  const previousPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-llm-settings-'));
+  const settingsPath = path.join(dir, 'llm-settings.json');
+  fs.writeFileSync(settingsPath, JSON.stringify(settings));
+  process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = settingsPath;
+  return () => {
+    if (previousPath === undefined) {
+      delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    } else {
+      process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = previousPath;
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
   };
 }

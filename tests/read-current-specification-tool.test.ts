@@ -701,7 +701,7 @@ describe('todo_list worker tool', () => {
     await repo.createTaskRunTodo({
       runId: run.id,
       seq: 8,
-      title: '品質ゲート verify を実施する',
+      title: '品質ゲート verify コマンドを通す',
       taskType: 'verification',
       procedureId: 'quality_gate_verify',
       status: 'running',

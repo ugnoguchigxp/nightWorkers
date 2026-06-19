@@ -34,6 +34,7 @@ import type {
   AgentRuntimeSink,
   CodexContractWarning,
 } from './types';
+import { normalizeVerificationCommand, verificationCommandsMatch } from './verification-command';
 
 export type { CodexThreadFactory } from './codex-sdk/codex-sdk-client';
 export { buildCodexRuntimePrompt } from './codex-sdk/codex-sdk-runtime-prompt';
@@ -665,31 +666,6 @@ function readExitCode(payload: Record<string, unknown>): number | null {
   if (typeof payload.exitCode === 'number') return payload.exitCode;
   if (typeof payload.exit_code === 'number') return payload.exit_code;
   return null;
-}
-
-function normalizeVerificationCommand(command: string | null): string | null {
-  if (!command) return null;
-  const normalized = command.trim().replace(/\s+/g, ' ');
-  return normalized.length > 0 ? normalized : null;
-}
-
-function verificationCommandsMatch(actual: string | null, recommended: string | null): boolean {
-  if (!actual || !recommended) return false;
-  if (actual === recommended) return true;
-  return verificationCommandEquivalentKey(actual) === verificationCommandEquivalentKey(recommended);
-}
-
-function verificationCommandEquivalentKey(command: string): string {
-  const parts = command.split(' ');
-  const runner = parts[0];
-  if (
-    (runner === 'bun' || runner === 'pnpm' || runner === 'yarn') &&
-    parts[1] === 'run' &&
-    parts[2]
-  ) {
-    return [runner, ...parts.slice(2)].join(' ');
-  }
-  return command;
 }
 
 function readChangedFiles(payload: Record<string, unknown>): string[] {

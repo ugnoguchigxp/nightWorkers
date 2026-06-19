@@ -6,7 +6,9 @@
 
 ## Required Behavior
 
-- 既存の repo 検証コマンドを優先する。
+- package.json に verify script がある場合は、完了報告前の代表検証として verify command を最優先で実行する。
+- typecheck / lint / test / build の個別実行は、修正途中の focused check、または verify script が存在しない・実行不能な場合の fallback とする。
+- verify を実行しなかった場合は、理由と代替検証を証拠として残す。
 - 検証できない場合は、できなかった理由を証拠として残す。
 - command result、検証範囲、未検証リスクを、次 Role の working context に渡せる短い証拠として残す。
 

@@ -160,7 +160,8 @@ const workerToolDefinitions: NativeApiToolRegistration[] = [
     workerToolName: 'run_verification',
     definition: {
       name: 'run_verification',
-      description: 'Run a verification command such as typecheck or tests.',
+      description:
+        'Run a verification command. If package.json defines a verify script, prefer that verify command as the representative final verification before completion; use typecheck/lint/test/build as focused checks or fallbacks.',
       inputSchema: objectSchema(
         {
           command: { type: 'string' },
