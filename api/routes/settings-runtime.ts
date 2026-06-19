@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from '@hono/zod-openapi';
+import { ValidationError } from '../lib/errors';
 import { getRuntimePaths } from '../runtime/paths';
 import { readCodexModelOptions } from '../services/codex-global-config/status';
+import { migrateStructuredLlmEndpointIds } from '../services/structured-llm/endpoint-id-migration';
 
 const RUNTIME_SETTINGS_DIR = getRuntimePaths().settingsDir;
 const RUNTIME_SETTINGS_PATH =
@@ -71,6 +73,8 @@ const llmRoleRouteSchema = z.object({
 });
 
 export const llmSettingsSchema = z.object({
+  settingsRevision: z.string().optional(),
+  endpointIdSchemaVersion: z.number().int().positive().optional(),
   ACTIVE_LLM_PROVIDER: z.string().default('azure').openapi({ example: 'azure' }),
   OPENAI_ENABLED: z.boolean().default(true).openapi({ example: true }),
   AZURE_OPENAI_API_KEY: z.string().default('').openapi({ example: 'your-azure-key' }),
@@ -164,22 +168,33 @@ const getStructuredProviderSetting = (value: unknown): 'azure' | 'openai' | 'bed
   return 'azure';
 };
 
-const readRuntimeSettings = (): Partial<RawLlmSettings> => {
+const readRuntimeSettings = (): {
+  settings: Partial<RawLlmSettings>;
+  exists: boolean;
+  loaded: boolean;
+} => {
+  const exists = fs.existsSync(RUNTIME_SETTINGS_PATH);
   try {
-    if (!fs.existsSync(RUNTIME_SETTINGS_PATH)) return {};
+    if (!exists) return { settings: {}, exists: false, loaded: false };
     const text = fs.readFileSync(RUNTIME_SETTINGS_PATH, 'utf-8');
-    return JSON.parse(text) as Partial<RawLlmSettings>;
+    return {
+      settings: JSON.parse(text) as Partial<RawLlmSettings>,
+      exists: true,
+      loaded: true,
+    };
   } catch {
-    return {};
+    return { settings: {}, exists, loaded: false };
   }
 };
 
 const writeRuntimeSettings = (settings: LlmSettings) => {
   fs.mkdirSync(path.dirname(RUNTIME_SETTINGS_PATH), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(RUNTIME_SETTINGS_PATH, `${JSON.stringify(settings, null, 2)}\n`, {
+  const tmpPath = `${RUNTIME_SETTINGS_PATH}.tmp`;
+  fs.writeFileSync(tmpPath, `${JSON.stringify(settings, null, 2)}\n`, {
     encoding: 'utf-8',
     mode: 0o600,
   });
+  fs.renameSync(tmpPath, RUNTIME_SETTINGS_PATH);
   try {
     fs.chmodSync(path.dirname(RUNTIME_SETTINGS_PATH), 0o700);
     fs.chmodSync(RUNTIME_SETTINGS_PATH, 0o600);
@@ -189,7 +204,8 @@ const writeRuntimeSettings = (settings: LlmSettings) => {
 };
 
 export const getCurrentSettings = (): LlmSettings => {
-  const persisted = readRuntimeSettings();
+  const persistedRead = readRuntimeSettings();
+  const persisted = persistedRead.settings;
   const rawActiveProvider =
     persisted.ACTIVE_LLM_PROVIDER || process.env.ACTIVE_LLM_PROVIDER || 'azure';
   const codexEnabled =
@@ -201,6 +217,12 @@ export const getCurrentSettings = (): LlmSettings => {
   );
   const legacyCodexRuntimeLane = rawActiveProvider === 'codex' && codexEnabled ? 'codex-sdk' : '';
   const legacySettings: Omit<LlmSettings, 'providerEndpoints' | 'roleRoutes'> = {
+    settingsRevision:
+      typeof persisted.settingsRevision === 'string' ? persisted.settingsRevision : undefined,
+    endpointIdSchemaVersion:
+      typeof persisted.endpointIdSchemaVersion === 'number'
+        ? persisted.endpointIdSchemaVersion
+        : undefined,
     ACTIVE_LLM_PROVIDER: getStructuredProviderSetting(rawActiveProvider),
     OPENAI_ENABLED:
       typeof persisted.OPENAI_ENABLED === 'boolean'
@@ -244,11 +266,16 @@ export const getCurrentSettings = (): LlmSettings => {
     providerEndpoints,
     legacySettings.ACTIVE_LLM_PROVIDER
   );
-  return {
+  const normalized = {
     ...legacySettings,
     providerEndpoints,
     roleRoutes,
   };
+  const migration = migrateStructuredLlmEndpointIds(normalized);
+  if (migration.changed && persistedRead.exists && persistedRead.loaded) {
+    writeRuntimeSettings(migration.settings);
+  }
+  return migration.settings;
 };
 
 const applySettingsToProcessEnv = (settings: LlmSettings) => {
@@ -302,7 +329,8 @@ function normalizeRawLlmSettings(input: RawLlmSettings): LlmSettings {
     IMPLEMENTATION_RUNTIME_LANE: getRuntimeLaneSetting(rawLegacy.IMPLEMENTATION_RUNTIME_LANE),
   };
   const providerEndpoints = normalizeProviderEndpoints(rawProviderEndpoints, legacySettings);
-  return {
+  validateExplicitRoleRoutesOrThrow(rawRoleRoutes, providerEndpoints);
+  const normalized = {
     ...legacySettings,
     providerEndpoints,
     roleRoutes: normalizeRoleRoutes(
@@ -311,6 +339,7 @@ function normalizeRawLlmSettings(input: RawLlmSettings): LlmSettings {
       legacySettings.ACTIVE_LLM_PROVIDER
     ),
   };
+  return migrateStructuredLlmEndpointIds(normalized).settings;
 }
 
 function normalizeProviderEndpoints(
@@ -492,6 +521,73 @@ function normalizeModelDisplayNames(
       .map(([model, label]) => [model.trim(), label.trim()])
       .filter(([model, label]) => modelSet.has(model) && Boolean(label))
   );
+}
+
+function validateExplicitRoleRoutesOrThrow(
+  input: unknown,
+  providerEndpoints: LlmProviderEndpoint[]
+) {
+  const parsed = z.array(llmRoleRouteSchema).safeParse(input);
+  if (!parsed.success) return;
+  const endpointsById = new Map(providerEndpoints.map((endpoint) => [endpoint.id, endpoint]));
+  const issues: Array<Record<string, unknown>> = [];
+  for (const route of parsed.data) {
+    const normalized = normalizeRoleRoute(route, {
+      providerEndpointId: '',
+      model: '',
+      thinkingDepth: '',
+    });
+    validateRouteTarget({
+      issues,
+      endpointsById,
+      role: normalized.role,
+      source: 'primary',
+      target: normalized.primary,
+    });
+    normalized.fallbacks.forEach((target, fallbackIndex) => {
+      validateRouteTarget({
+        issues,
+        endpointsById,
+        role: normalized.role,
+        source: 'fallback',
+        target,
+        fallbackIndex,
+      });
+    });
+  }
+  if (issues.length > 0) {
+    throw new ValidationError('Invalid Role Routing target', { issues });
+  }
+}
+
+function validateRouteTarget(input: {
+  issues: Array<Record<string, unknown>>;
+  endpointsById: Map<string, LlmProviderEndpoint>;
+  role: LlmRole;
+  source: 'primary' | 'fallback';
+  target: LlmModelTarget;
+  fallbackIndex?: number;
+}) {
+  if (!input.target.providerEndpointId || !input.target.model) return;
+  const endpoint = input.endpointsById.get(input.target.providerEndpointId);
+  const baseIssue = {
+    role: input.role,
+    source: input.source,
+    providerEndpointId: input.target.providerEndpointId,
+    model: input.target.model,
+    ...(input.fallbackIndex === undefined ? {} : { fallbackIndex: input.fallbackIndex }),
+  };
+  if (!endpoint) {
+    input.issues.push({ ...baseIssue, reason: 'missing_endpoint' });
+    return;
+  }
+  if (!endpoint.enabled) {
+    input.issues.push({ ...baseIssue, reason: 'disabled_endpoint' });
+    return;
+  }
+  if (!endpoint.models.includes(input.target.model)) {
+    input.issues.push({ ...baseIssue, reason: 'missing_model' });
+  }
 }
 
 applySettingsToProcessEnv(getCurrentSettings());

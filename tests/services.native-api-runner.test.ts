@@ -459,6 +459,95 @@ describe('NativeApiRunner', () => {
     }
   });
 
+  it('blocks provider routes that are outside the run route snapshot', async () => {
+    const restoreSettings = installRuntimeLlmSettings({
+      ACTIVE_LLM_PROVIDER: 'azure',
+      providerEndpoints: [
+        {
+          id: 'local-qwen',
+          name: 'Local Qwen',
+          kind: 'local',
+          enabled: true,
+          baseUrl: 'http://localhost:11434/v1',
+          models: ['qwen3-coder'],
+        },
+      ],
+      roleRoutes: [
+        {
+          role: 'implementation',
+          primary: {
+            providerEndpointId: 'local-qwen',
+            model: 'qwen3-coder',
+          },
+          fallbacks: [],
+        },
+      ],
+    });
+    try {
+      const store = createFakeStore();
+      const providerTurn = createProvider([
+        {
+          type: 'supported',
+          content: 'should not run',
+          toolCalls: [],
+          usage: usage(),
+          model: 'qwen3-coder',
+        },
+      ]);
+      const events: AgentRuntimeEvent[] = [];
+      const runner = new NativeApiRunner({
+        store: store.instance,
+        startupController: createNoopStartup(),
+        providerTurn,
+        usageRecorder: vi.fn(async () => undefined),
+      });
+
+      const result = await runner.run(
+        buildContext({
+          contextSnapshot: {
+            compiledPrompt: 'implement',
+            source: 'test',
+            effectiveLlmRouting: {
+              roles: {
+                implementation: {
+                  primary: {
+                    providerEndpointId: 'other-local',
+                    providerId: 'openai',
+                    model: 'qwen3-coder',
+                    routeKey: 'other-local::qwen3-coder::openai',
+                  },
+                  fallbacks: [],
+                  candidates: [],
+                },
+              },
+            },
+          },
+        }),
+        createSink(events)
+      );
+
+      expect(result).toMatchObject({
+        terminalState: 'needs_human',
+        stoppedBy: 'llm_error',
+      });
+      expect(result.finalReport).toContain('outside the run snapshot');
+      expect(providerTurn).not.toHaveBeenCalled();
+      expect(store.turns).toHaveLength(0);
+      expect(events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'runtime_error',
+            payload: expect.objectContaining({
+              reason: 'route_candidate_outside_snapshot',
+            }),
+          }),
+        ])
+      );
+    } finally {
+      restoreSettings();
+    }
+  });
+
   it('runs baseline context compaction before provider call without waiting for new_context', async () => {
     const restoreSettings = installRuntimeLlmSettings({
       ACTIVE_LLM_PROVIDER: 'azure',

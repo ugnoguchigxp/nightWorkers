@@ -8,6 +8,7 @@ import {
   readStructuredLlmProviderSettings,
   resolveStructuredLlmModelCapability,
 } from '../../api/services/structured-llm';
+import { migrateStructuredLlmEndpointIds } from '../../api/services/structured-llm/endpoint-id-migration';
 import { buildNormalizedSupervisorLlmRequestCandidates } from '../../api/services/structured-llm/request';
 import { installStructuredLlmEnvHooks } from './structured-llm-test-env';
 
@@ -129,6 +130,137 @@ describe('Supervisor LLM schema-first parsing', () => {
     });
   });
 
+  it('rejects role routes whose configured model is not present on the endpoint', () => {
+    const requests = buildNormalizedSupervisorLlmRequestCandidates({
+      systemPrompt: 'system text',
+      userPrompt: 'user text',
+      label: 'native_api_runner',
+      role: 'implementation',
+      routePolicy: {
+        disallowedProviderIds: ['codex'],
+      },
+      settings: {
+        ACTIVE_LLM_PROVIDER: 'azure',
+        providerEndpoints: [
+          {
+            id: 'local-qwen',
+            name: 'Local Qwen',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['qwen3-coder'],
+          },
+          {
+            id: 'local-gemma',
+            name: 'Local Gemma',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11435/v1',
+            models: ['gemma-4-12b-it-4bit'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'local-qwen',
+              model: 'missing-model',
+            },
+            fallbacks: [],
+          },
+        ],
+      },
+    });
+
+    expect(requests).toEqual([]);
+  });
+
+  it('does not fall back to ACTIVE_LLM_PROVIDER when a configured role route is invalid', () => {
+    const requests = buildNormalizedSupervisorLlmRequestCandidates({
+      systemPrompt: 'system text',
+      userPrompt: 'user text',
+      label: 'schema_first_review',
+      role: 'review',
+      settings: {
+        ACTIVE_LLM_PROVIDER: 'azure',
+        AZURE_OPENAI_ENDPOINT: 'https://example.openai.azure.com',
+        AZURE_OPENAI_DEPLOYMENT_NAME: 'gpt-5-mini',
+        AZURE_OPENAI_API_VERSION: '2024-05-01-preview',
+        providerEndpoints: [
+          {
+            id: 'local-review',
+            name: 'Local Review',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['qwen3-coder'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'review',
+            primary: {
+              providerEndpointId: 'local-review',
+              model: 'missing-review-model',
+            },
+            fallbacks: [],
+          },
+        ],
+      },
+    });
+
+    expect(requests).toEqual([]);
+  });
+
+  it('migrates legacy endpoint ids and rewrites role routes without exposing secrets', () => {
+    const result = migrateStructuredLlmEndpointIds({
+      providerEndpoints: [
+        {
+          id: 'bedrock-default',
+          name: 'Qwen 3.6 27B(1)',
+          kind: 'local',
+          baseUrl: 'http://192.168.0.61:50043/v1',
+          models: ['Qwen 3.6 27B'],
+        },
+        {
+          id: 'endpoint-1781587673584',
+          name: 'Qwen 3.6 27B(2)',
+          kind: 'local',
+          baseUrl: 'http://192.168.0.61:50043/v1',
+          models: ['Qwen 3.6 27B'],
+        },
+      ],
+      roleRoutes: [
+        {
+          role: 'implementation',
+          primary: {
+            providerEndpointId: 'bedrock-default',
+            model: 'Qwen 3.6 27B',
+          },
+          fallbacks: [
+            {
+              providerEndpointId: 'endpoint-1781587673584',
+              model: 'Qwen 3.6 27B',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.changed).toBe(true);
+    expect(result.mappings).toHaveLength(2);
+    expect(result.settings.providerEndpoints?.map((endpoint) => endpoint.id)).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^ep_[0-9a-f]{16}$/)])
+    );
+    expect(result.settings.roleRoutes?.[0]?.primary.providerEndpointId).toBe(
+      result.mappings[0].newId
+    );
+    expect(result.settings.roleRoutes?.[0]?.fallbacks[0]?.providerEndpointId).toBe(
+      result.mappings[1].newId
+    );
+    expect(JSON.stringify(result.mappings)).not.toContain('api');
+  });
+
   it('does not synthesize enabled endpoints when a native/API route policy is explicit-only', () => {
     const requests = buildNormalizedSupervisorLlmRequestCandidates({
       systemPrompt: 'system text',
@@ -181,7 +313,6 @@ describe('Supervisor LLM schema-first parsing', () => {
       role: 'implementation',
       routePolicy: {
         disallowedProviderIds: ['codex'],
-        synthesizeFallbacksFromEnabledEndpoints: true,
       },
       settings: {
         ACTIVE_LLM_PROVIDER: 'azure',
@@ -240,7 +371,6 @@ describe('Supervisor LLM schema-first parsing', () => {
       role: 'implementation',
       routePolicy: {
         disallowedProviderIds: ['codex'],
-        synthesizeFallbacksFromEnabledEndpoints: true,
         skipUnreachableEndpoints: true,
         endpointReadiness: {
           'local-qwen': {
@@ -307,7 +437,6 @@ describe('Supervisor LLM schema-first parsing', () => {
       role: 'implementation',
       routePolicy: {
         disallowedProviderIds: ['codex'],
-        synthesizeFallbacksFromEnabledEndpoints: true,
         skipUnreachableEndpoints: true,
         endpointReadiness: {
           'local-qwen': {
@@ -1088,7 +1217,7 @@ describe('Supervisor LLM schema-first parsing', () => {
     ).toBe(true);
   });
 
-  it('uses a synthesized non-Codex fallback when the native/API primary fails at runtime', async () => {
+  it('does not synthesize non-Codex fallback when the native/API primary fails at runtime', async () => {
     delete process.env.OPENAI_API_KEY;
     fs.writeFileSync(
       process.env.NIGHTWORKERS_LLM_SETTINGS_PATH!,
@@ -1144,10 +1273,7 @@ describe('Supervisor LLM schema-first parsing', () => {
             {
               message: {
                 content: JSON.stringify({
-                  toolCall: {
-                    name: 'finalize_answer',
-                    arguments: { message: 'synthesized fallback ok' },
-                  },
+                  toolCall: { name: 'finalize_answer', arguments: { message: 'unexpected' } },
                 }),
               },
             },
@@ -1163,27 +1289,21 @@ describe('Supervisor LLM schema-first parsing', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
-    const decision = await callSupervisorLLM('system', 'user', {
-      round: 2,
-      schemaFirst: true,
-      role: 'implementation',
-      routePolicy: {
-        disallowedProviderIds: ['codex'],
-        synthesizeFallbacksFromEnabledEndpoints: true,
-      },
-      emitEvent: (event) => events.push({ type: event.type, data: event.data }),
-    });
+    await expect(
+      callSupervisorLLM('system', 'user', {
+        round: 2,
+        schemaFirst: true,
+        role: 'implementation',
+        routePolicy: {
+          disallowedProviderIds: ['codex'],
+        },
+        emitEvent: (event) => events.push({ type: event.type, data: event.data }),
+      })
+    ).rejects.toThrow();
 
-    expect(decision).toMatchObject({
-      toolCall: {
-        name: 'finalize_answer',
-        arguments: { message: 'synthesized fallback ok' },
-      },
-    });
     expect(urls).toEqual([
       'http://localhost:11434/v1/chat/completions',
       'http://localhost:11434/v1/chat/completions',
-      'http://localhost:11435/v1/chat/completions',
     ]);
     expect(
       events.some(
@@ -1191,7 +1311,7 @@ describe('Supervisor LLM schema-first parsing', () => {
           event.type === 'model.request_started' &&
           event.data?.providerEndpointId === 'local-synthesized'
       )
-    ).toBe(true);
+    ).toBe(false);
     expect(
       events.some(
         (event) =>

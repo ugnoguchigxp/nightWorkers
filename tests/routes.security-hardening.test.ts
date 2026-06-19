@@ -14,12 +14,74 @@ async function importSettingsRoute() {
   return import('../api/routes/settings');
 }
 
+async function importSettingsRuntimeWithPath(settingsPath: string) {
+  vi.resetModules();
+  vi.stubEnv('NIGHTWORKERS_LLM_SETTINGS_PATH', settingsPath);
+  return import('../api/routes/settings-runtime');
+}
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.resetModules();
 });
 
 describe('LLM settings secret hardening', () => {
+  it('persists endpoint id migration when an existing settings file is loaded', async () => {
+    const settingsPath = isolatedSettingsPath();
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        ACTIVE_LLM_PROVIDER: 'openai',
+        OPENAI_ENABLED: true,
+        OPENAI_API_KEY: 'existing-openai-secret',
+        providerEndpoints: [
+          {
+            id: 'bedrock-default',
+            name: 'Qwen Local',
+            kind: 'local',
+            enabled: true,
+            apiKey: '',
+            baseUrl: 'http://localhost:11434/v1',
+            endpoint: '',
+            apiVersion: '',
+            region: '',
+            models: ['qwen3-coder'],
+            modelDisplayNames: {},
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'bedrock-default',
+              model: 'qwen3-coder',
+            },
+            fallbacks: [],
+          },
+        ],
+      })
+    );
+    const { getCurrentSettings } = await importSettingsRuntimeWithPath(settingsPath);
+
+    const settings = getCurrentSettings();
+    const persisted = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as {
+      OPENAI_API_KEY?: string;
+      providerEndpoints: Array<{ id: string }>;
+      roleRoutes: Array<{ primary: { providerEndpointId: string } }>;
+    };
+
+    const migratedRouteEndpointId = persisted.roleRoutes[0]?.primary.providerEndpointId;
+    expect(migratedRouteEndpointId).toMatch(/^ep_[0-9a-f]{16}$/);
+    expect(
+      persisted.providerEndpoints.some((endpoint) => endpoint.id === migratedRouteEndpointId)
+    ).toBe(true);
+    expect(
+      settings.providerEndpoints.some((endpoint) => endpoint.id === migratedRouteEndpointId)
+    ).toBe(true);
+    expect(persisted.OPENAI_API_KEY).toBe('existing-openai-secret');
+  });
+
   it('masks configured secrets before returning settings to clients', async () => {
     const { maskLlmSettings } = await importSettingsRoute();
 

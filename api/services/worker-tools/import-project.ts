@@ -111,6 +111,8 @@ export async function importProjectTool(
         ? await inspectAndInitializeImportedProject({
             targetPath: result.payload.targetPath,
             initialize: input.initialize,
+            removeLicenseFile: true,
+            createBaselineCommit: true,
           })
         : null;
     return {
@@ -140,6 +142,8 @@ export async function importProjectTool(
       ? await inspectAndInitializeImportedProject({
           targetPath: result.payload.targetPath,
           initialize: input.initialize,
+          removeLicenseFile: false,
+          createBaselineCommit: false,
         })
       : null;
   return {

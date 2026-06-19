@@ -101,7 +101,6 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
             ? {
                 structuredLlmRoutePolicy: {
                   disallowedProviderIds: ['codex'],
-                  synthesizeFallbacksFromEnabledEndpoints: true,
                 },
               }
             : {}),
@@ -580,7 +579,6 @@ describe('NightWorkers service', () => {
             runtimeLane: 'native-api-runner',
             structuredLlmRoutePolicy: {
               disallowedProviderIds: ['codex'],
-              synthesizeFallbacksFromEnabledEndpoints: true,
             },
           }),
         }),

@@ -35,14 +35,19 @@ import {
 } from '../../services/conversation-context/flags';
 import { projectConversationStateCardForRuntime } from '../../services/conversation-context/state-card-projection';
 import { getSessionQueueMaxConcurrencyFromEnv } from '../../services/runtime-env';
+import { providerAdapterKey } from '../../services/structured-llm/request';
 import {
   type ResolvedStructuredLlmRoute,
   resolveStructuredLlmRoleRoute,
+  resolveStructuredLlmRoleRouteCandidates,
+  structuredLlmRouteKey,
 } from '../../services/structured-llm/role-routing';
 import { normalizeStructuredLlmModelTarget } from '../../services/structured-llm/selection';
 import {
   readStructuredLlmProviderSettings,
   type StructuredLlmModelTarget,
+  type StructuredLlmProviderSettings,
+  type StructuredLlmRole,
 } from '../../services/structured-llm/settings';
 import { digestText } from '../../services/text-digest';
 import type { RuntimePromptSnapshot } from '../../services/todo-context';
@@ -466,10 +471,66 @@ function summarizeResolvedRoute(route: ResolvedStructuredLlmRoute) {
     role: route.role,
     providerEndpointId: route.providerEndpointId,
     providerId: route.providerId,
+    providerAdapter: providerAdapterKey(route.providerId),
+    endpointName: route.endpoint.name,
+    endpointKind: route.endpoint.kind,
     model: route.model,
     thinkingDepth: route.thinkingDepth || null,
     source: route.source,
+    routeKey: structuredLlmRouteKey(route),
     diagnostics: route.diagnostics,
+  };
+}
+
+const STRUCTURED_LLM_ROLES: StructuredLlmRole[] = [
+  'plan',
+  'implementation',
+  'test',
+  'review',
+  'quality_gate',
+  'completion',
+];
+
+function buildEffectiveLlmRoutingSnapshot(input: {
+  activeRole: StructuredLlmRole;
+  executionMode: NativeApiExecutionMode;
+  settings: StructuredLlmProviderSettings;
+  activeRoute: ResolvedStructuredLlmRoute | null;
+  override: StructuredLlmModelTarget | null;
+}) {
+  const roles = Object.fromEntries(
+    STRUCTURED_LLM_ROLES.map((role) => {
+      const candidates = resolveStructuredLlmRoleRouteCandidates({
+        role,
+        settings: input.settings,
+        override: role === input.activeRole ? input.override : null,
+      }).map(summarizeResolvedRoute);
+      return [
+        role,
+        {
+          primary: candidates.find((candidate) => candidate.source === 'primary') ?? null,
+          fallbacks: candidates.filter((candidate) => candidate.source === 'fallback'),
+          override: candidates.find((candidate) => candidate.source === 'override') ?? null,
+          candidates,
+        },
+      ];
+    })
+  );
+  return {
+    activeRole: input.activeRole,
+    executionMode: input.executionMode,
+    settingsRevision: input.settings.settingsRevision ?? null,
+    endpointIdSchemaVersion: input.settings.endpointIdSchemaVersion ?? null,
+    routePolicyDigest: 'native-api:no-codex:explicit-only',
+    active: input.activeRoute ? summarizeResolvedRoute(input.activeRoute) : null,
+    implementation:
+      input.activeRoute?.role === 'implementation'
+        ? summarizeResolvedRoute(input.activeRoute)
+        : null,
+    plan: input.activeRoute?.role === 'plan' ? summarizeResolvedRoute(input.activeRoute) : null,
+    review: input.activeRoute?.role === 'review' ? summarizeResolvedRoute(input.activeRoute) : null,
+    roles,
+    override: input.override,
   };
 }
 
@@ -666,9 +727,10 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
     codexEnabled: settings.CODEX_ENABLED,
     ...readRuntimeLaneConfigFromEnv(),
   });
+  const structuredLlmSettings = readStructuredLlmProviderSettings();
   const runtimeLlmRoute = resolveStructuredLlmRoleRoute({
     role: runtimeRole,
-    settings: readStructuredLlmProviderSettings(),
+    settings: structuredLlmSettings,
     override: llmRouteOverride,
   });
   const runtimeLaneResolution = resolveRuntimeLaneForRoleRoute(
@@ -677,19 +739,13 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
     executionMode
   );
   const runtimeLaneDefinition = resolveRuntimeLaneDefinition(runtimeLaneResolution.lane);
-  const effectiveLlmRouting = {
+  const effectiveLlmRouting = buildEffectiveLlmRoutingSnapshot({
     activeRole: runtimeRole,
     executionMode,
-    implementation:
-      runtimeRole === 'implementation' && runtimeLlmRoute
-        ? summarizeResolvedRoute(runtimeLlmRoute)
-        : null,
-    plan:
-      runtimeRole === 'plan' && runtimeLlmRoute ? summarizeResolvedRoute(runtimeLlmRoute) : null,
-    review:
-      runtimeRole === 'review' && runtimeLlmRoute ? summarizeResolvedRoute(runtimeLlmRoute) : null,
+    settings: structuredLlmSettings,
+    activeRoute: runtimeLlmRoute,
     override: llmRouteOverride,
-  };
+  });
   const run = await repo.createTaskRun({
     taskId,
     repositoryId: task.repositoryId,

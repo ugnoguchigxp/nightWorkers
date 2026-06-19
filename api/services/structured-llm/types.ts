@@ -5,7 +5,6 @@ export type StructuredLlmRouteSource = 'override' | 'primary' | 'fallback';
 
 export type StructuredLlmRoutePolicy = {
   disallowedProviderIds?: SupervisorProviderId[];
-  synthesizeFallbacksFromEnabledEndpoints?: boolean;
   skipUnreachableEndpoints?: boolean;
   endpointReadiness?: Record<string, StructuredLlmEndpointReadiness | undefined>;
 };

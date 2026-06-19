@@ -109,6 +109,7 @@ describe('Worker Tools Unit Tests', () => {
         path.join(templateRepo, 'LLM_CONTEXT.md'),
         '# LLM Context\n\nUse src/index.ts as the implementation entrypoint.\n'
       );
+      await fs.writeFile(path.join(templateRepo, 'LICENSE.md'), 'MIT License\n');
       await fs.mkdir(path.join(templateRepo, 'src'));
       await fs.writeFile(path.join(templateRepo, 'src/index.ts'), 'export const ok = true;\n');
       await fs.mkdir(path.join(templateRepo, 'node_modules'));
@@ -173,6 +174,7 @@ describe('Worker Tools Unit Tests', () => {
         path.join(templateRepo, 'LLM_CONTEXT.md'),
         '# LLM Context\n\nUse src/index.ts as the implementation entrypoint.\n'
       );
+      await fs.writeFile(path.join(templateRepo, 'LICENSE.md'), 'MIT License\n');
       await fs.mkdir(path.join(templateRepo, 'src'));
       await fs.writeFile(path.join(templateRepo, 'src/index.ts'), 'export const ok = true;\n');
       await execFileAsync('git', ['init'], { cwd: templateRepo });
@@ -266,6 +268,24 @@ describe('Worker Tools Unit Tests', () => {
         gitDirPath: path.join(targetDir, '.git'),
         removedExistingGitDir: true,
         exitCode: 0,
+        licenseRemoval: {
+          status: 'removed',
+          path: path.join(targetDir, 'LICENSE.md'),
+        },
+        baselineCommit: {
+          status: 'passed',
+          command: [
+            'git',
+            '-c',
+            'user.name=NightWorkers',
+            '-c',
+            'user.email=nightworkers@example.invalid',
+            'commit',
+            '-m',
+            'Initialize project from template',
+          ],
+          exitCode: 0,
+        },
       });
       expect(result.payload?.postImport?.initialization).toMatchObject({
         status: 'passed',
@@ -280,9 +300,13 @@ describe('Worker Tools Unit Tests', () => {
         cwd: targetDir,
       });
       expect(workTree.stdout.trim()).toBe('true');
-      await expect(
-        execFileAsync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: targetDir })
-      ).rejects.toBeTruthy();
+      const head = await execFileAsync('git', ['rev-parse', '--verify', 'HEAD'], {
+        cwd: targetDir,
+      });
+      expect(head.stdout.trim()).toMatch(/^[0-9a-f]{40}$/);
+      const status = await execFileAsync('git', ['status', '--porcelain'], { cwd: targetDir });
+      expect(status.stdout.trim()).toBe('');
+      await expect(fs.stat(path.join(targetDir, 'LICENSE.md'))).rejects.toThrow();
       const remotes = await execFileAsync('git', ['remote', '-v'], { cwd: targetDir });
       expect(remotes.stdout.trim()).toBe('');
     } finally {

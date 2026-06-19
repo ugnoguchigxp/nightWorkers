@@ -161,6 +161,27 @@ export class NativeApiRunner {
           routeOverride,
           routePolicy,
         });
+        const routeSnapshotGuard = validateNativeApiRouteSnapshot(providerRequests, context);
+        if (!routeSnapshotGuard.ok) {
+          await sink.emit({
+            type: 'runtime_error',
+            message: '[NativeApiRunner] provider route candidate was outside the run snapshot.',
+            payload: {
+              runtime: 'native_api_runner',
+              executionMode,
+              reason: 'route_candidate_outside_snapshot',
+              route: routeSnapshotGuard.route,
+            },
+          });
+          return {
+            terminalState: 'needs_human',
+            summary: 'Native API route candidate was outside the run snapshot.',
+            finalReport:
+              'Native API route candidate was outside the run snapshot. Provider call was blocked before execution.',
+            stoppedBy: 'llm_error',
+            riskLevel: 'high',
+          };
+        }
         if (providerRequests.length === 0) {
           await sink.emit({
             type: 'runtime_error',
@@ -415,6 +436,27 @@ export class NativeApiRunner {
               routeOverride,
               routePolicy,
             });
+            const rebuiltRouteSnapshotGuard = validateNativeApiRouteSnapshot(
+              providerRequests,
+              context
+            );
+            if (!rebuiltRouteSnapshotGuard.ok) {
+              const message =
+                'Context compaction rebuilt a provider route candidate outside the run snapshot.';
+              await sink.emit({
+                type: 'runtime_error',
+                message: `[NativeApiRunner] ${message}`,
+                payload: {
+                  runtime: 'native_api_runner',
+                  executionMode,
+                  reason: 'route_candidate_outside_snapshot',
+                  route: rebuiltRouteSnapshotGuard.route,
+                },
+              });
+              lastProviderFailure = { message, providerDebug };
+              providerResult = null;
+              break;
+            }
             providerRequest = providerRequests[attemptIndex];
             if (!providerRequest) {
               const message =
@@ -1030,6 +1072,65 @@ function summarizeNativeApiRoute(request: NativeApiProviderRequest) {
     model: request.options.normalizedRequest.modelOrDeployment ?? null,
     thinkingDepth: request.options.normalizedRequest.thinkingDepth ?? null,
   };
+}
+
+function validateNativeApiRouteSnapshot(
+  requests: NativeApiProviderRequest[],
+  context: AgentRunContext
+): { ok: true } | { ok: false; route: ReturnType<typeof summarizeNativeApiRoute> } {
+  const allowedRouteKeys = readAllowedRouteKeysFromSnapshot(context);
+  if (!allowedRouteKeys || requests.length === 0) return { ok: true };
+  for (const request of requests) {
+    const routeKey = nativeApiRequestRouteKey(request);
+    if (!allowedRouteKeys.has(routeKey)) {
+      return { ok: false, route: summarizeNativeApiRoute(request) };
+    }
+  }
+  return { ok: true };
+}
+
+function readAllowedRouteKeysFromSnapshot(context: AgentRunContext): Set<string> | null {
+  const snapshot = context.contextSnapshot as Record<string, unknown> | undefined;
+  const effectiveLlmRouting = snapshot?.effectiveLlmRouting as Record<string, unknown> | undefined;
+  const roles = effectiveLlmRouting?.roles as Record<string, unknown> | undefined;
+  if (!roles) return null;
+  const routeKeys = new Set<string>();
+  for (const rolePlan of Object.values(roles)) {
+    if (!rolePlan || typeof rolePlan !== 'object') continue;
+    const record = rolePlan as Record<string, unknown>;
+    collectSnapshotRouteKey(routeKeys, record.primary);
+    collectSnapshotRouteKey(routeKeys, record.override);
+    const fallbacks = Array.isArray(record.fallbacks) ? record.fallbacks : [];
+    for (const fallback of fallbacks) collectSnapshotRouteKey(routeKeys, fallback);
+    const candidates = Array.isArray(record.candidates) ? record.candidates : [];
+    for (const candidate of candidates) collectSnapshotRouteKey(routeKeys, candidate);
+  }
+  return routeKeys.size > 0 ? routeKeys : null;
+}
+
+function collectSnapshotRouteKey(routeKeys: Set<string>, value: unknown) {
+  if (!value || typeof value !== 'object') return;
+  const route = value as Record<string, unknown>;
+  if (typeof route.routeKey === 'string' && route.routeKey.trim()) {
+    routeKeys.add(route.routeKey);
+    return;
+  }
+  const providerEndpointId =
+    typeof route.providerEndpointId === 'string' ? route.providerEndpointId : '';
+  const model = typeof route.model === 'string' ? route.model : '';
+  const providerId = typeof route.providerId === 'string' ? route.providerId : '';
+  if (providerEndpointId && model && providerId) {
+    routeKeys.add(`${providerEndpointId}::${model}::${providerId}`);
+  }
+}
+
+function nativeApiRequestRouteKey(request: NativeApiProviderRequest) {
+  const normalizedRequest = request.options.normalizedRequest;
+  return [
+    normalizedRequest.providerEndpointId ?? '',
+    normalizedRequest.modelOrDeployment ?? '',
+    normalizedRequest.providerId,
+  ].join('::');
 }
 
 async function buildNativeApiRoutePolicy(input: {

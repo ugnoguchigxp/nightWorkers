@@ -6,7 +6,10 @@ import { getDeepRecordString } from '../../../shared/json-record';
 const INSTALL_TIMEOUT_MS = 180_000;
 const INSTALL_MAX_BUFFER = 10 * 1024 * 1024;
 const GIT_INIT_TIMEOUT_MS = 120_000;
+const GIT_COMMIT_TIMEOUT_MS = 120_000;
 const GIT_INIT_MAX_BUFFER = 5 * 1024 * 1024;
+const GIT_COMMIT_MAX_BUFFER = 5 * 1024 * 1024;
+const BASELINE_COMMIT_MESSAGE = 'Initialize project from template';
 const PACKAGE_MANAGER_LOCKFILES = [
   { file: 'bun.lock', packageManager: 'bun' },
   { file: 'bun.lockb', packageManager: 'bun' },
@@ -69,6 +72,30 @@ export type ProjectGitInitializationResult = {
   stdout: string;
   stderr: string;
   errorMessage?: string;
+  licenseRemoval: ProjectLicenseRemovalResult;
+  baselineCommit: ProjectBaselineCommitResult;
+};
+
+export type ProjectLicenseRemovalResult = {
+  status: 'removed' | 'not_found' | 'failed' | 'skipped';
+  path: string;
+  errorMessage?: string;
+};
+
+export type ProjectBaselineCommitResult = {
+  status: 'passed' | 'failed' | 'skipped';
+  skippedReason?: 'disabled' | 'git_init_failed' | 'nothing_to_commit';
+  cwd: string;
+  command: string[] | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
+  exitCode: number | null;
+  signal: string | null;
+  stdout: string;
+  stderr: string;
+  commitHash?: string;
+  errorMessage?: string;
 };
 
 export type ProjectLlmContextInspection = {
@@ -89,9 +116,14 @@ export type ProjectPostImportOutput = {
 export async function inspectAndInitializeImportedProject(input: {
   targetPath: string;
   initialize?: boolean;
+  removeLicenseFile?: boolean;
+  createBaselineCommit?: boolean;
 }): Promise<ProjectPostImportOutput> {
   const targetPath = path.resolve(input.targetPath);
-  const gitInitialization = await initializeFreshGitRepository(targetPath);
+  const gitInitialization = await initializeFreshGitRepository({
+    targetPath,
+    removeLicenseFile: input.removeLicenseFile === true,
+  });
   const manifest = await inspectPackageManifest(targetPath);
   const llmContext = await inspectLlmContext(targetPath);
   const initialization = await initializeProject({
@@ -99,26 +131,40 @@ export async function inspectAndInitializeImportedProject(input: {
     manifest,
     enabled: input.initialize !== false,
   });
+  const baselineCommit = await createBaselineCommit({
+    targetPath,
+    enabled: input.createBaselineCommit === true,
+    gitInitStatus: gitInitialization.status,
+  });
   return {
     targetPath,
     manifest,
     ...(llmContext ? { llmContext } : {}),
-    gitInitialization,
+    gitInitialization: {
+      ...gitInitialization,
+      baselineCommit,
+    },
     initialization,
   };
 }
 
-async function initializeFreshGitRepository(
-  targetPath: string
-): Promise<ProjectGitInitializationResult> {
+async function initializeFreshGitRepository(input: {
+  targetPath: string;
+  removeLicenseFile: boolean;
+}): Promise<Omit<ProjectGitInitializationResult, 'baselineCommit'>> {
+  const targetPath = input.targetPath;
   const gitDirPath = path.join(targetPath, '.git');
   const command = ['git', 'init'];
   const startedAt = new Date();
   let removedExistingGitDir = false;
+  let licenseRemoval = skippedLicenseRemoval(targetPath);
 
   try {
     removedExistingGitDir = await pathExists(gitDirPath);
     await fs.rm(gitDirPath, { recursive: true, force: true });
+    licenseRemoval = input.removeLicenseFile
+      ? await removeTemplateLicenseFile(targetPath)
+      : skippedLicenseRemoval(targetPath);
   } catch (error) {
     const finishedAt = new Date();
     return {
@@ -134,6 +180,7 @@ async function initializeFreshGitRepository(
       signal: null,
       stdout: '',
       stderr: '',
+      licenseRemoval,
       errorMessage: `.git removal failed: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
@@ -153,7 +200,33 @@ async function initializeFreshGitRepository(
     signal: result.signal,
     stdout: result.stdout,
     stderr: result.stderr,
+    licenseRemoval,
     errorMessage: result.errorMessage,
+  };
+}
+
+async function removeTemplateLicenseFile(targetPath: string): Promise<ProjectLicenseRemovalResult> {
+  const licensePath = path.join(targetPath, 'LICENSE.md');
+  try {
+    const exists = await pathExists(licensePath);
+    if (!exists) {
+      return { status: 'not_found', path: licensePath };
+    }
+    await fs.rm(licensePath, { force: true });
+    return { status: 'removed', path: licensePath };
+  } catch (error) {
+    return {
+      status: 'failed',
+      path: licensePath,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function skippedLicenseRemoval(targetPath: string): ProjectLicenseRemovalResult {
+  return {
+    status: 'skipped',
+    path: path.join(targetPath, 'LICENSE.md'),
   };
 }
 
@@ -390,6 +463,128 @@ function runGitInitCommand(command: string[], cwd: string) {
         cwd,
         timeout: GIT_INIT_TIMEOUT_MS,
         maxBuffer: GIT_INIT_MAX_BUFFER,
+      },
+      (error, stdout, stderr) => {
+        const execError = error as
+          | (Error & { code?: string | number; signal?: string | null })
+          | null;
+        const exitCode = typeof execError?.code === 'number' ? execError.code : error ? null : 0;
+        resolve({
+          exitCode,
+          signal: execError?.signal ?? null,
+          stdout: String(stdout || ''),
+          stderr: String(stderr || ''),
+          errorMessage: error ? error.message : undefined,
+        });
+      }
+    );
+  });
+}
+
+async function createBaselineCommit(input: {
+  targetPath: string;
+  enabled: boolean;
+  gitInitStatus: 'passed' | 'failed';
+}): Promise<ProjectBaselineCommitResult> {
+  const base = {
+    cwd: input.targetPath,
+    startedAt: null,
+    finishedAt: null,
+    durationMs: null,
+    exitCode: null,
+    signal: null,
+    stdout: '',
+    stderr: '',
+  };
+  if (!input.enabled) {
+    return { ...base, status: 'skipped', skippedReason: 'disabled', command: null };
+  }
+  if (input.gitInitStatus !== 'passed') {
+    return { ...base, status: 'skipped', skippedReason: 'git_init_failed', command: null };
+  }
+
+  const status = await runGitCommand(['git', 'status', '--porcelain'], input.targetPath);
+  if (status.exitCode !== 0) {
+    return {
+      ...base,
+      status: 'failed',
+      command: ['git', 'status', '--porcelain'],
+      exitCode: status.exitCode,
+      signal: status.signal,
+      stdout: status.stdout,
+      stderr: status.stderr,
+      errorMessage: status.errorMessage,
+    };
+  }
+  if (status.stdout.trim().length === 0) {
+    return { ...base, status: 'skipped', skippedReason: 'nothing_to_commit', command: null };
+  }
+
+  const add = await runGitCommand(['git', 'add', '-A'], input.targetPath);
+  if (add.exitCode !== 0) {
+    return {
+      ...base,
+      status: 'failed',
+      command: ['git', 'add', '-A'],
+      exitCode: add.exitCode,
+      signal: add.signal,
+      stdout: add.stdout,
+      stderr: add.stderr,
+      errorMessage: add.errorMessage,
+    };
+  }
+
+  const command = [
+    'git',
+    '-c',
+    'user.name=NightWorkers',
+    '-c',
+    'user.email=nightworkers@example.invalid',
+    'commit',
+    '-m',
+    BASELINE_COMMIT_MESSAGE,
+  ];
+  const startedAt = new Date();
+  const commit = await runGitCommand(command, input.targetPath);
+  const finishedAt = new Date();
+  const commitHash =
+    commit.exitCode === 0
+      ? (await runGitCommand(['git', 'rev-parse', 'HEAD'], input.targetPath)).stdout.trim() ||
+        undefined
+      : undefined;
+
+  return {
+    ...base,
+    status: commit.exitCode === 0 ? 'passed' : 'failed',
+    command,
+    startedAt: startedAt.toISOString(),
+    finishedAt: finishedAt.toISOString(),
+    durationMs: finishedAt.getTime() - startedAt.getTime(),
+    exitCode: commit.exitCode,
+    signal: commit.signal,
+    stdout: commit.stdout,
+    stderr: commit.stderr,
+    ...(commitHash ? { commitHash } : {}),
+    errorMessage: commit.errorMessage,
+  };
+}
+
+function runGitCommand(command: string[], cwd: string) {
+  const [file, ...args] = command;
+  return new Promise<{
+    exitCode: number | null;
+    signal: string | null;
+    stdout: string;
+    stderr: string;
+    errorMessage?: string;
+  }>((resolve) => {
+    execFile(
+      file,
+      args,
+      {
+        cwd,
+        timeout: command.includes('commit') ? GIT_COMMIT_TIMEOUT_MS : GIT_INIT_TIMEOUT_MS,
+        maxBuffer: command.includes('commit') ? GIT_COMMIT_MAX_BUFFER : GIT_INIT_MAX_BUFFER,
       },
       (error, stdout, stderr) => {
         const execError = error as

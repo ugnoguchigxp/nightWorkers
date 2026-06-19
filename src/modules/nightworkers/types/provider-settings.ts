@@ -79,6 +79,8 @@ export type LlmRoleRoute = {
 };
 
 export type LlmSettings = {
+  settingsRevision?: string;
+  endpointIdSchemaVersion?: number;
   ACTIVE_LLM_PROVIDER: LlmProvider;
   AZURE_OPENAI_ENABLED: boolean;
   AZURE_OPENAI_API_KEY: string;

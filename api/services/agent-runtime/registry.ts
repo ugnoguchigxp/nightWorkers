@@ -87,7 +87,6 @@ export function buildRuntimeLaneOptions(
       ? {
           structuredLlmRoutePolicy: {
             disallowedProviderIds: ['codex'],
-            synthesizeFallbacksFromEnabledEndpoints: true,
           },
         }
       : {}),

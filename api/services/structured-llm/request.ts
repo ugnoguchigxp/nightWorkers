@@ -132,7 +132,7 @@ export function buildNormalizedSupervisorLlmRequestCandidates(input: {
     policy: input.routePolicy,
   });
   if (routeCandidates.length === 0) {
-    if (input.routePolicy) return [];
+    if (input.routePolicy || isRoleRouteConfigured(settings, input.role)) return [];
     return [
       buildNormalizedSupervisorLlmRequest({
         ...input,
@@ -144,6 +144,10 @@ export function buildNormalizedSupervisorLlmRequestCandidates(input: {
   return routeCandidates.map((resolvedRoute) =>
     buildNormalizedSupervisorLlmRequest({ ...input, settings, resolvedRoute })
   );
+}
+
+function isRoleRouteConfigured(settings: StructuredLlmProviderSettings, role: StructuredLlmRole) {
+  return (settings.roleRoutes || []).some((route) => route.role === role);
 }
 
 export function normalizeProviderId(value: string): SupervisorProviderId {

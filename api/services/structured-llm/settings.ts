@@ -1,8 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { getRuntimePaths } from '../../runtime/paths';
+import { migrateStructuredLlmEndpointIds } from './endpoint-id-migration';
 
 export type StructuredLlmProviderSettings = {
+  settingsRevision?: string;
+  endpointIdSchemaVersion?: number;
   ACTIVE_LLM_PROVIDER?: string;
   OPENAI_ENABLED?: boolean;
   OPENAI_API_KEY?: string;
@@ -107,7 +110,7 @@ export function readStructuredLlmProviderSettings(): StructuredLlmProviderSettin
     merged[key] = normalizeSettingValue(key, envValue) as never;
   }
   merged.ACTIVE_LLM_PROVIDER = normalizeStructuredLlmProviderSetting(merged.ACTIVE_LLM_PROVIDER);
-  return merged;
+  return migrateStructuredLlmEndpointIds(merged).settings;
 }
 
 export function normalizeStructuredLlmProviderSetting(value?: string): string | undefined {
@@ -153,6 +156,8 @@ function readPersistedRuntimeSettings(): Partial<StructuredLlmProviderSettings> 
 function defaultSettings(): Required<Record<keyof StructuredLlmProviderSettings, null>> {
   return {
     ACTIVE_LLM_PROVIDER: null,
+    settingsRevision: null,
+    endpointIdSchemaVersion: null,
     OPENAI_ENABLED: null,
     OPENAI_API_KEY: null,
     OPENAI_BASE_URL: null,

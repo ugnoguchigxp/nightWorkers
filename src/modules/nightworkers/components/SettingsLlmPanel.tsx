@@ -36,6 +36,14 @@ const roleLabels: Record<LlmRole, string> = {
 
 const emptyModelTarget: LlmModelTarget = { providerEndpointId: '', model: '' };
 
+function createEndpointId() {
+  if (!globalThis.crypto?.getRandomValues) return `ep_${Date.now().toString(16)}`;
+  const bytes = new Uint8Array(8);
+  globalThis.crypto.getRandomValues(bytes);
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `ep_${hex}`;
+}
+
 const thinkingDepthOptions: Array<{ value: '' | ThinkingDepth; label: string }> = [
   { value: '', label: 'Auto' },
   { value: 'low', label: 'Low' },
@@ -100,29 +108,6 @@ function uniqueModelOptions(options: ModelOption[]) {
     seen.add(option.value);
     return true;
   });
-}
-
-function ensureCodexRoutingEndpoint(
-  endpoints: LlmProviderEndpoint[],
-  codex: { enabled: boolean; models: string[] }
-) {
-  if (endpoints.some((endpoint) => endpoint.id === 'codex-default')) return endpoints;
-  return [
-    ...endpoints,
-    {
-      id: 'codex-default',
-      name: 'Codex SDK',
-      kind: 'codex' as const,
-      enabled: codex.enabled,
-      apiKey: '',
-      baseUrl: '',
-      endpoint: '',
-      apiVersion: '',
-      region: '',
-      models: codex.models,
-      modelDisplayNames: {},
-    },
-  ];
 }
 
 function formatModelTargetLabel(
@@ -204,11 +189,7 @@ export function SettingsLlmPanel({
         }))
       ),
   ]);
-  const routingEndpoints = ensureCodexRoutingEndpoint(settings.providerEndpoints, {
-    enabled: settings.CODEX_ENABLED,
-    models: codexModelOptions.map((option) => option.value),
-  });
-  const modelTargetOptions = routingEndpoints
+  const modelTargetOptions = settings.providerEndpoints
     .filter((endpoint) => (endpoint.kind === 'codex' ? settings.CODEX_ENABLED : endpoint.enabled))
     .flatMap((endpoint) =>
       (endpoint.kind === 'codex' && codexModelOptions.length
@@ -251,7 +232,7 @@ export function SettingsLlmPanel({
   };
 
   const addEndpoint = () => {
-    const id = `endpoint-${Date.now()}`;
+    const id = createEndpointId();
     onChange('providerEndpoints', [
       ...settings.providerEndpoints,
       {
