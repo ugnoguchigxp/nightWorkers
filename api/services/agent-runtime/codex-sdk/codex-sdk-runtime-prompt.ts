@@ -4,11 +4,60 @@ import type { AgentRunContext } from '../types';
 export function buildCodexRuntimePrompt(context: AgentRunContext): string {
   const request = (context.latestUserMessage || context.compiledPrompt).trim();
   const nightWorkersToolList = getNightWorkersCodexToolNames().join(', ');
+  const executionMode = readCodexRuntimeExecutionMode(context);
+  const contract =
+    executionMode === 'general_answer'
+      ? buildGeneralAnswerContract(context, nightWorkersToolList)
+      : buildExecutionContract(context, nightWorkersToolList, executionMode);
+  return request ? `${request}\n\n${contract}` : contract;
+}
+
+function buildGeneralAnswerContract(context: AgentRunContext, nightWorkersToolList: string) {
+  const readOnlyToolList =
+    nightWorkersToolList
+      .split(', ')
+      .filter(
+        (toolName) =>
+          toolName !== 'nightworkers.todo_list' && toolName !== 'nightworkers.import_project'
+      )
+      .join(', ') || 'none';
+  return [
+    '[NightWorkers Runtime Contract]',
+    `taskId: ${context.taskId}`,
+    `runId: ${context.runId}`,
+    `repoRoot: ${context.repoRoot}`,
+    'executionMode: general_answer',
+    'Plan mode: disabled. この run は質問への回答用です。Plan Mode artifact を作成・更新せず、実装編集も行わず、必要な読み取り確認だけで回答してください。',
+    '',
+    'NightWorkers MCP:',
+    '- MCP server name: nightworkers',
+    `- Available read-only NightWorkers MCP tools in this lane: ${readOnlyToolList}.`,
+    '',
+    'General answer behavior:',
+    '- ユーザーの質問に答えるための読み取り確認だけを行う。',
+    '- Plan Mode artifact、Specification Workspace、TodoList、Implementation Queue を作成・更新しない。',
+    '- 実装編集、テスト実行、レビュー、verify、closeout gate を開始しない。',
+    '- 完了済みの Plan Mode artifact は証跡として扱い、後続の質問で再編集・再オープン対象にしない。',
+    '- 回答に必要な根拠が確認できたら、短く直接回答する。',
+  ].join('\n');
+}
+
+function buildExecutionContract(
+  context: AgentRunContext,
+  nightWorkersToolList: string,
+  executionMode: ReturnType<typeof readCodexRuntimeExecutionMode>
+) {
+  const planModeContract =
+    executionMode === 'planning'
+      ? 'Plan mode: enabled. ユーザーは計画、仕様化、設計作業を明示的に依頼している。ユーザーが実装へ移るよう依頼するまで、実装編集は行わない。'
+      : 'Plan mode: disabled. ユーザーはこの run で Plan Mode を明示していない。計画だけの回答で止まらず、implementation-plan artifact を主成果物として作らない。';
   const contract = [
     '[NightWorkers Runtime Contract]',
     `taskId: ${context.taskId}`,
     `runId: ${context.runId}`,
     `repoRoot: ${context.repoRoot}`,
+    `executionMode: ${executionMode}`,
+    planModeContract,
     '',
     'NightWorkers MCP:',
     '- MCP server name: nightworkers',
@@ -52,5 +101,29 @@ export function buildCodexRuntimePrompt(context: AgentRunContext): string {
     '- Use postImport.manifest.recommendedVerificationCommands when choosing manifest-based verification before reporting completion.',
     '- CLI checks appear as Codex native command_execution events, not NightWorkers MCP tools. Preserve important command, exit code, stdout, and stderr evidence in the final report.',
   ].join('\n');
-  return request ? `${request}\n\n${contract}` : contract;
+  return contract;
+}
+
+function readCodexRuntimeExecutionMode(context: AgentRunContext) {
+  const value = context.runtimeOptions?.executionMode;
+  if (
+    value === 'planning' ||
+    value === 'implementation' ||
+    value === 'review' ||
+    value === 'runtime_debug' ||
+    value === 'general_answer'
+  ) {
+    return value;
+  }
+  const snapshotValue = context.contextSnapshot.executionMode;
+  if (
+    snapshotValue === 'planning' ||
+    snapshotValue === 'implementation' ||
+    snapshotValue === 'review' ||
+    snapshotValue === 'runtime_debug' ||
+    snapshotValue === 'general_answer'
+  ) {
+    return snapshotValue;
+  }
+  return 'implementation';
 }

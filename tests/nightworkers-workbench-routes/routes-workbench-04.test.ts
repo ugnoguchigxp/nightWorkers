@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import app from '../../api/app';
 import { ensureNightWorkersSchema } from '../../api/db/bootstrap';
 import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
@@ -34,8 +34,10 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
     stop: vi.fn(),
   };
   const resolveAgentRuntime = vi.fn(() => runtime);
-  const buildRuntimeLaneInitialTodos = vi.fn((lane: string) =>
-    lane === 'codex-sdk'
+  const buildRuntimeLaneInitialTodos = vi.fn((lane: string, input?: { executionMode?: string }) =>
+    input?.executionMode === 'general_answer'
+      ? []
+      : lane === 'codex-sdk'
       ? [
           { title: '対象変更を確認して実装する', taskType: 'implementation' },
           { title: '必要最小限の動作確認を行う', taskType: 'focused_verification' },
@@ -53,7 +55,7 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
     resolveRuntimeLaneDefinition: vi.fn((lane: 'native-api-runner' | 'codex-sdk') => ({
       kind: lane,
       aliases: [],
-      buildInitialTodos: (input: { compiledPromptText: string }) =>
+      buildInitialTodos: (input: { compiledPromptText: string; executionMode?: string }) =>
         buildRuntimeLaneInitialTodos(lane, input),
       buildRuntimeOptions: (input: { runtimeLaneResolution?: unknown }) => ({
         runtimeLane: lane,
@@ -67,8 +69,14 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
 
 const sameOriginHeaders = { Origin: 'http://localhost:39174' };
 
-function mockJobSelection(jobType: string, goal: string) {
-  return { jobType, goal };
+function mockPlanModeGate(
+  shouldStartPlanMode: boolean,
+  reason = 'test gate',
+  action: 'plan_mode' | 'general_answer' | 'implementation' = shouldStartPlanMode
+    ? 'plan_mode'
+    : 'implementation'
+) {
+  return JSON.stringify({ shouldStartPlanMode, action, reason });
 }
 
 function _expectStrictObjectSchemas(schema: unknown, path = 'schema') {
@@ -100,6 +108,10 @@ beforeAll(async () => {
   await ensureNightWorkersSchema();
 });
 
+beforeEach(() => {
+  vi.mocked(llm.callStructuredJsonLLM).mockResolvedValue(mockPlanModeGate(false));
+});
+
 afterEach(async () => {
   await flushPendingWorkbenchTasks();
   vi.clearAllMocks();
@@ -107,12 +119,50 @@ afterEach(async () => {
 
 describe('NightWorkers workbench routes', () => {
   it('keeps plan-mode AI responses available for queued sessions without starting a run', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('blueprint', 'Update the queued plan as a Blueprint.')
-    );
-    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
-      JSON.stringify(representativeAppBlueprint)
-    );
+    vi.mocked(llm.callStructuredJsonLLM)
+      .mockResolvedValueOnce(mockPlanModeGate(true, 'explicit planning request'))
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          version: 1,
+          source: {
+            taskId: 'queued-task',
+            repositoryId: 'queued-repo',
+            blueprintMessageId: null,
+            sourceKind: 'plan_mode_intake',
+          },
+          title: 'Queued Plan Questionnaire',
+          summary: 'Clarify the queued plan before implementation.',
+          questionSets: [
+            {
+              id: 'scope',
+              title: 'Scope',
+              category: 'workflow',
+              purpose: 'Clarify queued plan scope.',
+              questions: [
+                {
+                  id: 'target',
+                  topic: 'Target',
+                  question: 'What should be refined first?',
+                  why: 'The next implementation depends on scope.',
+                  answerType: 'single_choice',
+                  options: [
+                    {
+                      id: 'ui',
+                      label: 'UI',
+                      description: 'Refine UI first.',
+                      tradeoff: 'Keeps implementation focused.',
+                    },
+                  ],
+                  blocks: ['Implementation'],
+                  outputSection: 'Scope',
+                },
+              ],
+            },
+          ],
+          openQuestions: [],
+          dbDesignHandoffNotes: [],
+        })
+      );
     const { task } = await createWorkbenchTask({ status: 'queued' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -127,12 +177,17 @@ describe('NightWorkers workbench routes', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.run).toBeNull();
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
-    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(2);
     expect(body.task.status).toBe('queued');
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
     expect(
       body.messages.some((message: unknown) => message.metadataJson?.intent === 'app_blueprint')
+    ).toBe(false);
+    expect(
+      body.messages.some(
+        (message: unknown) => message.metadataJson?.intent === 'design_questionnaire_ready'
+      )
     ).toBe(true);
   });
 

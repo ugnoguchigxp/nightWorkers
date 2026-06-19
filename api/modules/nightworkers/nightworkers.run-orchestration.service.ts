@@ -705,8 +705,15 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
   }
   const messages = await repo.listTaskMessages(taskId);
   const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
-  const implementationHandoffMessage = findLatestImplementationHandoffMessage(messages);
   const llmRouteOverride = readMessageLlmRouteOverride(lastUserMessage);
+  const executionMode = options.executionMode ?? resolveExecutionModeFromMessages(messages);
+  const executionModeSource = options.executionMode
+    ? (options.executionModeSource ?? 'explicit')
+    : 'message_history';
+  const implementationHandoffMessage =
+    executionMode === 'implementation'
+      ? findLatestImplementationHandoffMessage(messages)
+      : undefined;
   const compiledPromptText = buildCompiledPromptText({
     task,
     lastUserMessage,
@@ -715,12 +722,17 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
   if (!compiledPromptText.trim()) {
     throw new AppError(400, 'EMPTY_PROMPT', 'No user message found to start a run');
   }
-  const executionMode = options.executionMode ?? resolveExecutionModeFromMessages(messages);
-  const executionModeSource = options.executionMode
-    ? (options.executionModeSource ?? 'explicit')
-    : 'message_history';
   const runtimeRole = nativeApiRoleForExecutionMode(executionMode);
-  const blueprintReadiness = await resolveBlueprintPlanningReadiness(taskId);
+  const blueprintReadiness =
+    executionMode === 'general_answer' ? null : await resolveBlueprintPlanningReadiness(taskId);
+  const blueprintPlanningSnapshot =
+    executionMode === 'general_answer' ? {} : { blueprintPlanning: blueprintReadiness };
+  const runtimeRoleLabel =
+    executionMode === 'general_answer'
+      ? 'general_answer'
+      : runtimeRole === 'implementation'
+        ? 'Implementation'
+        : runtimeRole;
   const settings = getCurrentSettings();
   const baseRuntimeLaneResolution = resolveRuntimeLane({
     settingsRuntimeLane: settings.IMPLEMENTATION_RUNTIME_LANE,
@@ -757,7 +769,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
       compiledPrompt: compiledPromptText,
       executionMode,
       executionModeSource,
-      blueprintPlanning: blueprintReadiness,
+      ...blueprintPlanningSnapshot,
       runtimeLane: runtimeLaneResolution.lane,
       runtimeLaneResolution: {
         workerKind: runtimeLaneResolution.workerKind,
@@ -779,7 +791,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
   const initialTodos = runtimeLaneDefinition.buildInitialTodos(runtimeLaneSetupInput);
   await repo.replaceTaskRunTodosForRun(
     run.id,
-    executionMode === 'planning'
+    executionMode === 'planning' || executionMode === 'general_answer'
       ? []
       : buildStandardImplementationTodoList({
           todos: initialTodos,
@@ -801,7 +813,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
       executionMode,
       executionModeSource,
       runtimeRole,
-      blueprintPlanning: blueprintReadiness,
+      ...blueprintPlanningSnapshot,
       runtimeLane: runtimeLaneResolution.lane,
       workerKind: runtimeLaneResolution.workerKind,
       runtimeLaneResolution,
@@ -817,8 +829,8 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
     severity: 'info',
     actor: 'system',
     message: runtimeLlmRoute
-      ? `${runtimeRole === 'implementation' ? 'Implementation' : runtimeRole} LLM route resolved: ${runtimeLlmRoute.model} (${runtimeLlmRoute.providerEndpointId}); runtime lane=${runtimeLaneResolution.lane} worker=${runtimeLaneResolution.workerKind}.`
-      : `${runtimeRole === 'implementation' ? 'Implementation' : runtimeRole} LLM route was not configured; runtime lane=${runtimeLaneResolution.lane} worker=${runtimeLaneResolution.workerKind}.`,
+      ? `${runtimeRoleLabel} LLM route resolved: ${runtimeLlmRoute.model} (${runtimeLlmRoute.providerEndpointId}); runtime lane=${runtimeLaneResolution.lane} worker=${runtimeLaneResolution.workerKind}.`
+      : `${runtimeRoleLabel} LLM route was not configured; runtime lane=${runtimeLaneResolution.lane} worker=${runtimeLaneResolution.workerKind}.`,
     data: {
       effectiveLlmRouting,
       executionMode,
@@ -832,10 +844,11 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
     compiledPrompt: compiledPromptText,
     source: 'task_prompt',
     degraded: false,
+    executionMode,
     executionPhase: executionMode,
     executionModeSource,
     planModeClosed: executionMode !== 'planning',
-    blueprintPlanning: blueprintReadiness,
+    ...blueprintPlanningSnapshot,
     runtimeLane: runtimeLaneResolution.lane,
     runtimeLaneResolution: {
       workerKind: runtimeLaneResolution.workerKind,
@@ -866,7 +879,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
   const projectedStateCard = projectConversationStateCardForRuntime({
     snapshot: conversationContext,
     role: stateCardRoleForExecutionMode(executionMode),
-    workKind: runtimeRole,
+    workKind: executionMode === 'general_answer' ? null : runtimeRole,
   });
   const runtimePromptParts = buildPromptWithStateCardParts({
     latestUserMessage: rawLatestUserMessage,

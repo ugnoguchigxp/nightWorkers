@@ -17,6 +17,7 @@ export type RuntimePromptSnapshot = {
   source: 'task_prompt' | 'fallback';
   degraded: boolean;
   degradedReason?: string;
+  executionMode?: 'planning' | 'implementation' | 'review' | 'runtime_debug' | 'general_answer';
   executionPhase?: 'planning' | 'implementation' | 'review' | 'runtime_debug' | 'general_answer';
   executionModeSource?:
     | 'message_history'

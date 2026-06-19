@@ -194,6 +194,9 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain('[NightWorkers Runtime Contract]');
     expect(prompt).toContain('taskId: task-codex');
     expect(prompt).toContain('runId: run-codex');
+    expect(prompt).toContain('executionMode: implementation');
+    expect(prompt).toContain('Plan mode: disabled');
+    expect(prompt).toContain('Plan Mode を明示していない');
     expect(prompt).toContain('context-still.initial_instructions');
     expect(prompt).toContain(getNightWorkersCodexToolNames().join(', '));
     expect(prompt).toContain('nightworkers.todo_list');
@@ -234,6 +237,38 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain('Codex native command_execution events');
     expect(prompt).toContain('Do not create a fallback static app');
     expect(prompt).toContain('do not stop with a plan-only answer or next-steps summary');
+  });
+
+  it('marks Codex runtime prompt as planning only for planning executionMode', () => {
+    const prompt = buildCodexRuntimePrompt(
+      buildContext({
+        latestUserMessage: '実装計画書を作ってください',
+        executionMode: 'planning',
+      })
+    );
+
+    expect(prompt).toContain('executionMode: planning');
+    expect(prompt).toContain('Plan mode: enabled');
+    expect(prompt).toContain('実装編集は行わない');
+  });
+
+  it('keeps general answer prompts separate from implementation contracts', () => {
+    const prompt = buildCodexRuntimePrompt(
+      buildContext({
+        latestUserMessage: 'バックエンド使わない構成でしょうか？',
+        executionMode: 'general_answer',
+      })
+    );
+
+    expect(prompt).toContain('executionMode: general_answer');
+    expect(prompt).toContain('General answer behavior:');
+    expect(prompt).toContain('質問に答えるための読み取り確認だけ');
+    expect(prompt).toContain('Plan Mode artifact、Specification Workspace、TodoList');
+    expect(prompt).not.toContain('Minimal implementation behavior:');
+    expect(prompt).not.toContain('nightworkers.todo_list');
+    expect(prompt).not.toContain('LLM コードレビュー、品質ゲート verify、closeout');
+    expect(prompt).not.toContain('Execution order: specification -> Todo execution');
+    expect(prompt).not.toContain('implementation-plan artifact を主成果物');
   });
 
   it('passes the composed runtime prompt to Codex threads', async () => {
@@ -1806,6 +1841,7 @@ function buildContext(
   input: {
     repoRoot?: string;
     codex?: Record<string, unknown>;
+    executionMode?: 'planning' | 'implementation' | 'review' | 'runtime_debug' | 'general_answer';
     latestUserMessage?: string;
     conversationContextUsage?: {
       latestUserMessageTokens: number;
@@ -1850,7 +1886,13 @@ function buildContext(
           }
         : {}),
     },
-    runtimeOptions: input.codex ? { codex: input.codex } : undefined,
+    runtimeOptions:
+      input.codex || input.executionMode
+        ? {
+            ...(input.codex ? { codex: input.codex } : {}),
+            ...(input.executionMode ? { executionMode: input.executionMode } : {}),
+          }
+        : undefined,
     currentTodo: input.currentTodo,
     todoPlan: input.todoPlan,
   };

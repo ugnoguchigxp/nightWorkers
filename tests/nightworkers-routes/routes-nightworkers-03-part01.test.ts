@@ -356,6 +356,91 @@ describe('NightWorkers task routes', () => {
     }
   });
 
+  it('rejects Plan Mode questionnaire edits after the task is completed', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+
+    try {
+      const createdRepo = await repo.createRepository({
+        name: `TEST: Locked Plan Mode ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: createdRepo.id,
+        title: 'TEST: Locked questionnaire target',
+        description: 'Generate questionnaire',
+        status: 'draft',
+      });
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+        version: 1,
+        source: {
+          taskId: task.id,
+          repositoryId: createdRepo.id,
+          sourceKind: 'plan_mode_intake',
+        },
+        title: 'Locked Plan Questionnaire',
+        questionSets: [
+          {
+            id: 'scope',
+            title: 'Scope',
+            questions: [
+              {
+                id: 'storage-mode',
+                question: 'Storage mode?',
+                answerType: 'single_choice',
+                required: true,
+                options: [{ id: 'local-only', label: 'Local only' }],
+              },
+            ],
+          },
+        ],
+      });
+      const createRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+      expect(createRes.status).toBe(201);
+      const session = await createRes.json();
+
+      await repo.updateTaskStatus(task.id, 'completed');
+
+      const answersRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/answers`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            answers: [
+              {
+                questionId: 'storage-mode',
+                selectedOptionIds: ['local-only'],
+                rankedOptionIds: [],
+                deferred: false,
+              },
+            ],
+          }),
+        }
+      );
+      expect(answersRes.status).toBe(409);
+      expect((await answersRes.json()).code).toBe('PLAN_MODE_READ_ONLY');
+    } finally {
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+      else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+    }
+  });
+
   it('stores schema-invalid Design Questionnaire raw output without replacing it', async () => {
     const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
     const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;

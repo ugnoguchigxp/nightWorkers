@@ -110,6 +110,14 @@ function isImplementationLockedStatus(status: string | undefined) {
   return status === 'completed';
 }
 
+function isDesignQuestionnaireReadyMessage(message: TaskMessage) {
+  return String(toDeepRecord(message.metadataJson).intent) === 'design_questionnaire_ready';
+}
+
+function designQuestionnaireMessageIds(messages: TaskMessage[]) {
+  return new Set(messages.filter(isDesignQuestionnaireReadyMessage).map((message) => message.id));
+}
+
 export function NightWorkersShell(props: NightWorkersShellProps) {
   const { workspace } = props;
   const { attributes: appearanceAttributes } = useWorkspaceAppearanceState();
@@ -443,8 +451,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       .reverse()
       .find(
         (message) =>
-          message.taskId === workspace.activeSessionId &&
-          String(toDeepRecord(message.metadataJson).intent) === 'design_questionnaire_ready'
+          message.taskId === workspace.activeSessionId && isDesignQuestionnaireReadyMessage(message)
       );
     if (!latestQuestionnaireMessage) return;
     if (
@@ -563,6 +570,9 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               onSubmitInitialPrompt={submitPrompt}
               onSubmitWorkbenchMessage={async (prompt, intent) => {
                 if (workspace.activeSession) {
+                  const existingQuestionnaireMessageIds = designQuestionnaireMessageIds(
+                    workspace.taskMessages
+                  );
                   const result = await workspace.sendWorkbenchMessage(
                     workspace.activeSession.id,
                     prompt,
@@ -570,15 +580,17 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                     selectedArtifactContext,
                     buildComposerLlmSelection()
                   );
-                  const latestQuestionnaireMessage = [...(result?.messages || [])]
-                    .reverse()
-                    .find(
-                      (message) =>
-                        String(toDeepRecord(message.metadataJson).intent) ===
-                        'design_questionnaire_ready'
-                    );
-                  if (latestQuestionnaireMessage) {
-                    void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'questionnaire');
+                  if (!result?.run) {
+                    const latestQuestionnaireMessage = [...(result?.messages || [])]
+                      .reverse()
+                      .find(
+                        (message) =>
+                          !existingQuestionnaireMessageIds.has(message.id) &&
+                          isDesignQuestionnaireReadyMessage(message)
+                      );
+                    if (latestQuestionnaireMessage) {
+                      void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'questionnaire');
+                    }
                   }
                   return;
                 }

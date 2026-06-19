@@ -32,8 +32,10 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
     stop: vi.fn(),
   };
   const resolveAgentRuntime = vi.fn(() => runtime);
-  const buildRuntimeLaneInitialTodos = vi.fn((lane: string) =>
-    lane === 'codex-sdk'
+  const buildRuntimeLaneInitialTodos = vi.fn((lane: string, input?: { executionMode?: string }) =>
+    input?.executionMode === 'general_answer'
+      ? []
+      : lane === 'codex-sdk'
       ? [
           { title: '対象変更を確認して実装する', taskType: 'implementation' },
           { title: '必要最小限の動作確認を行う', taskType: 'focused_verification' },
@@ -51,7 +53,7 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
     resolveRuntimeLaneDefinition: vi.fn((lane: 'native-api-runner' | 'codex-sdk') => ({
       kind: lane,
       aliases: [],
-      buildInitialTodos: (input: { compiledPromptText: string }) =>
+      buildInitialTodos: (input: { compiledPromptText: string; executionMode?: string }) =>
         buildRuntimeLaneInitialTodos(lane, input),
       buildRuntimeOptions: (input: { runtimeLaneResolution?: unknown }) => ({
         runtimeLane: lane,
@@ -65,8 +67,14 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
 
 const sameOriginHeaders = { Origin: 'http://localhost:39174' };
 
-function mockJobSelection(jobType: string, goal: string) {
-  return { jobType, goal };
+function mockPlanModeGate(
+  shouldStartPlanMode: boolean,
+  reason = 'test gate',
+  action: 'plan_mode' | 'general_answer' | 'implementation' = shouldStartPlanMode
+    ? 'plan_mode'
+    : 'implementation'
+) {
+  return JSON.stringify({ shouldStartPlanMode, action, reason });
 }
 
 function expectStrictObjectSchemas(schema: unknown, path = 'schema') {
@@ -101,6 +109,7 @@ beforeAll(async () => {
 beforeEach(() => {
   delete process.env.IMPLEMENTATION_RUNTIME_LANE;
   process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-api-runner';
+  vi.mocked(llm.callStructuredJsonLLM).mockResolvedValue(mockPlanModeGate(false));
 });
 
 afterEach(async () => {
@@ -135,9 +144,6 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('stores draft conversation messages without creating a run', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('general_answer', '相談内容を整理して次の一手を提案します。')
-    );
     const { task } = await createWorkbenchTask();
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -151,56 +157,13 @@ describe('NightWorkers workbench routes', () => {
     expect(body.run).toBeNull();
     expect(body.task.status).toBe('draft');
     expect(body.messages.some((message: unknown) => message.role === 'user')).toBe(true);
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
-    expect(body.messages.some((message: unknown) => message.role === 'assistant')).toBe(true);
+    expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
+    expect(body.messages.some((message: unknown) => message.role === 'assistant')).toBe(false);
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
   });
 
   it('routes active Blueprint artifact instructions without round 1 intake or rewriting the user message', async () => {
-    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
-      JSON.stringify({
-        id: 'kanban-system-blueprint',
-        name: 'Kanban System Blueprint',
-        version: 1,
-        description: 'KanbanSection を含む Blueprint Preview',
-        designPreset: {
-          id: 'nightworkers-default',
-          name: 'NightWorkers Default',
-          mode: 'hybrid',
-          theme: 'nightworkers-dark',
-          density: 'compact',
-          radius: 'default',
-          shadow: 'subtle',
-          fontScale: 'default',
-          contrast: 'standard',
-          motion: 'standard',
-        },
-        screens: [
-          {
-            id: 'kanban-workspace',
-            name: 'Kanban Workspace',
-            path: '/',
-            componentName: 'DashboardPage',
-            sections: [
-              {
-                kind: 'component_section',
-                id: 'boards-and-filters',
-                name: 'Boards and Filters',
-                componentName: 'DataTableSection',
-                source: 'static',
-                intent: '検索とフィルターをボードの上に置く',
-                visualIntent: '検索とフィルターを先に確認できる配置',
-                props: {},
-              },
-            ],
-          },
-        ],
-        databaseSchema: { tables: [], relations: [] },
-        dataBindings: [],
-        implementationTasks: [],
-        learningHooks: [],
-      })
-    );
     const { task } = await createWorkbenchTask();
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -248,9 +211,6 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('passes DB Design artifact context with table names to workbench intake', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('general_answer', 'DB Design artifact を前提に修正方針を返します。')
-    );
     const { task } = await createWorkbenchTask();
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -283,7 +243,7 @@ describe('NightWorkers workbench routes', () => {
     expect(userMessage.metadataJson.artifactContext.metadata.artifactType).toBe(
       'blueprint_db_design'
     );
-    const llmPrompt = vi.mocked(llm.callSupervisorLLM).mock.calls[0]?.[1] as string;
+    const llmPrompt = vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[1] as string;
     expect(llmPrompt).toContain('Artifact type: blueprint_db_design');
     expect(llmPrompt).toContain('Workspace tab: db-design');
     expect(llmPrompt).toContain('Tables: boards, columns, cards');
@@ -291,9 +251,6 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('starts a docs run for normal intake without persisting the round 1 response as chat', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('docs', 'Analyze the goal and propose the next implementation step.')
-    );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -304,7 +261,8 @@ describe('NightWorkers workbench routes', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
     expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(1);
     const assistantMessage = body.messages.find(
@@ -316,7 +274,8 @@ describe('NightWorkers workbench routes', () => {
       (message: unknown) =>
         message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
-    expect(systemMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('docs');
+    expect(systemMessage?.metadataJson?.planModeGate?.shouldStartPlanMode).toBe(false);
+    expect(systemMessage?.metadataJson?.intakeJobSelection).toBeUndefined();
     expect(body.task.objective).toBe('ECサイトのトップページを作ってください');
     await vi.waitFor(async () => {
       const runs = await repo.listTaskRunsForTask(task.id);
@@ -325,12 +284,11 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('starts Plan mode artifacts and questionnaire for planning intake', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('planning', 'kanbanアプリの実装方針を整理し、主要機能と作業順を決める')
-    );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
-    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
-      JSON.stringify({
+    vi.mocked(llm.callStructuredJsonLLM)
+      .mockResolvedValueOnce(mockPlanModeGate(true, 'explicit planning request'))
+      .mockResolvedValueOnce(
+        JSON.stringify({
         version: 1,
         source: {
           taskId: task.id,
@@ -394,17 +352,9 @@ describe('NightWorkers workbench routes', () => {
     const body = await res.json();
     expect(body.run).toBeNull();
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
-    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(llm.callSupervisorLLM).mock.calls[0]?.[2]).toMatchObject({
-      role: 'plan',
-      routeOverride: {
-        providerEndpointId: 'local-qwen',
-        model: 'qwen3-coder',
-        thinkingDepth: 'medium',
-      },
-    });
+    expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(2);
     expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[2]).toMatchObject({
-      role: 'plan',
       routeOverride: {
         providerEndpointId: 'local-qwen',
         model: 'qwen3-coder',
@@ -413,6 +363,21 @@ describe('NightWorkers workbench routes', () => {
     });
     expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[2]?.schema).toMatchObject({
       properties: {
+        shouldStartPlanMode: { type: 'boolean' },
+        action: { type: 'string' },
+        reason: { type: 'string' },
+      },
+    });
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[1]?.[2]).toMatchObject({
+      role: 'plan',
+      routeOverride: {
+        providerEndpointId: 'local-qwen',
+        model: 'qwen3-coder',
+        thinkingDepth: 'medium',
+      },
+    });
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[1]?.[2]?.schema).toMatchObject({
+      properties: {
         title: { type: 'string' },
         questions: {
           type: 'array',
@@ -420,6 +385,7 @@ describe('NightWorkers workbench routes', () => {
       },
     });
     expectStrictObjectSchemas(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[2]?.schema);
+    expectStrictObjectSchemas(vi.mocked(llm.callStructuredJsonLLM).mock.calls[1]?.[2]?.schema);
     expect(
       body.messages.some(
         (message: unknown) => message.role === 'assistant' && message.content.includes('jobType:')
@@ -433,7 +399,7 @@ describe('NightWorkers workbench routes', () => {
       metadataJson: expect.objectContaining({
         questionnaireStatus: 'answering',
         totalQuestionCount: 1,
-        intakeJobSelection: expect.objectContaining({ jobType: 'planning' }),
+        planModeGate: expect.objectContaining({ shouldStartPlanMode: true }),
       }),
     });
     expect(questionnaireReadyMessage.content).toContain('Design Questionnaire を生成しました');
@@ -460,12 +426,11 @@ describe('NightWorkers workbench routes', () => {
 
   it('keeps first-message planning intake on the design questionnaire path even when codex-agent is the runtime lane', async () => {
     process.env.NIGHTWORKERS_RUNTIME_LANE = 'codex-agent';
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('planning', 'todo list アプリの設計方針を整理する')
-    );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
-    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
-      JSON.stringify({
+    vi.mocked(llm.callStructuredJsonLLM)
+      .mockResolvedValueOnce(mockPlanModeGate(true, 'explicit planning request'))
+      .mockResolvedValueOnce(
+        JSON.stringify({
         version: 1,
         source: {
           taskId: task.id,
@@ -504,8 +469,8 @@ describe('NightWorkers workbench routes', () => {
         ],
         openQuestions: [],
         dbDesignHandoffNotes: [],
-      })
-    );
+        })
+      );
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
       method: 'POST',
@@ -519,8 +484,8 @@ describe('NightWorkers workbench routes', () => {
     const body = await res.json();
     expect(body.run).toBeNull();
     expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
-    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(2);
     expect(
       body.messages.some(
         (message: unknown) =>
@@ -536,12 +501,9 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('does not leave an empty questionnaire draft when planning questionnaire generation fails', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('planning', 'kanbanアプリの実装方針を整理する')
-    );
-    vi.mocked(llm.callStructuredJsonLLM).mockRejectedValueOnce(
-      new Error('invalid_json_schema: version schema must have a type key')
-    );
+    vi.mocked(llm.callStructuredJsonLLM)
+      .mockResolvedValueOnce(mockPlanModeGate(true, 'explicit planning request'))
+      .mockRejectedValueOnce(new Error('invalid_json_schema: version schema must have a type key'));
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -554,10 +516,79 @@ describe('NightWorkers workbench routes', () => {
     expect(await repo.listDesignQuestionnaireSessionsForTask(task.id)).toHaveLength(0);
   });
 
-  it('starts an implementation run for code-change intake without persisting the round 1 response as chat', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('minor_code_edit', '`fizzbuzz.ts` をプロジェクトルートに追加する。')
+  it('starts a general-answer run for questions without reopening Plan Mode or implementation Todos', async () => {
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+      mockPlanModeGate(false, 'question only', 'general_answer')
     );
+    const { task } = await createWorkbenchTask({
+      title: 'Todo List',
+      status: 'completed',
+      objective: 'Todo List を実装する',
+    });
+    await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: '## 仕様\nTodo List の実装仕様',
+      messageType: 'markdown_document',
+      payloadJson: { intent: 'draft_spec', source: 'status_document_review' },
+    });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'バックエンド使わない構成でしょうか？' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
+    const systemMessage = body.messages.find(
+      (message: unknown) =>
+        message.role === 'system' && message.metadataJson?.intent === 'run_started'
+    );
+    expect(systemMessage?.content).toContain('General answer run started');
+    expect(systemMessage?.metadataJson).toMatchObject({
+      executionMode: 'general_answer',
+      planModeGate: { shouldStartPlanMode: false, action: 'general_answer' },
+    });
+    const runs = await repo.listTaskRunsForTask(task.id);
+    expect(runs[0]?.contextSnapshot).toMatchObject({
+      executionMode: 'general_answer',
+      executionModeSource: 'workbench_intake',
+    });
+    expect(runs[0]?.contextSnapshot).not.toHaveProperty('blueprintPlanning');
+    expect(String(runs[0]?.contextSnapshot?.compiledPrompt || '')).not.toContain(
+      '<IMPLEMENTATION_HANDOFF>'
+    );
+    expect(await repo.listTaskRunTodosForRun(runs[0]?.id || '')).toEqual([]);
+    const events = await repo.listTaskEventsForRun(runs[0]?.id || '');
+    expect(events.some((event) => event.message.includes('general_answer LLM route resolved'))).toBe(
+      true
+    );
+  });
+
+  it('rejects reopening Plan Mode artifacts after the task is completed', async () => {
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+      mockPlanModeGate(true, 'explicit planning request')
+    );
+    const { task } = await createWorkbenchTask({
+      title: 'Todo List',
+      status: 'completed',
+      objective: 'Todo List を実装する',
+    });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: '実装計画をもう一度作ってください' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('PLAN_MODE_READ_ONLY');
+    expect(await repo.listDesignQuestionnaireSessionsForTask(task.id)).toHaveLength(0);
+  });
+
+  it('starts an implementation run for code-change intake without persisting the round 1 response as chat', async () => {
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -580,7 +611,8 @@ describe('NightWorkers workbench routes', () => {
         message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
     expect(systemMessage?.content).toContain('Implementation run started');
-    expect(systemMessage?.metadataJson?.intakeJobSelection?.goal).toContain('fizzbuzz.ts');
+    expect(systemMessage?.metadataJson?.planModeGate?.shouldStartPlanMode).toBe(false);
+    expect(systemMessage?.metadataJson?.intakeJobSelection).toBeUndefined();
     expect(body.task.status).toBe('running');
     await vi.waitFor(async () => {
       const runs = await repo.listTaskRunsForTask(task.id);
@@ -589,12 +621,6 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('starts a runtime debug run from intake instead of leaving only a classifier message', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection(
-        'runtime_debug',
-        '実際に使われているポートを確認し、5173 との不一致の原因を特定して報告する。'
-      )
-    );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -618,8 +644,9 @@ describe('NightWorkers workbench routes', () => {
       (message: unknown) =>
         message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
-    expect(systemMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('runtime_debug');
-    expect(systemMessage?.metadataJson?.routingHypothesis?.primaryMode).toBe('runtime_debug');
+    expect(systemMessage?.metadataJson?.planModeGate?.shouldStartPlanMode).toBe(false);
+    expect(systemMessage?.metadataJson?.intakeJobSelection).toBeUndefined();
+    expect(systemMessage?.metadataJson?.routingHypothesis).toBeUndefined();
     await vi.waitFor(async () => {
       const runs = await repo.listTaskRunsForTask(task.id);
       expect(runs[0]?.status).toBe('needs_human');
@@ -627,9 +654,6 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('starts a review run from intake instead of leaving only a classifier message', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('review', '現在のコードベースの差分を確認し、レビューを開始する。')
-    );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -652,21 +676,18 @@ describe('NightWorkers workbench routes', () => {
       (message: unknown) =>
         message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
-    expect(systemMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('review');
-    expect(systemMessage?.metadataJson?.routingHypothesis?.primaryMode).toBe('review');
-    expect(systemMessage?.metadataJson?.routingHypothesis?.phase).toBe('review');
+    expect(systemMessage?.metadataJson?.planModeGate?.shouldStartPlanMode).toBe(false);
+    expect(systemMessage?.metadataJson?.intakeJobSelection).toBeUndefined();
+    expect(systemMessage?.metadataJson?.routingHypothesis).toBeUndefined();
     const runs = await repo.listTaskRunsForTask(task.id);
     expect(runs[0]?.contextSnapshot).toMatchObject({
-      executionPhase: 'review',
+      executionPhase: 'implementation',
       executionModeSource: 'workbench_intake',
       planModeClosed: true,
     });
   });
 
   it('starts an investigation run from intake without routing through planning', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('investigation', '直近ログとDB状態から停止原因を特定する。')
-    );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -682,16 +703,12 @@ describe('NightWorkers workbench routes', () => {
       (message: unknown) =>
         message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
-    expect(systemMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('investigation');
-    expect(systemMessage?.metadataJson?.routingHypothesis?.primaryMode).toBe('investigation');
-    expect(systemMessage?.metadataJson?.routingHypothesis?.phase).toBe('investigate');
-    expect(systemMessage?.metadataJson?.routingHypothesis?.primaryMode).not.toBe('planning');
+    expect(systemMessage?.metadataJson?.planModeGate?.shouldStartPlanMode).toBe(false);
+    expect(systemMessage?.metadataJson?.intakeJobSelection).toBeUndefined();
+    expect(systemMessage?.metadataJson?.routingHypothesis).toBeUndefined();
   });
 
   it('starts a verification run from intake without routing through planning', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('test_and_verification', '既存テストを実行し、結果を確認する。')
-    );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -707,17 +724,12 @@ describe('NightWorkers workbench routes', () => {
       (message: unknown) =>
         message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
-    expect(systemMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('test_and_verification');
-    expect(systemMessage?.metadataJson?.routingHypothesis?.primaryMode).toBe(
-      'test_and_verification'
-    );
-    expect(systemMessage?.metadataJson?.routingHypothesis?.phase).toBe('verify');
+    expect(systemMessage?.metadataJson?.planModeGate?.shouldStartPlanMode).toBe(false);
+    expect(systemMessage?.metadataJson?.intakeJobSelection).toBeUndefined();
+    expect(systemMessage?.metadataJson?.routingHypothesis).toBeUndefined();
   });
 
   it('starts a config implementation run from intake without routing through planning', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('config', '設定ファイルの軽微な修正を行う。')
-    );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -733,9 +745,9 @@ describe('NightWorkers workbench routes', () => {
       (message: unknown) =>
         message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
-    expect(systemMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('config');
-    expect(systemMessage?.metadataJson?.routingHypothesis?.primaryMode).toBe('code_edit');
-    expect(systemMessage?.metadataJson?.routingHypothesis?.workKinds).toContain('config');
+    expect(systemMessage?.metadataJson?.planModeGate?.shouldStartPlanMode).toBe(false);
+    expect(systemMessage?.metadataJson?.intakeJobSelection).toBeUndefined();
+    expect(systemMessage?.metadataJson?.routingHypothesis).toBeUndefined();
     const runs = await repo.listTaskRunsForTask(task.id);
     expect(runs[0]?.contextSnapshot).toMatchObject({
       executionPhase: 'implementation',
@@ -745,9 +757,6 @@ describe('NightWorkers workbench routes', () => {
 
   it('keeps prior-message intake on round 1 instead of using the Codex intake bypass', async () => {
     process.env.NIGHTWORKERS_RUNTIME_LANE = 'codex-agent';
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('runtime_debug', '実際に使われているポート番号を確認する')
-    );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
     await repo.createTaskMessage({
       taskId: task.id,
@@ -767,7 +776,8 @@ describe('NightWorkers workbench routes', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
     expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
     const runs = await repo.listTaskRunsForTask(task.id);
     expect(runs).toHaveLength(1);
@@ -776,8 +786,9 @@ describe('NightWorkers workbench routes', () => {
         message.role === 'system' && message.metadataJson?.intent === 'run_started'
     );
     expect(systemMessage?.metadataJson?.intakeBypass).toBeUndefined();
-    expect(systemMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('runtime_debug');
-    expect(systemMessage?.metadataJson?.routingHypothesis?.primaryMode).toBe('runtime_debug');
+    expect(systemMessage?.metadataJson?.planModeGate?.shouldStartPlanMode).toBe(false);
+    expect(systemMessage?.metadataJson?.intakeJobSelection).toBeUndefined();
+    expect(systemMessage?.metadataJson?.routingHypothesis).toBeUndefined();
     await vi.waitFor(async () => {
       const updatedRuns = await repo.listTaskRunsForTask(task.id);
       expect(updatedRuns[0]?.status).toBe('needs_human');
@@ -785,9 +796,6 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('does not fall back to fixed intake prose for non-running code-edit decisions', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('minor_code_edit', '`fizzbuzz.ts` をプロジェクトルートに追加する。')
-    );
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -807,12 +815,12 @@ describe('NightWorkers workbench routes', () => {
       (message: unknown) =>
         message.role === 'assistant' && message.metadataJson?.intent === 'intake'
     );
-    expect(assistantMessage?.content).toContain('jobType: minor_code_edit');
-    expect(assistantMessage?.content).toContain('fizzbuzz.ts');
+    expect(assistantMessage).toBeUndefined();
+    expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
   });
 
-  it('records a visible intake message even when the LLM job selection has no goal text', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(mockJobSelection('general_answer', ''));
+  it('starts a normal implementation run without recording a classifier message', async () => {
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -823,17 +831,10 @@ describe('NightWorkers workbench routes', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.messages).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          role: 'assistant',
-          content: expect.stringContaining('jobType: general_answer'),
-          metadataJson: expect.objectContaining({
-            intent: 'intake',
-            jobSelection: expect.objectContaining({ jobType: 'general_answer', goal: '' }),
-          }),
-        }),
-      ])
+    expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
+    expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
+    expect(body.messages.find((message: unknown) => message.metadataJson?.intent === 'intake')).toBe(
+      undefined
     );
   });
 });

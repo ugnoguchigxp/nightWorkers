@@ -48,6 +48,21 @@ describe('agent runtime registry', () => {
     ).toEqual([]);
   });
 
+  it('does not create implementation Todos for general answers', () => {
+    expect(
+      buildRuntimeLaneInitialTodos('codex-sdk', {
+        compiledPromptText: 'バックエンドを使わない構成でしょうか？',
+        executionMode: 'general_answer',
+      })
+    ).toEqual([]);
+    expect(
+      buildRuntimeLaneInitialTodos('native-api-runner', {
+        compiledPromptText: 'バックエンドを使わない構成でしょうか？',
+        executionMode: 'general_answer',
+      })
+    ).toEqual([]);
+  });
+
   it('creates review-specific Todos and role metadata for review mode', () => {
     const todos = buildRuntimeLaneInitialTodos('native-api-runner', {
       compiledPromptText: 'コードレビューから再開できますか？',

@@ -1,10 +1,9 @@
 import crypto from 'node:crypto';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import app from '../../api/app';
 import { ensureNightWorkersSchema } from '../../api/db/bootstrap';
 import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
 import * as llm from '../../api/services/structured-llm';
-import { representativeAppBlueprint } from '../fixtures/app-blueprint';
 import { flushPendingWorkbenchTasks } from '../helpers/nightworkers-test-controls';
 
 vi.mock('../../api/services/structured-llm', async () => {
@@ -33,8 +32,10 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
     stop: vi.fn(),
   };
   const resolveAgentRuntime = vi.fn(() => runtime);
-  const buildRuntimeLaneInitialTodos = vi.fn((lane: string) =>
-    lane === 'codex-sdk'
+  const buildRuntimeLaneInitialTodos = vi.fn((lane: string, input?: { executionMode?: string }) =>
+    input?.executionMode === 'general_answer'
+      ? []
+      : lane === 'codex-sdk'
       ? [
           { title: '対象変更を確認して実装する', taskType: 'implementation' },
           { title: '必要最小限の動作確認を行う', taskType: 'focused_verification' },
@@ -52,7 +53,7 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
     resolveRuntimeLaneDefinition: vi.fn((lane: 'native-api-runner' | 'codex-sdk') => ({
       kind: lane,
       aliases: [],
-      buildInitialTodos: (input: { compiledPromptText: string }) =>
+      buildInitialTodos: (input: { compiledPromptText: string; executionMode?: string }) =>
         buildRuntimeLaneInitialTodos(lane, input),
       buildRuntimeOptions: (input: { runtimeLaneResolution?: unknown }) => ({
         runtimeLane: lane,
@@ -66,37 +67,22 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
 
 const sameOriginHeaders = { Origin: 'http://localhost:39174' };
 
-function mockJobSelection(jobType: string, goal: string) {
-  return { jobType, goal };
-}
-
-function _expectStrictObjectSchemas(schema: unknown, path = 'schema') {
-  if (!schema || typeof schema !== 'object') return;
-  const node = schema as Record<string, unknown>;
-  if (node.type === 'object') {
-    expect(node.additionalProperties, `${path}.additionalProperties`).toBe(false);
-  }
-  for (const [key, value] of Object.entries(node)) {
-    if (key === 'properties' && value && typeof value === 'object') {
-      for (const [propertyName, propertySchema] of Object.entries(value)) {
-        _expectStrictObjectSchemas(propertySchema, `${path}.properties.${propertyName}`);
-      }
-      continue;
-    }
-    if (key === 'items') {
-      _expectStrictObjectSchemas(value, `${path}.items`);
-      continue;
-    }
-    if ((key === 'anyOf' || key === 'oneOf' || key === 'allOf') && Array.isArray(value)) {
-      value.forEach((item, index) => {
-        _expectStrictObjectSchemas(item, `${path}.${key}.${index}`);
-      });
-    }
-  }
+function mockPlanModeGate(
+  shouldStartPlanMode: boolean,
+  reason = 'test gate',
+  action: 'plan_mode' | 'general_answer' | 'implementation' = shouldStartPlanMode
+    ? 'plan_mode'
+    : 'implementation'
+) {
+  return JSON.stringify({ shouldStartPlanMode, action, reason });
 }
 
 beforeAll(async () => {
   await ensureNightWorkersSchema();
+});
+
+beforeEach(() => {
+  vi.mocked(llm.callStructuredJsonLLM).mockResolvedValue(mockPlanModeGate(false));
 });
 
 afterEach(async () => {
@@ -106,7 +92,7 @@ afterEach(async () => {
 
 describe('NightWorkers workbench routes', () => {
   it('returns immediately when workbench intake is not explicitly awaited', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockImplementationOnce(() => new Promise(() => {}));
+    vi.mocked(llm.callStructuredJsonLLM).mockImplementationOnce(() => new Promise(() => {}));
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const startedAt = Date.now();
@@ -128,18 +114,7 @@ describe('NightWorkers workbench routes', () => {
     expect(body.task.objective).toBe('同期で待たずに受付してください');
   });
 
-  it('generates an app blueprint artifact when LLM intake classifies the prompt as blueprint work', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('blueprint', 'Create an EC site top page Blueprint.')
-    );
-    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
-      JSON.stringify({
-        ...representativeAppBlueprint,
-        id: 'shop-home',
-        name: 'EC Site Top Page',
-        description: 'LLM generated storefront blueprint with commerce-specific sections.',
-      })
-    );
+  it('starts a normal run for Blueprint wording instead of classifying jobType in intake', async () => {
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -150,61 +125,21 @@ describe('NightWorkers workbench routes', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
     expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
-      '[Procedure Reference: references/work_kinds/blueprint.md]'
+    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[2]?.schemaName).toBe(
+      'workbench_plan_mode_gate'
     );
-    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
-      '通常の Blueprint 生成では DB/DDL/data model/data binding を設計しない'
-    );
-    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
-      '複数件の比較、状態確認、一括操作、ソート、絞り込み、更新対象の見極めが主目的なら table_workspace または DataTableSection を第一候補にする'
-    );
-    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
-      '単なる task / todo / record 一覧を自動で card 化しない'
-    );
-    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
-      'databaseSchema は必ず {"tables":[],"relations":[]}'
-    );
-    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
-      'DB table/column/relation/binding/DDL の考案は DB Design workflow の担当'
-    );
-    expect(body.run).toBeNull();
-    expect(body.task.status).toBe('ready');
-    const intakeMessage = body.messages.find(
-      (message: unknown) =>
-        message.role === 'assistant' && message.metadataJson?.intent === 'intake'
-    );
-    expect(intakeMessage).toBeUndefined();
-    const blueprintMessage = body.messages.find(
-      (message: unknown) => message.metadataJson?.intent === 'app_blueprint'
-    );
-    expect(blueprintMessage?.messageType).toBe('markdown_document');
-    expect(blueprintMessage?.metadataJson?.appBlueprint?.screens).toHaveLength(1);
-    expect(blueprintMessage?.metadataJson?.appBlueprint?.name).toBe('EC Site Top Page');
-    expect(blueprintMessage?.metadataJson?.validation?.valid).toBe(true);
-    expect(blueprintMessage?.metadataJson?.generation?.source).toBe('llm');
-    expect(blueprintMessage?.metadataJson?.generation?.referenceDocuments).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ relativePath: 'references/work_kinds/blueprint.md' }),
-      ])
-    );
-    expect(blueprintMessage?.metadataJson?.routingHypothesis?.subtype).toBe('app_blueprint');
-    expect(blueprintMessage?.metadataJson?.intakeJobSelection?.goal).toBe(
-      'Create an EC site top page Blueprint.'
-    );
+    expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
+    expect(
+      body.messages.some((message: unknown) => message.metadataJson?.intent === 'app_blueprint')
+    ).toBe(false);
+    expect(
+      body.messages.some((message: unknown) => message.metadataJson?.intent === 'intake')
+    ).toBe(false);
   });
 
-  it('routes active Blueprint workspace instructions to Blueprint generation without round 1 intake', async () => {
-    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
-      JSON.stringify({
-        ...representativeAppBlueprint,
-        id: 'todo-minimal-blueprint',
-        name: 'Todo Minimal Blueprint',
-        description: 'TODO登録と一覧だけに絞った Blueprint。',
-      })
-    );
+  it('does not auto-generate Blueprint artifacts from active Blueprint workspace instructions', async () => {
     const { task } = await createWorkbenchTask({ title: 'todo listを作りたいです。' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -230,46 +165,7 @@ describe('NightWorkers workbench routes', () => {
     const body = await res.json();
     expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
     expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
-    expect(
-      body.messages.some(
-        (message: unknown) => message.metadataJson?.intent === 'design_questionnaire_ready'
-      )
-    ).toBe(false);
-    const blueprintMessage = body.messages.find(
-      (message: unknown) => message.metadataJson?.intent === 'app_blueprint'
-    );
-    expect(blueprintMessage?.metadataJson?.appBlueprint?.id).toBe('todo-minimal-blueprint');
-    expect(blueprintMessage?.metadataJson?.routingHypothesis?.subtype).toBe('app_blueprint');
-    expect(blueprintMessage?.metadataJson?.intakeJobSelection?.jobType).toBe('blueprint');
-    expect(blueprintMessage?.metadataJson?.intakeJobSelection?.goal).toContain('TODO登録と、一覧');
-  });
-
-  it('keeps generic Specification Workspace instructions on round 1 when no Blueprint focus is present', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('general_answer', 'Specification Workspace の内容を確認して返答する。')
-    );
-    const { task } = await createWorkbenchTask({ title: 'Implementation plan only' });
-
-    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
-      body: JSON.stringify({
-        prompt: 'この仕様を見て次に何をすべきか教えてください',
-        artifactContext: {
-          artifactId: `blueprint-workspace-${task.id}`,
-          kind: 'blueprint_workspace',
-          title: 'Specification Workspace',
-          summary: '1 Implementation Plan',
-          source: { type: 'task_message', messageId: crypto.randomUUID() },
-          metadata: {},
-        },
-      }),
-    });
-
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
-    expect(llm.callStructuredJsonLLM).not.toHaveBeenCalled();
+    expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
     expect(
       body.messages.some((message: unknown) => message.metadataJson?.intent === 'app_blueprint')
     ).toBe(false);
@@ -278,189 +174,9 @@ describe('NightWorkers workbench routes', () => {
         (message: unknown) => message.metadataJson?.intent === 'design_questionnaire_ready'
       )
     ).toBe(false);
-    expect(
-      body.messages.some(
-        (message: unknown) =>
-          message.metadataJson?.intent === 'intake' &&
-          message.metadataJson?.jobSelection?.jobType === 'general_answer'
-      )
-    ).toBe(true);
   });
 
-  it('shows an SFA dashboard request as an app blueprint artifact', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('blueprint', 'Create an SFA dashboard AppBlueprint artifact.')
-    );
-    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
-      JSON.stringify({
-        ...representativeAppBlueprint,
-        id: 'sfa-dashboard',
-        name: 'SFA Dashboard',
-        description: 'Sales force automation dashboard for pipeline, activity, and alerts.',
-        screens: [
-          {
-            ...representativeAppBlueprint.screens[0],
-            id: 'sales-dashboard',
-            name: 'Sales Dashboard',
-            componentName: 'DashboardPage',
-            sections: [
-              {
-                kind: 'component_section',
-                ...representativeAppBlueprint.screens[0].sections[0],
-                id: 'sales-kpis',
-                name: 'Sales KPIs',
-                componentName: 'AnalyticsDashboardSection',
-              },
-              {
-                kind: 'component_section',
-                ...representativeAppBlueprint.screens[0].sections[1],
-                id: 'pipeline-table',
-                name: 'Pipeline Table',
-                componentName: 'DataTableSection',
-              },
-            ],
-          },
-        ],
-      })
-    );
-    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
-
-    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
-      body: JSON.stringify({ prompt: 'SFAのダッシュボードをblueprintで表示してください。' }),
-    });
-
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
-    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
-    expect(body.messages).not.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ metadataJson: expect.objectContaining({ intent: 'intake' }) }),
-      ])
-    );
-    const blueprintMessage = body.messages.find(
-      (message: unknown) => message.metadataJson?.intent === 'app_blueprint'
-    );
-    expect(blueprintMessage?.messageType).toBe('markdown_document');
-    expect(blueprintMessage?.metadataJson?.appBlueprint?.id).toBe('sfa-dashboard');
-    expect(blueprintMessage?.metadataJson?.appBlueprint?.screens[0]?.componentName).toBe(
-      'DashboardPage'
-    );
-    expect(blueprintMessage?.content).toContain('Sales KPIs');
-    expect(blueprintMessage?.content).toContain('Pipeline Table');
-    expect(blueprintMessage?.metadataJson?.validation?.valid).toBe(true);
-    expect(blueprintMessage?.metadataJson?.generation?.promptDiagnostics).toEqual(
-      expect.objectContaining({
-        schemaIncluded: true,
-        catalogComponentCount: expect.any(Number),
-        referenceDocumentCount: expect.any(Number),
-      })
-    );
-  });
-
-  it('records raw LLM output when blueprint generation returns non-json', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('blueprint', 'Create a Blueprint artifact.')
-    );
-    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce('not json');
-    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
-
-    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
-      body: JSON.stringify({ prompt: 'SFAのダッシュボードをblueprintで表示してください。' }),
-    });
-
-    expect(res.status).toBe(502);
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
-    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
-      '[Procedure Reference: references/work_kinds/blueprint.md]'
-    );
-    expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
-      '[AppBlueprint JSON Schema]'
-    );
-    const messages = await repo.listTaskMessages(task.id);
-    expect(messages).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          role: 'assistant',
-          content: 'not json',
-          metadataJson: expect.objectContaining({
-            intent: 'blueprint_raw_output',
-            promptDiagnostics: expect.objectContaining({
-              schemaIncluded: true,
-              referenceDocumentCount: expect.any(Number),
-            }),
-          }),
-        }),
-        expect.objectContaining({
-          role: 'system',
-          metadataJson: expect.objectContaining({
-            intent: 'blueprint_generation_failed',
-            rawOutputRecorded: true,
-          }),
-        }),
-      ])
-    );
-    expect(messages).not.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ metadataJson: expect.objectContaining({ intent: 'intake' }) }),
-      ])
-    );
-  });
-
-  it('records raw LLM output when generated blueprint json fails catalog validation', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('blueprint', 'Create a Blueprint artifact.')
-    );
-    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
-      JSON.stringify({
-        ...representativeAppBlueprint,
-        designPreset: { ...representativeAppBlueprint.designPreset, theme: 'design_governance' },
-      })
-    );
-    const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
-
-    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
-      body: JSON.stringify({ prompt: 'SFAのダッシュボードをblueprintで表示してください。' }),
-    });
-
-    expect(res.status).toBe(502);
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
-    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
-    const messages = await repo.listTaskMessages(task.id);
-    expect(messages).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          role: 'assistant',
-          metadataJson: expect.objectContaining({
-            intent: 'blueprint_raw_output',
-            validationStatus: 'failed',
-          }),
-        }),
-        expect.objectContaining({
-          role: 'system',
-          metadataJson: expect.objectContaining({
-            intent: 'blueprint_generation_failed',
-            error: expect.stringContaining('designPreset.theme:design_governance'),
-          }),
-        }),
-      ])
-    );
-  });
-
-  it('drafts a markdown spec message and queues only after validation passes', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('blueprint', 'Create a Blueprint from the requested workbench spec.')
-    );
-    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
-      JSON.stringify(representativeAppBlueprint)
-    );
+  it('keeps draft_spec messages as draft chat without Blueprint generation', async () => {
     const { task } = await createWorkbenchTask();
 
     const draftRes = await app.request(
@@ -474,41 +190,16 @@ describe('NightWorkers workbench routes', () => {
 
     expect(draftRes.status).toBe(200);
     const draftBody = await draftRes.json();
-    expect(llm.callSupervisorLLM).toHaveBeenCalledTimes(1);
+    expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
     expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
-    expect(draftBody.task.status).toBe('ready');
+    expect(draftBody.task.status).toBe('draft');
+    expect(draftBody.run).toBeNull();
     expect(
       draftBody.messages.some((message: unknown) => message.messageType === 'markdown_document')
-    ).toBe(true);
-    const blueprintMessage = draftBody.messages.find(
-      (message: unknown) => message.metadataJson?.intent === 'app_blueprint'
-    );
-    expect(blueprintMessage?.metadataJson?.appBlueprint?.screens).toHaveLength(1);
-    expect(blueprintMessage?.metadataJson?.validation?.valid).toBe(true);
-    expect(blueprintMessage?.metadataJson?.generation?.source).toBe('llm');
-
-    await repo.updateImplementationQueueSettings({ processorCount: 1 });
-    const { task: blockerTask } = await createWorkbenchTask({
-      title: 'Processor blocker for draft queue',
-      status: 'queued',
-    });
-    const blockerEntry = await repo.createImplementationQueueEntry({
-      taskId: blockerTask.id,
-      repositoryId: blockerTask.repositoryId,
-    });
-    await repo.updateImplementationQueueEntry(blockerEntry.id, {
-      status: 'claimed',
-      processorSlot: 1,
-    });
-
-    const queueRes = await app.request(`http://localhost/api/workbench/sessions/${task.id}/queue`, {
-      method: 'POST',
-      headers: sameOriginHeaders,
-    });
-    expect(queueRes.status).toBe(200);
-    const queued = await queueRes.json();
-    expect(queued.status).toBe('queued');
-    expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
+    ).toBe(false);
+    expect(
+      draftBody.messages.some((message: unknown) => message.metadataJson?.intent === 'app_blueprint')
+    ).toBe(false);
   });
 
   it('does not treat markdown titles as implementation plan evidence for queue admission', async () => {

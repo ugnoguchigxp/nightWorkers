@@ -11,10 +11,12 @@ export function QuestionnaireForm({
   questionGroups,
   answers,
   onChange,
+  readOnly = false,
 }: {
   questionGroups: DesignQuestionSet[];
   answers: Record<string, DesignQuestionnaireAnswer>;
   onChange: (answers: Record<string, DesignQuestionnaireAnswer>) => void;
+  readOnly?: boolean;
 }) {
   if (questionGroups.length === 0)
     return <p className="text-xs text-slate-500">No valid question set.</p>;
@@ -48,6 +50,7 @@ export function QuestionnaireForm({
                 question={question}
                 answer={answers[question.id] || emptyAnswer(question.id)}
                 onChange={(patch) => updateAnswer(question.id, patch)}
+                readOnly={readOnly}
               />
             ))}
           </section>
@@ -61,10 +64,12 @@ function QuestionCard({
   question,
   answer,
   onChange,
+  readOnly = false,
 }: {
   question: DesignQuestion;
   answer: DesignQuestionnaireAnswer;
   onChange: (patch: Partial<DesignQuestionnaireAnswer>) => void;
+  readOnly?: boolean;
 }) {
   const options = Array.isArray(question.options) ? question.options : [];
   const isMultiChoice = question.answerType === 'multi_choice';
@@ -78,6 +83,7 @@ function QuestionCard({
           <input
             type="checkbox"
             checked={answer.deferred}
+            disabled={readOnly}
             onChange={(event) => onChange({ deferred: event.target.checked })}
           />
           Later
@@ -100,6 +106,7 @@ function QuestionCard({
                   type={isMultiChoice ? 'checkbox' : 'radio'}
                   name={String(question.id)}
                   checked={selected}
+                  disabled={readOnly}
                   onChange={() => {
                     if (isMultiChoice) {
                       onChange({

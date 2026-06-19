@@ -134,6 +134,7 @@ function buildNativeSupervisorInitialRunTodos(
   input: RuntimeLaneSetupInput
 ): ImplementationTodoInput[] {
   if (input.executionMode === 'planning') return [];
+  if (input.executionMode === 'general_answer') return [];
   if (input.executionMode === 'review') return buildReviewInitialRunTodos(input);
 
   const screenPath = extractFirstMatch(input.compiledPromptText, /画面パス:\s*`([^`]+)`/);
@@ -174,6 +175,7 @@ function buildNativeSupervisorInitialRunTodos(
 
 function buildCodexSdkInitialRunTodos(input: RuntimeLaneSetupInput): ImplementationTodoInput[] {
   if (input.executionMode === 'planning') return [];
+  if (input.executionMode === 'general_answer') return [];
   if (input.executionMode === 'review') return buildReviewInitialRunTodos(input);
 
   const summary = input.compiledPromptText.replace(/\s+/g, ' ').trim().slice(0, 160);

@@ -321,6 +321,7 @@ export function BlueprintSpecificationWorkspaceViewer({
                   questionGroups={questionGroups}
                   answers={answers}
                   onChange={setAnswers}
+                  readOnly={isImplementationLocked}
                 />
                 <div className="flex flex-wrap items-center gap-2">
                   <ActionButton

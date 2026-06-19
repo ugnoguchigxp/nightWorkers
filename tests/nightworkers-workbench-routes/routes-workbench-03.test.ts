@@ -39,8 +39,10 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
     stop: vi.fn(),
   };
   const resolveAgentRuntime = vi.fn(() => runtime);
-  const buildRuntimeLaneInitialTodos = vi.fn((lane: string) =>
-    lane === 'codex-sdk'
+  const buildRuntimeLaneInitialTodos = vi.fn((lane: string, input?: { executionMode?: string }) =>
+    input?.executionMode === 'general_answer'
+      ? []
+      : lane === 'codex-sdk'
       ? [
           { title: '対象変更を確認して実装する', taskType: 'implementation' },
           { title: '必要最小限の動作確認を行う', taskType: 'focused_verification' },
@@ -58,7 +60,7 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
     resolveRuntimeLaneDefinition: vi.fn((lane: 'native-api-runner' | 'codex-sdk') => ({
       kind: lane,
       aliases: [],
-      buildInitialTodos: (input: { compiledPromptText: string }) =>
+      buildInitialTodos: (input: { compiledPromptText: string; executionMode?: string }) =>
         buildRuntimeLaneInitialTodos(lane, input),
       buildRuntimeOptions: (input: { runtimeLaneResolution?: unknown }) => ({
         runtimeLane: lane,
@@ -72,8 +74,14 @@ vi.mock('../../api/services/agent-runtime/registry', () => {
 
 const sameOriginHeaders = { Origin: 'http://localhost:39174' };
 
-function mockJobSelection(jobType: string, goal: string) {
-  return { jobType, goal };
+function mockPlanModeGate(
+  shouldStartPlanMode: boolean,
+  reason = 'test gate',
+  action: 'plan_mode' | 'general_answer' | 'implementation' = shouldStartPlanMode
+    ? 'plan_mode'
+    : 'implementation'
+) {
+  return JSON.stringify({ shouldStartPlanMode, action, reason });
 }
 
 function _expectStrictObjectSchemas(schema: unknown, path = 'schema') {
@@ -108,6 +116,7 @@ beforeAll(async () => {
 beforeEach(() => {
   delete process.env.IMPLEMENTATION_RUNTIME_LANE;
   disableAutoQueueDrainForTest();
+  vi.mocked(llm.callStructuredJsonLLM).mockResolvedValue(mockPlanModeGate(false));
 });
 
 afterEach(async () => {
@@ -237,9 +246,6 @@ describe('NightWorkers workbench routes', () => {
   });
 
   it('routes design tool intent through LLM intake instead of fixed component artifacts', async () => {
-    vi.mocked(llm.callSupervisorLLM).mockResolvedValueOnce(
-      mockJobSelection('docs', 'Analyze the requested component design.')
-    );
     const { task } = await createWorkbenchTask({ title: 'Button design session' });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -256,11 +262,13 @@ describe('NightWorkers workbench routes', () => {
     expect(
       body.messages.some((message: unknown) => message.metadataJson?.intent === 'component_design')
     ).toBe(false);
+    expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
     const intakeMessage = body.messages.find(
       (message: unknown) =>
         message.role === 'assistant' && message.metadataJson?.intent === 'intake'
     );
-    expect(intakeMessage?.content).toContain('Analyze the requested component design.');
+    expect(intakeMessage).toBeUndefined();
   });
 
   it('creates a revised Blueprint artifact from DB Design intent without round-1 intake', async () => {

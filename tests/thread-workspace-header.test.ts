@@ -58,6 +58,9 @@ describe('ThreadWorkspace header', () => {
     expect(shellSource).toContain(
       "void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'questionnaire');"
     );
+    expect(shellSource).toContain('existingQuestionnaireMessageIds');
+    expect(shellSource).toContain('!existingQuestionnaireMessageIds.has(message.id)');
+    expect(shellSource).toContain('if (!result?.run)');
   });
 
   it('shows the plan route before implementation in the composer model selector', () => {
