@@ -77,6 +77,16 @@ export const CODEX_CONTRACT_WARNING_CATALOG = {
     description:
       'A native project import command completed without nightworkers.import_project success.',
   },
+  codex_plan_mode_file_change: {
+    defaultSeverity: 'error',
+    terminalPolicy: 'needs_human',
+    description: 'Codex changed files during a planning run.',
+  },
+  codex_plan_mode_mutating_tool: {
+    defaultSeverity: 'error',
+    terminalPolicy: 'needs_human',
+    description: 'Codex used a mutating NightWorkers MCP tool during a planning run.',
+  },
 } as const satisfies Record<
   string,
   {

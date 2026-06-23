@@ -16,6 +16,11 @@ export type TaskLlmUsageSummary = {
 
 export type NightWorkersLanguage = 'ja' | 'en';
 export type NightWorkersCurrency = 'JPY' | 'USD' | 'EUR';
+export type PlanModeCapability = 'questionnaire' | 'blueprint' | 'dbDesign' | 'specification';
+
+export type PlanModeSettings = {
+  capabilities: Record<PlanModeCapability, boolean>;
+};
 
 export type GeneralSettings = {
   timezone: string;
@@ -26,6 +31,7 @@ export type GeneralSettings = {
     autoRefresh: boolean;
     lastRefreshedAt: string | null;
   };
+  planMode: PlanModeSettings;
 };
 
 export type OverviewUsageSummary = {

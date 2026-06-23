@@ -75,4 +75,49 @@ describe('SpecificationStatusView', () => {
     expect(markup).toContain('キューに追加');
     expect(markup.match(/disabled=""/g) || []).toHaveLength(5);
   });
+
+  it('disables Plan Mode capability actions while keeping read-only status visible', () => {
+    const markup = renderToStaticMarkup(
+      <SpecificationStatusView
+        workspace={
+          {
+            blueprintArtifacts: [{ id: 'blueprint-1', title: 'Blueprint' }],
+            dbDesignArtifacts: [{ id: 'db-design-1', title: 'DB Design' }],
+          } as never
+        }
+        questionnaireSession={
+          {
+            id: 'questionnaire-1',
+            status: 'accepted',
+            answers: [],
+            questionSets: [],
+          } as never
+        }
+        busyAction={null}
+        canGenerateDbDesign={true}
+        hasSpecification={true}
+        planModeSettings={{
+          capabilities: {
+            questionnaire: true,
+            blueprint: false,
+            dbDesign: false,
+            specification: false,
+          },
+        }}
+        onOpenQuestionnaire={vi.fn()}
+        onGenerateBlueprint={vi.fn()}
+        onGenerateDbDesign={vi.fn()}
+        onGenerateSpecification={vi.fn()}
+        onQueueSession={vi.fn()}
+        onAddToQueue={vi.fn()}
+      />
+    );
+
+    expect(markup).toContain('アンケートを確認');
+    expect(markup).toContain('Blueprintを再生成');
+    expect(markup).toContain('DBデザインを再生成');
+    expect(markup).toContain('仕様書を再生成');
+    expect(markup).toContain('Plan Mode capability is disabled in Settings.');
+    expect(markup.match(/disabled=""/g) || []).toHaveLength(3);
+  });
 });

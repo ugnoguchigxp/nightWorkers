@@ -49,6 +49,7 @@ import {
   removeDuplicateFollowUpQuestions,
   validateDesignQuestionnaireAnswerForQuestion,
 } from './nightworkers.design-questionnaire-validation';
+import { assertPlanModeCapabilityEnabled } from './nightworkers.plan-mode-settings.service';
 import { isAppBlueprintMessage } from './nightworkers.planning-helpers.service';
 import * as repo from './nightworkers.repository';
 import {
@@ -89,6 +90,7 @@ export async function createDesignQuestionnaire(
 ) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeCapabilityEnabled('questionnaire');
   assertPlanModeMutable(task);
   const sourceBlueprintMessage = sourceBlueprintMessageId
     ? (await getQuestionnaireTaskAndBlueprint(taskId, sourceBlueprintMessageId))
@@ -158,6 +160,7 @@ export async function saveDesignQuestionnaireAnswers(
 ) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeCapabilityEnabled('questionnaire');
   assertPlanModeMutable(task);
   const session = await getDesignQuestionnaireSession(taskId, sessionId);
   if (session.status === 'review_ready' || session.status === 'accepted') {
@@ -206,6 +209,7 @@ export async function saveDesignQuestionnaireAnswers(
 export async function generateDesignQuestionnaireFollowUp(taskId: string, sessionId: string) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeCapabilityEnabled('questionnaire');
   assertPlanModeMutable(task);
   const session = await getDesignQuestionnaireSession(taskId, sessionId);
   if (session.questionSets.length >= MAX_DESIGN_QUESTIONNAIRE_PAGES) {
@@ -302,6 +306,7 @@ async function assessDesignQuestionnaireNextStep(
 export async function generateDesignQuestionnaireReview(taskId: string, sessionId: string) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeCapabilityEnabled('questionnaire');
   assertPlanModeMutable(task);
   const session = await getDesignQuestionnaireSession(taskId, sessionId);
   const rawOutput = await generateDesignQuestionnaireReviewRawOutput(session);
@@ -326,6 +331,7 @@ export async function generateDesignQuestionnaireReview(taskId: string, sessionI
 export async function acceptDesignQuestionnaireReview(taskId: string, sessionId: string) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeCapabilityEnabled('questionnaire');
   assertPlanModeMutable(task);
   const session = await getDesignQuestionnaireSession(taskId, sessionId);
   const latestDraft = session.reviews.find((review) => review.status === 'draft' && review.review);
@@ -357,6 +363,7 @@ export async function acceptDesignQuestionnaireReview(taskId: string, sessionId:
 export async function leaveDesignQuestionnaireReviewUnadopted(taskId: string, sessionId: string) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeCapabilityEnabled('questionnaire');
   assertPlanModeMutable(task);
   const session = await getDesignQuestionnaireSession(taskId, sessionId);
   const latestReview = session.reviews[0];
@@ -467,6 +474,7 @@ export async function generateSpecificationStatusBlueprint(
 ) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeCapabilityEnabled('blueprint');
   assertPlanModeMutable(task);
   const session = await resolveReadyQuestionnaireSession(taskId, input.questionnaireSessionId);
   const prompt = renderQuestionnaireBlueprintPrompt(task, session);
@@ -547,6 +555,7 @@ export async function generateSpecificationStatusDbDesign(
 ) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeCapabilityEnabled('dbDesign');
   assertPlanModeMutable(task);
   const session = await resolveReadyQuestionnaireSession(taskId, input.questionnaireSessionId);
   const sourceBlueprintMessage = await resolveSourceBlueprintMessage(
@@ -602,6 +611,7 @@ export async function generateSpecificationStatusDesignDocument(
 ) {
   const task = await repo.getTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
+  assertPlanModeCapabilityEnabled('specification');
   assertPlanModeMutable(task);
   const session = await resolveReadyQuestionnaireSession(taskId, input.questionnaireSessionId);
   const workspace = await getSpecificationWorkspace(taskId);

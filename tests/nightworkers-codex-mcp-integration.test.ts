@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -158,4 +159,50 @@ describe('NightWorkers Codex MCP integration', () => {
       await deleteRepository(repository.id);
     }
   }, 120_000);
+
+  it('blocks mutating NightWorkers MCP tools in planning execution mode', async () => {
+    const originalExecutionMode = process.env.NIGHTWORKERS_EXECUTION_MODE;
+    process.env.NIGHTWORKERS_EXECUTION_MODE = 'planning';
+    let client: Client | null = null;
+    try {
+      client = new Client(
+        { name: 'nightworkers-codex-mcp-planning-test', version: '0.1.0' },
+        { capabilities: {} }
+      );
+      const transport = new StreamableHTTPClientTransport(
+        new URL('http://127.0.0.1/mcp/nightworkers'),
+        {
+          fetch: async (input, init) => {
+            const request = input instanceof Request ? input : new Request(input, init);
+            return app.fetch(request);
+          },
+        }
+      );
+      await client.connect(transport);
+
+      const callResult = await client.callTool(
+        {
+          name: 'import_project',
+          arguments: {
+            taskId: crypto.randomUUID(),
+            source: 'starter',
+            stack: 'hono',
+          },
+        },
+        undefined,
+        { timeout: 30_000 }
+      );
+
+      expect(callResult.isError).toBe(true);
+      expect(callResult.structuredContent).toMatchObject({
+        error: {
+          code: 'PLAN_MODE_TOOL_DISABLED',
+        },
+      });
+    } finally {
+      if (client) await client.close().catch(() => undefined);
+      if (originalExecutionMode === undefined) delete process.env.NIGHTWORKERS_EXECUTION_MODE;
+      else process.env.NIGHTWORKERS_EXECUTION_MODE = originalExecutionMode;
+    }
+  });
 });

@@ -47,8 +47,6 @@ const DEFAULT_RESULT: AgentRuntimeResult = {
   riskLevel: 'high',
 };
 
-const NIGHTWORKERS_EXPECTED_CODEX_TOOLS = new Set(getNightWorkersCodexToolNames());
-
 export class CodexAgentRuntime implements AgentRuntime {
   readonly kind = 'codex-agent' as const;
   private cancelledRunIds = new Set<string>();
@@ -84,7 +82,9 @@ export class CodexAgentRuntime implements AgentRuntime {
     let terminalState: AgentRuntimeResult['terminalState'] = 'completed';
     let stoppedBy: AgentRuntimeResult['stoppedBy'] = 'decision';
     const mapperState = createCodexEventMapperState();
-    const auditState = createCodexRuntimeAuditState();
+    const auditState = createCodexRuntimeAuditState({
+      executionMode: readCodexRuntimeExecutionMode(context),
+    });
 
     try {
       if (signal?.aborted || this.cancelledRunIds.has(context.runId)) {
@@ -239,15 +239,29 @@ export class CodexAgentRuntime implements AgentRuntime {
 
     const warnings: CodexContractWarning[] = [];
     const toolName = typeof payload.toolName === 'string' ? payload.toolName : null;
+    const executionMode = readCodexRuntimeExecutionMode(context);
+    const expectedCodexTools = new Set(getNightWorkersCodexToolNames({ executionMode }));
     if (toolName?.startsWith('nightworkers.')) {
       auditState.observedNightWorkersTools.add(toolName);
+      if (
+        executionMode === 'planning' &&
+        (toolName === 'nightworkers.todo_list' || toolName === 'nightworkers.import_project')
+      ) {
+        warnings.push({
+          code: 'codex_plan_mode_mutating_tool',
+          severity: 'error',
+          message: `Mutating NightWorkers MCP tool observed during planning mode: ${toolName}.`,
+          providerItemId: readString(payload.providerItemId),
+          toolName,
+        });
+      }
       if (toolName === 'nightworkers.todo_list') {
         auditState.sawAnyNightworkersTodo = true;
         if (event.type === 'tool_call_finished' && readToolOperation(payload) === 'replace') {
           auditState.sawNightworkersTodoReplace = true;
         }
       }
-      if (event.type === 'tool_call_finished' && !NIGHTWORKERS_EXPECTED_CODEX_TOOLS.has(toolName)) {
+      if (event.type === 'tool_call_finished' && !expectedCodexTools.has(toolName)) {
         warnings.push({
           code: 'codex_unexpected_nightworkers_mcp_tool',
           severity: 'warning',
@@ -335,6 +349,15 @@ export class CodexAgentRuntime implements AgentRuntime {
     }
 
     if (event.type === 'diff_collected' && isCodexFileChangeEvent(payload)) {
+      if (executionMode === 'planning') {
+        warnings.push({
+          code: 'codex_plan_mode_file_change',
+          severity: 'error',
+          message: 'Codex file_change occurred during planning mode.',
+          providerItemId: readString(payload.providerItemId),
+          changedFiles: readChangedFiles(payload),
+        });
+      }
       const todoEvidence = await this.readCurrentTodoEvidence(context);
       const currentTodo = todoEvidence.todo;
       if (currentTodo) {
@@ -529,10 +552,30 @@ export class CodexAgentRuntime implements AgentRuntime {
       riskLevel: AgentRuntimeResult['riskLevel'];
     }
   ): Promise<typeof input> {
+    if (input.terminalState !== 'completed') {
+      return input;
+    }
+    const planModeViolation = auditState.contractWarnings.find(
+      (warning) =>
+        warning.code === 'codex_plan_mode_file_change' ||
+        warning.code === 'codex_plan_mode_mutating_tool'
+    );
+    if (planModeViolation) {
+      const finalReportSuffix =
+        'Codex planning mode mutation was observed; stopping for human review.';
+      const finalReport = input.finalReport
+        ? `${input.finalReport}\n\n${finalReportSuffix}`
+        : finalReportSuffix;
+      return {
+        terminalState: 'needs_human',
+        finalReport,
+        stoppedBy: 'tool_failure',
+        riskLevel: 'high',
+      };
+    }
     if (
       !auditState.sawHighRiskNativeImportCommand ||
-      auditState.sawNightworkersImportProjectSuccess ||
-      input.terminalState !== 'completed'
+      auditState.sawNightworkersImportProjectSuccess
     ) {
       return input;
     }
@@ -672,6 +715,30 @@ function readChangedFiles(payload: Record<string, unknown>): string[] {
   return Array.isArray(payload.changedFiles)
     ? payload.changedFiles.filter((file): file is string => typeof file === 'string')
     : [];
+}
+
+function readCodexRuntimeExecutionMode(context: AgentRunContext) {
+  const value = context.runtimeOptions?.executionMode;
+  if (
+    value === 'planning' ||
+    value === 'implementation' ||
+    value === 'review' ||
+    value === 'runtime_debug' ||
+    value === 'general_answer'
+  ) {
+    return value;
+  }
+  const snapshotValue = context.contextSnapshot.executionMode;
+  if (
+    snapshotValue === 'planning' ||
+    snapshotValue === 'implementation' ||
+    snapshotValue === 'review' ||
+    snapshotValue === 'runtime_debug' ||
+    snapshotValue === 'general_answer'
+  ) {
+    return snapshotValue;
+  }
+  return 'implementation';
 }
 
 function readToolOperation(payload: Record<string, unknown>): string | null {

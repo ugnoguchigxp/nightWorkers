@@ -43,7 +43,9 @@ export type CodexRuntimeAuditState = {
   mcpConfig: CodexRuntimeMcpConfigState;
 };
 
-export function createCodexRuntimeAuditState(): CodexRuntimeAuditState {
+export function createCodexRuntimeAuditState(
+  input: { executionMode?: string } = {}
+): CodexRuntimeAuditState {
   return {
     sawNightworkersTodoReplace: false,
     sawAnyNightworkersTodo: false,
@@ -61,7 +63,9 @@ export function createCodexRuntimeAuditState(): CodexRuntimeAuditState {
     sawHighRiskNativeImportCommand: false,
     highRiskNativeImportCommand: null,
     highRiskNativeImportProviderItemId: null,
-    mcpConfig: resolveCodexRuntimeMcpConfigState(),
+    mcpConfig: resolveCodexRuntimeMcpConfigState({
+      env: input.executionMode ? { NIGHTWORKERS_EXECUTION_MODE: input.executionMode } : undefined,
+    }),
   };
 }
 

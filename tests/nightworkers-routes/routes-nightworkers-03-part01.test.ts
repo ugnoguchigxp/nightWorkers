@@ -1,8 +1,9 @@
 import crypto from 'node:crypto';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import app from '../../api/app';
 import { ensureNightWorkersSchema } from '../../api/db/bootstrap';
 import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
+import * as generalSettings from '../../api/services/settings/general-settings';
 import { representativeAppBlueprint } from '../fixtures/app-blueprint';
 
 const sameOriginHeaders = { Origin: 'http://localhost:39174' };
@@ -438,6 +439,105 @@ describe('NightWorkers task routes', () => {
       else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
       if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
       else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+    }
+  });
+
+  it('rejects Questionnaire mutation when the Plan Mode capability is disabled', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+    vi.spyOn(generalSettings, 'readGeneralSettings').mockReturnValue({
+      ...generalSettings.DEFAULT_GENERAL_SETTINGS,
+      planMode: {
+        capabilities: {
+          ...generalSettings.DEFAULT_GENERAL_SETTINGS.planMode.capabilities,
+          questionnaire: false,
+        },
+      },
+    });
+
+    try {
+      const createdRepo = await repo.createRepository({
+        name: `TEST: Disabled Questionnaire ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: createdRepo.id,
+        title: 'TEST: Disabled questionnaire target',
+        description: 'Generate questionnaire',
+        status: 'draft',
+      });
+
+      const createRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+      expect(createRes.status).toBe(409);
+      const body = await createRes.json();
+      expect(body.error?.code ?? body.code).toBe('PLAN_MODE_CAPABILITY_DISABLED');
+
+      const listRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire`,
+        { headers: sameOriginHeaders }
+      );
+      expect(listRes.status).toBe(200);
+      expect(await listRes.json()).toEqual([]);
+    } finally {
+      vi.restoreAllMocks();
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+    }
+  });
+
+  it.each([
+    ['blueprint', 'blueprint'],
+    ['dbDesign', 'db-design'],
+    ['specification', 'design-doc'],
+  ] as const)('rejects %s Status generation when the Plan Mode capability is disabled', async (capability, endpoint) => {
+    vi.spyOn(generalSettings, 'readGeneralSettings').mockReturnValue({
+      ...generalSettings.DEFAULT_GENERAL_SETTINGS,
+      planMode: {
+        capabilities: {
+          ...generalSettings.DEFAULT_GENERAL_SETTINGS.planMode.capabilities,
+          [capability]: false,
+        },
+      },
+    });
+
+    try {
+      const createdRepo = await repo.createRepository({
+        name: `TEST: Disabled ${capability} ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: createdRepo.id,
+        title: `TEST: Disabled ${capability} target`,
+        description: 'Generate Status artifact',
+        status: 'draft',
+      });
+
+      const res = await app.request(
+        `http://localhost/api/tasks/${task.id}/specification-workspace/${endpoint}`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+      expect(res.status).toBe(409);
+      const body = await res.json();
+      expect(body.error?.code ?? body.code).toBe('PLAN_MODE_CAPABILITY_DISABLED');
+    } finally {
+      vi.restoreAllMocks();
     }
   });
 

@@ -77,6 +77,7 @@ describe('general-settings service', () => {
         autoRefresh: false,
         lastRefreshedAt: '2026-06-10T12:00:00Z',
       });
+      expect(settings.planMode).toEqual(DEFAULT_GENERAL_SETTINGS.planMode);
     });
 
     it('returns defaults if file contains invalid JSON', () => {
@@ -99,10 +100,16 @@ describe('general-settings service', () => {
         },
       };
       const result = writeGeneralSettings(input);
-      expect(result).toEqual(input);
+      expect(result).toEqual({
+        ...input,
+        planMode: DEFAULT_GENERAL_SETTINGS.planMode,
+      });
       expect(fs.existsSync(GENERAL_SETTINGS_FILE)).toBe(true);
       const saved = JSON.parse(fs.readFileSync(GENERAL_SETTINGS_FILE, 'utf-8'));
-      expect(saved).toEqual(input);
+      expect(saved).toEqual({
+        ...input,
+        planMode: DEFAULT_GENERAL_SETTINGS.planMode,
+      });
     });
   });
 

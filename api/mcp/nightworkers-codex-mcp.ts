@@ -9,7 +9,11 @@ import {
 } from '../services/worker-tools/read-current-specification';
 import { todoListTool } from '../services/worker-tools/todo-list';
 import type { WorkerToolResult } from '../services/worker-tools/types';
-import { nightWorkersCodexToolManifest } from './nightworkers-tool-manifest';
+import {
+  isNightWorkersCodexToolAllowedForMode,
+  type NightWorkersCodexToolName,
+  nightWorkersCodexToolManifest,
+} from './nightworkers-tool-manifest';
 
 export function createNightWorkersCodexMcpServer() {
   const server = new McpServer({
@@ -43,8 +47,11 @@ export function createNightWorkersCodexMcpServer() {
     {
       ...nightWorkersCodexToolManifest.todo_list,
     },
-    async ({ runId, operation, seq, todos, startFirst, todoListReplaceReason }) =>
-      toolResultToMcp(
+    async ({ runId, operation, seq, todos, startFirst, todoListReplaceReason }) => {
+      if (isToolDisabledForExecutionMode('todo_list')) {
+        return toolResultToMcp(disabledToolResult('todo_list'));
+      }
+      return toolResultToMcp(
         await todoListTool({
           runId: runId || process.env.NIGHTWORKERS_RUN_ID || '',
           operation,
@@ -53,7 +60,8 @@ export function createNightWorkersCodexMcpServer() {
           startFirst,
           todoListReplaceReason,
         })
-      )
+      );
+    }
   );
 
   server.registerTool(
@@ -76,6 +84,9 @@ export function createNightWorkersCodexMcpServer() {
       stripGitDir,
       initialize,
     }) => {
+      if (isToolDisabledForExecutionMode('import_project')) {
+        return toolResultToMcp(disabledToolResult('import_project'));
+      }
       const resolvedTaskId = taskId || process.env.NIGHTWORKERS_TASK_ID || '';
       const task = resolvedTaskId ? await repo.getTask(resolvedTaskId) : null;
       const repository = task ? await repo.getRepository(task.repositoryId) : null;
@@ -115,6 +126,25 @@ export function createNightWorkersCodexMcpServer() {
   );
 
   return server;
+}
+
+function isToolDisabledForExecutionMode(toolName: NightWorkersCodexToolName) {
+  return !isNightWorkersCodexToolAllowedForMode(toolName, process.env.NIGHTWORKERS_EXECUTION_MODE);
+}
+
+function disabledToolResult(toolName: NightWorkersCodexToolName): WorkerToolResult<unknown> {
+  const now = new Date().toISOString();
+  return {
+    ok: false,
+    toolName,
+    startedAt: now,
+    finishedAt: now,
+    payload: null,
+    error: {
+      code: 'PLAN_MODE_TOOL_DISABLED',
+      message: `${toolName} is disabled in NightWorkers planning mode.`,
+    },
+  };
 }
 
 export async function handleNightWorkersCodexMcpRequest(request: Request): Promise<Response> {

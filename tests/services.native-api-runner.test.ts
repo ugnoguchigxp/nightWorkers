@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import {
   NativeApiRunner,
@@ -29,7 +29,10 @@ vi.mock('../api/services/mcp/mcp-client-manager', () => ({
 }));
 
 describe('NativeApiRunner', () => {
+  let restoreDefaultSettings: (() => void) | null = null;
+
   beforeEach(() => {
+    restoreDefaultSettings = installRuntimeLlmSettings(defaultNativeApiRunnerSettings());
     vi.clearAllMocks();
     (repo.getTaskRun as never).mockResolvedValue({
       id: 'run-1',
@@ -37,6 +40,11 @@ describe('NativeApiRunner', () => {
     });
     (repo.listTaskRunTodosForRun as never).mockResolvedValue([]);
     (repo.updateTaskRunTodo as never).mockResolvedValue({});
+  });
+
+  afterEach(() => {
+    restoreDefaultSettings?.();
+    restoreDefaultSettings = null;
   });
 
   it('stops with needs_human when implementation provider returns text but no native tool calls', async () => {
@@ -1701,6 +1709,47 @@ function buildContext(overrides: Partial<AgentRunContext> = {}): AgentRunContext
       source: 'fallback',
     },
     ...overrides,
+  };
+}
+
+function defaultNativeApiRunnerSettings(): Record<string, unknown> {
+  return {
+    ACTIVE_LLM_PROVIDER: 'openai',
+    providerEndpoints: [
+      {
+        id: 'test-openai',
+        name: 'Test OpenAI',
+        kind: 'openai',
+        enabled: true,
+        models: ['test-model'],
+      },
+    ],
+    roleRoutes: [
+      {
+        role: 'implementation',
+        primary: {
+          providerEndpointId: 'test-openai',
+          model: 'test-model',
+        },
+        fallbacks: [],
+      },
+      {
+        role: 'plan',
+        primary: {
+          providerEndpointId: 'test-openai',
+          model: 'test-model',
+        },
+        fallbacks: [],
+      },
+      {
+        role: 'review',
+        primary: {
+          providerEndpointId: 'test-openai',
+          model: 'test-model',
+        },
+        fallbacks: [],
+      },
+    ],
   };
 }
 

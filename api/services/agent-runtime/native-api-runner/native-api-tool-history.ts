@@ -102,9 +102,13 @@ export function extractLatestNativeApiUserPrompt(history: readonly NativeApiHist
 
 function buildNativeApiSystemPrompt(context: AgentRunContext) {
   const executionMode = readNativeApiExecutionMode(context);
+  const planModeSettings = formatPlanModeSettingsSnapshot(
+    context.runtimeOptions?.planModeSettingsSnapshot
+  );
   return [
     'あなたは NightWorkers の native/API lane coding agent runtime です。',
     `executionMode: ${executionMode}`,
+    ...(planModeSettings ? [`planModeSettings: ${planModeSettings}`] : []),
     'Codex 型の turn lifecycle / tool dispatch / cancellation discipline に従って実行します。',
     'Codex SDK lane へ fallback せず、SchemaFirst supervisor loop へ fallback しません。',
     'new_context tool は、会話履歴を要約せず次の provider turn から新しい context window を開始します。',
@@ -125,6 +129,16 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
     ...modeGuidance(executionMode),
     `repoRoot: ${context.repoRoot}`,
   ].join('\n');
+}
+
+function formatPlanModeSettingsSnapshot(snapshot: unknown) {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return null;
+  const disabledCapabilities = (snapshot as { disabledCapabilities?: unknown })
+    .disabledCapabilities;
+  if (!Array.isArray(disabledCapabilities)) return null;
+  return disabledCapabilities.length > 0
+    ? `disabled=${disabledCapabilities.join(', ')}`
+    : 'all enabled';
 }
 
 function modeGuidance(executionMode: ReturnType<typeof readNativeApiExecutionMode>) {

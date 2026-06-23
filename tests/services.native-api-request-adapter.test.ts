@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildNativeApiProviderRequest } from '../api/services/agent-runtime/native-api-runner/native-api-request-adapter';
 import {
   buildInitialNativeApiHistory,
@@ -8,6 +11,17 @@ import {
 import type { AgentRunContext } from '../api/services/agent-runtime/types';
 
 describe('NativeApiRunner request adapter', () => {
+  let restoreSettings: (() => void) | null = null;
+
+  beforeEach(() => {
+    restoreSettings = installRuntimeLlmSettings(defaultNativeApiRequestAdapterSettings());
+  });
+
+  afterEach(() => {
+    restoreSettings?.();
+    restoreSettings = null;
+  });
+
   it('projects all system history into one leading provider system message', () => {
     const history: NativeApiHistoryItem[] = [
       { type: 'user', source: 'user', content: 'first user' },
@@ -149,5 +163,54 @@ function buildContext(overrides: Partial<AgentRunContext> = {}): AgentRunContext
       source: 'fallback',
     },
     ...overrides,
+  };
+}
+
+function defaultNativeApiRequestAdapterSettings(): Record<string, unknown> {
+  return {
+    ACTIVE_LLM_PROVIDER: 'openai',
+    providerEndpoints: [
+      {
+        id: 'test-openai',
+        name: 'Test OpenAI',
+        kind: 'openai',
+        enabled: true,
+        models: ['test-model'],
+      },
+    ],
+    roleRoutes: [
+      {
+        role: 'implementation',
+        primary: {
+          providerEndpointId: 'test-openai',
+          model: 'test-model',
+        },
+        fallbacks: [],
+      },
+      {
+        role: 'plan',
+        primary: {
+          providerEndpointId: 'test-openai',
+          model: 'test-model',
+        },
+        fallbacks: [],
+      },
+    ],
+  };
+}
+
+function installRuntimeLlmSettings(settings: Record<string, unknown>) {
+  const previousPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-llm-settings-'));
+  const settingsPath = path.join(dir, 'llm-settings.json');
+  fs.writeFileSync(settingsPath, JSON.stringify(settings));
+  process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = settingsPath;
+  return () => {
+    if (previousPath === undefined) {
+      delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    } else {
+      process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = previousPath;
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
   };
 }

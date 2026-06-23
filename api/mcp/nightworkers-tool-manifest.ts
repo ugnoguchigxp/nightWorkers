@@ -203,26 +203,57 @@ export const nightWorkersCodexToolManifest = {
 } as const;
 
 export type NightWorkersCodexToolName = keyof typeof nightWorkersCodexToolManifest;
+export type NightWorkersCodexToolExecutionMode =
+  | 'planning'
+  | 'implementation'
+  | 'review'
+  | 'runtime_debug'
+  | 'general_answer';
 
-export function getNightWorkersCodexToolNames() {
-  return Object.keys(nightWorkersCodexToolManifest).map((tool) => `nightworkers.${tool}`);
+const PLAN_MODE_READ_ONLY_CODEX_TOOLS = new Set<NightWorkersCodexToolName>([
+  'read_current_specification',
+  'list_recent_specifications',
+]);
+
+export function getNightWorkersCodexToolNames(input: { executionMode?: string } = {}) {
+  return Object.keys(nightWorkersCodexToolManifest)
+    .filter((tool): tool is NightWorkersCodexToolName =>
+      isNightWorkersCodexToolAllowedForMode(tool as NightWorkersCodexToolName, input.executionMode)
+    )
+    .map((tool) => `nightworkers.${tool}`);
 }
 
-export function buildNightWorkersCodexToolApprovalConfig() {
+export function buildNightWorkersCodexToolApprovalConfig(input: { executionMode?: string } = {}) {
   return Object.fromEntries(
-    Object.entries(nightWorkersCodexToolManifest).map(([name, definition]) => [
-      name,
-      { approval_mode: definition.approvalMode },
-    ])
+    Object.entries(nightWorkersCodexToolManifest)
+      .filter(([name]) =>
+        isNightWorkersCodexToolAllowedForMode(
+          name as NightWorkersCodexToolName,
+          input.executionMode
+        )
+      )
+      .map(([name, definition]) => [name, { approval_mode: definition.approvalMode }])
   );
 }
 
-export function buildNightWorkersCodexToolConfigLines() {
-  return Object.entries(nightWorkersCodexToolManifest).flatMap(([name, definition]) => [
-    '',
-    `[mcp_servers.nightworkers.tools.${name}]`,
-    `approval_mode = "${definition.approvalMode}"`,
-  ]);
+export function buildNightWorkersCodexToolConfigLines(input: { executionMode?: string } = {}) {
+  return Object.entries(nightWorkersCodexToolManifest)
+    .filter(([name]) =>
+      isNightWorkersCodexToolAllowedForMode(name as NightWorkersCodexToolName, input.executionMode)
+    )
+    .flatMap(([name, definition]) => [
+      '',
+      `[mcp_servers.nightworkers.tools.${name}]`,
+      `approval_mode = "${definition.approvalMode}"`,
+    ]);
+}
+
+export function isNightWorkersCodexToolAllowedForMode(
+  tool: NightWorkersCodexToolName,
+  executionMode?: string
+) {
+  if (executionMode !== 'planning') return true;
+  return PLAN_MODE_READ_ONLY_CODEX_TOOLS.has(tool);
 }
 
 export function toNightWorkersJsonSchema(schema: z.ZodTypeAny) {

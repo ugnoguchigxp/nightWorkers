@@ -72,9 +72,12 @@ const sameOriginHeaders = { Origin: 'http://localhost:39174' };
 function mockPlanModeGate(
   shouldStartPlanMode: boolean,
   reason = 'test gate',
-  action: 'plan_mode' | 'general_answer' | 'implementation' = shouldStartPlanMode
-    ? 'plan_mode'
-    : 'implementation'
+  action:
+    | 'plan_mode'
+    | 'general_answer'
+    | 'implementation'
+    | 'review'
+    | 'runtime_debug' = shouldStartPlanMode ? 'plan_mode' : 'implementation'
 ) {
   return JSON.stringify({ shouldStartPlanMode, action, reason });
 }

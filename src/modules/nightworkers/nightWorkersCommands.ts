@@ -103,8 +103,8 @@ export function saveLlmSettings(settings: LlmSettings) {
   return apiFetch('/api/settings/llm', jsonRequest('POST', settings));
 }
 
-export function fetchGeneralSettings() {
-  return apiFetch('/api/settings/general');
+export function fetchGeneralSettings(init?: RequestInit) {
+  return apiFetch('/api/settings/general', init);
 }
 
 export function saveGeneralSettings(settings: GeneralSettings) {

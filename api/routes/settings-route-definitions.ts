@@ -57,6 +57,14 @@ const generalSettingsSchema = z.object({
     autoRefresh: z.boolean(),
     lastRefreshedAt: z.string().nullable(),
   }),
+  planMode: z.object({
+    capabilities: z.object({
+      questionnaire: z.boolean(),
+      blueprint: z.boolean(),
+      dbDesign: z.boolean(),
+      specification: z.boolean(),
+    }),
+  }),
 });
 
 const fxRateCacheSchema = z

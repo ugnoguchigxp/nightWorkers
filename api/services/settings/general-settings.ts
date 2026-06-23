@@ -12,6 +12,11 @@ const FX_CACHE_PATH =
 export type NightWorkersLanguage = 'ja' | 'en';
 export type NightWorkersCurrency = 'JPY' | 'USD' | 'EUR';
 export type FxSource = 'ecb' | 'manual';
+export type PlanModeCapability = 'questionnaire' | 'blueprint' | 'dbDesign' | 'specification';
+
+export type PlanModeSettings = {
+  capabilities: Record<PlanModeCapability, boolean>;
+};
 
 export type GeneralSettings = {
   timezone: string;
@@ -22,6 +27,7 @@ export type GeneralSettings = {
     autoRefresh: boolean;
     lastRefreshedAt: string | null;
   };
+  planMode: PlanModeSettings;
 };
 
 export type FxRateCache = {
@@ -34,6 +40,12 @@ export type FxRateCache = {
 
 export const SUPPORTED_LANGUAGES: NightWorkersLanguage[] = ['ja', 'en'];
 export const SUPPORTED_CURRENCIES: NightWorkersCurrency[] = ['JPY', 'USD', 'EUR'];
+export const PLAN_MODE_CAPABILITIES: PlanModeCapability[] = [
+  'questionnaire',
+  'blueprint',
+  'dbDesign',
+  'specification',
+];
 
 export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   timezone: 'Asia/Tokyo',
@@ -43,6 +55,14 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
     source: 'ecb',
     autoRefresh: true,
     lastRefreshedAt: null,
+  },
+  planMode: {
+    capabilities: {
+      questionnaire: true,
+      blueprint: true,
+      dbDesign: true,
+      specification: true,
+    },
   },
 };
 
@@ -146,7 +166,38 @@ export function normalizeGeneralSettings(input: Partial<GeneralSettings>): Gener
       lastRefreshedAt:
         typeof input.fx?.lastRefreshedAt === 'string' ? input.fx.lastRefreshedAt : null,
     },
+    planMode: normalizePlanModeSettings(input.planMode),
   };
+}
+
+export function normalizePlanModeSettings(input: unknown): PlanModeSettings {
+  const record = isRecord(input) ? input : {};
+  const capabilities = isRecord(record.capabilities) ? record.capabilities : {};
+  return {
+    capabilities: Object.fromEntries(
+      PLAN_MODE_CAPABILITIES.map((capability) => [
+        capability,
+        typeof capabilities[capability] === 'boolean'
+          ? capabilities[capability]
+          : DEFAULT_GENERAL_SETTINGS.planMode.capabilities[capability],
+      ])
+    ) as Record<PlanModeCapability, boolean>,
+  };
+}
+
+export function buildPlanModeSettingsSnapshot(settings = readGeneralSettings()) {
+  const disabledCapabilities = PLAN_MODE_CAPABILITIES.filter(
+    (capability) => !settings.planMode.capabilities[capability]
+  );
+  return {
+    capabilities: settings.planMode.capabilities,
+    disabledCapabilities,
+    source: 'general-settings' as const,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function readJsonFile<T>(filePath: string): T | null {

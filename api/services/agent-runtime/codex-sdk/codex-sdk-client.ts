@@ -27,9 +27,17 @@ export async function createCodexRuntimeThread(input: {
       ...process.env,
       NIGHTWORKERS_TASK_ID: input.context.taskId,
       NIGHTWORKERS_RUN_ID: input.context.runId,
+      NIGHTWORKERS_EXECUTION_MODE: readCodexRuntimeExecutionMode(input.context),
     },
   });
   const codex = new Codex(codexOptions);
   const threadOptions = buildCodexRuntimeThreadOptions(input.context);
   return codex.startThread(threadOptions);
+}
+
+function readCodexRuntimeExecutionMode(context: AgentRunContext) {
+  const value = context.runtimeOptions?.executionMode;
+  if (typeof value === 'string') return value;
+  const snapshotValue = context.contextSnapshot.executionMode;
+  return typeof snapshotValue === 'string' ? snapshotValue : 'implementation';
 }

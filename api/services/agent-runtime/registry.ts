@@ -27,6 +27,7 @@ export type RuntimeLaneSetupInput = {
   runtimeLaneResolution?: RuntimeLaneResolution;
   implementationLlmRoute?: ResolvedStructuredLlmRoute | null;
   llmRouteOverride?: StructuredLlmModelTarget | null;
+  planModeSettingsSnapshot?: unknown;
 };
 
 export type RuntimeLaneDefinition = {
@@ -80,6 +81,7 @@ export function buildRuntimeLaneOptions(
   const activeRole = activeRoute?.role ?? fallbackRoleForExecutionMode(input.executionMode);
   return {
     executionMode: input.executionMode ?? 'implementation',
+    planModeSettingsSnapshot: input.planModeSettingsSnapshot ?? null,
     runtimeLane: input.runtimeLaneResolution?.lane ?? null,
     runtimeLaneResolution: input.runtimeLaneResolution ?? null,
     ...(nativeApiRoute

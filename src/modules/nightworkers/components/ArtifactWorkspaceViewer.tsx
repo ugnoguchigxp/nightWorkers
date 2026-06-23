@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toDeepRecord } from '../../../../shared/json-record';
 import {
   fetchDesignQuestionnaireSessions,
+  fetchGeneralSettings,
   fetchSpecificationWorkspace,
   generateSpecificationWorkspaceArtifact,
   startDesignQuestionnaire,
@@ -13,6 +14,7 @@ import type {
   BlueprintSpecificationWorkspace,
   DesignQuestionnaireAnswer,
   DesignQuestionnaireSession,
+  GeneralSettings,
   TaskMessage,
 } from '../types';
 import {
@@ -62,6 +64,8 @@ export function BlueprintSpecificationWorkspaceViewer({
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, DesignQuestionnaireAnswer>>({});
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [generalSettings, setGeneralSettings] = useState<GeneralSettings | null>(null);
   const [assemblyReadySessionIds, setAssemblyReadySessionIds] = useState<Set<string>>(new Set());
   const [generatedMessages, setGeneratedMessages] = useState<TaskMessage[]>([]);
   const combinedTaskMessages = useMemo(
@@ -124,6 +128,22 @@ export function BlueprintSpecificationWorkspaceViewer({
   }, [refresh]);
 
   useEffect(() => {
+    const controller = new AbortController();
+    fetchGeneralSettings({ signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        return (await res.json()) as GeneralSettings;
+      })
+      .then((settings) => {
+        if (!controller.signal.aborted) setGeneralSettings(settings);
+      })
+      .catch((error) => {
+        if (error?.name !== 'AbortError') console.warn('Failed to load Plan Mode settings', error);
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
   }, [initialTab]);
 
@@ -144,9 +164,13 @@ export function BlueprintSpecificationWorkspaceViewer({
 
   async function runAction(action: string, fn: () => Promise<void>) {
     setBusyAction(action);
+    setActionError(null);
     try {
       await fn();
       await refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setActionError(message);
     } finally {
       setBusyAction(null);
     }
@@ -156,6 +180,14 @@ export function BlueprintSpecificationWorkspaceViewer({
     if (!fn || isImplementationLocked) return;
     await runAction(action, fn);
   }
+
+  const planModeCapabilities = generalSettings?.planMode.capabilities ?? {
+    questionnaire: true,
+    blueprint: true,
+    dbDesign: true,
+    specification: true,
+  };
+  const planModeDisabledReason = 'Plan Mode capability is disabled in Settings.';
 
   async function startQuestionnaire() {
     if (!sessionId || !activeBlueprintMessage) return;
@@ -285,13 +317,20 @@ export function BlueprintSpecificationWorkspaceViewer({
                   type="button"
                   className="inline-flex items-center gap-1.5 rounded border border-cyan-500/60 bg-cyan-950/30 px-2 py-1 text-xs text-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
                   onClick={startQuestionnaire}
-                  disabled={Boolean(busyAction) || isImplementationLocked}
+                  disabled={
+                    Boolean(busyAction) ||
+                    isImplementationLocked ||
+                    !planModeCapabilities.questionnaire
+                  }
                 >
                   {busyAction === 'start' ? (
                     <LoaderCircle className="h-3 w-3 animate-spin" />
                   ) : null}
                   この画面案から質問を作成
                 </button>
+              ) : null}
+              {!planModeCapabilities.questionnaire ? (
+                <span className="text-[11px] text-amber-300">{planModeDisabledReason}</span>
               ) : null}
               {sessions.map((session) => (
                 <button
@@ -332,7 +371,11 @@ export function BlueprintSpecificationWorkspaceViewer({
                     }
                     icon="send"
                     busy={busyAction === 'submit-answers'}
-                    disabled={unansweredQuestions.length > 0 || isImplementationLocked}
+                    disabled={
+                      unansweredQuestions.length > 0 ||
+                      isImplementationLocked ||
+                      !planModeCapabilities.questionnaire
+                    }
                     onClick={submitAnswersForNextStep}
                   />
                   <span
@@ -352,6 +395,9 @@ export function BlueprintSpecificationWorkspaceViewer({
                         .join(' / ')}
                     </span>
                   ) : null}
+                  {!planModeCapabilities.questionnaire ? (
+                    <span className="text-[11px] text-amber-300">{planModeDisabledReason}</span>
+                  ) : null}
                 </div>
               </>
             ) : (
@@ -368,6 +414,7 @@ export function BlueprintSpecificationWorkspaceViewer({
             )}
             hasSpecification={reviewedDesignDocMessages.length > 0}
             isImplementationLocked={isImplementationLocked}
+            planModeSettings={generalSettings?.planMode}
             onOpenQuestionnaire={() => setActiveTab('questionnaire')}
             onGenerateBlueprint={() => generateSpecificationArtifact('blueprint', 'blueprints')}
             onGenerateDbDesign={() => generateSpecificationArtifact('db-design', 'db-design')}
@@ -389,6 +436,14 @@ export function BlueprintSpecificationWorkspaceViewer({
             }
           />
         )}
+        {actionError ? (
+          <p
+            role="alert"
+            className="mt-3 rounded border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-200"
+          >
+            {actionError}
+          </p>
+        ) : null}
       </div>
     </div>
   );

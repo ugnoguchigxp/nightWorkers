@@ -58,7 +58,9 @@ export function buildCodexRuntimeSdkOptions(input: CodexRuntimeConfigInput = {})
 export function resolveCodexRuntimeMcpConfigState(
   input: Pick<CodexRuntimeConfigInput, 'env' | 'enableNightworkersMcp'> = {}
 ): CodexRuntimeMcpConfigState {
-  const expectedTools = getNightWorkersCodexToolNames();
+  const expectedTools = getNightWorkersCodexToolNames({
+    executionMode: input.env?.NIGHTWORKERS_EXECUTION_MODE,
+  });
   if (input.enableNightworkersMcp === false) {
     return {
       source: 'disabled',
@@ -104,7 +106,9 @@ function buildNightWorkersMcpServers(env: NodeJS.ProcessEnv): CodexConfigObject 
     [NIGHTWORKERS_MCP_SERVER_NAME]: {
       transport: 'streamable_http',
       url,
-      tools: buildNightWorkersCodexToolApprovalConfig(),
+      tools: buildNightWorkersCodexToolApprovalConfig({
+        executionMode: env.NIGHTWORKERS_EXECUTION_MODE,
+      }),
     },
   };
 }

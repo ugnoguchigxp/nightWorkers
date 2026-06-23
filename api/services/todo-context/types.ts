@@ -4,6 +4,12 @@ export type RuntimeLaneSnapshot = {
   diagnostics?: Array<{ level: 'info' | 'warning'; message: string }>;
 };
 
+export type PlanModeSettingsSnapshot = {
+  capabilities: Record<'questionnaire' | 'blueprint' | 'dbDesign' | 'specification', boolean>;
+  disabledCapabilities: Array<'questionnaire' | 'blueprint' | 'dbDesign' | 'specification'>;
+  source: 'general-settings';
+};
+
 export type TodoProcedureSnapshot = {
   id?: string | null;
   source?: string | null;
@@ -28,6 +34,7 @@ export type RuntimePromptSnapshot = {
     | 'session_queue'
     | 'explicit';
   planModeClosed?: boolean;
+  planModeSettingsSnapshot?: PlanModeSettingsSnapshot;
   implementationPhasePreamble?: string;
   blueprintPlanning?: unknown;
   runtimeLane?: 'native-api-runner' | 'codex-sdk';

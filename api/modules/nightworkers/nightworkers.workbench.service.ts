@@ -10,6 +10,10 @@ import { renderBlueprintMarkdown } from '../../services/blueprints/draft';
 import { validateAppBlueprint } from '../../services/blueprints/validation';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
 import { shouldWaitForWorkbenchIntakeInTests } from '../../services/runtime-env';
+import {
+  buildPlanModeSettingsSnapshot,
+  readGeneralSettings,
+} from '../../services/settings/general-settings';
 import { callStructuredJsonLLM, type SupervisorLlmDebugEvent } from '../../services/structured-llm';
 import { normalizeStructuredLlmModelTarget } from '../../services/structured-llm/selection';
 import { createDesignQuestionnaire } from './nightworkers.design-questionnaire.service';
@@ -346,13 +350,15 @@ function renderArtifactContextualPrompt(
 const workbenchPlanModeGateSchema = z
   .object({
     shouldStartPlanMode: z.boolean(),
-    action: z.enum(['plan_mode', 'general_answer', 'implementation']).optional(),
+    action: z
+      .enum(['plan_mode', 'general_answer', 'implementation', 'review', 'runtime_debug'])
+      .optional(),
     reason: z.string().min(1),
   })
   .strict();
 
 type WorkbenchPlanModeGate = z.infer<typeof workbenchPlanModeGateSchema> & {
-  action: 'plan_mode' | 'general_answer' | 'implementation';
+  action: 'plan_mode' | 'general_answer' | 'implementation' | 'review' | 'runtime_debug';
 };
 
 async function decideWorkbenchPlanModeGate(input: {
@@ -375,7 +381,7 @@ async function decideWorkbenchPlanModeGate(input: {
           shouldStartPlanMode: { type: 'boolean' },
           action: {
             type: 'string',
-            enum: ['plan_mode', 'general_answer', 'implementation'],
+            enum: ['plan_mode', 'general_answer', 'implementation', 'review', 'runtime_debug'],
           },
           reason: { type: 'string' },
         },
@@ -401,7 +407,9 @@ function buildWorkbenchPlanModeGatePrompt(projectRoot: string) {
     'jobType、作業種別、難易度、実装規模、レビュー種別、調査種別は分類しないでください。',
     'shouldStartPlanMode は、ユーザーが計画、実装計画、設計方針、仕様策定、質問票化、Blueprint など、実装前の計画作成を明示的に依頼した場合だけ true にしてください。',
     '質問、確認、説明依頼、状態確認は shouldStartPlanMode=false かつ action="general_answer" にしてください。',
-    '修正、実装、テスト、設定変更、依存更新、リファクタ、ログ確認、原因調査、レビューは shouldStartPlanMode=false かつ action="implementation" にしてください。',
+    '修正、実装、設定変更、依存更新、リファクタは shouldStartPlanMode=false かつ action="implementation" にしてください。',
+    'コードレビュー、差分レビュー、品質レビューは shouldStartPlanMode=false かつ action="review" にしてください。',
+    'ログ確認、原因調査、実行時状態の確認、テスト実行や検証依頼は shouldStartPlanMode=false かつ action="runtime_debug" にしてください。',
     '完了済みの Plan Mode artifact は証跡として扱い、後続の質問や変更依頼で再編集対象にしないでください。',
     '判断に迷う場合は shouldStartPlanMode=false かつ action="general_answer" にしてください。',
     'JSON のみを返してください。',
@@ -409,7 +417,7 @@ function buildWorkbenchPlanModeGatePrompt(projectRoot: string) {
     `プロジェクトルート: ${projectRoot}`,
     '',
     '[Output Schema]',
-    '{ "shouldStartPlanMode": boolean, "action": "plan_mode" | "general_answer" | "implementation", "reason": "short reason" }',
+    '{ "shouldStartPlanMode": boolean, "action": "plan_mode" | "general_answer" | "implementation" | "review" | "runtime_debug", "reason": "short reason" }',
   ].join('\n');
 }
 
@@ -441,7 +449,38 @@ async function handleWorkbenchIntakeMessage(
       emitEvent: emitWorkbenchLlmDebugEvent,
       taskId,
     });
+    const planModeSettingsSnapshot = buildPlanModeSettingsSnapshot(readGeneralSettings());
     if (planModeGate.shouldStartPlanMode || planModeGate.action === 'plan_mode') {
+      if (!planModeSettingsSnapshot.capabilities.questionnaire) {
+        const runnable = await repo.updateTask(taskId, {
+          title,
+          objective: task.objective || prompt,
+          acceptanceCriteria: task.acceptanceCriteria || prompt,
+          status: 'ready',
+        });
+        await repo.createTaskMessage({
+          taskId,
+          role: 'system',
+          content: 'Planning run started from Workbench intake because Questionnaire is disabled.',
+          messageType: 'text',
+          payloadJson: {
+            intent: 'run_started',
+            source: 'workbench',
+            executionMode: 'planning',
+            planModeGate,
+            planModeSettingsSnapshot,
+          },
+        });
+        const run = await startTaskRun(taskId, {
+          executionMode: 'planning',
+          executionModeSource: 'workbench_intake',
+        });
+        return {
+          task: (await repo.getTask(taskId)) || runnable,
+          run,
+          messages: await repo.listTaskMessages(taskId),
+        };
+      }
       const questionnaireSession = await createDesignQuestionnaire(taskId, null, llmPrompt, {
         routeOverride: options.llmRouteOverride || null,
       });
@@ -466,11 +505,11 @@ async function handleWorkbenchIntakeMessage(
           questionnaireStatus: questionnaireSession.status,
           totalQuestionCount,
           planModeGate,
+          planModeSettingsSnapshot,
         },
       });
     } else if ((options.intent || 'intake') === 'intake') {
-      const executionMode =
-        planModeGate.action === 'general_answer' ? 'general_answer' : 'implementation';
+      const executionMode = planModeGate.action;
       const runnable = await repo.updateTask(taskId, {
         title,
         objective: task.objective || prompt,
@@ -480,16 +519,14 @@ async function handleWorkbenchIntakeMessage(
       await repo.createTaskMessage({
         taskId,
         role: 'system',
-        content:
-          executionMode === 'general_answer'
-            ? 'General answer run started from Workbench intake.'
-            : 'Implementation run started from Workbench intake.',
+        content: workbenchRunStartedMessage(executionMode),
         messageType: 'text',
         payloadJson: {
           intent: 'run_started',
           source: 'workbench',
           executionMode,
           planModeGate,
+          planModeSettingsSnapshot,
         },
       });
       const run = await startTaskRun(taskId, {
@@ -537,6 +574,18 @@ async function handleWorkbenchIntakeMessage(
       { task: updated }
     );
   }
+}
+
+function workbenchRunStartedMessage(
+  executionMode: 'general_answer' | 'implementation' | 'review' | 'runtime_debug'
+) {
+  if (executionMode === 'general_answer')
+    return 'General answer run started from Workbench intake.';
+  if (executionMode === 'review') return 'Review run started from Workbench intake.';
+  if (executionMode === 'runtime_debug') {
+    return 'Runtime debug run started from Workbench intake.';
+  }
+  return 'Implementation run started from Workbench intake.';
 }
 
 function createWorkbenchLlmDebugEventEmitter(taskId: string) {

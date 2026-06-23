@@ -4,6 +4,7 @@ import { fetchBlueprintDesignSettings } from '../nightWorkersCommands';
 import type {
   BlueprintSpecificationWorkspace,
   DesignQuestionnaireSession,
+  PlanModeSettings,
   TaskMessage,
 } from '../types';
 import { MarkdownViewer } from './ArtifactFileViewers';
@@ -140,6 +141,7 @@ export function SpecificationStatusView({
   canGenerateDbDesign,
   hasSpecification,
   isImplementationLocked = false,
+  planModeSettings,
   onOpenQuestionnaire,
   onGenerateBlueprint,
   onGenerateDbDesign,
@@ -153,6 +155,7 @@ export function SpecificationStatusView({
   canGenerateDbDesign: boolean;
   hasSpecification: boolean;
   isImplementationLocked?: boolean;
+  planModeSettings?: PlanModeSettings;
   onOpenQuestionnaire: () => void;
   onGenerateBlueprint: () => void;
   onGenerateDbDesign: () => void;
@@ -164,6 +167,13 @@ export function SpecificationStatusView({
   const questionCount = questionnaireSession ? getQuestionCount(questionnaireSession) : 0;
   const hasBlueprint = Boolean(workspace?.blueprintArtifacts.length);
   const hasDbDesign = Boolean(workspace?.dbDesignArtifacts.length);
+  const capabilities = planModeSettings?.capabilities ?? {
+    questionnaire: true,
+    blueprint: true,
+    dbDesign: true,
+    specification: true,
+  };
+  const disabledReason = 'Plan Mode capability is disabled in Settings.';
   const questionnaireDone = Boolean(
     questionnaireSession &&
       (questionnaireSession.status === 'review_ready' || questionnaireSession.status === 'accepted')
@@ -179,7 +189,8 @@ export function SpecificationStatusView({
       done: questionnaireDone,
       buttonLabel: questionnaireDone ? 'アンケートを確認' : 'アンケートへ',
       busy: false,
-      disabled: false,
+      disabled: !capabilities.questionnaire,
+      disabledReason: capabilities.questionnaire ? null : disabledReason,
       onClick: onOpenQuestionnaire,
     },
     {
@@ -191,7 +202,8 @@ export function SpecificationStatusView({
       done: hasBlueprint,
       buttonLabel: hasBlueprint ? 'Blueprintを再生成' : 'Blueprint作成',
       busy: busyAction === 'blueprint',
-      disabled: !questionnaireDone || isImplementationLocked,
+      disabled: !questionnaireDone || isImplementationLocked || !capabilities.blueprint,
+      disabledReason: !capabilities.blueprint ? disabledReason : null,
       onClick: onGenerateBlueprint,
     },
     {
@@ -203,7 +215,12 @@ export function SpecificationStatusView({
       done: hasDbDesign,
       buttonLabel: hasDbDesign ? 'DBデザインを再生成' : 'DBデザイン作成',
       busy: busyAction === 'db-design',
-      disabled: !questionnaireDone || !canGenerateDbDesign || isImplementationLocked,
+      disabled:
+        !questionnaireDone ||
+        !canGenerateDbDesign ||
+        isImplementationLocked ||
+        !capabilities.dbDesign,
+      disabledReason: !capabilities.dbDesign ? disabledReason : null,
       onClick: onGenerateDbDesign,
     },
     {
@@ -215,7 +232,8 @@ export function SpecificationStatusView({
       done: hasSpecification,
       buttonLabel: hasSpecification ? '仕様書を再生成' : '仕様書作成',
       busy: busyAction === 'design-doc',
-      disabled: !questionnaireDone || isImplementationLocked,
+      disabled: !questionnaireDone || isImplementationLocked || !capabilities.specification,
+      disabledReason: !capabilities.specification ? disabledReason : null,
       onClick: onGenerateSpecification,
     },
   ];
@@ -254,6 +272,9 @@ export function SpecificationStatusView({
                   {step.number}. {step.title}
                 </div>
                 <div className="mt-1 text-slate-400">{step.detail}</div>
+                {step.disabledReason ? (
+                  <div className="mt-1 text-[11px] text-amber-300">{step.disabledReason}</div>
+                ) : null}
               </div>
             </div>
             <StatusActionButton

@@ -20,6 +20,15 @@ vi.mock('../api/services/settings/general-settings', () => ({
   SUPPORTED_CURRENCIES: ['JPY', 'USD', 'EUR'],
 }));
 
+const defaultPlanModeSettings = {
+  capabilities: {
+    questionnaire: true,
+    blueprint: true,
+    dbDesign: true,
+    specification: true,
+  },
+};
+
 const pricingMocks = vi.hoisted(() => ({
   listPricingRows: vi.fn(),
   upsertPricingRow: vi.fn(),
@@ -265,6 +274,13 @@ describe('general and LLM settings routes', () => {
     generalSettingsMocks.readGeneralSettings.mockReturnValue({
       timezone: 'UTC',
       language: 'en',
+      currency: 'USD',
+      fx: {
+        source: 'ecb',
+        autoRefresh: true,
+        lastRefreshedAt: null,
+      },
+      planMode: defaultPlanModeSettings,
     });
 
     const app = new OpenAPIHono<AppEnv>();
@@ -274,7 +290,17 @@ describe('general and LLM settings routes', () => {
     const res = await app.request('/api/settings/general', { method: 'GET' });
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json).toEqual({ timezone: 'UTC', language: 'en' });
+    expect(json).toEqual({
+      timezone: 'UTC',
+      language: 'en',
+      currency: 'USD',
+      fx: {
+        source: 'ecb',
+        autoRefresh: true,
+        lastRefreshedAt: null,
+      },
+      planMode: defaultPlanModeSettings,
+    });
   });
 
   it('POST /api/settings/general saves general settings', async () => {
@@ -286,6 +312,12 @@ describe('general and LLM settings routes', () => {
         source: 'ecb',
         autoRefresh: true,
         lastRefreshedAt: null,
+      },
+      planMode: {
+        capabilities: {
+          ...defaultPlanModeSettings.capabilities,
+          blueprint: false,
+        },
       },
     });
 
@@ -307,6 +339,12 @@ describe('general and LLM settings routes', () => {
           autoRefresh: true,
           lastRefreshedAt: null,
         },
+        planMode: {
+          capabilities: {
+            ...defaultPlanModeSettings.capabilities,
+            blueprint: false,
+          },
+        },
       }),
     });
     expect(res.status).toBe(200);
@@ -319,6 +357,28 @@ describe('general and LLM settings routes', () => {
         source: 'ecb',
         autoRefresh: true,
         lastRefreshedAt: null,
+      },
+      planMode: {
+        capabilities: {
+          ...defaultPlanModeSettings.capabilities,
+          blueprint: false,
+        },
+      },
+    });
+    expect(generalSettingsMocks.writeGeneralSettings).toHaveBeenCalledWith({
+      timezone: 'Asia/Tokyo',
+      language: 'ja',
+      currency: 'JPY',
+      fx: {
+        source: 'ecb',
+        autoRefresh: true,
+        lastRefreshedAt: null,
+      },
+      planMode: {
+        capabilities: {
+          ...defaultPlanModeSettings.capabilities,
+          blueprint: false,
+        },
       },
     });
   });

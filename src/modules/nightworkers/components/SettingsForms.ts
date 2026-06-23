@@ -1,4 +1,13 @@
-import { Bot, Globe, Palette, PlugZap, type Settings, TestTube2, Workflow } from 'lucide-react';
+import {
+  Bot,
+  ClipboardList,
+  Globe,
+  Palette,
+  PlugZap,
+  type Settings,
+  TestTube2,
+  Workflow,
+} from 'lucide-react';
 import type {
   AgentHookConfig,
   AgentHookEvent,
@@ -41,6 +50,7 @@ export type AgentHookForm = {
 
 export type SettingsSectionId =
   | 'general'
+  | 'plan-mode'
   | 'appearance'
   | 'llm-providers'
   | 'llm-routing'
@@ -57,7 +67,34 @@ export const defaultGeneralSettings: GeneralSettings = {
     autoRefresh: true,
     lastRefreshedAt: null,
   },
+  planMode: {
+    capabilities: {
+      questionnaire: true,
+      blueprint: true,
+      dbDesign: true,
+      specification: true,
+    },
+  },
 };
+
+export function mergeGeneralSettings(input: Partial<GeneralSettings> = {}): GeneralSettings {
+  return {
+    ...defaultGeneralSettings,
+    ...input,
+    fx: {
+      ...defaultGeneralSettings.fx,
+      ...input.fx,
+    },
+    planMode: {
+      ...defaultGeneralSettings.planMode,
+      ...input.planMode,
+      capabilities: {
+        ...defaultGeneralSettings.planMode.capabilities,
+        ...input.planMode?.capabilities,
+      },
+    },
+  };
+}
 
 export const emptyMcpForm: McpServerForm = {
   name: '',
@@ -108,6 +145,12 @@ export const settingsSections: Array<{
     labelKey: 'settings.section.general',
     descriptionKey: 'settings.section.generalDescription',
     icon: Globe,
+  },
+  {
+    id: 'plan-mode',
+    labelKey: 'settings.section.planMode',
+    descriptionKey: 'settings.section.planModeDescription',
+    icon: ClipboardList,
   },
   {
     id: 'appearance',

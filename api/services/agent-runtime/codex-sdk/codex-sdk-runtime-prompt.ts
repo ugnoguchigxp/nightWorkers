@@ -3,8 +3,8 @@ import type { AgentRunContext } from '../types';
 
 export function buildCodexRuntimePrompt(context: AgentRunContext): string {
   const request = (context.latestUserMessage || context.compiledPrompt).trim();
-  const nightWorkersToolList = getNightWorkersCodexToolNames().join(', ');
   const executionMode = readCodexRuntimeExecutionMode(context);
+  const nightWorkersToolList = getNightWorkersCodexToolNames({ executionMode }).join(', ');
   const contract =
     executionMode === 'general_answer'
       ? buildGeneralAnswerContract(context, nightWorkersToolList)
@@ -47,10 +47,11 @@ function buildExecutionContract(
   nightWorkersToolList: string,
   executionMode: ReturnType<typeof readCodexRuntimeExecutionMode>
 ) {
+  if (executionMode === 'planning') {
+    return buildPlanningContract(context, nightWorkersToolList);
+  }
   const planModeContract =
-    executionMode === 'planning'
-      ? 'Plan mode: enabled. ユーザーは計画、仕様化、設計作業を明示的に依頼している。ユーザーが実装へ移るよう依頼するまで、実装編集は行わない。'
-      : 'Plan mode: disabled. ユーザーはこの run で Plan Mode を明示していない。計画だけの回答で止まらず、implementation-plan artifact を主成果物として作らない。';
+    'Plan mode: disabled. ユーザーはこの run で Plan Mode を明示していない。計画だけの回答で止まらず、implementation-plan artifact を主成果物として作らない。';
   const contract = [
     '[NightWorkers Runtime Contract]',
     `taskId: ${context.taskId}`,
@@ -103,6 +104,28 @@ function buildExecutionContract(
     '- CLI checks appear as Codex native command_execution events, not NightWorkers MCP tools. Preserve important command, exit code, stdout, and stderr evidence in the final report.',
   ].join('\n');
   return contract;
+}
+
+function buildPlanningContract(context: AgentRunContext, nightWorkersToolList: string) {
+  return [
+    '[NightWorkers Runtime Contract]',
+    `taskId: ${context.taskId}`,
+    `runId: ${context.runId}`,
+    `repoRoot: ${context.repoRoot}`,
+    'executionMode: planning',
+    'Plan mode: enabled. ユーザーは計画、仕様化、設計作業を明示的に依頼している。ユーザーが実装へ移るよう依頼するまで、実装編集は行わない。',
+    '',
+    'NightWorkers MCP:',
+    '- MCP server name: nightworkers',
+    `- Available read-only NightWorkers MCP tools in this lane: ${nightWorkersToolList || 'none'}.`,
+    '- If context-still.initial_instructions has not run in this NightWorkers run, run it before other task work and follow it.',
+    '',
+    'Planning behavior:',
+    '- リポジトリの読み取り、既存仕様の確認、実装計画の作成に限定する。',
+    '- Project import、TodoList mutation、ファイル編集、実装、検証、closeout gate を開始しない。',
+    '- 実装に移るにはユーザーの明示依頼が必要です。',
+    '- 完了時は、実装順、検証ゲート、停止条件を含む計画を短く具体的に返す。',
+  ].join('\n');
 }
 
 function readCodexRuntimeExecutionMode(context: AgentRunContext) {

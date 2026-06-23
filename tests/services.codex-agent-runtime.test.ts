@@ -252,6 +252,77 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain('executionMode: planning');
     expect(prompt).toContain('Plan mode: enabled');
     expect(prompt).toContain('実装編集は行わない');
+    expect(prompt).toContain(
+      getNightWorkersCodexToolNames({ executionMode: 'planning' }).join(', ')
+    );
+    expect(prompt).not.toContain('nightworkers.todo_list');
+    expect(prompt).not.toContain('nightworkers.import_project');
+  });
+
+  it('removes mutating NightWorkers MCP tools from planning Codex inline config', () => {
+    const options = buildCodexRuntimeSdkOptions({
+      env: {
+        NIGHTWORKERS_EXECUTION_MODE: 'planning',
+        NIGHTWORKERS_CODEX_MCP_URL: 'http://127.0.0.1:39173/mcp/nightworkers',
+      } as never,
+    });
+
+    expect(options.config).toMatchObject({
+      mcp_servers: {
+        nightworkers: {
+          tools: {
+            read_current_specification: { approval_mode: 'approve' },
+            list_recent_specifications: { approval_mode: 'approve' },
+          },
+        },
+      },
+    });
+    expect(
+      (options.config as { mcp_servers?: { nightworkers?: { tools?: Record<string, unknown> } } })
+        .mcp_servers?.nightworkers?.tools
+    ).not.toHaveProperty('todo_list');
+    expect(
+      (options.config as { mcp_servers?: { nightworkers?: { tools?: Record<string, unknown> } } })
+        .mcp_servers?.nightworkers?.tools
+    ).not.toHaveProperty('import_project');
+    expect(
+      resolveCodexRuntimeMcpConfigState({
+        env: { NIGHTWORKERS_EXECUTION_MODE: 'planning' } as never,
+      }).expectedTools
+    ).toEqual([
+      'nightworkers.read_current_specification',
+      'nightworkers.list_recent_specifications',
+    ]);
+  });
+
+  it('emits planning runtime contract with read-only NightWorkers MCP tools', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          { type: 'thread.started', thread_id: 'codex-thread-1' },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'plan' } },
+        ] as never),
+    });
+    const events: unknown[] = [];
+
+    await runtime.start(buildContext({ executionMode: 'planning' }), {
+      emit: async (event) => {
+        events.push(event);
+      },
+    });
+
+    const runtimeStarted = events.find(
+      (event) => (event as { type?: string }).type === 'runtime_started'
+    ) as { payload?: { runtimeContract?: { mcp?: { expectedTools?: string[] } } } };
+    expect(runtimeStarted?.payload?.runtimeContract?.mcp?.expectedTools).toEqual(
+      getNightWorkersCodexToolNames({ executionMode: 'planning' })
+    );
+    expect(runtimeStarted?.payload?.runtimeContract?.mcp?.expectedTools).not.toContain(
+      'nightworkers.todo_list'
+    );
+    expect(runtimeStarted?.payload?.runtimeContract?.mcp?.expectedTools).not.toContain(
+      'nightworkers.import_project'
+    );
   });
 
   it('keeps general answer prompts separate from implementation contracts', () => {

@@ -46,6 +46,10 @@ import {
   formatCoverageAutonomyFinalReport,
 } from '../../services/quality/coverage-autonomy-gate';
 import { getSessionQueueMaxConcurrencyFromEnv } from '../../services/runtime-env';
+import {
+  buildPlanModeSettingsSnapshot,
+  readGeneralSettings,
+} from '../../services/settings/general-settings';
 import { providerAdapterKey } from '../../services/structured-llm/request';
 import {
   type ResolvedStructuredLlmRoute,
@@ -799,6 +803,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
         ? 'Implementation'
         : runtimeRole;
   const settings = getCurrentSettings();
+  const planModeSettingsSnapshot = buildPlanModeSettingsSnapshot(readGeneralSettings());
   const baseRuntimeLaneResolution = resolveRuntimeLane({
     settingsRuntimeLane: settings.IMPLEMENTATION_RUNTIME_LANE,
     activeLlmProvider: settings.ACTIVE_LLM_PROVIDER,
@@ -834,6 +839,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
       compiledPrompt: compiledPromptText,
       executionMode,
       executionModeSource,
+      planModeSettingsSnapshot,
       ...blueprintPlanningSnapshot,
       runtimeLane: runtimeLaneResolution.lane,
       runtimeLaneResolution: {
@@ -851,6 +857,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
     runtimeLaneResolution,
     implementationLlmRoute: runtimeLlmRoute,
     llmRouteOverride,
+    planModeSettingsSnapshot,
   };
   const runtimeOptions = runtimeLaneDefinition.buildRuntimeOptions(runtimeLaneSetupInput);
   const initialTodos = runtimeLaneDefinition.buildInitialTodos(runtimeLaneSetupInput);
@@ -878,6 +885,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
       executionMode,
       executionModeSource,
       runtimeRole,
+      planModeSettingsSnapshot,
       ...blueprintPlanningSnapshot,
       runtimeLane: runtimeLaneResolution.lane,
       workerKind: runtimeLaneResolution.workerKind,
@@ -913,6 +921,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
     executionPhase: executionMode,
     executionModeSource,
     planModeClosed: executionMode !== 'planning',
+    planModeSettingsSnapshot,
     ...blueprintPlanningSnapshot,
     runtimeLane: runtimeLaneResolution.lane,
     runtimeLaneResolution: {

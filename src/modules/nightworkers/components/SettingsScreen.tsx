@@ -27,6 +27,7 @@ import { GeneralSettingsPanel } from './SettingsGeneralPanel';
 import { SettingsHooksPanel } from './SettingsHooksPanel';
 import { SettingsLlmPanel } from './SettingsLlmPanel';
 import { SettingsMcpPanel } from './SettingsMcpPanel';
+import { SettingsPlanModePanel } from './SettingsPlanModePanel';
 import { SettingsTestPanel } from './SettingsTestPanel';
 
 const defaultSettings: LlmSettings = {
@@ -66,6 +67,7 @@ import {
   hookFormToInput,
   type McpServerForm,
   mcpFormToInput,
+  mergeGeneralSettings,
   type SettingsSectionId,
   settingsSections,
 } from './SettingsForms';
@@ -118,11 +120,7 @@ export function SettingsScreen({
     ])
       .then(([llmData, generalData]: [Partial<LlmSettings>, Partial<GeneralSettings>]) => {
         setSettings({ ...defaultSettings, ...llmData });
-        setGeneralSettings({
-          ...defaultGeneralSettings,
-          ...generalData,
-          fx: { ...defaultGeneralSettings.fx, ...generalData.fx },
-        });
+        setGeneralSettings(mergeGeneralSettings(generalData));
       })
       .finally(() => setIsLoading(false));
   }, []);
@@ -202,7 +200,7 @@ export function SettingsScreen({
       setGeneralMessageStatus('error');
       return;
     }
-    const saved = (await res.json()) as GeneralSettings;
+    const saved = mergeGeneralSettings((await res.json()) as Partial<GeneralSettings>);
     setGeneralSettings(saved);
     void applyNightWorkersLanguage(saved.language);
     setGeneralMessage(t('settings.general.saveSucceeded'));
@@ -468,6 +466,16 @@ export function SettingsScreen({
               onChange={setGeneralSettings}
               onSave={() => void saveGeneralSettings()}
               onRefreshFx={() => void refreshFxRates()}
+            />
+          ) : null}
+
+          {activeSettingsSection === 'plan-mode' ? (
+            <SettingsPlanModePanel
+              value={generalSettings}
+              message={generalMessage}
+              messageStatus={generalMessageStatus}
+              onChange={setGeneralSettings}
+              onSave={() => void saveGeneralSettings()}
             />
           ) : null}
 
