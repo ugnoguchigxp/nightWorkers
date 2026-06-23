@@ -1,4 +1,7 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import app from '../../api/app';
 import { ensureNightWorkersSchema } from '../../api/db/bootstrap';
@@ -128,5 +131,83 @@ describe('NightWorkers repositories routes', () => {
     expect(patched.safetyPolicy.externalAllowedPaths).toContain(
       '/Users/y.noguchi/Code/hono-standard'
     );
+  });
+
+  it('reads and writes Project-scoped Test quality settings', async () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-quality-route-'));
+    try {
+      const createRes = await app.request('http://localhost/api/repositories', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: `TEST: Quality ${crypto.randomUUID()}`,
+          localPath: repoRoot,
+          branch: 'main',
+        }),
+      });
+      expect(createRes.status).toBe(201);
+      const project = await createRes.json();
+
+      const initialRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/settings/test-quality`
+      );
+      expect(initialRes.status).toBe(200);
+      await expect(initialRes.json()).resolves.toMatchObject({
+        coverageGateEnabled: false,
+        coverageMinimumPercent: 80,
+        coverageMaxIterations: 5,
+      });
+
+      const saveRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/settings/test-quality`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            coverageGateEnabled: true,
+            coverageMinimumPercent: 85,
+            coverageMaxIterations: 4,
+          }),
+        }
+      );
+      expect(saveRes.status).toBe(200);
+      await expect(saveRes.json()).resolves.toEqual({
+        coverageGateEnabled: true,
+        coverageMinimumPercent: 85,
+        coverageMaxIterations: 4,
+      });
+      expect(
+        JSON.parse(fs.readFileSync(path.join(repoRoot, 'nightworkers-quality.json'), 'utf8'))
+      ).toEqual({
+        testQuality: {
+          coverageGateEnabled: true,
+          coverageMinimumPercent: 85,
+          coverageMaxIterations: 4,
+        },
+      });
+
+      const credentialRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/settings/test-quality`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            coverageGateEnabled: true,
+            coverageMinimumPercent: 85,
+            coverageMaxIterations: 4,
+            apiKey: 'must-not-be-accepted',
+          }),
+        }
+      );
+      expect(credentialRes.status).toBe(400);
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
   });
 });

@@ -45,6 +45,7 @@ export type TodoCompletionGateResult = {
     finalReportDigest: string;
     diffBytes: number;
     hasTests: boolean;
+    coverageAutonomy?: unknown;
   };
 };
 

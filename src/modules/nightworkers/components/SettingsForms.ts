@@ -1,4 +1,4 @@
-import { Bot, Globe, Palette, PlugZap, type Settings, Workflow } from 'lucide-react';
+import { Bot, Globe, Palette, PlugZap, type Settings, TestTube2, Workflow } from 'lucide-react';
 import type {
   AgentHookConfig,
   AgentHookEvent,
@@ -44,6 +44,7 @@ export type SettingsSectionId =
   | 'appearance'
   | 'llm-providers'
   | 'llm-routing'
+  | 'test'
   | 'hooks'
   | 'mcp';
 
@@ -125,6 +126,12 @@ export const settingsSections: Array<{
     labelKey: 'settings.section.llmRouting',
     descriptionKey: 'settings.section.llmRoutingDescription',
     icon: Workflow,
+  },
+  {
+    id: 'test',
+    labelKey: 'settings.section.test',
+    descriptionKey: 'settings.section.testDescription',
+    icon: TestTube2,
   },
   {
     id: 'hooks',

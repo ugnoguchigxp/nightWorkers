@@ -859,6 +859,9 @@ export class NativeApiRunner {
               finalReport: dispatch.finalReport,
               stoppedBy: 'decision',
               riskLevel: 'medium',
+              testResults: dispatch.coverageAutonomyGate
+                ? { coverageAutonomy: dispatch.coverageAutonomyGate }
+                : undefined,
             };
           }
         }

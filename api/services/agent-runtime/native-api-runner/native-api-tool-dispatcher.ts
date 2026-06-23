@@ -1,5 +1,11 @@
 import * as repo from '../../../modules/nightworkers/nightworkers.repository';
 import { type McpToolSummary, mcpClientManager } from '../../mcp/mcp-client-manager';
+import {
+  type CoverageAutonomyGateResult,
+  type CoverageAutonomyState,
+  evaluateCoverageAutonomyGate,
+  formatCoverageAutonomyFinalReport,
+} from '../../quality/coverage-autonomy-gate';
 import type { ProviderToolCall } from '../../structured-llm/tool-calls';
 import { executeWorkerTool } from '../../worker-tools/dispatcher';
 import { type TodoListOperation, todoListTool } from '../../worker-tools/todo-list';
@@ -28,6 +34,8 @@ export type NativeApiDispatchState = {
   manifestReadAfterImport?: boolean;
   successfulVerificationCommands?: string[];
   compileEvalCompleted?: boolean;
+  coverageAutonomy?: CoverageAutonomyState | null;
+  lastCoverageAutonomyGate?: CoverageAutonomyGateResult | null;
 };
 
 export type NativeApiPostImportState = {
@@ -52,6 +60,7 @@ export type NativeApiDispatchResult =
       toolResult: NativeApiToolResult;
       finalReport: string;
       summary: string;
+      coverageAutonomyGate?: CoverageAutonomyGateResult | null;
       state: NativeApiDispatchState;
     };
 
@@ -396,11 +405,46 @@ async function finalizeAnswer(input: {
   const openTodos = (await repo.listTaskRunTodosForRun(input.context.runId)).filter((todo) =>
     ['pending', 'running'].includes(todo.status)
   );
-  if (openTodos.length > 0) {
-    if (!openTodos.every(isFinalCompletionReportTodo)) {
-      return continueWith(openTodosRemainToolResult(openTodos), input.state);
-    }
+  if (openTodos.length > 0 && !openTodos.every(isFinalCompletionReportTodo)) {
+    return continueWith(openTodosRemainToolResult(openTodos), input.state);
+  }
 
+  const coverageGate = await evaluateCoverageAutonomyGate({
+    repoRoot: input.context.repoRoot,
+    state: input.state.coverageAutonomy,
+    safetyPolicy: input.context.safetyPolicy,
+  });
+  const stateWithCoverageGate: NativeApiDispatchState = {
+    ...input.state,
+    coverageAutonomy: coverageGate.nextState,
+    lastCoverageAutonomyGate: coverageGate.result,
+  };
+  await input.sink.emit({
+    type: 'verification_finished',
+    message: `[NativeApiRunner] coverage autonomy gate ${coverageGate.result.status}.`,
+    payload: coverageGate.result,
+  });
+  if (!coverageGate.result.allowFinalize) {
+    return continueWith(
+      failedToolResult(
+        'COVERAGE_GATE_NOT_MET',
+        [
+          coverageGate.result.message,
+          `attempt=${coverageGate.result.attempt}/${coverageGate.result.maxIterations}`,
+          'Continue by adding or repairing focused unit tests. Do not change production logic only to satisfy tests.',
+          coverageGate.result.coverage
+            ? `failedMetrics=${coverageGate.result.coverage.failedMetrics.join(',')}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        coverageGate.result
+      ),
+      stateWithCoverageGate
+    );
+  }
+
+  if (openTodos.length > 0) {
     const now = new Date();
     for (const todo of openTodos) {
       await repo.updateTaskRunTodo(
@@ -418,24 +462,28 @@ async function finalizeAnswer(input: {
       (todo) => ['pending', 'running'].includes(todo.status)
     );
     if (remainingOpenTodos.length > 0) {
-      return continueWith(openTodosRemainToolResult(remainingOpenTodos), input.state);
+      return continueWith(openTodosRemainToolResult(remainingOpenTodos), stateWithCoverageGate);
     }
   }
 
+  const coverageReport = formatCoverageAutonomyFinalReport(coverageGate.result);
+  const finalReportWithCoverage =
+    coverageGate.result.status === 'disabled' ? finalReport : `${finalReport}\n\n${coverageReport}`;
   const summary =
     typeof input.toolCall.arguments.summary === 'string' && input.toolCall.arguments.summary.trim()
       ? input.toolCall.arguments.summary.trim()
-      : firstLine(finalReport);
+      : firstLine(finalReportWithCoverage);
   return {
     kind: 'final',
-    finalReport,
+    finalReport: finalReportWithCoverage,
     summary,
     toolResult: {
       ok: true,
-      content: JSON.stringify({ ok: true, summary, finalReport }),
-      payload: { summary, finalReport },
+      content: JSON.stringify({ ok: true, summary, finalReport: finalReportWithCoverage }),
+      payload: { summary, finalReport: finalReportWithCoverage, coverageGate: coverageGate.result },
     },
-    state: input.state,
+    coverageAutonomyGate: coverageGate.result,
+    state: stateWithCoverageGate,
   };
 }
 
@@ -511,10 +559,11 @@ function continueWith(
   return { kind: 'continue', toolResult, state };
 }
 
-function failedToolResult(code: string, message: string): NativeApiToolResult {
+function failedToolResult(code: string, message: string, payload?: unknown): NativeApiToolResult {
   return {
     ok: false,
-    content: JSON.stringify({ ok: false, error: { code, message } }),
+    content: JSON.stringify({ ok: false, error: { code, message }, payload }),
+    ...(payload !== undefined ? { payload } : {}),
     error: { code, message },
   };
 }

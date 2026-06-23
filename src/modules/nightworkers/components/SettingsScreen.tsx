@@ -9,16 +9,25 @@ import { applyNightWorkersLanguage } from '../i18n/NightWorkersI18nProvider';
 import {
   fetchGeneralSettings,
   fetchLlmSettings,
+  fetchTestQualitySettings,
   refreshFxRates as refreshFxRatesCommand,
   saveGeneralSettings as saveGeneralSettingsCommand,
   saveLlmSettings,
+  saveTestQualitySettings as saveTestQualitySettingsCommand,
 } from '../nightWorkersCommands';
-import type { GeneralSettings, LlmSettings, McpServerConfig } from '../types';
+import {
+  defaultTestQualitySettings,
+  type GeneralSettings,
+  type LlmSettings,
+  type McpServerConfig,
+  type TestQualitySettings,
+} from '../types';
 import { AppearanceSettings } from './SettingsAppearancePanel';
 import { GeneralSettingsPanel } from './SettingsGeneralPanel';
 import { SettingsHooksPanel } from './SettingsHooksPanel';
 import { SettingsLlmPanel } from './SettingsLlmPanel';
 import { SettingsMcpPanel } from './SettingsMcpPanel';
+import { SettingsTestPanel } from './SettingsTestPanel';
 
 const defaultSettings: LlmSettings = {
   ACTIVE_LLM_PROVIDER: 'azure',
@@ -87,6 +96,13 @@ export function SettingsScreen({
   const [hookMessage, setHookMessage] = useState<string>('');
   const [hookMessageStatus, setHookMessageStatus] = useState<SaveFeedbackStatus>('idle');
   const [hookBusy, setHookBusy] = useState(false);
+  const [testQualitySettings, setTestQualitySettings] = useState<TestQualitySettings>(
+    defaultTestQualitySettings
+  );
+  const [testQualityMessage, setTestQualityMessage] = useState('');
+  const [testQualityMessageStatus, setTestQualityMessageStatus] =
+    useState<SaveFeedbackStatus>('idle');
+  const [testQualityBusy, setTestQualityBusy] = useState(false);
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>('general');
   const { settings: appearanceSettings } = useWorkspaceAppearanceState();
   const { setAppearanceSettings, resetAppearanceSettings } = useWorkspaceAppearanceActions();
@@ -110,6 +126,46 @@ export function SettingsScreen({
       })
       .finally(() => setIsLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!workspace.activeProject) {
+      setTestQualitySettings(defaultTestQualitySettings);
+      setTestQualityMessage('');
+      setTestQualityMessageStatus('idle');
+      return;
+    }
+
+    let cancelled = false;
+    setTestQualityBusy(true);
+    setTestQualityMessage('');
+    setTestQualityMessageStatus('idle');
+    fetchTestQualitySettings(workspace.activeProject.id)
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(t('settings.test.loadFailed', { status: res.status }));
+        }
+        return (await res.json()) as TestQualitySettings;
+      })
+      .then((settingsData) => {
+        if (!cancelled) {
+          setTestQualitySettings({ ...defaultTestQualitySettings, ...settingsData });
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setTestQualitySettings(defaultTestQualitySettings);
+          setTestQualityMessage(err instanceof Error ? err.message : String(err));
+          setTestQualityMessageStatus('error');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTestQualityBusy(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workspace.activeProject, t]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -174,6 +230,36 @@ export function SettingsScreen({
       setGeneralMessageStatus('error');
     } finally {
       setIsRefreshingFx(false);
+    }
+  };
+
+  const saveTestQualitySettings = async () => {
+    if (!workspace.activeProject) {
+      setTestQualityMessage(t('settings.test.noProject'));
+      setTestQualityMessageStatus('error');
+      return;
+    }
+
+    setTestQualityBusy(true);
+    setTestQualityMessage('');
+    setTestQualityMessageStatus('idle');
+    try {
+      const res = await saveTestQualitySettingsCommand(
+        workspace.activeProject.id,
+        testQualitySettings
+      );
+      if (!res.ok) {
+        throw new Error(t('settings.test.saveFailed', { status: res.status }));
+      }
+      const saved = (await res.json()) as TestQualitySettings;
+      setTestQualitySettings({ ...defaultTestQualitySettings, ...saved });
+      setTestQualityMessage(t('settings.test.saveSucceeded'));
+      setTestQualityMessageStatus('success');
+    } catch (err) {
+      setTestQualityMessage(err instanceof Error ? err.message : String(err));
+      setTestQualityMessageStatus('error');
+    } finally {
+      setTestQualityBusy(false);
     }
   };
 
@@ -414,6 +500,22 @@ export function SettingsScreen({
               saveMessage={llmSaveMessage}
               onChange={onChange}
               handleSave={handleSave}
+            />
+          ) : null}
+
+          {activeSettingsSection === 'test' ? (
+            <SettingsTestPanel
+              activeProject={workspace.activeProject}
+              value={testQualitySettings}
+              message={testQualityMessage}
+              messageStatus={testQualityMessageStatus}
+              isSaving={testQualityBusy}
+              onChange={(next) => {
+                setTestQualitySettings(next);
+                setTestQualityMessage('');
+                setTestQualityMessageStatus('idle');
+              }}
+              onSave={() => void saveTestQualitySettings()}
             />
           ) : null}
 

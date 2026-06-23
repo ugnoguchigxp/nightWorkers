@@ -14,7 +14,12 @@ export function evaluateTodoCompletionGate(input: {
   const outcomeOk = ['completed', 'needs_review'].includes(outcomeStatus);
   const policyStopped = runtimeResult.stoppedBy === 'policy';
   const budgetStopped = runtimeResult.stoppedBy === 'budget';
-  const passed = terminalOk && outcomeOk && !policyStopped && !budgetStopped;
+  const coverageAutonomy = readCoverageAutonomy(runtimeResult.testResults);
+  const coveragePassed =
+    !coverageAutonomy ||
+    coverageAutonomy.status === 'disabled' ||
+    coverageAutonomy.status === 'passed';
+  const passed = terminalOk && outcomeOk && !policyStopped && !budgetStopped && coveragePassed;
 
   let status: TodoCompletionGateResult['status'] = passed ? 'passed' : 'failed';
   if (
@@ -53,6 +58,15 @@ export function evaluateTodoCompletionGate(input: {
         passed: !policyStopped && !budgetStopped,
         evidence: `stoppedBy=${runtimeResult.stoppedBy}`,
       },
+      ...(coverageAutonomy
+        ? [
+            {
+              id: 'coverage_autonomy',
+              passed: coveragePassed,
+              evidence: `status=${coverageAutonomy.status}`,
+            },
+          ]
+        : []),
     ],
     evidence: {
       terminalState: runtimeResult.terminalState,
@@ -62,6 +76,7 @@ export function evaluateTodoCompletionGate(input: {
       finalReportDigest: digestText(runtimeResult.finalReport || ''),
       diffBytes,
       hasTests,
+      ...(coverageAutonomy ? { coverageAutonomy } : {}),
     },
   };
 }
@@ -89,6 +104,22 @@ export function buildSkippedTodoGate(input: {
       finalReportDigest: digestText(runtimeResult.finalReport || ''),
       diffBytes: Buffer.byteLength(runtimeResult.diffPatch || '', 'utf8'),
       hasTests: runtimeResult.testResults !== undefined && runtimeResult.testResults !== null,
+      ...(readCoverageAutonomy(runtimeResult.testResults)
+        ? { coverageAutonomy: readCoverageAutonomy(runtimeResult.testResults) }
+        : {}),
     },
   };
+}
+
+function readCoverageAutonomy(testResults: unknown): { status?: string } | null {
+  if (!testResults || typeof testResults !== 'object' || Array.isArray(testResults)) return null;
+  const coverageAutonomy = (testResults as Record<string, unknown>).coverageAutonomy;
+  if (
+    !coverageAutonomy ||
+    typeof coverageAutonomy !== 'object' ||
+    Array.isArray(coverageAutonomy)
+  ) {
+    return null;
+  }
+  return coverageAutonomy as { status?: string };
 }

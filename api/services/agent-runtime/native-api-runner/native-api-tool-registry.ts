@@ -349,7 +349,7 @@ const nativeApiToolRegistrations: NativeApiToolRegistration[] = [
     definition: {
       name: 'finalize_answer',
       description:
-        'Finalize the native API runner after all required gates for the current mode are complete.',
+        'Finalize the native API runner after all required gates for the current mode are complete. If the coverage autonomy gate rejects finalize_answer, continue in a test-focused loop by adding or repairing unit tests; do not add test-only branches, coverage-ignore comments, or production logic hacks just to satisfy coverage.',
       inputSchema: objectSchema(
         {
           finalReport: { type: 'string' },

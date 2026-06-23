@@ -5,6 +5,7 @@ import type {
   LlmProviderEndpoint,
   LlmSettings,
   McpServerInput,
+  TestQualitySettings,
   TodoWorkflowSettings,
 } from './types';
 
@@ -112,6 +113,17 @@ export function saveGeneralSettings(settings: GeneralSettings) {
 
 export function refreshFxRates() {
   return apiFetch('/api/settings/fx/refresh', { method: 'POST' });
+}
+
+export function fetchTestQualitySettings(repositoryId: string) {
+  return apiFetch(`/api/repositories/${repositoryId}/settings/test-quality`);
+}
+
+export function saveTestQualitySettings(repositoryId: string, settings: TestQualitySettings) {
+  return apiFetch(
+    `/api/repositories/${repositoryId}/settings/test-quality`,
+    jsonRequest('PUT', settings)
+  );
 }
 
 export function fetchLlmModelOptions() {

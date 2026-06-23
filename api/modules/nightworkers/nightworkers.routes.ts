@@ -2,6 +2,10 @@ import { AppError, ValidationError } from '../../lib/errors';
 import { logEvent } from '../../lib/logger';
 import { createOpenApiRouter } from '../../lib/openapi';
 import {
+  readTestQualitySettingsFile,
+  writeTestQualitySettingsFile,
+} from '../../services/settings/test-quality-settings';
+import {
   acceptDesignQuestionnaireReviewHandler,
   createDesignQuestionnaireHandler,
   createReviewerEvaluationHandler,
@@ -52,10 +56,12 @@ import {
   createRepositoryRoute,
   deleteRepositoryRoute,
   getRepositoryRoute,
+  getRepositoryTestQualitySettingsRoute,
   listProjectFilesRoute,
   listRepositoriesRoute,
   readProjectFileRoute,
   readRepositoryDiffRoute,
+  saveRepositoryTestQualitySettingsRoute,
   updateRepositoryRoute,
 } from './routes/repository-routes';
 import {
@@ -203,6 +209,24 @@ const router = createOpenApiRouter()
     withOpenApiRouteError(readRepositoryDiffRoute, async (c) => {
       const diff = await service.readRepositoryDiff(c.req.param('id'));
       return c.json(diff, 200);
+    })
+  )
+  .openapi(
+    getRepositoryTestQualitySettingsRoute,
+    withOpenApiRouteError(getRepositoryTestQualitySettingsRoute, async (c) => {
+      const repo = await service.getRepository(c.req.param('id'));
+      if (!repo) return c.json({ error: 'Repository not found' }, 404);
+      const settings = readTestQualitySettingsFile(repo.localPath);
+      return c.json(settings, 200);
+    })
+  )
+  .openapi(
+    saveRepositoryTestQualitySettingsRoute,
+    withOpenApiRouteError(saveRepositoryTestQualitySettingsRoute, async (c) => {
+      const repo = await service.getRepository(c.req.param('id'));
+      if (!repo) return c.json({ error: 'Repository not found' }, 404);
+      const settings = writeTestQualitySettingsFile(repo.localPath, c.req.valid('json'));
+      return c.json(settings, 200);
     })
   )
   .openapi(deleteRepositoryRoute, async (c) => {

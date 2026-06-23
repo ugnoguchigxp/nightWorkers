@@ -23,7 +23,12 @@ import {
   mergeRuntimeContractSnapshot,
   normalizeRuntimeContractWarnings,
 } from '../../services/agent-runtime/shared';
-import type { AgentRuntimeKind, AgentRuntimeResult } from '../../services/agent-runtime/types';
+import type {
+  AgentRuntimeKind,
+  AgentRuntimeResult,
+  AgentRuntimeSink,
+  AgentSafetyPolicy,
+} from '../../services/agent-runtime/types';
 import {
   buildPromptWithStateCardParts,
   getLatestConversationContextForTask,
@@ -35,6 +40,11 @@ import {
   isConversationContextStateCardEnabled,
 } from '../../services/conversation-context/flags';
 import { projectConversationStateCardForRuntime } from '../../services/conversation-context/state-card-projection';
+import {
+  type CoverageAutonomyGateResult,
+  evaluateCoverageAutonomyGate,
+  formatCoverageAutonomyFinalReport,
+} from '../../services/quality/coverage-autonomy-gate';
 import { getSessionQueueMaxConcurrencyFromEnv } from '../../services/runtime-env';
 import { providerAdapterKey } from '../../services/structured-llm/request';
 import {
@@ -91,6 +101,61 @@ export function assertRunStatusTransition(from: string, to: string) {
 
 function listOpenTodos<TTodo extends { status: string }>(todos: TTodo[]) {
   return todos.filter((todo) => todo.status === 'pending' || todo.status === 'running');
+}
+
+async function applyCoverageAutonomyFallback(input: {
+  runtimeResult: AgentRuntimeResult;
+  repoRoot: string;
+  safetyPolicy?: AgentSafetyPolicy;
+  sink: AgentRuntimeSink;
+}): Promise<AgentRuntimeResult> {
+  if (readCoverageAutonomyResult(input.runtimeResult.testResults)) return input.runtimeResult;
+  if (!['completed', 'needs_review'].includes(input.runtimeResult.terminalState)) {
+    return input.runtimeResult;
+  }
+
+  const gate = await evaluateCoverageAutonomyGate({
+    repoRoot: input.repoRoot,
+    safetyPolicy: input.safetyPolicy,
+  });
+  await input.sink.emit({
+    type: 'verification_finished',
+    message: `[NightWorkers] coverage autonomy fallback gate ${gate.result.status}.`,
+    payload: gate.result,
+  });
+  if (gate.result.status === 'disabled') return input.runtimeResult;
+
+  const normalizedGate =
+    gate.result.status === 'continue'
+      ? ({
+          ...gate.result,
+          status: 'needs_human',
+          shouldContinue: false,
+          allowFinalize: true,
+        } as CoverageAutonomyGateResult)
+      : gate.result;
+  const coverageReport = formatCoverageAutonomyFinalReport(normalizedGate);
+  return {
+    ...input.runtimeResult,
+    finalReport: [input.runtimeResult.finalReport, coverageReport].filter(Boolean).join('\n\n'),
+    summary:
+      normalizedGate.status === 'passed'
+        ? input.runtimeResult.summary
+        : 'Coverage autonomy gate did not pass.',
+    testResults: {
+      ...(isRecord(input.runtimeResult.testResults) ? input.runtimeResult.testResults : {}),
+      coverageAutonomy: normalizedGate,
+    },
+  };
+}
+
+function readCoverageAutonomyResult(testResults: unknown) {
+  if (!isRecord(testResults)) return null;
+  return isRecord(testResults.coverageAutonomy) ? testResults.coverageAutonomy : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 async function markRunningTodosNeedsHuman(input: {
@@ -1058,7 +1123,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
     try {
       await repo.updateTaskStatus(taskId, 'running');
       const runtimeTodosBeforeStart = await repo.listTaskRunTodosForRun(run.id);
-      const runtimeResult = await runtime.start(
+      let runtimeResult = await runtime.start(
         {
           runId: run.id,
           taskId,
@@ -1154,6 +1219,21 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
         return;
       }
 
+      const preliminaryOutcome = outcomeFromRuntimeResult(runtimeResult);
+      const todosBeforeCoverageFallback = await repo.listTaskRunTodosForRun(run.id);
+      const coverageFallbackBlockedByOpenTodos =
+        preliminaryOutcome.status === 'completed' &&
+        listOpenTodos(todosBeforeCoverageFallback).length > 0 &&
+        !isPlanningOnlyRun(todosBeforeCoverageFallback);
+      if (!coverageFallbackBlockedByOpenTodos) {
+        runtimeResult = await applyCoverageAutonomyFallback({
+          runtimeResult,
+          repoRoot: repoInfo.localPath,
+          safetyPolicy: repoInfo.safetyPolicy || undefined,
+          sink,
+        });
+      }
+
       const statusBeforeFinalize = latestRunBeforeFinalize?.status || 'running';
       const transitionTable: Record<string, readonly string[]> = runStatusTransitionTable;
       const canEnterFinalizing =
@@ -1198,7 +1278,9 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
       });
 
       const outcome = outcomeFromRuntimeResult(runtimeResult);
-      let finalTodos = await repo.listTaskRunTodosForRun(run.id);
+      let finalTodos = coverageFallbackBlockedByOpenTodos
+        ? todosBeforeCoverageFallback
+        : await repo.listTaskRunTodosForRun(run.id);
       if (outcome.status === 'needs_human') {
         await markRunningTodosNeedsHuman({
           runId: run.id,
