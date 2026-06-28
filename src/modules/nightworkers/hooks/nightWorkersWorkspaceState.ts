@@ -105,6 +105,10 @@ export type NightWorkersWorkspaceState = {
   archiveImplementationQueueEntry: (entryId: string) => Promise<void>;
   removeImplementationQueueEntry: (entryId: string) => Promise<void>;
   requeueImplementationQueueEntry: (entryId: string, note?: string) => Promise<void>;
+  updateImplementationQueueEntry: (
+    entryId: string,
+    input: { queuePosition?: number | null; priority?: number }
+  ) => Promise<void>;
   submitRunReview: (
     runId: string,
     input: { action: 'complete' | 'cancel'; note?: string }

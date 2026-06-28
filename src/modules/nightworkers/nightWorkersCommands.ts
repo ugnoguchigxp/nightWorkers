@@ -278,6 +278,13 @@ export function cancelImplementationQueueEntry(entryId: string) {
   );
 }
 
+export function updateImplementationQueueEntry(
+  entryId: string,
+  input: { queuePosition?: number | null; priority?: number }
+) {
+  return apiFetch(`/api/implementation-queue/entries/${entryId}`, jsonRequest('PATCH', input));
+}
+
 export function submitRunReview(
   runId: string,
   input: { action: 'complete' | 'cancel'; note?: string }

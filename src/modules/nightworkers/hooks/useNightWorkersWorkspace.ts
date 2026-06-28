@@ -255,6 +255,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     removeImplementationQueueEntryMutation,
     submitRunReviewMutation,
     requeueImplementationQueueEntryMutation,
+    updateImplementationQueueEntryMutation,
     updateImplementationQueueProcessorCountMutation,
     updateTodoWorkflowSettingsMutation,
     updateSessionStatusMutation,
@@ -498,6 +499,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     },
     requeueImplementationQueueEntry: async (entryId, note) => {
       await requeueImplementationQueueEntryMutation.mutateAsync({ entryId, note });
+    },
+    updateImplementationQueueEntry: async (entryId, input) => {
+      await updateImplementationQueueEntryMutation.mutateAsync({ entryId, data: input });
     },
     submitRunReview: async (runId, input) => {
       await submitRunReviewMutation.mutateAsync({ runId, data: input });

@@ -32,6 +32,7 @@ import { FolderBrowserDialog } from './FolderBrowserDialog';
 import { ImplementationQueueScreen } from './ImplementationQueueScreen';
 import { OverviewScreen } from './OverviewScreen';
 import { ProjectSidebar } from './ProjectSidebar';
+import { ProjectQueueScreen } from './project-queue';
 import { BlueprintShowcaseButton, SettingsButton } from './SettingsButton';
 import { SettingsScreen } from './SettingsScreen';
 import { ThreadWorkspace } from './ThreadWorkspace';
@@ -136,10 +137,23 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const [clearedArtifactContextId, setClearedArtifactContextId] = useState<string | null>(null);
   const [showQueueScreen, setShowQueueScreen] = useState(false);
   const [showOverviewScreen, setShowOverviewScreen] = useState(true);
+  const [projectQueueProjectId, setProjectQueueProjectId] = useState<string | null>(null);
   const [queueProjectFilterId, setQueueProjectFilterId] = useState<string | null>(null);
   const isOverviewActive = showOverviewScreen && !props.showSettings;
+  const projectQueueProject = projectQueueProjectId
+    ? workspace.projects.find((project) => project.id === projectQueueProjectId) || null
+    : null;
+  const projectQueueSessionViews = projectQueueProject
+    ? [
+        ...(workspace.groupedSessionViews[projectQueueProject.id]?.processing || []),
+        ...(workspace.groupedSessionViews[projectQueueProject.id]?.queue || []),
+        ...(workspace.groupedSessionViews[projectQueueProject.id]?.archive || []),
+      ]
+    : [];
   const visibleActiveSessionId =
-    props.showSettings || isOverviewActive ? null : workspace.activeSessionId;
+    props.showSettings || isOverviewActive || projectQueueProject
+      ? null
+      : workspace.activeSessionId;
   const selectedArtifact = artifactFocus.type === 'artifact' ? artifactFocus.artifact : null;
   const selectedArtifactContext =
     selectedArtifact && selectedArtifact.id !== clearedArtifactContextId
@@ -311,6 +325,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const focusTodoArtifact = useCallback(() => {
     setShowOverviewScreen(false);
     setShowQueueScreen(false);
+    setProjectQueueProjectId(null);
     props.onCloseSettings();
     setClearedArtifactContextId(null);
     setArtifactFocus({ type: 'todo' });
@@ -331,6 +346,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       if (isImplementationLockedStatus(targetSession?.status)) return;
       setShowOverviewScreen(false);
       setShowQueueScreen(false);
+      setProjectQueueProjectId(null);
       props.onCloseSettings();
       current.setActiveSessionId(sessionId);
       setClearedArtifactContextId(null);
@@ -348,6 +364,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       if (isImplementationLockedStatus(targetSession?.status)) return;
       setShowOverviewScreen(false);
       setShowQueueScreen(false);
+      setProjectQueueProjectId(null);
       props.onCloseSettings();
       current.setActiveSessionId(sessionId);
       setClearedArtifactContextId(null);
@@ -373,6 +390,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     setArtifactFocus({ type: 'closed' });
     setShowQueueScreen(false);
     setShowOverviewScreen(false);
+    setProjectQueueProjectId(null);
     workspaceRef.current.setActiveSessionId(sessionId);
   }, []);
   const handleCreateSession = useCallback((repositoryId: string) => {
@@ -402,9 +420,20 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const handleOpenOverview = useCallback(() => {
     setArtifactFocus({ type: 'closed' });
     setShowQueueScreen(false);
+    setProjectQueueProjectId(null);
     setShowOverviewScreen(true);
     props.onCloseSettings();
   }, [props.onCloseSettings]);
+  const handleOpenProjectQueue = useCallback(
+    (projectId: string) => {
+      setArtifactFocus({ type: 'closed' });
+      setShowQueueScreen(false);
+      setShowOverviewScreen(false);
+      setProjectQueueProjectId(projectId);
+      props.onCloseSettings();
+    },
+    [props.onCloseSettings]
+  );
 
   const waitForQuestionnaireWorkspaceReady = useCallback(async (message: TaskMessage) => {
     const sessionId = String(toDeepRecord(message.metadataJson).questionnaireSessionId || '');
@@ -509,6 +538,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
             onCreateSession={handleCreateSession}
             onDeleteProject={handleDeleteProject}
             onToggleProject={handleToggleProject}
+            onOpenProjectQueue={handleOpenProjectQueue}
+            activeProjectQueueId={projectQueueProjectId}
             onOpenOverview={handleOpenOverview}
             isOverviewActive={isOverviewActive}
             onOpenFolderBrowser={handleOpenFolderBrowser}
@@ -527,6 +558,18 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               projects={workspace.projects}
               initialProjectFilterId={null}
               onOpenSession={(sessionId) => handleSelectSession(sessionId)}
+            />
+          ) : projectQueueProject ? (
+            <ProjectQueueScreen
+              implementationQueue={workspace.implementationQueue}
+              isLoading={workspace.isImplementationQueueLoading || workspace.isSessionsLoading}
+              onOpenSession={(sessionId) => handleSelectSession(sessionId)}
+              onQueueSession={workspace.createImplementationQueueEntry}
+              onRequeueEntry={workspace.requeueImplementationQueueEntry}
+              onUpdateQueueEntry={workspace.updateImplementationQueueEntry}
+              project={projectQueueProject}
+              sessionViews={projectQueueSessionViews}
+              sessions={workspace.sessions}
             />
           ) : showQueueScreen ? (
             <ImplementationQueueScreen

@@ -41,6 +41,7 @@ export const enDictionary = {
   'sidebar.emptyProjects':
     'No project folders registered. Click "+" to register a local directory.',
   'sidebar.openImplementationQueue': 'Open Implementation Queue',
+  'sidebar.openProjectQueue': 'Open Project Queue',
   'sidebar.createTask': 'Create Task',
   'sidebar.deleteProject': 'Delete project',
   'sidebar.confirmDeleteProject':
@@ -233,6 +234,8 @@ export const enDictionary = {
   'queue.todo.fixAfterReview': 'fix after review',
   'queue.todo.finalVerify': 'final verify',
   'queue.todo.commitPrompt': 'commit prompt',
+  'projectQueue.tableView': 'Switch to Table view',
+  'projectQueue.boardView': 'Switch to Queue view',
   'thread.noProject': 'No Project',
   'thread.hideDebugEvents': 'Hide debug events',
   'thread.showDebugEvents': 'Show debug events',

@@ -15,6 +15,7 @@ import {
   stopBackgroundProcess,
   stopRun,
   submitRunReview,
+  updateImplementationQueueEntry,
   updateImplementationQueueSettings,
   updateTodoWorkflowSettings,
 } from '../nightWorkersCommands';
@@ -321,6 +322,21 @@ export function useNightWorkersMutations({
     },
   });
 
+  const updateImplementationQueueEntryMutation = useMutation({
+    mutationFn: async (input: {
+      entryId: string;
+      data: { queuePosition?: number | null; priority?: number };
+    }) => {
+      const res = await updateImplementationQueueEntry(input.entryId, input.data);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
+    },
+  });
+
   const updateImplementationQueueProcessorCountMutation = useMutation({
     mutationFn: async (processorCount: number) => {
       const res = await updateImplementationQueueSettings({ processorCount });
@@ -489,6 +505,7 @@ export function useNightWorkersMutations({
     removeImplementationQueueEntryMutation,
     submitRunReviewMutation,
     requeueImplementationQueueEntryMutation,
+    updateImplementationQueueEntryMutation,
     updateImplementationQueueProcessorCountMutation,
     updateTodoWorkflowSettingsMutation,
     updateSessionStatusMutation,
