@@ -6,30 +6,17 @@ import {
   writeTestQualitySettingsFile,
 } from '../../services/settings/test-quality-settings';
 import {
-  acceptDesignQuestionnaireReviewHandler,
-  createDesignQuestionnaireHandler,
   createReviewerEvaluationHandler,
   createReviewerReplayEvaluationHandler,
   createRunReviewHandler,
   exportTaskRunJsonlHandler,
-  generateDesignQuestionnaireFollowUpHandler,
-  generateDesignQuestionnaireReviewHandler,
-  generateSpecificationStatusBlueprintHandler,
-  generateSpecificationStatusDbDesignHandler,
-  generateSpecificationStatusDesignDocumentHandler,
   getBackgroundProcessHandler,
-  getBlueprintSpecificationWorkspaceHandler,
-  getDesignQuestionnaireHandler,
-  getSpecificationWorkspaceHandler,
   getTaskRunHandler,
-  leaveDesignQuestionnaireReviewUnadoptedHandler,
   listBackgroundProcessesHandler,
-  listDesignQuestionnairesHandler,
   listReviewRubricsHandler,
   listTaskRunActivityEventsHandler,
   listTaskRunEventsHandler,
   listTaskRunsHandler,
-  saveDesignQuestionnaireAnswersHandler,
   startBackgroundProcessHandler,
   startTaskRunHandler,
   stopBackgroundProcessHandler,
@@ -75,34 +62,13 @@ import {
   stopTaskRunRoute,
 } from './routes/run-routes';
 import {
-  acceptDesignQuestionnaireReviewRoute,
   appendTaskMessageRoute,
   appendWorkbenchMessageRoute,
-  createDesignQuestionnaireRoute,
   createTaskRoute,
   createWorkbenchSessionRoute,
   deleteTaskRoute,
-  generateDesignQuestionnaireFollowUpRoute,
-  generateDesignQuestionnaireReviewRoute,
-  generateSpecificationStatusBlueprintRoute,
-  generateSpecificationStatusDbDesignRoute,
-  generateSpecificationStatusDesignDocumentRoute,
-  getBlueprintArtifactAdoptionRoute,
-  getBlueprintDbDesignAdoptionRoute,
-  getBlueprintDesignSettingsRoute,
-  getBlueprintDesignTokenAdoptionRoute,
-  getBlueprintSpecificationWorkspaceRoute,
-  getDesignQuestionnaireRoute,
-  getSpecificationWorkspaceRoute,
   getTaskRoute,
-  leaveDesignQuestionnaireReviewUnadoptedRoute,
-  listDesignQuestionnairesRoute,
   listTasksRoute,
-  saveBlueprintArtifactAdoptionRoute,
-  saveBlueprintDbDesignAdoptionRoute,
-  saveBlueprintDesignSettingsRoute,
-  saveBlueprintDesignTokenAdoptionRoute,
-  saveDesignQuestionnaireAnswersRoute,
   startTaskRunRoute,
   updateTaskRoute,
 } from './routes/task-routes';
@@ -302,89 +268,6 @@ const router = createOpenApiRouter()
     return c.json(task, 200);
   })
   .openapi(
-    getBlueprintDesignSettingsRoute,
-    withOpenApiRouteError(getBlueprintDesignSettingsRoute, async (c) => {
-      const settings = await service.getBlueprintDesignSettings(c.req.param('id'));
-      return c.json(settings, 200);
-    })
-  )
-  .openapi(
-    saveBlueprintDesignSettingsRoute,
-    withOpenApiRouteError(saveBlueprintDesignSettingsRoute, async (c) => {
-      const settings = await service.saveBlueprintDesignSettings(
-        c.req.param('id'),
-        c.req.valid('json')
-      );
-      return c.json(settings, 200);
-    })
-  )
-  .openapi(
-    getBlueprintArtifactAdoptionRoute,
-    withOpenApiRouteError(getBlueprintArtifactAdoptionRoute, async (c) => {
-      const adoption = await service.getBlueprintArtifactAdoption(
-        c.req.param('id'),
-        c.req.valid('query').messageId
-      );
-      return c.json(adoption, 200);
-    })
-  )
-  .openapi(
-    saveBlueprintArtifactAdoptionRoute,
-    withOpenApiRouteError(saveBlueprintArtifactAdoptionRoute, async (c) => {
-      const body = c.req.valid('json');
-      const adoption = await service.saveBlueprintArtifactAdoption(
-        c.req.param('id'),
-        body.messageId,
-        body.adopted
-      );
-      return c.json(adoption, 200);
-    })
-  )
-  .openapi(
-    getBlueprintDbDesignAdoptionRoute,
-    withOpenApiRouteError(getBlueprintDbDesignAdoptionRoute, async (c) => {
-      const adoption = await service.getBlueprintDbDesignAdoption(
-        c.req.param('id'),
-        c.req.valid('query').messageId
-      );
-      return c.json(adoption, 200);
-    })
-  )
-  .openapi(
-    saveBlueprintDbDesignAdoptionRoute,
-    withOpenApiRouteError(saveBlueprintDbDesignAdoptionRoute, async (c) => {
-      const body = c.req.valid('json');
-      const adoption = await service.saveBlueprintDbDesignAdoption(
-        c.req.param('id'),
-        body.messageId,
-        body.adopted
-      );
-      return c.json(adoption, 200);
-    })
-  )
-  .openapi(
-    getBlueprintDesignTokenAdoptionRoute,
-    withOpenApiRouteError(getBlueprintDesignTokenAdoptionRoute, async (c) => {
-      const adoption = await service.getBlueprintDesignTokenAdoption(
-        c.req.param('id'),
-        c.req.valid('query').messageId
-      );
-      return c.json(adoption, 200);
-    })
-  )
-  .openapi(
-    saveBlueprintDesignTokenAdoptionRoute,
-    withOpenApiRouteError(saveBlueprintDesignTokenAdoptionRoute, async (c) => {
-      const body = c.req.valid('json');
-      const adoption = await service.saveBlueprintDesignTokenAdoption(
-        c.req.param('id'),
-        body.messageId,
-        body.adopted
-      );
-      return c.json(adoption, 200);
-    })
-  )
-  .openapi(
     appendTaskMessageRoute,
     withOpenApiRouteError(appendTaskMessageRoute, async (c) => {
       const id = c.req.param('id');
@@ -451,25 +334,6 @@ const router = createOpenApiRouter()
       const events = await service.listTaskActivityEvents(id, c.req.valid('query'));
       return c.json(events, 200);
     })
-  )
-  .openapi(createDesignQuestionnaireRoute, createDesignQuestionnaireHandler)
-  .openapi(listDesignQuestionnairesRoute, listDesignQuestionnairesHandler)
-  .openapi(getDesignQuestionnaireRoute, getDesignQuestionnaireHandler)
-  .openapi(saveDesignQuestionnaireAnswersRoute, saveDesignQuestionnaireAnswersHandler)
-  .openapi(generateDesignQuestionnaireFollowUpRoute, generateDesignQuestionnaireFollowUpHandler)
-  .openapi(generateDesignQuestionnaireReviewRoute, generateDesignQuestionnaireReviewHandler)
-  .openapi(acceptDesignQuestionnaireReviewRoute, acceptDesignQuestionnaireReviewHandler)
-  .openapi(
-    leaveDesignQuestionnaireReviewUnadoptedRoute,
-    leaveDesignQuestionnaireReviewUnadoptedHandler
-  )
-  .openapi(getBlueprintSpecificationWorkspaceRoute, getBlueprintSpecificationWorkspaceHandler)
-  .openapi(getSpecificationWorkspaceRoute, getSpecificationWorkspaceHandler)
-  .openapi(generateSpecificationStatusBlueprintRoute, generateSpecificationStatusBlueprintHandler)
-  .openapi(generateSpecificationStatusDbDesignRoute, generateSpecificationStatusDbDesignHandler)
-  .openapi(
-    generateSpecificationStatusDesignDocumentRoute,
-    generateSpecificationStatusDesignDocumentHandler
   )
   .openapi(startTaskRunRoute, startTaskRunHandler)
   .openapi(getTaskRunRoute, getTaskRunHandler)

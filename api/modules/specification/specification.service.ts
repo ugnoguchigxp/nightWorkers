@@ -1,5 +1,5 @@
+export { generateSpecificationArtifact } from './specification-generation.service';
 export {
-  generateSpecificationStatusDesignDocument as generateSpecificationArtifact,
   getBlueprintSpecificationWorkspace,
   getSpecificationWorkspace,
-} from '../nightworkers/nightworkers.design-questionnaire.service';
+} from './specification-workspace.service';

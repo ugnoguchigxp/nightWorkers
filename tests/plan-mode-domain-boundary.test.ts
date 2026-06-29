@@ -17,7 +17,12 @@ describe('Plan Mode domain boundaries', () => {
       'api/modules/questionnaire/questionnaire.repository.ts',
       'api/modules/blueprint/blueprint-adoption.service.ts',
       'api/modules/blueprint/blueprint-design-settings.service.ts',
+      'api/modules/blueprint/blueprint-generation.service.ts',
       'api/modules/blueprint/blueprint.repository.ts',
+      'api/modules/dbDesign/dbDesign-generation.service.ts',
+      'api/modules/specification/specification-generation.service.ts',
+      'api/modules/specification/specification-workspace.service.ts',
+      'api/modules/specification/specification-document-renderer.ts',
     ];
 
     for (const path of movedDomainFiles) {
@@ -55,6 +60,41 @@ describe('Plan Mode domain boundaries', () => {
     expect(source).not.toContain('export async function generateDesignQuestionnaireReview');
     expect(source).not.toContain('export async function acceptDesignQuestionnaireReview');
     expect(source).not.toContain('export async function leaveDesignQuestionnaireReviewUnadopted');
+    expect(source).not.toContain('export async function generateSpecificationStatusBlueprint');
+    expect(source).not.toContain('export async function generateSpecificationStatusDbDesign');
+    expect(source).not.toContain('export async function generateSpecificationStatusDesignDocument');
+    expect(source).not.toContain('export async function getBlueprintSpecificationWorkspace');
+    expect(source).not.toContain('export async function getSpecificationWorkspace');
+  });
+
+  it('keeps Plan Mode API ownership out of the NightWorkers aggregate router', () => {
+    const nightworkersRouteFiles = [
+      'api/modules/nightworkers/routes/task-routes.ts',
+      'api/modules/nightworkers/nightworkers.routes.ts',
+      'api/modules/nightworkers/nightworkers.route-handlers.ts',
+    ];
+    const planModeRouteMarkers = [
+      'blueprint-design-settings',
+      'blueprint-adoption',
+      'blueprint-db-design-adoption',
+      'blueprint-design-token-adoption',
+      'design-questionnaire',
+      'blueprint-specification-workspace',
+      'specification-workspace/blueprint',
+      'specification-workspace/db-design',
+      'specification-workspace/design-doc',
+      'getBlueprintSpecificationWorkspaceHandler',
+      'generateSpecificationStatusBlueprintHandler',
+      'generateSpecificationStatusDbDesignHandler',
+      'generateSpecificationStatusDesignDocumentHandler',
+    ];
+
+    for (const path of nightworkersRouteFiles) {
+      const source = readProjectFile(path);
+      for (const marker of planModeRouteMarkers) {
+        expect(source, `${path} should not contain ${marker}`).not.toContain(marker);
+      }
+    }
   });
 
   it('exposes the Plan Mode core bridge as an explicit NightWorkers port', () => {

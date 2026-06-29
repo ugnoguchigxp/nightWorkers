@@ -1,4 +1,3 @@
-export { generateSpecificationStatusBlueprint as generateBlueprintArtifact } from '../nightworkers/nightworkers.design-questionnaire.service';
 export {
   getBlueprintArtifactAdoption,
   getBlueprintDesignTokenAdoption,
@@ -9,3 +8,4 @@ export {
   getBlueprintDesignSettings,
   saveBlueprintDesignSettings,
 } from './blueprint-design-settings.service';
+export { generateBlueprintArtifact } from './blueprint-generation.service';
