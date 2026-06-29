@@ -1,3 +1,8 @@
+export { AppearanceSettings } from './AppearanceSettings';
+export {
+  BlueprintArtifactViewer,
+  ComponentDesignArtifactViewer,
+} from './ArtifactBlueprintViewers';
 export { BlueprintDbDesignPanel } from './BlueprintDbDesignPanel';
 export { BlueprintPreview } from './BlueprintPreview';
 export {

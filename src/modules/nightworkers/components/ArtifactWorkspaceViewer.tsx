@@ -1,14 +1,18 @@
 import { LoaderCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toDeepRecord } from '../../../../shared/json-record';
+import { generateBlueprintArtifact } from '../../blueprint';
+import { generateDbDesignArtifact } from '../../dbDesign';
 import {
   fetchDesignQuestionnaireSessions,
-  fetchGeneralSettings,
-  fetchSpecificationWorkspace,
-  generateSpecificationWorkspaceArtifact,
   startDesignQuestionnaire,
   submitDesignQuestionnaireAnswers,
-} from '../nightWorkersCommands';
+} from '../../questionnaire';
+import {
+  fetchSpecificationWorkspace,
+  generateSpecificationArtifact as generateDesignDocArtifact,
+} from '../../specification';
+import { fetchGeneralSettings } from '../nightWorkersCommands';
 import type {
   ActivityArtifact,
   BlueprintSpecificationWorkspace,
@@ -238,10 +242,16 @@ export function BlueprintSpecificationWorkspaceViewer({
     if (!sessionId || !activeQuestionnaireSession) return;
     if (isImplementationLocked) return;
     await runAction(action, async () => {
-      const res = await generateSpecificationWorkspaceArtifact(sessionId, action, {
+      const input = {
         questionnaireSessionId: activeQuestionnaireSession.id,
         sourceBlueprintMessageId: activeBlueprintSourceMessageId || null,
-      });
+      };
+      const res =
+        action === 'blueprint'
+          ? await generateBlueprintArtifact(sessionId, input)
+          : action === 'db-design'
+            ? await generateDbDesignArtifact(sessionId, input)
+            : await generateDesignDocArtifact(sessionId, input);
       if (!res.ok) throw new Error(await res.text());
       const result = (await res.json()) as {
         message?: TaskMessage;

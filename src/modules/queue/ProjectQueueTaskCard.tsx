@@ -3,9 +3,9 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { AlertTriangle, CheckCircle2, GripVertical, Play } from 'lucide-react';
 import type { CSSProperties, HTMLAttributes } from 'react';
-import { getRelativeTimestamp } from '../../utils/time';
 import { getProjectQueuePriorityLabel, getProjectQueueStatusLabel } from './projectQueueModel';
 import type { ProjectQueueTask } from './projectQueueTypes';
+import { getRelativeTimestamp } from './queueTime';
 
 type ProjectQueueTaskCardProps = {
   task: ProjectQueueTask;

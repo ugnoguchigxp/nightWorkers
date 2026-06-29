@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { toDeepRecord } from '../../../../shared/json-record';
+import { ProjectEvaluationMockScreen } from '../../project-evaluation';
+import { fetchDesignQuestionnaireSession } from '../../questionnaire';
+import { ProjectQueueScreen } from '../../queue';
+import { fetchSpecificationWorkspace } from '../../specification';
 import { useWorkspaceAppearanceState } from '../contexts/WorkspaceAppearanceContext';
 import {
   useWorkspaceLayoutActions,
   useWorkspaceLayoutState,
 } from '../contexts/WorkspaceLayoutContext';
 import type { NightWorkersWorkspaceState } from '../hooks/useNightWorkersWorkspace';
-import {
-  fetchDesignQuestionnaireSession,
-  fetchSpecificationWorkspace,
-} from '../nightWorkersCommands';
 import { shouldAutoOpenPlanArtifact } from '../planArtifactVisibility';
 import type {
   LlmModelTarget,
@@ -32,7 +32,6 @@ import { FolderBrowserDialog } from './FolderBrowserDialog';
 import { ImplementationQueueScreen } from './ImplementationQueueScreen';
 import { OverviewScreen } from './OverviewScreen';
 import { ProjectSidebar } from './ProjectSidebar';
-import { ProjectQueueScreen } from './project-queue';
 import { BlueprintShowcaseButton, SettingsButton } from './SettingsButton';
 import { SettingsScreen } from './SettingsScreen';
 import { ThreadWorkspace } from './ThreadWorkspace';
@@ -138,10 +137,14 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const [showQueueScreen, setShowQueueScreen] = useState(false);
   const [showOverviewScreen, setShowOverviewScreen] = useState(true);
   const [projectQueueProjectId, setProjectQueueProjectId] = useState<string | null>(null);
+  const [projectEvaluationProjectId, setProjectEvaluationProjectId] = useState<string | null>(null);
   const [queueProjectFilterId, setQueueProjectFilterId] = useState<string | null>(null);
   const isOverviewActive = showOverviewScreen && !props.showSettings;
   const projectQueueProject = projectQueueProjectId
     ? workspace.projects.find((project) => project.id === projectQueueProjectId) || null
+    : null;
+  const projectEvaluationProject = projectEvaluationProjectId
+    ? workspace.projects.find((project) => project.id === projectEvaluationProjectId) || null
     : null;
   const projectQueueSessionViews = projectQueueProject
     ? [
@@ -151,7 +154,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       ]
     : [];
   const visibleActiveSessionId =
-    props.showSettings || isOverviewActive || projectQueueProject
+    props.showSettings || isOverviewActive || projectQueueProject || projectEvaluationProject
       ? null
       : workspace.activeSessionId;
   const selectedArtifact = artifactFocus.type === 'artifact' ? artifactFocus.artifact : null;
@@ -326,6 +329,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     setShowOverviewScreen(false);
     setShowQueueScreen(false);
     setProjectQueueProjectId(null);
+    setProjectEvaluationProjectId(null);
     props.onCloseSettings();
     setClearedArtifactContextId(null);
     setArtifactFocus({ type: 'todo' });
@@ -347,6 +351,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       setShowOverviewScreen(false);
       setShowQueueScreen(false);
       setProjectQueueProjectId(null);
+      setProjectEvaluationProjectId(null);
       props.onCloseSettings();
       current.setActiveSessionId(sessionId);
       setClearedArtifactContextId(null);
@@ -365,6 +370,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       setShowOverviewScreen(false);
       setShowQueueScreen(false);
       setProjectQueueProjectId(null);
+      setProjectEvaluationProjectId(null);
       props.onCloseSettings();
       current.setActiveSessionId(sessionId);
       setClearedArtifactContextId(null);
@@ -391,6 +397,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     setShowQueueScreen(false);
     setShowOverviewScreen(false);
     setProjectQueueProjectId(null);
+    setProjectEvaluationProjectId(null);
     workspaceRef.current.setActiveSessionId(sessionId);
   }, []);
   const handleCreateSession = useCallback((repositoryId: string) => {
@@ -421,6 +428,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     setArtifactFocus({ type: 'closed' });
     setShowQueueScreen(false);
     setProjectQueueProjectId(null);
+    setProjectEvaluationProjectId(null);
     setShowOverviewScreen(true);
     props.onCloseSettings();
   }, [props.onCloseSettings]);
@@ -430,6 +438,18 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       setShowQueueScreen(false);
       setShowOverviewScreen(false);
       setProjectQueueProjectId(projectId);
+      setProjectEvaluationProjectId(null);
+      props.onCloseSettings();
+    },
+    [props.onCloseSettings]
+  );
+  const handleOpenProjectEvaluation = useCallback(
+    (projectId: string) => {
+      setArtifactFocus({ type: 'closed' });
+      setShowQueueScreen(false);
+      setShowOverviewScreen(false);
+      setProjectQueueProjectId(null);
+      setProjectEvaluationProjectId(projectId);
       props.onCloseSettings();
     },
     [props.onCloseSettings]
@@ -461,6 +481,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         if (!ready) return;
         openedQuestionnaireMessageIdsRef.current.add(message.id);
         setShowOverviewScreen(false);
+        setProjectEvaluationProjectId(null);
         props.onCloseSettings();
         setClearedArtifactContextId(null);
         setArtifactFocus({
@@ -540,6 +561,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
             onToggleProject={handleToggleProject}
             onOpenProjectQueue={handleOpenProjectQueue}
             activeProjectQueueId={projectQueueProjectId}
+            onOpenProjectEvaluation={handleOpenProjectEvaluation}
+            activeProjectEvaluationId={projectEvaluationProjectId}
             onOpenOverview={handleOpenOverview}
             isOverviewActive={isOverviewActive}
             onOpenFolderBrowser={handleOpenFolderBrowser}
@@ -571,6 +594,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               sessionViews={projectQueueSessionViews}
               sessions={workspace.sessions}
             />
+          ) : projectEvaluationProject ? (
+            <ProjectEvaluationMockScreen project={projectEvaluationProject} />
           ) : showQueueScreen ? (
             <ImplementationQueueScreen
               dashboard={workspace.implementationQueue}

@@ -2,12 +2,13 @@ import { CheckCircle2, Palette, SlidersHorizontal, XCircle } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  type BlueprintAdoptionEndpoint,
   fetchBlueprintAdoption,
   fetchBlueprintDesignSettings,
+  fetchBlueprintDesignTokenAdoption,
   saveBlueprintAdoption,
   saveBlueprintDesignSettings,
-} from '../../nightWorkersCommands';
+  saveBlueprintDesignTokenAdoption,
+} from '../blueprint/blueprintCommands';
 import {
   PreviewActionButton,
   PreviewCard,
@@ -51,12 +52,12 @@ export function BlueprintPreview({
   const blueprintAdoption = useBlueprintAdoption({
     sessionId,
     messageId,
-    endpoint: 'blueprint-adoption',
+    kind: 'blueprint',
   });
   const designTokenAdoption = useBlueprintAdoption({
     sessionId,
     messageId,
-    endpoint: 'blueprint-design-token-adoption',
+    kind: 'designTokens',
   });
   const saveRequestSeqRef = useRef(0);
 
@@ -341,11 +342,11 @@ function screenGridClassName(
 function useBlueprintAdoption({
   sessionId,
   messageId,
-  endpoint,
+  kind,
 }: {
   sessionId?: string | null;
   messageId?: string | null;
-  endpoint: BlueprintAdoptionEndpoint;
+  kind: 'blueprint' | 'designTokens';
 }) {
   const [adopted, setAdopted] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -355,7 +356,13 @@ function useBlueprintAdoption({
     setAdopted(false);
     if (!sessionId || !messageId) return;
     const controller = new AbortController();
-    fetchBlueprintAdoption(sessionId, endpoint, messageId, { signal: controller.signal })
+    const request =
+      kind === 'blueprint'
+        ? fetchBlueprintAdoption(sessionId, messageId, { signal: controller.signal })
+        : fetchBlueprintDesignTokenAdoption(sessionId, messageId, {
+            signal: controller.signal,
+          });
+    request
       .then(async (res) => {
         if (!res.ok) return null;
         return (await res.json()) as { adopted?: boolean };
@@ -366,18 +373,22 @@ function useBlueprintAdoption({
       })
       .catch((error) => {
         if (error?.name !== 'AbortError') {
-          console.warn(`Failed to load Blueprint adoption state for ${endpoint}`, error);
+          console.warn(`Failed to load Blueprint adoption state for ${kind}`, error);
         }
       });
     return () => controller.abort();
-  }, [endpoint, messageId, sessionId]);
+  }, [kind, messageId, sessionId]);
 
   const toggle = useCallback(() => {
     if (!sessionId || !messageId || saving) return;
     const next = !adopted;
     setAdopted(next);
     setSaving(true);
-    saveBlueprintAdoption(sessionId, endpoint, { messageId, adopted: next })
+    const request =
+      kind === 'blueprint'
+        ? saveBlueprintAdoption(sessionId, { messageId, adopted: next })
+        : saveBlueprintDesignTokenAdoption(sessionId, { messageId, adopted: next });
+    request
       .then((res) => {
         if (!res.ok) throw new Error(`Failed to save Blueprint adoption: ${res.status}`);
         return res.json();
@@ -387,10 +398,10 @@ function useBlueprintAdoption({
       })
       .catch((error) => {
         setAdopted(!next);
-        console.warn(`Failed to save Blueprint adoption state for ${endpoint}`, error);
+        console.warn(`Failed to save Blueprint adoption state for ${kind}`, error);
       })
       .finally(() => setSaving(false));
-  }, [adopted, endpoint, messageId, saving, sessionId]);
+  }, [adopted, kind, messageId, saving, sessionId]);
 
   return { adopted, enabled, saving, toggle };
 }

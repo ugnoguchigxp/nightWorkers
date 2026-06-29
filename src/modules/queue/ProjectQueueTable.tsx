@@ -7,7 +7,6 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { useMemo, useState } from 'react';
-import { getRelativeTimestamp } from '../../utils/time';
 import {
   compareProjectQueuePriority,
   getProjectQueuePriorityLabel,
@@ -16,6 +15,7 @@ import {
   sortProjectQueueTasksForTable,
 } from './projectQueueModel';
 import type { ProjectQueueTask } from './projectQueueTypes';
+import { getRelativeTimestamp } from './queueTime';
 
 type ProjectQueueTableProps = {
   tasks: ProjectQueueTask[];

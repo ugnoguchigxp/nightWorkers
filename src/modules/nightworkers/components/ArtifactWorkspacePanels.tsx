@@ -1,6 +1,11 @@
 import { Check, LoaderCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { fetchBlueprintDesignSettings } from '../nightWorkersCommands';
+import { fetchBlueprintDesignSettings } from '../../blueprint';
+import { BlueprintDbDesignPanel, BlueprintPreview } from '../../blueprint-preview';
+import {
+  type BlueprintPreviewDesignSettings,
+  createBlueprintPreviewDesignSettings,
+} from '../../blueprint-preview/designSettings';
 import type {
   BlueprintSpecificationWorkspace,
   DesignQuestionnaireSession,
@@ -9,11 +14,6 @@ import type {
 } from '../types';
 import { MarkdownViewer } from './ArtifactFileViewers';
 import { getQuestionCount } from './ArtifactQuestionnaire';
-import { BlueprintDbDesignPanel, BlueprintPreview } from './blueprint-preview';
-import {
-  type BlueprintPreviewDesignSettings,
-  createBlueprintPreviewDesignSettings,
-} from './blueprint-preview/designSettings';
 
 export function WorkspaceBlueprintPreview({
   sessionId,

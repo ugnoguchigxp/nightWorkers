@@ -2,7 +2,7 @@ import { createContext, type ReactNode, useCallback, useContext, useMemo, useSta
 import {
   type BlueprintPreviewDesignSettings,
   createBlueprintPreviewDesignSettings,
-} from '../components/blueprint-preview/designSettings';
+} from '../../blueprint-preview/designSettings';
 
 const STORAGE_KEY = 'nightworkers.workspaceAppearance.v1';
 

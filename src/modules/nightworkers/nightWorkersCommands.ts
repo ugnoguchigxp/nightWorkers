@@ -1,4 +1,5 @@
 import { apiFetch } from '../../lib/api-base';
+import { jsonRequest } from '../../lib/api-request';
 import type {
   AgentHookInput,
   GeneralSettings,
@@ -8,88 +9,6 @@ import type {
   TestQualitySettings,
   TodoWorkflowSettings,
 } from './types';
-
-export type SpecificationWorkspaceAction = 'blueprint' | 'db-design' | 'design-doc';
-export type BlueprintAdoptionEndpoint =
-  | 'blueprint-adoption'
-  | 'blueprint-db-design-adoption'
-  | 'blueprint-design-token-adoption';
-
-export function fetchSpecificationWorkspace(sessionId: string, init?: RequestInit) {
-  return apiFetch(`/api/tasks/${sessionId}/specification-workspace`, init);
-}
-
-export function fetchDesignQuestionnaireSessions(sessionId: string, init?: RequestInit) {
-  return apiFetch(`/api/tasks/${sessionId}/design-questionnaire`, init);
-}
-
-export function fetchDesignQuestionnaireSession(
-  sessionId: string,
-  questionnaireSessionId: string,
-  init?: RequestInit
-) {
-  return apiFetch(`/api/tasks/${sessionId}/design-questionnaire/${questionnaireSessionId}`, init);
-}
-
-export function startDesignQuestionnaire(
-  sessionId: string,
-  input: { sourceBlueprintMessageId: string }
-) {
-  return apiFetch(`/api/tasks/${sessionId}/design-questionnaire`, jsonRequest('POST', input));
-}
-
-export function submitDesignQuestionnaireAnswers(
-  sessionId: string,
-  questionnaireSessionId: string,
-  input: { answers: unknown[] }
-) {
-  return apiFetch(
-    `/api/tasks/${sessionId}/design-questionnaire/${questionnaireSessionId}/answers`,
-    jsonRequest('POST', input)
-  );
-}
-
-export function generateSpecificationWorkspaceArtifact(
-  sessionId: string,
-  action: SpecificationWorkspaceAction,
-  input: { questionnaireSessionId: string; sourceBlueprintMessageId: string | null }
-) {
-  return apiFetch(
-    `/api/tasks/${sessionId}/specification-workspace/${action}`,
-    jsonRequest('POST', input)
-  );
-}
-
-export function fetchBlueprintDesignSettings(sessionId: string, init?: RequestInit) {
-  return apiFetch(`/api/tasks/${sessionId}/blueprint-design-settings`, init);
-}
-
-export function saveBlueprintDesignSettings(sessionId: string, settings: unknown) {
-  return apiFetch(
-    `/api/tasks/${sessionId}/blueprint-design-settings`,
-    jsonRequest('PUT', settings)
-  );
-}
-
-export function fetchBlueprintAdoption(
-  sessionId: string,
-  endpoint: BlueprintAdoptionEndpoint,
-  messageId: string,
-  init?: RequestInit
-) {
-  return apiFetch(
-    `/api/tasks/${sessionId}/${endpoint}?messageId=${encodeURIComponent(messageId)}`,
-    init
-  );
-}
-
-export function saveBlueprintAdoption(
-  sessionId: string,
-  endpoint: BlueprintAdoptionEndpoint,
-  input: { messageId: string; adopted: boolean }
-) {
-  return apiFetch(`/api/tasks/${sessionId}/${endpoint}`, jsonRequest('PUT', input));
-}
 
 export function fetchOverview(query: string) {
   return apiFetch(`/api/overview?${query}`);
@@ -330,12 +249,4 @@ export function fetchRepositoryFile(repositoryId: string, path: string) {
 
 export function fetchRepositoryDiff(repositoryId: string) {
   return apiFetch(`/api/repositories/${repositoryId}/diff`);
-}
-
-function jsonRequest(method: 'PATCH' | 'POST' | 'PUT', body: unknown): RequestInit {
-  return {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  };
 }

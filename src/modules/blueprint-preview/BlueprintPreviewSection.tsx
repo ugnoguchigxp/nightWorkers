@@ -1,14 +1,14 @@
 import { useTranslation } from 'react-i18next';
-import { createPresetBlueprintNodeTree } from '../../../../../shared/blueprint-composition-catalog';
+import { createPresetBlueprintNodeTree } from '../../../shared/blueprint-composition-catalog';
 import {
   applyBlueprintSectionOverridesToNode,
   normalizeBlueprintSectionForPreview,
-} from '../../../../../shared/blueprint-section-composition';
+} from '../../../shared/blueprint-section-composition';
 import type {
   BlueprintNode,
   BlueprintSection,
   BlueprintSectionOverride,
-} from '../../../../../shared/schemas/app-blueprint-ui.schema';
+} from '../../../shared/schemas/app-blueprint-ui.schema';
 import {
   PreviewBadge,
   PreviewButton,

@@ -1,14 +1,12 @@
 import type {
-  ImplementationQueueDashboard,
-  ImplementationQueueEntryStatus,
-  ImplementationQueueItem,
-  Task,
-  WorkbenchSessionView,
-} from '../../types';
-import type {
   BuildProjectQueueTasksInput,
+  ProjectQueueDashboard,
+  ProjectQueueEntry,
+  ProjectQueueEntryStatus,
   ProjectQueueLaneId,
   ProjectQueueLanes,
+  ProjectQueueSession,
+  ProjectQueueSessionView,
   ProjectQueueTask,
   ProjectQueueTaskStatus,
 } from './projectQueueTypes';
@@ -21,7 +19,7 @@ const ATTENTION_ENTRY_STATUSES = new Set([
 ]);
 const ATTENTION_EMAIL_STATES = new Set(['needs_input', 'review_needed', 'failed']);
 const COMPLETED_ENTRY_STATUSES = new Set(['cancelled', 'execution_archived']);
-const ACTIVE_NON_REQUEUEABLE_ENTRY_STATUSES = new Set<ImplementationQueueEntryStatus>([
+const ACTIVE_NON_REQUEUEABLE_ENTRY_STATUSES = new Set<ProjectQueueEntryStatus>([
   'queued',
   'claimed',
   'processing',
@@ -37,8 +35,8 @@ const TABLE_STATUS_RANK: Record<ProjectQueueTaskStatus, number> = {
 };
 
 type TaskCandidate = {
-  task: Task;
-  sessionView?: WorkbenchSessionView;
+  task: ProjectQueueSession;
+  sessionView?: ProjectQueueSessionView;
 };
 
 export function buildProjectQueueTasks({
@@ -210,10 +208,7 @@ export function projectQueueTimestamp(value: unknown) {
   return 0;
 }
 
-function createBaseTask(
-  candidate?: TaskCandidate,
-  entry?: ImplementationQueueItem
-): ProjectQueueTask {
+function createBaseTask(candidate?: TaskCandidate, entry?: ProjectQueueEntry): ProjectQueueTask {
   const task = candidate?.task ?? entry?.task;
   if (!task) throw new Error('Project Queue task requires a Task or queue entry.');
   const phase = candidate?.sessionView?.phase
@@ -232,7 +227,7 @@ function createBaseTask(
 
 function withEntry(
   task: ProjectQueueTask,
-  entry: ImplementationQueueItem,
+  entry: ProjectQueueEntry,
   status: ProjectQueueTaskStatus
 ): ProjectQueueTask {
   return {
@@ -253,24 +248,24 @@ function withEntry(
   };
 }
 
-function isRequeueableEntryStatus(status: ImplementationQueueEntryStatus) {
+function isRequeueableEntryStatus(status: ProjectQueueEntryStatus) {
   return !ACTIVE_NON_REQUEUEABLE_ENTRY_STATUSES.has(status);
 }
 
-function canQueueSessionWithoutEntry(view: WorkbenchSessionView, planReadyTaskIds: Set<string>) {
+function canQueueSessionWithoutEntry(view: ProjectQueueSessionView, planReadyTaskIds: Set<string>) {
   if (view.queueEntry) return false;
   if (planReadyTaskIds.has(view.task.id)) return true;
   return view.task.status === 'ready' || view.task.status === 'queued';
 }
 
 function projectQueueEntries(
-  dashboard: ImplementationQueueDashboard | null,
+  dashboard: ProjectQueueDashboard | null,
   projectId: string
-): ImplementationQueueItem[] {
+): ProjectQueueEntry[] {
   if (!dashboard) return [];
   const processorEntries = dashboard.processors
     .map((processor) => processor.entry)
-    .filter((entry): entry is ImplementationQueueItem => Boolean(entry));
+    .filter((entry): entry is ProjectQueueEntry => Boolean(entry));
   return [...dashboard.queued, ...dashboard.completed, ...processorEntries].filter(
     (entry) => entry.repository.id === projectId
   );

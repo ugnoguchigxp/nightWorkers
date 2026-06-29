@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import {
   type BlueprintPreviewDesignSettings,
   blueprintPreviewDesignOptions,
-} from './blueprint-preview/designSettings';
+} from './designSettings';
 
 export function AppearanceSettings({
   value,

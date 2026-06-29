@@ -16,7 +16,7 @@ import {
 } from '../../services/settings/general-settings';
 import { callStructuredJsonLLM, type SupervisorLlmDebugEvent } from '../../services/structured-llm';
 import { normalizeStructuredLlmModelTarget } from '../../services/structured-llm/selection';
-import { createDesignQuestionnaire } from './nightworkers.design-questionnaire.service';
+import { createDesignQuestionnaire } from '../questionnaire/questionnaire.service';
 import { assertRunnableWorkbenchTask } from './nightworkers.planning-helpers.service';
 import { queueTask } from './nightworkers.queue-management.service';
 import * as repo from './nightworkers.repository';

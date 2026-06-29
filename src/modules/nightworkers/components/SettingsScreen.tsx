@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AppearanceSettings } from '../../blueprint-preview';
 import {
   useWorkspaceAppearanceActions,
   useWorkspaceAppearanceState,
@@ -22,7 +23,6 @@ import {
   type McpServerConfig,
   type TestQualitySettings,
 } from '../types';
-import { AppearanceSettings } from './SettingsAppearancePanel';
 import { GeneralSettingsPanel } from './SettingsGeneralPanel';
 import { SettingsHooksPanel } from './SettingsHooksPanel';
 import { SettingsLlmPanel } from './SettingsLlmPanel';

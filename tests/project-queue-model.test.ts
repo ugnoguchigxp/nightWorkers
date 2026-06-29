@@ -4,27 +4,20 @@ import {
   getProjectQueuePriorityLabel,
   groupProjectQueueTasks,
   sortProjectQueueTasksForTable,
-} from '../src/modules/nightworkers/components/project-queue/projectQueueModel';
+} from '../src/modules/queue/projectQueueModel';
 import type {
-  ImplementationQueueDashboard,
-  ImplementationQueueItem,
-  Repository,
-  Task,
-  WorkbenchSessionView,
-} from '../src/modules/nightworkers/types';
+  ProjectQueueDashboard,
+  ProjectQueueEntry,
+  ProjectQueueRepository,
+  ProjectQueueSession,
+  ProjectQueueSessionView,
+} from '../src/modules/queue/projectQueueTypes';
 
-const project: Repository = {
+const project: ProjectQueueRepository = {
   id: 'project-1',
   name: 'Project',
-  localPath: '/tmp/project',
-  branch: 'main',
-  allowed: true,
-  queueEnabled: true,
-  maxConcurrentSessions: 1,
-  createdAt: '2026-01-01T00:00:00.000Z',
-  updatedAt: '2026-01-01T00:00:00.000Z',
 };
-const otherProject: Repository = { ...project, id: 'project-2', name: 'Other' };
+const otherProject: ProjectQueueRepository = { ...project, id: 'project-2', name: 'Other' };
 
 describe('projectQueueModel', () => {
   it('deduplicates with executing precedence and orders table by production rank', () => {
@@ -35,7 +28,7 @@ describe('projectQueueModel', () => {
       task('planned-b', 'Planned B'),
       task('unclassified-task', 'Unclassified Session'),
     ];
-    const dashboard: ImplementationQueueDashboard = {
+    const dashboard: ProjectQueueDashboard = {
       settings: { processorCount: 2 },
       processors: [{ slot: 2, entry: entry(sessions[0], 'processing', { processorSlot: 2 }) }],
       queued: [
@@ -66,7 +59,7 @@ describe('projectQueueModel', () => {
 
   it('groups planned by queuePosition and keeps queue priority empty outside Planned', () => {
     const sessions = [task('planned-a', 'A'), task('planned-b', 'B'), task('completed', 'Done')];
-    const dashboard: ImplementationQueueDashboard = {
+    const dashboard: ProjectQueueDashboard = {
       settings: { processorCount: 1 },
       processors: [],
       queued: [
@@ -107,7 +100,7 @@ describe('projectQueueModel', () => {
   it('marks only persistable attention rows as movable to Planned', () => {
     const reviewTask = task('review', 'Review');
     const failedTask = task('failed', 'Failed');
-    const dashboard: ImplementationQueueDashboard = {
+    const dashboard: ProjectQueueDashboard = {
       settings: { processorCount: 1 },
       processors: [],
       queued: [],
@@ -133,7 +126,7 @@ describe('projectQueueModel', () => {
 
   it('keeps cancelled queue entries in Completed even when session state looks failed', () => {
     const cancelledTask = task('cancelled-entry', 'Cancelled');
-    const dashboard: ImplementationQueueDashboard = {
+    const dashboard: ProjectQueueDashboard = {
       settings: { processorCount: 1 },
       processors: [],
       queued: [],
@@ -153,7 +146,7 @@ describe('projectQueueModel', () => {
   it('does not synthesize rows for unrelated projects', () => {
     const ownTask = task('own', 'Own');
     const otherTask = { ...task('other', 'Other'), repositoryId: otherProject.id };
-    const dashboard: ImplementationQueueDashboard = {
+    const dashboard: ProjectQueueDashboard = {
       settings: { processorCount: 1 },
       processors: [],
       queued: [entry(otherTask, 'queued', { repository: otherProject, queuePosition: 1 })],
@@ -172,35 +165,30 @@ describe('projectQueueModel', () => {
   });
 });
 
-function task(id: string, title: string): Task {
+function task(id: string, title: string): ProjectQueueSession {
   return {
     id,
     repositoryId: project.id,
     title,
     status: 'ready',
-    timeoutSeconds: 3600,
-    priority: 0,
-    createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: `2026-01-01T00:0${id.length % 9}:00.000Z`,
   };
 }
 
 function entry(
-  sourceTask: Task,
-  status: ImplementationQueueItem['status'],
-  options: Partial<ImplementationQueueItem> & { repository?: Repository } = {}
-): ImplementationQueueItem {
+  sourceTask: ProjectQueueSession,
+  status: ProjectQueueEntry['status'],
+  options: Partial<ProjectQueueEntry> & { repository?: ProjectQueueRepository } = {}
+): ProjectQueueEntry {
   return {
     id: `entry-${sourceTask.id}`,
     taskId: sourceTask.id,
     repositoryId: sourceTask.repositoryId,
     status,
-    priority: 0,
     queuePosition: null,
     processorSlot: null,
     activeRunId: null,
     statusReason: null,
-    createdAt: sourceTask.createdAt,
     updatedAt: sourceTask.updatedAt,
     task: sourceTask,
     repository: options.repository || project,
@@ -208,11 +196,13 @@ function entry(
   };
 }
 
-function sessionView(taskRecord: Task, emailState: WorkbenchSessionView['emailState']) {
+function sessionView(
+  taskRecord: ProjectQueueSession,
+  emailState: ProjectQueueSessionView['emailState']
+) {
   return {
     task: taskRecord,
-    group: 'archive',
     emailState,
     phase: 'Reviewing',
-  } as WorkbenchSessionView;
+  } as ProjectQueueSessionView;
 }

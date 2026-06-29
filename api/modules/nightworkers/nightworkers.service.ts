@@ -16,6 +16,35 @@ import {
 } from './nightworkers.run-orchestration.service';
 
 export {
+  generateBlueprintArtifact as generateSpecificationStatusBlueprint,
+  getBlueprintArtifactAdoption,
+  getBlueprintDesignSettings,
+  getBlueprintDesignTokenAdoption,
+  saveBlueprintArtifactAdoption,
+  saveBlueprintDesignSettings,
+  saveBlueprintDesignTokenAdoption,
+} from '../blueprint/blueprint.service';
+export {
+  generateDbDesignArtifact as generateSpecificationStatusDbDesign,
+  getDbDesignAdoption as getBlueprintDbDesignAdoption,
+  saveDbDesignAdoption as saveBlueprintDbDesignAdoption,
+} from '../dbDesign/dbDesign.service';
+export {
+  acceptDesignQuestionnaireReview,
+  createDesignQuestionnaire,
+  generateDesignQuestionnaireFollowUp,
+  generateDesignQuestionnaireReview,
+  getDesignQuestionnaireSession,
+  leaveDesignQuestionnaireReviewUnadopted,
+  listDesignQuestionnaires,
+  saveDesignQuestionnaireAnswers,
+} from '../questionnaire/questionnaire.service';
+export {
+  generateSpecificationArtifact as generateSpecificationStatusDesignDocument,
+  getBlueprintSpecificationWorkspace,
+  getSpecificationWorkspace,
+} from '../specification/specification.service';
+export {
   getTaskBackgroundProcess,
   listTaskBackgroundProcesses,
   startTaskBackgroundProcess,
@@ -26,7 +55,6 @@ export {
   createRepository,
   createTask,
   deleteRepository,
-  getBlueprintDesignSettings,
   getOverviewDashboard,
   getRepository,
   getTask,
@@ -36,35 +64,9 @@ export {
   listTaskMessages,
   listTasks,
   resolveBlueprintPlanningReadiness,
-  saveBlueprintDesignSettings,
   updateRepository,
   updateTask,
 } from './nightworkers.basic.service';
-
-export {
-  getBlueprintArtifactAdoption,
-  getBlueprintDbDesignAdoption,
-  getBlueprintDesignTokenAdoption,
-  saveBlueprintArtifactAdoption,
-  saveBlueprintDbDesignAdoption,
-  saveBlueprintDesignTokenAdoption,
-} from './nightworkers.blueprint-adoption.service';
-
-export {
-  acceptDesignQuestionnaireReview,
-  createDesignQuestionnaire,
-  generateDesignQuestionnaireFollowUp,
-  generateDesignQuestionnaireReview,
-  generateSpecificationStatusBlueprint,
-  generateSpecificationStatusDbDesign,
-  generateSpecificationStatusDesignDocument,
-  getBlueprintSpecificationWorkspace,
-  getDesignQuestionnaireSession,
-  getSpecificationWorkspace,
-  leaveDesignQuestionnaireReviewUnadopted,
-  listDesignQuestionnaires,
-  saveDesignQuestionnaireAnswers,
-} from './nightworkers.design-questionnaire.service';
 export {
   assertRunnableWorkbenchTask,
   buildBlueprintPlanningReadiness,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createBlueprintPreviewDesignSettings } from '../src/modules/nightworkers/components/blueprint-preview/designSettings';
+import { createBlueprintPreviewDesignSettings } from '../src/modules/blueprint-preview/designSettings';
 import { createWorkspaceAppearanceAttributes } from '../src/modules/nightworkers/contexts/WorkspaceAppearanceContext';
 
 describe('Workspace appearance settings', () => {

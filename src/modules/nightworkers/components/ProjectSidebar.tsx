@@ -1,4 +1,4 @@
-import { FolderPlus, ListTodo, LoaderCircle, Plus, Trash2 } from 'lucide-react';
+import { BarChart3, FolderPlus, ListTodo, LoaderCircle, Plus, Trash2 } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
@@ -18,6 +18,8 @@ type ProjectSidebarProps = {
   onToggleProject: (projectId: string) => void;
   onOpenProjectQueue: (projectId: string) => void;
   activeProjectQueueId: string | null;
+  onOpenProjectEvaluation: (projectId: string) => void;
+  activeProjectEvaluationId: string | null;
   onOpenOverview: () => void;
   isOverviewActive: boolean;
   onOpenFolderBrowser: () => void;
@@ -106,6 +108,20 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                       title={t('sidebar.openProjectQueue')}
                     >
                       <ListTodo className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className={`nightworkers-sidebar-control h-7 w-7 rounded-md p-0 ${
+                        props.activeProjectEvaluationId === project.id
+                          ? 'nightworkers-sidebar-link-active'
+                          : ''
+                      }`}
+                      onClick={() => props.onOpenProjectEvaluation(project.id)}
+                      title={t('sidebar.openProjectEvaluation')}
+                    >
+                      <BarChart3 className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       type="button"

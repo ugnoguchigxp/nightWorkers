@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { client } from '../../../lib/api';
+import { fetchSpecificationWorkspace } from '../../specification';
 import {
   fetchBackgroundProcessesForTask,
   fetchImplementationQueue,
-  fetchSpecificationWorkspace,
   fetchTaskActivityEvents,
   fetchTaskLlmUsage,
   fetchTaskMessages,

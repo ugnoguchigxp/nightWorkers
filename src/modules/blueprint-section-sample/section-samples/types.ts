@@ -1,4 +1,4 @@
-import type { BlueprintComponentName } from '../../../../../shared/schemas/blueprint-catalog.schema';
+import type { BlueprintComponentName } from '../../../../shared/schemas/blueprint-catalog.schema';
 
 export type SectionSampleContext = {
   base: Record<string, unknown>;

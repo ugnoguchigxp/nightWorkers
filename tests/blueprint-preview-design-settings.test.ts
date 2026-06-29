@@ -6,7 +6,7 @@ import {
   createBlueprintPreviewDesignSettings,
   createBlueprintPreviewDesignSettingsFromPreset,
   designReferenceSummary,
-} from '../src/modules/nightworkers/components/blueprint-preview/designSettings';
+} from '../src/modules/blueprint-preview/designSettings';
 
 describe('Blueprint Preview design settings', () => {
   it('maps governed backend preset themes to preview themes', () => {

@@ -13,7 +13,6 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { Rows3, Table2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { ProjectQueueBoard } from './ProjectQueueBoard';
 import { ProjectQueueTable } from './ProjectQueueTable';
 import { ProjectQueueTaskCardPreview } from './ProjectQueueTaskCard';
@@ -26,7 +25,6 @@ import { buildProjectQueueTasks, groupProjectQueueTasks } from './projectQueueMo
 import type { ProjectQueueScreenProps, ProjectQueueViewMode } from './projectQueueTypes';
 
 export function ProjectQueueScreen(props: ProjectQueueScreenProps) {
-  const { t } = useTranslation();
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ProjectQueueViewMode>('board');
   const [isPersisting, setIsPersisting] = useState(false);
@@ -135,9 +133,7 @@ export function ProjectQueueScreen(props: ProjectQueueScreenProps) {
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-950/60 text-slate-300 transition hover:border-cyan-400/60 hover:text-cyan-100"
               data-view-toggle="project-queue"
               onClick={() => setViewMode((current) => (current === 'board' ? 'table' : 'board'))}
-              title={
-                viewMode === 'board' ? t('projectQueue.tableView') : t('projectQueue.boardView')
-              }
+              title={viewMode === 'board' ? 'Switch to Table view' : 'Switch to Queue view'}
               type="button"
             >
               {viewMode === 'board' ? (

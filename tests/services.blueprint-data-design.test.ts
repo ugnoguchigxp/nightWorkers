@@ -4,7 +4,7 @@ import {
   parseAndValidateBlueprintDataDesignOutput,
   parseBlueprintDbDesignRequestPrompt,
 } from '../api/services/blueprints/data-design';
-import { buildBlueprintDbDesignPrompt } from '../src/modules/nightworkers/components/blueprint-preview/dbDesignModel';
+import { buildBlueprintDbDesignPrompt } from '../src/modules/blueprint-preview/dbDesignModel';
 import { representativeAppBlueprint } from './fixtures/app-blueprint';
 
 describe('Blueprint data-design service helpers', () => {

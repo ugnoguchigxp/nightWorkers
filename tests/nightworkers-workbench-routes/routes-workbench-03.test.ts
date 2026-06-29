@@ -5,7 +5,7 @@ import { ensureNightWorkersSchema } from '../../api/db/bootstrap';
 import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
 import * as service from '../../api/modules/nightworkers/nightworkers.service';
 import * as llm from '../../api/services/structured-llm';
-import { buildBlueprintDbDesignPrompt } from '../../src/modules/nightworkers/components/blueprint-preview/dbDesignModel';
+import { buildBlueprintDbDesignPrompt } from '../../src/modules/blueprint-preview/dbDesignModel';
 import { representativeAppBlueprint } from '../fixtures/app-blueprint';
 import {
   disableAutoQueueDrainForTest,

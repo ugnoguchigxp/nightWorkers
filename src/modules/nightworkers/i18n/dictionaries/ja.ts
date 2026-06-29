@@ -42,6 +42,7 @@ export const jaDictionary = {
     'Project folder は未登録です。「+」から local directory を登録してください。',
   'sidebar.openImplementationQueue': 'Implementation Queue を開く',
   'sidebar.openProjectQueue': 'Project Queue を開く',
+  'sidebar.openProjectEvaluation': 'Project 評価を開く',
   'sidebar.createTask': 'Task 作成',
   'sidebar.deleteProject': 'Project 削除',
   'sidebar.confirmDeleteProject':
@@ -233,8 +234,6 @@ export const jaDictionary = {
   'queue.todo.fixAfterReview': 'fix after review',
   'queue.todo.finalVerify': 'final verify',
   'queue.todo.commitPrompt': 'commit prompt',
-  'projectQueue.tableView': 'Table view に切り替え',
-  'projectQueue.boardView': 'Queue view に切り替え',
   'thread.noProject': 'No Project',
   'thread.hideDebugEvents': 'Debug events を隠す',
   'thread.showDebugEvents': 'Debug events を表示',
