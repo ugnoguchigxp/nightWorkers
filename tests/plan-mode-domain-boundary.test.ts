@@ -97,6 +97,26 @@ describe('Plan Mode domain boundaries', () => {
     }
   });
 
+  it('keeps frontend Questionnaire and Specification domain logic out of the PlanMode shell', () => {
+    expect(readProjectFile('src/modules/questionnaire/questionnaireModel.ts')).toContain(
+      'export function buildSubmittableQuestionnaireAnswers'
+    );
+    expect(readProjectFile('src/modules/specification/specificationWorkspaceModel.ts')).toContain(
+      'export function selectSpecificationWorkspaceMessages'
+    );
+
+    const questionnaireShell = readProjectFile('src/modules/planMode/PlanModeQuestionnaire.tsx');
+    expect(questionnaireShell).not.toContain('function evaluateQuestionDependency');
+    expect(questionnaireShell).not.toContain(
+      'export function buildSubmittableQuestionnaireAnswers'
+    );
+
+    const workspaceShell = readProjectFile('src/modules/planMode/PlanModeWorkspaceViewer.tsx');
+    expect(workspaceShell).toContain('selectSpecificationWorkspaceMessages');
+    expect(workspaceShell).not.toContain('mergeWorkspaceTaskMessages');
+    expect(workspaceShell).not.toContain('isReviewedSpecificationMessage');
+  });
+
   it('exposes the Plan Mode core bridge as an explicit NightWorkers port', () => {
     expect(existsSync(resolve(root, 'api/modules/planMode/plan-mode-core.port.ts'))).toBe(false);
     expect(

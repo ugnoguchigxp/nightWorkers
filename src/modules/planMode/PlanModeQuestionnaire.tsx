@@ -1,11 +1,25 @@
 import { LoaderCircle, Send } from 'lucide-react';
 import type {
   DesignQuestion,
-  DesignQuestionDependency,
   DesignQuestionOption,
   DesignQuestionSet,
 } from '../../../shared/schemas/design-questionnaire.schema';
-import type { DesignQuestionnaireAnswer, DesignQuestionnaireSession } from '../nightworkers/types';
+import type { DesignQuestionnaireAnswer } from '../nightworkers/types';
+import {
+  emptyQuestionnaireAnswer,
+  getUnansweredQuestions,
+  isQuestionDependencySatisfied,
+} from '../questionnaire';
+
+export {
+  buildSubmittableQuestionnaireAnswers,
+  getAnswerProgress,
+  getQuestionCount,
+  getUnansweredQuestions,
+  getVisibleQuestionnaireQuestions,
+  isAnswered,
+  isQuestionAnswered,
+} from '../questionnaire';
 
 export function QuestionnaireForm({
   questionGroups,
@@ -21,7 +35,7 @@ export function QuestionnaireForm({
   if (questionGroups.length === 0)
     return <p className="text-xs text-slate-500">No valid question set.</p>;
   const updateAnswer = (questionId: string, patch: Partial<DesignQuestionnaireAnswer>) => {
-    const current = answers[questionId] || emptyAnswer(questionId);
+    const current = answers[questionId] || emptyQuestionnaireAnswer(questionId);
     onChange({ ...answers, [questionId]: { ...current, ...patch } });
   };
   return (
@@ -48,7 +62,7 @@ export function QuestionnaireForm({
               <QuestionCard
                 key={String(question.id)}
                 question={question}
-                answer={answers[question.id] || emptyAnswer(question.id)}
+                answer={answers[question.id] || emptyQuestionnaireAnswer(question.id)}
                 onChange={(patch) => updateAnswer(question.id, patch)}
                 readOnly={readOnly}
               />
@@ -159,137 +173,4 @@ export function ActionButton({
       {label}
     </button>
   );
-}
-
-function emptyAnswer(questionId: string): DesignQuestionnaireAnswer {
-  return {
-    questionId,
-    selectedOptionIds: [],
-    rankedOptionIds: [],
-    deferred: false,
-  };
-}
-
-export function isAnswered(answer?: DesignQuestionnaireAnswer) {
-  return Boolean(
-    answer?.deferred ||
-      answer?.selectedOptionIds.length ||
-      answer?.rankedOptionIds.length ||
-      answer?.booleanValue !== undefined ||
-      answer?.freeText?.trim()
-  );
-}
-
-export function isQuestionAnswered(question: DesignQuestion, answer?: DesignQuestionnaireAnswer) {
-  if (answer?.deferred) return true;
-  if (question.answerType === 'multi_choice') return true;
-  return isAnswered(answer);
-}
-
-export function getVisibleQuestionnaireQuestions(
-  questionGroups: DesignQuestionSet[],
-  answers: Record<string, DesignQuestionnaireAnswer>
-) {
-  return questionGroups.flatMap((group) =>
-    (Array.isArray(group.questions) ? group.questions : []).filter((question) =>
-      isQuestionDependencySatisfied(question, answers)
-    )
-  );
-}
-
-export function getUnansweredQuestions(
-  questionGroups: DesignQuestionSet[],
-  answers: Record<string, DesignQuestionnaireAnswer>
-) {
-  return getVisibleQuestionnaireQuestions(questionGroups, answers).filter(
-    (question) => !isQuestionAnswered(question, answers[question.id])
-  );
-}
-
-export function buildSubmittableQuestionnaireAnswers(
-  questionGroups: DesignQuestionSet[],
-  answers: Record<string, DesignQuestionnaireAnswer>
-) {
-  const visibleQuestions = getVisibleQuestionnaireQuestions(questionGroups, answers);
-  const merged = { ...answers };
-  for (const question of visibleQuestions) {
-    if (!merged[question.id] && question.answerType === 'multi_choice') {
-      merged[question.id] = emptyAnswer(question.id);
-    }
-  }
-  return Object.values(merged);
-}
-
-export function getAnswerProgress(
-  questionGroups: DesignQuestionSet[],
-  answers: Record<string, DesignQuestionnaireAnswer>
-) {
-  const questions = getVisibleQuestionnaireQuestions(questionGroups, answers);
-  const answeredCount = questions.filter((question) =>
-    isQuestionAnswered(question, answers[question.id])
-  ).length;
-  return {
-    answeredCount,
-    totalCount: questions.length,
-    unansweredCount: Math.max(questions.length - answeredCount, 0),
-  };
-}
-
-export function getQuestionCount(session: DesignQuestionnaireSession) {
-  const answers = Object.fromEntries(session.answers.map((item) => [item.questionId, item.answer]));
-  return session.questionSets.reduce((total, set) => {
-    const groups = set.questionnaire?.questionSets;
-    if (!Array.isArray(groups)) return total;
-    return (
-      total +
-      groups.reduce(
-        (sum, group) =>
-          sum +
-          (Array.isArray(group.questions)
-            ? group.questions.filter((question) => isQuestionDependencySatisfied(question, answers))
-                .length
-            : 0),
-        0
-      )
-    );
-  }, 0);
-}
-
-function isQuestionDependencySatisfied(
-  question: DesignQuestion,
-  answers: Record<string, DesignQuestionnaireAnswer>
-) {
-  const dependencies = Array.isArray(question.dependsOn) ? question.dependsOn : [];
-  return dependencies.every((dependency) => {
-    const answer = answers[String(dependency.questionId)];
-    if (!answer) return false;
-    return evaluateQuestionDependency(answer, dependency);
-  });
-}
-
-function evaluateQuestionDependency(
-  answer: DesignQuestionnaireAnswer,
-  dependency: DesignQuestionDependency
-) {
-  const expected = dependency.value;
-  const values = [
-    ...answer.selectedOptionIds,
-    ...answer.rankedOptionIds,
-    ...(answer.freeText?.trim() ? [answer.freeText.trim()] : []),
-  ];
-  const hasExpectedString = Array.isArray(expected)
-    ? expected.some((value) => values.includes(String(value)))
-    : values.includes(String(expected));
-  if (typeof expected === 'boolean') {
-    if (dependency.operator === 'equals') return answer.booleanValue === expected;
-    if (dependency.operator === 'not_equals') return answer.booleanValue !== expected;
-    return false;
-  }
-  if (dependency.operator === 'equals' || dependency.operator === 'includes') {
-    return hasExpectedString;
-  }
-  if (dependency.operator === 'not_equals' || dependency.operator === 'excludes') {
-    return !hasExpectedString;
-  }
-  return false;
 }

@@ -1,6 +1,5 @@
 import { LoaderCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { toDeepRecord } from '../../../shared/json-record';
 import { generateBlueprintArtifact } from '../blueprint';
 import { generateDbDesignArtifact } from '../dbDesign';
 import { MarkdownViewer } from '../nightworkers/components/ArtifactFileViewers';
@@ -13,12 +12,6 @@ import type {
   TaskMessage,
 } from '../nightworkers/types';
 import {
-  isDbDesignBlueprintMessage,
-  isNormalBlueprintMessage,
-  isReviewedSpecificationMessage,
-  mergeWorkspaceTaskMessages,
-} from '../nightworkers/workbenchSelectors';
-import {
   fetchDesignQuestionnaireSessions,
   startDesignQuestionnaire,
   submitDesignQuestionnaireAnswers,
@@ -27,6 +20,10 @@ import { fetchGeneralSettings } from '../settings';
 import {
   fetchSpecificationWorkspace,
   generateSpecificationArtifact as generateDesignDocArtifact,
+  getPlanModeCapabilities,
+  isDesignAssemblyReady,
+  selectSpecificationWorkspaceMessages,
+  type WorkspaceTab,
 } from '../specification';
 import {
   ActionButton,
@@ -42,8 +39,6 @@ import {
   WorkspaceDbDesignPanel,
   WorkspaceList,
 } from './PlanModeWorkspacePanels';
-
-type WorkspaceTab = 'blueprints' | 'db-design' | 'questionnaire' | 'status' | 'specification';
 
 export function BlueprintSpecificationWorkspaceViewer({
   sessionId,
@@ -72,38 +67,24 @@ export function BlueprintSpecificationWorkspaceViewer({
   const [generalSettings, setGeneralSettings] = useState<GeneralSettings | null>(null);
   const [assemblyReadySessionIds, setAssemblyReadySessionIds] = useState<Set<string>>(new Set());
   const [generatedMessages, setGeneratedMessages] = useState<TaskMessage[]>([]);
-  const combinedTaskMessages = useMemo(
-    () => mergeWorkspaceTaskMessages({ taskMessages, activityArtifacts, generatedMessages }),
-    [activityArtifacts, generatedMessages, taskMessages]
-  );
-  const blueprintMessages = useMemo(
-    () => combinedTaskMessages.filter(isNormalBlueprintMessage),
-    [combinedTaskMessages]
-  );
-  const dbDesignMessages = useMemo(
-    () => combinedTaskMessages.filter(isDbDesignBlueprintMessage),
-    [combinedTaskMessages]
-  );
-  const designDocMessages = useMemo(
+  const workspaceMessages = useMemo(
     () =>
-      combinedTaskMessages.filter(
-        (message) =>
-          message.messageType === 'markdown_document' &&
-          String(toDeepRecord(message.metadataJson).intent) === 'draft_spec'
-      ),
-    [combinedTaskMessages]
+      selectSpecificationWorkspaceMessages({
+        taskMessages,
+        activityArtifacts,
+        generatedMessages,
+        workspace,
+      }),
+    [activityArtifacts, generatedMessages, taskMessages, workspace]
   );
-  const reviewedDesignDocMessages = useMemo(
-    () => designDocMessages.filter(isReviewedSpecificationMessage),
-    [designDocMessages]
-  );
-  const activeBlueprintMessage = blueprintMessages.at(-1) || null;
-  const activeDbDesignMessage = dbDesignMessages.at(-1) || null;
-  const latestWorkspaceBlueprintMessageId =
-    workspace?.blueprintArtifacts.at(-1)?.sourceMessageId || null;
-  const activeBlueprintSourceMessageId = activeBlueprintMessage?.id?.startsWith('artifact-')
-    ? latestWorkspaceBlueprintMessageId
-    : activeBlueprintMessage?.id || latestWorkspaceBlueprintMessageId;
+  const {
+    blueprintMessages,
+    designDocMessages,
+    reviewedDesignDocMessages,
+    activeBlueprintMessage,
+    activeDbDesignMessage,
+    activeBlueprintSourceMessageId,
+  } = workspaceMessages;
 
   const refresh = useCallback(async () => {
     if (!sessionId) return;
@@ -159,11 +140,9 @@ export function BlueprintSpecificationWorkspaceViewer({
     ) || [];
   const answerProgress = getAnswerProgress(questionGroups, answers);
   const unansweredQuestions = getUnansweredQuestions(questionGroups, answers);
-  const isDesignAssemblyReady = Boolean(
-    activeQuestionnaireSession &&
-      (activeQuestionnaireSession.status === 'review_ready' ||
-        activeQuestionnaireSession.status === 'accepted' ||
-        assemblyReadySessionIds.has(activeQuestionnaireSession.id))
+  const designAssemblyReady = isDesignAssemblyReady(
+    activeQuestionnaireSession,
+    assemblyReadySessionIds
   );
 
   async function runAction(action: string, fn: () => Promise<void>) {
@@ -185,12 +164,7 @@ export function BlueprintSpecificationWorkspaceViewer({
     await runAction(action, fn);
   }
 
-  const planModeCapabilities = generalSettings?.planMode.capabilities ?? {
-    questionnaire: true,
-    blueprint: true,
-    dbDesign: true,
-    specification: true,
-  };
+  const planModeCapabilities = getPlanModeCapabilities(generalSettings);
   const planModeDisabledReason = 'Plan Mode capability is disabled in Settings.';
 
   async function startQuestionnaire() {
@@ -284,16 +258,16 @@ export function BlueprintSpecificationWorkspaceViewer({
             <button
               key={id}
               type="button"
-              disabled={id === 'specification' && !isDesignAssemblyReady}
+              disabled={id === 'specification' && !designAssemblyReady}
               className={`rounded border px-2 py-1 text-xs ${
                 activeTab === id
                   ? 'border-cyan-400/70 bg-cyan-950/40 text-cyan-100'
-                  : id === 'specification' && !isDesignAssemblyReady
+                  : id === 'specification' && !designAssemblyReady
                     ? 'cursor-not-allowed border-slate-800 bg-slate-950/10 text-slate-600'
                     : 'border-slate-700 bg-slate-950/20 text-slate-300 hover:border-slate-500'
               }`}
               onClick={() => {
-                if (id === 'specification' && !isDesignAssemblyReady) return;
+                if (id === 'specification' && !designAssemblyReady) return;
                 setActiveTab(id as typeof activeTab);
               }}
             >
@@ -401,7 +375,7 @@ export function BlueprintSpecificationWorkspaceViewer({
                     <span className="text-[11px] text-amber-300" aria-live="polite">
                       未回答:{' '}
                       {unansweredQuestions
-                        .map((question: unknown) => String(toDeepRecord(question).question || ''))
+                        .map((question) => String(question.question || ''))
                         .join(' / ')}
                     </span>
                   ) : null}
