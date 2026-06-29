@@ -6,7 +6,7 @@ const dateLikeSchema = z.union([z.string(), z.date()]);
 export const questionnaireChoiceQuestionSchema = z.object({
   text: z.string().min(1),
   type: z.enum(['radio', 'checkbox']),
-  options: z.array(z.string().min(1)).min(2).max(6),
+  options: z.array(z.string().min(1)).min(2).max(10),
 });
 
 export const questionnaireChoiceFormSchema = z.object({
