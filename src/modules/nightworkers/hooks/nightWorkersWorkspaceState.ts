@@ -2,19 +2,11 @@ import type { Dispatch, SetStateAction } from 'react';
 import type {
   ActivityArtifact,
   ActivityEvent,
-  AgentHookConfig,
-  AgentHookInput,
-  AgentHookTestResult,
   BackgroundProcess,
   CreateProjectInput,
   CreateSessionInput,
-  ImplementationQueueDashboard,
   LlmProvider,
   LlmSettings,
-  McpServerConfig,
-  McpServerImportResult,
-  McpServerInput,
-  McpServerTestResult,
   ProjectDiff,
   ProjectFileContent,
   ProjectFileEntry,
@@ -26,7 +18,6 @@ import type {
   TaskMessage,
   TaskRun,
   TaskRunTodo,
-  TodoWorkflowSettings,
   UpdateProjectInput,
   WorkbenchArtifactContext,
   WorkbenchArtifactRef,
@@ -68,8 +59,6 @@ export type NightWorkersWorkspaceState = {
   latestRunTodos: TaskRunTodo[];
   latestRunReviews: ReviewResult[];
   activeArtifactRefs: WorkbenchArtifactRef[];
-  implementationQueue: ImplementationQueueDashboard | null;
-  todoWorkflowSettings: TodoWorkflowSettings | null;
   projectFileEntries: ProjectFileEntry[];
   projectFileEntriesByDirectory: Record<string, ProjectFileEntry[]>;
   expandedProjectDirectories: Record<string, boolean>;
@@ -88,7 +77,6 @@ export type NightWorkersWorkspaceState = {
   isAgentWorking: boolean;
   isAgentThinking: boolean;
   isUpdatingSessionStatus: boolean;
-  isImplementationQueueLoading: boolean;
   expandedProjects: Record<string, boolean>;
   setExpandedProjects: Dispatch<SetStateAction<Record<string, boolean>>>;
   setActiveSessionId: (id: string | null) => void;
@@ -101,20 +89,10 @@ export type NightWorkersWorkspaceState = {
   stopRun: (runId: string) => Promise<TaskRun>;
   stopBackgroundProcess: (processId: string) => Promise<BackgroundProcess>;
   queueSession: (sessionId: string) => Promise<Task>;
-  createImplementationQueueEntry: (sessionId: string) => Promise<void>;
-  archiveImplementationQueueEntry: (entryId: string) => Promise<void>;
-  removeImplementationQueueEntry: (entryId: string) => Promise<void>;
-  requeueImplementationQueueEntry: (entryId: string, note?: string) => Promise<void>;
-  updateImplementationQueueEntry: (
-    entryId: string,
-    input: { queuePosition?: number | null; priority?: number }
-  ) => Promise<void>;
   submitRunReview: (
     runId: string,
     input: { action: 'complete' | 'cancel'; note?: string }
   ) => Promise<void>;
-  updateImplementationQueueProcessorCount: (processorCount: number) => Promise<void>;
-  updateTodoWorkflowSettings: (input: Partial<TodoWorkflowSettings>) => Promise<void>;
   updateSessionStatus: (sessionId: string, status: 'draft' | 'ready') => Promise<Task>;
   reorderQueueSessions: (sessionIds: string[]) => Promise<Task[]>;
   moveWorkbenchSession: (input: {
@@ -145,17 +123,6 @@ export type NightWorkersWorkspaceState = {
   llmSettings: LlmSettings | null;
   activeProvider: LlmProvider;
   providerModelOptions: Array<{ value: string; label: string }>;
-  mcpServers: McpServerConfig[];
-  agentHooks: AgentHookConfig[];
-  createMcpServer: (input: McpServerInput) => Promise<McpServerConfig>;
-  importMcpServers: (text: string, testAfterImport?: boolean) => Promise<McpServerImportResult>;
-  updateMcpServer: (id: string, input: Partial<McpServerInput>) => Promise<McpServerConfig>;
-  deleteMcpServer: (id: string) => Promise<void>;
-  testMcpServer: (id: string) => Promise<McpServerTestResult>;
-  createAgentHook: (input: AgentHookInput) => Promise<AgentHookConfig>;
-  updateAgentHook: (id: string, input: Partial<AgentHookInput>) => Promise<AgentHookConfig>;
-  deleteAgentHook: (id: string) => Promise<void>;
-  testAgentHook: (id: string) => Promise<AgentHookTestResult>;
   setActiveProvider: (provider: LlmProvider) => Promise<void>;
   toggleProviderEnabled: (provider: LlmProvider, enabled: boolean) => Promise<void>;
   updateProviderModel: (model: string) => Promise<void>;

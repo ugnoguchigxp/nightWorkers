@@ -1,15 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as queueService from '../api/modules/nightworkers/nightworkers.queue-management.service';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
-import * as orchestration from '../api/modules/nightworkers/nightworkers.run-orchestration.service';
+import * as queueRepo from '../api/modules/queue/queue.repository';
+import * as queueSchedulerPort from '../api/modules/queue/queue-scheduler-port';
 
 vi.mock('../api/modules/nightworkers/nightworkers.repository', () => ({
   getTask: vi.fn(),
   listTaskMessages: vi.fn(),
-  hasActiveImplementationQueueEntry: vi.fn(),
   updateTask: vi.fn(),
-  createImplementationQueueEntry: vi.fn(),
   createTaskMessage: vi.fn(),
+}));
+
+vi.mock('../api/modules/queue/queue.repository', () => ({
+  hasActiveImplementationQueueEntry: vi.fn(),
+  createImplementationQueueEntry: vi.fn(),
 }));
 
 vi.mock('../api/modules/nightworkers/nightworkers.planning-helpers.service', () => ({
@@ -18,8 +22,8 @@ vi.mock('../api/modules/nightworkers/nightworkers.planning-helpers.service', () 
   hasImplementationPlanEvidence: vi.fn(() => true),
 }));
 
-vi.mock('../api/modules/nightworkers/nightworkers.run-orchestration.service', () => ({
-  runImplementationQueue: vi.fn(async () => []),
+vi.mock('../api/modules/queue/queue-scheduler-port', () => ({
+  triggerConfiguredQueueDrain: vi.fn(),
 }));
 
 const task = {
@@ -45,9 +49,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(repo.getTask).mockResolvedValue(task as never);
   vi.mocked(repo.listTaskMessages).mockResolvedValue([{ id: 'message-1' }] as never);
-  vi.mocked(repo.hasActiveImplementationQueueEntry).mockResolvedValue(false);
+  vi.mocked(queueRepo.hasActiveImplementationQueueEntry).mockResolvedValue(false);
   vi.mocked(repo.updateTask).mockResolvedValue(queuedTask as never);
-  vi.mocked(repo.createImplementationQueueEntry).mockResolvedValue(queueEntry as never);
+  vi.mocked(queueRepo.createImplementationQueueEntry).mockResolvedValue(queueEntry as never);
   vi.mocked(repo.createTaskMessage).mockResolvedValue({ id: 'message-2' } as never);
 });
 
@@ -56,12 +60,12 @@ describe('NightWorkers queue management side effects', () => {
     const entry = await queueService.createImplementationQueueEntry(task.id, { autoDrain: false });
 
     expect(entry).toBe(queueEntry);
-    expect(orchestration.runImplementationQueue).not.toHaveBeenCalled();
+    expect(queueSchedulerPort.triggerConfiguredQueueDrain).not.toHaveBeenCalled();
   });
 
   it('auto-drains by default when createImplementationQueueEntry succeeds', async () => {
     await queueService.createImplementationQueueEntry(task.id);
 
-    expect(orchestration.runImplementationQueue).toHaveBeenCalledTimes(1);
+    expect(queueSchedulerPort.triggerConfiguredQueueDrain).toHaveBeenCalledTimes(1);
   });
 });

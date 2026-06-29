@@ -3,7 +3,7 @@ import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
-import { formatCurrency, formatDateTime, formatTokenCount } from '../i18n/format';
+import { formatCurrency, formatDateTime, formatTokenCount } from '../../../i18n/format';
 import { fetchOverview } from '../nightWorkersCommands';
 import type { NightWorkersCurrency, OverviewDashboard, Repository } from '../types';
 

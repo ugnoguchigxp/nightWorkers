@@ -6,7 +6,7 @@ import type {
 import {
   getAnswerableSessionQuestions,
   getSessionQuestions,
-} from './nightworkers.design-questionnaire-parser.service';
+} from '../questionnaire/questionnaire-parser.service';
 
 type JsonRecord = Record<string, unknown>;
 type TaskMessageRow = { id: string; metadataJson?: unknown | null };

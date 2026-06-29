@@ -11,6 +11,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toDeepRecord } from '../../../../shared/json-record';
+import { BlueprintSpecificationWorkspaceViewer } from '../../planMode';
 import type {
   ActivityArtifact,
   ProjectDiff,
@@ -35,7 +36,6 @@ import {
   copyText,
   saveTextFile,
 } from './ArtifactPaneVersions';
-import { BlueprintSpecificationWorkspaceViewer } from './ArtifactWorkspaceViewer';
 
 type ArtifactPaneProps = {
   activeProject: Repository | null;

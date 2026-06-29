@@ -20,8 +20,11 @@ import { rateLimiter } from './middleware/rate-limiter';
 import { nightworkersRouter } from './modules/nightworkers/nightworkers.routes';
 import * as nightworkersService from './modules/nightworkers/nightworkers.service';
 import { projectEvaluationRouter } from './modules/project-evaluation/project-evaluation.routes';
+import { queueRouter } from './modules/queue/queue.routes';
 import { authRouter } from './routes/auth';
 import { healthRouter } from './routes/health';
+import { hooksSettingsRouter } from './routes/hooks-settings';
+import { mcpSettingsRouter } from './routes/mcp-settings';
 import { oauthRouter } from './routes/oauth';
 import { settingsRouter } from './routes/settings';
 import { getResourceRoot } from './runtime/paths';
@@ -32,7 +35,10 @@ const apiRoutes = createOpenApiRouter()
   .route('/auth/oauth', oauthRouter)
   .route('/auth', authRouter)
   .route('/settings', settingsRouter)
+  .route('/settings', mcpSettingsRouter)
+  .route('/settings', hooksSettingsRouter)
   .route('/', projectEvaluationRouter)
+  .route('/', queueRouter)
   .route('/', nightworkersRouter);
 
 const app = createOpenApiRouter();

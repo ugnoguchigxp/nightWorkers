@@ -1,13 +1,13 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { BlueprintSpecificationWorkspaceViewer } from '../src/modules/nightworkers/components/ArtifactWorkspaceViewer';
 import {
   isDbDesignBlueprintMessage,
   isNormalBlueprintMessage,
   isReviewedSpecificationMessage,
   mergeWorkspaceTaskMessages,
 } from '../src/modules/nightworkers/workbenchSelectors';
+import { BlueprintSpecificationWorkspaceViewer } from '../src/modules/planMode';
 import {
   buildActivityArtifact,
   buildBlueprintMessage,

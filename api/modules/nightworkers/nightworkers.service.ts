@@ -4,16 +4,20 @@ import { buildReviewResult } from '../../services/review-results/build-review-re
 import { collectDefaultReviewEvidence } from '../../services/review-results/evidence-collector';
 import type { ReviewRunRequest } from '../../services/review-results/types';
 import { decideRunOutcome } from '../../services/run-control/run-outcome-gate';
+import { configureQueueDrainRunner } from '../queue/queue-scheduler-port';
 import { createTask } from './nightworkers.basic.service';
 import { assertRunnableWorkbenchTask } from './nightworkers.planning-helpers.service';
 import * as repo from './nightworkers.repository';
 import {
   archiveImplementationQueueEntryForRun,
   completeImplementationQueueEntryForRun,
+  runImplementationQueue,
   runSessionQueueForRepository,
   shouldContinueSessionQueue,
   startTaskRun,
 } from './nightworkers.run-orchestration.service';
+
+configureQueueDrainRunner(runImplementationQueue);
 
 export {
   generateBlueprintArtifact as generateSpecificationStatusBlueprint,

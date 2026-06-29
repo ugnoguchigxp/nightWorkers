@@ -1,11 +1,11 @@
-export {
-  getBlueprintDesignSettings,
-  saveBlueprintDesignSettings,
-} from '../nightworkers/nightworkers.basic.service';
+export { generateSpecificationStatusBlueprint as generateBlueprintArtifact } from '../nightworkers/nightworkers.design-questionnaire.service';
 export {
   getBlueprintArtifactAdoption,
   getBlueprintDesignTokenAdoption,
   saveBlueprintArtifactAdoption,
   saveBlueprintDesignTokenAdoption,
-} from '../nightworkers/nightworkers.blueprint-adoption.service';
-export { generateSpecificationStatusBlueprint as generateBlueprintArtifact } from '../nightworkers/nightworkers.design-questionnaire.service';
+} from './blueprint-adoption.service';
+export {
+  getBlueprintDesignSettings,
+  saveBlueprintDesignSettings,
+} from './blueprint-design-settings.service';

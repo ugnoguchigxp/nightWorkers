@@ -38,18 +38,8 @@ import {
 import { routeErrorResponse, withOpenApiRouteError } from './nightworkers.route-utils';
 import * as service from './nightworkers.service';
 import {
-  archiveImplementationQueueEntryRoute,
   archiveWorkbenchSessionRoute,
-  createImplementationQueueEntryRoute,
-  drainImplementationQueueRoute,
-  getImplementationQueueSettingsRoute,
-  getTodoWorkflowSettingsRoute,
-  implementationQueueDashboardRoute,
-  patchImplementationQueueEntryRoute,
-  patchImplementationQueueSettingsRoute,
-  patchTodoWorkflowSettingsRoute,
   queueWorkbenchSessionRoute,
-  requeueImplementationQueueEntryRoute,
   runWorkbenchSessionRoute,
 } from './routes/queue-routes';
 import {
@@ -415,84 +405,6 @@ const router = createOpenApiRouter()
       const body = c.req.valid('json');
       const result = await service.appendWorkbenchMessage(id, body);
       return c.json(result, 200);
-    })
-  )
-
-  .openapi(
-    implementationQueueDashboardRoute,
-    withOpenApiRouteError(implementationQueueDashboardRoute, async (c) => {
-      const result = await service.listImplementationQueueDashboard();
-      return c.json(result, 200);
-    })
-  )
-  .openapi(
-    createImplementationQueueEntryRoute,
-    withOpenApiRouteError(createImplementationQueueEntryRoute, async (c) => {
-      const body = c.req.valid('json');
-      const entry = await service.createImplementationQueueEntry(body.taskId);
-      return c.json(entry, 201);
-    })
-  )
-  .openapi(
-    patchImplementationQueueEntryRoute,
-    withOpenApiRouteError(patchImplementationQueueEntryRoute, async (c) => {
-      const body = c.req.valid('json');
-      const entry = await service.patchImplementationQueueEntry(c.req.param('id'), body);
-      return c.json(entry, 200);
-    })
-  )
-  .openapi(
-    archiveImplementationQueueEntryRoute,
-    withOpenApiRouteError(archiveImplementationQueueEntryRoute, async (c) => {
-      const entry = await service.archiveImplementationQueueEntry(c.req.param('id'));
-      return c.json(entry, 200);
-    })
-  )
-  .openapi(
-    requeueImplementationQueueEntryRoute,
-    withOpenApiRouteError(requeueImplementationQueueEntryRoute, async (c) => {
-      const entry = await service.requeueImplementationQueueEntry(
-        c.req.param('id'),
-        c.req.valid('json')
-      );
-      return c.json(entry, 201);
-    })
-  )
-  .openapi(
-    drainImplementationQueueRoute,
-    withOpenApiRouteError(drainImplementationQueueRoute, async (c) => {
-      const started = await service.runImplementationQueue();
-      return c.json({ started: started.length }, 200);
-    })
-  )
-  .openapi(
-    getImplementationQueueSettingsRoute,
-    withOpenApiRouteError(getImplementationQueueSettingsRoute, async (c) => {
-      const result = await service.listImplementationQueueDashboard();
-      return c.json(result.settings, 200);
-    })
-  )
-  .openapi(
-    patchImplementationQueueSettingsRoute,
-    withOpenApiRouteError(patchImplementationQueueSettingsRoute, async (c) => {
-      const body = c.req.valid('json');
-      const settings = await service.updateImplementationQueueSettings(body);
-      return c.json(settings, 200);
-    })
-  )
-  .openapi(
-    getTodoWorkflowSettingsRoute,
-    withOpenApiRouteError(getTodoWorkflowSettingsRoute, async (c) => {
-      const settings = await service.getTodoWorkflowSettings();
-      return c.json(settings, 200);
-    })
-  )
-  .openapi(
-    patchTodoWorkflowSettingsRoute,
-    withOpenApiRouteError(patchTodoWorkflowSettingsRoute, async (c) => {
-      const body = c.req.valid('json');
-      const settings = await service.updateTodoWorkflowSettings(body);
-      return c.json(settings, 200);
     })
   )
   .openapi(

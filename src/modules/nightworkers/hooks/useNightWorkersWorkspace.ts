@@ -8,7 +8,6 @@ import {
   fetchTaskActivityEvents,
   fetchTaskLlmUsage,
   fetchTaskMessages,
-  fetchTodoWorkflowSettings,
 } from '../nightWorkersCommands';
 import { mergeRunEvents } from '../realtimeEvents';
 import type {
@@ -24,7 +23,6 @@ import type {
   TaskLlmUsageSummary,
   TaskMessage,
   TaskRun,
-  TodoWorkflowSettings,
 } from '../types';
 import { createNightWorkersChatActions } from './nightWorkersChatActions';
 import type { NightWorkersWorkspaceState, RealtimeStatus } from './nightWorkersWorkspaceState';
@@ -117,23 +115,12 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     refetchOnReconnect: false,
   });
 
-  const { data: implementationQueue = null, isLoading: isImplementationQueueLoading } = useQuery({
+  const { data: implementationQueue = null } = useQuery({
     queryKey: ['implementationQueue'],
     queryFn: async () => {
       const res = await fetchImplementationQueue();
       if (!res.ok) throw new Error('Failed to fetch implementation queue');
       return (await res.json()) as ImplementationQueueDashboard;
-    },
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-
-  const { data: todoWorkflowSettings = null } = useQuery({
-    queryKey: ['todoWorkflowSettings'],
-    queryFn: async () => {
-      const res = await fetchTodoWorkflowSettings();
-      if (!res.ok) throw new Error('Failed to fetch Todo Workflow settings');
-      return (await res.json()) as TodoWorkflowSettings;
     },
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -250,14 +237,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     stopRunMutation,
     stopBackgroundProcessMutation,
     queueSessionMutation,
-    createImplementationQueueEntryMutation,
-    archiveImplementationQueueEntryMutation,
-    removeImplementationQueueEntryMutation,
     submitRunReviewMutation,
-    requeueImplementationQueueEntryMutation,
-    updateImplementationQueueEntryMutation,
-    updateImplementationQueueProcessorCountMutation,
-    updateTodoWorkflowSettingsMutation,
     updateSessionStatusMutation,
     reorderQueueSessionsMutation,
     moveWorkbenchSessionMutation,
@@ -455,8 +435,6 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     latestRunTodos,
     latestRunReviews,
     activeArtifactRefs,
-    implementationQueue,
-    todoWorkflowSettings,
     projectFileEntries: projectFilesState.projectFileEntries,
     projectFileEntriesByDirectory: projectFilesState.projectFileEntriesByDirectory,
     expandedProjectDirectories: projectFilesState.expandedProjectDirectories,
@@ -475,7 +453,6 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     isAgentWorking,
     isAgentThinking,
     isUpdatingSessionStatus: updateSessionStatusMutation.isPending,
-    isImplementationQueueLoading,
     expandedProjects,
     setExpandedProjects,
     setActiveSessionId,
@@ -488,29 +465,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     stopRun: (runId) => stopRunMutation.mutateAsync(runId),
     stopBackgroundProcess: (processId) => stopBackgroundProcessMutation.mutateAsync(processId),
     queueSession: (sessionId) => queueSessionMutation.mutateAsync(sessionId),
-    createImplementationQueueEntry: async (sessionId) => {
-      await createImplementationQueueEntryMutation.mutateAsync(sessionId);
-    },
-    archiveImplementationQueueEntry: async (entryId) => {
-      await archiveImplementationQueueEntryMutation.mutateAsync(entryId);
-    },
-    removeImplementationQueueEntry: async (entryId) => {
-      await removeImplementationQueueEntryMutation.mutateAsync(entryId);
-    },
-    requeueImplementationQueueEntry: async (entryId, note) => {
-      await requeueImplementationQueueEntryMutation.mutateAsync({ entryId, note });
-    },
-    updateImplementationQueueEntry: async (entryId, input) => {
-      await updateImplementationQueueEntryMutation.mutateAsync({ entryId, data: input });
-    },
     submitRunReview: async (runId, input) => {
       await submitRunReviewMutation.mutateAsync({ runId, data: input });
-    },
-    updateImplementationQueueProcessorCount: async (processorCount) => {
-      await updateImplementationQueueProcessorCountMutation.mutateAsync(processorCount);
-    },
-    updateTodoWorkflowSettings: async (input) => {
-      await updateTodoWorkflowSettingsMutation.mutateAsync(input);
     },
     updateSessionStatus: (sessionId, status) =>
       updateSessionStatusMutation.mutateAsync({ sessionId, status }),

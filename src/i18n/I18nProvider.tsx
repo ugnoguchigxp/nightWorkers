@@ -1,13 +1,14 @@
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
-import { fetchGeneralSettings } from '../nightWorkersCommands';
+import { apiFetch } from '../lib/api-base';
 import { i18next } from './setup';
+import type { AppLanguage } from './types';
 
 type GeneralSettingsResponse = {
-  language?: 'ja' | 'en';
+  language?: AppLanguage;
 };
 
-export function NightWorkersI18nProvider({ children }: { children: ReactNode }) {
+export function AppI18nProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
 
@@ -17,7 +18,7 @@ export function NightWorkersI18nProvider({ children }: { children: ReactNode }) 
         if (!res.ok) return;
         const settings = (await res.json()) as GeneralSettingsResponse;
         if (cancelled || !settings.language) return;
-        await applyNightWorkersLanguage(settings.language);
+        await applyAppLanguage(settings.language);
       } catch {
         // The default Japanese UI remains available if runtime settings cannot be loaded.
       }
@@ -33,7 +34,11 @@ export function NightWorkersI18nProvider({ children }: { children: ReactNode }) 
   return <>{children}</>;
 }
 
-export async function applyNightWorkersLanguage(language: 'ja' | 'en') {
+export async function applyAppLanguage(language: AppLanguage) {
   await i18next.changeLanguage(language);
   document.documentElement.lang = language;
+}
+
+function fetchGeneralSettings(init?: RequestInit) {
+  return apiFetch('/api/settings/general', init);
 }

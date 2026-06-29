@@ -1,8 +1,8 @@
-import type { NightWorkersLanguage } from '../types';
 import { enDictionary } from './dictionaries/en';
 import { jaDictionary } from './dictionaries/ja';
+import type { AppLanguage } from './types';
 
-export const DEFAULT_LANGUAGE: NightWorkersLanguage = 'ja';
+export const DEFAULT_LANGUAGE: AppLanguage = 'ja';
 
 export const dictionary = {
   ja: jaDictionary,
@@ -16,7 +16,7 @@ export const resources = {
 
 export type DictionaryKey = keyof typeof dictionary.ja;
 
-export function t(language: NightWorkersLanguage | undefined, key: DictionaryKey) {
+export function t(language: AppLanguage | undefined, key: DictionaryKey) {
   const lang = language === 'en' ? 'en' : DEFAULT_LANGUAGE;
   return dictionary[lang][key] || dictionary.ja[key];
 }

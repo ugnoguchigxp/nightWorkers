@@ -3,7 +3,7 @@ import {
   buildSubmittableQuestionnaireAnswers,
   getAnswerProgress,
   getUnansweredQuestions,
-} from '../src/modules/nightworkers/components/ArtifactQuestionnaire';
+} from '../src/modules/planMode';
 
 const questionGroups = [
   {

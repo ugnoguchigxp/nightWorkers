@@ -1,25 +1,5 @@
 import { createOpenApiRouter } from '../lib/openapi';
 import { readCodexSdkStatus } from '../services/codex-global-config/status';
-import { buildSampleHookInput } from '../services/hooks/hooks-config-schema';
-import { readEffectiveAgentHooksSettings } from '../services/hooks/hooks-effective-settings';
-import { runSingleAgentHookForTest } from '../services/hooks/hooks-runner';
-import {
-  createAgentHook,
-  deleteAgentHook,
-  getAgentHook,
-  updateAgentHook,
-} from '../services/hooks/hooks-settings';
-import { mcpClientManager } from '../services/mcp/mcp-client-manager';
-import {
-  getEffectiveMcpServer,
-  readEffectiveMcpServerSettings,
-} from '../services/mcp/mcp-effective-settings';
-import {
-  createMcpServer,
-  deleteMcpServer,
-  importMcpServersFromText,
-  updateMcpServer,
-} from '../services/mcp/mcp-settings';
 import { runStartupPreflight } from '../services/preflight/preflight';
 import { listPricingRows, seedCodexPricingRows, upsertPricingRow } from '../services/pricing';
 import {
@@ -33,19 +13,12 @@ import { callSupervisorLLM } from '../services/structured-llm';
 import { checkStructuredLlmProviderHealth } from '../services/structured-llm/provider-health';
 import { buildRound1JobTypePrompt } from '../services/supervisor/prompt';
 import {
-  createAgentHookRoute,
-  createMcpServerRoute,
-  deleteAgentHookRoute,
-  deleteMcpServerRoute,
-  getAgentHooksRoute,
   getCodexSdkStatusRoute,
   getFxRatesRoute,
   getGeneralSettingsRoute,
   getLlmModelsRoute,
   getLlmSettingsRoute,
-  getMcpServersRoute,
   getStartupPreflightRoute,
-  importMcpServersRoute,
   listPricingRoute,
   refreshFxRatesRoute,
   saveGeneralSettingsRoute,
@@ -53,11 +26,7 @@ import {
   savePricingRoute,
   seedCodexPricingRoute,
   smokeLlmRoute,
-  testAgentHookRoute,
   testLlmProviderHealthRoute,
-  testMcpServerRoute,
-  updateAgentHookRoute,
-  updateMcpServerRoute,
 } from './settings-route-definitions';
 import {
   applySettingsToProcessEnv,
@@ -175,93 +144,5 @@ export const settingsRouter = createOpenApiRouter()
         404
       );
     const result = await checkStructuredLlmProviderHealth(endpoint);
-    return c.json(result, 200);
-  })
-  .openapi(getMcpServersRoute, (c) => {
-    const settings = readEffectiveMcpServerSettings();
-    return c.json({ servers: settings.servers, diagnostics: settings.diagnostics || [] }, 200);
-  })
-  .openapi(createMcpServerRoute, (c) => {
-    const server = createMcpServer(c.req.valid('json'));
-    return c.json(server, 201);
-  })
-  .openapi(importMcpServersRoute, async (c) => {
-    const input = c.req.valid('json');
-    const servers = importMcpServersFromText(input.text);
-    const updatedServers = new Map(servers.map((server) => [server.id, server]));
-    const results = input.testAfterImport
-      ? await Promise.all(
-          servers.map(async (server) => {
-            const status = await mcpClientManager.testServer(server);
-            if (!status.ok) {
-              const updated = updateMcpServer(server.id, { enabled: false });
-              if (updated) updatedServers.set(updated.id, updated);
-            }
-            return {
-              serverId: server.id,
-              ok: status.ok,
-              message: status.message,
-              toolCount: status.toolCount,
-            };
-          })
-        )
-      : [];
-    return c.json(
-      { servers: servers.map((server) => updatedServers.get(server.id) ?? server), results },
-      201
-    );
-  })
-  .openapi(updateMcpServerRoute, async (c) => {
-    const server = updateMcpServer(c.req.param('id'), c.req.valid('json'));
-    if (!server)
-      return c.json({ error: { code: 'NOT_FOUND', message: 'MCP server not found' } }, 404);
-    await mcpClientManager.disconnect(server.id);
-    return c.json(server, 200);
-  })
-  .openapi(deleteMcpServerRoute, async (c) => {
-    const removed = deleteMcpServer(c.req.param('id'));
-    if (!removed)
-      return c.json({ error: { code: 'NOT_FOUND', message: 'MCP server not found' } }, 404);
-    await mcpClientManager.disconnect(removed.id);
-    return c.json(removed, 200);
-  })
-  .openapi(testMcpServerRoute, async (c) => {
-    const server = getEffectiveMcpServer(c.req.param('id'));
-    if (!server)
-      return c.json({ error: { code: 'NOT_FOUND', message: 'MCP server not found' } }, 404);
-    const status = await mcpClientManager.testServer(server);
-    return c.json(
-      {
-        ok: status.ok,
-        message: status.message,
-        toolCount: status.toolCount,
-      },
-      200
-    );
-  })
-  .openapi(getAgentHooksRoute, (c) => {
-    return c.json(readEffectiveAgentHooksSettings(), 200);
-  })
-  .openapi(createAgentHookRoute, (c) => {
-    const hook = createAgentHook(c.req.valid('json'));
-    return c.json(hook, 201);
-  })
-  .openapi(updateAgentHookRoute, (c) => {
-    const hook = updateAgentHook(c.req.param('id'), c.req.valid('json'));
-    if (!hook)
-      return c.json({ error: { code: 'NOT_FOUND', message: 'Agent hook not found' } }, 404);
-    return c.json(hook, 200);
-  })
-  .openapi(deleteAgentHookRoute, (c) => {
-    const removed = deleteAgentHook(c.req.param('id'));
-    if (!removed)
-      return c.json({ error: { code: 'NOT_FOUND', message: 'Agent hook not found' } }, 404);
-    return c.json(removed, 200);
-  })
-  .openapi(testAgentHookRoute, async (c) => {
-    const hook = getAgentHook(c.req.param('id'));
-    if (!hook)
-      return c.json({ error: { code: 'NOT_FOUND', message: 'Agent hook not found' } }, 404);
-    const result = await runSingleAgentHookForTest(hook, buildSampleHookInput(hook.event));
     return c.json(result, 200);
   });

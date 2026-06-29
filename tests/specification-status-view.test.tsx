@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { SpecificationStatusView } from '../src/modules/nightworkers/components/ArtifactWorkspacePanels';
+import { SpecificationStatusView } from '../src/modules/planMode';
 
 describe('SpecificationStatusView', () => {
   it('shows separate start-now and add-to-queue actions after the status flow is complete', () => {

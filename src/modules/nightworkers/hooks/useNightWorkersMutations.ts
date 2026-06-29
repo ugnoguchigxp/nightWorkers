@@ -2,22 +2,15 @@ import { type QueryClient, useMutation } from '@tanstack/react-query';
 import type { Dispatch, SetStateAction } from 'react';
 import { client } from '../../../lib/api';
 import {
-  archiveImplementationQueueEntry,
   archiveWorkbenchSession,
-  cancelImplementationQueueEntry,
-  createImplementationQueueEntry,
   createWorkbenchSession,
   deleteTask,
   patchTask as patchTaskCommand,
   queueWorkbenchSession,
-  requeueImplementationQueueEntry,
   startWorkbenchRun,
   stopBackgroundProcess,
   stopRun,
   submitRunReview,
-  updateImplementationQueueEntry,
-  updateImplementationQueueSettings,
-  updateTodoWorkflowSettings,
 } from '../nightWorkersCommands';
 import { mergeRealtimeRunDetails, mergeRealtimeRunList } from '../realtimeEvents';
 import type {
@@ -28,7 +21,6 @@ import type {
   RunDetails,
   Task,
   TaskRun,
-  TodoWorkflowSettings,
   UpdateProjectInput,
   WorkbenchMovableSessionGroup,
 } from '../types';
@@ -249,43 +241,6 @@ export function useNightWorkersMutations({
     },
   });
 
-  const createImplementationQueueEntryMutation = useMutation({
-    mutationFn: async (sessionId: string) => {
-      const res = await createImplementationQueueEntry(sessionId);
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
-      queryClient.invalidateQueries({ queryKey: ['sessions'] });
-    },
-  });
-
-  const archiveImplementationQueueEntryMutation = useMutation({
-    mutationFn: async (entryId: string) => {
-      const res = await archiveImplementationQueueEntry(entryId);
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
-    },
-  });
-
-  const removeImplementationQueueEntryMutation = useMutation({
-    mutationFn: async (entryId: string) => {
-      const cancelRes = await cancelImplementationQueueEntry(entryId);
-      if (!cancelRes.ok) throw new Error(await cancelRes.text());
-      const archiveRes = await archiveImplementationQueueEntry(entryId);
-      if (!archiveRes.ok) throw new Error(await archiveRes.text());
-      return archiveRes.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
-      queryClient.invalidateQueries({ queryKey: ['sessions'] });
-    },
-  });
-
   const submitRunReviewMutation = useMutation({
     mutationFn: async (input: {
       runId: string;
@@ -303,60 +258,6 @@ export function useNightWorkersMutations({
       if (activeSessionId) {
         queryClient.invalidateQueries({ queryKey: ['sessionRuns', activeSessionId] });
       }
-    },
-  });
-
-  const requeueImplementationQueueEntryMutation = useMutation({
-    mutationFn: async (input: { entryId: string; note?: string }) => {
-      const res = await requeueImplementationQueueEntry(input.entryId, { note: input.note });
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sessions'] });
-      queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
-      queryClient.invalidateQueries({ queryKey: ['sessionRuns'] });
-      if (activeSessionId) {
-        queryClient.invalidateQueries({ queryKey: ['sessionRuns', activeSessionId] });
-      }
-    },
-  });
-
-  const updateImplementationQueueEntryMutation = useMutation({
-    mutationFn: async (input: {
-      entryId: string;
-      data: { queuePosition?: number | null; priority?: number };
-    }) => {
-      const res = await updateImplementationQueueEntry(input.entryId, input.data);
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sessions'] });
-      queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
-    },
-  });
-
-  const updateImplementationQueueProcessorCountMutation = useMutation({
-    mutationFn: async (processorCount: number) => {
-      const res = await updateImplementationQueueSettings({ processorCount });
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
-    },
-  });
-
-  const updateTodoWorkflowSettingsMutation = useMutation({
-    mutationFn: async (input: Partial<TodoWorkflowSettings>) => {
-      const res = await updateTodoWorkflowSettings(input);
-      if (!res.ok) throw new Error(await res.text());
-      return (await res.json()) as TodoWorkflowSettings;
-    },
-    onSuccess: (settings) => {
-      queryClient.setQueryData(['todoWorkflowSettings'], settings);
-      queryClient.invalidateQueries({ queryKey: ['todoWorkflowSettings'] });
     },
   });
 
@@ -500,14 +401,7 @@ export function useNightWorkersMutations({
     stopRunMutation,
     stopBackgroundProcessMutation,
     queueSessionMutation,
-    createImplementationQueueEntryMutation,
-    archiveImplementationQueueEntryMutation,
-    removeImplementationQueueEntryMutation,
     submitRunReviewMutation,
-    requeueImplementationQueueEntryMutation,
-    updateImplementationQueueEntryMutation,
-    updateImplementationQueueProcessorCountMutation,
-    updateTodoWorkflowSettingsMutation,
     updateSessionStatusMutation,
     reorderQueueSessionsMutation,
     moveWorkbenchSessionMutation,
