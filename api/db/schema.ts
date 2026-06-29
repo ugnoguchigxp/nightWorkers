@@ -594,6 +594,8 @@ export const blueprintDesignSettings = sqliteTable(
   })
 );
 
+export * from './project-evaluation-schema';
+
 export const blueprintArtifactAdoptions = sqliteTable(
   'blueprint_artifact_adoptions',
   {

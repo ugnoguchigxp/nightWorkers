@@ -27,7 +27,14 @@ export type LlmProviderEndpointKind =
   | 'bedrock'
   | 'codex'
   | 'local';
-export type LlmRole = 'plan' | 'implementation' | 'test' | 'review' | 'quality_gate' | 'completion';
+export type LlmRole =
+  | 'plan'
+  | 'evaluation'
+  | 'implementation'
+  | 'test'
+  | 'review'
+  | 'quality_gate'
+  | 'completion';
 export type ImplementationRuntimeLane = '' | 'native-supervisor' | 'codex-sdk' | 'codex-agent';
 
 export type LlmModelCapability = {

@@ -554,6 +554,7 @@ function summarizeResolvedRoute(route: ResolvedStructuredLlmRoute) {
 
 const STRUCTURED_LLM_ROLES: StructuredLlmRole[] = [
   'plan',
+  'evaluation',
   'implementation',
   'test',
   'review',

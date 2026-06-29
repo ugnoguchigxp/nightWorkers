@@ -27,6 +27,7 @@ const endpointKindOptions: Array<{ value: LlmProviderEndpointKind; label: string
 
 const roleLabels: Record<LlmRole, string> = {
   plan: 'Plan',
+  evaluation: 'Evaluation',
   implementation: 'Implementation',
   test: 'Test',
   review: 'Review',

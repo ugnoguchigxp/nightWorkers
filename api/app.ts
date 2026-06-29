@@ -19,6 +19,7 @@ import { loggerMiddleware } from './middleware/logger';
 import { rateLimiter } from './middleware/rate-limiter';
 import { nightworkersRouter } from './modules/nightworkers/nightworkers.routes';
 import * as nightworkersService from './modules/nightworkers/nightworkers.service';
+import { projectEvaluationRouter } from './modules/project-evaluation/project-evaluation.routes';
 import { authRouter } from './routes/auth';
 import { healthRouter } from './routes/health';
 import { oauthRouter } from './routes/oauth';
@@ -31,6 +32,7 @@ const apiRoutes = createOpenApiRouter()
   .route('/auth/oauth', oauthRouter)
   .route('/auth', authRouter)
   .route('/settings', settingsRouter)
+  .route('/', projectEvaluationRouter)
   .route('/', nightworkersRouter);
 
 const app = createOpenApiRouter();

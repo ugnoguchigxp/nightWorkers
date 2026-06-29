@@ -53,6 +53,7 @@ export type StructuredLlmPromptBudgetMetadata = {
 
 export type StructuredLlmRole =
   | 'plan'
+  | 'evaluation'
   | 'implementation'
   | 'test'
   | 'review'

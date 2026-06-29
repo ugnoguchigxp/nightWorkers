@@ -23,6 +23,7 @@ const providerEndpointKindSchema = z.enum([
 
 export const llmRoleSchema = z.enum([
   'plan',
+  'evaluation',
   'implementation',
   'test',
   'review',
@@ -141,6 +142,7 @@ const providerModelOptions = {
 
 export const LLM_ROLE_ORDER: LlmRole[] = [
   'plan',
+  'evaluation',
   'implementation',
   'test',
   'review',

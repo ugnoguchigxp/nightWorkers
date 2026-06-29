@@ -2,6 +2,7 @@ import { type Client, createClient, type Transaction } from '@libsql/client';
 import { drizzle } from 'drizzle-orm/libsql';
 import { config } from '../config';
 import * as designQuestionnaireSchema from './design-questionnaire-schema';
+import * as projectEvaluationSchema from './project-evaluation-schema';
 import { withSqliteBusyRetry } from './retry';
 import * as baseSchema from './schema';
 
@@ -162,6 +163,8 @@ export const client = wrapClientWithBusyRetry(
   })
 );
 
-export const db = drizzle(client, { schema: { ...baseSchema, ...designQuestionnaireSchema } });
+export const db = drizzle(client, {
+  schema: { ...baseSchema, ...designQuestionnaireSchema, ...projectEvaluationSchema },
+});
 
 export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
