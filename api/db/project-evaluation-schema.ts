@@ -22,6 +22,7 @@ export const projectEvaluationRuns = sqliteTable(
     repositoryId: text('repository_id')
       .notNull()
       .references(() => repositories.id, { onDelete: 'cascade' }),
+    status: text('status').default('completed').notNull(),
     bundleJson: text('bundle_json', { mode: 'json' }).notNull(),
     rawOutputJson: text('raw_output_json', { mode: 'json' }),
     summary: text('summary').notNull(),

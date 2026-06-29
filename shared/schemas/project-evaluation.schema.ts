@@ -20,18 +20,18 @@ export const projectEvaluationDimensionKeySchema = z.enum([
 ]);
 export type ProjectEvaluationDimensionKey = z.infer<typeof projectEvaluationDimensionKeySchema>;
 
-export const defaultProjectEvaluationDimensions = [
+export const fixedProjectEvaluationDimensions = [
   'conceptValue',
-  'implementationCompleteness',
   'architectureQuality',
+  'extensibility',
   'uiUx',
-  'testability',
   'operability',
   'security',
   'maintainability',
-  'extensibility',
   'marketCompetitiveness',
 ] as const satisfies ProjectEvaluationDimensionKey[];
+
+export const defaultProjectEvaluationDimensions = fixedProjectEvaluationDimensions;
 
 export const projectEvaluationDimensionLabels: Record<ProjectEvaluationDimensionKey, string> = {
   conceptValue: 'コンセプト価値',
@@ -58,6 +58,9 @@ export const projectEvaluationEvidenceLevelSchema = z.enum([
 ]);
 export type ProjectEvaluationEvidenceLevel = z.infer<typeof projectEvaluationEvidenceLevelSchema>;
 
+export const projectEvaluationRunStatusSchema = z.enum(['running', 'completed', 'failed']);
+export type ProjectEvaluationRunStatus = z.infer<typeof projectEvaluationRunStatusSchema>;
+
 export const projectEvaluationDimensionScoreSchema = z
   .object({
     id: z.string().uuid().optional(),
@@ -79,6 +82,45 @@ export const projectEvaluationReportDimensionSchema = projectEvaluationDimension
   evaluationId: true,
   delta: true,
 });
+
+const fixedProjectEvaluationDimensionSet = new Set<ProjectEvaluationDimensionKey>(
+  fixedProjectEvaluationDimensions
+);
+
+function validateFixedProjectEvaluationDimensions(
+  dimensions: Array<{ key: ProjectEvaluationDimensionKey }>,
+  ctx: z.RefinementCtx
+) {
+  const seen = new Set<ProjectEvaluationDimensionKey>();
+  for (let index = 0; index < dimensions.length; index += 1) {
+    const dimension = dimensions[index];
+    const expectedKey = fixedProjectEvaluationDimensions[index];
+    if (dimension.key !== expectedKey) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['dimensions', index, 'key'],
+        message: expectedKey
+          ? `Project Evaluation dimensions must use the fixed axis order: expected ${expectedKey}.`
+          : 'Project Evaluation dimensions include an extra axis.',
+      });
+    }
+    if (!fixedProjectEvaluationDimensionSet.has(dimension.key)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['dimensions', index, 'key'],
+        message: `Project Evaluation dimensions must not include non-fixed axis: ${dimension.key}.`,
+      });
+    }
+    if (seen.has(dimension.key)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['dimensions', index, 'key'],
+        message: `Project Evaluation dimensions must not duplicate axis: ${dimension.key}.`,
+      });
+    }
+    seen.add(dimension.key);
+  }
+}
 
 export const projectEvaluationBundleSchema = z
   .object({
@@ -114,11 +156,14 @@ export const projectEvaluationReportSchema = z
     overallScore: z.number().min(0).max(100),
     confidence: z.number().min(0).max(1),
     summary: z.string().min(1),
-    dimensions: z.array(projectEvaluationReportDimensionSchema).min(1),
+    dimensions: z
+      .array(projectEvaluationReportDimensionSchema)
+      .length(fixedProjectEvaluationDimensions.length),
     strengths: z.array(z.string()).default([]),
     weaknesses: z.array(z.string()).default([]),
     nextEvidenceToCollect: z.array(z.string()).default([]),
   })
+  .superRefine((report, ctx) => validateFixedProjectEvaluationDimensions(report.dimensions, ctx))
   .openapi('ProjectEvaluationReport');
 export type ProjectEvaluationReport = z.infer<typeof projectEvaluationReportSchema>;
 
@@ -150,7 +195,11 @@ export type ProjectImprovementIdea = z.infer<typeof projectImprovementIdeaSchema
 export const projectImprovementIdeasResultSchema = z.object({
   schemaVersion: z.literal('nightworkers.project-improvement-ideas/v1'),
   ideas: z
-    .array(projectImprovementIdeaSchema.omit({ id: true, evaluationId: true, createdAt: true }))
+    .array(
+      projectImprovementIdeaSchema
+        .omit({ id: true, evaluationId: true, createdAt: true })
+        .extend({ scoreImpacts: z.array(focusedImprovementScoreImpactSchema).min(1) })
+    )
     .min(1),
 });
 
@@ -174,6 +223,7 @@ export const projectEvaluationRunSchema = z
   .object({
     id: z.string().uuid(),
     repositoryId: z.string().uuid(),
+    status: projectEvaluationRunStatusSchema.default('completed'),
     bundle: projectEvaluationBundleSchema,
     rawOutput: z.unknown().nullable().optional(),
     summary: z.string(),
@@ -231,3 +281,15 @@ export const projectEvaluationDetailSchema = z.object({
   taskLinks: z.array(projectEvaluationTaskLinkSchema),
 });
 export type ProjectEvaluationDetail = z.infer<typeof projectEvaluationDetailSchema>;
+
+export const startProjectEvaluationResponseSchema = z.object({
+  evaluationId: z.string().uuid(),
+  detail: projectEvaluationDetailSchema,
+});
+export type StartProjectEvaluationResponse = z.infer<typeof startProjectEvaluationResponseSchema>;
+
+export const projectEvaluationActivityReplaySchema = z.object({
+  status: projectEvaluationRunStatusSchema,
+  events: z.array(projectEvaluationActivityEventSchema),
+});
+export type ProjectEvaluationActivityReplay = z.infer<typeof projectEvaluationActivityReplaySchema>;

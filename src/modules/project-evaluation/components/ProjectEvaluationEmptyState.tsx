@@ -1,3 +1,5 @@
+import { Loader2, Play } from 'lucide-react';
+
 export function ProjectEvaluationEmptyState({
   isLoading,
   onRun,
@@ -21,7 +23,12 @@ export function ProjectEvaluationEmptyState({
           onClick={onRun}
           type="button"
         >
-          評価を実行
+          {isLoading ? (
+            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Play className="mr-2 h-3.5 w-3.5" />
+          )}
+          {isLoading ? 'LLMに依頼中' : '評価を実行'}
         </button>
       </div>
     </div>

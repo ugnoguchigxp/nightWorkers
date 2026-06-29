@@ -28,9 +28,13 @@ export function EvaluationHistorySidebar({
             onClick={() => onSelect(item.id)}
             type="button"
           >
-            <span className="font-semibold text-sm">{Math.round(item.overallScore)}</span>
+            <span className="font-semibold text-sm">
+              {item.status === 'running' ? '...' : Math.round(item.overallScore)}
+            </span>
             <span className="text-[var(--nw-subtle-text)] text-xs">
-              {new Date(item.createdAt).toLocaleString()}
+              {item.status === 'completed'
+                ? new Date(item.createdAt).toLocaleString()
+                : `${item.status} · ${new Date(item.createdAt).toLocaleString()}`}
             </span>
           </button>
         ))}

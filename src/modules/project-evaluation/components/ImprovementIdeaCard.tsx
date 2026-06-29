@@ -16,7 +16,6 @@ export function ImprovementIdeaCard({
   onToggle: () => void;
 }) {
   const dimensionByKey = new Map(dimensions.map((dimension) => [dimension.key, dimension]));
-  const maxGain = Math.max(0, ...idea.scoreImpacts.map((impact) => impact.expectedScoreGain));
   return (
     <div className="flex min-h-64">
       <ProjectEvaluationImprovementInstructionField idea={idea} />
@@ -53,16 +52,44 @@ export function ImprovementIdeaCard({
         <span className="mt-2 block text-[var(--nw-muted-text)] text-sm leading-6">
           {idea.summary}
         </span>
-        <span className="mt-3 space-y-1.5 text-[var(--nw-muted-text)] text-sm">
-          {idea.implementationFocus.map((item) => (
-            <span className="flex gap-2" key={item}>
-              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--nw-primary)]" />
-              <span>{item}</span>
+        <span className="mt-auto grid gap-4 pt-4 md:grid-cols-[minmax(0,1fr)_minmax(180px,0.75fr)]">
+          <span className="min-w-0 space-y-1.5 text-[var(--nw-muted-text)] text-sm">
+            {idea.implementationFocus.map((item) => (
+              <span className="flex gap-2" key={item}>
+                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--nw-primary)]" />
+                <span>{item}</span>
+              </span>
+            ))}
+          </span>
+          <span className="min-w-0 rounded-md border border-[var(--nw-border)] bg-[var(--nw-panel)] p-3">
+            <span className="block font-medium text-[var(--nw-subtle-text)] text-[11px] uppercase">
+              改善見込み
             </span>
-          ))}
-        </span>
-        <span className="mt-auto pt-4 font-medium text-[var(--nw-primary)] text-sm">
-          expected score gain +{maxGain}
+            <span className="mt-2 grid gap-2">
+              {idea.scoreImpacts.length > 0 ? (
+                idea.scoreImpacts.map((impact) => (
+                  <span
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"
+                    key={`${impact.dimensionKey}-${impact.expectedScoreGain}`}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-[var(--nw-text)] text-xs">
+                        {dimensionByKey.get(impact.dimensionKey)?.label ?? impact.dimensionKey}
+                      </span>
+                      <span className="mt-0.5 block text-[var(--nw-subtle-text)] text-[11px]">
+                        {impact.currentScore} → {impact.expectedScoreAfter}
+                      </span>
+                    </span>
+                    <span className="font-semibold text-[var(--nw-primary)] text-sm">
+                      +{impact.expectedScoreGain}
+                    </span>
+                  </span>
+                ))
+              ) : (
+                <span className="text-[var(--nw-subtle-text)] text-xs">score impact 未算出</span>
+              )}
+            </span>
+          </span>
         </span>
       </button>
     </div>

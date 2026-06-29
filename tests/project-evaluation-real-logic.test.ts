@@ -8,9 +8,28 @@ import { ensureNightWorkersSchema } from '../api/db/bootstrap';
 import { buildProjectEvaluationBundle } from '../api/modules/project-evaluation/project-evaluation-bundle.service';
 import { LLM_ROLE_ORDER, llmRoleSchema } from '../api/routes/settings-runtime';
 import {
+  defaultProjectEvaluationDimensions,
+  projectEvaluationDimensionLabels,
   projectEvaluationReportSchema,
   projectImprovementIdeasResultSchema,
 } from '../shared/schemas/project-evaluation.schema';
+
+function fixtureEvaluationDimensions() {
+  return defaultProjectEvaluationDimensions.map((key, index) => ({
+    key,
+    label: projectEvaluationDimensionLabels[key],
+    score: 70 - index,
+    confidence: 0.72,
+    rationale:
+      key === 'operability'
+        ? '運用性は設定、確認手順、信頼性、回復性をまとめて評価している。'
+        : key === 'extensibility'
+          ? '拡張性は将来の provider、runtime、workflow、tool 追加に耐えるかを独立軸として評価している。'
+          : `${projectEvaluationDimensionLabels[key]} を固定軸として評価している。`,
+    evidence: ['README.md', 'package.json'],
+    concerns: ['runtime verification は未実施'],
+  }));
+}
 
 vi.mock('../api/services/structured-llm', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/services/structured-llm')>();
@@ -29,6 +48,17 @@ vi.mock('../api/services/structured-llm', async (importOriginal) => {
           thinkingDepth: 'high',
         },
       });
+      await options.emitEvent?.({
+        type: 'model.response_delta',
+        severity: 'debug',
+        message: 'fixture response delta',
+        data: {
+          provider: 'fixture',
+          round: null,
+          text: '{"schemaVersion"',
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
       if (options.schemaName === 'project_improvement_ideas') {
         return JSON.stringify({
           schemaVersion: 'nightworkers.project-improvement-ideas/v1',
@@ -41,10 +71,10 @@ vi.mock('../api/services/structured-llm', async (importOriginal) => {
                 'Project Evaluation の保存済み評価、選択軸、改善案を読み取り、UI と API の実データ接続を実装してください。',
               expectedOutcome: '評価履歴、選択軸、改善案、Task 化結果が mock なしで表示される。',
               implementationFocus: ['API response を UI controller に接続する'],
-              targetDimensions: ['implementationCompleteness'],
+              targetDimensions: ['architectureQuality'],
               scoreImpacts: [
                 {
-                  dimensionKey: 'implementationCompleteness',
+                  dimensionKey: 'architectureQuality',
                   currentScore: 70,
                   expectedScoreGain: 8,
                   expectedScoreAfter: 78,
@@ -60,17 +90,7 @@ vi.mock('../api/services/structured-llm', async (importOriginal) => {
         overallScore: 70,
         confidence: 0.71,
         summary: 'repository bundle と保存済み証跡に基づく評価です。',
-        dimensions: [
-          {
-            key: 'implementationCompleteness',
-            label: '実装完成度',
-            score: 70,
-            confidence: 0.72,
-            rationale: '評価画面は実 API と DB に接続されている。',
-            evidence: ['README.md', 'package.json'],
-            concerns: ['runtime verification は未実施'],
-          },
-        ],
+        dimensions: fixtureEvaluationDimensions(),
         strengths: ['local-first DB に保存できる'],
         weaknesses: ['source sampling は初期範囲外'],
         nextEvidenceToCollect: ['bun run verify の結果'],
@@ -110,20 +130,77 @@ describe('project evaluation real logic', () => {
         overallScore: 80,
         confidence: 0.8,
         summary: '実データ評価です。',
-        dimensions: [
-          {
-            key: 'security',
-            label: 'セキュリティ',
-            score: 72,
-            confidence: 0.6,
-            rationale: 'redaction がある。',
-            evidence: [],
-            concerns: [],
-          },
-        ],
+        dimensions: fixtureEvaluationDimensions(),
       }).overallScore
     ).toBe(80);
     expect(
+      projectEvaluationReportSchema
+        .parse({
+          schemaVersion: 'nightworkers.project-evaluation-report/v1',
+          overallScore: 80,
+          confidence: 0.8,
+          summary: '実データ評価です。',
+          dimensions: fixtureEvaluationDimensions(),
+        })
+        .dimensions.map((dimension) => dimension.key)
+    ).toEqual(defaultProjectEvaluationDimensions);
+    expect(defaultProjectEvaluationDimensions).toEqual([
+      'conceptValue',
+      'architectureQuality',
+      'extensibility',
+      'uiUx',
+      'operability',
+      'security',
+      'maintainability',
+      'marketCompetitiveness',
+    ]);
+    expect(() =>
+      projectEvaluationReportSchema.parse({
+        schemaVersion: 'nightworkers.project-evaluation-report/v1',
+        overallScore: 80,
+        confidence: 0.8,
+        summary: '欠落した評価です。',
+        dimensions: fixtureEvaluationDimensions().slice(0, -1),
+      })
+    ).toThrow();
+    expect(() =>
+      projectEvaluationReportSchema.parse({
+        schemaVersion: 'nightworkers.project-evaluation-report/v1',
+        overallScore: 80,
+        confidence: 0.8,
+        summary: '旧軸を含む評価です。',
+        dimensions: fixtureEvaluationDimensions().map((dimension, index) =>
+          index === 0
+            ? { ...dimension, key: 'implementationCompleteness', label: '実装完成度' }
+            : dimension
+        ),
+      })
+    ).toThrow();
+    expect(
+      projectImprovementIdeasResultSchema.parse({
+        schemaVersion: 'nightworkers.project-improvement-ideas/v1',
+        ideas: [
+          {
+            title: 'redaction を検証する',
+            summary: 'secret-like path を評価 bundle から除外する。',
+            agentPrompt: 'redaction test を追加する。',
+            expectedOutcome: '.env が bundle に入らない。',
+            implementationFocus: ['bundle builder'],
+            targetDimensions: ['security'],
+            scoreImpacts: [
+              {
+                dimensionKey: 'security',
+                currentScore: 72,
+                expectedScoreGain: 5,
+                expectedScoreAfter: 77,
+                rationale: 'secret-like path の除外検証により security 評価が改善するため。',
+              },
+            ],
+          },
+        ],
+      }).ideas
+    ).toHaveLength(1);
+    expect(() =>
       projectImprovementIdeasResultSchema.parse({
         schemaVersion: 'nightworkers.project-improvement-ideas/v1',
         ideas: [
@@ -137,8 +214,8 @@ describe('project evaluation real logic', () => {
             scoreImpacts: [],
           },
         ],
-      }).ideas
-    ).toHaveLength(1);
+      })
+    ).toThrow();
   });
 
   it('builds a bundle from the registered repository root without secret-like paths', async () => {
@@ -197,6 +274,41 @@ describe('project evaluation real logic', () => {
       expect(createRepoRes.status).toBe(201);
       const project = await createRepoRes.json();
 
+      const startRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/evaluations/start`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+      expect(startRes.status, await startRes.clone().text()).toBe(202);
+      const started = await startRes.json();
+      expect(started.detail.evaluation.status).toBe('running');
+
+      let startedActivity = null;
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const activityRes = await app.request(
+          `http://localhost/api/project-evaluations/${started.evaluationId}/activity-events`
+        );
+        expect(activityRes.status).toBe(200);
+        startedActivity = await activityRes.json();
+        if (
+          startedActivity.events.some((event) => event.message === 'fixture request started') &&
+          startedActivity.status === 'completed'
+        ) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(startedActivity?.events.map((event) => event.message)).toContain(
+        'fixture request started'
+      );
+      expect(startedActivity?.events.map((event) => event.message)).toContain(
+        'fixture response delta'
+      );
+      expect(startedActivity?.status).toBe('completed');
+
       const evalRes = await app.request(
         `http://localhost/api/repositories/${project.id}/evaluations`,
         {
@@ -207,26 +319,47 @@ describe('project evaluation real logic', () => {
       );
       expect(evalRes.status, await evalRes.clone().text()).toBe(201);
       const evaluationDetail = await evalRes.json();
+      expect(evaluationDetail.evaluation.status).toBe('completed');
       expect(evaluationDetail.evaluation.overallScore).toBe(70);
-      expect(evaluationDetail.evaluation.dimensions[0].key).toBe('implementationCompleteness');
+      expect(evaluationDetail.evaluation.dimensions.map((dimension) => dimension.key)).toEqual(
+        defaultProjectEvaluationDimensions
+      );
+      expect(evaluationDetail.evaluation.dimensions).toHaveLength(
+        defaultProjectEvaluationDimensions.length
+      );
       expect(evaluationDetail.evaluation.selectedModel).toMatchObject({
         providerId: 'fixture',
         providerEndpointId: 'fixture-evaluation',
         modelOrDeployment: 'fixture-eval-model',
         thinkingDepth: 'high',
       });
+      expect(evaluationDetail.activityEvents.map((event) => event.status)).toContain('running');
+      expect(evaluationDetail.activityEvents.map((event) => event.message)).toContain(
+        'fixture request started'
+      );
 
       const improvementsRes = await app.request(
         `http://localhost/api/project-evaluations/${evaluationDetail.evaluation.id}/improvements`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dimensionKeys: ['implementationCompleteness'] }),
+          body: JSON.stringify({ dimensionKeys: ['architectureQuality'] }),
         }
       );
       expect(improvementsRes.status, await improvementsRes.clone().text()).toBe(201);
       const improvements = await improvementsRes.json();
       expect(improvements.ideas).toHaveLength(1);
+      const detailAfterImprovementsRes = await app.request(
+        `http://localhost/api/project-evaluations/${evaluationDetail.evaluation.id}`
+      );
+      expect(detailAfterImprovementsRes.status).toBe(200);
+      const detailAfterImprovements = await detailAfterImprovementsRes.json();
+      expect(detailAfterImprovements.activityEvents.map((event) => event.message)).toContain(
+        'fixture request started'
+      );
+      expect(detailAfterImprovements.activityEvents.at(-1).message).toBe(
+        '1 件の改善案を保存しました。'
+      );
 
       const tasksRes = await app.request(
         `http://localhost/api/project-evaluations/${evaluationDetail.evaluation.id}/tasks`,

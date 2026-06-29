@@ -1,4 +1,4 @@
-import { CheckCircle2, Play } from 'lucide-react';
+import { CheckCircle2, Loader2, Play } from 'lucide-react';
 import type {
   ProjectEvaluationProject,
   ProjectEvaluationRun,
@@ -42,8 +42,8 @@ export function ProjectEvaluationToolbar({
           onClick={onRun}
           type="button"
         >
-          <Play className="h-4 w-4" />
-          {isRunning ? '評価中' : '評価を実行'}
+          {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+          {isRunning ? 'LLMに依頼中' : '評価を実行'}
         </button>
       </div>
     </header>

@@ -67,6 +67,7 @@ async function ensureProjectEvaluationTables() {
       created_at integer NOT NULL,
       updated_at integer NOT NULL,
       repository_id text NOT NULL,
+      status text DEFAULT 'completed' NOT NULL,
       bundle_json text NOT NULL,
       raw_output_json text,
       summary text NOT NULL,
@@ -84,6 +85,13 @@ async function ensureProjectEvaluationTables() {
   await client.execute(
     'CREATE INDEX IF NOT EXISTS project_eval_runs_repository_created_idx ON project_evaluation_runs (repository_id, created_at)'
   );
+  const evaluationRunColumns = await client.execute('PRAGMA table_info(project_evaluation_runs)');
+  const hasEvaluationStatusColumn = evaluationRunColumns.rows.some((row) => row.name === 'status');
+  if (evaluationRunColumns.rows.length > 0 && !hasEvaluationStatusColumn) {
+    await client.execute(
+      "ALTER TABLE project_evaluation_runs ADD COLUMN status text DEFAULT 'completed' NOT NULL"
+    );
+  }
 
   await client.execute(`
     CREATE TABLE IF NOT EXISTS project_evaluation_dimensions (

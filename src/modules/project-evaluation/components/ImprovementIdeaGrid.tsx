@@ -1,4 +1,4 @@
-import { BrainCircuit, ClipboardList, Sparkles } from 'lucide-react';
+import { BrainCircuit, ClipboardList, Loader2, Sparkles } from 'lucide-react';
 import type {
   ProjectEvaluationDimensionKey,
   ProjectEvaluationDimensionScore,
@@ -50,19 +50,32 @@ export function ImprovementIdeaGrid({
           onClick={onGenerate}
           type="button"
         >
-          <BrainCircuit className="h-3.5 w-3.5" />
-          {isGenerating ? '生成中' : '改善案を生成'}
+          {isGenerating ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <BrainCircuit className="h-3.5 w-3.5" />
+          )}
+          {isGenerating ? '改善案を生成中' : '改善案を生成'}
         </button>
       </div>
       {ideas.length === 0 ? (
         <div className="p-6 text-center text-[var(--nw-subtle-text)] text-sm">
-          まだ改善案は生成されていません。Round 1 で軸を選び、改善案を生成してください。
+          {isGenerating ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-[var(--nw-primary)]" />
+              選択軸から改善案を生成しています。
+            </span>
+          ) : (
+            'まだ改善案は生成されていません。Round 1 で軸を選び、改善案を生成してください。'
+          )}
         </div>
       ) : (
         <>
           <div className="flex min-h-10 items-center justify-between border-[var(--nw-border)] border-b px-3 py-2">
             <span className="text-[var(--nw-subtle-text)] text-xs">
-              {ideas.length} improvement tasks / {selectedIdeaIds.size} selected
+              {isGenerating
+                ? '改善案を再生成しています。'
+                : `${ideas.length} improvement tasks / ${selectedIdeaIds.size} selected`}
             </span>
             <button
               className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${
@@ -70,7 +83,7 @@ export function ImprovementIdeaGrid({
                   ? 'border-[var(--nw-strong-border)] bg-[var(--nw-surface-soft)] text-[var(--nw-text)] hover:bg-[var(--nw-surface)]'
                   : 'border-[var(--nw-border)] text-[var(--nw-muted-text)]'
               }`}
-              disabled={selectedIdeaIds.size === 0 || isCreatingTasks}
+              disabled={selectedIdeaIds.size === 0 || isCreatingTasks || isGenerating}
               onClick={onCreateTasks}
               type="button"
             >

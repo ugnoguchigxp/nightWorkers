@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   createProjectEvaluationTasks,
+  fetchProjectEvaluationActivityEvents,
   fetchProjectEvaluationDetail,
   fetchProjectEvaluationHistory,
   generateProjectImprovements,
-  runProjectEvaluation,
+  startProjectEvaluation,
 } from '../api/projectEvaluationCommands';
 import type {
+  ProjectEvaluationActivityEvent,
+  ProjectEvaluationActivityReplay,
   ProjectEvaluationDetail,
   ProjectEvaluationDimensionKey,
   ProjectEvaluationRun,
   ProjectEvaluationTaskLink,
+  StartProjectEvaluationResponse,
 } from '../model/projectEvaluationTypes';
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
@@ -27,9 +31,26 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
+function mergeActivityEvents(
+  current: ProjectEvaluationActivityEvent[],
+  incoming: ProjectEvaluationActivityEvent[]
+) {
+  const byId = new Map(current.map((event) => [event.id, event]));
+  for (const event of incoming) byId.set(event.id, event);
+  return [...byId.values()].sort((a, b) => {
+    if (a.seq !== b.seq) return a.seq - b.seq;
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
+}
+
+function maxActivitySeq(events: ProjectEvaluationActivityEvent[]) {
+  return events.reduce((max, event) => Math.max(max, event.seq), -1);
+}
+
 export function useProjectEvaluationController(repositoryId: string) {
   const [history, setHistory] = useState<ProjectEvaluationRun[]>([]);
   const [detail, setDetail] = useState<ProjectEvaluationDetail | null>(null);
+  const [runningEvaluationId, setRunningEvaluationId] = useState<string | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<ProjectEvaluationDimensionKey>>(
     () => new Set()
   );
@@ -45,7 +66,7 @@ export function useProjectEvaluationController(repositoryId: string) {
       await fetchProjectEvaluationDetail(evaluationId)
     );
     setDetail(nextDetail);
-    setSelectedKeys(new Set(nextDetail.evaluation.dimensions.slice(0, 3).map((item) => item.key)));
+    setSelectedKeys(new Set());
     setSelectedIdeaIds(new Set());
   }, []);
 
@@ -57,8 +78,15 @@ export function useProjectEvaluationController(repositoryId: string) {
         await fetchProjectEvaluationHistory(repositoryId)
       );
       setHistory(evaluations);
-      if (evaluations[0]) await loadDetail(evaluations[0].id);
-      else setDetail(null);
+      if (evaluations[0]) {
+        await loadDetail(evaluations[0].id);
+        if (evaluations[0].status === 'running') {
+          setIsRunning(true);
+          setRunningEvaluationId(evaluations[0].id);
+        }
+      } else {
+        setDetail(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -74,36 +102,105 @@ export function useProjectEvaluationController(repositoryId: string) {
     setIsRunning(true);
     setError(null);
     try {
-      const nextDetail = await parseJsonResponse<ProjectEvaluationDetail>(
-        await runProjectEvaluation(repositoryId)
+      const started = await parseJsonResponse<StartProjectEvaluationResponse>(
+        await startProjectEvaluation(repositoryId)
       );
-      setDetail(nextDetail);
+      setDetail(started.detail);
+      setRunningEvaluationId(started.evaluationId);
       const evaluations = await parseJsonResponse<ProjectEvaluationRun[]>(
         await fetchProjectEvaluationHistory(repositoryId)
       );
       setHistory(evaluations);
-      setSelectedKeys(
-        new Set(nextDetail.evaluation.dimensions.slice(0, 3).map((item) => item.key))
-      );
+      setSelectedKeys(new Set());
       setSelectedIdeaIds(new Set());
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
       setIsRunning(false);
+      setRunningEvaluationId(null);
     }
   }, [repositoryId]);
 
-  const selectEvaluation = useCallback(
-    async (evaluationId: string) => {
-      setError(null);
+  useEffect(() => {
+    if (!runningEvaluationId) return;
+    let cancelled = false;
+    let afterSeq = maxActivitySeq(detail?.activityEvents ?? []);
+
+    const poll = async () => {
       try {
-        await loadDetail(evaluationId);
+        const replay = await parseJsonResponse<ProjectEvaluationActivityReplay>(
+          await fetchProjectEvaluationActivityEvents(
+            runningEvaluationId,
+            afterSeq >= 0 ? afterSeq : undefined
+          )
+        );
+        if (cancelled) return;
+        if (replay.events.length > 0) {
+          afterSeq = Math.max(afterSeq, maxActivitySeq(replay.events));
+          setDetail((current) =>
+            current?.evaluation.id === runningEvaluationId
+              ? {
+                  ...current,
+                  activityEvents: mergeActivityEvents(current.activityEvents, replay.events),
+                  evaluation: { ...current.evaluation, status: replay.status },
+                }
+              : current
+          );
+        } else {
+          setDetail((current) =>
+            current?.evaluation.id === runningEvaluationId
+              ? { ...current, evaluation: { ...current.evaluation, status: replay.status } }
+              : current
+          );
+        }
+        if (replay.status === 'completed' || replay.status === 'failed') {
+          const [nextDetail, evaluations] = await Promise.all([
+            parseJsonResponse<ProjectEvaluationDetail>(
+              await fetchProjectEvaluationDetail(runningEvaluationId)
+            ),
+            parseJsonResponse<ProjectEvaluationRun[]>(
+              await fetchProjectEvaluationHistory(repositoryId)
+            ),
+          ]);
+          if (cancelled) return;
+          setDetail(nextDetail);
+          setHistory(evaluations);
+          setIsRunning(false);
+          setRunningEvaluationId(null);
+        }
       } catch (err) {
+        if (cancelled) return;
         setError(err instanceof Error ? err.message : String(err));
+        setIsRunning(false);
+        setRunningEvaluationId(null);
       }
-    },
-    [loadDetail]
-  );
+    };
+
+    void poll();
+    const timer = window.setInterval(() => void poll(), 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [detail?.activityEvents, repositoryId, runningEvaluationId]);
+
+  const selectEvaluation = useCallback(async (evaluationId: string) => {
+    setError(null);
+    try {
+      const nextDetail = await parseJsonResponse<ProjectEvaluationDetail>(
+        await fetchProjectEvaluationDetail(evaluationId)
+      );
+      setDetail(nextDetail);
+      setSelectedKeys(new Set());
+      setSelectedIdeaIds(new Set());
+      if (nextDetail.evaluation.status === 'running') {
+        setIsRunning(true);
+        setRunningEvaluationId(nextDetail.evaluation.id);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
 
   const generateIdeas = useCallback(async () => {
     if (!detail || selectedKeys.size === 0) return;
@@ -115,7 +212,10 @@ export function useProjectEvaluationController(repositoryId: string) {
           dimensionKeys: [...selectedKeys],
         })
       );
-      setDetail({ ...detail, improvements: result.ideas });
+      const nextDetail = await parseJsonResponse<ProjectEvaluationDetail>(
+        await fetchProjectEvaluationDetail(detail.evaluation.id)
+      );
+      setDetail({ ...nextDetail, improvements: result.ideas });
       setSelectedIdeaIds(new Set());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -158,8 +258,10 @@ export function useProjectEvaluationController(repositoryId: string) {
     selectedIdeaIds,
     isLoading,
     isRunning,
+    isViewingRunningEvaluation: Boolean(detail && detail.evaluation.id === runningEvaluationId),
     isGenerating,
     isCreatingTasks,
+    activityEvents: detail?.activityEvents ?? [],
     error,
     setSelectedKeys,
     runEvaluation,

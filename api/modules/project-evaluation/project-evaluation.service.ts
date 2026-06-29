@@ -5,6 +5,7 @@ import type {
   ProjectImprovementIdea,
 } from '../../../shared/schemas/project-evaluation.schema';
 import { NotFoundError, ValidationError } from '../../lib/errors';
+import type { SupervisorLlmDebugEvent } from '../../services/structured-llm';
 import * as nightworkersRepo from '../nightworkers/nightworkers.repository';
 import * as repo from './project-evaluation.repository';
 import { buildProjectEvaluationBundle } from './project-evaluation-bundle.service';
@@ -15,18 +16,75 @@ import {
 
 type ActivityDraft = Omit<ProjectEvaluationActivityEvent, 'id' | 'evaluationId'>;
 
-function createActivityRecorder() {
+function createActivityRecorder(startSeq = 0) {
   const events: ActivityDraft[] = [];
   return {
     events,
     push(event: Omit<ActivityDraft, 'seq' | 'createdAt'>) {
       events.push({
         ...event,
-        seq: events.length,
+        seq: startSeq + events.length,
         createdAt: new Date().toISOString(),
       });
     },
   };
+}
+
+function createActivityAppender(input: { evaluationId: string; startSeq?: number }) {
+  let seq = input.startSeq ?? 0;
+  return {
+    async push(event: Omit<ActivityDraft, 'seq' | 'createdAt'>) {
+      await repo.createProjectEvaluationActivityEvents(input.evaluationId, [
+        {
+          ...event,
+          seq,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+      seq += 1;
+    },
+  };
+}
+
+function activityLevelFromLlmEvent(
+  event: SupervisorLlmDebugEvent
+): ProjectEvaluationActivityEvent['level'] {
+  if (event.severity === 'error') return 'error';
+  if (event.severity === 'warning') return 'warning';
+  if (event.type === 'model.response_finished' || event.type === 'model.response_repaired') {
+    return 'checkpoint';
+  }
+  return event.severity;
+}
+
+function activityStatusFromLlmEvent(event: SupervisorLlmDebugEvent) {
+  if (event.type === 'model.request_started') return 'running';
+  if (event.type === 'model.response_finished') return 'completed';
+  if (event.severity === 'error') return 'failed';
+  return event.type;
+}
+
+function summarizeLlmEventData(data: SupervisorLlmDebugEvent['data']) {
+  if (!data) return undefined;
+  const { rawContent: _rawContent, ...safeData } = data;
+  return safeData;
+}
+
+function recordLlmActivity(
+  activity: Pick<ReturnType<typeof createActivityRecorder>, 'push'>,
+  event: SupervisorLlmDebugEvent
+) {
+  return activity.push({
+    phase: 'llm',
+    level: activityLevelFromLlmEvent(event),
+    source: 'structured-llm',
+    message: event.message,
+    status: activityStatusFromLlmEvent(event),
+    payload: {
+      type: event.type,
+      data: summarizeLlmEventData(event.data),
+    },
+  });
 }
 
 export async function listProjectEvaluations(repositoryId: string) {
@@ -52,7 +110,21 @@ export async function getProjectEvaluationDetail(evaluationId: string) {
   return { evaluation, improvements, activityEvents, taskLinks };
 }
 
-export async function runProjectEvaluation(input: {
+export async function listProjectEvaluationActivityEvents(input: {
+  evaluationId: string;
+  afterSeq?: number;
+}) {
+  const evaluation = await repo.getProjectEvaluation(input.evaluationId);
+  if (!evaluation) throw new NotFoundError('Evaluation not found');
+  return {
+    status: evaluation.status,
+    events: await repo.listProjectEvaluationActivityEvents(input.evaluationId, {
+      afterSeq: input.afterSeq,
+    }),
+  };
+}
+
+async function prepareProjectEvaluationRun(input: {
   repositoryId: string;
   baselinePrompt?: string;
 }) {
@@ -80,41 +152,114 @@ export async function runProjectEvaluation(input: {
     message: 'evaluation role で評価 JSON を生成します。',
     payload: { evidenceLevel: bundle.evidenceLevel },
   });
+  return { repository, previousEvaluation, bundle, initialActivityEvents: activity.events };
+}
 
+async function completeProjectEvaluation(input: {
+  evaluationId: string;
+  bundle: Awaited<ReturnType<typeof prepareProjectEvaluationRun>>['bundle'];
+  baselinePrompt?: string;
+  startSeq: number;
+}) {
+  const activity = createActivityAppender({
+    evaluationId: input.evaluationId,
+    startSeq: input.startSeq,
+  });
   try {
     const judged = await judgeProjectEvaluation({
-      bundle,
+      bundle: input.bundle,
       baselinePrompt: input.baselinePrompt,
+      onLlmEvent: (event) => recordLlmActivity(activity, event),
     });
-    activity.push({
+    await activity.push({
       phase: 'save',
       level: 'checkpoint',
       source: 'project-evaluation',
       message: `評価を保存します: ${judged.report.overallScore} / 100。`,
       payload: { selectedModel: judged.selectedModel },
     });
-    const evaluation = await repo.createProjectEvaluationRun({
-      repositoryId: repository.id,
-      bundle,
+    await repo.completeProjectEvaluationRun({
+      evaluationId: input.evaluationId,
       report: judged.report,
       rawOutput: judged.rawOutput,
       selectedModel: judged.selectedModel,
-      previousEvaluationId: previousEvaluation?.id ?? null,
-      activityEvents: activity.events,
     });
-    return getProjectEvaluationDetail(evaluation.id);
   } catch (error) {
-    activity.push({
+    const message = error instanceof Error ? error.message : String(error);
+    await activity.push({
       phase: 'judge',
       level: 'error',
       source: 'project-evaluation',
-      message: error instanceof Error ? error.message : String(error),
+      message,
       status: 'failed',
     });
+    await repo.failProjectEvaluationRun({
+      evaluationId: input.evaluationId,
+      message,
+    });
+    throw error;
+  }
+}
+
+function runProjectEvaluationInBackground(input: {
+  evaluationId: string;
+  bundle: Awaited<ReturnType<typeof prepareProjectEvaluationRun>>['bundle'];
+  baselinePrompt?: string;
+  startSeq: number;
+}) {
+  void completeProjectEvaluation(input).catch(() => {
+    // The failure is persisted as an activity event and failed run status.
+  });
+}
+
+export async function runProjectEvaluation(input: {
+  repositoryId: string;
+  baselinePrompt?: string;
+}) {
+  const prepared = await prepareProjectEvaluationRun(input);
+  const evaluation = await repo.createRunningProjectEvaluationRun({
+    repositoryId: prepared.repository.id,
+    bundle: prepared.bundle,
+    previousEvaluationId: prepared.previousEvaluation?.id ?? null,
+    activityEvents: prepared.initialActivityEvents,
+  });
+
+  try {
+    await completeProjectEvaluation({
+      evaluationId: evaluation.id,
+      bundle: prepared.bundle,
+      baselinePrompt: input.baselinePrompt,
+      startSeq: prepared.initialActivityEvents.length,
+    });
+    return getProjectEvaluationDetail(evaluation.id);
+  } catch (error) {
     throw new ValidationError('Project evaluation failed', {
       message: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+export async function startProjectEvaluation(input: {
+  repositoryId: string;
+  baselinePrompt?: string;
+}) {
+  const prepared = await prepareProjectEvaluationRun(input);
+  const evaluation = await repo.createRunningProjectEvaluationRun({
+    repositoryId: prepared.repository.id,
+    bundle: prepared.bundle,
+    previousEvaluationId: prepared.previousEvaluation?.id ?? null,
+    activityEvents: prepared.initialActivityEvents,
+  });
+  runProjectEvaluationInBackground({
+    evaluationId: evaluation.id,
+    bundle: prepared.bundle,
+    baselinePrompt: input.baselinePrompt,
+    startSeq: prepared.initialActivityEvents.length,
+  });
+  return {
+    evaluationId: evaluation.id,
+    detail: await getProjectEvaluationDetail(evaluation.id),
+  };
 }
 
 export async function generateProjectImprovements(input: {
@@ -128,23 +273,22 @@ export async function generateProjectImprovements(input: {
   if (selectedKeys.length === 0) {
     throw new ValidationError('Select at least one dimension from the saved evaluation');
   }
+  const activity = createActivityRecorder(Date.now());
   const generated = await generateIdeasWithLlm({
     evaluation,
     bundle: evaluation.bundle,
     dimensionKeys: selectedKeys,
+    onLlmEvent: (event) => recordLlmActivity(activity, event),
   });
   const ideas = await repo.createProjectImprovementIdeas(evaluation.id, generated.ideas);
-  await repo.createProjectEvaluationActivityEvents(evaluation.id, [
-    {
-      seq: Date.now(),
-      phase: 'improvements',
-      level: 'checkpoint',
-      source: 'project-evaluation',
-      message: `${ideas.length} 件の改善案を保存しました。`,
-      payload: { selectedKeys, selectedModel: generated.selectedModel },
-      createdAt: new Date().toISOString(),
-    },
-  ]);
+  activity.push({
+    phase: 'improvements',
+    level: 'checkpoint',
+    source: 'project-evaluation',
+    message: `${ideas.length} 件の改善案を保存しました。`,
+    payload: { selectedKeys, selectedModel: generated.selectedModel },
+  });
+  await repo.createProjectEvaluationActivityEvents(evaluation.id, activity.events);
   return {
     ideas,
     selectedDimensionKeys: selectedKeys,

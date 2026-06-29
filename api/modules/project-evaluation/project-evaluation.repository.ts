@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray } from 'drizzle-orm';
 import {
   type ProjectEvaluationActivityEvent,
   type ProjectEvaluationBundle,
@@ -51,6 +51,7 @@ async function mapRun(
   return projectEvaluationRunSchema.parse({
     id: row.id,
     repositoryId: row.repositoryId,
+    status: row.status || 'completed',
     bundle: row.bundleJson,
     rawOutput: row.rawOutputJson,
     summary: row.summary,
@@ -125,6 +126,7 @@ export async function createProjectEvaluationRun(input: {
     .insert(projectEvaluationRuns)
     .values({
       repositoryId: input.repositoryId,
+      status: 'completed',
       bundleJson: input.bundle,
       rawOutputJson: input.rawOutput,
       summary: input.report.summary,
@@ -161,6 +163,110 @@ export async function createProjectEvaluationRun(input: {
   return mapRun(run);
 }
 
+export async function createRunningProjectEvaluationRun(input: {
+  repositoryId: string;
+  bundle: ProjectEvaluationBundle;
+  previousEvaluationId?: string | null;
+  activityEvents?: Array<Omit<ProjectEvaluationActivityEvent, 'id' | 'evaluationId'>>;
+}) {
+  const now = new Date();
+  const [run] = await db
+    .insert(projectEvaluationRuns)
+    .values({
+      repositoryId: input.repositoryId,
+      status: 'running',
+      bundleJson: input.bundle,
+      summary: '評価を実行中です。',
+      overallScore: 0,
+      overallConfidence: 0,
+      evidenceLevel: input.bundle.evidenceLevel,
+      previousEvaluationId: input.previousEvaluationId ?? null,
+      strengthsJson: [],
+      weaknessesJson: [],
+      nextEvidenceToCollectJson: [],
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+
+  if (input.activityEvents?.length) {
+    await createProjectEvaluationActivityEvents(run.id, input.activityEvents);
+  }
+
+  return mapRun(run);
+}
+
+export async function completeProjectEvaluationRun(input: {
+  evaluationId: string;
+  report: {
+    overallScore: number;
+    confidence: number;
+    summary: string;
+    dimensions: Array<{
+      key: ProjectEvaluationDimensionKey;
+      label: string;
+      score: number;
+      confidence: number;
+      rationale: string;
+      evidence: string[];
+      concerns: string[];
+    }>;
+    strengths: string[];
+    weaknesses: string[];
+    nextEvidenceToCollect: string[];
+  };
+  rawOutput: unknown;
+  selectedModel: unknown;
+}) {
+  await db
+    .delete(projectEvaluationDimensions)
+    .where(eq(projectEvaluationDimensions.evaluationId, input.evaluationId));
+
+  await db.insert(projectEvaluationDimensions).values(
+    input.report.dimensions.map((dimension) => ({
+      evaluationId: input.evaluationId,
+      dimensionKey: dimension.key,
+      label: dimension.label,
+      score: dimension.score,
+      confidence: dimension.confidence,
+      rationale: dimension.rationale,
+      evidenceJson: dimension.evidence,
+      concernsJson: dimension.concerns,
+    }))
+  );
+
+  const [row] = await db
+    .update(projectEvaluationRuns)
+    .set({
+      status: 'completed',
+      rawOutputJson: input.rawOutput,
+      summary: input.report.summary,
+      overallScore: input.report.overallScore,
+      overallConfidence: input.report.confidence,
+      selectedModelJson: input.selectedModel,
+      strengthsJson: input.report.strengths,
+      weaknessesJson: input.report.weaknesses,
+      nextEvidenceToCollectJson: input.report.nextEvidenceToCollect,
+      updatedAt: new Date(),
+    })
+    .where(eq(projectEvaluationRuns.id, input.evaluationId))
+    .returning();
+  return row ? mapRun(row) : null;
+}
+
+export async function failProjectEvaluationRun(input: { evaluationId: string; message: string }) {
+  const [row] = await db
+    .update(projectEvaluationRuns)
+    .set({
+      status: 'failed',
+      summary: input.message,
+      updatedAt: new Date(),
+    })
+    .where(eq(projectEvaluationRuns.id, input.evaluationId))
+    .returning();
+  return row ? mapRun(row) : null;
+}
+
 export async function createProjectEvaluationActivityEvents(
   evaluationId: string,
   events: Array<Omit<ProjectEvaluationActivityEvent, 'id' | 'evaluationId'>>
@@ -185,11 +291,18 @@ export async function createProjectEvaluationActivityEvents(
     .returning();
 }
 
-export async function listProjectEvaluationActivityEvents(evaluationId: string) {
+export async function listProjectEvaluationActivityEvents(
+  evaluationId: string,
+  options?: { afterSeq?: number }
+) {
+  const predicates = [eq(projectEvaluationActivityEvents.evaluationId, evaluationId)];
+  if (typeof options?.afterSeq === 'number') {
+    predicates.push(gt(projectEvaluationActivityEvents.seq, options.afterSeq));
+  }
   const rows = await db
     .select()
     .from(projectEvaluationActivityEvents)
-    .where(eq(projectEvaluationActivityEvents.evaluationId, evaluationId))
+    .where(and(...predicates))
     .orderBy(projectEvaluationActivityEvents.seq);
   return rows.map((row) => ({
     id: row.id,

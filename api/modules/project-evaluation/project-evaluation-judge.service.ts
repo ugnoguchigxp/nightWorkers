@@ -5,6 +5,7 @@ import {
   type ProjectEvaluationReport,
   type ProjectEvaluationRun,
   type ProjectImprovementIdea,
+  projectEvaluationDimensionLabels,
   projectEvaluationReportSchema,
   projectImprovementIdeasResultSchema,
 } from '../../../shared/schemas/project-evaluation.schema';
@@ -80,6 +81,7 @@ async function callProjectEvaluationJson(input: {
   userPrompt: string;
   schemaName: string;
   schema: unknown;
+  onLlmEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
 }) {
   let selectedModel = fallbackSelectedModelForPrompts(
     input.systemPrompt,
@@ -91,17 +93,31 @@ async function callProjectEvaluationJson(input: {
     role: 'evaluation',
     schemaName: input.schemaName,
     schema: input.schema,
-    emitEvent: (event) => {
+    emitEvent: async (event) => {
       const nextSelection = selectionFromDebugEvent(event);
       if (nextSelection) selectedModel = nextSelection;
+      await input.onLlmEvent?.(event);
     },
   });
   return { raw, selectedModel };
 }
 
+function normalizeProjectEvaluationReportLabels(
+  report: ProjectEvaluationReport
+): ProjectEvaluationReport {
+  return {
+    ...report,
+    dimensions: report.dimensions.map((dimension) => ({
+      ...dimension,
+      label: projectEvaluationDimensionLabels[dimension.key],
+    })),
+  };
+}
+
 export async function judgeProjectEvaluation(input: {
   bundle: ProjectEvaluationBundle;
   baselinePrompt?: string;
+  onLlmEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
 }): Promise<{
   report: ProjectEvaluationReport;
   rawOutput: unknown;
@@ -114,10 +130,12 @@ export async function judgeProjectEvaluation(input: {
     userPrompt,
     schemaName: 'project_evaluation',
     schema: toJsonSchema(projectEvaluationReportSchema),
+    onLlmEvent: input.onLlmEvent,
   });
   const rawOutput = JSON.parse(called.raw) as unknown;
+  const report = projectEvaluationReportSchema.parse(rawOutput);
   return {
-    report: projectEvaluationReportSchema.parse(rawOutput),
+    report: normalizeProjectEvaluationReportLabels(report),
     rawOutput,
     selectedModel: called.selectedModel,
   };
@@ -127,6 +145,7 @@ export async function generateProjectImprovementIdeas(input: {
   evaluation: ProjectEvaluationRun;
   bundle: ProjectEvaluationBundle;
   dimensionKeys: ProjectEvaluationDimensionKey[];
+  onLlmEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
 }): Promise<{
   ideas: ProjectImprovementIdea[];
   rawOutput: unknown;
@@ -139,6 +158,7 @@ export async function generateProjectImprovementIdeas(input: {
     userPrompt,
     schemaName: 'project_improvement_ideas',
     schema: toJsonSchema(projectImprovementIdeasResultSchema),
+    onLlmEvent: input.onLlmEvent,
   });
   const rawOutput = JSON.parse(called.raw) as unknown;
   const parsed = projectImprovementIdeasResultSchema.parse(rawOutput);

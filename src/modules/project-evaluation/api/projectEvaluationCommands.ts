@@ -21,6 +21,15 @@ export function runProjectEvaluation(repositoryId: string) {
   return apiFetch(`/api/repositories/${repositoryId}/evaluations`, jsonRequest('POST', {}));
 }
 
+export function startProjectEvaluation(repositoryId: string) {
+  return apiFetch(`/api/repositories/${repositoryId}/evaluations/start`, jsonRequest('POST', {}));
+}
+
+export function fetchProjectEvaluationActivityEvents(evaluationId: string, afterSeq?: number) {
+  const params = typeof afterSeq === 'number' ? `?afterSeq=${afterSeq}` : '';
+  return apiFetch(`/api/project-evaluations/${evaluationId}/activity-events${params}`);
+}
+
 export function generateProjectImprovements(
   evaluationId: string,
   input: GenerateProjectImprovementsRequest
