@@ -9,7 +9,10 @@ import {
 } from '../api/services/agent-runtime/native-api-runner/native-api-runner';
 import type { NativeApiSessionStore } from '../api/services/agent-runtime/native-api-runner/native-api-session-store';
 import { dispatchNativeApiToolCall } from '../api/services/agent-runtime/native-api-runner/native-api-tool-dispatcher';
-import { buildInitialNativeApiHistory } from '../api/services/agent-runtime/native-api-runner/native-api-tool-history';
+import {
+  buildInitialNativeApiHistory,
+  sanitizeNativeApiResumeHistory,
+} from '../api/services/agent-runtime/native-api-runner/native-api-tool-history';
 import { getNativeApiToolDefinitions } from '../api/services/agent-runtime/native-api-runner/native-api-tool-registry';
 import type { AgentRunContext, AgentRuntimeEvent } from '../api/services/agent-runtime/types';
 import type { ProviderToolTurnResult } from '../api/services/structured-llm/tool-calls';
@@ -128,7 +131,6 @@ describe('NativeApiRunner', () => {
           },
         ],
         usage: usage(),
-        model: 'api-model',
       },
     ]);
     const runner = new NativeApiRunner({
@@ -173,6 +175,10 @@ describe('NativeApiRunner', () => {
         }),
       ])
     );
+    expect(store.finishedTurns[0]).toMatchObject({
+      status: 'completed',
+      model: 'test-model',
+    });
   });
 
   it('continues past the previous 20 provider-native turn ceiling', async () => {
@@ -299,6 +305,165 @@ describe('NativeApiRunner', () => {
       source: 'runtime',
       content: expect.stringContaining('<ROLE_WORKING_CONTEXT version="1"'),
     });
+  });
+
+  it('adds TodoList progress contract to native/API system prompt', () => {
+    const history = buildInitialNativeApiHistory(buildContext());
+    const system = history.find((item) => item.type === 'system')?.content ?? '';
+
+    expect(system).toContain('TodoList pane がユーザーに見える進捗の source of truth');
+    expect(system).toContain('todo_list operation=list は診断専用');
+    expect(system).toContain('finalReport / finalize_answer の前に open Todo を確認');
+  });
+
+  it('sanitizes native/API resume history without stale runtime context', () => {
+    const sanitized = sanitizeNativeApiResumeHistory([
+      { type: 'system', content: 'stale system' },
+      { type: 'user', source: 'user', content: 'previous user request' },
+      { type: 'user', source: 'todo', content: 'stale todo' },
+      {
+        type: 'assistant',
+        content: 'I will read the spec.',
+        toolCalls: [{ id: 'call-read', name: 'read_current_specification', arguments: {} }],
+      },
+      {
+        type: 'tool_result',
+        toolCallId: 'call-read',
+        toolName: 'read_current_specification',
+        result: { ok: true, content: '{"ok":true}' },
+      },
+      { type: 'user', source: 'runtime', content: 'stale role context' },
+      { type: 'assistant', content: 'Previous turn completed.' },
+    ]);
+
+    expect(sanitized).toEqual([
+      { type: 'user', source: 'user', content: 'previous user request' },
+      {
+        type: 'assistant',
+        content: 'I will read the spec.',
+        toolCalls: [{ id: 'call-read', name: 'read_current_specification', arguments: {} }],
+      },
+      {
+        type: 'tool_result',
+        toolCallId: 'call-read',
+        toolName: 'read_current_specification',
+        result: { ok: true, content: '{"ok":true}' },
+      },
+      { type: 'assistant', content: 'Previous turn completed.' },
+    ]);
+    expect(
+      sanitizeNativeApiResumeHistory([
+        {
+          type: 'tool_result',
+          toolCallId: 'missing-call',
+          toolName: 'read_current_specification',
+          result: { ok: true, content: '{}' },
+        },
+      ])
+    ).toBeNull();
+    expect(
+      sanitizeNativeApiResumeHistory([
+        {
+          type: 'assistant',
+          content: 'incomplete',
+          toolCalls: [{ id: 'call-open', name: 'read_file', arguments: {} }],
+        },
+      ])
+    ).toBeNull();
+    expect(
+      sanitizeNativeApiResumeHistory([
+        {
+          type: 'assistant',
+          content: 'invalid tool calls',
+          toolCalls: [{ name: 'read_file', arguments: {} }],
+        },
+      ])
+    ).toBeNull();
+  });
+
+  it('restores sanitized completed native/API history before the fresh user request', async () => {
+    const store = createFakeStore();
+    const getLatestCompletedTurnForPreviousRun = vi.fn(async () => ({
+      id: 'turn-previous',
+      runId: 'run-previous',
+      historyJson: [
+        { type: 'system', content: 'stale system prompt' },
+        { type: 'user', source: 'user', content: 'previous request' },
+        { type: 'user', source: 'todo', content: 'stale todo context' },
+        { type: 'assistant', content: 'previous assistant response' },
+      ],
+    }));
+    (
+      store.instance as unknown as {
+        getLatestCompletedTurnForPreviousRun: typeof getLatestCompletedTurnForPreviousRun;
+      }
+    ).getLatestCompletedTurnForPreviousRun = getLatestCompletedTurnForPreviousRun;
+    const providerTurn = createProvider([
+      {
+        type: 'supported',
+        content: 'ready to finalize',
+        toolCalls: [
+          {
+            id: 'call-final',
+            name: 'finalize_answer',
+            arguments: { finalReport: 'resumed done' },
+          },
+        ],
+        usage: usage(),
+        model: 'api-model',
+      },
+    ]);
+    const events: AgentRuntimeEvent[] = [];
+    const runner = new NativeApiRunner({
+      store: store.instance,
+      startupController: createNoopStartup(),
+      providerTurn,
+      usageRecorder: vi.fn(async () => undefined),
+    });
+
+    const result = await runner.run(buildContextWithNativeApiRoute(), createSink(events));
+
+    expect(result).toMatchObject({ terminalState: 'completed', finalReport: 'resumed done' });
+    expect(getLatestCompletedTurnForPreviousRun).toHaveBeenCalledWith({
+      taskId: 'task-1',
+      runId: 'run-1',
+      provider: 'openai',
+      model: 'test-model',
+      executionMode: 'implementation',
+    });
+    const providerMessages = vi.mocked(providerTurn).mock.calls[0]?.[0].messages ?? [];
+    expect(providerMessages.map((message) => message.role)).toEqual([
+      'system',
+      'user',
+      'assistant',
+      'user',
+    ]);
+    expect(providerMessages.map((message) => message.content)).toEqual(
+      expect.arrayContaining([
+        'previous request',
+        'previous assistant response',
+        'implement the requested change',
+      ])
+    );
+    expect(providerMessages.map((message) => message.content).join('\n')).not.toContain(
+      'stale todo context'
+    );
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'runtime_started',
+          payload: expect.objectContaining({
+            action: 'runtime.resume_state_reused',
+            runtimeResume: expect.objectContaining({
+              kind: 'native_api_history',
+              sourceRunId: 'run-previous',
+              sourceTurnId: 'turn-previous',
+              restoredItemCount: 2,
+            }),
+          }),
+        }),
+      ])
+    );
   });
 
   it('classifies required tool-call failures and falls back to the next native/API route', async () => {
@@ -1284,6 +1449,28 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
     });
   });
 
+  it('rejects todo_list list as progress evidence at dispatch time', async () => {
+    const result = await dispatchNativeApiToolCall({
+      toolCall: {
+        id: 'call-todos',
+        name: 'todo_list',
+        arguments: { operation: 'list' },
+      },
+      context: buildContext(),
+      sink: createSink(),
+      state: { readFiles: [], specificationRead: true },
+    });
+
+    expect(result.kind).toBe('continue');
+    expect(result.toolResult).toMatchObject({
+      ok: false,
+      error: {
+        code: 'INVALID_TOOL_ARGS',
+      },
+    });
+    expect(result.toolResult.error?.message).toContain('operation=start');
+  });
+
   it('restricts model-visible tools in planning mode', () => {
     const toolNames = getNativeApiToolDefinitions({
       executionMode: 'planning',
@@ -1710,6 +1897,23 @@ function buildContext(overrides: Partial<AgentRunContext> = {}): AgentRunContext
     },
     ...overrides,
   };
+}
+
+function buildContextWithNativeApiRoute(overrides: Partial<AgentRunContext> = {}): AgentRunContext {
+  return buildContext({
+    runtimeOptions: {
+      executionMode: 'implementation',
+      llmRouting: {
+        executionMode: 'implementation',
+        active: {
+          providerId: 'openai',
+          providerEndpointId: 'test-openai',
+          model: 'test-model',
+        },
+      },
+    },
+    ...overrides,
+  });
 }
 
 function defaultNativeApiRunnerSettings(): Record<string, unknown> {

@@ -1,4 +1,12 @@
-import { BarChart3, FolderPlus, ListTodo, LoaderCircle, Plus, Trash2 } from 'lucide-react';
+import {
+  BarChart3,
+  FolderPlus,
+  ListTodo,
+  LoaderCircle,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
@@ -23,6 +31,8 @@ type ProjectSidebarProps = {
   onOpenOverview: () => void;
   isOverviewActive: boolean;
   onOpenFolderBrowser: () => void;
+  onRefreshProjects: () => void;
+  isProjectListRefreshing: boolean;
 };
 
 const EMPTY_PROJECT_SESSION_GROUPS: ProjectSessionGroups = {
@@ -50,14 +60,27 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
         >
           <span className="truncate">nightWorkers</span>
         </button>
-        <button
-          type="button"
-          onClick={props.onOpenFolderBrowser}
-          className="nightworkers-sidebar-control flex h-8 w-8 items-center justify-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2"
-          title={t('sidebar.registerProjectFolder')}
-        >
-          <FolderPlus className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={props.onRefreshProjects}
+            disabled={props.isProjectListRefreshing}
+            className="nightworkers-sidebar-control flex h-8 w-8 items-center justify-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
+            title={t('sidebar.refreshProjects')}
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${props.isProjectListRefreshing ? 'animate-spin' : ''}`}
+            />
+          </button>
+          <button
+            type="button"
+            onClick={props.onOpenFolderBrowser}
+            className="nightworkers-sidebar-control flex h-8 w-8 items-center justify-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2"
+            title={t('sidebar.registerProjectFolder')}
+          >
+            <FolderPlus className="h-4 w-4" />
+          </button>
+        </div>
       </div>
       <div className="nightworkers-scrollbar min-h-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto overscroll-contain pb-4">
         {props.isProjectsLoading ? (

@@ -19,6 +19,9 @@ describe('design questionnaire prompts', () => {
     expect(prompt).toContain('pgvector');
     expect(prompt).toContain('Turso/libSQL');
     expect(prompt).toContain('各 options は 2-10 件');
+    expect(prompt).toContain('本当に複数の選択肢を同時に採用できる設問だけ checkbox');
+    expect(prompt).toContain('実装深度、優先度、段階');
+    expect(prompt).toContain('単一軸の判断を checkbox で表現しない');
   });
 
   it('keeps missing template variant inputs in follow-up scope', () => {
@@ -32,6 +35,9 @@ describe('design questionnaire prompts', () => {
     expect(prompt).toContain('pgvector');
     expect(prompt).toContain('Turso/libSQL');
     expect(prompt).toContain('各 options は 2-10 件');
+    expect(prompt).toContain('本当に複数の選択肢を同時に採用できる設問だけ checkbox');
+    expect(prompt).toContain('実装深度、優先度、段階');
+    expect(prompt).toContain('単一軸の判断を checkbox で表現しない');
   });
 
   it('accepts up to ten choices in generated choice-form output', () => {

@@ -262,6 +262,101 @@ describe('NativeApiStartupController', () => {
     });
   });
 
+  it('continues startup on missing specification when native/API resume history was restored', async () => {
+    const store = createFakeStore();
+    const events: AgentRuntimeEvent[] = [];
+    const executeTool = vi
+      .fn()
+      .mockResolvedValueOnce({
+        result: okWorkerResult('read_current_specification', {
+          taskId: 'task-1',
+          found: false,
+          messageId: null,
+          title: null,
+          content: '',
+          generatedAt: null,
+          digest: null,
+          sources: {},
+        }),
+      })
+      .mockResolvedValueOnce({
+        result: okWorkerResult('mcp_call_tool', {
+          serverId: 'context-still',
+          toolName: 'initial_instructions',
+          result: { content: [{ type: 'text', text: 'Use context_compile first.' }] },
+        }),
+      })
+      .mockResolvedValueOnce({
+        result: okWorkerResult('mcp_call_tool', {
+          serverId: 'context-still',
+          toolName: 'context_compile',
+          result: { content: [{ type: 'text', text: 'Compiled resume context.' }] },
+        }),
+      });
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([] as never);
+    const controller = new NativeApiStartupController({
+      store: store.instance,
+      executeTool,
+      listAvailableMcpTools: async () => [
+        {
+          serverId: 'context-still',
+          serverName: 'context-still',
+          toolPrefix: 'context_still',
+          name: 'initial_instructions',
+          description: '',
+          inputSchema: {},
+        },
+        {
+          serverId: 'context-still',
+          serverName: 'context-still',
+          toolPrefix: 'context_still',
+          name: 'context_compile',
+          description: '',
+          inputSchema: {},
+        },
+      ],
+      mutateTodos: vi.fn(),
+    });
+
+    const result = await controller.runStartup({
+      context: buildContext(),
+      sink: createSink(events),
+      history: initialHistory(),
+      state: initialState(),
+      resumeHistoryRestored: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.state).toMatchObject({
+      specificationRead: true,
+      specificationReadFromResumeFallback: true,
+      initialInstructionsCompleted: true,
+      contextCompiled: true,
+      startupCompleted: true,
+    });
+    expect(executeTool).toHaveBeenCalledTimes(3);
+    const contextCompileArgs = executeTool.mock.calls[2][0].args.arguments as Record<
+      string,
+      unknown
+    >;
+    expect(contextCompileArgs.goal).toContain('現行仕様書は見つからなかった');
+    expect(store.finishedToolCalls[0]).toMatchObject({
+      status: 'failed',
+      error: { code: 'SPECIFICATION_NOT_FOUND' },
+    });
+    expect(store.finishedTurns[0]).toMatchObject({ status: 'completed' });
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'runtime_started',
+          payload: expect.objectContaining({
+            action: 'runtime.resume_specification_missing_waived',
+          }),
+        }),
+      ])
+    );
+  });
+
   it('records unavailable contextStill startup gates as durable runtime failures', async () => {
     const store = createFakeStore();
     const events: AgentRuntimeEvent[] = [];

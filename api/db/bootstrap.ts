@@ -260,6 +260,7 @@ export async function ensureNightWorkersSchema() {
       status text DEFAULT 'running' NOT NULL,
       provider text,
       model text,
+      execution_mode text,
       history_json text,
       provider_debug_json text,
       error_json text,
@@ -274,6 +275,10 @@ export async function ensureNightWorkersSchema() {
   );
   await client.execute(
     'CREATE INDEX IF NOT EXISTS native_api_turns_run_status_idx ON native_api_turns (run_id, status)'
+  );
+  await ensureColumn('native_api_turns', 'execution_mode', 'execution_mode text');
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS native_api_turns_resume_idx ON native_api_turns (task_id, status, provider, model, execution_mode, finished_at)'
   );
 
   await client.execute(`
@@ -308,6 +313,43 @@ export async function ensureNightWorkersSchema() {
   );
   await client.execute(
     'CREATE INDEX IF NOT EXISTS native_api_tool_calls_turn_idx ON native_api_tool_calls (turn_id)'
+  );
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS runtime_session_states (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      task_id text NOT NULL,
+      repository_id text,
+      run_id text,
+      runtime_lane text NOT NULL,
+      provider text NOT NULL,
+      provider_session_id text,
+      execution_mode text,
+      model text,
+      status text NOT NULL,
+      last_seen_at integer NOT NULL,
+      metadata_json text,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
+      FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade,
+      FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE set null
+    )
+  `);
+  await client.execute(`
+    CREATE INDEX IF NOT EXISTS runtime_session_states_lookup_idx
+    ON runtime_session_states (
+      task_id,
+      repository_id,
+      runtime_lane,
+      provider,
+      execution_mode,
+      status,
+      last_seen_at
+    )
+  `);
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS runtime_session_states_run_idx ON runtime_session_states (run_id)'
   );
 
   await client.execute(`
@@ -777,4 +819,12 @@ export async function ensureNightWorkersSchema() {
   await client.execute(
     'CREATE INDEX IF NOT EXISTS design_questionnaire_reviews_published_message_idx ON design_questionnaire_reviews (published_message_id)'
   );
+}
+
+async function ensureColumn(table: string, column: string, definition: string) {
+  const columns = await client.execute(`PRAGMA table_info(${table})`);
+  const exists = columns.rows.some((row) => row.name === column);
+  if (columns.rows.length > 0 && !exists) {
+    await client.execute(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+  }
 }

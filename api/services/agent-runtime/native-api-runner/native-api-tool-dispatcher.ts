@@ -22,6 +22,7 @@ import {
 export type NativeApiDispatchState = {
   readFiles: string[];
   specificationRead: boolean;
+  specificationReadFromResumeFallback?: boolean;
   initialInstructionsCompleted?: boolean;
   contextCompiled?: boolean;
   todoAligned?: boolean;

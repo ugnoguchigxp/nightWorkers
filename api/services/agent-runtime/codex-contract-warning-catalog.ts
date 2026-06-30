@@ -54,6 +54,22 @@ export const CODEX_CONTRACT_WARNING_CATALOG = {
     terminalPolicy: 'none',
     description: 'Codex changed files before nightworkers.todo_list operation=replace.',
   },
+  codex_todo_progress_missing: {
+    defaultSeverity: 'warning',
+    terminalPolicy: 'none',
+    description: 'Codex performed work before any nightworkers.todo_list progress mutation.',
+  },
+  codex_todo_progress_list_only: {
+    defaultSeverity: 'warning',
+    terminalPolicy: 'none',
+    description: 'Codex called nightworkers.todo_list operation=list without progress mutation.',
+  },
+  codex_todo_progress_stale_before_verify: {
+    defaultSeverity: 'warning',
+    terminalPolicy: 'none',
+    description:
+      'Codex started broad verification without a TodoList progress mutation after the latest file change.',
+  },
   codex_file_change_while_mcp_degraded: {
     defaultSeverity: 'warning',
     terminalPolicy: 'none',
@@ -86,6 +102,11 @@ export const CODEX_CONTRACT_WARNING_CATALOG = {
     defaultSeverity: 'error',
     terminalPolicy: 'needs_human',
     description: 'Codex used a mutating NightWorkers MCP tool during a planning run.',
+  },
+  codex_runtime_resume_failed: {
+    defaultSeverity: 'warning',
+    terminalPolicy: 'none',
+    description: 'Codex runtime session resume failed and a fresh thread was started.',
   },
 } as const satisfies Record<
   string,

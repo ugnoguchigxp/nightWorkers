@@ -37,6 +37,7 @@ export const enDictionary = {
   'overview.kpi.stateCard': 'StateCard',
   'overview.empty': 'No LLM usage has been recorded yet.',
   'sidebar.registerProjectFolder': 'Register project folder',
+  'sidebar.refreshProjects': 'Refresh projects',
   'sidebar.loadingWorkspaces': 'Loading workspaces...',
   'sidebar.emptyProjects':
     'No project folders registered. Click "+" to register a local directory.',

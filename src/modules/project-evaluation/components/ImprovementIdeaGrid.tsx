@@ -25,7 +25,7 @@ export function ImprovementIdeaGrid({
   isCreatingTasks: boolean;
   onGenerate: () => void;
   onToggleIdea: (id: string) => void;
-  onCreateTasks: () => void;
+  onCreateTasks: () => void | Promise<void>;
 }) {
   const selectedLabels = dimensions
     .filter((dimension) => selectedKeys.has(dimension.key))

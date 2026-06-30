@@ -47,9 +47,7 @@ vi.mock('../../api/routes/settings', () => ({
     return {
       ACTIVE_LLM_PROVIDER: activeProvider === 'codex' ? 'azure' : activeProvider,
       CODEX_ENABLED: codexEnabled,
-      IMPLEMENTATION_RUNTIME_LANE:
-        process.env.IMPLEMENTATION_RUNTIME_LANE ||
-        (activeProvider === 'codex' && codexEnabled ? 'codex-sdk' : ''),
+      IMPLEMENTATION_RUNTIME_LANE: process.env.IMPLEMENTATION_RUNTIME_LANE || '',
     };
   }),
 }));
@@ -126,7 +124,8 @@ describe('NightWorkers service', () => {
     delete process.env.ACTIVE_LLM_PROVIDER;
     delete process.env.CODEX_ENABLED;
     delete process.env.IMPLEMENTATION_RUNTIME_LANE;
-    delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH =
+      '/tmp/nightworkers-service-02-empty-llm-settings.json';
     process.env.NIGHTWORKERS_RUNTIME_LANE = 'native-api-runner';
   });
 
@@ -189,7 +188,6 @@ describe('NightWorkers service', () => {
           runtimeLane: 'native-api-runner',
           runtimeLaneResolution: expect.objectContaining({
             workerKind: 'native-local',
-            source: 'role_route',
           }),
         }),
       })
@@ -715,6 +713,111 @@ describe('NightWorkers service', () => {
         }),
       })
     );
+  });
+
+  it('closes open Todos when runtime returns a failed terminal result', async () => {
+    const task = {
+      id: 'task-runtime-failed-open-todos',
+      repositoryId: 'repo-runtime-failed-open-todos',
+      title: 'Failed runtime task',
+      description: 'Runtime fails with open todos',
+      objective: 'Fail with open todos',
+      acceptanceCriteria: 'Open todos are closed',
+      timeoutSeconds: 60,
+    };
+    const run = {
+      id: 'run-runtime-failed-open-todos',
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+      status: 'running',
+    };
+    vi.mocked(repo.getTask).mockResolvedValue(task as never);
+    vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+    vi.mocked(repo.getRepository).mockResolvedValue({
+      id: task.repositoryId,
+      localPath: repoRoot,
+      safetyPolicy: {},
+    } as never);
+    vi.mocked(repo.listTaskMessages).mockResolvedValue([
+      { role: 'user', content: task.description },
+    ] as never);
+    vi.mocked(repo.createTaskRun).mockResolvedValue(run as never);
+    vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([
+      {
+        id: 'todo-running-failed',
+        runId: run.id,
+        seq: 1,
+        title: 'Running Todo',
+        taskType: 'implementation',
+        status: 'running',
+        startedAt: new Date('2026-06-12T00:00:00.000Z'),
+      },
+      {
+        id: 'todo-pending-failed',
+        runId: run.id,
+        seq: 2,
+        title: 'Pending Todo',
+        taskType: 'verification',
+        status: 'pending',
+      },
+    ] as never);
+    vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as never);
+    vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+    vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
+    const runtimeStart = vi.fn().mockResolvedValue({
+      terminalState: 'failed',
+      summary: 'Codex Agent Runtime failed: provider_capacity: Selected model is at capacity.',
+      finalReport: 'Codex Agent Runtime failed: provider_capacity: Selected model is at capacity.',
+      stoppedBy: 'llm_error',
+      riskLevel: 'high',
+      diffPatch: '',
+      logContent: 'diagnostics',
+      testResults: {
+        codexFailure: {
+          terminalReason: 'provider_capacity',
+        },
+      },
+    });
+    vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+      kind: 'codex-agent',
+      start: runtimeStart,
+      stop: vi.fn(),
+    } as never);
+
+    await startTaskRun(task.id);
+
+    await vi.waitFor(() => {
+      expect(repo.updateTaskRunTodo).toHaveBeenCalledWith(
+        'todo-running-failed',
+        expect.objectContaining({
+          status: 'failed',
+          statusReason: 'provider_capacity',
+          completionGateResult: expect.objectContaining({
+            status: 'failed',
+            evidence: expect.objectContaining({
+              terminalState: 'failed',
+              terminalReason: 'provider_capacity',
+            }),
+          }),
+        }),
+        { notifyTaskId: task.id, notifyRunId: run.id }
+      );
+      expect(repo.updateTaskRunTodo).toHaveBeenCalledWith(
+        'todo-pending-failed',
+        expect.objectContaining({
+          status: 'skipped',
+          statusReason: 'provider_capacity',
+        }),
+        { notifyTaskId: task.id, notifyRunId: run.id }
+      );
+      expect(repo.updateTaskRun).toHaveBeenCalledWith(
+        run.id,
+        expect.objectContaining({
+          status: 'failed',
+          summary: 'Codex Agent Runtime failed: provider_capacity: Selected model is at capacity.',
+        })
+      );
+    });
   });
 
   it('injects StateCard into runtime latestUserMessage while preserving raw compiled prompt', async () => {

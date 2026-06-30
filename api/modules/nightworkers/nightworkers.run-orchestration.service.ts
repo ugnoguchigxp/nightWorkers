@@ -18,6 +18,7 @@ import {
   readRuntimeLaneConfigFromEnv,
   resolveRuntimeLane,
 } from '../../services/agent-runtime/runtime-lane';
+import { RuntimeSessionStateStore } from '../../services/agent-runtime/runtime-session-state';
 import {
   buildOpenTodoRuntimeContractWarning,
   mergeRuntimeContractSnapshot,
@@ -156,6 +157,15 @@ async function applyCoverageAutonomyFallback(input: {
 function readCoverageAutonomyResult(testResults: unknown) {
   if (!isRecord(testResults)) return null;
   return isRecord(testResults.coverageAutonomy) ? testResults.coverageAutonomy : null;
+}
+
+function readRuntimeFailureTerminalReason(runtimeResult: AgentRuntimeResult): string | null {
+  if (!isRecord(runtimeResult.testResults)) return null;
+  const codexFailure = runtimeResult.testResults.codexFailure;
+  if (!isRecord(codexFailure)) return null;
+  return typeof codexFailure.terminalReason === 'string' && codexFailure.terminalReason.trim()
+    ? codexFailure.terminalReason.trim()
+    : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -370,6 +380,8 @@ async function closeOpenTodosForFailedRun(input: {
     startedAt?: unknown;
   }>;
   evidence: string;
+  terminalReason?: string | null;
+  stoppedBy?: string | null;
 }) {
   const openTodos = listOpenTodos(input.todos);
   if (openTodos.length === 0) return;
@@ -382,9 +394,10 @@ async function closeOpenTodosForFailedRun(input: {
       const reason =
         status === 'failed'
           ? todo.status === 'running'
-            ? `Runtime crashed while this Todo was active: ${input.evidence}`
-            : `Runtime crashed before this required contextStill MCP gate could run: ${input.evidence}`
-          : `Skipped because the runtime crashed before this Todo started: ${input.evidence}`;
+            ? `Runtime failed while this Todo was active: ${input.evidence}`
+            : `Runtime failed before this required contextStill MCP gate could run: ${input.evidence}`
+          : `Skipped because the runtime failed before this Todo started: ${input.evidence}`;
+      const statusReason = input.terminalReason || reason;
       const completionGateResult = {
         version: 1,
         todoId: todo.id,
@@ -402,7 +415,8 @@ async function closeOpenTodosForFailedRun(input: {
         ],
         evidence: {
           terminalState: 'failed',
-          stoppedBy: 'llm_error',
+          stoppedBy: input.stoppedBy || 'llm_error',
+          terminalReason: input.terminalReason ?? null,
           riskLevel: 'high',
           summaryDigest: digestText(reason),
         },
@@ -411,7 +425,7 @@ async function closeOpenTodosForFailedRun(input: {
         todo.id,
         {
           status,
-          statusReason: reason,
+          statusReason,
           completionGateResult,
           completedAt,
           startedAt: todo.startedAt ? new Date(String(todo.startedAt)) : completedAt,
@@ -426,7 +440,7 @@ async function closeOpenTodosForFailedRun(input: {
         type: 'turn.finished',
         severity: status === 'failed' ? 'error' : 'warning',
         actor: 'system',
-        message: `Todo #${todo.seq} ${status} because the runtime crashed: ${todo.title}`,
+        message: `Todo #${todo.seq} ${status} because the runtime failed: ${todo.title}`,
         data: {
           todoId: todo.id,
           todoSeq: todo.seq,
@@ -732,6 +746,37 @@ function buildLatestRuntimeUserMessage(input: {
       '</IMPLEMENTATION_HANDOFF>',
     ].join('\n')
   );
+}
+
+async function loadCodexRuntimeResumeState(input: {
+  taskId: string;
+  repositoryId: string;
+  executionMode: NativeApiExecutionMode;
+}) {
+  const store = new RuntimeSessionStateStore();
+  const state = await store.getLatestRuntimeSessionStateForTask({
+    taskId: input.taskId,
+    repositoryId: input.repositoryId,
+    runtimeLane: 'codex-sdk',
+    provider: 'codex',
+    executionMode: input.executionMode,
+  });
+  if (!state?.providerSessionId) {
+    return {
+      kind: 'codex_thread',
+      status: 'unavailable',
+      executionMode: input.executionMode,
+    };
+  }
+  return {
+    kind: 'codex_thread',
+    status: 'available',
+    stateId: state.id,
+    sourceRunId: state.runId,
+    providerThreadId: state.providerSessionId,
+    executionMode: input.executionMode,
+    model: state.model,
+  };
 }
 
 export type StartTaskRunOptions = {
@@ -1095,6 +1140,36 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
     }
   }
 
+  if (runtimeLaneResolution.lane === 'codex-sdk') {
+    const runtimeResume = await loadCodexRuntimeResumeState({
+      taskId,
+      repositoryId: task.repositoryId,
+      executionMode,
+    });
+    runtimeContextSnapshot = {
+      ...runtimeContextSnapshot,
+      runtimeResume,
+    };
+    runtimeOptions.runtimeResume = runtimeResume;
+    await repo.createRunEvent({
+      version: 1,
+      runId: run.id,
+      taskId,
+      timestamp: new Date().toISOString(),
+      type: 'system.info',
+      severity: runtimeResume.status === 'available' ? 'info' : 'warning',
+      actor: 'system',
+      message:
+        runtimeResume.status === 'available'
+          ? 'Codex runtime resume state loaded.'
+          : 'Codex runtime resume state unavailable; runtime will start fresh.',
+      data: {
+        action: 'runtime.resume_state_loaded',
+        runtimeResume,
+      },
+    });
+  }
+
   await repo.updateTaskCompiledPrompt(taskId, compiledPromptText);
   const compiledRun = await repo.updateTaskRun(run.id, {
     status: 'running',
@@ -1305,6 +1380,18 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
           taskId,
           todos: finalTodos,
           evidence: runtimeResult.finalReport || runtimeResult.summary || outcome.summary,
+        });
+        finalTodos = await repo.listTaskRunTodosForRun(run.id);
+      }
+      if (outcome.status === 'failed') {
+        const terminalReason = readRuntimeFailureTerminalReason(runtimeResult) ?? outcome.reason;
+        await closeOpenTodosForFailedRun({
+          runId: run.id,
+          taskId,
+          todos: finalTodos,
+          evidence: runtimeResult.finalReport || runtimeResult.summary || outcome.summary,
+          terminalReason,
+          stoppedBy: runtimeResult.stoppedBy,
         });
         finalTodos = await repo.listTaskRunTodosForRun(run.id);
       }

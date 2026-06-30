@@ -93,7 +93,12 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const [bufferedEventsByRun, setBufferedEventsByRun] = useState<Record<string, TaskEvent[]>>({});
   const [streamingTextByTask, setStreamingTextByTask] = useState<Record<string, string>>({});
 
-  const { data: projects = [], isLoading: isProjectsLoading } = useQuery({
+  const {
+    data: projects = [],
+    isLoading: isProjectsLoading,
+    isFetching: isProjectsFetching,
+    refetch: refetchProjects,
+  } = useQuery({
     queryKey: ['projects'],
     queryFn: async () => {
       const res = await client.repositories.$get();
@@ -104,7 +109,12 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     refetchOnReconnect: false,
   });
 
-  const { data: sessions = [], isLoading: isSessionsLoading } = useQuery({
+  const {
+    data: sessions = [],
+    isLoading: isSessionsLoading,
+    isFetching: isSessionsFetching,
+    refetch: refetchSessions,
+  } = useQuery({
     queryKey: ['sessions'],
     queryFn: async () => {
       const res = await client.tasks.$get();
@@ -449,6 +459,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     realtimeStatus,
     isChatSubmitting,
     isProjectsLoading,
+    isProjectListRefreshing: isProjectsFetching || isSessionsFetching,
     isSessionsLoading,
     isAgentWorking,
     isAgentThinking,
@@ -479,6 +490,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       queryClient.invalidateQueries({ queryKey: ['sessionRuns', activeSessionId] });
       queryClient.invalidateQueries({ queryKey: ['runDetails', latestRun?.id] });
       queryClient.invalidateQueries({ queryKey: ['backgroundProcesses', activeSessionId] });
+    },
+    refreshProjectList: async () => {
+      await Promise.all([refetchProjects(), refetchSessions()]);
     },
     currentBrowserPath: projectFilesState.currentBrowserPath,
     browserParentPath: projectFilesState.browserParentPath,

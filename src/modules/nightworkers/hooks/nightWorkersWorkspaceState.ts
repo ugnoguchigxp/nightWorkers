@@ -73,6 +73,7 @@ export type NightWorkersWorkspaceState = {
   realtimeStatus: RealtimeStatus;
   isChatSubmitting: boolean;
   isProjectsLoading: boolean;
+  isProjectListRefreshing: boolean;
   isSessionsLoading: boolean;
   isAgentWorking: boolean;
   isAgentThinking: boolean;
@@ -112,6 +113,7 @@ export type NightWorkersWorkspaceState = {
     llmSelection?: WorkbenchLlmSelection
   ) => Promise<WorkbenchMessageResult | undefined>;
   refreshWorkspace: () => void;
+  refreshProjectList: () => Promise<void>;
   currentBrowserPath: string | null;
   browserParentPath: string | null;
   browserDirectories: FolderDir[];

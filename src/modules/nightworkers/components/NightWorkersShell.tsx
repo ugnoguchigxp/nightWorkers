@@ -16,6 +16,7 @@ import type {
   LlmModelTarget,
   LlmRoleRoute,
   ProjectSafetyPolicy,
+  Task,
   TaskMessage,
   ThinkingDepth,
   ThinkingDepthOption,
@@ -115,6 +116,16 @@ function isDesignQuestionnaireReadyMessage(message: TaskMessage) {
 
 function designQuestionnaireMessageIds(messages: TaskMessage[]) {
   return new Set(messages.filter(isDesignQuestionnaireReadyMessage).map((message) => message.id));
+}
+
+export function projectEvaluationDraftStorageKey(taskId: string) {
+  return `nightworkers:composer:${taskId}`;
+}
+
+export function projectEvaluationTaskPromptDrafts(tasks: Task[]) {
+  return tasks
+    .map((task) => ({ taskId: task.id, prompt: task.objective?.trim() || '' }))
+    .filter((draft) => draft.prompt.length > 0);
 }
 
 export function NightWorkersShell(props: NightWorkersShellProps) {
@@ -454,6 +465,28 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     },
     [props.onCloseSettings]
   );
+  const handleProjectEvaluationTasksCreated = useCallback(
+    (tasks: Task[]) => {
+      const drafts = projectEvaluationTaskPromptDrafts(tasks);
+      try {
+        for (const draft of drafts) {
+          window.localStorage.setItem(projectEvaluationDraftStorageKey(draft.taskId), draft.prompt);
+        }
+      } catch {
+        // localStorage is a convenience for Composer drafts; the Task objective still has the prompt.
+      }
+      const firstTask = tasks[0];
+      if (!firstTask) return;
+      setArtifactFocus({ type: 'closed' });
+      setShowQueueScreen(false);
+      setShowOverviewScreen(false);
+      setProjectQueueProjectId(null);
+      setProjectEvaluationProjectId(null);
+      props.onCloseSettings();
+      workspaceRef.current.setActiveSessionId(firstTask.id);
+    },
+    [props.onCloseSettings]
+  );
 
   const waitForQuestionnaireWorkspaceReady = useCallback(async (message: TaskMessage) => {
     const sessionId = String(toDeepRecord(message.metadataJson).questionnaireSessionId || '');
@@ -566,6 +599,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
             onOpenOverview={handleOpenOverview}
             isOverviewActive={isOverviewActive}
             onOpenFolderBrowser={handleOpenFolderBrowser}
+            onRefreshProjects={() => void workspace.refreshProjectList()}
+            isProjectListRefreshing={workspace.isProjectListRefreshing}
           />
         </Panel>
         <Separator className="nightworkers-panel-resize-handle" />
@@ -598,7 +633,10 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               sessions={workspace.sessions}
             />
           ) : projectEvaluationProject ? (
-            <ProjectEvaluationMockScreen project={projectEvaluationProject} />
+            <ProjectEvaluationMockScreen
+              onTasksCreated={handleProjectEvaluationTasksCreated}
+              project={projectEvaluationProject}
+            />
           ) : showQueueScreen ? (
             <ImplementationQueueScreen
               dashboard={queueState.implementationQueue}

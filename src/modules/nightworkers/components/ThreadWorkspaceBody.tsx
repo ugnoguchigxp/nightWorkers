@@ -132,6 +132,19 @@ function BackgroundProcessesStrip({
   );
 }
 
+export function projectEvaluationComposerDraftState(
+  activeSession: Task | null,
+  taskMessages: TaskMessage[]
+) {
+  const isProjectEvaluationTask = activeSession?.createdBy === 'project-evaluation';
+  const hasSentUserPrompt = taskMessages.some((message) => message.role === 'user');
+  return {
+    discardStoredDraft: isProjectEvaluationTask && hasSentUserPrompt,
+    initialPrompt:
+      isProjectEvaluationTask && !hasSentUserPrompt ? activeSession.objective?.trim() || '' : '',
+  };
+}
+
 export function ThreadBody({
   activeSession,
   activeStreamingResponse,
@@ -167,6 +180,7 @@ export function ThreadBody({
 }: ThreadBodyProps) {
   const composerResizeObserverRef = useRef<ResizeObserver | null>(null);
   const [composerReservedHeight, setComposerReservedHeight] = useState(176);
+  const composerDraftState = projectEvaluationComposerDraftState(activeSession, taskMessages);
 
   const updateComposerReservedHeight = useCallback((node: HTMLDivElement | null) => {
     if (!node) return;
@@ -245,6 +259,8 @@ export function ThreadBody({
                 ? `nightworkers:composer:${activeSession.id}`
                 : 'nightworkers:composer:new'
             }
+            initialPrompt={composerDraftState.initialPrompt}
+            discardStoredDraft={composerDraftState.discardStoredDraft}
             artifactContext={activeArtifactContext}
             model={model}
             thinkingDepth={thinkingDepth}

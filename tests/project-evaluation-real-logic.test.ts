@@ -5,6 +5,7 @@ import path from 'node:path';
 import { z } from '@hono/zod-openapi';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { ensureNightWorkersSchema } from '../api/db/bootstrap';
+import * as nightworkersRepo from '../api/modules/nightworkers/nightworkers.repository';
 import { buildProjectEvaluationBundle } from '../api/modules/project-evaluation/project-evaluation-bundle.service';
 import { LLM_ROLE_ORDER, llmRoleSchema } from '../api/routes/settings-runtime';
 import {
@@ -380,6 +381,9 @@ describe('project evaluation real logic', () => {
         ideaId: improvements.ideas[0].id,
         taskId: tasks.tasks[0].id,
       });
+      expect(tasks.tasks[0].objective).toBe(improvements.ideas[0].agentPrompt);
+      const taskMessages = await nightworkersRepo.listTaskMessages(tasks.tasks[0].id);
+      expect(taskMessages).toEqual([]);
 
       const duplicateTasksRes = await app.request(
         `http://localhost/api/project-evaluations/${evaluationDetail.evaluation.id}/tasks`,

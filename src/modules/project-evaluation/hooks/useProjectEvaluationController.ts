@@ -1,4 +1,6 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { Task } from '../../nightworkers/types';
 import {
   createProjectEvaluationTasks,
   fetchProjectEvaluationActivityEvents,
@@ -47,7 +49,18 @@ function maxActivitySeq(events: ProjectEvaluationActivityEvent[]) {
   return events.reduce((max, event) => Math.max(max, event.seq), -1);
 }
 
-export function useProjectEvaluationController(repositoryId: string) {
+export function mergeCreatedProjectEvaluationTasks(current: Task[], createdTasks: Task[]) {
+  if (createdTasks.length === 0) return current;
+  const createdIds = new Set(createdTasks.map((task) => task.id));
+  return [...createdTasks, ...current.filter((task) => !createdIds.has(task.id))];
+}
+
+export function useProjectEvaluationController(
+  repositoryId: string,
+  options: { onTasksCreated?: (tasks: Task[]) => void } = {}
+) {
+  const { onTasksCreated } = options;
+  const queryClient = useQueryClient();
   const [history, setHistory] = useState<ProjectEvaluationRun[]>([]);
   const [detail, setDetail] = useState<ProjectEvaluationDetail | null>(null);
   const [runningEvaluationId, setRunningEvaluationId] = useState<string | null>(null);
@@ -229,20 +242,29 @@ export function useProjectEvaluationController(repositoryId: string) {
     setIsCreatingTasks(true);
     setError(null);
     try {
-      const result = await parseJsonResponse<{ taskLinks: ProjectEvaluationTaskLink[] }>(
+      const result = await parseJsonResponse<{
+        tasks: Task[];
+        taskLinks: ProjectEvaluationTaskLink[];
+      }>(
         await createProjectEvaluationTasks(detail.evaluation.id, {
           ideaIds: [...selectedIdeaIds],
-          mode: 'ready',
+          mode: 'draft',
         })
       );
+      queryClient.setQueryData<Task[]>(['sessions'], (current = []) =>
+        mergeCreatedProjectEvaluationTasks(current, result.tasks)
+      );
+      void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      void queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
       setDetail({ ...detail, taskLinks: result.taskLinks });
       setSelectedIdeaIds(new Set());
+      onTasksCreated?.(result.tasks);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsCreatingTasks(false);
     }
-  }, [detail, selectedIdeaIds]);
+  }, [detail, onTasksCreated, queryClient, selectedIdeaIds]);
 
   const previousEvaluation = useMemo(() => {
     if (!detail) return null;

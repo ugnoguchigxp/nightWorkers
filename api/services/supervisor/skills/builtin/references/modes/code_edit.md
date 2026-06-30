@@ -21,6 +21,8 @@
 - 許可済み外部テンプレートを取り込む場合は copy_directory を優先する。
 - テンプレート取り込みは import_project / copy_directory だけで完了扱いにしない。major_code_edit の TodoList に manifest inspection と manifest-based verification を含める。
 - major_code_edit の todo_list operation=replace では、各 Todo に taskType を明示する。確認・調査だけの Todo は inspection または investigation、実装変更は implementation / code_edit / scaffold、局所検証は focused_verification にする。
+- TodoList pane がユーザーに見える進捗の source of truth なので、2 手以上の調査・編集・検証では最初の実質作業前に既存 Todo を start するか、作業内容と合わない場合だけ operation=replace で追跡可能な TodoList にする。
+- todo_list operation=list は診断専用であり、進捗更新として扱わない。作業段階を進める場合は start/done/block/fail を使う。
 - operation=replace に広域 verification / review / closeout Todo を含めない。NightWorkers が品質ゲート、知識登録、完了報告の固定ゲートを追加する。
 - import_project 後は postImport.gitInitialization、postImport.llmContext があればそれ、あわせて postImport.manifest、postImport.initialization の実出力を先に使う。payload が欠落している、または修復対象の失敗がある場合を除き、LLM_CONTEXT.md や package.json の再読込、install 再実行をしない。
 - copy_directory 後は package.json や pyproject.toml を読み、scripts / tool config から build / lint / typecheck / test / verify / pytest / ruff / pyright など実行可能な検証を選び、run_verification で実行する。
@@ -32,6 +34,7 @@
 ## Stop Conditions
 
 - 編集と検証が完了した場合だけ summarize へ進む。
+- 未完了 Todo が残っている場合は、done/block/fail のいずれかで整理するまで finalize_answer へ進まない。
 - observations の worker tool 結果だけを根拠に、追加作業が不要な場合だけ最終回答へ進む。
 
 ## Report Contract

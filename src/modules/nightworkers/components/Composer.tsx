@@ -19,6 +19,8 @@ type ComposerProps = {
   thinkingDepthOptions: ThinkingDepthOption[];
   latestDiffPatch?: string;
   draftStorageKey?: string;
+  initialPrompt?: string;
+  discardStoredDraft?: boolean;
   artifactContext?: WorkbenchArtifactContext | null;
   realtimeStatus?: 'initializing' | 'connecting' | 'connected' | 'disconnected';
   isStopMode?: boolean;
@@ -38,6 +40,8 @@ export function Composer({
   thinkingDepthOptions,
   latestDiffPatch = '',
   draftStorageKey,
+  initialPrompt = '',
+  discardStoredDraft = false,
   artifactContext = null,
   realtimeStatus = 'initializing',
   isStopMode = false,
@@ -74,27 +78,43 @@ export function Composer({
       setPrompt('');
       return;
     }
-    try {
-      setPrompt(window.localStorage.getItem(draftStorageKey) || '');
-    } catch {
+    if (discardStoredDraft) {
+      try {
+        window.localStorage.removeItem(draftStorageKey);
+      } catch {
+        // localStorage can be unavailable in private contexts; the in-memory draft still works.
+      }
       setPrompt('');
+      return;
     }
-  }, [draftStorageKey]);
+    try {
+      setPrompt(window.localStorage.getItem(draftStorageKey) || initialPrompt);
+    } catch {
+      setPrompt(initialPrompt);
+    }
+  }, [discardStoredDraft, draftStorageKey, initialPrompt]);
 
   useEffect(() => {
-    if (!draftStorageKey) return;
+    if (!draftStorageKey || discardStoredDraft) return;
     try {
       if (prompt) window.localStorage.setItem(draftStorageKey, prompt);
       else window.localStorage.removeItem(draftStorageKey);
     } catch {
       // localStorage can be unavailable in private contexts; the in-memory draft still works.
     }
-  }, [draftStorageKey, prompt]);
+  }, [discardStoredDraft, draftStorageKey, prompt]);
 
   async function submitCurrentPrompt() {
     if (!canSubmit) return;
     const text = prompt.trim();
     await onSubmit(text, intent);
+    if (draftStorageKey) {
+      try {
+        window.localStorage.removeItem(draftStorageKey);
+      } catch {
+        // localStorage cleanup is best-effort; prompt state still clears below.
+      }
+    }
     setPrompt('');
   }
 

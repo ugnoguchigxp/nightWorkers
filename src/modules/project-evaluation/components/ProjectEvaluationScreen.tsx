@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { Task } from '../../nightworkers/types';
 import { useProjectEvaluationController } from '../hooks/useProjectEvaluationController';
 import type { ProjectEvaluationProject } from '../model/projectEvaluationTypes';
 import { DimensionSelector } from './DimensionSelector';
@@ -12,8 +13,14 @@ import { ProjectEvaluationToolbar } from './ProjectEvaluationToolbar';
 
 type EvaluationTab = 'result' | 'activity';
 
-export function ProjectEvaluationScreen({ project }: { project: ProjectEvaluationProject }) {
-  const controller = useProjectEvaluationController(project.id);
+export function ProjectEvaluationScreen({
+  project,
+  onTasksCreated,
+}: {
+  project: ProjectEvaluationProject;
+  onTasksCreated?: (tasks: Task[]) => void;
+}) {
+  const controller = useProjectEvaluationController(project.id, { onTasksCreated });
   const detail = controller.detail;
   const [activeTab, setActiveTab] = useState<EvaluationTab>('result');
   const wasRunningRef = useRef(false);

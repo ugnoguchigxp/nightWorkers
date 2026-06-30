@@ -364,13 +364,16 @@ type WorkbenchPlanModeGate = z.infer<typeof workbenchPlanModeGateSchema> & {
 async function decideWorkbenchPlanModeGate(input: {
   projectRoot: string;
   prompt: string;
+  task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>;
+  messages: Awaited<ReturnType<typeof repo.listTaskMessages>>;
+  runs: Awaited<ReturnType<typeof repo.listTaskRunsForTask>>;
   routeOverride: ReturnType<typeof normalizeStructuredLlmModelTarget> | null;
   emitEvent: (event: SupervisorLlmDebugEvent) => void | Promise<void>;
   taskId: string;
 }): Promise<WorkbenchPlanModeGate> {
   const raw = await callStructuredJsonLLM(
     buildWorkbenchPlanModeGatePrompt(input.projectRoot),
-    input.prompt,
+    buildWorkbenchPlanModeGateUserPrompt(input),
     {
       schemaName: 'workbench_plan_mode_gate',
       schema: {
@@ -404,9 +407,11 @@ async function decideWorkbenchPlanModeGate(input: {
 function buildWorkbenchPlanModeGatePrompt(projectRoot: string) {
   return [
     'Workbench intake で次の処理を1つだけ判定してください。',
+    '現在のユーザー文だけでなく、提示された Task context / Recent conversation / Latest non-general run を判断材料にしてください。',
     'jobType、作業種別、難易度、実装規模、レビュー種別、調査種別は分類しないでください。',
     'shouldStartPlanMode は、ユーザーが計画、実装計画、設計方針、仕様策定、質問票化、Blueprint など、実装前の計画作成を明示的に依頼した場合だけ true にしてください。',
     '質問、確認、説明依頼、状態確認は shouldStartPlanMode=false かつ action="general_answer" にしてください。',
+    'ただし、直前の可否回答や状態確認に続いてユーザーが作業の続行、再開、実行を求めている場合は状態確認ではありません。Latest non-general run があればその executionMode を優先し、なければ action="implementation" にしてください。',
     '修正、実装、設定変更、依存更新、リファクタは shouldStartPlanMode=false かつ action="implementation" にしてください。',
     'コードレビュー、差分レビュー、品質レビューは shouldStartPlanMode=false かつ action="review" にしてください。',
     'ログ確認、原因調査、実行時状態の確認、テスト実行や検証依頼は shouldStartPlanMode=false かつ action="runtime_debug" にしてください。',
@@ -419,6 +424,88 @@ function buildWorkbenchPlanModeGatePrompt(projectRoot: string) {
     '[Output Schema]',
     '{ "shouldStartPlanMode": boolean, "action": "plan_mode" | "general_answer" | "implementation" | "review" | "runtime_debug", "reason": "short reason" }',
   ].join('\n');
+}
+
+function buildWorkbenchPlanModeGateUserPrompt(input: {
+  prompt: string;
+  task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>;
+  messages: Awaited<ReturnType<typeof repo.listTaskMessages>>;
+  runs: Awaited<ReturnType<typeof repo.listTaskRunsForTask>>;
+}) {
+  const recentMessages = input.messages.slice(-6).map((message) => {
+    const metadata = toRecord(message.metadataJson);
+    const intent = typeof metadata?.intent === 'string' ? ` intent=${metadata.intent}` : '';
+    return `- ${message.role}${intent}: ${compactForGatePrompt(message.content, 360)}`;
+  });
+  const latestNonGeneralRun = input.runs.find((run) => {
+    const executionMode = readRunExecutionMode(run.contextSnapshot);
+    return executionMode && executionMode !== 'general_answer';
+  });
+  const latestRun = input.runs[0];
+  const latestRunExecutionMode = latestRun ? readRunExecutionMode(latestRun.contextSnapshot) : null;
+  const latestNonGeneralRunExecutionMode = latestNonGeneralRun
+    ? readRunExecutionMode(latestNonGeneralRun.contextSnapshot)
+    : null;
+  const latestRunLines = latestRun
+    ? [
+        `Latest run: status=${latestRun.status}`,
+        latestRunExecutionMode ? `Latest run executionMode=${latestRunExecutionMode}` : null,
+        latestRun.summary
+          ? `Latest run summary=${compactForGatePrompt(latestRun.summary, 180)}`
+          : null,
+      ].filter((line): line is string => Boolean(line))
+    : ['Latest run: none'];
+  const latestNonGeneralRunLines = latestNonGeneralRun
+    ? [
+        `Latest non-general run: status=${latestNonGeneralRun.status}`,
+        `Latest non-general run executionMode=${latestNonGeneralRunExecutionMode}`,
+        latestNonGeneralRun.summary
+          ? `Latest non-general run summary=${compactForGatePrompt(
+              latestNonGeneralRun.summary,
+              180
+            )}`
+          : null,
+      ].filter((line): line is string => Boolean(line))
+    : ['Latest non-general run: none'];
+
+  return [
+    '[Task Context]',
+    `Task status: ${input.task.status}`,
+    `Task title: ${compactForGatePrompt(input.task.title, 180)}`,
+    input.task.objective
+      ? `Task objective: ${compactForGatePrompt(input.task.objective, 240)}`
+      : null,
+    ...latestRunLines,
+    ...latestNonGeneralRunLines,
+    '',
+    '[Recent Conversation]',
+    recentMessages.length ? recentMessages.join('\n') : '- none',
+    '',
+    '[Current User Message]',
+    input.prompt,
+  ]
+    .filter((line): line is string => line !== null)
+    .join('\n');
+}
+
+function readRunExecutionMode(value: unknown) {
+  const context = toRecord(value);
+  const executionMode = context?.executionMode;
+  return typeof executionMode === 'string' && executionMode.trim().length > 0
+    ? executionMode.trim()
+    : null;
+}
+
+function compactForGatePrompt(value: string, maxLength: number) {
+  const compacted = value.replace(/\s+/g, ' ').trim();
+  if (compacted.length <= maxLength) return compacted;
+  return `${compacted.slice(0, maxLength - 1)}…`;
+}
+
+function toRecord(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 async function handleWorkbenchIntakeMessage(
@@ -445,6 +532,9 @@ async function handleWorkbenchIntakeMessage(
     const planModeGate = await decideWorkbenchPlanModeGate({
       projectRoot,
       prompt: llmPrompt,
+      task,
+      messages: await repo.listTaskMessages(taskId),
+      runs: await repo.listTaskRunsForTask(taskId),
       routeOverride: options.llmRouteOverride || null,
       emitEvent: emitWorkbenchLlmDebugEvent,
       taskId,

@@ -1,3 +1,4 @@
+import type { Task } from '../../nightworkers/types';
 import type { ProjectEvaluationProject } from '../model/projectEvaluationTypes';
 import { ProjectEvaluationImprovementInstructionField } from './ImprovementIdeaCard';
 import { ProjectEvaluationScreen } from './ProjectEvaluationScreen';
@@ -21,6 +22,12 @@ export const projectEvaluationImprovementIdeas: ProjectEvaluationImprovementIdea
   },
 ];
 
-export function ProjectEvaluationMockScreen({ project }: { project: ProjectEvaluationProject }) {
-  return <ProjectEvaluationScreen project={project} />;
+export function ProjectEvaluationMockScreen({
+  project,
+  onTasksCreated,
+}: {
+  project: ProjectEvaluationProject;
+  onTasksCreated?: (tasks: Task[]) => void;
+}) {
+  return <ProjectEvaluationScreen onTasksCreated={onTasksCreated} project={project} />;
 }

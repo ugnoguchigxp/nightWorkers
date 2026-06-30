@@ -26,6 +26,7 @@ import {
   type RuntimeUsageRecorder,
   recordCodexRuntimeUsageIfPresent,
 } from './codex-sdk/codex-sdk-usage';
+import { RuntimeSessionStateStore } from './runtime-session-state';
 import type {
   AgentRunContext,
   AgentRuntime,
@@ -47,10 +48,54 @@ const DEFAULT_RESULT: AgentRuntimeResult = {
   riskLevel: 'high',
 };
 
+type CodexTerminalReason =
+  | 'provider_capacity'
+  | 'codex_exec_nonzero'
+  | 'unrecovered_tool_failure'
+  | 'unknown_runtime_error';
+
+type CodexRuntimeFailureEvidence = {
+  reason: CodexTerminalReason;
+  message: string;
+  source: 'runtime_error' | 'turn_failed' | 'stream_error' | 'exec_exit';
+  rawMessage?: string;
+};
+
+type CodexExecExitError = {
+  detail: string | null;
+  message: string;
+  stderr: string;
+};
+
+type CodexObservedFileChange = {
+  filePath: string;
+  providerItemId: string | null;
+  observedAtMs: number;
+};
+
+type CodexToolFailureDiagnostic = {
+  kind: 'apply_patch_verification_failed';
+  filePath: string | null;
+  recovered: boolean;
+  reason: CodexTerminalReason;
+  message: string;
+};
+
+type CodexFailureReport = {
+  reason: CodexTerminalReason;
+  summary: string;
+  diagnostics: string[];
+  execExitError: CodexExecExitError | null;
+  recoveredToolFailures: CodexToolFailureDiagnostic[];
+  unrecoveredToolFailures: CodexToolFailureDiagnostic[];
+};
+
 export class CodexAgentRuntime implements AgentRuntime {
   readonly kind = 'codex-agent' as const;
   private cancelledRunIds = new Set<string>();
   private readonly threadFactory?: CodexThreadFactory;
+  private readonly runtimeSessionStore: RuntimeSessionStateStore;
+  private readonly persistRuntimeSessionState: boolean;
   private readonly collectWorkspaceDiff: boolean;
   private readonly persistRuntimeUsage: boolean;
   private readonly usageRecorder: RuntimeUsageRecorder;
@@ -58,12 +103,16 @@ export class CodexAgentRuntime implements AgentRuntime {
   constructor(
     input: {
       threadFactory?: CodexThreadFactory;
+      runtimeSessionStore?: RuntimeSessionStateStore;
+      persistRuntimeSessionState?: boolean;
       collectWorkspaceDiff?: boolean;
       persistRuntimeUsage?: boolean;
       usageRecorder?: RuntimeUsageRecorder;
     } = {}
   ) {
     this.threadFactory = input.threadFactory;
+    this.runtimeSessionStore = input.runtimeSessionStore ?? new RuntimeSessionStateStore();
+    this.persistRuntimeSessionState = input.persistRuntimeSessionState ?? !input.threadFactory;
     this.collectWorkspaceDiff = input.collectWorkspaceDiff ?? !input.threadFactory;
     this.persistRuntimeUsage = input.persistRuntimeUsage ?? !input.threadFactory;
     this.usageRecorder = input.usageRecorder ?? recordLlmUsage;
@@ -85,6 +134,8 @@ export class CodexAgentRuntime implements AgentRuntime {
     const auditState = createCodexRuntimeAuditState({
       executionMode: readCodexRuntimeExecutionMode(context),
     });
+    let lastRuntimeError: CodexRuntimeFailureEvidence | null = null;
+    const completedFileChanges: CodexObservedFileChange[] = [];
 
     try {
       if (signal?.aborted || this.cancelledRunIds.has(context.runId)) {
@@ -92,7 +143,7 @@ export class CodexAgentRuntime implements AgentRuntime {
         return this.toCancelled('');
       }
 
-      const thread = await this.createThread(context);
+      const thread = await this.createThread(context, sink);
       const { events } = await thread.runStreamed(buildCodexRuntimePrompt(context), {
         signal: controller.signal,
       });
@@ -108,6 +159,9 @@ export class CodexAgentRuntime implements AgentRuntime {
           for (const audited of auditedEvents) {
             logs.push(audited.message);
             await sink.emit(audited);
+            if (this.persistRuntimeSessionState) {
+              await persistCodexProviderThreadIfPresent(this.runtimeSessionStore, context, audited);
+            }
           }
           const importOutcome = getProjectImportOutcome(mapped);
           if (importOutcome?.kind === 'cancelled') {
@@ -175,6 +229,15 @@ export class CodexAgentRuntime implements AgentRuntime {
           if (mapped.type === 'runtime_error') {
             terminalState = 'failed';
             stoppedBy = 'llm_error';
+            lastRuntimeError = readRuntimeFailureEvidence(mapped);
+            finalText = buildCodexFailureReport({
+              terminalError: lastRuntimeError,
+              execExitError: null,
+              completedFileChanges,
+            }).summary;
+          }
+          if (mapped.type === 'diff_collected') {
+            completedFileChanges.push(...readCompletedFileChanges(mapped));
           }
         }
       }
@@ -198,16 +261,53 @@ export class CodexAgentRuntime implements AgentRuntime {
         return this.toCancelled(logs.join('\n'));
       }
       const message = err instanceof Error ? err.message : String(err);
+      const execExitError = parseCodexExecExitError(message);
+      const failureReport = buildCodexFailureReport({
+        terminalError: lastRuntimeError,
+        execExitError,
+        unknownErrorMessage: execExitError ? null : message,
+        completedFileChanges,
+      });
+      for (const diagnostic of failureReport.recoveredToolFailures) {
+        await sink.emit({
+          type: 'runtime_warning',
+          message: `[Codex Diagnostic] ${diagnostic.message}`,
+          payload: {
+            code: 'recovered_tool_failure',
+            severity: 'warning',
+            message: diagnostic.message,
+            toolName: 'apply_patch',
+            changedFiles: diagnostic.filePath ? [diagnostic.filePath] : [],
+          },
+        });
+      }
       await sink.emit({
         type: 'runtime_error',
-        message: `[System Error] Codex Agent Runtime failed: ${message}`,
-        payload: { provider: 'codex', error: message },
+        message: `[System Error] ${failureReport.summary}`,
+        payload: {
+          provider: 'codex',
+          error: failureReport.summary,
+          rawError: message,
+          terminalReason: failureReport.reason,
+          diagnosticKind: execExitError ? 'codex_exec_nonzero' : 'runtime_error',
+          recoveredToolFailures: failureReport.recoveredToolFailures,
+          unrecoveredToolFailures: failureReport.unrecoveredToolFailures,
+        },
       });
       return {
         ...DEFAULT_RESULT,
-        summary: `Codex Agent Runtime failed: ${message}`,
-        logContent: [...logs, message].join('\n'),
+        summary: failureReport.summary,
+        finalReport: failureReport.summary,
+        logContent: [...logs, ...failureReport.diagnostics].join('\n'),
         contractWarnings: auditState.contractWarnings,
+        testResults: {
+          codexFailure: {
+            terminalReason: failureReport.reason,
+            execExitDetail: failureReport.execExitError?.detail ?? null,
+            recoveredToolFailures: failureReport.recoveredToolFailures,
+            unrecoveredToolFailures: failureReport.unrecoveredToolFailures,
+          },
+        },
       };
     } finally {
       signal?.removeEventListener('abort', abort);
@@ -257,8 +357,20 @@ export class CodexAgentRuntime implements AgentRuntime {
       }
       if (toolName === 'nightworkers.todo_list') {
         auditState.sawAnyNightworkersTodo = true;
-        if (event.type === 'tool_call_finished' && readToolOperation(payload) === 'replace') {
-          auditState.sawNightworkersTodoReplace = true;
+        if (event.type === 'tool_call_finished') {
+          const operation = readToolOperation(payload);
+          if (operation === 'list') {
+            auditState.sawNightworkersTodoList = true;
+          }
+          if (isTodoProgressMutationOperation(operation) && !isFailedToolPayload(payload)) {
+            auditState.sawNightworkersTodoMutation = true;
+            auditState.firstNightworkersTodoMutationSequence ??= sequence;
+            auditState.lastNightworkersTodoMutationSequence = sequence;
+            auditState.lastNightworkersTodoMutationOperation = operation;
+            if (operation === 'replace') {
+              auditState.sawNightworkersTodoReplace = true;
+            }
+          }
         }
       }
       if (event.type === 'tool_call_finished' && !expectedCodexTools.has(toolName)) {
@@ -301,6 +413,23 @@ export class CodexAgentRuntime implements AgentRuntime {
           normalizedCommand: normalizeVerificationCommand(command),
           commandClass,
           exitCode,
+        });
+      }
+      if (
+        commandClass === 'broad_verification' &&
+        auditState.lastFileChangeSequence !== null &&
+        (auditState.lastNightworkersTodoMutationSequence === null ||
+          auditState.lastNightworkersTodoMutationSequence < auditState.lastFileChangeSequence)
+      ) {
+        warnings.push({
+          code: 'codex_todo_progress_stale_before_verify',
+          severity: 'warning',
+          message:
+            'Codex broad verification started without a TodoList progress mutation after the latest file change.',
+          providerItemId: readString(payload.providerItemId),
+          toolName,
+          command,
+          changedFiles: auditState.lastChangedFiles,
         });
       }
       warnings.push({
@@ -349,6 +478,9 @@ export class CodexAgentRuntime implements AgentRuntime {
     }
 
     if (event.type === 'diff_collected' && isCodexFileChangeEvent(payload)) {
+      auditState.lastFileChangeSequence = sequence;
+      auditState.lastFileChangeProviderItemId = readString(payload.providerItemId);
+      auditState.lastChangedFiles = readChangedFiles(payload);
       if (executionMode === 'planning') {
         warnings.push({
           code: 'codex_plan_mode_file_change',
@@ -357,6 +489,29 @@ export class CodexAgentRuntime implements AgentRuntime {
           providerItemId: readString(payload.providerItemId),
           changedFiles: readChangedFiles(payload),
         });
+      }
+      if (!auditState.sawNightworkersTodoMutation) {
+        if (auditState.sawNightworkersTodoList) {
+          warnings.push({
+            code: 'codex_todo_progress_list_only',
+            severity: 'warning',
+            message:
+              'Codex called nightworkers.todo_list operation=list, but no TodoList progress mutation occurred before file changes.',
+            providerItemId: readString(payload.providerItemId),
+            toolName: 'nightworkers.todo_list',
+            changedFiles: readChangedFiles(payload),
+          });
+        } else {
+          warnings.push({
+            code: 'codex_todo_progress_missing',
+            severity: 'warning',
+            message:
+              'Codex file_change occurred before any nightworkers.todo_list progress mutation.',
+            providerItemId: readString(payload.providerItemId),
+            toolName: 'nightworkers.todo_list',
+            changedFiles: readChangedFiles(payload),
+          });
+        }
       }
       const todoEvidence = await this.readCurrentTodoEvidence(context);
       const currentTodo = todoEvidence.todo;
@@ -603,8 +758,55 @@ export class CodexAgentRuntime implements AgentRuntime {
     };
   }
 
-  private async createThread(context: AgentRunContext) {
-    return createCodexRuntimeThread({ context, threadFactory: this.threadFactory });
+  private async createThread(context: AgentRunContext, sink: AgentRuntimeSink) {
+    return createCodexRuntimeThread({
+      context,
+      threadFactory: this.threadFactory,
+      onResumeEvent: async (event) => {
+        if (event.status === 'reused') {
+          await sink.emit({
+            type: 'runtime_started',
+            message: '[Codex] Runtime session resume state reused.',
+            payload: {
+              provider: 'codex',
+              action: 'runtime.resume_state_reused',
+              resumeState: 'reused',
+              providerThreadId: event.providerThreadId,
+              stateId: event.stateId ?? null,
+            },
+          });
+          return;
+        }
+        if (event.status === 'fallback_started_fresh') {
+          if (event.stateId) {
+            await this.runtimeSessionStore.markRuntimeSessionStateResumeFailed({
+              id: event.stateId,
+              error: event.error,
+            });
+          }
+          await sink.emit({
+            type: 'runtime_warning',
+            message: '[Codex] Runtime session resume failed; started a fresh thread.',
+            payload: {
+              code: 'codex_runtime_resume_failed',
+              severity: 'warning',
+              message: 'Codex runtime session resume failed; started a fresh thread.',
+              providerItemId: event.providerThreadId,
+            },
+          });
+          return;
+        }
+        await sink.emit({
+          type: 'runtime_started',
+          message: '[Codex] Runtime session resume state unavailable; starting fresh.',
+          payload: {
+            provider: 'codex',
+            action: 'runtime.resume_state_missing',
+            resumeState: 'unavailable',
+          },
+        });
+      },
+    });
   }
 
   private toCancelled(logContent: string): AgentRuntimeResult {
@@ -629,6 +831,7 @@ export class CodexAgentRuntime implements AgentRuntime {
       riskLevel: AgentRuntimeResult['riskLevel'];
       collectDiff?: boolean;
       auditState: CodexRuntimeAuditState;
+      testResults?: unknown;
     }
   ): Promise<AgentRuntimeResult> {
     const diffPatch =
@@ -649,6 +852,7 @@ export class CodexAgentRuntime implements AgentRuntime {
       logContent: logs.join('\n'),
       diffPatch,
       contractWarnings,
+      testResults: input.testResults,
     };
     await sink.emit({
       type: 'runtime_finished',
@@ -676,6 +880,30 @@ export class CodexAgentRuntime implements AgentRuntime {
     const result = await gitDiffTool({ repoRoot: context.repoRoot });
     if (!result.ok || !result.payload.hasChanges) return '';
     const changedFiles = changedFilesFromDiff(result.payload.diff);
+    if (!auditState.sawNightworkersTodoMutation && !hasTodoProgressWarning(auditState)) {
+      const warning = this.toContractWarningEvent(
+        auditState,
+        auditState.sawNightworkersTodoList
+          ? {
+              code: 'codex_todo_progress_list_only',
+              severity: 'warning',
+              message:
+                'Codex completed with workspace changes after nightworkers.todo_list operation=list only; list is not progress.',
+              toolName: 'nightworkers.todo_list',
+              changedFiles,
+            }
+          : {
+              code: 'codex_todo_progress_missing',
+              severity: 'warning',
+              message:
+                'Codex completed with workspace changes before any nightworkers.todo_list progress mutation.',
+              toolName: 'nightworkers.todo_list',
+              changedFiles,
+            }
+      );
+      logs.push(warning.message);
+      await sink.emit(warning);
+    }
     const message = `[Codex] Workspace diff collected: ${changedFiles.length || 'unknown'} file(s).`;
     logs.push(message);
     await sink.emit({
@@ -693,6 +921,179 @@ export class CodexAgentRuntime implements AgentRuntime {
     });
     return result.payload.diff;
   }
+}
+
+async function persistCodexProviderThreadIfPresent(
+  store: RuntimeSessionStateStore,
+  context: AgentRunContext,
+  event: AgentRuntimeEvent
+) {
+  const payload = readEventPayload(event);
+  if (event.type !== 'runtime_started') return;
+  const providerThreadId = readString(payload.providerThreadId);
+  if (!providerThreadId) return;
+  await store.upsertRuntimeSessionState({
+    taskId: context.taskId,
+    repositoryId: context.repositoryId,
+    runId: context.runId,
+    runtimeLane: 'codex-sdk',
+    provider: 'codex',
+    providerSessionId: providerThreadId,
+    executionMode: readCodexRuntimeExecutionMode(context),
+    model: readCodexRuntimeModel(context),
+    metadata: {
+      source: 'thread.started',
+      providerThreadId,
+    },
+  });
+}
+
+function readRuntimeFailureEvidence(event: AgentRuntimeEvent): CodexRuntimeFailureEvidence {
+  const payload = readEventPayload(event);
+  const rawMessage = readString(payload.error) ?? event.message;
+  const providerEventType = readString(payload.providerEventType);
+  return {
+    reason: classifyTerminalRuntimeError(rawMessage),
+    message: sanitizeSingleLine(rawMessage),
+    source:
+      providerEventType === 'turn.failed'
+        ? 'turn_failed'
+        : providerEventType === 'error'
+          ? 'stream_error'
+          : 'runtime_error',
+    rawMessage,
+  };
+}
+
+function readCompletedFileChanges(event: AgentRuntimeEvent): CodexObservedFileChange[] {
+  const payload = readEventPayload(event);
+  if (payload.status !== 'completed') return [];
+  const observedAtMs = Date.now();
+  return readChangedFiles(payload).map((filePath) => ({
+    filePath,
+    providerItemId: readString(payload.providerItemId),
+    observedAtMs,
+  }));
+}
+
+function parseCodexExecExitError(message: string): CodexExecExitError | null {
+  const match = /^Codex Exec exited with ([^:]+):\s*([\s\S]*)$/.exec(message);
+  if (!match) return null;
+  return {
+    detail: match[1]?.trim() || null,
+    message,
+    stderr: match[2] || '',
+  };
+}
+
+function classifyTerminalRuntimeError(message: string): CodexTerminalReason {
+  const clean = stripAnsi(message);
+  if (/Selected model is at capacity/i.test(clean)) return 'provider_capacity';
+  if (/^Codex Exec exited with\b/.test(clean)) return 'codex_exec_nonzero';
+  return 'unknown_runtime_error';
+}
+
+function buildCodexFailureReport(input: {
+  terminalError: CodexRuntimeFailureEvidence | null;
+  execExitError: CodexExecExitError | null;
+  unknownErrorMessage?: string | null;
+  completedFileChanges: CodexObservedFileChange[];
+}): CodexFailureReport {
+  const toolFailures = input.execExitError
+    ? detectApplyPatchFailures(input.execExitError.stderr, input.completedFileChanges)
+    : [];
+  const unrecoveredToolFailures = toolFailures.filter((failure) => !failure.recovered);
+  const recoveredToolFailures = toolFailures.filter((failure) => failure.recovered);
+  const reason: CodexTerminalReason =
+    input.terminalError?.reason ??
+    (unrecoveredToolFailures.length > 0
+      ? 'unrecovered_tool_failure'
+      : input.execExitError
+        ? 'codex_exec_nonzero'
+        : 'unknown_runtime_error');
+  const terminalMessage =
+    input.terminalError?.message ??
+    unrecoveredToolFailures[0]?.message ??
+    (input.execExitError
+      ? `Codex exec exited with ${input.execExitError.detail || 'non-zero status'}.`
+      : input.unknownErrorMessage
+        ? sanitizeSingleLine(input.unknownErrorMessage)
+        : 'Unknown runtime error.');
+  const diagnostics: string[] = [];
+  for (const failure of recoveredToolFailures) diagnostics.push(failure.message);
+  if (input.execExitError) {
+    diagnostics.push(
+      `Codex exec exited with ${input.execExitError.detail || 'non-zero status'}; stderr retained in diagnostics.`
+    );
+    if (input.execExitError.stderr.trim()) diagnostics.push(input.execExitError.stderr.trim());
+  }
+  return {
+    reason,
+    summary: `Codex Agent Runtime failed: ${reason}: ${terminalMessage}`,
+    diagnostics,
+    execExitError: input.execExitError,
+    recoveredToolFailures,
+    unrecoveredToolFailures,
+  };
+}
+
+function detectApplyPatchFailures(
+  stderr: string,
+  completedFileChanges: CodexObservedFileChange[]
+): CodexToolFailureDiagnostic[] {
+  const clean = stripAnsi(stderr);
+  if (!/apply_patch verification failed/i.test(clean)) return [];
+  const filePath = extractApplyPatchFailurePath(clean);
+  if (!filePath) return [];
+  const failureOccurredAtMs = extractFirstIsoTimestampMs(clean);
+  const recovered = completedFileChanges.some(
+    (change) =>
+      filePathsMatch(change.filePath, filePath) &&
+      (failureOccurredAtMs === null || change.observedAtMs >= failureOccurredAtMs)
+  );
+  const shortPath = filePath;
+  return [
+    {
+      kind: 'apply_patch_verification_failed',
+      filePath,
+      recovered,
+      reason: recovered ? 'codex_exec_nonzero' : 'unrecovered_tool_failure',
+      message: recovered
+        ? `Recovered tool failure: apply_patch verification failed in ${shortPath}.`
+        : `Unrecovered tool failure: apply_patch verification failed in ${shortPath}.`,
+    },
+  ];
+}
+
+function extractApplyPatchFailurePath(stderr: string): string | null {
+  const match = /Failed to find expected lines in ([^\n:]+):/.exec(stderr);
+  return match?.[1]?.trim() || null;
+}
+
+function extractFirstIsoTimestampMs(value: string): number | null {
+  const match = /\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?Z\b/.exec(value);
+  if (!match) return null;
+  const fractional = match[2] ? match[2].slice(0, 4).padEnd(4, '0') : '';
+  const timestamp = Date.parse(`${match[1]}${fractional}Z`);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function filePathsMatch(observedPath: string, failurePath: string) {
+  const normalizedObserved = observedPath.replaceAll('\\', '/');
+  const normalizedFailure = failurePath.replaceAll('\\', '/');
+  return (
+    normalizedObserved === normalizedFailure ||
+    normalizedFailure.endsWith(`/${normalizedObserved}`) ||
+    normalizedObserved.endsWith(`/${normalizedFailure}`)
+  );
+}
+
+function stripAnsi(value: string) {
+  return value.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g'), '');
+}
+
+function sanitizeSingleLine(value: string) {
+  return stripAnsi(value).replace(/\s+/g, ' ').trim();
 }
 
 function readEventPayload(event: AgentRuntimeEvent): Record<string, unknown> {
@@ -741,11 +1142,34 @@ function readCodexRuntimeExecutionMode(context: AgentRunContext) {
   return 'implementation';
 }
 
+function readCodexRuntimeModel(context: AgentRunContext) {
+  const codex = readRecord(context.runtimeOptions?.codex);
+  return readString(codex?.model);
+}
+
 function readToolOperation(payload: Record<string, unknown>): string | null {
   const args = payload.arguments;
   if (!args || typeof args !== 'object' || Array.isArray(args)) return null;
   const operation = (args as Record<string, unknown>).operation;
   return typeof operation === 'string' ? operation : null;
+}
+
+function isTodoProgressMutationOperation(value: string | null) {
+  return (
+    value === 'replace' ||
+    value === 'start' ||
+    value === 'done' ||
+    value === 'block' ||
+    value === 'fail'
+  );
+}
+
+function hasTodoProgressWarning(auditState: CodexRuntimeAuditState) {
+  return auditState.contractWarnings.some(
+    (warning) =>
+      warning.code === 'codex_todo_progress_missing' ||
+      warning.code === 'codex_todo_progress_list_only'
+  );
 }
 
 function isFailedToolPayload(payload: Record<string, unknown>) {

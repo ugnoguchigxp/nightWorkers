@@ -50,6 +50,7 @@ export class NativeApiStartupController {
     sink: AgentRuntimeSink;
     history: NativeApiHistoryItem[];
     state: NativeApiDispatchState;
+    resumeHistoryRestored?: boolean;
     signal?: AbortSignal;
   }): Promise<NativeApiStartupResult> {
     let history = input.history;
@@ -61,6 +62,7 @@ export class NativeApiStartupController {
       history,
       provider: 'runtime_gate',
       model: null,
+      executionMode: readNativeApiExecutionMode(input.context),
     });
 
     await input.sink.emit({
@@ -117,9 +119,17 @@ export class NativeApiStartupController {
       state,
     });
     history = [...history, specification.historyItem];
-    state = { ...state, specificationRead: specification.toolResult.ok };
+    const specificationResumeFallback =
+      !specification.toolResult.ok &&
+      input.resumeHistoryRestored === true &&
+      isMissingSpecificationFailure(specification.toolResult);
+    state = {
+      ...state,
+      specificationRead: specification.toolResult.ok || specificationResumeFallback,
+      ...(specificationResumeFallback ? { specificationReadFromResumeFallback: true } : {}),
+    };
 
-    if (!specification.toolResult.ok) {
+    if (!specification.toolResult.ok && !specificationResumeFallback) {
       return fail(
         history,
         state,
@@ -128,6 +138,21 @@ export class NativeApiStartupController {
           'Draft specification was not found or could not be read.',
         specification.toolResult.error
       );
+    }
+    if (specificationResumeFallback) {
+      await input.sink.emit({
+        type: 'runtime_started',
+        message:
+          '[NativeApiRunner] current specification was missing; continuing with restored native/API resume history.',
+        payload: {
+          runtime: 'native_api_runner',
+          action: 'runtime.resume_specification_missing_waived',
+          resumeState: 'reused',
+          phase: 'startup_specification',
+          executionMode: readNativeApiExecutionMode(input.context),
+          error: specification.toolResult.error,
+        },
+      });
     }
 
     const initialInstructions = await this.runMcpGate({
@@ -642,6 +667,7 @@ function buildContextCompileArguments(
   workTodo: StartupWorkTodo | null
 ) {
   const spec = toRecord(specification);
+  const specificationMissing = spec.found === false;
   const title = typeof spec.title === 'string' && spec.title.trim() ? spec.title.trim() : null;
   const digest = typeof spec.digest === 'string' && spec.digest.trim() ? spec.digest.trim() : null;
   const specContent =
@@ -657,7 +683,9 @@ function buildContextCompileArguments(
       : 'startup gate ではなく、ユーザー依頼と仕様書を現在の作業単位にする。',
     title || digest
       ? `仕様書 ${title ? `「${title}」` : ''}${digest ? ` (${digest})` : ''} を前提にする。`
-      : '読了済み仕様書を前提にする。',
+      : specificationMissing
+        ? '現行仕様書は見つからなかったため、復元済み native/API resume history とユーザー依頼を現在の作業単位にする。'
+        : '読了済み仕様書を前提にする。',
     specContent ? `仕様書要点: ${specContent}` : '',
     `executionMode=${executionMode} として、必要な実装・検証・closeout まで進める。`,
   ];
@@ -759,6 +787,10 @@ function failedToolResult(code: string, message: string, payload?: unknown): Nat
     payload,
     error: { code, message },
   };
+}
+
+function isMissingSpecificationFailure(result: NativeApiToolResult) {
+  return result.error?.code === 'SPECIFICATION_NOT_FOUND';
 }
 
 function successfulTodoAlignment(

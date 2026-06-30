@@ -20,6 +20,11 @@ export type RuntimeTodoEvidenceReadResult = {
 export type CodexRuntimeAuditState = {
   sawNightworkersTodoReplace: boolean;
   sawAnyNightworkersTodo: boolean;
+  sawNightworkersTodoMutation: boolean;
+  sawNightworkersTodoList: boolean;
+  firstNightworkersTodoMutationSequence: number | null;
+  lastNightworkersTodoMutationSequence: number | null;
+  lastNightworkersTodoMutationOperation: string | null;
   sawNightworkersImportProjectSuccess: boolean;
   sawNightworkersImportProjectFailure: boolean;
   mcpDegraded: boolean;
@@ -40,6 +45,9 @@ export type CodexRuntimeAuditState = {
   sawHighRiskNativeImportCommand: boolean;
   highRiskNativeImportCommand: string | null;
   highRiskNativeImportProviderItemId: string | null;
+  lastFileChangeSequence: number | null;
+  lastFileChangeProviderItemId: string | null;
+  lastChangedFiles: string[];
   mcpConfig: CodexRuntimeMcpConfigState;
 };
 
@@ -49,6 +57,11 @@ export function createCodexRuntimeAuditState(
   return {
     sawNightworkersTodoReplace: false,
     sawAnyNightworkersTodo: false,
+    sawNightworkersTodoMutation: false,
+    sawNightworkersTodoList: false,
+    firstNightworkersTodoMutationSequence: null,
+    lastNightworkersTodoMutationSequence: null,
+    lastNightworkersTodoMutationOperation: null,
     sawNightworkersImportProjectSuccess: false,
     sawNightworkersImportProjectFailure: false,
     mcpDegraded: false,
@@ -63,6 +76,9 @@ export function createCodexRuntimeAuditState(
     sawHighRiskNativeImportCommand: false,
     highRiskNativeImportCommand: null,
     highRiskNativeImportProviderItemId: null,
+    lastFileChangeSequence: null,
+    lastFileChangeProviderItemId: null,
+    lastChangedFiles: [],
     mcpConfig: resolveCodexRuntimeMcpConfigState({
       env: input.executionMode ? { NIGHTWORKERS_EXECUTION_MODE: input.executionMode } : undefined,
     }),

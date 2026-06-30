@@ -22,10 +22,14 @@ export type NativeApiHistoryItem =
   | { type: 'assistant'; content: string; toolCalls?: ProviderToolCall[] }
   | { type: 'tool_result'; toolCallId: string; toolName: string; result: NativeApiToolResult };
 
-export function buildInitialNativeApiHistory(context: AgentRunContext): NativeApiHistoryItem[] {
+export function buildInitialNativeApiHistory(
+  context: AgentRunContext,
+  options: { resumeHistory?: readonly NativeApiHistoryItem[] | null } = {}
+): NativeApiHistoryItem[] {
   const userMessage = context.latestUserMessage || context.compiledPrompt;
   const items: NativeApiHistoryItem[] = [
     { type: 'system', content: buildNativeApiSystemPrompt(context) },
+    ...(options.resumeHistory ?? []),
     { type: 'user', source: 'user', content: userMessage },
   ];
   const currentTodo = context.currentTodo;
@@ -45,6 +49,59 @@ export function buildInitialNativeApiHistory(context: AgentRunContext): NativeAp
     });
   }
   return items;
+}
+
+export function sanitizeNativeApiResumeHistory(
+  history: unknown,
+  options: { maxItems?: number } = {}
+): NativeApiHistoryItem[] | null {
+  if (!Array.isArray(history)) return null;
+  const sanitized: NativeApiHistoryItem[] = [];
+  const pendingToolCallIds = new Set<string>();
+  const completedToolCallIds = new Set<string>();
+
+  for (const item of history) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    const record = item as Record<string, unknown>;
+    if (record.type === 'system') continue;
+    if (record.type === 'user') {
+      if (record.source !== 'user') continue;
+      const content = readNonEmptyString(record.content);
+      if (!content) continue;
+      sanitized.push({ type: 'user', source: 'user', content });
+      continue;
+    }
+    if (record.type === 'assistant') {
+      const content = typeof record.content === 'string' ? record.content : '';
+      const toolCalls = readProviderToolCalls(record.toolCalls);
+      if (!toolCalls) return null;
+      for (const toolCall of toolCalls) pendingToolCallIds.add(toolCall.id);
+      sanitized.push({
+        type: 'assistant',
+        content,
+        ...(toolCalls.length ? { toolCalls } : {}),
+      });
+      continue;
+    }
+    if (record.type === 'tool_result') {
+      const toolCallId = readNonEmptyString(record.toolCallId);
+      const toolName = readNonEmptyString(record.toolName);
+      const result = readNativeApiToolResult(record.result);
+      if (!toolCallId || !toolName || !result) return null;
+      if (!pendingToolCallIds.has(toolCallId) || completedToolCallIds.has(toolCallId)) {
+        return null;
+      }
+      pendingToolCallIds.delete(toolCallId);
+      completedToolCallIds.add(toolCallId);
+      sanitized.push({ type: 'tool_result', toolCallId, toolName, result });
+      continue;
+    }
+    return null;
+  }
+
+  if (pendingToolCallIds.size > 0) return null;
+  const maxItems = options.maxItems ?? 40;
+  return sanitized.slice(Math.max(0, sanitized.length - maxItems));
 }
 
 export function projectNativeApiHistoryToProviderMessages(
@@ -115,13 +172,18 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
     'リポジトリの読み書きは登録済み Project の repo root を基準にし、worker tool handler 経由で行います。',
     '',
     'Tool choice guidance:',
-    '- context_initial_instructions または context_compile を使う前に、必ず read_current_specification を成功させてください。',
+    '- context_initial_instructions または context_compile を使う前に、通常は read_current_specification を成功させてください。',
+    '- native/API resume で runtime が仕様未発見を非致命化した場合は、復元済み履歴と最新ユーザー依頼を現在の作業文脈として続行してください。',
     '- 仕様書、実装計画、artifact が source of truth です。これを読まずに contextStill へ進むと助言品質が落ちます。',
     '- 実作業前に context_initial_instructions が未実行なら、read_current_specification の後に呼び出すことを強く推奨します。',
     '- repo 固有の文脈、過去判断、実装境界、検証方針が必要な場合は read_current_specification の内容を踏まえて context_compile を使ってください。',
+    '- TodoList pane がユーザーに見える進捗の source of truth です。Timeline 追加警告ではなく、TodoList の状態遷移で現在位置を示してください。',
+    '- 2 手以上の調査、レビュー、実装、検証では、最初の実質作業前に既存 Todo を start するか、作業内容に合わない場合だけ todo_list operation=replace で UI 追跡可能な TodoList にしてください。',
     '- todo_list operation=replace は TodoList の構造を再定義する再計画操作です。見積もり変更、スコープ変更、作業分解の粒度変更、実装中に新しい必須作業が判明した場合だけ使います。',
     '- running Todo がある状態で todo_list operation=replace を使う場合は todoListReplaceReason を必ず指定してください。現在の Todo が完了したことを表すために todo_list operation=replace を使ってはいけません。',
     '- todo_list operation=start/done/block/fail は既存 Todo の状態遷移です。Todo が終わったら todo_list operation=done を使ってください。todo_list operation=done は次の pending Todo を自動で running にします。',
+    '- todo_list operation=list は診断専用であり、進捗更新ではありません。',
+    '- finalReport / finalize_answer の前に open Todo を確認し、未完了 Todo は done/block/fail のいずれかに整理してください。未確認 mutation や未実施 verification を done にしないでください。',
     '- blocker、未完了 Todo、failed tests/review、ユーザー確認へ進む判断がある場合は context_decision を強く推奨します。',
     '- closeout では、context_compile を使った場合 compile_eval を検討し、再利用可能な知識があれば register_candidates を検討してください。',
     '- 推奨 tool を使わない場合は、finalReport でその理由を短く説明してください。',
@@ -181,6 +243,7 @@ function modeGuidance(executionMode: ReturnType<typeof readNativeApiExecutionMod
     'Implementation guidance:',
     '- 実装 Todo が running になった後は、plan-only answer や次ステップ列挙だけで停止しないでください。',
     '- 実装、必要な検証、必要な修正、closeout まで進めてください。明確な blocker がある場合は todo_list operation=block/fail を使って説明してください。',
+    '- ファイル編集、DB mutation、長い検証、review 判定の後は、該当 Todo を done/block/fail のいずれかに更新してから次の段階に進んでください。',
     '- import_project を使った場合は、postImport payload と recommended verification command を優先してください。',
     '- コード変更後、package.json に verify script が存在する場合は、完了報告前の代表検証として verify command を最優先で実行してください。typecheck / lint / test / build の個別実行は、修正途中の focused check、または verify script が存在しない・実行不能な場合の fallback としてください。',
     '',
@@ -196,4 +259,47 @@ function renderCurrentTodoContext(currentTodo: NonNullable<AgentRunContext['curr
     `procedureId=${currentTodo.procedureId ?? 'none'}`,
     `status=${currentTodo.status}`,
   ].join('\n');
+}
+
+function readNonEmptyString(value: unknown) {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function readProviderToolCalls(value: unknown): ProviderToolCall[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return null;
+  const calls: ProviderToolCall[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    const record = item as Record<string, unknown>;
+    const id = readNonEmptyString(record.id);
+    const name = readNonEmptyString(record.name);
+    if (!id || !name) return null;
+    calls.push({
+      id,
+      name,
+      arguments:
+        record.arguments && typeof record.arguments === 'object' && !Array.isArray(record.arguments)
+          ? (record.arguments as Record<string, unknown>)
+          : {},
+    });
+  }
+  return calls;
+}
+
+function readNativeApiToolResult(value: unknown): NativeApiToolResult | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.ok !== 'boolean') return null;
+  const content = typeof record.content === 'string' ? record.content : null;
+  if (content === null) return null;
+  const error = record.error;
+  return {
+    ok: record.ok,
+    content,
+    ...(record.payload !== undefined ? { payload: record.payload } : {}),
+    ...(error && typeof error === 'object' && !Array.isArray(error)
+      ? { error: error as NativeApiToolResult['error'] }
+      : {}),
+  };
 }

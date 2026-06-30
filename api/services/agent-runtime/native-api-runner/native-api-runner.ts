@@ -3,6 +3,7 @@ import { estimateTokens } from '../../conversation-context/token-budget';
 import { recordLlmUsage } from '../../llm-usage';
 import { getCachedStructuredLlmProviderHealth } from '../../structured-llm/provider-health';
 import { callProviderToolTurn } from '../../structured-llm/providers';
+import { providerAdapterKey } from '../../structured-llm/request';
 import { normalizeStructuredLlmModelTarget } from '../../structured-llm/selection';
 import {
   readStructuredLlmProviderSettings,
@@ -39,7 +40,11 @@ import {
   type NativeApiDispatchState,
   type NativeApiPostImportState,
 } from './native-api-tool-dispatcher';
-import { buildInitialNativeApiHistory, type NativeApiHistoryItem } from './native-api-tool-history';
+import {
+  buildInitialNativeApiHistory,
+  type NativeApiHistoryItem,
+  sanitizeNativeApiResumeHistory,
+} from './native-api-tool-history';
 import { getNativeApiToolDefinitions } from './native-api-tool-registry';
 
 export type NativeApiToolTurnProvider = typeof callProviderToolTurn;
@@ -81,7 +86,10 @@ export class NativeApiRunner {
       return this.toCancelled();
     }
 
-    let history: NativeApiHistoryItem[] = buildInitialNativeApiHistory(context);
+    const executionMode = readNativeApiExecutionMode(context);
+    const routeOverride = readRuntimeLlmRouteOverride(context);
+    const resumeHistory = await this.loadResumeHistory(context, sink, executionMode);
+    let history: NativeApiHistoryItem[] = buildInitialNativeApiHistory(context, { resumeHistory });
     let state: NativeApiDispatchState = {
       readFiles: [],
       specificationRead: false,
@@ -99,8 +107,6 @@ export class NativeApiRunner {
     let lastTodoSnapshotContent: string | null = null;
     let lastCurrentTodoContent: string | null = null;
     let lastPostImportHistoryToolCallId: string | null = null;
-    const executionMode = readNativeApiExecutionMode(context);
-    const routeOverride = readRuntimeLlmRouteOverride(context);
     const runController = new AbortController();
     this.activeRunControllers.set(context.runId, runController);
     const timeout = createTimeoutSignal(signal, runController.signal, context.timeoutSeconds);
@@ -111,6 +117,7 @@ export class NativeApiRunner {
           sink,
           history,
           state,
+          resumeHistoryRestored: (resumeHistory?.length ?? 0) > 0,
           signal: timeout.signal,
         });
         history = startup.history;
@@ -343,6 +350,7 @@ export class NativeApiRunner {
           history,
           provider: initialProviderRequest.provider,
           model: initialProviderRequest.options.normalizedRequest.modelOrDeployment,
+          executionMode,
         });
 
         await sink.emit({
@@ -717,7 +725,7 @@ export class NativeApiRunner {
             status: canComplete ? 'completed' : 'failed',
             history,
             providerDebug,
-            model: providerResult.model ?? null,
+            model: readNativeApiCompletedTurnModel(providerResult, providerRequest),
           });
           if (canComplete) {
             return {
@@ -851,7 +859,7 @@ export class NativeApiRunner {
               status: 'completed',
               history,
               providerDebug,
-              model: providerResult.model ?? null,
+              model: readNativeApiCompletedTurnModel(providerResult, providerRequest),
             });
             return {
               terminalState: 'completed',
@@ -871,7 +879,7 @@ export class NativeApiRunner {
           status: 'completed',
           history,
           providerDebug,
-          model: providerResult.model ?? null,
+          model: readNativeApiCompletedTurnModel(providerResult, providerRequest),
         });
 
         if (state.newContextWindowRequested) {
@@ -900,6 +908,84 @@ export class NativeApiRunner {
       timeout.dispose();
       this.activeRunControllers.delete(context.runId);
     }
+  }
+
+  private async loadResumeHistory(
+    context: AgentRunContext,
+    sink: AgentRuntimeSink,
+    executionMode: ReturnType<typeof readNativeApiExecutionMode>
+  ) {
+    const getLatestCompletedTurn = this.store.getLatestCompletedTurnForPreviousRun;
+    if (typeof getLatestCompletedTurn !== 'function') return null;
+    const routeCompatibility = readNativeApiResumeRouteCompatibility(context, executionMode);
+    if (!routeCompatibility) {
+      await sink.emit({
+        type: 'runtime_started',
+        message:
+          '[NativeApiRunner] runtime session resume skipped because route compatibility is unavailable.',
+        payload: {
+          runtime: 'native_api_runner',
+          action: 'runtime.resume_state_missing',
+          resumeState: 'unavailable',
+          reason: 'route_compatibility_unavailable',
+          executionMode,
+        },
+      });
+      return null;
+    }
+    const sourceTurn = await getLatestCompletedTurn.call(this.store, {
+      taskId: context.taskId,
+      runId: context.runId,
+      provider: routeCompatibility.provider,
+      model: routeCompatibility.model,
+      executionMode,
+    });
+    if (!sourceTurn?.historyJson) {
+      await sink.emit({
+        type: 'runtime_started',
+        message: '[NativeApiRunner] runtime session resume history unavailable.',
+        payload: {
+          runtime: 'native_api_runner',
+          action: 'runtime.resume_state_missing',
+          resumeState: 'unavailable',
+          reason: 'no_compatible_completed_history',
+          compatibility: routeCompatibility,
+        },
+      });
+      return null;
+    }
+    const sanitized = sanitizeNativeApiResumeHistory(sourceTurn.historyJson);
+    if (!sanitized) {
+      await sink.emit({
+        type: 'runtime_warning',
+        message: '[NativeApiRunner] invalid runtime session resume history ignored.',
+        payload: {
+          code: 'native_api_resume_history_invalid',
+          severity: 'warning',
+          message: 'Invalid native/API resume history was ignored; runtime started fresh.',
+        },
+      });
+      return null;
+    }
+    await sink.emit({
+      type: 'runtime_started',
+      message: '[NativeApiRunner] runtime session resume history restored.',
+      payload: {
+        runtime: 'native_api_runner',
+        action: 'runtime.resume_state_reused',
+        runtimeResume: {
+          kind: 'native_api_history',
+          status: 'reused',
+          sourceRunId: sourceTurn.runId,
+          sourceTurnId: sourceTurn.id,
+          restoredItemCount: sanitized.length,
+          provider: routeCompatibility.provider,
+          model: routeCompatibility.model,
+          executionMode,
+        },
+      },
+    });
+    return sanitized;
   }
 
   async stop(runId: string): Promise<void> {
@@ -1077,6 +1163,13 @@ function summarizeNativeApiRoute(request: NativeApiProviderRequest) {
   };
 }
 
+function readNativeApiCompletedTurnModel(
+  providerResult: Extract<ProviderToolTurnResult, { type: 'supported' }>,
+  providerRequest: NativeApiProviderRequest
+) {
+  return providerResult.model ?? providerRequest.options.normalizedRequest.modelOrDeployment;
+}
+
 function validateNativeApiRouteSnapshot(
   requests: NativeApiProviderRequest[],
   context: AgentRunContext
@@ -1234,6 +1327,29 @@ function readRuntimeLlmRouteOverride(context: AgentRunContext) {
       ? (context.runtimeOptions.llmRouting as Record<string, unknown>)
       : {};
   return normalizeStructuredLlmModelTarget(routing.override);
+}
+
+function readNativeApiResumeRouteCompatibility(
+  context: AgentRunContext,
+  executionMode: ReturnType<typeof readNativeApiExecutionMode>
+) {
+  const routing =
+    context.runtimeOptions?.llmRouting &&
+    typeof context.runtimeOptions.llmRouting === 'object' &&
+    !Array.isArray(context.runtimeOptions.llmRouting)
+      ? (context.runtimeOptions.llmRouting as Record<string, unknown>)
+      : null;
+  const active = toRecord(routing?.active);
+  if (!active) return null;
+  if (readString(routing?.executionMode) !== executionMode) return null;
+  const providerId = readString(active.providerId);
+  const model = readString(active.model);
+  if (!providerId || !model || providerId === 'codex') return null;
+  return {
+    provider: providerAdapterKey(providerId),
+    model,
+    executionMode,
+  };
 }
 
 type NativeApiRuntimeTodoSnapshot = {
@@ -1443,6 +1559,10 @@ function toRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function readString(value: unknown) {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
 function firstLine(value: string) {

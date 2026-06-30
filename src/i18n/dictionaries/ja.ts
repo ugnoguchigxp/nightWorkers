@@ -37,6 +37,7 @@ export const jaDictionary = {
   'overview.kpi.stateCard': 'StateCard',
   'overview.empty': 'LLM usage はまだ記録されていません。',
   'sidebar.registerProjectFolder': 'Project folder を登録',
+  'sidebar.refreshProjects': 'Project 一覧を更新',
   'sidebar.loadingWorkspaces': 'Workspace を読み込み中...',
   'sidebar.emptyProjects':
     'Project folder は未登録です。「+」から local directory を登録してください。',

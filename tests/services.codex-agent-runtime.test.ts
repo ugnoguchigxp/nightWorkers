@@ -22,6 +22,7 @@ import {
   buildCodexRuntimeThreadOptions,
   resolveCodexRuntimeMcpConfigState,
 } from '../api/services/agent-runtime/codex-runtime-config';
+import { createCodexRuntimeThread } from '../api/services/agent-runtime/codex-sdk/codex-sdk-client';
 
 const execFileAsync = promisify(execFile);
 
@@ -99,6 +100,85 @@ describe('CodexAgentRuntime', () => {
       CODEX_ACCESS_TOKEN: 'runtime-token',
     });
     expect(options.env?.CODEX_THREAD_ID).toBeUndefined();
+  });
+
+  it('resumes a compatible Codex SDK thread when runtime resume state is present', async () => {
+    const resumedThread = fakeThread([]);
+    const freshThread = fakeThread([]);
+    const codexClient = {
+      resumeThread: vi.fn(() => resumedThread),
+      startThread: vi.fn(() => freshThread),
+    };
+    const resumeEvents: unknown[] = [];
+
+    const thread = await createCodexRuntimeThread({
+      context: {
+        ...buildContext(),
+        contextSnapshot: {
+          ...buildContext().contextSnapshot,
+          runtimeResume: {
+            kind: 'codex_thread',
+            stateId: 'state-1',
+            providerThreadId: 'codex-thread-1',
+          },
+        },
+      },
+      codexClient,
+      onResumeEvent: (event) => {
+        resumeEvents.push(event);
+      },
+    });
+
+    expect(thread).toBe(resumedThread);
+    expect(codexClient.resumeThread).toHaveBeenCalledWith(
+      'codex-thread-1',
+      expect.objectContaining({ workingDirectory: expect.any(String) })
+    );
+    expect(codexClient.startThread).not.toHaveBeenCalled();
+    expect(resumeEvents).toEqual([
+      { status: 'reused', providerThreadId: 'codex-thread-1', stateId: 'state-1' },
+    ]);
+  });
+
+  it('falls back to a fresh Codex SDK thread when resumeThread is rejected', async () => {
+    const freshThread = fakeThread([]);
+    const codexClient = {
+      resumeThread: vi.fn(() => {
+        throw new Error('resume rejected');
+      }),
+      startThread: vi.fn(() => freshThread),
+    };
+    const resumeEvents: unknown[] = [];
+
+    const thread = await createCodexRuntimeThread({
+      context: {
+        ...buildContext(),
+        contextSnapshot: {
+          ...buildContext().contextSnapshot,
+          runtimeResume: {
+            kind: 'codex_thread',
+            stateId: 'state-stale',
+            providerThreadId: 'codex-thread-stale',
+          },
+        },
+      },
+      codexClient,
+      onResumeEvent: (event) => {
+        resumeEvents.push(event);
+      },
+    });
+
+    expect(thread).toBe(freshThread);
+    expect(codexClient.resumeThread).toHaveBeenCalledOnce();
+    expect(codexClient.startThread).toHaveBeenCalledOnce();
+    expect(resumeEvents).toEqual([
+      {
+        status: 'fallback_started_fresh',
+        providerThreadId: 'codex-thread-stale',
+        stateId: 'state-stale',
+        error: 'resume rejected',
+      },
+    ]);
   });
 
   it('derives the Hono-hosted NightWorkers MCP URL from the API origin', () => {
@@ -225,6 +305,10 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain(
       'nightworkers.todo_list operation=replace 直後や context_compile 直後'
     );
+    expect(prompt).toContain('TodoList pane is the user-visible progress source of truth');
+    expect(prompt).toContain('Timeline cards are not the mechanism');
+    expect(prompt).toContain('Do not call nightworkers.todo_list operation=list to make progress');
+    expect(prompt).toContain('未確認 mutation や未実施 verification を done にしない');
     expect(prompt).toContain('nightworkers.read_current_specification');
     expect(prompt).toContain('nightworkers.list_recent_specifications');
     expect(prompt).toContain('For explicit planning, implementation-plan, specification');
@@ -827,6 +911,269 @@ describe('CodexAgentRuntime', () => {
     );
   });
 
+  it('records a Todo progress warning when file changes happen without a todo_list mutation', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'file-without-todo-progress',
+              type: 'file_change',
+              status: 'completed',
+              changes: [{ path: 'src/app.ts' }],
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as never),
+    });
+
+    const result = await runtime.start(
+      buildContext({
+        currentTodo: {
+          id: 'todo-1',
+          seq: 1,
+          title: '実装',
+          taskType: 'implementation',
+          status: 'running',
+        },
+      }),
+      { emit: async () => {} }
+    );
+
+    expect(result.contractWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'codex_todo_progress_missing',
+          providerItemId: 'file-without-todo-progress',
+          toolName: 'nightworkers.todo_list',
+          changedFiles: ['src/app.ts'],
+        }),
+      ])
+    );
+  });
+
+  it('treats todo_list list as diagnostics instead of progress evidence', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'todo-list-only',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'todo_list',
+              arguments: { operation: 'list' },
+              status: 'completed',
+              result: { ok: true },
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'file-after-list',
+              type: 'file_change',
+              status: 'completed',
+              changes: [{ path: 'src/app.ts' }],
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as never),
+    });
+
+    const result = await runtime.start(
+      buildContext({
+        currentTodo: {
+          id: 'todo-1',
+          seq: 1,
+          title: '実装',
+          taskType: 'implementation',
+          status: 'running',
+        },
+      }),
+      { emit: async () => {} }
+    );
+
+    expect(result.contractWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'codex_todo_progress_list_only',
+          providerItemId: 'file-after-list',
+          changedFiles: ['src/app.ts'],
+        }),
+      ])
+    );
+    expect(result.contractWarnings ?? []).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'codex_todo_progress_missing' })])
+    );
+  });
+
+  it('does not record a Todo progress warning when replace happens before file changes', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'todo-replace',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'todo_list',
+              arguments: { operation: 'replace', todos: [{ seq: 1, title: '実装' }] },
+              status: 'completed',
+              result: { ok: true },
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'file-after-replace',
+              type: 'file_change',
+              status: 'completed',
+              changes: [{ path: 'src/app.ts' }],
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as never),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.contractWarnings ?? []).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'codex_todo_progress_missing' }),
+        expect.objectContaining({ code: 'codex_todo_progress_list_only' }),
+      ])
+    );
+  });
+
+  it('warns when broad verification starts after file changes without fresh Todo progress', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'todo-start',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'todo_list',
+              arguments: { operation: 'start', seq: 1 },
+              status: 'completed',
+              result: { ok: true },
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'file-before-verify',
+              type: 'file_change',
+              status: 'completed',
+              changes: [{ path: 'src/app.ts' }],
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'cmd-verify',
+              type: 'command_execution',
+              command: 'bun run verify',
+              aggregated_output: 'ok',
+              exit_code: 0,
+              status: 'completed',
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as never),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.contractWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'codex_todo_progress_stale_before_verify',
+          providerItemId: 'cmd-verify',
+          command: 'bun run verify',
+          changedFiles: ['src/app.ts'],
+        }),
+      ])
+    );
+  });
+
+  it('does not warn about stale Todo progress when a Todo mutation follows focused verification', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'item.completed',
+            item: {
+              id: 'todo-start',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'todo_list',
+              arguments: { operation: 'start', seq: 1 },
+              status: 'completed',
+              result: { ok: true },
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'file-before-focused',
+              type: 'file_change',
+              status: 'completed',
+              changes: [{ path: 'src/app.ts' }],
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'cmd-focused',
+              type: 'command_execution',
+              command: 'bunx vitest run tests/app.test.ts',
+              aggregated_output: 'ok',
+              exit_code: 0,
+              status: 'completed',
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'todo-done',
+              type: 'mcp_tool_call',
+              server: 'nightworkers',
+              tool: 'todo_list',
+              arguments: { operation: 'done', seq: 1 },
+              status: 'completed',
+              result: { ok: true },
+            },
+          },
+          {
+            type: 'item.completed',
+            item: {
+              id: 'cmd-verify',
+              type: 'command_execution',
+              command: 'bun run verify',
+              aggregated_output: 'ok',
+              exit_code: 0,
+              status: 'completed',
+            },
+          },
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as never),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.contractWarnings ?? []).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'codex_todo_progress_stale_before_verify' }),
+      ])
+    );
+  });
+
   it('records Codex turn usage through the shared LLM usage recorder', async () => {
     const usageRecorder = vi.fn(async (input) => ({ id: 'usage-record', ...input }) as never);
     const runtime = new CodexAgentRuntime({
@@ -921,6 +1268,190 @@ describe('CodexAgentRuntime', () => {
         }),
       ])
     );
+  });
+
+  it('prefers structured terminal runtime errors over stale Codex exec stderr', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThreadThatThrows(
+          [
+            {
+              type: 'item.completed',
+              item: {
+                id: 'file-change-styles',
+                type: 'file_change',
+                status: 'completed',
+                changes: [{ path: 'web/src/styles.css' }],
+              },
+            },
+            {
+              type: 'turn.failed',
+              error: { message: 'Selected model is at capacity. Please try a different model.' },
+            },
+          ] as never,
+          new Error(
+            'Codex Exec exited with code 1: apply_patch verification failed: Failed to find expected lines in /Users/y.noguchi/Code/todolist/web/src/styles.css:\n.auth-chip {'
+          )
+        ),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.terminalState).toBe('failed');
+    expect(result.summary).toContain('provider_capacity');
+    expect(result.summary).toContain('Selected model is at capacity');
+    expect(result.summary).not.toContain('apply_patch verification failed');
+    expect(result.logContent).toContain(
+      'Recovered tool failure: apply_patch verification failed in /Users/y.noguchi/Code/todolist/web/src/styles.css.'
+    );
+    expect(result.testResults).toMatchObject({
+      codexFailure: {
+        terminalReason: 'provider_capacity',
+        recoveredToolFailures: [
+          expect.objectContaining({
+            recovered: true,
+            filePath: '/Users/y.noguchi/Code/todolist/web/src/styles.css',
+          }),
+        ],
+      },
+    });
+  });
+
+  it('keeps recovered apply_patch failures as diagnostics for non-zero exec exits', async () => {
+    const events: unknown[] = [];
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThreadThatThrows(
+          [
+            {
+              type: 'item.completed',
+              item: {
+                id: 'file-change-styles',
+                type: 'file_change',
+                status: 'completed',
+                changes: [{ path: 'web/src/styles.css' }],
+              },
+            },
+          ] as never,
+          new Error(
+            'Codex Exec exited with code 1: apply_patch verification failed: Failed to find expected lines in /Users/y.noguchi/Code/todolist/web/src/styles.css:\n.auth-chip {'
+          )
+        ),
+    });
+
+    const result = await runtime.start(buildContext(), {
+      emit: async (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(result.summary).toContain('codex_exec_nonzero');
+    expect(result.summary).not.toContain('unrecovered_tool_failure');
+    expect(result.logContent).toContain('Recovered tool failure: apply_patch verification failed');
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'runtime_warning',
+          payload: expect.objectContaining({
+            code: 'recovered_tool_failure',
+            toolName: 'apply_patch',
+          }),
+        }),
+      ])
+    );
+  });
+
+  it('does not treat file changes observed before timestamped apply_patch failures as recovered', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThreadThatThrows(
+          [
+            {
+              type: 'item.completed',
+              item: {
+                id: 'file-change-styles-before-failure',
+                type: 'file_change',
+                status: 'completed',
+                changes: [{ path: 'web/src/styles.css' }],
+              },
+            },
+          ] as never,
+          new Error(
+            'Codex Exec exited with code 1: 2999-01-01T00:00:00.000000Z ERROR apply_patch verification failed: Failed to find expected lines in /Users/y.noguchi/Code/todolist/web/src/styles.css:\n.auth-chip {'
+          )
+        ),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.summary).toContain('unrecovered_tool_failure');
+    expect(result.logContent).not.toContain('Recovered tool failure');
+    expect(result.testResults).toMatchObject({
+      codexFailure: {
+        terminalReason: 'unrecovered_tool_failure',
+        unrecoveredToolFailures: [
+          expect.objectContaining({
+            recovered: false,
+            filePath: '/Users/y.noguchi/Code/todolist/web/src/styles.css',
+          }),
+        ],
+      },
+    });
+  });
+
+  it('classifies non-zero Codex exec exits without structured errors', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThreadThatThrows([], new Error('Codex Exec exited with code 1: stderr details')),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.summary).toContain('codex_exec_nonzero');
+    expect(result.summary).not.toContain('stderr details');
+    expect(result.logContent).toContain('stderr details');
+    expect(result.testResults).toMatchObject({
+      codexFailure: { terminalReason: 'codex_exec_nonzero', execExitDetail: 'code 1' },
+    });
+  });
+
+  it('preserves non-exec runtime exception messages in failed summaries', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () => fakeThreadThatThrows([], new Error('network transport failed')),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.summary).toContain('unknown_runtime_error');
+    expect(result.summary).toContain('network transport failed');
+  });
+
+  it('classifies unmatched apply_patch failures as unrecovered tool failures', async () => {
+    const runtime = new CodexAgentRuntime({
+      threadFactory: () =>
+        fakeThreadThatThrows(
+          [],
+          new Error(
+            'Codex Exec exited with code 1: apply_patch verification failed: Failed to find expected lines in /Users/y.noguchi/Code/todolist/web/src/styles.css:\n.auth-chip {'
+          )
+        ),
+    });
+
+    const result = await runtime.start(buildContext(), { emit: async () => {} });
+
+    expect(result.summary).toContain('unrecovered_tool_failure');
+    expect(result.summary).toContain('apply_patch verification failed');
+    expect(result.testResults).toMatchObject({
+      codexFailure: {
+        terminalReason: 'unrecovered_tool_failure',
+        unrecoveredToolFailures: [
+          expect.objectContaining({
+            recovered: false,
+            filePath: '/Users/y.noguchi/Code/todolist/web/src/styles.css',
+          }),
+        ],
+      },
+    });
   });
 
   it('fails once for provider-cancelled project import and records transport diagnostics', async () => {
@@ -1976,6 +2507,17 @@ function fakeThread(events: ThreadEvent[]) {
     runStreamed: vi.fn(async () => ({
       events: (async function* () {
         for (const event of events) yield event;
+      })(),
+    })),
+  } as never;
+}
+
+function fakeThreadThatThrows(events: ThreadEvent[], error: Error) {
+  return {
+    runStreamed: vi.fn(async () => ({
+      events: (async function* () {
+        for (const event of events) yield event;
+        throw error;
       })(),
     })),
   } as never;

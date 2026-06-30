@@ -622,6 +622,64 @@ describe('NightWorkers workbench routes', () => {
     ).toBe(true);
   });
 
+  it('passes recent answer and prior implementation run context to intake for continue requests', async () => {
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+      mockPlanModeGate(false, 'continue previous implementation', 'implementation')
+    );
+    const { task } = await createWorkbenchTask({
+      title: 'Todo List',
+      status: 'completed',
+      objective: 'Todo List を実装する',
+    });
+    await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+      status: 'completed',
+      contextSnapshot: { executionMode: 'implementation' },
+      summary: 'バックエンド経由で SQLite に保存する形へ切り替えました。',
+      finalReport: 'バックエンド経由で SQLite に保存する形へ切り替えました。',
+      startedAt: new Date(Date.now() - 20_000),
+      endedAt: new Date(Date.now() - 15_000),
+      finishedAt: new Date(Date.now() - 15_000),
+    });
+    await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'user',
+      content: '継続出来ますか？',
+      messageType: 'text',
+    });
+    await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: '継続できます。',
+      messageType: 'text',
+    });
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: '継続してください' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.run).toMatchObject({ taskId: task.id, status: 'running' });
+    const systemPrompt = vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0] as string;
+    const gatePrompt = vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[1] as string;
+    expect(systemPrompt).toContain('直前の可否回答や状態確認に続いて');
+    expect(gatePrompt).toContain('[Recent Conversation]');
+    expect(gatePrompt).toContain('assistant: 継続できます。');
+    expect(gatePrompt).toContain('[Current User Message]');
+    expect(gatePrompt).toContain('継続してください');
+    expect(gatePrompt).toContain('Latest non-general run executionMode=implementation');
+    const systemMessage = body.messages.find(
+      (message: unknown) =>
+        message.role === 'system' && message.metadataJson?.intent === 'run_started'
+    );
+    expect(systemMessage?.content).toContain('Implementation run started');
+    expect(systemMessage?.metadataJson?.executionMode).toBe('implementation');
+  });
+
   it('rejects reopening Plan Mode artifacts after the task is completed', async () => {
     vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
       mockPlanModeGate(true, 'explicit planning request')

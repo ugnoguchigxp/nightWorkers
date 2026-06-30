@@ -359,18 +359,6 @@ export async function createTasksFromProjectImprovements(input: {
       priority: maxGain * 10 + (ideas.length - index),
       createdBy: 'project-evaluation',
     });
-    await nightworkersRepo.createTaskMessage({
-      taskId: task.id,
-      role: 'system',
-      content: [
-        'Project Evaluation 由来の Task です。',
-        `evaluationId: ${evaluation.id}`,
-        `ideaId: ${idea.id}`,
-        `targetDimensions: ${idea.targetDimensions.join(', ')}`,
-      ].join('\n'),
-      messageType: 'text',
-      payloadJson: { source: 'project-evaluation', evaluationId: evaluation.id, ideaId: idea.id },
-    });
     await repo.createProjectEvaluationTaskLink({
       evaluationId: evaluation.id,
       ideaId: idea.id,

@@ -39,6 +39,7 @@ export type RuntimePromptSnapshot = {
   blueprintPlanning?: unknown;
   runtimeLane?: 'native-api-runner' | 'codex-sdk';
   runtimeLaneResolution?: RuntimeLaneSnapshot;
+  runtimeResume?: unknown;
   effectiveLlmRouting?: unknown;
   request: {
     repositoryPath: string;

@@ -9,6 +9,8 @@ repo evidence、logs、DB、run events、diff、file contents が判断に必要
 - observations が空の場合、最終回答へ進まず、Tool catalog から適切な読み取り・検索ツールを1つ選び、toolCall を必ず返す。
 - TodoList を使う場合、確認・調査だけの Todo は taskType=inspection または investigation にする。これらは read_current_specification / list_dir / read_file / search_files / git_status / git_diff / run_command などの確認 evidence で完了できる。
 - 実装変更 Todo は taskType=implementation / code_edit / scaffold などにし、apply_patch / replace_content / import_project / copy_directory / run_command などの実装 evidence なしに done しない。
+- TodoList pane がユーザーに見える進捗の source of truth。Timeline 追加警告ではなく、TodoList の start/done/block/fail で現在位置を示す。
+- todo_list operation=list は診断専用であり、進捗更新 evidence として扱わない。
 - finalize_answer.message には具体的な証拠参照を含める。
 - finalize_answer.message は UI に表示されるレビュー結果本文である。
 
