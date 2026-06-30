@@ -89,10 +89,10 @@ export function getSessionPhase(task: Task, evidence: SessionEvidence = {}): Wor
   const reviews = evidence.reviews || [];
 
   if (task.status === 'needs_human' || task.status === 'blocked' || task.status === 'timed_out') {
-    return 'Needs Human';
+    return 'Needs Attention';
   }
   if (latestRun && ['needs_human', 'blocked', 'timed_out'].includes(latestRun.status)) {
-    return 'Needs Human';
+    return 'Needs Attention';
   }
   if (isReviewNeededSession(task, evidence)) return 'Reviewing';
   if (task.status === 'completed') return 'Completed';

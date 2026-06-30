@@ -273,7 +273,7 @@ async function closePendingTodosForNeedsHumanRun(input: {
         type: 'turn.finished',
         severity: 'warning',
         actor: 'system',
-        message: `Todo #${todo.seq} needs human review because the run stopped: ${todo.title}`,
+        message: `Todo #${todo.seq} needs attention because the run stopped: ${todo.title}`,
         data: {
           todoId: todo.id,
           todoSeq: todo.seq,

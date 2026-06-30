@@ -7,7 +7,7 @@ function statusLabel(status: string) {
     case 'failed':
       return 'failed';
     case 'needs_human':
-      return 'needs human';
+      return 'needs attention';
     case 'skipped':
       return 'skipped';
     case 'running':

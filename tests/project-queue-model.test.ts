@@ -97,6 +97,36 @@ describe('projectQueueModel', () => {
     ]);
   });
 
+  it('keeps review-needed and execution-completed work in Completed on the Kanban board', () => {
+    const reviewTask = task('review-needed', 'Review Needed');
+    const queueTask = task('queue-completed', 'Queue Completed');
+    const dashboard: ProjectQueueDashboard = {
+      settings: { processorCount: 1 },
+      processors: [],
+      queued: [],
+      completed: [entry(queueTask, 'execution_completed')],
+      notQueued: [],
+    };
+    const tasks = buildProjectQueueTasks({
+      project,
+      sessions: [reviewTask, queueTask],
+      sessionViews: [sessionView(reviewTask, 'review_needed')],
+      implementationQueue: dashboard,
+    });
+
+    expect(tasks.find((item) => item.id === 'review-needed')).toMatchObject({
+      status: 'completed',
+    });
+    expect(tasks.find((item) => item.id === 'queue-completed')).toMatchObject({
+      status: 'completed',
+      queueEntryStatus: 'execution_completed',
+    });
+    expect(groupProjectQueueTasks(tasks).complete.map((item) => item.id)).toEqual([
+      'queue-completed',
+      'review-needed',
+    ]);
+  });
+
   it('marks only persistable attention rows as movable to Planned', () => {
     const reviewTask = task('review', 'Review');
     const failedTask = task('failed', 'Failed');

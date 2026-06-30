@@ -144,7 +144,7 @@ function buildTaskMarker(task: ProjectQueueTask) {
   const priority = getProjectQueuePriorityLabel(task);
   if (priority) return priority;
   if (task.processorSlot) return `Processor ${task.processorSlot}`;
-  if (task.status === 'attention') return 'Needs decision';
+  if (task.status === 'attention') return 'Needs Attention';
   return getProjectQueueStatusLabel(task.status);
 }
 
@@ -153,7 +153,7 @@ function buildTaskFooter(task: ProjectQueueTask) {
   if (task.status === 'planned') return 'queued for implementation';
   if (task.status === 'executing')
     return task.activeRunId ? `run ${task.activeRunId.slice(0, 8)}` : 'active run';
-  if (task.status === 'attention') return 'manual action required';
+  if (task.status === 'attention') return 'attention required';
   return 'recently completed';
 }
 

@@ -267,7 +267,7 @@ function CodexDiagnosticsPanel({
 function stateLabel(sessionView: WorkbenchSessionView) {
   if (sessionView.emailState === 'draft') return 'Draft';
   if (sessionView.emailState === 'running') return 'Running';
-  if (sessionView.emailState === 'needs_input') return 'Needs input';
+  if (sessionView.emailState === 'needs_input') return 'Needs Attention';
   if (sessionView.emailState === 'done') return 'Done';
   if (sessionView.emailState === 'failed') return 'Failed';
   return sessionView.emailState;

@@ -36,7 +36,7 @@ export const representativeAppBlueprint: AppBlueprint = {
             description: 'Highlights the strongest operational cues before opening a task.',
             items: [
               { label: 'Ready to review', value: '12' },
-              { label: 'Needs decision', value: '4' },
+              { label: 'Needs Attention', value: '4' },
               { label: 'Blocked paths', value: '2' },
             ],
           },
@@ -58,7 +58,7 @@ export const representativeAppBlueprint: AppBlueprint = {
             ],
             rows: [
               { title: 'Approve launch copy', status: 'Ready' },
-              { title: 'Resolve intake ambiguity', status: 'Needs decision' },
+              { title: 'Resolve intake ambiguity', status: 'Needs Attention' },
             ],
           },
           actions: [],

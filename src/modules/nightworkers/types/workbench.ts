@@ -12,7 +12,7 @@ export type WorkbenchPhase =
   | 'Verifying'
   | 'Reviewing'
   | 'Improving'
-  | 'Needs Human'
+  | 'Needs Attention'
   | 'Completed'
   | 'Archived';
 

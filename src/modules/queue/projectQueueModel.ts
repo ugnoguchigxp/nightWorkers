@@ -11,14 +11,14 @@ import type {
   ProjectQueueTaskStatus,
 } from './projectQueueTypes';
 
-const ATTENTION_ENTRY_STATUSES = new Set([
-  'needs_human',
-  'awaiting_commit_decision',
+const ATTENTION_ENTRY_STATUSES = new Set(['needs_human', 'awaiting_commit_decision', 'failed']);
+const ATTENTION_EMAIL_STATES = new Set(['needs_input', 'failed']);
+const COMPLETED_EMAIL_STATES = new Set(['done', 'review_needed']);
+const COMPLETED_ENTRY_STATUSES = new Set([
+  'cancelled',
+  'execution_archived',
   'execution_completed',
-  'failed',
 ]);
-const ATTENTION_EMAIL_STATES = new Set(['needs_input', 'review_needed', 'failed']);
-const COMPLETED_ENTRY_STATUSES = new Set(['cancelled', 'execution_archived']);
 const ACTIVE_NON_REQUEUEABLE_ENTRY_STATUSES = new Set<ProjectQueueEntryStatus>([
   'queued',
   'claimed',
@@ -180,7 +180,7 @@ export function getProjectQueueStatusLabel(status: ProjectQueueTaskStatus) {
   if (status === 'unclassified') return 'Unclassified';
   if (status === 'planned') return 'Planned';
   if (status === 'executing') return 'Executing';
-  if (status === 'attention') return 'Need Attention';
+  if (status === 'attention') return 'Needs Attention';
   return 'Completed';
 }
 
@@ -219,7 +219,9 @@ function createBaseTask(candidate?: TaskCandidate, entry?: ProjectQueueEntry): P
     sessionId: task.id,
     projectId: task.repositoryId,
     title: task.title,
-    status: candidate?.sessionView?.emailState === 'done' ? 'completed' : 'unclassified',
+    status: COMPLETED_EMAIL_STATES.has(candidate?.sessionView?.emailState || '')
+      ? 'completed'
+      : 'unclassified',
     phase,
     updatedAt: entry?.updatedAt ?? task.updatedAt,
   };
