@@ -327,6 +327,19 @@ function buildAcceptanceCriteria(idea: ProjectImprovementIdea) {
   ].join('\n');
 }
 
+function buildPlanFirstObjective(idea: ProjectImprovementIdea) {
+  return [
+    'この改善タスクは、まず実装計画を作成してください。',
+    '',
+    '初回の成果物は Implementation Plan とし、まだ実装編集には入らないでください。',
+    '計画には、変更範囲、非目標、実装手順、検証コマンド、期待結果、失敗時対応を含めてください。',
+    'Plan 完了後に Implementation Queue へ入れて実装する前提で、Queue 実行者が迷わない粒度にしてください。',
+    '',
+    '[改善案の元指示]',
+    idea.agentPrompt,
+  ].join('\n');
+}
+
 export async function createTasksFromProjectImprovements(input: {
   evaluationId: string;
   ideaIds: string[];
@@ -353,7 +366,7 @@ export async function createTasksFromProjectImprovements(input: {
       repositoryId: evaluation.repositoryId,
       title: idea.title,
       description: buildTaskDescription(evaluation, idea),
-      objective: idea.agentPrompt,
+      objective: buildPlanFirstObjective(idea),
       acceptanceCriteria: buildAcceptanceCriteria(idea),
       status: input.mode,
       priority: maxGain * 10 + (ideas.length - index),

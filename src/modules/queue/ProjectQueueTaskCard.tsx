@@ -129,6 +129,7 @@ function ProjectQueueTaskCardFrame({
 function buildTaskIconClass(task: ProjectQueueTask) {
   if (task.status === 'attention') return 'text-amber-300';
   if (task.status === 'executing') return 'text-cyan-300';
+  if (task.status === 'needs_plan') return 'text-violet-300';
   if (task.status === 'planned') return 'text-emerald-300';
   return 'text-slate-400';
 }
@@ -149,6 +150,7 @@ function buildTaskMarker(task: ProjectQueueTask) {
 }
 
 function buildTaskFooter(task: ProjectQueueTask) {
+  if (task.status === 'needs_plan') return 'plan recommended before implementation';
   if (task.status === 'unclassified') return 'not in implementation queue';
   if (task.status === 'planned') return 'queued for implementation';
   if (task.status === 'executing')
@@ -158,6 +160,7 @@ function buildTaskFooter(task: ProjectQueueTask) {
 }
 
 function statusToneClass(task: ProjectQueueTask) {
+  if (task.status === 'needs_plan') return 'border-violet-500/35 bg-violet-950/18 text-violet-100';
   if (task.status === 'planned') return 'border-emerald-500/35 bg-emerald-950/18 text-emerald-100';
   if (task.status === 'executing') return 'border-cyan-500/45 bg-cyan-950/24 text-cyan-100';
   if (task.status === 'attention') return 'border-amber-500/40 bg-amber-950/20 text-amber-100';

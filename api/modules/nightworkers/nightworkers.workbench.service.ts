@@ -17,7 +17,10 @@ import {
 import { callStructuredJsonLLM, type SupervisorLlmDebugEvent } from '../../services/structured-llm';
 import { normalizeStructuredLlmModelTarget } from '../../services/structured-llm/selection';
 import { createDesignQuestionnaire } from '../questionnaire/questionnaire.service';
-import { assertRunnableWorkbenchTask } from './nightworkers.planning-helpers.service';
+import {
+  assertRunnableWorkbenchTask,
+  hasImplementationPlanEvidence,
+} from './nightworkers.planning-helpers.service';
 import { queueTask } from './nightworkers.queue-management.service';
 import * as repo from './nightworkers.repository';
 import { startTaskRun } from './nightworkers.run-orchestration.service';
@@ -529,18 +532,28 @@ async function handleWorkbenchIntakeMessage(
   const llmPrompt = renderArtifactContextualPrompt(prompt, options.artifactContext || null);
 
   try {
+    const messages = await repo.listTaskMessages(taskId);
     const planModeGate = await decideWorkbenchPlanModeGate({
       projectRoot,
       prompt: llmPrompt,
       task,
-      messages: await repo.listTaskMessages(taskId),
+      messages,
       runs: await repo.listTaskRunsForTask(taskId),
       routeOverride: options.llmRouteOverride || null,
       emitEvent: emitWorkbenchLlmDebugEvent,
       taskId,
     });
+    const effectivePlanModeGate = shouldPreferPlanModeForProjectEvaluationTask(task, messages)
+      ? {
+          shouldStartPlanMode: true,
+          action: 'plan_mode' as const,
+          reason:
+            'Project Evaluation improvement tasks start in Needs Plan until an implementation plan exists.',
+          originalGate: planModeGate,
+        }
+      : planModeGate;
     const planModeSettingsSnapshot = buildPlanModeSettingsSnapshot(readGeneralSettings());
-    if (planModeGate.shouldStartPlanMode || planModeGate.action === 'plan_mode') {
+    if (effectivePlanModeGate.shouldStartPlanMode || effectivePlanModeGate.action === 'plan_mode') {
       if (!planModeSettingsSnapshot.capabilities.questionnaire) {
         const runnable = await repo.updateTask(taskId, {
           title,
@@ -557,7 +570,7 @@ async function handleWorkbenchIntakeMessage(
             intent: 'run_started',
             source: 'workbench',
             executionMode: 'planning',
-            planModeGate,
+            planModeGate: effectivePlanModeGate,
             planModeSettingsSnapshot,
           },
         });
@@ -594,12 +607,12 @@ async function handleWorkbenchIntakeMessage(
           questionnaireSessionId: questionnaireSession.id,
           questionnaireStatus: questionnaireSession.status,
           totalQuestionCount,
-          planModeGate,
+          planModeGate: effectivePlanModeGate,
           planModeSettingsSnapshot,
         },
       });
     } else if ((options.intent || 'intake') === 'intake') {
-      const executionMode = planModeGate.action;
+      const executionMode = effectivePlanModeGate.action;
       const runnable = await repo.updateTask(taskId, {
         title,
         objective: task.objective || prompt,
@@ -615,7 +628,7 @@ async function handleWorkbenchIntakeMessage(
           intent: 'run_started',
           source: 'workbench',
           executionMode,
-          planModeGate,
+          planModeGate: effectivePlanModeGate,
           planModeSettingsSnapshot,
         },
       });
@@ -664,6 +677,13 @@ async function handleWorkbenchIntakeMessage(
       { task: updated }
     );
   }
+}
+
+function shouldPreferPlanModeForProjectEvaluationTask(
+  task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>,
+  messages: Awaited<ReturnType<typeof repo.listTaskMessages>>
+) {
+  return task.createdBy === 'project-evaluation' && !hasImplementationPlanEvidence(messages);
 }
 
 function workbenchRunStartedMessage(

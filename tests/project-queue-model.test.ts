@@ -173,6 +173,35 @@ describe('projectQueueModel', () => {
     expect(tasks).toMatchObject([{ id: 'cancelled-entry', status: 'completed' }]);
   });
 
+  it('shows project evaluation tasks without plan evidence as Needs Plan', () => {
+    const evaluationTask = {
+      ...task('evaluation-task', 'Evaluation Improvement'),
+      createdBy: 'project-evaluation',
+    };
+    const planReadyEvaluationTask = {
+      ...task('plan-ready-evaluation-task', 'Plan Ready Evaluation Improvement'),
+      createdBy: 'project-evaluation',
+    };
+    const tasks = buildProjectQueueTasks({
+      project,
+      sessions: [evaluationTask, planReadyEvaluationTask],
+      sessionViews: [sessionView(planReadyEvaluationTask, 'plan_ready')],
+      implementationQueue: null,
+    });
+    const lanes = groupProjectQueueTasks(tasks);
+
+    expect(tasks.find((item) => item.id === 'evaluation-task')).toMatchObject({
+      status: 'needs_plan',
+      phase: 'Needs Plan',
+    });
+    expect(tasks.find((item) => item.id === 'plan-ready-evaluation-task')?.status).toBe(
+      'unclassified'
+    );
+    expect(lanes.unclassified.map((item) => item.id)).toEqual(
+      expect.arrayContaining(['evaluation-task', 'plan-ready-evaluation-task'])
+    );
+  });
+
   it('does not synthesize rows for unrelated projects', () => {
     const ownTask = task('own', 'Own');
     const otherTask = { ...task('other', 'Other'), repositoryId: otherProject.id };

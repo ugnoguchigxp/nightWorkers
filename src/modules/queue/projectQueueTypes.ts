@@ -8,6 +8,7 @@ export type ProjectQueueSession = {
   repositoryId: string;
   title: string;
   status: string;
+  createdBy?: string | null;
   updatedAt: unknown;
 };
 
@@ -65,6 +66,7 @@ export type ProjectQueueSessionView = {
 };
 
 export type ProjectQueueTaskStatus =
+  | 'needs_plan'
   | 'unclassified'
   | 'planned'
   | 'executing'

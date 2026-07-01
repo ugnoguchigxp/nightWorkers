@@ -23,7 +23,7 @@ export function ProjectQueueBoard({ lanes, activeTask, onOpenSession }: ProjectQ
         count={lanes.unclassified.length}
         icon={<PackageOpen className="h-4 w-4" />}
         laneId="unclassified"
-        title="Unclassified"
+        title="Needs Plan"
       >
         {lanes.unclassified.map((task) => (
           <StaticProjectQueueTaskCard key={task.id} onOpenSession={onOpenSession} task={task} />

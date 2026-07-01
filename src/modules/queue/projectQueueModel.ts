@@ -30,6 +30,7 @@ const TABLE_STATUS_RANK: Record<ProjectQueueTaskStatus, number> = {
   executing: 0,
   attention: 1,
   planned: 2,
+  needs_plan: 3,
   unclassified: 3,
   completed: 4,
 };
@@ -146,7 +147,8 @@ export function groupProjectQueueTasks(tasks: ProjectQueueTask[]): ProjectQueueL
     complete: [],
   };
   for (const task of tasks) {
-    if (task.status === 'unclassified') lanes.unclassified.push(task);
+    if (task.status === 'unclassified' || task.status === 'needs_plan')
+      lanes.unclassified.push(task);
     else if (task.status === 'planned') lanes.planned.push(task);
     else if (task.status === 'executing') lanes.executing.push(task);
     else lanes.complete.push(task);
@@ -177,6 +179,7 @@ export function sortProjectQueueTasksForTable(tasks: ProjectQueueTask[]) {
 }
 
 export function getProjectQueueStatusLabel(status: ProjectQueueTaskStatus) {
+  if (status === 'needs_plan') return 'Needs Plan';
   if (status === 'unclassified') return 'Unclassified';
   if (status === 'planned') return 'Planned';
   if (status === 'executing') return 'Executing';
@@ -214,6 +217,13 @@ function createBaseTask(candidate?: TaskCandidate, entry?: ProjectQueueEntry): P
   const phase = candidate?.sessionView?.phase
     ? String(candidate.sessionView.phase)
     : 'Unclassified';
+  const needsPlan =
+    task.createdBy === 'project-evaluation' &&
+    candidate?.sessionView?.emailState !== 'plan_ready' &&
+    candidate?.sessionView?.emailState !== 'queued' &&
+    candidate?.sessionView?.emailState !== 'running' &&
+    candidate?.sessionView?.emailState !== 'done' &&
+    candidate?.sessionView?.emailState !== 'review_needed';
   return {
     id: task.id,
     sessionId: task.id,
@@ -221,8 +231,10 @@ function createBaseTask(candidate?: TaskCandidate, entry?: ProjectQueueEntry): P
     title: task.title,
     status: COMPLETED_EMAIL_STATES.has(candidate?.sessionView?.emailState || '')
       ? 'completed'
-      : 'unclassified',
-    phase,
+      : needsPlan
+        ? 'needs_plan'
+        : 'unclassified',
+    phase: needsPlan ? 'Needs Plan' : phase,
     updatedAt: entry?.updatedAt ?? task.updatedAt,
   };
 }

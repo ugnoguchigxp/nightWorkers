@@ -479,6 +479,73 @@ describe('NightWorkers workbench routes', () => {
     });
   });
 
+  it('prefers Plan mode for project evaluation tasks until plan evidence exists', async () => {
+    const { task } = await createWorkbenchTask({
+      title: 'Evaluation improvement',
+      createdBy: 'project-evaluation',
+    });
+    vi.mocked(llm.callStructuredJsonLLM)
+      .mockResolvedValueOnce(mockPlanModeGate(false, 'looks like implementation', 'implementation'))
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          version: 1,
+          source: {
+            taskId: task.id,
+            repositoryId: task.repositoryId,
+            blueprintMessageId: null,
+            sourceKind: 'plan_mode_intake',
+          },
+          title: 'Improvement Plan Questionnaire',
+          summary: 'Clarify project evaluation improvement scope before implementation.',
+          questionSets: [
+            {
+              id: 'scope',
+              title: 'Scope',
+              category: 'workflow',
+              purpose: 'Confirm improvement scope.',
+              questions: [
+                {
+                  id: 'scope-boundary',
+                  topic: 'Scope boundary',
+                  question: 'Which part of the improvement should be implemented first?',
+                  why: 'Project evaluation improvements should start with a bounded plan.',
+                  answerType: 'free_text',
+                  options: [],
+                  blocks: ['Implementation Plan'],
+                  outputSection: 'Scope',
+                },
+              ],
+            },
+          ],
+          openQuestions: [],
+          dbDesignHandoffNotes: [],
+        })
+      );
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'この改善案を実装してください' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.run).toBeNull();
+    expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
+    expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(2);
+    const questionnaireReadyMessage = body.messages.find(
+      (message: unknown) => message.metadataJson?.intent === 'design_questionnaire_ready'
+    );
+    expect(questionnaireReadyMessage?.metadataJson?.planModeGate).toMatchObject({
+      shouldStartPlanMode: true,
+      action: 'plan_mode',
+      originalGate: expect.objectContaining({
+        shouldStartPlanMode: false,
+        action: 'implementation',
+      }),
+    });
+  });
+
   it('keeps first-message planning intake on the design questionnaire path even when codex-agent is the runtime lane', async () => {
     process.env.NIGHTWORKERS_RUNTIME_LANE = 'codex-agent';
     const { task } = await createWorkbenchTask({ title: 'New Session', objective: '' });
@@ -979,7 +1046,7 @@ describe('NightWorkers workbench routes', () => {
 });
 
 async function createWorkbenchTask(
-  input: { title?: string; status?: string; objective?: string } = {}
+  input: { title?: string; status?: string; objective?: string; createdBy?: string } = {}
 ) {
   const project = await repo.createRepository({
     name: `TEST: Workbench Project ${crypto.randomUUID()}`,
@@ -992,6 +1059,7 @@ async function createWorkbenchTask(
     objective: input.objective ?? 'Implement chat-first workbench',
     acceptanceCriteria: 'Draft conversation, queue, and run are separate task-queue steps',
     status: input.status || 'draft',
+    createdBy: input.createdBy,
   });
   return { project, task };
 }
