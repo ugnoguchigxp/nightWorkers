@@ -145,6 +145,12 @@ describe('Mock Blueprint', () => {
     expect(Buffer.byteLength(JSON.stringify(schema), 'utf8')).toBeLessThan(10_000);
   });
 
+  it('lists every strict object property in required for structured output compatibility', () => {
+    const schema = buildMockBlueprintStructuredOutputJsonSchema();
+
+    expectStrictRequiredProperties(schema);
+  });
+
   it('uses the fixture LLM provider to build and validate mock JSON', async () => {
     const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
     const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
@@ -187,3 +193,23 @@ describe('Mock Blueprint', () => {
     }
   });
 });
+
+function expectStrictRequiredProperties(schema: unknown) {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return;
+  const record = schema as Record<string, unknown>;
+  if (record.additionalProperties === false && isRecord(record.properties)) {
+    const required = Array.isArray(record.required) ? record.required.map(String) : [];
+    expect(required.sort()).toEqual(Object.keys(record.properties).sort());
+  }
+  for (const value of Object.values(record)) {
+    if (Array.isArray(value)) {
+      for (const item of value) expectStrictRequiredProperties(item);
+    } else {
+      expectStrictRequiredProperties(value);
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}

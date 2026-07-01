@@ -361,16 +361,16 @@ export const mockBlueprintSectionSchema = z
     id: mockBlueprintIdSchema,
     name: z.string().min(1),
     componentName: renderableMockBlueprintSectionNameSchema,
-    region: mockBlueprintSectionRegionSchema.optional(),
+    region: mockBlueprintSectionRegionSchema.nullish(),
     selectionReason: z.string().min(1),
     copy: z
       .object({
         title: z.string().min(1),
-        description: z.string().min(1).optional(),
-        primaryActionLabel: z.string().min(1).optional(),
-        secondaryActionLabel: z.string().min(1).optional(),
-        emptyStateTitle: z.string().min(1).optional(),
-        emptyStateDescription: z.string().min(1).optional(),
+        description: z.string().min(1).nullish(),
+        primaryActionLabel: z.string().min(1).nullish(),
+        secondaryActionLabel: z.string().min(1).nullish(),
+        emptyStateTitle: z.string().min(1).nullish(),
+        emptyStateDescription: z.string().min(1).nullish(),
       })
       .strict(),
     dataset: mockBlueprintDatasetSchema,

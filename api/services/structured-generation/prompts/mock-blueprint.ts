@@ -147,7 +147,15 @@ export function buildMockBlueprintStructuredOutputJsonSchema() {
               items: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['id', 'name', 'componentName', 'selectionReason', 'copy', 'dataset'],
+                required: [
+                  'id',
+                  'name',
+                  'componentName',
+                  'region',
+                  'selectionReason',
+                  'copy',
+                  'dataset',
+                ],
                 properties: {
                   id: { type: 'string' },
                   name: { type: 'string' },
@@ -156,21 +164,28 @@ export function buildMockBlueprintStructuredOutputJsonSchema() {
                     enum: [...renderableMockBlueprintSectionNames],
                   },
                   region: {
-                    type: 'string',
-                    enum: ['header', 'main', 'sidebar', 'aside', 'full_width', 'footer'],
+                    type: ['string', 'null'],
+                    enum: ['header', 'main', 'sidebar', 'aside', 'full_width', 'footer', null],
                   },
                   selectionReason: { type: 'string' },
                   copy: {
                     type: 'object',
                     additionalProperties: false,
-                    required: ['title'],
+                    required: [
+                      'title',
+                      'description',
+                      'primaryActionLabel',
+                      'secondaryActionLabel',
+                      'emptyStateTitle',
+                      'emptyStateDescription',
+                    ],
                     properties: {
                       title: { type: 'string' },
-                      description: { type: 'string' },
-                      primaryActionLabel: { type: 'string' },
-                      secondaryActionLabel: { type: 'string' },
-                      emptyStateTitle: { type: 'string' },
-                      emptyStateDescription: { type: 'string' },
+                      description: { type: ['string', 'null'] },
+                      primaryActionLabel: { type: ['string', 'null'] },
+                      secondaryActionLabel: { type: ['string', 'null'] },
+                      emptyStateTitle: { type: ['string', 'null'] },
+                      emptyStateDescription: { type: ['string', 'null'] },
                     },
                   },
                   dataset: {

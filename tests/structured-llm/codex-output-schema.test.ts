@@ -5,6 +5,7 @@ describe('Codex structured LLM output schema routing', () => {
   it('omits Codex outputSchema for prompt-validated Blueprint artifacts', () => {
     expect(shouldOmitCodexOutputSchema('app_blueprint')).toBe(true);
     expect(shouldOmitCodexOutputSchema('app_blueprint_data_design')).toBe(true);
+    expect(shouldOmitCodexOutputSchema('mock_blueprint')).toBe(true);
   });
 
   it('keeps Codex outputSchema for compact schema-first calls', () => {
