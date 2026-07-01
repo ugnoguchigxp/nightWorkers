@@ -57,6 +57,7 @@ export type StructuredLlmRole =
   | 'implementation'
   | 'test'
   | 'review'
+  | 'mission_task_generation'
   | 'quality_gate'
   | 'completion';
 

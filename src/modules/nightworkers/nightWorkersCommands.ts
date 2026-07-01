@@ -143,3 +143,66 @@ export function fetchRepositoryFile(repositoryId: string, path: string) {
 export function fetchRepositoryDiff(repositoryId: string) {
   return apiFetch(`/api/repositories/${repositoryId}/diff`);
 }
+
+export function fetchProjectDetailMetrics(repositoryId: string) {
+  return apiFetch(`/api/repositories/${repositoryId}/project-detail/metrics`);
+}
+
+export function fetchMissionGoals(repositoryId: string) {
+  return apiFetch(`/api/repositories/${repositoryId}/mission-goals`);
+}
+
+export function createMissionGoal(repositoryId: string, input: unknown) {
+  return apiFetch(`/api/repositories/${repositoryId}/mission-goals`, jsonRequest('POST', input));
+}
+
+export function updateMissionGoal(repositoryId: string, goalId: string, input: unknown) {
+  return apiFetch(
+    `/api/repositories/${repositoryId}/mission-goals/${goalId}`,
+    jsonRequest('PATCH', input)
+  );
+}
+
+export function deleteMissionGoal(repositoryId: string, goalId: string) {
+  return apiFetch(`/api/repositories/${repositoryId}/mission-goals/${goalId}`, {
+    method: 'DELETE',
+  });
+}
+
+export function fetchMissionTaskCandidates(repositoryId: string, status = 'candidate') {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  const query = params.toString();
+  return apiFetch(
+    `/api/repositories/${repositoryId}/mission-task-candidates${query ? `?${query}` : ''}`
+  );
+}
+
+export function generateMissionTaskCandidates(repositoryId: string, input: unknown = {}) {
+  return apiFetch(
+    `/api/repositories/${repositoryId}/mission-task-candidates/generate`,
+    jsonRequest('POST', input)
+  );
+}
+
+export function updateMissionTaskCandidate(candidateId: string, input: unknown) {
+  return apiFetch(`/api/mission-task-candidates/${candidateId}`, jsonRequest('PATCH', input));
+}
+
+export function createTasksFromMissionCandidates(repositoryId: string, input: unknown) {
+  return apiFetch(
+    `/api/repositories/${repositoryId}/mission-task-candidates/create-tasks`,
+    jsonRequest('POST', input)
+  );
+}
+
+export function fetchProjectQuality(repositoryId: string) {
+  return apiFetch(`/api/repositories/${repositoryId}/quality`);
+}
+
+export function createProjectQualityRun(
+  repositoryId: string,
+  input: { runType: 'unit' | 'e2e' | 'all' }
+) {
+  return apiFetch(`/api/repositories/${repositoryId}/quality/runs`, jsonRequest('POST', input));
+}

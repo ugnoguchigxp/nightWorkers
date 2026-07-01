@@ -31,6 +31,7 @@ const roleLabels: Record<LlmRole, string> = {
   implementation: 'Implementation',
   test: 'Test',
   review: 'Review',
+  mission_task_generation: 'Mission Task Generation',
   quality_gate: 'Quality Gate',
   completion: 'Completion',
 };

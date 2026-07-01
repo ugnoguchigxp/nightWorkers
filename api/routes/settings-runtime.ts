@@ -27,6 +27,7 @@ export const llmRoleSchema = z.enum([
   'implementation',
   'test',
   'review',
+  'mission_task_generation',
   'quality_gate',
   'completion',
 ]);
@@ -146,6 +147,7 @@ export const LLM_ROLE_ORDER: LlmRole[] = [
   'implementation',
   'test',
   'review',
+  'mission_task_generation',
   'quality_gate',
   'completion',
 ];

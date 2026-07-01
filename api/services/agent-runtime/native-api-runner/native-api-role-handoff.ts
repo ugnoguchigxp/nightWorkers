@@ -339,6 +339,7 @@ function requireStructuredLlmRole(value: unknown, label: string, errors: string[
     value !== 'implementation' &&
     value !== 'test' &&
     value !== 'review' &&
+    value !== 'mission_task_generation' &&
     value !== 'quality_gate' &&
     value !== 'completion'
   ) {

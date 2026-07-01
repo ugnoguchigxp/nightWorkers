@@ -33,6 +33,7 @@ export type LlmRole =
   | 'implementation'
   | 'test'
   | 'review'
+  | 'mission_task_generation'
   | 'quality_gate'
   | 'completion';
 export type ImplementationRuntimeLane = '' | 'native-supervisor' | 'codex-sdk' | 'codex-agent';
