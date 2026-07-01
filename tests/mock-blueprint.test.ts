@@ -112,6 +112,23 @@ describe('Mock Blueprint', () => {
     );
   });
 
+  it('drops empty sidebar layouts when mock sections do not need side columns', () => {
+    const preview = mockBlueprintToPreviewBlueprint({
+      ...representativeMockBlueprint,
+      screens: [
+        {
+          ...representativeMockBlueprint.screens[0],
+          layout: { template: 'sidebar_right' },
+          sections: representativeMockBlueprint.screens[0].sections
+            .filter((section) => section.region !== 'sidebar')
+            .map((section) => ({ ...section, region: 'main' })),
+        },
+      ],
+    });
+
+    expect(preview.screens[0].layout).toEqual({ template: 'single_column' });
+  });
+
   it('returns null instead of throwing for invalid preview input', () => {
     expect(
       mockBlueprintToPreviewBlueprintSafely({
@@ -143,6 +160,17 @@ describe('Mock Blueprint', () => {
     expect(prompt).toContain('DataTableSection');
     expect(prompt).toContain('dataset.kind');
     expect(Buffer.byteLength(JSON.stringify(schema), 'utf8')).toBeLessThan(10_000);
+  });
+
+  it('discourages generic sidebar placeholders in mock blueprint selection', () => {
+    const prompt = buildMockBlueprintSystemPrompt({
+      jsonSchema: buildMockBlueprintStructuredOutputJsonSchema(),
+      sectionCatalog: buildMockBlueprintSectionCatalog(),
+    });
+
+    expect(prompt).toContain('BBS');
+    expect(prompt).toContain('明示要求がない限り右/左 sidebar は使わない');
+    expect(prompt).toContain('ads、sponsored、newsletter');
   });
 
   it('lists every strict object property in required for structured output compatibility', () => {

@@ -186,6 +186,8 @@ export function ArtifactPane({
       ? parseArtifactContentJson(selectedActivityArtifact?.contentText)
       : null);
   const artifactValidation = activityArtifactMetadata.validation;
+  const artifactGeneration =
+    activityArtifactMetadata.generation || displayArtifact?.metadata?.generation || null;
   const showDocument =
     Boolean(selectedArtifact) &&
     !showDiff &&
@@ -284,6 +286,7 @@ export function ArtifactPane({
               blueprint={artifactBlueprint || displayArtifact?.metadata?.appBlueprint}
               mockBlueprint={artifactMockBlueprint || displayArtifact?.metadata?.mockBlueprint}
               validation={artifactValidation || displayArtifact?.metadata?.validation}
+              generation={artifactGeneration}
               markdown={
                 selectedMessage?.content || selectedActivityArtifact?.contentText || undefined
               }

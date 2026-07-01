@@ -69,6 +69,7 @@ export function BlueprintViewer({
   blueprint,
   mockBlueprint,
   validation,
+  generation,
   markdown,
 }: {
   sessionId: string | null;
@@ -76,6 +77,7 @@ export function BlueprintViewer({
   blueprint: unknown;
   mockBlueprint?: unknown;
   validation: unknown;
+  generation?: unknown;
   markdown?: string;
 }) {
   const { t } = useTranslation();
@@ -92,6 +94,7 @@ export function BlueprintViewer({
       messageId={messageId}
       blueprint={previewBlueprint}
       validation={validation}
+      generation={generation}
     />
   );
 }

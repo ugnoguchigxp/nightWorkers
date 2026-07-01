@@ -33,15 +33,38 @@ export function mockBlueprintToPreviewBlueprintSafely(input: unknown): PreviewBl
 }
 
 function screenToPreviewScreen(screen: MockBlueprintScreen): Record<string, unknown> {
+  const layout = previewLayoutForScreen(screen);
   return {
     id: screen.id,
     name: screen.name,
     path: screen.path,
-    componentName: pageComponentForLayout(screen.layout.template),
-    layout: screen.layout,
+    componentName: pageComponentForLayout(layout.template),
+    layout,
     sections: screen.sections.map((section) => sectionToPreviewSection(section, screen)),
     actions: [],
   };
+}
+
+function previewLayoutForScreen(screen: MockBlueprintScreen): MockBlueprintScreen['layout'] {
+  const hasSidebar = screen.sections.some(
+    (section) => (section.region || defaultRegionForSection(section.componentName)) === 'sidebar'
+  );
+  const hasAside = screen.sections.some(
+    (section) => (section.region || defaultRegionForSection(section.componentName)) === 'aside'
+  );
+
+  if (hasSidebar && hasAside) return { template: 'three_column' };
+  if (hasSidebar) return { template: 'sidebar_left' };
+  if (hasAside) return { template: 'sidebar_right' };
+  if (
+    screen.layout.template === 'sidebar_left' ||
+    screen.layout.template === 'sidebar_right' ||
+    screen.layout.template === 'three_column' ||
+    screen.layout.template === 'article_with_sidebar'
+  ) {
+    return { template: 'single_column' };
+  }
+  return screen.layout;
 }
 
 function sectionToPreviewSection(

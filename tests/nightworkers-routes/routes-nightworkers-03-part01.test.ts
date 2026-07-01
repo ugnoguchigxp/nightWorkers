@@ -592,6 +592,12 @@ describe('NightWorkers task routes', () => {
         intent: 'mock_blueprint',
         source: 'status',
         questionnaireSessionId: null,
+        generation: {
+          llmUsage: expect.objectContaining({
+            label: 'mock_blueprint',
+            totalTokens: expect.any(Number),
+          }),
+        },
       });
 
       process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({

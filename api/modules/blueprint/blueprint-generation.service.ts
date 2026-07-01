@@ -5,6 +5,7 @@ import {
   generatePlanModeMockBlueprintDraft,
   MockBlueprintDraftGenerationError,
 } from '../../services/blueprints/mock-llm-draft';
+import { listLlmUsageRecordsForTask } from '../../services/llm-usage';
 import {
   createPlanModeMockBlueprintActivityArtifact,
   createPlanModeTaskMessage,
@@ -42,11 +43,15 @@ export async function generateBlueprintArtifact(
       questionnaireMarkdown: session ? renderQuestionnaireAnswerMarkdown(session) : null,
       featurePlanSummary,
     });
+    const generationWithUsage = {
+      ...generation,
+      llmUsage: await resolveLatestMockBlueprintUsage(taskId),
+    };
     const artifact = await createPlanModeMockBlueprintActivityArtifact({
       taskId,
       title: mockBlueprint.name || task.title || 'Mock Blueprint',
       mockBlueprint,
-      generation,
+      generation: generationWithUsage,
       source: 'status',
       metadataJson: {
         questionnaireSessionId: session?.id ?? null,
@@ -74,7 +79,7 @@ export async function generateBlueprintArtifact(
           cardKind: 'app_blueprint',
         },
         mockBlueprint,
-        generation,
+        generation: generationWithUsage,
         source: 'status',
         questionnaireSessionId: session?.id ?? null,
       },
@@ -127,4 +132,35 @@ async function resolveLatestFeaturePlanSummary(taskId: string) {
     return message.messageType === 'markdown_document' && metadata.intent === 'feature_plan';
   });
   return latest?.content.slice(0, 4_000) || null;
+}
+
+async function resolveLatestMockBlueprintUsage(taskId: string) {
+  const records = await listLlmUsageRecordsForTask(taskId);
+  const record = records.find((item) => item.label === 'mock_blueprint');
+  if (!record) return null;
+
+  const inputTokens = normalizeTokenCount(record.inputTokens) ?? 0;
+  const outputTokens = normalizeTokenCount(record.outputTokens) ?? 0;
+  return {
+    usageRecordId: record.id,
+    provider: record.provider,
+    model: record.model,
+    label: record.label,
+    usageMode: record.usageMode,
+    inputTokens,
+    outputTokens,
+    totalTokens: normalizeTokenCount(record.totalTokens) ?? inputTokens + outputTokens,
+    cachedInputTokens: normalizeTokenCount(record.cachedInputTokens),
+    reasoningOutputTokens: normalizeTokenCount(record.reasoningOutputTokens),
+    systemPromptTokens: normalizeTokenCount(record.systemPromptTokens),
+    userPromptTokens: normalizeTokenCount(record.userPromptTokens),
+    durationMs: Math.max(0, Math.floor(record.durationMs)),
+    createdAt: record.createdAt instanceof Date ? record.createdAt.toISOString() : null,
+  };
+}
+
+function normalizeTokenCount(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.floor(value))
+    : null;
 }

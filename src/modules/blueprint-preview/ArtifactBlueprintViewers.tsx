@@ -7,15 +7,18 @@ export function BlueprintArtifactViewer({
   messageId,
   blueprint,
   validation,
+  generation,
 }: {
   sessionId: string | null;
   messageId: string | null;
   blueprint: Record<string, unknown>;
   validation: unknown;
+  generation?: unknown;
 }) {
   const { t } = useTranslation();
   const screens = toObjectArray(blueprint.screens);
   const issues = isObject(validation) ? toObjectArray(validation.issues) : [];
+  const llmUsage = getLlmUsageSnapshot(generation);
   return (
     <div className="h-full overflow-y-auto px-6 py-5 text-sm text-slate-100">
       <div className="grid gap-4">
@@ -29,6 +32,25 @@ export function BlueprintArtifactViewer({
             validationIssues={issues}
           />
         </BlueprintSection>
+        {llmUsage ? (
+          <BlueprintSection title={t('artifact.llmUsage')}>
+            <div className="grid gap-2 rounded border border-slate-700/80 bg-slate-950/20 p-3 text-xs sm:grid-cols-3">
+              <UsageMetric
+                label={t('artifact.llmUsageInput')}
+                value={formatTokenCount(llmUsage.inputTokens)}
+              />
+              <UsageMetric
+                label={t('artifact.llmUsageOutput')}
+                value={formatTokenCount(llmUsage.outputTokens)}
+              />
+              <UsageMetric
+                label={t('artifact.llmUsageTotal')}
+                value={formatTokenCount(llmUsage.totalTokens)}
+              />
+              <div className="text-slate-400 sm:col-span-3">{formatUsageContext(llmUsage)}</div>
+            </div>
+          </BlueprintSection>
+        ) : null}
         <PromptDetail>
           <BlueprintSection title={t('artifact.screenComposition')}>
             {screens.map((screen, index) => (
@@ -186,6 +208,15 @@ function TokenValue({ label, value }: { label: string; value: string }) {
   );
 }
 
+function UsageMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase text-slate-500">{label}</div>
+      <div className="mt-1 font-mono text-slate-100">{value}</div>
+    </div>
+  );
+}
+
 function componentButtonClass(variant: string): string {
   const base =
     'inline-flex h-9 min-w-24 items-center justify-center rounded border px-3 text-xs font-medium';
@@ -231,4 +262,49 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function toObjectArray(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? value.filter(isObject) : [];
+}
+
+type LlmUsageSnapshot = {
+  provider: string;
+  model: string | null;
+  usageMode: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  durationMs: number | null;
+};
+
+function getLlmUsageSnapshot(generation: unknown): LlmUsageSnapshot | null {
+  if (!isObject(generation) || !isObject(generation.llmUsage)) return null;
+  const usage = generation.llmUsage;
+  return {
+    provider: String(usage.provider || ''),
+    model: usage.model ? String(usage.model) : null,
+    usageMode: String(usage.usageMode || ''),
+    inputTokens: toFiniteNumber(usage.inputTokens),
+    outputTokens: toFiniteNumber(usage.outputTokens),
+    totalTokens: toFiniteNumber(usage.totalTokens),
+    durationMs:
+      typeof usage.durationMs === 'number' && Number.isFinite(usage.durationMs)
+        ? Math.max(0, Math.floor(usage.durationMs))
+        : null,
+  };
+}
+
+function toFiniteNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+}
+
+function formatTokenCount(value: number) {
+  return `${value.toLocaleString()} tokens`;
+}
+
+function formatUsageContext(usage: LlmUsageSnapshot) {
+  return [
+    [usage.provider, usage.model].filter(Boolean).join(' / '),
+    usage.usageMode,
+    usage.durationMs === null ? null : `${(usage.durationMs / 1000).toFixed(1)}s`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
