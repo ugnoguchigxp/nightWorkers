@@ -24,6 +24,7 @@ type ChatActionsInput = {
   chatSubmitTransportRef: MutableRefObject<'http' | 'websocket' | null>;
   pendingChatRunIdRef: MutableRefObject<string | null>;
   pendingAssistantTaskIdRef: MutableRefObject<string | null>;
+  pendingChatAbortControllerRef: MutableRefObject<AbortController | null>;
   setIsChatSubmitting: (value: boolean) => void;
   setPendingChatRunId: (value: string | null) => void;
   setPendingAssistantTaskId: (value: string | null) => void;
@@ -76,11 +77,30 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
     chatSubmitTransportRef,
     pendingChatRunIdRef,
     pendingAssistantTaskIdRef,
+    pendingChatAbortControllerRef,
     setIsChatSubmitting,
     setPendingChatRunId,
     setPendingAssistantTaskId,
   } = input;
+  const resetPendingChatState = () => {
+    setIsChatSubmitting(false);
+    chatSubmitStartedAtRef.current = null;
+    chatSubmitTransportRef.current = null;
+    pendingChatRunIdRef.current = null;
+    setPendingChatRunId(null);
+    pendingAssistantTaskIdRef.current = null;
+    setPendingAssistantTaskId(null);
+    pendingChatAbortControllerRef.current = null;
+  };
+
   return {
+    cancelChatSubmit: async () => {
+      pendingChatAbortControllerRef.current?.abort(
+        new DOMException('Chat submit cancelled.', 'AbortError')
+      );
+      pendingChatQueueRef.current = [];
+      resetPendingChatState();
+    },
     sendChatMessage: async (sessionId: string, prompt: string) => {
       const content = prompt.trim();
       if (!content) return;
@@ -131,6 +151,8 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
       setPendingChatRunId(null);
       const expectsAssistantResponse = intent !== 'queue' && intent !== 'create_task';
       let shouldClearPendingAssistant = !expectsAssistantResponse;
+      const abortController = new AbortController();
+      pendingChatAbortControllerRef.current = abortController;
       if (expectsAssistantResponse) {
         pendingAssistantTaskIdRef.current = sessionId;
         setPendingAssistantTaskId(sessionId);
@@ -139,17 +161,21 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
         setPendingAssistantTaskId(null);
       }
       try {
-        const res = await appendWorkbenchMessage(sessionId, {
-          prompt: content,
-          intent,
-          waitForIntake: true,
-          ...(llmSelection?.model ? { model: llmSelection.model } : {}),
-          ...(llmSelection?.providerEndpointId
-            ? { providerEndpointId: llmSelection.providerEndpointId }
-            : {}),
-          ...(llmSelection?.thinkingDepth ? { thinkingDepth: llmSelection.thinkingDepth } : {}),
-          ...(artifactContext ? { artifactContext } : {}),
-        });
+        const res = await appendWorkbenchMessage(
+          sessionId,
+          {
+            prompt: content,
+            intent,
+            waitForIntake: true,
+            ...(llmSelection?.model ? { model: llmSelection.model } : {}),
+            ...(llmSelection?.providerEndpointId
+              ? { providerEndpointId: llmSelection.providerEndpointId }
+              : {}),
+            ...(llmSelection?.thinkingDepth ? { thinkingDepth: llmSelection.thinkingDepth } : {}),
+            ...(artifactContext ? { artifactContext } : {}),
+          },
+          { signal: abortController.signal }
+        );
         if (!res.ok) throw new Error(await res.text());
         const result = (await res.json()) as WorkbenchMessageResult;
         if (result.messages) queryClient.setQueryData(['taskMessages', sessionId], result.messages);
@@ -196,6 +222,9 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
         if (shouldClearPendingAssistant) {
           pendingAssistantTaskIdRef.current = null;
           setPendingAssistantTaskId(null);
+        }
+        if (pendingChatAbortControllerRef.current === abortController) {
+          pendingChatAbortControllerRef.current = null;
         }
       }
     },

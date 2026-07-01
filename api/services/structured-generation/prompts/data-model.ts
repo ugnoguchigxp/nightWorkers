@@ -11,6 +11,10 @@ export function buildDataModelSystemPrompt(dataModelJsonSchema: string): string 
     'DDL は実行指示ではなく設計 artifact です。migration 実行、runtime DB call、seed data 作成はしません。',
     'DDL から table / column / relation / index summary を派生させ、別正本を作らないでください。',
     'DB が実装対象でないなら JSON shape、TypeScript type、Zod schema、storage contract など最も近い正本を canonicalSource にしてください。',
+    '`updated_at` の自動更新が必要な場合は SQLite trigger を既定方針として扱い、都度 open question にしないでください。',
+    'title 重複可否、将来の一意制約、実装時に変更可能な細部など、非ブロッキングな選択肢は openQuestions に出さず、一般的な既定値を置いてください。',
+    'Data Model 生成中に追加質問を増やさないでください。確認が本当に必要な仕様判断は Questionnaire / Decisions の入力にある前提で扱い、未回答なら最小限の保守的な設計にしてください。',
+    'constraints と openQuestions は schema 互換のため配列を返しますが、通常は空配列にしてください。',
     'AppBlueprint JSON は返さないでください。',
     '',
     '[Output Contract]',
@@ -79,11 +83,5 @@ export function renderDataModelArtifactMarkdown(artifact: DataModelArtifact) {
       `- ${relation.from} -> ${relation.to} (${relation.cardinality}): ${relation.reason}`
     );
   }
-  lines.push('', '## Constraints');
-  if (artifact.constraints.length === 0) lines.push('- None.');
-  for (const constraint of artifact.constraints) lines.push(`- ${constraint}`);
-  lines.push('', '## Open Questions');
-  if (artifact.openQuestions.length === 0) lines.push('- None.');
-  for (const question of artifact.openQuestions) lines.push(`- ${question}`);
   return lines.join('\n');
 }

@@ -78,7 +78,7 @@ export function OverviewScreen({
     setError(null);
     try {
       const res = await fetchOverview(query);
-      if (!res.ok) throw new Error(`Overview API failed: ${res.status}`);
+      if (!res.ok) throw new Error(t('overview.error.loadFailed', { status: res.status }));
       const data = (await res.json()) as OverviewDashboard;
       setDashboard(data);
     } catch (err) {
@@ -86,7 +86,7 @@ export function OverviewScreen({
     } finally {
       setIsLoading(false);
     }
-  }, [query]);
+  }, [query, t]);
 
   useEffect(() => {
     void loadOverview();
@@ -187,7 +187,7 @@ export function OverviewScreen({
               <KpiCard
                 label={t('overview.kpi.totalTokens')}
                 value={formatTokenCount(dashboard.usage.totalTokens)}
-                sub={`${dashboard.usage.callCount} ${t('overview.kpi.calls')}`}
+                sub={t('overview.kpi.callCount', { count: dashboard.usage.callCount })}
               />
               <KpiCard
                 label={t('overview.kpi.input')}
@@ -240,7 +240,10 @@ export function OverviewScreen({
                             background: 'var(--nw-primary)',
                             height: `${Math.max(4, (bucket.totalTokens / maxBucketTokens) * 170)}px`,
                           }}
-                          title={`${bucket.key}: ${formatTokenCount(bucket.totalTokens)}`}
+                          title={t('overview.chart.bucketTokens', {
+                            bucket: bucket.key,
+                            tokens: formatTokenCount(bucket.totalTokens),
+                          })}
                         />
                         <span className="max-w-full truncate text-[9px]" style={subtleTextStyle}>
                           {bucket.key}
@@ -273,7 +276,7 @@ export function OverviewScreen({
                     label={t('overview.cost.codexCredits')}
                     value={
                       dashboard.cost.creditTotal === null
-                        ? 'N/A'
+                        ? t('overview.value.notAvailable')
                         : dashboard.cost.creditTotal.toFixed(3)
                     }
                   />
@@ -281,8 +284,12 @@ export function OverviewScreen({
                     label={t('overview.cost.exchangeRates')}
                     value={
                       dashboard.cost.fxRate
-                        ? `${dashboard.cost.fxBaseCurrency} -> ${currency} ${dashboard.cost.fxRate.toFixed(4)}`
-                        : 'N/A'
+                        ? t('overview.cost.fxRate', {
+                            base: dashboard.cost.fxBaseCurrency,
+                            currency,
+                            rate: dashboard.cost.fxRate.toFixed(4),
+                          })
+                        : t('overview.value.notAvailable')
                     }
                   />
                   <MetricRow
@@ -318,7 +325,7 @@ export function OverviewScreen({
                         color: 'var(--nw-muted-text)',
                       }}
                     >
-                      {String(warning.code)}
+                      {formatWarningCode(String(warning.code), t)}
                     </span>
                   ))}
                 </div>
@@ -344,7 +351,9 @@ export function OverviewScreen({
                       style={tableBorderStyle}
                     >
                       <td className="max-w-[220px] truncate py-2">
-                        <div className="font-semibold">{item.model || 'unknown'}</div>
+                        <div className="font-semibold">
+                          {item.model || t('overview.value.unknownModel')}
+                        </div>
                         <div className="text-[10px]" style={subtleTextStyle}>
                           {item.provider}
                         </div>
@@ -354,7 +363,9 @@ export function OverviewScreen({
                       <td className="py-2 text-right">
                         {formatCurrency(item.estimatedCost, currency, language)}
                       </td>
-                      <td className="py-2 text-right">{item.pricingStatus}</td>
+                      <td className="py-2 text-right">
+                        {t(`overview.pricingStatus.${item.pricingStatus}`)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -381,7 +392,7 @@ export function OverviewScreen({
                           {call.taskTitle || call.label}
                         </button>
                         <div className="truncate text-[10px]" style={subtleTextStyle}>
-                          {call.provider} / {call.model || 'unknown'} /{' '}
+                          {call.provider} / {call.model || t('overview.value.unknownModel')} /{' '}
                           {formatDateTime(call.createdAt, language, timezone)}
                         </div>
                       </td>
@@ -460,4 +471,8 @@ function EmptyState({ text }: { text: string }) {
       {text}
     </div>
   );
+}
+
+function formatWarningCode(code: string, t: ReturnType<typeof useTranslation>['t']) {
+  return t(`overview.warning.${code}`, { defaultValue: code });
 }

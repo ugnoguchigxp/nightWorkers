@@ -34,13 +34,10 @@ const baseProps = {
   onDeleteSession: vi.fn(),
   onQueueSession: vi.fn(),
   onRemoveQueueEntry: vi.fn(),
-  onSubmitReview: vi.fn(),
   onRequeueQueueEntry: vi.fn(),
-  onArchiveQueueExecution: vi.fn(),
   onOpenArtifact: vi.fn(),
   isProjectFilesOpen: false,
   onOpenProjectFiles: vi.fn(),
-  onOpenDiffArtifact: vi.fn(),
 };
 
 describe('ThreadWorkspace pending indicator', () => {

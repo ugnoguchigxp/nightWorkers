@@ -104,18 +104,37 @@ export function Composer({
     }
   }, [discardStoredDraft, draftStorageKey, prompt]);
 
+  function clearDraft() {
+    if (!draftStorageKey) return;
+    try {
+      window.localStorage.removeItem(draftStorageKey);
+    } catch {
+      // localStorage cleanup is best-effort; prompt state is authoritative for this render.
+    }
+  }
+
+  function restoreDraft(text: string) {
+    if (!draftStorageKey) return;
+    try {
+      window.localStorage.setItem(draftStorageKey, text);
+    } catch {
+      // localStorage can be unavailable in private contexts; the in-memory prompt still restores.
+    }
+  }
+
   async function submitCurrentPrompt() {
     if (!canSubmit) return;
     const text = prompt.trim();
-    await onSubmit(text, intent);
-    if (draftStorageKey) {
-      try {
-        window.localStorage.removeItem(draftStorageKey);
-      } catch {
-        // localStorage cleanup is best-effort; prompt state still clears below.
-      }
-    }
     setPrompt('');
+    clearDraft();
+    try {
+      await onSubmit(text, intent);
+    } catch (error) {
+      if (isAbortError(error)) return;
+      setPrompt(text);
+      restoreDraft(text);
+      throw error;
+    }
   }
 
   return (
@@ -218,4 +237,10 @@ export function Composer({
       </div>
     </div>
   );
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException
+    ? error.name === 'AbortError'
+    : error instanceof Error && error.name === 'AbortError';
 }

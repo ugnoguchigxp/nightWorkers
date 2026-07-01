@@ -188,6 +188,12 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     workspace.activeSession?.status
   );
   const activeSessionId = workspace.activeSessionId;
+  const canStopLatestRun = Boolean(
+    workspace.latestRun &&
+      ['running', 'context_compiling', 'compiling_context', 'finalizing'].includes(
+        workspace.latestRun.status
+      )
+  );
 
   if (previousActiveSessionIdRef.current !== activeSessionId) {
     previousActiveSessionIdRef.current = activeSessionId;
@@ -553,7 +559,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       return;
     }
     if (openedQuestionnaireMessageIdsRef.current.has(latestQuestionnaireMessage.id)) return;
-    void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'status');
+    void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'questionnaire');
   }, [
     openQuestionnaireWorkspace,
     workspace.activeSession,
@@ -709,16 +715,13 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                 }
                 await submitPrompt(prompt, intent);
               }}
-              canStopActiveRun={Boolean(
-                workspace.latestRun &&
-                  ['running', 'context_compiling', 'compiling_context', 'finalizing'].includes(
-                    workspace.latestRun.status
-                  )
-              )}
+              canStopActiveRun={workspace.isChatSubmitting || canStopLatestRun}
               onStopActiveRun={async () => {
-                const runId = workspace.latestRun?.id;
-                if (!runId) return;
-                await workspace.stopRun(runId);
+                if (canStopLatestRun && workspace.latestRun?.id) {
+                  await workspace.stopRun(workspace.latestRun.id);
+                  return;
+                }
+                await workspace.cancelChatSubmit();
               }}
               onStopBackgroundProcess={workspace.stopBackgroundProcess}
               onOpenBlueprintArtifact={handleOpenBlueprintArtifact}
@@ -741,20 +744,10 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                 if (!entryId) return;
                 void queueState.removeImplementationQueueEntry(entryId);
               }}
-              onSubmitReview={(action, note) => {
-                const runId = workspace.latestRun?.id;
-                if (!runId) return;
-                void workspace.submitRunReview(runId, { action, note });
-              }}
               onRequeueQueueEntry={(note) => {
                 const entryId = workspace.activeSessionView?.queueEntry?.id;
                 if (!entryId) return;
                 void queueState.requeueImplementationQueueEntry(entryId, note);
-              }}
-              onArchiveQueueExecution={() => {
-                const entryId = workspace.activeSessionView?.queueEntry?.id;
-                if (!entryId) return;
-                void queueState.archiveImplementationQueueEntry(entryId);
               }}
               onOpenArtifact={(artifact) => {
                 setClearedArtifactContextId(null);
@@ -771,14 +764,6 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                 }
                 setClearedArtifactContextId(null);
                 setArtifactFocus({ type: 'project_tree' });
-              }}
-              onOpenDiffArtifact={(artifact) => {
-                if (artifactPaneOpen && selectedArtifact?.id === artifact.id) {
-                  setArtifactFocus({ type: 'closed' });
-                  return;
-                }
-                setClearedArtifactContextId(null);
-                setArtifactFocus({ type: 'artifact', artifact });
               }}
               onGrantExternalPath={async (externalPath) => {
                 const project = workspace.activeProject;

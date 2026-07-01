@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildDesignQuestionnaireFollowUpDecisionSystemPrompt,
+  buildDesignQuestionnaireFollowUpDecisionUserPrompt,
   buildDesignQuestionnaireSystemPrompt,
 } from '../api/services/structured-generation/prompts/design-questionnaire';
 import { questionnaireChoiceFormSchema } from '../shared/schemas/design-questionnaire.schema';
@@ -61,5 +62,89 @@ describe('design questionnaire prompts', () => {
         ],
       }).success
     ).toBe(false);
+  });
+
+  it('includes answered questions and selected labels in follow-up decision input', () => {
+    const prompt = buildDesignQuestionnaireFollowUpDecisionUserPrompt({
+      id: '00000000-0000-0000-0000-000000000001',
+      taskId: '00000000-0000-0000-0000-000000000002',
+      repositoryId: '00000000-0000-0000-0000-000000000003',
+      sourceBlueprintMessageId: null,
+      status: 'answering',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      questionSets: [
+        {
+          id: '00000000-0000-0000-0000-000000000004',
+          sequence: 1,
+          rawOutput: null,
+          validationStatus: 'valid',
+          createdAt: new Date(),
+          questionnaire: {
+            version: 1,
+            source: {
+              taskId: '00000000-0000-0000-0000-000000000002',
+              repositoryId: '00000000-0000-0000-0000-000000000003',
+              sourceKind: 'plan_mode_intake',
+              blueprintMessageId: null,
+            },
+            title: '実装前に決めたいこと',
+            summary: '実装前確認',
+            openQuestions: [],
+            dataModelHandoffNotes: [],
+            questionSets: [
+              {
+                id: 'choice-form',
+                title: '実装前に決めたいこと',
+                category: '実装前確認',
+                purpose: '実装前に確認します。',
+                questions: [
+                  {
+                    id: 'q1',
+                    topic: '運用',
+                    question: '運用・保存の前提はどれですか？',
+                    why: '実装前に仕様判断が必要です。',
+                    answerType: 'single_choice',
+                    options: [
+                      {
+                        id: 'q1-o1',
+                        label: 'ローカル開発のみ',
+                        tradeoff: '選択後に設計判断として整理します。',
+                      },
+                      {
+                        id: 'q1-o2',
+                        label: '未定',
+                        tradeoff: '選択後に設計判断として整理します。',
+                      },
+                    ],
+                    blocks: ['実装前の仕様判断'],
+                    outputSection: 'question-1',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      answers: [
+        {
+          id: '00000000-0000-0000-0000-000000000005',
+          questionId: 'q1',
+          answeredAt: new Date(),
+          answer: {
+            questionId: 'q1',
+            selectedOptionIds: ['q1-o2'],
+            rankedOptionIds: [],
+            deferred: false,
+          },
+        },
+      ],
+      reviews: [],
+    });
+
+    expect(prompt).toContain('answeredQuestions');
+    expect(prompt).toContain('運用・保存の前提はどれですか？');
+    expect(prompt).toContain('未定');
+    expect(prompt).toContain('unansweredQuestions');
   });
 });

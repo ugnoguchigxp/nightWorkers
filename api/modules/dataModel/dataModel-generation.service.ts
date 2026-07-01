@@ -124,6 +124,32 @@ export function parseDataModelOutput(rawOutput: string): DataModelArtifact {
   return parsed.value;
 }
 
+export function buildDataModelResponseJsonSchema() {
+  return normalizeStructuredOutputJsonSchema(z.toJSONSchema(dataModelArtifactSchema));
+}
+
+function normalizeStructuredOutputJsonSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => normalizeStructuredOutputJsonSchema(item));
+  if (!value || typeof value !== 'object') return value;
+
+  const source = value as Record<string, unknown>;
+  const normalized: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(source)) {
+    if (key === '$schema' || key === 'default') continue;
+    normalized[key] = normalizeStructuredOutputJsonSchema(child);
+  }
+
+  if (normalized.type === 'object' && isRecord(normalized.properties)) {
+    normalized.required = Object.keys(normalized.properties);
+    normalized.additionalProperties = false;
+  }
+  return normalized;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
 async function resolveQuestionnaireSession(taskId: string, sessionId?: string | null) {
   if (sessionId) return getDesignQuestionnaireSession(taskId, sessionId);
   const sessions = await listDesignQuestionnaires(taskId);
@@ -156,7 +182,7 @@ async function generateArtifactFromLlm(input: {
   prompt: string;
 }) {
   try {
-    const schema = z.toJSONSchema(dataModelArtifactSchema);
+    const schema = buildDataModelResponseJsonSchema();
     const rawOutput = await callStructuredJsonLLM(
       buildDataModelSystemPrompt(JSON.stringify(schema, null, 2)),
       buildDataModelUserPrompt(input),

@@ -1,5 +1,5 @@
 import { LoaderCircle } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { generateBlueprintArtifact } from '../blueprint';
 import { generateDataModelArtifact } from '../dataModel';
 import { MarkdownViewer } from '../nightworkers/components/ArtifactFileViewers';
@@ -39,7 +39,6 @@ import {
   ViewDecisionSummary,
   WorkspaceBlueprintPreview,
   WorkspaceDataModelPanel,
-  WorkspaceList,
 } from './PlanModeWorkspacePanels';
 import { type GenericPlanView, generatePlanViewArtifact } from './planViewCommands';
 
@@ -62,7 +61,7 @@ const tabToPlanView = {
 } as const;
 
 const tabLabels: Record<PlanWorkspaceTab, string> = {
-  'feature-plan': 'Feature Plan',
+  'feature-plan': 'spec',
   status: 'Status',
   questionnaire: 'Questionnaire',
   blueprint: 'Blueprint',
@@ -74,6 +73,45 @@ const tabLabels: Record<PlanWorkspaceTab, string> = {
   'sequence-flow': 'Sequence',
   'zod-schema-design': 'Zod',
 };
+
+export function getPlanWorkspaceTabLabel(tab: PlanWorkspaceTab) {
+  return tabLabels[tab];
+}
+
+type PlanModeCapabilities = ReturnType<typeof getPlanModeCapabilities>;
+
+export function buildVisiblePlanWorkspaceTabs(input: {
+  questionnaireGateLocked: boolean;
+  hasFeaturePlan: boolean;
+  hasQuestionnaire: boolean;
+  hasBlueprint: boolean;
+  hasDataModel: boolean;
+  includedViews: ReadonlySet<string>;
+  planModeCapabilities: PlanModeCapabilities;
+  dedicatedViewArtifacts: PlanModeWorkspace['dedicatedViewArtifacts'] | undefined;
+}): PlanWorkspaceTab[] {
+  if (input.questionnaireGateLocked) return ['questionnaire'];
+  const additionalTabs = additionalPlanViewTabs.filter((tab) => {
+    const view = tabToPlanView[tab];
+    return (
+      input.dedicatedViewArtifacts?.some((artifact) => artifact.kind === view) ||
+      input.includedViews.has(view)
+    );
+  });
+  return [
+    'status',
+    ...(input.hasFeaturePlan ? (['feature-plan'] as const) : []),
+    ...(input.planModeCapabilities.questionnaire &&
+    (input.hasQuestionnaire || input.includedViews.has('questionnaire'))
+      ? (['questionnaire'] as const)
+      : []),
+    ...(input.hasBlueprint || input.includedViews.has('blueprint') ? (['blueprint'] as const) : []),
+    ...(input.hasDataModel || input.includedViews.has('data_model')
+      ? (['data-model'] as const)
+      : []),
+    ...additionalTabs,
+  ];
+}
 
 export function PlanModeWorkspaceViewer({
   sessionId,
@@ -94,7 +132,9 @@ export function PlanModeWorkspaceViewer({
 }) {
   const [workspace, setWorkspace] = useState<PlanModeWorkspace | null>(null);
   const [sessions, setSessions] = useState<DesignQuestionnaireSession[]>([]);
-  const [activeTab, setActiveTab] = useState<PlanWorkspaceTab>(initialTab || 'status');
+  const [activeTab, setActiveTab] = useState<PlanWorkspaceTab>(
+    initialTab === 'status' ? 'questionnaire' : initialTab || 'questionnaire'
+  );
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, DesignQuestionnaireAnswer>>({});
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -127,37 +167,38 @@ export function PlanModeWorkspaceViewer({
       new Set(viewDecisions.filter((item) => item.decision === 'include').map((item) => item.view)),
     [viewDecisions]
   );
+  const planModeCapabilities = getPlanModeCapabilities(generalSettings);
   const hasFeaturePlan = Boolean(featurePlanMessage || workspace?.featurePlanArtifacts.length);
   const hasQuestionnaire = sessions.length > 0 || Boolean(workspace?.questionnaireSessions.length);
   const hasBlueprint = Boolean(activeBlueprintMessage || workspace?.blueprintArtifacts.length);
   const hasDataModel = Boolean(activeDataModelMessage || workspace?.dataModelArtifacts.length);
+  const questionnaireComplete =
+    sessions.some(isCompletedQuestionnaireSession) ||
+    Boolean(workspace?.questionnaireSessions.some((session) => isCompletedStatus(session.status)));
+  const questionnaireGateLocked = planModeCapabilities.questionnaire && !questionnaireComplete;
+  const didSelectUnlockedDefaultTab = useRef(false);
   const visibleTabs = useMemo<PlanWorkspaceTab[]>(() => {
-    const additionalTabs = additionalPlanViewTabs.filter((tab) => {
-      const view = tabToPlanView[tab];
-      return (
-        workspace?.dedicatedViewArtifacts.some((artifact) => artifact.kind === view) ||
-        includedViews.has(view)
-      );
+    return buildVisiblePlanWorkspaceTabs({
+      questionnaireGateLocked,
+      hasFeaturePlan,
+      hasQuestionnaire,
+      hasBlueprint,
+      hasDataModel,
+      includedViews,
+      planModeCapabilities,
+      dedicatedViewArtifacts: workspace?.dedicatedViewArtifacts,
     });
-    return [
-      ...(hasFeaturePlan ? (['feature-plan'] as const) : []),
-      'status',
-      ...(hasQuestionnaire || includedViews.has('questionnaire')
-        ? (['questionnaire'] as const)
-        : []),
-      ...(hasBlueprint || includedViews.has('blueprint') ? (['blueprint'] as const) : []),
-      ...(hasDataModel || includedViews.has('data_model') ? (['data-model'] as const) : []),
-      ...additionalTabs,
-    ];
   }, [
     hasBlueprint,
     hasDataModel,
     hasFeaturePlan,
     hasQuestionnaire,
     includedViews,
+    planModeCapabilities,
+    questionnaireGateLocked,
     workspace?.dedicatedViewArtifacts,
   ]);
-  const defaultTab: PlanWorkspaceTab = hasFeaturePlan ? 'feature-plan' : 'status';
+  const defaultTab: PlanWorkspaceTab = questionnaireGateLocked ? 'questionnaire' : 'status';
 
   const refresh = useCallback(async () => {
     if (!sessionId) return;
@@ -201,13 +242,24 @@ export function PlanModeWorkspaceViewer({
   }, []);
 
   useEffect(() => {
-    if (initialTab) setActiveTab(initialTab);
-  }, [initialTab]);
+    if (!initialTab) return;
+    setActiveTab(questionnaireGateLocked ? 'questionnaire' : initialTab);
+  }, [initialTab, questionnaireGateLocked]);
 
   useEffect(() => {
+    if (questionnaireGateLocked) {
+      didSelectUnlockedDefaultTab.current = false;
+      if (activeTab !== 'questionnaire') setActiveTab('questionnaire');
+      return;
+    }
     if (initialTab) return;
+    if (!didSelectUnlockedDefaultTab.current && activeTab === 'questionnaire') {
+      didSelectUnlockedDefaultTab.current = true;
+      setActiveTab(defaultTab);
+      return;
+    }
     if (!visibleTabs.includes(activeTab)) setActiveTab(defaultTab);
-  }, [activeTab, defaultTab, initialTab, visibleTabs]);
+  }, [activeTab, defaultTab, initialTab, questionnaireGateLocked, visibleTabs]);
 
   const activeQuestionnaireSession =
     sessions.find((session) => session.id === activeSessionId) || sessions[0] || null;
@@ -244,7 +296,6 @@ export function PlanModeWorkspaceViewer({
     await runAction(action, fn);
   }
 
-  const planModeCapabilities = getPlanModeCapabilities(generalSettings);
   const planModeDisabledReason = 'Plan Mode capability is disabled in Settings.';
 
   async function startQuestionnaire() {
@@ -394,24 +445,22 @@ export function PlanModeWorkspaceViewer({
               }`}
               onClick={() => setActiveTab(id)}
             >
-              {tabLabels[id]}
+              {getPlanWorkspaceTabLabel(id)}
             </button>
           ))}
         </div>
       </div>
       <div className="nightworkers-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
         {activeTab === 'feature-plan' ? (
-          <MarkdownViewer content={featurePlanMessage?.content || 'No Feature Plan artifact.'} />
+          <MarkdownViewer
+            content={featurePlanMessage?.content || '仕様書 artifact はありません。'}
+          />
         ) : activeTab === 'blueprint' ? (
           <div className="grid gap-3">
             <WorkspaceBlueprintPreview sessionId={sessionId} message={activeBlueprintMessage} />
           </div>
         ) : activeTab === 'data-model' ? (
           <div className="grid gap-4">
-            <WorkspaceList
-              items={workspace?.dataModelArtifacts || []}
-              empty="No Data Model revisions."
-            />
             <WorkspaceDataModelPanel
               message={activeDataModelMessage}
               empty="No Data Model artifact."
@@ -594,6 +643,14 @@ const planViewToTab: Record<GenericPlanView, PlanWorkspaceTab> = {
 
 function isGenericPlanView(view: string): view is GenericPlanView {
   return Object.hasOwn(planViewToTab, view);
+}
+
+function isCompletedQuestionnaireSession(session: DesignQuestionnaireSession) {
+  return isCompletedStatus(session.status);
+}
+
+function isCompletedStatus(status: string) {
+  return status === 'review_ready' || status === 'accepted';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

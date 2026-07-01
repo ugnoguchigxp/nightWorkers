@@ -75,9 +75,13 @@ export function appendWorkbenchMessage(
     providerEndpointId?: string;
     thinkingDepth?: string;
     waitForIntake?: boolean;
-  }
+  },
+  init?: RequestInit
 ) {
-  return apiFetch(`/api/workbench/sessions/${sessionId}/messages`, jsonRequest('POST', input));
+  return apiFetch(`/api/workbench/sessions/${sessionId}/messages`, {
+    ...jsonRequest('POST', input),
+    ...init,
+  });
 }
 
 export function patchTask(sessionId: string, input: unknown) {

@@ -1,4 +1,5 @@
-import { Check, LoaderCircle } from 'lucide-react';
+import { Check, Download, LoaderCircle } from 'lucide-react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { BlueprintPreview } from '../blueprint-preview';
 import { MarkdownViewer } from '../nightworkers/components/ArtifactFileViewers';
 import type {
@@ -82,8 +83,6 @@ export function WorkspaceDataModelPanel({
   const ddl = stringValue(dataModel.ddl);
   const tables = toRecordArray(dataModel.derivedTables);
   const relations = toRecordArray(dataModel.relations);
-  const constraints = stringArray(dataModel.constraints);
-  const openQuestions = stringArray(dataModel.openQuestions);
 
   return (
     <div className="grid gap-4 text-xs">
@@ -99,46 +98,13 @@ export function WorkspaceDataModelPanel({
           Source message {message?.id?.slice(0, 8) || 'unknown'}
         </p>
       </div>
+      {tables.length > 0 ? <DataModelDiagram tables={tables} relations={relations} /> : null}
       {ddl ? (
         <div className="rounded border border-slate-800 bg-slate-950/20 p-3">
           <div className="mb-2 text-[11px] font-semibold uppercase text-slate-400">DDL</div>
           <pre className="nightworkers-code-block overflow-x-auto rounded bg-slate-950 p-3 text-[11px] text-slate-200">
             <code>{ddl}</code>
           </pre>
-        </div>
-      ) : null}
-      {tables.length > 0 ? (
-        <div className="grid gap-2">
-          <div className="text-[11px] font-semibold uppercase text-slate-400">Derived tables</div>
-          {tables.map((table, index) => {
-            const columns = toRecordArray(table.columns);
-            return (
-              <div
-                key={`${stringValue(table.name) || index}`}
-                className="rounded border border-slate-800 bg-slate-950/20 p-3"
-              >
-                <div className="font-semibold text-slate-100">
-                  {stringValue(table.name) || 'Table'}
-                </div>
-                {stringValue(table.purpose) ? (
-                  <div className="mt-1 text-slate-400">{stringValue(table.purpose)}</div>
-                ) : null}
-                {columns.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {columns.map((column, columnIndex) => (
-                      <span
-                        key={`${stringValue(column.name) || columnIndex}`}
-                        className="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] text-slate-300"
-                      >
-                        {stringValue(column.name) || 'column'}:{' '}
-                        {stringValue(column.type) || 'unknown'}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
         </div>
       ) : null}
       {relations.length > 0 ? (
@@ -156,15 +122,175 @@ export function WorkspaceDataModelPanel({
           )}
         />
       ) : null}
-      {constraints.length > 0 ? <SummaryList title="Constraints" items={constraints} /> : null}
-      {openQuestions.length > 0 ? (
-        <SummaryList title="Open questions" items={openQuestions} tone="amber" />
-      ) : null}
       {!ddl && tables.length === 0 && message?.content ? (
         <MarkdownViewer content={message.content} />
       ) : null}
     </div>
   );
+}
+
+function DataModelDiagram({
+  tables,
+  relations,
+}: {
+  tables: Array<Record<string, unknown>>;
+  relations: Array<Record<string, unknown>>;
+}) {
+  const diagram = useMemo(() => buildMermaidErDiagram(tables, relations), [tables, relations]);
+  return (
+    <div className="grid gap-3 rounded border border-cyan-500/30 bg-slate-950/30 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-[11px] font-semibold uppercase text-cyan-100">
+            Mermaid ER diagram
+          </div>
+          <div className="mt-1 text-[11px] text-slate-400">
+            Generated deterministically from Data Model tables and relations.
+          </div>
+        </div>
+      </div>
+      <MermaidDiagram chart={diagram} />
+    </div>
+  );
+}
+
+function MermaidDiagram({ chart }: { chart: string }) {
+  const rawId = useId();
+  const diagramId = useMemo(() => `data-model-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`, [rawId]);
+  const containerRef = useRef<HTMLButtonElement | null>(null);
+  const fullscreenContainerRef = useRef<HTMLButtonElement | null>(null);
+  const [rendered, setRendered] = useState(false);
+  const [renderedSvg, setRenderedSvg] = useState('');
+  const [error, setError] = useState('');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    containerRef.current?.replaceChildren();
+    setRendered(false);
+    setRenderedSvg('');
+    setError('');
+    setIsFullscreen(false);
+    import('mermaid')
+      .then(async ({ default: mermaid }) => {
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme: 'dark',
+          themeVariables: {
+            darkMode: true,
+            background: '#020617',
+            mainBkg: '#0f172a',
+            primaryColor: '#164e63',
+            primaryTextColor: '#e2e8f0',
+            lineColor: '#67e8f9',
+            textColor: '#e2e8f0',
+          },
+        });
+        const rendered = await mermaid.render(diagramId, chart);
+        if (cancelled || !containerRef.current) return;
+        if (!replaceMermaidSvg(containerRef.current, rendered.svg)) {
+          throw new Error('Mermaid did not return SVG output.');
+        }
+        setRenderedSvg(rendered.svg);
+        setRendered(true);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chart, diagramId]);
+
+  useEffect(() => {
+    if (isFullscreen && renderedSvg) {
+      replaceMermaidSvg(fullscreenContainerRef.current, renderedSvg);
+    }
+  }, [isFullscreen, renderedSvg]);
+
+  const handleDownload = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (!renderedSvg) return;
+    const blob = new Blob([renderedSvg], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'data-model-mermaid.svg';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const renderDownloadButton = () => (
+    <button
+      type="button"
+      className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 bg-slate-950/90 text-slate-200 shadow hover:border-cyan-400/70 hover:text-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
+      title="Download Mermaid SVG"
+      aria-label="Download Mermaid SVG"
+      disabled={!renderedSvg}
+      onClick={handleDownload}
+    >
+      <Download className="h-3.5 w-3.5" />
+    </button>
+  );
+
+  return (
+    <div className="grid gap-2">
+      <div className="relative">
+        <div className="absolute right-2 top-2 z-10">{renderDownloadButton()}</div>
+        <button
+          type="button"
+          ref={containerRef}
+          className={`w-full overflow-x-auto rounded border border-slate-800 bg-slate-950 p-3 pr-12 text-left [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full ${
+            rendered ? 'cursor-zoom-in' : 'hidden'
+          }`}
+          onClick={() => {
+            if (renderedSvg) setIsFullscreen(true);
+          }}
+          aria-label="Open Mermaid diagram fullscreen"
+          title={renderedSvg ? 'Open Mermaid diagram fullscreen' : undefined}
+        />
+      </div>
+      {!rendered ? (
+        <pre className="nightworkers-code-block overflow-x-auto rounded border border-slate-800 bg-slate-950 p-3 text-[11px] text-slate-200">
+          <code>{chart}</code>
+        </pre>
+      ) : null}
+      {error ? (
+        <div className="text-[11px] text-amber-300">Mermaid render failed: {error}</div>
+      ) : null}
+      <details className="text-[11px] text-slate-400">
+        <summary className="cursor-pointer text-slate-300">Mermaid source</summary>
+        <pre className="mt-2 overflow-x-auto rounded border border-slate-800 bg-slate-950 p-3 text-[11px] text-slate-300">
+          <code>{chart}</code>
+        </pre>
+      </details>
+      {isFullscreen && renderedSvg ? (
+        <div className="fixed inset-0 z-50 grid bg-slate-950/95 p-4">
+          <div className="absolute right-4 top-4 z-10">{renderDownloadButton()}</div>
+          <button
+            type="button"
+            ref={fullscreenContainerRef}
+            className="min-h-0 cursor-zoom-out overflow-auto rounded border border-cyan-500/40 bg-slate-950 p-4 text-left [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-h-[calc(100vh-4rem)] [&_svg]:max-w-full"
+            aria-label="Close fullscreen Mermaid diagram"
+            title="Close fullscreen Mermaid diagram"
+            onClick={() => setIsFullscreen(false)}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function replaceMermaidSvg(target: Element | null, svg: string) {
+  if (!target) return false;
+  const parsedSvg = new DOMParser().parseFromString(svg, 'image/svg+xml');
+  const svgElement = parsedSvg.documentElement;
+  if (svgElement.nodeName.toLowerCase() !== 'svg') return false;
+  target.replaceChildren(document.importNode(svgElement, true));
+  return true;
 }
 
 export function PlanWorkspaceStatusView({
@@ -317,12 +443,12 @@ export function PlanWorkspaceStatusView({
       : null,
     {
       number: 5,
-      title: 'Feature Plan Markdownを作ります。これによってすぐに実装に移れます',
+      title: '仕様書を作成します',
       detail: hasFeaturePlan
-        ? 'Feature Planが作成済みです。'
-        : '利用可能なQuestionnaire、Blueprint、Data Modelを要約してFeature Planを生成します。',
+        ? '仕様書が作成済みです。'
+        : '利用可能なQuestionnaire、Blueprint、Data Modelを要約して仕様書を生成します。',
       done: hasFeaturePlan,
-      buttonLabel: hasFeaturePlan ? 'Feature Planを再生成' : 'Feature Plan作成',
+      buttonLabel: hasFeaturePlan ? '仕様書を再生成' : '仕様書作成',
       busy: busyAction === 'feature-plan',
       disabled: isImplementationLocked || !capabilities.feature_plan,
       disabledReason: !capabilities.feature_plan ? disabledReason : null,
@@ -334,50 +460,51 @@ export function PlanWorkspaceStatusView({
     <div className="grid gap-3 text-xs">
       <div>
         <h2 className="text-base font-semibold text-slate-100">Status</h2>
-        <p className="mt-1 text-slate-400">
-          必要なArtifactを確認し、Feature Plan から実装開始へ進みます。
-        </p>
+        <p className="mt-1 text-slate-400">必要なArtifactを確認し、仕様書を作成します。</p>
       </div>
       <ViewDecisionSummary decisions={viewDecisions} />
       <div className="grid gap-3">
-        {steps.map((step, index) => (
-          <div
-            key={step.number}
-            className="grid gap-3 rounded border border-slate-800 bg-slate-950/20 p-3 md:grid-cols-[1fr_auto] md:items-center"
-          >
-            <div className="flex gap-3">
-              <div className="flex flex-col items-center">
-                <div
-                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold ${
-                    step.done
-                      ? 'border-emerald-400/70 bg-emerald-950/40 text-emerald-100'
-                      : 'border-slate-700 bg-slate-900 text-slate-300'
-                  }`}
-                >
-                  {step.done ? <Check className="h-3.5 w-3.5" /> : step.number}
+        {steps.map((step, index) => {
+          const displayNumber = index + 1;
+          return (
+            <div
+              key={step.number}
+              className="grid gap-3 rounded border border-slate-800 bg-slate-950/20 p-3 md:grid-cols-[1fr_auto] md:items-center"
+            >
+              <div className="flex gap-3">
+                <div className="flex flex-col items-center">
+                  <div
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold ${
+                      step.done
+                        ? 'border-emerald-400/70 bg-emerald-950/40 text-emerald-100'
+                        : 'border-slate-700 bg-slate-900 text-slate-300'
+                    }`}
+                  >
+                    {step.done ? <Check className="h-3.5 w-3.5" /> : displayNumber}
+                  </div>
+                  {index < steps.length - 1 ? (
+                    <div className="mt-2 min-h-8 w-px flex-1 bg-slate-800" />
+                  ) : null}
                 </div>
-                {index < steps.length - 1 ? (
-                  <div className="mt-2 min-h-8 w-px flex-1 bg-slate-800" />
-                ) : null}
-              </div>
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-slate-100">
-                  {step.number}. {step.title}
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-slate-100">
+                    {displayNumber}. {step.title}
+                  </div>
+                  <div className="mt-1 text-slate-400">{step.detail}</div>
+                  {step.disabledReason ? (
+                    <div className="mt-1 text-[11px] text-amber-300">{step.disabledReason}</div>
+                  ) : null}
                 </div>
-                <div className="mt-1 text-slate-400">{step.detail}</div>
-                {step.disabledReason ? (
-                  <div className="mt-1 text-[11px] text-amber-300">{step.disabledReason}</div>
-                ) : null}
               </div>
+              <StatusActionButton
+                label={step.buttonLabel}
+                busy={step.busy}
+                disabled={step.disabled}
+                onClick={step.onClick}
+              />
             </div>
-            <StatusActionButton
-              label={step.buttonLabel}
-              busy={step.busy}
-              disabled={step.disabled}
-              onClick={step.onClick}
-            />
-          </div>
-        ))}
+          );
+        })}
       </div>
       {allStepsDone ? (
         <div className="mt-4 flex flex-wrap justify-center gap-3">
@@ -528,18 +655,161 @@ function SummaryList({
   );
 }
 
+type RelationEdge = {
+  from: string;
+  to: string;
+  cardinality: string;
+  reason: string;
+};
+
+export function buildMermaidErDiagram(
+  tables: Array<Record<string, unknown>>,
+  relations: Array<Record<string, unknown>>
+) {
+  const relationEdges = relations
+    .map(toRelationEdge)
+    .filter((edge): edge is RelationEdge => Boolean(edge));
+  const tableNames = tables.map((table, index) => stringValue(table.name) || `table_${index + 1}`);
+  const entityByTableName = new Map(
+    tableNames.map((tableName) => [tableName, sanitizeMermaidIdentifier(tableName)])
+  );
+  const lines = ['erDiagram'];
+
+  tables.forEach((table, index) => {
+    const tableName = tableNames[index] || `table_${index + 1}`;
+    const entityName = entityByTableName.get(tableName) || sanitizeMermaidIdentifier(tableName);
+    const columns = toRecordArray(table.columns);
+    lines.push(`  ${entityName} {`);
+    if (columns.length === 0) {
+      lines.push('    string no_columns');
+    }
+    columns.forEach((column, columnIndex) => {
+      const columnName = stringValue(column.name) || `column_${columnIndex + 1}`;
+      const type = sanitizeMermaidType(stringValue(column.type) || 'string');
+      const keys = mermaidColumnKeys(tableName, column, relationEdges);
+      const comment = mermaidColumnComment(column);
+      lines.push(
+        `    ${sanitizeMermaidIdentifier(columnName)} ${type}${keys ? ` ${keys}` : ''}${
+          comment ? ` "${comment}"` : ''
+        }`
+      );
+    });
+    lines.push('  }');
+  });
+
+  relationEdges.forEach((relation) => {
+    const fromTable = splitRelationEndpoint(relation.from)[0];
+    const toTable = splitRelationEndpoint(relation.to)[0];
+    const fromEntity = entityByTableName.get(fromTable) || sanitizeMermaidIdentifier(fromTable);
+    const toEntity = entityByTableName.get(toTable) || sanitizeMermaidIdentifier(toTable);
+    if (!fromEntity || !toEntity) return;
+    lines.push(
+      `  ${fromEntity} ${mermaidCardinality(relation.cardinality)} ${toEntity} : ${sanitizeMermaidLabel(
+        relation.reason || 'relates'
+      )}`
+    );
+  });
+
+  return lines.join('\n');
+}
+
+function toRelationEdge(relation: Record<string, unknown>): RelationEdge | null {
+  const from = stringValue(relation.from);
+  const to = stringValue(relation.to);
+  if (!from || !to) return null;
+  return {
+    from,
+    to,
+    cardinality: stringValue(relation.cardinality),
+    reason: stringValue(relation.reason),
+  };
+}
+
+function mermaidColumnKeys(
+  tableName: string,
+  column: Record<string, unknown>,
+  relations: RelationEdge[]
+) {
+  const flags = [];
+  const columnName = stringValue(column.name);
+  if (column.primaryKey === true) flags.push('PK');
+  if (isForeignKeyColumn(tableName, columnName, relations)) flags.push('FK');
+  if (column.unique === true) flags.push('UK');
+  return flags.join(', ');
+}
+
+function mermaidColumnComment(column: Record<string, unknown>) {
+  const notes = [];
+  if (column.nullable === false) notes.push('not null');
+  const defaultValue = stringValue(column.defaultValue);
+  if (defaultValue) notes.push(`default ${defaultValue}`);
+  return notes.join(', ');
+}
+
+function isForeignKeyColumn(tableName: string, columnName: string, relations: RelationEdge[]) {
+  if (!columnName) return false;
+  return relations.some((relation) => {
+    return endpointMatchesColumn(relation.from, tableName, columnName);
+  });
+}
+
+function endpointMatchesColumn(endpoint: string, tableName: string, columnName: string) {
+  const [endpointTable, endpointColumn] = splitRelationEndpoint(endpoint);
+  if (!endpointColumn) return false;
+  return endpointTable === tableName && endpointColumn === columnName;
+}
+
+function splitRelationEndpoint(endpoint: string) {
+  const trimmed = endpoint.trim();
+  const dotIndex = trimmed.lastIndexOf('.');
+  if (dotIndex > 0 && dotIndex < trimmed.length - 1) {
+    return [trimmed.slice(0, dotIndex), trimmed.slice(dotIndex + 1)] as const;
+  }
+  return [trimmed, ''] as const;
+}
+
+function mermaidCardinality(value: string) {
+  const labels: Record<string, string> = {
+    one_to_one: '||--||',
+    one_to_many: '||--o{',
+    many_to_one: '}o--||',
+    many_to_many: '}o--o{',
+  };
+  return labels[value] || '--';
+}
+
+function sanitizeMermaidIdentifier(value: string) {
+  const sanitized = value
+    .trim()
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .replace(/^([0-9])/, '_$1')
+    .replace(/_+/g, '_');
+  return sanitized || 'unnamed';
+}
+
+function sanitizeMermaidType(value: string) {
+  const sanitized = value
+    .trim()
+    .split(/\s+/)[0]
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .replace(/^([0-9])/, 't_$1')
+    .replace(/_+/g, '_');
+  return sanitized || 'string';
+}
+
+function sanitizeMermaidLabel(value: string) {
+  const label =
+    value.replace(/["`:]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 10).join(' ') ||
+    'relates';
+  return `"${label}"`;
+}
+
 function firstRecord(...values: unknown[]) {
   return values.find(isRecord) || null;
 }
 
 function stringValue(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
-}
-
-function stringArray(value: unknown) {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : [];
 }
 
 function formatCanonicalSource(value: string) {

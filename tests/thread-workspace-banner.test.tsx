@@ -16,12 +16,13 @@ const baseSessionView: WorkbenchSessionView = {
   badges: [],
 };
 
-describe('WorkbenchStateBanner Codex diagnostics', () => {
-  it('renders contract warning and MCP diagnostics as read-only badges', () => {
+describe('WorkbenchStateBanner review state', () => {
+  it('does not render the review-needed banner or its action buttons', () => {
     const markup = renderToStaticMarkup(
       <WorkbenchStateBanner
         sessionView={{
           ...baseSessionView,
+          emailState: 'review_needed',
           codexContractWarnings: {
             totalCount: 3,
             warningCount: 2,
@@ -52,18 +53,20 @@ describe('WorkbenchStateBanner Codex diagnostics', () => {
         }}
         model="test-model"
         onRemoveQueueEntry={vi.fn()}
-        onSubmitReview={vi.fn()}
         onRequeueQueueEntry={vi.fn()}
-        onArchiveQueueExecution={vi.fn()}
-        onOpenDiff={vi.fn()}
-        hasDiff={false}
       />
     );
 
-    expect(markup).toContain('Contract warnings: 2 warning / 1 error');
-    expect(markup).toContain('codex_open_todos_before_completion x1');
-    expect(markup).toContain('MCP degraded');
-    expect(markup).toContain('observed 1');
-    expect(markup).not.toContain('<button');
+    expect(markup).toBe('');
+    expect(markup).not.toContain('実行が完了しました。レビューが必要です。');
+    expect(markup).not.toContain('Review');
+    expect(markup).not.toContain('満足 / Accept');
+    expect(markup).not.toContain('修正を依頼して再投入');
+    expect(markup).not.toContain('採用しない / Archive');
+    expect(markup).not.toContain('Decision support');
+    expect(markup).not.toContain('Contract warnings');
+    expect(markup).not.toContain('codex_open_todos_before_completion');
+    expect(markup).not.toContain('MCP degraded');
+    expect(markup).not.toContain('Codex contract diagnostics');
   });
 });

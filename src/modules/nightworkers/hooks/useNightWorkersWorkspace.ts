@@ -53,7 +53,7 @@ function _hasPlanModeWorkspaceEvidence(workspace: PlanModeWorkspace) {
 
 function _summarizePlanModeWorkspace(workspace: PlanModeWorkspace) {
   return [
-    `${workspace.featurePlanArtifacts.length} Feature Plan`,
+    `${workspace.featurePlanArtifacts.length} spec`,
     `${workspace.blueprintArtifacts.length} Blueprint`,
     `${workspace.dataModelArtifacts.length} Data Model`,
     `${workspace.dedicatedViewArtifacts.length} Dedicated Views`,
@@ -89,6 +89,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const chatSubmitTransportRef = useRef<'http' | 'websocket' | null>(null);
   const pendingChatRunIdRef = useRef<string | null>(null);
   const pendingAssistantTaskIdRef = useRef<string | null>(null);
+  const pendingChatAbortControllerRef = useRef<AbortController | null>(null);
   const processedRealtimeMessageKeysRef = useRef<Set<string>>(new Set());
   const latestRunSubscriptionRef = useRef<{ runId: string | null; afterSeq?: number }>({
     runId: null,
@@ -231,6 +232,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     chatSubmitTransportRef,
     pendingChatRunIdRef,
     pendingAssistantTaskIdRef,
+    pendingChatAbortControllerRef,
     setIsChatSubmitting,
     setPendingChatRunId,
     setPendingAssistantTaskId,
@@ -349,6 +351,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     setPendingChatRunId(null);
     pendingAssistantTaskIdRef.current = null;
     setPendingAssistantTaskId(null);
+    pendingChatAbortControllerRef.current?.abort();
+    pendingChatAbortControllerRef.current = null;
     pendingChatQueueRef.current = [];
   }, [realtimeStatus]);
 
@@ -376,6 +380,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
         setPendingChatRunId(null);
         pendingAssistantTaskIdRef.current = null;
         setPendingAssistantTaskId(null);
+        pendingChatAbortControllerRef.current?.abort();
+        pendingChatAbortControllerRef.current = null;
         pendingChatQueueRef.current = [];
       }
     }, 2000);

@@ -82,6 +82,80 @@ describe('LLM settings secret hardening', () => {
     expect(persisted.OPENAI_API_KEY).toBe('existing-openai-secret');
   });
 
+  it('does not append migrated legacy default endpoints on repeated settings reads', async () => {
+    const settingsPath = isolatedSettingsPath();
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        ACTIVE_LLM_PROVIDER: 'codex',
+        CODEX_ENABLED: true,
+        CODEX_MODEL: 'gpt-5.4-mini',
+        providerEndpoints: [
+          {
+            id: 'codex-default',
+            name: 'Codex SDK',
+            kind: 'codex',
+            enabled: true,
+            apiKey: '',
+            baseUrl: '',
+            endpoint: '',
+            apiVersion: '',
+            region: '',
+            models: [
+              'gpt-5.4-mini',
+              'gpt-5.5',
+              'gpt-5.4',
+              'gpt-5.3-codex-spark',
+              'codex-auto-review',
+              'gpt-5-mini',
+            ],
+            modelDisplayNames: {},
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'codex-default',
+              model: 'gpt-5.4-mini',
+            },
+            fallbacks: [],
+          },
+        ],
+      })
+    );
+    const { getCurrentSettings } = await importSettingsRuntimeWithPath(settingsPath);
+
+    const first = getCurrentSettings();
+    const firstPersisted = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as {
+      providerEndpoints: Array<{
+        id: string;
+        name: string;
+        kind: string;
+        models: string[];
+      }>;
+    };
+    const second = getCurrentSettings();
+    const secondPersisted = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as {
+      providerEndpoints: Array<{
+        id: string;
+        name: string;
+        kind: string;
+        models: string[];
+      }>;
+    };
+
+    const endpointKey = (endpoint: { name: string; kind: string }) =>
+      `${endpoint.kind}\u0000${endpoint.name}`;
+
+    expect(second.providerEndpoints).toHaveLength(first.providerEndpoints.length);
+    expect(secondPersisted.providerEndpoints).toHaveLength(firstPersisted.providerEndpoints.length);
+    expect(new Set(secondPersisted.providerEndpoints.map(endpointKey)).size).toBe(
+      secondPersisted.providerEndpoints.length
+    );
+  });
+
   it('masks configured secrets before returning settings to clients', async () => {
     const { maskLlmSettings } = await importSettingsRoute();
 

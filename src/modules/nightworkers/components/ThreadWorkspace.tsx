@@ -82,25 +82,20 @@ type ThreadWorkspaceProps = {
   onDeleteSession: () => void;
   onQueueSession: () => Promise<void> | void;
   onRemoveQueueEntry: () => void;
-  onSubmitReview: (action: 'complete' | 'cancel', note?: string) => void;
   onRequeueQueueEntry: (note?: string) => void;
-  onArchiveQueueExecution: () => void;
   onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
   onClearArtifactContext?: () => void;
   isProjectFilesOpen: boolean;
   onOpenProjectFiles: () => void;
-  onOpenDiffArtifact: (artifact: WorkbenchArtifactRef) => void;
   onGrantExternalPath: (path: string) => Promise<void>;
   splitPanel?: ReactNode;
 };
 
 export function ThreadWorkspace(props: ThreadWorkspaceProps) {
   const { t } = useTranslation();
-  const diffArtifacts = props.artifactRefs.filter((artifact) => artifact.kind === 'diff');
   const blueprintArtifact =
     props.artifactRefs.find((artifact) => artifact.kind === 'plan_mode_workspace') ||
     props.artifactRefs.find((artifact) => artifact.kind === 'app_blueprint');
-  const latestDiffArtifact = diffArtifacts[0];
   const [showDebugEvents, setShowDebugEvents] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const scrollStateRef = useRef<PersistedScrollState>({ mode: 'bottom' });
@@ -257,13 +252,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
       sessionView={props.sessionView}
       model={props.model}
       onRemoveQueueEntry={props.onRemoveQueueEntry}
-      onSubmitReview={props.onSubmitReview}
       onRequeueQueueEntry={props.onRequeueQueueEntry}
-      onArchiveQueueExecution={props.onArchiveQueueExecution}
-      onOpenDiff={() => {
-        if (latestDiffArtifact) props.onOpenDiffArtifact(latestDiffArtifact);
-      }}
-      hasDiff={Boolean(latestDiffArtifact)}
     />
   ) : null;
   return (

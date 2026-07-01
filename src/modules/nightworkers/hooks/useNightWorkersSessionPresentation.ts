@@ -32,7 +32,7 @@ function hasPlanModeWorkspaceEvidence(workspace: PlanModeWorkspace) {
 
 function summarizePlanModeWorkspace(workspace: PlanModeWorkspace) {
   return [
-    `${workspace.featurePlanArtifacts.length} Feature Plan`,
+    `${workspace.featurePlanArtifacts.length} spec`,
     `${workspace.blueprintArtifacts.length} Blueprint`,
     `${workspace.dataModelArtifacts.length} Data Model`,
     `${workspace.dedicatedViewArtifacts.length} Dedicated Views`,

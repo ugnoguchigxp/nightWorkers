@@ -41,6 +41,7 @@ describe('supervisor prompt packet', () => {
     expect(rendered).toContain('feature_plan');
     expect(rendered).toContain('planMode');
     expect(rendered).toContain('planning 以外では planMode は null');
+    expect(rendered).toContain('questionnaire を最初の判断材料');
     expect(rendered).toContain('ユースケース図');
     expect(rendered).toContain('AI coding rules');
     expect(rendered).not.toContain(['Use', 'case'].join(''));

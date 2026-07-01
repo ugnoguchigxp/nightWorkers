@@ -92,6 +92,7 @@
     "jose": "6.2.2",
     "jsonrepair": "3.14.0",
     "lucide-react": "1.7.0",
+    "mermaid": "^11.16.0",
     "pino": "10.3.1",
     "radix-ui": "1.4.3",
     "react": "19.2.4",

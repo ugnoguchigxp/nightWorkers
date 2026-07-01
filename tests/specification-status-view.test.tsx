@@ -1,6 +1,110 @@
+import mermaid from 'mermaid';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { PlanWorkspaceStatusView } from '../src/modules/planMode';
+import {
+  buildMermaidErDiagram,
+  PlanWorkspaceStatusView,
+  WorkspaceDataModelPanel,
+} from '../src/modules/planMode';
+
+describe('WorkspaceDataModelPanel', () => {
+  it('renders Data Model artifacts as a Mermaid ER diagram while preserving DDL', () => {
+    const markup = renderToStaticMarkup(
+      <WorkspaceDataModelPanel
+        message={
+          {
+            id: 'data-model-message-1',
+            content: '# Data Model',
+            metadataJson: {
+              dataModelArtifact: {
+                title: 'Project Data Model',
+                summary: 'Project and task persistence.',
+                canonicalSource: 'ddl',
+                ddl: 'CREATE TABLE projects (id TEXT PRIMARY KEY);',
+                derivedTables: [
+                  {
+                    name: 'projects',
+                    purpose: 'Stores projects.',
+                    columns: [
+                      { name: 'id', type: 'TEXT', nullable: false, primaryKey: true },
+                      { name: 'name', type: 'TEXT', nullable: false, unique: true },
+                    ],
+                    indexes: [],
+                  },
+                  {
+                    name: 'tasks',
+                    purpose: 'Stores tasks.',
+                    columns: [
+                      { name: 'id', type: 'TEXT', nullable: false, primaryKey: true },
+                      { name: 'project_id', type: 'TEXT', nullable: false },
+                    ],
+                    indexes: [],
+                  },
+                ],
+                relations: [
+                  {
+                    from: 'tasks.project_id',
+                    to: 'projects.id',
+                    cardinality: 'many_to_one',
+                    reason: 'Each task belongs to a project.',
+                  },
+                ],
+                constraints: ['This constraint should stay out of the Data Model screen.'],
+                openQuestions: ['This question should stay out of the Data Model screen.'],
+              },
+            },
+          } as never
+        }
+      />
+    );
+
+    expect(markup).toContain('Mermaid ER diagram');
+    expect(markup).toContain('Download Mermaid SVG');
+    expect(markup).toContain('erDiagram');
+    expect(markup).toContain('projects');
+    expect(markup).toContain('tasks');
+    expect(markup).toContain('project_id');
+    expect(markup).toContain('id TEXT PK');
+    expect(markup).toContain('name TEXT UK');
+    expect(markup).not.toContain('TEXT id PK');
+    expect(markup).toContain('FK');
+    expect(markup).toContain('}o--||');
+    expect(markup).toContain('CREATE TABLE projects');
+    expect(markup).not.toContain('Constraints');
+    expect(markup).not.toContain('Open questions');
+    expect(markup).not.toContain('This constraint should stay out');
+    expect(markup).not.toContain('This question should stay out');
+  });
+
+  it('builds Mermaid ER diagrams with parseable relationship labels', async () => {
+    const chart = buildMermaidErDiagram(
+      [
+        {
+          name: 'threads',
+          columns: [{ name: 'id', type: 'TEXT', nullable: false, primaryKey: true }],
+        },
+        {
+          name: 'actions',
+          columns: [
+            { name: 'id', type: 'TEXT', nullable: false, primaryKey: true },
+            { name: 'thread_id', type: 'TEXT', nullable: false },
+          ],
+        },
+      ],
+      [
+        {
+          from: 'actions.thread_id',
+          to: 'threads.id',
+          cardinality: 'many_to_one',
+          reason: '1つのスレッドに複数の編集履歴が属する',
+        },
+      ]
+    );
+
+    expect(chart).toContain('actions }o--|| threads : "1つのスレッドに複数の編集履歴が属する"');
+    await expect(mermaid.parse(chart)).resolves.toBeTruthy();
+  });
+});
 
 describe('PlanWorkspaceStatusView', () => {
   it('shows separate start-now and add-to-queue actions after the status flow is complete', () => {
@@ -72,7 +176,9 @@ describe('PlanWorkspaceStatusView', () => {
     expect(markup).toContain('アンケートを確認');
     expect(markup).toContain('Blueprintを再生成');
     expect(markup).toContain('Data Modelを再生成');
-    expect(markup).toContain('Feature Planを再生成');
+    expect(markup).toContain('仕様書を再生成');
+    expect(markup).toContain('4. 仕様書を作成します');
+    expect(markup).not.toContain('5. 仕様書を作成します');
     expect(markup).toContain('今すぐ実装開始');
     expect(markup).toContain('キューに追加');
     expect(markup.match(/disabled=""/g) || []).toHaveLength(5);
@@ -125,7 +231,7 @@ describe('PlanWorkspaceStatusView', () => {
     expect(markup).toContain('アンケートを確認');
     expect(markup).toContain('Blueprintを再生成');
     expect(markup).toContain('Data Modelを再生成');
-    expect(markup).toContain('Feature Planを再生成');
+    expect(markup).toContain('仕様書を再生成');
     expect(markup).toContain('Plan Mode capability is disabled in Settings.');
     expect(markup.match(/disabled=""/g) || []).toHaveLength(3);
   });
@@ -228,6 +334,8 @@ describe('PlanWorkspaceStatusView', () => {
 
     expect(markup).toContain('0/2件の追加 view が生成済みです。');
     expect(markup).toContain('追加Viewを生成');
+    expect(markup).toContain('1. 追加の dedicated design view を確認します');
+    expect(markup).toContain('2. 仕様書を作成します');
     expect(markup).toContain('User Flow: include - flow changes');
     expect(markup).toContain('API / I/O: include - API changes');
   });

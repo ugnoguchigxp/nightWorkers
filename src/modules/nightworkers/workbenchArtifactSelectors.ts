@@ -263,7 +263,7 @@ export function buildWorkbenchArtifactRefs(input: {
       kind: 'plan_mode_workspace',
       title: 'Plan Mode Workspace',
       summary: [
-        `${featurePlanMessages.length} Feature Plan${featurePlanMessages.length === 1 ? '' : 's'}`,
+        `${featurePlanMessages.length} spec${featurePlanMessages.length === 1 ? '' : 's'}`,
         `${dataModelMessages.length} Data Model${dataModelMessages.length === 1 ? '' : 's'}`,
         `${dedicatedViewMessages.length} Dedicated View${dedicatedViewMessages.length === 1 ? '' : 's'}`,
         `${blueprintArtifactRows.length + blueprintMessages.length} Blueprint artifact${

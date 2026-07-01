@@ -66,7 +66,9 @@ export function buildDesignQuestionnaireInitialUserPrompt(input: QuestionnaireSo
 export function buildDesignQuestionnaireFollowUpUserPrompt(session: DesignQuestionnaireSession) {
   return [
     '次の質問票と回答をもとに、追加確認が必要な質問だけを follow-up question set として返してください。',
-    '既に十分に回答された質問を繰り返さないでください。',
+    'answeredQuestions は既に回答済みの仕様判断です。選択肢が「未定」「後続決定」でも、その質問自体は回答済みとして扱ってください。',
+    'answeredQuestions と同じ質問、同じ判断軸、同じ意味の言い換え、同じ選択肢集合の質問は絶対に繰り返さないでください。',
+    '追加質問は unansweredQuestions と answeredQuestions のどちらにも存在しない新しい判断軸だけにしてください。',
     JSON.stringify(buildSessionPromptPayload(session), null, 2),
   ].join('\n');
 }
@@ -77,6 +79,7 @@ export function buildDesignQuestionnaireFollowUpDecisionSystemPrompt() {
     '目的は、実装前の仕様の曖昧さを grill-me のように質問攻めで潰すことです。',
     'ユーザー回答を読み、次に聞かないと答えられない下位論点や、まだ未確認の質問ジャンルが残っているか判定してください。',
     'Questionnaire は最大4ページまでです。4ページ目まで回答済みなら追加質問を出さず ready_for_design_assembly にしてください。',
+    'answeredQuestions は既に回答済みの仕様判断です。選択肢が「未定」「後続決定」でも、その質問自体は回答済みとして扱い、同じ判断軸を言い換えて再質問しないでください。',
     '不足がある場合だけ action=follow_up にし、次に回答可能になったジャンルの追加質問を questionnaire に返してください。',
     '既存質問と同じ質問文、同じ意味、または同じ選択肢セットの質問は絶対に返さないでください。',
     'checkbox が未選択で回答されている場合、それは「どれも不要 / 今回は含めない」という仕様判断として扱ってください。',
@@ -102,6 +105,7 @@ export function buildDesignQuestionnaireFollowUpDecisionUserPrompt(
   return [
     '次の質問票とユーザー回答を評価し、Design Assembly に進めるか、さらに追質問が必要かを判定してください。',
     '追質問が必要な場合だけ、追加質問フォームを questionnaire に入れてください。',
+    'answeredQuestions に含まれる質問と回答は必ず引き継ぎ、同じ質問や同じ判断軸を再生成しないでください。',
     '十分なら action は ready_for_design_assembly、questionnaire は null にしてください。',
     JSON.stringify(buildSessionPromptPayload(session), null, 2),
   ].join('\n');
@@ -206,6 +210,11 @@ export function buildSpecificationReviewUserPrompt(input: {
 }
 
 function buildSessionPromptPayload(session: DesignQuestionnaireSession) {
+  const allQuestions = session.questionSets.flatMap((set) =>
+    (set.questionnaire?.questionSets || []).flatMap((questionSet) => questionSet.questions)
+  );
+  const questionById = new Map(allQuestions.map((question) => [question.id, question]));
+  const answeredQuestionIds = new Set(session.answers.map((answer) => answer.questionId));
   return {
     sessionId: session.id,
     taskId: session.taskId,
@@ -213,5 +222,33 @@ function buildSessionPromptPayload(session: DesignQuestionnaireSession) {
     sourceBlueprintMessageId: session.sourceBlueprintMessageId,
     questionSets: session.questionSets.map((set) => set.questionnaire),
     answers: session.answers.map((answer) => answer.answer),
+    answeredQuestions: session.answers.map((answer) => {
+      const question = questionById.get(answer.questionId);
+      const optionById = new Map((question?.options || []).map((option) => [option.id, option]));
+      return {
+        questionId: answer.questionId,
+        question: question?.question ?? null,
+        topic: question?.topic ?? null,
+        answerType: question?.answerType ?? null,
+        selectedOptionLabels: answer.answer.selectedOptionIds.map(
+          (optionId) => optionById.get(optionId)?.label ?? optionId
+        ),
+        rankedOptionLabels: answer.answer.rankedOptionIds.map(
+          (optionId) => optionById.get(optionId)?.label ?? optionId
+        ),
+        booleanValue: answer.answer.booleanValue ?? null,
+        freeText: answer.answer.freeText ?? null,
+        deferred: answer.answer.deferred,
+      };
+    }),
+    unansweredQuestions: allQuestions
+      .filter((question) => !answeredQuestionIds.has(question.id))
+      .map((question) => ({
+        questionId: question.id,
+        question: question.question,
+        topic: question.topic,
+        answerType: question.answerType,
+        optionLabels: (question.options || []).map((option) => option.label),
+      })),
   };
 }

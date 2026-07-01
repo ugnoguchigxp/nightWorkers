@@ -112,6 +112,7 @@ export type NightWorkersWorkspaceState = {
     artifactContext?: WorkbenchArtifactContext | null,
     llmSelection?: WorkbenchLlmSelection
   ) => Promise<WorkbenchMessageResult | undefined>;
+  cancelChatSubmit: () => Promise<void>;
   refreshWorkspace: () => void;
   refreshProjectList: () => Promise<void>;
   currentBrowserPath: string | null;

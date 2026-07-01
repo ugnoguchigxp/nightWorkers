@@ -7,6 +7,7 @@
 ## Required Behavior
 
 - Plan mode の主 artifact は常に Feature Plan とする。Feature Plan は、実装者が次の作業へ進める判断材料を一つに集約する。
+- Plan mode の最初の作業画面は questionnaire とし、回答内容を見てから Status で必要な dedicated design view と後続 artifact を判断する。回答前に Status を主導線にしない。
 - Feature Plan body には、目的、scope / non-goals、現状と目標状態、acceptance criteria、制約、implementation steps、verification、risk notes を含める。
 - dedicated design view は固定テンプレートとして全部作らず、今回の依頼に必要なものだけ選ぶ。不要な view は、実装判断に意味がある場合だけ omit reason を残す。
 - verification は Feature Plan body に残す。検証だけを別 artifact に逃がさない。

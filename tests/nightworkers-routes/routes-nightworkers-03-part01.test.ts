@@ -1179,6 +1179,149 @@ describe('NightWorkers task routes', () => {
     }
   });
 
+  it('carries answered questions forward and drops same-axis follow-up questions', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+
+    try {
+      const createdRepo = await repo.createRepository({
+        name: `TEST: Answered Axis Follow-up ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: createdRepo.id,
+        title: 'TEST: Answered axis follow-up target',
+        description: 'Avoid regenerating already answered questionnaire axes',
+        status: 'draft',
+      });
+
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+        title: '実装前に決めたいこと',
+        questions: [
+          {
+            text: '運用・保存の前提はどれですか？',
+            type: 'radio',
+            options: [
+              'ローカル開発のみ',
+              'Docker 前提',
+              'クラウド配置前提',
+              'バックアップや移行も考慮',
+              '未定',
+            ],
+          },
+          {
+            text: '今回の実装はどの技術スタックの前提ですか？',
+            type: 'radio',
+            options: [
+              'Hono + React/Vite',
+              'Python/FastAPI + React/Vite',
+              '既存リポジトリの標準に合わせる',
+            ],
+          },
+        ],
+      });
+
+      const createRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+      expect(createRes.status).toBe(201);
+      const session = await createRes.json();
+
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+        action: 'follow_up',
+        rationale:
+          'The fixture intentionally repeats answered axes before one genuinely new question.',
+        questionnaire: {
+          title: '追加確認フォーム',
+          questions: [
+            {
+              text: 'この機能の実行・配置先はどれですか？',
+              type: 'radio',
+              options: [
+                'ローカル専用の Web アプリ',
+                'Docker で動かす self-hosted',
+                'クラウド配置前提',
+                '将来切り替えられる前提',
+                '未定',
+              ],
+            },
+            {
+              text: 'データの保存と復旧はどこまで必要ですか？',
+              type: 'radio',
+              options: [
+                'ローカル SQLite の永続保存のみ',
+                'エクスポート / インポートが必要',
+                '定期バックアップや復元を考慮',
+                '保存は最小限で、復旧は不要',
+                '未定',
+              ],
+            },
+            {
+              text: '単一ユーザー前提は維持しますか？',
+              type: 'radio',
+              options: [
+                '個人利用の単一ユーザー',
+                '同一端末で複数プロフィール',
+                '将来の複数ユーザーを見据える',
+                '複数ユーザーは今回扱わない',
+                '未定',
+              ],
+            },
+          ],
+        },
+      });
+
+      const answersRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/answers`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            answers: [
+              {
+                questionId: 'q1',
+                selectedOptionIds: ['q1-o5'],
+                rankedOptionIds: [],
+                deferred: false,
+              },
+              {
+                questionId: 'q2',
+                selectedOptionIds: ['q2-o1'],
+                rankedOptionIds: [],
+                deferred: false,
+              },
+            ],
+          }),
+        }
+      );
+      expect(answersRes.status).toBe(200);
+      const answeredSession = await answersRes.json();
+      const followUpQuestions =
+        answeredSession.questionSets[1]?.questionnaire?.questionSets[0]?.questions || [];
+
+      expect(answeredSession.status).toBe('answering');
+      expect(followUpQuestions.map((question: { question: unknown }) => question.question)).toEqual(
+        ['単一ユーザー前提は維持しますか？']
+      );
+    } finally {
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+      else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+    }
+  });
+
   it('generates Blueprint, Data Model, and Specification from Status', async () => {
     const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
     const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;

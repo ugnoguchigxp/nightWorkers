@@ -7,7 +7,11 @@ import {
   isReviewedFeaturePlanMessage,
   mergeWorkspaceTaskMessages,
 } from '../src/modules/nightworkers/workbenchSelectors';
-import { PlanModeWorkspaceViewer } from '../src/modules/planMode';
+import {
+  buildVisiblePlanWorkspaceTabs,
+  getPlanWorkspaceTabLabel,
+  PlanModeWorkspaceViewer,
+} from '../src/modules/planMode';
 import {
   buildActivityArtifact,
   buildBlueprintMessage,
@@ -51,7 +55,7 @@ describe('mergeWorkspaceTaskMessages', () => {
 });
 
 describe('isReviewedFeaturePlanMessage', () => {
-  it('waits for the reviewed Feature Plan before marking the status flow complete', () => {
+  it('waits for the reviewed specification before marking the status flow complete', () => {
     const createdAt = new Date().toISOString();
     const initialSpec = buildTaskMessage({
       id: 'message-spec-1',
@@ -109,18 +113,52 @@ describe('Blueprint message classification', () => {
 });
 
 describe('PlanModeWorkspaceViewer', () => {
-  it('keeps Status selectable while omitting empty Feature Plan tabs', () => {
+  it('keeps Status before the spec tab when a reviewed specification exists', () => {
+    const tabs = buildVisiblePlanWorkspaceTabs({
+      questionnaireGateLocked: false,
+      hasFeaturePlan: true,
+      hasQuestionnaire: true,
+      hasBlueprint: true,
+      hasDataModel: true,
+      includedViews: new Set(),
+      planModeCapabilities: {
+        questionnaire: true,
+        feature_plan: true,
+        user_flow: true,
+        blueprint: true,
+        data_model: true,
+        api_io_contract: true,
+        state_model: true,
+        activity_flow: true,
+        sequence_flow: true,
+        zod_schema_design: true,
+      },
+      dedicatedViewArtifacts: [],
+    });
+
+    expect(tabs).toEqual(['status', 'feature-plan', 'questionnaire', 'blueprint', 'data-model']);
+    expect(tabs.map(getPlanWorkspaceTabLabel)).toEqual([
+      'Status',
+      'spec',
+      'Questionnaire',
+      'Blueprint',
+      'Data Model',
+    ]);
+  });
+
+  it('starts on Questionnaire and withholds Status until questionnaire answers are ready', () => {
     const markup = renderToStaticMarkup(
       createElement(PlanModeWorkspaceViewer, {
         sessionId: 'task-1',
         taskMessages: [],
         activityArtifacts: [],
-        initialTab: 'questionnaire',
+        initialTab: 'status',
       })
     );
 
-    expect(markup).toContain('>Status</button>');
-    expect(markup).not.toMatch(/<button[^>]*disabled[^>]*>Status<\/button>/);
-    expect(markup).not.toContain('>Feature Plan</button>');
+    expect(markup).toContain('>Questionnaire</button>');
+    expect(markup).toContain('No questionnaire session.');
+    expect(markup).not.toContain('>Status</button>');
+    expect(markup).not.toContain('>spec</button>');
   });
 });

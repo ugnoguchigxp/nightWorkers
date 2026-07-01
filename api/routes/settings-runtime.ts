@@ -270,13 +270,20 @@ export const getCurrentSettings = (): LlmSettings => {
     providerEndpoints,
     legacySettings.ACTIVE_LLM_PROVIDER
   );
+  const providerEndpointsChanged =
+    Array.isArray(persisted.providerEndpoints) &&
+    persisted.providerEndpoints.length !== providerEndpoints.length;
   const normalized = {
     ...legacySettings,
     providerEndpoints,
     roleRoutes,
   };
   const migration = migrateStructuredLlmEndpointIds(normalized);
-  if (migration.changed && persistedRead.exists && persistedRead.loaded) {
+  if (
+    (migration.changed || providerEndpointsChanged) &&
+    persistedRead.exists &&
+    persistedRead.loaded
+  ) {
     writeRuntimeSettings(migration.settings);
   }
   return migration.settings;
@@ -351,12 +358,15 @@ function normalizeProviderEndpoints(
   legacySettings: Omit<LlmSettings, 'providerEndpoints' | 'roleRoutes'>
 ): LlmProviderEndpoint[] {
   const parsed = z.array(llmProviderEndpointSchema).safeParse(input);
-  const endpoints = parsed.success ? parsed.data : [];
+  const endpoints = parsed.success ? dedupeProviderEndpoints(parsed.data) : [];
   const endpointById = new Map(endpoints.map((endpoint) => [endpoint.id, endpoint]));
+  const defaultEndpointKeys = new Set(endpoints.map(defaultProviderEndpointKey).filter(Boolean));
   for (const endpoint of buildLegacyProviderEndpoints(legacySettings)) {
+    const defaultKey = defaultProviderEndpointKey(endpoint);
+    if (defaultKey && defaultEndpointKeys.has(defaultKey)) continue;
     if (!endpointById.has(endpoint.id)) endpointById.set(endpoint.id, endpoint);
   }
-  return [...endpointById.values()].map((endpoint) => {
+  return dedupeProviderEndpoints([...endpointById.values()]).map((endpoint) => {
     const models = uniqueNonEmpty(endpoint.models);
     return {
       ...endpoint,
@@ -364,6 +374,75 @@ function normalizeProviderEndpoints(
       modelDisplayNames: normalizeModelDisplayNames(endpoint.modelDisplayNames, models),
     };
   });
+}
+
+function dedupeProviderEndpoints(endpoints: LlmProviderEndpoint[]) {
+  const endpointById = new Map<string, LlmProviderEndpoint>();
+  const defaultEndpointByKey = new Map<string, string>();
+  for (const endpoint of endpoints) {
+    const normalizedEndpoint = {
+      ...endpoint,
+      models: uniqueNonEmpty(endpoint.models),
+    };
+    const defaultKey = defaultProviderEndpointKey(normalizedEndpoint);
+    if (defaultKey) {
+      const existingId = defaultEndpointByKey.get(defaultKey);
+      if (existingId) {
+        const existing = endpointById.get(existingId);
+        if (existing)
+          endpointById.set(existingId, mergeDuplicateEndpoint(existing, normalizedEndpoint));
+        continue;
+      }
+      defaultEndpointByKey.set(defaultKey, normalizedEndpoint.id);
+    }
+    endpointById.set(normalizedEndpoint.id, normalizedEndpoint);
+  }
+  return [...endpointById.values()];
+}
+
+function mergeDuplicateEndpoint(
+  current: LlmProviderEndpoint,
+  duplicate: LlmProviderEndpoint
+): LlmProviderEndpoint {
+  return {
+    ...current,
+    enabled: current.enabled || duplicate.enabled,
+    apiKey: current.apiKey || duplicate.apiKey,
+    baseUrl: current.baseUrl || duplicate.baseUrl,
+    endpoint: current.endpoint || duplicate.endpoint,
+    apiVersion: current.apiVersion || duplicate.apiVersion,
+    region: current.region || duplicate.region,
+    models: uniqueNonEmpty([...current.models, ...duplicate.models]),
+    modelDisplayNames: {
+      ...duplicate.modelDisplayNames,
+      ...current.modelDisplayNames,
+    },
+    defaultModelCapability: current.defaultModelCapability || duplicate.defaultModelCapability,
+    modelCapabilities: {
+      ...duplicate.modelCapabilities,
+      ...current.modelCapabilities,
+    },
+  };
+}
+
+function defaultProviderEndpointKey(endpoint: LlmProviderEndpoint): string | null {
+  const defaultNames: Record<LlmProviderEndpoint['kind'], string | null> = {
+    azure: 'Azure OpenAI',
+    openai: 'OpenAI Compatible',
+    'openai-compatible': 'OpenAI Compatible',
+    bedrock: 'AWS Bedrock',
+    codex: 'Codex SDK',
+    local: null,
+  };
+  const defaultName = defaultNames[endpoint.kind];
+  if (!defaultName || endpoint.name !== defaultName) return null;
+  return [
+    endpoint.kind,
+    endpoint.baseUrl || '',
+    endpoint.endpoint || '',
+    endpoint.apiVersion || '',
+    endpoint.region || '',
+  ].join('\u0001');
 }
 
 function buildLegacyProviderEndpoints(
@@ -508,7 +587,11 @@ function findDefaultEndpointForProvider(
   provider: string
 ): LlmProviderEndpoint | undefined {
   const defaultId = provider === 'azure' ? 'azure-default' : `${provider}-default`;
-  return endpoints.find((endpoint) => endpoint.id === defaultId) || endpoints[0];
+  return (
+    endpoints.find((endpoint) => endpoint.id === defaultId) ||
+    endpoints.find((endpoint) => endpoint.kind === provider) ||
+    endpoints[0]
+  );
 }
 
 function uniqueNonEmpty(values: Array<string | undefined>) {
