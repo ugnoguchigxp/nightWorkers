@@ -42,7 +42,7 @@ artifacts, diffs, todos, settings, and provider usage records.
 - Non-authenticated MCP Server settings for the coding agent
 - Agent Hooks settings for lifecycle command / HTTP automation
 - Chat-first workbench flow with explicit Implementation Queue admission and run execution
-- App Blueprint review with governed preview settings, DB Design revisions, and adopted-artifact state
+- App Blueprint review with governed preview settings plus Plan Mode Workspace artifacts
 - Clear current limits: no automatic PR/merge/deploy, no parallel multi-agent
   orchestration, no required external memory service, and no bundled demo
   project or fixed seed transcript yet
@@ -57,8 +57,8 @@ artifacts, diffs, todos, settings, and provider usage records.
 - Artifact pane with project tree and source file preview
 - App Blueprint artifacts rendered as reviewable Blueprint Preview surfaces
 - Design settings in Blueprint Preview for governed theme, density, shape, shadow, font, contrast, motion, and component variants
-- DB Design action in Blueprint Preview for revising Blueprint `databaseSchema` and `dataBindings` without applying physical database changes
-- Separate adopted/not-adopted decisions for Blueprint artifacts, DB Design revisions, and Design Token settings, tied to the Workbench session and source conversation message
+- Data Model artifacts in Plan Mode Workspace for canonical data structure design without applying physical database changes
+- Separate adopted/not-adopted decisions for Blueprint artifacts and Design Token settings, tied to the Workbench session and source conversation message
 - LLM provider settings UI and smoke-test API
 - MCP Server settings UI for non-auth stdio / Streamable HTTP servers, with paste-import, immediate connection tests, ON/OFF controls, and legacy SSE compatibility
 - Agent Hooks settings UI for `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, and session lifecycle hooks

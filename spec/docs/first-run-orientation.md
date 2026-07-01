@@ -71,7 +71,8 @@ show:
 - Project tree and source previews.
 - Diff artifacts.
 - App Blueprint artifacts.
-- Blueprint Preview, DB Design revisions, and Design Token adoption state.
+- Plan Mode Workspace artifacts, including Feature Plan, Blueprint, Data Model,
+  and additional dedicated design views.
 
 If the pane is empty, the Session may not have produced an artifact yet.
 

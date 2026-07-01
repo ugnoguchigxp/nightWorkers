@@ -136,11 +136,10 @@ Use these inputs to demonstrate rejected or recoverable extension paths without 
 - The Preview Design panel controls governed visual axes only: theme, density,
   shape, shadow, font, contrast, motion, and component variants.
 - DB/table/column/relation/binding design is not part of normal visual
-  Blueprint generation. Use the DB Design panel to request a revised
-  App Blueprint data contract.
+  Blueprint generation. Use the Plan Mode Data Model view for canonical data
+  structure design.
 - Adoption decisions are stored separately from generated artifacts:
   - `blueprint_artifact_adoptions`
-  - `blueprint_db_design_adoptions`
   - `blueprint_design_token_adoptions`
 - Each adoption row is tied to the Workbench session `task_id` and source
   conversation `message_id`, so later planning can prefer explicitly adopted

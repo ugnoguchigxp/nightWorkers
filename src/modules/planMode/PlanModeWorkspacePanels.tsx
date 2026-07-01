@@ -5,9 +5,16 @@ import type {
   DesignQuestionnaireSession,
   PlanModeSettings,
   PlanModeWorkspace,
+  PlanModeWorkspaceArtifact,
   TaskMessage,
 } from '../nightworkers/types';
 import { getQuestionCount } from './PlanModeQuestionnaire';
+
+export type PlanViewDecision = {
+  view: string;
+  decision: 'include' | 'omit';
+  reason?: string;
+};
 
 export function WorkspaceBlueprintPreview({
   sessionId,
@@ -39,30 +46,125 @@ export function WorkspaceBlueprintPreview({
 }
 
 export function WorkspaceDataModelPanel({
-  sessionId,
   message,
   empty = 'No Data Model artifact.',
 }: {
-  sessionId: string | null;
   message: TaskMessage | null;
   empty?: string;
 }) {
-  void sessionId;
-  return <MarkdownViewer content={message?.content || empty} />;
+  const metadata = isRecord(message?.metadataJson) ? message.metadataJson : {};
+  const dataModel = firstRecord(
+    metadata.dataModel,
+    metadata.artifactPayload,
+    metadata.dataModelArtifact
+  );
+  if (!message && !dataModel) return <MarkdownViewer content={empty} />;
+  if (!dataModel) return <MarkdownViewer content={message?.content || empty} />;
+
+  const title = stringValue(dataModel.title) || stringValue(metadata.title) || 'Data Model';
+  const summary = stringValue(dataModel.summary);
+  const canonicalSource = formatCanonicalSource(stringValue(dataModel.canonicalSource));
+  const ddl = stringValue(dataModel.ddl);
+  const tables = toRecordArray(dataModel.derivedTables);
+  const relations = toRecordArray(dataModel.relations);
+  const constraints = stringArray(dataModel.constraints);
+  const openQuestions = stringArray(dataModel.openQuestions);
+
+  return (
+    <div className="grid gap-4 text-xs">
+      <div className="rounded border border-slate-800 bg-slate-950/20 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-base font-semibold text-slate-100">{title}</h2>
+          <span className="rounded border border-cyan-500/40 bg-cyan-950/30 px-2 py-0.5 text-[10px] uppercase text-cyan-100">
+            {canonicalSource || 'Canonical source unknown'}
+          </span>
+        </div>
+        {summary ? <p className="mt-2 text-slate-400">{summary}</p> : null}
+        <p className="mt-2 text-[11px] text-slate-500">
+          Source message {message?.id?.slice(0, 8) || 'unknown'}
+        </p>
+      </div>
+      {ddl ? (
+        <div className="rounded border border-slate-800 bg-slate-950/20 p-3">
+          <div className="mb-2 text-[11px] font-semibold uppercase text-slate-400">DDL</div>
+          <pre className="nightworkers-code-block overflow-x-auto rounded bg-slate-950 p-3 text-[11px] text-slate-200">
+            <code>{ddl}</code>
+          </pre>
+        </div>
+      ) : null}
+      {tables.length > 0 ? (
+        <div className="grid gap-2">
+          <div className="text-[11px] font-semibold uppercase text-slate-400">Derived tables</div>
+          {tables.map((table, index) => {
+            const columns = toRecordArray(table.columns);
+            return (
+              <div
+                key={`${stringValue(table.name) || index}`}
+                className="rounded border border-slate-800 bg-slate-950/20 p-3"
+              >
+                <div className="font-semibold text-slate-100">
+                  {stringValue(table.name) || 'Table'}
+                </div>
+                {stringValue(table.purpose) ? (
+                  <div className="mt-1 text-slate-400">{stringValue(table.purpose)}</div>
+                ) : null}
+                {columns.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {columns.map((column, columnIndex) => (
+                      <span
+                        key={`${stringValue(column.name) || columnIndex}`}
+                        className="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] text-slate-300"
+                      >
+                        {stringValue(column.name) || 'column'}:{' '}
+                        {stringValue(column.type) || 'unknown'}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+      {relations.length > 0 ? (
+        <SummaryList
+          title="Relations"
+          items={relations.map((relation) =>
+            [
+              stringValue(relation.from),
+              stringValue(relation.cardinality),
+              stringValue(relation.to),
+              stringValue(relation.reason),
+            ]
+              .filter(Boolean)
+              .join(' · ')
+          )}
+        />
+      ) : null}
+      {constraints.length > 0 ? <SummaryList title="Constraints" items={constraints} /> : null}
+      {openQuestions.length > 0 ? (
+        <SummaryList title="Open questions" items={openQuestions} tone="amber" />
+      ) : null}
+      {!ddl && tables.length === 0 && message?.content ? (
+        <MarkdownViewer content={message.content} />
+      ) : null}
+    </div>
+  );
 }
 
-export function SpecificationStatusView({
+export function PlanWorkspaceStatusView({
   workspace,
   questionnaireSession,
   busyAction,
   canGenerateDataModel,
-  hasSpecification,
+  hasFeaturePlan,
   isImplementationLocked = false,
   planModeSettings,
+  viewDecisions = [],
   onOpenQuestionnaire,
   onGenerateBlueprint,
   onGenerateDataModel,
-  onGenerateSpecification,
+  onGenerateFeaturePlan,
   onQueueSession,
   onAddToQueue,
 }: {
@@ -70,13 +172,14 @@ export function SpecificationStatusView({
   questionnaireSession: DesignQuestionnaireSession | null;
   busyAction: string | null;
   canGenerateDataModel: boolean;
-  hasSpecification: boolean;
+  hasFeaturePlan: boolean;
   isImplementationLocked?: boolean;
   planModeSettings?: PlanModeSettings;
+  viewDecisions?: PlanViewDecision[];
   onOpenQuestionnaire: () => void;
   onGenerateBlueprint: () => void;
   onGenerateDataModel: () => void;
-  onGenerateSpecification: () => void;
+  onGenerateFeaturePlan: () => void;
   onQueueSession?: () => void;
   onAddToQueue?: () => void;
 }) {
@@ -84,6 +187,13 @@ export function SpecificationStatusView({
   const questionCount = questionnaireSession ? getQuestionCount(questionnaireSession) : 0;
   const hasBlueprint = Boolean(workspace?.blueprintArtifacts.length);
   const hasDataModel = Boolean(workspace?.dataModelArtifacts.length);
+  const includedAdditionalViews = viewDecisions.filter(
+    (item) => item.decision === 'include' && isAdditionalView(item.view)
+  );
+  const includedAdditionalViewCount = includedAdditionalViews.length;
+  const generatedAdditionalViewCount =
+    (workspace?.dedicatedViewArtifacts || []).filter((artifact) => isAdditionalView(artifact.kind))
+      .length || 0;
   const capabilities = planModeSettings?.capabilities ?? {
     feature_plan: true,
     questionnaire: true,
@@ -102,73 +212,93 @@ export function SpecificationStatusView({
       (questionnaireSession.status === 'review_ready' || questionnaireSession.status === 'accepted')
   );
   const steps = [
+    capabilities.questionnaire || questionnaireSession
+      ? {
+          number: 1,
+          title: '仕様に関する質問を回答してください',
+          detail:
+            questionCount > 0
+              ? `Questionnaire ${answeredCount}/${questionCount}`
+              : '仕様判断に必要な質問を先に確認します。',
+          done: questionnaireDone,
+          buttonLabel: questionnaireDone ? 'アンケートを確認' : 'アンケートへ',
+          busy: false,
+          disabled: !capabilities.questionnaire,
+          disabledReason: capabilities.questionnaire ? null : disabledReason,
+          onClick: onOpenQuestionnaire,
+        }
+      : null,
+    capabilities.blueprint || hasBlueprint
+      ? {
+          number: 2,
+          title: 'インスタントMockUpを作成し、大筋UIの方向性を決めます',
+          detail: hasBlueprint
+            ? `${workspace?.blueprintArtifacts.length || 0}件のBlueprintがあります。`
+            : '画面構成と主要UIセクションを生成します。',
+          done: hasBlueprint,
+          buttonLabel: hasBlueprint ? 'Blueprintを再生成' : 'Blueprint作成',
+          busy: busyAction === 'blueprint',
+          disabled: !questionnaireDone || isImplementationLocked || !capabilities.blueprint,
+          disabledReason: !capabilities.blueprint ? disabledReason : null,
+          onClick: onGenerateBlueprint,
+        }
+      : null,
+    capabilities.data_model || hasDataModel
+      ? {
+          number: 3,
+          title: 'どの様なデータモデルが必要になるかプレビュー出来ます',
+          detail: hasDataModel
+            ? `${workspace?.dataModelArtifacts.length || 0}件のData Modelがあります。`
+            : 'Data Modelでテーブル、カラム、リレーションを確認します。',
+          done: hasDataModel,
+          buttonLabel: hasDataModel ? 'Data Modelを再生成' : 'Data Model作成',
+          busy: busyAction === 'data-model',
+          disabled:
+            !questionnaireDone ||
+            !canGenerateDataModel ||
+            isImplementationLocked ||
+            !capabilities.data_model,
+          disabledReason: !capabilities.data_model ? disabledReason : null,
+          onClick: onGenerateDataModel,
+        }
+      : null,
+    includedAdditionalViewCount > 0
+      ? {
+          number: 4,
+          title: '追加の dedicated design view を確認します',
+          detail: `${generatedAdditionalViewCount}/${includedAdditionalViewCount}件の追加 view が生成済みです。`,
+          done: generatedAdditionalViewCount >= includedAdditionalViewCount,
+          buttonLabel: '生成状況を確認',
+          busy: Boolean(busyAction?.startsWith('view:')),
+          disabled: false,
+          disabledReason: null,
+          onClick: () => undefined,
+        }
+      : null,
     {
-      number: 1,
-      title: '仕様に関する質問を回答してください',
-      detail:
-        questionCount > 0
-          ? `Questionnaire ${answeredCount}/${questionCount}`
-          : '仕様判断に必要な質問を先に確認します。',
-      done: questionnaireDone,
-      buttonLabel: questionnaireDone ? 'アンケートを確認' : 'アンケートへ',
-      busy: false,
-      disabled: !capabilities.questionnaire,
-      disabledReason: capabilities.questionnaire ? null : disabledReason,
-      onClick: onOpenQuestionnaire,
-    },
-    {
-      number: 2,
-      title: 'インスタントMockUpを作成し、大筋UIの方向性を決めます',
-      detail: hasBlueprint
-        ? `${workspace?.blueprintArtifacts.length || 0}件のBlueprintがあります。`
-        : '画面構成と主要UIセクションを生成します。',
-      done: hasBlueprint,
-      buttonLabel: hasBlueprint ? 'Blueprintを再生成' : 'Blueprint作成',
-      busy: busyAction === 'blueprint',
-      disabled: !questionnaireDone || isImplementationLocked || !capabilities.blueprint,
-      disabledReason: !capabilities.blueprint ? disabledReason : null,
-      onClick: onGenerateBlueprint,
-    },
-    {
-      number: 3,
-      title: 'どの様なデータモデルが必要になるかプレビュー出来ます',
-      detail: hasDataModel
-        ? `${workspace?.dataModelArtifacts.length || 0}件のData Modelがあります。`
-        : 'Data Modelでテーブル、カラム、リレーションを確認します。',
-      done: hasDataModel,
-      buttonLabel: hasDataModel ? 'Data Modelを再生成' : 'Data Model作成',
-      busy: busyAction === 'data-model',
-      disabled:
-        !questionnaireDone ||
-        !canGenerateDataModel ||
-        isImplementationLocked ||
-        !capabilities.data_model,
-      disabledReason: !capabilities.data_model ? disabledReason : null,
-      onClick: onGenerateDataModel,
-    },
-    {
-      number: 4,
+      number: 5,
       title: 'Feature Plan Markdownを作ります。これによってすぐに実装に移れます',
-      detail: hasSpecification
+      detail: hasFeaturePlan
         ? 'Feature Planが作成済みです。'
         : '回答、Blueprint、Data Modelを要約してFeature Planを生成します。',
-      done: hasSpecification,
-      buttonLabel: hasSpecification ? 'Feature Planを再生成' : 'Feature Plan作成',
-      busy: busyAction === 'design-doc',
-      disabled: !questionnaireDone || isImplementationLocked || !capabilities.feature_plan,
+      done: hasFeaturePlan,
+      buttonLabel: hasFeaturePlan ? 'Feature Planを再生成' : 'Feature Plan作成',
+      busy: busyAction === 'feature-plan',
+      disabled: isImplementationLocked || !capabilities.feature_plan,
       disabledReason: !capabilities.feature_plan ? disabledReason : null,
-      onClick: onGenerateSpecification,
+      onClick: onGenerateFeaturePlan,
     },
-  ];
+  ].filter((step): step is NonNullable<typeof step> => Boolean(step));
   const allStepsDone = steps.every((step) => step.done);
   return (
     <div className="grid gap-3 text-xs">
       <div>
         <h2 className="text-base font-semibold text-slate-100">Status</h2>
         <p className="mt-1 text-slate-400">
-          上から順に確認し、必要なArtifactを作成して仕様書へ進みます。
+          必要なArtifactを確認し、Feature Plan から実装開始へ進みます。
         </p>
       </div>
+      <ViewDecisionSummary decisions={viewDecisions} />
       <div className="grid gap-3">
         {steps.map((step, index) => (
           <div
@@ -262,6 +392,52 @@ export function WorkspaceList({
   );
 }
 
+export function DedicatedViewPanel({
+  artifact,
+  message,
+}: {
+  artifact: PlanModeWorkspaceArtifact | null;
+  message: TaskMessage | null;
+}) {
+  if (!artifact && !message) return <MarkdownViewer content="No dedicated view artifact." />;
+  return (
+    <div className="grid gap-3">
+      <div className="rounded border border-slate-800 bg-slate-950/20 p-3 text-xs">
+        <div className="font-semibold text-slate-100">{artifact?.title || 'Dedicated View'}</div>
+        <div className="mt-1 text-slate-500">
+          {artifact?.kind || 'view'}{' '}
+          {artifact?.sourceMessageId ? `message ${artifact.sourceMessageId.slice(0, 8)}` : ''}
+        </div>
+      </div>
+      <MarkdownViewer content={message?.content || 'No Markdown content.'} />
+    </div>
+  );
+}
+
+export function ViewDecisionSummary({ decisions }: { decisions: PlanViewDecision[] }) {
+  if (decisions.length === 0) return null;
+  return (
+    <div className="grid gap-2 rounded border border-slate-800 bg-slate-950/20 p-3 text-xs">
+      <div className="font-semibold text-slate-100">View decisions</div>
+      <div className="flex flex-wrap gap-2">
+        {decisions.map((decision) => (
+          <span
+            key={`${decision.view}-${decision.decision}`}
+            className={`rounded border px-2 py-1 ${
+              decision.decision === 'include'
+                ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-100'
+                : 'border-slate-700 bg-slate-900/60 text-slate-300'
+            }`}
+          >
+            {formatViewLabel(decision.view)}: {decision.decision}
+            {decision.reason ? ` - ${decision.reason}` : ''}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function StatusActionButton({
   label,
   busy,
@@ -288,6 +464,78 @@ function StatusActionButton({
       {label}
     </button>
   );
+}
+
+function SummaryList({
+  title,
+  items,
+  tone = 'slate',
+}: {
+  title: string;
+  items: string[];
+  tone?: 'slate' | 'amber';
+}) {
+  const textClass = tone === 'amber' ? 'text-amber-100' : 'text-slate-300';
+  return (
+    <div className="rounded border border-slate-800 bg-slate-950/20 p-3 text-xs">
+      <div className="mb-2 text-[11px] font-semibold uppercase text-slate-400">{title}</div>
+      <ul className={`grid gap-1 ${textClass}`}>
+        {items.map((item, index) => (
+          <li key={`${title}-${index}`}>{item}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function firstRecord(...values: unknown[]) {
+  return values.find(isRecord) || null;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function formatCanonicalSource(value: string) {
+  const labels: Record<string, string> = {
+    ddl: 'DDL',
+    json_shape: 'JSON shape',
+    typescript_type: 'TypeScript type',
+    zod_schema: 'Zod schema',
+    storage_contract: 'Storage contract',
+  };
+  return labels[value] || value;
+}
+
+function isAdditionalView(value: string) {
+  return [
+    'api_io_contract',
+    'state_model',
+    'activity_flow',
+    'sequence_flow',
+    'zod_schema_design',
+  ].includes(value);
+}
+
+function formatViewLabel(value: string) {
+  const labels: Record<string, string> = {
+    questionnaire: 'Questionnaire',
+    blueprint: 'Blueprint',
+    data_model: 'Data Model',
+    api_io_contract: 'API / I/O',
+    state_model: 'State',
+    activity_flow: 'Activity',
+    sequence_flow: 'Sequence',
+    zod_schema_design: 'Zod',
+    user_flow: 'User Flow',
+  };
+  return labels[value] || value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

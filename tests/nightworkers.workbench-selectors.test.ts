@@ -8,7 +8,7 @@ import type {
 import {
   buildArtifactContext,
   buildBlueprintArtifactRef,
-  buildQuestionnaireWorkspaceArtifactRef,
+  buildPlanModeWorkspaceArtifactRef,
   buildWorkbenchArtifactRefs,
   buildWorkbenchSessionView,
   getCodexContractWarningSummary,
@@ -347,8 +347,8 @@ describe('workbench selectors', () => {
     expect(refs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          kind: 'blueprint_workspace',
-          title: 'Specification Workspace',
+          kind: 'plan_mode_workspace',
+          title: 'Plan Mode Workspace',
           source: { type: 'task_message', messageId: message.id },
         }),
         expect.objectContaining({
@@ -432,7 +432,7 @@ describe('workbench selectors', () => {
     expect(refs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          kind: 'blueprint_workspace',
+          kind: 'plan_mode_workspace',
           title: 'Data Model: Kanban Data Model',
           source: { type: 'task_message', messageId: message.id },
           metadata: expect.objectContaining({ initialTab: 'data-model' }),
@@ -488,7 +488,7 @@ describe('workbench selectors', () => {
     expect(refs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          kind: 'blueprint_workspace',
+          kind: 'plan_mode_workspace',
           title: 'Data Model: Kanban Data Model',
           metadata: expect.objectContaining({ initialTab: 'data-model' }),
         }),
@@ -499,7 +499,7 @@ describe('workbench selectors', () => {
     );
   });
 
-  it('builds Specification Workspace refs from accepted Decision Review messages', () => {
+  it('builds Plan Mode Workspace refs from accepted Decision Review messages', () => {
     const message: TaskMessage = {
       id: '44444444-4444-4444-8444-444444444446',
       taskId: baseTask.id,
@@ -521,8 +521,8 @@ describe('workbench selectors', () => {
 
     expect(refs).toEqual([
       expect.objectContaining({
-        kind: 'blueprint_workspace',
-        title: 'Specification Workspace',
+        kind: 'plan_mode_workspace',
+        title: 'Plan Mode Workspace',
         source: { type: 'task_message', messageId: message.id },
       }),
       expect.objectContaining({
@@ -533,7 +533,7 @@ describe('workbench selectors', () => {
     ]);
   });
 
-  it('builds Specification Workspace refs from implementation plan documents', () => {
+  it('keeps implementation plan documents as standalone artifacts', () => {
     const message: TaskMessage = {
       id: '44444444-4444-4444-8444-444444444447',
       taskId: baseTask.id,
@@ -553,11 +553,6 @@ describe('workbench selectors', () => {
     });
 
     expect(refs).toEqual([
-      expect.objectContaining({
-        kind: 'blueprint_workspace',
-        title: 'Specification Workspace',
-        source: { type: 'task_message', messageId: message.id },
-      }),
       expect.objectContaining({
         kind: 'implementation_plan',
         title: 'Kanban Implementation Plan',
@@ -723,14 +718,14 @@ describe('workbench selectors', () => {
       createdAt: '2026-06-02T00:00:01.000Z',
     };
 
-    expect(buildQuestionnaireWorkspaceArtifactRef(message)).toMatchObject({
-      id: `blueprint-workspace-${baseTask.id}`,
+    expect(buildPlanModeWorkspaceArtifactRef(message)).toMatchObject({
+      id: `plan-mode-workspace-${baseTask.id}`,
       taskId: baseTask.id,
-      kind: 'blueprint_workspace',
-      title: 'Specification Workspace',
+      kind: 'plan_mode_workspace',
+      title: 'Plan Mode Workspace',
       source: { type: 'task_message', messageId: message.id },
       metadata: {
-        specificationSource: 'design_questionnaire_ready',
+        planModeWorkspaceSource: 'design_questionnaire_ready',
         questionnaireSessionId: 'questionnaire-1',
         initialTab: 'questionnaire',
       },
@@ -751,9 +746,9 @@ describe('workbench selectors', () => {
       createdAt: '2026-06-02T00:00:01.000Z',
     };
 
-    expect(buildQuestionnaireWorkspaceArtifactRef(message, 'status')).toMatchObject({
+    expect(buildPlanModeWorkspaceArtifactRef(message, 'status')).toMatchObject({
       metadata: {
-        specificationSource: 'design_questionnaire_ready',
+        planModeWorkspaceSource: 'design_questionnaire_ready',
         questionnaireSessionId: 'questionnaire-1',
         initialTab: 'status',
       },

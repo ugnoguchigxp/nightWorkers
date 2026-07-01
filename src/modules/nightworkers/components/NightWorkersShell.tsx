@@ -24,10 +24,7 @@ import type {
   WorkbenchChatIntent,
 } from '../types';
 import { THINKING_DEPTH_OPTIONS } from '../types';
-import {
-  buildArtifactContext,
-  buildQuestionnaireWorkspaceArtifactRef,
-} from '../workbenchSelectors';
+import { buildArtifactContext, buildPlanModeWorkspaceArtifactRef } from '../workbenchSelectors';
 import { ArtifactPane } from './ArtifactPane';
 import { FolderBrowserDialog } from './FolderBrowserDialog';
 import { OverviewScreen } from './OverviewScreen';
@@ -177,7 +174,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const isTodoArtifactOpen = artifactFocus.type === 'todo';
   const isBlueprintArtifactOpen =
     artifactPaneOpen &&
-    (selectedArtifact?.kind === 'blueprint_workspace' ||
+    (selectedArtifact?.kind === 'plan_mode_workspace' ||
       selectedArtifact?.kind === 'app_blueprint');
   const hasTodoArtifact = Boolean(workspace.activeSession);
   const isActiveImplementationLocked = isImplementationLockedStatus(
@@ -200,7 +197,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       setArtifactFocus({ type: 'closed' });
       return;
     }
-    if (selectedArtifact.kind === 'blueprint_workspace') return;
+    if (selectedArtifact.kind === 'plan_mode_workspace') return;
     const stillAvailable = workspace.activeArtifactRefs.some(
       (artifact) => artifact.id === selectedArtifact.id
     );
@@ -328,7 +325,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     }
     const current = workspaceRef.current;
     const existing =
-      current.activeArtifactRefs.find((artifact) => artifact.kind === 'blueprint_workspace') ||
+      current.activeArtifactRefs.find((artifact) => artifact.kind === 'plan_mode_workspace') ||
       current.activeArtifactRefs.find((artifact) => artifact.kind === 'app_blueprint');
     if (existing) {
       setClearedArtifactContextId(null);
@@ -519,7 +516,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         setClearedArtifactContextId(null);
         setArtifactFocus({
           type: 'artifact',
-          artifact: buildQuestionnaireWorkspaceArtifactRef(message, initialTab),
+          artifact: buildPlanModeWorkspaceArtifactRef(message, initialTab),
         });
       } finally {
         openingQuestionnaireMessageIdsRef.current.delete(message.id);

@@ -9,16 +9,21 @@ import type {
 import {
   isDataModelMessage,
   isNormalBlueprintMessage,
-  isReviewedSpecificationMessage,
+  isReviewedFeaturePlanMessage,
   mergeWorkspaceTaskMessages,
 } from '../nightworkers/workbenchSelectors';
 
-export type WorkspaceTab =
-  | 'blueprints'
+export type PlanWorkspaceTab =
+  | 'feature-plan'
+  | 'blueprint'
   | 'data-model'
+  | 'api-io-contract'
+  | 'state-model'
+  | 'activity-flow'
+  | 'sequence-flow'
+  | 'zod-schema-design'
   | 'questionnaire'
-  | 'status'
-  | 'specification';
+  | 'status';
 
 export function selectSpecificationWorkspaceMessages(input: {
   taskMessages: TaskMessage[];
@@ -40,7 +45,7 @@ export function selectSpecificationWorkspaceMessages(input: {
       (intent === 'feature_plan' || intent === 'draft_spec')
     );
   });
-  const reviewedDesignDocMessages = designDocMessages.filter(isReviewedSpecificationMessage);
+  const reviewedDesignDocMessages = designDocMessages.filter(isReviewedFeaturePlanMessage);
   const activeBlueprintMessage = blueprintMessages.at(-1) || null;
   const activeDataModelMessage = dataModelMessages.at(-1) || null;
   const latestWorkspaceBlueprintMessageId =

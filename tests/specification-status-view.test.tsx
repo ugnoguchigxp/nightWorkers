@@ -1,11 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { SpecificationStatusView } from '../src/modules/planMode';
+import { PlanWorkspaceStatusView } from '../src/modules/planMode';
 
-describe('SpecificationStatusView', () => {
+describe('PlanWorkspaceStatusView', () => {
   it('shows separate start-now and add-to-queue actions after the status flow is complete', () => {
     const markup = renderToStaticMarkup(
-      <SpecificationStatusView
+      <PlanWorkspaceStatusView
         workspace={
           {
             blueprintArtifacts: [{ id: 'blueprint-1', title: 'Blueprint' }],
@@ -22,11 +22,11 @@ describe('SpecificationStatusView', () => {
         }
         busyAction={null}
         canGenerateDataModel={true}
-        hasSpecification={true}
+        hasFeaturePlan={true}
         onOpenQuestionnaire={vi.fn()}
         onGenerateBlueprint={vi.fn()}
         onGenerateDataModel={vi.fn()}
-        onGenerateSpecification={vi.fn()}
+        onGenerateFeaturePlan={vi.fn()}
         onQueueSession={vi.fn()}
         onAddToQueue={vi.fn()}
       />
@@ -39,7 +39,7 @@ describe('SpecificationStatusView', () => {
 
   it('disables regeneration and implementation actions for implemented tasks', () => {
     const markup = renderToStaticMarkup(
-      <SpecificationStatusView
+      <PlanWorkspaceStatusView
         workspace={
           {
             blueprintArtifacts: [{ id: 'blueprint-1', title: 'Blueprint' }],
@@ -56,12 +56,12 @@ describe('SpecificationStatusView', () => {
         }
         busyAction={null}
         canGenerateDataModel={true}
-        hasSpecification={true}
+        hasFeaturePlan={true}
         isImplementationLocked={true}
         onOpenQuestionnaire={vi.fn()}
         onGenerateBlueprint={vi.fn()}
         onGenerateDataModel={vi.fn()}
-        onGenerateSpecification={vi.fn()}
+        onGenerateFeaturePlan={vi.fn()}
         onQueueSession={vi.fn()}
         onAddToQueue={vi.fn()}
       />
@@ -78,7 +78,7 @@ describe('SpecificationStatusView', () => {
 
   it('disables Plan Mode capability actions while keeping read-only status visible', () => {
     const markup = renderToStaticMarkup(
-      <SpecificationStatusView
+      <PlanWorkspaceStatusView
         workspace={
           {
             blueprintArtifacts: [{ id: 'blueprint-1', title: 'Blueprint' }],
@@ -95,7 +95,7 @@ describe('SpecificationStatusView', () => {
         }
         busyAction={null}
         canGenerateDataModel={true}
-        hasSpecification={true}
+        hasFeaturePlan={true}
         planModeSettings={{
           capabilities: {
             questionnaire: true,
@@ -113,7 +113,7 @@ describe('SpecificationStatusView', () => {
         onOpenQuestionnaire={vi.fn()}
         onGenerateBlueprint={vi.fn()}
         onGenerateDataModel={vi.fn()}
-        onGenerateSpecification={vi.fn()}
+        onGenerateFeaturePlan={vi.fn()}
         onQueueSession={vi.fn()}
         onAddToQueue={vi.fn()}
       />

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isDataModelMessage,
   isNormalBlueprintMessage,
-  isReviewedSpecificationMessage,
+  isReviewedFeaturePlanMessage,
   mergeWorkspaceTaskMessages,
 } from '../src/modules/nightworkers/workbenchSelectors';
 import { PlanModeWorkspaceViewer } from '../src/modules/planMode';
@@ -50,8 +50,8 @@ describe('mergeWorkspaceTaskMessages', () => {
   });
 });
 
-describe('isReviewedSpecificationMessage', () => {
-  it('waits for the reviewed specification before marking the status flow complete', () => {
+describe('isReviewedFeaturePlanMessage', () => {
+  it('waits for the reviewed Feature Plan before marking the status flow complete', () => {
     const createdAt = new Date().toISOString();
     const initialSpec = buildTaskMessage({
       id: 'message-spec-1',
@@ -71,8 +71,8 @@ describe('isReviewedSpecificationMessage', () => {
       },
     };
 
-    expect(isReviewedSpecificationMessage(initialSpec)).toBe(false);
-    expect(isReviewedSpecificationMessage(reviewedSpec)).toBe(true);
+    expect(isReviewedFeaturePlanMessage(initialSpec)).toBe(false);
+    expect(isReviewedFeaturePlanMessage(reviewedSpec)).toBe(true);
   });
 });
 
@@ -109,7 +109,7 @@ describe('Blueprint message classification', () => {
 });
 
 describe('PlanModeWorkspaceViewer', () => {
-  it('keeps Status selectable while an active questionnaire is still incomplete', () => {
+  it('keeps Status selectable while omitting empty Feature Plan tabs', () => {
     const markup = renderToStaticMarkup(
       createElement(PlanModeWorkspaceViewer, {
         sessionId: 'task-1',
@@ -121,6 +121,6 @@ describe('PlanModeWorkspaceViewer', () => {
 
     expect(markup).toContain('>Status</button>');
     expect(markup).not.toMatch(/<button[^>]*disabled[^>]*>Status<\/button>/);
-    expect(markup).toMatch(/<button[^>]*disabled[^>]*>Feature Plan<\/button>/);
+    expect(markup).not.toContain('>Feature Plan</button>');
   });
 });

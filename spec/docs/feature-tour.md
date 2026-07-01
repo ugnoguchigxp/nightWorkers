@@ -111,21 +111,21 @@ Current limits:
 - Visual preview settings do not apply physical database migrations.
 - Normal App Blueprint generation should not invent DB tables or DDL.
 
-## DB Design
+## Data Model
 What it does:
-- Revises a Blueprint data contract through a dedicated DB Design intent.
-- Produces revised `databaseSchema` and `dataBindings` fields without applying
-  migrations.
+- Captures canonical data structures, storage contracts, and API-facing data
+  assumptions for Plan mode without applying migrations.
 
 Where to find it:
-- The DB Design panel inside Blueprint Preview.
+- The Data Model tab in Plan Mode Workspace.
 
 Why it matters:
-- Keeps visual application structure separate from data modeling.
+- Keeps visual application structure separate from data modeling while allowing
+  UI-less tasks to proceed without forcing Blueprint generation.
 
 Evidence it creates:
-- Revised App Blueprint artifact messages and DB Design adoption decisions tied
-  to the source message.
+- Data Model artifact messages tied to the source Feature Plan, Questionnaire,
+  or Blueprint context.
 
 Current limits:
 - It does not create physical tables, columns, relations, or migrations by

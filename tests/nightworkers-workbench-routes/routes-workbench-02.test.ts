@@ -152,9 +152,9 @@ describe('NightWorkers workbench routes', () => {
         prompt:
           '駄目ですね。TODO登録と、一覧があればそれだけで十分だと思いますが。余計なセクション追加しなくていいです',
         artifactContext: {
-          artifactId: `blueprint-workspace-${task.id}`,
-          kind: 'blueprint_workspace',
-          title: 'Specification Workspace',
+          artifactId: `plan-mode-workspace-${task.id}`,
+          kind: 'plan_mode_workspace',
+          title: 'Plan Mode Workspace',
           summary: 'Design Questionnaire を生成しました。10 件の質問に回答できます。',
           source: { type: 'task_message', messageId: crypto.randomUUID() },
           metadata: {

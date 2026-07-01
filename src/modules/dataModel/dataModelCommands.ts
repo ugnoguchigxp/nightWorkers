@@ -2,8 +2,10 @@ import { apiFetch } from '../../lib/api-base';
 import { jsonRequest } from '../../lib/api-request';
 
 type DataModelGenerationInput = {
-  questionnaireSessionId: string;
-  sourceBlueprintMessageId: string | null;
+  prompt?: string;
+  questionnaireSessionId?: string | null;
+  featurePlanMessageId?: string | null;
+  sourceBlueprintMessageId?: string | null;
 };
 
 export function generateDataModelArtifact(sessionId: string, input: DataModelGenerationInput) {

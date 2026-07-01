@@ -35,7 +35,7 @@ function buildGeneralAnswerContract(context: AgentRunContext, nightWorkersToolLi
     '',
     'General answer behavior:',
     '- ユーザーの質問に答えるための読み取り確認だけを行う。',
-    '- Plan Mode artifact、Specification Workspace、TodoList、Implementation Queue を作成・更新しない。',
+    '- Plan Mode artifact、Plan Mode Workspace、TodoList、Implementation Queue を作成・更新しない。',
     '- 実装編集、テスト実行、レビュー、verify、closeout gate を開始しない。',
     '- 完了済みの Plan Mode artifact は証跡として扱い、後続の質問で再編集・再オープン対象にしない。',
     '- 回答に必要な根拠が確認できたら、短く直接回答する。',

@@ -57,29 +57,24 @@ export async function generatePlanViewArtifact(
   const featurePlanMessage = resolveMessage(messages, input.featurePlanMessageId, 'feature_plan');
   const blueprintMessage = resolveMessage(messages, input.sourceBlueprintMessageId, 'blueprint');
   const dataModelMessage = resolveMessage(messages, input.sourceDataModelMessageId, 'data_model');
-  const prompt = input.prompt?.trim() || task.objective || task.description || task.title;
-  const rawOutput = await callStructuredJsonLLM(
-    buildPlanDedicatedViewSystemPrompt(parsedView.data),
-    buildPlanDedicatedViewUserPrompt({
-      view: parsedView.data,
-      task: renderTaskContext(task),
-      featurePlan: featurePlanMessage?.content || 'Feature Plan は未生成です。',
-      questionnaire: input.questionnaireSessionId
-        ? `Questionnaire session: ${input.questionnaireSessionId}`
-        : 'Questionnaire は指定されていません。',
-      blueprint: blueprintMessage?.content || 'Blueprint は未生成です。',
-      dataModel: dataModelMessage?.content || 'Data Model は未生成です。',
-      prompt,
-    }),
-    {
-      schemaName: 'plan_mode_dedicated_view',
-      schema: genericDedicatedViewSchema,
-      taskId,
-      runId: null,
-      role: 'plan',
-    }
-  );
-  const artifact = parseGenericDedicatedViewOutput(rawOutput, parsedView.data);
+  const prompt =
+    input.prompt?.trim() ||
+    task.objective ||
+    task.description ||
+    task.title ||
+    'No additional prompt.';
+  const artifact = await generateArtifactFromLlm({
+    view: parsedView.data,
+    taskId,
+    task: renderTaskContext(task),
+    featurePlan: featurePlanMessage?.content || 'Feature Plan は未生成です。',
+    questionnaire: input.questionnaireSessionId
+      ? `Questionnaire session: ${input.questionnaireSessionId}`
+      : 'Questionnaire は指定されていません。',
+    blueprint: blueprintMessage?.content || 'Blueprint は未生成です。',
+    dataModel: dataModelMessage?.content || 'Data Model は未生成です。',
+    prompt,
+  });
   const sourceMessageIds = [
     featurePlanMessage?.id,
     blueprintMessage?.id,
@@ -145,6 +140,9 @@ function validateDedicatedViewMarkdown(artifact: GenericDedicatedViewArtifact) {
     throw new Error(`${artifact.view} must use ${expectedDiagramKind}.`);
   }
   if (artifact.markdown.includes('```mermaid')) {
+    if (!artifact.diagramKind) {
+      throw new Error(`${artifact.view} Mermaid output must include diagramKind.`);
+    }
     const requiredMarker = expectedDiagramKind === 'flowchart' ? 'flowchart ' : expectedDiagramKind;
     if (!artifact.markdown.includes(requiredMarker)) {
       throw new Error(`${artifact.view} Mermaid output must include ${requiredMarker}.`);
@@ -164,8 +162,41 @@ function resolveMessage(
   messageId: string | null | undefined,
   kind: 'feature_plan' | 'blueprint' | 'data_model'
 ) {
-  if (messageId) return messages.find((message) => message.id === messageId) || null;
+  if (messageId)
+    return (
+      messages.find((message) => message.id === messageId && isMessageKind(message, kind)) || null
+    );
   return [...messages].reverse().find((message) => isMessageKind(message, kind)) || null;
+}
+
+async function generateArtifactFromLlm(input: {
+  view: GenericPlanView;
+  taskId: string;
+  task: string;
+  featurePlan: string;
+  questionnaire: string;
+  blueprint: string;
+  dataModel: string;
+  prompt: string;
+}) {
+  try {
+    const rawOutput = await callStructuredJsonLLM(
+      buildPlanDedicatedViewSystemPrompt(input.view),
+      buildPlanDedicatedViewUserPrompt(input),
+      {
+        schemaName: 'plan_mode_dedicated_view',
+        schema: genericDedicatedViewSchema,
+        taskId: input.taskId,
+        runId: null,
+        role: 'plan',
+      }
+    );
+    return parseGenericDedicatedViewOutput(rawOutput, input.view);
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    const message = err instanceof Error ? err.message : 'Dedicated view generation failed.';
+    throw new AppError(502, 'PLAN_VIEW_GENERATION_FAILED', message);
+  }
 }
 
 function isMessageKind(

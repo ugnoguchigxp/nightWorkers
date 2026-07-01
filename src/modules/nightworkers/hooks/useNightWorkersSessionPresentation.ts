@@ -18,22 +18,24 @@ import {
 } from '../workbenchSelectors';
 import type { ProjectSessionGroups } from './nightWorkersWorkspaceState';
 
-function hasSpecificationWorkspaceEvidence(workspace: PlanModeWorkspace) {
+function hasPlanModeWorkspaceEvidence(workspace: PlanModeWorkspace) {
   return Boolean(
     workspace.featurePlanArtifacts.length ||
       workspace.blueprintArtifacts.length ||
       workspace.dataModelArtifacts.length ||
+      workspace.dedicatedViewArtifacts.length ||
       workspace.questionnaireSessions.length ||
       workspace.decisionReviews.length ||
       workspace.implementationReferences.length
   );
 }
 
-function summarizeSpecificationWorkspace(workspace: PlanModeWorkspace) {
+function summarizePlanModeWorkspace(workspace: PlanModeWorkspace) {
   return [
     `${workspace.featurePlanArtifacts.length} Feature Plan`,
     `${workspace.blueprintArtifacts.length} Blueprint`,
     `${workspace.dataModelArtifacts.length} Data Model`,
+    `${workspace.dedicatedViewArtifacts.length} Dedicated Views`,
     `${workspace.questionnaireSessions.length} Questionnaire`,
     `${workspace.decisionReviews.length} Decision Review`,
     `${workspace.implementationReferences.length} Implementation`,
@@ -80,15 +82,15 @@ export function useNightWorkersSessionPresentation({
     });
     if (
       activeSpecificationWorkspace &&
-      hasSpecificationWorkspaceEvidence(activeSpecificationWorkspace) &&
-      !refs.some((artifact) => artifact.kind === 'blueprint_workspace')
+      hasPlanModeWorkspaceEvidence(activeSpecificationWorkspace) &&
+      !refs.some((artifact) => artifact.kind === 'plan_mode_workspace')
     ) {
       refs.unshift({
-        id: `blueprint-workspace-${activeSession.id}`,
+        id: `plan-mode-workspace-${activeSession.id}`,
         taskId: activeSession.id,
-        kind: 'blueprint_workspace',
-        title: 'Specification Workspace',
-        summary: summarizeSpecificationWorkspace(activeSpecificationWorkspace),
+        kind: 'plan_mode_workspace',
+        title: 'Plan Mode Workspace',
+        summary: summarizePlanModeWorkspace(activeSpecificationWorkspace),
         source: {
           type: 'task_message',
           messageId:
@@ -96,12 +98,13 @@ export function useNightWorkersSessionPresentation({
             activeSpecificationWorkspace.featurePlanArtifacts[0]?.sourceMessageId ||
             activeSpecificationWorkspace.blueprintArtifacts[0]?.sourceMessageId ||
             activeSpecificationWorkspace.dataModelArtifacts[0]?.sourceMessageId ||
+            activeSpecificationWorkspace.dedicatedViewArtifacts[0]?.sourceMessageId ||
             activeSpecificationWorkspace.questionnaireSessions[0]?.sourceBlueprintMessageId ||
             activeSpecificationWorkspace.implementationReferences[0]?.sourceMessageId ||
             '',
         },
         createdAt: activeSpecificationWorkspace.generatedAt || String(activeSession.updatedAt),
-        metadata: { specificationWorkspace: activeSpecificationWorkspace },
+        metadata: { planModeWorkspace: activeSpecificationWorkspace },
       });
     }
     return refs;

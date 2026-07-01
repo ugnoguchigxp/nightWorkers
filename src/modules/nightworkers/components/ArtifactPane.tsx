@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toDeepRecord } from '../../../../shared/json-record';
 import { PlanModeWorkspaceViewer } from '../../planMode';
+import type { PlanWorkspaceTab } from '../../specification';
 import type {
   ActivityArtifact,
   ProjectDiff,
@@ -66,14 +67,21 @@ type ArtifactPaneProps = {
 
 type ProjectArtifactMode = 'tree' | 'diff';
 
-function workspaceInitialTab(value: unknown) {
-  if (value === 'design-doc') return 'specification';
+function workspaceInitialTab(value: unknown): PlanWorkspaceTab | undefined {
+  if (value === 'design-doc' || value === 'specification') return 'feature-plan';
   if (value === 'specification-status') return 'status';
-  return value === 'blueprints' ||
+  if (value === 'blueprints') return 'blueprint';
+  if (value === 'db-design') return 'data-model';
+  return value === 'feature-plan' ||
+    value === 'blueprint' ||
     value === 'data-model' ||
+    value === 'api-io-contract' ||
+    value === 'state-model' ||
+    value === 'activity-flow' ||
+    value === 'sequence-flow' ||
+    value === 'zod-schema-design' ||
     value === 'questionnaire' ||
-    value === 'status' ||
-    value === 'specification'
+    value === 'status'
     ? value
     : undefined;
 }
@@ -153,7 +161,7 @@ export function ArtifactPane({
   );
   const displayArtifact = artifactVersions[currentVersionIndex] || selectedArtifact;
   const showDiff = displayArtifact?.kind === 'diff';
-  const showBlueprintWorkspace = displayArtifact?.kind === 'blueprint_workspace';
+  const showBlueprintWorkspace = displayArtifact?.kind === 'plan_mode_workspace';
   const showBlueprint = displayArtifact?.kind === 'app_blueprint';
   const showComponentDesign =
     displayArtifact?.kind === 'component_design' || displayArtifact?.kind === 'design_delta';

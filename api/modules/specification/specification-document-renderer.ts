@@ -324,26 +324,14 @@ function getMessageDataModelArtifact(message: TaskMessageRow | undefined): JsonR
   const metadata = isRecord(message?.metadataJson) ? message.metadataJson : {};
   const artifact = metadata.dataModelArtifact;
   if (isRecord(artifact)) return artifact;
-  const blueprint = isRecord(metadata.appBlueprint) ? metadata.appBlueprint : {};
-  const databaseSchema = isRecord(blueprint.databaseSchema) ? blueprint.databaseSchema : null;
-  if (!databaseSchema) return null;
-  return {
-    artifactKind: 'plan_mode_dedicated_view',
-    view: 'data_model',
-    title: String(metadata.title || 'Data Model'),
-    derivedTables: toRecordArray(databaseSchema.tables),
-    relations: toRecordArray(databaseSchema.relations),
-  };
+  return null;
 }
 
 function isDataModelMessageMetadata(metadata: JsonRecord) {
   return (
     (metadata.artifactKind === 'plan_mode_dedicated_view' && metadata.view === 'data_model') ||
     metadata.source === 'data-model' ||
-    metadata.source === 'blueprint-db-design' ||
-    Boolean(metadata.dbDesignTarget) ||
-    metadata.artifactType === 'data_model' ||
-    metadata.artifactType === 'blueprint_db_design'
+    metadata.artifactType === 'data_model'
   );
 }
 

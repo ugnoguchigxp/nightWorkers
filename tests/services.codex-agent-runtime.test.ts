@@ -424,7 +424,7 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain('executionMode: general_answer');
     expect(prompt).toContain('General answer behavior:');
     expect(prompt).toContain('質問に答えるための読み取り確認だけ');
-    expect(prompt).toContain('Plan Mode artifact、Specification Workspace、TodoList');
+    expect(prompt).toContain('Plan Mode artifact、Plan Mode Workspace、TodoList');
     expect(prompt).not.toContain('Minimal implementation behavior:');
     expect(prompt).not.toContain('nightworkers.todo_list');
     expect(prompt).not.toContain('LLM コードレビュー、品質ゲート verify コマンド、closeout');

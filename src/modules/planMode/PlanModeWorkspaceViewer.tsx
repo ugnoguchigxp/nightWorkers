@@ -21,9 +21,8 @@ import {
   fetchSpecificationWorkspace,
   generateSpecificationArtifact as generateDesignDocArtifact,
   getPlanModeCapabilities,
-  isDesignAssemblyReady,
+  type PlanWorkspaceTab,
   selectSpecificationWorkspaceMessages,
-  type WorkspaceTab,
 } from '../specification';
 import {
   ActionButton,
@@ -34,11 +33,43 @@ import {
   QuestionnaireForm,
 } from './PlanModeQuestionnaire';
 import {
-  SpecificationStatusView,
+  DedicatedViewPanel,
+  type PlanViewDecision,
+  PlanWorkspaceStatusView,
+  ViewDecisionSummary,
   WorkspaceBlueprintPreview,
   WorkspaceDataModelPanel,
   WorkspaceList,
 } from './PlanModeWorkspacePanels';
+
+const additionalPlanViewTabs = [
+  'api-io-contract',
+  'state-model',
+  'activity-flow',
+  'sequence-flow',
+  'zod-schema-design',
+] as const;
+
+const tabToPlanView = {
+  'api-io-contract': 'api_io_contract',
+  'state-model': 'state_model',
+  'activity-flow': 'activity_flow',
+  'sequence-flow': 'sequence_flow',
+  'zod-schema-design': 'zod_schema_design',
+} as const;
+
+const tabLabels: Record<PlanWorkspaceTab, string> = {
+  'feature-plan': 'Feature Plan',
+  status: 'Status',
+  questionnaire: 'Questionnaire',
+  blueprint: 'Blueprint',
+  'data-model': 'Data Model',
+  'api-io-contract': 'API / I/O',
+  'state-model': 'State',
+  'activity-flow': 'Activity',
+  'sequence-flow': 'Sequence',
+  'zod-schema-design': 'Zod',
+};
 
 export function PlanModeWorkspaceViewer({
   sessionId,
@@ -52,20 +83,20 @@ export function PlanModeWorkspaceViewer({
   sessionId: string | null;
   taskMessages: TaskMessage[];
   activityArtifacts?: ActivityArtifact[];
-  initialTab?: WorkspaceTab;
+  initialTab?: PlanWorkspaceTab;
   onQueueSession?: () => Promise<void>;
   onAddToQueue?: () => Promise<void>;
   isImplementationLocked?: boolean;
 }) {
   const [workspace, setWorkspace] = useState<PlanModeWorkspace | null>(null);
   const [sessions, setSessions] = useState<DesignQuestionnaireSession[]>([]);
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab || 'blueprints');
+  const [activeTab, setActiveTab] = useState<PlanWorkspaceTab>(initialTab || 'status');
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, DesignQuestionnaireAnswer>>({});
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [generalSettings, setGeneralSettings] = useState<GeneralSettings | null>(null);
-  const [assemblyReadySessionIds, setAssemblyReadySessionIds] = useState<Set<string>>(new Set());
+  const [, setAssemblyReadySessionIds] = useState<Set<string>>(new Set());
   const [generatedMessages, setGeneratedMessages] = useState<TaskMessage[]>([]);
   const workspaceMessages = useMemo(
     () =>
@@ -85,6 +116,44 @@ export function PlanModeWorkspaceViewer({
     activeDataModelMessage,
     activeBlueprintSourceMessageId,
   } = workspaceMessages;
+  const featurePlanMessage = reviewedDesignDocMessages.at(-1) || designDocMessages.at(-1) || null;
+  const viewDecisions = useMemo(() => extractViewDecisions(taskMessages), [taskMessages]);
+  const includedViews = useMemo(
+    () =>
+      new Set(viewDecisions.filter((item) => item.decision === 'include').map((item) => item.view)),
+    [viewDecisions]
+  );
+  const hasFeaturePlan = Boolean(featurePlanMessage || workspace?.featurePlanArtifacts.length);
+  const hasQuestionnaire = sessions.length > 0 || Boolean(workspace?.questionnaireSessions.length);
+  const hasBlueprint = Boolean(activeBlueprintMessage || workspace?.blueprintArtifacts.length);
+  const hasDataModel = Boolean(activeDataModelMessage || workspace?.dataModelArtifacts.length);
+  const visibleTabs = useMemo<PlanWorkspaceTab[]>(() => {
+    const additionalTabs = additionalPlanViewTabs.filter((tab) => {
+      const view = tabToPlanView[tab];
+      return (
+        workspace?.dedicatedViewArtifacts.some((artifact) => artifact.kind === view) ||
+        includedViews.has(view)
+      );
+    });
+    return [
+      ...(hasFeaturePlan ? (['feature-plan'] as const) : []),
+      'status',
+      ...(hasQuestionnaire || includedViews.has('questionnaire')
+        ? (['questionnaire'] as const)
+        : []),
+      ...(hasBlueprint || includedViews.has('blueprint') ? (['blueprint'] as const) : []),
+      ...(hasDataModel || includedViews.has('data_model') ? (['data-model'] as const) : []),
+      ...additionalTabs,
+    ];
+  }, [
+    hasBlueprint,
+    hasDataModel,
+    hasFeaturePlan,
+    hasQuestionnaire,
+    includedViews,
+    workspace?.dedicatedViewArtifacts,
+  ]);
+  const defaultTab: PlanWorkspaceTab = hasFeaturePlan ? 'feature-plan' : 'status';
 
   const refresh = useCallback(async () => {
     if (!sessionId) return;
@@ -94,7 +163,7 @@ export function PlanModeWorkspaceViewer({
     if (sessionsRes.ok) {
       const nextSessions = (await sessionsRes.json()) as DesignQuestionnaireSession[];
       setSessions(nextSessions);
-      if (nextSessions.length > 0 && blueprintMessages.length === 0 && activeTab === 'blueprints') {
+      if (nextSessions.length > 0 && blueprintMessages.length === 0 && activeTab === 'blueprint') {
         setActiveTab('questionnaire');
       }
       const selected = nextSessions.find((item) => item.id === activeSessionId) || nextSessions[0];
@@ -131,6 +200,11 @@ export function PlanModeWorkspaceViewer({
     if (initialTab) setActiveTab(initialTab);
   }, [initialTab]);
 
+  useEffect(() => {
+    if (initialTab) return;
+    if (!visibleTabs.includes(activeTab)) setActiveTab(defaultTab);
+  }, [activeTab, defaultTab, initialTab, visibleTabs]);
+
   const activeQuestionnaireSession =
     sessions.find((session) => session.id === activeSessionId) || sessions[0] || null;
   const questionGroups =
@@ -139,10 +213,7 @@ export function PlanModeWorkspaceViewer({
     ) || [];
   const answerProgress = getAnswerProgress(questionGroups, answers);
   const unansweredQuestions = getUnansweredQuestions(questionGroups, answers);
-  const designAssemblyReady = isDesignAssemblyReady(
-    activeQuestionnaireSession,
-    assemblyReadySessionIds
-  );
+  const canGenerateDataModel = Boolean(activeQuestionnaireSession || featurePlanMessage);
 
   async function runAction(action: string, fn: () => Promise<void>) {
     setBusyAction(action);
@@ -209,8 +280,8 @@ export function PlanModeWorkspaceViewer({
   }
 
   async function generateSpecificationArtifact(
-    action: 'blueprint' | 'data-model' | 'design-doc',
-    nextTab: WorkspaceTab
+    action: 'blueprint' | 'data-model' | 'feature-plan',
+    nextTab: PlanWorkspaceTab
   ) {
     if (!sessionId || !activeQuestionnaireSession) return;
     if (isImplementationLocked) return;
@@ -240,41 +311,43 @@ export function PlanModeWorkspaceViewer({
     });
   }
 
+  const activeDedicatedView =
+    activeTab in tabToPlanView ? tabToPlanView[activeTab as keyof typeof tabToPlanView] : null;
+  const activeDedicatedArtifact = activeDedicatedView
+    ? workspace?.dedicatedViewArtifacts.find((artifact) => artifact.kind === activeDedicatedView) ||
+      null
+    : null;
+  const activeDedicatedMessage = activeDedicatedArtifact
+    ? workspaceMessages.combinedTaskMessages.find(
+        (message) => message.id === activeDedicatedArtifact.sourceMessageId
+      ) || null
+    : null;
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#1e1e2e] text-slate-100">
       <div className="shrink-0 border-slate-800 border-b px-5 py-3">
         <div className="text-[11px] font-semibold uppercase text-cyan-200">Plan Mode Workspace</div>
         <div className="mt-2 flex flex-wrap gap-1">
-          {[
-            ['status', 'Status'],
-            ['questionnaire', 'Questionnaire'],
-            ['blueprints', 'Blueprints'],
-            ['data-model', 'Data Model'],
-            ['specification', 'Feature Plan'],
-          ].map(([id, label]) => (
+          {visibleTabs.map((id) => (
             <button
               key={id}
               type="button"
-              disabled={id === 'specification' && !designAssemblyReady}
               className={`rounded border px-2 py-1 text-xs ${
                 activeTab === id
                   ? 'border-cyan-400/70 bg-cyan-950/40 text-cyan-100'
-                  : id === 'specification' && !designAssemblyReady
-                    ? 'cursor-not-allowed border-slate-800 bg-slate-950/10 text-slate-600'
-                    : 'border-slate-700 bg-slate-950/20 text-slate-300 hover:border-slate-500'
+                  : 'border-slate-700 bg-slate-950/20 text-slate-300 hover:border-slate-500'
               }`}
-              onClick={() => {
-                if (id === 'specification' && !designAssemblyReady) return;
-                setActiveTab(id as typeof activeTab);
-              }}
+              onClick={() => setActiveTab(id)}
             >
-              {label}
+              {tabLabels[id]}
             </button>
           ))}
         </div>
       </div>
       <div className="nightworkers-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        {activeTab === 'blueprints' ? (
+        {activeTab === 'feature-plan' ? (
+          <MarkdownViewer content={featurePlanMessage?.content || 'No Feature Plan artifact.'} />
+        ) : activeTab === 'blueprint' ? (
           <div className="grid gap-3">
             <WorkspaceBlueprintPreview sessionId={sessionId} message={activeBlueprintMessage} />
           </div>
@@ -285,7 +358,6 @@ export function PlanModeWorkspaceViewer({
               empty="No Data Model revisions."
             />
             <WorkspaceDataModelPanel
-              sessionId={sessionId}
               message={activeDataModelMessage}
               empty="No Data Model artifact."
             />
@@ -386,21 +458,20 @@ export function PlanModeWorkspaceViewer({
             )}
           </div>
         ) : activeTab === 'status' ? (
-          <SpecificationStatusView
+          <PlanWorkspaceStatusView
             workspace={workspace}
             questionnaireSession={activeQuestionnaireSession}
             busyAction={busyAction}
-            canGenerateDataModel={Boolean(
-              activeBlueprintSourceMessageId || workspace?.blueprintArtifacts.length
-            )}
-            hasSpecification={reviewedDesignDocMessages.length > 0}
+            canGenerateDataModel={canGenerateDataModel}
+            hasFeaturePlan={hasFeaturePlan}
             isImplementationLocked={isImplementationLocked}
             planModeSettings={generalSettings?.planMode}
+            viewDecisions={viewDecisions}
             onOpenQuestionnaire={() => setActiveTab('questionnaire')}
-            onGenerateBlueprint={() => generateSpecificationArtifact('blueprint', 'blueprints')}
+            onGenerateBlueprint={() => generateSpecificationArtifact('blueprint', 'blueprint')}
             onGenerateDataModel={() => generateSpecificationArtifact('data-model', 'data-model')}
-            onGenerateSpecification={() =>
-              generateSpecificationArtifact('design-doc', 'specification')
+            onGenerateFeaturePlan={() =>
+              generateSpecificationArtifact('feature-plan', 'feature-plan')
             }
             onQueueSession={
               onQueueSession ? () => runSessionAction('start-session', onQueueSession) : undefined
@@ -409,13 +480,13 @@ export function PlanModeWorkspaceViewer({
               onAddToQueue ? () => runSessionAction('add-to-queue', onAddToQueue) : undefined
             }
           />
+        ) : activeDedicatedView ? (
+          <DedicatedViewPanel artifact={activeDedicatedArtifact} message={activeDedicatedMessage} />
         ) : (
-          <MarkdownViewer
-            content={
-              (reviewedDesignDocMessages.at(-1) || designDocMessages.at(-1))?.content ||
-              'No Feature Plan artifact.'
-            }
-          />
+          <div className="grid gap-4">
+            <ViewDecisionSummary decisions={viewDecisions} />
+            <MarkdownViewer content="Select a Plan Mode view." />
+          </div>
         )}
         {actionError ? (
           <p
@@ -428,4 +499,40 @@ export function PlanModeWorkspaceViewer({
       </div>
     </div>
   );
+}
+
+function extractViewDecisions(messages: TaskMessage[]): PlanViewDecision[] {
+  const decisions: PlanViewDecision[] = [];
+  const seen = new Set<string>();
+  for (const message of messages) {
+    const metadata = isRecord(message.metadataJson) ? message.metadataJson : {};
+    const candidates = [
+      metadata.dedicatedViews,
+      metadata.viewDecisions,
+      isRecord(metadata.planMode) ? metadata.planMode.dedicatedViews : null,
+    ];
+    for (const candidate of candidates) {
+      if (!Array.isArray(candidate)) continue;
+      for (const item of candidate) {
+        if (!isRecord(item)) continue;
+        const view = typeof item.view === 'string' ? item.view : '';
+        const decision =
+          item.decision === 'include' || item.decision === 'omit' ? item.decision : null;
+        if (!view || !decision) continue;
+        const key = `${view}:${decision}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        decisions.push({
+          view,
+          decision,
+          reason: typeof item.reason === 'string' ? item.reason : undefined,
+        });
+      }
+    }
+  }
+  return decisions;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }

@@ -98,7 +98,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
   const { t } = useTranslation();
   const diffArtifacts = props.artifactRefs.filter((artifact) => artifact.kind === 'diff');
   const blueprintArtifact =
-    props.artifactRefs.find((artifact) => artifact.kind === 'blueprint_workspace') ||
+    props.artifactRefs.find((artifact) => artifact.kind === 'plan_mode_workspace') ||
     props.artifactRefs.find((artifact) => artifact.kind === 'app_blueprint');
   const latestDiffArtifact = diffArtifacts[0];
   const [showDebugEvents, setShowDebugEvents] = useState(true);
@@ -123,8 +123,8 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
     latestActivityEvent?.id || props.activityEvents.length,
     props.activeStreamingResponse.length,
   ].join(':');
-  const specificationWorkspaceLabel = t('thread.specificationWorkspace');
-  const noSpecificationWorkspaceLabel = t('thread.noSpecificationWorkspace');
+  const planModeWorkspaceLabel = t('thread.planModeWorkspace');
+  const noPlanModeWorkspaceLabel = t('thread.noPlanModeWorkspace');
   const commitScrollState = useCallback(
     (snapshot: ScrollSnapshot) => {
       const state = buildPersistedScrollState(snapshot);
@@ -350,12 +350,8 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
                   disabled={
                     props.isBlueprintActionBusy || !props.activeSession || !blueprintArtifact
                   }
-                  title={
-                    blueprintArtifact ? specificationWorkspaceLabel : noSpecificationWorkspaceLabel
-                  }
-                  aria-label={
-                    blueprintArtifact ? specificationWorkspaceLabel : noSpecificationWorkspaceLabel
-                  }
+                  title={blueprintArtifact ? planModeWorkspaceLabel : noPlanModeWorkspaceLabel}
+                  aria-label={blueprintArtifact ? planModeWorkspaceLabel : noPlanModeWorkspaceLabel}
                   aria-pressed={props.isBlueprintArtifactOpen}
                 >
                   {props.isBlueprintActionBusy ? (

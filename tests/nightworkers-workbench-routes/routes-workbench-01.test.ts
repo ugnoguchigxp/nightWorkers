@@ -225,7 +225,7 @@ describe('NightWorkers workbench routes', () => {
         intent: 'draft',
         artifactContext: {
           artifactId: 'message-data-model-1',
-          kind: 'blueprint_workspace',
+          kind: 'plan_mode_workspace',
           title: 'Data Model: Kanban Data Model',
           summary: 'Kanban DB schema',
           source: { type: 'task_message', messageId: crypto.randomUUID() },

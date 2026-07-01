@@ -46,6 +46,20 @@ describe('Plan dedicated view generation helpers', () => {
     ).toThrow('not allowed');
   });
 
+  it('requires diagramKind when a diagram view returns Mermaid', () => {
+    expect(() =>
+      parseGenericDedicatedViewOutput(
+        JSON.stringify({
+          artifactKind: 'plan_mode_dedicated_view',
+          view: 'sequence_flow',
+          title: 'Sequence Flow',
+          markdown: '```mermaid\nsequenceDiagram\n  User->>API: submit\n```',
+        }),
+        'sequence_flow'
+      )
+    ).toThrow('diagramKind');
+  });
+
   it('accepts Zod schema design without Mermaid diagram metadata', () => {
     const artifact = parseGenericDedicatedViewOutput(
       JSON.stringify({

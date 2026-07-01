@@ -31,9 +31,8 @@ back to legacy `markdown_document` messages with structured
 `artifact-<activityArtifactId>` are frontend projection IDs; the server
 resolvable ID is the raw `artifactId` inside `artifactRef` or an artifact-row
 source. The Artifact Pane renders App Blueprint artifacts through Blueprint
-Preview, where users can adjust governed preview design settings, request DB
-Design revisions, and mark which Blueprint, DB Design, or Design Token artifact
-should be adopted for later planning.
+Preview, and renders Plan Mode Workspace artifacts for Feature Plan, Blueprint,
+Data Model, and additional dedicated design views.
 
 ## Desktop Packaging Boundary
 The desktop app keeps the existing Node backend boundary. The Tauri shell owns
@@ -70,8 +69,10 @@ WebSocket URLs. Browser development keeps the existing Vite `/api` proxy path.
 - `/api/tasks`: Session/Task CRUD, queue updates, and run start
 - `/api/tasks/:id/blueprint-design-settings`: session-scoped Blueprint Preview design settings
 - `/api/tasks/:id/blueprint-adoption`: adopted/not-adopted state for a Blueprint artifact message
-- `/api/tasks/:id/blueprint-db-design-adoption`: adopted/not-adopted state for a DB Design revision message
 - `/api/tasks/:id/blueprint-design-token-adoption`: adopted/not-adopted state for Design Token settings tied to a message
+- `/api/tasks/:id/plan-mode-workspace`: Plan Mode Workspace read model
+- `/api/tasks/:id/plan-mode/data-model`: Data Model artifact generation
+- `/api/tasks/:id/plan-mode/views/:view`: additional dedicated design view generation
 - `/api/runs/:id`: run detail and event timeline
 - `/api/runs/:id/events`: run events after an optional `afterSeq` cursor
 - `/api/workbench/*`: chat-first workbench read/write model
@@ -87,15 +88,13 @@ WebSocket URLs. Browser development keeps the existing Vite `/api` proxy path.
   sections, component choices, visual intent, sample preview props, and
   implementation task hints.
 - Normal App Blueprint generation must not invent DB tables, columns, relations,
-  bindings, or DDL. It leaves `databaseSchema` and `dataBindings` empty unless a
-  DB Design revision has explicitly produced those fields.
-- DB Design is a dedicated Workbench intent (`design_blueprint_data`) launched
-  from the Blueprint Preview DB Design panel. It returns a revised
-  App Blueprint artifact and does not apply migrations or physical database
-  changes.
-- Adoption state is persistence, not artifact content. Blueprint, DB Design,
-  and Design Token adoption decisions are stored separately and keyed by
-  session/task ID plus source message ID.
+  bindings, or DDL. Canonical data structure decisions belong to the Data Model
+  view.
+- Data Model generation produces Plan mode dedicated-view artifacts and does not
+  apply migrations or physical database changes.
+- Adoption state is persistence, not artifact content. Blueprint and Design
+  Token adoption decisions are stored separately and keyed by session/task ID
+  plus source message ID.
 
 ## Artifact Projection Rules
 - Canonical artifact rows outrank embedded task message payloads. Selectors
@@ -104,10 +103,9 @@ WebSocket URLs. Browser development keeps the existing Vite `/api` proxy path.
 - Activity artifacts may be projected into synthetic task messages for read-only
   compatibility. New write paths should persist a projection message with
   `metadataJson.artifactRef` instead of relying on synthetic IDs.
-- DB Design is classified through shared helpers, not by scattering checks for
-  `source === "blueprint-db-design"` or `dbDesignTarget` across UI components.
-  Until DB Design receives a dedicated artifact kind, those metadata checks stay
-  isolated in selector/model helpers.
+- Data Model artifacts are classified through Plan mode dedicated-view metadata:
+  `artifactKind: "plan_mode_dedicated_view"` with `view: "data_model"`, or the
+  current `source: "data-model"` compatibility marker.
 - `artifact-*` IDs in the frontend are display/projection IDs. Code that needs
   to fetch persisted content must use `artifactRef.artifactId` or an
   `artifact_row` source.
@@ -168,7 +166,7 @@ WebSocket URLs. Browser development keeps the existing Vite `/api` proxy path.
 - Keep Implementation Queue execution separate from Session chat. Queue Entries
   are explicit user-approved automation items; normal Session chat and direct
   coding requests remain available outside the Queue.
-- Keep Blueprint visual design, DB Design, and implementation planning as
+- Keep Blueprint visual design, Data Model, and implementation planning as
   separate reasoning boundaries. A UI action should map to a distinct backend
   intent and persistence path when it changes the model's scope.
 - Prefer additive, test-backed schema changes.

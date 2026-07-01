@@ -62,7 +62,7 @@ export function mergeWorkspaceTaskMessages({
   ];
 }
 
-export function isReviewedSpecificationMessage(message: TaskMessage) {
+export function isReviewedFeaturePlanMessage(message: TaskMessage) {
   const metadata = taskMessageMetadata(message);
   return (
     message.messageType === 'markdown_document' &&
@@ -109,21 +109,21 @@ export function buildBlueprintArtifactRef(message: TaskMessage): WorkbenchArtifa
   };
 }
 
-export function buildQuestionnaireWorkspaceArtifactRef(
+export function buildPlanModeWorkspaceArtifactRef(
   message: TaskMessage,
   initialTab: 'questionnaire' | 'status' = 'questionnaire'
 ): WorkbenchArtifactRef {
   return {
-    id: `blueprint-workspace-${message.taskId}`,
+    id: `plan-mode-workspace-${message.taskId}`,
     taskId: message.taskId,
     runId: message.runId || undefined,
-    kind: 'blueprint_workspace',
-    title: 'Specification Workspace',
+    kind: 'plan_mode_workspace',
+    title: 'Plan Mode Workspace',
     summary: message.content.slice(0, 160),
     source: { type: 'task_message', messageId: message.id },
     createdAt: String(message.createdAt),
     metadata: {
-      specificationSource: 'design_questionnaire_ready',
+      planModeWorkspaceSource: 'design_questionnaire_ready',
       questionnaireSessionId: taskMessageMetadata(message).questionnaireSessionId,
       initialTab,
     },
@@ -222,25 +222,32 @@ export function buildWorkbenchArtifactRefs(input: {
       message.messageType === 'markdown_document' &&
       String(taskMessageMetadata(message).intent) === 'design_decision_review'
   );
-  const implementationPlanMessages = (input.messages || []).filter(
+  const featurePlanMessages = (input.messages || []).filter(
     (message) =>
       message.messageType === 'markdown_document' &&
-      (String(taskMessageMetadata(message).intent) === 'implementation_plan' ||
+      (String(taskMessageMetadata(message).intent) === 'feature_plan' ||
         String(taskMessageMetadata(message).intent) === 'draft_spec')
+  );
+  const dedicatedViewMessages = (input.messages || []).filter(
+    (message) =>
+      message.messageType === 'markdown_document' &&
+      String(taskMessageMetadata(message).artifactKind) === 'plan_mode_dedicated_view'
   );
   if (
     blueprintArtifactRows.length > 0 ||
     blueprintMessages.length > 0 ||
     dataModelMessages.length > 0 ||
+    dedicatedViewMessages.length > 0 ||
     decisionReviewMessages.length > 0 ||
-    implementationPlanMessages.length > 0
+    featurePlanMessages.length > 0
   ) {
     const latestWorkspaceMessage =
       [
         ...blueprintMessages,
         ...dataModelMessages,
+        ...dedicatedViewMessages,
         ...decisionReviewMessages,
-        ...implementationPlanMessages,
+        ...featurePlanMessages,
       ].sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt))[0] || blueprintMessages.at(-1);
     const latestBlueprintArtifactRow = [...blueprintArtifactRows].sort(
       (a, b) => toMs(b.createdAt) - toMs(a.createdAt)
@@ -251,16 +258,18 @@ export function buildWorkbenchArtifactRefs(input: {
         ? { type: 'artifact_row' as const, artifactId: latestBlueprintArtifactRow.id }
         : { type: 'task_message' as const, messageId: '' };
     refs.push({
-      id: `blueprint-workspace-${input.task.id}`,
+      id: `plan-mode-workspace-${input.task.id}`,
       taskId: input.task.id,
-      kind: 'blueprint_workspace',
-      title: 'Specification Workspace',
+      kind: 'plan_mode_workspace',
+      title: 'Plan Mode Workspace',
       summary: [
+        `${featurePlanMessages.length} Feature Plan${featurePlanMessages.length === 1 ? '' : 's'}`,
+        `${dataModelMessages.length} Data Model${dataModelMessages.length === 1 ? '' : 's'}`,
+        `${dedicatedViewMessages.length} Dedicated View${dedicatedViewMessages.length === 1 ? '' : 's'}`,
         `${blueprintArtifactRows.length + blueprintMessages.length} Blueprint artifact${
           blueprintArtifactRows.length + blueprintMessages.length === 1 ? '' : 's'
         }`,
         `${decisionReviewMessages.length} Decision Review${decisionReviewMessages.length === 1 ? '' : 's'}`,
-        `${implementationPlanMessages.length} Implementation Plan${implementationPlanMessages.length === 1 ? '' : 's'}`,
       ].join(' · '),
       source: workspaceSource,
       createdAt: String(
@@ -271,8 +280,9 @@ export function buildWorkbenchArtifactRefs(input: {
       metadata: {
         blueprintCount: blueprintArtifactRows.length + blueprintMessages.length,
         dataModelCount: dataModelMessages.length,
+        dedicatedViewCount: dedicatedViewMessages.length,
         decisionReviewCount: decisionReviewMessages.length,
-        implementationPlanCount: implementationPlanMessages.length,
+        featurePlanCount: featurePlanMessages.length,
       },
     });
   }
@@ -410,7 +420,8 @@ function runFieldRef(
 function inferDocumentArtifactKind(message: TaskMessage): WorkbenchArtifactKind {
   const metadata = taskMessageMetadata(message);
   const intent = String(metadata.intent);
-  if (isDataModelArtifactMessage(message)) return 'blueprint_workspace';
+  if (String(metadata.artifactKind) === 'plan_mode_dedicated_view') return 'plan_mode_workspace';
+  if (isDataModelArtifactMessage(message)) return 'plan_mode_workspace';
   if (isBlueprintArtifactMessage(message)) return 'app_blueprint';
   if (intent === 'component_design' || metadata.componentDesign) return 'component_design';
   if (intent === 'design_delta' || metadata.designDelta) return 'design_delta';
@@ -444,7 +455,7 @@ function artifactTitleForKind(kind: WorkbenchArtifactKind, message: TaskMessage)
   const metadataTitle = String(metadata.title || '');
   if (metadataTitle.trim()) {
     if (isDataModelArtifactMessage(message)) return `Data Model: ${metadataTitle}`;
-    if (kind === 'blueprint_workspace') return `Specification Workspace: ${metadataTitle}`;
+    if (kind === 'plan_mode_workspace') return `Plan Mode Workspace: ${metadataTitle}`;
     if (kind === 'app_blueprint') return `Blueprint: ${metadataTitle}`;
     if (kind === 'component_design') return `Component: ${metadataTitle}`;
     if (kind === 'design_delta') return `Design Delta: ${metadataTitle}`;
@@ -452,7 +463,7 @@ function artifactTitleForKind(kind: WorkbenchArtifactKind, message: TaskMessage)
     if (kind === 'spec' && String(metadata.intent) === 'design_decision_review')
       return metadataTitle;
   }
-  if (kind === 'blueprint_workspace') return 'Specification Workspace';
+  if (kind === 'plan_mode_workspace') return 'Plan Mode Workspace';
   if (kind === 'app_blueprint') return 'App Blueprint';
   if (kind === 'component_design') return 'Component Design';
   if (kind === 'design_delta') return 'Design Delta';

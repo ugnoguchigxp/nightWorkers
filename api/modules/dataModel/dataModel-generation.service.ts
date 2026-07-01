@@ -3,7 +3,7 @@ import {
   type DataModelArtifact,
   dataModelArtifactSchema,
 } from '../../../shared/schemas/plan-mode-artifact.schema';
-import { NotFoundError } from '../../lib/errors';
+import { AppError, NotFoundError } from '../../lib/errors';
 import {
   buildDataModelSystemPrompt,
   buildDataModelUserPrompt,
@@ -68,27 +68,22 @@ export async function generateDataModelArtifact(
     input.sourceBlueprintMessageId,
     'blueprint'
   );
-  const prompt = input.prompt?.trim() || task.objective || task.description || task.title;
-  const rawOutput = await callStructuredJsonLLM(
-    buildDataModelSystemPrompt(JSON.stringify(z.toJSONSchema(dataModelArtifactSchema), null, 2)),
-    buildDataModelUserPrompt({
-      task: renderTaskContext(task),
-      featurePlan: featurePlanMessage?.content || 'Feature Plan は未生成です。',
-      questionnaire: session
-        ? renderQuestionnaireAnswerMarkdown(session)
-        : 'Questionnaire は未生成です。',
-      blueprint: sourceBlueprintMessage?.content || 'Blueprint は未生成です。',
-      prompt,
-    }),
-    {
-      schemaName: 'plan_mode_data_model',
-      schema: z.toJSONSchema(dataModelArtifactSchema),
-      taskId,
-      runId: null,
-      role: 'plan',
-    }
-  );
-  const artifact = parseDataModelOutput(rawOutput);
+  const prompt =
+    input.prompt?.trim() ||
+    task.objective ||
+    task.description ||
+    task.title ||
+    'No additional prompt.';
+  const artifact = await generateArtifactFromLlm({
+    taskId,
+    task: renderTaskContext(task),
+    featurePlan: featurePlanMessage?.content || 'Feature Plan は未生成です。',
+    questionnaire: session
+      ? renderQuestionnaireAnswerMarkdown(session)
+      : 'Questionnaire は未生成です。',
+    blueprint: sourceBlueprintMessage?.content || 'Blueprint は未生成です。',
+    prompt,
+  });
   const message = await createPlanModeTaskMessage({
     taskId,
     role: 'assistant',
@@ -145,9 +140,40 @@ function resolveSourceMessage(
   kind: 'feature_plan' | 'blueprint'
 ) {
   if (messageId) {
-    return messages.find((message) => message.id === messageId) || null;
+    return (
+      messages.find((message) => message.id === messageId && isMessageKind(message, kind)) || null
+    );
   }
   return [...messages].reverse().find((message) => isMessageKind(message, kind)) || null;
+}
+
+async function generateArtifactFromLlm(input: {
+  taskId: string;
+  task: string;
+  featurePlan: string;
+  questionnaire: string;
+  blueprint: string;
+  prompt: string;
+}) {
+  try {
+    const schema = z.toJSONSchema(dataModelArtifactSchema);
+    const rawOutput = await callStructuredJsonLLM(
+      buildDataModelSystemPrompt(JSON.stringify(schema, null, 2)),
+      buildDataModelUserPrompt(input),
+      {
+        schemaName: 'plan_mode_data_model',
+        schema,
+        taskId: input.taskId,
+        runId: null,
+        role: 'plan',
+      }
+    );
+    return parseDataModelOutput(rawOutput);
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    const message = err instanceof Error ? err.message : 'Data Model generation failed.';
+    throw new AppError(502, 'DATA_MODEL_GENERATION_FAILED', message);
+  }
 }
 
 function isMessageKind(message: PlanModeTaskMessage, kind: 'feature_plan' | 'blueprint') {

@@ -39,22 +39,24 @@ export type {
 
 const emptyActivityReplay: ActivityReplay = { events: [], artifacts: [] };
 
-function _hasSpecificationWorkspaceEvidence(workspace: PlanModeWorkspace) {
+function _hasPlanModeWorkspaceEvidence(workspace: PlanModeWorkspace) {
   return Boolean(
     workspace.featurePlanArtifacts.length ||
       workspace.blueprintArtifacts.length ||
       workspace.dataModelArtifacts.length ||
+      workspace.dedicatedViewArtifacts.length ||
       workspace.questionnaireSessions.length ||
       workspace.decisionReviews.length ||
       workspace.implementationReferences.length
   );
 }
 
-function _summarizeSpecificationWorkspace(workspace: PlanModeWorkspace) {
+function _summarizePlanModeWorkspace(workspace: PlanModeWorkspace) {
   return [
     `${workspace.featurePlanArtifacts.length} Feature Plan`,
     `${workspace.blueprintArtifacts.length} Blueprint`,
     `${workspace.dataModelArtifacts.length} Data Model`,
+    `${workspace.dedicatedViewArtifacts.length} Dedicated Views`,
     `${workspace.questionnaireSessions.length} Questionnaire`,
     `${workspace.decisionReviews.length} Decision Review`,
     `${workspace.implementationReferences.length} Implementation`,

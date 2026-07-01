@@ -1,4 +1,7 @@
-import type { PlanModeWorkspace } from '../../../shared/schemas/plan-mode-artifact.schema';
+import {
+  type PlanModeWorkspace,
+  planModeArtifactKindSchema,
+} from '../../../shared/schemas/plan-mode-artifact.schema';
 import { NotFoundError } from '../../lib/errors';
 import { getBlueprintArtifactAdoption } from '../blueprint/blueprint-adoption.service';
 import {
@@ -54,10 +57,12 @@ export async function getPlanModeWorkspace(taskId: string): Promise<PlanModeWork
       dedicatedViewArtifacts.push(artifact);
     }
     if (metadata.artifactKind === 'plan_mode_dedicated_view') {
-      const view = String(metadata.view || '');
+      const parsedView = planModeArtifactKindSchema.safeParse(metadata.view);
+      if (!parsedView.success) continue;
+      const view = parsedView.data;
       const artifact = {
-        id: `${view || 'dedicated-view'}-${message.id}`,
-        kind: view === 'data_model' ? ('data_model' as const) : (view as never),
+        id: `${view}-${message.id}`,
+        kind: view,
         title: String(metadata.title || 'Dedicated View'),
         sourceMessageId: message.id,
         createdAt: message.createdAt,

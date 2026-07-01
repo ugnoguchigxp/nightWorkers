@@ -66,7 +66,7 @@ export type CodexMcpDiagnosticsSummary = {
 };
 
 export type WorkbenchArtifactKind =
-  | 'blueprint_workspace'
+  | 'plan_mode_workspace'
   | 'app_blueprint'
   | 'component_design'
   | 'design_delta'
