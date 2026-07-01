@@ -6,7 +6,7 @@ import { summarizeLlmUsageForTask } from '../../services/llm-usage';
 import { buildOverviewDashboard, type OverviewRange } from '../../services/overview';
 import {
   buildBlueprintPlanningReadiness,
-  isAppBlueprintMessage,
+  isBlueprintMessage,
 } from './nightworkers.planning-helpers.service';
 import * as repo from './nightworkers.repository';
 import { runSessionQueueForRepository } from './nightworkers.run-orchestration.service';
@@ -236,7 +236,7 @@ export async function resolveBlueprintPlanningReadiness(
   taskId: string
 ): Promise<BlueprintPlanningReadiness> {
   const messages = await repo.listTaskMessages(taskId);
-  const blueprintMessages = messages.filter(isAppBlueprintMessage);
+  const blueprintMessages = messages.filter(isBlueprintMessage);
   for (const message of [...blueprintMessages].reverse()) {
     const adoption = await repo.getBlueprintArtifactAdoption(taskId, message.id);
     if (adoption?.adopted) {

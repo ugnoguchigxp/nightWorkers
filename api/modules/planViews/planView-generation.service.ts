@@ -208,7 +208,10 @@ function isMessageKind(
   const metadata = (message.metadataJson || {}) as Record<string, unknown>;
   if (kind === 'feature_plan') return metadata.intent === 'feature_plan';
   if (kind === 'blueprint')
-    return metadata.intent === 'app_blueprint' && Boolean(metadata.appBlueprint);
+    return (
+      (metadata.intent === 'app_blueprint' && Boolean(metadata.appBlueprint)) ||
+      (metadata.intent === 'mock_blueprint' && Boolean(metadata.mockBlueprint))
+    );
   return metadata.artifactKind === 'plan_mode_dedicated_view' && metadata.view === 'data_model';
 }
 

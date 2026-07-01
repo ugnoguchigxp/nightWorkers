@@ -15,8 +15,8 @@ function _isAppBlueprintDocumentMessage(
   const payload = isRecord(payloadJson) ? payloadJson : {};
   return Boolean(
     messageType === 'markdown_document' &&
-      payload.intent === 'app_blueprint' &&
-      payload.appBlueprint
+      ((payload.intent === 'app_blueprint' && payload.appBlueprint) ||
+        (payload.intent === 'mock_blueprint' && payload.mockBlueprint))
   );
 }
 

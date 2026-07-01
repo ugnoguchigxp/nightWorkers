@@ -34,13 +34,17 @@ export async function getPlanModeWorkspace(taskId: string): Promise<PlanModeWork
         createdAt: message.createdAt,
       });
     }
-    if (metadata.intent === 'app_blueprint' && metadata.appBlueprint) {
-      const appBlueprint = isRecord(metadata.appBlueprint) ? metadata.appBlueprint : {};
+    if (isBlueprintMetadata(metadata)) {
+      const blueprintPayload = isRecord(metadata.appBlueprint)
+        ? metadata.appBlueprint
+        : isRecord(metadata.mockBlueprint)
+          ? metadata.mockBlueprint
+          : {};
       const adoption = await getBlueprintArtifactAdoption(taskId, message.id);
       const artifact = {
         id: `blueprint-${message.id}`,
         kind: 'blueprint' as const,
-        title: String(metadata.title || appBlueprint.name || 'App Blueprint'),
+        title: String(metadata.title || blueprintPayload.name || 'Blueprint'),
         sourceMessageId: message.id,
         createdAt: message.createdAt,
         adoptionState: adoption
@@ -120,4 +124,11 @@ export async function getPlanModeWorkspace(taskId: string): Promise<PlanModeWork
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function isBlueprintMetadata(metadata: Record<string, unknown>) {
+  return (
+    (metadata.intent === 'app_blueprint' && Boolean(metadata.appBlueprint)) ||
+    (metadata.intent === 'mock_blueprint' && Boolean(metadata.mockBlueprint))
+  );
 }

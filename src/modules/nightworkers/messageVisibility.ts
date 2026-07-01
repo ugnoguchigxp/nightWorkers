@@ -10,6 +10,7 @@ export function isUserVisibleChatMessage(message: TaskMessage): boolean {
   const intent = (message.metadataJson as Record<string, unknown>)?.intent;
   return (
     intent !== 'blueprint_raw_output' &&
+    intent !== 'mock_blueprint_raw_output' &&
     intent !== 'data_model_raw_output' &&
     !isWorkspaceOnlyTaskMessage(message)
   );

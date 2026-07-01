@@ -6,6 +6,7 @@ import type {
   TaskRunTodo,
 } from '../src/modules/nightworkers/types';
 import {
+  activityArtifactToTaskMessage,
   buildArtifactContext,
   buildBlueprintArtifactRef,
   buildPlanModeWorkspaceArtifactRef,
@@ -405,6 +406,36 @@ describe('workbench selectors', () => {
       title: 'Blueprint: Canonical Inventory App',
       source: { type: 'artifact_row', artifactId: 'artifact-blueprint-1' },
     });
+  });
+
+  it('preserves mock Blueprint intent when synthesizing messages from artifact rows', () => {
+    const message = activityArtifactToTaskMessage({
+      id: 'artifact-mock-blueprint-1',
+      taskId: baseTask.id,
+      runId: null,
+      kind: 'app_blueprint',
+      path: 'artifact-mock-blueprint-1.mock-blueprint.json',
+      contentText: JSON.stringify({
+        artifactKind: 'mock_blueprint',
+        id: 'mock-blueprint',
+        name: 'Mock Blueprint',
+        version: 1,
+        summary: 'Preview only.',
+        tone: 'focused',
+        screens: [],
+      }),
+      metadataJson: {
+        schemaName: 'mock_blueprint',
+        title: 'Mock Blueprint',
+      },
+      createdAt: '2026-06-02T00:00:02.000Z',
+    });
+
+    expect(message.metadataJson).toMatchObject({
+      intent: 'mock_blueprint',
+      mockBlueprint: expect.objectContaining({ artifactKind: 'mock_blueprint' }),
+    });
+    expect(message.metadataJson).not.toHaveProperty('appBlueprint');
   });
 
   it('routes Data Model messages to the Plan Mode Workspace Data Model tab', () => {

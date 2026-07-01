@@ -43,12 +43,15 @@ export function buildDesignQuestionnaireSystemPrompt() {
 }
 
 export function buildDesignQuestionnaireInitialUserPrompt(input: QuestionnaireSourceInput) {
-  const metadata = (input.sourceBlueprintMessage?.metadataJson || {}) as { appBlueprint?: unknown };
+  const metadata = (input.sourceBlueprintMessage?.metadataJson || {}) as {
+    appBlueprint?: unknown;
+    mockBlueprint?: unknown;
+  };
   const source = input.sourceBlueprintMessage
     ? {
         sourceKind: 'blueprint',
         blueprintMessageId: input.sourceBlueprintMessage.id,
-        blueprint: metadata.appBlueprint,
+        blueprint: metadata.appBlueprint || metadata.mockBlueprint,
       }
     : {
         sourceKind: 'plan_mode_intake',

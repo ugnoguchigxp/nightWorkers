@@ -90,7 +90,7 @@ export function findArtifactTaskMessage(events: ActivityEvent[]): TaskMessage | 
     if (
       event.kind === 'assistant.message' &&
       message &&
-      (metadata?.appBlueprint || metadata?.artifactRef) &&
+      (metadata?.appBlueprint || metadata?.mockBlueprint || metadata?.artifactRef) &&
       String(message.messageType) === 'markdown_document'
     ) {
       return {

@@ -22,7 +22,7 @@ import {
   type PlanModeTaskMessage,
 } from '../nightworkers/nightworkers.plan-mode-core.port';
 import { assertPlanModeCapabilityEnabled } from '../nightworkers/nightworkers.plan-mode-settings.service';
-import { isAppBlueprintMessage } from '../nightworkers/nightworkers.planning-helpers.service';
+import { isBlueprintMessage } from '../nightworkers/nightworkers.planning-helpers.service';
 import * as repo from './questionnaire.repository';
 import {
   buildDesignQuestionnaireSessionView,
@@ -358,12 +358,8 @@ async function getQuestionnaireTaskAndBlueprint(taskId: string, sourceBlueprintM
   if (!sourceBlueprintMessage || sourceBlueprintMessage.taskId !== taskId) {
     throw new AppError(422, 'SOURCE_BLUEPRINT_NOT_FOUND', 'Source Blueprint message not found.');
   }
-  if (!isAppBlueprintMessage(sourceBlueprintMessage)) {
-    throw new AppError(
-      422,
-      'SOURCE_BLUEPRINT_REQUIRED',
-      'Source message must be an App Blueprint.'
-    );
+  if (!isBlueprintMessage(sourceBlueprintMessage)) {
+    throw new AppError(422, 'SOURCE_BLUEPRINT_REQUIRED', 'Source message must be a Blueprint.');
   }
   return { task, sourceBlueprintMessage };
 }

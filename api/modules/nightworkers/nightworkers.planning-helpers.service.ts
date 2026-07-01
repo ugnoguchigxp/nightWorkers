@@ -8,8 +8,8 @@ export function buildBlueprintPlanningReadiness(
   source: 'adopted' | 'latest_generated',
   message: TaskMessageRow
 ): import('./nightworkers.basic.service').BlueprintPlanningReadiness {
-  const metadata = message.metadataJson as { appBlueprint?: unknown };
-  const blueprint = metadata.appBlueprint;
+  const metadata = message.metadataJson as { appBlueprint?: unknown; mockBlueprint?: unknown };
+  const blueprint = metadata.appBlueprint || metadata.mockBlueprint;
   return {
     source,
     diagnostic: source === 'adopted' ? 'adopted_blueprint' : 'using_latest_generated_blueprint',
@@ -35,6 +35,13 @@ export function summarizePlanningBlueprint(
     implementationTasks?: unknown;
   };
   const screens = Array.isArray(value.screens) ? value.screens.length : 0;
+  const sections = Array.isArray(value.screens)
+    ? value.screens.reduce((total, screen) => {
+        if (!screen || typeof screen !== 'object' || Array.isArray(screen)) return total;
+        const screenSections = (screen as { sections?: unknown }).sections;
+        return total + (Array.isArray(screenSections) ? screenSections.length : 0);
+      }, 0)
+    : 0;
   const implementationTasks = Array.isArray(value.implementationTasks)
     ? value.implementationTasks.length
     : 0;
@@ -43,6 +50,7 @@ export function summarizePlanningBlueprint(
     `Blueprint id: ${String(value.id || 'unknown')}`,
     `Blueprint name: ${String(value.name || 'Untitled Blueprint')}`,
     `Screens: ${screens}`,
+    `Sections: ${sections}`,
     `Implementation tasks: ${implementationTasks}`,
   ].join('\n');
 }
@@ -107,5 +115,15 @@ export function isAppBlueprintMessage(message: TaskMessageRow): boolean {
       !Array.isArray(metadata) &&
       (metadata as { intent?: unknown; appBlueprint?: unknown }).intent === 'app_blueprint' &&
       (metadata as { appBlueprint?: unknown }).appBlueprint
+  );
+}
+
+export function isBlueprintMessage(message: TaskMessageRow): boolean {
+  const metadata = message.metadataJson;
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false;
+  const record = metadata as { intent?: unknown; appBlueprint?: unknown; mockBlueprint?: unknown };
+  return Boolean(
+    (record.intent === 'app_blueprint' && record.appBlueprint) ||
+      (record.intent === 'mock_blueprint' && record.mockBlueprint)
   );
 }

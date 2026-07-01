@@ -4,7 +4,7 @@ import app from '../../api/app';
 import { ensureNightWorkersSchema } from '../../api/db/bootstrap';
 import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
 import * as generalSettings from '../../api/services/settings/general-settings';
-import { representativeAppBlueprint } from '../fixtures/app-blueprint';
+import { representativeMockBlueprint } from '../fixtures/mock-blueprint';
 
 const sameOriginHeaders = { Origin: 'http://localhost:39174' };
 const representativeDataModelArtifact = {
@@ -577,7 +577,7 @@ describe('NightWorkers task routes', () => {
         status: 'draft',
       });
 
-      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(representativeAppBlueprint);
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(representativeMockBlueprint);
       const blueprintRes = await app.request(
         `http://localhost/api/tasks/${task.id}/plan-mode/blueprint`,
         {
@@ -589,7 +589,7 @@ describe('NightWorkers task routes', () => {
       expect(blueprintRes.status).toBe(200);
       const blueprintBody = await blueprintRes.json();
       expect(blueprintBody.message.metadataJson).toMatchObject({
-        intent: 'app_blueprint',
+        intent: 'mock_blueprint',
         source: 'status',
         questionnaireSessionId: null,
       });
@@ -1388,7 +1388,7 @@ describe('NightWorkers task routes', () => {
       expect(answersRes.status).toBe(200);
       expect((await answersRes.json()).status).toBe('review_ready');
 
-      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(representativeAppBlueprint);
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(representativeMockBlueprint);
       const blueprintRes = await app.request(
         `http://localhost/api/tasks/${task.id}/plan-mode/blueprint`,
         {
@@ -1400,7 +1400,7 @@ describe('NightWorkers task routes', () => {
       expect(blueprintRes.status).toBe(200);
       const blueprintBody = await blueprintRes.json();
       expect(blueprintBody.message.metadataJson).toMatchObject({
-        intent: 'app_blueprint',
+        intent: 'mock_blueprint',
         source: 'status',
         questionnaireSessionId: session.id,
       });
@@ -1693,7 +1693,7 @@ describe('NightWorkers task routes', () => {
       expect(session.status).toBe('review_ready');
       expect(session.answers.length).toBeGreaterThanOrEqual(8);
 
-      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(representativeAppBlueprint);
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(representativeMockBlueprint);
       const blueprintRes = await app.request(
         `http://localhost/api/tasks/${task.id}/plan-mode/blueprint`,
         {
@@ -1705,7 +1705,7 @@ describe('NightWorkers task routes', () => {
       expect(blueprintRes.status).toBe(200);
       const blueprintBody = await blueprintRes.json();
       expect(blueprintBody.message.metadataJson).toMatchObject({
-        intent: 'app_blueprint',
+        intent: 'mock_blueprint',
         questionnaireSessionId: session.id,
       });
 

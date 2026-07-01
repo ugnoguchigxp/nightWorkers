@@ -57,9 +57,9 @@ export function MessagePayload({
   }
   if (
     message.messageType === 'markdown_document' &&
-    (metadata?.appBlueprint || metadata?.artifactRef)
+    (metadata?.appBlueprint || metadata?.mockBlueprint || metadata?.artifactRef)
   ) {
-    const appBlueprint = toDeepRecord(metadata.appBlueprint);
+    const appBlueprint = toDeepRecord(metadata.appBlueprint || metadata.mockBlueprint);
     const display = toDeepRecord(metadata.display);
     const validation = toDeepRecord(metadata.validation);
     const artifactRef = toDeepRecord(metadata.artifactRef);

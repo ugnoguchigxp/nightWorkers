@@ -180,6 +180,11 @@ export function ArtifactPane({
   const artifactBlueprint =
     activityArtifactMetadata.appBlueprint ||
     parseArtifactContentJson(selectedActivityArtifact?.contentText);
+  const artifactMockBlueprint =
+    activityArtifactMetadata.mockBlueprint ||
+    (String(activityArtifactMetadata.schemaName || '') === 'mock_blueprint'
+      ? parseArtifactContentJson(selectedActivityArtifact?.contentText)
+      : null);
   const artifactValidation = activityArtifactMetadata.validation;
   const showDocument =
     Boolean(selectedArtifact) &&
@@ -277,6 +282,7 @@ export function ArtifactPane({
               sessionId={activeSessionId}
               messageId={taskMessageId}
               blueprint={artifactBlueprint || displayArtifact?.metadata?.appBlueprint}
+              mockBlueprint={artifactMockBlueprint || displayArtifact?.metadata?.mockBlueprint}
               validation={artifactValidation || displayArtifact?.metadata?.validation}
               markdown={
                 selectedMessage?.content || selectedActivityArtifact?.contentText || undefined

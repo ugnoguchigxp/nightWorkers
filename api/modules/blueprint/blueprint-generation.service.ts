@@ -1,15 +1,15 @@
 import type { DesignQuestionnaireSession } from '../../../shared/schemas/design-questionnaire.schema';
 import { AppError, NotFoundError } from '../../lib/errors';
-import { renderBlueprintMarkdown } from '../../services/blueprints/draft';
+import { renderMockBlueprintMarkdown } from '../../services/blueprints/mock-draft';
 import {
-  BlueprintDraftGenerationError,
-  generatePlanModeBlueprintDraft,
-} from '../../services/blueprints/llm-draft';
+  generatePlanModeMockBlueprintDraft,
+  MockBlueprintDraftGenerationError,
+} from '../../services/blueprints/mock-llm-draft';
 import {
-  createPlanModeBlueprintActivityArtifact,
+  createPlanModeMockBlueprintActivityArtifact,
   createPlanModeTaskMessage,
   getPlanModeTask,
-  type PlanModeTask,
+  listPlanModeTaskMessages,
   updatePlanModeTask,
 } from '../nightworkers/nightworkers.plan-mode-core.port';
 import { assertPlanModeCapabilityEnabled } from '../nightworkers/nightworkers.plan-mode-settings.service';
@@ -30,18 +30,22 @@ export async function generateBlueprintArtifact(
     taskId,
     input.questionnaireSessionId
   );
-  const prompt = renderQuestionnaireBlueprintPrompt(task, session);
+  const prompt = renderQuestionnaireBlueprintPrompt(session);
+  const featurePlanSummary = await resolveLatestFeaturePlanSummary(taskId);
   try {
-    const { blueprint, validation, generation } = await generatePlanModeBlueprintDraft({
+    const { mockBlueprint, generation } = await generatePlanModeMockBlueprintDraft({
       taskId,
-      title: task.title || 'App Blueprint',
+      title: task.title || 'Mock Blueprint',
       prompt,
+      description: task.description,
+      objective: task.objective,
+      questionnaireMarkdown: session ? renderQuestionnaireAnswerMarkdown(session) : null,
+      featurePlanSummary,
     });
-    const artifact = await createPlanModeBlueprintActivityArtifact({
+    const artifact = await createPlanModeMockBlueprintActivityArtifact({
       taskId,
-      title: blueprint.name || task.title || 'App Blueprint',
-      appBlueprint: blueprint,
-      validation,
+      title: mockBlueprint.name || task.title || 'Mock Blueprint',
+      mockBlueprint,
       generation,
       source: 'status',
       metadataJson: {
@@ -49,48 +53,47 @@ export async function generateBlueprintArtifact(
       },
     });
     if (!artifact) throw new Error('Blueprint artifact persistence failed.');
-    const renderedBlueprint = renderBlueprintMarkdown(blueprint);
+    const renderedBlueprint = renderMockBlueprintMarkdown(mockBlueprint);
     const message = await createPlanModeTaskMessage({
       taskId,
       role: 'assistant',
       content: renderedBlueprint,
       messageType: 'markdown_document',
       payloadJson: {
-        intent: 'app_blueprint',
-        title: blueprint.name || task.title || 'App Blueprint',
-        artifactType: 'app_blueprint',
+        intent: 'mock_blueprint',
+        title: mockBlueprint.name || task.title || 'Mock Blueprint',
+        artifactType: 'mock_blueprint',
         artifactRef: {
           artifactId: artifact.id,
           kind: 'app_blueprint',
           version: 1,
         },
         display: {
-          title: blueprint.name || task.title || 'App Blueprint',
-          summary: blueprint.description || renderedBlueprint.slice(0, 160),
+          title: mockBlueprint.name || task.title || 'Mock Blueprint',
+          summary: mockBlueprint.summary || renderedBlueprint.slice(0, 160),
           cardKind: 'app_blueprint',
         },
-        appBlueprint: blueprint,
-        validation,
+        mockBlueprint,
         generation,
         source: 'status',
         questionnaireSessionId: session?.id ?? null,
       },
     });
     await updatePlanModeTask(taskId, {
-      objective: task.objective || prompt,
+      objective: task.objective || task.description || task.title || prompt,
       status: task.status === 'draft' ? 'ready' : task.status,
     });
     return { message, workspace: await getPlanModeWorkspace(taskId) };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (error instanceof BlueprintDraftGenerationError && error.rawOutput?.trim()) {
+    if (error instanceof MockBlueprintDraftGenerationError && error.rawOutput?.trim()) {
       await createPlanModeTaskMessage({
         taskId,
         role: 'assistant',
         content: error.rawOutput.trim(),
         messageType: 'text',
         payloadJson: {
-          intent: 'blueprint_raw_output',
+          intent: 'mock_blueprint_raw_output',
           source: 'status',
           validationStatus: 'failed',
           error: message,
@@ -103,28 +106,25 @@ export async function generateBlueprintArtifact(
   }
 }
 
-function renderQuestionnaireBlueprintPrompt(
-  task: PlanModeTask,
-  session: DesignQuestionnaireSession | null
-) {
+function renderQuestionnaireBlueprintPrompt(session: DesignQuestionnaireSession | null) {
   return [
     session
-      ? 'Design Questionnaire の回答から App Blueprint を生成してください。'
-      : 'Task context から App Blueprint を生成してください。',
-    '',
-    '## Task',
-    `Title: ${task.title}`,
-    task.description ? `Description: ${task.description}` : '',
-    task.objective ? `Objective: ${task.objective}` : '',
-    '',
-    '## Questionnaire Answers',
-    session ? renderQuestionnaireAnswerMarkdown(session) : '- Questionnaire は未生成です。',
-    '',
+      ? 'Design Questionnaire の回答から Mock Blueprint を生成してください。'
+      : 'Task context から Mock Blueprint を生成してください。',
     '## Output Focus',
     '- UI/UX と画面構成を優先する。',
-    '- DB table/column/relation は作らず、Data Model へ渡す論点として残す。',
+    '- DB table/column/relation や詳細実装情報は作らず、表示用の Section 選択と Mock dataset に集中する。',
     '- ユーザーが回答した仕様判断を画面・セクション・サンプルデータに反映する。',
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+async function resolveLatestFeaturePlanSummary(taskId: string) {
+  const messages = await listPlanModeTaskMessages(taskId);
+  const latest = [...messages].reverse().find((message) => {
+    const metadata = (message.metadataJson || {}) as Record<string, unknown>;
+    return message.messageType === 'markdown_document' && metadata.intent === 'feature_plan';
+  });
+  return latest?.content.slice(0, 4_000) || null;
 }

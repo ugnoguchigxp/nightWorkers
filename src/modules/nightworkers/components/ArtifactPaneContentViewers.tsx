@@ -1,5 +1,9 @@
 import { useTranslation } from 'react-i18next';
-import { BlueprintArtifactViewer, ComponentDesignArtifactViewer } from '../../blueprint-preview';
+import {
+  BlueprintArtifactViewer,
+  ComponentDesignArtifactViewer,
+  mockBlueprintToPreviewBlueprintSafely,
+} from '../../blueprint-preview';
 import type { ProjectFileEntry } from '../types';
 import { DiffViewer, MarkdownViewer, ProjectTree } from './ArtifactFileViewers';
 
@@ -63,25 +67,30 @@ export function BlueprintViewer({
   sessionId,
   messageId,
   blueprint,
+  mockBlueprint,
   validation,
   markdown,
 }: {
   sessionId: string | null;
   messageId: string | null;
   blueprint: unknown;
+  mockBlueprint?: unknown;
   validation: unknown;
   markdown?: string;
 }) {
   const { t } = useTranslation();
+  const previewBlueprint = isObject(mockBlueprint)
+    ? mockBlueprintToPreviewBlueprintSafely(mockBlueprint)
+    : blueprint;
 
-  if (!isObject(blueprint)) {
+  if (!isObject(previewBlueprint)) {
     return <MarkdownViewer content={markdown || t('artifact.noBlueprintContent')} />;
   }
   return (
     <BlueprintArtifactViewer
       sessionId={sessionId}
       messageId={messageId}
-      blueprint={blueprint}
+      blueprint={previewBlueprint}
       validation={validation}
     />
   );

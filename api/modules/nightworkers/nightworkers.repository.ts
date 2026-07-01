@@ -355,14 +355,46 @@ export async function createBlueprintActivityArtifact(data: {
   });
 }
 
+export async function createMockBlueprintActivityArtifact(data: {
+  taskId: string;
+  runId?: string | null;
+  messageId?: string | null;
+  title: string;
+  mockBlueprint: unknown;
+  generation?: unknown;
+  source?: string | null;
+  metadataJson?: Record<string, unknown>;
+}) {
+  return appendActivityArtifact({
+    taskId: data.taskId,
+    runId: data.runId ?? null,
+    kind: 'app_blueprint',
+    path: `${data.messageId || crypto.randomUUID()}.mock-blueprint.json`,
+    contentText: JSON.stringify(data.mockBlueprint, null, 2),
+    metadataJson: {
+      messageId: data.messageId ?? null,
+      intent: 'mock_blueprint',
+      artifactType: 'mock_blueprint',
+      title: data.title,
+      mockBlueprint: data.mockBlueprint,
+      generation: data.generation,
+      source: data.source,
+      schemaName: 'mock_blueprint',
+      schemaVersion: 1,
+      status: 'valid',
+      ...(data.metadataJson || {}),
+    },
+  });
+}
+
 function isAppBlueprintDocumentMessage(
   messageType: string | null | undefined,
   payloadJson: Record<string, unknown>
 ) {
   return Boolean(
     messageType === 'markdown_document' &&
-      payloadJson.intent === 'app_blueprint' &&
-      payloadJson.appBlueprint
+      ((payloadJson.intent === 'app_blueprint' && payloadJson.appBlueprint) ||
+        (payloadJson.intent === 'mock_blueprint' && payloadJson.mockBlueprint))
   );
 }
 
@@ -373,7 +405,7 @@ function isAppBlueprintProjectionMessage(
   const artifactRef = isJsonRecord(payloadJson.artifactRef) ? payloadJson.artifactRef : {};
   return Boolean(
     messageType === 'markdown_document' &&
-      payloadJson.intent === 'app_blueprint' &&
+      (payloadJson.intent === 'app_blueprint' || payloadJson.intent === 'mock_blueprint') &&
       typeof artifactRef.artifactId === 'string'
   );
 }
@@ -386,12 +418,16 @@ function getArtifactRefId(payloadJson: Record<string, unknown>) {
 function getBlueprintProjectionTitle(payloadJson: Record<string, unknown>) {
   const display = isJsonRecord(payloadJson.display) ? payloadJson.display : {};
   const appBlueprint = isJsonRecord(payloadJson.appBlueprint) ? payloadJson.appBlueprint : {};
-  return String(display.title || payloadJson.title || appBlueprint.name || 'App Blueprint');
+  const mockBlueprint = isJsonRecord(payloadJson.mockBlueprint) ? payloadJson.mockBlueprint : {};
+  return String(
+    display.title || payloadJson.title || appBlueprint.name || mockBlueprint.name || 'Blueprint'
+  );
 }
 
 function getBlueprintDocumentTitle(payloadJson: Record<string, unknown>) {
   const appBlueprint = isJsonRecord(payloadJson.appBlueprint) ? payloadJson.appBlueprint : {};
-  return String(payloadJson.title || appBlueprint.name || 'App Blueprint');
+  const mockBlueprint = isJsonRecord(payloadJson.mockBlueprint) ? payloadJson.mockBlueprint : {};
+  return String(payloadJson.title || appBlueprint.name || mockBlueprint.name || 'Blueprint');
 }
 
 export async function updateTaskStatus(id: string, status: string) {

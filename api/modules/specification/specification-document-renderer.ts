@@ -305,7 +305,10 @@ function _renderSpecificationDesignDocument(input: {
 function findLatestBlueprintMessage(messages: TaskMessageRow[], kind: 'blueprint') {
   return [...messages].reverse().find((message) => {
     const metadata = isRecord(message.metadataJson) ? message.metadataJson : {};
-    if (metadata.intent !== 'app_blueprint' || !metadata.appBlueprint) return false;
+    const hasBlueprint =
+      (metadata.intent === 'app_blueprint' && metadata.appBlueprint) ||
+      (metadata.intent === 'mock_blueprint' && metadata.mockBlueprint);
+    if (!hasBlueprint) return false;
     if (isDataModelMessageMetadata(metadata)) return false;
     return kind === 'blueprint';
   });
@@ -320,7 +323,7 @@ function findLatestDataModelMessage(messages: TaskMessageRow[]) {
 
 function getMessageBlueprint(message: TaskMessageRow | undefined): JsonRecord | null {
   const metadata = isRecord(message?.metadataJson) ? message.metadataJson : {};
-  const blueprint = metadata.appBlueprint;
+  const blueprint = metadata.appBlueprint || metadata.mockBlueprint;
   return isRecord(blueprint) ? blueprint : null;
 }
 

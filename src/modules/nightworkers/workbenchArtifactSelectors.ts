@@ -14,7 +14,12 @@ import { isRecord, taskMessageMetadata, toMs } from './workbenchSelectorUtils';
 
 export function activityArtifactToTaskMessage(artifact: ActivityArtifact): TaskMessage {
   const metadata = activityArtifactMetadata(artifact);
-  const appBlueprint = metadata.appBlueprint || parseArtifactContentJson(artifact.contentText);
+  const parsedContent = parseArtifactContentJson(artifact.contentText);
+  const isMockBlueprint =
+    metadata.intent === 'mock_blueprint' || metadata.schemaName === 'mock_blueprint';
+  const blueprintPayload = isMockBlueprint
+    ? metadata.mockBlueprint || parsedContent
+    : metadata.appBlueprint || parsedContent;
   return {
     id: `artifact-${artifact.id}`,
     taskId: artifact.taskId,
@@ -24,9 +29,11 @@ export function activityArtifactToTaskMessage(artifact: ActivityArtifact): TaskM
     messageType: 'markdown_document',
     metadataJson: {
       ...metadata,
-      intent: metadata.intent || 'app_blueprint',
+      intent: metadata.intent || (isMockBlueprint ? 'mock_blueprint' : 'app_blueprint'),
       artifactRef: { artifactId: artifact.id, kind: 'app_blueprint', version: 1 },
-      appBlueprint,
+      ...(isMockBlueprint
+        ? { mockBlueprint: blueprintPayload }
+        : { appBlueprint: blueprintPayload }),
     },
     createdAt: artifact.createdAt,
   };
@@ -76,7 +83,7 @@ export function isNormalBlueprintMessage(message: TaskMessage): boolean {
   const metadata = isRecord(message.metadataJson) ? message.metadataJson : {};
   return (
     message.messageType === 'markdown_document' &&
-    hasAppBlueprintMetadata(metadata) &&
+    hasBlueprintMetadata(metadata) &&
     !isDataModelMessage(message)
   );
 }
@@ -88,7 +95,7 @@ export function isDataModelMessage(message: TaskMessage): boolean {
 
 export function buildBlueprintArtifactRef(message: TaskMessage): WorkbenchArtifactRef {
   const metadata = taskMessageMetadata(message);
-  const blueprint = isRecord(metadata.appBlueprint) ? metadata.appBlueprint : {};
+  const blueprint = blueprintPayloadFromMetadata(metadata);
   const display = isRecord(metadata.display) ? metadata.display : {};
   const artifactRef = isRecord(metadata.artifactRef) ? metadata.artifactRef : {};
   const title = String(blueprint.name || display.title || metadata.title || 'App Blueprint');
@@ -136,7 +143,7 @@ export function buildArtifactContext(
 ): WorkbenchArtifactContext | null {
   if (!artifact || artifact.taskId !== activeSessionId) return null;
   const metadata = artifact.metadata || {};
-  const appBlueprint = isRecord(metadata.appBlueprint) ? metadata.appBlueprint : {};
+  const appBlueprint = blueprintPayloadFromMetadata(metadata);
   const screens = Array.isArray(appBlueprint.screens) ? appBlueprint.screens : [];
   const screenNames = screens
     .map((screen) => (isRecord(screen) ? screen : null))
@@ -335,9 +342,14 @@ export function buildWorkbenchArtifactRefs(input: {
 
 function activityArtifactRef(taskId: string, artifact: ActivityArtifact): WorkbenchArtifactRef {
   const metadata = activityArtifactMetadata(artifact);
-  const appBlueprint = metadata.appBlueprint || parseArtifactContentJson(artifact.contentText);
-  const appBlueprintRecord = isRecord(appBlueprint) ? appBlueprint : null;
-  const title = String(appBlueprintRecord?.name || metadata.title || 'App Blueprint');
+  const isMockBlueprint =
+    metadata.intent === 'mock_blueprint' || metadata.schemaName === 'mock_blueprint';
+  const parsedContent = parseArtifactContentJson(artifact.contentText);
+  const blueprint = isMockBlueprint
+    ? metadata.mockBlueprint || parsedContent
+    : metadata.appBlueprint || parsedContent;
+  const blueprintRecord = isRecord(blueprint) ? blueprint : null;
+  const title = String(blueprintRecord?.name || metadata.title || 'Blueprint');
   return {
     id: `artifact-${artifact.id}`,
     taskId,
@@ -345,14 +357,17 @@ function activityArtifactRef(taskId: string, artifact: ActivityArtifact): Workbe
     kind: 'app_blueprint',
     title: `Blueprint: ${title}`,
     summary:
-      typeof appBlueprintRecord?.description === 'string'
-        ? appBlueprintRecord.description
-        : (artifact.contentText || '').slice(0, 160),
+      typeof blueprintRecord?.description === 'string'
+        ? blueprintRecord.description
+        : typeof blueprintRecord?.summary === 'string'
+          ? blueprintRecord.summary
+          : (artifact.contentText || '').slice(0, 160),
     source: { type: 'artifact_row', artifactId: artifact.id },
     createdAt: String(artifact.createdAt),
     metadata: {
       ...metadata,
-      appBlueprint,
+      intent: metadata.intent || (isMockBlueprint ? 'mock_blueprint' : 'app_blueprint'),
+      ...(isMockBlueprint ? { mockBlueprint: blueprint } : { appBlueprint: blueprint }),
       artifactRef: { artifactId: artifact.id, kind: 'app_blueprint', version: 1 },
     },
   };
@@ -361,7 +376,9 @@ function activityArtifactRef(taskId: string, artifact: ActivityArtifact): Workbe
 function isBlueprintActivityArtifact(artifact: ActivityArtifact): boolean {
   const metadata = activityArtifactMetadata(artifact);
   return (
-    (artifact.kind === 'app_blueprint' || metadata.schemaName === 'app_blueprint') &&
+    (artifact.kind === 'app_blueprint' ||
+      metadata.schemaName === 'app_blueprint' ||
+      metadata.schemaName === 'mock_blueprint') &&
     !isDataModelMetadata(metadata)
   );
 }
@@ -463,8 +480,19 @@ function planModeWorkspaceInitialTabMetadata(message: TaskMessage): { initialTab
   return tab ? { initialTab: tab } : {};
 }
 
-function hasAppBlueprintMetadata(metadata: Record<string, unknown>): boolean {
-  return metadata.intent === 'app_blueprint' || Boolean(metadata.appBlueprint);
+function hasBlueprintMetadata(metadata: Record<string, unknown>): boolean {
+  return (
+    metadata.intent === 'app_blueprint' ||
+    metadata.intent === 'mock_blueprint' ||
+    Boolean(metadata.appBlueprint) ||
+    Boolean(metadata.mockBlueprint)
+  );
+}
+
+function blueprintPayloadFromMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+  if (isRecord(metadata.appBlueprint)) return metadata.appBlueprint;
+  if (isRecord(metadata.mockBlueprint)) return metadata.mockBlueprint;
+  return {};
 }
 
 function artifactTitleForKind(kind: WorkbenchArtifactKind, message: TaskMessage): string {

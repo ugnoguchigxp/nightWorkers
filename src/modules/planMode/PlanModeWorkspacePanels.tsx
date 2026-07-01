@@ -1,6 +1,6 @@
 import { Check, Download, LoaderCircle } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { BlueprintPreview } from '../blueprint-preview';
+import { BlueprintPreview, mockBlueprintToPreviewBlueprintSafely } from '../blueprint-preview';
 import { MarkdownViewer } from '../nightworkers/components/ArtifactFileViewers';
 import type {
   DesignQuestionnaireSession,
@@ -42,7 +42,7 @@ export function WorkspaceBlueprintPreview({
   empty?: string;
 }) {
   const metadata = isRecord(message?.metadataJson) ? message.metadataJson : {};
-  const blueprint = metadata.appBlueprint;
+  const blueprint = previewBlueprintFromMetadata(metadata);
   if (!isRecord(blueprint)) {
     return <MarkdownViewer content={message?.content || empty} />;
   }
@@ -59,6 +59,13 @@ export function WorkspaceBlueprintPreview({
       validationIssues={issues}
     />
   );
+}
+
+function previewBlueprintFromMetadata(metadata: Record<string, unknown>) {
+  if (isRecord(metadata.mockBlueprint)) {
+    return mockBlueprintToPreviewBlueprintSafely(metadata.mockBlueprint);
+  }
+  return metadata.appBlueprint;
 }
 
 export function WorkspaceDataModelPanel({

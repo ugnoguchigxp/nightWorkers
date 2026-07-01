@@ -33,3 +33,9 @@ export async function createPlanModeBlueprintActivityArtifact(
 ) {
   return repo.createBlueprintActivityArtifact(input);
 }
+
+export async function createPlanModeMockBlueprintActivityArtifact(
+  input: Parameters<typeof repo.createMockBlueprintActivityArtifact>[0]
+) {
+  return repo.createMockBlueprintActivityArtifact(input);
+}

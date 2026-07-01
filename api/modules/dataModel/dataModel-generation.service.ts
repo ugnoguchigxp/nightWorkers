@@ -206,7 +206,10 @@ function isMessageKind(message: PlanModeTaskMessage, kind: 'feature_plan' | 'blu
   if (message.messageType !== 'markdown_document') return false;
   const metadata = (message.metadataJson || {}) as Record<string, unknown>;
   if (kind === 'feature_plan') return metadata.intent === 'feature_plan';
-  return metadata.intent === 'app_blueprint' && Boolean(metadata.appBlueprint);
+  return (
+    (metadata.intent === 'app_blueprint' && Boolean(metadata.appBlueprint)) ||
+    (metadata.intent === 'mock_blueprint' && Boolean(metadata.mockBlueprint))
+  );
 }
 
 function renderTaskContext(task: {

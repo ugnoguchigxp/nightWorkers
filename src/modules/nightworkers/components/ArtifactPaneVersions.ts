@@ -88,6 +88,7 @@ function taskMessageToArtifactRef(
   const metadata = toDeepRecord(message.metadataJson);
   const display = toDeepRecord(metadata.display);
   const appBlueprint = toDeepRecord(metadata.appBlueprint);
+  const mockBlueprint = toDeepRecord(metadata.mockBlueprint);
   const componentDesign = toDeepRecord(metadata.componentDesign);
   const artifactRef = toDeepRecord(metadata.artifactRef);
   const kind = resolveMessageArtifactKind(message);
@@ -96,6 +97,7 @@ function taskMessageToArtifactRef(
     metadata.title ||
     display.title ||
     appBlueprint.name ||
+    mockBlueprint.name ||
     componentDesign.componentName ||
     'Artifact';
   return {
@@ -122,12 +124,15 @@ function activityArtifactToArtifactRef(
   if (kind !== selectedKind) return null;
   const metadata = toDeepRecord(artifact.metadataJson);
   const appBlueprint = toDeepRecord(metadata.appBlueprint);
+  const mockBlueprint = toDeepRecord(metadata.mockBlueprint);
   return {
     id: `artifact-${artifact.id}`,
     taskId: artifact.taskId,
     runId: artifact.runId || undefined,
     kind,
-    title: String(metadata.title || appBlueprint.name || artifact.path || artifact.kind),
+    title: String(
+      metadata.title || appBlueprint.name || mockBlueprint.name || artifact.path || artifact.kind
+    ),
     summary: String(metadata.summary || artifact.contentText?.slice(0, 160) || ''),
     source: { type: 'artifact_row', artifactId: artifact.id },
     createdAt: String(artifact.createdAt),
@@ -140,7 +145,8 @@ function resolveMessageArtifactKind(message: TaskMessage): WorkbenchArtifactRef[
   if (metadata.componentDesign) return 'component_design';
   if (metadata.designDelta) return 'design_delta';
   if (metadata.markdownDocumentData || String(metadata.intent) === 'draft_spec') return 'spec';
-  if (metadata.appBlueprint || metadata.artifactRef) return 'app_blueprint';
+  if (metadata.appBlueprint || metadata.mockBlueprint || metadata.artifactRef)
+    return 'app_blueprint';
   if (message.messageType === 'markdown_document') return 'spec';
   return null;
 }
