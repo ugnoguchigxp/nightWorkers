@@ -6,7 +6,7 @@ import { listRecentSpecificationsTool } from '../api/services/worker-tools/read-
 import { todoListTool } from '../api/services/worker-tools/todo-list';
 
 describe('read_current_specification worker tool', () => {
-  it('reads the latest draft_spec markdown for a task without external MCP settings', async () => {
+  it('reads the latest feature_plan markdown for a task without external MCP settings', async () => {
     const createdRepo = await repo.createRepository({
       name: `TEST: read spec ${crypto.randomUUID()}`,
       localPath: '/Users/y.noguchi/Code/nightWorkers',
@@ -32,33 +32,34 @@ describe('read_current_specification worker tool', () => {
     await repo.createTaskMessage({
       taskId: task.id,
       role: 'assistant',
-      content: '# DB Design\n\nNot the spec.',
+      content: '# Data Model\n\nNot the feature plan.',
       messageType: 'markdown_document',
       payloadJson: {
-        intent: 'app_blueprint',
-        artifactType: 'blueprint_db_design',
-        appBlueprint: { id: 'db-1', name: 'DB Design' },
+        artifactKind: 'plan_mode_dedicated_view',
+        view: 'data_model',
+        artifactType: 'data_model',
+        title: 'Data Model',
       },
     });
     const specMessage = await repo.createTaskMessage({
       taskId: task.id,
       role: 'assistant',
-      content: '# Specification\n\nUse this document.',
+      content: '# Feature Plan\n\nUse this document.',
       messageType: 'markdown_document',
       payloadJson: {
-        intent: 'draft_spec',
-        title: 'Specification',
+        intent: 'feature_plan',
+        title: 'Feature Plan',
         questionnaireSessionId: '11111111-1111-4111-8111-111111111111',
         generation: {
           source: 'llm',
           context: {
             blueprintSummaryIncluded: true,
-            dbDdlReferenceIncluded: true,
+            dataModelReferenceIncluded: true,
           },
         },
         markdownDocumentData: {
-          title: 'Specification',
-          content: '# Specification\n\nUse this document.',
+          title: 'Feature Plan',
+          content: '# Feature Plan\n\nUse this document.',
         },
       },
     });
@@ -76,15 +77,66 @@ describe('read_current_specification worker tool', () => {
       taskId: task.id,
       found: true,
       messageId: specMessage.id,
-      title: 'Specification',
-      content: '# Specification\n\nUse this document.',
+      title: 'Feature Plan',
+      content: '# Feature Plan\n\nUse this document.',
       sources: {
         questionnaireSessionId: '11111111-1111-4111-8111-111111111111',
         blueprintSummaryIncluded: true,
-        dbDdlReferenceIncluded: true,
+        dataModelReferenceIncluded: true,
       },
     });
     expect(String((dispatch.result.payload as never).digest)).toMatch(/^sha256:/);
+  });
+
+  it('keeps legacy draft_spec markdown readable during artifact migration', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: read legacy spec ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: read legacy current specification',
+      description: 'Read legacy specification artifact',
+      status: 'draft',
+    });
+
+    const specMessage = await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: '# Legacy Specification\n\nUse this legacy document.',
+      messageType: 'markdown_document',
+      payloadJson: {
+        intent: 'draft_spec',
+        title: 'Legacy Specification',
+        generation: {
+          context: {
+            dbDdlReferenceIncluded: true,
+          },
+        },
+      },
+    });
+
+    const dispatch = await executeWorkerTool({
+      toolName: 'read_current_specification',
+      args: {},
+      repoRoot: '/Users/y.noguchi/Code/nightWorkers',
+      taskId: task.id,
+      readFiles: [],
+    });
+
+    expect(dispatch.result.ok).toBe(true);
+    expect(dispatch.result.payload).toMatchObject({
+      taskId: task.id,
+      found: true,
+      messageId: specMessage.id,
+      title: 'Legacy Specification',
+      content: '# Legacy Specification\n\nUse this legacy document.',
+      sources: {
+        dataModelReferenceIncluded: true,
+        dbDdlReferenceIncluded: true,
+      },
+    });
   });
 
   it('returns found=false when no specification has been generated', async () => {
@@ -116,7 +168,7 @@ describe('read_current_specification worker tool', () => {
     });
   });
 
-  it('lists recent draft specifications for Codex MCP discovery', async () => {
+  it('lists recent feature plans for Codex MCP discovery', async () => {
     const createdRepo = await repo.createRepository({
       name: `TEST: list specs ${crypto.randomUUID()}`,
       localPath: '/Users/y.noguchi/Code/nightWorkers',
@@ -131,13 +183,13 @@ describe('read_current_specification worker tool', () => {
     const specMessage = await repo.createTaskMessage({
       taskId: task.id,
       role: 'assistant',
-      content: '# Listed Specification\n\nUse this document.',
+      content: '# Listed Feature Plan\n\nUse this document.',
       messageType: 'markdown_document',
       payloadJson: {
-        intent: 'draft_spec',
+        intent: 'feature_plan',
         markdownDocumentData: {
-          title: 'Listed Specification',
-          content: '# Listed Specification\n\nUse this document.',
+          title: 'Listed Feature Plan',
+          content: '# Listed Feature Plan\n\nUse this document.',
         },
       },
     });
@@ -151,7 +203,7 @@ describe('read_current_specification worker tool', () => {
           taskId: task.id,
           taskTitle: 'TEST: listed current specification',
           messageId: specMessage.id,
-          title: 'Listed Specification',
+          title: 'Listed Feature Plan',
         }),
       ])
     );

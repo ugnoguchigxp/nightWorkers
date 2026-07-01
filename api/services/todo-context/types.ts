@@ -1,3 +1,5 @@
+import type { PlanModeCapability } from '../settings/general-settings';
+
 export type RuntimeLaneSnapshot = {
   workerKind: 'native-local' | 'codex-agent';
   source: 'task' | 'queue' | 'settings' | 'env' | 'role_route' | 'provider_default';
@@ -5,8 +7,8 @@ export type RuntimeLaneSnapshot = {
 };
 
 export type PlanModeSettingsSnapshot = {
-  capabilities: Record<'questionnaire' | 'blueprint' | 'dbDesign' | 'specification', boolean>;
-  disabledCapabilities: Array<'questionnaire' | 'blueprint' | 'dbDesign' | 'specification'>;
+  capabilities: Record<PlanModeCapability, boolean>;
+  disabledCapabilities: PlanModeCapability[];
   source: 'general-settings';
 };
 

@@ -1,13 +1,6 @@
 import { z } from 'zod';
 import { toDeepRecord } from '../../../shared/json-record';
 import { AppError, NotFoundError } from '../../lib/errors';
-import {
-  BlueprintDataDesignGenerationError,
-  generateBlueprintDataDesignDraft,
-  parseBlueprintDbDesignRequestPrompt,
-} from '../../services/blueprints/data-design';
-import { renderBlueprintMarkdown } from '../../services/blueprints/draft';
-import { validateAppBlueprint } from '../../services/blueprints/validation';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
 import { shouldWaitForWorkbenchIntakeInTests } from '../../services/runtime-env';
 import {
@@ -16,6 +9,7 @@ import {
 } from '../../services/settings/general-settings';
 import { callStructuredJsonLLM, type SupervisorLlmDebugEvent } from '../../services/structured-llm';
 import { normalizeStructuredLlmModelTarget } from '../../services/structured-llm/selection';
+import { generateDataModelArtifact } from '../dataModel/dataModel-generation.service';
 import { createDesignQuestionnaire } from '../questionnaire/questionnaire.service';
 import {
   assertRunnableWorkbenchTask,
@@ -112,6 +106,7 @@ export async function appendTaskMessage(
 export type WorkbenchChatIntent =
   | 'intake'
   | 'draft'
+  | 'feature_plan'
   | 'draft_spec'
   | 'create_task'
   | 'queue'
@@ -174,7 +169,13 @@ export async function appendWorkbenchMessage(
   }
 
   if (intent === 'design_blueprint_data') {
-    return handleBlueprintDataDesignMessage(id, task, prompt);
+    await appendTaskMessage(id, prompt, messageMetadata);
+    await generateDataModelArtifact(id, { prompt });
+    const updated = await repo.updateTask(id, {
+      objective: task.objective || prompt,
+      status: task.status === 'draft' ? 'ready' : task.status,
+    });
+    return { task: updated, run: null, messages: await repo.listTaskMessages(id) };
   }
 
   await appendTaskMessage(id, prompt, messageMetadata);
@@ -202,117 +203,6 @@ export async function appendWorkbenchMessage(
     llmRouteOverride,
   });
   return { task: updated, run: null, messages: await repo.listTaskMessages(id) };
-}
-
-async function handleBlueprintDataDesignMessage(
-  taskId: string,
-  task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>,
-  prompt: string
-) {
-  const emitWorkbenchLlmDebugEvent = createWorkbenchLlmDebugEventEmitter(taskId);
-  try {
-    const parsedRequest = parseBlueprintDbDesignRequestPrompt(prompt);
-    const currentValidation = validateAppBlueprint(parsedRequest.currentBlueprint);
-    const request = {
-      ...parsedRequest,
-      validationIssues: currentValidation.issues,
-    };
-    await repo.createTaskMessage({
-      taskId,
-      role: 'user',
-      content: renderBlueprintDataDesignRequestContent(request),
-      messageType: 'text',
-      payloadJson: {
-        intent: 'design_blueprint_data',
-        source: 'blueprint-preview',
-        blueprintId: request.blueprintId,
-        dbDesignTarget: request.target,
-        prompt: request.prompt,
-        validation: currentValidation,
-      },
-    });
-    const { blueprint, validation, generation } = await generateBlueprintDataDesignDraft({
-      taskId,
-      request,
-      emitEvent: emitWorkbenchLlmDebugEvent,
-    });
-    await repo.createTaskMessage({
-      taskId,
-      role: 'assistant',
-      content: renderBlueprintMarkdown(blueprint),
-      messageType: 'markdown_document',
-      payloadJson: {
-        intent: 'app_blueprint',
-        title: blueprint.name || task.title,
-        appBlueprint: blueprint,
-        validation,
-        generation,
-        source: 'blueprint-db-design',
-        parentBlueprintId: request.blueprintId,
-        dbDesignTarget: request.target,
-      },
-    });
-    const updated = await repo.updateTask(taskId, {
-      objective: task.objective || request.prompt,
-      status: task.status === 'draft' ? 'ready' : task.status,
-    });
-    return { task: updated, run: null, messages: await repo.listTaskMessages(taskId) };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (error instanceof BlueprintDataDesignGenerationError && error.rawOutput?.trim()) {
-      await repo.createTaskMessage({
-        taskId,
-        role: 'assistant',
-        content: error.rawOutput.trim(),
-        messageType: 'text',
-        payloadJson: {
-          intent: 'blueprint_db_design_raw_output',
-          source: 'blueprint-db-design',
-          validationStatus: 'failed',
-          error: message,
-          promptDiagnostics: error.promptDiagnostics,
-        },
-      });
-    }
-    await repo.createTaskMessage({
-      taskId,
-      role: 'system',
-      content: `Blueprint DB Design generation failed: ${message}`,
-      messageType: 'text',
-      payloadJson: {
-        intent: 'blueprint_db_design_failed',
-        source: 'blueprint-db-design',
-        error: message,
-        rawOutputRecorded:
-          error instanceof BlueprintDataDesignGenerationError && Boolean(error.rawOutput?.trim()),
-        promptDiagnostics:
-          error instanceof BlueprintDataDesignGenerationError ? error.promptDiagnostics : undefined,
-      },
-    });
-    throw new AppError(
-      502,
-      'BLUEPRINT_DB_DESIGN_FAILED',
-      `Blueprint DB Design generation failed: ${message}`
-    );
-  }
-}
-
-function renderBlueprintDataDesignRequestContent(
-  request: ReturnType<typeof parseBlueprintDbDesignRequestPrompt>
-) {
-  return [
-    'Blueprint DB Design request',
-    `Target: ${blueprintDataDesignTargetLabel(request.target)}`,
-    `Instruction: ${request.prompt}`,
-  ].join('\n');
-}
-
-function blueprintDataDesignTargetLabel(
-  target: ReturnType<typeof parseBlueprintDbDesignRequestPrompt>['target']
-) {
-  if (target.kind === 'schema') return 'Schema';
-  if (target.kind === 'table') return `Table ${target.tableName}`;
-  return `Relation ${target.relationId}`;
 }
 
 function renderArtifactContextualPrompt(

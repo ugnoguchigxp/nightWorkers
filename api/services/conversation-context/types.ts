@@ -148,7 +148,7 @@ export type ConversationContextBaseline = {
   relevantFilesDigest: string | null;
   adoptedArtifactDigest: string | null;
   blueprintRefsDigest: string | null;
-  blueprintDbDesignRefsDigest: string | null;
+  dataModelRefsDigest: string | null;
   designQuestionnaireRefsDigest: string | null;
   decisionReviewRefsDigest: string | null;
   contextStillRefsDigest: string | null;

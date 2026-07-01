@@ -18,9 +18,10 @@ import { errorHandler } from './middleware/error-handler';
 import { loggerMiddleware } from './middleware/logger';
 import { rateLimiter } from './middleware/rate-limiter';
 import { blueprintRouter } from './modules/blueprint/blueprint.routes';
-import { dbDesignRouter } from './modules/dbDesign/dbDesign.routes';
+import { dataModelRouter } from './modules/dataModel/dataModel.routes';
 import { nightworkersRouter } from './modules/nightworkers/nightworkers.routes';
 import * as nightworkersService from './modules/nightworkers/nightworkers.service';
+import { planViewRouter } from './modules/planViews/planView.routes';
 import { projectEvaluationRouter } from './modules/project-evaluation/project-evaluation.routes';
 import { questionnaireRouter } from './modules/questionnaire/questionnaire.routes';
 import { queueRouter } from './modules/queue/queue.routes';
@@ -45,7 +46,8 @@ const apiRoutes = createOpenApiRouter()
   .route('/', queueRouter)
   .route('/', questionnaireRouter)
   .route('/', blueprintRouter)
-  .route('/', dbDesignRouter)
+  .route('/', dataModelRouter)
+  .route('/', planViewRouter)
   .route('/', specificationRouter)
   .route('/', nightworkersRouter);
 

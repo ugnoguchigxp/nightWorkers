@@ -407,20 +407,19 @@ describe('workbench selectors', () => {
     });
   });
 
-  it('routes DB Design blueprint messages to the Specification Workspace DB Design tab', () => {
+  it('routes Data Model messages to the Plan Mode Workspace Data Model tab', () => {
     const message: TaskMessage = {
       id: '44444444-4444-4444-8444-444444447777',
       taskId: baseTask.id,
       role: 'assistant',
-      content: '# DB Design',
+      content: '# Data Model',
       messageType: 'markdown_document',
       metadataJson: {
-        intent: 'app_blueprint',
-        artifactType: 'blueprint_db_design',
-        source: 'blueprint-db-design',
-        title: 'Kanban DB Design',
-        appBlueprint: { name: 'Kanban DB Design' },
-        validation: { valid: true, issues: [] },
+        artifactKind: 'plan_mode_dedicated_view',
+        view: 'data_model',
+        artifactType: 'data_model',
+        source: 'data-model',
+        title: 'Kanban Data Model',
       },
       createdAt: '2026-06-02T00:00:01.000Z',
     };
@@ -434,9 +433,9 @@ describe('workbench selectors', () => {
       expect.arrayContaining([
         expect.objectContaining({
           kind: 'blueprint_workspace',
-          title: 'DB Design: Kanban DB Design',
+          title: 'Data Model: Kanban Data Model',
           source: { type: 'task_message', messageId: message.id },
-          metadata: expect.objectContaining({ initialTab: 'db-design' }),
+          metadata: expect.objectContaining({ initialTab: 'data-model' }),
         }),
       ])
     );
@@ -445,20 +444,19 @@ describe('workbench selectors', () => {
     );
   });
 
-  it('does not promote DB Design activity artifacts into App Blueprint refs', () => {
+  it('does not promote Data Model activity artifacts into App Blueprint refs', () => {
     const message: TaskMessage = {
       id: '44444444-4444-4444-8444-444444447777',
       taskId: baseTask.id,
       role: 'assistant',
-      content: '# DB Design',
+      content: '# Data Model',
       messageType: 'markdown_document',
       metadataJson: {
-        intent: 'app_blueprint',
-        artifactType: 'blueprint_db_design',
-        source: 'blueprint-db-design',
-        title: 'Kanban DB Design',
-        appBlueprint: { name: 'Kanban DB Design' },
-        validation: { valid: true, issues: [] },
+        artifactKind: 'plan_mode_dedicated_view',
+        view: 'data_model',
+        artifactType: 'data_model',
+        source: 'data-model',
+        title: 'Kanban Data Model',
       },
       createdAt: '2026-06-02T00:00:01.000Z',
     };
@@ -468,19 +466,19 @@ describe('workbench selectors', () => {
       messages: [message],
       activityArtifacts: [
         {
-          id: 'artifact-db-design-1',
+          id: 'artifact-data-model-1',
           taskId: baseTask.id,
           runId: null,
-          kind: 'app_blueprint',
-          path: 'artifact-db-design-1.app-blueprint.json',
-          contentText: JSON.stringify({ name: 'Kanban DB Design' }),
+          kind: 'plan_mode_dedicated_view',
+          path: 'artifact-data-model-1.md',
+          contentText: '# Data Model',
           metadataJson: {
             messageId: message.id,
-            intent: 'app_blueprint',
-            artifactType: 'blueprint_db_design',
-            source: 'blueprint-db-design',
-            title: 'Kanban DB Design',
-            appBlueprint: { name: 'Kanban DB Design' },
+            artifactKind: 'plan_mode_dedicated_view',
+            view: 'data_model',
+            artifactType: 'data_model',
+            source: 'data-model',
+            title: 'Kanban Data Model',
           },
           createdAt: '2026-06-02T00:00:02.000Z',
         },
@@ -491,8 +489,8 @@ describe('workbench selectors', () => {
       expect.arrayContaining([
         expect.objectContaining({
           kind: 'blueprint_workspace',
-          title: 'DB Design: Kanban DB Design',
-          metadata: expect.objectContaining({ initialTab: 'db-design' }),
+          title: 'Data Model: Kanban Data Model',
+          metadata: expect.objectContaining({ initialTab: 'data-model' }),
         }),
       ])
     );

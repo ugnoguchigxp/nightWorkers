@@ -3,15 +3,15 @@ import { withOpenApiRouteError } from '../nightworkers/nightworkers.route-utils'
 import * as service from './specification.service';
 import {
   generateSpecificationStatusDesignDocumentRoute,
-  getBlueprintSpecificationWorkspaceRoute,
+  getPlanModeWorkspaceCompatibilityRoute,
   getSpecificationWorkspaceRoute,
 } from './specification-route-definitions';
 
 export const specificationRouter = createOpenApiRouter()
   .openapi(
-    getBlueprintSpecificationWorkspaceRoute,
-    withOpenApiRouteError(getBlueprintSpecificationWorkspaceRoute, async (c) => {
-      const workspace = await service.getBlueprintSpecificationWorkspace(c.req.param('id'));
+    getPlanModeWorkspaceCompatibilityRoute,
+    withOpenApiRouteError(getPlanModeWorkspaceCompatibilityRoute, async (c) => {
+      const workspace = await service.getPlanModeWorkspace(c.req.param('id'));
       return c.json(workspace, 200);
     })
   )

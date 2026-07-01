@@ -66,7 +66,7 @@ export function isReviewedSpecificationMessage(message: TaskMessage) {
   const metadata = taskMessageMetadata(message);
   return (
     message.messageType === 'markdown_document' &&
-    String(metadata.intent) === 'draft_spec' &&
+    (String(metadata.intent) === 'feature_plan' || String(metadata.intent) === 'draft_spec') &&
     String(metadata.source) === 'status_document_review' &&
     typeof metadata.reviewedSourceMessageId === 'string'
   );
@@ -77,13 +77,13 @@ export function isNormalBlueprintMessage(message: TaskMessage): boolean {
   return (
     message.messageType === 'markdown_document' &&
     hasAppBlueprintMetadata(metadata) &&
-    !isDbDesignBlueprintMessage(message)
+    !isDataModelMessage(message)
   );
 }
 
-export function isDbDesignBlueprintMessage(message: TaskMessage): boolean {
+export function isDataModelMessage(message: TaskMessage): boolean {
   const metadata = isRecord(message.metadataJson) ? message.metadataJson : {};
-  return message.messageType === 'markdown_document' && isBlueprintDbDesignMetadata(metadata);
+  return message.messageType === 'markdown_document' && isDataModelMetadata(metadata);
 }
 
 export function buildBlueprintArtifactRef(message: TaskMessage): WorkbenchArtifactRef {
@@ -214,9 +214,8 @@ export function buildWorkbenchArtifactRefs(input: {
         blueprintArtifactIds
       )
   );
-  const dbDesignMessages = (input.messages || []).filter(
-    (message) =>
-      message.messageType === 'markdown_document' && isBlueprintDbDesignArtifactMessage(message)
+  const dataModelMessages = (input.messages || []).filter(
+    (message) => message.messageType === 'markdown_document' && isDataModelArtifactMessage(message)
   );
   const decisionReviewMessages = (input.messages || []).filter(
     (message) =>
@@ -232,14 +231,14 @@ export function buildWorkbenchArtifactRefs(input: {
   if (
     blueprintArtifactRows.length > 0 ||
     blueprintMessages.length > 0 ||
-    dbDesignMessages.length > 0 ||
+    dataModelMessages.length > 0 ||
     decisionReviewMessages.length > 0 ||
     implementationPlanMessages.length > 0
   ) {
     const latestWorkspaceMessage =
       [
         ...blueprintMessages,
-        ...dbDesignMessages,
+        ...dataModelMessages,
         ...decisionReviewMessages,
         ...implementationPlanMessages,
       ].sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt))[0] || blueprintMessages.at(-1);
@@ -271,7 +270,7 @@ export function buildWorkbenchArtifactRefs(input: {
       ),
       metadata: {
         blueprintCount: blueprintArtifactRows.length + blueprintMessages.length,
-        dbDesignCount: dbDesignMessages.length,
+        dataModelCount: dataModelMessages.length,
         decisionReviewCount: decisionReviewMessages.length,
         implementationPlanCount: implementationPlanMessages.length,
       },
@@ -298,8 +297,8 @@ export function buildWorkbenchArtifactRefs(input: {
       summary: message.content.slice(0, 160),
       source: { type: 'task_message', messageId: message.id },
       createdAt: String(message.createdAt),
-      metadata: isBlueprintDbDesignArtifactMessage(message)
-        ? { ...taskMessageMetadata(message), initialTab: 'db-design' }
+      metadata: isDataModelArtifactMessage(message)
+        ? { ...taskMessageMetadata(message), initialTab: 'data-model' }
         : taskMessageMetadata(message),
     });
   }
@@ -352,7 +351,7 @@ function isBlueprintActivityArtifact(artifact: ActivityArtifact): boolean {
   const metadata = activityArtifactMetadata(artifact);
   return (
     (artifact.kind === 'app_blueprint' || metadata.schemaName === 'app_blueprint') &&
-    !isBlueprintDbDesignMetadata(metadata)
+    !isDataModelMetadata(metadata)
   );
 }
 
@@ -411,7 +410,7 @@ function runFieldRef(
 function inferDocumentArtifactKind(message: TaskMessage): WorkbenchArtifactKind {
   const metadata = taskMessageMetadata(message);
   const intent = String(metadata.intent);
-  if (isBlueprintDbDesignArtifactMessage(message)) return 'blueprint_workspace';
+  if (isDataModelArtifactMessage(message)) return 'blueprint_workspace';
   if (isBlueprintArtifactMessage(message)) return 'app_blueprint';
   if (intent === 'component_design' || metadata.componentDesign) return 'component_design';
   if (intent === 'design_delta' || metadata.designDelta) return 'design_delta';
@@ -424,15 +423,15 @@ function isBlueprintArtifactMessage(message: TaskMessage): boolean {
   return isNormalBlueprintMessage(message);
 }
 
-function isBlueprintDbDesignArtifactMessage(message: TaskMessage): boolean {
-  return isDbDesignBlueprintMessage(message);
+function isDataModelArtifactMessage(message: TaskMessage): boolean {
+  return isDataModelMessage(message);
 }
 
-function isBlueprintDbDesignMetadata(metadata: Record<string, unknown>): boolean {
+function isDataModelMetadata(metadata: Record<string, unknown>): boolean {
   return (
-    metadata.artifactType === 'blueprint_db_design' ||
-    metadata.source === 'blueprint-db-design' ||
-    Boolean(metadata.dbDesignTarget)
+    (metadata.artifactKind === 'plan_mode_dedicated_view' && metadata.view === 'data_model') ||
+    metadata.artifactType === 'data_model' ||
+    metadata.source === 'data-model'
   );
 }
 
@@ -444,7 +443,7 @@ function artifactTitleForKind(kind: WorkbenchArtifactKind, message: TaskMessage)
   const metadata = taskMessageMetadata(message);
   const metadataTitle = String(metadata.title || '');
   if (metadataTitle.trim()) {
-    if (isBlueprintDbDesignArtifactMessage(message)) return `DB Design: ${metadataTitle}`;
+    if (isDataModelArtifactMessage(message)) return `Data Model: ${metadataTitle}`;
     if (kind === 'blueprint_workspace') return `Specification Workspace: ${metadataTitle}`;
     if (kind === 'app_blueprint') return `Blueprint: ${metadataTitle}`;
     if (kind === 'component_design') return `Component: ${metadataTitle}`;

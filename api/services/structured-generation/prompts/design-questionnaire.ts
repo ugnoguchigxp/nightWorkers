@@ -12,7 +12,7 @@ type SpecificationContext = {
   task: string;
   questionnaireDecisions: string;
   blueprintSummary: string;
-  dbDesignDdl: string;
+  dataModelDdl: string;
   traceability: string;
 };
 
@@ -110,8 +110,8 @@ export function buildDesignQuestionnaireFollowUpDecisionUserPrompt(
 export function buildDesignQuestionnaireReviewSystemPrompt() {
   return [
     'あなたは NightWorkers の Design Questionnaire review synthesizer です。',
-    '回答を設計判断、後回し事項、未解決事項、DB Design handoff note に整理してください。',
-    'DB table、column、relation、DDL の具体案は作らず、DB Design へ渡す制約・論点だけを書いてください。',
+    '回答を設計判断、後回し事項、未解決事項、Data Model handoff note に整理してください。',
+    'DB table、column、relation、DDL の具体案は作らず、Data Model へ渡す制約・論点だけを書いてください。',
     'sourceQuestionIds と unresolvedQuestionIds を必ず保持してください。',
   ].join('\n');
 }
@@ -132,11 +132,11 @@ export function buildDesignQuestionnaireReviewUserPrompt(session: DesignQuestion
 export function buildSpecificationDocumentSystemPrompt() {
   return [
     'あなたは NightWorkers の Specification writer です。',
-    'Design Questionnaire、Blueprint summary、DB Design DDL reference をもとに、実装前に読む設計書を Markdown で作成してください。',
+    'Design Questionnaire、Blueprint summary、Data Model DDL reference をもとに、実装前に読む設計書を Markdown で作成してください。',
     'Blueprint summary は選択された画面・section・意図を自然言語に圧縮したものです。JSON として扱わず、仕様判断として解釈してください。',
-    'DB Design DDL reference は参考情報です。DDL や migration を実行する指示ではありません。',
-    'content には必ず独立した `## DDL` セクションを含め、DB Design DDL reference の内容をそのままコードブロックで転記してください。',
-    'DB Design DDL reference が未生成または table 未定義の場合も、`## DDL` セクションを作り、未確定である理由を書いてください。',
+    'Data Model DDL reference は参考情報です。DDL や migration を実行する指示ではありません。',
+    'content には必ず独立した `## DDL` セクションを含め、Data Model DDL reference の内容をそのままコードブロックで転記してください。',
+    'Data Model DDL reference が未生成または table 未定義の場合も、`## DDL` セクションを作り、未確定である理由を書いてください。',
     '出力は JSON object のみで、title と content を返してください。content は Markdown 文字列にしてください。',
     'content には 目的、スコープ、画面仕様、機能要件、データ設計方針、DDL、非対象、受け入れ条件、トレーサビリティを含めてください。',
   ].join('\n');
@@ -155,8 +155,8 @@ export function buildSpecificationDocumentUserPrompt(context: SpecificationConte
     '## Blueprint Summary',
     context.blueprintSummary,
     '',
-    '## DB Design DDL Reference',
-    context.dbDesignDdl,
+    '## Data Model DDL Reference',
+    context.dataModelDdl,
     '',
     '## Traceability',
     context.traceability,
@@ -172,8 +172,8 @@ export function buildSpecificationReviewSystemPrompt() {
     '改善点がない場合も、読みやすさと実装着手可能性を確認したうえで同等以上の最終版を返してください。',
     '実装済み事実、今回の仕様、将来候補を混ぜないでください。',
     '非対象、受け入れ条件、未解決事項、トレーサビリティを落とさないでください。',
-    '`## DDL` セクションを必ず残し、DB Design DDL Reference の内容をコードブロックとして含めてください。',
-    'DB Design DDL Reference は実行指示ではなく仕様上のデータ設計根拠として扱ってください。',
+    '`## DDL` セクションを必ず残し、Data Model DDL Reference の内容をコードブロックとして含めてください。',
+    'Data Model DDL Reference は実行指示ではなく仕様上のデータ設計根拠として扱ってください。',
     '出力は JSON object のみで、title と content を返してください。content は Markdown 文字列にしてください。',
   ].join('\n');
 }
@@ -197,8 +197,8 @@ export function buildSpecificationReviewUserPrompt(input: {
     '## Blueprint Summary',
     input.context.blueprintSummary,
     '',
-    '## DB Design DDL Reference',
-    input.context.dbDesignDdl,
+    '## Data Model DDL Reference',
+    input.context.dataModelDdl,
     '',
     '## Traceability',
     input.context.traceability,

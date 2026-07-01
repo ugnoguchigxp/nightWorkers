@@ -2,7 +2,6 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '../../db/client';
 import {
   blueprintArtifactAdoptions,
-  blueprintDbDesignAdoptions,
   blueprintDesignSettings,
   blueprintDesignTokenAdoptions,
 } from '../../db/schema';
@@ -66,45 +65,6 @@ export async function upsertBlueprintArtifactAdoption(
     })
     .onConflictDoUpdate({
       target: [blueprintArtifactAdoptions.taskId, blueprintArtifactAdoptions.messageId],
-      set: {
-        adopted,
-        updatedAt: now,
-      },
-    })
-    .returning();
-  return adoption;
-}
-
-export async function getBlueprintDbDesignAdoption(taskId: string, messageId: string) {
-  const [adoption] = await db
-    .select()
-    .from(blueprintDbDesignAdoptions)
-    .where(
-      and(
-        eq(blueprintDbDesignAdoptions.taskId, taskId),
-        eq(blueprintDbDesignAdoptions.messageId, messageId)
-      )
-    );
-  return adoption;
-}
-
-export async function upsertBlueprintDbDesignAdoption(
-  taskId: string,
-  messageId: string,
-  adopted: boolean
-) {
-  const now = new Date();
-  const [adoption] = await db
-    .insert(blueprintDbDesignAdoptions)
-    .values({
-      taskId,
-      messageId,
-      adopted,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [blueprintDbDesignAdoptions.taskId, blueprintDbDesignAdoptions.messageId],
       set: {
         adopted,
         updatedAt: now,

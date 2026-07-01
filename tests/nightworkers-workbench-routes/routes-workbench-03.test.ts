@@ -5,8 +5,6 @@ import { ensureNightWorkersSchema } from '../../api/db/bootstrap';
 import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
 import * as service from '../../api/modules/nightworkers/nightworkers.service';
 import * as llm from '../../api/services/structured-llm';
-import { buildBlueprintDbDesignPrompt } from '../../src/modules/blueprint-preview/dbDesignModel';
-import { representativeAppBlueprint } from '../fixtures/app-blueprint';
 import {
   disableAutoQueueDrainForTest,
   flushPendingWorkbenchTasks,
@@ -274,47 +272,32 @@ describe('NightWorkers workbench routes', () => {
     expect(intakeMessage).toBeUndefined();
   });
 
-  it('creates a revised Blueprint artifact from DB Design intent without round-1 intake', async () => {
-    const revisedBlueprint = {
-      ...representativeAppBlueprint,
-      databaseSchema: {
-        ...representativeAppBlueprint.databaseSchema,
-        tables: [
-          {
-            ...representativeAppBlueprint.databaseSchema.tables[0],
-            columns: [
-              ...representativeAppBlueprint.databaseSchema.tables[0].columns,
-              {
-                name: 'priority',
-                type: 'string',
-                nullable: false,
-                primaryKey: false,
-                unique: false,
-                label: 'Priority',
-                uiHint: 'status',
-              },
-            ],
-            indexes: [['status'], ['priority']],
-          },
-        ],
-      },
-      dataBindings: [
+  it('creates a Data Model artifact from Data Model intent without round-1 intake', async () => {
+    const dataModelArtifact = {
+      artifactKind: 'plan_mode_dedicated_view',
+      view: 'data_model',
+      title: 'Decision Data Model',
+      summary: 'Decision item persistence model.',
+      canonicalSource: 'ddl',
+      ddl: 'CREATE TABLE decision_items (id TEXT PRIMARY KEY, priority TEXT NOT NULL);',
+      derivedTables: [
         {
-          ...representativeAppBlueprint.dataBindings[0],
-          fields: ['id', 'status', 'priority'],
+          name: 'decision_items',
+          purpose: 'Stores decision items.',
+          columns: [
+            { name: 'id', type: 'TEXT', nullable: false, primaryKey: true },
+            { name: 'priority', type: 'TEXT', nullable: false },
+          ],
+          indexes: ['priority'],
         },
-        representativeAppBlueprint.dataBindings[1],
       ],
+      relations: [],
+      constraints: [],
+      openQuestions: [],
     };
-    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(JSON.stringify(revisedBlueprint));
-    const { task } = await createWorkbenchTask({ title: 'DB Design task', objective: '' });
-    const prompt = buildBlueprintDbDesignPrompt({
-      blueprintId: representativeAppBlueprint.id,
-      currentBlueprint: representativeAppBlueprint as unknown as Record<string, unknown>,
-      prompt: 'priority column を追加してください',
-      target: { kind: 'table', tableName: 'decision-items' },
-      validationIssues: [],
-    });
+    vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(JSON.stringify(dataModelArtifact));
+    const { task } = await createWorkbenchTask({ title: 'Data Model task', objective: '' });
+    const prompt = 'priority column を Data Model に追加してください';
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
       method: 'POST',
@@ -327,30 +310,15 @@ describe('NightWorkers workbench routes', () => {
     expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
     expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
     expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
-      'AppBlueprint の DB Design'
+      'Data Model dedicated design view generator'
     );
-    const userMessage = body.messages.find(
+    const dataModelMessage = body.messages.find(
       (message: unknown) =>
-        message.role === 'user' && message.metadataJson?.intent === 'design_blueprint_data'
+        message.messageType === 'markdown_document' && message.metadataJson?.source === 'data-model'
     );
-    expect(userMessage?.content).toContain('Target: Table decision-items');
-    expect(userMessage?.content).toContain('Instruction: priority column を追加してください');
-    expect(userMessage?.content).not.toContain('currentBlueprint');
-    expect(userMessage?.metadataJson?.validation?.valid).toBe(true);
-    const blueprintMessage = body.messages.find(
-      (message: unknown) =>
-        message.messageType === 'markdown_document' &&
-        message.metadataJson?.source === 'blueprint-db-design'
-    );
-    expect(blueprintMessage?.metadataJson?.intent).toBe('app_blueprint');
-    expect(blueprintMessage?.metadataJson?.dbDesignTarget).toEqual({
-      kind: 'table',
-      tableName: 'decision-items',
-    });
-    expect(
-      blueprintMessage?.metadataJson?.appBlueprint?.databaseSchema?.tables?.[0]?.columns
-    ).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'priority' })]));
-    expect(blueprintMessage?.metadataJson?.validation?.valid).toBe(true);
+    expect(dataModelMessage?.metadataJson?.intent).toBe('plan_mode_dedicated_view');
+    expect(dataModelMessage?.metadataJson?.view).toBe('data_model');
+    expect(dataModelMessage?.metadataJson?.dataModelArtifact?.ddl).toContain('priority');
     expect(body.task.status).toBe('ready');
   });
 

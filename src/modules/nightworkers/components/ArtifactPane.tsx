@@ -11,7 +11,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toDeepRecord } from '../../../../shared/json-record';
-import { BlueprintSpecificationWorkspaceViewer } from '../../planMode';
+import { PlanModeWorkspaceViewer } from '../../planMode';
 import type {
   ActivityArtifact,
   ProjectDiff,
@@ -70,7 +70,7 @@ function workspaceInitialTab(value: unknown) {
   if (value === 'design-doc') return 'specification';
   if (value === 'specification-status') return 'status';
   return value === 'blueprints' ||
-    value === 'db-design' ||
+    value === 'data-model' ||
     value === 'questionnaire' ||
     value === 'status' ||
     value === 'specification'
@@ -254,7 +254,7 @@ export function ArtifactPane({
           ) : showDiff ? (
             <DiffViewer diff={latestRun?.diffPatch || ''} />
           ) : showBlueprintWorkspace ? (
-            <BlueprintSpecificationWorkspaceViewer
+            <PlanModeWorkspaceViewer
               sessionId={activeSessionId}
               taskMessages={taskMessages}
               activityArtifacts={activityArtifacts}

@@ -46,7 +46,7 @@ export function buildBlueprintSystemPrompt(input: {
     '- ユーザー回答で「最小構成」「シンプル」「基本操作」「画面だけ」と判断された場合は、screen あたり 1-3 section を基本にし、中心操作に直結しない section は削る。',
     '- 通常の Blueprint 生成では DB/DDL/data model/data binding を設計しない。databaseSchema は必ず {"tables":[],"relations":[]}、dataBindings は必ず [] にする。',
     '- 通常の Blueprint 生成では section.dataBindingId を使わない。デザイン確認に必要なサンプル表示は section.props の title、description、items、columns、rows、links、actions、data に入れる。',
-    '- DB table/column/relation/binding/DDL の考案は DB Design workflow の担当。必要性がある場合も implementationTasks に「DB Design で検討する」作業として残すだけにする。',
+    '- DB table/column/relation/binding/DDL の考案は Data Model view の担当。必要性がある場合も implementationTasks に「Data Model で検討する」作業として残すだけにする。',
     '- implementationTasks[].affectedDomains は blueprint-ui、blueprint-data、blueprint-binding、blueprints、blueprint-task-planning などから選ぶ。',
     '- section.props は空にしない。プレビューに出せるtitle、description、items、columns、rows、links、actions、dataなどを、選んだcomponentNameに自然な形で入れる。',
     '- description には、なぜその画面構成がよいか、ユーザーが最初に見るべき情報、優先アクションが分かる文を入れる。',

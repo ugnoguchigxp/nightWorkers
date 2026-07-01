@@ -214,6 +214,7 @@ export const appendWorkbenchMessageRoute = createRoute({
               .enum([
                 'intake',
                 'draft',
+                'feature_plan',
                 'draft_spec',
                 'create_task',
                 'queue',

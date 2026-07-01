@@ -86,22 +86,35 @@ export type DesignQuestionnaireSession = {
   }>;
 };
 
-export type BlueprintWorkspaceArtifact = {
+export type PlanModeWorkspaceArtifact = {
   id: string;
-  kind: 'blueprint' | 'db-design' | 'decision-review';
+  kind:
+    | 'feature_plan'
+    | 'questionnaire'
+    | 'blueprint'
+    | 'data_model'
+    | 'api_io_contract'
+    | 'state_model'
+    | 'activity_flow'
+    | 'sequence_flow'
+    | 'zod_schema_design'
+    | 'decision_review'
+    | 'implementation_reference';
   title: string;
   sourceMessageId: string;
   createdAt: unknown;
   adoptionState?: 'adopted' | 'not_adopted' | 'unknown';
-  sourceBlueprintMessageId?: string;
+  sourceArtifactMessageId?: string;
 };
 
-export type BlueprintSpecificationWorkspace = {
+export type PlanModeWorkspace = {
   taskId: string;
   repositoryId: string;
   generatedAt: string;
-  blueprintArtifacts: BlueprintWorkspaceArtifact[];
-  dbDesignArtifacts: BlueprintWorkspaceArtifact[];
+  featurePlanArtifacts: PlanModeWorkspaceArtifact[];
+  blueprintArtifacts: PlanModeWorkspaceArtifact[];
+  dataModelArtifacts: PlanModeWorkspaceArtifact[];
+  dedicatedViewArtifacts: PlanModeWorkspaceArtifact[];
   questionnaireSessions: Array<{
     id: string;
     sourceBlueprintMessageId: string | null;
@@ -110,10 +123,10 @@ export type BlueprintSpecificationWorkspace = {
     totalQuestionCount: number;
     latestReviewId?: string;
   }>;
-  decisionReviews: BlueprintWorkspaceArtifact[];
+  decisionReviews: PlanModeWorkspaceArtifact[];
   implementationReferences: Array<{
     id: string;
-    kind: 'implementation-plan' | 'queue-candidate';
+    kind: 'implementation_reference';
     title: string;
     sourceMessageId?: string;
     taskId: string;

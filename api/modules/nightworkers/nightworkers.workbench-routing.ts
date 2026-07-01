@@ -14,13 +14,14 @@ export type WorkbenchArtifactContext = {
     initialTab?: string;
     blueprintCount?: number;
     source?: string;
-    dbDesignTarget?: unknown;
+    dataModelTarget?: unknown;
   };
 };
 
 export type WorkbenchChatIntent =
   | 'intake'
   | 'draft'
+  | 'feature_plan'
   | 'draft_spec'
   | 'create_task'
   | 'queue'

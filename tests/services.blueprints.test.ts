@@ -19,7 +19,7 @@ describe('Blueprint validation service', () => {
     expect(schema.properties.screens.items.properties.sections.items).toEqual({ type: 'object' });
   });
 
-  it('keeps regular Blueprint generation request contract separate from DB Design', () => {
+  it('keeps regular Blueprint generation request contract separate from Data Model', () => {
     const contract = buildPlanModeBlueprintRequestContract({
       taskId: 'task-blueprint-contract',
       title: 'Kanban preview',
@@ -33,7 +33,7 @@ describe('Blueprint validation service', () => {
         databaseSchema: { tables: [], relations: [] },
         dataBindings: [],
         sectionDataBindingId: 'forbidden',
-        dbDesignWorkflowOnly: true,
+        dataModelWorkflowOnly: true,
       },
       userRequest: {
         taskId: 'task-blueprint-contract',
@@ -47,7 +47,7 @@ describe('Blueprint validation service', () => {
     );
   });
 
-  it('documents the regular Blueprint and DB Design boundary in the work-kind reference', () => {
+  it('documents the regular Blueprint and Data Model boundary in the work-kind reference', () => {
     const reference = readFileSync(
       join(
         process.cwd(),
@@ -57,7 +57,7 @@ describe('Blueprint validation service', () => {
     );
 
     expect(reference).toContain('通常 Blueprint では `databaseSchema.tables`');
-    expect(reference).toContain('DB Design workflow');
+    expect(reference).toContain('Data Model view');
     expect(reference).toContain('`dataBindings`');
     expect(reference).toContain('`table_workspace` または `DataTableSection` を第一候補');
     expect(reference).toContain('単なる task / todo / record 一覧を自動で card 化しない');

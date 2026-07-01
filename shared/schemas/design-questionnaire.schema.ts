@@ -90,10 +90,10 @@ export const designOpenQuestionSchema = z.object({
   topic: z.string().min(1),
   reason: z.string().min(1),
   blocks: z.array(z.string().min(1)).min(1),
-  suggestedOwner: z.enum(['user', 'designer', 'engineer', 'db-design', 'later']).optional(),
+  suggestedOwner: z.enum(['user', 'designer', 'engineer', 'data-model', 'later']).optional(),
 });
 
-export const dbDesignHandoffNoteSchema = z.object({
+export const dataModelHandoffNoteSchema = z.object({
   id: kebabIdSchema,
   summary: z.string().min(1),
   sourceQuestionIds: z.array(kebabIdSchema),
@@ -114,7 +114,7 @@ export const designQuestionnaireSchema = z.object({
   summary: z.string().min(1),
   questionSets: z.array(designQuestionSetSchema).min(1),
   openQuestions: z.array(designOpenQuestionSchema).default([]),
-  dbDesignHandoffNotes: z.array(dbDesignHandoffNoteSchema).default([]),
+  dataModelHandoffNotes: z.array(dataModelHandoffNoteSchema).default([]),
 });
 
 export const designQuestionnaireAnswerSchema = z.object({
@@ -150,7 +150,7 @@ export const designDecisionReviewSchema = z.object({
   decisions: z.array(designDecisionDraftSchema).default([]),
   deferredItems: z.array(designOpenQuestionSchema).default([]),
   unresolvedQuestions: z.array(designOpenQuestionSchema).default([]),
-  dbDesignHandoffNotes: z.array(dbDesignHandoffNoteSchema).default([]),
+  dataModelHandoffNotes: z.array(dataModelHandoffNoteSchema).default([]),
 });
 
 export const createDesignQuestionnaireRequestSchema = z.object({
@@ -204,44 +204,6 @@ export const designQuestionnaireSessionSchema = z.object({
   ),
 });
 
-export const blueprintWorkspaceArtifactSchema = z.object({
-  id: z.string(),
-  kind: z.enum(['blueprint', 'db-design', 'decision-review']),
-  title: z.string(),
-  sourceMessageId: z.string().uuid(),
-  createdAt: dateLikeSchema,
-  adoptionState: z.enum(['adopted', 'not_adopted', 'unknown']).optional(),
-  sourceBlueprintMessageId: z.string().uuid().optional(),
-});
-
-export const blueprintWorkspaceQuestionnaireSchema = z.object({
-  id: z.string().uuid(),
-  sourceBlueprintMessageId: z.string().uuid().nullable(),
-  status: designQuestionnaireSessionStatusSchema,
-  answeredCount: z.number().int().nonnegative(),
-  totalQuestionCount: z.number().int().nonnegative(),
-  latestReviewId: z.string().uuid().optional(),
-});
-
-export const blueprintWorkspaceReferenceSchema = z.object({
-  id: z.string(),
-  kind: z.enum(['implementation-plan', 'queue-candidate']),
-  title: z.string(),
-  sourceMessageId: z.string().uuid().optional(),
-  taskId: z.string().uuid(),
-});
-
-export const blueprintSpecificationWorkspaceSchema = z.object({
-  taskId: z.string().uuid(),
-  repositoryId: z.string().uuid(),
-  generatedAt: z.string(),
-  blueprintArtifacts: z.array(blueprintWorkspaceArtifactSchema),
-  dbDesignArtifacts: z.array(blueprintWorkspaceArtifactSchema),
-  questionnaireSessions: z.array(blueprintWorkspaceQuestionnaireSchema),
-  decisionReviews: z.array(blueprintWorkspaceArtifactSchema),
-  implementationReferences: z.array(blueprintWorkspaceReferenceSchema),
-});
-
 export type DesignQuestionnaire = z.infer<typeof designQuestionnaireSchema>;
 export type DesignQuestion = z.infer<typeof designQuestionSchema>;
 export type DesignQuestionDependency = z.infer<typeof designQuestionDependencySchema>;
@@ -254,4 +216,3 @@ export type DesignQuestionnaireFollowUpDecision = z.infer<
 export type DesignQuestionnaireAnswer = z.infer<typeof designQuestionnaireAnswerSchema>;
 export type DesignDecisionReview = z.infer<typeof designDecisionReviewSchema>;
 export type DesignQuestionnaireSession = z.infer<typeof designQuestionnaireSessionSchema>;
-export type BlueprintSpecificationWorkspace = z.infer<typeof blueprintSpecificationWorkspaceSchema>;

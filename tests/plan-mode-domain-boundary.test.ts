@@ -1,6 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  dedicatedDesignViewSchema,
+  planModeArtifactKindSchema,
+} from '../shared/schemas/plan-mode-artifact.schema';
 
 const root = resolve(__dirname, '..');
 
@@ -9,6 +13,12 @@ function readProjectFile(path: string) {
 }
 
 describe('Plan Mode domain boundaries', () => {
+  it('keeps every dedicated design view representable as a workspace artifact kind', () => {
+    for (const view of dedicatedDesignViewSchema.options) {
+      expect(planModeArtifactKindSchema.safeParse(view).success, view).toBe(true);
+    }
+  });
+
   it('keeps moved Questionnaire and Blueprint modules off NightWorkers aggregate internals', () => {
     const movedDomainFiles = [
       'api/modules/questionnaire/questionnaire.service.ts',
@@ -19,7 +29,7 @@ describe('Plan Mode domain boundaries', () => {
       'api/modules/blueprint/blueprint-design-settings.service.ts',
       'api/modules/blueprint/blueprint-generation.service.ts',
       'api/modules/blueprint/blueprint.repository.ts',
-      'api/modules/dbDesign/dbDesign-generation.service.ts',
+      'api/modules/dataModel/dataModel-generation.service.ts',
       'api/modules/specification/specification-generation.service.ts',
       'api/modules/specification/specification-workspace.service.ts',
       'api/modules/specification/specification-document-renderer.ts',
@@ -61,7 +71,7 @@ describe('Plan Mode domain boundaries', () => {
     expect(source).not.toContain('export async function acceptDesignQuestionnaireReview');
     expect(source).not.toContain('export async function leaveDesignQuestionnaireReviewUnadopted');
     expect(source).not.toContain('export async function generateSpecificationStatusBlueprint');
-    expect(source).not.toContain('export async function generateSpecificationStatusDbDesign');
+    expect(source).not.toContain('export async function generateSpecificationStatusDataModel');
     expect(source).not.toContain('export async function generateSpecificationStatusDesignDocument');
     expect(source).not.toContain('export async function getBlueprintSpecificationWorkspace');
     expect(source).not.toContain('export async function getSpecificationWorkspace');
@@ -76,16 +86,16 @@ describe('Plan Mode domain boundaries', () => {
     const planModeRouteMarkers = [
       'blueprint-design-settings',
       'blueprint-adoption',
-      'blueprint-db-design-adoption',
+      'data-model-adoption',
       'blueprint-design-token-adoption',
       'design-questionnaire',
       'blueprint-specification-workspace',
       'specification-workspace/blueprint',
-      'specification-workspace/db-design',
+      'specification-workspace/data-model',
       'specification-workspace/design-doc',
       'getBlueprintSpecificationWorkspaceHandler',
       'generateSpecificationStatusBlueprintHandler',
-      'generateSpecificationStatusDbDesignHandler',
+      'generateSpecificationStatusDataModelHandler',
       'generateSpecificationStatusDesignDocumentHandler',
     ];
 

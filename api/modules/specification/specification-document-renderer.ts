@@ -1,8 +1,8 @@
 import type {
-  BlueprintSpecificationWorkspace,
   DesignQuestionnaire,
   DesignQuestionnaireAnswer,
 } from '../../../shared/schemas/design-questionnaire.schema';
+import type { PlanModeWorkspace } from '../../../shared/schemas/plan-mode-artifact.schema';
 import {
   getAnswerableSessionQuestions,
   getSessionQuestions,
@@ -36,13 +36,13 @@ type SpecificationDecision = {
 export function buildSpecificationDocumentContext(input: {
   task: TaskLike;
   session: QuestionnaireSessionLike;
-  workspace: BlueprintSpecificationWorkspace;
+  workspace: PlanModeWorkspace;
   messages: TaskMessageRow[];
 }) {
   const latestBlueprint = findLatestBlueprintMessage(input.messages, 'blueprint');
-  const latestDbDesign = findLatestBlueprintMessage(input.messages, 'db-design');
+  const latestDataModel = findLatestDataModelMessage(input.messages);
   const blueprint = getMessageBlueprint(latestBlueprint);
-  const dbDesignBlueprint = getMessageBlueprint(latestDbDesign);
+  const dataModelArtifact = getMessageDataModelArtifact(latestDataModel);
   return {
     task: [
       `Title: ${input.task.title || 'Untitled'}`,
@@ -53,16 +53,16 @@ export function buildSpecificationDocumentContext(input: {
       .join('\n'),
     questionnaireDecisions: renderQuestionnaireAnswerMarkdown(input.session),
     blueprintSummary: renderCompressedBlueprintNaturalLanguage(blueprint),
-    dbDesignDdl: renderDbDesignDdlReference(dbDesignBlueprint),
+    dataModelDdl: renderDataModelDdlReference(dataModelArtifact),
     traceability: [
       `Questionnaire session: ${input.session.id}`,
       latestBlueprint
         ? `Blueprint message: ${latestBlueprint.id}`
         : 'Blueprint message: not generated',
-      latestDbDesign
-        ? `DB Design message: ${latestDbDesign.id}`
-        : 'DB Design message: not generated',
-      `Workspace counts: blueprint=${input.workspace.blueprintArtifacts.length}, dbDesign=${input.workspace.dbDesignArtifacts.length}`,
+      latestDataModel
+        ? `Data Model message: ${latestDataModel.id}`
+        : 'Data Model message: not generated',
+      `Workspace counts: blueprint=${input.workspace.blueprintArtifacts.length}, dataModel=${input.workspace.dataModelArtifacts.length}`,
     ].join('\n'),
   };
 }
@@ -151,12 +151,13 @@ function summarizeSectionProps(section: JsonRecord) {
   return parts.join(' ');
 }
 
-function renderDbDesignDdlReference(blueprint: JsonRecord | null) {
-  if (!blueprint) return 'DB Design は未生成です。';
-  const schema = isRecord(blueprint.databaseSchema) ? blueprint.databaseSchema : {};
-  const tables = toRecordArray(schema.tables);
-  const relations = toRecordArray(schema.relations);
-  if (tables.length === 0) return 'DB Design には table が定義されていません。';
+function renderDataModelDdlReference(artifact: JsonRecord | null) {
+  if (!artifact) return 'Data Model は未生成です。';
+  const ddl = typeof artifact.ddl === 'string' ? artifact.ddl.trim() : '';
+  if (ddl) return ddl;
+  const tables = toRecordArray(artifact.derivedTables);
+  const relations = toRecordArray(artifact.relations);
+  if (tables.length === 0) return 'Data Model には table が定義されていません。';
   const lines: string[] = [];
   for (const table of tables) {
     const tableName = safeSqlIdentifier(String(table.name || table.id || 'table'));
@@ -235,21 +236,26 @@ function compactText(value: string, limit: number) {
 function _renderSpecificationDesignDocument(input: {
   task: TaskLike;
   session: QuestionnaireSessionLike;
-  workspace: BlueprintSpecificationWorkspace;
+  workspace: PlanModeWorkspace;
   messages: TaskMessageRow[];
 }) {
   const latestBlueprint = findLatestBlueprintMessage(input.messages, 'blueprint');
-  const latestDbDesign = findLatestBlueprintMessage(input.messages, 'db-design');
+  const latestDataModel = findLatestDataModelMessage(input.messages);
   const blueprint = getMessageBlueprint(latestBlueprint);
-  const dbDesignBlueprint = getMessageBlueprint(latestDbDesign);
+  const dataModelArtifact = getMessageDataModelArtifact(latestDataModel);
   const decisionRows = collectQuestionnaireDecisions(input.session);
   const screens = toRecordArray(blueprint?.screens);
   const implementationTasks = toRecordArray(blueprint?.implementationTasks);
-  const dataSource = dbDesignBlueprint || blueprint;
-  const databaseSchema = isRecord(dataSource?.databaseSchema) ? dataSource.databaseSchema : {};
-  const tables = toRecordArray(databaseSchema.tables);
-  const relations = toRecordArray(databaseSchema.relations);
-  const bindings = toRecordArray(dataSource?.dataBindings);
+  const dataSource = dataModelArtifact || blueprint;
+  const tables = dataModelArtifact
+    ? toRecordArray(dataModelArtifact.derivedTables)
+    : toRecordArray(isRecord(dataSource?.databaseSchema) ? dataSource.databaseSchema.tables : []);
+  const relations = dataModelArtifact
+    ? toRecordArray(dataModelArtifact.relations)
+    : toRecordArray(
+        isRecord(dataSource?.databaseSchema) ? dataSource.databaseSchema.relations : []
+      );
+  const bindings = dataModelArtifact ? [] : toRecordArray(dataSource?.dataBindings);
   return [
     `# ${input.task.title || 'Specification'}`,
     '',
@@ -270,11 +276,11 @@ function _renderSpecificationDesignDocument(input: {
       tables,
       relations,
       bindings,
-      hasDbDesign: Boolean(latestDbDesign),
+      hasDataModel: Boolean(latestDataModel),
     }),
     '',
     '## 6. 非対象・後続判断',
-    renderOutOfScope(decisionRows, Boolean(latestDbDesign)),
+    renderOutOfScope(decisionRows, Boolean(latestDataModel)),
     '',
     '## 7. 受け入れ条件',
     renderAcceptanceCriteria(screens, decisionRows),
@@ -284,7 +290,7 @@ function _renderSpecificationDesignDocument(input: {
       session: input.session,
       workspace: input.workspace,
       latestBlueprint,
-      latestDbDesign,
+      latestDataModel,
     }),
     '',
     '## Appendix. Questionnaire Decisions',
@@ -292,14 +298,19 @@ function _renderSpecificationDesignDocument(input: {
   ].join('\n');
 }
 
-function findLatestBlueprintMessage(messages: TaskMessageRow[], kind: 'blueprint' | 'db-design') {
+function findLatestBlueprintMessage(messages: TaskMessageRow[], kind: 'blueprint') {
   return [...messages].reverse().find((message) => {
     const metadata = isRecord(message.metadataJson) ? message.metadataJson : {};
     if (metadata.intent !== 'app_blueprint' || !metadata.appBlueprint) return false;
-    const isDbDesign = Boolean(
-      metadata.source === 'blueprint-db-design' || metadata.dbDesignTarget
-    );
-    return kind === 'db-design' ? isDbDesign : !isDbDesign;
+    if (isDataModelMessageMetadata(metadata)) return false;
+    return kind === 'blueprint';
+  });
+}
+
+function findLatestDataModelMessage(messages: TaskMessageRow[]) {
+  return [...messages].reverse().find((message) => {
+    const metadata = isRecord(message.metadataJson) ? message.metadataJson : {};
+    return isDataModelMessageMetadata(metadata);
   });
 }
 
@@ -307,6 +318,33 @@ function getMessageBlueprint(message: TaskMessageRow | undefined): JsonRecord | 
   const metadata = isRecord(message?.metadataJson) ? message.metadataJson : {};
   const blueprint = metadata.appBlueprint;
   return isRecord(blueprint) ? blueprint : null;
+}
+
+function getMessageDataModelArtifact(message: TaskMessageRow | undefined): JsonRecord | null {
+  const metadata = isRecord(message?.metadataJson) ? message.metadataJson : {};
+  const artifact = metadata.dataModelArtifact;
+  if (isRecord(artifact)) return artifact;
+  const blueprint = isRecord(metadata.appBlueprint) ? metadata.appBlueprint : {};
+  const databaseSchema = isRecord(blueprint.databaseSchema) ? blueprint.databaseSchema : null;
+  if (!databaseSchema) return null;
+  return {
+    artifactKind: 'plan_mode_dedicated_view',
+    view: 'data_model',
+    title: String(metadata.title || 'Data Model'),
+    derivedTables: toRecordArray(databaseSchema.tables),
+    relations: toRecordArray(databaseSchema.relations),
+  };
+}
+
+function isDataModelMessageMetadata(metadata: JsonRecord) {
+  return (
+    (metadata.artifactKind === 'plan_mode_dedicated_view' && metadata.view === 'data_model') ||
+    metadata.source === 'data-model' ||
+    metadata.source === 'blueprint-db-design' ||
+    Boolean(metadata.dbDesignTarget) ||
+    metadata.artifactType === 'data_model' ||
+    metadata.artifactType === 'blueprint_db_design'
+  );
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -406,17 +444,17 @@ function renderDataSpecification(input: {
   tables: JsonRecord[];
   relations: JsonRecord[];
   bindings: JsonRecord[];
-  hasDbDesign: boolean;
+  hasDataModel: boolean;
 }) {
   if (input.tables.length === 0 && input.bindings.length === 0) {
-    return input.hasDbDesign
-      ? '- DB Design は生成済みだが、table / binding はまだ定義されていない。'
-      : '- DB Design は未生成。現時点では Blueprint の画面仕様を優先し、物理 DB / DDL / migration は確定しない。';
+    return input.hasDataModel
+      ? '- Data Model は生成済みだが、table / binding はまだ定義されていない。'
+      : '- Data Model は未生成。現時点では Blueprint の画面仕様を優先し、物理 DB / DDL / migration は確定しない。';
   }
   const lines = [
-    input.hasDbDesign
-      ? '- DB Design artifact の内容をデータ方針として採用する。'
-      : '- Blueprint 内の暫定 data schema を参考情報として扱う。DB Design で確定する。',
+    input.hasDataModel
+      ? '- Data Model artifact の内容をデータ方針として採用する。'
+      : '- Blueprint 内の暫定 data schema を参考情報として扱う。Data Model で確定する。',
   ];
   if (input.tables.length > 0) {
     lines.push('- Tables:');
@@ -442,12 +480,12 @@ function renderDataSpecification(input: {
   return lines.join('\n');
 }
 
-function renderOutOfScope(decisions: SpecificationDecision[], hasDbDesign: boolean) {
+function renderOutOfScope(decisions: SpecificationDecision[], hasDataModel: boolean) {
   const deferred = decisions.filter((decision) => decision.deferred);
   const lines = [
-    hasDbDesign
+    hasDataModel
       ? null
-      : '- DB の物理設計、DDL、migration、詳細な relation 設計は DB Design 生成後に確定する。',
+      : '- DB の物理設計、DDL、migration、詳細な relation 設計は Data Model 生成後に確定する。',
     ...deferred.map((decision) => `- 後続判断: ${decision.question}`),
   ].filter(Boolean);
   return lines.length > 0 ? lines.join('\n') : '- 現時点で明示的な非対象事項はない。';
@@ -468,9 +506,9 @@ function renderAcceptanceCriteria(screens: JsonRecord[], decisions: Specificatio
 
 function renderTraceability(input: {
   session: QuestionnaireSessionLike;
-  workspace: BlueprintSpecificationWorkspace;
+  workspace: PlanModeWorkspace;
   latestBlueprint: TaskMessageRow | undefined;
-  latestDbDesign: TaskMessageRow | undefined;
+  latestDataModel: TaskMessageRow | undefined;
 }) {
   return [
     `- Questionnaire session: ${input.session.id}`,
@@ -479,10 +517,10 @@ function renderTraceability(input: {
     input.latestBlueprint
       ? `- Blueprint source message: ${input.latestBlueprint.id}`
       : '- Blueprint source message: 未生成',
-    `- DB Design artifacts: ${input.workspace.dbDesignArtifacts.length}`,
-    input.latestDbDesign
-      ? `- DB Design source message: ${input.latestDbDesign.id}`
-      : '- DB Design source message: 未生成',
+    `- Data Model artifacts: ${input.workspace.dataModelArtifacts.length}`,
+    input.latestDataModel
+      ? `- Data Model source message: ${input.latestDataModel.id}`
+      : '- Data Model source message: 未生成',
     '',
   ]
     .filter((line) => line !== '')

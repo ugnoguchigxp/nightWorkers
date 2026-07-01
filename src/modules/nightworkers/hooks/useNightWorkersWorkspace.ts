@@ -14,8 +14,8 @@ import type {
   ActivityEvent,
   ActivityReplay,
   BackgroundProcess,
-  BlueprintSpecificationWorkspace,
   ImplementationQueueDashboard,
+  PlanModeWorkspace,
   Repository,
   RunDetails,
   Task,
@@ -39,20 +39,22 @@ export type {
 
 const emptyActivityReplay: ActivityReplay = { events: [], artifacts: [] };
 
-function _hasSpecificationWorkspaceEvidence(workspace: BlueprintSpecificationWorkspace) {
+function _hasSpecificationWorkspaceEvidence(workspace: PlanModeWorkspace) {
   return Boolean(
-    workspace.blueprintArtifacts.length ||
-      workspace.dbDesignArtifacts.length ||
+    workspace.featurePlanArtifacts.length ||
+      workspace.blueprintArtifacts.length ||
+      workspace.dataModelArtifacts.length ||
       workspace.questionnaireSessions.length ||
       workspace.decisionReviews.length ||
       workspace.implementationReferences.length
   );
 }
 
-function _summarizeSpecificationWorkspace(workspace: BlueprintSpecificationWorkspace) {
+function _summarizeSpecificationWorkspace(workspace: PlanModeWorkspace) {
   return [
+    `${workspace.featurePlanArtifacts.length} Feature Plan`,
     `${workspace.blueprintArtifacts.length} Blueprint`,
-    `${workspace.dbDesignArtifacts.length} DB Design`,
+    `${workspace.dataModelArtifacts.length} Data Model`,
     `${workspace.questionnaireSessions.length} Questionnaire`,
     `${workspace.decisionReviews.length} Decision Review`,
     `${workspace.implementationReferences.length} Implementation`,
@@ -168,7 +170,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       if (!activeSessionId) return null;
       const res = await fetchSpecificationWorkspace(activeSessionId);
       if (!res.ok) throw new Error('Failed to fetch specification workspace');
-      return (await res.json()) as BlueprintSpecificationWorkspace;
+      return (await res.json()) as PlanModeWorkspace;
     },
     enabled: !!activeSessionId,
     refetchOnWindowFocus: false,

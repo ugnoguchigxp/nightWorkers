@@ -357,7 +357,7 @@ describe('conversation context domain', () => {
       relevantFilesDigest: 'sha256:files',
       adoptedArtifactDigest: null,
       blueprintRefsDigest: null,
-      blueprintDbDesignRefsDigest: null,
+      blueprintDataModelRefsDigest: null,
       designQuestionnaireRefsDigest: null,
       decisionReviewRefsDigest: null,
       contextStillRefsDigest: null,

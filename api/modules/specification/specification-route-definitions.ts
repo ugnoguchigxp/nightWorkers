@@ -1,7 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { blueprintSpecificationWorkspaceSchema } from '../../../shared/schemas/design-questionnaire.schema';
+import { planModeWorkspaceSchema } from '../../../shared/schemas/plan-mode-artifact.schema';
 
-export const getBlueprintSpecificationWorkspaceRoute = createRoute({
+export const getPlanModeWorkspaceCompatibilityRoute = createRoute({
   method: 'get',
   path: '/tasks/:id/blueprint-specification-workspace',
   request: {
@@ -9,8 +9,8 @@ export const getBlueprintSpecificationWorkspaceRoute = createRoute({
   },
   responses: {
     200: {
-      content: { 'application/json': { schema: blueprintSpecificationWorkspaceSchema } },
-      description: 'Blueprint Specification Workspace read model',
+      content: { 'application/json': { schema: planModeWorkspaceSchema } },
+      description: 'Plan Mode Workspace read model',
     },
   },
 });
@@ -23,8 +23,8 @@ export const getSpecificationWorkspaceRoute = createRoute({
   },
   responses: {
     200: {
-      content: { 'application/json': { schema: blueprintSpecificationWorkspaceSchema } },
-      description: 'Specification Workspace read model',
+      content: { 'application/json': { schema: planModeWorkspaceSchema } },
+      description: 'Plan Mode Workspace read model',
     },
   },
 });

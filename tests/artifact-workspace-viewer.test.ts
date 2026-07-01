@@ -2,12 +2,12 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
-  isDbDesignBlueprintMessage,
+  isDataModelMessage,
   isNormalBlueprintMessage,
   isReviewedSpecificationMessage,
   mergeWorkspaceTaskMessages,
 } from '../src/modules/nightworkers/workbenchSelectors';
-import { BlueprintSpecificationWorkspaceViewer } from '../src/modules/planMode';
+import { PlanModeWorkspaceViewer } from '../src/modules/planMode';
 import {
   buildActivityArtifact,
   buildBlueprintMessage,
@@ -58,14 +58,14 @@ describe('isReviewedSpecificationMessage', () => {
       taskId: 'task-1',
       content: '# Specification',
       messageType: 'markdown_document',
-      metadataJson: { intent: 'draft_spec', source: 'status' },
+      metadataJson: { intent: 'feature_plan', source: 'status' },
       createdAt,
     });
     const reviewedSpec: TaskMessage = {
       ...initialSpec,
       id: 'message-spec-2',
       metadataJson: {
-        intent: 'draft_spec',
+        intent: 'feature_plan',
         source: 'status_document_review',
         reviewedSourceMessageId: initialSpec.id,
       },
@@ -77,7 +77,7 @@ describe('isReviewedSpecificationMessage', () => {
 });
 
 describe('Blueprint message classification', () => {
-  it('keeps DB Design messages out of normal Blueprint surfaces', () => {
+  it('keeps Data Model messages out of normal Blueprint surfaces', () => {
     const createdAt = new Date().toISOString();
     const normalBlueprint = buildBlueprintMessage({
       id: 'message-blueprint',
@@ -89,29 +89,29 @@ describe('Blueprint message classification', () => {
       },
       createdAt,
     });
-    const dbDesignBlueprint: TaskMessage = {
+    const dataModelBlueprint: TaskMessage = {
       ...normalBlueprint,
-      id: 'message-db-design',
+      id: 'message-data-model',
       metadataJson: {
         intent: 'app_blueprint',
-        artifactType: 'blueprint_db_design',
-        source: 'blueprint-db-design',
-        dbDesignTarget: { sourceBlueprintMessageId: normalBlueprint.id },
-        appBlueprint: { name: 'DB Design' },
+        artifactType: 'data_model',
+        source: 'data-model',
+        dataModelTarget: { sourceBlueprintMessageId: normalBlueprint.id },
+        appBlueprint: { name: 'Data Model' },
       },
     };
 
     expect(isNormalBlueprintMessage(normalBlueprint)).toBe(true);
-    expect(isDbDesignBlueprintMessage(normalBlueprint)).toBe(false);
-    expect(isNormalBlueprintMessage(dbDesignBlueprint)).toBe(false);
-    expect(isDbDesignBlueprintMessage(dbDesignBlueprint)).toBe(true);
+    expect(isDataModelMessage(normalBlueprint)).toBe(false);
+    expect(isNormalBlueprintMessage(dataModelBlueprint)).toBe(false);
+    expect(isDataModelMessage(dataModelBlueprint)).toBe(true);
   });
 });
 
-describe('BlueprintSpecificationWorkspaceViewer', () => {
+describe('PlanModeWorkspaceViewer', () => {
   it('keeps Status selectable while an active questionnaire is still incomplete', () => {
     const markup = renderToStaticMarkup(
-      createElement(BlueprintSpecificationWorkspaceViewer, {
+      createElement(PlanModeWorkspaceViewer, {
         sessionId: 'task-1',
         taskMessages: [],
         activityArtifacts: [],
@@ -121,6 +121,6 @@ describe('BlueprintSpecificationWorkspaceViewer', () => {
 
     expect(markup).toContain('>Status</button>');
     expect(markup).not.toMatch(/<button[^>]*disabled[^>]*>Status<\/button>/);
-    expect(markup).toMatch(/<button[^>]*disabled[^>]*>Specification<\/button>/);
+    expect(markup).toMatch(/<button[^>]*disabled[^>]*>Feature Plan<\/button>/);
   });
 });

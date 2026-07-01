@@ -95,7 +95,7 @@ export function hasImplementationPlanEvidence(messages: TaskMessageRow[]) {
     if (message.messageType !== 'markdown_document') return false;
     const metadata = (message.metadataJson || {}) as { intent?: unknown };
     const intent = String(metadata.intent || '').toLowerCase();
-    return intent === 'implementation_plan' || intent === 'draft_spec';
+    return intent === 'implementation_plan' || intent === 'feature_plan' || intent === 'draft_spec';
   });
 }
 

@@ -7,6 +7,28 @@ import * as generalSettings from '../../api/services/settings/general-settings';
 import { representativeAppBlueprint } from '../fixtures/app-blueprint';
 
 const sameOriginHeaders = { Origin: 'http://localhost:39174' };
+const representativeDataModelArtifact = {
+  artifactKind: 'plan_mode_dedicated_view',
+  view: 'data_model',
+  title: 'Kanban Data Model',
+  summary: 'Kanban board persistence model.',
+  canonicalSource: 'ddl',
+  ddl: 'CREATE TABLE cards (id TEXT PRIMARY KEY, title TEXT NOT NULL);',
+  derivedTables: [
+    {
+      name: 'cards',
+      purpose: 'Stores board cards.',
+      columns: [
+        { name: 'id', type: 'TEXT', nullable: false, primaryKey: true },
+        { name: 'title', type: 'TEXT', nullable: false },
+      ],
+      indexes: [],
+    },
+  ],
+  relations: [],
+  constraints: ['Keep cards scoped to a board in follow-up design.'],
+  openQuestions: [],
+};
 
 beforeAll(async () => {
   await ensureNightWorkersSchema();
@@ -122,26 +144,21 @@ describe('NightWorkers task routes', () => {
           validation: { valid: true, issues: [] },
         },
       });
-      const dbDesignMessage = await repo.createTaskMessage({
+      const dataModelMessage = await repo.createTaskMessage({
         taskId: task.id,
         role: 'assistant',
-        content: '# DB Design Blueprint',
+        content: '# Support Desk Data Model',
         messageType: 'markdown_document',
         payloadJson: {
-          intent: 'app_blueprint',
-          title: 'Support Desk DB Design',
-          source: 'blueprint-db-design',
-          dbDesignTarget: 'full',
-          appBlueprint: {
-            id: 'support-desk-db-design',
-            name: 'Support Desk DB Design',
-            screens: [{ id: 'inbox', name: 'Inbox', sections: [] }],
-          },
-          validation: { valid: true, issues: [] },
+          artifactKind: 'plan_mode_dedicated_view',
+          view: 'data_model',
+          source: 'data-model',
+          title: 'Support Desk Data Model',
+          intent: 'plan_mode_dedicated_view',
+          artifactType: 'data_model',
+          dataModelArtifact: representativeDataModelArtifact,
         },
       });
-      await repo.upsertBlueprintDbDesignAdoption(task.id, dbDesignMessage.id, true);
-
       process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
         version: 1,
         source: {
@@ -202,12 +219,13 @@ describe('NightWorkers task routes', () => {
           },
         ],
         openQuestions: [],
-        dbDesignHandoffNotes: [
+        dataModelHandoffNotes: [
           {
             id: 'ticket-state-constraint',
             summary: 'Ticket state history must be traceable.',
             sourceQuestionIds: ['triage-mode'],
-            constraint: 'DB Design should model state changes without committing table names here.',
+            constraint:
+              'Data Model should model state changes without committing table names here.',
           },
         ],
       });
@@ -275,12 +293,13 @@ describe('NightWorkers task routes', () => {
         ],
         deferredItems: [],
         unresolvedQuestions: [],
-        dbDesignHandoffNotes: [
+        dataModelHandoffNotes: [
           {
             id: 'ticket-state-constraint',
             summary: 'Ticket state history must be traceable.',
             sourceQuestionIds: ['triage-mode'],
-            constraint: 'DB Design should model state changes without committing table names here.',
+            constraint:
+              'Data Model should model state changes without committing table names here.',
           },
         ],
       });
@@ -308,11 +327,11 @@ describe('NightWorkers task routes', () => {
       expect(workspace.blueprintArtifacts).toEqual(
         expect.arrayContaining([expect.objectContaining({ sourceMessageId: blueprintMessage.id })])
       );
-      expect(workspace.dbDesignArtifacts).toEqual(
+      expect(workspace.dataModelArtifacts).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            sourceMessageId: dbDesignMessage.id,
-            adoptionState: 'adopted',
+            sourceMessageId: dataModelMessage.id,
+            kind: 'data_model',
           }),
         ])
       );
@@ -498,10 +517,10 @@ describe('NightWorkers task routes', () => {
   });
 
   it.each([
-    ['blueprint', 'blueprint'],
-    ['dbDesign', 'db-design'],
-    ['specification', 'design-doc'],
-  ] as const)('rejects %s Status generation when the Plan Mode capability is disabled', async (capability, endpoint) => {
+    ['blueprint', 'specification-workspace/blueprint'],
+    ['data_model', 'plan-mode/data-model'],
+    ['feature_plan', 'specification-workspace/design-doc'],
+  ] as const)('rejects %s Status generation when the Plan Mode capability is disabled', async (capability, endpointPath) => {
     vi.spyOn(generalSettings, 'readGeneralSettings').mockReturnValue({
       ...generalSettings.DEFAULT_GENERAL_SETTINGS,
       planMode: {
@@ -525,14 +544,11 @@ describe('NightWorkers task routes', () => {
         status: 'draft',
       });
 
-      const res = await app.request(
-        `http://localhost/api/tasks/${task.id}/specification-workspace/${endpoint}`,
-        {
-          method: 'POST',
-          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-        }
-      );
+      const res = await app.request(`http://localhost/api/tasks/${task.id}/${endpointPath}`, {
+        method: 'POST',
+        headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
       expect(res.status).toBe(409);
       const body = await res.json();
       expect(body.error?.code ?? body.code).toBe('PLAN_MODE_CAPABILITY_DISABLED');
@@ -1091,7 +1107,7 @@ describe('NightWorkers task routes', () => {
     }
   });
 
-  it('generates Blueprint, DB Design, and Specification from Status', async () => {
+  it('generates Blueprint, Data Model, and Specification from Status', async () => {
     const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
     const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
     const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
@@ -1176,9 +1192,9 @@ describe('NightWorkers task routes', () => {
       let messages = await repo.listTaskMessages(task.id);
       expect(messages.some((message) => message.metadataJson?.intent === 'draft_spec')).toBe(false);
 
-      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(representativeAppBlueprint);
-      const dbDesignRes = await app.request(
-        `http://localhost/api/tasks/${task.id}/specification-workspace/db-design`,
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(representativeDataModelArtifact);
+      const dataModelRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/plan-mode/data-model`,
         {
           method: 'POST',
           headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
@@ -1188,10 +1204,12 @@ describe('NightWorkers task routes', () => {
           }),
         }
       );
-      expect(dbDesignRes.status).toBe(200);
-      expect((await dbDesignRes.json()).message.metadataJson).toMatchObject({
-        intent: 'app_blueprint',
-        source: 'blueprint-db-design',
+      expect(dataModelRes.status).toBe(200);
+      expect((await dataModelRes.json()).message.metadataJson).toMatchObject({
+        intent: 'plan_mode_dedicated_view',
+        source: 'data-model',
+        view: 'data_model',
+        artifactType: 'data_model',
         questionnaireSessionId: session.id,
       });
       messages = await repo.listTaskMessages(task.id);
@@ -1231,7 +1249,7 @@ describe('NightWorkers task routes', () => {
       expect(docBody.message).toMatchObject({
         messageType: 'markdown_document',
         metadataJson: {
-          intent: 'draft_spec',
+          intent: 'feature_plan',
           source: 'status',
           questionnaireSessionId: session.id,
         },
@@ -1246,13 +1264,13 @@ describe('NightWorkers task routes', () => {
         source: 'llm',
         context: {
           blueprintSummaryIncluded: true,
-          dbDdlReferenceIncluded: true,
+          dataModelReferenceIncluded: true,
         },
       });
       expect(docBody.reviewedMessage).toMatchObject({
         messageType: 'markdown_document',
         metadataJson: {
-          intent: 'draft_spec',
+          intent: 'feature_plan',
           source: 'status_document_review',
           reviewedSourceMessageId: docBody.message.id,
           questionnaireSessionId: session.id,
@@ -1369,7 +1387,7 @@ describe('NightWorkers task routes', () => {
           },
         ],
         openQuestions: [],
-        dbDesignHandoffNotes: [],
+        dataModelHandoffNotes: [],
       });
       const createRes = await app.request(
         `http://localhost/api/tasks/${task.id}/design-questionnaire`,
@@ -1476,9 +1494,9 @@ describe('NightWorkers task routes', () => {
         questionnaireSessionId: session.id,
       });
 
-      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(representativeAppBlueprint);
-      const dbDesignRes = await app.request(
-        `http://localhost/api/tasks/${task.id}/specification-workspace/db-design`,
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(representativeDataModelArtifact);
+      const dataModelRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/plan-mode/data-model`,
         {
           method: 'POST',
           headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
@@ -1488,9 +1506,10 @@ describe('NightWorkers task routes', () => {
           }),
         }
       );
-      expect(dbDesignRes.status).toBe(200);
-      expect((await dbDesignRes.json()).message.metadataJson).toMatchObject({
-        source: 'blueprint-db-design',
+      expect(dataModelRes.status).toBe(200);
+      expect((await dataModelRes.json()).message.metadataJson).toMatchObject({
+        source: 'data-model',
+        view: 'data_model',
         questionnaireSessionId: session.id,
       });
 
@@ -1528,7 +1547,7 @@ describe('NightWorkers task routes', () => {
       expect(docBody.message).toMatchObject({
         messageType: 'markdown_document',
         metadataJson: {
-          intent: 'draft_spec',
+          intent: 'feature_plan',
           questionnaireSessionId: session.id,
         },
       });
@@ -1589,7 +1608,7 @@ describe('NightWorkers task routes', () => {
             tradeoff: '共有を入れるほど初期実装は重くなります。',
           },
         ],
-        dbDesignHandoffNotes: ['ボード、列、カードの正規化方針を DB Design で決める。'],
+        dataModelHandoffNotes: ['ボード、列、カードの正規化方針を Data Model で決める。'],
       });
 
       const createRes = await app.request(
@@ -1628,8 +1647,8 @@ describe('NightWorkers task routes', () => {
           }),
         ])
       );
-      expect(questionnaire.dbDesignHandoffNotes[0]).toMatchObject({
-        id: 'db-note-1',
+      expect(questionnaire.dataModelHandoffNotes[0]).toMatchObject({
+        id: 'data-model-note-1',
         sourceQuestionIds: ['product-scope-and-users'],
       });
     } finally {

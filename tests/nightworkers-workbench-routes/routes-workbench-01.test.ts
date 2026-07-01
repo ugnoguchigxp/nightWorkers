@@ -214,7 +214,7 @@ describe('NightWorkers workbench routes', () => {
     ).toBe(false);
   });
 
-  it('passes DB Design artifact context with table names to workbench intake', async () => {
+  it('passes Data Model artifact context with table names to workbench intake', async () => {
     const { task } = await createWorkbenchTask();
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -224,17 +224,17 @@ describe('NightWorkers workbench routes', () => {
         prompt: 'カード履歴テーブルは不要です',
         intent: 'draft',
         artifactContext: {
-          artifactId: 'message-db-design-1',
+          artifactId: 'message-data-model-1',
           kind: 'blueprint_workspace',
-          title: 'DB Design: Kanban DB Design',
+          title: 'Data Model: Kanban Data Model',
           summary: 'Kanban DB schema',
           source: { type: 'task_message', messageId: crypto.randomUUID() },
           metadata: {
             intent: 'app_blueprint',
-            artifactType: 'blueprint_db_design',
-            appBlueprintName: 'Kanban DB Design',
+            artifactType: 'data_model',
+            appBlueprintName: 'Kanban Data Model',
             tableNames: ['boards', 'columns', 'cards'],
-            initialTab: 'db-design',
+            initialTab: 'data-model',
           },
         },
       }),
@@ -244,12 +244,10 @@ describe('NightWorkers workbench routes', () => {
     const body = await res.json();
     const userMessage = body.messages.find((message: unknown) => message.role === 'user');
     expect(userMessage.content).toBe('カード履歴テーブルは不要です');
-    expect(userMessage.metadataJson.artifactContext.metadata.artifactType).toBe(
-      'blueprint_db_design'
-    );
+    expect(userMessage.metadataJson.artifactContext.metadata.artifactType).toBe('data_model');
     const llmPrompt = vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[1] as string;
-    expect(llmPrompt).toContain('Artifact type: blueprint_db_design');
-    expect(llmPrompt).toContain('Workspace tab: db-design');
+    expect(llmPrompt).toContain('Artifact type: data_model');
+    expect(llmPrompt).toContain('Workspace tab: data-model');
     expect(llmPrompt).toContain('Tables: boards, columns, cards');
     expect(llmPrompt).toContain('カード履歴テーブルは不要です');
   });
@@ -330,12 +328,12 @@ describe('NightWorkers workbench routes', () => {
             },
           ],
           openQuestions: [],
-          dbDesignHandoffNotes: [
+          dataModelHandoffNotes: [
             {
               id: 'card-lane-history',
               summary: 'Card lane transitions may need history.',
               sourceQuestionIds: ['lane-model'],
-              constraint: 'DB Design should decide whether lane transition history is stored.',
+              constraint: 'Data Model should decide whether lane transition history is stored.',
             },
           ],
         })
@@ -518,7 +516,7 @@ describe('NightWorkers workbench routes', () => {
             },
           ],
           openQuestions: [],
-          dbDesignHandoffNotes: [],
+          dataModelHandoffNotes: [],
         })
       );
 
@@ -590,7 +588,7 @@ describe('NightWorkers workbench routes', () => {
             },
           ],
           openQuestions: [],
-          dbDesignHandoffNotes: [],
+          dataModelHandoffNotes: [],
         })
       );
 

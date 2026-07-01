@@ -163,7 +163,7 @@ describe('NightWorkers workbench routes', () => {
             },
           ],
           openQuestions: [],
-          dbDesignHandoffNotes: [],
+          dataModelHandoffNotes: [],
         })
       );
     const { task } = await createWorkbenchTask({ status: 'queued' });

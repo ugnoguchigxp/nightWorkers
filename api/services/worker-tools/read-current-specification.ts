@@ -20,6 +20,7 @@ export interface ReadCurrentSpecificationOutput {
   sources: {
     questionnaireSessionId?: string;
     blueprintSummaryIncluded?: boolean;
+    dataModelReferenceIncluded?: boolean;
     dbDdlReferenceIncluded?: boolean;
   };
 }
@@ -55,7 +56,7 @@ export async function readCurrentSpecificationTool(
     const messages = await repo.listTaskMessages(taskId);
     const latest = [...messages].reverse().find((message) => {
       const metadata = toRecord(message.metadataJson);
-      return message.messageType === 'markdown_document' && metadata.intent === 'draft_spec';
+      return isPlanSpecificationMessage(message.messageType, metadata);
     });
     if (!latest) {
       return {
@@ -89,7 +90,7 @@ export async function readCurrentSpecificationTool(
         ? markdownDocumentData.title
         : typeof metadata.title === 'string'
           ? metadata.title
-          : 'Specification';
+          : 'Feature Plan';
     const generation = isRecord(metadata.generation) ? metadata.generation : {};
     const generationContext = isRecord(generation.context) ? generation.context : {};
 
@@ -115,6 +116,11 @@ export async function readCurrentSpecificationTool(
             typeof generationContext.blueprintSummaryIncluded === 'boolean'
               ? generationContext.blueprintSummaryIncluded
               : undefined,
+          dataModelReferenceIncluded: readOptionalBoolean(
+            generationContext.dataModelReferenceIncluded,
+            generationContext.dataModelDdlReferenceIncluded,
+            generationContext.dbDdlReferenceIncluded
+          ),
           dbDdlReferenceIncluded:
             typeof generationContext.dbDdlReferenceIncluded === 'boolean'
               ? generationContext.dbDdlReferenceIncluded
@@ -157,7 +163,7 @@ export async function listRecentSpecificationsTool(
     for (const row of rows) {
       if (specifications.length >= limit) break;
       const metadata = toRecord(row.metadataJson);
-      if (row.messageType !== 'markdown_document' || metadata.intent !== 'draft_spec') continue;
+      if (!isPlanSpecificationMessage(row.messageType, metadata)) continue;
       const markdownDocumentData = isRecord(metadata.markdownDocumentData)
         ? metadata.markdownDocumentData
         : {};
@@ -170,7 +176,7 @@ export async function listRecentSpecificationsTool(
           ? markdownDocumentData.title
           : typeof metadata.title === 'string'
             ? metadata.title
-            : 'Specification';
+            : 'Feature Plan';
       specifications.push({
         taskId: row.taskId,
         taskTitle: row.taskTitle,
@@ -234,6 +240,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function toRecord(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
+}
+
+function isPlanSpecificationMessage(messageType: unknown, metadata: Record<string, unknown>) {
+  const intent = String(metadata.intent || '');
+  return (
+    messageType === 'markdown_document' && (intent === 'feature_plan' || intent === 'draft_spec')
+  );
+}
+
+function readOptionalBoolean(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === 'boolean') return value;
+  }
+  return undefined;
 }
 
 function normalizeLimit(value: number | undefined) {

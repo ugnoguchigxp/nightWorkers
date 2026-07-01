@@ -47,8 +47,13 @@ describe('spec-document-renderer', () => {
   };
 
   const mockWorkspace = {
+    featurePlanArtifacts: [],
     blueprintArtifacts: [{ id: 'art-bp' }],
-    dbDesignArtifacts: [],
+    dataModelArtifacts: [],
+    dedicatedViewArtifacts: [],
+    questionnaireSessions: [],
+    decisionReviews: [],
+    implementationReferences: [],
   };
 
   const mockMessages = [
@@ -88,10 +93,10 @@ describe('spec-document-renderer', () => {
       },
     },
     {
-      id: 'msg-db-design',
+      id: 'msg-data-model',
       metadataJson: {
         intent: 'app_blueprint',
-        source: 'blueprint-db-design', // signals db-design message
+        source: 'data-model', // signals data-model message
         appBlueprint: {
           id: 'db-1',
           databaseSchema: {
@@ -144,33 +149,41 @@ describe('spec-document-renderer', () => {
       expect(result.blueprintSummary).toContain('Setup DB');
 
       // Check DDL generation
-      expect(result.dbDesignDdl).toContain('CREATE TABLE users (');
-      expect(result.dbDesignDdl).toContain('id INTEGER PRIMARY KEY NOT NULL');
-      expect(result.dbDesignDdl).toContain('email TEXT NOT NULL UNIQUE');
-      expect(result.dbDesignDdl).toContain('is_active BOOLEAN');
-      expect(result.dbDesignDdl).toContain('created_at DATETIME');
-      expect(result.dbDesignDdl).toContain('meta JSON');
-      expect(result.dbDesignDdl).toContain('CREATE INDEX idx_users_email ON users (email);');
-      expect(result.dbDesignDdl).toContain(
+      expect(result.dataModelDdl).toContain('CREATE TABLE users (');
+      expect(result.dataModelDdl).toContain('id INTEGER PRIMARY KEY NOT NULL');
+      expect(result.dataModelDdl).toContain('email TEXT NOT NULL UNIQUE');
+      expect(result.dataModelDdl).toContain('is_active BOOLEAN');
+      expect(result.dataModelDdl).toContain('created_at DATETIME');
+      expect(result.dataModelDdl).toContain('meta JSON');
+      expect(result.dataModelDdl).toContain('CREATE INDEX idx_users_email ON users (email);');
+      expect(result.dataModelDdl).toContain(
         'ALTER TABLE profiles ADD FOREIGN KEY (user_id) REFERENCES users (id);'
       );
 
       // Check traceability
       expect(result.traceability).toContain('Questionnaire session: session-123');
       expect(result.traceability).toContain('Blueprint message: msg-blueprint');
-      expect(result.traceability).toContain('DB Design message: msg-db-design');
+      expect(result.traceability).toContain('Data Model message: msg-data-model');
     });
 
     it('handles missing blueprint and db design gracefully', () => {
       const result = buildSpecificationDocumentContext({
         task: { title: 'No Blueprint Task' },
         session: { id: 'session-2', answers: [], questionSets: [] },
-        workspace: { blueprintArtifacts: [], dbDesignArtifacts: [] },
+        workspace: {
+          featurePlanArtifacts: [],
+          blueprintArtifacts: [],
+          dataModelArtifacts: [],
+          dedicatedViewArtifacts: [],
+          questionnaireSessions: [],
+          decisionReviews: [],
+          implementationReferences: [],
+        },
         messages: [],
       });
 
       expect(result.blueprintSummary).toContain('Blueprint は未生成です。');
-      expect(result.dbDesignDdl).toContain('DB Design は未生成です。');
+      expect(result.dataModelDdl).toContain('Data Model は未生成です。');
     });
 
     it('handles empty tables in database schema', () => {
@@ -183,7 +196,7 @@ describe('spec-document-renderer', () => {
             id: 'msg-empty-db',
             metadataJson: {
               intent: 'app_blueprint',
-              source: 'blueprint-db-design',
+              source: 'data-model',
               appBlueprint: {
                 databaseSchema: {
                   tables: [],
@@ -193,7 +206,7 @@ describe('spec-document-renderer', () => {
           },
         ],
       });
-      expect(result.dbDesignDdl).toContain('DB Design には table が定義されていません。');
+      expect(result.dataModelDdl).toContain('Data Model には table が定義されていません。');
     });
   });
 

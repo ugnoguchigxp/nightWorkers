@@ -37,7 +37,7 @@ export type PlanModeBlueprintRequestContract = {
     databaseSchema: { tables: []; relations: [] };
     dataBindings: [];
     sectionDataBindingId: 'forbidden';
-    dbDesignWorkflowOnly: true;
+    dataModelWorkflowOnly: true;
   };
   referenceDocuments: BlueprintReferenceDocumentsSummary;
   userRequest: {
@@ -162,7 +162,7 @@ export function buildPlanModeBlueprintRequestContract(
       databaseSchema: { tables: [], relations: [] },
       dataBindings: [],
       sectionDataBindingId: 'forbidden',
-      dbDesignWorkflowOnly: true,
+      dataModelWorkflowOnly: true,
     },
     referenceDocuments,
     userRequest: {

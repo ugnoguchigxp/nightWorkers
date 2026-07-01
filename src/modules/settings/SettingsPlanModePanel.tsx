@@ -9,9 +9,19 @@ const planModeCapabilities: Array<{
   descriptionKey: string;
 }> = [
   {
+    key: 'feature_plan',
+    labelKey: 'settings.planMode.featurePlan',
+    descriptionKey: 'settings.planMode.featurePlanHelp',
+  },
+  {
     key: 'questionnaire',
     labelKey: 'settings.planMode.questionnaire',
     descriptionKey: 'settings.planMode.questionnaireHelp',
+  },
+  {
+    key: 'user_flow',
+    labelKey: 'settings.planMode.userFlow',
+    descriptionKey: 'settings.planMode.userFlowHelp',
   },
   {
     key: 'blueprint',
@@ -19,14 +29,34 @@ const planModeCapabilities: Array<{
     descriptionKey: 'settings.planMode.blueprintHelp',
   },
   {
-    key: 'dbDesign',
-    labelKey: 'settings.planMode.dbDesign',
-    descriptionKey: 'settings.planMode.dbDesignHelp',
+    key: 'data_model',
+    labelKey: 'settings.planMode.dataModel',
+    descriptionKey: 'settings.planMode.dataModelHelp',
   },
   {
-    key: 'specification',
-    labelKey: 'settings.planMode.specification',
-    descriptionKey: 'settings.planMode.specificationHelp',
+    key: 'api_io_contract',
+    labelKey: 'settings.planMode.apiIoContract',
+    descriptionKey: 'settings.planMode.apiIoContractHelp',
+  },
+  {
+    key: 'state_model',
+    labelKey: 'settings.planMode.stateModel',
+    descriptionKey: 'settings.planMode.stateModelHelp',
+  },
+  {
+    key: 'activity_flow',
+    labelKey: 'settings.planMode.activityFlow',
+    descriptionKey: 'settings.planMode.activityFlowHelp',
+  },
+  {
+    key: 'sequence_flow',
+    labelKey: 'settings.planMode.sequenceFlow',
+    descriptionKey: 'settings.planMode.sequenceFlowHelp',
+  },
+  {
+    key: 'zod_schema_design',
+    labelKey: 'settings.planMode.zodSchemaDesign',
+    descriptionKey: 'settings.planMode.zodSchemaDesignHelp',
   },
 ];
 

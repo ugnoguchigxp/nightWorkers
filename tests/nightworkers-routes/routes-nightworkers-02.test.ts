@@ -472,7 +472,7 @@ describe('NightWorkers task routes', () => {
 
     const endpoints = [
       'blueprint-adoption',
-      'blueprint-db-design-adoption',
+      'data-model-adoption',
       'blueprint-design-token-adoption',
     ];
 
@@ -489,16 +489,16 @@ describe('NightWorkers task routes', () => {
       });
     }
 
-    const saveDbDesignRes = await app.request(
-      `http://localhost/api/tasks/${task.id}/blueprint-db-design-adoption`,
+    const saveDataModelRes = await app.request(
+      `http://localhost/api/tasks/${task.id}/data-model-adoption`,
       {
         method: 'PUT',
         headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({ messageId: message.id, adopted: true }),
       }
     );
-    expect(saveDbDesignRes.status).toBe(200);
-    expect(await saveDbDesignRes.json()).toMatchObject({
+    expect(saveDataModelRes.status).toBe(200);
+    expect(await saveDataModelRes.json()).toMatchObject({
       sessionId: task.id,
       messageId: message.id,
       adopted: true,
@@ -508,8 +508,8 @@ describe('NightWorkers task routes', () => {
       `http://localhost/api/tasks/${task.id}/blueprint-adoption?messageId=${message.id}`,
       { headers: sameOriginHeaders }
     );
-    const getDbDesignRes = await app.request(
-      `http://localhost/api/tasks/${task.id}/blueprint-db-design-adoption?messageId=${message.id}`,
+    const getDataModelRes = await app.request(
+      `http://localhost/api/tasks/${task.id}/data-model-adoption?messageId=${message.id}`,
       { headers: sameOriginHeaders }
     );
     const getDesignTokenRes = await app.request(
@@ -518,7 +518,7 @@ describe('NightWorkers task routes', () => {
     );
 
     expect(await getBlueprintRes.json()).toMatchObject({ adopted: false });
-    expect(await getDbDesignRes.json()).toMatchObject({ adopted: true });
+    expect(await getDataModelRes.json()).toMatchObject({ adopted: true });
     expect(await getDesignTokenRes.json()).toMatchObject({ adopted: false });
   });
 });

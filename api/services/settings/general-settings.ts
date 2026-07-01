@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { PlanModeCapability } from '../../../shared/schemas/plan-mode-artifact.schema';
 import { getRuntimePaths } from '../../runtime/paths';
+
+export type { PlanModeCapability } from '../../../shared/schemas/plan-mode-artifact.schema';
 
 const RUNTIME_SETTINGS_DIR = getRuntimePaths().settingsDir;
 const GENERAL_SETTINGS_PATH =
@@ -12,7 +15,6 @@ const FX_CACHE_PATH =
 export type NightWorkersLanguage = 'ja' | 'en';
 export type NightWorkersCurrency = 'JPY' | 'USD' | 'EUR';
 export type FxSource = 'ecb' | 'manual';
-export type PlanModeCapability = 'questionnaire' | 'blueprint' | 'dbDesign' | 'specification';
 
 export type PlanModeSettings = {
   capabilities: Record<PlanModeCapability, boolean>;
@@ -41,10 +43,16 @@ export type FxRateCache = {
 export const SUPPORTED_LANGUAGES: NightWorkersLanguage[] = ['ja', 'en'];
 export const SUPPORTED_CURRENCIES: NightWorkersCurrency[] = ['JPY', 'USD', 'EUR'];
 export const PLAN_MODE_CAPABILITIES: PlanModeCapability[] = [
+  'feature_plan',
   'questionnaire',
+  'user_flow',
   'blueprint',
-  'dbDesign',
-  'specification',
+  'data_model',
+  'api_io_contract',
+  'state_model',
+  'activity_flow',
+  'sequence_flow',
+  'zod_schema_design',
 ];
 
 export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
@@ -58,10 +66,16 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   },
   planMode: {
     capabilities: {
+      feature_plan: true,
       questionnaire: true,
+      user_flow: true,
       blueprint: true,
-      dbDesign: true,
-      specification: true,
+      data_model: true,
+      api_io_contract: true,
+      state_model: true,
+      activity_flow: true,
+      sequence_flow: true,
+      zod_schema_design: true,
     },
   },
 };
@@ -177,12 +191,31 @@ export function normalizePlanModeSettings(input: unknown): PlanModeSettings {
     capabilities: Object.fromEntries(
       PLAN_MODE_CAPABILITIES.map((capability) => [
         capability,
-        typeof capabilities[capability] === 'boolean'
-          ? capabilities[capability]
-          : DEFAULT_GENERAL_SETTINGS.planMode.capabilities[capability],
+        resolveCapabilityValue(capability, capabilities),
       ])
     ) as Record<PlanModeCapability, boolean>,
   };
+}
+
+function resolveCapabilityValue(
+  capability: PlanModeCapability,
+  capabilities: Record<string, unknown>
+) {
+  if (typeof capabilities[capability] === 'boolean') return capabilities[capability];
+  return (
+    legacyCapabilityValue(capability, capabilities) ??
+    DEFAULT_GENERAL_SETTINGS.planMode.capabilities[capability]
+  );
+}
+
+function legacyCapabilityValue(
+  capability: PlanModeCapability,
+  capabilities: Record<string, unknown>
+): boolean | undefined {
+  if (capability === 'feature_plan' && typeof capabilities.specification === 'boolean') {
+    return capabilities.specification;
+  }
+  return undefined;
 }
 
 export function buildPlanModeSettingsSnapshot(settings = readGeneralSettings()) {

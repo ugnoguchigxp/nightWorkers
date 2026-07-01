@@ -31,10 +31,16 @@ export const defaultGeneralSettings: GeneralSettings = {
   },
   planMode: {
     capabilities: {
+      feature_plan: true,
       questionnaire: true,
+      user_flow: true,
       blueprint: true,
-      dbDesign: true,
-      specification: true,
+      data_model: true,
+      api_io_contract: true,
+      state_model: true,
+      activity_flow: true,
+      sequence_flow: true,
+      zod_schema_design: true,
     },
   },
 };

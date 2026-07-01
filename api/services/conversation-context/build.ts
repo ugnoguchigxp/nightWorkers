@@ -233,7 +233,7 @@ function buildContextBaseline(input: {
     relevantFilesDigest,
     adoptedArtifactDigest: null,
     blueprintRefsDigest: null,
-    blueprintDbDesignRefsDigest: null,
+    dataModelRefsDigest: null,
     designQuestionnaireRefsDigest: null,
     decisionReviewRefsDigest: null,
     contextStillRefsDigest: null,

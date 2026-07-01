@@ -113,7 +113,7 @@ function adaptQuestionnaireChoiceForm(
       },
     ],
     openQuestions: [],
-    dbDesignHandoffNotes: [],
+    dataModelHandoffNotes: [],
   };
 }
 
@@ -169,7 +169,10 @@ function normalizeLegacyDesignQuestionnaireOutput(
       };
     }),
     openQuestions: [],
-    dbDesignHandoffNotes: normalizeLegacyDbDesignHandoffNotes(raw.dbDesignHandoffNotes, questions),
+    dataModelHandoffNotes: normalizeLegacyDataModelHandoffNotes(
+      raw.dataModelHandoffNotes,
+      questions
+    ),
   };
 }
 
@@ -216,7 +219,10 @@ function normalizeLegacyQuestion(question: Record<string, unknown>, index: numbe
   };
 }
 
-function normalizeLegacyDbDesignHandoffNotes(value: unknown, questions: Record<string, unknown>[]) {
+function normalizeLegacyDataModelHandoffNotes(
+  value: unknown,
+  questions: Record<string, unknown>[]
+) {
   const notes = Array.isArray(value) ? value : [];
   const firstQuestionId = toKebabId(
     firstNonEmptyString(questions[0]?.id, 'question-1'),
@@ -226,25 +232,25 @@ function normalizeLegacyDbDesignHandoffNotes(value: unknown, questions: Record<s
     if (isRecord(note)) {
       return {
         id: toKebabId(
-          firstNonEmptyString(note.id, note.summary, `db-note-${index + 1}`),
-          `db-note-${index + 1}`
+          firstNonEmptyString(note.id, note.summary, `data-model-note-${index + 1}`),
+          `data-model-note-${index + 1}`
         ),
-        summary: firstNonEmptyString(note.summary, note.constraint, `DB Design note ${index + 1}`),
+        summary: firstNonEmptyString(note.summary, note.constraint, `Data Model note ${index + 1}`),
         sourceQuestionIds: normalizeStringArray(note.sourceQuestionIds, [firstQuestionId]).map(
           (id, idIndex) => toKebabId(id, `question-${idIndex + 1}`)
         ),
         constraint: firstNonEmptyString(
           note.constraint,
           note.summary,
-          `DB Design note ${index + 1}`
+          `Data Model note ${index + 1}`
         ),
       };
     }
     return {
-      id: `db-note-${index + 1}`,
-      summary: String(note || `DB Design note ${index + 1}`),
+      id: `data-model-note-${index + 1}`,
+      summary: String(note || `Data Model note ${index + 1}`),
       sourceQuestionIds: [firstQuestionId],
-      constraint: String(note || `DB Design note ${index + 1}`),
+      constraint: String(note || `Data Model note ${index + 1}`),
     };
   });
 }
@@ -456,9 +462,9 @@ export function renderDesignDecisionReviewMarkdown(review: DesignDecisionReview)
   for (const item of review.unresolvedQuestions) {
     lines.push(`- ${item.topic}: ${item.reason}`);
   }
-  lines.push('', '## DB Design Handoff');
-  if (review.dbDesignHandoffNotes.length === 0) lines.push('- None.');
-  for (const note of review.dbDesignHandoffNotes) {
+  lines.push('', '## Data Model Handoff');
+  if (review.dataModelHandoffNotes.length === 0) lines.push('- None.');
+  for (const note of review.dataModelHandoffNotes) {
     lines.push(`- ${note.summary}: ${note.constraint}`);
   }
   return lines.join('\n');
@@ -481,7 +487,7 @@ export const designDecisionReviewJsonSchema = {
     'decisions',
     'deferredItems',
     'unresolvedQuestions',
-    'dbDesignHandoffNotes',
+    'dataModelHandoffNotes',
   ],
   properties: {
     version: { type: 'integer', const: 1 },
@@ -529,7 +535,7 @@ export const designDecisionReviewJsonSchema = {
           blocks: { type: 'array', items: { type: 'string' } },
           suggestedOwner: {
             type: 'string',
-            enum: ['user', 'designer', 'engineer', 'db-design', 'later'],
+            enum: ['user', 'designer', 'engineer', 'data-model', 'later'],
           },
         },
       },
@@ -547,12 +553,12 @@ export const designDecisionReviewJsonSchema = {
           blocks: { type: 'array', items: { type: 'string' } },
           suggestedOwner: {
             type: 'string',
-            enum: ['user', 'designer', 'engineer', 'db-design', 'later'],
+            enum: ['user', 'designer', 'engineer', 'data-model', 'later'],
           },
         },
       },
     },
-    dbDesignHandoffNotes: {
+    dataModelHandoffNotes: {
       type: 'array',
       items: {
         type: 'object',

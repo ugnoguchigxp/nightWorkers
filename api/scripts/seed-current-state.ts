@@ -14,7 +14,6 @@ const RESET_TABLES = [
   'artifacts',
   'background_processes',
   'blueprint_artifact_adoptions',
-  'blueprint_db_design_adoptions',
   'blueprint_design_settings',
   'blueprint_design_token_adoptions',
   'conversation_context_snapshots',

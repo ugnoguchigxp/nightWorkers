@@ -1,13 +1,13 @@
 import { toDeepRecord } from '../../../shared/json-record';
 import type {
   ActivityArtifact,
-  BlueprintSpecificationWorkspace,
   DesignQuestionnaireSession,
   GeneralSettings,
+  PlanModeWorkspace,
   TaskMessage,
 } from '../nightworkers/types';
 import {
-  isDbDesignBlueprintMessage,
+  isDataModelMessage,
   isNormalBlueprintMessage,
   isReviewedSpecificationMessage,
   mergeWorkspaceTaskMessages,
@@ -15,7 +15,7 @@ import {
 
 export type WorkspaceTab =
   | 'blueprints'
-  | 'db-design'
+  | 'data-model'
   | 'questionnaire'
   | 'status'
   | 'specification';
@@ -24,7 +24,7 @@ export function selectSpecificationWorkspaceMessages(input: {
   taskMessages: TaskMessage[];
   activityArtifacts: ActivityArtifact[];
   generatedMessages: TaskMessage[];
-  workspace: BlueprintSpecificationWorkspace | null;
+  workspace: PlanModeWorkspace | null;
 }) {
   const combinedTaskMessages = mergeWorkspaceTaskMessages({
     taskMessages: input.taskMessages,
@@ -32,15 +32,17 @@ export function selectSpecificationWorkspaceMessages(input: {
     generatedMessages: input.generatedMessages,
   });
   const blueprintMessages = combinedTaskMessages.filter(isNormalBlueprintMessage);
-  const dbDesignMessages = combinedTaskMessages.filter(isDbDesignBlueprintMessage);
-  const designDocMessages = combinedTaskMessages.filter(
-    (message) =>
+  const dataModelMessages = combinedTaskMessages.filter(isDataModelMessage);
+  const designDocMessages = combinedTaskMessages.filter((message) => {
+    const intent = String(toDeepRecord(message.metadataJson).intent);
+    return (
       message.messageType === 'markdown_document' &&
-      String(toDeepRecord(message.metadataJson).intent) === 'draft_spec'
-  );
+      (intent === 'feature_plan' || intent === 'draft_spec')
+    );
+  });
   const reviewedDesignDocMessages = designDocMessages.filter(isReviewedSpecificationMessage);
   const activeBlueprintMessage = blueprintMessages.at(-1) || null;
-  const activeDbDesignMessage = dbDesignMessages.at(-1) || null;
+  const activeDataModelMessage = dataModelMessages.at(-1) || null;
   const latestWorkspaceBlueprintMessageId =
     input.workspace?.blueprintArtifacts.at(-1)?.sourceMessageId || null;
   const activeBlueprintSourceMessageId = activeBlueprintMessage?.id?.startsWith('artifact-')
@@ -50,11 +52,11 @@ export function selectSpecificationWorkspaceMessages(input: {
   return {
     combinedTaskMessages,
     blueprintMessages,
-    dbDesignMessages,
+    dataModelMessages,
     designDocMessages,
     reviewedDesignDocMessages,
     activeBlueprintMessage,
-    activeDbDesignMessage,
+    activeDataModelMessage,
     activeBlueprintSourceMessageId,
   };
 }
@@ -75,9 +77,15 @@ export function getPlanModeCapabilities(settings: GeneralSettings | null) {
   return (
     settings?.planMode.capabilities ?? {
       questionnaire: true,
+      feature_plan: true,
+      user_flow: true,
       blueprint: true,
-      dbDesign: true,
-      specification: true,
+      data_model: true,
+      api_io_contract: true,
+      state_model: true,
+      activity_flow: true,
+      sequence_flow: true,
+      zod_schema_design: true,
     }
   );
 }

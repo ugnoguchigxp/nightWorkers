@@ -1,14 +1,14 @@
 import { LoaderCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { generateBlueprintArtifact } from '../blueprint';
-import { generateDbDesignArtifact } from '../dbDesign';
+import { generateDataModelArtifact } from '../dataModel';
 import { MarkdownViewer } from '../nightworkers/components/ArtifactFileViewers';
 import type {
   ActivityArtifact,
-  BlueprintSpecificationWorkspace,
   DesignQuestionnaireAnswer,
   DesignQuestionnaireSession,
   GeneralSettings,
+  PlanModeWorkspace,
   TaskMessage,
 } from '../nightworkers/types';
 import {
@@ -36,11 +36,11 @@ import {
 import {
   SpecificationStatusView,
   WorkspaceBlueprintPreview,
-  WorkspaceDbDesignPanel,
+  WorkspaceDataModelPanel,
   WorkspaceList,
 } from './PlanModeWorkspacePanels';
 
-export function BlueprintSpecificationWorkspaceViewer({
+export function PlanModeWorkspaceViewer({
   sessionId,
   taskMessages,
   activityArtifacts = [],
@@ -57,7 +57,7 @@ export function BlueprintSpecificationWorkspaceViewer({
   onAddToQueue?: () => Promise<void>;
   isImplementationLocked?: boolean;
 }) {
-  const [workspace, setWorkspace] = useState<BlueprintSpecificationWorkspace | null>(null);
+  const [workspace, setWorkspace] = useState<PlanModeWorkspace | null>(null);
   const [sessions, setSessions] = useState<DesignQuestionnaireSession[]>([]);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab || 'blueprints');
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -82,15 +82,14 @@ export function BlueprintSpecificationWorkspaceViewer({
     designDocMessages,
     reviewedDesignDocMessages,
     activeBlueprintMessage,
-    activeDbDesignMessage,
+    activeDataModelMessage,
     activeBlueprintSourceMessageId,
   } = workspaceMessages;
 
   const refresh = useCallback(async () => {
     if (!sessionId) return;
     const workspaceRes = await fetchSpecificationWorkspace(sessionId);
-    if (workspaceRes.ok)
-      setWorkspace((await workspaceRes.json()) as BlueprintSpecificationWorkspace);
+    if (workspaceRes.ok) setWorkspace((await workspaceRes.json()) as PlanModeWorkspace);
     const sessionsRes = await fetchDesignQuestionnaireSessions(sessionId);
     if (sessionsRes.ok) {
       const nextSessions = (await sessionsRes.json()) as DesignQuestionnaireSession[];
@@ -210,7 +209,7 @@ export function BlueprintSpecificationWorkspaceViewer({
   }
 
   async function generateSpecificationArtifact(
-    action: 'blueprint' | 'db-design' | 'design-doc',
+    action: 'blueprint' | 'data-model' | 'design-doc',
     nextTab: WorkspaceTab
   ) {
     if (!sessionId || !activeQuestionnaireSession) return;
@@ -223,14 +222,14 @@ export function BlueprintSpecificationWorkspaceViewer({
       const res =
         action === 'blueprint'
           ? await generateBlueprintArtifact(sessionId, input)
-          : action === 'db-design'
-            ? await generateDbDesignArtifact(sessionId, input)
+          : action === 'data-model'
+            ? await generateDataModelArtifact(sessionId, input)
             : await generateDesignDocArtifact(sessionId, input);
       if (!res.ok) throw new Error(await res.text());
       const result = (await res.json()) as {
         message?: TaskMessage;
         reviewedMessage?: TaskMessage;
-        workspace?: BlueprintSpecificationWorkspace;
+        workspace?: PlanModeWorkspace;
       };
       const generatedMessage = result.reviewedMessage || result.message;
       if (generatedMessage) {
@@ -244,16 +243,14 @@ export function BlueprintSpecificationWorkspaceViewer({
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#1e1e2e] text-slate-100">
       <div className="shrink-0 border-slate-800 border-b px-5 py-3">
-        <div className="text-[11px] font-semibold uppercase text-cyan-200">
-          Specification Workspace
-        </div>
+        <div className="text-[11px] font-semibold uppercase text-cyan-200">Plan Mode Workspace</div>
         <div className="mt-2 flex flex-wrap gap-1">
           {[
             ['status', 'Status'],
             ['questionnaire', 'Questionnaire'],
             ['blueprints', 'Blueprints'],
-            ['db-design', 'DB Design'],
-            ['specification', 'Specification'],
+            ['data-model', 'Data Model'],
+            ['specification', 'Feature Plan'],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -281,16 +278,16 @@ export function BlueprintSpecificationWorkspaceViewer({
           <div className="grid gap-3">
             <WorkspaceBlueprintPreview sessionId={sessionId} message={activeBlueprintMessage} />
           </div>
-        ) : activeTab === 'db-design' ? (
+        ) : activeTab === 'data-model' ? (
           <div className="grid gap-4">
             <WorkspaceList
-              items={workspace?.dbDesignArtifacts || []}
-              empty="No DB Design revisions."
+              items={workspace?.dataModelArtifacts || []}
+              empty="No Data Model revisions."
             />
-            <WorkspaceDbDesignPanel
+            <WorkspaceDataModelPanel
               sessionId={sessionId}
-              message={activeDbDesignMessage}
-              empty="No DB Design artifact."
+              message={activeDataModelMessage}
+              empty="No Data Model artifact."
             />
           </div>
         ) : activeTab === 'questionnaire' ? (
@@ -393,7 +390,7 @@ export function BlueprintSpecificationWorkspaceViewer({
             workspace={workspace}
             questionnaireSession={activeQuestionnaireSession}
             busyAction={busyAction}
-            canGenerateDbDesign={Boolean(
+            canGenerateDataModel={Boolean(
               activeBlueprintSourceMessageId || workspace?.blueprintArtifacts.length
             )}
             hasSpecification={reviewedDesignDocMessages.length > 0}
@@ -401,7 +398,7 @@ export function BlueprintSpecificationWorkspaceViewer({
             planModeSettings={generalSettings?.planMode}
             onOpenQuestionnaire={() => setActiveTab('questionnaire')}
             onGenerateBlueprint={() => generateSpecificationArtifact('blueprint', 'blueprints')}
-            onGenerateDbDesign={() => generateSpecificationArtifact('db-design', 'db-design')}
+            onGenerateDataModel={() => generateSpecificationArtifact('data-model', 'data-model')}
             onGenerateSpecification={() =>
               generateSpecificationArtifact('design-doc', 'specification')
             }
@@ -416,7 +413,7 @@ export function BlueprintSpecificationWorkspaceViewer({
           <MarkdownViewer
             content={
               (reviewedDesignDocMessages.at(-1) || designDocMessages.at(-1))?.content ||
-              'No Specification artifact.'
+              'No Feature Plan artifact.'
             }
           />
         )}

@@ -1,16 +1,10 @@
 import { Check, LoaderCircle } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { fetchBlueprintDesignSettings } from '../blueprint';
-import { BlueprintDbDesignPanel, BlueprintPreview } from '../blueprint-preview';
-import {
-  type BlueprintPreviewDesignSettings,
-  createBlueprintPreviewDesignSettings,
-} from '../blueprint-preview/designSettings';
+import { BlueprintPreview } from '../blueprint-preview';
 import { MarkdownViewer } from '../nightworkers/components/ArtifactFileViewers';
 import type {
-  BlueprintSpecificationWorkspace,
   DesignQuestionnaireSession,
   PlanModeSettings,
+  PlanModeWorkspace,
   TaskMessage,
 } from '../nightworkers/types';
 import { getQuestionCount } from './PlanModeQuestionnaire';
@@ -44,121 +38,44 @@ export function WorkspaceBlueprintPreview({
   );
 }
 
-export function WorkspaceDbDesignPanel({
+export function WorkspaceDataModelPanel({
   sessionId,
   message,
-  empty = 'No DB Design artifact.',
+  empty = 'No Data Model artifact.',
 }: {
   sessionId: string | null;
   message: TaskMessage | null;
   empty?: string;
 }) {
-  const metadata = isRecord(message?.metadataJson) ? message.metadataJson : {};
-  const blueprint = metadata.appBlueprint;
-  if (!isRecord(blueprint)) {
-    return <MarkdownViewer content={message?.content || empty} />;
-  }
-  return (
-    <WorkspaceDbDesignPanelContent sessionId={sessionId} blueprint={blueprint} message={message} />
-  );
-}
-
-function WorkspaceDbDesignPanelContent({
-  sessionId,
-  blueprint,
-  message,
-}: {
-  sessionId: string | null;
-  blueprint: Record<string, unknown>;
-  message: TaskMessage | null;
-}) {
-  const tables =
-    isRecord(blueprint.databaseSchema) && Array.isArray(blueprint.databaseSchema.tables)
-      ? toRecordArray(blueprint.databaseSchema.tables)
-      : [];
-  const metadata = isRecord(message?.metadataJson) ? message.metadataJson : {};
-  const validation = metadata.validation;
-  const issues = isRecord(validation) ? toRecordArray(validation.issues) : [];
-  const initialSettings = useMemo(
-    () => createBlueprintPreviewDesignSettings(blueprint.designPreset),
-    [blueprint.designPreset]
-  );
-  const [settings, setSettings] = useState<BlueprintPreviewDesignSettings>(initialSettings);
-
-  useEffect(() => {
-    setSettings(initialSettings);
-    if (!sessionId) return;
-    const controller = new AbortController();
-    fetchBlueprintDesignSettings(sessionId, { signal: controller.signal })
-      .then(async (res) => {
-        if (!res.ok) return null;
-        return (await res.json()) as { settings?: unknown };
-      })
-      .then((data) => {
-        if (controller.signal.aborted || !data?.settings) return;
-        setSettings(createBlueprintPreviewDesignSettings(data.settings));
-      })
-      .catch((error) => {
-        if (error?.name !== 'AbortError') {
-          console.warn('Failed to load DB Design display settings', error);
-        }
-      });
-    return () => controller.abort();
-  }, [initialSettings, sessionId]);
-
-  return (
-    <div
-      className="blueprint-preview grid gap-[var(--blueprint-preview-gap)] rounded-xl border border-border p-[var(--blueprint-preview-section-padding)] text-ui"
-      data-blueprint-preview
-      data-theme={settings.theme}
-      data-density={settings.density}
-      data-shape={settings.shape}
-      data-shadow={settings.shadow}
-      data-shadow-direction={settings.shadowDirection}
-      data-font={settings.font}
-      data-contrast={settings.contrast}
-      data-motion={settings.motion}
-      data-button-variant={settings.componentVariants.button}
-      data-card-variant={settings.componentVariants.card}
-      data-table-variant={settings.componentVariants.table}
-      data-input-variant={settings.componentVariants.input}
-    >
-      <BlueprintDbDesignPanel
-        id="specification-workspace-db-design"
-        blueprint={blueprint}
-        tables={tables}
-        validationIssues={issues}
-        adoption={null}
-      />
-    </div>
-  );
+  void sessionId;
+  return <MarkdownViewer content={message?.content || empty} />;
 }
 
 export function SpecificationStatusView({
   workspace,
   questionnaireSession,
   busyAction,
-  canGenerateDbDesign,
+  canGenerateDataModel,
   hasSpecification,
   isImplementationLocked = false,
   planModeSettings,
   onOpenQuestionnaire,
   onGenerateBlueprint,
-  onGenerateDbDesign,
+  onGenerateDataModel,
   onGenerateSpecification,
   onQueueSession,
   onAddToQueue,
 }: {
-  workspace: BlueprintSpecificationWorkspace | null;
+  workspace: PlanModeWorkspace | null;
   questionnaireSession: DesignQuestionnaireSession | null;
   busyAction: string | null;
-  canGenerateDbDesign: boolean;
+  canGenerateDataModel: boolean;
   hasSpecification: boolean;
   isImplementationLocked?: boolean;
   planModeSettings?: PlanModeSettings;
   onOpenQuestionnaire: () => void;
   onGenerateBlueprint: () => void;
-  onGenerateDbDesign: () => void;
+  onGenerateDataModel: () => void;
   onGenerateSpecification: () => void;
   onQueueSession?: () => void;
   onAddToQueue?: () => void;
@@ -166,12 +83,18 @@ export function SpecificationStatusView({
   const answeredCount = questionnaireSession?.answers.length || 0;
   const questionCount = questionnaireSession ? getQuestionCount(questionnaireSession) : 0;
   const hasBlueprint = Boolean(workspace?.blueprintArtifacts.length);
-  const hasDbDesign = Boolean(workspace?.dbDesignArtifacts.length);
+  const hasDataModel = Boolean(workspace?.dataModelArtifacts.length);
   const capabilities = planModeSettings?.capabilities ?? {
+    feature_plan: true,
     questionnaire: true,
+    user_flow: true,
     blueprint: true,
-    dbDesign: true,
-    specification: true,
+    data_model: true,
+    api_io_contract: true,
+    state_model: true,
+    activity_flow: true,
+    sequence_flow: true,
+    zod_schema_design: true,
   };
   const disabledReason = 'Plan Mode capability is disabled in Settings.';
   const questionnaireDone = Boolean(
@@ -209,31 +132,31 @@ export function SpecificationStatusView({
     {
       number: 3,
       title: 'どの様なデータモデルが必要になるかプレビュー出来ます',
-      detail: hasDbDesign
-        ? `${workspace?.dbDesignArtifacts.length || 0}件のDB Designがあります。`
-        : 'DB Designでテーブル、カラム、リレーションを確認します。',
-      done: hasDbDesign,
-      buttonLabel: hasDbDesign ? 'DBデザインを再生成' : 'DBデザイン作成',
-      busy: busyAction === 'db-design',
+      detail: hasDataModel
+        ? `${workspace?.dataModelArtifacts.length || 0}件のData Modelがあります。`
+        : 'Data Modelでテーブル、カラム、リレーションを確認します。',
+      done: hasDataModel,
+      buttonLabel: hasDataModel ? 'Data Modelを再生成' : 'Data Model作成',
+      busy: busyAction === 'data-model',
       disabled:
         !questionnaireDone ||
-        !canGenerateDbDesign ||
+        !canGenerateDataModel ||
         isImplementationLocked ||
-        !capabilities.dbDesign,
-      disabledReason: !capabilities.dbDesign ? disabledReason : null,
-      onClick: onGenerateDbDesign,
+        !capabilities.data_model,
+      disabledReason: !capabilities.data_model ? disabledReason : null,
+      onClick: onGenerateDataModel,
     },
     {
       number: 4,
-      title: '設計書Markdownを作ります。これによってすぐに実装に移れます',
+      title: 'Feature Plan Markdownを作ります。これによってすぐに実装に移れます',
       detail: hasSpecification
-        ? 'Specificationが作成済みです。'
-        : '回答、Blueprint、DB Designを要約して仕様書を生成します。',
+        ? 'Feature Planが作成済みです。'
+        : '回答、Blueprint、Data Modelを要約してFeature Planを生成します。',
       done: hasSpecification,
-      buttonLabel: hasSpecification ? '仕様書を再生成' : '仕様書作成',
+      buttonLabel: hasSpecification ? 'Feature Planを再生成' : 'Feature Plan作成',
       busy: busyAction === 'design-doc',
-      disabled: !questionnaireDone || isImplementationLocked || !capabilities.specification,
-      disabledReason: !capabilities.specification ? disabledReason : null,
+      disabled: !questionnaireDone || isImplementationLocked || !capabilities.feature_plan,
+      disabledReason: !capabilities.feature_plan ? disabledReason : null,
       onClick: onGenerateSpecification,
     },
   ];

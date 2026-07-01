@@ -117,7 +117,7 @@ function renderQuestionnaireBlueprintPrompt(
     '',
     '## Output Focus',
     '- UI/UX と画面構成を優先する。',
-    '- DB table/column/relation は作らず、DB Design へ渡す論点として残す。',
+    '- DB table/column/relation は作らず、Data Model へ渡す論点として残す。',
     '- ユーザーが回答した仕様判断を画面・セクション・サンプルデータに反映する。',
   ]
     .filter(Boolean)

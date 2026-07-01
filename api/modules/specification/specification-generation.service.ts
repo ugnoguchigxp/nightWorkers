@@ -22,6 +22,7 @@ const specificationDocumentDraftSchema = z.object({
   title: z.string().min(1),
   content: z.string().min(1),
 });
+const DEFAULT_FEATURE_PLAN_TITLE = 'Feature Plan';
 
 export async function generateSpecificationArtifact(
   taskId: string,
@@ -29,7 +30,7 @@ export async function generateSpecificationArtifact(
 ) {
   const task = await getPlanModeTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
-  assertPlanModeCapabilityEnabled('specification');
+  assertPlanModeCapabilityEnabled('feature_plan');
   assertPlanModeMutable(task);
   const session = await resolveReadyQuestionnaireSession(taskId, input.questionnaireSessionId);
   const workspace = await getSpecificationWorkspace(taskId);
@@ -42,26 +43,26 @@ export async function generateSpecificationArtifact(
   });
   const rawOutput = await generateSpecificationDesignDocumentRawOutput(taskId, context);
   const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
-  const content = ensureSpecificationDdlSection(parsed.content, context.dbDesignDdl);
+  const content = ensureSpecificationDdlSection(parsed.content, context.dataModelDdl);
   const message = await createPlanModeTaskMessage({
     taskId,
     role: 'assistant',
     content,
     messageType: 'markdown_document',
     payloadJson: {
-      intent: 'draft_spec',
-      title: parsed.title || 'Specification',
+      intent: 'feature_plan',
+      title: parsed.title || DEFAULT_FEATURE_PLAN_TITLE,
       source: 'status',
       questionnaireSessionId: session.id,
       generation: {
         source: 'llm',
         context: {
           blueprintSummaryIncluded: Boolean(context.blueprintSummary.trim()),
-          dbDdlReferenceIncluded: Boolean(context.dbDesignDdl.trim()),
+          dataModelReferenceIncluded: Boolean(context.dataModelDdl.trim()),
         },
       },
       markdownDocumentData: {
-        title: parsed.title || 'Specification',
+        title: parsed.title || DEFAULT_FEATURE_PLAN_TITLE,
         content,
       },
     },
@@ -72,7 +73,7 @@ export async function generateSpecificationArtifact(
   const reviewedMessage = await reviewAndImproveSpecificationDocument({
     taskId,
     sourceMessageId: message.id,
-    title: parsed.title || 'Specification',
+    title: parsed.title || DEFAULT_FEATURE_PLAN_TITLE,
     content,
     context,
     questionnaireSessionId: session.id,
@@ -116,14 +117,14 @@ async function reviewAndImproveSpecificationDocument(input: {
   );
   const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
   const title = parsed.title || input.title;
-  const content = ensureSpecificationDdlSection(parsed.content, input.context.dbDesignDdl);
+  const content = ensureSpecificationDdlSection(parsed.content, input.context.dataModelDdl);
   return createPlanModeTaskMessage({
     taskId: input.taskId,
     role: 'assistant',
     content,
     messageType: 'markdown_document',
     payloadJson: {
-      intent: 'draft_spec',
+      intent: 'feature_plan',
       title,
       source: 'status_document_review',
       reviewedSourceMessageId: input.sourceMessageId,
@@ -134,7 +135,7 @@ async function reviewAndImproveSpecificationDocument(input: {
           'ドキュメントレビューをしてください。改善するべき点が無くなるまで改善してください',
         context: {
           blueprintSummaryIncluded: Boolean(input.context.blueprintSummary.trim()),
-          dbDdlReferenceIncluded: Boolean(input.context.dbDesignDdl.trim()),
+          dataModelReferenceIncluded: Boolean(input.context.dataModelDdl.trim()),
         },
       },
       markdownDocumentData: {
@@ -145,12 +146,12 @@ async function reviewAndImproveSpecificationDocument(input: {
   });
 }
 
-function ensureSpecificationDdlSection(content: string, dbDesignDdl: string) {
+function ensureSpecificationDdlSection(content: string, dataModelDdl: string) {
   const trimmedContent = content.trimEnd();
   if (/^##\s+DDL\b/im.test(trimmedContent)) return trimmedContent;
-  const ddl = dbDesignDdl.trim();
+  const ddl = dataModelDdl.trim();
   const ddlBody = ddl
     ? ['```sql', ddl, '```'].join('\n')
-    : 'DB Design DDL reference は未生成です。';
+    : 'Data Model DDL reference は未生成です。';
   return [trimmedContent, '', '## DDL', ddlBody].join('\n');
 }

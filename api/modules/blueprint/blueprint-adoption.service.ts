@@ -5,7 +5,7 @@ import {
 } from '../nightworkers/nightworkers.plan-mode-core.port';
 import * as repo from './blueprint.repository';
 
-type BlueprintAdoptionKind = 'blueprint' | 'dbDesign' | 'designTokens';
+type BlueprintAdoptionKind = 'blueprint' | 'designTokens';
 
 function serializeBlueprintAdoption(input: {
   taskId: string;
@@ -41,9 +41,7 @@ async function getBlueprintAdoption(
   const row =
     kind === 'blueprint'
       ? await repo.getBlueprintArtifactAdoption(taskId, messageId)
-      : kind === 'dbDesign'
-        ? await repo.getBlueprintDbDesignAdoption(taskId, messageId)
-        : await repo.getBlueprintDesignTokenAdoption(taskId, messageId);
+      : await repo.getBlueprintDesignTokenAdoption(taskId, messageId);
   return serializeBlueprintAdoption({
     taskId,
     messageId,
@@ -63,9 +61,7 @@ async function saveBlueprintAdoption(
   const row =
     kind === 'blueprint'
       ? await repo.upsertBlueprintArtifactAdoption(taskId, messageId, adopted)
-      : kind === 'dbDesign'
-        ? await repo.upsertBlueprintDbDesignAdoption(taskId, messageId, adopted)
-        : await repo.upsertBlueprintDesignTokenAdoption(taskId, messageId, adopted);
+      : await repo.upsertBlueprintDesignTokenAdoption(taskId, messageId, adopted);
   return serializeBlueprintAdoption({
     taskId,
     messageId,
@@ -85,18 +81,6 @@ export async function saveBlueprintArtifactAdoption(
   adopted: boolean
 ) {
   return saveBlueprintAdoption('blueprint', taskId, messageId, adopted);
-}
-
-export async function getBlueprintDbDesignAdoption(taskId: string, messageId: string) {
-  return getBlueprintAdoption('dbDesign', taskId, messageId);
-}
-
-export async function saveBlueprintDbDesignAdoption(
-  taskId: string,
-  messageId: string,
-  adopted: boolean
-) {
-  return saveBlueprintAdoption('dbDesign', taskId, messageId, adopted);
 }
 
 export async function getBlueprintDesignTokenAdoption(taskId: string, messageId: string) {

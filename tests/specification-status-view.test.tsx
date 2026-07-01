@@ -9,7 +9,7 @@ describe('SpecificationStatusView', () => {
         workspace={
           {
             blueprintArtifacts: [{ id: 'blueprint-1', title: 'Blueprint' }],
-            dbDesignArtifacts: [{ id: 'db-design-1', title: 'DB Design' }],
+            dataModelArtifacts: [{ id: 'data-model-1', title: 'Data Model' }],
           } as never
         }
         questionnaireSession={
@@ -21,11 +21,11 @@ describe('SpecificationStatusView', () => {
           } as never
         }
         busyAction={null}
-        canGenerateDbDesign={true}
+        canGenerateDataModel={true}
         hasSpecification={true}
         onOpenQuestionnaire={vi.fn()}
         onGenerateBlueprint={vi.fn()}
-        onGenerateDbDesign={vi.fn()}
+        onGenerateDataModel={vi.fn()}
         onGenerateSpecification={vi.fn()}
         onQueueSession={vi.fn()}
         onAddToQueue={vi.fn()}
@@ -43,7 +43,7 @@ describe('SpecificationStatusView', () => {
         workspace={
           {
             blueprintArtifacts: [{ id: 'blueprint-1', title: 'Blueprint' }],
-            dbDesignArtifacts: [{ id: 'db-design-1', title: 'DB Design' }],
+            dataModelArtifacts: [{ id: 'data-model-1', title: 'Data Model' }],
           } as never
         }
         questionnaireSession={
@@ -55,12 +55,12 @@ describe('SpecificationStatusView', () => {
           } as never
         }
         busyAction={null}
-        canGenerateDbDesign={true}
+        canGenerateDataModel={true}
         hasSpecification={true}
         isImplementationLocked={true}
         onOpenQuestionnaire={vi.fn()}
         onGenerateBlueprint={vi.fn()}
-        onGenerateDbDesign={vi.fn()}
+        onGenerateDataModel={vi.fn()}
         onGenerateSpecification={vi.fn()}
         onQueueSession={vi.fn()}
         onAddToQueue={vi.fn()}
@@ -69,8 +69,8 @@ describe('SpecificationStatusView', () => {
 
     expect(markup).toContain('アンケートを確認');
     expect(markup).toContain('Blueprintを再生成');
-    expect(markup).toContain('DBデザインを再生成');
-    expect(markup).toContain('仕様書を再生成');
+    expect(markup).toContain('Data Modelを再生成');
+    expect(markup).toContain('Feature Planを再生成');
     expect(markup).toContain('今すぐ実装開始');
     expect(markup).toContain('キューに追加');
     expect(markup.match(/disabled=""/g) || []).toHaveLength(5);
@@ -82,7 +82,7 @@ describe('SpecificationStatusView', () => {
         workspace={
           {
             blueprintArtifacts: [{ id: 'blueprint-1', title: 'Blueprint' }],
-            dbDesignArtifacts: [{ id: 'db-design-1', title: 'DB Design' }],
+            dataModelArtifacts: [{ id: 'data-model-1', title: 'Data Model' }],
           } as never
         }
         questionnaireSession={
@@ -94,19 +94,25 @@ describe('SpecificationStatusView', () => {
           } as never
         }
         busyAction={null}
-        canGenerateDbDesign={true}
+        canGenerateDataModel={true}
         hasSpecification={true}
         planModeSettings={{
           capabilities: {
             questionnaire: true,
+            feature_plan: false,
+            user_flow: true,
             blueprint: false,
-            dbDesign: false,
-            specification: false,
+            data_model: false,
+            api_io_contract: true,
+            state_model: true,
+            activity_flow: true,
+            sequence_flow: true,
+            zod_schema_design: true,
           },
         }}
         onOpenQuestionnaire={vi.fn()}
         onGenerateBlueprint={vi.fn()}
-        onGenerateDbDesign={vi.fn()}
+        onGenerateDataModel={vi.fn()}
         onGenerateSpecification={vi.fn()}
         onQueueSession={vi.fn()}
         onAddToQueue={vi.fn()}
@@ -115,8 +121,8 @@ describe('SpecificationStatusView', () => {
 
     expect(markup).toContain('アンケートを確認');
     expect(markup).toContain('Blueprintを再生成');
-    expect(markup).toContain('DBデザインを再生成');
-    expect(markup).toContain('仕様書を再生成');
+    expect(markup).toContain('Data Modelを再生成');
+    expect(markup).toContain('Feature Planを再生成');
     expect(markup).toContain('Plan Mode capability is disabled in Settings.');
     expect(markup.match(/disabled=""/g) || []).toHaveLength(3);
   });

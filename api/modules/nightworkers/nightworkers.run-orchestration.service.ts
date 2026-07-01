@@ -686,7 +686,7 @@ function isImplementationHandoffMessage(
 ) {
   if (message.messageType !== 'markdown_document') return false;
   const intent = String(metadata?.intent || '').toLowerCase();
-  return intent === 'implementation_plan' || intent === 'draft_spec';
+  return intent === 'implementation_plan' || intent === 'feature_plan' || intent === 'draft_spec';
 }
 
 function findLatestImplementationHandoffMessage(

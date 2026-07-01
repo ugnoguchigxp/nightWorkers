@@ -28,11 +28,7 @@ export {
   saveBlueprintDesignSettings,
   saveBlueprintDesignTokenAdoption,
 } from '../blueprint/blueprint.service';
-export {
-  generateDbDesignArtifact as generateSpecificationStatusDbDesign,
-  getDbDesignAdoption as getBlueprintDbDesignAdoption,
-  saveDbDesignAdoption as saveBlueprintDbDesignAdoption,
-} from '../dbDesign/dbDesign.service';
+export { generateDataModelArtifact as generateSpecificationStatusDataModel } from '../dataModel/dataModel.service';
 export {
   acceptDesignQuestionnaireReview,
   createDesignQuestionnaire,
@@ -45,7 +41,7 @@ export {
 } from '../questionnaire/questionnaire.service';
 export {
   generateSpecificationArtifact as generateSpecificationStatusDesignDocument,
-  getBlueprintSpecificationWorkspace,
+  getPlanModeWorkspace,
   getSpecificationWorkspace,
 } from '../specification/specification.service';
 export {

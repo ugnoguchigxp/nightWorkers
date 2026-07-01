@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import type {
   ActivityArtifact,
-  BlueprintSpecificationWorkspace,
   ImplementationQueueDashboard,
+  PlanModeWorkspace,
   Repository,
   ReviewResult,
   Task,
@@ -18,20 +18,22 @@ import {
 } from '../workbenchSelectors';
 import type { ProjectSessionGroups } from './nightWorkersWorkspaceState';
 
-function hasSpecificationWorkspaceEvidence(workspace: BlueprintSpecificationWorkspace) {
+function hasSpecificationWorkspaceEvidence(workspace: PlanModeWorkspace) {
   return Boolean(
-    workspace.blueprintArtifacts.length ||
-      workspace.dbDesignArtifacts.length ||
+    workspace.featurePlanArtifacts.length ||
+      workspace.blueprintArtifacts.length ||
+      workspace.dataModelArtifacts.length ||
       workspace.questionnaireSessions.length ||
       workspace.decisionReviews.length ||
       workspace.implementationReferences.length
   );
 }
 
-function summarizeSpecificationWorkspace(workspace: BlueprintSpecificationWorkspace) {
+function summarizeSpecificationWorkspace(workspace: PlanModeWorkspace) {
   return [
+    `${workspace.featurePlanArtifacts.length} Feature Plan`,
     `${workspace.blueprintArtifacts.length} Blueprint`,
-    `${workspace.dbDesignArtifacts.length} DB Design`,
+    `${workspace.dataModelArtifacts.length} Data Model`,
     `${workspace.questionnaireSessions.length} Questionnaire`,
     `${workspace.decisionReviews.length} Decision Review`,
     `${workspace.implementationReferences.length} Implementation`,
@@ -40,7 +42,7 @@ function summarizeSpecificationWorkspace(workspace: BlueprintSpecificationWorksp
 
 type UseNightWorkersSessionPresentationInput = {
   activeSession: Task | null;
-  activeSpecificationWorkspace: BlueprintSpecificationWorkspace | null;
+  activeSpecificationWorkspace: PlanModeWorkspace | null;
   implementationQueue: ImplementationQueueDashboard | null;
   latestRun: TaskRun | undefined;
   latestRunEvents: TaskEvent[];
@@ -91,8 +93,9 @@ export function useNightWorkersSessionPresentation({
           type: 'task_message',
           messageId:
             activeSpecificationWorkspace.decisionReviews[0]?.sourceMessageId ||
+            activeSpecificationWorkspace.featurePlanArtifacts[0]?.sourceMessageId ||
             activeSpecificationWorkspace.blueprintArtifacts[0]?.sourceMessageId ||
-            activeSpecificationWorkspace.dbDesignArtifacts[0]?.sourceMessageId ||
+            activeSpecificationWorkspace.dataModelArtifacts[0]?.sourceMessageId ||
             activeSpecificationWorkspace.questionnaireSessions[0]?.sourceBlueprintMessageId ||
             activeSpecificationWorkspace.implementationReferences[0]?.sourceMessageId ||
             '',
