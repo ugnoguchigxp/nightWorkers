@@ -25,7 +25,7 @@ export async function getPlanModeWorkspace(taskId: string): Promise<PlanModeWork
   for (const message of messages) {
     if (message.messageType !== 'markdown_document') continue;
     const metadata = (message.metadataJson || {}) as Record<string, unknown>;
-    if (metadata.intent === 'feature_plan' || metadata.intent === 'draft_spec') {
+    if (metadata.intent === 'feature_plan') {
       featurePlanArtifacts.push({
         id: `feature-plan-${message.id}`,
         kind: 'feature_plan' as const,
@@ -116,10 +116,6 @@ export async function getPlanModeWorkspace(taskId: string): Promise<PlanModeWork
     decisionReviews,
     implementationReferences,
   };
-}
-
-export async function getSpecificationWorkspace(taskId: string) {
-  return getPlanModeWorkspace(taskId);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

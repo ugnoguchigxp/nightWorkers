@@ -15,7 +15,7 @@ export function fetchDesignQuestionnaireSession(
 
 export function startDesignQuestionnaire(
   sessionId: string,
-  input: { sourceBlueprintMessageId: string }
+  input: { sourceBlueprintMessageId?: string | null }
 ) {
   return apiFetch(`/api/tasks/${sessionId}/design-questionnaire`, jsonRequest('POST', input));
 }

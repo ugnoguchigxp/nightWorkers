@@ -93,6 +93,7 @@ export type PlanModeWorkspaceArtifact = {
     | 'questionnaire'
     | 'blueprint'
     | 'data_model'
+    | 'user_flow'
     | 'api_io_contract'
     | 'state_model'
     | 'activity_flow'

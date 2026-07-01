@@ -27,6 +27,7 @@ describe('PlanWorkspaceStatusView', () => {
         onGenerateBlueprint={vi.fn()}
         onGenerateDataModel={vi.fn()}
         onGenerateFeaturePlan={vi.fn()}
+        onGenerateDedicatedViews={vi.fn()}
         onQueueSession={vi.fn()}
         onAddToQueue={vi.fn()}
       />
@@ -62,6 +63,7 @@ describe('PlanWorkspaceStatusView', () => {
         onGenerateBlueprint={vi.fn()}
         onGenerateDataModel={vi.fn()}
         onGenerateFeaturePlan={vi.fn()}
+        onGenerateDedicatedViews={vi.fn()}
         onQueueSession={vi.fn()}
         onAddToQueue={vi.fn()}
       />
@@ -114,6 +116,7 @@ describe('PlanWorkspaceStatusView', () => {
         onGenerateBlueprint={vi.fn()}
         onGenerateDataModel={vi.fn()}
         onGenerateFeaturePlan={vi.fn()}
+        onGenerateDedicatedViews={vi.fn()}
         onQueueSession={vi.fn()}
         onAddToQueue={vi.fn()}
       />
@@ -158,6 +161,7 @@ describe('PlanWorkspaceStatusView', () => {
         onGenerateBlueprint={vi.fn()}
         onGenerateDataModel={vi.fn()}
         onGenerateFeaturePlan={vi.fn()}
+        onGenerateDedicatedViews={vi.fn()}
       />
     );
 
@@ -167,5 +171,109 @@ describe('PlanWorkspaceStatusView', () => {
     expect(markup).toContain('Data Model: include - storage contract needed');
     expect(markup).toContain('Questionnaire: omit - not needed');
     expect(markup).toMatch(/<button[^>]*>Data Model作成<\/button>/);
+  });
+
+  it('allows included Blueprint work without forcing Questionnaire first', () => {
+    const markup = renderToStaticMarkup(
+      <PlanWorkspaceStatusView
+        workspace={null}
+        questionnaireSession={null}
+        busyAction={null}
+        canGenerateDataModel={true}
+        hasFeaturePlan={false}
+        viewDecisions={[
+          { view: 'questionnaire', decision: 'omit', reason: 'not needed' },
+          { view: 'blueprint', decision: 'include', reason: 'UI exists' },
+        ]}
+        onOpenQuestionnaire={vi.fn()}
+        onGenerateBlueprint={vi.fn()}
+        onGenerateDataModel={vi.fn()}
+        onGenerateFeaturePlan={vi.fn()}
+        onGenerateDedicatedViews={vi.fn()}
+      />
+    );
+
+    expect(markup).toContain('Blueprint作成');
+    expect(markup).not.toContain('アンケートへ');
+    expect(markup).toMatch(/<button[^>]*>Blueprint作成<\/button>/);
+  });
+
+  it('shows a generation action for included additional dedicated views', () => {
+    const markup = renderToStaticMarkup(
+      <PlanWorkspaceStatusView
+        workspace={
+          {
+            blueprintArtifacts: [],
+            dataModelArtifacts: [],
+            dedicatedViewArtifacts: [],
+          } as never
+        }
+        questionnaireSession={null}
+        busyAction={null}
+        canGenerateDataModel={true}
+        hasFeaturePlan={true}
+        viewDecisions={[
+          { view: 'questionnaire', decision: 'omit', reason: 'not needed' },
+          { view: 'blueprint', decision: 'omit', reason: 'no UI' },
+          { view: 'user_flow', decision: 'include', reason: 'flow changes' },
+          { view: 'api_io_contract', decision: 'include', reason: 'API changes' },
+        ]}
+        onOpenQuestionnaire={vi.fn()}
+        onGenerateBlueprint={vi.fn()}
+        onGenerateDataModel={vi.fn()}
+        onGenerateFeaturePlan={vi.fn()}
+        onGenerateDedicatedViews={vi.fn()}
+      />
+    );
+
+    expect(markup).toContain('0/2件の追加 view が生成済みです。');
+    expect(markup).toContain('追加Viewを生成');
+    expect(markup).toContain('User Flow: include - flow changes');
+    expect(markup).toContain('API / I/O: include - API changes');
+  });
+
+  it('does not generate additional dedicated views disabled in Plan Mode settings', () => {
+    const markup = renderToStaticMarkup(
+      <PlanWorkspaceStatusView
+        workspace={
+          {
+            blueprintArtifacts: [],
+            dataModelArtifacts: [],
+            dedicatedViewArtifacts: [],
+          } as never
+        }
+        questionnaireSession={null}
+        busyAction={null}
+        canGenerateDataModel={true}
+        hasFeaturePlan={true}
+        planModeSettings={{
+          capabilities: {
+            questionnaire: true,
+            feature_plan: true,
+            user_flow: false,
+            blueprint: true,
+            data_model: true,
+            api_io_contract: false,
+            state_model: true,
+            activity_flow: true,
+            sequence_flow: true,
+            zod_schema_design: true,
+          },
+        }}
+        viewDecisions={[
+          { view: 'user_flow', decision: 'include', reason: 'flow changes' },
+          { view: 'api_io_contract', decision: 'include', reason: 'API changes' },
+        ]}
+        onOpenQuestionnaire={vi.fn()}
+        onGenerateBlueprint={vi.fn()}
+        onGenerateDataModel={vi.fn()}
+        onGenerateFeaturePlan={vi.fn()}
+        onGenerateDedicatedViews={vi.fn()}
+      />
+    );
+
+    expect(markup).toContain('2件の追加 view はSettingsで無効です。');
+    expect(markup).toContain('Disabled in Settings: User Flow / API / I/O');
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>生成状況を確認<\/button>/);
   });
 });

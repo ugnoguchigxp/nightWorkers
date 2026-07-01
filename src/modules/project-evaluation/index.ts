@@ -1,5 +1,2 @@
-export {
-  ProjectEvaluationImprovementInstructionField,
-  ProjectEvaluationMockScreen,
-} from './components/ProjectEvaluationMockScreen';
+export { ProjectEvaluationImprovementInstructionField } from './components/ImprovementIdeaCard';
 export { ProjectEvaluationScreen } from './components/ProjectEvaluationScreen';

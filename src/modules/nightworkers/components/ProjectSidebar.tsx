@@ -1,6 +1,8 @@
 import {
-  BarChart3,
+  ChevronDown,
+  ChevronRight,
   FolderPlus,
+  LayoutDashboard,
   ListTodo,
   LoaderCircle,
   Plus,
@@ -26,8 +28,8 @@ type ProjectSidebarProps = {
   onToggleProject: (projectId: string) => void;
   onOpenProjectQueue: (projectId: string) => void;
   activeProjectQueueId: string | null;
-  onOpenProjectEvaluation: (projectId: string) => void;
-  activeProjectEvaluationId: string | null;
+  onOpenProjectDetail: (projectId: string) => void;
+  activeProjectDetailId: string | null;
   onOpenOverview: () => void;
   isOverviewActive: boolean;
   onOpenFolderBrowser: () => void;
@@ -95,6 +97,7 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
           props.projects.map((project) => {
             const grouped = props.groupedSessions[project.id] || EMPTY_PROJECT_SESSION_GROUPS;
             const isExpanded = props.expandedProjects[project.id] ?? true;
+            const isProjectDetailActive = props.activeProjectDetailId === project.id;
             const sessions = [...grouped.processing, ...grouped.queue, ...grouped.archive];
             return (
               <div key={project.id} className="space-y-1">
@@ -102,8 +105,22 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                   <button
                     type="button"
                     onClick={() => props.onToggleProject(project.id)}
+                    className="nightworkers-sidebar-control mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition focus-visible:outline-none focus-visible:ring-2"
+                    aria-expanded={isExpanded}
+                    title={isExpanded ? 'Collapse project' : 'Expand project'}
+                  >
+                    {isExpanded ? (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => props.onToggleProject(project.id)}
                     className="nightworkers-sidebar-project flex min-w-0 flex-1 items-center rounded-lg px-1.5 py-1.5 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2"
                     aria-expanded={isExpanded}
+                    title={isExpanded ? 'Collapse project' : 'Expand project'}
                   >
                     <span className="truncate font-medium">{project.name}</span>
                   </button>
@@ -123,6 +140,18 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                       variant="ghost"
                       size="sm"
                       className={`nightworkers-sidebar-control h-7 w-7 rounded-md p-0 ${
+                        isProjectDetailActive ? 'nightworkers-sidebar-link-active' : ''
+                      }`}
+                      onClick={() => props.onOpenProjectDetail(project.id)}
+                      title={t('sidebar.openProjectDetail')}
+                    >
+                      <LayoutDashboard className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className={`nightworkers-sidebar-control h-7 w-7 rounded-md p-0 ${
                         props.activeProjectQueueId === project.id
                           ? 'nightworkers-sidebar-link-active'
                           : ''
@@ -131,20 +160,6 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                       title={t('sidebar.openProjectQueue')}
                     >
                       <ListTodo className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className={`nightworkers-sidebar-control h-7 w-7 rounded-md p-0 ${
-                        props.activeProjectEvaluationId === project.id
-                          ? 'nightworkers-sidebar-link-active'
-                          : ''
-                      }`}
-                      onClick={() => props.onOpenProjectEvaluation(project.id)}
-                      title={t('sidebar.openProjectEvaluation')}
-                    >
-                      <BarChart3 className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       type="button"

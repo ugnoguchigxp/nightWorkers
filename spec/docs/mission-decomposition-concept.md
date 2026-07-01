@@ -2,19 +2,21 @@
 
 ## 目的
 
-NightWorkers の Mission Pilot が、ユーザーの大きなゴールを実行可能な作業構造へ分解するための考え方を定義する。
+NightWorkers の `Mission Planner` が、ユーザーの大きなゴールを実行可能な作業構造へ分解し、その分解結果を評価して、十分に質の高いものだけをユーザーのレビュー待ちにするための考え方を定義する。
 
 この文書では、その分解機構を `Mission Decomposition` と呼ぶ。
 
-Mission Decomposition は、PDCA 全体や自己改善ループ全体ではない。ここで扱うのは、ユーザーが掲げたゴールを、Mission、Objective、Work Package、Task、Verification Gate、Replanning Unit に落とすところまでである。
+Mission Decomposition は、PDCA 全体や自己改善ループ全体ではない。ここで扱うのは、ユーザーが掲げたゴールを、Mission、Objective、Work Package、Task、Verification Gate、Replanning Unit に落とし、評価を通過した planning result だけを `review_pending` にするところまでである。
 
-この文書は実装計画ではない。次に Mission data model、TaskGraph schema、decomposition prompt、UI、approval flow を設計するためのコンセプト境界を固定する。
+この文書は実装計画ではない。次に Mission Planner、Mission data model、TaskGraph schema、decomposition prompt、PlanEvaluation、UI、approval flow を設計するためのコンセプト境界を固定する。
 
 ## 位置づけ
 
 Mission Pilot は、NightWorkers 全体を操縦する上位レイヤーである。
 
-Mission Decomposition は、その中の最初の重要な機能である。
+Mission Planner は、Mission Pilot の下位で、Mission の分解、タスク候補生成、分解結果の評価、低品質案の除外、ユーザーへ提示する review-ready plan の作成を担当する。
+
+Mission Decomposition は、Mission Planner の中核機能である。
 
 ```text
 User Goal
@@ -25,9 +27,11 @@ User Goal
   -> Tasks
   -> Verification Gates
   -> Replanning Units
+  -> PlanEvaluation
+  -> review_pending planning result
 ```
 
-後続で、これらの task は Plan mode、Implementation Queue、Worker、Review、Evaluation に接続される。
+後続で、`review_pending` になった planning result は、ユーザー確認後に Plan mode、Implementation Queue、Worker、Review、Evaluation に接続される。
 
 ただし、この文書では後続の PDCA や継続改善ループの詳細には踏み込まない。
 
@@ -45,7 +49,7 @@ User Goal
 
 これらをそのまま Worker に渡すと、作業範囲が広すぎる。何をもって完了とするか、どこで止めるか、失敗時にどこへ戻るかが曖昧になる。
 
-Mission Decomposition は、この曖昧な goal を、実装、評価、再計画が可能な構造へ変換するためのレイヤーである。
+Mission Decomposition は、この曖昧な goal を、実装、評価、再計画が可能な構造へ変換し、評価に通ったものだけをユーザーがレビューできる状態にするためのレイヤーである。
 
 ## 基本方針
 
@@ -168,6 +172,31 @@ Mission Decomposition は、どこで失敗したらどこまで戻るかを先�
 - evaluation が不正なら、Evaluation work package に戻る。
 
 Replanning Unit がないと、失敗時に全体をやり直すか、場当たり修正になる。
+
+### 8. 評価前の draft をユーザーに出さない
+
+Mission Planner は、分解しただけの raw draft をそのままユーザーに見せない。
+
+ユーザーに見せるのは、PlanEvaluation を通過した planning result だけである。
+
+品質が不足している場合は、Mission Planner が次を行う。
+
+- clarification question を作る。
+- Work Package を分割し直す。
+- Task を merge / split / reorder する。
+- Verification Gate を追加する。
+- approvalRequired 判定を付ける。
+- blocked として理由を保存する。
+
+ユーザーのレビュー待ちに置く条件:
+
+- Mission と Objective が goal に合っている。
+- Work Package と Task の粒度が妥当である。
+- Task に Verification Gate がある。
+- high-risk task が approval required になっている。
+- Replanning Unit がある。
+- Plan mode に渡すべき Work Package が識別されている。
+- PlanEvaluation の verdict が `review_ready` またはそれに相当する状態である。
 
 ## 分解階層
 
@@ -388,6 +417,12 @@ Mission Decomposition の出力は、最低限この形にする。
 
 ```ts
 type MissionDecomposition = {
+  status:
+    | 'draft'
+    | 'evaluating'
+    | 'needs_revision'
+    | 'blocked'
+    | 'review_pending';
   mission: {
     title: string;
     goal: string;
@@ -417,6 +452,10 @@ type MissionDecomposition = {
     scope: string;
     action: 'split' | 'merge' | 'reorder' | 'ask_human' | 'pause';
   }>;
+  evaluationSummary?: {
+    verdict: 'review_ready' | 'needs_clarification' | 'needs_redecomposition' | 'blocked';
+    confidence: 'low' | 'medium' | 'high';
+  };
 };
 ```
 
@@ -478,18 +517,50 @@ NightWorkers が、広いユーザーゴールを実行可能な task graph に�
 - Task が大きすぎたら Work Package を分割する。
 - Verification Gate が作れない task は human question に戻す。
 
+## Mission Planner の責務
+
+Mission Planner は、Mission Decomposition を実行する主体である。
+
+Mission Planner が担当すること:
+
+- ユーザー goal から Mission draft を作る。
+- Mission を Objectives に分ける。
+- Objectives を Work Packages に分ける。
+- Work Packages から Task candidates を作る。
+- Task candidates に Verification Gate、risk、approvalRequired、Replanning Unit を付ける。
+- Mission Decomposition Evaluation を実行する。
+- 低品質な candidate をユーザーに出さず、修正または blocked にする。
+- 十分に質の高い planning result だけを `review_pending` にする。
+
+Mission Planner が担当しないこと:
+
+- queue に流すこと。
+- Worker を実行すること。
+- 実装結果を review すること。
+- Mission 全体の運航判断をすること。
+- ユーザー承認なしに high-risk task を実行すること。
+
 ## Mission Pilot との関係
 
-Mission Decomposition は、Mission Pilot の最初の判断レーンである。
+Mission Pilot は、Mission Planner が作成し評価した planning result を受け取る。
 
-Mission Pilot は、Mission Decomposition の出力を見て次を決める。
+Mission Pilot が見るもの:
 
-- 追加質問が必要か。
-- Plan mode に渡すべき Work Package はどれか。
-- 直接 task 化できるものはどれか。
-- human approval が必要なものはどれか。
-- 先に investigation すべきものはどれか。
-- queue に流す順序はどうするか。
+- `review_pending` の planning result。
+- PlanEvaluation / Mission Decomposition Evaluation。
+- approvalRequired task。
+- blocked reason。
+- suggested next action。
+
+Mission Pilot が決めること:
+
+- ユーザーにレビューを求める。
+- Mission Planner に再分解を依頼する。
+- Plan mode に Work Package を渡す。
+- 承認済み task を queue に流す。
+- Mission を pause する。
+
+Mission Pilot は、task candidates を直接考案しない。Mission Pilot は、PlanEvaluation を自分で捏造して通過扱いにしない。
 
 Mission Decomposition は queue に直接流さない。queue に流すかどうかは、Mission Pilot の approval / orchestration の責務である。
 
@@ -561,7 +632,7 @@ Mission Decomposition の出力は、すぐ実装や queue に流さず、まず
 type MissionDecompositionEvaluation = {
   decompositionId: string;
   verdict:
-    | 'ready'
+    | 'review_ready'
     | 'needs_clarification'
     | 'needs_redecomposition'
     | 'needs_human_approval'
@@ -600,9 +671,11 @@ type MissionDecompositionEvaluation = {
 
 Mission Decomposition Evaluation の結果は、次の action に変換する。
 
-### `ready`
+### `review_ready`
 
-分解結果を Mission Pilot に渡し、Plan mode / approval / queue orchestration へ進める。
+分解結果を `review_pending` にし、ユーザーがレビューできる状態にする。
+
+Mission Pilot は、この状態になった planning result だけを、ユーザー確認、Plan mode handoff、approval、queue orchestration の対象にする。
 
 ### `needs_clarification`
 
@@ -647,7 +720,7 @@ Mission Decomposition をやり直す。
 - goal が矛盾している。
 - verification gate を定義できない。
 
-軌道修正は「実装中に迷ったら考えるもの」ではなく、分解結果を queue に流す前の gate として扱う。
+軌道修正は「実装中に迷ったら考えるもの」ではなく、分解結果をユーザーに見せる前、または queue に流す前の gate として扱う。
 
 ## ContextStill との関係
 
@@ -670,6 +743,9 @@ Mission Decomposition では、次を扱わない。
 - 改善案の実装前評価。
 - 実装後評価。
 - 自己改善候補の learning / registration。
+- Mission Pilot に task generation / evaluation 責務を持たせること。
+- 評価前の raw draft や低品質 plan をユーザーのレビュー待ちに出すこと。
+- PlanEvaluation / Mission Decomposition Evaluation なしで `review_pending` にすること。
 - Worker 実装の詳細。
 - Queue processor の実行制御。
 - Review rubrics の設計。
@@ -692,32 +768,40 @@ Mission Decomposition concept が成立している状態:
 7. high-risk task を approval required として分類できる。
 8. Plan mode が必要な Work Package を判定できる。
 9. Mission Decomposition Evaluation によって分解結果を評価できる。
-10. 評価結果から ready / clarify / redecompose / approval / blocked を選べる。
-11. task が大きすぎる / 細かすぎる兆候を検出できる。
-12. PDCA 全体や自己改善ループに踏み込みすぎていない。
+10. 評価結果から review_ready / clarify / redecompose / approval / blocked を選べる。
+11. Mission Planner が task candidate generation / evaluation / filtering の主体になっている。
+12. Mission Pilot に task candidate generation / evaluation 責務が残っていない。
+13. `review_pending` には評価を通過した planning result だけが入る。
+14. 低品質 plan は `needs_revision` または `blocked` になり、ユーザーに提示されない。
+15. task が大きすぎる / 細かすぎる兆候を検出できる。
+16. PDCA 全体や自己改善ループに踏み込みすぎていない。
 
 ## Open Questions
 
-- Mission Decomposition を Mission Pilot service の一部にするか、独立 service にするか。
-- Decomposition output は JSON artifact として保存するか、DB rows に展開するか。
+- Mission Planner を独立 service にするか、Mission Pilot から呼び出す subordinate service にするか。
+- `review_pending` planning result は JSON artifact として保存するか、DB rows に展開するか。
 - TaskGraph は DAG として厳密に検証するか、初期は順序付き list で始めるか。
 - Work Package と Feature Plan の関係を 1:1 にするか、1:N を許すか。
 - human approval required の判定を deterministic rule と LLM decision のどちらで主導するか。
 - ContextStill decision を分解前に必須にするか、高リスク時だけにするか。
 - task 粒度の良し悪しをどう評価するか。
-- Mission Decomposition Evaluation は ProjectEvaluation の evaluator infrastructure を共用するか、別 service にするか。
-- Course correction は evaluation result から自動適用するか、人間確認を挟むか。
+- Mission Decomposition Evaluation / PlanEvaluation は ProjectEvaluation の evaluator infrastructure を共用するか、Mission Planner 専用 evaluator にするか。
+- Course correction はユーザー提示前に自動適用するか、`needs_revision` として保存して再生成 run に回すか。
+- Mission Pilot へ渡す handoff contract に、どの評価 summary と blocked reason を含めるか。
 
 ## 次に作るべき設計
 
 この concept の次は、次の順に設計する。
 
-1. Mission Decomposition output schema。
-2. TaskGraph data model。
-3. Decomposition prompt。
-4. Decomposition validation。
-5. Mission Decomposition Evaluation schema。
-6. Course correction action schema。
-7. Plan mode work package handoff。
-8. Approval classification。
-9. Mission Pilot orchestration integration。
+1. Mission Planner service boundary。
+2. Mission Decomposition output schema。
+3. Planning result lifecycle / status model。
+4. TaskGraph data model。
+5. Decomposition prompt。
+6. Decomposition validation。
+7. Mission Decomposition Evaluation / PlanEvaluation schema。
+8. Quality gate and `review_pending` transition。
+9. Course correction action schema。
+10. Plan mode work package handoff。
+11. Approval classification。
+12. Mission Pilot handoff contract。

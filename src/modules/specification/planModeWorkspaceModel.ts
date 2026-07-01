@@ -17,6 +17,7 @@ export type PlanWorkspaceTab =
   | 'feature-plan'
   | 'blueprint'
   | 'data-model'
+  | 'user-flow'
   | 'api-io-contract'
   | 'state-model'
   | 'activity-flow'
@@ -25,7 +26,7 @@ export type PlanWorkspaceTab =
   | 'questionnaire'
   | 'status';
 
-export function selectSpecificationWorkspaceMessages(input: {
+export function selectPlanModeWorkspaceMessages(input: {
   taskMessages: TaskMessage[];
   activityArtifacts: ActivityArtifact[];
   generatedMessages: TaskMessage[];
@@ -40,10 +41,7 @@ export function selectSpecificationWorkspaceMessages(input: {
   const dataModelMessages = combinedTaskMessages.filter(isDataModelMessage);
   const designDocMessages = combinedTaskMessages.filter((message) => {
     const intent = String(toDeepRecord(message.metadataJson).intent);
-    return (
-      message.messageType === 'markdown_document' &&
-      (intent === 'feature_plan' || intent === 'draft_spec')
-    );
+    return message.messageType === 'markdown_document' && intent === 'feature_plan';
   });
   const reviewedDesignDocMessages = designDocMessages.filter(isReviewedFeaturePlanMessage);
   const activeBlueprintMessage = blueprintMessages.at(-1) || null;

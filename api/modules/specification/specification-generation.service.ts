@@ -13,10 +13,10 @@ import {
   listPlanModeTaskMessages,
 } from '../nightworkers/nightworkers.plan-mode-core.port';
 import { assertPlanModeCapabilityEnabled } from '../nightworkers/nightworkers.plan-mode-settings.service';
+import { getPlanModeWorkspace } from './plan-mode-workspace.service';
 import { buildSpecificationDocumentContext } from './specification-document-renderer';
 import { assertPlanModeMutable } from './specification-mutability';
-import { resolveReadyQuestionnaireSession } from './specification-questionnaire-session';
-import { getSpecificationWorkspace } from './specification-workspace.service';
+import { resolveOptionalReadyQuestionnaireSession } from './specification-questionnaire-session';
 
 const specificationDocumentDraftSchema = z.object({
   title: z.string().min(1),
@@ -24,7 +24,7 @@ const specificationDocumentDraftSchema = z.object({
 });
 const DEFAULT_FEATURE_PLAN_TITLE = 'Feature Plan';
 
-export async function generateSpecificationArtifact(
+export async function generateFeaturePlanArtifact(
   taskId: string,
   input: { questionnaireSessionId?: string | null; reviewAfterGenerate?: boolean } = {}
 ) {
@@ -32,8 +32,11 @@ export async function generateSpecificationArtifact(
   if (!task) throw new NotFoundError('Task not found');
   assertPlanModeCapabilityEnabled('feature_plan');
   assertPlanModeMutable(task);
-  const session = await resolveReadyQuestionnaireSession(taskId, input.questionnaireSessionId);
-  const workspace = await getSpecificationWorkspace(taskId);
+  const session = await resolveOptionalReadyQuestionnaireSession(
+    taskId,
+    input.questionnaireSessionId
+  );
+  const workspace = await getPlanModeWorkspace(taskId);
   const messages = await listPlanModeTaskMessages(taskId);
   const context = buildSpecificationDocumentContext({
     task,
@@ -53,7 +56,7 @@ export async function generateSpecificationArtifact(
       intent: 'feature_plan',
       title: parsed.title || DEFAULT_FEATURE_PLAN_TITLE,
       source: 'status',
-      questionnaireSessionId: session.id,
+      questionnaireSessionId: session?.id ?? null,
       generation: {
         source: 'llm',
         context: {
@@ -68,7 +71,7 @@ export async function generateSpecificationArtifact(
     },
   });
   if (input.reviewAfterGenerate === false) {
-    return { message, workspace: await getSpecificationWorkspace(taskId) };
+    return { message, workspace: await getPlanModeWorkspace(taskId) };
   }
   const reviewedMessage = await reviewAndImproveSpecificationDocument({
     taskId,
@@ -76,9 +79,9 @@ export async function generateSpecificationArtifact(
     title: parsed.title || DEFAULT_FEATURE_PLAN_TITLE,
     content,
     context,
-    questionnaireSessionId: session.id,
+    questionnaireSessionId: session?.id ?? null,
   });
-  return { message, reviewedMessage, workspace: await getSpecificationWorkspace(taskId) };
+  return { message, reviewedMessage, workspace: await getPlanModeWorkspace(taskId) };
 }
 
 async function generateSpecificationDesignDocumentRawOutput(
@@ -103,7 +106,7 @@ async function reviewAndImproveSpecificationDocument(input: {
   title: string;
   content: string;
   context: ReturnType<typeof buildSpecificationDocumentContext>;
-  questionnaireSessionId: string;
+  questionnaireSessionId: string | null;
 }) {
   const rawOutput = await callStructuredJsonLLM(
     buildSpecificationReviewSystemPrompt(),

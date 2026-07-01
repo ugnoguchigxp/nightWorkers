@@ -13,10 +13,10 @@ import {
   updatePlanModeTask,
 } from '../nightworkers/nightworkers.plan-mode-core.port';
 import { assertPlanModeCapabilityEnabled } from '../nightworkers/nightworkers.plan-mode-settings.service';
+import { getPlanModeWorkspace } from '../specification/plan-mode-workspace.service';
 import { renderQuestionnaireAnswerMarkdown } from '../specification/specification-document-renderer';
 import { assertPlanModeMutable } from '../specification/specification-mutability';
-import { resolveReadyQuestionnaireSession } from '../specification/specification-questionnaire-session';
-import { getSpecificationWorkspace } from '../specification/specification-workspace.service';
+import { resolveOptionalReadyQuestionnaireSession } from '../specification/specification-questionnaire-session';
 
 export async function generateBlueprintArtifact(
   taskId: string,
@@ -26,7 +26,10 @@ export async function generateBlueprintArtifact(
   if (!task) throw new NotFoundError('Task not found');
   assertPlanModeCapabilityEnabled('blueprint');
   assertPlanModeMutable(task);
-  const session = await resolveReadyQuestionnaireSession(taskId, input.questionnaireSessionId);
+  const session = await resolveOptionalReadyQuestionnaireSession(
+    taskId,
+    input.questionnaireSessionId
+  );
   const prompt = renderQuestionnaireBlueprintPrompt(task, session);
   try {
     const { blueprint, validation, generation } = await generatePlanModeBlueprintDraft({
@@ -42,7 +45,7 @@ export async function generateBlueprintArtifact(
       generation,
       source: 'status',
       metadataJson: {
-        questionnaireSessionId: session.id,
+        questionnaireSessionId: session?.id ?? null,
       },
     });
     if (!artifact) throw new Error('Blueprint artifact persistence failed.');
@@ -70,14 +73,14 @@ export async function generateBlueprintArtifact(
         validation,
         generation,
         source: 'status',
-        questionnaireSessionId: session.id,
+        questionnaireSessionId: session?.id ?? null,
       },
     });
     await updatePlanModeTask(taskId, {
       objective: task.objective || prompt,
       status: task.status === 'draft' ? 'ready' : task.status,
     });
-    return { message, workspace: await getSpecificationWorkspace(taskId) };
+    return { message, workspace: await getPlanModeWorkspace(taskId) };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (error instanceof BlueprintDraftGenerationError && error.rawOutput?.trim()) {
@@ -91,7 +94,7 @@ export async function generateBlueprintArtifact(
           source: 'status',
           validationStatus: 'failed',
           error: message,
-          questionnaireSessionId: session.id,
+          questionnaireSessionId: session?.id ?? null,
           promptDiagnostics: error.promptDiagnostics,
         },
       });
@@ -102,10 +105,12 @@ export async function generateBlueprintArtifact(
 
 function renderQuestionnaireBlueprintPrompt(
   task: PlanModeTask,
-  session: DesignQuestionnaireSession
+  session: DesignQuestionnaireSession | null
 ) {
   return [
-    'Design Questionnaire の回答から App Blueprint を生成してください。',
+    session
+      ? 'Design Questionnaire の回答から App Blueprint を生成してください。'
+      : 'Task context から App Blueprint を生成してください。',
     '',
     '## Task',
     `Title: ${task.title}`,
@@ -113,7 +118,7 @@ function renderQuestionnaireBlueprintPrompt(
     task.objective ? `Objective: ${task.objective}` : '',
     '',
     '## Questionnaire Answers',
-    renderQuestionnaireAnswerMarkdown(session),
+    session ? renderQuestionnaireAnswerMarkdown(session) : '- Questionnaire は未生成です。',
     '',
     '## Output Focus',
     '- UI/UX と画面構成を優先する。',

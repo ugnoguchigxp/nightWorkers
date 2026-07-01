@@ -35,7 +35,7 @@ type SpecificationDecision = {
 
 export function buildSpecificationDocumentContext(input: {
   task: TaskLike;
-  session: QuestionnaireSessionLike;
+  session: QuestionnaireSessionLike | null;
   workspace: PlanModeWorkspace;
   messages: TaskMessageRow[];
 }) {
@@ -51,11 +51,13 @@ export function buildSpecificationDocumentContext(input: {
     ]
       .filter(Boolean)
       .join('\n'),
-    questionnaireDecisions: renderQuestionnaireAnswerMarkdown(input.session),
+    questionnaireDecisions: input.session
+      ? renderQuestionnaireAnswerMarkdown(input.session)
+      : '- Questionnaire は未生成です。',
     blueprintSummary: renderCompressedBlueprintNaturalLanguage(blueprint),
     dataModelDdl: renderDataModelDdlReference(dataModelArtifact),
     traceability: [
-      `Questionnaire session: ${input.session.id}`,
+      input.session ? `Questionnaire session: ${input.session.id}` : 'Questionnaire session: none',
       latestBlueprint
         ? `Blueprint message: ${latestBlueprint.id}`
         : 'Blueprint message: not generated',
@@ -235,7 +237,7 @@ function compactText(value: string, limit: number) {
 
 function _renderSpecificationDesignDocument(input: {
   task: TaskLike;
-  session: QuestionnaireSessionLike;
+  session: QuestionnaireSessionLike | null;
   workspace: PlanModeWorkspace;
   messages: TaskMessageRow[];
 }) {
@@ -243,7 +245,7 @@ function _renderSpecificationDesignDocument(input: {
   const latestDataModel = findLatestDataModelMessage(input.messages);
   const blueprint = getMessageBlueprint(latestBlueprint);
   const dataModelArtifact = getMessageDataModelArtifact(latestDataModel);
-  const decisionRows = collectQuestionnaireDecisions(input.session);
+  const decisionRows = input.session ? collectQuestionnaireDecisions(input.session) : [];
   const screens = toRecordArray(blueprint?.screens);
   const implementationTasks = toRecordArray(blueprint?.implementationTasks);
   const dataSource = dataModelArtifact || blueprint;
@@ -294,7 +296,9 @@ function _renderSpecificationDesignDocument(input: {
     }),
     '',
     '## Appendix. Questionnaire Decisions',
-    renderQuestionnaireAnswerMarkdown(input.session),
+    input.session
+      ? renderQuestionnaireAnswerMarkdown(input.session)
+      : '- Questionnaire は未生成です。',
   ].join('\n');
 }
 
@@ -493,14 +497,18 @@ function renderAcceptanceCriteria(screens: JsonRecord[], decisions: Specificatio
 }
 
 function renderTraceability(input: {
-  session: QuestionnaireSessionLike;
+  session: QuestionnaireSessionLike | null;
   workspace: PlanModeWorkspace;
   latestBlueprint: TaskMessageRow | undefined;
   latestDataModel: TaskMessageRow | undefined;
 }) {
   return [
-    `- Questionnaire session: ${input.session.id}`,
-    `- Questionnaire: ${input.session.answers.length}/${getAnswerableSessionQuestions(input.session, input.session.answers).length}`,
+    input.session
+      ? `- Questionnaire session: ${input.session.id}`
+      : '- Questionnaire session: 未生成',
+    input.session
+      ? `- Questionnaire: ${input.session.answers.length}/${getAnswerableSessionQuestions(input.session, input.session.answers).length}`
+      : '- Questionnaire: 未生成',
     `- Blueprint artifacts: ${input.workspace.blueprintArtifacts.length}`,
     input.latestBlueprint
       ? `- Blueprint source message: ${input.latestBlueprint.id}`

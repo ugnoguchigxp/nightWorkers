@@ -66,7 +66,7 @@ export function isReviewedFeaturePlanMessage(message: TaskMessage) {
   const metadata = taskMessageMetadata(message);
   return (
     message.messageType === 'markdown_document' &&
-    (String(metadata.intent) === 'feature_plan' || String(metadata.intent) === 'draft_spec') &&
+    String(metadata.intent) === 'feature_plan' &&
     String(metadata.source) === 'status_document_review' &&
     typeof metadata.reviewedSourceMessageId === 'string'
   );
@@ -225,8 +225,7 @@ export function buildWorkbenchArtifactRefs(input: {
   const featurePlanMessages = (input.messages || []).filter(
     (message) =>
       message.messageType === 'markdown_document' &&
-      (String(taskMessageMetadata(message).intent) === 'feature_plan' ||
-        String(taskMessageMetadata(message).intent) === 'draft_spec')
+      String(taskMessageMetadata(message).intent) === 'feature_plan'
   );
   const dedicatedViewMessages = (input.messages || []).filter(
     (message) =>
@@ -453,6 +452,7 @@ function planModeWorkspaceInitialTabMetadata(message: TaskMessage): { initialTab
   if (isDataModelArtifactMessage(message)) return { initialTab: 'data-model' };
   if (String(metadata.artifactKind) !== 'plan_mode_dedicated_view') return {};
   const tabs: Record<string, string> = {
+    user_flow: 'user-flow',
     api_io_contract: 'api-io-contract',
     state_model: 'state-model',
     activity_flow: 'activity-flow',

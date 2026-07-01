@@ -173,7 +173,7 @@ describe('NightWorkers workbench routes', () => {
       headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
       body: JSON.stringify({
         prompt: '実装前に計画をもう少し具体化して',
-        intent: 'draft_spec',
+        intent: 'feature_plan',
       }),
     });
 

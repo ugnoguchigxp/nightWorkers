@@ -502,10 +502,7 @@ function hasImplementationPlanEvidence(messages: TaskMessage[]) {
     if (message.messageType !== 'markdown_document') return false;
     const intent = String(taskMessageMetadata(message).intent);
     return (
-      intent === 'implementation_plan' ||
-      intent === 'feature_plan' ||
-      intent === 'draft_spec' ||
-      intent === 'app_blueprint'
+      intent === 'implementation_plan' || intent === 'feature_plan' || intent === 'app_blueprint'
     );
   });
 }

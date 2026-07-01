@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { parseGenericDedicatedViewOutput } from '../api/modules/planViews/planView-generation.service';
 
 describe('Plan dedicated view generation helpers', () => {
+  it('accepts User Flow Markdown artifacts', () => {
+    const artifact = parseGenericDedicatedViewOutput(
+      JSON.stringify({
+        artifactKind: 'plan_mode_dedicated_view',
+        view: 'user_flow',
+        title: 'Checkout User Flow',
+        markdown: '# Checkout User Flow\n\n1. User opens checkout.\n2. User submits payment.',
+      }),
+      'user_flow'
+    );
+
+    expect(artifact.view).toBe('user_flow');
+  });
+
   it('accepts API I/O contract Markdown artifacts', () => {
     const artifact = parseGenericDedicatedViewOutput(
       JSON.stringify({

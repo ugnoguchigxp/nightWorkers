@@ -226,7 +226,7 @@ export function useNightWorkersRealtime({
               String(toDeepRecord(incoming.metadataJson).intent) === 'design_questionnaire_ready'
             ) {
               void queryClient.invalidateQueries({
-                queryKey: ['specificationWorkspace', incoming.taskId],
+                queryKey: ['planModeWorkspace', incoming.taskId],
               });
             }
             queryClient.setQueryData<TaskMessage[]>(

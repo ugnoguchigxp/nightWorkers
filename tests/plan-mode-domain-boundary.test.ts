@@ -31,7 +31,7 @@ describe('Plan Mode domain boundaries', () => {
       'api/modules/blueprint/blueprint.repository.ts',
       'api/modules/dataModel/dataModel-generation.service.ts',
       'api/modules/specification/specification-generation.service.ts',
-      'api/modules/specification/specification-workspace.service.ts',
+      'api/modules/specification/plan-mode-workspace.service.ts',
       'api/modules/specification/specification-document-renderer.ts',
     ];
 
@@ -73,8 +73,8 @@ describe('Plan Mode domain boundaries', () => {
     expect(source).not.toContain('export async function generateSpecificationStatusBlueprint');
     expect(source).not.toContain('export async function generateSpecificationStatusDataModel');
     expect(source).not.toContain('export async function generateSpecificationStatusDesignDocument');
-    expect(source).not.toContain('export async function getBlueprintSpecificationWorkspace');
-    expect(source).not.toContain('export async function getSpecificationWorkspace');
+    expect(source).not.toContain('export async function getBlueprintPlanModeWorkspace');
+    expect(source).not.toContain('export async function getPlanModeWorkspace');
   });
 
   it('keeps Plan Mode API ownership out of the NightWorkers aggregate router', () => {
@@ -89,11 +89,11 @@ describe('Plan Mode domain boundaries', () => {
       'data-model-adoption',
       'blueprint-design-token-adoption',
       'design-questionnaire',
-      'blueprint-specification-workspace',
-      'specification-workspace/blueprint',
-      'specification-workspace/data-model',
-      'specification-workspace/design-doc',
-      'getBlueprintSpecificationWorkspaceHandler',
+      'plan-mode/workspace',
+      'plan-mode/blueprint',
+      'plan-mode/data-model',
+      'plan-mode/feature-plan',
+      'getBlueprintPlanModeWorkspaceHandler',
       'generateSpecificationStatusBlueprintHandler',
       'generateSpecificationStatusDataModelHandler',
       'generateSpecificationStatusDesignDocumentHandler',
@@ -111,8 +111,8 @@ describe('Plan Mode domain boundaries', () => {
     expect(readProjectFile('src/modules/questionnaire/questionnaireModel.ts')).toContain(
       'export function buildSubmittableQuestionnaireAnswers'
     );
-    expect(readProjectFile('src/modules/specification/specificationWorkspaceModel.ts')).toContain(
-      'export function selectSpecificationWorkspaceMessages'
+    expect(readProjectFile('src/modules/specification/planModeWorkspaceModel.ts')).toContain(
+      'export function selectPlanModeWorkspaceMessages'
     );
 
     const questionnaireShell = readProjectFile('src/modules/planMode/PlanModeQuestionnaire.tsx');
@@ -122,9 +122,25 @@ describe('Plan Mode domain boundaries', () => {
     );
 
     const workspaceShell = readProjectFile('src/modules/planMode/PlanModeWorkspaceViewer.tsx');
-    expect(workspaceShell).toContain('selectSpecificationWorkspaceMessages');
+    expect(workspaceShell).toContain('selectPlanModeWorkspaceMessages');
     expect(workspaceShell).not.toContain('mergeWorkspaceTaskMessages');
     expect(workspaceShell).not.toContain('isReviewedSpecificationMessage');
+  });
+
+  it('allows Plan Mode Questionnaire creation without a Blueprint source', () => {
+    const workspaceShell = readProjectFile('src/modules/planMode/PlanModeWorkspaceViewer.tsx');
+    const questionnaireCommands = readProjectFile(
+      'src/modules/questionnaire/questionnaireCommands.ts'
+    );
+
+    expect(workspaceShell).not.toContain('if (!sessionId || !activeBlueprintMessage) return;');
+    expect(workspaceShell).toContain(
+      'sourceBlueprintMessageId: activeBlueprintMessage?.id ?? null'
+    );
+    expect(workspaceShell).toContain(
+      "{activeBlueprintMessage ? 'この画面案から質問を作成' : '質問を作成'}"
+    );
+    expect(questionnaireCommands).toContain('sourceBlueprintMessageId?: string | null');
   });
 
   it('exposes the Plan Mode core bridge as an explicit NightWorkers port', () => {

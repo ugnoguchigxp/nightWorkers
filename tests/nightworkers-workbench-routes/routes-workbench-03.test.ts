@@ -368,16 +368,16 @@ describe('NightWorkers workbench routes', () => {
     await repo.createTaskMessage({
       taskId: task.id,
       role: 'assistant',
-      content: '# Specification\n\nImplement this specification.',
+      content: '# Feature Plan\n\nImplement this specification.',
       messageType: 'markdown_document',
-      payloadJson: { intent: 'draft_spec', source: 'status' },
+      payloadJson: { intent: 'feature_plan', source: 'status' },
     });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
       body: JSON.stringify({
-        prompt: '現在のSpecification artifactを読み込み、この設計書の実装を開始してください。',
+        prompt: '現在のFeature Plan artifactを読み込み、この設計書の実装を開始してください。',
         intent: 'run_task',
       }),
     });
@@ -395,9 +395,9 @@ describe('NightWorkers workbench routes', () => {
     await repo.createTaskMessage({
       taskId: task.id,
       role: 'assistant',
-      content: '# Specification\n\nImplement this specification.',
+      content: '# Feature Plan\n\nImplement this specification.',
       messageType: 'markdown_document',
-      payloadJson: { intent: 'draft_spec', source: 'status' },
+      payloadJson: { intent: 'feature_plan', source: 'status' },
     });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/queue`, {

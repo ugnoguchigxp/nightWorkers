@@ -23,9 +23,9 @@ import {
   getDesignQuestionnaireSession,
   listDesignQuestionnaires,
 } from '../questionnaire/questionnaire.service';
+import { getPlanModeWorkspace } from '../specification/plan-mode-workspace.service';
 import { renderQuestionnaireAnswerMarkdown } from '../specification/specification-document-renderer';
 import { assertPlanModeMutable } from '../specification/specification-mutability';
-import { getSpecificationWorkspace } from '../specification/specification-workspace.service';
 
 export type DataModelGenerationInput = {
   prompt?: string;
@@ -108,7 +108,7 @@ export async function generateDataModelArtifact(
       },
     },
   });
-  return { message, workspace: await getSpecificationWorkspace(taskId) };
+  return { message, workspace: await getPlanModeWorkspace(taskId) };
 }
 
 export function parseDataModelOutput(rawOutput: string): DataModelArtifact {
@@ -179,8 +179,7 @@ async function generateArtifactFromLlm(input: {
 function isMessageKind(message: PlanModeTaskMessage, kind: 'feature_plan' | 'blueprint') {
   if (message.messageType !== 'markdown_document') return false;
   const metadata = (message.metadataJson || {}) as Record<string, unknown>;
-  if (kind === 'feature_plan')
-    return metadata.intent === 'feature_plan' || metadata.intent === 'draft_spec';
+  if (kind === 'feature_plan') return metadata.intent === 'feature_plan';
   return metadata.intent === 'app_blueprint' && Boolean(metadata.appBlueprint);
 }
 

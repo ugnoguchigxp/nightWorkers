@@ -180,7 +180,7 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
           latestMessage?.role === 'system';
         queryClient.invalidateQueries({ queryKey: ['sessions'] });
         queryClient.invalidateQueries({ queryKey: ['sessionRuns', sessionId] });
-        queryClient.invalidateQueries({ queryKey: ['specificationWorkspace', sessionId] });
+        queryClient.invalidateQueries({ queryKey: ['planModeWorkspace', sessionId] });
         return result;
       } catch (error) {
         shouldClearPendingAssistant = true;

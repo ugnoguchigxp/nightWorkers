@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { client } from '../../../lib/api';
-import { fetchSpecificationWorkspace } from '../../specification';
+import { fetchPlanModeWorkspace } from '../../specification';
 import {
   fetchBackgroundProcessesForTask,
   fetchImplementationQueue,
@@ -166,12 +166,12 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     refetchOnReconnect: false,
   });
 
-  const { data: activeSpecificationWorkspace = null } = useQuery({
-    queryKey: ['specificationWorkspace', activeSessionId],
+  const { data: activePlanModeWorkspace = null } = useQuery({
+    queryKey: ['planModeWorkspace', activeSessionId],
     queryFn: async () => {
       if (!activeSessionId) return null;
-      const res = await fetchSpecificationWorkspace(activeSessionId);
-      if (!res.ok) throw new Error('Failed to fetch specification workspace');
+      const res = await fetchPlanModeWorkspace(activeSessionId);
+      if (!res.ok) throw new Error('Failed to fetch Plan Mode workspace');
       return (await res.json()) as PlanModeWorkspace;
     },
     enabled: !!activeSessionId,
@@ -321,7 +321,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   }, [activeSessionId, latestRun?.id, latestRun?.taskId, latestRunEvents]);
   const sessionPresentation = useNightWorkersSessionPresentation({
     activeSession,
-    activeSpecificationWorkspace,
+    activePlanModeWorkspace,
     implementationQueue,
     latestRun,
     latestRunEvents,

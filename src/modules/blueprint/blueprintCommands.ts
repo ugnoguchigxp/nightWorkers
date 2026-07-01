@@ -7,10 +7,7 @@ type BlueprintGenerationInput = {
 };
 
 export function generateBlueprintArtifact(sessionId: string, input: BlueprintGenerationInput) {
-  return apiFetch(
-    `/api/tasks/${sessionId}/specification-workspace/blueprint`,
-    jsonRequest('POST', input)
-  );
+  return apiFetch(`/api/tasks/${sessionId}/plan-mode/blueprint`, jsonRequest('POST', input));
 }
 
 export function fetchBlueprintDesignSettings(sessionId: string, init?: RequestInit) {

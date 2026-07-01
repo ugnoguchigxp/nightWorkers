@@ -11,6 +11,7 @@ export const genericDedicatedViewSchema = {
     view: {
       type: 'string',
       enum: [
+        'user_flow',
         'api_io_contract',
         'state_model',
         'activity_flow',
@@ -29,7 +30,7 @@ export const genericDedicatedViewSchema = {
 
 export type GenericDedicatedViewArtifact = {
   artifactKind: 'plan_mode_dedicated_view';
-  view: Exclude<DedicatedDesignView, 'questionnaire' | 'user_flow' | 'blueprint' | 'data_model'>;
+  view: Exclude<DedicatedDesignView, 'questionnaire' | 'blueprint' | 'data_model'>;
   title: string;
   markdown: string;
   diagramKind?: 'stateDiagram-v2' | 'flowchart' | 'sequenceDiagram';
@@ -86,6 +87,12 @@ export function buildPlanDedicatedViewUserPrompt(input: {
 
 function viewRules(view: GenericDedicatedViewArtifact['view']) {
   switch (view) {
+    case 'user_flow':
+      return [
+        '- ユーザー操作、画面遷移、手順が実装判断に影響する範囲だけを書く。',
+        '- UI がない作業、または user-visible flow が変わらない作業では、不要な画面や actor を足さない。',
+        '- ユースケース図、journey、gantt は生成しない。',
+      ].join('\n');
     case 'api_io_contract':
       return [
         '- Markdown で request / response / error / permission / timeout / idempotency を必要な範囲だけ書く。',

@@ -44,7 +44,7 @@ function summarizePlanModeWorkspace(workspace: PlanModeWorkspace) {
 
 type UseNightWorkersSessionPresentationInput = {
   activeSession: Task | null;
-  activeSpecificationWorkspace: PlanModeWorkspace | null;
+  activePlanModeWorkspace: PlanModeWorkspace | null;
   implementationQueue: ImplementationQueueDashboard | null;
   latestRun: TaskRun | undefined;
   latestRunEvents: TaskEvent[];
@@ -58,7 +58,7 @@ type UseNightWorkersSessionPresentationInput = {
 
 export function useNightWorkersSessionPresentation({
   activeSession,
-  activeSpecificationWorkspace,
+  activePlanModeWorkspace,
   implementationQueue,
   latestRun,
   latestRunEvents,
@@ -81,8 +81,8 @@ export function useNightWorkersSessionPresentation({
       activityArtifacts,
     });
     if (
-      activeSpecificationWorkspace &&
-      hasPlanModeWorkspaceEvidence(activeSpecificationWorkspace) &&
+      activePlanModeWorkspace &&
+      hasPlanModeWorkspaceEvidence(activePlanModeWorkspace) &&
       !refs.some((artifact) => artifact.kind === 'plan_mode_workspace')
     ) {
       refs.unshift({
@@ -90,27 +90,27 @@ export function useNightWorkersSessionPresentation({
         taskId: activeSession.id,
         kind: 'plan_mode_workspace',
         title: 'Plan Mode Workspace',
-        summary: summarizePlanModeWorkspace(activeSpecificationWorkspace),
+        summary: summarizePlanModeWorkspace(activePlanModeWorkspace),
         source: {
           type: 'task_message',
           messageId:
-            activeSpecificationWorkspace.decisionReviews[0]?.sourceMessageId ||
-            activeSpecificationWorkspace.featurePlanArtifacts[0]?.sourceMessageId ||
-            activeSpecificationWorkspace.blueprintArtifacts[0]?.sourceMessageId ||
-            activeSpecificationWorkspace.dataModelArtifacts[0]?.sourceMessageId ||
-            activeSpecificationWorkspace.dedicatedViewArtifacts[0]?.sourceMessageId ||
-            activeSpecificationWorkspace.questionnaireSessions[0]?.sourceBlueprintMessageId ||
-            activeSpecificationWorkspace.implementationReferences[0]?.sourceMessageId ||
+            activePlanModeWorkspace.decisionReviews[0]?.sourceMessageId ||
+            activePlanModeWorkspace.featurePlanArtifacts[0]?.sourceMessageId ||
+            activePlanModeWorkspace.blueprintArtifacts[0]?.sourceMessageId ||
+            activePlanModeWorkspace.dataModelArtifacts[0]?.sourceMessageId ||
+            activePlanModeWorkspace.dedicatedViewArtifacts[0]?.sourceMessageId ||
+            activePlanModeWorkspace.questionnaireSessions[0]?.sourceBlueprintMessageId ||
+            activePlanModeWorkspace.implementationReferences[0]?.sourceMessageId ||
             '',
         },
-        createdAt: activeSpecificationWorkspace.generatedAt || String(activeSession.updatedAt),
-        metadata: { planModeWorkspace: activeSpecificationWorkspace },
+        createdAt: activePlanModeWorkspace.generatedAt || String(activeSession.updatedAt),
+        metadata: { planModeWorkspace: activePlanModeWorkspace },
       });
     }
     return refs;
   }, [
     activeSession,
-    activeSpecificationWorkspace,
+    activePlanModeWorkspace,
     latestRun,
     latestRunEvents,
     latestRunReviews,

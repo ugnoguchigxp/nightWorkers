@@ -409,7 +409,7 @@ describe('NightWorkers workbench routes', () => {
       body.messages.some((message: unknown) => message.metadataJson?.intent === 'app_blueprint')
     ).toBe(false);
     const workspaceRes = await app.request(
-      `http://localhost/api/tasks/${task.id}/specification-workspace`,
+      `http://localhost/api/tasks/${task.id}/plan-mode/workspace`,
       { headers: sameOriginHeaders }
     );
     expect(workspaceRes.status).toBe(200);
@@ -650,7 +650,7 @@ describe('NightWorkers workbench routes', () => {
       role: 'assistant',
       content: '## 仕様\nTodo List の実装仕様',
       messageType: 'markdown_document',
-      payloadJson: { intent: 'draft_spec', source: 'status_document_review' },
+      payloadJson: { intent: 'feature_plan', source: 'status_document_review' },
     });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -1007,7 +1007,7 @@ describe('NightWorkers workbench routes', () => {
       headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
       body: JSON.stringify({
         prompt: 'fizzbuzz.tsをプロジェクトルートに作ってください',
-        intent: 'draft_spec',
+        intent: 'feature_plan',
       }),
     });
 

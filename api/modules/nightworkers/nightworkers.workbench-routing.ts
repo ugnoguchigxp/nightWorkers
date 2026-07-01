@@ -22,7 +22,6 @@ export type WorkbenchChatIntent =
   | 'intake'
   | 'draft'
   | 'feature_plan'
-  | 'draft_spec'
   | 'create_task'
   | 'queue'
   | 'run_task'

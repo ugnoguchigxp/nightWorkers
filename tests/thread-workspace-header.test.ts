@@ -22,7 +22,7 @@ describe('ThreadWorkspace header', () => {
     );
 
     expect(workspaceSource).not.toContain('Create Blueprint artifact');
-    expect(workspaceSource).toContain('noSpecificationWorkspaceLabel');
+    expect(workspaceSource).toContain('noPlanModeWorkspaceLabel');
     expect(workspaceSource).toContain('!blueprintArtifact');
     expect(shellSource).not.toContain("sendWorkbenchMessage(session.id, prompt, 'draft_spec')");
   });
@@ -41,7 +41,7 @@ describe('ThreadWorkspace header', () => {
     expect(shellSource).toContain('await current.startRun(sessionId);');
     expect(shellSource).toContain("setArtifactFocus({ type: 'todo' });");
     expect(shellSource).toContain('queueSessionAndFocusTodo');
-    expect(shellSource).toContain('await current.createImplementationQueueEntry(sessionId);');
+    expect(shellSource).toContain('await queueState.createImplementationQueueEntry(sessionId);');
     expect(workspaceSource).toContain('onOpenTodoArtifact');
     expect(workspaceSource).not.toContain('nightworkers-thread-side-panel');
   });

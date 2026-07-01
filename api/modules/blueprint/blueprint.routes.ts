@@ -2,7 +2,7 @@ import { createOpenApiRouter } from '../../lib/openapi';
 import { withOpenApiRouteError } from '../nightworkers/nightworkers.route-utils';
 import * as service from './blueprint.service';
 import {
-  generateSpecificationStatusBlueprintRoute,
+  generatePlanModeBlueprintRoute,
   getBlueprintArtifactAdoptionRoute,
   getBlueprintDesignSettingsRoute,
   getBlueprintDesignTokenAdoptionRoute,
@@ -74,8 +74,8 @@ export const blueprintRouter = createOpenApiRouter()
     })
   )
   .openapi(
-    generateSpecificationStatusBlueprintRoute,
-    withOpenApiRouteError(generateSpecificationStatusBlueprintRoute, async (c) => {
+    generatePlanModeBlueprintRoute,
+    withOpenApiRouteError(generatePlanModeBlueprintRoute, async (c) => {
       const result = await service.generateBlueprintArtifact(
         c.req.param('id'),
         c.req.valid('json')

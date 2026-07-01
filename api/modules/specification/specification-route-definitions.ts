@@ -1,9 +1,9 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { planModeWorkspaceSchema } from '../../../shared/schemas/plan-mode-artifact.schema';
 
-export const getPlanModeWorkspaceCompatibilityRoute = createRoute({
+export const getPlanModeWorkspaceRoute = createRoute({
   method: 'get',
-  path: '/tasks/:id/blueprint-specification-workspace',
+  path: '/tasks/:id/plan-mode/workspace',
   request: {
     params: z.object({ id: z.string().uuid() }),
   },
@@ -15,35 +15,21 @@ export const getPlanModeWorkspaceCompatibilityRoute = createRoute({
   },
 });
 
-export const getSpecificationWorkspaceRoute = createRoute({
-  method: 'get',
-  path: '/tasks/:id/specification-workspace',
-  request: {
-    params: z.object({ id: z.string().uuid() }),
-  },
-  responses: {
-    200: {
-      content: { 'application/json': { schema: planModeWorkspaceSchema } },
-      description: 'Plan Mode Workspace read model',
-    },
-  },
-});
-
-const specificationStatusGenerateRequestSchema = z.object({
+const featurePlanGenerateRequestSchema = z.object({
   questionnaireSessionId: z.string().uuid().nullable().optional(),
   sourceBlueprintMessageId: z.string().uuid().nullable().optional(),
   reviewAfterGenerate: z.boolean().optional(),
 });
 
-export const generateSpecificationStatusDesignDocumentRoute = createRoute({
+export const generateFeaturePlanRoute = createRoute({
   method: 'post',
-  path: '/tasks/:id/specification-workspace/design-doc',
+  path: '/tasks/:id/plan-mode/feature-plan',
   request: {
     params: z.object({ id: z.string().uuid() }),
     body: {
       content: {
         'application/json': {
-          schema: specificationStatusGenerateRequestSchema,
+          schema: featurePlanGenerateRequestSchema,
         },
       },
     },
@@ -51,7 +37,7 @@ export const generateSpecificationStatusDesignDocumentRoute = createRoute({
   responses: {
     200: {
       content: { 'application/json': { schema: z.unknown() } },
-      description: 'Specification generated from Status',
+      description: 'Feature Plan generated from Plan Mode Status',
     },
   },
 });

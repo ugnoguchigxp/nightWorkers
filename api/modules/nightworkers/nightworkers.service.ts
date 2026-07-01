@@ -40,9 +40,8 @@ export {
   saveDesignQuestionnaireAnswers,
 } from '../questionnaire/questionnaire.service';
 export {
-  generateSpecificationArtifact as generateSpecificationStatusDesignDocument,
+  generateFeaturePlanArtifact as generateSpecificationStatusDesignDocument,
   getPlanModeWorkspace,
-  getSpecificationWorkspace,
 } from '../specification/specification.service';
 export {
   getTaskBackgroundProcess,

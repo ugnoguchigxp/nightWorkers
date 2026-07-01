@@ -1,2 +1,2 @@
-export { generateSpecificationArtifact } from './specification-generation.service';
-export { getPlanModeWorkspace, getSpecificationWorkspace } from './specification-workspace.service';
+export { getPlanModeWorkspace } from './plan-mode-workspace.service';
+export { generateFeaturePlanArtifact } from './specification-generation.service';

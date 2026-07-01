@@ -1,33 +1,23 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import {
-  ProjectEvaluationImprovementInstructionField,
-  projectEvaluationImprovementIdeas,
-} from '../src/modules/project-evaluation/components/ProjectEvaluationMockScreen';
+import { ProjectEvaluationImprovementInstructionField } from '../src/modules/project-evaluation/components/ImprovementIdeaCard';
+import type { ProjectImprovementIdea } from '../src/modules/project-evaluation/model/projectEvaluationTypes';
 
-describe('project evaluation improvement ideas', () => {
-  it('keeps visible summaries long enough to explain current problems and importance', () => {
-    expect(projectEvaluationImprovementIdeas.length).toBeGreaterThan(0);
+const idea: ProjectImprovementIdea = {
+  title: '評価結果から Task draft を生成する',
+  summary:
+    '評価結果を実装候補へ変換するため、選択された評価軸、rationale、期待 score impact を Task draft として扱える形にする。',
+  agentPrompt:
+    'LLM は保存済み Project Evaluation の選択評価軸、rationale、期待 score impact を読み取り、自然言語の Task draft を作成すること。',
+  expectedOutcome: 'Project owner が次に実装へ移すべき改善を判断できる。',
+  implementationFocus: ['評価軸と改善候補の対応を明確にする'],
+  targetDimensions: ['implementation_readiness'],
+  scoreImpacts: [],
+};
 
-    for (const idea of projectEvaluationImprovementIdeas) {
-      expect(idea.summary.length).toBeGreaterThanOrEqual(120);
-      expect(idea.summary).toMatch(/現状|弱い|不足|分断|曖昧/);
-      expect(idea.summary).toMatch(/重要|必要|判断|価値|信頼性|確実/);
-    }
-  });
-
-  it('stores hidden natural-language implementation instructions for LLM task generation', () => {
-    for (const idea of projectEvaluationImprovementIdeas) {
-      expect(idea.implementationInstruction.length).toBeGreaterThanOrEqual(100);
-      expect(idea.implementationInstruction).toContain('LLM');
-      expect(idea.implementationInstruction).toMatch(/自然言語|記述|設計|作成/);
-      expect(idea.implementationInstruction).toMatch(/実装|保存|draft|Queue|UI/);
-    }
-  });
-
+describe('project evaluation improvement instruction field', () => {
   it('renders implementation instructions as a hidden field separate from visible text', () => {
-    const idea = projectEvaluationImprovementIdeas[0];
     const markup = renderToStaticMarkup(
       createElement(ProjectEvaluationImprovementInstructionField, { idea })
     );

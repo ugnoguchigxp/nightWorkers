@@ -3,12 +3,27 @@ import { BlueprintPreview } from '../blueprint-preview';
 import { MarkdownViewer } from '../nightworkers/components/ArtifactFileViewers';
 import type {
   DesignQuestionnaireSession,
+  PlanModeCapability,
   PlanModeSettings,
   PlanModeWorkspace,
   PlanModeWorkspaceArtifact,
   TaskMessage,
 } from '../nightworkers/types';
 import { getQuestionCount } from './PlanModeQuestionnaire';
+
+type AdditionalPlanView = Exclude<
+  PlanModeCapability,
+  'feature_plan' | 'questionnaire' | 'blueprint' | 'data_model'
+>;
+
+const ADDITIONAL_PLAN_VIEWS: readonly AdditionalPlanView[] = [
+  'user_flow',
+  'api_io_contract',
+  'state_model',
+  'activity_flow',
+  'sequence_flow',
+  'zod_schema_design',
+];
 
 export type PlanViewDecision = {
   view: string;
@@ -165,6 +180,7 @@ export function PlanWorkspaceStatusView({
   onGenerateBlueprint,
   onGenerateDataModel,
   onGenerateFeaturePlan,
+  onGenerateDedicatedViews,
   onQueueSession,
   onAddToQueue,
 }: {
@@ -180,6 +196,7 @@ export function PlanWorkspaceStatusView({
   onGenerateBlueprint: () => void;
   onGenerateDataModel: () => void;
   onGenerateFeaturePlan: () => void;
+  onGenerateDedicatedViews: (views: string[]) => void;
   onQueueSession?: () => void;
   onAddToQueue?: () => void;
 }) {
@@ -192,13 +209,6 @@ export function PlanWorkspaceStatusView({
   const isIncluded = (view: string) => decisionByView.get(view)?.decision === 'include';
   const shouldShowDefault = (view: string, enabled: boolean, exists: boolean) =>
     exists || isIncluded(view) || (!hasRoutingDecisions && enabled);
-  const includedAdditionalViews = viewDecisions.filter(
-    (item) => item.decision === 'include' && isAdditionalView(item.view)
-  );
-  const includedAdditionalViewCount = includedAdditionalViews.length;
-  const generatedAdditionalViewCount =
-    (workspace?.dedicatedViewArtifacts || []).filter((artifact) => isAdditionalView(artifact.kind))
-      .length || 0;
   const capabilities = planModeSettings?.capabilities ?? {
     feature_plan: true,
     questionnaire: true,
@@ -211,7 +221,33 @@ export function PlanWorkspaceStatusView({
     sequence_flow: true,
     zod_schema_design: true,
   };
+  const includedAdditionalViews = viewDecisions.filter(
+    (item): item is PlanViewDecision & { view: AdditionalPlanView } =>
+      item.decision === 'include' && isAdditionalView(item.view)
+  );
+  const generatedAdditionalViews = new Set<AdditionalPlanView>(
+    (workspace?.dedicatedViewArtifacts || [])
+      .map((artifact) => artifact.kind)
+      .filter(isAdditionalView)
+  );
+  const enabledIncludedAdditionalViews = includedAdditionalViews
+    .map((item) => item.view)
+    .filter((view) => capabilities[view]);
+  const disabledIncludedAdditionalViews = includedAdditionalViews
+    .map((item) => item.view)
+    .filter((view) => !capabilities[view]);
+  const missingAdditionalViews = enabledIncludedAdditionalViews.filter(
+    (view) => !generatedAdditionalViews.has(view)
+  );
+  const includedAdditionalViewCount = includedAdditionalViews.length;
+  const generatedAdditionalViewCount = enabledIncludedAdditionalViews.filter((view) =>
+    generatedAdditionalViews.has(view)
+  ).length;
   const disabledReason = 'Plan Mode capability is disabled in Settings.';
+  const additionalViewDisabledReason =
+    disabledIncludedAdditionalViews.length > 0
+      ? `Disabled in Settings: ${disabledIncludedAdditionalViews.map(formatViewLabel).join(' / ')}`
+      : null;
   const questionnaireDone = Boolean(
     questionnaireSession &&
       (questionnaireSession.status === 'review_ready' || questionnaireSession.status === 'accepted')
@@ -243,7 +279,7 @@ export function PlanWorkspaceStatusView({
           done: hasBlueprint,
           buttonLabel: hasBlueprint ? 'Blueprintを再生成' : 'Blueprint作成',
           busy: busyAction === 'blueprint',
-          disabled: !questionnaireDone || isImplementationLocked || !capabilities.blueprint,
+          disabled: isImplementationLocked || !capabilities.blueprint,
           disabledReason: !capabilities.blueprint ? disabledReason : null,
           onClick: onGenerateBlueprint,
         }
@@ -267,13 +303,16 @@ export function PlanWorkspaceStatusView({
       ? {
           number: 4,
           title: '追加の dedicated design view を確認します',
-          detail: `${generatedAdditionalViewCount}/${includedAdditionalViewCount}件の追加 view が生成済みです。`,
-          done: generatedAdditionalViewCount >= includedAdditionalViewCount,
-          buttonLabel: '生成状況を確認',
+          detail:
+            enabledIncludedAdditionalViews.length > 0
+              ? `${generatedAdditionalViewCount}/${enabledIncludedAdditionalViews.length}件の追加 view が生成済みです。`
+              : `${includedAdditionalViewCount}件の追加 view はSettingsで無効です。`,
+          done: missingAdditionalViews.length === 0,
+          buttonLabel: missingAdditionalViews.length > 0 ? '追加Viewを生成' : '生成状況を確認',
           busy: Boolean(busyAction?.startsWith('view:')),
-          disabled: false,
-          disabledReason: null,
-          onClick: () => undefined,
+          disabled: isImplementationLocked || missingAdditionalViews.length === 0,
+          disabledReason: additionalViewDisabledReason,
+          onClick: () => onGenerateDedicatedViews(missingAdditionalViews),
         }
       : null,
     {
@@ -281,7 +320,7 @@ export function PlanWorkspaceStatusView({
       title: 'Feature Plan Markdownを作ります。これによってすぐに実装に移れます',
       detail: hasFeaturePlan
         ? 'Feature Planが作成済みです。'
-        : '回答、Blueprint、Data Modelを要約してFeature Planを生成します。',
+        : '利用可能なQuestionnaire、Blueprint、Data Modelを要約してFeature Planを生成します。',
       done: hasFeaturePlan,
       buttonLabel: hasFeaturePlan ? 'Feature Planを再生成' : 'Feature Plan作成',
       busy: busyAction === 'feature-plan',
@@ -514,14 +553,8 @@ function formatCanonicalSource(value: string) {
   return labels[value] || value;
 }
 
-function isAdditionalView(value: string) {
-  return [
-    'api_io_contract',
-    'state_model',
-    'activity_flow',
-    'sequence_flow',
-    'zod_schema_design',
-  ].includes(value);
+function isAdditionalView(value: string): value is AdditionalPlanView {
+  return (ADDITIONAL_PLAN_VIEWS as readonly string[]).includes(value);
 }
 
 function formatViewLabel(value: string) {

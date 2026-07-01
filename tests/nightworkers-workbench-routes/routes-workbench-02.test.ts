@@ -179,7 +179,7 @@ describe('NightWorkers workbench routes', () => {
     ).toBe(false);
   });
 
-  it('keeps draft_spec messages as draft chat without Blueprint generation', async () => {
+  it('keeps feature_plan messages as draft chat without Blueprint generation', async () => {
     const { task } = await createWorkbenchTask();
 
     const draftRes = await app.request(
@@ -187,7 +187,10 @@ describe('NightWorkers workbench routes', () => {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
-        body: JSON.stringify({ prompt: 'チャット中心の作業台を仕様にして', intent: 'draft_spec' }),
+        body: JSON.stringify({
+          prompt: 'チャット中心の作業台を仕様にして',
+          intent: 'feature_plan',
+        }),
       }
     );
 

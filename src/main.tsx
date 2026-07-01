@@ -3,20 +3,6 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import './index.css';
 
-async function enableMocking() {
-  if (!import.meta.env.DEV || import.meta.env.VITE_ENABLE_MSW !== 'true') {
-    return;
-  }
-
-  const { worker } = await import('./mocks/browser');
-
-  // `worker.start()` returns a Promise that resolves
-  // once the Service Worker is up and ready to intercept requests.
-  return worker.start({
-    onUnhandledRequest: 'bypass',
-  });
-}
-
 async function loadDesktopConfig() {
   if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
   try {
@@ -29,7 +15,7 @@ async function loadDesktopConfig() {
 
 const rootElement = document.getElementById('root');
 if (rootElement && !rootElement.innerHTML) {
-  Promise.all([loadDesktopConfig(), enableMocking()])
+  loadDesktopConfig()
     .catch((err) => {
       console.warn('App bootstrap warning, continuing with defaults.', err);
     })

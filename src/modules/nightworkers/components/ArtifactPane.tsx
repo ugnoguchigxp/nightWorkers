@@ -75,6 +75,7 @@ function workspaceInitialTab(value: unknown): PlanWorkspaceTab | undefined {
   return value === 'feature-plan' ||
     value === 'blueprint' ||
     value === 'data-model' ||
+    value === 'user-flow' ||
     value === 'api-io-contract' ||
     value === 'state-model' ||
     value === 'activity-flow' ||

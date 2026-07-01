@@ -1,2 +1,2 @@
+export * from './planModeWorkspaceModel';
 export * from './specificationCommands';
-export * from './specificationWorkspaceModel';

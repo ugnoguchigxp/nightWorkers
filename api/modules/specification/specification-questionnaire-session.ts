@@ -30,3 +30,14 @@ export async function resolveReadyQuestionnaireSession(
   }
   return session;
 }
+
+export async function resolveOptionalReadyQuestionnaireSession(
+  taskId: string,
+  sessionId?: string | null
+): Promise<DesignQuestionnaireSession | null> {
+  if (sessionId) return resolveReadyQuestionnaireSession(taskId, sessionId);
+  const session = (await listDesignQuestionnaires(taskId)).find(
+    (item) => item.status === 'review_ready' || item.status === 'accepted'
+  );
+  return session || null;
+}

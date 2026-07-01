@@ -1,0 +1,213 @@
+@layer components {
+  .nw-dev-error-shell {
+    min-height: 100vh;
+    background: #101418;
+    color: #f3f6f8;
+    padding: 1.5rem 1rem;
+  }
+
+  .nw-dev-error-panel {
+    position: relative;
+    width: min(100%, 1180px);
+    margin: 0 auto;
+    border: 1px solid #34404b;
+    border-radius: var(--radius);
+    background: #171d23;
+    padding: 1.25rem;
+    box-shadow: 0 24px 80px rgb(0 0 0 / 35%);
+  }
+
+  .nw-dev-error-header {
+    display: flex;
+    align-items: flex-start;
+    border-bottom: 1px solid #34404b;
+    padding-right: 19rem;
+    padding-bottom: 1.25rem;
+  }
+
+  .nw-dev-error-title-row,
+  .nw-dev-error-actions,
+  .nw-dev-error-action {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .nw-dev-error-icon {
+    display: grid;
+    width: 2.75rem;
+    height: 2.75rem;
+    flex-shrink: 0;
+    place-items: center;
+    border-radius: var(--radius);
+    background: #4a1e22;
+    color: #ff8f8f;
+  }
+
+  .nw-dev-error-icon svg {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  .nw-dev-error-kicker {
+    margin: 0;
+    color: #9ba8b5;
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  .nw-dev-error-title-row h1 {
+    max-width: 53rem;
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: 0;
+    line-height: 1.1;
+  }
+
+  .nw-dev-error-actions {
+    position: absolute;
+    top: 1.25rem;
+    right: 1.25rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .nw-dev-error-action {
+    min-height: 2rem;
+    border: 1px solid #4d5a66;
+    border-radius: calc(var(--radius) - 2px);
+    background: #202832;
+    color: #f3f6f8;
+    padding: 0 0.625rem;
+    font-size: 0.75rem;
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  .nw-dev-error-action:hover {
+    border-color: #7d8c9b;
+    background: #28313c;
+  }
+
+  .nw-dev-error-action-icon {
+    width: 0.875rem;
+    height: 0.875rem;
+    flex-shrink: 0;
+  }
+
+  .nw-dev-error-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+    padding: 1.25rem 0;
+  }
+
+  .nw-dev-error-meta div {
+    min-width: 0;
+    border: 1px solid #34404b;
+    border-radius: var(--radius);
+    background: #12171d;
+    padding: 0.75rem;
+  }
+
+  .nw-dev-error-meta span {
+    display: block;
+    color: #9ba8b5;
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  .nw-dev-error-meta strong {
+    display: block;
+    margin-top: 0.25rem;
+    overflow: hidden;
+    color: #f3f6f8;
+    font-size: 0.875rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .nw-dev-error-section {
+    overflow: hidden;
+    border: 1px solid #34404b;
+    border-radius: var(--radius);
+    background: #0e1318;
+  }
+
+  .nw-dev-error-section + .nw-dev-error-section {
+    margin-top: 1rem;
+  }
+
+  .nw-dev-error-section-header {
+    border-bottom: 1px solid #34404b;
+    background: #151b21;
+    padding: 0.75rem 1rem;
+  }
+
+  .nw-dev-error-section-header h2 {
+    margin: 0;
+    color: #d6dde4;
+    font-size: 0.875rem;
+    font-weight: 800;
+    letter-spacing: 0;
+  }
+
+  .nw-dev-error-section pre {
+    margin: 0;
+    overflow: auto;
+    padding: 1rem;
+    color: #f2b8b8;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+
+  .nw-dev-error-section details {
+    background: #0e1318;
+  }
+
+  .nw-dev-error-section summary {
+    cursor: pointer;
+    border-bottom: 1px solid #34404b;
+    background: #151b21;
+    color: #d6dde4;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 800;
+  }
+
+  .nw-dev-error-list {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 1rem;
+    color: #f2b8b8;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.8125rem;
+    line-height: 1.6;
+  }
+
+  @media (max-width: 760px) {
+    .nw-dev-error-header {
+      flex-wrap: wrap;
+      gap: 1rem;
+      padding-right: 0;
+    }
+
+    .nw-dev-error-actions {
+      position: static;
+      justify-content: flex-start;
+    }
+
+    .nw-dev-error-title-row h1 {
+      font-size: 1.5rem;
+    }
+  }
+}

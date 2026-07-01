@@ -2,7 +2,7 @@ import type { TaskMessage } from './types';
 
 export function isWorkspaceOnlyTaskMessage(message: TaskMessage): boolean {
   const intent = (message.metadataJson as Record<string, unknown>)?.intent;
-  return intent === 'feature_plan' || intent === 'draft_spec';
+  return intent === 'feature_plan';
 }
 
 export function isUserVisibleChatMessage(message: TaskMessage): boolean {

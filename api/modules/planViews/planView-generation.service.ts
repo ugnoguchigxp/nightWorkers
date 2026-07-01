@@ -17,10 +17,11 @@ import {
   type PlanModeTaskMessage,
 } from '../nightworkers/nightworkers.plan-mode-core.port';
 import { assertPlanModeCapabilityEnabled } from '../nightworkers/nightworkers.plan-mode-settings.service';
+import { getPlanModeWorkspace } from '../specification/plan-mode-workspace.service';
 import { assertPlanModeMutable } from '../specification/specification-mutability';
-import { getSpecificationWorkspace } from '../specification/specification-workspace.service';
 
 export const genericPlanViewSchema = z.enum([
+  'user_flow',
   'api_io_contract',
   'state_model',
   'activity_flow',
@@ -103,7 +104,7 @@ export async function generatePlanViewArtifact(
       },
     },
   });
-  return { message, workspace: await getSpecificationWorkspace(taskId) };
+  return { message, workspace: await getPlanModeWorkspace(taskId) };
 }
 
 export function parseGenericDedicatedViewOutput(
@@ -205,8 +206,7 @@ function isMessageKind(
 ) {
   if (message.messageType !== 'markdown_document') return false;
   const metadata = (message.metadataJson || {}) as Record<string, unknown>;
-  if (kind === 'feature_plan')
-    return metadata.intent === 'feature_plan' || metadata.intent === 'draft_spec';
+  if (kind === 'feature_plan') return metadata.intent === 'feature_plan';
   if (kind === 'blueprint')
     return metadata.intent === 'app_blueprint' && Boolean(metadata.appBlueprint);
   return metadata.artifactKind === 'plan_mode_dedicated_view' && metadata.view === 'data_model';

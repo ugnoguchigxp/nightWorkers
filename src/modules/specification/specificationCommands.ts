@@ -6,16 +6,13 @@ type SpecificationGenerationInput = {
   sourceBlueprintMessageId?: string | null;
 };
 
-export function fetchSpecificationWorkspace(sessionId: string, init?: RequestInit) {
-  return apiFetch(`/api/tasks/${sessionId}/specification-workspace`, init);
+export function fetchPlanModeWorkspace(sessionId: string, init?: RequestInit) {
+  return apiFetch(`/api/tasks/${sessionId}/plan-mode/workspace`, init);
 }
 
-export function generateSpecificationArtifact(
+export function generateFeaturePlanArtifact(
   sessionId: string,
   input: SpecificationGenerationInput
 ) {
-  return apiFetch(
-    `/api/tasks/${sessionId}/specification-workspace/design-doc`,
-    jsonRequest('POST', input)
-  );
+  return apiFetch(`/api/tasks/${sessionId}/plan-mode/feature-plan`, jsonRequest('POST', input));
 }

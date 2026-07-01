@@ -159,21 +159,21 @@ export const saveBlueprintDesignTokenAdoptionRoute = createRoute({
   },
 });
 
-const specificationStatusGenerateRequestSchema = z.object({
+const planModeBlueprintGenerateRequestSchema = z.object({
   questionnaireSessionId: z.string().uuid().nullable().optional(),
   sourceBlueprintMessageId: z.string().uuid().nullable().optional(),
   reviewAfterGenerate: z.boolean().optional(),
 });
 
-export const generateSpecificationStatusBlueprintRoute = createRoute({
+export const generatePlanModeBlueprintRoute = createRoute({
   method: 'post',
-  path: '/tasks/:id/specification-workspace/blueprint',
+  path: '/tasks/:id/plan-mode/blueprint',
   request: {
     params: z.object({ id: z.string().uuid() }),
     body: {
       content: {
         'application/json': {
-          schema: specificationStatusGenerateRequestSchema,
+          schema: planModeBlueprintGenerateRequestSchema,
         },
       },
     },
@@ -181,7 +181,7 @@ export const generateSpecificationStatusBlueprintRoute = createRoute({
   responses: {
     200: {
       content: { 'application/json': { schema: z.unknown() } },
-      description: 'Blueprint generated from Status',
+      description: 'Blueprint dedicated design view generated',
     },
   },
 });

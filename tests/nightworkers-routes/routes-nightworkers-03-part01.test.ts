@@ -319,7 +319,7 @@ describe('NightWorkers task routes', () => {
       expect((await acceptRes.json()).status).toBe('accepted');
 
       const workspaceRes = await app.request(
-        `http://localhost/api/tasks/${task.id}/blueprint-specification-workspace`,
+        `http://localhost/api/tasks/${task.id}/plan-mode/workspace`,
         { headers: sameOriginHeaders }
       );
       expect(workspaceRes.status).toBe(200);
@@ -349,13 +349,13 @@ describe('NightWorkers task routes', () => {
         expect.arrayContaining([expect.objectContaining({ title: 'Support Desk Decision Review' })])
       );
 
-      const specificationWorkspaceRes = await app.request(
-        `http://localhost/api/tasks/${task.id}/specification-workspace`,
+      const planModeWorkspaceRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/plan-mode/workspace`,
         { headers: sameOriginHeaders }
       );
-      expect(specificationWorkspaceRes.status).toBe(200);
-      const specificationWorkspace = await specificationWorkspaceRes.json();
-      expect(specificationWorkspace.questionnaireSessions).toEqual(
+      expect(planModeWorkspaceRes.status).toBe(200);
+      const planModeWorkspace = await planModeWorkspaceRes.json();
+      expect(planModeWorkspace.questionnaireSessions).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             id: session.id,
@@ -363,7 +363,7 @@ describe('NightWorkers task routes', () => {
           }),
         ])
       );
-      expect(specificationWorkspace.decisionReviews).toEqual(
+      expect(planModeWorkspace.decisionReviews).toEqual(
         expect.arrayContaining([expect.objectContaining({ title: 'Support Desk Decision Review' })])
       );
     } finally {
@@ -517,9 +517,9 @@ describe('NightWorkers task routes', () => {
   });
 
   it.each([
-    ['blueprint', 'specification-workspace/blueprint'],
+    ['blueprint', 'plan-mode/blueprint'],
     ['data_model', 'plan-mode/data-model'],
-    ['feature_plan', 'specification-workspace/design-doc'],
+    ['feature_plan', 'plan-mode/feature-plan'],
   ] as const)('rejects %s Status generation when the Plan Mode capability is disabled', async (capability, endpointPath) => {
     vi.spyOn(generalSettings, 'readGeneralSettings').mockReturnValue({
       ...generalSettings.DEFAULT_GENERAL_SETTINGS,
@@ -554,6 +554,78 @@ describe('NightWorkers task routes', () => {
       expect(body.error?.code ?? body.code).toBe('PLAN_MODE_CAPABILITY_DISABLED');
     } finally {
       vi.restoreAllMocks();
+    }
+  });
+
+  it('generates Blueprint and Feature Plan without requiring a Questionnaire session', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+
+    try {
+      const createdRepo = await repo.createRepository({
+        name: `TEST: Optional Questionnaire ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: createdRepo.id,
+        title: 'TEST: Optional questionnaire target',
+        description: 'Generate Plan Mode artifacts from task context only',
+        status: 'draft',
+      });
+
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(representativeAppBlueprint);
+      const blueprintRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/plan-mode/blueprint`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+      expect(blueprintRes.status).toBe(200);
+      const blueprintBody = await blueprintRes.json();
+      expect(blueprintBody.message.metadataJson).toMatchObject({
+        intent: 'app_blueprint',
+        source: 'status',
+        questionnaireSessionId: null,
+      });
+
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+        title: 'Questionnaire Optional Feature Plan',
+        content: [
+          '# Questionnaire Optional Feature Plan',
+          '',
+          '## Goal',
+          'Task contextだけから初期実装可能なFeature Planを作る。',
+        ].join('\n'),
+      });
+      const featurePlanRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/plan-mode/feature-plan`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reviewAfterGenerate: false }),
+        }
+      );
+      expect(featurePlanRes.status).toBe(200);
+      const featurePlanBody = await featurePlanRes.json();
+      expect(featurePlanBody.message.metadataJson).toMatchObject({
+        intent: 'feature_plan',
+        source: 'status',
+        questionnaireSessionId: null,
+      });
+      expect(featurePlanBody.message.content).toContain('# Questionnaire Optional Feature Plan');
+    } finally {
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+      else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
     }
   });
 
@@ -1175,7 +1247,7 @@ describe('NightWorkers task routes', () => {
 
       process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(representativeAppBlueprint);
       const blueprintRes = await app.request(
-        `http://localhost/api/tasks/${task.id}/specification-workspace/blueprint`,
+        `http://localhost/api/tasks/${task.id}/plan-mode/blueprint`,
         {
           method: 'POST',
           headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
@@ -1237,7 +1309,7 @@ describe('NightWorkers task routes', () => {
         ].join('\n'),
       });
       const docRes = await app.request(
-        `http://localhost/api/tasks/${task.id}/specification-workspace/design-doc`,
+        `http://localhost/api/tasks/${task.id}/plan-mode/feature-plan`,
         {
           method: 'POST',
           headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
@@ -1480,7 +1552,7 @@ describe('NightWorkers task routes', () => {
 
       process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(representativeAppBlueprint);
       const blueprintRes = await app.request(
-        `http://localhost/api/tasks/${task.id}/specification-workspace/blueprint`,
+        `http://localhost/api/tasks/${task.id}/plan-mode/blueprint`,
         {
           method: 'POST',
           headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
@@ -1535,7 +1607,7 @@ describe('NightWorkers task routes', () => {
         ].join('\n'),
       });
       const docRes = await app.request(
-        `http://localhost/api/tasks/${task.id}/specification-workspace/design-doc`,
+        `http://localhost/api/tasks/${task.id}/plan-mode/feature-plan`,
         {
           method: 'POST',
           headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
