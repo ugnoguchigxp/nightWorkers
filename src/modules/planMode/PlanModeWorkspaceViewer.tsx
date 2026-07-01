@@ -213,7 +213,7 @@ export function PlanModeWorkspaceViewer({
     ) || [];
   const answerProgress = getAnswerProgress(questionGroups, answers);
   const unansweredQuestions = getUnansweredQuestions(questionGroups, answers);
-  const canGenerateDataModel = Boolean(activeQuestionnaireSession || featurePlanMessage);
+  const canGenerateDataModel = Boolean(sessionId);
 
   async function runAction(action: string, fn: () => Promise<void>) {
     setBusyAction(action);
@@ -283,19 +283,31 @@ export function PlanModeWorkspaceViewer({
     action: 'blueprint' | 'data-model' | 'feature-plan',
     nextTab: PlanWorkspaceTab
   ) {
-    if (!sessionId || !activeQuestionnaireSession) return;
+    if (!sessionId) return;
     if (isImplementationLocked) return;
+    if (action !== 'data-model' && !activeQuestionnaireSession) {
+      setActionError(
+        'A completed Design Questionnaire is required before generating this artifact.'
+      );
+      return;
+    }
     await runAction(action, async () => {
-      const input = {
-        questionnaireSessionId: activeQuestionnaireSession.id,
-        sourceBlueprintMessageId: activeBlueprintSourceMessageId || null,
-      };
       const res =
         action === 'blueprint'
-          ? await generateBlueprintArtifact(sessionId, input)
+          ? await generateBlueprintArtifact(sessionId, {
+              questionnaireSessionId: activeQuestionnaireSession?.id ?? null,
+              sourceBlueprintMessageId: activeBlueprintSourceMessageId || null,
+            })
           : action === 'data-model'
-            ? await generateDataModelArtifact(sessionId, input)
-            : await generateDesignDocArtifact(sessionId, input);
+            ? await generateDataModelArtifact(sessionId, {
+                questionnaireSessionId: activeQuestionnaireSession?.id ?? null,
+                featurePlanMessageId: featurePlanMessage?.id ?? null,
+                sourceBlueprintMessageId: activeBlueprintSourceMessageId || null,
+              })
+            : await generateDesignDocArtifact(sessionId, {
+                questionnaireSessionId: activeQuestionnaireSession?.id ?? null,
+                sourceBlueprintMessageId: activeBlueprintSourceMessageId || null,
+              });
       if (!res.ok) throw new Error(await res.text());
       const result = (await res.json()) as {
         message?: TaskMessage;
@@ -502,8 +514,7 @@ export function PlanModeWorkspaceViewer({
 }
 
 function extractViewDecisions(messages: TaskMessage[]): PlanViewDecision[] {
-  const decisions: PlanViewDecision[] = [];
-  const seen = new Set<string>();
+  const decisionsByView = new Map<string, PlanViewDecision>();
   for (const message of messages) {
     const metadata = isRecord(message.metadataJson) ? message.metadataJson : {};
     const candidates = [
@@ -519,10 +530,7 @@ function extractViewDecisions(messages: TaskMessage[]): PlanViewDecision[] {
         const decision =
           item.decision === 'include' || item.decision === 'omit' ? item.decision : null;
         if (!view || !decision) continue;
-        const key = `${view}:${decision}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        decisions.push({
+        decisionsByView.set(view, {
           view,
           decision,
           reason: typeof item.reason === 'string' ? item.reason : undefined,
@@ -530,7 +538,7 @@ function extractViewDecisions(messages: TaskMessage[]): PlanViewDecision[] {
       }
     }
   }
-  return decisions;
+  return [...decisionsByView.values()];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

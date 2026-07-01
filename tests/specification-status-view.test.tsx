@@ -126,4 +126,46 @@ describe('PlanWorkspaceStatusView', () => {
     expect(markup).toContain('Plan Mode capability is disabled in Settings.');
     expect(markup.match(/disabled=""/g) || []).toHaveLength(3);
   });
+
+  it('allows included Data Model work without forcing Questionnaire or Blueprint steps', () => {
+    const markup = renderToStaticMarkup(
+      <PlanWorkspaceStatusView
+        workspace={null}
+        questionnaireSession={null}
+        busyAction={null}
+        canGenerateDataModel={true}
+        hasFeaturePlan={false}
+        planModeSettings={{
+          capabilities: {
+            questionnaire: true,
+            feature_plan: true,
+            user_flow: true,
+            blueprint: true,
+            data_model: true,
+            api_io_contract: true,
+            state_model: true,
+            activity_flow: true,
+            sequence_flow: true,
+            zod_schema_design: true,
+          },
+        }}
+        viewDecisions={[
+          { view: 'questionnaire', decision: 'omit', reason: 'not needed' },
+          { view: 'blueprint', decision: 'omit', reason: 'no UI' },
+          { view: 'data_model', decision: 'include', reason: 'storage contract needed' },
+        ]}
+        onOpenQuestionnaire={vi.fn()}
+        onGenerateBlueprint={vi.fn()}
+        onGenerateDataModel={vi.fn()}
+        onGenerateFeaturePlan={vi.fn()}
+      />
+    );
+
+    expect(markup).toContain('Data Model作成');
+    expect(markup).not.toContain('アンケートへ');
+    expect(markup).not.toContain('Blueprint作成');
+    expect(markup).toContain('Data Model: include - storage contract needed');
+    expect(markup).toContain('Questionnaire: omit - not needed');
+    expect(markup).toMatch(/<button[^>]*>Data Model作成<\/button>/);
+  });
 });

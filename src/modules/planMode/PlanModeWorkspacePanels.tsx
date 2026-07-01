@@ -187,6 +187,11 @@ export function PlanWorkspaceStatusView({
   const questionCount = questionnaireSession ? getQuestionCount(questionnaireSession) : 0;
   const hasBlueprint = Boolean(workspace?.blueprintArtifacts.length);
   const hasDataModel = Boolean(workspace?.dataModelArtifacts.length);
+  const hasRoutingDecisions = viewDecisions.length > 0;
+  const decisionByView = new Map(viewDecisions.map((item) => [item.view, item]));
+  const isIncluded = (view: string) => decisionByView.get(view)?.decision === 'include';
+  const shouldShowDefault = (view: string, enabled: boolean, exists: boolean) =>
+    exists || isIncluded(view) || (!hasRoutingDecisions && enabled);
   const includedAdditionalViews = viewDecisions.filter(
     (item) => item.decision === 'include' && isAdditionalView(item.view)
   );
@@ -212,7 +217,7 @@ export function PlanWorkspaceStatusView({
       (questionnaireSession.status === 'review_ready' || questionnaireSession.status === 'accepted')
   );
   const steps = [
-    capabilities.questionnaire || questionnaireSession
+    shouldShowDefault('questionnaire', capabilities.questionnaire, Boolean(questionnaireSession))
       ? {
           number: 1,
           title: '仕様に関する質問を回答してください',
@@ -228,7 +233,7 @@ export function PlanWorkspaceStatusView({
           onClick: onOpenQuestionnaire,
         }
       : null,
-    capabilities.blueprint || hasBlueprint
+    shouldShowDefault('blueprint', capabilities.blueprint, hasBlueprint)
       ? {
           number: 2,
           title: 'インスタントMockUpを作成し、大筋UIの方向性を決めます',
@@ -243,7 +248,7 @@ export function PlanWorkspaceStatusView({
           onClick: onGenerateBlueprint,
         }
       : null,
-    capabilities.data_model || hasDataModel
+    shouldShowDefault('data_model', capabilities.data_model, hasDataModel)
       ? {
           number: 3,
           title: 'どの様なデータモデルが必要になるかプレビュー出来ます',
@@ -253,11 +258,7 @@ export function PlanWorkspaceStatusView({
           done: hasDataModel,
           buttonLabel: hasDataModel ? 'Data Modelを再生成' : 'Data Model作成',
           busy: busyAction === 'data-model',
-          disabled:
-            !questionnaireDone ||
-            !canGenerateDataModel ||
-            isImplementationLocked ||
-            !capabilities.data_model,
+          disabled: !canGenerateDataModel || isImplementationLocked || !capabilities.data_model,
           disabledReason: !capabilities.data_model ? disabledReason : null,
           onClick: onGenerateDataModel,
         }

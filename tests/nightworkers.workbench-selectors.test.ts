@@ -444,6 +444,42 @@ describe('workbench selectors', () => {
     );
   });
 
+  it('routes additional dedicated view messages to their Plan Mode Workspace tab', () => {
+    const message: TaskMessage = {
+      id: '44444444-4444-4444-8444-444444447778',
+      taskId: baseTask.id,
+      role: 'assistant',
+      content: '# API / I/O',
+      messageType: 'markdown_document',
+      metadataJson: {
+        artifactKind: 'plan_mode_dedicated_view',
+        view: 'api_io_contract',
+        source: 'dedicated-view-generator',
+        title: 'API Contract',
+      },
+      createdAt: '2026-06-02T00:00:01.000Z',
+    };
+
+    const refs = buildWorkbenchArtifactRefs({
+      task: baseTask,
+      messages: [message],
+    });
+
+    expect(refs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'plan_mode_workspace',
+          title: 'Plan Mode Workspace: API Contract',
+          source: { type: 'task_message', messageId: message.id },
+          metadata: expect.objectContaining({ initialTab: 'api-io-contract' }),
+        }),
+      ])
+    );
+    expect(refs.find((ref) => ref.id === `plan-mode-workspace-${baseTask.id}`)?.metadata).toEqual(
+      expect.objectContaining({ dedicatedViewCount: 1, dataModelCount: 0 })
+    );
+  });
+
   it('does not promote Data Model activity artifacts into App Blueprint refs', () => {
     const message: TaskMessage = {
       id: '44444444-4444-4444-8444-444444447777',

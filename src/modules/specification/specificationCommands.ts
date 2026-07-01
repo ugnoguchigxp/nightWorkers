@@ -2,8 +2,8 @@ import { apiFetch } from '../../lib/api-base';
 import { jsonRequest } from '../../lib/api-request';
 
 type SpecificationGenerationInput = {
-  questionnaireSessionId: string;
-  sourceBlueprintMessageId: string | null;
+  questionnaireSessionId?: string | null;
+  sourceBlueprintMessageId?: string | null;
 };
 
 export function fetchSpecificationWorkspace(sessionId: string, init?: RequestInit) {

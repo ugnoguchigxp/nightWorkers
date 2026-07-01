@@ -2,8 +2,8 @@ import { apiFetch } from '../../lib/api-base';
 import { jsonRequest } from '../../lib/api-request';
 
 type BlueprintGenerationInput = {
-  questionnaireSessionId: string;
-  sourceBlueprintMessageId: string | null;
+  questionnaireSessionId?: string | null;
+  sourceBlueprintMessageId?: string | null;
 };
 
 export function generateBlueprintArtifact(sessionId: string, input: BlueprintGenerationInput) {

@@ -231,7 +231,8 @@ export function buildWorkbenchArtifactRefs(input: {
   const dedicatedViewMessages = (input.messages || []).filter(
     (message) =>
       message.messageType === 'markdown_document' &&
-      String(taskMessageMetadata(message).artifactKind) === 'plan_mode_dedicated_view'
+      String(taskMessageMetadata(message).artifactKind) === 'plan_mode_dedicated_view' &&
+      String(taskMessageMetadata(message).view) !== 'data_model'
   );
   if (
     blueprintArtifactRows.length > 0 ||
@@ -307,9 +308,10 @@ export function buildWorkbenchArtifactRefs(input: {
       summary: message.content.slice(0, 160),
       source: { type: 'task_message', messageId: message.id },
       createdAt: String(message.createdAt),
-      metadata: isDataModelArtifactMessage(message)
-        ? { ...taskMessageMetadata(message), initialTab: 'data-model' }
-        : taskMessageMetadata(message),
+      metadata: {
+        ...taskMessageMetadata(message),
+        ...planModeWorkspaceInitialTabMetadata(message),
+      },
     });
   }
   if (run?.diffPatch?.trim())
@@ -444,6 +446,21 @@ function isDataModelMetadata(metadata: Record<string, unknown>): boolean {
     metadata.artifactType === 'data_model' ||
     metadata.source === 'data-model'
   );
+}
+
+function planModeWorkspaceInitialTabMetadata(message: TaskMessage): { initialTab?: string } {
+  const metadata = taskMessageMetadata(message);
+  if (isDataModelArtifactMessage(message)) return { initialTab: 'data-model' };
+  if (String(metadata.artifactKind) !== 'plan_mode_dedicated_view') return {};
+  const tabs: Record<string, string> = {
+    api_io_contract: 'api-io-contract',
+    state_model: 'state-model',
+    activity_flow: 'activity-flow',
+    sequence_flow: 'sequence-flow',
+    zod_schema_design: 'zod-schema-design',
+  };
+  const tab = tabs[String(metadata.view)];
+  return tab ? { initialTab: tab } : {};
 }
 
 function hasAppBlueprintMetadata(metadata: Record<string, unknown>): boolean {
