@@ -192,6 +192,140 @@ describe('Mock Blueprint', () => {
       else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
     }
   });
+
+  it('normalizes common LLM dataset aliases before schema validation', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+    process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+      ...representativeMockBlueprint,
+      screens: [
+        {
+          ...representativeMockBlueprint.screens[0],
+          sections: [
+            {
+              ...representativeMockBlueprint.screens[0].sections[1],
+              componentName: 'ControlPanelSection',
+              dataset: {
+                kind: 'cards',
+                items: [
+                  { title: '検索', summary: 'キーワードで探す', meta: '全文検索' },
+                  { title: '状態', summary: '公開中・削除済みを確認', meta: 'status' },
+                ],
+              },
+            },
+            {
+              ...representativeMockBlueprint.screens[0].sections[2],
+              componentName: 'FormSection',
+              dataset: {
+                kind: 'form',
+                fields: [
+                  {
+                    name: 'body',
+                    label: '本文',
+                    type: 'textarea',
+                    required: true,
+                    placeholder: '返信内容を入力',
+                  },
+                ],
+                submitLabel: '返信を投稿',
+              },
+            },
+            {
+              id: 'activity',
+              name: '返信履歴',
+              componentName: 'TimelineSection',
+              region: 'main',
+              selectionReason: '時系列の返信を確認するため。',
+              copy: {
+                title: '返信履歴',
+                description: '返信を時系列で確認します。',
+              },
+              dataset: {
+                kind: 'timeline',
+                items: [
+                  {
+                    title: '返信 #1',
+                    timestamp: '2026-07-02 09:30',
+                    status: 'active',
+                    summary: '最初の返信です。',
+                  },
+                ],
+              },
+            },
+            {
+              id: 'article',
+              name: 'スレッド本文',
+              componentName: 'BlogPostSection',
+              region: 'main',
+              selectionReason: '本文を読むため。',
+              copy: {
+                title: 'お知らせ',
+                description: '本文を表示します。',
+              },
+              dataset: {
+                kind: 'article',
+                title: 'お知らせ',
+                author: 'admin',
+                publishedAt: '2026-07-02 09:10',
+                body: 'このBBSは最小構成で運用します。',
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    try {
+      const repository = await repo.createRepository({
+        name: `TEST: Mock Blueprint Alias ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: repository.id,
+        title: 'TEST: Mock Blueprint alias task',
+        description: 'Validate mock blueprint alias normalization.',
+        status: 'draft',
+      });
+      const result = await generatePlanModeMockBlueprintDraft({
+        taskId: task.id,
+        title: 'Operations Mock',
+        prompt: 'BBS の軽量 mock を作る',
+      });
+      const sections = result.mockBlueprint.screens[0].sections;
+
+      expect(sections[0].dataset).toMatchObject({
+        kind: 'cards',
+        cards: expect.arrayContaining([
+          expect.objectContaining({ description: 'キーワードで探す' }),
+        ]),
+      });
+      expect(sections[1].dataset).toMatchObject({
+        kind: 'form',
+        fields: [expect.not.objectContaining({ required: true })],
+      });
+      expect(sections[2].dataset).toMatchObject({
+        kind: 'timeline',
+        items: [expect.objectContaining({ description: '最初の返信です。' })],
+      });
+      expect(sections[3].dataset).toMatchObject({
+        kind: 'article',
+        meta: expect.arrayContaining([
+          expect.objectContaining({ label: 'author', value: 'admin' }),
+        ]),
+      });
+    } finally {
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+      else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+    }
+  });
 });
 
 function expectStrictRequiredProperties(schema: unknown) {
