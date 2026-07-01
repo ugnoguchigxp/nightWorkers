@@ -262,7 +262,7 @@ function normalizeChangedFiles(changes: unknown): string[] {
 }
 
 export function classifyCodexCommand(command: string): CodexCommandClass {
-  const normalized = command.replace(/\s+/g, ' ').trim();
+  const normalized = normalizeCodexCommand(command);
   if (!normalized) return 'other';
   if (isBroadVerificationCommand(normalized)) return 'broad_verification';
   if (isGitCloneOrImportCommand(normalized)) return 'git_clone_or_import';
@@ -270,6 +270,27 @@ export function classifyCodexCommand(command: string): CodexCommandClass {
   if (isVerificationCommand(normalized)) return 'verification';
   if (isInspectionCommand(normalized)) return 'inspection';
   return 'other';
+}
+
+export function normalizeCodexCommand(command: string): string {
+  const unwrapped = unwrapShellCommand(command.trim());
+  return unwrapped.replace(/\s+/g, ' ').trim();
+}
+
+function unwrapShellCommand(command: string): string {
+  const match = /^(?:\/bin\/)?(?:zsh|bash|sh)\s+-lc\s+([\s\S]+)$/.exec(command);
+  if (!match) return command;
+  const inner = unquoteShellArgument(match[1].trim());
+  return inner || command;
+}
+
+function unquoteShellArgument(value: string): string {
+  if (value.length < 2) return value;
+  const quote = value[0];
+  if ((quote !== "'" && quote !== '"') || value.at(-1) !== quote) return value;
+  const inner = value.slice(1, -1);
+  if (quote === "'") return inner.replace(/'\\''/g, "'");
+  return inner.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
 }
 
 function isBroadVerificationCommand(command: string) {

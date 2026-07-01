@@ -192,6 +192,7 @@ export const todoWorkflowSettingsSchema = z.object({
   requirePerTodoReview: z.boolean(),
   requirePerTodoFix: z.boolean(),
   requireFinalVerification: z.boolean(),
+  requireRegisterCandidatePrompt: z.boolean(),
   askCommitOnCompletion: z.boolean(),
   hookPolicyJson: jsonValueSchema.nullable().optional(),
   createdAt: dateLikeSchema,
@@ -202,6 +203,7 @@ export const todoWorkflowSettingsInputSchema = z.object({
   requirePerTodoReview: z.boolean().optional(),
   requirePerTodoFix: z.boolean().optional(),
   requireFinalVerification: z.boolean().optional(),
+  requireRegisterCandidatePrompt: z.boolean().optional(),
   askCommitOnCompletion: z.boolean().optional(),
   hookPolicyJson: jsonValueSchema.optional(),
 });

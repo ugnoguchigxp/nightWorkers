@@ -15,7 +15,13 @@ import {
   nightWorkersCodexToolManifest,
 } from './nightworkers-tool-manifest';
 
-export function createNightWorkersCodexMcpServer() {
+type NightWorkersMcpRequestContext = {
+  taskId?: string;
+  runId?: string;
+  executionMode?: string;
+};
+
+export function createNightWorkersCodexMcpServer(context: NightWorkersMcpRequestContext = {}) {
   const server = new McpServer({
     name: 'nightworkers',
     version: '0.1.0',
@@ -29,7 +35,7 @@ export function createNightWorkersCodexMcpServer() {
     async ({ taskId }) =>
       toolResultToMcp(
         await readCurrentSpecificationTool({
-          taskId: taskId || process.env.NIGHTWORKERS_TASK_ID || '',
+          taskId: firstNonEmpty(taskId, context.taskId, process.env.NIGHTWORKERS_TASK_ID),
         })
       )
   );
@@ -48,12 +54,12 @@ export function createNightWorkersCodexMcpServer() {
       ...nightWorkersCodexToolManifest.todo_list,
     },
     async ({ runId, operation, seq, todos, startFirst, todoListReplaceReason }) => {
-      if (isToolDisabledForExecutionMode('todo_list')) {
+      if (isToolDisabledForExecutionMode('todo_list', context)) {
         return toolResultToMcp(disabledToolResult('todo_list'));
       }
       return toolResultToMcp(
         await todoListTool({
-          runId: runId || process.env.NIGHTWORKERS_RUN_ID || '',
+          runId: firstNonEmpty(runId, context.runId, process.env.NIGHTWORKERS_RUN_ID),
           operation,
           seq,
           todos,
@@ -71,6 +77,7 @@ export function createNightWorkersCodexMcpServer() {
     },
     async ({
       taskId,
+      runId,
       source,
       stack,
       repoUrl,
@@ -84,12 +91,14 @@ export function createNightWorkersCodexMcpServer() {
       stripGitDir,
       initialize,
     }) => {
-      if (isToolDisabledForExecutionMode('import_project')) {
+      if (isToolDisabledForExecutionMode('import_project', context)) {
         return toolResultToMcp(disabledToolResult('import_project'));
       }
-      const resolvedTaskId = taskId || process.env.NIGHTWORKERS_TASK_ID || '';
-      const task = resolvedTaskId ? await repo.getTask(resolvedTaskId) : null;
-      const repository = task ? await repo.getRepository(task.repositoryId) : null;
+      const resolved = await resolveTaskRepository({
+        taskId: firstNonEmpty(taskId, context.taskId, process.env.NIGHTWORKERS_TASK_ID),
+        runId: firstNonEmpty(runId, context.runId, process.env.NIGHTWORKERS_RUN_ID),
+      });
+      const { task, repository } = resolved;
       if (!task || !repository) {
         return toolResultToMcp({
           ok: false,
@@ -128,8 +137,40 @@ export function createNightWorkersCodexMcpServer() {
   return server;
 }
 
-function isToolDisabledForExecutionMode(toolName: NightWorkersCodexToolName) {
-  return !isNightWorkersCodexToolAllowedForMode(toolName, process.env.NIGHTWORKERS_EXECUTION_MODE);
+function firstNonEmpty(...values: Array<string | undefined | null>) {
+  return values.find((value) => typeof value === 'string' && value.trim())?.trim() ?? '';
+}
+
+async function resolveTaskRepository(input: { taskId: string; runId: string }) {
+  const task = input.taskId ? await repo.getTask(input.taskId) : null;
+  if (task) {
+    return {
+      task,
+      repository: await repo.getRepository(task.repositoryId),
+    };
+  }
+
+  const run = input.runId ? await repo.getTaskRun(input.runId) : null;
+  if (!run) {
+    return { task: null, repository: null };
+  }
+  const runTask = await repo.getTask(run.taskId);
+  const repositoryId = run.repositoryId || runTask?.repositoryId || '';
+  return {
+    task: runTask ?? null,
+    repository: repositoryId ? await repo.getRepository(repositoryId) : null,
+  };
+}
+
+function isToolDisabledForExecutionMode(
+  toolName: NightWorkersCodexToolName,
+  context: NightWorkersMcpRequestContext
+) {
+  const executionMode = firstNonEmpty(
+    context.executionMode,
+    process.env.NIGHTWORKERS_EXECUTION_MODE
+  );
+  return !isNightWorkersCodexToolAllowedForMode(toolName, executionMode);
 }
 
 function disabledToolResult(toolName: NightWorkersCodexToolName): WorkerToolResult<unknown> {
@@ -165,7 +206,7 @@ export async function handleNightWorkersCodexMcpRequest(request: Request): Promi
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });
-  const server = createNightWorkersCodexMcpServer();
+  const server = createNightWorkersCodexMcpServer(readNightWorkersMcpRequestContext(request));
   await server.connect(transport);
   return transport.handleRequest(request);
 }
@@ -181,6 +222,24 @@ export function isLoopbackNightWorkersMcpRequest(request: Request) {
 function isLoopbackHostname(hostname: string) {
   const normalized = hostname.toLowerCase().replace(/^\[/, '').replace(/\]$/, '');
   return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1';
+}
+
+function readNightWorkersMcpRequestContext(request: Request): NightWorkersMcpRequestContext {
+  try {
+    const url = new URL(request.url);
+    return {
+      taskId: readSearchParam(url, 'taskId'),
+      runId: readSearchParam(url, 'runId'),
+      executionMode: readSearchParam(url, 'executionMode'),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function readSearchParam(url: URL, key: keyof NightWorkersMcpRequestContext) {
+  const value = url.searchParams.get(key);
+  return value?.trim() || undefined;
 }
 
 function toolResultToMcp(result: WorkerToolResult<unknown>) {

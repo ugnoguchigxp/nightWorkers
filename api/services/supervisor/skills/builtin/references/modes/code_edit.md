@@ -8,6 +8,8 @@
 
 - 編集前に既存コードを確認する。
 - observations が空の場合、最終回答へ進まず、対象パスが分かっているならまず read_file で対象コードを確認する。search_files は対象パスが不明、または横断検索が必要な場合だけ使う。
+- ファイルを編集する前に、対象ファイルまたは直接関係する既存ファイルを読む。新規ファイル作成では、配置先の route / registry / sibling / style / test pattern を先に確認する。
+- rg --files や ls は探索であり、編集対象の読了 evidence ではない。読んだ内容に基づかない blind edit を避ける。
 - 不具合原因が未確認なら、先に investigation / evidence の rule を読む。
 - read-only や書き込み不可だと推測して最終回答へ進んではいけない。
 - 空の Project root は有効な作業対象として扱う。空であることは新規作成やテンプレート取り込みの前提であり、作業不能の根拠ではない。

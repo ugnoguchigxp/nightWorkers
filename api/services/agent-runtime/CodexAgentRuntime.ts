@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { getNightWorkersCodexToolNames } from '../../mcp/nightworkers-tool-manifest';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
 import { recordLlmUsage } from '../llm-usage';
@@ -6,6 +7,7 @@ import { type CodexThreadFactory, createCodexRuntimeThread } from './codex-sdk/c
 import {
   createCodexEventMapperState,
   mapCodexThreadEvent,
+  normalizeCodexCommand,
 } from './codex-sdk/codex-sdk-event-adapter';
 import {
   buildProjectImportCancelledReport,
@@ -15,6 +17,7 @@ import {
 import {
   addContractWarning,
   buildCodexRuntimeContractSnapshot,
+  type CodexReadEvidence,
   type CodexRuntimeAuditState,
   createCodexRuntimeAuditState,
   normalizeContractWarning,
@@ -367,8 +370,29 @@ export class CodexAgentRuntime implements AgentRuntime {
             auditState.firstNightworkersTodoMutationSequence ??= sequence;
             auditState.lastNightworkersTodoMutationSequence = sequence;
             auditState.lastNightworkersTodoMutationOperation = operation;
+            const transition = readTodoTransitionResult(payload);
+            auditState.lastTodoTransitionResult = transition;
+            if (isValidTodoProgressOperation(operation, payload)) {
+              auditState.lastProgressValidSequence = sequence;
+            }
             if (operation === 'replace') {
               auditState.sawNightworkersTodoReplace = true;
+              auditState.structuralTodoReplanRequired = false;
+            }
+          } else if (operation === 'replace' && isFailedToolPayload(payload)) {
+            auditState.structuralTodoReplanRequired = true;
+            auditState.structuralTodoReplanEvidence.push('failed_replace');
+            auditState.lastTodoTransitionResult = 'failed_replace';
+          }
+          if (event.type === 'tool_call_finished' && toolName === 'nightworkers.todo_list') {
+            const todoPayload = readTodoActionPayload(payload);
+            if (todoPayload?.currentTodo) {
+              auditState.lastCurrentTodo = {
+                id: todoPayload.currentTodo.id,
+                seq: todoPayload.currentTodo.seq,
+                title: todoPayload.currentTodo.title,
+                procedureId: todoPayload.currentTodo.procedureId ?? null,
+              };
             }
           }
         }
@@ -406,6 +430,16 @@ export class CodexAgentRuntime implements AgentRuntime {
       const command = readString(payload.command);
       const commandClass = readString(payload.commandClass);
       const exitCode = readExitCode(payload);
+      recordCommandReadEvidence({
+        auditState,
+        repoRoot: context.repoRoot,
+        sequence,
+        command,
+        commandClass,
+        exitCode,
+        status: readString(payload.status),
+        providerItemId: readString(payload.providerItemId),
+      });
       if (commandClass === 'verification' || commandClass === 'broad_verification') {
         auditState.verificationEvidence.push({
           sequence,
@@ -418,8 +452,8 @@ export class CodexAgentRuntime implements AgentRuntime {
       if (
         commandClass === 'broad_verification' &&
         auditState.lastFileChangeSequence !== null &&
-        (auditState.lastNightworkersTodoMutationSequence === null ||
-          auditState.lastNightworkersTodoMutationSequence < auditState.lastFileChangeSequence)
+        (auditState.lastProgressValidSequence === null ||
+          auditState.lastProgressValidSequence < auditState.lastFileChangeSequence)
       ) {
         warnings.push({
           code: 'codex_todo_progress_stale_before_verify',
@@ -490,8 +524,8 @@ export class CodexAgentRuntime implements AgentRuntime {
           changedFiles: readChangedFiles(payload),
         });
       }
-      if (!auditState.sawNightworkersTodoMutation) {
-        if (auditState.sawNightworkersTodoList) {
+      if (!hasValidTodoProgressBeforeFileChange(auditState, sequence)) {
+        if (auditState.sawNightworkersTodoList && !auditState.sawNightworkersTodoMutation) {
           warnings.push({
             code: 'codex_todo_progress_list_only',
             severity: 'warning',
@@ -506,7 +540,7 @@ export class CodexAgentRuntime implements AgentRuntime {
             code: 'codex_todo_progress_missing',
             severity: 'warning',
             message:
-              'Codex file_change occurred before any nightworkers.todo_list progress mutation.',
+              'Codex file_change occurred before any valid nightworkers.todo_list progress mutation.',
             providerItemId: readString(payload.providerItemId),
             toolName: 'nightworkers.todo_list',
             changedFiles: readChangedFiles(payload),
@@ -515,6 +549,7 @@ export class CodexAgentRuntime implements AgentRuntime {
       }
       const todoEvidence = await this.readCurrentTodoEvidence(context);
       const currentTodo = todoEvidence.todo;
+      auditState.lastTodoEvidenceSource = todoEvidence.source;
       if (currentTodo) {
         auditState.lastCurrentTodo = currentTodo;
         auditedEvent = {
@@ -546,11 +581,25 @@ export class CodexAgentRuntime implements AgentRuntime {
           todoEvidenceSource: todoEvidence.source,
         });
       }
-      if (!auditState.sawNightworkersTodoReplace) {
+      const missingReadFiles = readChangedFiles(payload).filter(
+        (filePath) =>
+          !hasPriorReadEvidence(auditState, context.repoRoot, filePath, sequence, payload)
+      );
+      if (missingReadFiles.length > 0) {
+        warnings.push({
+          code: 'codex_file_change_without_prior_read',
+          severity: 'warning',
+          message: 'Codex file_change occurred without prior read evidence for the changed file.',
+          providerItemId: readString(payload.providerItemId),
+          changedFiles: missingReadFiles,
+        });
+      }
+      if (auditState.structuralTodoReplanRequired && !auditState.sawNightworkersTodoReplace) {
         warnings.push({
           code: 'codex_file_change_before_todo_replace',
           severity: 'warning',
-          message: 'Codex file_change occurred before nightworkers.todo_list operation=replace.',
+          message:
+            'Codex file_change occurred after structural TodoList replanning was required but before nightworkers.todo_list operation=replace.',
           providerItemId: readString(payload.providerItemId),
           todoId: currentTodo?.id ?? null,
           todoSeq: currentTodo?.seq ?? null,
@@ -570,9 +619,9 @@ export class CodexAgentRuntime implements AgentRuntime {
       }
     }
 
-    const warningEvents = warnings.map((warning) =>
-      this.toContractWarningEvent(auditState, warning)
-    );
+    const warningEvents = warnings
+      .map((warning) => this.toContractWarningEvent(auditState, warning))
+      .filter((warning): warning is AgentRuntimeEvent => warning !== null);
     return [...warningEvents, auditedEvent];
   }
 
@@ -632,14 +681,15 @@ export class CodexAgentRuntime implements AgentRuntime {
   private toContractWarningEvent(
     auditState: CodexRuntimeAuditState,
     warning: CodexContractWarning
-  ): AgentRuntimeEvent {
+  ): AgentRuntimeEvent | null {
     const normalized = normalizeContractWarning({
       ...warning,
       sequence: warning.sequence ?? auditState.eventSequence,
       occurredAt: warning.occurredAt ?? new Date().toISOString(),
       count: warning.count ?? 1,
     });
-    addContractWarning(auditState, normalized);
+    const added = addContractWarning(auditState, normalized);
+    if (!added.isNew && normalized.severity !== 'error') return null;
     return {
       type: 'runtime_warning',
       message: `[Codex Contract Warning] ${normalized.message}`,
@@ -680,8 +730,10 @@ export class CodexAgentRuntime implements AgentRuntime {
         toolName: 'nightworkers.import_project',
         command: firstEvidence.command,
       });
-      logs.push(warning.message);
-      await sink.emit(warning);
+      if (warning) {
+        logs.push(warning.message);
+        await sink.emit(warning);
+      }
       return;
     }
     const warning = this.toContractWarningEvent(auditState, {
@@ -692,8 +744,10 @@ export class CodexAgentRuntime implements AgentRuntime {
       providerItemId: auditState.importProjectProviderItemId,
       toolName: 'nightworkers.import_project',
     });
-    logs.push(warning.message);
-    await sink.emit(warning);
+    if (warning) {
+      logs.push(warning.message);
+      await sink.emit(warning);
+    }
   }
 
   private async resolveCodexTerminalPolicy(
@@ -743,8 +797,10 @@ export class CodexAgentRuntime implements AgentRuntime {
       toolName: 'command_execution',
       command: auditState.highRiskNativeImportCommand,
     });
-    logs.push(warning.message);
-    await sink.emit(warning);
+    if (warning) {
+      logs.push(warning.message);
+      await sink.emit(warning);
+    }
     const finalReportSuffix =
       'Codex native project import command was observed without nightworkers.import_project success; stopping for human review.';
     const finalReport = input.finalReport
@@ -901,8 +957,10 @@ export class CodexAgentRuntime implements AgentRuntime {
               changedFiles,
             }
       );
-      logs.push(warning.message);
-      await sink.emit(warning);
+      if (warning) {
+        logs.push(warning.message);
+        await sink.emit(warning);
+      }
     }
     const message = `[Codex] Workspace diff collected: ${changedFiles.length || 'unknown'} file(s).`;
     logs.push(message);
@@ -1154,6 +1212,75 @@ function readToolOperation(payload: Record<string, unknown>): string | null {
   return typeof operation === 'string' ? operation : null;
 }
 
+function readTodoTransitionResult(payload: Record<string, unknown>): string | null {
+  const todoPayload = readTodoActionPayload(payload);
+  const operation = readToolOperation(payload);
+  const nextCurrentSeq = readRecord(todoPayload?.transition)?.nextCurrentSeq;
+  if (typeof nextCurrentSeq === 'number') return `${operation || 'todo'}:next:${nextCurrentSeq}`;
+  if (todoPayload?.currentTodo)
+    return `${operation || 'todo'}:current:${todoPayload.currentTodo.seq}`;
+  return operation ? `${operation}:no_current` : null;
+}
+
+function isValidTodoProgressOperation(operation: string | null, payload: Record<string, unknown>) {
+  if (operation === 'start' || operation === 'replace') return true;
+  if (operation === 'done') {
+    const todoPayload = readTodoActionPayload(payload);
+    return Boolean(todoPayload?.currentTodo || todoPayload?.nextTodo);
+  }
+  return false;
+}
+
+function readTodoActionPayload(payload: Record<string, unknown>): {
+  currentTodo?: RuntimeTodoEvidence | null;
+  nextTodo?: RuntimeTodoEvidence | null;
+  transition?: Record<string, unknown> | null;
+} | null {
+  const record = readMcpGenericPayloadRecord(payload.result);
+  if (!record) return null;
+  const currentTodo = readTodoEvidenceRecord(readRecord(record.currentTodo));
+  const nextTodo = readTodoEvidenceRecord(readRecord(record.nextTodo));
+  return {
+    currentTodo,
+    nextTodo,
+    transition: readRecord(record.transition),
+  };
+}
+
+function readMcpGenericPayloadRecord(value: unknown): Record<string, unknown> | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  const payload = readRecord(record.payload);
+  if (payload) return payload;
+  const structuredPayload = readRecord(readRecord(record.structuredContent)?.payload);
+  if (structuredPayload) return structuredPayload;
+  const content = Array.isArray(record.content) ? record.content : [];
+  for (const item of content) {
+    const text = readString(readRecord(item)?.text);
+    if (!text) continue;
+    const parsed = parseJsonRecord(text);
+    if (!parsed) continue;
+    return readRecord(parsed.payload) ?? parsed;
+  }
+  return record;
+}
+
+function readTodoEvidenceRecord(
+  record: Record<string, unknown> | null
+): RuntimeTodoEvidence | null {
+  if (!record) return null;
+  const id = readString(record.id);
+  const title = readString(record.title);
+  const seq = record.seq;
+  if (!id || !title || typeof seq !== 'number') return null;
+  return {
+    id,
+    seq,
+    title,
+    procedureId: readString(record.procedureId),
+  };
+}
+
 function isTodoProgressMutationOperation(value: string | null) {
   return (
     value === 'replace' ||
@@ -1162,6 +1289,284 @@ function isTodoProgressMutationOperation(value: string | null) {
     value === 'block' ||
     value === 'fail'
   );
+}
+
+function hasValidTodoProgressBeforeFileChange(
+  auditState: CodexRuntimeAuditState,
+  fileChangeSequence: number
+) {
+  if (
+    auditState.lastProgressValidSequence === null ||
+    auditState.lastProgressValidSequence >= fileChangeSequence
+  ) {
+    return false;
+  }
+  if (
+    auditState.lastNightworkersTodoMutationSequence !== null &&
+    auditState.lastNightworkersTodoMutationSequence > auditState.lastProgressValidSequence &&
+    (auditState.lastNightworkersTodoMutationOperation === 'done' ||
+      auditState.lastNightworkersTodoMutationOperation === 'block' ||
+      auditState.lastNightworkersTodoMutationOperation === 'fail')
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function recordCommandReadEvidence(input: {
+  auditState: CodexRuntimeAuditState;
+  repoRoot: string;
+  sequence: number;
+  command: string | null;
+  commandClass: string | null;
+  exitCode: number | null;
+  status: string | null;
+  providerItemId: string | null;
+}) {
+  if (!input.command) return;
+  if (input.status && input.status !== 'completed') return;
+  if (input.exitCode !== null && input.exitCode !== 0) return;
+  const normalizedCommand = normalizeCodexCommand(input.command);
+  const normalizedClass =
+    input.commandClass === 'inspection' || classifyInspectionCommand(normalizedCommand)
+      ? 'inspection'
+      : input.commandClass;
+  if (normalizedClass !== 'inspection') return;
+  const paths = extractReadEvidencePaths(normalizedCommand, input.repoRoot);
+  for (const { path: pathValue, kind } of paths) {
+    const evidence: CodexReadEvidence = {
+      sequence: input.sequence,
+      path: pathValue,
+      source: 'command_execution',
+      kind,
+      command: input.command,
+      normalizedCommand,
+      providerItemId: input.providerItemId,
+    };
+    appendMapValue(input.auditState.readEvidenceByPath, pathValue, evidence);
+    appendMapValue(
+      input.auditState.createdFileContextEvidenceByDirectory,
+      path.posix.dirname(pathValue),
+      evidence
+    );
+  }
+}
+
+function classifyInspectionCommand(command: string) {
+  return (
+    /^(?:pwd|ls|find|tree|wc)\b/.test(command) ||
+    /^(?:rg|grep|cat|sed|awk|head|tail|nl)\b/.test(command) ||
+    /^git\s+(?:status|diff|log|show|branch|rev-parse)\b/.test(command)
+  );
+}
+
+function extractReadEvidencePaths(command: string, repoRoot: string) {
+  const tokens = tokenizeShellLike(command);
+  const paths = new Map<string, CodexReadEvidence['kind']>();
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === 'cat' || token === 'nl' || token === 'head' || token === 'tail') {
+      collectPathArgs(tokens, index + 1, repoRoot, paths, 'content');
+    }
+    if (token === 'sed') {
+      collectPathArgs(tokens, index + 1, repoRoot, paths, 'content');
+    }
+    if (token === 'rg' || token === 'grep') {
+      collectSearchPathArgs(tokens, index + 1, repoRoot, paths);
+    }
+    if (token === 'git' && tokens[index + 1] === 'diff') {
+      const separatorIndex = tokens.indexOf('--', index + 2);
+      if (separatorIndex >= 0) collectPathArgs(tokens, separatorIndex + 1, repoRoot, paths, 'diff');
+    }
+  }
+  return [...paths.entries()].map(([path, kind]) => ({ path, kind }));
+}
+
+function collectPathArgs(
+  tokens: string[],
+  startIndex: number,
+  repoRoot: string,
+  output: Map<string, CodexReadEvidence['kind']>,
+  kind: CodexReadEvidence['kind']
+) {
+  for (let index = startIndex; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (isCommandBoundary(token)) break;
+    if (token.startsWith('-')) continue;
+    if (!isLikelyPathToken(token)) continue;
+    output.set(normalizeRepoRelativePath(token, repoRoot), kind);
+  }
+}
+
+function collectSearchPathArgs(
+  tokens: string[],
+  startIndex: number,
+  repoRoot: string,
+  output: Map<string, CodexReadEvidence['kind']>
+) {
+  let sawPattern = false;
+  for (let index = startIndex; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (isCommandBoundary(token)) break;
+    if (token.startsWith('-')) continue;
+    if (!sawPattern) {
+      sawPattern = true;
+      continue;
+    }
+    if (!isLikelyPathToken(token)) continue;
+    output.set(normalizeRepoRelativePath(token, repoRoot), 'content');
+  }
+}
+
+function hasPriorReadEvidence(
+  auditState: CodexRuntimeAuditState,
+  repoRoot: string,
+  filePath: string,
+  fileChangeSequence: number,
+  payload: Record<string, unknown>
+) {
+  const normalizedPath = normalizeRepoRelativePath(filePath, repoRoot);
+  const created = isCreatedFileChange(payload, filePath);
+  if (
+    !created &&
+    hasEvidenceBefore(auditState.readEvidenceByPath.get(normalizedPath), fileChangeSequence)
+  ) {
+    return true;
+  }
+  if (!created) return false;
+  return createdFileContextDirectories(normalizedPath).some((directory) =>
+    hasEvidenceBefore(
+      auditState.createdFileContextEvidenceByDirectory.get(directory),
+      fileChangeSequence,
+      { allowDiff: false }
+    )
+  );
+}
+
+function createdFileContextDirectories(normalizedPath: string) {
+  const direct = path.posix.dirname(normalizedPath);
+  const parent = path.posix.dirname(direct);
+  return [direct, parent].filter(
+    (directory, index, directories) =>
+      directory !== '.' && directory !== '/' && directories.indexOf(directory) === index
+  );
+}
+
+function hasEvidenceBefore(
+  evidence: CodexReadEvidence[] | undefined,
+  sequence: number,
+  input: { allowDiff?: boolean } = {}
+) {
+  const allowDiff = input.allowDiff ?? true;
+  return Boolean(
+    evidence?.some((item) => item.sequence < sequence && (allowDiff || item.kind !== 'diff'))
+  );
+}
+
+function isCreatedFileChange(payload: Record<string, unknown>, filePath: string) {
+  const changes = Array.isArray(payload.changes) ? payload.changes : [];
+  return changes.some((change) => {
+    if (!change || typeof change !== 'object') return false;
+    const record = change as Record<string, unknown>;
+    const changePath =
+      readString(record.path) ?? readString(record.filePath) ?? readString(record.relativePath);
+    if (changePath && !filePathsMatch(changePath, filePath)) return false;
+    const value = readString(record.type) ?? readString(record.status) ?? readString(record.kind);
+    return value === 'add' || value === 'added' || value === 'create' || value === 'created';
+  });
+}
+
+function appendMapValue<K, V>(map: Map<K, V[]>, key: K, value: V) {
+  const existing = map.get(key);
+  if (existing) {
+    existing.push(value);
+    return;
+  }
+  map.set(key, [value]);
+}
+
+function tokenizeShellLike(command: string) {
+  const tokens: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | null = null;
+  for (let index = 0; index < command.length; index += 1) {
+    const char = command[index];
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      if (current) {
+        tokens.push(current);
+        current = '';
+      }
+      continue;
+    }
+    if (
+      (char === '&' && command[index + 1] === '&') ||
+      (char === '|' && command[index + 1] === '|')
+    ) {
+      if (current) {
+        tokens.push(current);
+        current = '';
+      }
+      tokens.push(`${char}${command[index + 1]}`);
+      index += 1;
+      continue;
+    }
+    if (char === ';' || char === '|' || char === '<' || char === '>') {
+      if (current) {
+        tokens.push(current);
+        current = '';
+      }
+      tokens.push(char);
+      continue;
+    }
+    current += char;
+  }
+  if (current) tokens.push(current);
+  return tokens;
+}
+
+function isCommandBoundary(token: string) {
+  return (
+    token === '&&' ||
+    token === '||' ||
+    token === ';' ||
+    token === '|' ||
+    token === '<' ||
+    token === '>'
+  );
+}
+
+function isLikelyPathToken(token: string) {
+  if (!token || token.includes('$(') || token.includes('`')) return false;
+  if (/^[0-9]+(?:,[0-9]+)?p$/.test(token)) return false;
+  return (
+    token.includes('/') ||
+    token.startsWith('.') ||
+    /\.(?:[cm]?[jt]sx?|css|scss|md|json|ya?ml|toml|sql|rs|py|go|java|html|txt)$/.test(token)
+  );
+}
+
+function normalizeRepoRelativePath(value: string, repoRoot: string) {
+  const normalizedRoot = path.resolve(repoRoot).replaceAll('\\', '/');
+  const normalizedValue = value.replaceAll('\\', '/');
+  const absolute = path.isAbsolute(normalizedValue)
+    ? path.normalize(normalizedValue).replaceAll('\\', '/')
+    : path.resolve(repoRoot, normalizedValue).replaceAll('\\', '/');
+  const relative = absolute.startsWith(`${normalizedRoot}/`)
+    ? absolute.slice(normalizedRoot.length + 1)
+    : normalizedValue;
+  return path.posix.normalize(relative).replace(/^\.\//, '');
 }
 
 function hasTodoProgressWarning(auditState: CodexRuntimeAuditState) {

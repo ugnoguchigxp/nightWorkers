@@ -30,6 +30,30 @@ describe('nightworkers MCP manifest', () => {
     });
   });
 
+  it('adds per-run request context to the runtime MCP URL', () => {
+    const options = buildCodexRuntimeSdkOptions({
+      env: {
+        PATH: '/usr/bin',
+        NIGHTWORKERS_CODEX_MCP_URL: 'http://127.0.0.1:39173/mcp/nightworkers',
+        NIGHTWORKERS_TASK_ID: 'task-123',
+        NIGHTWORKERS_RUN_ID: 'run-456',
+        NIGHTWORKERS_EXECUTION_MODE: 'implementation',
+      } as never,
+    });
+
+    const url = new URL(
+      String(
+        (options.config as { mcp_servers?: { nightworkers?: { url?: unknown } } } | undefined)
+          ?.mcp_servers?.nightworkers?.url ?? ''
+      )
+    );
+
+    expect(url.origin + url.pathname).toBe('http://127.0.0.1:39173/mcp/nightworkers');
+    expect(url.searchParams.get('taskId')).toBe('task-123');
+    expect(url.searchParams.get('runId')).toBe('run-456');
+    expect(url.searchParams.get('executionMode')).toBe('implementation');
+  });
+
   it('drives the installer tool config lines', () => {
     const lines = buildNightWorkersCodexToolConfigLines().join('\n');
 

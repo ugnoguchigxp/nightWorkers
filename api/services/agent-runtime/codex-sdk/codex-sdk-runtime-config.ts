@@ -101,7 +101,7 @@ export function buildCodexRuntimeThreadOptions(context: AgentRunContext): Thread
 }
 
 function buildNightWorkersMcpServers(env: NodeJS.ProcessEnv): CodexConfigObject {
-  const url = resolveNightWorkersMcpUrl(env);
+  const url = appendNightWorkersMcpRequestContext(resolveNightWorkersMcpUrl(env), env);
   return {
     [NIGHTWORKERS_MCP_SERVER_NAME]: {
       transport: 'streamable_http',
@@ -126,6 +126,28 @@ function appendNightWorkersMcpPath(origin: string) {
   const trimmed = origin.replace(/\/+$/, '');
   if (trimmed.endsWith('/mcp/nightworkers')) return trimmed;
   return `${trimmed}/mcp/nightworkers`;
+}
+
+function appendNightWorkersMcpRequestContext(url: string, env: NodeJS.ProcessEnv) {
+  const contextParams = {
+    taskId: env.NIGHTWORKERS_TASK_ID,
+    runId: env.NIGHTWORKERS_RUN_ID,
+    executionMode: env.NIGHTWORKERS_EXECUTION_MODE,
+  };
+  if (!Object.values(contextParams).some((value) => typeof value === 'string' && value.trim())) {
+    return url;
+  }
+  try {
+    const parsed = new URL(url);
+    for (const [key, value] of Object.entries(contextParams)) {
+      if (typeof value === 'string' && value.trim()) {
+        parsed.searchParams.set(key, value.trim());
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return url;
+  }
 }
 
 function isCodexParentSessionEnv(key: string) {

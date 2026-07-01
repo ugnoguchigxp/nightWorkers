@@ -30,7 +30,7 @@ export const nightWorkersReadCurrentSpecificationInputSchema = z.object({
     .string()
     .trim()
     .optional()
-    .describe('NightWorkers task id. Defaults to NIGHTWORKERS_TASK_ID when available.'),
+    .describe('NightWorkers task id. Defaults to request-scoped task context when available.'),
 });
 
 export const nightWorkersListRecentSpecificationsInputSchema = z.object({
@@ -42,7 +42,7 @@ export const nightWorkersTodoListInputSchema = z.object({
     .string()
     .trim()
     .optional()
-    .describe('NightWorkers run id. Defaults to NIGHTWORKERS_RUN_ID when available.'),
+    .describe('NightWorkers run id. Defaults to request-scoped run context when available.'),
   operation: z
     .enum(['list', 'replace', 'start', 'done', 'block', 'fail'])
     .describe(
@@ -97,7 +97,14 @@ export const nightWorkersImportProjectInputSchema = z.object({
     .string()
     .trim()
     .optional()
-    .describe('NightWorkers task id. Defaults to NIGHTWORKERS_TASK_ID when available.'),
+    .describe('NightWorkers task id. Defaults to request-scoped task context when available.'),
+  runId: z
+    .string()
+    .trim()
+    .optional()
+    .describe(
+      'NightWorkers run id. Used to resolve the task repository when taskId is not available.'
+    ),
   source: z
     .enum(['starter', 'git'])
     .optional()
@@ -147,7 +154,7 @@ export const nightWorkersImportProjectInputSchema = z.object({
     .boolean()
     .optional()
     .describe(
-      'Run dependency initialization after import when package.json is present. Default: true.'
+      'Run package bootstrap after git init for starter templates. Arbitrary Git imports fall back to dependency initialization when bootstrap is absent. Default: true.'
     ),
 });
 

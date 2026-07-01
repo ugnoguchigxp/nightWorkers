@@ -15,6 +15,7 @@ import {
 import {
   resolveStandardTemplate,
   resolveStarterTemplate,
+  standardTemplateRegistry,
 } from '../../api/services/worker-tools/template-registry';
 
 let dummyRepoDir: string;
@@ -168,7 +169,16 @@ describe('Worker Tools Unit Tests', () => {
     try {
       await fs.writeFile(
         path.join(templateRepo, 'package.json'),
-        '{"name":"template-app","packageManager":"bun@1.3.14","scripts":{"test":"vitest","build":"vite build"}}'
+        JSON.stringify({
+          name: 'template-app',
+          packageManager: 'bun@1.3.14',
+          scripts: {
+            bootstrap:
+              "node -e \"const fs=require('fs'); if (!fs.existsSync('.git')) process.exit(2); fs.writeFileSync('bootstrap.txt','ok')\"",
+            test: 'vitest',
+            build: 'vite build',
+          },
+        })
       );
       await fs.writeFile(
         path.join(templateRepo, 'LLM_CONTEXT.md'),
@@ -249,6 +259,8 @@ describe('Worker Tools Unit Tests', () => {
           name: 'template-app',
           packageManager: 'bun@1.3.14',
           scripts: {
+            bootstrap:
+              "node -e \"const fs=require('fs'); if (!fs.existsSync('.git')) process.exit(2); fs.writeFileSync('bootstrap.txt','ok')\"",
             test: 'vitest',
             build: 'vite build',
           },
@@ -290,9 +302,10 @@ describe('Worker Tools Unit Tests', () => {
       expect(result.payload?.postImport?.initialization).toMatchObject({
         status: 'passed',
         cwd: targetDir,
-        command: ['bun', 'install'],
+        command: ['bun', 'run', 'bootstrap'],
         exitCode: 0,
       });
+      await expect(fs.readFile(path.join(targetDir, 'bootstrap.txt'), 'utf-8')).resolves.toBe('ok');
       await expect(fs.readFile(path.join(targetDir, 'src/index.ts'), 'utf-8')).resolves.toContain(
         'ok = true'
       );
@@ -309,6 +322,62 @@ describe('Worker Tools Unit Tests', () => {
       await expect(fs.stat(path.join(targetDir, 'LICENSE.md'))).rejects.toThrow();
       const remotes = await execFileAsync('git', ['remote', '-v'], { cwd: targetDir });
       expect(remotes.stdout.trim()).toBe('');
+    } finally {
+      await fs.rm(templateRepo, { recursive: true, force: true });
+      await fs.rm(targetDir, { recursive: true, force: true });
+    }
+  });
+
+  it('requires bootstrap for registered starter template initialization', async () => {
+    const templateRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-template-repo-'));
+    const targetDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nightworkers-template-target-'));
+    try {
+      await fs.writeFile(
+        path.join(templateRepo, 'package.json'),
+        '{"name":"template-app","packageManager":"bun@1.3.14","scripts":{"test":"vitest"}}'
+      );
+      await execFileAsync('git', ['init'], { cwd: templateRepo });
+      await execFileAsync('git', ['add', '.'], { cwd: templateRepo });
+      await execFileAsync(
+        'git',
+        ['-c', 'user.name=Test User', '-c', 'user.email=test@example.com', 'commit', '-m', 'init'],
+        { cwd: templateRepo }
+      );
+      await execFileAsync('git', ['tag', 'sqlite-v1.0.0'], { cwd: templateRepo });
+
+      const result = await importProjectTool({
+        source: 'starter',
+        stack: 'hono',
+        variant: 'sqlite',
+        repoRoot: targetDir,
+        registry: {
+          'hono-standard': {
+            id: 'hono-standard',
+            repoUrl: templateRepo,
+            defaultVariant: 'sqlite',
+            variants: {
+              sqlite: { name: 'sqlite', ref: 'sqlite-v1.0.0', description: 'test' },
+            },
+            overlays: {},
+          },
+          'python-standard': {
+            id: 'python-standard',
+            repoUrl: templateRepo,
+            defaultVariant: 'sqlite',
+            variants: {
+              sqlite: { name: 'sqlite', ref: 'sqlite-v1.0.0', description: 'test' },
+            },
+            overlays: {},
+          },
+        },
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.payload?.postImport?.initialization).toMatchObject({
+        status: 'failed',
+        command: null,
+        errorMessage: 'Template package.json must define scripts.bootstrap.',
+      });
     } finally {
       await fs.rm(templateRepo, { recursive: true, force: true });
       await fs.rm(targetDir, { recursive: true, force: true });
@@ -565,17 +634,26 @@ describe('Worker Tools Unit Tests', () => {
 
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) throw new Error('expected rag variant to resolve');
-    expect(resolved.variant.ref).toBe('rag-v1.3.0');
+    expect(resolved.variant.ref).toBe('rag-v1.4.0');
   });
 
   it('resolves current hono-standard starter snapshot refs', () => {
-    const sqlite = resolveStarterTemplate({ stack: 'hono', variant: 'sqlite' });
-    const postgres = resolveStarterTemplate({ stack: 'hono', variant: 'postgres' });
-    const rag = resolveStarterTemplate({ stack: 'hono', variant: 'rag' });
+    const expectedRefs = {
+      sqlite: 'sqlite-v1.4.0',
+      baseline: 'baseline-v1.4.0',
+      postgres: 'postgres-v1.4.0',
+      pgvector: 'pgvector-v1.4.0',
+      rag: 'rag-v1.4.0',
+      turso: 'turso-v1.4.0',
+      cloudflare: 'cloudflare-v1.4.0',
+    };
 
-    expect(sqlite.ok && sqlite.variant.ref).toBe('sqlite-v1.3.0');
-    expect(postgres.ok && postgres.variant.ref).toBe('postgres-v1.2.0');
-    expect(rag.ok && rag.variant.ref).toBe('rag-v1.3.0');
+    for (const [variant, expectedRef] of Object.entries(expectedRefs)) {
+      const resolved = resolveStarterTemplate({ stack: 'hono', variant });
+      expect(resolved.ok && resolved.variant.ref).toBe(expectedRef);
+    }
+    expect(standardTemplateRegistry['hono-standard'].overlays.ssr.ref).toBe('overlay-ssr-v1.4.0');
+    expect(standardTemplateRegistry['hono-standard'].overlays.ssg.ref).toBe('overlay-ssg-v1.4.0');
   });
 
   it('resolves a starter stack and variant into the internal template registry', () => {

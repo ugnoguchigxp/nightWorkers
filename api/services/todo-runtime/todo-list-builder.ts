@@ -76,11 +76,16 @@ const FINAL_GATES: StandardGate[] = [
 export function buildStandardImplementationTodoList(input: {
   todos?: ImplementationTodoInput[];
   startFirst?: boolean;
+  includeKnowledgeCapture?: boolean;
   now?: Date;
 }): BuiltTodoInput[] {
   const now = input.now ?? new Date();
   const implementationTodos = normalizeImplementationTodos(input.todos ?? [], FIRST_GATES.length);
-  const gatesAndTodos = [...FIRST_GATES, ...implementationTodos, ...FINAL_GATES];
+  const finalGates =
+    input.includeKnowledgeCapture === false
+      ? FINAL_GATES.filter((todo) => todo.procedureId !== 'contextstill.register_candidates')
+      : FINAL_GATES;
+  const gatesAndTodos = [...FIRST_GATES, ...implementationTodos, ...finalGates];
   const finalGateStartSeq = FIRST_GATES.length + implementationTodos.length + 1;
 
   return gatesAndTodos.map((todo, index) => {

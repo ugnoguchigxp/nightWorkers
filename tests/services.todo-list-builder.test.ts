@@ -72,6 +72,29 @@ describe('standard implementation TodoList builder', () => {
     expect(todos.every((todo) => todo.status === 'pending')).toBe(true);
   });
 
+  it('can omit the knowledge capture gate for temporary debugging', () => {
+    const todos = buildStandardImplementationTodoList({
+      todos: [{ seq: 1, title: 'Implement feature' }],
+      includeKnowledgeCapture: false,
+    });
+
+    expect(todos.map((todo) => `${todo.seq}:${todo.taskType}:${todo.title}`)).toEqual([
+      '1:initial_instructions:initial_instructions を実行する',
+      '2:context_compile:context_compile を実行する',
+      '3:implementation:Implement feature',
+      '4:review:LLM コードレビューを実施する',
+      '5:verification:品質ゲート verify コマンドを通す',
+      '6:completion_report:完了報告を行う',
+    ]);
+    expect(
+      todos.filter((todo) => todo.procedureId === 'contextstill.register_candidates')
+    ).toHaveLength(0);
+    expect(todos.at(-1)).toMatchObject({
+      taskType: 'completion_report',
+      dependsOn: [5],
+    });
+  });
+
   it('rejects malformed LLM Todo items before writing to the database', () => {
     expect(() =>
       buildStandardImplementationTodoList({

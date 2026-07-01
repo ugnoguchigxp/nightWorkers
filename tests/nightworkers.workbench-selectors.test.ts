@@ -236,6 +236,48 @@ describe('workbench selectors', () => {
     });
   });
 
+  it('does not double-count Codex contract warnings present in both snapshot and events', () => {
+    const warning = {
+      code: 'codex_file_change_without_prior_read',
+      severity: 'warning',
+      providerItemId: 'file-1',
+      count: 2,
+      changedFiles: ['src/app.ts'],
+      occurredAt: '2026-06-02T00:00:01.000Z',
+    };
+    const run = buildTaskRun({
+      contextSnapshot: {
+        runtimeContract: {
+          warnings: [warning],
+        },
+      },
+    });
+    const event = buildTaskEvent({
+      eventType: 'system.warning',
+      payloadJson: {
+        runEvent: {
+          type: 'system.warning',
+          data: { contractWarning: warning },
+        },
+      },
+    });
+
+    const summary = getCodexContractWarningSummary(run, [event]);
+
+    expect(summary).toMatchObject({
+      totalCount: 2,
+      warningCount: 2,
+      errorCount: 0,
+    });
+    expect(summary?.items).toEqual([
+      expect.objectContaining({
+        code: 'codex_file_change_without_prior_read',
+        count: 2,
+        changedFiles: ['src/app.ts'],
+      }),
+    ]);
+  });
+
   it('summarizes Codex MCP diagnostics without treating global inheritance as warning', () => {
     const inheritedRun = buildTaskRun({
       contextSnapshot: {

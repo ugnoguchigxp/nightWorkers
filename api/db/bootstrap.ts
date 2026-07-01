@@ -645,23 +645,30 @@ export async function ensureNightWorkersSchema() {
       require_per_todo_review integer DEFAULT true NOT NULL,
       require_per_todo_fix integer DEFAULT true NOT NULL,
       require_final_verification integer DEFAULT true NOT NULL,
+      require_register_candidate_prompt integer DEFAULT true NOT NULL,
       ask_commit_on_completion integer DEFAULT true NOT NULL,
       hook_policy_json text,
       created_at integer NOT NULL,
       updated_at integer NOT NULL
     )
   `);
+  await ensureColumn(
+    'todo_workflow_settings',
+    'require_register_candidate_prompt',
+    'require_register_candidate_prompt integer DEFAULT true NOT NULL'
+  );
   await client.execute(`
     INSERT INTO todo_workflow_settings (
       id,
       require_per_todo_review,
       require_per_todo_fix,
       require_final_verification,
+      require_register_candidate_prompt,
       ask_commit_on_completion,
       created_at,
       updated_at
     )
-    SELECT 'global', true, true, true, true, unixepoch() * 1000, unixepoch() * 1000
+    SELECT 'global', true, true, true, true, true, unixepoch() * 1000, unixepoch() * 1000
     WHERE NOT EXISTS (SELECT 1 FROM todo_workflow_settings WHERE id = 'global')
   `);
 

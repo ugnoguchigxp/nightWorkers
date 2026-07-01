@@ -234,6 +234,7 @@ export const jaDictionary = {
   'queue.todo.reviewEveryTodo': 'review every Todo',
   'queue.todo.fixAfterReview': 'fix after review',
   'queue.todo.finalVerify': 'final verify',
+  'queue.todo.registerCandidates': 'register candidates',
   'queue.todo.commitPrompt': 'commit prompt',
   'thread.noProject': 'No Project',
   'thread.hideDebugEvents': 'Debug events を隠す',

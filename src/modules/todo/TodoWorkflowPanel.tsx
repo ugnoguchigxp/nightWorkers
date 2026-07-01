@@ -10,6 +10,7 @@ export function TodoWorkflowPanel() {
     { key: 'requirePerTodoReview', label: t('queue.todo.reviewEveryTodo') },
     { key: 'requirePerTodoFix', label: t('queue.todo.fixAfterReview') },
     { key: 'requireFinalVerification', label: t('queue.todo.finalVerify') },
+    { key: 'requireRegisterCandidatePrompt', label: t('queue.todo.registerCandidates') },
     { key: 'askCommitOnCompletion', label: t('queue.todo.commitPrompt') },
   ];
   return (

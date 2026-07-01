@@ -195,6 +195,9 @@ export const todoWorkflowSettings = sqliteTable('todo_workflow_settings', {
   requireFinalVerification: integer('require_final_verification', { mode: 'boolean' })
     .default(true)
     .notNull(),
+  requireRegisterCandidatePrompt: integer('require_register_candidate_prompt', { mode: 'boolean' })
+    .default(true)
+    .notNull(),
   askCommitOnCompletion: integer('ask_commit_on_completion', { mode: 'boolean' })
     .default(true)
     .notNull(),

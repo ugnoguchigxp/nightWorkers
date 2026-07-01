@@ -17,6 +17,7 @@ import {
 import {
   createRepository,
   createTask,
+  createTaskRun,
   deleteRepository,
   deleteTask,
 } from '../api/modules/nightworkers/nightworkers.repository';
@@ -153,6 +154,145 @@ describe('NightWorkers Codex MCP integration', () => {
       expect(buildNightWorkersCodexToolApprovalConfig()).toMatchObject({
         import_project: { approval_mode: 'approve' },
       });
+    } finally {
+      if (client) await client.close().catch(() => undefined);
+      await deleteTask(task.id);
+      await deleteRepository(repository.id);
+    }
+  }, 120_000);
+
+  it('imports a starter project from request-scoped task context when taskId is omitted', async () => {
+    const repoRoot = path.join(tempDir, 'request-context-repo');
+    fs.mkdirSync(repoRoot, { recursive: true });
+
+    const repository = await createRepository({
+      name: `request-context-${Date.now()}`,
+      localPath: repoRoot,
+      branch: 'main',
+      allowed: true,
+    });
+
+    const task = await createTask({
+      repositoryId: repository.id,
+      title: 'NightWorkers MCP request context import',
+      status: 'queued',
+    });
+
+    let client: Client | null = null;
+    try {
+      client = new Client(
+        { name: 'nightworkers-codex-mcp-request-context-test', version: '0.1.0' },
+        { capabilities: {} }
+      );
+      const transport = new StreamableHTTPClientTransport(
+        new URL(`http://127.0.0.1/mcp/nightworkers?taskId=${task.id}`),
+        {
+          fetch: async (input, init) => {
+            const request = input instanceof Request ? input : new Request(input, init);
+            return app.fetch(request);
+          },
+        }
+      );
+      await client.connect(transport);
+
+      const callResult = await client.callTool(
+        {
+          name: 'import_project',
+          arguments: {
+            source: 'starter',
+            stack: 'hono',
+            targetPath: '.',
+            overwrite: false,
+            initialize: false,
+          },
+        },
+        undefined,
+        { timeout: 120_000 }
+      );
+
+      expect(callResult.isError).toBeFalsy();
+      expect(callResult.structuredContent).toMatchObject({
+        payload: {
+          mode: 'template',
+          template: expect.objectContaining({
+            templateId: 'hono-standard',
+          }),
+        },
+      });
+      expect(fs.existsSync(path.join(repoRoot, 'package.json'))).toBe(true);
+    } finally {
+      if (client) await client.close().catch(() => undefined);
+      await deleteTask(task.id);
+      await deleteRepository(repository.id);
+    }
+  }, 120_000);
+
+  it('imports a starter project from request-scoped run context when taskId is omitted', async () => {
+    const repoRoot = path.join(tempDir, 'run-context-repo');
+    fs.mkdirSync(repoRoot, { recursive: true });
+
+    const repository = await createRepository({
+      name: `run-context-${Date.now()}`,
+      localPath: repoRoot,
+      branch: 'main',
+      allowed: true,
+    });
+
+    const task = await createTask({
+      repositoryId: repository.id,
+      title: 'NightWorkers MCP run context import',
+      status: 'queued',
+    });
+    const run = await createTaskRun({
+      taskId: task.id,
+      repositoryId: repository.id,
+      status: 'running',
+      workerKind: 'codex-agent',
+      startedAt: new Date(),
+    });
+
+    let client: Client | null = null;
+    try {
+      client = new Client(
+        { name: 'nightworkers-codex-mcp-run-context-test', version: '0.1.0' },
+        { capabilities: {} }
+      );
+      const transport = new StreamableHTTPClientTransport(
+        new URL(`http://127.0.0.1/mcp/nightworkers?runId=${run.id}`),
+        {
+          fetch: async (input, init) => {
+            const request = input instanceof Request ? input : new Request(input, init);
+            return app.fetch(request);
+          },
+        }
+      );
+      await client.connect(transport);
+
+      const callResult = await client.callTool(
+        {
+          name: 'import_project',
+          arguments: {
+            source: 'starter',
+            stack: 'hono',
+            targetPath: '.',
+            overwrite: false,
+            initialize: false,
+          },
+        },
+        undefined,
+        { timeout: 120_000 }
+      );
+
+      expect(callResult.isError).toBeFalsy();
+      expect(callResult.structuredContent).toMatchObject({
+        payload: {
+          mode: 'template',
+          template: expect.objectContaining({
+            templateId: 'hono-standard',
+          }),
+        },
+      });
+      expect(fs.existsSync(path.join(repoRoot, 'package.json'))).toBe(true);
     } finally {
       if (client) await client.close().catch(() => undefined);
       await deleteTask(task.id);

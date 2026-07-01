@@ -113,6 +113,7 @@ export async function importProjectTool(
             initialize: input.initialize,
             removeLicenseFile: true,
             createBaselineCommit: true,
+            requireBootstrap: true,
           })
         : null;
     return {
@@ -144,6 +145,7 @@ export async function importProjectTool(
           initialize: input.initialize,
           removeLicenseFile: false,
           createBaselineCommit: false,
+          requireBootstrap: false,
         })
       : null;
   return {

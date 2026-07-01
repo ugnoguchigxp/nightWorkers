@@ -52,7 +52,13 @@ export const CODEX_CONTRACT_WARNING_CATALOG = {
   codex_file_change_before_todo_replace: {
     defaultSeverity: 'warning',
     terminalPolicy: 'none',
-    description: 'Codex changed files before nightworkers.todo_list operation=replace.',
+    description:
+      'Codex changed files after structural TodoList replanning was required but before a successful nightworkers.todo_list operation=replace.',
+  },
+  codex_file_change_without_prior_read: {
+    defaultSeverity: 'warning',
+    terminalPolicy: 'none',
+    description: 'Codex changed files without observable read evidence for the target path.',
   },
   codex_todo_progress_missing: {
     defaultSeverity: 'warning',

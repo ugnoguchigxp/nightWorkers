@@ -71,6 +71,7 @@ import {
   buildStandardImplementationTodoList,
   evaluateTodoCompletionGate,
 } from '../../services/todo-runtime';
+import { getTodoWorkflowSettings } from '../queue/queue-management.service';
 import {
   outcomeFromRuntimeResult,
   resolveBlueprintPlanningReadiness,
@@ -907,6 +908,10 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
   };
   const runtimeOptions = runtimeLaneDefinition.buildRuntimeOptions(runtimeLaneSetupInput);
   const initialTodos = runtimeLaneDefinition.buildInitialTodos(runtimeLaneSetupInput);
+  const todoWorkflowSettings =
+    executionMode === 'planning' || executionMode === 'general_answer'
+      ? null
+      : await getTodoWorkflowSettings();
   await repo.replaceTaskRunTodosForRun(
     run.id,
     executionMode === 'planning' || executionMode === 'general_answer'
@@ -914,6 +919,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
       : buildStandardImplementationTodoList({
           todos: initialTodos,
           startFirst: true,
+          includeKnowledgeCapture: todoWorkflowSettings?.requireRegisterCandidatePrompt ?? true,
         })
   );
 

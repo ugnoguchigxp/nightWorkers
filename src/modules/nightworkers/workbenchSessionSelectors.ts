@@ -353,9 +353,14 @@ export function getCodexContractWarningSummary(
   latestRun?: TaskRun,
   events: TaskEvent[] = []
 ): CodexContractWarningSummary | undefined {
+  const snapshotWarnings = readCodexContractSnapshotWarnings(latestRun);
+  const eventWarnings = readCodexContractEventWarnings(events);
+  const snapshotKeys = new Set(snapshotWarnings.map(codexContractWarningIdentityKey));
   const warnings = [
-    ...readCodexContractSnapshotWarnings(latestRun),
-    ...readCodexContractEventWarnings(events),
+    ...snapshotWarnings,
+    ...eventWarnings.filter(
+      (warning) => !snapshotKeys.has(codexContractWarningIdentityKey(warning))
+    ),
   ];
   if (warnings.length === 0) return undefined;
   const byCode = new Map<string, CodexContractWarningSummary['items'][number]>();
@@ -397,6 +402,18 @@ export function getCodexContractWarningSummary(
       .reduce((sum, item) => sum + item.count, 0),
     items,
   };
+}
+
+function codexContractWarningIdentityKey(warning: Record<string, unknown>) {
+  return [
+    readNonEmptyString(warning.code) || '',
+    readWarningSeverity(warning.severity),
+    readNonEmptyString(warning.providerItemId) || '',
+    readNonEmptyString(warning.toolName) || '',
+    readNonEmptyString(warning.command) || '',
+    readPositiveInteger(warning.todoSeq) ?? '',
+    readStringArray(warning.changedFiles).sort().join(','),
+  ].join('|');
 }
 
 export function getCodexMcpDiagnosticsSummary(

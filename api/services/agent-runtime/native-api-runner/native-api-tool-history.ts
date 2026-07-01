@@ -183,6 +183,8 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
     '- running Todo がある状態で todo_list operation=replace を使う場合は todoListReplaceReason を必ず指定してください。現在の Todo が完了したことを表すために todo_list operation=replace を使ってはいけません。',
     '- todo_list operation=start/done/block/fail は既存 Todo の状態遷移です。Todo が終わったら todo_list operation=done を使ってください。todo_list operation=done は次の pending Todo を自動で running にします。',
     '- todo_list operation=list は診断専用であり、進捗更新ではありません。',
+    '- ファイルを編集する前に、対象ファイルまたは直接関係する既存ファイルを読む。新規ファイル作成では、配置先の route / registry / sibling / style / test pattern を先に確認してください。',
+    '- rg --files や ls は探索であり、編集対象の読了 evidence ではありません。読んだ内容に基づかない blind edit を避けてください。',
     '- finalReport / finalize_answer の前に open Todo を確認し、未完了 Todo は done/block/fail のいずれかに整理してください。未確認 mutation や未実施 verification を done にしないでください。',
     '- blocker、未完了 Todo、failed tests/review、ユーザー確認へ進む判断がある場合は context_decision を強く推奨します。',
     '- closeout では、context_compile を使った場合 compile_eval を検討し、再利用可能な知識があれば register_candidates を検討してください。',

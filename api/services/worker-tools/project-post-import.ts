@@ -43,6 +43,7 @@ export type ProjectInitializationResult = {
   status: 'passed' | 'failed' | 'skipped';
   skippedReason?:
     | 'disabled'
+    | 'git_init_failed'
     | 'manifest_missing'
     | 'manifest_parse_failed'
     | 'unsupported_manifest';
@@ -118,18 +119,21 @@ export async function inspectAndInitializeImportedProject(input: {
   initialize?: boolean;
   removeLicenseFile?: boolean;
   createBaselineCommit?: boolean;
+  requireBootstrap?: boolean;
 }): Promise<ProjectPostImportOutput> {
   const targetPath = path.resolve(input.targetPath);
+  const manifest = await inspectPackageManifest(targetPath);
+  const llmContext = await inspectLlmContext(targetPath);
   const gitInitialization = await initializeFreshGitRepository({
     targetPath,
     removeLicenseFile: input.removeLicenseFile === true,
   });
-  const manifest = await inspectPackageManifest(targetPath);
-  const llmContext = await inspectLlmContext(targetPath);
   const initialization = await initializeProject({
     targetPath,
     manifest,
     enabled: input.initialize !== false,
+    gitInitStatus: gitInitialization.status,
+    requireBootstrap: input.requireBootstrap === true,
   });
   const baselineCommit = await createBaselineCommit({
     targetPath,
@@ -352,6 +356,13 @@ function installCommandFor(packageManager: PackageManager) {
   return ['npm', 'install'];
 }
 
+function packageScriptCommandFor(packageManager: PackageManager, script: string) {
+  if (packageManager === 'bun') return ['bun', 'run', script];
+  if (packageManager === 'pnpm') return ['pnpm', 'run', script];
+  if (packageManager === 'yarn') return ['yarn', script];
+  return ['npm', 'run', script];
+}
+
 function runCommandFor(packageManager: PackageManager, script: string) {
   if (packageManager === 'bun') return `bun run ${script}`;
   if (packageManager === 'pnpm') return `pnpm run ${script}`;
@@ -373,10 +384,13 @@ async function initializeProject(input: {
   targetPath: string;
   manifest: ProjectManifestInspection;
   enabled: boolean;
+  gitInitStatus: 'passed' | 'failed';
+  requireBootstrap: boolean;
 }): Promise<ProjectInitializationResult> {
+  const initializationCommand = buildInitializationCommand(input.manifest, input.requireBootstrap);
   const base = {
     cwd: input.targetPath,
-    command: input.manifest.installCommand,
+    command: initializationCommand,
     startedAt: null,
     finishedAt: null,
     durationMs: null,
@@ -386,18 +400,28 @@ async function initializeProject(input: {
     stderr: '',
   };
   if (!input.enabled) return { ...base, status: 'skipped', skippedReason: 'disabled' };
+  if (input.gitInitStatus !== 'passed') {
+    return { ...base, status: 'skipped', skippedReason: 'git_init_failed' };
+  }
   if (input.manifest.status === 'missing') {
     return { ...base, status: 'skipped', skippedReason: 'manifest_missing' };
   }
   if (input.manifest.status === 'parse_failed') {
     return { ...base, status: 'skipped', skippedReason: 'manifest_parse_failed' };
   }
-  if (!input.manifest.installCommand) {
+  if (!initializationCommand && input.requireBootstrap && input.manifest.status === 'found') {
+    return {
+      ...base,
+      status: 'failed',
+      errorMessage: 'Template package.json must define scripts.bootstrap.',
+    };
+  }
+  if (!initializationCommand) {
     return { ...base, status: 'skipped', skippedReason: 'unsupported_manifest' };
   }
 
   const startedAt = new Date();
-  const result = await runInstallCommand(input.manifest.installCommand, input.targetPath);
+  const result = await runInstallCommand(initializationCommand, input.targetPath);
   const finishedAt = new Date();
   return {
     ...base,
@@ -411,6 +435,19 @@ async function initializeProject(input: {
     stderr: result.stderr,
     errorMessage: result.errorMessage,
   };
+}
+
+function buildInitializationCommand(
+  manifest: ProjectManifestInspection,
+  requireBootstrap: boolean
+) {
+  const packageManager = manifest.detectedPackageManager;
+  if (!packageManager) return null;
+  if (typeof manifest.packageJson?.scripts.bootstrap === 'string') {
+    return packageScriptCommandFor(packageManager, 'bootstrap');
+  }
+  if (requireBootstrap) return null;
+  return manifest.installCommand;
 }
 
 function runInstallCommand(command: string[], cwd: string) {

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import { sanitizeTerminalText } from '@/modules/nightworkers/components/terminalText';
 import { client } from '../lib/api';
 import { apiPath } from '../lib/api-base';
 
@@ -386,17 +387,17 @@ function TaskConsolePage() {
                           </div>
                           {Boolean(nestedPayload.content) && (
                             <pre className="text-[10px] text-zinc-300 bg-zinc-950/80 p-2 rounded border border-zinc-900/50 overflow-y-auto max-h-[120px] whitespace-pre-wrap">
-                              {String(nestedPayload.content)}
+                              {sanitizeTerminalText(String(nestedPayload.content))}
                             </pre>
                           )}
                           {Boolean(nestedPayload.stdout) && (
                             <pre className="text-[10px] text-zinc-300 bg-zinc-950/80 p-2 rounded border border-zinc-900/50 overflow-y-auto max-h-[120px] whitespace-pre-wrap font-mono">
-                              {String(nestedPayload.stdout)}
+                              {sanitizeTerminalText(String(nestedPayload.stdout))}
                             </pre>
                           )}
                           {Boolean(nestedPayload.stderr) && (
                             <pre className="text-[10px] text-rose-300 bg-zinc-950/80 p-2 rounded border border-zinc-900/50 overflow-y-auto max-h-[120px] whitespace-pre-wrap font-mono">
-                              {String(nestedPayload.stderr)}
+                              {sanitizeTerminalText(String(nestedPayload.stderr))}
                             </pre>
                           )}
                           {payloadError && (

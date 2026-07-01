@@ -11,6 +11,16 @@ export type RuntimeTodoEvidence = {
   procedureId?: string | null;
 };
 
+export type CodexReadEvidence = {
+  sequence: number;
+  path: string;
+  source: 'command_execution' | 'mcp_tool';
+  kind: 'content' | 'diff';
+  command?: string | null;
+  normalizedCommand?: string | null;
+  providerItemId?: string | null;
+};
+
 export type RuntimeTodoEvidenceReadResult = {
   todo: RuntimeTodoEvidence | null;
   source: 'db' | 'context' | 'none';
@@ -25,6 +35,11 @@ export type CodexRuntimeAuditState = {
   firstNightworkersTodoMutationSequence: number | null;
   lastNightworkersTodoMutationSequence: number | null;
   lastNightworkersTodoMutationOperation: string | null;
+  lastProgressValidSequence: number | null;
+  lastTodoEvidenceSource: RuntimeTodoEvidenceReadResult['source'] | null;
+  structuralTodoReplanRequired: boolean;
+  structuralTodoReplanEvidence: string[];
+  lastTodoTransitionResult: string | null;
   sawNightworkersImportProjectSuccess: boolean;
   sawNightworkersImportProjectFailure: boolean;
   mcpDegraded: boolean;
@@ -48,6 +63,8 @@ export type CodexRuntimeAuditState = {
   lastFileChangeSequence: number | null;
   lastFileChangeProviderItemId: string | null;
   lastChangedFiles: string[];
+  readEvidenceByPath: Map<string, CodexReadEvidence[]>;
+  createdFileContextEvidenceByDirectory: Map<string, CodexReadEvidence[]>;
   mcpConfig: CodexRuntimeMcpConfigState;
 };
 
@@ -62,6 +79,11 @@ export function createCodexRuntimeAuditState(
     firstNightworkersTodoMutationSequence: null,
     lastNightworkersTodoMutationSequence: null,
     lastNightworkersTodoMutationOperation: null,
+    lastProgressValidSequence: null,
+    lastTodoEvidenceSource: null,
+    structuralTodoReplanRequired: false,
+    structuralTodoReplanEvidence: [],
+    lastTodoTransitionResult: null,
     sawNightworkersImportProjectSuccess: false,
     sawNightworkersImportProjectFailure: false,
     mcpDegraded: false,
@@ -79,6 +101,8 @@ export function createCodexRuntimeAuditState(
     lastFileChangeSequence: null,
     lastFileChangeProviderItemId: null,
     lastChangedFiles: [],
+    readEvidenceByPath: new Map(),
+    createdFileContextEvidenceByDirectory: new Map(),
     mcpConfig: resolveCodexRuntimeMcpConfigState({
       env: input.executionMode ? { NIGHTWORKERS_EXECUTION_MODE: input.executionMode } : undefined,
     }),
@@ -89,6 +113,7 @@ export function buildCodexRuntimeContractSnapshot(state: CodexRuntimeAuditState)
   return {
     lane: 'codex-sdk',
     warnings: state.contractWarnings,
+    summary: buildCodexRuntimeContractSummary(state),
     mcp: {
       configSource: state.mcpConfig.source,
       expectedTools: state.mcpConfig.expectedTools,
@@ -100,34 +125,21 @@ export function buildCodexRuntimeContractSnapshot(state: CodexRuntimeAuditState)
   };
 }
 
-export function addContractWarning(state: CodexRuntimeAuditState, warning: CodexContractWarning) {
+export function addContractWarning(
+  state: CodexRuntimeAuditState,
+  warning: CodexContractWarning
+): { warning: CodexContractWarning; isNew: boolean } {
   const normalized = normalizeContractWarning(warning);
-  const key = [
-    normalized.code,
-    normalized.providerItemId ?? '',
-    normalized.toolName ?? '',
-    normalized.command ?? '',
-    normalized.todoId ?? '',
-    normalized.todoSeq ?? '',
-    (normalized.changedFiles ?? []).join(','),
-  ].join('|');
+  const key = contractWarningAggregationKey(normalized);
   const existing = state.contractWarnings.find(
-    (item) =>
-      [
-        item.code,
-        item.providerItemId ?? '',
-        item.toolName ?? '',
-        item.command ?? '',
-        item.todoId ?? '',
-        item.todoSeq ?? '',
-        (item.changedFiles ?? []).join(','),
-      ].join('|') === key
+    (item) => contractWarningAggregationKey(item) === key
   );
   if (existing) {
     existing.count = Math.max(1, existing.count ?? 1) + Math.max(1, normalized.count ?? 1);
-    return;
+    return { warning: existing, isNew: false };
   }
   state.contractWarnings.push(normalized);
+  return { warning: normalized, isNew: true };
 }
 
 export function normalizeContractWarning(warning: CodexContractWarning): CodexContractWarning {
@@ -151,5 +163,41 @@ export function normalizeContractWarning(warning: CodexContractWarning): CodexCo
     ...(typeof warning.count === 'number' && Number.isFinite(warning.count)
       ? { count: Math.max(1, Math.floor(warning.count)) }
       : {}),
+  };
+}
+
+function contractWarningAggregationKey(warning: CodexContractWarning) {
+  const changedFiles = [...(warning.changedFiles ?? [])].sort().join(',');
+  const code = warning.code;
+  if (changedFiles || code.includes('file_change') || code.includes('todo_progress')) {
+    return [code, warning.todoSeq ?? '', changedFiles].join('|');
+  }
+  return [
+    code,
+    warning.providerItemId ?? '',
+    warning.toolName ?? '',
+    warning.command ?? '',
+    warning.todoId ?? '',
+    warning.todoSeq ?? '',
+  ].join('|');
+}
+
+function buildCodexRuntimeContractSummary(state: CodexRuntimeAuditState) {
+  const warnings = state.contractWarnings;
+  const warningCount = (code: string) =>
+    warnings
+      .filter((warning) => warning.code === code)
+      .reduce((sum, warning) => sum + Math.max(1, warning.count ?? 1), 0);
+  return {
+    todoProgress: {
+      missingCount: warningCount('codex_todo_progress_missing'),
+      listOnlyCount: warningCount('codex_todo_progress_list_only'),
+      staleBeforeVerifyCount: warningCount('codex_todo_progress_stale_before_verify'),
+    },
+    readBeforeEdit: {
+      missingPriorReadCount: warningCount('codex_file_change_without_prior_read'),
+      coveredFileCount: state.readEvidenceByPath.size,
+      warningCount: warningCount('codex_file_change_without_prior_read'),
+    },
   };
 }

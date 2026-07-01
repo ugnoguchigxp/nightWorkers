@@ -10,6 +10,7 @@ import {
   getCodexCommandOutput,
   getToolActivityModel,
 } from './ThreadTimeline';
+import { CodexToolCard, hasCodexToolCard } from './ThreadTimelineCodexToolCard';
 import { ContextStillToolCard, hasContextStillToolCard } from './ThreadTimelineContextStillCards';
 import { DiffCodeBlock } from './ThreadTimelineDiffView';
 import { hasImportProjectToolCard, ImportProjectToolCard } from './ThreadTimelineImportProjectCard';
@@ -21,6 +22,7 @@ import {
   stringValue,
   tryParseJsonObject,
 } from './ThreadTimelineStreaming';
+import { sanitizeTerminalText } from './terminalText';
 
 const UNKNOWN_ACTIVITY_TITLE_KEY = 'timeline.unknownActivity';
 
@@ -197,6 +199,9 @@ function TranscriptActivityBlock({
   if (hasInspectionToolCard(event)) {
     return <InspectionToolCard event={event} />;
   }
+  if (hasCodexToolCard(event)) {
+    return <CodexToolCard event={event} />;
+  }
 
   return (
     <details className={`rounded border ${borderClass}`} open={defaultOpen}>
@@ -269,10 +274,10 @@ export function getActivityCode(event: ActivityEvent) {
     return payload.runEvent.data.rawContent;
   }
   if (typeof payload?.runEvent?.data?.result?.payload?.stdout === 'string') {
-    return payload.runEvent.data.result.payload.stdout;
+    return sanitizeTerminalText(payload.runEvent.data.result.payload.stdout);
   }
   if (typeof payload?.runEvent?.data?.result?.payload?.stderr === 'string') {
-    return payload.runEvent.data.result.payload.stderr;
+    return sanitizeTerminalText(payload.runEvent.data.result.payload.stderr);
   }
   const codexOutput = getCodexCommandOutput(event);
   if (codexOutput) return codexOutput;

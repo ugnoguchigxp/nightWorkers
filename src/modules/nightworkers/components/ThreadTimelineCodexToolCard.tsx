@@ -7,6 +7,7 @@ import {
   type ToolActivityLifecycle,
 } from './ThreadTimeline';
 import { NightWorkersCodeBlock } from './ThreadTimelineMarkdown';
+import { sanitizeTerminalPreviewValue, sanitizeTerminalText } from './terminalText';
 
 type CodexToolLifecycle = 'started' | 'progress' | 'result' | 'failed';
 type CodexToolStatus = 'started' | 'running' | 'ok' | 'failed';
@@ -222,13 +223,13 @@ function buildCommandCard(input: {
     toolName: 'command_execution',
     codexKind: 'command',
     title: 'Codex command',
-    summary: command,
+    summary: `command_execution | ${command}`,
     metadata: compactMetadata([
       ['class', commandClass],
       ['exit', exitCode],
       ['provider status', asString(input.data.status)],
     ]),
-    outputPreview: asString(input.data.aggregatedOutput) || undefined,
+    outputPreview: sanitizeTerminalText(asString(input.data.aggregatedOutput)) || undefined,
     errorMessage: input.errorMessage,
   };
 }
@@ -348,7 +349,7 @@ function stringifyPreview(value: unknown) {
   if (!value || typeof value !== 'object') return undefined;
   if (Object.keys(asRecord(value)).length === 0) return undefined;
   try {
-    return JSON.stringify(value, null, 2);
+    return JSON.stringify(sanitizeTerminalPreviewValue(value), null, 2);
   } catch {
     return undefined;
   }

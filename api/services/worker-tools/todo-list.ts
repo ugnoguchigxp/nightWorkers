@@ -1,4 +1,5 @@
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
+import { getTodoWorkflowSettings } from '../../modules/queue/queue-management.service';
 import { buildStandardImplementationTodoList, type ImplementationTodoInput } from '../todo-runtime';
 import type { WorkerToolResult } from './types';
 
@@ -98,9 +99,11 @@ export async function todoListTool(input: {
             { todoListReplaceReason: input.todoListReplaceReason }
           );
         }
+        const workflowSettings = await getTodoWorkflowSettings();
         const todos = buildStandardImplementationTodoList({
           todos: input.todos ?? [],
           startFirst: input.startFirst,
+          includeKnowledgeCapture: workflowSettings.requireRegisterCandidatePrompt,
         });
         const created = await repo.replaceTaskRunTodosForRun(runId, todos);
         return okTodoAction('todo_list', input.operation, runId, taskId, created, {

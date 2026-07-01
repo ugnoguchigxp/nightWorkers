@@ -81,6 +81,7 @@ export async function updateTodoWorkflowSettings(data: {
   requirePerTodoReview?: boolean;
   requirePerTodoFix?: boolean;
   requireFinalVerification?: boolean;
+  requireRegisterCandidatePrompt?: boolean;
   askCommitOnCompletion?: boolean;
   hookPolicyJson?: unknown;
 }) {
@@ -92,6 +93,8 @@ export async function updateTodoWorkflowSettings(data: {
       requirePerTodoReview: data.requirePerTodoReview ?? current.requirePerTodoReview,
       requirePerTodoFix: data.requirePerTodoFix ?? current.requirePerTodoFix,
       requireFinalVerification: data.requireFinalVerification ?? current.requireFinalVerification,
+      requireRegisterCandidatePrompt:
+        data.requireRegisterCandidatePrompt ?? current.requireRegisterCandidatePrompt,
       askCommitOnCompletion: data.askCommitOnCompletion ?? current.askCommitOnCompletion,
       hookPolicyJson: data.hookPolicyJson ?? current.hookPolicyJson,
       updatedAt: now,

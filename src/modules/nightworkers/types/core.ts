@@ -116,6 +116,7 @@ export type TodoWorkflowSettings = {
   requirePerTodoReview: boolean;
   requirePerTodoFix: boolean;
   requireFinalVerification: boolean;
+  requireRegisterCandidatePrompt: boolean;
   askCommitOnCompletion: boolean;
   hookPolicyJson?: unknown | null;
   createdAt: unknown;

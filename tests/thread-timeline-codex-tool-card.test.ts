@@ -81,6 +81,37 @@ describe('ThreadTimeline Codex tool cards', () => {
     expect(card?.resultPreview).toContain('CURRENT_TODO_NOT_UNIQUE');
   });
 
+  it('strips terminal control sequences from Codex command output previews', () => {
+    const card = getCodexToolCardModel({
+      kind: 'tool.result',
+      status: 'completed',
+      payloadJson: {
+        payload: {
+          provider: 'codex',
+          providerEventType: 'item.completed',
+          providerItemId: 'cmd-build',
+          toolName: 'command_execution',
+          command: 'bun run build',
+          commandClass: 'verification',
+          aggregatedOutput:
+            '\u001b[2K\rtransforming...\u001b[32m✓\u001b[39m 1899 modules transformed.\u0007\nrendering chunks...',
+          exitCode: 0,
+          status: 'completed',
+        },
+      },
+    });
+
+    expect(card?.summary).toBe('command_execution | bun run build');
+    expect(card?.outputPreview).toContain('transforming...');
+    expect(card?.outputPreview).toContain('✓ 1899 modules transformed.');
+    expect(card?.outputPreview).not.toContain(String.fromCharCode(27));
+    expect(card?.outputPreview).not.toContain(String.fromCharCode(7));
+    expect(card?.outputPreview).not.toContain('\r');
+    expect(card?.outputPreview).not.toContain('[2K');
+    expect(card?.outputPreview).not.toContain('[32m');
+    expect(card?.outputPreview).not.toContain('[39m');
+  });
+
   it('keeps Codex MCP tool cards visible in normal transcript mode', () => {
     const items = buildNormalTranscriptItems([
       {

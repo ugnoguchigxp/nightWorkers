@@ -53,6 +53,7 @@ import {
   StreamingResponsePreview,
   ThinkingIndicator,
 } from './ThreadTimelineStreaming';
+import { sanitizeTerminalText } from './terminalText';
 
 export { isUserVisibleChatMessage } from '../messageVisibility';
 export {
@@ -572,7 +573,7 @@ export function formatCodexToolActivitySummary(event: ActivityEvent): string {
 
 export function getCodexCommandOutput(event: ActivityEvent): string {
   const data = codexActivityData(event.payloadJson);
-  return asString(data.aggregatedOutput).trim();
+  return sanitizeTerminalText(asString(data.aggregatedOutput)).trim();
 }
 
 export function getActivityChangedFiles(event: ActivityEvent): string[] {
