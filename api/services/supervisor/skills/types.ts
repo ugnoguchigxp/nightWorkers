@@ -1,3 +1,8 @@
+import type {
+  DedicatedDesignView,
+  SpecificationLens,
+} from '../../../../shared/schemas/plan-mode-artifact.schema';
+
 export const supervisorPhases = [
   'answer',
   'analyze',
@@ -53,6 +58,18 @@ export type SupervisorMode = (typeof supervisorModes)[number];
 export type SupervisorWorkKind = (typeof supervisorWorkKinds)[number];
 export type SupervisorOverlay = (typeof supervisorOverlays)[number];
 
+export type PlanModeViewDecision = {
+  view: DedicatedDesignView;
+  decision: 'include' | 'omit';
+  reason: string;
+};
+
+export type PlanModeRoutingDecision = {
+  primaryArtifact: 'feature_plan';
+  dedicatedViews: PlanModeViewDecision[];
+  specificationLenses: SpecificationLens[];
+};
+
 export type SupervisorRoutingHypothesis = {
   primaryMode: SupervisorMode;
   secondaryModes: SupervisorMode[];
@@ -63,6 +80,7 @@ export type SupervisorRoutingHypothesis = {
   requiredEvidence: string[];
   nextReferenceFiles: string[];
   confidence: number;
+  planMode?: PlanModeRoutingDecision;
 };
 
 export type SupervisorReferenceSectionName =

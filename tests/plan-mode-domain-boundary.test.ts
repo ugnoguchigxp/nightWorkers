@@ -123,4 +123,22 @@ describe('Plan Mode domain boundaries', () => {
       readProjectFile('api/modules/nightworkers/nightworkers.plan-mode-core.port.ts')
     ).toContain("import * as repo from './nightworkers.repository';");
   });
+
+  it('does not introduce user wording classifier helpers or split Plan mode generations', () => {
+    const supervisorFlowFiles = [
+      'api/services/supervisor/prompt.ts',
+      'api/services/supervisor/schema-first.ts',
+      'api/services/supervisor/skills/types.ts',
+      'api/services/supervisor/skills/registry.ts',
+    ];
+
+    for (const path of supervisorFlowFiles) {
+      const source = readProjectFile(path);
+      expect(source, path).not.toMatch(/classif(?:y|ier).*user.*wording/i);
+      expect(source, path).not.toMatch(/user.*wording.*regex/i);
+      expect(source, path).not.toMatch(/\b(?:new|legacy)[ -]?plan\b/i);
+      expect(source, path).not.toMatch(/\bplan(?:Mode)?V[12]\b/);
+      expect(source, path).not.toMatch(/\bV[12]Plan\b/);
+    }
+  });
 });

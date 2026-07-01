@@ -6,6 +6,7 @@ import {
   buildRound1JobTypePrompt,
   buildRound1PromptPacket,
 } from '../api/services/supervisor/prompt';
+import { buildResponseJsonSchema } from '../api/services/supervisor/schema-first';
 
 const originalCodexHome = process.env.NIGHTWORKERS_CODEX_HOME;
 
@@ -31,6 +32,24 @@ describe('supervisor prompt packet', () => {
     expect(packet.runtimeContext.join('\n')).toContain('[Job Types]');
     expect(rendered).toContain('[Output Schema]');
     expect(rendered).not.toContain('"diagnostics"');
+  });
+
+  it('renders Feature Plan routing instructions and round1 planMode schema', () => {
+    const rendered = buildRound1JobTypePrompt('/repo');
+    const schema = buildResponseJsonSchema(1);
+
+    expect(rendered).toContain('feature_plan');
+    expect(rendered).toContain('planMode');
+    expect(rendered).toContain('planning 以外では planMode は null');
+    expect(rendered).toContain('ユースケース図');
+    expect(rendered).toContain('AI coding rules');
+    expect(rendered).not.toContain(['Use', 'case'].join(''));
+    expect(rendered).not.toContain(['AI Coding', 'Rules'].join(' '));
+    expect(JSON.stringify(schema)).toContain('planMode');
+    expect(JSON.stringify(schema)).toContain('"required":["jobType","goal","planMode"]');
+    expect(JSON.stringify(schema)).toContain('"type":"null"');
+    expect(JSON.stringify(schema)).toContain('feature_plan');
+    expect(JSON.stringify(schema)).toContain('dedicatedViews');
   });
 
   it('renders safe AGENTS.md guidance without raw native tool directives', () => {

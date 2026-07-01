@@ -6,6 +6,7 @@ import { getAllowedToolsForJobType } from '../api/services/supervisor/prompt';
 import {
   clearSupervisorReferenceDocumentCache,
   listSupervisorReferenceDocuments,
+  normalizeSupervisorRoutingHypothesis,
   renderSupervisorReferenceDocuments,
   resolveSupervisorReferenceDocuments,
 } from '../api/services/supervisor/skills/registry';
@@ -140,6 +141,79 @@ describe('Supervisor reference registry', () => {
     expect(paths).toContain('references/work_kinds/blueprint.md');
     expect(paths).toContain('references/work_kinds/ui_ux.md');
     expect(paths).toContain('references/overlays/user_facing_change.md');
+  });
+
+  it('renders planning references with Feature Plan dedicated view wording', () => {
+    const documents = resolveSupervisorReferenceDocuments({
+      primaryMode: 'planning',
+      secondaryModes: [],
+      phase: 'plan',
+      workKinds: ['blueprint'],
+      overlays: [],
+      requiredEvidence: [],
+      nextReferenceFiles: [],
+      confidence: 0.8,
+    });
+    const rendered = renderSupervisorReferenceDocuments(documents);
+
+    expect(rendered).toContain('Feature Plan');
+    expect(rendered).toContain('dedicated design view');
+    expect(rendered).toContain('Data Model view');
+    expect(rendered).toContain('UI specification');
+    expect(rendered).not.toContain(['DB', 'Design workflow'].join(' '));
+    expect(rendered).not.toContain(['DB', 'Design に回す'].join(' '));
+  });
+
+  it('normalizes planMode routing decisions without expanding workKinds', () => {
+    const normalized = normalizeSupervisorRoutingHypothesis({
+      primaryMode: 'planning',
+      phase: 'plan',
+      workKinds: ['blueprint'],
+      planMode: {
+        primaryArtifact: 'feature_plan',
+        dedicatedViews: [
+          { view: 'blueprint', decision: 'include', reason: 'UI needs a view' },
+          { view: 'unknown', decision: 'include', reason: 'drop me' },
+          { view: 'blueprint', decision: 'omit', reason: 'duplicate ignored' },
+          { view: 'data_model', decision: 'omit', reason: '' },
+          { view: 'zod_schema_design', decision: 'skip', reason: 'bad decision' },
+        ],
+        specificationLenses: [
+          'functional_requirements',
+          'future_lens',
+          'interface_contract',
+          'functional_requirements',
+        ],
+      },
+    } as unknown as Parameters<typeof normalizeSupervisorRoutingHypothesis>[0]);
+
+    expect(normalized.planMode).toEqual({
+      primaryArtifact: 'feature_plan',
+      dedicatedViews: [
+        { view: 'blueprint', decision: 'include', reason: 'UI needs a view' },
+        {
+          view: 'data_model',
+          decision: 'omit',
+          reason: 'not specified by routing',
+        },
+      ],
+      specificationLenses: ['functional_requirements', 'interface_contract'],
+    });
+    expect(normalized.workKinds).toEqual(['blueprint']);
+  });
+
+  it('drops planMode routing outside planning routes', () => {
+    const normalized = normalizeSupervisorRoutingHypothesis({
+      primaryMode: 'code_edit',
+      phase: 'execute',
+      planMode: {
+        primaryArtifact: 'feature_plan',
+        dedicatedViews: [{ view: 'blueprint', decision: 'include', reason: 'not allowed here' }],
+        specificationLenses: ['functional_requirements'],
+      },
+    });
+
+    expect(normalized.planMode).toBeUndefined();
   });
 
   it('ignores unknown nextReferenceFiles while allowing known extra references', () => {

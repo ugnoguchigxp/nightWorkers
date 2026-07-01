@@ -2,13 +2,15 @@
 
 ## Use When
 
-ユーザーが実装前にアプリや画面の Blueprint、試作、プレビュー、完成イメージ、画面構成、情報設計を確認したいときに使う。DB/table/column/relation/binding/DDL の設計は通常 Blueprint では行わず、DB Design workflow に分離する。
+ユーザーが実装前にアプリや画面の Blueprint、試作、プレビュー、完成イメージ、画面構成、情報設計を確認したいときに使う。DB/table/column/relation/binding/DDL の設計は通常 Blueprint では行わず、Data Model view に分離する。
 
 ## Required Behavior
 
 - まずユーザーの目的、対象ユーザー、主要導線、必要な画面、サンプル表示内容、成功条件を Blueprint として整理する。
 - 「試作して」「どんなイメージか見せて」「Blueprint を見たい」「プレビューを作って」「トップページ案を出して」のような依頼は、実装開始ではなく Blueprint 作成/更新の依頼として扱う。
-- 通常 Blueprint は screen、section、props に入るサンプル表示、implementation task を一貫した単位として扱う。data model、binding、DDL は DB Design workflow で扱う。
+- Blueprint は UI specification と related design view hub を扱う。UI のない task では必須にしない。
+- 通常 Blueprint は screen、section、props に入るサンプル表示、implementation task を一貫した単位として扱う。data model、binding、DDL は Data Model view で扱う。
+- Blueprint は DB DDL、API contract、Zod schema の canonical source ではない。API は api_io_contract、validation / JSON / tool input contract は zod_schema_design に分離する。
 - 既存の Blueprint artifact がある場合は、現在の user request を反映して更新・差分化する前提で考える。
 - e-commerce、dashboard、admin、content、workflow などのドメインらしさを、generic overview ではなく実際の画面構成とコンポーネント選定に反映する。
 - section は必要なものだけを選ぶ。見栄えのために hero、画像、KPI、chart、activity、marketing section を自動追加しない。
@@ -33,7 +35,7 @@ Blueprint JSON を生成・更新する前に、次の Zod schema を根拠と�
 
 - `shared/schemas/app-blueprint.schema.ts`: root AppBlueprint、implementationTasks、learningHooks。
 - `shared/schemas/app-blueprint-ui.schema.ts`: screens、sections、actions。
-- `shared/schemas/app-blueprint-data.schema.ts`: databaseSchema の空 contract。通常 Blueprint では `tables: []`、`relations: []` のままにする。
+- `shared/schemas/app-blueprint-data.schema.ts`: databaseSchema の空 contract。通常 Blueprint では `tables: []`、`relations: []` のままにし、Data Model view に詳細を渡す。
 - `shared/schemas/app-blueprint-binding.schema.ts`: dataBindings の空 contract。通常 Blueprint では `[]` のままにする。
 - `shared/schemas/blueprint-catalog.schema.ts`: 利用可能な page/section componentName と data source kind。
 - `shared/schemas/design-governance.schema.ts`: designPreset。
@@ -80,7 +82,7 @@ AppBlueprint JSON は次の root 形にする。
           "source": "static",
           "props": {
             "title": "Featured Products",
-            "description": "Curated products shown before DB Design is defined.",
+            "description": "Curated products shown before Data Model view is defined.",
             "items": [
               {
                 "title": "Starter Kit",
@@ -116,8 +118,8 @@ AppBlueprint JSON は次の root 形にする。
 - `custom_section` は preset で表現できない時だけ使い、`root` の BlueprintNode tree は `Text`、`Button`、`Input`、`Card`、`DataTable`、`List`、`Alert` など既知 component と `stack` / `row` / `grid` / `split` layout token だけで構成する。任意 HTML、className、CSS は作らない。
 - `component_section` は `kind: "component_section"`、`id`、`name`、`componentName`、`source`、`props`、必要なら `intent`、`visualIntent`、`actions` を持つ。通常 Blueprint では `dataBindingId` を使わない。
 - `source` は選んだ `componentName` の catalog allowedSources から選ぶ。通常 Blueprint の `table`、`record`、`api`、`postgres` は接続先の想定カテゴリであり、実 table/column/binding の定義ではない。
-- 通常 Blueprint では `databaseSchema.tables`、`databaseSchema.relations`、`dataBindings` を空にする。DB table/column/relation/binding/DDL の考案は DB Design workflow だけで実行する。
-- データ構造が必要そうな場合も、通常 Blueprint では DDL や table/column を書かず、`implementationTasks` に DB Design で検討する作業を残す。
+- 通常 Blueprint では `databaseSchema.tables`、`databaseSchema.relations`、`dataBindings` を空にする。DB table/column/relation/binding/DDL の考案は Data Model view だけで実行する。
+- データ構造が必要そうな場合も、通常 Blueprint では DDL や table/column を書かず、`implementationTasks` に Data Model view で検討する作業を残す。
 - `implementationTasks[].affectedDomains` は schema の enum から選ぶ。Blueprint JSON の構造や生成なら `blueprint-ui`、`blueprint-data`、`blueprint-binding`、`blueprints`、`blueprint-task-planning` を優先する。
 - `props` は component-specific な自由領域だが、画面の意味を埋めるために使い、schema root の代替として使わない。
 - ユーザーが「検索バーを半分にして右にボタン」など局所修正を求めた場合は、画面全体を書き直さず `BlueprintSectionPatch` 相当の `target` / `op` / `path` / `node` を考え、artifact には `overrides` または更新後の section として反映する。
@@ -130,7 +132,7 @@ AppBlueprint JSON は次の root 形にする。
 - Kanban なら KanbanSection を中心にし、検索・フィルタ・表示切替は KanbanSection.props.filters / views / segments に入れる。FormSection、DataTableSection に逃がさない。SplitHeroSection、FullBleedHeroSection、画像、棒グラフ、analytics dashboard は通常不要。
 - CRUD / task management / admin list では、主役が record collection なのに card grid を先に置いていないか確認する。比較や更新のしやすさが主目的なら table 系を優先する。
 - 「最小構成」「シンプル」「基本操作」「画面だけ」の場合、screen あたり 1-3 section を基本にし、中心操作に直結しない section は削る。
-- どのドメインでも、section 名、componentName、props のサンプル表示内容が画面目的に対応していることを確認する。table/column の具体化は DB Design workflow に渡す。
+- どのドメインでも、section 名、componentName、props のサンプル表示内容が画面目的に対応していることを確認する。table/column の具体化は Data Model view に渡す。
 
 ## Stop Conditions
 
@@ -139,7 +141,7 @@ AppBlueprint JSON は次の root 形にする。
 
 ## Report Contract
 
-- Blueprint として扱った理由、想定画面、主要セクション、DB Design に回すべき未確定事項を報告する。
+- Blueprint として扱った理由、想定画面、主要セクション、Data Model view に回すべき未確定事項を報告する。
 - 実装に進める場合は、Blueprint から派生する implementation task を短く列挙する。
 
 ## Tool Guidance
@@ -155,7 +157,7 @@ AppBlueprint JSON は次の root 形にする。
 - Kanban / CRUD / form / list などの作業画面で、主役 section が最初に来ているか確認する。
 - ユーザーのドメイン語彙が screen/section/props のサンプル表示に反映されているか確認する。
 - AppBlueprint JSON が schema の root keys、required fields、enum、ID regex に従っているか確認する。
-- 通常 Blueprint で `databaseSchema.tables`、`databaseSchema.relations`、`dataBindings`、`section.dataBindingId` が空のままか確認する。DB Design workflow では相互参照の整合性を別途確認する。
+- 通常 Blueprint で `databaseSchema.tables`、`databaseSchema.relations`、`dataBindings`、`section.dataBindingId` が空のままか確認する。Data Model view では相互参照の整合性を別途確認する。
 - `componentName` と `source` が catalog schema の enum に存在するか確認する。
 
 ## Risk Notes

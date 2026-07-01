@@ -2,36 +2,30 @@
 
 ## Use When
 
-実装計画、設計メモ、spec 文書、作業分解を書くときに使う。
+Feature Plan を作成または更新し、Plan mode の dedicated design view decisions を確定するときに使う。
 
 ## Required Behavior
 
-- 現行コード、既存 spec、schema、DB migration、route、service、UI、test、検証手順に基づいて計画する。
-- 計画は作業一覧だけにせず、目的、対象範囲、非目標、現状、目標状態、設計判断、実装段階、受け入れ基準、検証、リスク、段階リリース、切り戻しまたは緩和策、未解決事項を含める。
-- 受け入れ基準は pass/fail で確認できる形にする。
-- 情報が不足する場合は合理的な前提を明示し、実装判断を変える未確定事項だけ open question に残す。
-- 後続 Role に渡すべき設計書 path / section、未解決判断、acceptance criteria、誤解してはいけない制約を handoff 可能な形で残す。
-- 本番影響、データ移行、API / contract change、security / privacy impact、observability impact がある場合は、それぞれの計画を省略しない。
-- 小さい変更では構造を圧縮してよいが、範囲、受け入れ基準、検証、リスク、切り戻しまたは緩和策は残す。
+- 現行コード、既存 artifact、schema、route、service、UI、test、検証手順を必要な範囲で確認してから Feature Plan を書く。
+- Feature Plan には、目的、scope / non-goals、現状と目標状態、acceptance criteria、制約、implementation steps、verification、risk notes を含める。
+- dedicated view decisions は明示する。include する view だけでなく、UI-less、data 変更なし、contract 変更なし、追加図不要など実装判断に効く omit は理由を残す。
+- blocking open questions と assumptions は questionnaire が扱う。Feature Plan は未解決事項を隠さず、実装開始を止めるものと受容できる前提を分ける。
+- 後続 Role に渡すべき artifact path / section、acceptance criteria、誤解してはいけない制約、最初の implementation step を handoff 可能な形で残す。
 
 ## Stop Conditions
 
-- 計画文書が作成または更新され、次の実装 ticket に分解できる粒度まで、段階、作業、依存関係、担当者または担当者 TBD、受け入れ基準、検証 gate、リスク、切り戻しまたは緩和策が明確になったら summarize へ進む。
+- Feature Plan body が完了し、dedicated view decisions が明示され、次の implementation step と verification gate が判断できる状態になったら summarize へ進む。
+- questionnaire に移すべき blocking item がある場合は、それを報告できる状態にしてから止める。
 
 ## Report Contract
 
-- 変更した文書、採用した設計方針、上位リスク、実行可否 gate、未解決事項、最初に着手すべき実装 ticket を短く報告する。
+- 作成または更新した Feature Plan を報告する。
+- included views と omitted views を理由付きで報告する。
+- 最初の implementation step、blocking questionnaire items、required verification gate を報告する。
 
 ## Verification Guidance
 
-- 目的が明確。
-- 対象範囲、対象外、非目標が明確。
-- 依存関係と順序制約が見える。
-- 担当者または担当者 TBD が見える。
-- 受け入れ基準が検証可能。
-- リスクと緩和策が対応している。
-- セキュリティとプライバシー影響が必要な粒度で確認されている。
-- 段階リリース計画が定義されている。
-- 切り戻しまたは緩和策が定義されている。
-- 観測性が metrics / logs / traces / alerts の具体名で定義されている。
-- 未解決事項が実装開始を止めるものか、受容リスクか区別されている。
+- Feature Plan body の必須要素が揃っているか確認する。
+- dedicated view decisions が依頼内容と evidence に対応しているか確認する。
+- blueprint、data_model、api_io_contract、state_model、activity_flow、sequence_flow、zod_schema_design の責務が混ざっていないか確認する。
+- verification gate が pass/fail で確認できる形になっているか確認する。

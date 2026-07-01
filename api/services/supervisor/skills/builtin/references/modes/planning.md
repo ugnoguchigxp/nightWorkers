@@ -2,64 +2,41 @@
 
 ## Use When
 
-実装計画、設計方針、設計から実装への分解、移行計画、段階リリース計画、レビュー観点、受け入れ基準、検証計画を作るときに使う。
+実装前に Feature Plan を作成または更新し、必要な dedicated design view を選ぶときに使う。
 
 ## Required Behavior
 
-- 計画は単なる作業一覧ではない。実装者が推測せずに着手でき、レビュー担当者が着手前にリスクを検出できる、意思決定文書、実行ガイド、リスク制御資料として書く。
-- 各計画は、なぜ実施するのか、何が具体的に変わるのか、何を明示的に対象外にするのか、どのコンポーネント、ファイル、API、データ、UI、ワークフローが関係するのか、依存関係と順序制約は何か、どうなれば動いたと言えるのか、どう安全にリリースするのか、失敗時にどう戻すかまたは緩和するのか、残るリスク、前提、未解決事項は何かを答えられる状態にする。
-- 現行コード、既存 spec、schema、DB migration、route、service、UI、test、log、trace、runtime evidence を必要な範囲で確認してから計画する。
-- 情報が不足していても停止せず、合理的な前提を明示して計画を進める。ただし、実装判断を変える未解決事項は open question として分離する。
-- 計画作成またはレビュー時は、目的とユーザーに見える成果の確認、対象範囲と対象外の識別、現状と目標状態の整理、段階分解、担当者、依存関係、受け入れ基準付きの作業定義、データ、API、インフラ、移行、互換性の確認、セキュリティ、プライバシー、コンプライアンス、運用の確認、テスト方針と検証ゲートの定義、段階リリース、監視、切り戻し、障害対応の定義、リスク、前提、未解決事項、決定ログの整理、着手前チェックリストの作成を順に行う。
-- 対象範囲、対象外、非目標を明示し、実装済みの事実、今回の計画、将来候補を混ぜない。
-- 現状と目標状態は観測可能な挙動で書く。抽象的な「改善」「整理」「強化」だけで終えない。
-- 設計判断は、実装に影響するものだけを書く。各判断には、判断内容、理由、検討した代替案、トレードオフ、後から戻せるかを添える。
-- 実装単位は段階に分け、各段階に目的、作業、依存関係、受け入れ基準、検証、リスクを含める。
-- 作業は issue や ticket に変換できる粒度にする。変更箇所、入力、出力、依存、テスト要件、切り戻しまたは緩和策を書く。
-- データ、移行、互換性が関係する場合は、schema 変更、backfill 方針、移行順序、新旧互換性、データ検証、失敗時の扱い、再実行安全性、切り戻し制限、データ保持または削除影響を明示する。移行は後方互換、冪等性、dry-run、小分け実行、進捗指標、安全な再試行を優先する。
-- API、インターフェース、契約が変わる場合は、新規または変更 endpoint、request / response 例、error behavior、versioning 方針、後方互換性、deprecation plan、client impact、contract test を明示し、既存 client が継続動作するかを書く。
-- セキュリティ、プライバシー、コンプライアンスは「影響なし」とだけ書かない。認証、認可、入力検証、出力エンコード、secret handling、機密データのログ出力、PII、監査要件、依存関係や supply-chain risk、abuse case、最小権限、安全な default を必要な範囲で確認する。
-- テスト方針は影響範囲に比例させ、unit、integration、contract、migration、end-to-end、performance、security、regression、manual verification の必要性を判断する。重要挙動ごとに、test case、期待結果、担当者、必要環境、pass/fail gate を置く。
-- 観測性と運用は、metrics、logs、traces、dashboards、alerts、SLO/SLA 影響、runbook 更新、on-call 影響、support handoff、既知の failure mode を具体名で書く。system metric だけでなく user-impact metric を優先する。`ログを見る` だけで済ませない。
-- 本番影響がある計画では、段階リリースと切り戻しまたは緩和策を必ず書く。切り戻し不能なら明示し、feature flag disable path や forward-fix などの緩和策を定義する。
-- 担当者が不明な場合は `TBD` として残すが、作業、リリース、切り戻し、検証に必要な担当者欄は見える形にする。
-- 最後に着手前チェックリストを置き、実装開始前と本番リリース前の gate を分ける。
-- ユーザーが別 template を指定しない限り、計画文書は「概要」「範囲」「背景と現状」「目標状態」「設計判断」「実装段階」「詳細作業分解」「データと移行計画」「API、インターフェース、契約変更」「セキュリティ、プライバシー、コンプライアンス」「テスト方針」「観測性と運用」「段階リリース計画」「切り戻しと緩和策」「リスク、前提、未解決事項」「マイルストーン」「着手前チェックリスト」の構造を基本にする。
-- 小さい変更では該当しない section を短く畳んでよいが、範囲、受け入れ基準、検証、リスク、切り戻しまたは緩和策は落とさない。
-- 「概要」には目的、期待する成果、ユーザー価値または事業価値、主要関係者、目標リリース時期、現在の状態を置く。
-- 「範囲」には対象範囲、対象外、非目標を分けて置く。特に「仕様策定アンケートを実装計画の代替にしない」のような境界は非目標として明示する。
-- 「背景と現状」には既存 system / component、既知の制約、関連 file / reference、現在の制限、運用または support context を置く。
-- 「目標状態」にはユーザーに見える挙動、system behavior、data flow、API / contract changes、operational behavior、success criteria を置く。
-- 「設計判断」には実装に影響する decision だけを置き、各 decision に判断内容、理由、検討した代替案、トレードオフ、後から戻せるかを書く。`more scalable`、`cleaner` のような曖昧な理由ではなく、明示的な trade-off を優先する。
-- 「実装段階」は段階的 delivery を優先し、各段階に目的、作業表、リスク、検証を置く。作業表は作業、担当者、依存関係、受け入れ基準を最低列にする。
-- 「詳細作業分解」では、各作業について、何を変えるか、どこを変えるか、必要な入力、期待する出力、依存関係、受け入れ基準、テスト要件、切り戻しまたは緩和メモを書く。
-- 「リスク、前提、未解決事項」はリスク、影響度、発生可能性、緩和策、担当者の表を基本にし、前提と未解決事項を別に置く。
-- 「マイルストーン」は日付の羅列ではなく、節目、終了条件、目標日、担当者で書く。
+- Plan mode の主 artifact は常に Feature Plan とする。Feature Plan は、実装者が次の作業へ進める判断材料を一つに集約する。
+- Feature Plan body には、目的、scope / non-goals、現状と目標状態、acceptance criteria、制約、implementation steps、verification、risk notes を含める。
+- dedicated design view は固定テンプレートとして全部作らず、今回の依頼に必要なものだけ選ぶ。不要な view は、実装判断に意味がある場合だけ omit reason を残す。
+- verification は Feature Plan body に残す。検証だけを別 artifact に逃がさない。
+- questionnaire は blocking open questions と assumptions を扱う。Feature Plan body に open question section を必須化しない。
+- blueprint は UI specification と related design view hub を扱う。UI のない task では必須にしない。
+- data_model は DB、data structure、DDL の正本を扱う。blueprint に DDL や table/column の正本を持たせない。
+- api_io_contract、state_model、activity_flow、sequence_flow、zod_schema_design は必要な場合だけ選ぶ。zod_schema_design は validation、JSON、tool input contract の設計に使う。
+- ユースケース図は dedicated design view として選ばない。
+- AI coding rules は Feature Plan の一部にしない。
+- ユーザー文言の keyword list や正規表現分類ではなく、依頼内容、既存 artifact、runtime evidence、routing hypothesis から必要な view を判断する。
 
 ## Stop Conditions
 
-- 計画が作成または更新され、範囲、段階、作業、受け入れ基準、検証、リスク、段階リリース、切り戻しまたは緩和策、未解決事項が次に実装できる粒度で揃ったら summarize へ進む。
+- Feature Plan body が実装に渡せる粒度で揃い、included views と omitted views の判断理由が明示されたら summarize へ進む。
+- 実装判断を止める質問が残る場合は questionnaire に分離し、Feature Plan には前提と影響範囲だけを残す。
 
 ## Report Contract
 
-- 作成・更新した計画ファイル、採用した設計方針、上位3つのリスク、実行可否チェック、未解決事項、最初に着手すべき実装 ticket を短く報告する。
+- 作成または更新した Feature Plan を報告する。
+- include した dedicated view と理由、omit した dedicated view と理由を短く報告する。
+- 最初に着手すべき implementation step、blocking questionnaire items、必要な verification gate を報告する。
 
 ## Verification Guidance
 
-- 実装開始前チェック: 目的が明確、対象範囲と対象外が明示、依存関係が識別済み、担当者が割り当て済みまたは TBD として可視化済み、受け入れ基準が検証可能、リスクに緩和策がある、セキュリティとプライバシー影響が確認済み、段階リリース計画が定義済み、切り戻しまたは緩和策が定義済み、観測性が定義済み、未解決事項が解決済みまたは受容リスクとして明示されている。
-- 本番リリース前チェック: テストが通っている、必要な場合は migration の dry-run が完了している、dashboards と alerts が準備済み、runbook が更新済み、support / on-call teams へ共有済み、rollback path がテスト済みまたはレビュー済み、release owner が割り当て済み、go/no-go criteria が合意済み。
-- 計画が非目標、見える化された不確実性、pass/fail の受け入れ基準、切り戻しまたは緩和策、担当者または担当者 TBD、データ移行と互換性、観測性、セキュリティとプライバシー、実行可能な作業を持つか確認する。
-- 新しいエンジニアが最小限の確認で実装できるか、レビュー担当者が 5 分以内に最も危険な箇所を見つけられるか、不可逆な変更が明示されているか、段階リリース中に旧版と新版が互換か、テスト方針が影響範囲に比例しているか、運用担当者と alert path が明確か、切り戻しが実際に可能か、前提が反証可能なほど見えるか確認する。
-- 具体的に書く。
-- `改善する`、`エラー対応する`、`スケールさせる`、`監視する`、`しっかりテストする` のような曖昧な task を避ける。
-- 例: `orders table に nullable cancelled_at timestamp を追加する`、`10,000 rows 単位で checkpoint 付き backfill を行う`、`feature flag order_cancel_v2_enabled=false で disable できるようにする`、`rollback は feature-flag-only; schema migration は forward-compatible なので revert しない`。
-- `implement backend` のような task は、`POST /v1/orders/{id}/cancel endpoint を idempotency key validation 付きで追加する` のように変更する。
-- 計画が着手可能でない条件: 非目標がない、不確実性を隠している、受け入れ基準がない、切り戻しまたは緩和策がない、担当者がない、データ移行または互換性を無視している、`monitor logs` だけで metrics / alerts がない、security を後回しにしている、リスクの大きい変更を 1 release に詰め込みすぎている、実行可能な作業に変換できない。
+- Feature Plan body に goal、scope / non-goals、current / desired behavior、acceptance criteria、constraints、implementation steps、verification、risk notes があるか確認する。
+- dedicated view decisions が依頼内容に対応しており、不要な view を固定テンプレートで追加していないか確認する。
+- UI 仕様は blueprint、DB / data structure は data_model、API contract は api_io_contract、validation / JSON / tool input contract は zod_schema_design に分離されているか確認する。
+- ユースケース図や AI coding rules を artifact として選んでいないか確認する。
 
 ## Risk Notes
 
-- 日本語の運用文脈を維持し、repo の prompt / SystemContext ownership、workflow routing、storage / presentation boundary を崩す runtime shortcut を計画に混ぜない。
-- リスクの大きい変更を 1 release に詰め込みすぎると、review と rollback が成立しにくい。
-- `monitor logs` のような曖昧な運用計画は、実際の障害検知や go/no-go 判断に使えない。
-- `no security impact` は根拠なしに書かない。影響が小さい場合も、確認した境界と理由を書く。
-- rollback 不能な migration / data mutation / irreversible operation は隠さず、切り戻し制限と緩和策を先に書く。
+- Feature Plan が大きくなりすぎる場合でも、artifact を旧来の一律セットへ戻さない。必要な dedicated view を選び、Feature Plan は実装判断に必要な本文へ絞る。
+- 旧 artifact 名や generator の都合を理由に、Feature Plan の主導線を崩さない。
