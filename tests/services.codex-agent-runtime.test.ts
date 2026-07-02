@@ -288,6 +288,9 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain(
       'LLM コードレビュー、品質ゲート verify コマンド、closeout は省略しない'
     );
+    expect(prompt).toContain('data_migration.add_integration_test');
+    expect(prompt).toContain('既存 migration を使う実 DB focused integration test');
+    expect(prompt).toContain('テスト内で schema を手書き再現せず');
     expect(prompt).toContain('小さいコード変更で仕様 artifact がないことだけを理由に停止しない');
     expect(prompt).toContain(
       'Execution order: specification -> Todo execution -> verification -> closeout.'
@@ -1565,6 +1568,60 @@ describe('CodexAgentRuntime', () => {
         expect.objectContaining({
           type: 'runtime_error',
           payload: expect.objectContaining({ error: 'boom' }),
+        }),
+      ])
+    );
+  });
+
+  it('retries provider capacity failures before marking the run failed', async () => {
+    const threadFactory = vi
+      .fn()
+      .mockReturnValueOnce(
+        fakeThreadThatThrows(
+          [
+            {
+              type: 'turn.failed',
+              error: { message: 'Selected model is at capacity. Please try a different model.' },
+            },
+          ] as never,
+          new Error('Codex Exec exited with code 1: apply_patch verification failed: stale stderr')
+        )
+      )
+      .mockReturnValueOnce(
+        fakeThread([
+          { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'done' } },
+        ] as never)
+      );
+    const runtime = new CodexAgentRuntime({ threadFactory });
+    const events: unknown[] = [];
+
+    const result = await runtime.start(buildContext(), {
+      emit: async (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(threadFactory).toHaveBeenCalledTimes(2);
+    expect(result.terminalState).toBe('completed');
+    expect(result.finalReport).toBe('done');
+    expect(result.summary).toBe('done');
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'model_retry_scheduled',
+          payload: expect.objectContaining({
+            reason: 'provider_capacity',
+            retryNumber: 1,
+            maxRetries: 1,
+          }),
+        }),
+        expect.objectContaining({
+          type: 'model_retry_started',
+          payload: expect.objectContaining({
+            reason: 'provider_capacity',
+            retryNumber: 1,
+            maxRetries: 1,
+          }),
         }),
       ])
     );

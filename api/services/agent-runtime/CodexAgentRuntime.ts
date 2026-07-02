@@ -50,6 +50,8 @@ const DEFAULT_RESULT: AgentRuntimeResult = {
   stoppedBy: 'llm_error',
   riskLevel: 'high',
 };
+const DEFAULT_PROVIDER_CAPACITY_RETRY_LIMIT = 1;
+const DEFAULT_PROVIDER_CAPACITY_RETRY_DELAY_MS = 5000;
 
 type CodexTerminalReason =
   | 'provider_capacity'
@@ -102,6 +104,8 @@ export class CodexAgentRuntime implements AgentRuntime {
   private readonly collectWorkspaceDiff: boolean;
   private readonly persistRuntimeUsage: boolean;
   private readonly usageRecorder: RuntimeUsageRecorder;
+  private readonly providerCapacityRetryLimit: number;
+  private readonly providerCapacityRetryDelayMs: number;
 
   constructor(
     input: {
@@ -111,6 +115,8 @@ export class CodexAgentRuntime implements AgentRuntime {
       collectWorkspaceDiff?: boolean;
       persistRuntimeUsage?: boolean;
       usageRecorder?: RuntimeUsageRecorder;
+      providerCapacityRetryLimit?: number;
+      providerCapacityRetryDelayMs?: number;
     } = {}
   ) {
     this.threadFactory = input.threadFactory;
@@ -119,6 +125,14 @@ export class CodexAgentRuntime implements AgentRuntime {
     this.collectWorkspaceDiff = input.collectWorkspaceDiff ?? !input.threadFactory;
     this.persistRuntimeUsage = input.persistRuntimeUsage ?? !input.threadFactory;
     this.usageRecorder = input.usageRecorder ?? recordLlmUsage;
+    this.providerCapacityRetryLimit = normalizeRetryLimit(
+      input.providerCapacityRetryLimit,
+      DEFAULT_PROVIDER_CAPACITY_RETRY_LIMIT
+    );
+    this.providerCapacityRetryDelayMs = normalizeRetryDelayMs(
+      input.providerCapacityRetryDelayMs,
+      input.threadFactory ? 0 : DEFAULT_PROVIDER_CAPACITY_RETRY_DELAY_MS
+    );
   }
 
   async start(
@@ -130,191 +144,258 @@ export class CodexAgentRuntime implements AgentRuntime {
     const abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
     const logs: string[] = [];
-    let finalText = '';
-    let terminalState: AgentRuntimeResult['terminalState'] = 'completed';
-    let stoppedBy: AgentRuntimeResult['stoppedBy'] = 'decision';
-    const mapperState = createCodexEventMapperState();
     const auditState = createCodexRuntimeAuditState({
       executionMode: readCodexRuntimeExecutionMode(context),
     });
-    let lastRuntimeError: CodexRuntimeFailureEvidence | null = null;
     const completedFileChanges: CodexObservedFileChange[] = [];
 
     try {
-      if (signal?.aborted || this.cancelledRunIds.has(context.runId)) {
-        controller.abort();
-        return this.toCancelled('');
-      }
+      for (let attemptIndex = 0; ; attemptIndex += 1) {
+        let finalText = '';
+        let terminalState: AgentRuntimeResult['terminalState'] = 'completed';
+        let stoppedBy: AgentRuntimeResult['stoppedBy'] = 'decision';
+        let lastRuntimeError: CodexRuntimeFailureEvidence | null = null;
+        const mapperState = createCodexEventMapperState();
 
-      const thread = await this.createThread(context, sink);
-      const { events } = await thread.runStreamed(buildCodexRuntimePrompt(context), {
-        signal: controller.signal,
-      });
-
-      for await (const event of events) {
-        if (this.cancelledRunIds.has(context.runId)) {
+        if (signal?.aborted || this.cancelledRunIds.has(context.runId)) {
           controller.abort();
-          return this.toCancelled(logs.join('\n'));
+          return this.toCancelled(attemptIndex === 0 ? '' : logs.join('\n'));
         }
-        const mappedEvents = mapCodexThreadEvent(event, mapperState);
-        for (const mapped of mappedEvents) {
-          const auditedEvents = await this.auditMappedEvent(context, auditState, mapped);
-          for (const audited of auditedEvents) {
-            logs.push(audited.message);
-            await sink.emit(audited);
-            if (this.persistRuntimeSessionState) {
-              await persistCodexProviderThreadIfPresent(this.runtimeSessionStore, context, audited);
-            }
-          }
-          const importOutcome = getProjectImportOutcome(mapped);
-          if (importOutcome?.kind === 'cancelled') {
-            addContractWarning(auditState, {
-              code: 'codex_import_project_cancelled',
-              severity: 'error',
-              message:
-                'nightworkers.import_project was cancelled. Fallback implementation is forbidden.',
-              providerItemId: importOutcome.providerItemId,
-              toolName: importOutcome.toolName,
-            });
-            return this.finishRun(context, sink, logs, {
-              terminalState: 'cancelled',
-              finalReport: buildProjectImportCancelledReport(importOutcome),
-              stoppedBy: 'cancelled',
-              riskLevel: 'medium',
-              collectDiff: false,
-              auditState,
-            });
-          }
-          if (importOutcome?.kind === 'failed') {
-            addContractWarning(auditState, {
-              code: 'codex_import_project_failed',
-              severity: 'error',
-              message: 'nightworkers.import_project failed. Fallback implementation is forbidden.',
-              providerItemId: importOutcome.providerItemId,
-              toolName: importOutcome.toolName,
-            });
-            if (importOutcome.retryableTransportCancel) {
-              const diagnosticMessage =
-                '[System] nightworkers.import_project was cancelled before the MCP server returned a tool result. Automatic retry is disabled.';
-              logs.push(diagnosticMessage);
-              await sink.emit({
-                type: 'runtime_error',
-                message: diagnosticMessage,
-                payload: {
-                  provider: 'codex',
-                  toolName: importOutcome.toolName,
-                  error: importOutcome.error,
-                  reason: 'project_import_transport_cancelled',
-                  providerItemId: importOutcome.providerItemId,
-                },
-              });
-            }
-            finalText = buildProjectImportFailureReport(importOutcome);
-            return this.finishRun(context, sink, logs, {
-              terminalState: 'needs_human',
-              finalReport: finalText,
-              stoppedBy: 'tool_failure',
-              riskLevel: 'high',
-              collectDiff: false,
-              auditState,
-            });
-          }
-          if (mapped.type === 'model_response_finished') {
-            const payload = mapped.payload as { text?: unknown } | undefined;
-            if (typeof payload?.text === 'string') finalText = payload.text;
-            await recordCodexRuntimeUsageIfPresent({
-              context,
-              payload: mapped.payload,
-              persistRuntimeUsage: this.persistRuntimeUsage,
-              usageRecorder: this.usageRecorder,
-            });
-          }
-          if (mapped.type === 'runtime_error') {
-            terminalState = 'failed';
-            stoppedBy = 'llm_error';
-            lastRuntimeError = readRuntimeFailureEvidence(mapped);
-            finalText = buildCodexFailureReport({
-              terminalError: lastRuntimeError,
-              execExitError: null,
-              completedFileChanges,
-            }).summary;
-          }
-          if (mapped.type === 'diff_collected') {
-            completedFileChanges.push(...readCompletedFileChanges(mapped));
-          }
-        }
-      }
 
-      await this.emitMissingImportVerificationWarningIfNeeded(sink, logs, auditState);
-      const terminalPolicy = await this.resolveCodexTerminalPolicy(sink, logs, auditState, {
-        terminalState,
-        finalReport: finalText,
-        stoppedBy,
-        riskLevel: terminalState === 'completed' ? 'medium' : 'high',
-      });
-      return this.finishRun(context, sink, logs, {
-        terminalState: terminalPolicy.terminalState,
-        finalReport: terminalPolicy.finalReport,
-        stoppedBy: terminalPolicy.stoppedBy,
-        riskLevel: terminalPolicy.riskLevel,
-        auditState,
-      });
-    } catch (err) {
-      if (controller.signal.aborted || this.cancelledRunIds.has(context.runId)) {
-        return this.toCancelled(logs.join('\n'));
+        try {
+          const thread = await this.createThread(context, sink);
+          const { events } = await thread.runStreamed(buildCodexRuntimePrompt(context), {
+            signal: controller.signal,
+          });
+
+          for await (const event of events) {
+            if (this.cancelledRunIds.has(context.runId)) {
+              controller.abort();
+              return this.toCancelled(logs.join('\n'));
+            }
+            const mappedEvents = mapCodexThreadEvent(event, mapperState);
+            for (const mapped of mappedEvents) {
+              const auditedEvents = await this.auditMappedEvent(context, auditState, mapped);
+              for (const audited of auditedEvents) {
+                logs.push(audited.message);
+                await sink.emit(audited);
+                if (this.persistRuntimeSessionState) {
+                  await persistCodexProviderThreadIfPresent(
+                    this.runtimeSessionStore,
+                    context,
+                    audited
+                  );
+                }
+              }
+              const importOutcome = getProjectImportOutcome(mapped);
+              if (importOutcome?.kind === 'cancelled') {
+                addContractWarning(auditState, {
+                  code: 'codex_import_project_cancelled',
+                  severity: 'error',
+                  message:
+                    'nightworkers.import_project was cancelled. Fallback implementation is forbidden.',
+                  providerItemId: importOutcome.providerItemId,
+                  toolName: importOutcome.toolName,
+                });
+                return this.finishRun(context, sink, logs, {
+                  terminalState: 'cancelled',
+                  finalReport: buildProjectImportCancelledReport(importOutcome),
+                  stoppedBy: 'cancelled',
+                  riskLevel: 'medium',
+                  collectDiff: false,
+                  auditState,
+                });
+              }
+              if (importOutcome?.kind === 'failed') {
+                addContractWarning(auditState, {
+                  code: 'codex_import_project_failed',
+                  severity: 'error',
+                  message:
+                    'nightworkers.import_project failed. Fallback implementation is forbidden.',
+                  providerItemId: importOutcome.providerItemId,
+                  toolName: importOutcome.toolName,
+                });
+                if (importOutcome.retryableTransportCancel) {
+                  const diagnosticMessage =
+                    '[System] nightworkers.import_project was cancelled before the MCP server returned a tool result. Automatic retry is disabled.';
+                  logs.push(diagnosticMessage);
+                  await sink.emit({
+                    type: 'runtime_error',
+                    message: diagnosticMessage,
+                    payload: {
+                      provider: 'codex',
+                      toolName: importOutcome.toolName,
+                      error: importOutcome.error,
+                      reason: 'project_import_transport_cancelled',
+                      providerItemId: importOutcome.providerItemId,
+                    },
+                  });
+                }
+                finalText = buildProjectImportFailureReport(importOutcome);
+                return this.finishRun(context, sink, logs, {
+                  terminalState: 'needs_human',
+                  finalReport: finalText,
+                  stoppedBy: 'tool_failure',
+                  riskLevel: 'high',
+                  collectDiff: false,
+                  auditState,
+                });
+              }
+              if (mapped.type === 'model_response_finished') {
+                const payload = mapped.payload as { text?: unknown } | undefined;
+                if (typeof payload?.text === 'string') finalText = payload.text;
+                await recordCodexRuntimeUsageIfPresent({
+                  context,
+                  payload: mapped.payload,
+                  persistRuntimeUsage: this.persistRuntimeUsage,
+                  usageRecorder: this.usageRecorder,
+                });
+              }
+              if (mapped.type === 'runtime_error') {
+                terminalState = 'failed';
+                stoppedBy = 'llm_error';
+                lastRuntimeError = readRuntimeFailureEvidence(mapped);
+                finalText = buildCodexFailureReport({
+                  terminalError: lastRuntimeError,
+                  execExitError: null,
+                  completedFileChanges,
+                }).summary;
+              }
+              if (mapped.type === 'diff_collected') {
+                completedFileChanges.push(...readCompletedFileChanges(mapped));
+              }
+            }
+          }
+
+          if (
+            terminalState === 'failed' &&
+            lastRuntimeError?.reason === 'provider_capacity' &&
+            this.canRetryProviderCapacity(attemptIndex)
+          ) {
+            await this.emitProviderCapacityRetry(sink, logs, attemptIndex, controller.signal);
+            if (controller.signal.aborted || this.cancelledRunIds.has(context.runId)) {
+              return this.toCancelled(logs.join('\n'));
+            }
+            continue;
+          }
+
+          await this.emitMissingImportVerificationWarningIfNeeded(sink, logs, auditState);
+          const terminalPolicy = await this.resolveCodexTerminalPolicy(sink, logs, auditState, {
+            terminalState,
+            finalReport: finalText,
+            stoppedBy,
+            riskLevel: terminalState === 'completed' ? 'medium' : 'high',
+          });
+          return this.finishRun(context, sink, logs, {
+            terminalState: terminalPolicy.terminalState,
+            finalReport: terminalPolicy.finalReport,
+            stoppedBy: terminalPolicy.stoppedBy,
+            riskLevel: terminalPolicy.riskLevel,
+            auditState,
+          });
+        } catch (err) {
+          if (controller.signal.aborted || this.cancelledRunIds.has(context.runId)) {
+            return this.toCancelled(logs.join('\n'));
+          }
+          const message = err instanceof Error ? err.message : String(err);
+          const execExitError = parseCodexExecExitError(message);
+          const failureReport = buildCodexFailureReport({
+            terminalError: lastRuntimeError,
+            execExitError,
+            unknownErrorMessage: execExitError ? null : message,
+            completedFileChanges,
+          });
+          if (
+            failureReport.reason === 'provider_capacity' &&
+            this.canRetryProviderCapacity(attemptIndex)
+          ) {
+            await this.emitProviderCapacityRetry(sink, logs, attemptIndex, controller.signal);
+            if (controller.signal.aborted || this.cancelledRunIds.has(context.runId)) {
+              return this.toCancelled(logs.join('\n'));
+            }
+            continue;
+          }
+          for (const diagnostic of failureReport.recoveredToolFailures) {
+            await sink.emit({
+              type: 'runtime_warning',
+              message: `[Codex Diagnostic] ${diagnostic.message}`,
+              payload: {
+                code: 'recovered_tool_failure',
+                severity: 'warning',
+                message: diagnostic.message,
+                toolName: 'apply_patch',
+                changedFiles: diagnostic.filePath ? [diagnostic.filePath] : [],
+              },
+            });
+          }
+          await sink.emit({
+            type: 'runtime_error',
+            message: `[System Error] ${failureReport.summary}`,
+            payload: {
+              provider: 'codex',
+              error: failureReport.summary,
+              rawError: message,
+              terminalReason: failureReport.reason,
+              diagnosticKind: execExitError ? 'codex_exec_nonzero' : 'runtime_error',
+              recoveredToolFailures: failureReport.recoveredToolFailures,
+              unrecoveredToolFailures: failureReport.unrecoveredToolFailures,
+            },
+          });
+          return {
+            ...DEFAULT_RESULT,
+            summary: failureReport.summary,
+            finalReport: failureReport.summary,
+            logContent: [...logs, ...failureReport.diagnostics].join('\n'),
+            contractWarnings: auditState.contractWarnings,
+            testResults: {
+              codexFailure: {
+                terminalReason: failureReport.reason,
+                execExitDetail: failureReport.execExitError?.detail ?? null,
+                recoveredToolFailures: failureReport.recoveredToolFailures,
+                unrecoveredToolFailures: failureReport.unrecoveredToolFailures,
+              },
+            },
+          };
+        }
       }
-      const message = err instanceof Error ? err.message : String(err);
-      const execExitError = parseCodexExecExitError(message);
-      const failureReport = buildCodexFailureReport({
-        terminalError: lastRuntimeError,
-        execExitError,
-        unknownErrorMessage: execExitError ? null : message,
-        completedFileChanges,
-      });
-      for (const diagnostic of failureReport.recoveredToolFailures) {
-        await sink.emit({
-          type: 'runtime_warning',
-          message: `[Codex Diagnostic] ${diagnostic.message}`,
-          payload: {
-            code: 'recovered_tool_failure',
-            severity: 'warning',
-            message: diagnostic.message,
-            toolName: 'apply_patch',
-            changedFiles: diagnostic.filePath ? [diagnostic.filePath] : [],
-          },
-        });
-      }
-      await sink.emit({
-        type: 'runtime_error',
-        message: `[System Error] ${failureReport.summary}`,
-        payload: {
-          provider: 'codex',
-          error: failureReport.summary,
-          rawError: message,
-          terminalReason: failureReport.reason,
-          diagnosticKind: execExitError ? 'codex_exec_nonzero' : 'runtime_error',
-          recoveredToolFailures: failureReport.recoveredToolFailures,
-          unrecoveredToolFailures: failureReport.unrecoveredToolFailures,
-        },
-      });
-      return {
-        ...DEFAULT_RESULT,
-        summary: failureReport.summary,
-        finalReport: failureReport.summary,
-        logContent: [...logs, ...failureReport.diagnostics].join('\n'),
-        contractWarnings: auditState.contractWarnings,
-        testResults: {
-          codexFailure: {
-            terminalReason: failureReport.reason,
-            execExitDetail: failureReport.execExitError?.detail ?? null,
-            recoveredToolFailures: failureReport.recoveredToolFailures,
-            unrecoveredToolFailures: failureReport.unrecoveredToolFailures,
-          },
-        },
-      };
     } finally {
       signal?.removeEventListener('abort', abort);
     }
+  }
+
+  private canRetryProviderCapacity(attemptIndex: number) {
+    return attemptIndex < this.providerCapacityRetryLimit;
+  }
+
+  private async emitProviderCapacityRetry(
+    sink: AgentRuntimeSink,
+    logs: string[],
+    attemptIndex: number,
+    signal: AbortSignal
+  ) {
+    const retryNumber = attemptIndex + 1;
+    const retryPayload = {
+      provider: 'codex',
+      reason: 'provider_capacity',
+      retryNumber,
+      maxRetries: this.providerCapacityRetryLimit,
+      retryDelayMs: this.providerCapacityRetryDelayMs,
+    };
+    const scheduled = {
+      type: 'model_retry_scheduled' as const,
+      message: `[Codex] Provider capacity reached; retry ${retryNumber}/${this.providerCapacityRetryLimit} scheduled.`,
+      payload: retryPayload,
+    };
+    logs.push(scheduled.message);
+    await sink.emit(scheduled);
+    await sleep(this.providerCapacityRetryDelayMs, signal);
+    const started = {
+      type: 'model_retry_started' as const,
+      message: `[Codex] Provider capacity retry ${retryNumber}/${this.providerCapacityRetryLimit} started.`,
+      payload: retryPayload,
+    };
+    logs.push(started.message);
+    await sink.emit(started);
   }
 
   async stop(runId: string): Promise<void> {
@@ -1042,6 +1123,31 @@ function parseCodexExecExitError(message: string): CodexExecExitError | null {
     message,
     stderr: match[2] || '',
   };
+}
+
+function normalizeRetryLimit(value: number | undefined, fallback: number) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.floor(value));
+}
+
+function normalizeRetryDelayMs(value: number | undefined, fallback: number) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.floor(value));
+}
+
+async function sleep(ms: number, signal: AbortSignal) {
+  if (ms <= 0 || signal.aborted) return;
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, ms);
+    signal.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timeout);
+        resolve();
+      },
+      { once: true }
+    );
+  });
 }
 
 function classifyTerminalRuntimeError(message: string): CodexTerminalReason {

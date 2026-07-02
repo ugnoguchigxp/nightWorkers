@@ -8,8 +8,9 @@ DB schema、migration、backfill、データ変換を扱うときに使う。
 
 - 既存 migration flow と rollback / failure impact を確認する。
 - destructive operation overlay を検討する。
-- DB schema 変更を伴う場合は、TodoList に migration 作成、migration 実行、migration 後検証を独立 Todo として含める。
-- 固定 migration Todo を明示する場合は `procedureId` に `data_migration.create_migration`、`data_migration.apply_migration`、`data_migration.verify_migration` を使う。
+- DB schema 変更を伴う場合は、TodoList に migration 作成、migration 実行、既存 migration を使う実 DB 統合テスト追加、migration 後検証を独立 Todo として含める。
+- 固定 migration Todo を明示する場合は `procedureId` に `data_migration.create_migration`、`data_migration.apply_migration`、`data_migration.add_integration_test`、`data_migration.verify_migration` を使う。
+- migration 由来の統合テストは一時 DB または隔離された test DB に既存 migration を適用し、作成・更新・SELECT・並び順などの実 DB 経路を確認する。テスト内で schema を手書き再現せず、既存 DB を汚さない。
 - migration を作っただけで完了扱いにせず、対象 DB への適用と schema/API/test の検証 evidence を残す。
 
 ## Stop Conditions

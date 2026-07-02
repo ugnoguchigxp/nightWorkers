@@ -23,6 +23,7 @@ type StandardGate = Omit<BuiltTodoInput, 'seq' | 'status' | 'startedAt'>;
 const DATA_MIGRATION_PROCEDURE_IDS = new Set([
   'data_migration.create_migration',
   'data_migration.apply_migration',
+  'data_migration.add_integration_test',
   'data_migration.verify_migration',
 ]);
 
@@ -63,9 +64,17 @@ const DATA_MIGRATION_GATES: StandardGate[] = [
     dependsOn: [],
   },
   {
+    title: 'DB migration を使う実 DB 統合テストを追加する',
+    description:
+      'migration が必要な機能実装では、既存 migration を一時 DB または隔離された test DB に適用し、実 DB 経路の作成・更新・SELECT・並び順などを確認する focused integration test を追加する。テスト内で schema を手書き再現せず、既存 DB を汚さない。',
+    taskType: 'test_change',
+    procedureId: 'data_migration.add_integration_test',
+    dependsOn: [],
+  },
+  {
     title: 'DB migration 後の schema と動作を検証する',
     description:
-      'migration 適用後に schema 存在確認、関連 API smoke、または focused test を実行し、DB schema 変更が実行時に反映されていることを確認する。',
+      'migration 適用後に schema 存在確認、関連 API smoke、または focused test を実行し、DB schema 変更と実 DB 統合テストが実行時に反映されていることを確認する。',
     taskType: 'focused_verification',
     procedureId: 'data_migration.verify_migration',
     dependsOn: [],

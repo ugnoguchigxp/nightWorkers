@@ -72,7 +72,7 @@ export const nightWorkersTodoListInputSchema = z.object({
     )
     .optional()
     .describe(
-      'Run Todos decomposed by the LLM. Use taskType to distinguish inspection, implementation, and focused verification work. Fixed quality gates are added automatically. For DB schema changes, mark migration work with taskType=data_migration or procedureId=data_migration.create_migration / data_migration.apply_migration / data_migration.verify_migration so required migration gates are preserved.'
+      'Run Todos decomposed by the LLM. Use taskType to distinguish inspection, implementation, and focused verification work. Fixed quality gates are added automatically. For DB schema changes, mark migration work with taskType=data_migration or procedureId=data_migration.create_migration / data_migration.apply_migration / data_migration.add_integration_test / data_migration.verify_migration so required migration gates are preserved.'
     ),
   startFirst: z
     .boolean()

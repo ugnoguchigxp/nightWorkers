@@ -166,7 +166,7 @@ describe('standard implementation TodoList builder', () => {
     expect(todos.filter((todo) => todo.procedureId === 'quality_gate_verify')).toHaveLength(1);
   });
 
-  it('adds required migration creation, application, and verification gates for data migration runs', () => {
+  it('adds required migration creation, application, integration test, and verification gates for data migration runs', () => {
     const todos = buildStandardImplementationTodoList({
       requireDataMigrationGates: true,
       todos: [{ seq: 1, title: 'BBS persistenceを実装する', taskType: 'implementation' }],
@@ -178,11 +178,12 @@ describe('standard implementation TodoList builder', () => {
       '3:implementation:null',
       '4:data_migration:data_migration.create_migration',
       '5:data_migration:data_migration.apply_migration',
-      '6:focused_verification:data_migration.verify_migration',
-      '7:review:llm_code_review',
-      '8:verification:quality_gate_verify',
-      '9:knowledge_capture:contextstill.register_candidates',
-      '10:completion_report:final_completion_report',
+      '6:test_change:data_migration.add_integration_test',
+      '7:focused_verification:data_migration.verify_migration',
+      '8:review:llm_code_review',
+      '9:verification:quality_gate_verify',
+      '10:knowledge_capture:contextstill.register_candidates',
+      '11:completion_report:final_completion_report',
     ]);
     expect(todos[3]).toMatchObject({
       title: 'DB migration を作成する',
@@ -193,10 +194,17 @@ describe('standard implementation TodoList builder', () => {
       dependsOn: [4],
     });
     expect(todos[5]).toMatchObject({
-      title: 'DB migration 後の schema と動作を検証する',
+      title: 'DB migration を使う実 DB 統合テストを追加する',
       dependsOn: [5],
     });
-    expect(todos[6]).toMatchObject({ taskType: 'review', dependsOn: [6] });
+    expect(todos[5]?.description).toContain('既存 migration を一時 DB');
+    expect(todos[5]?.description).toContain('schema を手書き再現せず');
+    expect(todos[6]).toMatchObject({
+      title: 'DB migration 後の schema と動作を検証する',
+      dependsOn: [6],
+    });
+    expect(todos[7]).toMatchObject({ taskType: 'review', dependsOn: [7] });
+    expect(todos.filter((todo) => todo.procedureId === 'quality_gate_verify')).toHaveLength(1);
   });
 
   it('preserves required migration gates when a replacement TodoList marks migration work', () => {
@@ -220,6 +228,7 @@ describe('standard implementation TodoList builder', () => {
     ).toEqual([
       'data_migration.create_migration',
       'data_migration.apply_migration',
+      'data_migration.add_integration_test',
       'data_migration.verify_migration',
     ]);
     expect(todos.filter((todo) => todo.title.includes('threads table migration'))).toHaveLength(0);
