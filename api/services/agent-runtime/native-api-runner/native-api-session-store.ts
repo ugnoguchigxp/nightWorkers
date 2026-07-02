@@ -2,6 +2,7 @@ import { and, asc, desc, eq, ne } from 'drizzle-orm';
 import { client, db } from '../../../db/client';
 import { nativeApiToolCalls, nativeApiTurns } from '../../../db/schema';
 import type { ProviderToolCall } from '../../structured-llm/tool-calls';
+import { compactModelVisibleText } from '../model-visible-payload';
 import type { NativeApiExecutionMode } from './native-api-mode';
 import type { NativeApiHistoryItem, NativeApiToolResult } from './native-api-tool-history';
 
@@ -110,13 +111,16 @@ export class NativeApiSessionStore {
     modelVisibleOutput?: string;
   }) {
     await this.ensureTables();
+    const modelVisibleOutput = compactStoredModelVisibleOutput(
+      input.modelVisibleOutput ?? input.result?.content ?? null
+    );
     const [record] = await db
       .update(nativeApiToolCalls)
       .set({
         status: input.status,
         resultJson: input.result ?? null,
         errorJson: input.error ?? null,
-        modelVisibleOutput: input.modelVisibleOutput ?? input.result?.content ?? null,
+        modelVisibleOutput,
         finishedAt: new Date(),
         updatedAt: new Date(),
       })
@@ -188,6 +192,15 @@ export class NativeApiSessionStore {
     this.ensureTablesPromise ??= ensureNativeApiRunnerTables();
     await this.ensureTablesPromise;
   }
+}
+
+function compactStoredModelVisibleOutput(value: string | null) {
+  if (value === null) return null;
+  return compactModelVisibleText({
+    content: value,
+    strategy: 'json_summary',
+    omittedReason: 'large_native_api_model_visible_output',
+  }).content;
 }
 
 async function ensureNativeApiRunnerTables() {

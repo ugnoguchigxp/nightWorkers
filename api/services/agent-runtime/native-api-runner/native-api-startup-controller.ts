@@ -2,12 +2,15 @@ import * as repo from '../../../modules/nightworkers/nightworkers.repository';
 import { type McpToolSummary, mcpClientManager } from '../../mcp/mcp-client-manager';
 import { executeWorkerTool } from '../../worker-tools/dispatcher';
 import { type TodoActionPayload, todoListTool } from '../../worker-tools/todo-list';
-import type { WorkerToolResult } from '../../worker-tools/types';
 import type { AgentRunContext, AgentRuntimeResult, AgentRuntimeSink } from '../types';
 import { readNativeApiExecutionMode } from './native-api-mode';
 import type { NativeApiSessionStore } from './native-api-session-store';
 import type { NativeApiDispatchState } from './native-api-tool-dispatcher';
 import type { NativeApiHistoryItem, NativeApiToolResult } from './native-api-tool-history';
+import {
+  capNativeApiToolResultContent,
+  projectWorkerResultToNativeApiToolResult,
+} from './native-api-tool-result-projector';
 
 type StartupPhase =
   | 'startup_specification'
@@ -413,8 +416,8 @@ export class NativeApiStartupController {
       readFiles: input.state.readFiles,
     });
     const toolResult = input.validateResult
-      ? input.validateResult(projectWorkerResult(dispatch.result))
-      : projectWorkerResult(dispatch.result);
+      ? input.validateResult(projectWorkerResultToNativeApiToolResult(dispatch.result))
+      : projectWorkerResultToNativeApiToolResult(dispatch.result);
     await this.input.store.finishToolCall({
       id: record.id,
       status: toolResult.ok ? 'completed' : 'failed',
@@ -618,7 +621,7 @@ export class NativeApiStartupController {
       operation: 'start',
       seq: nextOpen.seq,
     });
-    if (!result.ok) return projectWorkerResult(result);
+    if (!result.ok) return projectWorkerResultToNativeApiToolResult(result);
     const refreshed = await repo.listTaskRunTodosForRun(runId);
     return successfulTodoAlignment(refreshed, result.payload);
   }
@@ -759,34 +762,13 @@ function summarizeText(value: string, maxLength: number) {
   return `${normalized.slice(0, maxLength - 3)}...`;
 }
 
-function projectWorkerResult(result: WorkerToolResult<unknown>): NativeApiToolResult {
-  return {
-    ok: result.ok,
-    content: JSON.stringify({
-      ok: result.ok,
-      toolName: result.toolName,
-      payload: result.payload,
-      error: result.error,
-    }),
-    payload: result.payload,
-    ...(result.error
-      ? {
-          error: {
-            code: result.error.code,
-            message: result.error.message,
-          },
-        }
-      : {}),
-  };
-}
-
 function failedToolResult(code: string, message: string, payload?: unknown): NativeApiToolResult {
-  return {
+  return capNativeApiToolResultContent({
     ok: false,
     content: JSON.stringify({ ok: false, error: { code, message }, payload }),
     payload,
     error: { code, message },
-  };
+  });
 }
 
 function isMissingSpecificationFailure(result: NativeApiToolResult) {
@@ -797,7 +779,7 @@ function successfulTodoAlignment(
   todos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>,
   transitionPayload: TodoActionPayload | null
 ): NativeApiToolResult {
-  return {
+  return capNativeApiToolResultContent({
     ok: true,
     content: JSON.stringify({
       ok: true,
@@ -805,7 +787,7 @@ function successfulTodoAlignment(
       payload: { todos, transition: transitionPayload?.transition ?? null },
     }),
     payload: { todos, transition: transitionPayload?.transition ?? null },
-  };
+  });
 }
 
 function renderSpecificationHistory(payload: Record<string, unknown>) {

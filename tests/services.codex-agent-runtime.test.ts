@@ -1557,6 +1557,7 @@ describe('CodexAgentRuntime', () => {
           promptPartSource: 'nightworkers_estimate',
           runtimePromptShape: 'request_plus_runtime_contract',
           systemPromptMeaning: 'runtime_contract_tokens',
+          nonCachedInputTokens: 900,
           promptPartObservabilityEnabled: true,
         }),
       })
@@ -2748,6 +2749,87 @@ describe('CodexAgentRuntime', () => {
         payload: { command, commandClass },
       });
     }
+  });
+
+  it('compacts large Codex command_execution payloads at the activity boundary', () => {
+    const state = createCodexEventMapperState();
+    const longOutput = [
+      'running tests',
+      ...Array.from({ length: 1400 }, (_, index) => `verbose output ${index}`),
+      'AssertionError: expected 1 to equal 2',
+      'failed tests: services.codex-agent-runtime.test.ts',
+      ...Array.from({ length: 1400 }, (_, index) => `tail output ${index}`),
+    ].join('\n');
+    const [event] = mapCodexThreadEvent(
+      {
+        type: 'item.completed',
+        item: {
+          id: 'cmd-large-output',
+          type: 'command_execution',
+          command: 'bunx vitest run tests/services.codex-agent-runtime.test.ts',
+          aggregated_output: longOutput,
+          exit_code: 1,
+          status: 'completed',
+        },
+      } as never,
+      state
+    );
+
+    expect(event.payload).toMatchObject({
+      toolName: 'command_execution',
+      aggregatedOutputTruncated: true,
+      aggregatedOutputOriginalChars: longOutput.length,
+      compressionStrategy: 'command_output',
+      fullProviderEventAvailable: true,
+    });
+    const payload = event.payload as Record<string, unknown>;
+    expect(String(payload.aggregatedOutput)).toContain('[model-visible-payload-compressed]');
+    expect(String(payload.aggregatedOutput)).toContain('AssertionError: expected 1 to equal 2');
+    expect(String(payload.aggregatedOutput)).not.toContain(longOutput);
+    expect(Number(payload.aggregatedOutputReturnedChars)).toBeLessThan(longOutput.length);
+  });
+
+  it('compacts large Codex MCP result and provider event projections', () => {
+    const state = createCodexEventMapperState();
+    const largeText = [
+      'start',
+      ...Array.from({ length: 3000 }, (_, index) => `large structured result ${index}`),
+      'AssertionError: MCP result should be compacted',
+      ...Array.from({ length: 3000 }, (_, index) => `tail structured result ${index}`),
+    ].join('\n');
+    const [event] = mapCodexThreadEvent(
+      {
+        type: 'item.completed',
+        item: {
+          id: 'mcp-large-result',
+          type: 'mcp_tool_call',
+          server: 'nightworkers',
+          tool: 'read_current_specification',
+          arguments: { view: 'full' },
+          result: {
+            structuredContent: {
+              payload: {
+                content: largeText,
+              },
+            },
+            content: [{ type: 'text', text: largeText }],
+          },
+          status: 'completed',
+        },
+      } as never,
+      state
+    );
+
+    expect(event.payload).toMatchObject({
+      toolName: 'nightworkers.read_current_specification',
+      resultCompacted: true,
+      providerEventCompacted: true,
+    });
+    const payload = event.payload as Record<string, unknown>;
+    expect(JSON.stringify(payload.result)).toContain('[model-visible-payload-compressed]');
+    expect(JSON.stringify(payload.result)).toContain('MCP result should be compacted');
+    expect(JSON.stringify(payload.result)).not.toContain(largeText);
+    expect(JSON.stringify(payload.providerEvent)).not.toContain(largeText);
   });
 
   it('maps in-progress command and MCP updates as tool progress', () => {

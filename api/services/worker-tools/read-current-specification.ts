@@ -7,7 +7,16 @@ import type { WorkerToolResult } from './types';
 
 export interface ReadCurrentSpecificationInput {
   taskId: string;
+  view?: ReadCurrentSpecificationView;
 }
+
+export type ReadCurrentSpecificationView =
+  | 'compact'
+  | 'implementation'
+  | 'migration'
+  | 'ui'
+  | 'verification'
+  | 'full';
 
 export interface ReadCurrentSpecificationOutput {
   taskId: string;
@@ -15,6 +24,10 @@ export interface ReadCurrentSpecificationOutput {
   messageId: string | null;
   title: string | null;
   content: string;
+  view?: ReadCurrentSpecificationView;
+  fullContentChars?: number;
+  fullContentDigest?: string | null;
+  compactWarning?: string;
   generatedAt: string | null;
   digest: string | null;
   sources: {
@@ -48,6 +61,7 @@ export async function readCurrentSpecificationTool(
 ): Promise<WorkerToolResult<ReadCurrentSpecificationOutput>> {
   const startedAt = new Date().toISOString();
   const taskId = String(input.taskId || '').trim();
+  const view = normalizeSpecificationView(input.view);
   if (!taskId) {
     return failedReadCurrentSpecification(startedAt, 'INVALID_TOOL_ARGS', 'taskId is required.');
   }
@@ -70,6 +84,9 @@ export async function readCurrentSpecificationTool(
           messageId: null,
           title: null,
           content: '',
+          view,
+          fullContentChars: 0,
+          fullContentDigest: null,
           generatedAt: null,
           digest: null,
           sources: {},
@@ -91,6 +108,8 @@ export async function readCurrentSpecificationTool(
         : typeof metadata.title === 'string'
           ? metadata.title
           : 'Feature Plan';
+    const digest = `sha256:${createHash('sha256').update(content).digest('hex')}`;
+    const projectedContent = projectSpecificationContent(content, view);
     const generation = isRecord(metadata.generation) ? metadata.generation : {};
     const generationContext = isRecord(generation.context) ? generation.context : {};
 
@@ -104,9 +123,13 @@ export async function readCurrentSpecificationTool(
         found: true,
         messageId: latest.id,
         title,
-        content,
+        content: projectedContent.content,
+        view,
+        fullContentChars: content.length,
+        fullContentDigest: digest,
+        compactWarning: projectedContent.warning,
         generatedAt: String(latest.createdAt),
-        digest: `sha256:${createHash('sha256').update(content).digest('hex')}`,
+        digest,
         sources: {
           questionnaireSessionId:
             typeof metadata.questionnaireSessionId === 'string'
@@ -226,6 +249,9 @@ function failedReadCurrentSpecification(
       messageId: null,
       title: null,
       content: '',
+      view: 'compact',
+      fullContentChars: 0,
+      fullContentDigest: null,
       generatedAt: null,
       digest: null,
       sources: {},
@@ -254,6 +280,77 @@ function readOptionalBoolean(...values: unknown[]) {
     if (typeof value === 'boolean') return value;
   }
   return undefined;
+}
+
+function normalizeSpecificationView(value: unknown): ReadCurrentSpecificationView {
+  return value === 'implementation' ||
+    value === 'migration' ||
+    value === 'ui' ||
+    value === 'verification' ||
+    value === 'full'
+    ? value
+    : 'compact';
+}
+
+function projectSpecificationContent(
+  content: string,
+  view: ReadCurrentSpecificationView
+): { content: string; warning?: string } {
+  if (view === 'full' || content.length <= 8000) return { content };
+  const selected = selectSpecificationSections(content, view);
+  if (selected.trim().length > 0) return { content: selected };
+  return {
+    content: [
+      '[specification-compact-view]',
+      '',
+      content.slice(0, 3000),
+      '',
+      content.slice(-3000),
+    ].join('\n'),
+    warning: "Section extraction was uncertain. Use view='full' for the complete markdown.",
+  };
+}
+
+function selectSpecificationSections(content: string, view: ReadCurrentSpecificationView) {
+  const wanted =
+    view === 'implementation'
+      ? ['scope', 'implementation', 'acceptance', 'files', 'steps', 'todo']
+      : view === 'migration'
+        ? ['migration', 'schema', 'database', 'data model', 'rollback']
+        : view === 'ui'
+          ? ['ui', 'ux', 'screen', 'component', 'interaction']
+          : view === 'verification'
+            ? ['verification', 'test', 'acceptance', 'gate', 'expected']
+            : ['purpose', 'goal', 'scope', 'acceptance', 'implementation', 'verification'];
+  const lines = content.split(/\r?\n/);
+  const selectedSections: string[] = [];
+  let currentSection: string[] = [];
+  let includeCurrentSection = false;
+  let matched = false;
+  const flushSection = () => {
+    if (!includeCurrentSection || currentSection.length === 0) return;
+    const section = currentSection.join('\n');
+    selectedSections.push(
+      section.length > 1800 ? `${section.slice(0, 1800)}\n[section-truncated]` : section
+    );
+  };
+  for (const line of lines) {
+    const heading = /^(#{1,3})\s+(.+)$/.exec(line);
+    if (heading) {
+      flushSection();
+      currentSection = [line];
+      const normalized = heading[2].toLowerCase();
+      includeCurrentSection = wanted.some((keyword) => normalized.includes(keyword));
+      matched = matched || includeCurrentSection;
+      continue;
+    }
+    if (includeCurrentSection) currentSection.push(line);
+  }
+  flushSection();
+  if (!matched) return '';
+  return ['[specification-compact-view]', `view: ${view}`, ...selectedSections]
+    .join('\n')
+    .slice(0, 8000);
 }
 
 function normalizeLimit(value: number | undefined) {

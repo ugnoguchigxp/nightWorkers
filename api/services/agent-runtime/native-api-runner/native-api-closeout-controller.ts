@@ -5,6 +5,10 @@ import { isNativeApiPlanningMode, readNativeApiExecutionMode } from './native-ap
 import type { NativeApiSessionStore } from './native-api-session-store';
 import type { NativeApiDispatchState } from './native-api-tool-dispatcher';
 import type { NativeApiHistoryItem, NativeApiToolResult } from './native-api-tool-history';
+import {
+  capNativeApiToolResultContent,
+  projectWorkerResultToNativeApiToolResult,
+} from './native-api-tool-result-projector';
 
 export type NativeApiCloseoutControllerLike = Pick<NativeApiCloseoutController, 'runCompileEval'>;
 
@@ -86,7 +90,7 @@ export class NativeApiCloseoutController {
     });
 
     const toolResult = tool
-      ? projectWorkerResult(
+      ? projectWorkerResultToNativeApiToolResult(
           (
             await this.executeTool({
               toolName: 'mcp_call_tool',
@@ -173,33 +177,12 @@ function buildCompileEvalArguments(finalReport: string) {
   };
 }
 
-function projectWorkerResult(result: Awaited<ReturnType<typeof executeWorkerTool>>['result']) {
-  return {
-    ok: result.ok,
-    content: JSON.stringify({
-      ok: result.ok,
-      toolName: result.toolName,
-      payload: result.payload,
-      error: result.error,
-    }),
-    payload: result.payload,
-    ...(result.error
-      ? {
-          error: {
-            code: result.error.code,
-            message: result.error.message,
-          },
-        }
-      : {}),
-  } satisfies NativeApiToolResult;
-}
-
 function failedToolResult(code: string, message: string): NativeApiToolResult {
-  return {
+  return capNativeApiToolResultContent({
     ok: false,
     content: JSON.stringify({ ok: false, error: { code, message } }),
     error: { code, message },
-  };
+  });
 }
 
 function isContextStillTool(tool: McpToolSummary) {

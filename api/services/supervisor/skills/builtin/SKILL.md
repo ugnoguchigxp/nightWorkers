@@ -12,6 +12,7 @@ Supervisor がユーザー依頼を処理するすべてのラウンドで使う
 - ユーザー文言を正規表現、keyword、固定 phrase で runtime 分岐しない。
 - Role 境界では、前 Role が事実・判断・参照先を handoff として残し、新 Role が Todo / state card / task events / 設計書参照から自分用の working context を作る前提で進める。
 - 設計書は正本参照として扱い、通常は全文を常時 context に入れない。必要な path、section、digest、今回誤解してはいけない制約だけを参照情報として残す。
+- コマンド出力は model-visible payload として bounded に扱う。広い `rg`、全文 `git diff`、再帰的 `ls/find` の前に、path / glob / context / 件数 / summary 形式で絞れるか確認する。
 - provider 側に Role 判断、圧縮判断、用途別 SystemContext を増やさない。
 
 ## Stop Conditions

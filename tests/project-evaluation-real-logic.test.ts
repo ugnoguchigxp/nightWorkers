@@ -383,6 +383,8 @@ describe('project evaluation real logic', () => {
         taskId: tasks.tasks[0].id,
       });
       expect(tasks.tasks[0].objective).toContain('まず実装計画を作成してください');
+      expect(tasks.tasks[0].objective).not.toContain('初回の成果物は Implementation Plan');
+      expect(tasks.tasks[0].objective).not.toContain('計画には、変更範囲');
       expect(tasks.tasks[0].objective).toContain(improvements.ideas[0].agentPrompt);
       const taskMessages = await nightworkersRepo.listTaskMessages(tasks.tasks[0].id);
       expect(taskMessages).toEqual([]);

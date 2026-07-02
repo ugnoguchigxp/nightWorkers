@@ -1,4 +1,10 @@
 import type { ThreadEvent, ThreadItem, Usage } from '@openai/codex-sdk';
+import {
+  compactModelVisibleText,
+  DEFAULT_MODEL_VISIBLE_PROVIDER_EVENT_LIMIT_CHARS,
+  type ModelVisiblePayloadSummary,
+  summarizeModelVisibleJson,
+} from '../model-visible-payload';
 import type { AgentRuntimeEvent } from '../types';
 
 const SECRET_KEY_PATTERN = /(authorization|cookie|token|secret|api[_-]?key|password)/i;
@@ -69,7 +75,7 @@ export function mapCodexThreadEvent(
           provider: 'codex',
           providerEventType: event.type,
           error: event.error.message,
-          providerEvent: redactProviderEvent(event),
+          ...projectCodexProviderEvent(event),
         },
       },
     ];
@@ -83,7 +89,7 @@ export function mapCodexThreadEvent(
           provider: 'codex',
           providerEventType: event.type,
           error: event.message,
-          providerEvent: redactProviderEvent(event),
+          ...projectCodexProviderEvent(event),
         },
       },
     ];
@@ -115,7 +121,7 @@ function mapCodexItemEvent(
       provider: 'codex',
       providerEventType: eventType,
       providerItemId: item.id,
-      providerEvent: redactProviderEvent(rawEvent),
+      ...projectCodexProviderEvent(rawEvent, item.id),
     };
     if (eventType === 'item.completed') {
       return [
@@ -140,6 +146,7 @@ function mapCodexItemEvent(
 
   if (item.type === 'command_execution') {
     const commandClass = classifyCodexCommand(item.command);
+    const projection = compactCodexCommandExecutionItem({ item, rawEvent });
     const payload = {
       provider: 'codex',
       providerEventType: eventType,
@@ -147,10 +154,18 @@ function mapCodexItemEvent(
       toolName: 'command_execution',
       command: item.command,
       commandClass,
-      aggregatedOutput: item.aggregated_output,
+      aggregatedOutput: projection.aggregatedOutput,
+      aggregatedOutputTruncated: projection.aggregation?.truncated ?? false,
+      aggregatedOutputOriginalChars: projection.aggregation?.originalChars ?? 0,
+      aggregatedOutputReturnedChars: projection.aggregation?.returnedChars ?? 0,
+      compressionStrategy: projection.aggregation?.strategy ?? 'none',
+      aggregation: projection.aggregation,
       exitCode: item.exit_code,
       status: item.status,
-      providerEvent: redactProviderEvent(rawEvent),
+      fullProviderEventAvailable: true,
+      providerEvent: projection.providerEvent,
+      providerEventCompacted: projection.providerEventSummary?.truncated ?? false,
+      providerEventSummary: projection.providerEventSummary,
     };
     return [
       {
@@ -162,6 +177,11 @@ function mapCodexItemEvent(
   }
 
   if (item.type === 'mcp_tool_call') {
+    const resultProjection = projectCodexJsonValue({
+      value: redactProviderEvent(item.result),
+      omittedReason: 'large_codex_mcp_tool_result',
+      providerEventRef: item.id,
+    });
     const payload = {
       provider: 'codex',
       providerEventType: eventType,
@@ -170,10 +190,12 @@ function mapCodexItemEvent(
       mcpTool: item.tool,
       toolName: `${item.server}.${item.tool}`,
       arguments: redactProviderEvent(item.arguments),
-      result: redactProviderEvent(item.result),
+      result: resultProjection.value,
+      resultCompacted: resultProjection.summary?.truncated ?? false,
+      resultSummary: resultProjection.summary,
       status: item.status,
       error: item.error?.message,
-      providerEvent: redactProviderEvent(rawEvent),
+      ...projectCodexProviderEvent(rawEvent, item.id),
     };
     return [
       {
@@ -185,6 +207,11 @@ function mapCodexItemEvent(
   }
 
   if (item.type === 'file_change') {
+    const changesProjection = projectCodexJsonValue({
+      value: item.changes,
+      omittedReason: 'large_codex_file_change_payload',
+      providerEventRef: item.id,
+    });
     return [
       {
         type: 'diff_collected',
@@ -194,9 +221,11 @@ function mapCodexItemEvent(
           providerEventType: eventType,
           providerItemId: item.id,
           changedFiles: normalizeChangedFiles(item.changes),
-          changes: item.changes,
+          changes: changesProjection.value,
+          changesCompacted: changesProjection.summary?.truncated ?? false,
+          changesSummary: changesProjection.summary,
           status: item.status,
-          providerEvent: redactProviderEvent(rawEvent),
+          ...projectCodexProviderEvent(rawEvent, item.id),
         },
       },
     ];
@@ -212,7 +241,7 @@ function mapCodexItemEvent(
           providerEventType: eventType,
           providerItemId: item.id,
           error: item.message,
-          providerEvent: redactProviderEvent(rawEvent),
+          ...projectCodexProviderEvent(rawEvent, item.id),
         },
       },
     ];
@@ -226,10 +255,104 @@ function mapCodexItemEvent(
         provider: 'codex',
         providerEventType: eventType,
         providerItemId: item.id,
-        providerEvent: redactProviderEvent(rawEvent),
+        ...projectCodexProviderEvent(rawEvent, item.id),
       },
     },
   ];
+}
+
+function projectCodexProviderEvent(rawEvent: ThreadEvent, providerEventRef?: string) {
+  const projection = projectCodexJsonValue({
+    value: redactProviderEvent(rawEvent),
+    omittedReason: 'large_codex_provider_event',
+    providerEventRef,
+  });
+  return {
+    providerEvent: projection.value,
+    providerEventCompacted: projection.summary?.truncated ?? false,
+    providerEventSummary: projection.summary,
+  };
+}
+
+function projectCodexJsonValue(input: {
+  value: unknown;
+  omittedReason: string;
+  providerEventRef?: string;
+}): { value: unknown; summary: ModelVisiblePayloadSummary | null } {
+  const serialized = JSON.stringify(input.value);
+  if (serialized === undefined) {
+    return { value: input.value, summary: null };
+  }
+  if (serialized.length <= DEFAULT_MODEL_VISIBLE_PROVIDER_EVENT_LIMIT_CHARS) {
+    return { value: input.value, summary: null };
+  }
+  const projection = summarizeModelVisibleJson({
+    value: input.value,
+    omittedReason: input.omittedReason,
+    providerEventRef: input.providerEventRef,
+  });
+  return {
+    value: {
+      type: 'provider_event_redacted_summary',
+      content: projection.content,
+      summary: projection.summary,
+    },
+    summary: {
+      ...projection.summary,
+      strategy: 'provider_event_redacted_summary',
+    },
+  };
+}
+
+function compactCodexCommandExecutionItem(input: {
+  item: Extract<ThreadItem, { type: 'command_execution' }>;
+  rawEvent: ThreadEvent;
+}): {
+  aggregatedOutput: string | undefined;
+  aggregation: ModelVisiblePayloadSummary | null;
+  providerEvent: unknown;
+  providerEventSummary: ModelVisiblePayloadSummary | null;
+} {
+  const aggregatedOutput =
+    typeof input.item.aggregated_output === 'string' ? input.item.aggregated_output : undefined;
+  const outputProjection =
+    aggregatedOutput === undefined
+      ? null
+      : compactModelVisibleText({
+          content: aggregatedOutput,
+          strategy: 'command_output',
+          omittedReason: 'large_codex_command_execution_output',
+          providerEventRef: input.item.id,
+        });
+  const redactedProviderEvent = redactProviderEvent(input.rawEvent);
+  const serializedProviderEvent = JSON.stringify(redactedProviderEvent);
+  if (serializedProviderEvent.length <= DEFAULT_MODEL_VISIBLE_PROVIDER_EVENT_LIMIT_CHARS) {
+    return {
+      aggregatedOutput: outputProjection?.content,
+      aggregation: outputProjection?.summary ?? null,
+      providerEvent: redactedProviderEvent,
+      providerEventSummary: null,
+    };
+  }
+
+  const providerProjection = summarizeModelVisibleJson({
+    value: redactedProviderEvent,
+    omittedReason: 'large_codex_provider_event',
+    providerEventRef: input.item.id,
+  });
+  return {
+    aggregatedOutput: outputProjection?.content,
+    aggregation: outputProjection?.summary ?? null,
+    providerEvent: {
+      type: 'provider_event_redacted_summary',
+      content: providerProjection.content,
+      summary: providerProjection.summary,
+    },
+    providerEventSummary: {
+      ...providerProjection.summary,
+      strategy: 'provider_event_redacted_summary',
+    },
+  };
 }
 
 function normalizeUsage(usage: Usage) {

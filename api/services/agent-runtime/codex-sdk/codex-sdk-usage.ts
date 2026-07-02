@@ -55,6 +55,10 @@ export async function recordCodexRuntimeUsageIfPresent(input: {
         input.promptPartObservabilityEnabled === false ? null : 'nightworkers_estimate',
       runtimePromptShape: 'request_plus_runtime_contract',
       systemPromptMeaning: 'runtime_contract_tokens',
+      nonCachedInputTokens:
+        usage.inputTokens !== null && usage.cachedInputTokens !== null
+          ? Math.max(0, usage.inputTokens - usage.cachedInputTokens)
+          : null,
       promptPartObservabilityEnabled: input.promptPartObservabilityEnabled ?? true,
     },
   });

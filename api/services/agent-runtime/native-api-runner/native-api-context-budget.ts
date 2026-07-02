@@ -16,6 +16,9 @@ export type NativeApiContextBudget = {
   hardLimitExceeded: boolean;
   messageTokens: number;
   toolTokens: number;
+  largestModelVisibleMessageChars: number;
+  largestModelVisibleMessageRole: string | null;
+  compactedToolResultCount: number;
 };
 
 export function estimateNativeApiContextBudget(
@@ -33,6 +36,7 @@ export function estimateNativeApiContextBudget(
     routePolicy: request.options.routePolicy,
   });
   const messageTokens = estimateProviderMessageTokens(request.messages);
+  const messageShape = summarizeProviderMessageShape(request.messages);
   const toolTokens = estimateProviderToolTokens(request.tools);
   const estimatedPromptTokens = messageTokens + toolTokens;
   const modelContextWindowTokens = capability.contextWindowTokens;
@@ -58,6 +62,9 @@ export function estimateNativeApiContextBudget(
     hardLimitExceeded: estimatedPromptTokens >= modelContextWindowTokens,
     messageTokens,
     toolTokens,
+    largestModelVisibleMessageChars: messageShape.largestChars,
+    largestModelVisibleMessageRole: messageShape.largestRole,
+    compactedToolResultCount: messageShape.compactedToolResultCount,
   };
 }
 
@@ -87,6 +94,32 @@ function estimateProviderMessageTokens(messages: readonly ProviderToolMessage[])
 function estimateProviderToolTokens(tools: readonly ProviderToolDefinition[]) {
   if (tools.length === 0) return 0;
   return estimateConservativeTokens(JSON.stringify(tools).length);
+}
+
+function summarizeProviderMessageShape(messages: readonly ProviderToolMessage[]) {
+  let largestChars = 0;
+  let largestRole: string | null = null;
+  let compactedToolResultCount = 0;
+  for (const message of messages) {
+    const chars =
+      message.content.length +
+      (message.role === 'assistant' && message.toolCalls?.length
+        ? JSON.stringify(message.toolCalls).length
+        : 0);
+    if (chars > largestChars) {
+      largestChars = chars;
+      largestRole = message.role;
+    }
+    if (
+      message.role === 'tool' &&
+      (message.content.includes('[model-visible-payload-compressed]') ||
+        message.content.includes('"modelVisiblePayload":"compact"') ||
+        message.content.includes('"modelVisiblePayload": "compact"'))
+    ) {
+      compactedToolResultCount += 1;
+    }
+  }
+  return { largestChars, largestRole, compactedToolResultCount };
 }
 
 function estimateConservativeTokens(charCount: number) {

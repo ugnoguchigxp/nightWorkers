@@ -24,6 +24,7 @@ export type TaskLlmUsageSummary = {
   outputTokens: number;
   stateCardTokens: number;
   cachedInputTokens: number;
+  nonCachedInputTokens: number;
   reasoningOutputTokens: number;
   totalTokens: number;
   usageMode: LlmUsageMode;

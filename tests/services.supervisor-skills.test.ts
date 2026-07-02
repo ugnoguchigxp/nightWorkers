@@ -119,6 +119,36 @@ describe('Supervisor reference registry', () => {
     });
   });
 
+  it('describes bounded command output defaults and scoped command guidance', () => {
+    const tools = getAllowedToolsForJobType('test_and_verification');
+    const runCommand = tools.find((tool) => tool.name === 'run_command');
+    const runVerification = tools.find((tool) => tool.name === 'run_verification');
+
+    expect(runCommand?.description).toContain('compressionMode=auto');
+    expect(runCommand?.description).toContain('git diff --stat');
+    expect(runCommand?.description).toContain('compressionMode=off');
+    expect(runVerification?.description).toContain('compressionMode=auto');
+    expect(runVerification?.description).toContain('失敗名');
+
+    const rendered = renderSupervisorReferenceDocuments(
+      resolveSupervisorReferenceDocuments({
+        primaryMode: 'code_edit',
+        secondaryModes: ['test_and_verification'],
+        phase: 'verify',
+        workKinds: ['code'],
+        overlays: ['evidence'],
+        requiredEvidence: ['focused verification'],
+        nextReferenceFiles: [],
+        confidence: 0.9,
+      })
+    );
+
+    expect(rendered).toContain('bounded な出力を優先');
+    expect(rendered).toContain('path/glob/context を絞った `rg`');
+    expect(rendered).toContain('focused verification');
+    expect(rendered).toContain('compressionMode=off');
+  });
+
   it('resolves blueprint references from app blueprint routing', () => {
     const documents = resolveSupervisorReferenceDocuments({
       primaryMode: 'planning',

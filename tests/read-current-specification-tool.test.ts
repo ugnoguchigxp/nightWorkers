@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import { getAllowedToolsForJobType } from '../api/services/supervisor/prompt';
 import { executeWorkerTool } from '../api/services/worker-tools/dispatcher';
-import { listRecentSpecificationsTool } from '../api/services/worker-tools/read-current-specification';
+import {
+  listRecentSpecificationsTool,
+  readCurrentSpecificationTool,
+} from '../api/services/worker-tools/read-current-specification';
 import { todoListTool } from '../api/services/worker-tools/todo-list';
 
 describe('read_current_specification worker tool', () => {
@@ -137,6 +140,61 @@ describe('read_current_specification worker tool', () => {
         dbDdlReferenceIncluded: true,
       },
     });
+  });
+
+  it('returns compact specification view by default and full markdown on explicit request', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: read compact spec ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: read compact current specification',
+      status: 'draft',
+    });
+    const longContent = [
+      '# Feature Plan',
+      '',
+      '## Purpose',
+      'Keep this purpose.',
+      ...Array.from({ length: 900 }, (_, index) => `Noise line ${index}`),
+      '## Verification',
+      'Run bun run verify.',
+      ...Array.from({ length: 900 }, (_, index) => `Tail noise ${index}`),
+    ].join('\n');
+    await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: longContent,
+      messageType: 'markdown_document',
+      payloadJson: {
+        intent: 'feature_plan',
+        title: 'Feature Plan',
+        markdownDocumentData: {
+          title: 'Feature Plan',
+          content: longContent,
+        },
+      },
+    });
+
+    const compact = await readCurrentSpecificationTool({ taskId: task.id });
+    const full = await readCurrentSpecificationTool({ taskId: task.id, view: 'full' });
+
+    expect(compact.ok).toBe(true);
+    expect(compact.payload.view).toBe('compact');
+    expect(compact.payload.content).toContain('[specification-compact-view]');
+    expect(compact.payload.content).toContain('## Purpose');
+    expect(compact.payload.content).toContain('## Verification');
+    expect(compact.payload.content.length).toBeLessThan(longContent.length);
+    expect(compact.payload.fullContentChars).toBe(longContent.length);
+    expect(compact.payload.fullContentDigest).toMatch(/^sha256:/);
+
+    expect(full.ok).toBe(true);
+    expect(full.payload.view).toBe('full');
+    expect(full.payload.content).toBe(longContent);
+    expect(full.payload.fullContentChars).toBe(longContent.length);
+    expect(full.payload.digest).toBe(compact.payload.digest);
   });
 
   it('returns found=false when no specification has been generated', async () => {

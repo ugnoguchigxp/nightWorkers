@@ -99,6 +99,7 @@ export async function executeWorkerTool(
     return {
       result: await readCurrentSpecificationTool({
         taskId: (args.taskId as string | undefined) || input.taskId || '',
+        view: args.view as never,
       }),
     };
   }

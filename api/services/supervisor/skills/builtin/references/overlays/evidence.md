@@ -11,6 +11,8 @@ repo evidence、logs、DB、run events、diff、file contents が判断に必要
 - 実装変更 Todo は taskType=implementation / code_edit / scaffold などにし、apply_patch / replace_content / import_project / copy_directory / run_command などの実装 evidence なしに done しない。
 - TodoList pane がユーザーに見える進捗の source of truth。Timeline 追加警告ではなく、TodoList の start/done/block/fail で現在位置を示す。
 - todo_list operation=list は診断専用であり、進捗更新 evidence として扱わない。
+- evidence 収集では bounded な出力を優先する。`read_file` は必要な line range を指定し、`search_files` / path-scoped `rg` は glob や context を絞り、`git diff` はまず `--stat` / `--name-only` / path 指定で確認する。
+- `run_command` / `run_verification` の大きい stdout/stderr は既定で compact される。全文が必要な場合は、なぜ必要かが明確な targeted debugging に限って `compressionMode=off` を使う。
 - finalize_answer.message には具体的な証拠参照を含める。
 - finalize_answer.message は UI に表示されるレビュー結果本文である。
 

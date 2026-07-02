@@ -1,4 +1,5 @@
 import type { ProviderToolCall, ProviderToolMessage } from '../../structured-llm/tool-calls';
+import type { ModelVisiblePayloadSummary } from '../model-visible-payload';
 import type { AgentRunContext } from '../types';
 import { readNativeApiExecutionMode } from './native-api-mode';
 import { readNativeApiRoleWorkingContextText } from './native-api-role-context-events';
@@ -9,6 +10,7 @@ export type NativeApiToolResult = {
   ok: boolean;
   content: string;
   payload?: unknown;
+  modelVisibleSummary?: ModelVisiblePayloadSummary;
   error?: {
     code?: string;
     message: string;
@@ -300,6 +302,11 @@ function readNativeApiToolResult(value: unknown): NativeApiToolResult | null {
     ok: record.ok,
     content,
     ...(record.payload !== undefined ? { payload: record.payload } : {}),
+    ...(record.modelVisibleSummary &&
+    typeof record.modelVisibleSummary === 'object' &&
+    !Array.isArray(record.modelVisibleSummary)
+      ? { modelVisibleSummary: record.modelVisibleSummary as ModelVisiblePayloadSummary }
+      : {}),
     ...(error && typeof error === 'object' && !Array.isArray(error)
       ? { error: error as NativeApiToolResult['error'] }
       : {}),

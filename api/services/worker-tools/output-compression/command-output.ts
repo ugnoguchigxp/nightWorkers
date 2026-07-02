@@ -1,8 +1,9 @@
+import { DEFAULT_MODEL_VISIBLE_TEXT_LIMIT_CHARS } from '../../agent-runtime/model-visible-payload';
 import { compactLineSections, selectWindow, uniqueLines } from './markers';
 import { buildCompressionMetadata } from './metadata';
 import type { ToolOutputCompressionMetadata } from './types';
 
-const MAX_INLINE_CHARS = 20_000;
+const MAX_INLINE_CHARS = DEFAULT_MODEL_VISIBLE_TEXT_LIMIT_CHARS;
 const IMPORTANT_LINE_RE =
   /\b(error|fatal|exception|failed|failure|panic|traceback|assertion|timeout|timed out|cannot|not found)\b/i;
 const SUMMARY_LINE_RE =

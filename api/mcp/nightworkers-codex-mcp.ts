@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { ensureNightWorkersSchema } from '../db/bootstrap';
 import * as repo from '../modules/nightworkers/nightworkers.repository';
+import { projectWorkerResultToNativeApiToolResult } from '../services/agent-runtime/native-api-runner/native-api-tool-result-projector';
 import { importProjectTool } from '../services/worker-tools/import-project';
 import {
   listRecentSpecificationsTool,
@@ -32,10 +33,11 @@ export function createNightWorkersCodexMcpServer(context: NightWorkersMcpRequest
     {
       ...nightWorkersCodexToolManifest.read_current_specification,
     },
-    async ({ taskId }) =>
+    async ({ taskId, view }) =>
       toolResultToMcp(
         await readCurrentSpecificationTool({
           taskId: firstNonEmpty(taskId, context.taskId, process.env.NIGHTWORKERS_TASK_ID),
+          view,
         })
       )
   );
@@ -243,19 +245,7 @@ function readSearchParam(url: URL, key: keyof NightWorkersMcpRequestContext) {
 }
 
 function toolResultToMcp(result: WorkerToolResult<unknown>) {
-  const text = JSON.stringify(
-    result.ok
-      ? result.payload
-      : {
-          error: result.error ?? {
-            code: 'NIGHTWORKERS_TOOL_FAILED',
-            message: 'NightWorkers MCP tool failed.',
-          },
-          payload: result.payload,
-        },
-    null,
-    2
-  );
+  const text = projectWorkerResultToNativeApiToolResult(result).content;
   return {
     isError: !result.ok,
     structuredContent: result.ok ? { payload: result.payload } : { error: result.error },

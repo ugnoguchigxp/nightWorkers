@@ -31,6 +31,12 @@ export const nightWorkersReadCurrentSpecificationInputSchema = z.object({
     .trim()
     .optional()
     .describe('NightWorkers task id. Defaults to request-scoped task context when available.'),
+  view: z
+    .enum(['compact', 'implementation', 'migration', 'ui', 'verification', 'full'])
+    .optional()
+    .describe(
+      'Specification view to return. compact is the default model-visible view. full returns the complete markdown content.'
+    ),
 });
 
 export const nightWorkersListRecentSpecificationsInputSchema = z.object({
@@ -162,7 +168,7 @@ export const nightWorkersCodexToolManifest = {
   read_current_specification: {
     title: 'Read Current Specification',
     description:
-      'Read the latest NightWorkers draft specification markdown for a task. This is read-only and does not edit project files.',
+      'Read the latest NightWorkers draft specification markdown for a task. Defaults to view=compact; use view=full only when the complete markdown is necessary. This is read-only and does not edit project files.',
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,

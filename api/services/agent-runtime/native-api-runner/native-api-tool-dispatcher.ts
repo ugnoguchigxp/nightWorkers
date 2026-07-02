@@ -9,7 +9,6 @@ import {
 import type { ProviderToolCall } from '../../structured-llm/tool-calls';
 import { executeWorkerTool } from '../../worker-tools/dispatcher';
 import { type TodoListOperation, todoListTool } from '../../worker-tools/todo-list';
-import type { WorkerToolResult } from '../../worker-tools/types';
 import type { AgentRunContext, AgentRuntimeSink } from '../types';
 import { normalizeVerificationCommand, verificationCommandsMatch } from '../verification-command';
 import { readNativeApiExecutionMode } from './native-api-mode';
@@ -18,6 +17,10 @@ import {
   getNativeApiToolRegistration,
   isNativeApiToolAllowedForMode,
 } from './native-api-tool-registry';
+import {
+  capNativeApiToolResultContent,
+  projectWorkerResultToNativeApiToolResult,
+} from './native-api-tool-result-projector';
 
 export type NativeApiDispatchState = {
   readFiles: string[];
@@ -137,7 +140,7 @@ export async function dispatchNativeApiToolCall(input: {
     safetyPolicy: input.context.safetyPolicy,
     readFiles: input.state.readFiles,
   });
-  const result = projectWorkerResult(dispatch.result);
+  const result = projectWorkerResultToNativeApiToolResult(dispatch.result);
   await input.sink.emit({
     type: 'tool_call_finished',
     message: `[NativeApiRunner] ${workerToolName} ${dispatch.result.ok ? 'finished' : 'failed'}.`,
@@ -287,17 +290,17 @@ async function dispatchTodoTool(input: {
         ? (input.toolCall.arguments.todoListReplaceReason as never)
         : undefined,
   });
-  return projectWorkerResult(result);
+  return projectWorkerResultToNativeApiToolResult(result);
 }
 
 async function dispatchMcpCatalog(): Promise<NativeApiToolResult> {
   try {
     const tools = await mcpClientManager.listAvailableTools();
-    return {
+    return capNativeApiToolResultContent({
       ok: true,
       content: JSON.stringify({ ok: true, tools }),
       payload: { tools },
-    };
+    });
   } catch (error) {
     return failedToolResult(
       'MCP_TOOL_LIST_FAILED',
@@ -358,7 +361,7 @@ async function dispatchContextStillTool(input: {
     safetyPolicy: input.context.safetyPolicy,
     readFiles: input.state.readFiles,
   });
-  const toolResult = projectWorkerResult(result.result);
+  const toolResult = projectWorkerResultToNativeApiToolResult(result.result);
   await input.sink.emit({
     type: 'tool_call_finished',
     message: `[NativeApiRunner] context-still.${mcpToolName} ${
@@ -532,27 +535,6 @@ function validateFinalizeGuard(
   };
 }
 
-function projectWorkerResult(result: WorkerToolResult<unknown>): NativeApiToolResult {
-  return {
-    ok: result.ok,
-    content: JSON.stringify({
-      ok: result.ok,
-      toolName: result.toolName,
-      payload: result.payload,
-      error: result.error,
-    }),
-    payload: result.payload,
-    ...(result.error
-      ? {
-          error: {
-            code: result.error.code,
-            message: result.error.message,
-          },
-        }
-      : {}),
-  };
-}
-
 function continueWith(
   toolResult: NativeApiToolResult,
   state: NativeApiDispatchState
@@ -561,12 +543,12 @@ function continueWith(
 }
 
 function failedToolResult(code: string, message: string, payload?: unknown): NativeApiToolResult {
-  return {
+  return capNativeApiToolResultContent({
     ok: false,
     content: JSON.stringify({ ok: false, error: { code, message }, payload }),
     ...(payload !== undefined ? { payload } : {}),
     error: { code, message },
-  };
+  });
 }
 
 function openTodosRemainToolResult(
@@ -606,7 +588,7 @@ function openTodosRemainToolResult(
       ? `Next Todo action hint: call ${nextAction.example}. Use block/fail instead if the Todo cannot be completed.`
       : 'Use todo_list done/block/fail to close the remaining open Todos before finalize_answer.',
   ].join(' ');
-  return {
+  return capNativeApiToolResultContent({
     ok: false,
     content: JSON.stringify({
       ok: false,
@@ -626,19 +608,19 @@ function openTodosRemainToolResult(
         nextAction,
       },
     },
-  };
+  });
 }
 
 function successfulNewContextWindow(): NativeApiToolResult {
   const message = 'A new context window will start without summarizing conversation history.';
-  return {
+  return capNativeApiToolResultContent({
     ok: true,
     content: message,
     payload: {
       newContextWindowRequested: true,
       message,
     },
-  };
+  });
 }
 
 function readRecommendedVerificationCommands(manifest: unknown): string[] {

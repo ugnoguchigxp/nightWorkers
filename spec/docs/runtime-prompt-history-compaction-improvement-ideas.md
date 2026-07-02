@@ -214,6 +214,10 @@ BBS task は cached input 比率が高かった。provider cache が効いてい
 
 ## Proposed Next Planning Step
 
+Implementation plan:
+
+- `spec/docs/runtime-model-visible-payload-boundary-implementation-plan.md`
+
 この改善案をレビューした後、次の実装計画を作るなら、最初の計画は以下に絞る。
 
 Title:

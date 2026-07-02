@@ -3,7 +3,12 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { analyzeCommand, gitDiffTool, runCommandTool } from '../../api/services/worker-tools';
+import {
+  analyzeCommand,
+  gitDiffTool,
+  runCommandTool,
+  runVerificationTool,
+} from '../../api/services/worker-tools';
 
 let dummyRepoDir: string;
 
@@ -47,11 +52,10 @@ describe('Worker Tools Unit Tests', () => {
     }
   });
 
-  it('stores full command output as an artifact when preview is truncated', async () => {
+  it('compresses large command output by default and stores full output as an artifact', async () => {
     const longOutput = 'x'.repeat(21000);
     const result = await runCommandTool({
       command: `echo "${longOutput}"`,
-      compressionMode: 'auto',
       repoRoot: dummyRepoDir,
     });
 
@@ -63,6 +67,37 @@ describe('Worker Tools Unit Tests', () => {
 
     const artifact = await fs.readFile(result.payload.logArtifactPath as string, 'utf-8');
     expect(artifact).toContain(longOutput);
+  });
+
+  it('keeps full command output when compressionMode is explicitly off', async () => {
+    const longOutput = 'x'.repeat(21000);
+    const result = await runCommandTool({
+      command: `echo "${longOutput}"`,
+      compressionMode: 'off',
+      repoRoot: dummyRepoDir,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.payload.truncated).toBe(false);
+    expect(result.payload.stdout).toContain(longOutput);
+    expect(result.payload.stdout).not.toContain('[command-output-compressed]');
+    expect(result.payload.logArtifactPath).toBeUndefined();
+  });
+
+  it('inherits default output compression for verification commands', async () => {
+    const longOutput = 'x'.repeat(21000);
+    const result = await runVerificationTool({
+      command: `echo "${longOutput}"`,
+      reason: 'large verification output fixture',
+      repoRoot: dummyRepoDir,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.payload.verified).toBe(true);
+    expect(result.payload.truncated).toBe(true);
+    expect(result.payload.stdout).toContain('[command-output-compressed]');
+    expect(result.payload.reason).toBe('large verification output fixture');
+    expect(result.payload.logArtifactPath).toBeTruthy();
   });
 });
 

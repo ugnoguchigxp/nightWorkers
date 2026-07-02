@@ -90,6 +90,67 @@ describe('NativeApiSessionStore', () => {
     });
   });
 
+  it('compacts modelVisibleOutput defensively before persisting tool calls', async () => {
+    const project = await repo.createRepository({
+      name: `TEST: native api compact output ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: project.id,
+      title: 'TEST: native API compact output',
+      status: 'running',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: project.id,
+      workerKind: 'native-api-runner',
+      status: 'running',
+      timeoutSeconds: 60,
+    });
+    const store = new NativeApiSessionStore();
+    const turn = await store.createTurn({
+      runId: run.id,
+      taskId: task.id,
+      turnIndex: 1,
+      history: [{ type: 'user', source: 'user', content: 'do the work' }],
+    });
+    const toolCall = await store.recordToolCallPending({
+      runId: run.id,
+      taskId: task.id,
+      turnId: turn.id,
+      toolCall: {
+        id: 'call-large',
+        name: 'read_file',
+        arguments: {},
+      },
+    });
+    const fullOutput = [
+      'start',
+      ...Array.from({ length: 2000 }, (_, index) => `verbose persisted output ${index}`),
+      'AssertionError: modelVisibleOutput must be compacted',
+      ...Array.from({ length: 2000 }, (_, index) => `tail persisted output ${index}`),
+    ].join('\n');
+
+    await store.finishToolCall({
+      id: toolCall.id,
+      status: 'completed',
+      result: { ok: true, content: fullOutput, payload: { fullOutput } },
+      modelVisibleOutput: fullOutput,
+    });
+
+    const [record] = await store.listToolCalls(run.id);
+
+    expect(record.modelVisibleOutput).toContain('[model-visible-payload-compressed]');
+    expect(record.modelVisibleOutput).toContain('modelVisibleOutput must be compacted');
+    expect(record.modelVisibleOutput).not.toBe(fullOutput);
+    expect(String(record.modelVisibleOutput).length).toBeLessThan(fullOutput.length);
+    expect(record.resultJson).toMatchObject({
+      ok: true,
+      payload: { fullOutput },
+    });
+  });
+
   it('lists the latest completed previous turn as resumable history', async () => {
     const project = await repo.createRepository({
       name: `TEST: native api resume ${crypto.randomUUID()}`,

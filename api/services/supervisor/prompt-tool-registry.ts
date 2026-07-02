@@ -202,7 +202,7 @@ export const toolRegistry = {
   run_command: {
     name: 'run_command',
     description:
-      '検証や確認のためにコマンドを実行する。stdout/stderr は既定で全文を返す。出力が大きすぎる場合だけ compressionMode=auto を指定する。',
+      '検証や確認のために単一コマンドを実行する。stdout/stderr は既定で compressionMode=auto のため、大きい出力は要点・head/tail・artifact 参照へ圧縮される。実行前に rg の path/glob/context、git diff --stat/name-only/path 指定、件数制限などで出力を小さくする。正確な全文が必要な targeted debugging の場合だけ compressionMode=off を指定する。',
     inputSchema: objectSchema(
       {
         command: { type: 'string' },
@@ -228,7 +228,7 @@ export const toolRegistry = {
   run_verification: {
     name: 'run_verification',
     description:
-      '明示的な検証コマンドを実行する。package.json に verify script がある場合、完了報告前の代表検証は verify command を優先する。stdout/stderr は既定で全文を返す。出力が大きすぎる場合だけ compressionMode=auto を指定する。',
+      '明示的な検証コマンドを実行する。package.json に verify script がある場合、完了報告前の代表検証は verify command を優先する。stdout/stderr は既定で compressionMode=auto のため、大きい出力は失敗名・エラー行・summary・head/tail・artifact 参照へ圧縮される。調査中は対象テストや path を絞り、全文が必要な場合だけ compressionMode=off を指定する。',
     inputSchema: objectSchema(
       {
         command: { type: 'string' },

@@ -27,8 +27,13 @@ export async function recordLlmUsage(input: {
     promptPartTokenEstimates: input.promptPartTokenEstimates,
   });
   const usageMode = resolveStoredUsageMode(input.usage.mode, promptPartTokenEstimates);
+  const nonCachedInputTokens =
+    input.usage.inputTokens !== null && input.usage.cachedInputTokens !== null
+      ? Math.max(0, input.usage.inputTokens - input.usage.cachedInputTokens)
+      : null;
   const metadataJson = {
     ...(input.metadataJson ?? {}),
+    nonCachedInputTokens,
     promptPartObservabilityEnabled,
   };
   const [record] = await db
@@ -78,6 +83,7 @@ export async function recordLlmUsage(input: {
         inputTokens: record.inputTokens,
         outputTokens: record.outputTokens,
         cachedInputTokens: record.cachedInputTokens,
+        nonCachedInputTokens,
         reasoningOutputTokens: record.reasoningOutputTokens,
         systemPromptTokens: record.systemPromptTokens,
         userPromptTokens: record.userPromptTokens,
@@ -106,6 +112,7 @@ export async function summarizeLlmUsageForTask(taskId: string) {
       stateCardTokens: sql<number>`coalesce(sum(${llmUsageRecords.stateCardTokens}), 0)`,
       promptInputTokens: sql<number>`coalesce(sum(coalesce(${llmUsageRecords.systemPromptTokens}, 0) + coalesce(${llmUsageRecords.userPromptTokens}, 0) + coalesce(${llmUsageRecords.stateCardTokens}, 0)), 0)`,
       cachedInputTokens: sql<number>`coalesce(sum(${llmUsageRecords.cachedInputTokens}), 0)`,
+      nonCachedInputTokens: sql<number>`coalesce(sum(case when ${llmUsageRecords.inputTokens} is not null and ${llmUsageRecords.cachedInputTokens} is not null and ${llmUsageRecords.inputTokens} > ${llmUsageRecords.cachedInputTokens} then ${llmUsageRecords.inputTokens} - ${llmUsageRecords.cachedInputTokens} else 0 end), 0)`,
       reasoningOutputTokens: sql<number>`coalesce(sum(${llmUsageRecords.reasoningOutputTokens}), 0)`,
       totalTokens: sql<number>`coalesce(sum(coalesce(${llmUsageRecords.totalTokens}, coalesce(${llmUsageRecords.inputTokens}, 0) + coalesce(${llmUsageRecords.outputTokens}, 0))), 0)`,
       callCount: sql<number>`count(*)`,
@@ -139,6 +146,7 @@ export async function summarizeLlmUsageForTask(taskId: string) {
     outputTokens: Number(row?.outputTokens ?? 0),
     stateCardTokens: Number(row?.stateCardTokens ?? 0),
     cachedInputTokens: Number(row?.cachedInputTokens ?? 0),
+    nonCachedInputTokens: Number(row?.nonCachedInputTokens ?? 0),
     reasoningOutputTokens: Number(row?.reasoningOutputTokens ?? 0),
     totalTokens: Number(row?.totalTokens ?? 0),
     usageMode,

@@ -46,6 +46,7 @@ import {
   sanitizeNativeApiResumeHistory,
 } from './native-api-tool-history';
 import { getNativeApiToolDefinitions } from './native-api-tool-registry';
+import { capNativeApiToolResultContent } from './native-api-tool-result-projector';
 
 export type NativeApiToolTurnProvider = typeof callProviderToolTurn;
 type NativeApiUsageRecorder = typeof recordLlmUsage;
@@ -698,6 +699,7 @@ export class NativeApiRunner {
           executionMode,
           providerResult,
           providerDebug,
+          contextBudget,
           systemPrompt: providerRequest.systemPrompt,
           userPrompt: providerRequest.userPrompt,
           turnIndex,
@@ -814,14 +816,14 @@ export class NativeApiRunner {
             return {
               kind: 'continue',
               state,
-              toolResult: {
+              toolResult: capNativeApiToolResultContent({
                 ok: false,
                 content: JSON.stringify({
                   ok: false,
                   error: { code: 'TOOL_DISPATCH_EXCEPTION', message },
                 }),
                 error: { code: 'TOOL_DISPATCH_EXCEPTION', message },
-              },
+              }),
             };
           });
           state = dispatch.state;
@@ -1096,6 +1098,9 @@ function summarizeNativeApiContextBudget(budget: NativeApiContextBudget) {
     hardLimitExceeded: budget.hardLimitExceeded,
     messageTokens: budget.messageTokens,
     toolTokens: budget.toolTokens,
+    largestModelVisibleMessageChars: budget.largestModelVisibleMessageChars,
+    largestModelVisibleMessageRole: budget.largestModelVisibleMessageRole,
+    compactedToolResultCount: budget.compactedToolResultCount,
   };
 }
 
@@ -1456,6 +1461,7 @@ async function recordNativeApiTurnUsage(input: {
   executionMode: ReturnType<typeof readNativeApiExecutionMode>;
   providerResult: Extract<ProviderToolTurnResult, { type: 'supported' }>;
   providerDebug: Record<string, unknown>;
+  contextBudget: NativeApiContextBudget;
   systemPrompt: string;
   userPrompt: string;
   turnIndex: number;
@@ -1492,6 +1498,15 @@ async function recordNativeApiTurnUsage(input: {
       executionMode: input.executionMode,
       toolCallCount: input.providerResult.toolCalls.length,
       providerDebug: input.providerDebug,
+      contextBudget: summarizeNativeApiContextBudget(input.contextBudget),
+      nonCachedInputTokens:
+        input.providerResult.usage.inputTokens !== null &&
+        input.providerResult.usage.cachedInputTokens !== null
+          ? Math.max(
+              0,
+              input.providerResult.usage.inputTokens - input.providerResult.usage.cachedInputTokens
+            )
+          : null,
       promptPartSource: readPromptPartObservabilityEnabled(input.context)
         ? 'nightworkers_estimate'
         : null,
