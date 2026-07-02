@@ -24,7 +24,7 @@ import {
   type RuntimeTodoEvidence,
   type RuntimeTodoEvidenceReadResult,
 } from './codex-sdk/codex-sdk-mcp-audit';
-import { buildCodexRuntimePrompt } from './codex-sdk/codex-sdk-runtime-prompt';
+import { buildCodexRuntimePromptParts } from './codex-sdk/codex-sdk-runtime-prompt';
 import {
   type RuntimeUsageRecorder,
   recordCodexRuntimeUsageIfPresent,
@@ -41,7 +41,10 @@ import type {
 import { normalizeVerificationCommand, verificationCommandsMatch } from './verification-command';
 
 export type { CodexThreadFactory } from './codex-sdk/codex-sdk-client';
-export { buildCodexRuntimePrompt } from './codex-sdk/codex-sdk-runtime-prompt';
+export {
+  buildCodexRuntimePrompt,
+  buildCodexRuntimePromptParts,
+} from './codex-sdk/codex-sdk-runtime-prompt';
 
 const DEFAULT_RESULT: AgentRuntimeResult = {
   terminalState: 'failed',
@@ -164,7 +167,9 @@ export class CodexAgentRuntime implements AgentRuntime {
 
         try {
           const thread = await this.createThread(context, sink);
-          const { events } = await thread.runStreamed(buildCodexRuntimePrompt(context), {
+          const runtimePromptParts = buildCodexRuntimePromptParts(context);
+          const promptPartObservabilityEnabled = readPromptPartObservabilityEnabled(context);
+          const { events } = await thread.runStreamed(runtimePromptParts.prompt, {
             signal: controller.signal,
           });
 
@@ -249,6 +254,18 @@ export class CodexAgentRuntime implements AgentRuntime {
                   payload: mapped.payload,
                   persistRuntimeUsage: this.persistRuntimeUsage,
                   usageRecorder: this.usageRecorder,
+                  promptPartObservabilityEnabled,
+                  promptPartTokenEstimates: promptPartObservabilityEnabled
+                    ? {
+                        latestUserMessageTokens:
+                          context.contextSnapshot.conversationContext?.usage
+                            ?.latestUserMessageTokens,
+                        stateCardTokens:
+                          context.contextSnapshot.conversationContext?.usage?.stateCardTokens,
+                        userPromptTokens: runtimePromptParts.estimates.requestTokens,
+                        systemPromptTokens: runtimePromptParts.estimates.runtimeContractTokens,
+                      }
+                    : undefined,
                 });
               }
               if (mapped.type === 'runtime_error') {
@@ -1304,6 +1321,14 @@ function readCodexRuntimeExecutionMode(context: AgentRunContext) {
     return snapshotValue;
   }
   return 'implementation';
+}
+
+function readPromptPartObservabilityEnabled(context: AgentRunContext) {
+  const llmUsage =
+    context.runtimeOptions?.llmUsage && typeof context.runtimeOptions.llmUsage === 'object'
+      ? (context.runtimeOptions.llmUsage as Record<string, unknown>)
+      : null;
+  return llmUsage?.promptPartObservabilityEnabled !== false;
 }
 
 function readCodexRuntimeModel(context: AgentRunContext) {

@@ -56,6 +56,8 @@ vi.mock('../api/services/structured-llm', async (importOriginal) => {
 
 import app from '../api/app';
 import { ensureNightWorkersSchema } from '../api/db/bootstrap';
+import * as nightworkersRepo from '../api/modules/nightworkers/nightworkers.repository';
+import { recordLlmUsage } from '../api/services/llm-usage';
 
 beforeAll(async () => {
   await ensureNightWorkersSchema();
@@ -130,6 +132,90 @@ describe('Project Detail backend', () => {
         { method: 'DELETE', headers: { Origin: 'http://localhost:39174' } }
       );
       expect(deleteRes.status).toBe(200);
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('returns project detail LLM usage input and output breakdowns', async () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-usage-'));
+    try {
+      fs.writeFileSync(
+        path.join(repoRoot, 'package.json'),
+        JSON.stringify({ scripts: { test: 'echo unit' } }),
+        'utf8'
+      );
+      const project = await createRepository(repoRoot);
+      const task = await nightworkersRepo.createTask({
+        repositoryId: project.id,
+        title: 'TEST: Token-heavy BBS implementation',
+        status: 'completed',
+      });
+
+      await recordLlmUsage({
+        taskId: task.id,
+        runId: null,
+        callId: crypto.randomUUID(),
+        provider: 'fixture-provider',
+        model: 'gpt-test',
+        label: 'codex-runtime',
+        usage: {
+          inputTokens: 1200,
+          outputTokens: 45,
+          cachedInputTokens: 300,
+          reasoningOutputTokens: 6,
+          totalTokens: 1245,
+          mode: 'measured',
+          rawUsage: { input_tokens: 1200, output_tokens: 45 },
+        },
+        promptPartTokenEstimates: {
+          systemPromptTokens: 100,
+          userPromptTokens: 200,
+          stateCardTokens: 30,
+        },
+        durationMs: 25,
+      });
+
+      const metricsRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/project-detail/metrics`
+      );
+
+      expect(metricsRes.status).toBe(200);
+      await expect(metricsRes.json()).resolves.toMatchObject({
+        llmUsage: {
+          totalTokens: 1245,
+          promptInputTokens: 330,
+          inputTokens: 1200,
+          outputTokens: 45,
+          cachedInputTokens: 300,
+          reasoningOutputTokens: 6,
+          stateCardTokens: 30,
+          callCount: 1,
+          modelMix: [
+            expect.objectContaining({
+              provider: 'fixture-provider',
+              model: 'gpt-test',
+              calls: 1,
+              tokens: 1245,
+              inputTokens: 1200,
+              outputTokens: 45,
+              cachedInputTokens: 300,
+              reasoningOutputTokens: 6,
+            }),
+          ],
+          topTokenTasks: [
+            expect.objectContaining({
+              taskId: task.id,
+              title: 'TEST: Token-heavy BBS implementation',
+              tokens: 1245,
+              inputTokens: 1200,
+              outputTokens: 45,
+              cachedInputTokens: 300,
+              reasoningOutputTokens: 6,
+            }),
+          ],
+        },
+      });
     } finally {
       fs.rmSync(repoRoot, { recursive: true, force: true });
     }

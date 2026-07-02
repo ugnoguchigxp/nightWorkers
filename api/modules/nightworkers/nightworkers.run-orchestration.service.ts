@@ -868,7 +868,11 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
         ? 'Implementation'
         : runtimeRole;
   const settings = getCurrentSettings();
-  const planModeSettingsSnapshot = buildPlanModeSettingsSnapshot(readGeneralSettings());
+  const generalSettings = readGeneralSettings();
+  const planModeSettingsSnapshot = buildPlanModeSettingsSnapshot(generalSettings);
+  const llmUsageSettingsSnapshot = generalSettings.llmUsage ?? {
+    promptPartObservabilityEnabled: true,
+  };
   const baseRuntimeLaneResolution = resolveRuntimeLane({
     settingsRuntimeLane: settings.IMPLEMENTATION_RUNTIME_LANE,
     activeLlmProvider: settings.ACTIVE_LLM_PROVIDER,
@@ -925,6 +929,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
     implementationLlmRoute: runtimeLlmRoute,
     llmRouteOverride,
     planModeSettingsSnapshot,
+    llmUsageSettingsSnapshot,
   };
   const runtimeOptions = runtimeLaneDefinition.buildRuntimeOptions(runtimeLaneSetupInput);
   const initialTodos = runtimeLaneDefinition.buildInitialTodos(runtimeLaneSetupInput);

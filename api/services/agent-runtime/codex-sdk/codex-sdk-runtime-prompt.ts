@@ -1,15 +1,41 @@
 import { getNightWorkersCodexToolNames } from '../../../mcp/nightworkers-tool-manifest';
+import { estimateTokens } from '../../conversation-context/token-budget';
 import type { AgentRunContext } from '../types';
 
 export function buildCodexRuntimePrompt(context: AgentRunContext): string {
+  return buildCodexRuntimePromptParts(context).prompt;
+}
+
+export type CodexRuntimePromptParts = {
+  prompt: string;
+  request: string;
+  runtimeContract: string;
+  estimates: {
+    requestTokens: number;
+    runtimeContractTokens: number;
+    fullPromptTokens: number;
+  };
+};
+
+export function buildCodexRuntimePromptParts(context: AgentRunContext): CodexRuntimePromptParts {
   const request = (context.latestUserMessage || context.compiledPrompt).trim();
   const executionMode = readCodexRuntimeExecutionMode(context);
   const nightWorkersToolList = getNightWorkersCodexToolNames({ executionMode }).join(', ');
-  const contract =
+  const runtimeContract =
     executionMode === 'general_answer'
       ? buildGeneralAnswerContract(context, nightWorkersToolList)
       : buildExecutionContract(context, nightWorkersToolList, executionMode);
-  return request ? `${request}\n\n${contract}` : contract;
+  const prompt = request ? `${request}\n\n${runtimeContract}` : runtimeContract;
+  return {
+    prompt,
+    request,
+    runtimeContract,
+    estimates: {
+      requestTokens: estimateTokens(request),
+      runtimeContractTokens: estimateTokens(runtimeContract),
+      fullPromptTokens: estimateTokens(prompt),
+    },
+  };
 }
 
 function buildGeneralAnswerContract(context: AgentRunContext, nightWorkersToolList: string) {

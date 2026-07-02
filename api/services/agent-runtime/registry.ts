@@ -30,6 +30,7 @@ export type RuntimeLaneSetupInput = {
   llmRouteOverride?: StructuredLlmModelTarget | null;
   jobType?: JobType | null;
   planModeSettingsSnapshot?: unknown;
+  llmUsageSettingsSnapshot?: unknown;
 };
 
 export type RuntimeLaneDefinition = {
@@ -85,6 +86,7 @@ export function buildRuntimeLaneOptions(
     executionMode: input.executionMode ?? 'implementation',
     jobType: input.jobType ?? null,
     planModeSettingsSnapshot: input.planModeSettingsSnapshot ?? null,
+    llmUsage: input.llmUsageSettingsSnapshot ?? null,
     runtimeLane: input.runtimeLaneResolution?.lane ?? null,
     runtimeLaneResolution: input.runtimeLaneResolution ?? null,
     ...(nativeApiRoute

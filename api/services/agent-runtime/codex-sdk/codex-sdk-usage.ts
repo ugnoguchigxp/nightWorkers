@@ -9,6 +9,13 @@ export async function recordCodexRuntimeUsageIfPresent(input: {
   payload: unknown;
   persistRuntimeUsage: boolean;
   usageRecorder: RuntimeUsageRecorder;
+  promptPartTokenEstimates?: {
+    latestUserMessageTokens?: number | null;
+    stateCardTokens?: number | null;
+    userPromptTokens?: number | null;
+    systemPromptTokens?: number | null;
+  };
+  promptPartObservabilityEnabled?: boolean;
 }): Promise<void> {
   if (!input.persistRuntimeUsage) return;
   const record =
@@ -27,17 +34,28 @@ export async function recordCodexRuntimeUsageIfPresent(input: {
     label: 'codex-runtime',
     round: null,
     usage,
-    promptPartTokenEstimates: {
-      latestUserMessageTokens:
-        input.context.contextSnapshot.conversationContext?.usage?.latestUserMessageTokens,
-      stateCardTokens: input.context.contextSnapshot.conversationContext?.usage?.stateCardTokens,
-      userPromptTokens:
-        input.context.contextSnapshot.conversationContext?.usage?.runtimeUserPromptTokens,
-    },
+    promptPartTokenEstimates:
+      input.promptPartObservabilityEnabled === false
+        ? undefined
+        : (input.promptPartTokenEstimates ?? {
+            latestUserMessageTokens:
+              input.context.contextSnapshot.conversationContext?.usage?.latestUserMessageTokens,
+            stateCardTokens:
+              input.context.contextSnapshot.conversationContext?.usage?.stateCardTokens,
+            userPromptTokens:
+              input.context.contextSnapshot.conversationContext?.usage?.runtimeUserPromptTokens,
+          }),
+    promptPartObservabilityEnabled: input.promptPartObservabilityEnabled ?? true,
     durationMs: 0,
     metadataJson: {
       source: 'codex_sdk_runtime_turn_completed',
       providerEventType: record.providerEventType ?? null,
+      providerUsageSource: 'codex_sdk_measured',
+      promptPartSource:
+        input.promptPartObservabilityEnabled === false ? null : 'nightworkers_estimate',
+      runtimePromptShape: 'request_plus_runtime_contract',
+      systemPromptMeaning: 'runtime_contract_tokens',
+      promptPartObservabilityEnabled: input.promptPartObservabilityEnabled ?? true,
     },
   });
 }

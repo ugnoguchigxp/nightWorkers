@@ -43,6 +43,9 @@ export const defaultGeneralSettings: GeneralSettings = {
       zod_schema_design: true,
     },
   },
+  llmUsage: {
+    promptPartObservabilityEnabled: true,
+  },
 };
 
 export function mergeGeneralSettings(input: Partial<GeneralSettings> = {}): GeneralSettings {
@@ -60,6 +63,10 @@ export function mergeGeneralSettings(input: Partial<GeneralSettings> = {}): Gene
         ...defaultGeneralSettings.planMode.capabilities,
         ...input.planMode?.capabilities,
       },
+    },
+    llmUsage: {
+      ...defaultGeneralSettings.llmUsage,
+      ...input.llmUsage,
     },
   };
 }

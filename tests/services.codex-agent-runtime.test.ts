@@ -9,6 +9,7 @@ import { getNightWorkersCodexToolNames } from '../api/mcp/nightworkers-tool-mani
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import {
   buildCodexRuntimePrompt,
+  buildCodexRuntimePromptParts,
   CodexAgentRuntime,
 } from '../api/services/agent-runtime/CodexAgentRuntime';
 import { CODEX_CONTRACT_WARNING_CATALOG } from '../api/services/agent-runtime/codex-contract-warning-catalog';
@@ -330,6 +331,21 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain('Codex native command_execution events');
     expect(prompt).toContain('Do not create a fallback static app');
     expect(prompt).toContain('do not stop with a plan-only answer or next-steps summary');
+  });
+
+  it('builds Codex runtime prompt parts without changing the prompt string', () => {
+    const context = buildContext({
+      latestUserMessage: '仕様に沿って実装してください',
+    });
+    const prompt = buildCodexRuntimePrompt(context);
+    const parts = buildCodexRuntimePromptParts(context);
+
+    expect(parts.prompt).toBe(prompt);
+    expect(parts.request).toBe('仕様に沿って実装してください');
+    expect(parts.runtimeContract).toContain('[NightWorkers Runtime Contract]');
+    expect(parts.estimates.requestTokens).toBeGreaterThan(0);
+    expect(parts.estimates.runtimeContractTokens).toBeGreaterThan(0);
+    expect(parts.estimates.fullPromptTokens).toBeGreaterThan(parts.estimates.requestTokens);
   });
 
   it('marks Codex runtime prompt as planning only for planning executionMode', () => {
@@ -1532,8 +1548,64 @@ describe('CodexAgentRuntime', () => {
         promptPartTokenEstimates: {
           latestUserMessageTokens: 10,
           stateCardTokens: 20,
-          userPromptTokens: 30,
+          userPromptTokens: expect.any(Number),
+          systemPromptTokens: expect.any(Number),
         },
+        promptPartObservabilityEnabled: true,
+        metadataJson: expect.objectContaining({
+          providerUsageSource: 'codex_sdk_measured',
+          promptPartSource: 'nightworkers_estimate',
+          runtimePromptShape: 'request_plus_runtime_contract',
+          systemPromptMeaning: 'runtime_contract_tokens',
+          promptPartObservabilityEnabled: true,
+        }),
+      })
+    );
+    const recorded = usageRecorder.mock.calls[0]?.[0];
+    expect(recorded.promptPartTokenEstimates.userPromptTokens).toBeGreaterThan(0);
+    expect(recorded.promptPartTokenEstimates.systemPromptTokens).toBeGreaterThan(0);
+  });
+
+  it('does not send Codex prompt estimates when prompt observability is disabled', async () => {
+    const usageRecorder = vi.fn(async (input) => ({ id: 'usage-record', ...input }) as never);
+    const runtime = new CodexAgentRuntime({
+      persistRuntimeUsage: true,
+      usageRecorder,
+      threadFactory: () =>
+        fakeThread([
+          {
+            type: 'turn.completed',
+            usage: {
+              input_tokens: 1200,
+              output_tokens: 45,
+            },
+          },
+        ]),
+    });
+
+    await runtime.start(
+      buildContext({
+        runtimeOptions: {
+          executionMode: 'implementation',
+          llmUsage: { promptPartObservabilityEnabled: false },
+        },
+      }),
+      { emit: async () => {} }
+    );
+
+    expect(usageRecorder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        usage: expect.objectContaining({
+          inputTokens: 1200,
+          outputTokens: 45,
+          mode: 'measured',
+        }),
+        promptPartTokenEstimates: undefined,
+        promptPartObservabilityEnabled: false,
+        metadataJson: expect.objectContaining({
+          promptPartSource: null,
+          promptPartObservabilityEnabled: false,
+        }),
       })
     );
   });
@@ -2804,6 +2876,7 @@ function buildContext(
     repoRoot?: string;
     codex?: Record<string, unknown>;
     executionMode?: 'planning' | 'implementation' | 'review' | 'runtime_debug' | 'general_answer';
+    runtimeOptions?: Record<string, unknown>;
     latestUserMessage?: string;
     conversationContextUsage?: {
       latestUserMessageTokens: number;
@@ -2849,10 +2922,11 @@ function buildContext(
         : {}),
     },
     runtimeOptions:
-      input.codex || input.executionMode
+      input.codex || input.executionMode || input.runtimeOptions
         ? {
             ...(input.codex ? { codex: input.codex } : {}),
             ...(input.executionMode ? { executionMode: input.executionMode } : {}),
+            ...(input.runtimeOptions ?? {}),
           }
         : undefined,
     currentTodo: input.currentTodo,

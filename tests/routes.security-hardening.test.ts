@@ -156,6 +156,61 @@ describe('LLM settings secret hardening', () => {
     );
   });
 
+  it('heals persisted role routes that point at removed endpoints', async () => {
+    const settingsPath = isolatedSettingsPath();
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        ACTIVE_LLM_PROVIDER: 'codex',
+        CODEX_ENABLED: true,
+        CODEX_MODEL: 'gpt-5.4-mini',
+        providerEndpoints: [
+          {
+            id: 'codex-main',
+            name: 'Codex SDK',
+            kind: 'codex',
+            enabled: true,
+            apiKey: '',
+            baseUrl: '',
+            endpoint: '',
+            apiVersion: '',
+            region: '',
+            models: ['gpt-5.4-mini'],
+            modelDisplayNames: {},
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'evaluation',
+            primary: {
+              providerEndpointId: 'deleted-evaluation-endpoint',
+              model: 'gpt-5.4-mini',
+            },
+            fallbacks: [],
+          },
+        ],
+      })
+    );
+    const { getCurrentSettings } = await importSettingsRuntimeWithPath(settingsPath);
+
+    const settings = getCurrentSettings();
+    const persisted = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as {
+      roleRoutes: Array<{ role: string; primary: { providerEndpointId: string; model: string } }>;
+    };
+    const evaluationRoute = settings.roleRoutes.find((route) => route.role === 'evaluation');
+    const persistedEvaluationRoute = persisted.roleRoutes.find(
+      (route) => route.role === 'evaluation'
+    );
+
+    expect(evaluationRoute?.primary).toEqual({
+      providerEndpointId: 'codex-main',
+      model: 'gpt-5.4-mini',
+      thinkingDepth: '',
+    });
+    expect(persistedEvaluationRoute?.primary.providerEndpointId).toBe('codex-main');
+  });
+
   it('masks configured secrets before returning settings to clients', async () => {
     const { maskLlmSettings } = await importSettingsRoute();
 

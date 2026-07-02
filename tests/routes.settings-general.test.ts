@@ -35,6 +35,10 @@ const defaultPlanModeSettings = {
   },
 };
 
+const defaultLlmUsageSettings = {
+  promptPartObservabilityEnabled: true,
+};
+
 const pricingMocks = vi.hoisted(() => ({
   listPricingRows: vi.fn(),
   upsertPricingRow: vi.fn(),
@@ -287,6 +291,7 @@ describe('general and LLM settings routes', () => {
         lastRefreshedAt: null,
       },
       planMode: defaultPlanModeSettings,
+      llmUsage: defaultLlmUsageSettings,
     });
 
     const app = new OpenAPIHono<AppEnv>();
@@ -306,6 +311,7 @@ describe('general and LLM settings routes', () => {
         lastRefreshedAt: null,
       },
       planMode: defaultPlanModeSettings,
+      llmUsage: defaultLlmUsageSettings,
     });
   });
 
@@ -324,6 +330,9 @@ describe('general and LLM settings routes', () => {
           ...defaultPlanModeSettings.capabilities,
           blueprint: false,
         },
+      },
+      llmUsage: {
+        promptPartObservabilityEnabled: false,
       },
     });
 
@@ -351,6 +360,9 @@ describe('general and LLM settings routes', () => {
             blueprint: false,
           },
         },
+        llmUsage: {
+          promptPartObservabilityEnabled: false,
+        },
       }),
     });
     expect(res.status).toBe(200);
@@ -370,6 +382,9 @@ describe('general and LLM settings routes', () => {
           blueprint: false,
         },
       },
+      llmUsage: {
+        promptPartObservabilityEnabled: false,
+      },
     });
     expect(generalSettingsMocks.writeGeneralSettings).toHaveBeenCalledWith({
       timezone: 'Asia/Tokyo',
@@ -386,6 +401,62 @@ describe('general and LLM settings routes', () => {
           blueprint: false,
         },
       },
+      llmUsage: {
+        promptPartObservabilityEnabled: false,
+      },
+    });
+  });
+
+  it('POST /api/settings/general accepts settings without llmUsage for compatibility', async () => {
+    generalSettingsMocks.writeGeneralSettings.mockReturnValue({
+      timezone: 'Asia/Tokyo',
+      language: 'ja',
+      currency: 'JPY',
+      fx: {
+        source: 'ecb',
+        autoRefresh: true,
+        lastRefreshedAt: null,
+      },
+      planMode: defaultPlanModeSettings,
+      llmUsage: defaultLlmUsageSettings,
+    });
+
+    const app = new OpenAPIHono<AppEnv>();
+    app.onError(errorHandler);
+    app.route('/api/settings', settingsRouter);
+
+    const res = await app.request('/api/settings/general', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        timezone: 'Asia/Tokyo',
+        language: 'ja',
+        currency: 'JPY',
+        fx: {
+          source: 'ecb',
+          autoRefresh: true,
+          lastRefreshedAt: null,
+        },
+        planMode: defaultPlanModeSettings,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      llmUsage: defaultLlmUsageSettings,
+    });
+    expect(generalSettingsMocks.writeGeneralSettings).toHaveBeenCalledWith({
+      timezone: 'Asia/Tokyo',
+      language: 'ja',
+      currency: 'JPY',
+      fx: {
+        source: 'ecb',
+        autoRefresh: true,
+        lastRefreshedAt: null,
+      },
+      planMode: defaultPlanModeSettings,
     });
   });
 

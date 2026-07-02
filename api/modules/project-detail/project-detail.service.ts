@@ -254,6 +254,13 @@ export async function getProjectDetailMetrics(repositoryId: string) {
         title: tasks.title,
         provider: llmUsageRecords.provider,
         model: llmUsageRecords.model,
+        inputTokens: llmUsageRecords.inputTokens,
+        outputTokens: llmUsageRecords.outputTokens,
+        cachedInputTokens: llmUsageRecords.cachedInputTokens,
+        reasoningOutputTokens: llmUsageRecords.reasoningOutputTokens,
+        stateCardTokens: llmUsageRecords.stateCardTokens,
+        systemPromptTokens: llmUsageRecords.systemPromptTokens,
+        userPromptTokens: llmUsageRecords.userPromptTokens,
         totalTokens: llmUsageRecords.totalTokens,
       })
       .from(llmUsageRecords)
@@ -263,12 +270,49 @@ export async function getProjectDetailMetrics(repositoryId: string) {
     repo.getLatestProjectQualityRun({ repositoryId }),
   ]);
 
-  const totalTokens = usageRows.reduce((sum, row) => sum + (row.totalTokens ?? 0), 0);
+  const totalTokens = usageRows.reduce((sum, row) => sum + normalizeUsageTotal(row), 0);
+  const inputTokens = usageRows.reduce((sum, row) => sum + (row.inputTokens ?? 0), 0);
+  const outputTokens = usageRows.reduce((sum, row) => sum + (row.outputTokens ?? 0), 0);
+  const cachedInputTokens = usageRows.reduce((sum, row) => sum + (row.cachedInputTokens ?? 0), 0);
+  const reasoningOutputTokens = usageRows.reduce(
+    (sum, row) => sum + (row.reasoningOutputTokens ?? 0),
+    0
+  );
+  const stateCardTokens = usageRows.reduce((sum, row) => sum + (row.stateCardTokens ?? 0), 0);
+  const promptInputTokens = usageRows.reduce(
+    (sum, row) =>
+      sum +
+      (row.systemPromptTokens ?? 0) +
+      (row.userPromptTokens ?? 0) +
+      (row.stateCardTokens ?? 0),
+    0
+  );
   const modelMap = new Map<
     string,
-    { provider: string; model: string | null; calls: number; tokens: number }
+    {
+      provider: string;
+      model: string | null;
+      calls: number;
+      tokens: number;
+      inputTokens: number;
+      outputTokens: number;
+      cachedInputTokens: number;
+      reasoningOutputTokens: number;
+    }
   >();
-  const taskMap = new Map<string, { taskId: string; title: string; tokens: number; cost: null }>();
+  const taskMap = new Map<
+    string,
+    {
+      taskId: string;
+      title: string;
+      tokens: number;
+      inputTokens: number;
+      outputTokens: number;
+      cachedInputTokens: number;
+      reasoningOutputTokens: number;
+      cost: null;
+    }
+  >();
   for (const row of usageRows) {
     const modelKey = `${row.provider}:${row.model ?? ''}`;
     const modelEntry = modelMap.get(modelKey) ?? {
@@ -276,18 +320,34 @@ export async function getProjectDetailMetrics(repositoryId: string) {
       model: row.model ?? null,
       calls: 0,
       tokens: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cachedInputTokens: 0,
+      reasoningOutputTokens: 0,
     };
     modelEntry.calls += 1;
-    modelEntry.tokens += row.totalTokens ?? 0;
+    modelEntry.tokens += normalizeUsageTotal(row);
+    modelEntry.inputTokens += row.inputTokens ?? 0;
+    modelEntry.outputTokens += row.outputTokens ?? 0;
+    modelEntry.cachedInputTokens += row.cachedInputTokens ?? 0;
+    modelEntry.reasoningOutputTokens += row.reasoningOutputTokens ?? 0;
     modelMap.set(modelKey, modelEntry);
 
     const taskEntry = taskMap.get(row.taskId) ?? {
       taskId: row.taskId,
       title: row.title,
       tokens: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cachedInputTokens: 0,
+      reasoningOutputTokens: 0,
       cost: null,
     };
-    taskEntry.tokens += row.totalTokens ?? 0;
+    taskEntry.tokens += normalizeUsageTotal(row);
+    taskEntry.inputTokens += row.inputTokens ?? 0;
+    taskEntry.outputTokens += row.outputTokens ?? 0;
+    taskEntry.cachedInputTokens += row.cachedInputTokens ?? 0;
+    taskEntry.reasoningOutputTokens += row.reasoningOutputTokens ?? 0;
     taskMap.set(row.taskId, taskEntry);
   }
   const coverageMetrics = latestQuality?.coverageGate?.metrics ?? [];
@@ -308,6 +368,13 @@ export async function getProjectDetailMetrics(repositoryId: string) {
     },
     llmUsage: {
       totalTokens,
+      promptInputTokens,
+      inputTokens,
+      outputTokens,
+      cachedInputTokens,
+      reasoningOutputTokens,
+      stateCardTokens,
+      callCount: usageRows.length,
       totalCost: null,
       averageTokensPerRun: runs.length > 0 ? Math.round(totalTokens / runs.length) : null,
       averageCostPerRun: null,
@@ -319,6 +386,14 @@ export async function getProjectDetailMetrics(repositoryId: string) {
       coverageAverage,
     },
   };
+}
+
+function normalizeUsageTotal(row: {
+  totalTokens?: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+}) {
+  return row.totalTokens ?? (row.inputTokens ?? 0) + (row.outputTokens ?? 0);
 }
 
 export async function listMissionGoals(repositoryId: string) {

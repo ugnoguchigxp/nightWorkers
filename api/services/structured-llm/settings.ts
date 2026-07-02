@@ -112,7 +112,7 @@ export function readStructuredLlmProviderSettings(): StructuredLlmProviderSettin
     merged[key] = normalizeSettingValue(key, envValue) as never;
   }
   merged.ACTIVE_LLM_PROVIDER = normalizeStructuredLlmProviderSetting(merged.ACTIVE_LLM_PROVIDER);
-  return migrateStructuredLlmEndpointIds(merged).settings;
+  return sanitizeStructuredLlmRoleRoutes(migrateStructuredLlmEndpointIds(merged).settings);
 }
 
 export function normalizeStructuredLlmProviderSetting(value?: string): string | undefined {
@@ -188,4 +188,34 @@ function defaultSettings(): Required<Record<keyof StructuredLlmProviderSettings,
 function normalizeSettingValue(key: keyof StructuredLlmProviderSettings, value: string) {
   if (boolKeys.has(key)) return value.toLowerCase() === 'true';
   return value;
+}
+
+function sanitizeStructuredLlmRoleRoutes(
+  settings: StructuredLlmProviderSettings
+): StructuredLlmProviderSettings {
+  const endpoints = settings.providerEndpoints || [];
+  if (endpoints.length === 0 || !settings.roleRoutes?.length) return settings;
+
+  const validRoutes = settings.roleRoutes.flatMap((route) => {
+    const validFallbacks = (route.fallbacks || []).filter((target) =>
+      isValidStructuredLlmModelTarget(target, endpoints)
+    );
+    if (isValidStructuredLlmModelTarget(route.primary, endpoints)) {
+      return [{ ...route, fallbacks: validFallbacks }];
+    }
+    const promotedPrimary = validFallbacks.shift();
+    if (!promotedPrimary) return [];
+    return [{ ...route, primary: promotedPrimary, fallbacks: validFallbacks }];
+  });
+
+  return { ...settings, roleRoutes: validRoutes };
+}
+
+function isValidStructuredLlmModelTarget(
+  target: StructuredLlmModelTarget | undefined,
+  endpoints: StructuredLlmProviderEndpoint[]
+) {
+  if (!target?.providerEndpointId || !target.model) return false;
+  const endpoint = endpoints.find((item) => item.id === target.providerEndpointId);
+  return Boolean(endpoint?.enabled && endpoint.models.includes(target.model));
 }

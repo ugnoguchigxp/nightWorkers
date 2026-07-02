@@ -273,6 +273,9 @@ export const getCurrentSettings = (): LlmSettings => {
   const providerEndpointsChanged =
     Array.isArray(persisted.providerEndpoints) &&
     persisted.providerEndpoints.length !== providerEndpoints.length;
+  const roleRoutesChanged =
+    Array.isArray(persisted.roleRoutes) &&
+    JSON.stringify(persisted.roleRoutes) !== JSON.stringify(roleRoutes);
   const normalized = {
     ...legacySettings,
     providerEndpoints,
@@ -280,7 +283,7 @@ export const getCurrentSettings = (): LlmSettings => {
   };
   const migration = migrateStructuredLlmEndpointIds(normalized);
   if (
-    (migration.changed || providerEndpointsChanged) &&
+    (migration.changed || providerEndpointsChanged || roleRoutesChanged) &&
     persistedRead.exists &&
     persistedRead.loaded
   ) {
@@ -529,7 +532,7 @@ function normalizeRoleRoutes(
   };
   return LLM_ROLE_ORDER.map((role) => {
     const route = routesByRole.get(role);
-    if (route) return normalizeRoleRoute(route, defaultTarget);
+    if (route) return normalizeRoleRoute(route, defaultTarget, providerEndpoints);
     return {
       role,
       primary: defaultTarget,
@@ -540,9 +543,10 @@ function normalizeRoleRoutes(
 
 function normalizeRoleRoute(
   route: z.infer<typeof llmRoleRouteSchema>,
-  defaultTarget: LlmModelTarget
+  defaultTarget: LlmModelTarget,
+  providerEndpoints?: LlmProviderEndpoint[]
 ): LlmRoleRoute {
-  const primary =
+  const normalizedPrimary =
     normalizeModelTarget(route.primary) ||
     normalizeModelTarget({
       providerEndpointId: route.providerEndpointId,
@@ -553,13 +557,27 @@ function normalizeRoleRoute(
     providerEndpointId: route.fallbackProviderEndpointId,
     model: route.fallbackModel,
   });
+  const fallbacks = uniqueModelTargets([
+    ...route.fallbacks.map(normalizeModelTarget).filter((target) => Boolean(target)),
+    ...(legacyFallback ? [legacyFallback] : []),
+  ] as LlmModelTarget[]);
+  if (!providerEndpoints) {
+    return {
+      role: route.role,
+      primary: normalizedPrimary,
+      fallbacks,
+    };
+  }
+  const validFallbacks = fallbacks.filter((target) =>
+    isValidModelTarget(target, providerEndpoints)
+  );
+  const primary = isValidModelTarget(normalizedPrimary, providerEndpoints)
+    ? normalizedPrimary
+    : validFallbacks.shift() || defaultTarget;
   return {
     role: route.role,
     primary,
-    fallbacks: uniqueModelTargets([
-      ...route.fallbacks.map(normalizeModelTarget).filter((target) => Boolean(target)),
-      ...(legacyFallback ? [legacyFallback] : []),
-    ] as LlmModelTarget[]),
+    fallbacks: validFallbacks,
   };
 }
 
@@ -580,6 +598,12 @@ function uniqueModelTargets(targets: LlmModelTarget[]) {
     seen.add(key);
     return true;
   });
+}
+
+function isValidModelTarget(target: LlmModelTarget, providerEndpoints: LlmProviderEndpoint[]) {
+  if (!target.providerEndpointId || !target.model) return false;
+  const endpoint = providerEndpoints.find((item) => item.id === target.providerEndpointId);
+  return Boolean(endpoint?.enabled && endpoint.models.includes(target.model));
 }
 
 function findDefaultEndpointForProvider(

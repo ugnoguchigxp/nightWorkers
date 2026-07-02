@@ -1473,23 +1473,39 @@ async function recordNativeApiTurnUsage(input: {
     label: 'native_api_runner',
     round: null,
     usage: input.providerResult.usage,
-    promptPartTokenEstimates: {
-      latestUserMessageTokens:
-        input.context.contextSnapshot.conversationContext?.usage?.latestUserMessageTokens,
-      stateCardTokens: input.context.contextSnapshot.conversationContext?.usage?.stateCardTokens,
-      userPromptTokens:
-        input.context.contextSnapshot.conversationContext?.usage?.runtimeUserPromptTokens ??
-        estimateTokens(input.userPrompt),
-      systemPromptTokens: estimateTokens(input.systemPrompt),
-    },
+    promptPartTokenEstimates: readPromptPartObservabilityEnabled(input.context)
+      ? {
+          latestUserMessageTokens:
+            input.context.contextSnapshot.conversationContext?.usage?.latestUserMessageTokens,
+          stateCardTokens:
+            input.context.contextSnapshot.conversationContext?.usage?.stateCardTokens,
+          userPromptTokens:
+            input.context.contextSnapshot.conversationContext?.usage?.runtimeUserPromptTokens ??
+            estimateTokens(input.userPrompt),
+          systemPromptTokens: estimateTokens(input.systemPrompt),
+        }
+      : undefined,
+    promptPartObservabilityEnabled: readPromptPartObservabilityEnabled(input.context),
     durationMs: input.durationMs,
     metadataJson: {
       mode: 'native_api_runner',
       executionMode: input.executionMode,
       toolCallCount: input.providerResult.toolCalls.length,
       providerDebug: input.providerDebug,
+      promptPartSource: readPromptPartObservabilityEnabled(input.context)
+        ? 'nightworkers_estimate'
+        : null,
+      promptPartObservabilityEnabled: readPromptPartObservabilityEnabled(input.context),
     },
   });
+}
+
+function readPromptPartObservabilityEnabled(context: AgentRunContext) {
+  const llmUsage =
+    context.runtimeOptions?.llmUsage && typeof context.runtimeOptions.llmUsage === 'object'
+      ? (context.runtimeOptions.llmUsage as Record<string, unknown>)
+      : null;
+  return llmUsage?.promptPartObservabilityEnabled !== false;
 }
 
 function createTimeoutSignal(

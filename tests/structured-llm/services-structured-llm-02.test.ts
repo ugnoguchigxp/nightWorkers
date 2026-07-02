@@ -83,6 +83,54 @@ describe('Supervisor LLM schema-first parsing', () => {
     expect(directRequest.providerId).toBe('codex');
   });
 
+  it('ignores stale persisted role routes whose endpoint was removed', () => {
+    fs.writeFileSync(
+      process.env.NIGHTWORKERS_LLM_SETTINGS_PATH!,
+      JSON.stringify({
+        ACTIVE_LLM_PROVIDER: 'codex',
+        CODEX_ENABLED: true,
+        CODEX_MODEL: 'gpt-5.4-mini',
+        providerEndpoints: [
+          {
+            id: 'codex-main',
+            name: 'Codex Main',
+            kind: 'codex',
+            enabled: true,
+            models: ['gpt-5.4-mini'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'evaluation',
+            primary: {
+              providerEndpointId: 'deleted-evaluation-endpoint',
+              model: 'gpt-5.4-mini',
+            },
+            fallbacks: [],
+          },
+        ],
+      })
+    );
+
+    const settings = readStructuredLlmProviderSettings();
+    const requests = buildNormalizedSupervisorLlmRequestCandidates({
+      systemPrompt: 'system text',
+      userPrompt: 'user text',
+      label: 'project_evaluation',
+      role: 'evaluation',
+      settings,
+    });
+
+    expect(settings.roleRoutes?.some((route) => route.role === 'evaluation')).toBe(false);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      providerId: 'codex',
+      role: 'evaluation',
+      routeSource: null,
+      modelOrDeployment: 'gpt-5.4-mini',
+    });
+  });
+
   it('resolves role routing to provider endpoint and model when role is specified', () => {
     const request = buildNormalizedSupervisorLlmRequest({
       systemPrompt: 'system text',

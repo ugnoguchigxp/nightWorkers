@@ -20,6 +20,10 @@ export type PlanModeSettings = {
   capabilities: Record<PlanModeCapability, boolean>;
 };
 
+export type LlmUsageSettings = {
+  promptPartObservabilityEnabled: boolean;
+};
+
 export type GeneralSettings = {
   timezone: string;
   language: NightWorkersLanguage;
@@ -30,6 +34,7 @@ export type GeneralSettings = {
     lastRefreshedAt: string | null;
   };
   planMode: PlanModeSettings;
+  llmUsage: LlmUsageSettings;
 };
 
 export type FxRateCache = {
@@ -78,6 +83,9 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
       zod_schema_design: true,
     },
   },
+  llmUsage: {
+    promptPartObservabilityEnabled: true,
+  },
 };
 
 export function readGeneralSettings(): GeneralSettings {
@@ -85,7 +93,7 @@ export function readGeneralSettings(): GeneralSettings {
   return normalizeGeneralSettings(persisted);
 }
 
-export function writeGeneralSettings(input: GeneralSettings): GeneralSettings {
+export function writeGeneralSettings(input: Partial<GeneralSettings>): GeneralSettings {
   const settings = normalizeGeneralSettings(input);
   writeJsonFile(GENERAL_SETTINGS_PATH, settings);
   return settings;
@@ -181,6 +189,17 @@ export function normalizeGeneralSettings(input: Partial<GeneralSettings>): Gener
         typeof input.fx?.lastRefreshedAt === 'string' ? input.fx.lastRefreshedAt : null,
     },
     planMode: normalizePlanModeSettings(input.planMode),
+    llmUsage: normalizeLlmUsageSettings(input.llmUsage),
+  };
+}
+
+export function normalizeLlmUsageSettings(input: unknown): LlmUsageSettings {
+  const record = isRecord(input) ? input : {};
+  return {
+    promptPartObservabilityEnabled:
+      typeof record.promptPartObservabilityEnabled === 'boolean'
+        ? record.promptPartObservabilityEnabled
+        : DEFAULT_GENERAL_SETTINGS.llmUsage.promptPartObservabilityEnabled,
   };
 }
 

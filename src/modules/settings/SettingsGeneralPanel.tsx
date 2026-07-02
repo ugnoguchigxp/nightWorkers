@@ -97,6 +97,30 @@ export function GeneralSettingsPanel({
           {t('settings.general.refreshFx')}
         </Button>
       </div>
+      <label className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+        <input
+          type="checkbox"
+          checked={value.llmUsage?.promptPartObservabilityEnabled ?? true}
+          onChange={(event) =>
+            onChange({
+              ...value,
+              llmUsage: {
+                ...value.llmUsage,
+                promptPartObservabilityEnabled: event.target.checked,
+              },
+            })
+          }
+          className="mt-0.5 h-4 w-4 rounded border-zinc-700 bg-zinc-900"
+        />
+        <span>
+          <span className="block text-xs font-semibold text-zinc-100">
+            {t('settings.general.promptPartObservability')}
+          </span>
+          <span className="mt-1 block text-[10px] text-zinc-500">
+            {t('settings.general.promptPartObservabilityHelp')}
+          </span>
+        </span>
+      </label>
       {message ? (
         <p
           role={messageStatus === 'error' ? 'alert' : 'status'}

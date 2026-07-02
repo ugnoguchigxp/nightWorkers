@@ -81,6 +81,61 @@ describe('NativeApiRunner', () => {
     expect(store.finishedTurns[0]).toMatchObject({ status: 'failed' });
     expect(store.toolCalls).toHaveLength(0);
     expect(usageRecorder).toHaveBeenCalledOnce();
+    expect(usageRecorder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptPartTokenEstimates: expect.objectContaining({
+          systemPromptTokens: expect.any(Number),
+          userPromptTokens: expect.any(Number),
+        }),
+        promptPartObservabilityEnabled: true,
+      })
+    );
+  });
+
+  it('records provider usage without prompt estimates when prompt observability is disabled', async () => {
+    const store = createFakeStore();
+    const providerTurn = createProvider([
+      {
+        type: 'supported',
+        content: 'I will explain instead of using tools.',
+        toolCalls: [],
+        usage: usage(),
+        model: 'api-model',
+      },
+    ]);
+    const usageRecorder = vi.fn(async () => undefined);
+    const runner = new NativeApiRunner({
+      store: store.instance,
+      startupController: createNoopStartup(),
+      providerTurn,
+      usageRecorder,
+    });
+
+    await runner.run(
+      buildContext({
+        runtimeOptions: {
+          executionMode: 'implementation',
+          llmUsage: { promptPartObservabilityEnabled: false },
+        },
+      }),
+      createSink()
+    );
+
+    expect(usageRecorder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        usage: expect.objectContaining({
+          inputTokens: 10,
+          outputTokens: 5,
+          mode: 'measured',
+        }),
+        promptPartTokenEstimates: undefined,
+        promptPartObservabilityEnabled: false,
+        metadataJson: expect.objectContaining({
+          promptPartSource: null,
+          promptPartObservabilityEnabled: false,
+        }),
+      })
+    );
   });
 
   it('allows text-only completion for general answers', async () => {

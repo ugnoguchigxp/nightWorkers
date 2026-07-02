@@ -32,6 +32,10 @@ export type PlanModeSettings = {
   capabilities: Record<PlanModeCapability, boolean>;
 };
 
+export type LlmUsageSettings = {
+  promptPartObservabilityEnabled: boolean;
+};
+
 export type GeneralSettings = {
   timezone: string;
   language: NightWorkersLanguage;
@@ -42,6 +46,7 @@ export type GeneralSettings = {
     lastRefreshedAt: string | null;
   };
   planMode: PlanModeSettings;
+  llmUsage: LlmUsageSettings;
 };
 
 export type OverviewUsageSummary = {

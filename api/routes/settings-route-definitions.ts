@@ -71,6 +71,11 @@ const generalSettingsSchema = z.object({
       zod_schema_design: z.boolean(),
     }),
   }),
+  llmUsage: z
+    .object({
+      promptPartObservabilityEnabled: z.boolean(),
+    })
+    .optional(),
 });
 
 const fxRateCacheSchema = z

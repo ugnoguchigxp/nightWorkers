@@ -1,9 +1,10 @@
 import crypto from 'node:crypto';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import app from '../../api/app';
 import { ensureNightWorkersSchema } from '../../api/db/bootstrap';
 import * as repo from '../../api/modules/nightworkers/nightworkers.repository';
 import { recordLlmUsage } from '../../api/services/llm-usage';
+import * as generalSettings from '../../api/services/settings/general-settings';
 
 const sameOriginHeaders = { Origin: 'http://localhost:39174' };
 
@@ -181,7 +182,7 @@ describe('NightWorkers task run todo routes', () => {
     });
   });
 
-  it('keeps Codex measured usage separate from prompt estimate counts', async () => {
+  it('stores Codex measured usage with prompt estimate counts when observability is enabled', async () => {
     const createdRepo = await repo.createRepository({
       name: `TEST: Codex LLM Usage ${crypto.randomUUID()}`,
       localPath: '/Users/y.noguchi/Code/nightWorkers',
@@ -235,6 +236,70 @@ describe('NightWorkers task run todo routes', () => {
       cachedInputTokens: 5,
       reasoningOutputTokens: 2,
       totalTokens: 120,
+      promptInputTokens: 112,
+      stateCardTokens: 12,
+      usageMode: 'mixed',
+      callCount: 1,
+      measuredCallCount: 1,
+      estimatedCallCount: 0,
+    });
+  });
+
+  it('keeps Codex measured provider tokens when prompt observability is disabled', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: Codex LLM Usage Disabled ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: Codex LLM usage disabled task',
+      status: 'draft',
+    });
+
+    await recordLlmUsage({
+      taskId: task.id,
+      runId: null,
+      callId: crypto.randomUUID(),
+      provider: 'codex',
+      model: 'gpt-5.4-mini',
+      label: 'specification_document',
+      round: null,
+      usage: {
+        inputTokens: 100,
+        outputTokens: 20,
+        cachedInputTokens: 5,
+        reasoningOutputTokens: 2,
+        totalTokens: 120,
+        mode: 'measured',
+        rawUsage: {
+          input_tokens: 100,
+          cached_input_tokens: 5,
+          output_tokens: 20,
+          reasoning_output_tokens: 2,
+        },
+      },
+      promptPartTokenEstimates: {
+        systemPromptTokens: 30,
+        userPromptTokens: 70,
+        stateCardTokens: 12,
+      },
+      promptPartObservabilityEnabled: false,
+      durationMs: 42,
+    });
+
+    const res = await app.request(`http://localhost/api/tasks/${task.id}/llm-usage`, {
+      headers: sameOriginHeaders,
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      taskId: task.id,
+      inputTokens: 100,
+      outputTokens: 20,
+      cachedInputTokens: 5,
+      reasoningOutputTokens: 2,
+      totalTokens: 120,
       promptInputTokens: 0,
       stateCardTokens: 0,
       usageMode: 'measured',
@@ -242,5 +307,68 @@ describe('NightWorkers task run todo routes', () => {
       measuredCallCount: 1,
       estimatedCallCount: 0,
     });
+  });
+
+  it('uses General Settings to disable prompt estimates when record input omits the flag', async () => {
+    const settingsSpy = vi.spyOn(generalSettings, 'readGeneralSettings').mockReturnValue({
+      ...generalSettings.DEFAULT_GENERAL_SETTINGS,
+      llmUsage: {
+        promptPartObservabilityEnabled: false,
+      },
+    });
+    try {
+      const createdRepo = await repo.createRepository({
+        name: `TEST: LLM Usage Settings Disabled ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: createdRepo.id,
+        title: 'TEST: LLM usage settings disabled task',
+        status: 'draft',
+      });
+
+      await recordLlmUsage({
+        taskId: task.id,
+        runId: null,
+        callId: crypto.randomUUID(),
+        provider: 'openai',
+        model: 'gpt-test',
+        label: 'supervisor',
+        round: 1,
+        usage: {
+          inputTokens: 100,
+          outputTokens: 20,
+          cachedInputTokens: 10,
+          reasoningOutputTokens: 4,
+          totalTokens: 120,
+          mode: 'measured',
+          rawUsage: { prompt_tokens: 100, completion_tokens: 20 },
+        },
+        promptPartTokenEstimates: {
+          systemPromptTokens: 30,
+          userPromptTokens: 70,
+          stateCardTokens: 12,
+        },
+        durationMs: 42,
+      });
+
+      const res = await app.request(`http://localhost/api/tasks/${task.id}/llm-usage`, {
+        headers: sameOriginHeaders,
+      });
+
+      expect(res.status).toBe(200);
+      await expect(res.json()).resolves.toMatchObject({
+        taskId: task.id,
+        inputTokens: 100,
+        outputTokens: 20,
+        totalTokens: 120,
+        promptInputTokens: 0,
+        stateCardTokens: 0,
+        usageMode: 'measured',
+      });
+    } finally {
+      settingsSpy.mockRestore();
+    }
   });
 });

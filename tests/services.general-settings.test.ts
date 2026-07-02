@@ -78,6 +78,7 @@ describe('general-settings service', () => {
         lastRefreshedAt: '2026-06-10T12:00:00Z',
       });
       expect(settings.planMode).toEqual(DEFAULT_GENERAL_SETTINGS.planMode);
+      expect(settings.llmUsage).toEqual(DEFAULT_GENERAL_SETTINGS.llmUsage);
     });
 
     it('returns defaults if file contains invalid JSON', () => {
@@ -98,6 +99,9 @@ describe('general-settings service', () => {
           autoRefresh: true,
           lastRefreshedAt: null,
         },
+        llmUsage: {
+          promptPartObservabilityEnabled: false,
+        },
       };
       const result = writeGeneralSettings(input);
       expect(result).toEqual({
@@ -110,6 +114,20 @@ describe('general-settings service', () => {
         ...input,
         planMode: DEFAULT_GENERAL_SETTINGS.planMode,
       });
+    });
+  });
+
+  describe('normalizeGeneralSettings', () => {
+    it('defaults prompt part observability to enabled', () => {
+      const settings = normalizeGeneralSettings({});
+      expect(settings.llmUsage.promptPartObservabilityEnabled).toBe(true);
+    });
+
+    it('preserves disabled prompt part observability', () => {
+      const settings = normalizeGeneralSettings({
+        llmUsage: { promptPartObservabilityEnabled: false },
+      });
+      expect(settings.llmUsage.promptPartObservabilityEnabled).toBe(false);
     });
   });
 

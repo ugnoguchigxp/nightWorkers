@@ -1,6 +1,5 @@
 import {
   Activity,
-  BarChart3,
   CircleDollarSign,
   ClipboardCheck,
   Pencil,
@@ -97,12 +96,25 @@ const tableBorderStyle = {
   borderColor: 'var(--nw-border)',
 } satisfies React.CSSProperties;
 
-type UsageBucket = { label: string; tokens: number; cost: number };
-type ModelUsageRow = { model: string; role: string; calls: number; cost: string };
+type ModelUsageRow = {
+  model: string;
+  role: string;
+  calls: number;
+  tokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  reasoningOutputTokens: number;
+  cost: string;
+};
 type TopTokenTaskRow = {
   title: string;
   phase: string;
   tokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  reasoningOutputTokens: number;
   cost: string;
   sessionId?: string;
 };
@@ -136,11 +148,17 @@ type E2EResultRow = {
   lastFailure: string;
 };
 
-const usageBuckets: UsageBucket[] = [];
 const emptyMetrics: ProjectDetailMetrics = {
   runs: { total: 0, completed: 0, failed: 0 },
   llmUsage: {
     totalTokens: 0,
+    promptInputTokens: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedInputTokens: 0,
+    reasoningOutputTokens: 0,
+    stateCardTokens: 0,
+    callCount: 0,
     totalCost: null,
     averageTokensPerRun: null,
     averageCostPerRun: null,
@@ -201,6 +219,11 @@ export function ProjectDetailScreen({
         model: row.model || row.provider,
         role: row.provider,
         calls: row.calls,
+        tokens: row.tokens,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        cachedInputTokens: row.cachedInputTokens,
+        reasoningOutputTokens: row.reasoningOutputTokens,
         cost: row.cost === null ? '—' : `$${row.cost.toFixed(2)}`,
       })),
     [metrics.llmUsage.modelMix]
@@ -211,6 +234,10 @@ export function ProjectDetailScreen({
         title: task.title,
         phase: task.taskId.slice(0, 8),
         tokens: task.tokens,
+        inputTokens: task.inputTokens,
+        outputTokens: task.outputTokens,
+        cachedInputTokens: task.cachedInputTokens,
+        reasoningOutputTokens: task.reasoningOutputTokens,
         cost: task.cost === null ? '—' : `$${task.cost.toFixed(2)}`,
         sessionId: task.taskId,
       })),
@@ -251,10 +278,6 @@ export function ProjectDetailScreen({
     () => e2eRowsFromSummary(quality?.latestE2eRun?.e2eSummary),
     [quality?.latestE2eRun?.e2eSummary]
   );
-  const maxTokens =
-    usageBuckets.length > 0 ? Math.max(...usageBuckets.map((bucket) => bucket.tokens)) : 0;
-  const maxCost =
-    usageBuckets.length > 0 ? Math.max(...usageBuckets.map((bucket) => bucket.cost)) : 0;
 
   const loadProjectDetail = useCallback(async () => {
     const [metricsRes, goalsRes, candidatesRes, qualityRes] = await Promise.all([
@@ -358,18 +381,14 @@ export function ProjectDetailScreen({
               icon={<Activity className="h-4 w-4" />}
               title={t('projectDetail.metrics.title')}
             />
+            <TokenBreakdownBand metrics={metrics} />
             <div className="grid gap-4 xl:grid-cols-[1.45fr_0.75fr]">
               <div className="space-y-4">
-                <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <KpiTile
                     label={t('projectDetail.metrics.runs')}
                     value={totalRuns.toLocaleString()}
                     sub={t('projectDetail.metrics.completed', { count: completedCount })}
-                  />
-                  <KpiTile
-                    label={t('projectDetail.metrics.tokens')}
-                    value={metrics.llmUsage.totalTokens.toLocaleString()}
-                    sub="tokens"
                   />
                   <KpiTile
                     label={t('projectDetail.metrics.cost')}
@@ -392,86 +411,45 @@ export function ProjectDetailScreen({
                   />
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
-                  <div className="border p-4" style={panelStyle}>
-                    <SectionLabel
-                      icon={<BarChart3 className="h-4 w-4" />}
-                      title={t('projectDetail.metrics.sevenDayActivity')}
-                    />
-                    {usageBuckets.length > 0 ? (
-                      <div className="mt-4 flex h-44 items-end gap-2">
-                        {usageBuckets.map((bucket) => (
-                          <div
-                            key={bucket.label}
-                            className="flex min-w-0 flex-1 flex-col items-center gap-1"
-                          >
-                            <div className="flex h-36 w-full items-end gap-1">
-                              <div
-                                className="w-1/2 rounded-t"
-                                style={{
-                                  background: 'var(--nw-primary)',
-                                  height: `${Math.max(8, (bucket.tokens / maxTokens) * 136)}px`,
-                                }}
-                                title={`${bucket.tokens.toLocaleString()} tokens`}
-                              />
-                              <div
-                                className="w-1/2 rounded-t"
-                                style={{
-                                  background:
-                                    'color-mix(in srgb, var(--nw-warning) 78%, var(--nw-panel))',
-                                  height: `${Math.max(8, (bucket.cost / maxCost) * 136)}px`,
-                                }}
-                                title={`$${bucket.cost.toFixed(2)}`}
-                              />
-                            </div>
-                            <span className="truncate text-[10px]" style={subtleTextStyle}>
-                              {bucket.label}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <EmptyBlock message={t('projectDetail.empty.activity')} />
-                    )}
-                  </div>
-
-                  <div className="border p-4" style={panelStyle}>
-                    <SectionLabel
-                      icon={<CircleDollarSign className="h-4 w-4" />}
-                      title={t('projectDetail.metrics.modelMix')}
-                    />
-                    <div className="mt-3 overflow-hidden">
-                      <table className="w-full text-xs">
-                        <thead style={subtleTextStyle}>
-                          <tr>
-                            <th className="py-2 text-left">{t('projectDetail.field.model')}</th>
-                            <th className="py-2 text-right">{t('projectDetail.field.calls')}</th>
-                            <th className="py-2 text-right">{t('projectDetail.field.cost')}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {modelUsageRows.length > 0 ? (
-                            modelUsageRows.map((row) => (
-                              <tr key={row.model} className="border-t" style={tableBorderStyle}>
-                                <td className="max-w-[160px] py-2">
-                                  <div className="truncate font-semibold">{row.model}</div>
-                                  <div className="truncate text-[10px]" style={subtleTextStyle}>
-                                    {row.role}
-                                  </div>
-                                </td>
-                                <td className="py-2 text-right">{row.calls}</td>
-                                <td className="py-2 text-right">{row.cost}</td>
-                              </tr>
-                            ))
-                          ) : (
-                            <EmptyTableRow
-                              colSpan={3}
-                              message={t('projectDetail.empty.modelUsage')}
-                            />
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                <div className="border p-4" style={panelStyle}>
+                  <SectionLabel
+                    icon={<CircleDollarSign className="h-4 w-4" />}
+                    title={t('projectDetail.metrics.modelMix')}
+                  />
+                  <div className="mt-3 overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead style={subtleTextStyle}>
+                        <tr>
+                          <th className="py-2 text-left">{t('projectDetail.field.model')}</th>
+                          <th className="py-2 text-right">{t('projectDetail.field.calls')}</th>
+                          <th className="py-2 text-right">{t('projectDetail.field.tokens')}</th>
+                          <th className="py-2 text-right">{t('projectDetail.field.cost')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {modelUsageRows.length > 0 ? (
+                          modelUsageRows.map((row) => (
+                            <tr key={row.model} className="border-t" style={tableBorderStyle}>
+                              <td className="max-w-[160px] py-2">
+                                <div className="truncate font-semibold">{row.model}</div>
+                                <div className="truncate text-[10px]" style={subtleTextStyle}>
+                                  {row.role} · I/O {formatCompactTokens(row.inputTokens)} /{' '}
+                                  {formatCompactTokens(row.outputTokens)}
+                                </div>
+                              </td>
+                              <td className="py-2 text-right">{row.calls}</td>
+                              <td className="py-2 text-right">{formatCompactTokens(row.tokens)}</td>
+                              <td className="py-2 text-right">{row.cost}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <EmptyTableRow
+                            colSpan={4}
+                            message={t('projectDetail.empty.modelUsage')}
+                          />
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>
@@ -512,6 +490,10 @@ export function ProjectDetailScreen({
                               </span>
                               <span className="block truncate text-[10px]" style={subtleTextStyle}>
                                 {task.phase} / {task.cost}
+                              </span>
+                              <span className="block truncate text-[10px]" style={subtleTextStyle}>
+                                I/O {formatCompactTokens(task.inputTokens)} /{' '}
+                                {formatCompactTokens(task.outputTokens)}
                               </span>
                             </span>
                             <span className="shrink-0 text-right">
@@ -671,6 +653,58 @@ function KpiTile({ label, value, sub }: { label: string; value: string; sub: str
       <div className="mt-1 truncate text-[11px]" style={subtleTextStyle}>
         {sub}
       </div>
+    </div>
+  );
+}
+
+function TokenBreakdownBand({ metrics }: { metrics: ProjectDetailMetrics }) {
+  const { t } = useTranslation();
+  const items = [
+    {
+      key: 'input',
+      label: t('projectDetail.usage.input'),
+      value: metrics.llmUsage.inputTokens,
+    },
+    {
+      key: 'output',
+      label: t('projectDetail.usage.output'),
+      value: metrics.llmUsage.outputTokens,
+    },
+    {
+      key: 'cached',
+      label: t('projectDetail.usage.cachedInput'),
+      value: metrics.llmUsage.cachedInputTokens,
+    },
+    {
+      key: 'reasoning',
+      label: t('projectDetail.usage.reasoningOutput'),
+      value: metrics.llmUsage.reasoningOutputTokens,
+    },
+    {
+      key: 'state',
+      label: t('projectDetail.usage.stateCard'),
+      value: metrics.llmUsage.stateCardTokens,
+    },
+    {
+      key: 'prompt',
+      label: t('projectDetail.usage.promptParts'),
+      value: metrics.llmUsage.promptInputTokens,
+    },
+  ];
+
+  return (
+    <div
+      className="grid gap-2 border p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+      style={panelStyle}
+    >
+      {items.map((item) => (
+        <div key={item.key} className="min-w-0">
+          <div className="truncate text-[10px] font-semibold uppercase" style={subtleTextStyle}>
+            {item.label}
+          </div>
+          <div className="mt-1 truncate text-sm font-bold">{item.value.toLocaleString()}</div>
+        </div>
+      ))}
     </div>
   );
 }

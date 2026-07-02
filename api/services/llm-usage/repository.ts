@@ -2,6 +2,7 @@ import { desc, eq, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { llmUsageRecords } from '../../db/schema';
 import * as nightWorkersRepo from '../../modules/nightworkers/nightworkers.repository';
+import { readGeneralSettings } from '../settings/general-settings';
 import type { LlmPromptPartTokenEstimates, LlmUsageMode, NormalizedLlmUsage } from './types';
 
 export async function recordLlmUsage(input: {
@@ -14,11 +15,22 @@ export async function recordLlmUsage(input: {
   round?: 1 | 2 | null;
   usage: NormalizedLlmUsage;
   promptPartTokenEstimates?: LlmPromptPartTokenEstimates;
+  promptPartObservabilityEnabled?: boolean;
   durationMs: number;
   metadataJson?: Record<string, unknown>;
 }) {
-  const promptPartTokenEstimates = resolveStoredPromptPartTokenEstimates(input);
+  const promptPartObservabilityEnabled = resolvePromptPartObservabilityEnabled(
+    input.promptPartObservabilityEnabled
+  );
+  const promptPartTokenEstimates = resolveStoredPromptPartTokenEstimates({
+    promptPartObservabilityEnabled,
+    promptPartTokenEstimates: input.promptPartTokenEstimates,
+  });
   const usageMode = resolveStoredUsageMode(input.usage.mode, promptPartTokenEstimates);
+  const metadataJson = {
+    ...(input.metadataJson ?? {}),
+    promptPartObservabilityEnabled,
+  };
   const [record] = await db
     .insert(llmUsageRecords)
     .values({
@@ -41,7 +53,7 @@ export async function recordLlmUsage(input: {
       responseTokensEstimate: null,
       durationMs: Math.max(0, Math.floor(input.durationMs)),
       rawUsageJson: input.usage.rawUsage ?? null,
-      metadataJson: input.metadataJson ?? null,
+      metadataJson,
     })
     .returning();
 
@@ -67,7 +79,10 @@ export async function recordLlmUsage(input: {
         outputTokens: record.outputTokens,
         cachedInputTokens: record.cachedInputTokens,
         reasoningOutputTokens: record.reasoningOutputTokens,
+        systemPromptTokens: record.systemPromptTokens,
+        userPromptTokens: record.userPromptTokens,
         stateCardTokens: record.stateCardTokens,
+        promptPartObservabilityEnabled,
       },
     });
   }
@@ -155,11 +170,19 @@ function resolveStoredUsageMode(
   return usageMode;
 }
 
+function resolvePromptPartObservabilityEnabled(explicit: boolean | undefined) {
+  if (typeof explicit === 'boolean') return explicit;
+  try {
+    return readGeneralSettings().llmUsage.promptPartObservabilityEnabled;
+  } catch {
+    return true;
+  }
+}
+
 function resolveStoredPromptPartTokenEstimates(input: {
-  provider: string;
-  usage: NormalizedLlmUsage;
   promptPartTokenEstimates?: LlmPromptPartTokenEstimates;
+  promptPartObservabilityEnabled: boolean;
 }) {
-  if (input.provider === 'codex' && input.usage.mode === 'measured') return undefined;
+  if (!input.promptPartObservabilityEnabled) return undefined;
   return input.promptPartTokenEstimates;
 }

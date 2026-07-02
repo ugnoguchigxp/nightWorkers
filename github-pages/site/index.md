@@ -1,13 +1,13 @@
 ---
 layout: default
 title: NightWorkers | Local-first Autonomous Development Control Plane
-description: NightWorkers は、ローカル環境で自律開発セッションを制御し、実行証跡を記録するための開発コントロールプレーンです。
+description: NightWorkers は、ローカル環境で自律開発セッション、実行キュー、成果物、実行証跡を扱うための開発コントロールプレーンです。
 permalink: /
 image: /assets/img/og-image.jpg
 body_class: lp-body
 preload_hero: true
-twitter_image_alt: NightWorkers の開発コントロールプレーンを表すワークベンチのキービジュアル
-og_image_alt: NightWorkers の開発コントロールプレーンを表すワークベンチのキービジュアル
+twitter_image_alt: NightWorkers のローカル開発コントロールプレーンを表すワークベンチのキービジュアル
+og_image_alt: NightWorkers のローカル開発コントロールプレーンを表すワークベンチのキービジュアル
 ---
 
 <main class="lp">
@@ -28,20 +28,24 @@ og_image_alt: NightWorkers の開発コントロールプレーンを表すワ�
 
     <div class="shell hero-shell">
       <header class="topbar">
-        <a class="brand" href="{{ '/' | relative_url }}">NightWorkers</a>
-        <div class="chip">local-first / run evidence / workbench</div>
+        <a class="brand" href="{{ '/' | relative_url }}">
+          <img src="{{ '/assets/img/favicon.svg' | relative_url }}" alt="" width="32" height="32">
+          <span>NightWorkers</span>
+        </a>
+        <div class="chip">local-first / queue / evidence</div>
       </header>
 
       <div class="hero-copy">
         <p class="eyebrow">Autonomous Development Control Plane</p>
         <h1>
           自律開発を、<br>
-          実行証跡で<br>
-          制御する。
+          ローカルで<br>
+          運用する。
         </h1>
         <p class="lead">
-          NightWorkers は、プロジェクトごとの Session queue、supervisor-worker 実行、
-          run event ledger、diff・todo・test result を束ねるローカルファーストな開発コントロールプレーンです。
+          NightWorkers は、Project Folder ごとの Workbench Session、明示的な Implementation Queue、
+          supervisor-worker 実行、artifact review、run event ledger を束ねる
+          ローカルファーストな開発コントロールプレーンです。
         </p>
         <div class="hero-actions">
           <a class="btn btn-primary" href="https://github.com/ugnoguchigxp/nightWorkers">GitHubで見る</a>
@@ -50,9 +54,9 @@ og_image_alt: NightWorkers の開発コントロールプレーンを表すワ�
       </div>
 
       <div class="status-strip" aria-label="NightWorkers capability highlights">
-        <div><strong>Project + Session</strong><span>folder-scoped work queue</span></div>
-        <div><strong>Run Ledger</strong><span>events, diffs, todos, reports</span></div>
-        <div><strong>Blueprint Review</strong><span>preview, DB design, adoption</span></div>
+        <div><strong>Project Workbench</strong><span>chat, planning, artifacts, review</span></div>
+        <div><strong>Implementation Queue</strong><span>explicit admission, processor lanes</span></div>
+        <div><strong>Evidence Ledger</strong><span>events, diffs, todos, reports</span></div>
       </div>
     </div>
   </section>
@@ -61,12 +65,12 @@ og_image_alt: NightWorkers の開発コントロールプレーンを表すワ�
     <div class="shell section-grid">
       <div>
         <p class="section-kicker">Why NightWorkers</p>
-        <h2>エージェントの実行を、チャットの外側で運用する。</h2>
+        <h2>チャットの外側に、実行状態を残す。</h2>
       </div>
       <p class="section-lead">
-        長い自律開発では、何を依頼したかよりも、どの Session が走り、どこで止まり、
-        どんな証跡を残したかが重要になります。NightWorkers はその制御面をローカルに置き、
-        queue、run、artifact、review の状態を一つの Workbench で扱います。
+        長い自律開発では、会話ログだけでは運用できません。どの Project で、どの Session が動き、
+        何が Queue に入り、どの run が何を変更し、どんな証跡を残したかを追える必要があります。
+        NightWorkers はその制御面をローカルな Workbench に置きます。
       </p>
     </div>
   </section>
@@ -74,26 +78,59 @@ og_image_alt: NightWorkers の開発コントロールプレーンを表すワ�
   <section class="section">
     <div class="shell">
       <div class="section-heading">
-        <p class="section-kicker">Core Surfaces</p>
-        <h2>Workbench に必要な状態を、最初から分けて扱う。</h2>
+        <p class="section-kicker">Current Surfaces</p>
+        <h2>Project、Session、Queue、Run を別々の状態として扱う。</h2>
       </div>
       <div class="cards">
         <article class="card">
-          <h3>Session Queue</h3>
-          <p>Project Folder を起点に Session/Task を管理し、Draft、Ready、Queued、Processing を明確に分離します。</p>
+          <span class="card-icon icon-spec" aria-hidden="true"></span>
+          <h3>Project Workbench</h3>
+          <p>Project Folder ごとに Session を持ち、チャット、計画、実行、artifact review、timeline inspection を一つの場所で扱います。</p>
         </article>
         <article class="card">
+          <span class="card-icon icon-queue" aria-hidden="true"></span>
+          <h3>Implementation Queue</h3>
+          <p>通常の Session chat と自動化を分け、承認済みの実装作業だけを Processor lanes に流します。</p>
+        </article>
+        <article class="card">
+          <span class="card-icon icon-ledger" aria-hidden="true"></span>
           <h3>Run Evidence</h3>
-          <p>run events、todo、context output、diff、test result、final report を再接続可能な ledger として保持します。</p>
+          <p>run events、todo、tool outcome、diff、test result、final report を SQLite に残し、再接続後も追えるようにします。</p>
         </article>
         <article class="card">
-          <h3>Blueprint Review</h3>
-          <p>App Blueprint、DB Design、Design Token を artifact として表示し、採用判断を会話と紐づけます。</p>
+          <span class="card-icon icon-blueprint" aria-hidden="true"></span>
+          <h3>Artifacts</h3>
+          <p>Diff、App Blueprint、Blueprint Preview、Data Model、Spec などを Session の判断材料として表示します。</p>
         </article>
         <article class="card">
+          <span class="card-icon icon-settings" aria-hidden="true"></span>
           <h3>Runtime Settings</h3>
-          <p>LLM provider、MCP Server、Agent Hooks、queue concurrency を UI から調整し、実行面に反映します。</p>
+          <p>LLM providers、MCP servers、Agent Hooks、Todo Workflow gates、appearance をローカル設定として管理します。</p>
         </article>
+        <article class="card">
+          <span class="card-icon icon-desktop" aria-hidden="true"></span>
+          <h3>Desktop Runtime</h3>
+          <p>Tauri shell が frontend と Node sidecar を起動し、runtime state と logs をローカルに保持します。</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-spec">
+    <div class="shell spec-grid">
+      <div class="section-heading">
+        <p class="section-kicker">Operating Model</p>
+        <h2>実行は runner 任せにせず、ローカルな状態遷移として扱う。</h2>
+        <p class="section-copy">
+          NightWorkers は、会話、キュー投入、実行、証跡、成果物、設定を一つの永続状態に寄せます。
+          Workbench で話した内容と、Queue で走った automation と、run が残した evidence を混ぜずに追えます。
+        </p>
+      </div>
+      <div class="spec-stack" aria-label="NightWorkers operating model">
+        <div class="spec-node active"><span class="icon-dot"></span><strong>Project + Session</strong><em>repo root と会話の作業単位</em></div>
+        <div class="spec-node active"><span class="icon-dot"></span><strong>Queue Admission</strong><em>承認済み automation の入口</em></div>
+        <div class="spec-node active"><span class="icon-dot"></span><strong>Worker Run</strong><em>tool calls、todo、verification</em></div>
+        <div class="spec-node output"><span class="icon-dot"></span><strong>Evidence + Artifacts</strong><em>diff、reports、Blueprint、Spec、Data Model</em></div>
       </div>
     </div>
   </section>
@@ -102,14 +139,14 @@ og_image_alt: NightWorkers の開発コントロールプレーンを表すワ�
     <div class="shell">
       <div class="section-heading">
         <p class="section-kicker">Execution Loop</p>
-        <h2>依頼から証跡までを、一つの流れで追う。</h2>
+        <h2>依頼からレビューまでを、証跡つきで追う。</h2>
       </div>
       <div class="flow">
         <article class="flow-step"><span>01</span><p>Project Folder を登録</p></article>
-        <article class="flow-step"><span>02</span><p>Workbench で Session を作成</p></article>
-        <article class="flow-step"><span>03</span><p>Queue を Play / Pause</p></article>
-        <article class="flow-step"><span>04</span><p>supervisor-worker 実行を記録</p></article>
-        <article class="flow-step"><span>05</span><p>artifact と run evidence を確認</p></article>
+        <article class="flow-step"><span>02</span><p>Workbench Session で相談・計画・直接依頼</p></article>
+        <article class="flow-step"><span>03</span><p>必要な作業を Queue に明示投入</p></article>
+        <article class="flow-step"><span>04</span><p>supervisor-worker run を実行</p></article>
+        <article class="flow-step"><span>05</span><p>artifact、diff、test、final report を確認</p></article>
       </div>
     </div>
   </section>
@@ -118,26 +155,47 @@ og_image_alt: NightWorkers の開発コントロールプレーンを表すワ�
     <div class="shell">
       <div class="section-heading">
         <p class="section-kicker">Boundary</p>
-        <h2>NightWorkers は runner ではなく、制御面です。</h2>
+        <h2>NightWorkers は、チャット UI でも万能 runner でもない。</h2>
       </div>
       <div class="compare">
         <article class="compare-box">
-          <h3>Typical Chat Agent UI</h3>
+          <h3>Available now</h3>
           <ul>
-            <li>会話ログが実行状態の代わりになる</li>
-            <li>queue と todo が混ざりやすい</li>
-            <li>再接続時に run outcome を追いにくい</li>
+            <li>Project Folder と Workbench Session の永続管理</li>
+            <li>Implementation Queue、Processor lanes、Todo gates</li>
+            <li>Run timeline、artifact pane、provider / MCP / hooks settings</li>
           </ul>
         </article>
         <article class="compare-box active">
-          <h3>NightWorkers</h3>
+          <h3>Current limits</h3>
           <ul>
-            <li>Project / Session / run event を永続化</li>
-            <li>queue はユーザー操作、todo は run 内部状態として分離</li>
-            <li>証跡を Workbench と API から再確認できる</li>
+            <li>PR 作成、merge、deploy は自動化しない</li>
+            <li>並列 multi-agent orchestration ではない</li>
+            <li>外部 memory service や hosted demo を前提にしない</li>
           </ul>
         </article>
       </div>
+    </div>
+  </section>
+
+  <section class="section section-roadmap">
+    <div class="shell">
+      <div class="section-heading">
+        <p class="section-kicker">Next Concept</p>
+        <h2>大きな目的を、評価できる作業構造へ分解する。</h2>
+      </div>
+      <div class="pills" aria-label="Future design view concepts">
+        <span>mission pilot</span>
+        <span>task graph</span>
+        <span>work packages</span>
+        <span>review findings</span>
+        <span>proposed goals</span>
+        <span>proposal adoption</span>
+      </div>
+      <p class="roadmap-note">
+        まだ実装済みの主機能としては扱いません。今後は、広いゴールを Mission、Objective、
+        Work Package、Task、Verification Gate に分解し、review evidence から次の候補作業へつなぐ方向を検討しています。
+      </p>
     </div>
   </section>
 
@@ -147,7 +205,7 @@ og_image_alt: NightWorkers の開発コントロールプレーンを表すワ�
         <p class="section-kicker">Local-first by design</p>
         <h2>自律開発を、運用できる単位に戻す。</h2>
         <p>
-          NightWorkers は、ローカル環境で実行制御と証跡確認を担うための control plane です。
+          NightWorkers は、Project、Session、Queue、Run、Artifact、Settings をローカルで扱う control plane です。
         </p>
         <a class="btn btn-primary" href="https://github.com/ugnoguchigxp/nightWorkers">GitHub プロジェクトを見る</a>
       </div>
