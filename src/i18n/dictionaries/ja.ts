@@ -426,6 +426,7 @@ export const jaDictionary = {
   'blueprint.preview.sectionsCount': '{{count}} sections',
   'blueprint.preview.design': 'Design token',
   'blueprint.preview.designTokens': 'Design token',
+  'blueprint.preview.seeMeta': 'see meta',
   'blueprint.preview.adopted': 'Adopted',
   'blueprint.preview.notAdopted': 'Not adopted',
   'blueprint.preview.kpi.primarySignal': '主要シグナル',
@@ -463,6 +464,10 @@ export const jaDictionary = {
   'blueprint.designSettings.description':
     'Preview は specification-review mock です。選択した token は後続の implementation plan に添付できます。',
   'blueprint.designSettings.implementationPlanAttachment': 'Implementation-plan attachment',
+  'blueprint.meta.title': 'Mock Blueprint meta',
+  'blueprint.meta.description': 'Generator が記録した section selection と intent です。',
+  'blueprint.meta.intent': 'intent',
+  'blueprint.meta.selectedSections': 'selectedSections',
   'timeline.unknownActivity': 'unknown.activity',
   'timeline.todoProgress': 'Todo progress',
   'timeline.thinking': 'AI が返答を生成中です',

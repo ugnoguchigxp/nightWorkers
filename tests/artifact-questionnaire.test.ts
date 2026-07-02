@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildSubmittableQuestionnaireAnswers,
   getAnswerProgress,
+  getQuestionnaireSubmissionState,
   getUnansweredQuestions,
 } from '../src/modules/planMode';
 
@@ -74,5 +75,51 @@ describe('ArtifactQuestionnaire answer progress', () => {
     expect(getUnansweredQuestions(questionGroups, answers).map((question) => question.id)).toEqual([
       'q1',
     ]);
+  });
+
+  it('locks the submit action after a questionnaire is completed', () => {
+    expect(
+      getQuestionnaireSubmissionState({
+        unansweredCount: 0,
+        isCompleted: true,
+        isImplementationLocked: false,
+        isCapabilityEnabled: true,
+      })
+    ).toEqual({
+      disabled: true,
+      icon: undefined,
+      label: '回答済み',
+      readOnly: true,
+      state: 'completed',
+    });
+  });
+
+  it('keeps the submit action enabled only for ready unanswered-free drafts', () => {
+    expect(
+      getQuestionnaireSubmissionState({
+        unansweredCount: 0,
+        isCompleted: false,
+        isImplementationLocked: false,
+        isCapabilityEnabled: true,
+      })
+    ).toMatchObject({
+      disabled: false,
+      icon: 'send',
+      label: '回答を送信して次へ',
+      readOnly: false,
+      state: 'ready',
+    });
+    expect(
+      getQuestionnaireSubmissionState({
+        unansweredCount: 2,
+        isCompleted: false,
+        isImplementationLocked: false,
+        isCapabilityEnabled: true,
+      })
+    ).toMatchObject({
+      disabled: true,
+      label: '未回答 2件',
+      state: 'incomplete',
+    });
   });
 });

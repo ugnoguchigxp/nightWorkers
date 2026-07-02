@@ -219,6 +219,7 @@ function normalizeMockBlueprintCandidate(candidate: unknown): unknown {
   }
   if (!isRecord(candidate)) return candidate;
   const blueprint = { ...candidate };
+  blueprint.id = normalizeMockBlueprintId(blueprint.id, 'mock_blueprint');
   if (Array.isArray(blueprint.screens)) {
     blueprint.screens = normalizeMockBlueprintScreens(blueprint.screens);
   }
@@ -245,6 +246,7 @@ function normalizeMockBlueprintScreens(screens: unknown[]): unknown[] {
 function normalizeMockBlueprintScreen(screen: unknown): unknown {
   if (!isRecord(screen)) return screen;
   const screenRecord = { ...screen };
+  screenRecord.id = normalizeMockBlueprintId(screenRecord.id, 'screen');
   if (Array.isArray(screenRecord.sections)) {
     screenRecord.sections = screenRecord.sections.map(normalizeMockBlueprintSection);
   }
@@ -254,6 +256,7 @@ function normalizeMockBlueprintScreen(screen: unknown): unknown {
 function normalizeMockBlueprintSection(section: unknown): unknown {
   if (!isRecord(section)) return section;
   const sectionRecord = { ...section };
+  sectionRecord.id = normalizeMockBlueprintId(sectionRecord.id, 'section');
   sectionRecord.copy = normalizeMockBlueprintCopy(sectionRecord.copy, sectionRecord);
   sectionRecord.dataset = normalizeMockBlueprintDataset(sectionRecord.dataset, sectionRecord);
   return sectionRecord;
@@ -402,9 +405,9 @@ function normalizeMockBlueprintDataset(
       return {
         kind: 'article',
         title: stringValue(dataset.title || dataset.label, sample.title),
-        body: stringValue(
-          dataset.body || dataset.content || dataset.description,
-          sample.description
+        body: ensureArticleBodyLength(
+          stringValue(dataset.body || dataset.content || dataset.description, sample.description),
+          sample
         ),
         ...(articleMeta(dataset).length > 0 ? { meta: articleMeta(dataset) } : {}),
       };
@@ -520,26 +523,27 @@ function normalizeMockBlueprintMeta(meta: unknown, blueprint: Record<string, unk
         selectionReason: string;
       } => Boolean(section)
     );
-  const selectedSections = mergeSelectedSections(
-    explicitSections,
-    sections
-      .map((section) => {
-        const sectionType = normalizeRenderableSectionName(section.componentName);
-        if (!sectionType) return null;
-        return {
-          sectionType,
-          selectionReason: stringValue(section.selectionReason, 'Selected for the product mockup.'),
-        };
-      })
-      .filter(
-        (
-          section
-        ): section is {
-          sectionType: RenderableMockBlueprintSectionName;
-          selectionReason: string;
-        } => Boolean(section)
-      )
-  );
+  const selectedSections = sections
+    .map((section) => {
+      const sectionType = normalizeRenderableSectionName(section.componentName);
+      if (!sectionType) return null;
+      const explicitSection = explicitSections.find((item) => item.sectionType === sectionType);
+      return {
+        sectionType,
+        selectionReason: stringValue(
+          explicitSection?.selectionReason || section.selectionReason,
+          'Selected for the product mockup.'
+        ),
+      };
+    })
+    .filter(
+      (
+        section
+      ): section is {
+        sectionType: RenderableMockBlueprintSectionName;
+        selectionReason: string;
+      } => Boolean(section)
+    );
   return {
     intent: stringValue(
       metaRecord.intent || blueprint.summary || blueprint.name,
@@ -555,24 +559,6 @@ function normalizeMockBlueprintMeta(meta: unknown, blueprint: Record<string, unk
             },
           ],
   };
-}
-
-function mergeSelectedSections(
-  explicitSections: Array<{
-    sectionType: RenderableMockBlueprintSectionName;
-    selectionReason: string;
-  }>,
-  sectionSelections: Array<{
-    sectionType: RenderableMockBlueprintSectionName;
-    selectionReason: string;
-  }>
-) {
-  const merged = [...explicitSections];
-  for (const section of sectionSelections) {
-    if (merged.some((item) => item.sectionType === section.sectionType)) continue;
-    merged.push(section);
-  }
-  return merged;
 }
 
 function normalizeDatasetKind(
@@ -633,6 +619,18 @@ function fallbackTableRow(
   );
 }
 
+function ensureArticleBodyLength(body: string, sample: { title: string; description: string }) {
+  if (body.trim().length >= 180) return body;
+  return [
+    body,
+    `${sample.title} では、ユーザーが内容を読みながら状況を判断できるように、背景、現在の状態、次に取れる行動を同じ画面で確認できます。`,
+    `この mock data は実装メモではなく、実際の利用画面に表示される本文として、投稿内容、補足説明、確認したいポイントを含めています。`,
+    '読み手が一覧から詳細へ移動したあとに、本文だけで判断を続けられるよう、具体的な説明文を十分に持たせます。',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
 function normalizeTableRow(row: unknown) {
   if (!isRecord(row)) return {};
   return Object.fromEntries(
@@ -664,6 +662,10 @@ function stableMockKey(value: unknown) {
     .replace(/[^A-Za-z0-9_-]+/g, '_')
     .replace(/^_+|_+$/g, '');
   return /^[A-Za-z][A-Za-z0-9_-]*$/.test(key) ? key : `item_${key || '1'}`;
+}
+
+function normalizeMockBlueprintId(value: unknown, fallback: string) {
+  return stableMockKey(value || fallback);
 }
 
 function scalarValue(value: unknown, fallback: string) {

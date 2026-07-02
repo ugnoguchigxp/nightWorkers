@@ -12,6 +12,7 @@ import {
   buildVisiblePlanWorkspaceTabs,
   getPlanWorkspaceTabLabel,
   PlanModeWorkspaceViewer,
+  resolveInitialPlanWorkspaceTabUpdate,
   WorkspaceBlueprintPreview,
 } from '../src/modules/planMode';
 import { selectPlanModeWorkspaceMessages } from '../src/modules/specification';
@@ -165,6 +166,12 @@ describe('PlanModeWorkspaceViewer', () => {
     expect(markup).not.toContain('>Status</button>');
     expect(markup).not.toContain('>spec</button>');
   });
+
+  it('does not reapply the Questionnaire initial tab after the gate unlocks', () => {
+    expect(resolveInitialPlanWorkspaceTabUpdate('questionnaire', true)).toBe('questionnaire');
+    expect(resolveInitialPlanWorkspaceTabUpdate('questionnaire', false)).toBeNull();
+    expect(resolveInitialPlanWorkspaceTabUpdate('status', false)).toBe('status');
+  });
 });
 
 describe('WorkspaceBlueprintPreview', () => {
@@ -187,6 +194,9 @@ describe('WorkspaceBlueprintPreview', () => {
     );
 
     expect(markup).toContain('data-blueprint-preview="true"');
+    expect(markup).toMatch(/see meta|blueprint\.preview\.seeMeta/);
+    expect(markup).not.toContain('Blueprint:');
+    expect(markup).not.toContain('Not adopted');
     expect(markup).not.toContain('No Blueprint artifact.');
     expect(markup).not.toContain('Mock Blueprint Summary');
   });

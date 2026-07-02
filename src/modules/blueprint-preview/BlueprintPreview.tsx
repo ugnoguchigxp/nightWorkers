@@ -1,4 +1,4 @@
-import { CheckCircle2, Palette, SlidersHorizontal, XCircle } from 'lucide-react';
+import { CheckCircle2, Info, Palette, SlidersHorizontal, XCircle } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -50,11 +50,7 @@ export function BlueprintPreview({
   );
   const [settings, setSettings] = useState<BlueprintPreviewDesignSettings>(initialSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const blueprintAdoption = useBlueprintAdoption({
-    sessionId,
-    messageId,
-    kind: 'blueprint',
-  });
+  const [metaOpen, setMetaOpen] = useState(false);
   const designTokenAdoption = useBlueprintAdoption({
     sessionId,
     messageId,
@@ -87,6 +83,7 @@ export function BlueprintPreview({
     if (previousBlueprintId.current === blueprintId) return;
     previousBlueprintId.current = blueprintId;
     setSettingsOpen(false);
+    setMetaOpen(false);
   }, [blueprintId]);
 
   const designReference = useMemo(
@@ -131,6 +128,7 @@ export function BlueprintPreview({
   const sections = toObjectArray(firstScreen?.sections);
   const screenLayout = resolveScreenLayout(firstScreen);
   const arrangedSections = arrangeSectionsByRegion(sections);
+  const meta = getBlueprintMetaDebugData(blueprint.meta, displayedSections(arrangedSections));
 
   return (
     <div
@@ -150,12 +148,17 @@ export function BlueprintPreview({
       data-input-variant={settings.componentVariants.input}
     >
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <AdoptionToggle
-          label={t('blueprint.preview.blueprint')}
-          adopted={blueprintAdoption.adopted}
-          disabled={!blueprintAdoption.enabled || blueprintAdoption.saving}
-          onToggle={blueprintAdoption.toggle}
-        />
+        {meta ? (
+          <PreviewActionButton
+            aria-expanded={metaOpen}
+            aria-controls="blueprint-meta-panel"
+            tone={metaOpen ? 'primary' : 'secondary'}
+            onClick={() => setMetaOpen((open) => !open)}
+          >
+            <Info className="h-3.5 w-3.5" />
+            {t('blueprint.preview.seeMeta')}
+          </PreviewActionButton>
+        ) : null}
         <div className="rounded-full border border-border bg-card px-3 py-1 text-[11px] text-muted-foreground">
           {t('blueprint.preview.sectionsCount', { count: sections.length })}
         </div>
@@ -169,6 +172,8 @@ export function BlueprintPreview({
           {t('blueprint.preview.design')}
         </PreviewActionButton>
       </div>
+
+      {metaOpen && meta ? <BlueprintMetaPanel id="blueprint-meta-panel" meta={meta} /> : null}
 
       {settingsOpen ? (
         <DesignSettingsPanel
@@ -189,6 +194,94 @@ export function BlueprintPreview({
 
       <BlueprintScreenSectionLayout layout={screenLayout} sections={arrangedSections} />
     </div>
+  );
+}
+
+type BlueprintMetaDebugData = {
+  intent: string;
+  selectedSections: Array<{ sectionType: string; selectionReason: string }>;
+};
+
+export function getBlueprintMetaDebugData(
+  value: unknown,
+  displayedScreenSections?: Array<Record<string, unknown>>
+): BlueprintMetaDebugData | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const intent = typeof record.intent === 'string' ? record.intent.trim() : '';
+  const rootSelectedSections = Array.isArray(record.selectedSections)
+    ? record.selectedSections
+        .filter((section): section is Record<string, unknown> =>
+          Boolean(section && typeof section === 'object' && !Array.isArray(section))
+        )
+        .map((section) => ({
+          sectionType: String(section.sectionType || ''),
+          selectionReason: String(section.selectionReason || ''),
+        }))
+        .filter((section) => section.sectionType && section.selectionReason)
+    : [];
+  const selectedSections =
+    displayedScreenSections && displayedScreenSections.length > 0
+      ? displayedScreenSections
+          .map((section) => {
+            const sectionType = String(section.componentName || '');
+            if (!sectionType) return null;
+            const rootSection = rootSelectedSections.find(
+              (item) => item.sectionType === sectionType
+            );
+            const selectionReason = String(
+              rootSection?.selectionReason || section.intent || ''
+            ).trim();
+            if (!selectionReason) return null;
+            return { sectionType, selectionReason };
+          })
+          .filter(
+            (
+              section
+            ): section is {
+              sectionType: string;
+              selectionReason: string;
+            } => Boolean(section)
+          )
+      : rootSelectedSections;
+  return intent && selectedSections.length > 0 ? { intent, selectedSections } : null;
+}
+
+function BlueprintMetaPanel({ id, meta }: { id: string; meta: BlueprintMetaDebugData }) {
+  const { t } = useTranslation();
+  return (
+    <PreviewCard id={id} className="rounded-lg p-3 text-xs">
+      <div className="mb-3 flex items-start gap-2 text-muted-foreground">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+        <div className="min-w-0">
+          <div className="font-semibold text-foreground">{t('blueprint.meta.title')}</div>
+          <div className="mt-1 leading-5">{t('blueprint.meta.description')}</div>
+        </div>
+      </div>
+      <div className="grid gap-2">
+        <SettingsGroup title={t('blueprint.meta.intent')} summary="intent">
+          <p className="leading-5 text-foreground">{meta.intent}</p>
+        </SettingsGroup>
+        <SettingsGroup
+          title={t('blueprint.meta.selectedSections')}
+          summary={`${meta.selectedSections.length}`}
+        >
+          <div className="grid gap-2">
+            {meta.selectedSections.map((section, index) => (
+              <div
+                key={`${section.sectionType}-${index}`}
+                className="rounded border border-border bg-background p-2"
+              >
+                <div className="font-mono text-[11px] font-semibold text-foreground">
+                  {section.sectionType}
+                </div>
+                <p className="mt-1 leading-5 text-muted-foreground">{section.selectionReason}</p>
+              </div>
+            ))}
+          </div>
+        </SettingsGroup>
+      </div>
+    </PreviewCard>
   );
 }
 
@@ -286,6 +379,17 @@ function arrangeSectionsByRegion(
     arranged[sectionRegion(section)].push(section);
   }
   return arranged;
+}
+
+function displayedSections(sections: ArrangedBlueprintSections) {
+  return [
+    ...sections.header,
+    ...sections.full_width,
+    ...sections.sidebar,
+    ...sections.main,
+    ...sections.aside,
+    ...sections.footer,
+  ];
 }
 
 function sectionRegion(section: Record<string, unknown>): BlueprintSectionRegion {

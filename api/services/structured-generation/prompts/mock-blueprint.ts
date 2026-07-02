@@ -8,7 +8,7 @@ import {
   renderableMockBlueprintSectionNames,
 } from '../../../../shared/schemas/mock-blueprint.schema';
 
-export const MOCK_BLUEPRINT_PROMPT_VERSION = 'mock-blueprint-v2';
+export const MOCK_BLUEPRINT_PROMPT_VERSION = 'mock-blueprint-v3';
 
 type SectionCatalogEntry = {
   componentName: RenderableMockBlueprintSectionName;
@@ -45,18 +45,25 @@ export function buildMockBlueprintSystemPrompt(input: {
     '- dataset.kind は、その Section に許可された kind だけを使う。',
     '- 通常は 1-3 screens、screen ごとに 1-6 sections に抑える。',
     '- Mock は「実装後にユーザーが触るプロダクト画面」を描く。仕様書（Spec）、仕様確認、進行メモ、実装手順、決定事項サマリー、確認用ノートを画面化しない。',
+    '- 技術スタック、保存先、認証方針、実装範囲、ライブラリ、DB 種別、開発方針は制約としてだけ使う。これらを CardGridSection / BlogPostSection / DataTableSection の表示データにしない。',
+    '- Questionnaire / Decisions に明示された方針は、meta.intent、screen.purpose、section.selectionReason、section.copy、dataset に反映する。特に thread、投稿、編集、削除、返信なし、認証不要などの決定は無視しない。',
+    '- meta.intent は「何の実装前確認か」ではなく、作るプロダクト画面そのものの目的を書く。例: thread ベースの投稿画面で、投稿一覧、本文詳細、作成、編集、削除を確認する、のように主要 entity と workflow を含める。',
+    '- meta.selectedSections は実際の screens[].sections[] と同じ順序、同じ sectionType で記録する。実画面に出さない候補や不採用 section は selectedSections に入れない。',
     '- 依頼文から主要ユーザー、主要エンティティ、主要ワークフロー、最も確認したい状態を読み取り、それに必要な Section を選ぶ。',
     '- Section は用途で選ぶ。レコード一覧や比較は DataTableSection、作成・編集は FormSection、本文や詳細閲覧は BlogPostSection、会話やコメントは ChatPanelSection、状態遷移は KanbanSection、操作・設定は ControlPanelSection、グローバル導線は TopMenuSection / TabNavigationSection / FooterNavigationSection を使う。',
     '- ControlPanelSection や Display controls は、表示モード切替、運用スイッチ、設定、フィルタ操作そのものが画面の主目的の場合だけ使う。',
     '- 分析、KPI、レポート、監視が主目的ではない依頼では、AnalyticsDashboardSection / ChartSection を埋め草として追加しない。',
-    '- CRUD / list workflow は、多くの場合 DataTableSection と FormSection の組み合わせが自然です。会話、投稿、コメント系 workflow は、一覧、詳細本文、作成入力、会話表示の用途に合わせて選ぶ。ただしこれはガイドであり、固定の画面計画ではありません。',
-    '- CardGridSection / TimelineSection は、対象プロダクト自体がカード閲覧や時系列活動を中心にする場合だけ使う。仕様項目、実装工程、決定事項の要約には使わない。',
+    '- CRUD / list workflow は、多くの場合 DataTableSection と FormSection の組み合わせが自然です。thread / 投稿 / 掲示板系 workflow は、一覧は DataTableSection、本文詳細は BlogPostSection、作成・編集は FormSection、返信やコメント表示が仕様に含まれる場合だけ ChatPanelSection を使う。',
+    '- TabNavigationSection は、ユーザーが同格の複数 view や mode を切り替えること自体が必要な画面だけで使う。投稿一覧、新規投稿、詳細、編集、削除の通常導線は TopMenuSection、表の操作、フォーム、行アクションで表現し、タブを追加しない。',
+    '- CardGridSection / TimelineSection は、対象プロダクト自体がカード閲覧や時系列活動を中心にする場合だけ使う。小規模掲示板、thread CRUD、投稿一覧、仕様項目、実装工程、決定事項の要約には使わない。',
     '- screen.layout.template は通常 single_column を使う。two_column / three_column / sidebar_left / sidebar_right / article_with_sidebar は、sidebar / aside に置く Section が必要な場合だけ使う。',
     '- 左右横の side column に置いてよいのは、SidebarMenuSection / LeftSidebarSection / ExplorerSidebarSection / RightSidebarLinksSection、または componentName / name / id に sidebar / サイドバー / サイドメニューを含む Section だけ。該当しない通常コンテンツ、カード、フォーム、表、記事、指標、optional view は main / full_width に置き、横並びにしない。',
     '- RightSidebarLinksSection / LeftSidebarSection は、画面に独立した補助カラムが明示的に必要な場合だけ使う。通常の関連リンクやページ遷移は TopMenuSection / TabNavigationSection / FooterNavigationSection / SidebarMenuSection で表現する。',
     '- ads、sponsored、newsletter などの汎用 placeholder は依頼に明示されていない限り dataset や copy に入れない。',
     '- landing、article、media、campaign が明示されていない場合、hero/media 系を主役にしない。',
     '- section.copy と dataset の文言は、依頼テーマ、業務、利用者、画面の用途に合わせる。',
+    '- BlogPostSection を使う場合、dataset.body は実際にユーザーが読む本文として十分な量にする。掲示板や記事の本文なら 180 文字以上を目安にし、技術方針や実装メモの短文にしない。',
+    '- CardGridSection を使う場合、cards は product item、投稿カテゴリ、スレッド、ユーザーが選ぶ対象などに限定する。Spec の決定事項や技術要素をカード化しない。',
     '- DB schema、data binding、API contract、Zod schema、implementation task、CSS、HTML、任意 component tree は生成しない。',
     '',
     '[Section Catalog]',
@@ -81,6 +88,7 @@ export function buildMockBlueprintUserPrompt(input: {
     '生成する screens は、作ろうとしているアプリそのものの画面です。',
     'Plan Mode、仕様書（Spec）、仕様レビュー、進行管理、確認メモを表示する NightWorkers 内部画面にはしないでください。',
     'サンプルデータは task domain の実データ風に作り、仕様項目や実装工程をデータ化しないでください。',
+    '技術スタック、保存先、認証方針、実装範囲などは制約であり、画面上のカードや本文として表示しないでください。',
     '',
     '## Task',
     `Task ID: ${input.task.id}`,

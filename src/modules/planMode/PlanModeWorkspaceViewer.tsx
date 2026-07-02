@@ -29,6 +29,7 @@ import {
   buildSubmittableQuestionnaireAnswers,
   getAnswerProgress,
   getQuestionCount,
+  getQuestionnaireSubmissionState,
   getUnansweredQuestions,
   QuestionnaireForm,
 } from './PlanModeQuestionnaire';
@@ -76,6 +77,15 @@ const tabLabels: Record<PlanWorkspaceTab, string> = {
 
 export function getPlanWorkspaceTabLabel(tab: PlanWorkspaceTab) {
   return tabLabels[tab];
+}
+
+export function resolveInitialPlanWorkspaceTabUpdate(
+  initialTab: PlanWorkspaceTab | undefined,
+  questionnaireGateLocked: boolean
+): PlanWorkspaceTab | null {
+  if (!initialTab) return null;
+  if (questionnaireGateLocked) return 'questionnaire';
+  return initialTab === 'questionnaire' ? null : initialTab;
 }
 
 type PlanModeCapabilities = ReturnType<typeof getPlanModeCapabilities>;
@@ -242,8 +252,8 @@ export function PlanModeWorkspaceViewer({
   }, []);
 
   useEffect(() => {
-    if (!initialTab) return;
-    setActiveTab(questionnaireGateLocked ? 'questionnaire' : initialTab);
+    const nextTab = resolveInitialPlanWorkspaceTabUpdate(initialTab, questionnaireGateLocked);
+    if (nextTab) setActiveTab(nextTab);
   }, [initialTab, questionnaireGateLocked]);
 
   useEffect(() => {
@@ -276,6 +286,15 @@ export function PlanModeWorkspaceViewer({
       activeQuestionnaireSession.status === 'accepted')
       ? activeQuestionnaireSession
       : null;
+  const isActiveQuestionnaireComplete = Boolean(
+    activeQuestionnaireSession && isCompletedQuestionnaireSession(activeQuestionnaireSession)
+  );
+  const questionnaireSubmissionState = getQuestionnaireSubmissionState({
+    unansweredCount: unansweredQuestions.length,
+    isCompleted: isActiveQuestionnaireComplete,
+    isImplementationLocked,
+    isCapabilityEnabled: planModeCapabilities.questionnaire,
+  });
 
   async function runAction(action: string, fn: () => Promise<void>) {
     setBusyAction(action);
@@ -315,6 +334,10 @@ export function PlanModeWorkspaceViewer({
 
   async function submitAnswersForNextStep() {
     if (!sessionId || !activeQuestionnaireSession) return;
+    if (isCompletedQuestionnaireSession(activeQuestionnaireSession)) {
+      setActiveTab('status');
+      return;
+    }
     if (unansweredQuestions.length > 0) return;
     if (isImplementationLocked) return;
     await runAction('submit-answers', async () => {
@@ -334,7 +357,7 @@ export function PlanModeWorkspaceViewer({
       setAnswers(
         Object.fromEntries(updatedSession.answers.map((item) => [item.questionId, item.answer]))
       );
-      if (updatedSession.status === 'review_ready') {
+      if (isCompletedQuestionnaireSession(updatedSession)) {
         setAssemblyReadySessionIds((prev) => new Set([...prev, updatedSession.id]));
         setActiveTab('status');
       }
@@ -521,30 +544,20 @@ export function PlanModeWorkspaceViewer({
                   questionGroups={questionGroups}
                   answers={answers}
                   onChange={setAnswers}
-                  readOnly={isImplementationLocked}
+                  readOnly={questionnaireSubmissionState.readOnly}
                 />
                 <div className="flex flex-wrap items-center gap-2">
                   <ActionButton
-                    label={
-                      unansweredQuestions.length > 0
-                        ? `未回答 ${unansweredQuestions.length}件`
-                        : '回答を送信して次へ'
-                    }
-                    icon="send"
+                    label={questionnaireSubmissionState.label}
+                    icon={questionnaireSubmissionState.icon}
                     busy={busyAction === 'submit-answers'}
-                    disabled={
-                      unansweredQuestions.length > 0 ||
-                      isImplementationLocked ||
-                      !planModeCapabilities.questionnaire
-                    }
+                    disabled={questionnaireSubmissionState.disabled}
                     onClick={submitAnswersForNextStep}
                   />
                   <span
                     className="text-[11px] text-slate-500"
                     aria-live="polite"
-                    data-questionnaire-state={
-                      answerProgress.unansweredCount > 0 ? 'incomplete' : 'ready'
-                    }
+                    data-questionnaire-state={questionnaireSubmissionState.state}
                   >
                     {answerProgress.answeredCount}/{answerProgress.totalCount} 回答済み
                   </span>

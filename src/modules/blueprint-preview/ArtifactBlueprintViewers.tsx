@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BlueprintPreview } from './BlueprintPreview';
 
@@ -19,8 +19,6 @@ export function BlueprintArtifactViewer({
   const screens = toObjectArray(blueprint.screens);
   const issues = isObject(validation) ? toObjectArray(validation.issues) : [];
   const llmUsage = getLlmUsageSnapshot(generation);
-  const meta = getBlueprintMetaDebugData(blueprint.meta);
-  const [metaOpen, setMetaOpen] = useState(false);
   return (
     <div className="h-full overflow-y-auto px-6 py-5 text-sm text-slate-100">
       <div className="grid gap-4">
@@ -52,19 +50,6 @@ export function BlueprintArtifactViewer({
               <div className="text-slate-400 sm:col-span-3">{formatUsageContext(llmUsage)}</div>
             </div>
           </BlueprintSection>
-        ) : null}
-        {meta ? (
-          <div className="rounded border border-slate-700/80 bg-slate-950/20 p-3 text-xs">
-            <button
-              type="button"
-              className="font-medium text-slate-200 hover:text-cyan-100"
-              aria-expanded={metaOpen}
-              onClick={() => setMetaOpen((open) => !open)}
-            >
-              Meta
-            </button>
-            {metaOpen ? <BlueprintMetaDebugView meta={meta} /> : null}
-          </div>
         ) : null}
         <PromptDetail>
           <BlueprintSection title={t('artifact.screenComposition')}>
@@ -122,53 +107,6 @@ export function BlueprintArtifactViewer({
       </div>
     </div>
   );
-}
-
-function BlueprintMetaDebugView({
-  meta,
-}: {
-  meta: {
-    intent: string;
-    selectedSections: Array<{ sectionType: string; selectionReason: string }>;
-  };
-}) {
-  return (
-    <div className="mt-3 grid gap-3">
-      <div>
-        <div className="text-[11px] font-semibold uppercase text-slate-500">intent</div>
-        <div className="mt-1 text-slate-200">{meta.intent}</div>
-      </div>
-      <div>
-        <div className="text-[11px] font-semibold uppercase text-slate-500">selectedSections</div>
-        <div className="mt-2 grid gap-2">
-          {meta.selectedSections.map((section, index) => (
-            <div
-              key={`${section.sectionType}-${index}`}
-              className="rounded border border-slate-800 p-2"
-            >
-              <div className="font-mono text-slate-200">{section.sectionType}</div>
-              <div className="mt-1 text-slate-400">{section.selectionReason}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function getBlueprintMetaDebugData(value: unknown) {
-  if (!isObject(value)) return null;
-  const selectedSections = Array.isArray(value.selectedSections)
-    ? value.selectedSections
-        .filter(isObject)
-        .map((section) => ({
-          sectionType: String(section.sectionType || ''),
-          selectionReason: String(section.selectionReason || ''),
-        }))
-        .filter((section) => section.sectionType && section.selectionReason)
-    : [];
-  const intent = String(value.intent || '');
-  return intent && selectedSections.length > 0 ? { intent, selectedSections } : null;
 }
 
 export function ComponentDesignArtifactViewer({ artifact }: { artifact: Record<string, unknown> }) {

@@ -427,6 +427,7 @@ export const enDictionary = {
   'blueprint.preview.sectionsCount': '{{count}} sections',
   'blueprint.preview.design': 'Design token',
   'blueprint.preview.designTokens': 'Design token',
+  'blueprint.preview.seeMeta': 'see meta',
   'blueprint.preview.adopted': 'Adopted',
   'blueprint.preview.notAdopted': 'Not adopted',
   'blueprint.preview.kpi.primarySignal': 'Primary signal',
@@ -463,6 +464,10 @@ export const enDictionary = {
   'blueprint.designSettings.description':
     'Preview is a specification-review mock. These selected tokens can be attached to later implementation plans.',
   'blueprint.designSettings.implementationPlanAttachment': 'Implementation-plan attachment',
+  'blueprint.meta.title': 'Mock Blueprint meta',
+  'blueprint.meta.description': 'Section choices and intent recorded by the generator.',
+  'blueprint.meta.intent': 'intent',
+  'blueprint.meta.selectedSections': 'selectedSections',
   'timeline.unknownActivity': 'unknown.activity',
   'timeline.todoProgress': 'Todo progress',
   'timeline.thinking': 'AI is generating a response',

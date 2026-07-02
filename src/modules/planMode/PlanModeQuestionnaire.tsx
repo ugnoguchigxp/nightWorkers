@@ -161,7 +161,7 @@ export function ActionButton({
   return (
     <button
       type="button"
-      className="inline-flex items-center gap-1.5 rounded border border-slate-700 bg-slate-950/20 px-2 py-1 text-xs text-slate-200 hover:border-slate-500 disabled:cursor-wait disabled:opacity-60"
+      className="inline-flex items-center gap-1.5 rounded border border-slate-700 bg-slate-950/20 px-2 py-1 text-xs text-slate-200 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-60"
       onClick={onClick}
       disabled={busy || disabled}
     >
@@ -173,4 +173,33 @@ export function ActionButton({
       {label}
     </button>
   );
+}
+
+export function getQuestionnaireSubmissionState({
+  unansweredCount,
+  isCompleted,
+  isImplementationLocked,
+  isCapabilityEnabled,
+}: {
+  unansweredCount: number;
+  isCompleted: boolean;
+  isImplementationLocked: boolean;
+  isCapabilityEnabled: boolean;
+}) {
+  if (isCompleted) {
+    return {
+      disabled: true,
+      icon: undefined,
+      label: '回答済み',
+      readOnly: true,
+      state: 'completed',
+    } as const;
+  }
+  return {
+    disabled: unansweredCount > 0 || isImplementationLocked || !isCapabilityEnabled,
+    icon: 'send',
+    label: unansweredCount > 0 ? `未回答 ${unansweredCount}件` : '回答を送信して次へ',
+    readOnly: isImplementationLocked,
+    state: unansweredCount > 0 ? 'incomplete' : 'ready',
+  } as const;
 }

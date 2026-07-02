@@ -18,10 +18,8 @@ import {
   mockBlueprintSchema,
   renderableMockBlueprintSectionNames,
 } from '../shared/schemas/mock-blueprint.schema';
-import {
-  BlueprintArtifactViewer,
-  getBlueprintMetaDebugData,
-} from '../src/modules/blueprint-preview/ArtifactBlueprintViewers';
+import { BlueprintArtifactViewer } from '../src/modules/blueprint-preview/ArtifactBlueprintViewers';
+import { getBlueprintMetaDebugData } from '../src/modules/blueprint-preview/BlueprintPreview';
 import {
   mockBlueprintToPreviewBlueprint,
   mockBlueprintToPreviewBlueprintSafely,
@@ -277,7 +275,9 @@ describe('Mock Blueprint', () => {
     expect(prompt).toContain('ControlPanelSection や Display controls');
     expect(prompt).toContain('分析、KPI、レポート、監視が主目的ではない依頼');
     expect(prompt).toContain('CRUD / list workflow');
-    expect(prompt).toContain('会話、投稿、コメント系 workflow');
+    expect(prompt).toContain('thread / 投稿 / 掲示板系 workflow');
+    expect(prompt).toContain('TabNavigationSection は、ユーザーが同格の複数 view');
+    expect(prompt).toContain('小規模掲示板、thread CRUD、投稿一覧');
     expect(prompt).toContain('通常の関連リンクやページ遷移');
     expect(prompt).toContain('左右横の side column');
     expect(prompt).toContain('optional view は main / full_width');
@@ -301,11 +301,19 @@ describe('Mock Blueprint', () => {
 
     expect(prompt).toContain('プロダクト画面');
     expect(prompt).toContain('仕様書（Spec）、仕様確認、進行メモ');
+    expect(prompt).toContain('技術スタック、保存先、認証方針、実装範囲');
+    expect(prompt).toContain('Questionnaire / Decisions に明示された方針');
+    expect(prompt).toContain('thread、投稿、編集、削除、返信なし、認証不要');
+    expect(prompt).toContain('meta.intent は「何の実装前確認か」ではなく');
+    expect(prompt).toContain('実際の screens[].sections[] と同じ順序');
+    expect(prompt).toContain('BlogPostSection を使う場合');
+    expect(prompt).toContain('180 文字以上');
     expect(prompt).toContain('Section は用途で選ぶ');
     expect(prompt).toContain('仕様項目、実装工程、決定事項の要約には使わない');
     expect(userPrompt).toContain('仕様書 / Spec（制約として参照）');
     expect(userPrompt).toContain('アプリそのものの画面');
     expect(userPrompt).toContain('画面に出す題材ではなく');
+    expect(userPrompt).toContain('技術スタック、保存先、認証方針、実装範囲');
     expect(userPrompt).toContain('仕様項目や実装工程をデータ化しない');
     expect(userPrompt).toContain('確認ノートの画面は生成しない');
   });
@@ -316,28 +324,7 @@ describe('Mock Blueprint', () => {
     expectStrictRequiredProperties(schema);
   });
 
-  it('keeps Mock Blueprint meta debug data closed by default and sanitized', () => {
-    const debugData = getBlueprintMetaDebugData({
-      intent: 'Internal debug intent only',
-      selectedSections: [
-        {
-          sectionType: 'DataTableSection',
-          selectionReason: 'Debug reason only',
-          extra: 'must be dropped',
-        },
-      ],
-      generationNotes: ['must be dropped'],
-    });
-    expect(debugData).toEqual({
-      intent: 'Internal debug intent only',
-      selectedSections: [
-        {
-          sectionType: 'DataTableSection',
-          selectionReason: 'Debug reason only',
-        },
-      ],
-    });
-
+  it('shows see meta in the preview toolbar and keeps meta details closed by default', () => {
     const markup = renderToStaticMarkup(
       createElement(BlueprintArtifactViewer, {
         sessionId: null,
@@ -345,18 +332,85 @@ describe('Mock Blueprint', () => {
         blueprint: {
           id: 'meta-test',
           name: 'Meta Test',
-          meta: debugData,
+          meta: {
+            intent: 'Internal debug intent only',
+            selectedSections: [
+              {
+                sectionType: 'DataTableSection',
+                selectionReason: 'Debug reason only',
+                extra: 'must be dropped',
+              },
+            ],
+            generationNotes: ['must be dropped'],
+          },
           screens: [{ id: 'screen-1', name: 'Screen', sections: [] }],
         },
         validation: null,
       })
     );
 
-    expect(markup).toContain('Meta');
+    expect(markup).toMatch(/see meta|blueprint\.preview\.seeMeta/);
+    expect(markup).not.toContain('Blueprint:');
+    expect(markup).not.toContain('Not adopted');
     expect(markup).not.toContain('Internal debug intent only');
     expect(markup).not.toContain('Debug reason only');
     expect(markup).not.toContain('must be dropped');
     expect(markup).not.toContain('LLM Usage');
+  });
+
+  it('filters meta debug data to the currently displayed screen order', () => {
+    const meta = getBlueprintMetaDebugData(
+      {
+        intent: 'Thread based BBS with list, detail, create, edit, and delete workflows.',
+        selectedSections: [
+          {
+            sectionType: 'CardGridSection',
+            selectionReason: 'Should not be shown when this screen does not render it.',
+          },
+          {
+            sectionType: 'DataTableSection',
+            selectionReason: 'Show thread rows with edit and delete actions.',
+          },
+          {
+            sectionType: 'TabNavigationSection',
+            selectionReason: 'Should not be shown when this screen does not render it.',
+          },
+          {
+            sectionType: 'FormSection',
+            selectionReason: 'Create or edit a thread post.',
+          },
+        ],
+      },
+      [
+        {
+          componentName: 'TopMenuSection',
+          intent: 'Provide the primary global actions.',
+        },
+        {
+          componentName: 'DataTableSection',
+          intent: 'Fallback table intent.',
+        },
+        {
+          componentName: 'FormSection',
+          intent: 'Fallback form intent.',
+        },
+      ]
+    );
+
+    expect(meta?.selectedSections).toEqual([
+      {
+        sectionType: 'TopMenuSection',
+        selectionReason: 'Provide the primary global actions.',
+      },
+      {
+        sectionType: 'DataTableSection',
+        selectionReason: 'Show thread rows with edit and delete actions.',
+      },
+      {
+        sectionType: 'FormSection',
+        selectionReason: 'Create or edit a thread post.',
+      },
+    ]);
   });
 
   it('renders LLM usage as secondary artifact viewer information when present', () => {
@@ -420,6 +474,63 @@ describe('Mock Blueprint', () => {
       });
       expect(result.generation.promptDiagnostics.schemaName).toBe('mock_blueprint');
       expect(result.generation.promptDiagnostics.sectionAllowlistCount).toBeGreaterThan(10);
+    } finally {
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+      else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+    }
+  });
+
+  it('normalizes UUID-like LLM ids before schema validation', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+
+    try {
+      const repository = await repo.createRepository({
+        name: `TEST: Mock Blueprint UUID IDs ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: repository.id,
+        title: 'TEST: Mock Blueprint UUID id task',
+        description: 'Validate mock blueprint id normalization.',
+        status: 'draft',
+      });
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+        ...representativeMockBlueprint,
+        id: task.id,
+        screens: [
+          {
+            ...representativeMockBlueprint.screens[0],
+            id: '123-screen',
+            sections: [
+              {
+                ...representativeMockBlueprint.screens[0].sections[0],
+                id: '投稿 詳細',
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await generatePlanModeMockBlueprintDraft({
+        taskId: task.id,
+        title: 'Operations Mock',
+        prompt: 'BBS の軽量 mock を作る',
+      });
+
+      const idPattern = /^[A-Za-z][A-Za-z0-9_-]*$/;
+      expect(result.mockBlueprint.id).toBe(`item_${task.id}`);
+      expect(result.mockBlueprint.id).toMatch(idPattern);
+      expect(result.mockBlueprint.screens[0].id).toBe('item_123-screen');
+      expect(result.mockBlueprint.screens[0].sections[0].id).toBe('item_1');
     } finally {
       if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
       else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
@@ -560,6 +671,9 @@ describe('Mock Blueprint', () => {
           expect.objectContaining({ label: 'author', value: 'admin' }),
         ]),
       });
+      expect(sections[3].dataset.kind).toBe('article');
+      if (sections[3].dataset.kind !== 'article') throw new Error('Expected article dataset.');
+      expect(sections[3].dataset.body.length).toBeGreaterThanOrEqual(180);
     } finally {
       if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
       else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
