@@ -32,7 +32,7 @@ export async function generateBlueprintArtifact(
     input.questionnaireSessionId
   );
   const prompt = renderQuestionnaireBlueprintPrompt(session);
-  const featurePlanSummary = await resolveLatestFeaturePlanSummary(taskId);
+  const specContext = await resolveLatestSpecContext(taskId);
   try {
     const { mockBlueprint, generation } = await generatePlanModeMockBlueprintDraft({
       taskId,
@@ -41,7 +41,7 @@ export async function generateBlueprintArtifact(
       description: task.description,
       objective: task.objective,
       questionnaireMarkdown: session ? renderQuestionnaireAnswerMarkdown(session) : null,
-      featurePlanSummary,
+      specContext,
     });
     const generationWithUsage = {
       ...generation,
@@ -102,6 +102,8 @@ export async function generateBlueprintArtifact(
           source: 'status',
           validationStatus: 'failed',
           error: message,
+          rawOutputBytes: Buffer.byteLength(error.rawOutput.trim(), 'utf8'),
+          rawOutputPreview: error.rawOutput.trim().slice(0, 500),
           questionnaireSessionId: session?.id ?? null,
           promptDiagnostics: error.promptDiagnostics,
         },
@@ -125,13 +127,41 @@ function renderQuestionnaireBlueprintPrompt(session: DesignQuestionnaireSession 
     .join('\n');
 }
 
-async function resolveLatestFeaturePlanSummary(taskId: string) {
+async function resolveLatestSpecContext(taskId: string) {
   const messages = await listPlanModeTaskMessages(taskId);
-  const latest = [...messages].reverse().find((message) => {
-    const metadata = (message.metadataJson || {}) as Record<string, unknown>;
-    return message.messageType === 'markdown_document' && metadata.intent === 'feature_plan';
-  });
-  return latest?.content.slice(0, 4_000) || null;
+  const latest = [...messages]
+    .filter((message) => {
+      const metadata = (message.metadataJson || {}) as Record<string, unknown>;
+      return message.messageType === 'markdown_document' && metadata.intent === 'feature_plan';
+    })
+    .sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt))[0];
+  return latest ? compactSpecContext(latest.content) : null;
+}
+
+function compactSpecContext(content: string) {
+  const compacted = content
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, 1_600);
+  return compacted || null;
+}
+
+function toMs(value: unknown) {
+  if (!value) return 0;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value > 0 && value < 1_000_000_000_000 ? value * 1000 : value;
+  }
+  if (typeof value === 'string' && /^-?\d+(\.\d+)?$/.test(value.trim())) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return numeric > 0 && numeric < 1_000_000_000_000 ? numeric * 1000 : numeric;
+    }
+  }
+  const ms = new Date(String(value)).getTime();
+  return Number.isFinite(ms) ? ms : 0;
 }
 
 async function resolveLatestMockBlueprintUsage(taskId: string) {

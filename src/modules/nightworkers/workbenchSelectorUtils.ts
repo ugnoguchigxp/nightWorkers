@@ -55,6 +55,15 @@ export function warningSeverityRank(severity: 'info' | 'warning' | 'error') {
 export function toMs(value: unknown): number {
   if (!value) return 0;
   if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value > 0 && value < 1_000_000_000_000 ? value * 1000 : value;
+  }
+  if (typeof value === 'string' && /^-?\d+(\.\d+)?$/.test(value.trim())) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return numeric > 0 && numeric < 1_000_000_000_000 ? numeric * 1000 : numeric;
+    }
+  }
   const date = new Date(String(value));
   const ms = date.getTime();
   return Number.isFinite(ms) ? ms : 0;

@@ -60,6 +60,14 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
           }`}
           aria-current={props.isOverviewActive ? 'page' : undefined}
         >
+          <img
+            src="/nightworkers-logo-icon-64.webp"
+            alt=""
+            width={24}
+            height={24}
+            className="mr-2 h-6 w-6 shrink-0 rounded-md"
+            aria-hidden="true"
+          />
           <span className="truncate">nightWorkers</span>
         </button>
         <div className="flex items-center gap-1">

@@ -1,5 +1,13 @@
 # Mock Blueprint Lightweight Generation Plan
 
+> Superseded for the next implementation pass by:
+>
+> - [Mock Blueprint Recovery Implementation Plan](./mock-blueprint-recovery-implementation-plan.md)
+> - [Mock Blueprint JSON Contract](./mock-blueprint-json-contract.md)
+> - [Mock Blueprint Verification Checklist](./mock-blueprint-verification-checklist.md)
+>
+> This older document is kept as background only. Use the recovery implementation documents above as the executable source for the next session.
+
 ## Purpose
 
 Blueprint 作成を、重い `AppBlueprint` 一括生成から、LLM が Section 選択と Mock 用データセットを JSON として構築する軽量な `MockBlueprint` 方式へ移行する。

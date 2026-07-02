@@ -96,6 +96,16 @@ function parseArtifactContentJson(content: string | null | undefined): unknown {
   }
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function isMockBlueprintCandidate(value: unknown) {
+  return asRecord(value).artifactKind === 'mock_blueprint';
+}
+
 export function ArtifactPane({
   activeProject,
   activeSessionId,
@@ -176,14 +186,25 @@ export function ArtifactPane({
   const selectedActivityArtifact = artifactRowId
     ? activityArtifacts.find((artifact) => artifact.id === artifactRowId) || null
     : null;
-  const activityArtifactMetadata = toDeepRecord(selectedActivityArtifact?.metadataJson);
+  const selectedActivityArtifactContent = parseArtifactContentJson(
+    selectedActivityArtifact?.contentText
+  );
+  const activityArtifactMetadata = {
+    ...asRecord(selectedActivityArtifactContent),
+    ...toDeepRecord(selectedActivityArtifact?.metadataJson),
+    ...asRecord(selectedArtifact?.metadata),
+    ...asRecord(displayArtifact?.metadata),
+  };
   const artifactBlueprint =
     activityArtifactMetadata.appBlueprint ||
-    parseArtifactContentJson(selectedActivityArtifact?.contentText);
+    (!isMockBlueprintCandidate(selectedActivityArtifactContent)
+      ? selectedActivityArtifactContent
+      : null);
   const artifactMockBlueprint =
     activityArtifactMetadata.mockBlueprint ||
-    (String(activityArtifactMetadata.schemaName || '') === 'mock_blueprint'
-      ? parseArtifactContentJson(selectedActivityArtifact?.contentText)
+    (String(activityArtifactMetadata.schemaName || '') === 'mock_blueprint' ||
+    isMockBlueprintCandidate(selectedActivityArtifactContent)
+      ? selectedActivityArtifactContent
       : null);
   const artifactValidation = activityArtifactMetadata.validation;
   const artifactGeneration =

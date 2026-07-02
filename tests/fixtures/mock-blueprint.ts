@@ -7,6 +7,23 @@ export const representativeMockBlueprint: MockBlueprint = {
   version: 1,
   summary: 'A lightweight mock preview for reviewing operational work before implementation.',
   tone: 'calm operational workspace',
+  meta: {
+    intent: 'Review operational work before implementation.',
+    selectedSections: [
+      {
+        sectionType: 'SidebarMenuSection',
+        selectionReason: 'Keep work queues, reviews, and settings visible while scanning.',
+      },
+      {
+        sectionType: 'AnalyticsDashboardSection',
+        selectionReason: 'Show aggregate status before the user opens individual work items.',
+      },
+      {
+        sectionType: 'DataTableSection',
+        selectionReason: 'Represent the primary repeated workflow as a compact table.',
+      },
+    ],
+  },
   screens: [
     {
       id: 'operations-command-center',
@@ -74,6 +91,9 @@ export const representativeMockBlueprint: MockBlueprint = {
             rows: [
               { title: 'Approve launch copy', status: 'Ready', owner: 'Design' },
               { title: 'Resolve intake ambiguity', status: 'Needs attention', owner: 'PM' },
+              { title: 'Confirm billing labels', status: 'Review', owner: 'Finance' },
+              { title: 'Check import preview', status: 'Ready', owner: 'Ops' },
+              { title: 'Triage blocked signup', status: 'Blocked', owner: 'Support' },
             ],
           },
         },

@@ -1,5 +1,7 @@
 # NightWorkers
 
+<img src="assets/brand/nightworkers-logo-icon-64.png" alt="NightWorkers logo" width="64" height="64" />
+
 NightWorkers is a local-first autonomous development control plane. It coordinates project-scoped work sessions, runs supervisor-worker executions, and records verifiable run evidence such as events, logs, diffs, todos, test results, and final reports.
 
 ## Table of Contents

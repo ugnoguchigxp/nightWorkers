@@ -592,12 +592,51 @@ describe('NightWorkers task routes', () => {
         intent: 'mock_blueprint',
         source: 'status',
         questionnaireSessionId: null,
+        artifactRef: {
+          artifactId: expect.any(String),
+          kind: 'app_blueprint',
+          version: 1,
+        },
+        mockBlueprint: expect.objectContaining({
+          artifactKind: 'mock_blueprint',
+          meta: expect.objectContaining({
+            selectedSections: expect.any(Array),
+          }),
+        }),
         generation: {
           llmUsage: expect.objectContaining({
             label: 'mock_blueprint',
             totalTokens: expect.any(Number),
           }),
         },
+      });
+      const blueprintArtifacts = await repo.listActivityArtifactsForTask(task.id);
+      const mockBlueprintArtifact = blueprintArtifacts.find(
+        (artifact) => artifact.id === blueprintBody.message.metadataJson.artifactRef.artifactId
+      );
+      expect(mockBlueprintArtifact).toMatchObject({
+        kind: 'app_blueprint',
+        metadataJson: {
+          intent: 'mock_blueprint',
+          schemaName: 'mock_blueprint',
+          mockBlueprint: expect.objectContaining({
+            artifactKind: 'mock_blueprint',
+            meta: expect.objectContaining({
+              selectedSections: expect.any(Array),
+            }),
+          }),
+          generation: expect.objectContaining({
+            llmUsage: expect.objectContaining({
+              label: 'mock_blueprint',
+            }),
+          }),
+        },
+      });
+      expect(JSON.parse(String(mockBlueprintArtifact?.contentText))).toMatchObject({
+        artifactKind: 'mock_blueprint',
+        meta: expect.objectContaining({
+          selectedSections: expect.any(Array),
+        }),
       });
 
       process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
@@ -625,6 +664,67 @@ describe('NightWorkers task routes', () => {
         questionnaireSessionId: null,
       });
       expect(featurePlanBody.message.content).toContain('# Questionnaire Optional Feature Plan');
+    } finally {
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+      else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+    }
+  });
+
+  it('stores Mock Blueprint raw output metadata when schema validation fails', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+    const rawOutput = '{"artifactKind":"mock_blueprint","id":"broken","name":"Broken"}';
+    process.env.SUPERVISOR_FIXTURE_OUTPUT = rawOutput;
+
+    try {
+      const createdRepo = await repo.createRepository({
+        name: `TEST: Mock Blueprint Failure ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: createdRepo.id,
+        title: 'TEST: Mock Blueprint failure target',
+        description: 'Generate invalid Mock Blueprint output',
+        status: 'draft',
+      });
+
+      const blueprintRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/plan-mode/blueprint`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+
+      expect(blueprintRes.status).toBe(502);
+      const messages = await repo.listTaskMessages(task.id);
+      expect(messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            messageType: 'text',
+            content: rawOutput,
+            metadataJson: expect.objectContaining({
+              intent: 'mock_blueprint_raw_output',
+              validationStatus: 'failed',
+              rawOutputBytes: Buffer.byteLength(rawOutput, 'utf8'),
+              rawOutputPreview: rawOutput,
+              promptDiagnostics: expect.objectContaining({
+                schemaName: 'mock_blueprint',
+                totalPromptEstimatedTokens: expect.any(Number),
+              }),
+            }),
+          }),
+        ])
+      );
     } finally {
       if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
       else process.env.ACTIVE_LLM_PROVIDER = originalProvider;

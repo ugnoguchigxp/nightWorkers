@@ -12,6 +12,7 @@ import {
   isReviewedFeaturePlanMessage,
   mergeWorkspaceTaskMessages,
 } from '../nightworkers/workbenchSelectors';
+import { toMs } from '../nightworkers/workbenchSelectorUtils';
 
 export type PlanWorkspaceTab =
   | 'feature-plan'
@@ -44,8 +45,8 @@ export function selectPlanModeWorkspaceMessages(input: {
     return message.messageType === 'markdown_document' && intent === 'feature_plan';
   });
   const reviewedDesignDocMessages = designDocMessages.filter(isReviewedFeaturePlanMessage);
-  const activeBlueprintMessage = blueprintMessages.at(-1) || null;
-  const activeDataModelMessage = dataModelMessages.at(-1) || null;
+  const activeBlueprintMessage = latestMessageByCreatedAt(blueprintMessages);
+  const activeDataModelMessage = latestMessageByCreatedAt(dataModelMessages);
   const latestWorkspaceBlueprintMessageId =
     input.workspace?.blueprintArtifacts.at(-1)?.sourceMessageId || null;
   const activeBlueprintSourceMessageId = activeBlueprintMessage?.id?.startsWith('artifact-')
@@ -62,6 +63,10 @@ export function selectPlanModeWorkspaceMessages(input: {
     activeDataModelMessage,
     activeBlueprintSourceMessageId,
   };
+}
+
+function latestMessageByCreatedAt(messages: TaskMessage[]) {
+  return [...messages].sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt))[0] || null;
 }
 
 export function isDesignAssemblyReady(

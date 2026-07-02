@@ -86,6 +86,15 @@ export function BlueprintViewer({
     : blueprint;
 
   if (!isObject(previewBlueprint)) {
+    if (isObject(mockBlueprint)) {
+      return (
+        <div className="flex h-full items-center justify-center p-6 text-xs text-amber-100">
+          <div className="rounded border border-amber-700/70 bg-amber-950/20 p-3">
+            Blueprint preview conversion failed.
+          </div>
+        </div>
+      );
+    }
     return <MarkdownViewer content={markdown || t('artifact.noBlueprintContent')} />;
   }
   return (

@@ -58,7 +58,7 @@ const navigationDatasetSchema = z
           })
           .strict()
       )
-      .min(1),
+      .min(2),
   })
   .strict();
 
@@ -67,8 +67,8 @@ const tableDatasetSchema = z
     kind: z.literal('table'),
     columns: z
       .array(z.object({ key: mockBlueprintIdSchema, label: z.string().min(1) }).strict())
-      .min(1),
-    rows: z.array(z.record(z.string(), mockBlueprintScalarSchema)).min(1),
+      .min(2),
+    rows: z.array(z.record(z.string(), mockBlueprintScalarSchema)).min(5),
   })
   .strict();
 
@@ -87,7 +87,7 @@ const formDatasetSchema = z
           })
           .strict()
       )
-      .min(1),
+      .min(2),
     submitLabel: z.string().min(1),
   })
   .strict();
@@ -106,7 +106,7 @@ const cardsDatasetSchema = z
           })
           .strict()
       )
-      .min(1),
+      .min(2),
   })
   .strict();
 
@@ -150,7 +150,7 @@ const timelineDatasetSchema = z
           })
           .strict()
       )
-      .min(1),
+      .min(2),
   })
   .strict();
 
@@ -178,7 +178,7 @@ const metricsDatasetSchema = z
           })
           .strict()
       )
-      .min(1),
+      .min(2),
   })
   .strict();
 
@@ -246,7 +246,7 @@ const chatDatasetSchema = z
           })
           .strict()
       )
-      .min(1),
+      .min(2),
   })
   .strict();
 
@@ -255,7 +255,7 @@ const genericDatasetSchema = z
     kind: z.literal('generic'),
     items: z
       .array(z.object({ title: z.string().min(1), description: z.string().min(1) }).strict())
-      .min(1),
+      .min(2),
   })
   .strict();
 
@@ -401,6 +401,22 @@ export const mockBlueprintScreenSchema = z
   })
   .strict();
 
+export const mockBlueprintMetaSchema = z
+  .object({
+    intent: z.string().min(1),
+    selectedSections: z
+      .array(
+        z
+          .object({
+            sectionType: renderableMockBlueprintSectionNameSchema,
+            selectionReason: z.string().min(1),
+          })
+          .strict()
+      )
+      .min(1),
+  })
+  .strict();
+
 export const mockBlueprintSchema = z
   .object({
     artifactKind: z.literal('mock_blueprint'),
@@ -409,6 +425,7 @@ export const mockBlueprintSchema = z
     version: z.literal(1),
     summary: z.string().min(1),
     tone: z.string().min(1),
+    meta: mockBlueprintMetaSchema,
     screens: z.array(mockBlueprintScreenSchema).min(1).max(3),
     generationNotes: z.array(z.string().min(1)).default([]),
   })
@@ -420,4 +437,5 @@ export type RenderableMockBlueprintSectionName = z.infer<
 export type MockBlueprintDataset = z.infer<typeof mockBlueprintDatasetSchema>;
 export type MockBlueprintSection = z.infer<typeof mockBlueprintSectionSchema>;
 export type MockBlueprintScreen = z.infer<typeof mockBlueprintScreenSchema>;
+export type MockBlueprintMeta = z.infer<typeof mockBlueprintMetaSchema>;
 export type MockBlueprint = z.infer<typeof mockBlueprintSchema>;

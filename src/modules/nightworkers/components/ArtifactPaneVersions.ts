@@ -6,6 +6,7 @@ import type {
   TaskRun,
   WorkbenchArtifactRef,
 } from '../types';
+import { toMs } from '../workbenchSelectorUtils';
 
 export function buildArtifactVersions(
   selectedArtifact: WorkbenchArtifactRef | null,
@@ -24,9 +25,7 @@ export function buildArtifactVersions(
   for (const artifact of [...messageRefs, ...activityRefs, selectedArtifact]) {
     byId.set(artifact.id, artifact);
   }
-  return [...byId.values()].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
+  return [...byId.values()].sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt));
 }
 
 export function buildExportedArtifactContent(input: {

@@ -457,7 +457,11 @@ export function PlanModeWorkspaceViewer({
           />
         ) : activeTab === 'blueprint' ? (
           <div className="grid gap-3">
-            <WorkspaceBlueprintPreview sessionId={sessionId} message={activeBlueprintMessage} />
+            <WorkspaceBlueprintPreview
+              sessionId={sessionId}
+              message={activeBlueprintMessage}
+              activityArtifacts={activityArtifacts}
+            />
           </div>
         ) : activeTab === 'data-model' ? (
           <div className="grid gap-4">

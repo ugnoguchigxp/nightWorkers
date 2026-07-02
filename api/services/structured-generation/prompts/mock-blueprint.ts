@@ -47,8 +47,10 @@ export function buildMockBlueprintSystemPrompt(input: {
     '- Mock は「実装後にユーザーが触るプロダクト画面」を描く。仕様書（Spec）、仕様確認、進行メモ、実装手順、決定事項サマリー、確認用ノートを画面化しない。',
     '- 依頼文から主要ユーザー、主要エンティティ、主要ワークフロー、最も確認したい状態を読み取り、それに必要な Section を選ぶ。',
     '- Section は用途で選ぶ。レコード一覧や比較は DataTableSection、作成・編集は FormSection、本文や詳細閲覧は BlogPostSection、会話やコメントは ChatPanelSection、状態遷移は KanbanSection、操作・設定は ControlPanelSection、グローバル導線は TopMenuSection / TabNavigationSection / FooterNavigationSection を使う。',
-    '- ControlPanelSection や Display controls は、表示モード切替、運用スイッチ、設定、フィルタ操作そのものが画面の主目的の場合だけ使う。掲示板 / forum / thread / 投稿本文 / 返信 / コメント閲覧では、明示要求がない限り使わず、BlogPostSection / ChatPanelSection / DataTableSection / FormSection / TabNavigationSection を選ぶ。',
-    '- CardGridSection / TimelineSection / AnalyticsDashboardSection は、対象プロダクト自体がカード閲覧、時系列活動、指標確認を中心にする場合だけ使う。仕様項目、実装工程、決定事項の要約には使わない。',
+    '- ControlPanelSection や Display controls は、表示モード切替、運用スイッチ、設定、フィルタ操作そのものが画面の主目的の場合だけ使う。',
+    '- 分析、KPI、レポート、監視が主目的ではない依頼では、AnalyticsDashboardSection / ChartSection を埋め草として追加しない。',
+    '- CRUD / list workflow は、多くの場合 DataTableSection と FormSection の組み合わせが自然です。会話、投稿、コメント系 workflow は、一覧、詳細本文、作成入力、会話表示の用途に合わせて選ぶ。ただしこれはガイドであり、固定の画面計画ではありません。',
+    '- CardGridSection / TimelineSection は、対象プロダクト自体がカード閲覧や時系列活動を中心にする場合だけ使う。仕様項目、実装工程、決定事項の要約には使わない。',
     '- screen.layout.template は通常 single_column を使う。two_column / three_column / sidebar_left / sidebar_right / article_with_sidebar は、sidebar / aside に置く Section が必要な場合だけ使う。',
     '- 左右横の side column に置いてよいのは、SidebarMenuSection / LeftSidebarSection / ExplorerSidebarSection / RightSidebarLinksSection、または componentName / name / id に sidebar / サイドバー / サイドメニューを含む Section だけ。該当しない通常コンテンツ、カード、フォーム、表、記事、指標、optional view は main / full_width に置き、横並びにしない。',
     '- RightSidebarLinksSection / LeftSidebarSection は、画面に独立した補助カラムが明示的に必要な場合だけ使う。通常の関連リンクやページ遷移は TopMenuSection / TabNavigationSection / FooterNavigationSection / SidebarMenuSection で表現する。',
@@ -71,7 +73,7 @@ export function buildMockBlueprintSystemPrompt(input: {
 export function buildMockBlueprintUserPrompt(input: {
   task: { id: string; title: string; description?: string | null; objective?: string | null };
   questionnaireMarkdown?: string | null;
-  featurePlanSummary?: string | null;
+  specContext?: string | null;
   prompt?: string | null;
 }) {
   return [
@@ -92,7 +94,7 @@ export function buildMockBlueprintUserPrompt(input: {
     '## 仕様書 / Spec（制約として参照）',
     'この内容は画面に出す題材ではなく、Mock の制約としてだけ使ってください。',
     '仕様書（Spec）、仕様確認、進行メモ、実装手順、確認ノートの画面は生成しないでください。',
-    input.featurePlanSummary?.trim() || '仕様書（Spec）は未生成です。',
+    input.specContext?.trim() || '仕様書（Spec）は未生成です。',
     '',
     '## User Prompt',
     input.prompt?.trim() || input.task.objective || input.task.description || input.task.title,
@@ -112,6 +114,7 @@ export function buildMockBlueprintStructuredOutputJsonSchema() {
       'version',
       'summary',
       'tone',
+      'meta',
       'screens',
       'generationNotes',
     ],
@@ -122,6 +125,30 @@ export function buildMockBlueprintStructuredOutputJsonSchema() {
       version: { type: 'integer', const: 1 },
       summary: { type: 'string' },
       tone: { type: 'string' },
+      meta: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['intent', 'selectedSections'],
+        properties: {
+          intent: { type: 'string' },
+          selectedSections: {
+            type: 'array',
+            minItems: 1,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['sectionType', 'selectionReason'],
+              properties: {
+                sectionType: {
+                  type: 'string',
+                  enum: [...renderableMockBlueprintSectionNames],
+                },
+                selectionReason: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
       screens: {
         type: 'array',
         minItems: 1,
@@ -245,13 +272,22 @@ export function mockBlueprintPromptDiagnostics(input: {
   userPrompt: string;
   schema: unknown;
 }) {
+  const systemPromptEstimatedTokens = estimatePromptTokens(input.systemPrompt);
+  const userPromptEstimatedTokens = estimatePromptTokens(input.userPrompt);
   return {
     schemaName: 'mock_blueprint' as const,
     systemPromptBytes: Buffer.byteLength(input.systemPrompt, 'utf8'),
     userPromptBytes: Buffer.byteLength(input.userPrompt, 'utf8'),
+    systemPromptEstimatedTokens,
+    userPromptEstimatedTokens,
+    totalPromptEstimatedTokens: systemPromptEstimatedTokens + userPromptEstimatedTokens,
     sectionAllowlistCount: renderableMockBlueprintSectionNames.length,
     schemaDigest: createHash('sha256').update(JSON.stringify(input.schema)).digest('hex'),
   };
+}
+
+function estimatePromptTokens(value: string) {
+  return Math.ceil(Buffer.byteLength(value, 'utf8') / 4);
 }
 
 function renderSectionCatalog(sectionCatalog: SectionCatalogEntry[]) {
@@ -264,19 +300,19 @@ function renderSectionCatalog(sectionCatalog: SectionCatalogEntry[]) {
 
 function renderDatasetGuide() {
   return [
-    'navigation: nav items with label/href/active.',
-    'table: columns and row records for comparison/list management.',
-    'form: fields and submitLabel for create/edit input.',
-    'cards: rich summary cards.',
+    'navigation: nav items with label/href/active. min items=2.',
+    'table: columns and row records for comparison/list management. min columns=2, min rows=5.',
+    'form: fields and submitLabel for create/edit input. min fields=2.',
+    'cards: rich summary cards. min cards=2.',
     'kanban: workflow columns and cards.',
-    'timeline: chronological items.',
+    'timeline: chronological items. min items=2.',
     'article: text body and meta.',
-    'metrics: KPI labels, values, trends.',
+    'metrics: KPI labels, values, trends. min metrics=2.',
     'media: visual/story items without real image generation.',
     'map: points or regions.',
     'code: file excerpts.',
-    'chat: messages.',
-    'generic: simple titled items.',
+    'chat: messages. min messages=2.',
+    'generic: simple titled items. min items=2.',
   ].join('\n');
 }
 

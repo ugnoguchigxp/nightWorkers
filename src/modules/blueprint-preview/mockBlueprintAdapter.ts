@@ -15,6 +15,7 @@ export function mockBlueprintToPreviewBlueprint(mockBlueprint: MockBlueprint): {
   name: string;
   version: number;
   description: string;
+  meta: MockBlueprint['meta'];
   designPreset: typeof defaultBlueprintPreviewDesignSettings;
   screens: Array<Record<string, unknown>>;
 } {
@@ -23,6 +24,7 @@ export function mockBlueprintToPreviewBlueprint(mockBlueprint: MockBlueprint): {
     name: mockBlueprint.name,
     version: mockBlueprint.version,
     description: mockBlueprint.summary,
+    meta: mockBlueprint.meta,
     designPreset: defaultBlueprintPreviewDesignSettings,
     screens: mockBlueprint.screens.map((screen) => screenToPreviewScreen(screen)),
   };

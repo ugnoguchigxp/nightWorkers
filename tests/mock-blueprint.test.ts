@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ensureNightWorkersSchema } from '../api/db/bootstrap';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
@@ -9,12 +11,17 @@ import {
   buildMockBlueprintStructuredOutputJsonSchema,
   buildMockBlueprintSystemPrompt,
   buildMockBlueprintUserPrompt,
+  mockBlueprintPromptDiagnostics,
 } from '../api/services/structured-generation/prompts/mock-blueprint';
 import {
   getMockBlueprintDatasetKindsForSection,
   mockBlueprintSchema,
   renderableMockBlueprintSectionNames,
 } from '../shared/schemas/mock-blueprint.schema';
+import {
+  BlueprintArtifactViewer,
+  getBlueprintMetaDebugData,
+} from '../src/modules/blueprint-preview/ArtifactBlueprintViewers';
 import {
   mockBlueprintToPreviewBlueprint,
   mockBlueprintToPreviewBlueprintSafely,
@@ -31,6 +38,9 @@ describe('Mock Blueprint', () => {
     const parsed = mockBlueprintSchema.parse(representativeMockBlueprint);
 
     expect(parsed.artifactKind).toBe('mock_blueprint');
+    expect(parsed.meta.selectedSections.map((section) => section.sectionType)).toEqual(
+      parsed.screens.flatMap((screen) => screen.sections.map((section) => section.componentName))
+    );
     for (const screen of parsed.screens) {
       for (const section of screen.sections) {
         expect(renderableMockBlueprintSectionNames).toContain(section.componentName);
@@ -52,13 +62,41 @@ describe('Mock Blueprint', () => {
               {
                 ...representativeMockBlueprint.screens[0].sections[0],
                 componentName: 'DataTableSection',
-                dataset: { kind: 'navigation', items: [{ label: 'Queue' }] },
+                dataset: {
+                  kind: 'navigation',
+                  items: [{ label: 'Queue' }, { label: 'Reviews' }],
+                },
               },
             ],
           },
         ],
       })
     ).toThrow(/does not support navigation/);
+  });
+
+  it('requires root meta and minimum mock datasets for reviewable previews', () => {
+    expect(() => mockBlueprintSchema.parse(mockBlueprintFixtureWithoutMeta())).toThrow(/meta/);
+
+    expect(() =>
+      mockBlueprintSchema.parse({
+        ...representativeMockBlueprint,
+        screens: [
+          {
+            ...representativeMockBlueprint.screens[0],
+            sections: [
+              {
+                ...representativeMockBlueprint.screens[0].sections[2],
+                dataset: {
+                  kind: 'table',
+                  columns: [{ key: 'title', label: 'Title' }],
+                  rows: [],
+                },
+              },
+            ],
+          },
+        ],
+      })
+    ).toThrow(/Too small/);
   });
 
   it('accepts natural mock data keys and scalar row values', () => {
@@ -77,7 +115,13 @@ describe('Mock Blueprint', () => {
                   { key: 'riskScore', label: 'Risk Score' },
                   { key: 'blocked', label: 'Blocked' },
                 ],
-                rows: [{ due_date: '2026-07-02', riskScore: 7, blocked: false }],
+                rows: [
+                  { due_date: '2026-07-02', riskScore: 7, blocked: false },
+                  { due_date: '2026-07-03', riskScore: 5, blocked: false },
+                  { due_date: '2026-07-04', riskScore: 8, blocked: true },
+                  { due_date: '2026-07-05', riskScore: 3, blocked: false },
+                  { due_date: '2026-07-06', riskScore: 6, blocked: false },
+                ],
               },
             },
           ],
@@ -85,10 +129,13 @@ describe('Mock Blueprint', () => {
       ],
     });
 
-    expect(parsed.screens[0].sections[0].dataset).toMatchObject({
-      kind: 'table',
-      rows: [expect.objectContaining({ riskScore: 7, blocked: false })],
-    });
+    const dataset = parsed.screens[0].sections[0].dataset;
+    expect(dataset.kind).toBe('table');
+    if (dataset.kind !== 'table') throw new Error('Expected table dataset.');
+    expect(dataset.rows).toEqual(
+      expect.arrayContaining([expect.objectContaining({ riskScore: 7, blocked: false })])
+    );
+    expect(dataset.rows.length).toBeGreaterThanOrEqual(5);
   });
 
   it('adapts mock datasets into the existing Blueprint preview model', () => {
@@ -100,6 +147,7 @@ describe('Mock Blueprint', () => {
       id: representativeMockBlueprint.id,
       name: representativeMockBlueprint.name,
       version: 1,
+      meta: representativeMockBlueprint.meta,
     });
     expect(sections).toEqual(
       expect.arrayContaining([
@@ -190,9 +238,29 @@ describe('Mock Blueprint', () => {
       jsonSchema: schema,
       sectionCatalog: buildMockBlueprintSectionCatalog(),
     });
+    const diagnostics = mockBlueprintPromptDiagnostics({
+      systemPrompt: prompt,
+      userPrompt: buildMockBlueprintUserPrompt({
+        task: { id: 'task-1', title: 'BBS 作成' },
+      }),
+      schema,
+    });
 
     expect(prompt).toContain('DataTableSection');
     expect(prompt).toContain('dataset.kind');
+    expect(schema.required).toContain('meta');
+    expect(schema.properties.meta.properties.selectedSections.items.required).toEqual(
+      expect.arrayContaining(['sectionType', 'selectionReason'])
+    );
+    expect(diagnostics).toMatchObject({
+      systemPromptBytes: expect.any(Number),
+      userPromptBytes: expect.any(Number),
+      systemPromptEstimatedTokens: expect.any(Number),
+      userPromptEstimatedTokens: expect.any(Number),
+      totalPromptEstimatedTokens: expect.any(Number),
+      sectionAllowlistCount: renderableMockBlueprintSectionNames.length,
+      schemaDigest: expect.any(String),
+    });
     expect(Buffer.byteLength(JSON.stringify(schema), 'utf8')).toBeLessThan(10_000);
   });
 
@@ -204,9 +272,12 @@ describe('Mock Blueprint', () => {
 
     expect(prompt).not.toContain('BBS');
     expect(prompt).not.toContain('掲示板トップ');
+    expect(prompt).not.toContain('掲示板 / forum / thread');
     expect(prompt).toContain('主要ユーザー、主要エンティティ、主要ワークフロー');
     expect(prompt).toContain('ControlPanelSection や Display controls');
-    expect(prompt).toContain('掲示板 / forum / thread');
+    expect(prompt).toContain('分析、KPI、レポート、監視が主目的ではない依頼');
+    expect(prompt).toContain('CRUD / list workflow');
+    expect(prompt).toContain('会話、投稿、コメント系 workflow');
     expect(prompt).toContain('通常の関連リンクやページ遷移');
     expect(prompt).toContain('左右横の side column');
     expect(prompt).toContain('optional view は main / full_width');
@@ -224,7 +295,7 @@ describe('Mock Blueprint', () => {
         title: 'BBS 作成',
         description: 'Hono + React/Vite と SQLite で BBS を作る',
       },
-      featurePlanSummary: '# Spec\n\n## Goal\nBBS を実装する。',
+      specContext: '# Spec\n\n## Goal\nBBS を実装する。',
       prompt: 'BBS の mock を作る',
     });
 
@@ -243,6 +314,78 @@ describe('Mock Blueprint', () => {
     const schema = buildMockBlueprintStructuredOutputJsonSchema();
 
     expectStrictRequiredProperties(schema);
+  });
+
+  it('keeps Mock Blueprint meta debug data closed by default and sanitized', () => {
+    const debugData = getBlueprintMetaDebugData({
+      intent: 'Internal debug intent only',
+      selectedSections: [
+        {
+          sectionType: 'DataTableSection',
+          selectionReason: 'Debug reason only',
+          extra: 'must be dropped',
+        },
+      ],
+      generationNotes: ['must be dropped'],
+    });
+    expect(debugData).toEqual({
+      intent: 'Internal debug intent only',
+      selectedSections: [
+        {
+          sectionType: 'DataTableSection',
+          selectionReason: 'Debug reason only',
+        },
+      ],
+    });
+
+    const markup = renderToStaticMarkup(
+      createElement(BlueprintArtifactViewer, {
+        sessionId: null,
+        messageId: null,
+        blueprint: {
+          id: 'meta-test',
+          name: 'Meta Test',
+          meta: debugData,
+          screens: [{ id: 'screen-1', name: 'Screen', sections: [] }],
+        },
+        validation: null,
+      })
+    );
+
+    expect(markup).toContain('Meta');
+    expect(markup).not.toContain('Internal debug intent only');
+    expect(markup).not.toContain('Debug reason only');
+    expect(markup).not.toContain('must be dropped');
+    expect(markup).not.toContain('LLM Usage');
+  });
+
+  it('renders LLM usage as secondary artifact viewer information when present', () => {
+    const markup = renderToStaticMarkup(
+      createElement(BlueprintArtifactViewer, {
+        sessionId: null,
+        messageId: null,
+        blueprint: {
+          id: 'usage-test',
+          name: 'Usage Test',
+          screens: [{ id: 'screen-1', name: 'Screen', sections: [] }],
+        },
+        validation: null,
+        generation: {
+          llmUsage: {
+            label: 'mock_blueprint',
+            inputTokens: 12,
+            outputTokens: 8,
+            totalTokens: 20,
+            provider: 'fixture',
+            model: 'fixture-model',
+          },
+        },
+      })
+    );
+
+    expect(markup).toContain('artifact.llmUsage');
+    expect(markup).toContain('20');
+    expect(markup).toContain('fixture');
   });
 
   it('uses the fixture LLM provider to build and validate mock JSON', async () => {
@@ -294,7 +437,7 @@ describe('Mock Blueprint', () => {
     process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
     process.env.ACTIVE_LLM_PROVIDER = 'fixture';
     process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
-      ...representativeMockBlueprint,
+      ...mockBlueprintFixtureWithoutMeta(),
       screens: [
         {
           ...representativeMockBlueprint.screens[0],
@@ -391,26 +534,233 @@ describe('Mock Blueprint', () => {
       });
       const sections = result.mockBlueprint.screens[0].sections;
 
+      expect(
+        result.mockBlueprint.meta.selectedSections.map((section) => section.sectionType)
+      ).toEqual(sections.map((section) => section.componentName));
       expect(sections[0].dataset).toMatchObject({
         kind: 'cards',
         cards: expect.arrayContaining([
           expect.objectContaining({ description: 'キーワードで探す' }),
         ]),
       });
-      expect(sections[1].dataset).toMatchObject({
-        kind: 'form',
-        fields: [expect.not.objectContaining({ required: true })],
-      });
-      expect(sections[2].dataset).toMatchObject({
-        kind: 'timeline',
-        items: [expect.objectContaining({ description: '最初の返信です。' })],
-      });
+      expect(sections[1].dataset.kind).toBe('form');
+      if (sections[1].dataset.kind !== 'form') throw new Error('Expected form dataset.');
+      expect(sections[1].dataset.fields).toEqual(
+        expect.arrayContaining([expect.not.objectContaining({ required: true })])
+      );
+      expect(sections[1].dataset.fields.length).toBeGreaterThanOrEqual(2);
+      expect(sections[2].dataset.kind).toBe('timeline');
+      if (sections[2].dataset.kind !== 'timeline') throw new Error('Expected timeline dataset.');
+      expect(sections[2].dataset.items).toEqual(
+        expect.arrayContaining([expect.objectContaining({ description: '最初の返信です。' })])
+      );
       expect(sections[3].dataset).toMatchObject({
         kind: 'article',
         meta: expect.arrayContaining([
           expect.objectContaining({ label: 'author', value: 'admin' }),
         ]),
       });
+    } finally {
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+      else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+    }
+  });
+
+  it('repairs missing copy and empty table datasets before final validation', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+    process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+      ...mockBlueprintFixtureWithoutMeta(),
+      screens: [
+        {
+          ...representativeMockBlueprint.screens[0],
+          sections: [
+            {
+              ...representativeMockBlueprint.screens[0].sections[2],
+              copy: undefined,
+              dataset: {
+                kind: 'table',
+                columns: [],
+                rows: [],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    try {
+      const repository = await repo.createRepository({
+        name: `TEST: Mock Blueprint Empty Dataset ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: repository.id,
+        title: 'TEST: Mock Blueprint empty dataset task',
+        description: 'Validate mock blueprint dataset repair.',
+        status: 'draft',
+      });
+      const result = await generatePlanModeMockBlueprintDraft({
+        taskId: task.id,
+        title: 'Empty Dataset Repair Mock',
+        prompt: 'empty dataset repair',
+      });
+      const dataset = result.mockBlueprint.screens[0].sections[0].dataset;
+
+      expect(result.mockBlueprint.screens[0].sections[0].copy).toMatchObject({
+        title: 'Decision Queue',
+        description: null,
+      });
+      expect(dataset).toMatchObject({
+        kind: 'table',
+        columns: expect.arrayContaining([expect.objectContaining({ key: expect.any(String) })]),
+      });
+      if (dataset.kind !== 'table') throw new Error('Expected table dataset');
+      expect(dataset.columns).toHaveLength(2);
+      expect(dataset.rows).toHaveLength(5);
+      expect(JSON.stringify(dataset)).not.toContain('BBS');
+      expect(JSON.stringify(dataset)).toContain('Decision Queue');
+    } finally {
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+      else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+    }
+  });
+
+  it('repairs empty non-table datasets before final validation', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+    process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+      ...mockBlueprintFixtureWithoutMeta(),
+      screens: [
+        {
+          ...representativeMockBlueprint.screens[0],
+          sections: [
+            emptyDatasetSection('nav', 'SidebarMenuSection', 'navigation', { items: [] }),
+            emptyDatasetSection('form', 'FormSection', 'form', { fields: [] }),
+            emptyDatasetSection('cards', 'CardGridSection', 'cards', { cards: [] }),
+            emptyDatasetSection('timeline', 'TimelineSection', 'timeline', { items: [] }),
+            emptyDatasetSection('chat', 'ChatPanelSection', 'chat', { messages: [] }),
+            emptyDatasetSection('metrics', 'AnalyticsDashboardSection', 'metrics', { metrics: [] }),
+          ],
+        },
+      ],
+    });
+
+    try {
+      const repository = await repo.createRepository({
+        name: `TEST: Mock Blueprint Empty Non Table ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: repository.id,
+        title: 'TEST: Mock Blueprint empty non-table dataset task',
+        description: 'Validate non-table mock blueprint dataset repair.',
+        status: 'draft',
+      });
+      const result = await generatePlanModeMockBlueprintDraft({
+        taskId: task.id,
+        title: 'Empty Non Table Dataset Repair Mock',
+        prompt: 'empty non-table dataset repair',
+      });
+      const [navigation, form, cards, timeline, chat, metrics] =
+        result.mockBlueprint.screens[0].sections.map((section) => section.dataset);
+
+      expect(navigation.kind).toBe('navigation');
+      if (navigation.kind !== 'navigation') throw new Error('Expected navigation dataset');
+      expect(navigation.items).toHaveLength(2);
+      expect(form.kind).toBe('form');
+      if (form.kind !== 'form') throw new Error('Expected form dataset');
+      expect(form.fields).toHaveLength(2);
+      expect(cards.kind).toBe('cards');
+      if (cards.kind !== 'cards') throw new Error('Expected cards dataset');
+      expect(cards.cards).toHaveLength(2);
+      expect(timeline.kind).toBe('timeline');
+      if (timeline.kind !== 'timeline') throw new Error('Expected timeline dataset');
+      expect(timeline.items).toHaveLength(2);
+      expect(chat.kind).toBe('chat');
+      if (chat.kind !== 'chat') throw new Error('Expected chat dataset');
+      expect(chat.messages).toHaveLength(2);
+      expect(metrics.kind).toBe('metrics');
+      if (metrics.kind !== 'metrics') throw new Error('Expected metrics dataset');
+      expect(metrics.metrics).toHaveLength(2);
+    } finally {
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+      else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+    }
+  });
+
+  it('preserves explicit meta while adding missing selected sections from screens', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+    process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+      ...representativeMockBlueprint,
+      meta: {
+        intent: 'Explicit operator review intent.',
+        selectedSections: [
+          {
+            sectionType: 'SidebarMenuSection',
+            selectionReason: 'Explicit navigation reason from the provider.',
+          },
+        ],
+      },
+    });
+
+    try {
+      const repository = await repo.createRepository({
+        name: `TEST: Mock Blueprint Partial Meta ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: repository.id,
+        title: 'TEST: Mock Blueprint partial meta task',
+        description: 'Validate mock blueprint meta completion.',
+        status: 'draft',
+      });
+      const result = await generatePlanModeMockBlueprintDraft({
+        taskId: task.id,
+        title: 'Partial Meta Mock',
+        prompt: 'partial meta repair',
+      });
+
+      expect(result.mockBlueprint.meta.intent).toBe('Explicit operator review intent.');
+      expect(result.mockBlueprint.meta.selectedSections).toEqual([
+        {
+          sectionType: 'SidebarMenuSection',
+          selectionReason: 'Explicit navigation reason from the provider.',
+        },
+        {
+          sectionType: 'AnalyticsDashboardSection',
+          selectionReason: 'Show aggregate status before the user opens individual work items.',
+        },
+        {
+          sectionType: 'DataTableSection',
+          selectionReason: 'Represent the primary repeated workflow as a compact table.',
+        },
+      ]);
     } finally {
       if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
       else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
@@ -462,7 +812,7 @@ describe('Mock Blueprint', () => {
       expect(result.mockBlueprint.screens[0].sections).toEqual(
         expect.arrayContaining([expect.objectContaining({ id: 'misplaced-section' })])
       );
-      expect(result.generation.jsonRepair?.repaired).toBe(true);
+      expect(result.generation.jsonRepair?.repairKind).toEqual(expect.any(String));
     } finally {
       if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
       else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
@@ -488,6 +838,36 @@ function expectStrictRequiredProperties(schema: unknown) {
       expectStrictRequiredProperties(value);
     }
   }
+}
+
+function mockBlueprintFixtureWithoutMeta() {
+  return Object.fromEntries(
+    Object.entries(representativeMockBlueprint).filter(([key]) => key !== 'meta')
+  );
+}
+
+function emptyDatasetSection(
+  id: string,
+  componentName: string,
+  kind: string,
+  dataset: Record<string, unknown>
+) {
+  return {
+    id,
+    name: `${id} section`,
+    componentName,
+    region: componentName === 'SidebarMenuSection' ? 'sidebar' : 'main',
+    selectionReason: `${id} section supports empty dataset repair.`,
+    copy: {
+      title: `${id} sample`,
+      description: `${id} repair description`,
+      primaryActionLabel: null,
+      secondaryActionLabel: null,
+      emptyStateTitle: null,
+      emptyStateDescription: null,
+    },
+    dataset: { kind, ...dataset },
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

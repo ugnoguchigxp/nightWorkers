@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import type { TaskMessage } from '../src/modules/nightworkers/types';
 import {
   isDataModelMessage,
   isNormalBlueprintMessage,
@@ -11,7 +12,10 @@ import {
   buildVisiblePlanWorkspaceTabs,
   getPlanWorkspaceTabLabel,
   PlanModeWorkspaceViewer,
+  WorkspaceBlueprintPreview,
 } from '../src/modules/planMode';
+import { selectPlanModeWorkspaceMessages } from '../src/modules/specification';
+import { representativeMockBlueprint } from './fixtures/mock-blueprint';
 import {
   buildActivityArtifact,
   buildBlueprintMessage,
@@ -160,5 +164,202 @@ describe('PlanModeWorkspaceViewer', () => {
     expect(markup).toContain('No questionnaire session.');
     expect(markup).not.toContain('>Status</button>');
     expect(markup).not.toContain('>spec</button>');
+  });
+});
+
+describe('WorkspaceBlueprintPreview', () => {
+  it('renders a Mock Blueprint preview from message metadata', () => {
+    const message = buildBlueprintMessage({
+      id: 'message-mock-blueprint-1',
+      content: '# Mock Blueprint Summary\n\nShould not be primary.',
+      metadataJson: {
+        intent: 'mock_blueprint',
+        mockBlueprint: representativeMockBlueprint,
+      },
+    });
+
+    const markup = renderToStaticMarkup(
+      createElement(WorkspaceBlueprintPreview, {
+        sessionId: 'task-1',
+        message,
+        activityArtifacts: [],
+      })
+    );
+
+    expect(markup).toContain('data-blueprint-preview="true"');
+    expect(markup).not.toContain('No Blueprint artifact.');
+    expect(markup).not.toContain('Mock Blueprint Summary');
+  });
+
+  it('renders a Mock Blueprint preview from a linked activity artifact', () => {
+    const message = buildBlueprintMessage({
+      id: 'message-mock-blueprint-1',
+      content: '# Mock Blueprint Summary\n\nShould not be primary.',
+      metadataJson: {
+        intent: 'mock_blueprint',
+        artifactRef: { artifactId: 'artifact-mock-blueprint-1', kind: 'app_blueprint', version: 1 },
+      },
+    });
+    const activityArtifact = buildActivityArtifact({
+      id: 'artifact-mock-blueprint-1',
+      contentText: JSON.stringify(representativeMockBlueprint),
+      metadataJson: {
+        schemaName: 'mock_blueprint',
+        mockBlueprint: representativeMockBlueprint,
+      },
+    });
+
+    const markup = renderToStaticMarkup(
+      createElement(WorkspaceBlueprintPreview, {
+        sessionId: 'task-1',
+        message,
+        activityArtifacts: [activityArtifact],
+      })
+    );
+
+    expect(markup).toContain('data-blueprint-preview="true"');
+    expect(markup).not.toContain('No Blueprint artifact.');
+    expect(markup).not.toContain('Mock Blueprint Summary');
+  });
+
+  it('renders a Mock Blueprint preview from activity artifact JSON content', () => {
+    const message = buildBlueprintMessage({
+      id: 'message-mock-blueprint-1',
+      content: '# Mock Blueprint Summary\n\nShould not be primary.',
+      metadataJson: {
+        intent: 'mock_blueprint',
+        artifactRef: { artifactId: 'artifact-mock-blueprint-1', kind: 'app_blueprint', version: 1 },
+      },
+    });
+    const activityArtifact = buildActivityArtifact({
+      id: 'artifact-mock-blueprint-1',
+      contentText: JSON.stringify(representativeMockBlueprint),
+      metadataJson: { schemaName: 'mock_blueprint' },
+    });
+
+    const markup = renderToStaticMarkup(
+      createElement(WorkspaceBlueprintPreview, {
+        sessionId: 'task-1',
+        message,
+        activityArtifacts: [activityArtifact],
+      })
+    );
+
+    expect(markup).toContain('data-blueprint-preview="true"');
+    expect(markup).not.toContain('No Blueprint artifact.');
+    expect(markup).not.toContain('Mock Blueprint Summary');
+  });
+
+  it('renders the latest Blueprint activity artifact when no message is selected', () => {
+    const activityArtifact = buildActivityArtifact({
+      id: 'artifact-mock-blueprint-1',
+      contentText: JSON.stringify(representativeMockBlueprint),
+      metadataJson: { schemaName: 'mock_blueprint' },
+      createdAt: '1800000000',
+    });
+
+    const markup = renderToStaticMarkup(
+      createElement(WorkspaceBlueprintPreview, {
+        sessionId: 'task-1',
+        message: null,
+        activityArtifacts: [activityArtifact],
+      })
+    );
+
+    expect(markup).toContain('data-blueprint-preview="true"');
+    expect(markup).not.toContain('No Blueprint artifact.');
+  });
+
+  it('does not render Markdown fallback when Mock Blueprint conversion fails', () => {
+    const message = buildBlueprintMessage({
+      id: 'message-broken-mock-blueprint',
+      content: '# Mock Blueprint Summary\n\nShould not be primary.',
+      metadataJson: {
+        intent: 'mock_blueprint',
+        mockBlueprint: {
+          artifactKind: 'mock_blueprint',
+          id: 'broken',
+          name: 'Broken',
+          version: 1,
+        },
+      },
+    });
+
+    const markup = renderToStaticMarkup(
+      createElement(WorkspaceBlueprintPreview, {
+        sessionId: 'task-1',
+        message,
+        activityArtifacts: [],
+      })
+    );
+
+    expect(markup).toContain('Blueprint preview is unavailable.');
+    expect(markup).not.toContain('Mock Blueprint Summary');
+  });
+
+  it('uses a linked activity artifact when message Mock Blueprint metadata is incomplete', () => {
+    const message = buildBlueprintMessage({
+      id: 'message-broken-linked-mock-blueprint',
+      content: '# Mock Blueprint Summary\n\nShould not be primary.',
+      metadataJson: {
+        intent: 'mock_blueprint',
+        artifactRef: {
+          artifactId: 'artifact-valid-mock-blueprint',
+          kind: 'app_blueprint',
+          version: 1,
+        },
+        mockBlueprint: {
+          artifactKind: 'mock_blueprint',
+          id: 'broken',
+          name: 'Broken',
+          version: 1,
+        },
+      },
+    });
+    const activityArtifact = buildActivityArtifact({
+      id: 'artifact-valid-mock-blueprint',
+      contentText: JSON.stringify(representativeMockBlueprint),
+      metadataJson: { schemaName: 'mock_blueprint' },
+    });
+
+    const markup = renderToStaticMarkup(
+      createElement(WorkspaceBlueprintPreview, {
+        sessionId: 'task-1',
+        message,
+        activityArtifacts: [activityArtifact],
+      })
+    );
+
+    expect(markup).toContain('data-blueprint-preview="true"');
+    expect(markup).not.toContain('Blueprint preview is unavailable.');
+    expect(markup).not.toContain('Mock Blueprint Summary');
+  });
+
+  it('selects the newest Blueprint message by numeric createdAt instead of array order', () => {
+    const newerMessage = buildBlueprintMessage({
+      id: 'message-mock-blueprint-newer',
+      createdAt: '1800000000',
+      metadataJson: {
+        intent: 'mock_blueprint',
+        mockBlueprint: representativeMockBlueprint,
+      },
+    });
+    const olderMessage = buildBlueprintMessage({
+      id: 'message-blueprint-older',
+      createdAt: '2026-06-02T00:00:00.000Z',
+      metadataJson: {
+        intent: 'app_blueprint',
+        appBlueprint: { id: 'older-blueprint', name: 'Older Blueprint', screens: [] },
+      },
+    });
+
+    const workspaceMessages = selectPlanModeWorkspaceMessages({
+      taskMessages: [newerMessage, olderMessage],
+      activityArtifacts: [],
+      generatedMessages: [],
+      workspace: null,
+    });
+
+    expect(workspaceMessages.activeBlueprintMessage?.id).toBe(newerMessage.id);
   });
 });

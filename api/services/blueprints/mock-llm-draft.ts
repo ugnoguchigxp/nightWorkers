@@ -1,5 +1,14 @@
-import type { MockBlueprint } from '../../../shared/schemas/mock-blueprint.schema';
-import { mockBlueprintSchema } from '../../../shared/schemas/mock-blueprint.schema';
+import type {
+  MockBlueprint,
+  MockBlueprintDatasetKind,
+  RenderableMockBlueprintSectionName,
+} from '../../../shared/schemas/mock-blueprint.schema';
+import {
+  getMockBlueprintDatasetKindsForSection,
+  mockBlueprintDatasetKinds,
+  mockBlueprintSchema,
+  renderableMockBlueprintSectionNames,
+} from '../../../shared/schemas/mock-blueprint.schema';
 import {
   buildMockBlueprintSectionCatalog,
   buildMockBlueprintStructuredOutputJsonSchema,
@@ -9,11 +18,7 @@ import {
   mockBlueprintPromptDiagnostics,
 } from '../structured-generation/prompts/mock-blueprint';
 import { callStructuredJsonLLM, type SupervisorLlmDebugEvent } from '../structured-llm';
-import {
-  type JsonFixWrapperResult,
-  jsonFixWrapper,
-  parseRepairedJsonWithSchema,
-} from '../structured-llm/json';
+import { type JsonFixWrapperResult, jsonFixWrapper } from '../structured-llm/json';
 
 export type GeneratedMockBlueprintDraft = {
   mockBlueprint: MockBlueprint;
@@ -53,7 +58,7 @@ export async function generatePlanModeMockBlueprintDraft(input: {
   description?: string | null;
   objective?: string | null;
   questionnaireMarkdown?: string | null;
-  featurePlanSummary?: string | null;
+  specContext?: string | null;
   emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
 }): Promise<GeneratedMockBlueprintDraft> {
   const schema = buildMockBlueprintStructuredOutputJsonSchema();
@@ -69,7 +74,7 @@ export async function generatePlanModeMockBlueprintDraft(input: {
       objective: input.objective,
     },
     questionnaireMarkdown: input.questionnaireMarkdown,
-    featurePlanSummary: input.featurePlanSummary,
+    specContext: input.specContext,
     prompt: input.prompt,
   });
   const promptDiagnostics = mockBlueprintPromptDiagnostics({
@@ -121,54 +126,52 @@ function parseMockBlueprintJsonOutput(rawOutput: string):
       repairKind: JsonFixWrapperResult['repairKind'];
     }
   | { ok: false; reason: 'parse' | 'schema'; message: string; rawOutput: string } {
-  const parsed = parseRepairedJsonWithSchema(rawOutput, mockBlueprintSchema);
-  if (parsed.ok) return parsed;
-
   const jsonFix = jsonFixWrapper(rawOutput);
-  if (!jsonFix) {
-    const balancedPrefix = firstBalancedJsonObject(rawOutput);
-    if (!balancedPrefix) {
-      return {
-        ok: false,
-        reason: 'parse',
-        message: 'LLM output did not contain repairable JSON.',
-        rawOutput,
-      };
-    }
-    const prefixParsed = parseNormalizedMockBlueprintCandidate(balancedPrefix);
-    if (prefixParsed.ok) {
+  if (jsonFix) {
+    const rawParsed = mockBlueprintSchema.safeParse(jsonFix.parsedJson);
+    const normalized = normalizeMockBlueprintCandidate(jsonFix.parsedJson);
+    const normalizedParsed = mockBlueprintSchema.safeParse(normalized);
+    if (normalizedParsed.success) {
       return {
         ok: true,
-        value: prefixParsed.value,
-        sourceText: balancedPrefix,
-        repaired: true,
-        repairKind: 'balanced_json',
+        value: normalizedParsed.data,
+        sourceText: jsonFix.sourceText,
+        repaired: jsonFix.repaired || !rawParsed.success,
+        repairKind: jsonFix.repairKind,
       };
     }
-    return prefixParsed.error;
-  }
 
-  const normalized = normalizeMockBlueprintCandidate(jsonFix.parsedJson);
-  const normalizedParsed = mockBlueprintSchema.safeParse(normalized);
-  if (normalizedParsed.success) {
     return {
-      ok: true,
-      value: normalizedParsed.data,
-      sourceText: jsonFix.sourceText,
-      repaired: true,
-      repairKind: jsonFix.repairKind,
+      ok: false,
+      reason: 'schema',
+      message: normalizedParsed.error.issues
+        .slice(0, 6)
+        .map((issue) => `${issue.path.join('.') || '$'}:${issue.message}`)
+        .join(', '),
+      rawOutput,
     };
   }
 
-  return {
-    ok: false,
-    reason: 'schema',
-    message: normalizedParsed.error.issues
-      .slice(0, 6)
-      .map((issue) => `${issue.path.join('.') || '$'}:${issue.message}`)
-      .join(', '),
-    rawOutput,
-  };
+  const balancedPrefix = firstBalancedJsonObject(rawOutput);
+  if (!balancedPrefix) {
+    return {
+      ok: false,
+      reason: 'parse',
+      message: 'LLM output did not contain repairable JSON.',
+      rawOutput,
+    };
+  }
+  const prefixParsed = parseNormalizedMockBlueprintCandidate(balancedPrefix);
+  if (prefixParsed.ok) {
+    return {
+      ok: true,
+      value: prefixParsed.value,
+      sourceText: balancedPrefix,
+      repaired: true,
+      repairKind: 'balanced_json',
+    };
+  }
+  return prefixParsed.error;
 }
 
 function parseNormalizedMockBlueprintCandidate(sourceText: string):
@@ -220,6 +223,7 @@ function normalizeMockBlueprintCandidate(candidate: unknown): unknown {
     blueprint.screens = normalizeMockBlueprintScreens(blueprint.screens);
   }
   if (!Array.isArray(blueprint.generationNotes)) blueprint.generationNotes = [];
+  blueprint.meta = normalizeMockBlueprintMeta(blueprint.meta, blueprint);
   return blueprint;
 }
 
@@ -250,8 +254,8 @@ function normalizeMockBlueprintScreen(screen: unknown): unknown {
 function normalizeMockBlueprintSection(section: unknown): unknown {
   if (!isRecord(section)) return section;
   const sectionRecord = { ...section };
-  sectionRecord.copy = normalizeMockBlueprintCopy(sectionRecord.copy);
-  sectionRecord.dataset = normalizeMockBlueprintDataset(sectionRecord.dataset);
+  sectionRecord.copy = normalizeMockBlueprintCopy(sectionRecord.copy, sectionRecord);
+  sectionRecord.dataset = normalizeMockBlueprintDataset(sectionRecord.dataset, sectionRecord);
   return sectionRecord;
 }
 
@@ -259,10 +263,20 @@ function looksLikeMockBlueprintSection(value: unknown): value is Record<string, 
   return isRecord(value) && typeof value.componentName === 'string' && isRecord(value.dataset);
 }
 
-function normalizeMockBlueprintCopy(copy: unknown): unknown {
-  if (!isRecord(copy)) return copy;
+function normalizeMockBlueprintCopy(copy: unknown, section: Record<string, unknown>): unknown {
+  const fallbackTitle = stringValue(section.name || section.id, 'Mock section');
+  if (!isRecord(copy)) {
+    return {
+      title: fallbackTitle,
+      description: null,
+      primaryActionLabel: null,
+      secondaryActionLabel: null,
+      emptyStateTitle: null,
+      emptyStateDescription: null,
+    };
+  }
   return {
-    title: stringValue(copy.title, 'Untitled'),
+    title: stringValue(copy.title, fallbackTitle),
     description: nullableString(copy.description),
     primaryActionLabel: nullableString(copy.primaryActionLabel),
     secondaryActionLabel: nullableString(copy.secondaryActionLabel),
@@ -271,31 +285,59 @@ function normalizeMockBlueprintCopy(copy: unknown): unknown {
   };
 }
 
-function normalizeMockBlueprintDataset(dataset: unknown): unknown {
-  if (!isRecord(dataset) || typeof dataset.kind !== 'string') return dataset;
-  switch (dataset.kind) {
+function normalizeMockBlueprintDataset(
+  dataset: unknown,
+  section: Record<string, unknown> = {}
+): unknown {
+  if (!isRecord(dataset)) return fallbackDatasetForSection(section);
+  const datasetKind = normalizeDatasetKind(dataset.kind, section);
+  const sample = sampleContext(section);
+  switch (datasetKind) {
     case 'navigation':
       return {
         kind: 'navigation',
-        items: arrayOfRecords(dataset.items).map((item) => ({
+        items: ensureMinRecords(arrayOfRecords(dataset.items), 2, (index) => ({
+          label: `${sample.title} ${index + 1}`,
+          href: `/${stableMockKey(sample.title).toLowerCase()}-${index + 1}`,
+          active: index === 0,
+        })).map((item) => ({
           label: stringValue(item.label || item.title || item.name, 'Item'),
           ...(typeof item.href === 'string' ? { href: item.href } : {}),
           ...(typeof item.active === 'boolean' ? { active: item.active } : {}),
         })),
       };
-    case 'table':
+    case 'table': {
+      const columns = ensureMinRecords(arrayOfRecords(dataset.columns), 2, (index) => ({
+        key: `column_${index + 1}`,
+        label: index === 0 ? sample.title : 'Status',
+      })).map((column, index) => ({
+        key: stableMockKey(column.key || column.name || `column_${index + 1}`),
+        label: stringValue(column.label || column.name || column.key, `Column ${index + 1}`),
+      }));
       return {
         kind: 'table',
-        columns: arrayOfRecords(dataset.columns).map((column, index) => ({
-          key: stableMockKey(column.key || column.name || `column_${index + 1}`),
-          label: stringValue(column.label || column.name || column.key, `Column ${index + 1}`),
-        })),
-        rows: Array.isArray(dataset.rows) ? dataset.rows.map(normalizeTableRow) : [],
+        columns,
+        rows: ensureMinRecords(
+          Array.isArray(dataset.rows) ? dataset.rows.filter(isRecord) : [],
+          5,
+          (index) => fallbackTableRow(columns, sample, index)
+        ).map((row, index) => {
+          const normalized = normalizeTableRow(row);
+          return Object.keys(normalized).length > 0
+            ? normalized
+            : fallbackTableRow(columns, sample, index);
+        }),
       };
+    }
     case 'form':
       return {
         kind: 'form',
-        fields: arrayOfRecords(dataset.fields).map((field, index) => ({
+        fields: ensureMinRecords(arrayOfRecords(dataset.fields), 2, (index) => ({
+          name: index === 0 ? 'title' : 'details',
+          label: index === 0 ? sample.title : 'Details',
+          type: index === 0 ? 'text' : 'textarea',
+          placeholder: index === 0 ? sample.title : sample.description,
+        })).map((field, index) => ({
           name: stableMockKey(field.name || field.key || `field_${index + 1}`),
           label: stringValue(field.label || field.name || field.key, `Field ${index + 1}`),
           type: normalizeFieldType(field.type),
@@ -307,7 +349,11 @@ function normalizeMockBlueprintDataset(dataset: unknown): unknown {
     case 'cards':
       return {
         kind: 'cards',
-        cards: arrayOfRecords(dataset.cards || dataset.items).map((card) => ({
+        cards: ensureMinRecords(arrayOfRecords(dataset.cards || dataset.items), 2, (index) => ({
+          title: `${sample.title} ${index + 1}`,
+          description: sample.description,
+          meta: index === 0 ? 'Primary' : 'Secondary',
+        })).map((card) => ({
           title: stringValue(card.title || card.label || card.name, 'Card'),
           description: stringValue(
             card.description || card.summary || card.body || card.content,
@@ -320,7 +366,14 @@ function normalizeMockBlueprintDataset(dataset: unknown): unknown {
     case 'kanban':
       return {
         kind: 'kanban',
-        columns: arrayOfRecords(dataset.columns).map((column, index) => ({
+        columns: ensureMinRecords(arrayOfRecords(dataset.columns), 1, (index) => ({
+          id: `column_${index + 1}`,
+          title: index === 0 ? 'Active' : `Column ${index + 1}`,
+          cards: [
+            { title: `${sample.title} 1`, description: sample.description },
+            { title: `${sample.title} 2`, description: sample.description },
+          ],
+        })).map((column, index) => ({
           id: stableMockKey(column.id || column.key || `column_${index + 1}`),
           title: stringValue(column.title || column.label || column.name, `Column ${index + 1}`),
           cards: arrayOfRecords(column.cards || column.items).map((card) => ({
@@ -333,7 +386,10 @@ function normalizeMockBlueprintDataset(dataset: unknown): unknown {
     case 'timeline':
       return {
         kind: 'timeline',
-        items: arrayOfRecords(dataset.items).map((item) => ({
+        items: ensureMinRecords(arrayOfRecords(dataset.items), 2, (index) => ({
+          title: `${sample.title} ${index + 1}`,
+          description: sample.description,
+        })).map((item) => ({
           title: stringValue(item.title || item.label || item.name, 'Event'),
           description: stringValue(
             item.description || item.summary || item.body || item.content,
@@ -345,14 +401,21 @@ function normalizeMockBlueprintDataset(dataset: unknown): unknown {
     case 'article':
       return {
         kind: 'article',
-        title: stringValue(dataset.title || dataset.label, 'Article'),
-        body: stringValue(dataset.body || dataset.content || dataset.description, 'No body.'),
+        title: stringValue(dataset.title || dataset.label, sample.title),
+        body: stringValue(
+          dataset.body || dataset.content || dataset.description,
+          sample.description
+        ),
         ...(articleMeta(dataset).length > 0 ? { meta: articleMeta(dataset) } : {}),
       };
     case 'metrics':
       return {
         kind: 'metrics',
-        metrics: arrayOfRecords(dataset.metrics || dataset.items).map((metric) => ({
+        metrics: ensureMinRecords(arrayOfRecords(dataset.metrics || dataset.items), 2, (index) => ({
+          label: index === 0 ? sample.title : 'Secondary signal',
+          value: index === 0 ? '5' : '2',
+          trend: index === 0 ? 'review ready' : 'watching',
+        })).map((metric) => ({
           label: stringValue(metric.label || metric.title || metric.name, 'Metric'),
           value: scalarValue(metric.value ?? metric.count ?? metric.total, '0'),
           ...(typeof metric.trend === 'string' ? { trend: metric.trend } : {}),
@@ -361,7 +424,10 @@ function normalizeMockBlueprintDataset(dataset: unknown): unknown {
     case 'media':
       return {
         kind: 'media',
-        items: arrayOfRecords(dataset.items || dataset.cards).map((item) => ({
+        items: ensureMinRecords(arrayOfRecords(dataset.items || dataset.cards), 1, (index) => ({
+          title: `${sample.title} ${index + 1}`,
+          description: sample.description,
+        })).map((item) => ({
           title: stringValue(item.title || item.label || item.name, 'Media'),
           description: stringValue(item.description || item.summary || item.caption, 'No details.'),
           ...(typeof item.mediaLabel === 'string' ? { mediaLabel: item.mediaLabel } : {}),
@@ -370,7 +436,10 @@ function normalizeMockBlueprintDataset(dataset: unknown): unknown {
     case 'map':
       return {
         kind: 'map',
-        points: arrayOfRecords(dataset.points || dataset.items).map((point) => ({
+        points: ensureMinRecords(arrayOfRecords(dataset.points || dataset.items), 1, (index) => ({
+          label: `${sample.title} ${index + 1}`,
+          description: sample.description,
+        })).map((point) => ({
           label: stringValue(point.label || point.title || point.name, 'Point'),
           description: stringValue(point.description || point.summary || point.body, 'No details.'),
           ...(typeof point.region === 'string' ? { region: point.region } : {}),
@@ -379,7 +448,11 @@ function normalizeMockBlueprintDataset(dataset: unknown): unknown {
     case 'code':
       return {
         kind: 'code',
-        files: arrayOfRecords(dataset.files || dataset.items).map((file) => ({
+        files: ensureMinRecords(arrayOfRecords(dataset.files || dataset.items), 1, (index) => ({
+          path: `mock-${index + 1}.txt`,
+          language: 'text',
+          excerpt: sample.description,
+        })).map((file) => ({
           path: stringValue(file.path || file.title || file.name, 'file.txt'),
           language: stringValue(file.language || file.lang, 'text'),
           excerpt: stringValue(file.excerpt || file.body || file.content, 'No excerpt.'),
@@ -388,7 +461,15 @@ function normalizeMockBlueprintDataset(dataset: unknown): unknown {
     case 'chat':
       return {
         kind: 'chat',
-        messages: arrayOfRecords(dataset.messages || dataset.items).map((message) => ({
+        messages: ensureMinRecords(
+          arrayOfRecords(dataset.messages || dataset.items),
+          2,
+          (index) => ({
+            author: index === 0 ? 'User' : 'Team',
+            body: sample.description,
+            state: index === 0 ? 'active' : 'reply',
+          })
+        ).map((message) => ({
           author: stringValue(message.author || message.name || message.role, 'User'),
           body: stringValue(message.body || message.content || message.description, 'No message.'),
           ...(typeof message.state === 'string' ? { state: message.state } : {}),
@@ -397,14 +478,159 @@ function normalizeMockBlueprintDataset(dataset: unknown): unknown {
     case 'generic':
       return {
         kind: 'generic',
-        items: arrayOfRecords(dataset.items || dataset.cards).map((item) => ({
+        items: ensureMinRecords(arrayOfRecords(dataset.items || dataset.cards), 2, (index) => ({
+          title: `${sample.title} ${index + 1}`,
+          description: sample.description,
+        })).map((item) => ({
           title: stringValue(item.title || item.label || item.name, 'Item'),
           description: stringValue(item.description || item.summary || item.body, 'No details.'),
         })),
       };
     default:
-      return dataset;
+      return fallbackDatasetForSection(section);
   }
+}
+
+function normalizeMockBlueprintMeta(meta: unknown, blueprint: Record<string, unknown>) {
+  const sections = Array.isArray(blueprint.screens)
+    ? blueprint.screens.flatMap((screen) =>
+        isRecord(screen) && Array.isArray(screen.sections) ? screen.sections.filter(isRecord) : []
+      )
+    : [];
+  const metaRecord = isRecord(meta) ? meta : {};
+  const explicitSections = arrayOfRecords(metaRecord.selectedSections)
+    .map((section) => {
+      const sectionType = normalizeRenderableSectionName(
+        section.sectionType || section.componentName
+      );
+      if (!sectionType) return null;
+      return {
+        sectionType,
+        selectionReason: stringValue(
+          section.selectionReason || section.reason,
+          'Selected for the product mockup.'
+        ),
+      };
+    })
+    .filter(
+      (
+        section
+      ): section is {
+        sectionType: RenderableMockBlueprintSectionName;
+        selectionReason: string;
+      } => Boolean(section)
+    );
+  const selectedSections = mergeSelectedSections(
+    explicitSections,
+    sections
+      .map((section) => {
+        const sectionType = normalizeRenderableSectionName(section.componentName);
+        if (!sectionType) return null;
+        return {
+          sectionType,
+          selectionReason: stringValue(section.selectionReason, 'Selected for the product mockup.'),
+        };
+      })
+      .filter(
+        (
+          section
+        ): section is {
+          sectionType: RenderableMockBlueprintSectionName;
+          selectionReason: string;
+        } => Boolean(section)
+      )
+  );
+  return {
+    intent: stringValue(
+      metaRecord.intent || blueprint.summary || blueprint.name,
+      'Mock blueprint preview'
+    ),
+    selectedSections:
+      selectedSections.length > 0
+        ? selectedSections
+        : [
+            {
+              sectionType: 'CardGridSection' as const,
+              selectionReason: 'Selected for the product mockup.',
+            },
+          ],
+  };
+}
+
+function mergeSelectedSections(
+  explicitSections: Array<{
+    sectionType: RenderableMockBlueprintSectionName;
+    selectionReason: string;
+  }>,
+  sectionSelections: Array<{
+    sectionType: RenderableMockBlueprintSectionName;
+    selectionReason: string;
+  }>
+) {
+  const merged = [...explicitSections];
+  for (const section of sectionSelections) {
+    if (merged.some((item) => item.sectionType === section.sectionType)) continue;
+    merged.push(section);
+  }
+  return merged;
+}
+
+function normalizeDatasetKind(
+  value: unknown,
+  section: Record<string, unknown>
+): MockBlueprintDatasetKind {
+  const candidate = mockBlueprintDatasetKinds.includes(value as MockBlueprintDatasetKind)
+    ? (value as MockBlueprintDatasetKind)
+    : null;
+  const sectionName = normalizeRenderableSectionName(section.componentName);
+  if (!sectionName) return candidate || 'generic';
+  const allowedKinds = getMockBlueprintDatasetKindsForSection(sectionName);
+  if (candidate && allowedKinds.includes(candidate)) return candidate;
+  return allowedKinds[0] || 'generic';
+}
+
+function fallbackDatasetForSection(section: Record<string, unknown>) {
+  return normalizeMockBlueprintDataset({ kind: normalizeDatasetKind(null, section) }, section);
+}
+
+function normalizeRenderableSectionName(value: unknown): RenderableMockBlueprintSectionName | null {
+  return renderableMockBlueprintSectionNames.includes(value as RenderableMockBlueprintSectionName)
+    ? (value as RenderableMockBlueprintSectionName)
+    : null;
+}
+
+function sampleContext(section: Record<string, unknown>) {
+  const copy = isRecord(section.copy) ? section.copy : {};
+  return {
+    title: stringValue(copy.title || section.name || section.id, 'Mock item'),
+    description: stringValue(
+      copy.description || section.selectionReason,
+      'Representative mock content for this product screen.'
+    ),
+  };
+}
+
+function ensureMinRecords(
+  records: Array<Record<string, unknown>>,
+  min: number,
+  build: (index: number) => Record<string, unknown>
+) {
+  const next = [...records];
+  while (next.length < min) next.push(build(next.length));
+  return next;
+}
+
+function fallbackTableRow(
+  columns: Array<{ key: string; label: string }>,
+  sample: { title: string; description: string },
+  index: number
+) {
+  return Object.fromEntries(
+    columns.map((column, columnIndex) => [
+      column.key,
+      columnIndex === 0 ? `${sample.title} ${index + 1}` : sample.description,
+    ])
+  );
 }
 
 function normalizeTableRow(row: unknown) {
