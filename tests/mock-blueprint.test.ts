@@ -8,6 +8,7 @@ import {
   buildMockBlueprintSectionCatalog,
   buildMockBlueprintStructuredOutputJsonSchema,
   buildMockBlueprintSystemPrompt,
+  buildMockBlueprintUserPrompt,
 } from '../api/services/structured-generation/prompts/mock-blueprint';
 import {
   getMockBlueprintDatasetKindsForSection,
@@ -18,6 +19,7 @@ import {
   mockBlueprintToPreviewBlueprint,
   mockBlueprintToPreviewBlueprintSafely,
 } from '../src/modules/blueprint-preview/mockBlueprintAdapter';
+import { canUseBlueprintSideColumn } from '../src/modules/blueprint-preview/sidebarPlacement';
 import { representativeMockBlueprint } from './fixtures/mock-blueprint';
 
 beforeAll(async () => {
@@ -129,6 +131,38 @@ describe('Mock Blueprint', () => {
     expect(preview.screens[0].layout).toEqual({ template: 'single_column' });
   });
 
+  it('keeps non-sidebar content out of side columns even when region asks for it', () => {
+    const preview = mockBlueprintToPreviewBlueprint({
+      ...representativeMockBlueprint,
+      screens: [
+        {
+          ...representativeMockBlueprint.screens[0],
+          layout: { template: 'two_column' },
+          sections: representativeMockBlueprint.screens[0].sections
+            .filter((section) => section.region !== 'sidebar')
+            .map((section) => ({ ...section, region: 'aside' })),
+        },
+      ],
+    });
+
+    expect(preview.screens[0].layout).toEqual({ template: 'single_column' });
+    expect(preview.screens[0].sections).toEqual(
+      expect.arrayContaining([expect.objectContaining({ region: 'main' })])
+    );
+    expect(preview.screens[0].sections).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ region: 'aside' })])
+    );
+  });
+
+  it('allows side columns only for sidebar-named sections or sidebar components', () => {
+    expect(canUseBlueprintSideColumn({ componentName: 'SidebarMenuSection' })).toBe(true);
+    expect(canUseBlueprintSideColumn({ name: 'サイドメニュー' })).toBe(true);
+    expect(canUseBlueprintSideColumn({ id: 'project-sidebar' })).toBe(true);
+    expect(canUseBlueprintSideColumn({ componentName: 'DataTableSection', name: 'Tasks' })).toBe(
+      false
+    );
+  });
+
   it('returns null instead of throwing for invalid preview input', () => {
     expect(
       mockBlueprintToPreviewBlueprintSafely({
@@ -162,15 +196,47 @@ describe('Mock Blueprint', () => {
     expect(Buffer.byteLength(JSON.stringify(schema), 'utf8')).toBeLessThan(10_000);
   });
 
-  it('discourages generic sidebar placeholders in mock blueprint selection', () => {
+  it('discourages generic sidebar placeholders without hard-coded domain steering', () => {
     const prompt = buildMockBlueprintSystemPrompt({
       jsonSchema: buildMockBlueprintStructuredOutputJsonSchema(),
       sectionCatalog: buildMockBlueprintSectionCatalog(),
     });
 
-    expect(prompt).toContain('BBS');
-    expect(prompt).toContain('明示要求がない限り右/左 sidebar は使わない');
+    expect(prompt).not.toContain('BBS');
+    expect(prompt).not.toContain('掲示板トップ');
+    expect(prompt).toContain('主要ユーザー、主要エンティティ、主要ワークフロー');
+    expect(prompt).toContain('ControlPanelSection や Display controls');
+    expect(prompt).toContain('掲示板 / forum / thread');
+    expect(prompt).toContain('通常の関連リンクやページ遷移');
+    expect(prompt).toContain('左右横の side column');
+    expect(prompt).toContain('optional view は main / full_width');
     expect(prompt).toContain('ads、sponsored、newsletter');
+  });
+
+  it('frames spec context as constraints instead of implementation planning screens', () => {
+    const prompt = buildMockBlueprintSystemPrompt({
+      jsonSchema: buildMockBlueprintStructuredOutputJsonSchema(),
+      sectionCatalog: buildMockBlueprintSectionCatalog(),
+    });
+    const userPrompt = buildMockBlueprintUserPrompt({
+      task: {
+        id: 'bbs-task',
+        title: 'BBS 作成',
+        description: 'Hono + React/Vite と SQLite で BBS を作る',
+      },
+      featurePlanSummary: '# Spec\n\n## Goal\nBBS を実装する。',
+      prompt: 'BBS の mock を作る',
+    });
+
+    expect(prompt).toContain('プロダクト画面');
+    expect(prompt).toContain('仕様書（Spec）、仕様確認、進行メモ');
+    expect(prompt).toContain('Section は用途で選ぶ');
+    expect(prompt).toContain('仕様項目、実装工程、決定事項の要約には使わない');
+    expect(userPrompt).toContain('仕様書 / Spec（制約として参照）');
+    expect(userPrompt).toContain('アプリそのものの画面');
+    expect(userPrompt).toContain('画面に出す題材ではなく');
+    expect(userPrompt).toContain('仕様項目や実装工程をデータ化しない');
+    expect(userPrompt).toContain('確認ノートの画面は生成しない');
   });
 
   it('lists every strict object property in required for structured output compatibility', () => {
@@ -345,6 +411,58 @@ describe('Mock Blueprint', () => {
           expect.objectContaining({ label: 'author', value: 'admin' }),
         ]),
       });
+    } finally {
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+      else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+    }
+  });
+
+  it('repairs raw mock JSON when the model appends malformed trailing fragments', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+    const misplacedSection = {
+      ...representativeMockBlueprint.screens[0].sections[2],
+      id: 'misplaced-section',
+      name: 'Misplaced Section',
+    };
+    const malformedOutput = `${JSON.stringify({
+      ...representativeMockBlueprint,
+      screens: [representativeMockBlueprint.screens[0], misplacedSection],
+      generationNotes: undefined,
+    })},{"trailing":true}`;
+    process.env.SUPERVISOR_FIXTURE_OUTPUT = malformedOutput;
+
+    try {
+      const repository = await repo.createRepository({
+        name: `TEST: Mock Blueprint Raw Repair ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: repository.id,
+        title: 'TEST: Mock Blueprint raw repair task',
+        description: 'Validate raw mock blueprint repair.',
+        status: 'draft',
+      });
+      const result = await generatePlanModeMockBlueprintDraft({
+        taskId: task.id,
+        title: 'Raw Repair Mock',
+        prompt: 'raw repair',
+      });
+
+      expect(result.mockBlueprint.generationNotes).toEqual([]);
+      expect(result.mockBlueprint.screens).toHaveLength(1);
+      expect(result.mockBlueprint.screens[0].sections).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: 'misplaced-section' })])
+      );
+      expect(result.generation.jsonRepair?.repaired).toBe(true);
     } finally {
       if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
       else process.env.ACTIVE_LLM_PROVIDER = originalProvider;

@@ -6,6 +6,7 @@ import {
   getToolActivityModel,
   type ToolActivityLifecycle,
 } from './ThreadTimeline';
+import { DiffCodeBlock } from './ThreadTimelineDiffView';
 import { NightWorkersCodeBlock } from './ThreadTimelineMarkdown';
 import { sanitizeTerminalPreviewValue, sanitizeTerminalText } from './terminalText';
 
@@ -17,11 +18,12 @@ export type CodexToolCardModel = {
   status: CodexToolStatus;
   providerItemId?: string;
   toolName: string;
-  codexKind: 'mcp' | 'command' | 'file_change';
+  codexKind: 'mcp' | 'command' | 'edit_command' | 'file_change';
   title: string;
   summary: string;
   metadata: Array<{ label: string; value: string }>;
   argumentsPreview?: string;
+  editDiffPreview?: { diff: string; label: string };
   resultPreview?: string;
   outputPreview?: string;
   errorMessage?: string;
@@ -149,13 +151,28 @@ function CodexToolCardBody({ card, debug = false }: { card: CodexToolCardModel; 
 
   return (
     <div className="border-slate-700/60 border-t">
-      <NightWorkersCodeBlock
-        code={blocks.join('\n\n')}
-        filename={`${card.toolName}.txt`}
-        language="text"
-        maxHeight={debug ? 320 : 220}
-        syntaxHighlighting={false}
-      />
+      {card.editDiffPreview ? (
+        <div className="space-y-2 p-3">
+          <DiffCodeBlock code={card.editDiffPreview.diff} label={card.editDiffPreview.label} />
+          {card.outputPreview ? (
+            <NightWorkersCodeBlock
+              code={card.outputPreview}
+              filename={`${card.toolName}.output.txt`}
+              language="text"
+              maxHeight={debug ? 240 : 140}
+              syntaxHighlighting={false}
+            />
+          ) : null}
+        </div>
+      ) : (
+        <NightWorkersCodeBlock
+          code={blocks.join('\n\n')}
+          filename={`${card.toolName}.txt`}
+          language="text"
+          maxHeight={debug ? 320 : 220}
+          syntaxHighlighting={false}
+        />
+      )}
     </div>
   );
 }
@@ -211,6 +228,7 @@ function buildCommandCard(input: {
   const command = asString(input.data.command);
   if (!command) return null;
   const commandClass = asString(input.data.commandClass);
+  const editDiffPreview = buildEditCommandDiffPreview(command);
   const exitCode =
     typeof input.data.exitCode === 'number' || input.data.exitCode === null
       ? String(input.data.exitCode ?? 'pending')
@@ -221,17 +239,173 @@ function buildCommandCard(input: {
     status: input.status,
     providerItemId: input.providerItemId || undefined,
     toolName: 'command_execution',
-    codexKind: 'command',
-    title: 'Codex command',
-    summary: `command_execution | ${command}`,
+    codexKind: editDiffPreview ? 'edit_command' : 'command',
+    title: editDiffPreview ? 'Codex edit' : 'Codex command',
+    summary: editDiffPreview?.summary ?? `command_execution | ${command}`,
     metadata: compactMetadata([
       ['class', commandClass],
       ['exit', exitCode],
+      ['file', editDiffPreview?.filePath],
       ['provider status', asString(input.data.status)],
     ]),
+    editDiffPreview: editDiffPreview
+      ? { diff: editDiffPreview.diff, label: editDiffPreview.label }
+      : undefined,
     outputPreview: sanitizeTerminalText(asString(input.data.aggregatedOutput)) || undefined,
     errorMessage: input.errorMessage,
   };
+}
+
+type EditCommandDiffPreview = {
+  diff: string;
+  filePath: string;
+  label: string;
+  summary: string;
+};
+
+function buildEditCommandDiffPreview(command: string): EditCommandDiffPreview | null {
+  const tokens = tokenizeShellLike(command);
+  if (tokens[0] !== 'sed') return null;
+  return buildSedEditDiffPreview(tokens);
+}
+
+function buildSedEditDiffPreview(tokens: string[]): EditCommandDiffPreview | null {
+  if (!tokens.some((token) => token === '-i' || /^-i.+/.test(token))) return null;
+
+  const script = findSedScript(tokens);
+  if (!script) return null;
+  const substitution = parseSedSubstitution(script);
+  if (!substitution) return null;
+
+  const filePath = findSedTargetFile(tokens, script);
+  if (!filePath) return null;
+
+  const before = substitution.before || '<matched text>';
+  const after = substitution.after || '<empty>';
+  const diff = [
+    `--- ${filePath}`,
+    `+++ ${filePath}`,
+    '@@ sed in-place edit @@',
+    `- ${before}`,
+    `+ ${after}`,
+  ].join('\n');
+
+  return {
+    diff,
+    filePath,
+    label: 'sed edit preview',
+    summary: `sed edit | ${filePath} | ${truncatePreview(before)} -> ${truncatePreview(after)}`,
+  };
+}
+
+function findSedScript(tokens: string[]): string | null {
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (isCommandBoundary(token)) return null;
+    if (token === '-e' || token === '-f') {
+      const next = tokens[index + 1];
+      if (token === '-e' && next && parseSedSubstitution(next)) return next;
+      index += 1;
+      continue;
+    }
+    if (token === '-i') {
+      const next = tokens[index + 1];
+      if (next === '') index += 1;
+      continue;
+    }
+    if (token.startsWith('-')) continue;
+    if (parseSedSubstitution(token)) return token;
+  }
+  return null;
+}
+
+function findSedTargetFile(tokens: string[], script: string): string | null {
+  const scriptIndex = tokens.indexOf(script);
+  if (scriptIndex < 0) return null;
+  for (let index = scriptIndex + 1; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (isCommandBoundary(token)) break;
+    if (!token || token.startsWith('-')) continue;
+    return token;
+  }
+  return null;
+}
+
+function parseSedSubstitution(script: string): { before: string; after: string } | null {
+  if (script.length < 4 || script[0] !== 's') return null;
+  const separator = script[1];
+  if (!separator || /\w|\s/.test(separator)) return null;
+
+  const beforeEnd = findUnescaped(script, separator, 2);
+  if (beforeEnd < 0) return null;
+  const afterEnd = findUnescaped(script, separator, beforeEnd + 1);
+  if (afterEnd < 0) return null;
+
+  return {
+    before: unescapeSedPart(script.slice(2, beforeEnd), separator),
+    after: unescapeSedPart(script.slice(beforeEnd + 1, afterEnd), separator),
+  };
+}
+
+function findUnescaped(value: string, target: string, startIndex: number): number {
+  let escaped = false;
+  for (let index = startIndex; index < value.length; index += 1) {
+    const char = value[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (char === target) return index;
+  }
+  return -1;
+}
+
+function unescapeSedPart(value: string, separator: string): string {
+  return value.replaceAll(`\\${separator}`, separator).replaceAll('\\\\', '\\');
+}
+
+function tokenizeShellLike(command: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | null = null;
+  let escaped = false;
+
+  for (const char of command) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+    if (char === '\\' && quote !== "'") {
+      escaped = true;
+      continue;
+    }
+    if ((char === '"' || char === "'") && (!quote || quote === char)) {
+      quote = quote ? null : char;
+      continue;
+    }
+    if (!quote && /\s/.test(char)) {
+      tokens.push(current);
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  tokens.push(current);
+  return tokens.filter((token, index, list) => token !== '' || list[index - 1] === '-i');
+}
+
+function isCommandBoundary(token: string): boolean {
+  return token === '&&' || token === '||' || token === ';' || token === '|';
+}
+
+function truncatePreview(value: string): string {
+  const compact = value.replace(/\s+/g, ' ').trim();
+  return compact.length > 42 ? `${compact.slice(0, 39)}...` : compact;
 }
 
 function buildFileChangeCard(input: {

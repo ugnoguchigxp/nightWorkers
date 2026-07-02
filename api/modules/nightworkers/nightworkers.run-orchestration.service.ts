@@ -65,6 +65,7 @@ import {
   type StructuredLlmProviderSettings,
   type StructuredLlmRole,
 } from '../../services/structured-llm/settings';
+import { type JobType, jobTypes } from '../../services/supervisor/prompt';
 import { digestText } from '../../services/text-digest';
 import type { RuntimePromptSnapshot } from '../../services/todo-context';
 import {
@@ -680,6 +681,22 @@ function resolveExecutionModeFromMessages(
   return 'implementation';
 }
 
+function resolveLatestJobTypeFromMessages(
+  messages: Awaited<ReturnType<typeof repo.listTaskMessages>>
+): JobType | null {
+  for (const message of [...messages].reverse()) {
+    const metadata = toRecord(message.metadataJson);
+    const selection = toRecord(metadata?.intakeJobSelection) ?? toRecord(metadata?.jobSelection);
+    const jobType = typeof selection?.jobType === 'string' ? selection.jobType : null;
+    if (isJobType(jobType)) return jobType;
+  }
+  return null;
+}
+
+function isJobType(value: unknown): value is JobType {
+  return typeof value === 'string' && (jobTypes as readonly string[]).includes(value);
+}
+
 function isImplementationHandoffMessage(
   message: Awaited<ReturnType<typeof repo.listTaskMessages>>[number],
   metadata: Record<string, unknown> | null
@@ -822,6 +839,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
   const messages = await repo.listTaskMessages(taskId);
   const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
   const llmRouteOverride = readMessageLlmRouteOverride(lastUserMessage);
+  const jobType = resolveLatestJobTypeFromMessages(messages);
   const executionMode = options.executionMode ?? resolveExecutionModeFromMessages(messages);
   const executionModeSource = options.executionMode
     ? (options.executionModeSource ?? 'explicit')
@@ -886,6 +904,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
       compiledPrompt: compiledPromptText,
       executionMode,
       executionModeSource,
+      jobType,
       planModeSettingsSnapshot,
       ...blueprintPlanningSnapshot,
       runtimeLane: runtimeLaneResolution.lane,
@@ -901,6 +920,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
   const runtimeLaneSetupInput = {
     compiledPromptText,
     executionMode,
+    jobType,
     runtimeLaneResolution,
     implementationLlmRoute: runtimeLlmRoute,
     llmRouteOverride,
@@ -920,6 +940,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
           todos: initialTodos,
           startFirst: true,
           includeKnowledgeCapture: todoWorkflowSettings?.requireRegisterCandidatePrompt ?? true,
+          requireDataMigrationGates: jobType === 'data_migration',
         })
   );
 

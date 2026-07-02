@@ -128,6 +128,7 @@ export type ProviderCallResult = {
 export type StructuredJsonLlmOptions = Omit<CallSupervisorOptions, 'schemaFirst' | 'round'> & {
   schemaName: string;
   schema: unknown;
+  allowRawOutputOnJsonParseFailure?: boolean;
 };
 
 export type SupervisorLlmDebugEvent = {

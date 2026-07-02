@@ -24,6 +24,7 @@ import {
   designReferenceSummary,
 } from './designSettings';
 import { labelForOption, labelForOptionA11y, toObjectArray } from './previewModel';
+import { canUseBlueprintSideColumn, coerceBlueprintSideRegion } from './sidebarPlacement';
 
 type BlueprintPreviewProps = {
   sessionId?: string | null;
@@ -210,8 +211,7 @@ function BlueprintScreenSectionLayout({
   layout: BlueprintScreenLayoutTemplate;
   sections: ArrangedBlueprintSections;
 }) {
-  const hasColumns =
-    sections.sidebar.length > 0 || sections.aside.length > 0 || layout !== 'single_column';
+  const hasColumns = sections.sidebar.length > 0 || sections.aside.length > 0;
 
   return (
     <div className="grid gap-[var(--blueprint-preview-gap)]">
@@ -219,7 +219,7 @@ function BlueprintScreenSectionLayout({
       <BlueprintRegionSections sections={sections.full_width} />
       {hasColumns ? (
         <div className={screenGridClassName(layout, sections)}>
-          {sections.sidebar.length > 0 || layout === 'three_column' || layout === 'sidebar_left' ? (
+          {sections.sidebar.length > 0 ? (
             <aside className="grid content-start gap-[var(--blueprint-preview-gap)]">
               <BlueprintRegionSections sections={sections.sidebar} />
             </aside>
@@ -227,11 +227,7 @@ function BlueprintScreenSectionLayout({
           <main className="grid min-w-0 content-start gap-[var(--blueprint-preview-gap)]">
             <BlueprintRegionSections sections={sections.main} />
           </main>
-          {sections.aside.length > 0 ||
-          layout === 'three_column' ||
-          layout === 'two_column' ||
-          layout === 'sidebar_right' ||
-          layout === 'article_with_sidebar' ? (
+          {sections.aside.length > 0 ? (
             <aside className="grid content-start gap-[var(--blueprint-preview-gap)]">
               <BlueprintRegionSections sections={sections.aside} />
             </aside>
@@ -294,20 +290,18 @@ function arrangeSectionsByRegion(
 
 function sectionRegion(section: Record<string, unknown>): BlueprintSectionRegion {
   const explicitRegion = String(section.region || '');
-  if (isBlueprintSectionRegion(explicitRegion)) return explicitRegion;
+  if (isBlueprintSectionRegion(explicitRegion)) {
+    return coerceBlueprintSideRegion(explicitRegion, section);
+  }
   const componentName = String(section.componentName || '');
   if (componentName === 'TopMenuSection' || componentName === 'TabNavigationSection') {
     return 'header';
   }
   if (componentName === 'FooterNavigationSection') return 'footer';
-  if (
-    componentName === 'LeftSidebarSection' ||
-    componentName === 'SidebarMenuSection' ||
-    componentName === 'ExplorerSidebarSection'
-  ) {
+  if (componentName === 'RightSidebarLinksSection') return 'aside';
+  if (canUseBlueprintSideColumn(section)) {
     return 'sidebar';
   }
-  if (componentName === 'RightSidebarLinksSection') return 'aside';
   if (componentName === 'FullBleedHeroSection') return 'full_width';
   return 'main';
 }

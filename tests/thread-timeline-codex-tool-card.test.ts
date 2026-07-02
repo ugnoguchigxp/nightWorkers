@@ -112,6 +112,39 @@ describe('ThreadTimeline Codex tool cards', () => {
     expect(card?.outputPreview).not.toContain('[39m');
   });
 
+  it('renders sed in-place commands as Codex edit diff previews', () => {
+    const card = getCodexToolCardModel({
+      kind: 'tool.result',
+      status: 'completed',
+      payloadJson: {
+        payload: {
+          provider: 'codex',
+          providerEventType: 'item.completed',
+          providerItemId: 'cmd-sed-edit',
+          toolName: 'command_execution',
+          command: "sed -i '' 's/oldTitle/newTitle/g' src/App.tsx",
+          commandClass: 'inspection',
+          aggregatedOutput: '',
+          exitCode: 0,
+          status: 'completed',
+        },
+      },
+    });
+
+    expect(card).toMatchObject({
+      codexKind: 'edit_command',
+      title: 'Codex edit',
+      summary: 'sed edit | src/App.tsx | oldTitle -> newTitle',
+      editDiffPreview: {
+        label: 'sed edit preview',
+      },
+    });
+    expect(card?.metadata).toContainEqual({ label: 'file', value: 'src/App.tsx' });
+    expect(card?.editDiffPreview?.diff).toContain('--- src/App.tsx');
+    expect(card?.editDiffPreview?.diff).toContain('- oldTitle');
+    expect(card?.editDiffPreview?.diff).toContain('+ newTitle');
+  });
+
   it('keeps Codex MCP tool cards visible in normal transcript mode', () => {
     const items = buildNormalTranscriptItems([
       {

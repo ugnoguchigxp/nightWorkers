@@ -166,6 +166,65 @@ describe('standard implementation TodoList builder', () => {
     expect(todos.filter((todo) => todo.procedureId === 'quality_gate_verify')).toHaveLength(1);
   });
 
+  it('adds required migration creation, application, and verification gates for data migration runs', () => {
+    const todos = buildStandardImplementationTodoList({
+      requireDataMigrationGates: true,
+      todos: [{ seq: 1, title: 'BBS persistenceを実装する', taskType: 'implementation' }],
+    });
+
+    expect(todos.map((todo) => `${todo.seq}:${todo.taskType}:${todo.procedureId}`)).toEqual([
+      '1:initial_instructions:contextstill.initial_instructions',
+      '2:context_compile:contextstill.context_compile',
+      '3:implementation:null',
+      '4:data_migration:data_migration.create_migration',
+      '5:data_migration:data_migration.apply_migration',
+      '6:focused_verification:data_migration.verify_migration',
+      '7:review:llm_code_review',
+      '8:verification:quality_gate_verify',
+      '9:knowledge_capture:contextstill.register_candidates',
+      '10:completion_report:final_completion_report',
+    ]);
+    expect(todos[3]).toMatchObject({
+      title: 'DB migration を作成する',
+      dependsOn: [3],
+    });
+    expect(todos[4]).toMatchObject({
+      title: 'DB migration を対象 DB に適用する',
+      dependsOn: [4],
+    });
+    expect(todos[5]).toMatchObject({
+      title: 'DB migration 後の schema と動作を検証する',
+      dependsOn: [5],
+    });
+    expect(todos[6]).toMatchObject({ taskType: 'review', dependsOn: [6] });
+  });
+
+  it('preserves required migration gates when a replacement TodoList marks migration work', () => {
+    const todos = buildStandardImplementationTodoList({
+      todos: [
+        { seq: 1, title: 'スレッド保存処理を実装する', taskType: 'implementation' },
+        {
+          seq: 2,
+          title: 'threads table migration を作成する',
+          taskType: 'data_migration',
+          procedureId: 'data_migration.create_migration',
+          dependsOn: [1],
+        },
+      ],
+    });
+
+    expect(
+      todos
+        .filter((todo) => todo.procedureId?.startsWith('data_migration.'))
+        .map((todo) => todo.procedureId)
+    ).toEqual([
+      'data_migration.create_migration',
+      'data_migration.apply_migration',
+      'data_migration.verify_migration',
+    ]);
+    expect(todos.filter((todo) => todo.title.includes('threads table migration'))).toHaveLength(0);
+  });
+
   it('merges LLM-generated review Todos into the fixed LLM review gate', () => {
     const todos = buildStandardImplementationTodoList({
       todos: [

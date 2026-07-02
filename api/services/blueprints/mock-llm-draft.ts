@@ -84,6 +84,7 @@ export async function generatePlanModeMockBlueprintDraft(input: {
     taskId: input.taskId,
     runId: null,
     role: 'plan',
+    allowRawOutputOnJsonParseFailure: true,
   });
 
   const parsed = parseMockBlueprintJsonOutput(rawOutput);
@@ -125,12 +126,26 @@ function parseMockBlueprintJsonOutput(rawOutput: string):
 
   const jsonFix = jsonFixWrapper(rawOutput);
   if (!jsonFix) {
-    return {
-      ok: false,
-      reason: 'parse',
-      message: 'LLM output did not contain repairable JSON.',
-      rawOutput,
-    };
+    const balancedPrefix = firstBalancedJsonObject(rawOutput);
+    if (!balancedPrefix) {
+      return {
+        ok: false,
+        reason: 'parse',
+        message: 'LLM output did not contain repairable JSON.',
+        rawOutput,
+      };
+    }
+    const prefixParsed = parseNormalizedMockBlueprintCandidate(balancedPrefix);
+    if (prefixParsed.ok) {
+      return {
+        ok: true,
+        value: prefixParsed.value,
+        sourceText: balancedPrefix,
+        repaired: true,
+        repairKind: 'balanced_json',
+      };
+    }
+    return prefixParsed.error;
   }
 
   const normalized = normalizeMockBlueprintCandidate(jsonFix.parsedJson);
@@ -156,13 +171,71 @@ function parseMockBlueprintJsonOutput(rawOutput: string):
   };
 }
 
+function parseNormalizedMockBlueprintCandidate(sourceText: string):
+  | { ok: true; value: MockBlueprint }
+  | {
+      ok: false;
+      error: { ok: false; reason: 'parse' | 'schema'; message: string; rawOutput: string };
+    } {
+  try {
+    const normalized = normalizeMockBlueprintCandidate(JSON.parse(sourceText));
+    const parsed = mockBlueprintSchema.safeParse(normalized);
+    if (parsed.success) return { ok: true, value: parsed.data };
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        reason: 'schema',
+        message: parsed.error.issues
+          .slice(0, 6)
+          .map((issue) => `${issue.path.join('.') || '$'}:${issue.message}`)
+          .join(', '),
+        rawOutput: sourceText,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        reason: 'parse',
+        message: error instanceof Error ? error.message : String(error),
+        rawOutput: sourceText,
+      },
+    };
+  }
+}
+
 function normalizeMockBlueprintCandidate(candidate: unknown): unknown {
+  if (Array.isArray(candidate)) {
+    return normalizeMockBlueprintCandidate(
+      candidate.find(
+        (item) => isRecord(item) && String(item.artifactKind || '') === 'mock_blueprint'
+      ) ?? candidate[0]
+    );
+  }
   if (!isRecord(candidate)) return candidate;
   const blueprint = { ...candidate };
   if (Array.isArray(blueprint.screens)) {
-    blueprint.screens = blueprint.screens.map(normalizeMockBlueprintScreen);
+    blueprint.screens = normalizeMockBlueprintScreens(blueprint.screens);
   }
+  if (!Array.isArray(blueprint.generationNotes)) blueprint.generationNotes = [];
   return blueprint;
+}
+
+function normalizeMockBlueprintScreens(screens: unknown[]): unknown[] {
+  const normalizedScreens: Record<string, unknown>[] = [];
+  for (const screen of screens) {
+    if (looksLikeMockBlueprintSection(screen) && normalizedScreens.length > 0) {
+      const previous = normalizedScreens[normalizedScreens.length - 1];
+      const sections = Array.isArray(previous.sections) ? previous.sections : [];
+      previous.sections = [...sections, normalizeMockBlueprintSection(screen)];
+      continue;
+    }
+    const normalized = normalizeMockBlueprintScreen(screen);
+    if (isRecord(normalized)) normalizedScreens.push(normalized);
+  }
+  return normalizedScreens;
 }
 
 function normalizeMockBlueprintScreen(screen: unknown): unknown {
@@ -180,6 +253,10 @@ function normalizeMockBlueprintSection(section: unknown): unknown {
   sectionRecord.copy = normalizeMockBlueprintCopy(sectionRecord.copy);
   sectionRecord.dataset = normalizeMockBlueprintDataset(sectionRecord.dataset);
   return sectionRecord;
+}
+
+function looksLikeMockBlueprintSection(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && typeof value.componentName === 'string' && isRecord(value.dataset);
 }
 
 function normalizeMockBlueprintCopy(copy: unknown): unknown {
@@ -380,6 +457,35 @@ function nullableString(value: unknown) {
 
 function arrayOfRecords(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function firstBalancedJsonObject(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed.startsWith('{')) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\' && inString) {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === '{') depth += 1;
+    if (char === '}') depth -= 1;
+    if (depth === 0) return trimmed.slice(0, index + 1);
+  }
+  return null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

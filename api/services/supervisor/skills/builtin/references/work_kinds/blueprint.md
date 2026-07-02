@@ -14,10 +14,13 @@
 - 既存の Blueprint artifact がある場合は、現在の user request を反映して更新・差分化する前提で考える。
 - e-commerce、dashboard、admin、content、workflow などのドメインらしさを、generic overview ではなく実際の画面構成とコンポーネント選定に反映する。
 - section は必要なものだけを選ぶ。見栄えのために hero、画像、KPI、chart、activity、marketing section を自動追加しない。
-- Webページ全体の列構成は `screen.layout.template` で選ぶ。`single_column`、`two_column`、`three_column`、`sidebar_left`、`sidebar_right`、`article_with_sidebar` を使い、個々の section は `region` で `header`、`main`、`sidebar`、`aside`、`full_width`、`footer` に配置する。
+- Webページ全体の列構成は `screen.layout.template` で選ぶ。通常は `single_column` を使う。`two_column`、`three_column`、`sidebar_left`、`sidebar_right`、`article_with_sidebar` は `sidebar` / `aside` に置く section がある場合だけ使う。
+- 左右横の side column に置いてよいのは、サイドメニュー用途、または `componentName` / `name` / `id` に `sidebar` / `サイドバー` / `サイドメニュー` を含む section だけ。該当しない通常コンテンツ、カード、フォーム、表、記事、指標、optional view は `main` / `full_width` に置き、横並びにしない。
+- 個々の section は `region` で `header`、`main`、`sidebar`、`aside`、`full_width`、`footer` に配置する。`sidebar` / `aside` は上記の side column 条件を満たす section にだけ使う。
 - Header / footer は列レイアウトの外側に置く。`TopMenuSection`、`TabNavigationSection` は `header`、`FooterNavigationSection` は `footer`、`LeftSidebarSection` / `SidebarMenuSection` / `ExplorerSidebarSection` は `sidebar`、`RightSidebarLinksSection` は `aside` に置く。
 - `LeftSidebarSection` と `RightSidebarLinksSection` は本文横の補助カラムとして使い、広告、ランキング、リンク集、関連コンテンツを入れる。アプリの主ナビゲーションが必要なら `SidebarMenuSection`、Explorer風の階層ナビが必要なら `ExplorerSidebarSection` を使う。
 - workflow / CRUD / kanban / admin などの作業画面では、見た目の優先度だけでなく、実際の操作順序、使用感、作業前に必要な入力、画面上の視線移動を考えて section と props を決める。
+- `ControlPanelSection` や Display controls は、表示モード切替、運用スイッチ、設定、フィルタ操作そのものが画面の主目的の場合だけ使う。掲示板 / forum / thread / 投稿本文 / 返信 / コメント閲覧では、明示要求がない限り使わず、`BlogPostSection` / `ChatPanelSection` / `DataTableSection` / `FormSection` / `TabNavigationSection` を選ぶ。
 - 一覧系 section は、見た目の好みで cards に寄せず、主操作に合わせて公平に選ぶ。複数件の比較、状態確認、一括操作、ソート、絞り込み、更新対象の見極めが主目的なら `table_workspace` または `DataTableSection` を第一候補にする。
 - `CardGridSection` は、アイテムごとの要約、視覚的な分類、候補ブラウズ、テンプレート選択、リッチなカード単位アクションが主目的のときに使う。単なる task / todo / record 一覧を自動で card 化しない。
 - TODO / task / issue / order / customer などの CRUD・運用一覧で、ユーザーが「一覧」「管理」「最小構成」「登録と一覧だけ」を求める場合は、検索 header と table workspace、または compact form と table workspace を基本形として考える。board/card/gallery を明示された場合だけ card や kanban を主役にする。
@@ -113,7 +116,7 @@ AppBlueprint JSON は次の root 形にする。
 - `path` は `/` から始め、英数字、`/`、`_`、`-` だけを使う。例: `/`, `/products`, `/account/orders`。
 - `componentName` は `blueprint-catalog.schema.ts` の enum から選ぶ。トップページなら `SidebarPage`、`ListPage`、`ArticleFeedPage`、`DashboardPage` などの汎用 page を使う。
 - catalog にある単体 section を使う場合は、必ず `kind: "component_section"` と `componentName` を指定する。ただし検索 header、table workspace、metrics overview、kanban board のように内部構成を調整したい領域は `kind: "preset_section"` を優先する。
-- `screen.layout.template` は `single_column`、`two_column`、`three_column`、`sidebar_left`、`sidebar_right`、`article_with_sidebar` から選ぶ。`section.region` は `header`、`main`、`sidebar`、`aside`、`full_width`、`footer` から選ぶ。
+- `screen.layout.template` は `single_column`、`two_column`、`three_column`、`sidebar_left`、`sidebar_right`、`article_with_sidebar` から選ぶ。ただし `two_column`、`three_column`、`sidebar_left`、`sidebar_right`、`article_with_sidebar` は、side column 条件を満たす `sidebar` / `aside` section がある時だけ使う。`section.region` は `header`、`main`、`sidebar`、`aside`、`full_width`、`footer` から選ぶ。
 - `preset_section` は `id`、必要なら `name`、`preset`、`props`、`overrides`、`actions` を持つ。`preset` は `search_header`、`table_workspace`、`metrics_overview`、`kanban_board` から選ぶ。
 - `custom_section` は preset で表現できない時だけ使い、`root` の BlueprintNode tree は `Text`、`Button`、`Input`、`Card`、`DataTable`、`List`、`Alert` など既知 component と `stack` / `row` / `grid` / `split` layout token だけで構成する。任意 HTML、className、CSS は作らない。
 - `component_section` は `kind: "component_section"`、`id`、`name`、`componentName`、`source`、`props`、必要なら `intent`、`visualIntent`、`actions` を持つ。通常 Blueprint では `dataBindingId` を使わない。

@@ -55,4 +55,17 @@ describe('Supervisor LLM schema-first parsing', () => {
       })
     ).rejects.toThrow(/response JSON parse failed/);
   });
+
+  it('can return raw structured output when callers own repair handling', async () => {
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+    process.env.SUPERVISOR_FIXTURE_OUTPUT = 'plain fixture text';
+
+    const rawOutput = await callStructuredJsonLLM('system', 'user', {
+      schemaName: 'example_schema',
+      schema: { type: 'object' },
+      allowRawOutputOnJsonParseFailure: true,
+    });
+
+    expect(rawOutput).toBe('plain fixture text');
+  });
 });

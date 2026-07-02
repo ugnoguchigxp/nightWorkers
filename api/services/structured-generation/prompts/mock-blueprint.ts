@@ -8,7 +8,7 @@ import {
   renderableMockBlueprintSectionNames,
 } from '../../../../shared/schemas/mock-blueprint.schema';
 
-export const MOCK_BLUEPRINT_PROMPT_VERSION = 'mock-blueprint-v1';
+export const MOCK_BLUEPRINT_PROMPT_VERSION = 'mock-blueprint-v2';
 
 type SectionCatalogEntry = {
   componentName: RenderableMockBlueprintSectionName;
@@ -44,8 +44,13 @@ export function buildMockBlueprintSystemPrompt(input: {
     '- componentName は [Section Catalog] の名前だけを使う。',
     '- dataset.kind は、その Section に許可された kind だけを使う。',
     '- 通常は 1-3 screens、screen ごとに 1-6 sections に抑える。',
-    '- CRUD、管理、運用、一覧確認では FormSection / DataTableSection / KanbanSection / TimelineSection / navigation を優先する。',
-    '- BBS、forum、thread、投稿一覧、返信管理は DataTableSection / FormSection / TimelineSection / TopMenuSection / FooterNavigationSection を優先し、明示要求がない限り右/左 sidebar は使わない。',
+    '- Mock は「実装後にユーザーが触るプロダクト画面」を描く。仕様書（Spec）、仕様確認、進行メモ、実装手順、決定事項サマリー、確認用ノートを画面化しない。',
+    '- 依頼文から主要ユーザー、主要エンティティ、主要ワークフロー、最も確認したい状態を読み取り、それに必要な Section を選ぶ。',
+    '- Section は用途で選ぶ。レコード一覧や比較は DataTableSection、作成・編集は FormSection、本文や詳細閲覧は BlogPostSection、会話やコメントは ChatPanelSection、状態遷移は KanbanSection、操作・設定は ControlPanelSection、グローバル導線は TopMenuSection / TabNavigationSection / FooterNavigationSection を使う。',
+    '- ControlPanelSection や Display controls は、表示モード切替、運用スイッチ、設定、フィルタ操作そのものが画面の主目的の場合だけ使う。掲示板 / forum / thread / 投稿本文 / 返信 / コメント閲覧では、明示要求がない限り使わず、BlogPostSection / ChatPanelSection / DataTableSection / FormSection / TabNavigationSection を選ぶ。',
+    '- CardGridSection / TimelineSection / AnalyticsDashboardSection は、対象プロダクト自体がカード閲覧、時系列活動、指標確認を中心にする場合だけ使う。仕様項目、実装工程、決定事項の要約には使わない。',
+    '- screen.layout.template は通常 single_column を使う。two_column / three_column / sidebar_left / sidebar_right / article_with_sidebar は、sidebar / aside に置く Section が必要な場合だけ使う。',
+    '- 左右横の side column に置いてよいのは、SidebarMenuSection / LeftSidebarSection / ExplorerSidebarSection / RightSidebarLinksSection、または componentName / name / id に sidebar / サイドバー / サイドメニューを含む Section だけ。該当しない通常コンテンツ、カード、フォーム、表、記事、指標、optional view は main / full_width に置き、横並びにしない。',
     '- RightSidebarLinksSection / LeftSidebarSection は、画面に独立した補助カラムが明示的に必要な場合だけ使う。通常の関連リンクやページ遷移は TopMenuSection / TabNavigationSection / FooterNavigationSection / SidebarMenuSection で表現する。',
     '- ads、sponsored、newsletter などの汎用 placeholder は依頼に明示されていない限り dataset や copy に入れない。',
     '- landing、article、media、campaign が明示されていない場合、hero/media 系を主役にしない。',
@@ -71,6 +76,9 @@ export function buildMockBlueprintUserPrompt(input: {
 }) {
   return [
     '次の context から Mock Blueprint JSON を1つ生成してください。',
+    '生成する screens は、作ろうとしているアプリそのものの画面です。',
+    'Plan Mode、仕様書（Spec）、仕様レビュー、進行管理、確認メモを表示する NightWorkers 内部画面にはしないでください。',
+    'サンプルデータは task domain の実データ風に作り、仕様項目や実装工程をデータ化しないでください。',
     '',
     '## Task',
     `Task ID: ${input.task.id}`,
@@ -81,8 +89,10 @@ export function buildMockBlueprintUserPrompt(input: {
     '## Questionnaire / Decisions',
     input.questionnaireMarkdown?.trim() || 'Questionnaire は未生成です。',
     '',
-    '## Feature Plan Summary',
-    input.featurePlanSummary?.trim() || 'Feature Plan は未生成です。',
+    '## 仕様書 / Spec（制約として参照）',
+    'この内容は画面に出す題材ではなく、Mock の制約としてだけ使ってください。',
+    '仕様書（Spec）、仕様確認、進行メモ、実装手順、確認ノートの画面は生成しないでください。',
+    input.featurePlanSummary?.trim() || '仕様書（Spec）は未生成です。',
     '',
     '## User Prompt',
     input.prompt?.trim() || input.task.objective || input.task.description || input.task.title,
@@ -283,7 +293,7 @@ function sectionUsage(componentName: RenderableMockBlueprintSectionName) {
     CheckoutSummarySection: 'checkout/order/payment summary',
     CodeEditorSection: 'code/config editing mock',
     ComparisonSection: 'side-by-side comparison',
-    ControlPanelSection: 'settings, toggles, operational controls',
+    ControlPanelSection: 'settings, toggles, operational controls only',
     DataTableSection: 'records, CRUD lists, sorting, comparison',
     EmailInboxSection: 'inbox-style table/list workflow',
     ExplorerSidebarSection: 'hierarchical file/project navigation',

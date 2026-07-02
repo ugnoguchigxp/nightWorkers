@@ -6,6 +6,7 @@ import type {
 } from '../../../shared/schemas/mock-blueprint.schema';
 import { mockBlueprintSchema } from '../../../shared/schemas/mock-blueprint.schema';
 import { defaultBlueprintPreviewDesignSettings } from './designSettings';
+import { canUseBlueprintSideColumn, coerceBlueprintSideRegion } from './sidebarPlacement';
 
 type PreviewBlueprint = ReturnType<typeof mockBlueprintToPreviewBlueprint>;
 
@@ -47,16 +48,15 @@ function screenToPreviewScreen(screen: MockBlueprintScreen): Record<string, unkn
 
 function previewLayoutForScreen(screen: MockBlueprintScreen): MockBlueprintScreen['layout'] {
   const hasSidebar = screen.sections.some(
-    (section) => (section.region || defaultRegionForSection(section.componentName)) === 'sidebar'
+    (section) => previewRegionForSection(section) === 'sidebar'
   );
-  const hasAside = screen.sections.some(
-    (section) => (section.region || defaultRegionForSection(section.componentName)) === 'aside'
-  );
+  const hasAside = screen.sections.some((section) => previewRegionForSection(section) === 'aside');
 
   if (hasSidebar && hasAside) return { template: 'three_column' };
   if (hasSidebar) return { template: 'sidebar_left' };
   if (hasAside) return { template: 'sidebar_right' };
   if (
+    screen.layout.template === 'two_column' ||
     screen.layout.template === 'sidebar_left' ||
     screen.layout.template === 'sidebar_right' ||
     screen.layout.template === 'three_column' ||
@@ -76,7 +76,7 @@ function sectionToPreviewSection(
     id: section.id,
     name: section.name,
     componentName: section.componentName,
-    region: section.region || defaultRegionForSection(section.componentName),
+    region: previewRegionForSection(section),
     source: sourceForDataset(section.dataset),
     intent: section.selectionReason,
     visualIntent: section.copy.description || screen.purpose,
@@ -253,14 +253,8 @@ function defaultRegionForSection(componentName: MockBlueprintSection['componentN
   if (componentName === 'TopMenuSection' || componentName === 'TabNavigationSection')
     return 'header';
   if (componentName === 'FooterNavigationSection') return 'footer';
-  if (
-    componentName === 'LeftSidebarSection' ||
-    componentName === 'SidebarMenuSection' ||
-    componentName === 'ExplorerSidebarSection'
-  ) {
-    return 'sidebar';
-  }
   if (componentName === 'RightSidebarLinksSection') return 'aside';
+  if (canUseBlueprintSideColumn({ componentName })) return 'sidebar';
   if (
     componentName === 'FullBleedHeroSection' ||
     componentName === 'SplitHeroSection' ||
@@ -269,6 +263,11 @@ function defaultRegionForSection(componentName: MockBlueprintSection['componentN
     return 'full_width';
   }
   return 'main';
+}
+
+function previewRegionForSection(section: MockBlueprintSection) {
+  const region = section.region || defaultRegionForSection(section.componentName);
+  return coerceBlueprintSideRegion(region, section);
 }
 
 function sourceForDataset(dataset: MockBlueprintDataset) {

@@ -1754,6 +1754,47 @@ describe('NativeApiRunner tool registry and dispatcher gates', () => {
     expect(result.toolResult.content).toContain('todo_list operation=done seq=3');
   });
 
+  it('blocks finalize_answer while required migration verification Todos remain open', async () => {
+    (repo.listTaskRunTodosForRun as never).mockResolvedValue([
+      {
+        seq: 6,
+        title: 'DB migration 後の schema と動作を検証する',
+        taskType: 'focused_verification',
+        status: 'pending',
+        procedureId: 'data_migration.verify_migration',
+      },
+    ]);
+
+    const result = await dispatchNativeApiToolCall({
+      toolCall: {
+        id: 'call-final',
+        name: 'finalize_answer',
+        arguments: { finalReport: 'done' },
+      },
+      context: buildContext({
+        runtimeOptions: { executionMode: 'implementation', jobType: 'data_migration' },
+      }),
+      sink: createSink(),
+      state: { readFiles: [], specificationRead: true },
+    });
+
+    expect(result.kind).toBe('continue');
+    expect(result.toolResult).toMatchObject({
+      ok: false,
+      error: {
+        code: 'OPEN_TODOS_REMAIN',
+        details: {
+          nextAction: {
+            operation: 'start',
+            seq: 6,
+            example: 'todo_list operation=start seq=6',
+          },
+        },
+      },
+    });
+    expect(result.toolResult.content).toContain('data_migration.verify_migration');
+  });
+
   it('closes the final completion_report Todo when finalize_answer succeeds', async () => {
     const completionTodo = {
       id: 'todo-final',

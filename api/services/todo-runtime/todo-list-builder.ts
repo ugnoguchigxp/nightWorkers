@@ -20,6 +20,12 @@ export type BuiltTodoInput = {
 
 type StandardGate = Omit<BuiltTodoInput, 'seq' | 'status' | 'startedAt'>;
 
+const DATA_MIGRATION_PROCEDURE_IDS = new Set([
+  'data_migration.create_migration',
+  'data_migration.apply_migration',
+  'data_migration.verify_migration',
+]);
+
 const FIRST_GATES: StandardGate[] = [
   {
     title: 'initial_instructions を実行する',
@@ -36,6 +42,33 @@ const FIRST_GATES: StandardGate[] = [
     taskType: 'context_compile',
     procedureId: 'contextstill.context_compile',
     dependsOn: [1],
+  },
+];
+
+const DATA_MIGRATION_GATES: StandardGate[] = [
+  {
+    title: 'DB migration を作成する',
+    description:
+      'DB schema 変更が必要な場合は、既存の migration flow に従って migration ファイルまたは同等の schema 適用手順を作成する。',
+    taskType: 'data_migration',
+    procedureId: 'data_migration.create_migration',
+    dependsOn: [],
+  },
+  {
+    title: 'DB migration を対象 DB に適用する',
+    description:
+      '作成した migration を実作業対象の DB に適用する。適用できない場合は完了扱いにせず block または fail にする。',
+    taskType: 'data_migration',
+    procedureId: 'data_migration.apply_migration',
+    dependsOn: [],
+  },
+  {
+    title: 'DB migration 後の schema と動作を検証する',
+    description:
+      'migration 適用後に schema 存在確認、関連 API smoke、または focused test を実行し、DB schema 変更が実行時に反映されていることを確認する。',
+    taskType: 'focused_verification',
+    procedureId: 'data_migration.verify_migration',
+    dependsOn: [],
   },
 ];
 
@@ -77,21 +110,40 @@ export function buildStandardImplementationTodoList(input: {
   todos?: ImplementationTodoInput[];
   startFirst?: boolean;
   includeKnowledgeCapture?: boolean;
+  requireDataMigrationGates?: boolean;
   now?: Date;
 }): BuiltTodoInput[] {
   const now = input.now ?? new Date();
   const implementationTodos = normalizeImplementationTodos(input.todos ?? [], FIRST_GATES.length);
+  const dataMigrationGates =
+    input.requireDataMigrationGates || hasDataMigrationTodo(input.todos ?? [])
+      ? DATA_MIGRATION_GATES
+      : [];
   const finalGates =
     input.includeKnowledgeCapture === false
       ? FINAL_GATES.filter((todo) => todo.procedureId !== 'contextstill.register_candidates')
       : FINAL_GATES;
-  const gatesAndTodos = [...FIRST_GATES, ...implementationTodos, ...finalGates];
-  const finalGateStartSeq = FIRST_GATES.length + implementationTodos.length + 1;
+  const gatesAndTodos = [
+    ...FIRST_GATES,
+    ...implementationTodos,
+    ...dataMigrationGates,
+    ...finalGates,
+  ];
+  const dataMigrationGateStartSeq = FIRST_GATES.length + implementationTodos.length + 1;
+  const dataMigrationGateEndSeq = dataMigrationGateStartSeq + dataMigrationGates.length - 1;
+  const finalGateStartSeq =
+    FIRST_GATES.length + implementationTodos.length + dataMigrationGates.length + 1;
 
   return gatesAndTodos.map((todo, index) => {
     const seq = index + 1;
     const dependsOn =
-      seq >= finalGateStartSeq && todo.dependsOn.length === 0 ? [seq - 1] : todo.dependsOn;
+      todo.dependsOn.length === 0 &&
+      (seq >= finalGateStartSeq ||
+        (dataMigrationGates.length > 0 &&
+          seq >= dataMigrationGateStartSeq &&
+          seq <= dataMigrationGateEndSeq))
+        ? [seq - 1]
+        : todo.dependsOn;
     const running = input.startFirst !== false && index === 0;
     return {
       ...todo,
@@ -139,10 +191,30 @@ function normalizeImplementationTodos(
 function isReservedFinalGateTodo(todo: ImplementationTodoInput) {
   return (
     isReservedFirstGateTodo(todo) ||
+    isReservedDataMigrationGateTodo(todo) ||
     isReservedReviewTodo(todo) ||
     isReservedCloseoutTodo(todo) ||
     isReservedBroadVerificationTodo(todo)
   );
+}
+
+function hasDataMigrationTodo(todos: ImplementationTodoInput[]) {
+  return todos.some((todo) => {
+    const taskType = typeof todo.taskType === 'string' ? todo.taskType.trim() : '';
+    const procedureId = typeof todo.procedureId === 'string' ? todo.procedureId.trim() : '';
+    return (
+      taskType === 'data_migration' ||
+      taskType === 'migration' ||
+      procedureId === 'data_migration' ||
+      procedureId.startsWith('data_migration.')
+    );
+  });
+}
+
+function isReservedDataMigrationGateTodo(todo: ImplementationTodoInput) {
+  const procedureId = typeof todo.procedureId === 'string' ? todo.procedureId.trim() : '';
+
+  return DATA_MIGRATION_PROCEDURE_IDS.has(procedureId);
 }
 
 function isReservedFirstGateTodo(todo: ImplementationTodoInput) {

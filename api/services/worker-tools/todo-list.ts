@@ -62,6 +62,7 @@ export type TodoActionPayload = {
 type TodoMutationContext = {
   runId: string;
   taskId: string;
+  requireDataMigrationGates: boolean;
   todos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>;
 };
 
@@ -85,14 +86,14 @@ export async function todoListTool(input: {
       input.runId,
       input.operation,
       { todoListReplaceReason: input.todoListReplaceReason },
-      async ({ runId, taskId, todos: currentTodos }) => {
+      async ({ runId, taskId, requireDataMigrationGates, todos: currentTodos }) => {
         const reasonValidation = validateTodoListReplaceReason({
           currentTodos,
           todoListReplaceReason: input.todoListReplaceReason,
         });
         if (!reasonValidation.ok) {
           return failedTodoAction(
-            { runId, taskId, todos: currentTodos },
+            { runId, taskId, requireDataMigrationGates, todos: currentTodos },
             'todo_list',
             input.operation,
             reasonValidation.errorCode,
@@ -104,6 +105,10 @@ export async function todoListTool(input: {
           todos: input.todos ?? [],
           startFirst: input.startFirst,
           includeKnowledgeCapture: workflowSettings.requireRegisterCandidatePrompt,
+          requireDataMigrationGates: requireDataMigrationGatesForContext({
+            contextRequiresDataMigration: requireDataMigrationGates,
+            todos: input.todos ?? [],
+          }),
         });
         const created = await repo.replaceTaskRunTodosForRun(runId, todos);
         return okTodoAction('todo_list', input.operation, runId, taskId, created, {
@@ -333,7 +338,11 @@ async function withRunContext(
     seq?: number;
     todoListReplaceReason?: TodoListReplaceReason;
   },
-  fn: (context: { runId: string; taskId: string }) => Promise<WorkerToolResult<TodoActionPayload>>
+  fn: (context: {
+    runId: string;
+    taskId: string;
+    requireDataMigrationGates: boolean;
+  }) => Promise<WorkerToolResult<TodoActionPayload>>
 ) {
   const runId = String(rawRunId || '').trim();
   const startedAt = new Date().toISOString();
@@ -363,7 +372,11 @@ async function withRunContext(
         attemptedAction
       );
     }
-    return await fn({ runId, taskId: run.taskId });
+    return await fn({
+      runId,
+      taskId: run.taskId,
+      requireDataMigrationGates: requiresDataMigrationFromRun(run),
+    });
   } catch (error) {
     return {
       ok: false,
@@ -402,6 +415,34 @@ async function withTodoMutationContext(
     const todos = await repo.listTaskRunTodosForRun(base.runId);
     return fn({ ...base, todos });
   });
+}
+
+function requireDataMigrationGatesForContext(input: {
+  contextRequiresDataMigration: boolean;
+  todos: ImplementationTodoInput[];
+}) {
+  return input.contextRequiresDataMigration || input.todos.some(hasDataMigrationMarker);
+}
+
+function requiresDataMigrationFromRun(run: { contextSnapshot?: unknown }) {
+  const snapshot =
+    run.contextSnapshot &&
+    typeof run.contextSnapshot === 'object' &&
+    !Array.isArray(run.contextSnapshot)
+      ? (run.contextSnapshot as Record<string, unknown>)
+      : null;
+  return snapshot?.jobType === 'data_migration';
+}
+
+function hasDataMigrationMarker(todo: ImplementationTodoInput) {
+  const taskType = typeof todo.taskType === 'string' ? todo.taskType.trim() : '';
+  const procedureId = typeof todo.procedureId === 'string' ? todo.procedureId.trim() : '';
+  return (
+    taskType === 'data_migration' ||
+    taskType === 'migration' ||
+    procedureId === 'data_migration' ||
+    procedureId.startsWith('data_migration.')
+  );
 }
 
 function okTodoAction(

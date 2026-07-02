@@ -90,6 +90,8 @@ function buildExecutionContract(
     '- 「知識登録を行う」は start/done せず、context-still.register_candidates の成功後に自動完了される。「完了報告を行う」は最後の assistant 完了報告でのみ自動完了される。',
     '- nightworkers.todo_list operation=replace に広域 verify Todo を含めない。NightWorkers が最後に quality_gate_verify Todo を追加する。その Todo が current になる前は typecheck、lint、unit test、build、targeted E2E などの focused checks に留める。',
     '- リポジトリ全体の広域 verify は、追加された quality_gate_verify Todo が current のときだけ実行する。広域 verify 成功後にファイル変更がなければ、再度広域 verify を実行しない。',
+    '- DB schema 変更、migration、永続化テーブル追加を伴う実装では、TodoList に migration 作成、対象 DB への migration 実行、migration 後の schema/API/test 検証を独立 Todo として含める。固定 Todo を明示する場合は procedureId=data_migration.create_migration / data_migration.apply_migration / data_migration.verify_migration を使う。',
+    '- migration を作っただけで完了扱いにしない。migration 実行と migration 後検証の evidence がない場合は final assistant report に進まず、該当 Todo を block または fail にする。',
     '- ファイルを編集する前に、対象ファイルまたは直接関係する既存ファイルを読む。小さい変更でも既存パターン確認を省略しない。',
     '- 新規ファイル作成では、配置先の route、registry、sibling component、既存 style、または test pattern を先に読む。',
     '- rg --files や ls は探索であり、編集対象を読んだ evidence ではない。rg -n、sed、cat、nl、head/tail、git diff -- path など、対象パスの内容に触れる確認を使う。',

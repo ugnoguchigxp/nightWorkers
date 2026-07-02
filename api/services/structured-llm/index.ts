@@ -87,7 +87,13 @@ export async function callStructuredJsonLLM(
     jsonSchema: { name: options.schemaName, schema: options.schema },
     label: options.schemaName,
   });
-  const parsedJson = await parseJsonContent(rawContent, options, options.schemaName);
+  let parsedJson: Awaited<ReturnType<typeof parseJsonContent>>;
+  try {
+    parsedJson = await parseJsonContent(rawContent, options, options.schemaName);
+  } catch (error) {
+    if (options.allowRawOutputOnJsonParseFailure) return rawContent;
+    throw error;
+  }
   return parsedJson.sourceText;
 }
 

@@ -1,6 +1,7 @@
 import { AppError } from '../../lib/errors';
 import type { ResolvedStructuredLlmRoute } from '../structured-llm/role-routing';
 import type { StructuredLlmModelTarget } from '../structured-llm/settings';
+import type { JobType } from '../supervisor/prompt';
 import type { ImplementationTodoInput } from '../todo-runtime';
 import { CodexAgentRuntime } from './CodexAgentRuntime';
 import { NativeAgentRuntime } from './NativeAgentRuntime';
@@ -27,6 +28,7 @@ export type RuntimeLaneSetupInput = {
   runtimeLaneResolution?: RuntimeLaneResolution;
   implementationLlmRoute?: ResolvedStructuredLlmRoute | null;
   llmRouteOverride?: StructuredLlmModelTarget | null;
+  jobType?: JobType | null;
   planModeSettingsSnapshot?: unknown;
 };
 
@@ -81,6 +83,7 @@ export function buildRuntimeLaneOptions(
   const activeRole = activeRoute?.role ?? fallbackRoleForExecutionMode(input.executionMode);
   return {
     executionMode: input.executionMode ?? 'implementation',
+    jobType: input.jobType ?? null,
     planModeSettingsSnapshot: input.planModeSettingsSnapshot ?? null,
     runtimeLane: input.runtimeLaneResolution?.lane ?? null,
     runtimeLaneResolution: input.runtimeLaneResolution ?? null,
