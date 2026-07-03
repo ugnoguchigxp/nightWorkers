@@ -1,10 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ImplementationQueueDashboard } from '../nightworkers/types';
+import type {
+  ImplementationQueueDashboard,
+  ImplementationQueueHealth,
+} from '../nightworkers/types';
 import {
   archiveImplementationQueueEntry,
   cancelImplementationQueueEntry,
   createImplementationQueueEntry,
   fetchImplementationQueue,
+  fetchImplementationQueueHealth,
+  recoverImplementationQueueEntry,
   requeueImplementationQueueEntry,
   updateImplementationQueueEntry,
   updateImplementationQueueSettings,
@@ -12,6 +17,7 @@ import {
 
 function invalidateQueueState(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
+  queryClient.invalidateQueries({ queryKey: ['implementationQueueHealth'] });
 }
 
 export function useImplementationQueue() {
@@ -26,6 +32,17 @@ export function useImplementationQueue() {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+  const { data: implementationQueueHealth = null, isLoading: isImplementationQueueHealthLoading } =
+    useQuery({
+      queryKey: ['implementationQueueHealth'],
+      queryFn: async () => {
+        const res = await fetchImplementationQueueHealth();
+        if (!res.ok) throw new Error('Failed to fetch implementation queue health');
+        return (await res.json()) as ImplementationQueueHealth;
+      },
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+    });
 
   const createImplementationQueueEntryMutation = useMutation({
     mutationFn: async (sessionId: string) => {
@@ -99,9 +116,31 @@ export function useImplementationQueue() {
     onSuccess: () => invalidateQueueState(queryClient),
   });
 
+  const recoverImplementationQueueEntryMutation = useMutation({
+    mutationFn: async (input: {
+      entryId: string;
+      action: 'retry' | 'mark_needs_human' | 'cancel' | 'archive' | 'complete';
+      note?: string;
+    }) => {
+      const res = await recoverImplementationQueueEntry(input.entryId, {
+        action: input.action,
+        note: input.note,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['sessionRuns'] });
+      invalidateQueueState(queryClient);
+    },
+  });
+
   return {
     implementationQueue,
+    implementationQueueHealth,
     isImplementationQueueLoading,
+    isImplementationQueueHealthLoading,
     createImplementationQueueEntry: async (sessionId: string) => {
       await createImplementationQueueEntryMutation.mutateAsync(sessionId);
     },
@@ -122,6 +161,13 @@ export function useImplementationQueue() {
     },
     updateImplementationQueueProcessorCount: async (processorCount: number) => {
       await updateImplementationQueueProcessorCountMutation.mutateAsync(processorCount);
+    },
+    recoverImplementationQueueEntry: async (
+      entryId: string,
+      action: 'retry' | 'mark_needs_human' | 'cancel' | 'archive' | 'complete',
+      note?: string
+    ) => {
+      await recoverImplementationQueueEntryMutation.mutateAsync({ entryId, action, note });
     },
   };
 }

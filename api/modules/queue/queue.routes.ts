@@ -6,7 +6,9 @@ import {
   createImplementationQueueEntry,
   getTodoWorkflowSettings,
   listImplementationQueueDashboard,
+  listImplementationQueueHealth,
   patchImplementationQueueEntry,
+  recoverImplementationQueueEntry,
   requeueImplementationQueueEntry,
   updateImplementationQueueSettings,
   updateTodoWorkflowSettings,
@@ -18,9 +20,11 @@ import {
   getImplementationQueueSettingsRoute,
   getTodoWorkflowSettingsRoute,
   implementationQueueDashboardRoute,
+  implementationQueueHealthRoute,
   patchImplementationQueueEntryRoute,
   patchImplementationQueueSettingsRoute,
   patchTodoWorkflowSettingsRoute,
+  recoverImplementationQueueEntryRoute,
   requeueImplementationQueueEntryRoute,
 } from './queue-route-definitions';
 
@@ -38,6 +42,13 @@ export const queueRouter = createOpenApiRouter()
       const body = c.req.valid('json');
       const entry = await createImplementationQueueEntry(body.taskId);
       return c.json(entry, 201);
+    })
+  )
+  .openapi(
+    implementationQueueHealthRoute,
+    withOpenApiRouteError(implementationQueueHealthRoute, async (c) => {
+      const result = await listImplementationQueueHealth();
+      return c.json(result, 200);
     })
   )
   .openapi(
@@ -60,6 +71,13 @@ export const queueRouter = createOpenApiRouter()
     withOpenApiRouteError(requeueImplementationQueueEntryRoute, async (c) => {
       const entry = await requeueImplementationQueueEntry(c.req.param('id'), c.req.valid('json'));
       return c.json(entry, 201);
+    })
+  )
+  .openapi(
+    recoverImplementationQueueEntryRoute,
+    withOpenApiRouteError(recoverImplementationQueueEntryRoute, async (c) => {
+      const entry = await recoverImplementationQueueEntry(c.req.param('id'), c.req.valid('json'));
+      return c.json(entry, 200);
     })
   )
   .openapi(

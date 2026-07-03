@@ -1240,26 +1240,50 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
     try {
       await repo.updateTaskStatus(taskId, 'running');
       const runtimeTodosBeforeStart = await repo.listTaskRunTodosForRun(run.id);
-      let runtimeResult = await runtime.start(
-        {
-          runId: run.id,
-          taskId,
-          repositoryId: task.repositoryId,
-          repoRoot: repoInfo.localPath,
-          compiledPrompt: compiledPromptText,
-          latestUserMessage: runtimeLatestUserMessage,
-          timeoutSeconds: task.timeoutSeconds ?? 3600,
-          safetyPolicy: repoInfo.safetyPolicy || undefined,
-          contextSnapshot: runtimeContextSnapshot,
-          runtimeOptions,
-          todoPlan: runtimeTodosBeforeStart.map(toAgentRuntimeTodoContext),
-          currentTodo: runtimeTodosBeforeStart
-            .filter((todo) => todo.status === 'running')
-            .sort((a, b) => a.seq - b.seq)
-            .map(toAgentRuntimeTodoContext)[0],
-        },
-        sink
+      const heartbeatIntervalMs = Math.min(
+        60_000,
+        Math.floor(IMPLEMENTATION_QUEUE_LEASE_TTL_MS / 3)
       );
+      const heartbeatTimer = setInterval(() => {
+        void repo.refreshImplementationQueueLeaseForRun({
+          runId: run.id,
+          leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
+        });
+      }, heartbeatIntervalMs);
+      heartbeatTimer.unref?.();
+      let runtimeResult: AgentRuntimeResult;
+      try {
+        await repo.refreshImplementationQueueLeaseForRun({
+          runId: run.id,
+          leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
+        });
+        runtimeResult = await runtime.start(
+          {
+            runId: run.id,
+            taskId,
+            repositoryId: task.repositoryId,
+            repoRoot: repoInfo.localPath,
+            compiledPrompt: compiledPromptText,
+            latestUserMessage: runtimeLatestUserMessage,
+            timeoutSeconds: task.timeoutSeconds ?? 3600,
+            safetyPolicy: repoInfo.safetyPolicy || undefined,
+            contextSnapshot: runtimeContextSnapshot,
+            runtimeOptions,
+            todoPlan: runtimeTodosBeforeStart.map(toAgentRuntimeTodoContext),
+            currentTodo: runtimeTodosBeforeStart
+              .filter((todo) => todo.status === 'running')
+              .sort((a, b) => a.seq - b.seq)
+              .map(toAgentRuntimeTodoContext)[0],
+          },
+          sink
+        );
+      } finally {
+        clearInterval(heartbeatTimer);
+      }
+      await repo.refreshImplementationQueueLeaseForRun({
+        runId: run.id,
+        leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
+      });
       const latestRunBeforeFinalize = await repo.getTaskRun(run.id);
       const stopWasRequested =
         latestRunBeforeFinalize?.status === 'cancelled' ||
@@ -1643,6 +1667,8 @@ export function shouldContinueSessionQueue(status: string) {
 }
 
 let implementationQueueDrainPromise: Promise<void> | null = null;
+const IMPLEMENTATION_QUEUE_LEASE_TTL_MS = 30 * 60 * 1000;
+const IMPLEMENTATION_QUEUE_LEASE_OWNER_ID = `api-process:${process.pid}`;
 
 export async function runImplementationQueue() {
   if (implementationQueueDrainPromise) {
@@ -1660,7 +1686,12 @@ export async function runImplementationQueue() {
 async function drainImplementationQueue(started: Awaited<ReturnType<typeof startTaskRun>>[]) {
   while (true) {
     const settings = await repo.getImplementationQueueSettings();
-    const claimed = await repo.claimNextImplementationQueueEntry(settings.processorCount);
+    const claimed = await repo.claimNextImplementationQueueEntry({
+      processorCount: settings.processorCount,
+      leaseOwnerId: IMPLEMENTATION_QUEUE_LEASE_OWNER_ID,
+      leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
+      allowExpiredClaimRecovery: false,
+    });
     if (!claimed) break;
     try {
       const run = await startTaskRun(claimed.taskId, {
@@ -1668,28 +1699,73 @@ async function drainImplementationQueue(started: Awaited<ReturnType<typeof start
         executionModeSource: 'implementation_queue',
       });
       started.push(run);
-      await repo.updateImplementationQueueEntry(claimed.id, {
-        status: 'processing',
-        activeRunId: run.id,
-        lastHeartbeatAt: new Date(),
+      const processingEntry = await repo.markImplementationQueueEntryProcessing({
+        entryId: claimed.id,
+        runId: run.id,
+        leaseOwnerId: IMPLEMENTATION_QUEUE_LEASE_OWNER_ID,
+        leaseVersion: claimed.leaseVersion,
+        leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
       });
+      if (!processingEntry) {
+        await repo.updateTaskRun(run.id, {
+          status: 'needs_human',
+          endedAt: new Date(),
+          finishedAt: new Date(),
+          finalReport: 'Implementation Queue lease changed before run ownership was recorded.',
+        });
+        await repo.createRunEvent({
+          version: 1,
+          runId: run.id,
+          taskId: claimed.taskId,
+          timestamp: new Date().toISOString(),
+          type: 'system.warning',
+          severity: 'warning',
+          actor: 'system',
+          message: 'Implementation Queue lease changed before run ownership was recorded.',
+          data: {
+            source: 'implementation_queue',
+            queueEntryId: claimed.id,
+            leaseOwnerId: IMPLEMENTATION_QUEUE_LEASE_OWNER_ID,
+            leaseVersion: claimed.leaseVersion,
+          },
+        });
+        await repo.createTaskMessage({
+          taskId: claimed.taskId,
+          runId: run.id,
+          role: 'system',
+          content: 'Implementation Queue could not attach the run because the lease changed.',
+          messageType: 'text',
+          payloadJson: {
+            source: 'implementation_queue',
+            status: 'lease_conflict',
+            queueEntryId: claimed.id,
+            runId: run.id,
+          },
+        });
+        continue;
+      }
       await repo.createTaskMessage({
         taskId: claimed.taskId,
         runId: run.id,
         role: 'system',
-        content: `Implementation Queue processor ${claimed.processorSlot ?? 1} started this run.`,
+        content: `Implementation Queue processor ${processingEntry.processorSlot ?? 1} started this run.`,
         messageType: 'text',
         payloadJson: {
           source: 'implementation_queue',
           status: 'processing',
           queueEntryId: claimed.id,
-          processorSlot: claimed.processorSlot,
+          processorSlot: processingEntry.processorSlot,
+          leaseOwnerId: processingEntry.leaseOwnerId,
+          leaseVersion: processingEntry.leaseVersion,
         },
       });
     } catch (err) {
       await repo.updateImplementationQueueEntry(claimed.id, {
         status: 'failed',
         processorSlot: null,
+        leaseOwnerId: null,
+        leaseExpiresAt: null,
+        lastFailureKind: 'start_task_run_failed',
         statusReason: err instanceof Error ? err.message : String(err),
       });
       await repo.createTaskMessage({
@@ -1714,21 +1790,12 @@ export async function completeImplementationQueueEntryForRun(runId: string, stat
   try {
     const entry = await repo.getImplementationQueueEntryForRun(runId);
     if (!entry) return;
-    const nextStatus =
-      status === 'completed'
-        ? 'execution_completed'
-        : status === 'cancelled'
-          ? 'cancelled'
-          : status === 'needs_human'
-            ? 'needs_human'
-            : 'failed';
-    await repo.updateImplementationQueueEntry(entry.id, {
-      status: nextStatus,
-      processorSlot: null,
-      lastHeartbeatAt: new Date(),
-      statusReason: nextStatus === 'failed' ? `Run finished with status=${status}` : null,
+    const completed = await repo.completeImplementationQueueEntryForRunId({
+      runId,
+      runStatus: status,
     });
-    if (['execution_completed', 'cancelled', 'failed'].includes(nextStatus)) {
+    const finalStatus = completed?.status ?? entry.status;
+    if (['execution_completed', 'cancelled', 'failed'].includes(finalStatus)) {
       void runImplementationQueue();
     }
   } catch {

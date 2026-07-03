@@ -718,11 +718,43 @@ export async function ensureNightWorkersSchema() {
       last_heartbeat_at integer,
       archived_at integer,
       status_reason text,
+      lease_owner_id text,
+      lease_acquired_at integer,
+      lease_expires_at integer,
+      lease_version integer DEFAULT 0 NOT NULL,
+      attempt_count integer DEFAULT 0 NOT NULL,
+      recovered_at integer,
+      recovery_reason text,
+      last_failure_kind text,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
       FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade,
       FOREIGN KEY (active_run_id) REFERENCES task_runs(id) ON DELETE set null
     )
   `);
+  await ensureColumn('implementation_queue_entries', 'lease_owner_id', 'lease_owner_id text');
+  await ensureColumn(
+    'implementation_queue_entries',
+    'lease_acquired_at',
+    'lease_acquired_at integer'
+  );
+  await ensureColumn(
+    'implementation_queue_entries',
+    'lease_expires_at',
+    'lease_expires_at integer'
+  );
+  await ensureColumn(
+    'implementation_queue_entries',
+    'lease_version',
+    'lease_version integer DEFAULT 0 NOT NULL'
+  );
+  await ensureColumn(
+    'implementation_queue_entries',
+    'attempt_count',
+    'attempt_count integer DEFAULT 0 NOT NULL'
+  );
+  await ensureColumn('implementation_queue_entries', 'recovered_at', 'recovered_at integer');
+  await ensureColumn('implementation_queue_entries', 'recovery_reason', 'recovery_reason text');
+  await ensureColumn('implementation_queue_entries', 'last_failure_kind', 'last_failure_kind text');
   await client.execute(
     'CREATE INDEX IF NOT EXISTS implementation_queue_entries_task_id_idx ON implementation_queue_entries (task_id)'
   );
@@ -731,6 +763,15 @@ export async function ensureNightWorkersSchema() {
   );
   await client.execute(
     'CREATE INDEX IF NOT EXISTS implementation_queue_entries_claim_order_idx ON implementation_queue_entries (status, priority, queue_position, created_at)'
+  );
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS implementation_queue_entries_lease_expiry_idx ON implementation_queue_entries (status, lease_expires_at)'
+  );
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS implementation_queue_entries_active_run_idx ON implementation_queue_entries (active_run_id)'
+  );
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS implementation_queue_entries_lease_owner_idx ON implementation_queue_entries (lease_owner_id, lease_expires_at)'
   );
 
   await client.execute(`

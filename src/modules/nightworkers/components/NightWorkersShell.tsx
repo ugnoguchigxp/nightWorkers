@@ -652,13 +652,18 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
           ) : showQueueScreen ? (
             <ImplementationQueueScreen
               dashboard={queueState.implementationQueue}
+              health={queueState.implementationQueueHealth}
               projects={workspace.projects}
               activeProjectFilterId={queueProjectFilterId}
-              isLoading={queueState.isImplementationQueueLoading}
+              isLoading={
+                queueState.isImplementationQueueLoading ||
+                queueState.isImplementationQueueHealthLoading
+              }
               onSetProjectFilter={setQueueProjectFilterId}
               onOpenSession={(sessionId) => handleSelectSession(sessionId)}
               onQueueSession={queueSessionAndFocusTodo}
               onArchiveEntry={queueState.archiveImplementationQueueEntry}
+              onRecoverEntry={queueState.recoverImplementationQueueEntry}
               onUpdateProcessorCount={queueState.updateImplementationQueueProcessorCount}
             />
           ) : (

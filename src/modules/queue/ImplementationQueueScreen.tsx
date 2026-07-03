@@ -1,9 +1,11 @@
-import { Archive, Cpu, ListTodo, Minus, Plus } from 'lucide-react';
+import { AlertTriangle, Archive, CheckCircle2, Cpu, ListTodo, Minus, Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import type {
   ImplementationQueueDashboard,
+  ImplementationQueueHealth,
+  ImplementationQueueHealthClassification,
   ImplementationQueueItem,
   Repository,
 } from '../nightworkers/types';
@@ -12,6 +14,7 @@ import { TodoWorkflowPanel } from '../todo/TodoWorkflowPanel';
 
 type ImplementationQueueScreenProps = {
   dashboard: ImplementationQueueDashboard | null;
+  health: ImplementationQueueHealth | null;
   projects: Repository[];
   activeProjectFilterId: string | null;
   isLoading: boolean;
@@ -19,6 +22,10 @@ type ImplementationQueueScreenProps = {
   onOpenSession: (sessionId: string) => void;
   onQueueSession: (sessionId: string) => Promise<void>;
   onArchiveEntry: (entryId: string) => Promise<void>;
+  onRecoverEntry: (
+    entryId: string,
+    action: 'retry' | 'mark_needs_human' | 'cancel' | 'archive' | 'complete'
+  ) => Promise<void>;
   onUpdateProcessorCount: (processorCount: number) => Promise<void>;
 };
 
@@ -27,6 +34,21 @@ export function ImplementationQueueScreen(props: ImplementationQueueScreenProps)
   const dashboard = props.dashboard;
   const filteredQueued = filterItems(dashboard?.queued || [], props.activeProjectFilterId);
   const filteredCompleted = filterItems(dashboard?.completed || [], props.activeProjectFilterId);
+  const allEntries = [
+    ...(dashboard?.queued || []),
+    ...(dashboard?.completed || []),
+    ...(dashboard?.processors || []).flatMap((processor) =>
+      processor.entry ? [processor.entry] : []
+    ),
+  ];
+  const entryById = new Map(allEntries.map((entry) => [entry.id, entry]));
+  const problemHealthItems = (props.health?.items || []).filter(
+    (item) =>
+      (!props.activeProjectFilterId ||
+        entryById.get(item.entryId)?.repositoryId === props.activeProjectFilterId) &&
+      (item.classification !== 'normal' ||
+        ['retry', 'complete', 'mark_needs_human'].includes(item.recommendedAction))
+  );
   const filteredNotQueued = (dashboard?.notQueued || []).filter(
     (item) => !props.activeProjectFilterId || item.repository.id === props.activeProjectFilterId
   );
@@ -96,6 +118,12 @@ export function ImplementationQueueScreen(props: ImplementationQueueScreenProps)
         <section className="min-h-0 border-slate-800 border-r">
           <SectionHeader icon={<ListTodo className="h-4 w-4" />} label={t('queue.queue')} />
           <div className="nightworkers-scrollbar min-h-0 space-y-2 overflow-y-auto p-3">
+            <QueueHealthPanel
+              health={props.health}
+              items={problemHealthItems}
+              entryById={entryById}
+              onRecoverEntry={props.onRecoverEntry}
+            />
             {filteredQueued.length === 0 ? (
               <EmptyState text={t('queue.emptyWaiting')} />
             ) : (
@@ -152,6 +180,110 @@ export function ImplementationQueueScreen(props: ImplementationQueueScreenProps)
       </div>
     </main>
   );
+}
+
+function QueueHealthPanel({
+  health,
+  items,
+  entryById,
+  onRecoverEntry,
+}: {
+  health: ImplementationQueueHealth | null;
+  items: NonNullable<ImplementationQueueHealth['items']>;
+  entryById: Map<string, ImplementationQueueItem>;
+  onRecoverEntry: ImplementationQueueScreenProps['onRecoverEntry'];
+}) {
+  const { t } = useTranslation();
+  if (!health) return null;
+  const visibleCounts = {
+    stale: items.filter((item) => ['stale_claim', 'stale_processing'].includes(item.classification))
+      .length,
+    retryable: items.filter((item) => item.recommendedAction === 'retry').length,
+    needsHuman: items.filter((item) => item.classification === 'needs_human').length,
+    orphaned: items.filter((item) => item.classification === 'orphaned_active_run').length,
+  };
+  const hasProblems = items.length > 0;
+  if (!hasProblems) {
+    return (
+      <div className="flex h-9 items-center gap-2 rounded-md border border-emerald-900/60 bg-emerald-950/25 px-3 text-emerald-200 text-xs">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        <span>{t('queue.healthNormal')}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2 rounded-md border border-amber-900/60 bg-amber-950/25 p-3">
+      <div className="flex flex-wrap items-center gap-2 text-amber-100 text-xs">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        <span className="font-semibold">{t('queue.healthIssues')}</span>
+        <span className="text-amber-200/80">
+          {t('queue.healthCounts', {
+            stale: visibleCounts.stale,
+            retryable: visibleCounts.retryable,
+            needsHuman: visibleCounts.needsHuman,
+            orphaned: visibleCounts.orphaned,
+          })}
+        </span>
+      </div>
+      <div className="space-y-1.5">
+        {items.slice(0, 5).map((item) => (
+          <QueueHealthItem
+            key={item.entryId}
+            item={item}
+            entry={entryById.get(item.entryId)}
+            onRecoverEntry={onRecoverEntry}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function QueueHealthItem({
+  item,
+  entry,
+  onRecoverEntry,
+}: {
+  item: NonNullable<ImplementationQueueHealth['items']>[number];
+  entry?: ImplementationQueueItem;
+  onRecoverEntry: ImplementationQueueScreenProps['onRecoverEntry'];
+}) {
+  const { t } = useTranslation();
+  const action = item.recommendedAction;
+  const actionable = action !== 'none';
+  const actionLabel = actionable ? t(`queue.recovery.${action}`) : '';
+  const handleAction = async () => {
+    if (!actionable) return;
+    if (!window.confirm(t('queue.recoveryConfirm', { action: actionLabel }))) return;
+    await onRecoverEntry(item.entryId, action);
+  };
+
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded border border-amber-900/45 bg-slate-950/45 p-2">
+      <div className="min-w-0">
+        <div className="truncate font-medium text-slate-100 text-xs">
+          {entry?.task.title || item.taskId.slice(0, 8)}
+        </div>
+        <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-amber-200/80">
+          <span>{classificationLabel(item.classification, t)}</span>
+          <span>{item.status}</span>
+          {item.lastHeartbeatAt ? <span>{getRelativeTimestamp(item.lastHeartbeatAt)}</span> : null}
+        </div>
+      </div>
+      {actionable ? (
+        <Button type="button" size="sm" className="h-7 text-xs" onClick={() => void handleAction()}>
+          {actionLabel}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function classificationLabel(
+  classification: ImplementationQueueHealthClassification,
+  t: ReturnType<typeof useTranslation>['t']
+) {
+  return t(`queue.classification.${classification}`);
 }
 
 function SectionHeader({ icon, label }: { icon: ReactNode; label: string }) {

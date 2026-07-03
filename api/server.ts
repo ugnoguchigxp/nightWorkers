@@ -5,6 +5,7 @@ import { ensureNightWorkersSchema } from './db/bootstrap';
 import { client } from './db/client';
 import { logEvent } from './lib/logger';
 import { flushActivityEventQueue } from './modules/nightworkers/nightworkers.activity.repository';
+import { reconcileImplementationQueue } from './modules/queue/queue-management.service';
 import { mcpClientManager } from './services/mcp/mcp-client-manager';
 import { nightWorkersRealtimeBroker } from './services/realtime/nightworkers-ws';
 
@@ -105,6 +106,14 @@ export async function createNightWorkersServer(
   const shutdownTimeoutMs = options.shutdownTimeoutMs ?? defaultShutdownTimeoutMs;
 
   await ensureNightWorkersSchema();
+  void reconcileImplementationQueue({ apply: true, reason: 'startup' }).catch((error) => {
+    logEvent({
+      channel: 'api',
+      level: 'error',
+      message: 'implementation queue startup reconciliation failed',
+      meta: { errorMessage: error instanceof Error ? error.message : String(error) },
+    });
+  });
 
   const server = serve({
     fetch: app.fetch,

@@ -134,6 +134,13 @@
       "when": 1782950400000,
       "tag": "0018_project_detail_backend",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1783046400000,
+      "tag": "0019_implementation_queue_lease",
+      "breakpoints": true
     }
   ]
 }

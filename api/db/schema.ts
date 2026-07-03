@@ -158,6 +158,14 @@ export const implementationQueueEntries = sqliteTable(
     lastHeartbeatAt: integer('last_heartbeat_at', { mode: 'timestamp' }),
     archivedAt: integer('archived_at', { mode: 'timestamp' }),
     statusReason: text('status_reason'),
+    leaseOwnerId: text('lease_owner_id'),
+    leaseAcquiredAt: integer('lease_acquired_at', { mode: 'timestamp' }),
+    leaseExpiresAt: integer('lease_expires_at', { mode: 'timestamp' }),
+    leaseVersion: integer('lease_version').default(0).notNull(),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    recoveredAt: integer('recovered_at', { mode: 'timestamp' }),
+    recoveryReason: text('recovery_reason'),
+    lastFailureKind: text('last_failure_kind'),
   },
   (table) => ({
     taskIdIdx: index('implementation_queue_entries_task_id_idx').on(table.taskId),
@@ -170,6 +178,15 @@ export const implementationQueueEntries = sqliteTable(
       table.priority,
       table.queuePosition,
       table.createdAt
+    ),
+    leaseExpiryIdx: index('implementation_queue_entries_lease_expiry_idx').on(
+      table.status,
+      table.leaseExpiresAt
+    ),
+    activeRunIdx: index('implementation_queue_entries_active_run_idx').on(table.activeRunId),
+    leaseOwnerIdx: index('implementation_queue_entries_lease_owner_idx').on(
+      table.leaseOwnerId,
+      table.leaseExpiresAt
     ),
   })
 );

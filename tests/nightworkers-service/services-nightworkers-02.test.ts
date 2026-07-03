@@ -38,6 +38,7 @@ vi.mock('../../api/modules/nightworkers/nightworkers.repository', () => ({
   createTaskMessage: vi.fn(),
   getImplementationQueueEntryForRun: vi.fn(),
   updateImplementationQueueEntry: vi.fn(),
+  refreshImplementationQueueLeaseForRun: vi.fn(),
 }));
 
 vi.mock('../../api/routes/settings', () => ({

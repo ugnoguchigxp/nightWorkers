@@ -21,6 +21,14 @@ export const implementationQueueEntrySchema = z.object({
   lastHeartbeatAt: dateLikeSchema.nullable().optional(),
   archivedAt: dateLikeSchema.nullable().optional(),
   statusReason: z.string().nullable().optional(),
+  leaseOwnerId: z.string().nullable().optional(),
+  leaseAcquiredAt: dateLikeSchema.nullable().optional(),
+  leaseExpiresAt: dateLikeSchema.nullable().optional(),
+  leaseVersion: z.number().int().optional(),
+  attemptCount: z.number().int().optional(),
+  recoveredAt: dateLikeSchema.nullable().optional(),
+  recoveryReason: z.string().nullable().optional(),
+  lastFailureKind: z.string().nullable().optional(),
   createdAt: dateLikeSchema,
   updatedAt: dateLikeSchema,
 });
@@ -59,6 +67,56 @@ export const implementationQueueDashboardRoute = createRoute({
         },
       },
       description: 'Implementation Queue dashboard',
+    },
+  },
+});
+
+export const implementationQueueHealthSchema = z.object({
+  generatedAt: dateLikeSchema,
+  counts: z.object({
+    queued: z.number().int(),
+    claimed: z.number().int(),
+    processing: z.number().int(),
+    stale: z.number().int(),
+    retryable: z.number().int(),
+    needsHuman: z.number().int(),
+    orphaned: z.number().int(),
+    pendingCompletion: z.number().int(),
+  }),
+  items: z.array(
+    z.object({
+      entryId: z.string().uuid(),
+      taskId: z.string().uuid(),
+      runId: z.string().uuid().nullable().optional(),
+      status: z.string(),
+      classification: z.enum([
+        'normal',
+        'stale_claim',
+        'stale_processing',
+        'terminal_run_pending_completion',
+        'orphaned_active_run',
+        'needs_human',
+        'failed',
+      ]),
+      processorSlot: z.number().nullable().optional(),
+      leaseOwnerId: z.string().nullable().optional(),
+      leaseExpiresAt: dateLikeSchema.nullable().optional(),
+      lastHeartbeatAt: dateLikeSchema.nullable().optional(),
+      attemptCount: z.number().int(),
+      recoveryReason: z.string().nullable().optional(),
+      statusReason: z.string().nullable().optional(),
+      recommendedAction: z.enum(['none', 'retry', 'complete', 'mark_needs_human', 'archive']),
+    })
+  ),
+});
+
+export const implementationQueueHealthRoute = createRoute({
+  method: 'get',
+  path: '/implementation-queue/health',
+  responses: {
+    200: {
+      content: { 'application/json': { schema: implementationQueueHealthSchema } },
+      description: 'Implementation Queue health',
     },
   },
 });
@@ -141,6 +199,30 @@ export const requeueImplementationQueueEntryRoute = createRoute({
     201: {
       content: { 'application/json': { schema: implementationQueueEntrySchema } },
       description: 'Implementation Queue Entry requeued with preserved priority',
+    },
+  },
+});
+
+export const recoverImplementationQueueEntryRoute = createRoute({
+  method: 'post',
+  path: '/implementation-queue/entries/:id/recover',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            action: z.enum(['retry', 'mark_needs_human', 'cancel', 'archive', 'complete']),
+            note: z.string().optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: implementationQueueEntrySchema } },
+      description: 'Implementation Queue Entry recovered',
     },
   },
 });

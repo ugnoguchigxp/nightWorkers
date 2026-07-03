@@ -89,6 +89,14 @@ export type ImplementationQueueEntry = {
   lastHeartbeatAt?: unknown | null;
   archivedAt?: unknown | null;
   statusReason?: string | null;
+  leaseOwnerId?: string | null;
+  leaseAcquiredAt?: unknown | null;
+  leaseExpiresAt?: unknown | null;
+  leaseVersion?: number;
+  attemptCount?: number;
+  recoveredAt?: unknown | null;
+  recoveryReason?: string | null;
+  lastFailureKind?: string | null;
   createdAt: unknown;
   updatedAt: unknown;
 };
@@ -109,6 +117,50 @@ export type ImplementationQueueDashboard = {
   queued: ImplementationQueueItem[];
   completed: ImplementationQueueItem[];
   notQueued: Array<{ task: Task; repository: Repository }>;
+};
+
+export type ImplementationQueueHealthClassification =
+  | 'normal'
+  | 'stale_claim'
+  | 'stale_processing'
+  | 'terminal_run_pending_completion'
+  | 'orphaned_active_run'
+  | 'needs_human'
+  | 'failed';
+
+export type ImplementationQueueRecoveryAction =
+  | 'retry'
+  | 'complete'
+  | 'mark_needs_human'
+  | 'archive';
+
+export type ImplementationQueueHealth = {
+  generatedAt: unknown;
+  counts: {
+    queued: number;
+    claimed: number;
+    processing: number;
+    stale: number;
+    retryable: number;
+    needsHuman: number;
+    orphaned: number;
+    pendingCompletion: number;
+  };
+  items: Array<{
+    entryId: string;
+    taskId: string;
+    runId?: string | null;
+    status: string;
+    classification: ImplementationQueueHealthClassification;
+    processorSlot?: number | null;
+    leaseOwnerId?: string | null;
+    leaseExpiresAt?: unknown | null;
+    lastHeartbeatAt?: unknown | null;
+    attemptCount: number;
+    recoveryReason?: string | null;
+    statusReason?: string | null;
+    recommendedAction: 'none' | ImplementationQueueRecoveryAction;
+  }>;
 };
 
 export type TodoWorkflowSettings = {
