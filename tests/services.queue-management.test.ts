@@ -68,4 +68,35 @@ describe('NightWorkers queue management side effects', () => {
 
     expect(queueSchedulerPort.triggerConfiguredQueueDrain).toHaveBeenCalledTimes(1);
   });
+
+  it('downgrades incomplete sequence scheduling metadata to exclusive enqueue scheduling', async () => {
+    vi.mocked(repo.listTaskMessages).mockResolvedValue([
+      {
+        id: 'message-1',
+        metadataJson: {
+          intakeJobSelection: {
+            jobType: 'major_code_edit',
+            scheduling: {
+              executionType: 'sequence',
+              reason: 'Requires ordered work',
+              sequenceGroupId: null,
+              sequenceOrder: null,
+              dependsOnTaskIds: null,
+            },
+          },
+        },
+      },
+    ] as never);
+
+    await queueService.createImplementationQueueEntry(task.id, { autoDrain: false });
+
+    expect(queueRepo.createImplementationQueueEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionType: 'exclusive',
+        sequenceGroupId: null,
+        sequenceOrder: null,
+        schedulingReason: expect.stringContaining('sequence metadata missing'),
+      })
+    );
+  });
 });

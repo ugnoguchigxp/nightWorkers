@@ -796,7 +796,11 @@ export async function ensureNightWorkersSchema() {
     'execution_type',
     "execution_type text DEFAULT 'normal' NOT NULL"
   );
-  await ensureColumn('implementation_queue_entries', 'execution_lock_key', 'execution_lock_key text');
+  await ensureColumn(
+    'implementation_queue_entries',
+    'execution_lock_key',
+    'execution_lock_key text'
+  );
   await ensureColumn('implementation_queue_entries', 'sequence_group_id', 'sequence_group_id text');
   await ensureColumn('implementation_queue_entries', 'sequence_order', 'sequence_order integer');
   await ensureColumn(

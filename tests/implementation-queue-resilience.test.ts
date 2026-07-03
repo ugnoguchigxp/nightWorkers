@@ -51,7 +51,9 @@ describe('Implementation Queue resilience repository behavior', () => {
       now,
     });
 
-    expect(claimed).toMatchObject({
+    expect(claimed.kind).toBe('claimed');
+    const claimedEntry = claimed.kind === 'claimed' ? claimed.entry : null;
+    expect(claimedEntry).toMatchObject({
       id: first.entry.id,
       status: 'claimed',
       leaseOwnerId: 'test-owner',
@@ -60,7 +62,7 @@ describe('Implementation Queue resilience repository behavior', () => {
       leaseVersion: 1,
       attemptCount: 1,
     });
-    expect(claimed?.processorSlot).toBeGreaterThan(0);
+    expect(claimedEntry?.processorSlot).toBeGreaterThan(0);
 
     await expect(
       queueRepo.claimNextImplementationQueueEntry({
@@ -69,7 +71,7 @@ describe('Implementation Queue resilience repository behavior', () => {
         leaseTtlMs: 60_000,
         now,
       })
-    ).resolves.toBeNull();
+    ).resolves.toMatchObject({ kind: 'not_claimed', reason: 'processor_full' });
   });
 
   it('only recovers an expired claimed lease when recovery is explicitly allowed', async () => {
@@ -95,7 +97,9 @@ describe('Implementation Queue resilience repository behavior', () => {
       now,
       allowExpiredClaimRecovery: false,
     });
-    expect(notRecovered?.id).not.toBe(fixture.entry.id);
+    if (notRecovered.kind === 'claimed') {
+      expect(notRecovered.entry.id).not.toBe(fixture.entry.id);
+    }
 
     const recovered = await queueRepo.claimNextImplementationQueueEntry({
       processorCount: 1_000,
@@ -105,7 +109,9 @@ describe('Implementation Queue resilience repository behavior', () => {
       allowExpiredClaimRecovery: true,
     });
 
-    expect(recovered).toMatchObject({
+    expect(recovered.kind).toBe('claimed');
+    const recoveredEntry = recovered.kind === 'claimed' ? recovered.entry : null;
+    expect(recoveredEntry).toMatchObject({
       id: fixture.entry.id,
       status: 'claimed',
       leaseOwnerId: 'new-owner',
@@ -212,7 +218,9 @@ describe('Implementation Queue resilience repository behavior', () => {
       leaseTtlMs: 60_000,
       now,
     });
-    expect(claimed?.id).toBe(fixture.entry.id);
+    expect(claimed.kind).toBe('claimed');
+    const claimedEntry = claimed.kind === 'claimed' ? claimed.entry : null;
+    expect(claimedEntry?.id).toBe(fixture.entry.id);
     const run = await nightworkersRepo.createTaskRun({
       taskId: fixture.task.id,
       repositoryId: fixture.repository.id,
@@ -234,7 +242,7 @@ describe('Implementation Queue resilience repository behavior', () => {
       entryId: fixture.entry.id,
       runId: run.id,
       leaseOwnerId: 'processor-a',
-      leaseVersion: claimed?.leaseVersion ?? 0,
+      leaseVersion: claimedEntry?.leaseVersion ?? 0,
       leaseTtlMs: 60_000,
       now,
     });
@@ -242,7 +250,7 @@ describe('Implementation Queue resilience repository behavior', () => {
       id: fixture.entry.id,
       status: 'processing',
       activeRunId: run.id,
-      leaseVersion: (claimed?.leaseVersion ?? 0) + 1,
+      leaseVersion: (claimedEntry?.leaseVersion ?? 0) + 1,
     });
 
     const refreshed = await queueRepo.refreshImplementationQueueLease({

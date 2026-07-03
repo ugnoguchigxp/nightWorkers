@@ -70,6 +70,14 @@ export type PlanModeRoutingDecision = {
   specificationLenses: SpecificationLens[];
 };
 
+export type TaskSchedulingDecision = {
+  executionType: 'normal' | 'exclusive' | 'sequence';
+  reason: string;
+  sequenceGroupId?: string | null;
+  sequenceOrder?: number | null;
+  dependsOnTaskIds?: string[] | null;
+};
+
 export type SupervisorRoutingHypothesis = {
   primaryMode: SupervisorMode;
   secondaryModes: SupervisorMode[];
@@ -81,6 +89,7 @@ export type SupervisorRoutingHypothesis = {
   nextReferenceFiles: string[];
   confidence: number;
   planMode?: PlanModeRoutingDecision;
+  scheduling?: TaskSchedulingDecision;
 };
 
 export type SupervisorReferenceSectionName =

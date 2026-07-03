@@ -255,6 +255,7 @@ function withEntry(
     processorSlot: status === 'executing' ? entry.processorSlot : null,
     activeRunId: entry.activeRunId,
     statusReason: entry.statusReason,
+    executionType: entry.executionType ?? 'normal',
     canMoveToPlanned:
       status === 'attention' &&
       isRequeueableEntryStatus(entry.status) &&

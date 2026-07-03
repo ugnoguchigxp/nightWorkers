@@ -40,7 +40,7 @@ export const implementationQueueEntrySchema = z.object({
   recoveredAt: dateLikeSchema.nullable().optional(),
   recoveryReason: z.string().nullable().optional(),
   lastFailureKind: z.string().nullable().optional(),
-  executionType: taskExecutionTypeSchema.optional(),
+  executionType: z.string().optional(),
   executionLockKey: z.string().nullable().optional(),
   sequenceGroupId: z.string().nullable().optional(),
   sequenceOrder: z.number().int().nullable().optional(),

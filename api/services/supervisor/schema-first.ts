@@ -36,11 +36,22 @@ const planModeRoutingDecisionSchema = z
   })
   .strict();
 
+const taskSchedulingDecisionSchema = z
+  .object({
+    executionType: z.enum(['normal', 'exclusive', 'sequence']),
+    reason: z.string().min(1),
+    sequenceGroupId: z.string().nullish(),
+    sequenceOrder: z.number().int().nullish(),
+    dependsOnTaskIds: z.array(z.string()).nullish(),
+  })
+  .strict();
+
 const jobTypeSelectionSchema = z
   .object({
     jobType: z.enum(jobTypes),
     goal: z.string().min(1),
     planMode: planModeRoutingDecisionSchema.nullish(),
+    scheduling: taskSchedulingDecisionSchema.nullish(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -58,11 +69,13 @@ const jobTypeSelectionSchema = z
         jobType: value.jobType,
         goal: value.goal,
         planMode: value.planMode,
+        scheduling: value.scheduling ?? undefined,
       };
     }
     return {
       jobType: value.jobType,
       goal: value.goal,
+      scheduling: value.scheduling ?? undefined,
     };
   });
 
@@ -87,7 +100,7 @@ export function buildResponseJsonSchema(round?: 1 | 2) {
       strict: true,
       schema: {
         type: 'object',
-        required: ['jobType', 'goal', 'planMode'],
+        required: ['jobType', 'goal', 'planMode', 'scheduling'],
         additionalProperties: false,
         properties: {
           jobType: { type: 'string', enum: [...jobTypes] },
@@ -116,6 +129,31 @@ export function buildResponseJsonSchema(round?: 1 | 2) {
                   specificationLenses: {
                     type: 'array',
                     items: { type: 'string', enum: specificationLensSchema.options },
+                  },
+                },
+              },
+              { type: 'null' },
+            ],
+          },
+          scheduling: {
+            anyOf: [
+              {
+                type: 'object',
+                required: [
+                  'executionType',
+                  'reason',
+                  'sequenceGroupId',
+                  'sequenceOrder',
+                  'dependsOnTaskIds',
+                ],
+                additionalProperties: false,
+                properties: {
+                  executionType: { type: 'string', enum: ['normal', 'exclusive', 'sequence'] },
+                  reason: { type: 'string' },
+                  sequenceGroupId: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+                  sequenceOrder: { anyOf: [{ type: 'integer' }, { type: 'null' }] },
+                  dependsOnTaskIds: {
+                    anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'null' }],
                   },
                 },
               },

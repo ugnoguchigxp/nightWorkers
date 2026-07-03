@@ -1,4 +1,6 @@
+import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
+import { promisify } from 'node:util';
 import { AppError, NotFoundError } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 import { getCurrentSettings } from '../../routes/settings';
@@ -80,6 +82,8 @@ import {
 import * as repo from './nightworkers.repository';
 import { createPlanningArtifactMessageIfNeeded } from './nightworkers.workbench.service';
 
+const execFileAsync = promisify(execFile);
+
 export const runStatusTransitionTable = {
   ready: ['queued', 'running'],
   queued: ['running', 'ready', 'cancelled'],
@@ -108,6 +112,131 @@ export function assertRunStatusTransition(from: string, to: string) {
 
 function listOpenTodos<TTodo extends { status: string }>(todos: TTodo[]) {
   return todos.filter((todo) => todo.status === 'pending' || todo.status === 'running');
+}
+
+function parseGitPorcelainZ(output: string) {
+  const entries: Array<{ status: string; path: string }> = [];
+  const tokens = output.split('\0').filter(Boolean);
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? '';
+    const status = token.slice(0, 2);
+    const filePath = token.slice(3);
+    if (!filePath) continue;
+    entries.push({ status, path: filePath });
+    if (status.includes('R') || status.includes('C')) {
+      const nextPath = tokens[index + 1];
+      if (nextPath) entries.push({ status, path: nextPath });
+      index += 1;
+    }
+  }
+  return entries;
+}
+
+function parseChangedPathsFromDiff(diffPatch?: string | null) {
+  if (!diffPatch) return [];
+  const paths = new Set<string>();
+  for (const line of diffPatch.split('\n')) {
+    if (!line.startsWith('diff --git ')) continue;
+    const match = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
+    if (!match) continue;
+    if (match[1] !== '/dev/null') paths.add(match[1]);
+    if (match[2] !== '/dev/null') paths.add(match[2]);
+  }
+  return [...paths].sort();
+}
+
+function normalizeVerificationStatus(
+  testResults: unknown
+): 'not_run' | 'passed' | 'failed' | 'partial' {
+  if (!testResults || typeof testResults !== 'object') return 'not_run';
+  const record = testResults as Record<string, unknown>;
+  const status = String(record.status || record.outcome || '').toLowerCase();
+  if (status === 'passed' || status === 'pass' || status === 'success') return 'passed';
+  if (status === 'failed' || status === 'fail' || status === 'error') return 'failed';
+  return 'partial';
+}
+
+async function readGitBaseline(repoRoot: string): Promise<{
+  status: 'pending' | 'not_requested';
+  baselineHead: string | null;
+  baselineStatusJson: Array<{ status: string; path: string }> | null;
+  preExistingDirtyPaths: string[];
+  statusReason: string | null;
+}> {
+  try {
+    await execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: repoRoot });
+  } catch (error) {
+    return {
+      status: 'not_requested',
+      baselineHead: null,
+      baselineStatusJson: null,
+      preExistingDirtyPaths: [],
+      statusReason: `Repository is not a git work tree: ${toErrorMessage(error)}`,
+    };
+  }
+
+  let baselineHead: string | null = null;
+  try {
+    const head = await execFileAsync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: repoRoot });
+    baselineHead = head.stdout.trim() || null;
+  } catch {
+    baselineHead = null;
+  }
+
+  const status = await execFileAsync('git', ['status', '--porcelain=v1', '-z'], { cwd: repoRoot });
+  const baselineStatusJson = parseGitPorcelainZ(status.stdout);
+  return {
+    status: 'pending',
+    baselineHead,
+    baselineStatusJson,
+    preExistingDirtyPaths: baselineStatusJson.map((entry) => entry.path).sort(),
+    statusReason: null,
+  };
+}
+
+async function updateCommitOwnershipEvidence(input: {
+  runId: string;
+  diffPatch?: string | null;
+  testResults?: unknown;
+}) {
+  const record = await repo.getTaskRunCommitRecord(input.runId);
+  if (!record || record.status === 'not_requested') return;
+  const ownedCandidatePaths = parseChangedPathsFromDiff(input.diffPatch);
+  const preExistingDirtyPaths = new Set(record.preExistingDirtyPathsJson ?? []);
+  const stageableOwnedPaths = ownedCandidatePaths.filter(
+    (path) => !preExistingDirtyPaths.has(path)
+  );
+  const excludedPaths = ownedCandidatePaths
+    .filter((path) => preExistingDirtyPaths.has(path))
+    .map((path) => ({ path, reason: 'pre_existing_dirty_path' }));
+  const verificationStatus = normalizeVerificationStatus(input.testResults);
+  const verificationAllowsCommit =
+    verificationStatus === 'passed' || verificationStatus === 'partial';
+  const status =
+    ownedCandidatePaths.length === 0
+      ? 'not_requested'
+      : stageableOwnedPaths.length === 0
+        ? 'needs_human'
+        : verificationAllowsCommit
+          ? 'ready'
+          : 'needs_human';
+  const statusReason =
+    ownedCandidatePaths.length === 0
+      ? 'No runtime-owned diff paths were detected.'
+      : stageableOwnedPaths.length === 0
+        ? 'Runtime-edited paths overlapped with pre-existing dirty paths.'
+        : !verificationAllowsCommit
+          ? 'Runtime-owned paths were detected, but verification did not pass.'
+          : 'Runtime-owned clean-baseline paths are ready for explicit commit closeout.';
+  await repo.updateTaskRunCommitRecord(input.runId, {
+    status,
+    ownedCandidatePaths,
+    stageableOwnedPaths,
+    excludedPaths,
+    verificationStatus,
+    verificationEvidenceJson: input.testResults ?? null,
+    statusReason,
+  });
 }
 
 async function applyCoverageAutonomyFallback(input: {
@@ -898,11 +1027,13 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
     activeRoute: runtimeLlmRoute,
     override: llmRouteOverride,
   });
+  const gitBaseline = await readGitBaseline(repoInfo.localPath);
   const run = await repo.createTaskRun({
     taskId,
     repositoryId: task.repositoryId,
     status: 'running',
     workerKind: runtimeLaneResolution.workerKind,
+    baseRef: gitBaseline.baselineHead,
     timeoutSeconds: task.timeoutSeconds,
     contextSnapshot: {
       compiledPrompt: compiledPromptText,
@@ -920,6 +1051,15 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
       effectiveLlmRouting,
     },
     startedAt: new Date(),
+  });
+  await repo.createTaskRunCommitRecord({
+    runId: run.id,
+    repositoryId: task.repositoryId,
+    status: gitBaseline.status,
+    baselineHead: gitBaseline.baselineHead,
+    baselineStatusJson: gitBaseline.baselineStatusJson,
+    preExistingDirtyPaths: gitBaseline.preExistingDirtyPaths,
+    statusReason: gitBaseline.statusReason,
   });
   const runtimeLaneSetupInput = {
     compiledPromptText,
@@ -1310,6 +1450,11 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
           contractWarnings: runtimeContractWarnings,
         },
       });
+      await updateCommitOwnershipEvidence({
+        runId: run.id,
+        diffPatch: runtimeResult.diffPatch,
+        testResults: runtimeResult.testResults,
+      });
 
       if (stopWasRequested) {
         const outcome = outcomeFromRuntimeResult(runtimeResult);
@@ -1692,18 +1837,19 @@ async function drainImplementationQueue(started: Awaited<ReturnType<typeof start
       leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
       allowExpiredClaimRecovery: false,
     });
-    if (!claimed) break;
+    if (claimed.kind !== 'claimed') break;
+    const claimedEntry = claimed.entry;
     try {
-      const run = await startTaskRun(claimed.taskId, {
+      const run = await startTaskRun(claimedEntry.taskId, {
         executionMode: 'implementation',
         executionModeSource: 'implementation_queue',
       });
       started.push(run);
       const processingEntry = await repo.markImplementationQueueEntryProcessing({
-        entryId: claimed.id,
+        entryId: claimedEntry.id,
         runId: run.id,
         leaseOwnerId: IMPLEMENTATION_QUEUE_LEASE_OWNER_ID,
-        leaseVersion: claimed.leaseVersion,
+        leaseVersion: claimedEntry.leaseVersion,
         leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
       });
       if (!processingEntry) {
@@ -1716,7 +1862,7 @@ async function drainImplementationQueue(started: Awaited<ReturnType<typeof start
         await repo.createRunEvent({
           version: 1,
           runId: run.id,
-          taskId: claimed.taskId,
+          taskId: claimedEntry.taskId,
           timestamp: new Date().toISOString(),
           type: 'system.warning',
           severity: 'warning',
@@ -1724,13 +1870,13 @@ async function drainImplementationQueue(started: Awaited<ReturnType<typeof start
           message: 'Implementation Queue lease changed before run ownership was recorded.',
           data: {
             source: 'implementation_queue',
-            queueEntryId: claimed.id,
+            queueEntryId: claimedEntry.id,
             leaseOwnerId: IMPLEMENTATION_QUEUE_LEASE_OWNER_ID,
-            leaseVersion: claimed.leaseVersion,
+            leaseVersion: claimedEntry.leaseVersion,
           },
         });
         await repo.createTaskMessage({
-          taskId: claimed.taskId,
+          taskId: claimedEntry.taskId,
           runId: run.id,
           role: 'system',
           content: 'Implementation Queue could not attach the run because the lease changed.',
@@ -1738,14 +1884,14 @@ async function drainImplementationQueue(started: Awaited<ReturnType<typeof start
           payloadJson: {
             source: 'implementation_queue',
             status: 'lease_conflict',
-            queueEntryId: claimed.id,
+            queueEntryId: claimedEntry.id,
             runId: run.id,
           },
         });
         continue;
       }
       await repo.createTaskMessage({
-        taskId: claimed.taskId,
+        taskId: claimedEntry.taskId,
         runId: run.id,
         role: 'system',
         content: `Implementation Queue processor ${processingEntry.processorSlot ?? 1} started this run.`,
@@ -1753,14 +1899,14 @@ async function drainImplementationQueue(started: Awaited<ReturnType<typeof start
         payloadJson: {
           source: 'implementation_queue',
           status: 'processing',
-          queueEntryId: claimed.id,
+          queueEntryId: claimedEntry.id,
           processorSlot: processingEntry.processorSlot,
           leaseOwnerId: processingEntry.leaseOwnerId,
           leaseVersion: processingEntry.leaseVersion,
         },
       });
     } catch (err) {
-      await repo.updateImplementationQueueEntry(claimed.id, {
+      await repo.updateImplementationQueueEntry(claimedEntry.id, {
         status: 'failed',
         processorSlot: null,
         leaseOwnerId: null,
@@ -1769,7 +1915,7 @@ async function drainImplementationQueue(started: Awaited<ReturnType<typeof start
         statusReason: err instanceof Error ? err.message : String(err),
       });
       await repo.createTaskMessage({
-        taskId: claimed.taskId,
+        taskId: claimedEntry.taskId,
         role: 'system',
         content: `Implementation Queue failed to start this task: ${
           err instanceof Error ? err.message : String(err)
@@ -1778,7 +1924,7 @@ async function drainImplementationQueue(started: Awaited<ReturnType<typeof start
         payloadJson: {
           source: 'implementation_queue',
           status: 'failed_to_start',
-          queueEntryId: claimed.id,
+          queueEntryId: claimedEntry.id,
         },
       });
       break;

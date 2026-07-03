@@ -63,6 +63,17 @@ export type TaskRun = {
   events?: TaskEvent[];
   reviews?: ReviewResult[];
   todos?: TaskRunTodo[];
+  commitRecord?: {
+    status: 'not_requested' | 'pending' | 'ready' | 'committed' | 'needs_human' | 'failed';
+    baselineHead?: string | null;
+    preExistingDirtyPathsJson?: string[] | null;
+    ownedCandidatePathsJson?: string[] | null;
+    stageableOwnedPathsJson?: string[] | null;
+    excludedPathsJson?: Array<{ path: string; reason: string }> | null;
+    verificationStatus: 'not_run' | 'passed' | 'failed' | 'partial';
+    commitSha?: string | null;
+    statusReason?: string | null;
+  } | null;
 };
 
 export type ImplementationQueueEntryStatus =
@@ -97,6 +108,12 @@ export type ImplementationQueueEntry = {
   recoveredAt?: unknown | null;
   recoveryReason?: string | null;
   lastFailureKind?: string | null;
+  executionType?: 'normal' | 'exclusive' | 'sequence';
+  executionLockKey?: string | null;
+  sequenceGroupId?: string | null;
+  sequenceOrder?: number | null;
+  sequenceDependsOnEntryId?: string | null;
+  schedulingReason?: string | null;
   createdAt: unknown;
   updatedAt: unknown;
 };

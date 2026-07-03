@@ -1,7 +1,14 @@
 import { and, asc, desc, eq, gt, inArray, not, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { withSqliteBusyRetry } from '../../db/retry';
-import { artifacts, taskEvents, taskRuns, taskRunTodos, tasks } from '../../db/schema';
+import {
+  artifacts,
+  taskEvents,
+  taskRunCommitRecords,
+  taskRuns,
+  taskRunTodos,
+  tasks,
+} from '../../db/schema';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
 import { normalizeRunEventToLegacy } from '../../services/run-events/normalizer';
 import type { RunEventBase } from '../../services/run-events/types';
@@ -98,6 +105,118 @@ export async function createTaskRun(data: {
 export async function getTaskRun(id: string) {
   const [run] = await db.select().from(taskRuns).where(eq(taskRuns.id, id));
   return run;
+}
+
+export async function createTaskRunCommitRecord(data: {
+  runId: string;
+  repositoryId: string;
+  status?: string;
+  baselineHead?: string | null;
+  baselineStatusJson?: unknown;
+  preExistingDirtyPaths?: string[];
+  ownedCandidatePaths?: string[];
+  stageableOwnedPaths?: string[];
+  excludedPaths?: Array<{ path: string; reason: string }>;
+  verificationStatus?: 'not_run' | 'passed' | 'failed' | 'partial';
+  verificationEvidenceJson?: unknown;
+  commitSha?: string | null;
+  commitMessage?: string | null;
+  statusReason?: string | null;
+}) {
+  const now = new Date();
+  const values = {
+    runId: data.runId,
+    repositoryId: data.repositoryId,
+    status: data.status ?? 'pending',
+    baselineHead: data.baselineHead ?? null,
+    baselineStatusJson: data.baselineStatusJson ?? null,
+    preExistingDirtyPathsJson: data.preExistingDirtyPaths ?? [],
+    ownedCandidatePathsJson: data.ownedCandidatePaths ?? [],
+    stageableOwnedPathsJson: data.stageableOwnedPaths ?? [],
+    excludedPathsJson: data.excludedPaths ?? [],
+    verificationStatus: data.verificationStatus ?? 'not_run',
+    verificationEvidenceJson: data.verificationEvidenceJson ?? null,
+    commitSha: data.commitSha ?? null,
+    commitMessage: data.commitMessage ?? null,
+    statusReason: data.statusReason ?? null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const updateValues = {
+    repositoryId: values.repositoryId,
+    status: values.status,
+    baselineHead: values.baselineHead,
+    baselineStatusJson: values.baselineStatusJson,
+    preExistingDirtyPathsJson: values.preExistingDirtyPathsJson,
+    ownedCandidatePathsJson: values.ownedCandidatePathsJson,
+    stageableOwnedPathsJson: values.stageableOwnedPathsJson,
+    excludedPathsJson: values.excludedPathsJson,
+    verificationStatus: values.verificationStatus,
+    verificationEvidenceJson: values.verificationEvidenceJson,
+    commitSha: values.commitSha,
+    commitMessage: values.commitMessage,
+    statusReason: values.statusReason,
+    updatedAt: now,
+  };
+  const [record] = await db
+    .insert(taskRunCommitRecords)
+    .values(values)
+    .onConflictDoUpdate({
+      target: taskRunCommitRecords.runId,
+      set: updateValues,
+    })
+    .returning();
+  return record;
+}
+
+export async function getTaskRunCommitRecord(runId: string) {
+  const [record] = await db
+    .select()
+    .from(taskRunCommitRecords)
+    .where(eq(taskRunCommitRecords.runId, runId));
+  return record ?? null;
+}
+
+export async function updateTaskRunCommitRecord(
+  runId: string,
+  data: {
+    status?: string;
+    ownedCandidatePaths?: string[];
+    stageableOwnedPaths?: string[];
+    excludedPaths?: Array<{ path: string; reason: string }>;
+    verificationStatus?: 'not_run' | 'passed' | 'failed' | 'partial';
+    verificationEvidenceJson?: unknown;
+    commitSha?: string | null;
+    commitMessage?: string | null;
+    statusReason?: string | null;
+  }
+) {
+  const updateValues = {
+    ...(data.status !== undefined ? { status: data.status } : {}),
+    ...(data.ownedCandidatePaths !== undefined
+      ? { ownedCandidatePathsJson: data.ownedCandidatePaths }
+      : {}),
+    ...(data.stageableOwnedPaths !== undefined
+      ? { stageableOwnedPathsJson: data.stageableOwnedPaths }
+      : {}),
+    ...(data.excludedPaths !== undefined ? { excludedPathsJson: data.excludedPaths } : {}),
+    ...(data.verificationStatus !== undefined
+      ? { verificationStatus: data.verificationStatus }
+      : {}),
+    ...(data.verificationEvidenceJson !== undefined
+      ? { verificationEvidenceJson: data.verificationEvidenceJson }
+      : {}),
+    ...(data.commitSha !== undefined ? { commitSha: data.commitSha } : {}),
+    ...(data.commitMessage !== undefined ? { commitMessage: data.commitMessage } : {}),
+    ...(data.statusReason !== undefined ? { statusReason: data.statusReason } : {}),
+    updatedAt: new Date(),
+  };
+  const [record] = await db
+    .update(taskRunCommitRecords)
+    .set(updateValues)
+    .where(eq(taskRunCommitRecords.runId, runId))
+    .returning();
+  return record ?? null;
 }
 
 export async function listTaskRunsForTask(taskId: string) {

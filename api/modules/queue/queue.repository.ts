@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
-import { db } from '../../db/client';
+import { type DbTransaction, db } from '../../db/client';
 import {
   implementationQueueEntries,
   implementationQueueSettings,
@@ -42,7 +42,43 @@ type ClaimNextImplementationQueueEntryInput = {
   leaseTtlMs: number;
   now?: Date;
   allowExpiredClaimRecovery?: boolean;
+  candidateLimit?: number;
 };
+
+export type TaskExecutionType = 'normal' | 'exclusive' | 'sequence';
+type QueueSchedulingBlockedReason =
+  | 'none'
+  | 'exclusive_waiting_for_active_tasks'
+  | 'normal_blocked_by_ready_non_normal'
+  | 'normal_blocked_by_active_non_normal'
+  | 'sequence_predecessor_pending'
+  | 'sequence_predecessor_failed'
+  | 'sequence_order_conflict'
+  | 'candidate_window_exhausted'
+  | 'cas_lost';
+type ClaimSkipEvidence = {
+  entryId: string;
+  reason: QueueSchedulingBlockedReason;
+  executionType: TaskExecutionType;
+  lockKey: string;
+  activeEntryIds: string[];
+  readyNonNormalEntryIds: string[];
+};
+export type ClaimImplementationQueueResult =
+  | { kind: 'claimed'; entry: typeof implementationQueueEntries.$inferSelect }
+  | {
+      kind: 'not_claimed';
+      reason: 'empty' | 'processor_full' | 'blocked_by_lock' | 'cas_lost';
+      skipped: ClaimSkipEvidence[];
+    };
+type QueueSchedulingLockState = {
+  activeCount: number;
+  activeNonNormalCount: number;
+  readyNonNormalCount: number;
+  activeEntryIds: string[];
+  readyNonNormalEntryIds: string[];
+};
+type QueueDb = DbTransaction | typeof db;
 
 const RUNNING_TASK_RUN_STATUSES = ['running', 'context_compiling', 'finalizing'] as const;
 const QUEUE_COMPLETION_SOURCE_STATUSES = [
@@ -50,6 +86,19 @@ const QUEUE_COMPLETION_SOURCE_STATUSES = [
   'processing',
   'awaiting_commit_decision',
 ] as const;
+const LOCK_ACTIVE_STATUSES = ['claimed', 'processing'] as const;
+const SEQUENCE_TERMINAL_BLOCKER_STATUSES = ['failed', 'cancelled', 'needs_human'] as const;
+
+function normalizeExecutionType(value: string | null | undefined): TaskExecutionType {
+  return value === 'exclusive' || value === 'sequence' ? value : 'normal';
+}
+
+export function resolveImplementationQueueExecutionLockKey(entry: {
+  repositoryId: string;
+  executionLockKey?: string | null;
+}) {
+  return entry.executionLockKey?.trim() || `repository:${entry.repositoryId}`;
+}
 
 function isRunningTaskRunStatus(status: string | null | undefined) {
   return Boolean(status && (RUNNING_TASK_RUN_STATUSES as readonly string[]).includes(status));
@@ -204,8 +253,15 @@ export async function createImplementationQueueEntry(data: {
   repositoryId: string;
   priority?: number;
   queuePosition?: number | null;
+  executionType?: TaskExecutionType;
+  executionLockKey?: string | null;
+  sequenceGroupId?: string | null;
+  sequenceOrder?: number | null;
+  sequenceDependsOnEntryId?: string | null;
+  schedulingReason?: string | null;
 }) {
   const now = new Date();
+  const executionType = data.executionType ?? 'normal';
   const [entry] = await db
     .insert(implementationQueueEntries)
     .values({
@@ -213,6 +269,13 @@ export async function createImplementationQueueEntry(data: {
       repositoryId: data.repositoryId,
       priority: data.priority ?? 0,
       queuePosition: data.queuePosition ?? null,
+      executionType,
+      executionLockKey: data.executionLockKey ?? resolveImplementationQueueExecutionLockKey(data),
+      sequenceGroupId: executionType === 'sequence' ? (data.sequenceGroupId ?? null) : null,
+      sequenceOrder: executionType === 'sequence' ? (data.sequenceOrder ?? null) : null,
+      sequenceDependsOnEntryId:
+        executionType === 'sequence' ? (data.sequenceDependsOnEntryId ?? null) : null,
+      schedulingReason: data.schedulingReason ?? null,
       status: 'queued',
       createdAt: now,
       updatedAt: now,
@@ -241,6 +304,12 @@ export async function updateImplementationQueueEntry(
     recoveredAt?: Date | null;
     recoveryReason?: string | null;
     lastFailureKind?: string | null;
+    executionType?: TaskExecutionType;
+    executionLockKey?: string | null;
+    sequenceGroupId?: string | null;
+    sequenceOrder?: number | null;
+    sequenceDependsOnEntryId?: string | null;
+    schedulingReason?: string | null;
   }
 ) {
   const [entry] = await db
@@ -495,86 +564,273 @@ export async function listImplementationQueueHealthSnapshot(
   };
 }
 
-export async function claimNextImplementationQueueEntry(
-  input: ClaimNextImplementationQueueEntryInput
-) {
-  const now = input.now ?? new Date();
-  const processorCount = Math.max(1, Math.floor(input.processorCount));
-  const leaseExpiresAt = new Date(now.getTime() + input.leaseTtlMs);
-  const occupied = (await listOccupiedImplementationQueueEntries()).filter((entry) => {
-    if (
-      input.allowExpiredClaimRecovery &&
-      entry.status === 'claimed' &&
-      entry.leaseExpiresAt &&
-      entry.leaseExpiresAt < now &&
-      !entry.activeRunId
-    ) {
-      return false;
-    }
-    return true;
-  });
-  if (occupied.length >= processorCount) return null;
-  const occupiedSlots = new Set(occupied.map((entry) => entry.processorSlot).filter(Boolean));
-  const processorSlot =
-    Array.from({ length: processorCount }, (_value, index) => index + 1).find(
-      (slot) => !occupiedSlots.has(slot)
-    ) ?? 1;
+async function resolveSequenceReadiness(
+  tx: QueueDb,
+  candidate: typeof implementationQueueEntries.$inferSelect
+): Promise<{ ready: boolean; reason: QueueSchedulingBlockedReason }> {
+  if (normalizeExecutionType(candidate.executionType) !== 'sequence') {
+    return { ready: true, reason: 'none' };
+  }
+  const sequenceOrder = candidate.sequenceOrder;
+  if (!candidate.sequenceGroupId || sequenceOrder === null) {
+    return { ready: false, reason: 'sequence_order_conflict' };
+  }
+  const peers = await tx
+    .select()
+    .from(implementationQueueEntries)
+    .where(eq(implementationQueueEntries.sequenceGroupId, candidate.sequenceGroupId));
+  const sameOrder = peers.filter((entry) => entry.sequenceOrder === sequenceOrder);
+  if (sameOrder.length > 1) return { ready: false, reason: 'sequence_order_conflict' };
+  if (sequenceOrder <= 1) return { ready: true, reason: 'none' };
 
-  const [candidate] = await db
+  const predecessor = peers.find((entry) => entry.sequenceOrder === sequenceOrder - 1);
+  if (!predecessor) return { ready: false, reason: 'sequence_predecessor_pending' };
+  if (predecessor.status === 'execution_completed') return { ready: true, reason: 'none' };
+  if ((SEQUENCE_TERMINAL_BLOCKER_STATUSES as readonly string[]).includes(predecessor.status)) {
+    return { ready: false, reason: 'sequence_predecessor_failed' };
+  }
+  return { ready: false, reason: 'sequence_predecessor_pending' };
+}
+
+async function resolveSchedulingLockState(
+  tx: QueueDb,
+  lockKey: string,
+  repositoryId: string,
+  candidateId: string
+): Promise<QueueSchedulingLockState> {
+  const defaultRepositoryLockKey = `repository:${repositoryId}`;
+  const rows = await tx
     .select()
     .from(implementationQueueEntries)
     .where(
-      input.allowExpiredClaimRecovery
+      lockKey === defaultRepositoryLockKey
         ? or(
-            eq(implementationQueueEntries.status, 'queued'),
+            eq(implementationQueueEntries.executionLockKey, lockKey),
             and(
-              eq(implementationQueueEntries.status, 'claimed'),
-              lt(implementationQueueEntries.leaseExpiresAt, now),
-              isNull(implementationQueueEntries.activeRunId)
+              eq(implementationQueueEntries.repositoryId, repositoryId),
+              isNull(implementationQueueEntries.executionLockKey)
             )
           )
-        : eq(implementationQueueEntries.status, 'queued')
-    )
-    .orderBy(
-      desc(implementationQueueEntries.priority),
-      asc(implementationQueueEntries.queuePosition),
-      asc(implementationQueueEntries.createdAt)
-    )
-    .limit(1);
-  if (!candidate) return null;
+        : eq(implementationQueueEntries.executionLockKey, lockKey)
+    );
+  const active = rows.filter(
+    (entry) =>
+      entry.id !== candidateId && (LOCK_ACTIVE_STATUSES as readonly string[]).includes(entry.status)
+  );
+  const readyNonNormal = [];
+  for (const entry of rows) {
+    if (entry.id === candidateId) continue;
+    if (entry.status !== 'queued') continue;
+    if (normalizeExecutionType(entry.executionType) === 'normal') continue;
+    const sequenceReadiness = await resolveSequenceReadiness(tx, entry);
+    if (sequenceReadiness.ready) readyNonNormal.push(entry);
+  }
+  return {
+    activeCount: active.length,
+    activeNonNormalCount: active.filter(
+      (entry) => normalizeExecutionType(entry.executionType) !== 'normal'
+    ).length,
+    readyNonNormalCount: readyNonNormal.length,
+    activeEntryIds: active.map((entry) => entry.id),
+    readyNonNormalEntryIds: readyNonNormal.map((entry) => entry.id),
+  };
+}
 
-  const isExpiredClaimRecovery = candidate.status === 'claimed';
-  const claimPredicate = isExpiredClaimRecovery
-    ? and(
-        eq(implementationQueueEntries.id, candidate.id),
-        eq(implementationQueueEntries.status, 'claimed'),
-        eq(implementationQueueEntries.leaseVersion, candidate.leaseVersion),
-        lt(implementationQueueEntries.leaseExpiresAt, now),
-        isNull(implementationQueueEntries.activeRunId)
+function canClaimCandidate(
+  candidate: typeof implementationQueueEntries.$inferSelect,
+  sequenceState: { ready: boolean; reason: QueueSchedulingBlockedReason },
+  lockState: QueueSchedulingLockState
+): { claimable: boolean; reason: QueueSchedulingBlockedReason } {
+  const executionType = normalizeExecutionType(candidate.executionType);
+  if (!sequenceState.ready) return { claimable: false, reason: sequenceState.reason };
+  if (executionType !== 'normal' && lockState.activeCount > 0) {
+    return { claimable: false, reason: 'exclusive_waiting_for_active_tasks' };
+  }
+  if (executionType === 'normal' && lockState.readyNonNormalCount > 0) {
+    return { claimable: false, reason: 'normal_blocked_by_ready_non_normal' };
+  }
+  if (executionType === 'normal' && lockState.activeNonNormalCount > 0) {
+    return { claimable: false, reason: 'normal_blocked_by_active_non_normal' };
+  }
+  return { claimable: true, reason: 'none' };
+}
+
+export async function getImplementationQueueEntrySchedulingHealth(
+  entry: typeof implementationQueueEntries.$inferSelect
+) {
+  const executionType = normalizeExecutionType(entry.executionType);
+  const executionLockKey = resolveImplementationQueueExecutionLockKey(entry);
+  const sequenceState = await resolveSequenceReadiness(db, entry);
+  const lockState = await resolveSchedulingLockState(
+    db,
+    executionLockKey,
+    entry.repositoryId,
+    entry.id
+  );
+  const decision = canClaimCandidate(entry, sequenceState, lockState);
+  const hasActiveNonNormal = lockState.activeNonNormalCount > 0;
+  const hasActiveNormal = lockState.activeCount > 0 && !hasActiveNonNormal;
+  const lockStateLabel =
+    executionType === 'normal' && lockState.readyNonNormalCount > 0
+      ? 'draining_for_non_normal'
+      : hasActiveNonNormal
+        ? 'active_exclusive'
+        : hasActiveNormal
+          ? 'active_normal'
+          : 'free';
+  return {
+    executionType,
+    executionLockKey,
+    lockState: lockStateLabel as
+      | 'free'
+      | 'active_normal'
+      | 'active_exclusive'
+      | 'draining_for_non_normal',
+    sequenceGroupId: entry.sequenceGroupId ?? null,
+    sequenceOrder: entry.sequenceOrder ?? null,
+    schedulingBlockedReason:
+      entry.status === 'queued' && !decision.claimable
+        ? decision.reason === 'cas_lost'
+          ? 'candidate_window_exhausted'
+          : decision.reason
+        : 'none',
+    activeEntryIds: lockState.activeEntryIds,
+    readyNonNormalEntryIds: lockState.readyNonNormalEntryIds,
+  };
+}
+
+export async function claimNextImplementationQueueEntry(
+  input: ClaimNextImplementationQueueEntryInput
+): Promise<ClaimImplementationQueueResult> {
+  const now = input.now ?? new Date();
+  const processorCount = Math.max(1, Math.floor(input.processorCount));
+  const leaseExpiresAt = new Date(now.getTime() + input.leaseTtlMs);
+  const candidateLimit = input.candidateLimit ?? Math.max(processorCount * 4, 20);
+
+  return db.transaction(async (tx) => {
+    const occupied = (
+      await tx
+        .select()
+        .from(implementationQueueEntries)
+        .where(inArray(implementationQueueEntries.status, [...OCCUPIED_PROCESSOR_STATUSES]))
+    ).filter((entry) => {
+      if (
+        input.allowExpiredClaimRecovery &&
+        entry.status === 'claimed' &&
+        entry.leaseExpiresAt &&
+        entry.leaseExpiresAt < now &&
+        !entry.activeRunId
+      ) {
+        return false;
+      }
+      return true;
+    });
+    if (occupied.length >= processorCount) {
+      return { kind: 'not_claimed', reason: 'processor_full', skipped: [] };
+    }
+    const occupiedSlots = new Set(occupied.map((entry) => entry.processorSlot).filter(Boolean));
+    const processorSlot =
+      Array.from({ length: processorCount }, (_value, index) => index + 1).find(
+        (slot) => !occupiedSlots.has(slot)
+      ) ?? 1;
+
+    const candidates = await tx
+      .select()
+      .from(implementationQueueEntries)
+      .where(
+        input.allowExpiredClaimRecovery
+          ? or(
+              eq(implementationQueueEntries.status, 'queued'),
+              and(
+                eq(implementationQueueEntries.status, 'claimed'),
+                lt(implementationQueueEntries.leaseExpiresAt, now),
+                isNull(implementationQueueEntries.activeRunId)
+              )
+            )
+          : eq(implementationQueueEntries.status, 'queued')
       )
-    : and(
-        eq(implementationQueueEntries.id, candidate.id),
-        eq(implementationQueueEntries.status, 'queued')
+      .orderBy(
+        desc(implementationQueueEntries.priority),
+        asc(implementationQueueEntries.queuePosition),
+        asc(implementationQueueEntries.createdAt)
+      )
+      .limit(candidateLimit);
+    const skipped: ClaimSkipEvidence[] = [];
+    if (candidates.length === 0) return { kind: 'not_claimed', reason: 'empty', skipped };
+
+    for (const candidate of candidates) {
+      const lockKey = resolveImplementationQueueExecutionLockKey(candidate);
+      const sequenceState = await resolveSequenceReadiness(tx, candidate);
+      const lockState = await resolveSchedulingLockState(
+        tx,
+        lockKey,
+        candidate.repositoryId,
+        candidate.id
       );
-  const [claimed] = await db
-    .update(implementationQueueEntries)
-    .set({
-      status: 'claimed',
-      processorSlot,
-      leaseOwnerId: input.leaseOwnerId,
-      leaseAcquiredAt: now,
-      leaseExpiresAt,
-      leaseVersion: sql`${implementationQueueEntries.leaseVersion} + 1`,
-      attemptCount: sql`${implementationQueueEntries.attemptCount} + 1`,
-      claimedAt: now,
-      lastHeartbeatAt: now,
-      recoveredAt: isExpiredClaimRecovery ? now : candidate.recoveredAt,
-      recoveryReason: isExpiredClaimRecovery
-        ? 'lease_expired_before_run_start'
-        : candidate.recoveryReason,
-      updatedAt: now,
-    })
-    .where(claimPredicate)
-    .returning();
-  return claimed ?? null;
+      const decision = canClaimCandidate(candidate, sequenceState, lockState);
+      const executionType = normalizeExecutionType(candidate.executionType);
+      if (!decision.claimable) {
+        skipped.push({
+          entryId: candidate.id,
+          reason: decision.reason,
+          executionType,
+          lockKey,
+          activeEntryIds: lockState.activeEntryIds,
+          readyNonNormalEntryIds: lockState.readyNonNormalEntryIds,
+        });
+        continue;
+      }
+
+      const isExpiredClaimRecovery = candidate.status === 'claimed';
+      const claimPredicate = isExpiredClaimRecovery
+        ? and(
+            eq(implementationQueueEntries.id, candidate.id),
+            eq(implementationQueueEntries.status, 'claimed'),
+            eq(implementationQueueEntries.leaseVersion, candidate.leaseVersion),
+            lt(implementationQueueEntries.leaseExpiresAt, now),
+            isNull(implementationQueueEntries.activeRunId)
+          )
+        : and(
+            eq(implementationQueueEntries.id, candidate.id),
+            eq(implementationQueueEntries.status, 'queued')
+          );
+      const [claimed] = await tx
+        .update(implementationQueueEntries)
+        .set({
+          status: 'claimed',
+          processorSlot,
+          leaseOwnerId: input.leaseOwnerId,
+          leaseAcquiredAt: now,
+          leaseExpiresAt,
+          executionLockKey: lockKey,
+          leaseVersion: sql`${implementationQueueEntries.leaseVersion} + 1`,
+          attemptCount: sql`${implementationQueueEntries.attemptCount} + 1`,
+          claimedAt: now,
+          lastHeartbeatAt: now,
+          recoveredAt: isExpiredClaimRecovery ? now : candidate.recoveredAt,
+          recoveryReason: isExpiredClaimRecovery
+            ? 'lease_expired_before_run_start'
+            : candidate.recoveryReason,
+          updatedAt: now,
+        })
+        .where(claimPredicate)
+        .returning();
+      if (claimed) return { kind: 'claimed', entry: claimed };
+      skipped.push({
+        entryId: candidate.id,
+        reason: 'cas_lost',
+        executionType,
+        lockKey,
+        activeEntryIds: lockState.activeEntryIds,
+        readyNonNormalEntryIds: lockState.readyNonNormalEntryIds,
+      });
+    }
+
+    const onlyCasLost = skipped.length > 0 && skipped.every((entry) => entry.reason === 'cas_lost');
+    return {
+      kind: 'not_claimed',
+      reason: onlyCasLost ? 'cas_lost' : 'blocked_by_lock',
+      skipped,
+    };
+  });
 }

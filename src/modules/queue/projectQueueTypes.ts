@@ -32,6 +32,11 @@ export type ProjectQueueEntry = {
   processorSlot?: number | null;
   activeRunId?: string | null;
   statusReason?: string | null;
+  executionType?: 'normal' | 'exclusive' | 'sequence';
+  executionLockKey?: string | null;
+  sequenceGroupId?: string | null;
+  sequenceOrder?: number | null;
+  schedulingReason?: string | null;
   updatedAt: unknown;
   task: ProjectQueueSession;
   repository: ProjectQueueRepository;
@@ -91,6 +96,7 @@ export type ProjectQueueTask = {
   processorSlot?: number | null;
   activeRunId?: string | null;
   statusReason?: string | null;
+  executionType?: 'normal' | 'exclusive' | 'sequence';
   canMoveToPlanned?: boolean;
 };
 

@@ -114,8 +114,15 @@ function ProjectQueueTaskCardFrame({
       </div>
       <div className="mt-2 flex items-center justify-between gap-2 text-[11px]">
         <span className="truncate text-slate-400">{task.phase}</span>
-        <span className="shrink-0 rounded border border-slate-700 bg-slate-950/55 px-1.5 py-0.5 text-slate-300">
-          {getProjectQueueStatusLabel(task.status)}
+        <span className="flex shrink-0 items-center gap-1">
+          {task.executionType && task.executionType !== 'normal' ? (
+            <span className="rounded border border-amber-500/35 bg-amber-950/35 px-1.5 py-0.5 text-amber-100">
+              {task.executionType}
+            </span>
+          ) : null}
+          <span className="rounded border border-slate-700 bg-slate-950/55 px-1.5 py-0.5 text-slate-300">
+            {getProjectQueueStatusLabel(task.status)}
+          </span>
         </span>
       </div>
       <div className="mt-auto flex items-center gap-1.5 pt-2 text-[11px] text-slate-500">

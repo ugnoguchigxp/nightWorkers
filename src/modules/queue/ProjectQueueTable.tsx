@@ -156,6 +156,11 @@ function ProjectQueueStatusCell({ task }: { task: ProjectQueueTask }) {
       <span className={`w-fit rounded border px-2 py-1 font-medium ${toneClass}`}>
         {getProjectQueueStatusLabel(task.status)}
       </span>
+      {task.executionType && task.executionType !== 'normal' ? (
+        <span className="w-fit rounded border border-amber-500/35 bg-amber-950/35 px-2 py-0.5 text-amber-100 text-xs">
+          {task.executionType}
+        </span>
+      ) : null}
       <span className="text-slate-500 text-xs">{task.activeRunId || task.queueEntryId || ''}</span>
     </div>
   );

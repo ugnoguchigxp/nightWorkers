@@ -126,10 +126,11 @@ export async function getTaskRun(runId: string) {
   if (!run) return null;
   const todos = await repo.listTaskRunTodosForRun(runId);
   const events = await repo.listTaskEventsForRun(runId);
+  const commitRecord = await repo.getTaskRunCommitRecord(runId);
   const reviews = events
     .map((event) => (event.payloadJson as { reviewResult?: ReviewResult } | null)?.reviewResult)
     .filter((reviewResult): reviewResult is ReviewResult => Boolean(reviewResult));
-  return { ...run, todos, events, reviews };
+  return { ...run, todos, events, reviews, commitRecord };
 }
 
 export async function listTaskRunEvents(runId: string, options?: { afterSeq?: number }) {

@@ -3,6 +3,31 @@ import { z } from '@hono/zod-openapi';
 const jsonValueSchema = z.unknown();
 const dateLikeSchema = z.union([z.string(), z.date()]);
 
+export const taskRunCommitRecordSchema = z
+  .object({
+    id: z.string().uuid(),
+    runId: z.string().uuid(),
+    repositoryId: z.string().uuid(),
+    status: z.enum(['not_requested', 'pending', 'ready', 'committed', 'needs_human', 'failed']),
+    baselineHead: z.string().nullable().optional(),
+    baselineStatusJson: jsonValueSchema.nullable().optional(),
+    preExistingDirtyPathsJson: z.array(z.string()).nullable().optional(),
+    ownedCandidatePathsJson: z.array(z.string()).nullable().optional(),
+    stageableOwnedPathsJson: z.array(z.string()).nullable().optional(),
+    excludedPathsJson: z
+      .array(z.object({ path: z.string(), reason: z.string() }))
+      .nullable()
+      .optional(),
+    verificationStatus: z.enum(['not_run', 'passed', 'failed', 'partial']),
+    verificationEvidenceJson: jsonValueSchema.nullable().optional(),
+    commitSha: z.string().nullable().optional(),
+    commitMessage: z.string().nullable().optional(),
+    statusReason: z.string().nullable().optional(),
+    createdAt: dateLikeSchema,
+    updatedAt: dateLikeSchema,
+  })
+  .openapi('TaskRunCommitRecord');
+
 export const taskRunSchema = z
   .object({
     id: z.string().uuid(),

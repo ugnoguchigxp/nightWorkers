@@ -41,13 +41,17 @@ describe('supervisor prompt packet', () => {
     expect(rendered).toContain('feature_plan');
     expect(rendered).toContain('planMode');
     expect(rendered).toContain('planning 以外では planMode は null');
+    expect(rendered).toContain('scheduling.executionType');
     expect(rendered).toContain('questionnaire を最初の判断材料');
     expect(rendered).toContain('ユースケース図');
     expect(rendered).toContain('AI coding rules');
     expect(rendered).not.toContain(['Use', 'case'].join(''));
     expect(rendered).not.toContain(['AI Coding', 'Rules'].join(' '));
     expect(JSON.stringify(schema)).toContain('planMode');
-    expect(JSON.stringify(schema)).toContain('"required":["jobType","goal","planMode"]');
+    expect(JSON.stringify(schema)).toContain(
+      '"required":["jobType","goal","planMode","scheduling"]'
+    );
+    expect(JSON.stringify(schema)).toContain('executionType');
     expect(JSON.stringify(schema)).toContain('"type":"null"');
     expect(JSON.stringify(schema)).toContain('feature_plan');
     expect(JSON.stringify(schema)).toContain('dedicatedViews');

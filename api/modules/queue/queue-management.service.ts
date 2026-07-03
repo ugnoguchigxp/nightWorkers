@@ -26,6 +26,81 @@ type QueueHealthClassification =
 const DEFAULT_STALE_PROCESSING_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_QUEUE_ATTEMPTS = 3;
 
+function toRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function normalizeExecutionType(value: unknown): repo.TaskExecutionType | null {
+  return value === 'normal' || value === 'exclusive' || value === 'sequence' ? value : null;
+}
+
+function resolveSchedulingDecisionFromMessages(
+  messages: Awaited<ReturnType<typeof nightworkersRepo.listTaskMessages>>
+): {
+  executionType: repo.TaskExecutionType;
+  sequenceGroupId: string | null;
+  sequenceOrder: number | null;
+  schedulingReason: string | null;
+} {
+  for (const message of [...messages].reverse()) {
+    const metadata = toRecord(message.metadataJson);
+    const selection = toRecord(metadata?.intakeJobSelection) ?? toRecord(metadata?.jobSelection);
+    const scheduling = toRecord(selection?.scheduling);
+    const executionType = normalizeExecutionType(scheduling?.executionType);
+    if (executionType) {
+      const sequenceGroupId =
+        executionType === 'sequence' && typeof scheduling?.sequenceGroupId === 'string'
+          ? scheduling.sequenceGroupId
+          : null;
+      const sequenceOrder =
+        executionType === 'sequence' && typeof scheduling?.sequenceOrder === 'number'
+          ? scheduling.sequenceOrder
+          : null;
+      const schedulingReason =
+        typeof scheduling?.reason === 'string' ? scheduling.reason : 'Supervisor scheduling';
+      if (executionType === 'sequence' && (!sequenceGroupId || sequenceOrder === null)) {
+        return {
+          executionType: 'exclusive',
+          sequenceGroupId: null,
+          sequenceOrder: null,
+          schedulingReason: `${schedulingReason}; sequence metadata missing, using exclusive scheduling`,
+        };
+      }
+      return {
+        executionType,
+        sequenceGroupId,
+        sequenceOrder,
+        schedulingReason,
+      };
+    }
+
+    const routing = toRecord(metadata?.routingHypothesis) ?? toRecord(metadata?.routing);
+    const overlays = Array.isArray(routing?.overlays) ? routing.overlays : [];
+    const workKinds = Array.isArray(routing?.workKinds) ? routing.workKinds : [];
+    const jobType = typeof selection?.jobType === 'string' ? selection.jobType : null;
+    if (
+      jobType === 'data_migration' ||
+      overlays.includes('destructive_operation') ||
+      workKinds.includes('data_migration')
+    ) {
+      return {
+        executionType: 'exclusive',
+        sequenceGroupId: null,
+        sequenceOrder: null,
+        schedulingReason: 'Conservative fallback from structured routing metadata',
+      };
+    }
+  }
+  return {
+    executionType: 'normal',
+    sequenceGroupId: null,
+    sequenceOrder: null,
+    schedulingReason: 'Default normal scheduling',
+  };
+}
+
 function shouldAutoDrain(options: QueueSideEffectOptions = {}) {
   return options.autoDrain ?? isAutoQueueDrainEnabled();
 }
@@ -130,24 +205,27 @@ export async function listImplementationQueueHealth(
     staleProcessingMs: options.staleProcessingMs ?? DEFAULT_STALE_PROCESSING_MS,
     maxAttempts: options.maxAttempts ?? DEFAULT_MAX_QUEUE_ATTEMPTS,
   });
-  const items = snapshot.items.map((item) => {
-    const classification = healthClassification(item);
-    return {
-      entryId: item.entry.id,
-      taskId: item.entry.taskId,
-      runId: item.entry.activeRunId,
-      status: item.entry.status,
-      classification,
-      processorSlot: item.entry.processorSlot,
-      leaseOwnerId: item.entry.leaseOwnerId,
-      leaseExpiresAt: item.entry.leaseExpiresAt,
-      lastHeartbeatAt: item.entry.lastHeartbeatAt,
-      attemptCount: item.entry.attemptCount,
-      recoveryReason: item.entry.recoveryReason,
-      statusReason: item.entry.statusReason,
-      recommendedAction: recommendedActionForHealthItem(item),
-    };
-  });
+  const items = await Promise.all(
+    snapshot.items.map(async (item) => {
+      const classification = healthClassification(item);
+      return {
+        entryId: item.entry.id,
+        taskId: item.entry.taskId,
+        runId: item.entry.activeRunId,
+        status: item.entry.status,
+        classification,
+        processorSlot: item.entry.processorSlot,
+        leaseOwnerId: item.entry.leaseOwnerId,
+        leaseExpiresAt: item.entry.leaseExpiresAt,
+        lastHeartbeatAt: item.entry.lastHeartbeatAt,
+        attemptCount: item.entry.attemptCount,
+        recoveryReason: item.entry.recoveryReason,
+        statusReason: item.entry.statusReason,
+        recommendedAction: recommendedActionForHealthItem(item),
+        scheduling: await repo.getImplementationQueueEntrySchedulingHealth(item.entry),
+      };
+    })
+  );
   return {
     generatedAt: snapshot.generatedAt,
     counts: {
@@ -407,6 +485,7 @@ export async function createImplementationQueueEntry(
       'Create or mark an implementation plan before adding this session to the Queue.'
     );
   }
+  const scheduling = resolveSchedulingDecisionFromMessages(messages);
   const queuedTask =
     task.status === 'queued'
       ? task
@@ -416,6 +495,11 @@ export async function createImplementationQueueEntry(
     taskId,
     repositoryId: queuedTask.repositoryId,
     priority: queuedTask.priority,
+    executionType: scheduling.executionType,
+    executionLockKey: `repository:${queuedTask.repositoryId}`,
+    sequenceGroupId: scheduling.sequenceGroupId,
+    sequenceOrder: scheduling.sequenceOrder,
+    schedulingReason: scheduling.schedulingReason,
   });
   await nightworkersRepo.createTaskMessage({
     taskId,
