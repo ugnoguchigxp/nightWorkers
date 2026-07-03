@@ -81,6 +81,50 @@ async function createRepository(repoRoot: string) {
   return (await res.json()) as { id: string };
 }
 
+function writeCoverageSummary(repoRoot: string) {
+  fs.mkdirSync(path.join(repoRoot, 'coverage'), { recursive: true });
+  fs.writeFileSync(
+    path.join(repoRoot, 'coverage', 'coverage-summary.json'),
+    JSON.stringify({
+      total: {
+        statements: { pct: 88.2 },
+        branches: { pct: 81.4 },
+        functions: { pct: 90 },
+        lines: { pct: 87.5 },
+      },
+      'src/checkout.ts': {
+        statements: { pct: 75 },
+        branches: { pct: 64 },
+        functions: { pct: 80 },
+        lines: { pct: 72 },
+        uncoveredLines: [12, 18],
+      },
+    }),
+    'utf8'
+  );
+}
+
+function writePlaywrightSummary(repoRoot: string) {
+  fs.mkdirSync(path.join(repoRoot, 'playwright-report'), { recursive: true });
+  fs.writeFileSync(
+    path.join(repoRoot, 'playwright-report', 'results.json'),
+    JSON.stringify({
+      suites: [
+        {
+          title: 'checkout.spec.ts',
+          specs: [
+            {
+              title: 'loads checkout',
+              tests: [{ results: [{ status: 'passed', duration: 120 }] }],
+            },
+          ],
+        },
+      ],
+    }),
+    'utf8'
+  );
+}
+
 describe('Project Detail backend', () => {
   it('supports mission goal CRUD and metrics empty state', async () => {
     const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-'));
@@ -783,6 +827,182 @@ describe('Project Detail backend', () => {
       const quality = await qualityRes.json();
       expect(quality.runningRuns).toHaveLength(0);
       expect(quality.latestUnitRun.id).toBe(run.id);
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('uses all quality runs as the latest coverage and E2E display source', async () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-quality-all-'));
+    try {
+      writeCoverageSummary(repoRoot);
+      writePlaywrightSummary(repoRoot);
+      fs.writeFileSync(
+        path.join(repoRoot, 'package.json'),
+        JSON.stringify({
+          scripts: {
+            test: 'echo unit',
+            'test:coverage': 'echo coverage',
+            'test:e2e': 'echo e2e',
+          },
+        }),
+        'utf8'
+      );
+      const project = await createRepository(repoRoot);
+
+      const runRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/quality/runs`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ runType: 'all' }),
+        }
+      );
+      expect(runRes.status).toBe(201);
+      const run = (await runRes.json()) as { id: string; runType: string };
+      expect(run.runType).toBe('all');
+
+      const qualityRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/quality`
+      );
+      expect(qualityRes.status).toBe(200);
+      const quality = await qualityRes.json();
+
+      expect(quality.latestUnitRun).toBeNull();
+      expect(quality.latestE2eRun).toBeNull();
+      expect(quality.latestAllRun.id).toBe(run.id);
+      expect(quality.latestCoverageRun.id).toBe(run.id);
+      expect(quality.latestE2eResultRun.id).toBe(run.id);
+      expect(quality.latestCoverageRun.coverageSummary['src/checkout.ts'].lines.pct).toBe(72);
+      expect(quality.latestE2eResultRun.e2eSummary.suites).toMatchObject([
+        { title: 'checkout.spec.ts', tests: 1, status: 'passed' },
+      ]);
+      expect(quality.recentRuns.map((item: { id: string }) => item.id)).toContain(run.id);
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps E2E runs visible when the structured artifact is missing', async () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-e2e-missing-'));
+    try {
+      fs.writeFileSync(
+        path.join(repoRoot, 'package.json'),
+        JSON.stringify({ scripts: { test: 'echo unit', 'test:e2e': 'echo e2e' } }),
+        'utf8'
+      );
+      const project = await createRepository(repoRoot);
+
+      const runRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/quality/runs`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ runType: 'e2e' }),
+        }
+      );
+      expect(runRes.status).toBe(201);
+      const run = await runRes.json();
+      expect(run.errorMessage).toContain('E2E artifact not found');
+
+      const qualityRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/quality`
+      );
+      const quality = await qualityRes.json();
+      expect(quality.latestE2eRun.id).toBe(run.id);
+      expect(quality.latestE2eResultRun.id).toBe(run.id);
+      expect(quality.latestE2eResultRun.e2eSummary).toMatchObject({
+        status: 'passed',
+        total: 0,
+        suites: [],
+      });
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('counts failed tests from E2E artifacts instead of failed suites only', async () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-e2e-failed-'));
+    try {
+      fs.mkdirSync(path.join(repoRoot, 'playwright-report'), { recursive: true });
+      fs.writeFileSync(
+        path.join(repoRoot, 'playwright-report', 'results.json'),
+        JSON.stringify({
+          suites: [
+            {
+              title: 'checkout.spec.ts',
+              specs: [
+                {
+                  title: 'loads checkout',
+                  tests: [
+                    {
+                      results: [
+                        { status: 'failed', duration: 100, error: { message: 'missing total' } },
+                      ],
+                    },
+                  ],
+                },
+                {
+                  title: 'submits checkout',
+                  tests: [
+                    {
+                      results: [
+                        {
+                          status: 'failed',
+                          duration: 200,
+                          error: { message: 'button disabled' },
+                        },
+                      ],
+                    },
+                  ],
+                },
+                {
+                  title: 'opens receipt',
+                  tests: [{ results: [{ status: 'passed', duration: 50 }] }],
+                },
+                {
+                  title: 'passes after retry',
+                  tests: [
+                    {
+                      results: [
+                        { status: 'failed', duration: 30, error: { message: 'first attempt' } },
+                        { status: 'passed', duration: 40 },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+        'utf8'
+      );
+      fs.writeFileSync(
+        path.join(repoRoot, 'package.json'),
+        JSON.stringify({ scripts: { test: 'echo unit', 'test:e2e': 'echo e2e' } }),
+        'utf8'
+      );
+      const project = await createRepository(repoRoot);
+
+      const runRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/quality/runs`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ runType: 'e2e' }),
+        }
+      );
+      expect(runRes.status).toBe(201);
+      const run = await runRes.json();
+      expect(run.e2eSummary).toMatchObject({
+        status: 'failed',
+        total: 4,
+        passed: 2,
+        failed: 2,
+      });
+      expect(run.e2eSummary.suites).toMatchObject([
+        { title: 'checkout.spec.ts', status: 'failed', tests: 4, lastFailure: 'button disabled' },
+      ]);
     } finally {
       fs.rmSync(repoRoot, { recursive: true, force: true });
     }

@@ -5,6 +5,7 @@ import { z } from '@hono/zod-openapi';
 import { eq } from 'drizzle-orm';
 import { missionGoalTemplates } from '../../../shared/mission-goal-templates';
 import {
+  type E2ESummary,
   e2eSummarySchema,
   MISSION_TASK_CANDIDATE_MAX_COUNT,
   type MissionGoal,
@@ -12,6 +13,7 @@ import {
   type MissionTaskCandidatesResult,
   missionTaskCandidatesResultSchema,
   type ProjectQualityCapabilities,
+  type ProjectQualityRun,
   type ProjectSignalSnapshot,
 } from '../../../shared/schemas/project-detail.schema';
 import { db } from '../../db/client';
@@ -39,6 +41,14 @@ import {
 
 const MISSION_TASK_SCHEMA_NAME = 'mission_task_candidates';
 const MAX_OUTPUT_CHARS = 120_000;
+const RECENT_QUALITY_RUN_LIMIT = 10;
+const E2E_ARTIFACT_PATHS = [
+  path.join('test-results', 'e2e-results.json'),
+  path.join('playwright-report', 'results.json'),
+  path.join('playwright-report', 'test-results.json'),
+];
+
+type PlaywrightSuiteSummary = E2ESummary['suites'][number] & { failedTests: number };
 
 export const missionGoalPresets = missionGoalTemplates;
 
@@ -663,17 +673,173 @@ function minimalE2eSummary(exitCode: number | null) {
   });
 }
 
+function readE2eArtifacts(repositoryRoot: string, exitCode: number | null) {
+  const fallback = minimalE2eSummary(exitCode);
+  const artifactPath = E2E_ARTIFACT_PATHS.map((candidate) =>
+    path.join(repositoryRoot, candidate)
+  ).find((candidate) => fs.existsSync(candidate));
+  if (!artifactPath) {
+    return {
+      e2eSummary: fallback,
+      error: `E2E artifact not found (${E2E_ARTIFACT_PATHS.join(', ')})`,
+    };
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(artifactPath, 'utf8')) as unknown;
+    return { e2eSummary: parsePlaywrightJsonSummary(parsed, exitCode), error: null };
+  } catch (error) {
+    return {
+      e2eSummary: fallback,
+      error: `Failed to read E2E artifact: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+function parsePlaywrightJsonSummary(input: unknown, exitCode: number | null): E2ESummary {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new ValidationError('E2E artifact must be a JSON object');
+  }
+  const suites = collectPlaywrightSuites(input as Record<string, unknown>, []);
+  const totals = suites.reduce(
+    (acc, suite) => ({
+      total: acc.total + suite.tests,
+      failed: acc.failed + suite.failedTests,
+      durationMs: acc.durationMs + (suite.durationMs ?? 0),
+    }),
+    { total: 0, failed: 0, durationMs: 0 }
+  );
+  const total = totals.total;
+  const failedCount = Math.min(total, totals.failed);
+  return e2eSummarySchema.parse({
+    status:
+      failedCount > 0
+        ? 'failed'
+        : exitCode === null
+          ? 'unknown'
+          : exitCode === 0
+            ? 'passed'
+            : 'failed',
+    total,
+    passed: Math.max(0, total - failedCount),
+    failed: failedCount,
+    skipped: 0,
+    durationMs: totals.durationMs > 0 ? totals.durationMs : null,
+    suites: suites.map(({ failedTests: _failedTests, ...suite }) => suite),
+  });
+}
+
+function collectPlaywrightSuites(
+  node: Record<string, unknown>,
+  pathParts: string[]
+): PlaywrightSuiteSummary[] {
+  const title = typeof node.title === 'string' && node.title.trim() ? node.title.trim() : null;
+  const nextPath = title ? [...pathParts, title] : pathParts;
+  const directSpecs = Array.isArray(node.specs) ? node.specs : [];
+  const rows = directSpecs.length > 0 ? [summarizePlaywrightSuite(nextPath, directSpecs)] : [];
+  const children = Array.isArray(node.suites) ? node.suites : [];
+  for (const child of children) {
+    if (child && typeof child === 'object' && !Array.isArray(child)) {
+      rows.push(...collectPlaywrightSuites(child as Record<string, unknown>, nextPath));
+    }
+  }
+  return rows.filter((suite) => suite.tests > 0);
+}
+
+function summarizePlaywrightSuite(pathParts: string[], specs: unknown[]): PlaywrightSuiteSummary {
+  let tests = 0;
+  let failedTests = 0;
+  let durationMs = 0;
+  let lastFailure: string | null = null;
+  for (const spec of specs) {
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) continue;
+    const specRecord = spec as Record<string, unknown>;
+    const specTitle = typeof specRecord.title === 'string' ? specRecord.title : 'test';
+    const testEntries = Array.isArray(specRecord.tests) ? specRecord.tests : [];
+    for (const testEntry of testEntries) {
+      if (!testEntry || typeof testEntry !== 'object' || Array.isArray(testEntry)) continue;
+      tests += 1;
+      const testRecord = testEntry as Record<string, unknown>;
+      const results = Array.isArray(testRecord.results) ? testRecord.results : [];
+      const resultRecords = results.filter(
+        (result): result is Record<string, unknown> =>
+          Boolean(result) && typeof result === 'object' && !Array.isArray(result)
+      );
+      const failedResult = resultRecords[resultRecords.length - 1];
+      const finalStatus = failedResult?.status;
+      if (failedResult) {
+        if (finalStatus === 'failed' || finalStatus === 'timedOut') {
+          failedTests += 1;
+          lastFailure =
+            firstString(failedResult.error) ??
+            firstString(failedResult.errors) ??
+            firstString(failedResult.errorMessage) ??
+            specTitle;
+        }
+      }
+      durationMs += resultRecords.reduce(
+        (sum, result) => sum + (typeof result.duration === 'number' ? result.duration : 0),
+        0
+      );
+    }
+  }
+  return {
+    title: pathParts.length > 0 ? pathParts.join(' / ') : 'E2E',
+    status: failedTests > 0 ? 'failed' : 'passed',
+    tests,
+    durationMs: durationMs > 0 ? durationMs : null,
+    lastFailure,
+    failedTests,
+  };
+}
+
+function firstString(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = firstString(item);
+      if (found) return found;
+    }
+  }
+  if (value && typeof value === 'object') {
+    for (const key of ['message', 'value', 'name'] as const) {
+      const found = firstString((value as Record<string, unknown>)[key]);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function selectLatestQualityRunWithArtifact(
+  runs: ProjectQualityRun[],
+  artifact: 'coverage' | 'e2e'
+) {
+  return (
+    runs.find((run) =>
+      artifact === 'coverage'
+        ? Boolean(run.coverageSummary || run.coverageGate)
+        : Boolean(run.e2eSummary)
+    ) ?? null
+  );
+}
+
 export async function getProjectQuality(repositoryId: string) {
   const repository = await requireRepository(repositoryId);
-  const [latestUnitRun, latestE2eRun, runningRuns] = await Promise.all([
+  const [latestUnitRun, latestE2eRun, latestAllRun, runningRuns, allRuns] = await Promise.all([
     repo.getLatestProjectQualityRun({ repositoryId, runType: 'unit' }),
     repo.getLatestProjectQualityRun({ repositoryId, runType: 'e2e' }),
+    repo.getLatestProjectQualityRun({ repositoryId, runType: 'all' }),
     repo.listRunningProjectQualityRuns(repositoryId),
+    repo.listProjectQualityRuns(repositoryId),
   ]);
+  const recentRuns = allRuns.slice(0, RECENT_QUALITY_RUN_LIMIT);
   return {
     capabilities: detectQualityCapabilities(repository.localPath),
     latestUnitRun,
     latestE2eRun,
+    latestCoverageRun: selectLatestQualityRunWithArtifact(allRuns, 'coverage'),
+    latestE2eResultRun: selectLatestQualityRunWithArtifact(allRuns, 'e2e'),
+    latestAllRun,
+    recentRuns,
     runningRuns,
   };
 }
@@ -714,9 +880,13 @@ export async function createProjectQualityRun(input: {
   const coverage = needsCoverage
     ? readCoverageArtifacts(repository.localPath)
     : { coverageSummary: null, coverageGate: null, error: null };
+  const e2e = needsE2e
+    ? readE2eArtifacts(repository.localPath, commandResult.exitCode)
+    : { e2eSummary: null, error: null };
   const errorMessage = [
     commandResult.timedOut ? `command timed out after ${timeoutSeconds}s` : null,
     coverage.error,
+    e2e.error,
   ]
     .filter(Boolean)
     .join('; ');
@@ -728,7 +898,7 @@ export async function createProjectQualityRun(input: {
     latestOutput: commandResult.output,
     coverageSummary: coverage.coverageSummary,
     coverageGate: coverage.coverageGate,
-    e2eSummary: needsE2e ? minimalE2eSummary(commandResult.exitCode) : null,
+    e2eSummary: e2e.e2eSummary,
     errorMessage: errorMessage || null,
   });
   if (!completed) throw new NotFoundError('Project quality run not found');

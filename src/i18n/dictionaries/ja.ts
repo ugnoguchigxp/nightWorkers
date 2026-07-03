@@ -167,6 +167,11 @@ export const jaDictionary = {
   'projectDetail.quality.coverageReport': 'カバレッジレポート',
   'projectDetail.quality.coverageSubtitle': 'Jestカバレッジ一覧',
   'projectDetail.quality.e2eResults': 'E2E結果',
+  'projectDetail.quality.coverageNotRun': 'Coverage run はまだ実行されていません。',
+  'projectDetail.quality.e2eNotRun': 'E2E run はまだ実行されていません。',
+  'projectDetail.quality.missingCapability': '不足している capability: {{capability}}',
+  'projectDetail.quality.coverageGateStatus': 'Coverage Gate: {{status}} / target {{target}}%',
+  'projectDetail.quality.commandOutput': 'コマンド出力',
   'projectDetail.stack.title': '技術スタック',
   'projectDetail.stack.description':
     'package.json と周辺ファイルから検出した Project の実行基盤です。',

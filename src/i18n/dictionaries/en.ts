@@ -169,6 +169,11 @@ export const enDictionary = {
   'projectDetail.quality.coverageReport': 'Coverage Report',
   'projectDetail.quality.coverageSubtitle': 'Jest coverage table',
   'projectDetail.quality.e2eResults': 'E2E Results',
+  'projectDetail.quality.coverageNotRun': 'No coverage run has been executed yet.',
+  'projectDetail.quality.e2eNotRun': 'No E2E run has been executed yet.',
+  'projectDetail.quality.missingCapability': 'Missing capability: {{capability}}',
+  'projectDetail.quality.coverageGateStatus': 'Coverage Gate: {{status}} / target {{target}}%',
+  'projectDetail.quality.commandOutput': 'Command output',
   'projectDetail.stack.title': 'Tech Stack',
   'projectDetail.stack.description':
     'Runtime foundation detected from package.json and nearby files.',

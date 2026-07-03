@@ -34,6 +34,7 @@ import type {
   MissionTaskCandidate,
   ProjectDetailMetrics,
   ProjectQualityOverview,
+  ProjectQualityRun,
   ProjectStackProfile,
 } from '../../../../shared/schemas/project-detail.schema';
 import {
@@ -56,6 +57,11 @@ import {
   updateMissionGoal,
   updateMissionTaskCandidate,
 } from '../nightWorkersCommands';
+import {
+  type CoverageDisplayValue,
+  type CoverageFileRow,
+  coverageRowsFromSummary,
+} from '../qualityRows';
 import type { Repository, Task, WorkbenchSessionView } from '../types';
 
 type ProjectDetailScreenProps = {
@@ -155,15 +161,6 @@ type TaskCandidateRow = {
   confidence: number;
   complexity: string;
   reason: string;
-};
-type CoverageFileRow = {
-  file: string;
-  statements: number;
-  branches: number;
-  functions: number;
-  lines: number;
-  uncovered: string;
-  summary?: boolean;
 };
 type E2EResultRow = {
   suite: string;
@@ -314,11 +311,11 @@ export function ProjectDetailScreen({
   );
   const coverageAxes = useMemo<CoverageAxis[]>(
     () =>
-      quality?.latestUnitRun?.coverageGate?.metrics.map((metric) => ({
+      quality?.latestCoverageRun?.coverageGate?.metrics.map((metric) => ({
         labelKey: `projectDetail.coverage.${metric.metric}`,
         value: metric.actualPercent,
       })) ?? [],
-    [quality?.latestUnitRun?.coverageGate?.metrics]
+    [quality?.latestCoverageRun?.coverageGate?.metrics]
   );
   const taskCandidateRows = useMemo<TaskCandidateRow[]>(
     () => [
@@ -358,12 +355,12 @@ export function ProjectDetailScreen({
     [candidates, proposalCandidates, t]
   );
   const coverageFileRows = useMemo(
-    () => coverageRowsFromSummary(quality?.latestUnitRun?.coverageSummary),
-    [quality?.latestUnitRun?.coverageSummary]
+    () => coverageRowsFromSummary(quality?.latestCoverageRun?.coverageSummary),
+    [quality?.latestCoverageRun?.coverageSummary]
   );
   const e2eCoverageRows = useMemo(
-    () => e2eRowsFromSummary(quality?.latestE2eRun?.e2eSummary),
-    [quality?.latestE2eRun?.e2eSummary]
+    () => e2eRowsFromSummary(quality?.latestE2eResultRun?.e2eSummary),
+    [quality?.latestE2eResultRun?.e2eSummary]
   );
 
   const loadProjectDetail = useCallback(async () => {
@@ -1474,7 +1471,7 @@ export function MissionGenerateTasksPanel({
   );
 }
 
-function QualityReportPanel({
+export function QualityReportPanel({
   quality,
   coverageRows,
   e2eRows,
@@ -1505,6 +1502,8 @@ function QualityReportPanel({
       capability: quality?.capabilities.all,
     },
   ];
+  const coverageRun = quality?.latestCoverageRun ?? null;
+  const e2eRun = quality?.latestE2eResultRun ?? null;
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1532,6 +1531,21 @@ function QualityReportPanel({
             </Button>
           ))}
         </div>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        <QualityRunStatus
+          label={t('projectDetail.quality.coverageReport')}
+          run={coverageRun}
+          emptyMessage={t('projectDetail.quality.coverageNotRun')}
+          capability={quality?.capabilities.coverage}
+        />
+        <QualityRunStatus
+          label={t('projectDetail.quality.e2eResults')}
+          run={e2eRun}
+          emptyMessage={t('projectDetail.quality.e2eNotRun')}
+          capability={quality?.capabilities.e2e}
+        />
       </div>
 
       <div className="overflow-hidden border" style={panelStyle}>
@@ -1648,6 +1662,92 @@ function QualityReportPanel({
         </div>
       </div>
     </section>
+  );
+}
+
+function QualityRunStatus({
+  label,
+  run,
+  emptyMessage,
+  capability,
+}: {
+  label: string;
+  run: ProjectQualityRun | null;
+  emptyMessage: string;
+  capability?: { runnable: boolean; missingCapabilities: string[]; command?: string };
+}) {
+  const { t } = useTranslation();
+  const missingCapability =
+    !capability?.runnable && capability?.missingCapabilities.length
+      ? t('projectDetail.quality.missingCapability', {
+          capability: capability.missingCapabilities.join(', '),
+        })
+      : null;
+  return (
+    <div className="border p-3 text-xs" style={panelStyle}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold">{label}</span>
+        {run ? <QualityStatusChip status={run.status} /> : null}
+      </div>
+      <div className="mt-2 space-y-1" style={mutedTextStyle}>
+        {run ? (
+          <>
+            <div>
+              {run.runType} / {run.status}
+              {run.exitCode === null ? '' : ` / exit ${run.exitCode}`}
+            </div>
+            <div className="truncate">{run.command}</div>
+            {run.coverageGate ? (
+              <div>
+                {t('projectDetail.quality.coverageGateStatus', {
+                  status: run.coverageGate.passed ? 'PASS' : 'FAIL',
+                  target: run.coverageGate.targetPercent,
+                })}
+              </div>
+            ) : null}
+            {missingCapability ? (
+              <div style={{ color: 'var(--nw-warning)' }}>{missingCapability}</div>
+            ) : null}
+            {run.errorMessage ? (
+              <div style={{ color: 'var(--nw-warning)' }}>{run.errorMessage}</div>
+            ) : null}
+            {run.latestOutput ? (
+              <details className="mt-2">
+                <summary className="cursor-pointer" style={primaryTextStyle}>
+                  {t('projectDetail.quality.commandOutput')}
+                </summary>
+                <pre
+                  className="nightworkers-scrollbar mt-2 max-h-40 overflow-auto whitespace-pre-wrap border p-2 font-mono text-[11px]"
+                  style={controlStyle}
+                >
+                  {run.latestOutput}
+                </pre>
+              </details>
+            ) : null}
+          </>
+        ) : (
+          <div>{missingCapability ?? emptyMessage}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function QualityStatusChip({ status }: { status: ProjectQualityRun['status'] }) {
+  if (status === 'completed') return <JestStatusLabel status="PASS" />;
+  if (status === 'failed' || status === 'cancelled') return <JestStatusLabel status="FAIL" />;
+  return (
+    <span
+      className="inline-flex h-6 items-center border px-2 font-mono text-[11px] font-bold"
+      style={{
+        background: 'color-mix(in srgb, var(--nw-primary) 12%, var(--nw-panel))',
+        borderColor: 'color-mix(in srgb, var(--nw-primary) 42%, var(--nw-border))',
+        borderRadius: 'var(--nw-control-radius)',
+        color: 'var(--nw-primary)',
+      }}
+    >
+      {status.toUpperCase()}
+    </span>
   );
 }
 
@@ -2112,7 +2212,14 @@ function JestStatusLabel({ status }: { status: string }) {
   );
 }
 
-function CoverageCell({ value }: { value: number }) {
+function CoverageCell({ value }: { value: CoverageDisplayValue }) {
+  if (value === null) {
+    return (
+      <td className="border-b px-2 py-2 text-right font-bold" style={tableBorderStyle}>
+        —
+      </td>
+    );
+  }
   const tone =
     value >= 85 ? 'var(--nw-success)' : value >= 80 ? 'var(--nw-warning)' : 'var(--nw-danger)';
   return (
@@ -2218,36 +2325,6 @@ function ActiveChip({ active }: { active: boolean }) {
 function formatCompactTokens(tokens: number) {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
   return `${Math.round(tokens / 1_000)}K`;
-}
-
-function percentFromCoverageEntry(entry: unknown, metric: string) {
-  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return 0;
-  const metricValue = (entry as Record<string, unknown>)[metric];
-  if (!metricValue || typeof metricValue !== 'object' || Array.isArray(metricValue)) return 0;
-  const pct = (metricValue as Record<string, unknown>).pct;
-  return typeof pct === 'number' && Number.isFinite(pct) ? pct : 0;
-}
-
-function uncoveredFromCoverageEntry(entry: unknown) {
-  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return '—';
-  const value = (entry as Record<string, unknown>).uncoveredLines;
-  return Array.isArray(value) && value.length > 0 ? value.join(', ') : '—';
-}
-
-function coverageRowsFromSummary(summary: unknown): CoverageFileRow[] {
-  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) return [];
-  const record = summary as Record<string, unknown>;
-  return Object.entries(record)
-    .filter(([file]) => file === 'total')
-    .map(([file, entry]) => ({
-      file,
-      statements: percentFromCoverageEntry(entry, 'statements'),
-      branches: percentFromCoverageEntry(entry, 'branches'),
-      functions: percentFromCoverageEntry(entry, 'functions'),
-      lines: percentFromCoverageEntry(entry, 'lines'),
-      uncovered: uncoveredFromCoverageEntry(entry),
-      summary: file === 'total',
-    }));
 }
 
 function e2eRowsFromSummary(summary: E2ESummary | null | undefined): E2EResultRow[] {

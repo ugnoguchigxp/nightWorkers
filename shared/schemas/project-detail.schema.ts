@@ -347,6 +347,10 @@ export const projectQualityOverviewSchema = z.object({
   capabilities: projectQualityCapabilitiesSchema,
   latestUnitRun: projectQualityRunSchema.nullable(),
   latestE2eRun: projectQualityRunSchema.nullable(),
+  latestCoverageRun: projectQualityRunSchema.nullable(),
+  latestE2eResultRun: projectQualityRunSchema.nullable(),
+  latestAllRun: projectQualityRunSchema.nullable(),
+  recentRuns: z.array(projectQualityRunSchema),
   runningRuns: z.array(projectQualityRunSchema),
 });
 export type ProjectQualityOverview = z.infer<typeof projectQualityOverviewSchema>;
