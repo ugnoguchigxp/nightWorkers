@@ -7,6 +7,17 @@ import {
 
 const dateLikeSchema = z.union([z.string(), z.date()]);
 const jsonValueSchema = z.unknown();
+const taskExecutionTypeSchema = z.enum(['normal', 'exclusive', 'sequence']);
+const schedulingBlockedReasonSchema = z.enum([
+  'none',
+  'exclusive_waiting_for_active_tasks',
+  'normal_blocked_by_ready_non_normal',
+  'normal_blocked_by_active_non_normal',
+  'sequence_predecessor_pending',
+  'sequence_predecessor_failed',
+  'sequence_order_conflict',
+  'candidate_window_exhausted',
+]);
 
 export const implementationQueueEntrySchema = z.object({
   id: z.string().uuid(),
@@ -29,6 +40,12 @@ export const implementationQueueEntrySchema = z.object({
   recoveredAt: dateLikeSchema.nullable().optional(),
   recoveryReason: z.string().nullable().optional(),
   lastFailureKind: z.string().nullable().optional(),
+  executionType: taskExecutionTypeSchema.optional(),
+  executionLockKey: z.string().nullable().optional(),
+  sequenceGroupId: z.string().nullable().optional(),
+  sequenceOrder: z.number().int().nullable().optional(),
+  sequenceDependsOnEntryId: z.string().uuid().nullable().optional(),
+  schedulingReason: z.string().nullable().optional(),
   createdAt: dateLikeSchema,
   updatedAt: dateLikeSchema,
 });
@@ -106,6 +123,23 @@ export const implementationQueueHealthSchema = z.object({
       recoveryReason: z.string().nullable().optional(),
       statusReason: z.string().nullable().optional(),
       recommendedAction: z.enum(['none', 'retry', 'complete', 'mark_needs_human', 'archive']),
+      scheduling: z
+        .object({
+          executionType: taskExecutionTypeSchema,
+          executionLockKey: z.string(),
+          lockState: z.enum([
+            'free',
+            'active_normal',
+            'active_exclusive',
+            'draining_for_non_normal',
+          ]),
+          sequenceGroupId: z.string().nullable(),
+          sequenceOrder: z.number().int().nullable(),
+          schedulingBlockedReason: schedulingBlockedReasonSchema,
+          activeEntryIds: z.array(z.string().uuid()),
+          readyNonNormalEntryIds: z.array(z.string().uuid()),
+        })
+        .optional(),
     })
   ),
 });

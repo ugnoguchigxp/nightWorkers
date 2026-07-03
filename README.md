@@ -83,7 +83,7 @@ artifacts, diffs, todos, settings, and provider usage records.
 - Shared schemas: Zod (`shared/schemas`)
 - UI primitives: NightWorkers-owned components under `src/components/ui`
 
-Details: [Architecture and Module Boundaries](./spec/docs/architecture.md)
+Details: [Architecture and Module Boundaries](./spec/architecture.md)
 
 ## Requirements
 - Bun 1.3+
@@ -112,7 +112,7 @@ bun run dev
 
 Default URL: `http://localhost:39174`
 
-After startup, use the [First Run Orientation](./spec/docs/first-run-orientation.md)
+After startup, use the [First Run Orientation](./spec/first-run-orientation.md)
 if you are trying NightWorkers against an existing local repository for the
 first time.
 
@@ -133,7 +133,7 @@ first time.
    Agent Hooks.
 
 For a fuller step-by-step walkthrough, see
-[First Run Orientation](./spec/docs/first-run-orientation.md).
+[First Run Orientation](./spec/first-run-orientation.md).
 
 ## What You Should See First
 - Project Folder: the local repo root NightWorkers will use for workbench and
@@ -150,7 +150,7 @@ For a fuller step-by-step walkthrough, see
 - Overview: repository, queue, settings, usage, and warning summaries across
   the local NightWorkers workspace.
 
-See [Feature Tour](./spec/docs/feature-tour.md) for each surface's evidence
+See [Feature Tour](./spec/feature-tour.md) for each surface's evidence
 path and current limits.
 
 ## Trust and Local-First Model
@@ -223,7 +223,7 @@ Important environment variables:
 - `NIGHTWORKERS_LLM_SETTINGS_PATH`: optional override for the LLM settings JSON path in tests or local experiments
 
 Detailed runtime configuration:
-- [Runtime Configuration Reference](./spec/docs/configuration.md)
+- [Runtime Configuration Reference](./spec/configuration.md)
 
 ## Development Commands
 | Command | Description |
@@ -287,13 +287,13 @@ This repository uses the following documentation layout.
   - [`CHANGELOG.md`](./CHANGELOG.md)
 - Adoption and first-run references:
   - [`Trust Model`](./spec/docs/trust-model.md)
-  - [`First Run Orientation`](./spec/docs/first-run-orientation.md)
-  - [`Feature Tour`](./spec/docs/feature-tour.md)
+  - [`First Run Orientation`](./spec/first-run-orientation.md)
+  - [`Feature Tour`](./spec/feature-tour.md)
   - [`Adoption Checklist`](./spec/docs/adoption-checklist.md)
 - Engineering specs and internal references:
   - `spec/docs/` (primary specification/reference docs)
-  - [`Architecture and Module Boundaries`](./spec/docs/architecture.md)
-  - [`Runtime Configuration Reference`](./spec/docs/configuration.md)
+  - [`Architecture and Module Boundaries`](./spec/architecture.md)
+  - [`Runtime Configuration Reference`](./spec/configuration.md)
   - [`Project Intelligence Overview 実装計画`](./spec/docs/project-intelligence-layer-concept.md)
 - `spec/public/` (public-facing specs managed outside GitHub-rendered root docs)
 

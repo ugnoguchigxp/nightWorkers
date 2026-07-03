@@ -703,6 +703,36 @@ export async function ensureNightWorkersSchema() {
   );
 
   await client.execute(`
+    CREATE TABLE IF NOT EXISTS task_run_commit_records (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      run_id text NOT NULL UNIQUE,
+      repository_id text NOT NULL,
+      status text DEFAULT 'pending' NOT NULL,
+      baseline_head text,
+      baseline_status_json text,
+      pre_existing_dirty_paths_json text,
+      owned_candidate_paths_json text,
+      stageable_owned_paths_json text,
+      excluded_paths_json text,
+      verification_status text DEFAULT 'not_run' NOT NULL,
+      verification_evidence_json text,
+      commit_sha text,
+      commit_message text,
+      status_reason text,
+      FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE cascade,
+      FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade
+    )
+  `);
+  await client.execute(
+    'CREATE UNIQUE INDEX IF NOT EXISTS task_run_commit_records_run_id_uidx ON task_run_commit_records (run_id)'
+  );
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS task_run_commit_records_repository_status_idx ON task_run_commit_records (repository_id, status)'
+  );
+
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS implementation_queue_entries (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -726,6 +756,12 @@ export async function ensureNightWorkersSchema() {
       recovered_at integer,
       recovery_reason text,
       last_failure_kind text,
+      execution_type text DEFAULT 'normal' NOT NULL,
+      execution_lock_key text,
+      sequence_group_id text,
+      sequence_order integer,
+      sequence_depends_on_entry_id text,
+      scheduling_reason text,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
       FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade,
       FOREIGN KEY (active_run_id) REFERENCES task_runs(id) ON DELETE set null
@@ -755,6 +791,25 @@ export async function ensureNightWorkersSchema() {
   await ensureColumn('implementation_queue_entries', 'recovered_at', 'recovered_at integer');
   await ensureColumn('implementation_queue_entries', 'recovery_reason', 'recovery_reason text');
   await ensureColumn('implementation_queue_entries', 'last_failure_kind', 'last_failure_kind text');
+  await ensureColumn(
+    'implementation_queue_entries',
+    'execution_type',
+    "execution_type text DEFAULT 'normal' NOT NULL"
+  );
+  await ensureColumn('implementation_queue_entries', 'execution_lock_key', 'execution_lock_key text');
+  await ensureColumn('implementation_queue_entries', 'sequence_group_id', 'sequence_group_id text');
+  await ensureColumn('implementation_queue_entries', 'sequence_order', 'sequence_order integer');
+  await ensureColumn(
+    'implementation_queue_entries',
+    'sequence_depends_on_entry_id',
+    'sequence_depends_on_entry_id text'
+  );
+  await ensureColumn('implementation_queue_entries', 'scheduling_reason', 'scheduling_reason text');
+  await client.execute(`
+    UPDATE implementation_queue_entries
+    SET execution_lock_key = 'repository:' || repository_id
+    WHERE execution_lock_key IS NULL
+  `);
   await client.execute(
     'CREATE INDEX IF NOT EXISTS implementation_queue_entries_task_id_idx ON implementation_queue_entries (task_id)'
   );
@@ -772,6 +827,12 @@ export async function ensureNightWorkersSchema() {
   );
   await client.execute(
     'CREATE INDEX IF NOT EXISTS implementation_queue_entries_lease_owner_idx ON implementation_queue_entries (lease_owner_id, lease_expires_at)'
+  );
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS implementation_queue_entries_scheduling_idx ON implementation_queue_entries (repository_id, execution_lock_key, execution_type, status)'
+  );
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS implementation_queue_entries_sequence_idx ON implementation_queue_entries (sequence_group_id, sequence_order)'
   );
 
   await client.execute(`

@@ -166,6 +166,12 @@ export const implementationQueueEntries = sqliteTable(
     recoveredAt: integer('recovered_at', { mode: 'timestamp' }),
     recoveryReason: text('recovery_reason'),
     lastFailureKind: text('last_failure_kind'),
+    executionType: text('execution_type').default('normal').notNull(),
+    executionLockKey: text('execution_lock_key'),
+    sequenceGroupId: text('sequence_group_id'),
+    sequenceOrder: integer('sequence_order'),
+    sequenceDependsOnEntryId: text('sequence_depends_on_entry_id'),
+    schedulingReason: text('scheduling_reason'),
   },
   (table) => ({
     taskIdIdx: index('implementation_queue_entries_task_id_idx').on(table.taskId),
@@ -187,6 +193,53 @@ export const implementationQueueEntries = sqliteTable(
     leaseOwnerIdx: index('implementation_queue_entries_lease_owner_idx').on(
       table.leaseOwnerId,
       table.leaseExpiresAt
+    ),
+    schedulingIdx: index('implementation_queue_entries_scheduling_idx').on(
+      table.repositoryId,
+      table.executionLockKey,
+      table.executionType,
+      table.status
+    ),
+    sequenceIdx: index('implementation_queue_entries_sequence_idx').on(
+      table.sequenceGroupId,
+      table.sequenceOrder
+    ),
+  })
+);
+
+export const taskRunCommitRecords = sqliteTable(
+  'task_run_commit_records',
+  {
+    ...commonColumns,
+    runId: text('run_id')
+      .notNull()
+      .unique()
+      .references(() => taskRuns.id, { onDelete: 'cascade' }),
+    repositoryId: text('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
+    status: text('status').default('pending').notNull(),
+    baselineHead: text('baseline_head'),
+    baselineStatusJson: text('baseline_status_json', { mode: 'json' }),
+    preExistingDirtyPathsJson: text('pre_existing_dirty_paths_json', { mode: 'json' }).$type<
+      string[]
+    >(),
+    ownedCandidatePathsJson: text('owned_candidate_paths_json', { mode: 'json' }).$type<string[]>(),
+    stageableOwnedPathsJson: text('stageable_owned_paths_json', { mode: 'json' }).$type<string[]>(),
+    excludedPathsJson: text('excluded_paths_json', { mode: 'json' }).$type<
+      Array<{ path: string; reason: string }>
+    >(),
+    verificationStatus: text('verification_status').default('not_run').notNull(),
+    verificationEvidenceJson: text('verification_evidence_json', { mode: 'json' }),
+    commitSha: text('commit_sha'),
+    commitMessage: text('commit_message'),
+    statusReason: text('status_reason'),
+  },
+  (table) => ({
+    runIdIdx: uniqueIndex('task_run_commit_records_run_id_uidx').on(table.runId),
+    repositoryStatusIdx: index('task_run_commit_records_repository_status_idx').on(
+      table.repositoryId,
+      table.status
     ),
   })
 );

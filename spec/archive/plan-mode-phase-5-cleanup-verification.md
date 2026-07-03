@@ -399,7 +399,7 @@ Target docs:
 - `spec/docs/plan-mode-phase-3-dedicated-view-generators.md`
 - `spec/docs/plan-mode-phase-4-ui-artifact-ux-replacement.md`
 - `spec/docs/plan-mode-phase-5-cleanup-verification.md`
-- `spec/docs/first-run-orientation.md`
+- `spec/first-run-orientation.md`
 - Any README or operator docs that mention Plan mode artifacts.
 
 Required actions:
