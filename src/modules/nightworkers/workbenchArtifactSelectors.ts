@@ -1,6 +1,7 @@
 import type {
   ActivityArtifact,
   ReviewResult,
+  ReviewSessionDetail,
   Task,
   TaskEvent,
   TaskMessage,
@@ -197,6 +198,7 @@ export function buildWorkbenchArtifactRefs(input: {
   todos?: TaskRunTodo[];
   events?: TaskEvent[];
   reviews?: ReviewResult[];
+  reviewSession?: ReviewSessionDetail | null;
   messages?: TaskMessage[];
   activityArtifacts?: ActivityArtifact[];
 }): WorkbenchArtifactRef[] {
@@ -335,6 +337,19 @@ export function buildWorkbenchArtifactRefs(input: {
       source: { type: 'review_result', reviewId: review.id },
       createdAt: review.createdAt,
       metadata: { review },
+    });
+  }
+  if (input.reviewSession) {
+    refs.push({
+      id: `review-status-${input.reviewSession.session.id}`,
+      taskId: input.task.id,
+      runId: input.reviewSession.session.runId,
+      kind: 'review_status',
+      title: 'Review Status',
+      summary: `${input.reviewSession.recommendation.level} · ${input.reviewSession.statusArtifact.sections.length} sections`,
+      source: { type: 'review_result', reviewId: input.reviewSession.session.id },
+      createdAt: input.reviewSession.session.updatedAt,
+      metadata: { reviewSession: input.reviewSession },
     });
   }
   return refs.sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
@@ -513,5 +528,6 @@ function artifactTitleForKind(kind: WorkbenchArtifactKind, message: TaskMessage)
   if (kind === 'component_design') return 'Component Design';
   if (kind === 'design_delta') return 'Design Delta';
   if (kind === 'implementation_plan') return 'Implementation Plan';
+  if (kind === 'review_status') return 'Review Status';
   return 'Spec';
 }

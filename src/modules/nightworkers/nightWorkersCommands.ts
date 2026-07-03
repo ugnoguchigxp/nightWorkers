@@ -123,6 +123,123 @@ export function submitRunReview(
   return apiFetch(`/api/runs/${runId}/reviews`, jsonRequest('POST', input));
 }
 
+export function fetchReviewRecommendation(runId: string) {
+  return apiFetch(`/api/runs/${runId}/review-recommendation`);
+}
+
+export function startReviewSession(runId: string) {
+  return apiFetch(`/api/runs/${runId}/review-sessions`, { method: 'POST' });
+}
+
+export function fetchLatestTaskReviewSession(sessionId: string) {
+  return apiFetch(`/api/tasks/${sessionId}/review-session`);
+}
+
+export function runReviewSection(reviewSessionId: string, section: string) {
+  return apiFetch(
+    `/api/review-sessions/${reviewSessionId}/sections/${section}/run`,
+    jsonRequest('POST', {})
+  );
+}
+
+export function updateReviewFindingDisposition(
+  reviewSessionId: string,
+  findingId: string,
+  input: {
+    disposition:
+      | 'human_callout'
+      | 'agent_followup'
+      | 'proposed_goal'
+      | 'security_plugin_handoff'
+      | 'knowledge_candidate'
+      | 'accepted_risk'
+      | 'ignored';
+    note?: string;
+    evidenceRefs?: unknown[];
+  }
+) {
+  return apiFetch(
+    `/api/review-sessions/${reviewSessionId}/findings/${findingId}/disposition`,
+    jsonRequest('POST', input)
+  );
+}
+
+export function createReviewProposedGoals(reviewSessionId: string) {
+  return apiFetch(`/api/review-sessions/${reviewSessionId}/proposed-goals`, {
+    method: 'POST',
+  });
+}
+
+export function updateReviewProposedGoal(
+  reviewSessionId: string,
+  goalId: string,
+  input: { status: 'approved' | 'rejected' | 'deferred'; note?: string }
+) {
+  return apiFetch(
+    `/api/review-sessions/${reviewSessionId}/proposed-goals/${goalId}`,
+    jsonRequest('PATCH', input)
+  );
+}
+
+export function materializeReviewProposedGoal(reviewSessionId: string, goalId: string) {
+  return apiFetch(
+    `/api/review-sessions/${reviewSessionId}/proposed-goals/${goalId}/materialize`,
+    jsonRequest('POST', { target: 'task' })
+  );
+}
+
+export function createReviewKnowledgeCandidate(
+  reviewSessionId: string,
+  input: {
+    findingId: string;
+    candidateType?: 'rule' | 'procedure' | 'failure_pattern';
+    title?: string;
+    body?: string;
+    avoid?: string | null;
+    prefer?: string | null;
+  }
+) {
+  return apiFetch(
+    `/api/review-sessions/${reviewSessionId}/knowledge-candidates`,
+    jsonRequest('POST', input)
+  );
+}
+
+export function updateReviewKnowledgeCandidate(
+  reviewSessionId: string,
+  candidateId: string,
+  input: {
+    candidateType?: 'rule' | 'procedure' | 'failure_pattern';
+    title?: string;
+    body?: string;
+    avoid?: string | null;
+    prefer?: string | null;
+    status?: 'discarded';
+  }
+) {
+  return apiFetch(
+    `/api/review-sessions/${reviewSessionId}/knowledge-candidates/${candidateId}`,
+    jsonRequest('PATCH', input)
+  );
+}
+
+export function sendReviewKnowledgeCandidate(reviewSessionId: string, candidateId: string) {
+  return apiFetch(
+    `/api/review-sessions/${reviewSessionId}/knowledge-candidates/${candidateId}/send`,
+    { method: 'POST' }
+  );
+}
+
+export function applyReviewFinalAction(
+  reviewSessionId: string,
+  input: { action: 'approve' | 'request_changes' | 'needs_human' | 'exit_review'; note?: string }
+) {
+  return apiFetch(
+    `/api/review-sessions/${reviewSessionId}/final-action`,
+    jsonRequest('POST', input)
+  );
+}
+
 export function browseFolders(targetPath?: string) {
   const path = targetPath ? `?path=${encodeURIComponent(targetPath)}` : '';
   return apiFetch(`/api/utils/browse-folders${path}`);
@@ -214,6 +331,13 @@ export function fetchMissionDetail(missionId: string) {
 
 export function decomposeMission(missionId: string, input: unknown = {}) {
   return apiFetch(`/api/missions/${missionId}/decompose`, jsonRequest('POST', input));
+}
+
+export function requestMissionPlanningRevision(resultId: string, input: { reason: string }) {
+  return apiFetch(
+    `/api/mission-planning-results/${resultId}/request-revision`,
+    jsonRequest('POST', input)
+  );
 }
 
 export function dismissMissionTaskProposal(proposalId: string) {

@@ -209,8 +209,10 @@ export function validateMissionPlanningResult(
     addCheck(
       checks,
       'verification_gate_required',
-      workPackage.purpose.trim().length > 0 ? 'pass' : 'fail',
-      'Every Work Package must include a purpose that can be reviewed as a gate.',
+      workPackage.verificationGate.length > 0 || hasManualConfirmation([workPackage.purpose])
+        ? 'pass'
+        : 'fail',
+      'Every Work Package must include a verification gate or explicit manual confirmation.',
       workPackage.id
     );
   }

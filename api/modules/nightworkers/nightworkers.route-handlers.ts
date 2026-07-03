@@ -3,20 +3,33 @@ import type { AppEnv } from '../../lib/types';
 import { withOpenApiRouteError } from './nightworkers.route-utils';
 import * as service from './nightworkers.service';
 import {
+  applyReviewFinalActionRoute,
   createReviewerEvaluationRoute,
   createReviewerReplayEvaluationRoute,
+  createReviewKnowledgeCandidateRoute,
+  createReviewProposedGoalsRoute,
+  createReviewSessionRoute,
   createRunReviewRoute,
   type exportTaskRunJsonlRoute,
   type getBackgroundProcessRoute,
+  getLatestTaskReviewSessionRoute,
+  getReviewRecommendationRoute,
+  getReviewSessionRoute,
   type getTaskRunRoute,
   listBackgroundProcessesRoute,
   type listReviewRubricsRoute,
   listTaskRunActivityEventsRoute,
   listTaskRunEventsRoute,
   type listTaskRunsRoute,
+  materializeReviewProposedGoalRoute,
+  runReviewSectionRoute,
+  sendReviewKnowledgeCandidateRoute,
   startBackgroundProcessRoute,
   stopBackgroundProcessRoute,
   stopTaskRunRoute,
+  updateReviewFindingDispositionRoute,
+  updateReviewKnowledgeCandidateRoute,
+  updateReviewProposedGoalRoute,
 } from './routes/run-routes';
 import { startTaskRunRoute } from './routes/task-routes';
 
@@ -126,6 +139,129 @@ export const createReviewerEvaluationHandler = withOpenApiRouteError(
     const id = c.req.param('id');
     const request = c.req.valid('json');
     const result = await service.createReviewerEvaluation(id, request);
+    return c.json(result, 200);
+  }
+);
+
+export const getReviewRecommendationHandler = withOpenApiRouteError(
+  getReviewRecommendationRoute,
+  async (c) => {
+    const result = await service.getOrCreateReviewRecommendation(c.req.param('id'));
+    return c.json(result, 200);
+  }
+);
+
+export const createReviewSessionHandler = withOpenApiRouteError(
+  createReviewSessionRoute,
+  async (c) => {
+    const result = await service.startReviewSessionForRun(c.req.param('id'));
+    return c.json(result, 201);
+  }
+);
+
+export const getLatestTaskReviewSessionHandler = withOpenApiRouteError(
+  getLatestTaskReviewSessionRoute,
+  async (c) => {
+    const result = await service.getLatestReviewSessionDetailForTask(c.req.param('id'));
+    return c.json(result, 200);
+  }
+);
+
+export const getReviewSessionHandler = withOpenApiRouteError(getReviewSessionRoute, async (c) => {
+  const result = await service.getReviewSessionDetail(c.req.param('id'));
+  return c.json(result, 200);
+});
+
+export const runReviewSectionHandler = withOpenApiRouteError(runReviewSectionRoute, async (c) => {
+  const result = await service.runReviewSection(
+    c.req.param('id'),
+    c.req.param('section') as Parameters<typeof service.runReviewSection>[1]
+  );
+  return c.json(result, 200);
+});
+
+export const updateReviewFindingDispositionHandler = withOpenApiRouteError(
+  updateReviewFindingDispositionRoute,
+  async (c) => {
+    const result = await service.setReviewFindingDisposition(
+      c.req.param('id'),
+      c.req.param('findingId'),
+      c.req.valid('json')
+    );
+    return c.json(result, 200);
+  }
+);
+
+export const createReviewProposedGoalsHandler = withOpenApiRouteError(
+  createReviewProposedGoalsRoute,
+  async (c) => {
+    const result = await service.createReviewProposedGoals(c.req.param('id'));
+    return c.json(result, 200);
+  }
+);
+
+export const updateReviewProposedGoalHandler = withOpenApiRouteError(
+  updateReviewProposedGoalRoute,
+  async (c) => {
+    const result = await service.updateReviewProposedGoalDecision(
+      c.req.param('id'),
+      c.req.param('goalId'),
+      c.req.valid('json')
+    );
+    return c.json(result, 200);
+  }
+);
+
+export const materializeReviewProposedGoalHandler = withOpenApiRouteError(
+  materializeReviewProposedGoalRoute,
+  async (c) => {
+    const result = await service.materializeReviewProposedGoal(
+      c.req.param('id'),
+      c.req.param('goalId'),
+      c.req.valid('json') ?? { target: 'task' }
+    );
+    return c.json(result, 200);
+  }
+);
+
+export const createReviewKnowledgeCandidateHandler = withOpenApiRouteError(
+  createReviewKnowledgeCandidateRoute,
+  async (c) => {
+    const result = await service.createReviewKnowledgeCandidate(
+      c.req.param('id'),
+      c.req.valid('json')
+    );
+    return c.json(result, 200);
+  }
+);
+
+export const sendReviewKnowledgeCandidateHandler = withOpenApiRouteError(
+  sendReviewKnowledgeCandidateRoute,
+  async (c) => {
+    const result = await service.sendReviewKnowledgeCandidate(
+      c.req.param('id'),
+      c.req.param('candidateId')
+    );
+    return c.json(result, 200);
+  }
+);
+
+export const updateReviewKnowledgeCandidateHandler = withOpenApiRouteError(
+  updateReviewKnowledgeCandidateRoute,
+  async (c) => {
+    const result = await service.updateReviewKnowledgeCandidate(
+      c.req.param('id'),
+      c.req.param('candidateId'),
+      c.req.valid('json')
+    );
+    return c.json(result, 200);
+  }
+);
+
+export const applyReviewFinalActionHandler = withOpenApiRouteError(
+  applyReviewFinalActionRoute,
+  async (c) => {
+    const result = await service.applyReviewFinalAction(c.req.param('id'), c.req.valid('json'));
     return c.json(result, 200);
   }
 );

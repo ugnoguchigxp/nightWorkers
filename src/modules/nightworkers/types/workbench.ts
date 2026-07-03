@@ -77,6 +77,7 @@ export type WorkbenchArtifactKind =
   | 'source_preview'
   | 'test_result'
   | 'review_result'
+  | 'review_status'
   | 'run_ledger'
   | 'todo_plan'
   | 'final_report'

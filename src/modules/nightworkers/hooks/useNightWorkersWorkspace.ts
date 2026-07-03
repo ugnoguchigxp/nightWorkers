@@ -5,6 +5,7 @@ import { fetchPlanModeWorkspace } from '../../specification';
 import {
   fetchBackgroundProcessesForTask,
   fetchImplementationQueue,
+  fetchLatestTaskReviewSession,
   fetchTaskActivityEvents,
   fetchTaskLlmUsage,
   fetchTaskMessages,
@@ -17,6 +18,7 @@ import type {
   ImplementationQueueDashboard,
   PlanModeWorkspace,
   Repository,
+  ReviewSessionDetail,
   RunDetails,
   Task,
   TaskEvent,
@@ -208,6 +210,19 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
   const activityEvents = activityReplay.events;
   const activityArtifacts = activityReplay.artifacts;
 
+  const { data: activeReviewSession = null } = useQuery({
+    queryKey: ['reviewSession', activeSessionId],
+    queryFn: async () => {
+      if (!activeSessionId) return null;
+      const res = await fetchLatestTaskReviewSession(activeSessionId);
+      if (!res.ok) throw new Error('Failed to fetch Review Mode session');
+      return (await res.json()) as ReviewSessionDetail | null;
+    },
+    enabled: !!activeSessionId,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
   const { data: backgroundProcesses = [] } = useQuery({
     queryKey: ['backgroundProcesses', activeSessionId],
     queryFn: async () => {
@@ -254,6 +269,16 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     stopBackgroundProcessMutation,
     queueSessionMutation,
     submitRunReviewMutation,
+    startReviewSessionMutation,
+    runReviewSectionMutation,
+    updateReviewFindingDispositionMutation,
+    createReviewProposedGoalsMutation,
+    updateReviewProposedGoalMutation,
+    materializeReviewProposedGoalMutation,
+    createReviewKnowledgeCandidateMutation,
+    updateReviewKnowledgeCandidateMutation,
+    sendReviewKnowledgeCandidateMutation,
+    applyReviewFinalActionMutation,
     updateSessionStatusMutation,
     reorderQueueSessionsMutation,
     moveWorkbenchSessionMutation,
@@ -329,6 +354,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     latestRunEvents,
     latestRunReviews,
     latestRunTodos,
+    activeReviewSession,
     taskMessages,
     activityArtifacts,
     sessions,
@@ -454,6 +480,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     activeStreamingResponse: activeSessionId ? streamingTextByTask[activeSessionId] || '' : '',
     latestRunTodos,
     latestRunReviews,
+    activeReviewSession,
     activeArtifactRefs,
     projectFileEntries: projectFilesState.projectFileEntries,
     projectFileEntriesByDirectory: projectFilesState.projectFileEntriesByDirectory,
@@ -489,6 +516,37 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     submitRunReview: async (runId, input) => {
       await submitRunReviewMutation.mutateAsync({ runId, data: input });
     },
+    startReviewSession: (runId) => startReviewSessionMutation.mutateAsync(runId),
+    runReviewSection: (reviewSessionId, section) =>
+      runReviewSectionMutation.mutateAsync({ reviewSessionId, section }),
+    updateReviewFindingDisposition: (reviewSessionId, findingId, input) =>
+      updateReviewFindingDispositionMutation.mutateAsync({
+        reviewSessionId,
+        findingId,
+        data: input,
+      }),
+    createReviewProposedGoals: (reviewSessionId) =>
+      createReviewProposedGoalsMutation.mutateAsync(reviewSessionId),
+    updateReviewProposedGoal: (reviewSessionId, goalId, input) =>
+      updateReviewProposedGoalMutation.mutateAsync({
+        reviewSessionId,
+        goalId,
+        data: input,
+      }),
+    materializeReviewProposedGoal: (reviewSessionId, goalId) =>
+      materializeReviewProposedGoalMutation.mutateAsync({ reviewSessionId, goalId }),
+    createReviewKnowledgeCandidate: (reviewSessionId, input) =>
+      createReviewKnowledgeCandidateMutation.mutateAsync({ reviewSessionId, data: input }),
+    updateReviewKnowledgeCandidate: (reviewSessionId, candidateId, input) =>
+      updateReviewKnowledgeCandidateMutation.mutateAsync({
+        reviewSessionId,
+        candidateId,
+        data: input,
+      }),
+    sendReviewKnowledgeCandidate: (reviewSessionId, candidateId) =>
+      sendReviewKnowledgeCandidateMutation.mutateAsync({ reviewSessionId, candidateId }),
+    applyReviewFinalAction: (reviewSessionId, input) =>
+      applyReviewFinalActionMutation.mutateAsync({ reviewSessionId, data: input }),
     updateSessionStatus: (sessionId, status) =>
       updateSessionStatusMutation.mutateAsync({ sessionId, status }),
     reorderQueueSessions: (sessionIds) => reorderQueueSessionsMutation.mutateAsync(sessionIds),
@@ -500,6 +558,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       queryClient.invalidateQueries({ queryKey: ['sessionRuns', activeSessionId] });
       queryClient.invalidateQueries({ queryKey: ['runDetails', latestRun?.id] });
       queryClient.invalidateQueries({ queryKey: ['backgroundProcesses', activeSessionId] });
+      queryClient.invalidateQueries({ queryKey: ['reviewSession', activeSessionId] });
     },
     refreshProjectList: async () => {
       await Promise.all([refetchProjects(), refetchSessions()]);

@@ -12,6 +12,7 @@ import type {
   ProjectFileEntry,
   Repository,
   ReviewResult,
+  ReviewSessionDetail,
   Task,
   TaskEvent,
   TaskLlmUsageSummary,
@@ -58,6 +59,7 @@ export type NightWorkersWorkspaceState = {
   activeStreamingResponse: string;
   latestRunTodos: TaskRunTodo[];
   latestRunReviews: ReviewResult[];
+  activeReviewSession: ReviewSessionDetail | null;
   activeArtifactRefs: WorkbenchArtifactRef[];
   projectFileEntries: ProjectFileEntry[];
   projectFileEntriesByDirectory: Record<string, ProjectFileEntry[]>;
@@ -94,6 +96,65 @@ export type NightWorkersWorkspaceState = {
     runId: string,
     input: { action: 'complete' | 'cancel'; note?: string }
   ) => Promise<void>;
+  startReviewSession: (runId: string) => Promise<ReviewSessionDetail>;
+  runReviewSection: (reviewSessionId: string, section: string) => Promise<ReviewSessionDetail>;
+  updateReviewFindingDisposition: (
+    reviewSessionId: string,
+    findingId: string,
+    input: {
+      disposition:
+        | 'human_callout'
+        | 'agent_followup'
+        | 'proposed_goal'
+        | 'security_plugin_handoff'
+        | 'knowledge_candidate'
+        | 'accepted_risk'
+        | 'ignored';
+      note?: string;
+      evidenceRefs?: unknown[];
+    }
+  ) => Promise<ReviewSessionDetail>;
+  createReviewProposedGoals: (reviewSessionId: string) => Promise<ReviewSessionDetail>;
+  updateReviewProposedGoal: (
+    reviewSessionId: string,
+    goalId: string,
+    input: { status: 'approved' | 'rejected' | 'deferred'; note?: string }
+  ) => Promise<ReviewSessionDetail>;
+  materializeReviewProposedGoal: (
+    reviewSessionId: string,
+    goalId: string
+  ) => Promise<ReviewSessionDetail>;
+  createReviewKnowledgeCandidate: (
+    reviewSessionId: string,
+    input: {
+      findingId: string;
+      candidateType?: 'rule' | 'procedure' | 'failure_pattern';
+      title?: string;
+      body?: string;
+      avoid?: string | null;
+      prefer?: string | null;
+    }
+  ) => Promise<ReviewSessionDetail>;
+  updateReviewKnowledgeCandidate: (
+    reviewSessionId: string,
+    candidateId: string,
+    input: {
+      candidateType?: 'rule' | 'procedure' | 'failure_pattern';
+      title?: string;
+      body?: string;
+      avoid?: string | null;
+      prefer?: string | null;
+      status?: 'discarded';
+    }
+  ) => Promise<ReviewSessionDetail>;
+  sendReviewKnowledgeCandidate: (
+    reviewSessionId: string,
+    candidateId: string
+  ) => Promise<ReviewSessionDetail>;
+  applyReviewFinalAction: (
+    reviewSessionId: string,
+    input: { action: 'approve' | 'request_changes' | 'needs_human' | 'exit_review'; note?: string }
+  ) => Promise<ReviewSessionDetail>;
   updateSessionStatus: (sessionId: string, status: 'draft' | 'ready') => Promise<Task>;
   reorderQueueSessions: (sessionIds: string[]) => Promise<Task[]>;
   moveWorkbenchSession: (input: {

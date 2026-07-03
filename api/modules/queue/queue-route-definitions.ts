@@ -162,7 +162,10 @@ export const createImplementationQueueEntryRoute = createRoute({
     body: {
       content: {
         'application/json': {
-          schema: z.object({ taskId: z.string().uuid() }),
+          schema: z.object({
+            taskId: z.string().uuid(),
+            approveMissionProposal: z.boolean().optional(),
+          }),
         },
       },
     },

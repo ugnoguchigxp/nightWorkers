@@ -53,6 +53,8 @@ const LEGACY_MAPPING: Record<RunEventType, LegacyMapping> = {
   'review.llm_started': { eventType: 'review_evaluation', type: 'info' },
   'review.llm_finished': { eventType: 'review_evaluation', type: 'info' },
   'review.evaluation_finished': { eventType: 'review_evaluation', type: 'checkpoint' },
+  'review.recommendation_created': { eventType: 'review_recommendation', type: 'checkpoint' },
+  'review.recommendation_failed': { eventType: 'review_recommendation', type: 'warning' },
   'system.info': { eventType: 'info', type: 'info' },
   'system.warning': { eventType: 'warning', type: 'warning' },
   'system.error': { eventType: 'error', type: 'error' },

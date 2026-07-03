@@ -6,6 +6,7 @@ import * as missionPlannerSchema from './mission-planner-schema';
 import * as projectDetailSchema from './project-detail-schema';
 import * as projectEvaluationSchema from './project-evaluation-schema';
 import { withSqliteBusyRetry } from './retry';
+import * as reviewModeSchema from './review-mode-schema';
 import * as baseSchema from './schema';
 
 type StatementLike = string | { sql?: string } | [string, unknown?];
@@ -172,6 +173,7 @@ export const db = drizzle(client, {
     ...missionPlannerSchema,
     ...projectDetailSchema,
     ...projectEvaluationSchema,
+    ...reviewModeSchema,
   },
 });
 

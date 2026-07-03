@@ -263,3 +263,19 @@ export {
   readProjectFile,
   readRepositoryDiff,
 } from './nightworkers.review-files.service';
+
+export {
+  applyReviewFinalAction,
+  createReviewKnowledgeCandidate,
+  createReviewProposedGoals,
+  getLatestReviewSessionDetailForTask,
+  getOrCreateReviewRecommendation,
+  getReviewSessionDetail,
+  materializeReviewProposedGoal,
+  runReviewSection,
+  sendReviewKnowledgeCandidate,
+  setReviewFindingDisposition,
+  startReviewSessionForRun,
+  updateReviewKnowledgeCandidate,
+  updateReviewProposedGoalDecision,
+} from './nightworkers.review-mode.service';

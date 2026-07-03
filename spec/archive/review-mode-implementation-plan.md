@@ -101,14 +101,15 @@ Phase 1-5 では deterministic recommendation と deterministic findings を優�
 
 LLM reviewer が deterministic blocking finding を消すことは禁止する。
 
-### Required review は完了状態を書き換えない
+### Review state は execution status ではなく overlay
 
-Review recommendation は run evidence の上に載る判断 layer であり、既に terminal になった `task_runs.status` を安易に巻き戻さない。
+Review recommendation は run evidence の上に載る判断 layer であり、既に terminal になった `task_runs.status` を巻き戻さない。Plan Mode 中であることを Kanban status にしないのと同じく、Review Mode 中であることも Kanban column / task execution status にしない。
 
 Initial rule:
 
 - completed run に `required` review が付いた場合、run は completed のまま、review session が required / unresolved を保持する。
-- future closeout gate として Review Mode を組み込む場合だけ、task/session の表示状態を `needs_review` にできる。
+- task / run / queue entry の execution status は `completed` のまま維持する。
+- Kanban では card badge / overlay action として `review_required`, `review_recommended`, `blocking_findings` を表示する。
 - queue entry terminal state は Review Mode の開始・終了で変更しない。
 - final action が `request_changes` または `needs_human` の場合は、follow-up Goal / Task proposal / task status で次アクションを表す。
 
@@ -256,6 +257,7 @@ In scope:
 Out of scope:
 
 - PR review 風 UI。
+- Review Mode / Plan Mode を Kanban column や task execution status として追加すること。
 - vulnWorkbench や同等 security plugin の診断ロジック再実装。
 - 実装中 self-review / quality gate の再実装。
 - LLM verdict による approve / reject 主導。
@@ -271,8 +273,22 @@ Out of scope:
 - run 完了時に `ReviewRecommendation` が作られる。
 - `none` / `optional` / `recommended` の場合、run は通常どおり completed にできる。
 - `required` の場合、completed run を巻き戻さず、Review Mode card と unresolved required state で Review Mode を促す。
-- future closeout gate として接続する場合だけ、task/session 表示を `needs_review` にする。
+- `required` review は execution status ではなく review overlay として保持する。
 - recommendation は deterministic であり、LLM call を必要としない。
+
+### Kanban behavior
+
+- Kanban columns remain execution-lifecycle oriented.
+- Review Mode and Plan Mode do not create columns.
+- Completed tasks stay in `completed` even when review is required or recommended.
+- Cards may show review badges:
+  - `review_required`
+  - `review_recommended`
+  - `blocking_findings`
+  - `followup_goal_created`
+  - `knowledge_candidate_pending`
+  - `security_plugin_missing`
+- Card actions can open Review Mode, but Review section details stay inside Review Mode artifacts.
 
 ### Review entry
 
@@ -841,7 +857,7 @@ Effect:
 
 - Review session -> `approved`
 - optional `ReviewResult` persisted
-- run remains completed, or task/session display moves from `needs_review` to completed only when Review Mode was used as a pre-closeout gate
+- run / task / queue entry execution status remains unchanged
 
 ### `request_changes`
 
@@ -850,13 +866,15 @@ Effect:
 - Review session -> `changes_requested`
 - selected findings become `agent_followup` or `proposed_goal`
 - user can create follow-up Goal / Task proposal
+- original completed task stays completed unless a separate follow-up task is created
 
 ### `needs_human`
 
 Effect:
 
 - Review session -> `needs_human`
-- run / task may remain `needs_review` or `needs_human`
+- execution status is not changed by Review Mode itself
+- a follow-up task, proposed Goal, or human callout records the next action
 
 ### `exit_review`
 

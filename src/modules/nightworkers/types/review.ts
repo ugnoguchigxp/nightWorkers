@@ -90,6 +90,212 @@ export type ReviewResult = {
   createdAt: string;
 };
 
+export type ReviewRecommendationLevel = 'none' | 'optional' | 'recommended' | 'required';
+
+export type ReviewRecommendationReason = {
+  code:
+    | 'minor_no_review_needed'
+    | 'large_diff'
+    | 'many_changed_files'
+    | 'verification_missing'
+    | 'verification_failed'
+    | 'acceptance_evidence_missing'
+    | 'todo_unresolved'
+    | 'self_review_unresolved'
+    | 'queue_recovery_present'
+    | 'queue_run_status_mismatch'
+    | 'security_sensitive_change'
+    | 'security_plugin_missing'
+    | 'schema_or_migration_change'
+    | 'public_contract_change'
+    | 'final_report_evidence_mismatch';
+  severity: 'info' | 'warning' | 'blocking';
+  label: string;
+  evidenceRefs: ReviewEvidenceRef[];
+};
+
+export type ReviewRecommendation = {
+  version: 1;
+  id: string;
+  runId: string;
+  taskId: string;
+  repositoryId: string;
+  level: ReviewRecommendationLevel;
+  defaultAction: 'skip' | 'offer_review' | 'require_review';
+  reasons: ReviewRecommendationReason[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ReviewSectionKind =
+  | 'acceptance_evidence'
+  | 'verification_evidence'
+  | 'self_review_followups'
+  | 'queue_recovery'
+  | 'security_review'
+  | 'findings'
+  | 'proposed_goals'
+  | 'knowledge_candidates';
+
+export type ReviewSectionRequirement = 'required' | 'recommended' | 'optional' | 'omitted';
+export type ReviewSectionProgress = 'not_started' | 'running' | 'done' | 'blocked' | 'needs_human';
+
+export type ReviewStatusArtifact = {
+  version: 1;
+  reviewSessionId: string;
+  runId: string;
+  taskId: string;
+  recommendation: ReviewRecommendation;
+  sections: Array<{
+    kind: ReviewSectionKind;
+    requirement: ReviewSectionRequirement;
+    progress: ReviewSectionProgress;
+    reason: string;
+    artifactId: string | null;
+    findingCounts: {
+      blocking: number;
+      warning: number;
+      info: number;
+    };
+  }>;
+  finalActionGate: {
+    canApprove: boolean;
+    blockingReason: string | null;
+    unresolvedBlockingFindingIds: string[];
+    requiredSectionKindsRemaining: ReviewSectionKind[];
+  };
+  proposedGoalCount: number;
+  knowledgeCandidateCount: number;
+  securityHandoffCount?: number;
+};
+
+export type ReviewSession = {
+  id: string;
+  runId: string;
+  taskId: string;
+  repositoryId: string;
+  status:
+    | 'not_started'
+    | 'in_progress'
+    | 'approved'
+    | 'changes_requested'
+    | 'needs_human'
+    | 'cancelled';
+  recommendationId: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  finalAction: string | null;
+  finalNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ReviewModeFinding = {
+  id: string;
+  reviewSessionId: string;
+  runId: string;
+  taskId: string;
+  severity: 'info' | 'warning' | 'blocking';
+  title: string;
+  body: string | null;
+  disposition:
+    | 'human_callout'
+    | 'agent_followup'
+    | 'proposed_goal'
+    | 'security_plugin_handoff'
+    | 'knowledge_candidate'
+    | 'accepted_risk'
+    | 'ignored'
+    | null;
+  dispositionStatus: 'unresolved' | 'accepted' | 'converted' | 'dismissed';
+  dispositionNote: string | null;
+  evidenceRefs: ReviewEvidenceRef[];
+  createdGoalId: string | null;
+  createdTaskProposalId: string | null;
+  contextStillCandidateId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ReviewArtifact = {
+  id: string;
+  reviewSessionId: string;
+  runId: string;
+  taskId: string;
+  kind: 'review_status' | ReviewSectionKind | 'security_handoff';
+  status: ReviewSectionProgress;
+  artifact: unknown;
+  sourceEvidenceRefs: ReviewEvidenceRef[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ReviewKnowledgeCandidate = {
+  id: string;
+  reviewSessionId: string;
+  findingId: string;
+  candidateType: 'rule' | 'procedure' | 'failure_pattern';
+  title: string;
+  body: string;
+  avoid: string | null;
+  prefer: string | null;
+  status: 'draft' | 'sent' | 'discarded' | 'send_failed';
+  contextStillCandidateId: string | null;
+  sendError: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ReviewProposedGoal = {
+  id: string;
+  reviewSessionId: string;
+  findingId: string;
+  runId: string;
+  taskId: string;
+  repositoryId: string;
+  title: string;
+  expectedOutcome: string;
+  acceptanceCriteria: string;
+  verificationGate: string;
+  evidenceRefs: ReviewEvidenceRef[];
+  status: 'draft' | 'approved' | 'rejected' | 'deferred' | 'materialized';
+  decisionNote: string | null;
+  materializedTaskId: string | null;
+  materializationTarget: string | null;
+  materializationError: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ReviewSecurityHandoff = {
+  id: string;
+  reviewSessionId: string;
+  findingId: string;
+  runId: string;
+  taskId: string;
+  repositoryId: string;
+  title: string;
+  summary: string;
+  requestedIntegration: string | null;
+  status: 'needs_configuration' | 'requested' | 'deferred';
+  changedPaths: string[];
+  evidenceRefs: ReviewEvidenceRef[];
+  handoffArtifact: unknown | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ReviewSessionDetail = {
+  session: ReviewSession;
+  recommendation: ReviewRecommendation;
+  statusArtifact: ReviewStatusArtifact;
+  artifacts: ReviewArtifact[];
+  findings: ReviewModeFinding[];
+  knowledgeCandidates: ReviewKnowledgeCandidate[];
+  proposedGoals: ReviewProposedGoal[];
+  securityHandoffs: ReviewSecurityHandoff[];
+};
+
 export const THINKING_DEPTH_OPTIONS: ThinkingDepthOption[] = [
   { value: 'low', label: '低い' },
   { value: 'medium', label: '標準' },

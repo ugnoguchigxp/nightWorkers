@@ -11,6 +11,7 @@ import { triggerConfiguredQueueDrain } from './queue-scheduler-port';
 
 type QueueSideEffectOptions = {
   autoDrain?: boolean;
+  approveMissionProposal?: boolean;
 };
 
 type QueueRecoveryAction = 'retry' | 'mark_needs_human' | 'cancel' | 'archive' | 'complete';
@@ -26,6 +27,8 @@ type QueueHealthClassification =
 const DEFAULT_STALE_PROCESSING_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_QUEUE_ATTEMPTS = 3;
 
+type TaskMessageRows = Awaited<ReturnType<typeof nightworkersRepo.listTaskMessages>>;
+
 function toRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -36,9 +39,76 @@ function normalizeExecutionType(value: unknown): repo.TaskExecutionType | null {
   return value === 'normal' || value === 'exclusive' || value === 'sequence' ? value : null;
 }
 
-function resolveSchedulingDecisionFromMessages(
-  messages: Awaited<ReturnType<typeof nightworkersRepo.listTaskMessages>>
-): {
+function latestMissionProposalMetadata(messages: TaskMessageRows) {
+  for (const message of [...messages].reverse()) {
+    const metadata = toRecord(message.metadataJson);
+    const missionProposal = toRecord(metadata?.missionProposal);
+    if (missionProposal?.source === 'mission_task_proposal') return missionProposal;
+  }
+  return null;
+}
+
+function hasExplicitMissionProposalApproval(messages: TaskMessageRows, proposalId: unknown) {
+  if (typeof proposalId !== 'string' || !proposalId) return false;
+  return messages.some((message) => {
+    const metadata = toRecord(message.metadataJson);
+    const approval = toRecord(metadata?.missionProposalApproval);
+    return (
+      metadata?.source === 'mission_proposal_approval' &&
+      approval?.proposalId === proposalId &&
+      approval?.approved === true
+    );
+  });
+}
+
+function assertMissionProposalQueueApproval(messages: TaskMessageRows) {
+  const missionProposal = latestMissionProposalMetadata(messages);
+  if (!missionProposal || missionProposal.approvalRequired !== true) return;
+  if (hasExplicitMissionProposalApproval(messages, missionProposal.proposalId)) return;
+  throw new AppError(
+    409,
+    'MISSION_PROPOSAL_APPROVAL_REQUIRED',
+    'Mission proposal requires explicit approval before entering the Implementation Queue.',
+    {
+      proposalId: missionProposal.proposalId,
+      missionId: missionProposal.missionId,
+      planningResultId: missionProposal.planningResultId,
+    }
+  );
+}
+
+async function ensureMissionProposalQueueApproval(
+  taskId: string,
+  messages: TaskMessageRows,
+  options: QueueSideEffectOptions
+) {
+  const missionProposal = latestMissionProposalMetadata(messages);
+  if (
+    !options.approveMissionProposal ||
+    !missionProposal ||
+    missionProposal.approvalRequired !== true ||
+    hasExplicitMissionProposalApproval(messages, missionProposal.proposalId)
+  ) {
+    return messages;
+  }
+  await nightworkersRepo.createTaskMessage({
+    taskId,
+    role: 'system',
+    content: 'Mission proposal explicitly approved for Implementation Queue admission.',
+    messageType: 'text',
+    payloadJson: {
+      source: 'mission_proposal_approval',
+      missionProposalApproval: {
+        proposalId: missionProposal.proposalId,
+        approved: true,
+        approvedAt: new Date().toISOString(),
+      },
+    },
+  });
+  return nightworkersRepo.listTaskMessages(taskId);
+}
+
+function resolveSchedulingDecisionFromMessages(messages: TaskMessageRows): {
   executionType: repo.TaskExecutionType;
   sequenceGroupId: string | null;
   sequenceOrder: number | null;
@@ -502,7 +572,7 @@ export async function createImplementationQueueEntry(
       'Terminal sessions cannot enter the Implementation Queue.'
     );
   }
-  const messages = await nightworkersRepo.listTaskMessages(taskId);
+  let messages = await nightworkersRepo.listTaskMessages(taskId);
   assertTaskDraftComplete(task, messages);
   if (await repo.hasActiveImplementationQueueEntry(taskId)) {
     throw new AppError(
@@ -518,6 +588,8 @@ export async function createImplementationQueueEntry(
       'Create or mark an implementation plan before adding this session to the Queue.'
     );
   }
+  messages = await ensureMissionProposalQueueApproval(taskId, messages, options);
+  assertMissionProposalQueueApproval(messages);
   const scheduling = resolveSchedulingDecisionFromMessages(messages);
   const queuedTask =
     task.status === 'queued'

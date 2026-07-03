@@ -40,7 +40,9 @@ export const queueRouter = createOpenApiRouter()
     createImplementationQueueEntryRoute,
     withOpenApiRouteError(createImplementationQueueEntryRoute, async (c) => {
       const body = c.req.valid('json');
-      const entry = await createImplementationQueueEntry(body.taskId);
+      const entry = await createImplementationQueueEntry(body.taskId, {
+        approveMissionProposal: body.approveMissionProposal,
+      });
       return c.json(entry, 201);
     })
   )

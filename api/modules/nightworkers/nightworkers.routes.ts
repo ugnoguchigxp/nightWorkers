@@ -6,21 +6,34 @@ import {
   writeTestQualitySettingsFile,
 } from '../../services/settings/test-quality-settings';
 import {
+  applyReviewFinalActionHandler,
   createReviewerEvaluationHandler,
   createReviewerReplayEvaluationHandler,
+  createReviewKnowledgeCandidateHandler,
+  createReviewProposedGoalsHandler,
+  createReviewSessionHandler,
   createRunReviewHandler,
   exportTaskRunJsonlHandler,
   getBackgroundProcessHandler,
+  getLatestTaskReviewSessionHandler,
+  getReviewRecommendationHandler,
+  getReviewSessionHandler,
   getTaskRunHandler,
   listBackgroundProcessesHandler,
   listReviewRubricsHandler,
   listTaskRunActivityEventsHandler,
   listTaskRunEventsHandler,
   listTaskRunsHandler,
+  materializeReviewProposedGoalHandler,
+  runReviewSectionHandler,
+  sendReviewKnowledgeCandidateHandler,
   startBackgroundProcessHandler,
   startTaskRunHandler,
   stopBackgroundProcessHandler,
   stopTaskRunHandler,
+  updateReviewFindingDispositionHandler,
+  updateReviewKnowledgeCandidateHandler,
+  updateReviewProposedGoalHandler,
 } from './nightworkers.route-handlers';
 import { routeErrorResponse, withOpenApiRouteError } from './nightworkers.route-utils';
 import * as service from './nightworkers.service';
@@ -42,12 +55,19 @@ import {
   updateRepositoryRoute,
 } from './routes/repository-routes';
 import {
+  applyReviewFinalActionRoute,
   createReviewerEvaluationRoute,
   createReviewerReplayEvaluationRoute,
+  createReviewKnowledgeCandidateRoute,
+  createReviewProposedGoalsRoute,
+  createReviewSessionRoute,
   createRunReviewRoute,
   exportTaskRunJsonlRoute,
   getBackgroundProcessRoute,
+  getLatestTaskReviewSessionRoute,
   getOverviewDashboardRoute,
+  getReviewRecommendationRoute,
+  getReviewSessionRoute,
   getTaskLlmUsageRoute,
   getTaskRunRoute,
   listBackgroundProcessesRoute,
@@ -57,9 +77,15 @@ import {
   listTaskRunActivityEventsRoute,
   listTaskRunEventsRoute,
   listTaskRunsRoute,
+  materializeReviewProposedGoalRoute,
+  runReviewSectionRoute,
+  sendReviewKnowledgeCandidateRoute,
   startBackgroundProcessRoute,
   stopBackgroundProcessRoute,
   stopTaskRunRoute,
+  updateReviewFindingDispositionRoute,
+  updateReviewKnowledgeCandidateRoute,
+  updateReviewProposedGoalRoute,
 } from './routes/run-routes';
 import {
   appendTaskMessageRoute,
@@ -340,6 +366,19 @@ const router = createOpenApiRouter()
   .openapi(stopTaskRunRoute, stopTaskRunHandler)
   .openapi(listTaskRunEventsRoute, listTaskRunEventsHandler)
   .openapi(listTaskRunActivityEventsRoute, listTaskRunActivityEventsHandler)
+  .openapi(getReviewRecommendationRoute, getReviewRecommendationHandler)
+  .openapi(createReviewSessionRoute, createReviewSessionHandler)
+  .openapi(getLatestTaskReviewSessionRoute, getLatestTaskReviewSessionHandler)
+  .openapi(getReviewSessionRoute, getReviewSessionHandler)
+  .openapi(runReviewSectionRoute, runReviewSectionHandler)
+  .openapi(updateReviewFindingDispositionRoute, updateReviewFindingDispositionHandler)
+  .openapi(createReviewProposedGoalsRoute, createReviewProposedGoalsHandler)
+  .openapi(updateReviewProposedGoalRoute, updateReviewProposedGoalHandler)
+  .openapi(materializeReviewProposedGoalRoute, materializeReviewProposedGoalHandler)
+  .openapi(createReviewKnowledgeCandidateRoute, createReviewKnowledgeCandidateHandler)
+  .openapi(updateReviewKnowledgeCandidateRoute, updateReviewKnowledgeCandidateHandler)
+  .openapi(sendReviewKnowledgeCandidateRoute, sendReviewKnowledgeCandidateHandler)
+  .openapi(applyReviewFinalActionRoute, applyReviewFinalActionHandler)
   .openapi(startBackgroundProcessRoute, startBackgroundProcessHandler)
   .openapi(listBackgroundProcessesRoute, listBackgroundProcessesHandler)
   .openapi(getBackgroundProcessRoute, getBackgroundProcessHandler)

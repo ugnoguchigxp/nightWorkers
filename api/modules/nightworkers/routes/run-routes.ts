@@ -8,8 +8,18 @@ import {
   reviewActionSchema,
   reviewEvidenceRefSchema,
   reviewerEvaluationSchema,
+  reviewFinalActionRequestSchema,
+  reviewFindingDispositionRequestSchema,
   reviewFindingSchema,
+  reviewKnowledgeCandidateRequestSchema,
+  reviewKnowledgeCandidateUpdateRequestSchema,
+  reviewProposedGoalMaterializeRequestSchema,
+  reviewProposedGoalUpdateRequestSchema,
+  reviewRecommendationSchema,
   reviewResultSchema,
+  reviewSectionKindSchema,
+  reviewSectionRunRequestSchema,
+  reviewSessionDetailSchema,
   startBackgroundProcessRequestSchema,
   taskEventSchema,
   taskLlmUsageSummarySchema,
@@ -383,6 +393,325 @@ export const createReviewerEvaluationRoute = createRoute({
     },
     404: {
       description: 'Run not found',
+    },
+  },
+});
+
+export const getReviewRecommendationRoute = createRoute({
+  method: 'get',
+  path: '/runs/:id/review-recommendation',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'run-uuid' }),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: reviewRecommendationSchema,
+        },
+      },
+      description: 'Deterministic Review Mode recommendation for a run',
+    },
+    404: { description: 'Run not found' },
+  },
+});
+
+export const createReviewSessionRoute = createRoute({
+  method: 'post',
+  path: '/runs/:id/review-sessions',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'run-uuid' }),
+    }),
+  },
+  responses: {
+    201: {
+      content: {
+        'application/json': {
+          schema: reviewSessionDetailSchema,
+        },
+      },
+      description: 'Review Mode session started',
+    },
+    404: { description: 'Run not found' },
+  },
+});
+
+export const getLatestTaskReviewSessionRoute = createRoute({
+  method: 'get',
+  path: '/tasks/:id/review-session',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'task-uuid' }),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: reviewSessionDetailSchema.nullable(),
+        },
+      },
+      description: 'Latest Review Mode session for the task',
+    },
+  },
+});
+
+export const getReviewSessionRoute = createRoute({
+  method: 'get',
+  path: '/review-sessions/:id',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'review-session-uuid' }),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: reviewSessionDetailSchema,
+        },
+      },
+      description: 'Review Mode session detail',
+    },
+    404: { description: 'Review session not found' },
+  },
+});
+
+export const runReviewSectionRoute = createRoute({
+  method: 'post',
+  path: '/review-sessions/:id/sections/:section/run',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'review-session-uuid' }),
+      section: reviewSectionKindSchema,
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: reviewSectionRunRequestSchema.optional(),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: reviewSessionDetailSchema,
+        },
+      },
+      description: 'Review section generated',
+    },
+    404: { description: 'Review session not found' },
+  },
+});
+
+export const updateReviewFindingDispositionRoute = createRoute({
+  method: 'post',
+  path: '/review-sessions/:id/findings/:findingId/disposition',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'review-session-uuid' }),
+      findingId: z.string().uuid().openapi({ example: 'finding-uuid' }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: reviewFindingDispositionRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: reviewSessionDetailSchema,
+        },
+      },
+      description: 'Review finding disposition updated',
+    },
+  },
+});
+
+export const createReviewProposedGoalsRoute = createRoute({
+  method: 'post',
+  path: '/review-sessions/:id/proposed-goals',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'review-session-uuid' }),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: reviewSessionDetailSchema,
+        },
+      },
+      description: 'Review proposed Goal candidates created',
+    },
+  },
+});
+
+export const updateReviewProposedGoalRoute = createRoute({
+  method: 'patch',
+  path: '/review-sessions/:id/proposed-goals/:goalId',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'review-session-uuid' }),
+      goalId: z.string().uuid().openapi({ example: 'review-proposed-goal-uuid' }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: reviewProposedGoalUpdateRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: reviewSessionDetailSchema,
+        },
+      },
+      description: 'Review proposed Goal decision updated',
+    },
+  },
+});
+
+export const materializeReviewProposedGoalRoute = createRoute({
+  method: 'post',
+  path: '/review-sessions/:id/proposed-goals/:goalId/materialize',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'review-session-uuid' }),
+      goalId: z.string().uuid().openapi({ example: 'review-proposed-goal-uuid' }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: reviewProposedGoalMaterializeRequestSchema.optional(),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: reviewSessionDetailSchema,
+        },
+      },
+      description: 'Review proposed Goal materialized through an explicit boundary',
+    },
+  },
+});
+
+export const createReviewKnowledgeCandidateRoute = createRoute({
+  method: 'post',
+  path: '/review-sessions/:id/knowledge-candidates',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'review-session-uuid' }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: reviewKnowledgeCandidateRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: reviewSessionDetailSchema,
+        },
+      },
+      description: 'Review knowledge candidate created',
+    },
+  },
+});
+
+export const sendReviewKnowledgeCandidateRoute = createRoute({
+  method: 'post',
+  path: '/review-sessions/:id/knowledge-candidates/:candidateId/send',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'review-session-uuid' }),
+      candidateId: z.string().uuid().openapi({ example: 'candidate-uuid' }),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: reviewSessionDetailSchema,
+        },
+      },
+      description: 'Review knowledge candidate send attempted',
+    },
+  },
+});
+
+export const updateReviewKnowledgeCandidateRoute = createRoute({
+  method: 'patch',
+  path: '/review-sessions/:id/knowledge-candidates/:candidateId',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'review-session-uuid' }),
+      candidateId: z.string().uuid().openapi({ example: 'candidate-uuid' }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: reviewKnowledgeCandidateUpdateRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: reviewSessionDetailSchema,
+        },
+      },
+      description: 'Review knowledge candidate updated',
+    },
+  },
+});
+
+export const applyReviewFinalActionRoute = createRoute({
+  method: 'post',
+  path: '/review-sessions/:id/final-action',
+  request: {
+    params: z.object({
+      id: z.string().uuid().openapi({ example: 'review-session-uuid' }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: reviewFinalActionRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: reviewSessionDetailSchema,
+        },
+      },
+      description: 'Review final action applied',
     },
   },
 });

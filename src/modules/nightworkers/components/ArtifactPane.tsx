@@ -19,6 +19,8 @@ import type {
   ProjectFileContent,
   ProjectFileEntry,
   Repository,
+  ReviewSectionKind,
+  ReviewSessionDetail,
   TaskMessage,
   TaskRun,
   WorkbenchArtifactRef,
@@ -37,6 +39,7 @@ import {
   copyText,
   saveTextFile,
 } from './ArtifactPaneVersions';
+import { ReviewStatusViewer } from './ReviewStatusViewer';
 
 type ArtifactPaneProps = {
   activeProject: Repository | null;
@@ -62,6 +65,68 @@ type ArtifactPaneProps = {
   onRefreshDiff: () => Promise<void>;
   onQueueSession?: () => Promise<void>;
   onAddToQueue?: () => Promise<void>;
+  activeReviewSession?: ReviewSessionDetail | null;
+  onRunReviewSection?: (
+    reviewSessionId: string,
+    section: ReviewSectionKind
+  ) => Promise<ReviewSessionDetail>;
+  onUpdateReviewFindingDisposition?: (
+    reviewSessionId: string,
+    findingId: string,
+    input: {
+      disposition:
+        | 'human_callout'
+        | 'agent_followup'
+        | 'proposed_goal'
+        | 'security_plugin_handoff'
+        | 'knowledge_candidate'
+        | 'accepted_risk'
+        | 'ignored';
+      note?: string;
+      evidenceRefs?: unknown[];
+    }
+  ) => Promise<ReviewSessionDetail>;
+  onCreateReviewProposedGoals?: (reviewSessionId: string) => Promise<ReviewSessionDetail>;
+  onUpdateReviewProposedGoal?: (
+    reviewSessionId: string,
+    goalId: string,
+    input: { status: 'approved' | 'rejected' | 'deferred'; note?: string }
+  ) => Promise<ReviewSessionDetail>;
+  onMaterializeReviewProposedGoal?: (
+    reviewSessionId: string,
+    goalId: string
+  ) => Promise<ReviewSessionDetail>;
+  onCreateReviewKnowledgeCandidate?: (
+    reviewSessionId: string,
+    input: {
+      findingId: string;
+      candidateType?: 'rule' | 'procedure' | 'failure_pattern';
+      title?: string;
+      body?: string;
+      avoid?: string | null;
+      prefer?: string | null;
+    }
+  ) => Promise<ReviewSessionDetail>;
+  onUpdateReviewKnowledgeCandidate?: (
+    reviewSessionId: string,
+    candidateId: string,
+    input: {
+      candidateType?: 'rule' | 'procedure' | 'failure_pattern';
+      title?: string;
+      body?: string;
+      avoid?: string | null;
+      prefer?: string | null;
+      status?: 'discarded';
+    }
+  ) => Promise<ReviewSessionDetail>;
+  onSendReviewKnowledgeCandidate?: (
+    reviewSessionId: string,
+    candidateId: string
+  ) => Promise<ReviewSessionDetail>;
+  onApplyReviewFinalAction?: (
+    reviewSessionId: string,
+    input: { action: 'approve' | 'request_changes' | 'needs_human' | 'exit_review'; note?: string }
+  ) => Promise<ReviewSessionDetail>;
   isImplementationLocked?: boolean;
 };
 
@@ -130,6 +195,16 @@ export function ArtifactPane({
   onRefreshDiff,
   onQueueSession,
   onAddToQueue,
+  activeReviewSession,
+  onRunReviewSection,
+  onUpdateReviewFindingDisposition,
+  onCreateReviewProposedGoals,
+  onUpdateReviewProposedGoal,
+  onMaterializeReviewProposedGoal,
+  onCreateReviewKnowledgeCandidate,
+  onUpdateReviewKnowledgeCandidate,
+  onSendReviewKnowledgeCandidate,
+  onApplyReviewFinalAction,
   isImplementationLocked = false,
 }: ArtifactPaneProps) {
   const { t } = useTranslation();
@@ -173,6 +248,7 @@ export function ArtifactPane({
   const displayArtifact = artifactVersions[currentVersionIndex] || selectedArtifact;
   const showDiff = displayArtifact?.kind === 'diff';
   const showBlueprintWorkspace = displayArtifact?.kind === 'plan_mode_workspace';
+  const showReviewStatus = displayArtifact?.kind === 'review_status';
   const showBlueprint = displayArtifact?.kind === 'app_blueprint';
   const showComponentDesign =
     displayArtifact?.kind === 'component_design' || displayArtifact?.kind === 'design_delta';
@@ -213,6 +289,7 @@ export function ArtifactPane({
     Boolean(selectedArtifact) &&
     !showDiff &&
     !showBlueprintWorkspace &&
+    !showReviewStatus &&
     !showBlueprint &&
     !showComponentDesign &&
     Boolean(selectedMessage);
@@ -299,6 +376,27 @@ export function ArtifactPane({
               onQueueSession={onQueueSession}
               onAddToQueue={onAddToQueue}
               isImplementationLocked={isImplementationLocked}
+            />
+          ) : showReviewStatus ? (
+            <ReviewStatusViewer
+              detail={
+                activeReviewSession ||
+                (displayArtifact?.metadata?.reviewSession as ReviewSessionDetail | undefined) ||
+                null
+              }
+              onRunSection={
+                onRunReviewSection && activeReviewSession
+                  ? (section) => onRunReviewSection(activeReviewSession.session.id, section)
+                  : undefined
+              }
+              onFinalAction={onApplyReviewFinalAction}
+              onUpdateFindingDisposition={onUpdateReviewFindingDisposition}
+              onCreateProposedGoals={onCreateReviewProposedGoals}
+              onUpdateProposedGoal={onUpdateReviewProposedGoal}
+              onMaterializeProposedGoal={onMaterializeReviewProposedGoal}
+              onCreateKnowledgeCandidate={onCreateReviewKnowledgeCandidate}
+              onUpdateKnowledgeCandidate={onUpdateReviewKnowledgeCandidate}
+              onSendKnowledgeCandidate={onSendReviewKnowledgeCandidate}
             />
           ) : showBlueprint ? (
             <BlueprintViewer

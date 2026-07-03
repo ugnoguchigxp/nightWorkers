@@ -33,6 +33,7 @@ vi.mock('../api/services/structured-llm', async (importOriginal) => {
 
 import app from '../api/app';
 import { ensureNightWorkersSchema } from '../api/db/bootstrap';
+import * as missionPlannerRepo from '../api/modules/mission-planner/mission-planner.repository';
 import * as missionPlannerService from '../api/modules/mission-planner/mission-planner.service';
 import { validateMissionPlanningResult } from '../api/modules/mission-planner/mission-planner-validation';
 import * as nightworkersRepo from '../api/modules/nightworkers/nightworkers.repository';
@@ -98,6 +99,7 @@ function planningResultFixture() {
         suggestedPlanMode: false,
         risk: 'medium',
         approvalRequired: false,
+        verificationGate: ['Work Package 単位で Queue metadata handoff が検証できる。'],
       },
     ],
     taskProposals: [
@@ -219,6 +221,21 @@ describe('Mission Planner schemas and validation', () => {
       )
     ).toBe(true);
   });
+
+  it('fails deterministic validation when a Work Package gate is missing', () => {
+    const fixture = planningResultFixture();
+    fixture.workPackages[0].verificationGate = [];
+    const report = validateMissionPlanningResult(fixture);
+    expect(report.status).toBe('fail');
+    expect(
+      report.checks.some(
+        (check) =>
+          check.key === 'verification_gate_required' &&
+          check.status === 'fail' &&
+          check.targetId === 'wp-backend'
+      )
+    ).toBe(true);
+  });
 });
 
 describe('Mission Planner service and routes', () => {
@@ -281,6 +298,35 @@ describe('Mission Planner service and routes', () => {
       detail.latestPlanningResult?.id ?? ''
     );
     expect(proposals).toHaveLength(1);
+  });
+
+  it('records retry evaluation raw output and selected model on the decomposition run', async () => {
+    const repository = await createRepository();
+    queueLlmOutputs();
+    const mission = await missionPlannerService.createMission({
+      repositoryId: repository.id,
+      goalText: '再評価の観測情報を decomposition run に保存する。',
+    });
+    const detail = await missionPlannerService.decomposeMission({ missionId: mission.id });
+    const resultId = detail.latestPlanningResult?.id ?? '';
+    const runId = detail.latestPlanningResult?.decompositionRunId ?? '';
+
+    structuredLlmFixture.outputs = [
+      missionDecompositionEvaluationSchema.parse({
+        schemaVersion: 'nightworkers.mission-decomposition-evaluation/v1',
+        verdict: 'needs_human_approval',
+        confidence: 'medium',
+        dimensions: [],
+        courseCorrections: [],
+      }),
+    ];
+    await missionPlannerService.evaluatePlanningResult(resultId);
+
+    const run = await missionPlannerRepo.getDecompositionRun(runId);
+    expect(run?.stageOutputs.evaluation).toMatchObject({ verdict: 'needs_human_approval' });
+    expect(
+      run?.selectedModels.filter((selection) => selection.stage === 'evaluation')
+    ).toHaveLength(2);
   });
 
   it('blocks task materialization after a planning result leaves review_pending', async () => {
@@ -372,6 +418,71 @@ describe('Mission Planner queue handoff', () => {
       sequenceGroupId: 'mission-sequence-group',
       sequenceOrder: 3,
       schedulingReason: 'Mission-defined order',
+    });
+  });
+
+  it('blocks approval-required Mission proposal tasks until explicit approval metadata exists', async () => {
+    const repository = await createRepository();
+    const proposalId = crypto.randomUUID();
+    const task = await nightworkersRepo.createTask({
+      repositoryId: repository.id,
+      title: `TEST: Mission approval gate ${crypto.randomUUID()}`,
+      description: 'Queue approval gate fixture',
+      objective: 'Require Mission proposal approval before queue admission',
+      acceptanceCriteria: 'Queue entry is blocked until approval metadata exists',
+      status: 'ready',
+      createdBy: 'mission-task-proposal',
+    });
+    await nightworkersRepo.createTaskMessage({
+      taskId: task.id,
+      role: 'system',
+      content: 'Mission task proposal metadata attached.',
+      messageType: 'text',
+      payloadJson: {
+        source: 'mission_task_proposal',
+        missionProposal: {
+          source: 'mission_task_proposal',
+          missionId: crypto.randomUUID(),
+          planningResultId: crypto.randomUUID(),
+          proposalId,
+          workPackageId: 'wp-approval',
+          decompositionTaskId: 'task-approval',
+          dependencies: [],
+          risk: 'high',
+          approvalRequired: true,
+          scheduling: {
+            executionType: 'exclusive',
+            reason: 'Mission approval required',
+            sequenceGroupId: null,
+            sequenceOrder: null,
+            dependsOnTaskIds: [],
+          },
+        },
+      },
+    });
+
+    await expect(
+      queueService.createImplementationQueueEntry(task.id, { autoDrain: false })
+    ).rejects.toMatchObject({
+      code: 'MISSION_PROPOSAL_APPROVAL_REQUIRED',
+      statusCode: 409,
+    });
+
+    const entry = await queueService.createImplementationQueueEntry(task.id, {
+      autoDrain: false,
+      approveMissionProposal: true,
+    });
+    expect(entry).toMatchObject({
+      executionType: 'exclusive',
+      schedulingReason: 'Mission approval required',
+    });
+    const messages = await nightworkersRepo.listTaskMessages(task.id);
+    expect(messages.at(-2)?.metadataJson).toMatchObject({
+      source: 'mission_proposal_approval',
+      missionProposalApproval: {
+        proposalId,
+        approved: true,
+      },
     });
   });
 });

@@ -294,3 +294,320 @@ export const createReviewerReplayEvaluationRequestSchema = z
     replayResult: z.unknown().optional(),
   })
   .openapi('CreateReviewerReplayEvaluationRequest');
+
+export const reviewRecommendationLevelSchema = z
+  .enum(['none', 'optional', 'recommended', 'required'])
+  .openapi('ReviewRecommendationLevel');
+
+export const reviewRecommendationReasonCodeSchema = z
+  .enum([
+    'minor_no_review_needed',
+    'large_diff',
+    'many_changed_files',
+    'verification_missing',
+    'verification_failed',
+    'acceptance_evidence_missing',
+    'todo_unresolved',
+    'self_review_unresolved',
+    'queue_recovery_present',
+    'queue_run_status_mismatch',
+    'security_sensitive_change',
+    'security_plugin_missing',
+    'schema_or_migration_change',
+    'public_contract_change',
+    'final_report_evidence_mismatch',
+  ])
+  .openapi('ReviewRecommendationReasonCode');
+
+export const reviewRecommendationReasonSchema = z
+  .object({
+    code: reviewRecommendationReasonCodeSchema,
+    severity: z.enum(['info', 'warning', 'blocking']),
+    label: z.string(),
+    evidenceRefs: z.array(reviewEvidenceRefSchema),
+  })
+  .openapi('ReviewRecommendationReason');
+
+export const reviewRecommendationSchema = z
+  .object({
+    version: z.literal(1),
+    id: z.string().uuid(),
+    runId: z.string().uuid(),
+    taskId: z.string().uuid(),
+    repositoryId: z.string().uuid(),
+    level: reviewRecommendationLevelSchema,
+    defaultAction: z.enum(['skip', 'offer_review', 'require_review']),
+    reasons: z.array(reviewRecommendationReasonSchema),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .openapi('ReviewRecommendation');
+
+export const reviewSectionKindSchema = z
+  .enum([
+    'acceptance_evidence',
+    'verification_evidence',
+    'self_review_followups',
+    'queue_recovery',
+    'security_review',
+    'findings',
+    'proposed_goals',
+    'knowledge_candidates',
+  ])
+  .openapi('ReviewSectionKind');
+
+export const reviewArtifactKindSchema = z
+  .union([z.literal('review_status'), reviewSectionKindSchema, z.literal('security_handoff')])
+  .openapi('ReviewArtifactKind');
+
+export const reviewSectionRequirementSchema = z
+  .enum(['required', 'recommended', 'optional', 'omitted'])
+  .openapi('ReviewSectionRequirement');
+
+export const reviewSectionProgressSchema = z
+  .enum(['not_started', 'running', 'done', 'blocked', 'needs_human'])
+  .openapi('ReviewSectionProgress');
+
+export const reviewFindingDispositionSchema = z
+  .enum([
+    'human_callout',
+    'agent_followup',
+    'proposed_goal',
+    'security_plugin_handoff',
+    'knowledge_candidate',
+    'accepted_risk',
+    'ignored',
+  ])
+  .openapi('ReviewFindingDisposition');
+
+export const reviewFindingDispositionStatusSchema = z
+  .enum(['unresolved', 'accepted', 'converted', 'dismissed'])
+  .openapi('ReviewFindingDispositionStatus');
+
+export const reviewSessionStatusSchema = z
+  .enum(['not_started', 'in_progress', 'approved', 'changes_requested', 'needs_human', 'cancelled'])
+  .openapi('ReviewSessionStatus');
+
+export const reviewStatusArtifactSchema = z
+  .object({
+    version: z.literal(1),
+    reviewSessionId: z.string().uuid(),
+    runId: z.string().uuid(),
+    taskId: z.string().uuid(),
+    recommendation: reviewRecommendationSchema,
+    sections: z.array(
+      z.object({
+        kind: reviewSectionKindSchema,
+        requirement: reviewSectionRequirementSchema,
+        progress: reviewSectionProgressSchema,
+        reason: z.string(),
+        artifactId: z.string().uuid().nullable(),
+        findingCounts: z.object({
+          blocking: z.number().int().nonnegative(),
+          warning: z.number().int().nonnegative(),
+          info: z.number().int().nonnegative(),
+        }),
+      })
+    ),
+    finalActionGate: z.object({
+      canApprove: z.boolean(),
+      blockingReason: z.string().nullable(),
+      unresolvedBlockingFindingIds: z.array(z.string().uuid()),
+      requiredSectionKindsRemaining: z.array(reviewSectionKindSchema),
+    }),
+    proposedGoalCount: z.number().int().nonnegative(),
+    knowledgeCandidateCount: z.number().int().nonnegative(),
+    securityHandoffCount: z.number().int().nonnegative().optional(),
+  })
+  .openapi('ReviewStatusArtifact');
+
+export const reviewSessionSchema = z
+  .object({
+    id: z.string().uuid(),
+    runId: z.string().uuid(),
+    taskId: z.string().uuid(),
+    repositoryId: z.string().uuid(),
+    status: reviewSessionStatusSchema,
+    recommendationId: z.string().uuid().nullable(),
+    startedAt: z.string().nullable(),
+    completedAt: z.string().nullable(),
+    finalAction: z.string().nullable(),
+    finalNote: z.string().nullable(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .openapi('ReviewSession');
+
+export const reviewArtifactSchema = z
+  .object({
+    id: z.string().uuid(),
+    reviewSessionId: z.string().uuid(),
+    runId: z.string().uuid(),
+    taskId: z.string().uuid(),
+    kind: reviewArtifactKindSchema,
+    status: reviewSectionProgressSchema,
+    artifact: z.unknown(),
+    sourceEvidenceRefs: z.array(reviewEvidenceRefSchema),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .openapi('ReviewArtifact');
+
+export const reviewModeFindingSchema = z
+  .object({
+    id: z.string().uuid(),
+    reviewSessionId: z.string().uuid(),
+    runId: z.string().uuid(),
+    taskId: z.string().uuid(),
+    severity: z.enum(['info', 'warning', 'blocking']),
+    title: z.string(),
+    body: z.string().nullable(),
+    disposition: reviewFindingDispositionSchema.nullable(),
+    dispositionStatus: reviewFindingDispositionStatusSchema,
+    dispositionNote: z.string().nullable(),
+    evidenceRefs: z.array(reviewEvidenceRefSchema),
+    createdGoalId: z.string().uuid().nullable(),
+    createdTaskProposalId: z.string().uuid().nullable(),
+    contextStillCandidateId: z.string().nullable(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .openapi('ReviewModeFinding');
+
+export const reviewKnowledgeCandidateSchema = z
+  .object({
+    id: z.string().uuid(),
+    reviewSessionId: z.string().uuid(),
+    findingId: z.string().uuid(),
+    candidateType: z.enum(['rule', 'procedure', 'failure_pattern']),
+    title: z.string(),
+    body: z.string(),
+    avoid: z.string().nullable(),
+    prefer: z.string().nullable(),
+    status: z.enum(['draft', 'sent', 'discarded', 'send_failed']),
+    contextStillCandidateId: z.string().nullable(),
+    sendError: z.string().nullable(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .openapi('ReviewKnowledgeCandidate');
+
+export const reviewProposedGoalStatusSchema = z
+  .enum(['draft', 'approved', 'rejected', 'deferred', 'materialized'])
+  .openapi('ReviewProposedGoalStatus');
+
+export const reviewProposedGoalSchema = z
+  .object({
+    id: z.string().uuid(),
+    reviewSessionId: z.string().uuid(),
+    findingId: z.string().uuid(),
+    runId: z.string().uuid(),
+    taskId: z.string().uuid(),
+    repositoryId: z.string().uuid(),
+    title: z.string(),
+    expectedOutcome: z.string(),
+    acceptanceCriteria: z.string(),
+    verificationGate: z.string(),
+    evidenceRefs: z.array(reviewEvidenceRefSchema),
+    status: reviewProposedGoalStatusSchema,
+    decisionNote: z.string().nullable(),
+    materializedTaskId: z.string().uuid().nullable(),
+    materializationTarget: z.string().nullable(),
+    materializationError: z.string().nullable(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .openapi('ReviewProposedGoal');
+
+export const reviewSecurityHandoffStatusSchema = z
+  .enum(['needs_configuration', 'requested', 'deferred'])
+  .openapi('ReviewSecurityHandoffStatus');
+
+export const reviewSecurityHandoffSchema = z
+  .object({
+    id: z.string().uuid(),
+    reviewSessionId: z.string().uuid(),
+    findingId: z.string().uuid(),
+    runId: z.string().uuid(),
+    taskId: z.string().uuid(),
+    repositoryId: z.string().uuid(),
+    title: z.string(),
+    summary: z.string(),
+    requestedIntegration: z.string().nullable(),
+    status: reviewSecurityHandoffStatusSchema,
+    changedPaths: z.array(z.string()),
+    evidenceRefs: z.array(reviewEvidenceRefSchema),
+    handoffArtifact: z.unknown().nullable(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .openapi('ReviewSecurityHandoff');
+
+export const reviewSessionDetailSchema = z
+  .object({
+    session: reviewSessionSchema,
+    recommendation: reviewRecommendationSchema,
+    statusArtifact: reviewStatusArtifactSchema,
+    artifacts: z.array(reviewArtifactSchema),
+    findings: z.array(reviewModeFindingSchema),
+    knowledgeCandidates: z.array(reviewKnowledgeCandidateSchema),
+    proposedGoals: z.array(reviewProposedGoalSchema),
+    securityHandoffs: z.array(reviewSecurityHandoffSchema),
+  })
+  .openapi('ReviewSessionDetail');
+
+export const reviewSectionRunRequestSchema = z
+  .object({
+    section: reviewSectionKindSchema.optional(),
+  })
+  .openapi('ReviewSectionRunRequest');
+
+export const reviewFindingDispositionRequestSchema = z
+  .object({
+    disposition: reviewFindingDispositionSchema,
+    note: z.string().optional(),
+    evidenceRefs: z.array(reviewEvidenceRefSchema).optional(),
+  })
+  .openapi('ReviewFindingDispositionRequest');
+
+export const reviewProposedGoalUpdateRequestSchema = z
+  .object({
+    status: z.enum(['approved', 'rejected', 'deferred']),
+    note: z.string().optional(),
+  })
+  .openapi('ReviewProposedGoalUpdateRequest');
+
+export const reviewProposedGoalMaterializeRequestSchema = z
+  .object({
+    target: z.literal('task').default('task'),
+  })
+  .openapi('ReviewProposedGoalMaterializeRequest');
+
+export const reviewKnowledgeCandidateRequestSchema = z
+  .object({
+    findingId: z.string().uuid(),
+    candidateType: z.enum(['rule', 'procedure', 'failure_pattern']).default('rule'),
+    title: z.string().optional(),
+    body: z.string().optional(),
+    avoid: z.string().nullable().optional(),
+    prefer: z.string().nullable().optional(),
+  })
+  .openapi('ReviewKnowledgeCandidateRequest');
+
+export const reviewKnowledgeCandidateUpdateRequestSchema = z
+  .object({
+    candidateType: z.enum(['rule', 'procedure', 'failure_pattern']).optional(),
+    title: z.string().optional(),
+    body: z.string().optional(),
+    avoid: z.string().nullable().optional(),
+    prefer: z.string().nullable().optional(),
+    status: z.literal('discarded').optional(),
+  })
+  .openapi('ReviewKnowledgeCandidateUpdateRequest');
+
+export const reviewFinalActionRequestSchema = z
+  .object({
+    action: z.enum(['approve', 'request_changes', 'needs_human', 'exit_review']),
+    note: z.string().optional(),
+  })
+  .openapi('ReviewFinalActionRequest');

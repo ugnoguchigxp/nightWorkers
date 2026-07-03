@@ -9,8 +9,14 @@ export function fetchImplementationQueueHealth() {
   return apiFetch('/api/implementation-queue/health');
 }
 
-export function createImplementationQueueEntry(sessionId: string) {
-  return apiFetch('/api/implementation-queue/entries', jsonRequest('POST', { taskId: sessionId }));
+export function createImplementationQueueEntry(
+  sessionId: string,
+  input: { approveMissionProposal?: boolean } = {}
+) {
+  return apiFetch(
+    '/api/implementation-queue/entries',
+    jsonRequest('POST', { taskId: sessionId, ...input })
+  );
 }
 
 export function archiveImplementationQueueEntry(entryId: string) {

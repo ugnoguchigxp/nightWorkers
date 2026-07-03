@@ -59,7 +59,7 @@ export const missionDecompositionPlanningResultSchema = z
           id: z.string().min(1),
           title: z.string().min(1),
           completionCriteria: z.array(z.string().min(1)).min(1),
-          verificationGate: z.array(z.string().min(1)).min(1),
+          verificationGate: z.array(z.string().min(1)).default([]),
         })
       )
       .min(1),
@@ -73,6 +73,7 @@ export const missionDecompositionPlanningResultSchema = z
           suggestedPlanMode: z.boolean(),
           risk: missionRiskSchema,
           approvalRequired: z.boolean(),
+          verificationGate: z.array(z.string().min(1)).min(1),
         })
       )
       .min(1),

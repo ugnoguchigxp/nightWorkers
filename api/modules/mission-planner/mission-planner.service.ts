@@ -428,7 +428,8 @@ export async function evaluatePlanningResult(resultId: string) {
   const mission = await repo.getMission(planningResult.missionId);
   if (!mission) throw new NotFoundError('Mission not found');
   const run = await repo.getDecompositionRun(planningResult.decompositionRunId);
-  const inputBundle = run?.inputBundle as { projectSignalSnapshot?: unknown } | undefined;
+  if (!run) throw new NotFoundError('Mission decomposition run not found');
+  const inputBundle = run.inputBundle as { projectSignalSnapshot?: unknown } | undefined;
   const signal = inputBundle?.projectSignalSnapshot;
   if (!signal || typeof signal !== 'object') {
     throw new ValidationError(
@@ -455,6 +456,8 @@ export async function evaluatePlanningResult(resultId: string) {
     existingTaskTitles: await existingTaskTitles(mission.repositoryId),
   });
   const finalStatus = finalStatusFromEvaluation(evaluated.parsed.verdict);
+  const stageOutputs = { ...run.stageOutputs, evaluation: evaluated.rawOutput };
+  const selectedModels = [...run.selectedModels, evaluated.selectedModel];
   const updated = await db.transaction(async (tx) => {
     const updatedResult = await repo.updatePlanningResult(
       resultId,
@@ -467,6 +470,7 @@ export async function evaluatePlanningResult(resultId: string) {
       tx
     );
     if (!updatedResult) throw new NotFoundError('Mission planning result not found');
+    await repo.updateDecompositionRun(run.id, { stageOutputs, selectedModels }, tx);
     await repo.updateMission(
       mission.id,
       {

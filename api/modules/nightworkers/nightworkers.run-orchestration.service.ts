@@ -80,6 +80,7 @@ import {
   resolveBlueprintPlanningReadiness,
 } from './nightworkers.basic.service';
 import * as repo from './nightworkers.repository';
+import { getOrCreateReviewRecommendation } from './nightworkers.review-mode.service';
 import { createPlanningArtifactMessageIfNeeded } from './nightworkers.workbench.service';
 
 const execFileAsync = promisify(execFile);
@@ -763,6 +764,49 @@ async function safelyRefreshConversationContext(input: RefreshConversationContex
       },
       'conversation context refresh failed'
     );
+  }
+}
+
+async function safelyCreateReviewRecommendation(input: { taskId: string; runId: string }) {
+  try {
+    const recommendation = await getOrCreateReviewRecommendation(input.runId);
+    if (!recommendation || recommendation.level === 'none') return;
+    await repo.createRunEvent({
+      version: 1,
+      runId: input.runId,
+      taskId: input.taskId,
+      timestamp: new Date().toISOString(),
+      type: 'review.recommendation_created',
+      severity: recommendation.level === 'required' ? 'warning' : 'info',
+      actor: 'system',
+      message: `Review recommendation created: ${recommendation.level}`,
+      data: {
+        recommendationId: recommendation.id,
+        level: recommendation.level,
+        defaultAction: recommendation.defaultAction,
+        reasons: recommendation.reasons.map((reason) => ({
+          code: reason.code,
+          severity: reason.severity,
+          label: reason.label,
+        })),
+      },
+    });
+  } catch (error) {
+    logger.warn(
+      { error: toErrorMessage(error), taskId: input.taskId, runId: input.runId },
+      'review recommendation creation failed'
+    );
+    await repo.createRunEvent({
+      version: 1,
+      runId: input.runId,
+      taskId: input.taskId,
+      timestamp: new Date().toISOString(),
+      type: 'review.recommendation_failed',
+      severity: 'warning',
+      actor: 'system',
+      message: 'Review recommendation could not be created.',
+      data: { error: toErrorMessage(error) },
+    });
   }
 }
 
@@ -1681,6 +1725,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
           status: guardedStatus,
         },
       });
+      await safelyCreateReviewRecommendation({ taskId, runId: run.id });
       await safelyRefreshConversationContext({
         taskId,
         runId: run.id,
@@ -1725,6 +1770,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
           status: 'failed',
         },
       });
+      await safelyCreateReviewRecommendation({ taskId, runId: run.id });
       await safelyRefreshConversationContext({
         taskId,
         runId: run.id,

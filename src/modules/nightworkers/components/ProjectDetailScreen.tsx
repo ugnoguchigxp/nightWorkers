@@ -46,6 +46,7 @@ import {
   fetchProjectDetailMetrics,
   fetchProjectQuality,
   generateMissionTaskCandidates,
+  requestMissionPlanningRevision,
   updateMissionGoal,
   updateMissionTaskCandidate,
 } from '../nightWorkersCommands';
@@ -646,6 +647,29 @@ export function ProjectDetailScreen({
                   if (selectedMissionId) await loadSelectedMissionDetail(selectedMissionId);
                 })
               }
+              onRequestRevision={() =>
+                missionDetail?.latestPlanningResult
+                  ? void runAction('mission-planner:request-revision', async () => {
+                      const reason =
+                        window.prompt(
+                          'Revision reason',
+                          'ユーザーが planning result の修正を要求した。'
+                        ) ?? '';
+                      const trimmed = reason.trim();
+                      if (!trimmed || !missionDetail.latestPlanningResult) return;
+                      await readJsonResponse(
+                        await requestMissionPlanningRevision(
+                          missionDetail.latestPlanningResult.id,
+                          {
+                            reason: trimmed,
+                          }
+                        )
+                      );
+                      setSelectedProposalIds([]);
+                      if (selectedMissionId) await loadSelectedMissionDetail(selectedMissionId);
+                    })
+                  : undefined
+              }
               onSelectMission={(missionId) =>
                 void runAction('mission-planner:load', async () => {
                   await loadSelectedMissionDetail(missionId);
@@ -1115,6 +1139,7 @@ function MissionPlannerPanel({
   onCreateMission,
   onSelectMission,
   onDecompose,
+  onRequestRevision,
   onToggleProposal,
   onDismissProposal,
   onCreateTasks,
@@ -1129,6 +1154,7 @@ function MissionPlannerPanel({
   onCreateMission: () => void;
   onSelectMission: (missionId: string) => void;
   onDecompose: () => void;
+  onRequestRevision: () => void;
   onToggleProposal: (proposalId: string) => void;
   onDismissProposal: (proposal: MissionTaskProposal) => void;
   onCreateTasks: () => void;
@@ -1213,6 +1239,16 @@ function MissionPlannerPanel({
                   <div className="mt-2 text-[10px] uppercase" style={mutedTextStyle}>
                     {detail.mission.status}
                   </div>
+                  {detail.mission.nonGoals.length > 0 ? (
+                    <div className="mt-2 text-[10px]" style={subtleTextStyle}>
+                      <div className="font-semibold">Non-goals</div>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                        {detail.mission.nonGoals.map((nonGoal) => (
+                          <li key={nonGoal}>{nonGoal}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -1224,6 +1260,16 @@ function MissionPlannerPanel({
                   >
                     <Sparkles className="h-3.5 w-3.5" />
                     分解 / 評価
+                  </Button>
+                  <Button
+                    className="h-8 px-3 text-xs font-semibold"
+                    disabled={busy || !detail.latestPlanningResult}
+                    onClick={onRequestRevision}
+                    style={controlStyle}
+                    type="button"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Revision 要求
                   </Button>
                   <Button
                     className="h-8 px-3 text-xs font-semibold"
@@ -1245,6 +1291,7 @@ function MissionPlannerPanel({
                         id: item.id,
                         title: item.title,
                         body: item.completionCriteria.join(' / '),
+                        gates: item.verificationGate,
                       }))}
                       title="Objectives"
                     />
@@ -1253,7 +1300,10 @@ function MissionPlannerPanel({
                         (item) => ({
                           id: item.id,
                           title: item.title,
-                          body: `${item.risk}${item.suggestedPlanMode ? ' / Plan first' : ''}`,
+                          body: `${item.purpose} / ${item.risk}${
+                            item.suggestedPlanMode ? ' / Plan first' : ''
+                          }`,
+                          gates: item.verificationGate,
                         })
                       )}
                       title="Work Packages"
@@ -1318,7 +1368,7 @@ function PlanningListBlock({
   items,
 }: {
   title: string;
-  items: Array<{ id: string; title: string; body: string }>;
+  items: Array<{ id: string; title: string; body: string; gates?: string[] }>;
 }) {
   return (
     <div className="border p-3" style={controlStyle}>
@@ -1330,6 +1380,13 @@ function PlanningListBlock({
             <div className="mt-1 line-clamp-2 text-[10px]" style={subtleTextStyle}>
               {item.body}
             </div>
+            {item.gates?.length ? (
+              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[10px]" style={mutedTextStyle}>
+                {item.gates.map((gate) => (
+                  <li key={gate}>{gate}</li>
+                ))}
+              </ul>
+            ) : null}
           </div>
         ))}
       </div>
@@ -1379,6 +1436,13 @@ function MissionTaskProposalRow({
         <span>{proposal.scheduling.executionType}</span>
         {proposal.approvalRequired ? <span>approval required</span> : null}
       </div>
+      {proposal.verificationGate.length > 0 ? (
+        <ul className="mt-2 list-disc space-y-0.5 pl-4 text-[10px]" style={mutedTextStyle}>
+          {proposal.verificationGate.map((gate) => (
+            <li key={gate}>{gate}</li>
+          ))}
+        </ul>
+      ) : null}
       <pre
         className="nightworkers-scrollbar mt-2 max-h-28 overflow-auto whitespace-pre-wrap border p-2 text-[10px]"
         style={panelStyle}

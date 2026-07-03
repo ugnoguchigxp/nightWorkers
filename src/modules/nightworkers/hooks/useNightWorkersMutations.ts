@@ -2,15 +2,25 @@ import { type QueryClient, useMutation } from '@tanstack/react-query';
 import type { Dispatch, SetStateAction } from 'react';
 import { client } from '../../../lib/api';
 import {
+  applyReviewFinalAction,
   archiveWorkbenchSession,
+  createReviewKnowledgeCandidate,
+  createReviewProposedGoals,
   createWorkbenchSession,
   deleteTask,
+  materializeReviewProposedGoal,
   patchTask as patchTaskCommand,
   queueWorkbenchSession,
+  runReviewSection,
+  sendReviewKnowledgeCandidate,
+  startReviewSession,
   startWorkbenchRun,
   stopBackgroundProcess,
   stopRun,
   submitRunReview,
+  updateReviewFindingDisposition,
+  updateReviewKnowledgeCandidate,
+  updateReviewProposedGoal,
 } from '../nightWorkersCommands';
 import { mergeRealtimeRunDetails, mergeRealtimeRunList } from '../realtimeEvents';
 import type {
@@ -18,6 +28,7 @@ import type {
   CreateProjectInput,
   CreateSessionInput,
   Repository,
+  ReviewSessionDetail,
   RunDetails,
   Task,
   TaskRun,
@@ -32,6 +43,37 @@ type TaskPatchInput = {
   acceptanceCriteria?: string;
   status?: string;
   priority?: number;
+};
+
+type ReviewKnowledgeCandidateInput = {
+  findingId: string;
+  candidateType?: 'rule' | 'procedure' | 'failure_pattern';
+  title?: string;
+  body?: string;
+  avoid?: string | null;
+  prefer?: string | null;
+};
+
+type ReviewKnowledgeCandidateUpdateInput = {
+  candidateType?: 'rule' | 'procedure' | 'failure_pattern';
+  title?: string;
+  body?: string;
+  avoid?: string | null;
+  prefer?: string | null;
+  status?: 'discarded';
+};
+
+type ReviewFindingDispositionInput = {
+  disposition:
+    | 'human_callout'
+    | 'agent_followup'
+    | 'proposed_goal'
+    | 'security_plugin_handoff'
+    | 'knowledge_candidate'
+    | 'accepted_risk'
+    | 'ignored';
+  note?: string;
+  evidenceRefs?: unknown[];
 };
 
 type UseNightWorkersMutationsInput = {
@@ -261,6 +303,185 @@ export function useNightWorkersMutations({
     },
   });
 
+  const startReviewSessionMutation = useMutation({
+    mutationFn: async (runId: string) => {
+      const res = await startReviewSession(runId);
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as ReviewSessionDetail;
+    },
+    onSuccess: (detail) => {
+      queryClient.setQueryData<ReviewSessionDetail | null>(
+        ['reviewSession', detail.session.taskId],
+        detail
+      );
+      queryClient.invalidateQueries({ queryKey: ['reviewSession', detail.session.taskId] });
+      queryClient.invalidateQueries({ queryKey: ['runDetails', detail.session.runId] });
+    },
+  });
+
+  const runReviewSectionMutation = useMutation({
+    mutationFn: async (input: { reviewSessionId: string; section: string }) => {
+      const res = await runReviewSection(input.reviewSessionId, input.section);
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as ReviewSessionDetail;
+    },
+    onSuccess: (detail) => {
+      queryClient.setQueryData<ReviewSessionDetail | null>(
+        ['reviewSession', detail.session.taskId],
+        detail
+      );
+      queryClient.invalidateQueries({ queryKey: ['reviewSession', detail.session.taskId] });
+    },
+  });
+
+  const updateReviewFindingDispositionMutation = useMutation({
+    mutationFn: async (input: {
+      reviewSessionId: string;
+      findingId: string;
+      data: ReviewFindingDispositionInput;
+    }) => {
+      const res = await updateReviewFindingDisposition(
+        input.reviewSessionId,
+        input.findingId,
+        input.data
+      );
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as ReviewSessionDetail;
+    },
+    onSuccess: (detail) => {
+      queryClient.setQueryData<ReviewSessionDetail | null>(
+        ['reviewSession', detail.session.taskId],
+        detail
+      );
+      queryClient.invalidateQueries({ queryKey: ['reviewSession', detail.session.taskId] });
+    },
+  });
+
+  const createReviewProposedGoalsMutation = useMutation({
+    mutationFn: async (reviewSessionId: string) => {
+      const res = await createReviewProposedGoals(reviewSessionId);
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as ReviewSessionDetail;
+    },
+    onSuccess: (detail) => {
+      queryClient.setQueryData<ReviewSessionDetail | null>(
+        ['reviewSession', detail.session.taskId],
+        detail
+      );
+      queryClient.invalidateQueries({ queryKey: ['reviewSession', detail.session.taskId] });
+    },
+  });
+
+  const updateReviewProposedGoalMutation = useMutation({
+    mutationFn: async (input: {
+      reviewSessionId: string;
+      goalId: string;
+      data: { status: 'approved' | 'rejected' | 'deferred'; note?: string };
+    }) => {
+      const res = await updateReviewProposedGoal(input.reviewSessionId, input.goalId, input.data);
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as ReviewSessionDetail;
+    },
+    onSuccess: (detail) => {
+      queryClient.setQueryData<ReviewSessionDetail | null>(
+        ['reviewSession', detail.session.taskId],
+        detail
+      );
+      queryClient.invalidateQueries({ queryKey: ['reviewSession', detail.session.taskId] });
+    },
+  });
+
+  const materializeReviewProposedGoalMutation = useMutation({
+    mutationFn: async (input: { reviewSessionId: string; goalId: string }) => {
+      const res = await materializeReviewProposedGoal(input.reviewSessionId, input.goalId);
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as ReviewSessionDetail;
+    },
+    onSuccess: (detail) => {
+      queryClient.setQueryData<ReviewSessionDetail | null>(
+        ['reviewSession', detail.session.taskId],
+        detail
+      );
+      queryClient.invalidateQueries({ queryKey: ['reviewSession', detail.session.taskId] });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+  });
+
+  const createReviewKnowledgeCandidateMutation = useMutation({
+    mutationFn: async (input: { reviewSessionId: string; data: ReviewKnowledgeCandidateInput }) => {
+      const res = await createReviewKnowledgeCandidate(input.reviewSessionId, input.data);
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as ReviewSessionDetail;
+    },
+    onSuccess: (detail) => {
+      queryClient.setQueryData<ReviewSessionDetail | null>(
+        ['reviewSession', detail.session.taskId],
+        detail
+      );
+      queryClient.invalidateQueries({ queryKey: ['reviewSession', detail.session.taskId] });
+    },
+  });
+
+  const updateReviewKnowledgeCandidateMutation = useMutation({
+    mutationFn: async (input: {
+      reviewSessionId: string;
+      candidateId: string;
+      data: ReviewKnowledgeCandidateUpdateInput;
+    }) => {
+      const res = await updateReviewKnowledgeCandidate(
+        input.reviewSessionId,
+        input.candidateId,
+        input.data
+      );
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as ReviewSessionDetail;
+    },
+    onSuccess: (detail) => {
+      queryClient.setQueryData<ReviewSessionDetail | null>(
+        ['reviewSession', detail.session.taskId],
+        detail
+      );
+      queryClient.invalidateQueries({ queryKey: ['reviewSession', detail.session.taskId] });
+    },
+  });
+
+  const sendReviewKnowledgeCandidateMutation = useMutation({
+    mutationFn: async (input: { reviewSessionId: string; candidateId: string }) => {
+      const res = await sendReviewKnowledgeCandidate(input.reviewSessionId, input.candidateId);
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as ReviewSessionDetail;
+    },
+    onSuccess: (detail) => {
+      queryClient.setQueryData<ReviewSessionDetail | null>(
+        ['reviewSession', detail.session.taskId],
+        detail
+      );
+      queryClient.invalidateQueries({ queryKey: ['reviewSession', detail.session.taskId] });
+    },
+  });
+
+  const applyReviewFinalActionMutation = useMutation({
+    mutationFn: async (input: {
+      reviewSessionId: string;
+      data: {
+        action: 'approve' | 'request_changes' | 'needs_human' | 'exit_review';
+        note?: string;
+      };
+    }) => {
+      const res = await applyReviewFinalAction(input.reviewSessionId, input.data);
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as ReviewSessionDetail;
+    },
+    onSuccess: (detail) => {
+      queryClient.setQueryData<ReviewSessionDetail | null>(
+        ['reviewSession', detail.session.taskId],
+        detail
+      );
+      queryClient.invalidateQueries({ queryKey: ['reviewSession', detail.session.taskId] });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+  });
+
   const updateSessionStatusMutation = useMutation({
     mutationFn: async (input: { sessionId: string; status: 'draft' | 'ready' }) => {
       return patchTask(input.sessionId, { status: input.status });
@@ -405,5 +626,15 @@ export function useNightWorkersMutations({
     updateSessionStatusMutation,
     reorderQueueSessionsMutation,
     moveWorkbenchSessionMutation,
+    startReviewSessionMutation,
+    runReviewSectionMutation,
+    updateReviewFindingDispositionMutation,
+    createReviewProposedGoalsMutation,
+    updateReviewProposedGoalMutation,
+    materializeReviewProposedGoalMutation,
+    createReviewKnowledgeCandidateMutation,
+    updateReviewKnowledgeCandidateMutation,
+    sendReviewKnowledgeCandidateMutation,
+    applyReviewFinalActionMutation,
   };
 }

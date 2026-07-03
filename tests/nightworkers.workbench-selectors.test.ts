@@ -183,6 +183,75 @@ describe('workbench selectors', () => {
     );
   });
 
+  it('builds a Review Status artifact ref from Review Mode session detail', () => {
+    const refs = buildWorkbenchArtifactRefs({
+      task: baseTask,
+      reviewSession: {
+        session: {
+          id: '44444444-4444-4444-8444-444444444444',
+          runId: baseRun.id,
+          taskId: baseTask.id,
+          repositoryId: baseTask.repositoryId,
+          status: 'in_progress',
+          recommendationId: '55555555-5555-4555-8555-555555555555',
+          startedAt: '2026-07-03T00:00:00.000Z',
+          completedAt: null,
+          finalAction: null,
+          finalNote: null,
+          createdAt: '2026-07-03T00:00:00.000Z',
+          updatedAt: '2026-07-03T00:00:00.000Z',
+        },
+        recommendation: {
+          version: 1,
+          id: '55555555-5555-4555-8555-555555555555',
+          runId: baseRun.id,
+          taskId: baseTask.id,
+          repositoryId: baseTask.repositoryId,
+          level: 'required',
+          defaultAction: 'require_review',
+          reasons: [],
+          createdAt: '2026-07-03T00:00:00.000Z',
+          updatedAt: '2026-07-03T00:00:00.000Z',
+        },
+        statusArtifact: {
+          version: 1,
+          reviewSessionId: '44444444-4444-4444-8444-444444444444',
+          runId: baseRun.id,
+          taskId: baseTask.id,
+          recommendation: {
+            version: 1,
+            id: '55555555-5555-4555-8555-555555555555',
+            runId: baseRun.id,
+            taskId: baseTask.id,
+            repositoryId: baseTask.repositoryId,
+            level: 'required',
+            defaultAction: 'require_review',
+            reasons: [],
+            createdAt: '2026-07-03T00:00:00.000Z',
+            updatedAt: '2026-07-03T00:00:00.000Z',
+          },
+          sections: [],
+          finalActionGate: {
+            canApprove: false,
+            blockingReason: 'Required review sections are not complete.',
+            unresolvedBlockingFindingIds: [],
+            requiredSectionKindsRemaining: ['verification_evidence'],
+          },
+          proposedGoalCount: 0,
+          knowledgeCandidateCount: 0,
+        },
+        artifacts: [],
+        findings: [],
+        knowledgeCandidates: [],
+      },
+    });
+
+    expect(refs.find((ref) => ref.kind === 'review_status')).toMatchObject({
+      title: 'Review Status',
+      source: { type: 'review_result', reviewId: '44444444-4444-4444-8444-444444444444' },
+    });
+  });
+
   it('summarizes Codex contract warnings from run snapshot and warning events', () => {
     const run = buildTaskRun({
       contextSnapshot: {

@@ -1,4 +1,12 @@
-import { Bug, FolderTree, ListTodo, LoaderCircle, PanelsTopLeft, Trash2 } from 'lucide-react';
+import {
+  Bug,
+  ClipboardCheck,
+  FolderTree,
+  ListTodo,
+  LoaderCircle,
+  PanelsTopLeft,
+  Trash2,
+} from 'lucide-react';
 import { type ReactNode, useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Group, Panel, Separator } from 'react-resizable-panels';
@@ -76,6 +84,10 @@ type ThreadWorkspaceProps = {
   onOpenBlueprintArtifact: () => Promise<void>;
   isBlueprintArtifactOpen: boolean;
   isBlueprintActionBusy: boolean;
+  onOpenReviewArtifact: () => Promise<void>;
+  isReviewArtifactOpen: boolean;
+  hasReviewArtifact: boolean;
+  isReviewActionBusy: boolean;
   onOpenTodoArtifact: () => void;
   isTodoArtifactOpen: boolean;
   hasTodoArtifact: boolean;
@@ -96,6 +108,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
   const blueprintArtifact =
     props.artifactRefs.find((artifact) => artifact.kind === 'plan_mode_workspace') ||
     props.artifactRefs.find((artifact) => artifact.kind === 'app_blueprint');
+  const reviewArtifact = props.artifactRefs.find((artifact) => artifact.kind === 'review_status');
   const [showDebugEvents, setShowDebugEvents] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const scrollStateRef = useRef<PersistedScrollState>({ mode: 'bottom' });
@@ -347,6 +360,29 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
                     <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <PanelsTopLeft className="h-3.5 w-3.5" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className={`inline-flex h-7 w-7 items-center justify-center rounded border disabled:cursor-not-allowed disabled:opacity-40 ${
+                    props.isReviewArtifactOpen
+                      ? 'border-cyan-400/70 bg-cyan-950/30 text-cyan-100'
+                      : 'border-slate-600/80 bg-slate-900/30 text-slate-200 hover:border-slate-400'
+                  }`}
+                  aria-pressed={props.isReviewArtifactOpen}
+                  disabled={
+                    !props.activeSession ||
+                    (!props.latestRun && !props.hasReviewArtifact) ||
+                    props.isReviewActionBusy
+                  }
+                  onClick={() => void props.onOpenReviewArtifact()}
+                  title={reviewArtifact ? 'Review Status' : 'Start Review'}
+                  aria-label={reviewArtifact ? 'Review Status' : 'Start Review'}
+                >
+                  {props.isReviewActionBusy ? (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <ClipboardCheck className="h-3.5 w-3.5" />
                   )}
                 </button>
                 <button

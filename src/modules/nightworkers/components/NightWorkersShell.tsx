@@ -74,6 +74,16 @@ function parseModelTargetKey(value: string): ComposerModelTarget | null {
   return null;
 }
 
+function isMissionProposalApprovalRequiredError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  try {
+    const parsed = JSON.parse(error.message) as { code?: unknown };
+    return parsed.code === 'MISSION_PROPOSAL_APPROVAL_REQUIRED';
+  } catch {
+    return error.message.includes('MISSION_PROPOSAL_APPROVAL_REQUIRED');
+  }
+}
+
 function isThinkingModel(modelName: string) {
   const normalized = modelName.toLowerCase();
   return (
@@ -168,6 +178,23 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         ...(workspace.groupedSessionViews[projectDetailProject.id]?.archive || []),
       ]
     : [];
+  const createImplementationQueueEntryWithMissionApproval = useCallback(
+    async (sessionId: string) => {
+      try {
+        await queueState.createImplementationQueueEntry(sessionId);
+      } catch (error) {
+        if (!isMissionProposalApprovalRequiredError(error)) throw error;
+        const approved = window.confirm(
+          'この Mission proposal は Queue 投入前の明示承認が必要です。承認して Queue に追加しますか？'
+        );
+        if (!approved) throw error;
+        await queueState.createImplementationQueueEntry(sessionId, {
+          approveMissionProposal: true,
+        });
+      }
+    },
+    [queueState]
+  );
   const visibleActiveSessionId =
     props.showSettings || isOverviewActive || projectQueueProject || projectDetailProject
       ? null
@@ -183,6 +210,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     artifactPaneOpen &&
     (selectedArtifact?.kind === 'plan_mode_workspace' ||
       selectedArtifact?.kind === 'app_blueprint');
+  const isReviewArtifactOpen = artifactPaneOpen && selectedArtifact?.kind === 'review_status';
   const hasTodoArtifact = Boolean(workspace.activeSession);
   const isActiveImplementationLocked = isImplementationLockedStatus(
     workspace.activeSession?.status
@@ -210,7 +238,11 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       setArtifactFocus({ type: 'closed' });
       return;
     }
-    if (selectedArtifact.kind === 'plan_mode_workspace') return;
+    if (
+      selectedArtifact.kind === 'plan_mode_workspace' ||
+      selectedArtifact.kind === 'review_status'
+    )
+      return;
     const stillAvailable = workspace.activeArtifactRefs.some(
       (artifact) => artifact.id === selectedArtifact.id
     );
@@ -346,6 +378,39 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       return;
     }
   }, [isBlueprintArtifactOpen]);
+  const handleOpenReviewArtifact = useCallback(async () => {
+    if (isReviewArtifactOpen) {
+      setArtifactFocus({ type: 'closed' });
+      return;
+    }
+    const current = workspaceRef.current;
+    const existing = current.activeArtifactRefs.find(
+      (artifact) => artifact.kind === 'review_status'
+    );
+    let artifact = existing;
+    if (!artifact && current.latestRun?.id) {
+      const detail = await current.startReviewSession(current.latestRun.id);
+      artifact = {
+        id: `review-status-${detail.session.id}`,
+        taskId: detail.session.taskId,
+        runId: detail.session.runId,
+        kind: 'review_status',
+        title: 'Review Status',
+        summary: `${detail.recommendation.level} · ${detail.statusArtifact.sections.length} sections`,
+        source: { type: 'review_result', reviewId: detail.session.id },
+        createdAt: detail.session.updatedAt,
+        metadata: { reviewSession: detail },
+      };
+    }
+    if (!artifact) return;
+    setShowOverviewScreen(false);
+    setShowQueueScreen(false);
+    setProjectQueueProjectId(null);
+    setProjectDetailProjectId(null);
+    props.onCloseSettings();
+    setClearedArtifactContextId(null);
+    setArtifactFocus({ type: 'artifact', artifact });
+  }, [isReviewArtifactOpen, props.onCloseSettings]);
   const focusTodoArtifact = useCallback(() => {
     setShowOverviewScreen(false);
     setShowQueueScreen(false);
@@ -396,10 +461,10 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       current.setActiveSessionId(sessionId);
       setClearedArtifactContextId(null);
       setArtifactFocus({ type: 'todo' });
-      await queueState.createImplementationQueueEntry(sessionId);
+      await createImplementationQueueEntryWithMissionApproval(sessionId);
       setArtifactFocus({ type: 'todo' });
     },
-    [props.onCloseSettings, queueState]
+    [createImplementationQueueEntryWithMissionApproval, props.onCloseSettings]
   );
   const queueActiveSessionAndFocusTodo = useCallback(async () => {
     const sessionId = workspaceRef.current.activeSession?.id;
@@ -411,8 +476,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     if (isImplementationLockedStatus(activeSession?.status)) return;
     const sessionId = activeSession?.id;
     if (!sessionId) return;
-    await queueState.createImplementationQueueEntry(sessionId);
-  }, [queueState]);
+    await createImplementationQueueEntryWithMissionApproval(sessionId);
+  }, [createImplementationQueueEntryWithMissionApproval]);
   const handleSelectSession = useCallback((sessionId: string | null) => {
     setArtifactFocus({ type: 'closed' });
     setShowQueueScreen(false);
@@ -635,7 +700,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               implementationQueue={queueState.implementationQueue}
               isLoading={queueState.isImplementationQueueLoading || workspace.isSessionsLoading}
               onOpenSession={(sessionId) => handleSelectSession(sessionId)}
-              onQueueSession={queueState.createImplementationQueueEntry}
+              onQueueSession={createImplementationQueueEntryWithMissionApproval}
               onRequeueEntry={queueState.requeueImplementationQueueEntry}
               onUpdateQueueEntry={queueState.updateImplementationQueueEntry}
               project={projectQueueProject}
@@ -732,6 +797,10 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               onOpenBlueprintArtifact={handleOpenBlueprintArtifact}
               isBlueprintArtifactOpen={isBlueprintArtifactOpen}
               isBlueprintActionBusy={workspace.isChatSubmitting}
+              onOpenReviewArtifact={handleOpenReviewArtifact}
+              isReviewArtifactOpen={isReviewArtifactOpen}
+              hasReviewArtifact={Boolean(workspace.activeReviewSession)}
+              isReviewActionBusy={workspace.isChatSubmitting}
               onOpenTodoArtifact={handleOpenTodoArtifact}
               isTodoArtifactOpen={isTodoArtifactOpen}
               hasTodoArtifact={hasTodoArtifact}
@@ -817,6 +886,16 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                       await queueActiveSessionAndFocusTodo();
                     }}
                     onAddToQueue={addActiveSessionToQueue}
+                    activeReviewSession={workspace.activeReviewSession}
+                    onRunReviewSection={workspace.runReviewSection}
+                    onUpdateReviewFindingDisposition={workspace.updateReviewFindingDisposition}
+                    onCreateReviewProposedGoals={workspace.createReviewProposedGoals}
+                    onUpdateReviewProposedGoal={workspace.updateReviewProposedGoal}
+                    onMaterializeReviewProposedGoal={workspace.materializeReviewProposedGoal}
+                    onCreateReviewKnowledgeCandidate={workspace.createReviewKnowledgeCandidate}
+                    onUpdateReviewKnowledgeCandidate={workspace.updateReviewKnowledgeCandidate}
+                    onSendReviewKnowledgeCandidate={workspace.sendReviewKnowledgeCandidate}
+                    onApplyReviewFinalAction={workspace.applyReviewFinalAction}
                     isImplementationLocked={isActiveImplementationLocked}
                   />
                 ) : undefined

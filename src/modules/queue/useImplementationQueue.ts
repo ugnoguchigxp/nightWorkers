@@ -45,8 +45,10 @@ export function useImplementationQueue() {
     });
 
   const createImplementationQueueEntryMutation = useMutation({
-    mutationFn: async (sessionId: string) => {
-      const res = await createImplementationQueueEntry(sessionId);
+    mutationFn: async (input: { sessionId: string; approveMissionProposal?: boolean }) => {
+      const res = await createImplementationQueueEntry(input.sessionId, {
+        approveMissionProposal: input.approveMissionProposal,
+      });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
@@ -141,8 +143,11 @@ export function useImplementationQueue() {
     implementationQueueHealth,
     isImplementationQueueLoading,
     isImplementationQueueHealthLoading,
-    createImplementationQueueEntry: async (sessionId: string) => {
-      await createImplementationQueueEntryMutation.mutateAsync(sessionId);
+    createImplementationQueueEntry: async (
+      sessionId: string,
+      input: { approveMissionProposal?: boolean } = {}
+    ) => {
+      await createImplementationQueueEntryMutation.mutateAsync({ sessionId, ...input });
     },
     archiveImplementationQueueEntry: async (entryId: string) => {
       await archiveImplementationQueueEntryMutation.mutateAsync(entryId);

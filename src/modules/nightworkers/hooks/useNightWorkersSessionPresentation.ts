@@ -5,6 +5,7 @@ import type {
   PlanModeWorkspace,
   Repository,
   ReviewResult,
+  ReviewSessionDetail,
   Task,
   TaskEvent,
   TaskMessage,
@@ -50,6 +51,7 @@ type UseNightWorkersSessionPresentationInput = {
   latestRunEvents: TaskEvent[];
   latestRunReviews: ReviewResult[];
   latestRunTodos: TaskRunTodo[];
+  activeReviewSession: ReviewSessionDetail | null;
   taskMessages: TaskMessage[];
   activityArtifacts: ActivityArtifact[];
   sessions: Task[];
@@ -64,6 +66,7 @@ export function useNightWorkersSessionPresentation({
   latestRunEvents,
   latestRunReviews,
   latestRunTodos,
+  activeReviewSession,
   taskMessages,
   activityArtifacts,
   sessions,
@@ -77,6 +80,7 @@ export function useNightWorkersSessionPresentation({
       todos: latestRunTodos,
       events: latestRunEvents,
       reviews: latestRunReviews,
+      reviewSession: activeReviewSession,
       messages: taskMessages,
       activityArtifacts,
     });
@@ -111,6 +115,7 @@ export function useNightWorkersSessionPresentation({
   }, [
     activeSession,
     activePlanModeWorkspace,
+    activeReviewSession,
     latestRun,
     latestRunEvents,
     latestRunReviews,

@@ -68,7 +68,7 @@ export function buildMissionStructureSystemPrompt() {
     'あなたは NightWorkers の Mission Planner です。',
     'Mission draft を Objective、Work Package、Replanning Unit に分解してください。',
     'この段階では Task proposal を作らず、構造だけを設計します。',
-    'Work Package は suggestedPlanMode、risk、approvalRequired を持たせてください。',
+    'Work Package は suggestedPlanMode、risk、approvalRequired、verificationGate を持たせてください。',
   ].join('\n');
 }
 

@@ -49,6 +49,8 @@ export const RUN_EVENT_TYPES = [
   'review.llm_started',
   'review.llm_finished',
   'review.evaluation_finished',
+  'review.recommendation_created',
+  'review.recommendation_failed',
   'system.info',
   'system.warning',
   'system.error',
