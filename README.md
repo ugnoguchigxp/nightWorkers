@@ -155,10 +155,11 @@ path and current limits.
 
 ## Trust and Local-First Model
 NightWorkers stores its primary runtime state locally. Development mode uses the
-repo-local database/settings/log defaults; desktop mode writes runtime state
-under the repo-local `data` directory by default. Registered Project work is still performed
-relative to the registered Project repo root, not a temporary provider or
-desktop resource directory.
+repo-local database/settings/log defaults. Desktop mode uses
+`NIGHTWORKERS_RUNTIME_DIR` when set; otherwise the Tauri sidecar resolves the
+runtime directory from its desktop resource root. Registered Project work is
+still performed relative to the registered Project repo root, not a temporary
+provider or desktop resource directory.
 
 Provider calls can include the current user request, supervisor prompt context,
 StateCard continuity context when enabled, tool/result summaries, and relevant
@@ -168,7 +169,7 @@ lane handles repository execution. MCP servers and Agent Hooks are configured
 locally, reject secret-like auth inputs in the current implementation slice,
 and run through NightWorkers evidence paths instead of bypassing the ledger.
 
-Read [Trust Model](./spec/docs/trust-model.md) before connecting provider
+Read [Trust Model](./spec/trust-model.md) before connecting provider
 credentials, MCP servers, hooks, or a repository that contains sensitive data.
 
 ## Desktop App
@@ -186,16 +187,18 @@ The generated app is written to:
 src-tauri/target/release/bundle/macos/NightWorkers.app
 ```
 
-Desktop runtime state is stored under the repo-local `data` directory by default:
+Desktop runtime state is stored under the resolved runtime directory. Set
+`NIGHTWORKERS_RUNTIME_DIR` to force a specific location; otherwise the packaged
+app resolves it from the desktop resource root.
 
 ```text
-data
+${NIGHTWORKERS_RUNTIME_DIR}/
 ```
 
-Desktop diagnostics are written under:
+Desktop diagnostics are written under that runtime directory:
 
 ```text
-data/logs
+logs/
 ```
 
 The main files are `desktop.log` for the Tauri shell startup path, `sidecar.log`
@@ -252,22 +255,25 @@ Detailed runtime configuration:
 | `bun run cleanup:test-data:dry-run` | Preview cleanup of TEST-prefixed local data |
 | `bun run cleanup:test-data` | Delete TEST-prefixed local data |
 | `bun run verify:base` | Run the base gate: TypeScript, Biome, and supervisor regression tests |
-| `bun run verify:desktop` | Run Tauri/Rust checks, build the `.app`, and smoke-test it |
+| `bun run verify:desktop` | Run desktop runtime tests, Rust format/Clippy checks, build the `.app`, and run sidecar/packaged smoke |
 | `bun run verify` | Run `verify:base` and `verify:desktop` |
 | `bun run verify:fast` | Run only `verify:base` |
-| `bun run verify:full` | Run `verify` plus the full Vitest suite |
+| `bun run verify:full` | Run `verify` plus `bun run test run` |
 
 ## Testing
-- Default gate: `bun run verify` runs TypeScript, Biome, supervisor regression tests, Rust format/Clippy checks, Tauri `.app` build, and packaged app smoke.
+- Default gate: `bun run verify` runs TypeScript, Biome, supervisor regression tests, desktop runtime tests, Rust format/Clippy checks, Tauri `.app` build, staged sidecar smoke, and packaged app smoke.
 - Fast gate: `bun run verify:fast` runs only the TypeScript/Biome/supervisor regression base gate.
-- Full gate: `bun run verify:full` runs the default gate plus the full Vitest suite. Use it when a change touches runtime behavior, API contracts, schemas, or user-visible flows.
+- Full gate: `bun run verify:full` runs the default gate plus `bun run test run`, which is the full non-E2E/non-live Vitest suite selected by `vitest.config.ts` (`tests/**/*.{test,spec}.{ts,tsx}` excluding `tests/e2e/**` and `tests/live/**`). Use it when a change touches runtime behavior, API contracts, schemas, or user-visible flows.
+- Coverage report: `bun run test:coverage` runs the same non-E2E/non-live Vitest suite with V8 coverage and writes `coverage/coverage-summary.json`; use the summary to track statements, branches, functions, and lines toward the 80% target.
+- Packaged desktop smoke: `bun run desktop:smoke` can also be run directly as the release/adoption smoke for launching the built `.app` and verifying API, WebSocket, logs, and shutdown.
 - Smoke E2E: `bun run test:e2e:smoke` remains separate until local app/server prerequisites are explicitly available.
 - Husky hooks: `pre-commit` and `pre-push` both run `bun run verify`.
 - Unit/integration: Vitest
 - End-to-end: Playwright (`@smoke`, `@regression` tags)
 - Agent outcome E2E: `bun run test:e2e:agent-outcome` uses the deterministic `test` provider, scratch git workspaces, real API/DB/run event paths, and requires no provider credentials. Set `KEEP_E2E_WORKSPACE=1` to keep the scratch workspace after a failure.
 - Live agent E2E: `bun run test:e2e:agent-live` is optional and skips unless provider credentials are configured.
-- If validation fails, first identify the phase that failed: TypeScript (`bun run typecheck`), Biome (`bun run lint`), Rust/Tauri (`bun run desktop:lint` / `bun run desktop:build`), packaged smoke (`bun run desktop:smoke`), Vitest (`bun run test run`), or Playwright (`bun run test:e2e:smoke`).
+- If validation fails, first identify the phase that failed: TypeScript (`bun run typecheck`), Biome (`bun run lint`), Rust/Tauri (`bun run desktop:lint` / `bun run desktop:build`), sidecar or packaged smoke (`bun run desktop:smoke-sidecar` / `bun run desktop:smoke`), Vitest (`bun run test run`), coverage (`bun run test:coverage`), or Playwright (`bun run test:e2e:smoke`).
+- Do not describe a red Full Vitest or coverage run as passing. Record the failing command, failing test file(s) or below-target metric, and the next repair target separately from any green narrower gate used for interim confidence.
 - Recommended pre-PR validation:
 ```bash
 bun run verify
@@ -286,15 +292,15 @@ This repository uses the following documentation layout.
   - [`GOVERNANCE.md`](./GOVERNANCE.md)
   - [`CHANGELOG.md`](./CHANGELOG.md)
 - Adoption and first-run references:
-  - [`Trust Model`](./spec/docs/trust-model.md)
+  - [`Trust Model`](./spec/trust-model.md)
   - [`First Run Orientation`](./spec/first-run-orientation.md)
   - [`Feature Tour`](./spec/feature-tour.md)
-  - [`Adoption Checklist`](./spec/docs/adoption-checklist.md)
+  - [`Adoption Checklist`](./spec/adoption-checklist.md)
+  - [`Documentation Maintenance Checklist`](./spec/archive/documentation-maintenance-checklist.md)
 - Engineering specs and internal references:
   - `spec/docs/` (primary specification/reference docs)
   - [`Architecture and Module Boundaries`](./spec/architecture.md)
   - [`Runtime Configuration Reference`](./spec/configuration.md)
-  - [`Project Intelligence Overview 実装計画`](./spec/docs/project-intelligence-layer-concept.md)
 - `spec/public/` (public-facing specs managed outside GitHub-rendered root docs)
 
 Note: `spec/public/` is reserved for non-GitHub-public spec artifacts. GitHub-rendered documents are intentionally kept at the repository root.

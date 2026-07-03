@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   buildSpecificationDocumentContext,
   renderQuestionnaireAnswerMarkdown,
-} from '../api/modules/nightworkers/nightworkers.spec-document-renderer';
+} from '../api/modules/specification/specification-document-renderer';
+import type {
+  DesignQuestionnaire,
+  DesignQuestionnaireAnswer,
+} from '../shared/schemas/design-questionnaire.schema';
 
 // Helper to mock parsing functions that are imported by the module
 // (which we can mock if needed, but the original parser has basic behaviors we can reuse or just pass compatible data)
@@ -97,31 +101,29 @@ describe('spec-document-renderer', () => {
       metadataJson: {
         intent: 'app_blueprint',
         source: 'data-model', // signals data-model message
-        appBlueprint: {
+        dataModelArtifact: {
           id: 'db-1',
-          databaseSchema: {
-            tables: [
-              {
-                name: 'users',
-                columns: [
-                  { name: 'id', type: 'number', primaryKey: true, nullable: false },
-                  { name: 'email', type: 'text', nullable: false, unique: true },
-                  { name: 'is_active', type: 'boolean' },
-                  { name: 'created_at', type: 'datetime' },
-                  { name: 'meta', type: 'json' },
-                ],
-                indexes: [['email']],
-              },
-            ],
-            relations: [
-              {
-                fromTable: 'profiles',
-                fromColumn: 'user_id',
-                toTable: 'users',
-                toColumn: 'id',
-              },
-            ],
-          },
+          derivedTables: [
+            {
+              name: 'users',
+              columns: [
+                { name: 'id', type: 'number', primaryKey: true, nullable: false },
+                { name: 'email', type: 'text', nullable: false, unique: true },
+                { name: 'is_active', type: 'boolean' },
+                { name: 'created_at', type: 'datetime' },
+                { name: 'meta', type: 'json' },
+              ],
+              indexes: [['email']],
+            },
+          ],
+          relations: [
+            {
+              fromTable: 'profiles',
+              fromColumn: 'user_id',
+              toTable: 'users',
+              toColumn: 'id',
+            },
+          ],
         },
       },
     },
@@ -197,16 +199,40 @@ describe('spec-document-renderer', () => {
             metadataJson: {
               intent: 'app_blueprint',
               source: 'data-model',
-              appBlueprint: {
-                databaseSchema: {
-                  tables: [],
-                },
+              dataModelArtifact: {
+                derivedTables: [],
               },
             },
           },
         ],
       });
       expect(result.dataModelDdl).toContain('Data Model には table が定義されていません。');
+    });
+
+    it('handles tables with empty columns', () => {
+      const result = buildSpecificationDocumentContext({
+        task: mockTask,
+        session: mockSession,
+        workspace: mockWorkspace,
+        messages: [
+          {
+            id: 'msg-no-columns-db',
+            metadataJson: {
+              intent: 'app_blueprint',
+              source: 'data-model',
+              dataModelArtifact: {
+                derivedTables: [
+                  {
+                    name: 'no_columns_table',
+                    columns: [],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      });
+      expect(result.dataModelDdl).toContain('-- columns are not defined');
     });
   });
 
@@ -218,6 +244,131 @@ describe('spec-document-renderer', () => {
         questionSets: [],
       });
       expect(result).toBe('- No questionnaire answers.');
+    });
+
+    it('renders structured questionnaire answers in markdown', () => {
+      const result = renderQuestionnaireAnswerMarkdown(mockSession);
+      expect(result).toContain('- Question 1');
+      expect(result).toContain('- Answer: はい');
+      expect(result).toContain('- Question 2');
+      expect(result).toContain('- Answer: Option 1, Option 2');
+      expect(result).toContain('- Question 3');
+      expect(result).toContain('- Answer: 後で決める');
+    });
+  });
+
+  describe('Edge cases and fallbacks for full renderer coverage', () => {
+    it('handles compactText, missing props, and legacy databaseSchema format', () => {
+      const result = buildSpecificationDocumentContext({
+        task: {
+          title: 'A'.repeat(100), // triggers compactText limit in title
+          description: 'Desc',
+          objective: 'Obj',
+        },
+        session: {
+          id: 'session-edge',
+          answers: [
+            { questionId: 'q-empty', answer: {} as DesignQuestionnaireAnswer },
+            { questionId: 'q-deferred', answer: { deferred: true } },
+          ],
+          questionSets: [
+            {
+              questionnaire: {
+                questionSets: [
+                  {
+                    questions: [
+                      { id: 'q-empty', question: 'Empty Q', text: 'Text Q' },
+                      {
+                        id: 'q-deferred',
+                        question: 'Deferred Q',
+                        why: 'Deferred Why',
+                        outputSection: 'Deferred Sec',
+                      },
+                    ],
+                  },
+                ],
+              } as unknown as DesignQuestionnaire,
+            },
+          ],
+        },
+        workspace: mockWorkspace,
+        messages: [
+          {
+            id: 'msg-legacy-bp',
+            metadataJson: {
+              intent: 'app_blueprint',
+              source: 'blueprint-generation',
+              appBlueprint: {
+                id: 'bp-legacy',
+                name: '', // tests fallback name
+                description: 'B'.repeat(300), // triggers compactText in blueprint description
+                implementationTasks: [
+                  { title: 'Task 1', description: 'C'.repeat(200) }, // triggers compactText in task description
+                ],
+                screens: [
+                  {
+                    id: 'screen-no-name',
+                    // name is missing
+                    path: '', // tests default '/' path
+                    sections: [
+                      {
+                        id: 'section-no-props',
+                        name: '', // tests fallback name
+                        visualIntent: 'Visual Intent', // fallback description
+                        // props is missing
+                      },
+                      {
+                        id: 'section-non-obj-props',
+                        name: 'Non Object Props',
+                        props: 'not-an-object', // tests isRecord props fallback
+                        intent: 'Intent Description', // fallback description
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+          {
+            id: 'msg-legacy-dm',
+            metadataJson: {
+              intent: 'app_blueprint',
+              source: 'data-model',
+              dataModelArtifact: {
+                derivedTables: [
+                  {
+                    name: 'legacy_users',
+                    columns: [
+                      { name: 'id', type: 'number', primaryKey: true, nullable: true },
+                      { name: 'name', type: 'text', nullable: false },
+                    ],
+                  },
+                ],
+                relations: [
+                  {
+                    fromTable: 'legacy_profiles',
+                    fromColumn: 'user_id',
+                    toTable: 'legacy_users',
+                    toColumn: 'id',
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      });
+
+      // Assert compactText limits description length
+      expect(result.blueprintSummary).toContain('…');
+
+      // Assert legacy database schema renders tables
+      expect(result.dataModelDdl).toContain('CREATE TABLE legacy_users (');
+      expect(result.dataModelDdl).toContain('id INTEGER PRIMARY KEY');
+
+      // Assert default sections and fallback names are printed
+      expect(result.blueprintSummary).toContain('画面: screen-no-name。');
+      expect(result.blueprintSummary).toContain('Visual Intent');
+      expect(result.blueprintSummary).toContain('Intent Description');
     });
   });
 });

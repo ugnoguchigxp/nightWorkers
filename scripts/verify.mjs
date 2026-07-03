@@ -20,6 +20,8 @@ const desktopTasks = [
   },
   { label: 'desktop lint', command: 'bun', args: ['--silent', 'run', 'desktop:lint'] },
   { label: 'desktop build', command: 'bun', args: ['--silent', 'run', 'desktop:build'] },
+  { label: 'desktop sidecar smoke', command: 'bun', args: ['--silent', 'run', 'desktop:smoke-sidecar'] },
+  { label: 'desktop packaged smoke', command: 'bun', args: ['--silent', 'run', 'desktop:smoke'] },
 ];
 
 const allTestsTask = {

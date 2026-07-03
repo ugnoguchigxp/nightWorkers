@@ -223,6 +223,78 @@ describe('Plan View generation helpers', () => {
 
     expect(artifact.view).toBe('zod_schema_design');
   });
+
+  it('covers dedicated view markdown validation failures and text sanitization', () => {
+    // 1. Expected diagram kind mismatch
+    expect(() =>
+      parseGenericDedicatedViewOutput(
+        JSON.stringify({
+          artifactKind: 'plan_mode_dedicated_view',
+          view: 'user_flow',
+          title: 'User Flow',
+          markdown: '```mermaid\nflowchart TD\n  A --> B\n```',
+          diagramKind: 'sequenceDiagram',
+        }),
+        'user_flow'
+      )
+    ).toThrow('must use flowchart');
+
+    // 2. Expected diagram kind mismatch when no explicit mermaid block
+    expect(() =>
+      parseGenericDedicatedViewOutput(
+        JSON.stringify({
+          artifactKind: 'plan_mode_dedicated_view',
+          view: 'user_flow',
+          title: 'User Flow',
+          markdown: 'No diagram here',
+          diagramKind: 'sequenceDiagram',
+        }),
+        'user_flow'
+      )
+    ).toThrow('rendered as a Mermaid diagram');
+
+    // 3. Expected view mismatch
+    expect(() =>
+      parseGenericDedicatedViewOutput(
+        JSON.stringify({
+          artifactKind: 'plan_mode_dedicated_view',
+          view: 'state_model',
+          title: 'State Model',
+          markdown: '```mermaid\nstateDiagram-v2\n  draft --> ready\n```',
+          diagramKind: 'stateDiagram-v2',
+        }),
+        'user_flow'
+      )
+    ).toThrow('expected user_flow');
+
+    // 4. Mermaid block without expectedDiagramKind marker
+    expect(() =>
+      parseGenericDedicatedViewOutput(
+        JSON.stringify({
+          artifactKind: 'plan_mode_dedicated_view',
+          view: 'user_flow',
+          title: 'User Flow',
+          markdown: '```mermaid\nsequenceDiagram\n  A ->> B: msg\n```',
+          diagramKind: 'flowchart',
+        }),
+        'user_flow'
+      )
+    ).toThrow('must include flowchart ');
+
+    // 5. sanitizeMermaidText edge cases (length limits, special chars removal)
+    const longText = 'a'.repeat(150);
+    const sanitized = normalizePlanViewMermaidArtifact({
+      artifactKind: 'plan_mode_dedicated_view',
+      view: 'user_flow',
+      title: 'User Flow',
+      markdown: `\`\`\`mermaid\nflowchart TD\n  step["\`${longText}\` [link](url) {special} <chars>"]\n\`\`\``,
+      diagramKind: 'flowchart',
+    });
+    expect(sanitized.markdown).toContain('a'.repeat(119));
+    expect(sanitized.markdown).not.toContain('a'.repeat(120));
+    expect(sanitized.markdown).not.toContain('{special}');
+    expect(sanitized.markdown).not.toContain('<chars>');
+  });
 });
 
 function expectStrictRequiredProperties(schema: unknown) {

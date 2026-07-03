@@ -2,8 +2,12 @@ import { config as dotenvConfig } from 'dotenv';
 import { z } from 'zod';
 import { ensureDesktopRuntimeBootstrap } from './runtime/bootstrap';
 
+const configuredDatabaseUrlBeforeDotenv = process.env.DATABASE_URL?.trim();
 dotenvConfig({ quiet: true }); // ensure env is loaded in Node.js, Bun might auto-load
-ensureDesktopRuntimeBootstrap();
+ensureDesktopRuntimeBootstrap(process.env, {
+  preserveConfiguredDatabaseUrl:
+    Boolean(configuredDatabaseUrlBeforeDotenv) || process.env.NODE_ENV !== 'production',
+});
 
 const envSchema = z
   .object({

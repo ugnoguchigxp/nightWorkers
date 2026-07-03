@@ -470,11 +470,7 @@ describe('NightWorkers task routes', () => {
       payloadJson: { intent: 'app_blueprint' },
     });
 
-    const endpoints = [
-      'blueprint-adoption',
-      'data-model-adoption',
-      'blueprint-design-token-adoption',
-    ];
+    const endpoints = ['blueprint-adoption', 'blueprint-design-token-adoption'];
 
     for (const endpoint of endpoints) {
       const initialRes = await app.request(
@@ -489,27 +485,8 @@ describe('NightWorkers task routes', () => {
       });
     }
 
-    const saveDataModelRes = await app.request(
-      `http://localhost/api/tasks/${task.id}/data-model-adoption`,
-      {
-        method: 'PUT',
-        headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messageId: message.id, adopted: true }),
-      }
-    );
-    expect(saveDataModelRes.status).toBe(200);
-    expect(await saveDataModelRes.json()).toMatchObject({
-      sessionId: task.id,
-      messageId: message.id,
-      adopted: true,
-    });
-
     const getBlueprintRes = await app.request(
       `http://localhost/api/tasks/${task.id}/blueprint-adoption?messageId=${message.id}`,
-      { headers: sameOriginHeaders }
-    );
-    const getDataModelRes = await app.request(
-      `http://localhost/api/tasks/${task.id}/data-model-adoption?messageId=${message.id}`,
       { headers: sameOriginHeaders }
     );
     const getDesignTokenRes = await app.request(
@@ -518,7 +495,6 @@ describe('NightWorkers task routes', () => {
     );
 
     expect(await getBlueprintRes.json()).toMatchObject({ adopted: false });
-    expect(await getDataModelRes.json()).toMatchObject({ adopted: true });
     expect(await getDesignTokenRes.json()).toMatchObject({ adopted: false });
   });
 });

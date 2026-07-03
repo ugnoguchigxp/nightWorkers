@@ -10,9 +10,58 @@
 
   html,
   body {
+    width: 100%;
+    height: 100%;
     color-scheme: dark;
     scrollbar-color: var(--nightworkers-scrollbar-thumb) var(--nightworkers-scrollbar-track);
     scrollbar-width: auto;
+  }
+
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  #root {
+    height: 100%;
+  }
+
+  :root:has(.nightworkers-shell) {
+    --nightworkers-app-background: hsl(222 42% 10%);
+  }
+
+  :root:has(.nightworkers-shell[data-theme="light"]) {
+    --nightworkers-app-background: hsl(210 24% 96%);
+  }
+
+  :root:has(.nightworkers-shell[data-theme="eclipse"]) {
+    --nightworkers-app-background: hsl(245 46% 90%);
+  }
+
+  :root:has(.nightworkers-shell[data-theme="macosclassic"]) {
+    --nightworkers-app-background: hsl(0 0% 89%);
+  }
+
+  :root:has(.nightworkers-shell[data-theme="campfire"]) {
+    --nightworkers-app-background: hsl(24 38% 8%);
+  }
+
+  :root:has(.nightworkers-shell[data-theme="mint"]) {
+    --nightworkers-app-background: hsl(154 30% 96%);
+  }
+
+  :root:has(.nightworkers-shell[data-theme="bloom"]) {
+    --nightworkers-app-background: hsl(344 76% 96%);
+  }
+
+  :root:has(.nightworkers-shell[data-theme="mocha"]) {
+    --nightworkers-app-background: hsl(38 38% 94%);
+  }
+
+  :root:has(.nightworkers-shell),
+  :root:has(.nightworkers-shell) body,
+  :root:has(.nightworkers-shell) #root {
+    background: var(--nightworkers-app-background);
   }
 
   ::-webkit-scrollbar {

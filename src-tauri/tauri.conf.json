@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "dev.nightworkers.desktop",
   "build": {
-    "beforeDevCommand": "bun run build:backend && bun run dev:web -- --host 127.0.0.1",
+    "beforeDevCommand": "bun run build:frontend && bun run desktop:prepare-sidecar && bun run dev:web:desktop",
     "beforeBuildCommand": "bun run build:frontend && bun run desktop:prepare-sidecar",
     "devUrl": "http://127.0.0.1:39174",
     "frontendDist": "../dist"
@@ -16,7 +16,14 @@
         "width": 1440,
         "height": 960,
         "minWidth": 1024,
-        "minHeight": 720
+        "minHeight": 720,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 18,
+          "y": 15
+        },
+        "devtools": true
       }
     ],
     "security": {
@@ -35,12 +42,9 @@
       "icons/icon.png"
     ],
     "resources": [
-      "../dist",
-      "../dist-api-desktop",
       "../api/services/supervisor/skills",
       "../api/services/procedures/builtin",
-      "../scripts/desktop/staged/node",
-      "../scripts/desktop/staged/node_modules"
+      "../scripts/desktop/staged"
     ],
     "macOS": {
       "minimumSystemVersion": "12.0"

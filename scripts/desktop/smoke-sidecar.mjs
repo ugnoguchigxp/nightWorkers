@@ -10,7 +10,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '../..');
 const stagedRoot = path.join(repoRoot, 'scripts/desktop/staged');
 const nodeBinary = path.join(stagedRoot, 'node/bin/node');
-const backendEntry = path.join(stagedRoot, 'dist-api-desktop/index.cjs');
+const backendEntry = path.join(stagedRoot, 'dist-api-desktop/index.js');
 
 if (!fs.existsSync(nodeBinary) || !fs.existsSync(backendEntry)) {
   throw new Error('Desktop sidecar staging is missing. Run bun run desktop:prepare-sidecar first.');
@@ -41,7 +41,7 @@ const child = spawn(nodeBinary, [backendEntry], {
 });
 
 try {
-  await waitForReady(apiOrigin, 30_000);
+  await waitForReady(apiOrigin, child, 30_000);
   console.log(`Desktop sidecar smoke passed at ${apiOrigin}`);
 } finally {
   if (child.exitCode === null) {
@@ -63,10 +63,13 @@ function pickFreePort() {
   });
 }
 
-async function waitForReady(apiOrigin, timeoutMs) {
+async function waitForReady(apiOrigin, child, timeoutMs) {
   const started = Date.now();
   let lastError = null;
   while (Date.now() - started < timeoutMs) {
+    if (child.exitCode !== null) {
+      throw new Error(`Sidecar exited before readiness: code=${child.exitCode}`);
+    }
     try {
       const status = await getStatus(`${apiOrigin}/api/health/ready`);
       if (status === 200) return;

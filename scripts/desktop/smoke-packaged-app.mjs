@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -26,7 +27,7 @@ if (!fs.existsSync(executablePath)) {
   throw new Error(`Packaged app executable was not found: ${executablePath}`);
 }
 
-const runtimeRoot = path.join(repoRoot, 'data');
+const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-packaged-smoke-'));
 const logsDir = path.join(runtimeRoot, 'logs');
 const desktopLogPath = path.join(logsDir, 'desktop.log');
 const sidecarLogPath = path.join(logsDir, 'sidecar.log');
@@ -37,54 +38,64 @@ console.log(`Packaged app found: ${appPath}`);
 
 const app = spawn(executablePath, [], {
   cwd: path.dirname(executablePath),
+  env: {
+    ...process.env,
+    NIGHTWORKERS_RUNTIME_DIR: runtimeRoot,
+  },
   stdio: 'ignore',
 });
 let sidecarPid = null;
 let port = null;
 
 try {
-  const readyLine = await waitForLogLine(
-    desktopLogPath,
-    desktopLogOffset,
-    /sidecar ready: http:\/\/127\.0\.0\.1:(\d+)/,
-    30_000
-  );
-  port = Number(readyLine.match(/:(\d+)$/)?.[1]);
-  if (!Number.isInteger(port)) {
-    throw new Error(`Unable to parse sidecar port from desktop log line: ${readyLine}`);
+  try {
+    const readyLine = await waitForLogLine(
+      desktopLogPath,
+      desktopLogOffset,
+      /sidecar ready: http:\/\/127\.0\.0\.1:(\d+)/,
+      30_000,
+      app
+    );
+    port = Number(readyLine.match(/:(\d+)$/)?.[1]);
+    if (!Number.isInteger(port)) {
+      throw new Error(`Unable to parse sidecar port from desktop log line: ${readyLine}`);
+    }
+    const spawnedLine = await waitForLogLine(
+      desktopLogPath,
+      desktopLogOffset,
+      /sidecar spawned pid=(\d+)/,
+      1_000,
+      app
+    ).catch(() => null);
+    sidecarPid = spawnedLine ? Number(spawnedLine.match(/pid=(\d+)/)?.[1]) : null;
+
+    await expectStatus(`http://127.0.0.1:${port}/api/health/ready`, 200);
+    await expectStatus(`http://127.0.0.1:${port}/api/overview`, 200);
+    await expectStatus(`http://127.0.0.1:${port}/api/implementation-queue`, 200);
+    await expectWebSocketOpen(`ws://127.0.0.1:${port}/api/ws/nightworkers`);
+
+    console.log(`Packaged app smoke passed at http://127.0.0.1:${port}`);
+  } finally {
+    await stopApp(app, sidecarPid);
   }
-  const spawnedLine = await waitForLogLine(
-    desktopLogPath,
-    desktopLogOffset,
-    /sidecar spawned pid=(\d+)/,
-    1_000
-  ).catch(() => null);
-  sidecarPid = spawnedLine ? Number(spawnedLine.match(/pid=(\d+)/)?.[1]) : null;
 
-  await expectStatus(`http://127.0.0.1:${port}/api/health/ready`, 200);
-  await expectStatus(`http://127.0.0.1:${port}/api/overview`, 200);
-  await expectStatus(`http://127.0.0.1:${port}/api/implementation-queue`, 200);
-  await expectWebSocketOpen(`ws://127.0.0.1:${port}/api/ws/nightworkers`);
+  if (port) {
+    await waitForPortClosed('127.0.0.1', port, 10_000);
+  }
+  if (sidecarPid) {
+    await waitForProcessExit(sidecarPid, 10_000);
+  }
 
-  console.log(`Packaged app smoke passed at http://127.0.0.1:${port}`);
+  const newDesktopLog = readFromOffset(desktopLogPath, desktopLogOffset);
+  const newSidecarLog = readFromOffset(sidecarLogPath, sidecarLogOffset);
+  if (!newDesktopLog.includes('sidecar ready:')) {
+    throw new Error(`Desktop smoke did not write sidecar readiness to ${desktopLogPath}`);
+  }
+  if (!newSidecarLog.includes('server started')) {
+    throw new Error(`Desktop smoke did not write sidecar server startup to ${sidecarLogPath}`);
+  }
 } finally {
-  await stopApp(app, sidecarPid);
-}
-
-if (port) {
-  await waitForPortClosed('127.0.0.1', port, 10_000);
-}
-if (sidecarPid) {
-  await waitForProcessExit(sidecarPid, 10_000);
-}
-
-const newDesktopLog = readFromOffset(desktopLogPath, desktopLogOffset);
-const newSidecarLog = readFromOffset(sidecarLogPath, sidecarLogOffset);
-if (!newDesktopLog.includes('sidecar ready:')) {
-  throw new Error(`Desktop smoke did not write sidecar readiness to ${desktopLogPath}`);
-}
-if (!newSidecarLog.includes('server started')) {
-  throw new Error(`Desktop smoke did not write sidecar server startup to ${sidecarLogPath}`);
+  fs.rmSync(runtimeRoot, { recursive: true, force: true });
 }
 
 function findFirst(root, predicate) {
@@ -118,7 +129,7 @@ function readFromOffset(filePath, offset) {
   }
 }
 
-async function waitForLogLine(filePath, offset, pattern, timeoutMs) {
+async function waitForLogLine(filePath, offset, pattern, timeoutMs, app) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const content = readFromOffset(filePath, offset);
@@ -126,9 +137,25 @@ async function waitForLogLine(filePath, offset, pattern, timeoutMs) {
       .split('\n')
       .find((candidate) => pattern.test(candidate));
     if (line) return line;
+    if (app?.exitCode !== null) {
+      throw new Error(
+        `Packaged app exited before ${pattern}. desktopLog=${readLogTail(
+          desktopLogPath
+        )} sidecarLog=${readLogTail(sidecarLogPath)}`
+      );
+    }
     await sleep(250);
   }
-  throw new Error(`Timed out waiting for ${pattern} in ${filePath}`);
+  throw new Error(
+    `Timed out waiting for ${pattern} in ${filePath}. desktopLog=${readLogTail(
+      desktopLogPath
+    )} sidecarLog=${readLogTail(sidecarLogPath)}`
+  );
+}
+
+function readLogTail(filePath) {
+  const content = readFromOffset(filePath, 0);
+  return content.split('\n').slice(-40).join('\\n');
 }
 
 function expectStatus(url, expectedStatus) {

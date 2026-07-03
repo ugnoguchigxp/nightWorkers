@@ -351,6 +351,7 @@ describe('Desktop security configuration', () => {
       'http://127.0.0.1:41234',
       'http://tauri.localhost',
       'tauri://localhost',
+      'http://localhost:39174',
     ]);
     expect(config.DATABASE_URL).toContain('/sqlite.db');
     expect(config.JWT_SECRET.length).toBeGreaterThanOrEqual(32);

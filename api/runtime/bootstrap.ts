@@ -4,7 +4,25 @@ import { getRuntimePaths, isDesktopMode } from './paths';
 
 const JWT_SECRET_BYTES = 48;
 
-export function ensureDesktopRuntimeBootstrap(env: NodeJS.ProcessEnv = process.env) {
+type DesktopRuntimeBootstrapOptions = {
+  preserveConfiguredDatabaseUrl?: boolean;
+};
+
+function mergeCorsOrigins(defaultOrigins: string[], configuredOrigins?: string) {
+  const origins = [
+    ...defaultOrigins,
+    ...(configuredOrigins || '')
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter((origin) => origin.length > 0),
+  ];
+  return [...new Set(origins)].join(',');
+}
+
+export function ensureDesktopRuntimeBootstrap(
+  env: NodeJS.ProcessEnv = process.env,
+  options: DesktopRuntimeBootstrapOptions = {}
+) {
   if (!isDesktopMode(env)) return;
 
   const paths = getRuntimePaths(env);
@@ -18,7 +36,10 @@ export function ensureDesktopRuntimeBootstrap(env: NodeJS.ProcessEnv = process.e
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  env.DATABASE_URL = `file:${paths.databasePath}`;
+  const preserveConfiguredDatabaseUrl = options.preserveConfiguredDatabaseUrl ?? true;
+  if (!preserveConfiguredDatabaseUrl || !env.DATABASE_URL?.trim()) {
+    env.DATABASE_URL = `file:${paths.databasePath}`;
+  }
   if (
     !env.AUTH_MODE ||
     ((env.AUTH_MODE === 'both' || env.AUTH_MODE === 'oauth') &&
@@ -31,7 +52,10 @@ export function ensureDesktopRuntimeBootstrap(env: NodeJS.ProcessEnv = process.e
 
   const apiOrigin = env.NIGHTWORKERS_API_ORIGIN || `http://127.0.0.1:${env.PORT || 39173}`;
   env.APP_URL = apiOrigin;
-  env.CORS_ORIGIN = [apiOrigin, 'http://tauri.localhost', 'tauri://localhost'].join(',');
+  env.CORS_ORIGIN = mergeCorsOrigins(
+    [apiOrigin, 'http://tauri.localhost', 'tauri://localhost'],
+    env.CORS_ORIGIN
+  );
 
   if (!env.JWT_SECRET) {
     const secretPath = `${paths.secretsDir}/jwt-secret`;

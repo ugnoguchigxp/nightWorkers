@@ -59,6 +59,27 @@ describe('desktop runtime bootstrap', () => {
     expect(fs.existsSync(paths.logsDir)).toBe(true);
   });
 
+  it('preserves configured desktop CORS origins while adding required defaults', () => {
+    const runtimeDir = makeRuntimeDir();
+    const env: NodeJS.ProcessEnv = {
+      NIGHTWORKERS_DESKTOP: '1',
+      NIGHTWORKERS_RUNTIME_DIR: runtimeDir,
+      PORT: '40125',
+      CORS_ORIGIN: 'http://127.0.0.1:39174,http://tauri.localhost',
+    };
+
+    ensureDesktopRuntimeBootstrap(env);
+
+    expect(env.CORS_ORIGIN).toBe(
+      [
+        'http://127.0.0.1:40125',
+        'http://tauri.localhost',
+        'tauri://localhost',
+        'http://127.0.0.1:39174',
+      ].join(',')
+    );
+  });
+
   it('reuses a generated JWT secret on the next bootstrap', () => {
     const runtimeDir = makeRuntimeDir();
     const firstEnv: NodeJS.ProcessEnv = {

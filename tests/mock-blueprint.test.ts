@@ -4,7 +4,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ensureNightWorkersSchema } from '../api/db/bootstrap';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
-import { renderMockBlueprintMarkdown } from '../api/services/blueprints/mock-draft';
+import {
+  renderMockBlueprintMarkdown,
+  summarizeMockBlueprintForDataModel,
+} from '../api/services/blueprints/mock-draft';
 import { generatePlanModeMockBlueprintDraft } from '../api/services/blueprints/mock-llm-draft';
 import {
   buildMockBlueprintSectionCatalog,
@@ -15,6 +18,8 @@ import {
 } from '../api/services/structured-generation/prompts/mock-blueprint';
 import {
   getMockBlueprintDatasetKindsForSection,
+  type MockBlueprint,
+  type MockBlueprintDataset,
   mockBlueprintSchema,
   renderableMockBlueprintSectionNames,
 } from '../shared/schemas/mock-blueprint.schema';
@@ -228,6 +233,51 @@ describe('Mock Blueprint', () => {
     expect(markdown).toContain('Dataset: `table`');
     expect(markdown).not.toContain('## Data Model');
     expect(markdown).not.toContain('## Implementation Tasks');
+  });
+
+  it('covers all dataset kind formatting variants in compactDatasetSample', () => {
+    const kinds: Array<[MockBlueprintDataset['kind'], MockBlueprintDataset]> = [
+      ['navigation', { kind: 'navigation', items: [{ label: 'Nav1' }] }],
+      ['table', { kind: 'table', columns: [{ key: 'col1' }], rows: [{ col1: 'Val1' }] }],
+      ['form', { kind: 'form', fields: [{ label: 'F1', type: 'text' }] }],
+      ['cards', { kind: 'cards', cards: [{ title: 'Card1' }] }],
+      ['kanban', { kind: 'kanban', columns: [{ title: 'Col1', cards: [] }] }],
+      ['timeline', { kind: 'timeline', items: [{ title: 'Time1' }] }],
+      ['article', { kind: 'article', title: 'Art1' }],
+      ['metrics', { kind: 'metrics', metrics: [{ label: 'Met1', value: '10' }] }],
+      ['media', { kind: 'media', items: [{ title: 'Med1' }] }],
+      ['map', { kind: 'map', points: [{ label: 'Map1' }] }],
+      ['code', { kind: 'code', files: [{ path: 'File1' }] }],
+      ['chat', { kind: 'chat', messages: [{ author: 'User', body: 'Hello' }] }],
+      ['generic', { kind: 'generic', items: [{ title: 'Gen1' }] }],
+    ];
+
+    for (const [kind, dataset] of kinds) {
+      const baseScreen = representativeMockBlueprint.screens[0];
+      const baseSection = baseScreen.sections[0];
+      const mockBlueprint: MockBlueprint = {
+        ...representativeMockBlueprint,
+        name: `Test Blueprint ${kind}`,
+        screens: [
+          {
+            ...baseScreen,
+            sections: [
+              {
+                ...baseSection,
+                dataset,
+              },
+            ],
+          },
+        ],
+        generationNotes: ['Note1'],
+      };
+
+      const markdown = renderMockBlueprintMarkdown(mockBlueprint);
+      expect(markdown).toContain(`Dataset: \`${kind}\``);
+
+      const summary = summarizeMockBlueprintForDataModel(mockBlueprint);
+      expect(summary).toContain(`dataset=${kind}`);
+    }
   });
 
   it('keeps the prompt schema compact while exposing the section allowlist', () => {
@@ -529,8 +579,9 @@ describe('Mock Blueprint', () => {
         prompt: 'BBS の軽量 mock を作る',
       });
 
+      const expectedId = /^[A-Za-z]/.test(task.id) ? task.id : `item_${task.id}`;
+      expect(result.mockBlueprint.id).toBe(expectedId);
       const idPattern = /^[A-Za-z][A-Za-z0-9_-]*$/;
-      expect(result.mockBlueprint.id).toBe(`item_${task.id}`);
       expect(result.mockBlueprint.id).toMatch(idPattern);
       expect(result.mockBlueprint.screens[0].id).toBe('item_123-screen');
       expect(result.mockBlueprint.screens[0].sections[0].id).toBe('item_1');

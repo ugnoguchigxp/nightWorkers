@@ -7,7 +7,7 @@ use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Child, Command, ExitStatus, Stdio},
     sync::Mutex,
     thread,
     time::{Duration, Instant},
@@ -28,13 +28,21 @@ struct DesktopConfig {
 }
 
 #[tauri::command]
-fn get_desktop_config(state: State<'_, SidecarState>) -> Result<DesktopConfig, String> {
-    state
+fn get_desktop_config(
+    app: tauri::AppHandle,
+    state: State<'_, SidecarState>,
+) -> Result<DesktopConfig, String> {
+    let config = state
         .config
         .lock()
         .map_err(|_| "desktop config lock poisoned".to_string())?
         .clone()
-        .ok_or_else(|| "desktop backend is not ready".to_string())
+        .ok_or_else(|| "desktop backend is not ready".to_string())?;
+    desktop_log(
+        &app,
+        &format!("desktop config requested: {}", config.api_origin),
+    );
+    Ok(config)
 }
 
 fn main() {
@@ -53,6 +61,7 @@ fn main() {
                     &app_handle,
                     &format!("backend sidecar startup failed: {error}"),
                 );
+                return Err(error);
             }
             Ok(())
         })
@@ -105,6 +114,16 @@ fn start_backend_sidecar(app: tauri::AppHandle) -> Result<(), Box<dyn std::error
     let sidecar_stderr = sidecar_stdout.try_clone()?;
     append_file_line(&sidecar_log_path, "sidecar process starting");
 
+    let mut cors_origins = vec![
+        api_origin.clone(),
+        "http://tauri.localhost".to_string(),
+        "tauri://localhost".to_string(),
+    ];
+    if cfg!(debug_assertions) {
+        cors_origins.push("http://127.0.0.1:39174".to_string());
+        cors_origins.push("http://localhost:39174".to_string());
+    }
+
     let mut command = Command::new(&node_binary);
     command
         .arg(&backend_entry)
@@ -117,10 +136,7 @@ fn start_backend_sidecar(app: tauri::AppHandle) -> Result<(), Box<dyn std::error
         .env("NIGHTWORKERS_API_ORIGIN", &api_origin)
         .env("PORT", port.to_string())
         .env("APP_URL", &api_origin)
-        .env(
-            "CORS_ORIGIN",
-            format!("{api_origin},http://tauri.localhost,tauri://localhost"),
-        )
+        .env("CORS_ORIGIN", cors_origins.join(","))
         .env("API_AUTH_REQUIRED", "false")
         .env("AUTH_MODE", "local")
         .env(
@@ -150,7 +166,13 @@ fn start_backend_sidecar(app: tauri::AppHandle) -> Result<(), Box<dyn std::error
         *child_slot = Some(child);
     }
 
-    wait_for_ready(&api_origin, Duration::from_secs(30)).map_err(|error| {
+    wait_for_ready(
+        state.inner(),
+        &api_origin,
+        Duration::from_secs(30),
+        &sidecar_log_path,
+    )
+    .map_err(|error| {
         desktop_log(&app, &format!("sidecar readiness failed: {error}"));
         stop_backend_sidecar(state.inner());
         error
@@ -230,15 +252,52 @@ fn pick_free_port() -> std::io::Result<u16> {
     Ok(listener.local_addr()?.port())
 }
 
-fn wait_for_ready(api_origin: &str, timeout: Duration) -> Result<(), String> {
+fn wait_for_ready(
+    state: &SidecarState,
+    api_origin: &str,
+    timeout: Duration,
+    sidecar_log_path: &Path,
+) -> Result<(), String> {
     let started = Instant::now();
     while started.elapsed() < timeout {
         if health_ready(api_origin).unwrap_or(false) {
             return Ok(());
         }
+        if let Some(status) = sidecar_exit_status(state)? {
+            return Err(format!(
+                "backend sidecar exited before readiness: status={status}; log_tail={}",
+                read_log_tail(sidecar_log_path, 40)
+            ));
+        }
         thread::sleep(Duration::from_millis(250));
     }
-    Err(format!("backend did not become ready within {:?}", timeout))
+    Err(format!(
+        "backend did not become ready within {:?}; log_tail={}",
+        timeout,
+        read_log_tail(sidecar_log_path, 40)
+    ))
+}
+
+fn sidecar_exit_status(state: &SidecarState) -> Result<Option<ExitStatus>, String> {
+    let mut child_slot = state
+        .child
+        .lock()
+        .map_err(|_| "sidecar lock poisoned".to_string())?;
+    let Some(child) = child_slot.as_mut() else {
+        return Ok(None);
+    };
+    child
+        .try_wait()
+        .map_err(|error| format!("failed to inspect sidecar process: {error}"))
+}
+
+fn read_log_tail(path: &Path, max_lines: usize) -> String {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return "<unavailable>".to_string();
+    };
+    let lines = content.lines().collect::<Vec<_>>();
+    let start = lines.len().saturating_sub(max_lines);
+    lines[start..].join("\\n")
 }
 
 fn health_ready(api_origin: &str) -> std::io::Result<bool> {
@@ -275,16 +334,19 @@ fn resolve_runtime_dir(app: &tauri::AppHandle) -> Result<PathBuf, Box<dyn std::e
             return Ok(PathBuf::from(value));
         }
     }
+    if !cfg!(debug_assertions) {
+        return Ok(app.path().app_data_dir()?);
+    }
     Ok(resolve_resource_root(app)?.join("data"))
 }
 
 fn resolve_backend_entry(resource_root: &Path) -> Result<PathBuf, String> {
     let candidates = [
-        resource_root.join("dist-api-desktop/index.cjs"),
+        resource_root.join("scripts/desktop/staged/dist-api-desktop/index.js"),
+        resource_root.join("scripts/desktop/staged/dist-api-desktop/index.cjs"),
         resource_root.join("dist-api-desktop/index.js"),
+        resource_root.join("dist-api-desktop/index.cjs"),
         resource_root.join("dist-api/index.js"),
-        resource_root.join("staged/dist-api-desktop/index.cjs"),
-        resource_root.join("staged/dist-api-desktop/index.js"),
     ];
     candidates
         .into_iter()

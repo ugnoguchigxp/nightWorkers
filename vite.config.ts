@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
 const devReloadDirs = [path.resolve(__dirname, './api'), path.resolve(__dirname, './src')];
+const desktopDev = process.env.NIGHTWORKERS_DESKTOP_DEV === '1';
 
 function isApiOrSrcPath(file: string) {
   const resolved = path.resolve(file);
@@ -36,7 +37,7 @@ export default defineConfig({
     strictPort: true,
     hmr: false,
     watch: {
-      ignored: (file) => !isApiOrSrcPath(file),
+      ignored: desktopDev ? ['**/*'] : (file) => !isApiOrSrcPath(file),
     },
     proxy: {
       '/api': {

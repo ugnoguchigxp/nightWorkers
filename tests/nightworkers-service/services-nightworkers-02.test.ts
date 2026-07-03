@@ -39,6 +39,8 @@ vi.mock('../../api/modules/nightworkers/nightworkers.repository', () => ({
   getImplementationQueueEntryForRun: vi.fn(),
   updateImplementationQueueEntry: vi.fn(),
   refreshImplementationQueueLeaseForRun: vi.fn(),
+  createTaskRunCommitRecord: vi.fn(),
+  getTaskRunCommitRecord: vi.fn(),
 }));
 
 vi.mock('../../api/routes/settings', () => ({
@@ -1170,5 +1172,56 @@ describe('NightWorkers service', () => {
       if (previousLimit === undefined) delete process.env.SESSION_QUEUE_MAX_CONCURRENCY;
       else process.env.SESSION_QUEUE_MAX_CONCURRENCY = previousLimit;
     }
+  });
+
+  it('waits for sessionQueueDrainPromise if queue drain is already in progress', async () => {
+    vi.mocked(repo.getRepository).mockResolvedValue({
+      id: 'repo-drain',
+      localPath: repoRoot,
+      queueEnabled: true,
+      maxConcurrentSessions: 1,
+      safetyPolicy: {},
+    } as never);
+    vi.mocked(repo.countActiveTaskRuns).mockResolvedValue(0);
+
+    vi.mocked(repo.claimNextQueuedTask).mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return null;
+    });
+
+    const [started1, started2] = await Promise.all([
+      runSessionQueueForRepository('repo-drain'),
+      runSessionQueueForRepository('repo-drain'),
+    ]);
+
+    expect(started1).toHaveLength(0);
+    expect(started2).toHaveLength(0);
+  });
+
+  it('fails task status and logs message if startTaskRun fails inside claim next task', async () => {
+    vi.mocked(repo.getRepository).mockResolvedValue({
+      id: 'repo-fail-start',
+      localPath: repoRoot,
+      queueEnabled: true,
+      maxConcurrentSessions: 1,
+      safetyPolicy: {},
+    } as never);
+    vi.mocked(repo.countActiveTaskRuns).mockResolvedValue(0);
+    vi.mocked(repo.claimNextQueuedTask).mockResolvedValue({
+      id: 'task-fail-run',
+      repositoryId: 'repo-fail-start',
+    } as never);
+    vi.mocked(repo.getTask).mockRejectedValue(new Error('Mock startTaskRun failure'));
+
+    const started = await runSessionQueueForRepository('repo-fail-start');
+    expect(started).toHaveLength(0);
+    expect(repo.updateTaskStatus).toHaveBeenCalledWith('task-fail-run', 'failed');
+    expect(repo.createTaskMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'task-fail-run',
+        role: 'system',
+        content: expect.stringContaining('Session queue failed to start this task'),
+      })
+    );
   });
 });

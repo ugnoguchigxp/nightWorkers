@@ -624,7 +624,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       return;
     }
     if (openedQuestionnaireMessageIdsRef.current.has(latestQuestionnaireMessage.id)) return;
-    void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'questionnaire');
+    void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'status');
   }, [
     openQuestionnaireWorkspace,
     workspace.activeSession,

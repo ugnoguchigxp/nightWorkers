@@ -3,10 +3,7 @@ import type {
   DesignQuestionnaireAnswer,
 } from '../../../shared/schemas/design-questionnaire.schema';
 import type { PlanModeWorkspace } from '../../../shared/schemas/plan-mode-artifact.schema';
-import {
-  getAnswerableSessionQuestions,
-  getSessionQuestions,
-} from '../questionnaire/questionnaire-parser.service';
+import { getSessionQuestions } from '../questionnaire/questionnaire-parser.service';
 
 type JsonRecord = Record<string, unknown>;
 type TaskMessageRow = { id: string; metadataJson?: unknown | null };
@@ -23,14 +20,6 @@ type QuestionnaireSessionLike = {
   id: string;
   questionSets: Array<{ questionnaire: DesignQuestionnaire | null }>;
   answers: QuestionnaireAnswerRow[];
-};
-
-type SpecificationDecision = {
-  question: string;
-  answer: string;
-  why: string;
-  section: string;
-  deferred: boolean;
 };
 
 export function buildSpecificationDocumentContext(input: {
@@ -237,73 +226,6 @@ function compactText(value: string, limit: number) {
   return `${text.slice(0, Math.max(0, limit - 1)).trim()}…`;
 }
 
-function _renderSpecificationDesignDocument(input: {
-  task: TaskLike;
-  session: QuestionnaireSessionLike | null;
-  workspace: PlanModeWorkspace;
-  messages: TaskMessageRow[];
-}) {
-  const latestBlueprint = findLatestBlueprintMessage(input.messages, 'blueprint');
-  const latestDataModel = findLatestDataModelMessage(input.messages);
-  const blueprint = getMessageBlueprint(latestBlueprint);
-  const dataModelArtifact = getMessageDataModelArtifact(latestDataModel);
-  const decisionRows = input.session ? collectQuestionnaireDecisions(input.session) : [];
-  const screens = toRecordArray(blueprint?.screens);
-  const implementationTasks = toRecordArray(blueprint?.implementationTasks);
-  const dataSource = dataModelArtifact || blueprint;
-  const tables = dataModelArtifact
-    ? toRecordArray(dataModelArtifact.derivedTables)
-    : toRecordArray(isRecord(dataSource?.databaseSchema) ? dataSource.databaseSchema.tables : []);
-  const relations = dataModelArtifact
-    ? toRecordArray(dataModelArtifact.relations)
-    : toRecordArray(
-        isRecord(dataSource?.databaseSchema) ? dataSource.databaseSchema.relations : []
-      );
-  const bindings = dataModelArtifact ? [] : toRecordArray(dataSource?.dataBindings);
-  return [
-    `# ${input.task.title || 'Specification'}`,
-    '',
-    '## 1. 目的',
-    renderSpecificationPurpose(input.task, blueprint),
-    '',
-    '## 2. 決定済みスコープ',
-    renderDecisionSummary(decisionRows),
-    '',
-    '## 3. 画面仕様',
-    renderScreenSpecification(screens),
-    '',
-    '## 4. 機能要件',
-    renderFunctionalRequirements(screens, implementationTasks),
-    '',
-    '## 5. データ/API 方針',
-    renderDataSpecification({
-      tables,
-      relations,
-      bindings,
-      hasDataModel: Boolean(latestDataModel),
-    }),
-    '',
-    '## 6. 非対象・後続判断',
-    renderOutOfScope(decisionRows, Boolean(latestDataModel)),
-    '',
-    '## 7. 受け入れ条件',
-    renderAcceptanceCriteria(screens, decisionRows),
-    '',
-    '## 8. トレーサビリティ',
-    renderTraceability({
-      session: input.session,
-      workspace: input.workspace,
-      latestBlueprint,
-      latestDataModel,
-    }),
-    '',
-    '## Appendix. Questionnaire Decisions',
-    input.session
-      ? renderQuestionnaireAnswerMarkdown(input.session)
-      : '- Questionnaire は未生成です。',
-  ].join('\n');
-}
-
 function findLatestBlueprintMessage(messages: TaskMessageRow[], kind: 'blueprint') {
   return [...messages].reverse().find((message) => {
     const metadata = isRecord(message.metadataJson) ? message.metadataJson : {};
@@ -352,182 +274,6 @@ function toRecordArray(value: unknown): JsonRecord[] {
   return Array.isArray(value) ? value.filter(isRecord) : [];
 }
 
-function collectQuestionnaireDecisions(session: QuestionnaireSessionLike): SpecificationDecision[] {
-  const answerByQuestionId = new Map(session.answers.map((item) => [item.questionId, item]));
-  return toRecordArray(getSessionQuestions(session)).map((question) => {
-    const answer = answerByQuestionId.get(String(question.id));
-    return {
-      question: String(question.question || question.text || question.id),
-      answer: renderQuestionnaireAnswer(question, answer?.answer),
-      why: typeof question.why === 'string' ? question.why : '',
-      section: typeof question.outputSection === 'string' ? question.outputSection : '',
-      deferred: Boolean(answer?.answer?.deferred),
-    };
-  });
-}
-
-function renderSpecificationPurpose(task: TaskLike, blueprint: JsonRecord | null) {
-  const lines = [
-    task.description ? `- 背景: ${task.description}` : null,
-    task.objective ? `- 目的: ${task.objective}` : null,
-    blueprint?.description ? `- 画面方針: ${blueprint.description}` : null,
-    blueprint?.name ? `- 対象 Blueprint: ${blueprint.name}` : null,
-  ].filter(Boolean);
-  return lines.length > 0
-    ? lines.join('\n')
-    : '- 実装前に確定した質問回答と Blueprint をもとに、初期実装の仕様を定義する。';
-}
-
-function renderDecisionSummary(decisions: SpecificationDecision[]) {
-  const answered = decisions.filter((decision) => decision.answer !== '未回答');
-  if (answered.length === 0) return '- まだ仕様判断は記録されていない。';
-  return answered
-    .flatMap((decision, index) => [
-      `### 2.${index + 1}. ${decision.question}`,
-      `- 決定: ${decision.answer}`,
-      decision.deferred ? '- 状態: 後続判断' : '- 状態: 確定',
-    ])
-    .join('\n');
-}
-
-function renderScreenSpecification(screens: JsonRecord[]) {
-  if (screens.length === 0) return '- Blueprint が未生成のため、画面仕様は未定義。';
-  return screens
-    .map((screen, screenIndex) => {
-      const sections = toRecordArray(screen.sections);
-      return [
-        `### 3.${screenIndex + 1}. ${String(screen.name || screen.id || `Screen ${screenIndex + 1}`)}`,
-        `- パス: ${String(screen.path || '/')}`,
-        `- 画面種別: ${String(screen.componentName || 'Page')}`,
-        sections.length > 0 ? '- セクション:' : '- セクション: 未定義',
-        ...sections.map((section, sectionIndex) => {
-          const props = isRecord(section.props) ? section.props : {};
-          const label = String(
-            section.name || section.title || section.id || `Section ${sectionIndex + 1}`
-          );
-          const component = String(section.componentName || 'Section');
-          const description = String(
-            props.description || section.visualIntent || section.intent || ''
-          ).trim();
-          return `  - ${label}: ${component}${description ? `。${description}` : ''}`;
-        }),
-      ].join('\n');
-    })
-    .join('\n\n');
-}
-
-function renderFunctionalRequirements(screens: JsonRecord[], implementationTasks: JsonRecord[]) {
-  const sectionRequirements = screens.flatMap((screen) =>
-    toRecordArray(screen.sections).map((section) => {
-      const props = isRecord(section.props) ? section.props : {};
-      const title = String(section.name || props.title || section.id || 'Section');
-      const component = String(section.componentName || 'Section');
-      const description = String(
-        props.description || section.intent || section.visualIntent || ''
-      ).trim();
-      return `- ${title} を ${component} として実装し、${description || '画面目的に沿った表示と操作を提供する。'}`;
-    })
-  );
-  const taskRequirements = implementationTasks.map((task) => {
-    const title = String(task.title || task.id || 'Implementation task');
-    const description = String(task.description || '').trim();
-    return `- ${title}${description ? `: ${description}` : ''}`;
-  });
-  const requirements = [...sectionRequirements, ...taskRequirements];
-  return requirements.length > 0 ? requirements.join('\n') : '- Blueprint の機能要件は未生成。';
-}
-
-function renderDataSpecification(input: {
-  tables: JsonRecord[];
-  relations: JsonRecord[];
-  bindings: JsonRecord[];
-  hasDataModel: boolean;
-}) {
-  if (input.tables.length === 0 && input.bindings.length === 0) {
-    return input.hasDataModel
-      ? '- Data Model は生成済みだが、table / binding はまだ定義されていない。'
-      : '- Data Model は未生成。現時点では Blueprint の画面仕様を優先し、物理 DB / DDL / migration は確定しない。';
-  }
-  const lines = [
-    input.hasDataModel
-      ? '- Data Model artifact の内容をデータ方針として採用する。'
-      : '- Blueprint 内の暫定 data schema を参考情報として扱う。Data Model で確定する。',
-  ];
-  if (input.tables.length > 0) {
-    lines.push('- Tables:');
-    lines.push(
-      ...input.tables.map((table) => {
-        const columns = toRecordArray(table.columns)
-          .map((column) => String(column.name || column.key || column.label || '').trim())
-          .filter(Boolean);
-        return `  - ${String(table.label || table.name || 'table')}${columns.length ? `: ${columns.join(', ')}` : ''}`;
-      })
-    );
-  }
-  if (input.relations.length > 0) lines.push(`- Relations: ${input.relations.length} 件`);
-  if (input.bindings.length > 0) {
-    lines.push('- UI Bindings:');
-    lines.push(
-      ...input.bindings.map((binding) => {
-        const fields = Array.isArray(binding.fields) ? binding.fields.join(', ') : '';
-        return `  - ${String(binding.name || binding.id || 'binding')}${fields ? `: ${fields}` : ''}`;
-      })
-    );
-  }
-  return lines.join('\n');
-}
-
-function renderOutOfScope(decisions: SpecificationDecision[], hasDataModel: boolean) {
-  const deferred = decisions.filter((decision) => decision.deferred);
-  const lines = [
-    hasDataModel
-      ? null
-      : '- DB の物理設計、DDL、migration、詳細な relation 設計は Data Model 生成後に確定する。',
-    ...deferred.map((decision) => `- 後続判断: ${decision.question}`),
-  ].filter(Boolean);
-  return lines.length > 0 ? lines.join('\n') : '- 現時点で明示的な非対象事項はない。';
-}
-
-function renderAcceptanceCriteria(screens: JsonRecord[], decisions: SpecificationDecision[]) {
-  const criteria = [
-    decisions.length > 0
-      ? '- Questionnaire の回答内容が画面構成と機能範囲に反映されていること。'
-      : null,
-    screens.length > 0
-      ? '- Blueprint に定義された主要画面とセクションが実装計画に落とせる粒度で説明されていること。'
-      : null,
-    '- 仕様書だけを読んで、初期実装の対象・非対象・後続判断が区別できること。',
-  ].filter(Boolean);
-  return criteria.join('\n');
-}
-
-function renderTraceability(input: {
-  session: QuestionnaireSessionLike | null;
-  workspace: PlanModeWorkspace;
-  latestBlueprint: TaskMessageRow | undefined;
-  latestDataModel: TaskMessageRow | undefined;
-}) {
-  return [
-    input.session
-      ? `- Questionnaire session: ${input.session.id}`
-      : '- Questionnaire session: 未生成',
-    input.session
-      ? `- Questionnaire: ${input.session.answers.length}/${getAnswerableSessionQuestions(input.session, input.session.answers).length}`
-      : '- Questionnaire: 未生成',
-    `- Blueprint artifacts: ${input.workspace.blueprintArtifacts.length}`,
-    input.latestBlueprint
-      ? `- Blueprint source message: ${input.latestBlueprint.id}`
-      : '- Blueprint source message: 未生成',
-    `- Data Model artifacts: ${input.workspace.dataModelArtifacts.length}`,
-    input.latestDataModel
-      ? `- Data Model source message: ${input.latestDataModel.id}`
-      : '- Data Model source message: 未生成',
-    '',
-  ]
-    .filter((line) => line !== '')
-    .join('\n');
-}
-
 export function renderQuestionnaireAnswerMarkdown(session: QuestionnaireSessionLike) {
   const answerByQuestionId = new Map(session.answers.map((item) => [item.questionId, item]));
   const lines: string[] = [];
@@ -555,7 +301,10 @@ function renderQuestionnaireAnswer(
       String(option.label || option.id),
     ])
   );
-  const selected = [...answer.selectedOptionIds, ...answer.rankedOptionIds]
+  const selected = [
+    ...(Array.isArray(answer.selectedOptionIds) ? answer.selectedOptionIds : []),
+    ...(Array.isArray(answer.rankedOptionIds) ? answer.rankedOptionIds : []),
+  ]
     .map((id) => options.get(id) || id)
     .filter(Boolean);
   return selected.length > 0 ? selected.join(', ') : '未回答';

@@ -128,7 +128,8 @@
   background-color: color-mix(in srgb, var(--nw-primary) 16%, var(--nw-surface));
 }
 
-.nightworkers-settings-button {
+.nightworkers-settings-button,
+.nightworkers-blueprint-showcase-button {
   background: var(--nw-panel);
   border-color: var(--nw-border);
   border-radius: var(--nw-control-radius);
@@ -139,6 +140,11 @@
 .nightworkers-settings-button:hover {
   background: var(--nw-surface-soft);
   color: var(--nw-primary);
+}
+
+.nightworkers-blueprint-showcase-button:hover {
+  background: var(--nw-surface-soft);
+  color: var(--nw-text);
 }
 
 .nightworkers-composer {
@@ -374,12 +380,23 @@
   color: var(--nw-muted-text);
 }
 
-.nightworkers-shell .nightworkers-settings-button {
+.nightworkers-shell .nightworkers-settings-button,
+.nightworkers-shell .nightworkers-blueprint-showcase-button {
   background: var(--nw-panel);
   border-color: var(--nw-border);
   border-radius: var(--nw-control-radius);
   color: var(--nw-text);
   box-shadow: var(--nw-shadow);
+}
+
+.nightworkers-shell .nightworkers-settings-button:hover {
+  background: var(--nw-surface-soft);
+  color: var(--nw-primary);
+}
+
+.nightworkers-shell .nightworkers-blueprint-showcase-button:hover {
+  background: var(--nw-surface-soft);
+  color: var(--nw-text);
 }
 
 .nightworkers-shell .nightworkers-composer {

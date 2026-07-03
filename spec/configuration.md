@@ -31,7 +31,9 @@ Desktop shell startup diagnostics are written to `desktop.log`, bundled Node
 sidecar stdout/stderr is written to `sidecar.log`, and API events are written to
 `api.log`.
 Development mode keeps the existing repo-local defaults, including `api/.runtime`
-and `logs`; desktop sidecar mode uses `data` by default.
+and `logs`; desktop sidecar mode stores state under
+`${NIGHTWORKERS_RUNTIME_DIR}`, defaulting to `${NIGHTWORKERS_RESOURCE_DIR}/data`
+when no override is set.
 
 Runtime hygiene:
 
@@ -189,7 +191,12 @@ bun run desktop:smoke
 `bun run desktop:build` produces a macOS `.app`. `bun run desktop:smoke` launches that
 app and checks the sidecar health endpoint, overview endpoint, implementation
 queue endpoint, WebSocket startup, desktop/sidecar log output, and shutdown.
-`bun run verify` includes this desktop gate. `bun run desktop:build:dmg` is kept as a
-separate release gate because DMG creation can fail on local mount/Finder state.
+`bun run verify` includes desktop runtime tests, Rust lint, desktop build,
+staged sidecar smoke, and packaged app smoke. `bun run desktop:smoke` can also
+be run directly when rechecking release/adoption readiness without rerunning the
+full default gate. `bun run verify:full` adds `bun run test run` after the
+default gate; that command is the full non-E2E/non-live Vitest suite selected by
+`vitest.config.ts`. `bun run desktop:build:dmg` is kept as a separate release
+gate because DMG creation can fail on local mount/Finder state.
 `bun run desktop:sign` requires `NIGHTWORKERS_DESKTOP_APP_PATH` and
 `APPLE_DEVELOPER_ID_APPLICATION`.

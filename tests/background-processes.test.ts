@@ -5,6 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ensureNightWorkersSchema } from '../api/db/bootstrap';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import {
+  getTaskBackgroundProcess,
   listTaskActivityEvents,
   listTaskBackgroundProcesses,
   startTaskBackgroundProcess,
@@ -53,6 +54,12 @@ describe('background processes', () => {
     const listed = await listTaskBackgroundProcesses({ taskId: task.id });
     expect(listed.map((item) => item.id)).toContain(processRecord.id);
 
+    const retrieved = await getTaskBackgroundProcess(processRecord.id);
+    expect(retrieved).toMatchObject({
+      id: processRecord.id,
+      command: 'tail -f server.log',
+    });
+
     const stopped = await stopTaskBackgroundProcess(processRecord.id);
     expect(stopped).toMatchObject({
       id: processRecord.id,
@@ -69,5 +76,76 @@ describe('background processes', () => {
       status: 'stopped',
       workRecordCard: { executionMode: 'background' },
     });
+  });
+
+  it('throws NotFoundError when entity is not found in resolveRepoRoot', async () => {
+    await expect(
+      startTaskBackgroundProcess({
+        repositoryId: 'non-existent-repo',
+        command: 'tail -f server.log',
+      })
+    ).rejects.toThrow('Repository not found');
+
+    await expect(
+      startTaskBackgroundProcess({
+        taskId: 'non-existent-task',
+        command: 'tail -f server.log',
+      })
+    ).rejects.toThrow('Task not found');
+
+    await expect(
+      startTaskBackgroundProcess({
+        runId: 'non-existent-run',
+        command: 'tail -f server.log',
+      })
+    ).rejects.toThrow('Run not found');
+
+    await expect(
+      startTaskBackgroundProcess({
+        command: 'tail -f server.log',
+      })
+    ).rejects.toThrow('Repository not found');
+  });
+
+  it('handles runId resolution variants in resolveRepoRoot', async () => {
+    const project = await repo.createRepository({
+      name: `TEST: runId project ${crypto.randomUUID()}`,
+      localPath: dummyRepoDir,
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: project.id,
+      title: 'TEST: runId task',
+      status: 'running',
+    });
+
+    const runWithRepo = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: project.id,
+      status: 'running',
+    });
+    const process1 = await startTaskBackgroundProcess({
+      runId: runWithRepo.id,
+      command: 'tail -f server.log',
+    });
+    expect(process1.repositoryId).toBe(project.id);
+    await stopTaskBackgroundProcess(process1.id);
+
+    const runWithoutRepo = await repo.createTaskRun({
+      taskId: task.id,
+      status: 'running',
+    });
+    const process2 = await startTaskBackgroundProcess({
+      runId: runWithoutRepo.id,
+      command: 'tail -f server.log',
+    });
+    expect(process2.repositoryId).toBe(project.id);
+    await stopTaskBackgroundProcess(process2.id);
+  });
+
+  it('throws NotFoundError for non-existent background processes', async () => {
+    await expect(stopTaskBackgroundProcess('non-existent-proc')).rejects.toThrow(
+      'Background process not found'
+    );
   });
 });

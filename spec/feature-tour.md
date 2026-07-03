@@ -228,4 +228,5 @@ Evidence it creates:
 
 Current limits:
 - DMG creation and signing are separate release gates.
-- Desktop state is local to repo-local `data` by default.
+- Desktop state is local to the resolved runtime directory; set
+  `NIGHTWORKERS_RUNTIME_DIR` to override it.

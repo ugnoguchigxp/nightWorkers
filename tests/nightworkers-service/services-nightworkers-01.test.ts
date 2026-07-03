@@ -47,6 +47,9 @@ vi.mock('../../api/modules/nightworkers/nightworkers.repository', () => ({
   createTaskMessage: vi.fn(),
   getImplementationQueueEntryForRun: vi.fn(),
   updateImplementationQueueEntry: vi.fn(),
+  createTaskRunCommitRecord: vi.fn(),
+  getTaskRunCommitRecord: vi.fn(),
+  refreshImplementationQueueLeaseForRun: vi.fn(),
 }));
 
 vi.mock('../../api/routes/settings', () => ({
@@ -441,6 +444,37 @@ describe('NightWorkers service', () => {
   });
 
   it('creates role handoff and working context events before starting native runtime', async () => {
+    process.env.IMPLEMENTATION_RUNTIME_LANE = 'native-api-runner';
+    const previousSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    const settingsPath = path.join(repoRoot, 'llm-route-role-context-test.json');
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = settingsPath;
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        ACTIVE_LLM_PROVIDER: 'azure',
+        providerEndpoints: [
+          {
+            id: 'local-implementation',
+            name: 'Local Implementation',
+            kind: 'local',
+            enabled: true,
+            baseUrl: 'http://localhost:11434/v1',
+            models: ['qwen3-coder'],
+          },
+        ],
+        roleRoutes: [
+          {
+            role: 'implementation',
+            primary: {
+              providerEndpointId: 'local-implementation',
+              model: 'qwen3-coder',
+            },
+            fallbacks: [],
+          },
+        ],
+      })
+    );
+
     const task = {
       id: 'task-role-context',
       repositoryId: 'repo-role-context',
@@ -505,68 +539,79 @@ describe('NightWorkers service', () => {
       stop: vi.fn(),
     } as never);
 
-    await startTaskRun(task.id);
+    try {
+      await startTaskRun(task.id);
 
-    expect(repo.createRunEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'context.handoff_created',
-        actor: 'runtime',
-        data: expect.objectContaining({
-          artifact: expect.objectContaining({
-            runId: run.id,
-            taskId: task.id,
-            currentTodo: expect.objectContaining({ id: runningTodo.id }),
-            designReferences: expect.arrayContaining([
-              expect.objectContaining({ path: 'spec/role-owned-context-compaction-plan.md' }),
-            ]),
-          }),
-        }),
-      })
-    );
-    expect(repo.createRunEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'context.working_context_created',
-        actor: 'runtime',
-        data: expect.objectContaining({
-          artifact: expect.objectContaining({
-            currentTodo: expect.objectContaining({ id: runningTodo.id }),
-            source: 'deterministic',
-          }),
-        }),
-      })
-    );
-    expect(repo.updateTaskRun).toHaveBeenCalledWith(
-      run.id,
-      expect.objectContaining({
-        status: 'running',
-        contextSnapshot: expect.objectContaining({
-          roleContext: expect.objectContaining({
-            source: 'deterministic',
-            handoff: expect.objectContaining({ eventSeq: expect.any(Number) }),
-            workingContext: expect.objectContaining({
-              eventSeq: expect.any(Number),
-              renderedText: expect.stringContaining('<ROLE_WORKING_CONTEXT version="1"'),
+      expect(repo.createRunEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'context.handoff_created',
+          actor: 'runtime',
+          data: expect.objectContaining({
+            artifact: expect.objectContaining({
+              runId: run.id,
+              taskId: task.id,
+              currentTodo: expect.objectContaining({ id: runningTodo.id }),
+              designReferences: expect.arrayContaining([
+                expect.objectContaining({ path: 'spec/role-owned-context-compaction-plan.md' }),
+              ]),
             }),
           }),
-        }),
-      })
-    );
-    await vi.waitFor(() => {
-      expect(runtimeStart).toHaveBeenCalledWith(
+        })
+      );
+      expect(repo.createRunEvent).toHaveBeenCalledWith(
         expect.objectContaining({
+          type: 'context.working_context_created',
+          actor: 'runtime',
+          data: expect.objectContaining({
+            artifact: expect.objectContaining({
+              currentTodo: expect.objectContaining({ id: runningTodo.id }),
+              source: 'deterministic',
+            }),
+          }),
+        })
+      );
+      expect(repo.updateTaskRun).toHaveBeenCalledWith(
+        run.id,
+        expect.objectContaining({
+          status: 'running',
           contextSnapshot: expect.objectContaining({
             roleContext: expect.objectContaining({
+              source: 'deterministic',
+              handoff: expect.objectContaining({ eventSeq: expect.any(Number) }),
               workingContext: expect.objectContaining({
-                renderedText: expect.stringContaining(
-                  'designReference path=spec/role-owned-context-compaction-plan.md'
-                ),
+                eventSeq: expect.any(Number),
+                renderedText: expect.stringContaining('<ROLE_WORKING_CONTEXT version="1"'),
               }),
             }),
           }),
-        }),
-        expect.anything()
+        })
       );
-    });
+      await vi.waitFor(() => {
+        expect(runtimeStart).toHaveBeenCalledWith(
+          expect.objectContaining({
+            contextSnapshot: expect.objectContaining({
+              roleContext: expect.objectContaining({
+                workingContext: expect.objectContaining({
+                  renderedText: expect.stringContaining(
+                    'designReference path=spec/role-owned-context-compaction-plan.md'
+                  ),
+                }),
+              }),
+            }),
+          }),
+          expect.anything()
+        );
+      });
+    } finally {
+      if (previousSettingsPath === undefined) {
+        delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      } else {
+        process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = previousSettingsPath;
+      }
+      try {
+        fs.unlinkSync(settingsPath);
+      } catch {}
+    }
   });
 
   it('does not create role context events for codex-sdk runs', async () => {

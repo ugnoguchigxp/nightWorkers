@@ -41,8 +41,9 @@ Node sidecar startup, health readiness, and shutdown. The backend still owns
 Hono routes, SQLite/libSQL, supervisor/worker execution, MCP, hooks, and Codex
 SDK integration.
 
-Writable desktop state is rooted at `NIGHTWORKERS_RUNTIME_DIR`, which Tauri sets
-to the repo-local `data` directory by default. Bundled readonly resources are rooted at
+Writable desktop state is rooted at `NIGHTWORKERS_RUNTIME_DIR` when that
+environment variable is set; otherwise the Tauri sidecar resolves it from the
+desktop resource root. Bundled readonly resources are rooted at
 `NIGHTWORKERS_RESOURCE_DIR`, which points to the packaged resource directory.
 Registered Project work still uses the Project repo root and must not use the
 Tauri temporary/resource directory as a workspace.

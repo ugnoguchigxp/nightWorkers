@@ -494,3 +494,50 @@ function buildSnapshot(input: {
     limits: { tokenEstimate: 0, truncatedFields: [] },
   };
 }
+
+describe('loadConversationGitState edge cases', () => {
+  it('handles git errors, stat truncations, and status parsers', async () => {
+    // 1. Invalid git repo root to trigger runGit error catch block
+    const resultError = await loadConversationGitState({
+      repoRoot: '/non-existent-path-git-error',
+      targetPaths: ['test.txt'],
+    });
+    expect(resultError.errors.length).toBeGreaterThan(0);
+    expect(resultError.nameStatus).toEqual([]);
+
+    // Create a temporary git repository for testing parsers
+    const tempRepo = await mkdtemp(path.join(os.tmpdir(), 'git-state-test-'));
+    try {
+      await execFileAsync('git', ['init'], { cwd: tempRepo });
+
+      // Test status with added file
+      await writeFile(path.join(tempRepo, 'added.txt'), 'added');
+      const state1 = await loadConversationGitState({
+        repoRoot: tempRepo,
+        targetPaths: ['added.txt'],
+      });
+      expect(state1.nameStatus).toContainEqual({ path: 'added.txt', status: 'added' });
+
+      // Test status with modified file
+      await execFileAsync('git', ['add', 'added.txt'], { cwd: tempRepo });
+      await execFileAsync('git', ['commit', '-m', 'initial'], { cwd: tempRepo });
+      await writeFile(path.join(tempRepo, 'added.txt'), 'modified');
+      const state2 = await loadConversationGitState({
+        repoRoot: tempRepo,
+        targetPaths: ['added.txt'],
+      });
+      expect(state2.nameStatus).toContainEqual({ path: 'added.txt', status: 'modified' });
+
+      // Test renamed status (by git mv)
+      await execFileAsync('git', ['add', 'added.txt'], { cwd: tempRepo });
+      await execFileAsync('git', ['mv', 'added.txt', 'renamed.txt'], { cwd: tempRepo });
+      const state3 = await loadConversationGitState({
+        repoRoot: tempRepo,
+        targetPaths: ['renamed.txt'],
+      });
+      expect(state3.nameStatus).toContainEqual({ path: 'renamed.txt', status: 'added' });
+    } finally {
+      await rm(tempRepo, { recursive: true, force: true });
+    }
+  });
+});

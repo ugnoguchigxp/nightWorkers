@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => {
     listActivityArtifactsForTask: vi.fn(),
     listTaskRunsForTask: vi.fn(),
     getRepository: vi.fn(),
+    getTaskRunCommitRecord: vi.fn(),
     nativeLocalRunner: {
       getStatus: vi.fn(),
     },
@@ -38,6 +39,7 @@ vi.mock('@api/modules/nightworkers/nightworkers.repository', () => ({
   listActivityArtifactsForTask: mocks.listActivityArtifactsForTask,
   listTaskRunsForTask: mocks.listTaskRunsForTask,
   getRepository: mocks.getRepository,
+  getTaskRunCommitRecord: mocks.getTaskRunCommitRecord,
 }));
 
 vi.mock('@api/services/runner/NativeLocalRunner', () => ({
