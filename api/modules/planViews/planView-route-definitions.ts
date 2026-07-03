@@ -29,7 +29,7 @@ export const generatePlanViewRoute = createRoute({
   responses: {
     200: {
       content: { 'application/json': { schema: z.unknown() } },
-      description: 'Generic dedicated design view generated',
+      description: 'Generic Plan View generated',
     },
   },
 });

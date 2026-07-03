@@ -23,6 +23,7 @@ import {
 } from '../nightworkers/nightworkers.plan-mode-core.port';
 import { assertPlanModeCapabilityEnabled } from '../nightworkers/nightworkers.plan-mode-settings.service';
 import { isBlueprintMessage } from '../nightworkers/nightworkers.planning-helpers.service';
+import { resolvePlanModeProjectStackContext } from '../specification/plan-mode-project-stack-context';
 import * as repo from './questionnaire.repository';
 import {
   buildDesignQuestionnaireSessionView,
@@ -73,11 +74,13 @@ export async function createDesignQuestionnaire(
     ? (await getQuestionnaireTaskAndBlueprint(taskId, sourceBlueprintMessageId))
         .sourceBlueprintMessage
     : null;
+  const projectStackContext = await resolvePlanModeProjectStackContext(task.repositoryId);
   const rawOutput = await generateDesignQuestionnaireRawOutput({
     taskId,
     repositoryId: task.repositoryId,
     sourceBlueprintMessage,
     taskPrompt: sourcePrompt || task.objective || task.description || task.title,
+    projectStackContext,
     routeOverride: options.routeOverride || null,
   }).catch(async (error) => {
     const rawContent = (error as Error & { rawContent?: string }).rawContent;
@@ -369,6 +372,7 @@ async function generateDesignQuestionnaireRawOutput(input: {
   repositoryId: string;
   sourceBlueprintMessage: PlanModeTaskMessage | null;
   taskPrompt: string;
+  projectStackContext?: string | null;
   routeOverride?: StructuredLlmModelTarget | null;
 }) {
   return callStructuredJsonLLM(
@@ -385,9 +389,10 @@ async function generateDesignQuestionnaireRawOutput(input: {
 }
 
 async function generateDesignQuestionnaireFollowUpRawOutput(session: DesignQuestionnaireSession) {
+  const projectStackContext = await resolvePlanModeProjectStackContext(session.repositoryId);
   return callStructuredJsonLLM(
     buildDesignQuestionnaireSystemPrompt(),
-    buildDesignQuestionnaireFollowUpUserPrompt(session),
+    buildDesignQuestionnaireFollowUpUserPrompt(session, projectStackContext),
     {
       schemaName: 'design_questionnaire_follow_up',
       schema: questionnaireChoiceFormJsonSchema,
@@ -400,9 +405,10 @@ async function generateDesignQuestionnaireFollowUpRawOutput(session: DesignQuest
 async function generateDesignQuestionnaireFollowUpDecisionRawOutput(
   session: DesignQuestionnaireSession
 ) {
+  const projectStackContext = await resolvePlanModeProjectStackContext(session.repositoryId);
   return callStructuredJsonLLM(
     buildDesignQuestionnaireFollowUpDecisionSystemPrompt(),
-    buildDesignQuestionnaireFollowUpDecisionUserPrompt(session),
+    buildDesignQuestionnaireFollowUpDecisionUserPrompt(session, projectStackContext),
     {
       schemaName: 'design_questionnaire_follow_up_decision',
       schema: designQuestionnaireFollowUpDecisionJsonSchema,

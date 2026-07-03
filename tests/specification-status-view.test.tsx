@@ -2,9 +2,14 @@ import mermaid from 'mermaid';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  buildFlowchartFromMarkdown,
   buildMermaidErDiagram,
+  DedicatedViewPanel,
+  PLAN_MODE_SEQUENTIAL_AUTO_GENERATE_STORAGE_KEY,
   PlanWorkspaceStatusView,
+  readPlanModeSequentialAutoGeneratePreference,
   WorkspaceDataModelPanel,
+  writePlanModeSequentialAutoGeneratePreference,
 } from '../src/modules/planMode';
 
 describe('WorkspaceDataModelPanel', () => {
@@ -106,7 +111,138 @@ describe('WorkspaceDataModelPanel', () => {
   });
 });
 
+describe('DedicatedViewPanel', () => {
+  it('renders User Flow artifacts through the Mermaid diagram surface', () => {
+    const markup = renderToStaticMarkup(
+      <DedicatedViewPanel
+        artifact={
+          {
+            id: 'user-flow-1',
+            kind: 'user_flow',
+            title: 'Checkout User Flow',
+            sourceMessageId: '44444444-4444-4444-8444-444444447778',
+            createdAt: '2026-07-02T00:00:00.000Z',
+          } as never
+        }
+        message={
+          {
+            id: '44444444-4444-4444-8444-444444447778',
+            content:
+              '```mermaid\nflowchart TD\n  OpenCheckout[Open checkout] --> SubmitPayment[Submit payment]\n```',
+            metadataJson: {
+              artifactKind: 'plan_mode_dedicated_view',
+              view: 'user_flow',
+              diagramKind: 'flowchart',
+            },
+          } as never
+        }
+      />
+    );
+
+    expect(markup).toContain('Mermaid diagram');
+    expect(markup).toContain('Download Mermaid SVG');
+    expect(markup).toContain('flowchart TD');
+    expect(markup).toContain('OpenCheckout');
+    expect(markup).not.toContain('language-mermaid');
+  });
+
+  it('renders markdown-only User Flow artifacts as a Mermaid flowchart with notes', () => {
+    const markup = renderToStaticMarkup(
+      <DedicatedViewPanel
+        artifact={
+          {
+            id: 'user-flow-1',
+            kind: 'user_flow',
+            title: 'Checkout User Flow',
+            sourceMessageId: '44444444-4444-4444-8444-444444447778',
+            createdAt: '2026-07-02T00:00:00.000Z',
+          } as never
+        }
+        message={
+          {
+            id: '44444444-4444-4444-8444-444444447778',
+            content: '# Checkout User Flow\n\n1. Open checkout\n2. Submit payment',
+            metadataJson: {
+              artifactKind: 'plan_mode_dedicated_view',
+              view: 'user_flow',
+            },
+          } as never
+        }
+      />
+    );
+
+    expect(markup).toContain('Mermaid diagram');
+    expect(markup).toContain('flowchart TD');
+    expect(markup).toContain('step1');
+    expect(markup).toContain('Open checkout');
+    expect(markup).toContain('Submit payment');
+    expect(markup).toContain('step1 --&gt; step2');
+  });
+
+  it('does not build User Flow fallback charts from implementation-only Markdown', () => {
+    const chart = buildFlowchartFromMarkdown(
+      [
+        '# User Flow',
+        '1. 画面を開く',
+        '2. `styles.css` で共通の余白、見出し間隔、ボタン優先度を調整する',
+      ].join('\n'),
+      'user_flow'
+    );
+
+    expect(chart).toBeNull();
+  });
+
+  it('builds meaningful User Flow fallback charts from user-visible Markdown', () => {
+    const chart = buildFlowchartFromMarkdown(
+      ['# User Flow', '1. Checkout を開く', '2. 支払い内容を確認する', '3. 注文を送信する'].join(
+        '\n'
+      ),
+      'user_flow'
+    );
+
+    expect(chart).toContain('Checkout を開く');
+    expect(chart).toContain('支払い内容を確認する');
+    expect(chart).toContain('step1 --> step2');
+  });
+});
+
 describe('PlanWorkspaceStatusView', () => {
+  it('persists the sequential auto-generate preference in localStorage', () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    } as Storage;
+
+    expect(readPlanModeSequentialAutoGeneratePreference(storage)).toBe(false);
+    writePlanModeSequentialAutoGeneratePreference(true, storage);
+    expect(values.get(PLAN_MODE_SEQUENTIAL_AUTO_GENERATE_STORAGE_KEY)).toBe('true');
+    expect(readPlanModeSequentialAutoGeneratePreference(storage)).toBe(true);
+    writePlanModeSequentialAutoGeneratePreference(false, storage);
+    expect(values.get(PLAN_MODE_SEQUENTIAL_AUTO_GENERATE_STORAGE_KEY)).toBe('false');
+    expect(readPlanModeSequentialAutoGeneratePreference(storage)).toBe(false);
+  });
+
+  it('shows the sequential auto-generate checkbox on Status', () => {
+    const markup = renderToStaticMarkup(
+      <PlanWorkspaceStatusView
+        workspace={null}
+        questionnaireSession={null}
+        busyAction={null}
+        canGenerateDataModel={true}
+        hasFeaturePlan={false}
+        onOpenQuestionnaire={vi.fn()}
+        onGenerateBlueprint={vi.fn()}
+        onGenerateDataModel={vi.fn()}
+        onGenerateFeaturePlan={vi.fn()}
+        onGenerateDedicatedViews={vi.fn()}
+      />
+    );
+
+    expect(markup).toContain('type="checkbox"');
+    expect(markup).toContain('順次自動生成');
+  });
+
   it('shows separate start-now and add-to-queue actions after the status flow is complete', () => {
     const markup = renderToStaticMarkup(
       <PlanWorkspaceStatusView
@@ -279,6 +415,82 @@ describe('PlanWorkspaceStatusView', () => {
     expect(markup).toMatch(/<button[^>]*>Data Model作成<\/button>/);
   });
 
+  it('hides stale Blueprint artifacts when routing omits Frontend UI work', () => {
+    const markup = renderToStaticMarkup(
+      <PlanWorkspaceStatusView
+        workspace={
+          {
+            blueprintArtifacts: [{ id: 'blueprint-1', title: 'Prior Blueprint' }],
+            dataModelArtifacts: [],
+            dedicatedViewArtifacts: [],
+          } as never
+        }
+        questionnaireSession={
+          {
+            id: 'questionnaire-1',
+            status: 'accepted',
+            answers: [],
+            questionSets: [],
+          } as never
+        }
+        busyAction={null}
+        canGenerateDataModel={true}
+        hasFeaturePlan={false}
+        viewDecisions={[
+          { view: 'questionnaire', decision: 'omit', reason: 'not needed' },
+          { view: 'blueprint', decision: 'omit', reason: 'documentation only' },
+        ]}
+        onOpenQuestionnaire={vi.fn()}
+        onGenerateBlueprint={vi.fn()}
+        onGenerateDataModel={vi.fn()}
+        onGenerateFeaturePlan={vi.fn()}
+        onGenerateDedicatedViews={vi.fn()}
+      />
+    );
+
+    expect(markup).not.toContain('インスタントMockUpを作成し、大筋UIの方向性を決めます');
+    expect(markup).not.toContain('Blueprint作成');
+    expect(markup).not.toContain('Blueprintを再生成');
+    expect(markup).toContain('1. 仕様書を作成します');
+  });
+
+  it('does not show Blueprint or Data Model creation by default when routing decisions are missing', () => {
+    const markup = renderToStaticMarkup(
+      <PlanWorkspaceStatusView
+        workspace={
+          {
+            blueprintArtifacts: [],
+            dataModelArtifacts: [],
+            dedicatedViewArtifacts: [],
+          } as never
+        }
+        questionnaireSession={
+          {
+            id: 'questionnaire-1',
+            status: 'accepted',
+            answers: [],
+            questionSets: [],
+          } as never
+        }
+        busyAction={null}
+        canGenerateDataModel={true}
+        hasFeaturePlan={false}
+        onOpenQuestionnaire={vi.fn()}
+        onGenerateBlueprint={vi.fn()}
+        onGenerateDataModel={vi.fn()}
+        onGenerateFeaturePlan={vi.fn()}
+        onGenerateDedicatedViews={vi.fn()}
+      />
+    );
+
+    expect(markup).toContain('アンケートを確認');
+    expect(markup).toContain('仕様書作成');
+    expect(markup).not.toContain('Blueprint作成');
+    expect(markup).not.toContain('Data Model作成');
+    expect(markup).toContain('2. 仕様書を作成します');
+    expect(markup).not.toContain('3. 仕様書を作成します');
+  });
+
   it('allows included Blueprint work without forcing Questionnaire first', () => {
     const markup = renderToStaticMarkup(
       <PlanWorkspaceStatusView
@@ -304,7 +516,7 @@ describe('PlanWorkspaceStatusView', () => {
     expect(markup).toMatch(/<button[^>]*>Blueprint作成<\/button>/);
   });
 
-  it('shows a generation action for included additional dedicated views', () => {
+  it('shows separate generation actions for included plan views', () => {
     const markup = renderToStaticMarkup(
       <PlanWorkspaceStatusView
         workspace={
@@ -332,15 +544,60 @@ describe('PlanWorkspaceStatusView', () => {
       />
     );
 
-    expect(markup).toContain('0/2件の追加 view が生成済みです。');
-    expect(markup).toContain('追加Viewを生成');
-    expect(markup).toContain('1. 追加の dedicated design view を確認します');
-    expect(markup).toContain('2. 仕様書を作成します');
+    expect(markup).toContain('1. User Flowを作成します');
+    expect(markup).toContain('2. API / I/Oを作成します');
+    expect(markup).toContain('3. 仕様書を作成します');
+    expect(markup).toContain('User Flow作成');
+    expect(markup).toContain('API / I/O作成');
+    expect(markup).not.toContain('追加の Plan View');
+    expect(markup).not.toContain('追加Viewを生成');
     expect(markup).toContain('User Flow: include - flow changes');
     expect(markup).toContain('API / I/O: include - API changes');
   });
 
-  it('does not generate additional dedicated views disabled in Plan Mode settings', () => {
+  it('shows regeneration actions for generated plan views', () => {
+    const markup = renderToStaticMarkup(
+      <PlanWorkspaceStatusView
+        workspace={
+          {
+            blueprintArtifacts: [],
+            dataModelArtifacts: [],
+            dedicatedViewArtifacts: [
+              { id: 'user-flow-1', kind: 'user_flow', title: 'User Flow' },
+              { id: 'api-contract-1', kind: 'api_io_contract', title: 'API / I/O' },
+            ],
+          } as never
+        }
+        questionnaireSession={null}
+        busyAction={null}
+        canGenerateDataModel={true}
+        hasFeaturePlan={true}
+        viewDecisions={[
+          { view: 'questionnaire', decision: 'omit', reason: 'not needed' },
+          { view: 'blueprint', decision: 'omit', reason: 'no UI' },
+          { view: 'user_flow', decision: 'include', reason: 'flow changes' },
+          { view: 'api_io_contract', decision: 'include', reason: 'API changes' },
+        ]}
+        onOpenQuestionnaire={vi.fn()}
+        onGenerateBlueprint={vi.fn()}
+        onGenerateDataModel={vi.fn()}
+        onGenerateFeaturePlan={vi.fn()}
+        onGenerateDedicatedViews={vi.fn()}
+      />
+    );
+
+    expect(markup).toContain('User Flowが作成済みです。');
+    expect(markup).toContain('API / I/Oが作成済みです。');
+    expect(markup).toContain('User Flowを再生成');
+    expect(markup).toContain('API / I/Oを再生成');
+    expect(markup).not.toContain('生成状況を確認');
+    expect(markup).toMatch(/<button[^>]*>User Flowを再生成<\/button>/);
+    expect(markup).toMatch(/<button[^>]*>API \/ I\/Oを再生成<\/button>/);
+    expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>User Flowを再生成<\/button>/);
+    expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>API \/ I\/Oを再生成<\/button>/);
+  });
+
+  it('disables plan view actions disabled in Plan Mode settings', () => {
     const markup = renderToStaticMarkup(
       <PlanWorkspaceStatusView
         workspace={
@@ -380,8 +637,11 @@ describe('PlanWorkspaceStatusView', () => {
       />
     );
 
-    expect(markup).toContain('2件の追加 view はSettingsで無効です。');
-    expect(markup).toContain('Disabled in Settings: User Flow / API / I/O');
-    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>生成状況を確認<\/button>/);
+    expect(markup).toContain('1. User Flowを作成します');
+    expect(markup).toContain('2. API / I/Oを作成します');
+    expect(markup).toContain('Plan Mode capability is disabled in Settings.');
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>User Flow作成<\/button>/);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>API \/ I\/O作成<\/button>/);
+    expect(markup).not.toContain('生成状況を確認');
   });
 });

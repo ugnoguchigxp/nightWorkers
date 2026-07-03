@@ -56,7 +56,7 @@ function _summarizePlanModeWorkspace(workspace: PlanModeWorkspace) {
     `${workspace.featurePlanArtifacts.length} spec`,
     `${workspace.blueprintArtifacts.length} Blueprint`,
     `${workspace.dataModelArtifacts.length} Data Model`,
-    `${workspace.dedicatedViewArtifacts.length} Dedicated Views`,
+    `${workspace.dedicatedViewArtifacts.length} Plan Views`,
     `${workspace.questionnaireSessions.length} Questionnaire`,
     `${workspace.decisionReviews.length} Decision Review`,
     `${workspace.implementationReferences.length} Implementation`,

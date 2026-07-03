@@ -246,6 +246,45 @@ const workbenchPlanModeGateSchema = z
       .enum(['plan_mode', 'general_answer', 'implementation', 'review', 'runtime_debug'])
       .optional(),
     reason: z.string().min(1),
+    dedicatedViews: z
+      .array(
+        z
+          .object({
+            view: z.enum([
+              'questionnaire',
+              'user_flow',
+              'blueprint',
+              'data_model',
+              'api_io_contract',
+              'state_model',
+              'activity_flow',
+              'sequence_flow',
+              'zod_schema_design',
+            ]),
+            decision: z.enum(['include', 'omit']),
+            reason: z.string().min(1),
+          })
+          .strict()
+      )
+      .default([]),
+    specificationLenses: z
+      .array(
+        z.enum([
+          'target_users_or_actors',
+          'functional_requirements',
+          'business_rules',
+          'input_output',
+          'interface_contract',
+          'data_requirements',
+          'state_behavior',
+          'workflow_behavior',
+          'error_behavior',
+          'permission_boundary',
+          'compatibility',
+          'observability',
+        ])
+      )
+      .default([]),
   })
   .strict();
 
@@ -270,7 +309,13 @@ async function decideWorkbenchPlanModeGate(input: {
       schemaName: 'workbench_plan_mode_gate',
       schema: {
         type: 'object',
-        required: ['shouldStartPlanMode', 'action', 'reason'],
+        required: [
+          'shouldStartPlanMode',
+          'action',
+          'reason',
+          'dedicatedViews',
+          'specificationLenses',
+        ],
         additionalProperties: false,
         properties: {
           shouldStartPlanMode: { type: 'boolean' },
@@ -279,6 +324,52 @@ async function decideWorkbenchPlanModeGate(input: {
             enum: ['plan_mode', 'general_answer', 'implementation', 'review', 'runtime_debug'],
           },
           reason: { type: 'string' },
+          dedicatedViews: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['view', 'decision', 'reason'],
+              additionalProperties: false,
+              properties: {
+                view: {
+                  type: 'string',
+                  enum: [
+                    'questionnaire',
+                    'user_flow',
+                    'blueprint',
+                    'data_model',
+                    'api_io_contract',
+                    'state_model',
+                    'activity_flow',
+                    'sequence_flow',
+                    'zod_schema_design',
+                  ],
+                },
+                decision: { type: 'string', enum: ['include', 'omit'] },
+                reason: { type: 'string' },
+              },
+            },
+          },
+          specificationLenses: {
+            type: 'array',
+            items: {
+              type: 'string',
+              enum: [
+                'target_users_or_actors',
+                'functional_requirements',
+                'business_rules',
+                'input_output',
+                'interface_contract',
+                'data_requirements',
+                'state_behavior',
+                'workflow_behavior',
+                'error_behavior',
+                'permission_boundary',
+                'compatibility',
+                'observability',
+              ],
+            },
+          },
         },
       },
       routeOverride: input.routeOverride,
@@ -308,13 +399,15 @@ function buildWorkbenchPlanModeGatePrompt(projectRoot: string) {
     'コードレビュー、差分レビュー、品質レビューは shouldStartPlanMode=false かつ action="review" にしてください。',
     'ログ確認、原因調査、実行時状態の確認、テスト実行や検証依頼は shouldStartPlanMode=false かつ action="runtime_debug" にしてください。',
     '完了済みの Plan Mode artifact は証跡として扱い、後続の質問や変更依頼で再編集対象にしないでください。',
+    'Plan View は Plan Mode の表示メニュー用です。UI 変更がない場合は blueprint を omit、DB/永続化 schema 変更がない場合は data_model を omit してください。API 契約、状態、フロー、Zod schema など今回の仕様化に必要な view だけ include してください。',
+    'user_flow / state_model / activity_flow / sequence_flow は Mermaid 図として価値がある場合だけ include し、文章説明で足りる場合は omit して spec に任せてください。',
     '判断に迷う場合は shouldStartPlanMode=false かつ action="general_answer" にしてください。',
     'JSON のみを返してください。',
     '',
     `プロジェクトルート: ${projectRoot}`,
     '',
     '[Output Schema]',
-    '{ "shouldStartPlanMode": boolean, "action": "plan_mode" | "general_answer" | "implementation" | "review" | "runtime_debug", "reason": "short reason" }',
+    '{ "shouldStartPlanMode": boolean, "action": "plan_mode" | "general_answer" | "implementation" | "review" | "runtime_debug", "reason": "short reason", "dedicatedViews": [{ "view": "questionnaire|user_flow|blueprint|data_model|api_io_contract|state_model|activity_flow|sequence_flow|zod_schema_design", "decision": "include|omit", "reason": "short reason" }], "specificationLenses": ["target_users_or_actors|functional_requirements|business_rules|input_output|interface_contract|data_requirements|state_behavior|workflow_behavior|error_behavior|permission_boundary|compatibility|observability"] }',
   ].join('\n');
 }
 
@@ -434,6 +527,7 @@ async function handleWorkbenchIntakeMessage(
     });
     const effectivePlanModeGate = shouldPreferPlanModeForProjectEvaluationTask(task, messages)
       ? {
+          ...planModeGate,
           shouldStartPlanMode: true,
           action: 'plan_mode' as const,
           reason:

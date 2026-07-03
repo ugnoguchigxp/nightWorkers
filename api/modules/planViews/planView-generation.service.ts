@@ -1,3 +1,4 @@
+import mermaid from 'mermaid';
 import { z } from 'zod';
 import type { DedicatedDesignView } from '../../../shared/schemas/plan-mode-artifact.schema';
 import { AppError, NotFoundError } from '../../lib/errors';
@@ -17,8 +18,11 @@ import {
   type PlanModeTaskMessage,
 } from '../nightworkers/nightworkers.plan-mode-core.port';
 import { assertPlanModeCapabilityEnabled } from '../nightworkers/nightworkers.plan-mode-settings.service';
+import { resolvePlanModeProjectStackContext } from '../specification/plan-mode-project-stack-context';
 import { getPlanModeWorkspace } from '../specification/plan-mode-workspace.service';
 import { assertPlanModeMutable } from '../specification/specification-mutability';
+
+const PLAN_VIEW_MERMAID_MAX_ATTEMPTS = 3;
 
 export const genericPlanViewSchema = z.enum([
   'user_flow',
@@ -47,7 +51,7 @@ export async function generatePlanViewArtifact(
 ) {
   const parsedView = genericPlanViewSchema.safeParse(view);
   if (!parsedView.success) {
-    throw new AppError(422, 'UNSUPPORTED_PLAN_VIEW', `Unsupported generic dedicated view: ${view}`);
+    throw new AppError(422, 'UNSUPPORTED_PLAN_VIEW', `Unsupported generic plan view: ${view}`);
   }
   const task = await getPlanModeTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
@@ -64,10 +68,12 @@ export async function generatePlanViewArtifact(
     task.description ||
     task.title ||
     'No additional prompt.';
+  const projectStackContext = await resolvePlanModeProjectStackContext(task.repositoryId);
   const artifact = await generateArtifactFromLlm({
     view: parsedView.data,
     taskId,
     task: renderTaskContext(task),
+    projectStackContext,
     featurePlan: featurePlanMessage?.content || 'Feature Plan は未生成です。',
     questionnaire: input.questionnaireSessionId
       ? `Questionnaire session: ${input.questionnaireSessionId}`
@@ -113,17 +119,28 @@ export function parseGenericDedicatedViewOutput(
 ): GenericDedicatedViewArtifact {
   const parsed = parseRepairedJsonWithSchema(
     rawOutput,
-    z.object({
-      artifactKind: z.literal('plan_mode_dedicated_view'),
-      view: genericPlanViewSchema,
-      title: z.string().min(1),
-      markdown: z.string().min(1),
-      diagramKind: z.enum(['stateDiagram-v2', 'flowchart', 'sequenceDiagram']).optional(),
-    })
+    z
+      .object({
+        artifactKind: z.literal('plan_mode_dedicated_view'),
+        view: genericPlanViewSchema,
+        title: z.string().min(1),
+        markdown: z.string().min(1),
+        diagramKind: z
+          .enum(['stateDiagram-v2', 'flowchart', 'sequenceDiagram'])
+          .nullable()
+          .optional(),
+      })
+      .transform((artifact) => {
+        if (artifact.diagramKind === null) {
+          const { diagramKind: _diagramKind, ...normalized } = artifact;
+          return normalized;
+        }
+        return artifact;
+      })
   );
-  if (!parsed.ok) throw new Error('Dedicated view LLM output did not contain valid JSON.');
+  if (!parsed.ok) throw new Error('Plan view LLM output did not contain valid JSON.');
   if (parsed.value.view !== expectedView) {
-    throw new Error(`Dedicated view output used ${parsed.value.view}, expected ${expectedView}.`);
+    throw new Error(`Plan view output used ${parsed.value.view}, expected ${expectedView}.`);
   }
   validateDedicatedViewMarkdown(parsed.value);
   return parsed.value;
@@ -133,10 +150,21 @@ function validateDedicatedViewMarkdown(artifact: GenericDedicatedViewArtifact) {
   const lower = artifact.markdown.toLowerCase();
   const forbiddenDiagram = 'use' + 'case';
   if (lower.includes(`${forbiddenDiagram}diagram`) || lower.includes(forbiddenDiagram)) {
-    throw new Error('Unsupported diagram output is not allowed in Plan Mode dedicated views.');
+    throw new Error('Unsupported diagram output is not allowed in Plan Mode views.');
   }
   const expectedDiagramKind = diagramKindForView(artifact.view);
   if (!expectedDiagramKind) return;
+  if (requiresMermaidDiagram(artifact.view)) {
+    if (!artifact.markdown.includes('```mermaid')) {
+      throw new Error(`${artifact.view} must be rendered as a Mermaid diagram.`);
+    }
+    if (!artifact.diagramKind) {
+      throw new Error(`${artifact.view} Mermaid output must include diagramKind.`);
+    }
+    if (artifact.diagramKind !== expectedDiagramKind) {
+      throw new Error(`${artifact.view} must use ${expectedDiagramKind}.`);
+    }
+  }
   if (artifact.diagramKind && artifact.diagramKind !== expectedDiagramKind) {
     throw new Error(`${artifact.view} must use ${expectedDiagramKind}.`);
   }
@@ -152,10 +180,15 @@ function validateDedicatedViewMarkdown(artifact: GenericDedicatedViewArtifact) {
 }
 
 function diagramKindForView(view: GenericPlanView) {
+  if (view === 'user_flow') return 'flowchart' as const;
   if (view === 'state_model') return 'stateDiagram-v2' as const;
   if (view === 'activity_flow') return 'flowchart' as const;
   if (view === 'sequence_flow') return 'sequenceDiagram' as const;
   return null;
+}
+
+function requiresMermaidDiagram(view: GenericPlanView) {
+  return Boolean(diagramKindForView(view));
 }
 
 function resolveMessage(
@@ -174,6 +207,7 @@ async function generateArtifactFromLlm(input: {
   view: GenericPlanView;
   taskId: string;
   task: string;
+  projectStackContext: string;
   featurePlan: string;
   questionnaire: string;
   blueprint: string;
@@ -181,23 +215,145 @@ async function generateArtifactFromLlm(input: {
   prompt: string;
 }) {
   try {
-    const rawOutput = await callStructuredJsonLLM(
-      buildPlanDedicatedViewSystemPrompt(input.view),
-      buildPlanDedicatedViewUserPrompt(input),
-      {
-        schemaName: 'plan_mode_dedicated_view',
-        schema: genericDedicatedViewSchema,
-        taskId: input.taskId,
-        runId: null,
-        role: 'plan',
+    let repairContext: string | null = null;
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= PLAN_VIEW_MERMAID_MAX_ATTEMPTS; attempt += 1) {
+      const rawOutput = await callStructuredJsonLLM(
+        buildPlanDedicatedViewSystemPrompt(input.view),
+        buildPlanDedicatedViewUserPrompt({ ...input, repairContext }),
+        {
+          schemaName: 'plan_mode_dedicated_view',
+          schema: genericDedicatedViewSchema,
+          taskId: input.taskId,
+          runId: null,
+          role: 'plan',
+        }
+      );
+      try {
+        const artifact = normalizePlanViewMermaidArtifact(
+          parseGenericDedicatedViewOutput(rawOutput, input.view)
+        );
+        const mermaidError = await validatePlanViewMermaidArtifact(artifact);
+        if (!mermaidError) return artifact;
+        lastError = new Error(mermaidError.error);
+        repairContext = buildPlanViewMermaidRepairContext({
+          artifact,
+          chart: mermaidError.chart,
+          error: mermaidError.error,
+        });
+      } catch (err) {
+        lastError = err;
+        repairContext = buildPlanViewOutputRepairContext(rawOutput, err);
       }
-    );
-    return parseGenericDedicatedViewOutput(rawOutput, input.view);
+    }
+    throw lastError instanceof Error ? lastError : new Error('Plan view generation failed.');
   } catch (err) {
     if (err instanceof AppError) throw err;
-    const message = err instanceof Error ? err.message : 'Dedicated view generation failed.';
+    const message = err instanceof Error ? err.message : 'Plan view generation failed.';
     throw new AppError(502, 'PLAN_VIEW_GENERATION_FAILED', message);
   }
+}
+
+async function validatePlanViewMermaidArtifact(artifact: GenericDedicatedViewArtifact) {
+  const chart = extractMermaidChart(artifact.markdown);
+  if (!chart) return null;
+  const parseChart = chart.trim().startsWith('flowchart') ? stripFlowchartLabels(chart) : chart;
+  try {
+    await mermaid.parse(parseChart);
+    return null;
+  } catch (err) {
+    return { chart, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export function normalizePlanViewMermaidArtifact(
+  artifact: GenericDedicatedViewArtifact
+): GenericDedicatedViewArtifact {
+  const chart = extractMermaidChart(artifact.markdown);
+  if (!chart?.trim().startsWith('flowchart')) return artifact;
+  const sanitizedChart = sanitizeFlowchartLabels(chart);
+  if (sanitizedChart === chart) return artifact;
+  return {
+    ...artifact,
+    markdown: artifact.markdown.replace(/```mermaid\s*([\s\S]*?)```/i, () =>
+      ['```mermaid', sanitizedChart, '```'].join('\n')
+    ),
+  };
+}
+
+function sanitizeFlowchartLabels(chart: string) {
+  return chart
+    .split('\n')
+    .map((line) =>
+      line
+        .replace(/\["([^"\n]*)"\]/g, (_match, label: string) => `["${sanitizeMermaidText(label)}"]`)
+        .replace(/\[([^\]\n]*)\]/g, (_match, label: string) => `["${sanitizeMermaidText(label)}"]`)
+        .replace(/\(([^)\n]*)\)/g, (_match, label: string) => `("${sanitizeMermaidText(label)}")`)
+        .replace(/\{([^}\n]*)\}/g, (_match, label: string) => `{"${sanitizeMermaidText(label)}"}`)
+    )
+    .join('\n');
+}
+
+function sanitizeMermaidText(value: string) {
+  return value
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/`/g, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[*_~]/g, '')
+    .replace(/[{}<>]/g, ' ')
+    .replaceAll('[', ' ')
+    .replaceAll(']', ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120)
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"');
+}
+
+function stripFlowchartLabels(chart: string) {
+  return chart
+    .split('\n')
+    .map((line) =>
+      line
+        .replace(/\[[^\]\n]*\]/g, '')
+        .replace(/\([^)\n]*\)/g, '')
+        .replace(/\{[^}\n]*\}/g, '')
+    )
+    .join('\n');
+}
+
+function buildPlanViewMermaidRepairContext(input: {
+  artifact: GenericDedicatedViewArtifact;
+  chart: string;
+  error: string;
+}) {
+  return [
+    '### Error',
+    input.error,
+    '',
+    '### Previous Mermaid source',
+    '```mermaid',
+    input.chart.trim(),
+    '```',
+    '',
+    '### Previous artifact JSON',
+    JSON.stringify(input.artifact, null, 2),
+  ].join('\n');
+}
+
+function buildPlanViewOutputRepairContext(rawOutput: string, err: unknown) {
+  return [
+    '### Error',
+    err instanceof Error ? err.message : String(err),
+    '',
+    '### Previous raw output',
+    rawOutput,
+  ].join('\n');
+}
+
+function extractMermaidChart(content: string) {
+  const match = content.match(/```mermaid\s*([\s\S]*?)```/i);
+  return match?.[1]?.trim() || null;
 }
 
 function isMessageKind(

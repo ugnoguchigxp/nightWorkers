@@ -295,6 +295,7 @@ describe('Mock Blueprint', () => {
         title: 'BBS 作成',
         description: 'Hono + React/Vite と SQLite で BBS を作る',
       },
+      projectStackContext: '- 既存 Project stack: TypeScript + React + Vite + Hono',
       specContext: '# Spec\n\n## Goal\nBBS を実装する。',
       prompt: 'BBS の mock を作る',
     });
@@ -314,6 +315,8 @@ describe('Mock Blueprint', () => {
     expect(userPrompt).toContain('アプリそのものの画面');
     expect(userPrompt).toContain('画面に出す題材ではなく');
     expect(userPrompt).toContain('技術スタック、保存先、認証方針、実装範囲');
+    expect(userPrompt).toContain('## Project Stack Context');
+    expect(userPrompt).toContain('TypeScript + React + Vite + Hono');
     expect(userPrompt).toContain('仕様項目や実装工程をデータ化しない');
     expect(userPrompt).toContain('確認ノートの画面は生成しない');
   });

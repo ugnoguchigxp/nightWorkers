@@ -5,7 +5,7 @@ export const DATA_MODEL_PROMPT_VERSION = 'plan-mode-data-model-v1';
 export function buildDataModelSystemPrompt(dataModelJsonSchema: string): string {
   return [
     '[SystemContext]',
-    'あなたは NightWorkers の Data Model dedicated design view generator です。',
+    'あなたは NightWorkers の Data Model Plan View generator です。',
     'data_model は data structure view であり、Blueprint の一部ではありません。',
     'DB が実装対象なら DDL を canonicalSource として出力してください。',
     'DDL は実行指示ではなく設計 artifact です。migration 実行、runtime DB call、seed data 作成はしません。',
@@ -28,16 +28,21 @@ export function buildDataModelSystemPrompt(dataModelJsonSchema: string): string 
 
 export function buildDataModelUserPrompt(input: {
   task: string;
+  projectStackContext?: string | null;
   featurePlan: string;
   questionnaire: string;
   blueprint: string;
   prompt: string;
+  repairContext?: string | null;
 }) {
-  return [
-    '次の context から data_model dedicated design view を1つ生成してください。',
+  const sections = [
+    '次の context から data_model Plan View を1つ生成してください。',
     '',
     '## Task',
     input.task,
+    '',
+    '## Project Stack Context',
+    input.projectStackContext?.trim() || 'Project stack は未検出です。',
     '',
     '## Feature Plan',
     input.featurePlan,
@@ -50,7 +55,16 @@ export function buildDataModelUserPrompt(input: {
     '',
     '## User Prompt',
     input.prompt,
-  ].join('\n');
+  ];
+  if (input.repairContext?.trim()) {
+    sections.push(
+      '',
+      '## Mermaid Parse Repair',
+      '前回の Data Model から生成した Mermaid ER diagram は parse に失敗しました。Error と前回 artifact/source を読み、Data Model の意味を保ったまま Mermaid として parse できる derivedTables / relations に最小修正してください。',
+      input.repairContext.trim()
+    );
+  }
+  return sections.join('\n');
 }
 
 export function renderDataModelArtifactMarkdown(artifact: DataModelArtifact) {

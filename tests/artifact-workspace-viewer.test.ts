@@ -10,9 +10,11 @@ import {
 } from '../src/modules/nightworkers/workbenchSelectors';
 import {
   buildVisiblePlanWorkspaceTabs,
+  extractViewDecisions,
   getPlanWorkspaceTabLabel,
   PlanModeWorkspaceViewer,
   resolveInitialPlanWorkspaceTabUpdate,
+  shouldShowQuestionnaireStartAction,
   WorkspaceBlueprintPreview,
 } from '../src/modules/planMode';
 import { selectPlanModeWorkspaceMessages } from '../src/modules/specification';
@@ -118,6 +120,53 @@ describe('Blueprint message classification', () => {
 });
 
 describe('PlanModeWorkspaceViewer', () => {
+  it('hides the Questionnaire start action after a questionnaire is complete', () => {
+    expect(
+      shouldShowQuestionnaireStartAction({
+        sessionId: 'task-1',
+        questionnaireComplete: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldShowQuestionnaireStartAction({
+        sessionId: 'task-1',
+        questionnaireComplete: false,
+      })
+    ).toBe(true);
+    expect(
+      shouldShowQuestionnaireStartAction({
+        sessionId: null,
+        questionnaireComplete: false,
+      })
+    ).toBe(false);
+  });
+
+  it('extracts Plan View decisions from Workbench plan mode gate metadata', () => {
+    const decisions = extractViewDecisions([
+      buildTaskMessage({
+        id: 'message-plan-gate',
+        metadataJson: {
+          intent: 'design_questionnaire_ready',
+          planModeGate: {
+            shouldStartPlanMode: true,
+            action: 'plan_mode',
+            dedicatedViews: [
+              { view: 'blueprint', decision: 'omit', reason: 'no UI change' },
+              { view: 'data_model', decision: 'omit', reason: 'no schema change' },
+              { view: 'api_io_contract', decision: 'include', reason: 'headers contract changes' },
+            ],
+          },
+        },
+      }),
+    ]);
+
+    expect(decisions).toEqual([
+      { view: 'blueprint', decision: 'omit', reason: 'no UI change' },
+      { view: 'data_model', decision: 'omit', reason: 'no schema change' },
+      { view: 'api_io_contract', decision: 'include', reason: 'headers contract changes' },
+    ]);
+  });
+
   it('keeps Status before the spec tab when a reviewed specification exists', () => {
     const tabs = buildVisiblePlanWorkspaceTabs({
       questionnaireGateLocked: false,

@@ -5,6 +5,7 @@ import {
 } from '../api/modules/dataModel/dataModel-generation.service';
 import {
   buildDataModelSystemPrompt,
+  buildDataModelUserPrompt,
   renderDataModelArtifactMarkdown,
 } from '../api/services/structured-generation/prompts/data-model';
 
@@ -97,6 +98,35 @@ describe('Data Model generation helpers', () => {
     expect(prompt).toContain('open question にしない');
     expect(prompt).toContain('Questionnaire / Decisions');
     expect(prompt).toContain('通常は空配列');
+  });
+
+  it('includes project stack context in Data Model input', () => {
+    const prompt = buildDataModelUserPrompt({
+      task: 'Title: BBS',
+      projectStackContext: '- 既存 Project stack: TypeScript + React + Vite + Hono',
+      featurePlan: 'Feature Plan は未生成です。',
+      questionnaire: 'Questionnaire は未生成です。',
+      blueprint: 'Blueprint は未生成です。',
+      prompt: 'BBS の data model を作る',
+    });
+
+    expect(prompt).toContain('## Project Stack Context');
+    expect(prompt).toContain('TypeScript + React + Vite + Hono');
+  });
+
+  it('includes Mermaid repair context in Data Model input', () => {
+    const prompt = buildDataModelUserPrompt({
+      task: 'Title: BBS',
+      featurePlan: 'Feature Plan',
+      questionnaire: 'Questionnaire',
+      blueprint: 'Blueprint',
+      prompt: 'BBS の data model を作る',
+      repairContext: 'Parse error on line 4\n```mermaid\nerDiagram\n  threads {\n```',
+    });
+
+    expect(prompt).toContain('## Mermaid Parse Repair');
+    expect(prompt).toContain('Parse error on line 4');
+    expect(prompt).toContain('derivedTables / relations');
   });
 
   it('parses non-DB structure contracts without DDL', () => {

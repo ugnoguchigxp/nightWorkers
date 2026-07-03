@@ -36,7 +36,7 @@ export function buildRound1PromptPacket(projectRoot: string): SupervisorPromptPa
       '修正、実装、確認、調査、レビュー、テスト、設定変更、依存更新、リファクタを依頼している場合は planning ではなく、実行可能な jobType を選んでください。',
       'planning を選ぶ場合だけ planMode object を返し、primaryArtifact は必ず "feature_plan" にする。planning 以外では planMode は null にする。',
       'planning では questionnaire を最初の判断材料として扱い、回答前に Status や後続 artifact の必要性を確定しない。',
-      'planMode.dedicatedViews は固定テンプレートではなく、今回の依頼に必要な dedicated design view だけ include し、UIなし、DBなし、契約変更なし、図が不要など判断に意味がある omit は reason 付きで返す。',
+      'planMode.dedicatedViews は固定テンプレートではなく、今回の依頼に必要な Plan View だけ include し、UIなし、DBなし、契約変更なし、図が不要など判断に意味がある omit は reason 付きで返す。',
       'questionnaire は blocking open question と assumption の整理、blueprint は UI specification と related design view hub、data_model は DB/data structure、zod_schema_design は validation / JSON / tool input contract に使う。',
       'ユースケース図と AI coding rules は Plan mode artifact として選ばない。',
       'ユーザー文言の keyword list や正規表現分類ではなく、依頼内容から必要な設計 view を推論する。',

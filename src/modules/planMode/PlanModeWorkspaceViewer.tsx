@@ -79,6 +79,13 @@ export function getPlanWorkspaceTabLabel(tab: PlanWorkspaceTab) {
   return tabLabels[tab];
 }
 
+export function shouldShowQuestionnaireStartAction(input: {
+  sessionId: string | null;
+  questionnaireComplete: boolean;
+}) {
+  return Boolean(input.sessionId) && !input.questionnaireComplete;
+}
+
 export function resolveInitialPlanWorkspaceTabUpdate(
   initialTab: PlanWorkspaceTab | undefined,
   questionnaireGateLocked: boolean
@@ -295,6 +302,10 @@ export function PlanModeWorkspaceViewer({
     isImplementationLocked,
     isCapabilityEnabled: planModeCapabilities.questionnaire,
   });
+  const showQuestionnaireStartAction = shouldShowQuestionnaireStartAction({
+    sessionId,
+    questionnaireComplete,
+  });
 
   async function runAction(action: string, fn: () => Promise<void>) {
     setBusyAction(action);
@@ -496,7 +507,7 @@ export function PlanModeWorkspaceViewer({
         ) : activeTab === 'questionnaire' ? (
           <div className="grid gap-4">
             <div className="flex flex-wrap items-center gap-2">
-              {sessionId ? (
+              {showQuestionnaireStartAction ? (
                 <button
                   type="button"
                   className="inline-flex items-center gap-1.5 rounded border border-cyan-500/60 bg-cyan-950/30 px-2 py-1 text-xs text-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
@@ -621,14 +632,19 @@ export function PlanModeWorkspaceViewer({
   );
 }
 
-function extractViewDecisions(messages: TaskMessage[]): PlanViewDecision[] {
+export function extractViewDecisions(messages: TaskMessage[]): PlanViewDecision[] {
   const decisionsByView = new Map<string, PlanViewDecision>();
   for (const message of messages) {
     const metadata = isRecord(message.metadataJson) ? message.metadataJson : {};
+    const planModeGate = isRecord(metadata.planModeGate) ? metadata.planModeGate : null;
+    const originalGate =
+      planModeGate && isRecord(planModeGate.originalGate) ? planModeGate.originalGate : null;
     const candidates = [
+      originalGate?.dedicatedViews,
+      isRecord(metadata.planMode) ? metadata.planMode.dedicatedViews : null,
+      planModeGate?.dedicatedViews,
       metadata.dedicatedViews,
       metadata.viewDecisions,
-      isRecord(metadata.planMode) ? metadata.planMode.dedicatedViews : null,
     ];
     for (const candidate of candidates) {
       if (!Array.isArray(candidate)) continue;

@@ -475,7 +475,7 @@ describe('workbench selectors', () => {
     );
   });
 
-  it('routes additional dedicated view messages to their Plan Mode Workspace tab', () => {
+  it('routes additional Plan View messages to their Plan Mode Workspace tab', () => {
     const message: TaskMessage = {
       id: '44444444-4444-4444-8444-444444447778',
       taskId: baseTask.id,

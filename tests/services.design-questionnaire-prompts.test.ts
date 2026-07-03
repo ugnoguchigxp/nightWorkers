@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDesignQuestionnaireFollowUpDecisionSystemPrompt,
   buildDesignQuestionnaireFollowUpDecisionUserPrompt,
+  buildDesignQuestionnaireInitialUserPrompt,
   buildDesignQuestionnaireSystemPrompt,
 } from '../api/services/structured-generation/prompts/design-questionnaire';
 import { questionnaireChoiceFormSchema } from '../shared/schemas/design-questionnaire.schema';
@@ -39,6 +40,18 @@ describe('design questionnaire prompts', () => {
     expect(prompt).toContain('本当に複数の選択肢を同時に採用できる設問だけ checkbox');
     expect(prompt).toContain('実装深度、優先度、段階');
     expect(prompt).toContain('単一軸の判断を checkbox で表現しない');
+  });
+
+  it('includes concise project stack context in initial questionnaire input', () => {
+    const prompt = buildDesignQuestionnaireInitialUserPrompt({
+      taskPrompt: 'BBS を改善する',
+      projectStackContext:
+        '- 既存 Project stack: TypeScript + React + Vite + Hono\n- この stack は既存コードベースの前提です。ユーザーが変更を明示しない限り、別 stack / starter template 選択を質問しないでください。',
+    });
+
+    expect(prompt).toContain('## Project Stack Context');
+    expect(prompt).toContain('TypeScript + React + Vite + Hono');
+    expect(prompt).toContain('別 stack / starter template 選択を質問しない');
   });
 
   it('accepts up to ten choices in generated choice-form output', () => {

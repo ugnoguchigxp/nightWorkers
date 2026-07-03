@@ -44,6 +44,7 @@ export type PlanModeBlueprintRequestContract = {
     taskId: string;
     title: string;
     userRequest: string;
+    projectStackContext: string | null;
     routingHypothesis: SupervisorRoutingHypothesis | null;
     requiredArtifact: 'AppBlueprint JSON';
   };
@@ -95,6 +96,7 @@ export async function generatePlanModeBlueprintDraft(input: {
   taskId: string;
   title: string;
   prompt: string;
+  projectStackContext?: string | null;
   routing?: SupervisorRoutingHypothesis;
   emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
 }): Promise<GeneratedBlueprintDraft> {
@@ -149,6 +151,7 @@ export function buildPlanModeBlueprintRequestContract(
     taskId: string;
     title: string;
     prompt: string;
+    projectStackContext?: string | null;
     routing?: SupervisorRoutingHypothesis;
   },
   referenceDocuments: BlueprintReferenceDocumentsSummary = summarizeSupervisorReferenceDocuments(
@@ -169,6 +172,7 @@ export function buildPlanModeBlueprintRequestContract(
       taskId: input.taskId,
       title: input.title,
       userRequest: input.prompt,
+      projectStackContext: input.projectStackContext || null,
       routingHypothesis: input.routing || null,
       requiredArtifact: 'AppBlueprint JSON',
     },

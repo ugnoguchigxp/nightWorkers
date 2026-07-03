@@ -13,7 +13,7 @@ function readProjectFile(path: string) {
 }
 
 describe('Plan Mode domain boundaries', () => {
-  it('keeps every dedicated design view representable as a workspace artifact kind', () => {
+  it('keeps every Plan View representable as a workspace artifact kind', () => {
     for (const view of dedicatedDesignViewSchema.options) {
       expect(planModeArtifactKindSchema.safeParse(view).success, view).toBe(true);
     }

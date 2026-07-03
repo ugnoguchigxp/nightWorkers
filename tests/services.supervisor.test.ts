@@ -13,7 +13,7 @@ describe('Supervisor schema-first parser', () => {
             {
               view: 'blueprint',
               decision: 'include',
-              reason: 'UI behavior needs a dedicated view',
+              reason: 'UI behavior needs a Plan View',
             },
             {
               view: 'data_model',

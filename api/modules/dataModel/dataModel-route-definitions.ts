@@ -24,7 +24,7 @@ export const generateDataModelRoute = createRoute({
   responses: {
     200: {
       content: { 'application/json': { schema: z.unknown() } },
-      description: 'Data Model dedicated design view generated',
+      description: 'Data Model Plan View generated',
     },
   },
 });

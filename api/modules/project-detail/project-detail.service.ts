@@ -15,6 +15,7 @@ import {
 import { db } from '../../db/client';
 import { llmUsageRecords, taskRuns, tasks } from '../../db/schema';
 import { NotFoundError, ValidationError } from '../../lib/errors';
+import { detectProjectStackProfile } from '../../services/project-stack-context';
 import {
   evaluateCoverageGate,
   readCoverageSummaryFile,
@@ -245,7 +246,7 @@ async function buildProjectSignalSnapshot(input: {
 }
 
 export async function getProjectDetailMetrics(repositoryId: string) {
-  await requireRepository(repositoryId);
+  const repository = await requireRepository(repositoryId);
   const [runs, usageRows, latestEvaluation, latestQuality] = await Promise.all([
     db.select().from(taskRuns).where(eq(taskRuns.repositoryId, repositoryId)),
     db
@@ -361,6 +362,7 @@ export async function getProjectDetailMetrics(repositoryId: string) {
       : null;
 
   return {
+    stackProfile: detectProjectStackProfile(repository.localPath),
     runs: {
       total: runs.length,
       completed: runs.filter((run) => run.status === 'completed').length,

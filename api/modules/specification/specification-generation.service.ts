@@ -13,6 +13,7 @@ import {
   listPlanModeTaskMessages,
 } from '../nightworkers/nightworkers.plan-mode-core.port';
 import { assertPlanModeCapabilityEnabled } from '../nightworkers/nightworkers.plan-mode-settings.service';
+import { resolvePlanModeProjectStackContext } from './plan-mode-project-stack-context';
 import { getPlanModeWorkspace } from './plan-mode-workspace.service';
 import { buildSpecificationDocumentContext } from './specification-document-renderer';
 import { assertPlanModeMutable } from './specification-mutability';
@@ -36,6 +37,7 @@ export async function generateFeaturePlanArtifact(
     taskId,
     input.questionnaireSessionId
   );
+  const projectStackContext = await resolvePlanModeProjectStackContext(task.repositoryId);
   const workspace = await getPlanModeWorkspace(taskId);
   const messages = await listPlanModeTaskMessages(taskId);
   const context = buildSpecificationDocumentContext({
@@ -43,6 +45,7 @@ export async function generateFeaturePlanArtifact(
     session,
     workspace,
     messages,
+    projectStackContext,
   });
   const rawOutput = await generateSpecificationDesignDocumentRawOutput(taskId, context);
   const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));

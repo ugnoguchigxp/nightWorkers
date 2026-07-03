@@ -124,7 +124,7 @@ export const toolRegistry = {
   read_current_specification: {
     name: 'read_current_specification',
     description:
-      'NightWorkers内蔵の現在タスク仕様書を読む。taskId を省略すると現在のTask IDを使う。git上のファイルではなく、最新 Feature Plan Markdown を返す。Plan mode artifacts のうち Questionnaire / Blueprint / Data Model などの dedicated views は直接返さない。',
+      'NightWorkers内蔵の現在タスク仕様書を読む。taskId を省略すると現在のTask IDを使う。git上のファイルではなく、最新 Feature Plan Markdown を返す。Plan mode artifacts のうち Questionnaire / Blueprint / Data Model などの Plan Views は直接返さない。',
     inputSchema: toNightWorkersJsonSchema(nightWorkersReadCurrentSpecificationInputSchema),
   },
   search_files: {

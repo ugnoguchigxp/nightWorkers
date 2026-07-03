@@ -272,7 +272,7 @@ export function buildWorkbenchArtifactRefs(input: {
       summary: [
         `${featurePlanMessages.length} spec${featurePlanMessages.length === 1 ? '' : 's'}`,
         `${dataModelMessages.length} Data Model${dataModelMessages.length === 1 ? '' : 's'}`,
-        `${dedicatedViewMessages.length} Dedicated View${dedicatedViewMessages.length === 1 ? '' : 's'}`,
+        `${dedicatedViewMessages.length} Plan View${dedicatedViewMessages.length === 1 ? '' : 's'}`,
         `${blueprintArtifactRows.length + blueprintMessages.length} Blueprint artifact${
           blueprintArtifactRows.length + blueprintMessages.length === 1 ? '' : 's'
         }`,

@@ -1,3 +1,4 @@
+import mermaid from 'mermaid';
 import { z } from 'zod';
 import {
   type DataModelArtifact,
@@ -23,9 +24,12 @@ import {
   getDesignQuestionnaireSession,
   listDesignQuestionnaires,
 } from '../questionnaire/questionnaire.service';
+import { resolvePlanModeProjectStackContext } from '../specification/plan-mode-project-stack-context';
 import { getPlanModeWorkspace } from '../specification/plan-mode-workspace.service';
 import { renderQuestionnaireAnswerMarkdown } from '../specification/specification-document-renderer';
 import { assertPlanModeMutable } from '../specification/specification-mutability';
+
+const DATA_MODEL_MERMAID_MAX_ATTEMPTS = 3;
 
 export type DataModelGenerationInput = {
   prompt?: string;
@@ -74,9 +78,11 @@ export async function generateDataModelArtifact(
     task.description ||
     task.title ||
     'No additional prompt.';
+  const projectStackContext = await resolvePlanModeProjectStackContext(task.repositoryId);
   const artifact = await generateArtifactFromLlm({
     taskId,
     task: renderTaskContext(task),
+    projectStackContext,
     featurePlan: featurePlanMessage?.content || 'Feature Plan は未生成です。',
     questionnaire: session
       ? renderQuestionnaireAnswerMarkdown(session)
@@ -176,6 +182,7 @@ function resolveSourceMessage(
 async function generateArtifactFromLlm(input: {
   taskId: string;
   task: string;
+  projectStackContext: string;
   featurePlan: string;
   questionnaire: string;
   blueprint: string;
@@ -183,23 +190,211 @@ async function generateArtifactFromLlm(input: {
 }) {
   try {
     const schema = buildDataModelResponseJsonSchema();
-    const rawOutput = await callStructuredJsonLLM(
-      buildDataModelSystemPrompt(JSON.stringify(schema, null, 2)),
-      buildDataModelUserPrompt(input),
-      {
-        schemaName: 'plan_mode_data_model',
-        schema,
-        taskId: input.taskId,
-        runId: null,
-        role: 'plan',
+    let repairContext: string | null = null;
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= DATA_MODEL_MERMAID_MAX_ATTEMPTS; attempt += 1) {
+      const rawOutput = await callStructuredJsonLLM(
+        buildDataModelSystemPrompt(JSON.stringify(schema, null, 2)),
+        buildDataModelUserPrompt({ ...input, repairContext }),
+        {
+          schemaName: 'plan_mode_data_model',
+          schema,
+          taskId: input.taskId,
+          runId: null,
+          role: 'plan',
+        }
+      );
+      try {
+        const artifact = parseDataModelOutput(rawOutput);
+        const mermaidError = await validateDataModelMermaidArtifact(artifact);
+        if (!mermaidError) return artifact;
+        lastError = new Error(mermaidError.error);
+        repairContext = buildDataModelMermaidRepairContext({
+          artifact,
+          chart: mermaidError.chart,
+          error: mermaidError.error,
+        });
+      } catch (err) {
+        lastError = err;
+        repairContext = buildDataModelOutputRepairContext(rawOutput, err);
       }
-    );
-    return parseDataModelOutput(rawOutput);
+    }
+    throw lastError instanceof Error ? lastError : new Error('Data Model generation failed.');
   } catch (err) {
     if (err instanceof AppError) throw err;
     const message = err instanceof Error ? err.message : 'Data Model generation failed.';
     throw new AppError(502, 'DATA_MODEL_GENERATION_FAILED', message);
   }
+}
+
+async function validateDataModelMermaidArtifact(artifact: DataModelArtifact) {
+  if (artifact.derivedTables.length === 0) return null;
+  const chart = buildDataModelMermaidErDiagram(artifact);
+  try {
+    await mermaid.parse(chart);
+    return null;
+  } catch (err) {
+    return { chart, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+function buildDataModelMermaidRepairContext(input: {
+  artifact: DataModelArtifact;
+  chart: string;
+  error: string;
+}) {
+  return [
+    '### Error',
+    input.error,
+    '',
+    '### Previous Mermaid source',
+    '```mermaid',
+    input.chart.trim(),
+    '```',
+    '',
+    '### Previous Data Model artifact JSON',
+    JSON.stringify(input.artifact, null, 2),
+  ].join('\n');
+}
+
+function buildDataModelOutputRepairContext(rawOutput: string, err: unknown) {
+  return [
+    '### Error',
+    err instanceof Error ? err.message : String(err),
+    '',
+    '### Previous raw output',
+    rawOutput,
+  ].join('\n');
+}
+
+function buildDataModelMermaidErDiagram(artifact: DataModelArtifact) {
+  const relationEdges = artifact.relations;
+  const tableNames = artifact.derivedTables.map(
+    (table, index) => table.name || `table_${index + 1}`
+  );
+  const entityByTableName = new Map(
+    tableNames.map((tableName) => [tableName, sanitizeMermaidIdentifier(tableName)])
+  );
+  const lines = ['erDiagram'];
+
+  artifact.derivedTables.forEach((table, index) => {
+    const tableName = tableNames[index] || `table_${index + 1}`;
+    const entityName = entityByTableName.get(tableName) || sanitizeMermaidIdentifier(tableName);
+    lines.push(`  ${entityName} {`);
+    if (table.columns.length === 0) {
+      lines.push('    string no_columns');
+    }
+    table.columns.forEach((column, columnIndex) => {
+      const columnName = column.name || `column_${columnIndex + 1}`;
+      const type = sanitizeMermaidType(column.type || 'string');
+      const keys = mermaidColumnKeys(tableName, column, relationEdges);
+      const comment = mermaidColumnComment(column);
+      lines.push(
+        `    ${sanitizeMermaidIdentifier(columnName)} ${type}${keys ? ` ${keys}` : ''}${
+          comment ? ` "${comment}"` : ''
+        }`
+      );
+    });
+    lines.push('  }');
+  });
+
+  relationEdges.forEach((relation) => {
+    const fromTable = splitRelationEndpoint(relation.from)[0];
+    const toTable = splitRelationEndpoint(relation.to)[0];
+    const fromEntity = entityByTableName.get(fromTable) || sanitizeMermaidIdentifier(fromTable);
+    const toEntity = entityByTableName.get(toTable) || sanitizeMermaidIdentifier(toTable);
+    if (!fromEntity || !toEntity) return;
+    lines.push(
+      `  ${fromEntity} ${mermaidCardinality(relation.cardinality)} ${toEntity} : ${sanitizeMermaidLabel(
+        relation.reason || 'relates'
+      )}`
+    );
+  });
+
+  return lines.join('\n');
+}
+
+function mermaidColumnKeys(
+  tableName: string,
+  column: DataModelArtifact['derivedTables'][number]['columns'][number],
+  relations: DataModelArtifact['relations']
+) {
+  const flags = [];
+  if (column.primaryKey === true) flags.push('PK');
+  if (isForeignKeyColumn(tableName, column.name, relations)) flags.push('FK');
+  if (column.unique === true) flags.push('UK');
+  return flags.join(', ');
+}
+
+function mermaidColumnComment(
+  column: DataModelArtifact['derivedTables'][number]['columns'][number]
+) {
+  const notes = [];
+  if (column.nullable === false) notes.push('not null');
+  if (column.defaultValue) notes.push(`default ${column.defaultValue}`);
+  return notes.join(', ');
+}
+
+function isForeignKeyColumn(
+  tableName: string,
+  columnName: string,
+  relations: DataModelArtifact['relations']
+) {
+  if (!columnName) return false;
+  return relations.some((relation) => {
+    return endpointMatchesColumn(relation.from, tableName, columnName);
+  });
+}
+
+function endpointMatchesColumn(endpoint: string, tableName: string, columnName: string) {
+  const [endpointTable, endpointColumn] = splitRelationEndpoint(endpoint);
+  if (!endpointColumn) return false;
+  return endpointTable === tableName && endpointColumn === columnName;
+}
+
+function splitRelationEndpoint(endpoint: string) {
+  const trimmed = endpoint.trim();
+  const dotIndex = trimmed.lastIndexOf('.');
+  if (dotIndex > 0 && dotIndex < trimmed.length - 1) {
+    return [trimmed.slice(0, dotIndex), trimmed.slice(dotIndex + 1)] as const;
+  }
+  return [trimmed, ''] as const;
+}
+
+function mermaidCardinality(value: string) {
+  const labels: Record<string, string> = {
+    one_to_one: '||--||',
+    one_to_many: '||--o{',
+    many_to_one: '}o--||',
+    many_to_many: '}o--o{',
+  };
+  return labels[value] || '--';
+}
+
+function sanitizeMermaidIdentifier(value: string) {
+  const sanitized = value
+    .trim()
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .replace(/^([0-9])/, '_$1')
+    .replace(/_+/g, '_');
+  return sanitized || 'unnamed';
+}
+
+function sanitizeMermaidType(value: string) {
+  const sanitized = value
+    .trim()
+    .split(/\s+/)[0]
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .replace(/^([0-9])/, 't_$1')
+    .replace(/_+/g, '_');
+  return sanitized || 'string';
+}
+
+function sanitizeMermaidLabel(value: string) {
+  const label =
+    value.replace(/["`:]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 10).join(' ') ||
+    'relates';
+  return `"${label}"`;
 }
 
 function isMessageKind(message: PlanModeTaskMessage, kind: 'feature_plan' | 'blueprint') {

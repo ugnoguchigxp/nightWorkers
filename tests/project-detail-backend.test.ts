@@ -221,6 +221,50 @@ describe('Project Detail backend', () => {
     }
   });
 
+  it('returns detected project tech stack profile', async () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-stack-'));
+    try {
+      fs.writeFileSync(
+        path.join(repoRoot, 'package.json'),
+        JSON.stringify({
+          packageManager: 'bun@1.3.14',
+          scripts: { test: 'vitest', build: 'vite build' },
+          dependencies: {
+            hono: '4.12.21',
+            react: '19.2.4',
+          },
+          devDependencies: {
+            typescript: '6.0.2',
+            vite: '6.4.2',
+          },
+        }),
+        'utf8'
+      );
+      const project = await createRepository(repoRoot);
+
+      const metricsRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/project-detail/metrics`
+      );
+
+      expect(metricsRes.status).toBe(200);
+      await expect(metricsRes.json()).resolves.toMatchObject({
+        stackProfile: {
+          summary: 'TypeScript + React + Vite + Hono',
+          manifestStatus: 'found',
+          packageManager: 'bun@1.3.14',
+          technologies: expect.arrayContaining([
+            expect.objectContaining({ name: 'TypeScript', packageName: 'typescript' }),
+            expect.objectContaining({ name: 'React', packageName: 'react' }),
+            expect.objectContaining({ name: 'Vite', packageName: 'vite' }),
+            expect.objectContaining({ name: 'Hono', packageName: 'hono' }),
+          ]),
+        },
+      });
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
   it('generates mission candidates and creates draft tasks', async () => {
     const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-generate-'));
     try {

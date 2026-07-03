@@ -38,6 +38,7 @@ export function buildSpecificationDocumentContext(input: {
   session: QuestionnaireSessionLike | null;
   workspace: PlanModeWorkspace;
   messages: TaskMessageRow[];
+  projectStackContext?: string | null;
 }) {
   const latestBlueprint = findLatestBlueprintMessage(input.messages, 'blueprint');
   const latestDataModel = findLatestDataModelMessage(input.messages);
@@ -51,6 +52,7 @@ export function buildSpecificationDocumentContext(input: {
     ]
       .filter(Boolean)
       .join('\n'),
+    projectStackContext: input.projectStackContext?.trim() || 'Project stack は未検出です。',
     questionnaireDecisions: input.session
       ? renderQuestionnaireAnswerMarkdown(input.session)
       : '- Questionnaire は未生成です。',

@@ -34,6 +34,31 @@ export type PlanViewDecision = {
   reason?: string;
 };
 
+export const PLAN_MODE_SEQUENTIAL_AUTO_GENERATE_STORAGE_KEY =
+  'nightworkers.planMode.sequentialAutoGenerate';
+
+export function readPlanModeSequentialAutoGeneratePreference(storage?: Storage | null) {
+  try {
+    const source = storage ?? (typeof window === 'undefined' ? null : window.localStorage);
+    return source?.getItem(PLAN_MODE_SEQUENTIAL_AUTO_GENERATE_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function writePlanModeSequentialAutoGeneratePreference(
+  enabled: boolean,
+  storage?: Storage | null
+) {
+  try {
+    const source = storage ?? (typeof window === 'undefined' ? null : window.localStorage);
+    if (!source) return;
+    source.setItem(PLAN_MODE_SEQUENTIAL_AUTO_GENERATE_STORAGE_KEY, enabled ? 'true' : 'false');
+  } catch {
+    // localStorage is a UI preference only; the Status flow still works without persistence.
+  }
+}
+
 export function WorkspaceBlueprintPreview({
   sessionId,
   message,
@@ -262,9 +287,20 @@ function DataModelDiagram({
   );
 }
 
-function MermaidDiagram({ chart }: { chart: string }) {
+function MermaidDiagram({
+  chart,
+  idPrefix = 'data-model',
+  downloadName = 'data-model-mermaid.svg',
+}: {
+  chart: string;
+  idPrefix?: string;
+  downloadName?: string;
+}) {
   const rawId = useId();
-  const diagramId = useMemo(() => `data-model-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`, [rawId]);
+  const diagramId = useMemo(
+    () => `${idPrefix}-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`,
+    [idPrefix, rawId]
+  );
   const containerRef = useRef<HTMLButtonElement | null>(null);
   const fullscreenContainerRef = useRef<HTMLButtonElement | null>(null);
   const [rendered, setRendered] = useState(false);
@@ -324,7 +360,7 @@ function MermaidDiagram({ chart }: { chart: string }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'data-model-mermaid.svg';
+    link.download = downloadName;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -434,6 +470,11 @@ export function PlanWorkspaceStatusView({
   onQueueSession?: () => void;
   onAddToQueue?: () => void;
 }) {
+  const [sequentialAutoGenerate, setSequentialAutoGenerate] = useState(
+    readPlanModeSequentialAutoGeneratePreference
+  );
+  const autoGenerateInFlightStepRef = useRef<string | null>(null);
+  const autoGenerateBlockedStepRef = useRef<string | null>(null);
   const answeredCount = questionnaireSession?.answers.length || 0;
   const questionCount = questionnaireSession ? getQuestionCount(questionnaireSession) : 0;
   const hasBlueprint = Boolean(workspace?.blueprintArtifacts.length);
@@ -441,8 +482,15 @@ export function PlanWorkspaceStatusView({
   const hasRoutingDecisions = viewDecisions.length > 0;
   const decisionByView = new Map(viewDecisions.map((item) => [item.view, item]));
   const isIncluded = (view: string) => decisionByView.get(view)?.decision === 'include';
-  const shouldShowDefault = (view: string, enabled: boolean, exists: boolean) =>
-    exists || isIncluded(view) || (!hasRoutingDecisions && enabled);
+  const isOmitted = (view: string) => decisionByView.get(view)?.decision === 'omit';
+  const shouldShowDefault = (
+    view: string,
+    enabled: boolean,
+    exists: boolean,
+    defaultWhenUnrouted = false
+  ) =>
+    !isOmitted(view) &&
+    (exists || isIncluded(view) || (!hasRoutingDecisions && defaultWhenUnrouted && enabled));
   const capabilities = planModeSettings?.capabilities ?? {
     feature_plan: true,
     questionnaire: true,
@@ -464,30 +512,18 @@ export function PlanWorkspaceStatusView({
       .map((artifact) => artifact.kind)
       .filter(isAdditionalView)
   );
-  const enabledIncludedAdditionalViews = includedAdditionalViews
-    .map((item) => item.view)
-    .filter((view) => capabilities[view]);
-  const disabledIncludedAdditionalViews = includedAdditionalViews
-    .map((item) => item.view)
-    .filter((view) => !capabilities[view]);
-  const missingAdditionalViews = enabledIncludedAdditionalViews.filter(
-    (view) => !generatedAdditionalViews.has(view)
-  );
-  const includedAdditionalViewCount = includedAdditionalViews.length;
-  const generatedAdditionalViewCount = enabledIncludedAdditionalViews.filter((view) =>
-    generatedAdditionalViews.has(view)
-  ).length;
   const disabledReason = 'Plan Mode capability is disabled in Settings.';
-  const additionalViewDisabledReason =
-    disabledIncludedAdditionalViews.length > 0
-      ? `Disabled in Settings: ${disabledIncludedAdditionalViews.map(formatViewLabel).join(' / ')}`
-      : null;
   const questionnaireDone = Boolean(
     questionnaireSession &&
       (questionnaireSession.status === 'review_ready' || questionnaireSession.status === 'accepted')
   );
   const steps = [
-    shouldShowDefault('questionnaire', capabilities.questionnaire, Boolean(questionnaireSession))
+    shouldShowDefault(
+      'questionnaire',
+      capabilities.questionnaire,
+      Boolean(questionnaireSession),
+      true
+    )
       ? {
           number: 1,
           title: '仕様に関する質問を回答してください',
@@ -501,6 +537,8 @@ export function PlanWorkspaceStatusView({
           disabled: !capabilities.questionnaire,
           disabledReason: capabilities.questionnaire ? null : disabledReason,
           onClick: onOpenQuestionnaire,
+          autoGenerate: false,
+          autoGenerateKey: 'questionnaire',
         }
       : null,
     shouldShowDefault('blueprint', capabilities.blueprint, hasBlueprint)
@@ -516,6 +554,8 @@ export function PlanWorkspaceStatusView({
           disabled: isImplementationLocked || !capabilities.blueprint,
           disabledReason: !capabilities.blueprint ? disabledReason : null,
           onClick: onGenerateBlueprint,
+          autoGenerate: true,
+          autoGenerateKey: 'blueprint',
         }
       : null,
     shouldShowDefault('data_model', capabilities.data_model, hasDataModel)
@@ -531,43 +571,86 @@ export function PlanWorkspaceStatusView({
           disabled: !canGenerateDataModel || isImplementationLocked || !capabilities.data_model,
           disabledReason: !capabilities.data_model ? disabledReason : null,
           onClick: onGenerateDataModel,
+          autoGenerate: true,
+          autoGenerateKey: 'data-model',
         }
       : null,
-    includedAdditionalViewCount > 0
-      ? {
-          number: 4,
-          title: '追加の dedicated design view を確認します',
-          detail:
-            enabledIncludedAdditionalViews.length > 0
-              ? `${generatedAdditionalViewCount}/${enabledIncludedAdditionalViews.length}件の追加 view が生成済みです。`
-              : `${includedAdditionalViewCount}件の追加 view はSettingsで無効です。`,
-          done: missingAdditionalViews.length === 0,
-          buttonLabel: missingAdditionalViews.length > 0 ? '追加Viewを生成' : '生成状況を確認',
-          busy: Boolean(busyAction?.startsWith('view:')),
-          disabled: isImplementationLocked || missingAdditionalViews.length === 0,
-          disabledReason: additionalViewDisabledReason,
-          onClick: () => onGenerateDedicatedViews(missingAdditionalViews),
-        }
-      : null,
+    ...includedAdditionalViews.map((item, index) => {
+      const view = item.view;
+      const label = formatViewLabel(view);
+      const generated = generatedAdditionalViews.has(view);
+      const enabled = capabilities[view];
+      return {
+        number: 4 + index,
+        title: `${label}を作成します`,
+        detail: generated
+          ? `${label}が作成済みです。`
+          : item.reason || `${label}をPlan Mode Artifactとして作成します。`,
+        done: generated,
+        buttonLabel: generated ? `${label}を再生成` : `${label}作成`,
+        busy: busyAction === `view:${view}`,
+        disabled: isImplementationLocked || !enabled,
+        disabledReason: enabled ? null : disabledReason,
+        onClick: () => onGenerateDedicatedViews([view]),
+        autoGenerate: true,
+        autoGenerateKey: `view:${view}`,
+      };
+    }),
     {
       number: 5,
       title: '仕様書を作成します',
       detail: hasFeaturePlan
         ? '仕様書が作成済みです。'
-        : '利用可能なQuestionnaire、Blueprint、Data Modelを要約して仕様書を生成します。',
+        : '利用可能なPlan Mode Artifactを要約して仕様書を生成します。',
       done: hasFeaturePlan,
       buttonLabel: hasFeaturePlan ? '仕様書を再生成' : '仕様書作成',
       busy: busyAction === 'feature-plan',
       disabled: isImplementationLocked || !capabilities.feature_plan,
       disabledReason: !capabilities.feature_plan ? disabledReason : null,
       onClick: onGenerateFeaturePlan,
+      autoGenerate: true,
+      autoGenerateKey: 'feature-plan',
     },
   ].filter((step): step is NonNullable<typeof step> => Boolean(step));
   const allStepsDone = steps.every((step) => step.done);
+  const nextAutoGenerateStep = steps.find(
+    (step) => step.autoGenerate && !step.done && !step.disabled
+  );
+
+  useEffect(() => {
+    if (!sequentialAutoGenerate || busyAction || !nextAutoGenerateStep) {
+      if (!nextAutoGenerateStep) autoGenerateBlockedStepRef.current = null;
+      return;
+    }
+    if (autoGenerateInFlightStepRef.current) return;
+    if (autoGenerateBlockedStepRef.current === nextAutoGenerateStep.autoGenerateKey) return;
+    autoGenerateInFlightStepRef.current = nextAutoGenerateStep.autoGenerateKey;
+    void Promise.resolve(nextAutoGenerateStep.onClick()).finally(() => {
+      autoGenerateInFlightStepRef.current = null;
+      autoGenerateBlockedStepRef.current = nextAutoGenerateStep.autoGenerateKey;
+    });
+  }, [busyAction, nextAutoGenerateStep, sequentialAutoGenerate]);
+
+  function handleSequentialAutoGenerateChange(enabled: boolean) {
+    setSequentialAutoGenerate(enabled);
+    writePlanModeSequentialAutoGeneratePreference(enabled);
+    autoGenerateBlockedStepRef.current = null;
+  }
+
   return (
     <div className="grid gap-3 text-xs">
       <div>
-        <h2 className="text-base font-semibold text-slate-100">Status</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-slate-100">Status</h2>
+          <label className="inline-flex items-center gap-2 text-[11px] text-slate-300">
+            <input
+              type="checkbox"
+              checked={sequentialAutoGenerate}
+              onChange={(event) => handleSequentialAutoGenerateChange(event.target.checked)}
+            />
+            順次自動生成
+          </label>
+        </div>
         <p className="mt-1 text-slate-400">必要なArtifactを確認し、仕様書を作成します。</p>
       </div>
       <ViewDecisionSummary decisions={viewDecisions} />
@@ -576,7 +659,7 @@ export function PlanWorkspaceStatusView({
           const displayNumber = index + 1;
           return (
             <div
-              key={step.number}
+              key={`${step.number}-${step.title}`}
               className="grid gap-3 rounded border border-slate-800 bg-slate-950/20 p-3 md:grid-cols-[1fr_auto] md:items-center"
             >
               <div className="flex gap-3">
@@ -674,11 +757,53 @@ export function DedicatedViewPanel({
   artifact: PlanModeWorkspaceArtifact | null;
   message: TaskMessage | null;
 }) {
-  if (!artifact && !message) return <MarkdownViewer content="No dedicated view artifact." />;
+  if (!artifact && !message) return <MarkdownViewer content="No plan view artifact." />;
+  const metadata = isRecord(message?.metadataJson) ? message.metadataJson : {};
+  const viewKind = String(artifact?.kind || metadata.view || '');
+  const explicitChart = isDiagramDedicatedView(viewKind)
+    ? extractMermaidChart(message?.content || '')
+    : null;
+  const fallbackChart =
+    !explicitChart && isFlowchartPlanView(viewKind)
+      ? buildFlowchartFromMarkdown(message?.content || '', viewKind)
+      : null;
+  const chart = explicitChart || fallbackChart;
+  if (isDiagramDedicatedView(viewKind) && !chart) {
+    return (
+      <div className="rounded border border-amber-700/70 bg-amber-950/20 p-3 text-xs text-amber-100">
+        {viewKind === 'user_flow'
+          ? 'User Flow として作図できるユーザー操作や画面遷移が見つかりません。実装手順は Feature Plan または Activity Flow に残してください。'
+          : `${formatViewLabel(viewKind)} は Mermaid 図が必要です。再生成するか、文章で足りる内容は spec に残してください。`}
+      </div>
+    );
+  }
+  if (chart) {
+    const notes = stripMermaidBlocks(message?.content || '').trim();
+    return (
+      <div className="grid gap-3">
+        <div className="rounded border border-slate-800 bg-slate-950/20 p-3 text-xs">
+          <div className="font-semibold text-slate-100">{artifact?.title || 'Plan View'}</div>
+          <div className="mt-1 text-slate-500">
+            {artifact?.kind || viewKind || 'view'}{' '}
+            {artifact?.sourceMessageId ? `message ${artifact.sourceMessageId.slice(0, 8)}` : ''}
+          </div>
+        </div>
+        <div className="grid gap-3 rounded border border-cyan-500/30 bg-slate-950/30 p-3">
+          <div className="text-[11px] font-semibold uppercase text-cyan-100">Mermaid diagram</div>
+          <MermaidDiagram
+            chart={chart}
+            idPrefix={`dedicated-${viewKind || 'view'}`}
+            downloadName={`${viewKind || 'dedicated-view'}-mermaid.svg`}
+          />
+        </div>
+        {notes ? <MarkdownViewer content={notes} /> : null}
+      </div>
+    );
+  }
   return (
     <div className="grid gap-3">
       <div className="rounded border border-slate-800 bg-slate-950/20 p-3 text-xs">
-        <div className="font-semibold text-slate-100">{artifact?.title || 'Dedicated View'}</div>
+        <div className="font-semibold text-slate-100">{artifact?.title || 'Plan View'}</div>
         <div className="mt-1 text-slate-500">
           {artifact?.kind || 'view'}{' '}
           {artifact?.sourceMessageId ? `message ${artifact.sourceMessageId.slice(0, 8)}` : ''}
@@ -687,6 +812,88 @@ export function DedicatedViewPanel({
       <MarkdownViewer content={message?.content || 'No Markdown content.'} />
     </div>
   );
+}
+
+function isDiagramDedicatedView(view: string) {
+  return (
+    view === 'user_flow' ||
+    view === 'activity_flow' ||
+    view === 'state_model' ||
+    view === 'sequence_flow'
+  );
+}
+
+function isFlowchartPlanView(view: string) {
+  return view === 'user_flow' || view === 'activity_flow';
+}
+
+function extractMermaidChart(content: string) {
+  const match = content.match(/```mermaid\s*([\s\S]*?)```/i);
+  return match?.[1]?.trim() || null;
+}
+
+function stripMermaidBlocks(content: string) {
+  return content.replace(/```mermaid\s*[\s\S]*?```/gi, '').trim();
+}
+
+export function buildFlowchartFromMarkdown(content: string, viewKind = '') {
+  const labels = extractMarkdownFlowLabels(content).filter(
+    (label) => viewKind !== 'user_flow' || isUserFlowLabel(label)
+  );
+  if (labels.length === 0) return null;
+  if (viewKind === 'user_flow' && labels.length < 2) return null;
+  const nodes = labels.map((label, index) => `  step${index + 1}["${sanitizeFlowLabel(label)}"]`);
+  const edges = labels.slice(1).map((_, index) => `  step${index + 1} --> step${index + 2}`);
+  return ['flowchart TD', ...nodes, ...edges].join('\n');
+}
+
+function isUserFlowLabel(label: string) {
+  const normalized = label.replace(/`([^`]*)`/g, '$1').trim();
+  if (
+    /\b[\w-]+\.(css|ts|tsx|js|jsx|json|md|sql|rs|go|py|rb|java|kt|swift|html)\b/i.test(normalized)
+  ) {
+    return false;
+  }
+  if (/\b(src|api|tests?|shared|components|modules)\//i.test(normalized)) return false;
+  return true;
+}
+
+function extractMarkdownFlowLabels(content: string) {
+  const lines = content
+    .replace(/```[\s\S]*?```/g, '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const listItems = lines
+    .map((line) =>
+      line
+        .replace(/^\d+[.)]\s+/, '')
+        .replace(/^[-*]\s+\[[ xX]\]\s+/, '')
+        .replace(/^[-*]\s+/, '')
+        .trim()
+    )
+    .filter((line, index) => line !== lines[index] && line.length > 0);
+  if (listItems.length > 0) return listItems;
+  return lines
+    .filter((line) => !line.startsWith('#'))
+    .map((line) => line.replace(/^#+\s*/, '').trim())
+    .filter(Boolean);
+}
+
+function sanitizeFlowLabel(label: string) {
+  return label
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/`/g, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[*_~]/g, '')
+    .replace(/[{}<>]/g, ' ')
+    .replaceAll('[', ' ')
+    .replaceAll(']', ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"');
 }
 
 export function ViewDecisionSummary({ decisions }: { decisions: PlanViewDecision[] }) {

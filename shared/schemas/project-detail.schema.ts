@@ -323,7 +323,37 @@ export const createProjectQualityRunRequestSchema = z.object({
   runType: projectQualityRunTypeSchema,
 });
 
+export const projectStackTechnologySchema = z.object({
+  name: z.string(),
+  category: z.enum([
+    'language',
+    'frontend',
+    'backend',
+    'runtime',
+    'database',
+    'orm',
+    'testing',
+    'desktop',
+    'tooling',
+  ]),
+  packageName: z.string().nullable(),
+  version: z.string().nullable(),
+  source: z.enum(['package_json', 'file', 'lockfile']),
+  confidence: z.enum(['high', 'medium', 'low']),
+});
+export type ProjectStackTechnology = z.infer<typeof projectStackTechnologySchema>;
+
+export const projectStackProfileSchema = z.object({
+  summary: z.string(),
+  manifestStatus: z.enum(['found', 'missing', 'parse_failed']),
+  manifestPath: z.string(),
+  packageManager: z.string().nullable(),
+  technologies: z.array(projectStackTechnologySchema),
+});
+export type ProjectStackProfile = z.infer<typeof projectStackProfileSchema>;
+
 export const projectDetailMetricsSchema = z.object({
+  stackProfile: projectStackProfileSchema,
   runs: z.object({
     total: z.number(),
     completed: z.number(),

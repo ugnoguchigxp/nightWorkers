@@ -80,6 +80,7 @@ export function buildMockBlueprintSystemPrompt(input: {
 export function buildMockBlueprintUserPrompt(input: {
   task: { id: string; title: string; description?: string | null; objective?: string | null };
   questionnaireMarkdown?: string | null;
+  projectStackContext?: string | null;
   specContext?: string | null;
   prompt?: string | null;
 }) {
@@ -98,6 +99,9 @@ export function buildMockBlueprintUserPrompt(input: {
     '',
     '## Questionnaire / Decisions',
     input.questionnaireMarkdown?.trim() || 'Questionnaire は未生成です。',
+    '',
+    '## Project Stack Context',
+    input.projectStackContext?.trim() || 'Project stack は未検出です。',
     '',
     '## 仕様書 / Spec（制約として参照）',
     'この内容は画面に出す題材ではなく、Mock の制約としてだけ使ってください。',

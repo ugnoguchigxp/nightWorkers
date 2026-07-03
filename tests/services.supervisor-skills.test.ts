@@ -173,7 +173,7 @@ describe('Supervisor reference registry', () => {
     expect(paths).toContain('references/overlays/user_facing_change.md');
   });
 
-  it('renders planning references with Feature Plan dedicated view wording', () => {
+  it('renders planning references with Feature Plan Plan View wording', () => {
     const documents = resolveSupervisorReferenceDocuments({
       primaryMode: 'planning',
       secondaryModes: [],
@@ -187,7 +187,7 @@ describe('Supervisor reference registry', () => {
     const rendered = renderSupervisorReferenceDocuments(documents);
 
     expect(rendered).toContain('Feature Plan');
-    expect(rendered).toContain('dedicated design view');
+    expect(rendered).toContain('Plan View');
     expect(rendered).toContain('Data Model view');
     expect(rendered).toContain('UI specification');
     expect(rendered).not.toContain(['DB', 'Design workflow'].join(' '));

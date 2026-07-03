@@ -58,6 +58,7 @@ export async function generatePlanModeMockBlueprintDraft(input: {
   description?: string | null;
   objective?: string | null;
   questionnaireMarkdown?: string | null;
+  projectStackContext?: string | null;
   specContext?: string | null;
   emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
 }): Promise<GeneratedMockBlueprintDraft> {
@@ -74,6 +75,7 @@ export async function generatePlanModeMockBlueprintDraft(input: {
       objective: input.objective,
     },
     questionnaireMarkdown: input.questionnaireMarkdown,
+    projectStackContext: input.projectStackContext,
     specContext: input.specContext,
     prompt: input.prompt,
   });

@@ -106,6 +106,7 @@ export const dedicatedViewArtifactMetadataSchema = z.object({
   sourceBlueprintMessageId: z.string().uuid().nullable().optional(),
   sourceDataModelMessageId: z.string().uuid().nullable().optional(),
   sourceMessageIds: z.array(z.string().uuid()).default([]),
+  diagramKind: z.enum(['stateDiagram-v2', 'flowchart', 'sequenceDiagram']).optional(),
   generation: z.object({
     provider: z.string().optional(),
     model: z.string().optional(),
@@ -161,7 +162,7 @@ export const dataModelArtifactSchema = z.object({
 
 export const planDiagramArtifactSchema = z.object({
   artifactKind: z.literal('plan_mode_dedicated_view'),
-  view: z.enum(['state_model', 'activity_flow', 'sequence_flow']),
+  view: z.enum(['user_flow', 'state_model', 'activity_flow', 'sequence_flow']),
   title: z.string().min(1),
   markdown: z.string().min(1),
   diagramKind: z.enum(['stateDiagram-v2', 'flowchart', 'sequenceDiagram']),

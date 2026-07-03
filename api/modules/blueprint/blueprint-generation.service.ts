@@ -14,6 +14,7 @@ import {
   updatePlanModeTask,
 } from '../nightworkers/nightworkers.plan-mode-core.port';
 import { assertPlanModeCapabilityEnabled } from '../nightworkers/nightworkers.plan-mode-settings.service';
+import { resolvePlanModeProjectStackContext } from '../specification/plan-mode-project-stack-context';
 import { getPlanModeWorkspace } from '../specification/plan-mode-workspace.service';
 import { renderQuestionnaireAnswerMarkdown } from '../specification/specification-document-renderer';
 import { assertPlanModeMutable } from '../specification/specification-mutability';
@@ -32,6 +33,7 @@ export async function generateBlueprintArtifact(
     input.questionnaireSessionId
   );
   const prompt = renderQuestionnaireBlueprintPrompt(session);
+  const projectStackContext = await resolvePlanModeProjectStackContext(task.repositoryId);
   const specContext = await resolveLatestSpecContext(taskId);
   try {
     const { mockBlueprint, generation } = await generatePlanModeMockBlueprintDraft({
@@ -41,6 +43,7 @@ export async function generateBlueprintArtifact(
       description: task.description,
       objective: task.objective,
       questionnaireMarkdown: session ? renderQuestionnaireAnswerMarkdown(session) : null,
+      projectStackContext,
       specContext,
     });
     const generationWithUsage = {

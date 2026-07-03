@@ -67,7 +67,7 @@ export async function getPlanModeWorkspace(taskId: string): Promise<PlanModeWork
       const artifact = {
         id: `${view}-${message.id}`,
         kind: view,
-        title: String(metadata.title || 'Dedicated View'),
+        title: String(metadata.title || 'Plan View'),
         sourceMessageId: message.id,
         createdAt: message.createdAt,
         sourceArtifactMessageId:

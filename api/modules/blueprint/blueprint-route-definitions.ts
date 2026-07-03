@@ -181,7 +181,7 @@ export const generatePlanModeBlueprintRoute = createRoute({
   responses: {
     200: {
       content: { 'application/json': { schema: z.unknown() } },
-      description: 'Blueprint dedicated design view generated',
+      description: 'Blueprint Plan View generated',
     },
   },
 });

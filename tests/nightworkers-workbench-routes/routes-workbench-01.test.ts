@@ -483,7 +483,19 @@ describe('NightWorkers workbench routes', () => {
       createdBy: 'project-evaluation',
     });
     vi.mocked(llm.callStructuredJsonLLM)
-      .mockResolvedValueOnce(mockPlanModeGate(false, 'looks like implementation', 'implementation'))
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          shouldStartPlanMode: false,
+          action: 'implementation',
+          reason: 'looks like implementation',
+          dedicatedViews: [
+            { view: 'blueprint', decision: 'omit', reason: 'no UI change' },
+            { view: 'data_model', decision: 'omit', reason: 'no schema change' },
+            { view: 'api_io_contract', decision: 'include', reason: 'security headers change' },
+          ],
+          specificationLenses: ['permission_boundary', 'interface_contract'],
+        })
+      )
       .mockResolvedValueOnce(
         JSON.stringify({
           version: 1,
@@ -537,6 +549,11 @@ describe('NightWorkers workbench routes', () => {
     expect(questionnaireReadyMessage?.metadataJson?.planModeGate).toMatchObject({
       shouldStartPlanMode: true,
       action: 'plan_mode',
+      dedicatedViews: [
+        { view: 'blueprint', decision: 'omit', reason: 'no UI change' },
+        { view: 'data_model', decision: 'omit', reason: 'no schema change' },
+        { view: 'api_io_contract', decision: 'include', reason: 'security headers change' },
+      ],
       originalGate: expect.objectContaining({
         shouldStartPlanMode: false,
         action: 'implementation',

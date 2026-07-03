@@ -6,10 +6,12 @@ type QuestionnaireSourceInput = {
     metadataJson?: unknown;
   } | null;
   taskPrompt: string;
+  projectStackContext?: string | null;
 };
 
 type SpecificationContext = {
   task: string;
+  projectStackContext: string;
   questionnaireDecisions: string;
   blueprintSummary: string;
   dataModelDdl: string;
@@ -63,15 +65,25 @@ export function buildDesignQuestionnaireInitialUserPrompt(input: QuestionnaireSo
       : '次の Plan mode intake を入力に、実装前に決めたい質問フォームを生成してください。',
     '',
     JSON.stringify(source, null, 2),
+    '',
+    '## Project Stack Context',
+    input.projectStackContext?.trim() || 'Project stack は未検出です。',
   ].join('\n');
 }
 
-export function buildDesignQuestionnaireFollowUpUserPrompt(session: DesignQuestionnaireSession) {
+export function buildDesignQuestionnaireFollowUpUserPrompt(
+  session: DesignQuestionnaireSession,
+  projectStackContext?: string | null
+) {
   return [
     '次の質問票と回答をもとに、追加確認が必要な質問だけを follow-up question set として返してください。',
     'answeredQuestions は既に回答済みの仕様判断です。選択肢が「未定」「後続決定」でも、その質問自体は回答済みとして扱ってください。',
     'answeredQuestions と同じ質問、同じ判断軸、同じ意味の言い換え、同じ選択肢集合の質問は絶対に繰り返さないでください。',
     '追加質問は unansweredQuestions と answeredQuestions のどちらにも存在しない新しい判断軸だけにしてください。',
+    '',
+    '## Project Stack Context',
+    projectStackContext?.trim() || 'Project stack は未検出です。',
+    '',
     JSON.stringify(buildSessionPromptPayload(session), null, 2),
   ].join('\n');
 }
@@ -103,13 +115,18 @@ export function buildDesignQuestionnaireFollowUpDecisionSystemPrompt() {
 }
 
 export function buildDesignQuestionnaireFollowUpDecisionUserPrompt(
-  session: DesignQuestionnaireSession
+  session: DesignQuestionnaireSession,
+  projectStackContext?: string | null
 ) {
   return [
     '次の質問票とユーザー回答を評価し、Design Assembly に進めるか、さらに追質問が必要かを判定してください。',
     '追質問が必要な場合だけ、追加質問フォームを questionnaire に入れてください。',
     'answeredQuestions に含まれる質問と回答は必ず引き継ぎ、同じ質問や同じ判断軸を再生成しないでください。',
     '十分なら action は ready_for_design_assembly、questionnaire は null にしてください。',
+    '',
+    '## Project Stack Context',
+    projectStackContext?.trim() || 'Project stack は未検出です。',
+    '',
     JSON.stringify(buildSessionPromptPayload(session), null, 2),
   ].join('\n');
 }
@@ -156,6 +173,9 @@ export function buildSpecificationDocumentUserPrompt(context: SpecificationConte
     '## Task',
     context.task,
     '',
+    '## Project Stack Context',
+    context.projectStackContext,
+    '',
     '## Questionnaire Decisions',
     context.questionnaireDecisions,
     '',
@@ -197,6 +217,9 @@ export function buildSpecificationReviewUserPrompt(input: {
     '',
     '## Task',
     input.context.task,
+    '',
+    '## Project Stack Context',
+    input.context.projectStackContext,
     '',
     '## Questionnaire Decisions',
     input.context.questionnaireDecisions,
