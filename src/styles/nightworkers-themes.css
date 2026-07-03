@@ -14,6 +14,9 @@
   --nw-subtle-text: hsl(215 11% 54%);
   --nw-primary: hsl(210 62% 49%);
   --nw-primary-foreground: hsl(0 0% 100%);
+  --nw-success: hsl(152 48% 34%);
+  --nw-warning: hsl(39 88% 40%);
+  --nw-danger: hsl(350 72% 48%);
   --nw-border: hsl(214 18% 78% / 0.9);
   --nw-strong-border: hsl(214 18% 64% / 0.95);
   color-scheme: light;
@@ -28,6 +31,9 @@
   --nw-muted-text: hsl(240 23% 32%);
   --nw-primary: hsl(248 30% 45%);
   --nw-primary-foreground: hsl(0 0% 100%);
+  --nw-success: hsl(152 38% 32%);
+  --nw-warning: hsl(39 74% 36%);
+  --nw-danger: hsl(350 58% 45%);
   --nw-border: hsl(245 26% 64% / 0.9);
   color-scheme: light;
 }
@@ -41,6 +47,9 @@
   --nw-muted-text: hsl(215 12% 38%);
   --nw-primary: hsl(210 85% 45%);
   --nw-primary-foreground: hsl(0 0% 100%);
+  --nw-success: hsl(152 48% 32%);
+  --nw-warning: hsl(39 82% 38%);
+  --nw-danger: hsl(350 68% 46%);
   --nw-border: hsl(0 0% 68% / 0.95);
   color-scheme: light;
 }
@@ -55,6 +64,9 @@
   --nw-subtle-text: hsl(32 16% 58%);
   --nw-primary: hsl(25 96% 58%);
   --nw-primary-foreground: hsl(24 42% 8%);
+  --nw-success: hsl(142 58% 54%);
+  --nw-warning: hsl(42 92% 58%);
+  --nw-danger: hsl(350 88% 68%);
   --nw-border: hsl(25 30% 30% / 0.9);
   --nw-strong-border: hsl(25 34% 42% / 0.92);
   color-scheme: dark;
@@ -69,6 +81,9 @@
   --nw-muted-text: hsl(158 22% 42%);
   --nw-primary: hsl(158 42% 40%);
   --nw-primary-foreground: hsl(0 0% 100%);
+  --nw-success: hsl(152 46% 32%);
+  --nw-warning: hsl(39 82% 36%);
+  --nw-danger: hsl(350 62% 46%);
   --nw-border: hsl(153 24% 72% / 0.9);
   color-scheme: light;
 }
@@ -82,6 +97,9 @@
   --nw-muted-text: hsl(325 18% 45%);
   --nw-primary: hsl(338 68% 63%);
   --nw-primary-foreground: hsl(0 0% 100%);
+  --nw-success: hsl(152 42% 34%);
+  --nw-warning: hsl(39 82% 38%);
+  --nw-danger: hsl(350 68% 48%);
   --nw-border: hsl(334 38% 74% / 0.9);
   color-scheme: light;
 }
@@ -95,6 +113,9 @@
   --nw-muted-text: hsl(24 18% 42%);
   --nw-primary: hsl(188 58% 36%);
   --nw-primary-foreground: hsl(38 54% 96%);
+  --nw-success: hsl(152 42% 32%);
+  --nw-warning: hsl(39 78% 36%);
+  --nw-danger: hsl(350 60% 44%);
   --nw-border: hsl(28 28% 68% / 0.9);
   color-scheme: light;
 }

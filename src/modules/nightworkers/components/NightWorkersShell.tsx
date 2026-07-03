@@ -637,11 +637,11 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 
   return (
     <div
-      className="nightworkers-shell h-screen overflow-hidden bg-[#111827] text-slate-100"
+      className="nightworkers-shell min-h-0 overflow-hidden bg-[#111827] text-slate-100"
       {...appearanceAttributes}
     >
       <Group
-        className="nightworkers-workbench-group h-screen min-h-0"
+        className="nightworkers-workbench-group min-h-0"
         defaultLayout={{
           'nightworkers-sidebar': initialPanelSizes.current[0],
           'nightworkers-chat': initialPanelSizes.current[1],
@@ -653,6 +653,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       >
         <Panel
           id="nightworkers-sidebar"
+          className="h-full min-h-0"
           defaultSize={`${initialPanelSizes.current[0]}%`}
           minSize="18%"
           maxSize="42%"
@@ -681,6 +682,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         <Separator className="nightworkers-panel-resize-handle" />
         <Panel
           id="nightworkers-chat"
+          className="h-full min-h-0"
           defaultSize={`${initialPanelSizes.current[1]}%`}
           minSize="58%"
         >

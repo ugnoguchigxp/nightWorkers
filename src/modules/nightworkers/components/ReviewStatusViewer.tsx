@@ -149,7 +149,7 @@ export function ReviewStatusViewer({
         ? 'border-amber-500/60 bg-amber-950/30 text-amber-100'
         : 'border-cyan-500/60 bg-cyan-950/30 text-cyan-100';
   return (
-    <div className="h-full overflow-auto bg-slate-950 p-5 text-slate-100">
+    <div className="nightworkers-review-status h-full overflow-auto bg-slate-950 p-5 text-slate-100">
       <div className="mx-auto grid max-w-5xl gap-5">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800 pb-4">
           <div>

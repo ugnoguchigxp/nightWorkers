@@ -471,6 +471,96 @@
   color: var(--nw-muted-text);
 }
 
+.nightworkers-shell .nightworkers-review-status {
+  background: var(--nw-background);
+  color: var(--nw-text);
+  color-scheme: inherit;
+}
+
+.nightworkers-shell .nightworkers-review-status[class~="bg-slate-950"] {
+  background-color: var(--nw-background);
+}
+
+.nightworkers-shell .nightworkers-review-status [class~="bg-slate-900/50"],
+.nightworkers-shell .nightworkers-review-status [class~="bg-slate-900/60"] {
+  background-color: color-mix(in srgb, var(--nw-panel) 92%, var(--nw-primary) 8%);
+}
+
+.nightworkers-shell
+  .nightworkers-review-status
+  :is(input, select, textarea)[class~="bg-slate-950"] {
+  background-color: var(--nw-surface);
+}
+
+.nightworkers-shell .nightworkers-review-status [class~="border-slate-800"] {
+  border-color: color-mix(in srgb, var(--nw-border) 82%, transparent);
+}
+
+.nightworkers-shell .nightworkers-review-status [class~="border-slate-700"] {
+  border-color: color-mix(in srgb, var(--nw-strong-border) 82%, transparent);
+}
+
+.nightworkers-shell .nightworkers-review-status[class~="text-slate-100"],
+.nightworkers-shell .nightworkers-review-status [class~="text-slate-100"] {
+  color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-review-status [class~="text-slate-300"],
+.nightworkers-shell .nightworkers-review-status [class~="text-slate-400"] {
+  color: var(--nw-muted-text);
+}
+
+.nightworkers-shell .nightworkers-review-status [class~="text-slate-500"] {
+  color: var(--nw-subtle-text);
+}
+
+.nightworkers-shell .nightworkers-review-status [class~="text-cyan-100"],
+.nightworkers-shell .nightworkers-review-status [class~="text-cyan-200"] {
+  color: color-mix(in srgb, var(--nw-primary) 82%, var(--nw-text));
+}
+
+.nightworkers-shell .nightworkers-review-status [class~="border-cyan-500/60"] {
+  border-color: color-mix(in srgb, var(--nw-primary) 62%, var(--nw-border));
+}
+
+.nightworkers-shell .nightworkers-review-status [class~="bg-cyan-950/30"] {
+  background-color: color-mix(in srgb, var(--nw-primary) 14%, var(--nw-panel));
+}
+
+.nightworkers-shell .nightworkers-review-status [class~="text-emerald-300"] {
+  color: var(--nw-success);
+}
+
+.nightworkers-shell .nightworkers-review-status [class~="text-amber-100"],
+.nightworkers-shell .nightworkers-review-status [class~="text-amber-300"] {
+  color: color-mix(in srgb, var(--nw-warning) 82%, var(--nw-text));
+}
+
+.nightworkers-shell .nightworkers-review-status [class~="border-amber-500/60"],
+.nightworkers-shell .nightworkers-review-status [class~="border-amber-700/60"] {
+  border-color: color-mix(in srgb, var(--nw-warning) 58%, var(--nw-border));
+}
+
+.nightworkers-shell .nightworkers-review-status [class~="bg-amber-950/30"] {
+  background-color: color-mix(in srgb, var(--nw-warning) 14%, var(--nw-panel));
+}
+
+.nightworkers-shell .nightworkers-review-status [class~="text-red-100"],
+.nightworkers-shell .nightworkers-review-status [class~="text-red-300"] {
+  color: color-mix(in srgb, var(--nw-danger) 82%, var(--nw-text));
+}
+
+.nightworkers-shell .nightworkers-review-status [class~="border-red-500/60"],
+.nightworkers-shell .nightworkers-review-status [class~="border-red-700"],
+.nightworkers-shell .nightworkers-review-status [class~="border-red-800"] {
+  border-color: color-mix(in srgb, var(--nw-danger) 58%, var(--nw-border));
+}
+
+.nightworkers-shell .nightworkers-review-status [class~="bg-red-950/30"],
+.nightworkers-shell .nightworkers-review-status [class~="bg-red-950/40"] {
+  background-color: color-mix(in srgb, var(--nw-danger) 14%, var(--nw-panel));
+}
+
 .nightworkers-shell[data-theme="dark"] .nightworkers-message-bubble,
 .nightworkers-shell[data-theme="dark"] .nightworkers-message-content,
 .nightworkers-shell[data-theme="dark"] .nightworkers-artifact-title,
@@ -508,27 +598,30 @@
 @layer utilities {
   .nightworkers-scrollbar {
     color-scheme: inherit;
-    scrollbar-color: var(--nightworkers-scrollbar-thumb) var(--nightworkers-scrollbar-track);
-    scrollbar-width: auto;
+    scrollbar-color: color-mix(in srgb, var(--nightworkers-scrollbar-thumb) 54%, transparent)
+      transparent;
+    scrollbar-width: thin;
   }
 
   .nightworkers-scrollbar::-webkit-scrollbar {
-    width: 0.875rem;
-    height: 0.875rem;
+    width: 0.5rem;
+    height: 0.5rem;
   }
 
   .nightworkers-scrollbar::-webkit-scrollbar-track {
-    background: var(--nightworkers-scrollbar-track);
+    background: transparent;
   }
 
   .nightworkers-scrollbar::-webkit-scrollbar-thumb {
-    border: 3px solid var(--nightworkers-scrollbar-track);
+    border: 0.125rem solid transparent;
     border-radius: 999px;
-    background: var(--nightworkers-scrollbar-thumb);
+    background: color-mix(in srgb, var(--nightworkers-scrollbar-thumb) 54%, transparent);
+    background-clip: padding-box;
   }
 
   .nightworkers-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: var(--nightworkers-scrollbar-thumb-hover);
+    background: color-mix(in srgb, var(--nightworkers-scrollbar-thumb-hover) 68%, transparent);
+    background-clip: padding-box;
   }
 
   .nightworkers-thinking-dot {

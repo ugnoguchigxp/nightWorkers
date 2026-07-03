@@ -50,7 +50,7 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
   };
 
   return (
-    <div className="nightworkers-sidebar flex h-screen min-h-0 w-full flex-col overflow-hidden border-r">
+    <div className="nightworkers-sidebar flex h-full min-h-0 w-full flex-col overflow-hidden border-r">
       <div className="flex shrink-0 items-center justify-between px-4 pb-3 pt-4">
         <button
           type="button"

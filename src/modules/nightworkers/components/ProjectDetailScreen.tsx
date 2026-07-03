@@ -652,8 +652,8 @@ export function ProjectDetailScreen({
                   ? void runAction('mission-planner:request-revision', async () => {
                       const reason =
                         window.prompt(
-                          'Revision reason',
-                          'ユーザーが planning result の修正を要求した。'
+                          t('projectDetail.mission.revisionPromptTitle'),
+                          t('projectDetail.mission.revisionPromptDefault')
                         ) ?? '';
                       const trimmed = reason.trim();
                       if (!trimmed || !missionDetail.latestPlanningResult) return;
@@ -1159,23 +1159,27 @@ function MissionPlannerPanel({
   onDismissProposal: (proposal: MissionTaskProposal) => void;
   onCreateTasks: () => void;
 }) {
+  const { t } = useTranslation();
   const reviewPending = detail?.latestPlanningResult?.status === 'review_pending';
   const selectableProposals =
     detail?.taskProposals.filter((proposal) => proposal.status === 'proposed') ?? [];
   return (
     <section className="space-y-3">
-      <SectionHeading icon={<Target className="h-4 w-4" />} title="Mission Decomposition" />
+      <SectionHeading
+        icon={<Target className="h-4 w-4" />}
+        title={t('projectDetail.mission.decompositionTitle')}
+      />
       <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
         <div className="space-y-3">
           <div className="border p-3" style={panelStyle}>
             <div className="text-xs font-semibold uppercase" style={subtleTextStyle}>
-              New Mission
+              {t('projectDetail.mission.newMission')}
             </div>
             <textarea
               className="mt-3 min-h-28 w-full resize-y border p-2 text-xs outline-none"
               disabled={busy}
               onChange={(event) => onChangeGoalText(event.target.value)}
-              placeholder="広い goal を入力"
+              placeholder={t('projectDetail.mission.goalPlaceholder')}
               style={controlStyle}
               value={goalText}
             />
@@ -1187,12 +1191,12 @@ function MissionPlannerPanel({
               type="button"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              Mission 作成
+              {t('projectDetail.mission.createMission')}
             </Button>
           </div>
           <div className="overflow-hidden border" style={panelStyle}>
             <div className="border-b px-3 py-2 text-xs font-semibold" style={tableBorderStyle}>
-              Missions
+              {t('projectDetail.mission.listTitle')}
             </div>
             <div className="max-h-80 overflow-auto">
               {missions.length > 0 ? (
@@ -1213,12 +1217,14 @@ function MissionPlannerPanel({
                   >
                     <span className="block truncate font-semibold">{mission.title}</span>
                     <span className="mt-1 block truncate text-[10px]" style={subtleTextStyle}>
-                      {mission.status}
+                      {t(`projectDetail.mission.status.${mission.status}`, {
+                        defaultValue: mission.status,
+                      })}
                     </span>
                   </button>
                 ))
               ) : (
-                <EmptyBlock message="Mission はまだありません。" />
+                <EmptyBlock message={t('projectDetail.mission.emptyMissions')} />
               )}
             </div>
           </div>
@@ -1237,11 +1243,13 @@ function MissionPlannerPanel({
                     {detail.mission.goalText}
                   </div>
                   <div className="mt-2 text-[10px] uppercase" style={mutedTextStyle}>
-                    {detail.mission.status}
+                    {t(`projectDetail.mission.status.${detail.mission.status}`, {
+                      defaultValue: detail.mission.status,
+                    })}
                   </div>
                   {detail.mission.nonGoals.length > 0 ? (
                     <div className="mt-2 text-[10px]" style={subtleTextStyle}>
-                      <div className="font-semibold">Non-goals</div>
+                      <div className="font-semibold">{t('projectDetail.mission.nonGoals')}</div>
                       <ul className="mt-1 list-disc space-y-0.5 pl-4">
                         {detail.mission.nonGoals.map((nonGoal) => (
                           <li key={nonGoal}>{nonGoal}</li>
@@ -1259,7 +1267,7 @@ function MissionPlannerPanel({
                     type="button"
                   >
                     <Sparkles className="h-3.5 w-3.5" />
-                    分解 / 評価
+                    {t('projectDetail.mission.decompose')}
                   </Button>
                   <Button
                     className="h-8 px-3 text-xs font-semibold"
@@ -1269,7 +1277,7 @@ function MissionPlannerPanel({
                     type="button"
                   >
                     <Pencil className="h-3.5 w-3.5" />
-                    Revision 要求
+                    {t('projectDetail.mission.requestRevision')}
                   </Button>
                   <Button
                     className="h-8 px-3 text-xs font-semibold"
@@ -1278,7 +1286,9 @@ function MissionPlannerPanel({
                     style={primaryButtonStyle}
                     type="button"
                   >
-                    Task 化 ({selectedProposalIds.length})
+                    {t('projectDetail.mission.createSelectedTasks', {
+                      count: selectedProposalIds.length,
+                    })}
                   </Button>
                 </div>
               </div>
@@ -1293,30 +1303,43 @@ function MissionPlannerPanel({
                         body: item.completionCriteria.join(' / '),
                         gates: item.verificationGate,
                       }))}
-                      title="Objectives"
+                      title={t('projectDetail.mission.objectives')}
                     />
                     <PlanningListBlock
                       items={detail.latestPlanningResult.planningResult.workPackages.map(
                         (item) => ({
                           id: item.id,
                           title: item.title,
-                          body: `${item.purpose} / ${item.risk}${
-                            item.suggestedPlanMode ? ' / Plan first' : ''
+                          body: `${item.purpose} / ${t(`projectDetail.mission.risk.${item.risk}`, {
+                            defaultValue: item.risk,
+                          })}${
+                            item.suggestedPlanMode
+                              ? ` / ${t('projectDetail.mission.planFirst')}`
+                              : ''
                           }`,
                           gates: item.verificationGate,
                         })
                       )}
-                      title="Work Packages"
+                      title={t('projectDetail.mission.workPackages')}
                     />
                   </div>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
                       <SectionLabel
                         icon={<ClipboardCheck className="h-4 w-4" />}
-                        title="Task Proposals"
+                        title={t('projectDetail.mission.taskProposals')}
                       />
                       <span className="text-[10px]" style={subtleTextStyle}>
-                        {reviewPending ? 'review_pending' : detail.latestPlanningResult.status}
+                        {t(
+                          `projectDetail.mission.status.${
+                            reviewPending ? 'review_pending' : detail.latestPlanningResult.status
+                          }`,
+                          {
+                            defaultValue: reviewPending
+                              ? 'review_pending'
+                              : detail.latestPlanningResult.status,
+                          }
+                        )}
                       </span>
                     </div>
                     {detail.taskProposals.length > 0 ? (
@@ -1331,30 +1354,30 @@ function MissionPlannerPanel({
                         />
                       ))
                     ) : (
-                      <EmptyBlock message="Task proposal はまだありません。" />
+                      <EmptyBlock message={t('projectDetail.mission.emptyTaskProposals')} />
                     )}
                     {!reviewPending && detail.latestPlanningResult.status !== 'draft' ? (
                       <div className="border px-3 py-2 text-xs" style={controlStyle}>
                         {detail.latestPlanningResult.statusReason ??
-                          'この planning result はまだ Task 化できません。'}
+                          t('projectDetail.mission.resultNotReady')}
                       </div>
                     ) : null}
                     {reviewPending && selectableProposals.length === 0 ? (
                       <div className="border px-3 py-2 text-xs" style={controlStyle}>
-                        Task 化できる proposed proposal はありません。
+                        {t('projectDetail.mission.noSelectableProposals')}
                       </div>
                     ) : null}
                   </div>
                 </div>
               ) : (
                 <div className="p-6 text-center text-xs" style={subtleTextStyle}>
-                  Mission を分解すると planning result が表示されます。
+                  {t('projectDetail.mission.decomposeHint')}
                 </div>
               )}
             </>
           ) : (
             <div className="p-6 text-center text-xs" style={subtleTextStyle}>
-              Mission を選択してください。
+              {t('projectDetail.mission.selectMission')}
             </div>
           )}
         </div>
@@ -1407,6 +1430,7 @@ function MissionTaskProposalRow({
   onToggle: () => void;
   onDismiss: () => void;
 }) {
+  const { t } = useTranslation();
   const disabled = disabledByResult || proposal.status !== 'proposed';
   return (
     <div className="border p-3 text-xs" style={controlStyle}>
@@ -1427,14 +1451,26 @@ function MissionTaskProposalRow({
           style={controlStyle}
           type="button"
         >
-          Dismiss
+          {t('projectDetail.mission.dismissProposal')}
         </Button>
       </div>
       <div className="mt-2 flex flex-wrap gap-2 text-[10px]" style={mutedTextStyle}>
-        <span>{proposal.status}</span>
-        <span>{proposal.risk}</span>
-        <span>{proposal.scheduling.executionType}</span>
-        {proposal.approvalRequired ? <span>approval required</span> : null}
+        <span>
+          {t(`projectDetail.mission.proposalStatus.${proposal.status}`, {
+            defaultValue: proposal.status,
+          })}
+        </span>
+        <span>
+          {t(`projectDetail.mission.risk.${proposal.risk}`, { defaultValue: proposal.risk })}
+        </span>
+        <span>
+          {t(`projectDetail.mission.execution.${proposal.scheduling.executionType}`, {
+            defaultValue: proposal.scheduling.executionType,
+          })}
+        </span>
+        {proposal.approvalRequired ? (
+          <span>{t('projectDetail.mission.approvalRequired')}</span>
+        ) : null}
       </div>
       {proposal.verificationGate.length > 0 ? (
         <ul className="mt-2 list-disc space-y-0.5 pl-4 text-[10px]" style={mutedTextStyle}>
@@ -1509,14 +1545,14 @@ function MissionGenerateTasksPanel({
             className="h-8 px-3 text-xs font-semibold"
             style={controlStyle}
           >
-            {`Create Tasks (${selectedCount})`}
+            {t('projectDetail.mission.createTasks', { count: selectedCount })}
           </Button>
         </div>
         <div className="nightworkers-scrollbar overflow-auto">
           <table className="w-full min-w-[1040px] text-xs">
             <thead style={subtleTextStyle}>
               <tr>
-                <th className="py-2 pl-4 text-left">Select</th>
+                <th className="py-2 pl-4 text-left">{t('projectDetail.mission.select')}</th>
                 <th className="py-2 pl-4 text-left">{t('projectDetail.field.candidate')}</th>
                 <th className="py-2 text-left">{t('projectDetail.field.goalSignal')}</th>
                 <th className="py-2 text-right">{t('projectDetail.field.evalContribution')}</th>
@@ -1866,6 +1902,7 @@ function CandidateDrawer({
   onClose: () => void;
   onDismiss: (candidate: MissionTaskCandidate) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
       <aside
@@ -1876,20 +1913,26 @@ function CandidateDrawer({
           <div>
             <div className="text-base font-bold">{candidate.title}</div>
             <div className="mt-1 text-xs" style={mutedTextStyle}>
-              {candidate.goalTitle || candidate.goalId || 'No linked goal'}
+              {candidate.goalTitle || candidate.goalId || t('projectDetail.mission.noLinkedGoal')}
             </div>
           </div>
           <Button type="button" onClick={onClose} style={controlStyle}>
-            Close
+            {t('projectDetail.mission.close')}
           </Button>
         </div>
-        <DrawerSection title="Summary" body={candidate.summary} />
-        <DrawerSection title="Rationale" body={candidate.rationale} />
-        <DrawerSection title="Task prompt" body={candidate.taskPrompt} />
-        <DrawerSection title="Acceptance criteria" body={candidate.acceptanceCriteria} />
-        <DrawerSection title="Verification plan" body={candidate.verificationPlan} />
+        <DrawerSection title={t('projectDetail.mission.summary')} body={candidate.summary} />
+        <DrawerSection title={t('projectDetail.mission.rationale')} body={candidate.rationale} />
+        <DrawerSection title={t('projectDetail.mission.taskPrompt')} body={candidate.taskPrompt} />
+        <DrawerSection
+          title={t('projectDetail.mission.acceptanceCriteria')}
+          body={candidate.acceptanceCriteria}
+        />
+        <DrawerSection
+          title={t('projectDetail.mission.verificationPlan')}
+          body={candidate.verificationPlan}
+        />
         <div className="mt-4">
-          <div className="text-xs font-bold">Evidence</div>
+          <div className="text-xs font-bold">{t('projectDetail.mission.evidence')}</div>
           <div className="mt-2 space-y-2">
             {candidate.evidence.map((item, index) => (
               <div
@@ -1906,12 +1949,20 @@ function CandidateDrawer({
           </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-          <KpiTile label="Importance" value={`${candidate.importancePercent}%`} sub="mission" />
-          <KpiTile label="Confidence" value={`${candidate.confidencePercent}%`} sub="generation" />
+          <KpiTile
+            label={t('projectDetail.field.importance')}
+            value={`${candidate.importancePercent}%`}
+            sub={t('projectDetail.mission.importanceSub')}
+          />
+          <KpiTile
+            label={t('projectDetail.field.confidence')}
+            value={`${candidate.confidencePercent}%`}
+            sub={t('projectDetail.mission.confidenceSub')}
+          />
         </div>
         <div className="mt-4 flex justify-end">
           <Button type="button" onClick={() => onDismiss(candidate)} style={controlStyle}>
-            Dismiss
+            {t('projectDetail.mission.dismissCandidate')}
           </Button>
         </div>
       </aside>
