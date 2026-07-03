@@ -63,6 +63,53 @@ export function buildMissionDraftUserPrompt(input: { inputBundle: unknown }) {
   );
 }
 
+export function buildMissionCandidatesSystemPrompt() {
+  return [
+    'あなたは NightWorkers の Mission Candidate generator です。',
+    '設定済み Mission Goal と repository signal から、中間目標としてレビューできる Mission 候補だけを JSON schema に従って返してください。',
+    'ユーザーが Mission を白紙から作る前提にしないでください。Mission 候補は LLM が初期案として作ります。',
+    '候補は Task ではありません。Task proposal は候補が人間に選ばれた後の分解 stage で作ります。',
+    'repositorySnapshot.llmContextFiles がある場合はそれを最優先の実装状態として扱い、無い場合だけ README / sourceExcerpts / recentCommitDiffs を補助根拠にしてください。',
+    '候補は Goal 達成までの中間目標、作業パッケージ、または複数 Task の workflow として意味がある粒度にしてください。',
+    'プロンプト文言と出力本文は日本語を維持してください。',
+  ].join('\n');
+}
+
+export function buildMissionCandidatesUserPrompt(input: {
+  inputBundle: unknown;
+  existingMissions: Array<{ id: string; title: string; status: string }>;
+}) {
+  return JSON.stringify(
+    {
+      instruction:
+        'Mission 候補を作成してください。既存 Mission と title が重なる候補は返さないでください。',
+      requiredOutput: {
+        schemaVersion: 'nightworkers.mission-candidates/v1',
+        candidates: [
+          {
+            title: 'string',
+            goalText: 'string',
+            nonGoals: ['string'],
+            sourceGoalIds: ['MissionGoal.id'],
+            rationale: 'string',
+          },
+        ],
+      },
+      generationRules: [
+        'Mission は Goal の言い換えではなく、Goal 達成に向けた中間目標または workflow 単位にする。',
+        'Task まで細かくしない。Task proposal は後続の分解で作る。',
+        'sourceGoalIds は必ず1件以上入れ、inputBundle.sourceGoals に含まれる id だけを使う。',
+        'Goal 本体の実装状態は projectSignalSnapshot.repositorySnapshot から判断する。',
+        '根拠が薄い場合は、大きすぎる Mission を作らず、確認しやすい候補へ分割する。',
+      ],
+      existingMissions: input.existingMissions,
+      inputBundle: input.inputBundle,
+    },
+    null,
+    2
+  );
+}
+
 export function buildMissionStructureSystemPrompt() {
   return [
     'あなたは NightWorkers の Mission Planner です。',

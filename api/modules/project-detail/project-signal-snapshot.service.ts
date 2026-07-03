@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
@@ -38,6 +39,180 @@ function readPackageScripts(repoRoot: string): Record<string, string> {
       (entry): entry is [string, string] => typeof entry[1] === 'string'
     )
   );
+}
+
+function readReadmeExcerpt(repoRoot: string) {
+  const readmePath = path.join(repoRoot, 'README.md');
+  if (!fs.existsSync(readmePath)) return null;
+  try {
+    return fs.readFileSync(readmePath, 'utf8').slice(0, 4000);
+  } catch {
+    return null;
+  }
+}
+
+function packageStringField(
+  packageJson: Record<string, unknown> | null,
+  field: 'name' | 'description'
+) {
+  const value = packageJson?.[field];
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function listRepositoryFiles(repoRoot: string) {
+  const ignored = new Set([
+    '.git',
+    'node_modules',
+    'coverage',
+    'dist',
+    'dist-web',
+    'build',
+    'playwright-report',
+    'test-results',
+    'data',
+  ]);
+  const files: string[] = [];
+
+  function visit(current: string, depth: number) {
+    if (depth > 5 || files.length >= 300) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (ignored.has(entry.name)) continue;
+      const fullPath = path.join(current, entry.name);
+      const relativePath = path.relative(repoRoot, fullPath);
+      if (entry.isDirectory()) {
+        visit(fullPath, depth + 1);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      files.push(relativePath);
+    }
+  }
+
+  visit(repoRoot, 0);
+  return files.sort();
+}
+
+function readSourceExcerpts(repoRoot: string, sourceFiles: string[]) {
+  const preferred = sourceFiles.filter(
+    (filePath) =>
+      /\.(ts|tsx|js|jsx|css|md)$/.test(filePath) &&
+      (/(^|\/)(src|app|web|pages|routes?|components|views?)\//.test(filePath) ||
+        /(^|\/)(README|package)\./i.test(filePath))
+  );
+  const fallback = sourceFiles.filter((filePath) => /\.(ts|tsx|js|jsx|md)$/.test(filePath));
+  return [...new Set([...preferred, ...fallback])].slice(0, 16).flatMap((filePath) => {
+    try {
+      const fullPath = path.join(repoRoot, filePath);
+      const stat = fs.statSync(fullPath);
+      if (!stat.isFile() || stat.size > 80_000) return [];
+      const excerpt = fs
+        .readFileSync(fullPath, 'utf8')
+        .replace(/\s+\n/g, '\n')
+        .slice(0, 1800)
+        .trim();
+      return excerpt ? [{ path: filePath, excerpt }] : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
+function readTextExcerpt(filePath: string, maxChars: number) {
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size > 120_000) return null;
+    const excerpt = fs.readFileSync(filePath, 'utf8').slice(0, maxChars).trim();
+    return excerpt || null;
+  } catch {
+    return null;
+  }
+}
+
+function readLlmContextFiles(repoRoot: string, sourceFiles: string[]) {
+  const contextFileNames = new Set([
+    'LLM_CONTEXT.md',
+    'LLM_CONTEXT',
+    'llm-context.md',
+    '.llm-context.md',
+  ]);
+  return sourceFiles
+    .filter((filePath) => contextFileNames.has(filePath) || /(^|\/)LLM_CONTEXT\.md$/.test(filePath))
+    .slice(0, 4)
+    .flatMap((filePath) => {
+      const excerpt = readTextExcerpt(path.join(repoRoot, filePath), 6000);
+      return excerpt ? [{ path: filePath, excerpt }] : [];
+    });
+}
+
+function git(repoRoot: string, args: string[]) {
+  try {
+    return execFileSync('git', ['-C', repoRoot, ...args], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 3000,
+      maxBuffer: 256_000,
+    }).trim();
+  } catch {
+    return '';
+  }
+}
+
+function readRecentNonInitialCommitDiffs(repoRoot: string) {
+  const hashes = git(repoRoot, ['rev-list', '--max-count=2', '--min-parents=1', 'HEAD'])
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return hashes.flatMap((hash) => {
+    const header = git(repoRoot, ['show', '--no-patch', '--format=%h%n%s', hash]).split('\n');
+    const diff = git(repoRoot, [
+      'show',
+      '--format=',
+      '--stat',
+      '--patch',
+      '--find-renames',
+      '--unified=2',
+      hash,
+    ]).slice(0, 10_000);
+    if (!diff) return [];
+    return [
+      {
+        hash: header[0] || hash.slice(0, 12),
+        subject: header.slice(1).join('\n').trim() || '(no subject)',
+        diffExcerpt: diff,
+      },
+    ];
+  });
+}
+
+function buildRepositorySnapshot(repoRoot: string): ProjectSignalSnapshot['repositorySnapshot'] {
+  const packageJson = readPackageJson(repoRoot);
+  const sourceFiles = listRepositoryFiles(repoRoot);
+  const llmContextFiles = readLlmContextFiles(repoRoot, sourceFiles);
+  const packageScripts = Object.entries(readPackageScripts(repoRoot))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, command]) => ({ name, command }));
+  return {
+    packageName: packageStringField(packageJson, 'name'),
+    description: packageStringField(packageJson, 'description'),
+    readmeExcerpt: readReadmeExcerpt(repoRoot),
+    sourceFiles: sourceFiles
+      .filter((filePath) => /\.(ts|tsx|js|jsx|css|sql|md|json)$/.test(filePath))
+      .slice(0, 120),
+    routeFiles: sourceFiles
+      .filter((filePath) => /(^|\/)(routes?|views?)\//.test(filePath))
+      .slice(0, 80),
+    migrationFiles: sourceFiles.filter((filePath) => filePath.startsWith('drizzle/')).slice(0, 40),
+    sourceExcerpts: readSourceExcerpts(repoRoot, sourceFiles),
+    llmContextFiles,
+    recentCommitDiffs: llmContextFiles.length > 0 ? [] : readRecentNonInitialCommitDiffs(repoRoot),
+    packageScripts,
+  };
 }
 
 function shellQuote(value: string) {
@@ -191,6 +366,7 @@ export async function buildProjectSignalSnapshot(input: {
       coverage: latestQuality?.coverageGate ?? null,
       e2e: latestQuality?.e2eSummary ?? null,
     },
+    repositorySnapshot: buildRepositorySnapshot(input.repository.localPath),
     qualityCapabilities: signalQualityCapabilities(input.repository.localPath),
     recentTokenSpendTasks: await recentTokenSpendTasks(input.repository.id),
     recentRuns: await recentRunCounts(input.repository.id),

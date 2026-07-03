@@ -57,7 +57,7 @@ export function mergeCreatedProjectEvaluationTasks(current: Task[], createdTasks
 
 export function useProjectEvaluationController(
   repositoryId: string,
-  options: { onTasksCreated?: (tasks: Task[]) => void } = {}
+  options: { onTasksCreated?: (tasks: Task[]) => Promise<void> | void } = {}
 ) {
   const { onTasksCreated } = options;
   const queryClient = useQueryClient();
@@ -258,7 +258,7 @@ export function useProjectEvaluationController(
       void queryClient.invalidateQueries({ queryKey: ['implementationQueue'] });
       setDetail({ ...detail, taskLinks: result.taskLinks });
       setSelectedIdeaIds(new Set());
-      onTasksCreated?.(result.tasks);
+      await onTasksCreated?.(result.tasks);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

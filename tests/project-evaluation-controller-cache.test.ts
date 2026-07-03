@@ -85,4 +85,21 @@ describe('project evaluation task prompt drafts', () => {
       initialPrompt: '',
     });
   });
+
+  it('restores a mission task candidate prompt before the first user message', () => {
+    const createdTask = {
+      ...task('task-created', 'todo list の本体機能を実装する'),
+      createdBy: 'mission-task-candidate',
+      objective: 'todo list プロダクトの本体を追加してください。',
+    };
+
+    expect(projectEvaluationComposerDraftState(createdTask, [])).toEqual({
+      discardStoredDraft: false,
+      initialPrompt: 'todo list プロダクトの本体を追加してください。',
+    });
+    expect(projectEvaluationComposerDraftState(createdTask, [taskMessage('user')])).toEqual({
+      discardStoredDraft: true,
+      initialPrompt: '',
+    });
+  });
 });

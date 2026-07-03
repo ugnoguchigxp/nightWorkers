@@ -217,7 +217,13 @@ export const missionDecompositionRunSchema = z
     }),
     selectedModels: z.array(
       z.object({
-        stage: z.enum(['mission_draft', 'structure', 'task_proposals', 'evaluation']),
+        stage: z.enum([
+          'mission_candidates',
+          'mission_draft',
+          'structure',
+          'task_proposals',
+          'evaluation',
+        ]),
         providerId: z.string(),
         providerEndpointId: z.string().nullable(),
         routeSource: z.string().nullable(),
@@ -311,6 +317,43 @@ export const createMissionRequestSchema = z.object({
   sourceGoalIds: z.array(z.string().uuid()).default([]),
 });
 export type CreateMissionRequest = z.infer<typeof createMissionRequestSchema>;
+
+export const generateMissionCandidatesRequestSchema = z.object({
+  goalIds: z.array(z.string().uuid()).optional(),
+  includeInactiveGoals: z.boolean().default(false),
+});
+export type GenerateMissionCandidatesRequest = z.infer<
+  typeof generateMissionCandidatesRequestSchema
+>;
+
+export const missionCandidateGenerationResultSchema = z
+  .object({
+    schemaVersion: z.literal('nightworkers.mission-candidates/v1'),
+    candidates: z
+      .array(
+        z.object({
+          title: z.string().min(1),
+          goalText: z.string().min(1),
+          nonGoals: z.array(z.string().min(1)).default([]),
+          sourceGoalIds: z.array(z.string().uuid()).min(1),
+          rationale: z.string().min(1),
+        })
+      )
+      .min(1)
+      .max(8),
+  })
+  .openapi('MissionCandidateGenerationResult');
+export type MissionCandidateGenerationResult = z.infer<
+  typeof missionCandidateGenerationResultSchema
+>;
+
+export const generateMissionCandidatesResponseSchema = z.object({
+  status: z.enum(['completed']),
+  missions: z.array(missionSchema),
+});
+export type GenerateMissionCandidatesResponse = z.infer<
+  typeof generateMissionCandidatesResponseSchema
+>;
 
 export const decomposeMissionRequestSchema = z.object({
   force: z.boolean().default(false),

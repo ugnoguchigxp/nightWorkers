@@ -101,6 +101,15 @@ describe('Project Detail backend', () => {
         health: { latestEvaluationScore: null, coverageAverage: null },
       });
 
+      const presetsRes = await app.request('http://localhost/api/mission-goal-presets');
+      expect(presetsRes.status).toBe(200);
+      await expect(presetsRes.json()).resolves.toMatchObject([
+        { id: 'coverage-budget', title: 'カバレッジ維持' },
+        { id: 'performance-budget', title: 'パフォーマンス維持' },
+        { id: 'design-token-coverage', title: 'Design Token準拠' },
+        { id: 'i18n-dictionary-parity', title: 'i18n辞書同期' },
+      ]);
+
       const createGoalRes = await app.request(
         `http://localhost/api/repositories/${project.id}/mission-goals`,
         {
@@ -232,14 +241,17 @@ describe('Project Detail backend', () => {
           dependencies: {
             hono: '4.12.21',
             react: '19.2.4',
+            'react-i18next': '17.0.8',
           },
           devDependencies: {
+            tailwindcss: '4.0.0',
             typescript: '6.0.2',
             vite: '6.4.2',
           },
         }),
         'utf8'
       );
+      fs.writeFileSync(path.join(repoRoot, 'components.json'), '{"style":"radix-nova"}', 'utf8');
       const project = await createRepository(repoRoot);
 
       const metricsRes = await app.request(
@@ -257,6 +269,9 @@ describe('Project Detail backend', () => {
             expect.objectContaining({ name: 'React', packageName: 'react' }),
             expect.objectContaining({ name: 'Vite', packageName: 'vite' }),
             expect.objectContaining({ name: 'Hono', packageName: 'hono' }),
+            expect.objectContaining({ name: 'i18next', packageName: 'react-i18next' }),
+            expect.objectContaining({ name: 'Tailwind CSS', packageName: 'tailwindcss' }),
+            expect.objectContaining({ name: 'shadcn/ui', source: 'file' }),
           ]),
         },
       });
@@ -314,9 +329,216 @@ describe('Project Detail backend', () => {
         status: 'draft',
         createdBy: 'mission-task-candidate',
       });
+      expect(created.tasks[0].objective).toContain(
+        'この Mission Task Candidate は、まず実装計画を作成してください。'
+      );
+      expect(created.tasks[0].objective).toContain('[前提]');
+      expect(created.tasks[0].objective).toContain('[候補の元指示]');
+      expect(created.tasks[0].objective).toContain(
+        'package.json に test:coverage と test:e2e scripts を追加してください。'
+      );
+      expect(created.tasks[0].objective).toContain('[事前に分かっている仕様]');
+      expect(created.tasks[0].objective).toContain(
+        '- 期待成果: Quality capability が runnable として検出される。'
+      );
+      expect(created.tasks[0].objective).toContain('[ユーザー定義候補 / 未確定事項]');
+      expect(created.tasks[0].objective).toContain(
+        'Questionnaire や Plan Mode でユーザーが定義できる仕様要素'
+      );
+      expect(created.tasks[0].objective).toContain('Goal: 未指定');
+      expect(created.tasks[0].objective).toContain('Expected evaluation contribution: +12');
+      expect(created.tasks[0].objective).toContain('[Verification]');
       expect(created.candidates[0]).toMatchObject({
         status: 'task_created',
         taskId: created.tasks[0].id,
+      });
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('skips mission candidates that duplicate existing uncreated candidates', async () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-dedupe-'));
+    try {
+      fs.writeFileSync(
+        path.join(repoRoot, 'package.json'),
+        JSON.stringify({ scripts: { test: 'echo unit' } }),
+        'utf8'
+      );
+      const project = await createRepository(repoRoot);
+      const createGoalRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-goals`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Quality',
+            goalText: 'Quality capability を整備する。',
+            active: true,
+          }),
+        }
+      );
+      expect(createGoalRes.status).toBe(201);
+
+      const firstGenerateRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates/generate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+      expect(firstGenerateRes.status).toBe(201);
+      const firstGenerated = (await firstGenerateRes.json()) as {
+        candidates: Array<{ id: string; title: string }>;
+      };
+      expect(firstGenerated.candidates).toHaveLength(1);
+
+      const secondGenerateRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates/generate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+      expect(secondGenerateRes.status).toBe(201);
+      const secondGenerated = (await secondGenerateRes.json()) as {
+        candidates: Array<{ id: string; title: string }>;
+      };
+      expect(secondGenerated.candidates).toHaveLength(0);
+
+      const candidatesRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates`
+      );
+      expect(await candidatesRes.json()).toHaveLength(1);
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('skips mission candidates that duplicate existing task titles', async () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-task-dedupe-'));
+    try {
+      fs.writeFileSync(
+        path.join(repoRoot, 'package.json'),
+        JSON.stringify({ scripts: { test: 'echo unit' } }),
+        'utf8'
+      );
+      const project = await createRepository(repoRoot);
+      await nightworkersRepo.createTask({
+        repositoryId: project.id,
+        title: 'package.json に coverage と E2E scripts を追加する',
+        status: 'draft',
+      });
+      const createGoalRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-goals`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Quality',
+            goalText: 'Quality capability を整備する。',
+            active: true,
+          }),
+        }
+      );
+      expect(createGoalRes.status).toBe(201);
+
+      const generateRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates/generate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+      expect(generateRes.status).toBe(201);
+      const generated = (await generateRes.json()) as {
+        candidates: Array<{ id: string; title: string }>;
+      };
+      expect(generated.candidates).toHaveLength(0);
+
+      const candidatesRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates`
+      );
+      expect(await candidatesRes.json()).toHaveLength(0);
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('reactivates a mission candidate when its unimplemented task is deleted', async () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-reactivate-'));
+    try {
+      fs.writeFileSync(
+        path.join(repoRoot, 'package.json'),
+        JSON.stringify({ scripts: { test: 'echo unit' } }),
+        'utf8'
+      );
+      const project = await createRepository(repoRoot);
+      const createGoalRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-goals`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Quality',
+            goalText: 'Quality capability を整備する。',
+            active: true,
+          }),
+        }
+      );
+      expect(createGoalRes.status).toBe(201);
+
+      const generateRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates/generate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+      expect(generateRes.status).toBe(201);
+      const generated = (await generateRes.json()) as { candidates: Array<{ id: string }> };
+      const candidateId = generated.candidates[0].id;
+
+      const createTasksRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates/create-tasks`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ candidateIds: [candidateId], mode: 'draft' }),
+        }
+      );
+      expect(createTasksRes.status).toBe(201);
+      const created = (await createTasksRes.json()) as {
+        tasks: Array<{ id: string }>;
+        candidates: Array<{ status: string; taskId: string | null }>;
+      };
+      expect(created.candidates[0]).toMatchObject({
+        status: 'task_created',
+        taskId: created.tasks[0].id,
+      });
+
+      const deleteTaskRes = await app.request(`http://localhost/api/tasks/${created.tasks[0].id}`, {
+        method: 'DELETE',
+        headers: { Origin: 'http://localhost:39174' },
+      });
+      expect(deleteTaskRes.status).toBe(200);
+
+      const candidatesRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates`
+      );
+      expect(candidatesRes.status).toBe(200);
+      const candidates = (await candidatesRes.json()) as Array<{
+        id: string;
+        status: string;
+        taskId: string | null;
+      }>;
+      expect(candidates.find((candidate) => candidate.id === candidateId)).toMatchObject({
+        status: 'candidate',
+        taskId: null,
       });
     } finally {
       fs.rmSync(repoRoot, { recursive: true, force: true });

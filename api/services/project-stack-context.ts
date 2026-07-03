@@ -87,13 +87,30 @@ export function detectProjectStackProfile(repoRoot: string): ProjectStackProfile
     });
   }
   addDependencyTechnology('React', 'frontend', ['react']);
+  addDependencyTechnology('Next.js', 'frontend', ['next']);
   addDependencyTechnology('Vite', 'tooling', ['vite']);
   addDependencyTechnology('Hono', 'backend', ['hono']);
   addDependencyTechnology('SQLite', 'database', ['better-sqlite3', '@libsql/client']);
   addDependencyTechnology('Drizzle ORM', 'orm', ['drizzle-orm']);
+  addDependencyTechnology('i18next', 'tooling', ['react-i18next', 'i18next']);
+  addDependencyTechnology('Tailwind CSS', 'frontend', [
+    'tailwindcss',
+    '@tailwindcss/vite',
+    '@tailwindcss/cli',
+  ]);
   addDependencyTechnology('Vitest', 'testing', ['vitest']);
   addDependencyTechnology('Playwright', 'testing', ['@playwright/test']);
   addDependencyTechnology('Tauri', 'desktop', ['@tauri-apps/api', '@tauri-apps/cli']);
+  if (fs.existsSync(path.join(repoRoot, 'components.json'))) {
+    technologies.push({
+      name: 'shadcn/ui',
+      category: 'frontend',
+      packageName: null,
+      version: null,
+      source: 'file',
+      confidence: 'medium',
+    });
+  }
   if (packageManager) {
     technologies.push({
       name: packageManager.split('@')[0] || packageManager,

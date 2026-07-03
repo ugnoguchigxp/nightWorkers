@@ -541,7 +541,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     [props.onCloseSettings]
   );
   const handleProjectEvaluationTasksCreated = useCallback(
-    (tasks: Task[]) => {
+    async (tasks: Task[]) => {
       const drafts = projectEvaluationTaskPromptDrafts(tasks);
       try {
         for (const draft of drafts) {
@@ -552,6 +552,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       }
       const firstTask = tasks[0];
       if (!firstTask) return;
+      await workspaceRef.current.refreshProjectList();
       setArtifactFocus({ type: 'closed' });
       setShowQueueScreen(false);
       setShowOverviewScreen(false);

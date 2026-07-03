@@ -239,6 +239,104 @@ describe('Mission Planner schemas and validation', () => {
 });
 
 describe('Mission Planner service and routes', () => {
+  it('generates Mission candidates from configured Goals and repository signal', async () => {
+    const repository = await createRepository();
+    const goal = await app.request(
+      `http://localhost/api/repositories/${repository.id}/mission-goals`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Quality',
+          goalText: 'リリース前の品質を安定させる。',
+          active: true,
+        }),
+      }
+    );
+    expect(goal.status).toBe(201);
+    const createdGoal = (await goal.json()) as { id: string };
+    structuredLlmFixture.outputs = [
+      {
+        schemaVersion: 'nightworkers.mission-candidates/v1',
+        candidates: [
+          {
+            title: '品質ゲートを先に整備する',
+            goalText: 'verify / test / coverage の実行前提を固める。',
+            nonGoals: ['機能追加は含めない。'],
+            sourceGoalIds: [createdGoal.id],
+            rationale: 'package scripts と quality signal から先に整備が必要。',
+          },
+        ],
+      },
+    ];
+
+    const generateRes = await app.request(
+      `http://localhost/api/repositories/${repository.id}/missions/generate-candidates`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }
+    );
+    expect(generateRes.status).toBe(201);
+    const generated = (await generateRes.json()) as {
+      missions: Array<{ title: string; status: string; statusReason: string | null }>;
+    };
+    expect(generated.missions).toMatchObject([
+      {
+        title: '品質ゲートを先に整備する',
+        status: 'draft',
+        statusReason: 'package scripts と quality signal から先に整備が必要。',
+      },
+    ]);
+  });
+
+  it('rejects Mission candidates that are not linked to a configured Goal', async () => {
+    const repository = await createRepository();
+    const goal = await app.request(
+      `http://localhost/api/repositories/${repository.id}/mission-goals`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Quality',
+          goalText: 'リリース前の品質を安定させる。',
+          active: true,
+        }),
+      }
+    );
+    expect(goal.status).toBe(201);
+    structuredLlmFixture.outputs = [
+      {
+        schemaVersion: 'nightworkers.mission-candidates/v1',
+        candidates: [
+          {
+            title: 'リンクなし候補',
+            goalText: '紐づく Goal がない候補。',
+            nonGoals: [],
+            sourceGoalIds: [],
+            rationale: 'schema validation で拒否されるべき候補。',
+          },
+        ],
+      },
+    ];
+
+    const generateRes = await app.request(
+      `http://localhost/api/repositories/${repository.id}/missions/generate-candidates`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }
+    );
+    expect(generateRes.status).toBe(400);
+
+    const listRes = await app.request(
+      `http://localhost/api/repositories/${repository.id}/missions`
+    );
+    expect(await listRes.json()).toEqual([]);
+  });
+
   it('creates a review-pending planning result and materializes selected proposals as Tasks', async () => {
     const repository = await createRepository();
     queueLlmOutputs();
@@ -369,6 +467,24 @@ describe('Mission Planner service and routes', () => {
     expect(listRes.status).toBe(200);
     const list = await listRes.json();
     expect(list.map((mission: { id: string }) => mission.id)).toContain(created.id);
+  });
+
+  it('lists repository Mission task proposals for the Project Detail task candidate list', async () => {
+    const repository = await createRepository();
+    queueLlmOutputs();
+    const mission = await missionPlannerService.createMission({
+      repositoryId: repository.id,
+      goalText: 'Project Detail の候補一覧に proposal を表示する。',
+    });
+    const detail = await missionPlannerService.decomposeMission({ missionId: mission.id });
+    expect(detail.taskProposals).toHaveLength(1);
+
+    const proposalsRes = await app.request(
+      `http://localhost/api/repositories/${repository.id}/mission-task-proposals`
+    );
+    expect(proposalsRes.status).toBe(200);
+    const proposals = (await proposalsRes.json()) as Array<{ id: string; status: string }>;
+    expect(proposals).toMatchObject([{ id: detail.taskProposals[0].id, status: 'proposed' }]);
   });
 });
 

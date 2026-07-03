@@ -1,9 +1,11 @@
 import {
   Activity,
+  Check,
   CircleDollarSign,
   ClipboardCheck,
   Code2,
   Layers3,
+  Loader2,
   Pencil,
   Play,
   Sparkles,
@@ -17,9 +19,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { ProjectEvaluationScreen } from '@/modules/project-evaluation';
+import {
+  getMissionGoalTemplatesForStack,
+  type MissionGoalTemplate,
+  missionGoalTemplates,
+} from '../../../../shared/mission-goal-templates';
 import type {
   Mission,
-  MissionDetail,
   MissionTaskProposal,
 } from '../../../../shared/schemas/mission-planner.schema';
 import type {
@@ -31,7 +37,6 @@ import type {
   ProjectStackProfile,
 } from '../../../../shared/schemas/project-detail.schema';
 import {
-  createMission,
   createMissionGoal,
   createProjectQualityRun,
   createTasksFromMissionCandidates,
@@ -39,14 +44,14 @@ import {
   decomposeMission,
   deleteMissionGoal,
   dismissMissionTaskProposal,
-  fetchMissionDetail,
   fetchMissionGoals,
   fetchMissions,
   fetchMissionTaskCandidates,
   fetchProjectDetailMetrics,
   fetchProjectQuality,
+  fetchRepositoryMissionTaskProposals,
+  generateMissionCandidatesFromGoals,
   generateMissionTaskCandidates,
-  requestMissionPlanningRevision,
   updateMissionGoal,
   updateMissionTaskCandidate,
 } from '../nightWorkersCommands';
@@ -56,7 +61,7 @@ type ProjectDetailScreenProps = {
   project: Repository;
   sessionViews: WorkbenchSessionView[];
   onOpenSession: (sessionId: string) => void;
-  onEvaluationTasksCreated?: (tasks: Task[]) => void;
+  onEvaluationTasksCreated?: (tasks: Task[]) => Promise<void> | void;
 };
 
 type ProjectDetailTab = 'overview' | 'mission' | 'evaluation' | 'quality' | 'stack';
@@ -135,8 +140,11 @@ type TopTokenTaskRow = {
   sessionId?: string;
 };
 type CoverageAxis = { labelKey: string; value: number };
+type CandidateRowSource = 'mission_task_candidate' | 'mission_task_proposal';
 type TaskCandidateRow = {
   id: string;
+  source: CandidateRowSource;
+  sourceId: string;
   title: string;
   goal: string;
   signal: string;
@@ -163,6 +171,44 @@ type E2EResultRow = {
   duration: string;
   lastFailure: string;
 };
+type GoalDraft = { id?: string; title: string; goalText: string; active: boolean };
+
+function candidateRowId(source: CandidateRowSource, id: string) {
+  return `${source}:${id}`;
+}
+
+function parseCandidateRowId(rowId: string) {
+  const [source, ...rest] = rowId.split(':');
+  const sourceId = rest.join(':');
+  if ((source === 'mission_task_candidate' || source === 'mission_task_proposal') && sourceId) {
+    return { source, sourceId } as const;
+  }
+  return null;
+}
+
+export function applyMissionGoalTemplate(
+  draft: GoalDraft,
+  template: MissionGoalTemplate
+): GoalDraft {
+  const titleMatchesTemplate = missionGoalTemplates.some((item) => item.title === draft.title);
+  return {
+    ...draft,
+    title: draft.title.trim() && !titleMatchesTemplate ? draft.title : template.title,
+    goalText: template.goalText,
+  };
+}
+
+export function toggleMissionGoalTemplate(
+  draft: GoalDraft,
+  template: MissionGoalTemplate
+): GoalDraft {
+  if (draft.goalText !== template.goalText) return applyMissionGoalTemplate(draft, template);
+  return {
+    ...draft,
+    title: draft.title === template.title ? '' : draft.title,
+    goalText: '',
+  };
+}
 
 const emptyMetrics: ProjectDetailMetrics = {
   stackProfile: {
@@ -220,20 +266,14 @@ export function ProjectDetailScreen({
   const [metrics, setMetrics] = useState<ProjectDetailMetrics>(emptyMetrics);
   const [goals, setGoals] = useState<MissionGoal[]>([]);
   const [missions, setMissions] = useState<Mission[]>([]);
-  const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
-  const [missionDetail, setMissionDetail] = useState<MissionDetail | null>(null);
-  const [missionGoalText, setMissionGoalText] = useState('');
-  const [selectedProposalIds, setSelectedProposalIds] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<MissionTaskCandidate[]>([]);
+  const [proposalCandidates, setProposalCandidates] = useState<MissionTaskProposal[]>([]);
   const [quality, setQuality] = useState<ProjectQualityOverview | null>(null);
-  const [goalDraft, setGoalDraft] = useState<{
-    id?: string;
-    title: string;
-    goalText: string;
-    active: boolean;
-  } | null>(null);
+  const [goalDraft, setGoalDraft] = useState<GoalDraft | null>(null);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
   const [drawerCandidate, setDrawerCandidate] = useState<MissionTaskCandidate | null>(null);
+  const [drawerProposal, setDrawerProposal] = useState<MissionTaskProposal | null>(null);
+  const [missionCandidateModal, setMissionCandidateModal] = useState<Mission | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string>('');
   const totalRuns = metrics.runs.total || sessionViews.length;
@@ -280,9 +320,26 @@ export function ProjectDetailScreen({
     [quality?.latestUnitRun?.coverageGate?.metrics]
   );
   const taskCandidateRows = useMemo<TaskCandidateRow[]>(
-    () =>
-      candidates.map((candidate) => ({
-        id: candidate.id,
+    () => [
+      ...proposalCandidates.map((proposal) => ({
+        id: candidateRowId('mission_task_proposal', proposal.id),
+        source: 'mission_task_proposal' as const,
+        sourceId: proposal.id,
+        title: proposal.title,
+        goal: t('projectDetail.mission.proposalSource'),
+        signal: proposal.targetFilesOrModules[0] ?? proposal.workPackageId,
+        evaluationContribution: '—',
+        tokenSize: 'medium',
+        importance: proposal.risk === 'high' ? 90 : proposal.risk === 'medium' ? 70 : 50,
+        confidence: 80,
+        complexity:
+          proposal.risk === 'high' ? 'complex' : proposal.risk === 'medium' ? 'moderate' : 'simple',
+        reason: proposal.summary,
+      })),
+      ...candidates.map((candidate) => ({
+        id: candidateRowId('mission_task_candidate', candidate.id),
+        source: 'mission_task_candidate' as const,
+        sourceId: candidate.id,
         title: candidate.title,
         goal: candidate.goalTitle || '—',
         signal: candidate.evidence[0]
@@ -296,7 +353,8 @@ export function ProjectDetailScreen({
         complexity: candidate.complexity,
         reason: candidate.rationale,
       })),
-    [candidates]
+    ],
+    [candidates, proposalCandidates, t]
   );
   const coverageFileRows = useMemo(
     () => coverageRowsFromSummary(quality?.latestUnitRun?.coverageSummary),
@@ -308,17 +366,20 @@ export function ProjectDetailScreen({
   );
 
   const loadProjectDetail = useCallback(async () => {
-    const [metricsRes, goalsRes, missionsRes, candidatesRes, qualityRes] = await Promise.all([
-      fetchProjectDetailMetrics(project.id),
-      fetchMissionGoals(project.id),
-      fetchMissions(project.id),
-      fetchMissionTaskCandidates(project.id),
-      fetchProjectQuality(project.id),
-    ]);
+    const [metricsRes, goalsRes, missionsRes, candidatesRes, proposalsRes, qualityRes] =
+      await Promise.all([
+        fetchProjectDetailMetrics(project.id),
+        fetchMissionGoals(project.id),
+        fetchMissions(project.id),
+        fetchMissionTaskCandidates(project.id),
+        fetchRepositoryMissionTaskProposals(project.id),
+        fetchProjectQuality(project.id),
+      ]);
     setMetrics(await readJsonResponse<ProjectDetailMetrics>(metricsRes));
     setGoals(await readJsonResponse<MissionGoal[]>(goalsRes));
     setMissions(await readJsonResponse<Mission[]>(missionsRes));
     setCandidates(await readJsonResponse<MissionTaskCandidate[]>(candidatesRes));
+    setProposalCandidates(await readJsonResponse<MissionTaskProposal[]>(proposalsRes));
     setQuality(await readJsonResponse<ProjectQualityOverview>(qualityRes));
   }, [project.id]);
 
@@ -349,13 +410,6 @@ export function ProjectDetailScreen({
     [loadProjectDetail]
   );
 
-  const loadSelectedMissionDetail = useCallback(async (missionId: string) => {
-    setSelectedMissionId(missionId);
-    setSelectedProposalIds([]);
-    const detail = await readJsonResponse<MissionDetail>(await fetchMissionDetail(missionId));
-    setMissionDetail(detail);
-  }, []);
-
   const saveGoalDraft = () =>
     goalDraft
       ? runAction('goal', async () => {
@@ -374,9 +428,15 @@ export function ProjectDetailScreen({
         })
       : undefined;
 
-  const selectedCandidates = candidates.filter((candidate) =>
-    selectedCandidateIds.includes(candidate.id)
-  );
+  const selectedCandidateRefs = selectedCandidateIds
+    .map(parseCandidateRowId)
+    .filter((item): item is NonNullable<ReturnType<typeof parseCandidateRowId>> => Boolean(item));
+  const selectedMissionTaskCandidateIds = selectedCandidateRefs
+    .filter((item) => item.source === 'mission_task_candidate')
+    .map((item) => item.sourceId);
+  const selectedMissionTaskProposalIds = selectedCandidateRefs
+    .filter((item) => item.source === 'mission_task_proposal')
+    .map((item) => item.sourceId);
 
   return (
     <div className="nightworkers-scrollbar h-full min-h-0 overflow-y-auto p-4" style={shellStyle}>
@@ -604,92 +664,20 @@ export function ProjectDetailScreen({
           <section className="space-y-4">
             <MissionPlannerPanel
               busy={busyAction?.startsWith('mission-planner') ?? false}
-              detail={missionDetail}
-              goalText={missionGoalText}
+              isGenerating={busyAction === 'mission-planner:generate-candidates'}
               missions={missions}
-              onChangeGoalText={setMissionGoalText}
-              onCreateMission={() =>
-                void runAction('mission-planner:create', async () => {
-                  const created = await readJsonResponse<Mission>(
-                    await createMission(project.id, { goalText: missionGoalText })
-                  );
-                  setMissionGoalText('');
-                  await loadSelectedMissionDetail(created.id);
+              onGenerateCandidates={() =>
+                void runAction('mission-planner:generate-candidates', async () => {
+                  await readJsonResponse(await generateMissionCandidatesFromGoals(project.id));
                 })
               }
-              onCreateTasks={() =>
-                void runAction('mission-planner:create-tasks', async () => {
-                  const payload = await readJsonResponse<{ tasks: Task[] }>(
-                    await createTasksFromMissionTaskProposals({
-                      proposalIds: selectedProposalIds,
-                      mode: 'ready',
-                    })
-                  );
-                  onEvaluationTasksCreated?.(payload.tasks);
-                  setSelectedProposalIds([]);
-                  if (selectedMissionId) await loadSelectedMissionDetail(selectedMissionId);
-                })
-              }
-              onDecompose={() =>
-                selectedMissionId
-                  ? void runAction('mission-planner:decompose', async () => {
-                      const detail = await readJsonResponse<MissionDetail>(
-                        await decomposeMission(selectedMissionId)
-                      );
-                      setMissionDetail(detail);
-                      setSelectedProposalIds([]);
-                    })
-                  : undefined
-              }
-              onDismissProposal={(proposal) =>
-                void runAction('mission-planner:dismiss-proposal', async () => {
-                  await readJsonResponse(await dismissMissionTaskProposal(proposal.id));
-                  if (selectedMissionId) await loadSelectedMissionDetail(selectedMissionId);
-                })
-              }
-              onRequestRevision={() =>
-                missionDetail?.latestPlanningResult
-                  ? void runAction('mission-planner:request-revision', async () => {
-                      const reason =
-                        window.prompt(
-                          t('projectDetail.mission.revisionPromptTitle'),
-                          t('projectDetail.mission.revisionPromptDefault')
-                        ) ?? '';
-                      const trimmed = reason.trim();
-                      if (!trimmed || !missionDetail.latestPlanningResult) return;
-                      await readJsonResponse(
-                        await requestMissionPlanningRevision(
-                          missionDetail.latestPlanningResult.id,
-                          {
-                            reason: trimmed,
-                          }
-                        )
-                      );
-                      setSelectedProposalIds([]);
-                      if (selectedMissionId) await loadSelectedMissionDetail(selectedMissionId);
-                    })
-                  : undefined
-              }
-              onSelectMission={(missionId) =>
-                void runAction('mission-planner:load', async () => {
-                  await loadSelectedMissionDetail(missionId);
-                })
-              }
-              onToggleProposal={(proposalId) =>
-                setSelectedProposalIds((current) =>
-                  current.includes(proposalId)
-                    ? current.filter((id) => id !== proposalId)
-                    : [...current, proposalId]
-                )
-              }
-              selectedMissionId={selectedMissionId}
-              selectedProposalIds={selectedProposalIds}
+              onOpenMission={setMissionCandidateModal}
             />
             <MissionGenerateTasksPanel
               rows={taskCandidateRows}
-              candidates={candidates}
               selectedIds={selectedCandidateIds}
               busy={busyAction === 'generate' || busyAction === 'create-tasks'}
+              isGenerating={busyAction === 'generate'}
               onToggleSelected={(candidateId) =>
                 setSelectedCandidateIds((current) =>
                   current.includes(candidateId)
@@ -697,7 +685,15 @@ export function ProjectDetailScreen({
                     : [...current, candidateId]
                 )
               }
-              onOpen={(candidate) => setDrawerCandidate(candidate)}
+              onOpen={(row) => {
+                if (row.source === 'mission_task_proposal') {
+                  const proposal = proposalCandidates.find((item) => item.id === row.sourceId);
+                  if (proposal) setDrawerProposal(proposal);
+                  return;
+                }
+                const candidate = candidates.find((item) => item.id === row.sourceId);
+                if (candidate) setDrawerCandidate(candidate);
+              }}
               onGenerate={() =>
                 void runAction('generate', async () => {
                   await readJsonResponse(await generateMissionTaskCandidates(project.id));
@@ -705,16 +701,28 @@ export function ProjectDetailScreen({
               }
               onCreateTasks={() =>
                 void runAction('create-tasks', async () => {
-                  const response = await createTasksFromMissionCandidates(project.id, {
-                    candidateIds: selectedCandidateIds,
-                    mode: 'draft',
-                  });
-                  const payload = await readJsonResponse<{ tasks: Task[] }>(response);
-                  onEvaluationTasksCreated?.(payload.tasks);
+                  const createdTasks: Task[] = [];
+                  if (selectedMissionTaskCandidateIds.length > 0) {
+                    const response = await createTasksFromMissionCandidates(project.id, {
+                      candidateIds: selectedMissionTaskCandidateIds,
+                      mode: 'draft',
+                    });
+                    const payload = await readJsonResponse<{ tasks: Task[] }>(response);
+                    createdTasks.push(...payload.tasks);
+                  }
+                  if (selectedMissionTaskProposalIds.length > 0) {
+                    const response = await createTasksFromMissionTaskProposals({
+                      proposalIds: selectedMissionTaskProposalIds,
+                      mode: 'draft',
+                    });
+                    const payload = await readJsonResponse<{ tasks: Task[] }>(response);
+                    createdTasks.push(...payload.tasks);
+                  }
+                  if (createdTasks.length > 0) await onEvaluationTasksCreated?.(createdTasks);
                   setSelectedCandidateIds([]);
                 })
               }
-              selectedCount={selectedCandidates.length}
+              selectedCount={selectedCandidateIds.length}
             />
           </section>
         ) : null}
@@ -747,6 +755,7 @@ export function ProjectDetailScreen({
         <GoalEditorDialog
           draft={goalDraft}
           busy={busyAction === 'goal'}
+          stackProfile={metrics.stackProfile}
           onChange={setGoalDraft}
           onClose={() => setGoalDraft(null)}
           onSave={saveGoalDraft}
@@ -761,7 +770,41 @@ export function ProjectDetailScreen({
               await readJsonResponse(
                 await updateMissionTaskCandidate(candidate.id, { status: 'dismissed' })
               );
+              setSelectedCandidateIds((current) =>
+                current.filter(
+                  (id) => id !== candidateRowId('mission_task_candidate', candidate.id)
+                )
+              );
               setDrawerCandidate(null);
+            })
+          }
+        />
+      ) : null}
+      {drawerProposal ? (
+        <ProposalDrawer
+          proposal={drawerProposal}
+          onClose={() => setDrawerProposal(null)}
+          onDismiss={(proposal) =>
+            void runAction('proposal', async () => {
+              await readJsonResponse(await dismissMissionTaskProposal(proposal.id));
+              setSelectedCandidateIds((current) =>
+                current.filter((id) => id !== candidateRowId('mission_task_proposal', proposal.id))
+              );
+              setDrawerProposal(null);
+            })
+          }
+        />
+      ) : null}
+      {missionCandidateModal ? (
+        <MissionCandidateModal
+          mission={missionCandidateModal}
+          goals={goals}
+          busy={busyAction === 'mission-planner:decompose-candidate'}
+          onClose={() => setMissionCandidateModal(null)}
+          onDecompose={(mission) =>
+            void runAction('mission-planner:decompose-candidate', async () => {
+              await readJsonResponse(await decomposeMission(mission.id));
+              setMissionCandidateModal(null);
             })
           }
         />
@@ -1130,370 +1173,108 @@ function GoalDefinitionsPanel({
 
 function MissionPlannerPanel({
   missions,
-  selectedMissionId,
-  detail,
-  goalText,
-  selectedProposalIds,
   busy,
-  onChangeGoalText,
-  onCreateMission,
-  onSelectMission,
-  onDecompose,
-  onRequestRevision,
-  onToggleProposal,
-  onDismissProposal,
-  onCreateTasks,
+  isGenerating,
+  onGenerateCandidates,
+  onOpenMission,
 }: {
   missions: Mission[];
-  selectedMissionId: string | null;
-  detail: MissionDetail | null;
-  goalText: string;
-  selectedProposalIds: string[];
   busy: boolean;
-  onChangeGoalText: (value: string) => void;
-  onCreateMission: () => void;
-  onSelectMission: (missionId: string) => void;
-  onDecompose: () => void;
-  onRequestRevision: () => void;
-  onToggleProposal: (proposalId: string) => void;
-  onDismissProposal: (proposal: MissionTaskProposal) => void;
-  onCreateTasks: () => void;
+  isGenerating: boolean;
+  onGenerateCandidates: () => void;
+  onOpenMission: (mission: Mission) => void;
 }) {
   const { t } = useTranslation();
-  const reviewPending = detail?.latestPlanningResult?.status === 'review_pending';
-  const selectableProposals =
-    detail?.taskProposals.filter((proposal) => proposal.status === 'proposed') ?? [];
   return (
     <section className="space-y-3">
-      <SectionHeading
-        icon={<Target className="h-4 w-4" />}
-        title={t('projectDetail.mission.decompositionTitle')}
-      />
-      <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <div className="space-y-3">
-          <div className="border p-3" style={panelStyle}>
-            <div className="text-xs font-semibold uppercase" style={subtleTextStyle}>
-              {t('projectDetail.mission.newMission')}
-            </div>
-            <textarea
-              className="mt-3 min-h-28 w-full resize-y border p-2 text-xs outline-none"
-              disabled={busy}
-              onChange={(event) => onChangeGoalText(event.target.value)}
-              placeholder={t('projectDetail.mission.goalPlaceholder')}
-              style={controlStyle}
-              value={goalText}
-            />
-            <Button
-              className="mt-2 h-8 w-full justify-center px-3 text-xs font-semibold"
-              disabled={busy || goalText.trim().length === 0}
-              onClick={onCreateMission}
-              style={primaryButtonStyle}
-              type="button"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              {t('projectDetail.mission.createMission')}
-            </Button>
-          </div>
-          <div className="overflow-hidden border" style={panelStyle}>
-            <div className="border-b px-3 py-2 text-xs font-semibold" style={tableBorderStyle}>
-              {t('projectDetail.mission.listTitle')}
-            </div>
-            <div className="max-h-80 overflow-auto">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SectionHeading
+          icon={<Target className="h-4 w-4" />}
+          title={t('projectDetail.mission.decompositionTitle')}
+        />
+        <Button
+          className="h-8 px-3 text-xs font-semibold"
+          disabled={busy}
+          onClick={onGenerateCandidates}
+          style={primaryButtonStyle}
+          type="button"
+        >
+          {isGenerating ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Sparkles className="h-3.5 w-3.5" />
+          )}
+          {isGenerating
+            ? t('projectDetail.mission.generateMissionCandidatesLoading')
+            : t('projectDetail.mission.generateMissionCandidates')}
+        </Button>
+      </div>
+      <div className="overflow-hidden border" style={panelStyle}>
+        <div className="border-b px-3 py-2 text-xs font-semibold" style={tableBorderStyle}>
+          {t('projectDetail.mission.missionCandidates')}
+        </div>
+        <div className="nightworkers-scrollbar overflow-auto">
+          <table className="w-full min-w-[860px] text-xs">
+            <thead style={subtleTextStyle}>
+              <tr>
+                <th className="py-2 pl-4 text-left">{t('projectDetail.field.candidate')}</th>
+                <th className="py-2 text-left">{t('projectDetail.field.goalSignal')}</th>
+                <th className="py-2 text-left">{t('projectDetail.mission.rationale')}</th>
+                <th className="py-2 pr-4 text-right">{t('projectDetail.field.status')}</th>
+              </tr>
+            </thead>
+            <tbody>
               {missions.length > 0 ? (
                 missions.map((mission) => (
-                  <button
-                    className="block w-full border-b px-3 py-2 text-left text-xs last:border-b-0"
-                    disabled={busy}
-                    key={mission.id}
-                    onClick={() => onSelectMission(mission.id)}
-                    style={{
-                      ...tableBorderStyle,
-                      background:
-                        selectedMissionId === mission.id
-                          ? 'color-mix(in srgb, var(--nw-primary) 10%, var(--nw-panel))'
-                          : 'transparent',
-                    }}
-                    type="button"
-                  >
-                    <span className="block truncate font-semibold">{mission.title}</span>
-                    <span className="mt-1 block truncate text-[10px]" style={subtleTextStyle}>
+                  <tr key={mission.id} className="border-t" style={tableBorderStyle}>
+                    <td className="max-w-[280px] py-3 pl-4">
+                      <button
+                        className="block max-w-full text-left"
+                        disabled={busy}
+                        onClick={() => onOpenMission(mission)}
+                        type="button"
+                      >
+                        <span className="block truncate font-semibold">{mission.title}</span>
+                        <span className="mt-0.5 line-clamp-2 text-[10px]" style={subtleTextStyle}>
+                          {mission.goalText}
+                        </span>
+                      </button>
+                    </td>
+                    <td className="max-w-[220px] py-3">
+                      <span className="block truncate">
+                        {mission.sourceGoalIds.length
+                          ? `${mission.sourceGoalIds.length} ${t('projectDetail.mission.linkedGoals')}`
+                          : t('projectDetail.mission.noLinkedGoal')}
+                      </span>
+                    </td>
+                    <td className="max-w-[300px] py-3">
+                      <span className="line-clamp-2" style={subtleTextStyle}>
+                        {mission.statusReason ?? '—'}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-4 text-right">
                       {t(`projectDetail.mission.status.${mission.status}`, {
                         defaultValue: mission.status,
                       })}
-                    </span>
-                  </button>
+                    </td>
+                  </tr>
                 ))
               ) : (
-                <EmptyBlock message={t('projectDetail.mission.emptyMissions')} />
+                <EmptyTableRow colSpan={4} message={t('projectDetail.mission.emptyMissions')} />
               )}
-            </div>
-          </div>
-        </div>
-
-        <div className="min-w-0 overflow-hidden border" style={panelStyle}>
-          {detail ? (
-            <>
-              <div
-                className="flex flex-wrap items-start justify-between gap-3 border-b p-3"
-                style={tableBorderStyle}
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold">{detail.mission.title}</div>
-                  <div className="mt-1 line-clamp-2 text-xs" style={subtleTextStyle}>
-                    {detail.mission.goalText}
-                  </div>
-                  <div className="mt-2 text-[10px] uppercase" style={mutedTextStyle}>
-                    {t(`projectDetail.mission.status.${detail.mission.status}`, {
-                      defaultValue: detail.mission.status,
-                    })}
-                  </div>
-                  {detail.mission.nonGoals.length > 0 ? (
-                    <div className="mt-2 text-[10px]" style={subtleTextStyle}>
-                      <div className="font-semibold">{t('projectDetail.mission.nonGoals')}</div>
-                      <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                        {detail.mission.nonGoals.map((nonGoal) => (
-                          <li key={nonGoal}>{nonGoal}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    className="h-8 px-3 text-xs font-semibold"
-                    disabled={busy}
-                    onClick={onDecompose}
-                    style={controlStyle}
-                    type="button"
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    {t('projectDetail.mission.decompose')}
-                  </Button>
-                  <Button
-                    className="h-8 px-3 text-xs font-semibold"
-                    disabled={busy || !detail.latestPlanningResult}
-                    onClick={onRequestRevision}
-                    style={controlStyle}
-                    type="button"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    {t('projectDetail.mission.requestRevision')}
-                  </Button>
-                  <Button
-                    className="h-8 px-3 text-xs font-semibold"
-                    disabled={busy || !reviewPending || selectedProposalIds.length === 0}
-                    onClick={onCreateTasks}
-                    style={primaryButtonStyle}
-                    type="button"
-                  >
-                    {t('projectDetail.mission.createSelectedTasks', {
-                      count: selectedProposalIds.length,
-                    })}
-                  </Button>
-                </div>
-              </div>
-
-              {detail.latestPlanningResult ? (
-                <div className="grid gap-3 p-3 2xl:grid-cols-[0.8fr_1.2fr]">
-                  <div className="space-y-3">
-                    <PlanningListBlock
-                      items={detail.latestPlanningResult.planningResult.objectives.map((item) => ({
-                        id: item.id,
-                        title: item.title,
-                        body: item.completionCriteria.join(' / '),
-                        gates: item.verificationGate,
-                      }))}
-                      title={t('projectDetail.mission.objectives')}
-                    />
-                    <PlanningListBlock
-                      items={detail.latestPlanningResult.planningResult.workPackages.map(
-                        (item) => ({
-                          id: item.id,
-                          title: item.title,
-                          body: `${item.purpose} / ${t(`projectDetail.mission.risk.${item.risk}`, {
-                            defaultValue: item.risk,
-                          })}${
-                            item.suggestedPlanMode
-                              ? ` / ${t('projectDetail.mission.planFirst')}`
-                              : ''
-                          }`,
-                          gates: item.verificationGate,
-                        })
-                      )}
-                      title={t('projectDetail.mission.workPackages')}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <SectionLabel
-                        icon={<ClipboardCheck className="h-4 w-4" />}
-                        title={t('projectDetail.mission.taskProposals')}
-                      />
-                      <span className="text-[10px]" style={subtleTextStyle}>
-                        {t(
-                          `projectDetail.mission.status.${
-                            reviewPending ? 'review_pending' : detail.latestPlanningResult.status
-                          }`,
-                          {
-                            defaultValue: reviewPending
-                              ? 'review_pending'
-                              : detail.latestPlanningResult.status,
-                          }
-                        )}
-                      </span>
-                    </div>
-                    {detail.taskProposals.length > 0 ? (
-                      detail.taskProposals.map((proposal) => (
-                        <MissionTaskProposalRow
-                          disabled={!reviewPending}
-                          key={proposal.id}
-                          onDismiss={() => onDismissProposal(proposal)}
-                          onToggle={() => onToggleProposal(proposal.id)}
-                          proposal={proposal}
-                          selected={selectedProposalIds.includes(proposal.id)}
-                        />
-                      ))
-                    ) : (
-                      <EmptyBlock message={t('projectDetail.mission.emptyTaskProposals')} />
-                    )}
-                    {!reviewPending && detail.latestPlanningResult.status !== 'draft' ? (
-                      <div className="border px-3 py-2 text-xs" style={controlStyle}>
-                        {detail.latestPlanningResult.statusReason ??
-                          t('projectDetail.mission.resultNotReady')}
-                      </div>
-                    ) : null}
-                    {reviewPending && selectableProposals.length === 0 ? (
-                      <div className="border px-3 py-2 text-xs" style={controlStyle}>
-                        {t('projectDetail.mission.noSelectableProposals')}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : (
-                <div className="p-6 text-center text-xs" style={subtleTextStyle}>
-                  {t('projectDetail.mission.decomposeHint')}
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="p-6 text-center text-xs" style={subtleTextStyle}>
-              {t('projectDetail.mission.selectMission')}
-            </div>
-          )}
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
   );
 }
 
-function PlanningListBlock({
-  title,
-  items,
-}: {
-  title: string;
-  items: Array<{ id: string; title: string; body: string; gates?: string[] }>;
-}) {
-  return (
-    <div className="border p-3" style={controlStyle}>
-      <div className="text-xs font-semibold">{title}</div>
-      <div className="mt-2 space-y-2">
-        {items.map((item) => (
-          <div className="border-t pt-2 text-xs first:border-t-0 first:pt-0" key={item.id}>
-            <div className="font-semibold">{item.title}</div>
-            <div className="mt-1 line-clamp-2 text-[10px]" style={subtleTextStyle}>
-              {item.body}
-            </div>
-            {item.gates?.length ? (
-              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[10px]" style={mutedTextStyle}>
-                {item.gates.map((gate) => (
-                  <li key={gate}>{gate}</li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function MissionTaskProposalRow({
-  proposal,
-  selected,
-  disabled: disabledByResult,
-  onToggle,
-  onDismiss,
-}: {
-  proposal: MissionTaskProposal;
-  selected: boolean;
-  disabled: boolean;
-  onToggle: () => void;
-  onDismiss: () => void;
-}) {
-  const { t } = useTranslation();
-  const disabled = disabledByResult || proposal.status !== 'proposed';
-  return (
-    <div className="border p-3 text-xs" style={controlStyle}>
-      <div className="flex items-start justify-between gap-3">
-        <label className="flex min-w-0 items-start gap-2">
-          <input checked={selected} disabled={disabled} onChange={onToggle} type="checkbox" />
-          <span className="min-w-0">
-            <span className="block truncate font-semibold">{proposal.title}</span>
-            <span className="mt-1 line-clamp-2 text-[10px]" style={subtleTextStyle}>
-              {proposal.summary}
-            </span>
-          </span>
-        </label>
-        <Button
-          className="h-7 px-2 text-[10px]"
-          disabled={disabled}
-          onClick={onDismiss}
-          style={controlStyle}
-          type="button"
-        >
-          {t('projectDetail.mission.dismissProposal')}
-        </Button>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-2 text-[10px]" style={mutedTextStyle}>
-        <span>
-          {t(`projectDetail.mission.proposalStatus.${proposal.status}`, {
-            defaultValue: proposal.status,
-          })}
-        </span>
-        <span>
-          {t(`projectDetail.mission.risk.${proposal.risk}`, { defaultValue: proposal.risk })}
-        </span>
-        <span>
-          {t(`projectDetail.mission.execution.${proposal.scheduling.executionType}`, {
-            defaultValue: proposal.scheduling.executionType,
-          })}
-        </span>
-        {proposal.approvalRequired ? (
-          <span>{t('projectDetail.mission.approvalRequired')}</span>
-        ) : null}
-      </div>
-      {proposal.verificationGate.length > 0 ? (
-        <ul className="mt-2 list-disc space-y-0.5 pl-4 text-[10px]" style={mutedTextStyle}>
-          {proposal.verificationGate.map((gate) => (
-            <li key={gate}>{gate}</li>
-          ))}
-        </ul>
-      ) : null}
-      <pre
-        className="nightworkers-scrollbar mt-2 max-h-28 overflow-auto whitespace-pre-wrap border p-2 text-[10px]"
-        style={panelStyle}
-      >
-        {proposal.initialPrompt}
-      </pre>
-    </div>
-  );
-}
-
-function MissionGenerateTasksPanel({
+export function MissionGenerateTasksPanel({
   rows,
-  candidates,
   selectedIds,
   busy,
+  isGenerating,
   selectedCount,
   onToggleSelected,
   onOpen,
@@ -1501,12 +1282,12 @@ function MissionGenerateTasksPanel({
   onCreateTasks,
 }: {
   rows: TaskCandidateRow[];
-  candidates: MissionTaskCandidate[];
   selectedIds: string[];
   busy: boolean;
+  isGenerating: boolean;
   selectedCount: number;
   onToggleSelected: (candidateId: string) => void;
-  onOpen: (candidate: MissionTaskCandidate) => void;
+  onOpen: (row: TaskCandidateRow) => void;
   onGenerate: () => void;
   onCreateTasks: () => void;
 }) {
@@ -1533,8 +1314,14 @@ function MissionGenerateTasksPanel({
             className="h-8 px-3 text-xs font-semibold"
             style={primaryButtonStyle}
           >
-            <Sparkles className="h-3.5 w-3.5" />
-            {t('projectDetail.mission.generate')}
+            {isGenerating ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5" />
+            )}
+            {isGenerating
+              ? t('projectDetail.mission.generateLoading')
+              : t('projectDetail.mission.generate')}
           </Button>
         </div>
         <div className="flex justify-end border-b px-3 py-2" style={tableBorderStyle}>
@@ -1564,53 +1351,51 @@ function MissionGenerateTasksPanel({
             </thead>
             <tbody>
               {rows.length > 0 ? (
-                rows.map((candidate) => {
-                  const source = candidates.find((item) => item.id === candidate.id);
-                  return (
-                    <tr key={candidate.id} className="border-t" style={tableBorderStyle}>
-                      <td className="py-3 pl-4">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(candidate.id)}
-                          onChange={() => onToggleSelected(candidate.id)}
-                        />
-                      </td>
-                      <td className="max-w-[270px] py-3 pl-4">
-                        <button
-                          type="button"
-                          className="block max-w-full text-left"
-                          onClick={() => {
-                            if (source) onOpen(source);
-                          }}
-                        >
-                          <span className="block truncate font-semibold">{candidate.title}</span>
-                        </button>
-                        <div className="mt-0.5 line-clamp-2 text-[10px]" style={subtleTextStyle}>
-                          {candidate.reason}
-                        </div>
-                      </td>
-                      <td className="max-w-[260px] py-3">
-                        <div className="truncate">{candidate.goal}</div>
-                        <div className="mt-0.5 line-clamp-2 text-[10px]" style={subtleTextStyle}>
-                          {candidate.signal}
-                        </div>
-                      </td>
-                      <td className="py-3 text-right">
-                        <span className="font-semibold" style={primaryTextStyle}>
-                          {candidate.evaluationContribution}
+                rows.map((candidate) => (
+                  <tr key={candidate.id} className="border-t" style={tableBorderStyle}>
+                    <td className="py-3 pl-4">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(candidate.id)}
+                        onChange={() => onToggleSelected(candidate.id)}
+                      />
+                    </td>
+                    <td className="max-w-[270px] py-3 pl-4">
+                      <button
+                        type="button"
+                        className="block max-w-full text-left"
+                        onClick={() => onOpen(candidate)}
+                      >
+                        <span className="block truncate font-semibold">{candidate.title}</span>
+                        <span className="mt-0.5 block text-[10px]" style={mutedTextStyle}>
+                          {t(`projectDetail.mission.rowSource.${candidate.source}`)}
                         </span>
-                      </td>
-                      <td className="py-3 text-right">
-                        <SizeChip value={candidate.tokenSize} />
-                      </td>
-                      <td className="py-3 text-right">{candidate.importance}%</td>
-                      <td className="py-3 text-right">{candidate.confidence}%</td>
-                      <td className="py-3 pr-4 text-right">
-                        <ComplexityChip value={candidate.complexity} />
-                      </td>
-                    </tr>
-                  );
-                })
+                      </button>
+                      <div className="mt-0.5 line-clamp-2 text-[10px]" style={subtleTextStyle}>
+                        {candidate.reason}
+                      </div>
+                    </td>
+                    <td className="max-w-[260px] py-3">
+                      <div className="truncate">{candidate.goal}</div>
+                      <div className="mt-0.5 line-clamp-2 text-[10px]" style={subtleTextStyle}>
+                        {candidate.signal}
+                      </div>
+                    </td>
+                    <td className="py-3 text-right">
+                      <span className="font-semibold" style={primaryTextStyle}>
+                        {candidate.evaluationContribution}
+                      </span>
+                    </td>
+                    <td className="py-3 text-right">
+                      <SizeChip value={candidate.tokenSize} />
+                    </td>
+                    <td className="py-3 text-right">{candidate.importance}%</td>
+                    <td className="py-3 text-right">{candidate.confidence}%</td>
+                    <td className="py-3 pr-4 text-right">
+                      <ComplexityChip value={candidate.complexity} />
+                    </td>
+                  </tr>
+                ))
               ) : (
                 <EmptyTableRow colSpan={8} message={t('projectDetail.empty.taskCandidates')} />
               )}
@@ -1825,31 +1610,93 @@ function IconActionButton({
   );
 }
 
-function GoalEditorDialog({
+export function GoalEditorDialog({
   draft,
   busy,
+  stackProfile,
   onChange,
   onClose,
   onSave,
 }: {
-  draft: { id?: string; title: string; goalText: string; active: boolean };
+  draft: GoalDraft;
   busy: boolean;
-  onChange: (draft: { id?: string; title: string; goalText: string; active: boolean }) => void;
+  stackProfile?: ProjectStackProfile | null;
+  onChange: (draft: GoalDraft) => void;
   onClose: () => void;
   onSave: () => void;
 }) {
+  const { t } = useTranslation();
+  const availableTemplates = getMissionGoalTemplatesForStack(stackProfile);
+  const selectedTemplateId = availableTemplates.find(
+    (template) => template.goalText === draft.goalText
+  )?.id;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div
         role="dialog"
         aria-modal="true"
-        className="w-full max-w-xl border p-4"
+        className="w-full max-w-lg border p-3"
         style={panelStyle}
       >
-        <div className="text-sm font-bold">{draft.id ? 'Edit Goal' : 'Add Goal'}</div>
-        <div className="mt-3 space-y-3">
+        <div className="text-sm font-bold">
+          {draft.id
+            ? t('projectDetail.goalDialog.editTitle')
+            : t('projectDetail.goalDialog.addTitle')}
+        </div>
+        <div className="mt-3 space-y-2.5">
+          {!draft.id ? (
+            <div className="space-y-1">
+              <div className="text-[11px] font-semibold" style={subtleTextStyle}>
+                {t('projectDetail.goalTemplates.label')}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {availableTemplates.map((template) => {
+                  const selected = selectedTemplateId === template.id;
+                  return (
+                    <button
+                      key={template.id}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => onChange(toggleMissionGoalTemplate(draft, template))}
+                      className="flex h-8 min-w-0 cursor-pointer items-center gap-2 border px-2 text-left text-[11px] font-semibold"
+                      style={
+                        selected
+                          ? {
+                              background:
+                                'color-mix(in srgb, var(--nw-primary) 12%, var(--nw-panel))',
+                              borderColor: 'var(--nw-primary)',
+                              borderRadius: 'var(--nw-control-radius)',
+                              color: 'var(--nw-primary)',
+                            }
+                          : controlStyle
+                      }
+                    >
+                      <span
+                        aria-hidden
+                        className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
+                        style={{
+                          background: selected ? 'var(--nw-primary)' : 'transparent',
+                          borderColor: selected ? 'var(--nw-primary)' : 'var(--nw-border)',
+                        }}
+                      >
+                        {selected ? (
+                          <Check
+                            aria-hidden
+                            className="h-3 w-3"
+                            style={{ color: 'var(--nw-primary-foreground, var(--nw-background))' }}
+                          />
+                        ) : null}
+                      </span>
+                      <span className="truncate">{template.title}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
           <label className="block text-xs font-semibold">
-            Title
+            {t('projectDetail.goalDialog.title')}
             <input
               value={draft.title}
               onChange={(event) => onChange({ ...draft, title: event.target.value })}
@@ -1858,11 +1705,11 @@ function GoalEditorDialog({
             />
           </label>
           <label className="block text-xs font-semibold">
-            Goal definition
+            {t('projectDetail.goalDialog.definition')}
             <textarea
               value={draft.goalText}
               onChange={(event) => onChange({ ...draft, goalText: event.target.value })}
-              className="mt-1 min-h-32 w-full border px-2 py-2"
+              className="mt-1 min-h-28 w-full border px-2 py-2"
               style={controlStyle}
             />
           </label>
@@ -1872,12 +1719,12 @@ function GoalEditorDialog({
               checked={draft.active}
               onChange={(event) => onChange({ ...draft, active: event.target.checked })}
             />
-            Active
+            {t('projectDetail.goalDialog.active')}
           </label>
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <Button type="button" onClick={onClose} disabled={busy} style={controlStyle}>
-            Cancel
+            {t('projectDetail.goalDialog.cancel')}
           </Button>
           <Button
             type="button"
@@ -1885,7 +1732,97 @@ function GoalEditorDialog({
             disabled={busy || !draft.title.trim() || !draft.goalText.trim()}
             style={primaryButtonStyle}
           >
-            Save
+            {t('projectDetail.goalDialog.save')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MissionCandidateModal({
+  mission,
+  goals,
+  busy,
+  onClose,
+  onDecompose,
+}: {
+  mission: Mission;
+  goals: MissionGoal[];
+  busy: boolean;
+  onClose: () => void;
+  onDecompose: (mission: Mission) => void;
+}) {
+  const { t } = useTranslation();
+  const sourceGoals = mission.sourceGoalIds
+    .map((goalId) => goals.find((goal) => goal.id === goalId))
+    .filter((goal): goal is MissionGoal => Boolean(goal));
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="nightworkers-scrollbar max-h-[90vh] w-full max-w-2xl overflow-y-auto border p-4"
+        style={panelStyle}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-base font-bold">{mission.title}</div>
+            <div className="mt-1 text-xs" style={mutedTextStyle}>
+              {t(`projectDetail.mission.status.${mission.status}`, {
+                defaultValue: mission.status,
+              })}
+            </div>
+          </div>
+          <Button type="button" onClick={onClose} disabled={busy} style={controlStyle}>
+            {t('projectDetail.mission.close')}
+          </Button>
+        </div>
+        <DrawerSection title={t('projectDetail.mission.goalText')} body={mission.goalText} />
+        {mission.statusReason ? (
+          <DrawerSection title={t('projectDetail.mission.rationale')} body={mission.statusReason} />
+        ) : null}
+        {mission.nonGoals.length > 0 ? (
+          <DrawerSection
+            title={t('projectDetail.mission.nonGoals')}
+            body={mission.nonGoals.join('\n')}
+          />
+        ) : null}
+        <section className="mt-4">
+          <div className="text-xs font-bold">{t('projectDetail.mission.linkedGoals')}</div>
+          <div className="mt-2 space-y-2">
+            {sourceGoals.length > 0 ? (
+              sourceGoals.map((goal) => (
+                <div key={goal.id} className="border p-2 text-xs" style={controlStyle}>
+                  <div className="font-semibold">{goal.title}</div>
+                  <div className="mt-1" style={mutedTextStyle}>
+                    {goal.goalText}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-xs" style={mutedTextStyle}>
+                {t('projectDetail.mission.noLinkedGoal')}
+              </div>
+            )}
+          </div>
+        </section>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button type="button" onClick={onClose} disabled={busy} style={controlStyle}>
+            {t('projectDetail.mission.close')}
+          </Button>
+          <Button
+            type="button"
+            onClick={() => onDecompose(mission)}
+            disabled={busy || mission.status === 'review_pending' || mission.status === 'active'}
+            style={primaryButtonStyle}
+          >
+            {busy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5" />
+            )}
+            {t('projectDetail.mission.decomposeToTaskCandidates')}
           </Button>
         </div>
       </div>
@@ -1962,6 +1899,66 @@ function CandidateDrawer({
         </div>
         <div className="mt-4 flex justify-end">
           <Button type="button" onClick={() => onDismiss(candidate)} style={controlStyle}>
+            {t('projectDetail.mission.dismissCandidate')}
+          </Button>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function ProposalDrawer({
+  proposal,
+  onClose,
+  onDismiss,
+}: {
+  proposal: MissionTaskProposal;
+  onClose: () => void;
+  onDismiss: (proposal: MissionTaskProposal) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
+      <aside
+        className="nightworkers-scrollbar h-full w-full max-w-xl overflow-y-auto border-l p-4"
+        style={panelStyle}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-base font-bold">{proposal.title}</div>
+            <div className="mt-1 text-xs" style={mutedTextStyle}>
+              {t('projectDetail.mission.proposalSource')}
+            </div>
+          </div>
+          <Button type="button" onClick={onClose} style={controlStyle}>
+            {t('projectDetail.mission.close')}
+          </Button>
+        </div>
+        <DrawerSection title={t('projectDetail.mission.summary')} body={proposal.summary} />
+        <DrawerSection
+          title={t('projectDetail.mission.expectedOutcome')}
+          body={proposal.expectedOutcome}
+        />
+        <DrawerSection
+          title={t('projectDetail.mission.taskPrompt')}
+          body={proposal.initialPrompt}
+        />
+        <DrawerSection
+          title={t('projectDetail.mission.acceptanceCriteria')}
+          body={proposal.acceptanceCriteria.join('\n')}
+        />
+        <DrawerSection
+          title={t('projectDetail.mission.verificationPlan')}
+          body={proposal.verificationGate.join('\n')}
+        />
+        {proposal.targetFilesOrModules.length > 0 ? (
+          <DrawerSection
+            title={t('projectDetail.mission.targetFiles')}
+            body={proposal.targetFilesOrModules.join('\n')}
+          />
+        ) : null}
+        <div className="mt-4 flex justify-end">
+          <Button type="button" onClick={() => onDismiss(proposal)} style={controlStyle}>
             {t('projectDetail.mission.dismissCandidate')}
           </Button>
         </div>

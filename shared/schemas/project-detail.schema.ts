@@ -102,6 +102,36 @@ export const projectSignalSnapshotSchema = z.object({
     coverage: jsonValueSchema.nullable(),
     e2e: jsonValueSchema.nullable(),
   }),
+  repositorySnapshot: z
+    .object({
+      packageName: z.string().nullable(),
+      description: z.string().nullable(),
+      readmeExcerpt: z.string().nullable(),
+      sourceFiles: z.array(z.string()),
+      routeFiles: z.array(z.string()),
+      migrationFiles: z.array(z.string()),
+      sourceExcerpts: z.array(
+        z.object({
+          path: z.string(),
+          excerpt: z.string(),
+        })
+      ),
+      llmContextFiles: z.array(
+        z.object({
+          path: z.string(),
+          excerpt: z.string(),
+        })
+      ),
+      recentCommitDiffs: z.array(
+        z.object({
+          hash: z.string(),
+          subject: z.string(),
+          diffExcerpt: z.string(),
+        })
+      ),
+      packageScripts: z.array(z.object({ name: z.string(), command: z.string() })),
+    })
+    .optional(),
   qualityCapabilities: z.object({
     projectType: z.literal('typescript'),
     commands: z.array(
@@ -209,6 +239,8 @@ export const createTasksFromMissionCandidatesResponseSchema = z.object({
   candidates: z.array(missionTaskCandidateSchema),
 });
 
+export const MISSION_TASK_CANDIDATE_MAX_COUNT = 10;
+
 export const missionTaskCandidatesResultSchema = z.object({
   schemaVersion: z.literal('nightworkers.mission-task-candidates/v1'),
   candidates: z
@@ -217,9 +249,9 @@ export const missionTaskCandidatesResultSchema = z.object({
         title: z.string().min(1),
         summary: z.string().min(1),
         rationale: z.string().min(1),
-        goalId: z.string().uuid().optional(),
+        goalId: z.string().uuid().nullable().optional(),
         evidence: z.array(candidateEvidenceSchema).default([]),
-        evaluationContribution: z.number().min(0).max(100).optional(),
+        evaluationContribution: z.number().min(0).max(100),
         importancePercent: z.number().int().min(0).max(100),
         confidencePercent: z.number().int().min(0).max(100),
         tokenSize: missionTaskTokenSizeSchema,
@@ -230,7 +262,7 @@ export const missionTaskCandidatesResultSchema = z.object({
       })
     )
     .min(1)
-    .max(10),
+    .max(MISSION_TASK_CANDIDATE_MAX_COUNT),
 });
 export type MissionTaskCandidatesResult = z.infer<typeof missionTaskCandidatesResultSchema>;
 

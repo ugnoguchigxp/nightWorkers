@@ -4,6 +4,8 @@ import {
   createTasksFromMissionTaskProposalsRequestSchema,
   createTasksFromMissionTaskProposalsResponseSchema,
   decomposeMissionRequestSchema,
+  generateMissionCandidatesRequestSchema,
+  generateMissionCandidatesResponseSchema,
   missionDetailSchema,
   missionPlanningResultSchema,
   missionSchema,
@@ -42,6 +44,23 @@ const listMissionsRoute = createRoute({
     200: {
       content: { 'application/json': { schema: z.array(missionSchema) } },
       description: 'Repository Missions',
+    },
+  },
+});
+
+const generateMissionCandidatesRoute = createRoute({
+  method: 'post',
+  path: '/repositories/:repositoryId/missions/generate-candidates',
+  request: {
+    params: repositoryParams,
+    body: {
+      content: { 'application/json': { schema: generateMissionCandidatesRequestSchema } },
+    },
+  },
+  responses: {
+    201: {
+      content: { 'application/json': { schema: generateMissionCandidatesResponseSchema } },
+      description: 'Mission candidates generated from configured Goals',
     },
   },
 });
@@ -126,6 +145,21 @@ const listTaskProposalsRoute = createRoute({
   },
 });
 
+const listRepositoryTaskProposalsRoute = createRoute({
+  method: 'get',
+  path: '/repositories/:repositoryId/mission-task-proposals',
+  request: {
+    params: repositoryParams,
+    query: z.object({ status: z.string().optional() }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: z.array(missionTaskProposalSchema) } },
+      description: 'Repository Mission task proposals',
+    },
+  },
+});
+
 const dismissTaskProposalRoute = createRoute({
   method: 'post',
   path: '/mission-task-proposals/:proposalId/dismiss',
@@ -182,6 +216,20 @@ export const missionPlannerRouter = createOpenApiRouter()
     )
   )
   .openapi(
+    generateMissionCandidatesRoute,
+    withOpenApiRouteError(generateMissionCandidatesRoute, async (c) => {
+      const body = c.req.valid('json');
+      return c.json(
+        await service.generateMissionCandidatesFromGoals({
+          repositoryId: c.req.param('repositoryId'),
+          goalIds: body.goalIds,
+          includeInactiveGoals: body.includeInactiveGoals,
+        }),
+        201
+      );
+    })
+  )
+  .openapi(
     getMissionRoute,
     withOpenApiRouteError(getMissionRoute, async (c) =>
       c.json(await service.getMissionDetail(c.req.param('missionId')), 200)
@@ -229,6 +277,18 @@ export const missionPlannerRouter = createOpenApiRouter()
     listTaskProposalsRoute,
     withOpenApiRouteError(listTaskProposalsRoute, async (c) =>
       c.json(await service.listTaskProposals(c.req.param('resultId')), 200)
+    )
+  )
+  .openapi(
+    listRepositoryTaskProposalsRoute,
+    withOpenApiRouteError(listRepositoryTaskProposalsRoute, async (c) =>
+      c.json(
+        await service.listRepositoryTaskProposals({
+          repositoryId: c.req.param('repositoryId'),
+          status: c.req.valid('query').status,
+        }),
+        200
+      )
     )
   )
   .openapi(

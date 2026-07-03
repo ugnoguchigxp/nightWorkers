@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import {
   type MissionGoal,
   type MissionTaskCandidate,
@@ -296,11 +296,51 @@ export async function updateMissionCandidate(
   return row ? mapCandidate(row) : null;
 }
 
+export async function reactivateDeletedTaskMissionCandidates(
+  repositoryId: string,
+  database: Db = db
+) {
+  const now = new Date();
+  await database
+    .update(missionTaskCandidates)
+    .set({ status: 'candidate', updatedAt: now })
+    .where(
+      and(
+        eq(missionTaskCandidates.repositoryId, repositoryId),
+        eq(missionTaskCandidates.status, 'task_created'),
+        isNull(missionTaskCandidates.taskId)
+      )
+    );
+}
+
 export async function listMissionCandidatesByIds(candidateIds: string[], database: Db = db) {
   if (candidateIds.length === 0) return [];
   const rows = await database
-    .select()
+    .select({
+      id: missionTaskCandidates.id,
+      createdAt: missionTaskCandidates.createdAt,
+      updatedAt: missionTaskCandidates.updatedAt,
+      batchId: missionTaskCandidates.batchId,
+      repositoryId: missionTaskCandidates.repositoryId,
+      goalId: missionTaskCandidates.goalId,
+      goalTitle: missionGoals.title,
+      title: missionTaskCandidates.title,
+      summary: missionTaskCandidates.summary,
+      rationale: missionTaskCandidates.rationale,
+      evidenceJson: missionTaskCandidates.evidenceJson,
+      evaluationContribution: missionTaskCandidates.evaluationContribution,
+      importancePercent: missionTaskCandidates.importancePercent,
+      confidencePercent: missionTaskCandidates.confidencePercent,
+      tokenSize: missionTaskCandidates.tokenSize,
+      complexity: missionTaskCandidates.complexity,
+      taskPrompt: missionTaskCandidates.taskPrompt,
+      acceptanceCriteria: missionTaskCandidates.acceptanceCriteria,
+      verificationPlan: missionTaskCandidates.verificationPlan,
+      status: missionTaskCandidates.status,
+      taskId: missionTaskCandidates.taskId,
+    })
     .from(missionTaskCandidates)
+    .leftJoin(missionGoals, eq(missionGoals.id, missionTaskCandidates.goalId))
     .where(inArray(missionTaskCandidates.id, candidateIds));
   return rows.map((row) => mapCandidate(row));
 }
@@ -324,13 +364,55 @@ export async function createTaskFromMissionCandidate(
         'Evidence:',
         ...candidate.evidence.map((item) => `- ${item.label}: ${item.value}`),
       ].join('\n'),
-      objective: candidate.taskPrompt,
+      objective: buildMissionCandidateTaskObjective(candidate),
       acceptanceCriteria: `${candidate.acceptanceCriteria}\n\nVerification:\n${candidate.verificationPlan}`,
       status,
       createdBy: 'mission-task-candidate',
     })
     .returning();
   return task;
+}
+
+function buildMissionCandidateTaskObjective(candidate: MissionTaskCandidate) {
+  return [
+    'この Mission Task Candidate は、まず実装計画を作成してください。',
+    'Plan 完了後に Implementation Queue へ入れて実装する前提で、Queue 実行者が迷わない粒度にしてください。',
+    '',
+    '[前提]',
+    candidate.summary,
+    '',
+    '[候補の元指示]',
+    candidate.taskPrompt,
+    '',
+    '[事前に分かっている仕様]',
+    `- 実装対象: ${candidate.title}`,
+    `- Goal: ${candidate.goalTitle ?? '未指定'}`,
+    `- 期待成果: ${candidate.acceptanceCriteria}`,
+    `- 検証方針: ${candidate.verificationPlan}`,
+    ...candidate.evidence.map((item) => `- 根拠: ${item.label}: ${item.value}`),
+    '',
+    '[ユーザー定義候補 / 未確定事項]',
+    '- Questionnaire や Plan Mode でユーザーが定義できる仕様要素は、ここで除外・禁止として固定せず、確認項目または選択肢として残してください。',
+    '- repositorySnapshot や evidence から断定できない詳細仕様は仮決めせず、Plan 内で未確定事項として明示してください。',
+    '- 既存の検証ゲートや認証/ルーティングなど、関係する既存構造との扱いは、必要に応じて Plan Mode で確認してください。',
+    '',
+    '[Mission Goal / Signal]',
+    candidate.goalTitle ? `Goal: ${candidate.goalTitle}` : 'Goal: 未指定',
+    `Importance: ${candidate.importancePercent}%`,
+    candidate.evaluationContribution === null
+      ? 'Expected evaluation contribution: 未算出'
+      : `Expected evaluation contribution: +${candidate.evaluationContribution}`,
+    `Confidence: ${candidate.confidencePercent}%`,
+    '',
+    '[Rationale]',
+    candidate.rationale,
+    '',
+    '[Acceptance Criteria]',
+    candidate.acceptanceCriteria,
+    '',
+    '[Verification]',
+    candidate.verificationPlan,
+  ].join('\n');
 }
 
 export async function createProjectQualityRun(input: {

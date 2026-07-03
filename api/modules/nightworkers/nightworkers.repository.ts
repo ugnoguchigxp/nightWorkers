@@ -1,5 +1,6 @@
 import { desc, eq } from 'drizzle-orm';
 import { db } from '../../db/client';
+import { missionTaskCandidates } from '../../db/project-detail-schema';
 import { repositories, taskMessages, tasks } from '../../db/schema';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
 import {
@@ -474,8 +475,19 @@ export async function updateTask(
 }
 
 export async function deleteTask(id: string) {
-  const [task] = await db.delete(tasks).where(eq(tasks.id, id)).returning();
-  return task;
+  return db.transaction(async (tx) => {
+    const existing = await tx.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+    const task = existing[0];
+    if (!task) return undefined;
+    if (!['completed', 'needs_review'].includes(task.status)) {
+      await tx
+        .update(missionTaskCandidates)
+        .set({ status: 'candidate', taskId: null, updatedAt: new Date() })
+        .where(eq(missionTaskCandidates.taskId, id));
+    }
+    const [deleted] = await tx.delete(tasks).where(eq(tasks.id, id)).returning();
+    return deleted;
+  });
 }
 
 // --- Task Runs ---

@@ -325,6 +325,22 @@ export function createMission(repositoryId: string, input: unknown) {
   return apiFetch(`/api/repositories/${repositoryId}/missions`, jsonRequest('POST', input));
 }
 
+export function generateMissionCandidatesFromGoals(repositoryId: string, input: unknown = {}) {
+  return apiFetch(
+    `/api/repositories/${repositoryId}/missions/generate-candidates`,
+    jsonRequest('POST', input)
+  );
+}
+
+export function fetchRepositoryMissionTaskProposals(repositoryId: string, status = 'proposed') {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  const query = params.toString();
+  return apiFetch(
+    `/api/repositories/${repositoryId}/mission-task-proposals${query ? `?${query}` : ''}`
+  );
+}
+
 export function fetchMissionDetail(missionId: string) {
   return apiFetch(`/api/missions/${missionId}`);
 }

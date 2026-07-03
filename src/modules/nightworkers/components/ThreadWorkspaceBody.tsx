@@ -136,12 +136,14 @@ export function projectEvaluationComposerDraftState(
   activeSession: Task | null,
   taskMessages: TaskMessage[]
 ) {
-  const isProjectEvaluationTask = activeSession?.createdBy === 'project-evaluation';
+  const usesGeneratedInitialPrompt =
+    activeSession?.createdBy === 'project-evaluation' ||
+    activeSession?.createdBy === 'mission-task-candidate';
   const hasSentUserPrompt = taskMessages.some((message) => message.role === 'user');
   return {
-    discardStoredDraft: isProjectEvaluationTask && hasSentUserPrompt,
+    discardStoredDraft: usesGeneratedInitialPrompt && hasSentUserPrompt,
     initialPrompt:
-      isProjectEvaluationTask && !hasSentUserPrompt ? activeSession.objective?.trim() || '' : '',
+      usesGeneratedInitialPrompt && !hasSentUserPrompt ? activeSession.objective?.trim() || '' : '',
   };
 }
 

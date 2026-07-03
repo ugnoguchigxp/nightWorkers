@@ -3,8 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from '@hono/zod-openapi';
 import { eq } from 'drizzle-orm';
+import { missionGoalTemplates } from '../../../shared/mission-goal-templates';
 import {
   e2eSummarySchema,
+  MISSION_TASK_CANDIDATE_MAX_COUNT,
   type MissionGoal,
   type MissionTaskCandidate,
   type MissionTaskCandidatesResult,
@@ -26,6 +28,7 @@ import {
   buildNormalizedSupervisorLlmRequest,
   callStructuredJsonLLM,
 } from '../../services/structured-llm';
+import { normalizeStructuredOutputJsonSchema } from '../../services/structured-llm/json-schema';
 import * as nightworkersRepo from '../nightworkers/nightworkers.repository';
 import * as projectEvaluationRepo from '../project-evaluation/project-evaluation.repository';
 import * as repo from './project-detail.repository';
@@ -37,32 +40,7 @@ import {
 const MISSION_TASK_SCHEMA_NAME = 'mission_task_candidates';
 const MAX_OUTPUT_CHARS = 120_000;
 
-export const missionGoalPresets = [
-  {
-    id: 'coverage-threshold',
-    title: 'Keep unit coverage above configured threshold',
-    goalText:
-      '設定済みの coverage threshold を継続的に満たし、coverage 低下を早期に検知できる状態を維持する。',
-  },
-  {
-    id: 'planning-quality',
-    title: 'Keep planning quality above threshold',
-    goalText:
-      'Plan / specification の品質を維持し、実装前に必要な判断材料と受け入れ条件が揃っている状態を保つ。',
-  },
-  {
-    id: 'token-spend',
-    title: 'Control recurring LLM token spend',
-    goalText:
-      '繰り返し発生する LLM token 消費を把握し、同じ作業で過剰な token を消費しない状態にする。',
-  },
-  {
-    id: 'queue-reliability',
-    title: 'Keep queue execution reliability healthy',
-    goalText:
-      'Queue 実行の失敗、停滞、再実行不能な状態を減らし、完了・失敗・人間確認の状態が明確に残るようにする。',
-  },
-];
+export const missionGoalPresets = missionGoalTemplates;
 
 async function requireRepository(repositoryId: string) {
   const repository = await nightworkersRepo.getRepository(repositoryId);
@@ -261,7 +239,7 @@ export async function deleteMissionGoal(repositoryId: string, goalId: string) {
 }
 
 export function listMissionGoalPresets() {
-  return missionGoalPresets;
+  return missionGoalPresets.map((preset) => ({ ...preset }));
 }
 
 export async function createMissionGoalFromPreset(
@@ -284,8 +262,17 @@ function buildMissionTaskSystemPrompt() {
   return [
     'あなたは NightWorkers の Mission Task Candidate generator です。',
     'Mission Goal と project signal から、ユーザーが Task 化する候補だけを JSON schema に従って返してください。',
+    `候補数は最大 ${MISSION_TASK_CANDIDATE_MAX_COUNT} 件です。既存 Task や existingUncreatedCandidates と同じ候補を返さないでください。`,
+    '候補は必ず Mission Goal の達成に直接つながる作業にしてください。一般的な品質改善、テスト安定化、運用改善は、Goal 本体の実装候補より優先しないでください。',
+    'repositorySnapshot を読み、現在の repo が starter/template/別ドメイン実装に見える場合は、最初の候補で Mission Goal のプロダクト本体を作るタスクを提案してください。',
+    'repositorySnapshot.llmContextFiles が存在する場合は、それを実装状態の優先根拠にしてください。その場合 recentCommitDiffs は読みません。llmContextFiles が無い場合だけ sourceExcerpts / recentCommitDiffs を補助根拠にしてください。Goal 本体が既に実装されていると判断できる場合は、その本体実装タスクを返さず、残っている差分だけを候補にしてください。',
+    '既存の Task や未作成候補が Goal 本体の実装をすでに扱っている場合だけ、改善・品質・追加機能の候補を上位にできます。',
+    'importancePercent は選択された Mission Goal に対する重要度として 0-100 の整数で算出してください。repo 全体の一般的な重要度ではありません。',
+    'evaluationContribution は、その候補を完了した場合に latestEvaluation.overallScore または該当 dimensions がどれだけ改善し得るかを 0-100 の数値で見積もってください。必ず数値を返し、null や空欄は禁止です。',
+    'taskPrompt は Composer にそのまま入る初期プロンプトです。短い命令ではなく、まず実装計画を作成する前提、実装対象、事前に分かっている仕様、ユーザーが定義できる未確定要素、期待成果、検証方針が分かる粒度で書いてください。',
+    '事前に分かっている仕様は、Mission Goal、repositorySnapshot、evidence、acceptanceCriteria から断定できる範囲だけを書いてください。未確認の詳細仕様やユーザーが選べる仕様要素は、除外や禁止として固定せず、Questionnaire / Plan Mode で定義する項目として残してください。',
     'Quality や Evaluation の成功/失敗判定は行わず、保存済み signal を根拠として扱ってください。',
-    'unit / coverage / e2e capability が欠けている場合は、package.json scripts または project quality settings を整備する候補を最優先にしてください。',
+    'unit / coverage / e2e capability が欠けている場合だけ、package.json scripts または project quality settings を整備する候補を高優先にしてください。capability が存在するだけなら Goal 本体より優先しないでください。',
     '秘密情報、生ログ全文、リポジトリ全文を要求しないでください。',
   ].join('\n');
 }
@@ -299,6 +286,18 @@ function buildMissionTaskUserPrompt(input: {
     {
       missionGoals: input.signal.activeGoals,
       projectSignalSnapshot: input.signal,
+      generationRules: [
+        '各候補は Mission Goal に直接紐付ける。',
+        'Goal の対象プロダクトが repositorySnapshot.llmContextFiles に見当たる場合は、それを最優先の実装状態として扱う。',
+        'llmContextFiles が無い場合だけ、sourceFiles / sourceExcerpts / recentCommitDiffs から Goal 対象プロダクトの有無を判断する。',
+        'Goal の対象プロダクトが確認できない場合、最初の候補はそのプロダクト本体を作るタスクにする。',
+        'Goal の対象プロダクトが実装済みと判断できる場合、同じ本体実装タスクは返さない。',
+        'importancePercent は Goal 達成への重要度を示す。',
+        'evaluationContribution は評価改善の見込みを数値で示し、null にしない。',
+        'taskPrompt は Project Evaluation 由来タスクのように Plan-first の Composer 初期プロンプトとして使える長さと構成にする。',
+        'taskPrompt には、既知仕様、ユーザーが定義できる未確定要素、期待結果、検証方法を文章化して含める。',
+        `候補数は最大 ${MISSION_TASK_CANDIDATE_MAX_COUNT} 件にし、existingUncreatedCandidates / existingTaskTitles と title が重なる候補は返さない。`,
+      ],
       existingUncreatedCandidates: input.existingCandidates.map((candidate) => ({
         id: candidate.id,
         title: candidate.title,
@@ -313,7 +312,7 @@ function buildMissionTaskUserPrompt(input: {
 }
 
 function selectedModelForMissionPrompt(systemPrompt: string, userPrompt: string) {
-  const schema = z.toJSONSchema(missionTaskCandidatesResultSchema);
+  const schema = buildMissionTaskCandidatesResponseJsonSchema();
   const normalized = buildNormalizedSupervisorLlmRequest({
     systemPrompt,
     userPrompt,
@@ -329,6 +328,10 @@ function selectedModelForMissionPrompt(systemPrompt: string, userPrompt: string)
     modelOrDeployment: normalized.modelOrDeployment,
     thinkingDepth: normalized.thinkingDepth ?? null,
   };
+}
+
+export function buildMissionTaskCandidatesResponseJsonSchema() {
+  return normalizeStructuredOutputJsonSchema(z.toJSONSchema(missionTaskCandidatesResultSchema));
 }
 
 function selectionFromLlmEvent(event: SupervisorLlmDebugEvent) {
@@ -370,14 +373,26 @@ function hasQualitySetupCandidate(result: MissionTaskCandidatesResult) {
   });
 }
 
-function rejectDuplicateTitles(candidates: MissionTaskCandidatesResult['candidates']) {
+function normalizeMissionCandidateTitle(title: string) {
+  return title
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s　"'`.,:;!?()[\]{}<>「」『』【】・_-]+/g, '');
+}
+
+function selectUniqueMissionTaskCandidates(
+  candidates: MissionTaskCandidatesResult['candidates'],
+  blockedTitleKeys: Set<string>
+) {
   const seen = new Set<string>();
+  const selected: MissionTaskCandidatesResult['candidates'] = [];
   for (const candidate of candidates) {
-    const key = candidate.title.trim().toLowerCase();
-    if (seen.has(key))
-      throw new ValidationError('Mission task generation returned duplicate titles');
+    const key = normalizeMissionCandidateTitle(candidate.title);
+    if (!key || seen.has(key) || blockedTitleKeys.has(key)) continue;
     seen.add(key);
+    selected.push(candidate);
   }
+  return selected;
 }
 
 function validateGeneratedGoalIds(
@@ -396,6 +411,7 @@ function validateGeneratedGoalIds(
 
 export async function listMissionTaskCandidates(input: { repositoryId: string; status?: string }) {
   await requireRepository(input.repositoryId);
+  await repo.reactivateDeletedTaskMissionCandidates(input.repositoryId);
   return repo.listMissionCandidates(input);
 }
 
@@ -432,6 +448,7 @@ export async function generateMissionTaskCandidates(input: {
   });
   if (selectedGoals.length === 0)
     throw new ValidationError('At least one mission goal is required');
+  await repo.reactivateDeletedTaskMissionCandidates(repository.id);
   const signal = await buildProjectSignalSnapshot({ repository, goals: selectedGoals });
   const batch = await repo.createRunningMissionBatch({
     repositoryId: repository.id,
@@ -458,7 +475,7 @@ export async function generateMissionTaskCandidates(input: {
     const raw = await callStructuredJsonLLM(systemPrompt, userPrompt, {
       role: 'mission_task_generation',
       schemaName: MISSION_TASK_SCHEMA_NAME,
-      schema: z.toJSONSchema(missionTaskCandidatesResultSchema),
+      schema: buildMissionTaskCandidatesResponseJsonSchema(),
       emitEvent: async (event) => {
         const nextSelection = selectionFromLlmEvent(event);
         if (nextSelection) selectedModel = nextSelection;
@@ -466,7 +483,14 @@ export async function generateMissionTaskCandidates(input: {
     });
     const rawOutput = JSON.parse(raw) as unknown;
     const parsed = missionTaskCandidatesResultSchema.parse(rawOutput);
-    rejectDuplicateTitles(parsed.candidates);
+    const blockedTitleKeys = new Set([
+      ...existingCandidates.map((candidate) => normalizeMissionCandidateTitle(candidate.title)),
+      ...existingTasks.map((task) => normalizeMissionCandidateTitle(task.title)),
+    ]);
+    const selectedCandidates = selectUniqueMissionTaskCandidates(
+      parsed.candidates,
+      blockedTitleKeys
+    );
     validateGeneratedGoalIds(parsed.candidates, selectedGoals);
     if (
       signal.qualityCapabilities.missingCapabilities.length > 0 &&
@@ -481,10 +505,7 @@ export async function generateMissionTaskCandidates(input: {
     }
     await repo.completeMissionBatch({ batchId: batch.id, rawOutput, selectedModel });
     const candidates = await repo.createMissionCandidates(
-      parsed.candidates.map((candidate) => {
-        const duplicate = existingTasks.some(
-          (task) => task.title.trim().toLowerCase() === candidate.title.trim().toLowerCase()
-        );
+      selectedCandidates.map((candidate) => {
         return {
           batchId: batch.id,
           repositoryId: repository.id,
@@ -492,16 +513,7 @@ export async function generateMissionTaskCandidates(input: {
           title: candidate.title,
           summary: candidate.summary,
           rationale: candidate.rationale,
-          evidenceJson: duplicate
-            ? [
-                ...candidate.evidence,
-                {
-                  source: 'recent_runs' as const,
-                  label: 'duplicateWarning',
-                  value: '同名の既存 task が存在します。',
-                },
-              ]
-            : candidate.evidence,
+          evidenceJson: candidate.evidence,
           evaluationContribution: candidate.evaluationContribution ?? null,
           importancePercent: candidate.importancePercent,
           confidencePercent: candidate.confidencePercent,

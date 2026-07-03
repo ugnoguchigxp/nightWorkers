@@ -108,6 +108,7 @@ export async function createMission(input: {
   goalText: string;
   nonGoals: string[];
   sourceGoalIds: string[];
+  statusReason?: string | null;
 }) {
   const now = new Date();
   const [row] = await db
@@ -119,6 +120,7 @@ export async function createMission(input: {
       nonGoalsJson: input.nonGoals,
       sourceGoalIdsJson: input.sourceGoalIds,
       status: 'draft',
+      statusReason: input.statusReason ?? null,
       createdAt: now,
       updatedAt: now,
     })
@@ -322,6 +324,20 @@ export async function listTaskProposals(planningResultId: string, database: Db =
     .from(missionTaskProposals)
     .where(eq(missionTaskProposals.planningResultId, planningResultId))
     .orderBy(missionTaskProposals.createdAt);
+  return rows.map(mapProposal);
+}
+
+export async function listRepositoryTaskProposals(input: {
+  repositoryId: string;
+  status?: string;
+}) {
+  const conditions = [eq(missionTaskProposals.repositoryId, input.repositoryId)];
+  if (input.status) conditions.push(eq(missionTaskProposals.status, input.status));
+  const rows = await db
+    .select()
+    .from(missionTaskProposals)
+    .where(and(...conditions))
+    .orderBy(desc(missionTaskProposals.createdAt));
   return rows.map(mapProposal);
 }
 

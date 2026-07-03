@@ -18,7 +18,7 @@ export function ProjectEvaluationScreen({
   onTasksCreated,
 }: {
   project: ProjectEvaluationProject;
-  onTasksCreated?: (tasks: Task[]) => void;
+  onTasksCreated?: (tasks: Task[]) => Promise<void> | void;
 }) {
   const controller = useProjectEvaluationController(project.id, { onTasksCreated });
   const detail = controller.detail;

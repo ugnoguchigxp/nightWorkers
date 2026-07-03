@@ -18,7 +18,7 @@ import {
 } from './mission-planner.prompts';
 
 export type MissionPlannerLlmSelection = {
-  stage: 'mission_draft' | 'structure' | 'task_proposals' | 'evaluation';
+  stage: 'mission_candidates' | 'mission_draft' | 'structure' | 'task_proposals' | 'evaluation';
   providerId: string;
   providerEndpointId: string | null;
   routeSource: string | null;

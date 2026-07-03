@@ -8,6 +8,7 @@ import {
   type MissionPlanningResult,
   type MissionProposalTaskMetadata,
   type MissionTaskProposal,
+  missionCandidateGenerationResultSchema,
   missionDecompositionPlanningResultSchema,
   missionProposalTaskMetadataSchema,
 } from '../../../shared/schemas/mission-planner.schema';
@@ -18,6 +19,8 @@ import * as nightworkersRepo from '../nightworkers/nightworkers.repository';
 import * as projectDetailRepo from '../project-detail/project-detail.repository';
 import { buildProjectSignalSnapshot } from '../project-detail/project-signal-snapshot.service';
 import {
+  buildMissionCandidatesSystemPrompt,
+  buildMissionCandidatesUserPrompt,
   buildMissionDraftSystemPrompt,
   buildMissionDraftUserPrompt,
   buildMissionPlannerInputBundle,
@@ -69,6 +72,13 @@ function defaultMissionTitle(goalText: string) {
   return normalized.length > 80 ? `${normalized.slice(0, 77)}...` : normalized;
 }
 
+function normalizeMissionTitle(title: string) {
+  return title
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s　"'`.,:;!?()[\]{}<>「」『』【】・_-]+/g, '');
+}
+
 async function sourceGoalsForMission(mission: Mission) {
   const goals = await projectDetailRepo.listMissionGoals(mission.repositoryId);
   const selected = mission.sourceGoalIds.length
@@ -114,6 +124,7 @@ export async function createMission(input: {
   goalText: string;
   nonGoals?: string[];
   sourceGoalIds?: string[];
+  statusReason?: string | null;
 }) {
   await requireRepository(input.repositoryId);
   const sourceGoalIds = [...new Set(input.sourceGoalIds ?? [])];
@@ -129,7 +140,93 @@ export async function createMission(input: {
     goalText: input.goalText.trim(),
     nonGoals: input.nonGoals ?? [],
     sourceGoalIds,
+    statusReason: input.statusReason ?? null,
   });
+}
+
+export async function generateMissionCandidatesFromGoals(input: {
+  repositoryId: string;
+  goalIds?: string[];
+  includeInactiveGoals?: boolean;
+}) {
+  const repository = await requireRepository(input.repositoryId);
+  const allGoals = await projectDetailRepo.listMissionGoals(repository.id);
+  const sourceGoals = allGoals.filter((goal) => {
+    if (input.goalIds?.length && !input.goalIds.includes(goal.id)) return false;
+    return input.includeInactiveGoals || goal.active;
+  });
+  if (sourceGoals.length === 0) {
+    throw new ValidationError('At least one mission goal is required');
+  }
+
+  const signal = await buildProjectSignalSnapshot({ repository, goals: sourceGoals });
+  const inputBundle = {
+    schemaVersion: 'nightworkers.mission-candidate-input/v1',
+    sourceGoals: sourceGoals.map((goal) => ({
+      id: goal.id,
+      title: goal.title,
+      goalText: goal.goalText,
+      active: goal.active,
+    })),
+    projectSignalSnapshot: signal,
+    createdAt: new Date().toISOString(),
+  };
+  const existingMissions = await repo.listMissions(repository.id);
+  const missionCandidatesCall = await (async () => {
+    try {
+      return await callMissionPlannerJson({
+        stage: 'mission_candidates',
+        systemPrompt: buildMissionCandidatesSystemPrompt(),
+        userPrompt: buildMissionCandidatesUserPrompt({
+          inputBundle,
+          existingMissions: existingMissions.map((mission) => ({
+            id: mission.id,
+            title: mission.title,
+            status: mission.status,
+          })),
+        }),
+        schemaName: 'mission_candidates',
+        schema: missionCandidateGenerationResultSchema,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new ValidationError('Mission candidate generation failed', { message });
+    }
+  })();
+
+  const allowedGoalIds = new Set(sourceGoals.map((goal) => goal.id));
+  const blockedTitleKeys = new Set(
+    existingMissions.map((mission) => normalizeMissionTitle(mission.title))
+  );
+  const seenTitleKeys = new Set<string>();
+  const selectedCandidates = missionCandidatesCall.parsed.candidates.filter((candidate) => {
+    for (const goalId of candidate.sourceGoalIds) {
+      if (!allowedGoalIds.has(goalId)) {
+        throw new ValidationError('Mission candidate generation returned an unknown goalId', {
+          goalId,
+        });
+      }
+    }
+    const key = normalizeMissionTitle(candidate.title);
+    if (!key || blockedTitleKeys.has(key) || seenTitleKeys.has(key)) return false;
+    seenTitleKeys.add(key);
+    return true;
+  });
+
+  const missions = [];
+  for (const candidate of selectedCandidates) {
+    missions.push(
+      await repo.createMission({
+        repositoryId: repository.id,
+        title: candidate.title,
+        goalText: candidate.goalText,
+        nonGoals: candidate.nonGoals,
+        sourceGoalIds: candidate.sourceGoalIds,
+        statusReason: candidate.rationale,
+      })
+    );
+  }
+  return { status: 'completed' as const, missions };
 }
 
 export async function listMissions(repositoryId: string) {
@@ -513,6 +610,14 @@ export async function listTaskProposals(planningResultId: string) {
   const planningResult = await repo.getPlanningResult(planningResultId);
   if (!planningResult) throw new NotFoundError('Mission planning result not found');
   return repo.listTaskProposals(planningResultId);
+}
+
+export async function listRepositoryTaskProposals(input: {
+  repositoryId: string;
+  status?: string;
+}) {
+  await requireRepository(input.repositoryId);
+  return repo.listRepositoryTaskProposals(input);
 }
 
 export async function dismissTaskProposal(proposalId: string) {
