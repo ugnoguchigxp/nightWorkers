@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "concurrently -k -n api,web -c cyan,magenta \"bun run dev:api\" \"bun run dev:web\"",
-    "dev:api": "bun --watch api/index.ts",
+    "dev:api": "bun api/index.ts",
     "dev:web": "vite",
     "prepare": "husky",
     "build": "bun run build:frontend && bun run build:backend",

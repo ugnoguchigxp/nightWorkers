@@ -34,6 +34,7 @@ export default defineConfig({
   server: {
     port: 39174,
     strictPort: true,
+    hmr: false,
     watch: {
       ignored: (file) => !isApiOrSrcPath(file),
     },

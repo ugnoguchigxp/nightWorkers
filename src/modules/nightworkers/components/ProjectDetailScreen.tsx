@@ -18,6 +18,11 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { ProjectEvaluationScreen } from '@/modules/project-evaluation';
 import type {
+  Mission,
+  MissionDetail,
+  MissionTaskProposal,
+} from '../../../../shared/schemas/mission-planner.schema';
+import type {
   E2ESummary,
   MissionGoal,
   MissionTaskCandidate,
@@ -26,11 +31,17 @@ import type {
   ProjectStackProfile,
 } from '../../../../shared/schemas/project-detail.schema';
 import {
+  createMission,
   createMissionGoal,
   createProjectQualityRun,
   createTasksFromMissionCandidates,
+  createTasksFromMissionTaskProposals,
+  decomposeMission,
   deleteMissionGoal,
+  dismissMissionTaskProposal,
+  fetchMissionDetail,
   fetchMissionGoals,
+  fetchMissions,
   fetchMissionTaskCandidates,
   fetchProjectDetailMetrics,
   fetchProjectQuality,
@@ -207,6 +218,11 @@ export function ProjectDetailScreen({
   const [activeTab, setActiveTab] = useState<ProjectDetailTab>('overview');
   const [metrics, setMetrics] = useState<ProjectDetailMetrics>(emptyMetrics);
   const [goals, setGoals] = useState<MissionGoal[]>([]);
+  const [missions, setMissions] = useState<Mission[]>([]);
+  const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
+  const [missionDetail, setMissionDetail] = useState<MissionDetail | null>(null);
+  const [missionGoalText, setMissionGoalText] = useState('');
+  const [selectedProposalIds, setSelectedProposalIds] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<MissionTaskCandidate[]>([]);
   const [quality, setQuality] = useState<ProjectQualityOverview | null>(null);
   const [goalDraft, setGoalDraft] = useState<{
@@ -291,14 +307,16 @@ export function ProjectDetailScreen({
   );
 
   const loadProjectDetail = useCallback(async () => {
-    const [metricsRes, goalsRes, candidatesRes, qualityRes] = await Promise.all([
+    const [metricsRes, goalsRes, missionsRes, candidatesRes, qualityRes] = await Promise.all([
       fetchProjectDetailMetrics(project.id),
       fetchMissionGoals(project.id),
+      fetchMissions(project.id),
       fetchMissionTaskCandidates(project.id),
       fetchProjectQuality(project.id),
     ]);
     setMetrics(await readJsonResponse<ProjectDetailMetrics>(metricsRes));
     setGoals(await readJsonResponse<MissionGoal[]>(goalsRes));
+    setMissions(await readJsonResponse<Mission[]>(missionsRes));
     setCandidates(await readJsonResponse<MissionTaskCandidate[]>(candidatesRes));
     setQuality(await readJsonResponse<ProjectQualityOverview>(qualityRes));
   }, [project.id]);
@@ -329,6 +347,13 @@ export function ProjectDetailScreen({
     },
     [loadProjectDetail]
   );
+
+  const loadSelectedMissionDetail = useCallback(async (missionId: string) => {
+    setSelectedMissionId(missionId);
+    setSelectedProposalIds([]);
+    const detail = await readJsonResponse<MissionDetail>(await fetchMissionDetail(missionId));
+    setMissionDetail(detail);
+  }, []);
 
   const saveGoalDraft = () =>
     goalDraft
@@ -575,37 +600,99 @@ export function ProjectDetailScreen({
         ) : null}
 
         {activeTab === 'mission' ? (
-          <MissionGenerateTasksPanel
-            rows={taskCandidateRows}
-            candidates={candidates}
-            selectedIds={selectedCandidateIds}
-            busy={busyAction === 'generate' || busyAction === 'create-tasks'}
-            onToggleSelected={(candidateId) =>
-              setSelectedCandidateIds((current) =>
-                current.includes(candidateId)
-                  ? current.filter((id) => id !== candidateId)
-                  : [...current, candidateId]
-              )
-            }
-            onOpen={(candidate) => setDrawerCandidate(candidate)}
-            onGenerate={() =>
-              void runAction('generate', async () => {
-                await readJsonResponse(await generateMissionTaskCandidates(project.id));
-              })
-            }
-            onCreateTasks={() =>
-              void runAction('create-tasks', async () => {
-                const response = await createTasksFromMissionCandidates(project.id, {
-                  candidateIds: selectedCandidateIds,
-                  mode: 'draft',
-                });
-                const payload = await readJsonResponse<{ tasks: Task[] }>(response);
-                onEvaluationTasksCreated?.(payload.tasks);
-                setSelectedCandidateIds([]);
-              })
-            }
-            selectedCount={selectedCandidates.length}
-          />
+          <section className="space-y-4">
+            <MissionPlannerPanel
+              busy={busyAction?.startsWith('mission-planner') ?? false}
+              detail={missionDetail}
+              goalText={missionGoalText}
+              missions={missions}
+              onChangeGoalText={setMissionGoalText}
+              onCreateMission={() =>
+                void runAction('mission-planner:create', async () => {
+                  const created = await readJsonResponse<Mission>(
+                    await createMission(project.id, { goalText: missionGoalText })
+                  );
+                  setMissionGoalText('');
+                  await loadSelectedMissionDetail(created.id);
+                })
+              }
+              onCreateTasks={() =>
+                void runAction('mission-planner:create-tasks', async () => {
+                  const payload = await readJsonResponse<{ tasks: Task[] }>(
+                    await createTasksFromMissionTaskProposals({
+                      proposalIds: selectedProposalIds,
+                      mode: 'ready',
+                    })
+                  );
+                  onEvaluationTasksCreated?.(payload.tasks);
+                  setSelectedProposalIds([]);
+                  if (selectedMissionId) await loadSelectedMissionDetail(selectedMissionId);
+                })
+              }
+              onDecompose={() =>
+                selectedMissionId
+                  ? void runAction('mission-planner:decompose', async () => {
+                      const detail = await readJsonResponse<MissionDetail>(
+                        await decomposeMission(selectedMissionId)
+                      );
+                      setMissionDetail(detail);
+                      setSelectedProposalIds([]);
+                    })
+                  : undefined
+              }
+              onDismissProposal={(proposal) =>
+                void runAction('mission-planner:dismiss-proposal', async () => {
+                  await readJsonResponse(await dismissMissionTaskProposal(proposal.id));
+                  if (selectedMissionId) await loadSelectedMissionDetail(selectedMissionId);
+                })
+              }
+              onSelectMission={(missionId) =>
+                void runAction('mission-planner:load', async () => {
+                  await loadSelectedMissionDetail(missionId);
+                })
+              }
+              onToggleProposal={(proposalId) =>
+                setSelectedProposalIds((current) =>
+                  current.includes(proposalId)
+                    ? current.filter((id) => id !== proposalId)
+                    : [...current, proposalId]
+                )
+              }
+              selectedMissionId={selectedMissionId}
+              selectedProposalIds={selectedProposalIds}
+            />
+            <MissionGenerateTasksPanel
+              rows={taskCandidateRows}
+              candidates={candidates}
+              selectedIds={selectedCandidateIds}
+              busy={busyAction === 'generate' || busyAction === 'create-tasks'}
+              onToggleSelected={(candidateId) =>
+                setSelectedCandidateIds((current) =>
+                  current.includes(candidateId)
+                    ? current.filter((id) => id !== candidateId)
+                    : [...current, candidateId]
+                )
+              }
+              onOpen={(candidate) => setDrawerCandidate(candidate)}
+              onGenerate={() =>
+                void runAction('generate', async () => {
+                  await readJsonResponse(await generateMissionTaskCandidates(project.id));
+                })
+              }
+              onCreateTasks={() =>
+                void runAction('create-tasks', async () => {
+                  const response = await createTasksFromMissionCandidates(project.id, {
+                    candidateIds: selectedCandidateIds,
+                    mode: 'draft',
+                  });
+                  const payload = await readJsonResponse<{ tasks: Task[] }>(response);
+                  onEvaluationTasksCreated?.(payload.tasks);
+                  setSelectedCandidateIds([]);
+                })
+              }
+              selectedCount={selectedCandidates.length}
+            />
+          </section>
         ) : null}
 
         {activeTab === 'evaluation' ? (
@@ -1014,6 +1101,291 @@ function GoalDefinitionsPanel({
         </div>
       </div>
     </section>
+  );
+}
+
+function MissionPlannerPanel({
+  missions,
+  selectedMissionId,
+  detail,
+  goalText,
+  selectedProposalIds,
+  busy,
+  onChangeGoalText,
+  onCreateMission,
+  onSelectMission,
+  onDecompose,
+  onToggleProposal,
+  onDismissProposal,
+  onCreateTasks,
+}: {
+  missions: Mission[];
+  selectedMissionId: string | null;
+  detail: MissionDetail | null;
+  goalText: string;
+  selectedProposalIds: string[];
+  busy: boolean;
+  onChangeGoalText: (value: string) => void;
+  onCreateMission: () => void;
+  onSelectMission: (missionId: string) => void;
+  onDecompose: () => void;
+  onToggleProposal: (proposalId: string) => void;
+  onDismissProposal: (proposal: MissionTaskProposal) => void;
+  onCreateTasks: () => void;
+}) {
+  const reviewPending = detail?.latestPlanningResult?.status === 'review_pending';
+  const selectableProposals =
+    detail?.taskProposals.filter((proposal) => proposal.status === 'proposed') ?? [];
+  return (
+    <section className="space-y-3">
+      <SectionHeading icon={<Target className="h-4 w-4" />} title="Mission Decomposition" />
+      <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="space-y-3">
+          <div className="border p-3" style={panelStyle}>
+            <div className="text-xs font-semibold uppercase" style={subtleTextStyle}>
+              New Mission
+            </div>
+            <textarea
+              className="mt-3 min-h-28 w-full resize-y border p-2 text-xs outline-none"
+              disabled={busy}
+              onChange={(event) => onChangeGoalText(event.target.value)}
+              placeholder="広い goal を入力"
+              style={controlStyle}
+              value={goalText}
+            />
+            <Button
+              className="mt-2 h-8 w-full justify-center px-3 text-xs font-semibold"
+              disabled={busy || goalText.trim().length === 0}
+              onClick={onCreateMission}
+              style={primaryButtonStyle}
+              type="button"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Mission 作成
+            </Button>
+          </div>
+          <div className="overflow-hidden border" style={panelStyle}>
+            <div className="border-b px-3 py-2 text-xs font-semibold" style={tableBorderStyle}>
+              Missions
+            </div>
+            <div className="max-h-80 overflow-auto">
+              {missions.length > 0 ? (
+                missions.map((mission) => (
+                  <button
+                    className="block w-full border-b px-3 py-2 text-left text-xs last:border-b-0"
+                    disabled={busy}
+                    key={mission.id}
+                    onClick={() => onSelectMission(mission.id)}
+                    style={{
+                      ...tableBorderStyle,
+                      background:
+                        selectedMissionId === mission.id
+                          ? 'color-mix(in srgb, var(--nw-primary) 10%, var(--nw-panel))'
+                          : 'transparent',
+                    }}
+                    type="button"
+                  >
+                    <span className="block truncate font-semibold">{mission.title}</span>
+                    <span className="mt-1 block truncate text-[10px]" style={subtleTextStyle}>
+                      {mission.status}
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <EmptyBlock message="Mission はまだありません。" />
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="min-w-0 overflow-hidden border" style={panelStyle}>
+          {detail ? (
+            <>
+              <div
+                className="flex flex-wrap items-start justify-between gap-3 border-b p-3"
+                style={tableBorderStyle}
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold">{detail.mission.title}</div>
+                  <div className="mt-1 line-clamp-2 text-xs" style={subtleTextStyle}>
+                    {detail.mission.goalText}
+                  </div>
+                  <div className="mt-2 text-[10px] uppercase" style={mutedTextStyle}>
+                    {detail.mission.status}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    className="h-8 px-3 text-xs font-semibold"
+                    disabled={busy}
+                    onClick={onDecompose}
+                    style={controlStyle}
+                    type="button"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    分解 / 評価
+                  </Button>
+                  <Button
+                    className="h-8 px-3 text-xs font-semibold"
+                    disabled={busy || !reviewPending || selectedProposalIds.length === 0}
+                    onClick={onCreateTasks}
+                    style={primaryButtonStyle}
+                    type="button"
+                  >
+                    Task 化 ({selectedProposalIds.length})
+                  </Button>
+                </div>
+              </div>
+
+              {detail.latestPlanningResult ? (
+                <div className="grid gap-3 p-3 2xl:grid-cols-[0.8fr_1.2fr]">
+                  <div className="space-y-3">
+                    <PlanningListBlock
+                      items={detail.latestPlanningResult.planningResult.objectives.map((item) => ({
+                        id: item.id,
+                        title: item.title,
+                        body: item.completionCriteria.join(' / '),
+                      }))}
+                      title="Objectives"
+                    />
+                    <PlanningListBlock
+                      items={detail.latestPlanningResult.planningResult.workPackages.map(
+                        (item) => ({
+                          id: item.id,
+                          title: item.title,
+                          body: `${item.risk}${item.suggestedPlanMode ? ' / Plan first' : ''}`,
+                        })
+                      )}
+                      title="Work Packages"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <SectionLabel
+                        icon={<ClipboardCheck className="h-4 w-4" />}
+                        title="Task Proposals"
+                      />
+                      <span className="text-[10px]" style={subtleTextStyle}>
+                        {reviewPending ? 'review_pending' : detail.latestPlanningResult.status}
+                      </span>
+                    </div>
+                    {detail.taskProposals.length > 0 ? (
+                      detail.taskProposals.map((proposal) => (
+                        <MissionTaskProposalRow
+                          disabled={!reviewPending}
+                          key={proposal.id}
+                          onDismiss={() => onDismissProposal(proposal)}
+                          onToggle={() => onToggleProposal(proposal.id)}
+                          proposal={proposal}
+                          selected={selectedProposalIds.includes(proposal.id)}
+                        />
+                      ))
+                    ) : (
+                      <EmptyBlock message="Task proposal はまだありません。" />
+                    )}
+                    {!reviewPending && detail.latestPlanningResult.status !== 'draft' ? (
+                      <div className="border px-3 py-2 text-xs" style={controlStyle}>
+                        {detail.latestPlanningResult.statusReason ??
+                          'この planning result はまだ Task 化できません。'}
+                      </div>
+                    ) : null}
+                    {reviewPending && selectableProposals.length === 0 ? (
+                      <div className="border px-3 py-2 text-xs" style={controlStyle}>
+                        Task 化できる proposed proposal はありません。
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-6 text-center text-xs" style={subtleTextStyle}>
+                  Mission を分解すると planning result が表示されます。
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="p-6 text-center text-xs" style={subtleTextStyle}>
+              Mission を選択してください。
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PlanningListBlock({
+  title,
+  items,
+}: {
+  title: string;
+  items: Array<{ id: string; title: string; body: string }>;
+}) {
+  return (
+    <div className="border p-3" style={controlStyle}>
+      <div className="text-xs font-semibold">{title}</div>
+      <div className="mt-2 space-y-2">
+        {items.map((item) => (
+          <div className="border-t pt-2 text-xs first:border-t-0 first:pt-0" key={item.id}>
+            <div className="font-semibold">{item.title}</div>
+            <div className="mt-1 line-clamp-2 text-[10px]" style={subtleTextStyle}>
+              {item.body}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MissionTaskProposalRow({
+  proposal,
+  selected,
+  disabled: disabledByResult,
+  onToggle,
+  onDismiss,
+}: {
+  proposal: MissionTaskProposal;
+  selected: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+  onDismiss: () => void;
+}) {
+  const disabled = disabledByResult || proposal.status !== 'proposed';
+  return (
+    <div className="border p-3 text-xs" style={controlStyle}>
+      <div className="flex items-start justify-between gap-3">
+        <label className="flex min-w-0 items-start gap-2">
+          <input checked={selected} disabled={disabled} onChange={onToggle} type="checkbox" />
+          <span className="min-w-0">
+            <span className="block truncate font-semibold">{proposal.title}</span>
+            <span className="mt-1 line-clamp-2 text-[10px]" style={subtleTextStyle}>
+              {proposal.summary}
+            </span>
+          </span>
+        </label>
+        <Button
+          className="h-7 px-2 text-[10px]"
+          disabled={disabled}
+          onClick={onDismiss}
+          style={controlStyle}
+          type="button"
+        >
+          Dismiss
+        </Button>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2 text-[10px]" style={mutedTextStyle}>
+        <span>{proposal.status}</span>
+        <span>{proposal.risk}</span>
+        <span>{proposal.scheduling.executionType}</span>
+        {proposal.approvalRequired ? <span>approval required</span> : null}
+      </div>
+      <pre
+        className="nightworkers-scrollbar mt-2 max-h-28 overflow-auto whitespace-pre-wrap border p-2 text-[10px]"
+        style={panelStyle}
+      >
+        {proposal.initialPrompt}
+      </pre>
+    </div>
   );
 }
 

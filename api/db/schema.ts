@@ -710,6 +710,7 @@ export const blueprintDesignSettings = sqliteTable(
   })
 );
 
+export * from './mission-planner-schema';
 export * from './project-evaluation-schema';
 
 export const blueprintArtifactAdoptions = sqliteTable(

@@ -46,6 +46,39 @@ function resolveSchedulingDecisionFromMessages(
 } {
   for (const message of [...messages].reverse()) {
     const metadata = toRecord(message.metadataJson);
+    const missionProposal = toRecord(metadata?.missionProposal);
+    const missionScheduling = toRecord(missionProposal?.scheduling);
+    const missionExecutionType = normalizeExecutionType(missionScheduling?.executionType);
+    if (missionProposal?.source === 'mission_task_proposal' && missionExecutionType) {
+      const sequenceGroupId =
+        missionExecutionType === 'sequence' &&
+        typeof missionScheduling?.sequenceGroupId === 'string'
+          ? missionScheduling.sequenceGroupId
+          : null;
+      const sequenceOrder =
+        missionExecutionType === 'sequence' && typeof missionScheduling?.sequenceOrder === 'number'
+          ? missionScheduling.sequenceOrder
+          : null;
+      const schedulingReason =
+        typeof missionScheduling?.reason === 'string'
+          ? missionScheduling.reason
+          : 'Mission proposal scheduling';
+      if (missionExecutionType === 'sequence' && (!sequenceGroupId || sequenceOrder === null)) {
+        return {
+          executionType: 'exclusive',
+          sequenceGroupId: null,
+          sequenceOrder: null,
+          schedulingReason: `${schedulingReason}; sequence metadata missing, using exclusive scheduling`,
+        };
+      }
+      return {
+        executionType: missionExecutionType,
+        sequenceGroupId,
+        sequenceOrder,
+        schedulingReason,
+      };
+    }
+
     const selection = toRecord(metadata?.intakeJobSelection) ?? toRecord(metadata?.jobSelection);
     const scheduling = toRecord(selection?.scheduling);
     const executionType = normalizeExecutionType(scheduling?.executionType);

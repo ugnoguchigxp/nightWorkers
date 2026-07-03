@@ -200,6 +200,30 @@ export function createTasksFromMissionCandidates(repositoryId: string, input: un
   );
 }
 
+export function fetchMissions(repositoryId: string) {
+  return apiFetch(`/api/repositories/${repositoryId}/missions`);
+}
+
+export function createMission(repositoryId: string, input: unknown) {
+  return apiFetch(`/api/repositories/${repositoryId}/missions`, jsonRequest('POST', input));
+}
+
+export function fetchMissionDetail(missionId: string) {
+  return apiFetch(`/api/missions/${missionId}`);
+}
+
+export function decomposeMission(missionId: string, input: unknown = {}) {
+  return apiFetch(`/api/missions/${missionId}/decompose`, jsonRequest('POST', input));
+}
+
+export function dismissMissionTaskProposal(proposalId: string) {
+  return apiFetch(`/api/mission-task-proposals/${proposalId}/dismiss`, jsonRequest('POST', {}));
+}
+
+export function createTasksFromMissionTaskProposals(input: unknown) {
+  return apiFetch(`/api/mission-task-proposals/create-tasks`, jsonRequest('POST', input));
+}
+
 export function fetchProjectQuality(repositoryId: string) {
   return apiFetch(`/api/repositories/${repositoryId}/quality`);
 }
