@@ -77,6 +77,18 @@ const getMissionRoute = createRoute({
   },
 });
 
+const deleteMissionRoute = createRoute({
+  method: 'delete',
+  path: '/missions/:missionId',
+  request: { params: missionParams },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: missionSchema } },
+      description: 'Draft Mission deleted',
+    },
+  },
+});
+
 const decomposeMissionRoute = createRoute({
   method: 'post',
   path: '/missions/:missionId/decompose',
@@ -233,6 +245,12 @@ export const missionPlannerRouter = createOpenApiRouter()
     getMissionRoute,
     withOpenApiRouteError(getMissionRoute, async (c) =>
       c.json(await service.getMissionDetail(c.req.param('missionId')), 200)
+    )
+  )
+  .openapi(
+    deleteMissionRoute,
+    withOpenApiRouteError(deleteMissionRoute, async (c) =>
+      c.json(await service.deleteMission(c.req.param('missionId')), 200)
     )
   )
   .openapi(

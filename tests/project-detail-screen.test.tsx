@@ -22,6 +22,7 @@ const baseProps = {
   selectedCount: 0,
   onToggleSelected: vi.fn(),
   onOpen: vi.fn(),
+  onDismiss: vi.fn(),
   onGenerate: vi.fn(),
   onCreateTasks: vi.fn(),
 };
@@ -79,6 +80,33 @@ describe('MissionGenerateTasksPanel', () => {
 
     expect(markup).not.toContain('animate-spin');
     expect(markup).toContain('候補を生成');
+  });
+
+  it('renders row-level delete actions for draft task candidates', () => {
+    const markup = renderToStaticMarkup(
+      <MissionGenerateTasksPanel
+        {...baseProps}
+        rows={[
+          {
+            id: 'mission_task_candidate:candidate-1',
+            source: 'mission_task_candidate' as const,
+            sourceId: 'candidate-1',
+            title: '候補タスク',
+            goal: 'Goal',
+            signal: 'Signal',
+            evaluationContribution: '+10',
+            tokenSize: 'small',
+            importance: 80,
+            confidence: 70,
+            complexity: 'simple',
+            reason: 'ドラフト候補として削除できる。',
+          },
+        ]}
+      />
+    );
+
+    expect(markup).toContain('aria-label="候補を削除"');
+    expect(markup).toContain('lucide-trash-2');
   });
 });
 

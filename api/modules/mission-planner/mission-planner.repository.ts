@@ -142,6 +142,11 @@ export async function getMission(missionId: string, database: Db = db) {
   return row ? mapMission(row) : null;
 }
 
+export async function deleteMission(missionId: string) {
+  const [row] = await db.delete(missions).where(eq(missions.id, missionId)).returning();
+  return row ? mapMission(row) : null;
+}
+
 export async function updateMission(
   missionId: string,
   input: {

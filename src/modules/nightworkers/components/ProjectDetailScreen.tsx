@@ -42,6 +42,7 @@ import {
   createTasksFromMissionCandidates,
   createTasksFromMissionTaskProposals,
   decomposeMission,
+  deleteMission,
   deleteMissionGoal,
   dismissMissionTaskProposal,
   fetchMissionGoals,
@@ -438,6 +439,20 @@ export function ProjectDetailScreen({
     .filter((item) => item.source === 'mission_task_proposal')
     .map((item) => item.sourceId);
 
+  const dismissCandidateRow = (row: TaskCandidateRow) =>
+    runAction(row.source === 'mission_task_candidate' ? 'candidate' : 'proposal', async () => {
+      if (row.source === 'mission_task_candidate') {
+        await readJsonResponse(
+          await updateMissionTaskCandidate(row.sourceId, { status: 'dismissed' })
+        );
+        if (drawerCandidate?.id === row.sourceId) setDrawerCandidate(null);
+      } else {
+        await readJsonResponse(await dismissMissionTaskProposal(row.sourceId));
+        if (drawerProposal?.id === row.sourceId) setDrawerProposal(null);
+      }
+      setSelectedCandidateIds((current) => current.filter((id) => id !== row.id));
+    });
+
   return (
     <div className="nightworkers-scrollbar h-full min-h-0 overflow-y-auto p-4" style={shellStyle}>
       <div className="mx-auto max-w-7xl space-y-4">
@@ -672,6 +687,12 @@ export function ProjectDetailScreen({
                 })
               }
               onOpenMission={setMissionCandidateModal}
+              onDeleteMission={(mission) =>
+                void runAction('mission-planner:delete-candidate', async () => {
+                  await readJsonResponse(await deleteMission(mission.id));
+                  if (missionCandidateModal?.id === mission.id) setMissionCandidateModal(null);
+                })
+              }
             />
             <MissionGenerateTasksPanel
               rows={taskCandidateRows}
@@ -694,6 +715,7 @@ export function ProjectDetailScreen({
                 const candidate = candidates.find((item) => item.id === row.sourceId);
                 if (candidate) setDrawerCandidate(candidate);
               }}
+              onDismiss={(row) => void dismissCandidateRow(row)}
               onGenerate={() =>
                 void runAction('generate', async () => {
                   await readJsonResponse(await generateMissionTaskCandidates(project.id));
@@ -766,16 +788,19 @@ export function ProjectDetailScreen({
           candidate={drawerCandidate}
           onClose={() => setDrawerCandidate(null)}
           onDismiss={(candidate) =>
-            void runAction('candidate', async () => {
-              await readJsonResponse(
-                await updateMissionTaskCandidate(candidate.id, { status: 'dismissed' })
-              );
-              setSelectedCandidateIds((current) =>
-                current.filter(
-                  (id) => id !== candidateRowId('mission_task_candidate', candidate.id)
-                )
-              );
-              setDrawerCandidate(null);
+            void dismissCandidateRow({
+              id: candidateRowId('mission_task_candidate', candidate.id),
+              source: 'mission_task_candidate',
+              sourceId: candidate.id,
+              title: candidate.title,
+              goal: candidate.goalTitle || '—',
+              signal: '—',
+              evaluationContribution: '—',
+              tokenSize: candidate.tokenSize,
+              importance: candidate.importancePercent,
+              confidence: candidate.confidencePercent,
+              complexity: candidate.complexity,
+              reason: candidate.rationale,
             })
           }
         />
@@ -785,12 +810,24 @@ export function ProjectDetailScreen({
           proposal={drawerProposal}
           onClose={() => setDrawerProposal(null)}
           onDismiss={(proposal) =>
-            void runAction('proposal', async () => {
-              await readJsonResponse(await dismissMissionTaskProposal(proposal.id));
-              setSelectedCandidateIds((current) =>
-                current.filter((id) => id !== candidateRowId('mission_task_proposal', proposal.id))
-              );
-              setDrawerProposal(null);
+            void dismissCandidateRow({
+              id: candidateRowId('mission_task_proposal', proposal.id),
+              source: 'mission_task_proposal',
+              sourceId: proposal.id,
+              title: proposal.title,
+              goal: t('projectDetail.mission.proposalSource'),
+              signal: proposal.targetFilesOrModules[0] ?? proposal.workPackageId,
+              evaluationContribution: '—',
+              tokenSize: 'medium',
+              importance: proposal.risk === 'high' ? 90 : proposal.risk === 'medium' ? 70 : 50,
+              confidence: 80,
+              complexity:
+                proposal.risk === 'high'
+                  ? 'complex'
+                  : proposal.risk === 'medium'
+                    ? 'moderate'
+                    : 'simple',
+              reason: proposal.summary,
             })
           }
         />
@@ -804,6 +841,12 @@ export function ProjectDetailScreen({
           onDecompose={(mission) =>
             void runAction('mission-planner:decompose-candidate', async () => {
               await readJsonResponse(await decomposeMission(mission.id));
+              setMissionCandidateModal(null);
+            })
+          }
+          onDelete={(mission) =>
+            void runAction('mission-planner:delete-candidate', async () => {
+              await readJsonResponse(await deleteMission(mission.id));
               setMissionCandidateModal(null);
             })
           }
@@ -1177,12 +1220,14 @@ function MissionPlannerPanel({
   isGenerating,
   onGenerateCandidates,
   onOpenMission,
+  onDeleteMission,
 }: {
   missions: Mission[];
   busy: boolean;
   isGenerating: boolean;
   onGenerateCandidates: () => void;
   onOpenMission: (mission: Mission) => void;
+  onDeleteMission: (mission: Mission) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -1220,7 +1265,8 @@ function MissionPlannerPanel({
                 <th className="py-2 pl-4 text-left">{t('projectDetail.field.candidate')}</th>
                 <th className="py-2 text-left">{t('projectDetail.field.goalSignal')}</th>
                 <th className="py-2 text-left">{t('projectDetail.mission.rationale')}</th>
-                <th className="py-2 pr-4 text-right">{t('projectDetail.field.status')}</th>
+                <th className="py-2 text-right">{t('projectDetail.field.status')}</th>
+                <th className="py-2 pr-4 text-right">{t('projectDetail.field.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1257,10 +1303,19 @@ function MissionPlannerPanel({
                         defaultValue: mission.status,
                       })}
                     </td>
+                    <td className="py-3 pr-4 text-right">
+                      <IconActionButton
+                        label={t('projectDetail.mission.deleteCandidate')}
+                        onClick={() => onDeleteMission(mission)}
+                        disabled={busy || mission.status !== 'draft'}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </IconActionButton>
+                    </td>
                   </tr>
                 ))
               ) : (
-                <EmptyTableRow colSpan={4} message={t('projectDetail.mission.emptyMissions')} />
+                <EmptyTableRow colSpan={5} message={t('projectDetail.mission.emptyMissions')} />
               )}
             </tbody>
           </table>
@@ -1278,6 +1333,7 @@ export function MissionGenerateTasksPanel({
   selectedCount,
   onToggleSelected,
   onOpen,
+  onDismiss,
   onGenerate,
   onCreateTasks,
 }: {
@@ -1288,6 +1344,7 @@ export function MissionGenerateTasksPanel({
   selectedCount: number;
   onToggleSelected: (candidateId: string) => void;
   onOpen: (row: TaskCandidateRow) => void;
+  onDismiss: (row: TaskCandidateRow) => void;
   onGenerate: () => void;
   onCreateTasks: () => void;
 }) {
@@ -1346,7 +1403,8 @@ export function MissionGenerateTasksPanel({
                 <th className="py-2 text-right">{t('projectDetail.field.tokenSize')}</th>
                 <th className="py-2 text-right">{t('projectDetail.field.importance')}</th>
                 <th className="py-2 text-right">{t('projectDetail.field.confidence')}</th>
-                <th className="py-2 pr-4 text-right">{t('projectDetail.field.complexity')}</th>
+                <th className="py-2 text-right">{t('projectDetail.field.complexity')}</th>
+                <th className="py-2 pr-4 text-right">{t('projectDetail.field.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1394,10 +1452,19 @@ export function MissionGenerateTasksPanel({
                     <td className="py-3 pr-4 text-right">
                       <ComplexityChip value={candidate.complexity} />
                     </td>
+                    <td className="py-3 pr-4 text-right">
+                      <IconActionButton
+                        label={t('projectDetail.mission.deleteCandidate')}
+                        onClick={() => onDismiss(candidate)}
+                        disabled={busy}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </IconActionButton>
+                    </td>
                   </tr>
                 ))
               ) : (
-                <EmptyTableRow colSpan={8} message={t('projectDetail.empty.taskCandidates')} />
+                <EmptyTableRow colSpan={9} message={t('projectDetail.empty.taskCandidates')} />
               )}
             </tbody>
           </table>
@@ -1746,12 +1813,14 @@ function MissionCandidateModal({
   busy,
   onClose,
   onDecompose,
+  onDelete,
 }: {
   mission: Mission;
   goals: MissionGoal[];
   busy: boolean;
   onClose: () => void;
   onDecompose: (mission: Mission) => void;
+  onDelete: (mission: Mission) => void;
 }) {
   const { t } = useTranslation();
   const sourceGoals = mission.sourceGoalIds
@@ -1808,6 +1877,15 @@ function MissionCandidateModal({
           </div>
         </section>
         <div className="mt-4 flex justify-end gap-2">
+          <Button
+            type="button"
+            onClick={() => onDelete(mission)}
+            disabled={busy || mission.status !== 'draft'}
+            style={controlStyle}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {t('projectDetail.mission.deleteCandidate')}
+          </Button>
           <Button type="button" onClick={onClose} disabled={busy} style={controlStyle}>
             {t('projectDetail.mission.close')}
           </Button>
@@ -1899,7 +1977,7 @@ function CandidateDrawer({
         </div>
         <div className="mt-4 flex justify-end">
           <Button type="button" onClick={() => onDismiss(candidate)} style={controlStyle}>
-            {t('projectDetail.mission.dismissCandidate')}
+            {t('projectDetail.mission.deleteCandidate')}
           </Button>
         </div>
       </aside>
@@ -1959,7 +2037,7 @@ function ProposalDrawer({
         ) : null}
         <div className="mt-4 flex justify-end">
           <Button type="button" onClick={() => onDismiss(proposal)} style={controlStyle}>
-            {t('projectDetail.mission.dismissCandidate')}
+            {t('projectDetail.mission.deleteCandidate')}
           </Button>
         </div>
       </aside>

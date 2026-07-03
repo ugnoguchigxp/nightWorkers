@@ -345,6 +345,10 @@ export function fetchMissionDetail(missionId: string) {
   return apiFetch(`/api/missions/${missionId}`);
 }
 
+export function deleteMission(missionId: string) {
+  return apiFetch(`/api/missions/${missionId}`, { method: 'DELETE' });
+}
+
 export function decomposeMission(missionId: string, input: unknown = {}) {
   return apiFetch(`/api/missions/${missionId}/decompose`, jsonRequest('POST', input));
 }

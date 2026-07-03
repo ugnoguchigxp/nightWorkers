@@ -417,6 +417,68 @@ describe('Project Detail backend', () => {
     }
   });
 
+  it('removes dismissed mission task candidates from the default draft list', async () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-dismiss-'));
+    try {
+      fs.writeFileSync(
+        path.join(repoRoot, 'package.json'),
+        JSON.stringify({ scripts: { test: 'echo unit' } }),
+        'utf8'
+      );
+      const project = await createRepository(repoRoot);
+      const createGoalRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-goals`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Quality',
+            goalText: 'Quality capability を整備する。',
+            active: true,
+          }),
+        }
+      );
+      expect(createGoalRes.status).toBe(201);
+
+      const generateRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates/generate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+      expect(generateRes.status).toBe(201);
+      const generated = (await generateRes.json()) as { candidates: Array<{ id: string }> };
+      const candidateId = generated.candidates[0].id;
+
+      const dismissRes = await app.request(
+        `http://localhost/api/mission-task-candidates/${candidateId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'dismissed' }),
+        }
+      );
+      expect(dismissRes.status).toBe(200);
+      expect((await dismissRes.json()).status).toBe('dismissed');
+
+      const defaultListRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates?status=candidate`
+      );
+      expect(await defaultListRes.json()).toEqual([]);
+
+      const dismissedListRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates?status=dismissed`
+      );
+      expect(await dismissedListRes.json()).toMatchObject([
+        { id: candidateId, status: 'dismissed' },
+      ]);
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
   it('skips mission candidates that duplicate existing task titles', async () => {
     const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-task-dedupe-'));
     try {

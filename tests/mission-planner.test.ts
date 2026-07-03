@@ -469,6 +469,56 @@ describe('Mission Planner service and routes', () => {
     expect(list.map((mission: { id: string }) => mission.id)).toContain(created.id);
   });
 
+  it('deletes draft Mission candidates from the list', async () => {
+    const repository = await createRepository();
+    const createRes = await app.request(
+      `http://localhost/api/repositories/${repository.id}/missions`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ goalText: '不要になった Mission 候補を消す。' }),
+      }
+    );
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { id: string };
+
+    const deleteRes = await app.request(`http://localhost/api/missions/${created.id}`, {
+      method: 'DELETE',
+      headers: { Origin: 'http://localhost:39174' },
+    });
+    expect(deleteRes.status).toBe(200);
+    expect((await deleteRes.json()).id).toBe(created.id);
+
+    const listRes = await app.request(
+      `http://localhost/api/repositories/${repository.id}/missions`
+    );
+    expect(await listRes.json()).toEqual([]);
+  });
+
+  it('does not delete a Mission after it leaves draft status', async () => {
+    const repository = await createRepository();
+    queueLlmOutputs();
+    const mission = await missionPlannerService.createMission({
+      repositoryId: repository.id,
+      goalText: 'review_pending の Mission は削除できない。',
+    });
+    await missionPlannerService.decomposeMission({ missionId: mission.id });
+
+    const deleteRes = await app.request(`http://localhost/api/missions/${mission.id}`, {
+      method: 'DELETE',
+      headers: { Origin: 'http://localhost:39174' },
+    });
+    expect(deleteRes.status).toBe(400);
+
+    const listRes = await app.request(
+      `http://localhost/api/repositories/${repository.id}/missions`
+    );
+    const missions = (await listRes.json()) as Array<{ id: string; status: string }>;
+    expect(missions).toContainEqual(
+      expect.objectContaining({ id: mission.id, status: 'review_pending' })
+    );
+  });
+
   it('lists repository Mission task proposals for the Project Detail task candidate list', async () => {
     const repository = await createRepository();
     queueLlmOutputs();
@@ -485,6 +535,25 @@ describe('Mission Planner service and routes', () => {
     expect(proposalsRes.status).toBe(200);
     const proposals = (await proposalsRes.json()) as Array<{ id: string; status: string }>;
     expect(proposals).toMatchObject([{ id: detail.taskProposals[0].id, status: 'proposed' }]);
+
+    const dismissRes = await app.request(
+      `http://localhost/api/mission-task-proposals/${detail.taskProposals[0].id}/dismiss`,
+      { method: 'POST', headers: { Origin: 'http://localhost:39174' } }
+    );
+    expect(dismissRes.status).toBe(200);
+    expect((await dismissRes.json()).status).toBe('dismissed');
+
+    const defaultListRes = await app.request(
+      `http://localhost/api/repositories/${repository.id}/mission-task-proposals?status=proposed`
+    );
+    expect(await defaultListRes.json()).toEqual([]);
+
+    const dismissedListRes = await app.request(
+      `http://localhost/api/repositories/${repository.id}/mission-task-proposals?status=dismissed`
+    );
+    expect(await dismissedListRes.json()).toMatchObject([
+      { id: detail.taskProposals[0].id, status: 'dismissed' },
+    ]);
   });
 });
 

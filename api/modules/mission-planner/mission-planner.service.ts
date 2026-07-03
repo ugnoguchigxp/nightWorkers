@@ -234,6 +234,20 @@ export async function listMissions(repositoryId: string) {
   return repo.listMissions(repositoryId);
 }
 
+export async function deleteMission(missionId: string) {
+  const mission = await repo.getMission(missionId);
+  if (!mission) throw new NotFoundError('Mission not found');
+  if (mission.status !== 'draft') {
+    throw new ValidationError('Only draft Missions can be deleted', {
+      missionId: mission.id,
+      status: mission.status,
+    });
+  }
+  const deleted = await repo.deleteMission(mission.id);
+  if (!deleted) throw new NotFoundError('Mission not found');
+  return deleted;
+}
+
 export async function getMissionDetail(missionId: string) {
   const mission = await repo.getMission(missionId);
   if (!mission) throw new NotFoundError('Mission not found');
