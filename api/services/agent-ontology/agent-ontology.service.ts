@@ -49,6 +49,7 @@ export async function compileOntologyModuleContext(input: {
   repositoryId?: string;
   missionId?: string;
   taskCandidateId?: string;
+  taskId?: string;
   memoryEvidence?: unknown;
   summaryType?: string;
 }) {
@@ -56,12 +57,13 @@ export async function compileOntologyModuleContext(input: {
   const repoPath = input.repoPath || defaultOntologyRepoRoot();
   const taskGenerationEvidence =
     input.taskGenerationEvidence ??
-    (input.repositoryId || input.taskCandidateId || input.missionId
+    (input.repositoryId || input.taskCandidateId || input.missionId || input.taskId
       ? await buildTaskGenerationEvidence({
           repoPath,
           repositoryId: input.repositoryId,
           missionId: input.missionId,
           taskCandidateId: input.taskCandidateId,
+          taskId: input.taskId,
         })
       : undefined);
   return core.compileModuleContext({

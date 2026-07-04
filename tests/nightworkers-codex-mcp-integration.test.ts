@@ -21,6 +21,7 @@ import {
   deleteRepository,
   deleteTask,
 } from '../api/modules/nightworkers/nightworkers.repository';
+import * as projectDetailRepo from '../api/modules/project-detail/project-detail.repository';
 
 let tempDir = '';
 
@@ -338,6 +339,137 @@ describe('NightWorkers Codex MCP integration', () => {
       await deleteRepository(repository.id);
     }
   }, 120_000);
+
+  it('loads task generation evidence from request-scoped run context', async () => {
+    const repoRoot = path.join(tempDir, 'run-context-task-evidence-repo');
+    fs.mkdirSync(repoRoot, { recursive: true });
+
+    const repository = await createRepository({
+      name: `run-context-evidence-${Date.now()}`,
+      localPath: repoRoot,
+      branch: 'main',
+      allowed: true,
+    });
+
+    const task = await createTask({
+      repositoryId: repository.id,
+      title: 'TaskCandidate backed task',
+      status: 'queued',
+      createdBy: 'mission-task-candidate',
+    });
+    const run = await createTaskRun({
+      taskId: task.id,
+      repositoryId: repository.id,
+      status: 'running',
+      workerKind: 'codex-agent',
+      startedAt: new Date(),
+    });
+    const batch = await projectDetailRepo.createRunningMissionBatch({
+      repositoryId: repository.id,
+      requestedGoalIds: [],
+      signalSnapshot: {
+        repository: {
+          id: repository.id,
+          name: repository.name,
+          localPath: repository.localPath,
+          branch: repository.branch,
+        },
+        activeGoals: [],
+        latestEvaluation: null,
+        latestQuality: {
+          coverage: null,
+          e2e: null,
+        },
+        qualityCapabilities: {
+          projectType: 'typescript',
+          commands: [],
+          missingCapabilities: ['unit', 'coverage', 'e2e'],
+        },
+        recentTokenSpendTasks: [],
+        recentRuns: {
+          completed: 0,
+          failed: 0,
+          running: 1,
+        },
+      },
+    });
+    const [candidate] = await projectDetailRepo.createMissionCandidates([
+      {
+        batchId: batch.id,
+        repositoryId: repository.id,
+        goalId: null,
+        candidateKind: 'feature_entrypoint',
+        primaryModule: 'project-detail',
+        secondaryModulesJson: [],
+        routingConfidencePercent: 92,
+        routingReason: 'integration fixture',
+        constraintGoalIdsJson: [],
+        planModeOpenQuestionsJson: ['保存方式を確認する。'],
+        title: 'TaskCandidate backed task',
+        summary: 'TaskCandidate evidence should reach ontology context.',
+        rationale: 'The run context only carries runId.',
+        evidenceJson: [],
+        evaluationContribution: null,
+        importancePercent: 90,
+        confidencePercent: 88,
+        tokenSize: 'small',
+        complexity: 'simple',
+        taskPrompt: 'Plan the feature entrypoint.',
+        acceptanceCriteria: 'Evidence is present.',
+        verificationPlan: 'Call compile_module_context.',
+        status: 'task_created',
+        taskId: task.id,
+      },
+    ]);
+
+    let client: Client | null = null;
+    try {
+      client = new Client(
+        { name: 'nightworkers-codex-mcp-run-context-evidence-test', version: '0.1.0' },
+        { capabilities: {} }
+      );
+      const transport = new StreamableHTTPClientTransport(
+        new URL(`http://127.0.0.1/mcp/nightworkers?runId=${run.id}`),
+        {
+          fetch: async (input, init) => {
+            const request = input instanceof Request ? input : new Request(input, init);
+            return app.fetch(request);
+          },
+        }
+      );
+      await client.connect(transport);
+
+      const contextResult = await client.callTool(
+        {
+          name: 'compile_module_context',
+          arguments: {
+            goal: 'Project Detail Mission task candidate UI',
+          },
+        },
+        undefined,
+        { timeout: 30_000 }
+      );
+
+      expect(contextResult.isError).toBeFalsy();
+      expect(contextResult.structuredContent).toMatchObject({
+        payload: {
+          evidenceSources: {
+            taskGenerationEvidence: true,
+          },
+          taskGenerationEvidence: {
+            taskCandidate: {
+              id: candidate.id,
+              kind: 'feature_entrypoint',
+            },
+          },
+        },
+      });
+    } finally {
+      if (client) await client.close().catch(() => undefined);
+      await deleteTask(task.id);
+      await deleteRepository(repository.id);
+    }
+  });
 
   it('blocks mutating NightWorkers MCP tools in planning execution mode', async () => {
     const originalExecutionMode = process.env.NIGHTWORKERS_EXECUTION_MODE;

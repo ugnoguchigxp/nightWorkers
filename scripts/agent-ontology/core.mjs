@@ -902,6 +902,14 @@ function buildTaskScopedSummary(input) {
   if (questions.length > 0) {
     lines.push(`Plan mode open questions: ${questions.join(' / ')}`);
   }
+  const acceptanceCriteria = input.taskEvidence?.acceptanceCriteria ?? [];
+  if (acceptanceCriteria.length > 0) {
+    lines.push(`Acceptance criteria: ${acceptanceCriteria.join(' / ')}`);
+  }
+  const verificationHints = input.taskEvidence?.verificationHints ?? [];
+  if (verificationHints.length > 0) {
+    lines.push(`Task verification hints: ${verificationHints.join(' / ')}`);
+  }
   if ((input.verificationPlan ?? []).length > 0) {
     lines.push(`Focused verification: ${(input.verificationPlan ?? []).join(' | ')}`);
   }

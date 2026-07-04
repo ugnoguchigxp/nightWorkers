@@ -331,6 +331,45 @@ export async function getMissionCandidate(candidateId: string) {
   return rows[0] ? mapCandidate(rows[0]) : null;
 }
 
+export async function getMissionCandidateByTaskId(taskId: string) {
+  const rows = await db
+    .select({
+      id: missionTaskCandidates.id,
+      createdAt: missionTaskCandidates.createdAt,
+      updatedAt: missionTaskCandidates.updatedAt,
+      batchId: missionTaskCandidates.batchId,
+      repositoryId: missionTaskCandidates.repositoryId,
+      goalId: missionTaskCandidates.goalId,
+      goalTitle: missionGoals.title,
+      candidateKind: missionTaskCandidates.candidateKind,
+      primaryModule: missionTaskCandidates.primaryModule,
+      secondaryModulesJson: missionTaskCandidates.secondaryModulesJson,
+      routingConfidencePercent: missionTaskCandidates.routingConfidencePercent,
+      routingReason: missionTaskCandidates.routingReason,
+      constraintGoalIdsJson: missionTaskCandidates.constraintGoalIdsJson,
+      planModeOpenQuestionsJson: missionTaskCandidates.planModeOpenQuestionsJson,
+      title: missionTaskCandidates.title,
+      summary: missionTaskCandidates.summary,
+      rationale: missionTaskCandidates.rationale,
+      evidenceJson: missionTaskCandidates.evidenceJson,
+      evaluationContribution: missionTaskCandidates.evaluationContribution,
+      importancePercent: missionTaskCandidates.importancePercent,
+      confidencePercent: missionTaskCandidates.confidencePercent,
+      tokenSize: missionTaskCandidates.tokenSize,
+      complexity: missionTaskCandidates.complexity,
+      taskPrompt: missionTaskCandidates.taskPrompt,
+      acceptanceCriteria: missionTaskCandidates.acceptanceCriteria,
+      verificationPlan: missionTaskCandidates.verificationPlan,
+      status: missionTaskCandidates.status,
+      taskId: missionTaskCandidates.taskId,
+    })
+    .from(missionTaskCandidates)
+    .leftJoin(missionGoals, eq(missionGoals.id, missionTaskCandidates.goalId))
+    .where(eq(missionTaskCandidates.taskId, taskId))
+    .limit(1);
+  return rows[0] ? mapCandidate(rows[0]) : null;
+}
+
 export async function updateMissionCandidate(
   candidateId: string,
   input: { status?: string; taskId?: string | null },

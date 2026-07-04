@@ -215,20 +215,22 @@ Project Detail の既存データから `TaskGenerationEvidence` を作る adapt
 - `repositoryId`
 - `missionId`
 - `taskCandidateId`
+- Task 実行時の request context から解決できる `taskId`
 
 処理:
 
 1. 対象 repository を確認する。
 2. candidate が指定されていれば、TaskCandidate を取得する。
-3. candidate の `goalId` と `constraintGoalIds` から関連 Goal を取得する。
-4. active project-wide Goals を必要に応じて含める。
-5. candidate の `moduleRouting` を task hint として正規化する。
-6. `acceptanceCriteria`, `verificationPlan`, `planModeOpenQuestions` を evidence に分解する。
-7. 参照不能な ID があっても、失敗ではなく reason 付きの partial evidence にする。
+3. `taskId` が指定されていれば、`mission_task_candidates.task_id` から TaskCandidate を取得する。
+4. candidate の `goalId` と `constraintGoalIds` から関連 Goal を取得する。
+5. active project-wide Goals を必要に応じて含める。
+6. candidate の `moduleRouting` を task hint として正規化する。
+7. `acceptanceCriteria`, `verificationPlan`, `planModeOpenQuestions` を evidence に分解する。
+8. 参照不能な ID があっても、失敗ではなく reason 付きの partial evidence にする。
 
 完了条件:
 
-- candidate あり、mission あり、candidate なしの3経路で evidence が返る。
+- candidate あり、mission あり、taskId からの candidate 解決、candidate なしの経路で evidence が返る。
 - TaskCandidate の `constraintGoalIds` が project-wide constraints に反映される。
 - `feature_entrypoint` の open questions が保持される。
 - LLM API は呼ばない。
@@ -251,6 +253,7 @@ coding-agent module ontology の MCP context に Task Generation evidence を渡
 実装候補:
 
 - `compile_module_context` の入力に `taskCandidateId` / `missionId` / `repositoryId` を追加する。
+- Codex MCP の request context に `taskId` または `runId` がある場合は、ユーザーに追加入力を求めず TaskCandidate evidence を解決する。
 - 既存 tool contract を壊したくない場合は optional input にする。
 - 既存の直接指定 `taskGenerationEvidence` input は維持し、ID 指定による evidence 取得は additive な導線として追加する。
 - service 側で Project Detail adapter を呼び、出力に `taskGenerationEvidence` を追加する。
@@ -292,7 +295,7 @@ bunx vitest run tests/agent-ontology.test.ts tests/nightworkers-codex-mcp-integr
 期待結果:
 
 - 既存 MCP contract が維持される。
-- TaskCandidate 指定時だけ `taskGenerationEvidence` が追加される。
+- TaskCandidate 指定時、または TaskCandidate から作成された Task / Run context のときだけ `taskGenerationEvidence` が追加される。
 
 ### 5. Add task-scoped summary generation without LLM
 
@@ -341,7 +344,7 @@ TaskCandidate から Task を作るとき、objective に入っている metadat
 - Task objective に `taskCandidateId` を含められるなら含める。
 - Codex / composer / supervisor が読む metadata に、candidate kind と routing hint を落とさない。
 - `feature_entrypoint` は Plan-first のまま維持する。
-- Task 実行時に MCP context を引ける場合は、`taskCandidateId` を渡す導線を用意する。
+- Task 実行時に MCP context を引ける場合は、`taskCandidateId` を直接渡すか、request-scoped `taskId` / `runId` から candidate を解決する導線を用意する。
 
 完了条件:
 

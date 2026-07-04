@@ -103,6 +103,8 @@ describe('agent ontology helpers', () => {
       secondaryModules: ['mission-planner'],
       taskGenerationEvidence: {
         taskCandidate: { kind: 'feature_entrypoint' },
+        acceptanceCriteria: ['TaskCandidate evidence is preserved.'],
+        verificationHints: ['Run focused ontology tests.'],
       },
     });
     expect(context).toMatchObject({
@@ -135,6 +137,12 @@ describe('agent ontology helpers', () => {
       },
       relevantInvariants: expect.arrayContaining(['goal-mission-taskcandidate-tree']),
     });
+    expect(context.summary.taskScopedSummary).toContain(
+      'Acceptance criteria: TaskCandidate evidence is preserved.'
+    );
+    expect(context.summary.taskScopedSummary).toContain(
+      'Task verification hints: Run focused ontology tests.'
+    );
 
     const boundary = core.checkBoundary({
       repoRoot: process.cwd(),

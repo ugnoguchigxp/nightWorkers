@@ -218,6 +218,7 @@ export function createNightWorkersCodexMcpServer(context: NightWorkersMcpRequest
             repositoryId,
             missionId,
             taskCandidateId,
+            taskId: await resolveOntologyTaskId(context),
             taskGenerationEvidence,
             memoryEvidence,
             summaryType,
@@ -300,6 +301,16 @@ async function resolveOntologyRepoPath(
     runId: firstNonEmpty(context.runId, process.env.NIGHTWORKERS_RUN_ID),
   });
   return resolved.repository?.localPath;
+}
+
+async function resolveOntologyTaskId(context: NightWorkersMcpRequestContext) {
+  const explicitTaskId = firstNonEmpty(context.taskId, process.env.NIGHTWORKERS_TASK_ID);
+  if (explicitTaskId) return explicitTaskId;
+  const resolved = await resolveTaskRepository({
+    taskId: '',
+    runId: firstNonEmpty(context.runId, process.env.NIGHTWORKERS_RUN_ID),
+  });
+  return resolved.task?.id;
 }
 
 async function readOnlyOntologyTool<TPayload>(

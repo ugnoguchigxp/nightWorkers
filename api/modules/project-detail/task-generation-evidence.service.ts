@@ -48,13 +48,21 @@ export async function buildTaskGenerationEvidence(input: {
   repositoryId?: string | null;
   missionId?: string | null;
   taskCandidateId?: string | null;
+  taskId?: string | null;
 }): Promise<TaskGenerationEvidence | null> {
   const evidenceWarnings: string[] = [];
-  const candidate = input.taskCandidateId
-    ? await repo.getMissionCandidate(input.taskCandidateId)
-    : null;
+  const candidate = await resolveCandidate(input);
   if (input.taskCandidateId && !candidate) {
     evidenceWarnings.push(`mission task candidate not found: ${input.taskCandidateId}`);
+  }
+  if (
+    !input.taskCandidateId &&
+    input.taskId &&
+    !candidate &&
+    !input.repositoryId &&
+    !input.missionId
+  ) {
+    return null;
   }
   const mission = input.missionId ? await missionPlannerRepo.getMission(input.missionId) : null;
   if (input.missionId && !mission) {
@@ -142,6 +150,15 @@ async function resolveRepositoryIdByPath(repoPath?: string | null) {
   return (
     repositories.find((repository) => path.resolve(repository.localPath) === targetPath)?.id ?? null
   );
+}
+
+async function resolveCandidate(input: {
+  taskCandidateId?: string | null;
+  taskId?: string | null;
+}) {
+  if (input.taskCandidateId) return repo.getMissionCandidate(input.taskCandidateId);
+  if (input.taskId) return repo.getMissionCandidateByTaskId(input.taskId);
+  return null;
 }
 
 function collectSelectedGoalIds(input: {

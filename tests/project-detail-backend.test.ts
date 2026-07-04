@@ -790,6 +790,44 @@ describe('Project Detail backend', () => {
       expect(context.warnings).toEqual(
         expect.arrayContaining([expect.stringContaining('differs from manifest-selected module')])
       );
+
+      const createTasksRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates/create-tasks`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ candidateIds: [generated.candidates[0].id], mode: 'draft' }),
+        }
+      );
+      expect(createTasksRes.status).toBe(201);
+      const created = (await createTasksRes.json()) as {
+        tasks: Array<{ id: string }>;
+      };
+
+      const taskLinkedEvidence = await buildTaskGenerationEvidence({
+        taskId: created.tasks[0].id,
+      });
+      expect(taskLinkedEvidence).toMatchObject({
+        repositoryId: project.id,
+        taskCandidateId: generated.candidates[0].id,
+        taskCandidate: {
+          id: generated.candidates[0].id,
+          kind: 'feature_entrypoint',
+        },
+      });
+
+      const taskLinkedContext = (await compileOntologyModuleContext({
+        repoPath: process.cwd(),
+        taskId: created.tasks[0].id,
+        goal: 'Project Detail Mission task candidate UI',
+        primaryModule: 'project-detail',
+      })) as {
+        taskGenerationEvidence: { available: boolean; taskCandidate: { id: string } | null };
+      };
+      expect(taskLinkedContext.taskGenerationEvidence).toMatchObject({
+        available: true,
+        taskCandidate: { id: generated.candidates[0].id },
+      });
     } finally {
       fs.rmSync(repoRoot, { recursive: true, force: true });
     }
