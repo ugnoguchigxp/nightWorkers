@@ -53,6 +53,16 @@ const E2E_ARTIFACT_PATHS = [
 ];
 
 type PlaywrightSuiteSummary = E2ESummary['suites'][number] & { failedTests: number };
+type QualitySetupCandidateLike = {
+  title: string;
+  summary: string;
+  rationale: string;
+  taskPrompt: string;
+  acceptanceCriteria: string;
+  verificationPlan: string;
+  importancePercent: number;
+  evidence: Array<{ source: string; label: string; value: string }>;
+};
 
 export const missionGoalPresets = missionGoalTemplates;
 
@@ -420,8 +430,8 @@ function selectionFromLlmEvent(event: SupervisorLlmDebugEvent) {
   };
 }
 
-function hasQualitySetupCandidate(result: MissionTaskCandidatesResult) {
-  return result.candidates.some((candidate) => {
+function hasQualitySetupCandidate(candidates: QualitySetupCandidateLike[]) {
+  return candidates.some((candidate) => {
     const text = [
       candidate.title,
       candidate.summary,
@@ -436,13 +446,20 @@ function hasQualitySetupCandidate(result: MissionTaskCandidatesResult) {
     return (
       candidate.importancePercent >= 95 &&
       candidate.evidence.some((item) => item.source === 'quality') &&
-      (text.includes('package.json') ||
-        text.includes('test:coverage') ||
-        text.includes('test:e2e') ||
-        text.includes('unit') ||
-        text.includes('coverage'))
+      hasQualitySetupText(text)
     );
   });
+}
+
+function hasQualitySetupText(text: string) {
+  const normalized = text.toLowerCase();
+  return (
+    normalized.includes('package.json') ||
+    normalized.includes('test:coverage') ||
+    normalized.includes('test:e2e') ||
+    normalized.includes('unit') ||
+    normalized.includes('coverage')
+  );
 }
 
 function candidateKindPriority(candidate: MissionTaskCandidatesResult['candidates'][number]) {
@@ -481,6 +498,7 @@ export function applyMissionTaskCandidateSemantics(
   const projectWideGoalIds = selectedGoals
     .filter((goal) => goal.interpretation.scope === 'project_wide')
     .map((goal) => goal.id);
+  const projectWideGoalIdSet = new Set(projectWideGoalIds);
   const featureEntrypoints = candidates.filter(
     (candidate) => candidate.candidateKind === 'feature_entrypoint'
   );
@@ -492,6 +510,7 @@ export function applyMissionTaskCandidateSemantics(
   const singleEntrypoint = featureEntrypoints.length === 1 ? featureEntrypoints[0] : null;
   const deferredByGoal = new Map<string, string[]>();
   const deferredToSingleEntrypoint: string[] = [];
+  const deferredProjectWideDetails: string[] = [];
   const selected: MissionTaskCandidatesResult['candidates'] = [];
 
   for (const candidate of candidates) {
@@ -510,6 +529,15 @@ export function applyMissionTaskCandidateSemantics(
       deferredToSingleEntrypoint.push(candidateAsPlanModeQuestion(candidate));
       continue;
     }
+    if (
+      goalId &&
+      projectWideGoalIdSet.has(goalId) &&
+      featureEntrypoints.length > 0 &&
+      isPlanModeDetail
+    ) {
+      deferredProjectWideDetails.push(candidateAsPlanModeQuestion(candidate));
+      continue;
+    }
     selected.push(candidate);
   }
 
@@ -526,6 +554,7 @@ export function applyMissionTaskCandidateSemantics(
           ...candidate.planModeOpenQuestions,
           ...(candidate.goalId ? (deferredByGoal.get(candidate.goalId) ?? []) : []),
           ...(candidate === singleEntrypoint ? deferredToSingleEntrypoint : []),
+          ...deferredProjectWideDetails,
         ]),
       };
     })
@@ -662,10 +691,12 @@ export async function generateMissionTaskCandidates(input: {
       semanticCandidates,
       blockedTitleKeys
     );
-    validateGeneratedGoalIds(parsed.candidates, selectedGoals);
+    validateGeneratedGoalIds(selectedCandidates, selectedGoals);
     if (
       signal.qualityCapabilities.missingCapabilities.length > 0 &&
-      !hasQualitySetupCandidate(parsed)
+      !hasQualitySetupCandidate(selectedCandidates) &&
+      !hasQualitySetupCandidate(existingCandidates) &&
+      !existingTasks.some((task) => hasQualitySetupText(task.title))
     ) {
       throw new ValidationError(
         'Mission task generation must prioritize missing quality capabilities',

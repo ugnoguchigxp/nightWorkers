@@ -175,6 +175,30 @@ describe('Mission task candidate generation helpers', () => {
           acceptanceCriteria: '初期実装計画ができる。',
           verificationPlan: '計画をレビューする。',
         },
+        {
+          title: 'todolist の coverage gate を確認する',
+          summary: 'project-wide constraint の検証詳細。',
+          rationale: '本体計画内で扱う。',
+          goalId: projectWideGoalId,
+          candidateKind: 'constraint_verification',
+          moduleRouting: {
+            primaryModule: null,
+            secondaryModules: [],
+            confidencePercent: 20,
+            reason: 'project-wide Goal は本流候補の制約として扱う。',
+          },
+          constraintGoalIds: [],
+          planModeOpenQuestions: [],
+          evidence: [],
+          evaluationContribution: 15,
+          importancePercent: 80,
+          confidencePercent: 70,
+          tokenSize: 'small',
+          complexity: 'simple',
+          taskPrompt: 'coverage gate を確認してください。',
+          acceptanceCriteria: 'coverage gate が確認される。',
+          verificationPlan: 'coverage を確認する。',
+        },
       ],
       [
         missionGoalFixture({
@@ -201,6 +225,7 @@ describe('Mission task candidate generation helpers', () => {
     expect(candidates[0]?.planModeOpenQuestions).toEqual([
       '保存方式を決める。',
       '「Todo一覧のフィルタ UI を改善する」は、本体機能の初期実装計画内で必要性と範囲を決める。',
+      '「todolist の coverage gate を確認する」は、本体機能の初期実装計画内で必要性と範囲を決める。',
     ]);
   });
 

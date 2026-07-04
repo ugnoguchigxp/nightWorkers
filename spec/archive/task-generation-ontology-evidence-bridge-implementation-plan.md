@@ -2,7 +2,7 @@
 
 ## Use when
 
-`spec/docs/task-generation-module-ontology-implementation-plan.md` の実装が進み、Task Generation 側で得られた Goal interpretation / TaskCandidate kind / module routing / project-wide constraints を、coding-agent module ontology と MCP context に接続する段階で使う。
+`spec/archive/task-generation-module-ontology-implementation-plan.md` の実装が進み、Task Generation 側で得られた Goal interpretation / TaskCandidate kind / module routing / project-wide constraints を、coding-agent module ontology と MCP context に接続する段階で使う。
 
 この計画は、`spec/docs/coding-agent-module-ontology-implementation-plan.md` の `Unit 2: 実 task generation evidence の接続` を実装可能な粒度へ分解した下位計画である。独立した ontology roadmap ではなく、既存 coding-agent ontology 計画の Unit 2 execution plan として扱う。
 

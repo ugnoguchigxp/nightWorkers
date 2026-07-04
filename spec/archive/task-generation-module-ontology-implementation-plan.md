@@ -128,7 +128,7 @@ Todoの表示パフォーマンスを改善する
 
 Downstream bridge consideration:
 
-- `spec/docs/task-generation-ontology-evidence-bridge-implementation-plan.md` は、この計画で保存した Task Generation metadata を coding-agent ontology context へ渡す後続計画である。
+- `spec/archive/task-generation-ontology-evidence-bridge-implementation-plan.md` は、この計画で保存した Task Generation metadata を coding-agent ontology context へ渡す後続計画である。
 - この計画の Phase 3-5 を実装するときは、後続 bridge が読めるように `candidateKind`, `moduleRouting`, `constraintGoalIds`, `planModeOpenQuestions`, candidate id を欠落させない。
 - ただし、この計画では evidence bridge や MCP context 連携を完了条件にしない。候補生成の意味論、保存、Task 化の metadata 維持までを責務とする。
 

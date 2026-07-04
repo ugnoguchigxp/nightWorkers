@@ -1058,6 +1058,114 @@ describe('Project Detail backend', () => {
     }
   });
 
+  it('does not count project-wide detail candidates folded out by semantics as quality setup candidates', async () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-folded-quality-'));
+    try {
+      fs.writeFileSync(
+        path.join(repoRoot, 'package.json'),
+        JSON.stringify({ scripts: { test: 'echo unit' } }),
+        'utf8'
+      );
+      const project = await createRepository(repoRoot);
+      const featureGoalRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-goals`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Todo',
+            goalText: 'todolist を作る。',
+            active: true,
+          }),
+        }
+      );
+      expect(featureGoalRes.status).toBe(201);
+      const featureGoal = (await featureGoalRes.json()) as { id: string };
+
+      const coverageGoalRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-goals/from-preset`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ presetId: 'coverage-budget', active: true }),
+        }
+      );
+      expect(coverageGoalRes.status).toBe(201);
+      const coverageGoal = (await coverageGoalRes.json()) as { id: string };
+
+      structuredLlmFixture.nextOutput = JSON.stringify({
+        schemaVersion: 'nightworkers.mission-task-candidates/v1',
+        candidates: [
+          {
+            title: 'todolist 機能の初期実装計画を作成する',
+            summary: 'todolist 機能を Plan Mode で定義する。',
+            rationale: '本体機能が未実装。',
+            goalId: featureGoal.id,
+            candidateKind: 'feature_entrypoint',
+            moduleRouting: {
+              primaryModule: null,
+              secondaryModules: [],
+              confidencePercent: 30,
+              reason: 'ontology 未判定。',
+            },
+            constraintGoalIds: [coverageGoal.id],
+            planModeOpenQuestions: ['保存方式を決める。'],
+            evidence: [{ source: 'mission_goal', label: 'goal', value: 'todolist を作る' }],
+            evaluationContribution: 40,
+            importancePercent: 90,
+            confidencePercent: 80,
+            tokenSize: 'medium',
+            complexity: 'moderate',
+            taskPrompt: 'Plan Mode で todolist 機能の初期実装計画を作成してください。',
+            acceptanceCriteria: '初期実装計画ができる。',
+            verificationPlan: '計画をレビューする。',
+          },
+          {
+            title: 'coverage script を確認する',
+            summary: 'project-wide Goal の検証詳細。',
+            rationale: '本流候補の検証条件として扱う。',
+            goalId: coverageGoal.id,
+            candidateKind: 'constraint_verification',
+            moduleRouting: {
+              primaryModule: null,
+              secondaryModules: [],
+              confidencePercent: 20,
+              reason: 'project-wide Goal は独立候補にしない。',
+            },
+            constraintGoalIds: [],
+            planModeOpenQuestions: [],
+            evidence: [{ source: 'quality', label: 'missing capability', value: 'coverage' }],
+            evaluationContribution: 10,
+            importancePercent: 98,
+            confidencePercent: 75,
+            tokenSize: 'small',
+            complexity: 'simple',
+            taskPrompt: 'package.json に test:coverage script を追加してください。',
+            acceptanceCriteria: 'coverage capability が runnable になる。',
+            verificationPlan: 'test:coverage を確認する。',
+          },
+        ],
+      });
+
+      const generateRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates/generate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ goalIds: [featureGoal.id, coverageGoal.id] }),
+        }
+      );
+      expect(generateRes.status).toBe(400);
+
+      const candidatesRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates`
+      );
+      expect(await candidatesRes.json()).toHaveLength(0);
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
   it('does not allow PATCH to directly mark a candidate as task_created', async () => {
     const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-status-'));
     try {

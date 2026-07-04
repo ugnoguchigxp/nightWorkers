@@ -480,7 +480,7 @@ Evidence layers:
    - owned paths 内の exports、routes、schemas、DB tables、tests、import edges、recent touched files を抽出する。
 3. `taskGenerationEvidence`
    - Goal / Mission / TaskCandidate 生成から得られる手がかり。
-   - `spec/docs/task-generation-module-ontology-implementation-plan.md` の GoalInterpretation、GoalRouting、TaskCandidateKind、ModuleRoutingMetadata、project-wide constraints の扱いを参照する。
+   - `spec/archive/task-generation-module-ontology-implementation-plan.md` の GoalInterpretation、GoalRouting、TaskCandidateKind、ModuleRoutingMetadata、project-wide constraints の扱いを参照する。
    - これは source truth ではなく、task-scoped summary の入力 evidence として扱う。
 4. `memoryEvidence`
    - 過去の失敗、scope drift、ユーザー判断、known pitfalls。
@@ -945,7 +945,7 @@ Tasks:
 5. Implement `get_verification_plan`.
 6. Implement task generation evidence collection for `compile_module_context`.
    - Read GoalInterpretation / GoalRouting / TaskCandidateKind / ModuleRoutingMetadata when NightWorkers has them.
-   - Treat `spec/docs/task-generation-module-ontology-implementation-plan.md` as the design reference for those fields.
+   - Treat `spec/archive/task-generation-module-ontology-implementation-plan.md` as the design reference for those fields.
    - Use this evidence only for task-scoped summaries, not canonical module ownership.
 7. Reuse local helper scripts where possible.
 
@@ -1222,7 +1222,7 @@ NightWorkers の Goal / Mission / TaskCandidate metadata を task-scoped evidenc
 
 Detailed execution breakdown:
 
-- `spec/docs/task-generation-ontology-evidence-bridge-implementation-plan.md`
+- `spec/archive/task-generation-ontology-evidence-bridge-implementation-plan.md`
 
 Implementation consideration:
 
@@ -1270,51 +1270,88 @@ Failure response:
 - persisted metadata が不完全な場合、missing-field warning 付きの best-effort evidence として扱う。
 - Project Detail 側の変更が広がりすぎる場合、adapter を pure function に留め、まず fixture metadata を直接渡す test から始める。
 
-### Unit 3: agent prompt integration の追加
+### Unit 3: runtime ontology context snapshot の固定
 
 Goal:
 
-coding agent の通常 workflow で、広域探索や cross-module edit の前に ontology tool を使えるようにする。
+Codex lane / native API lane の run 開始時に、task-scoped ontology context を snapshot として固定し、prompt の注意書きではなく実行時 contract として参照できるようにする。
 
 Dependencies:
 
 - Unit 1 が完了していること。
-- Unit 2 は推奨だが、ユーザー goal から始まる単純な coding-agent task では必須ではない。
+- Unit 2 が完了していること。
+- TaskCandidate 由来 Task では `taskId` から `taskGenerationEvidence` を解決できること。
 
 Tasks:
 
-1. Codex runtime prompt に短い instruction block を追加する。
-   - ontology tool が使える場合、広域 edit の前に user goal を classify する。
-   - selected primary module に対して module context を compile する。
-   - repository-wide search の前に owned paths を探索する。
-   - owned paths 外の planned edit の前に boundary check を行う。
-   - final report に module、boundary crossing、invariant、verification facts を含める。
-2. この instruction は prompt / supervisor layer に置き、LLM provider layer へ用途別 routing policy を追加しない。
-3. ontology が無い、または module が明らかな trivial single-file edit では ontology tool を強制しない。
-4. planning / implementation mode の prompt content と tool availability を検査する test を追加する。
+1. Run start の baseline を明示する。
+   - `taskId`
+   - `runId`
+   - `repoRoot`
+   - runtime lane
+   - TaskCandidate evidence の有無
+   - current `HEAD` または runtime snapshot が既に持つ git baseline
+2. run context 生成時に `compile_module_context` を呼ぶ小さな service を追加する。
+   - `taskId` / `runId` から TaskCandidate evidence を解決する。
+   - `summaryType=task_scoped` を使う。
+   - TaskCandidate が無い場合は user goal + manifest / code evidence だけで継続する。
+   - tool failure は run 全体を落とさず、`ontologyContext.available=false` と warning にする。
+3. snapshot に保存する field を最小化する。
+   - primary module。
+   - secondary modules。
+   - summary type。
+   - evidence source flags。
+   - task candidate id。
+   - owned paths。
+   - boundary warnings。
+   - invariants。
+   - focused verification candidates。
+   - warnings。
+4. Codex runtime prompt と native API system prompt に、snapshot の短い要約を渡す。
+   - prompt は「必要なら取得せよ」ではなく「この run の ontology snapshot」として扱う。
+   - snapshot が absent の場合だけ、既存の MCP tool guidance に fallback する。
+5. provider layer へ用途別 routing policy を追加しない。
+   - snapshot 作成と prompt 注入は runtime / supervisor side の責務に留める。
+6. snapshot freshness を test する。
+   - TaskCandidate 由来 Task では `taskGenerationEvidence=true`。
+   - 通常 Task では `taskGenerationEvidence=false` でも run は継続。
+   - ontology failure は warning になり、runtime prompt は壊れない。
 
 Verification:
 
 ```bash
-bunx vitest run tests/services.codex-agent-runtime.test.ts tests/nightworkers-mcp-manifest.test.ts
+bunx vitest run tests/services.codex-agent-runtime.test.ts tests/services.native-api-runner.test.ts tests/nightworkers-codex-mcp-integration.test.ts tests/project-detail-backend.test.ts
 ```
 
 Expected:
 
-- runtime prompt が長すぎる policy prose ではなく、短い ontology protocol を含む。
-- `classify_goal`、`compile_module_context`、`check_boundary`、`get_verification_plan` は read-only tool として利用可能なままになる。
-- provider-layer code に workflow-specific routing policy が追加されない。
+- Codex lane と native API lane の両方で、run start の ontology snapshot が prompt-visible context になる。
+- TaskCandidate evidence は task-scoped hint として入るが、manifest ownership を上書きしない。
+- snapshot が作れない場合でも run は停止せず、warning と MCP fallback guidance が残る。
+- provider-layer code に workflow-specific policy が増えない。
 
 Failure response:
 
-- prompt が長くなりすぎる場合、start-of-task と final-report requirement だけを残し、tool 詳細は MCP description に寄せる。
-- mode-specific tool availability が壊れる場合、prompt behavior ではなく manifest mode filter を先に直す。
+- prompt が長くなりすぎる場合、snapshot payload は primary / secondary / warnings / verification candidates だけに圧縮する。
+- snapshot 作成が DB 依存で広がりすぎる場合、まず read-only helper + prompt injection だけに留め、永続化は後続に回す。
+- TaskCandidate 解決が不安定な場合、`taskGenerationEvidence=false` で継続し、bridge 側の regression test を先に直す。
 
-### Unit 4: closeout で boundary check を可視化する
+Implementation targets:
+
+- `api/services/agent-runtime/*`
+- `api/services/agent-runtime/codex-sdk/codex-sdk-runtime-prompt.ts`
+- `api/services/agent-runtime/native-api-runner/native-api-tool-history.ts`
+- `api/services/agent-ontology/agent-ontology.service.ts`
+- `api/mcp/nightworkers-codex-mcp.ts`
+- `tests/services.codex-agent-runtime.test.ts`
+- `tests/services.native-api-runner.test.ts`
+- `tests/nightworkers-codex-mcp-integration.test.ts`
+
+### Unit 4: closeout boundary audit の追加
 
 Goal:
 
-implementation / review task の final report に boundary check の結果が出るようにする。
+実際に触ったファイルをもとに closeout 前に boundary audit を行い、final report に module / crossing / invariant / verification facts を残す。
 
 Dependencies:
 
@@ -1322,56 +1359,85 @@ Dependencies:
 
 Tasks:
 
-1. final-report expectations に次を追加する。
+1. closeout の直前に touched files を取得する境界を決める。
+   - Codex lane は runtime audit / file change events / git diff から取得する。
+   - native API lane は worker tool history / git diff から取得する。
+   - dirty tree に user change が混ざる可能性があるため、run baseline がある場合は baseline diff を優先する。
+2. ontology snapshot の primary module と touched files で `check_boundary` 相当の判定を実行する。
+   - owned。
+   - allowed crossing。
+   - unknown crossing。
+   - forbidden mutation。
+3. closeout report requirement に次を追加する。
    - primary module。
    - secondary modules。
-   - owned paths touched。
+   - touched owned paths。
    - boundary crossings。
    - forbidden areas touched。
    - invariants checked。
    - verification run or skipped reason。
-2. `check_boundary` が forbidden path に対して `reject` を返す場合以外、自動 reject はまだ強めない。
-3. `needs_user_confirmation` は、planned and avoidable な unknown path edit の前に agent が停止する条件として扱う。
-4. closeout に boundary facts が要求されることを prompt test または review test で確認する。
+4. enforcement は段階的にする。
+   - forbidden mutation は closeout warning / failed review candidate にする。
+   - `reject` の自動停止は strict mode まで有効化しない。
+   - unknown path は reason または user confirmation evidence を要求する。
+5. audit result を structured evidence として保存または run event に残す。
+   - prompt の final report だけを source of truth にしない。
+   - 保存 payload に source content や secret-bearing output を入れない。
+6. closeout prompt / native API closeout guidance の test を追加する。
 
 Verification:
 
 ```bash
-bunx vitest run tests/services.codex-agent-runtime.test.ts tests/services.supervisor-prompt-packet.test.ts
+bunx vitest run tests/services.codex-agent-runtime.test.ts tests/services.native-api-runner.test.ts tests/services.native-api-runner-closeout.test.ts tests/agent-ontology.test.ts
 ```
 
 Expected:
 
-- final report requirement に module / boundary facts が含まれる。
-- unknown path edit は confirmation または skipped-edit reason として見える。
-- strict mode はまだ無効のまま。
+- ontology-guided run の closeout に boundary audit facts が含まれる。
+- touched files が primary owned paths 内なら crossing count は 0 になる。
+- allowed crossing は warning ではなく declared crossing として残る。
+- unknown / forbidden は見えるが、strict mode までは自動 reject しない。
 
 Failure response:
 
-- closeout format が重すぎる場合、ontology routing を使った task、または owned paths 外の file を触った task だけ full boundary report を必須にする。
+- closeout format が重すぎる場合、ontology snapshot がある run、または owned paths 外を触った run だけ full boundary report を必須にする。
+- touched files の取得が lane ごとに揺れる場合、最初は git diff based audit に寄せ、runtime event based audit は補助 evidence にする。
 
 ### Unit 5: verification plan selection の統合
 
 Goal:
 
-module manifest から focused verification command を選べるようにし、skipped verification を明示する。
+module manifest と boundary audit から focused verification command を選び、skipped verification を closeout の明示対象にする。
 
 Dependencies:
 
 - Unit 3 が完了していること。
+- Unit 4 が完了していることが望ましい。ただし closeout audit より先に verification candidates を prompt に載せる実装は可能。
 
 Tasks:
 
-1. `get_verification_plan` output を module context または prompt-facing workflow で参照できるようにする。
-2. 通常の module edit では primary module の focused verification を優先する。
-3. declared boundary crossing が secondary module に触る場合だけ secondary module verification を追加する。
-4. implementation task で focused verification を実行しない場合は skipped reason を要求する。
-5. Project Detail と Mission Planner の focused verification suggestion を test する。
+1. Unit 3 の ontology snapshot に verification candidates を含める。
+   - primary module focused。
+   - secondary module focused。
+   - baseline / full は必要時だけ表示する。
+2. Unit 4 の boundary audit と組み合わせ、実際に触った module の verification を選ぶ。
+   - primary owned edit は primary focused を優先する。
+   - declared secondary crossing は secondary focused を追加する。
+   - unknown crossing は focused verification だけで十分と判断せず、skipped reason または broader check を要求する。
+3. runtime prompt の verification guidance を短くする。
+   - 「まず snapshot の focused verification を見る」。
+   - 「実行できない場合は skipped reason を残す」。
+4. closeout で verification evidence を audit result と照合する。
+   - 実行済み command。
+   - exit code。
+   - skipped reason。
+   - unrelated failure の切り分け。
+5. Project Detail / Mission Planner / agent-runtime の fixture で verification candidate selection を test する。
 
 Verification:
 
 ```bash
-bunx vitest run tests/agent-ontology.test.ts tests/services.codex-agent-runtime.test.ts
+bunx vitest run tests/agent-ontology.test.ts tests/services.codex-agent-runtime.test.ts tests/services.native-api-runner.test.ts
 ```
 
 Expected:
@@ -1379,12 +1445,73 @@ Expected:
 - focused verification command は selected primary module manifest から出る。
 - secondary module verification は primary focused command の代替ではなく追加として扱われる。
 - missing verification は silently omitted にならず、report 対象になる。
+- unknown crossing がある場合、verification selection は warning を含む。
 
 Failure response:
 
 - module verification command が遅い、または flaky な場合、enforcement を強める前に manifest の `baseline`、`focused`、`full` を分け直す。
+- closeout との照合が不安定な場合、最初は prompt requirement + structured report field に留め、hard gate は strict mode に回す。
 
-### Unit 6: 最小限の pilot telemetry を追加する
+### Unit 6: LLM domain summary synthesis の準備
+
+Goal:
+
+LLM API による domain summary を入れる前に、evidence pack、schema、validation、fallback の境界を固定する。
+
+Dependencies:
+
+- Unit 1 が完了していること。
+- Unit 2 が完了していること。
+- Unit 3 の snapshot が、LLM synthesis なしでも動くこと。
+
+Tasks:
+
+1. LLM synthesis 入力の evidence pack schema を固定する。
+   - `moduleManifest`
+   - `codeEvidence`
+   - `taskGenerationEvidence`
+   - `memoryEvidence`
+2. 出力 schema を固定する。
+   - `summaryType`
+   - `domainSummary`
+   - `relevantConcepts`
+   - `relevantInvariants`
+   - `likelyFiles`
+   - `boundaryWarnings`
+   - `verificationPlan`
+   - `unsupportedClaims`
+3. validation policy を実装計画に固定する。
+   - `likelyFiles` は owned / readMostly / allowedCrossModule / verification test paths だけ。
+   - `relevantInvariants` は manifest 由来だけ。
+   - `verificationPlan` は manifest または repo verification command 由来だけ。
+   - task generation evidence は task-scoped emphasis にだけ使う。
+4. LLM synthesis が失敗した場合は deterministic summary に fallback する。
+   - provider failure。
+   - schema validation failure。
+   - unsupported claim が残る場合。
+5. 初期実装では provider call を必須にしない。
+   - deterministic summary を default。
+   - `summaryType=task_scoped` で evidence pack が十分に分離されていることを先に確認する。
+
+Verification:
+
+```bash
+bunx vitest run tests/agent-ontology.test.ts tests/nightworkers-codex-mcp-integration.test.ts
+node scripts/agent-ontology/smoke-mcp-contract.mjs
+```
+
+Expected:
+
+- LLM synthesis を入れなくても snapshot / boundary / verification flow は動く。
+- LLM synthesis の出力候補は schema と provenance validation を通らない限り agent-facing source truth にならない。
+- unsupported facts は warning または `unsupportedClaims` へ落ちる。
+
+Failure response:
+
+- schema が重すぎる場合、初期出力を `domainSummary`、`likelyFiles`、`boundaryWarnings`、`verificationPlan` に絞る。
+- provider integration が広がりすぎる場合、この unit では prompt / schema / fallback test までに留める。
+
+### Unit 7: 最小限の pilot telemetry を追加する
 
 Goal:
 
@@ -1393,6 +1520,7 @@ Goal:
 Dependencies:
 
 - Unit 4 が完了していること。
+- Unit 5 が完了していること。
 
 Tasks:
 
@@ -1425,12 +1553,40 @@ Failure response:
 
 1. Unit 1: `compile_module_context` provenance の安定化。
 2. Unit 2: 実 task generation evidence の接続。
-3. Unit 3: agent prompt integration の追加。
-4. Unit 5: verification plan selection の統合。
-5. Unit 4: closeout で boundary check を可視化する。
-6. Unit 6: 最小限の pilot telemetry を追加する。
+3. Unit 3: runtime ontology context snapshot の固定。
+4. Unit 4: closeout boundary audit の追加。
+5. Unit 5: verification plan selection の統合。
+6. Unit 6: LLM domain summary synthesis の準備。
+7. Unit 7: 最小限の pilot telemetry を追加する。
 
-Unit 4 と Unit 5 は、verification selection の方が closeout reporting より先に接続しやすい場合に入れ替えてよい。
+Unit 4 と Unit 5 は、verification candidates を先に prompt へ渡す方が実装しやすい場合に入れ替えてよい。ただし closeout で実際の touched files と verification evidence を照合するまでは、verification selection を hard gate にしない。
+
+### 次 tranche の implementation readiness checklist
+
+実装開始前に次を確認する。
+
+- Task Generation 側の semantics 修正が入っており、project-wide Goal が standalone candidate として残らない。
+- `spec/archive/task-generation-ontology-evidence-bridge-implementation-plan.md` は archive 済みだが、Unit 2 の detailed execution reference として参照できる。
+- `compile_module_context` は `taskId` / `taskCandidateId` / `missionId` のどれかから task generation evidence を解決できる。
+- Codex lane と native API lane の prompt 生成箇所が特定済みである。
+- touched files を closeout audit に渡す最初の実装では、runtime event より git diff based evidence を優先してよい。
+- LLM domain summary は Unit 6 まで provider call を必須化しない。
+
+次 tranche の最小実装対象:
+
+1. ontology snapshot builder。
+2. Codex / native API prompt への snapshot 注入。
+3. closeout boundary audit helper。
+4. verification candidate selector。
+5. LLM synthesis evidence pack / schema / fallback plan。
+
+次 tranche の最小 verification:
+
+```bash
+bunx vitest run tests/agent-ontology.test.ts tests/services.codex-agent-runtime.test.ts tests/services.native-api-runner.test.ts tests/nightworkers-codex-mcp-integration.test.ts tests/project-detail-backend.test.ts
+node scripts/agent-ontology/smoke-mcp-contract.mjs
+bun run verify:fast
+```
 
 ### 近い範囲の non-goals
 
@@ -1448,9 +1604,11 @@ Unit 4 と Unit 5 は、verification selection の方が closeout reporting よ�
 - `compile_module_context` が separated provenance と concise agent-facing fields を返す。
 - task generation metadata が canonical ownership を変えずに task-scoped summary へ影響できる。
 - contradictory task generation evidence が warning として見える。
-- agent prompt または runtime guidance が module routing、boundary checks、invariants、verification を要求する。
-- primary module manifest から focused verification を選べる。
-- ontology-guided task の final report に module / boundary facts を含められる。
+- runtime ontology snapshot が Codex lane / native API lane の prompt-visible context として入る。
+- closeout boundary audit が touched files と primary module を照合し、boundary facts を structured evidence として残せる。
+- primary module manifest と declared secondary crossing から focused verification を選べる。
+- LLM domain summary synthesis を入れる前に、evidence pack、schema、validation、deterministic fallback の境界が固定されている。
+- ontology-guided task の final report に module / boundary / invariant / verification facts を含められる。
 - tranche 後に `bun run verify` が通る。または unrelated dirty-tree failure がある場合は別途明記される。
 
 ## Rollout Plan
