@@ -1,5 +1,9 @@
 import { getNightWorkersCodexToolNames } from '../../../mcp/nightworkers-tool-manifest';
 import { estimateTokens } from '../../conversation-context/token-budget';
+import {
+  formatOntologyCloseoutRequirementsForPrompt,
+  formatOntologyRuntimeContextForPrompt,
+} from '../ontology-runtime-context';
 import type { AgentRunContext } from '../types';
 
 export function buildCodexRuntimePrompt(context: AgentRunContext): string {
@@ -93,11 +97,13 @@ function buildExecutionContract(
     '- Treat nightworkers MCP tools as the execution interface. When a named NightWorkers tool fits, call it directly instead of describing equivalent shell steps.',
     '',
     'Module ontology protocol:',
+    formatOntologyRuntimeContextForPrompt(context.contextSnapshot.ontologyContext),
     '- When ontology tools are available and the task is not a trivial single-file edit, classify the goal with nightworkers.classify_goal before broad exploration.',
     '- Compile module context with nightworkers.compile_module_context, then search owned paths before repository-wide search.',
     '- Run nightworkers.check_boundary before planned edits outside owned paths; do not silently edit unknown or forbidden paths.',
     '- Use nightworkers.get_verification_plan to prefer focused verification from the primary module and add secondary verification only for declared crossings.',
     '- Final reports for ontology-guided work must include primary module, secondary modules, boundary crossings, invariants checked, verification run, and skipped verification reasons.',
+    formatOntologyCloseoutRequirementsForPrompt(),
     '',
     'Minimal implementation behavior:',
     '- ユーザーが実装計画、仕様化、設計文書、Plan mode、要件整理を明示していない場合は、計画文書で止まらず、必要最小限の確認後に実装へ進む。',

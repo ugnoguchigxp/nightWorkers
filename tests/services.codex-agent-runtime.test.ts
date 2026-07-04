@@ -24,6 +24,7 @@ import {
   resolveCodexRuntimeMcpConfigState,
 } from '../api/services/agent-runtime/codex-runtime-config';
 import { createCodexRuntimeThread } from '../api/services/agent-runtime/codex-sdk/codex-sdk-client';
+import { buildOntologyBoundaryAuditSnapshot } from '../api/services/agent-runtime/ontology-runtime-context';
 
 const execFileAsync = promisify(execFile);
 
@@ -337,6 +338,88 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain('nightworkers.check_boundary');
     expect(prompt).toContain('nightworkers.get_verification_plan');
     expect(prompt).toContain('primary module, secondary modules, boundary crossings');
+  });
+
+  it('includes ontology runtime snapshot in Codex prompt when present', () => {
+    const prompt = buildCodexRuntimePrompt(
+      buildContext({
+        ontologyContext: {
+          version: 1,
+          available: true,
+          primaryModule: 'project-detail',
+          secondaryModules: ['mission-planner'],
+          summaryType: 'task_scoped',
+          taskGenerationEvidence: true,
+          taskCandidateId: 'candidate-1',
+          ownedPaths: ['api/modules/project-detail/**'],
+          invariants: ['candidate-routing'],
+          focusedVerification: ['bunx vitest run tests/project-detail-backend.test.ts'],
+          boundaryWarnings: ['Do not change provider routing policy.'],
+          warnings: [],
+        },
+      })
+    );
+
+    expect(prompt).toContain('Ontology runtime snapshot:');
+    expect(prompt).toContain('primary module: project-detail');
+    expect(prompt).toContain('secondary modules: mission-planner');
+    expect(prompt).toContain('task generation evidence: present');
+    expect(prompt).toContain('focused verification candidates');
+    expect(prompt).toContain('Ontology closeout requirements:');
+  });
+
+  it('keeps boundary audit unavailable when no touched files are present', async () => {
+    const audit = await buildOntologyBoundaryAuditSnapshot({
+      repoRoot: process.cwd(),
+      ontologyContext: {
+        version: 1,
+        available: true,
+        primaryModule: 'project-detail',
+        secondaryModules: [],
+        focusedVerification: ['bunx vitest run tests/project-detail-backend.test.ts'],
+      },
+      touchedFiles: [],
+    });
+
+    expect(audit).toMatchObject({
+      available: false,
+      source: 'unavailable',
+      verificationSelection: {
+        focused: ['bunx vitest run tests/project-detail-backend.test.ts'],
+      },
+    });
+    expect(audit.warnings[0]).toContain('No touched files');
+  });
+
+  it('records declared secondary module crossings in boundary audit', async () => {
+    const audit = await buildOntologyBoundaryAuditSnapshot({
+      repoRoot: process.cwd(),
+      ontologyContext: {
+        version: 1,
+        available: true,
+        primaryModule: 'project-detail',
+        secondaryModules: ['mission-planner'],
+        focusedVerification: ['bunx vitest run tests/project-detail-backend.test.ts'],
+      },
+      touchedFiles: ['api/modules/mission-planner/mission-planner.service.ts'],
+    });
+
+    expect(audit).toMatchObject({
+      available: true,
+      decision: 'allow_with_crossing',
+      primaryModule: 'project-detail',
+      boundaryCrossings: [
+        expect.objectContaining({
+          module: 'mission-planner',
+          declaredSecondary: true,
+          paths: ['api/modules/mission-planner/mission-planner.service.ts'],
+        }),
+      ],
+      verificationSelection: {
+        focused: ['bunx vitest run tests/project-detail-backend.test.ts'],
+        warnings: [],
+      },
+    });
   });
 
   it('builds Codex runtime prompt parts without changing the prompt string', () => {
@@ -2962,6 +3045,7 @@ function buildContext(
     codex?: Record<string, unknown>;
     executionMode?: 'planning' | 'implementation' | 'review' | 'runtime_debug' | 'general_answer';
     runtimeOptions?: Record<string, unknown>;
+    ontologyContext?: unknown;
     latestUserMessage?: string;
     conversationContextUsage?: {
       latestUserMessageTokens: number;
@@ -3005,6 +3089,7 @@ function buildContext(
             },
           }
         : {}),
+      ...(input.ontologyContext ? { ontologyContext: input.ontologyContext } : {}),
     },
     runtimeOptions:
       input.codex || input.executionMode || input.runtimeOptions

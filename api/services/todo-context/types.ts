@@ -42,6 +42,8 @@ export type RuntimePromptSnapshot = {
   runtimeLane?: 'native-api-runner' | 'codex-sdk';
   runtimeLaneResolution?: RuntimeLaneSnapshot;
   runtimeResume?: unknown;
+  ontologyContext?: unknown;
+  ontologyBoundaryAudit?: unknown;
   effectiveLlmRouting?: unknown;
   request: {
     repositoryPath: string;

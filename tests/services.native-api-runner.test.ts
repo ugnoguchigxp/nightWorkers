@@ -495,6 +495,36 @@ describe('NativeApiRunner', () => {
     expect(system).toContain('primary module、secondary modules、boundary crossings');
   });
 
+  it('includes ontology runtime snapshot in native/API system prompt', () => {
+    const history = buildInitialNativeApiHistory(
+      buildContext({
+        contextSnapshot: {
+          compiledPrompt: 'implement the requested change',
+          source: 'fallback',
+          ontologyContext: {
+            version: 1,
+            available: true,
+            primaryModule: 'project-detail',
+            secondaryModules: ['mission-planner'],
+            summaryType: 'task_scoped',
+            taskGenerationEvidence: true,
+            ownedPaths: ['api/modules/project-detail/**'],
+            invariants: ['candidate-routing'],
+            focusedVerification: ['bunx vitest run tests/project-detail-backend.test.ts'],
+            boundaryWarnings: [],
+            warnings: [],
+          },
+        },
+      })
+    );
+    const system = history.find((item) => item.type === 'system')?.content ?? '';
+
+    expect(system).toContain('Ontology runtime snapshot:');
+    expect(system).toContain('primary module: project-detail');
+    expect(system).toContain('task generation evidence: present');
+    expect(system).toContain('Ontology closeout requirements:');
+  });
+
   it('sanitizes native/API resume history without stale runtime context', () => {
     const sanitized = sanitizeNativeApiResumeHistory([
       { type: 'system', content: 'stale system' },

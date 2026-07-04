@@ -12,6 +12,12 @@ import {
 } from '../../services/agent-runtime/native-api-runner/native-api-mode';
 import { buildNativeApiRoleContextSnapshot } from '../../services/agent-runtime/native-api-runner/native-api-role-context-events';
 import {
+  boundaryAuditEventSeverity,
+  buildOntologyBoundaryAuditSnapshot,
+  buildOntologyRuntimeContextSnapshot,
+  ontologySnapshotEventSeverity,
+} from '../../services/agent-runtime/ontology-runtime-context';
+import {
   resolveAgentRuntime,
   resolveRuntimeLaneDefinition,
 } from '../../services/agent-runtime/registry';
@@ -1256,6 +1262,33 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
           },
         },
   };
+  const ontologyContext = await buildOntologyRuntimeContextSnapshot({
+    repoRoot: repoInfo.localPath,
+    goal: runtimeLatestUserMessage || compiledPromptText,
+    taskId,
+    runId: run.id,
+    runtimeLane: runtimeLaneResolution.lane,
+  });
+  runtimeContextSnapshot = {
+    ...runtimeContextSnapshot,
+    ontologyContext,
+  };
+  await repo.createRunEvent({
+    version: 1,
+    runId: run.id,
+    taskId,
+    timestamp: new Date().toISOString(),
+    type: 'system.info',
+    severity: ontologySnapshotEventSeverity(ontologyContext),
+    actor: 'runtime',
+    message: ontologyContext.available
+      ? 'Ontology runtime context snapshot prepared.'
+      : 'Ontology runtime context snapshot unavailable; runtime will use MCP fallback guidance.',
+    data: {
+      action: 'ontology.runtime_context_snapshot',
+      ontologyContext,
+    },
+  });
   if (runtimeLaneResolution.lane === 'native-api-runner') {
     try {
       const roleContextTodos = await repo.listTaskRunTodosForRun(run.id);
@@ -1499,6 +1532,40 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
         diffPatch: runtimeResult.diffPatch,
         testResults: runtimeResult.testResults,
       });
+      const ontologyBoundaryAudit = await buildOntologyBoundaryAuditSnapshot({
+        repoRoot: repoInfo.localPath,
+        ontologyContext:
+          contextSnapshotBeforeFinalize &&
+          typeof contextSnapshotBeforeFinalize === 'object' &&
+          !Array.isArray(contextSnapshotBeforeFinalize)
+            ? (contextSnapshotBeforeFinalize as Record<string, unknown>).ontologyContext
+            : null,
+        touchedFiles: parseChangedPathsFromDiff(runtimeResult.diffPatch),
+      });
+      const contextSnapshotWithBoundaryAudit = {
+        ...(contextSnapshotBeforeFinalize &&
+        typeof contextSnapshotBeforeFinalize === 'object' &&
+        !Array.isArray(contextSnapshotBeforeFinalize)
+          ? contextSnapshotBeforeFinalize
+          : runtimeContextSnapshot),
+        ontologyBoundaryAudit,
+      };
+      await repo.createRunEvent({
+        version: 1,
+        runId: run.id,
+        taskId,
+        timestamp: new Date().toISOString(),
+        type: 'system.info',
+        severity: boundaryAuditEventSeverity(ontologyBoundaryAudit),
+        actor: 'runtime',
+        message: ontologyBoundaryAudit.available
+          ? `Ontology boundary audit completed with decision=${ontologyBoundaryAudit.decision}.`
+          : 'Ontology boundary audit skipped or unavailable.',
+        data: {
+          action: 'ontology.boundary_closeout_audit',
+          ontologyBoundaryAudit,
+        },
+      });
 
       if (stopWasRequested) {
         const outcome = outcomeFromRuntimeResult(runtimeResult);
@@ -1519,7 +1586,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
           diffPatch: runtimeResult.diffPatch,
           testResults: runtimeResult.testResults,
           contextSnapshot: mergeRuntimeContractSnapshot(
-            contextSnapshotBeforeFinalize,
+            contextSnapshotWithBoundaryAudit,
             runtimeContractWarnings,
             { lane: runtimeLaneResolution.lane }
           ),
@@ -1667,7 +1734,7 @@ export async function startTaskRun(taskId: string, options: StartTaskRunOptions 
         endedAt: new Date(),
         finishedAt: new Date(),
         contextSnapshot: mergeRuntimeContractSnapshot(
-          contextSnapshotBeforeFinalize,
+          contextSnapshotWithBoundaryAudit,
           finalContractWarnings,
           { lane: runtimeLaneResolution.lane }
         ),
