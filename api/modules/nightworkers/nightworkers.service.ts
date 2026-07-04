@@ -150,6 +150,7 @@ export {
 
 export {
   getActiveTaskRun,
+  getOntologyRunDebugReport,
   getTaskRun,
   getTaskRunsForTask,
   listTaskRunActivityEvents,

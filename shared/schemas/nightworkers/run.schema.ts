@@ -53,6 +53,41 @@ export const taskRunSchema = z
   })
   .openapi('TaskRun');
 
+export const ontologyRunDebugReportSchema = z
+  .object({
+    runId: z.string().uuid(),
+    taskId: z.string().uuid(),
+    repositoryId: z.string().uuid().nullable().optional(),
+    status: z.string(),
+    runtimeLane: z.string().nullable(),
+    ontologyContext: jsonValueSchema.nullable(),
+    ontologyBoundaryAudit: jsonValueSchema.nullable(),
+    evidenceSources: z.object({
+      contextSnapshot: z.boolean(),
+      runtimeContextEvent: z.boolean(),
+      boundaryAuditEvent: z.boolean(),
+    }),
+    summary: z.object({
+      available: z.boolean(),
+      primaryModule: z.string().nullable(),
+      secondaryModules: z.array(z.string()),
+      taskGenerationEvidence: z.boolean(),
+      boundaryDecision: z.string().nullable(),
+      touchedFilesCount: z.number().int().nonnegative(),
+      unexplainedCrossingsCount: z.number().int().nonnegative(),
+      focusedVerificationCount: z.number().int().nonnegative(),
+      focusedVerificationState: z.enum([
+        'passed',
+        'failed',
+        'selected',
+        'not_selected',
+        'unavailable',
+      ]),
+    }),
+    warnings: z.array(z.string()),
+  })
+  .openapi('OntologyRunDebugReport');
+
 export const taskTypeSchema = z.string().min(1);
 
 export const todoStatusSchema = z.enum([

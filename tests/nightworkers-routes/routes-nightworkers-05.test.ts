@@ -86,6 +86,79 @@ describe('NightWorkers task run todo routes', () => {
     });
   });
 
+  it('returns ontology run debug report from run context snapshot', async () => {
+    const createdRepo = await repo.createRepository({
+      name: 'TEST: Ontology Debug Route Workspace',
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: Ontology debug task',
+      description: 'Inspect ontology debug report',
+      status: 'completed',
+    });
+    const run = await repo.createTaskRun({
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'completed',
+      workerKind: 'codex-sdk',
+      timeoutSeconds: 60,
+      startedAt: new Date('2026-06-02T00:00:00.000Z'),
+      testResults: { passed: true },
+      contextSnapshot: {
+        ontologyContext: {
+          available: true,
+          runtimeLane: 'codex-sdk',
+          primaryModule: 'agent-runtime',
+          secondaryModules: ['task-generation'],
+          taskGenerationEvidence: true,
+          warnings: [],
+        },
+        ontologyBoundaryAudit: {
+          available: true,
+          decision: 'allow',
+          touchedFiles: ['api/services/agent-runtime/runtime.ts'],
+          boundaryCrossings: [],
+          needsConfirmation: [],
+          forbiddenTouched: [],
+          verificationSelection: {
+            focused: ['bunx vitest run tests/services.codex-agent-runtime.test.ts'],
+          },
+          warnings: [],
+        },
+      },
+    });
+
+    const res = await app.request(`http://localhost/api/runs/${run.id}/ontology-debug`, {
+      method: 'GET',
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      runId: run.id,
+      taskId: task.id,
+      repositoryId: createdRepo.id,
+      status: 'completed',
+      runtimeLane: 'codex-sdk',
+      evidenceSources: {
+        contextSnapshot: true,
+      },
+      summary: {
+        available: true,
+        primaryModule: 'agent-runtime',
+        secondaryModules: ['task-generation'],
+        taskGenerationEvidence: true,
+        boundaryDecision: 'allow',
+        touchedFilesCount: 1,
+        unexplainedCrossingsCount: 0,
+        focusedVerificationCount: 1,
+        focusedVerificationState: 'passed',
+      },
+    });
+  });
+
   it('enforces one todo per run sequence and cascades todos with run deletion', async () => {
     const createdRepo = await repo.createRepository({
       name: 'TEST: Todo Constraint Workspace',

@@ -117,7 +117,7 @@ Todoの表示パフォーマンスを改善する
 
 ## Source Plan Alignment
 
-`spec/docs/coding-agent-module-ontology-implementation-plan.md` から、次を前提として取り込む。
+`spec/archive/coding-agent-module-ontology-implementation-plan.md` から、次を前提として取り込む。
 
 - `goal = module` と固定しない。
 - 作業ごとに `primaryModule`, `secondaryModules`, `changeTypes`, `risk`, `confidence`, `reason` を明示する。

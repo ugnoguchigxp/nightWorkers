@@ -1517,6 +1517,11 @@ Goal:
 
 大きな analytics system を作らず、ontology guidance が unexplained scope drift を減らしているか測れるようにする。
 
+Scope note:
+
+- この unit の実装対象は、pilot task 実走そのものではなく、pilot 実走後に ontology routing / boundary outcome を確認できる read-only debug surface である。
+- pilot task の実走、改善率の判定、strict mode の判断は rollout validation に分離し、この実装 tranche の archive blocker にはしない。
+
 Dependencies:
 
 - Unit 4 が完了していること。
@@ -1531,6 +1536,9 @@ Tasks:
    - unexplained crossings count。
    - focused verification run state。
 2. recent ontology-guided tasks を確認する read-only query または debug report を追加する。
+   - `contextSnapshot.ontologyContext` と `contextSnapshot.ontologyBoundaryAudit` を優先して読む。
+   - 古い run や部分保存 run では `ontology.runtime_context_snapshot` / `ontology.boundary_closeout_audit` event payload から fallback する。
+   - prompt、source file content、生ログ、secret-bearing content は返さない。
 3. metadata の有効性が見えるまで dashboard は作らない。
 
 Verification:
@@ -1541,8 +1549,9 @@ bunx vitest run tests/agent-ontology.test.ts tests/services.run-events.test.ts
 
 Expected:
 
-- pilot task 後に ontology routing と boundary outcome を確認できる。
+- pilot task 後に ontology routing と boundary outcome を read-only report で確認できる。
 - 保存 metadata は小さく、prompt、source、生ログ、secret-bearing content を含まない。
+- pilot 実走が未実施でも、この report surface 自体は focused test で検証できる。
 
 Failure response:
 
@@ -1609,13 +1618,29 @@ bun run verify:fast
 - primary module manifest と declared secondary crossing から focused verification を選べる。
 - LLM domain summary synthesis を入れる前に、evidence pack、schema、validation、deterministic fallback の境界が固定されている。
 - ontology-guided task の final report に module / boundary / invariant / verification facts を含められる。
+- ontology-guided run の routing / boundary / verification summary を read-only debug report で確認できる。
 - tranche 後に `bun run verify` が通る。または unrelated dirty-tree failure がある場合は別途明記される。
+
+### Archive readiness note
+
+この implementation plan は、manifest / MCP contract / task generation evidence bridge / runtime snapshot / closeout boundary audit / verification guidance / deterministic LLM summary preparation / read-only ontology debug report までが実装されていれば archive 可能とする。
+
+Archive 後に残す rollout validation:
+
+- pilot task を実走して unexplained cross-module edits が減るか確認する。
+- pilot metrics が十分な場合だけ strict mode を検討する。
+- 実 task で繰り返し必要になった module だけ manifest を追加する。
+- LLM provider call による domain summary synthesis は、deterministic evidence pack / schema / fallback が安定した後に別 tranche で導入する。
 
 ## Rollout Plan
 
 ### Pilot
 
 Use 3 to 5 modules for initial rollout.
+
+Status:
+
+- Pilot execution is deferred to rollout validation, not required for archiving this implementation plan.
 
 Pilot acceptance criteria:
 
@@ -1773,6 +1798,10 @@ The implementation is complete when:
 - Agent prompt requires module routing before edits.
 - Boundary gate is used before planned cross-module edits.
 - Final response includes module, crossing, invariant, and verification facts.
+- Ontology-guided run debug reports expose routing, boundary decision, unexplained crossing count, and focused verification state without returning prompts, source content, raw logs, or secret-bearing content.
+
+Rollout validation is complete when:
+
 - Pilot tasks show fewer unexplained cross-module edits.
 
 ## Non-Goals

@@ -48,6 +48,7 @@ vi.mock('@api/services/runner/NativeLocalRunner', () => ({
 
 import {
   getActiveTaskRun,
+  getOntologyRunDebugReport,
   getTaskRun,
   getTaskRunsForTask,
   listTaskRunActivityEvents,
@@ -107,6 +108,149 @@ describe('run-query.service', () => {
           { id: 'event-2', payloadJson: null },
         ],
         reviews: [{ passed: true }],
+      });
+    });
+  });
+
+  describe('getOntologyRunDebugReport', () => {
+    it('returns null if run does not exist', async () => {
+      mocks.getTaskRun.mockResolvedValue(null);
+      const result = await getOntologyRunDebugReport('run-1');
+      expect(result).toBeNull();
+    });
+
+    it('summarizes ontology snapshot and boundary audit without reading raw logs', async () => {
+      mocks.getTaskRun.mockResolvedValue({
+        id: 'run-1',
+        taskId: 'task-1',
+        repositoryId: 'repo-1',
+        status: 'completed',
+        contextSnapshot: {
+          ontologyContext: {
+            available: true,
+            runtimeLane: 'codex-sdk',
+            primaryModule: 'task-generation',
+            secondaryModules: ['agent-runtime'],
+            taskGenerationEvidence: true,
+            warnings: ['low confidence routing'],
+          },
+          ontologyBoundaryAudit: {
+            available: true,
+            decision: 'allow_with_crossing',
+            touchedFiles: ['api/modules/task-generation/service.ts', 'api/shared/types.ts'],
+            boundaryCrossings: [
+              {
+                module: 'agent-runtime',
+                paths: ['api/shared/types.ts'],
+                declaredSecondary: true,
+              },
+            ],
+            needsConfirmation: [],
+            forbiddenTouched: [],
+            verificationSelection: {
+              focused: ['bunx vitest run tests/agent-ontology.test.ts'],
+            },
+            warnings: ['secondary crossing recorded'],
+          },
+        },
+      });
+      mocks.listTaskEventsForRun.mockResolvedValue([
+        {
+          payloadJson: {
+            runEvent: {
+              data: { action: 'ontology.runtime_context_snapshot' },
+            },
+          },
+        },
+      ]);
+
+      const result = await getOntologyRunDebugReport('run-1');
+
+      expect(result).toMatchObject({
+        runId: 'run-1',
+        taskId: 'task-1',
+        repositoryId: 'repo-1',
+        status: 'completed',
+        runtimeLane: 'codex-sdk',
+        evidenceSources: {
+          contextSnapshot: true,
+          runtimeContextEvent: true,
+          boundaryAuditEvent: false,
+        },
+        summary: {
+          available: true,
+          primaryModule: 'task-generation',
+          secondaryModules: ['agent-runtime'],
+          taskGenerationEvidence: true,
+          boundaryDecision: 'allow_with_crossing',
+          touchedFilesCount: 2,
+          unexplainedCrossingsCount: 0,
+          focusedVerificationCount: 1,
+          focusedVerificationState: 'selected',
+        },
+        warnings: ['low confidence routing', 'secondary crossing recorded'],
+      });
+    });
+
+    it('falls back to structured ontology events when snapshot fields are absent', async () => {
+      mocks.getTaskRun.mockResolvedValue({
+        id: 'run-1',
+        taskId: 'task-1',
+        status: 'completed',
+        contextSnapshot: {},
+      });
+      mocks.listTaskEventsForRun.mockResolvedValue([
+        {
+          payloadJson: {
+            runEvent: {
+              data: {
+                action: 'ontology.runtime_context_snapshot',
+                ontologyContext: {
+                  available: true,
+                  primaryModule: 'agent-runtime',
+                  secondaryModules: [],
+                  taskGenerationEvidence: false,
+                  focusedVerification: [],
+                },
+              },
+            },
+          },
+        },
+        {
+          payloadJson: {
+            runEvent: {
+              data: {
+                action: 'ontology.boundary_closeout_audit',
+                ontologyBoundaryAudit: {
+                  available: true,
+                  decision: 'needs_confirmation',
+                  touchedFiles: ['api/unknown.ts'],
+                  boundaryCrossings: [{ paths: ['api/unknown.ts'], declaredSecondary: false }],
+                  needsConfirmation: [{ path: 'api/unknown.ts', reason: 'unknown path' }],
+                  forbiddenTouched: [],
+                  verificationSelection: { focused: [] },
+                },
+              },
+            },
+          },
+        },
+      ]);
+
+      const result = await getOntologyRunDebugReport('run-1');
+
+      expect(result).toMatchObject({
+        evidenceSources: {
+          contextSnapshot: false,
+          runtimeContextEvent: true,
+          boundaryAuditEvent: true,
+        },
+        summary: {
+          primaryModule: 'agent-runtime',
+          boundaryDecision: 'needs_confirmation',
+          touchedFilesCount: 1,
+          unexplainedCrossingsCount: 1,
+          focusedVerificationState: 'not_selected',
+        },
       });
     });
   });

@@ -13,6 +13,7 @@ import {
   type exportTaskRunJsonlRoute,
   type getBackgroundProcessRoute,
   getLatestTaskReviewSessionRoute,
+  type getOntologyRunDebugReportRoute,
   getReviewRecommendationRoute,
   getReviewSessionRoute,
   type getTaskRunRoute,
@@ -56,6 +57,15 @@ export const getTaskRunHandler: NightWorkersRouteHandler<typeof getTaskRunRoute>
   const run = await service.getTaskRun(id);
   if (!run) return routeNotFound(c, 'Run not found');
   return c.json(run, 200);
+};
+
+export const getOntologyRunDebugReportHandler: NightWorkersRouteHandler<
+  typeof getOntologyRunDebugReportRoute
+> = async (c) => {
+  const id = c.req.param('id');
+  const report = await service.getOntologyRunDebugReport(id);
+  if (!report) return routeNotFound(c, 'Run not found');
+  return c.json(report, 200);
 };
 
 export const stopTaskRunHandler = withOpenApiRouteError(stopTaskRunRoute, async (c) => {

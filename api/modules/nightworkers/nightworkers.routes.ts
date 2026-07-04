@@ -16,6 +16,7 @@ import {
   exportTaskRunJsonlHandler,
   getBackgroundProcessHandler,
   getLatestTaskReviewSessionHandler,
+  getOntologyRunDebugReportHandler,
   getReviewRecommendationHandler,
   getReviewSessionHandler,
   getTaskRunHandler,
@@ -65,6 +66,7 @@ import {
   exportTaskRunJsonlRoute,
   getBackgroundProcessRoute,
   getLatestTaskReviewSessionRoute,
+  getOntologyRunDebugReportRoute,
   getOverviewDashboardRoute,
   getReviewRecommendationRoute,
   getReviewSessionRoute,
@@ -363,6 +365,7 @@ const router = createOpenApiRouter()
   )
   .openapi(startTaskRunRoute, startTaskRunHandler)
   .openapi(getTaskRunRoute, getTaskRunHandler)
+  .openapi(getOntologyRunDebugReportRoute, getOntologyRunDebugReportHandler)
   .openapi(stopTaskRunRoute, stopTaskRunHandler)
   .openapi(listTaskRunEventsRoute, listTaskRunEventsHandler)
   .openapi(listTaskRunActivityEventsRoute, listTaskRunActivityEventsHandler)
