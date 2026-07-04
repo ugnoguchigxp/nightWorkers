@@ -12,7 +12,7 @@ export type CoverageFileRow = {
 
 const coverageMetrics = ['statements', 'branches', 'functions', 'lines'] as const;
 
-export function coverageRowsFromSummary(summary: unknown): CoverageFileRow[] {
+export function coverageRowsFromSummary(summary: unknown, projectRoot?: string): CoverageFileRow[] {
   if (!summary || typeof summary !== 'object' || Array.isArray(summary)) return [];
   const record = summary as Record<string, unknown>;
   return Object.entries(record)
@@ -23,7 +23,7 @@ export function coverageRowsFromSummary(summary: unknown): CoverageFileRow[] {
       return left.localeCompare(right);
     })
     .map(([file, entry]) => ({
-      file,
+      file: displayCoverageFilePath(file, projectRoot),
       statements: percentFromCoverageEntry(entry, 'statements'),
       branches: percentFromCoverageEntry(entry, 'branches'),
       functions: percentFromCoverageEntry(entry, 'functions'),
@@ -31,6 +31,24 @@ export function coverageRowsFromSummary(summary: unknown): CoverageFileRow[] {
       uncovered: uncoveredFromCoverageEntry(entry),
       summary: file === 'total',
     }));
+}
+
+function displayCoverageFilePath(file: string, projectRoot?: string) {
+  if (file === 'total' || !projectRoot) return file;
+  const normalizedFile = normalizePathSeparators(file);
+  const normalizedRoot = trimTrailingSlash(normalizePathSeparators(projectRoot));
+  if (!normalizedRoot) return file;
+  if (normalizedFile === normalizedRoot) return '.';
+  const rootPrefix = `${normalizedRoot}/`;
+  return normalizedFile.startsWith(rootPrefix) ? normalizedFile.slice(rootPrefix.length) : file;
+}
+
+function normalizePathSeparators(value: string) {
+  return value.replace(/\\/g, '/');
+}
+
+function trimTrailingSlash(value: string) {
+  return value.replace(/\/+$/, '');
 }
 
 function percentFromCoverageEntry(entry: unknown, metric: (typeof coverageMetrics)[number]) {

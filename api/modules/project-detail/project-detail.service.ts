@@ -19,6 +19,7 @@ import {
 import { db } from '../../db/client';
 import { llmUsageRecords, taskRuns, tasks } from '../../db/schema';
 import { NotFoundError, ValidationError } from '../../lib/errors';
+import { calculateUsageCost, findPricingForUsage } from '../../services/pricing';
 import { detectProjectStackProfile } from '../../services/project-stack-context';
 import {
   evaluateCoverageGate,
@@ -42,8 +43,11 @@ import {
 const MISSION_TASK_SCHEMA_NAME = 'mission_task_candidates';
 const MAX_OUTPUT_CHARS = 120_000;
 const RECENT_QUALITY_RUN_LIMIT = 10;
+const COVERAGE_SUMMARY_REPORTER_ARGS = '--coverage.reporter=json-summary --coverage.reporter=text';
+const E2E_JSON_OUTPUT_PATH = path.join('test-results', 'e2e-results.json');
+const PLAYWRIGHT_JSON_REPORTER_ARGS = '--reporter=list,json';
 const E2E_ARTIFACT_PATHS = [
-  path.join('test-results', 'e2e-results.json'),
+  E2E_JSON_OUTPUT_PATH,
   path.join('playwright-report', 'results.json'),
   path.join('playwright-report', 'test-results.json'),
 ];
@@ -76,6 +80,7 @@ export async function getProjectDetailMetrics(repositoryId: string) {
         systemPromptTokens: llmUsageRecords.systemPromptTokens,
         userPromptTokens: llmUsageRecords.userPromptTokens,
         totalTokens: llmUsageRecords.totalTokens,
+        createdAt: llmUsageRecords.createdAt,
       })
       .from(llmUsageRecords)
       .innerJoin(tasks, eq(tasks.id, llmUsageRecords.taskId))
@@ -112,6 +117,7 @@ export async function getProjectDetailMetrics(repositoryId: string) {
       outputTokens: number;
       cachedInputTokens: number;
       reasoningOutputTokens: number;
+      cost: number | null;
     }
   >();
   const taskMap = new Map<
@@ -124,10 +130,13 @@ export async function getProjectDetailMetrics(repositoryId: string) {
       outputTokens: number;
       cachedInputTokens: number;
       reasoningOutputTokens: number;
-      cost: null;
+      cost: number | null;
     }
   >();
+  let totalCost = 0;
+  let pricedUsageCount = 0;
   for (const row of usageRows) {
+    const usageCost = await calculateProjectDetailUsageCost(row);
     const modelKey = `${row.provider}:${row.model ?? ''}`;
     const modelEntry = modelMap.get(modelKey) ?? {
       provider: row.provider,
@@ -138,6 +147,7 @@ export async function getProjectDetailMetrics(repositoryId: string) {
       outputTokens: 0,
       cachedInputTokens: 0,
       reasoningOutputTokens: 0,
+      cost: null,
     };
     modelEntry.calls += 1;
     modelEntry.tokens += normalizeUsageTotal(row);
@@ -145,6 +155,9 @@ export async function getProjectDetailMetrics(repositoryId: string) {
     modelEntry.outputTokens += row.outputTokens ?? 0;
     modelEntry.cachedInputTokens += row.cachedInputTokens ?? 0;
     modelEntry.reasoningOutputTokens += row.reasoningOutputTokens ?? 0;
+    if (usageCost !== null) {
+      modelEntry.cost = (modelEntry.cost ?? 0) + usageCost;
+    }
     modelMap.set(modelKey, modelEntry);
 
     const taskEntry = taskMap.get(row.taskId) ?? {
@@ -162,6 +175,11 @@ export async function getProjectDetailMetrics(repositoryId: string) {
     taskEntry.outputTokens += row.outputTokens ?? 0;
     taskEntry.cachedInputTokens += row.cachedInputTokens ?? 0;
     taskEntry.reasoningOutputTokens += row.reasoningOutputTokens ?? 0;
+    if (usageCost !== null) {
+      taskEntry.cost = (taskEntry.cost ?? 0) + usageCost;
+      totalCost += usageCost;
+      pricedUsageCount += 1;
+    }
     taskMap.set(row.taskId, taskEntry);
   }
   const coverageMetrics = latestQuality?.coverageGate?.metrics ?? [];
@@ -190,10 +208,10 @@ export async function getProjectDetailMetrics(repositoryId: string) {
       reasoningOutputTokens,
       stateCardTokens,
       callCount: usageRows.length,
-      totalCost: null,
+      totalCost: pricedUsageCount > 0 ? totalCost : null,
       averageTokensPerRun: runs.length > 0 ? Math.round(totalTokens / runs.length) : null,
-      averageCostPerRun: null,
-      modelMix: [...modelMap.values()].map((entry) => ({ ...entry, cost: null })),
+      averageCostPerRun: runs.length > 0 && pricedUsageCount > 0 ? totalCost / runs.length : null,
+      modelMix: [...modelMap.values()],
       topTokenTasks: [...taskMap.values()].sort((a, b) => b.tokens - a.tokens).slice(0, 5),
     },
     health: {
@@ -201,6 +219,30 @@ export async function getProjectDetailMetrics(repositoryId: string) {
       coverageAverage,
     },
   };
+}
+
+async function calculateProjectDetailUsageCost(row: {
+  provider: string;
+  model?: string | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  cachedInputTokens?: number | null;
+  reasoningOutputTokens?: number | null;
+  createdAt: Date;
+}) {
+  const pricing = await findPricingForUsage({
+    provider: row.provider,
+    model: row.model ?? null,
+    createdAt: row.createdAt,
+  });
+  if (!pricing || pricing.currencyCode !== 'USD') return null;
+  return calculateUsageCost({
+    inputTokens: row.inputTokens ?? null,
+    outputTokens: row.outputTokens ?? null,
+    cachedInputTokens: row.cachedInputTokens ?? null,
+    reasoningOutputTokens: row.reasoningOutputTokens ?? null,
+    pricing,
+  }).totalCost;
 }
 
 function normalizeUsageTotal(row: {
@@ -719,20 +761,54 @@ function commandForQualityRun(
     if (!capabilities.unit.runnable || !capabilities.unit.command) {
       throw new ValidationError('missing_quality_capability', { missingCapabilities: ['unit'] });
     }
-    return [capabilities.unit.command, capabilities.coverage.command].filter(Boolean).join(' && ');
+    return [capabilities.unit.command, coverageCommandWithSummaryReporter(capabilities)]
+      .filter(Boolean)
+      .join(' && ');
   }
   if (runType === 'e2e') {
     if (!capabilities.e2e.runnable || !capabilities.e2e.command) {
       throw new ValidationError('missing_quality_capability', { missingCapabilities: ['e2e'] });
     }
-    return capabilities.e2e.command;
+    return e2eCommandWithJsonReporter(capabilities.e2e.command);
   }
   if (!capabilities.all.runnable || !capabilities.all.command) {
     throw new ValidationError('missing_quality_capability', {
       missingCapabilities: capabilities.all.missingCapabilities,
     });
   }
-  return capabilities.all.command;
+  return [
+    capabilities.unit.command,
+    coverageCommandWithSummaryReporter(capabilities),
+    capabilities.e2e.command ? e2eCommandWithJsonReporter(capabilities.e2e.command) : undefined,
+  ]
+    .filter(Boolean)
+    .join(' && ');
+}
+
+function coverageCommandWithSummaryReporter(capabilities: ProjectQualityCapabilities) {
+  const command = capabilities.coverage.command;
+  if (!command) return undefined;
+  if (command.includes('--coverage.reporter=json-summary')) return command;
+  if (/\bbun\s+run\b/.test(command)) return `${command} -- ${COVERAGE_SUMMARY_REPORTER_ARGS}`;
+  return `${command} ${COVERAGE_SUMMARY_REPORTER_ARGS}`;
+}
+
+function e2eCommandWithJsonReporter(command: string) {
+  const commandWithReporter =
+    command.includes('--reporter') && command.includes('json')
+      ? command
+      : appendCommandArgs(command, PLAYWRIGHT_JSON_REPORTER_ARGS);
+  if (commandWithReporter.includes('PLAYWRIGHT_JSON_OUTPUT_FILE=')) return commandWithReporter;
+  return `PLAYWRIGHT_JSON_OUTPUT_FILE=${shellQuote(E2E_JSON_OUTPUT_PATH)} ${commandWithReporter}`;
+}
+
+function appendCommandArgs(command: string, args: string) {
+  if (/\bbun\s+run\b/.test(command)) return `${command} -- ${args}`;
+  return `${command} ${args}`;
+}
+
+function shellQuote(value: string) {
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 async function runShellCommand(input: { command: string; cwd: string; timeoutSeconds: number }) {

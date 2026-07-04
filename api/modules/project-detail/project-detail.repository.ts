@@ -441,6 +441,7 @@ function buildMissionCandidateTaskObjective(candidate: MissionTaskCandidate) {
     '',
     '[事前に分かっている仕様]',
     `- 実装対象: ${candidate.title}`,
+    `- TaskCandidate id: ${candidate.id}`,
     `- Goal: ${candidate.goalTitle ?? '未指定'}`,
     `- Candidate kind: ${candidate.candidateKind}`,
     `- Primary module: ${candidate.moduleRouting.primaryModule ?? '未判定'}`,

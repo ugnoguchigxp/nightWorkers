@@ -66,8 +66,12 @@ vi.mock('../api/services/structured-llm', async (importOriginal) => {
 
 import app from '../api/app';
 import { ensureNightWorkersSchema } from '../api/db/bootstrap';
+import * as missionPlannerRepo from '../api/modules/mission-planner/mission-planner.repository';
 import * as nightworkersRepo from '../api/modules/nightworkers/nightworkers.repository';
+import { buildTaskGenerationEvidence } from '../api/modules/project-detail/task-generation-evidence.service';
+import { compileOntologyModuleContext } from '../api/services/agent-ontology/agent-ontology.service';
 import { recordLlmUsage } from '../api/services/llm-usage';
+import { upsertPricingRow } from '../api/services/pricing';
 
 beforeAll(async () => {
   await ensureNightWorkersSchema();
@@ -238,13 +242,25 @@ describe('Project Detail backend', () => {
         },
         durationMs: 25,
       });
+      await upsertPricingRow({
+        provider: 'fixture-provider',
+        model: 'gpt-test',
+        inputPer1m: 10,
+        cachedInputPer1m: 1,
+        outputPer1m: 20,
+        effectiveFrom: '1970-01-01T00:00:00.000Z',
+        fetchedAt: new Date().toISOString(),
+        manualOverride: false,
+        enabled: true,
+      });
 
       const metricsRes = await app.request(
         `http://localhost/api/repositories/${project.id}/project-detail/metrics`
       );
 
       expect(metricsRes.status).toBe(200);
-      await expect(metricsRes.json()).resolves.toMatchObject({
+      const metrics = await metricsRes.json();
+      expect(metrics).toMatchObject({
         llmUsage: {
           totalTokens: 1245,
           promptInputTokens: 330,
@@ -254,6 +270,7 @@ describe('Project Detail backend', () => {
           reasoningOutputTokens: 6,
           stateCardTokens: 30,
           callCount: 1,
+          totalCost: expect.any(Number),
           modelMix: [
             expect.objectContaining({
               provider: 'fixture-provider',
@@ -264,6 +281,7 @@ describe('Project Detail backend', () => {
               outputTokens: 45,
               cachedInputTokens: 300,
               reasoningOutputTokens: 6,
+              cost: expect.any(Number),
             }),
           ],
           topTokenTasks: [
@@ -275,10 +293,14 @@ describe('Project Detail backend', () => {
               outputTokens: 45,
               cachedInputTokens: 300,
               reasoningOutputTokens: 6,
+              cost: expect.any(Number),
             }),
           ],
         },
       });
+      expect(metrics.llmUsage.totalCost).toBeCloseTo(0.0102);
+      expect(metrics.llmUsage.modelMix[0].cost).toBeCloseTo(0.0102);
+      expect(metrics.llmUsage.topTokenTasks[0].cost).toBeCloseTo(0.0102);
     } finally {
       fs.rmSync(repoRoot, { recursive: true, force: true });
     }
@@ -579,6 +601,195 @@ describe('Project Detail backend', () => {
         `http://localhost/api/repositories/${project.id}/mission-task-candidates`
       );
       expect(await candidatesRes.json()).toHaveLength(0);
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('builds task generation evidence from saved mission task candidate metadata', async () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-evidence-'));
+    try {
+      fs.writeFileSync(
+        path.join(repoRoot, 'package.json'),
+        JSON.stringify({
+          scripts: {
+            test: 'echo unit',
+            'test:coverage': 'echo coverage',
+            'test:e2e': 'echo e2e',
+          },
+        }),
+        'utf8'
+      );
+      const project = await createRepository(repoRoot);
+      const createGoalRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-goals`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Todo',
+            goalText: 'todolist を作る。',
+            active: true,
+          }),
+        }
+      );
+      expect(createGoalRes.status).toBe(201);
+      const featureGoal = (await createGoalRes.json()) as { id: string };
+
+      const presetGoalRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-goals/from-preset`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ presetId: 'coverage-budget', active: true }),
+        }
+      );
+      expect(presetGoalRes.status).toBe(201);
+      const coverageGoal = (await presetGoalRes.json()) as { id: string };
+
+      structuredLlmFixture.nextOutput = JSON.stringify({
+        schemaVersion: 'nightworkers.mission-task-candidates/v1',
+        candidates: [
+          {
+            title: 'todolist 機能の初期実装計画を作成する',
+            summary: 'todolist 機能を Plan Mode で定義する。',
+            rationale: '本体機能が未実装。',
+            goalId: featureGoal.id,
+            candidateKind: 'feature_entrypoint',
+            moduleRouting: {
+              primaryModule: 'todolist',
+              secondaryModules: [],
+              confidencePercent: 42,
+              reason: '新規機能のため emerging module として扱う。',
+            },
+            constraintGoalIds: [coverageGoal.id],
+            planModeOpenQuestions: ['保存方式を決める。'],
+            evidence: [{ source: 'mission_goal', label: 'goal', value: 'todolist を作る' }],
+            evaluationContribution: 40,
+            importancePercent: 90,
+            confidencePercent: 80,
+            tokenSize: 'medium',
+            complexity: 'moderate',
+            taskPrompt: 'Plan Mode で todolist 機能の初期実装計画を作成してください。',
+            acceptanceCriteria: '初期実装計画ができる。',
+            verificationPlan: '計画をレビューする。',
+          },
+        ],
+      });
+
+      const generateRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates/generate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ goalIds: [featureGoal.id, coverageGoal.id] }),
+        }
+      );
+      expect(generateRes.status).toBe(201);
+      const generated = (await generateRes.json()) as {
+        candidates: Array<{ id: string }>;
+      };
+
+      const evidence = await buildTaskGenerationEvidence({
+        taskCandidateId: generated.candidates[0].id,
+      });
+
+      expect(evidence).toMatchObject({
+        source: 'nightworkers_project_detail',
+        repositoryId: project.id,
+        taskCandidateId: generated.candidates[0].id,
+        taskCandidate: {
+          kind: 'feature_entrypoint',
+          primaryModule: 'todolist',
+          routingConfidencePercent: 42,
+          planModeOpenQuestions: ['保存方式を決める。'],
+        },
+        projectWideConstraints: [
+          expect.objectContaining({
+            goalId: coverageGoal.id,
+            title: 'カバレッジ維持',
+            intent: 'maintain_threshold',
+          }),
+        ],
+        acceptanceCriteria: ['初期実装計画ができる。'],
+        verificationHints: ['計画をレビューする。'],
+      });
+      expect(evidence.selectedGoalIds).toEqual(
+        expect.arrayContaining([featureGoal.id, coverageGoal.id])
+      );
+
+      const mission = await missionPlannerRepo.createMission({
+        repositoryId: project.id,
+        title: 'todolist mission',
+        goalText: 'todolist を作る。',
+        nonGoals: [],
+        sourceGoalIds: [featureGoal.id, coverageGoal.id],
+      });
+      const missionEvidence = await buildTaskGenerationEvidence({
+        repositoryId: project.id,
+        missionId: mission.id,
+      });
+      expect(missionEvidence).toMatchObject({
+        repositoryId: project.id,
+        missionId: mission.id,
+        taskCandidateId: null,
+        taskCandidate: null,
+        projectWideConstraints: [
+          expect.objectContaining({
+            goalId: coverageGoal.id,
+            title: 'カバレッジ維持',
+          }),
+        ],
+      });
+      expect(missionEvidence.selectedGoalIds).toEqual(
+        expect.arrayContaining([featureGoal.id, coverageGoal.id])
+      );
+
+      const repositoryEvidence = await buildTaskGenerationEvidence({
+        repoPath: repoRoot,
+      });
+      expect(repositoryEvidence).toMatchObject({
+        repositoryId: project.id,
+        missionId: null,
+        taskCandidateId: null,
+        taskCandidate: null,
+        projectWideConstraints: [
+          expect.objectContaining({
+            goalId: coverageGoal.id,
+            title: 'カバレッジ維持',
+          }),
+        ],
+      });
+
+      const staleCandidateEvidence = await buildTaskGenerationEvidence({
+        repositoryId: project.id,
+        taskCandidateId: crypto.randomUUID(),
+      });
+      expect(staleCandidateEvidence).toMatchObject({
+        repositoryId: project.id,
+        taskCandidate: null,
+        warnings: [expect.stringContaining('mission task candidate not found')],
+      });
+
+      const context = (await compileOntologyModuleContext({
+        repoPath: process.cwd(),
+        repositoryId: project.id,
+        taskCandidateId: generated.candidates[0].id,
+        goal: 'Project Detail Mission task candidate UI',
+        primaryModule: 'project-detail',
+      })) as {
+        taskGenerationEvidence: { available: boolean; taskCandidate: { id: string } | null };
+        summary: { taskScopedSummary: string };
+        warnings: string[];
+      };
+      expect(context.taskGenerationEvidence).toMatchObject({
+        available: true,
+        taskCandidate: { id: generated.candidates[0].id },
+      });
+      expect(context.summary.taskScopedSummary).toContain('Plan mode open questions');
+      expect(context.warnings).toEqual(
+        expect.arrayContaining([expect.stringContaining('differs from manifest-selected module')])
+      );
     } finally {
       fs.rmSync(repoRoot, { recursive: true, force: true });
     }
@@ -928,6 +1139,67 @@ describe('Project Detail backend', () => {
     }
   });
 
+  it('requests Vitest json-summary coverage artifacts for project quality runs', async () => {
+    const repoRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'nightworkers-detail-coverage-reporter-')
+    );
+    try {
+      fs.mkdirSync(path.join(repoRoot, 'scripts'), { recursive: true });
+      fs.writeFileSync(
+        path.join(repoRoot, 'scripts', 'write-coverage-if-summary-reporter.cjs'),
+        [
+          "const fs = require('node:fs');",
+          "if (!process.argv.includes('--coverage.reporter=json-summary')) process.exit(0);",
+          "fs.mkdirSync('coverage', { recursive: true });",
+          'fs.writeFileSync(',
+          "  'coverage/coverage-summary.json',",
+          '  JSON.stringify({',
+          '    total: {',
+          '      statements: { pct: 91 },',
+          '      branches: { pct: 90 },',
+          '      functions: { pct: 92 },',
+          '      lines: { pct: 93 }',
+          '    }',
+          '  })',
+          ');',
+        ].join('\n'),
+        'utf8'
+      );
+      fs.writeFileSync(
+        path.join(repoRoot, 'package.json'),
+        JSON.stringify({
+          scripts: {
+            test: 'echo unit',
+            'test:coverage': 'node scripts/write-coverage-if-summary-reporter.cjs',
+          },
+        }),
+        'utf8'
+      );
+      const project = await createRepository(repoRoot);
+
+      const runRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/quality/runs`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ runType: 'unit' }),
+        }
+      );
+
+      expect(runRes.status).toBe(201);
+      const run = await runRes.json();
+      expect(run.status).toBe('completed');
+      expect(run.command).toContain('--coverage.reporter=json-summary');
+      expect(run.errorMessage).toBeNull();
+      expect(run.coverageSummary.total.lines.pct).toBe(93);
+      expect(run.coverageGate).toMatchObject({
+        passed: true,
+      });
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
   it('uses all quality runs as the latest coverage and E2E display source', async () => {
     const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-quality-all-'));
     try {
@@ -1011,6 +1283,77 @@ describe('Project Detail backend', () => {
         status: 'passed',
         total: 0,
         suites: [],
+      });
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('requests Playwright JSON artifacts for E2E quality runs', async () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-e2e-reporter-'));
+    try {
+      fs.mkdirSync(path.join(repoRoot, 'scripts'), { recursive: true });
+      fs.writeFileSync(
+        path.join(repoRoot, 'scripts', 'write-e2e-if-json-reporter.cjs'),
+        [
+          "const fs = require('node:fs');",
+          "const path = require('node:path');",
+          'const outputFile = process.env.PLAYWRIGHT_JSON_OUTPUT_FILE;',
+          "const hasJsonReporter = process.argv.some((arg) => arg.includes('--reporter=') && arg.includes('json'));",
+          'if (!outputFile || !hasJsonReporter) process.exit(0);',
+          'fs.mkdirSync(path.dirname(outputFile), { recursive: true });',
+          'fs.writeFileSync(',
+          '  outputFile,',
+          '  JSON.stringify({',
+          '    suites: [',
+          '      {',
+          "        title: 'smoke.spec.ts',",
+          '        specs: [',
+          '          {',
+          "            title: 'public screens render',",
+          '            tests: [{ results: [{ status: "passed", duration: 120 }] }]',
+          '          }',
+          '        ]',
+          '      }',
+          '    ]',
+          '  })',
+          ');',
+        ].join('\n'),
+        'utf8'
+      );
+      fs.writeFileSync(
+        path.join(repoRoot, 'package.json'),
+        JSON.stringify({
+          scripts: {
+            test: 'echo unit',
+            'test:e2e': 'node scripts/write-e2e-if-json-reporter.cjs',
+          },
+        }),
+        'utf8'
+      );
+      const project = await createRepository(repoRoot);
+
+      const runRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/quality/runs`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ runType: 'e2e' }),
+        }
+      );
+
+      expect(runRes.status).toBe(201);
+      const run = await runRes.json();
+      expect(run.status).toBe('completed');
+      expect(run.command).toContain('PLAYWRIGHT_JSON_OUTPUT_FILE');
+      expect(run.command).toContain('--reporter=list,json');
+      expect(run.errorMessage).toBeNull();
+      expect(run.e2eSummary).toMatchObject({
+        status: 'passed',
+        total: 1,
+        passed: 1,
+        failed: 0,
+        suites: [{ title: 'smoke.spec.ts', status: 'passed', tests: 1 }],
       });
     } finally {
       fs.rmSync(repoRoot, { recursive: true, force: true });

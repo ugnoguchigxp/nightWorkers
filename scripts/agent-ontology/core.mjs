@@ -251,29 +251,79 @@ export function compileModuleContext(input = {}) {
   const repoRoot = resolveRepoRoot(input);
   const goal = String(input.goal || '').trim();
   const indexAvailable = moduleIndexExists(repoRoot);
+  const taskEvidence = normalizeTaskGenerationEvidence(input.taskGenerationEvidence);
+  const memoryEvidence = normalizeMemoryEvidence(input.memoryEvidence);
   const routing =
     indexAvailable && input.primaryModule && input.primaryModule !== 'unknown'
       ? {
           primaryModule: input.primaryModule,
           secondaryModules: arrayOfStrings(input.secondaryModules),
           confidence: typeof input.confidence === 'number' ? input.confidence : undefined,
+          reason: typeof input.reason === 'string' ? input.reason : undefined,
+          source: 'explicit',
         }
       : classifyGoal({ repoRoot, goal });
 
   if (routing.primaryModule === 'unknown' || routing.primaryModule === 'emerging') {
+    const warnings = [
+      'module routing is low confidence',
+      ...taskEvidence.warnings,
+      ...memoryEvidence.warnings,
+    ];
+    const summaryType = 'task_scoped';
+    const domainSummary =
+      routing.primaryModule === 'emerging'
+        ? 'No stable module manifest owns this goal yet. Treat this as an emerging module and define a proposed boundary before editing.'
+        : 'No stable module manifest could be selected. Investigate or ask for clarification before editing.';
     return {
       module: routing.primaryModule,
-      summaryType: 'task_scoped',
-      domainSummary:
-        routing.primaryModule === 'emerging'
-          ? 'No stable module manifest owns this goal yet. Treat this as an emerging module and define a proposed boundary before editing.'
-          : 'No stable module manifest could be selected. Investigate or ask for clarification before editing.',
+      summaryType,
+      domainSummary,
       evidenceSources: {
         manifestDigest: null,
         codeEvidenceDigest: null,
-        taskGenerationEvidence: Boolean(input.taskGenerationEvidence),
-        memoryEvidence: false,
+        taskGenerationEvidence: taskEvidence.available,
+        memoryEvidence: memoryEvidence.available,
       },
+      moduleManifest: {
+        available: false,
+        source: 'manifest',
+        digest: null,
+        module: routing.primaryModule,
+        manifestPath: null,
+        summary: null,
+        responsibilities: [],
+        ownedPaths: [],
+        readMostlyPaths: [],
+        invariants: [],
+        forbiddenMutations: [],
+        verification: null,
+      },
+      codeEvidence: {
+        source: 'repository',
+        digest: null,
+        likelyFiles: [],
+      },
+      taskGenerationEvidence: taskEvidence.section,
+      memoryEvidence: memoryEvidence.section,
+      llmSynthesis: {
+        used: false,
+        reason: 'deterministic fallback summary only',
+      },
+      summary: {
+        canonicalDomainSummary: null,
+        taskScopedSummary: buildTaskScopedSummary({
+          domainSummary,
+          routing,
+          taskEvidence: taskEvidence.section,
+          boundaryWarnings: ['Do not perform repository-wide edits until a module boundary is selected.'],
+        }),
+      },
+      telemetry: buildOntologyTelemetry({
+        routing,
+        taskEvidence,
+        verificationPlan: [],
+      }),
       relevantConcepts: [],
       relevantInvariants: [],
       likelyFiles: [],
@@ -281,7 +331,7 @@ export function compileModuleContext(input = {}) {
       knownPitfalls: [],
       verificationPlan: [],
       routing,
-      warnings: ['module routing is low confidence'],
+      warnings,
     };
   }
 
@@ -290,21 +340,79 @@ export function compileModuleContext(input = {}) {
   const likelyFiles = collectLikelyFiles(repoRoot, manifest, 12);
   const codeEvidenceDigest = hashText(JSON.stringify({ module: manifest.id, likelyFiles }));
   const secondaryModules = arrayOfStrings(routing.secondaryModules);
+  const verificationPlan = verificationCommands(manifest.verification?.focused);
+  const boundaryWarnings = arrayOfStrings(manifest.forbiddenMutations).map(
+    (mutation) => `Do not change ${mutation} from ${manifest.id} work.`
+  );
+  const warnings = [
+    ...taskEvidence.warnings,
+    ...memoryEvidence.warnings,
+    ...detectTaskGenerationContradictions({
+      manifest,
+      routing,
+      taskEvidence: taskEvidence.section,
+      indexAvailable,
+      repoRoot,
+    }),
+  ];
   const crossingText =
     secondaryModules.length > 0
       ? ` Secondary modules for this task: ${secondaryModules.join(', ')}.`
       : '';
+  const canonicalDomainSummary = manifest.summary;
+  const domainSummary = `${manifest.summary}${crossingText}`;
+  const summaryType = input.summaryType || (taskEvidence.available ? 'task_scoped' : 'canonical');
 
   return {
     module: manifest.id,
-    summaryType: input.summaryType || (input.taskGenerationEvidence ? 'task_scoped' : 'canonical'),
-    domainSummary: `${manifest.summary}${crossingText}`,
+    summaryType,
+    domainSummary,
     evidenceSources: {
       manifestDigest: loaded.digest,
       codeEvidenceDigest,
-      taskGenerationEvidence: Boolean(input.taskGenerationEvidence),
-      memoryEvidence: Boolean(input.memoryEvidence),
+      taskGenerationEvidence: taskEvidence.available,
+      memoryEvidence: memoryEvidence.available,
     },
+    moduleManifest: {
+      available: true,
+      source: 'manifest',
+      digest: loaded.digest,
+      module: manifest.id,
+      manifestPath: loaded.manifestPath,
+      summary: manifest.summary,
+      responsibilities: arrayOfStrings(manifest.responsibilities),
+      ownedPaths: arrayOfStrings(manifest.ownedPaths),
+      readMostlyPaths: arrayOfStrings(manifest.readMostlyPaths),
+      invariants: arrayOfObjects(manifest.invariants),
+      forbiddenMutations: arrayOfStrings(manifest.forbiddenMutations),
+      verification: manifest.verification ?? null,
+    },
+    codeEvidence: {
+      source: 'repository',
+      digest: codeEvidenceDigest,
+      likelyFiles,
+    },
+    taskGenerationEvidence: taskEvidence.section,
+    memoryEvidence: memoryEvidence.section,
+    llmSynthesis: {
+      used: false,
+      reason: 'deterministic manifest and task evidence summary only',
+    },
+    summary: {
+      canonicalDomainSummary,
+      taskScopedSummary: buildTaskScopedSummary({
+        domainSummary,
+        routing,
+        taskEvidence: taskEvidence.section,
+        boundaryWarnings,
+        verificationPlan,
+      }),
+    },
+    telemetry: buildOntologyTelemetry({
+      routing,
+      taskEvidence,
+      verificationPlan,
+    }),
     relevantConcepts: arrayOfObjects(manifest.ubiquitousLanguage)
       .map((item) => String(item.name || '').trim())
       .filter(Boolean),
@@ -312,13 +420,11 @@ export function compileModuleContext(input = {}) {
       .map((item) => String(item.id || '').trim())
       .filter(Boolean),
     likelyFiles,
-    boundaryWarnings: arrayOfStrings(manifest.forbiddenMutations).map(
-      (mutation) => `Do not change ${mutation} from ${manifest.id} work.`
-    ),
+    boundaryWarnings,
     knownPitfalls: [],
-    verificationPlan: verificationCommands(manifest.verification?.focused),
+    verificationPlan,
     routing,
-    warnings: [],
+    warnings,
   };
 }
 
@@ -617,6 +723,216 @@ function verificationCommands(items) {
   return arrayOfObjects(items)
     .map((item) => String(item.command || '').trim())
     .filter(Boolean);
+}
+
+function normalizeTaskGenerationEvidence(value) {
+  if (!value) {
+    return {
+      available: false,
+      section: {
+        available: false,
+        source: null,
+        reason: 'task generation evidence not provided',
+      },
+      warnings: [],
+    };
+  }
+  if (value === true) {
+    return {
+      available: true,
+      section: {
+        available: true,
+        source: 'caller_flag',
+        raw: null,
+        goals: [],
+        taskCandidate: null,
+        projectWideConstraints: [],
+        acceptanceCriteria: [],
+        verificationHints: [],
+        planModeOpenQuestions: [],
+        warnings: ['task generation evidence flag was provided without structured evidence'],
+      },
+      warnings: ['task generation evidence flag was provided without structured evidence'],
+    };
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return {
+      available: false,
+      section: {
+        available: false,
+        source: null,
+        reason: 'task generation evidence was not an object',
+      },
+      warnings: ['task generation evidence was ignored because it was not an object'],
+    };
+  }
+
+  const record = value;
+  const taskCandidate = normalizeTaskCandidateEvidence(record.taskCandidate);
+  const projectWideConstraints = arrayOfObjects(record.projectWideConstraints).map((item) => ({
+    goalId: stringOrNull(item.goalId || item.id),
+    title: String(item.title || '').trim(),
+    intent: String(item.intent || '').trim() || 'unknown',
+    reason: stringOrNull(item.reason),
+  }));
+  const planModeOpenQuestions = mergeUniqueStrings([
+    ...arrayOfStrings(record.planModeOpenQuestions),
+    ...(taskCandidate?.planModeOpenQuestions ?? []),
+  ]);
+  const warnings = arrayOfStrings(record.warnings);
+  return {
+    available: true,
+    section: {
+      available: true,
+      source: String(record.source || 'caller').trim(),
+      repositoryId: stringOrNull(record.repositoryId),
+      missionId: stringOrNull(record.missionId),
+      taskCandidateId: stringOrNull(record.taskCandidateId || taskCandidate?.id),
+      selectedGoalIds: arrayOfStrings(record.selectedGoalIds),
+      goals: arrayOfObjects(record.goals).map((goal) => ({
+        id: String(goal.id || '').trim(),
+        title: String(goal.title || '').trim(),
+        scope: String(goal.scope || 'unknown').trim(),
+        intent: String(goal.intent || 'unknown').trim(),
+        confidencePercent: numberOrZero(goal.confidencePercent),
+        reason: stringOrNull(goal.reason),
+      })),
+      taskCandidate,
+      projectWideConstraints,
+      acceptanceCriteria: arrayOfStrings(record.acceptanceCriteria),
+      verificationHints: arrayOfStrings(record.verificationHints),
+      planModeOpenQuestions,
+      warnings,
+      raw: record.raw ?? null,
+    },
+    warnings,
+  };
+}
+
+function normalizeTaskCandidateEvidence(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const routing = value.moduleRouting && typeof value.moduleRouting === 'object'
+    ? value.moduleRouting
+    : value;
+  return {
+    id: stringOrNull(value.id),
+    title: String(value.title || '').trim(),
+    kind: String(value.kind || value.candidateKind || 'feature_followup').trim(),
+    primaryModule: stringOrNull(routing.primaryModule),
+    secondaryModules: arrayOfStrings(routing.secondaryModules),
+    routingConfidencePercent: numberOrZero(
+      routing.routingConfidencePercent ?? routing.confidencePercent
+    ),
+    routingReason: stringOrNull(routing.routingReason ?? routing.reason),
+    planModeOpenQuestions: arrayOfStrings(value.planModeOpenQuestions),
+  };
+}
+
+function normalizeMemoryEvidence(value) {
+  if (!value) {
+    return {
+      available: false,
+      section: { available: false, source: null, reason: 'memory evidence not provided' },
+      warnings: [],
+    };
+  }
+  return {
+    available: true,
+    section: {
+      available: true,
+      source: 'caller',
+      summary: typeof value === 'string' ? value : null,
+      raw: typeof value === 'string' ? null : value,
+    },
+    warnings: [],
+  };
+}
+
+function detectTaskGenerationContradictions(input) {
+  const warnings = [];
+  const taskCandidate = input.taskEvidence.taskCandidate;
+  const hintedPrimary = taskCandidate?.primaryModule;
+  if (hintedPrimary && hintedPrimary !== input.manifest.id) {
+    warnings.push(
+      `Task generation primaryModule ${hintedPrimary} differs from manifest-selected module ${input.manifest.id}; manifest ownership was kept.`
+    );
+  }
+  for (const moduleId of [hintedPrimary, ...(taskCandidate?.secondaryModules ?? [])].filter(Boolean)) {
+    if (input.indexAvailable && !moduleExists(input.repoRoot, moduleId)) {
+      warnings.push(
+        `Task generation referenced unknown module ${moduleId}; it was kept as an unconfirmed task hint.`
+      );
+    }
+  }
+  return warnings;
+}
+
+function moduleExists(repoRoot, moduleId) {
+  try {
+    readManifestById(repoRoot, moduleId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function buildTaskScopedSummary(input) {
+  const lines = [input.domainSummary];
+  const taskCandidate = input.taskEvidence?.taskCandidate;
+  if (taskCandidate) {
+    if (taskCandidate.title) lines.push(`Task candidate: ${taskCandidate.title}.`);
+    if (taskCandidate.kind) lines.push(`Candidate kind: ${taskCandidate.kind}.`);
+    if (taskCandidate.primaryModule) {
+      lines.push(
+        `Task generation hinted primary module ${taskCandidate.primaryModule} with confidence ${taskCandidate.routingConfidencePercent}%.`
+      );
+    }
+    if (taskCandidate.routingReason) lines.push(`Routing hint reason: ${taskCandidate.routingReason}.`);
+  }
+  const constraints = input.taskEvidence?.projectWideConstraints ?? [];
+  if (constraints.length > 0) {
+    lines.push(
+      `Project-wide constraints: ${constraints
+        .map((item) => item.title || item.goalId)
+        .filter(Boolean)
+        .join(', ')}.`
+    );
+  }
+  const questions = input.taskEvidence?.planModeOpenQuestions ?? [];
+  if (questions.length > 0) {
+    lines.push(`Plan mode open questions: ${questions.join(' / ')}`);
+  }
+  if ((input.verificationPlan ?? []).length > 0) {
+    lines.push(`Focused verification: ${(input.verificationPlan ?? []).join(' | ')}`);
+  }
+  if ((input.boundaryWarnings ?? []).length > 0) {
+    lines.push(`Boundary warnings: ${(input.boundaryWarnings ?? []).join(' ')}`);
+  }
+  return lines.filter(Boolean).join(' ');
+}
+
+function buildOntologyTelemetry(input) {
+  return {
+    primaryModule: input.routing.primaryModule ?? null,
+    secondaryModules: arrayOfStrings(input.routing.secondaryModules),
+    boundaryDecision: null,
+    unexplainedCrossingsCount: null,
+    focusedVerificationCommands: arrayOfStrings(input.verificationPlan),
+    taskGenerationEvidenceAvailable: Boolean(input.taskEvidence.available),
+    taskCandidateId: input.taskEvidence.section?.taskCandidateId ?? null,
+  };
+}
+
+function numberOrZero(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function stringOrNull(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function mergeUniqueStrings(values) {
+  return [...new Set(arrayOfStrings(values))];
 }
 
 function isVerificationPath(file, manifest) {

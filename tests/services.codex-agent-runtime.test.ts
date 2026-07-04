@@ -331,6 +331,12 @@ describe('CodexAgentRuntime', () => {
     expect(prompt).toContain('Codex native command_execution events');
     expect(prompt).toContain('Do not create a fallback static app');
     expect(prompt).toContain('do not stop with a plan-only answer or next-steps summary');
+    expect(prompt).toContain('Module ontology protocol:');
+    expect(prompt).toContain('nightworkers.classify_goal');
+    expect(prompt).toContain('nightworkers.compile_module_context');
+    expect(prompt).toContain('nightworkers.check_boundary');
+    expect(prompt).toContain('nightworkers.get_verification_plan');
+    expect(prompt).toContain('primary module, secondary modules, boundary crossings');
   });
 
   it('builds Codex runtime prompt parts without changing the prompt string', () => {
@@ -396,10 +402,7 @@ describe('CodexAgentRuntime', () => {
       resolveCodexRuntimeMcpConfigState({
         env: { NIGHTWORKERS_EXECUTION_MODE: 'planning' } as never,
       }).expectedTools
-    ).toEqual([
-      'nightworkers.read_current_specification',
-      'nightworkers.list_recent_specifications',
-    ]);
+    ).toEqual(getNightWorkersCodexToolNames({ executionMode: 'planning' }));
   });
 
   it('emits planning runtime contract with read-only NightWorkers MCP tools', async () => {

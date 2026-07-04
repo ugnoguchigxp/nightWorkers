@@ -27,6 +27,14 @@ export function refreshFxRates() {
   return apiFetch('/api/settings/fx/refresh', { method: 'POST' });
 }
 
+export function fetchPricingRows() {
+  return apiFetch('/api/settings/pricing');
+}
+
+export function importPublicPricingRows() {
+  return apiFetch('/api/settings/pricing/import-public', { method: 'POST' });
+}
+
 export function fetchTestQualitySettings(repositoryId: string) {
   return apiFetch(`/api/repositories/${repositoryId}/settings/test-quality`);
 }

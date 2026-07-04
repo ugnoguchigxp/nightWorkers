@@ -123,6 +123,15 @@ const pricingInputSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
+const publicPricingImportSchema = z.object({
+  sourceUrl: z.string(),
+  fetchedAt: z.string(),
+  imported: z.number(),
+  skipped: z.number(),
+  providers: z.array(z.string()),
+  rows: z.array(pricingRowSchema),
+});
+
 const startupPreflightSchema = z.object({
   mode: z.enum(['desktop', 'development']),
   runtimeRoot: z.string(),
@@ -314,6 +323,21 @@ export const seedCodexPricingRoute = createRoute({
     200: {
       content: { 'application/json': { schema: z.array(pricingRowSchema) } },
       description: 'Seed official Codex credit pricing rows',
+    },
+  },
+});
+
+export const importPublicPricingRoute = createRoute({
+  method: 'post',
+  path: '/pricing/import-public',
+  responses: {
+    200: {
+      content: { 'application/json': { schema: publicPricingImportSchema } },
+      description: 'Import LLM pricing rows from the public LiteLLM model price JSON',
+    },
+    500: {
+      content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      description: 'Public LLM pricing import failed',
     },
   },
 });

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -20,14 +21,23 @@ type CoreModule = {
   compileModuleContext: (input: {
     repoRoot: string;
     goal: string;
-    primaryModule: string;
+    primaryModule?: string;
     secondaryModules?: string[];
     taskGenerationEvidence?: unknown;
   }) => {
     module: string;
     summaryType: string;
     evidenceSources: { manifestDigest: string; taskGenerationEvidence: boolean };
+    moduleManifest: { available: boolean; module: string | null; digest: string | null };
+    codeEvidence: { source: string; likelyFiles: string[] };
+    taskGenerationEvidence: {
+      available: boolean;
+      taskCandidate?: { primaryModule: string | null; kind: string } | null;
+      projectWideConstraints?: Array<{ goalId: string; title: string }>;
+    };
+    summary: { canonicalDomainSummary: string | null; taskScopedSummary: string | null };
     relevantInvariants: string[];
+    warnings: string[];
   };
   checkBoundary: (input: {
     repoRoot: string;
@@ -102,6 +112,27 @@ describe('agent ontology helpers', () => {
         manifestDigest: expect.stringMatching(/^sha256:/),
         taskGenerationEvidence: true,
       },
+      moduleManifest: {
+        available: true,
+        module: 'project-detail',
+        digest: expect.stringMatching(/^sha256:/),
+      },
+      codeEvidence: {
+        source: 'repository',
+        likelyFiles: expect.arrayContaining([
+          'api/modules/project-detail/project-detail.service.ts',
+        ]),
+      },
+      taskGenerationEvidence: {
+        available: true,
+        taskCandidate: expect.objectContaining({
+          kind: 'feature_entrypoint',
+        }),
+      },
+      summary: {
+        canonicalDomainSummary: expect.stringContaining('Project Detail'),
+        taskScopedSummary: expect.stringContaining('Candidate kind: feature_entrypoint'),
+      },
       relevantInvariants: expect.arrayContaining(['goal-mission-taskcandidate-tree']),
     });
 
@@ -141,6 +172,46 @@ describe('agent ontology helpers', () => {
 
     expect(boundary.decision).toBe('needs_user_confirmation');
     expect(boundary.crossings).toEqual([]);
+  });
+
+  it('keeps manifest ownership when task generation routing conflicts', async () => {
+    const core = await loadCore();
+
+    const context = core.compileModuleContext({
+      repoRoot: process.cwd(),
+      goal: 'Project Detail Mission task candidate UI',
+      primaryModule: 'project-detail',
+      taskGenerationEvidence: {
+        source: 'nightworkers_project_detail',
+        taskCandidate: {
+          id: crypto.randomUUID(),
+          title: 'Settings の候補',
+          kind: 'feature_entrypoint',
+          primaryModule: 'settings',
+          secondaryModules: ['missing-module'],
+          routingConfidencePercent: 80,
+          routingReason: 'fixture conflict',
+          planModeOpenQuestions: ['境界を確認する。'],
+        },
+        projectWideConstraints: [
+          { goalId: crypto.randomUUID(), title: 'Coverage', intent: 'maintain_threshold' },
+        ],
+      },
+    });
+
+    expect(context.module).toBe('project-detail');
+    expect(context.taskGenerationEvidence.taskCandidate).toMatchObject({
+      primaryModule: 'settings',
+      kind: 'feature_entrypoint',
+    });
+    expect(context.summary.taskScopedSummary).toContain('Project-wide constraints: Coverage');
+    expect(context.summary.taskScopedSummary).toContain('Plan mode open questions');
+    expect(context.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('differs from manifest-selected module project-detail'),
+        expect.stringContaining('unknown module missing-module'),
+      ])
+    );
   });
 
   it('fails validation deterministically for missing manifest paths', async () => {
@@ -189,6 +260,7 @@ describe('agent ontology helpers', () => {
     expect(context).toMatchObject({
       module: 'emerging',
       evidenceSources: { manifestDigest: null },
+      moduleManifest: { available: false },
     });
 
     const boundary = core.checkBoundary({

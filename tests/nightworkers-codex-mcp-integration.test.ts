@@ -215,6 +215,25 @@ describe('NightWorkers Codex MCP integration', () => {
       );
       await client.connect(transport);
 
+      const contextResult = await client.callTool(
+        {
+          name: 'compile_module_context',
+          arguments: {
+            goal: 'todolist を作る',
+          },
+        },
+        undefined,
+        { timeout: 30_000 }
+      );
+      expect(contextResult.isError).toBeFalsy();
+      expect(contextResult.structuredContent).toMatchObject({
+        payload: {
+          evidenceSources: {
+            taskGenerationEvidence: false,
+          },
+        },
+      });
+
       const callResult = await client.callTool(
         {
           name: 'import_project',

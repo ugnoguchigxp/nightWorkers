@@ -199,6 +199,21 @@ export const nightWorkersCompileModuleContextInputSchema = z.object({
   goal: z.string().trim().min(1).describe('User goal for the task-scoped module context.'),
   primaryModule: z.string().trim().optional().describe('Primary module id.'),
   secondaryModules: z.array(z.string().trim().min(1)).optional().describe('Secondary module ids.'),
+  repositoryId: z
+    .string()
+    .uuid()
+    .optional()
+    .describe('Optional NightWorkers repository id used to collect task generation evidence.'),
+  missionId: z
+    .string()
+    .uuid()
+    .optional()
+    .describe('Optional Mission id used to scope task generation evidence when available.'),
+  taskCandidateId: z
+    .string()
+    .uuid()
+    .optional()
+    .describe('Optional Mission TaskCandidate id used to collect task generation evidence.'),
   taskGenerationEvidence: z
     .unknown()
     .optional()

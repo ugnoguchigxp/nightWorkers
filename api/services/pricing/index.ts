@@ -21,6 +21,41 @@ export type LlmPricingInput = {
 export type LlmPricingRow = typeof llmModelPricing.$inferSelect;
 
 const CODEX_PRICING_SOURCE_URL = 'https://developers.openai.com/codex/pricing#how-do-credits-work';
+const LITELLM_MODEL_PRICES_URL =
+  'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json';
+const LITELLM_PRICING_SOURCE_LABEL = 'LiteLLM model_prices_and_context_window.json';
+const PUBLIC_PRICING_COVERED_PROVIDERS = new Set([
+  'openai',
+  'anthropic',
+  'google',
+  'xai',
+  'deepseek',
+  'z-ai',
+  'qwen',
+]);
+
+type PricingFetch = (url: string) => Promise<{
+  ok: boolean;
+  status: number;
+  statusText: string;
+  json: () => Promise<unknown>;
+}>;
+
+type LiteLlmPriceRow = {
+  litellm_provider?: unknown;
+  input_cost_per_token?: unknown;
+  output_cost_per_token?: unknown;
+  cache_read_input_token_cost?: unknown;
+};
+
+export type PublicPricingImportResult = {
+  sourceUrl: string;
+  fetchedAt: string;
+  imported: number;
+  skipped: number;
+  providers: string[];
+  rows: LlmPricingRow[];
+};
 
 const CODEX_PRICING_SEED: LlmPricingInput[] = [
   {
@@ -123,27 +158,87 @@ export async function seedCodexPricingRows() {
   return seeded;
 }
 
+export async function importPublicPricingRows(
+  input: { fetchImpl?: PricingFetch; sourceUrl?: string } = {}
+): Promise<PublicPricingImportResult> {
+  const sourceUrl = input.sourceUrl || LITELLM_MODEL_PRICES_URL;
+  const fetchImpl = input.fetchImpl || globalThis.fetch;
+  if (!fetchImpl) throw new Error('fetch is not available in this runtime');
+
+  const response = await fetchImpl(sourceUrl);
+  if (!response.ok) {
+    throw new Error(`LLM pricing fetch failed: ${response.status} ${response.statusText}`);
+  }
+
+  const payload = await response.json();
+  const rawRows = parseLiteLlmRows(payload);
+  const fetchedAt = new Date().toISOString();
+  const effectiveFrom = startOfUtcDay(fetchedAt).toISOString();
+  const providers = new Set<string>();
+  const prepared = new Map<string, LlmPricingInput>();
+  let skipped = 0;
+
+  for (const rawRow of rawRows) {
+    const mappedRows = mapLiteLlmPriceRow(rawRow, { sourceUrl, fetchedAt, effectiveFrom });
+    if (!mappedRows.length) {
+      skipped += 1;
+      continue;
+    }
+    for (const mappedRow of mappedRows) {
+      if (!PUBLIC_PRICING_COVERED_PROVIDERS.has(mappedRow.provider)) {
+        skipped += 1;
+        continue;
+      }
+      providers.add(mappedRow.provider);
+      prepared.set(`${mappedRow.provider}\u0000${mappedRow.model}`, mappedRow);
+    }
+  }
+
+  const rows: LlmPricingRow[] = [];
+  for (const row of prepared.values()) {
+    rows.push(await upsertPricingRow(row));
+  }
+
+  return {
+    sourceUrl,
+    fetchedAt,
+    imported: rows.length,
+    skipped,
+    providers: [...providers].sort(),
+    rows,
+  };
+}
+
 export async function findPricingForUsage(input: {
   provider: string;
   model: string | null;
   createdAt: Date;
 }) {
   if (!input.model) return null;
-  const rows = await db
-    .select()
-    .from(llmModelPricing)
-    .where(
-      and(
-        eq(llmModelPricing.enabled, true),
-        eq(llmModelPricing.provider, input.provider),
-        eq(llmModelPricing.model, input.model)
-      )
-    )
-    .orderBy(desc(llmModelPricing.manualOverride), desc(llmModelPricing.effectiveFrom));
+  for (const provider of pricingProviderCandidates(input.provider, input.model)) {
+    const exactRow = await findBestPricingRow({
+      provider,
+      model: input.model,
+      createdAt: input.createdAt,
+    });
+    if (exactRow) return exactRow;
+  }
 
-  return (
-    rows.find((row) => row.effectiveFrom.getTime() <= input.createdAt.getTime()) || rows[0] || null
-  );
+  const modelLookupKeys = pricingModelLookupKeys(input.model);
+  for (const provider of pricingProviderCandidates(input.provider, input.model)) {
+    const providerRows = await db
+      .select()
+      .from(llmModelPricing)
+      .where(and(eq(llmModelPricing.enabled, true), eq(llmModelPricing.provider, provider)))
+      .orderBy(desc(llmModelPricing.manualOverride), desc(llmModelPricing.effectiveFrom));
+    const fuzzyRows = providerRows.filter((row) =>
+      setsOverlap(pricingModelLookupKeys(row.model), modelLookupKeys)
+    );
+    const fuzzyRow = chooseBestPricingRow(fuzzyRows, input.createdAt);
+    if (fuzzyRow) return fuzzyRow;
+  }
+
+  return null;
 }
 
 export function calculateUsageCost(input: {
@@ -213,4 +308,228 @@ function normalizeTokens(value: number | null | undefined) {
 
 function normalizePrice(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function parseLiteLlmRows(payload: unknown): Array<{ model: string; row: LiteLlmPriceRow }> {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('LiteLLM pricing payload was not a model price object');
+  }
+  return Object.entries(payload as Record<string, unknown>).map(([model, row]) => ({
+    model,
+    row: row && typeof row === 'object' ? (row as LiteLlmPriceRow) : {},
+  }));
+}
+
+function mapLiteLlmPriceRow(
+  input: { model: string; row: LiteLlmPriceRow },
+  context: { sourceUrl: string; fetchedAt: string; effectiveFrom: string }
+): LlmPricingInput[] {
+  const model = input.model.trim();
+  if (!model) return [];
+
+  const sourceProvider =
+    typeof input.row.litellm_provider === 'string' ? input.row.litellm_provider.trim() : '';
+  const provider = normalizeLiteLlmProvider(sourceProvider, model);
+  if (!provider) return [];
+
+  const inputPer1m = perMillionPrice(input.row.input_cost_per_token);
+  const outputPer1m = perMillionPrice(input.row.output_cost_per_token);
+  const cachedInputPer1m = perMillionPrice(input.row.cache_read_input_token_cost);
+  if (inputPer1m === null && outputPer1m === null && cachedInputPer1m === null) return [];
+
+  const sourceLabel = sourceProvider
+    ? `${LITELLM_PRICING_SOURCE_LABEL} (${sourceProvider})`
+    : LITELLM_PRICING_SOURCE_LABEL;
+  const models = pricingModelAliases(model);
+
+  return [...models].map((modelName) => ({
+    provider,
+    model: modelName,
+    currencyCode: 'USD',
+    inputPer1m,
+    cachedInputPer1m,
+    outputPer1m,
+    reasoningOutputPer1m: null,
+    sourceUrl: context.sourceUrl,
+    sourceLabel,
+    effectiveFrom: context.effectiveFrom,
+    fetchedAt: context.fetchedAt,
+    manualOverride: false,
+    enabled: true,
+  }));
+}
+
+function normalizeLiteLlmProvider(provider: string, model: string) {
+  const normalizedProvider = provider.trim().toLowerCase();
+  const normalizedModel = model.trim().toLowerCase();
+
+  if (isQwenModel(normalizedModel)) return 'qwen';
+  if (isZaiModel(normalizedModel)) return 'z-ai';
+  if (normalizedModel.includes('grok') || normalizedProvider === 'xai') return 'xai';
+  if (normalizedModel.includes('deepseek') || normalizedProvider === 'deepseek') return 'deepseek';
+  if (normalizedModel.includes('claude') || normalizedProvider === 'anthropic') return 'anthropic';
+  if (
+    normalizedModel.includes('gemini') ||
+    normalizedProvider === 'gemini' ||
+    normalizedProvider === 'vertex_ai' ||
+    normalizedProvider === 'vertex_ai-language-models'
+  ) {
+    return 'google';
+  }
+  if (
+    normalizedModel.includes('gpt-') ||
+    normalizedModel.includes('o1') ||
+    normalizedModel.includes('o3') ||
+    normalizedModel.includes('o4') ||
+    normalizedProvider === 'openai' ||
+    normalizedProvider === 'azure' ||
+    normalizedProvider === 'azure_ai'
+  ) {
+    return 'openai';
+  }
+
+  return null;
+}
+
+function pricingProviderCandidates(provider: string, model: string) {
+  const candidates = new Set([provider]);
+  const normalizedProvider = provider.toLowerCase();
+  const normalizedModel = model.toLowerCase();
+
+  if (isQwenModel(normalizedModel)) candidates.add('qwen');
+  if (isZaiModel(normalizedModel)) candidates.add('z-ai');
+  if (normalizedModel.includes('grok')) candidates.add('xai');
+  if (normalizedModel.includes('deepseek')) candidates.add('deepseek');
+  if (normalizedModel.includes('claude')) candidates.add('anthropic');
+  if (normalizedModel.includes('gemini')) candidates.add('google');
+  if (isOpenAiModel(normalizedModel) || isOpenAiProviderAlias(normalizedProvider)) {
+    candidates.add('openai');
+  }
+
+  return [...candidates].filter(Boolean);
+}
+
+async function findBestPricingRow(input: { provider: string; model: string; createdAt: Date }) {
+  const rows = await db
+    .select()
+    .from(llmModelPricing)
+    .where(
+      and(
+        eq(llmModelPricing.enabled, true),
+        eq(llmModelPricing.provider, input.provider),
+        eq(llmModelPricing.model, input.model)
+      )
+    )
+    .orderBy(desc(llmModelPricing.manualOverride), desc(llmModelPricing.effectiveFrom));
+
+  return chooseBestPricingRow(rows, input.createdAt);
+}
+
+function chooseBestPricingRow(rows: LlmPricingRow[], createdAt: Date) {
+  return (
+    rows.find((candidate) => candidate.effectiveFrom.getTime() <= createdAt.getTime()) ||
+    rows[0] ||
+    null
+  );
+}
+
+function pricingModelLookupKeys(model: string) {
+  return new Set(
+    [...pricingModelAliases(model)]
+      .map((alias) => normalizePricingModelKey(alias))
+      .filter((alias) => alias.length > 0)
+  );
+}
+
+function normalizePricingModelKey(model: string) {
+  return model.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function setsOverlap(left: Set<string>, right: Set<string>) {
+  for (const value of left) {
+    if (right.has(value)) return true;
+  }
+  return false;
+}
+
+function isQwenModel(model: string) {
+  return (
+    model === 'qwen' ||
+    model.startsWith('qwen') ||
+    model.startsWith('qwen/') ||
+    model.includes('/qwen')
+  );
+}
+
+function isZaiModel(model: string) {
+  return (
+    model.startsWith('z-ai/') ||
+    model.startsWith('zai-') ||
+    model.startsWith('glm-') ||
+    model.includes('/z-ai/') ||
+    model.includes('/zai-') ||
+    model.includes('/glm-')
+  );
+}
+
+function isOpenAiModel(model: string) {
+  return (
+    model.includes('gpt') ||
+    model.includes('codex') ||
+    model.startsWith('o1') ||
+    model.startsWith('o3') ||
+    model.startsWith('o4')
+  );
+}
+
+function isOpenAiProviderAlias(provider: string) {
+  return (
+    provider === 'azure' ||
+    provider === 'azure-openai' ||
+    provider === 'azure_ai' ||
+    provider === 'openai-compatible' ||
+    provider === 'local'
+  );
+}
+
+function perMillionPrice(value: unknown) {
+  const perToken =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim()
+        ? Number(value)
+        : null;
+  return normalizePrice(perToken === null ? null : perToken * 1_000_000);
+}
+
+function pricingModelAliases(model: string) {
+  const aliases = new Set([model]);
+  const slashIndex = model.lastIndexOf('/');
+  if (slashIndex > 0) {
+    const aliasModel = model.slice(slashIndex + 1).trim();
+    if (aliasModel) aliases.add(aliasModel);
+  }
+
+  if (model.startsWith('anthropic.')) {
+    aliases.add(model.slice('anthropic.'.length));
+  }
+  if (model.startsWith('xai/')) {
+    aliases.add(model.slice('xai/'.length));
+  }
+  if (model.startsWith('gemini/')) {
+    aliases.add(model.slice('gemini/'.length));
+  }
+  if (model.startsWith('deepseek/')) {
+    aliases.add(model.slice('deepseek/'.length));
+  }
+  for (const alias of [...aliases]) {
+    const qwenPrefixIndex = alias.lastIndexOf('qwen.');
+    if (qwenPrefixIndex >= 0) aliases.add(alias.slice(qwenPrefixIndex + 'qwen.'.length));
+  }
+  return aliases;
+}
+
+function startOfUtcDay(value: string) {
+  const date = new Date(value);
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }

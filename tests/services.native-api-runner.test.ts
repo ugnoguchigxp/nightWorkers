@@ -490,6 +490,9 @@ describe('NativeApiRunner', () => {
     expect(system).toContain('TodoList pane がユーザーに見える進捗の source of truth');
     expect(system).toContain('todo_list operation=list は診断専用');
     expect(system).toContain('finalReport / finalize_answer の前に open Todo を確認');
+    expect(system).toContain('classify_goal と compile_module_context');
+    expect(system).toContain('check_boundary');
+    expect(system).toContain('primary module、secondary modules、boundary crossings');
   });
 
   it('sanitizes native/API resume history without stale runtime context', () => {

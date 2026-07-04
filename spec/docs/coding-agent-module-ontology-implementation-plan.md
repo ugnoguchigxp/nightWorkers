@@ -1143,6 +1143,316 @@ Failure response:
 
 - If telemetry is noisy, keep only routing, crossing, and verification outcome first.
 
+## 現在地点からの実装ブレイクダウン
+
+この節は、現在の部分実装を前提に、残り作業をレビュー可能な実装単位へ分解する。
+
+現在のベースライン:
+
+- `.agent-ontology/modules.yaml` と 3 つの pilot manifest は存在する。
+- validation、module list、module ontology read、classification、context compilation、boundary check、verification plan lookup の local helper script は存在する。
+- `list_modules`、`get_module_ontology`、`classify_goal`、`compile_module_context`、`check_boundary`、`get_verification_plan` の MCP tool は存在する。
+- Task generation は `candidateKind`、`moduleRouting`、`constraintGoalIds`、`planModeOpenQuestions` を扱い始めている。
+- 残っている主なリスクは、ontology context が helper output として存在する一方で、task generation、prompt setup、boundary check、verification、reporting をつなぐ agent-facing protocol としてはまだ一貫利用されていないことである。
+
+次の実装単位の原則:
+
+- context contract が安定する前に strict enforcement を有効化しない。
+- 既存 3 module の有効性を確認する前に pilot module を増やさない。
+- task generation evidence に manifest ownership を上書きさせない。
+- 各 unit は focused test で確認できる大きさに保つ。
+- deterministic な manifest / code evidence を先に使い、LLM synthesis は evidence layer を分離した後に限定する。
+
+### Unit 1: `compile_module_context` provenance の安定化
+
+Goal:
+
+下流の task generation と coding agent が信頼できる安定 contract として `compile_module_context` を整える。
+
+Tasks:
+
+1. `scripts/agent-ontology/core.mjs` の `compileModuleContext` が、次の evidence section を分離して返すようにする。
+   - `moduleManifest`
+   - `codeEvidence`
+   - `taskGenerationEvidence`
+   - `memoryEvidence`
+   - `llmSynthesis`
+2. agent が読むための既存の簡潔な field は維持する。
+   - `domainSummary`
+   - `relevantConcepts`
+   - `relevantInvariants`
+   - `likelyFiles`
+   - `boundaryWarnings`
+   - `verificationPlan`
+3. contradiction detection を追加する。
+   - task generation が manifest-selected routing と異なる `primaryModule` を示す場合、manifest ownership を維持し warning を返す。
+   - task generation が存在しない module id を参照する場合、confirmed ownership に含めず warning を返す。
+   - task generation evidence が stale、malformed、absent の場合、manifest + code evidence で継続し、利用不可として明示する。
+4. low-confidence behavior を維持する。
+   - `unknown` は investigation-first context を返す。
+   - `emerging` は Plan mode で boundary definition を行う context を返す。
+   - どちらも confirmed module ownership を示さない。
+5. `api/services/agent-ontology/agent-ontology.service.ts` は richer structure を pass-through するために必要な範囲だけ更新する。
+6. `scripts/agent-ontology/smoke-mcp-contract.mjs` で richer context contract を検証する。
+
+Verification:
+
+```bash
+bunx vitest run tests/agent-ontology.test.ts
+node scripts/agent-ontology/smoke-mcp-contract.mjs
+```
+
+Expected:
+
+- canonical context は manifest / code evidence を含み、task-scoped な task generation evidence は含まない。
+- task-scoped context は入力された task generation evidence を分離して含む。
+- contradictory task generation evidence は warning になり、manifest ownership を上書きしない。
+- `unknown` / `emerging` は repository-wide edit guidance を返さない。
+
+Failure response:
+
+- richer contract が冗長になりすぎる場合、agent-facing field は維持し、詳細 provenance を `debug` または `evidence` object に寄せる。
+- contradiction detection が曖昧な場合、この unit では reject より warning を優先する。
+
+### Unit 2: 実 task generation evidence の接続
+
+Goal:
+
+NightWorkers の Goal / Mission / TaskCandidate metadata を task-scoped evidence として `compile_module_context` に接続する。
+
+Detailed execution breakdown:
+
+- `spec/docs/task-generation-ontology-evidence-bridge-implementation-plan.md`
+
+Implementation consideration:
+
+- Unit 2 を実装する場合は、上記 bridge plan を必ず考慮する。
+- Unit 1 では bridge plan を将来 consumer として扱い、`taskGenerationEvidence` を optional evidence slot として壊さない。
+- Unit 2 が未完了の間、Unit 3 以降は `taskGenerationEvidence` が absent / false でも manifest + code evidence で動く必要がある。
+
+Dependencies:
+
+- Unit 1 が完了していること。
+
+Tasks:
+
+1. 保存済み task generation metadata を context evidence shape に変換する小さな adapter を追加する。
+   - Goal interpretation scope / intent。
+   - Goal routing。
+   - TaskCandidate kind。
+   - ModuleRoutingMetadata。
+   - project-wide constraint goal ids。
+   - Plan mode open questions。
+2. この adapter は、現在の task に紐づく Goal、Mission、TaskCandidate がある場合だけ使う。
+3. canonical summary には task generation evidence を入れない。
+4. 次の test case を追加する。
+   - ontology present with matching module routing。
+   - ontology present with contradictory module routing。
+   - ontology absent。
+   - feature entrypoint with project-wide constraints。
+   - low-confidence or missing routing。
+
+Verification:
+
+```bash
+bunx vitest run tests/agent-ontology.test.ts tests/services.mission-task-candidates.test.ts tests/project-detail-backend.test.ts
+```
+
+Expected:
+
+- task-scoped summary に candidate kind と project-wide constraints が反映される。
+- project-wide Goal は verification / acceptance criteria の制約になるが、standalone module ownership にはならない。
+- contradiction は warning として見える。
+- ontology が無い repository でも task candidate generation は失敗しない。
+
+Failure response:
+
+- persisted metadata が不完全な場合、missing-field warning 付きの best-effort evidence として扱う。
+- Project Detail 側の変更が広がりすぎる場合、adapter を pure function に留め、まず fixture metadata を直接渡す test から始める。
+
+### Unit 3: agent prompt integration の追加
+
+Goal:
+
+coding agent の通常 workflow で、広域探索や cross-module edit の前に ontology tool を使えるようにする。
+
+Dependencies:
+
+- Unit 1 が完了していること。
+- Unit 2 は推奨だが、ユーザー goal から始まる単純な coding-agent task では必須ではない。
+
+Tasks:
+
+1. Codex runtime prompt に短い instruction block を追加する。
+   - ontology tool が使える場合、広域 edit の前に user goal を classify する。
+   - selected primary module に対して module context を compile する。
+   - repository-wide search の前に owned paths を探索する。
+   - owned paths 外の planned edit の前に boundary check を行う。
+   - final report に module、boundary crossing、invariant、verification facts を含める。
+2. この instruction は prompt / supervisor layer に置き、LLM provider layer へ用途別 routing policy を追加しない。
+3. ontology が無い、または module が明らかな trivial single-file edit では ontology tool を強制しない。
+4. planning / implementation mode の prompt content と tool availability を検査する test を追加する。
+
+Verification:
+
+```bash
+bunx vitest run tests/services.codex-agent-runtime.test.ts tests/nightworkers-mcp-manifest.test.ts
+```
+
+Expected:
+
+- runtime prompt が長すぎる policy prose ではなく、短い ontology protocol を含む。
+- `classify_goal`、`compile_module_context`、`check_boundary`、`get_verification_plan` は read-only tool として利用可能なままになる。
+- provider-layer code に workflow-specific routing policy が追加されない。
+
+Failure response:
+
+- prompt が長くなりすぎる場合、start-of-task と final-report requirement だけを残し、tool 詳細は MCP description に寄せる。
+- mode-specific tool availability が壊れる場合、prompt behavior ではなく manifest mode filter を先に直す。
+
+### Unit 4: closeout で boundary check を可視化する
+
+Goal:
+
+implementation / review task の final report に boundary check の結果が出るようにする。
+
+Dependencies:
+
+- Unit 3 が完了していること。
+
+Tasks:
+
+1. final-report expectations に次を追加する。
+   - primary module。
+   - secondary modules。
+   - owned paths touched。
+   - boundary crossings。
+   - forbidden areas touched。
+   - invariants checked。
+   - verification run or skipped reason。
+2. `check_boundary` が forbidden path に対して `reject` を返す場合以外、自動 reject はまだ強めない。
+3. `needs_user_confirmation` は、planned and avoidable な unknown path edit の前に agent が停止する条件として扱う。
+4. closeout に boundary facts が要求されることを prompt test または review test で確認する。
+
+Verification:
+
+```bash
+bunx vitest run tests/services.codex-agent-runtime.test.ts tests/services.supervisor-prompt-packet.test.ts
+```
+
+Expected:
+
+- final report requirement に module / boundary facts が含まれる。
+- unknown path edit は confirmation または skipped-edit reason として見える。
+- strict mode はまだ無効のまま。
+
+Failure response:
+
+- closeout format が重すぎる場合、ontology routing を使った task、または owned paths 外の file を触った task だけ full boundary report を必須にする。
+
+### Unit 5: verification plan selection の統合
+
+Goal:
+
+module manifest から focused verification command を選べるようにし、skipped verification を明示する。
+
+Dependencies:
+
+- Unit 3 が完了していること。
+
+Tasks:
+
+1. `get_verification_plan` output を module context または prompt-facing workflow で参照できるようにする。
+2. 通常の module edit では primary module の focused verification を優先する。
+3. declared boundary crossing が secondary module に触る場合だけ secondary module verification を追加する。
+4. implementation task で focused verification を実行しない場合は skipped reason を要求する。
+5. Project Detail と Mission Planner の focused verification suggestion を test する。
+
+Verification:
+
+```bash
+bunx vitest run tests/agent-ontology.test.ts tests/services.codex-agent-runtime.test.ts
+```
+
+Expected:
+
+- focused verification command は selected primary module manifest から出る。
+- secondary module verification は primary focused command の代替ではなく追加として扱われる。
+- missing verification は silently omitted にならず、report 対象になる。
+
+Failure response:
+
+- module verification command が遅い、または flaky な場合、enforcement を強める前に manifest の `baseline`、`focused`、`full` を分け直す。
+
+### Unit 6: 最小限の pilot telemetry を追加する
+
+Goal:
+
+大きな analytics system を作らず、ontology guidance が unexplained scope drift を減らしているか測れるようにする。
+
+Dependencies:
+
+- Unit 4 が完了していること。
+
+Tasks:
+
+1. 最小限の metadata だけを保存または structured event として記録する。
+   - primary module。
+   - secondary modules。
+   - boundary decision。
+   - unexplained crossings count。
+   - focused verification run state。
+2. recent ontology-guided tasks を確認する read-only query または debug report を追加する。
+3. metadata の有効性が見えるまで dashboard は作らない。
+
+Verification:
+
+```bash
+bunx vitest run tests/agent-ontology.test.ts tests/services.run-events.test.ts
+```
+
+Expected:
+
+- pilot task 後に ontology routing と boundary outcome を確認できる。
+- 保存 metadata は小さく、prompt、source、生ログ、secret-bearing content を含まない。
+
+Failure response:
+
+- telemetry が noisy な場合、primary module、boundary decision、verification outcome だけに絞る。
+- storage integration が広すぎる場合、まず structured run event の emit に留め、persistent report は後続に回す。
+
+### 推奨実装順
+
+1. Unit 1: `compile_module_context` provenance の安定化。
+2. Unit 2: 実 task generation evidence の接続。
+3. Unit 3: agent prompt integration の追加。
+4. Unit 5: verification plan selection の統合。
+5. Unit 4: closeout で boundary check を可視化する。
+6. Unit 6: 最小限の pilot telemetry を追加する。
+
+Unit 4 と Unit 5 は、verification selection の方が closeout reporting より先に接続しやすい場合に入れ替えてよい。
+
+### 近い範囲の non-goals
+
+- strict mode を global に有効化しない。
+- deterministic fixture が安定するまで goal classification の LLM reranking を追加しない。
+- 現在の task で繰り返し module boundary を越える必要が見えるまで pilot manifest を増やさない。
+- ontology module に合わせた source file 移動をしない。
+- task generation evidence、memory、LLM summary を module ownership の source truth にしない。
+- project-wide Goal を standalone module ownership に変換しない。
+
+### 近い範囲の completion criteria
+
+次の実装 tranche は、次を満たしたら完了とする。
+
+- `compile_module_context` が separated provenance と concise agent-facing fields を返す。
+- task generation metadata が canonical ownership を変えずに task-scoped summary へ影響できる。
+- contradictory task generation evidence が warning として見える。
+- agent prompt または runtime guidance が module routing、boundary checks、invariants、verification を要求する。
+- primary module manifest から focused verification を選べる。
+- ontology-guided task の final report に module / boundary facts を含められる。
+- tranche 後に `bun run verify` が通る。または unrelated dirty-tree failure がある場合は別途明記される。
+
 ## Rollout Plan
 
 ### Pilot

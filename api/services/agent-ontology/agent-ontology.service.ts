@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { buildTaskGenerationEvidence } from '../../modules/project-detail/task-generation-evidence.service';
 
 type AgentOntologyCore = {
   listModules: (repoRoot?: string) => unknown;
@@ -45,16 +46,30 @@ export async function compileOntologyModuleContext(input: {
   primaryModule?: string;
   secondaryModules?: string[];
   taskGenerationEvidence?: unknown;
+  repositoryId?: string;
+  missionId?: string;
+  taskCandidateId?: string;
   memoryEvidence?: unknown;
   summaryType?: string;
 }) {
   const core = await loadCore();
+  const repoPath = input.repoPath || defaultOntologyRepoRoot();
+  const taskGenerationEvidence =
+    input.taskGenerationEvidence ??
+    (input.repositoryId || input.taskCandidateId || input.missionId
+      ? await buildTaskGenerationEvidence({
+          repoPath,
+          repositoryId: input.repositoryId,
+          missionId: input.missionId,
+          taskCandidateId: input.taskCandidateId,
+        })
+      : undefined);
   return core.compileModuleContext({
-    repoRoot: input.repoPath || defaultOntologyRepoRoot(),
+    repoRoot: repoPath,
     goal: input.goal,
     primaryModule: input.primaryModule,
     secondaryModules: input.secondaryModules,
-    taskGenerationEvidence: input.taskGenerationEvidence,
+    taskGenerationEvidence,
     memoryEvidence: input.memoryEvidence,
     summaryType: input.summaryType,
   });

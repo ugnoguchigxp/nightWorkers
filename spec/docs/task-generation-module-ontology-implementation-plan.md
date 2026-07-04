@@ -126,6 +126,12 @@ Todoの表示パフォーマンスを改善する
 - low confidence は、強引な TaskCandidate 化ではなく調査・確認・Plan mode 側の未確定事項として扱う。
 - project-wide な品質・性能 Goal は、機能本流を置き換えるのではなく検証計画・invariant・acceptance criteria に反映する。
 
+Downstream bridge consideration:
+
+- `spec/docs/task-generation-ontology-evidence-bridge-implementation-plan.md` は、この計画で保存した Task Generation metadata を coding-agent ontology context へ渡す後続計画である。
+- この計画の Phase 3-5 を実装するときは、後続 bridge が読めるように `candidateKind`, `moduleRouting`, `constraintGoalIds`, `planModeOpenQuestions`, candidate id を欠落させない。
+- ただし、この計画では evidence bridge や MCP context 連携を完了条件にしない。候補生成の意味論、保存、Task 化の metadata 維持までを責務とする。
+
 ## Current Problems
 
 ### Main Feature Build が分かりにくい

@@ -201,23 +201,30 @@ export function createNightWorkersCodexMcpServer(context: NightWorkersMcpRequest
       goal,
       primaryModule,
       secondaryModules,
+      repositoryId,
+      missionId,
+      taskCandidateId,
       taskGenerationEvidence,
       memoryEvidence,
       summaryType,
-    }) =>
-      toolResultToMcp(
+    }) => {
+      return toolResultToMcp(
         await readOnlyOntologyTool('compile_module_context', async () =>
           compileOntologyModuleContext({
             repoPath: await resolveOntologyRepoPath(repoPath, context),
             goal,
             primaryModule,
             secondaryModules,
+            repositoryId,
+            missionId,
+            taskCandidateId,
             taskGenerationEvidence,
             memoryEvidence,
             summaryType,
           })
         )
-      )
+      );
+    }
   );
 
   server.registerTool(

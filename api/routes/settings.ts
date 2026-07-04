@@ -1,7 +1,12 @@
 import { createOpenApiRouter } from '../lib/openapi';
 import { readCodexSdkStatus } from '../services/codex-global-config/status';
 import { runStartupPreflight } from '../services/preflight/preflight';
-import { listPricingRows, seedCodexPricingRows, upsertPricingRow } from '../services/pricing';
+import {
+  importPublicPricingRows,
+  listPricingRows,
+  seedCodexPricingRows,
+  upsertPricingRow,
+} from '../services/pricing';
 import {
   type GeneralSettings,
   readFxRateCache,
@@ -19,6 +24,7 @@ import {
   getLlmModelsRoute,
   getLlmSettingsRoute,
   getStartupPreflightRoute,
+  importPublicPricingRoute,
   listPricingRoute,
   refreshFxRatesRoute,
   saveGeneralSettingsRoute,
@@ -105,6 +111,14 @@ export const settingsRouter = createOpenApiRouter()
   .openapi(seedCodexPricingRoute, async (c) => {
     const rows = await seedCodexPricingRows();
     return c.json(rows, 200);
+  })
+  .openapi(importPublicPricingRoute, async (c) => {
+    try {
+      const result = await importPublicPricingRows();
+      return c.json(result, 200);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
   })
   .openapi(smokeLlmRoute, async (c) => {
     const provider = getCurrentSettings().ACTIVE_LLM_PROVIDER || 'azure';

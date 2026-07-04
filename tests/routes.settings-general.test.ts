@@ -43,12 +43,14 @@ const pricingMocks = vi.hoisted(() => ({
   listPricingRows: vi.fn(),
   upsertPricingRow: vi.fn(),
   seedCodexPricingRows: vi.fn(),
+  importPublicPricingRows: vi.fn(),
 }));
 
 vi.mock('../api/services/pricing', () => ({
   listPricingRows: pricingMocks.listPricingRows,
   upsertPricingRow: pricingMocks.upsertPricingRow,
   seedCodexPricingRows: pricingMocks.seedCodexPricingRows,
+  importPublicPricingRows: pricingMocks.importPublicPricingRows,
 }));
 
 const llmMocks = vi.hoisted(() => ({
@@ -542,6 +544,35 @@ describe('general and LLM settings routes', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json).toEqual({ seeded: 5 });
+  });
+
+  it('POST /api/settings/pricing/import-public imports public pricing rows', async () => {
+    pricingMocks.importPublicPricingRows.mockResolvedValue({
+      imported: 3,
+      skipped: 1,
+      providers: ['anthropic', 'openai', 'qwen'],
+      rows: [{ provider: 'openai', model: 'gpt-5' }],
+      fetchedAt: '2026-07-04T00:00:00.000Z',
+      sourceUrl:
+        'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json',
+    });
+
+    const app = new OpenAPIHono<AppEnv>();
+    app.onError(errorHandler);
+    app.route('/api/settings', settingsRouter);
+
+    const res = await app.request('/api/settings/pricing/import-public', { method: 'POST' });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({
+      imported: 3,
+      skipped: 1,
+      providers: ['anthropic', 'openai', 'qwen'],
+      rows: [{ provider: 'openai', model: 'gpt-5' }],
+      fetchedAt: '2026-07-04T00:00:00.000Z',
+      sourceUrl:
+        'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json',
+    });
   });
 
   it('POST /api/settings/llm/smoke does smoke check (success)', async () => {
