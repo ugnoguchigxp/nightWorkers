@@ -62,6 +62,13 @@ describe('TaskGenerationTreeTable', () => {
     active: true,
     source: 'user' as const,
     sortOrder: 0,
+    interpretation: {
+      scope: 'unknown' as const,
+      intent: 'unknown' as const,
+      source: 'unknown' as const,
+      confidencePercent: 0,
+      reason: null,
+    },
     createdAt: new Date('2026-07-04T00:00:00.000Z'),
     updatedAt: new Date('2026-07-04T00:00:00.000Z'),
   };
@@ -84,6 +91,15 @@ describe('TaskGenerationTreeTable', () => {
     repositoryId: goal.repositoryId,
     goalId: goal.id,
     goalTitle: goal.title,
+    candidateKind: 'constraint_enablement' as const,
+    moduleRouting: {
+      primaryModule: 'quality',
+      secondaryModules: [] as string[],
+      confidencePercent: 75,
+      reason: 'coverage capability が不足している。',
+    },
+    constraintGoalIds: [] as string[],
+    planModeOpenQuestions: [] as string[],
     title: 'coverage script を追加',
     summary: 'coverage を実行できるようにする。',
     rationale: '品質ゲートに必要。',
@@ -210,11 +226,40 @@ describe('TaskGenerationTreeTable', () => {
     expect(markup).toContain('品質を安定させる');
     expect(markup).toContain('品質ゲート整備');
     expect(markup).toContain('verify gate を接続');
+    expect(markup).toContain('制約整備');
     expect(markup).not.toContain('ゴール / シグナル');
     expect(markup.match(/type="checkbox"/g)).toHaveLength(2);
     expect(markup).toContain('aria-label="タスク化"');
     expect(markup).toContain('aria-label="配下にタスク候補があるため削除できません"');
     expect(markup).toContain('aria-label="候補を削除"');
+  });
+
+  it('sorts feature entrypoint candidates before follow-up candidates within the same Goal', () => {
+    const featureEntrypoint = {
+      ...candidate,
+      id: '88888888-8888-4888-8888-888888888888',
+      candidateKind: 'feature_entrypoint' as const,
+      title: 'todolist 機能の初期実装計画を作成する',
+      createdAt: new Date('2026-07-04T00:01:00.000Z'),
+    };
+    const featureFollowup = {
+      ...candidate,
+      id: '99999999-9999-4999-8999-999999999999',
+      candidateKind: 'feature_followup' as const,
+      title: 'Todo一覧のフィルタ UI を改善する',
+      createdAt: new Date('2026-07-04T00:03:00.000Z'),
+    };
+    const unified = buildUnifiedTaskCandidates([featureFollowup, featureEntrypoint], []);
+    const rows = buildTaskGenerationTreeRows({
+      goals: [goal],
+      missions: [],
+      candidates: unified,
+      expanded: { goalIds: new Set([goal.id]), missionIds: new Set() },
+    });
+
+    expect(
+      rows.filter((row) => row.kind === 'task_candidate').map((row) => row.candidate.title)
+    ).toEqual(['todolist 機能の初期実装計画を作成する', 'Todo一覧のフィルタ UI を改善する']);
   });
 });
 

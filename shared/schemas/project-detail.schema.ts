@@ -5,11 +5,32 @@ const dateLikeSchema = z.union([z.string(), z.date()]);
 const jsonValueSchema: z.ZodType<unknown> = z.unknown();
 
 export const missionGoalSourceSchema = z.enum(['user', 'preset']);
+export const missionGoalScopeSchema = z.enum(['feature_domain', 'project_wide', 'unknown']);
+export const missionGoalIntentSchema = z.enum([
+  'build',
+  'maintain_threshold',
+  'improve_metric',
+  'unknown',
+]);
+export const missionGoalClassificationSourceSchema = z.enum([
+  'preset',
+  'user_override',
+  'heuristic',
+  'llm',
+  'unknown',
+]);
 export const missionTaskCandidateStatusSchema = z.enum([
   'candidate',
   'selected',
   'task_created',
   'dismissed',
+]);
+export const missionTaskCandidateKindSchema = z.enum([
+  'feature_entrypoint',
+  'feature_followup',
+  'constraint_enablement',
+  'constraint_verification',
+  'investigation',
 ]);
 export const missionTaskCandidateBatchStatusSchema = z.enum(['running', 'completed', 'failed']);
 export const missionTaskTokenSizeSchema = z.enum(['huge', 'big', 'medium', 'small', 'tiny']);
@@ -36,6 +57,15 @@ export const candidateEvidenceSchema = z.object({
 });
 export type CandidateEvidence = z.infer<typeof candidateEvidenceSchema>;
 
+export const missionGoalInterpretationSchema = z.object({
+  scope: missionGoalScopeSchema,
+  intent: missionGoalIntentSchema,
+  source: missionGoalClassificationSourceSchema,
+  confidencePercent: z.number().int().min(0).max(100),
+  reason: z.string().nullable(),
+});
+export type MissionGoalInterpretation = z.infer<typeof missionGoalInterpretationSchema>;
+
 export const missionGoalSchema = z
   .object({
     id: z.string().uuid(),
@@ -45,6 +75,7 @@ export const missionGoalSchema = z
     active: z.boolean(),
     source: missionGoalSourceSchema,
     sortOrder: z.number().int(),
+    interpretation: missionGoalInterpretationSchema,
     createdAt: dateLikeSchema,
     updatedAt: dateLikeSchema,
   })
@@ -88,7 +119,12 @@ export const projectSignalSnapshotSchema = z.object({
     branch: z.string(),
   }),
   activeGoals: z.array(
-    z.object({ id: z.string().uuid(), title: z.string(), goalText: z.string() })
+    z.object({
+      id: z.string().uuid(),
+      title: z.string(),
+      goalText: z.string(),
+      interpretation: missionGoalInterpretationSchema,
+    })
   ),
   latestEvaluation: z
     .object({
@@ -130,6 +166,12 @@ export const projectSignalSnapshotSchema = z.object({
         })
       ),
       packageScripts: z.array(z.object({ name: z.string(), command: z.string() })),
+      moduleOntology: z
+        .object({
+          path: z.string(),
+          excerpt: z.string(),
+        })
+        .nullable(),
     })
     .optional(),
   qualityCapabilities: z.object({
@@ -168,6 +210,15 @@ export const missionTaskCandidateSchema = z
     repositoryId: z.string().uuid(),
     goalId: z.string().uuid().nullable(),
     goalTitle: z.string().nullable().optional(),
+    candidateKind: missionTaskCandidateKindSchema,
+    moduleRouting: z.object({
+      primaryModule: z.string().nullable(),
+      secondaryModules: z.array(z.string()),
+      confidencePercent: z.number().int().min(0).max(100),
+      reason: z.string().nullable(),
+    }),
+    constraintGoalIds: z.array(z.string().uuid()),
+    planModeOpenQuestions: z.array(z.string().min(1)),
     title: z.string().min(1),
     summary: z.string().min(1),
     rationale: z.string().min(1),
@@ -250,6 +301,15 @@ export const missionTaskCandidatesResultSchema = z.object({
         summary: z.string().min(1),
         rationale: z.string().min(1),
         goalId: z.string().uuid().nullable().optional(),
+        candidateKind: missionTaskCandidateKindSchema,
+        moduleRouting: z.object({
+          primaryModule: z.string().nullable(),
+          secondaryModules: z.array(z.string()),
+          confidencePercent: z.number().int().min(0).max(100),
+          reason: z.string().nullable(),
+        }),
+        constraintGoalIds: z.array(z.string().uuid()),
+        planModeOpenQuestions: z.array(z.string().min(1)),
         evidence: z.array(candidateEvidenceSchema).default([]),
         evaluationContribution: z.number().min(0).max(100),
         importancePercent: z.number().int().min(0).max(100),

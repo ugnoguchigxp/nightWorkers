@@ -275,6 +275,12 @@ function buildMissionTaskSystemPrompt() {
     `候補数は最大 ${MISSION_TASK_CANDIDATE_MAX_COUNT} 件です。既存 Task や existingUncreatedCandidates と同じ候補を返さないでください。`,
     '候補は必ず Mission Goal の達成に直接つながる作業にしてください。一般的な品質改善、テスト安定化、運用改善は、Goal 本体の実装候補より優先しないでください。',
     'repositorySnapshot を読み、現在の repo が starter/template/別ドメイン実装に見える場合は、最初の候補で Mission Goal のプロダクト本体を作るタスクを提案してください。',
+    '未実装の機能 Goal では、最優先候補を candidateKind=feature_entrypoint とし、title は「<機能ドメイン> 機能の初期実装計画を作成する」の形にしてください。',
+    'feature_entrypoint は直接実装命令ではなく、Plan Mode で UI、データモデル、保存方式、完了状態、編集削除、検証方針を決める入口にしてください。',
+    '本体機能が未実装の場合、UI 詳細、データモデル詳細、永続化方式、完了状態、編集削除、検証方式は独立候補にせず planModeOpenQuestions に入れてください。',
+    'candidateKind は feature_entrypoint / feature_followup / constraint_enablement / constraint_verification / investigation のいずれかです。',
+    'moduleRouting には primaryModule, secondaryModules, confidencePercent, reason を必ず入れてください。ontology が無い、または低信頼なら primaryModule は null、confidencePercent は低め、reason に未判定理由を書いてください。',
+    'project-wide Goal は原則として feature_entrypoint の constraintGoalIds、acceptanceCriteria、verificationPlan、taskPrompt に反映し、単独候補にしないでください。検証基盤が欠ける場合だけ constraint_enablement を出せます。',
     'repositorySnapshot.llmContextFiles が存在する場合は、それを実装状態の優先根拠にしてください。その場合 recentCommitDiffs は読みません。llmContextFiles が無い場合だけ sourceExcerpts / recentCommitDiffs を補助根拠にしてください。Goal 本体が既に実装されていると判断できる場合は、その本体実装タスクを返さず、残っている差分だけを候補にしてください。',
     '既存の Task や未作成候補が Goal 本体の実装をすでに扱っている場合だけ、改善・品質・追加機能の候補を上位にできます。',
     'importancePercent は選択された Mission Goal に対する重要度として 0-100 の整数で算出してください。repo 全体の一般的な重要度ではありません。',
@@ -295,12 +301,26 @@ function buildMissionTaskUserPrompt(input: {
   return JSON.stringify(
     {
       missionGoals: input.signal.activeGoals,
+      goalInterpretationPolicy: {
+        userGoals:
+          '登録時には LLM 分類しないため unknown のまま渡ることがある。候補生成時に routing と candidateKind で解釈する。',
+        presetGoals:
+          'preset Goal は project_wide constraint として扱い、feature_entrypoint の制約・検証条件に反映する。',
+      },
+      projectWideGoals: input.signal.activeGoals.filter(
+        (goal) => goal.interpretation.scope === 'project_wide'
+      ),
+      moduleOntology: input.signal.repositorySnapshot?.moduleOntology ?? null,
       projectSignalSnapshot: input.signal,
       generationRules: [
         '各候補は Mission Goal に直接紐付ける。',
         'Goal の対象プロダクトが repositorySnapshot.llmContextFiles に見当たる場合は、それを最優先の実装状態として扱う。',
         'llmContextFiles が無い場合だけ、sourceFiles / sourceExcerpts / recentCommitDiffs から Goal 対象プロダクトの有無を判断する。',
         'Goal の対象プロダクトが確認できない場合、最初の候補はそのプロダクト本体を作るタスクにする。',
+        '未実装の機能 Goal の最初の候補は candidateKind=feature_entrypoint とし、title は「<機能ドメイン> 機能の初期実装計画を作成する」にする。',
+        '本体未実装時の UI 詳細、状態管理、永続化、編集削除、検証方式は候補にせず planModeOpenQuestions に入れる。',
+        'projectWideGoals は constraintGoalIds と acceptanceCriteria / verificationPlan / taskPrompt へ反映する。',
+        'moduleOntology が無い場合も失敗にせず、moduleRouting は null/低 confidence と reason で表現する。',
         'Goal の対象プロダクトが実装済みと判断できる場合、同じ本体実装タスクは返さない。',
         'importancePercent は Goal 達成への重要度を示す。',
         'evaluationContribution は評価改善の見込みを数値で示し、null にしない。',
@@ -383,6 +403,97 @@ function hasQualitySetupCandidate(result: MissionTaskCandidatesResult) {
   });
 }
 
+function candidateKindPriority(candidate: MissionTaskCandidatesResult['candidates'][number]) {
+  switch (candidate.candidateKind) {
+    case 'feature_entrypoint':
+      return 0;
+    case 'investigation':
+      return 1;
+    case 'feature_followup':
+      return 2;
+    case 'constraint_enablement':
+      return 3;
+    case 'constraint_verification':
+      return 4;
+  }
+}
+
+function mergeUniqueStrings(values: string[]) {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const normalized = value.trim();
+    if (!normalized || seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
+}
+
+function candidateAsPlanModeQuestion(candidate: MissionTaskCandidatesResult['candidates'][number]) {
+  return `「${candidate.title}」は、本体機能の初期実装計画内で必要性と範囲を決める。`;
+}
+
+export function applyMissionTaskCandidateSemantics(
+  candidates: MissionTaskCandidatesResult['candidates'],
+  selectedGoals: MissionGoal[]
+) {
+  const projectWideGoalIds = selectedGoals
+    .filter((goal) => goal.interpretation.scope === 'project_wide')
+    .map((goal) => goal.id);
+  const featureEntrypoints = candidates.filter(
+    (candidate) => candidate.candidateKind === 'feature_entrypoint'
+  );
+  const entrypointGoalIds = new Set(
+    featureEntrypoints
+      .map((candidate) => candidate.goalId)
+      .filter((goalId): goalId is string => Boolean(goalId))
+  );
+  const singleEntrypoint = featureEntrypoints.length === 1 ? featureEntrypoints[0] : null;
+  const deferredByGoal = new Map<string, string[]>();
+  const deferredToSingleEntrypoint: string[] = [];
+  const selected: MissionTaskCandidatesResult['candidates'] = [];
+
+  for (const candidate of candidates) {
+    const goalId = candidate.goalId;
+    const isPlanModeDetail =
+      candidate.candidateKind === 'feature_followup' ||
+      candidate.candidateKind === 'constraint_verification';
+    if (goalId && entrypointGoalIds.has(goalId) && isPlanModeDetail) {
+      deferredByGoal.set(goalId, [
+        ...(deferredByGoal.get(goalId) ?? []),
+        candidateAsPlanModeQuestion(candidate),
+      ]);
+      continue;
+    }
+    if (!goalId && singleEntrypoint && isPlanModeDetail) {
+      deferredToSingleEntrypoint.push(candidateAsPlanModeQuestion(candidate));
+      continue;
+    }
+    selected.push(candidate);
+  }
+
+  return selected
+    .map((candidate) => {
+      if (candidate.candidateKind !== 'feature_entrypoint') return candidate;
+      return {
+        ...candidate,
+        constraintGoalIds: mergeUniqueStrings([
+          ...candidate.constraintGoalIds,
+          ...projectWideGoalIds,
+        ]),
+        planModeOpenQuestions: mergeUniqueStrings([
+          ...candidate.planModeOpenQuestions,
+          ...(candidate.goalId ? (deferredByGoal.get(candidate.goalId) ?? []) : []),
+          ...(candidate === singleEntrypoint ? deferredToSingleEntrypoint : []),
+        ]),
+      };
+    })
+    .sort((a, b) => {
+      const priorityDelta = candidateKindPriority(a) - candidateKindPriority(b);
+      if (priorityDelta !== 0) return priorityDelta;
+      return b.importancePercent - a.importancePercent;
+    });
+}
+
 function normalizeMissionCandidateTitle(title: string) {
   return title
     .normalize('NFKC')
@@ -415,6 +526,13 @@ function validateGeneratedGoalIds(
       throw new ValidationError('Mission task generation returned an unknown goalId', {
         goalId: candidate.goalId,
       });
+    }
+    for (const goalId of candidate.constraintGoalIds) {
+      if (!allowedGoalIds.has(goalId)) {
+        throw new ValidationError('Mission task generation returned an unknown constraintGoalId', {
+          goalId,
+        });
+      }
     }
   }
 }
@@ -497,8 +615,9 @@ export async function generateMissionTaskCandidates(input: {
       ...existingCandidates.map((candidate) => normalizeMissionCandidateTitle(candidate.title)),
       ...existingTasks.map((task) => normalizeMissionCandidateTitle(task.title)),
     ]);
+    const semanticCandidates = applyMissionTaskCandidateSemantics(parsed.candidates, selectedGoals);
     const selectedCandidates = selectUniqueMissionTaskCandidates(
-      parsed.candidates,
+      semanticCandidates,
       blockedTitleKeys
     );
     validateGeneratedGoalIds(parsed.candidates, selectedGoals);
@@ -520,6 +639,13 @@ export async function generateMissionTaskCandidates(input: {
           batchId: batch.id,
           repositoryId: repository.id,
           goalId: candidate.goalId ?? null,
+          candidateKind: candidate.candidateKind,
+          primaryModule: candidate.moduleRouting.primaryModule,
+          secondaryModulesJson: candidate.moduleRouting.secondaryModules,
+          routingConfidencePercent: candidate.moduleRouting.confidencePercent,
+          routingReason: candidate.moduleRouting.reason,
+          constraintGoalIdsJson: candidate.constraintGoalIds,
+          planModeOpenQuestionsJson: candidate.planModeOpenQuestions,
           title: candidate.title,
           summary: candidate.summary,
           rationale: candidate.rationale,

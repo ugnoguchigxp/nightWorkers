@@ -150,6 +150,24 @@ function readLlmContextFiles(repoRoot: string, sourceFiles: string[]) {
     });
 }
 
+function readModuleOntology(repoRoot: string) {
+  const candidates = [
+    path.join(repoRoot, '.agent-ontology', 'modules.yaml'),
+    path.join(repoRoot, '.agent-ontology', 'modules.yml'),
+    path.join(repoRoot, '.agent-ontology', 'modules.json'),
+  ];
+  for (const filePath of candidates) {
+    const excerpt = readTextExcerpt(filePath, 12_000);
+    if (excerpt) {
+      return {
+        path: path.relative(repoRoot, filePath),
+        excerpt,
+      };
+    }
+  }
+  return null;
+}
+
 function git(repoRoot: string, args: string[]) {
   try {
     return execFileSync('git', ['-C', repoRoot, ...args], {
@@ -212,6 +230,7 @@ function buildRepositorySnapshot(repoRoot: string): ProjectSignalSnapshot['repos
     llmContextFiles,
     recentCommitDiffs: llmContextFiles.length > 0 ? [] : readRecentNonInitialCommitDiffs(repoRoot),
     packageScripts,
+    moduleOntology: readModuleOntology(repoRoot),
   };
 }
 
@@ -349,7 +368,12 @@ export async function buildProjectSignalSnapshot(input: {
     },
     activeGoals: input.goals
       .filter((goal) => goal.active)
-      .map((goal) => ({ id: goal.id, title: goal.title, goalText: goal.goalText })),
+      .map((goal) => ({
+        id: goal.id,
+        title: goal.title,
+        goalText: goal.goalText,
+        interpretation: goal.interpretation,
+      })),
     latestEvaluation: latestEvaluation
       ? {
           id: latestEvaluation.id,

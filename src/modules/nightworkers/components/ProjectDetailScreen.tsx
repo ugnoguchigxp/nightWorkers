@@ -172,6 +172,10 @@ type UnifiedTaskCandidate = {
   evaluationContribution: number | null;
   importancePercent: number | null;
   confidencePercent: number | null;
+  candidateKind: MissionTaskCandidate['candidateKind'];
+  moduleRouting: MissionTaskCandidate['moduleRouting'];
+  constraintGoalIds: string[];
+  planModeOpenQuestions: string[];
   tokenSize: string | null;
   complexity: string | null;
   taskPrompt: string;
@@ -252,6 +256,28 @@ function compareNewestFirst(a: { createdAt: string | Date }, b: { createdAt: str
   return toTimestamp(b.createdAt) - toTimestamp(a.createdAt);
 }
 
+function taskCandidateKindPriority(kind: MissionTaskCandidate['candidateKind']) {
+  switch (kind) {
+    case 'feature_entrypoint':
+      return 0;
+    case 'investigation':
+      return 1;
+    case 'feature_followup':
+      return 2;
+    case 'constraint_enablement':
+      return 3;
+    case 'constraint_verification':
+      return 4;
+  }
+}
+
+function compareTaskCandidates(a: UnifiedTaskCandidate, b: UnifiedTaskCandidate) {
+  const priorityDelta =
+    taskCandidateKindPriority(a.candidateKind) - taskCandidateKindPriority(b.candidateKind);
+  if (priorityDelta !== 0) return priorityDelta;
+  return compareNewestFirst(a, b);
+}
+
 function isMissionDeleteInProgress(status: Mission['status']) {
   return status === 'decomposing' || status === 'evaluating';
 }
@@ -277,6 +303,10 @@ export function buildUnifiedTaskCandidates(
         evaluationContribution: candidate.evaluationContribution,
         importancePercent: candidate.importancePercent,
         confidencePercent: candidate.confidencePercent,
+        candidateKind: candidate.candidateKind,
+        moduleRouting: candidate.moduleRouting,
+        constraintGoalIds: candidate.constraintGoalIds,
+        planModeOpenQuestions: candidate.planModeOpenQuestions,
         tokenSize: candidate.tokenSize,
         complexity: candidate.complexity,
         taskPrompt: candidate.taskPrompt,
@@ -307,6 +337,15 @@ export function buildUnifiedTaskCandidates(
         evaluationContribution: null,
         importancePercent: null,
         confidencePercent: null,
+        candidateKind: 'feature_followup',
+        moduleRouting: {
+          primaryModule: null,
+          secondaryModules: [],
+          confidencePercent: 0,
+          reason: null,
+        },
+        constraintGoalIds: [],
+        planModeOpenQuestions: [],
         tokenSize: null,
         complexity: null,
         taskPrompt: proposal.initialPrompt,
@@ -358,7 +397,7 @@ export function buildTaskGenerationTreeRows({
   const pushGoalGroup = (goal: MissionGoal | null) => {
     const goalId = goal?.id ?? unassignedGoalId;
     const goalMissions = [...(missionsByGoal.get(goalId) ?? [])].sort(compareNewestFirst);
-    const goalCandidates = [...(candidatesByGoal.get(goalId) ?? [])].sort(compareNewestFirst);
+    const goalCandidates = [...(candidatesByGoal.get(goalId) ?? [])].sort(compareTaskCandidates);
     rows.push({
       kind: 'goal',
       id: goalId,
@@ -369,7 +408,7 @@ export function buildTaskGenerationTreeRows({
     if (!expanded.goalIds.has(goalId)) return;
     for (const mission of goalMissions) {
       const missionCandidates = [...(candidatesByMission.get(mission.id) ?? [])].sort(
-        compareNewestFirst
+        compareTaskCandidates
       );
       rows.push({
         kind: 'mission',
@@ -1163,6 +1202,7 @@ export function ProjectDetailScreen({
       {detailCandidate ? (
         <TaskCandidateDetailModal
           candidate={detailCandidate}
+          goals={goals}
           busy={Boolean(busyAction)}
           onClose={() => setDetailModal(null)}
           onCreateTask={(candidate) =>
@@ -1844,7 +1884,9 @@ function TaskGenerationTreeRowView({
           </span>
         </button>
       </td>
-      <td className="py-3">{t('projectDetail.tree.kind.taskCandidate')}</td>
+      <td className="py-3">
+        <CandidateKindChip kind={candidate.candidateKind} />
+      </td>
       <td className="py-3 text-right">
         {t(`projectDetail.mission.status.${candidate.status}`, { defaultValue: candidate.status })}
       </td>
@@ -2596,18 +2638,24 @@ function MissionCandidateModal({
 
 function TaskCandidateDetailModal({
   candidate,
+  goals,
   busy,
   onClose,
   onCreateTask,
   onDismiss,
 }: {
   candidate: UnifiedTaskCandidate;
+  goals: MissionGoal[];
   busy: boolean;
   onClose: () => void;
   onCreateTask: (candidate: UnifiedTaskCandidate) => void;
   onDismiss: (candidate: UnifiedTaskCandidate) => void;
 }) {
   const { t } = useTranslation();
+  const constraintGoalLabels = candidate.constraintGoalIds.map((goalId) => {
+    const goal = goals.find((item) => item.id === goalId);
+    return goal?.title ?? goalId.slice(0, 8);
+  });
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div
@@ -2631,6 +2679,47 @@ function TaskCandidateDetailModal({
             <X className="h-3.5 w-3.5" />
           </IconActionButton>
         </div>
+        <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2">
+          <KpiTile
+            label={t('projectDetail.field.kind')}
+            value={t(`projectDetail.mission.candidateKind.${candidate.candidateKind}`)}
+            sub={t('projectDetail.mission.candidateKindSub')}
+          />
+          <KpiTile
+            label={t('projectDetail.mission.primaryModule')}
+            value={candidate.moduleRouting.primaryModule ?? '—'}
+            sub={
+              candidate.moduleRouting.confidencePercent > 0
+                ? `${candidate.moduleRouting.confidencePercent}%`
+                : '—'
+            }
+          />
+        </div>
+        {candidate.moduleRouting.secondaryModules.length > 0 ||
+        candidate.moduleRouting.reason ||
+        candidate.constraintGoalIds.length > 0 ? (
+          <div className="mt-4 border p-2 text-xs" style={controlStyle}>
+            {candidate.moduleRouting.secondaryModules.length > 0 ? (
+              <div>
+                <span className="font-semibold">
+                  {t('projectDetail.mission.secondaryModules')}:
+                </span>{' '}
+                {candidate.moduleRouting.secondaryModules.join(', ')}
+              </div>
+            ) : null}
+            {candidate.constraintGoalIds.length > 0 ? (
+              <div className="mt-1">
+                <span className="font-semibold">{t('projectDetail.mission.constraintGoals')}:</span>{' '}
+                {constraintGoalLabels.join(', ')}
+              </div>
+            ) : null}
+            {candidate.moduleRouting.reason ? (
+              <div className="mt-1" style={mutedTextStyle}>
+                {candidate.moduleRouting.reason}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <DrawerSection title={t('projectDetail.mission.summary')} body={candidate.summary} />
         <DrawerSection title={t('projectDetail.mission.rationale')} body={candidate.rationale} />
         <DrawerSection title={t('projectDetail.mission.taskPrompt')} body={candidate.taskPrompt} />
@@ -2642,6 +2731,18 @@ function TaskCandidateDetailModal({
           title={t('projectDetail.mission.verificationPlan')}
           body={candidate.verificationPlan}
         />
+        {candidate.planModeOpenQuestions.length > 0 ? (
+          <section className="mt-4">
+            <div className="text-xs font-bold">
+              {t('projectDetail.mission.planModeOpenQuestions')}
+            </div>
+            <ul className="mt-2 space-y-1 text-xs" style={mutedTextStyle}>
+              {candidate.planModeOpenQuestions.map((item) => (
+                <li key={item}>- {item}</li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
         <div className="mt-4">
           <div className="text-xs font-bold">{t('projectDetail.mission.evidence')}</div>
           <div className="mt-2 space-y-2">
@@ -2708,6 +2809,30 @@ function DrawerSection({ title, body }: { title: string; body: string }) {
         {body}
       </p>
     </section>
+  );
+}
+
+function CandidateKindChip({ kind }: { kind: MissionTaskCandidate['candidateKind'] }) {
+  const { t } = useTranslation();
+  const tone =
+    kind === 'feature_entrypoint'
+      ? 'var(--nw-primary)'
+      : kind === 'constraint_enablement' || kind === 'constraint_verification'
+        ? 'var(--nw-warning)'
+        : 'var(--nw-muted-text)';
+  return (
+    <span
+      className="inline-flex h-6 max-w-[132px] items-center truncate border px-2 text-[11px] font-semibold"
+      style={{
+        background: 'color-mix(in srgb, currentColor 9%, var(--nw-panel))',
+        borderColor: 'color-mix(in srgb, currentColor 35%, var(--nw-border))',
+        borderRadius: 'var(--nw-control-radius)',
+        color: tone,
+      }}
+      title={t(`projectDetail.mission.candidateKind.${kind}`)}
+    >
+      {t(`projectDetail.mission.candidateKind.${kind}`)}
+    </span>
   );
 }
 

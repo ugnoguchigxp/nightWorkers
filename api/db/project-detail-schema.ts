@@ -13,6 +13,13 @@ export const missionGoals = sqliteTable(
     active: integer('active', { mode: 'boolean' }).default(true).notNull(),
     source: text('source').default('user').notNull(),
     sortOrder: integer('sort_order').default(0).notNull(),
+    interpretationScope: text('interpretation_scope').default('unknown').notNull(),
+    interpretationIntent: text('interpretation_intent').default('unknown').notNull(),
+    interpretationSource: text('interpretation_source').default('unknown').notNull(),
+    interpretationConfidencePercent: integer('interpretation_confidence_percent')
+      .default(0)
+      .notNull(),
+    interpretationReason: text('interpretation_reason'),
   },
   (table) => ({
     repositoryActiveIdx: index('mission_goals_repository_active_idx').on(
@@ -60,6 +67,17 @@ export const missionTaskCandidates = sqliteTable(
       .notNull()
       .references(() => repositories.id, { onDelete: 'cascade' }),
     goalId: text('goal_id').references(() => missionGoals.id, { onDelete: 'set null' }),
+    candidateKind: text('candidate_kind').default('feature_followup').notNull(),
+    primaryModule: text('primary_module'),
+    secondaryModulesJson: text('secondary_modules_json', { mode: 'json' }).default('[]').notNull(),
+    routingConfidencePercent: integer('routing_confidence_percent').default(0).notNull(),
+    routingReason: text('routing_reason'),
+    constraintGoalIdsJson: text('constraint_goal_ids_json', { mode: 'json' })
+      .default('[]')
+      .notNull(),
+    planModeOpenQuestionsJson: text('plan_mode_open_questions_json', { mode: 'json' })
+      .default('[]')
+      .notNull(),
     title: text('title').notNull(),
     summary: text('summary').notNull(),
     rationale: text('rationale').notNull(),

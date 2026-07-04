@@ -32,6 +32,16 @@ vi.mock('../api/services/structured-llm', async (importOriginal) => {
             title: 'package.json に coverage と E2E scripts を追加する',
             summary: 'Quality capability 欠落を解消するため test:coverage と test:e2e を整備する。',
             rationale: 'Quality 実行 API は存在しない script を推測実行しないため。',
+            goalId: null,
+            candidateKind: 'constraint_enablement',
+            moduleRouting: {
+              primaryModule: 'quality',
+              secondaryModules: [],
+              confidencePercent: 80,
+              reason: 'Quality capability scripts が不足している。',
+            },
+            constraintGoalIds: [],
+            planModeOpenQuestions: [],
             evidence: [
               {
                 source: 'quality',
@@ -681,6 +691,15 @@ describe('Project Detail backend', () => {
             summary: '別 repository の goalId を参照している。',
             rationale: '保存前に reject されるべき候補。',
             goalId: crypto.randomUUID(),
+            candidateKind: 'constraint_enablement',
+            moduleRouting: {
+              primaryModule: 'quality',
+              secondaryModules: [],
+              confidencePercent: 80,
+              reason: '不正 goalId の検証 fixture。',
+            },
+            constraintGoalIds: [],
+            planModeOpenQuestions: [],
             evidence: [{ source: 'quality', label: 'missing capability', value: 'coverage' }],
             evaluationContribution: 1,
             importancePercent: 96,
@@ -690,6 +709,83 @@ describe('Project Detail backend', () => {
             taskPrompt: '不正な候補。',
             acceptanceCriteria: '保存されない。',
             verificationPlan: '400 を返す。',
+          },
+        ],
+      });
+
+      const generateRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates/generate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+      expect(generateRes.status).toBe(400);
+
+      const candidatesRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-task-candidates`
+      );
+      expect(await candidatesRes.json()).toHaveLength(0);
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects mission generation when LLM returns a constraint goal from outside the selected set', async () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-detail-bad-constraint-'));
+    try {
+      fs.writeFileSync(
+        path.join(repoRoot, 'package.json'),
+        JSON.stringify({
+          scripts: {
+            test: 'echo unit',
+            'test:coverage': 'echo coverage',
+            'test:e2e': 'echo e2e',
+          },
+        }),
+        'utf8'
+      );
+      const project = await createRepository(repoRoot);
+      const createGoalRes = await app.request(
+        `http://localhost/api/repositories/${project.id}/mission-goals`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Todo',
+            goalText: 'todolist を作る。',
+            active: true,
+          }),
+        }
+      );
+      expect(createGoalRes.status).toBe(201);
+      structuredLlmFixture.nextOutput = JSON.stringify({
+        schemaVersion: 'nightworkers.mission-task-candidates/v1',
+        candidates: [
+          {
+            title: 'todolist 機能の初期実装計画を作成する',
+            summary: 'todolist 機能を Plan Mode で定義する。',
+            rationale: '本体機能が未実装。',
+            goalId: null,
+            candidateKind: 'feature_entrypoint',
+            moduleRouting: {
+              primaryModule: null,
+              secondaryModules: [],
+              confidencePercent: 30,
+              reason: 'ontology 未判定。',
+            },
+            constraintGoalIds: [crypto.randomUUID()],
+            planModeOpenQuestions: ['保存方式を決める。'],
+            evidence: [{ source: 'mission_goal', label: 'goal', value: 'todolist を作る' }],
+            evaluationContribution: 40,
+            importancePercent: 90,
+            confidencePercent: 80,
+            tokenSize: 'medium',
+            complexity: 'moderate',
+            taskPrompt: 'Plan Mode で todolist 機能の初期実装計画を作成してください。',
+            acceptanceCriteria: '初期実装計画ができる。',
+            verificationPlan: '計画をレビューする。',
           },
         ],
       });

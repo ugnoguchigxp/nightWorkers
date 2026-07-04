@@ -5,9 +5,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ensureNightWorkersSchema } from '../api/db/bootstrap';
-import { buildMissionTaskCandidatesResponseJsonSchema } from '../api/modules/project-detail/project-detail.service';
+import {
+  applyMissionTaskCandidateSemantics,
+  buildMissionTaskCandidatesResponseJsonSchema,
+} from '../api/modules/project-detail/project-detail.service';
 import { buildProjectSignalSnapshot } from '../api/modules/project-detail/project-signal-snapshot.service';
-import { missionTaskCandidatesResultSchema } from '../shared/schemas/project-detail.schema';
+import {
+  type MissionGoal,
+  type MissionGoalInterpretation,
+  missionTaskCandidatesResultSchema,
+} from '../shared/schemas/project-detail.schema';
 
 beforeAll(async () => {
   await ensureNightWorkersSchema();
@@ -28,6 +35,10 @@ describe('Mission task candidate generation helpers', () => {
       'summary',
       'rationale',
       'goalId',
+      'candidateKind',
+      'moduleRouting',
+      'constraintGoalIds',
+      'planModeOpenQuestions',
       'evidence',
       'evaluationContribution',
       'importancePercent',
@@ -54,6 +65,15 @@ describe('Mission task candidate generation helpers', () => {
             summary: '要約',
             rationale: '理由',
             goalId: null,
+            candidateKind: 'feature_followup',
+            moduleRouting: {
+              primaryModule: null,
+              secondaryModules: [],
+              confidencePercent: 0,
+              reason: null,
+            },
+            constraintGoalIds: [],
+            planModeOpenQuestions: [],
             evidence: [],
             evaluationContribution: null,
             importancePercent: 50,
@@ -76,6 +96,15 @@ describe('Mission task candidate generation helpers', () => {
           summary: '要約',
           rationale: '理由',
           goalId: null,
+          candidateKind: 'feature_followup',
+          moduleRouting: {
+            primaryModule: null,
+            secondaryModules: [],
+            confidencePercent: 0,
+            reason: null,
+          },
+          constraintGoalIds: [],
+          planModeOpenQuestions: [],
           evidence: [],
           evaluationContribution: 35,
           importancePercent: 50,
@@ -91,6 +120,88 @@ describe('Mission task candidate generation helpers', () => {
 
     expect(parsed.candidates[0]?.goalId).toBeNull();
     expect(parsed.candidates[0]?.evaluationContribution).toBe(35);
+  });
+
+  it('keeps feature entrypoints first and folds detail followups into Plan mode questions', () => {
+    const featureGoalId = crypto.randomUUID();
+    const projectWideGoalId = crypto.randomUUID();
+    const candidates = applyMissionTaskCandidateSemantics(
+      [
+        {
+          title: 'Todo一覧のフィルタ UI を改善する',
+          summary: 'UI 詳細。',
+          rationale: '後続で検討する。',
+          goalId: null,
+          candidateKind: 'feature_followup',
+          moduleRouting: {
+            primaryModule: null,
+            secondaryModules: [],
+            confidencePercent: 20,
+            reason: '本体未実装のため詳細は未確定。',
+          },
+          constraintGoalIds: [],
+          planModeOpenQuestions: [],
+          evidence: [],
+          evaluationContribution: 20,
+          importancePercent: 70,
+          confidencePercent: 70,
+          tokenSize: 'small',
+          complexity: 'simple',
+          taskPrompt: 'Todo一覧のフィルタ UI を改善してください。',
+          acceptanceCriteria: 'フィルタ UI がある。',
+          verificationPlan: 'UI テストを行う。',
+        },
+        {
+          title: 'todolist 機能の初期実装計画を作成する',
+          summary: 'todolist 機能を Plan Mode で定義する。',
+          rationale: '本体機能が未実装。',
+          goalId: featureGoalId,
+          candidateKind: 'feature_entrypoint',
+          moduleRouting: {
+            primaryModule: null,
+            secondaryModules: [],
+            confidencePercent: 30,
+            reason: 'ontology 未判定。',
+          },
+          constraintGoalIds: [],
+          planModeOpenQuestions: ['保存方式を決める。'],
+          evidence: [],
+          evaluationContribution: 60,
+          importancePercent: 95,
+          confidencePercent: 85,
+          tokenSize: 'medium',
+          complexity: 'moderate',
+          taskPrompt: 'Plan Mode で todolist 機能の初期実装計画を作成してください。',
+          acceptanceCriteria: '初期実装計画ができる。',
+          verificationPlan: '計画をレビューする。',
+        },
+      ],
+      [
+        missionGoalFixture({
+          id: featureGoalId,
+          title: 'todolist を作る',
+          scope: 'unknown',
+          source: 'unknown',
+        }),
+        missionGoalFixture({
+          id: projectWideGoalId,
+          title: 'カバレッジ維持',
+          scope: 'project_wide',
+          source: 'preset',
+        }),
+      ]
+    );
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      candidateKind: 'feature_entrypoint',
+      title: 'todolist 機能の初期実装計画を作成する',
+      constraintGoalIds: [projectWideGoalId],
+    });
+    expect(candidates[0]?.planModeOpenQuestions).toEqual([
+      '保存方式を決める。',
+      '「Todo一覧のフィルタ UI を改善する」は、本体機能の初期実装計画内で必要性と範囲を決める。',
+    ]);
   });
 
   it('adds compact repository implementation context to mission signals', async () => {
@@ -158,6 +269,13 @@ describe('Mission task candidate generation helpers', () => {
             active: true,
             source: 'user',
             sortOrder: 0,
+            interpretation: {
+              scope: 'unknown',
+              intent: 'unknown',
+              source: 'unknown',
+              confidencePercent: 0,
+              reason: null,
+            },
             createdAt: new Date(),
             updatedAt: new Date(),
           },
@@ -252,6 +370,13 @@ describe('Mission task candidate generation helpers', () => {
             active: true,
             source: 'user',
             sortOrder: 0,
+            interpretation: {
+              scope: 'unknown',
+              intent: 'unknown',
+              source: 'unknown',
+              confidencePercent: 0,
+              reason: null,
+            },
             createdAt: new Date(),
             updatedAt: new Date(),
           },
@@ -294,4 +419,30 @@ function asRecord(value: unknown): Record<string, unknown> {
   expect(typeof value).toBe('object');
   expect(Array.isArray(value)).toBe(false);
   return value as Record<string, unknown>;
+}
+
+function missionGoalFixture(input: {
+  id: string;
+  title: string;
+  scope: MissionGoalInterpretation['scope'];
+  source: MissionGoalInterpretation['source'];
+}): MissionGoal {
+  return {
+    id: input.id,
+    repositoryId: crypto.randomUUID(),
+    title: input.title,
+    goalText: input.title,
+    active: true,
+    source: input.source === 'preset' ? 'preset' : 'user',
+    sortOrder: 0,
+    interpretation: {
+      scope: input.scope,
+      intent: input.scope === 'project_wide' ? 'maintain_threshold' : 'unknown',
+      source: input.source,
+      confidencePercent: input.source === 'preset' ? 100 : 0,
+      reason: input.source === 'preset' ? 'Preset Goal はプロジェクト横断制約として扱う' : null,
+    },
+    createdAt: new Date('2026-07-04T00:00:00.000Z'),
+    updatedAt: new Date('2026-07-04T00:00:00.000Z'),
+  };
 }

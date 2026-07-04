@@ -204,8 +204,45 @@ async function ensureProjectDetailTables() {
       active integer DEFAULT true NOT NULL,
       source text DEFAULT 'user' NOT NULL,
       sort_order integer DEFAULT 0 NOT NULL,
+      interpretation_scope text DEFAULT 'unknown' NOT NULL,
+      interpretation_intent text DEFAULT 'unknown' NOT NULL,
+      interpretation_source text DEFAULT 'unknown' NOT NULL,
+      interpretation_confidence_percent integer DEFAULT 0 NOT NULL,
+      interpretation_reason text,
       FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade
     )
+  `);
+  await ensureColumn(
+    'mission_goals',
+    'interpretation_scope',
+    "interpretation_scope text DEFAULT 'unknown' NOT NULL"
+  );
+  await ensureColumn(
+    'mission_goals',
+    'interpretation_intent',
+    "interpretation_intent text DEFAULT 'unknown' NOT NULL"
+  );
+  await ensureColumn(
+    'mission_goals',
+    'interpretation_source',
+    "interpretation_source text DEFAULT 'unknown' NOT NULL"
+  );
+  await ensureColumn(
+    'mission_goals',
+    'interpretation_confidence_percent',
+    'interpretation_confidence_percent integer DEFAULT 0 NOT NULL'
+  );
+  await ensureColumn('mission_goals', 'interpretation_reason', 'interpretation_reason text');
+  await client.execute(`
+    UPDATE mission_goals
+    SET
+      interpretation_scope = 'project_wide',
+      interpretation_intent = 'maintain_threshold',
+      interpretation_source = 'preset',
+      interpretation_confidence_percent = 100,
+      interpretation_reason = COALESCE(interpretation_reason, 'Preset Goal はプロジェクト横断制約として扱う')
+    WHERE source = 'preset'
+      AND interpretation_scope = 'unknown'
   `);
   await client.execute(
     'CREATE INDEX IF NOT EXISTS mission_goals_repository_active_idx ON mission_goals (repository_id, active, sort_order)'
@@ -240,6 +277,13 @@ async function ensureProjectDetailTables() {
       batch_id text NOT NULL,
       repository_id text NOT NULL,
       goal_id text,
+      candidate_kind text DEFAULT 'feature_followup' NOT NULL,
+      primary_module text,
+      secondary_modules_json text DEFAULT '[]' NOT NULL,
+      routing_confidence_percent integer DEFAULT 0 NOT NULL,
+      routing_reason text,
+      constraint_goal_ids_json text DEFAULT '[]' NOT NULL,
+      plan_mode_open_questions_json text DEFAULT '[]' NOT NULL,
       title text NOT NULL,
       summary text NOT NULL,
       rationale text NOT NULL,
@@ -260,6 +304,33 @@ async function ensureProjectDetailTables() {
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE set null
     )
   `);
+  await ensureColumn(
+    'mission_task_candidates',
+    'candidate_kind',
+    "candidate_kind text DEFAULT 'feature_followup' NOT NULL"
+  );
+  await ensureColumn('mission_task_candidates', 'primary_module', 'primary_module text');
+  await ensureColumn(
+    'mission_task_candidates',
+    'secondary_modules_json',
+    "secondary_modules_json text DEFAULT '[]' NOT NULL"
+  );
+  await ensureColumn(
+    'mission_task_candidates',
+    'routing_confidence_percent',
+    'routing_confidence_percent integer DEFAULT 0 NOT NULL'
+  );
+  await ensureColumn('mission_task_candidates', 'routing_reason', 'routing_reason text');
+  await ensureColumn(
+    'mission_task_candidates',
+    'constraint_goal_ids_json',
+    "constraint_goal_ids_json text DEFAULT '[]' NOT NULL"
+  );
+  await ensureColumn(
+    'mission_task_candidates',
+    'plan_mode_open_questions_json',
+    "plan_mode_open_questions_json text DEFAULT '[]' NOT NULL"
+  );
   await client.execute(
     'CREATE INDEX IF NOT EXISTS mission_candidates_repository_status_idx ON mission_task_candidates (repository_id, status, created_at)'
   );

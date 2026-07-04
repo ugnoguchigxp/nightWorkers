@@ -21,7 +21,24 @@ import { tasks } from '../../db/schema';
 type Db = typeof db | DbTransaction;
 
 function mapGoal(row: typeof missionGoals.$inferSelect): MissionGoal {
-  return missionGoalSchema.parse(row);
+  return missionGoalSchema.parse({
+    id: row.id,
+    repositoryId: row.repositoryId,
+    title: row.title,
+    goalText: row.goalText,
+    active: row.active,
+    source: row.source,
+    sortOrder: row.sortOrder,
+    interpretation: {
+      scope: row.interpretationScope,
+      intent: row.interpretationIntent,
+      source: row.interpretationSource,
+      confidencePercent: row.interpretationConfidencePercent,
+      reason: row.interpretationReason ?? null,
+    },
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  });
 }
 
 function mapBatch(row: typeof missionTaskCandidateBatches.$inferSelect): MissionTaskCandidateBatch {
@@ -50,6 +67,17 @@ function mapCandidate(
     repositoryId: row.repositoryId,
     goalId: row.goalId ?? null,
     goalTitle: row.goalTitle ?? null,
+    candidateKind: row.candidateKind ?? 'feature_followup',
+    moduleRouting: {
+      primaryModule: row.primaryModule ?? null,
+      secondaryModules: Array.isArray(row.secondaryModulesJson) ? row.secondaryModulesJson : [],
+      confidencePercent: row.routingConfidencePercent ?? 0,
+      reason: row.routingReason ?? null,
+    },
+    constraintGoalIds: Array.isArray(row.constraintGoalIdsJson) ? row.constraintGoalIdsJson : [],
+    planModeOpenQuestions: Array.isArray(row.planModeOpenQuestionsJson)
+      ? row.planModeOpenQuestionsJson
+      : [],
     title: row.title,
     summary: row.summary,
     rationale: row.rationale,
@@ -126,6 +154,12 @@ export async function createMissionGoal(input: {
       active: input.active,
       source: input.source ?? 'user',
       sortOrder: (latestGoal?.maxSortOrder ?? -1) + 1,
+      interpretationScope: input.source === 'preset' ? 'project_wide' : 'unknown',
+      interpretationIntent: input.source === 'preset' ? 'maintain_threshold' : 'unknown',
+      interpretationSource: input.source === 'preset' ? 'preset' : 'unknown',
+      interpretationConfidencePercent: input.source === 'preset' ? 100 : 0,
+      interpretationReason:
+        input.source === 'preset' ? 'Preset Goal はプロジェクト横断制約として扱う' : null,
     })
     .returning();
   return mapGoal(row);
@@ -229,6 +263,13 @@ export async function listMissionCandidates(input: { repositoryId: string; statu
       repositoryId: missionTaskCandidates.repositoryId,
       goalId: missionTaskCandidates.goalId,
       goalTitle: missionGoals.title,
+      candidateKind: missionTaskCandidates.candidateKind,
+      primaryModule: missionTaskCandidates.primaryModule,
+      secondaryModulesJson: missionTaskCandidates.secondaryModulesJson,
+      routingConfidencePercent: missionTaskCandidates.routingConfidencePercent,
+      routingReason: missionTaskCandidates.routingReason,
+      constraintGoalIdsJson: missionTaskCandidates.constraintGoalIdsJson,
+      planModeOpenQuestionsJson: missionTaskCandidates.planModeOpenQuestionsJson,
       title: missionTaskCandidates.title,
       summary: missionTaskCandidates.summary,
       rationale: missionTaskCandidates.rationale,
@@ -261,6 +302,13 @@ export async function getMissionCandidate(candidateId: string) {
       repositoryId: missionTaskCandidates.repositoryId,
       goalId: missionTaskCandidates.goalId,
       goalTitle: missionGoals.title,
+      candidateKind: missionTaskCandidates.candidateKind,
+      primaryModule: missionTaskCandidates.primaryModule,
+      secondaryModulesJson: missionTaskCandidates.secondaryModulesJson,
+      routingConfidencePercent: missionTaskCandidates.routingConfidencePercent,
+      routingReason: missionTaskCandidates.routingReason,
+      constraintGoalIdsJson: missionTaskCandidates.constraintGoalIdsJson,
+      planModeOpenQuestionsJson: missionTaskCandidates.planModeOpenQuestionsJson,
       title: missionTaskCandidates.title,
       summary: missionTaskCandidates.summary,
       rationale: missionTaskCandidates.rationale,
@@ -324,6 +372,13 @@ export async function listMissionCandidatesByIds(candidateIds: string[], databas
       repositoryId: missionTaskCandidates.repositoryId,
       goalId: missionTaskCandidates.goalId,
       goalTitle: missionGoals.title,
+      candidateKind: missionTaskCandidates.candidateKind,
+      primaryModule: missionTaskCandidates.primaryModule,
+      secondaryModulesJson: missionTaskCandidates.secondaryModulesJson,
+      routingConfidencePercent: missionTaskCandidates.routingConfidencePercent,
+      routingReason: missionTaskCandidates.routingReason,
+      constraintGoalIdsJson: missionTaskCandidates.constraintGoalIdsJson,
+      planModeOpenQuestionsJson: missionTaskCandidates.planModeOpenQuestionsJson,
       title: missionTaskCandidates.title,
       summary: missionTaskCandidates.summary,
       rationale: missionTaskCandidates.rationale,
@@ -387,6 +442,14 @@ function buildMissionCandidateTaskObjective(candidate: MissionTaskCandidate) {
     '[事前に分かっている仕様]',
     `- 実装対象: ${candidate.title}`,
     `- Goal: ${candidate.goalTitle ?? '未指定'}`,
+    `- Candidate kind: ${candidate.candidateKind}`,
+    `- Primary module: ${candidate.moduleRouting.primaryModule ?? '未判定'}`,
+    candidate.moduleRouting.secondaryModules.length > 0
+      ? `- Secondary modules: ${candidate.moduleRouting.secondaryModules.join(', ')}`
+      : '- Secondary modules: なし',
+    ...(candidate.moduleRouting.reason
+      ? [`- Routing reason: ${candidate.moduleRouting.reason}`]
+      : []),
     `- 期待成果: ${candidate.acceptanceCriteria}`,
     `- 検証方針: ${candidate.verificationPlan}`,
     ...candidate.evidence.map((item) => `- 根拠: ${item.label}: ${item.value}`),
@@ -395,6 +458,7 @@ function buildMissionCandidateTaskObjective(candidate: MissionTaskCandidate) {
     '- Questionnaire や Plan Mode でユーザーが定義できる仕様要素は、ここで除外・禁止として固定せず、確認項目または選択肢として残してください。',
     '- repositorySnapshot や evidence から断定できない詳細仕様は仮決めせず、Plan 内で未確定事項として明示してください。',
     '- 既存の検証ゲートや認証/ルーティングなど、関係する既存構造との扱いは、必要に応じて Plan Mode で確認してください。',
+    ...candidate.planModeOpenQuestions.map((item) => `- ${item}`),
     '',
     '[Mission Goal / Signal]',
     candidate.goalTitle ? `Goal: ${candidate.goalTitle}` : 'Goal: 未指定',
