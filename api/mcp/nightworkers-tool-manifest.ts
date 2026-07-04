@@ -164,6 +164,72 @@ export const nightWorkersImportProjectInputSchema = z.object({
     ),
 });
 
+export const nightWorkersListOntologyModulesInputSchema = z.object({
+  repoPath: z
+    .string()
+    .trim()
+    .optional()
+    .describe('Repository root. Defaults to request-scoped NightWorkers project when available.'),
+});
+
+export const nightWorkersGetModuleOntologyInputSchema = z.object({
+  repoPath: z
+    .string()
+    .trim()
+    .optional()
+    .describe('Repository root. Defaults to request-scoped NightWorkers project when available.'),
+  module: z.string().trim().min(1).describe('Module id from .agent-ontology/modules.yaml.'),
+});
+
+export const nightWorkersClassifyGoalInputSchema = z.object({
+  repoPath: z
+    .string()
+    .trim()
+    .optional()
+    .describe('Repository root. Defaults to request-scoped NightWorkers project when available.'),
+  goal: z.string().trim().min(1).describe('User goal to classify into module routing.'),
+});
+
+export const nightWorkersCompileModuleContextInputSchema = z.object({
+  repoPath: z
+    .string()
+    .trim()
+    .optional()
+    .describe('Repository root. Defaults to request-scoped NightWorkers project when available.'),
+  goal: z.string().trim().min(1).describe('User goal for the task-scoped module context.'),
+  primaryModule: z.string().trim().optional().describe('Primary module id.'),
+  secondaryModules: z.array(z.string().trim().min(1)).optional().describe('Secondary module ids.'),
+  taskGenerationEvidence: z
+    .unknown()
+    .optional()
+    .describe('Optional Goal/Mission/TaskCandidate evidence for task-scoped summaries.'),
+  memoryEvidence: z.unknown().optional().describe('Optional memory evidence summary.'),
+  summaryType: z.enum(['canonical', 'task_scoped']).optional().describe('Requested summary type.'),
+});
+
+export const nightWorkersCheckBoundaryInputSchema = z.object({
+  repoPath: z
+    .string()
+    .trim()
+    .optional()
+    .describe('Repository root. Defaults to request-scoped NightWorkers project when available.'),
+  primaryModule: z.string().trim().min(1).describe('Primary module id.'),
+  secondaryModules: z.array(z.string().trim().min(1)).optional().describe('Secondary module ids.'),
+  plannedFiles: z
+    .array(z.string().trim().min(1))
+    .describe('Repository-relative files planned for editing or already touched.'),
+});
+
+export const nightWorkersGetVerificationPlanInputSchema = z.object({
+  repoPath: z
+    .string()
+    .trim()
+    .optional()
+    .describe('Repository root. Defaults to request-scoped NightWorkers project when available.'),
+  primaryModule: z.string().trim().min(1).describe('Primary module id.'),
+  secondaryModules: z.array(z.string().trim().min(1)).optional().describe('Secondary module ids.'),
+});
+
 export const nightWorkersCodexToolManifest = {
   read_current_specification: {
     title: 'Read Current Specification',
@@ -213,6 +279,78 @@ export const nightWorkersCodexToolManifest = {
     approvalMode: 'approve',
     inputSchema: nightWorkersImportProjectInputSchema,
   },
+  list_modules: {
+    title: 'List Ontology Modules',
+    description:
+      'List coding-agent module ontology entries from .agent-ontology/modules.yaml. This is read-only.',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+    approvalMode: 'approve',
+    inputSchema: nightWorkersListOntologyModulesInputSchema,
+  },
+  get_module_ontology: {
+    title: 'Get Module Ontology',
+    description:
+      'Read one module ontology manifest, including owned paths, invariants, boundaries, and verification plan. This is read-only.',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+    approvalMode: 'approve',
+    inputSchema: nightWorkersGetModuleOntologyInputSchema,
+  },
+  classify_goal: {
+    title: 'Classify Goal',
+    description:
+      'Classify a user goal into primaryModule, secondaryModules, changeTypes, risk, confidence, and reason using module ontology evidence. This is read-only.',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+    approvalMode: 'approve',
+    inputSchema: nightWorkersClassifyGoalInputSchema,
+  },
+  compile_module_context: {
+    title: 'Compile Module Context',
+    description:
+      'Compile canonical or task-scoped module context from ontology manifest, code evidence, task generation evidence, and memory hints. This is read-only.',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+    approvalMode: 'approve',
+    inputSchema: nightWorkersCompileModuleContextInputSchema,
+  },
+  check_boundary: {
+    title: 'Check Boundary',
+    description:
+      'Check planned or touched files against module owned paths, allowed crossings, read-mostly paths, and unknown paths. This is read-only.',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+    approvalMode: 'approve',
+    inputSchema: nightWorkersCheckBoundaryInputSchema,
+  },
+  get_verification_plan: {
+    title: 'Get Verification Plan',
+    description:
+      'Return baseline, focused, and full verification commands for a primary module and optional secondary modules. This is read-only.',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+    approvalMode: 'approve',
+    inputSchema: nightWorkersGetVerificationPlanInputSchema,
+  },
 } as const;
 
 export type NightWorkersCodexToolName = keyof typeof nightWorkersCodexToolManifest;
@@ -226,6 +364,12 @@ export type NightWorkersCodexToolExecutionMode =
 const PLAN_MODE_READ_ONLY_CODEX_TOOLS = new Set<NightWorkersCodexToolName>([
   'read_current_specification',
   'list_recent_specifications',
+  'list_modules',
+  'get_module_ontology',
+  'classify_goal',
+  'compile_module_context',
+  'check_boundary',
+  'get_verification_plan',
 ]);
 
 export function getNightWorkersCodexToolNames(input: { executionMode?: string } = {}) {

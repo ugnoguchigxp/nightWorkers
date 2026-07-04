@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "id": "mission-planner",
+  "label": "Mission Planner",
+  "summary": "Owns mission decomposition, mission planning prompts, Mission candidate lifecycle, and task proposal materialization metadata.",
+  "ubiquitousLanguage": [
+    {
+      "name": "Mission",
+      "meaning": "A planning unit derived from a user goal and repository signals."
+    },
+    {
+      "name": "MissionPlanningResult",
+      "meaning": "Structured decomposition output containing objectives, work packages, verification gates, and task proposals."
+    },
+    {
+      "name": "TaskProposal",
+      "meaning": "Reviewable candidate that can be explicitly materialized into a Task."
+    }
+  ],
+  "responsibilities": [
+    "Generate Mission candidates from Goal and repository signal inputs.",
+    "Evaluate decomposition quality before review-ready output.",
+    "Keep Task Proposal separate from created Task until user action.",
+    "Preserve scheduling, risk, and verification metadata through materialization."
+  ],
+  "ownedPaths": [
+    "api/modules/mission-planner/**",
+    "api/db/mission-planner-schema.ts",
+    "shared/schemas/mission-planner.schema.ts",
+    "tests/mission-planner.test.ts"
+  ],
+  "readMostlyPaths": [
+    "api/modules/project-detail/**",
+    "api/db/project-detail-schema.ts",
+    "shared/schemas/project-detail.schema.ts"
+  ],
+  "ownedData": {
+    "tables": [
+      "missions",
+      "mission_planning_results",
+      "mission_task_proposals"
+    ],
+    "files": []
+  },
+  "invariants": [
+    {
+      "id": "proposal-not-task",
+      "statement": "TaskProposal is not a Task and must not enter the queue until explicit materialization.",
+      "check": "Mission planner tests cover proposal creation and task materialization boundaries."
+    },
+    {
+      "id": "project-wide-goals-as-constraints",
+      "statement": "Project-wide goals constrain verification and risk, but do not become standalone Mission candidates by default.",
+      "check": "Mission planner tests cover project-wide goal only inputs."
+    },
+    {
+      "id": "review-ready-not-raw-draft",
+      "statement": "review_pending planning results must pass deterministic or evaluation gates and must not be raw LLM drafts.",
+      "check": "Mission planner tests cover lifecycle transitions."
+    }
+  ],
+  "allowedMutations": [
+    "Mission Planner prompt contract",
+    "Mission decomposition lifecycle",
+    "Task proposal metadata",
+    "Mission planner focused tests"
+  ],
+  "forbiddenMutations": [
+    "Project Detail visual redesign",
+    "worker queue scheduling lock implementation",
+    "provider routing policy",
+    "global task status model"
+  ],
+  "allowedCrossModule": [
+    {
+      "module": "project-detail",
+      "paths": ["api/modules/project-detail/**", "tests/project-detail-backend.test.ts"],
+      "reason": "Mission Planner consumes Project Detail signal snapshots and Goal seeds."
+    }
+  ],
+  "verification": {
+    "baseline": [
+      {
+        "command": "bunx vitest run tests/mission-planner.test.ts",
+        "expect": "Current Mission Planner tests pass before edits."
+      }
+    ],
+    "focused": [
+      {
+        "command": "bunx vitest run tests/mission-planner.test.ts",
+        "expect": "Mission Planner lifecycle and prompt contract tests pass."
+      }
+    ],
+    "full": [
+      {
+        "command": "bun run verify",
+        "expect": "Repository verification passes."
+      }
+    ]
+  },
+  "completionReport": {
+    "require": ["primaryModule", "boundaryCrossings", "invariantsChecked", "verification"]
+  }
+}

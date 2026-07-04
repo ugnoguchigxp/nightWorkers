@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "modules": [
+    {
+      "id": "project-detail",
+      "label": "Project Detail",
+      "manifest": "modules/project-detail.yaml",
+      "aliases": ["project detail", "quality", "mission tab", "task candidate"]
+    },
+    {
+      "id": "mission-planner",
+      "label": "Mission Planner",
+      "manifest": "modules/mission-planner.yaml",
+      "aliases": ["mission", "mission planning", "decomposition", "task proposal"]
+    },
+    {
+      "id": "settings",
+      "label": "Settings",
+      "manifest": "modules/settings.yaml",
+      "aliases": ["settings", "configuration", "provider settings", "runtime settings"]
+    }
+  ]
+}

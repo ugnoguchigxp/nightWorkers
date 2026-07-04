@@ -2,6 +2,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { ensureNightWorkersSchema } from '../db/bootstrap';
 import * as repo from '../modules/nightworkers/nightworkers.repository';
+import {
+  checkOntologyBoundary,
+  classifyOntologyGoal,
+  compileOntologyModuleContext,
+  getModuleOntology,
+  getOntologyVerificationPlan,
+  listOntologyModules,
+} from '../services/agent-ontology/agent-ontology.service';
 import { projectWorkerResultToNativeApiToolResult } from '../services/agent-runtime/native-api-runner/native-api-tool-result-projector';
 import { importProjectTool } from '../services/worker-tools/import-project';
 import {
@@ -136,6 +144,117 @@ export function createNightWorkersCodexMcpServer(context: NightWorkersMcpRequest
     }
   );
 
+  server.registerTool(
+    'list_modules',
+    {
+      ...nightWorkersCodexToolManifest.list_modules,
+    },
+    async ({ repoPath }) =>
+      toolResultToMcp(
+        await readOnlyOntologyTool('list_modules', async () =>
+          listOntologyModules({
+            repoPath: await resolveOntologyRepoPath(repoPath, context),
+          })
+        )
+      )
+  );
+
+  server.registerTool(
+    'get_module_ontology',
+    {
+      ...nightWorkersCodexToolManifest.get_module_ontology,
+    },
+    async ({ repoPath, module }) =>
+      toolResultToMcp(
+        await readOnlyOntologyTool('get_module_ontology', async () =>
+          getModuleOntology({
+            repoPath: await resolveOntologyRepoPath(repoPath, context),
+            module,
+          })
+        )
+      )
+  );
+
+  server.registerTool(
+    'classify_goal',
+    {
+      ...nightWorkersCodexToolManifest.classify_goal,
+    },
+    async ({ repoPath, goal }) =>
+      toolResultToMcp(
+        await readOnlyOntologyTool('classify_goal', async () =>
+          classifyOntologyGoal({
+            repoPath: await resolveOntologyRepoPath(repoPath, context),
+            goal,
+          })
+        )
+      )
+  );
+
+  server.registerTool(
+    'compile_module_context',
+    {
+      ...nightWorkersCodexToolManifest.compile_module_context,
+    },
+    async ({
+      repoPath,
+      goal,
+      primaryModule,
+      secondaryModules,
+      taskGenerationEvidence,
+      memoryEvidence,
+      summaryType,
+    }) =>
+      toolResultToMcp(
+        await readOnlyOntologyTool('compile_module_context', async () =>
+          compileOntologyModuleContext({
+            repoPath: await resolveOntologyRepoPath(repoPath, context),
+            goal,
+            primaryModule,
+            secondaryModules,
+            taskGenerationEvidence,
+            memoryEvidence,
+            summaryType,
+          })
+        )
+      )
+  );
+
+  server.registerTool(
+    'check_boundary',
+    {
+      ...nightWorkersCodexToolManifest.check_boundary,
+    },
+    async ({ repoPath, primaryModule, secondaryModules, plannedFiles }) =>
+      toolResultToMcp(
+        await readOnlyOntologyTool('check_boundary', async () =>
+          checkOntologyBoundary({
+            repoPath: await resolveOntologyRepoPath(repoPath, context),
+            primaryModule,
+            secondaryModules,
+            plannedFiles,
+          })
+        )
+      )
+  );
+
+  server.registerTool(
+    'get_verification_plan',
+    {
+      ...nightWorkersCodexToolManifest.get_verification_plan,
+    },
+    async ({ repoPath, primaryModule, secondaryModules }) =>
+      toolResultToMcp(
+        await readOnlyOntologyTool('get_verification_plan', async () =>
+          getOntologyVerificationPlan({
+            repoPath: await resolveOntologyRepoPath(repoPath, context),
+            primaryModule,
+            secondaryModules,
+          })
+        )
+      )
+  );
+
   return server;
 }
 
@@ -162,6 +281,47 @@ async function resolveTaskRepository(input: { taskId: string; runId: string }) {
     task: runTask ?? null,
     repository: repositoryId ? await repo.getRepository(repositoryId) : null,
   };
+}
+
+async function resolveOntologyRepoPath(
+  explicitRepoPath: string | undefined,
+  context: NightWorkersMcpRequestContext
+) {
+  if (explicitRepoPath?.trim()) return explicitRepoPath.trim();
+  const resolved = await resolveTaskRepository({
+    taskId: firstNonEmpty(context.taskId, process.env.NIGHTWORKERS_TASK_ID),
+    runId: firstNonEmpty(context.runId, process.env.NIGHTWORKERS_RUN_ID),
+  });
+  return resolved.repository?.localPath;
+}
+
+async function readOnlyOntologyTool<TPayload>(
+  toolName: string,
+  callback: () => Promise<TPayload>
+): Promise<WorkerToolResult<TPayload | null>> {
+  const startedAt = new Date().toISOString();
+  try {
+    const payload = await callback();
+    return {
+      ok: true,
+      toolName,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      payload,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      toolName,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      payload: null,
+      error: {
+        code: 'ONTOLOGY_TOOL_FAILED',
+        message: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
 }
 
 function isToolDisabledForExecutionMode(

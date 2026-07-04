@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   buildNightWorkersCodexToolApprovalConfig,
   buildNightWorkersCodexToolConfigLines,
+  nightWorkersCheckBoundaryInputSchema,
+  nightWorkersClassifyGoalInputSchema,
+  nightWorkersCompileModuleContextInputSchema,
+  nightWorkersGetModuleOntologyInputSchema,
+  nightWorkersGetVerificationPlanInputSchema,
   nightWorkersImportProjectInputSchema,
+  nightWorkersListOntologyModulesInputSchema,
   nightWorkersReadCurrentSpecificationInputSchema,
   nightWorkersTodoListInputSchema,
   toNightWorkersJsonSchema,
@@ -61,6 +67,12 @@ describe('nightworkers MCP manifest', () => {
     expect(lines).toContain('[mcp_servers.nightworkers.tools.list_recent_specifications]');
     expect(lines).toContain('[mcp_servers.nightworkers.tools.todo_list]');
     expect(lines).toContain('[mcp_servers.nightworkers.tools.import_project]');
+    expect(lines).toContain('[mcp_servers.nightworkers.tools.list_modules]');
+    expect(lines).toContain('[mcp_servers.nightworkers.tools.get_module_ontology]');
+    expect(lines).toContain('[mcp_servers.nightworkers.tools.classify_goal]');
+    expect(lines).toContain('[mcp_servers.nightworkers.tools.compile_module_context]');
+    expect(lines).toContain('[mcp_servers.nightworkers.tools.check_boundary]');
+    expect(lines).toContain('[mcp_servers.nightworkers.tools.get_verification_plan]');
     expect(lines).not.toContain('replace_todo_list');
   });
 
@@ -93,5 +105,26 @@ describe('nightworkers MCP manifest', () => {
           | undefined
       )?.enum ?? []
     ).toContain('list');
+  });
+
+  it('defines JSON schemas for ontology MCP tools', () => {
+    expect(toNightWorkersJsonSchema(nightWorkersListOntologyModulesInputSchema)).toMatchObject({
+      type: 'object',
+    });
+    expect(toNightWorkersJsonSchema(nightWorkersGetModuleOntologyInputSchema)).toMatchObject({
+      required: ['module'],
+    });
+    expect(toNightWorkersJsonSchema(nightWorkersClassifyGoalInputSchema)).toMatchObject({
+      required: ['goal'],
+    });
+    expect(toNightWorkersJsonSchema(nightWorkersCompileModuleContextInputSchema)).toMatchObject({
+      required: ['goal'],
+    });
+    expect(toNightWorkersJsonSchema(nightWorkersCheckBoundaryInputSchema)).toMatchObject({
+      required: ['primaryModule', 'plannedFiles'],
+    });
+    expect(toNightWorkersJsonSchema(nightWorkersGetVerificationPlanInputSchema)).toMatchObject({
+      required: ['primaryModule'],
+    });
   });
 });

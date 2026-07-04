@@ -105,6 +105,26 @@ describe('NightWorkers Codex MCP integration', () => {
         Object.keys(nightWorkersCodexToolManifest).sort()
       );
 
+      const ontologyResult = await client.callTool(
+        {
+          name: 'list_modules',
+          arguments: {},
+        },
+        undefined,
+        { timeout: 30_000 }
+      );
+      expect(ontologyResult.isError).toBeFalsy();
+      expect(ontologyResult.structuredContent).toMatchObject({
+        payload: {
+          modules: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'project-detail',
+              manifestDigest: expect.stringMatching(/^sha256:/),
+            }),
+          ]),
+        },
+      });
+
       let callResult: CallToolResult;
       try {
         callResult = await client.callTool(

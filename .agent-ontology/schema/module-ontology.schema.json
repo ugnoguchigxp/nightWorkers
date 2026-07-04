@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "version",
+    "id",
+    "summary",
+    "ubiquitousLanguage",
+    "responsibilities",
+    "ownedPaths",
+    "invariants",
+    "forbiddenMutations",
+    "verification"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "id": { "type": "string", "minLength": 1 },
+    "label": { "type": "string" },
+    "summary": { "type": "string", "minLength": 1 },
+    "ubiquitousLanguage": { "type": "array" },
+    "responsibilities": { "type": "array" },
+    "ownedPaths": { "type": "array", "items": { "type": "string" } },
+    "readMostlyPaths": { "type": "array", "items": { "type": "string" } },
+    "ownedData": { "type": "object" },
+    "invariants": { "type": "array" },
+    "allowedMutations": { "type": "array" },
+    "forbiddenMutations": { "type": "array" },
+    "allowedCrossModule": { "type": "array" },
+    "verification": { "type": "object" },
+    "completionReport": { "type": "object" }
+  },
+  "additionalProperties": true
+}

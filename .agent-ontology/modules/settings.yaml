@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "id": "settings",
+  "label": "Settings",
+  "summary": "Owns Settings API and UI contracts for runtime, provider, MCP, pricing, and general configuration surfaces.",
+  "ubiquitousLanguage": [
+    {
+      "name": "RuntimeSettings",
+      "meaning": "Configuration controlling runtime lane and execution behavior."
+    },
+    {
+      "name": "ProviderSettings",
+      "meaning": "Configuration for LLM providers and task routing inputs."
+    },
+    {
+      "name": "McpSettings",
+      "meaning": "Configuration for registered MCP servers and tools."
+    }
+  ],
+  "responsibilities": [
+    "Expose settings routes and schemas.",
+    "Render settings UI surfaces.",
+    "Persist and validate configuration values.",
+    "Keep settings labels and command contracts aligned."
+  ],
+  "ownedPaths": [
+    "api/routes/settings*.ts",
+    "src/modules/settings/**",
+    "tests/routes.settings-general.test.ts",
+    "tests/services.general-settings.test.ts",
+    "tests/services.mcp-settings.test.ts"
+  ],
+  "readMostlyPaths": [
+    "api/services/pricing/**",
+    "api/services/agent-runtime/**",
+    "api/mcp/**"
+  ],
+  "ownedData": {
+    "tables": [],
+    "files": ["data/nightworkers-settings.json", "data/nightworkers-mcp-settings.json"]
+  },
+  "invariants": [
+    {
+      "id": "settings-schema-route-parity",
+      "statement": "Settings route definitions, route handlers, commands, and UI state must agree on field names and payload shapes.",
+      "check": "Settings route and UI tests cover changed settings contracts."
+    },
+    {
+      "id": "settings-no-runtime-policy-drift",
+      "statement": "Settings UI can configure runtime values but must not silently redefine execution policy.",
+      "check": "Runtime and settings focused tests cover changed defaults."
+    },
+    {
+      "id": "mcp-settings-safe-registration",
+      "statement": "MCP settings changes must preserve app-managed config behavior and avoid manual bundle path assumptions.",
+      "check": "MCP settings and Codex MCP setup tests cover registration output."
+    }
+  ],
+  "allowedMutations": [
+    "Settings API route definitions",
+    "Settings UI controls",
+    "Settings command wrappers",
+    "Settings-focused tests"
+  ],
+  "forbiddenMutations": [
+    "task execution queue semantics",
+    "Project Detail layout redesign",
+    "authentication model",
+    "provider call implementation outside configuration boundaries"
+  ],
+  "allowedCrossModule": [
+    {
+      "module": "project-detail",
+      "paths": ["api/modules/project-detail/**"],
+      "reason": "Settings may expose capabilities consumed by Project Detail projections."
+    }
+  ],
+  "verification": {
+    "baseline": [
+      {
+        "command": "bunx vitest run tests/routes.settings-general.test.ts tests/services.general-settings.test.ts tests/services.mcp-settings.test.ts",
+        "expect": "Current Settings focused tests pass before edits."
+      }
+    ],
+    "focused": [
+      {
+        "command": "bunx vitest run tests/routes.settings-general.test.ts tests/services.general-settings.test.ts tests/services.mcp-settings.test.ts",
+        "expect": "Settings route, service, and MCP settings tests pass."
+      }
+    ],
+    "full": [
+      {
+        "command": "bun run verify",
+        "expect": "Repository verification passes."
+      }
+    ]
+  },
+  "completionReport": {
+    "require": ["primaryModule", "boundaryCrossings", "invariantsChecked", "verification"]
+  }
+}

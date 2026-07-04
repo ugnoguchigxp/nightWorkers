@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "id": "project-detail",
+  "label": "Project Detail",
+  "summary": "Owns repository detail projections, Project Detail API contracts, Mission tab task-candidate display, Quality tab data projection, and related backend aggregation.",
+  "ubiquitousLanguage": [
+    {
+      "name": "MissionGoal",
+      "meaning": "Repository-scoped goal seed used by Project Detail and Mission generation."
+    },
+    {
+      "name": "TaskCandidate",
+      "meaning": "Selectable generated task candidate shown under Goal and Mission context."
+    },
+    {
+      "name": "ProjectQualityOverview",
+      "meaning": "Quality tab API projection for capability, coverage, E2E, and run state."
+    }
+  ],
+  "responsibilities": [
+    "Expose Project Detail API contracts.",
+    "Project repository signals into detail views and generation inputs.",
+    "Render Goal / Mission / TaskCandidate hierarchy in the Project Detail surface.",
+    "Project Quality run artifacts into UI-ready overview data."
+  ],
+  "ownedPaths": [
+    "api/modules/project-detail/**",
+    "src/modules/nightworkers/components/ProjectDetailScreen.tsx",
+    "shared/schemas/project-detail.schema.ts",
+    "tests/project-detail-backend.test.ts",
+    "tests/project-detail-screen.test.tsx"
+  ],
+  "readMostlyPaths": [
+    "api/modules/mission-planner/**",
+    "src/modules/nightworkers/nightWorkersCommands.ts",
+    "src/modules/nightworkers/hooks/**",
+    "src/i18n/dictionaries/**"
+  ],
+  "ownedData": {
+    "tables": [
+      "mission_goals",
+      "mission_task_candidate_batches",
+      "mission_task_candidates",
+      "project_quality_runs"
+    ],
+    "files": []
+  },
+  "invariants": [
+    {
+      "id": "goal-mission-taskcandidate-tree",
+      "statement": "Project Detail Mission UI presents Goal -> Mission -> TaskCandidate as one hierarchy.",
+      "check": "Project Detail screen tests cover tree/table rendering and row detail behavior."
+    },
+    {
+      "id": "candidate-proposal-wording",
+      "statement": "Visible Mission UI treats task_candidate and task_proposal as one task-candidate concept unless explicitly scoped otherwise.",
+      "check": "UI labels and dictionaries avoid reintroducing proposal/candidate split."
+    },
+    {
+      "id": "quality-overview-explicit-projection",
+      "statement": "Quality UI should consume explicit overview projection fields instead of guessing run type in the component.",
+      "check": "Backend and Project Detail screen tests cover Quality overview projection."
+    }
+  ],
+  "allowedMutations": [
+    "Project Detail API projection",
+    "Project Detail UI rendering",
+    "Mission Goal CRUD projection",
+    "TaskCandidate display and task materialization wiring",
+    "Quality overview projection"
+  ],
+  "forbiddenMutations": [
+    "provider routing policy",
+    "worker execution lifecycle",
+    "global authentication model",
+    "unrelated settings UI redesign"
+  ],
+  "allowedCrossModule": [
+    {
+      "module": "mission-planner",
+      "paths": ["api/modules/mission-planner/**", "tests/mission-planner.test.ts"],
+      "reason": "Project Detail Mission tab consumes Mission Planner lifecycle and task proposal data."
+    },
+    {
+      "module": "settings",
+      "paths": ["api/routes/settings*.ts", "src/modules/settings/**"],
+      "reason": "Project Detail may display or depend on configured provider/runtime capabilities."
+    }
+  ],
+  "verification": {
+    "baseline": [
+      {
+        "command": "bunx vitest run tests/project-detail-backend.test.ts tests/project-detail-screen.test.tsx",
+        "expect": "Current Project Detail backend and screen tests pass before edits."
+      }
+    ],
+    "focused": [
+      {
+        "command": "bunx vitest run tests/project-detail-backend.test.ts tests/project-detail-screen.test.tsx",
+        "expect": "Project Detail API projection and UI behavior pass."
+      }
+    ],
+    "full": [
+      {
+        "command": "bun run verify",
+        "expect": "Repository verification passes."
+      }
+    ]
+  },
+  "completionReport": {
+    "require": ["primaryModule", "boundaryCrossings", "invariantsChecked", "verification"]
+  }
+}
