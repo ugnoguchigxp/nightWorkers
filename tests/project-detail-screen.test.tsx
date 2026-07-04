@@ -8,26 +8,15 @@ import type { ProjectStackProfile } from '../shared/schemas/project-detail.schem
 import '../src/i18n/setup';
 import {
   applyMissionGoalTemplate,
+  buildTaskGenerationTreeRows,
+  buildUnifiedTaskCandidates,
+  coverageAxesFromQualityRun,
   GoalEditorDialog,
-  MissionGenerateTasksPanel,
   QualityReportPanel,
+  TaskGenerationTreeTable,
   toggleMissionGoalTemplate,
 } from '../src/modules/nightworkers/components/ProjectDetailScreen';
 import { coverageRowsFromSummary } from '../src/modules/nightworkers/qualityRows';
-
-const baseProps = {
-  rows: [],
-  candidates: [],
-  selectedIds: [],
-  busy: false,
-  isGenerating: false,
-  selectedCount: 0,
-  onToggleSelected: vi.fn(),
-  onOpen: vi.fn(),
-  onDismiss: vi.fn(),
-  onGenerate: vi.fn(),
-  onCreateTasks: vi.fn(),
-};
 
 const stackProfile = (technologies: ProjectStackProfile['technologies']): ProjectStackProfile => ({
   summary: technologies.map((technology) => technology.name).join(' + '),
@@ -64,51 +53,168 @@ const fullTemplateStack = stackProfile([
   },
 ]);
 
-describe('MissionGenerateTasksPanel', () => {
-  it('shows a loading indicator while task candidates are being generated', () => {
-    const markup = renderToStaticMarkup(
-      <MissionGenerateTasksPanel {...baseProps} busy={true} isGenerating={true} />
-    );
+describe('TaskGenerationTreeTable', () => {
+  const goal = {
+    id: '11111111-1111-4111-8111-111111111111',
+    repositoryId: '22222222-2222-4222-8222-222222222222',
+    title: '品質を安定させる',
+    goalText: 'リリース前の品質を安定させる。',
+    active: true,
+    source: 'user' as const,
+    sortOrder: 0,
+    createdAt: new Date('2026-07-04T00:00:00.000Z'),
+    updatedAt: new Date('2026-07-04T00:00:00.000Z'),
+  };
+  const mission = {
+    id: '33333333-3333-4333-8333-333333333333',
+    repositoryId: goal.repositoryId,
+    title: '品質ゲート整備',
+    goalText: '品質ゲートを整備する。',
+    nonGoals: [],
+    status: 'draft' as const,
+    sourceGoalIds: [goal.id],
+    latestPlanningResultId: null,
+    statusReason: '複数タスクに分解する必要がある。',
+    createdAt: new Date('2026-07-04T00:01:00.000Z'),
+    updatedAt: new Date('2026-07-04T00:01:00.000Z'),
+  };
+  const candidate = {
+    id: '44444444-4444-4444-8444-444444444444',
+    batchId: '55555555-5555-4555-8555-555555555555',
+    repositoryId: goal.repositoryId,
+    goalId: goal.id,
+    goalTitle: goal.title,
+    title: 'coverage script を追加',
+    summary: 'coverage を実行できるようにする。',
+    rationale: '品質ゲートに必要。',
+    evidence: [{ source: 'quality' as const, label: 'missing', value: 'coverage' }],
+    evaluationContribution: 20,
+    importancePercent: 80,
+    confidencePercent: 70,
+    tokenSize: 'small' as const,
+    complexity: 'simple' as const,
+    taskPrompt: 'coverage script を追加してください。',
+    acceptanceCriteria: 'coverage が実行できる。',
+    verificationPlan: 'bun run test:coverage',
+    status: 'candidate' as const,
+    taskId: null,
+    createdAt: new Date('2026-07-04T00:02:00.000Z'),
+    updatedAt: new Date('2026-07-04T00:02:00.000Z'),
+  };
+  const proposal = {
+    id: '66666666-6666-4666-8666-666666666666',
+    missionId: mission.id,
+    planningResultId: '77777777-7777-4777-8777-777777777777',
+    repositoryId: goal.repositoryId,
+    workPackageId: 'quality-gate',
+    decompositionTaskId: 'quality-gate-task',
+    status: 'proposed' as const,
+    title: 'verify gate を接続',
+    summary: 'verify gate を Mission から分解した候補。',
+    initialPrompt: 'verify gate を接続してください。',
+    expectedOutcome: 'verify gate が動く。',
+    implementationFocus: ['api/modules/project-detail'],
+    acceptanceCriteria: ['verify が通る'],
+    verificationGate: ['bun run verify'],
+    dependencies: [],
+    targetFilesOrModules: ['api/modules/project-detail'],
+    risk: 'medium' as const,
+    approvalRequired: false,
+    scheduling: {
+      executionType: 'normal' as const,
+      reason: '単独で実行できる。',
+      sequenceGroupId: null,
+      sequenceOrder: null,
+      dependsOnTaskIds: [],
+    },
+    taskId: null,
+    createdAt: new Date('2026-07-04T00:03:00.000Z'),
+    updatedAt: new Date('2026-07-04T00:03:00.000Z'),
+  };
 
-    expect(markup).toContain('animate-spin');
-    expect(markup).toContain('候補を生成中');
-    expect(markup).not.toContain('候補を生成</button>');
+  it('normalizes mission candidates and mission decomposition results into one candidate shape', () => {
+    const unified = buildUnifiedTaskCandidates([candidate], [proposal]);
+
+    expect(unified).toMatchObject([
+      {
+        id: `mission_task_candidate:${candidate.id}`,
+        goalId: goal.id,
+        missionId: null,
+        origin: 'goal_generation',
+        importancePercent: 80,
+      },
+      {
+        id: `mission_task_proposal:${proposal.id}`,
+        goalId: null,
+        missionId: mission.id,
+        origin: 'mission_decomposition',
+        importancePercent: null,
+      },
+    ]);
   });
 
-  it('keeps the normal generate button when another candidate action is busy', () => {
-    const markup = renderToStaticMarkup(
-      <MissionGenerateTasksPanel {...baseProps} busy={true} isGenerating={false} />
-    );
+  it('builds Goal -> Mission -> TaskCandidate rows with expansion state', () => {
+    const unified = buildUnifiedTaskCandidates([candidate], [proposal]);
+    const rows = buildTaskGenerationTreeRows({
+      goals: [goal],
+      missions: [mission],
+      candidates: unified,
+      expanded: { goalIds: new Set([goal.id]), missionIds: new Set([mission.id]) },
+    });
 
-    expect(markup).not.toContain('animate-spin');
-    expect(markup).toContain('候補を生成');
+    expect(rows.map((row) => `${row.kind}:${row.depth}:${row.id}`)).toEqual([
+      `goal:0:${goal.id}`,
+      `mission:1:${mission.id}`,
+      `task_candidate:2:mission_task_proposal:${proposal.id}`,
+      `task_candidate:1:mission_task_candidate:${candidate.id}`,
+    ]);
   });
 
-  it('renders row-level delete actions for draft task candidates', () => {
+  it('renders the tree table without a Goal / Signal column', () => {
+    const unified = buildUnifiedTaskCandidates([candidate], [proposal]);
+    const rows = buildTaskGenerationTreeRows({
+      goals: [goal],
+      missions: [mission],
+      candidates: unified,
+      expanded: { goalIds: new Set([goal.id]), missionIds: new Set([mission.id]) },
+    });
+    const noop = vi.fn();
     const markup = renderToStaticMarkup(
-      <MissionGenerateTasksPanel
-        {...baseProps}
-        rows={[
-          {
-            id: 'mission_task_candidate:candidate-1',
-            source: 'mission_task_candidate' as const,
-            sourceId: 'candidate-1',
-            title: '候補タスク',
-            goal: 'Goal',
-            signal: 'Signal',
-            evaluationContribution: '+10',
-            tokenSize: 'small',
-            importance: 80,
-            confidence: 70,
-            complexity: 'simple',
-            reason: 'ドラフト候補として削除できる。',
-          },
-        ]}
+      <TaskGenerationTreeTable
+        rows={rows}
+        expanded={{ goalIds: new Set([goal.id]), missionIds: new Set([mission.id]) }}
+        selectedIds={[]}
+        selectedCount={0}
+        busy={false}
+        busyAction={null}
+        onAddGoal={noop}
+        onCreateSelected={noop}
+        onGenerateTaskCandidates={noop}
+        onGenerateMissionCandidates={noop}
+        onToggleGoal={noop}
+        onToggleMission={noop}
+        onToggleSelected={noop}
+        onOpenGoal={noop}
+        onOpenMission={noop}
+        onOpenCandidate={noop}
+        onEditGoal={noop}
+        onToggleGoalActive={noop}
+        onDeleteGoal={noop}
+        onDecomposeMission={noop}
+        onDeleteMission={noop}
+        onCreateCandidate={noop}
+        onDismissCandidate={noop}
       />
     );
 
+    expect(markup).toContain('品質を安定させる');
+    expect(markup).toContain('品質ゲート整備');
+    expect(markup).toContain('verify gate を接続');
+    expect(markup).not.toContain('ゴール / シグナル');
+    expect(markup.match(/type="checkbox"/g)).toHaveLength(2);
+    expect(markup).toContain('aria-label="タスク化"');
+    expect(markup).toContain('aria-label="配下にタスク候補があるため削除できません"');
     expect(markup).toContain('aria-label="候補を削除"');
-    expect(markup).toContain('lucide-trash-2');
   });
 });
 
@@ -225,6 +331,28 @@ describe('QualityReportPanel', () => {
     expect(markup).toContain('コマンド出力');
   });
 
+  it('builds overview coverage gate axes from coverage summary when the gate is disabled', () => {
+    const axes = coverageAxesFromQualityRun({
+      ...allRun,
+      coverageGate: {
+        enabled: false,
+        passed: true,
+        targetPercent: 80,
+        metrics: [],
+        failedMetrics: [],
+        measuredAt: '2026-07-04T00:00:02.000Z',
+        reason: 'coverage_gate_disabled',
+      },
+    });
+
+    expect(axes).toEqual([
+      { labelKey: 'projectDetail.coverage.statements', value: 88.2 },
+      { labelKey: 'projectDetail.coverage.branches', value: 81.4 },
+      { labelKey: 'projectDetail.coverage.functions', value: 90 },
+      { labelKey: 'projectDetail.coverage.lines', value: 87.5 },
+    ]);
+  });
+
   it('shows capability and run errors instead of an unqualified empty table', () => {
     const failedRun = { ...allRun, status: 'failed' as const, exitCode: 1, errorMessage: 'boom' };
     const markup = renderToStaticMarkup(
@@ -285,6 +413,34 @@ describe('coverageRowsFromSummary', () => {
     expect(rows.map((row) => row.file)).toEqual(['total', 'src/a.ts', 'src/b.ts']);
     expect(rows[1].branches).toBeNull();
     expect(rows[1].uncovered).toBe('4, 8');
+  });
+
+  it('displays coverage files relative to the project root', () => {
+    const rows = coverageRowsFromSummary(
+      {
+        total: {
+          statements: { pct: 90 },
+          branches: { pct: 80 },
+          functions: { pct: 85 },
+          lines: { pct: 88 },
+        },
+        '/Users/y.noguchi/Code/todolist/api/app/env.ts': {
+          statements: { pct: 70 },
+          branches: { pct: 60 },
+          functions: { pct: 75 },
+          lines: { pct: 72 },
+        },
+        '/tmp/outside.ts': {
+          statements: { pct: 71 },
+          branches: { pct: 61 },
+          functions: { pct: 76 },
+          lines: { pct: 73 },
+        },
+      },
+      '/Users/y.noguchi/Code/todolist'
+    );
+
+    expect(rows.map((row) => row.file)).toEqual(['total', '/tmp/outside.ts', 'api/app/env.ts']);
   });
 });
 

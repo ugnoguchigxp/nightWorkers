@@ -147,6 +147,20 @@ export async function deleteMission(missionId: string) {
   return row ? mapMission(row) : null;
 }
 
+export async function hasOpenTaskProposalsForMission(missionId: string, database: Db = db) {
+  const [row] = await database
+    .select({ id: missionTaskProposals.id })
+    .from(missionTaskProposals)
+    .where(
+      and(
+        eq(missionTaskProposals.missionId, missionId),
+        eq(missionTaskProposals.status, 'proposed')
+      )
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
 export async function updateMission(
   missionId: string,
   input: {

@@ -1,6 +1,8 @@
 import {
   Activity,
   Check,
+  ChevronDown,
+  ChevronRight,
   CircleDollarSign,
   ClipboardCheck,
   Code2,
@@ -12,6 +14,7 @@ import {
   Target,
   TestTube2,
   Trash2,
+  X,
   Zap,
 } from 'lucide-react';
 import type React from 'react';
@@ -147,21 +150,70 @@ type TopTokenTaskRow = {
   sessionId?: string;
 };
 type CoverageAxis = { labelKey: string; value: number };
+const coverageAxisMetrics = ['statements', 'branches', 'functions', 'lines'] as const;
 type CandidateRowSource = 'mission_task_candidate' | 'mission_task_proposal';
-type TaskCandidateRow = {
+type TaskCandidateOrigin = 'goal_generation' | 'mission_decomposition';
+type TaskCandidateSourceRef =
+  | { source: 'mission_task_candidate'; id: string }
+  | { source: 'mission_task_proposal'; id: string };
+type UnifiedTaskCandidateStatus = 'candidate' | 'task_created' | 'dismissed';
+type UnifiedTaskCandidate = {
   id: string;
-  source: CandidateRowSource;
-  sourceId: string;
+  repositoryId: string;
+  goalId: string | null;
+  goalTitle: string | null;
+  missionId: string | null;
+  origin: TaskCandidateOrigin;
+  sourceRef: TaskCandidateSourceRef;
   title: string;
-  goal: string;
-  signal: string;
-  evaluationContribution: string;
-  tokenSize: string;
-  importance: number;
-  confidence: number;
-  complexity: string;
-  reason: string;
+  summary: string;
+  rationale: string;
+  evidence: Array<{ source: string; label: string; value: string }>;
+  evaluationContribution: number | null;
+  importancePercent: number | null;
+  confidencePercent: number | null;
+  tokenSize: string | null;
+  complexity: string | null;
+  taskPrompt: string;
+  acceptanceCriteria: string;
+  verificationPlan: string;
+  status: UnifiedTaskCandidateStatus;
+  taskId: string | null;
+  createdAt: string | Date;
 };
+type TaskGenerationTreeRow =
+  | {
+      kind: 'goal';
+      id: string;
+      depth: 0;
+      goal: MissionGoal | null;
+      childCounts: { missions: number; taskCandidates: number };
+    }
+  | {
+      kind: 'mission';
+      id: string;
+      depth: 1;
+      parentGoalId: string;
+      mission: Mission;
+      childCounts: { taskCandidates: number };
+    }
+  | {
+      kind: 'task_candidate';
+      id: string;
+      depth: 1 | 2;
+      parentGoalId: string | null;
+      parentMissionId: string | null;
+      candidate: UnifiedTaskCandidate;
+    };
+type ExpandedState = {
+  goalIds: Set<string>;
+  missionIds: Set<string>;
+};
+type DetailModalState =
+  | { kind: 'goal'; id: string }
+  | { kind: 'mission'; id: string }
+  | { kind: 'task_candidate'; id: string }
+  | null;
 type E2EResultRow = {
   suite: string;
   status: string;
@@ -175,13 +227,195 @@ function candidateRowId(source: CandidateRowSource, id: string) {
   return `${source}:${id}`;
 }
 
-function parseCandidateRowId(rowId: string) {
-  const [source, ...rest] = rowId.split(':');
-  const sourceId = rest.join(':');
-  if ((source === 'mission_task_candidate' || source === 'mission_task_proposal') && sourceId) {
-    return { source, sourceId } as const;
+const unassignedGoalId = '__unassigned__';
+
+function normalizeCandidateStatus(
+  status: MissionTaskCandidate['status']
+): UnifiedTaskCandidateStatus {
+  if (status === 'task_created' || status === 'dismissed') return status;
+  return 'candidate';
+}
+
+function normalizeProposalStatus(
+  status: MissionTaskProposal['status']
+): UnifiedTaskCandidateStatus {
+  if (status === 'task_created' || status === 'dismissed') return status;
+  return 'candidate';
+}
+
+function toTimestamp(value: string | Date) {
+  const timestamp = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function compareNewestFirst(a: { createdAt: string | Date }, b: { createdAt: string | Date }) {
+  return toTimestamp(b.createdAt) - toTimestamp(a.createdAt);
+}
+
+function isMissionDeleteInProgress(status: Mission['status']) {
+  return status === 'decomposing' || status === 'evaluating';
+}
+
+export function buildUnifiedTaskCandidates(
+  candidates: MissionTaskCandidate[],
+  proposals: MissionTaskProposal[]
+): UnifiedTaskCandidate[] {
+  return [
+    ...candidates.map(
+      (candidate): UnifiedTaskCandidate => ({
+        id: candidateRowId('mission_task_candidate', candidate.id),
+        repositoryId: candidate.repositoryId,
+        goalId: candidate.goalId,
+        goalTitle: candidate.goalTitle ?? null,
+        missionId: null,
+        origin: 'goal_generation',
+        sourceRef: { source: 'mission_task_candidate', id: candidate.id },
+        title: candidate.title,
+        summary: candidate.summary,
+        rationale: candidate.rationale,
+        evidence: candidate.evidence,
+        evaluationContribution: candidate.evaluationContribution,
+        importancePercent: candidate.importancePercent,
+        confidencePercent: candidate.confidencePercent,
+        tokenSize: candidate.tokenSize,
+        complexity: candidate.complexity,
+        taskPrompt: candidate.taskPrompt,
+        acceptanceCriteria: candidate.acceptanceCriteria,
+        verificationPlan: candidate.verificationPlan,
+        status: normalizeCandidateStatus(candidate.status),
+        taskId: candidate.taskId,
+        createdAt: candidate.createdAt,
+      })
+    ),
+    ...proposals.map(
+      (proposal): UnifiedTaskCandidate => ({
+        id: candidateRowId('mission_task_proposal', proposal.id),
+        repositoryId: proposal.repositoryId,
+        goalId: null,
+        goalTitle: null,
+        missionId: proposal.missionId,
+        origin: 'mission_decomposition',
+        sourceRef: { source: 'mission_task_proposal', id: proposal.id },
+        title: proposal.title,
+        summary: proposal.summary,
+        rationale: proposal.expectedOutcome,
+        evidence: proposal.targetFilesOrModules.map((path) => ({
+          source: 'mission_decomposition',
+          label: 'Target',
+          value: path,
+        })),
+        evaluationContribution: null,
+        importancePercent: null,
+        confidencePercent: null,
+        tokenSize: null,
+        complexity: null,
+        taskPrompt: proposal.initialPrompt,
+        acceptanceCriteria: proposal.acceptanceCriteria.join('\n'),
+        verificationPlan: proposal.verificationGate.join('\n'),
+        status: normalizeProposalStatus(proposal.status),
+        taskId: proposal.taskId,
+        createdAt: proposal.createdAt,
+      })
+    ),
+  ];
+}
+
+function pushToMap<T>(map: Map<string, T[]>, key: string, value: T) {
+  map.set(key, [...(map.get(key) ?? []), value]);
+}
+
+export function buildTaskGenerationTreeRows({
+  goals,
+  missions,
+  candidates,
+  expanded,
+}: {
+  goals: MissionGoal[];
+  missions: Mission[];
+  candidates: UnifiedTaskCandidate[];
+  expanded: ExpandedState;
+}): TaskGenerationTreeRow[] {
+  const rows: TaskGenerationTreeRow[] = [];
+  const missionsByGoal = new Map<string, Mission[]>();
+  const candidatesByGoal = new Map<string, UnifiedTaskCandidate[]>();
+  const candidatesByMission = new Map<string, UnifiedTaskCandidate[]>();
+
+  for (const mission of missions) {
+    pushToMap(missionsByGoal, mission.sourceGoalIds[0] ?? unassignedGoalId, mission);
   }
-  return null;
+  for (const candidate of candidates) {
+    if (candidate.missionId) {
+      pushToMap(candidatesByMission, candidate.missionId, candidate);
+    } else {
+      pushToMap(candidatesByGoal, candidate.goalId ?? unassignedGoalId, candidate);
+    }
+  }
+
+  const sortedGoals = [...goals].sort(
+    (a, b) => a.sortOrder - b.sortOrder || toTimestamp(a.createdAt) - toTimestamp(b.createdAt)
+  );
+
+  const pushGoalGroup = (goal: MissionGoal | null) => {
+    const goalId = goal?.id ?? unassignedGoalId;
+    const goalMissions = [...(missionsByGoal.get(goalId) ?? [])].sort(compareNewestFirst);
+    const goalCandidates = [...(candidatesByGoal.get(goalId) ?? [])].sort(compareNewestFirst);
+    rows.push({
+      kind: 'goal',
+      id: goalId,
+      depth: 0,
+      goal,
+      childCounts: { missions: goalMissions.length, taskCandidates: goalCandidates.length },
+    });
+    if (!expanded.goalIds.has(goalId)) return;
+    for (const mission of goalMissions) {
+      const missionCandidates = [...(candidatesByMission.get(mission.id) ?? [])].sort(
+        compareNewestFirst
+      );
+      rows.push({
+        kind: 'mission',
+        id: mission.id,
+        depth: 1,
+        parentGoalId: goalId,
+        mission,
+        childCounts: { taskCandidates: missionCandidates.length },
+      });
+      if (expanded.missionIds.has(mission.id)) {
+        rows.push(
+          ...missionCandidates.map(
+            (candidate): TaskGenerationTreeRow => ({
+              kind: 'task_candidate',
+              id: candidate.id,
+              depth: 2,
+              parentGoalId: goalId,
+              parentMissionId: mission.id,
+              candidate,
+            })
+          )
+        );
+      }
+    }
+    rows.push(
+      ...goalCandidates.map(
+        (candidate): TaskGenerationTreeRow => ({
+          kind: 'task_candidate',
+          id: candidate.id,
+          depth: 1,
+          parentGoalId: goalId === unassignedGoalId ? null : goalId,
+          parentMissionId: null,
+          candidate,
+        })
+      )
+    );
+  };
+
+  for (const goal of sortedGoals) pushGoalGroup(goal);
+  if (
+    (missionsByGoal.get(unassignedGoalId)?.length ?? 0) > 0 ||
+    (candidatesByGoal.get(unassignedGoalId)?.length ?? 0) > 0
+  ) {
+    pushGoalGroup(null);
+  }
+  return rows;
 }
 
 export function applyMissionGoalTemplate(
@@ -269,9 +503,12 @@ export function ProjectDetailScreen({
   const [quality, setQuality] = useState<ProjectQualityOverview | null>(null);
   const [goalDraft, setGoalDraft] = useState<GoalDraft | null>(null);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
-  const [drawerCandidate, setDrawerCandidate] = useState<MissionTaskCandidate | null>(null);
-  const [drawerProposal, setDrawerProposal] = useState<MissionTaskProposal | null>(null);
-  const [missionCandidateModal, setMissionCandidateModal] = useState<Mission | null>(null);
+  const [expandedRows, setExpandedRows] = useState<ExpandedState>({
+    goalIds: new Set(),
+    missionIds: new Set(),
+  });
+  const [detailModal, setDetailModal] = useState<DetailModalState>(null);
+  const [hasInitializedExpansion, setHasInitializedExpansion] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string>('');
   const totalRuns = metrics.runs.total || sessionViews.length;
@@ -310,53 +547,35 @@ export function ProjectDetailScreen({
     [metrics.llmUsage.topTokenTasks]
   );
   const coverageAxes = useMemo<CoverageAxis[]>(
-    () =>
-      quality?.latestCoverageRun?.coverageGate?.metrics.map((metric) => ({
-        labelKey: `projectDetail.coverage.${metric.metric}`,
-        value: metric.actualPercent,
-      })) ?? [],
-    [quality?.latestCoverageRun?.coverageGate?.metrics]
+    () => coverageAxesFromQualityRun(quality?.latestCoverageRun),
+    [quality?.latestCoverageRun]
   );
-  const taskCandidateRows = useMemo<TaskCandidateRow[]>(
-    () => [
-      ...proposalCandidates.map((proposal) => ({
-        id: candidateRowId('mission_task_proposal', proposal.id),
-        source: 'mission_task_proposal' as const,
-        sourceId: proposal.id,
-        title: proposal.title,
-        goal: t('projectDetail.mission.proposalSource'),
-        signal: proposal.targetFilesOrModules[0] ?? proposal.workPackageId,
-        evaluationContribution: '—',
-        tokenSize: 'medium',
-        importance: proposal.risk === 'high' ? 90 : proposal.risk === 'medium' ? 70 : 50,
-        confidence: 80,
-        complexity:
-          proposal.risk === 'high' ? 'complex' : proposal.risk === 'medium' ? 'moderate' : 'simple',
-        reason: proposal.summary,
-      })),
-      ...candidates.map((candidate) => ({
-        id: candidateRowId('mission_task_candidate', candidate.id),
-        source: 'mission_task_candidate' as const,
-        sourceId: candidate.id,
-        title: candidate.title,
-        goal: candidate.goalTitle || '—',
-        signal: candidate.evidence[0]
-          ? `${candidate.evidence[0].label}: ${candidate.evidence[0].value}`
-          : '—',
-        evaluationContribution:
-          candidate.evaluationContribution === null ? '—' : `+${candidate.evaluationContribution}`,
-        tokenSize: candidate.tokenSize,
-        importance: candidate.importancePercent,
-        confidence: candidate.confidencePercent,
-        complexity: candidate.complexity,
-        reason: candidate.rationale,
-      })),
-    ],
-    [candidates, proposalCandidates, t]
+  const unifiedTaskCandidates = useMemo(
+    () => buildUnifiedTaskCandidates(candidates, proposalCandidates),
+    [candidates, proposalCandidates]
+  );
+  const treeRows = useMemo(
+    () =>
+      buildTaskGenerationTreeRows({
+        goals,
+        missions,
+        candidates: unifiedTaskCandidates,
+        expanded: expandedRows,
+      }),
+    [expandedRows, goals, missions, unifiedTaskCandidates]
+  );
+  const selectedCandidates = useMemo(
+    () =>
+      selectedCandidateIds
+        .map((id) => unifiedTaskCandidates.find((candidate) => candidate.id === id))
+        .filter(
+          (candidate): candidate is UnifiedTaskCandidate => candidate?.status === 'candidate'
+        ),
+    [selectedCandidateIds, unifiedTaskCandidates]
   );
   const coverageFileRows = useMemo(
-    () => coverageRowsFromSummary(quality?.latestCoverageRun?.coverageSummary),
-    [quality?.latestCoverageRun?.coverageSummary]
+    () => coverageRowsFromSummary(quality?.latestCoverageRun?.coverageSummary, project.localPath),
+    [project.localPath, quality?.latestCoverageRun?.coverageSummary]
   );
   const e2eCoverageRows = useMemo(
     () => e2eRowsFromSummary(quality?.latestE2eResultRun?.e2eSummary),
@@ -392,6 +611,62 @@ export function ProjectDetailScreen({
     };
   }, [loadProjectDetail]);
 
+  useEffect(() => {
+    const goalIds = new Set(goals.map((goal) => goal.id));
+    const missionIds = new Set(missions.map((mission) => mission.id));
+    setExpandedRows((current) => ({
+      goalIds: new Set(
+        [...current.goalIds].filter((id) => id === unassignedGoalId || goalIds.has(id))
+      ),
+      missionIds: new Set([...current.missionIds].filter((id) => missionIds.has(id))),
+    }));
+    setSelectedCandidateIds((current) =>
+      current.filter((id) => unifiedTaskCandidates.some((candidate) => candidate.id === id))
+    );
+  }, [goals, missions, unifiedTaskCandidates]);
+
+  useEffect(() => {
+    if (hasInitializedExpansion) return;
+    if (goals.length === 0 && missions.length === 0 && unifiedTaskCandidates.length === 0) return;
+    const goalIdsWithChildren = new Set<string>();
+    for (const goal of goals) {
+      const hasChildren =
+        missions.some((mission) => mission.sourceGoalIds[0] === goal.id) ||
+        unifiedTaskCandidates.some(
+          (candidate) => !candidate.missionId && candidate.goalId === goal.id
+        );
+      if (goal.active && hasChildren) goalIdsWithChildren.add(goal.id);
+    }
+    const hasUnassigned =
+      missions.some((mission) => mission.sourceGoalIds.length === 0) ||
+      unifiedTaskCandidates.some((candidate) => !candidate.missionId && !candidate.goalId);
+    if (hasUnassigned) goalIdsWithChildren.add(unassignedGoalId);
+    setExpandedRows((current) => ({
+      ...current,
+      goalIds: goalIdsWithChildren.size > 0 ? goalIdsWithChildren : current.goalIds,
+    }));
+    setHasInitializedExpansion(true);
+  }, [goals, hasInitializedExpansion, missions, unifiedTaskCandidates]);
+
+  useEffect(() => {
+    if (!detailModal) return;
+    if (detailModal.kind === 'goal' && !goals.some((goal) => goal.id === detailModal.id)) {
+      setDetailModal(null);
+    }
+    if (
+      detailModal.kind === 'mission' &&
+      !missions.some((mission) => mission.id === detailModal.id)
+    ) {
+      setDetailModal(null);
+    }
+    if (
+      detailModal.kind === 'task_candidate' &&
+      !unifiedTaskCandidates.some((candidate) => candidate.id === detailModal.id)
+    ) {
+      setDetailModal(null);
+    }
+  }, [detailModal, goals, missions, unifiedTaskCandidates]);
+
   const runAction = useCallback(
     async (label: string, action: () => Promise<void>) => {
       setBusyAction(label);
@@ -410,7 +685,7 @@ export function ProjectDetailScreen({
 
   const saveGoalDraft = () =>
     goalDraft
-      ? runAction('goal', async () => {
+      ? runAction('goal:save', async () => {
           if (goalDraft.id) {
             await readJsonResponse(
               await updateMissionGoal(project.id, goalDraft.id, {
@@ -426,29 +701,78 @@ export function ProjectDetailScreen({
         })
       : undefined;
 
-  const selectedCandidateRefs = selectedCandidateIds
-    .map(parseCandidateRowId)
-    .filter((item): item is NonNullable<ReturnType<typeof parseCandidateRowId>> => Boolean(item));
-  const selectedMissionTaskCandidateIds = selectedCandidateRefs
-    .filter((item) => item.source === 'mission_task_candidate')
-    .map((item) => item.sourceId);
-  const selectedMissionTaskProposalIds = selectedCandidateRefs
-    .filter((item) => item.source === 'mission_task_proposal')
-    .map((item) => item.sourceId);
+  const createTasksFromUnifiedCandidates = useCallback(
+    async (selected: UnifiedTaskCandidate[]) => {
+      const createdTasks: Task[] = [];
+      const selectedMissionTaskCandidateIds = selected
+        .filter((candidate) => candidate.sourceRef.source === 'mission_task_candidate')
+        .map((candidate) => candidate.sourceRef.id);
+      const selectedMissionTaskProposalIds = selected
+        .filter((candidate) => candidate.sourceRef.source === 'mission_task_proposal')
+        .map((candidate) => candidate.sourceRef.id);
 
-  const dismissCandidateRow = (row: TaskCandidateRow) =>
-    runAction(row.source === 'mission_task_candidate' ? 'candidate' : 'proposal', async () => {
-      if (row.source === 'mission_task_candidate') {
-        await readJsonResponse(
-          await updateMissionTaskCandidate(row.sourceId, { status: 'dismissed' })
-        );
-        if (drawerCandidate?.id === row.sourceId) setDrawerCandidate(null);
-      } else {
-        await readJsonResponse(await dismissMissionTaskProposal(row.sourceId));
-        if (drawerProposal?.id === row.sourceId) setDrawerProposal(null);
+      if (selectedMissionTaskCandidateIds.length > 0) {
+        const response = await createTasksFromMissionCandidates(project.id, {
+          candidateIds: selectedMissionTaskCandidateIds,
+          mode: 'draft',
+        });
+        const payload = await readJsonResponse<{ tasks: Task[] }>(response);
+        createdTasks.push(...payload.tasks);
       }
-      setSelectedCandidateIds((current) => current.filter((id) => id !== row.id));
+      if (selectedMissionTaskProposalIds.length > 0) {
+        const response = await createTasksFromMissionTaskProposals({
+          proposalIds: selectedMissionTaskProposalIds,
+          mode: 'draft',
+        });
+        const payload = await readJsonResponse<{ tasks: Task[] }>(response);
+        createdTasks.push(...payload.tasks);
+      }
+      if (createdTasks.length > 0) await onEvaluationTasksCreated?.(createdTasks);
+    },
+    [onEvaluationTasksCreated, project.id]
+  );
+
+  const dismissUnifiedCandidate = (candidate: UnifiedTaskCandidate) =>
+    runAction(`candidate:dismiss:${candidate.id}`, async () => {
+      if (candidate.sourceRef.source === 'mission_task_candidate') {
+        await readJsonResponse(
+          await updateMissionTaskCandidate(candidate.sourceRef.id, { status: 'dismissed' })
+        );
+      } else {
+        await readJsonResponse(await dismissMissionTaskProposal(candidate.sourceRef.id));
+      }
+      setSelectedCandidateIds((current) => current.filter((id) => id !== candidate.id));
+      if (detailModal?.kind === 'task_candidate' && detailModal.id === candidate.id) {
+        setDetailModal(null);
+      }
     });
+
+  const toggleExpandedGoal = (goalId: string) =>
+    setExpandedRows((current) => {
+      const goalIds = new Set(current.goalIds);
+      if (goalIds.has(goalId)) goalIds.delete(goalId);
+      else goalIds.add(goalId);
+      return { ...current, goalIds };
+    });
+
+  const toggleExpandedMission = (missionId: string) =>
+    setExpandedRows((current) => {
+      const missionIds = new Set(current.missionIds);
+      if (missionIds.has(missionId)) missionIds.delete(missionId);
+      else missionIds.add(missionId);
+      return { ...current, missionIds };
+    });
+
+  const detailGoal =
+    detailModal?.kind === 'goal' ? goals.find((goal) => goal.id === detailModal.id) : null;
+  const detailMission =
+    detailModal?.kind === 'mission'
+      ? missions.find((mission) => mission.id === detailModal.id)
+      : null;
+  const detailCandidate =
+    detailModal?.kind === 'task_candidate'
+      ? unifiedTaskCandidates.find((candidate) => candidate.id === detailModal.id)
+      : null;
 
   return (
     <div className="nightworkers-scrollbar h-full min-h-0 overflow-y-auto p-4" style={shellStyle}>
@@ -516,8 +840,12 @@ export function ProjectDetailScreen({
                   />
                   <KpiTile
                     label={t('projectDetail.metrics.avgCostPerRun')}
-                    value="—"
-                    sub={t('projectDetail.metrics.notConnected')}
+                    value={
+                      metrics.llmUsage.averageCostPerRun === null
+                        ? '—'
+                        : `$${metrics.llmUsage.averageCostPerRun.toFixed(2)}`
+                    }
+                    sub="cost / run"
                   />
                 </div>
 
@@ -644,58 +972,37 @@ export function ProjectDetailScreen({
                 </div>
               </aside>
             </div>
-            <GoalDefinitionsPanel
-              goals={goals}
-              busy={busyAction === 'goal'}
-              onAdd={() => setGoalDraft({ title: '', goalText: '', active: true })}
-              onEdit={(goal) =>
-                setGoalDraft({
-                  id: goal.id,
-                  title: goal.title,
-                  goalText: goal.goalText,
-                  active: goal.active,
-                })
-              }
-              onToggle={(goal) =>
-                void runAction('goal', async () => {
-                  await readJsonResponse(
-                    await updateMissionGoal(project.id, goal.id, { active: !goal.active })
-                  );
-                })
-              }
-              onDelete={(goal) =>
-                void runAction('goal', async () => {
-                  await readJsonResponse(await deleteMissionGoal(project.id, goal.id));
-                })
-              }
-            />
           </section>
         ) : null}
 
         {activeTab === 'mission' ? (
           <section className="space-y-4">
-            <MissionPlannerPanel
-              busy={busyAction?.startsWith('mission-planner') ?? false}
-              isGenerating={busyAction === 'mission-planner:generate-candidates'}
-              missions={missions}
-              onGenerateCandidates={() =>
-                void runAction('mission-planner:generate-candidates', async () => {
+            <TaskGenerationTreeTable
+              rows={treeRows}
+              expanded={expandedRows}
+              selectedIds={selectedCandidateIds}
+              busy={Boolean(busyAction)}
+              busyAction={busyAction}
+              selectedCount={selectedCandidates.length}
+              onAddGoal={() => setGoalDraft({ title: '', goalText: '', active: true })}
+              onCreateSelected={() =>
+                void runAction('candidate:create-tasks', async () => {
+                  await createTasksFromUnifiedCandidates(selectedCandidates);
+                  setSelectedCandidateIds([]);
+                })
+              }
+              onGenerateTaskCandidates={() =>
+                void runAction('goal:generate-task-candidates', async () => {
+                  await readJsonResponse(await generateMissionTaskCandidates(project.id));
+                })
+              }
+              onGenerateMissionCandidates={() =>
+                void runAction('goal:generate-mission-candidates', async () => {
                   await readJsonResponse(await generateMissionCandidatesFromGoals(project.id));
                 })
               }
-              onOpenMission={setMissionCandidateModal}
-              onDeleteMission={(mission) =>
-                void runAction('mission-planner:delete-candidate', async () => {
-                  await readJsonResponse(await deleteMission(mission.id));
-                  if (missionCandidateModal?.id === mission.id) setMissionCandidateModal(null);
-                })
-              }
-            />
-            <MissionGenerateTasksPanel
-              rows={taskCandidateRows}
-              selectedIds={selectedCandidateIds}
-              busy={busyAction === 'generate' || busyAction === 'create-tasks'}
-              isGenerating={busyAction === 'generate'}
+              onToggleGoal={toggleExpandedGoal}
+              onToggleMission={toggleExpandedMission}
               onToggleSelected={(candidateId) =>
                 setSelectedCandidateIds((current) =>
                   current.includes(candidateId)
@@ -703,45 +1010,60 @@ export function ProjectDetailScreen({
                     : [...current, candidateId]
                 )
               }
-              onOpen={(row) => {
-                if (row.source === 'mission_task_proposal') {
-                  const proposal = proposalCandidates.find((item) => item.id === row.sourceId);
-                  if (proposal) setDrawerProposal(proposal);
-                  return;
-                }
-                const candidate = candidates.find((item) => item.id === row.sourceId);
-                if (candidate) setDrawerCandidate(candidate);
+              onOpenGoal={(goal) => {
+                if (goal) setDetailModal({ kind: 'goal', id: goal.id });
               }}
-              onDismiss={(row) => void dismissCandidateRow(row)}
-              onGenerate={() =>
-                void runAction('generate', async () => {
-                  await readJsonResponse(await generateMissionTaskCandidates(project.id));
+              onOpenMission={(mission) => setDetailModal({ kind: 'mission', id: mission.id })}
+              onOpenCandidate={(candidate) =>
+                setDetailModal({ kind: 'task_candidate', id: candidate.id })
+              }
+              onEditGoal={(goal) =>
+                setGoalDraft({
+                  id: goal.id,
+                  title: goal.title,
+                  goalText: goal.goalText,
+                  active: goal.active,
                 })
               }
-              onCreateTasks={() =>
-                void runAction('create-tasks', async () => {
-                  const createdTasks: Task[] = [];
-                  if (selectedMissionTaskCandidateIds.length > 0) {
-                    const response = await createTasksFromMissionCandidates(project.id, {
-                      candidateIds: selectedMissionTaskCandidateIds,
-                      mode: 'draft',
-                    });
-                    const payload = await readJsonResponse<{ tasks: Task[] }>(response);
-                    createdTasks.push(...payload.tasks);
-                  }
-                  if (selectedMissionTaskProposalIds.length > 0) {
-                    const response = await createTasksFromMissionTaskProposals({
-                      proposalIds: selectedMissionTaskProposalIds,
-                      mode: 'draft',
-                    });
-                    const payload = await readJsonResponse<{ tasks: Task[] }>(response);
-                    createdTasks.push(...payload.tasks);
-                  }
-                  if (createdTasks.length > 0) await onEvaluationTasksCreated?.(createdTasks);
-                  setSelectedCandidateIds([]);
+              onToggleGoalActive={(goal) =>
+                void runAction('goal:save', async () => {
+                  await readJsonResponse(
+                    await updateMissionGoal(project.id, goal.id, { active: !goal.active })
+                  );
                 })
               }
-              selectedCount={selectedCandidateIds.length}
+              onDeleteGoal={(goal) =>
+                void runAction('goal:delete', async () => {
+                  await readJsonResponse(await deleteMissionGoal(project.id, goal.id));
+                  if (detailModal?.kind === 'goal' && detailModal.id === goal.id) {
+                    setDetailModal(null);
+                  }
+                })
+              }
+              onDecomposeMission={(mission) =>
+                void runAction(`mission:decompose:${mission.id}`, async () => {
+                  await readJsonResponse(await decomposeMission(mission.id));
+                  setExpandedRows((current) => ({
+                    ...current,
+                    missionIds: new Set([...current.missionIds, mission.id]),
+                  }));
+                })
+              }
+              onDeleteMission={(mission) =>
+                void runAction(`mission:delete:${mission.id}`, async () => {
+                  await readJsonResponse(await deleteMission(mission.id));
+                  if (detailModal?.kind === 'mission' && detailModal.id === mission.id) {
+                    setDetailModal(null);
+                  }
+                })
+              }
+              onCreateCandidate={(candidate) =>
+                void runAction('candidate:create-tasks', async () => {
+                  await createTasksFromUnifiedCandidates([candidate]);
+                  setSelectedCandidateIds((current) => current.filter((id) => id !== candidate.id));
+                })
+              }
+              onDismissCandidate={(candidate) => void dismissUnifiedCandidate(candidate)}
             />
           </section>
         ) : null}
@@ -773,78 +1095,110 @@ export function ProjectDetailScreen({
       {goalDraft ? (
         <GoalEditorDialog
           draft={goalDraft}
-          busy={busyAction === 'goal'}
+          busy={busyAction === 'goal:save'}
           stackProfile={metrics.stackProfile}
           onChange={setGoalDraft}
           onClose={() => setGoalDraft(null)}
           onSave={saveGoalDraft}
         />
       ) : null}
-      {drawerCandidate ? (
-        <CandidateDrawer
-          candidate={drawerCandidate}
-          onClose={() => setDrawerCandidate(null)}
-          onDismiss={(candidate) =>
-            void dismissCandidateRow({
-              id: candidateRowId('mission_task_candidate', candidate.id),
-              source: 'mission_task_candidate',
-              sourceId: candidate.id,
-              title: candidate.title,
-              goal: candidate.goalTitle || '—',
-              signal: '—',
-              evaluationContribution: '—',
-              tokenSize: candidate.tokenSize,
-              importance: candidate.importancePercent,
-              confidence: candidate.confidencePercent,
-              complexity: candidate.complexity,
-              reason: candidate.rationale,
+      {detailGoal ? (
+        <GoalDetailModal
+          goal={detailGoal}
+          missionCount={
+            missions.filter((mission) => mission.sourceGoalIds[0] === detailGoal.id).length
+          }
+          candidateCount={
+            unifiedTaskCandidates.filter(
+              (candidate) => !candidate.missionId && candidate.goalId === detailGoal.id
+            ).length
+          }
+          busy={Boolean(busyAction)}
+          onClose={() => setDetailModal(null)}
+          onEdit={(goal) =>
+            setGoalDraft({
+              id: goal.id,
+              title: goal.title,
+              goalText: goal.goalText,
+              active: goal.active,
+            })
+          }
+          onToggle={(goal) =>
+            void runAction('goal:save', async () => {
+              await readJsonResponse(
+                await updateMissionGoal(project.id, goal.id, { active: !goal.active })
+              );
+            })
+          }
+          onDelete={(goal) =>
+            void runAction('goal:delete', async () => {
+              await readJsonResponse(await deleteMissionGoal(project.id, goal.id));
+              setDetailModal(null);
+            })
+          }
+          onGenerateTaskCandidates={(goal) =>
+            void runAction(`goal:generate-task-candidates:${goal.id}`, async () => {
+              await readJsonResponse(
+                await generateMissionTaskCandidates(project.id, { goalIds: [goal.id] })
+              );
+              setExpandedRows((current) => ({
+                ...current,
+                goalIds: new Set([...current.goalIds, goal.id]),
+              }));
+            })
+          }
+          onGenerateMissionCandidates={(goal) =>
+            void runAction(`goal:generate-mission-candidates:${goal.id}`, async () => {
+              await readJsonResponse(
+                await generateMissionCandidatesFromGoals(project.id, { goalIds: [goal.id] })
+              );
+              setExpandedRows((current) => ({
+                ...current,
+                goalIds: new Set([...current.goalIds, goal.id]),
+              }));
             })
           }
         />
       ) : null}
-      {drawerProposal ? (
-        <ProposalDrawer
-          proposal={drawerProposal}
-          onClose={() => setDrawerProposal(null)}
-          onDismiss={(proposal) =>
-            void dismissCandidateRow({
-              id: candidateRowId('mission_task_proposal', proposal.id),
-              source: 'mission_task_proposal',
-              sourceId: proposal.id,
-              title: proposal.title,
-              goal: t('projectDetail.mission.proposalSource'),
-              signal: proposal.targetFilesOrModules[0] ?? proposal.workPackageId,
-              evaluationContribution: '—',
-              tokenSize: 'medium',
-              importance: proposal.risk === 'high' ? 90 : proposal.risk === 'medium' ? 70 : 50,
-              confidence: 80,
-              complexity:
-                proposal.risk === 'high'
-                  ? 'complex'
-                  : proposal.risk === 'medium'
-                    ? 'moderate'
-                    : 'simple',
-              reason: proposal.summary,
+      {detailCandidate ? (
+        <TaskCandidateDetailModal
+          candidate={detailCandidate}
+          busy={Boolean(busyAction)}
+          onClose={() => setDetailModal(null)}
+          onCreateTask={(candidate) =>
+            void runAction('candidate:create-tasks', async () => {
+              await createTasksFromUnifiedCandidates([candidate]);
+              setSelectedCandidateIds((current) => current.filter((id) => id !== candidate.id));
+              setDetailModal(null);
             })
           }
+          onDismiss={(candidate) => void dismissUnifiedCandidate(candidate)}
         />
       ) : null}
-      {missionCandidateModal ? (
+      {detailMission ? (
         <MissionCandidateModal
-          mission={missionCandidateModal}
+          mission={detailMission}
           goals={goals}
-          busy={busyAction === 'mission-planner:decompose-candidate'}
-          onClose={() => setMissionCandidateModal(null)}
+          taskCandidateCount={
+            unifiedTaskCandidates.filter((candidate) => candidate.missionId === detailMission.id)
+              .length
+          }
+          busy={busyAction === `mission:decompose:${detailMission.id}`}
+          onClose={() => setDetailModal(null)}
           onDecompose={(mission) =>
-            void runAction('mission-planner:decompose-candidate', async () => {
+            void runAction(`mission:decompose:${mission.id}`, async () => {
               await readJsonResponse(await decomposeMission(mission.id));
-              setMissionCandidateModal(null);
+              setExpandedRows((current) => ({
+                ...current,
+                missionIds: new Set([...current.missionIds, mission.id]),
+              }));
+              setDetailModal(null);
             })
           }
           onDelete={(mission) =>
-            void runAction('mission-planner:delete-candidate', async () => {
+            void runAction(`mission:delete:${mission.id}`, async () => {
               await readJsonResponse(await deleteMission(mission.id));
-              setMissionCandidateModal(null);
+              setDetailModal(null);
             })
           }
         />
@@ -1117,285 +1471,130 @@ function StackProfilePanel({
   );
 }
 
-function GoalDefinitionsPanel({
-  goals,
-  busy,
-  onAdd,
-  onEdit,
-  onToggle,
-  onDelete,
-}: {
-  goals: MissionGoal[];
-  busy: boolean;
-  onAdd: () => void;
-  onEdit: (goal: MissionGoal) => void;
-  onToggle: (goal: MissionGoal) => void;
-  onDelete: (goal: MissionGoal) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <section className="space-y-3">
-      <SectionHeading
-        icon={<Target className="h-4 w-4" />}
-        title={t('projectDetail.goals.title')}
-      />
-      <div className="overflow-hidden border" style={panelStyle}>
-        <div
-          className="flex items-center justify-between gap-3 border-b p-3"
-          style={tableBorderStyle}
-        >
-          <SectionLabel
-            icon={<Target className="h-4 w-4" />}
-            title={t('projectDetail.goals.section')}
-          />
-          <Button
-            type="button"
-            onClick={onAdd}
-            disabled={busy}
-            className="h-8 px-3 text-xs font-semibold"
-            style={primaryButtonStyle}
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            {t('projectDetail.goals.add')}
-          </Button>
-        </div>
-        <div className="nightworkers-scrollbar overflow-auto">
-          <table className="w-full min-w-[760px] text-xs">
-            <thead style={subtleTextStyle}>
-              <tr>
-                <th className="py-2 pl-4 text-left">{t('projectDetail.field.missionGoal')}</th>
-                <th className="py-2 text-left">{t('projectDetail.field.goalDefinition')}</th>
-                <th className="py-2 pr-4 text-right">{t('projectDetail.field.active')}</th>
-                <th className="py-2 pr-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {goals.length > 0 ? (
-                goals.map((goal) => (
-                  <tr key={goal.id} className="border-t" style={tableBorderStyle}>
-                    <td className="max-w-[240px] py-3 pl-4">
-                      <div className="truncate font-semibold">{goal.title}</div>
-                    </td>
-                    <td className="max-w-[560px] py-3">
-                      <div className="line-clamp-2">{goal.goalText}</div>
-                    </td>
-                    <td className="py-3 pr-4 text-right">
-                      <button type="button" onClick={() => onToggle(goal)} disabled={busy}>
-                        <ActiveChip active={goal.active} />
-                      </button>
-                    </td>
-                    <td className="py-3 pr-4 text-right">
-                      <div className="flex justify-end gap-1">
-                        <IconActionButton label="Edit" onClick={() => onEdit(goal)} disabled={busy}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </IconActionButton>
-                        <IconActionButton
-                          label="Delete"
-                          onClick={() => onDelete(goal)}
-                          disabled={busy}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </IconActionButton>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <EmptyTableRow colSpan={4} message={t('projectDetail.empty.goals')} />
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function MissionPlannerPanel({
-  missions,
-  busy,
-  isGenerating,
-  onGenerateCandidates,
-  onOpenMission,
-  onDeleteMission,
-}: {
-  missions: Mission[];
-  busy: boolean;
-  isGenerating: boolean;
-  onGenerateCandidates: () => void;
-  onOpenMission: (mission: Mission) => void;
-  onDeleteMission: (mission: Mission) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <section className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <SectionHeading
-          icon={<Target className="h-4 w-4" />}
-          title={t('projectDetail.mission.decompositionTitle')}
-        />
-        <Button
-          className="h-8 px-3 text-xs font-semibold"
-          disabled={busy}
-          onClick={onGenerateCandidates}
-          style={primaryButtonStyle}
-          type="button"
-        >
-          {isGenerating ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Sparkles className="h-3.5 w-3.5" />
-          )}
-          {isGenerating
-            ? t('projectDetail.mission.generateMissionCandidatesLoading')
-            : t('projectDetail.mission.generateMissionCandidates')}
-        </Button>
-      </div>
-      <div className="overflow-hidden border" style={panelStyle}>
-        <div className="border-b px-3 py-2 text-xs font-semibold" style={tableBorderStyle}>
-          {t('projectDetail.mission.missionCandidates')}
-        </div>
-        <div className="nightworkers-scrollbar overflow-auto">
-          <table className="w-full min-w-[860px] text-xs">
-            <thead style={subtleTextStyle}>
-              <tr>
-                <th className="py-2 pl-4 text-left">{t('projectDetail.field.candidate')}</th>
-                <th className="py-2 text-left">{t('projectDetail.field.goalSignal')}</th>
-                <th className="py-2 text-left">{t('projectDetail.mission.rationale')}</th>
-                <th className="py-2 text-right">{t('projectDetail.field.status')}</th>
-                <th className="py-2 pr-4 text-right">{t('projectDetail.field.actions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {missions.length > 0 ? (
-                missions.map((mission) => (
-                  <tr key={mission.id} className="border-t" style={tableBorderStyle}>
-                    <td className="max-w-[280px] py-3 pl-4">
-                      <button
-                        className="block max-w-full text-left"
-                        disabled={busy}
-                        onClick={() => onOpenMission(mission)}
-                        type="button"
-                      >
-                        <span className="block truncate font-semibold">{mission.title}</span>
-                        <span className="mt-0.5 line-clamp-2 text-[10px]" style={subtleTextStyle}>
-                          {mission.goalText}
-                        </span>
-                      </button>
-                    </td>
-                    <td className="max-w-[220px] py-3">
-                      <span className="block truncate">
-                        {mission.sourceGoalIds.length
-                          ? `${mission.sourceGoalIds.length} ${t('projectDetail.mission.linkedGoals')}`
-                          : t('projectDetail.mission.noLinkedGoal')}
-                      </span>
-                    </td>
-                    <td className="max-w-[300px] py-3">
-                      <span className="line-clamp-2" style={subtleTextStyle}>
-                        {mission.statusReason ?? '—'}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4 text-right">
-                      {t(`projectDetail.mission.status.${mission.status}`, {
-                        defaultValue: mission.status,
-                      })}
-                    </td>
-                    <td className="py-3 pr-4 text-right">
-                      <IconActionButton
-                        label={t('projectDetail.mission.deleteCandidate')}
-                        onClick={() => onDeleteMission(mission)}
-                        disabled={busy || mission.status !== 'draft'}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </IconActionButton>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <EmptyTableRow colSpan={5} message={t('projectDetail.mission.emptyMissions')} />
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export function MissionGenerateTasksPanel({
+export function TaskGenerationTreeTable({
   rows,
+  expanded,
   selectedIds,
-  busy,
-  isGenerating,
   selectedCount,
+  busy,
+  busyAction,
+  onAddGoal,
+  onCreateSelected,
+  onGenerateTaskCandidates,
+  onGenerateMissionCandidates,
+  onToggleGoal,
+  onToggleMission,
   onToggleSelected,
-  onOpen,
-  onDismiss,
-  onGenerate,
-  onCreateTasks,
+  onOpenGoal,
+  onOpenMission,
+  onOpenCandidate,
+  onEditGoal,
+  onToggleGoalActive,
+  onDeleteGoal,
+  onDecomposeMission,
+  onDeleteMission,
+  onCreateCandidate,
+  onDismissCandidate,
 }: {
-  rows: TaskCandidateRow[];
+  rows: TaskGenerationTreeRow[];
+  expanded: ExpandedState;
   selectedIds: string[];
-  busy: boolean;
-  isGenerating: boolean;
   selectedCount: number;
+  busy: boolean;
+  busyAction: string | null;
+  onAddGoal: () => void;
+  onCreateSelected: () => void;
+  onGenerateTaskCandidates: () => void;
+  onGenerateMissionCandidates: () => void;
+  onToggleGoal: (goalId: string) => void;
+  onToggleMission: (missionId: string) => void;
   onToggleSelected: (candidateId: string) => void;
-  onOpen: (row: TaskCandidateRow) => void;
-  onDismiss: (row: TaskCandidateRow) => void;
-  onGenerate: () => void;
-  onCreateTasks: () => void;
+  onOpenGoal: (goal: MissionGoal | null) => void;
+  onOpenMission: (mission: Mission) => void;
+  onOpenCandidate: (candidate: UnifiedTaskCandidate) => void;
+  onEditGoal: (goal: MissionGoal) => void;
+  onToggleGoalActive: (goal: MissionGoal) => void;
+  onDeleteGoal: (goal: MissionGoal) => void;
+  onDecomposeMission: (mission: Mission) => void;
+  onDeleteMission: (mission: Mission) => void;
+  onCreateCandidate: (candidate: UnifiedTaskCandidate) => void;
+  onDismissCandidate: (candidate: UnifiedTaskCandidate) => void;
 }) {
   const { t } = useTranslation();
   return (
     <section className="space-y-3">
       <SectionHeading
         icon={<Sparkles className="h-4 w-4" />}
-        title={t('projectDetail.mission.title')}
+        title={t('projectDetail.mission.treeTitle')}
       />
       <div className="overflow-hidden border" style={panelStyle}>
         <div
-          className="flex items-center justify-between gap-3 border-b p-3"
+          className="flex flex-wrap items-center justify-between gap-3 border-b p-3"
           style={tableBorderStyle}
         >
           <SectionLabel
-            icon={<Zap className="h-4 w-4" />}
+            icon={<Target className="h-4 w-4" />}
             title={t('projectDetail.mission.candidates')}
           />
-          <Button
-            type="button"
-            onClick={onGenerate}
-            disabled={busy}
-            className="h-8 px-3 text-xs font-semibold"
-            style={primaryButtonStyle}
-          >
-            {isGenerating ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="h-3.5 w-3.5" />
-            )}
-            {isGenerating
-              ? t('projectDetail.mission.generateLoading')
-              : t('projectDetail.mission.generate')}
-          </Button>
-        </div>
-        <div className="flex justify-end border-b px-3 py-2" style={tableBorderStyle}>
-          <Button
-            type="button"
-            onClick={onCreateTasks}
-            disabled={busy || selectedCount === 0}
-            className="h-8 px-3 text-xs font-semibold"
-            style={controlStyle}
-          >
-            {t('projectDetail.mission.createTasks', { count: selectedCount })}
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              type="button"
+              onClick={onAddGoal}
+              disabled={busy}
+              className="h-8 px-3 text-xs font-semibold"
+              style={controlStyle}
+            >
+              <Target className="h-3.5 w-3.5" />
+              {t('projectDetail.goals.add')}
+            </Button>
+            <Button
+              type="button"
+              onClick={onCreateSelected}
+              disabled={busy || selectedCount === 0}
+              className="h-8 px-3 text-xs font-semibold"
+              style={controlStyle}
+            >
+              {t('projectDetail.mission.createTasks', { count: selectedCount })}
+            </Button>
+            <Button
+              type="button"
+              onClick={onGenerateMissionCandidates}
+              disabled={busy}
+              className="h-8 px-3 text-xs font-semibold"
+              style={controlStyle}
+            >
+              {busyAction === 'goal:generate-mission-candidates' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              {t('projectDetail.mission.generateMissionCandidates')}
+            </Button>
+            <Button
+              type="button"
+              onClick={onGenerateTaskCandidates}
+              disabled={busy}
+              className="h-8 px-3 text-xs font-semibold"
+              style={primaryButtonStyle}
+            >
+              {busyAction === 'goal:generate-task-candidates' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Zap className="h-3.5 w-3.5" />
+              )}
+              {t('projectDetail.mission.generate')}
+            </Button>
+          </div>
         </div>
         <div className="nightworkers-scrollbar overflow-auto">
-          <table className="w-full min-w-[1040px] text-xs">
+          <table className="w-full min-w-[1160px] text-xs">
             <thead style={subtleTextStyle}>
               <tr>
-                <th className="py-2 pl-4 text-left">{t('projectDetail.mission.select')}</th>
-                <th className="py-2 pl-4 text-left">{t('projectDetail.field.candidate')}</th>
-                <th className="py-2 text-left">{t('projectDetail.field.goalSignal')}</th>
+                <th className="py-2 pl-4 text-left">{t('projectDetail.mission.open')}</th>
+                <th className="py-2 text-left">{t('projectDetail.mission.select')}</th>
+                <th className="py-2 text-left">{t('projectDetail.field.candidate')}</th>
+                <th className="py-2 text-left">{t('projectDetail.field.kind')}</th>
+                <th className="py-2 text-right">{t('projectDetail.field.status')}</th>
                 <th className="py-2 text-right">{t('projectDetail.field.evalContribution')}</th>
                 <th className="py-2 text-right">{t('projectDetail.field.tokenSize')}</th>
                 <th className="py-2 text-right">{t('projectDetail.field.importance')}</th>
@@ -1406,62 +1605,30 @@ export function MissionGenerateTasksPanel({
             </thead>
             <tbody>
               {rows.length > 0 ? (
-                rows.map((candidate) => (
-                  <tr key={candidate.id} className="border-t" style={tableBorderStyle}>
-                    <td className="py-3 pl-4">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(candidate.id)}
-                        onChange={() => onToggleSelected(candidate.id)}
-                      />
-                    </td>
-                    <td className="max-w-[270px] py-3 pl-4">
-                      <button
-                        type="button"
-                        className="block max-w-full text-left"
-                        onClick={() => onOpen(candidate)}
-                      >
-                        <span className="block truncate font-semibold">{candidate.title}</span>
-                        <span className="mt-0.5 block text-[10px]" style={mutedTextStyle}>
-                          {t(`projectDetail.mission.rowSource.${candidate.source}`)}
-                        </span>
-                      </button>
-                      <div className="mt-0.5 line-clamp-2 text-[10px]" style={subtleTextStyle}>
-                        {candidate.reason}
-                      </div>
-                    </td>
-                    <td className="max-w-[260px] py-3">
-                      <div className="truncate">{candidate.goal}</div>
-                      <div className="mt-0.5 line-clamp-2 text-[10px]" style={subtleTextStyle}>
-                        {candidate.signal}
-                      </div>
-                    </td>
-                    <td className="py-3 text-right">
-                      <span className="font-semibold" style={primaryTextStyle}>
-                        {candidate.evaluationContribution}
-                      </span>
-                    </td>
-                    <td className="py-3 text-right">
-                      <SizeChip value={candidate.tokenSize} />
-                    </td>
-                    <td className="py-3 text-right">{candidate.importance}%</td>
-                    <td className="py-3 text-right">{candidate.confidence}%</td>
-                    <td className="py-3 pr-4 text-right">
-                      <ComplexityChip value={candidate.complexity} />
-                    </td>
-                    <td className="py-3 pr-4 text-right">
-                      <IconActionButton
-                        label={t('projectDetail.mission.deleteCandidate')}
-                        onClick={() => onDismiss(candidate)}
-                        disabled={busy}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </IconActionButton>
-                    </td>
-                  </tr>
+                rows.map((row) => (
+                  <TaskGenerationTreeRowView
+                    key={`${row.kind}:${row.id}`}
+                    row={row}
+                    expanded={expanded}
+                    selectedIds={selectedIds}
+                    busy={busy}
+                    onToggleGoal={onToggleGoal}
+                    onToggleMission={onToggleMission}
+                    onToggleSelected={onToggleSelected}
+                    onOpenGoal={onOpenGoal}
+                    onOpenMission={onOpenMission}
+                    onOpenCandidate={onOpenCandidate}
+                    onEditGoal={onEditGoal}
+                    onToggleGoalActive={onToggleGoalActive}
+                    onDeleteGoal={onDeleteGoal}
+                    onDecomposeMission={onDecomposeMission}
+                    onDeleteMission={onDeleteMission}
+                    onCreateCandidate={onCreateCandidate}
+                    onDismissCandidate={onDismissCandidate}
+                  />
                 ))
               ) : (
-                <EmptyTableRow colSpan={9} message={t('projectDetail.empty.taskCandidates')} />
+                <EmptyTableRow colSpan={11} message={t('projectDetail.empty.goals')} />
               )}
             </tbody>
           </table>
@@ -1469,6 +1636,316 @@ export function MissionGenerateTasksPanel({
       </div>
     </section>
   );
+}
+
+function TaskGenerationTreeRowView({
+  row,
+  expanded,
+  selectedIds,
+  busy,
+  onToggleGoal,
+  onToggleMission,
+  onToggleSelected,
+  onOpenGoal,
+  onOpenMission,
+  onOpenCandidate,
+  onEditGoal,
+  onToggleGoalActive,
+  onDeleteGoal,
+  onDecomposeMission,
+  onDeleteMission,
+  onCreateCandidate,
+  onDismissCandidate,
+}: {
+  row: TaskGenerationTreeRow;
+  expanded: ExpandedState;
+  selectedIds: string[];
+  busy: boolean;
+  onToggleGoal: (goalId: string) => void;
+  onToggleMission: (missionId: string) => void;
+  onToggleSelected: (candidateId: string) => void;
+  onOpenGoal: (goal: MissionGoal | null) => void;
+  onOpenMission: (mission: Mission) => void;
+  onOpenCandidate: (candidate: UnifiedTaskCandidate) => void;
+  onEditGoal: (goal: MissionGoal) => void;
+  onToggleGoalActive: (goal: MissionGoal) => void;
+  onDeleteGoal: (goal: MissionGoal) => void;
+  onDecomposeMission: (mission: Mission) => void;
+  onDeleteMission: (mission: Mission) => void;
+  onCreateCandidate: (candidate: UnifiedTaskCandidate) => void;
+  onDismissCandidate: (candidate: UnifiedTaskCandidate) => void;
+}) {
+  const { t } = useTranslation();
+  const indent = row.depth === 0 ? 'pl-1' : row.depth === 1 ? 'pl-7' : 'pl-12';
+  const emptyCell = <span style={mutedTextStyle}>—</span>;
+
+  if (row.kind === 'goal') {
+    const isExpanded = expanded.goalIds.has(row.id);
+    const hasChildren = row.childCounts.missions + row.childCounts.taskCandidates > 0;
+    return (
+      <tr className="border-t" style={tableBorderStyle}>
+        <td className="py-3 pl-4">
+          <TreeToggle
+            expanded={isExpanded}
+            disabled={!hasChildren}
+            onClick={() => onToggleGoal(row.id)}
+          />
+        </td>
+        <td className="py-3">{emptyCell}</td>
+        <td className={`max-w-[320px] py-3 ${indent}`}>
+          {row.goal ? (
+            <button
+              type="button"
+              className="block max-w-full text-left"
+              onClick={() => onOpenGoal(row.goal)}
+            >
+              <span className="block truncate font-semibold">{row.goal.title}</span>
+              <span className="mt-0.5 line-clamp-2 text-[10px]" style={subtleTextStyle}>
+                {row.goal.goalText}
+              </span>
+            </button>
+          ) : (
+            <div>
+              <div className="font-semibold">{t('projectDetail.mission.unassigned')}</div>
+              <div className="mt-0.5 text-[10px]" style={subtleTextStyle}>
+                {t('projectDetail.mission.unassignedHint')}
+              </div>
+            </div>
+          )}
+        </td>
+        <td className="py-3">{t('projectDetail.tree.kind.goal')}</td>
+        <td className="py-3 text-right">
+          {row.goal ? <ActiveChip active={row.goal.active} /> : emptyCell}
+        </td>
+        <td className="py-3 text-right">{emptyCell}</td>
+        <td className="py-3 text-right">{emptyCell}</td>
+        <td className="py-3 text-right">{emptyCell}</td>
+        <td className="py-3 text-right">{emptyCell}</td>
+        <td className="py-3 text-right">{emptyCell}</td>
+        <td className="py-3 pr-4 text-right">
+          {row.goal ? (
+            <div className="flex justify-end gap-1">
+              <IconActionButton label="Edit" onClick={() => onEditGoal(row.goal!)} disabled={busy}>
+                <Pencil className="h-3.5 w-3.5" />
+              </IconActionButton>
+              <IconActionButton
+                label={
+                  row.goal.active
+                    ? t('projectDetail.status.inactive')
+                    : t('projectDetail.status.active')
+                }
+                onClick={() => onToggleGoalActive(row.goal!)}
+                disabled={busy}
+              >
+                <Check className="h-3.5 w-3.5" />
+              </IconActionButton>
+              <IconActionButton
+                label="Delete"
+                onClick={() => onDeleteGoal(row.goal!)}
+                disabled={busy}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </IconActionButton>
+            </div>
+          ) : (
+            emptyCell
+          )}
+        </td>
+      </tr>
+    );
+  }
+
+  if (row.kind === 'mission') {
+    const isExpanded = expanded.missionIds.has(row.id);
+    const hasChildren = row.childCounts.taskCandidates > 0;
+    const canDeleteMission = !isMissionDeleteInProgress(row.mission.status) && !hasChildren;
+    return (
+      <tr className="border-t" style={tableBorderStyle}>
+        <td className="py-3 pl-4">
+          <TreeToggle
+            expanded={isExpanded}
+            disabled={!hasChildren}
+            onClick={() => onToggleMission(row.id)}
+          />
+        </td>
+        <td className="py-3">{emptyCell}</td>
+        <td className={`max-w-[320px] py-3 ${indent}`}>
+          <button
+            type="button"
+            className="block max-w-full text-left"
+            onClick={() => onOpenMission(row.mission)}
+          >
+            <span className="block truncate font-semibold">{row.mission.title}</span>
+            <span className="mt-0.5 line-clamp-2 text-[10px]" style={subtleTextStyle}>
+              {row.mission.goalText}
+            </span>
+          </button>
+        </td>
+        <td className="py-3">{t('projectDetail.tree.kind.mission')}</td>
+        <td className="py-3 text-right">
+          {t(`projectDetail.mission.status.${row.mission.status}`, {
+            defaultValue: row.mission.status,
+          })}
+        </td>
+        <td className="py-3 text-right">{emptyCell}</td>
+        <td className="py-3 text-right">{emptyCell}</td>
+        <td className="py-3 text-right">{emptyCell}</td>
+        <td className="py-3 text-right">{emptyCell}</td>
+        <td className="py-3 text-right">{emptyCell}</td>
+        <td className="py-3 pr-4 text-right">
+          <div className="flex justify-end gap-1">
+            <IconActionButton
+              label={t('projectDetail.mission.decomposeToTaskCandidates')}
+              onClick={() => onDecomposeMission(row.mission)}
+              disabled={
+                busy || row.mission.status === 'review_pending' || row.mission.status === 'active'
+              }
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+            </IconActionButton>
+            <IconActionButton
+              label={
+                hasChildren
+                  ? t('projectDetail.mission.deleteMissionBlockedByChildren')
+                  : t('projectDetail.mission.deleteMission')
+              }
+              onClick={() => onDeleteMission(row.mission)}
+              disabled={busy || !canDeleteMission}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </IconActionButton>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
+  const candidate = row.candidate;
+  return (
+    <tr className="border-t" style={tableBorderStyle}>
+      <td className="py-3 pl-4">{emptyCell}</td>
+      <td className="py-3">
+        <input
+          type="checkbox"
+          checked={selectedIds.includes(candidate.id)}
+          onChange={() => onToggleSelected(candidate.id)}
+          disabled={busy || candidate.status !== 'candidate'}
+        />
+      </td>
+      <td className={`max-w-[320px] py-3 ${indent}`}>
+        <button
+          type="button"
+          className="block max-w-full text-left"
+          onClick={() => onOpenCandidate(candidate)}
+        >
+          <span className="block truncate font-semibold">{candidate.title}</span>
+          <span className="mt-0.5 line-clamp-2 text-[10px]" style={subtleTextStyle}>
+            {candidate.rationale}
+          </span>
+        </button>
+      </td>
+      <td className="py-3">{t('projectDetail.tree.kind.taskCandidate')}</td>
+      <td className="py-3 text-right">
+        {t(`projectDetail.mission.status.${candidate.status}`, { defaultValue: candidate.status })}
+      </td>
+      <td className="py-3 text-right">
+        {candidate.evaluationContribution === null ? (
+          emptyCell
+        ) : (
+          <span className="font-semibold" style={primaryTextStyle}>
+            +{candidate.evaluationContribution}
+          </span>
+        )}
+      </td>
+      <td className="py-3 text-right">
+        {candidate.tokenSize ? <SizeChip value={candidate.tokenSize} /> : emptyCell}
+      </td>
+      <td className="py-3 text-right">
+        {candidate.importancePercent === null ? emptyCell : `${candidate.importancePercent}%`}
+      </td>
+      <td className="py-3 text-right">
+        {candidate.confidencePercent === null ? emptyCell : `${candidate.confidencePercent}%`}
+      </td>
+      <td className="py-3 text-right">
+        {candidate.complexity ? <ComplexityChip value={candidate.complexity} /> : emptyCell}
+      </td>
+      <td className="py-3 pr-4 text-right">
+        <div className="flex justify-end gap-1">
+          <IconActionButton
+            label={t('projectDetail.mission.createSingleTask')}
+            onClick={() => onCreateCandidate(candidate)}
+            disabled={busy || candidate.status !== 'candidate'}
+          >
+            <ClipboardCheck className="h-3.5 w-3.5" />
+          </IconActionButton>
+          <IconActionButton
+            label={t('projectDetail.mission.deleteCandidate')}
+            onClick={() => onDismissCandidate(candidate)}
+            disabled={busy || candidate.status !== 'candidate'}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </IconActionButton>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function TreeToggle({
+  expanded,
+  disabled,
+  onClick,
+}: {
+  expanded: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <IconActionButton
+      label={expanded ? 'Collapse' : 'Expand'}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {expanded ? (
+        <ChevronDown className="h-3.5 w-3.5" />
+      ) : (
+        <ChevronRight className="h-3.5 w-3.5" />
+      )}
+    </IconActionButton>
+  );
+}
+
+export function coverageAxesFromQualityRun(run: ProjectQualityRun | null | undefined) {
+  const gateMetrics = run?.coverageGate?.metrics ?? [];
+  if (gateMetrics.length > 0) {
+    return gateMetrics.map((metric) => ({
+      labelKey: `projectDetail.coverage.${metric.metric}`,
+      value: metric.actualPercent,
+    }));
+  }
+
+  const total = coverageSummaryTotal(run?.coverageSummary);
+  if (!total) return [];
+  return coverageAxisMetrics.flatMap((metric) => {
+    const value = coverageMetricPercent(total[metric]);
+    return value === null ? [] : [{ labelKey: `projectDetail.coverage.${metric}`, value }];
+  });
+}
+
+function coverageSummaryTotal(summary: unknown): Record<string, unknown> | null {
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) return null;
+  const total = (summary as Record<string, unknown>).total;
+  return total && typeof total === 'object' && !Array.isArray(total)
+    ? (total as Record<string, unknown>)
+    : null;
+}
+
+function coverageMetricPercent(metricSummary: unknown) {
+  if (!metricSummary || typeof metricSummary !== 'object' || Array.isArray(metricSummary)) {
+    return null;
+  }
+  const pct = (metricSummary as Record<string, unknown>).pct;
+  return typeof pct === 'number' && Number.isFinite(pct) ? pct : null;
 }
 
 export function QualityReportPanel({
@@ -1907,9 +2384,107 @@ export function GoalEditorDialog({
   );
 }
 
+function GoalDetailModal({
+  goal,
+  missionCount,
+  candidateCount,
+  busy,
+  onClose,
+  onEdit,
+  onToggle,
+  onDelete,
+  onGenerateTaskCandidates,
+  onGenerateMissionCandidates,
+}: {
+  goal: MissionGoal;
+  missionCount: number;
+  candidateCount: number;
+  busy: boolean;
+  onClose: () => void;
+  onEdit: (goal: MissionGoal) => void;
+  onToggle: (goal: MissionGoal) => void;
+  onDelete: (goal: MissionGoal) => void;
+  onGenerateTaskCandidates: (goal: MissionGoal) => void;
+  onGenerateMissionCandidates: (goal: MissionGoal) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="nightworkers-scrollbar max-h-[90vh] w-full max-w-2xl overflow-y-auto border p-4"
+        style={panelStyle}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-base font-bold">{goal.title}</div>
+            <div className="mt-1">
+              <ActiveChip active={goal.active} />
+            </div>
+          </div>
+          <IconActionButton
+            label={t('projectDetail.mission.close')}
+            onClick={onClose}
+            disabled={busy}
+          >
+            <X className="h-3.5 w-3.5" />
+          </IconActionButton>
+        </div>
+        <DrawerSection title={t('projectDetail.field.goalDefinition')} body={goal.goalText} />
+        <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+          <KpiTile
+            label={t('projectDetail.tree.kind.mission')}
+            value={String(missionCount)}
+            sub={t('projectDetail.mission.childCountSub')}
+          />
+          <KpiTile
+            label={t('projectDetail.tree.kind.taskCandidate')}
+            value={String(candidateCount)}
+            sub={t('projectDetail.mission.childCountSub')}
+          />
+        </div>
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <Button type="button" onClick={() => onEdit(goal)} disabled={busy} style={controlStyle}>
+            <Pencil className="h-3.5 w-3.5" />
+            {t('projectDetail.goalDialog.editTitle')}
+          </Button>
+          <Button type="button" onClick={() => onToggle(goal)} disabled={busy} style={controlStyle}>
+            <Check className="h-3.5 w-3.5" />
+            {goal.active ? t('projectDetail.status.inactive') : t('projectDetail.status.active')}
+          </Button>
+          <Button type="button" onClick={() => onDelete(goal)} disabled={busy} style={controlStyle}>
+            <Trash2 className="h-3.5 w-3.5" />
+            {t('projectDetail.goals.delete')}
+          </Button>
+          <Button
+            type="button"
+            onClick={() => onGenerateMissionCandidates(goal)}
+            disabled={busy}
+            style={controlStyle}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {t('projectDetail.mission.generateMissionCandidates')}
+          </Button>
+          <Button
+            type="button"
+            onClick={() => onGenerateTaskCandidates(goal)}
+            disabled={busy}
+            style={primaryButtonStyle}
+          >
+            <Zap className="h-3.5 w-3.5" />
+            {t('projectDetail.mission.generate')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MissionCandidateModal({
   mission,
   goals,
+  taskCandidateCount = 0,
   busy,
   onClose,
   onDecompose,
@@ -1917,12 +2492,14 @@ function MissionCandidateModal({
 }: {
   mission: Mission;
   goals: MissionGoal[];
+  taskCandidateCount?: number;
   busy: boolean;
   onClose: () => void;
   onDecompose: (mission: Mission) => void;
   onDelete: (mission: Mission) => void;
 }) {
   const { t } = useTranslation();
+  const canDeleteMission = !isMissionDeleteInProgress(mission.status) && taskCandidateCount === 0;
   const sourceGoals = mission.sourceGoalIds
     .map((goalId) => goals.find((goal) => goal.id === goalId))
     .filter((goal): goal is MissionGoal => Boolean(goal));
@@ -1943,9 +2520,13 @@ function MissionCandidateModal({
               })}
             </div>
           </div>
-          <Button type="button" onClick={onClose} disabled={busy} style={controlStyle}>
-            {t('projectDetail.mission.close')}
-          </Button>
+          <IconActionButton
+            label={t('projectDetail.mission.close')}
+            onClick={onClose}
+            disabled={busy}
+          >
+            <X className="h-3.5 w-3.5" />
+          </IconActionButton>
         </div>
         <DrawerSection title={t('projectDetail.mission.goalText')} body={mission.goalText} />
         {mission.statusReason ? (
@@ -1980,11 +2561,16 @@ function MissionCandidateModal({
           <Button
             type="button"
             onClick={() => onDelete(mission)}
-            disabled={busy || mission.status !== 'draft'}
+            disabled={busy || !canDeleteMission}
+            title={
+              taskCandidateCount > 0
+                ? t('projectDetail.mission.deleteMissionBlockedByChildren')
+                : undefined
+            }
             style={controlStyle}
           >
             <Trash2 className="h-3.5 w-3.5" />
-            {t('projectDetail.mission.deleteCandidate')}
+            {t('projectDetail.mission.deleteMission')}
           </Button>
           <Button type="button" onClick={onClose} disabled={busy} style={controlStyle}>
             {t('projectDetail.mission.close')}
@@ -2008,32 +2594,42 @@ function MissionCandidateModal({
   );
 }
 
-function CandidateDrawer({
+function TaskCandidateDetailModal({
   candidate,
+  busy,
   onClose,
+  onCreateTask,
   onDismiss,
 }: {
-  candidate: MissionTaskCandidate;
+  candidate: UnifiedTaskCandidate;
+  busy: boolean;
   onClose: () => void;
-  onDismiss: (candidate: MissionTaskCandidate) => void;
+  onCreateTask: (candidate: UnifiedTaskCandidate) => void;
+  onDismiss: (candidate: UnifiedTaskCandidate) => void;
 }) {
   const { t } = useTranslation();
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
-      <aside
-        className="nightworkers-scrollbar h-full w-full max-w-xl overflow-y-auto border-l p-4"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="nightworkers-scrollbar max-h-[90vh] w-full max-w-2xl overflow-y-auto border p-4"
         style={panelStyle}
       >
         <div className="flex items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <div className="text-base font-bold">{candidate.title}</div>
             <div className="mt-1 text-xs" style={mutedTextStyle}>
               {candidate.goalTitle || candidate.goalId || t('projectDetail.mission.noLinkedGoal')}
             </div>
           </div>
-          <Button type="button" onClick={onClose} style={controlStyle}>
-            {t('projectDetail.mission.close')}
-          </Button>
+          <IconActionButton
+            label={t('projectDetail.mission.close')}
+            onClick={onClose}
+            disabled={busy}
+          >
+            <X className="h-3.5 w-3.5" />
+          </IconActionButton>
         </div>
         <DrawerSection title={t('projectDetail.mission.summary')} body={candidate.summary} />
         <DrawerSection title={t('projectDetail.mission.rationale')} body={candidate.rationale} />
@@ -2049,98 +2645,57 @@ function CandidateDrawer({
         <div className="mt-4">
           <div className="text-xs font-bold">{t('projectDetail.mission.evidence')}</div>
           <div className="mt-2 space-y-2">
-            {candidate.evidence.map((item, index) => (
-              <div
-                key={`${item.source}-${index}`}
-                className="border p-2 text-xs"
-                style={controlStyle}
-              >
-                <div className="font-semibold">{item.label}</div>
-                <div className="mt-1" style={mutedTextStyle}>
-                  {item.value}
+            {candidate.evidence.length > 0 ? (
+              candidate.evidence.map((item, index) => (
+                <div
+                  key={`${item.source}-${index}`}
+                  className="border p-2 text-xs"
+                  style={controlStyle}
+                >
+                  <div className="font-semibold">{item.label}</div>
+                  <div className="mt-1" style={mutedTextStyle}>
+                    {item.value}
+                  </div>
                 </div>
+              ))
+            ) : (
+              <div className="text-xs" style={mutedTextStyle}>
+                —
               </div>
-            ))}
+            )}
           </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
           <KpiTile
             label={t('projectDetail.field.importance')}
-            value={`${candidate.importancePercent}%`}
+            value={candidate.importancePercent === null ? '—' : `${candidate.importancePercent}%`}
             sub={t('projectDetail.mission.importanceSub')}
           />
           <KpiTile
             label={t('projectDetail.field.confidence')}
-            value={`${candidate.confidencePercent}%`}
+            value={candidate.confidencePercent === null ? '—' : `${candidate.confidencePercent}%`}
             sub={t('projectDetail.mission.confidenceSub')}
           />
         </div>
-        <div className="mt-4 flex justify-end">
-          <Button type="button" onClick={() => onDismiss(candidate)} style={controlStyle}>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button
+            type="button"
+            onClick={() => onDismiss(candidate)}
+            disabled={busy || candidate.status !== 'candidate'}
+            style={controlStyle}
+          >
             {t('projectDetail.mission.deleteCandidate')}
           </Button>
-        </div>
-      </aside>
-    </div>
-  );
-}
-
-function ProposalDrawer({
-  proposal,
-  onClose,
-  onDismiss,
-}: {
-  proposal: MissionTaskProposal;
-  onClose: () => void;
-  onDismiss: (proposal: MissionTaskProposal) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
-      <aside
-        className="nightworkers-scrollbar h-full w-full max-w-xl overflow-y-auto border-l p-4"
-        style={panelStyle}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-base font-bold">{proposal.title}</div>
-            <div className="mt-1 text-xs" style={mutedTextStyle}>
-              {t('projectDetail.mission.proposalSource')}
-            </div>
-          </div>
-          <Button type="button" onClick={onClose} style={controlStyle}>
-            {t('projectDetail.mission.close')}
+          <Button
+            type="button"
+            onClick={() => onCreateTask(candidate)}
+            disabled={busy || candidate.status !== 'candidate'}
+            style={primaryButtonStyle}
+          >
+            {t('projectDetail.mission.createSingleTask')}
           </Button>
         </div>
-        <DrawerSection title={t('projectDetail.mission.summary')} body={proposal.summary} />
-        <DrawerSection
-          title={t('projectDetail.mission.expectedOutcome')}
-          body={proposal.expectedOutcome}
-        />
-        <DrawerSection
-          title={t('projectDetail.mission.taskPrompt')}
-          body={proposal.initialPrompt}
-        />
-        <DrawerSection
-          title={t('projectDetail.mission.acceptanceCriteria')}
-          body={proposal.acceptanceCriteria.join('\n')}
-        />
-        <DrawerSection
-          title={t('projectDetail.mission.verificationPlan')}
-          body={proposal.verificationGate.join('\n')}
-        />
-        {proposal.targetFilesOrModules.length > 0 ? (
-          <DrawerSection
-            title={t('projectDetail.mission.targetFiles')}
-            body={proposal.targetFilesOrModules.join('\n')}
-          />
-        ) : null}
-        <div className="mt-4 flex justify-end">
-          <Button type="button" onClick={() => onDismiss(proposal)} style={controlStyle}>
-            {t('projectDetail.mission.deleteCandidate')}
-          </Button>
-        </div>
-      </aside>
+      </div>
     </div>
   );
 }

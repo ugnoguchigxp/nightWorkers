@@ -495,7 +495,7 @@ describe('Mission Planner service and routes', () => {
     expect(await listRes.json()).toEqual([]);
   });
 
-  it('does not delete a Mission after it leaves draft status', async () => {
+  it('does not delete a Mission while task candidates remain', async () => {
     const repository = await createRepository();
     queueLlmOutputs();
     const mission = await missionPlannerService.createMission({
@@ -517,6 +517,90 @@ describe('Mission Planner service and routes', () => {
     expect(missions).toContainEqual(
       expect.objectContaining({ id: mission.id, status: 'review_pending' })
     );
+  });
+
+  it('deletes a Mission after previous task candidates are dismissed', async () => {
+    const repository = await createRepository();
+    queueLlmOutputs();
+    const mission = await missionPlannerService.createMission({
+      repositoryId: repository.id,
+      goalText: '過去に候補があった Mission も候補が残っていなければ削除できる。',
+    });
+    const detail = await missionPlannerService.decomposeMission({ missionId: mission.id });
+    expect(detail.taskProposals).toHaveLength(1);
+    await missionPlannerService.dismissTaskProposal(detail.taskProposals[0].id);
+
+    const deleteRes = await app.request(`http://localhost/api/missions/${mission.id}`, {
+      method: 'DELETE',
+      headers: { Origin: 'http://localhost:39174' },
+    });
+    expect(deleteRes.status).toBe(200);
+
+    const listRes = await app.request(
+      `http://localhost/api/repositories/${repository.id}/missions`
+    );
+    const missions = (await listRes.json()) as Array<{ id: string }>;
+    expect(missions.map((item) => item.id)).not.toContain(mission.id);
+  });
+
+  it('does not delete a draft Mission that has task candidates', async () => {
+    const repository = await createRepository();
+    const mission = await missionPlannerService.createMission({
+      repositoryId: repository.id,
+      goalText: '子タスク候補を持つ Mission は削除できない。',
+    });
+    const run = await missionPlannerRepo.createRunningDecompositionRun({
+      missionId: mission.id,
+      repositoryId: repository.id,
+      inputBundle: { source: 'test' },
+    });
+    const planningResult = await missionPlannerRepo.createPlanningResult({
+      missionId: mission.id,
+      repositoryId: repository.id,
+      decompositionRunId: run.id,
+      status: 'review_pending',
+      planningResult: planningResultFixture(),
+    });
+    await missionPlannerRepo.createTaskProposals([
+      {
+        missionId: mission.id,
+        planningResultId: planningResult.id,
+        repositoryId: repository.id,
+        workPackageId: 'wp-backend',
+        decompositionTaskId: 'task-backend',
+        status: 'proposed',
+        title: '子タスク候補',
+        summary: 'Mission 配下の TaskCandidate。',
+        initialPrompt: '子タスク候補を実装する。',
+        expectedOutcome: '子タスク候補が残る。',
+        implementationFocusJson: ['api/modules/mission-planner'],
+        acceptanceCriteriaJson: ['Mission は削除されない。'],
+        verificationGateJson: ['bunx vitest run tests/mission-planner.test.ts'],
+        dependenciesJson: [],
+        targetFilesOrModulesJson: ['api/modules/mission-planner'],
+        risk: 'medium',
+        approvalRequired: false,
+        schedulingJson: {
+          executionType: 'normal',
+          reason: '単独で実行できる。',
+          sequenceGroupId: null,
+          sequenceOrder: null,
+          dependsOnTaskIds: [],
+        },
+      },
+    ]);
+
+    const deleteRes = await app.request(`http://localhost/api/missions/${mission.id}`, {
+      method: 'DELETE',
+      headers: { Origin: 'http://localhost:39174' },
+    });
+    expect(deleteRes.status).toBe(400);
+
+    const listRes = await app.request(
+      `http://localhost/api/repositories/${repository.id}/missions`
+    );
+    const missions = (await listRes.json()) as Array<{ id: string; status: string }>;
+    expect(missions).toContainEqual(expect.objectContaining({ id: mission.id, status: 'draft' }));
   });
 
   it('lists repository Mission task proposals for the Project Detail task candidate list', async () => {
