@@ -8,6 +8,7 @@ import { writeLastWorkbenchRoute } from './last-workbench-route';
 import {
   parseWorkbenchRouteUrl,
   serializeWorkbenchRoute,
+  shouldCanonicalizeWorkbenchRoute,
   type WorkbenchRouteState,
 } from './workbench-route-state';
 
@@ -23,6 +24,7 @@ export function WorkbenchRoutePage({ routeState }: { routeState: WorkbenchRouteS
   }, [currentRoute]);
 
   useEffect(() => {
+    if (!shouldCanonicalizeWorkbenchRoute(routeState, location.pathname)) return;
     const currentUrl = `${location.pathname}${location.searchStr}`;
     if (currentUrl === currentRoute) return;
     const nextUrl = parseWorkbenchRouteUrl(currentRoute);
@@ -31,7 +33,7 @@ export function WorkbenchRoutePage({ routeState }: { routeState: WorkbenchRouteS
       search: nextUrl.search,
       replace: true,
     } as never);
-  }, [currentRoute, location.pathname, location.searchStr, navigate]);
+  }, [currentRoute, location.pathname, location.searchStr, navigate, routeState]);
 
   return (
     <WorkspaceAppearanceProvider>

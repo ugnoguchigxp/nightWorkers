@@ -9,10 +9,11 @@ import {
   RefreshCw,
   Trash2,
 } from 'lucide-react';
-import { memo } from 'react';
+import { type MouseEvent, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import type { ProjectSessionGroups } from '../hooks/useNightWorkersWorkspace';
+import { serializeWorkbenchRoute } from '../routing/workbench-route-state';
 import type { Repository, WorkbenchSessionView } from '../types';
 import { getRelativeTimestamp } from '../utils/time';
 
@@ -42,6 +43,13 @@ const EMPTY_PROJECT_SESSION_GROUPS: ProjectSessionGroups = {
   queue: [],
   archive: [],
 };
+
+function handleSidebarAnchorClick(event: MouseEvent<HTMLAnchorElement>, action: () => void) {
+  if (event.defaultPrevented || event.button !== 0) return;
+  if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return;
+  event.preventDefault();
+  action();
+}
 
 export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebarProps) {
   const { t } = useTranslation();
@@ -143,18 +151,25 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                     >
                       <Plus className="h-3.5 w-3.5" />
                     </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className={`nightworkers-sidebar-control h-7 w-7 rounded-md p-0 ${
+                    <a
+                      href={serializeWorkbenchRoute({
+                        kind: 'project_detail',
+                        projectId: project.id,
+                        tab: 'overview',
+                      })}
+                      className={`nightworkers-sidebar-control inline-flex h-7 w-7 items-center justify-center rounded-md p-0 ${
                         isProjectDetailActive ? 'nightworkers-sidebar-link-active' : ''
                       }`}
-                      onClick={() => props.onOpenProjectDetail(project.id)}
+                      aria-current={isProjectDetailActive ? 'page' : undefined}
+                      onClick={(event) =>
+                        handleSidebarAnchorClick(event, () => props.onOpenProjectDetail(project.id))
+                      }
                       title={t('sidebar.openProjectDetail')}
                     >
-                      <LayoutDashboard className="h-3.5 w-3.5" />
-                    </Button>
+                      <span className="flex h-full w-full items-center justify-center">
+                        <LayoutDashboard className="h-3.5 w-3.5" />
+                      </span>
+                    </a>
                     <Button
                       type="button"
                       variant="ghost"

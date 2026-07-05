@@ -24,4 +24,13 @@ describe('workbench nested route outlet contract', () => {
     expect(source).toContain("location.pathname !== '/settings'");
     expect(source).toContain('return <Outlet />');
   });
+
+  it('renders the project detail sidebar control as a real URL link', () => {
+    const source = readRoute('src/modules/nightworkers/components/ProjectSidebar.tsx');
+
+    expect(source).toContain('<a');
+    expect(source).toContain("kind: 'project_detail'");
+    expect(source).toContain("tab: 'overview'");
+    expect(source).toContain('handleSidebarAnchorClick');
+  });
 });

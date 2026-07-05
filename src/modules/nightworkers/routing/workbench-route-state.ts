@@ -128,6 +128,37 @@ export function parseWorkbenchRouteUrl(route: string): {
   };
 }
 
+export function shouldCanonicalizeWorkbenchRoute(state: WorkbenchRouteState, pathname: string) {
+  const parts = pathname.split('/').filter(Boolean).map(decodePathPart);
+  switch (state.kind) {
+    case 'overview':
+      return false;
+    case 'settings':
+      return pathname === '/settings';
+    case 'global_queue':
+      return false;
+    case 'project_queue':
+      return false;
+    case 'project_detail':
+      return (
+        parts.length === 3 &&
+        parts[0] === 'projects' &&
+        parts[1] === state.projectId &&
+        parts[2] === 'detail'
+      );
+    case 'session':
+      return false;
+  }
+}
+
+function decodePathPart(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 function appendArtifactSearch(
   params: URLSearchParams,
   artifact: WorkbenchArtifactRouteState | null

@@ -9,6 +9,7 @@ import {
   normalizeRelativeProjectPath,
   parseWorkbenchRouteUrl,
   serializeWorkbenchRoute,
+  shouldCanonicalizeWorkbenchRoute,
 } from '../src/modules/nightworkers/routing/workbench-route-state';
 
 class MemoryStorage implements Storage {
@@ -116,5 +117,47 @@ describe('workbench route state', () => {
       pathname: '/sessions/session-1',
       search: { artifact: 'project_tree', file: 'src/App.tsx' },
     });
+  });
+
+  it('does not canonicalize intra-screen navigation while a stale route state is still mounted', () => {
+    expect(
+      shouldCanonicalizeWorkbenchRoute(
+        { kind: 'overview', range: '30d', projectId: null },
+        '/sessions/s1'
+      )
+    ).toBe(false);
+    expect(
+      shouldCanonicalizeWorkbenchRoute(
+        { kind: 'project_detail', projectId: 'project-1', tab: 'overview' },
+        '/projects/project-1/detail/mission'
+      )
+    ).toBe(false);
+    expect(
+      shouldCanonicalizeWorkbenchRoute(
+        { kind: 'project_detail', projectId: 'project-1', tab: 'overview' },
+        '/projects/project-1/detail'
+      )
+    ).toBe(true);
+    expect(
+      shouldCanonicalizeWorkbenchRoute(
+        { kind: 'settings', section: 'general' },
+        '/settings/plan-mode'
+      )
+    ).toBe(false);
+    expect(
+      shouldCanonicalizeWorkbenchRoute({ kind: 'settings', section: 'general' }, '/settings')
+    ).toBe(true);
+    expect(
+      shouldCanonicalizeWorkbenchRoute(
+        { kind: 'project_detail', projectId: 'project-1', tab: 'overview' },
+        '/projects/project-1/queue'
+      )
+    ).toBe(false);
+    expect(
+      shouldCanonicalizeWorkbenchRoute(
+        { kind: 'project_queue', projectId: 'project-1', view: 'board' },
+        '/projects/project-1/queue'
+      )
+    ).toBe(false);
   });
 });
