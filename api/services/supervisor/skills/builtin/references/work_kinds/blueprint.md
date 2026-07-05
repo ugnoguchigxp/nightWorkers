@@ -10,7 +10,7 @@
 - 「試作して」「どんなイメージか見せて」「Blueprint を見たい」「プレビューを作って」「トップページ案を出して」のような依頼は、実装開始ではなく Blueprint 作成/更新の依頼として扱う。
 - Blueprint は UI specification と related design view hub を扱う。UI のない task では必須にしない。
 - 通常 Blueprint は screen、section、props に入るサンプル表示、implementation task を一貫した単位として扱う。data model、binding、DDL は Data Model view で扱う。
-- Blueprint は DB DDL、API contract、Zod schema の canonical source ではない。API は api_io_contract、validation / JSON / tool input contract は zod_schema_design に分離する。
+- Blueprint は DB DDL、API contract、Zod schema の canonical source ではない。API と HTTP validation は api_io_contract、OpenAPI endpoint に属さない JSON / tool input contract は zod_schema_design に分離する。
 - 既存の Blueprint artifact がある場合は、現在の user request を反映して更新・差分化する前提で考える。
 - e-commerce、dashboard、admin、content、workflow などのドメインらしさを、generic overview ではなく実際の画面構成とコンポーネント選定に反映する。
 - section は必要なものだけを選ぶ。見栄えのために hero、画像、KPI、chart、activity、marketing section を自動追加しない。

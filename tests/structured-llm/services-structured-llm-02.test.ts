@@ -528,7 +528,7 @@ describe('Supervisor LLM schema-first parsing', () => {
     const request = buildNormalizedSupervisorLlmRequest({
       systemPrompt: 'system text',
       userPrompt: 'user text',
-      label: 'specification_document_review',
+      label: 'role_route_fallback_review',
       role: 'review',
       settings: {
         ACTIVE_LLM_PROVIDER: 'azure',

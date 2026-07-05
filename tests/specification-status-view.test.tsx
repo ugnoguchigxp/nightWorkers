@@ -179,6 +179,206 @@ describe('DedicatedViewPanel', () => {
     expect(markup).toContain('step1 --&gt; step2');
   });
 
+  it('renders API Contract artifacts as endpoint and validation panels', () => {
+    const markup = renderToStaticMarkup(
+      <DedicatedViewPanel
+        artifact={
+          {
+            id: 'api-contract-1',
+            kind: 'api_io_contract',
+            title: 'Mission API Contract',
+            sourceMessageId: '44444444-4444-4444-8444-444444447779',
+            createdAt: '2026-07-02T00:00:00.000Z',
+          } as never
+        }
+        message={
+          {
+            id: '44444444-4444-4444-8444-444444447779',
+            content: '# Mission API Contract',
+            metadataJson: {
+              artifactKind: 'plan_mode_api_contract',
+              view: 'api_io_contract',
+              apiContract: {
+                artifactKind: 'plan_mode_api_contract',
+                view: 'api_io_contract',
+                title: 'Mission API Contract',
+                summary: 'Mission task creation API.',
+                openapi: {
+                  openapi: '3.1.0',
+                  info: { title: 'Mission API', version: '0.1.0' },
+                  paths: {
+                    '/api/missions/{missionId}/tasks': {
+                      post: {
+                        operationId: 'createMissionTasks',
+                        summary: 'Create mission tasks',
+                        description: 'Starts async task creation.',
+                        responses: {
+                          '202': { description: 'Accepted' },
+                          '409': { description: 'Already generating' },
+                        },
+                      },
+                    },
+                  },
+                  components: { schemas: {} },
+                },
+                stateTransitions: [
+                  {
+                    operationId: 'createMissionTasks',
+                    fromState: 'draft',
+                    toState: 'generating_tasks',
+                    successStatus: 202,
+                    conflictStatuses: [409],
+                    stateField: 'status',
+                    notes: [],
+                  },
+                ],
+                validation: [
+                  {
+                    schemaName: 'CreateMissionTasksRequest',
+                    owner: 'request',
+                    zodOwnerFile: 'shared/schemas/mission-planner.schema.ts',
+                    strictness: 'strict',
+                    examples: [
+                      {
+                        name: 'missing mission id',
+                        valid: false,
+                        payload: {},
+                        expectedIssues: ['missionId is required'],
+                      },
+                    ],
+                  },
+                ],
+                openQuestions: [],
+              },
+            },
+          } as never
+        }
+      />
+    );
+
+    expect(markup).toContain('Mission API Contract');
+    expect(markup).toContain('POST');
+    expect(markup).toContain('/api/missions/{missionId}/tasks');
+    expect(markup).toContain('202');
+    expect(markup).toContain('409');
+    expect(markup).toContain('draft -&gt; generating_tasks');
+    expect(markup).toContain('CreateMissionTasksRequest');
+    expect(markup).toContain('missing mission id');
+    expect(markup).toContain('Download OpenAPI JSON');
+  });
+
+  it('renders Zod schema artifacts as form fields, rules, and schema source', () => {
+    const markup = renderToStaticMarkup(
+      <DedicatedViewPanel
+        artifact={
+          {
+            id: 'zod-schema-1',
+            kind: 'zod_schema_design',
+            title: 'Tool Input Schema',
+            sourceMessageId: '44444444-4444-4444-8444-444444447780',
+            createdAt: '2026-07-02T00:00:00.000Z',
+          } as never
+        }
+        message={
+          {
+            id: '44444444-4444-4444-8444-444444447780',
+            content: 'const ToolInputSchema = z.object({ title: z.string().min(1) });',
+            metadataJson: {
+              artifactKind: 'plan_mode_zod_schema',
+              view: 'zod_schema_design',
+              zodSchema: {
+                artifactKind: 'plan_mode_zod_schema',
+                view: 'zod_schema_design',
+                title: 'Tool Input Schema',
+                summary: 'Worker tool input validation.',
+                schemaName: 'ToolInputSchema',
+                owner: 'worker_tool_input',
+                zodSource: 'const ToolInputSchema = z.object({ title: z.string().min(1) });',
+                fields: [
+                  {
+                    name: 'title',
+                    type: 'string',
+                    required: true,
+                    description: 'Todo title',
+                    enumOptions: [],
+                    defaultValue: null,
+                    rules: [{ name: 'min', args: [1], message: null }],
+                    zodExpression: 'z.string().min(1)',
+                  },
+                  {
+                    name: 'priority',
+                    type: 'enum',
+                    required: true,
+                    description: 'Todo priority',
+                    enumOptions: ['low', 'normal', 'high'],
+                    defaultValue: null,
+                    referencedSchema: null,
+                    children: [],
+                    rules: [],
+                    zodExpression: 'z.enum(["low", "normal", "high"])',
+                  },
+                  {
+                    name: 'owner',
+                    type: 'reference',
+                    required: true,
+                    description: 'Existing owner schema',
+                    enumOptions: [],
+                    defaultValue: null,
+                    referencedSchema: 'ownerSchema',
+                    children: [],
+                    rules: [{ name: 'describe', args: ['Existing owner schema'], message: null }],
+                    zodExpression: 'ownerSchema.describe("Existing owner schema")',
+                  },
+                  {
+                    name: 'boundaries',
+                    type: 'object',
+                    required: true,
+                    description: null,
+                    enumOptions: [],
+                    defaultValue: null,
+                    referencedSchema: null,
+                    children: [
+                      {
+                        name: 'schemaBoundary',
+                        type: 'string',
+                        required: true,
+                        description: 'schema の責務範囲',
+                        enumOptions: [],
+                        defaultValue: null,
+                        referencedSchema: null,
+                        children: [],
+                        rules: [{ name: 'min', args: [1], message: null }],
+                        zodExpression: 'z.string().min(1).describe("schema の責務範囲")',
+                      },
+                    ],
+                    rules: [{ name: 'strict', args: [], message: null }],
+                    zodExpression:
+                      'z.object({ schemaBoundary: z.string().min(1).describe("schema の責務範囲") }).strict()',
+                  },
+                ],
+                unsupportedExpressions: [],
+                openQuestions: [],
+              },
+            },
+          } as never
+        }
+      />
+    );
+
+    expect(markup).toContain('Validation form');
+    expect(markup).toContain('Field rules');
+    expect(markup).toContain('title');
+    expect(markup).toContain('Todo title');
+    expect(markup).toContain('value="sample"');
+    expect(markup).toContain('type="radio"');
+    expect(markup).toContain('normal');
+    expect(markup).toContain('min(1)');
+    expect(markup).toContain('Referenced schema: ownerSchema');
+    expect(markup).toContain('schema の責務範囲');
+    expect(markup).toContain('Zod schema source');
+    expect(markup).toContain('ToolInputSchema');
+  });
+
   it('does not build User Flow fallback charts from implementation-only Markdown', () => {
     const chart = buildFlowchartFromMarkdown(
       [
@@ -348,7 +548,6 @@ describe('PlanWorkspaceStatusView', () => {
             blueprint: false,
             data_model: false,
             api_io_contract: true,
-            state_model: true,
             activity_flow: true,
             sequence_flow: true,
             zod_schema_design: true,
@@ -388,7 +587,6 @@ describe('PlanWorkspaceStatusView', () => {
             blueprint: true,
             data_model: true,
             api_io_contract: true,
-            state_model: true,
             activity_flow: true,
             sequence_flow: true,
             zod_schema_design: true,
@@ -545,14 +743,52 @@ describe('PlanWorkspaceStatusView', () => {
     );
 
     expect(markup).toContain('1. User Flowを作成します');
-    expect(markup).toContain('2. API / I/Oを作成します');
+    expect(markup).toContain('2. API Contractを作成します');
     expect(markup).toContain('3. 仕様書を作成します');
     expect(markup).toContain('User Flow作成');
-    expect(markup).toContain('API / I/O作成');
+    expect(markup).toContain('API Contract作成');
     expect(markup).not.toContain('追加の Plan View');
     expect(markup).not.toContain('追加Viewを生成');
     expect(markup).toContain('User Flow: include - flow changes');
-    expect(markup).toContain('API / I/O: include - API changes');
+    expect(markup).toContain('API Contract: include - API changes');
+  });
+
+  it('shows only API Contract when Zod is omitted into the API contract', () => {
+    const markup = renderToStaticMarkup(
+      <PlanWorkspaceStatusView
+        workspace={
+          {
+            blueprintArtifacts: [],
+            dataModelArtifacts: [],
+            dedicatedViewArtifacts: [
+              { id: 'zod-schema-1', kind: 'zod_schema_design', title: 'Stale Zod Schema' },
+            ],
+          } as never
+        }
+        questionnaireSession={null}
+        busyAction={null}
+        canGenerateDataModel={true}
+        hasFeaturePlan={false}
+        viewDecisions={[
+          { view: 'questionnaire', decision: 'omit', reason: 'not needed' },
+          { view: 'blueprint', decision: 'omit', reason: 'no UI' },
+          { view: 'api_io_contract', decision: 'include', reason: 'API status covers state' },
+          { view: 'zod_schema_design', decision: 'omit', reason: 'covered by OpenAPI schemas' },
+        ]}
+        onOpenQuestionnaire={vi.fn()}
+        onGenerateBlueprint={vi.fn()}
+        onGenerateDataModel={vi.fn()}
+        onGenerateFeaturePlan={vi.fn()}
+        onGenerateDedicatedViews={vi.fn()}
+      />
+    );
+
+    expect(markup).toContain('API Contract作成');
+    expect(markup).not.toContain('State作成');
+    expect(markup).not.toContain('Zod作成');
+    expect(markup).not.toContain('Stateを再生成');
+    expect(markup).not.toContain('Zodを再生成');
+    expect(markup).toContain('Zod: omit - covered by OpenAPI schemas');
   });
 
   it('shows regeneration actions for generated plan views', () => {
@@ -587,14 +823,14 @@ describe('PlanWorkspaceStatusView', () => {
     );
 
     expect(markup).toContain('User Flowが作成済みです。');
-    expect(markup).toContain('API / I/Oが作成済みです。');
+    expect(markup).toContain('API Contractが作成済みです。');
     expect(markup).toContain('User Flowを再生成');
-    expect(markup).toContain('API / I/Oを再生成');
+    expect(markup).toContain('API Contractを再生成');
     expect(markup).not.toContain('生成状況を確認');
     expect(markup).toMatch(/<button[^>]*>User Flowを再生成<\/button>/);
-    expect(markup).toMatch(/<button[^>]*>API \/ I\/Oを再生成<\/button>/);
+    expect(markup).toMatch(/<button[^>]*>API Contractを再生成<\/button>/);
     expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>User Flowを再生成<\/button>/);
-    expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>API \/ I\/Oを再生成<\/button>/);
+    expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>API Contractを再生成<\/button>/);
   });
 
   it('disables plan view actions disabled in Plan Mode settings', () => {
@@ -619,7 +855,6 @@ describe('PlanWorkspaceStatusView', () => {
             blueprint: true,
             data_model: true,
             api_io_contract: false,
-            state_model: true,
             activity_flow: true,
             sequence_flow: true,
             zod_schema_design: true,
@@ -638,10 +873,10 @@ describe('PlanWorkspaceStatusView', () => {
     );
 
     expect(markup).toContain('1. User Flowを作成します');
-    expect(markup).toContain('2. API / I/Oを作成します');
+    expect(markup).toContain('2. API Contractを作成します');
     expect(markup).toContain('Plan Mode capability is disabled in Settings.');
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>User Flow作成<\/button>/);
-    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>API \/ I\/O作成<\/button>/);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>API Contract作成<\/button>/);
     expect(markup).not.toContain('生成状況を確認');
   });
 });

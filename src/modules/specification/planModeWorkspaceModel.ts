@@ -9,7 +9,6 @@ import type {
 import {
   isDataModelMessage,
   isNormalBlueprintMessage,
-  isReviewedFeaturePlanMessage,
   mergeWorkspaceTaskMessages,
 } from '../nightworkers/workbenchSelectors';
 import { toMs } from '../nightworkers/workbenchSelectorUtils';
@@ -20,7 +19,6 @@ export type PlanWorkspaceTab =
   | 'data-model'
   | 'user-flow'
   | 'api-io-contract'
-  | 'state-model'
   | 'activity-flow'
   | 'sequence-flow'
   | 'zod-schema-design'
@@ -44,7 +42,6 @@ export function selectPlanModeWorkspaceMessages(input: {
     const intent = String(toDeepRecord(message.metadataJson).intent);
     return message.messageType === 'markdown_document' && intent === 'feature_plan';
   });
-  const reviewedDesignDocMessages = designDocMessages.filter(isReviewedFeaturePlanMessage);
   const activeBlueprintMessage = latestMessageByCreatedAt(blueprintMessages);
   const activeDataModelMessage = latestMessageByCreatedAt(dataModelMessages);
   const latestWorkspaceBlueprintMessageId =
@@ -58,7 +55,6 @@ export function selectPlanModeWorkspaceMessages(input: {
     blueprintMessages,
     dataModelMessages,
     designDocMessages,
-    reviewedDesignDocMessages,
     activeBlueprintMessage,
     activeDataModelMessage,
     activeBlueprintSourceMessageId,
@@ -90,7 +86,6 @@ export function getPlanModeCapabilities(settings: GeneralSettings | null) {
       blueprint: true,
       data_model: true,
       api_io_contract: true,
-      state_model: true,
       activity_flow: true,
       sequence_flow: true,
       zod_schema_design: true,

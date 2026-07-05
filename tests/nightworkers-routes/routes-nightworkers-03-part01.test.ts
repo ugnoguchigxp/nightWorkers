@@ -653,7 +653,7 @@ describe('NightWorkers task routes', () => {
         {
           method: 'POST',
           headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reviewAfterGenerate: false }),
+          body: JSON.stringify({}),
         }
       );
       expect(featurePlanRes.status).toBe(200);
@@ -1542,7 +1542,7 @@ describe('NightWorkers task routes', () => {
           '# Kanban Specification',
           '',
           '## 1. 目的',
-          'Operations Command Center を初期実装する。',
+          'NightWorkers に Operations Command Center を初期実装する。',
           '',
           '## 3. 画面仕様',
           'Operations Command Center',
@@ -1576,6 +1576,7 @@ describe('NightWorkers task routes', () => {
         },
       });
       expect(docBody.message.content).toContain('## 1. 目的');
+      expect(docBody.message.content).not.toContain('NightWorkers');
       expect(docBody.message.content).toContain('## 3. 画面仕様');
       expect(docBody.message.content).toContain('Operations Command Center');
       expect(docBody.message.content).toContain('## 4. 機能要件');
@@ -1588,18 +1589,6 @@ describe('NightWorkers task routes', () => {
           dataModelReferenceIncluded: true,
         },
       });
-      expect(docBody.reviewedMessage).toMatchObject({
-        messageType: 'markdown_document',
-        metadataJson: {
-          intent: 'feature_plan',
-          source: 'status_document_review',
-          reviewedSourceMessageId: docBody.message.id,
-          questionnaireSessionId: session.id,
-        },
-      });
-      expect(docBody.reviewedMessage.metadataJson.generation.reviewPrompt).toBe(
-        'ドキュメントレビューをしてください。改善するべき点が無くなるまで改善してください'
-      );
     } finally {
       if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
       else process.env.ACTIVE_LLM_PROVIDER = originalProvider;

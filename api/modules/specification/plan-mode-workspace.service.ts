@@ -23,8 +23,13 @@ export async function getPlanModeWorkspace(taskId: string): Promise<PlanModeWork
   const decisionReviews = [];
   const implementationReferences = [];
   for (const message of messages) {
-    if (message.messageType !== 'markdown_document') continue;
     const metadata = (message.metadataJson || {}) as Record<string, unknown>;
+    const isMarkdownDocument = message.messageType === 'markdown_document';
+    const isApiContractDocument =
+      message.messageType === 'api_contract' && metadata.artifactKind === 'plan_mode_api_contract';
+    const isZodSchemaDocument =
+      message.messageType === 'zod_schema' && metadata.artifactKind === 'plan_mode_zod_schema';
+    if (!isMarkdownDocument && !isApiContractDocument && !isZodSchemaDocument) continue;
     if (metadata.intent === 'feature_plan') {
       featurePlanArtifacts.push({
         id: `feature-plan-${message.id}`,
@@ -60,7 +65,11 @@ export async function getPlanModeWorkspace(taskId: string): Promise<PlanModeWork
       blueprintArtifacts.push(artifact);
       dedicatedViewArtifacts.push(artifact);
     }
-    if (metadata.artifactKind === 'plan_mode_dedicated_view') {
+    if (
+      metadata.artifactKind === 'plan_mode_dedicated_view' ||
+      metadata.artifactKind === 'plan_mode_api_contract' ||
+      metadata.artifactKind === 'plan_mode_zod_schema'
+    ) {
       const parsedView = planModeArtifactKindSchema.safeParse(metadata.view);
       if (!parsedView.success) continue;
       const view = parsedView.data;

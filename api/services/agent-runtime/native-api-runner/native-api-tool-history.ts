@@ -169,7 +169,6 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
     context.runtimeOptions?.planModeSettingsSnapshot
   );
   return [
-    'あなたは NightWorkers の native/API lane coding agent runtime です。',
     `executionMode: ${executionMode}`,
     ...(planModeSettings ? [`planModeSettings: ${planModeSettings}`] : []),
     'Codex 型の turn lifecycle / tool dispatch / cancellation discipline に従って実行します。',

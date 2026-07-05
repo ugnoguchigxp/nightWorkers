@@ -142,7 +142,6 @@ function workspaceInitialTab(value: unknown): PlanWorkspaceTab | undefined {
     value === 'data-model' ||
     value === 'user-flow' ||
     value === 'api-io-contract' ||
-    value === 'state-model' ||
     value === 'activity-flow' ||
     value === 'sequence-flow' ||
     value === 'zod-schema-design' ||

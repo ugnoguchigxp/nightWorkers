@@ -168,6 +168,137 @@ describe('spec-document-renderer', () => {
       expect(result.traceability).toContain('Data Model message: msg-data-model');
     });
 
+    it('includes dedicated plan view references and traceability', () => {
+      const result = buildSpecificationDocumentContext({
+        task: mockTask,
+        session: mockSession,
+        workspace: {
+          ...mockWorkspace,
+          dedicatedViewArtifacts: [
+            {
+              id: 'api_io_contract-msg-api',
+              kind: 'api_io_contract',
+              title: 'API Contract',
+              sourceMessageId: 'msg-api',
+              createdAt: new Date().toISOString(),
+            },
+            {
+              id: 'zod_schema_design-msg-zod',
+              kind: 'zod_schema_design',
+              title: 'Zod Schema',
+              sourceMessageId: 'msg-zod',
+              createdAt: new Date().toISOString(),
+            },
+            {
+              id: 'activity_flow-msg-activity',
+              kind: 'activity_flow',
+              title: 'Todo Activity Flow',
+              sourceMessageId: 'msg-activity',
+              createdAt: new Date().toISOString(),
+            },
+          ],
+          decisionReviews: [
+            {
+              id: 'decision-review-msg-review',
+              kind: 'decision_review',
+              title: 'Decision Review',
+              sourceMessageId: 'msg-review',
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        },
+        messages: [
+          {
+            id: 'msg-api',
+            metadataJson: {
+              intent: 'plan_mode_dedicated_view',
+              artifactKind: 'plan_mode_api_contract',
+              view: 'api_io_contract',
+              apiContract: {
+                artifactKind: 'plan_mode_api_contract',
+                view: 'api_io_contract',
+                title: 'Todo API Contract',
+                summary: 'CRUD for todo tasks.',
+                openapi: {
+                  openapi: '3.1.0',
+                  info: { title: 'Todo API', version: '0.1.0' },
+                  paths: {
+                    '/api/todos': {
+                      get: { operationId: 'listTodos', summary: 'List todo tasks' },
+                    },
+                  },
+                  components: { schemas: {} },
+                },
+                validation: [{ schemaName: 'TodoRequest', owner: 'request' }],
+              },
+            },
+          },
+          {
+            id: 'msg-zod',
+            metadataJson: {
+              intent: 'plan_mode_dedicated_view',
+              artifactKind: 'plan_mode_zod_schema',
+              view: 'zod_schema_design',
+              zodSchema: {
+                artifactKind: 'plan_mode_zod_schema',
+                view: 'zod_schema_design',
+                title: 'Todo Zod Schema',
+                summary: 'Validation for todo input.',
+                schemaName: 'TodoInputSchema',
+                owner: 'llm_json',
+                zodSource: 'const TodoInputSchema = z.object({ title: z.string() });',
+                fields: [
+                  { name: 'title', type: 'string', required: true, zodExpression: 'z.string()' },
+                ],
+              },
+            },
+          },
+          {
+            id: 'msg-activity',
+            content: '```mermaid\nflowchart TD\n  create --> persist\n```',
+            metadataJson: {
+              intent: 'plan_mode_dedicated_view',
+              artifactKind: 'plan_mode_dedicated_view',
+              view: 'activity_flow',
+              title: 'Todo Activity Flow',
+              markdown: '```mermaid\nflowchart TD\n  create --> persist\n```',
+            },
+          },
+          {
+            id: 'msg-review',
+            content: 'Use the generated API contract as the source of truth.',
+            metadataJson: {
+              intent: 'design_decision_review',
+              title: 'Decision Review',
+              designDecisionReview: {
+                decisions: ['Use the generated API contract as the source of truth.'],
+              },
+            },
+          },
+        ],
+      });
+
+      expect(result.planViewReferences).toContain('API Contract: Todo API Contract');
+      expect(result.planViewReferences).toContain('GET /api/todos (listTodos)');
+      expect(result.planViewReferences).toContain('Validation: TodoRequest');
+      expect(result.planViewReferences).toContain('Zod Schema: TodoInputSchema');
+      expect(result.planViewReferences).toContain('title:string/required');
+      expect(result.traceability).toContain(
+        'API Contract view: api_io_contract-msg-api; message: msg-api'
+      );
+      expect(result.traceability).toContain(
+        'Zod Schema view: zod_schema_design-msg-zod; message: msg-zod'
+      );
+      expect(result.planModeReferences).toContain('Dedicated Views:');
+      expect(result.planModeReferences).toContain('Todo Activity Flow');
+      expect(result.planModeReferences).toContain('flowchart TD');
+      expect(result.planModeReferences).toContain('Decision Reviews:');
+      expect(result.planModeReferences).toContain(
+        'Use the generated API contract as the source of truth.'
+      );
+      expect(result.traceability).not.toContain('activity_flow:activity_flow-msg-activity');
+    });
+
     it('handles missing blueprint and db design gracefully', () => {
       const result = buildSpecificationDocumentContext({
         task: { title: 'No Blueprint Task' },

@@ -256,7 +256,6 @@ const workbenchPlanModeGateSchema = z
               'blueprint',
               'data_model',
               'api_io_contract',
-              'state_model',
               'activity_flow',
               'sequence_flow',
               'zod_schema_design',
@@ -290,7 +289,76 @@ const workbenchPlanModeGateSchema = z
 
 type WorkbenchPlanModeGate = z.infer<typeof workbenchPlanModeGateSchema> & {
   action: 'plan_mode' | 'general_answer' | 'implementation' | 'review' | 'runtime_debug';
+  planSignal?: WorkbenchPlanSignal;
 };
+
+type WorkbenchPlanSignal = {
+  detected: boolean;
+  cues: string[];
+  sources: Array<'current_message' | 'task_context' | 'recent_conversation'>;
+};
+
+const PLAN_SIGNAL_CUES = [
+  'Plan Mode',
+  'Planで確認',
+  'Planで決める',
+  'Planで確認すること',
+  'Planで決めること',
+  '計画',
+  '実装計画',
+  '仕様',
+  '仕様策定',
+  '実装方針',
+  '設計方針',
+  'Questionnaire',
+  'Blueprint',
+] as const;
+
+function detectWorkbenchPlanSignal(input: {
+  prompt: string;
+  task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>;
+  messages: Awaited<ReturnType<typeof repo.listTaskMessages>>;
+}): WorkbenchPlanSignal {
+  const cues = new Set<string>();
+  const sources = new Set<WorkbenchPlanSignal['sources'][number]>();
+  collectPlanSignal(input.prompt, 'current_message', cues, sources);
+  collectPlanSignal(
+    [input.task.title, input.task.objective, input.task.description, input.task.acceptanceCriteria]
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .join('\n'),
+    'task_context',
+    cues,
+    sources
+  );
+  collectPlanSignal(
+    input.messages
+      .slice(-6)
+      .map((message) => message.content)
+      .join('\n'),
+    'recent_conversation',
+    cues,
+    sources
+  );
+  return {
+    detected: cues.size > 0,
+    cues: [...cues],
+    sources: [...sources],
+  };
+}
+
+function collectPlanSignal(
+  value: string,
+  source: WorkbenchPlanSignal['sources'][number],
+  cues: Set<string>,
+  sources: Set<WorkbenchPlanSignal['sources'][number]>
+) {
+  const lower = value.toLowerCase();
+  for (const cue of PLAN_SIGNAL_CUES) {
+    if (!value.includes(cue) && !lower.includes(cue.toLowerCase())) continue;
+    cues.add(cue);
+    sources.add(source);
+  }
+}
 
 async function decideWorkbenchPlanModeGate(input: {
   projectRoot: string;
@@ -302,9 +370,10 @@ async function decideWorkbenchPlanModeGate(input: {
   emitEvent: (event: SupervisorLlmDebugEvent) => void | Promise<void>;
   taskId: string;
 }): Promise<WorkbenchPlanModeGate> {
+  const planSignal = detectWorkbenchPlanSignal(input);
   const raw = await callStructuredJsonLLM(
     buildWorkbenchPlanModeGatePrompt(input.projectRoot),
-    buildWorkbenchPlanModeGateUserPrompt(input),
+    buildWorkbenchPlanModeGateUserPrompt({ ...input, planSignal }),
     {
       schemaName: 'workbench_plan_mode_gate',
       schema: {
@@ -339,7 +408,6 @@ async function decideWorkbenchPlanModeGate(input: {
                     'blueprint',
                     'data_model',
                     'api_io_contract',
-                    'state_model',
                     'activity_flow',
                     'sequence_flow',
                     'zod_schema_design',
@@ -384,6 +452,7 @@ async function decideWorkbenchPlanModeGate(input: {
   return {
     ...parsed,
     action: parsed.shouldStartPlanMode ? 'plan_mode' : (parsed.action ?? 'implementation'),
+    planSignal,
   };
 }
 
@@ -392,22 +461,26 @@ function buildWorkbenchPlanModeGatePrompt(projectRoot: string) {
     'Workbench intake で次の処理を1つだけ判定してください。',
     '現在のユーザー文だけでなく、提示された Task context / Recent conversation / Latest non-general run を判断材料にしてください。',
     'jobType、作業種別、難易度、実装規模、レビュー種別、調査種別は分類しないでください。',
-    'shouldStartPlanMode は、ユーザーが計画、実装計画、設計方針、仕様策定、質問票化、Blueprint など、実装前の計画作成を明示的に依頼した場合だけ true にしてください。',
+    'Plan Signal は、実装前の計画・仕様整理が必要そうな文脈を事前抽出した補助情報です。Plan Signal だけで確定せず、Task context / Recent conversation / Current User Message と合わせて判断してください。',
+    'shouldStartPlanMode は、ユーザーが計画、実装計画、設計方針、仕様策定、質問票化、Blueprint など、実装前の計画作成を依頼している、または Task context 上で Plan Mode で確認する論点が明示されていて現在の依頼がその開始に該当する場合に true にしてください。',
     '質問、確認、説明依頼、状態確認は shouldStartPlanMode=false かつ action="general_answer" にしてください。',
     'ただし、直前の可否回答や状態確認に続いてユーザーが作業の続行、再開、実行を求めている場合は状態確認ではありません。Latest non-general run があればその executionMode を優先し、なければ action="implementation" にしてください。',
     '修正、実装、設定変更、依存更新、リファクタは shouldStartPlanMode=false かつ action="implementation" にしてください。',
     'コードレビュー、差分レビュー、品質レビューは shouldStartPlanMode=false かつ action="review" にしてください。',
     'ログ確認、原因調査、実行時状態の確認、テスト実行や検証依頼は shouldStartPlanMode=false かつ action="runtime_debug" にしてください。',
     '完了済みの Plan Mode artifact は証跡として扱い、後続の質問や変更依頼で再編集対象にしないでください。',
-    'Plan View は Plan Mode の表示メニュー用です。UI 変更がない場合は blueprint を omit、DB/永続化 schema 変更がない場合は data_model を omit してください。API 契約、状態、フロー、Zod schema など今回の仕様化に必要な view だけ include してください。',
-    'user_flow / state_model / activity_flow / sequence_flow は Mermaid 図として価値がある場合だけ include し、文章説明で足りる場合は omit して spec に任せてください。',
+    '既に implementation_plan / feature_plan があり、現在の依頼が実装・修正・実行キュー投入なら Plan Mode を再起動しないでください。',
+    'Plan View は Plan Mode の表示メニュー用です。UI 変更がない場合は blueprint を omit、DB/永続化 schema 変更がない場合は data_model を omit してください。API 契約が主題の場合は api_io_contract を include し、OpenAPI 互換 API contract に寄せてください。',
+    'API 経由で観測・変更できる state と HTTP request / response / error validation は api_io_contract に統合し、zod_schema_design を重複 include しないでください。',
+    'zod_schema_design は LLM JSON、MCP / worker tool input、provider adapter、local config など OpenAPI endpoint に属さない validation contract が主題の場合だけ include してください。',
+    'user_flow / activity_flow / sequence_flow は Mermaid 図として価値がある場合だけ include し、文章説明で足りる場合は omit して spec に任せてください。',
     '判断に迷う場合は shouldStartPlanMode=false かつ action="general_answer" にしてください。',
     'JSON のみを返してください。',
     '',
     `プロジェクトルート: ${projectRoot}`,
     '',
     '[Output Schema]',
-    '{ "shouldStartPlanMode": boolean, "action": "plan_mode" | "general_answer" | "implementation" | "review" | "runtime_debug", "reason": "short reason", "dedicatedViews": [{ "view": "questionnaire|user_flow|blueprint|data_model|api_io_contract|state_model|activity_flow|sequence_flow|zod_schema_design", "decision": "include|omit", "reason": "short reason" }], "specificationLenses": ["target_users_or_actors|functional_requirements|business_rules|input_output|interface_contract|data_requirements|state_behavior|workflow_behavior|error_behavior|permission_boundary|compatibility|observability"] }',
+    '{ "shouldStartPlanMode": boolean, "action": "plan_mode" | "general_answer" | "implementation" | "review" | "runtime_debug", "reason": "short reason", "dedicatedViews": [{ "view": "questionnaire|user_flow|blueprint|data_model|api_io_contract|activity_flow|sequence_flow|zod_schema_design", "decision": "include|omit", "reason": "short reason" }], "specificationLenses": ["target_users_or_actors|functional_requirements|business_rules|input_output|interface_contract|data_requirements|state_behavior|workflow_behavior|error_behavior|permission_boundary|compatibility|observability"] }',
   ].join('\n');
 }
 
@@ -416,6 +489,7 @@ function buildWorkbenchPlanModeGateUserPrompt(input: {
   task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>;
   messages: Awaited<ReturnType<typeof repo.listTaskMessages>>;
   runs: Awaited<ReturnType<typeof repo.listTaskRunsForTask>>;
+  planSignal: WorkbenchPlanSignal;
 }) {
   const recentMessages = input.messages.slice(-6).map((message) => {
     const metadata = toRecord(message.metadataJson);
@@ -462,6 +536,11 @@ function buildWorkbenchPlanModeGateUserPrompt(input: {
       : null,
     ...latestRunLines,
     ...latestNonGeneralRunLines,
+    '',
+    '[Plan Signal]',
+    `detected: ${input.planSignal.detected ? 'true' : 'false'}`,
+    `sources: ${input.planSignal.sources.length ? input.planSignal.sources.join(', ') : 'none'}`,
+    `cues: ${input.planSignal.cues.length ? input.planSignal.cues.join(', ') : 'none'}`,
     '',
     '[Recent Conversation]',
     recentMessages.length ? recentMessages.join('\n') : '- none',

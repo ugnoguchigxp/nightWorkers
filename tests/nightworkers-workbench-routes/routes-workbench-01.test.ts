@@ -370,6 +370,10 @@ describe('NightWorkers workbench routes', () => {
         reason: { type: 'string' },
       },
     });
+    const gateUserPrompt = String(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[1] || '');
+    expect(gateUserPrompt).toContain('[Plan Signal]');
+    expect(gateUserPrompt).toContain('detected: true');
+    expect(gateUserPrompt).toContain('実装計画');
     expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[1]?.[2]).toMatchObject({
       role: 'plan',
       routeOverride: {
@@ -421,6 +425,51 @@ describe('NightWorkers workbench routes', () => {
           sourceBlueprintMessageId: null,
           status: 'answering',
           totalQuestionCount: 1,
+        }),
+      ])
+    );
+  });
+
+  it('passes task-objective Plan cues to the gate even when the current message says to build', async () => {
+    const { task } = await createWorkbenchTask({
+      title: 'todo listを作る',
+      objective: [
+        'todo listを作ってください。',
+        '',
+        '[Planで確認すること]',
+        '- UI、データモデル、保存方式、完了状態、編集・削除、検証方針。',
+      ].join('\n'),
+    });
+    vi.mocked(llm.callStructuredJsonLLM)
+      .mockResolvedValueOnce(mockPlanModeGate(true, 'task objective contains plan cues'))
+      .mockResolvedValueOnce(mockQuestionnaireOutput(task));
+
+    const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
+      body: JSON.stringify({ prompt: 'todo listを作ってください' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const gateUserPrompt = String(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[1] || '');
+    expect(gateUserPrompt).toContain('[Plan Signal]');
+    expect(gateUserPrompt).toContain('detected: true');
+    expect(gateUserPrompt).toContain('sources: task_context');
+    expect(gateUserPrompt).toContain('Planで確認');
+    expect(body.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          metadataJson: expect.objectContaining({
+            intent: 'design_questionnaire_ready',
+            planModeGate: expect.objectContaining({
+              shouldStartPlanMode: true,
+              planSignal: expect.objectContaining({
+                detected: true,
+                sources: expect.arrayContaining(['task_context']),
+              }),
+            }),
+          }),
         }),
       ])
     );
@@ -667,7 +716,7 @@ describe('NightWorkers workbench routes', () => {
       role: 'assistant',
       content: '## 仕様\nTodo List の実装仕様',
       messageType: 'markdown_document',
-      payloadJson: { intent: 'feature_plan', source: 'status_document_review' },
+      payloadJson: { intent: 'feature_plan', source: 'status' },
     });
 
     const res = await app.request(`http://localhost/api/workbench/sessions/${task.id}/messages`, {
@@ -1059,6 +1108,49 @@ describe('NightWorkers workbench routes', () => {
     ).toBe(undefined);
   });
 });
+
+function mockQuestionnaireOutput(task: Awaited<ReturnType<typeof repo.createTask>>) {
+  return JSON.stringify({
+    version: 1,
+    source: {
+      taskId: task.id,
+      repositoryId: task.repositoryId,
+      blueprintMessageId: null,
+      sourceKind: 'plan_mode_intake',
+    },
+    title: 'Plan Mode Questionnaire',
+    summary: 'Clarify implementation choices before coding.',
+    questionSets: [
+      {
+        id: 'scope',
+        title: 'Scope',
+        category: 'requirements',
+        purpose: 'Decide the initial implementation scope.',
+        questions: [
+          {
+            id: 'initial-scope',
+            topic: 'Initial scope',
+            question: 'Which scope should be included first?',
+            why: 'The implementation queue needs a concrete target.',
+            answerType: 'single_choice',
+            options: [
+              {
+                id: 'minimal',
+                label: 'Minimal',
+                description: 'Implement the smallest useful flow.',
+                tradeoff: 'Leaves enhancements for later.',
+              },
+            ],
+            blocks: ['UI', 'Data model'],
+            outputSection: 'Initial scope',
+          },
+        ],
+      },
+    ],
+    openQuestions: [],
+    dataModelHandoffNotes: [],
+  });
+}
 
 async function createWorkbenchTask(
   input: { title?: string; status?: string; objective?: string; createdBy?: string } = {}

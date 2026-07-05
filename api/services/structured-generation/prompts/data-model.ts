@@ -5,7 +5,6 @@ export const DATA_MODEL_PROMPT_VERSION = 'plan-mode-data-model-v1';
 export function buildDataModelSystemPrompt(dataModelJsonSchema: string): string {
   return [
     '[SystemContext]',
-    'あなたは NightWorkers の Data Model Plan View generator です。',
     'data_model は data structure view であり、Blueprint の一部ではありません。',
     'DB が実装対象なら DDL を canonicalSource として出力してください。',
     'DDL は実行指示ではなく設計 artifact です。migration 実行、runtime DB call、seed data 作成はしません。',

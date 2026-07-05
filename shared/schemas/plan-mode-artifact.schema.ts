@@ -20,7 +20,6 @@ export const dedicatedDesignViewSchema = z.enum([
   'blueprint',
   'data_model',
   'api_io_contract',
-  'state_model',
   'activity_flow',
   'sequence_flow',
   'zod_schema_design',
@@ -33,7 +32,6 @@ export const planModeCapabilitySchema = z.enum([
   'blueprint',
   'data_model',
   'api_io_contract',
-  'state_model',
   'activity_flow',
   'sequence_flow',
   'zod_schema_design',
@@ -61,7 +59,6 @@ export const planModeArtifactKindSchema = z.enum([
   'blueprint',
   'data_model',
   'api_io_contract',
-  'state_model',
   'activity_flow',
   'sequence_flow',
   'zod_schema_design',
@@ -162,10 +159,117 @@ export const dataModelArtifactSchema = z.object({
 
 export const planDiagramArtifactSchema = z.object({
   artifactKind: z.literal('plan_mode_dedicated_view'),
-  view: z.enum(['user_flow', 'state_model', 'activity_flow', 'sequence_flow']),
+  view: z.enum(['user_flow', 'activity_flow', 'sequence_flow']),
   title: z.string().min(1),
   markdown: z.string().min(1),
   diagramKind: z.enum(['stateDiagram-v2', 'flowchart', 'sequenceDiagram']),
+});
+
+export const planApiContractOperationSchema = z
+  .object({
+    operationId: z.string().min(1),
+    summary: z.string().nullable().optional(),
+    description: z.string().nullable().optional(),
+    tags: z.array(z.string()).optional().default([]),
+    requestBody: z.record(z.string(), z.unknown()).nullable().optional(),
+    responses: z
+      .record(z.string(), z.unknown())
+      .refine((responses) => Object.keys(responses).length > 0, {
+        message: 'responses must not be empty',
+      }),
+  })
+  .passthrough();
+
+export const planApiContractArtifactSchema = z.object({
+  artifactKind: z.literal('plan_mode_api_contract'),
+  view: z.literal('api_io_contract'),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  openapi: z.object({
+    openapi: z.literal('3.1.0'),
+    info: z.object({
+      title: z.string().min(1),
+      version: z.string().min(1),
+    }),
+    paths: z
+      .record(z.string(), z.record(z.string(), planApiContractOperationSchema))
+      .refine((paths) => Object.keys(paths).length > 0, {
+        message: 'paths must not be empty',
+      }),
+    components: z
+      .object({
+        schemas: z.record(z.string(), z.unknown()).default({}),
+        responses: z.record(z.string(), z.unknown()).optional(),
+        parameters: z.record(z.string(), z.unknown()).optional(),
+      })
+      .default({ schemas: {} }),
+  }),
+  stateTransitions: z
+    .array(
+      z.object({
+        operationId: z.string().min(1),
+        fromState: z.string().nullable().optional(),
+        toState: z.string().nullable().optional(),
+        successStatus: z.number().int().min(100).max(599),
+        conflictStatuses: z.array(z.number().int().min(100).max(599)).default([]),
+        stateField: z.string().nullable().optional(),
+        notes: z.array(z.string()).default([]),
+      })
+    )
+    .default([]),
+  validation: z
+    .array(
+      z.object({
+        schemaName: z.string().min(1),
+        owner: z.enum(['request', 'response', 'error', 'shared']),
+        zodOwnerFile: z.string().nullable().optional(),
+        strictness: z.enum(['strict', 'passthrough', 'strip', 'unknown']).optional(),
+        examples: z
+          .array(
+            z.object({
+              name: z.string().min(1),
+              valid: z.boolean(),
+              payload: z.unknown(),
+              expectedIssues: z.array(z.string()).default([]),
+            })
+          )
+          .default([]),
+      })
+    )
+    .default([]),
+  openQuestions: z.array(z.string()).default([]),
+});
+
+export const planZodSchemaFieldRuleSchema = z.object({
+  name: z.string().min(1),
+  args: z.array(z.union([z.string(), z.number(), z.boolean()])).default([]),
+  message: z.string().nullable().optional(),
+});
+
+export const planZodSchemaFieldSchema = z.object({
+  name: z.string().min(1),
+  type: z.enum(['string', 'number', 'boolean', 'enum', 'array', 'object', 'reference', 'unknown']),
+  required: z.boolean(),
+  description: z.string().nullable().optional(),
+  enumOptions: z.array(z.string()).default([]),
+  defaultValue: z.union([z.string(), z.number(), z.boolean()]).nullable().optional(),
+  referencedSchema: z.string().nullable().optional(),
+  children: z.array(z.unknown()).default([]),
+  rules: z.array(planZodSchemaFieldRuleSchema).default([]),
+  zodExpression: z.string().min(1),
+});
+
+export const planZodSchemaArtifactSchema = z.object({
+  artifactKind: z.literal('plan_mode_zod_schema'),
+  view: z.literal('zod_schema_design'),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  schemaName: z.string().min(1),
+  owner: z.enum(['llm_json', 'worker_tool_input', 'mcp_input', 'provider_adapter', 'local_config']),
+  zodSource: z.string().min(1),
+  fields: z.array(planZodSchemaFieldSchema).default([]),
+  unsupportedExpressions: z.array(z.string()).default([]),
+  openQuestions: z.array(z.string()).default([]),
 });
 
 export const zodSchemaDesignArtifactSchema = z.object({
@@ -200,4 +304,7 @@ export type PlanModeWorkspace = z.infer<typeof planModeWorkspaceSchema>;
 export type DedicatedViewArtifactMetadata = z.infer<typeof dedicatedViewArtifactMetadataSchema>;
 export type DataModelArtifact = z.infer<typeof dataModelArtifactSchema>;
 export type PlanDiagramArtifact = z.infer<typeof planDiagramArtifactSchema>;
+export type PlanApiContractArtifact = z.infer<typeof planApiContractArtifactSchema>;
+export type PlanZodSchemaArtifact = z.infer<typeof planZodSchemaArtifactSchema>;
+export type PlanZodSchemaField = z.infer<typeof planZodSchemaFieldSchema>;
 export type ZodSchemaDesignArtifact = z.infer<typeof zodSchemaDesignArtifactSchema>;

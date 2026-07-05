@@ -70,16 +70,6 @@ export function mergeWorkspaceTaskMessages({
   ];
 }
 
-export function isReviewedFeaturePlanMessage(message: TaskMessage) {
-  const metadata = taskMessageMetadata(message);
-  return (
-    message.messageType === 'markdown_document' &&
-    String(metadata.intent) === 'feature_plan' &&
-    String(metadata.source) === 'status_document_review' &&
-    typeof metadata.reviewedSourceMessageId === 'string'
-  );
-}
-
 export function isNormalBlueprintMessage(message: TaskMessage): boolean {
   const metadata = isRecord(message.metadataJson) ? message.metadataJson : {};
   return (
@@ -238,8 +228,8 @@ export function buildWorkbenchArtifactRefs(input: {
   );
   const dedicatedViewMessages = (input.messages || []).filter(
     (message) =>
-      message.messageType === 'markdown_document' &&
-      String(taskMessageMetadata(message).artifactKind) === 'plan_mode_dedicated_view' &&
+      isPlanModeDedicatedViewMessage(message) &&
+      isPlanModeDedicatedViewMetadata(taskMessageMetadata(message)) &&
       String(taskMessageMetadata(message).view) !== 'data_model'
   );
   if (
@@ -270,7 +260,11 @@ export function buildWorkbenchArtifactRefs(input: {
       id: `plan-mode-workspace-${input.task.id}`,
       taskId: input.task.id,
       kind: 'plan_mode_workspace',
-      title: 'Plan Mode Workspace',
+      title:
+        latestWorkspaceMessage &&
+        planModeWorkspaceInitialTabMetadata(latestWorkspaceMessage).initialTab
+          ? artifactTitleForKind('plan_mode_workspace', latestWorkspaceMessage)
+          : 'Plan Mode Workspace',
       summary: [
         `${featurePlanMessages.length} spec${featurePlanMessages.length === 1 ? '' : 's'}`,
         `${dataModelMessages.length} Data Model${dataModelMessages.length === 1 ? '' : 's'}`,
@@ -292,6 +286,9 @@ export function buildWorkbenchArtifactRefs(input: {
         dedicatedViewCount: dedicatedViewMessages.length,
         decisionReviewCount: decisionReviewMessages.length,
         featurePlanCount: featurePlanMessages.length,
+        ...(latestWorkspaceMessage
+          ? planModeWorkspaceInitialTabMetadata(latestWorkspaceMessage)
+          : {}),
       },
     });
   }
@@ -453,7 +450,7 @@ function runFieldRef(
 function inferDocumentArtifactKind(message: TaskMessage): WorkbenchArtifactKind {
   const metadata = taskMessageMetadata(message);
   const intent = String(metadata.intent);
-  if (String(metadata.artifactKind) === 'plan_mode_dedicated_view') return 'plan_mode_workspace';
+  if (isPlanModeDedicatedViewMetadata(metadata)) return 'plan_mode_workspace';
   if (isDataModelArtifactMessage(message)) return 'plan_mode_workspace';
   if (isBlueprintArtifactMessage(message)) return 'app_blueprint';
   if (intent === 'component_design' || metadata.componentDesign) return 'component_design';
@@ -482,17 +479,35 @@ function isDataModelMetadata(metadata: Record<string, unknown>): boolean {
 function planModeWorkspaceInitialTabMetadata(message: TaskMessage): { initialTab?: string } {
   const metadata = taskMessageMetadata(message);
   if (isDataModelArtifactMessage(message)) return { initialTab: 'data-model' };
-  if (String(metadata.artifactKind) !== 'plan_mode_dedicated_view') return {};
+  if (!isPlanModeDedicatedViewMetadata(metadata)) return {};
   const tabs: Record<string, string> = {
     user_flow: 'user-flow',
     api_io_contract: 'api-io-contract',
-    state_model: 'state-model',
     activity_flow: 'activity-flow',
     sequence_flow: 'sequence-flow',
     zod_schema_design: 'zod-schema-design',
   };
   const tab = tabs[String(metadata.view)];
   return tab ? { initialTab: tab } : {};
+}
+
+function isPlanModeDedicatedViewMetadata(metadata: Record<string, unknown>) {
+  return (
+    metadata.artifactKind === 'plan_mode_dedicated_view' ||
+    metadata.artifactKind === 'plan_mode_api_contract' ||
+    metadata.artifactKind === 'plan_mode_zod_schema'
+  );
+}
+
+function isPlanModeDedicatedViewMessage(message: TaskMessage) {
+  const metadata = taskMessageMetadata(message);
+  if (message.messageType === 'markdown_document') return true;
+  return (
+    (message.messageType === 'api_contract' &&
+      String(metadata.artifactKind) === 'plan_mode_api_contract') ||
+    (message.messageType === 'zod_schema' &&
+      String(metadata.artifactKind) === 'plan_mode_zod_schema')
+  );
 }
 
 function hasBlueprintMetadata(metadata: Record<string, unknown>): boolean {

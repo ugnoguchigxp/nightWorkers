@@ -5,7 +5,6 @@ export const dataModelGenerateRequestSchema = z.object({
   questionnaireSessionId: z.string().uuid().nullable().optional(),
   featurePlanMessageId: z.string().uuid().nullable().optional(),
   sourceBlueprintMessageId: z.string().uuid().nullable().optional(),
-  reviewAfterGenerate: z.boolean().optional(),
 });
 
 export const generateDataModelRoute = createRoute({

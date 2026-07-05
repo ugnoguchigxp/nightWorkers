@@ -1,6 +1,7 @@
 import { z } from '@hono/zod-openapi';
 
 const kebabIdSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+const questionnaireDecisionKeySchema = z.string().regex(/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/);
 const dateLikeSchema = z.union([z.string(), z.date()]);
 
 export const questionnaireChoiceQuestionSchema = z.object({
@@ -12,6 +13,22 @@ export const questionnaireChoiceQuestionSchema = z.object({
 export const questionnaireChoiceFormSchema = z.object({
   title: z.string().min(1).default('実装前に決めたいこと'),
   questions: z.array(questionnaireChoiceQuestionSchema).min(1).max(15),
+});
+
+export const questionnaireQuestionSetSourceSchema = z.enum([
+  'initial',
+  'follow_up',
+  'user_requested',
+  'artifact_triggered',
+  'pre_feature_plan_gate',
+]);
+
+export const questionnaireQuestionSetMetadataSchema = z.object({
+  source: questionnaireQuestionSetSourceSchema,
+  blocking: z.boolean(),
+  reason: z.string().default(''),
+  generatedFromMessageIds: z.array(z.string()).default([]),
+  decisionKeys: z.array(questionnaireDecisionKeySchema).default([]),
 });
 
 export const designQuestionnaireFollowUpDecisionSchema = z
@@ -62,6 +79,9 @@ export const designQuestionSchema = z
     allowsCustomAnswer: z.boolean().optional(),
     blocks: z.array(z.string().min(1)).min(1),
     outputSection: z.string().min(1),
+    decisionKey: questionnaireDecisionKeySchema.optional(),
+    blocking: z.boolean().optional(),
+    blockingReason: z.string().optional(),
     dependsOn: z.array(designQuestionDependencySchema).optional(),
   })
   .superRefine((question, ctx) => {
@@ -82,7 +102,26 @@ export const designQuestionSetSchema = z.object({
   title: z.string().min(1),
   category: z.string().min(1),
   purpose: z.string().min(1),
+  metadata: questionnaireQuestionSetMetadataSchema.optional(),
   questions: z.array(designQuestionSchema).min(1),
+});
+
+export const additionalQuestionnaireDraftSchema = z.object({
+  title: z.string().min(1).default('追加で確認したいこと'),
+  rationale: z.string().default(''),
+  questions: z
+    .array(
+      z.object({
+        decisionKey: questionnaireDecisionKeySchema,
+        text: z.string().min(1),
+        type: z.enum(['radio', 'checkbox']),
+        options: z.array(z.string().min(1)).min(2).max(10),
+        blocking: z.boolean(),
+        reason: z.string().min(1),
+      })
+    )
+    .max(5)
+    .default([]),
 });
 
 export const designOpenQuestionSchema = z.object({
@@ -157,6 +196,12 @@ export const createDesignQuestionnaireRequestSchema = z.object({
   sourceBlueprintMessageId: z.string().uuid().nullable().optional(),
 });
 
+export const generateAdditionalDesignQuestionnaireRequestSchema = z.object({
+  source: z.enum(['user_requested', 'artifact_triggered', 'pre_feature_plan_gate']),
+  reason: z.string().optional(),
+  maxQuestions: z.number().int().min(0).max(5).optional(),
+});
+
 export const designQuestionnaireSessionStatusSchema = z.enum([
   'draft',
   'answering',
@@ -209,7 +254,13 @@ export type DesignQuestion = z.infer<typeof designQuestionSchema>;
 export type DesignQuestionDependency = z.infer<typeof designQuestionDependencySchema>;
 export type DesignQuestionOption = z.infer<typeof designQuestionOptionSchema>;
 export type DesignQuestionSet = z.infer<typeof designQuestionSetSchema>;
+export type QuestionnaireDecisionKey = z.infer<typeof questionnaireDecisionKeySchema>;
+export type QuestionnaireQuestionSetSource = z.infer<typeof questionnaireQuestionSetSourceSchema>;
+export type QuestionnaireQuestionSetMetadata = z.infer<
+  typeof questionnaireQuestionSetMetadataSchema
+>;
 export type QuestionnaireChoiceForm = z.infer<typeof questionnaireChoiceFormSchema>;
+export type AdditionalQuestionnaireDraft = z.infer<typeof additionalQuestionnaireDraftSchema>;
 export type DesignQuestionnaireFollowUpDecision = z.infer<
   typeof designQuestionnaireFollowUpDecisionSchema
 >;

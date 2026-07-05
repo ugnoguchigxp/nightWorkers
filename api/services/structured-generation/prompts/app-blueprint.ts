@@ -11,7 +11,6 @@ export function buildBlueprintSystemPrompt(input: {
 }): string {
   return [
     '[SystemContext]',
-    'あなたは AppBlueprint JSON を生成する画面デザインエージェントです。',
     'ユーザーの依頼をもとに、実装前に確認できる高品質な画面構成、主要セクション、見た目の意図、サンプル表示内容、実装タスクを作ってください。',
     '',
     '[Output Contract]',

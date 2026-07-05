@@ -37,7 +37,6 @@ export const defaultGeneralSettings: GeneralSettings = {
       blueprint: true,
       data_model: true,
       api_io_contract: true,
-      state_model: true,
       activity_flow: true,
       sequence_flow: true,
       zod_schema_design: true,

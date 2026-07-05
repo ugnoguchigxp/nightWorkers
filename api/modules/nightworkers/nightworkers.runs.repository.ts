@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gt, inArray, not, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { withSqliteBusyRetry } from '../../db/retry';
+import type { TaskRunStatus } from '../../db/schema';
 import {
   artifacts,
   taskEvents,
@@ -85,7 +86,7 @@ function isSqliteUniqueConstraintError(error: unknown) {
 export async function createTaskRun(data: {
   taskId: string;
   repositoryId?: string | null;
-  status?: string;
+  status?: TaskRunStatus;
   workerKind?: string;
   baseRef?: string | null;
   worktreePath?: string | null;
@@ -289,7 +290,7 @@ export async function claimNextQueuedTask(repositoryId: string) {
 export async function updateTaskRun(
   id: string,
   data: {
-    status?: string;
+    status?: TaskRunStatus;
     endedAt?: Date;
     finishedAt?: Date;
     logContent?: string;

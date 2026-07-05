@@ -215,6 +215,126 @@ export function MessagePayload({
       </div>
     );
   }
+  if (
+    message.messageType === 'api_contract' &&
+    String(metadata.artifactKind) === 'plan_mode_api_contract'
+  ) {
+    const apiContract = toDeepRecord(metadata.apiContract || metadata.artifactPayload || metadata);
+    const openapi = toDeepRecord(apiContract.openapi);
+    const paths = toDeepRecord(openapi.paths);
+    const endpointCount = Object.values(paths).reduce((total, methods) => {
+      const methodRecord = toDeepRecord(methods);
+      return (
+        total +
+        Object.keys(methodRecord).filter((method) =>
+          ['get', 'post', 'put', 'patch', 'delete', 'options', 'head'].includes(
+            method.toLowerCase()
+          )
+        ).length
+      );
+    }, 0);
+    const title = String(apiContract.title || metadata.title || 'API Contract');
+    const summary = String(apiContract.summary || '');
+    return (
+      <div className="nightworkers-artifact-message space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="nightworkers-artifact-kicker text-xs font-semibold uppercase text-cyan-200">
+              API Contract
+            </div>
+            <div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold text-slate-100">
+              {title}
+            </div>
+            <div className="nightworkers-artifact-meta mt-1 text-xs text-slate-400">
+              OpenAPI 3.1 / {endpointCount} endpoints
+            </div>
+          </div>
+          <button
+            type="button"
+            className="nightworkers-artifact-open-button inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-cyan-500/60 text-cyan-100 hover:bg-cyan-950/30"
+            onClick={() =>
+              onOpenArtifact({
+                id: `plan-mode-workspace-${message.taskId}`,
+                taskId: message.taskId,
+                runId: message.runId || undefined,
+                kind: 'plan_mode_workspace',
+                title: `Plan Mode Workspace: ${title}`,
+                summary,
+                source: { type: 'task_message', messageId: message.id },
+                createdAt: String(message.createdAt),
+                metadata: {
+                  ...metadata,
+                  initialTab: 'api-io-contract',
+                },
+              })
+            }
+            title="Open API Contract"
+          >
+            <PanelsTopLeft className="h-4 w-4" />
+          </button>
+        </div>
+        {summary ? (
+          <p className="nightworkers-artifact-summary line-clamp-3 text-xs leading-5 text-slate-300">
+            {summary}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+  if (
+    message.messageType === 'zod_schema' &&
+    String(metadata.artifactKind) === 'plan_mode_zod_schema'
+  ) {
+    const zodSchema = toDeepRecord(metadata.zodSchema || metadata.artifactPayload || metadata);
+    const title = String(zodSchema.title || metadata.title || 'Zod Schema');
+    const summary = String(zodSchema.summary || '');
+    const fields = Array.isArray(zodSchema.fields) ? zodSchema.fields : [];
+    return (
+      <div className="nightworkers-artifact-message space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="nightworkers-artifact-kicker text-xs font-semibold uppercase text-cyan-200">
+              Zod Schema
+            </div>
+            <div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold text-slate-100">
+              {title}
+            </div>
+            <div className="nightworkers-artifact-meta mt-1 text-xs text-slate-400">
+              {String(zodSchema.schemaName || 'Schema')} / {fields.length} fields
+            </div>
+          </div>
+          <button
+            type="button"
+            className="nightworkers-artifact-open-button inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-cyan-500/60 text-cyan-100 hover:bg-cyan-950/30"
+            onClick={() =>
+              onOpenArtifact({
+                id: `plan-mode-workspace-${message.taskId}`,
+                taskId: message.taskId,
+                runId: message.runId || undefined,
+                kind: 'plan_mode_workspace',
+                title: `Plan Mode Workspace: ${title}`,
+                summary,
+                source: { type: 'task_message', messageId: message.id },
+                createdAt: String(message.createdAt),
+                metadata: {
+                  ...metadata,
+                  initialTab: 'zod-schema-design',
+                },
+              })
+            }
+            title="Open Zod Schema"
+          >
+            <PanelsTopLeft className="h-4 w-4" />
+          </button>
+        </div>
+        {summary ? (
+          <p className="nightworkers-artifact-summary line-clamp-3 text-xs leading-5 text-slate-300">
+            {summary}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
   if (message.messageType === 'markdown_document' && metadata?.markdownDocumentData?.content) {
     const markdownDocumentData = toDeepRecord(metadata.markdownDocumentData);
     return <ChatMarkdown content={String(markdownDocumentData.content)} />;

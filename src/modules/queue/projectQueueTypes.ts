@@ -71,12 +71,16 @@ export type ProjectQueueSessionView = {
 };
 
 export type ProjectQueueTaskStatus =
-  | 'needs_plan'
   | 'unclassified'
-  | 'planned'
-  | 'executing'
-  | 'attention'
-  | 'completed';
+  | 'plan_mode'
+  | 'ready_for_queue'
+  | 'queued'
+  | 'running'
+  | 'review_required'
+  | 'needs_human'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
 export type ProjectQueueLaneId = 'unclassified' | 'planned' | 'executing' | 'complete';
 

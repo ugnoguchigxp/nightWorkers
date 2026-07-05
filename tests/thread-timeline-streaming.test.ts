@@ -209,8 +209,7 @@ describe('ThreadTimeline streaming persistence', () => {
         messageType: 'markdown_document',
         metadataJson: {
           intent: 'feature_plan',
-          source: 'status_document_review',
-          reviewedSourceMessageId: 'msg-spec',
+          source: 'status',
         },
         createdAt: '2026-06-08T00:00:03.000Z',
       } as never)

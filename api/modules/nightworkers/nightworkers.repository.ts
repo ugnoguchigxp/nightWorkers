@@ -1,6 +1,7 @@
 import { desc, eq } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { missionTaskCandidates } from '../../db/project-detail-schema';
+import type { TaskStatus } from '../../db/schema';
 import { repositories, taskMessages, tasks } from '../../db/schema';
 import { nightWorkersRealtimeBroker } from '../../services/realtime/nightworkers-ws';
 import {
@@ -90,17 +91,6 @@ export type ActivityStatus =
   | 'info'
   | 'unknown';
 
-export type ImplementationQueueEntryStatus =
-  | 'queued'
-  | 'claimed'
-  | 'processing'
-  | 'needs_human'
-  | 'awaiting_commit_decision'
-  | 'execution_completed'
-  | 'execution_archived'
-  | 'failed'
-  | 'cancelled';
-
 // --- Repositories ---
 export async function createRepository(data: {
   name: string;
@@ -152,7 +142,7 @@ export async function createTask(data: {
   description?: string | null;
   objective?: string | null;
   acceptanceCriteria?: string | null;
-  status?: string;
+  status?: TaskStatus;
   timeoutSeconds?: number;
   priority?: number;
   createdBy?: string | null;
@@ -431,7 +421,7 @@ function getBlueprintDocumentTitle(payloadJson: Record<string, unknown>) {
   return String(payloadJson.title || appBlueprint.name || mockBlueprint.name || 'Blueprint');
 }
 
-export async function updateTaskStatus(id: string, status: string) {
+export async function updateTaskStatus(id: string, status: TaskStatus) {
   const [task] = await db
     .update(tasks)
     .set({ status, updatedAt: new Date() })
@@ -462,7 +452,7 @@ export async function updateTask(
     description?: string | null;
     objective?: string | null;
     acceptanceCriteria?: string | null;
-    status?: string;
+    status?: TaskStatus;
     priority?: number;
   }
 ) {

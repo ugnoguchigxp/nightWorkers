@@ -152,7 +152,7 @@ describe('Mission task candidate generation helpers', () => {
           verificationPlan: 'UI テストを行う。',
         },
         {
-          title: 'todolist 機能の初期実装計画を作成する',
+          title: 'todolist 本体を実装する',
           summary: 'todolist 機能を Plan Mode で定義する。',
           rationale: '本体機能が未実装。',
           goalId: featureGoalId,
@@ -171,8 +171,8 @@ describe('Mission task candidate generation helpers', () => {
           confidencePercent: 85,
           tokenSize: 'medium',
           complexity: 'moderate',
-          taskPrompt: 'Plan Mode で todolist 機能の初期実装計画を作成してください。',
-          acceptanceCriteria: '初期実装計画ができる。',
+          taskPrompt: 'Plan Mode で todolist 本体の実装方針を決めてください。',
+          acceptanceCriteria: '本体実装方針が決まる。',
           verificationPlan: '計画をレビューする。',
         },
         {
@@ -219,13 +219,13 @@ describe('Mission task candidate generation helpers', () => {
     expect(candidates).toHaveLength(1);
     expect(candidates[0]).toMatchObject({
       candidateKind: 'feature_entrypoint',
-      title: 'todolist 機能の初期実装計画を作成する',
+      title: 'todolist 本体を実装する',
       constraintGoalIds: [projectWideGoalId],
     });
     expect(candidates[0]?.planModeOpenQuestions).toEqual([
       '保存方式を決める。',
-      '「Todo一覧のフィルタ UI を改善する」は、本体機能の初期実装計画内で必要性と範囲を決める。',
-      '「todolist の coverage gate を確認する」は、本体機能の初期実装計画内で必要性と範囲を決める。',
+      '「Todo一覧のフィルタ UI を改善する」は、本体実装方針の中で必要性と範囲を決める。',
+      '「todolist の coverage gate を確認する」は、本体実装方針の中で必要性と範囲を決める。',
     ]);
   });
 

@@ -4,7 +4,6 @@ import { jsonRequest } from '../../lib/api-request';
 export type GenericPlanView =
   | 'user_flow'
   | 'api_io_contract'
-  | 'state_model'
   | 'activity_flow'
   | 'sequence_flow'
   | 'zod_schema_design';
@@ -15,7 +14,6 @@ type PlanViewGenerationInput = {
   featurePlanMessageId?: string | null;
   sourceBlueprintMessageId?: string | null;
   sourceDataModelMessageId?: string | null;
-  reviewAfterGenerate?: boolean;
 };
 
 export function generatePlanViewArtifact(

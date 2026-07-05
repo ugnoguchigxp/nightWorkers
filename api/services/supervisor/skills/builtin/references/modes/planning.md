@@ -14,7 +14,9 @@
 - questionnaire は blocking open questions と assumptions を扱う。Feature Plan body に open question section を必須化しない。
 - blueprint は UI specification と related design view hub を扱う。UI のない task では必須にしない。
 - data_model は DB、data structure、DDL の正本を扱う。blueprint に DDL や table/column の正本を持たせない。
-- api_io_contract、state_model、activity_flow、sequence_flow、zod_schema_design は必要な場合だけ選ぶ。zod_schema_design は validation、JSON、tool input contract の設計に使う。
+- api_io_contract、activity_flow、sequence_flow、zod_schema_design は必要な場合だけ選ぶ。api_io_contract は OpenAPI 互換 API contract を正本にする。
+- API 経由で観測・変更できる state と HTTP request / response / error validation は api_io_contract に統合し、zod_schema_design を重複 include しない。
+- zod_schema_design は LLM JSON、MCP / worker tool input、provider adapter、local config など OpenAPI endpoint に属さない validation contract が主題の場合だけ選ぶ。
 - ユースケース図は Plan View として選ばない。
 - AI coding rules は Feature Plan の一部にしない。
 - ユーザー文言の keyword list や正規表現分類ではなく、依頼内容、既存 artifact、runtime evidence、routing hypothesis から必要な view を判断する。
@@ -34,7 +36,7 @@
 
 - Feature Plan body に goal、scope / non-goals、current / desired behavior、acceptance criteria、constraints、implementation steps、verification、risk notes があるか確認する。
 - Plan View decisions が依頼内容に対応しており、不要な view を固定テンプレートで追加していないか確認する。
-- UI 仕様は blueprint、DB / data structure は data_model、API contract は api_io_contract、validation / JSON / tool input contract は zod_schema_design に分離されているか確認する。
+- UI 仕様は blueprint、DB / data structure は data_model、OpenAPI 互換 API contract は api_io_contract に分離されているか確認する。API で表現できる state と HTTP validation が zod_schema_design に重複していないか確認する。
 - ユースケース図や AI coding rules を artifact として選んでいないか確認する。
 
 ## Risk Notes

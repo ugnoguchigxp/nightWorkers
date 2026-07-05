@@ -162,7 +162,6 @@ export const saveBlueprintDesignTokenAdoptionRoute = createRoute({
 const planModeBlueprintGenerateRequestSchema = z.object({
   questionnaireSessionId: z.string().uuid().nullable().optional(),
   sourceBlueprintMessageId: z.string().uuid().nullable().optional(),
-  reviewAfterGenerate: z.boolean().optional(),
 });
 
 export const generatePlanModeBlueprintRoute = createRoute({

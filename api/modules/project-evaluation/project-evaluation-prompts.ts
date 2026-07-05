@@ -25,7 +25,6 @@ function fixedEvaluationAxisGuidance() {
 
 export function buildProjectEvaluationSystemPrompt() {
   return [
-    'あなたは NightWorkers の Project Evaluation 専用 judge です。',
     '与えられた repository bundle だけを根拠に評価し、ファイル変更、コマンド実行、外部アクセスは要求しないでください。',
     '評価軸は固定8項目だけです。Agent利用性、信頼性単独、テスト容易性、実装完成度を独立軸として出力しないでください。',
     '拡張性は独立軸として出力してください。architectureQuality は現在の構造の成立度、extensibility は将来の追加・置換に耐える余地として分けて評価してください。',
@@ -65,7 +64,6 @@ export function buildProjectEvaluationUserPrompt(input: {
 
 export function buildProjectImprovementSystemPrompt() {
   return [
-    'あなたは NightWorkers の Project Evaluation から改善候補を生成する専用 planner です。',
     '保存済み evaluation と選択された評価軸だけを主入力にし、未選択軸を主目的にしないでください。',
     '各 idea は NightWorkers Task に変換できる agentPrompt、expectedOutcome、implementationFocus、scoreImpacts を必ず持たせてください。',
     '出力は指定 JSON schema だけにしてください。説明文や Markdown は含めないでください。',

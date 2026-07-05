@@ -15,7 +15,11 @@ export function isProjectQueueLaneDomId(id: string) {
 }
 
 export function canDragProjectQueueTask(task: ProjectQueueTask) {
-  return task.status === 'planned' || (task.status === 'attention' && task.canMoveToPlanned);
+  return (
+    task.status === 'queued' ||
+    (['review_required', 'needs_human', 'failed', 'cancelled'].includes(task.status) &&
+      task.canMoveToPlanned)
+  );
 }
 
 export function canDropTaskOnLane(task: ProjectQueueTask | null, laneId: ProjectQueueLaneId) {
@@ -29,7 +33,7 @@ export function buildPlannedReorderUpdates(
   activeTaskId: string,
   overTaskId: string
 ) {
-  const planned = tasks.filter((task) => task.status === 'planned');
+  const planned = tasks.filter((task) => task.status === 'queued');
   const oldIndex = planned.findIndex((task) => task.id === activeTaskId);
   const newIndex = planned.findIndex((task) => task.id === overTaskId);
   if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return [];
@@ -48,9 +52,13 @@ export function isAttentionToPlannedMove(
   overId: string | null,
   overTask: ProjectQueueTask | null
 ) {
-  if (!activeTask || activeTask.status !== 'attention' || !activeTask.canMoveToPlanned) {
+  if (
+    !activeTask ||
+    !['review_required', 'needs_human', 'failed', 'cancelled'].includes(activeTask.status) ||
+    !activeTask.canMoveToPlanned
+  ) {
     return false;
   }
   if (overId === PROJECT_QUEUE_LANE_IDS.planned) return true;
-  return overTask?.status === 'planned';
+  return overTask?.status === 'queued';
 }

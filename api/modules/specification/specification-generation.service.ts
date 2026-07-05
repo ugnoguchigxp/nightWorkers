@@ -1,10 +1,8 @@
 import { z } from 'zod';
-import { NotFoundError } from '../../lib/errors';
+import { AppError, NotFoundError } from '../../lib/errors';
 import {
   buildSpecificationDocumentSystemPrompt,
   buildSpecificationDocumentUserPrompt,
-  buildSpecificationReviewSystemPrompt,
-  buildSpecificationReviewUserPrompt,
 } from '../../services/structured-generation/prompts/design-questionnaire';
 import { callStructuredJsonLLM } from '../../services/structured-llm';
 import {
@@ -15,7 +13,10 @@ import {
 import { assertPlanModeCapabilityEnabled } from '../nightworkers/nightworkers.plan-mode-settings.service';
 import { resolvePlanModeProjectStackContext } from './plan-mode-project-stack-context';
 import { getPlanModeWorkspace } from './plan-mode-workspace.service';
-import { buildSpecificationDocumentContext } from './specification-document-renderer';
+import {
+  buildSpecificationDocumentContext,
+  sanitizeSpecificationTargetNaming,
+} from './specification-document-renderer';
 import { assertPlanModeMutable } from './specification-mutability';
 import { resolveOptionalReadyQuestionnaireSession } from './specification-questionnaire-session';
 
@@ -24,10 +25,11 @@ const specificationDocumentDraftSchema = z.object({
   content: z.string().min(1),
 });
 const DEFAULT_FEATURE_PLAN_TITLE = 'Feature Plan';
+export const FEATURE_PLAN_LLM_TIMEOUT_MS = 240_000;
 
 export async function generateFeaturePlanArtifact(
   taskId: string,
-  input: { questionnaireSessionId?: string | null; reviewAfterGenerate?: boolean } = {}
+  input: { questionnaireSessionId?: string | null } = {}
 ) {
   const task = await getPlanModeTask(taskId);
   if (!task) throw new NotFoundError('Task not found');
@@ -49,7 +51,10 @@ export async function generateFeaturePlanArtifact(
   });
   const rawOutput = await generateSpecificationDesignDocumentRawOutput(taskId, context);
   const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
-  const content = ensureSpecificationDdlSection(parsed.content, context.dataModelDdl);
+  const content = sanitizeSpecificationTargetNaming(
+    ensureSpecificationDdlSection(parsed.content, context.dataModelDdl),
+    context.projectStackContext
+  );
   const message = await createPlanModeTaskMessage({
     taskId,
     role: 'assistant',
@@ -65,6 +70,8 @@ export async function generateFeaturePlanArtifact(
         context: {
           blueprintSummaryIncluded: Boolean(context.blueprintSummary.trim()),
           dataModelReferenceIncluded: Boolean(context.dataModelDdl.trim()),
+          planViewReferencesIncluded: Boolean(context.planViewReferences.trim()),
+          planModeReferencesIncluded: Boolean(context.planModeReferences.trim()),
         },
       },
       markdownDocumentData: {
@@ -73,83 +80,42 @@ export async function generateFeaturePlanArtifact(
       },
     },
   });
-  if (input.reviewAfterGenerate === false) {
-    return { message, workspace: await getPlanModeWorkspace(taskId) };
-  }
-  const reviewedMessage = await reviewAndImproveSpecificationDocument({
-    taskId,
-    sourceMessageId: message.id,
-    title: parsed.title || DEFAULT_FEATURE_PLAN_TITLE,
-    content,
-    context,
-    questionnaireSessionId: session?.id ?? null,
-  });
-  return { message, reviewedMessage, workspace: await getPlanModeWorkspace(taskId) };
+  return { message, workspace: await getPlanModeWorkspace(taskId) };
 }
 
 async function generateSpecificationDesignDocumentRawOutput(
   taskId: string,
   context: ReturnType<typeof buildSpecificationDocumentContext>
 ) {
-  return callStructuredJsonLLM(
-    buildSpecificationDocumentSystemPrompt(),
-    buildSpecificationDocumentUserPrompt(context),
-    {
-      schemaName: 'specification_document',
-      schema: z.toJSONSchema(specificationDocumentDraftSchema),
-      taskId,
-      role: 'plan',
+  try {
+    return await callStructuredJsonLLM(
+      buildSpecificationDocumentSystemPrompt(),
+      buildSpecificationDocumentUserPrompt(context),
+      {
+        schemaName: 'specification_document',
+        schema: z.toJSONSchema(specificationDocumentDraftSchema),
+        taskId,
+        role: 'plan',
+        timeoutMs: FEATURE_PLAN_LLM_TIMEOUT_MS,
+      }
+    );
+  } catch (error) {
+    if (isStructuredLlmAbortError(error)) {
+      throw new AppError(
+        504,
+        'SPECIFICATION_DOCUMENT_TIMEOUT',
+        `Feature Plan generation timed out after ${Math.round(FEATURE_PLAN_LLM_TIMEOUT_MS / 1000)} seconds.`
+      );
     }
-  );
+    throw error;
+  }
 }
 
-async function reviewAndImproveSpecificationDocument(input: {
-  taskId: string;
-  sourceMessageId: string;
-  title: string;
-  content: string;
-  context: ReturnType<typeof buildSpecificationDocumentContext>;
-  questionnaireSessionId: string | null;
-}) {
-  const rawOutput = await callStructuredJsonLLM(
-    buildSpecificationReviewSystemPrompt(),
-    buildSpecificationReviewUserPrompt(input),
-    {
-      schemaName: 'specification_document_review',
-      schema: z.toJSONSchema(specificationDocumentDraftSchema),
-      taskId: input.taskId,
-      role: 'review',
-    }
+function isStructuredLlmAbortError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.name === 'AbortError' || error.message.toLowerCase().includes('operation was aborted')
   );
-  const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
-  const title = parsed.title || input.title;
-  const content = ensureSpecificationDdlSection(parsed.content, input.context.dataModelDdl);
-  return createPlanModeTaskMessage({
-    taskId: input.taskId,
-    role: 'assistant',
-    content,
-    messageType: 'markdown_document',
-    payloadJson: {
-      intent: 'feature_plan',
-      title,
-      source: 'status_document_review',
-      reviewedSourceMessageId: input.sourceMessageId,
-      questionnaireSessionId: input.questionnaireSessionId,
-      generation: {
-        source: 'llm',
-        reviewPrompt:
-          'ドキュメントレビューをしてください。改善するべき点が無くなるまで改善してください',
-        context: {
-          blueprintSummaryIncluded: Boolean(input.context.blueprintSummary.trim()),
-          dataModelReferenceIncluded: Boolean(input.context.dataModelDdl.trim()),
-        },
-      },
-      markdownDocumentData: {
-        title,
-        content,
-      },
-    },
-  });
 }
 
 function ensureSpecificationDdlSection(content: string, dataModelDdl: string) {

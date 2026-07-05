@@ -12,6 +12,7 @@ import * as repo from './nightworkers.repository';
 import { runSessionQueueForRepository } from './nightworkers.run-orchestration.service';
 
 type RepositorySafetyPolicy = Parameters<typeof repo.createRepository>[0]['safetyPolicy'];
+type UpdateTaskData = Parameters<typeof repo.updateTask>[1];
 
 function normalizeSafetyPolicyForRepository(
   localPath: string,
@@ -43,7 +44,11 @@ export type BlueprintPlanningReadiness = {
   summary: string;
 };
 
-export function outcomeFromRuntimeResult(runtimeResult: AgentRuntimeResult) {
+export function outcomeFromRuntimeResult(runtimeResult: AgentRuntimeResult): {
+  status: AgentRuntimeResult['terminalState'];
+  reason: string;
+  summary: string;
+} {
   const coverageAutonomy = readCoverageAutonomyStatus(runtimeResult.testResults);
   if (coverageAutonomy === 'needs_human' || coverageAutonomy === 'continue') {
     return {
@@ -256,17 +261,7 @@ export async function resolveBlueprintPlanningReadiness(
   };
 }
 
-export async function updateTask(
-  id: string,
-  data: {
-    title?: string;
-    description?: string | null;
-    objective?: string | null;
-    acceptanceCriteria?: string | null;
-    status?: string;
-    priority?: number;
-  }
-) {
+export async function updateTask(id: string, data: UpdateTaskData) {
   const updated = await repo.updateTask(id, data);
   if (updated?.status === 'ready') {
     void runSessionQueueForRepository(updated.repositoryId);

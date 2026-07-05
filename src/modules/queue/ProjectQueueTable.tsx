@@ -144,11 +144,15 @@ export function ProjectQueueTable({ tasks, onOpenSession }: ProjectQueueTablePro
 
 function ProjectQueueStatusCell({ task }: { task: ProjectQueueTask }) {
   const toneClass = {
-    attention: 'border-amber-400/35 bg-amber-950/45 text-amber-100',
+    cancelled: 'border-amber-400/35 bg-amber-950/45 text-amber-100',
     completed: 'border-slate-700 bg-slate-950/60 text-slate-300',
-    executing: 'border-cyan-400/35 bg-cyan-950/45 text-cyan-100',
-    needs_plan: 'border-violet-400/35 bg-violet-950/35 text-violet-100',
-    planned: 'border-emerald-400/35 bg-emerald-950/40 text-emerald-100',
+    failed: 'border-amber-400/35 bg-amber-950/45 text-amber-100',
+    needs_human: 'border-amber-400/35 bg-amber-950/45 text-amber-100',
+    plan_mode: 'border-violet-400/35 bg-violet-950/35 text-violet-100',
+    queued: 'border-emerald-400/35 bg-emerald-950/40 text-emerald-100',
+    ready_for_queue: 'border-emerald-400/35 bg-emerald-950/40 text-emerald-100',
+    review_required: 'border-amber-400/35 bg-amber-950/45 text-amber-100',
+    running: 'border-cyan-400/35 bg-cyan-950/45 text-cyan-100',
     unclassified: 'border-slate-700 bg-slate-950/60 text-slate-300',
   }[task.status];
   return (

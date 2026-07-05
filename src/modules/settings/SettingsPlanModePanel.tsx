@@ -39,11 +39,6 @@ const planModeCapabilities: Array<{
     descriptionKey: 'settings.planMode.apiIoContractHelp',
   },
   {
-    key: 'state_model',
-    labelKey: 'settings.planMode.stateModel',
-    descriptionKey: 'settings.planMode.stateModelHelp',
-  },
-  {
     key: 'activity_flow',
     labelKey: 'settings.planMode.activityFlow',
     descriptionKey: 'settings.planMode.activityFlowHelp',

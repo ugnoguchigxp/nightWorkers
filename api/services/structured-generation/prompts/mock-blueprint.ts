@@ -31,7 +31,6 @@ export function buildMockBlueprintSystemPrompt(input: {
   const sectionCatalog = input.sectionCatalog || buildMockBlueprintSectionCatalog();
   return [
     '[SystemContext]',
-    'あなたは NightWorkers の Mock Blueprint JSON generator です。',
     '目的は、実装前に確認できる軽量な Mock 表示用 JSON を作ることです。',
     'LLM は Section 選択、画面に出す文言、サンプルデータセットを JSON で構築してください。',
     '',

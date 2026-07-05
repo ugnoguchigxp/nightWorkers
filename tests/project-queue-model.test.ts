@@ -47,7 +47,7 @@ describe('projectQueueModel', () => {
     });
 
     expect(tasks).toHaveLength(5);
-    expect(tasks.find((item) => item.id === 'executing-task')?.status).toBe('executing');
+    expect(tasks.find((item) => item.id === 'executing-task')?.status).toBe('running');
     expect(sortProjectQueueTasksForTable(tasks).map((item) => item.id)).toEqual([
       'executing-task',
       'attention-task',
@@ -57,7 +57,7 @@ describe('projectQueueModel', () => {
     ]);
   });
 
-  it('groups planned by queuePosition and keeps queue priority empty outside Planned', () => {
+  it('groups queued work by queuePosition and keeps queue priority empty outside the Queue', () => {
     const sessions = [task('planned-a', 'A'), task('planned-b', 'B'), task('completed', 'Done')];
     const dashboard: ProjectQueueDashboard = {
       settings: { processorCount: 1 },
@@ -115,10 +115,10 @@ describe('projectQueueModel', () => {
     });
 
     expect(tasks.find((item) => item.id === 'review-needed')).toMatchObject({
-      status: 'completed',
+      status: 'review_required',
     });
     expect(tasks.find((item) => item.id === 'queue-completed')).toMatchObject({
-      status: 'completed',
+      status: 'review_required',
       queueEntryStatus: 'execution_completed',
     });
     expect(groupProjectQueueTasks(tasks).complete.map((item) => item.id)).toEqual([
@@ -127,7 +127,7 @@ describe('projectQueueModel', () => {
     ]);
   });
 
-  it('marks only persistable attention rows as movable to Planned', () => {
+  it('marks only persistable attention rows as movable to the Queue', () => {
     const reviewTask = task('review', 'Review');
     const failedTask = task('failed', 'Failed');
     const dashboard: ProjectQueueDashboard = {
@@ -145,11 +145,11 @@ describe('projectQueueModel', () => {
     });
 
     expect(tasks.find((item) => item.id === 'review')).toMatchObject({
-      status: 'attention',
+      status: 'review_required',
       canMoveToPlanned: false,
     });
     expect(tasks.find((item) => item.id === 'failed')).toMatchObject({
-      status: 'attention',
+      status: 'failed',
       canMoveToPlanned: true,
     });
   });
@@ -170,10 +170,10 @@ describe('projectQueueModel', () => {
       implementationQueue: dashboard,
     });
 
-    expect(tasks).toMatchObject([{ id: 'cancelled-entry', status: 'completed' }]);
+    expect(tasks).toMatchObject([{ id: 'cancelled-entry', status: 'cancelled' }]);
   });
 
-  it('shows project evaluation tasks without plan evidence as Needs Plan', () => {
+  it('shows project evaluation tasks without plan evidence as Plan Mode', () => {
     const evaluationTask = {
       ...task('evaluation-task', 'Evaluation Improvement'),
       createdBy: 'project-evaluation',
@@ -191,15 +191,14 @@ describe('projectQueueModel', () => {
     const lanes = groupProjectQueueTasks(tasks);
 
     expect(tasks.find((item) => item.id === 'evaluation-task')).toMatchObject({
-      status: 'needs_plan',
-      phase: 'Needs Plan',
+      status: 'plan_mode',
+      phase: 'Plan Mode',
     });
     expect(tasks.find((item) => item.id === 'plan-ready-evaluation-task')?.status).toBe(
-      'unclassified'
+      'ready_for_queue'
     );
-    expect(lanes.unclassified.map((item) => item.id)).toEqual(
-      expect.arrayContaining(['evaluation-task', 'plan-ready-evaluation-task'])
-    );
+    expect(lanes.unclassified.map((item) => item.id)).toEqual(['evaluation-task']);
+    expect(lanes.planned.map((item) => item.id)).toEqual(['plan-ready-evaluation-task']);
   });
 
   it('does not synthesize rows for unrelated projects', () => {

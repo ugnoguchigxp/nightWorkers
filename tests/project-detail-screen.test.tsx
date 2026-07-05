@@ -227,11 +227,18 @@ describe('TaskGenerationTreeTable', () => {
     expect(markup).toContain('品質ゲート整備');
     expect(markup).toContain('verify gate を接続');
     expect(markup).toContain('制約整備');
+    expect(markup).toContain('Mission候補生成');
+    expect(markup).not.toContain('生成候補を作成');
     expect(markup).not.toContain('ゴール / シグナル');
     expect(markup.match(/type="checkbox"/g)).toHaveLength(2);
     expect(markup).toContain('aria-label="タスク化"');
     expect(markup).toContain('aria-label="配下にタスク候補があるため削除できません"');
     expect(markup).toContain('aria-label="候補を削除"');
+    expect(markup).toContain('overflow-x-hidden');
+    expect(markup).toContain('table-fixed');
+    expect(markup).toContain('w-[116px]');
+    expect(markup).toContain('shrink-0');
+    expect(markup).not.toContain('min-w-[1160px]');
   });
 
   it('sorts feature entrypoint candidates before follow-up candidates within the same Goal', () => {
@@ -239,7 +246,7 @@ describe('TaskGenerationTreeTable', () => {
       ...candidate,
       id: '88888888-8888-4888-8888-888888888888',
       candidateKind: 'feature_entrypoint' as const,
-      title: 'todolist 機能の初期実装計画を作成する',
+      title: 'todolist 本体を実装する',
       createdAt: new Date('2026-07-04T00:01:00.000Z'),
     };
     const featureFollowup = {
@@ -259,7 +266,7 @@ describe('TaskGenerationTreeTable', () => {
 
     expect(
       rows.filter((row) => row.kind === 'task_candidate').map((row) => row.candidate.title)
-    ).toEqual(['todolist 機能の初期実装計画を作成する', 'Todo一覧のフィルタ UI を改善する']);
+    ).toEqual(['todolist 本体を実装する', 'Todo一覧のフィルタ UI を改善する']);
   });
 });
 

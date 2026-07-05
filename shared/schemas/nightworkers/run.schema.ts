@@ -3,6 +3,22 @@ import { z } from '@hono/zod-openapi';
 const jsonValueSchema = z.unknown();
 const dateLikeSchema = z.union([z.string(), z.date()]);
 
+export const taskRunStatusSchema = z.enum([
+  'ready',
+  'queued',
+  'running',
+  'context_compiling',
+  'finalizing',
+  'verifying',
+  'completed',
+  'failed',
+  'cancelled',
+  'needs_review',
+  'blocked',
+  'timed_out',
+  'needs_human',
+]);
+
 export const taskRunCommitRecordSchema = z
   .object({
     id: z.string().uuid(),
@@ -33,7 +49,7 @@ export const taskRunSchema = z
     id: z.string().uuid(),
     taskId: z.string().uuid(),
     repositoryId: z.string().uuid().nullable().optional(),
-    status: z.string(),
+    status: taskRunStatusSchema,
     workerKind: z.string(),
     baseRef: z.string().nullable().optional(),
     worktreePath: z.string().nullable().optional(),

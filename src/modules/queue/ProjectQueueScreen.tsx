@@ -51,7 +51,7 @@ export function ProjectQueueScreen(props: ProjectQueueScreenProps) {
     if (!active || !overId) return;
     const overTask = tasks.find((task) => task.id === overId) || null;
 
-    if (active.status === 'planned' && overTask?.status === 'planned') {
+    if (active.status === 'queued' && overTask?.status === 'queued') {
       const updates = buildPlannedReorderUpdates(tasks, active.id, overTask.id);
       if (updates.length === 0) return;
       setIsPersisting(true);
@@ -73,7 +73,7 @@ export function ProjectQueueScreen(props: ProjectQueueScreenProps) {
         if (active.queueEntryId) {
           await props.onRequeueEntry(
             active.queueEntryId,
-            'Returned to Planned from Project Queue.'
+            'Returned to Implementation Queue from Project Queue.'
           );
         } else {
           await props.onQueueSession(active.sessionId);
@@ -87,7 +87,7 @@ export function ProjectQueueScreen(props: ProjectQueueScreenProps) {
   return (
     <DndContext
       collisionDetection={(args) => {
-        if (args.active.data.current?.status === 'planned') {
+        if (args.active.data.current?.status === 'queued') {
           const collisions = closestCenter(args);
           const taskCollision = collisions.find(
             (collision) =>

@@ -134,17 +134,19 @@ function ProjectQueueTaskCardFrame({
 }
 
 function buildTaskIconClass(task: ProjectQueueTask) {
-  if (task.status === 'attention') return 'text-amber-300';
-  if (task.status === 'executing') return 'text-cyan-300';
-  if (task.status === 'needs_plan') return 'text-violet-300';
-  if (task.status === 'planned') return 'text-emerald-300';
+  if (['review_required', 'needs_human', 'failed', 'cancelled'].includes(task.status))
+    return 'text-amber-300';
+  if (task.status === 'running') return 'text-cyan-300';
+  if (task.status === 'plan_mode') return 'text-violet-300';
+  if (task.status === 'queued' || task.status === 'ready_for_queue') return 'text-emerald-300';
   return 'text-slate-400';
 }
 
 function buildStatusIcon(task: ProjectQueueTask) {
   const className = `h-3.5 w-3.5 shrink-0 ${buildTaskIconClass(task)}`;
-  if (task.status === 'attention') return <AlertTriangle className={className} />;
-  if (task.status === 'executing') return <Play className={className} />;
+  if (['review_required', 'needs_human', 'failed', 'cancelled'].includes(task.status))
+    return <AlertTriangle className={className} />;
+  if (task.status === 'running') return <Play className={className} />;
   return <GripVertical className={className} />;
 }
 
@@ -152,25 +154,30 @@ function buildTaskMarker(task: ProjectQueueTask) {
   const priority = getProjectQueuePriorityLabel(task);
   if (priority) return priority;
   if (task.processorSlot) return `Processor ${task.processorSlot}`;
-  if (task.status === 'attention') return 'Needs Attention';
   return getProjectQueueStatusLabel(task.status);
 }
 
 function buildTaskFooter(task: ProjectQueueTask) {
-  if (task.status === 'needs_plan') return 'plan recommended before implementation';
+  if (task.status === 'plan_mode') return 'Plan Mode before implementation';
   if (task.status === 'unclassified') return 'not in implementation queue';
-  if (task.status === 'planned') return 'queued for implementation';
-  if (task.status === 'executing')
+  if (task.status === 'ready_for_queue') return 'ready to enter the implementation queue';
+  if (task.status === 'queued') return 'queued for implementation';
+  if (task.status === 'running')
     return task.activeRunId ? `run ${task.activeRunId.slice(0, 8)}` : 'active run';
-  if (task.status === 'attention') return 'attention required';
-  return 'recently completed';
+  if (task.status === 'review_required') return 'review required';
+  if (task.status === 'needs_human') return 'human input required';
+  if (task.status === 'failed') return 'failed';
+  if (task.status === 'cancelled') return 'cancelled';
+  return 'completed';
 }
 
 function statusToneClass(task: ProjectQueueTask) {
-  if (task.status === 'needs_plan') return 'border-violet-500/35 bg-violet-950/18 text-violet-100';
-  if (task.status === 'planned') return 'border-emerald-500/35 bg-emerald-950/18 text-emerald-100';
-  if (task.status === 'executing') return 'border-cyan-500/45 bg-cyan-950/24 text-cyan-100';
-  if (task.status === 'attention') return 'border-amber-500/40 bg-amber-950/20 text-amber-100';
+  if (task.status === 'plan_mode') return 'border-violet-500/35 bg-violet-950/18 text-violet-100';
+  if (task.status === 'queued' || task.status === 'ready_for_queue')
+    return 'border-emerald-500/35 bg-emerald-950/18 text-emerald-100';
+  if (task.status === 'running') return 'border-cyan-500/45 bg-cyan-950/24 text-cyan-100';
+  if (['review_required', 'needs_human', 'failed', 'cancelled'].includes(task.status))
+    return 'border-amber-500/40 bg-amber-950/20 text-amber-100';
   if (task.status === 'completed') return 'border-slate-700 bg-slate-950/40 text-slate-300';
   return 'border-slate-700 bg-slate-950/40 text-slate-200';
 }

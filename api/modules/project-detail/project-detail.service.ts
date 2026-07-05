@@ -322,14 +322,13 @@ export async function createMissionGoalFromPreset(
 
 function buildMissionTaskSystemPrompt() {
   return [
-    'あなたは NightWorkers の Mission Task Candidate generator です。',
     'Mission Goal と project signal から、ユーザーが Task 化する候補だけを JSON schema に従って返してください。',
     `候補数は最大 ${MISSION_TASK_CANDIDATE_MAX_COUNT} 件です。既存 Task や existingUncreatedCandidates と同じ候補を返さないでください。`,
     '候補は必ず Mission Goal の達成に直接つながる作業にしてください。一般的な品質改善、テスト安定化、運用改善は、Goal 本体の実装候補より優先しないでください。',
     'repositorySnapshot を読み、現在の repo が starter/template/別ドメイン実装に見える場合は、最初の候補で Mission Goal のプロダクト本体を作るタスクを提案してください。',
-    '未実装の機能 Goal では、最優先候補を candidateKind=feature_entrypoint とし、title は「<機能ドメイン> 機能の初期実装計画を作成する」の形にしてください。',
-    'feature_entrypoint は直接実装命令ではなく、Plan Mode で UI、データモデル、保存方式、完了状態、編集削除、検証方針を決める入口にしてください。',
-    '本体機能が未実装の場合、UI 詳細、データモデル詳細、永続化方式、完了状態、編集削除、検証方式は独立候補にせず planModeOpenQuestions に入れてください。',
+    '未実装の機能 Goal では、最優先候補を candidateKind=feature_entrypoint とし、title は「<機能ドメイン> 本体を実装する」の形にしてください。',
+    'feature_entrypoint は Goal 本体を実装する候補です。ただし Task 化後は Plan Mode で UI、データモデル、保存方式、完了状態、編集削除、検証方針を短く決める入口にしてください。',
+    '本体機能が未実装の場合、UI 詳細、データモデル詳細、永続化方式、完了状態、編集削除、検証方式は独立候補にせず planModeOpenQuestions に短い箇条書きで入れてください。',
     'candidateKind は feature_entrypoint / feature_followup / constraint_enablement / constraint_verification / investigation のいずれかです。',
     'moduleRouting には primaryModule, secondaryModules, confidencePercent, reason を必ず入れてください。ontology が無い、または低信頼なら primaryModule は null、confidencePercent は低め、reason に未判定理由を書いてください。',
     'project-wide Goal は原則として feature_entrypoint の constraintGoalIds、acceptanceCriteria、verificationPlan、taskPrompt に反映し、単独候補にしないでください。検証基盤が欠ける場合だけ constraint_enablement を出せます。',
@@ -337,7 +336,7 @@ function buildMissionTaskSystemPrompt() {
     '既存の Task や未作成候補が Goal 本体の実装をすでに扱っている場合だけ、改善・品質・追加機能の候補を上位にできます。',
     'importancePercent は選択された Mission Goal に対する重要度として 0-100 の整数で算出してください。repo 全体の一般的な重要度ではありません。',
     'evaluationContribution は、その候補を完了した場合に latestEvaluation.overallScore または該当 dimensions がどれだけ改善し得るかを 0-100 の数値で見積もってください。必ず数値を返し、null や空欄は禁止です。',
-    'taskPrompt は Composer にそのまま入る初期プロンプトです。短い命令ではなく、まず実装計画を作成する前提、実装対象、事前に分かっている仕様、ユーザーが定義できる未確定要素、期待成果、検証方針が分かる粒度で書いてください。',
+    'taskPrompt は Composer に入る補助文です。Goal 本体を作ることを主目的に置き、Plan Mode で決める論点は要点だけにしてください。長い前置き、Queue 実行指示、Plan 後の手順説明は書かないでください。',
     '事前に分かっている仕様は、Mission Goal、repositorySnapshot、evidence、acceptanceCriteria から断定できる範囲だけを書いてください。未確認の詳細仕様やユーザーが選べる仕様要素は、除外や禁止として固定せず、Questionnaire / Plan Mode で定義する項目として残してください。',
     'Quality や Evaluation の成功/失敗判定は行わず、保存済み signal を根拠として扱ってください。',
     'unit / coverage / e2e capability が欠けている場合だけ、package.json scripts または project quality settings を整備する候補を高優先にしてください。capability が存在するだけなら Goal 本体より優先しないでください。',
@@ -369,15 +368,15 @@ function buildMissionTaskUserPrompt(input: {
         'Goal の対象プロダクトが repositorySnapshot.llmContextFiles に見当たる場合は、それを最優先の実装状態として扱う。',
         'llmContextFiles が無い場合だけ、sourceFiles / sourceExcerpts / recentCommitDiffs から Goal 対象プロダクトの有無を判断する。',
         'Goal の対象プロダクトが確認できない場合、最初の候補はそのプロダクト本体を作るタスクにする。',
-        '未実装の機能 Goal の最初の候補は candidateKind=feature_entrypoint とし、title は「<機能ドメイン> 機能の初期実装計画を作成する」にする。',
-        '本体未実装時の UI 詳細、状態管理、永続化、編集削除、検証方式は候補にせず planModeOpenQuestions に入れる。',
+        '未実装の機能 Goal の最初の候補は candidateKind=feature_entrypoint とし、title は「<機能ドメイン> 本体を実装する」にする。',
+        '本体未実装時の UI 詳細、状態管理、永続化、編集削除、検証方式は候補にせず planModeOpenQuestions に短く入れる。',
         'projectWideGoals は constraintGoalIds と acceptanceCriteria / verificationPlan / taskPrompt へ反映する。',
         'moduleOntology が無い場合も失敗にせず、moduleRouting は null/低 confidence と reason で表現する。',
         'Goal の対象プロダクトが実装済みと判断できる場合、同じ本体実装タスクは返さない。',
         'importancePercent は Goal 達成への重要度を示す。',
         'evaluationContribution は評価改善の見込みを数値で示し、null にしない。',
-        'taskPrompt は Project Evaluation 由来タスクのように Plan-first の Composer 初期プロンプトとして使える長さと構成にする。',
-        'taskPrompt には、既知仕様、ユーザーが定義できる未確定要素、期待結果、検証方法を文章化して含める。',
+        'taskPrompt は Goal 本体を作るための短い Plan Mode 補助文にする。',
+        'taskPrompt には長い前置き、Queue 実行指示、Plan 後の手順説明を含めない。',
         `候補数は最大 ${MISSION_TASK_CANDIDATE_MAX_COUNT} 件にし、existingUncreatedCandidates / existingTaskTitles と title が重なる候補は返さない。`,
       ],
       existingUncreatedCandidates: input.existingCandidates.map((candidate) => ({
@@ -488,7 +487,7 @@ function mergeUniqueStrings(values: string[]) {
 }
 
 function candidateAsPlanModeQuestion(candidate: MissionTaskCandidatesResult['candidates'][number]) {
-  return `「${candidate.title}」は、本体機能の初期実装計画内で必要性と範囲を決める。`;
+  return `「${candidate.title}」は、本体実装方針の中で必要性と範囲を決める。`;
 }
 
 export function applyMissionTaskCandidateSemantics(

@@ -24,6 +24,9 @@ describe('design questionnaire prompts', () => {
     expect(prompt).toContain('本当に複数の選択肢を同時に採用できる設問だけ checkbox');
     expect(prompt).toContain('実装深度、優先度、段階');
     expect(prompt).toContain('単一軸の判断を checkbox で表現しない');
+    expect(prompt).toContain('public / protected / auth / admin');
+    expect(prompt).toContain('route / API / data の保護方針');
+    expect(prompt).toContain('public only または auth only');
   });
 
   it('keeps missing template variant inputs in follow-up scope', () => {
@@ -40,18 +43,29 @@ describe('design questionnaire prompts', () => {
     expect(prompt).toContain('本当に複数の選択肢を同時に採用できる設問だけ checkbox');
     expect(prompt).toContain('実装深度、優先度、段階');
     expect(prompt).toContain('単一軸の判断を checkbox で表現しない');
+    expect(prompt).toContain('対象機能の配置が未回答');
+    expect(prompt).toContain('auth / permission の確認');
   });
 
-  it('includes concise project stack context in initial questionnaire input', () => {
+  it('includes concise project stack and plan mode context in initial questionnaire input', () => {
     const prompt = buildDesignQuestionnaireInitialUserPrompt({
       taskPrompt: 'BBS を改善する',
       projectStackContext:
         '- 既存 Project stack: TypeScript + React + Vite + Hono\n- この stack は既存コードベースの前提です。ユーザーが変更を明示しない限り、別 stack / starter template 選択を質問しないでください。',
+      planModeContext: [
+        'Generated artifacts available before Questionnaire:',
+        '- message=api-1; view=api_io_contract; title=BBS API',
+        'Auth / permission context:',
+        '- detected surfaces/signals: auth, protected, public',
+      ].join('\n'),
     });
 
     expect(prompt).toContain('## Project Stack Context');
     expect(prompt).toContain('TypeScript + React + Vite + Hono');
     expect(prompt).toContain('別 stack / starter template 選択を質問しない');
+    expect(prompt).toContain('## Plan Mode Context');
+    expect(prompt).toContain('view=api_io_contract');
+    expect(prompt).toContain('detected surfaces/signals: auth, protected, public');
   });
 
   it('accepts up to ten choices in generated choice-form output', () => {

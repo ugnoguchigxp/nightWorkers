@@ -14,6 +14,48 @@ export const commonColumns = {
     .notNull(),
 };
 
+export type TaskStatus =
+  | 'draft'
+  | 'ready'
+  | 'context_compiling'
+  | 'queued'
+  | 'running'
+  | 'finalizing'
+  | 'verifying'
+  | 'needs_review'
+  | 'completed'
+  | 'blocked'
+  | 'failed'
+  | 'timed_out'
+  | 'cancelled'
+  | 'needs_human';
+
+export type TaskRunStatus =
+  | 'ready'
+  | 'queued'
+  | 'running'
+  | 'context_compiling'
+  | 'finalizing'
+  | 'verifying'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'needs_review'
+  | 'blocked'
+  | 'timed_out'
+  | 'needs_human';
+
+export type ImplementationQueueEntryStatus =
+  | 'queued'
+  | 'claimed'
+  | 'processing'
+  | 'needs_human'
+  | 'awaiting_commit_decision'
+  | 'execution_completed'
+  | 'execution_archived'
+  | 'failed'
+  | 'cancelled';
+
 export const users = sqliteTable('users', {
   ...commonColumns,
   email: text('email').notNull().unique(),
@@ -97,7 +139,7 @@ export const tasks = sqliteTable(
     description: text('description'),
     objective: text('objective'),
     acceptanceCriteria: text('acceptance_criteria'),
-    status: text('status').default('draft').notNull(), // draft | ready | context_compiling | queued | running | verifying | needs_review | completed | blocked | failed | timed_out | cancelled | needs_human
+    status: text('status').$type<TaskStatus>().default('draft').notNull(), // draft | ready | context_compiling | queued | running | verifying | needs_review | completed | blocked | failed | timed_out | cancelled | needs_human
     compiledPrompt: text('compiled_prompt'),
     timeoutSeconds: integer('timeout_seconds').default(3600).notNull(),
     priority: integer('priority').default(0).notNull(),
@@ -116,7 +158,7 @@ export const taskRuns = sqliteTable(
       .notNull()
       .references(() => tasks.id, { onDelete: 'cascade' }),
     repositoryId: text('repository_id').references(() => repositories.id, { onDelete: 'cascade' }),
-    status: text('status').default('running').notNull(), // running | context_compiling | finalizing | completed | failed | cancelled | needs_review | blocked | timed_out | needs_human
+    status: text('status').$type<TaskRunStatus>().default('running').notNull(), // running | context_compiling | finalizing | completed | failed | cancelled | needs_review | blocked | timed_out | needs_human
     workerKind: text('worker_kind').default('native-local-worker').notNull(),
     baseRef: text('base_ref'),
     worktreePath: text('worktree_path'),
@@ -149,7 +191,7 @@ export const implementationQueueEntries = sqliteTable(
     repositoryId: text('repository_id')
       .notNull()
       .references(() => repositories.id, { onDelete: 'cascade' }),
-    status: text('status').default('queued').notNull(),
+    status: text('status').$type<ImplementationQueueEntryStatus>().default('queued').notNull(),
     priority: integer('priority').default(0).notNull(),
     queuePosition: integer('queue_position'),
     processorSlot: integer('processor_slot'),

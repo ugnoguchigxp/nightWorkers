@@ -10,14 +10,7 @@ export const genericDedicatedViewSchema = {
     artifactKind: { type: 'string', const: 'plan_mode_dedicated_view' },
     view: {
       type: 'string',
-      enum: [
-        'user_flow',
-        'api_io_contract',
-        'state_model',
-        'activity_flow',
-        'sequence_flow',
-        'zod_schema_design',
-      ],
+      enum: ['user_flow', 'activity_flow', 'sequence_flow'],
     },
     title: { type: 'string' },
     markdown: { type: 'string' },
@@ -30,7 +23,10 @@ export const genericDedicatedViewSchema = {
 
 export type GenericDedicatedViewArtifact = {
   artifactKind: 'plan_mode_dedicated_view';
-  view: Exclude<DedicatedDesignView, 'questionnaire' | 'blueprint' | 'data_model'>;
+  view: Exclude<
+    DedicatedDesignView,
+    'questionnaire' | 'blueprint' | 'data_model' | 'api_io_contract' | 'zod_schema_design'
+  >;
   title: string;
   markdown: string;
   diagramKind?: 'stateDiagram-v2' | 'flowchart' | 'sequenceDiagram';
@@ -39,7 +35,6 @@ export type GenericDedicatedViewArtifact = {
 export function buildPlanDedicatedViewSystemPrompt(view: GenericDedicatedViewArtifact['view']) {
   return [
     '[SystemContext]',
-    'あなたは NightWorkers の Plan View generator です。',
     `今回生成する view は ${view} だけです。複数 view をまとめて生成しないでください。`,
     'Feature Plan、Questionnaire、Blueprint、Data Model は入力 context として扱い、正本の責務を混ぜないでください。',
     'ユースケース図、journey、gantt は絶対に生成しないでください。',
@@ -48,7 +43,7 @@ export function buildPlanDedicatedViewSystemPrompt(view: GenericDedicatedViewArt
     'JSON object だけを返してください。markdown は JSON の markdown 文字列に入れてください。',
     'artifactKind は "plan_mode_dedicated_view"、view は選択された view 名にしてください。',
     'diagramKind は Mermaid を使う場合だけ種類を入れ、Mermaid を使わない場合は null にしてください。',
-    'user_flow / state_model / activity_flow / sequence_flow は Markdown 文書ではなく Mermaid 作図を主出力にしてください。',
+    'user_flow / activity_flow / sequence_flow は Markdown 文書ではなく Mermaid 作図を主出力にしてください。',
     'Mermaid 図にできない説明はこの View に詰め込まず、Feature Plan / spec 側の責務として扱ってください。',
     '',
     '[View Rules]',
@@ -115,16 +110,6 @@ function viewRules(view: GenericDedicatedViewArtifact['view']) {
         '- UI がない作業、または user-visible flow が変わらない作業では、不要な画面や actor を足さない。',
         '- ユースケース図、journey、gantt は生成しない。',
       ].join('\n');
-    case 'api_io_contract':
-      return [
-        '- Markdown で request / response / error / permission / timeout / idempotency を必要な範囲だけ書く。',
-        '- internal algorithm を API contract として書かない。',
-      ].join('\n');
-    case 'state_model':
-      return [
-        '- Mermaid を使う場合は stateDiagram-v2 だけを使い、diagramKind は stateDiagram-v2 にする。',
-        '- transition の trigger、guard、side effect を書く。',
-      ].join('\n');
     case 'activity_flow':
       return [
         '- Mermaid flowchart TD または flowchart LR だけを使い、diagramKind は flowchart にする。',
@@ -135,11 +120,6 @@ function viewRules(view: GenericDedicatedViewArtifact['view']) {
       return [
         '- Mermaid を使う場合は sequenceDiagram だけを使い、diagramKind は sequenceDiagram にする。',
         '- 実装に存在する actor だけを書く。',
-      ].join('\n');
-    case 'zod_schema_design':
-      return [
-        '- schema 名、owner file、input source、output consumer、default、strictness、compat normalize を書く。',
-        '- DB DDL の代替にしない。',
       ].join('\n');
   }
 }

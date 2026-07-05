@@ -18,7 +18,6 @@ export const getPlanModeWorkspaceRoute = createRoute({
 const featurePlanGenerateRequestSchema = z.object({
   questionnaireSessionId: z.string().uuid().nullable().optional(),
   sourceBlueprintMessageId: z.string().uuid().nullable().optional(),
-  reviewAfterGenerate: z.boolean().optional(),
 });
 
 export const generateFeaturePlanRoute = createRoute({

@@ -27,5 +27,5 @@ Feature Plan を作成または更新し、Plan mode の Plan View decisions を
 
 - Feature Plan body の必須要素が揃っているか確認する。
 - Plan View decisions が依頼内容と evidence に対応しているか確認する。
-- blueprint、data_model、api_io_contract、state_model、activity_flow、sequence_flow、zod_schema_design の責務が混ざっていないか確認する。
+- blueprint、data_model、api_io_contract、activity_flow、sequence_flow、zod_schema_design の責務が混ざっていないか確認する。API で表現できる state / HTTP validation は api_io_contract に統合する。
 - verification gate が pass/fail で確認できる形になっているか確認する。

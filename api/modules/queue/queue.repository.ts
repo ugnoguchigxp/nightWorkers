@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { type DbTransaction, db } from '../../db/client';
+import type { ImplementationQueueEntryStatus } from '../../db/schema';
 import {
   implementationQueueEntries,
   implementationQueueSettings,
@@ -25,17 +26,6 @@ const OCCUPIED_PROCESSOR_STATUSES = [
   'needs_human',
   'awaiting_commit_decision',
 ] as const;
-type ImplementationQueueEntryStatus =
-  | 'queued'
-  | 'claimed'
-  | 'processing'
-  | 'needs_human'
-  | 'awaiting_commit_decision'
-  | 'execution_completed'
-  | 'execution_archived'
-  | 'failed'
-  | 'cancelled';
-
 type ClaimNextImplementationQueueEntryInput = {
   processorCount: number;
   leaseOwnerId: string;
@@ -322,7 +312,7 @@ export async function updateImplementationQueueEntry(
 
 export async function recoverImplementationQueueEntryFromSnapshot(
   id: string,
-  expected: { status: string; leaseVersion: number },
+  expected: { status: ImplementationQueueEntryStatus; leaseVersion: number },
   data: {
     status?: ImplementationQueueEntryStatus;
     priority?: number;

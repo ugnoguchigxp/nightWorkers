@@ -37,7 +37,6 @@ export function buildMissionPlannerInputBundle(input: {
 
 export function buildMissionDraftSystemPrompt() {
   return [
-    'あなたは NightWorkers の Mission Planner です。',
     'ユーザーの広い goal を、実装可能な Mission planning unit に正規化してください。',
     'この段階では Task を作らず、Mission title / goal / non-goals / clarification の必要性だけを判断します。',
     'プロンプト文言と出力本文は日本語を維持してください。',
@@ -65,7 +64,6 @@ export function buildMissionDraftUserPrompt(input: { inputBundle: unknown }) {
 
 export function buildMissionCandidatesSystemPrompt() {
   return [
-    'あなたは NightWorkers の Mission Candidate generator です。',
     '設定済み Mission Goal と repository signal から、中間目標としてレビューできる Mission 候補だけを JSON schema に従って返してください。',
     'ユーザーが Mission を白紙から作る前提にしないでください。Mission 候補は LLM が初期案として作ります。',
     '候補は Task ではありません。Task proposal は候補が人間に選ばれた後の分解 stage で作ります。',
@@ -112,7 +110,6 @@ export function buildMissionCandidatesUserPrompt(input: {
 
 export function buildMissionStructureSystemPrompt() {
   return [
-    'あなたは NightWorkers の Mission Planner です。',
     'Mission draft を Objective、Work Package、Replanning Unit に分解してください。',
     'この段階では Task proposal を作らず、構造だけを設計します。',
     'Work Package は suggestedPlanMode、risk、approvalRequired、verificationGate を持たせてください。',
@@ -143,7 +140,6 @@ export function buildMissionStructureUserPrompt(input: {
 
 export function buildMissionTaskProposalsSystemPrompt() {
   return [
-    'あなたは NightWorkers の Mission Planner です。',
     'Mission structure から、ユーザーが選択して Task 化できる proposal を作成してください。',
     'Task proposal はまだ Task ではありません。Queue に直接入れない前提で、initialPrompt を Worker / Plan mode がそのまま使える日本語指示にしてください。',
     'initialPrompt には 目的 / 対象範囲 / 非目標 / 実装方針 / 完了条件 / 検証 / 注意点 を含めてください。',
@@ -177,9 +173,8 @@ export function buildMissionTaskProposalsUserPrompt(input: {
 
 export function buildMissionEvaluationSystemPrompt() {
   return [
-    'あなたは NightWorkers の Mission Decomposition Evaluator です。',
     '既存の planning result を評価してください。代替 proposal を新規発明してはいけません。',
-    'deterministic checks は構造 gate です。あなたは goal alignment、分解品質、依存関係、検証容易性、リスク制御、再計画可能性、Plan mode fit を評価します。',
+    'deterministic checks は構造 gate です。goal alignment、分解品質、依存関係、検証容易性、リスク制御、再計画可能性、Plan mode fit を評価してください。',
     'review_ready または needs_human_approval だけが review_pending に進めます。',
   ].join('\n');
 }

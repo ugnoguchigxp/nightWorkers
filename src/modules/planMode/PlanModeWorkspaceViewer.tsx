@@ -46,7 +46,6 @@ import { type GenericPlanView, generatePlanViewArtifact } from './planViewComman
 const additionalPlanViewTabs = [
   'user-flow',
   'api-io-contract',
-  'state-model',
   'activity-flow',
   'sequence-flow',
   'zod-schema-design',
@@ -55,7 +54,6 @@ const additionalPlanViewTabs = [
 const tabToPlanView = {
   'user-flow': 'user_flow',
   'api-io-contract': 'api_io_contract',
-  'state-model': 'state_model',
   'activity-flow': 'activity_flow',
   'sequence-flow': 'sequence_flow',
   'zod-schema-design': 'zod_schema_design',
@@ -68,8 +66,7 @@ const tabLabels: Record<PlanWorkspaceTab, string> = {
   blueprint: 'Blueprint',
   'data-model': 'Data Model',
   'user-flow': 'User Flow',
-  'api-io-contract': 'API / I/O',
-  'state-model': 'State',
+  'api-io-contract': 'API Contract',
   'activity-flow': 'Activity',
   'sequence-flow': 'Sequence',
   'zod-schema-design': 'Zod',
@@ -172,12 +169,11 @@ export function PlanModeWorkspaceViewer({
   const {
     blueprintMessages,
     designDocMessages,
-    reviewedDesignDocMessages,
     activeBlueprintMessage,
     activeDataModelMessage,
     activeBlueprintSourceMessageId,
   } = workspaceMessages;
-  const featurePlanMessage = reviewedDesignDocMessages.at(-1) || designDocMessages.at(-1) || null;
+  const featurePlanMessage = designDocMessages.at(-1) || null;
   const viewDecisions = useMemo(() => extractViewDecisions(taskMessages), [taskMessages]);
   const includedViews = useMemo(
     () =>
@@ -408,10 +404,9 @@ export function PlanModeWorkspaceViewer({
       if (!res.ok) throw new Error(await res.text());
       const result = (await res.json()) as {
         message?: TaskMessage;
-        reviewedMessage?: TaskMessage;
         workspace?: PlanModeWorkspace;
       };
-      const generatedMessage = result.reviewedMessage || result.message;
+      const generatedMessage = result.message;
       if (generatedMessage) {
         setGeneratedMessages((prev) => [...prev, generatedMessage]);
       }
@@ -454,8 +449,7 @@ export function PlanModeWorkspaceViewer({
   const activeDedicatedView =
     activeTab in tabToPlanView ? tabToPlanView[activeTab as keyof typeof tabToPlanView] : null;
   const activeDedicatedArtifact = activeDedicatedView
-    ? workspace?.dedicatedViewArtifacts.find((artifact) => artifact.kind === activeDedicatedView) ||
-      null
+    ? selectActiveDedicatedArtifact(workspace?.dedicatedViewArtifacts, activeDedicatedView)
     : null;
   const activeDedicatedMessage = activeDedicatedArtifact
     ? workspaceMessages.combinedTaskMessages.find(
@@ -668,7 +662,6 @@ export function extractViewDecisions(messages: TaskMessage[]): PlanViewDecision[
 const planViewToTab: Record<GenericPlanView, PlanWorkspaceTab> = {
   user_flow: 'user-flow',
   api_io_contract: 'api-io-contract',
-  state_model: 'state-model',
   activity_flow: 'activity-flow',
   sequence_flow: 'sequence-flow',
   zod_schema_design: 'zod-schema-design',
@@ -676,6 +669,29 @@ const planViewToTab: Record<GenericPlanView, PlanWorkspaceTab> = {
 
 function isGenericPlanView(view: string): view is GenericPlanView {
   return Object.hasOwn(planViewToTab, view);
+}
+
+export function selectActiveDedicatedArtifact(
+  artifacts: PlanModeWorkspace['dedicatedViewArtifacts'] | undefined,
+  view: string
+) {
+  return (
+    [...(artifacts || [])]
+      .filter((artifact) => artifact.kind === view)
+      .sort((a, b) => toTimeValue(b.createdAt) - toTimeValue(a.createdAt))[0] || null
+  );
+}
+
+function toTimeValue(value: unknown) {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }
 
 function isCompletedQuestionnaireSession(session: DesignQuestionnaireSession) {

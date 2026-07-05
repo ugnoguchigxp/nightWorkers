@@ -37,7 +37,6 @@ export type DataModelGenerationInput = {
   questionnaireSessionId?: string | null;
   featurePlanMessageId?: string | null;
   sourceBlueprintMessageId?: string | null;
-  reviewAfterGenerate?: boolean;
 };
 
 export class DataModelGenerationError extends Error {

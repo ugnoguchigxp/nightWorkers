@@ -5,7 +5,6 @@ import type { TaskMessage } from '../src/modules/nightworkers/types';
 import {
   isDataModelMessage,
   isNormalBlueprintMessage,
-  isReviewedFeaturePlanMessage,
   mergeWorkspaceTaskMessages,
 } from '../src/modules/nightworkers/workbenchSelectors';
 import {
@@ -14,6 +13,7 @@ import {
   getPlanWorkspaceTabLabel,
   PlanModeWorkspaceViewer,
   resolveInitialPlanWorkspaceTabUpdate,
+  selectActiveDedicatedArtifact,
   shouldShowQuestionnaireStartAction,
   WorkspaceBlueprintPreview,
 } from '../src/modules/planMode';
@@ -61,29 +61,29 @@ describe('mergeWorkspaceTaskMessages', () => {
   });
 });
 
-describe('isReviewedFeaturePlanMessage', () => {
-  it('waits for the reviewed specification before marking the status flow complete', () => {
-    const createdAt = new Date().toISOString();
-    const initialSpec = buildTaskMessage({
-      id: 'message-spec-1',
-      taskId: 'task-1',
-      content: '# Specification',
-      messageType: 'markdown_document',
-      metadataJson: { intent: 'feature_plan', source: 'status' },
-      createdAt,
-    });
-    const reviewedSpec: TaskMessage = {
-      ...initialSpec,
-      id: 'message-spec-2',
-      metadataJson: {
-        intent: 'feature_plan',
-        source: 'status_document_review',
-        reviewedSourceMessageId: initialSpec.id,
-      },
-    };
+describe('selectActiveDedicatedArtifact', () => {
+  it('selects the latest regenerated API Contract artifact', () => {
+    const artifact = selectActiveDedicatedArtifact(
+      [
+        {
+          id: 'api-contract-old',
+          kind: 'api_io_contract',
+          title: 'Old Markdown API Contract',
+          sourceMessageId: 'message-old',
+          createdAt: 1783224281,
+        },
+        {
+          id: 'api-contract-new',
+          kind: 'api_io_contract',
+          title: 'OpenAPI API Contract',
+          sourceMessageId: 'message-new',
+          createdAt: 1783230373,
+        },
+      ],
+      'api_io_contract'
+    );
 
-    expect(isReviewedFeaturePlanMessage(initialSpec)).toBe(false);
-    expect(isReviewedFeaturePlanMessage(reviewedSpec)).toBe(true);
+    expect(artifact?.sourceMessageId).toBe('message-new');
   });
 });
 
@@ -167,7 +167,7 @@ describe('PlanModeWorkspaceViewer', () => {
     ]);
   });
 
-  it('keeps Status before the spec tab when a reviewed specification exists', () => {
+  it('keeps Status before the spec tab when a feature plan exists', () => {
     const tabs = buildVisiblePlanWorkspaceTabs({
       questionnaireGateLocked: false,
       hasFeaturePlan: true,
@@ -182,7 +182,6 @@ describe('PlanModeWorkspaceViewer', () => {
         blueprint: true,
         data_model: true,
         api_io_contract: true,
-        state_model: true,
         activity_flow: true,
         sequence_flow: true,
         zod_schema_design: true,

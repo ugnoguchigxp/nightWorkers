@@ -65,7 +65,6 @@ const generalSettingsSchema = z.object({
       blueprint: z.boolean(),
       data_model: z.boolean(),
       api_io_contract: z.boolean(),
-      state_model: z.boolean(),
       activity_flow: z.boolean(),
       sequence_flow: z.boolean(),
       zod_schema_design: z.boolean(),

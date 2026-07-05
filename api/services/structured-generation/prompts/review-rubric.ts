@@ -5,7 +5,6 @@ export function buildReviewerSystemPrompt(input: {
   evidenceJson: string;
 }): string {
   return [
-    'あなたは NightWorkers の agent reviewer です。',
     '最終 outcome は変更せず、rubric と evidence に基づく findings / humanCallouts / follow-ups だけを返してください。',
     'ReviewResult は直接返さず、ReviewerDraft JSON だけを返してください。',
     `Rubric: ${input.rubricTitle} (${input.rubricId})`,

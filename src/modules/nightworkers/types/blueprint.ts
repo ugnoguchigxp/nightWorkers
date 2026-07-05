@@ -40,7 +40,16 @@ export type TaskMessage = {
   runId?: string | null;
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
-  messageType?: 'text' | 'chart' | 'browser' | 'playwright' | 'flow' | 'markdown_document' | null;
+  messageType?:
+    | 'text'
+    | 'chart'
+    | 'browser'
+    | 'playwright'
+    | 'flow'
+    | 'markdown_document'
+    | 'api_contract'
+    | 'zod_schema'
+    | null;
   metadataJson?: unknown;
   createdAt: unknown;
 };
@@ -95,7 +104,6 @@ export type PlanModeWorkspaceArtifact = {
     | 'data_model'
     | 'user_flow'
     | 'api_io_contract'
-    | 'state_model'
     | 'activity_flow'
     | 'sequence_flow'
     | 'zod_schema_design'

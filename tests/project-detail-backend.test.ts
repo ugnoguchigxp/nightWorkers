@@ -406,24 +406,42 @@ describe('Project Detail backend', () => {
         createdBy: 'mission-task-candidate',
       });
       expect(created.tasks[0].objective).toContain(
-        'この Mission Task Candidate は、まず実装計画を作成してください。'
+        'package.json に coverage と E2E scripts を追加してください。'
       );
-      expect(created.tasks[0].objective).toContain('[前提]');
-      expect(created.tasks[0].objective).toContain('[候補の元指示]');
+      expect(created.tasks[0].objective).toContain('[作るもの]');
       expect(created.tasks[0].objective).toContain(
-        'package.json に test:coverage と test:e2e scripts を追加してください。'
+        'package.json に coverage と E2E scripts を追加する。'
       );
-      expect(created.tasks[0].objective).toContain('[事前に分かっている仕様]');
+      expect(created.tasks[0].objective).toContain('[Planで確認すること]');
+      expect(created.tasks[0].objective).toContain('- 入口画面または route');
+      expect(created.tasks[0].objective).toContain('- データモデル');
+      expect(created.tasks[0].objective).toContain('- 保存方式');
+      expect(created.tasks[0].objective).toContain('- 完了状態の表現');
+      expect(created.tasks[0].objective).toContain('- 編集、削除、並び替えの初期範囲');
+      expect(created.tasks[0].objective).toContain('- unit / schema / e2e の検証範囲');
+      expect(created.tasks[0].objective).toContain('[実装上の注意]');
+      expect(created.tasks[0].objective).toContain('未確認の仕様は固定せず');
+      expect(created.tasks[0].objective).toContain('[完了条件]');
       expect(created.tasks[0].objective).toContain(
-        '- 期待成果: Quality capability が runnable として検出される。'
+        'Quality capability が runnable として検出される。'
       );
-      expect(created.tasks[0].objective).toContain('[ユーザー定義候補 / 未確定事項]');
+      expect(created.tasks[0].objective).toContain('[検証]');
       expect(created.tasks[0].objective).toContain(
-        'Questionnaire や Plan Mode でユーザーが定義できる仕様要素'
+        'GET /quality で missingCapabilities が解消されることを確認する。'
       );
-      expect(created.tasks[0].objective).toContain('Goal: 未指定');
-      expect(created.tasks[0].objective).toContain('Expected evaluation contribution: +12');
-      expect(created.tasks[0].objective).toContain('[Verification]');
+      expect(created.tasks[0].objective).not.toContain('Implementation Queue');
+      expect(created.tasks[0].objective).not.toContain('Plan 完了後');
+      expect(created.tasks[0].objective).not.toContain('Plan Mode は、その主目的を実装する前に');
+      expect(created.tasks[0].objective).not.toContain('[注意]');
+      expect(created.tasks[0].objective).not.toContain('[Planで決めること]');
+      expect(created.tasks[0].objective).not.toContain('[候補の元指示]');
+      expect(created.tasks[0].objective).not.toContain('[事前に分かっている仕様]');
+      expect(created.tasks[0].objective).not.toContain('TaskCandidate id:');
+      expect(created.tasks[0].objective).not.toContain('Candidate kind:');
+      expect(created.tasks[0].objective).not.toContain('Expected evaluation contribution:');
+      expect(created.tasks[0].objective).not.toContain(
+        'このタスクでは、まず実装計画を作成してください。'
+      );
       expect(created.candidates[0]).toMatchObject({
         status: 'task_created',
         taskId: created.tasks[0].id,
@@ -651,7 +669,7 @@ describe('Project Detail backend', () => {
         schemaVersion: 'nightworkers.mission-task-candidates/v1',
         candidates: [
           {
-            title: 'todolist 機能の初期実装計画を作成する',
+            title: 'todolist 本体を実装する',
             summary: 'todolist 機能を Plan Mode で定義する。',
             rationale: '本体機能が未実装。',
             goalId: featureGoal.id,
@@ -663,15 +681,20 @@ describe('Project Detail backend', () => {
               reason: '新規機能のため emerging module として扱う。',
             },
             constraintGoalIds: [coverageGoal.id],
-            planModeOpenQuestions: ['保存方式を決める。'],
+            planModeOpenQuestions: [
+              'UI は単一画面か分割画面か',
+              'データモデルは task の最小属性だけにするか',
+              '保存先は SQLite の永続化でよいか',
+              '完了状態をどう表現するか',
+            ],
             evidence: [{ source: 'mission_goal', label: 'goal', value: 'todolist を作る' }],
             evaluationContribution: 40,
             importancePercent: 90,
             confidencePercent: 80,
             tokenSize: 'medium',
             complexity: 'moderate',
-            taskPrompt: 'Plan Mode で todolist 機能の初期実装計画を作成してください。',
-            acceptanceCriteria: '初期実装計画ができる。',
+            taskPrompt: 'Plan Mode で todolist 本体の実装方針を決めてください。',
+            acceptanceCriteria: '本体実装方針が決まる。',
             verificationPlan: '計画をレビューする。',
           },
         ],
@@ -702,7 +725,12 @@ describe('Project Detail backend', () => {
           kind: 'feature_entrypoint',
           primaryModule: 'todolist',
           routingConfidencePercent: 42,
-          planModeOpenQuestions: ['保存方式を決める。'],
+          planModeOpenQuestions: [
+            'UI は単一画面か分割画面か',
+            'データモデルは task の最小属性だけにするか',
+            '保存先は SQLite の永続化でよいか',
+            '完了状態をどう表現するか',
+          ],
         },
         projectWideConstraints: [
           expect.objectContaining({
@@ -711,7 +739,7 @@ describe('Project Detail backend', () => {
             intent: 'maintain_threshold',
           }),
         ],
-        acceptanceCriteria: ['初期実装計画ができる。'],
+        acceptanceCriteria: ['本体実装方針が決まる。'],
         verificationHints: ['計画をレビューする。'],
       });
       expect(evidence.selectedGoalIds).toEqual(
@@ -801,8 +829,31 @@ describe('Project Detail backend', () => {
       );
       expect(createTasksRes.status).toBe(201);
       const created = (await createTasksRes.json()) as {
-        tasks: Array<{ id: string }>;
+        tasks: Array<{ id: string; objective: string }>;
       };
+      expect(created.tasks[0].objective).toContain('Todo を実現してください。');
+      expect(created.tasks[0].objective).toContain('todolist 本体。');
+      expect(created.tasks[0].objective).toContain('[Planで確認すること]');
+      const objectiveLines = created.tasks[0].objective.split('\n');
+      expect(objectiveLines).toContain('- UI は単一画面か分割画面か');
+      expect(objectiveLines).toContain('- データモデルは task の最小属性だけにするか');
+      expect(objectiveLines).toContain('- 保存先は SQLite の永続化でよいか');
+      expect(objectiveLines).toContain('- 完了状態をどう表現するか');
+      expect(objectiveLines).toContain('- 編集、削除、並び替えの初期範囲');
+      expect(objectiveLines).toContain('- unit / schema / e2e の検証範囲');
+      expect(objectiveLines).not.toContain('- 入口画面または route');
+      expect(objectiveLines).not.toContain('- データモデル');
+      expect(objectiveLines).not.toContain('- 保存方式');
+      expect(objectiveLines).not.toContain('- 完了状態の表現');
+      expect(created.tasks[0].objective).toContain('[実装上の注意]');
+      expect(created.tasks[0].objective).toContain('[完了条件]');
+      expect(created.tasks[0].objective).toContain('本体実装方針が決まる。');
+      expect(created.tasks[0].objective).toContain('[検証]');
+      expect(created.tasks[0].objective).toContain('計画をレビューする。');
+      expect(created.tasks[0].objective).not.toContain('Implementation Queue');
+      expect(created.tasks[0].objective).not.toContain('todolist 本体を実装する を実現するため');
+      expect(created.tasks[0].objective).not.toContain('Primary module:');
+      expect(created.tasks[0].objective).not.toContain('根拠:');
 
       const taskLinkedEvidence = await buildTaskGenerationEvidence({
         taskId: created.tasks[0].id,
@@ -1013,7 +1064,7 @@ describe('Project Detail backend', () => {
         schemaVersion: 'nightworkers.mission-task-candidates/v1',
         candidates: [
           {
-            title: 'todolist 機能の初期実装計画を作成する',
+            title: 'todolist 本体を実装する',
             summary: 'todolist 機能を Plan Mode で定義する。',
             rationale: '本体機能が未実装。',
             goalId: null,
@@ -1032,8 +1083,8 @@ describe('Project Detail backend', () => {
             confidencePercent: 80,
             tokenSize: 'medium',
             complexity: 'moderate',
-            taskPrompt: 'Plan Mode で todolist 機能の初期実装計画を作成してください。',
-            acceptanceCriteria: '初期実装計画ができる。',
+            taskPrompt: 'Plan Mode で todolist 本体の実装方針を決めてください。',
+            acceptanceCriteria: '本体実装方針が決まる。',
             verificationPlan: '計画をレビューする。',
           },
         ],
@@ -1097,7 +1148,7 @@ describe('Project Detail backend', () => {
         schemaVersion: 'nightworkers.mission-task-candidates/v1',
         candidates: [
           {
-            title: 'todolist 機能の初期実装計画を作成する',
+            title: 'todolist 本体を実装する',
             summary: 'todolist 機能を Plan Mode で定義する。',
             rationale: '本体機能が未実装。',
             goalId: featureGoal.id,
@@ -1116,8 +1167,8 @@ describe('Project Detail backend', () => {
             confidencePercent: 80,
             tokenSize: 'medium',
             complexity: 'moderate',
-            taskPrompt: 'Plan Mode で todolist 機能の初期実装計画を作成してください。',
-            acceptanceCriteria: '初期実装計画ができる。',
+            taskPrompt: 'Plan Mode で todolist 本体の実装方針を決めてください。',
+            acceptanceCriteria: '本体実装方針が決まる。',
             verificationPlan: '計画をレビューする。',
           },
           {

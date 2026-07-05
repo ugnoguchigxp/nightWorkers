@@ -8,6 +8,17 @@ import {
 const dateLikeSchema = z.union([z.string(), z.date()]);
 const jsonValueSchema = z.unknown();
 const taskExecutionTypeSchema = z.enum(['normal', 'exclusive', 'sequence']);
+export const implementationQueueEntryStatusSchema = z.enum([
+  'queued',
+  'claimed',
+  'processing',
+  'needs_human',
+  'awaiting_commit_decision',
+  'execution_completed',
+  'execution_archived',
+  'failed',
+  'cancelled',
+]);
 const schedulingBlockedReasonSchema = z.enum([
   'none',
   'exclusive_waiting_for_active_tasks',
@@ -23,7 +34,7 @@ export const implementationQueueEntrySchema = z.object({
   id: z.string().uuid(),
   taskId: z.string().uuid(),
   repositoryId: z.string().uuid(),
-  status: z.string(),
+  status: implementationQueueEntryStatusSchema,
   priority: z.number(),
   queuePosition: z.number().nullable().optional(),
   processorSlot: z.number().nullable().optional(),

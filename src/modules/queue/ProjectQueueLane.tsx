@@ -38,9 +38,9 @@ export function ProjectQueueLane({
       <ProjectQueueLaneHeader count={count} emphasized={emphasized} icon={icon} title={title} />
       {acceptsDrop && activeTask ? (
         <div className="mx-3 mt-3 rounded-md border border-emerald-400/40 bg-emerald-950/40 px-3 py-2 text-emerald-100 text-xs">
-          {activeTask.status === 'attention'
-            ? 'Drop here to return this Session to Planned.'
-            : 'Drop onto another Planned Session to persist queue order.'}
+          {activeTask.status === 'queued'
+            ? 'Drop onto another queued Session to persist queue order.'
+            : 'Drop here to return this Session to the Implementation Queue.'}
         </div>
       ) : null}
       <div className="space-y-2 p-3">{children}</div>

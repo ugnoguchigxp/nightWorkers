@@ -2,6 +2,23 @@ import { z } from '@hono/zod-openapi';
 
 const dateLikeSchema = z.union([z.string(), z.date()]);
 
+export const taskStatusSchema = z.enum([
+  'draft',
+  'ready',
+  'context_compiling',
+  'queued',
+  'running',
+  'finalizing',
+  'verifying',
+  'needs_review',
+  'completed',
+  'blocked',
+  'failed',
+  'timed_out',
+  'cancelled',
+  'needs_human',
+]);
+
 export const safetyPolicySchema = z
   .object({
     allowedPaths: z.array(z.string()).optional(),
@@ -49,7 +66,7 @@ export const taskSchema = z
     description: z.string().nullable().optional(),
     objective: z.string().nullable().optional(),
     acceptanceCriteria: z.string().nullable().optional(),
-    status: z.string(),
+    status: taskStatusSchema,
     compiledPrompt: z.string().nullable().optional(),
     timeoutSeconds: z.number(),
     priority: z.number(),

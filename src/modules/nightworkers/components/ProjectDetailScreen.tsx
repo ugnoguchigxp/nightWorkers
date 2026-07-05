@@ -1626,8 +1626,21 @@ export function TaskGenerationTreeTable({
             </Button>
           </div>
         </div>
-        <div className="nightworkers-scrollbar overflow-auto">
-          <table className="w-full min-w-[1160px] text-xs">
+        <div className="overflow-x-hidden overflow-y-visible">
+          <table className="w-full table-fixed text-xs">
+            <colgroup>
+              <col className="w-14" />
+              <col className="w-14" />
+              <col />
+              <col className="w-24" />
+              <col className="w-20" />
+              <col className="w-24" />
+              <col className="w-24" />
+              <col className="w-20" />
+              <col className="w-20" />
+              <col className="w-24" />
+              <col className="w-[116px]" />
+            </colgroup>
             <thead style={subtleTextStyle}>
               <tr>
                 <th className="py-2 pl-4 text-left">{t('projectDetail.mission.open')}</th>
@@ -1732,11 +1745,11 @@ function TaskGenerationTreeRowView({
           />
         </td>
         <td className="py-3">{emptyCell}</td>
-        <td className={`max-w-[320px] py-3 ${indent}`}>
+        <td className={`min-w-0 overflow-hidden py-3 ${indent}`}>
           {row.goal ? (
             <button
               type="button"
-              className="block max-w-full text-left"
+              className="block w-full min-w-0 text-left"
               onClick={() => onOpenGoal(row.goal)}
             >
               <span className="block truncate font-semibold">{row.goal.title}</span>
@@ -1764,7 +1777,7 @@ function TaskGenerationTreeRowView({
         <td className="py-3 text-right">{emptyCell}</td>
         <td className="py-3 pr-4 text-right">
           {row.goal ? (
-            <div className="flex justify-end gap-1">
+            <div className="flex justify-end gap-1 whitespace-nowrap">
               <IconActionButton label="Edit" onClick={() => onEditGoal(row.goal!)} disabled={busy}>
                 <Pencil className="h-3.5 w-3.5" />
               </IconActionButton>
@@ -1809,10 +1822,10 @@ function TaskGenerationTreeRowView({
           />
         </td>
         <td className="py-3">{emptyCell}</td>
-        <td className={`max-w-[320px] py-3 ${indent}`}>
+        <td className={`min-w-0 overflow-hidden py-3 ${indent}`}>
           <button
             type="button"
-            className="block max-w-full text-left"
+            className="block w-full min-w-0 text-left"
             onClick={() => onOpenMission(row.mission)}
           >
             <span className="block truncate font-semibold">{row.mission.title}</span>
@@ -1833,7 +1846,7 @@ function TaskGenerationTreeRowView({
         <td className="py-3 text-right">{emptyCell}</td>
         <td className="py-3 text-right">{emptyCell}</td>
         <td className="py-3 pr-4 text-right">
-          <div className="flex justify-end gap-1">
+          <div className="flex justify-end gap-1 whitespace-nowrap">
             <IconActionButton
               label={t('projectDetail.mission.decomposeToTaskCandidates')}
               onClick={() => onDecomposeMission(row.mission)}
@@ -1872,10 +1885,10 @@ function TaskGenerationTreeRowView({
           disabled={busy || candidate.status !== 'candidate'}
         />
       </td>
-      <td className={`max-w-[320px] py-3 ${indent}`}>
+      <td className={`min-w-0 overflow-hidden py-3 ${indent}`}>
         <button
           type="button"
-          className="block max-w-full text-left"
+          className="block w-full min-w-0 text-left"
           onClick={() => onOpenCandidate(candidate)}
         >
           <span className="block truncate font-semibold">{candidate.title}</span>
@@ -1912,7 +1925,7 @@ function TaskGenerationTreeRowView({
         {candidate.complexity ? <ComplexityChip value={candidate.complexity} /> : emptyCell}
       </td>
       <td className="py-3 pr-4 text-right">
-        <div className="flex justify-end gap-1">
+        <div className="flex justify-end gap-1 whitespace-nowrap">
           <IconActionButton
             label={t('projectDetail.mission.createSingleTask')}
             onClick={() => onCreateCandidate(candidate)}
@@ -2288,7 +2301,7 @@ function IconActionButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex h-7 w-7 items-center justify-center border"
+      className="inline-flex h-7 w-7 shrink-0 items-center justify-center border"
       style={controlStyle}
     >
       {children}

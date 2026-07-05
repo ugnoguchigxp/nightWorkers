@@ -3,6 +3,7 @@ import {
   createTaskSchema,
   taskRunSchema,
   taskSchema,
+  taskStatusSchema,
 } from '../../../../shared/schemas/nightworkers.schema';
 export const listTasksRoute = createRoute({
   method: 'get',
@@ -100,7 +101,7 @@ export const updateTaskRoute = createRoute({
             description: z.string().optional(),
             objective: z.string().optional(),
             acceptanceCriteria: z.string().optional(),
-            status: z.string().optional(),
+            status: taskStatusSchema.optional(),
             priority: z.number().optional(),
           }),
         },

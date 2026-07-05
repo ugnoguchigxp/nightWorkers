@@ -580,6 +580,60 @@ describe('workbench selectors', () => {
     );
   });
 
+  it('routes structured API Contract messages to the Plan Mode Workspace tab', () => {
+    const message: TaskMessage = {
+      id: '44444444-4444-4444-8444-444444447779',
+      taskId: baseTask.id,
+      role: 'assistant',
+      content: '{ "openapi": "3.1.0" }',
+      messageType: 'api_contract',
+      metadataJson: {
+        artifactKind: 'plan_mode_api_contract',
+        view: 'api_io_contract',
+        source: 'dedicated-view-generator',
+        title: 'API Contract',
+        apiContract: {
+          artifactKind: 'plan_mode_api_contract',
+          view: 'api_io_contract',
+          title: 'API Contract',
+          summary: 'Task API contract.',
+          openapi: {
+            openapi: '3.1.0',
+            info: { title: 'Task API', version: '0.1.0' },
+            paths: {},
+            components: { schemas: {} },
+          },
+          stateTransitions: [],
+          validation: [],
+          openQuestions: [],
+        },
+      },
+      createdAt: '2026-06-02T00:00:01.000Z',
+    };
+
+    const refs = buildWorkbenchArtifactRefs({
+      task: baseTask,
+      messages: [message],
+    });
+
+    expect(refs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'plan_mode_workspace',
+          title: 'Plan Mode Workspace: API Contract',
+          source: { type: 'task_message', messageId: message.id },
+          metadata: expect.objectContaining({ initialTab: 'api-io-contract' }),
+        }),
+      ])
+    );
+    expect(refs.find((ref) => ref.id === `plan-mode-workspace-${baseTask.id}`)?.metadata).toEqual(
+      expect.objectContaining({ dedicatedViewCount: 1, dataModelCount: 0 })
+    );
+    expect(refs.some((ref) => ref.id === `message-${message.id}` && ref.kind === 'spec')).toBe(
+      false
+    );
+  });
+
   it('does not promote Data Model activity artifacts into App Blueprint refs', () => {
     const message: TaskMessage = {
       id: '44444444-4444-4444-8444-444444447777',

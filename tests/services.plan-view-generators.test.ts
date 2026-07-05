@@ -2,20 +2,30 @@ import { describe, expect, it } from 'vitest';
 import {
   normalizePlanViewMermaidArtifact,
   parseGenericDedicatedViewOutput,
+  parsePlanApiContractOutput,
+  parsePlanZodSchemaOutput,
 } from '../api/modules/planViews/planView-generation.service';
+import {
+  buildPlanApiContractUserPrompt,
+  planApiContractStructuredOutputSchema,
+} from '../api/services/structured-generation/prompts/plan-api-contract';
 import {
   buildPlanDedicatedViewUserPrompt,
   genericDedicatedViewSchema,
 } from '../api/services/structured-generation/prompts/plan-dedicated-view';
+import { planZodSchemaStructuredOutputSchema } from '../api/services/structured-generation/prompts/plan-zod-schema';
 
 describe('Plan View generation helpers', () => {
   it('lists every strict object property in required for structured output compatibility', () => {
     expectStrictRequiredProperties(genericDedicatedViewSchema);
+    expectStrictRequiredProperties(planApiContractStructuredOutputSchema);
+    expectStrictRequiredProperties(planZodSchemaStructuredOutputSchema);
+    expectNoFreeObjects(planApiContractStructuredOutputSchema);
+    expectNoFreeObjects(planZodSchemaStructuredOutputSchema);
   });
 
-  it('includes project stack context in Plan View input', () => {
-    const prompt = buildPlanDedicatedViewUserPrompt({
-      view: 'api_io_contract',
+  it('includes project stack context in API Contract input', () => {
+    const prompt = buildPlanApiContractUserPrompt({
       task: 'Title: API',
       projectStackContext: '- 既存 Project stack: TypeScript + React + Vite + Hono',
       featurePlan: 'Feature Plan は未生成です。',
@@ -92,63 +102,216 @@ describe('Plan View generation helpers', () => {
     ).toThrow('Mermaid diagram');
   });
 
-  it('normalizes null diagramKind from strict structured output', () => {
-    const artifact = parseGenericDedicatedViewOutput(
+  it('accepts OpenAPI-compatible API Contract artifacts', () => {
+    const artifact = parsePlanApiContractOutput(
       JSON.stringify({
-        artifactKind: 'plan_mode_dedicated_view',
+        artifactKind: 'plan_mode_api_contract',
         view: 'api_io_contract',
         title: 'Task API Contract',
-        markdown: '# Task API Contract\n\n## Request\n- id',
-        diagramKind: null,
-      }),
-      'api_io_contract'
-    );
-
-    expect(artifact.diagramKind).toBeUndefined();
-  });
-
-  it('accepts API I/O contract Markdown artifacts', () => {
-    const artifact = parseGenericDedicatedViewOutput(
-      JSON.stringify({
-        artifactKind: 'plan_mode_dedicated_view',
-        view: 'api_io_contract',
-        title: 'Task API Contract',
-        markdown: '# Task API Contract\n\n## Request\n- id\n\n## Response\n- task',
-      }),
-      'api_io_contract'
+        summary: 'Task creation contract.',
+        openapi: {
+          openapi: '3.1.0',
+          info: { title: 'Task API', version: '0.1.0' },
+          paths: {
+            '/api/tasks': {
+              post: {
+                operationId: 'createTask',
+                summary: 'Create task',
+                responses: {
+                  '202': { description: 'Accepted' },
+                  '409': { description: 'Conflict' },
+                },
+              },
+            },
+          },
+          components: { schemas: {} },
+        },
+        stateTransitions: [
+          {
+            operationId: 'createTask',
+            toState: 'queued',
+            successStatus: 202,
+            conflictStatuses: [409],
+            stateField: 'status',
+            notes: ['HTTP-visible state belongs to the API Contract.'],
+          },
+        ],
+        validation: [
+          {
+            schemaName: 'CreateTaskRequest',
+            owner: 'request',
+            strictness: 'strict',
+            examples: [
+              {
+                name: 'missing title',
+                valid: false,
+                payload: {},
+                expectedIssues: ['title is required'],
+              },
+            ],
+          },
+        ],
+        openQuestions: [],
+      })
     );
 
     expect(artifact.view).toBe('api_io_contract');
+    expect(artifact.openapi.paths['/api/tasks']?.post?.operationId).toBe('createTask');
+    expect(artifact.stateTransitions[0]?.successStatus).toBe(202);
   });
 
-  it('accepts state model with stateDiagram-v2 only', () => {
-    const artifact = parseGenericDedicatedViewOutput(
+  it('normalizes strict API Contract draft output into OpenAPI-compatible artifacts', () => {
+    const artifact = parsePlanApiContractOutput(
       JSON.stringify({
-        artifactKind: 'plan_mode_dedicated_view',
-        view: 'state_model',
-        title: 'Task State Model',
-        markdown: '```mermaid\nstateDiagram-v2\n  draft --> ready\n```',
-        diagramKind: 'stateDiagram-v2',
-      }),
-      'state_model'
+        artifactKind: 'plan_mode_api_contract',
+        view: 'api_io_contract',
+        title: 'Task API Contract',
+        summary: 'Task creation contract.',
+        operations: [
+          {
+            path: '/api/tasks',
+            method: 'post',
+            operationId: 'createTask',
+            summary: 'Create task',
+            description: 'Create a task and enqueue planning.',
+            tags: ['tasks'],
+            requestBody: {
+              description: 'Task creation payload',
+              schemaName: 'CreateTaskRequest',
+              required: true,
+            },
+            responses: [
+              {
+                status: 202,
+                description: 'Accepted and queued',
+                schemaName: 'TaskResponse',
+              },
+              {
+                status: 409,
+                description: 'Task already exists',
+                schemaName: 'TaskConflictError',
+              },
+            ],
+          },
+        ],
+        componentSchemas: [
+          {
+            name: 'CreateTaskRequest',
+            description: 'Request payload',
+            fields: [
+              {
+                name: 'title',
+                type: 'string',
+                required: true,
+                description: 'Task title',
+              },
+            ],
+          },
+          {
+            name: 'TaskResponse',
+            description: 'Task state response',
+            fields: [
+              {
+                name: 'status',
+                type: 'string',
+                required: true,
+                description: 'HTTP-visible state',
+              },
+            ],
+          },
+        ],
+        stateTransitions: [
+          {
+            operationId: 'createTask',
+            fromState: '',
+            toState: 'queued',
+            successStatus: 202,
+            conflictStatuses: [409],
+            stateField: 'status',
+            notes: ['State is represented by status code and response body.'],
+          },
+        ],
+        validation: [
+          {
+            schemaName: 'CreateTaskRequest',
+            owner: 'request',
+            zodOwnerFile: '',
+            strictness: 'strict',
+            examples: [
+              {
+                name: 'missing title',
+                valid: false,
+                payloadJson: '{}',
+                expectedIssues: ['title is required'],
+              },
+            ],
+          },
+        ],
+        openQuestions: [],
+      })
     );
 
-    expect(artifact.diagramKind).toBe('stateDiagram-v2');
+    const operation = artifact.openapi.paths['/api/tasks']?.post;
+    expect(operation?.requestBody).toMatchObject({
+      required: true,
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/CreateTaskRequest' },
+        },
+      },
+    });
+    expect(operation?.responses).toMatchObject({
+      '202': {
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/TaskResponse' },
+          },
+        },
+      },
+    });
+    expect(artifact.openapi.components.schemas.CreateTaskRequest).toMatchObject({
+      type: 'object',
+      required: ['title'],
+    });
+    expect(artifact.stateTransitions[0]?.fromState).toBeNull();
+    expect(artifact.validation[0]?.zodOwnerFile).toBeNull();
+    expect(artifact.validation[0]?.examples[0]?.payload).toEqual({});
   });
 
-  it('rejects State Model Markdown-only artifacts', () => {
+  it('rejects API Contract state transitions that reference unknown operations', () => {
     expect(() =>
-      parseGenericDedicatedViewOutput(
+      parsePlanApiContractOutput(
         JSON.stringify({
-          artifactKind: 'plan_mode_dedicated_view',
-          view: 'state_model',
-          title: 'Task State Model',
-          markdown: '# State Model\n\n- draft\n- ready',
-          diagramKind: null,
-        }),
-        'state_model'
+          artifactKind: 'plan_mode_api_contract',
+          view: 'api_io_contract',
+          title: 'Task API Contract',
+          summary: 'Task creation contract.',
+          openapi: {
+            openapi: '3.1.0',
+            info: { title: 'Task API', version: '0.1.0' },
+            paths: {
+              '/api/tasks': {
+                post: {
+                  operationId: 'createTask',
+                  responses: { '202': { description: 'Accepted' } },
+                },
+              },
+            },
+            components: { schemas: {} },
+          },
+          stateTransitions: [
+            {
+              operationId: 'missingOperation',
+              successStatus: 202,
+              conflictStatuses: [],
+              notes: [],
+            },
+          ],
+          validation: [],
+          openQuestions: [],
+        })
       )
-    ).toThrow('Mermaid diagram');
+    ).toThrow('unknown operationId');
   });
 
   it('rejects unsupported diagrams', () => {
@@ -210,18 +373,167 @@ describe('Plan View generation helpers', () => {
     ).toThrow('Mermaid diagram');
   });
 
-  it('accepts Zod schema design without Mermaid diagram metadata', () => {
-    const artifact = parseGenericDedicatedViewOutput(
+  it('normalizes Zod schema source into form fields and validation rules', () => {
+    const artifact = parsePlanZodSchemaOutput(
       JSON.stringify({
-        artifactKind: 'plan_mode_dedicated_view',
+        artifactKind: 'plan_mode_zod_schema',
         view: 'zod_schema_design',
-        title: 'Schema Design',
-        markdown: '# Schema Design\n\n| schema | owner | consumer |\n| --- | --- | --- |',
-      }),
-      'zod_schema_design'
+        title: 'Tool Input Schema',
+        summary: 'Worker tool input validation.',
+        schemaName: 'CreateTodoToolInputSchema',
+        owner: 'worker_tool_input',
+        zodSource:
+          'const CreateTodoToolInputSchema = z.object({ title: z.string().min(1).max(80).describe("Todo title"), priority: z.enum(["low", "normal", "high"]).default("normal"), retryCount: z.number().int().min(0).max(3).optional(), dryRun: z.boolean().default(false) }).strict();',
+        openQuestions: [],
+      })
     );
 
     expect(artifact.view).toBe('zod_schema_design');
+    expect(artifact.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'title',
+          type: 'string',
+          required: true,
+          description: 'Todo title',
+        }),
+        expect.objectContaining({
+          name: 'priority',
+          type: 'enum',
+          required: false,
+          enumOptions: ['low', 'normal', 'high'],
+          defaultValue: 'normal',
+        }),
+        expect.objectContaining({
+          name: 'retryCount',
+          type: 'number',
+          required: false,
+        }),
+      ])
+    );
+    expect(artifact.fields.find((field) => field.name === 'title')?.rules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'min', args: [1] }),
+        expect.objectContaining({ name: 'max', args: [80] }),
+      ])
+    );
+  });
+
+  it('normalizes referenced and nested Zod schema fields without treating them as unknown input', () => {
+    const artifact = parsePlanZodSchemaOutput(
+      JSON.stringify({
+        artifactKind: 'plan_mode_zod_schema',
+        view: 'zod_schema_design',
+        title: 'Todo Tool Input Schema',
+        summary: 'Worker tool input validation.',
+        schemaName: 'CreateTodoToolInputSchema',
+        owner: 'worker_tool_input',
+        zodSource:
+          'const CreateTodoToolInputSchema = z.object({ owner: ownerSchema.describe("owner ref"), boundaries: z.object({ schemaBoundary: z.string().min(1).describe("schema の責務範囲") }).strict(), tags: z.array(z.string().min(1)).min(1).describe("Todo tags") }).strict();',
+        openQuestions: [],
+      })
+    );
+
+    const owner = artifact.fields.find((field) => field.name === 'owner');
+    const boundaries = artifact.fields.find((field) => field.name === 'boundaries');
+    const tags = artifact.fields.find((field) => field.name === 'tags');
+    const boundaryChildren = (boundaries?.children || []) as Array<Record<string, unknown>>;
+
+    expect(owner).toEqual(
+      expect.objectContaining({
+        type: 'reference',
+        referencedSchema: 'ownerSchema',
+        description: 'owner ref',
+      })
+    );
+    expect(boundaries).toEqual(expect.objectContaining({ type: 'object' }));
+    expect(boundaryChildren).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'schemaBoundary',
+          type: 'string',
+          description: 'schema の責務範囲',
+        }),
+      ])
+    );
+    expect(tags).toEqual(
+      expect.objectContaining({
+        type: 'array',
+        description: 'Todo tags',
+      })
+    );
+    expect(artifact.unsupportedExpressions).toEqual([]);
+  });
+
+  it('rejects Plan Mode decision schemas in the Zod schema view', () => {
+    expect(() =>
+      parsePlanZodSchemaOutput(
+        JSON.stringify({
+          artifactKind: 'plan_mode_zod_schema',
+          view: 'zod_schema_design',
+          title: 'Todo List Plan Decision Schema',
+          summary: 'Plan Mode decision validation.',
+          schemaName: 'TodoListPlanDecisionSchema',
+          owner: 'llm_json',
+          zodSource:
+            'const TodoListPlanDecisionSchema = z.object({ uiStructure: z.string().min(1) }).strict();',
+          openQuestions: [],
+        })
+      )
+    ).toThrow('targeted Plan Mode metadata');
+  });
+
+  it('rejects aggregate or speculative Zod schemas that are not backed by the source scope', () => {
+    expect(() =>
+      parsePlanZodSchemaOutput(
+        JSON.stringify({
+          artifactKind: 'plan_mode_zod_schema',
+          view: 'zod_schema_design',
+          title: 'Task Runtime Schema',
+          summary: 'Todo task runtime validation.',
+          schemaName: 'TaskRuntimeSchema',
+          owner: 'worker_tool_input',
+          zodSource: [
+            'const TaskInputSchema = z.object({ title: z.string().min(1) }).strict();',
+            'const TaskUpdateInputSchema = z.object({ id: z.number().int().positive(), title: z.string().optional() }).strict();',
+            'const TaskFilterSchema = z.object({ search: z.string().optional() }).strict();',
+            'const TaskSortSchema = z.object({ field: z.enum(["createdAt", "title"]) }).strict();',
+            'const TaskSettingsSchema = z.object({ showCompleted: z.boolean().default(true) }).strict();',
+            'const TaskRuntimeSchema = z.object({ create: TaskInputSchema, update: TaskUpdateInputSchema, filter: TaskFilterSchema, sort: TaskSortSchema, settings: TaskSettingsSchema }).strict();',
+          ].join('\n'),
+          openQuestions: [],
+        }),
+        {
+          sourceText: 'Todo の作成、編集、完了状態の切り替え、削除に必要な入力だけを扱う。',
+        }
+      )
+    ).toThrow('aggregate/root schema');
+  });
+
+  it('rejects unrequested filter schemas but allows them when the source scope explicitly asks for filtering', () => {
+    const filterSchemaOutput = JSON.stringify({
+      artifactKind: 'plan_mode_zod_schema',
+      view: 'zod_schema_design',
+      title: 'Task Filter Schema',
+      summary: 'Todo task filter validation.',
+      schemaName: 'TaskFilterSchema',
+      owner: 'worker_tool_input',
+      zodSource:
+        'const TaskFilterSchema = z.object({ search: z.string().min(1).max(200).optional() }).strict();',
+      openQuestions: [],
+    });
+
+    expect(() =>
+      parsePlanZodSchemaOutput(filterSchemaOutput, {
+        sourceText: 'Todo の作成と編集に必要な入力だけを扱う。',
+      })
+    ).toThrow('filter/search schema');
+
+    expect(
+      parsePlanZodSchemaOutput(filterSchemaOutput, {
+        sourceText: 'Todo 一覧は検索語で filter できる。検索条件の入力も扱う。',
+      }).schemaName
+    ).toBe('TaskFilterSchema');
   });
 
   it('covers dedicated view markdown validation failures and text sanitization', () => {
@@ -258,10 +570,10 @@ describe('Plan View generation helpers', () => {
       parseGenericDedicatedViewOutput(
         JSON.stringify({
           artifactKind: 'plan_mode_dedicated_view',
-          view: 'state_model',
-          title: 'State Model',
-          markdown: '```mermaid\nstateDiagram-v2\n  draft --> ready\n```',
-          diagramKind: 'stateDiagram-v2',
+          view: 'activity_flow',
+          title: 'Activity Flow',
+          markdown: '```mermaid\nflowchart TD\n  draft --> ready\n```',
+          diagramKind: 'flowchart',
         }),
         'user_flow'
       )
@@ -309,6 +621,24 @@ function expectStrictRequiredProperties(schema: unknown) {
       for (const item of value) expectStrictRequiredProperties(item);
     } else {
       expectStrictRequiredProperties(value);
+    }
+  }
+}
+
+function expectNoFreeObjects(schema: unknown) {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return;
+  const record = schema as Record<string, unknown>;
+  const type = record.type;
+  const includesObject =
+    type === 'object' || (Array.isArray(type) && type.map(String).includes('object'));
+  if (includesObject) {
+    expect(record.additionalProperties).toBe(false);
+  }
+  for (const value of Object.values(record)) {
+    if (Array.isArray(value)) {
+      for (const item of value) expectNoFreeObjects(item);
+    } else {
+      expectNoFreeObjects(value);
     }
   }
 }

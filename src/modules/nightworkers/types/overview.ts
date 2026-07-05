@@ -23,7 +23,6 @@ export type PlanModeCapability =
   | 'blueprint'
   | 'data_model'
   | 'api_io_contract'
-  | 'state_model'
   | 'activity_flow'
   | 'sequence_flow'
   | 'zod_schema_design';

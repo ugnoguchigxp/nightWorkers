@@ -7,7 +7,6 @@ export const planViewGenerateRequestSchema = z.object({
   featurePlanMessageId: z.string().uuid().nullable().optional(),
   sourceBlueprintMessageId: z.string().uuid().nullable().optional(),
   sourceDataModelMessageId: z.string().uuid().nullable().optional(),
-  reviewAfterGenerate: z.boolean().optional(),
 });
 
 export const generatePlanViewRoute = createRoute({

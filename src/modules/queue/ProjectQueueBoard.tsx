@@ -23,7 +23,7 @@ export function ProjectQueueBoard({ lanes, activeTask, onOpenSession }: ProjectQ
         count={lanes.unclassified.length}
         icon={<PackageOpen className="h-4 w-4" />}
         laneId="unclassified"
-        title="Needs Plan"
+        title="Unclassified / Plan Mode"
       >
         {lanes.unclassified.map((task) => (
           <StaticProjectQueueTaskCard key={task.id} onOpenSession={onOpenSession} task={task} />
@@ -35,7 +35,7 @@ export function ProjectQueueBoard({ lanes, activeTask, onOpenSession }: ProjectQ
         emphasized
         icon={<ListChecks className="h-4 w-4" />}
         laneId="planned"
-        title="Planned"
+        title="Implementation Queue"
       >
         <SortableContext
           items={lanes.planned.map((task) => task.id)}
@@ -51,7 +51,7 @@ export function ProjectQueueBoard({ lanes, activeTask, onOpenSession }: ProjectQ
         count={lanes.executing.length}
         icon={<Cpu className="h-4 w-4" />}
         laneId="executing"
-        title="Executing"
+        title="Running"
       >
         {lanes.executing.map((task) => (
           <StaticProjectQueueTaskCard key={task.id} onOpenSession={onOpenSession} task={task} />
@@ -62,7 +62,7 @@ export function ProjectQueueBoard({ lanes, activeTask, onOpenSession }: ProjectQ
         count={lanes.complete.length}
         icon={<Archive className="h-4 w-4" />}
         laneId="complete"
-        title="Recently Completed"
+        title="Done / Needs Attention"
       >
         {lanes.complete.map((task) =>
           canDragProjectQueueTask(task) ? (
