@@ -5,7 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { formatCurrency, formatDateTime, formatTokenCount } from '../../../i18n/format';
 import { fetchOverview } from '../nightWorkersCommands';
-import type { OverviewRange } from '../routing/workbench-route-state';
+import { handleWorkbenchAnchorClick } from '../routing/workbench-link-click';
+import { type OverviewRange, serializeWorkbenchRoute } from '../routing/workbench-route-state';
 import type { NightWorkersCurrency, OverviewDashboard, Repository } from '../types';
 
 type OverviewScreenProps = {
@@ -136,11 +137,16 @@ export function OverviewScreen({
               ))}
             </select>
             {(['24h', '7d', '30d', 'all'] as const).map((value) => (
-              <button
+              <a
                 key={value}
-                type="button"
-                onClick={() => onRangeChange(value)}
-                className="h-9 border px-3 text-xs"
+                href={serializeWorkbenchRoute({
+                  kind: 'overview',
+                  range: value,
+                  projectId: projectFilterId,
+                })}
+                onClick={(event) => handleWorkbenchAnchorClick(event, () => onRangeChange(value))}
+                className="inline-flex h-9 items-center border px-3 text-xs"
+                aria-current={range === value ? 'page' : undefined}
                 style={
                   range === value
                     ? {
@@ -153,7 +159,7 @@ export function OverviewScreen({
                 }
               >
                 {t(`overview.range.${value}`)}
-              </button>
+              </a>
             ))}
             <Button
               type="button"
@@ -388,14 +394,20 @@ export function OverviewScreen({
                   {dashboard.recentExpensiveCalls.map((call) => (
                     <tr key={call.id} className="border-t" style={tableBorderStyle}>
                       <td className="max-w-[280px] py-2">
-                        <button
-                          type="button"
+                        <a
+                          href={serializeWorkbenchRoute({
+                            kind: 'session',
+                            sessionId: call.taskId,
+                            artifact: null,
+                          })}
                           className="truncate text-left font-semibold"
                           style={primaryTextStyle}
-                          onClick={() => onOpenSession(call.taskId)}
+                          onClick={(event) =>
+                            handleWorkbenchAnchorClick(event, () => onOpenSession(call.taskId))
+                          }
                         >
                           {call.taskTitle || call.label}
-                        </button>
+                        </a>
                         <div className="truncate text-[10px]" style={subtleTextStyle}>
                           {call.provider} / {call.model || t('overview.value.unknownModel')} /{' '}
                           {formatDateTime(call.createdAt, language, timezone)}

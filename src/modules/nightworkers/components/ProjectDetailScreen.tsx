@@ -32,6 +32,8 @@ import {
   updateMissionTaskCandidate,
 } from '../nightWorkersCommands';
 import { coverageRowsFromSummary } from '../qualityRows';
+import { handleWorkbenchAnchorClick } from '../routing/workbench-link-click';
+import { serializeWorkbenchRoute } from '../routing/workbench-route-state';
 import type { Task } from '../types';
 import { emptyMetrics, readJsonResponse } from './project-detail/data';
 import {
@@ -373,11 +375,18 @@ export function ProjectDetailScreen({
       <div className="mx-auto max-w-7xl space-y-4">
         <nav className="flex flex-wrap gap-1 border-b pb-2 text-xs" style={tableBorderStyle}>
           {projectDetailTabs.map((tab) => (
-            <button
+            <a
               key={tab.id}
-              type="button"
-              onClick={() => onActiveTabChange(tab.id)}
-              className="h-8 border px-3 font-medium"
+              href={serializeWorkbenchRoute({
+                kind: 'project_detail',
+                projectId: project.id,
+                tab: tab.id,
+              })}
+              onClick={(event) =>
+                handleWorkbenchAnchorClick(event, () => onActiveTabChange(tab.id))
+              }
+              className="inline-flex h-8 items-center border px-3 font-medium"
+              aria-current={tab.id === activeTab ? 'page' : undefined}
               style={
                 tab.id === activeTab
                   ? {
@@ -390,7 +399,7 @@ export function ProjectDetailScreen({
               }
             >
               {t(tab.labelKey)}
-            </button>
+            </a>
           ))}
         </nav>
         {message ? (

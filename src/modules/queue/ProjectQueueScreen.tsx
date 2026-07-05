@@ -13,6 +13,8 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { Rows3, Table2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { handleWorkbenchAnchorClick } from '../nightworkers/routing/workbench-link-click';
+import { serializeWorkbenchRoute } from '../nightworkers/routing/workbench-route-state';
 import { ProjectQueueBoard } from './ProjectQueueBoard';
 import { ProjectQueueTable } from './ProjectQueueTable';
 import { ProjectQueueTaskCardPreview } from './ProjectQueueTaskCard';
@@ -129,19 +131,27 @@ export function ProjectQueueScreen(props: ProjectQueueScreenProps) {
                 {isPersisting ? 'Saving queue order...' : 'Loading queue...'}
               </span>
             ) : null}
-            <button
+            <a
+              href={serializeWorkbenchRoute({
+                kind: 'project_queue',
+                projectId: props.project.id,
+                view: viewMode === 'board' ? 'table' : 'board',
+              })}
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-950/60 text-slate-300 transition hover:border-cyan-400/60 hover:text-cyan-100"
               data-view-toggle="project-queue"
-              onClick={() => props.onViewModeChange(viewMode === 'board' ? 'table' : 'board')}
+              onClick={(event) =>
+                handleWorkbenchAnchorClick(event, () =>
+                  props.onViewModeChange(viewMode === 'board' ? 'table' : 'board')
+                )
+              }
               title={viewMode === 'board' ? 'Switch to Table view' : 'Switch to Queue view'}
-              type="button"
             >
               {viewMode === 'board' ? (
                 <Table2 className="h-4 w-4" />
               ) : (
                 <Rows3 className="h-4 w-4" />
               )}
-            </button>
+            </a>
           </div>
         </header>
         <div className="nightworkers-scrollbar min-h-0 flex-1 overflow-auto">

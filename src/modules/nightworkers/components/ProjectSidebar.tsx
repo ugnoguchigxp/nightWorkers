@@ -9,10 +9,11 @@ import {
   RefreshCw,
   Trash2,
 } from 'lucide-react';
-import { type MouseEvent, memo } from 'react';
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import type { ProjectSessionGroups } from '../hooks/useNightWorkersWorkspace';
+import { handleWorkbenchAnchorClick } from '../routing/workbench-link-click';
 import { serializeWorkbenchRoute } from '../routing/workbench-route-state';
 import type { Repository, WorkbenchSessionView } from '../types';
 import { getRelativeTimestamp } from '../utils/time';
@@ -44,13 +45,6 @@ const EMPTY_PROJECT_SESSION_GROUPS: ProjectSessionGroups = {
   archive: [],
 };
 
-function handleSidebarAnchorClick(event: MouseEvent<HTMLAnchorElement>, action: () => void) {
-  if (event.defaultPrevented || event.button !== 0) return;
-  if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return;
-  event.preventDefault();
-  action();
-}
-
 export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebarProps) {
   const { t } = useTranslation();
   const handleSelectSession = (session: WorkbenchSessionView) => {
@@ -60,9 +54,9 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
   return (
     <div className="nightworkers-sidebar flex h-full min-h-0 w-full flex-col overflow-hidden border-r">
       <div className="flex shrink-0 items-center justify-between px-4 pb-3 pt-4">
-        <button
-          type="button"
-          onClick={props.onOpenOverview}
+        <a
+          href={serializeWorkbenchRoute({ kind: 'overview', range: '30d', projectId: null })}
+          onClick={(event) => handleWorkbenchAnchorClick(event, props.onOpenOverview)}
           className={`nightworkers-sidebar-logo inline-flex min-w-0 items-center px-1 py-1 text-left text-base transition focus-visible:outline-none focus-visible:ring-2 ${
             props.isOverviewActive ? 'nightworkers-sidebar-link-active rounded-lg' : ''
           }`}
@@ -77,7 +71,7 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
             aria-hidden="true"
           />
           <span className="truncate">nightWorkers</span>
-        </button>
+        </a>
         <div className="flex items-center gap-1">
           <button
             type="button"
@@ -162,7 +156,9 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                       }`}
                       aria-current={isProjectDetailActive ? 'page' : undefined}
                       onClick={(event) =>
-                        handleSidebarAnchorClick(event, () => props.onOpenProjectDetail(project.id))
+                        handleWorkbenchAnchorClick(event, () =>
+                          props.onOpenProjectDetail(project.id)
+                        )
                       }
                       title={t('sidebar.openProjectDetail')}
                     >
@@ -170,20 +166,29 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                         <LayoutDashboard className="h-3.5 w-3.5" />
                       </span>
                     </a>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className={`nightworkers-sidebar-control h-7 w-7 rounded-md p-0 ${
+                    <a
+                      href={serializeWorkbenchRoute({
+                        kind: 'project_queue',
+                        projectId: project.id,
+                        view: 'board',
+                      })}
+                      className={`nightworkers-sidebar-control inline-flex h-7 w-7 items-center justify-center rounded-md p-0 ${
                         props.activeProjectQueueId === project.id
                           ? 'nightworkers-sidebar-link-active'
                           : ''
                       }`}
-                      onClick={() => props.onOpenProjectQueue(project.id)}
+                      aria-current={props.activeProjectQueueId === project.id ? 'page' : undefined}
+                      onClick={(event) =>
+                        handleWorkbenchAnchorClick(event, () =>
+                          props.onOpenProjectQueue(project.id)
+                        )
+                      }
                       title={t('sidebar.openProjectQueue')}
                     >
-                      <ListTodo className="h-3.5 w-3.5" />
-                    </Button>
+                      <span className="flex h-full w-full items-center justify-center">
+                        <ListTodo className="h-3.5 w-3.5" />
+                      </span>
+                    </a>
                     <Button
                       type="button"
                       variant="ghost"
@@ -242,7 +247,7 @@ function SessionList({
               key={session.task.id}
               session={session}
               active={session.task.id === activeSessionId}
-              onSelectSession={onSelectSession}
+              onSelectSession={() => onSelectSession(session)}
             />
           ))}
         </ul>
@@ -258,22 +263,27 @@ function SessionRow({
 }: {
   session: WorkbenchSessionView;
   active: boolean;
-  onSelectSession: (session: WorkbenchSessionView) => void;
+  onSelectSession: () => void;
 }) {
   return (
     <li className="min-w-0 overflow-hidden px-1">
-      <button
-        type="button"
-        onClick={() => onSelectSession(session)}
+      <a
+        href={serializeWorkbenchRoute({
+          kind: 'session',
+          sessionId: session.task.id,
+          artifact: null,
+        })}
+        onClick={(event) => handleWorkbenchAnchorClick(event, onSelectSession)}
         className={`nightworkers-sidebar-session-row flex min-h-9 w-full min-w-0 items-center justify-between gap-2 overflow-hidden rounded-lg px-3 py-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 ${
           active ? 'nightworkers-sidebar-session-row-active' : ''
         }`}
+        aria-current={active ? 'page' : undefined}
       >
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
           {session.task.title}
         </span>
         <SessionTrailingIndicator session={session} />
-      </button>
+      </a>
     </li>
   );
 }

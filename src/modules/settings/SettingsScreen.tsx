@@ -8,6 +8,8 @@ import {
   useWorkspaceAppearanceActions,
   useWorkspaceAppearanceState,
 } from '../nightworkers/contexts/WorkspaceAppearanceContext';
+import { handleWorkbenchAnchorClick } from '../nightworkers/routing/workbench-link-click';
+import { serializeWorkbenchRoute } from '../nightworkers/routing/workbench-route-state';
 import {
   defaultTestQualitySettings,
   type GeneralSettings,
@@ -254,13 +256,13 @@ export function SettingsScreen({
   return (
     <div className="flex h-full min-h-0 bg-[#121214]">
       <aside className="nightworkers-settings-menu flex w-64 shrink-0 flex-col border-zinc-800 border-r bg-[#16161a] p-4">
-        <button
-          type="button"
-          onClick={onClose}
+        <a
+          href={serializeWorkbenchRoute({ kind: 'overview', range: '30d', projectId: null })}
+          onClick={(event) => handleWorkbenchAnchorClick(event, onClose)}
           className="mb-5 inline-flex items-center gap-2 rounded-lg border border-zinc-700/50 bg-zinc-800 px-3 py-2 text-left text-xs text-zinc-300"
         >
           ← {t('settings.backToApp')}
-        </button>
+        </a>
         <div className="mb-3 px-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
           {t('settings.title')}
         </div>
@@ -269,16 +271,18 @@ export function SettingsScreen({
             const Icon = section.icon;
             const active = activeSection === section.id;
             return (
-              <button
+              <a
                 key={section.id}
-                type="button"
+                href={serializeWorkbenchRoute({ kind: 'settings', section: section.id })}
                 className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-left text-xs ${
                   active
                     ? 'border-indigo-500/70 bg-indigo-500/15 text-zinc-100'
                     : 'border-transparent text-zinc-400 hover:border-zinc-800 hover:bg-zinc-900/60 hover:text-zinc-200'
                 }`}
                 aria-current={active ? 'page' : undefined}
-                onClick={() => onSectionChange?.(section.id)}
+                onClick={(event) =>
+                  handleWorkbenchAnchorClick(event, () => onSectionChange?.(section.id))
+                }
               >
                 <Icon className="h-4 w-4 shrink-0" />
                 <span className="min-w-0">
@@ -287,7 +291,7 @@ export function SettingsScreen({
                     {t(section.descriptionKey)}
                   </span>
                 </span>
-              </button>
+              </a>
             );
           })}
         </nav>
