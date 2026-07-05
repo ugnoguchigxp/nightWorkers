@@ -133,6 +133,7 @@ export function PlanModeWorkspaceViewer({
   taskMessages,
   activityArtifacts = [],
   initialTab,
+  onTabChange,
   onQueueSession,
   onAddToQueue,
   isImplementationLocked = false,
@@ -141,6 +142,7 @@ export function PlanModeWorkspaceViewer({
   taskMessages: TaskMessage[];
   activityArtifacts?: ActivityArtifact[];
   initialTab?: PlanWorkspaceTab;
+  onTabChange?: (tab: PlanWorkspaceTab) => void;
   onQueueSession?: () => Promise<void>;
   onAddToQueue?: () => Promise<void>;
   isImplementationLocked?: boolean;
@@ -214,6 +216,13 @@ export function PlanModeWorkspaceViewer({
     workspace?.dedicatedViewArtifacts,
   ]);
   const defaultTab: PlanWorkspaceTab = questionnaireGateLocked ? 'questionnaire' : 'status';
+  const selectActiveTab = useCallback(
+    (tab: PlanWorkspaceTab) => {
+      setActiveTab(tab);
+      onTabChange?.(tab);
+    },
+    [onTabChange]
+  );
 
   const refresh = useCallback(async () => {
     if (!sessionId) return;
@@ -224,7 +233,7 @@ export function PlanModeWorkspaceViewer({
       const nextSessions = (await sessionsRes.json()) as DesignQuestionnaireSession[];
       setSessions(nextSessions);
       if (nextSessions.length > 0 && blueprintMessages.length === 0 && activeTab === 'blueprint') {
-        setActiveTab('questionnaire');
+        selectActiveTab('questionnaire');
       }
       const selected = nextSessions.find((item) => item.id === activeSessionId) || nextSessions[0];
       if (selected) {
@@ -234,7 +243,7 @@ export function PlanModeWorkspaceViewer({
         );
       }
     }
-  }, [activeSessionId, activeTab, blueprintMessages.length, sessionId]);
+  }, [activeSessionId, activeTab, blueprintMessages.length, selectActiveTab, sessionId]);
 
   useEffect(() => {
     void refresh();
@@ -258,23 +267,23 @@ export function PlanModeWorkspaceViewer({
 
   useEffect(() => {
     const nextTab = resolveInitialPlanWorkspaceTabUpdate(initialTab, questionnaireGateLocked);
-    if (nextTab) setActiveTab(nextTab);
-  }, [initialTab, questionnaireGateLocked]);
+    if (nextTab) selectActiveTab(nextTab);
+  }, [initialTab, questionnaireGateLocked, selectActiveTab]);
 
   useEffect(() => {
     if (questionnaireGateLocked) {
       didSelectUnlockedDefaultTab.current = false;
-      if (activeTab !== 'questionnaire') setActiveTab('questionnaire');
+      if (activeTab !== 'questionnaire') selectActiveTab('questionnaire');
       return;
     }
     if (initialTab) return;
     if (!didSelectUnlockedDefaultTab.current && activeTab === 'questionnaire') {
       didSelectUnlockedDefaultTab.current = true;
-      setActiveTab(defaultTab);
+      selectActiveTab(defaultTab);
       return;
     }
-    if (!visibleTabs.includes(activeTab)) setActiveTab(defaultTab);
-  }, [activeTab, defaultTab, initialTab, questionnaireGateLocked, visibleTabs]);
+    if (!visibleTabs.includes(activeTab)) selectActiveTab(defaultTab);
+  }, [activeTab, defaultTab, initialTab, questionnaireGateLocked, selectActiveTab, visibleTabs]);
 
   const activeQuestionnaireSession =
     sessions.find((session) => session.id === activeSessionId) || sessions[0] || null;
@@ -344,14 +353,14 @@ export function PlanModeWorkspaceViewer({
       if (!res.ok) throw new Error(await res.text());
       const created = (await res.json()) as DesignQuestionnaireSession;
       setActiveSessionId(created.id);
-      setActiveTab('questionnaire');
+      selectActiveTab('questionnaire');
     });
   }
 
   async function submitAnswersForNextStep() {
     if (!sessionId || !activeQuestionnaireSession) return;
     if (isCompletedQuestionnaireSession(activeQuestionnaireSession)) {
-      setActiveTab('status');
+      selectActiveTab('status');
       return;
     }
     if (unansweredQuestions.length > 0) return;
@@ -375,7 +384,7 @@ export function PlanModeWorkspaceViewer({
       );
       if (isCompletedQuestionnaireSession(updatedSession)) {
         setAssemblyReadySessionIds((prev) => new Set([...prev, updatedSession.id]));
-        setActiveTab('status');
+        selectActiveTab('status');
       }
     });
   }
@@ -406,7 +415,7 @@ export function PlanModeWorkspaceViewer({
       }
       if (payload.result.addedCount > 0) {
         setActionNotice(`追加質問を ${payload.result.addedCount} 件作成しました。`);
-        setActiveTab('questionnaire');
+        selectActiveTab('questionnaire');
       } else {
         setActionNotice('追加質問はありません。');
       }
@@ -436,7 +445,7 @@ export function PlanModeWorkspaceViewer({
           '要回答の未回答質問があります。未回答のまま仕様書を作成しますか？'
         );
         if (!confirmed) {
-          setActiveTab('questionnaire');
+          selectActiveTab('questionnaire');
           return;
         }
         proceedWithUnansweredBlocking = true;
@@ -462,7 +471,7 @@ export function PlanModeWorkspaceViewer({
         const errorText = await res.text();
         const parsedError = parseJsonRecord(errorText);
         if (String(parsedError?.code || '') === 'BLOCKING_QUESTIONNAIRE_ANSWERS_REQUIRED') {
-          setActiveTab('questionnaire');
+          selectActiveTab('questionnaire');
           throw new Error('要回答の未回答質問があります。Questionnaire で回答してください。');
         }
         throw new Error(errorText);
@@ -476,7 +485,7 @@ export function PlanModeWorkspaceViewer({
         setGeneratedMessages((prev) => [...prev, generatedMessage]);
       }
       if (result.workspace) setWorkspace(result.workspace);
-      setActiveTab(nextTab);
+      selectActiveTab(nextTab);
     });
   }
 
@@ -507,7 +516,7 @@ export function PlanModeWorkspaceViewer({
       if (generated.length > 0) setGeneratedMessages((prev) => [...prev, ...generated]);
       if (latestWorkspace) setWorkspace(latestWorkspace);
       const firstTab = planViewToTab[targetViews[0]];
-      if (firstTab) setActiveTab(firstTab);
+      if (firstTab) selectActiveTab(firstTab);
     });
   }
 
@@ -536,7 +545,7 @@ export function PlanModeWorkspaceViewer({
                   ? 'border-cyan-400/70 bg-cyan-950/40 text-cyan-100'
                   : 'border-slate-700 bg-slate-950/20 text-slate-300 hover:border-slate-500'
               }`}
-              onClick={() => setActiveTab(id)}
+              onClick={() => selectActiveTab(id)}
             >
               {getPlanWorkspaceTabLabel(id)}
             </button>
@@ -676,7 +685,7 @@ export function PlanModeWorkspaceViewer({
             isImplementationLocked={isImplementationLocked}
             planModeSettings={generalSettings?.planMode}
             viewDecisions={viewDecisions}
-            onOpenQuestionnaire={() => setActiveTab('questionnaire')}
+            onOpenQuestionnaire={() => selectActiveTab('questionnaire')}
             onGenerateAdditionalQuestions={requestAdditionalQuestionnaireQuestions}
             onGenerateBlueprint={() => generatePlanModeArtifact('blueprint', 'blueprint')}
             onGenerateDataModel={() => generatePlanModeArtifact('data-model', 'data-model')}

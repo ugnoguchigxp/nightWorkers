@@ -5,13 +5,15 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { formatCurrency, formatDateTime, formatTokenCount } from '../../../i18n/format';
 import { fetchOverview } from '../nightWorkersCommands';
+import type { OverviewRange } from '../routing/workbench-route-state';
 import type { NightWorkersCurrency, OverviewDashboard, Repository } from '../types';
-
-type OverviewRange = '24h' | '7d' | '30d' | 'all';
 
 type OverviewScreenProps = {
   projects: Repository[];
-  initialProjectFilterId?: string | null;
+  range: OverviewRange;
+  projectFilterId: string | null;
+  onRangeChange: (range: OverviewRange) => void;
+  onProjectFilterChange: (projectId: string | null) => void;
   onOpenSession: (sessionId: string) => void;
 };
 
@@ -53,11 +55,12 @@ const tableBorderStyle = {
 
 export function OverviewScreen({
   projects,
-  initialProjectFilterId = null,
+  range,
+  projectFilterId,
+  onRangeChange,
+  onProjectFilterChange,
   onOpenSession,
 }: OverviewScreenProps) {
-  const [range, setRange] = useState<OverviewRange>('30d');
-  const [projectFilterId, setProjectFilterId] = useState<string>(initialProjectFilterId || 'all');
   const [dashboard, setDashboard] = useState<OverviewDashboard | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +72,7 @@ export function OverviewScreen({
 
   const query = useMemo(() => {
     const params = new URLSearchParams({ range });
-    if (projectFilterId !== 'all') params.set('repositoryId', projectFilterId);
+    if (projectFilterId) params.set('repositoryId', projectFilterId);
     return params.toString();
   }, [range, projectFilterId]);
 
@@ -118,8 +121,10 @@ export function OverviewScreen({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <select
-              value={projectFilterId}
-              onChange={(event) => setProjectFilterId(event.target.value)}
+              value={projectFilterId || 'all'}
+              onChange={(event) =>
+                onProjectFilterChange(event.target.value === 'all' ? null : event.target.value)
+              }
               className="h-9 border px-3 text-xs"
               style={controlStyle}
             >
@@ -134,7 +139,7 @@ export function OverviewScreen({
               <button
                 key={value}
                 type="button"
-                onClick={() => setRange(value)}
+                onClick={() => onRangeChange(value)}
                 className="h-9 border px-3 text-xs"
                 style={
                   range === value

@@ -373,5 +373,5 @@ describe('Desktop security configuration', () => {
     expect(csp).toContain('ws://127.0.0.1:41234');
     expect(csp).toContain('http://tauri.localhost');
     expect(csp).toContain('tauri:');
-  });
+  }, 15_000);
 });

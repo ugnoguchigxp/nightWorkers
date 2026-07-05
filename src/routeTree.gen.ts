@@ -10,21 +10,44 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ShowcaseRouteImport } from './routes/showcase'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RepositoriesRouteImport } from './routes/repositories'
+import { Route as QueueRouteImport } from './routes/queue'
+import { Route as OverviewRouteImport } from './routes/overview'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as BlueprintShowcaseRouteImport } from './routes/blueprint-showcase'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TasksIdRouteImport } from './routes/tasks.$id'
+import { Route as SettingsSectionRouteImport } from './routes/settings.$section'
+import { Route as SessionsSessionIdRouteImport } from './routes/sessions.$sessionId'
 import { Route as OauthCallbackRouteImport } from './routes/oauth.callback'
+import { Route as ProjectsProjectIdQueueRouteImport } from './routes/projects.$projectId.queue'
+import { Route as ProjectsProjectIdDetailRouteImport } from './routes/projects.$projectId.detail'
+import { Route as ProjectsProjectIdDetailTabRouteImport } from './routes/projects.$projectId.detail.$tab'
 
 const ShowcaseRoute = ShowcaseRouteImport.update({
   id: '/showcase',
   path: '/showcase',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RepositoriesRoute = RepositoriesRouteImport.update({
   id: '/repositories',
   path: '/repositories',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QueueRoute = QueueRouteImport.update({
+  id: '/queue',
+  path: '/queue',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OverviewRoute = OverviewRouteImport.update({
+  id: '/overview',
+  path: '/overview',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -47,39 +70,89 @@ const TasksIdRoute = TasksIdRouteImport.update({
   path: '/tasks/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsSectionRoute = SettingsSectionRouteImport.update({
+  id: '/$section',
+  path: '/$section',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SessionsSessionIdRoute = SessionsSessionIdRouteImport.update({
+  id: '/sessions/$sessionId',
+  path: '/sessions/$sessionId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OauthCallbackRoute = OauthCallbackRouteImport.update({
   id: '/oauth/callback',
   path: '/oauth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectsProjectIdQueueRoute = ProjectsProjectIdQueueRouteImport.update({
+  id: '/projects/$projectId/queue',
+  path: '/projects/$projectId/queue',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsProjectIdDetailRoute = ProjectsProjectIdDetailRouteImport.update({
+  id: '/projects/$projectId/detail',
+  path: '/projects/$projectId/detail',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsProjectIdDetailTabRoute =
+  ProjectsProjectIdDetailTabRouteImport.update({
+    id: '/$tab',
+    path: '/$tab',
+    getParentRoute: () => ProjectsProjectIdDetailRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/blueprint-showcase': typeof BlueprintShowcaseRoute
   '/login': typeof LoginRoute
+  '/overview': typeof OverviewRoute
+  '/queue': typeof QueueRoute
   '/repositories': typeof RepositoriesRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/showcase': typeof ShowcaseRoute
   '/oauth/callback': typeof OauthCallbackRoute
+  '/sessions/$sessionId': typeof SessionsSessionIdRoute
+  '/settings/$section': typeof SettingsSectionRoute
   '/tasks/$id': typeof TasksIdRoute
+  '/projects/$projectId/detail': typeof ProjectsProjectIdDetailRouteWithChildren
+  '/projects/$projectId/queue': typeof ProjectsProjectIdQueueRoute
+  '/projects/$projectId/detail/$tab': typeof ProjectsProjectIdDetailTabRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/blueprint-showcase': typeof BlueprintShowcaseRoute
   '/login': typeof LoginRoute
+  '/overview': typeof OverviewRoute
+  '/queue': typeof QueueRoute
   '/repositories': typeof RepositoriesRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/showcase': typeof ShowcaseRoute
   '/oauth/callback': typeof OauthCallbackRoute
+  '/sessions/$sessionId': typeof SessionsSessionIdRoute
+  '/settings/$section': typeof SettingsSectionRoute
   '/tasks/$id': typeof TasksIdRoute
+  '/projects/$projectId/detail': typeof ProjectsProjectIdDetailRouteWithChildren
+  '/projects/$projectId/queue': typeof ProjectsProjectIdQueueRoute
+  '/projects/$projectId/detail/$tab': typeof ProjectsProjectIdDetailTabRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/blueprint-showcase': typeof BlueprintShowcaseRoute
   '/login': typeof LoginRoute
+  '/overview': typeof OverviewRoute
+  '/queue': typeof QueueRoute
   '/repositories': typeof RepositoriesRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/showcase': typeof ShowcaseRoute
   '/oauth/callback': typeof OauthCallbackRoute
+  '/sessions/$sessionId': typeof SessionsSessionIdRoute
+  '/settings/$section': typeof SettingsSectionRoute
   '/tasks/$id': typeof TasksIdRoute
+  '/projects/$projectId/detail': typeof ProjectsProjectIdDetailRouteWithChildren
+  '/projects/$projectId/queue': typeof ProjectsProjectIdQueueRoute
+  '/projects/$projectId/detail/$tab': typeof ProjectsProjectIdDetailTabRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -87,38 +160,68 @@ export interface FileRouteTypes {
     | '/'
     | '/blueprint-showcase'
     | '/login'
+    | '/overview'
+    | '/queue'
     | '/repositories'
+    | '/settings'
     | '/showcase'
     | '/oauth/callback'
+    | '/sessions/$sessionId'
+    | '/settings/$section'
     | '/tasks/$id'
+    | '/projects/$projectId/detail'
+    | '/projects/$projectId/queue'
+    | '/projects/$projectId/detail/$tab'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/blueprint-showcase'
     | '/login'
+    | '/overview'
+    | '/queue'
     | '/repositories'
+    | '/settings'
     | '/showcase'
     | '/oauth/callback'
+    | '/sessions/$sessionId'
+    | '/settings/$section'
     | '/tasks/$id'
+    | '/projects/$projectId/detail'
+    | '/projects/$projectId/queue'
+    | '/projects/$projectId/detail/$tab'
   id:
     | '__root__'
     | '/'
     | '/blueprint-showcase'
     | '/login'
+    | '/overview'
+    | '/queue'
     | '/repositories'
+    | '/settings'
     | '/showcase'
     | '/oauth/callback'
+    | '/sessions/$sessionId'
+    | '/settings/$section'
     | '/tasks/$id'
+    | '/projects/$projectId/detail'
+    | '/projects/$projectId/queue'
+    | '/projects/$projectId/detail/$tab'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BlueprintShowcaseRoute: typeof BlueprintShowcaseRoute
   LoginRoute: typeof LoginRoute
+  OverviewRoute: typeof OverviewRoute
+  QueueRoute: typeof QueueRoute
   RepositoriesRoute: typeof RepositoriesRoute
+  SettingsRoute: typeof SettingsRouteWithChildren
   ShowcaseRoute: typeof ShowcaseRoute
   OauthCallbackRoute: typeof OauthCallbackRoute
+  SessionsSessionIdRoute: typeof SessionsSessionIdRoute
   TasksIdRoute: typeof TasksIdRoute
+  ProjectsProjectIdDetailRoute: typeof ProjectsProjectIdDetailRouteWithChildren
+  ProjectsProjectIdQueueRoute: typeof ProjectsProjectIdQueueRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -130,11 +233,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShowcaseRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/repositories': {
       id: '/repositories'
       path: '/repositories'
       fullPath: '/repositories'
       preLoaderRoute: typeof RepositoriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/queue': {
+      id: '/queue'
+      path: '/queue'
+      fullPath: '/queue'
+      preLoaderRoute: typeof QueueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/overview': {
+      id: '/overview'
+      path: '/overview'
+      fullPath: '/overview'
+      preLoaderRoute: typeof OverviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -165,6 +289,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TasksIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/$section': {
+      id: '/settings/$section'
+      path: '/$section'
+      fullPath: '/settings/$section'
+      preLoaderRoute: typeof SettingsSectionRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/sessions/$sessionId': {
+      id: '/sessions/$sessionId'
+      path: '/sessions/$sessionId'
+      fullPath: '/sessions/$sessionId'
+      preLoaderRoute: typeof SessionsSessionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/oauth/callback': {
       id: '/oauth/callback'
       path: '/oauth/callback'
@@ -172,17 +310,70 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OauthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projects/$projectId/queue': {
+      id: '/projects/$projectId/queue'
+      path: '/projects/$projectId/queue'
+      fullPath: '/projects/$projectId/queue'
+      preLoaderRoute: typeof ProjectsProjectIdQueueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$projectId/detail': {
+      id: '/projects/$projectId/detail'
+      path: '/projects/$projectId/detail'
+      fullPath: '/projects/$projectId/detail'
+      preLoaderRoute: typeof ProjectsProjectIdDetailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$projectId/detail/$tab': {
+      id: '/projects/$projectId/detail/$tab'
+      path: '/$tab'
+      fullPath: '/projects/$projectId/detail/$tab'
+      preLoaderRoute: typeof ProjectsProjectIdDetailTabRouteImport
+      parentRoute: typeof ProjectsProjectIdDetailRoute
+    }
   }
 }
+
+interface SettingsRouteChildren {
+  SettingsSectionRoute: typeof SettingsSectionRoute
+}
+
+const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsSectionRoute: SettingsSectionRoute,
+}
+
+const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
+  SettingsRouteChildren,
+)
+
+interface ProjectsProjectIdDetailRouteChildren {
+  ProjectsProjectIdDetailTabRoute: typeof ProjectsProjectIdDetailTabRoute
+}
+
+const ProjectsProjectIdDetailRouteChildren: ProjectsProjectIdDetailRouteChildren =
+  {
+    ProjectsProjectIdDetailTabRoute: ProjectsProjectIdDetailTabRoute,
+  }
+
+const ProjectsProjectIdDetailRouteWithChildren =
+  ProjectsProjectIdDetailRoute._addFileChildren(
+    ProjectsProjectIdDetailRouteChildren,
+  )
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BlueprintShowcaseRoute: BlueprintShowcaseRoute,
   LoginRoute: LoginRoute,
+  OverviewRoute: OverviewRoute,
+  QueueRoute: QueueRoute,
   RepositoriesRoute: RepositoriesRoute,
+  SettingsRoute: SettingsRouteWithChildren,
   ShowcaseRoute: ShowcaseRoute,
   OauthCallbackRoute: OauthCallbackRoute,
+  SessionsSessionIdRoute: SessionsSessionIdRoute,
   TasksIdRoute: TasksIdRoute,
+  ProjectsProjectIdDetailRoute: ProjectsProjectIdDetailRouteWithChildren,
+  ProjectsProjectIdQueueRoute: ProjectsProjectIdQueueRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

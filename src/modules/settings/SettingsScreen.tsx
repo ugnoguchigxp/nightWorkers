@@ -65,9 +65,13 @@ import {
 
 export function SettingsScreen({
   activeProject,
+  activeSection = 'general',
+  onSectionChange,
   onClose,
 }: {
   activeProject: Repository | null;
+  activeSection?: SettingsSectionId;
+  onSectionChange?: (section: SettingsSectionId) => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -87,12 +91,11 @@ export function SettingsScreen({
   const [testQualityMessageStatus, setTestQualityMessageStatus] =
     useState<SaveFeedbackStatus>('idle');
   const [testQualityBusy, setTestQualityBusy] = useState(false);
-  const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>('general');
   const { settings: appearanceSettings } = useWorkspaceAppearanceState();
   const { setAppearanceSettings, resetAppearanceSettings } = useWorkspaceAppearanceActions();
 
   const activeSectionMeta =
-    settingsSections.find((section) => section.id === activeSettingsSection) || settingsSections[0];
+    settingsSections.find((section) => section.id === activeSection) || settingsSections[0];
   const ActiveSectionIcon = activeSectionMeta.icon;
 
   useEffect(() => {
@@ -264,7 +267,7 @@ export function SettingsScreen({
         <nav className="grid gap-1" aria-label={t('settings.sections')}>
           {settingsSections.map((section) => {
             const Icon = section.icon;
-            const active = activeSettingsSection === section.id;
+            const active = activeSection === section.id;
             return (
               <button
                 key={section.id}
@@ -275,7 +278,7 @@ export function SettingsScreen({
                     : 'border-transparent text-zinc-400 hover:border-zinc-800 hover:bg-zinc-900/60 hover:text-zinc-200'
                 }`}
                 aria-current={active ? 'page' : undefined}
-                onClick={() => setActiveSettingsSection(section.id)}
+                onClick={() => onSectionChange?.(section.id)}
               >
                 <Icon className="h-4 w-4 shrink-0" />
                 <span className="min-w-0">
@@ -299,7 +302,7 @@ export function SettingsScreen({
             <p className="text-xs text-zinc-500">{t(activeSectionMeta.descriptionKey)}</p>
           </div>
 
-          {activeSettingsSection === 'general' ? (
+          {activeSection === 'general' ? (
             <GeneralSettingsPanel
               value={generalSettings}
               message={generalMessage}
@@ -311,7 +314,7 @@ export function SettingsScreen({
             />
           ) : null}
 
-          {activeSettingsSection === 'plan-mode' ? (
+          {activeSection === 'plan-mode' ? (
             <SettingsPlanModePanel
               value={generalSettings}
               message={generalMessage}
@@ -321,7 +324,7 @@ export function SettingsScreen({
             />
           ) : null}
 
-          {activeSettingsSection === 'appearance' ? (
+          {activeSection === 'appearance' ? (
             <AppearanceSettings
               value={appearanceSettings}
               onChange={setAppearanceSettings}
@@ -329,7 +332,7 @@ export function SettingsScreen({
             />
           ) : null}
 
-          {activeSettingsSection === 'llm-providers' ? (
+          {activeSection === 'llm-providers' ? (
             <SettingsLlmPanel
               section="providers"
               settings={settings}
@@ -341,7 +344,7 @@ export function SettingsScreen({
             />
           ) : null}
 
-          {activeSettingsSection === 'llm-routing' ? (
+          {activeSection === 'llm-routing' ? (
             <SettingsLlmPanel
               section="routing"
               settings={settings}
@@ -353,7 +356,7 @@ export function SettingsScreen({
             />
           ) : null}
 
-          {activeSettingsSection === 'test' ? (
+          {activeSection === 'test' ? (
             <SettingsTestPanel
               activeProject={activeProject}
               value={testQualitySettings}
@@ -369,9 +372,9 @@ export function SettingsScreen({
             />
           ) : null}
 
-          {activeSettingsSection === 'hooks' ? <SettingsHooksPanel /> : null}
+          {activeSection === 'hooks' ? <SettingsHooksPanel /> : null}
 
-          {activeSettingsSection === 'mcp' ? <SettingsMcpPanel /> : null}
+          {activeSection === 'mcp' ? <SettingsMcpPanel /> : null}
         </div>
       </main>
     </div>

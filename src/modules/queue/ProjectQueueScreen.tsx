@@ -22,11 +22,11 @@ import {
   isProjectQueueLaneDomId,
 } from './projectQueueDnd';
 import { buildProjectQueueTasks, groupProjectQueueTasks } from './projectQueueModel';
-import type { ProjectQueueScreenProps, ProjectQueueViewMode } from './projectQueueTypes';
+import type { ProjectQueueScreenProps } from './projectQueueTypes';
 
 export function ProjectQueueScreen(props: ProjectQueueScreenProps) {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ProjectQueueViewMode>('board');
+  const viewMode = props.viewMode;
   const [isPersisting, setIsPersisting] = useState(false);
   const tasks = useMemo(() => buildProjectQueueTasks(props), [props]);
   const lanes = useMemo(() => groupProjectQueueTasks(tasks), [tasks]);
@@ -132,7 +132,7 @@ export function ProjectQueueScreen(props: ProjectQueueScreenProps) {
             <button
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-950/60 text-slate-300 transition hover:border-cyan-400/60 hover:text-cyan-100"
               data-view-toggle="project-queue"
-              onClick={() => setViewMode((current) => (current === 'board' ? 'table' : 'board'))}
+              onClick={() => props.onViewModeChange(viewMode === 'board' ? 'table' : 'board')}
               title={viewMode === 'board' ? 'Switch to Table view' : 'Switch to Queue view'}
               type="button"
             >

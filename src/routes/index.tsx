@@ -1,32 +1,20 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { useState } from 'react';
-import { NightWorkersShell } from '../modules/nightworkers/components/NightWorkersShell';
-import { WorkspaceAppearanceProvider } from '../modules/nightworkers/contexts/WorkspaceAppearanceContext';
-import { WorkspaceLayoutProvider } from '../modules/nightworkers/contexts/WorkspaceLayoutContext';
-import { useNightWorkersWorkspace } from '../modules/nightworkers/hooks/useNightWorkersWorkspace';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useEffect } from 'react';
+import { readLastWorkbenchRoute } from '../modules/nightworkers/routing/last-workbench-route';
+import { parseWorkbenchRouteUrl } from '../modules/nightworkers/routing/workbench-route-state';
 
 export const Route = createFileRoute('/')({
-  component: NightWorkersHome,
+  component: NightWorkersRootRedirect,
 });
 
-function NightWorkersHome() {
-  const workspace = useNightWorkersWorkspace();
-  const [showSettings, setShowSettings] = useState(false);
-  const [showFolderBrowser, setShowFolderBrowser] = useState(false);
+function NightWorkersRootRedirect() {
+  const navigate = useNavigate();
 
-  return (
-    <WorkspaceAppearanceProvider>
-      <WorkspaceLayoutProvider>
-        <NightWorkersShell
-          workspace={workspace}
-          showSettings={showSettings}
-          onOpenSettings={() => setShowSettings(true)}
-          onCloseSettings={() => setShowSettings(false)}
-          showFolderBrowser={showFolderBrowser}
-          onOpenFolderBrowser={() => setShowFolderBrowser(true)}
-          onCloseFolderBrowser={() => setShowFolderBrowser(false)}
-        />
-      </WorkspaceLayoutProvider>
-    </WorkspaceAppearanceProvider>
-  );
+  useEffect(() => {
+    const target = readLastWorkbenchRoute() || '/overview';
+    const nextUrl = parseWorkbenchRouteUrl(target);
+    void navigate({ to: nextUrl.pathname, search: nextUrl.search, replace: true } as never);
+  }, [navigate]);
+
+  return null;
 }

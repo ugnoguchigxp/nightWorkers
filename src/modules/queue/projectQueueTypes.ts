@@ -115,6 +115,8 @@ export type BuildProjectQueueTasksInput = {
 
 export type ProjectQueueScreenProps = BuildProjectQueueTasksInput & {
   isLoading: boolean;
+  viewMode: ProjectQueueViewMode;
+  onViewModeChange: (viewMode: ProjectQueueViewMode) => void;
   onOpenSession: (sessionId: string) => void;
   onRequeueEntry: (entryId: string, note?: string) => Promise<void>;
   onQueueSession: (sessionId: string) => Promise<void>;

@@ -4,7 +4,9 @@ import {
   ChevronRight,
   ClipboardCheck,
   Loader2,
+  Minus,
   Pencil,
+  Plus,
   Sparkles,
   Target,
   Trash2,
@@ -49,6 +51,8 @@ export function TaskGenerationTreeTable({
   onCreateSelected,
   onGenerateTaskCandidates,
   onGenerateMissionCandidates,
+  onExpandAll,
+  onCollapseAll,
   onToggleGoal,
   onToggleMission,
   onToggleSelected,
@@ -73,6 +77,8 @@ export function TaskGenerationTreeTable({
   onCreateSelected: () => void;
   onGenerateTaskCandidates: () => void;
   onGenerateMissionCandidates: () => void;
+  onExpandAll: () => void;
+  onCollapseAll: () => void;
   onToggleGoal: (goalId: string) => void;
   onToggleMission: (missionId: string) => void;
   onToggleSelected: (candidateId: string) => void;
@@ -104,6 +110,22 @@ export function TaskGenerationTreeTable({
             title={t('projectDetail.mission.candidates')}
           />
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="flex items-center gap-1">
+              <IconActionButton
+                label={t('projectDetail.mission.collapseAll')}
+                onClick={onCollapseAll}
+                disabled={rows.length === 0}
+              >
+                <Minus className="h-3.5 w-3.5" />
+              </IconActionButton>
+              <IconActionButton
+                label={t('projectDetail.mission.expandAll')}
+                onClick={onExpandAll}
+                disabled={rows.length === 0}
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </IconActionButton>
+            </div>
             <Button
               type="button"
               onClick={onAddGoal}
@@ -479,9 +501,12 @@ function TreeToggle({
   disabled: boolean;
   onClick: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <IconActionButton
-      label={expanded ? 'Collapse' : 'Expand'}
+      label={
+        expanded ? t('projectDetail.mission.collapseRow') : t('projectDetail.mission.expandRow')
+      }
       onClick={onClick}
       disabled={disabled}
     >

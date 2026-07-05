@@ -9,154 +9,56 @@ import {
   useWorkspaceLayoutActions,
   useWorkspaceLayoutState,
 } from '../contexts/WorkspaceLayoutContext';
-import type { NightWorkersWorkspaceState } from '../hooks/useNightWorkersWorkspace';
 import { shouldAutoOpenPlanArtifact } from '../planArtifactVisibility';
+import { buildOverviewRoute } from '../routing/workbench-route-state';
 import type {
   ComposerThinkingDepth,
-  LlmModelTarget,
-  LlmRoleRoute,
-  ProjectSafetyPolicy,
   Task,
   TaskMessage,
   ThinkingDepthOption,
-  WorkbenchArtifactRef,
   WorkbenchChatIntent,
 } from '../types';
-import { THINKING_DEPTH_OPTIONS } from '../types';
 import { buildArtifactContext, buildPlanModeWorkspaceArtifactRef } from '../workbenchSelectors';
-import { ArtifactPane } from './ArtifactPane';
-import { FolderBrowserDialog } from './FolderBrowserDialog';
+import type { NightWorkersShellProps } from './NightWorkersShell.types';
+import {
+  NightWorkersFolderBrowser,
+  NightWorkersRouteNotFoundScreen,
+} from './NightWorkersShellAuxiliary';
+import { NightWorkersShellThreadPanel } from './NightWorkersShellThreadPanel';
+import {
+  type ArtifactPaneFocus,
+  useNightWorkersRouteArtifactSync,
+} from './nightworkers-shell-route-effects';
+import {
+  COMPOSER_THINKING_DEPTH_OPTIONS,
+  collectProjectSessionViews,
+  findComposerRouteTargetByKey,
+  isDesignQuestionnaireReadyMessage,
+  isImplementationLockedStatus,
+  isMissingProjectRoute,
+  isMissingSessionRoute,
+  isMissionProposalApprovalRequiredError,
+  isThinkingModel,
+  modelTargetKey,
+  parseModelTargetKey,
+  projectEvaluationDraftStorageKey,
+  projectEvaluationTaskPromptDrafts,
+  resolveComposerRouteTarget,
+  resolveCurrentProviderModel,
+} from './nightworkers-shell-utils';
 import { OverviewScreen } from './OverviewScreen';
 import { ProjectDetailScreen } from './ProjectDetailScreen';
 import { ProjectSidebar } from './ProjectSidebar';
 import { BlueprintShowcaseButton, SettingsButton } from './SettingsButton';
 import { SettingsScreen } from './SettingsScreen';
-import { ThreadWorkspace } from './ThreadWorkspace';
-import { TodoListPane } from './TodoListPane';
 
-type NightWorkersShellProps = {
-  workspace: NightWorkersWorkspaceState;
-  showSettings: boolean;
-  onOpenSettings: () => void;
-  onCloseSettings: () => void;
-  showFolderBrowser: boolean;
-  onOpenFolderBrowser: () => void;
-  onCloseFolderBrowser: () => void;
-};
-
-function asProjectSafetyPolicy(value: unknown): ProjectSafetyPolicy {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  return value as ProjectSafetyPolicy;
-}
-
-type ArtifactPaneFocus =
-  | { type: 'closed' }
-  | { type: 'project_tree' }
-  | { type: 'todo' }
-  | { type: 'artifact'; artifact: WorkbenchArtifactRef };
-
-type ComposerModelTarget = {
-  providerEndpointId: string;
-  model: string;
-};
-
-const modelTargetKey = (target: ComposerModelTarget) => JSON.stringify(target);
-const COMPOSER_THINKING_DEPTH_OPTIONS: ThinkingDepthOption[] = [
-  { value: '', label: 'Auto' },
-  ...THINKING_DEPTH_OPTIONS,
-];
-
-function parseModelTargetKey(value: string): ComposerModelTarget | null {
-  try {
-    const parsed = JSON.parse(value) as Partial<ComposerModelTarget>;
-    if (typeof parsed.providerEndpointId === 'string' && typeof parsed.model === 'string') {
-      return { providerEndpointId: parsed.providerEndpointId, model: parsed.model };
-    }
-  } catch {
-    // Legacy model values fall through.
-  }
-  return null;
-}
-
-function isMissionProposalApprovalRequiredError(error: unknown) {
-  if (!(error instanceof Error)) return false;
-  try {
-    const parsed = JSON.parse(error.message) as { code?: unknown };
-    return parsed.code === 'MISSION_PROPOSAL_APPROVAL_REQUIRED';
-  } catch {
-    return error.message.includes('MISSION_PROPOSAL_APPROVAL_REQUIRED');
-  }
-}
-
-function isThinkingModel(modelName: string) {
-  const normalized = modelName.toLowerCase();
-  return (
-    /^gpt-5(\b|[.-])/.test(normalized) ||
-    /^o[134](\b|[.-])/.test(normalized) ||
-    normalized.includes('codex') ||
-    normalized.includes('reasoning') ||
-    normalized.includes('thinking') ||
-    normalized.includes('deepseek-r1') ||
-    normalized.includes('qwen3')
-  );
-}
-
-function resolveComposerRouteTarget(
-  routes: LlmRoleRoute[] | undefined,
-  availableModelKeys: Set<string>
-): LlmModelTarget | null {
-  const roles = ['plan', 'implementation'] as const;
-  for (const role of roles) {
-    const route = routes?.find((item) => item.role === role);
-    if (!route) continue;
-    for (const target of [route.primary, ...route.fallbacks]) {
-      const key = modelTargetKey(target);
-      if (availableModelKeys.has(key)) return target;
-    }
-  }
-  return null;
-}
-
-function findComposerRouteTargetByKey(
-  routes: LlmRoleRoute[] | undefined,
-  targetKey: string
-): LlmModelTarget | null {
-  const roles = ['plan', 'implementation'] as const;
-  for (const role of roles) {
-    const route = routes?.find((item) => item.role === role);
-    if (!route) continue;
-    const target = [route.primary, ...route.fallbacks].find(
-      (item) => modelTargetKey(item) === targetKey
-    );
-    if (target) return target;
-  }
-  return null;
-}
-
-function isImplementationLockedStatus(status: string | undefined) {
-  return status === 'completed';
-}
-
-function isDesignQuestionnaireReadyMessage(message: TaskMessage) {
-  return String(toDeepRecord(message.metadataJson).intent) === 'design_questionnaire_ready';
-}
-
-function designQuestionnaireMessageIds(messages: TaskMessage[]) {
-  return new Set(messages.filter(isDesignQuestionnaireReadyMessage).map((message) => message.id));
-}
-
-export function projectEvaluationDraftStorageKey(taskId: string) {
-  return `nightworkers:composer:${taskId}`;
-}
-
-export function projectEvaluationTaskPromptDrafts(tasks: Task[]) {
-  return tasks
-    .map((task) => ({ taskId: task.id, prompt: task.objective?.trim() || '' }))
-    .filter((draft) => draft.prompt.length > 0);
-}
+export {
+  projectEvaluationDraftStorageKey,
+  projectEvaluationTaskPromptDrafts,
+} from './nightworkers-shell-utils';
 
 export function NightWorkersShell(props: NightWorkersShellProps) {
-  const { workspace } = props;
+  const { routeState, workspace } = props;
   const { attributes: appearanceAttributes } = useWorkspaceAppearanceState();
   const { panelSizes } = useWorkspaceLayoutState();
   const { setPanelSizes } = useWorkspaceLayoutActions();
@@ -172,12 +74,12 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const [thinkingDepth, setThinkingDepth] = useState<ComposerThinkingDepth>('');
   const [artifactFocus, setArtifactFocus] = useState<ArtifactPaneFocus>({ type: 'closed' });
   const [clearedArtifactContextId, setClearedArtifactContextId] = useState<string | null>(null);
-  const [showQueueScreen, setShowQueueScreen] = useState(false);
-  const [showOverviewScreen, setShowOverviewScreen] = useState(true);
-  const [projectQueueProjectId, setProjectQueueProjectId] = useState<string | null>(null);
-  const [projectDetailProjectId, setProjectDetailProjectId] = useState<string | null>(null);
-  const [queueProjectFilterId, setQueueProjectFilterId] = useState<string | null>(null);
-  const isOverviewActive = showOverviewScreen && !props.showSettings;
+  const showSettings = routeState.kind === 'settings';
+  const isOverviewActive = routeState.kind === 'overview';
+  const showQueueScreen = routeState.kind === 'global_queue';
+  const queueProjectFilterId = routeState.kind === 'global_queue' ? routeState.projectId : null;
+  const projectQueueProjectId = routeState.kind === 'project_queue' ? routeState.projectId : null;
+  const projectDetailProjectId = routeState.kind === 'project_detail' ? routeState.projectId : null;
   const projectQueueProject = projectQueueProjectId
     ? workspace.projects.find((project) => project.id === projectQueueProjectId) || null
     : null;
@@ -185,19 +87,18 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     ? workspace.projects.find((project) => project.id === projectDetailProjectId) || null
     : null;
   const projectQueueSessionViews = projectQueueProject
-    ? [
-        ...(workspace.groupedSessionViews[projectQueueProject.id]?.processing || []),
-        ...(workspace.groupedSessionViews[projectQueueProject.id]?.queue || []),
-        ...(workspace.groupedSessionViews[projectQueueProject.id]?.archive || []),
-      ]
+    ? collectProjectSessionViews(workspace.groupedSessionViews, projectQueueProject.id)
     : [];
   const projectDetailSessionViews = projectDetailProject
-    ? [
-        ...(workspace.groupedSessionViews[projectDetailProject.id]?.processing || []),
-        ...(workspace.groupedSessionViews[projectDetailProject.id]?.queue || []),
-        ...(workspace.groupedSessionViews[projectDetailProject.id]?.archive || []),
-      ]
+    ? collectProjectSessionViews(workspace.groupedSessionViews, projectDetailProject.id)
     : [];
+  const missingProjectRoute = isMissingProjectRoute(
+    routeState,
+    workspace,
+    projectQueueProject,
+    projectDetailProject
+  );
+  const missingSessionRoute = isMissingSessionRoute(routeState, workspace);
   const createImplementationQueueEntryWithMissionApproval = useCallback(
     async (sessionId: string) => {
       try {
@@ -216,7 +117,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     [queueState]
   );
   const visibleActiveSessionId =
-    props.showSettings || isOverviewActive || projectQueueProject || projectDetailProject
+    showSettings || isOverviewActive || projectQueueProject || projectDetailProject
       ? null
       : workspace.activeSessionId;
   const selectedArtifact = artifactFocus.type === 'artifact' ? artifactFocus.artifact : null;
@@ -252,6 +153,13 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     workspaceRef.current = workspace;
   }, [workspace]);
 
+  useNightWorkersRouteArtifactSync({
+    routeState,
+    workspace,
+    setArtifactFocus,
+    setClearedArtifactContextId,
+  });
+
   useEffect(() => {
     if (!selectedArtifact) return;
     if (selectedArtifact.taskId !== workspace.activeSessionId) {
@@ -269,16 +177,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     if (!stillAvailable && selectedArtifact.kind !== 'diff') setArtifactFocus({ type: 'closed' });
   }, [selectedArtifact, workspace.activeArtifactRefs, workspace.activeSessionId]);
 
-  const currentProviderModel =
-    workspace.activeProvider === 'openai'
-      ? workspace.llmSettings?.OPENAI_MODEL
-      : workspace.activeProvider === 'azure'
-        ? workspace.llmSettings?.AZURE_OPENAI_DEPLOYMENT_NAME
-        : workspace.activeProvider === 'bedrock'
-          ? workspace.llmSettings?.AWS_BEDROCK_MODEL
-          : workspace.activeProvider === 'codex'
-            ? workspace.llmSettings?.CODEX_MODEL
-            : null;
+  const currentProviderModel = resolveCurrentProviderModel(workspace);
   const composerModelOptions = useMemo(() => {
     const endpoints = workspace.llmSettings?.providerEndpoints || [];
     const options = endpoints
@@ -413,8 +312,11 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     );
   };
   const handleOpenBlueprintArtifact = useCallback(async () => {
+    const sessionId = workspaceRef.current.activeSession?.id;
+    if (!sessionId) return;
     if (isBlueprintArtifactOpen) {
       setArtifactFocus({ type: 'closed' });
+      props.onNavigate({ kind: 'session', sessionId, artifact: null });
       return;
     }
     const current = workspaceRef.current;
@@ -424,12 +326,23 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     if (existing) {
       setClearedArtifactContextId(null);
       setArtifactFocus({ type: 'artifact', artifact: existing });
+      props.onNavigate({
+        kind: 'session',
+        sessionId,
+        artifact:
+          existing.kind === 'plan_mode_workspace'
+            ? { kind: 'plan_mode_workspace', tab: 'status' }
+            : { kind: 'artifact_ref', artifactId: existing.id },
+      });
       return;
     }
-  }, [isBlueprintArtifactOpen]);
+  }, [isBlueprintArtifactOpen, props.onNavigate]);
   const handleOpenReviewArtifact = useCallback(async () => {
+    const sessionId = workspaceRef.current.activeSession?.id;
+    if (!sessionId) return;
     if (isReviewArtifactOpen) {
       setArtifactFocus({ type: 'closed' });
+      props.onNavigate({ kind: 'session', sessionId, artifact: null });
       return;
     }
     const current = workspaceRef.current;
@@ -452,49 +365,42 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       };
     }
     if (!artifact) return;
-    setShowOverviewScreen(false);
-    setShowQueueScreen(false);
-    setProjectQueueProjectId(null);
-    setProjectDetailProjectId(null);
-    props.onCloseSettings();
     setClearedArtifactContextId(null);
     setArtifactFocus({ type: 'artifact', artifact });
-  }, [isReviewArtifactOpen, props.onCloseSettings]);
-  const focusTodoArtifact = useCallback(() => {
-    setShowOverviewScreen(false);
-    setShowQueueScreen(false);
-    setProjectQueueProjectId(null);
-    setProjectDetailProjectId(null);
-    props.onCloseSettings();
-    setClearedArtifactContextId(null);
-    setArtifactFocus({ type: 'todo' });
-  }, [props.onCloseSettings]);
+    props.onNavigate({ kind: 'session', sessionId, artifact: { kind: 'review_status' } });
+  }, [isReviewArtifactOpen, props.onNavigate]);
+  const focusTodoArtifact = useCallback(
+    (sessionId: string) => {
+      setClearedArtifactContextId(null);
+      setArtifactFocus({ type: 'todo' });
+      props.onNavigate({ kind: 'session', sessionId, artifact: { kind: 'todo' } });
+    },
+    [props.onNavigate]
+  );
   const handleOpenTodoArtifact = useCallback(() => {
-    if (!workspaceRef.current.activeSession) return;
+    const sessionId = workspaceRef.current.activeSession?.id;
+    if (!sessionId) return;
     if (artifactFocus.type === 'todo') {
       setArtifactFocus({ type: 'closed' });
+      props.onNavigate({ kind: 'session', sessionId, artifact: null });
       return;
     }
-    focusTodoArtifact();
-  }, [artifactFocus.type, focusTodoArtifact]);
+    focusTodoArtifact(sessionId);
+  }, [artifactFocus.type, focusTodoArtifact, props.onNavigate]);
   const startSessionAndFocusTodo = useCallback(
     async (sessionId: string) => {
       const current = workspaceRef.current;
       const targetSession =
         current.sessions.find((session) => session.id === sessionId) || current.activeSession;
       if (isImplementationLockedStatus(targetSession?.status)) return;
-      setShowOverviewScreen(false);
-      setShowQueueScreen(false);
-      setProjectQueueProjectId(null);
-      setProjectDetailProjectId(null);
-      props.onCloseSettings();
       current.setActiveSessionId(sessionId);
       setClearedArtifactContextId(null);
       setArtifactFocus({ type: 'todo' });
+      props.onNavigate({ kind: 'session', sessionId, artifact: { kind: 'todo' } });
       await current.startRun(sessionId);
       setArtifactFocus({ type: 'todo' });
     },
-    [props.onCloseSettings]
+    [props.onNavigate]
   );
   const queueSessionAndFocusTodo = useCallback(
     async (sessionId: string) => {
@@ -502,18 +408,14 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       const targetSession =
         current.sessions.find((session) => session.id === sessionId) || current.activeSession;
       if (isImplementationLockedStatus(targetSession?.status)) return;
-      setShowOverviewScreen(false);
-      setShowQueueScreen(false);
-      setProjectQueueProjectId(null);
-      setProjectDetailProjectId(null);
-      props.onCloseSettings();
       current.setActiveSessionId(sessionId);
       setClearedArtifactContextId(null);
       setArtifactFocus({ type: 'todo' });
+      props.onNavigate({ kind: 'session', sessionId, artifact: { kind: 'todo' } });
       await createImplementationQueueEntryWithMissionApproval(sessionId);
       setArtifactFocus({ type: 'todo' });
     },
-    [createImplementationQueueEntryWithMissionApproval, props.onCloseSettings]
+    [createImplementationQueueEntryWithMissionApproval, props.onNavigate]
   );
   const queueActiveSessionAndFocusTodo = useCallback(async () => {
     const sessionId = workspaceRef.current.activeSession?.id;
@@ -527,26 +429,42 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     if (!sessionId) return;
     await createImplementationQueueEntryWithMissionApproval(sessionId);
   }, [createImplementationQueueEntryWithMissionApproval]);
-  const handleSelectSession = useCallback((sessionId: string | null) => {
-    setArtifactFocus({ type: 'closed' });
-    setShowQueueScreen(false);
-    setShowOverviewScreen(false);
-    setProjectQueueProjectId(null);
-    setProjectDetailProjectId(null);
-    workspaceRef.current.setActiveSessionId(sessionId);
-  }, []);
-  const handleCreateSession = useCallback((repositoryId: string) => {
-    void workspaceRef.current.createSession({
-      repositoryId,
-      title: 'New Session',
-      description: '',
-      objective: '',
-      acceptanceCriteria: '',
-    });
-  }, []);
-  const handleDeleteProject = useCallback((projectId: string) => {
-    workspaceRef.current.deleteProject(projectId);
-  }, []);
+  const handleSelectSession = useCallback(
+    (sessionId: string | null) => {
+      setArtifactFocus({ type: 'closed' });
+      workspaceRef.current.setActiveSessionId(sessionId);
+      props.onNavigate(
+        sessionId ? { kind: 'session', sessionId, artifact: null } : buildOverviewRoute()
+      );
+    },
+    [props.onNavigate]
+  );
+  const handleCreateSession = useCallback(
+    async (repositoryId: string) => {
+      const session = await workspaceRef.current.createSession({
+        repositoryId,
+        title: 'New Session',
+        description: '',
+        objective: '',
+        acceptanceCriteria: '',
+      });
+      workspaceRef.current.setActiveSessionId(session.id);
+      props.onNavigate({ kind: 'session', sessionId: session.id, artifact: null });
+    },
+    [props.onNavigate]
+  );
+  const handleDeleteProject = useCallback(
+    (projectId: string) => {
+      workspaceRef.current.deleteProject(projectId);
+      if (
+        (routeState.kind === 'project_queue' || routeState.kind === 'project_detail') &&
+        routeState.projectId === projectId
+      ) {
+        props.onNavigate(buildOverviewRoute());
+      }
+    },
+    [props.onNavigate, routeState]
+  );
   const handleToggleProject = useCallback(
     (projectId: string) =>
       workspaceRef.current.setExpandedProjects((prev) => ({
@@ -561,33 +479,21 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   }, [props.onOpenFolderBrowser, selectedPath]);
   const handleOpenOverview = useCallback(() => {
     setArtifactFocus({ type: 'closed' });
-    setShowQueueScreen(false);
-    setProjectQueueProjectId(null);
-    setProjectDetailProjectId(null);
-    setShowOverviewScreen(true);
-    props.onCloseSettings();
-  }, [props.onCloseSettings]);
+    props.onNavigate(buildOverviewRoute());
+  }, [props.onNavigate]);
   const handleOpenProjectQueue = useCallback(
     (projectId: string) => {
       setArtifactFocus({ type: 'closed' });
-      setShowQueueScreen(false);
-      setShowOverviewScreen(false);
-      setProjectQueueProjectId(projectId);
-      setProjectDetailProjectId(null);
-      props.onCloseSettings();
+      props.onNavigate({ kind: 'project_queue', projectId, view: 'board' });
     },
-    [props.onCloseSettings]
+    [props.onNavigate]
   );
   const handleOpenProjectDetail = useCallback(
     (projectId: string) => {
       setArtifactFocus({ type: 'closed' });
-      setShowQueueScreen(false);
-      setShowOverviewScreen(false);
-      setProjectQueueProjectId(null);
-      setProjectDetailProjectId(projectId);
-      props.onCloseSettings();
+      props.onNavigate({ kind: 'project_detail', projectId, tab: 'overview' });
     },
-    [props.onCloseSettings]
+    [props.onNavigate]
   );
   const handleProjectEvaluationTasksCreated = useCallback(
     async (tasks: Task[]) => {
@@ -603,14 +509,10 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       if (!firstTask) return;
       await workspaceRef.current.refreshProjectList();
       setArtifactFocus({ type: 'closed' });
-      setShowQueueScreen(false);
-      setShowOverviewScreen(false);
-      setProjectQueueProjectId(null);
-      setProjectDetailProjectId(null);
-      props.onCloseSettings();
       workspaceRef.current.setActiveSessionId(firstTask.id);
+      props.onNavigate({ kind: 'session', sessionId: firstTask.id, artifact: null });
     },
-    [props.onCloseSettings]
+    [props.onNavigate]
   );
 
   const waitForQuestionnaireWorkspaceReady = useCallback(async (message: TaskMessage) => {
@@ -638,19 +540,21 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         const ready = await waitForQuestionnaireWorkspaceReady(message);
         if (!ready) return;
         openedQuestionnaireMessageIdsRef.current.add(message.id);
-        setShowOverviewScreen(false);
-        setProjectDetailProjectId(null);
-        props.onCloseSettings();
         setClearedArtifactContextId(null);
         setArtifactFocus({
           type: 'artifact',
           artifact: buildPlanModeWorkspaceArtifactRef(message, initialTab),
         });
+        props.onNavigate({
+          kind: 'session',
+          sessionId: message.taskId,
+          artifact: { kind: 'plan_mode_workspace', tab: initialTab },
+        });
       } finally {
         openingQuestionnaireMessageIdsRef.current.delete(message.id);
       }
     },
-    [props.onCloseSettings, waitForQuestionnaireWorkspaceReady]
+    [props.onNavigate, waitForQuestionnaireWorkspaceReady]
   );
 
   useEffect(() => {
@@ -736,21 +640,56 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
           defaultSize={`${initialPanelSizes.current[1]}%`}
           minSize="58%"
         >
-          {props.showSettings ? (
+          {showSettings ? (
             <SettingsScreen
               activeProject={workspace.activeProject}
-              onClose={props.onCloseSettings}
+              activeSection={routeState.kind === 'settings' ? routeState.section : 'general'}
+              onSectionChange={(section) => props.onNavigate({ kind: 'settings', section })}
+              onClose={() => props.onNavigate(buildOverviewRoute())}
             />
-          ) : showOverviewScreen ? (
+          ) : isOverviewActive ? (
             <OverviewScreen
               projects={workspace.projects}
-              initialProjectFilterId={null}
+              range={routeState.kind === 'overview' ? routeState.range : '30d'}
+              projectFilterId={routeState.kind === 'overview' ? routeState.projectId : null}
+              onRangeChange={(range) =>
+                props.onNavigate({
+                  kind: 'overview',
+                  range,
+                  projectId: routeState.kind === 'overview' ? routeState.projectId : null,
+                })
+              }
+              onProjectFilterChange={(projectId) =>
+                props.onNavigate({
+                  kind: 'overview',
+                  range: routeState.kind === 'overview' ? routeState.range : '30d',
+                  projectId,
+                })
+              }
               onOpenSession={(sessionId) => handleSelectSession(sessionId)}
+            />
+          ) : missingProjectRoute ? (
+            <NightWorkersRouteNotFoundScreen
+              title="Project not found"
+              detail={
+                routeState.kind === 'project_queue' || routeState.kind === 'project_detail'
+                  ? routeState.projectId
+                  : ''
+              }
+              onOpenOverview={handleOpenOverview}
             />
           ) : projectQueueProject ? (
             <ProjectQueueScreen
               implementationQueue={queueState.implementationQueue}
               isLoading={queueState.isImplementationQueueLoading || workspace.isSessionsLoading}
+              viewMode={routeState.kind === 'project_queue' ? routeState.view : 'board'}
+              onViewModeChange={(view) =>
+                props.onNavigate({
+                  kind: 'project_queue',
+                  projectId: projectQueueProject.id,
+                  view,
+                })
+              }
               onOpenSession={(sessionId) => handleSelectSession(sessionId)}
               onQueueSession={createImplementationQueueEntryWithMissionApproval}
               onRequeueEntry={queueState.requeueImplementationQueueEntry}
@@ -763,6 +702,14 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
             <ProjectDetailScreen
               project={projectDetailProject}
               sessionViews={projectDetailSessionViews}
+              activeTab={routeState.kind === 'project_detail' ? routeState.tab : 'overview'}
+              onActiveTabChange={(tab) =>
+                props.onNavigate({
+                  kind: 'project_detail',
+                  projectId: projectDetailProject.id,
+                  tab,
+                })
+              }
               onOpenSession={(sessionId) => handleSelectSession(sessionId)}
               onEvaluationTasksCreated={handleProjectEvaluationTasksCreated}
             />
@@ -776,225 +723,73 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
                 queueState.isImplementationQueueLoading ||
                 queueState.isImplementationQueueHealthLoading
               }
-              onSetProjectFilter={setQueueProjectFilterId}
+              onSetProjectFilter={(projectId) =>
+                props.onNavigate({ kind: 'global_queue', projectId })
+              }
               onOpenSession={(sessionId) => handleSelectSession(sessionId)}
               onQueueSession={queueSessionAndFocusTodo}
               onArchiveEntry={queueState.archiveImplementationQueueEntry}
               onRecoverEntry={queueState.recoverImplementationQueueEntry}
               onUpdateProcessorCount={queueState.updateImplementationQueueProcessorCount}
             />
+          ) : missingSessionRoute ? (
+            <NightWorkersRouteNotFoundScreen
+              title="Session not found"
+              detail={routeState.kind === 'session' ? routeState.sessionId : ''}
+              onOpenOverview={handleOpenOverview}
+            />
           ) : (
-            <ThreadWorkspace
-              activeSession={workspace.activeSession}
-              sessionView={workspace.activeSessionView}
-              activeProject={workspace.activeProject}
-              runs={workspace.activeSessionRuns}
-              latestRun={workspace.latestRun}
-              taskMessages={workspace.taskMessages}
-              latestRunEvents={workspace.latestRunEvents}
-              llmUsageSummary={workspace.llmUsageSummary}
-              activityEvents={workspace.activityEvents}
-              activityArtifacts={workspace.activityArtifacts}
-              backgroundProcesses={workspace.backgroundProcesses}
-              activeStreamingResponse={workspace.activeStreamingResponse}
-              artifactRefs={workspace.activeArtifactRefs}
-              activeArtifactContext={selectedArtifactContext}
-              isAgentWorking={workspace.isAgentWorking}
-              isAgentThinking={workspace.isAgentThinking}
-              realtimeStatus={workspace.realtimeStatus}
+            <NightWorkersShellThreadPanel
+              workspace={workspace}
+              queueState={queueState}
+              routeState={routeState}
+              onNavigate={props.onNavigate}
+              workspaceRef={workspaceRef}
               model={model}
               modelOptions={composerModelOptions}
               thinkingDepth={thinkingDepth}
+              thinkingDepthOptions={composerThinkingDepthOptions}
               onModelChange={handleComposerModelChange}
               onThinkingDepthChange={handleComposerThinkingDepthChange}
-              thinkingDepthOptions={composerThinkingDepthOptions}
-              onSubmitInitialPrompt={submitPrompt}
-              onSubmitWorkbenchMessage={async (prompt, intent) => {
-                if (workspace.activeSession) {
-                  const existingQuestionnaireMessageIds = designQuestionnaireMessageIds(
-                    workspace.taskMessages
-                  );
-                  const result = await workspace.sendWorkbenchMessage(
-                    workspace.activeSession.id,
-                    prompt,
-                    intent,
-                    selectedArtifactContext,
-                    buildComposerLlmSelection()
-                  );
-                  if (!result?.run) {
-                    const latestQuestionnaireMessage = [...(result?.messages || [])]
-                      .reverse()
-                      .find(
-                        (message) =>
-                          !existingQuestionnaireMessageIds.has(message.id) &&
-                          isDesignQuestionnaireReadyMessage(message)
-                      );
-                    if (latestQuestionnaireMessage) {
-                      void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'questionnaire');
-                    }
-                  }
-                  return;
-                }
-                await submitPrompt(prompt, intent);
-              }}
-              canStopActiveRun={workspace.isChatSubmitting || canStopLatestRun}
-              onStopActiveRun={async () => {
-                if (canStopLatestRun && workspace.latestRun?.id) {
-                  await workspace.stopRun(workspace.latestRun.id);
-                  return;
-                }
-                await workspace.cancelChatSubmit();
-              }}
-              onStopBackgroundProcess={workspace.stopBackgroundProcess}
-              onOpenBlueprintArtifact={handleOpenBlueprintArtifact}
-              isBlueprintArtifactOpen={isBlueprintArtifactOpen}
-              isBlueprintActionBusy={workspace.isChatSubmitting}
-              onOpenReviewArtifact={handleOpenReviewArtifact}
-              isReviewArtifactOpen={isReviewArtifactOpen}
-              hasReviewArtifact={Boolean(workspace.activeReviewSession)}
-              isReviewActionBusy={workspace.isChatSubmitting}
-              onOpenTodoArtifact={handleOpenTodoArtifact}
+              onSubmitPrompt={submitPrompt}
+              buildComposerLlmSelection={buildComposerLlmSelection}
+              openQuestionnaireWorkspace={openQuestionnaireWorkspace}
+              selectedArtifactContext={selectedArtifactContext}
+              selectedArtifact={selectedArtifact}
+              artifactFocus={artifactFocus}
+              setArtifactFocus={setArtifactFocus}
+              setClearedArtifactContextId={setClearedArtifactContextId}
+              artifactPaneOpen={artifactPaneOpen}
               isTodoArtifactOpen={isTodoArtifactOpen}
               hasTodoArtifact={hasTodoArtifact}
-              onDeleteSession={() => {
-                if (!workspace.activeSession) return;
-                workspace.deleteSession(workspace.activeSession.id);
-              }}
-              onQueueSession={async () => {
-                const sessionId = workspaceRef.current.activeSession?.id;
-                if (!sessionId) return;
-                await startSessionAndFocusTodo(sessionId);
-              }}
-              onRemoveQueueEntry={() => {
-                const entryId = workspace.activeSessionView?.queueEntry?.id;
-                if (!entryId) return;
-                void queueState.removeImplementationQueueEntry(entryId);
-              }}
-              onRequeueQueueEntry={(note) => {
-                const entryId = workspace.activeSessionView?.queueEntry?.id;
-                if (!entryId) return;
-                void queueState.requeueImplementationQueueEntry(entryId, note);
-              }}
-              onOpenArtifact={(artifact) => {
-                setClearedArtifactContextId(null);
-                setArtifactFocus({ type: 'artifact', artifact });
-              }}
-              onClearArtifactContext={() => {
-                if (selectedArtifact) setClearedArtifactContextId(selectedArtifact.id);
-              }}
-              isProjectFilesOpen={artifactFocus.type === 'project_tree'}
-              onOpenProjectFiles={() => {
-                if (artifactFocus.type === 'project_tree') {
-                  setArtifactFocus({ type: 'closed' });
-                  return;
-                }
-                setClearedArtifactContextId(null);
-                setArtifactFocus({ type: 'project_tree' });
-              }}
-              onGrantExternalPath={async (externalPath) => {
-                const project = workspace.activeProject;
-                if (!project) return;
-                const currentPolicy = asProjectSafetyPolicy(project.safetyPolicy);
-                const externalAllowedPaths = Array.from(
-                  new Set([...(currentPolicy.externalAllowedPaths || []), externalPath])
-                );
-                await workspace.updateProject(project.id, {
-                  safetyPolicy: {
-                    ...currentPolicy,
-                    externalAllowedPaths,
-                  },
-                });
-              }}
-              splitPanel={
-                isTodoArtifactOpen ? (
-                  <TodoListPane todos={workspace.latestRunTodos} />
-                ) : artifactPaneOpen ? (
-                  <ArtifactPane
-                    activeProject={workspace.activeProject}
-                    activeSessionId={workspace.activeSessionId}
-                    focusType={artifactFocus.type === 'project_tree' ? 'project_tree' : 'artifact'}
-                    selectedArtifact={selectedArtifact}
-                    taskMessages={workspace.taskMessages}
-                    activityArtifacts={workspace.activityArtifacts}
-                    latestRun={workspace.latestRun}
-                    fileEntries={workspace.projectFileEntries}
-                    fileEntriesByDirectory={workspace.projectFileEntriesByDirectory}
-                    expandedDirectories={workspace.expandedProjectDirectories}
-                    loadingDirectories={workspace.loadingProjectDirectories}
-                    selectedFile={workspace.selectedProjectFile}
-                    selectedFilePath={workspace.selectedProjectFilePath}
-                    isFilesLoading={workspace.isProjectFilesLoading}
-                    isFileLoading={workspace.isProjectFileLoading}
-                    projectDiff={workspace.projectDiff}
-                    isDiffLoading={workspace.isProjectDiffLoading}
-                    onToggleDirectory={workspace.toggleProjectDirectory}
-                    onOpenFile={(path) => {
-                      setArtifactFocus({ type: 'project_tree' });
-                      workspace.openProjectFile(path);
-                    }}
-                    onRefreshFiles={workspace.refreshProjectFiles}
-                    onRefreshDiff={workspace.refreshProjectDiff}
-                    onQueueSession={async () => {
-                      await queueActiveSessionAndFocusTodo();
-                    }}
-                    onAddToQueue={addActiveSessionToQueue}
-                    activeReviewSession={workspace.activeReviewSession}
-                    onRunReviewSection={workspace.runReviewSection}
-                    onUpdateReviewFindingDisposition={workspace.updateReviewFindingDisposition}
-                    onCreateReviewProposedGoals={workspace.createReviewProposedGoals}
-                    onUpdateReviewProposedGoal={workspace.updateReviewProposedGoal}
-                    onMaterializeReviewProposedGoal={workspace.materializeReviewProposedGoal}
-                    onCreateReviewKnowledgeCandidate={workspace.createReviewKnowledgeCandidate}
-                    onUpdateReviewKnowledgeCandidate={workspace.updateReviewKnowledgeCandidate}
-                    onSendReviewKnowledgeCandidate={workspace.sendReviewKnowledgeCandidate}
-                    onApplyReviewFinalAction={workspace.applyReviewFinalAction}
-                    isImplementationLocked={isActiveImplementationLocked}
-                  />
-                ) : undefined
-              }
+              canStopLatestRun={canStopLatestRun}
+              onOpenBlueprintArtifact={handleOpenBlueprintArtifact}
+              isBlueprintArtifactOpen={isBlueprintArtifactOpen}
+              onOpenReviewArtifact={handleOpenReviewArtifact}
+              isReviewArtifactOpen={isReviewArtifactOpen}
+              onOpenTodoArtifact={handleOpenTodoArtifact}
+              startSessionAndFocusTodo={startSessionAndFocusTodo}
+              queueActiveSessionAndFocusTodo={queueActiveSessionAndFocusTodo}
+              addActiveSessionToQueue={addActiveSessionToQueue}
+              isActiveImplementationLocked={isActiveImplementationLocked}
             />
           )}
         </Panel>
       </Group>
-      {!props.showSettings ? (
+      {!showSettings ? (
         <>
-          <SettingsButton onClick={props.onOpenSettings} />
+          <SettingsButton
+            onClick={() => props.onNavigate({ kind: 'settings', section: 'general' })}
+          />
           <BlueprintShowcaseButton />
         </>
       ) : null}
-      <FolderBrowserDialog
+      <NightWorkersFolderBrowser
         open={props.showFolderBrowser}
-        currentPath={workspace.currentBrowserPath}
-        parentPath={workspace.browserParentPath}
-        directories={workspace.browserDirectories}
+        workspace={workspace}
         selectedPath={selectedPath}
-        isLoading={workspace.isBrowserLoading}
+        setSelectedPath={setSelectedPath}
         onClose={props.onCloseFolderBrowser}
-        onNavigate={(path) => {
-          setSelectedPath(path);
-          void workspace.fetchDirectories(path);
-        }}
-        onSelectPath={(path) => {
-          setSelectedPath(path);
-        }}
-        onCreateFolder={async (name) => {
-          const parentPath = workspace.currentBrowserPath || undefined;
-          const folder = await workspace.createFolder({ parentPath, name });
-          await workspace.fetchDirectories(parentPath);
-          setSelectedPath(folder.path);
-        }}
-        onConfirmSelection={() => {
-          const selected = selectedPath || workspace.currentBrowserPath;
-          if (!selected) return;
-          const cleanPath = selected.replace(/[\\/]+$/, '');
-          const folderName = cleanPath.split(/[\\/]/).filter(Boolean).at(-1) || 'Project';
-          workspace.createProject({
-            name: folderName,
-            localPath: selected,
-          });
-          setSelectedPath('');
-          props.onCloseFolderBrowser();
-        }}
       />
     </div>
   );

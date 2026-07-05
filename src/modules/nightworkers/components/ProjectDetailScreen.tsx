@@ -35,9 +35,10 @@ import { coverageRowsFromSummary } from '../qualityRows';
 import type { Task } from '../types';
 import { emptyMetrics, readJsonResponse } from './project-detail/data';
 import {
+  buildExpandedTaskGenerationState,
   buildTaskGenerationTreeRows,
   buildUnifiedTaskCandidates,
-  unassignedGoalId,
+  pruneExpandedTaskGenerationState,
 } from './project-detail/mission-model';
 import {
   GoalDetailModal,
@@ -61,7 +62,6 @@ import type {
   GoalDraft,
   ModelUsageRow,
   ProjectDetailScreenProps,
-  ProjectDetailTab,
   TopTokenTaskRow,
   UnifiedTaskCandidate,
 } from './project-detail/types';
@@ -69,6 +69,7 @@ import { projectDetailTabs } from './project-detail/types';
 
 export {
   applyMissionGoalTemplate,
+  buildExpandedTaskGenerationState,
   buildTaskGenerationTreeRows,
   buildUnifiedTaskCandidates,
   toggleMissionGoalTemplate,
@@ -83,11 +84,12 @@ export {
 export function ProjectDetailScreen({
   project,
   sessionViews,
+  activeTab,
+  onActiveTabChange,
   onOpenSession,
   onEvaluationTasksCreated,
 }: ProjectDetailScreenProps) {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<ProjectDetailTab>('overview');
   const [metrics, setMetrics] = useState<ProjectDetailMetrics>(emptyMetrics);
   const [goals, setGoals] = useState<MissionGoal[]>([]);
   const [missions, setMissions] = useState<Mission[]>([]);
@@ -101,7 +103,7 @@ export function ProjectDetailScreen({
     missionIds: new Set(),
   });
   const [detailModal, setDetailModal] = useState<DetailModalState>(null);
-  const [hasInitializedExpansion, setHasInitializedExpansion] = useState(false);
+  const [expansionPreference, setExpansionPreference] = useState<'all' | 'custom'>('all');
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string>('');
   const totalRuns = metrics.runs.total || sessionViews.length;
@@ -174,6 +176,15 @@ export function ProjectDetailScreen({
     () => e2eRowsFromSummary(quality?.latestE2eResultRun?.e2eSummary),
     [quality?.latestE2eResultRun?.e2eSummary]
   );
+  const allExpandedRows = useMemo(
+    () =>
+      buildExpandedTaskGenerationState({
+        goals,
+        missions,
+        candidates: unifiedTaskCandidates,
+      }),
+    [goals, missions, unifiedTaskCandidates]
+  );
 
   const loadProjectDetail = useCallback(async () => {
     const [metricsRes, goalsRes, missionsRes, candidatesRes, proposalsRes, qualityRes] =
@@ -196,6 +207,8 @@ export function ProjectDetailScreen({
   useEffect(() => {
     let cancelled = false;
     setMessage('');
+    setExpansionPreference('all');
+    setExpandedRows({ goalIds: new Set(), missionIds: new Set() });
     loadProjectDetail().catch((error) => {
       if (!cancelled) setMessage(error instanceof Error ? error.message : String(error));
     });
@@ -205,41 +218,15 @@ export function ProjectDetailScreen({
   }, [loadProjectDetail]);
 
   useEffect(() => {
-    const goalIds = new Set(goals.map((goal) => goal.id));
-    const missionIds = new Set(missions.map((mission) => mission.id));
-    setExpandedRows((current) => ({
-      goalIds: new Set(
-        [...current.goalIds].filter((id) => id === unassignedGoalId || goalIds.has(id))
-      ),
-      missionIds: new Set([...current.missionIds].filter((id) => missionIds.has(id))),
-    }));
+    setExpandedRows((current) =>
+      expansionPreference === 'all'
+        ? allExpandedRows
+        : pruneExpandedTaskGenerationState({ expanded: current, goals, missions })
+    );
     setSelectedCandidateIds((current) =>
       current.filter((id) => unifiedTaskCandidates.some((candidate) => candidate.id === id))
     );
-  }, [goals, missions, unifiedTaskCandidates]);
-
-  useEffect(() => {
-    if (hasInitializedExpansion) return;
-    if (goals.length === 0 && missions.length === 0 && unifiedTaskCandidates.length === 0) return;
-    const goalIdsWithChildren = new Set<string>();
-    for (const goal of goals) {
-      const hasChildren =
-        missions.some((mission) => mission.sourceGoalIds[0] === goal.id) ||
-        unifiedTaskCandidates.some(
-          (candidate) => !candidate.missionId && candidate.goalId === goal.id
-        );
-      if (goal.active && hasChildren) goalIdsWithChildren.add(goal.id);
-    }
-    const hasUnassigned =
-      missions.some((mission) => mission.sourceGoalIds.length === 0) ||
-      unifiedTaskCandidates.some((candidate) => !candidate.missionId && !candidate.goalId);
-    if (hasUnassigned) goalIdsWithChildren.add(unassignedGoalId);
-    setExpandedRows((current) => ({
-      ...current,
-      goalIds: goalIdsWithChildren.size > 0 ? goalIdsWithChildren : current.goalIds,
-    }));
-    setHasInitializedExpansion(true);
-  }, [goals, hasInitializedExpansion, missions, unifiedTaskCandidates]);
+  }, [allExpandedRows, expansionPreference, goals, missions, unifiedTaskCandidates]);
 
   useEffect(() => {
     if (!detailModal) return;
@@ -340,21 +327,35 @@ export function ProjectDetailScreen({
       }
     });
 
-  const toggleExpandedGoal = (goalId: string) =>
+  const toggleExpandedGoal = (goalId: string) => {
+    setExpansionPreference('custom');
     setExpandedRows((current) => {
       const goalIds = new Set(current.goalIds);
       if (goalIds.has(goalId)) goalIds.delete(goalId);
       else goalIds.add(goalId);
       return { ...current, goalIds };
     });
+  };
 
-  const toggleExpandedMission = (missionId: string) =>
+  const toggleExpandedMission = (missionId: string) => {
+    setExpansionPreference('custom');
     setExpandedRows((current) => {
       const missionIds = new Set(current.missionIds);
       if (missionIds.has(missionId)) missionIds.delete(missionId);
       else missionIds.add(missionId);
       return { ...current, missionIds };
     });
+  };
+
+  const expandAllTaskGenerationRows = () => {
+    setExpansionPreference('all');
+    setExpandedRows(allExpandedRows);
+  };
+
+  const collapseAllTaskGenerationRows = () => {
+    setExpansionPreference('custom');
+    setExpandedRows({ goalIds: new Set(), missionIds: new Set() });
+  };
 
   const detailGoal =
     detailModal?.kind === 'goal' ? goals.find((goal) => goal.id === detailModal.id) : null;
@@ -375,7 +376,7 @@ export function ProjectDetailScreen({
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => onActiveTabChange(tab.id)}
               className="h-8 border px-3 font-medium"
               style={
                 tab.id === activeTab
@@ -439,6 +440,8 @@ export function ProjectDetailScreen({
                   await readJsonResponse(await generateMissionCandidatesFromGoals(project.id));
                 })
               }
+              onExpandAll={expandAllTaskGenerationRows}
+              onCollapseAll={collapseAllTaskGenerationRows}
               onToggleGoal={toggleExpandedGoal}
               onToggleMission={toggleExpandedMission}
               onToggleSelected={(candidateId) =>

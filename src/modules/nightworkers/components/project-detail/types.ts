@@ -8,6 +8,8 @@ import type { Repository, Task, WorkbenchSessionView } from '../../types';
 export type ProjectDetailScreenProps = {
   project: Repository;
   sessionViews: WorkbenchSessionView[];
+  activeTab: ProjectDetailTab;
+  onActiveTabChange: (tab: ProjectDetailTab) => void;
   onOpenSession: (sessionId: string) => void;
   onEvaluationTasksCreated?: (tasks: Task[]) => Promise<void> | void;
 };

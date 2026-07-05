@@ -79,7 +79,12 @@ describe('CodexAgentRuntime event mapping and catalog contracts', () => {
   });
 
   it('keeps emitted Codex contract warning codes documented in the read-only catalog', async () => {
-    const source = await readFile('api/services/agent-runtime/CodexAgentRuntime.ts', 'utf8');
+    const source = (
+      await Promise.all([
+        readFile('api/services/agent-runtime/CodexAgentRuntime.ts', 'utf8'),
+        readFile('api/services/agent-runtime/codex-runtime-audit.ts', 'utf8'),
+      ])
+    ).join('\n');
     const emittedCodes = [...source.matchAll(/code: '(codex_[^']+)'/g)].map((match) => match[1]);
 
     expect(new Set(emittedCodes)).toEqual(new Set(Object.keys(CODEX_CONTRACT_WARNING_CATALOG)));

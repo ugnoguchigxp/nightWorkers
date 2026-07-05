@@ -249,6 +249,58 @@ export function buildTaskGenerationTreeRows({
   return rows;
 }
 
+export function buildExpandedTaskGenerationState({
+  goals,
+  missions,
+  candidates,
+}: {
+  goals: MissionGoal[];
+  missions: Mission[];
+  candidates: UnifiedTaskCandidate[];
+}): ExpandedState {
+  const goalIds = new Set<string>();
+  const missionIds = new Set<string>();
+
+  for (const goal of goals) {
+    const hasChildren =
+      missions.some((mission) => mission.sourceGoalIds[0] === goal.id) ||
+      candidates.some((candidate) => !candidate.missionId && candidate.goalId === goal.id);
+    if (hasChildren) goalIds.add(goal.id);
+  }
+
+  const hasUnassigned =
+    missions.some((mission) => mission.sourceGoalIds.length === 0) ||
+    candidates.some((candidate) => !candidate.missionId && !candidate.goalId);
+  if (hasUnassigned) goalIds.add(unassignedGoalId);
+
+  for (const mission of missions) {
+    if (candidates.some((candidate) => candidate.missionId === mission.id)) {
+      missionIds.add(mission.id);
+    }
+  }
+
+  return { goalIds, missionIds };
+}
+
+export function pruneExpandedTaskGenerationState({
+  expanded,
+  goals,
+  missions,
+}: {
+  expanded: ExpandedState;
+  goals: MissionGoal[];
+  missions: Mission[];
+}): ExpandedState {
+  const goalIds = new Set(goals.map((goal) => goal.id));
+  const missionIds = new Set(missions.map((mission) => mission.id));
+  return {
+    goalIds: new Set(
+      [...expanded.goalIds].filter((id) => id === unassignedGoalId || goalIds.has(id))
+    ),
+    missionIds: new Set([...expanded.missionIds].filter((id) => missionIds.has(id))),
+  };
+}
+
 export function applyMissionGoalTemplate(
   draft: GoalDraft,
   template: MissionGoalTemplate

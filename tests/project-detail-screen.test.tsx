@@ -8,6 +8,7 @@ import type { ProjectStackProfile } from '../shared/schemas/project-detail.schem
 import '../src/i18n/setup';
 import {
   applyMissionGoalTemplate,
+  buildExpandedTaskGenerationState,
   buildTaskGenerationTreeRows,
   buildUnifiedTaskCandidates,
   coverageAxesFromQualityRun,
@@ -186,6 +187,18 @@ describe('TaskGenerationTreeTable', () => {
     ]);
   });
 
+  it('builds all-expanded state for task candidate tree parents', () => {
+    const unified = buildUnifiedTaskCandidates([candidate], [proposal]);
+    const expanded = buildExpandedTaskGenerationState({
+      goals: [goal],
+      missions: [mission],
+      candidates: unified,
+    });
+
+    expect([...expanded.goalIds]).toEqual([goal.id]);
+    expect([...expanded.missionIds]).toEqual([mission.id]);
+  });
+
   it('renders the tree table without a Goal / Signal column', () => {
     const unified = buildUnifiedTaskCandidates([candidate], [proposal]);
     const rows = buildTaskGenerationTreeRows({
@@ -207,6 +220,8 @@ describe('TaskGenerationTreeTable', () => {
         onCreateSelected={noop}
         onGenerateTaskCandidates={noop}
         onGenerateMissionCandidates={noop}
+        onExpandAll={noop}
+        onCollapseAll={noop}
         onToggleGoal={noop}
         onToggleMission={noop}
         onToggleSelected={noop}
@@ -232,6 +247,8 @@ describe('TaskGenerationTreeTable', () => {
     expect(markup).not.toContain('ゴール / シグナル');
     expect(markup.match(/type="checkbox"/g)).toHaveLength(2);
     expect(markup).toContain('aria-label="タスク化"');
+    expect(markup).toContain('aria-label="全部閉じる"');
+    expect(markup).toContain('aria-label="全展開"');
     expect(markup).toContain('aria-label="配下にタスク候補があるため削除できません"');
     expect(markup).toContain('aria-label="候補を削除"');
     expect(markup).toContain('overflow-x-hidden');

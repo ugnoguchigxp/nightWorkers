@@ -59,6 +59,9 @@ type ArtifactPaneProps = {
   isFileLoading: boolean;
   projectDiff: ProjectDiff | null;
   isDiffLoading: boolean;
+  projectArtifactMode?: ProjectArtifactMode;
+  onProjectArtifactModeChange?: (mode: ProjectArtifactMode) => void;
+  onPlanWorkspaceTabChange?: (tab: PlanWorkspaceTab) => void;
   onToggleDirectory: (path: string) => Promise<void>;
   onOpenFile: (path: string) => void;
   onRefreshFiles: () => Promise<void>;
@@ -188,6 +191,9 @@ export function ArtifactPane({
   isFileLoading,
   projectDiff,
   isDiffLoading,
+  projectArtifactMode: controlledProjectArtifactMode,
+  onProjectArtifactModeChange,
+  onPlanWorkspaceTabChange,
   onToggleDirectory,
   onOpenFile,
   onRefreshFiles,
@@ -209,7 +215,13 @@ export function ArtifactPane({
   const { t } = useTranslation();
   const [versionArtifactId, setVersionArtifactId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [projectArtifactMode, setProjectArtifactMode] = useState<ProjectArtifactMode>('tree');
+  const [localProjectArtifactMode, setLocalProjectArtifactMode] =
+    useState<ProjectArtifactMode>('tree');
+  const projectArtifactMode = controlledProjectArtifactMode ?? localProjectArtifactMode;
+  const setProjectArtifactMode = (mode: ProjectArtifactMode) => {
+    if (!controlledProjectArtifactMode) setLocalProjectArtifactMode(mode);
+    onProjectArtifactModeChange?.(mode);
+  };
   const showProjectTree = focusType === 'project_tree';
   const showProjectDiff = showProjectTree && projectArtifactMode === 'diff';
   const artifactVersions = useMemo(
@@ -372,6 +384,7 @@ export function ArtifactPane({
               taskMessages={taskMessages}
               activityArtifacts={activityArtifacts}
               initialTab={workspaceInitialTab(displayArtifact?.metadata?.initialTab)}
+              onTabChange={onPlanWorkspaceTabChange}
               onQueueSession={onQueueSession}
               onAddToQueue={onAddToQueue}
               isImplementationLocked={isImplementationLocked}
