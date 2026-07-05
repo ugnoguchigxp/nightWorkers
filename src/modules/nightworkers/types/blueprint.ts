@@ -130,6 +130,10 @@ export type PlanModeWorkspace = {
     status: DesignQuestionnaireSession['status'];
     answeredCount: number;
     totalQuestionCount: number;
+    unansweredCount?: number;
+    blockingUnansweredCount?: number;
+    nonBlockingUnansweredCount?: number;
+    latestAdditionalQuestionSetId?: string;
     latestReviewId?: string;
   }>;
   decisionReviews: PlanModeWorkspaceArtifact[];

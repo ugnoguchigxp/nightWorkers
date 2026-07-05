@@ -13,6 +13,7 @@ import type {
 } from '../nightworkers/types';
 import {
   fetchDesignQuestionnaireSessions,
+  generateAdditionalDesignQuestionnaireQuestions,
   startDesignQuestionnaire,
   submitDesignQuestionnaireAnswers,
 } from '../questionnaire';
@@ -153,6 +154,7 @@ export function PlanModeWorkspaceViewer({
   const [answers, setAnswers] = useState<Record<string, DesignQuestionnaireAnswer>>({});
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [generalSettings, setGeneralSettings] = useState<GeneralSettings | null>(null);
   const [, setAssemblyReadySessionIds] = useState<Set<string>>(new Set());
   const [generatedMessages, setGeneratedMessages] = useState<TaskMessage[]>([]);
@@ -276,6 +278,12 @@ export function PlanModeWorkspaceViewer({
 
   const activeQuestionnaireSession =
     sessions.find((session) => session.id === activeSessionId) || sessions[0] || null;
+  const activeQuestionnaireSummary =
+    workspace?.questionnaireSessions.find(
+      (session) => session.id === activeQuestionnaireSession?.id
+    ) ||
+    workspace?.questionnaireSessions[0] ||
+    null;
   const questionGroups =
     activeQuestionnaireSession?.questionSets.flatMap(
       (set) => set.questionnaire?.questionSets || []
@@ -306,6 +314,7 @@ export function PlanModeWorkspaceViewer({
   async function runAction(action: string, fn: () => Promise<void>) {
     setBusyAction(action);
     setActionError(null);
+    setActionNotice(null);
     try {
       await fn();
       await refresh();
@@ -371,6 +380,39 @@ export function PlanModeWorkspaceViewer({
     });
   }
 
+  async function requestAdditionalQuestionnaireQuestions() {
+    if (!sessionId) return;
+    if (isImplementationLocked) return;
+    if (!planModeCapabilities.questionnaire) return;
+    await runAction('questionnaire-additional', async () => {
+      const res = await generateAdditionalDesignQuestionnaireQuestions(sessionId, {
+        source: 'user_requested',
+        reason: 'Plan Mode Status からの追加確認',
+        maxQuestions: 5,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const payload = (await res.json()) as {
+        session: DesignQuestionnaireSession | null;
+        result: {
+          addedCount: number;
+          skippedDuplicateCount: number;
+        };
+      };
+      if (payload.session) {
+        setActiveSessionId(payload.session.id);
+        setAnswers(
+          Object.fromEntries(payload.session.answers.map((item) => [item.questionId, item.answer]))
+        );
+      }
+      if (payload.result.addedCount > 0) {
+        setActionNotice(`追加質問を ${payload.result.addedCount} 件作成しました。`);
+        setActiveTab('questionnaire');
+      } else {
+        setActionNotice('追加質問はありません。');
+      }
+    });
+  }
+
   async function generatePlanModeArtifact(
     action: 'blueprint' | 'data-model' | 'feature-plan',
     nextTab: PlanWorkspaceTab
@@ -385,6 +427,20 @@ export function PlanModeWorkspaceViewer({
           : 'feature_plan';
     if (!planModeCapabilities[capability]) return;
     await runAction(action, async () => {
+      let proceedWithUnansweredBlocking = false;
+      if (
+        action === 'feature-plan' &&
+        (activeQuestionnaireSummary?.blockingUnansweredCount || 0) > 0
+      ) {
+        const confirmed = window.confirm(
+          '要回答の未回答質問があります。未回答のまま仕様書を作成しますか？'
+        );
+        if (!confirmed) {
+          setActiveTab('questionnaire');
+          return;
+        }
+        proceedWithUnansweredBlocking = true;
+      }
       const res =
         action === 'blueprint'
           ? await generateBlueprintArtifact(sessionId, {
@@ -400,8 +456,17 @@ export function PlanModeWorkspaceViewer({
             : await generateFeaturePlanArtifact(sessionId, {
                 questionnaireSessionId: readyQuestionnaireSession?.id ?? null,
                 sourceBlueprintMessageId: activeBlueprintSourceMessageId || null,
+                proceedWithUnansweredBlocking,
               });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const errorText = await res.text();
+        const parsedError = parseJsonRecord(errorText);
+        if (String(parsedError?.code || '') === 'BLOCKING_QUESTIONNAIRE_ANSWERS_REQUIRED') {
+          setActiveTab('questionnaire');
+          throw new Error('要回答の未回答質問があります。Questionnaire で回答してください。');
+        }
+        throw new Error(errorText);
+      }
       const result = (await res.json()) as {
         message?: TaskMessage;
         workspace?: PlanModeWorkspace;
@@ -521,6 +586,23 @@ export function PlanModeWorkspaceViewer({
               {!planModeCapabilities.questionnaire ? (
                 <span className="text-[11px] text-amber-300">{planModeDisabledReason}</span>
               ) : null}
+              {planModeCapabilities.questionnaire ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 rounded border border-slate-700 bg-slate-950/20 px-2 py-1 text-xs text-slate-200 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={requestAdditionalQuestionnaireQuestions}
+                  disabled={
+                    Boolean(busyAction) ||
+                    isImplementationLocked ||
+                    !planModeCapabilities.questionnaire
+                  }
+                >
+                  {busyAction === 'questionnaire-additional' ? (
+                    <LoaderCircle className="h-3 w-3 animate-spin" />
+                  ) : null}
+                  追加確認
+                </button>
+              ) : null}
               {sessions.map((session) => (
                 <button
                   key={session.id}
@@ -587,6 +669,7 @@ export function PlanModeWorkspaceViewer({
           <PlanWorkspaceStatusView
             workspace={workspace}
             questionnaireSession={activeQuestionnaireSession}
+            questionnaireSummary={activeQuestionnaireSummary}
             busyAction={busyAction}
             canGenerateDataModel={canGenerateDataModel}
             hasFeaturePlan={hasFeaturePlan}
@@ -594,6 +677,7 @@ export function PlanModeWorkspaceViewer({
             planModeSettings={generalSettings?.planMode}
             viewDecisions={viewDecisions}
             onOpenQuestionnaire={() => setActiveTab('questionnaire')}
+            onGenerateAdditionalQuestions={requestAdditionalQuestionnaireQuestions}
             onGenerateBlueprint={() => generatePlanModeArtifact('blueprint', 'blueprint')}
             onGenerateDataModel={() => generatePlanModeArtifact('data-model', 'data-model')}
             onGenerateFeaturePlan={() => generatePlanModeArtifact('feature-plan', 'feature-plan')}
@@ -619,6 +703,11 @@ export function PlanModeWorkspaceViewer({
             className="mt-3 rounded border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-200"
           >
             {actionError}
+          </p>
+        ) : null}
+        {actionNotice ? (
+          <p className="mt-3 rounded border border-cyan-500/40 bg-cyan-500/10 p-3 text-xs text-cyan-100">
+            {actionNotice}
           </p>
         ) : null}
       </div>
@@ -704,4 +793,13 @@ function isCompletedStatus(status: string) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function parseJsonRecord(value: string) {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }

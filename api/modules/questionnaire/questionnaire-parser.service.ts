@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import {
+  type AdditionalQuestionnaireDraft,
+  additionalQuestionnaireDraftSchema,
   type DesignDecisionReview,
   type DesignQuestionnaire,
   type DesignQuestionnaireAnswer,
@@ -274,12 +276,22 @@ function normalizeStringArray(value: unknown, fallback: string[]) {
   return strings.length > 0 ? strings : fallback;
 }
 
-function toKebabId(value: string, fallback: string) {
+export function toKebabId(value: string, fallback: string) {
   const normalized = value
     .normalize('NFKD')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+  return normalized || fallback;
+}
+
+export function toQuestionnaireDecisionKey(value: string, fallback: string) {
+  const normalized = value
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '.')
+    .replace(/[._-]{2,}/g, '.')
+    .replace(/^[._-]+|[._-]+$/g, '');
   return normalized || fallback;
 }
 
@@ -331,6 +343,14 @@ export function parseDesignQuestionnaireFollowUpDecisionRaw(
         : null,
     },
   };
+}
+
+export function parseAdditionalQuestionnaireDraftRaw(
+  rawOutput: string
+): { ok: true; value: AdditionalQuestionnaireDraft } | { ok: false; error: unknown } {
+  const parsed = parseRepairedJsonWithSchema(rawOutput, additionalQuestionnaireDraftSchema);
+  if (parsed.ok) return { ok: true, value: parsed.value };
+  return { ok: false, error: parsed.error };
 }
 
 export async function buildDesignQuestionnaireSessionView(
@@ -471,6 +491,9 @@ export function renderDesignDecisionReviewMarkdown(review: DesignDecisionReview)
 }
 
 export const questionnaireChoiceFormJsonSchema = z.toJSONSchema(questionnaireChoiceFormSchema);
+export const additionalQuestionnaireDraftJsonSchema = z.toJSONSchema(
+  additionalQuestionnaireDraftSchema
+);
 export const designQuestionnaireFollowUpDecisionJsonSchema = z.toJSONSchema(
   designQuestionnaireFollowUpDecisionSchema
 );

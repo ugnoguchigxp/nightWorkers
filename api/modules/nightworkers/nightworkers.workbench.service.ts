@@ -440,6 +440,7 @@ async function decideWorkbenchPlanModeGate(input: {
           },
         },
       },
+      role: 'plan',
       routeOverride: input.routeOverride,
       tolerateSchemaFailure: false,
       emitEvent: input.emitEvent,

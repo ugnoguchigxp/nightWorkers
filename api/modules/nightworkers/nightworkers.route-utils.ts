@@ -17,7 +17,10 @@ export function queueRouteError<ContextType extends NightWorkersRouteContext>(
   err: unknown
 ): Response {
   if (err instanceof AppError) {
-    return c.json({ error: err.message, code: err.code }, err.statusCode as ContentfulStatusCode);
+    return c.json(
+      { error: err.message, code: err.code, ...(err.details || {}) },
+      err.statusCode as ContentfulStatusCode
+    );
   }
   const message = err instanceof Error ? err.message : String(err);
   return c.json({ error: message }, 500);

@@ -569,3 +569,177 @@ bun run test run tests/services.design-questionnaire-prompts.test.ts tests/night
 - blocking が強すぎて作業が止まる: 明示的な `未回答のまま進める` を用意する。
 - UI が Questionnaire を重複表示する: Status は 1 領域に集約し、question set を内部表示にする。
 - LLM が同じ質問を言い換える: decisionKey と normalized fallback の両方で保存前に除去する。
+
+## 追加改善案: Feature Plan 生成品質の強化
+
+この章は初回リファクタリング時点では実装済み範囲に含めない追加候補だった。2026-07-05 の追加実装で、追加 Questionnaire の仕組みを前提に、Feature Plan がより短く、契約に強く、未決事項の少ない設計書になるための改善として実装対象に含めた。
+
+### 1. 検証コマンドの実在確認
+
+対象:
+
+- `api/modules/specification/specification-generation.service.ts`
+- `api/modules/planViews/planView-generation.service.ts`
+- Target Project Context 収集処理
+
+改善:
+
+- Feature Plan に検証コマンドを書く前に、対象 project の `package.json` scripts を context として渡す。
+- 存在しない `verify:e2e` などの script 名を推測で出さない。
+- focused unit command は、追加予定 test file がある場合だけ具体名を出す。判断できない場合は blocking ではなく、`project scripts に存在する最小検証` へ寄せる。
+
+期待する変化:
+
+- 検証計画に実行不能な command が混ざらない。
+- `追加した unit test 実行コマンド` のような空見出しを出さない。
+
+完了条件:
+
+- script が存在する場合だけ Feature Plan に command が出る。
+- script が存在しない場合は、存在する代替 command か、追加確認対象として扱われる。
+
+### 2. API Contract / Zod Schema の shape 反映
+
+対象:
+
+- `api/services/structured-generation/prompts/plan-api-contract.ts`
+- `api/services/structured-generation/prompts/plan-zod-schema.ts`
+- `api/modules/specification/specification-document-renderer.ts`
+
+改善:
+
+- Feature Plan には型名だけでなく、request / response / error の最小 JSON shape を反映する。
+- Zod Schema がある場合は、必須 field、optional field、enum、validation error shape を要約する。
+- 詳細すぎる schema 全文は貼らず、実装者が迷う項目だけを短く残す。
+
+期待する変化:
+
+- `TodoItemResponse` のような型名だけで終わらない。
+- API handler と UI 実装者が同じ入出力契約を参照できる。
+
+完了条件:
+
+- API Contract / Zod Schema が存在する plan では、Feature Plan の API 章に JSON shape が含まれる。
+- schema が無い場合は推測で shape を作らず、既存資料か追加質問で補う。
+
+### 3. Auth / permission 判断根拠の明示
+
+対象:
+
+- Questionnaire prompt
+- Feature Plan prompt
+- Plan Mode Context builder
+
+改善:
+
+- public / protected / auth / admin が混在する project では、配置と権限が不明な場合に追加質問へ回す。
+- Blueprint や Questionnaire で判断済みの場合は、Feature Plan に `auth decision` として根拠を1行で書く。
+- 混在していない project では不要な auth 質問を出さない。
+
+期待する変化:
+
+- `protected 前提` のような結論だけでなく、なぜそう判断したかが分かる。
+- auth only project では質問が増えず、混在 project では判断漏れが減る。
+
+完了条件:
+
+- auth / permission が仕様に影響する場合、回答済み decision または project convention の根拠が Feature Plan に残る。
+- 根拠が無いまま危険に固定される場合は blocking 追加質問になる。
+
+### 4. 曖昧な API / DB 契約の追加質問化
+
+対象:
+
+- Additional Questionnaire generator
+- Feature Plan preflight gate
+- Feature Plan prompt
+
+改善:
+
+- `空または削除結果`, `現在の status または切替指示`, `作成順` のような曖昧表現を検出する。
+- 実装 convention から決められる場合は具体化する。
+- 決められない場合は、DELETE response、toggle semantics、id generation、sort direction、migration strategy などを追加質問にする。
+
+期待する変化:
+
+- 実装者が endpoint や DB 挙動をその場で決める必要が減る。
+- Feature Plan の contract が実装可能な単一解になる。
+
+完了条件:
+
+- Feature Plan の API / DB 契約に `A または B` 型の未決表現が残らない。
+- 残す場合は明示的な assumption として扱う。
+
+### 5. Blueprint 由来の UI 再現情報の短縮反映
+
+対象:
+
+- Blueprint summary builder
+- Feature Plan prompt
+- Specification renderer
+
+改善:
+
+- 採用 section 名だけでなく、画面再現に必要な構造を短く渡す。
+- table なら列、行操作、empty/loading/error の表示位置を要約する。
+- form なら配置、作成/編集の切替、validation 表示位置を要約する。
+- 装飾説明や marketing copy は増やさない。
+
+期待する変化:
+
+- `Top Navigation / DataTable / Form` の列挙だけで終わらない。
+- 実装者が Blueprint の見た目と操作構造を再現しやすくなる。
+
+完了条件:
+
+- Feature Plan の UI 章に、採用 section と主要 interaction の再現情報が短く含まれる。
+- Blueprint に無い UI 要素を推測で追加しない。
+
+### 6. Traceability の本文圧縮
+
+対象:
+
+- Feature Plan renderer
+- Specification prompt
+
+改善:
+
+- Questionnaire / Blueprint / Data Model / API Contract / Zod Schema は生成 context として必ず使う。
+- 最終 Feature Plan には ID 羅列を原則出さず、採用判断として本文に反映する。
+- 監査用途の ID は必要な場合だけ metadata 側に残す。
+
+期待する変化:
+
+- 設計書本文が実装者向けの判断と契約に集中する。
+- 参照 ID が増えても token を消費しない。
+
+完了条件:
+
+- Feature Plan 本文に不要な traceability ID 羅列が出ない。
+- 参照資料の内容は、scope / contract / validation / verification の判断として反映される。
+
+## 追加改善案の非対象
+
+- Feature Plan の長文化。
+- 全 artifact ID の本文表示。
+- API / Zod Schema 全文の貼り付け。
+- auth 質問の常時必須化。
+- Blueprint に無い UI の創作。
+- 対象 project に存在しない検証 command の推測生成。
+
+## Archive 判定
+
+2026-07-05 時点で、本体リファクタリングと追加改善案は実装・レビュー済み。
+
+確認済み:
+
+- 追加質問 route / service は、既存 session が無い場合の session 作成、重複抑止、blocking / non-blocking counts を扱える。
+- Feature Plan preflight gate は unanswered blocking を 409 で止め、明示続行時だけ assumption として進める。
+- non-blocking 未回答は Feature Plan 生成を止めない。
+- Status / Questionnaire UI は、既存追加質問の有無に関係なく `追加確認` を実行できる。
+- Feature Plan 生成 context は package scripts、API / Zod JSON shape、Blueprint interaction/state、圧縮 Traceability を反映する。
+- focused regression と `bun run verify` を通して archive 可能。
+
+残作業:
+
+- なし。

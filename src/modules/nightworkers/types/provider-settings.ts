@@ -1,7 +1,8 @@
 export type ThinkingDepth = 'low' | 'medium' | 'high' | 'very_high';
+export type ComposerThinkingDepth = ThinkingDepth | '';
 
 export type ThinkingDepthOption = {
-  value: ThinkingDepth;
+  value: ComposerThinkingDepth;
   label: string;
 };
 

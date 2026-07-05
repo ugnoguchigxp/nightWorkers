@@ -33,6 +33,27 @@ export type PlanViewDecision = {
   reason?: string;
 };
 
+type PlanWorkspaceStatusStep = {
+  number: number;
+  title: string;
+  detail: string;
+  badges?: string[];
+  done: boolean;
+  buttonLabel: string;
+  busy: boolean;
+  disabled: boolean;
+  disabledReason?: string | null;
+  onClick: () => void;
+  secondaryAction?: {
+    label: string;
+    busy: boolean;
+    disabled: boolean;
+    onClick: () => void;
+  } | null;
+  autoGenerate: boolean;
+  autoGenerateKey: string;
+};
+
 export const PLAN_MODE_SEQUENTIAL_AUTO_GENERATE_STORAGE_KEY =
   'nightworkers.planMode.sequentialAutoGenerate';
 
@@ -439,6 +460,7 @@ function replaceMermaidSvg(target: Element | null, svg: string) {
 export function PlanWorkspaceStatusView({
   workspace,
   questionnaireSession,
+  questionnaireSummary,
   busyAction,
   canGenerateDataModel,
   hasFeaturePlan,
@@ -446,6 +468,7 @@ export function PlanWorkspaceStatusView({
   planModeSettings,
   viewDecisions = [],
   onOpenQuestionnaire,
+  onGenerateAdditionalQuestions,
   onGenerateBlueprint,
   onGenerateDataModel,
   onGenerateFeaturePlan,
@@ -455,6 +478,7 @@ export function PlanWorkspaceStatusView({
 }: {
   workspace: PlanModeWorkspace | null;
   questionnaireSession: DesignQuestionnaireSession | null;
+  questionnaireSummary?: PlanModeWorkspace['questionnaireSessions'][number] | null;
   busyAction: string | null;
   canGenerateDataModel: boolean;
   hasFeaturePlan: boolean;
@@ -462,6 +486,7 @@ export function PlanWorkspaceStatusView({
   planModeSettings?: PlanModeSettings;
   viewDecisions?: PlanViewDecision[];
   onOpenQuestionnaire: () => void;
+  onGenerateAdditionalQuestions?: () => void;
   onGenerateBlueprint: () => void;
   onGenerateDataModel: () => void;
   onGenerateFeaturePlan: () => void;
@@ -476,6 +501,12 @@ export function PlanWorkspaceStatusView({
   const autoGenerateBlockedStepRef = useRef<string | null>(null);
   const answeredCount = questionnaireSession?.answers.length || 0;
   const questionCount = questionnaireSession ? getQuestionCount(questionnaireSession) : 0;
+  const totalQuestionCount = questionnaireSummary?.totalQuestionCount ?? questionCount;
+  const completedAnswerCount = questionnaireSummary?.answeredCount ?? answeredCount;
+  const unansweredCount =
+    questionnaireSummary?.unansweredCount ?? Math.max(totalQuestionCount - completedAnswerCount, 0);
+  const blockingUnansweredCount = questionnaireSummary?.blockingUnansweredCount ?? 0;
+  const nonBlockingUnansweredCount = questionnaireSummary?.nonBlockingUnansweredCount ?? 0;
   const hasBlueprint = Boolean(workspace?.blueprintArtifacts.length);
   const hasDataModel = Boolean(workspace?.dataModelArtifacts.length);
   const hasRoutingDecisions = viewDecisions.length > 0;
@@ -515,7 +546,7 @@ export function PlanWorkspaceStatusView({
     questionnaireSession &&
       (questionnaireSession.status === 'review_ready' || questionnaireSession.status === 'accepted')
   );
-  const steps = [
+  const rawSteps: Array<PlanWorkspaceStatusStep | null> = [
     shouldShowDefault(
       'questionnaire',
       capabilities.questionnaire,
@@ -526,15 +557,30 @@ export function PlanWorkspaceStatusView({
           number: 1,
           title: '仕様に関する質問を回答してください',
           detail:
-            questionCount > 0
-              ? `Questionnaire ${answeredCount}/${questionCount}`
+            totalQuestionCount > 0
+              ? `回答済み ${completedAnswerCount} / 未回答 ${unansweredCount} / 要回答 ${blockingUnansweredCount} / 任意 ${nonBlockingUnansweredCount}`
               : '仕様判断に必要な質問を先に確認します。',
+          badges: [
+            blockingUnansweredCount > 0 ? '要回答' : null,
+            blockingUnansweredCount === 0 && nonBlockingUnansweredCount > 0 ? '追加質問あり' : null,
+          ].filter((label): label is string => Boolean(label)),
           done: questionnaireDone,
           buttonLabel: questionnaireDone ? 'アンケートを確認' : 'アンケートへ',
           busy: false,
           disabled: !capabilities.questionnaire,
           disabledReason: capabilities.questionnaire ? null : disabledReason,
           onClick: onOpenQuestionnaire,
+          secondaryAction: onGenerateAdditionalQuestions
+            ? {
+                label: '追加確認',
+                busy: busyAction === 'questionnaire-additional',
+                disabled:
+                  isImplementationLocked ||
+                  !capabilities.questionnaire ||
+                  busyAction === 'questionnaire-additional',
+                onClick: onGenerateAdditionalQuestions,
+              }
+            : null,
           autoGenerate: false,
           autoGenerateKey: 'questionnaire',
         }
@@ -609,7 +655,8 @@ export function PlanWorkspaceStatusView({
       autoGenerate: true,
       autoGenerateKey: 'feature-plan',
     },
-  ].filter((step): step is NonNullable<typeof step> => Boolean(step));
+  ];
+  const steps = rawSteps.filter((step): step is PlanWorkspaceStatusStep => step !== null);
   const allStepsDone = steps.every((step) => step.done);
   const nextAutoGenerateStep = steps.find(
     (step) => step.autoGenerate && !step.done && !step.disabled
@@ -680,17 +727,43 @@ export function PlanWorkspaceStatusView({
                     {displayNumber}. {step.title}
                   </div>
                   <div className="mt-1 text-slate-400">{step.detail}</div>
+                  {step.badges?.length ? (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {step.badges.map((badge) => (
+                        <span
+                          key={badge}
+                          className={`rounded border px-2 py-0.5 text-[10px] ${
+                            badge === '要回答'
+                              ? 'border-amber-500/50 bg-amber-950/30 text-amber-100'
+                              : 'border-cyan-500/40 bg-cyan-950/30 text-cyan-100'
+                          }`}
+                        >
+                          {badge}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                   {step.disabledReason ? (
                     <div className="mt-1 text-[11px] text-amber-300">{step.disabledReason}</div>
                   ) : null}
                 </div>
               </div>
-              <StatusActionButton
-                label={step.buttonLabel}
-                busy={step.busy}
-                disabled={step.disabled}
-                onClick={step.onClick}
-              />
+              <div className="flex flex-wrap justify-end gap-2">
+                {step.secondaryAction ? (
+                  <StatusActionButton
+                    label={step.secondaryAction.label}
+                    busy={step.secondaryAction.busy}
+                    disabled={step.secondaryAction.disabled}
+                    onClick={step.secondaryAction.onClick}
+                  />
+                ) : null}
+                <StatusActionButton
+                  label={step.buttonLabel}
+                  busy={step.busy}
+                  disabled={step.disabled}
+                  onClick={step.onClick}
+                />
+              </div>
             </div>
           );
         })}

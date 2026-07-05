@@ -4,6 +4,7 @@ import { jsonRequest } from '../../lib/api-request';
 type SpecificationGenerationInput = {
   questionnaireSessionId?: string | null;
   sourceBlueprintMessageId?: string | null;
+  proceedWithUnansweredBlocking?: boolean;
 };
 
 export function fetchPlanModeWorkspace(sessionId: string, init?: RequestInit) {

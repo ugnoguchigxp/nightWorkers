@@ -10,6 +10,10 @@ import {
 } from '../nightworkers/nightworkers.plan-mode-core.port';
 import { listDesignQuestionnaires } from '../questionnaire/questionnaire.service';
 import { getAnswerableSessionQuestions } from '../questionnaire/questionnaire-parser.service';
+import {
+  isDesignQuestionnaireAnswerComplete,
+  listUnansweredBlockingQuestions,
+} from '../questionnaire/questionnaire-validation';
 
 export async function getPlanModeWorkspace(taskId: string): Promise<PlanModeWorkspace> {
   const task = await getPlanModeTask(taskId);
@@ -118,17 +122,47 @@ export async function getPlanModeWorkspace(taskId: string): Promise<PlanModeWork
     blueprintArtifacts,
     dataModelArtifacts,
     dedicatedViewArtifacts,
-    questionnaireSessions: sessions.map((session) => ({
-      id: session.id,
-      sourceBlueprintMessageId: session.sourceBlueprintMessageId,
-      status: session.status,
-      answeredCount: session.answers.length,
-      totalQuestionCount: getAnswerableSessionQuestions(session, session.answers).length,
-      latestReviewId: session.reviews[0]?.id,
-    })),
+    questionnaireSessions: sessions.map((session) => {
+      const answerableQuestions = getAnswerableSessionQuestions(session, session.answers);
+      const answerByQuestionId = new Map(
+        session.answers.map((answer) => [answer.questionId, answer.answer])
+      );
+      const answeredCount = answerableQuestions.filter((question) =>
+        isDesignQuestionnaireAnswerComplete(question, answerByQuestionId.get(String(question.id)))
+      ).length;
+      const unansweredCount = Math.max(answerableQuestions.length - answeredCount, 0);
+      const blockingUnansweredCount = listUnansweredBlockingQuestions(session).length;
+      return {
+        id: session.id,
+        sourceBlueprintMessageId: session.sourceBlueprintMessageId,
+        status: session.status,
+        answeredCount,
+        totalQuestionCount: answerableQuestions.length,
+        unansweredCount,
+        blockingUnansweredCount,
+        nonBlockingUnansweredCount: Math.max(unansweredCount - blockingUnansweredCount, 0),
+        latestAdditionalQuestionSetId: findLatestAdditionalQuestionSetId(session),
+        latestReviewId: session.reviews[0]?.id,
+      };
+    }),
     decisionReviews,
     implementationReferences,
   };
+}
+
+function findLatestAdditionalQuestionSetId(
+  session: Awaited<ReturnType<typeof listDesignQuestionnaires>>[number]
+) {
+  return [...session.questionSets].reverse().find((set) =>
+    (set.questionnaire?.questionSets || []).some((questionSet) => {
+      const source = questionSet.metadata?.source;
+      return (
+        source === 'user_requested' ||
+        source === 'artifact_triggered' ||
+        source === 'pre_feature_plan_gate'
+      );
+    })
+  )?.id;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

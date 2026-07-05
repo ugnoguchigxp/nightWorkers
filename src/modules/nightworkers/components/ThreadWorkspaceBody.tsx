@@ -4,12 +4,12 @@ import type {
   ActivityArtifact,
   ActivityEvent,
   BackgroundProcess,
+  ComposerThinkingDepth,
   ModelOption,
   Task,
   TaskEvent,
   TaskMessage,
   TaskRun,
-  ThinkingDepth,
   ThinkingDepthOption,
   WorkbenchArtifactContext,
   WorkbenchArtifactRef,
@@ -43,7 +43,7 @@ type ThreadBodyProps = {
   onSubmitWorkbenchMessage: (prompt: string, intent: WorkbenchChatIntent) => Promise<void>;
   onStopActiveRun?: () => Promise<void>;
   onStopBackgroundProcess?: (processId: string) => Promise<BackgroundProcess>;
-  onThinkingDepthChange: (depth: ThinkingDepth) => void;
+  onThinkingDepthChange: (depth: ComposerThinkingDepth) => void;
   thinkingDepthOptions: ThinkingDepthOption[];
   realtimeStatus: 'initializing' | 'connecting' | 'connected' | 'disconnected';
   runs: TaskRun[];
@@ -51,7 +51,7 @@ type ThreadBodyProps = {
   scrollContainerRef: (node: HTMLDivElement | null) => void;
   showDebugEvents: boolean;
   taskMessages: TaskMessage[];
-  thinkingDepth: ThinkingDepth;
+  thinkingDepth: ComposerThinkingDepth;
   workbenchBanner: ReactNode;
 };
 

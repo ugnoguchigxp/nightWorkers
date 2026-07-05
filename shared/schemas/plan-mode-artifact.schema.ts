@@ -82,6 +82,10 @@ export const planModeWorkspaceQuestionnaireSchema = z.object({
   status: designQuestionnaireSessionStatusSchema,
   answeredCount: z.number().int().nonnegative(),
   totalQuestionCount: z.number().int().nonnegative(),
+  unansweredCount: z.number().int().nonnegative().default(0),
+  blockingUnansweredCount: z.number().int().nonnegative().default(0),
+  nonBlockingUnansweredCount: z.number().int().nonnegative().default(0),
+  latestAdditionalQuestionSetId: z.string().uuid().optional(),
   latestReviewId: z.string().uuid().optional(),
 });
 

@@ -1,9 +1,9 @@
 import { ArrowUp, CircleStop, LoaderCircle, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
+  ComposerThinkingDepth,
   ModelOption,
-  ThinkingDepth,
   ThinkingDepthOption,
   WorkbenchArtifactContext,
   WorkbenchChatIntent,
@@ -14,7 +14,7 @@ import { ModelThinkingControls } from './ModelThinkingControls';
 type ComposerProps = {
   disabled: boolean;
   model: string;
-  thinkingDepth: ThinkingDepth;
+  thinkingDepth: ComposerThinkingDepth;
   modelOptions: ModelOption[];
   thinkingDepthOptions: ThinkingDepthOption[];
   latestDiffPatch?: string;
@@ -26,11 +26,36 @@ type ComposerProps = {
   isStopMode?: boolean;
   isStopping?: boolean;
   onModelChange: (model: string) => void;
-  onThinkingDepthChange: (depth: ThinkingDepth) => void;
+  onThinkingDepthChange: (depth: ComposerThinkingDepth) => void;
   onSubmit: (prompt: string, intent: WorkbenchChatIntent) => Promise<void>;
   onClearArtifactContext?: () => void;
   onStop?: () => Promise<void>;
 };
+
+const COMPOSER_TEXTAREA_MIN_HEIGHT = 58;
+const COMPOSER_TEXTAREA_MAX_ROWS = 10;
+const COMPOSER_TEXTAREA_FALLBACK_LINE_HEIGHT = 20;
+
+function resizeComposerTextArea(textarea: HTMLTextAreaElement | null) {
+  if (!textarea) return;
+  textarea.style.height = 'auto';
+
+  const style = window.getComputedStyle(textarea);
+  const lineHeight = Number.parseFloat(style.lineHeight) || COMPOSER_TEXTAREA_FALLBACK_LINE_HEIGHT;
+  const padding =
+    (Number.parseFloat(style.paddingTop) || 0) + (Number.parseFloat(style.paddingBottom) || 0);
+  const border =
+    (Number.parseFloat(style.borderTopWidth) || 0) +
+    (Number.parseFloat(style.borderBottomWidth) || 0);
+  const maxHeight = Math.ceil(lineHeight * COMPOSER_TEXTAREA_MAX_ROWS + padding + border);
+  const nextHeight = Math.min(
+    Math.max(textarea.scrollHeight, COMPOSER_TEXTAREA_MIN_HEIGHT),
+    maxHeight
+  );
+
+  textarea.style.height = `${nextHeight}px`;
+  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+}
 
 export function Composer({
   disabled,
@@ -54,6 +79,7 @@ export function Composer({
 }: ComposerProps) {
   const { t } = useTranslation();
   const [prompt, setPrompt] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const intent: WorkbenchChatIntent = 'intake';
   const canSubmit = !disabled && !!prompt.trim();
   const canStop = isStopMode && !!onStop && !isStopping;
@@ -103,6 +129,16 @@ export function Composer({
       // localStorage can be unavailable in private contexts; the in-memory draft still works.
     }
   }, [discardStoredDraft, draftStorageKey, prompt]);
+
+  useLayoutEffect(() => {
+    resizeComposerTextArea(textareaRef.current);
+  });
+
+  useEffect(() => {
+    const handleResize = () => resizeComposerTextArea(textareaRef.current);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   function clearDraft() {
     if (!draftStorageKey) return;
@@ -173,6 +209,7 @@ export function Composer({
           </div>
         ) : null}
         <textarea
+          ref={textareaRef}
           rows={2}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}

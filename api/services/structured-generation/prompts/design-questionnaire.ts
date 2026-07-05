@@ -1,4 +1,5 @@
 import type { DesignQuestionnaireSession } from '../../../../shared/schemas/design-questionnaire.schema';
+import type { QuestionnaireDecisionInventoryItem } from '../../../modules/questionnaire/questionnaire-validation';
 
 type QuestionnaireSourceInput = {
   sourceBlueprintMessage?: {
@@ -20,6 +21,16 @@ type SpecificationContext = {
   planViewReferences: string;
   planModeReferences: string;
   traceability: string;
+};
+
+type AdditionalQuestionnairePromptInput = {
+  task: string;
+  source: 'user_requested' | 'artifact_triggered' | 'pre_feature_plan_gate';
+  reason?: string | null;
+  maxQuestions: number;
+  projectStackContext?: string | null;
+  planModeContext?: string | null;
+  decisionInventory: QuestionnaireDecisionInventoryItem[];
 };
 
 export function buildDesignQuestionnaireSystemPrompt() {
@@ -148,6 +159,49 @@ export function buildDesignQuestionnaireFollowUpDecisionUserPrompt(
   ].join('\n');
 }
 
+export function buildAdditionalDesignQuestionnaireSystemPrompt() {
+  return [
+    'Plan Mode 中に追加確認が必要かを判断し、必要な場合だけ追加質問を返します。',
+    '目的は、Blueprint、Data Model、API Contract、Zod Schema、Flow、Feature Plan 生成中に見えた矛盾や不足を、LLM が勝手に丸めずユーザーに確認することです。',
+    '既存資料から合理的に決められる事項は質問しないでください。',
+    '実装判断に影響しない好み質問は出さないでください。',
+    'decisionInventory に同じ decisionKey、同じ質問、同じ選択肢集合がある場合は絶対に再質問しないでください。',
+    '未回答の同 decisionKey がある場合も新規質問を作らず、空配列にしてください。',
+    'blocking=true は、回答なしに Feature Plan を作ると仕様が危険に曖昧になる質問だけです。',
+    'auth / permission、data ownership、migration、破壊的操作、外部連携、API / validation 矛盾は blocking になり得ます。',
+    'API / DB 契約に「空または削除結果」「現在の status または切替指示」「作成順」「A または B」のような曖昧さがあり、project convention から決められない場合は追加質問にしてください。',
+    'DELETE response、toggle semantics、id generation、sort direction、migration strategy は、実装者がその場で決めると危険な場合だけ blocking にしてください。',
+    'non-blocking は回答すれば精度は上がるが既存資料や project convention で安全に進められるものだけです。',
+    '質問は radio または checkbox のみです。自由記述は作らないでください。',
+    'decisionKey は lower-case の dot 区切りにしてください。例: auth.scope.todo, api.todo.status_update_contract, data.todo.updated_at_strategy。',
+    '質問不要なら questions は空配列です。',
+    '回答は JSON object のみで、title, rationale, questions を返してください。',
+  ].join('\n');
+}
+
+export function buildAdditionalDesignQuestionnaireUserPrompt(
+  input: AdditionalQuestionnairePromptInput
+) {
+  return [
+    '次の Plan Mode context から、今追加でユーザーに確認すべき実装判断だけを返してください。',
+    `追加質問の最大件数: ${input.maxQuestions}`,
+    `source: ${input.source}`,
+    `reason: ${input.reason?.trim() || '明示理由なし'}`,
+    '',
+    '## Task',
+    input.task,
+    '',
+    '## Project Stack Context',
+    input.projectStackContext?.trim() || 'Project stack は未検出です。',
+    '',
+    '## Plan Mode Context',
+    input.planModeContext?.trim() || 'Plan Mode の追加 context は未検出です。',
+    '',
+    '## Decision Inventory',
+    JSON.stringify(input.decisionInventory, null, 2),
+  ].join('\n');
+}
+
 export function buildDesignQuestionnaireReviewSystemPrompt() {
   return [
     '回答を設計判断、後回し事項、未解決事項、Data Model handoff note に整理してください。',
@@ -183,6 +237,9 @@ export function buildSpecificationDocumentSystemPrompt() {
     '既生成資料は正本として信頼し、同じ内容を推測し直さないでください。矛盾がある場合は、最新ユーザー指示、Questionnaire Decisions、各 domain の専用 view、既存 repository context の順に優先してください。',
     '未決定事項は極力作らず、既存資料から合理的に決められる場合は前提として固定してください。実装を始めると危険な矛盾または欠落だけを未解決として短く残してください。',
     'Plan View References に API Contract や Zod Schema がある場合は、`## 契約` の API と validation/error handling に反映してください。参照 ID の列挙ではなく、request / response / error / schema 名 / 適用先 / 主要 rule を短く契約化してください。',
+    'API Contract / Zod Schema に JSON shape が含まれる場合は、型名だけで終わらせず、必須 field、optional field、enum、代表的な request / response / error shape を短く反映してください。schema 全文は貼らないでください。',
+    'auth / permission が仕様に影響する場合は、Questionnaire answer、Blueprint、または既存 project convention の根拠を1行で書いてください。根拠が無いまま public/protected/admin を固定しないでください。',
+    '`A または B`、`必要に応じて`、`適宜` のような API / DB 契約の未決表現は避けてください。既存資料から決められない場合だけ assumption として短く残してください。',
     'content の見出しは原則 `## 目的`, `## スコープ`, `## タスク分類`, `## 実装計画`, `## 契約`, `## DDL`, `## 検証計画`, `## 完了条件`, `## トレーサビリティ` だけにしてください。',
     '`## 目的` は 1-2 文にしてください。',
     '`## スコープ` は対象 / 非対象を短い箇条書きにしてください。',
@@ -192,9 +249,9 @@ export function buildSpecificationDocumentSystemPrompt() {
     '`## 契約` の API 項目には、endpoint / method / request body / response body / error body / auth or permission を必要最小限で含めてください。API が対象外なら書かないでください。',
     '`## 契約` の UI 項目には、Blueprint の画面 path、採用 section 名、component、主な表示文言、サンプルデータ、主要 state を短く含めてください。',
     '`## DDL` は Data Model DDL reference をコードブロックで載せます。ただし Questionnaire と矛盾する table/column がある場合は、コードブロック前に「参考。今回の採用対象外: ...」と短く明記してください。',
-    '`## 検証計画` はコマンドまたは既存 script 名、期待結果、失敗時の確認観点を短く書いてください。',
+    '`## 検証計画` は Target Project Context の `Project package scripts` に存在する script 名だけを command として書いてください。存在しない `verify:e2e` や架空の focused test command を推測しないでください。',
     '`## 完了条件` は検証済み事実だけで書いてください。',
-    '`## トレーサビリティ` は実装判断に直接効いた主要 source ID だけにしてください。関連資料の全件記録や not generated の列挙は不要です。',
+    '`## トレーサビリティ` は source ID 羅列ではなく、実装判断に効いた資料種別と採用判断だけにしてください。監査用 ID は metadata 側に残るため本文に列挙しないでください。',
     '画面仕様、機能要件、データ設計方針、参考情報、Evidence などの追加見出しは、重複になる場合は作らないでください。',
     '出力は JSON object のみで、title と content を返してください。content は Markdown 文字列にしてください。',
   ].join('\n');

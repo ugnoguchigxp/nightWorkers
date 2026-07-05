@@ -2,6 +2,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import {
   createDesignQuestionnaireRequestSchema,
   designQuestionnaireSessionSchema,
+  generateAdditionalDesignQuestionnaireRequestSchema,
   saveDesignQuestionnaireAnswersSchema,
 } from '../../../shared/schemas/design-questionnaire.schema';
 
@@ -85,6 +86,41 @@ export const generateDesignQuestionnaireFollowUpRoute = createRoute({
     200: {
       content: { 'application/json': { schema: designQuestionnaireSessionSchema } },
       description: 'Design Questionnaire follow-up generated',
+    },
+  },
+});
+
+export const generateAdditionalDesignQuestionnaireRoute = createRoute({
+  method: 'post',
+  path: '/tasks/:id/design-questionnaire/additional',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: generateAdditionalDesignQuestionnaireRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            session: designQuestionnaireSessionSchema.nullable(),
+            result: z.object({
+              sessionId: z.string().uuid().nullable(),
+              createdQuestionSetId: z.string().uuid().nullable(),
+              addedCount: z.number().int().nonnegative(),
+              skippedDuplicateCount: z.number().int().nonnegative(),
+              blockingCount: z.number().int().nonnegative(),
+              nonBlockingCount: z.number().int().nonnegative(),
+            }),
+          }),
+        },
+      },
+      description: 'Additional Design Questionnaire questions generated',
     },
   },
 });

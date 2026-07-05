@@ -1,9 +1,11 @@
 import { createOpenApiRouter } from '../../lib/openapi';
 import { withOpenApiRouteError } from '../nightworkers/nightworkers.route-utils';
 import * as service from './questionnaire.service';
+import * as additionalService from './questionnaire-additional.service';
 import {
   acceptDesignQuestionnaireReviewRoute,
   createDesignQuestionnaireRoute,
+  generateAdditionalDesignQuestionnaireRoute,
   generateDesignQuestionnaireFollowUpRoute,
   generateDesignQuestionnaireReviewRoute,
   getDesignQuestionnaireRoute,
@@ -49,6 +51,16 @@ export const questionnaireRouter = createOpenApiRouter()
         c.req.valid('json').answers
       );
       return c.json(session, 200);
+    })
+  )
+  .openapi(
+    generateAdditionalDesignQuestionnaireRoute,
+    withOpenApiRouteError(generateAdditionalDesignQuestionnaireRoute, async (c) => {
+      const result = await additionalService.generateAdditionalDesignQuestionnaireQuestions(
+        c.req.param('id'),
+        c.req.valid('json')
+      );
+      return c.json(result, 200);
     })
   )
   .openapi(

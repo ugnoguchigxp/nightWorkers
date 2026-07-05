@@ -1,13 +1,13 @@
 import { useTranslation } from 'react-i18next';
-import type { ModelOption, ThinkingDepth, ThinkingDepthOption } from '../types';
+import type { ComposerThinkingDepth, ModelOption, ThinkingDepthOption } from '../types';
 
 type ModelThinkingControlsProps = {
   model: string;
-  thinkingDepth: ThinkingDepth;
+  thinkingDepth: ComposerThinkingDepth;
   modelOptions: ModelOption[];
   thinkingDepthOptions: ThinkingDepthOption[];
   onModelChange: (model: string) => void;
-  onThinkingDepthChange: (depth: ThinkingDepth) => void;
+  onThinkingDepthChange: (depth: ComposerThinkingDepth) => void;
 };
 
 export function ModelThinkingControls({
@@ -49,7 +49,7 @@ export function ModelThinkingControls({
             id="thinking-select"
             className="nightworkers-control-select h-8 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100"
             value={thinkingDepth}
-            onChange={(e) => onThinkingDepthChange(e.target.value as ThinkingDepth)}
+            onChange={(e) => onThinkingDepthChange(e.target.value as ComposerThinkingDepth)}
           >
             {thinkingDepthOptions.map((option) => (
               <option key={option.value} value={option.value}>

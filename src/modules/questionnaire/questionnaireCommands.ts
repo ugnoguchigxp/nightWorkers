@@ -20,6 +20,20 @@ export function startDesignQuestionnaire(
   return apiFetch(`/api/tasks/${sessionId}/design-questionnaire`, jsonRequest('POST', input));
 }
 
+export function generateAdditionalDesignQuestionnaireQuestions(
+  sessionId: string,
+  input: {
+    source: 'user_requested' | 'artifact_triggered' | 'pre_feature_plan_gate';
+    reason?: string;
+    maxQuestions?: number;
+  }
+) {
+  return apiFetch(
+    `/api/tasks/${sessionId}/design-questionnaire/additional`,
+    jsonRequest('POST', input)
+  );
+}
+
 export function submitDesignQuestionnaireAnswers(
   sessionId: string,
   questionnaireSessionId: string,

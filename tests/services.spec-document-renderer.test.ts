@@ -163,9 +163,12 @@ describe('spec-document-renderer', () => {
       );
 
       // Check traceability
-      expect(result.traceability).toContain('Questionnaire session: session-123');
-      expect(result.traceability).toContain('Blueprint message: msg-blueprint');
-      expect(result.traceability).toContain('Data Model message: msg-data-model');
+      expect(result.traceability).toContain('Questionnaire decisions: included');
+      expect(result.traceability).toContain('Blueprint summary: included');
+      expect(result.traceability).toContain('Data Model DDL reference: included');
+      expect(result.traceability).toContain('API Contract: none');
+      expect(result.traceability).toContain('Zod Schema: none');
+      expect(result.traceability).toContain('Workspace counts: blueprint=1');
     });
 
     it('includes dedicated plan view references and traceability', () => {
@@ -224,10 +227,67 @@ describe('spec-document-renderer', () => {
                   info: { title: 'Todo API', version: '0.1.0' },
                   paths: {
                     '/api/todos': {
-                      get: { operationId: 'listTodos', summary: 'List todo tasks' },
+                      post: {
+                        operationId: 'createTodo',
+                        summary: 'Create todo task',
+                        requestBody: {
+                          required: true,
+                          content: {
+                            'application/json': {
+                              schema: { $ref: '#/components/schemas/CreateTodoRequest' },
+                            },
+                          },
+                        },
+                        responses: {
+                          '201': {
+                            description: 'Created',
+                            content: {
+                              'application/json': {
+                                schema: { $ref: '#/components/schemas/TodoResponse' },
+                              },
+                            },
+                          },
+                          '400': {
+                            description: 'Validation error',
+                            content: {
+                              'application/json': {
+                                schema: { $ref: '#/components/schemas/TodoValidationError' },
+                              },
+                            },
+                          },
+                        },
+                      },
                     },
                   },
-                  components: { schemas: {} },
+                  components: {
+                    schemas: {
+                      CreateTodoRequest: {
+                        type: 'object',
+                        required: ['title'],
+                        properties: {
+                          title: { type: 'string' },
+                          status: { type: 'string', enum: ['todo', 'done'] },
+                        },
+                      },
+                      TodoResponse: {
+                        type: 'object',
+                        required: ['id', 'title'],
+                        properties: {
+                          id: { type: 'string' },
+                          title: { type: 'string' },
+                          status: { type: 'string', enum: ['todo', 'done'] },
+                        },
+                      },
+                      TodoValidationError: {
+                        type: 'object',
+                        required: ['message'],
+                        properties: {
+                          message: { type: 'string' },
+                          issues: { type: 'array' },
+                        },
+                      },
+                    },
+                  },
                 },
                 validation: [{ schemaName: 'TodoRequest', owner: 'request' }],
               },
@@ -279,16 +339,19 @@ describe('spec-document-renderer', () => {
       });
 
       expect(result.planViewReferences).toContain('API Contract: Todo API Contract');
-      expect(result.planViewReferences).toContain('GET /api/todos (listTodos)');
+      expect(result.planViewReferences).toContain('POST /api/todos (createTodo)');
+      expect(result.planViewReferences).toContain(
+        'request: CreateTodoRequest; required; title:string, status:enum(todo|done)?'
+      );
+      expect(result.planViewReferences).toContain(
+        'response/error: 201 TodoResponse {id:string, title:string, status:enum(todo|done)?} / 400 TodoValidationError {message:string, issues:array?}'
+      );
       expect(result.planViewReferences).toContain('Validation: TodoRequest');
       expect(result.planViewReferences).toContain('Zod Schema: TodoInputSchema');
       expect(result.planViewReferences).toContain('title:string/required');
-      expect(result.traceability).toContain(
-        'API Contract view: api_io_contract-msg-api; message: msg-api'
-      );
-      expect(result.traceability).toContain(
-        'Zod Schema view: zod_schema_design-msg-zod; message: msg-zod'
-      );
+      expect(result.traceability).toContain('API Contract: included and indexed');
+      expect(result.traceability).toContain('Zod Schema: included and indexed');
+      expect(result.traceability).toContain('Workspace counts: blueprint=1, dataModel=0');
       expect(result.planModeReferences).toContain('Dedicated Views:');
       expect(result.planModeReferences).toContain('Todo Activity Flow');
       expect(result.planModeReferences).toContain('flowchart TD');

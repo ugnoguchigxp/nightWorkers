@@ -12,12 +12,12 @@ import {
 import type { NightWorkersWorkspaceState } from '../hooks/useNightWorkersWorkspace';
 import { shouldAutoOpenPlanArtifact } from '../planArtifactVisibility';
 import type {
+  ComposerThinkingDepth,
   LlmModelTarget,
   LlmRoleRoute,
   ProjectSafetyPolicy,
   Task,
   TaskMessage,
-  ThinkingDepth,
   ThinkingDepthOption,
   WorkbenchArtifactRef,
   WorkbenchChatIntent,
@@ -61,6 +61,10 @@ type ComposerModelTarget = {
 };
 
 const modelTargetKey = (target: ComposerModelTarget) => JSON.stringify(target);
+const COMPOSER_THINKING_DEPTH_OPTIONS: ThinkingDepthOption[] = [
+  { value: '', label: 'Auto' },
+  ...THINKING_DEPTH_OPTIONS,
+];
 
 function parseModelTargetKey(value: string): ComposerModelTarget | null {
   try {
@@ -113,6 +117,22 @@ function resolveComposerRouteTarget(
   return null;
 }
 
+function findComposerRouteTargetByKey(
+  routes: LlmRoleRoute[] | undefined,
+  targetKey: string
+): LlmModelTarget | null {
+  const roles = ['plan', 'implementation'] as const;
+  for (const role of roles) {
+    const route = routes?.find((item) => item.role === role);
+    if (!route) continue;
+    const target = [route.primary, ...route.fallbacks].find(
+      (item) => modelTargetKey(item) === targetKey
+    );
+    if (target) return target;
+  }
+  return null;
+}
+
 function isImplementationLockedStatus(status: string | undefined) {
   return status === 'completed';
 }
@@ -148,8 +168,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
   const previousActiveSessionIdRef = useRef<string | null>(null);
   const userSelectedComposerModelRef = useRef(false);
   const [selectedPath, setSelectedPath] = useState('');
-  const [model, setModel] = useState('gpt-5.5');
-  const [thinkingDepth, setThinkingDepth] = useState<ThinkingDepth>('medium');
+  const [model, setModel] = useState('');
+  const [thinkingDepth, setThinkingDepth] = useState<ComposerThinkingDepth>('');
   const [artifactFocus, setArtifactFocus] = useState<ArtifactPaneFocus>({ type: 'closed' });
   const [clearedArtifactContextId, setClearedArtifactContextId] = useState<string | null>(null);
   const [showQueueScreen, setShowQueueScreen] = useState(false);
@@ -284,14 +304,23 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     [composerModelOptionKeys, workspace.llmSettings?.roleRoutes]
   );
   const selectedModelTarget = parseModelTargetKey(model);
-  const selectedComposerModel = selectedModelTarget?.model || currentProviderModel || model;
+  const selectedComposerModel = selectedModelTarget?.model || model || currentProviderModel || '';
   const selectedComposerModelSupportsThinking = isThinkingModel(selectedComposerModel);
   const composerThinkingDepthOptions: ThinkingDepthOption[] = selectedComposerModelSupportsThinking
-    ? THINKING_DEPTH_OPTIONS
+    ? COMPOSER_THINKING_DEPTH_OPTIONS
     : [];
 
   useEffect(() => {
-    if (!composerModelOptions.length) return;
+    if (!composerModelOptions.length) {
+      if (
+        !userSelectedComposerModelRef.current &&
+        currentProviderModel &&
+        model !== currentProviderModel
+      ) {
+        setModel(currentProviderModel);
+      }
+      return;
+    }
     const currentModelIsAvailable = composerModelOptionKeys.has(model);
     if (userSelectedComposerModelRef.current && currentModelIsAvailable) return;
     if (!currentModelIsAvailable) userSelectedComposerModelRef.current = false;
@@ -299,34 +328,59 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
       ? modelTargetKey(preferredRouteTarget)
       : composerModelOptions[0].value;
     if (model !== nextModel) setModel(nextModel);
-    if (
-      preferredRouteTarget?.thinkingDepth &&
-      isThinkingModel(preferredRouteTarget.model) &&
-      thinkingDepth !== preferredRouteTarget.thinkingDepth
-    ) {
-      setThinkingDepth(preferredRouteTarget.thinkingDepth);
-    }
-  }, [composerModelOptionKeys, composerModelOptions, model, preferredRouteTarget, thinkingDepth]);
+    const nextThinkingDepth =
+      preferredRouteTarget && isThinkingModel(preferredRouteTarget.model)
+        ? (preferredRouteTarget.thinkingDepth ?? '')
+        : '';
+    if (thinkingDepth !== nextThinkingDepth) setThinkingDepth(nextThinkingDepth);
+  }, [
+    composerModelOptionKeys,
+    composerModelOptions,
+    currentProviderModel,
+    model,
+    preferredRouteTarget,
+    thinkingDepth,
+  ]);
 
   useEffect(() => {
     if (selectedComposerModelSupportsThinking) return;
-    setThinkingDepth('medium');
+    setThinkingDepth('');
   }, [selectedComposerModelSupportsThinking]);
 
   const buildComposerLlmSelection = () => {
     if (!userSelectedComposerModelRef.current) return undefined;
     const target = parseModelTargetKey(model);
-    const selected = target || { providerEndpointId: '', model: currentProviderModel || model };
+    const selected = target || { providerEndpointId: '', model };
+    if (!selected.model) return undefined;
     return {
       model: selected.model,
       providerEndpointId: selected.providerEndpointId || undefined,
       thinkingDepth: isThinkingModel(selected.model) ? thinkingDepth : undefined,
     };
   };
-  const handleComposerModelChange = useCallback((nextModel: string) => {
-    userSelectedComposerModelRef.current = true;
-    setModel(nextModel);
-  }, []);
+  const handleComposerModelChange = useCallback(
+    (nextModel: string) => {
+      userSelectedComposerModelRef.current = true;
+      setModel(nextModel);
+      const routeTarget = findComposerRouteTargetByKey(
+        workspace.llmSettings?.roleRoutes,
+        nextModel
+      );
+      const parsedTarget = parseModelTargetKey(nextModel);
+      const nextTargetModel = routeTarget?.model || parsedTarget?.model || nextModel;
+      const nextThinkingDepth =
+        routeTarget && isThinkingModel(nextTargetModel) ? (routeTarget.thinkingDepth ?? '') : '';
+      setThinkingDepth(nextThinkingDepth);
+    },
+    [workspace.llmSettings?.roleRoutes]
+  );
+  const handleComposerThinkingDepthChange = useCallback(
+    (nextThinkingDepth: ComposerThinkingDepth) => {
+      userSelectedComposerModelRef.current = true;
+      setThinkingDepth(nextThinkingDepth);
+    },
+    []
+  );
 
   const submitPrompt = async (prompt: string, intent: WorkbenchChatIntent = 'intake') => {
     if (!workspace.activeProject && workspace.projects[0]) {
@@ -345,14 +399,9 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         acceptanceCriteria: '',
       });
       workspace.setActiveSessionId(session.id);
+      const llmSelection = buildComposerLlmSelection();
       userSelectedComposerModelRef.current = false;
-      await workspace.sendWorkbenchMessage(
-        session.id,
-        prompt,
-        intent,
-        null,
-        buildComposerLlmSelection()
-      );
+      await workspace.sendWorkbenchMessage(session.id, prompt, intent, null, llmSelection);
       return;
     }
     await workspace.sendWorkbenchMessage(
@@ -757,7 +806,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
               modelOptions={composerModelOptions}
               thinkingDepth={thinkingDepth}
               onModelChange={handleComposerModelChange}
-              onThinkingDepthChange={setThinkingDepth}
+              onThinkingDepthChange={handleComposerThinkingDepthChange}
               thinkingDepthOptions={composerThinkingDepthOptions}
               onSubmitInitialPrompt={submitPrompt}
               onSubmitWorkbenchMessage={async (prompt, intent) => {

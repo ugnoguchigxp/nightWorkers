@@ -443,6 +443,53 @@ describe('PlanWorkspaceStatusView', () => {
     expect(markup).toContain('順次自動生成');
   });
 
+  it('allows additional confirmation generation even when no additional question set exists', () => {
+    const renderStatus = (latestAdditionalQuestionSetId?: string) =>
+      renderToStaticMarkup(
+        <PlanWorkspaceStatusView
+          workspace={null}
+          questionnaireSession={
+            {
+              id: 'questionnaire-1',
+              status: 'accepted',
+              answers: [],
+              questionSets: [],
+            } as never
+          }
+          questionnaireSummary={
+            {
+              id: '11111111-1111-4111-8111-111111111111',
+              sourceBlueprintMessageId: null,
+              status: 'accepted',
+              answeredCount: 0,
+              totalQuestionCount: latestAdditionalQuestionSetId ? 1 : 0,
+              unansweredCount: latestAdditionalQuestionSetId ? 1 : 0,
+              blockingUnansweredCount: 0,
+              nonBlockingUnansweredCount: latestAdditionalQuestionSetId ? 1 : 0,
+              latestAdditionalQuestionSetId,
+            } as never
+          }
+          busyAction={null}
+          canGenerateDataModel={true}
+          hasFeaturePlan={false}
+          onOpenQuestionnaire={vi.fn()}
+          onGenerateAdditionalQuestions={vi.fn()}
+          onGenerateBlueprint={vi.fn()}
+          onGenerateDataModel={vi.fn()}
+          onGenerateFeaturePlan={vi.fn()}
+          onGenerateDedicatedViews={vi.fn()}
+        />
+      );
+
+    const noExistingAdditionalButton = renderStatus().match(/<button[^>]*>追加確認<\/button>/)?.[0];
+    const enabledAdditionalButton = renderStatus('question-set-1').match(
+      /<button[^>]*>追加確認<\/button>/
+    )?.[0];
+
+    expect(noExistingAdditionalButton).not.toContain('disabled=""');
+    expect(enabledAdditionalButton).not.toContain('disabled=""');
+  });
+
   it('shows separate start-now and add-to-queue actions after the status flow is complete', () => {
     const markup = renderToStaticMarkup(
       <PlanWorkspaceStatusView

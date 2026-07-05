@@ -52,6 +52,8 @@ export function buildPlanZodSchemaSystemPrompt() {
     '生成する object schema は原則 1〜4 個までにしてください。各 schema は画面操作、worker/tool input、provider adapter input、local config のいずれかに直接対応している必要があります。',
     'フォーム化できるよう、top-level は z.object({...}) にし、field は z.string / z.number / z.boolean / z.enum / z.array を中心にしてください。',
     '各 field には必要に応じて .describe(), .min(), .max(), .length(), .email(), .url(), .uuid(), .regex(), .int(), .nonnegative(), .positive(), .optional(), .default() を使ってください。',
+    '必須 field、optional field、enum、代表的な validation error の根拠が Feature Plan / API Contract / Blueprint にある場合は zodSource に反映してください。',
+    '根拠がない field や便利そうな追加 field は作らず、必要なら openQuestions に残してください。',
   ].join('\n');
 }
 

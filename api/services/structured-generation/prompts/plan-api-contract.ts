@@ -187,6 +187,8 @@ export function buildPlanApiContractSystemPrompt() {
     'requestBody.schemaName、response.schemaName、zodOwnerFile、state field が該当しない場合は null ではなく空文字にしてください。',
     'validation.examples の payloadJson は JSON.stringify 済みの文字列にしてください。',
     'status code は success / validation / conflict / auth / not found / server error のうち実装判断に必要なものだけを具体化してください。',
+    'componentSchemas.fields には request / response / error body の主要 field、required、type、enum 相当の判断を必ず反映してください。型名だけで終わらせないでください。',
+    'DELETE response、toggle semantics、sort direction、id generation が未確定で project convention から決められない場合は、推測せず openQuestions に残してください。',
   ].join('\n');
 }
 

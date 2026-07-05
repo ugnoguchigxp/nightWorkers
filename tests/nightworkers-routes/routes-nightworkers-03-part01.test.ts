@@ -1428,6 +1428,94 @@ describe('NightWorkers task routes', () => {
     }
   });
 
+  it('generates additional questionnaire questions through the route and suppresses duplicates', async () => {
+    const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+    const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+    process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+    process.env.ACTIVE_LLM_PROVIDER = 'fixture';
+
+    try {
+      const createdRepo = await repo.createRepository({
+        name: `TEST: Additional Questionnaire Route ${crypto.randomUUID()}`,
+        localPath: '/Users/y.noguchi/Code/nightWorkers',
+        branch: 'main',
+      });
+      const task = await repo.createTask({
+        repositoryId: createdRepo.id,
+        title: 'TEST: Additional questionnaire route target',
+        description: 'Generate additional questionnaire questions through the route',
+        status: 'draft',
+      });
+      process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+        title: '追加確認',
+        rationale: 'API contract needs one more decision.',
+        questions: [
+          {
+            decisionKey: 'api.todo.delete_response',
+            text: 'DELETE /api/todos/{id} の成功 response はどれにしますか？',
+            type: 'radio',
+            options: ['204 No Content', '200 deleted object'],
+            blocking: true,
+            reason: 'API handler と UI の削除後処理が変わるため。',
+          },
+        ],
+      });
+
+      const createRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire/additional`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source: 'user_requested',
+            reason: 'route test',
+            maxQuestions: 5,
+          }),
+        }
+      );
+      expect(createRes.status).toBe(200);
+      const created = await createRes.json();
+      expect(created.session).toMatchObject({ taskId: task.id, status: 'answering' });
+      expect(created.result).toMatchObject({
+        sessionId: created.session.id,
+        addedCount: 1,
+        skippedDuplicateCount: 0,
+        blockingCount: 1,
+        nonBlockingCount: 0,
+      });
+
+      const duplicateRes = await app.request(
+        `http://localhost/api/tasks/${task.id}/design-questionnaire/additional`,
+        {
+          method: 'POST',
+          headers: { ...sameOriginHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source: 'user_requested',
+            reason: 'route test duplicate',
+            maxQuestions: 5,
+          }),
+        }
+      );
+      expect(duplicateRes.status).toBe(200);
+      const duplicate = await duplicateRes.json();
+      expect(duplicate.result).toMatchObject({
+        sessionId: created.session.id,
+        createdQuestionSetId: null,
+        addedCount: 0,
+        skippedDuplicateCount: 1,
+      });
+      expect(duplicate.session.questionSets).toHaveLength(1);
+    } finally {
+      if (originalProvider === undefined) delete process.env.ACTIVE_LLM_PROVIDER;
+      else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+      if (originalFixture === undefined) delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+      else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+      if (originalSettingsPath === undefined) delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+      else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+    }
+  });
+
   it('generates Blueprint, Data Model, and Specification from Status', async () => {
     const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
     const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;

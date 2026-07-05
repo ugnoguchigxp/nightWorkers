@@ -88,19 +88,15 @@ export function buildSpecificationDocumentContext(input: {
     planViewReferences,
     planModeReferences,
     traceability: [
-      input.session ? `Questionnaire session: ${input.session.id}` : 'Questionnaire session: none',
-      latestBlueprint
-        ? `Blueprint message: ${latestBlueprint.id}`
-        : 'Blueprint message: not generated',
-      latestDataModel
-        ? `Data Model message: ${latestDataModel.id}`
-        : 'Data Model message: not generated',
+      input.session ? 'Questionnaire decisions: included' : 'Questionnaire decisions: none',
+      latestBlueprint ? 'Blueprint summary: included' : 'Blueprint summary: not generated',
+      latestDataModel ? 'Data Model DDL reference: included' : 'Data Model DDL reference: none',
       latestApiContract
-        ? `API Contract view: ${latestApiContractArtifact?.id || 'not indexed'}; message: ${latestApiContract.id}`
-        : 'API Contract message: not generated',
+        ? `API Contract: included${latestApiContractArtifact ? ' and indexed' : ''}`
+        : 'API Contract: none',
       latestZodSchema
-        ? `Zod Schema view: ${latestZodSchemaArtifact?.id || 'not indexed'}; message: ${latestZodSchema.id}`
-        : 'Zod Schema message: not generated',
+        ? `Zod Schema: included${latestZodSchemaArtifact ? ' and indexed' : ''}`
+        : 'Zod Schema: none',
       `Workspace counts: blueprint=${workspaceArtifacts(input.workspace, 'blueprintArtifacts').length}, dataModel=${workspaceArtifacts(input.workspace, 'dataModelArtifacts').length}, dedicatedViews=${workspaceArtifacts(input.workspace, 'dedicatedViewArtifacts').length}`,
     ].join('\n'),
   };
@@ -295,7 +291,63 @@ function summarizeSectionProps(section: JsonRecord) {
       .slice(0, 5);
     if (filters.length) parts.push(`フィルターは ${filters.join(' / ')}。`);
   }
+  const interactions = summarizeInteractionHints(section, props);
+  if (interactions.length > 0) parts.push(`操作は ${interactions.join(' / ')}。`);
+  const states = summarizeStateHints(section, props);
+  if (states.length > 0) parts.push(`状態表示は ${states.join(' / ')}。`);
   return parts.join(' ');
+}
+
+function summarizeInteractionHints(section: JsonRecord, props: JsonRecord) {
+  const values = [
+    props.actions,
+    props.rowActions,
+    props.primaryAction,
+    props.secondaryAction,
+    props.submitLabel,
+    props.cancelLabel,
+    section.actions,
+  ];
+  return values
+    .flatMap((value) => labelArray(value))
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
+function summarizeStateHints(section: JsonRecord, props: JsonRecord) {
+  const stateKeys = [
+    ['empty', props.emptyState || section.emptyState],
+    ['loading', props.loadingState || section.loadingState],
+    ['error', props.errorState || section.errorState],
+    ['validation', props.validation || section.validation],
+  ] as const;
+  return stateKeys
+    .map(([label, value]) => {
+      const rendered = summarizeSampleValue(value);
+      return rendered ? `${label}:${rendered}` : '';
+    })
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
+function labelArray(value: unknown): string[] {
+  if (!value) return [];
+  if (typeof value === 'string') return [compactText(value, 60)];
+  if (Array.isArray(value)) {
+    return value
+      .map((item) =>
+        isRecord(item)
+          ? String(item.label || item.title || item.name || item.id || '')
+          : String(item || '')
+      )
+      .filter(Boolean)
+      .map((item) => compactText(item, 60));
+  }
+  if (isRecord(value)) {
+    const label = String(value.label || value.title || value.name || value.id || '');
+    return label ? [compactText(label, 60)] : [];
+  }
+  return [];
 }
 
 function summarizeSampleValue(value: unknown) {
@@ -593,7 +645,15 @@ function renderApiContractReference(artifact: JsonRecord | null) {
         const record = isRecord(operation) ? operation : {};
         const operationId = String(record.operationId || '');
         const summary = compactText(String(record.summary || record.description || ''), 100);
-        return `- ${method.toUpperCase()} ${path}${operationId ? ` (${operationId})` : ''}${summary ? `: ${summary}` : ''}`;
+        const requestShape = summarizeRequestShape(record.requestBody, artifact);
+        const responseShape = summarizeResponseShape(record.responses, artifact);
+        return [
+          `- ${method.toUpperCase()} ${path}${operationId ? ` (${operationId})` : ''}${summary ? `: ${summary}` : ''}`,
+          requestShape ? `  request: ${requestShape}` : null,
+          responseShape ? `  response/error: ${responseShape}` : null,
+        ]
+          .filter(Boolean)
+          .join('\n');
       })
       .slice(0, 8);
   });
@@ -610,6 +670,77 @@ function renderApiContractReference(artifact: JsonRecord | null) {
     );
   }
   return lines.join('\n');
+}
+
+function summarizeRequestShape(value: unknown, artifact: JsonRecord) {
+  if (!isRecord(value)) return '';
+  const schemaName = schemaNameFromContent(value);
+  const shape = schemaName
+    ? summarizeComponentSchema(artifact, schemaName)
+    : summarizeJsonShape(value);
+  const required =
+    value.required === false ? 'optional' : value.required === true ? 'required' : '';
+  return [schemaName, required, shape].filter(Boolean).join('; ');
+}
+
+function summarizeResponseShape(value: unknown, artifact: JsonRecord) {
+  if (!isRecord(value)) return '';
+  return Object.entries(value)
+    .slice(0, 5)
+    .map(([status, response]) => {
+      const record = isRecord(response) ? response : {};
+      const schemaName = schemaNameFromContent(record);
+      const shape = schemaName
+        ? summarizeComponentSchema(artifact, schemaName)
+        : summarizeJsonShape(record);
+      return `${status}${schemaName ? ` ${schemaName}` : ''}${shape ? ` {${shape}}` : ''}`;
+    })
+    .join(' / ');
+}
+
+function schemaNameFromContent(value: JsonRecord) {
+  const content = isRecord(value.content) ? value.content : {};
+  const json = isRecord(content['application/json']) ? content['application/json'] : {};
+  const schema = isRecord(json.schema) ? json.schema : {};
+  const ref = typeof schema.$ref === 'string' ? schema.$ref : '';
+  return ref.split('/').pop() || '';
+}
+
+function summarizeComponentSchema(artifact: JsonRecord, schemaName: string) {
+  const openapi = isRecord(artifact.openapi) ? artifact.openapi : {};
+  const components = isRecord(openapi.components) ? openapi.components : {};
+  const schemas = isRecord(components.schemas) ? components.schemas : {};
+  const schema = isRecord(schemas[schemaName]) ? schemas[schemaName] : null;
+  if (!schema) return '';
+  const properties = isRecord(schema.properties) ? schema.properties : {};
+  const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
+  const fields = Object.entries(properties)
+    .slice(0, 8)
+    .map(([name, field]) => {
+      const record = isRecord(field) ? field : {};
+      const type = Array.isArray(record.enum)
+        ? `enum(${record.enum.map(String).join('|')})`
+        : String(record.type || 'unknown');
+      return `${name}:${type}${required.has(name) ? '' : '?'}`;
+    });
+  return fields.join(', ');
+}
+
+function summarizeJsonShape(value: JsonRecord) {
+  const schema = isRecord(value.schema) ? value.schema : value;
+  const properties = isRecord(schema.properties) ? schema.properties : {};
+  if (Object.keys(properties).length === 0) return '';
+  const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
+  return Object.entries(properties)
+    .slice(0, 8)
+    .map(([name, field]) => {
+      const record = isRecord(field) ? field : {};
+      const type = Array.isArray(record.enum)
+        ? `enum(${record.enum.map(String).join('|')})`
+        : String(record.type || 'unknown');
+      return `${name}:${type}${required.has(name) ? '' : '?'}`;
+    })
+    .join(', ');
 }
 
 function renderZodSchemaReference(artifact: JsonRecord | null) {
@@ -636,7 +767,26 @@ function renderZodSchemaReference(artifact: JsonRecord | null) {
         .join(' / ')}`
     );
   }
+  const zodSource = typeof artifact.zodSource === 'string' ? artifact.zodSource : '';
+  const inferredShape = summarizeZodSourceShape(zodSource);
+  if (inferredShape) lines.push(`JSON shape: ${inferredShape}`);
   return lines.join('\n');
+}
+
+function summarizeZodSourceShape(source: string) {
+  if (!source.trim()) return '';
+  const objectMatch = source.match(/z\.object\(\s*\{([\s\S]*?)\}\s*\)/);
+  const body = objectMatch?.[1] || '';
+  if (!body.trim()) return '';
+  const fields = [...body.matchAll(/([A-Za-z_$][\w$]*)\s*:\s*z\.([A-Za-z]+)([\s\S]*?)(?:,|\n|$)/g)]
+    .slice(0, 8)
+    .map((match) => {
+      const name = match[1];
+      const type = match[2];
+      const chain = match[3] || '';
+      return `${name}:${type}${chain.includes('.optional()') ? '?' : ''}`;
+    });
+  return fields.join(', ');
 }
 
 function ddlType(value: unknown) {

@@ -244,12 +244,9 @@ describe('Specification document generation', () => {
     expect(context.planViewReferences).toContain('Validation: CreateTodoRequest');
     expect(context.planViewReferences).toContain('Zod Schema: TodoTaskInputSchema');
     expect(context.planViewReferences).toContain('status:enum/required(todo|done)');
-    expect(context.traceability).toContain(
-      'API Contract view: api_io_contract-api-contract-message; message: api-contract-message'
-    );
-    expect(context.traceability).toContain(
-      'Zod Schema view: zod_schema_design-zod-schema-message; message: zod-schema-message'
-    );
+    expect(context.traceability).toContain('API Contract: included and indexed');
+    expect(context.traceability).toContain('Zod Schema: included and indexed');
+    expect(context.traceability).toContain('Data Model DDL reference: included');
     expect(context.planModeReferences).toContain('Dedicated Views:');
     expect(context.planModeReferences).toContain('Todo User Flow');
     expect(context.planModeReferences).toContain('flowchart TD');

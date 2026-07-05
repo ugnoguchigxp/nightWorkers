@@ -211,6 +211,8 @@ describe('PlanModeWorkspaceViewer', () => {
 
     expect(markup).toContain('>Questionnaire</button>');
     expect(markup).toContain('No questionnaire session.');
+    const additionalButton = markup.match(/<button[^>]*>追加確認<\/button>/)?.[0];
+    expect(additionalButton).not.toContain('disabled=""');
     expect(markup).not.toContain('>Status</button>');
     expect(markup).not.toContain('>spec</button>');
   });

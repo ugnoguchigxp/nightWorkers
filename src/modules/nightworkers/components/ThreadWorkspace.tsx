@@ -14,6 +14,7 @@ import type {
   ActivityArtifact,
   ActivityEvent,
   BackgroundProcess,
+  ComposerThinkingDepth,
   ModelOption,
   Repository,
   Task,
@@ -21,7 +22,6 @@ import type {
   TaskLlmUsageSummary,
   TaskMessage,
   TaskRun,
-  ThinkingDepth,
   ThinkingDepthOption,
   WorkbenchArtifactContext,
   WorkbenchArtifactRef,
@@ -71,11 +71,11 @@ type ThreadWorkspaceProps = {
   isAgentThinking: boolean;
   realtimeStatus: 'initializing' | 'connecting' | 'connected' | 'disconnected';
   model: string;
-  thinkingDepth: ThinkingDepth;
+  thinkingDepth: ComposerThinkingDepth;
   thinkingDepthOptions: ThinkingDepthOption[];
   onModelChange: (model: string) => void;
   modelOptions: ModelOption[];
-  onThinkingDepthChange: (depth: ThinkingDepth) => void;
+  onThinkingDepthChange: (depth: ComposerThinkingDepth) => void;
   onSubmitInitialPrompt: (prompt: string) => Promise<void>;
   onSubmitWorkbenchMessage: (prompt: string, intent: WorkbenchChatIntent) => Promise<void>;
   canStopActiveRun?: boolean;
