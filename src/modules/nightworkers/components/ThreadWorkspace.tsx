@@ -60,6 +60,7 @@ type ThreadWorkspaceProps = {
   latestRun?: TaskRun;
   taskMessages: TaskMessage[];
   latestRunEvents: TaskEvent[];
+  injectedPrompt?: { id: number; text: string } | null;
   llmUsageSummary: TaskLlmUsageSummary | null;
   activityEvents: ActivityEvent[];
   activityArtifacts: ActivityArtifact[];
@@ -445,6 +446,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
               isAgentWorking={props.isAgentWorking}
               latestRun={props.latestRun}
               latestRunEvents={props.latestRunEvents}
+              injectedPrompt={props.injectedPrompt}
               model={props.model}
               modelOptions={props.modelOptions}
               onGrantExternalPath={props.onGrantExternalPath}
@@ -486,6 +488,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
             isAgentWorking={props.isAgentWorking}
             latestRun={props.latestRun}
             latestRunEvents={props.latestRunEvents}
+            injectedPrompt={props.injectedPrompt}
             model={props.model}
             modelOptions={props.modelOptions}
             onGrantExternalPath={props.onGrantExternalPath}

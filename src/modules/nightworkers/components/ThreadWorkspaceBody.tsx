@@ -32,6 +32,7 @@ type ThreadBodyProps = {
   isAgentWorking: boolean;
   latestRun?: TaskRun;
   latestRunEvents: TaskEvent[];
+  injectedPrompt?: { id: number; text: string } | null;
   model: string;
   modelOptions: ModelOption[];
   onGrantExternalPath: (path: string) => Promise<void>;
@@ -158,6 +159,7 @@ export function ThreadBody({
   isAgentWorking,
   latestRun,
   latestRunEvents,
+  injectedPrompt = null,
   model,
   modelOptions,
   onGrantExternalPath,
@@ -262,6 +264,7 @@ export function ThreadBody({
                 : 'nightworkers:composer:new'
             }
             initialPrompt={composerDraftState.initialPrompt}
+            injectedPrompt={injectedPrompt}
             discardStoredDraft={composerDraftState.discardStoredDraft}
             artifactContext={activeArtifactContext}
             model={model}

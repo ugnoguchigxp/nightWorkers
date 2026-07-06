@@ -229,7 +229,7 @@ export function getSessionProgress(
     events.some((event) => getRunEventType(event).startsWith('verification.'))
   ) {
     percent = Math.max(percent, 75);
-    basis.push({ kind: 'run_event', refId: latestRun?.id, label: 'Verification evidence exists' });
+    basis.push({ kind: 'run_event', refId: latestRun?.id, label: 'Verification record exists' });
   }
   if (
     reviews.some((review) => review.verdict === 'approved') ||

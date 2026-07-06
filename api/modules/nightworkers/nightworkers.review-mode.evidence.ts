@@ -104,7 +104,7 @@ export function buildRecommendationFromEvidence(input: {
     addReason({
       code: 'verification_missing',
       severity: 'blocking',
-      label: 'Changed run has no completed verification evidence.',
+      label: 'Changed run has no saved verification record.',
       evidenceRefs: [diffRef(pack)],
     });
   }
@@ -112,7 +112,7 @@ export function buildRecommendationFromEvidence(input: {
     addReason({
       code: 'verification_failed',
       severity: 'blocking',
-      label: 'A verification command failed.',
+      label: 'A saved verification record failed.',
       evidenceRefs: verificationRefs(pack),
     });
   }
@@ -120,7 +120,7 @@ export function buildRecommendationFromEvidence(input: {
     addReason({
       code: 'acceptance_evidence_missing',
       severity: 'blocking',
-      label: 'Final report is missing, so acceptance evidence cannot be checked.',
+      label: 'Final report is missing, so the completion claim cannot be checked.',
       evidenceRefs: [{ kind: 'final_report', runId: input.runId }],
     });
   }
@@ -201,7 +201,7 @@ export function buildRecommendationFromEvidence(input: {
     addReason({
       code: 'final_report_evidence_mismatch',
       severity: 'blocking',
-      label: 'Final report claims verification success without verification evidence.',
+      label: 'Final report claims verification success without a matching verification record.',
       evidenceRefs: [{ kind: 'final_report', runId: input.runId }],
     });
   }
@@ -245,7 +245,7 @@ export function sectionFindings(
       findings.push({
         severity: 'blocking',
         title: 'Final report is missing',
-        body: 'Review acceptance cannot be completed without a final report or equivalent closeout evidence.',
+        body: 'Run record check cannot confirm the completion claim without a final report or equivalent closeout record.',
         evidenceRefs: [{ kind: 'final_report', runId: pack.runId }],
       });
     }
@@ -257,8 +257,8 @@ export function sectionFindings(
     ) {
       findings.push({
         severity: 'blocking',
-        title: 'Final report claims verification without evidence',
-        body: 'The final report claims a passing verification state, but no verification.finished evidence is present.',
+        title: 'Final report claims verification without a matching record',
+        body: 'The final report claims a passing verification state, but no matching verification.finished record is present.',
         evidenceRefs: [{ kind: 'final_report', runId: pack.runId }],
       });
     }
@@ -269,8 +269,8 @@ export function sectionFindings(
       return [
         {
           severity: 'blocking',
-          title: 'Verification evidence is missing',
-          body: 'The run changed files but has no completed verification result.',
+          title: 'Saved verification record is missing',
+          body: 'The run changed files but has no saved verification record.',
           evidenceRefs: [diffRef(pack)],
         },
       ];
@@ -279,8 +279,8 @@ export function sectionFindings(
       .filter((verification) => verification.passed === false)
       .map((verification) => ({
         severity: 'blocking' as const,
-        title: 'Verification failed',
-        body: verification.summary || verification.command || 'A verification result failed.',
+        title: 'Saved verification record failed',
+        body: verification.summary || verification.command || 'A saved verification record failed.',
         evidenceRefs: [
           {
             kind: 'verification' as const,

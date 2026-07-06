@@ -7,7 +7,7 @@ import {
   createReviewerEvaluationRoute,
   createReviewerReplayEvaluationRoute,
   createReviewKnowledgeCandidateRoute,
-  createReviewProposedGoalsRoute,
+  createReviewPromptSuggestionsRoute,
   createReviewSessionRoute,
   createRunReviewRoute,
   type exportTaskRunJsonlRoute,
@@ -22,7 +22,6 @@ import {
   listTaskRunActivityEventsRoute,
   listTaskRunEventsRoute,
   type listTaskRunsRoute,
-  materializeReviewProposedGoalRoute,
   runReviewSectionRoute,
   sendReviewKnowledgeCandidateRoute,
   startBackgroundProcessRoute,
@@ -30,7 +29,8 @@ import {
   stopTaskRunRoute,
   updateReviewFindingDispositionRoute,
   updateReviewKnowledgeCandidateRoute,
-  updateReviewProposedGoalRoute,
+  updateReviewPromptSuggestionRoute,
+  useReviewPromptSuggestionRoute,
 } from './routes/run-routes';
 import { startTaskRunRoute } from './routes/task-routes';
 
@@ -202,33 +202,33 @@ export const updateReviewFindingDispositionHandler = withOpenApiRouteError(
   }
 );
 
-export const createReviewProposedGoalsHandler = withOpenApiRouteError(
-  createReviewProposedGoalsRoute,
+export const createReviewPromptSuggestionsHandler = withOpenApiRouteError(
+  createReviewPromptSuggestionsRoute,
   async (c) => {
-    const result = await service.createReviewProposedGoals(c.req.param('id'));
+    const result = await service.createReviewPromptSuggestions(c.req.param('id'));
     return c.json(result, 200);
   }
 );
 
-export const updateReviewProposedGoalHandler = withOpenApiRouteError(
-  updateReviewProposedGoalRoute,
+export const updateReviewPromptSuggestionHandler = withOpenApiRouteError(
+  updateReviewPromptSuggestionRoute,
   async (c) => {
-    const result = await service.updateReviewProposedGoalDecision(
+    const result = await service.updateReviewPromptSuggestion(
       c.req.param('id'),
-      c.req.param('goalId'),
+      c.req.param('suggestionId'),
       c.req.valid('json')
     );
     return c.json(result, 200);
   }
 );
 
-export const materializeReviewProposedGoalHandler = withOpenApiRouteError(
-  materializeReviewProposedGoalRoute,
+export const useReviewPromptSuggestionHandler = withOpenApiRouteError(
+  useReviewPromptSuggestionRoute,
   async (c) => {
-    const result = await service.materializeReviewProposedGoal(
+    const result = await service.useReviewPromptSuggestion(
       c.req.param('id'),
-      c.req.param('goalId'),
-      c.req.valid('json') ?? { target: 'task' }
+      c.req.param('suggestionId'),
+      c.req.valid('json') ?? {}
     );
     return c.json(result, 200);
   }

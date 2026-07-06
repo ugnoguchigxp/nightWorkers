@@ -97,7 +97,7 @@ describe('Review Mode', () => {
     expect(sectionRes.status).toBe(200);
     const afterSection = await sectionRes.json();
     expect(afterSection.findings.map((finding: { title: string }) => finding.title)).toContain(
-      'Verification evidence is missing'
+      'Saved verification record is missing'
     );
 
     const approveRes = await app.request(
@@ -313,7 +313,7 @@ describe('Review Mode', () => {
     expect(duplicateCreate.knowledgeCandidates).toHaveLength(1);
   });
 
-  it('routes findings to review-owned proposed goals and materializes approved goals as draft tasks', async () => {
+  it('routes findings to review-owned prompt suggestions without creating draft tasks', async () => {
     const { sessionId, findingId } = await createSessionWithVerificationFinding();
 
     const dispositionRes = await app.request(
@@ -322,64 +322,41 @@ describe('Review Mode', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
         body: JSON.stringify({
-          disposition: 'proposed_goal',
-          note: 'Create a follow-up task with verification evidence.',
+          disposition: 'prompt_suggestion',
+          note: 'Continue this session with verification evidence.',
         }),
       }
     );
     expect(dispositionRes.status).toBe(200);
     const routed = await dispositionRes.json();
-    expect(routed.proposedGoals).toHaveLength(1);
-    expect(routed.proposedGoals[0]).toMatchObject({
+    expect(routed.promptSuggestions).toHaveLength(1);
+    expect(routed.promptSuggestions[0]).toMatchObject({
       findingId,
       status: 'draft',
-      materializedTaskId: null,
     });
+    expect(routed.promptSuggestions[0].prompt).toContain('この session の作業を続けてください');
     expect(
       routed.findings.find((finding: { id: string }) => finding.id === findingId)
     ).toMatchObject({
-      disposition: 'proposed_goal',
+      disposition: 'prompt_suggestion',
       dispositionStatus: 'converted',
-      createdGoalId: routed.proposedGoals[0].id,
+      createdGoalId: routed.promptSuggestions[0].id,
     });
 
-    const approveGoalRes = await app.request(
-      `http://localhost/api/review-sessions/${sessionId}/proposed-goals/${routed.proposedGoals[0].id}`,
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
-        body: JSON.stringify({ status: 'approved', note: 'Approved for explicit task creation.' }),
-      }
-    );
-    expect(approveGoalRes.status).toBe(200);
-    const approved = await approveGoalRes.json();
-    expect(approved.proposedGoals[0]).toMatchObject({ status: 'approved' });
-
-    const materializeRes = await app.request(
-      `http://localhost/api/review-sessions/${sessionId}/proposed-goals/${routed.proposedGoals[0].id}/materialize`,
+    const useSuggestionRes = await app.request(
+      `http://localhost/api/review-sessions/${sessionId}/prompt-suggestions/${routed.promptSuggestions[0].id}/use`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
-        body: JSON.stringify({ target: 'task' }),
+        body: JSON.stringify({}),
       }
     );
-    expect(materializeRes.status).toBe(200);
-    const materialized = await materializeRes.json();
-    const taskId = materialized.proposedGoals[0].materializedTaskId;
-    expect(materialized.proposedGoals[0]).toMatchObject({
-      status: 'materialized',
-      materializationTarget: 'task',
-    });
-    expect(taskId).toBeTruthy();
-    const task = await repo.getTask(taskId);
-    expect(task).toMatchObject({
-      status: 'draft',
-      title: materialized.proposedGoals[0].title,
-      createdBy: 'review-mode',
-    });
+    expect(useSuggestionRes.status).toBe(200);
+    const used = await useSuggestionRes.json();
+    expect(used.promptSuggestions[0]).toMatchObject({ status: 'used', useCount: 1 });
   });
 
-  it('does not persist proposed_goal disposition when evidence refs are missing', async () => {
+  it('does not persist prompt_suggestion disposition when evidence refs are missing', async () => {
     const { sessionId, findingId } = await createSessionWithManualFinding({ evidenceRefs: [] });
 
     const dispositionRes = await app.request(
@@ -388,7 +365,7 @@ describe('Review Mode', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
         body: JSON.stringify({
-          disposition: 'proposed_goal',
+          disposition: 'prompt_suggestion',
           note: 'This should not be persisted without evidence.',
         }),
       }
@@ -400,7 +377,7 @@ describe('Review Mode', () => {
     });
     expect(detailRes.status).toBe(200);
     const detail = await detailRes.json();
-    expect(detail.proposedGoals).toHaveLength(0);
+    expect(detail.promptSuggestions).toHaveLength(0);
     expect(
       detail.findings.find((finding: { id: string }) => finding.id === findingId)
     ).toMatchObject({
@@ -408,6 +385,24 @@ describe('Review Mode', () => {
       dispositionStatus: 'unresolved',
       createdGoalId: null,
     });
+  });
+
+  it('caps generated prompt suggestions to five active cards', async () => {
+    const { sessionId } = await createSessionWithManualFindings(6);
+
+    const syncRes = await app.request(
+      `http://localhost/api/review-sessions/${sessionId}/prompt-suggestions`,
+      {
+        method: 'POST',
+        headers: sameOriginHeaders,
+      }
+    );
+    expect(syncRes.status).toBe(200);
+    const synced = await syncRes.json();
+    expect(
+      synced.promptSuggestions.filter((item: { status: string }) => item.status === 'draft')
+    ).toHaveLength(5);
+    expect(synced.statusArtifact.promptSuggestionCount).toBe(5);
   });
 
   it('routes security plugin handoff findings into review-owned handoff artifacts', async () => {
@@ -491,7 +486,7 @@ async function createSessionWithVerificationFinding() {
   expect(sectionRes.status).toBe(200);
   const afterSection = await sectionRes.json();
   const finding = afterSection.findings.find(
-    (item: { title: string }) => item.title === 'Verification evidence is missing'
+    (item: { title: string }) => item.title === 'Saved verification record is missing'
   );
   expect(finding).toBeTruthy();
   return { sessionId: started.session.id as string, findingId: finding.id as string };
@@ -568,4 +563,38 @@ async function createSessionWithManualFinding(input: { evidenceRefs: unknown[] }
     },
   ]);
   return { sessionId: started.session.id as string, findingId: finding.id as string };
+}
+
+async function createSessionWithManualFindings(count: number) {
+  const { task } = await createTask();
+  const run = await repo.createTaskRun({
+    taskId: task.id,
+    repositoryId: task.repositoryId,
+    status: 'completed',
+    workerKind: 'native-local',
+    summary: 'Manual review fixture',
+    finalReport: 'Manual review fixture.',
+    startedAt: new Date(),
+    endedAt: new Date(),
+    finishedAt: new Date(),
+  });
+  const startRes = await app.request(`http://localhost/api/runs/${run.id}/review-sessions`, {
+    method: 'POST',
+    headers: sameOriginHeaders,
+  });
+  expect(startRes.status).toBe(201);
+  const started = await startRes.json();
+  await reviewRepo.createReviewFindings(
+    Array.from({ length: count }, (_, index) => ({
+      reviewSessionId: started.session.id,
+      runId: run.id,
+      taskId: task.id,
+      severity: 'blocking',
+      title: `Manual capped finding ${index} ${crypto.randomUUID()}`,
+      body: 'Manual finding for prompt suggestion caps.',
+      evidenceRefsJson: [{ kind: 'changed_file', path: `src/file-${index}.ts` }],
+      sourceSection: 'findings',
+    }))
+  );
+  return { sessionId: started.session.id as string };
 }

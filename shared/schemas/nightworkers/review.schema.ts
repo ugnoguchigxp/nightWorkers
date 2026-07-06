@@ -351,7 +351,7 @@ export const reviewSectionKindSchema = z
     'queue_recovery',
     'security_review',
     'findings',
-    'proposed_goals',
+    'prompt_suggestions',
     'knowledge_candidates',
   ])
   .openapi('ReviewSectionKind');
@@ -372,7 +372,7 @@ export const reviewFindingDispositionSchema = z
   .enum([
     'human_callout',
     'agent_followup',
-    'proposed_goal',
+    'prompt_suggestion',
     'security_plugin_handoff',
     'knowledge_candidate',
     'accepted_risk',
@@ -415,7 +415,7 @@ export const reviewStatusArtifactSchema = z
       unresolvedBlockingFindingIds: z.array(z.string().uuid()),
       requiredSectionKindsRemaining: z.array(reviewSectionKindSchema),
     }),
-    proposedGoalCount: z.number().int().nonnegative(),
+    promptSuggestionCount: z.number().int().nonnegative(),
     knowledgeCandidateCount: z.number().int().nonnegative(),
     securityHandoffCount: z.number().int().nonnegative().optional(),
   })
@@ -492,11 +492,11 @@ export const reviewKnowledgeCandidateSchema = z
   })
   .openapi('ReviewKnowledgeCandidate');
 
-export const reviewProposedGoalStatusSchema = z
-  .enum(['draft', 'approved', 'rejected', 'deferred', 'materialized'])
-  .openapi('ReviewProposedGoalStatus');
+export const reviewPromptSuggestionStatusSchema = z
+  .enum(['draft', 'used', 'dismissed'])
+  .openapi('ReviewPromptSuggestionStatus');
 
-export const reviewProposedGoalSchema = z
+export const reviewPromptSuggestionSchema = z
   .object({
     id: z.string().uuid(),
     reviewSessionId: z.string().uuid(),
@@ -505,19 +505,20 @@ export const reviewProposedGoalSchema = z
     taskId: z.string().uuid(),
     repositoryId: z.string().uuid(),
     title: z.string(),
+    prompt: z.string(),
     expectedOutcome: z.string(),
     acceptanceCriteria: z.string(),
-    verificationGate: z.string(),
+    verificationHint: z.string(),
     evidenceRefs: z.array(reviewEvidenceRefSchema),
-    status: reviewProposedGoalStatusSchema,
-    decisionNote: z.string().nullable(),
-    materializedTaskId: z.string().uuid().nullable(),
-    materializationTarget: z.string().nullable(),
-    materializationError: z.string().nullable(),
+    status: reviewPromptSuggestionStatusSchema,
+    useCount: z.number().int().nonnegative(),
+    lastUsedAt: z.string().nullable(),
+    dismissedAt: z.string().nullable(),
+    createdMessageId: z.string().uuid().nullable(),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
-  .openapi('ReviewProposedGoal');
+  .openapi('ReviewPromptSuggestion');
 
 export const reviewSecurityHandoffStatusSchema = z
   .enum(['needs_configuration', 'requested', 'deferred'])
@@ -551,7 +552,7 @@ export const reviewSessionDetailSchema = z
     artifacts: z.array(reviewArtifactSchema),
     findings: z.array(reviewModeFindingSchema),
     knowledgeCandidates: z.array(reviewKnowledgeCandidateSchema),
-    proposedGoals: z.array(reviewProposedGoalSchema),
+    promptSuggestions: z.array(reviewPromptSuggestionSchema),
     securityHandoffs: z.array(reviewSecurityHandoffSchema),
   })
   .openapi('ReviewSessionDetail');
@@ -570,18 +571,17 @@ export const reviewFindingDispositionRequestSchema = z
   })
   .openapi('ReviewFindingDispositionRequest');
 
-export const reviewProposedGoalUpdateRequestSchema = z
+export const reviewPromptSuggestionUpdateRequestSchema = z
   .object({
-    status: z.enum(['approved', 'rejected', 'deferred']),
-    note: z.string().optional(),
+    status: z.enum(['dismissed']),
   })
-  .openapi('ReviewProposedGoalUpdateRequest');
+  .openapi('ReviewPromptSuggestionUpdateRequest');
 
-export const reviewProposedGoalMaterializeRequestSchema = z
+export const reviewPromptSuggestionUseRequestSchema = z
   .object({
-    target: z.literal('task').default('task'),
+    createdMessageId: z.string().uuid().optional(),
   })
-  .openapi('ReviewProposedGoalMaterializeRequest');
+  .openapi('ReviewPromptSuggestionUseRequest');
 
 export const reviewKnowledgeCandidateRequestSchema = z
   .object({

@@ -105,7 +105,7 @@ export type NightWorkersWorkspaceState = {
       disposition:
         | 'human_callout'
         | 'agent_followup'
-        | 'proposed_goal'
+        | 'prompt_suggestion'
         | 'security_plugin_handoff'
         | 'knowledge_candidate'
         | 'accepted_risk'
@@ -114,15 +114,15 @@ export type NightWorkersWorkspaceState = {
       evidenceRefs?: unknown[];
     }
   ) => Promise<ReviewSessionDetail>;
-  createReviewProposedGoals: (reviewSessionId: string) => Promise<ReviewSessionDetail>;
-  updateReviewProposedGoal: (
+  createReviewPromptSuggestions: (reviewSessionId: string) => Promise<ReviewSessionDetail>;
+  updateReviewPromptSuggestion: (
     reviewSessionId: string,
-    goalId: string,
-    input: { status: 'approved' | 'rejected' | 'deferred'; note?: string }
+    suggestionId: string,
+    input: { status: 'dismissed' }
   ) => Promise<ReviewSessionDetail>;
-  materializeReviewProposedGoal: (
+  markReviewPromptSuggestionUsed: (
     reviewSessionId: string,
-    goalId: string
+    suggestionId: string
   ) => Promise<ReviewSessionDetail>;
   createReviewKnowledgeCandidate: (
     reviewSessionId: string,

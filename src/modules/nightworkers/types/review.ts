@@ -134,7 +134,7 @@ export type ReviewSectionKind =
   | 'queue_recovery'
   | 'security_review'
   | 'findings'
-  | 'proposed_goals'
+  | 'prompt_suggestions'
   | 'knowledge_candidates';
 
 export type ReviewSectionRequirement = 'required' | 'recommended' | 'optional' | 'omitted';
@@ -164,7 +164,7 @@ export type ReviewStatusArtifact = {
     unresolvedBlockingFindingIds: string[];
     requiredSectionKindsRemaining: ReviewSectionKind[];
   };
-  proposedGoalCount: number;
+  promptSuggestionCount: number;
   knowledgeCandidateCount: number;
   securityHandoffCount?: number;
 };
@@ -201,7 +201,7 @@ export type ReviewModeFinding = {
   disposition:
     | 'human_callout'
     | 'agent_followup'
-    | 'proposed_goal'
+    | 'prompt_suggestion'
     | 'security_plugin_handoff'
     | 'knowledge_candidate'
     | 'accepted_risk'
@@ -246,7 +246,7 @@ export type ReviewKnowledgeCandidate = {
   updatedAt: string;
 };
 
-export type ReviewProposedGoal = {
+export type ReviewPromptSuggestion = {
   id: string;
   reviewSessionId: string;
   findingId: string;
@@ -254,15 +254,16 @@ export type ReviewProposedGoal = {
   taskId: string;
   repositoryId: string;
   title: string;
+  prompt: string;
   expectedOutcome: string;
   acceptanceCriteria: string;
-  verificationGate: string;
+  verificationHint: string;
   evidenceRefs: ReviewEvidenceRef[];
-  status: 'draft' | 'approved' | 'rejected' | 'deferred' | 'materialized';
-  decisionNote: string | null;
-  materializedTaskId: string | null;
-  materializationTarget: string | null;
-  materializationError: string | null;
+  status: 'draft' | 'used' | 'dismissed';
+  useCount: number;
+  lastUsedAt: string | null;
+  dismissedAt: string | null;
+  createdMessageId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -292,7 +293,7 @@ export type ReviewSessionDetail = {
   artifacts: ReviewArtifact[];
   findings: ReviewModeFinding[];
   knowledgeCandidates: ReviewKnowledgeCandidate[];
-  proposedGoals: ReviewProposedGoal[];
+  promptSuggestions: ReviewPromptSuggestion[];
   securityHandoffs: ReviewSecurityHandoff[];
 };
 

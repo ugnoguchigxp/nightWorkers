@@ -14,8 +14,8 @@ import {
   reviewFindingSchema,
   reviewKnowledgeCandidateRequestSchema,
   reviewKnowledgeCandidateUpdateRequestSchema,
-  reviewProposedGoalMaterializeRequestSchema,
-  reviewProposedGoalUpdateRequestSchema,
+  reviewPromptSuggestionUpdateRequestSchema,
+  reviewPromptSuggestionUseRequestSchema,
   reviewRecommendationSchema,
   reviewResultSchema,
   reviewSectionKindSchema,
@@ -561,9 +561,9 @@ export const updateReviewFindingDispositionRoute = createRoute({
   },
 });
 
-export const createReviewProposedGoalsRoute = createRoute({
+export const createReviewPromptSuggestionsRoute = createRoute({
   method: 'post',
-  path: '/review-sessions/:id/proposed-goals',
+  path: '/review-sessions/:id/prompt-suggestions',
   request: {
     params: z.object({
       id: z.string().uuid().openapi({ example: 'review-session-uuid' }),
@@ -576,23 +576,23 @@ export const createReviewProposedGoalsRoute = createRoute({
           schema: reviewSessionDetailSchema,
         },
       },
-      description: 'Review proposed Goal candidates created',
+      description: 'Review prompt suggestions created',
     },
   },
 });
 
-export const updateReviewProposedGoalRoute = createRoute({
+export const updateReviewPromptSuggestionRoute = createRoute({
   method: 'patch',
-  path: '/review-sessions/:id/proposed-goals/:goalId',
+  path: '/review-sessions/:id/prompt-suggestions/:suggestionId',
   request: {
     params: z.object({
       id: z.string().uuid().openapi({ example: 'review-session-uuid' }),
-      goalId: z.string().uuid().openapi({ example: 'review-proposed-goal-uuid' }),
+      suggestionId: z.string().uuid().openapi({ example: 'review-prompt-suggestion-uuid' }),
     }),
     body: {
       content: {
         'application/json': {
-          schema: reviewProposedGoalUpdateRequestSchema,
+          schema: reviewPromptSuggestionUpdateRequestSchema,
         },
       },
     },
@@ -604,23 +604,23 @@ export const updateReviewProposedGoalRoute = createRoute({
           schema: reviewSessionDetailSchema,
         },
       },
-      description: 'Review proposed Goal decision updated',
+      description: 'Review prompt suggestion updated',
     },
   },
 });
 
-export const materializeReviewProposedGoalRoute = createRoute({
+export const useReviewPromptSuggestionRoute = createRoute({
   method: 'post',
-  path: '/review-sessions/:id/proposed-goals/:goalId/materialize',
+  path: '/review-sessions/:id/prompt-suggestions/:suggestionId/use',
   request: {
     params: z.object({
       id: z.string().uuid().openapi({ example: 'review-session-uuid' }),
-      goalId: z.string().uuid().openapi({ example: 'review-proposed-goal-uuid' }),
+      suggestionId: z.string().uuid().openapi({ example: 'review-prompt-suggestion-uuid' }),
     }),
     body: {
       content: {
         'application/json': {
-          schema: reviewProposedGoalMaterializeRequestSchema.optional(),
+          schema: reviewPromptSuggestionUseRequestSchema.optional(),
         },
       },
     },
@@ -632,7 +632,7 @@ export const materializeReviewProposedGoalRoute = createRoute({
           schema: reviewSessionDetailSchema,
         },
       },
-      description: 'Review proposed Goal materialized through an explicit boundary',
+      description: 'Review prompt suggestion marked used',
     },
   },
 });

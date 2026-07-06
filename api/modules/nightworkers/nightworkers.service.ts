@@ -268,15 +268,15 @@ export {
 export {
   applyReviewFinalAction,
   createReviewKnowledgeCandidate,
-  createReviewProposedGoals,
+  createReviewPromptSuggestions,
   getLatestReviewSessionDetailForTask,
   getOrCreateReviewRecommendation,
   getReviewSessionDetail,
-  materializeReviewProposedGoal,
   runReviewSection,
   sendReviewKnowledgeCandidate,
   setReviewFindingDisposition,
   startReviewSessionForRun,
   updateReviewKnowledgeCandidate,
-  updateReviewProposedGoalDecision,
+  updateReviewPromptSuggestion,
+  useReviewPromptSuggestion,
 } from './nightworkers.review-mode.service';

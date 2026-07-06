@@ -80,7 +80,7 @@ type ArtifactPaneProps = {
       disposition:
         | 'human_callout'
         | 'agent_followup'
-        | 'proposed_goal'
+        | 'prompt_suggestion'
         | 'security_plugin_handoff'
         | 'knowledge_candidate'
         | 'accepted_risk'
@@ -89,16 +89,18 @@ type ArtifactPaneProps = {
       evidenceRefs?: unknown[];
     }
   ) => Promise<ReviewSessionDetail>;
-  onCreateReviewProposedGoals?: (reviewSessionId: string) => Promise<ReviewSessionDetail>;
-  onUpdateReviewProposedGoal?: (
+  onCreateReviewPromptSuggestions?: (reviewSessionId: string) => Promise<ReviewSessionDetail>;
+  onUpdateReviewPromptSuggestion?: (
     reviewSessionId: string,
-    goalId: string,
-    input: { status: 'approved' | 'rejected' | 'deferred'; note?: string }
+    suggestionId: string,
+    input: { status: 'dismissed' }
   ) => Promise<ReviewSessionDetail>;
-  onMaterializeReviewProposedGoal?: (
+  onUseReviewPromptSuggestion?: (
     reviewSessionId: string,
-    goalId: string
+    suggestionId: string,
+    prompt: string
   ) => Promise<ReviewSessionDetail>;
+  onInsertReviewPromptSuggestion?: (prompt: string) => void;
   onCreateReviewKnowledgeCandidate?: (
     reviewSessionId: string,
     input: {
@@ -203,9 +205,10 @@ export function ArtifactPane({
   activeReviewSession,
   onRunReviewSection,
   onUpdateReviewFindingDisposition,
-  onCreateReviewProposedGoals,
-  onUpdateReviewProposedGoal,
-  onMaterializeReviewProposedGoal,
+  onCreateReviewPromptSuggestions,
+  onUpdateReviewPromptSuggestion,
+  onUseReviewPromptSuggestion,
+  onInsertReviewPromptSuggestion,
   onCreateReviewKnowledgeCandidate,
   onUpdateReviewKnowledgeCandidate,
   onSendReviewKnowledgeCandidate,
@@ -405,9 +408,10 @@ export function ArtifactPane({
               }
               onFinalAction={onApplyReviewFinalAction}
               onUpdateFindingDisposition={onUpdateReviewFindingDisposition}
-              onCreateProposedGoals={onCreateReviewProposedGoals}
-              onUpdateProposedGoal={onUpdateReviewProposedGoal}
-              onMaterializeProposedGoal={onMaterializeReviewProposedGoal}
+              onCreatePromptSuggestions={onCreateReviewPromptSuggestions}
+              onUpdatePromptSuggestion={onUpdateReviewPromptSuggestion}
+              onUsePromptSuggestion={onUseReviewPromptSuggestion}
+              onInsertPromptSuggestion={onInsertReviewPromptSuggestion}
               onCreateKnowledgeCandidate={onCreateReviewKnowledgeCandidate}
               onUpdateKnowledgeCandidate={onUpdateReviewKnowledgeCandidate}
               onSendKnowledgeCandidate={onSendReviewKnowledgeCandidate}

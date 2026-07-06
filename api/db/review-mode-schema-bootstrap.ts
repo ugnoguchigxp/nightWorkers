@@ -174,6 +174,42 @@ export async function ensureReviewModeTables() {
   );
 
   await client.execute(`
+    CREATE TABLE IF NOT EXISTS review_prompt_suggestions (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      review_session_id text NOT NULL,
+      finding_id text NOT NULL,
+      run_id text NOT NULL,
+      task_id text NOT NULL,
+      repository_id text NOT NULL,
+      title text NOT NULL,
+      prompt text NOT NULL,
+      expected_outcome text NOT NULL,
+      acceptance_criteria text NOT NULL,
+      verification_hint text NOT NULL,
+      evidence_refs_json text NOT NULL,
+      status text DEFAULT 'draft' NOT NULL,
+      use_count integer DEFAULT 0 NOT NULL,
+      last_used_at integer,
+      dismissed_at integer,
+      created_message_id text,
+      FOREIGN KEY (review_session_id) REFERENCES review_sessions(id) ON DELETE cascade,
+      FOREIGN KEY (finding_id) REFERENCES review_findings(id) ON DELETE cascade,
+      FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE cascade,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
+      FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade,
+      FOREIGN KEY (created_message_id) REFERENCES task_messages(id) ON DELETE set null
+    )
+  `);
+  await client.execute(
+    'CREATE INDEX IF NOT EXISTS review_prompt_suggestions_session_status_idx ON review_prompt_suggestions (review_session_id, status)'
+  );
+  await client.execute(
+    'CREATE UNIQUE INDEX IF NOT EXISTS review_prompt_suggestions_finding_uidx ON review_prompt_suggestions (finding_id)'
+  );
+
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS review_security_handoffs (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,

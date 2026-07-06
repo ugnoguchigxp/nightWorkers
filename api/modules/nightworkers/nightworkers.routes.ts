@@ -10,7 +10,7 @@ import {
   createReviewerEvaluationHandler,
   createReviewerReplayEvaluationHandler,
   createReviewKnowledgeCandidateHandler,
-  createReviewProposedGoalsHandler,
+  createReviewPromptSuggestionsHandler,
   createReviewSessionHandler,
   createRunReviewHandler,
   exportTaskRunJsonlHandler,
@@ -25,7 +25,6 @@ import {
   listTaskRunActivityEventsHandler,
   listTaskRunEventsHandler,
   listTaskRunsHandler,
-  materializeReviewProposedGoalHandler,
   runReviewSectionHandler,
   sendReviewKnowledgeCandidateHandler,
   startBackgroundProcessHandler,
@@ -34,7 +33,8 @@ import {
   stopTaskRunHandler,
   updateReviewFindingDispositionHandler,
   updateReviewKnowledgeCandidateHandler,
-  updateReviewProposedGoalHandler,
+  updateReviewPromptSuggestionHandler,
+  useReviewPromptSuggestionHandler,
 } from './nightworkers.route-handlers';
 import { routeErrorResponse, withOpenApiRouteError } from './nightworkers.route-utils';
 import * as service from './nightworkers.service';
@@ -60,7 +60,7 @@ import {
   createReviewerEvaluationRoute,
   createReviewerReplayEvaluationRoute,
   createReviewKnowledgeCandidateRoute,
-  createReviewProposedGoalsRoute,
+  createReviewPromptSuggestionsRoute,
   createReviewSessionRoute,
   createRunReviewRoute,
   exportTaskRunJsonlRoute,
@@ -79,7 +79,6 @@ import {
   listTaskRunActivityEventsRoute,
   listTaskRunEventsRoute,
   listTaskRunsRoute,
-  materializeReviewProposedGoalRoute,
   runReviewSectionRoute,
   sendReviewKnowledgeCandidateRoute,
   startBackgroundProcessRoute,
@@ -87,7 +86,8 @@ import {
   stopTaskRunRoute,
   updateReviewFindingDispositionRoute,
   updateReviewKnowledgeCandidateRoute,
-  updateReviewProposedGoalRoute,
+  updateReviewPromptSuggestionRoute,
+  useReviewPromptSuggestionRoute,
 } from './routes/run-routes';
 import {
   appendTaskMessageRoute,
@@ -375,9 +375,9 @@ const router = createOpenApiRouter()
   .openapi(getReviewSessionRoute, getReviewSessionHandler)
   .openapi(runReviewSectionRoute, runReviewSectionHandler)
   .openapi(updateReviewFindingDispositionRoute, updateReviewFindingDispositionHandler)
-  .openapi(createReviewProposedGoalsRoute, createReviewProposedGoalsHandler)
-  .openapi(updateReviewProposedGoalRoute, updateReviewProposedGoalHandler)
-  .openapi(materializeReviewProposedGoalRoute, materializeReviewProposedGoalHandler)
+  .openapi(createReviewPromptSuggestionsRoute, createReviewPromptSuggestionsHandler)
+  .openapi(updateReviewPromptSuggestionRoute, updateReviewPromptSuggestionHandler)
+  .openapi(useReviewPromptSuggestionRoute, useReviewPromptSuggestionHandler)
   .openapi(createReviewKnowledgeCandidateRoute, createReviewKnowledgeCandidateHandler)
   .openapi(updateReviewKnowledgeCandidateRoute, updateReviewKnowledgeCandidateHandler)
   .openapi(sendReviewKnowledgeCandidateRoute, sendReviewKnowledgeCandidateHandler)

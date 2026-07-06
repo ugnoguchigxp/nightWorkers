@@ -20,6 +20,7 @@ type ComposerProps = {
   latestDiffPatch?: string;
   draftStorageKey?: string;
   initialPrompt?: string;
+  injectedPrompt?: { id: number; text: string } | null;
   discardStoredDraft?: boolean;
   artifactContext?: WorkbenchArtifactContext | null;
   realtimeStatus?: 'initializing' | 'connecting' | 'connected' | 'disconnected';
@@ -66,6 +67,7 @@ export function Composer({
   latestDiffPatch = '',
   draftStorageKey,
   initialPrompt = '',
+  injectedPrompt = null,
   discardStoredDraft = false,
   artifactContext = null,
   realtimeStatus = 'initializing',
@@ -129,6 +131,16 @@ export function Composer({
       // localStorage can be unavailable in private contexts; the in-memory draft still works.
     }
   }, [discardStoredDraft, draftStorageKey, prompt]);
+
+  useEffect(() => {
+    if (!injectedPrompt) return;
+    setPrompt((current) => {
+      const next = current.trim()
+        ? `${current.trim()}\n\n---\n\n${injectedPrompt.text}`
+        : injectedPrompt.text;
+      return next;
+    });
+  }, [injectedPrompt]);
 
   useLayoutEffect(() => {
     resizeComposerTextArea(textareaRef.current);

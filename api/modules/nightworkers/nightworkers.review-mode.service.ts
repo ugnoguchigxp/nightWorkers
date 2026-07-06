@@ -23,7 +23,7 @@ import {
   rowArtifact,
   rowFinding,
   rowKnowledgeCandidate,
-  rowProposedGoal,
+  rowPromptSuggestion,
   rowRecommendation,
   rowSecurityHandoff,
   rowSession,
@@ -79,7 +79,7 @@ async function buildStatusArtifact(reviewSessionId: string) {
   const artifacts = await reviewRepo.listReviewArtifacts(reviewSessionId);
   const findings = await reviewRepo.listReviewFindings(reviewSessionId);
   const knowledgeCandidates = await reviewRepo.listReviewKnowledgeCandidates(reviewSessionId);
-  const proposedGoals = await reviewRepo.listReviewProposedGoals(reviewSessionId);
+  const promptSuggestions = await reviewRepo.listReviewPromptSuggestions(reviewSessionId);
   const securityHandoffs = await reviewRepo.listReviewSecurityHandoffs(reviewSessionId);
   const artifactByKind = new Map(artifacts.map((artifact) => [artifact.kind, artifact]));
   const findingsBySection = new Map<string, typeof findings>();
@@ -130,7 +130,7 @@ async function buildStatusArtifact(reviewSessionId: string) {
       unresolvedBlockingFindingIds: unresolvedBlocking.map((finding) => finding.id),
       requiredSectionKindsRemaining: requiredRemaining,
     },
-    proposedGoalCount: proposedGoals.length,
+    promptSuggestionCount: promptSuggestions.filter((item) => item.status === 'draft').length,
     knowledgeCandidateCount: knowledgeCandidates.length,
     securityHandoffCount: securityHandoffs.length,
   };
@@ -176,7 +176,7 @@ export async function getReviewSessionDetail(reviewSessionId: string) {
   const artifacts = await reviewRepo.listReviewArtifacts(reviewSessionId);
   const findings = await reviewRepo.listReviewFindings(reviewSessionId);
   const knowledgeCandidates = await reviewRepo.listReviewKnowledgeCandidates(reviewSessionId);
-  const proposedGoals = await reviewRepo.listReviewProposedGoals(reviewSessionId);
+  const promptSuggestions = await reviewRepo.listReviewPromptSuggestions(reviewSessionId);
   const securityHandoffs = await reviewRepo.listReviewSecurityHandoffs(reviewSessionId);
   const statusArtifact = artifacts.find((artifact) => artifact.kind === 'review_status')
     ?.artifactJson as Awaited<ReturnType<typeof buildStatusArtifact>>;
@@ -189,7 +189,7 @@ export async function getReviewSessionDetail(reviewSessionId: string) {
     artifacts: artifacts.map(rowArtifact),
     findings: findings.map(rowFinding),
     knowledgeCandidates: knowledgeCandidates.map(rowKnowledgeCandidate),
-    proposedGoals: proposedGoals.map(rowProposedGoal),
+    promptSuggestions: promptSuggestions.map(rowPromptSuggestion),
     securityHandoffs: securityHandoffs.map(rowSecurityHandoff),
   };
 }
@@ -204,6 +204,9 @@ export async function runReviewSection(reviewSessionId: string, sectionKind: Rev
   if (!recommendation) throw new NotFoundError('Review recommendation not found');
   const planned = planSections(recommendation).find((section) => section.kind === sectionKind);
   if (!planned) throw new AppError(400, 'INVALID_SECTION', 'Invalid review section');
+  if (sectionKind === 'prompt_suggestions') {
+    return createReviewPromptSuggestions(reviewSessionId);
+  }
   const findings =
     sectionKind === 'findings'
       ? (await reviewRepo.listReviewFindings(reviewSessionId)).map((finding) => ({
@@ -214,10 +217,10 @@ export async function runReviewSection(reviewSessionId: string, sectionKind: Rev
             ? (finding.evidenceRefsJson as ReviewEvidenceRef[])
             : [],
         }))
-      : sectionKind === 'proposed_goals' || sectionKind === 'knowledge_candidates'
+      : sectionKind === 'knowledge_candidates'
         ? []
         : sectionFindings(sectionKind, pack);
-  if (!['findings', 'proposed_goals', 'knowledge_candidates'].includes(sectionKind)) {
+  if (!['findings', 'knowledge_candidates'].includes(sectionKind)) {
     await reviewRepo.createReviewFindings(
       findings.map((finding) => ({
         reviewSessionId,
@@ -295,20 +298,20 @@ export async function setReviewFindingDisposition(
         ? 'dismissed'
         : [
               'agent_followup',
-              'proposed_goal',
+              'prompt_suggestion',
               'security_plugin_handoff',
               'knowledge_candidate',
             ].includes(input.disposition)
           ? 'converted'
           : 'accepted';
-  if (input.disposition === 'proposed_goal') {
-    const proposedGoal = await ensureReviewProposedGoal(finding, input.evidenceRefs);
+  if (input.disposition === 'prompt_suggestion') {
+    const promptSuggestion = await ensureReviewPromptSuggestion(finding, input.evidenceRefs);
     await reviewRepo.updateReviewFindingDisposition(finding.id, {
       disposition: input.disposition,
       dispositionStatus: status,
       dispositionNote: input.note?.trim() || null,
       evidenceRefsJson: input.evidenceRefs?.length ? input.evidenceRefs : undefined,
-      createdGoalId: proposedGoal.id,
+      createdGoalId: promptSuggestion.id,
     });
     return getReviewSessionDetail(reviewSessionId);
   }
@@ -350,7 +353,7 @@ function findingEvidenceRefs(
     : [];
 }
 
-async function ensureReviewProposedGoal(
+async function ensureReviewPromptSuggestion(
   finding: NonNullable<Awaited<ReturnType<typeof reviewRepo.getReviewFinding>>>,
   evidenceRefsOverride?: ReviewEvidenceRef[]
 ) {
@@ -360,26 +363,60 @@ async function ensureReviewProposedGoal(
   if (evidenceRefs.length === 0) {
     throw new AppError(
       400,
-      'REVIEW_PROPOSED_GOAL_EVIDENCE_REQUIRED',
-      'Review proposed Goals require evidence refs'
+      'REVIEW_PROMPT_SUGGESTION_EVIDENCE_REQUIRED',
+      'Review prompt suggestions require evidence refs'
     );
   }
   const session = await reviewRepo.getReviewSession(finding.reviewSessionId);
   if (!session) throw new NotFoundError('Review session not found');
-  const existing = await reviewRepo.getReviewProposedGoalByFinding(finding.id);
-  const created = await reviewRepo.createReviewProposedGoal({
+  const existing = await reviewRepo.getReviewPromptSuggestionByFinding(finding.id);
+  const expectedOutcome = finding.body || finding.title;
+  const acceptanceCriteria = 'The cited review finding is resolved or explicitly re-routed.';
+  const verificationHint = 'Run the focused verification relevant to the finding.';
+  const created = await reviewRepo.createReviewPromptSuggestion({
     reviewSessionId: finding.reviewSessionId,
     findingId: finding.id,
     runId: finding.runId,
     taskId: finding.taskId,
     repositoryId: session.repositoryId,
-    title: `Follow-up: ${finding.title}`,
-    expectedOutcome: finding.body || finding.title,
-    acceptanceCriteria: 'The cited review finding is resolved or explicitly re-routed.',
-    verificationGate: 'Run the focused verification relevant to the finding.',
+    title: `追加対応: ${finding.title}`,
+    prompt: buildPromptSuggestionText({
+      title: finding.title,
+      body: finding.body,
+      acceptanceCriteria,
+      verificationHint,
+    }),
+    expectedOutcome,
+    acceptanceCriteria,
+    verificationHint,
     evidenceRefsJson: evidenceRefs,
   });
   return existing ?? created;
+}
+
+function buildPromptSuggestionText(input: {
+  title: string;
+  body: string | null;
+  acceptanceCriteria: string;
+  verificationHint: string;
+}) {
+  return [
+    '次のレビュー指摘を解消するため、この session の作業を続けてください。',
+    '',
+    `指摘: ${input.title}`,
+    '',
+    `背景: ${input.body?.trim() || input.title}`,
+    '',
+    'やること:',
+    '- 関連する証跡と差分を確認する',
+    '- 必要な追加実装または追加修正を行う',
+    '- focused verification を実行する',
+    '- 結果をこの session に報告する',
+    '',
+    `完了条件: ${input.acceptanceCriteria}`,
+    '',
+    `検証: ${input.verificationHint}`,
+  ].join('\n');
 }
 
 function changedPathsFromEvidence(evidenceRefs: ReviewEvidenceRef[]) {
@@ -439,141 +476,84 @@ async function ensureReviewSecurityHandoff(
   return handoff;
 }
 
-export async function createReviewProposedGoals(reviewSessionId: string) {
+export async function createReviewPromptSuggestions(reviewSessionId: string) {
   const findings = await reviewRepo.listReviewFindings(reviewSessionId);
-  const targetFindings = findings.filter(
-    (finding) =>
-      finding.disposition === 'proposed_goal' &&
-      finding.dispositionStatus === 'converted' &&
-      !finding.createdGoalId &&
-      Array.isArray(finding.evidenceRefsJson) &&
-      finding.evidenceRefsJson.length > 0
-  );
+  const existing = await reviewRepo.listReviewPromptSuggestions(reviewSessionId);
+  const existingFindingIds = new Set(existing.map((suggestion) => suggestion.findingId));
+  const activeDraftCount = existing.filter((suggestion) => suggestion.status === 'draft').length;
+  const remainingSlots = Math.max(0, 5 - activeDraftCount);
+  const targetFindings = findings
+    .filter(
+      (finding) =>
+        remainingSlots > 0 &&
+        !existingFindingIds.has(finding.id) &&
+        Array.isArray(finding.evidenceRefsJson) &&
+        finding.evidenceRefsJson.length > 0 &&
+        (finding.disposition === 'prompt_suggestion' ||
+          (!finding.disposition &&
+            finding.dispositionStatus === 'unresolved' &&
+            ['blocking', 'warning'].includes(finding.severity)))
+    )
+    .slice(0, remainingSlots);
   for (const finding of targetFindings) {
-    const proposedGoal = await ensureReviewProposedGoal(finding);
+    const promptSuggestion = await ensureReviewPromptSuggestion(finding);
     await reviewRepo.updateReviewFindingDisposition(finding.id, {
-      disposition: 'proposed_goal',
+      disposition: 'prompt_suggestion',
       dispositionStatus: 'converted',
-      createdGoalId: proposedGoal.id,
+      createdGoalId: promptSuggestion.id,
     });
   }
-  const proposedGoals = await reviewRepo.listReviewProposedGoals(reviewSessionId);
-  const session = await reviewRepo.getReviewSession(reviewSessionId);
-  if (session) {
-    await reviewRepo.upsertReviewArtifact({
-      reviewSessionId,
-      runId: session.runId,
-      taskId: session.taskId,
-      kind: 'proposed_goals',
-      status: 'done',
-      artifactJson: { version: 1, proposedGoals: proposedGoals.map(rowProposedGoal) },
-      sourceEvidenceRefsJson: proposedGoals.flatMap((goal) =>
-        Array.isArray(goal.evidenceRefsJson) ? goal.evidenceRefsJson : []
-      ),
-    });
-  }
+  await refreshPromptSuggestionsArtifact(reviewSessionId);
   return getReviewSessionDetail(reviewSessionId);
 }
 
-export async function updateReviewProposedGoalDecision(
+export async function updateReviewPromptSuggestion(
   reviewSessionId: string,
-  goalId: string,
-  input: { status: 'approved' | 'rejected' | 'deferred'; note?: string }
+  suggestionId: string,
+  input: { status: 'dismissed' }
 ) {
-  const goal = await reviewRepo.getReviewProposedGoal(reviewSessionId, goalId);
-  if (!goal) throw new NotFoundError('Review proposed Goal not found');
-  if (goal.status === 'materialized') {
-    throw new AppError(
-      400,
-      'REVIEW_PROPOSED_GOAL_ALREADY_MATERIALIZED',
-      'Materialized review proposed Goals cannot be re-decided'
-    );
-  }
-  await reviewRepo.updateReviewProposedGoal(goal.id, {
+  const suggestion = await reviewRepo.getReviewPromptSuggestion(reviewSessionId, suggestionId);
+  if (!suggestion) throw new NotFoundError('Review prompt suggestion not found');
+  await reviewRepo.updateReviewPromptSuggestion(suggestion.id, {
     status: input.status,
-    decisionNote: input.note?.trim() || null,
-    materializationError: null,
+    dismissedAt: input.status === 'dismissed' ? new Date() : null,
   });
-  await refreshProposedGoalsArtifact(reviewSessionId);
+  await refreshPromptSuggestionsArtifact(reviewSessionId);
   return getReviewSessionDetail(reviewSessionId);
 }
 
-async function refreshProposedGoalsArtifact(reviewSessionId: string) {
+export async function useReviewPromptSuggestion(
+  reviewSessionId: string,
+  suggestionId: string,
+  input: { createdMessageId?: string } = {}
+) {
+  const suggestion = await reviewRepo.getReviewPromptSuggestion(reviewSessionId, suggestionId);
+  if (!suggestion) throw new NotFoundError('Review prompt suggestion not found');
+  await reviewRepo.updateReviewPromptSuggestion(suggestion.id, {
+    status: 'used',
+    useCount: suggestion.useCount + 1,
+    lastUsedAt: new Date(),
+    createdMessageId: input.createdMessageId ?? suggestion.createdMessageId ?? null,
+  });
+  await refreshPromptSuggestionsArtifact(reviewSessionId);
+  return getReviewSessionDetail(reviewSessionId);
+}
+
+async function refreshPromptSuggestionsArtifact(reviewSessionId: string) {
   const session = await reviewRepo.getReviewSession(reviewSessionId);
   if (!session) throw new NotFoundError('Review session not found');
-  const proposedGoals = await reviewRepo.listReviewProposedGoals(reviewSessionId);
+  const promptSuggestions = await reviewRepo.listReviewPromptSuggestions(reviewSessionId);
   await reviewRepo.upsertReviewArtifact({
     reviewSessionId,
     runId: session.runId,
     taskId: session.taskId,
-    kind: 'proposed_goals',
+    kind: 'prompt_suggestions',
     status: 'done',
-    artifactJson: { version: 1, proposedGoals: proposedGoals.map(rowProposedGoal) },
-    sourceEvidenceRefsJson: proposedGoals.flatMap((goal) =>
-      Array.isArray(goal.evidenceRefsJson) ? goal.evidenceRefsJson : []
+    artifactJson: { version: 1, promptSuggestions: promptSuggestions.map(rowPromptSuggestion) },
+    sourceEvidenceRefsJson: promptSuggestions.flatMap((suggestion) =>
+      Array.isArray(suggestion.evidenceRefsJson) ? suggestion.evidenceRefsJson : []
     ),
   });
-}
-
-export async function materializeReviewProposedGoal(
-  reviewSessionId: string,
-  goalId: string,
-  input: { target?: 'task' } = { target: 'task' }
-) {
-  const goal = await reviewRepo.getReviewProposedGoal(reviewSessionId, goalId);
-  if (!goal) throw new NotFoundError('Review proposed Goal not found');
-  if (input.target && input.target !== 'task') {
-    throw new AppError(
-      400,
-      'REVIEW_PROPOSED_GOAL_TARGET_UNSUPPORTED',
-      'Review proposed Goals can currently materialize only to draft Tasks'
-    );
-  }
-  if (goal.status !== 'approved') {
-    throw new AppError(
-      400,
-      'REVIEW_PROPOSED_GOAL_APPROVAL_REQUIRED',
-      'Review proposed Goals must be approved before materialization'
-    );
-  }
-  if (goal.materializedTaskId) return getReviewSessionDetail(reviewSessionId);
-  const task = await repo.createTask({
-    repositoryId: goal.repositoryId,
-    title: goal.title,
-    description: goal.expectedOutcome,
-    objective: goal.expectedOutcome,
-    acceptanceCriteria: goal.acceptanceCriteria,
-    status: 'draft',
-    createdBy: 'review-mode',
-  });
-  await repo.createTaskMessage({
-    taskId: task.id,
-    role: 'user',
-    content: [
-      goal.expectedOutcome,
-      '',
-      `Verification: ${goal.verificationGate}`,
-      '',
-      `Source Review Session: ${goal.reviewSessionId}`,
-      `Source Finding: ${goal.findingId}`,
-    ].join('\n'),
-    messageType: 'review_proposed_goal',
-    payloadJson: {
-      source: 'review_proposed_goal',
-      reviewSessionId: goal.reviewSessionId,
-      findingId: goal.findingId,
-      proposedGoalId: goal.id,
-      evidenceRefs: goal.evidenceRefsJson,
-    },
-  });
-  await reviewRepo.updateReviewProposedGoal(goal.id, {
-    status: 'materialized',
-    materializedTaskId: task.id,
-    materializationTarget: 'task',
-    materializationError: null,
-  });
-  await refreshProposedGoalsArtifact(reviewSessionId);
-  return getReviewSessionDetail(reviewSessionId);
 }
 
 async function ensureReviewKnowledgeCandidate(

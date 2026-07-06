@@ -237,12 +237,14 @@ describe('workbench selectors', () => {
             unresolvedBlockingFindingIds: [],
             requiredSectionKindsRemaining: ['verification_evidence'],
           },
-          proposedGoalCount: 0,
+          promptSuggestionCount: 0,
           knowledgeCandidateCount: 0,
         },
         artifacts: [],
         findings: [],
         knowledgeCandidates: [],
+        promptSuggestions: [],
+        securityHandoffs: [],
       },
     });
 

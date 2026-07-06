@@ -9,7 +9,7 @@ export type ReviewSectionKind =
   | 'queue_recovery'
   | 'security_review'
   | 'findings'
-  | 'proposed_goals'
+  | 'prompt_suggestions'
   | 'knowledge_candidates';
 export type ReviewSectionRequirement = 'required' | 'recommended' | 'optional' | 'omitted';
 export type ReviewSectionProgress = 'not_started' | 'running' | 'done' | 'blocked' | 'needs_human';
@@ -23,17 +23,12 @@ export type ReviewSessionStatus =
 export type ReviewFindingDispositionStatus = 'unresolved' | 'accepted' | 'converted' | 'dismissed';
 export type ReviewKnowledgeCandidateStatus = 'draft' | 'sent' | 'discarded' | 'send_failed';
 export type ReviewKnowledgeCandidateType = 'rule' | 'procedure' | 'failure_pattern';
-export type ReviewProposedGoalStatus =
-  | 'draft'
-  | 'approved'
-  | 'rejected'
-  | 'deferred'
-  | 'materialized';
+export type ReviewPromptSuggestionStatus = 'draft' | 'used' | 'dismissed';
 export type ReviewSecurityHandoffStatus = 'needs_configuration' | 'requested' | 'deferred';
 export type ReviewFindingDisposition =
   | 'human_callout'
   | 'agent_followup'
-  | 'proposed_goal'
+  | 'prompt_suggestion'
   | 'security_plugin_handoff'
   | 'knowledge_candidate'
   | 'accepted_risk'
@@ -74,7 +69,7 @@ export const SECTION_ORDER: ReviewSectionKind[] = [
   'queue_recovery',
   'security_review',
   'findings',
-  'proposed_goals',
+  'prompt_suggestions',
   'knowledge_candidates',
 ];
 
@@ -183,8 +178,8 @@ export function rowKnowledgeCandidate(
   };
 }
 
-export function rowProposedGoal(
-  row: Awaited<ReturnType<typeof reviewRepo.listReviewProposedGoals>>[number]
+export function rowPromptSuggestion(
+  row: Awaited<ReturnType<typeof reviewRepo.listReviewPromptSuggestions>>[number]
 ) {
   return {
     id: row.id,
@@ -194,17 +189,18 @@ export function rowProposedGoal(
     taskId: row.taskId,
     repositoryId: row.repositoryId,
     title: row.title,
+    prompt: row.prompt,
     expectedOutcome: row.expectedOutcome,
     acceptanceCriteria: row.acceptanceCriteria,
-    verificationGate: row.verificationGate,
+    verificationHint: row.verificationHint,
     evidenceRefs: Array.isArray(row.evidenceRefsJson)
       ? (row.evidenceRefsJson as ReviewEvidenceRef[])
       : [],
-    status: row.status as ReviewProposedGoalStatus,
-    decisionNote: row.decisionNote,
-    materializedTaskId: row.materializedTaskId,
-    materializationTarget: row.materializationTarget,
-    materializationError: row.materializationError,
+    status: row.status as ReviewPromptSuggestionStatus,
+    useCount: row.useCount,
+    lastUsedAt: iso(row.lastUsedAt),
+    dismissedAt: iso(row.dismissedAt),
+    createdMessageId: row.createdMessageId,
     createdAt: iso(row.createdAt) ?? new Date().toISOString(),
     updatedAt: iso(row.updatedAt) ?? new Date().toISOString(),
   };
@@ -259,7 +255,7 @@ export function planSections(
           : 'recommended',
       recommendation.level === 'none'
         ? 'No acceptance review signal was detected.'
-        : 'Check final report claims against run evidence.'
+        : 'Check final report claims against run records.'
     ),
     section(
       'verification_evidence',
@@ -269,8 +265,8 @@ export function planSections(
           ? 'omitted'
           : 'recommended',
       codes.has('verification_missing') || codes.has('verification_failed')
-        ? 'Verification evidence is missing or failed.'
-        : 'Verification evidence can be inspected before acceptance.'
+        ? 'Saved verification record is missing or failed.'
+        : 'Saved verification record can be inspected before acceptance.'
     ),
     section(
       'self_review_followups',
@@ -316,9 +312,9 @@ export function planSections(
         : 'Consolidate section findings and route dispositions.'
     ),
     section(
-      'proposed_goals',
+      'prompt_suggestions',
       recommendation.level === 'none' ? 'omitted' : 'optional',
-      'Create follow-up Goal candidates only when findings need follow-up work.'
+      'Create additional prompts when findings should be handled by continuing this session.'
     ),
     section(
       'knowledge_candidates',

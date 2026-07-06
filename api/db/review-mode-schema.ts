@@ -1,5 +1,5 @@
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
-import { commonColumns, repositories, taskRuns, tasks } from './schema';
+import { commonColumns, repositories, taskMessages, taskRuns, tasks } from './schema';
 
 export const reviewRecommendations = sqliteTable(
   'review_recommendations',
@@ -185,6 +185,48 @@ export const reviewProposedGoals = sqliteTable(
       table.status
     ),
     findingIdx: uniqueIndex('review_proposed_goals_finding_uidx').on(table.findingId),
+  })
+);
+
+export const reviewPromptSuggestions = sqliteTable(
+  'review_prompt_suggestions',
+  {
+    ...commonColumns,
+    reviewSessionId: text('review_session_id')
+      .notNull()
+      .references(() => reviewSessions.id, { onDelete: 'cascade' }),
+    findingId: text('finding_id')
+      .notNull()
+      .references(() => reviewFindings.id, { onDelete: 'cascade' }),
+    runId: text('run_id')
+      .notNull()
+      .references(() => taskRuns.id, { onDelete: 'cascade' }),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    repositoryId: text('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    prompt: text('prompt').notNull(),
+    expectedOutcome: text('expected_outcome').notNull(),
+    acceptanceCriteria: text('acceptance_criteria').notNull(),
+    verificationHint: text('verification_hint').notNull(),
+    evidenceRefsJson: text('evidence_refs_json', { mode: 'json' }).$type<unknown[]>().notNull(),
+    status: text('status').default('draft').notNull(),
+    useCount: integer('use_count').default(0).notNull(),
+    lastUsedAt: integer('last_used_at', { mode: 'timestamp' }),
+    dismissedAt: integer('dismissed_at', { mode: 'timestamp' }),
+    createdMessageId: text('created_message_id').references(() => taskMessages.id, {
+      onDelete: 'set null',
+    }),
+  },
+  (table) => ({
+    sessionStatusIdx: index('review_prompt_suggestions_session_status_idx').on(
+      table.reviewSessionId,
+      table.status
+    ),
+    findingIdx: uniqueIndex('review_prompt_suggestions_finding_uidx').on(table.findingId),
   })
 );
 

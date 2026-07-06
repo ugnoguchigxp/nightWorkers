@@ -40,6 +40,8 @@ type NightWorkersShellThreadPanelProps = {
   onModelChange: (nextModel: string) => void;
   onThinkingDepthChange: (nextDepth: ComposerThinkingDepth) => void;
   onSubmitPrompt: (prompt: string, intent?: WorkbenchChatIntent) => Promise<void>;
+  injectedPrompt?: { id: number; text: string } | null;
+  onInsertReviewPromptSuggestion?: (prompt: string) => void;
   buildComposerLlmSelection: () => WorkbenchLlmSelection | undefined;
   openQuestionnaireWorkspace: (
     message: TaskMessage,
@@ -103,6 +105,7 @@ export function NightWorkersShellThreadPanel(props: NightWorkersShellThreadPanel
       activeStreamingResponse={workspace.activeStreamingResponse}
       artifactRefs={workspace.activeArtifactRefs}
       activeArtifactContext={selectedArtifactContext}
+      injectedPrompt={props.injectedPrompt}
       isAgentWorking={workspace.isAgentWorking}
       isAgentThinking={workspace.isAgentThinking}
       realtimeStatus={workspace.realtimeStatus}
@@ -301,9 +304,23 @@ export function NightWorkersShellThreadPanel(props: NightWorkersShellThreadPanel
             activeReviewSession={workspace.activeReviewSession}
             onRunReviewSection={workspace.runReviewSection}
             onUpdateReviewFindingDisposition={workspace.updateReviewFindingDisposition}
-            onCreateReviewProposedGoals={workspace.createReviewProposedGoals}
-            onUpdateReviewProposedGoal={workspace.updateReviewProposedGoal}
-            onMaterializeReviewProposedGoal={workspace.materializeReviewProposedGoal}
+            onCreateReviewPromptSuggestions={workspace.createReviewPromptSuggestions}
+            onUpdateReviewPromptSuggestion={workspace.updateReviewPromptSuggestion}
+            onUseReviewPromptSuggestion={async (reviewSessionId, suggestionId, prompt) => {
+              if (workspace.activeSession) {
+                await workspace.sendWorkbenchMessage(
+                  workspace.activeSession.id,
+                  prompt,
+                  'intake',
+                  selectedArtifactContext,
+                  buildComposerLlmSelection()
+                );
+              } else {
+                await props.onSubmitPrompt(prompt, 'intake');
+              }
+              return workspace.markReviewPromptSuggestionUsed(reviewSessionId, suggestionId);
+            }}
+            onInsertReviewPromptSuggestion={props.onInsertReviewPromptSuggestion}
             onCreateReviewKnowledgeCandidate={workspace.createReviewKnowledgeCandidate}
             onUpdateReviewKnowledgeCandidate={workspace.updateReviewKnowledgeCandidate}
             onSendReviewKnowledgeCandidate={workspace.sendReviewKnowledgeCandidate}

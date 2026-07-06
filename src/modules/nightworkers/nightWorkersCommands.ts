@@ -149,7 +149,7 @@ export function updateReviewFindingDisposition(
     disposition:
       | 'human_callout'
       | 'agent_followup'
-      | 'proposed_goal'
+      | 'prompt_suggestion'
       | 'security_plugin_handoff'
       | 'knowledge_candidate'
       | 'accepted_risk'
@@ -164,27 +164,31 @@ export function updateReviewFindingDisposition(
   );
 }
 
-export function createReviewProposedGoals(reviewSessionId: string) {
-  return apiFetch(`/api/review-sessions/${reviewSessionId}/proposed-goals`, {
+export function createReviewPromptSuggestions(reviewSessionId: string) {
+  return apiFetch(`/api/review-sessions/${reviewSessionId}/prompt-suggestions`, {
     method: 'POST',
   });
 }
 
-export function updateReviewProposedGoal(
+export function updateReviewPromptSuggestion(
   reviewSessionId: string,
-  goalId: string,
-  input: { status: 'approved' | 'rejected' | 'deferred'; note?: string }
+  suggestionId: string,
+  input: { status: 'dismissed' }
 ) {
   return apiFetch(
-    `/api/review-sessions/${reviewSessionId}/proposed-goals/${goalId}`,
+    `/api/review-sessions/${reviewSessionId}/prompt-suggestions/${suggestionId}`,
     jsonRequest('PATCH', input)
   );
 }
 
-export function materializeReviewProposedGoal(reviewSessionId: string, goalId: string) {
+export function markReviewPromptSuggestionUsed(
+  reviewSessionId: string,
+  suggestionId: string,
+  input: { createdMessageId?: string } = {}
+) {
   return apiFetch(
-    `/api/review-sessions/${reviewSessionId}/proposed-goals/${goalId}/materialize`,
-    jsonRequest('POST', { target: 'task' })
+    `/api/review-sessions/${reviewSessionId}/prompt-suggestions/${suggestionId}/use`,
+    jsonRequest('POST', input)
   );
 }
 

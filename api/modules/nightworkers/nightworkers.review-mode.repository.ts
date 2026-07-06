@@ -4,7 +4,7 @@ import {
   reviewArtifacts,
   reviewFindings,
   reviewKnowledgeCandidates,
-  reviewProposedGoals,
+  reviewPromptSuggestions,
   reviewRecommendations,
   reviewSecurityHandoffs,
   reviewSessions,
@@ -328,63 +328,66 @@ export async function updateReviewKnowledgeCandidate(
   return row ?? null;
 }
 
-export async function listReviewProposedGoals(reviewSessionId: string) {
+export async function listReviewPromptSuggestions(reviewSessionId: string) {
   return db
     .select()
-    .from(reviewProposedGoals)
-    .where(eq(reviewProposedGoals.reviewSessionId, reviewSessionId))
-    .orderBy(desc(reviewProposedGoals.createdAt));
+    .from(reviewPromptSuggestions)
+    .where(eq(reviewPromptSuggestions.reviewSessionId, reviewSessionId))
+    .orderBy(desc(reviewPromptSuggestions.createdAt));
 }
 
-export async function getReviewProposedGoal(reviewSessionId: string, goalId: string) {
+export async function getReviewPromptSuggestion(reviewSessionId: string, suggestionId: string) {
   const [row] = await db
     .select()
-    .from(reviewProposedGoals)
+    .from(reviewPromptSuggestions)
     .where(
       and(
-        eq(reviewProposedGoals.reviewSessionId, reviewSessionId),
-        eq(reviewProposedGoals.id, goalId)
+        eq(reviewPromptSuggestions.reviewSessionId, reviewSessionId),
+        eq(reviewPromptSuggestions.id, suggestionId)
       )
     );
   return row ?? null;
 }
 
-export async function getReviewProposedGoalByFinding(findingId: string) {
+export async function getReviewPromptSuggestionByFinding(findingId: string) {
   const [row] = await db
     .select()
-    .from(reviewProposedGoals)
-    .where(eq(reviewProposedGoals.findingId, findingId));
+    .from(reviewPromptSuggestions)
+    .where(eq(reviewPromptSuggestions.findingId, findingId));
   return row ?? null;
 }
 
-export async function createReviewProposedGoal(data: {
+export async function createReviewPromptSuggestion(data: {
   reviewSessionId: string;
   findingId: string;
   runId: string;
   taskId: string;
   repositoryId: string;
   title: string;
+  prompt: string;
   expectedOutcome: string;
   acceptanceCriteria: string;
-  verificationGate: string;
+  verificationHint: string;
   evidenceRefsJson: unknown[];
 }) {
   const now = new Date();
   const [row] = await db
-    .insert(reviewProposedGoals)
+    .insert(reviewPromptSuggestions)
     .values({
       ...data,
       status: 'draft',
+      useCount: 0,
       createdAt: now,
       updatedAt: now,
     })
     .onConflictDoUpdate({
-      target: reviewProposedGoals.findingId,
+      target: reviewPromptSuggestions.findingId,
       set: {
         title: data.title,
+        prompt: data.prompt,
         expectedOutcome: data.expectedOutcome,
         acceptanceCriteria: data.acceptanceCriteria,
-        verificationGate: data.verificationGate,
+        verificationHint: data.verificationHint,
         evidenceRefsJson: data.evidenceRefsJson,
         updatedAt: now,
       },
@@ -393,27 +396,26 @@ export async function createReviewProposedGoal(data: {
   return row;
 }
 
-export async function updateReviewProposedGoal(
+export async function updateReviewPromptSuggestion(
   id: string,
   data: {
     status?: string;
-    decisionNote?: string | null;
-    materializedTaskId?: string | null;
-    materializationTarget?: string | null;
-    materializationError?: string | null;
+    useCount?: number;
+    lastUsedAt?: Date | null;
+    dismissedAt?: Date | null;
+    createdMessageId?: string | null;
   }
 ) {
   const updateData: typeof data & { updatedAt: Date } = { updatedAt: new Date() };
   if ('status' in data) updateData.status = data.status;
-  if ('decisionNote' in data) updateData.decisionNote = data.decisionNote;
-  if ('materializedTaskId' in data) updateData.materializedTaskId = data.materializedTaskId;
-  if ('materializationTarget' in data)
-    updateData.materializationTarget = data.materializationTarget;
-  if ('materializationError' in data) updateData.materializationError = data.materializationError;
+  if ('useCount' in data) updateData.useCount = data.useCount;
+  if ('lastUsedAt' in data) updateData.lastUsedAt = data.lastUsedAt;
+  if ('dismissedAt' in data) updateData.dismissedAt = data.dismissedAt;
+  if ('createdMessageId' in data) updateData.createdMessageId = data.createdMessageId;
   const [row] = await db
-    .update(reviewProposedGoals)
+    .update(reviewPromptSuggestions)
     .set(updateData)
-    .where(eq(reviewProposedGoals.id, id))
+    .where(eq(reviewPromptSuggestions.id, id))
     .returning();
   return row ?? null;
 }

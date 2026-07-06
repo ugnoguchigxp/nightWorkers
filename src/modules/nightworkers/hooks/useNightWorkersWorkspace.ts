@@ -272,9 +272,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     startReviewSessionMutation,
     runReviewSectionMutation,
     updateReviewFindingDispositionMutation,
-    createReviewProposedGoalsMutation,
-    updateReviewProposedGoalMutation,
-    materializeReviewProposedGoalMutation,
+    createReviewPromptSuggestionsMutation,
+    updateReviewPromptSuggestionMutation,
+    markReviewPromptSuggestionUsedMutation,
     createReviewKnowledgeCandidateMutation,
     updateReviewKnowledgeCandidateMutation,
     sendReviewKnowledgeCandidateMutation,
@@ -525,16 +525,16 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
         findingId,
         data: input,
       }),
-    createReviewProposedGoals: (reviewSessionId) =>
-      createReviewProposedGoalsMutation.mutateAsync(reviewSessionId),
-    updateReviewProposedGoal: (reviewSessionId, goalId, input) =>
-      updateReviewProposedGoalMutation.mutateAsync({
+    createReviewPromptSuggestions: (reviewSessionId) =>
+      createReviewPromptSuggestionsMutation.mutateAsync(reviewSessionId),
+    updateReviewPromptSuggestion: (reviewSessionId, suggestionId, input) =>
+      updateReviewPromptSuggestionMutation.mutateAsync({
         reviewSessionId,
-        goalId,
+        suggestionId,
         data: input,
       }),
-    materializeReviewProposedGoal: (reviewSessionId, goalId) =>
-      materializeReviewProposedGoalMutation.mutateAsync({ reviewSessionId, goalId }),
+    markReviewPromptSuggestionUsed: (reviewSessionId, suggestionId) =>
+      markReviewPromptSuggestionUsedMutation.mutateAsync({ reviewSessionId, suggestionId }),
     createReviewKnowledgeCandidate: (reviewSessionId, input) =>
       createReviewKnowledgeCandidateMutation.mutateAsync({ reviewSessionId, data: input }),
     updateReviewKnowledgeCandidate: (reviewSessionId, candidateId, input) =>

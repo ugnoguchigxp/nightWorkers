@@ -5,10 +5,10 @@ import {
   applyReviewFinalAction,
   archiveWorkbenchSession,
   createReviewKnowledgeCandidate,
-  createReviewProposedGoals,
+  createReviewPromptSuggestions,
   createWorkbenchSession,
   deleteTask,
-  materializeReviewProposedGoal,
+  markReviewPromptSuggestionUsed,
   patchTask as patchTaskCommand,
   queueWorkbenchSession,
   runReviewSection,
@@ -20,7 +20,7 @@ import {
   submitRunReview,
   updateReviewFindingDisposition,
   updateReviewKnowledgeCandidate,
-  updateReviewProposedGoal,
+  updateReviewPromptSuggestion,
 } from '../nightWorkersCommands';
 import { mergeRealtimeRunDetails, mergeRealtimeRunList } from '../realtimeEvents';
 import type {
@@ -67,7 +67,7 @@ type ReviewFindingDispositionInput = {
   disposition:
     | 'human_callout'
     | 'agent_followup'
-    | 'proposed_goal'
+    | 'prompt_suggestion'
     | 'security_plugin_handoff'
     | 'knowledge_candidate'
     | 'accepted_risk'
@@ -357,9 +357,9 @@ export function useNightWorkersMutations({
     },
   });
 
-  const createReviewProposedGoalsMutation = useMutation({
+  const createReviewPromptSuggestionsMutation = useMutation({
     mutationFn: async (reviewSessionId: string) => {
-      const res = await createReviewProposedGoals(reviewSessionId);
+      const res = await createReviewPromptSuggestions(reviewSessionId);
       if (!res.ok) throw new Error(await res.text());
       return (await res.json()) as ReviewSessionDetail;
     },
@@ -372,13 +372,17 @@ export function useNightWorkersMutations({
     },
   });
 
-  const updateReviewProposedGoalMutation = useMutation({
+  const updateReviewPromptSuggestionMutation = useMutation({
     mutationFn: async (input: {
       reviewSessionId: string;
-      goalId: string;
-      data: { status: 'approved' | 'rejected' | 'deferred'; note?: string };
+      suggestionId: string;
+      data: { status: 'dismissed' };
     }) => {
-      const res = await updateReviewProposedGoal(input.reviewSessionId, input.goalId, input.data);
+      const res = await updateReviewPromptSuggestion(
+        input.reviewSessionId,
+        input.suggestionId,
+        input.data
+      );
       if (!res.ok) throw new Error(await res.text());
       return (await res.json()) as ReviewSessionDetail;
     },
@@ -391,9 +395,9 @@ export function useNightWorkersMutations({
     },
   });
 
-  const materializeReviewProposedGoalMutation = useMutation({
-    mutationFn: async (input: { reviewSessionId: string; goalId: string }) => {
-      const res = await materializeReviewProposedGoal(input.reviewSessionId, input.goalId);
+  const markReviewPromptSuggestionUsedMutation = useMutation({
+    mutationFn: async (input: { reviewSessionId: string; suggestionId: string }) => {
+      const res = await markReviewPromptSuggestionUsed(input.reviewSessionId, input.suggestionId);
       if (!res.ok) throw new Error(await res.text());
       return (await res.json()) as ReviewSessionDetail;
     },
@@ -403,7 +407,6 @@ export function useNightWorkersMutations({
         detail
       );
       queryClient.invalidateQueries({ queryKey: ['reviewSession', detail.session.taskId] });
-      queryClient.invalidateQueries({ queryKey: ['sessions'] });
     },
   });
 
@@ -629,9 +632,9 @@ export function useNightWorkersMutations({
     startReviewSessionMutation,
     runReviewSectionMutation,
     updateReviewFindingDispositionMutation,
-    createReviewProposedGoalsMutation,
-    updateReviewProposedGoalMutation,
-    materializeReviewProposedGoalMutation,
+    createReviewPromptSuggestionsMutation,
+    updateReviewPromptSuggestionMutation,
+    markReviewPromptSuggestionUsedMutation,
     createReviewKnowledgeCandidateMutation,
     updateReviewKnowledgeCandidateMutation,
     sendReviewKnowledgeCandidateMutation,

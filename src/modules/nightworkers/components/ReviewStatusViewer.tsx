@@ -30,16 +30,18 @@ type ReviewStatusViewerProps = {
       evidenceRefs?: unknown[];
     }
   ) => Promise<ReviewSessionDetail>;
-  onCreateProposedGoals?: (reviewSessionId: string) => Promise<ReviewSessionDetail>;
-  onUpdateProposedGoal?: (
+  onCreatePromptSuggestions?: (reviewSessionId: string) => Promise<ReviewSessionDetail>;
+  onUpdatePromptSuggestion?: (
     reviewSessionId: string,
-    goalId: string,
-    input: { status: 'approved' | 'rejected' | 'deferred'; note?: string }
+    suggestionId: string,
+    input: { status: 'dismissed' }
   ) => Promise<ReviewSessionDetail>;
-  onMaterializeProposedGoal?: (
+  onUsePromptSuggestion?: (
     reviewSessionId: string,
-    goalId: string
+    suggestionId: string,
+    prompt: string
   ) => Promise<ReviewSessionDetail>;
+  onInsertPromptSuggestion?: (prompt: string) => void;
   onCreateKnowledgeCandidate?: (
     reviewSessionId: string,
     input: {
@@ -77,7 +79,7 @@ const requirementOrder = ['required', 'recommended', 'optional', 'omitted'] as c
 const findingDispositions: NonNullable<ReviewModeFinding['disposition']>[] = [
   'human_callout',
   'agent_followup',
-  'proposed_goal',
+  'prompt_suggestion',
   'security_plugin_handoff',
   'knowledge_candidate',
   'accepted_risk',
@@ -112,10 +114,13 @@ function reviewStatusSectionReason(t: TFunction, reason: string) {
     case 'No acceptance review signal was detected.':
       return t('reviewStatus.sectionReason.noAcceptanceSignal');
     case 'Check final report claims against run evidence.':
+    case 'Check final report claims against run records.':
       return t('reviewStatus.sectionReason.checkFinalReport');
     case 'Verification evidence is missing or failed.':
+    case 'Saved verification record is missing or failed.':
       return t('reviewStatus.sectionReason.verificationMissingOrFailed');
     case 'Verification evidence can be inspected before acceptance.':
+    case 'Saved verification record can be inspected before acceptance.':
       return t('reviewStatus.sectionReason.verificationInspectable');
     case 'Self-review follow-up evidence is present.':
       return t('reviewStatus.sectionReason.selfReviewPresent');
@@ -134,7 +139,9 @@ function reviewStatusSectionReason(t: TFunction, reason: string) {
     case 'Consolidate section findings and route dispositions.':
       return t('reviewStatus.sectionReason.consolidateFindings');
     case 'Create follow-up Goal candidates only when findings need follow-up work.':
-      return t('reviewStatus.sectionReason.createFollowupGoals');
+      return t('reviewStatus.sectionReason.createFollowupPrompts');
+    case 'Create additional prompts when findings should be handled by continuing this session.':
+      return t('reviewStatus.sectionReason.createFollowupPrompts');
     case 'Create reusable contextStill knowledge candidates only after preview.':
       return t('reviewStatus.sectionReason.createKnowledgeCandidates');
     default:
@@ -157,9 +164,10 @@ export function ReviewStatusViewer({
   detail,
   onRunSection,
   onUpdateFindingDisposition,
-  onCreateProposedGoals,
-  onUpdateProposedGoal,
-  onMaterializeProposedGoal,
+  onCreatePromptSuggestions,
+  onUpdatePromptSuggestion,
+  onUsePromptSuggestion,
+  onInsertPromptSuggestion,
   onCreateKnowledgeCandidate,
   onUpdateKnowledgeCandidate,
   onSendKnowledgeCandidate,
@@ -170,7 +178,7 @@ export function ReviewStatusViewer({
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [busyCandidate, setBusyCandidate] = useState<string | null>(null);
   const [busyFinding, setBusyFinding] = useState<string | null>(null);
-  const [busyGoal, setBusyGoal] = useState<string | null>(null);
+  const [busyPromptSuggestion, setBusyPromptSuggestion] = useState<string | null>(null);
   const [candidateEdits, setCandidateEdits] = useState<Record<string, CandidateEditState>>({});
   const [findingEdits, setFindingEdits] = useState<
     Record<string, { disposition: NonNullable<ReviewModeFinding['disposition']>; note: string }>
@@ -188,6 +196,9 @@ export function ReviewStatusViewer({
   const candidateByFindingId = new Map(
     detail.knowledgeCandidates.map((candidate) => [candidate.findingId, candidate])
   );
+  const activePromptSuggestions = detail.promptSuggestions
+    .filter((suggestion) => suggestion.status === 'draft')
+    .slice(0, 5);
   const levelClass =
     level === 'required'
       ? 'border-red-500/60 bg-red-950/30 text-red-100'
@@ -455,30 +466,30 @@ export function ReviewStatusViewer({
           </div>
         ) : null}
 
-        {detail.proposedGoals.length > 0 ? (
+        {activePromptSuggestions.length > 0 ? (
           <div className="grid gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                {t('reviewStatus.proposedGoals')}
+                {t('reviewStatus.promptSuggestions')}
               </div>
               <button
                 type="button"
                 className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-slate-700 px-2.5 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!onCreateProposedGoals || busyGoal === 'sync'}
+                disabled={!onCreatePromptSuggestions || busyPromptSuggestion === 'sync'}
                 onClick={async () => {
-                  if (!onCreateProposedGoals) return;
-                  setBusyGoal('sync');
+                  if (!onCreatePromptSuggestions) return;
+                  setBusyPromptSuggestion('sync');
                   setError(null);
                   try {
-                    await onCreateProposedGoals(detail.session.id);
+                    await onCreatePromptSuggestions(detail.session.id);
                   } catch (err) {
                     setError(
                       err instanceof Error
                         ? err.message
-                        : t('reviewStatus.error.proposedGoalSyncFailed')
+                        : t('reviewStatus.error.promptSuggestionSyncFailed')
                     );
                   } finally {
-                    setBusyGoal(null);
+                    setBusyPromptSuggestion(null);
                   }
                 }}
               >
@@ -487,87 +498,100 @@ export function ReviewStatusViewer({
               </button>
             </div>
             <div className="grid gap-3">
-              {detail.proposedGoals.map((goal) => (
+              {activePromptSuggestions.map((suggestion) => (
                 <div
-                  key={goal.id}
+                  key={suggestion.id}
                   className="grid gap-3 rounded border border-slate-800 bg-slate-900/60 p-3"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium text-slate-100">{goal.title}</span>
+                        <span className="text-sm font-medium text-slate-100">
+                          {suggestion.title}
+                        </span>
                         <span className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
-                          {reviewStatusValueLabel(t, 'proposedGoalStatus', goal.status)}
+                          {reviewStatusValueLabel(t, 'promptSuggestionStatus', suggestion.status)}
                         </span>
                       </div>
                       <div className="mt-1 text-xs leading-5 text-slate-400">
-                        {goal.expectedOutcome}
+                        {suggestion.expectedOutcome}
                       </div>
-                      {goal.materializedTaskId ? (
-                        <div className="mt-1 font-mono text-[11px] text-emerald-300">
-                          task:{goal.materializedTaskId}
-                        </div>
-                      ) : null}
+                      <pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950/70 p-3 text-xs leading-5 text-slate-200">
+                        {suggestion.prompt}
+                      </pre>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {(['approved', 'rejected', 'deferred'] as const).map((nextStatus) => (
-                        <button
-                          key={nextStatus}
-                          type="button"
-                          className="inline-flex h-8 items-center justify-center rounded border border-slate-700 px-2.5 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                          disabled={
-                            goal.status === 'materialized' ||
-                            !onUpdateProposedGoal ||
-                            busyGoal === goal.id
-                          }
-                          onClick={async () => {
-                            if (!onUpdateProposedGoal) return;
-                            setBusyGoal(goal.id);
-                            setError(null);
-                            try {
-                              await onUpdateProposedGoal(detail.session.id, goal.id, {
-                                status: nextStatus,
-                              });
-                            } catch (err) {
-                              setError(
-                                err instanceof Error
-                                  ? err.message
-                                  : t('reviewStatus.error.proposedGoalUpdateFailed')
-                              );
-                            } finally {
-                              setBusyGoal(null);
-                            }
-                          }}
-                        >
-                          {reviewStatusValueLabel(t, 'proposedGoalAction', nextStatus)}
-                        </button>
-                      ))}
                       <button
                         type="button"
                         className="inline-flex h-8 items-center justify-center rounded border border-slate-700 px-2.5 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                         disabled={
-                          goal.status !== 'approved' ||
-                          !onMaterializeProposedGoal ||
-                          busyGoal === goal.id
+                          suggestion.status !== 'draft' ||
+                          !onInsertPromptSuggestion ||
+                          busyPromptSuggestion === suggestion.id
+                        }
+                        onClick={() => onInsertPromptSuggestion?.(suggestion.prompt)}
+                      >
+                        {t('reviewStatus.action.insertPrompt')}
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-flex h-8 items-center justify-center rounded border border-slate-700 px-2.5 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={
+                          suggestion.status !== 'draft' ||
+                          !onUsePromptSuggestion ||
+                          busyPromptSuggestion === suggestion.id
                         }
                         onClick={async () => {
-                          if (!onMaterializeProposedGoal) return;
-                          setBusyGoal(goal.id);
+                          if (!onUsePromptSuggestion) return;
+                          setBusyPromptSuggestion(suggestion.id);
                           setError(null);
                           try {
-                            await onMaterializeProposedGoal(detail.session.id, goal.id);
+                            await onUsePromptSuggestion(
+                              detail.session.id,
+                              suggestion.id,
+                              suggestion.prompt
+                            );
                           } catch (err) {
                             setError(
                               err instanceof Error
                                 ? err.message
-                                : t('reviewStatus.error.taskMaterializationFailed')
+                                : t('reviewStatus.error.promptSuggestionUseFailed')
                             );
                           } finally {
-                            setBusyGoal(null);
+                            setBusyPromptSuggestion(null);
                           }
                         }}
                       >
-                        {t('reviewStatus.action.task')}
+                        {t('reviewStatus.action.continueWithPrompt')}
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-flex h-8 items-center justify-center rounded border border-slate-700 px-2.5 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={
+                          suggestion.status !== 'draft' ||
+                          !onUpdatePromptSuggestion ||
+                          busyPromptSuggestion === suggestion.id
+                        }
+                        onClick={async () => {
+                          if (!onUpdatePromptSuggestion) return;
+                          setBusyPromptSuggestion(suggestion.id);
+                          setError(null);
+                          try {
+                            await onUpdatePromptSuggestion(detail.session.id, suggestion.id, {
+                              status: 'dismissed',
+                            });
+                          } catch (err) {
+                            setError(
+                              err instanceof Error
+                                ? err.message
+                                : t('reviewStatus.error.promptSuggestionUpdateFailed')
+                            );
+                          } finally {
+                            setBusyPromptSuggestion(null);
+                          }
+                        }}
+                      >
+                        {t('reviewStatus.action.discard')}
                       </button>
                     </div>
                   </div>
@@ -837,7 +861,7 @@ export function ReviewStatusViewer({
           </div>
           <div className="text-xs text-slate-500">
             {t('reviewStatus.finalCounts', {
-              proposedGoalCount: status.proposedGoalCount,
+              promptSuggestionCount: status.promptSuggestionCount,
               knowledgeCandidateCount: status.knowledgeCandidateCount,
               securityHandoffCount: status.securityHandoffCount ?? detail.securityHandoffs.length,
             })}
