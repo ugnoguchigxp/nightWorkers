@@ -117,8 +117,8 @@ export function sanitizeNativeApiResumeHistory(
 	}
 
 	if (pendingToolCallIds.size > 0) return null;
-	const maxItems = options.maxItems ?? 40;
-	return sanitized.slice(Math.max(0, sanitized.length - maxItems));
+	const maxItems = options.maxItems ?? 16;
+	return trimSanitizedResumeHistory(sanitized, maxItems);
 }
 
 export function projectNativeApiHistoryToProviderMessages(
@@ -158,6 +158,37 @@ export function projectNativeApiHistoryToProviderMessages(
 	}
 
 	return messages;
+}
+
+function trimSanitizedResumeHistory(
+	history: NativeApiHistoryItem[],
+	maxItems: number,
+) {
+	const limit = Math.max(0, Math.floor(maxItems));
+	if (limit === 0) return [];
+	if (history.length <= limit) return history;
+	const window = history.slice(Math.max(0, history.length - limit));
+	for (let offset = 0; offset < window.length; offset += 1) {
+		const candidate = window.slice(offset);
+		if (isValidTrimmedResumeHistory(candidate)) return candidate;
+	}
+	return [];
+}
+
+function isValidTrimmedResumeHistory(history: NativeApiHistoryItem[]) {
+	const pendingToolCallIds = new Set<string>();
+	for (const item of history) {
+		if (item.type === "assistant") {
+			for (const toolCall of item.toolCalls ?? []) {
+				pendingToolCallIds.add(toolCall.id);
+			}
+			continue;
+		}
+		if (item.type !== "tool_result") continue;
+		if (!pendingToolCallIds.has(item.toolCallId)) return false;
+		pendingToolCallIds.delete(item.toolCallId);
+	}
+	return pendingToolCallIds.size === 0;
 }
 
 export function extractNativeApiSystemPrompt(
@@ -243,10 +274,10 @@ function readOntologyMcpEnabled(context: AgentRunContext) {
 		typeof ontologyMcp !== "object" ||
 		Array.isArray(ontologyMcp)
 	) {
-		return true;
+		return false;
 	}
 	const enabled = (ontologyMcp as Record<string, unknown>).enabled;
-	return typeof enabled === "boolean" ? enabled : true;
+	return enabled === true;
 }
 
 function formatPlanModeSettingsSnapshot(snapshot: unknown) {

@@ -289,6 +289,7 @@ describe("CodexAgentRuntime config and prompt", () => {
 		const prompt = buildCodexRuntimePrompt(
 			buildContext({
 				latestUserMessage: "実装計画書を作ってください",
+				ontologyMcp: { enabled: true, fileScale: "large" },
 			}),
 		);
 
@@ -300,7 +301,9 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(prompt).toContain("Plan mode: disabled");
 		expect(prompt).toContain("Plan Mode を明示していない");
 		expect(prompt).toContain("context-still.initial_instructions");
-		expect(prompt).toContain(getNightWorkersCodexToolNames().join(", "));
+		expect(prompt).toContain(
+			getNightWorkersCodexToolNames({ ontologyMcpEnabled: true }).join(", "),
+		);
 		expect(prompt).toContain("nightworkers.todo_list");
 		expect(prompt).toContain("operation=replace");
 		expect(prompt).toContain("operation=done");
@@ -386,6 +389,7 @@ describe("CodexAgentRuntime config and prompt", () => {
 	it("includes ontology runtime snapshot in Codex prompt when present", () => {
 		const prompt = buildCodexRuntimePrompt(
 			buildContext({
+				ontologyMcp: { enabled: true, fileScale: "large" },
 				ontologyContext: {
 					version: 1,
 					available: true,
@@ -411,6 +415,21 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(prompt).toContain("task generation evidence: present");
 		expect(prompt).toContain("focused verification candidates");
 		expect(prompt).toContain("Ontology closeout requirements:");
+	});
+
+	it("omits ontology prompt guidance when ontology flag is absent", () => {
+		const prompt = buildCodexRuntimePrompt(
+			buildContext({
+				ontologyContext: {
+					version: 1,
+					available: true,
+					primaryModule: "project-detail",
+				},
+			}),
+		);
+
+		expect(prompt).not.toContain("Module ontology protocol:");
+		expect(prompt).not.toContain("Ontology runtime snapshot:");
 	});
 
 	it("omits ontology MCP tools and prompt guidance when disabled by project scale", () => {

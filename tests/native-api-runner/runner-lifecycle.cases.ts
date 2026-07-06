@@ -146,6 +146,41 @@ describe("NativeApiRunner lifecycle", () => {
 		expect(store.finishedTurns[0]).toMatchObject({ status: "completed" });
 	});
 
+	it("does not run fixed startup gates for review mode", async () => {
+		const store = createFakeStore();
+		const startupController = createNoopStartup();
+		const providerTurn = createProvider([
+			{
+				type: "supported",
+				content: "Review needs tool calls.",
+				toolCalls: [],
+				usage: usage(),
+				model: "api-model",
+			},
+		]);
+		const runner = new NativeApiRunner({
+			store: store.instance,
+			startupController,
+			providerTurn,
+			usageRecorder: vi.fn(async () => undefined),
+		});
+
+		await runner.run(
+			buildContext({
+				runtimeOptions: { executionMode: "review" },
+				contextSnapshot: {
+					compiledPrompt: "review the completed task",
+					source: "fallback",
+					executionMode: "review",
+				},
+			}),
+			createSink(),
+		);
+
+		expect(startupController.runStartup).not.toHaveBeenCalled();
+		expect(providerTurn).toHaveBeenCalledOnce();
+	});
+
 	it("persists provider-native tool lifecycle and completes on finalize_answer", async () => {
 		const store = createFakeStore();
 		const providerTurn = createProvider([
@@ -356,11 +391,8 @@ describe("NativeApiRunner lifecycle", () => {
 		expect(system).toContain(
 			"finalReport / finalize_answer の前に open Todo を確認",
 		);
-		expect(system).toContain("classify_goal と compile_module_context");
-		expect(system).toContain("check_boundary");
-		expect(system).toContain(
-			"primary module、secondary modules、boundary crossings",
-		);
+		expect(system).not.toContain("classify_goal と compile_module_context");
+		expect(system).not.toContain("check_boundary");
 	});
 
 	it("includes ontology runtime snapshot in native/API system prompt", () => {
@@ -369,6 +401,7 @@ describe("NativeApiRunner lifecycle", () => {
 				contextSnapshot: {
 					compiledPrompt: "implement the requested change",
 					source: "fallback",
+					ontologyMcp: { enabled: true, source: "project_meta_file_scale" },
 					ontologyContext: {
 						version: 1,
 						available: true,
@@ -471,6 +504,65 @@ describe("NativeApiRunner lifecycle", () => {
 				},
 			]),
 		).toBeNull();
+	});
+
+	it("trims native/API resume history to 16 valid items by default", () => {
+		const sanitized = sanitizeNativeApiResumeHistory(
+			Array.from({ length: 20 }, (_, index) => ({
+				type: "user",
+				source: "user",
+				content: `previous user request ${index + 1}`,
+			})),
+		);
+
+		expect(sanitized).toHaveLength(16);
+		expect(sanitized?.[0]).toMatchObject({
+			type: "user",
+			content: "previous user request 5",
+		});
+	});
+
+	it("trims native/API resume history to empty when maxItems is zero", () => {
+		const sanitized = sanitizeNativeApiResumeHistory(
+			[
+				{
+					type: "user",
+					source: "user",
+					content: "previous user request",
+				},
+			],
+			{ maxItems: 0 },
+		);
+
+		expect(sanitized).toEqual([]);
+	});
+
+	it("does not retain orphan tool results when trimming native/API resume history", () => {
+		const sanitized = sanitizeNativeApiResumeHistory(
+			[
+				{ type: "user", source: "user", content: "previous user request" },
+				{
+					type: "assistant",
+					content: "I will read the spec.",
+					toolCalls: [
+						{
+							id: "call-read",
+							name: "read_current_specification",
+							arguments: {},
+						},
+					],
+				},
+				{
+					type: "tool_result",
+					toolCallId: "call-read",
+					toolName: "read_current_specification",
+					result: { ok: true, content: '{"ok":true}' },
+				},
+			],
+			{ maxItems: 1 },
+		);
+
+		expect(sanitized).toEqual([]);
 	});
 
 	it("restores sanitized completed native/API history before the fresh user request", async () => {

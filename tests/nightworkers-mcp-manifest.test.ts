@@ -65,7 +65,7 @@ describe("nightworkers MCP manifest", () => {
 		expect(url.searchParams.get("executionMode")).toBe("implementation");
 	});
 
-	it("drives the installer tool config lines", () => {
+	it("drives the installer tool config lines without ontology tools by default", () => {
 		const lines = buildNightWorkersCodexToolConfigLines().join("\n");
 
 		expect(lines).toContain(
@@ -76,6 +76,32 @@ describe("nightworkers MCP manifest", () => {
 		);
 		expect(lines).toContain("[mcp_servers.nightworkers.tools.todo_list]");
 		expect(lines).toContain("[mcp_servers.nightworkers.tools.import_project]");
+		expect(lines).not.toContain(
+			"[mcp_servers.nightworkers.tools.list_modules]",
+		);
+		expect(lines).not.toContain(
+			"[mcp_servers.nightworkers.tools.get_module_ontology]",
+		);
+		expect(lines).not.toContain(
+			"[mcp_servers.nightworkers.tools.classify_goal]",
+		);
+		expect(lines).not.toContain(
+			"[mcp_servers.nightworkers.tools.compile_module_context]",
+		);
+		expect(lines).not.toContain(
+			"[mcp_servers.nightworkers.tools.check_boundary]",
+		);
+		expect(lines).not.toContain(
+			"[mcp_servers.nightworkers.tools.get_verification_plan]",
+		);
+		expect(lines).not.toContain("replace_todo_list");
+	});
+
+	it("adds ontology tools to installer config lines when explicitly enabled", () => {
+		const lines = buildNightWorkersCodexToolConfigLines({
+			ontologyMcpEnabled: true,
+		}).join("\n");
+
 		expect(lines).toContain("[mcp_servers.nightworkers.tools.list_modules]");
 		expect(lines).toContain(
 			"[mcp_servers.nightworkers.tools.get_module_ontology]",

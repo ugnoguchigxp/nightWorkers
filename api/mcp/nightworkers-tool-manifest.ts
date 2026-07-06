@@ -541,7 +541,7 @@ export function buildNightWorkersCodexToolConfigLines(
 export function isNightWorkersCodexToolAllowedForMode(
 	tool: NightWorkersCodexToolName,
 	executionMode?: string,
-	ontologyMcpEnabled = true,
+	ontologyMcpEnabled = false,
 ) {
 	if (!ontologyMcpEnabled && ONTOLOGY_CODEX_TOOLS.has(tool)) return false;
 	if (executionMode !== "planning") return true;

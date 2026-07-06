@@ -389,8 +389,8 @@ function readOntologyMcpEnabled(context: AgentRunContext) {
 		typeof ontologyMcp !== "object" ||
 		Array.isArray(ontologyMcp)
 	) {
-		return true;
+		return false;
 	}
 	const enabled = (ontologyMcp as Record<string, unknown>).enabled;
-	return typeof enabled === "boolean" ? enabled : true;
+	return enabled === true;
 }

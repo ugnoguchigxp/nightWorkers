@@ -95,7 +95,7 @@ function readOntologyMcpEnabled(context: AgentRunContext) {
 	const snapshot = context.contextSnapshot as Record<string, unknown>;
 	const ontologyMcp = readRecord(snapshot.ontologyMcp);
 	const enabled = ontologyMcp?.enabled;
-	return typeof enabled === "boolean" ? enabled : true;
+	return enabled === true;
 }
 
 function readCodexResumeState(context: AgentRunContext) {

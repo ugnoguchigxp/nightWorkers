@@ -140,7 +140,7 @@ function buildNightWorkersMcpServers(
 
 function readOntologyMcpEnabledFromEnv(env: NodeJS.ProcessEnv | undefined) {
 	const raw = env?.NIGHTWORKERS_ONTOLOGY_MCP_ENABLED;
-	if (raw === undefined) return true;
+	if (raw === undefined) return false;
 	return ["1", "true", "yes", "on"].includes(raw.trim().toLowerCase());
 }
 
