@@ -337,12 +337,7 @@ export const reviewRecommendationSchema = z
   .openapi('ReviewRecommendation');
 
 export const reviewSectionKindSchema = z
-  .enum([
-    'test_coverage',
-    'security_review',
-    'findings',
-    'prompt_suggestions',
-  ])
+  .enum(['test_coverage', 'security_review', 'findings', 'prompt_suggestions'])
   .openapi('ReviewSectionKind');
 
 export const reviewArtifactKindSchema = z

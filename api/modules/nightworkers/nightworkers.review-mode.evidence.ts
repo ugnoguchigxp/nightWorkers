@@ -25,31 +25,6 @@ function diffRef(pack: ReviewEvidencePack): ReviewEvidenceRef {
   };
 }
 
-function finalReportRef(pack: ReviewEvidencePack): ReviewEvidenceRef {
-  return {
-    kind: 'final_report',
-    runId: pack.runId,
-  };
-}
-
-function verificationRefs(pack: ReviewEvidencePack): ReviewEvidenceRef[] {
-  return pack.verification.map((verification) => ({
-    kind: 'verification' as const,
-    eventId: verification.eventId,
-    passed: verification.passed,
-    command: verification.command,
-  }));
-}
-
-function finalReportClaimsVerificationSuccess(finalReport: string | undefined) {
-  return Boolean(
-    finalReport &&
-      /pass(?:ed|es)?|success(?:ful|fully)?|green|verified|検証.*(成功|通過|完了)|テスト.*(成功|通過|完了)/i.test(
-        finalReport
-      )
-  );
-}
-
 function isSecuritySensitive(pack: ReviewEvidencePack) {
   return pack.diff.changedFiles.some((file) => SECURITY_PATH_PATTERN.test(file));
 }
@@ -101,37 +76,6 @@ export function buildRecommendationFromEvidence(input: {
       evidenceRefs: [],
     });
   }
-  if (pack.diff.hasChanges && !pack.finalReport?.trim()) {
-    addReason({
-      code: 'acceptance_evidence_missing',
-      severity: 'blocking',
-      label: 'Final report is missing, so the completion claim cannot be checked.',
-      evidenceRefs: [diffRef(pack)],
-    });
-  }
-  if (pack.diff.hasChanges && pack.verification.length === 0) {
-    addReason({
-      code: 'verification_missing',
-      severity: 'blocking',
-      label: 'Changed run has no saved verification record.',
-      evidenceRefs: [diffRef(pack)],
-    });
-  }
-  if (pack.verification.some((verification) => verification.passed === false)) {
-    addReason({
-      code: 'verification_failed',
-      severity: 'blocking',
-      label: 'A saved verification record failed.',
-      evidenceRefs: pack.verification
-        .filter((verification) => verification.passed === false)
-        .map((verification) => ({
-          kind: 'verification' as const,
-          eventId: verification.eventId,
-          passed: verification.passed,
-          command: verification.command,
-        })),
-    });
-  }
   if (isSecuritySensitive(pack)) {
     addReason({
       code: 'security_sensitive_change',
@@ -168,18 +112,6 @@ export function buildRecommendationFromEvidence(input: {
       ),
     });
   }
-  if (
-    pack.diff.hasChanges &&
-    finalReportClaimsVerificationSuccess(pack.finalReport) &&
-    !pack.verification.some((verification) => verification.passed === true)
-  ) {
-    addReason({
-      code: 'final_report_evidence_mismatch',
-      severity: 'blocking',
-      label: 'Final report claims verification success without a matching verification record.',
-      evidenceRefs: [finalReportRef(pack), ...verificationRefs(pack)],
-    });
-  }
   if (reasons.length === 0) {
     if (!pack.diff.hasChanges || pack.diff.bytes === 0) {
       addReason({
@@ -213,57 +145,6 @@ export function sectionFindings(
   kind: ReviewSectionKind,
   pack: ReviewEvidencePack
 ): ReviewFinding[] {
-  if (kind === 'acceptance_evidence') {
-    const findings: ReviewFinding[] = [];
-    if (!pack.finalReport?.trim()) {
-      findings.push({
-        severity: 'blocking',
-        title: 'Final report is missing',
-        body: 'Run record check cannot confirm the completion claim because no final report or equivalent closeout record is saved.',
-        evidenceRefs: [diffRef(pack)],
-      });
-    }
-    if (
-      pack.diff.hasChanges &&
-      finalReportClaimsVerificationSuccess(pack.finalReport) &&
-      !pack.verification.some((verification) => verification.passed === true)
-    ) {
-      findings.push({
-        severity: 'blocking',
-        title: 'Final report has no matching verification record',
-        body: 'The final report claims successful verification, but no saved passing verification record is linked to the run.',
-        evidenceRefs: [finalReportRef(pack), ...verificationRefs(pack)],
-      });
-    }
-    return findings;
-  }
-  if (kind === 'verification_evidence') {
-    const findings: ReviewFinding[] = [];
-    if (pack.diff.hasChanges && pack.verification.length === 0) {
-      findings.push({
-        severity: 'blocking',
-        title: 'Saved verification record is missing',
-        body: 'The completed run changed files, but no saved verification.finished record is available for review.',
-        evidenceRefs: [diffRef(pack)],
-      });
-    }
-    for (const verification of pack.verification.filter((item) => item.passed === false)) {
-      findings.push({
-        severity: 'blocking',
-        title: 'Saved verification record failed',
-        body: verification.summary || 'A saved verification record for this run failed.',
-        evidenceRefs: [
-          {
-            kind: 'verification',
-            eventId: verification.eventId,
-            passed: verification.passed,
-            command: verification.command,
-          },
-        ],
-      });
-    }
-    return findings;
-  }
   if (kind === 'security_review') {
     const findings: ReviewFinding[] = [];
     if (isSecuritySensitive(pack)) {

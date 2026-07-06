@@ -208,10 +208,10 @@ export function planSections(
   return [
     section(
       'test_coverage',
-      recommendation.level === 'none' ? 'omitted' : 'required',
+      recommendation.level === 'none' ? 'omitted' : 'recommended',
       recommendation.level === 'none'
-        ? 'No acceptance criteria test-name check is needed.'
-        : 'Compare implementation-plan acceptance criteria with describe/it/test names.'
+        ? 'No test evidence review is needed.'
+        : 'Check test evidence for implementation-plan acceptance criteria.'
     ),
     section(
       'security_review',

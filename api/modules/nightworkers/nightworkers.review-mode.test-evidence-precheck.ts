@@ -1,6 +1,5 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import type { ReviewFinding } from '../../services/review-results/types';
 import * as repo from './nightworkers.repository';
 
 type TaskMessage = Awaited<ReturnType<typeof repo.listTaskMessages>>[number];
@@ -10,6 +9,12 @@ export type AcceptanceCriterionMatch = {
   matched: boolean;
   bestScore: number;
   testNames: string[];
+  candidates: Array<{
+    testName: string;
+    filePath: string;
+    lineNumber: number;
+    score: number;
+  }>;
 };
 
 export type AcceptanceTestCoverageResult = {
@@ -23,7 +28,6 @@ export type AcceptanceTestCoverageResult = {
   testFilesScanned: number;
   testNamesScanned: number;
   matches: AcceptanceCriterionMatch[];
-  findings: ReviewFinding[];
 };
 
 const PLAN_INTENTS = new Set(['feature_plan', 'implementation_plan', 'draft_spec']);
@@ -159,9 +163,19 @@ async function walkTestFiles(root: string) {
   return files.sort();
 }
 
+type ExtractedTestName = {
+  testName: string;
+  filePath: string;
+  lineNumber: number;
+};
+
+function lineNumberForIndex(content: string, index: number) {
+  return content.slice(0, index).split(/\r?\n/).length;
+}
+
 async function extractTestNames(root: string) {
   const files = await walkTestFiles(root);
-  const names: string[] = [];
+  const names: ExtractedTestName[] = [];
   for (const file of files) {
     let content = '';
     try {
@@ -170,12 +184,22 @@ async function extractTestNames(root: string) {
       continue;
     }
     for (const match of content.matchAll(TEST_NAME_PATTERN)) {
-      if (match[2]?.trim()) names.push(match[2].replace(/\\(['"`])/g, '$1').trim());
+      if (match[2]?.trim()) {
+        names.push({
+          testName: match[2].replace(/\\(['"`])/g, '$1').trim(),
+          filePath: path.relative(root, file).split(path.sep).join('/'),
+          lineNumber: lineNumberForIndex(content, match.index ?? 0),
+        });
+      }
     }
+  }
+  const unique = new Map<string, ExtractedTestName>();
+  for (const item of names) {
+    unique.set(`${item.filePath}:${item.lineNumber}:${item.testName}`, item);
   }
   return {
     testFilesScanned: files.length,
-    testNames: [...new Set(names)],
+    testNames: [...unique.values()],
   };
 }
 
@@ -228,10 +252,13 @@ function similarity(left: string, right: string) {
   );
 }
 
-function matchCriteria(criteria: string[], testNames: string[]): AcceptanceCriterionMatch[] {
+function matchCriteria(
+  criteria: string[],
+  testNames: ExtractedTestName[]
+): AcceptanceCriterionMatch[] {
   return criteria.map((criterion) => {
     const scored = testNames
-      .map((testName) => ({ testName, score: similarity(criterion, testName) }))
+      .map((testName) => ({ ...testName, score: similarity(criterion, testName.testName) }))
       .filter((item) => item.score >= 0.34)
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
@@ -240,51 +267,17 @@ function matchCriteria(criteria: string[], testNames: string[]): AcceptanceCrite
       matched: scored.length > 0,
       bestScore: scored[0]?.score ?? 0,
       testNames: scored.map((item) => item.testName),
+      candidates: scored.map((item) => ({
+        testName: item.testName,
+        filePath: item.filePath,
+        lineNumber: item.lineNumber,
+        score: item.score,
+      })),
     };
   });
 }
 
-function findingsFor(result: Omit<AcceptanceTestCoverageResult, 'findings'>): ReviewFinding[] {
-  const planEvidenceRefs = result.planMessageId
-    ? [
-        {
-          kind: 'artifact' as const,
-          artifactId: result.planMessageId,
-          artifactKind: 'feature_plan',
-        },
-      ]
-    : [];
-  if (!result.planFound) {
-    return [
-      {
-        severity: 'blocking',
-        title: 'Implementation plan is missing',
-        body: '受け入れ条件を抽出する実装計画 artifact が見つからないため、テスト名との照合ができません。',
-        evidenceRefs: [],
-      },
-    ];
-  }
-  if (result.criteria.length === 0) {
-    return [
-      {
-        severity: 'blocking',
-        title: 'Acceptance criteria are missing from implementation plan',
-        body: '実装計画の受け入れ条件 section に箇条書きの条件がないため、テスト名との照合ができません。',
-        evidenceRefs: planEvidenceRefs,
-      },
-    ];
-  }
-  return result.matches
-    .filter((match) => !match.matched)
-    .map((match) => ({
-      severity: 'blocking' as const,
-      title: 'Acceptance criterion has no matching test name',
-      body: `受け入れ条件「${match.criterion}」に近い describe/it/test 名が見つかりません。`,
-      evidenceRefs: planEvidenceRefs,
-    }));
-}
-
-export async function buildAcceptanceTestCoverage(input: {
+export async function buildTestEvidencePrecheck(input: {
   taskId: string;
   repositoryId: string;
 }): Promise<AcceptanceTestCoverageResult> {
@@ -301,7 +294,7 @@ export async function buildAcceptanceTestCoverage(input: {
   const repositoryPath = repository?.localPath ?? null;
   const scanned = repositoryPath ? await extractTestNames(repositoryPath) : null;
   const testNames = scanned?.testNames ?? [];
-  const result = {
+  return {
     version: 1 as const,
     taskId: input.taskId,
     repositoryPath,
@@ -312,9 +305,5 @@ export async function buildAcceptanceTestCoverage(input: {
     testFilesScanned: scanned?.testFilesScanned ?? 0,
     testNamesScanned: testNames.length,
     matches: matchCriteria(criteria, testNames),
-  };
-  return {
-    ...result,
-    findings: findingsFor(result),
   };
 }

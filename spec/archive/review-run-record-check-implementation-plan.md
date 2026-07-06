@@ -1,5 +1,9 @@
 # Review Run Record Check Implementation Plan
 
+> Superseded: この計画は `review-agentic-test-evidence-implementation-plan.md` に置き換えられた。
+> Review Mode の現行方針では `最終報告` / `検証記録` / `Run 記録チェック` を primary concept として扱わない。
+> この文書は履歴参照用であり、実装時には archive へ移動する。
+
 ## Purpose
 
 Review Mode の `検証証跡` / `受け入れ証跡` を、強い audit trail や evidence ledger として扱うのをやめ、完了済み Run の保存記録を確認する `Run 記録チェック` として再位置づけする。

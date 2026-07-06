@@ -126,6 +126,8 @@ export async function executeWorkerTool(
         query: args.query as string,
         repoRoot,
         glob: args.glob as string | undefined,
+        maxResults: args.maxResults as number | undefined,
+        caseSensitive: args.caseSensitive as boolean | undefined,
         allowedPaths: safetyPolicy?.allowedPaths,
         externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
         deniedPaths: safetyPolicy?.deniedPaths,

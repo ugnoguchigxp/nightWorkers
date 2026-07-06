@@ -610,11 +610,10 @@ export const enDictionary = {
   'reviewStatus.finalCounts':
     'Additional Prompts: {{promptSuggestionCount}} · Security Handoffs: {{securityHandoffCount}}',
   'reviewStatus.artifact.summary': '{{level}} · {{count}} sections',
-  'reviewStatus.result.title': 'Test-name check result',
-  'reviewStatus.result.testCoverageOnly':
-    'This compares implementation-plan acceptance criteria with existing test names. It does not run tests.',
-  'reviewStatus.result.recordOnly':
-    'This checks saved Run records. Review Mode does not run verification commands.',
+  'reviewStatus.result.title': 'Test Evidence Review Result',
+  'reviewStatus.result.testCoverageOnly': 'Name-match precheck only',
+  'reviewStatus.result.agenticReview': 'LLM checked files/CLI',
+  'reviewStatus.result.degraded': 'Agentic review failed. Showing precheck results only.',
   'reviewStatus.result.updatedAt': 'Updated: {{value}}',
   'reviewStatus.result.noFindings': 'No findings were detected.',
   'reviewStatus.result.findingsProduced': '{{count}} findings',
@@ -625,7 +624,19 @@ export const enDictionary = {
     'Acceptance criteria matched: {{matchedCount}} / {{criteriaCount}}',
   'reviewStatus.result.testNamesScanned':
     'Checked: {{fileCount}} test files / {{testNameCount}} test names',
-  'reviewStatus.result.missingCriteria': 'Acceptance criteria without a similar test name',
+  'reviewStatus.result.missingCriteria': 'Acceptance criteria with weak name-match candidates',
+  'reviewStatus.result.confirmedCount': '{{count}} confirmed',
+  'reviewStatus.result.notFoundCount': '{{count}} not confirmed',
+  'reviewStatus.result.unclearCount': '{{count}} unclear',
+  'reviewStatus.result.commandCount': '{{count}} commands run',
+  'reviewStatus.result.notApplicableCount': '{{count}} not applicable',
+  'reviewStatus.result.status.confirmed': 'Matching test evidence confirmed',
+  'reviewStatus.result.status.not_found': 'Matching test evidence was not confirmed',
+  'reviewStatus.result.status.unclear': 'Unclear',
+  'reviewStatus.result.status.not_applicable': 'Not applicable',
+  'reviewStatus.result.confidence': 'Confidence: {{value}}',
+  'reviewStatus.result.checkedScope': 'Checked scope',
+  'reviewStatus.result.improvementPrompt': 'Improvement Prompt',
   'reviewStatus.level.none': 'No review needed',
   'reviewStatus.level.optional': 'Optional review',
   'reviewStatus.level.recommended': 'Review recommended',
@@ -639,9 +650,7 @@ export const enDictionary = {
   'reviewStatus.progress.done': 'Checked',
   'reviewStatus.progress.blocked': 'Blocked',
   'reviewStatus.progress.needs_human': 'Needs human',
-  'reviewStatus.section.acceptance_evidence': 'Final Report',
-  'reviewStatus.section.verification_evidence': 'Verification Record',
-  'reviewStatus.section.test_coverage': 'Acceptance Criteria Test-name Check',
+  'reviewStatus.section.test_coverage': 'Test Evidence Review',
   'reviewStatus.section.security_review': 'Security Review',
   'reviewStatus.section.findings': 'Findings',
   'reviewStatus.section.prompt_suggestions': 'Additional Prompts',
@@ -655,24 +664,10 @@ export const enDictionary = {
   'reviewStatus.reason.schema_or_migration_change': 'Schema or migration paths changed.',
   'reviewStatus.reason.public_contract_change':
     'Public API, schema, MCP, or worker-tool contract changed.',
-  'reviewStatus.reason.verification_missing': 'Changed run has no saved verification record.',
-  'reviewStatus.reason.verification_failed': 'A saved verification record failed.',
-  'reviewStatus.reason.acceptance_evidence_missing':
-    'Final report is missing, so the completion claim cannot be checked.',
-  'reviewStatus.reason.final_report_evidence_mismatch':
-    'Final report claims verification success without a matching verification record.',
   'reviewStatus.sectionReason.noAcceptanceSignal': 'No acceptance review signal was detected.',
-  'reviewStatus.sectionReason.noFinalReportRecordNeeded': 'No final report record check is needed.',
-  'reviewStatus.sectionReason.checkFinalReport':
-    'Check the final report completion claim against run records.',
-  'reviewStatus.sectionReason.noVerificationRecordNeeded':
-    'No saved verification record check is needed.',
-  'reviewStatus.sectionReason.checkVerificationRecord':
-    'Check saved verification records for this completed run.',
-  'reviewStatus.sectionReason.noTestCoverageNeeded':
-    'No acceptance criteria test-name check is needed.',
+  'reviewStatus.sectionReason.noTestCoverageNeeded': 'No test evidence review is needed.',
   'reviewStatus.sectionReason.testCoverage':
-    'Checks whether describe / it / test names are similar to implementation-plan acceptance criteria.',
+    'Checks whether tests can be confirmed for each implementation-plan acceptance criterion.',
   'reviewStatus.sectionReason.sensitivePathsChanged':
     'Sensitive, schema, or public contract paths changed.',
   'reviewStatus.sectionReason.noSecuritySignal': 'No security-sensitive change was detected.',

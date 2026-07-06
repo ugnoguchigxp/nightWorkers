@@ -7,6 +7,7 @@ import * as reviewRepo from '../api/modules/nightworkers/nightworkers.review-mod
 
 const sameOriginHeaders = { Origin: 'http://localhost:39174' };
 const originalSecurityPluginIntegration = process.env.NIGHTWORKERS_SECURITY_PLUGIN_INTEGRATION;
+const originalActiveLlmProvider = process.env.ACTIVE_LLM_PROVIDER;
 
 beforeAll(async () => {
   await ensureNightWorkersSchema();
@@ -17,6 +18,11 @@ afterEach(() => {
     delete process.env.NIGHTWORKERS_SECURITY_PLUGIN_INTEGRATION;
   } else {
     process.env.NIGHTWORKERS_SECURITY_PLUGIN_INTEGRATION = originalSecurityPluginIntegration;
+  }
+  if (originalActiveLlmProvider === undefined) {
+    delete process.env.ACTIVE_LLM_PROVIDER;
+  } else {
+    process.env.ACTIVE_LLM_PROVIDER = originalActiveLlmProvider;
   }
 });
 
@@ -75,7 +81,7 @@ describe('Review Mode', () => {
     expect(startRes.status).toBe(201);
     const started = await startRes.json();
     expect(started.statusArtifact.finalActionGate.canApprove).toBe(false);
-    expect(started.statusArtifact.finalActionGate.requiredSectionKindsRemaining).toContain(
+    expect(started.statusArtifact.finalActionGate.requiredSectionKindsRemaining).not.toContain(
       'test_coverage'
     );
 
@@ -89,9 +95,18 @@ describe('Review Mode', () => {
     );
     expect(sectionRes.status).toBe(200);
     const afterSection = await sectionRes.json();
-    expect(afterSection.findings.map((finding: { title: string }) => finding.title)).toContain(
-      'Implementation plan is missing'
+    expect(afterSection.statusArtifact.finalActionGate.requiredSectionKindsRemaining).not.toContain(
+      'test_coverage'
     );
+    expect(afterSection.findings.map((finding: { title: string }) => finding.title)).toContain(
+      'Test evidence review could not find an implementation plan'
+    );
+    expect(
+      afterSection.findings.find(
+        (finding: { title: string }) =>
+          finding.title === 'Test evidence review could not find an implementation plan'
+      )
+    ).toMatchObject({ severity: 'warning' });
 
     const approveRes = await app.request(
       `http://localhost/api/review-sessions/${started.session.id}/final-action`,
@@ -126,7 +141,9 @@ describe('Review Mode', () => {
       findingId,
       status: 'draft',
     });
-    expect(routed.promptSuggestions[0].prompt).toContain('この session の作業を続けてください');
+    expect(routed.promptSuggestions[0].prompt).toContain(
+      '次の受け入れ条件に対応するテスト証跡を確認できませんでした。'
+    );
     expect(
       routed.findings.find((finding: { id: string }) => finding.id === findingId)
     ).toMatchObject({
@@ -246,6 +263,7 @@ async function createTask() {
 }
 
 async function createSessionWithVerificationFinding() {
+  process.env.ACTIVE_LLM_PROVIDER = 'bedrock';
   const { task } = await createTask();
   await repo.createTaskMessage({
     taskId: task.id,
@@ -292,7 +310,7 @@ async function createSessionWithVerificationFinding() {
   expect(sectionRes.status).toBe(200);
   const afterSection = await sectionRes.json();
   const finding = afterSection.findings.find(
-    (item: { title: string }) => item.title === 'Acceptance criterion has no matching test name'
+    (item: { title: string }) => item.title === 'Agentic test evidence review could not complete'
   );
   expect(finding).toBeTruthy();
   return { sessionId: started.session.id as string, findingId: finding.id as string };

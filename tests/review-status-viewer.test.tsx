@@ -71,17 +71,17 @@ function reviewSessionDetail(): ReviewSessionDetail {
       sections: [
         {
           kind: 'test_coverage',
-          requirement: 'required',
+          requirement: 'recommended',
           progress: 'done',
-          reason: 'Compare implementation-plan acceptance criteria with describe/it/test names.',
+          reason: 'Check test evidence for implementation-plan acceptance criteria.',
           artifactId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-          findingCounts: { blocking: 1, warning: 0, info: 0 },
+          findingCounts: { blocking: 0, warning: 1, info: 0 },
         },
       ],
       finalActionGate: {
-        canApprove: false,
-        blockingReason: 'Unresolved blocking findings remain.',
-        unresolvedBlockingFindingIds: ['66666666-6666-4666-8666-666666666666'],
+        canApprove: true,
+        blockingReason: null,
+        unresolvedBlockingFindingIds: [],
         requiredSectionKindsRemaining: [],
       },
       promptSuggestionCount: 1,
@@ -99,11 +99,12 @@ function reviewSessionDetail(): ReviewSessionDetail {
         updatedAt: now,
         sourceEvidenceRefs: [],
         artifact: {
-          version: 1,
+          version: 2,
           kind: 'test_coverage',
-          requirement: 'required',
-          summary: '1/2 acceptance criteria have matching test names.',
-          result: {
+          requirement: 'recommended',
+          summary: '1 confirmed, 1 not confirmed, 0 unclear by agentic test evidence review.',
+          mode: 'agentic_review',
+          precheck: {
             version: 1,
             taskId: '33333333-3333-4333-8333-333333333333',
             repositoryPath: '/Users/y.noguchi/Code/nightWorkers',
@@ -126,7 +127,38 @@ function reviewSessionDetail(): ReviewSessionDetail {
                 testNames: [],
               },
             ],
-            findings: [],
+          },
+          agenticReview: {
+            version: 1,
+            summary: '1 confirmed, 1 not confirmed.',
+            criteria: [
+              {
+                criterion: 'ルート A が保存される',
+                status: 'confirmed',
+                confidence: 'high',
+                evidence: [
+                  {
+                    kind: 'test_name',
+                    filePath: 'tests/routes.test.ts',
+                    testName: 'ルート A が保存される',
+                    note: '対応する test name を確認しました。',
+                  },
+                ],
+              },
+              {
+                criterion: 'ルート B が削除される',
+                status: 'not_found',
+                confidence: 'medium',
+                evidence: [
+                  {
+                    kind: 'reasoning',
+                    note: '近い test name はなく、確認した範囲では対応が不明です。',
+                  },
+                ],
+                improvementPrompt: 'ルート B の削除を検証する focused test を追加してください。',
+              },
+            ],
+            commandsRun: [{ command: 'rg "ルート B" tests', exitCode: 1, summary: 'No matches' }],
           },
           findings: [],
           recommendedActions: [],
@@ -139,8 +171,8 @@ function reviewSessionDetail(): ReviewSessionDetail {
         reviewSessionId: '11111111-1111-4111-8111-111111111111',
         runId: '22222222-2222-4222-8222-222222222222',
         taskId: '33333333-3333-4333-8333-333333333333',
-        severity: 'blocking',
-        title: 'Acceptance criterion has no matching test name',
+        severity: 'warning',
+        title: 'Test evidence not confirmed for acceptance criterion: ルート B が削除される',
         body: '受け入れ条件「ルート B が削除される」に近い describe/it/test 名が見つかりません。',
         disposition: null,
         dispositionStatus: 'unresolved',
@@ -188,10 +220,13 @@ describe('ReviewStatusViewer', () => {
       renderToStaticMarkup(<ReviewStatusViewer detail={reviewSessionDetail()} />)
     );
 
-    expect(text).toContain('受け入れ条件テスト名チェック');
+    expect(text).toContain('テスト証跡確認');
     expect(text).toContain('実装計画: Feature Plan');
     expect(text).toContain('受け入れ条件: 1 / 2 件一致');
     expect(text).toContain('テストファイル 12 件 / テスト名 48 件');
+    expect(text).toContain('LLM がファイル/CLIで確認');
+    expect(text).toContain('確認済み 1 件');
+    expect(text).toContain('未確認 1 件');
     expect(text).toContain('ルート B が削除される');
     expect(text).not.toContain('検証記録');
     expect(text).not.toContain('最終報告');
@@ -205,10 +240,13 @@ describe('ReviewStatusViewer', () => {
       renderToStaticMarkup(<ReviewStatusViewer detail={reviewSessionDetail()} />)
     );
 
-    expect(text).toContain('Acceptance Criteria Test-name Check');
+    expect(text).toContain('Test Evidence Review');
     expect(text).toContain('Implementation plan: Feature Plan');
     expect(text).toContain('Acceptance criteria matched: 1 / 2');
     expect(text).toContain('12 test files / 48 test names');
+    expect(text).toContain('LLM checked files/CLI');
+    expect(text).toContain('1 confirmed');
+    expect(text).toContain('1 not confirmed');
     expect(text).not.toContain('Verification Record');
     expect(text).not.toContain('Final Report');
     expect(text).not.toContain('Run Record Check');

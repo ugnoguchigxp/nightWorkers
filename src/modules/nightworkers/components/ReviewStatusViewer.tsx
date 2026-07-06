@@ -63,20 +63,52 @@ type BusyPromptSuggestion =
 
 type SectionArtifactPayload = {
   summary?: string;
-  result?: {
-    planFound?: boolean;
-    planTitle?: string | null;
-    criteria?: string[];
-    testFilesScanned?: number;
-    testNamesScanned?: number;
-    matches?: Array<{
-      criterion?: string;
-      matched?: boolean;
-      testNames?: string[];
-    }>;
-  };
+  mode?: 'precheck_only' | 'agentic_review';
+  degradedReason?: string;
+  result?: TestEvidencePrecheckResult;
+  agenticReview?: TestEvidenceReviewResult | null;
   findings?: unknown[];
 };
+
+type TestEvidencePrecheckResult = {
+  planFound?: boolean;
+  planTitle?: string | null;
+  criteria?: string[];
+  testFilesScanned?: number;
+  testNamesScanned?: number;
+  matches?: Array<{
+    criterion?: string;
+    matched?: boolean;
+    testNames?: string[];
+  }>;
+};
+
+type TestEvidenceReviewResult = {
+  summary?: string;
+  criteria?: Array<{
+    criterion?: string;
+    status?: 'confirmed' | 'not_found' | 'unclear' | 'not_applicable';
+    confidence?: string;
+    evidence?: Array<{
+      kind?: string;
+      filePath?: string;
+      testName?: string;
+      command?: string;
+      excerpt?: string;
+      note?: string;
+    }>;
+    improvementPrompt?: string;
+  }>;
+  commandsRun?: Array<{
+    command?: string;
+    exitCode?: number | null;
+    summary?: string;
+  }>;
+};
+
+type TestEvidenceItem = NonNullable<
+  NonNullable<NonNullable<TestEvidenceReviewResult['criteria']>[number]['evidence']>[number]
+>;
 
 type ReviewStatusSection = ReviewSessionDetail['statusArtifact']['sections'][number];
 
@@ -92,17 +124,13 @@ function reviewStatusSectionReason(t: TFunction, reason: string) {
   switch (reason) {
     case 'No acceptance review signal was detected.':
       return t('reviewStatus.sectionReason.noAcceptanceSignal');
-    case 'No final report record check is needed.':
-      return t('reviewStatus.sectionReason.noFinalReportRecordNeeded');
-    case 'Check the final report completion claim against run records.':
-      return t('reviewStatus.sectionReason.checkFinalReport');
-    case 'No saved verification record check is needed.':
-      return t('reviewStatus.sectionReason.noVerificationRecordNeeded');
-    case 'Check saved verification records for this completed run.':
-      return t('reviewStatus.sectionReason.checkVerificationRecord');
     case 'No acceptance criteria test-name check is needed.':
       return t('reviewStatus.sectionReason.noTestCoverageNeeded');
     case 'Compare implementation-plan acceptance criteria with describe/it/test names.':
+      return t('reviewStatus.sectionReason.testCoverage');
+    case 'No test evidence review is needed.':
+      return t('reviewStatus.sectionReason.noTestCoverageNeeded');
+    case 'Check test evidence for implementation-plan acceptance criteria.':
       return t('reviewStatus.sectionReason.testCoverage');
     case 'Sensitive, schema, or public contract paths changed.':
       return t('reviewStatus.sectionReason.sensitivePathsChanged');
@@ -134,10 +162,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function sectionArtifactPayload(artifact: ReviewArtifact | undefined): SectionArtifactPayload {
-  if (!artifact || !isRecord(artifact.artifact)) return {};
-  const payload = artifact.artifact;
-  const result = isRecord(payload.result) ? payload.result : {};
+function parsePrecheckResult(value: unknown): TestEvidencePrecheckResult {
+  const result = isRecord(value) ? value : {};
   const matches = Array.isArray(result.matches)
     ? result.matches.filter(isRecord).map((match) => ({
         criterion: typeof match.criterion === 'string' ? match.criterion : undefined,
@@ -148,19 +174,81 @@ function sectionArtifactPayload(artifact: ReviewArtifact | undefined): SectionAr
       }))
     : undefined;
   return {
+    planFound: typeof result.planFound === 'boolean' ? result.planFound : undefined,
+    planTitle: typeof result.planTitle === 'string' ? result.planTitle : null,
+    criteria: Array.isArray(result.criteria)
+      ? result.criteria.filter((value): value is string => typeof value === 'string')
+      : undefined,
+    testFilesScanned:
+      typeof result.testFilesScanned === 'number' ? result.testFilesScanned : undefined,
+    testNamesScanned:
+      typeof result.testNamesScanned === 'number' ? result.testNamesScanned : undefined,
+    matches,
+  };
+}
+
+function parseAgenticReview(value: unknown): TestEvidenceReviewResult | null {
+  if (!isRecord(value)) return null;
+  return {
+    summary: typeof value.summary === 'string' ? value.summary : undefined,
+    criteria: Array.isArray(value.criteria)
+      ? value.criteria.filter(isRecord).map((criterion) => ({
+          criterion: typeof criterion.criterion === 'string' ? criterion.criterion : undefined,
+          status: isTestEvidenceStatus(criterion.status) ? criterion.status : undefined,
+          confidence: typeof criterion.confidence === 'string' ? criterion.confidence : undefined,
+          evidence: Array.isArray(criterion.evidence)
+            ? criterion.evidence.filter(isRecord).map((evidence) => ({
+                kind: typeof evidence.kind === 'string' ? evidence.kind : undefined,
+                filePath: typeof evidence.filePath === 'string' ? evidence.filePath : undefined,
+                testName: typeof evidence.testName === 'string' ? evidence.testName : undefined,
+                command: typeof evidence.command === 'string' ? evidence.command : undefined,
+                excerpt: typeof evidence.excerpt === 'string' ? evidence.excerpt : undefined,
+                note: typeof evidence.note === 'string' ? evidence.note : undefined,
+              }))
+            : undefined,
+          improvementPrompt:
+            typeof criterion.improvementPrompt === 'string'
+              ? criterion.improvementPrompt
+              : undefined,
+        }))
+      : undefined,
+    commandsRun: Array.isArray(value.commandsRun)
+      ? value.commandsRun.filter(isRecord).map((command) => ({
+          command: typeof command.command === 'string' ? command.command : undefined,
+          exitCode: typeof command.exitCode === 'number' ? command.exitCode : null,
+          summary: typeof command.summary === 'string' ? command.summary : undefined,
+        }))
+      : undefined,
+  };
+}
+
+function isTestEvidenceStatus(
+  value: unknown
+): value is NonNullable<NonNullable<TestEvidenceReviewResult['criteria']>[number]['status']> {
+  return (
+    value === 'confirmed' ||
+    value === 'not_found' ||
+    value === 'unclear' ||
+    value === 'not_applicable'
+  );
+}
+
+function sectionArtifactPayload(artifact: ReviewArtifact | undefined): SectionArtifactPayload {
+  if (!artifact || !isRecord(artifact.artifact)) return {};
+  const payload = artifact.artifact;
+  const mode =
+    payload.mode === 'precheck_only' || payload.mode === 'agentic_review'
+      ? payload.mode
+      : undefined;
+  const precheck = mode
+    ? parsePrecheckResult(payload.precheck)
+    : parsePrecheckResult(payload.result);
+  return {
     summary: typeof payload.summary === 'string' ? payload.summary : undefined,
-    result: {
-      planFound: typeof result.planFound === 'boolean' ? result.planFound : undefined,
-      planTitle: typeof result.planTitle === 'string' ? result.planTitle : null,
-      criteria: Array.isArray(result.criteria)
-        ? result.criteria.filter((value): value is string => typeof value === 'string')
-        : undefined,
-      testFilesScanned:
-        typeof result.testFilesScanned === 'number' ? result.testFilesScanned : undefined,
-      testNamesScanned:
-        typeof result.testNamesScanned === 'number' ? result.testNamesScanned : undefined,
-      matches,
-    },
+    mode: mode ?? 'precheck_only',
+    degradedReason: typeof payload.degradedReason === 'string' ? payload.degradedReason : undefined,
+    result: precheck,
+    agenticReview: parseAgenticReview(payload.agenticReview),
     findings: Array.isArray(payload.findings) ? payload.findings : undefined,
   };
 }
@@ -205,6 +293,23 @@ function reviewArtifactMissingCriteria(payload: SectionArtifactPayload) {
       ?.filter((match) => match.matched === false && match.criterion)
       .map((match) => match.criterion as string) ?? []
   );
+}
+
+function agenticStatusCount(payload: SectionArtifactPayload, status: string) {
+  return payload.agenticReview?.criteria?.filter((item) => item.status === status).length ?? 0;
+}
+
+function testEvidenceModeLabel(t: TFunction, payload: SectionArtifactPayload) {
+  return payload.mode === 'agentic_review'
+    ? t('reviewStatus.result.agenticReview')
+    : t('reviewStatus.result.testCoverageOnly');
+}
+
+function evidenceLine(evidence: TestEvidenceItem) {
+  const source = [evidence.filePath, evidence.testName, evidence.command]
+    .filter(Boolean)
+    .join(' · ');
+  return [source, evidence.note].filter(Boolean).join(' - ');
 }
 
 function reviewArtifactUpdatedAt(value: string) {
@@ -376,10 +481,14 @@ export function ReviewStatusViewer({
                                 </span>
                               </div>
                               <div className="text-slate-400">
-                                {section.kind === 'test_coverage'
-                                  ? t('reviewStatus.result.testCoverageOnly')
-                                  : t('reviewStatus.result.recordOnly')}
+                                {testEvidenceModeLabel(t, artifactPayload)}
                               </div>
+                              {artifactPayload.degradedReason ? (
+                                <div className="rounded border border-amber-800/70 bg-amber-950/30 px-2 py-1 text-amber-100">
+                                  {t('reviewStatus.result.degraded')}{' '}
+                                  {artifactPayload.degradedReason}
+                                </div>
+                              ) : null}
                               {artifactSummary ? (
                                 <div className="text-slate-200">{artifactSummary}</div>
                               ) : null}
@@ -395,6 +504,40 @@ export function ReviewStatusViewer({
                                   ))}
                                 </div>
                               ) : null}
+                              {artifactPayload.agenticReview ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                  <span className="rounded border border-emerald-700/70 px-2 py-0.5 text-[11px] text-emerald-100">
+                                    {t('reviewStatus.result.confirmedCount', {
+                                      count: agenticStatusCount(artifactPayload, 'confirmed'),
+                                    })}
+                                  </span>
+                                  <span className="rounded border border-amber-700/70 px-2 py-0.5 text-[11px] text-amber-100">
+                                    {t('reviewStatus.result.notFoundCount', {
+                                      count: agenticStatusCount(artifactPayload, 'not_found'),
+                                    })}
+                                  </span>
+                                  <span className="rounded border border-sky-700/70 px-2 py-0.5 text-[11px] text-sky-100">
+                                    {t('reviewStatus.result.unclearCount', {
+                                      count: agenticStatusCount(artifactPayload, 'unclear'),
+                                    })}
+                                  </span>
+                                  <span className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
+                                    {t('reviewStatus.result.commandCount', {
+                                      count: artifactPayload.agenticReview.commandsRun?.length ?? 0,
+                                    })}
+                                  </span>
+                                  {agenticStatusCount(artifactPayload, 'not_applicable') > 0 ? (
+                                    <span className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
+                                      {t('reviewStatus.result.notApplicableCount', {
+                                        count: agenticStatusCount(
+                                          artifactPayload,
+                                          'not_applicable'
+                                        ),
+                                      })}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ) : null}
                               {missingCriteria.length > 0 ? (
                                 <div className="grid gap-1">
                                   <div className="font-medium text-amber-100">
@@ -405,6 +548,61 @@ export function ReviewStatusViewer({
                                       {criterion}
                                     </div>
                                   ))}
+                                </div>
+                              ) : null}
+                              {artifactPayload.agenticReview?.criteria?.length ? (
+                                <div className="grid gap-2">
+                                  {artifactPayload.agenticReview.criteria
+                                    .slice(0, 5)
+                                    .map((item) => (
+                                      <div
+                                        key={`${item.status}-${item.criterion}`}
+                                        className="grid gap-1 rounded border border-slate-800 bg-slate-950/60 p-2"
+                                      >
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <span className="font-medium text-slate-100">
+                                            {item.criterion}
+                                          </span>
+                                          {item.status ? (
+                                            <span className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
+                                              {t(`reviewStatus.result.status.${item.status}`)}
+                                            </span>
+                                          ) : null}
+                                          {item.confidence ? (
+                                            <span className="text-[11px] text-slate-500">
+                                              {t('reviewStatus.result.confidence', {
+                                                value: item.confidence,
+                                              })}
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                        {item.evidence?.length ? (
+                                          <div className="grid gap-1 text-slate-400">
+                                            <div className="font-medium text-slate-300">
+                                              {t('reviewStatus.result.checkedScope')}
+                                            </div>
+                                            {item.evidence.slice(0, 3).map((evidence, index) => (
+                                              <div
+                                                key={`${item.criterion}-${evidence.kind}-${index}`}
+                                                className="font-mono text-[11px] text-slate-400"
+                                              >
+                                                {evidenceLine(evidence)}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : null}
+                                        {item.improvementPrompt ? (
+                                          <details className="text-slate-300">
+                                            <summary className="cursor-pointer text-[11px] font-medium text-slate-400">
+                                              {t('reviewStatus.result.improvementPrompt')}
+                                            </summary>
+                                            <div className="mt-1 whitespace-pre-wrap text-xs text-slate-300">
+                                              {item.improvementPrompt}
+                                            </div>
+                                          </details>
+                                        ) : null}
+                                      </div>
+                                    ))}
                                 </div>
                               ) : null}
                             </div>

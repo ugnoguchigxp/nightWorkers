@@ -606,9 +606,10 @@ export const jaDictionary = {
   'reviewStatus.finalCounts':
     '追加プロンプト: {{promptSuggestionCount}} · セキュリティ連携: {{securityHandoffCount}}',
   'reviewStatus.artifact.summary': '{{level}} · セクション {{count}} 件',
-  'reviewStatus.result.title': 'テスト名チェック結果',
-  'reviewStatus.result.testCoverageOnly':
-    '実装計画の受け入れ条件と既存テスト名を照合しています。テスト実行はしていません。',
+  'reviewStatus.result.title': 'テスト証跡確認結果',
+  'reviewStatus.result.testCoverageOnly': '名前一致による事前確認のみ',
+  'reviewStatus.result.agenticReview': 'LLM がファイル/CLIで確認',
+  'reviewStatus.result.degraded': 'Agentic 確認に失敗しました。precheck 結果のみ表示しています。',
   'reviewStatus.result.updatedAt': '更新: {{value}}',
   'reviewStatus.result.noFindings': '指摘は検出されませんでした。',
   'reviewStatus.result.findingsProduced': '指摘: {{count}} 件',
@@ -619,7 +620,19 @@ export const jaDictionary = {
     '受け入れ条件: {{matchedCount}} / {{criteriaCount}} 件一致',
   'reviewStatus.result.testNamesScanned':
     '確認対象: テストファイル {{fileCount}} 件 / テスト名 {{testNameCount}} 件',
-  'reviewStatus.result.missingCriteria': '近い名前のテストが見つからない受け入れ条件',
+  'reviewStatus.result.missingCriteria': '名前一致では確認候補が弱い受け入れ条件',
+  'reviewStatus.result.confirmedCount': '確認済み {{count}} 件',
+  'reviewStatus.result.notFoundCount': '未確認 {{count}} 件',
+  'reviewStatus.result.unclearCount': '判断不能 {{count}} 件',
+  'reviewStatus.result.commandCount': '実行したコマンド {{count}} 件',
+  'reviewStatus.result.notApplicableCount': '対象外 {{count}} 件',
+  'reviewStatus.result.status.confirmed': '対応テストを確認できました',
+  'reviewStatus.result.status.not_found': '対応テストを確認できませんでした',
+  'reviewStatus.result.status.unclear': '判断不能',
+  'reviewStatus.result.status.not_applicable': '対象外',
+  'reviewStatus.result.confidence': '信頼度: {{value}}',
+  'reviewStatus.result.checkedScope': '確認した範囲',
+  'reviewStatus.result.improvementPrompt': '改善依頼 Prompt',
   'reviewStatus.level.none': 'レビュー不要',
   'reviewStatus.level.optional': '任意レビュー',
   'reviewStatus.level.recommended': 'レビュー推奨',
@@ -633,7 +646,7 @@ export const jaDictionary = {
   'reviewStatus.progress.done': 'チェック済み',
   'reviewStatus.progress.blocked': 'ブロック中',
   'reviewStatus.progress.needs_human': '人の判断が必要',
-  'reviewStatus.section.test_coverage': '受け入れ条件テストの存在確認',
+  'reviewStatus.section.test_coverage': 'テスト証跡確認',
   'reviewStatus.section.security_review': 'セキュリティレビュー',
   'reviewStatus.section.findings': '指摘',
   'reviewStatus.section.prompt_suggestions': '追加プロンプト',
@@ -652,9 +665,9 @@ export const jaDictionary = {
     'Public API、schema、MCP、worker-tool contract が変更されています。',
   'reviewStatus.sectionReason.noAcceptanceSignal':
     '受け入れレビューのシグナルは検出されていません。',
-  'reviewStatus.sectionReason.noTestCoverageNeeded': '受け入れ条件テストの存在確認は不要です。',
+  'reviewStatus.sectionReason.noTestCoverageNeeded': 'テスト証跡確認は不要です。',
   'reviewStatus.sectionReason.testCoverage':
-    '実装計画の受け入れ条件に近い describe / it / test 名があるか確認します。',
+    '実装計画の受け入れ条件ごとに、対応するテストが確認できるかを調査します。',
   'reviewStatus.sectionReason.sensitivePathsChanged':
     '注意が必要な path、schema、public contract が変更されています。',
   'reviewStatus.sectionReason.noSecuritySignal':

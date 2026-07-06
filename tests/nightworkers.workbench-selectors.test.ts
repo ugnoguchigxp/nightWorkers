@@ -235,7 +235,7 @@ describe('workbench selectors', () => {
             canApprove: false,
             blockingReason: 'Required review sections are not complete.',
             unresolvedBlockingFindingIds: [],
-            requiredSectionKindsRemaining: ['test_coverage'],
+            requiredSectionKindsRemaining: [],
           },
           promptSuggestionCount: 0,
         },
