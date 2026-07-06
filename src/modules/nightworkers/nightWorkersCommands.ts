@@ -151,7 +151,6 @@ export function updateReviewFindingDisposition(
       | 'agent_followup'
       | 'prompt_suggestion'
       | 'security_plugin_handoff'
-      | 'knowledge_candidate'
       | 'accepted_risk'
       | 'ignored';
     note?: string;
@@ -189,48 +188,6 @@ export function markReviewPromptSuggestionUsed(
   return apiFetch(
     `/api/review-sessions/${reviewSessionId}/prompt-suggestions/${suggestionId}/use`,
     jsonRequest('POST', input)
-  );
-}
-
-export function createReviewKnowledgeCandidate(
-  reviewSessionId: string,
-  input: {
-    findingId: string;
-    candidateType?: 'rule' | 'procedure' | 'failure_pattern';
-    title?: string;
-    body?: string;
-    avoid?: string | null;
-    prefer?: string | null;
-  }
-) {
-  return apiFetch(
-    `/api/review-sessions/${reviewSessionId}/knowledge-candidates`,
-    jsonRequest('POST', input)
-  );
-}
-
-export function updateReviewKnowledgeCandidate(
-  reviewSessionId: string,
-  candidateId: string,
-  input: {
-    candidateType?: 'rule' | 'procedure' | 'failure_pattern';
-    title?: string;
-    body?: string;
-    avoid?: string | null;
-    prefer?: string | null;
-    status?: 'discarded';
-  }
-) {
-  return apiFetch(
-    `/api/review-sessions/${reviewSessionId}/knowledge-candidates/${candidateId}`,
-    jsonRequest('PATCH', input)
-  );
-}
-
-export function sendReviewKnowledgeCandidate(reviewSessionId: string, candidateId: string) {
-  return apiFetch(
-    `/api/review-sessions/${reviewSessionId}/knowledge-candidates/${candidateId}/send`,
-    { method: 'POST' }
   );
 }
 

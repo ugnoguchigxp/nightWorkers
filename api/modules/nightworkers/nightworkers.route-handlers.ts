@@ -6,7 +6,6 @@ import {
   applyReviewFinalActionRoute,
   createReviewerEvaluationRoute,
   createReviewerReplayEvaluationRoute,
-  createReviewKnowledgeCandidateRoute,
   createReviewPromptSuggestionsRoute,
   createReviewSessionRoute,
   createRunReviewRoute,
@@ -23,12 +22,10 @@ import {
   listTaskRunEventsRoute,
   type listTaskRunsRoute,
   runReviewSectionRoute,
-  sendReviewKnowledgeCandidateRoute,
   startBackgroundProcessRoute,
   stopBackgroundProcessRoute,
   stopTaskRunRoute,
   updateReviewFindingDispositionRoute,
-  updateReviewKnowledgeCandidateRoute,
   updateReviewPromptSuggestionRoute,
   useReviewPromptSuggestionRoute,
 } from './routes/run-routes';
@@ -229,40 +226,6 @@ export const useReviewPromptSuggestionHandler = withOpenApiRouteError(
       c.req.param('id'),
       c.req.param('suggestionId'),
       c.req.valid('json') ?? {}
-    );
-    return c.json(result, 200);
-  }
-);
-
-export const createReviewKnowledgeCandidateHandler = withOpenApiRouteError(
-  createReviewKnowledgeCandidateRoute,
-  async (c) => {
-    const result = await service.createReviewKnowledgeCandidate(
-      c.req.param('id'),
-      c.req.valid('json')
-    );
-    return c.json(result, 200);
-  }
-);
-
-export const sendReviewKnowledgeCandidateHandler = withOpenApiRouteError(
-  sendReviewKnowledgeCandidateRoute,
-  async (c) => {
-    const result = await service.sendReviewKnowledgeCandidate(
-      c.req.param('id'),
-      c.req.param('candidateId')
-    );
-    return c.json(result, 200);
-  }
-);
-
-export const updateReviewKnowledgeCandidateHandler = withOpenApiRouteError(
-  updateReviewKnowledgeCandidateRoute,
-  async (c) => {
-    const result = await service.updateReviewKnowledgeCandidate(
-      c.req.param('id'),
-      c.req.param('candidateId'),
-      c.req.valid('json')
     );
     return c.json(result, 200);
   }

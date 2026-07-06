@@ -12,8 +12,6 @@ import {
   reviewFinalActionRequestSchema,
   reviewFindingDispositionRequestSchema,
   reviewFindingSchema,
-  reviewKnowledgeCandidateRequestSchema,
-  reviewKnowledgeCandidateUpdateRequestSchema,
   reviewPromptSuggestionUpdateRequestSchema,
   reviewPromptSuggestionUseRequestSchema,
   reviewRecommendationSchema,
@@ -633,82 +631,6 @@ export const useReviewPromptSuggestionRoute = createRoute({
         },
       },
       description: 'Review prompt suggestion marked used',
-    },
-  },
-});
-
-export const createReviewKnowledgeCandidateRoute = createRoute({
-  method: 'post',
-  path: '/review-sessions/:id/knowledge-candidates',
-  request: {
-    params: z.object({
-      id: z.string().uuid().openapi({ example: 'review-session-uuid' }),
-    }),
-    body: {
-      content: {
-        'application/json': {
-          schema: reviewKnowledgeCandidateRequestSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      content: {
-        'application/json': {
-          schema: reviewSessionDetailSchema,
-        },
-      },
-      description: 'Review knowledge candidate created',
-    },
-  },
-});
-
-export const sendReviewKnowledgeCandidateRoute = createRoute({
-  method: 'post',
-  path: '/review-sessions/:id/knowledge-candidates/:candidateId/send',
-  request: {
-    params: z.object({
-      id: z.string().uuid().openapi({ example: 'review-session-uuid' }),
-      candidateId: z.string().uuid().openapi({ example: 'candidate-uuid' }),
-    }),
-  },
-  responses: {
-    200: {
-      content: {
-        'application/json': {
-          schema: reviewSessionDetailSchema,
-        },
-      },
-      description: 'Review knowledge candidate send attempted',
-    },
-  },
-});
-
-export const updateReviewKnowledgeCandidateRoute = createRoute({
-  method: 'patch',
-  path: '/review-sessions/:id/knowledge-candidates/:candidateId',
-  request: {
-    params: z.object({
-      id: z.string().uuid().openapi({ example: 'review-session-uuid' }),
-      candidateId: z.string().uuid().openapi({ example: 'candidate-uuid' }),
-    }),
-    body: {
-      content: {
-        'application/json': {
-          schema: reviewKnowledgeCandidateUpdateRequestSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      content: {
-        'application/json': {
-          schema: reviewSessionDetailSchema,
-        },
-      },
-      description: 'Review knowledge candidate updated',
     },
   },
 });

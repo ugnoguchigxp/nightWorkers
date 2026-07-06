@@ -35,9 +35,9 @@ function reviewSessionDetail(): ReviewSessionDetail {
       defaultAction: 'require_review',
       reasons: [
         {
-          code: 'verification_missing',
+          code: 'public_contract_change',
           severity: 'blocking',
-          label: 'Changed run has no saved verification record.',
+          label: 'Public API, schema, MCP, or worker-tool contract changed.',
           evidenceRefs: [],
         },
       ],
@@ -59,9 +59,9 @@ function reviewSessionDetail(): ReviewSessionDetail {
         defaultAction: 'require_review',
         reasons: [
           {
-            code: 'verification_missing',
+            code: 'public_contract_change',
             severity: 'blocking',
-            label: 'Changed run has no saved verification record.',
+            label: 'Public API, schema, MCP, or worker-tool contract changed.',
             evidenceRefs: [],
           },
         ],
@@ -70,25 +70,69 @@ function reviewSessionDetail(): ReviewSessionDetail {
       },
       sections: [
         {
-          kind: 'verification_evidence',
+          kind: 'test_coverage',
           requirement: 'required',
-          progress: 'not_started',
-          reason: 'Saved verification record is missing or failed.',
-          artifactId: null,
+          progress: 'done',
+          reason: 'Compare implementation-plan acceptance criteria with describe/it/test names.',
+          artifactId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
           findingCounts: { blocking: 1, warning: 0, info: 0 },
         },
       ],
       finalActionGate: {
         canApprove: false,
-        blockingReason: 'Required review sections are not complete.',
+        blockingReason: 'Unresolved blocking findings remain.',
         unresolvedBlockingFindingIds: ['66666666-6666-4666-8666-666666666666'],
-        requiredSectionKindsRemaining: ['verification_evidence'],
+        requiredSectionKindsRemaining: [],
       },
       promptSuggestionCount: 1,
-      knowledgeCandidateCount: 1,
-      securityHandoffCount: 1,
+      securityHandoffCount: 0,
     },
-    artifacts: [],
+    artifacts: [
+      {
+        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        reviewSessionId: '11111111-1111-4111-8111-111111111111',
+        runId: '22222222-2222-4222-8222-222222222222',
+        taskId: '33333333-3333-4333-8333-333333333333',
+        kind: 'test_coverage',
+        status: 'done',
+        createdAt: now,
+        updatedAt: now,
+        sourceEvidenceRefs: [],
+        artifact: {
+          version: 1,
+          kind: 'test_coverage',
+          requirement: 'required',
+          summary: '1/2 acceptance criteria have matching test names.',
+          result: {
+            version: 1,
+            taskId: '33333333-3333-4333-8333-333333333333',
+            repositoryPath: '/Users/y.noguchi/Code/nightWorkers',
+            planFound: true,
+            planTitle: 'Feature Plan',
+            criteria: ['ルート A が保存される', 'ルート B が削除される'],
+            testFilesScanned: 12,
+            testNamesScanned: 48,
+            matches: [
+              {
+                criterion: 'ルート A が保存される',
+                matched: true,
+                bestScore: 0.9,
+                testNames: ['ルート A が保存される'],
+              },
+              {
+                criterion: 'ルート B が削除される',
+                matched: false,
+                bestScore: 0,
+                testNames: [],
+              },
+            ],
+            findings: [],
+          },
+          findings: [],
+          recommendedActions: [],
+        },
+      },
+    ],
     findings: [
       {
         id: '66666666-6666-4666-8666-666666666666',
@@ -96,8 +140,8 @@ function reviewSessionDetail(): ReviewSessionDetail {
         runId: '22222222-2222-4222-8222-222222222222',
         taskId: '33333333-3333-4333-8333-333333333333',
         severity: 'blocking',
-        title: 'Missing verification',
-        body: 'Saved verification record should be attached.',
+        title: 'Acceptance criterion has no matching test name',
+        body: '受け入れ条件「ルート B が削除される」に近い describe/it/test 名が見つかりません。',
         disposition: null,
         dispositionStatus: 'unresolved',
         dispositionNote: null,
@@ -105,23 +149,6 @@ function reviewSessionDetail(): ReviewSessionDetail {
         createdGoalId: null,
         createdTaskProposalId: null,
         contextStillCandidateId: null,
-        createdAt: now,
-        updatedAt: now,
-      },
-    ],
-    knowledgeCandidates: [
-      {
-        id: '77777777-7777-4777-8777-777777777777',
-        reviewSessionId: '11111111-1111-4111-8111-111111111111',
-        findingId: '66666666-6666-4666-8666-666666666666',
-        candidateType: 'rule',
-        title: 'Require verification',
-        body: 'Review verification before approval.',
-        avoid: 'Approve without evidence.',
-        prefer: 'Run the repo-native gate.',
-        status: 'draft',
-        contextStillCandidateId: null,
-        sendError: null,
         createdAt: now,
         updatedAt: now,
       },
@@ -134,11 +161,11 @@ function reviewSessionDetail(): ReviewSessionDetail {
         runId: '22222222-2222-4222-8222-222222222222',
         taskId: '33333333-3333-4333-8333-333333333333',
         repositoryId: '44444444-4444-4444-8444-444444444444',
-        title: '検証証跡を追加する',
-        prompt: '次のレビュー指摘を解消するため、この session の作業を続けてください。',
-        expectedOutcome: 'Verification is traceable.',
-        acceptanceCriteria: 'Gate evidence is present.',
-        verificationHint: 'bun run verify',
+        title: 'テスト名を追加する',
+        prompt: 'この session の作業を続けてください。',
+        expectedOutcome: 'Missing acceptance criteria are represented by test names.',
+        acceptanceCriteria: 'Test names map to acceptance criteria.',
+        verificationHint: 'bun run test run ...',
         evidenceRefs: [],
         status: 'draft',
         useCount: 0,
@@ -149,112 +176,41 @@ function reviewSessionDetail(): ReviewSessionDetail {
         updatedAt: now,
       },
     ],
-    securityHandoffs: [
-      {
-        id: '99999999-9999-4999-8999-999999999999',
-        reviewSessionId: '11111111-1111-4111-8111-111111111111',
-        findingId: '66666666-6666-4666-8666-666666666666',
-        runId: '22222222-2222-4222-8222-222222222222',
-        taskId: '33333333-3333-4333-8333-333333333333',
-        repositoryId: '44444444-4444-4444-8444-444444444444',
-        title: 'Security plugin check',
-        summary: 'External security review is needed.',
-        requestedIntegration: null,
-        status: 'needs_configuration',
-        changedPaths: ['api/auth.ts'],
-        evidenceRefs: [],
-        handoffArtifact: null,
-        createdAt: now,
-        updatedAt: now,
-      },
-    ],
+    securityHandoffs: [],
   };
 }
 
-describe('ReviewStatusViewer i18n', () => {
-  it('renders review status artifact controls and deterministic states in Japanese', async () => {
+describe('ReviewStatusViewer', () => {
+  it('renders acceptance criteria test-name check results in Japanese', async () => {
     await i18next.changeLanguage('ja');
 
     const text = visibleText(
       renderToStaticMarkup(<ReviewStatusViewer detail={reviewSessionDetail()} />)
     );
 
-    expect(text).toContain('レビュー状況');
-    expect(text).toContain('レビュー必須');
-    expect(text).toContain('必須');
-    expect(text).toContain('検証記録');
-    expect(text).toContain('未開始');
-    expect(text).toContain('変更された Run に保存済みの検証記録がありません。');
-    expect(text).toContain('保存済みの検証記録がないか、失敗しています。');
-    expect(text).toContain('人に確認');
-    expect(text).toContain('追加プロンプト');
-    expect(text).toContain('入力に入れる');
-    expect(text).toContain('このプロンプトで続ける');
-    expect(text).toContain('設定が必要');
-    expect(text).toContain('ルール');
-    expect(text).toContain('最終アクション');
-    expect(text).not.toContain('Review Status');
-    expect(text).not.toContain('verification_evidence');
-    expect(text).not.toContain('not_started');
-    expect(text).not.toContain('human_callout');
+    expect(text).toContain('受け入れ条件テスト名チェック');
+    expect(text).toContain('実装計画: Feature Plan');
+    expect(text).toContain('受け入れ条件: 1 / 2 件一致');
+    expect(text).toContain('テストファイル 12 件 / テスト名 48 件');
+    expect(text).toContain('ルート B が削除される');
+    expect(text).not.toContain('検証記録');
+    expect(text).not.toContain('最終報告');
+    expect(text).not.toContain('保存済み Run 記録');
   });
 
-  it('renders the same review status artifact through English dictionary keys', async () => {
+  it('renders acceptance criteria test-name check results in English', async () => {
     await i18next.changeLanguage('en');
 
     const text = visibleText(
       renderToStaticMarkup(<ReviewStatusViewer detail={reviewSessionDetail()} />)
     );
 
-    expect(text).toContain('Review Status');
-    expect(text).toContain('Review required');
-    expect(text).toContain('Verification Record');
-    expect(text).toContain('Not started');
-    expect(text).toContain('Changed run has no saved verification record.');
-    expect(text).toContain('Human callout');
-    expect(text).toContain('Additional Prompts');
-    expect(text).toContain('Continue with prompt');
-    expect(text).toContain('Needs configuration');
-    expect(text).toContain('Final Action');
-    expect(text).not.toContain('verification_evidence');
-    expect(text).not.toContain('not_started');
-    expect(text).not.toContain('human_callout');
-  });
-
-  it('renders only active draft prompt suggestion cards', async () => {
-    await i18next.changeLanguage('ja');
-    const detail = reviewSessionDetail();
-    detail.promptSuggestions = [
-      {
-        ...detail.promptSuggestions[0],
-        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        title: '使用済みの追加プロンプト',
-        prompt: '使用済みカードの本文',
-        status: 'used',
-        useCount: 1,
-        lastUsedAt: detail.promptSuggestions[0].createdAt,
-      },
-      {
-        ...detail.promptSuggestions[0],
-        id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-        title: '破棄済みの追加プロンプト',
-        prompt: '破棄済みカードの本文',
-        status: 'dismissed',
-        dismissedAt: detail.promptSuggestions[0].createdAt,
-      },
-      {
-        ...detail.promptSuggestions[0],
-        id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-        title: '未使用の追加プロンプト',
-        prompt: '未使用カードの本文',
-        status: 'draft',
-      },
-    ];
-
-    const text = visibleText(renderToStaticMarkup(<ReviewStatusViewer detail={detail} />));
-
-    expect(text).toContain('未使用の追加プロンプト');
-    expect(text).not.toContain('使用済みの追加プロンプト');
-    expect(text).not.toContain('破棄済みの追加プロンプト');
+    expect(text).toContain('Acceptance Criteria Test-name Check');
+    expect(text).toContain('Implementation plan: Feature Plan');
+    expect(text).toContain('Acceptance criteria matched: 1 / 2');
+    expect(text).toContain('12 test files / 48 test names');
+    expect(text).not.toContain('Verification Record');
+    expect(text).not.toContain('Final Report');
+    expect(text).not.toContain('Run Record Check');
   });
 });

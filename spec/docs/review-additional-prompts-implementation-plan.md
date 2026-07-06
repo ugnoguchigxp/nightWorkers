@@ -17,7 +17,7 @@ Review Mode の「提案ゴール」を廃止し、同じ Workbench Session に�
 現状の Review Mode には次の実装がある。
 
 - `review_status` artifact が Review Mode の primary artifact である。
-- `ReviewStatusViewer` は section、findings、proposed goals、knowledge candidates、final action を表示する。
+- `ReviewStatusViewer` は section、findings、prompt suggestions、security handoffs、final action を表示する。
 - finding disposition には `proposed_goal` がある。
 - `proposed_goal` disposition を保存すると `review_proposed_goals` に draft 候補が作られる。
 - proposed goal は `approved` / `rejected` / `deferred` / `materialized` の状態を持つ。
@@ -47,7 +47,7 @@ Relevant files:
 
 「提案ゴール」は実態より概念が大きい。
 
-Review finding でよく出る内容は、例えば「保存済みの検証記録が足りない」「final report の完了主張と Run 記録が一致していない」「self-review follow-up が残っている」のような未完了事項である。これは新しい Goal でも、別 Task / Session として切り出す仕事でもない。現在の task をそのまま続けさせる追加指示の粒度である。
+Review finding でよく出る内容は、例えば「保存済みの検証記録が足りない」「final report の完了主張と Run 記録が一致していない」「セキュリティレビューの確認が必要」のような未完了事項である。これは新しい Goal でも、別 Task / Session として切り出す仕事でもない。現在の task をそのまま続けさせる追加指示の粒度である。
 
 そのため、現状の flow には次の違和感がある。
 
@@ -377,8 +377,7 @@ To:
 
 Section reason:
 
-- Current: `Create follow-up Goal candidates only when findings need follow-up work.`
-- New: `Create additional prompts when findings should be handled by continuing this session.`
+- Current: `Create additional prompts when findings should be handled by continuing this session.`
 
 ## Implementation Plan
 

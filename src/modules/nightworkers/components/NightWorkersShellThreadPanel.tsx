@@ -321,9 +321,6 @@ export function NightWorkersShellThreadPanel(props: NightWorkersShellThreadPanel
               return workspace.markReviewPromptSuggestionUsed(reviewSessionId, suggestionId);
             }}
             onInsertReviewPromptSuggestion={props.onInsertReviewPromptSuggestion}
-            onCreateReviewKnowledgeCandidate={workspace.createReviewKnowledgeCandidate}
-            onUpdateReviewKnowledgeCandidate={workspace.updateReviewKnowledgeCandidate}
-            onSendReviewKnowledgeCandidate={workspace.sendReviewKnowledgeCandidate}
             onApplyReviewFinalAction={workspace.applyReviewFinalAction}
             isImplementationLocked={isActiveImplementationLocked}
           />

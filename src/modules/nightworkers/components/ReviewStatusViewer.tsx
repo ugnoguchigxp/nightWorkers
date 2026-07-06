@@ -3,16 +3,15 @@ import {
   AlertTriangle,
   CheckCircle2,
   ClipboardCheck,
+  LoaderCircle,
   Play,
   Save,
-  Send,
   ShieldAlert,
-  Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
-  ReviewKnowledgeCandidate,
+  ReviewArtifact,
   ReviewModeFinding,
   ReviewSectionKind,
   ReviewSessionDetail,
@@ -42,33 +41,6 @@ type ReviewStatusViewerProps = {
     prompt: string
   ) => Promise<ReviewSessionDetail>;
   onInsertPromptSuggestion?: (prompt: string) => void;
-  onCreateKnowledgeCandidate?: (
-    reviewSessionId: string,
-    input: {
-      findingId: string;
-      candidateType?: 'rule' | 'procedure' | 'failure_pattern';
-      title?: string;
-      body?: string;
-      avoid?: string | null;
-      prefer?: string | null;
-    }
-  ) => Promise<ReviewSessionDetail>;
-  onUpdateKnowledgeCandidate?: (
-    reviewSessionId: string,
-    candidateId: string,
-    input: {
-      candidateType?: 'rule' | 'procedure' | 'failure_pattern';
-      title?: string;
-      body?: string;
-      avoid?: string | null;
-      prefer?: string | null;
-      status?: 'discarded';
-    }
-  ) => Promise<ReviewSessionDetail>;
-  onSendKnowledgeCandidate?: (
-    reviewSessionId: string,
-    candidateId: string
-  ) => Promise<ReviewSessionDetail>;
   onFinalAction?: (
     reviewSessionId: string,
     input: { action: 'approve' | 'request_changes' | 'needs_human' | 'exit_review'; note?: string }
@@ -81,25 +53,32 @@ const findingDispositions: NonNullable<ReviewModeFinding['disposition']>[] = [
   'agent_followup',
   'prompt_suggestion',
   'security_plugin_handoff',
-  'knowledge_candidate',
   'accepted_risk',
   'ignored',
 ];
 
-type CandidateEditState = Pick<
-  ReviewKnowledgeCandidate,
-  'candidateType' | 'title' | 'body' | 'avoid' | 'prefer'
->;
+type BusyPromptSuggestion =
+  | { id: 'sync'; action: 'sync' }
+  | { id: string; action: 'use' | 'dismiss' };
 
-function candidateEditState(candidate: ReviewKnowledgeCandidate): CandidateEditState {
-  return {
-    candidateType: candidate.candidateType,
-    title: candidate.title,
-    body: candidate.body,
-    avoid: candidate.avoid,
-    prefer: candidate.prefer,
+type SectionArtifactPayload = {
+  summary?: string;
+  result?: {
+    planFound?: boolean;
+    planTitle?: string | null;
+    criteria?: string[];
+    testFilesScanned?: number;
+    testNamesScanned?: number;
+    matches?: Array<{
+      criterion?: string;
+      matched?: boolean;
+      testNames?: string[];
+    }>;
   };
-}
+  findings?: unknown[];
+};
+
+type ReviewStatusSection = ReviewSessionDetail['statusArtifact']['sections'][number];
 
 function reviewStatusLabel(t: TFunction, key: string, fallback: string) {
   return t(key, { defaultValue: fallback });
@@ -113,23 +92,18 @@ function reviewStatusSectionReason(t: TFunction, reason: string) {
   switch (reason) {
     case 'No acceptance review signal was detected.':
       return t('reviewStatus.sectionReason.noAcceptanceSignal');
-    case 'Check final report claims against run evidence.':
-    case 'Check final report claims against run records.':
+    case 'No final report record check is needed.':
+      return t('reviewStatus.sectionReason.noFinalReportRecordNeeded');
+    case 'Check the final report completion claim against run records.':
       return t('reviewStatus.sectionReason.checkFinalReport');
-    case 'Verification evidence is missing or failed.':
-    case 'Saved verification record is missing or failed.':
-      return t('reviewStatus.sectionReason.verificationMissingOrFailed');
-    case 'Verification evidence can be inspected before acceptance.':
-    case 'Saved verification record can be inspected before acceptance.':
-      return t('reviewStatus.sectionReason.verificationInspectable');
-    case 'Self-review follow-up evidence is present.':
-      return t('reviewStatus.sectionReason.selfReviewPresent');
-    case 'No unresolved self-review follow-up signal was detected.':
-      return t('reviewStatus.sectionReason.noSelfReviewSignal');
-    case 'Queue recovery or status mismatch evidence should be checked.':
-      return t('reviewStatus.sectionReason.queueRecoveryCheck');
-    case 'No queue recovery signal was detected.':
-      return t('reviewStatus.sectionReason.noQueueRecoverySignal');
+    case 'No saved verification record check is needed.':
+      return t('reviewStatus.sectionReason.noVerificationRecordNeeded');
+    case 'Check saved verification records for this completed run.':
+      return t('reviewStatus.sectionReason.checkVerificationRecord');
+    case 'No acceptance criteria test-name check is needed.':
+      return t('reviewStatus.sectionReason.noTestCoverageNeeded');
+    case 'Compare implementation-plan acceptance criteria with describe/it/test names.':
+      return t('reviewStatus.sectionReason.testCoverage');
     case 'Sensitive, schema, or public contract paths changed.':
       return t('reviewStatus.sectionReason.sensitivePathsChanged');
     case 'No security-sensitive change was detected.':
@@ -138,12 +112,8 @@ function reviewStatusSectionReason(t: TFunction, reason: string) {
       return t('reviewStatus.sectionReason.noFindingsNeeded');
     case 'Consolidate section findings and route dispositions.':
       return t('reviewStatus.sectionReason.consolidateFindings');
-    case 'Create follow-up Goal candidates only when findings need follow-up work.':
-      return t('reviewStatus.sectionReason.createFollowupPrompts');
     case 'Create additional prompts when findings should be handled by continuing this session.':
       return t('reviewStatus.sectionReason.createFollowupPrompts');
-    case 'Create reusable contextStill knowledge candidates only after preview.':
-      return t('reviewStatus.sectionReason.createKnowledgeCandidates');
     default:
       return reason;
   }
@@ -160,6 +130,106 @@ function reviewStatusBlockingReason(t: TFunction, reason: string) {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function sectionArtifactPayload(artifact: ReviewArtifact | undefined): SectionArtifactPayload {
+  if (!artifact || !isRecord(artifact.artifact)) return {};
+  const payload = artifact.artifact;
+  const result = isRecord(payload.result) ? payload.result : {};
+  const matches = Array.isArray(result.matches)
+    ? result.matches.filter(isRecord).map((match) => ({
+        criterion: typeof match.criterion === 'string' ? match.criterion : undefined,
+        matched: typeof match.matched === 'boolean' ? match.matched : undefined,
+        testNames: Array.isArray(match.testNames)
+          ? match.testNames.filter((value): value is string => typeof value === 'string')
+          : undefined,
+      }))
+    : undefined;
+  return {
+    summary: typeof payload.summary === 'string' ? payload.summary : undefined,
+    result: {
+      planFound: typeof result.planFound === 'boolean' ? result.planFound : undefined,
+      planTitle: typeof result.planTitle === 'string' ? result.planTitle : null,
+      criteria: Array.isArray(result.criteria)
+        ? result.criteria.filter((value): value is string => typeof value === 'string')
+        : undefined,
+      testFilesScanned:
+        typeof result.testFilesScanned === 'number' ? result.testFilesScanned : undefined,
+      testNamesScanned:
+        typeof result.testNamesScanned === 'number' ? result.testNamesScanned : undefined,
+      matches,
+    },
+    findings: Array.isArray(payload.findings) ? payload.findings : undefined,
+  };
+}
+
+function reviewArtifactSummary(t: TFunction, summary: string | undefined) {
+  if (!summary) return null;
+  if (summary === 'No findings were produced by deterministic review.') {
+    return t('reviewStatus.result.noFindings');
+  }
+  const findingCount = /^(\d+) deterministic finding/.exec(summary);
+  if (findingCount?.[1]) {
+    return t('reviewStatus.result.findingsProduced', { count: Number(findingCount[1]) });
+  }
+  return summary;
+}
+
+function reviewArtifactTestCoverageLines(t: TFunction, payload: SectionArtifactPayload) {
+  const result = payload.result;
+  if (!result) return [];
+  const criteriaCount = result.criteria?.length ?? 0;
+  const matchedCount = result.matches?.filter((match) => match.matched).length ?? 0;
+  return [
+    result.planFound
+      ? t('reviewStatus.result.planFound', {
+          title: result.planTitle || t('reviewStatus.result.untitledPlan'),
+        })
+      : t('reviewStatus.result.planMissing'),
+    t('reviewStatus.result.criteriaMatched', {
+      matchedCount,
+      criteriaCount,
+    }),
+    t('reviewStatus.result.testNamesScanned', {
+      fileCount: result.testFilesScanned ?? 0,
+      testNameCount: result.testNamesScanned ?? 0,
+    }),
+  ];
+}
+
+function reviewArtifactMissingCriteria(payload: SectionArtifactPayload) {
+  return (
+    payload.result?.matches
+      ?.filter((match) => match.matched === false && match.criterion)
+      .map((match) => match.criterion as string) ?? []
+  );
+}
+
+function reviewArtifactUpdatedAt(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(date);
+}
+
+function reviewArtifactTimeValue(artifact: ReviewArtifact) {
+  const timestamp = new Date(artifact.updatedAt).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function latestSectionArtifact(
+  artifacts: ReviewArtifact[],
+  section: ReviewStatusSection
+): ReviewArtifact | undefined {
+  return artifacts
+    .filter((artifact) => artifact.kind === section.kind)
+    .sort((a, b) => reviewArtifactTimeValue(b) - reviewArtifactTimeValue(a))[0];
+}
+
 export function ReviewStatusViewer({
   detail,
   onRunSection,
@@ -168,18 +238,15 @@ export function ReviewStatusViewer({
   onUpdatePromptSuggestion,
   onUsePromptSuggestion,
   onInsertPromptSuggestion,
-  onCreateKnowledgeCandidate,
-  onUpdateKnowledgeCandidate,
-  onSendKnowledgeCandidate,
   onFinalAction,
 }: ReviewStatusViewerProps) {
   const { t } = useTranslation();
-  const [busySection, setBusySection] = useState<ReviewSectionKind | null>(null);
+  const [busySection, setBusySection] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [busyCandidate, setBusyCandidate] = useState<string | null>(null);
   const [busyFinding, setBusyFinding] = useState<string | null>(null);
-  const [busyPromptSuggestion, setBusyPromptSuggestion] = useState<string | null>(null);
-  const [candidateEdits, setCandidateEdits] = useState<Record<string, CandidateEditState>>({});
+  const [busyPromptSuggestion, setBusyPromptSuggestion] = useState<BusyPromptSuggestion | null>(
+    null
+  );
   const [findingEdits, setFindingEdits] = useState<
     Record<string, { disposition: NonNullable<ReviewModeFinding['disposition']>; note: string }>
   >({});
@@ -193,9 +260,6 @@ export function ReviewStatusViewer({
   }
   const status = detail.statusArtifact;
   const level = status.recommendation.level;
-  const candidateByFindingId = new Map(
-    detail.knowledgeCandidates.map((candidate) => [candidate.findingId, candidate])
-  );
   const activePromptSuggestions = detail.promptSuggestions
     .filter((suggestion) => suggestion.status === 'draft')
     .slice(0, 5);
@@ -265,10 +329,16 @@ export function ReviewStatusViewer({
                 </div>
                 <div className="grid gap-2">
                   {sections.map((section) => {
-                    const runnable =
-                      section.requirement !== 'omitted' &&
-                      section.progress !== 'done' &&
-                      Boolean(onRunSection);
+                    const runnable = section.requirement !== 'omitted' && Boolean(onRunSection);
+                    const isSectionBusy = busySection === section.kind;
+                    const artifact = latestSectionArtifact(detail.artifacts, section);
+                    const artifactPayload = sectionArtifactPayload(artifact);
+                    const artifactSummary = reviewArtifactSummary(t, artifactPayload.summary);
+                    const artifactEvidenceLines = reviewArtifactTestCoverageLines(
+                      t,
+                      artifactPayload
+                    );
+                    const missingCriteria = reviewArtifactMissingCriteria(artifactPayload);
                     return (
                       <div
                         key={section.kind}
@@ -293,11 +363,57 @@ export function ReviewStatusViewer({
                           <div className="mt-1 text-xs leading-5 text-slate-400">
                             {reviewStatusSectionReason(t, section.reason)}
                           </div>
+                          {artifact ? (
+                            <div className="mt-3 grid gap-2 rounded border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs">
+                              <div className="flex flex-wrap items-center gap-2 text-slate-300">
+                                <span className="font-medium text-slate-100">
+                                  {t('reviewStatus.result.title')}
+                                </span>
+                                <span className="text-slate-500">
+                                  {t('reviewStatus.result.updatedAt', {
+                                    value: reviewArtifactUpdatedAt(artifact.updatedAt),
+                                  })}
+                                </span>
+                              </div>
+                              <div className="text-slate-400">
+                                {section.kind === 'test_coverage'
+                                  ? t('reviewStatus.result.testCoverageOnly')
+                                  : t('reviewStatus.result.recordOnly')}
+                              </div>
+                              {artifactSummary ? (
+                                <div className="text-slate-200">{artifactSummary}</div>
+                              ) : null}
+                              {artifactEvidenceLines.length > 0 ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {artifactEvidenceLines.map((line) => (
+                                    <span
+                                      key={line}
+                                      className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300"
+                                    >
+                                      {line}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                              {missingCriteria.length > 0 ? (
+                                <div className="grid gap-1">
+                                  <div className="font-medium text-amber-100">
+                                    {t('reviewStatus.result.missingCriteria')}
+                                  </div>
+                                  {missingCriteria.slice(0, 5).map((criterion) => (
+                                    <div key={criterion} className="text-slate-300">
+                                      {criterion}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
                         <button
                           type="button"
                           className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-slate-700 px-2.5 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                          disabled={!runnable || busySection === section.kind}
+                          disabled={!runnable || isSectionBusy}
                           onClick={async () => {
                             if (!onRunSection) return;
                             setBusySection(section.kind);
@@ -315,7 +431,11 @@ export function ReviewStatusViewer({
                             }
                           }}
                         >
-                          <Play className="h-3.5 w-3.5" />
+                          {isSectionBusy ? (
+                            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Play className="h-3.5 w-3.5" />
+                          )}
                           {t('reviewStatus.action.run')}
                         </button>
                       </div>
@@ -334,9 +454,6 @@ export function ReviewStatusViewer({
             </div>
             <div className="grid gap-2">
               {detail.findings.map((finding) => {
-                const existingCandidate = candidateByFindingId.get(finding.id);
-                const canCreateCandidate =
-                  !existingCandidate || existingCandidate.status === 'discarded';
                 const findingEdit = findingEdits[finding.id] ?? {
                   disposition: finding.disposition ?? 'human_callout',
                   note: finding.dispositionNote ?? '',
@@ -375,7 +492,7 @@ export function ReviewStatusViewer({
                         <div className="mt-1 text-xs leading-5 text-slate-400">{finding.body}</div>
                       ) : null}
                     </div>
-                    <div className="grid gap-2 md:grid-cols-[190px_minmax(0,1fr)_auto_auto]">
+                    <div className="grid gap-2 md:grid-cols-[190px_minmax(0,1fr)_auto]">
                       <select
                         className="h-8 rounded border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
                         value={findingEdit.disposition}
@@ -427,37 +544,6 @@ export function ReviewStatusViewer({
                         <Save className="h-3.5 w-3.5" />
                         {t('reviewStatus.action.save')}
                       </button>
-                      <button
-                        type="button"
-                        className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-slate-700 px-2.5 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={
-                          !canCreateCandidate ||
-                          !onCreateKnowledgeCandidate ||
-                          busyCandidate === finding.id
-                        }
-                        onClick={async () => {
-                          if (!onCreateKnowledgeCandidate) return;
-                          setBusyCandidate(finding.id);
-                          setError(null);
-                          try {
-                            await onCreateKnowledgeCandidate(detail.session.id, {
-                              findingId: finding.id,
-                              candidateType: 'rule',
-                            });
-                          } catch (err) {
-                            setError(
-                              err instanceof Error
-                                ? err.message
-                                : t('reviewStatus.error.knowledgeCandidateCreationFailed')
-                            );
-                          } finally {
-                            setBusyCandidate(null);
-                          }
-                        }}
-                      >
-                        <ClipboardCheck className="h-3.5 w-3.5" />
-                        {t('reviewStatus.action.candidate')}
-                      </button>
                     </div>
                   </div>
                 );
@@ -475,10 +561,10 @@ export function ReviewStatusViewer({
               <button
                 type="button"
                 className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-slate-700 px-2.5 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!onCreatePromptSuggestions || busyPromptSuggestion === 'sync'}
+                disabled={!onCreatePromptSuggestions || busyPromptSuggestion?.action === 'sync'}
                 onClick={async () => {
                   if (!onCreatePromptSuggestions) return;
-                  setBusyPromptSuggestion('sync');
+                  setBusyPromptSuggestion({ id: 'sync', action: 'sync' });
                   setError(null);
                   try {
                     await onCreatePromptSuggestions(detail.session.id);
@@ -493,7 +579,11 @@ export function ReviewStatusViewer({
                   }
                 }}
               >
-                <ClipboardCheck className="h-3.5 w-3.5" />
+                {busyPromptSuggestion?.action === 'sync' ? (
+                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ClipboardCheck className="h-3.5 w-3.5" />
+                )}
                 {t('reviewStatus.action.sync')}
               </button>
             </div>
@@ -527,7 +617,7 @@ export function ReviewStatusViewer({
                         disabled={
                           suggestion.status !== 'draft' ||
                           !onInsertPromptSuggestion ||
-                          busyPromptSuggestion === suggestion.id
+                          busyPromptSuggestion?.id === suggestion.id
                         }
                         onClick={() => onInsertPromptSuggestion?.(suggestion.prompt)}
                       >
@@ -535,15 +625,15 @@ export function ReviewStatusViewer({
                       </button>
                       <button
                         type="button"
-                        className="inline-flex h-8 items-center justify-center rounded border border-slate-700 px-2.5 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-slate-700 px-2.5 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                         disabled={
                           suggestion.status !== 'draft' ||
                           !onUsePromptSuggestion ||
-                          busyPromptSuggestion === suggestion.id
+                          busyPromptSuggestion?.id === suggestion.id
                         }
                         onClick={async () => {
                           if (!onUsePromptSuggestion) return;
-                          setBusyPromptSuggestion(suggestion.id);
+                          setBusyPromptSuggestion({ id: suggestion.id, action: 'use' });
                           setError(null);
                           try {
                             await onUsePromptSuggestion(
@@ -562,19 +652,23 @@ export function ReviewStatusViewer({
                           }
                         }}
                       >
+                        {busyPromptSuggestion?.id === suggestion.id &&
+                        busyPromptSuggestion.action === 'use' ? (
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                        ) : null}
                         {t('reviewStatus.action.continueWithPrompt')}
                       </button>
                       <button
                         type="button"
-                        className="inline-flex h-8 items-center justify-center rounded border border-slate-700 px-2.5 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-slate-700 px-2.5 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                         disabled={
                           suggestion.status !== 'draft' ||
                           !onUpdatePromptSuggestion ||
-                          busyPromptSuggestion === suggestion.id
+                          busyPromptSuggestion?.id === suggestion.id
                         }
                         onClick={async () => {
                           if (!onUpdatePromptSuggestion) return;
-                          setBusyPromptSuggestion(suggestion.id);
+                          setBusyPromptSuggestion({ id: suggestion.id, action: 'dismiss' });
                           setError(null);
                           try {
                             await onUpdatePromptSuggestion(detail.session.id, suggestion.id, {
@@ -591,6 +685,10 @@ export function ReviewStatusViewer({
                           }
                         }}
                       >
+                        {busyPromptSuggestion?.id === suggestion.id &&
+                        busyPromptSuggestion.action === 'dismiss' ? (
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                        ) : null}
                         {t('reviewStatus.action.discard')}
                       </button>
                     </div>
@@ -631,189 +729,6 @@ export function ReviewStatusViewer({
           </div>
         ) : null}
 
-        {detail.knowledgeCandidates.length > 0 ? (
-          <div className="grid gap-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              {t('reviewStatus.knowledgeCandidates')}
-            </div>
-            <div className="grid gap-3">
-              {detail.knowledgeCandidates.map((candidate) => {
-                const edit = candidateEdits[candidate.id] ?? candidateEditState(candidate);
-                const isLocked = candidate.status === 'sent' || candidate.status === 'discarded';
-                const updateEdit = (patch: Partial<CandidateEditState>) => {
-                  setCandidateEdits((prev) => ({
-                    ...prev,
-                    [candidate.id]: { ...edit, ...patch },
-                  }));
-                };
-                return (
-                  <div
-                    key={candidate.id}
-                    className="grid gap-3 rounded border border-slate-800 bg-slate-900/60 p-3"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium text-slate-100">
-                          {candidate.title}
-                        </span>
-                        <span className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
-                          {reviewStatusValueLabel(t, 'knowledgeCandidateStatus', candidate.status)}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-slate-700 px-2.5 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                          disabled={
-                            isLocked ||
-                            !onUpdateKnowledgeCandidate ||
-                            busyCandidate === candidate.id
-                          }
-                          onClick={async () => {
-                            if (!onUpdateKnowledgeCandidate) return;
-                            setBusyCandidate(candidate.id);
-                            setError(null);
-                            try {
-                              await onUpdateKnowledgeCandidate(
-                                detail.session.id,
-                                candidate.id,
-                                edit
-                              );
-                            } catch (err) {
-                              setError(
-                                err instanceof Error
-                                  ? err.message
-                                  : t('reviewStatus.error.candidateSaveFailed')
-                              );
-                            } finally {
-                              setBusyCandidate(null);
-                            }
-                          }}
-                        >
-                          <Save className="h-3.5 w-3.5" />
-                          {t('reviewStatus.action.save')}
-                        </button>
-                        <button
-                          type="button"
-                          className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-slate-700 px-2.5 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                          disabled={
-                            isLocked || !onSendKnowledgeCandidate || busyCandidate === candidate.id
-                          }
-                          onClick={async () => {
-                            if (!onSendKnowledgeCandidate) return;
-                            setBusyCandidate(candidate.id);
-                            setError(null);
-                            try {
-                              await onSendKnowledgeCandidate(detail.session.id, candidate.id);
-                            } catch (err) {
-                              setError(
-                                err instanceof Error
-                                  ? err.message
-                                  : t('reviewStatus.error.candidateSendFailed')
-                              );
-                            } finally {
-                              setBusyCandidate(null);
-                            }
-                          }}
-                        >
-                          <Send className="h-3.5 w-3.5" />
-                          {t('reviewStatus.action.send')}
-                        </button>
-                        <button
-                          type="button"
-                          className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-slate-700 px-2.5 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                          disabled={
-                            isLocked ||
-                            !onUpdateKnowledgeCandidate ||
-                            busyCandidate === candidate.id
-                          }
-                          onClick={async () => {
-                            if (!onUpdateKnowledgeCandidate) return;
-                            setBusyCandidate(candidate.id);
-                            setError(null);
-                            try {
-                              await onUpdateKnowledgeCandidate(detail.session.id, candidate.id, {
-                                status: 'discarded',
-                              });
-                            } catch (err) {
-                              setError(
-                                err instanceof Error
-                                  ? err.message
-                                  : t('reviewStatus.error.candidateDiscardFailed')
-                              );
-                            } finally {
-                              setBusyCandidate(null);
-                            }
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          {t('reviewStatus.action.discard')}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="grid gap-2 md:grid-cols-[180px_minmax(0,1fr)]">
-                      <select
-                        className="h-8 rounded border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100 disabled:opacity-60"
-                        value={edit.candidateType}
-                        disabled={isLocked}
-                        onChange={(event) =>
-                          updateEdit({
-                            candidateType: event.target
-                              .value as ReviewKnowledgeCandidate['candidateType'],
-                          })
-                        }
-                      >
-                        <option value="rule">
-                          {reviewStatusValueLabel(t, 'candidateType', 'rule')}
-                        </option>
-                        <option value="procedure">
-                          {reviewStatusValueLabel(t, 'candidateType', 'procedure')}
-                        </option>
-                        <option value="failure_pattern">
-                          {reviewStatusValueLabel(t, 'candidateType', 'failure_pattern')}
-                        </option>
-                      </select>
-                      <input
-                        className="h-8 rounded border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100 disabled:opacity-60"
-                        value={edit.title}
-                        disabled={isLocked}
-                        onChange={(event) => updateEdit({ title: event.target.value })}
-                      />
-                    </div>
-                    <textarea
-                      className="min-h-32 resize-y rounded border border-slate-700 bg-slate-950 px-2 py-2 font-mono text-xs leading-5 text-slate-100 disabled:opacity-60"
-                      value={edit.body}
-                      disabled={isLocked}
-                      onChange={(event) => updateEdit({ body: event.target.value })}
-                    />
-                    <div className="grid gap-2 md:grid-cols-2">
-                      <input
-                        className="h-8 rounded border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100 disabled:opacity-60"
-                        value={edit.avoid ?? ''}
-                        placeholder={t('reviewStatus.placeholder.avoid')}
-                        disabled={isLocked}
-                        onChange={(event) => updateEdit({ avoid: event.target.value || null })}
-                      />
-                      <input
-                        className="h-8 rounded border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100 disabled:opacity-60"
-                        value={edit.prefer ?? ''}
-                        placeholder={t('reviewStatus.placeholder.prefer')}
-                        disabled={isLocked}
-                        onChange={(event) => updateEdit({ prefer: event.target.value || null })}
-                      />
-                    </div>
-                    {candidate.sendError ? (
-                      <div className="rounded border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-100">
-                        {candidate.sendError}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-
         <div className="grid gap-3 rounded border border-slate-800 bg-slate-900/60 p-4">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <CheckCircle2 className="h-4 w-4 text-emerald-300" />
@@ -830,7 +745,7 @@ export function ReviewStatusViewer({
                 <button
                   key={action}
                   type="button"
-                  className="inline-flex h-8 items-center justify-center rounded border border-slate-700 px-3 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-slate-700 px-3 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={
                     busyAction === action ||
                     (action === 'approve' && !status.finalActionGate.canApprove) ||
@@ -854,6 +769,9 @@ export function ReviewStatusViewer({
                     }
                   }}
                 >
+                  {busyAction === action ? (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  ) : null}
                   {reviewStatusValueLabel(t, 'finalActionType', action)}
                 </button>
               )
@@ -862,7 +780,6 @@ export function ReviewStatusViewer({
           <div className="text-xs text-slate-500">
             {t('reviewStatus.finalCounts', {
               promptSuggestionCount: status.promptSuggestionCount,
-              knowledgeCandidateCount: status.knowledgeCandidateCount,
               securityHandoffCount: status.securityHandoffCount ?? detail.securityHandoffs.length,
             })}
           </div>

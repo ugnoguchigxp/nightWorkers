@@ -275,9 +275,6 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
     createReviewPromptSuggestionsMutation,
     updateReviewPromptSuggestionMutation,
     markReviewPromptSuggestionUsedMutation,
-    createReviewKnowledgeCandidateMutation,
-    updateReviewKnowledgeCandidateMutation,
-    sendReviewKnowledgeCandidateMutation,
     applyReviewFinalActionMutation,
     updateSessionStatusMutation,
     reorderQueueSessionsMutation,
@@ -535,16 +532,6 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
       }),
     markReviewPromptSuggestionUsed: (reviewSessionId, suggestionId) =>
       markReviewPromptSuggestionUsedMutation.mutateAsync({ reviewSessionId, suggestionId }),
-    createReviewKnowledgeCandidate: (reviewSessionId, input) =>
-      createReviewKnowledgeCandidateMutation.mutateAsync({ reviewSessionId, data: input }),
-    updateReviewKnowledgeCandidate: (reviewSessionId, candidateId, input) =>
-      updateReviewKnowledgeCandidateMutation.mutateAsync({
-        reviewSessionId,
-        candidateId,
-        data: input,
-      }),
-    sendReviewKnowledgeCandidate: (reviewSessionId, candidateId) =>
-      sendReviewKnowledgeCandidateMutation.mutateAsync({ reviewSessionId, candidateId }),
     applyReviewFinalAction: (reviewSessionId, input) =>
       applyReviewFinalActionMutation.mutateAsync({ reviewSessionId, data: input }),
     updateSessionStatus: (sessionId, status) =>

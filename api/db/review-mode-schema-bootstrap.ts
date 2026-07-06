@@ -113,67 +113,6 @@ export async function ensureReviewModeTables() {
   await ensureColumn('review_findings', 'source_section', 'source_section text');
 
   await client.execute(`
-    CREATE TABLE IF NOT EXISTS review_knowledge_candidates (
-      id text PRIMARY KEY NOT NULL,
-      created_at integer NOT NULL,
-      updated_at integer NOT NULL,
-      review_session_id text NOT NULL,
-      finding_id text NOT NULL,
-      candidate_type text NOT NULL,
-      title text NOT NULL,
-      body text NOT NULL,
-      avoid text,
-      prefer text,
-      status text DEFAULT 'draft' NOT NULL,
-      context_still_candidate_id text,
-      send_error text,
-      FOREIGN KEY (review_session_id) REFERENCES review_sessions(id) ON DELETE cascade,
-      FOREIGN KEY (finding_id) REFERENCES review_findings(id) ON DELETE cascade
-    )
-  `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS review_knowledge_candidates_session_status_idx ON review_knowledge_candidates (review_session_id, status)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS review_knowledge_candidates_finding_idx ON review_knowledge_candidates (finding_id)'
-  );
-
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS review_proposed_goals (
-      id text PRIMARY KEY NOT NULL,
-      created_at integer NOT NULL,
-      updated_at integer NOT NULL,
-      review_session_id text NOT NULL,
-      finding_id text NOT NULL,
-      run_id text NOT NULL,
-      task_id text NOT NULL,
-      repository_id text NOT NULL,
-      title text NOT NULL,
-      expected_outcome text NOT NULL,
-      acceptance_criteria text NOT NULL,
-      verification_gate text NOT NULL,
-      evidence_refs_json text NOT NULL,
-      status text DEFAULT 'draft' NOT NULL,
-      decision_note text,
-      materialized_task_id text,
-      materialization_target text,
-      materialization_error text,
-      FOREIGN KEY (review_session_id) REFERENCES review_sessions(id) ON DELETE cascade,
-      FOREIGN KEY (finding_id) REFERENCES review_findings(id) ON DELETE cascade,
-      FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE cascade,
-      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
-      FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade,
-      FOREIGN KEY (materialized_task_id) REFERENCES tasks(id) ON DELETE set null
-    )
-  `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS review_proposed_goals_session_status_idx ON review_proposed_goals (review_session_id, status)'
-  );
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS review_proposed_goals_finding_uidx ON review_proposed_goals (finding_id)'
-  );
-
-  await client.execute(`
     CREATE TABLE IF NOT EXISTS review_prompt_suggestions (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,

@@ -1,12 +1,11 @@
 import crypto from 'node:crypto';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import app from '../api/app';
 import { ensureNightWorkersSchema } from '../api/db/bootstrap';
 import * as repo from '../api/modules/nightworkers/nightworkers.repository';
 import * as reviewRepo from '../api/modules/nightworkers/nightworkers.review-mode.repository';
 
 const sameOriginHeaders = { Origin: 'http://localhost:39174' };
-const originalContextStillRegisterCandidatesUrl = process.env.CONTEXT_STILL_REGISTER_CANDIDATES_URL;
 const originalSecurityPluginIntegration = process.env.NIGHTWORKERS_SECURITY_PLUGIN_INTEGRATION;
 
 beforeAll(async () => {
@@ -14,17 +13,11 @@ beforeAll(async () => {
 });
 
 afterEach(() => {
-  if (originalContextStillRegisterCandidatesUrl === undefined) {
-    delete process.env.CONTEXT_STILL_REGISTER_CANDIDATES_URL;
-  } else {
-    process.env.CONTEXT_STILL_REGISTER_CANDIDATES_URL = originalContextStillRegisterCandidatesUrl;
-  }
   if (originalSecurityPluginIntegration === undefined) {
     delete process.env.NIGHTWORKERS_SECURITY_PLUGIN_INTEGRATION;
   } else {
     process.env.NIGHTWORKERS_SECURITY_PLUGIN_INTEGRATION = originalSecurityPluginIntegration;
   }
-  vi.unstubAllGlobals();
 });
 
 describe('Review Mode', () => {
@@ -83,11 +76,11 @@ describe('Review Mode', () => {
     const started = await startRes.json();
     expect(started.statusArtifact.finalActionGate.canApprove).toBe(false);
     expect(started.statusArtifact.finalActionGate.requiredSectionKindsRemaining).toContain(
-      'verification_evidence'
+      'test_coverage'
     );
 
     const sectionRes = await app.request(
-      `http://localhost/api/review-sessions/${started.session.id}/sections/verification_evidence/run`,
+      `http://localhost/api/review-sessions/${started.session.id}/sections/test_coverage/run`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
@@ -97,7 +90,7 @@ describe('Review Mode', () => {
     expect(sectionRes.status).toBe(200);
     const afterSection = await sectionRes.json();
     expect(afterSection.findings.map((finding: { title: string }) => finding.title)).toContain(
-      'Saved verification record is missing'
+      'Implementation plan is missing'
     );
 
     const approveRes = await app.request(
@@ -110,207 +103,6 @@ describe('Review Mode', () => {
     );
     expect(approveRes.status).toBe(400);
     expect((await repo.getTaskRun(run.id))?.status).toBe('completed');
-  });
-
-  it('keeps knowledge candidates draft when contextStill integration is not configured', async () => {
-    delete process.env.CONTEXT_STILL_REGISTER_CANDIDATES_URL;
-    const { sessionId, findingId } = await createSessionWithVerificationFinding();
-
-    const createCandidateRes = await app.request(
-      `http://localhost/api/review-sessions/${sessionId}/knowledge-candidates`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
-        body: JSON.stringify({
-          findingId,
-          candidateType: 'procedure',
-          title: 'Capture review verification follow-up',
-        }),
-      }
-    );
-    expect(createCandidateRes.status).toBe(200);
-    const created = await createCandidateRes.json();
-    const candidate = created.knowledgeCandidates[0];
-    expect(candidate.status).toBe('draft');
-
-    const sendRes = await app.request(
-      `http://localhost/api/review-sessions/${sessionId}/knowledge-candidates/${candidate.id}/send`,
-      {
-        method: 'POST',
-        headers: sameOriginHeaders,
-      }
-    );
-
-    expect(sendRes.status).toBe(200);
-    const sent = await sendRes.json();
-    expect(sent.knowledgeCandidates[0]).toMatchObject({
-      id: candidate.id,
-      status: 'draft',
-      sendError: 'contextStill integration is not configured.',
-    });
-  });
-
-  it('sends knowledge candidates through the configured contextStill integration boundary', async () => {
-    process.env.CONTEXT_STILL_REGISTER_CANDIDATES_URL =
-      'http://contextstill.local/register_candidates';
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(JSON.stringify({ candidates: [{ id: 'contextstill-candidate-1' }] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-    );
-    vi.stubGlobal('fetch', fetchMock);
-    const { sessionId, findingId } = await createSessionWithVerificationFinding();
-
-    const createCandidateRes = await app.request(
-      `http://localhost/api/review-sessions/${sessionId}/knowledge-candidates`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
-        body: JSON.stringify({ findingId, candidateType: 'rule' }),
-      }
-    );
-    expect(createCandidateRes.status).toBe(200);
-    const created = await createCandidateRes.json();
-    const candidate = created.knowledgeCandidates[0];
-
-    const sendRes = await app.request(
-      `http://localhost/api/review-sessions/${sessionId}/knowledge-candidates/${candidate.id}/send`,
-      {
-        method: 'POST',
-        headers: sameOriginHeaders,
-      }
-    );
-
-    expect(sendRes.status).toBe(200);
-    expect(fetchMock).toHaveBeenCalledWith(
-      'http://contextstill.local/register_candidates',
-      expect.objectContaining({ method: 'POST' })
-    );
-    const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    const payload = JSON.parse(String(requestInit.body));
-    expect(payload.items[0]).toMatchObject({
-      title: candidate.title,
-      body: candidate.body,
-      type: 'rule',
-      source: 'nightworkers_review_mode',
-    });
-    expect(payload.items[0].metadata).toMatchObject({
-      reviewSessionId: sessionId,
-      findingId,
-      reviewKnowledgeCandidateId: candidate.id,
-    });
-    const sent = await sendRes.json();
-    expect(sent.knowledgeCandidates[0]).toMatchObject({
-      id: candidate.id,
-      status: 'sent',
-      contextStillCandidateId: 'contextstill-candidate-1',
-      sendError: null,
-    });
-  });
-
-  it('edits and discards knowledge candidates before send', async () => {
-    const { sessionId, findingId } = await createSessionWithVerificationFinding();
-    const createCandidateRes = await app.request(
-      `http://localhost/api/review-sessions/${sessionId}/knowledge-candidates`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
-        body: JSON.stringify({ findingId, candidateType: 'rule' }),
-      }
-    );
-    expect(createCandidateRes.status).toBe(200);
-    const created = await createCandidateRes.json();
-    const candidate = created.knowledgeCandidates[0];
-
-    const editRes = await app.request(
-      `http://localhost/api/review-sessions/${sessionId}/knowledge-candidates/${candidate.id}`,
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
-        body: JSON.stringify({
-          title: 'Generalized verification evidence rule',
-          body: 'Require concrete verification command evidence before approval.',
-          avoid: 'Approving without runnable evidence',
-          prefer: 'Cite the exact command and result',
-        }),
-      }
-    );
-    expect(editRes.status).toBe(200);
-    const edited = await editRes.json();
-    expect(edited.knowledgeCandidates[0]).toMatchObject({
-      id: candidate.id,
-      title: 'Generalized verification evidence rule',
-      body: 'Require concrete verification command evidence before approval.',
-      avoid: 'Approving without runnable evidence',
-      prefer: 'Cite the exact command and result',
-      status: 'draft',
-      sendError: null,
-    });
-
-    const discardRes = await app.request(
-      `http://localhost/api/review-sessions/${sessionId}/knowledge-candidates/${candidate.id}`,
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
-        body: JSON.stringify({ status: 'discarded' }),
-      }
-    );
-    expect(discardRes.status).toBe(200);
-    const discarded = await discardRes.json();
-    expect(discarded.knowledgeCandidates[0]).toMatchObject({
-      id: candidate.id,
-      status: 'discarded',
-    });
-
-    const sendRes = await app.request(
-      `http://localhost/api/review-sessions/${sessionId}/knowledge-candidates/${candidate.id}/send`,
-      {
-        method: 'POST',
-        headers: sameOriginHeaders,
-      }
-    );
-    expect(sendRes.status).toBe(400);
-  });
-
-  it('creates a knowledge candidate preview when the finding disposition is knowledge_candidate', async () => {
-    const { sessionId, findingId } = await createSessionWithVerificationFinding();
-
-    const dispositionRes = await app.request(
-      `http://localhost/api/review-sessions/${sessionId}/findings/${findingId}/disposition`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
-        body: JSON.stringify({
-          disposition: 'knowledge_candidate',
-          note: 'Save a reusable review rule.',
-        }),
-      }
-    );
-
-    expect(dispositionRes.status).toBe(200);
-    const routed = await dispositionRes.json();
-    expect(routed.knowledgeCandidates).toHaveLength(1);
-    expect(
-      routed.findings.find((finding: { id: string }) => finding.id === findingId)
-    ).toMatchObject({
-      disposition: 'knowledge_candidate',
-      dispositionStatus: 'converted',
-      contextStillCandidateId: routed.knowledgeCandidates[0].id,
-    });
-
-    const duplicateCreateRes = await app.request(
-      `http://localhost/api/review-sessions/${sessionId}/knowledge-candidates`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
-        body: JSON.stringify({ findingId, candidateType: 'rule' }),
-      }
-    );
-    expect(duplicateCreateRes.status).toBe(200);
-    const duplicateCreate = await duplicateCreateRes.json();
-    expect(duplicateCreate.knowledgeCandidates).toHaveLength(1);
   });
 
   it('routes findings to review-owned prompt suggestions without creating draft tasks', async () => {
@@ -455,6 +247,20 @@ async function createTask() {
 
 async function createSessionWithVerificationFinding() {
   const { task } = await createTask();
+  await repo.createTaskMessage({
+    taskId: task.id,
+    role: 'assistant',
+    messageType: 'markdown_document',
+    content: '# Feature Plan\n\n## 受け入れ条件\n- 虹色決済トークンが北極ログに転記される',
+    payloadJson: {
+      intent: 'feature_plan',
+      title: 'Feature Plan',
+      markdownDocumentData: {
+        title: 'Feature Plan',
+        content: '# Feature Plan\n\n## 受け入れ条件\n- 虹色決済トークンが北極ログに転記される',
+      },
+    },
+  });
   const run = await repo.createTaskRun({
     taskId: task.id,
     repositoryId: task.repositoryId,
@@ -476,7 +282,7 @@ async function createSessionWithVerificationFinding() {
   expect(startRes.status).toBe(201);
   const started = await startRes.json();
   const sectionRes = await app.request(
-    `http://localhost/api/review-sessions/${started.session.id}/sections/verification_evidence/run`,
+    `http://localhost/api/review-sessions/${started.session.id}/sections/test_coverage/run`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...sameOriginHeaders },
@@ -486,7 +292,7 @@ async function createSessionWithVerificationFinding() {
   expect(sectionRes.status).toBe(200);
   const afterSection = await sectionRes.json();
   const finding = afterSection.findings.find(
-    (item: { title: string }) => item.title === 'Saved verification record is missing'
+    (item: { title: string }) => item.title === 'Acceptance criterion has no matching test name'
   );
   expect(finding).toBeTruthy();
   return { sessionId: started.session.id as string, findingId: finding.id as string };

@@ -7,22 +7,13 @@ import {
   sectionFindings,
 } from './nightworkers.review-mode.evidence';
 import {
-  assertProcedureCandidateBody,
-  contextStillCandidatePayload,
-  defaultCandidateBody,
-  extractContextStillCandidateId,
-  extractContextStillError,
-} from './nightworkers.review-mode.knowledge-helpers';
-import {
   countFindings,
   planSections,
   type ReviewFindingDisposition,
-  type ReviewKnowledgeCandidateType,
   type ReviewSectionKind,
   type ReviewSectionProgress,
   rowArtifact,
   rowFinding,
-  rowKnowledgeCandidate,
   rowPromptSuggestion,
   rowRecommendation,
   rowSecurityHandoff,
@@ -30,6 +21,7 @@ import {
   SECTION_ORDER,
 } from './nightworkers.review-mode.model';
 import * as reviewRepo from './nightworkers.review-mode.repository';
+import { buildAcceptanceTestCoverage } from './nightworkers.review-mode.test-coverage';
 
 async function buildPackForRun(runId: string) {
   const run = await repo.getTaskRun(runId);
@@ -78,7 +70,6 @@ async function buildStatusArtifact(reviewSessionId: string) {
   if (!recommendation) throw new NotFoundError('Review recommendation not found');
   const artifacts = await reviewRepo.listReviewArtifacts(reviewSessionId);
   const findings = await reviewRepo.listReviewFindings(reviewSessionId);
-  const knowledgeCandidates = await reviewRepo.listReviewKnowledgeCandidates(reviewSessionId);
   const promptSuggestions = await reviewRepo.listReviewPromptSuggestions(reviewSessionId);
   const securityHandoffs = await reviewRepo.listReviewSecurityHandoffs(reviewSessionId);
   const artifactByKind = new Map(artifacts.map((artifact) => [artifact.kind, artifact]));
@@ -131,7 +122,6 @@ async function buildStatusArtifact(reviewSessionId: string) {
       requiredSectionKindsRemaining: requiredRemaining,
     },
     promptSuggestionCount: promptSuggestions.filter((item) => item.status === 'draft').length,
-    knowledgeCandidateCount: knowledgeCandidates.length,
     securityHandoffCount: securityHandoffs.length,
   };
   await reviewRepo.upsertReviewArtifact({
@@ -175,7 +165,6 @@ export async function getReviewSessionDetail(reviewSessionId: string) {
   if (!recommendation) throw new NotFoundError('Review recommendation not found');
   const artifacts = await reviewRepo.listReviewArtifacts(reviewSessionId);
   const findings = await reviewRepo.listReviewFindings(reviewSessionId);
-  const knowledgeCandidates = await reviewRepo.listReviewKnowledgeCandidates(reviewSessionId);
   const promptSuggestions = await reviewRepo.listReviewPromptSuggestions(reviewSessionId);
   const securityHandoffs = await reviewRepo.listReviewSecurityHandoffs(reviewSessionId);
   const statusArtifact = artifacts.find((artifact) => artifact.kind === 'review_status')
@@ -188,7 +177,6 @@ export async function getReviewSessionDetail(reviewSessionId: string) {
     statusArtifact,
     artifacts: artifacts.map(rowArtifact),
     findings: findings.map(rowFinding),
-    knowledgeCandidates: knowledgeCandidates.map(rowKnowledgeCandidate),
     promptSuggestions: promptSuggestions.map(rowPromptSuggestion),
     securityHandoffs: securityHandoffs.map(rowSecurityHandoff),
   };
@@ -207,6 +195,13 @@ export async function runReviewSection(reviewSessionId: string, sectionKind: Rev
   if (sectionKind === 'prompt_suggestions') {
     return createReviewPromptSuggestions(reviewSessionId);
   }
+  const testCoverage =
+    sectionKind === 'test_coverage'
+      ? await buildAcceptanceTestCoverage({
+          taskId: session.taskId,
+          repositoryId: session.repositoryId,
+        })
+      : null;
   const findings =
     sectionKind === 'findings'
       ? (await reviewRepo.listReviewFindings(reviewSessionId)).map((finding) => ({
@@ -217,10 +212,10 @@ export async function runReviewSection(reviewSessionId: string, sectionKind: Rev
             ? (finding.evidenceRefsJson as ReviewEvidenceRef[])
             : [],
         }))
-      : sectionKind === 'knowledge_candidates'
-        ? []
+      : testCoverage
+        ? testCoverage.findings
         : sectionFindings(sectionKind, pack);
-  if (!['findings', 'knowledge_candidates'].includes(sectionKind)) {
+  if (sectionKind !== 'findings') {
     await reviewRepo.createReviewFindings(
       findings.map((finding) => ({
         reviewSessionId,
@@ -238,16 +233,18 @@ export async function runReviewSection(reviewSessionId: string, sectionKind: Rev
     version: 1,
     kind: sectionKind,
     requirement: planned.requirement,
-    summary:
-      findings.length === 0
+    summary: testCoverage
+      ? `${testCoverage.matches.filter((match) => match.matched).length}/${testCoverage.criteria.length} acceptance criteria have matching test names.`
+      : findings.length === 0
         ? 'No findings were produced by deterministic review.'
         : `${findings.length} deterministic finding${findings.length === 1 ? '' : 's'} produced.`,
-    evidence: {
-      diff: pack.diff,
-      verification: pack.verification,
-      selectedEvents: pack.selectedEvents,
-      finalReportPresent: Boolean(pack.finalReport?.trim()),
-    },
+    result: testCoverage ?? undefined,
+    evidence: testCoverage
+      ? undefined
+      : {
+          diff: pack.diff,
+          selectedEvents: pack.selectedEvents,
+        },
     findings,
     recommendedActions: findings.map((finding) =>
       finding.severity === 'blocking'
@@ -296,12 +293,9 @@ export async function setReviewFindingDisposition(
       ? 'accepted'
       : input.disposition === 'ignored'
         ? 'dismissed'
-        : [
-              'agent_followup',
-              'prompt_suggestion',
-              'security_plugin_handoff',
-              'knowledge_candidate',
-            ].includes(input.disposition)
+        : ['agent_followup', 'prompt_suggestion', 'security_plugin_handoff'].includes(
+              input.disposition
+            )
           ? 'converted'
           : 'accepted';
   if (input.disposition === 'prompt_suggestion') {
@@ -322,17 +316,6 @@ export async function setReviewFindingDisposition(
       dispositionStatus: status,
       dispositionNote: input.note?.trim() || null,
       evidenceRefsJson: input.evidenceRefs?.length ? input.evidenceRefs : undefined,
-    });
-    return getReviewSessionDetail(reviewSessionId);
-  }
-  if (input.disposition === 'knowledge_candidate') {
-    const candidate = await ensureReviewKnowledgeCandidate(finding);
-    await reviewRepo.updateReviewFindingDisposition(finding.id, {
-      disposition: input.disposition,
-      dispositionStatus: status,
-      dispositionNote: input.note?.trim() || null,
-      evidenceRefsJson: input.evidenceRefs?.length ? input.evidenceRefs : undefined,
-      contextStillCandidateId: candidate.id,
     });
     return getReviewSessionDetail(reviewSessionId);
   }
@@ -554,165 +537,6 @@ async function refreshPromptSuggestionsArtifact(reviewSessionId: string) {
       Array.isArray(suggestion.evidenceRefsJson) ? suggestion.evidenceRefsJson : []
     ),
   });
-}
-
-async function ensureReviewKnowledgeCandidate(
-  finding: NonNullable<Awaited<ReturnType<typeof reviewRepo.getReviewFinding>>>
-) {
-  const existing = await reviewRepo.getReviewKnowledgeCandidateByFinding(finding.id);
-  if (existing && existing.status !== 'discarded') return existing;
-  const candidateType: ReviewKnowledgeCandidateType = 'rule';
-  return reviewRepo.createReviewKnowledgeCandidate({
-    reviewSessionId: finding.reviewSessionId,
-    findingId: finding.id,
-    candidateType,
-    title: `Review rule: ${finding.title}`,
-    body: defaultCandidateBody(finding, candidateType),
-    avoid: null,
-    prefer: null,
-  });
-}
-
-export async function createReviewKnowledgeCandidate(
-  reviewSessionId: string,
-  input: {
-    findingId: string;
-    candidateType?: 'rule' | 'procedure' | 'failure_pattern';
-    title?: string;
-    body?: string;
-    avoid?: string | null;
-    prefer?: string | null;
-  }
-) {
-  const finding = await reviewRepo.getReviewFinding(reviewSessionId, input.findingId);
-  if (!finding) throw new NotFoundError('Review finding not found');
-  const existing = await reviewRepo.getReviewKnowledgeCandidateByFinding(finding.id);
-  if (existing && existing.status !== 'discarded') {
-    await reviewRepo.updateReviewFindingDisposition(finding.id, {
-      disposition: 'knowledge_candidate',
-      dispositionStatus: 'converted',
-      contextStillCandidateId: existing.id,
-    });
-    return getReviewSessionDetail(reviewSessionId);
-  }
-  const candidateType = input.candidateType || 'rule';
-  const body = input.body?.trim() || defaultCandidateBody(finding, candidateType);
-  assertProcedureCandidateBody(candidateType, body);
-  const candidate = await reviewRepo.createReviewKnowledgeCandidate({
-    reviewSessionId,
-    findingId: finding.id,
-    candidateType,
-    title: input.title?.trim() || `Review rule: ${finding.title}`,
-    body,
-    avoid: input.avoid ?? null,
-    prefer: input.prefer ?? null,
-  });
-  await reviewRepo.updateReviewFindingDisposition(finding.id, {
-    disposition: 'knowledge_candidate',
-    dispositionStatus: 'converted',
-    contextStillCandidateId: candidate.id,
-  });
-  return getReviewSessionDetail(reviewSessionId);
-}
-
-export async function updateReviewKnowledgeCandidate(
-  reviewSessionId: string,
-  candidateId: string,
-  input: {
-    candidateType?: ReviewKnowledgeCandidateType;
-    title?: string;
-    body?: string;
-    avoid?: string | null;
-    prefer?: string | null;
-    status?: 'discarded';
-  }
-) {
-  const candidate = await reviewRepo.getReviewKnowledgeCandidate(reviewSessionId, candidateId);
-  if (!candidate) throw new NotFoundError('Review knowledge candidate not found');
-  if (candidate.status === 'sent') {
-    throw new AppError(
-      400,
-      'REVIEW_KNOWLEDGE_CANDIDATE_ALREADY_SENT',
-      'Sent review knowledge candidates cannot be edited'
-    );
-  }
-  const nextCandidateType =
-    input.candidateType ?? (candidate.candidateType as ReviewKnowledgeCandidateType);
-  const nextBody = input.body?.trim() ?? candidate.body;
-  assertProcedureCandidateBody(nextCandidateType, nextBody);
-  const update: {
-    candidateType?: string;
-    title?: string;
-    body?: string;
-    avoid?: string | null;
-    prefer?: string | null;
-    status?: string;
-    sendError?: string | null;
-  } = {};
-  if (input.candidateType) update.candidateType = input.candidateType;
-  if (input.title !== undefined) update.title = input.title.trim();
-  if (input.body !== undefined) update.body = nextBody;
-  if ('avoid' in input) update.avoid = input.avoid;
-  if ('prefer' in input) update.prefer = input.prefer;
-  if (input.status === 'discarded') update.status = 'discarded';
-  if (Object.keys(update).some((key) => key !== 'status')) {
-    update.status = input.status ?? 'draft';
-    update.sendError = null;
-  }
-  await reviewRepo.updateReviewKnowledgeCandidate(candidate.id, update);
-  return getReviewSessionDetail(reviewSessionId);
-}
-
-export async function sendReviewKnowledgeCandidate(reviewSessionId: string, candidateId: string) {
-  const candidate = await reviewRepo.getReviewKnowledgeCandidate(reviewSessionId, candidateId);
-  if (!candidate) throw new NotFoundError('Review knowledge candidate not found');
-  if (candidate.status === 'discarded') {
-    throw new AppError(
-      400,
-      'REVIEW_KNOWLEDGE_CANDIDATE_DISCARDED',
-      'Discarded review knowledge candidates cannot be sent'
-    );
-  }
-  if (candidate.status === 'sent') {
-    return getReviewSessionDetail(reviewSessionId);
-  }
-  const integrationUrl = process.env.CONTEXT_STILL_REGISTER_CANDIDATES_URL?.trim();
-  if (!integrationUrl) {
-    await reviewRepo.updateReviewKnowledgeCandidate(candidate.id, {
-      status: 'draft',
-      sendError: 'contextStill integration is not configured.',
-    });
-    return getReviewSessionDetail(reviewSessionId);
-  }
-  try {
-    const response = await fetch(integrationUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(contextStillCandidatePayload(candidate)),
-    });
-    const responseBody = await response.json().catch(() => null);
-    if (!response.ok) {
-      await reviewRepo.updateReviewKnowledgeCandidate(candidate.id, {
-        status: 'send_failed',
-        sendError:
-          extractContextStillError(responseBody) ||
-          `contextStill integration returned HTTP ${response.status}.`,
-      });
-      return getReviewSessionDetail(reviewSessionId);
-    }
-    await reviewRepo.updateReviewKnowledgeCandidate(candidate.id, {
-      status: 'sent',
-      contextStillCandidateId: extractContextStillCandidateId(responseBody),
-      sendError: null,
-    });
-  } catch (error) {
-    await reviewRepo.updateReviewKnowledgeCandidate(candidate.id, {
-      status: 'send_failed',
-      sendError:
-        error instanceof Error ? error.message : 'contextStill integration request failed.',
-    });
-  }
-  return getReviewSessionDetail(reviewSessionId);
 }
 
 export async function applyReviewFinalAction(

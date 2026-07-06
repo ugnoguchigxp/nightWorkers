@@ -11,8 +11,6 @@ const SECURITY_PATH_PATTERN =
 const SCHEMA_PATH_PATTERN = /(^|\/)(drizzle|migrations?|schema|db)(\/|\.|-|$)|\.(sql)$/i;
 const PUBLIC_CONTRACT_PATTERN =
   /(^|\/)(api\/routes|api\/modules|shared\/schemas|mcp|worker-tools)(\/|$)|\b(openapi|route-definitions|schema)\b/i;
-const QUEUE_EVENT_PATTERN = /queue|retry|recovery|lease|requeue/i;
-const SELF_REVIEW_EVENT_PATTERN = /self[-_. ]?review|review\.evaluation_finished/i;
 
 function changedFileRefs(pack: ReviewEvidencePack): ReviewEvidenceRef[] {
   return pack.diff.changedFiles.map((path) => ({ kind: 'changed_file' as const, path }));
@@ -27,6 +25,13 @@ function diffRef(pack: ReviewEvidencePack): ReviewEvidenceRef {
   };
 }
 
+function finalReportRef(pack: ReviewEvidencePack): ReviewEvidenceRef {
+  return {
+    kind: 'final_report',
+    runId: pack.runId,
+  };
+}
+
 function verificationRefs(pack: ReviewEvidencePack): ReviewEvidenceRef[] {
   return pack.verification.map((verification) => ({
     kind: 'verification' as const,
@@ -34,6 +39,15 @@ function verificationRefs(pack: ReviewEvidencePack): ReviewEvidenceRef[] {
     passed: verification.passed,
     command: verification.command,
   }));
+}
+
+function finalReportClaimsVerificationSuccess(finalReport: string | undefined) {
+  return Boolean(
+    finalReport &&
+      /pass(?:ed|es)?|success(?:ful|fully)?|green|verified|検証.*(成功|通過|完了)|テスト.*(成功|通過|完了)/i.test(
+        finalReport
+      )
+  );
 }
 
 function isSecuritySensitive(pack: ReviewEvidencePack) {
@@ -46,27 +60,6 @@ function isSchemaOrMigration(pack: ReviewEvidencePack) {
 
 function isPublicContract(pack: ReviewEvidencePack) {
   return pack.diff.changedFiles.some((file) => PUBLIC_CONTRACT_PATTERN.test(file));
-}
-
-function hasQueueRecovery(pack: ReviewEvidencePack) {
-  return (
-    pack.eventTypes.some((type) => QUEUE_EVENT_PATTERN.test(type)) ||
-    pack.selectedEvents.some(
-      (event) => QUEUE_EVENT_PATTERN.test(event.type) || QUEUE_EVENT_PATTERN.test(event.message)
-    )
-  );
-}
-
-function hasSelfReviewUnresolved(pack: ReviewEvidencePack) {
-  return pack.selectedEvents.some(
-    (event) =>
-      SELF_REVIEW_EVENT_PATTERN.test(event.type) &&
-      /warning|follow.?up|unresolved|changes_requested|blocking/i.test(event.message)
-  );
-}
-
-function includesEvidencePhrase(report: string | undefined, pattern: RegExp) {
-  return Boolean(report && pattern.test(report));
 }
 
 export function buildRecommendationFromEvidence(input: {
@@ -100,6 +93,22 @@ export function buildRecommendationFromEvidence(input: {
       evidenceRefs: changedFileRefs(pack),
     });
   }
+  if (input.openTodoCount > 0) {
+    addReason({
+      code: 'todo_unresolved',
+      severity: 'blocking',
+      label: 'Run still has unresolved Todo items.',
+      evidenceRefs: [],
+    });
+  }
+  if (pack.diff.hasChanges && !pack.finalReport?.trim()) {
+    addReason({
+      code: 'acceptance_evidence_missing',
+      severity: 'blocking',
+      label: 'Final report is missing, so the completion claim cannot be checked.',
+      evidenceRefs: [diffRef(pack)],
+    });
+  }
   if (pack.diff.hasChanges && pack.verification.length === 0) {
     addReason({
       code: 'verification_missing',
@@ -113,47 +122,14 @@ export function buildRecommendationFromEvidence(input: {
       code: 'verification_failed',
       severity: 'blocking',
       label: 'A saved verification record failed.',
-      evidenceRefs: verificationRefs(pack),
-    });
-  }
-  if (pack.diff.hasChanges && !pack.finalReport?.trim()) {
-    addReason({
-      code: 'acceptance_evidence_missing',
-      severity: 'blocking',
-      label: 'Final report is missing, so the completion claim cannot be checked.',
-      evidenceRefs: [{ kind: 'final_report', runId: input.runId }],
-    });
-  }
-  if (input.openTodoCount > 0) {
-    addReason({
-      code: 'todo_unresolved',
-      severity: 'blocking',
-      label: 'Run still has unresolved Todo items.',
-      evidenceRefs: [],
-    });
-  }
-  if (hasSelfReviewUnresolved(pack)) {
-    addReason({
-      code: 'self_review_unresolved',
-      severity: 'warning',
-      label: 'Self-review follow-up evidence is still unresolved.',
-      evidenceRefs: [],
-    });
-  }
-  if (hasQueueRecovery(pack)) {
-    addReason({
-      code: 'queue_recovery_present',
-      severity: 'warning',
-      label: 'Queue retry or recovery evidence is present.',
-      evidenceRefs: [],
-    });
-  }
-  if (pack.outcome?.status && pack.outcome.status !== pack.status) {
-    addReason({
-      code: 'queue_run_status_mismatch',
-      severity: 'blocking',
-      label: 'Run row status and outcome evidence disagree.',
-      evidenceRefs: [],
+      evidenceRefs: pack.verification
+        .filter((verification) => verification.passed === false)
+        .map((verification) => ({
+          kind: 'verification' as const,
+          eventId: verification.eventId,
+          passed: verification.passed,
+          command: verification.command,
+        })),
     });
   }
   if (isSecuritySensitive(pack)) {
@@ -193,19 +169,17 @@ export function buildRecommendationFromEvidence(input: {
     });
   }
   if (
-    pack.finalReport &&
-    /pass|passed|成功|通過/i.test(pack.finalReport) &&
-    pack.verification.length === 0 &&
-    pack.diff.hasChanges
+    pack.diff.hasChanges &&
+    finalReportClaimsVerificationSuccess(pack.finalReport) &&
+    !pack.verification.some((verification) => verification.passed === true)
   ) {
     addReason({
       code: 'final_report_evidence_mismatch',
       severity: 'blocking',
       label: 'Final report claims verification success without a matching verification record.',
-      evidenceRefs: [{ kind: 'final_report', runId: input.runId }],
+      evidenceRefs: [finalReportRef(pack), ...verificationRefs(pack)],
     });
   }
-
   if (reasons.length === 0) {
     if (!pack.diff.hasChanges || pack.diff.bytes === 0) {
       addReason({
@@ -219,8 +193,8 @@ export function buildRecommendationFromEvidence(input: {
     addReason({
       code: 'minor_no_review_needed',
       severity: 'info',
-      label: 'Focused change has verification and no blocking review signal.',
-      evidenceRefs: [diffRef(pack), ...verificationRefs(pack)],
+      label: 'Focused change has no blocking review signal.',
+      evidenceRefs: [diffRef(pack)],
     });
     return { level: 'optional', defaultAction: 'offer_review', reasons };
   }
@@ -245,83 +219,47 @@ export function sectionFindings(
       findings.push({
         severity: 'blocking',
         title: 'Final report is missing',
-        body: 'Run record check cannot confirm the completion claim without a final report or equivalent closeout record.',
-        evidenceRefs: [{ kind: 'final_report', runId: pack.runId }],
+        body: 'Run record check cannot confirm the completion claim because no final report or equivalent closeout record is saved.',
+        evidenceRefs: [diffRef(pack)],
       });
     }
     if (
-      pack.finalReport &&
-      /pass|passed|成功|通過/i.test(pack.finalReport) &&
-      pack.verification.length === 0 &&
-      pack.diff.hasChanges
+      pack.diff.hasChanges &&
+      finalReportClaimsVerificationSuccess(pack.finalReport) &&
+      !pack.verification.some((verification) => verification.passed === true)
     ) {
       findings.push({
         severity: 'blocking',
-        title: 'Final report claims verification without a matching record',
-        body: 'The final report claims a passing verification state, but no matching verification.finished record is present.',
-        evidenceRefs: [{ kind: 'final_report', runId: pack.runId }],
+        title: 'Final report has no matching verification record',
+        body: 'The final report claims successful verification, but no saved passing verification record is linked to the run.',
+        evidenceRefs: [finalReportRef(pack), ...verificationRefs(pack)],
       });
     }
     return findings;
   }
   if (kind === 'verification_evidence') {
-    if (pack.diff.hasChanges && pack.verification.length === 0) {
-      return [
-        {
-          severity: 'blocking',
-          title: 'Saved verification record is missing',
-          body: 'The run changed files but has no saved verification record.',
-          evidenceRefs: [diffRef(pack)],
-        },
-      ];
-    }
-    return pack.verification
-      .filter((verification) => verification.passed === false)
-      .map((verification) => ({
-        severity: 'blocking' as const,
-        title: 'Saved verification record failed',
-        body: verification.summary || verification.command || 'A saved verification record failed.',
-        evidenceRefs: [
-          {
-            kind: 'verification' as const,
-            eventId: verification.eventId,
-            command: verification.command,
-            passed: verification.passed,
-          },
-        ],
-      }));
-  }
-  if (kind === 'self_review_followups') {
-    return hasSelfReviewUnresolved(pack)
-      ? [
-          {
-            severity: 'warning',
-            title: 'Self-review follow-up may be unresolved',
-            body: 'Self-review event text indicates an unresolved warning or follow-up.',
-            evidenceRefs: [],
-          },
-        ]
-      : [];
-  }
-  if (kind === 'queue_recovery') {
     const findings: ReviewFinding[] = [];
-    if (pack.outcome?.status && pack.outcome.status !== pack.status) {
+    if (pack.diff.hasChanges && pack.verification.length === 0) {
       findings.push({
         severity: 'blocking',
-        title: 'Run outcome and persisted status mismatch',
-        body: `Run row status is ${pack.status}, while outcome evidence says ${pack.outcome.status}.`,
-        evidenceRefs: [],
+        title: 'Saved verification record is missing',
+        body: 'The completed run changed files, but no saved verification.finished record is available for review.',
+        evidenceRefs: [diffRef(pack)],
       });
     }
-    if (
-      hasQueueRecovery(pack) &&
-      !includesEvidencePhrase(pack.finalReport, /queue|retry|recovery|lease|再試行|復旧/i)
-    ) {
+    for (const verification of pack.verification.filter((item) => item.passed === false)) {
       findings.push({
-        severity: 'warning',
-        title: 'Queue recovery is not explained in final report',
-        body: 'Queue retry or recovery evidence appears in events, but the final report does not mention it.',
-        evidenceRefs: [],
+        severity: 'blocking',
+        title: 'Saved verification record failed',
+        body: verification.summary || 'A saved verification record for this run failed.',
+        evidenceRefs: [
+          {
+            kind: 'verification',
+            eventId: verification.eventId,
+            passed: verification.passed,
+            command: verification.command,
+          },
+        ],
       });
     }
     return findings;

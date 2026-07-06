@@ -9,7 +9,6 @@ import {
   applyReviewFinalActionHandler,
   createReviewerEvaluationHandler,
   createReviewerReplayEvaluationHandler,
-  createReviewKnowledgeCandidateHandler,
   createReviewPromptSuggestionsHandler,
   createReviewSessionHandler,
   createRunReviewHandler,
@@ -26,13 +25,11 @@ import {
   listTaskRunEventsHandler,
   listTaskRunsHandler,
   runReviewSectionHandler,
-  sendReviewKnowledgeCandidateHandler,
   startBackgroundProcessHandler,
   startTaskRunHandler,
   stopBackgroundProcessHandler,
   stopTaskRunHandler,
   updateReviewFindingDispositionHandler,
-  updateReviewKnowledgeCandidateHandler,
   updateReviewPromptSuggestionHandler,
   useReviewPromptSuggestionHandler,
 } from './nightworkers.route-handlers';
@@ -59,7 +56,6 @@ import {
   applyReviewFinalActionRoute,
   createReviewerEvaluationRoute,
   createReviewerReplayEvaluationRoute,
-  createReviewKnowledgeCandidateRoute,
   createReviewPromptSuggestionsRoute,
   createReviewSessionRoute,
   createRunReviewRoute,
@@ -80,12 +76,10 @@ import {
   listTaskRunEventsRoute,
   listTaskRunsRoute,
   runReviewSectionRoute,
-  sendReviewKnowledgeCandidateRoute,
   startBackgroundProcessRoute,
   stopBackgroundProcessRoute,
   stopTaskRunRoute,
   updateReviewFindingDispositionRoute,
-  updateReviewKnowledgeCandidateRoute,
   updateReviewPromptSuggestionRoute,
   useReviewPromptSuggestionRoute,
 } from './routes/run-routes';
@@ -378,9 +372,6 @@ const router = createOpenApiRouter()
   .openapi(createReviewPromptSuggestionsRoute, createReviewPromptSuggestionsHandler)
   .openapi(updateReviewPromptSuggestionRoute, updateReviewPromptSuggestionHandler)
   .openapi(useReviewPromptSuggestionRoute, useReviewPromptSuggestionHandler)
-  .openapi(createReviewKnowledgeCandidateRoute, createReviewKnowledgeCandidateHandler)
-  .openapi(updateReviewKnowledgeCandidateRoute, updateReviewKnowledgeCandidateHandler)
-  .openapi(sendReviewKnowledgeCandidateRoute, sendReviewKnowledgeCandidateHandler)
   .openapi(applyReviewFinalActionRoute, applyReviewFinalActionHandler)
   .openapi(startBackgroundProcessRoute, startBackgroundProcessHandler)
   .openapi(listBackgroundProcessesRoute, listBackgroundProcessesHandler)

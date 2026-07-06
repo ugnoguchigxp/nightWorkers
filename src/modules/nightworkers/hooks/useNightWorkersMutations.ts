@@ -4,7 +4,6 @@ import { client } from '../../../lib/api';
 import {
   applyReviewFinalAction,
   archiveWorkbenchSession,
-  createReviewKnowledgeCandidate,
   createReviewPromptSuggestions,
   createWorkbenchSession,
   deleteTask,
@@ -12,14 +11,12 @@ import {
   patchTask as patchTaskCommand,
   queueWorkbenchSession,
   runReviewSection,
-  sendReviewKnowledgeCandidate,
   startReviewSession,
   startWorkbenchRun,
   stopBackgroundProcess,
   stopRun,
   submitRunReview,
   updateReviewFindingDisposition,
-  updateReviewKnowledgeCandidate,
   updateReviewPromptSuggestion,
 } from '../nightWorkersCommands';
 import { mergeRealtimeRunDetails, mergeRealtimeRunList } from '../realtimeEvents';
@@ -45,31 +42,12 @@ type TaskPatchInput = {
   priority?: number;
 };
 
-type ReviewKnowledgeCandidateInput = {
-  findingId: string;
-  candidateType?: 'rule' | 'procedure' | 'failure_pattern';
-  title?: string;
-  body?: string;
-  avoid?: string | null;
-  prefer?: string | null;
-};
-
-type ReviewKnowledgeCandidateUpdateInput = {
-  candidateType?: 'rule' | 'procedure' | 'failure_pattern';
-  title?: string;
-  body?: string;
-  avoid?: string | null;
-  prefer?: string | null;
-  status?: 'discarded';
-};
-
 type ReviewFindingDispositionInput = {
   disposition:
     | 'human_callout'
     | 'agent_followup'
     | 'prompt_suggestion'
     | 'security_plugin_handoff'
-    | 'knowledge_candidate'
     | 'accepted_risk'
     | 'ignored';
   note?: string;
@@ -410,59 +388,6 @@ export function useNightWorkersMutations({
     },
   });
 
-  const createReviewKnowledgeCandidateMutation = useMutation({
-    mutationFn: async (input: { reviewSessionId: string; data: ReviewKnowledgeCandidateInput }) => {
-      const res = await createReviewKnowledgeCandidate(input.reviewSessionId, input.data);
-      if (!res.ok) throw new Error(await res.text());
-      return (await res.json()) as ReviewSessionDetail;
-    },
-    onSuccess: (detail) => {
-      queryClient.setQueryData<ReviewSessionDetail | null>(
-        ['reviewSession', detail.session.taskId],
-        detail
-      );
-      queryClient.invalidateQueries({ queryKey: ['reviewSession', detail.session.taskId] });
-    },
-  });
-
-  const updateReviewKnowledgeCandidateMutation = useMutation({
-    mutationFn: async (input: {
-      reviewSessionId: string;
-      candidateId: string;
-      data: ReviewKnowledgeCandidateUpdateInput;
-    }) => {
-      const res = await updateReviewKnowledgeCandidate(
-        input.reviewSessionId,
-        input.candidateId,
-        input.data
-      );
-      if (!res.ok) throw new Error(await res.text());
-      return (await res.json()) as ReviewSessionDetail;
-    },
-    onSuccess: (detail) => {
-      queryClient.setQueryData<ReviewSessionDetail | null>(
-        ['reviewSession', detail.session.taskId],
-        detail
-      );
-      queryClient.invalidateQueries({ queryKey: ['reviewSession', detail.session.taskId] });
-    },
-  });
-
-  const sendReviewKnowledgeCandidateMutation = useMutation({
-    mutationFn: async (input: { reviewSessionId: string; candidateId: string }) => {
-      const res = await sendReviewKnowledgeCandidate(input.reviewSessionId, input.candidateId);
-      if (!res.ok) throw new Error(await res.text());
-      return (await res.json()) as ReviewSessionDetail;
-    },
-    onSuccess: (detail) => {
-      queryClient.setQueryData<ReviewSessionDetail | null>(
-        ['reviewSession', detail.session.taskId],
-        detail
-      );
-      queryClient.invalidateQueries({ queryKey: ['reviewSession', detail.session.taskId] });
-    },
-  });
-
   const applyReviewFinalActionMutation = useMutation({
     mutationFn: async (input: {
       reviewSessionId: string;
@@ -635,9 +560,6 @@ export function useNightWorkersMutations({
     createReviewPromptSuggestionsMutation,
     updateReviewPromptSuggestionMutation,
     markReviewPromptSuggestionUsedMutation,
-    createReviewKnowledgeCandidateMutation,
-    updateReviewKnowledgeCandidateMutation,
-    sendReviewKnowledgeCandidateMutation,
     applyReviewFinalActionMutation,
   };
 }

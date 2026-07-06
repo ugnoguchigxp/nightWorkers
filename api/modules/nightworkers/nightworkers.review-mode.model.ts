@@ -3,14 +3,10 @@ import type * as reviewRepo from './nightworkers.review-mode.repository';
 
 export type ReviewRecommendationLevel = 'none' | 'optional' | 'recommended' | 'required';
 export type ReviewSectionKind =
-  | 'acceptance_evidence'
-  | 'verification_evidence'
-  | 'self_review_followups'
-  | 'queue_recovery'
+  | 'test_coverage'
   | 'security_review'
   | 'findings'
-  | 'prompt_suggestions'
-  | 'knowledge_candidates';
+  | 'prompt_suggestions';
 export type ReviewSectionRequirement = 'required' | 'recommended' | 'optional' | 'omitted';
 export type ReviewSectionProgress = 'not_started' | 'running' | 'done' | 'blocked' | 'needs_human';
 export type ReviewSessionStatus =
@@ -21,8 +17,6 @@ export type ReviewSessionStatus =
   | 'needs_human'
   | 'cancelled';
 export type ReviewFindingDispositionStatus = 'unresolved' | 'accepted' | 'converted' | 'dismissed';
-export type ReviewKnowledgeCandidateStatus = 'draft' | 'sent' | 'discarded' | 'send_failed';
-export type ReviewKnowledgeCandidateType = 'rule' | 'procedure' | 'failure_pattern';
 export type ReviewPromptSuggestionStatus = 'draft' | 'used' | 'dismissed';
 export type ReviewSecurityHandoffStatus = 'needs_configuration' | 'requested' | 'deferred';
 export type ReviewFindingDisposition =
@@ -30,7 +24,6 @@ export type ReviewFindingDisposition =
   | 'agent_followup'
   | 'prompt_suggestion'
   | 'security_plugin_handoff'
-  | 'knowledge_candidate'
   | 'accepted_risk'
   | 'ignored';
 
@@ -39,18 +32,11 @@ export type ReviewRecommendationReason = {
     | 'minor_no_review_needed'
     | 'large_diff'
     | 'many_changed_files'
-    | 'verification_missing'
-    | 'verification_failed'
-    | 'acceptance_evidence_missing'
     | 'todo_unresolved'
-    | 'self_review_unresolved'
-    | 'queue_recovery_present'
-    | 'queue_run_status_mismatch'
     | 'security_sensitive_change'
     | 'security_plugin_missing'
     | 'schema_or_migration_change'
-    | 'public_contract_change'
-    | 'final_report_evidence_mismatch';
+    | 'public_contract_change';
   severity: 'info' | 'warning' | 'blocking';
   label: string;
   evidenceRefs: ReviewEvidenceRef[];
@@ -63,14 +49,10 @@ export type SectionPlan = {
 };
 
 export const SECTION_ORDER: ReviewSectionKind[] = [
-  'acceptance_evidence',
-  'verification_evidence',
-  'self_review_followups',
-  'queue_recovery',
+  'test_coverage',
   'security_review',
   'findings',
   'prompt_suggestions',
-  'knowledge_candidates',
 ];
 
 function iso(value: Date | string | null | undefined) {
@@ -158,26 +140,6 @@ export function rowFinding(row: Awaited<ReturnType<typeof reviewRepo.listReviewF
   };
 }
 
-export function rowKnowledgeCandidate(
-  row: Awaited<ReturnType<typeof reviewRepo.listReviewKnowledgeCandidates>>[number]
-) {
-  return {
-    id: row.id,
-    reviewSessionId: row.reviewSessionId,
-    findingId: row.findingId,
-    candidateType: row.candidateType as ReviewKnowledgeCandidateType,
-    title: row.title,
-    body: row.body,
-    avoid: row.avoid,
-    prefer: row.prefer,
-    status: row.status as ReviewKnowledgeCandidateStatus,
-    contextStillCandidateId: row.contextStillCandidateId,
-    sendError: row.sendError,
-    createdAt: iso(row.createdAt) ?? new Date().toISOString(),
-    updatedAt: iso(row.updatedAt) ?? new Date().toISOString(),
-  };
-}
-
 export function rowPromptSuggestion(
   row: Awaited<ReturnType<typeof reviewRepo.listReviewPromptSuggestions>>[number]
 ) {
@@ -233,7 +195,6 @@ export function rowSecurityHandoff(
 export function planSections(
   recommendation: NonNullable<ReturnType<typeof rowRecommendation>>
 ): SectionPlan[] {
-  const codes = new Set(recommendation.reasons.map((reason) => reason.code));
   const blockingCodes = new Set(
     recommendation.reasons
       .filter((reason) => reason.severity === 'blocking')
@@ -246,45 +207,11 @@ export function planSections(
   ): SectionPlan => ({ kind, requirement, reason });
   return [
     section(
-      'acceptance_evidence',
-      blockingCodes.has('acceptance_evidence_missing') ||
-        blockingCodes.has('final_report_evidence_mismatch')
-        ? 'required'
-        : recommendation.level === 'none'
-          ? 'omitted'
-          : 'recommended',
+      'test_coverage',
+      recommendation.level === 'none' ? 'omitted' : 'required',
       recommendation.level === 'none'
-        ? 'No acceptance review signal was detected.'
-        : 'Check final report claims against run records.'
-    ),
-    section(
-      'verification_evidence',
-      blockingCodes.has('verification_missing') || blockingCodes.has('verification_failed')
-        ? 'required'
-        : recommendation.level === 'none'
-          ? 'omitted'
-          : 'recommended',
-      codes.has('verification_missing') || codes.has('verification_failed')
-        ? 'Saved verification record is missing or failed.'
-        : 'Saved verification record can be inspected before acceptance.'
-    ),
-    section(
-      'self_review_followups',
-      codes.has('self_review_unresolved') ? 'recommended' : 'omitted',
-      codes.has('self_review_unresolved')
-        ? 'Self-review follow-up evidence is present.'
-        : 'No unresolved self-review follow-up signal was detected.'
-    ),
-    section(
-      'queue_recovery',
-      blockingCodes.has('queue_run_status_mismatch')
-        ? 'required'
-        : codes.has('queue_recovery_present')
-          ? 'recommended'
-          : 'omitted',
-      codes.has('queue_recovery_present') || codes.has('queue_run_status_mismatch')
-        ? 'Queue recovery or status mismatch evidence should be checked.'
-        : 'No queue recovery signal was detected.'
+        ? 'No acceptance criteria test-name check is needed.'
+        : 'Compare implementation-plan acceptance criteria with describe/it/test names.'
     ),
     section(
       'security_review',
@@ -294,9 +221,12 @@ export function planSections(
         blockingCodes.has('public_contract_change')
         ? 'required'
         : 'omitted',
-      codes.has('security_sensitive_change') ||
-        codes.has('schema_or_migration_change') ||
-        codes.has('public_contract_change')
+      recommendation.reasons.some(
+        (reason) =>
+          reason.code === 'security_sensitive_change' ||
+          reason.code === 'schema_or_migration_change' ||
+          reason.code === 'public_contract_change'
+      )
         ? 'Sensitive, schema, or public contract paths changed.'
         : 'No security-sensitive change was detected.'
     ),
@@ -315,11 +245,6 @@ export function planSections(
       'prompt_suggestions',
       recommendation.level === 'none' ? 'omitted' : 'optional',
       'Create additional prompts when findings should be handled by continuing this session.'
-    ),
-    section(
-      'knowledge_candidates',
-      recommendation.level === 'none' ? 'omitted' : 'optional',
-      'Create reusable contextStill knowledge candidates only after preview.'
     ),
   ];
 }

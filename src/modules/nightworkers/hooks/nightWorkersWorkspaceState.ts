@@ -107,7 +107,6 @@ export type NightWorkersWorkspaceState = {
         | 'agent_followup'
         | 'prompt_suggestion'
         | 'security_plugin_handoff'
-        | 'knowledge_candidate'
         | 'accepted_risk'
         | 'ignored';
       note?: string;
@@ -123,33 +122,6 @@ export type NightWorkersWorkspaceState = {
   markReviewPromptSuggestionUsed: (
     reviewSessionId: string,
     suggestionId: string
-  ) => Promise<ReviewSessionDetail>;
-  createReviewKnowledgeCandidate: (
-    reviewSessionId: string,
-    input: {
-      findingId: string;
-      candidateType?: 'rule' | 'procedure' | 'failure_pattern';
-      title?: string;
-      body?: string;
-      avoid?: string | null;
-      prefer?: string | null;
-    }
-  ) => Promise<ReviewSessionDetail>;
-  updateReviewKnowledgeCandidate: (
-    reviewSessionId: string,
-    candidateId: string,
-    input: {
-      candidateType?: 'rule' | 'procedure' | 'failure_pattern';
-      title?: string;
-      body?: string;
-      avoid?: string | null;
-      prefer?: string | null;
-      status?: 'discarded';
-    }
-  ) => Promise<ReviewSessionDetail>;
-  sendReviewKnowledgeCandidate: (
-    reviewSessionId: string,
-    candidateId: string
   ) => Promise<ReviewSessionDetail>;
   applyReviewFinalAction: (
     reviewSessionId: string,

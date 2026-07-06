@@ -602,11 +602,24 @@ export const jaDictionary = {
   'reviewStatus.findings': '指摘',
   'reviewStatus.promptSuggestions': '追加プロンプト',
   'reviewStatus.securityHandoffs': 'セキュリティ連携',
-  'reviewStatus.knowledgeCandidates': '知識候補',
   'reviewStatus.finalAction': '最終アクション',
   'reviewStatus.finalCounts':
-    '追加プロンプト: {{promptSuggestionCount}} · 知識候補: {{knowledgeCandidateCount}} · セキュリティ連携: {{securityHandoffCount}}',
+    '追加プロンプト: {{promptSuggestionCount}} · セキュリティ連携: {{securityHandoffCount}}',
   'reviewStatus.artifact.summary': '{{level}} · セクション {{count}} 件',
+  'reviewStatus.result.title': 'テスト名チェック結果',
+  'reviewStatus.result.testCoverageOnly':
+    '実装計画の受け入れ条件と既存テスト名を照合しています。テスト実行はしていません。',
+  'reviewStatus.result.updatedAt': '更新: {{value}}',
+  'reviewStatus.result.noFindings': '指摘は検出されませんでした。',
+  'reviewStatus.result.findingsProduced': '指摘: {{count}} 件',
+  'reviewStatus.result.planFound': '実装計画: {{title}}',
+  'reviewStatus.result.planMissing': '実装計画: 未検出',
+  'reviewStatus.result.untitledPlan': '名称なし',
+  'reviewStatus.result.criteriaMatched':
+    '受け入れ条件: {{matchedCount}} / {{criteriaCount}} 件一致',
+  'reviewStatus.result.testNamesScanned':
+    '確認対象: テストファイル {{fileCount}} 件 / テスト名 {{testNameCount}} 件',
+  'reviewStatus.result.missingCriteria': '近い名前のテストが見つからない受け入れ条件',
   'reviewStatus.level.none': 'レビュー不要',
   'reviewStatus.level.optional': '任意レビュー',
   'reviewStatus.level.recommended': 'レビュー推奨',
@@ -617,30 +630,18 @@ export const jaDictionary = {
   'reviewStatus.requirement.omitted': '省略',
   'reviewStatus.progress.not_started': '未開始',
   'reviewStatus.progress.running': '実行中',
-  'reviewStatus.progress.done': '完了',
+  'reviewStatus.progress.done': 'チェック済み',
   'reviewStatus.progress.blocked': 'ブロック中',
   'reviewStatus.progress.needs_human': '人の判断が必要',
-  'reviewStatus.section.acceptance_evidence': '最終報告',
-  'reviewStatus.section.verification_evidence': '検証記録',
-  'reviewStatus.section.self_review_followups': 'セルフレビュー follow-up',
-  'reviewStatus.section.queue_recovery': 'Queue 復旧',
+  'reviewStatus.section.test_coverage': '受け入れ条件テストの存在確認',
   'reviewStatus.section.security_review': 'セキュリティレビュー',
   'reviewStatus.section.findings': '指摘',
   'reviewStatus.section.prompt_suggestions': '追加プロンプト',
-  'reviewStatus.section.knowledge_candidates': '知識候補',
   'reviewStatus.reason.minor_no_review_needed': 'リスクの高い Run 記録は検出されていません。',
   'reviewStatus.reason.large_diff': '差分が大きいため、受け入れ前のレビューが必要です。',
   'reviewStatus.reason.many_changed_files':
     '変更ファイル数が多く、レビューリスクが上がっています。',
-  'reviewStatus.reason.verification_missing': '変更された Run に保存済みの検証記録がありません。',
-  'reviewStatus.reason.verification_failed': '保存済みの検証記録が失敗しています。',
-  'reviewStatus.reason.acceptance_evidence_missing':
-    '最終レポートがなく、完了主張を確認できません。',
   'reviewStatus.reason.todo_unresolved': '未解決の Todo が残っています。',
-  'reviewStatus.reason.self_review_unresolved': '未解決のセルフレビュー follow-up 証跡があります。',
-  'reviewStatus.reason.queue_recovery_present': 'Queue retry または復旧の証跡があります。',
-  'reviewStatus.reason.queue_run_status_mismatch':
-    'Run 行の状態と outcome 証跡が一致していません。',
   'reviewStatus.reason.security_sensitive_change':
     'セキュリティ上注意が必要な path が変更されています。',
   'reviewStatus.reason.security_plugin_missing':
@@ -649,20 +650,11 @@ export const jaDictionary = {
     'Schema または migration path が変更されています。',
   'reviewStatus.reason.public_contract_change':
     'Public API、schema、MCP、worker-tool contract が変更されています。',
-  'reviewStatus.reason.final_report_evidence_mismatch':
-    '最終レポートは検証成功を主張していますが、対応する検証記録がありません。',
   'reviewStatus.sectionReason.noAcceptanceSignal':
     '受け入れレビューのシグナルは検出されていません。',
-  'reviewStatus.sectionReason.checkFinalReport': '最終レポートの主張を Run 記録と照合します。',
-  'reviewStatus.sectionReason.verificationMissingOrFailed':
-    '保存済みの検証記録がないか、失敗しています。',
-  'reviewStatus.sectionReason.verificationInspectable':
-    '受け入れ前に保存済みの検証記録を確認できます。',
-  'reviewStatus.sectionReason.selfReviewPresent': 'セルフレビュー follow-up 証跡があります。',
-  'reviewStatus.sectionReason.noSelfReviewSignal':
-    '未解決のセルフレビュー follow-up シグナルは検出されていません。',
-  'reviewStatus.sectionReason.queueRecoveryCheck': 'Queue 復旧または状態不一致の証跡を確認します。',
-  'reviewStatus.sectionReason.noQueueRecoverySignal': 'Queue 復旧シグナルは検出されていません。',
+  'reviewStatus.sectionReason.noTestCoverageNeeded': '受け入れ条件テストの存在確認は不要です。',
+  'reviewStatus.sectionReason.testCoverage':
+    '実装計画の受け入れ条件に近い describe / it / test 名があるか確認します。',
   'reviewStatus.sectionReason.sensitivePathsChanged':
     '注意が必要な path、schema、public contract が変更されています。',
   'reviewStatus.sectionReason.noSecuritySignal':
@@ -672,8 +664,6 @@ export const jaDictionary = {
     '各 section の指摘を集約し、disposition を振り分けます。',
   'reviewStatus.sectionReason.createFollowupPrompts':
     'この session で続けて対応すべき指摘がある場合だけ追加プロンプトを作成します。',
-  'reviewStatus.sectionReason.createKnowledgeCandidates':
-    'Preview 後に再利用可能な contextStill 知識候補を作成します。',
   'reviewStatus.blockingReason.requiredSectionsIncomplete':
     '必須レビュー section が完了していません。',
   'reviewStatus.blockingReason.unresolvedBlockingFindings':
@@ -690,7 +680,6 @@ export const jaDictionary = {
   'reviewStatus.findingDisposition.agent_followup': 'Agent follow-up',
   'reviewStatus.findingDisposition.prompt_suggestion': '追加プロンプト',
   'reviewStatus.findingDisposition.security_plugin_handoff': 'セキュリティ plugin 連携',
-  'reviewStatus.findingDisposition.knowledge_candidate': '知識候補',
   'reviewStatus.findingDisposition.accepted_risk': 'リスク受容',
   'reviewStatus.findingDisposition.ignored': '無視',
   'reviewStatus.promptSuggestionStatus.draft': '下書き',
@@ -699,37 +688,22 @@ export const jaDictionary = {
   'reviewStatus.securityHandoffStatus.needs_configuration': '設定が必要',
   'reviewStatus.securityHandoffStatus.requested': '依頼済み',
   'reviewStatus.securityHandoffStatus.deferred': '保留',
-  'reviewStatus.knowledgeCandidateStatus.draft': '下書き',
-  'reviewStatus.knowledgeCandidateStatus.sent': '送信済み',
-  'reviewStatus.knowledgeCandidateStatus.discarded': '破棄済み',
-  'reviewStatus.knowledgeCandidateStatus.send_failed': '送信失敗',
-  'reviewStatus.candidateType.rule': 'ルール',
-  'reviewStatus.candidateType.procedure': '手順',
-  'reviewStatus.candidateType.failure_pattern': '失敗パターン',
   'reviewStatus.finalActionType.approve': '承認',
   'reviewStatus.finalActionType.request_changes': '変更依頼',
   'reviewStatus.finalActionType.needs_human': '人の判断が必要',
   'reviewStatus.finalActionType.exit_review': 'レビュー終了',
-  'reviewStatus.action.run': '実行',
+  'reviewStatus.action.run': '記録を再チェック',
   'reviewStatus.action.save': '保存',
-  'reviewStatus.action.candidate': '候補化',
   'reviewStatus.action.sync': '同期',
   'reviewStatus.action.insertPrompt': '入力に入れる',
   'reviewStatus.action.continueWithPrompt': 'このプロンプトで続ける',
-  'reviewStatus.action.send': '送信',
   'reviewStatus.action.discard': '破棄',
   'reviewStatus.placeholder.dispositionNote': 'Disposition メモ',
-  'reviewStatus.placeholder.avoid': '避けること',
-  'reviewStatus.placeholder.prefer': '望ましいこと',
   'reviewStatus.error.sectionRunFailed': 'Section 実行に失敗しました。',
   'reviewStatus.error.findingDispositionFailed': '指摘 disposition の更新に失敗しました。',
-  'reviewStatus.error.knowledgeCandidateCreationFailed': '知識候補の作成に失敗しました。',
   'reviewStatus.error.promptSuggestionSyncFailed': '追加プロンプトの同期に失敗しました。',
   'reviewStatus.error.promptSuggestionUpdateFailed': '追加プロンプトの更新に失敗しました。',
   'reviewStatus.error.promptSuggestionUseFailed': '追加プロンプトの投入に失敗しました。',
-  'reviewStatus.error.candidateSaveFailed': '候補の保存に失敗しました。',
-  'reviewStatus.error.candidateSendFailed': '候補の送信に失敗しました。',
-  'reviewStatus.error.candidateDiscardFailed': '候補の破棄に失敗しました。',
   'reviewStatus.error.finalActionFailed': '最終アクションに失敗しました。',
   'blueprint.preview.noScreens': 'Screen は定義されていません。',
   'blueprint.preview.blueprint': 'Blueprint',

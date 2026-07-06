@@ -3,7 +3,6 @@ import { db } from '../../db/client';
 import {
   reviewArtifacts,
   reviewFindings,
-  reviewKnowledgeCandidates,
   reviewPromptSuggestions,
   reviewRecommendations,
   reviewSecurityHandoffs,
@@ -238,92 +237,6 @@ export async function updateReviewFindingDisposition(
     .update(reviewFindings)
     .set(updateData)
     .where(eq(reviewFindings.id, findingId))
-    .returning();
-  return row ?? null;
-}
-
-export async function listReviewKnowledgeCandidates(reviewSessionId: string) {
-  return db
-    .select()
-    .from(reviewKnowledgeCandidates)
-    .where(eq(reviewKnowledgeCandidates.reviewSessionId, reviewSessionId))
-    .orderBy(desc(reviewKnowledgeCandidates.createdAt));
-}
-
-export async function getReviewKnowledgeCandidate(reviewSessionId: string, candidateId: string) {
-  const [row] = await db
-    .select()
-    .from(reviewKnowledgeCandidates)
-    .where(
-      and(
-        eq(reviewKnowledgeCandidates.reviewSessionId, reviewSessionId),
-        eq(reviewKnowledgeCandidates.id, candidateId)
-      )
-    );
-  return row ?? null;
-}
-
-export async function getReviewKnowledgeCandidateByFinding(findingId: string) {
-  const [row] = await db
-    .select()
-    .from(reviewKnowledgeCandidates)
-    .where(eq(reviewKnowledgeCandidates.findingId, findingId))
-    .orderBy(desc(reviewKnowledgeCandidates.updatedAt));
-  return row ?? null;
-}
-
-export async function createReviewKnowledgeCandidate(data: {
-  reviewSessionId: string;
-  findingId: string;
-  candidateType: string;
-  title: string;
-  body: string;
-  avoid?: string | null;
-  prefer?: string | null;
-}) {
-  const now = new Date();
-  const [row] = await db
-    .insert(reviewKnowledgeCandidates)
-    .values({
-      ...data,
-      avoid: data.avoid ?? null,
-      prefer: data.prefer ?? null,
-      status: 'draft',
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
-  return row;
-}
-
-export async function updateReviewKnowledgeCandidate(
-  id: string,
-  data: {
-    candidateType?: string;
-    title?: string;
-    body?: string;
-    avoid?: string | null;
-    prefer?: string | null;
-    status?: string;
-    contextStillCandidateId?: string | null;
-    sendError?: string | null;
-  }
-) {
-  const updateData: typeof data & { updatedAt: Date } = { updatedAt: new Date() };
-  if ('candidateType' in data) updateData.candidateType = data.candidateType;
-  if ('title' in data) updateData.title = data.title;
-  if ('body' in data) updateData.body = data.body;
-  if ('avoid' in data) updateData.avoid = data.avoid;
-  if ('prefer' in data) updateData.prefer = data.prefer;
-  if ('status' in data) updateData.status = data.status;
-  if ('contextStillCandidateId' in data) {
-    updateData.contextStillCandidateId = data.contextStillCandidateId;
-  }
-  if ('sendError' in data) updateData.sendError = data.sendError;
-  const [row] = await db
-    .update(reviewKnowledgeCandidates)
-    .set(updateData)
-    .where(eq(reviewKnowledgeCandidates.id, id))
     .returning();
   return row ?? null;
 }

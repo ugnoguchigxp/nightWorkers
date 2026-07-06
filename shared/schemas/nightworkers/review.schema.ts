@@ -304,18 +304,11 @@ export const reviewRecommendationReasonCodeSchema = z
     'minor_no_review_needed',
     'large_diff',
     'many_changed_files',
-    'verification_missing',
-    'verification_failed',
-    'acceptance_evidence_missing',
     'todo_unresolved',
-    'self_review_unresolved',
-    'queue_recovery_present',
-    'queue_run_status_mismatch',
     'security_sensitive_change',
     'security_plugin_missing',
     'schema_or_migration_change',
     'public_contract_change',
-    'final_report_evidence_mismatch',
   ])
   .openapi('ReviewRecommendationReasonCode');
 
@@ -345,14 +338,10 @@ export const reviewRecommendationSchema = z
 
 export const reviewSectionKindSchema = z
   .enum([
-    'acceptance_evidence',
-    'verification_evidence',
-    'self_review_followups',
-    'queue_recovery',
+    'test_coverage',
     'security_review',
     'findings',
     'prompt_suggestions',
-    'knowledge_candidates',
   ])
   .openapi('ReviewSectionKind');
 
@@ -374,7 +363,6 @@ export const reviewFindingDispositionSchema = z
     'agent_followup',
     'prompt_suggestion',
     'security_plugin_handoff',
-    'knowledge_candidate',
     'accepted_risk',
     'ignored',
   ])
@@ -416,7 +404,6 @@ export const reviewStatusArtifactSchema = z
       requiredSectionKindsRemaining: z.array(reviewSectionKindSchema),
     }),
     promptSuggestionCount: z.number().int().nonnegative(),
-    knowledgeCandidateCount: z.number().int().nonnegative(),
     securityHandoffCount: z.number().int().nonnegative().optional(),
   })
   .openapi('ReviewStatusArtifact');
@@ -473,24 +460,6 @@ export const reviewModeFindingSchema = z
     updatedAt: z.string(),
   })
   .openapi('ReviewModeFinding');
-
-export const reviewKnowledgeCandidateSchema = z
-  .object({
-    id: z.string().uuid(),
-    reviewSessionId: z.string().uuid(),
-    findingId: z.string().uuid(),
-    candidateType: z.enum(['rule', 'procedure', 'failure_pattern']),
-    title: z.string(),
-    body: z.string(),
-    avoid: z.string().nullable(),
-    prefer: z.string().nullable(),
-    status: z.enum(['draft', 'sent', 'discarded', 'send_failed']),
-    contextStillCandidateId: z.string().nullable(),
-    sendError: z.string().nullable(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  })
-  .openapi('ReviewKnowledgeCandidate');
 
 export const reviewPromptSuggestionStatusSchema = z
   .enum(['draft', 'used', 'dismissed'])
@@ -551,7 +520,6 @@ export const reviewSessionDetailSchema = z
     statusArtifact: reviewStatusArtifactSchema,
     artifacts: z.array(reviewArtifactSchema),
     findings: z.array(reviewModeFindingSchema),
-    knowledgeCandidates: z.array(reviewKnowledgeCandidateSchema),
     promptSuggestions: z.array(reviewPromptSuggestionSchema),
     securityHandoffs: z.array(reviewSecurityHandoffSchema),
   })
@@ -582,28 +550,6 @@ export const reviewPromptSuggestionUseRequestSchema = z
     createdMessageId: z.string().uuid().optional(),
   })
   .openapi('ReviewPromptSuggestionUseRequest');
-
-export const reviewKnowledgeCandidateRequestSchema = z
-  .object({
-    findingId: z.string().uuid(),
-    candidateType: z.enum(['rule', 'procedure', 'failure_pattern']).default('rule'),
-    title: z.string().optional(),
-    body: z.string().optional(),
-    avoid: z.string().nullable().optional(),
-    prefer: z.string().nullable().optional(),
-  })
-  .openapi('ReviewKnowledgeCandidateRequest');
-
-export const reviewKnowledgeCandidateUpdateRequestSchema = z
-  .object({
-    candidateType: z.enum(['rule', 'procedure', 'failure_pattern']).optional(),
-    title: z.string().optional(),
-    body: z.string().optional(),
-    avoid: z.string().nullable().optional(),
-    prefer: z.string().nullable().optional(),
-    status: z.literal('discarded').optional(),
-  })
-  .openapi('ReviewKnowledgeCandidateUpdateRequest');
 
 export const reviewFinalActionRequestSchema = z
   .object({

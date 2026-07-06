@@ -97,18 +97,11 @@ export type ReviewRecommendationReason = {
     | 'minor_no_review_needed'
     | 'large_diff'
     | 'many_changed_files'
-    | 'verification_missing'
-    | 'verification_failed'
-    | 'acceptance_evidence_missing'
     | 'todo_unresolved'
-    | 'self_review_unresolved'
-    | 'queue_recovery_present'
-    | 'queue_run_status_mismatch'
     | 'security_sensitive_change'
     | 'security_plugin_missing'
     | 'schema_or_migration_change'
-    | 'public_contract_change'
-    | 'final_report_evidence_mismatch';
+    | 'public_contract_change';
   severity: 'info' | 'warning' | 'blocking';
   label: string;
   evidenceRefs: ReviewEvidenceRef[];
@@ -128,14 +121,10 @@ export type ReviewRecommendation = {
 };
 
 export type ReviewSectionKind =
-  | 'acceptance_evidence'
-  | 'verification_evidence'
-  | 'self_review_followups'
-  | 'queue_recovery'
+  | 'test_coverage'
   | 'security_review'
   | 'findings'
-  | 'prompt_suggestions'
-  | 'knowledge_candidates';
+  | 'prompt_suggestions';
 
 export type ReviewSectionRequirement = 'required' | 'recommended' | 'optional' | 'omitted';
 export type ReviewSectionProgress = 'not_started' | 'running' | 'done' | 'blocked' | 'needs_human';
@@ -165,7 +154,6 @@ export type ReviewStatusArtifact = {
     requiredSectionKindsRemaining: ReviewSectionKind[];
   };
   promptSuggestionCount: number;
-  knowledgeCandidateCount: number;
   securityHandoffCount?: number;
 };
 
@@ -203,7 +191,6 @@ export type ReviewModeFinding = {
     | 'agent_followup'
     | 'prompt_suggestion'
     | 'security_plugin_handoff'
-    | 'knowledge_candidate'
     | 'accepted_risk'
     | 'ignored'
     | null;
@@ -226,22 +213,6 @@ export type ReviewArtifact = {
   status: ReviewSectionProgress;
   artifact: unknown;
   sourceEvidenceRefs: ReviewEvidenceRef[];
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type ReviewKnowledgeCandidate = {
-  id: string;
-  reviewSessionId: string;
-  findingId: string;
-  candidateType: 'rule' | 'procedure' | 'failure_pattern';
-  title: string;
-  body: string;
-  avoid: string | null;
-  prefer: string | null;
-  status: 'draft' | 'sent' | 'discarded' | 'send_failed';
-  contextStillCandidateId: string | null;
-  sendError: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -292,7 +263,6 @@ export type ReviewSessionDetail = {
   statusArtifact: ReviewStatusArtifact;
   artifacts: ReviewArtifact[];
   findings: ReviewModeFinding[];
-  knowledgeCandidates: ReviewKnowledgeCandidate[];
   promptSuggestions: ReviewPromptSuggestion[];
   securityHandoffs: ReviewSecurityHandoff[];
 };

@@ -82,7 +82,6 @@ type ArtifactPaneProps = {
         | 'agent_followup'
         | 'prompt_suggestion'
         | 'security_plugin_handoff'
-        | 'knowledge_candidate'
         | 'accepted_risk'
         | 'ignored';
       note?: string;
@@ -101,33 +100,6 @@ type ArtifactPaneProps = {
     prompt: string
   ) => Promise<ReviewSessionDetail>;
   onInsertReviewPromptSuggestion?: (prompt: string) => void;
-  onCreateReviewKnowledgeCandidate?: (
-    reviewSessionId: string,
-    input: {
-      findingId: string;
-      candidateType?: 'rule' | 'procedure' | 'failure_pattern';
-      title?: string;
-      body?: string;
-      avoid?: string | null;
-      prefer?: string | null;
-    }
-  ) => Promise<ReviewSessionDetail>;
-  onUpdateReviewKnowledgeCandidate?: (
-    reviewSessionId: string,
-    candidateId: string,
-    input: {
-      candidateType?: 'rule' | 'procedure' | 'failure_pattern';
-      title?: string;
-      body?: string;
-      avoid?: string | null;
-      prefer?: string | null;
-      status?: 'discarded';
-    }
-  ) => Promise<ReviewSessionDetail>;
-  onSendReviewKnowledgeCandidate?: (
-    reviewSessionId: string,
-    candidateId: string
-  ) => Promise<ReviewSessionDetail>;
   onApplyReviewFinalAction?: (
     reviewSessionId: string,
     input: { action: 'approve' | 'request_changes' | 'needs_human' | 'exit_review'; note?: string }
@@ -209,9 +181,6 @@ export function ArtifactPane({
   onUpdateReviewPromptSuggestion,
   onUseReviewPromptSuggestion,
   onInsertReviewPromptSuggestion,
-  onCreateReviewKnowledgeCandidate,
-  onUpdateReviewKnowledgeCandidate,
-  onSendReviewKnowledgeCandidate,
   onApplyReviewFinalAction,
   isImplementationLocked = false,
 }: ArtifactPaneProps) {
@@ -412,9 +381,6 @@ export function ArtifactPane({
               onUpdatePromptSuggestion={onUpdateReviewPromptSuggestion}
               onUsePromptSuggestion={onUseReviewPromptSuggestion}
               onInsertPromptSuggestion={onInsertReviewPromptSuggestion}
-              onCreateKnowledgeCandidate={onCreateReviewKnowledgeCandidate}
-              onUpdateKnowledgeCandidate={onUpdateReviewKnowledgeCandidate}
-              onSendKnowledgeCandidate={onSendReviewKnowledgeCandidate}
             />
           ) : showBlueprint ? (
             <BlueprintViewer
