@@ -1,1 +1,1 @@
-export { SettingsTestPanel } from '../../settings/SettingsTestPanel';
+export { SettingsTestPanel } from "../../settings/SettingsTestPanel";

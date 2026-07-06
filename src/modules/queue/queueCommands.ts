@@ -1,59 +1,75 @@
-import { apiFetch } from '../../lib/api-base';
-import { jsonRequest } from '../../lib/api-request';
+import { apiFetch } from "../../lib/api-base";
+import { jsonRequest } from "../../lib/api-request";
 
 export function fetchImplementationQueue() {
-  return apiFetch('/api/implementation-queue');
+	return apiFetch("/api/implementation-queue");
 }
 
 export function fetchImplementationQueueHealth() {
-  return apiFetch('/api/implementation-queue/health');
+	return apiFetch("/api/implementation-queue/health");
 }
 
 export function createImplementationQueueEntry(
-  sessionId: string,
-  input: { approveMissionProposal?: boolean } = {}
+	sessionId: string,
+	input: { approveMissionProposal?: boolean } = {},
 ) {
-  return apiFetch(
-    '/api/implementation-queue/entries',
-    jsonRequest('POST', { taskId: sessionId, ...input })
-  );
+	return apiFetch(
+		"/api/implementation-queue/entries",
+		jsonRequest("POST", { taskId: sessionId, ...input }),
+	);
 }
 
 export function archiveImplementationQueueEntry(entryId: string) {
-  return apiFetch(`/api/implementation-queue/entries/${entryId}/archive`, { method: 'POST' });
+	return apiFetch(`/api/implementation-queue/entries/${entryId}/archive`, {
+		method: "POST",
+	});
 }
 
 export function cancelImplementationQueueEntry(entryId: string) {
-  return apiFetch(
-    `/api/implementation-queue/entries/${entryId}`,
-    jsonRequest('PATCH', { action: 'cancel' })
-  );
+	return apiFetch(
+		`/api/implementation-queue/entries/${entryId}`,
+		jsonRequest("PATCH", { action: "cancel" }),
+	);
 }
 
 export function updateImplementationQueueEntry(
-  entryId: string,
-  input: { queuePosition?: number | null; priority?: number }
+	entryId: string,
+	input: { queuePosition?: number | null; priority?: number },
 ) {
-  return apiFetch(`/api/implementation-queue/entries/${entryId}`, jsonRequest('PATCH', input));
+	return apiFetch(
+		`/api/implementation-queue/entries/${entryId}`,
+		jsonRequest("PATCH", input),
+	);
 }
 
-export function requeueImplementationQueueEntry(entryId: string, input: { note?: string }) {
-  return apiFetch(
-    `/api/implementation-queue/entries/${entryId}/requeue`,
-    jsonRequest('POST', input)
-  );
+export function requeueImplementationQueueEntry(
+	entryId: string,
+	input: { note?: string },
+) {
+	return apiFetch(
+		`/api/implementation-queue/entries/${entryId}/requeue`,
+		jsonRequest("POST", input),
+	);
 }
 
 export function recoverImplementationQueueEntry(
-  entryId: string,
-  input: { action: 'retry' | 'mark_needs_human' | 'cancel' | 'archive' | 'complete'; note?: string }
+	entryId: string,
+	input: {
+		action: "retry" | "mark_needs_human" | "cancel" | "archive" | "complete";
+		note?: string;
+	},
 ) {
-  return apiFetch(
-    `/api/implementation-queue/entries/${entryId}/recover`,
-    jsonRequest('POST', input)
-  );
+	return apiFetch(
+		`/api/implementation-queue/entries/${entryId}/recover`,
+		jsonRequest("POST", input),
+	);
 }
 
-export function updateImplementationQueueSettings(input: { processorCount: number }) {
-  return apiFetch('/api/implementation-queue/settings', jsonRequest('PATCH', input));
+export function updateImplementationQueueSettings(input: {
+	processorCount: number;
+}) {
+	return apiFetch(
+		"/api/implementation-queue/settings",
+		jsonRequest("PATCH", input),
+	);
 }

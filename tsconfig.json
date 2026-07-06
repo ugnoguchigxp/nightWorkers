@@ -1,20 +1,20 @@
 {
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "skipLibCheck": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "react",
-    "allowSyntheticDefaultImports": true,
-    "forceConsistentCasingInFileNames": true,
-    "paths": {
-      "@/*": ["./src/*"],
-      "@api/*": ["./api/*"]
-    },
-    "types": ["node", "vite/client"]
-  },
-  "include": ["src/**/*", "api/**/*", "shared/**/*"],
-  "exclude": ["node_modules", "dist", "drizzle"]
+	"compilerOptions": {
+		"target": "ESNext",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"strict": true,
+		"skipLibCheck": true,
+		"jsx": "react-jsx",
+		"jsxImportSource": "react",
+		"allowSyntheticDefaultImports": true,
+		"forceConsistentCasingInFileNames": true,
+		"paths": {
+			"@/*": ["./src/*"],
+			"@api/*": ["./api/*"]
+		},
+		"types": ["node", "vite/client"]
+	},
+	"include": ["src/**/*", "api/**/*", "shared/**/*"],
+	"exclude": ["node_modules", "dist", "drizzle"]
 }

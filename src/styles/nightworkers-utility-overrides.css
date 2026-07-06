@@ -1,6 +1,6 @@
 .nightworkers-shell [class~="bg-[#111827]"],
 .nightworkers-shell [class~="bg-[#121214]"] {
-  background-color: var(--nw-background);
+	background-color: var(--nw-background);
 }
 
 .nightworkers-shell [class~="bg-[#0f172a]"],
@@ -14,7 +14,7 @@
 .nightworkers-shell [class~="bg-zinc-950/30"],
 .nightworkers-shell [class~="bg-zinc-950/40"],
 .nightworkers-shell [class~="bg-zinc-950/60"] {
-  background-color: var(--nw-panel);
+	background-color: var(--nw-panel);
 }
 
 .nightworkers-shell [class~="bg-slate-800"],
@@ -27,7 +27,7 @@
 .nightworkers-shell [class~="bg-zinc-900/50"],
 .nightworkers-shell [class~="bg-zinc-900/60"],
 .nightworkers-shell [class~="bg-slate-700/40"] {
-  background-color: var(--nw-surface-soft);
+	background-color: var(--nw-surface-soft);
 }
 
 .nightworkers-shell [class~="border-slate-700/70"],
@@ -42,7 +42,7 @@
 .nightworkers-shell [class~="border-zinc-800/80"],
 .nightworkers-shell [class~="border-zinc-700/50"],
 .nightworkers-shell [class~="border-zinc-700"] {
-  border-color: var(--nw-border);
+	border-color: var(--nw-border);
 }
 
 .nightworkers-shell [class~="text-slate-100"],
@@ -51,7 +51,7 @@
 .nightworkers-shell [class~="text-slate-200"],
 .nightworkers-shell [class~="text-zinc-200"],
 .nightworkers-shell [class~="text-slate-200/90"] {
-  color: var(--nw-text);
+	color: var(--nw-text);
 }
 
 .nightworkers-shell [class~="text-slate-300"],
@@ -60,13 +60,13 @@
 .nightworkers-shell [class~="text-slate-300/60"],
 .nightworkers-shell [class~="text-zinc-300"],
 .nightworkers-shell [class~="text-zinc-400"] {
-  color: var(--nw-muted-text);
+	color: var(--nw-muted-text);
 }
 
 .nightworkers-shell [class~="text-slate-400"],
 .nightworkers-shell [class~="text-slate-500"],
 .nightworkers-shell [class~="text-zinc-500"] {
-  color: var(--nw-subtle-text);
+	color: var(--nw-subtle-text);
 }
 
 .nightworkers-shell [class~="text-indigo-400"],
@@ -75,490 +75,504 @@
 .nightworkers-shell [class~="text-cyan-300"],
 .nightworkers-shell [class~="text-cyan-400"],
 .nightworkers-shell [class~="text-cyan-500"] {
-  color: var(--nw-primary);
+	color: var(--nw-primary);
 }
 
 .nightworkers-shell [class~="border-indigo-500"],
 .nightworkers-shell [class~="border-indigo-400"],
 .nightworkers-shell [class~="border-cyan-400/70"],
 .nightworkers-shell [class~="border-cyan-500/70"] {
-  border-color: var(--nw-primary);
+	border-color: var(--nw-primary);
 }
 
 .nightworkers-shell [class~="bg-indigo-500"],
 .nightworkers-shell [class~="bg-cyan-500"],
 .nightworkers-shell [class~="bg-cyan-950/25"],
 .nightworkers-shell [class~="bg-cyan-950/30"] {
-  background-color: color-mix(in srgb, var(--nw-primary) 78%, transparent);
-  color: var(--nw-primary-foreground);
+	background-color: color-mix(in srgb, var(--nw-primary) 78%, transparent);
+	color: var(--nw-primary-foreground);
 }
 
 .nightworkers-shell [class*="rounded"] {
-  border-radius: var(--nw-radius);
+	border-radius: var(--nw-radius);
 }
 
 .nightworkers-shell button,
 .nightworkers-shell input,
 .nightworkers-shell textarea,
 .nightworkers-shell select {
-  border-radius: var(--nw-control-radius);
+	border-radius: var(--nw-control-radius);
 }
 
 .nightworkers-shell [class~="p-8"] {
-  padding: var(--nw-page-padding);
+	padding: var(--nw-page-padding);
 }
 
 .nightworkers-shell [class~="space-y-6"] > :not([hidden]) ~ :not([hidden]) {
-  margin-top: calc(var(--nw-gap) * 1.5);
+	margin-top: calc(var(--nw-gap) * 1.5);
 }
 
-.nightworkers-shell[data-card-variant="elevated"] [class*="border"][class*="bg-"] {
-  box-shadow: var(--nw-shadow);
+.nightworkers-shell[data-card-variant="elevated"]
+	[class*="border"][class*="bg-"] {
+	box-shadow: var(--nw-shadow);
 }
 
 .nightworkers-shell[data-card-variant="plain"] [class*="border"][class*="bg-"] {
-  box-shadow: none;
+	box-shadow: none;
 }
 
 .nightworkers-shell[data-button-variant="outline"] button:not(:disabled) {
-  background-color: transparent;
+	background-color: transparent;
 }
 
 .nightworkers-shell[data-button-variant="soft"] button:not(:disabled) {
-  background-color: color-mix(in srgb, var(--nw-primary) 16%, var(--nw-surface));
+	background-color: color-mix(
+		in srgb,
+		var(--nw-primary) 16%,
+		var(--nw-surface)
+	);
 }
 
 .nightworkers-settings-button,
 .nightworkers-blueprint-showcase-button {
-  background: var(--nw-panel);
-  border-color: var(--nw-border);
-  border-radius: var(--nw-control-radius);
-  color: var(--nw-text);
-  box-shadow: var(--nw-shadow);
+	background: var(--nw-panel);
+	border-color: var(--nw-border);
+	border-radius: var(--nw-control-radius);
+	color: var(--nw-text);
+	box-shadow: var(--nw-shadow);
 }
 
 .nightworkers-settings-button:hover {
-  background: var(--nw-surface-soft);
-  color: var(--nw-primary);
+	background: var(--nw-surface-soft);
+	color: var(--nw-primary);
 }
 
 .nightworkers-blueprint-showcase-button:hover {
-  background: var(--nw-surface-soft);
-  color: var(--nw-text);
+	background: var(--nw-surface-soft);
+	color: var(--nw-text);
 }
 
 .nightworkers-composer {
-  background: color-mix(in srgb, var(--nw-panel) 92%, var(--nw-primary) 8%);
-  border-color: color-mix(in srgb, var(--nw-strong-border) 72%, transparent);
-  border-radius: var(--nw-radius);
-  box-shadow: var(--nw-shadow);
-  color: var(--nw-text);
+	background: color-mix(in srgb, var(--nw-panel) 92%, var(--nw-primary) 8%);
+	border-color: color-mix(in srgb, var(--nw-strong-border) 72%, transparent);
+	border-radius: var(--nw-radius);
+	box-shadow: var(--nw-shadow);
+	color: var(--nw-text);
 }
 
 .nightworkers-composer-badge {
-  background: var(--nw-surface);
-  border-color: var(--nw-border);
+	background: var(--nw-surface);
+	border-color: var(--nw-border);
 }
 
 .nightworkers-composer-input {
-  color: var(--nw-text);
-  caret-color: var(--nw-primary);
+	color: var(--nw-text);
+	caret-color: var(--nw-primary);
 }
 
 .nightworkers-composer-input::placeholder {
-  color: color-mix(in srgb, var(--nw-muted-text) 72%, transparent);
+	color: color-mix(in srgb, var(--nw-muted-text) 72%, transparent);
 }
 
 .nightworkers-composer-toolbar {
-  border-color: var(--nw-border);
+	border-color: var(--nw-border);
 }
 
 .nightworkers-control-label {
-  color: var(--nw-subtle-text);
+	color: var(--nw-subtle-text);
 }
 
 .nightworkers-control-select {
-  background: var(--nw-surface);
-  border-color: var(--nw-border);
-  border-radius: var(--nw-control-radius);
-  color: var(--nw-text);
-  min-height: var(--nw-control-height);
+	background: var(--nw-surface);
+	border-color: var(--nw-border);
+	border-radius: var(--nw-control-radius);
+	color: var(--nw-text);
+	min-height: var(--nw-control-height);
 }
 
 .nightworkers-composer-submit {
-  border-radius: var(--nw-control-radius);
-  min-height: var(--nw-control-height);
+	border-radius: var(--nw-control-radius);
+	min-height: var(--nw-control-height);
 }
 
 .nightworkers-composer-submit-ready {
-  background: var(--nw-primary);
-  color: var(--nw-primary-foreground);
+	background: var(--nw-primary);
+	color: var(--nw-primary-foreground);
 }
 
 .nightworkers-composer-submit-idle {
-  background: var(--nw-surface-soft);
-  color: var(--nw-subtle-text);
+	background: var(--nw-surface-soft);
+	color: var(--nw-subtle-text);
 }
 
 .nightworkers-chat-window {
-  color: var(--nw-text);
+	color: var(--nw-text);
 }
 
 .nightworkers-code-block {
-  --nw-code-bg: #111827;
-  --nw-code-header-bg: #1f2937;
-  --nw-code-border: #334155;
-  --nw-code-text: #e5e7eb;
-  --nw-code-muted-text: #94a3b8;
-  --background: var(--nw-code-bg);
-  --foreground: var(--nw-code-text);
-  --card: var(--nw-code-bg);
-  --card-foreground: var(--nw-code-text);
-  --muted: var(--nw-code-header-bg);
-  --muted-foreground: var(--nw-code-muted-text);
-  --border: var(--nw-code-border);
-  background: var(--nw-code-bg);
-  border-color: var(--nw-code-border);
-  color: var(--nw-code-text);
+	--nw-code-bg: #111827;
+	--nw-code-header-bg: #1f2937;
+	--nw-code-border: #334155;
+	--nw-code-text: #e5e7eb;
+	--nw-code-muted-text: #94a3b8;
+	--background: var(--nw-code-bg);
+	--foreground: var(--nw-code-text);
+	--card: var(--nw-code-bg);
+	--card-foreground: var(--nw-code-text);
+	--muted: var(--nw-code-header-bg);
+	--muted-foreground: var(--nw-code-muted-text);
+	--border: var(--nw-code-border);
+	background: var(--nw-code-bg);
+	border-color: var(--nw-code-border);
+	color: var(--nw-code-text);
 }
 
 .nightworkers-code-block > div {
-  background: var(--nw-code-bg);
-  color: var(--nw-code-text);
+	background: var(--nw-code-bg);
+	color: var(--nw-code-text);
 }
 
 .nightworkers-code-block > div:first-child {
-  background: var(--nw-code-header-bg);
-  border-color: var(--nw-code-border);
-  color: var(--nw-code-muted-text);
+	background: var(--nw-code-header-bg);
+	border-color: var(--nw-code-border);
+	color: var(--nw-code-muted-text);
 }
 
 .nightworkers-code-block > div:first-child > div:first-child,
-.nightworkers-code-block > div:first-child > div:first-child :is(button, svg, span, div) {
-  color: #f8fafc;
+.nightworkers-code-block
+	> div:first-child
+	> div:first-child
+	:is(button, svg, span, div) {
+	color: #f8fafc;
 }
 
 .nightworkers-code-block pre,
 .nightworkers-code-block code,
 .nightworkers-code-block .shiki {
-  background: transparent;
+	background: transparent;
 }
 
 .nightworkers-code-block .line.diff.add {
-  background: color-mix(in srgb, var(--nw-success) 14%, transparent);
+	background: color-mix(in srgb, var(--nw-success) 14%, transparent);
 }
 
 .nightworkers-code-block .line.diff.remove {
-  background: color-mix(in srgb, var(--nw-danger) 14%, transparent);
+	background: color-mix(in srgb, var(--nw-danger) 14%, transparent);
 }
 
 .nightworkers-diff-view {
-  overflow: hidden;
-  border: 1px solid var(--nw-border);
-  border-radius: var(--nw-radius);
-  background: hsl(236 22% 14%);
-  color: var(--nw-text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  font-size: 0.8125rem;
+	overflow: hidden;
+	border: 1px solid var(--nw-border);
+	border-radius: var(--nw-radius);
+	background: hsl(236 22% 14%);
+	color: var(--nw-text);
+	font-family:
+		ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+		monospace;
+	font-size: 0.8125rem;
 }
 
 .nightworkers-diff-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  border-bottom: 1px solid var(--nw-border);
-  background: hsl(237 18% 24%);
-  color: var(--nw-muted-text);
-  min-height: 2.25rem;
-  padding: 0.5rem 0.75rem;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	border-bottom: 1px solid var(--nw-border);
+	background: hsl(237 18% 24%);
+	color: var(--nw-muted-text);
+	min-height: 2.25rem;
+	padding: 0.5rem 0.75rem;
 }
 
 .nightworkers-diff-file {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--nw-text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+	min-width: 0;
+	overflow: hidden;
+	color: var(--nw-text);
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .nightworkers-diff-label {
-  flex-shrink: 0;
-  color: var(--nw-subtle-text);
+	flex-shrink: 0;
+	color: var(--nw-subtle-text);
 }
 
 .nightworkers-diff-body {
-  margin: 0;
-  max-height: 360px;
-  overflow: auto;
-  padding: 0;
+	margin: 0;
+	max-height: 360px;
+	overflow: auto;
+	padding: 0;
 }
 
 .nightworkers-diff-line {
-  display: grid;
-  grid-template-columns: 3.5rem minmax(0, 1fr);
-  min-height: 1.55rem;
-  white-space: pre;
+	display: grid;
+	grid-template-columns: 3.5rem minmax(0, 1fr);
+	min-height: 1.55rem;
+	white-space: pre;
 }
 
 .nightworkers-diff-line-number {
-  border-right: 1px solid hsl(230 22% 24%);
-  color: hsl(230 18% 66%);
-  padding: 0 0.75rem 0 0.5rem;
-  text-align: right;
-  user-select: none;
+	border-right: 1px solid hsl(230 22% 24%);
+	color: hsl(230 18% 66%);
+	padding: 0 0.75rem 0 0.5rem;
+	text-align: right;
+	user-select: none;
 }
 
 .nightworkers-diff-line-code {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  padding: 0 0.75rem;
-  white-space: pre-wrap;
+	min-width: 0;
+	overflow-wrap: anywhere;
+	padding: 0 0.75rem;
+	white-space: pre-wrap;
 }
 
 .nightworkers-diff-line-add {
-  background: hsl(132 18% 25%);
-  color: hsl(118 72% 78%);
+	background: hsl(132 18% 25%);
+	color: hsl(118 72% 78%);
 }
 
 .nightworkers-diff-line-remove {
-  background: hsl(333 22% 24%);
-  color: hsl(350 80% 78%);
+	background: hsl(333 22% 24%);
+	color: hsl(350 80% 78%);
 }
 
 .nightworkers-diff-line-meta,
 .nightworkers-diff-line-hunk {
-  background: hsl(221 20% 22%);
-  color: hsl(214 74% 77%);
+	background: hsl(221 20% 22%);
+	color: hsl(214 74% 77%);
 }
 
 .nightworkers-message-bubble {
-  border-color: var(--nw-border);
-  border-radius: var(--nw-radius);
-  box-shadow: var(--nw-shadow);
-  color: var(--nw-text);
+	border-color: var(--nw-border);
+	border-radius: var(--nw-radius);
+	box-shadow: var(--nw-shadow);
+	color: var(--nw-text);
 }
 
 .nightworkers-message-bubble-user {
-  background: color-mix(in srgb, var(--nw-primary) 22%, var(--nw-panel));
+	background: color-mix(in srgb, var(--nw-primary) 22%, var(--nw-panel));
 }
 
 .nightworkers-message-bubble-assistant {
-  background: var(--nw-panel);
+	background: var(--nw-panel);
 }
 
 .nightworkers-message-bubble-system {
-  background: var(--nw-surface);
-  color: var(--nw-muted-text);
+	background: var(--nw-surface);
+	color: var(--nw-muted-text);
 }
 
 .nightworkers-message-timestamp,
 .nightworkers-artifact-meta {
-  color: var(--nw-subtle-text);
+	color: var(--nw-subtle-text);
 }
 
 .nightworkers-message-content,
 .nightworkers-artifact-title {
-  color: var(--nw-text);
+	color: var(--nw-text);
 }
 
 .nightworkers-artifact-kicker,
 .nightworkers-artifact-open-button {
-  color: var(--nw-primary);
+	color: var(--nw-primary);
 }
 
 .nightworkers-artifact-open-button {
-  border-color: color-mix(in srgb, var(--nw-primary) 70%, var(--nw-border));
-  border-radius: var(--nw-control-radius);
+	border-color: color-mix(in srgb, var(--nw-primary) 70%, var(--nw-border));
+	border-radius: var(--nw-control-radius);
 }
 
 .nightworkers-artifact-open-button:hover {
-  background: color-mix(in srgb, var(--nw-primary) 16%, transparent);
+	background: color-mix(in srgb, var(--nw-primary) 16%, transparent);
 }
 
 .nightworkers-artifact-summary {
-  color: var(--nw-muted-text);
+	color: var(--nw-muted-text);
 }
 
 .nightworkers-shell .nightworkers-settings-button,
 .nightworkers-shell .nightworkers-blueprint-showcase-button {
-  background: var(--nw-panel);
-  border-color: var(--nw-border);
-  border-radius: var(--nw-control-radius);
-  color: var(--nw-text);
-  box-shadow: var(--nw-shadow);
+	background: var(--nw-panel);
+	border-color: var(--nw-border);
+	border-radius: var(--nw-control-radius);
+	color: var(--nw-text);
+	box-shadow: var(--nw-shadow);
 }
 
 .nightworkers-shell .nightworkers-settings-button:hover {
-  background: var(--nw-surface-soft);
-  color: var(--nw-primary);
+	background: var(--nw-surface-soft);
+	color: var(--nw-primary);
 }
 
 .nightworkers-shell .nightworkers-blueprint-showcase-button:hover {
-  background: var(--nw-surface-soft);
-  color: var(--nw-text);
+	background: var(--nw-surface-soft);
+	color: var(--nw-text);
 }
 
 .nightworkers-shell .nightworkers-composer {
-  background: color-mix(in srgb, var(--nw-panel) 92%, var(--nw-primary) 8%);
-  border-color: color-mix(in srgb, var(--nw-strong-border) 72%, transparent);
-  border-radius: var(--nw-radius);
-  box-shadow: var(--nw-shadow);
-  color: var(--nw-text);
+	background: color-mix(in srgb, var(--nw-panel) 92%, var(--nw-primary) 8%);
+	border-color: color-mix(in srgb, var(--nw-strong-border) 72%, transparent);
+	border-radius: var(--nw-radius);
+	box-shadow: var(--nw-shadow);
+	color: var(--nw-text);
 }
 
 .nightworkers-shell .nightworkers-control-label {
-  color: var(--nw-subtle-text);
+	color: var(--nw-subtle-text);
 }
 
 .nightworkers-shell .nightworkers-control-select {
-  background: var(--nw-surface);
-  border-color: var(--nw-border);
-  border-radius: var(--nw-control-radius);
-  color: var(--nw-text);
+	background: var(--nw-surface);
+	border-color: var(--nw-border);
+	border-radius: var(--nw-control-radius);
+	color: var(--nw-text);
 }
 
 .nightworkers-shell .nightworkers-composer .nightworkers-control-select {
-  background: transparent;
-  border-color: color-mix(in srgb, var(--nw-border) 70%, transparent);
+	background: transparent;
+	border-color: color-mix(in srgb, var(--nw-border) 70%, transparent);
 }
 
 .nightworkers-shell .nightworkers-composer-submit {
-  border-radius: var(--nw-control-radius);
+	border-radius: var(--nw-control-radius);
 }
 
 .nightworkers-shell .nightworkers-message-bubble {
-  border-color: var(--nw-border);
-  border-radius: var(--nw-radius);
-  box-shadow: var(--nw-shadow);
-  color: var(--nw-text);
+	border-color: var(--nw-border);
+	border-radius: var(--nw-radius);
+	box-shadow: var(--nw-shadow);
+	color: var(--nw-text);
 }
 
 .nightworkers-shell .nightworkers-message-bubble-user {
-  background: color-mix(in srgb, var(--nw-primary) 22%, var(--nw-panel));
+	background: color-mix(in srgb, var(--nw-primary) 22%, var(--nw-panel));
 }
 
 .nightworkers-shell .nightworkers-message-bubble-assistant {
-  background: var(--nw-panel);
+	background: var(--nw-panel);
 }
 
 .nightworkers-shell .nightworkers-message-bubble-system {
-  background: var(--nw-surface);
-  color: var(--nw-muted-text);
+	background: var(--nw-surface);
+	color: var(--nw-muted-text);
 }
 
 .nightworkers-shell .nightworkers-message-timestamp,
 .nightworkers-shell .nightworkers-artifact-meta {
-  color: var(--nw-subtle-text);
+	color: var(--nw-subtle-text);
 }
 
 .nightworkers-shell .nightworkers-message-content,
 .nightworkers-shell .nightworkers-artifact-title {
-  color: var(--nw-text);
+	color: var(--nw-text);
 }
 
 .nightworkers-shell .nightworkers-artifact-kicker,
 .nightworkers-shell .nightworkers-artifact-open-button {
-  color: var(--nw-primary);
+	color: var(--nw-primary);
 }
 
 .nightworkers-shell .nightworkers-artifact-open-button {
-  border-color: color-mix(in srgb, var(--nw-primary) 70%, var(--nw-border));
-  border-radius: var(--nw-control-radius);
+	border-color: color-mix(in srgb, var(--nw-primary) 70%, var(--nw-border));
+	border-radius: var(--nw-control-radius);
 }
 
 .nightworkers-shell .nightworkers-artifact-summary {
-  color: var(--nw-muted-text);
+	color: var(--nw-muted-text);
 }
 
 .nightworkers-shell .nightworkers-review-status {
-  background: var(--nw-background);
-  color: var(--nw-text);
-  color-scheme: inherit;
+	background: var(--nw-background);
+	color: var(--nw-text);
+	color-scheme: inherit;
 }
 
 .nightworkers-shell .nightworkers-review-status[class~="bg-slate-950"] {
-  background-color: var(--nw-background);
+	background-color: var(--nw-background);
 }
 
 .nightworkers-shell .nightworkers-review-status [class~="bg-slate-900/50"],
 .nightworkers-shell .nightworkers-review-status [class~="bg-slate-900/60"] {
-  background-color: color-mix(in srgb, var(--nw-panel) 92%, var(--nw-primary) 8%);
+	background-color: color-mix(
+		in srgb,
+		var(--nw-panel) 92%,
+		var(--nw-primary) 8%
+	);
 }
 
 .nightworkers-shell
-  .nightworkers-review-status
-  :is(input, select, textarea)[class~="bg-slate-950"] {
-  background-color: var(--nw-surface);
+	.nightworkers-review-status
+	:is(input, select, textarea)[class~="bg-slate-950"] {
+	background-color: var(--nw-surface);
 }
 
 .nightworkers-shell .nightworkers-review-status [class~="border-slate-800"] {
-  border-color: color-mix(in srgb, var(--nw-border) 82%, transparent);
+	border-color: color-mix(in srgb, var(--nw-border) 82%, transparent);
 }
 
 .nightworkers-shell .nightworkers-review-status [class~="border-slate-700"] {
-  border-color: color-mix(in srgb, var(--nw-strong-border) 82%, transparent);
+	border-color: color-mix(in srgb, var(--nw-strong-border) 82%, transparent);
 }
 
 .nightworkers-shell .nightworkers-review-status[class~="text-slate-100"],
 .nightworkers-shell .nightworkers-review-status [class~="text-slate-100"] {
-  color: var(--nw-text);
+	color: var(--nw-text);
 }
 
 .nightworkers-shell .nightworkers-review-status [class~="text-slate-300"],
 .nightworkers-shell .nightworkers-review-status [class~="text-slate-400"] {
-  color: var(--nw-muted-text);
+	color: var(--nw-muted-text);
 }
 
 .nightworkers-shell .nightworkers-review-status [class~="text-slate-500"] {
-  color: var(--nw-subtle-text);
+	color: var(--nw-subtle-text);
 }
 
 .nightworkers-shell .nightworkers-review-status [class~="text-cyan-100"],
 .nightworkers-shell .nightworkers-review-status [class~="text-cyan-200"] {
-  color: color-mix(in srgb, var(--nw-primary) 82%, var(--nw-text));
+	color: color-mix(in srgb, var(--nw-primary) 82%, var(--nw-text));
 }
 
 .nightworkers-shell .nightworkers-review-status [class~="border-cyan-500/60"] {
-  border-color: color-mix(in srgb, var(--nw-primary) 62%, var(--nw-border));
+	border-color: color-mix(in srgb, var(--nw-primary) 62%, var(--nw-border));
 }
 
 .nightworkers-shell .nightworkers-review-status [class~="bg-cyan-950/30"] {
-  background-color: color-mix(in srgb, var(--nw-primary) 14%, var(--nw-panel));
+	background-color: color-mix(in srgb, var(--nw-primary) 14%, var(--nw-panel));
 }
 
 .nightworkers-shell .nightworkers-review-status [class~="text-emerald-300"] {
-  color: var(--nw-success);
+	color: var(--nw-success);
 }
 
 .nightworkers-shell .nightworkers-review-status [class~="text-amber-100"],
 .nightworkers-shell .nightworkers-review-status [class~="text-amber-300"] {
-  color: color-mix(in srgb, var(--nw-warning) 82%, var(--nw-text));
+	color: color-mix(in srgb, var(--nw-warning) 82%, var(--nw-text));
 }
 
 .nightworkers-shell .nightworkers-review-status [class~="border-amber-500/60"],
 .nightworkers-shell .nightworkers-review-status [class~="border-amber-700/60"] {
-  border-color: color-mix(in srgb, var(--nw-warning) 58%, var(--nw-border));
+	border-color: color-mix(in srgb, var(--nw-warning) 58%, var(--nw-border));
 }
 
 .nightworkers-shell .nightworkers-review-status [class~="bg-amber-950/30"] {
-  background-color: color-mix(in srgb, var(--nw-warning) 14%, var(--nw-panel));
+	background-color: color-mix(in srgb, var(--nw-warning) 14%, var(--nw-panel));
 }
 
 .nightworkers-shell .nightworkers-review-status [class~="text-red-100"],
 .nightworkers-shell .nightworkers-review-status [class~="text-red-300"] {
-  color: color-mix(in srgb, var(--nw-danger) 82%, var(--nw-text));
+	color: color-mix(in srgb, var(--nw-danger) 82%, var(--nw-text));
 }
 
 .nightworkers-shell .nightworkers-review-status [class~="border-red-500/60"],
 .nightworkers-shell .nightworkers-review-status [class~="border-red-700"],
 .nightworkers-shell .nightworkers-review-status [class~="border-red-800"] {
-  border-color: color-mix(in srgb, var(--nw-danger) 58%, var(--nw-border));
+	border-color: color-mix(in srgb, var(--nw-danger) 58%, var(--nw-border));
 }
 
 .nightworkers-shell .nightworkers-review-status [class~="bg-red-950/30"],
 .nightworkers-shell .nightworkers-review-status [class~="bg-red-950/40"] {
-  background-color: color-mix(in srgb, var(--nw-danger) 14%, var(--nw-panel));
+	background-color: color-mix(in srgb, var(--nw-danger) 14%, var(--nw-panel));
 }
 
 .nightworkers-shell[data-theme="dark"] .nightworkers-message-bubble,
@@ -571,101 +585,113 @@
 .nightworkers-shell[data-theme="campfire"] .nightworkers-artifact-title,
 .nightworkers-shell[data-theme="campfire"] .nightworkers-composer,
 .nightworkers-shell[data-theme="campfire"] .nightworkers-composer-input {
-  color: var(--nw-text);
+	color: var(--nw-text);
 }
 
 .nightworkers-shell[data-theme="dark"] .nightworkers-artifact-summary,
 .nightworkers-shell[data-theme="dark"] .nightworkers-artifact-meta,
 .nightworkers-shell[data-theme="campfire"] .nightworkers-artifact-summary,
 .nightworkers-shell[data-theme="campfire"] .nightworkers-artifact-meta {
-  color: var(--nw-muted-text);
+	color: var(--nw-muted-text);
 }
 
 @keyframes nightworkers-thinking-pop {
-  0%,
-  72%,
-  100% {
-    opacity: 0.55;
-    transform: translateY(0) scale(0.82);
-  }
+	0%,
+	72%,
+	100% {
+		opacity: 0.55;
+		transform: translateY(0) scale(0.82);
+	}
 
-  28% {
-    opacity: 1;
-    transform: translateY(-0.18em) scale(1.05);
-  }
+	28% {
+		opacity: 1;
+		transform: translateY(-0.18em) scale(1.05);
+	}
 }
 
 @layer utilities {
-  .nightworkers-scrollbar {
-    color-scheme: inherit;
-    scrollbar-color: color-mix(in srgb, var(--nightworkers-scrollbar-thumb) 54%, transparent)
-      transparent;
-    scrollbar-width: thin;
-  }
+	.nightworkers-scrollbar {
+		color-scheme: inherit;
+		scrollbar-color: color-mix(
+				in srgb,
+				var(--nightworkers-scrollbar-thumb) 54%,
+				transparent
+			)
+			transparent;
+		scrollbar-width: thin;
+	}
 
-  .nightworkers-scrollbar::-webkit-scrollbar {
-    width: 0.5rem;
-    height: 0.5rem;
-  }
+	.nightworkers-scrollbar::-webkit-scrollbar {
+		width: 0.5rem;
+		height: 0.5rem;
+	}
 
-  .nightworkers-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
+	.nightworkers-scrollbar::-webkit-scrollbar-track {
+		background: transparent;
+	}
 
-  .nightworkers-scrollbar::-webkit-scrollbar-thumb {
-    border: 0.125rem solid transparent;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--nightworkers-scrollbar-thumb) 54%, transparent);
-    background-clip: padding-box;
-  }
+	.nightworkers-scrollbar::-webkit-scrollbar-thumb {
+		border: 0.125rem solid transparent;
+		border-radius: 999px;
+		background: color-mix(
+			in srgb,
+			var(--nightworkers-scrollbar-thumb) 54%,
+			transparent
+		);
+		background-clip: padding-box;
+	}
 
-  .nightworkers-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--nightworkers-scrollbar-thumb-hover) 68%, transparent);
-    background-clip: padding-box;
-  }
+	.nightworkers-scrollbar::-webkit-scrollbar-thumb:hover {
+		background: color-mix(
+			in srgb,
+			var(--nightworkers-scrollbar-thumb-hover) 68%,
+			transparent
+		);
+		background-clip: padding-box;
+	}
 
-  .nightworkers-thinking-dot {
-    animation: nightworkers-thinking-pop 1.12s ease-in-out infinite;
-  }
+	.nightworkers-thinking-dot {
+		animation: nightworkers-thinking-pop 1.12s ease-in-out infinite;
+	}
 
-  .nightworkers-artifact-code {
-    --background: #1e1e2e;
-    --foreground: #cdd6f4;
-    --card: #1e1e2e;
-    --card-foreground: #cdd6f4;
-    --muted: #181825;
-    --muted-foreground: #a6adc8;
-    --border: #313244;
-  }
+	.nightworkers-artifact-code {
+		--background: #1e1e2e;
+		--foreground: #cdd6f4;
+		--card: #1e1e2e;
+		--card-foreground: #cdd6f4;
+		--muted: #181825;
+		--muted-foreground: #a6adc8;
+		--border: #313244;
+	}
 
-  .nightworkers-artifact-code,
-  .nightworkers-artifact-code > div {
-    height: 100%;
-    min-height: 100%;
-    border: 0;
-    border-radius: 0;
-    background: #1e1e2e;
-    box-shadow: none;
-    color: #cdd6f4;
-  }
+	.nightworkers-artifact-code,
+	.nightworkers-artifact-code > div {
+		height: 100%;
+		min-height: 100%;
+		border: 0;
+		border-radius: 0;
+		background: #1e1e2e;
+		box-shadow: none;
+		color: #cdd6f4;
+	}
 
-  .nightworkers-artifact-code > div {
-    max-height: none;
-  }
+	.nightworkers-artifact-code > div {
+		max-height: none;
+	}
 
-  .nightworkers-artifact-code pre {
-    background: transparent;
-    padding-block: 1rem;
-    font-size: 0.75rem;
-  }
+	.nightworkers-artifact-code pre {
+		background: transparent;
+		padding-block: 1rem;
+		font-size: 0.75rem;
+	}
 
-  .nightworkers-artifact-code code {
-    color: #cdd6f4;
-    font-size: inherit;
-  }
+	.nightworkers-artifact-code code {
+		color: #cdd6f4;
+		font-size: inherit;
+	}
 
-  .nightworkers-artifact-code .line::before {
-    color: #7f849c;
-    font-size: 0.75rem;
-  }
+	.nightworkers-artifact-code .line::before {
+		color: #7f849c;
+		font-size: 0.75rem;
+	}
 }

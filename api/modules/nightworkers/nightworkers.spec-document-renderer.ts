@@ -1,1 +1,1 @@
-export * from '../specification/specification-document-renderer';
+export * from "../specification/specification-document-renderer";

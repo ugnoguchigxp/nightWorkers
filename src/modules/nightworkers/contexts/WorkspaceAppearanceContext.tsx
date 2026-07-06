@@ -1,130 +1,152 @@
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 import {
-  type BlueprintPreviewDesignSettings,
-  createBlueprintPreviewDesignSettings,
-} from '../../blueprint-preview/designSettings';
+	createContext,
+	type ReactNode,
+	useCallback,
+	useContext,
+	useMemo,
+	useState,
+} from "react";
+import {
+	type BlueprintPreviewDesignSettings,
+	createBlueprintPreviewDesignSettings,
+} from "../../blueprint-preview/designSettings";
 
-const STORAGE_KEY = 'nightworkers.workspaceAppearance.v1';
+const STORAGE_KEY = "nightworkers.workspaceAppearance.v1";
 
 type WorkspaceAppearanceState = {
-  settings: BlueprintPreviewDesignSettings;
-  attributes: WorkspaceAppearanceAttributes;
+	settings: BlueprintPreviewDesignSettings;
+	attributes: WorkspaceAppearanceAttributes;
 };
 
 type WorkspaceAppearanceActions = {
-  setAppearanceSettings: (settings: BlueprintPreviewDesignSettings) => void;
-  resetAppearanceSettings: () => void;
+	setAppearanceSettings: (settings: BlueprintPreviewDesignSettings) => void;
+	resetAppearanceSettings: () => void;
 };
 
 export type WorkspaceAppearanceAttributes = {
-  'data-theme': BlueprintPreviewDesignSettings['theme'];
-  'data-density': BlueprintPreviewDesignSettings['density'];
-  'data-shape': BlueprintPreviewDesignSettings['shape'];
-  'data-shadow': BlueprintPreviewDesignSettings['shadow'];
-  'data-shadow-direction': BlueprintPreviewDesignSettings['shadowDirection'];
-  'data-font': BlueprintPreviewDesignSettings['font'];
-  'data-contrast': BlueprintPreviewDesignSettings['contrast'];
-  'data-motion': BlueprintPreviewDesignSettings['motion'];
-  'data-button-variant': BlueprintPreviewDesignSettings['componentVariants']['button'];
-  'data-card-variant': BlueprintPreviewDesignSettings['componentVariants']['card'];
-  'data-table-variant': BlueprintPreviewDesignSettings['componentVariants']['table'];
-  'data-input-variant': BlueprintPreviewDesignSettings['componentVariants']['input'];
+	"data-theme": BlueprintPreviewDesignSettings["theme"];
+	"data-density": BlueprintPreviewDesignSettings["density"];
+	"data-shape": BlueprintPreviewDesignSettings["shape"];
+	"data-shadow": BlueprintPreviewDesignSettings["shadow"];
+	"data-shadow-direction": BlueprintPreviewDesignSettings["shadowDirection"];
+	"data-font": BlueprintPreviewDesignSettings["font"];
+	"data-contrast": BlueprintPreviewDesignSettings["contrast"];
+	"data-motion": BlueprintPreviewDesignSettings["motion"];
+	"data-button-variant": BlueprintPreviewDesignSettings["componentVariants"]["button"];
+	"data-card-variant": BlueprintPreviewDesignSettings["componentVariants"]["card"];
+	"data-table-variant": BlueprintPreviewDesignSettings["componentVariants"]["table"];
+	"data-input-variant": BlueprintPreviewDesignSettings["componentVariants"]["input"];
 };
 
-const WorkspaceAppearanceStateContext = createContext<WorkspaceAppearanceState | null>(null);
-const WorkspaceAppearanceActionsContext = createContext<WorkspaceAppearanceActions | null>(null);
+const WorkspaceAppearanceStateContext =
+	createContext<WorkspaceAppearanceState | null>(null);
+const WorkspaceAppearanceActionsContext =
+	createContext<WorkspaceAppearanceActions | null>(null);
 
 export function createWorkspaceAppearanceAttributes(
-  settings: BlueprintPreviewDesignSettings
+	settings: BlueprintPreviewDesignSettings,
 ): WorkspaceAppearanceAttributes {
-  return {
-    'data-theme': settings.theme,
-    'data-density': settings.density,
-    'data-shape': settings.shape,
-    'data-shadow': settings.shadow,
-    'data-shadow-direction': settings.shadowDirection,
-    'data-font': settings.font,
-    'data-contrast': settings.contrast,
-    'data-motion': settings.motion,
-    'data-button-variant': settings.componentVariants.button,
-    'data-card-variant': settings.componentVariants.card,
-    'data-table-variant': settings.componentVariants.table,
-    'data-input-variant': settings.componentVariants.input,
-  };
+	return {
+		"data-theme": settings.theme,
+		"data-density": settings.density,
+		"data-shape": settings.shape,
+		"data-shadow": settings.shadow,
+		"data-shadow-direction": settings.shadowDirection,
+		"data-font": settings.font,
+		"data-contrast": settings.contrast,
+		"data-motion": settings.motion,
+		"data-button-variant": settings.componentVariants.button,
+		"data-card-variant": settings.componentVariants.card,
+		"data-table-variant": settings.componentVariants.table,
+		"data-input-variant": settings.componentVariants.input,
+	};
 }
 
 function readStoredAppearanceSettings(): BlueprintPreviewDesignSettings {
-  if (typeof window === 'undefined') return createBlueprintPreviewDesignSettings(undefined);
+	if (typeof window === "undefined")
+		return createBlueprintPreviewDesignSettings(undefined);
 
-  try {
-    return createBlueprintPreviewDesignSettings(
-      JSON.parse(window.localStorage.getItem(STORAGE_KEY) || 'null')
-    );
-  } catch {
-    return createBlueprintPreviewDesignSettings(undefined);
-  }
+	try {
+		return createBlueprintPreviewDesignSettings(
+			JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "null"),
+		);
+	} catch {
+		return createBlueprintPreviewDesignSettings(undefined);
+	}
 }
 
 function storeAppearanceSettings(settings: BlueprintPreviewDesignSettings) {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+	if (typeof window === "undefined") return;
+	window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 }
 
 function clearStoredAppearanceSettings() {
-  if (typeof window === 'undefined') return;
-  window.localStorage.removeItem(STORAGE_KEY);
+	if (typeof window === "undefined") return;
+	window.localStorage.removeItem(STORAGE_KEY);
 }
 
-export function WorkspaceAppearanceProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<BlueprintPreviewDesignSettings>(
-    readStoredAppearanceSettings
-  );
+export function WorkspaceAppearanceProvider({
+	children,
+}: {
+	children: ReactNode;
+}) {
+	const [settings, setSettings] = useState<BlueprintPreviewDesignSettings>(
+		readStoredAppearanceSettings,
+	);
 
-  const setAppearanceSettings = useCallback((nextSettings: BlueprintPreviewDesignSettings) => {
-    const normalized = createBlueprintPreviewDesignSettings(nextSettings);
-    setSettings(normalized);
-    storeAppearanceSettings(normalized);
-  }, []);
+	const setAppearanceSettings = useCallback(
+		(nextSettings: BlueprintPreviewDesignSettings) => {
+			const normalized = createBlueprintPreviewDesignSettings(nextSettings);
+			setSettings(normalized);
+			storeAppearanceSettings(normalized);
+		},
+		[],
+	);
 
-  const resetAppearanceSettings = useCallback(() => {
-    const defaults = createBlueprintPreviewDesignSettings(undefined);
-    setSettings(defaults);
-    clearStoredAppearanceSettings();
-  }, []);
+	const resetAppearanceSettings = useCallback(() => {
+		const defaults = createBlueprintPreviewDesignSettings(undefined);
+		setSettings(defaults);
+		clearStoredAppearanceSettings();
+	}, []);
 
-  const attributes = useMemo(() => createWorkspaceAppearanceAttributes(settings), [settings]);
-  const state = useMemo<WorkspaceAppearanceState>(
-    () => ({ settings, attributes }),
-    [attributes, settings]
-  );
-  const actions = useMemo<WorkspaceAppearanceActions>(
-    () => ({ setAppearanceSettings, resetAppearanceSettings }),
-    [resetAppearanceSettings, setAppearanceSettings]
-  );
+	const attributes = useMemo(
+		() => createWorkspaceAppearanceAttributes(settings),
+		[settings],
+	);
+	const state = useMemo<WorkspaceAppearanceState>(
+		() => ({ settings, attributes }),
+		[attributes, settings],
+	);
+	const actions = useMemo<WorkspaceAppearanceActions>(
+		() => ({ setAppearanceSettings, resetAppearanceSettings }),
+		[resetAppearanceSettings, setAppearanceSettings],
+	);
 
-  return (
-    <WorkspaceAppearanceStateContext.Provider value={state}>
-      <WorkspaceAppearanceActionsContext.Provider value={actions}>
-        {children}
-      </WorkspaceAppearanceActionsContext.Provider>
-    </WorkspaceAppearanceStateContext.Provider>
-  );
+	return (
+		<WorkspaceAppearanceStateContext.Provider value={state}>
+			<WorkspaceAppearanceActionsContext.Provider value={actions}>
+				{children}
+			</WorkspaceAppearanceActionsContext.Provider>
+		</WorkspaceAppearanceStateContext.Provider>
+	);
 }
 
 export function useWorkspaceAppearanceState() {
-  const state = useContext(WorkspaceAppearanceStateContext);
-  if (!state) {
-    throw new Error('useWorkspaceAppearanceState must be used within WorkspaceAppearanceProvider');
-  }
-  return state;
+	const state = useContext(WorkspaceAppearanceStateContext);
+	if (!state) {
+		throw new Error(
+			"useWorkspaceAppearanceState must be used within WorkspaceAppearanceProvider",
+		);
+	}
+	return state;
 }
 
 export function useWorkspaceAppearanceActions() {
-  const actions = useContext(WorkspaceAppearanceActionsContext);
-  if (!actions) {
-    throw new Error(
-      'useWorkspaceAppearanceActions must be used within WorkspaceAppearanceProvider'
-    );
-  }
-  return actions;
+	const actions = useContext(WorkspaceAppearanceActionsContext);
+	if (!actions) {
+		throw new Error(
+			"useWorkspaceAppearanceActions must be used within WorkspaceAppearanceProvider",
+		);
+	}
+	return actions;
 }

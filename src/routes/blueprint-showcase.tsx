@@ -1,10 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute } from "@tanstack/react-router";
 import {
-  BlueprintSectionSampleShowcase,
-  BlueprintSectionSampleShowcaseError,
-} from '../modules/blueprint-section-sample';
+	BlueprintSectionSampleShowcase,
+	BlueprintSectionSampleShowcaseError,
+} from "../modules/blueprint-section-sample";
 
-export const Route = createFileRoute('/blueprint-showcase')({
-  component: BlueprintSectionSampleShowcase,
-  errorComponent: BlueprintSectionSampleShowcaseError,
+export const Route = createFileRoute("/blueprint-showcase")({
+	component: BlueprintSectionSampleShowcase,
+	errorComponent: BlueprintSectionSampleShowcaseError,
 });

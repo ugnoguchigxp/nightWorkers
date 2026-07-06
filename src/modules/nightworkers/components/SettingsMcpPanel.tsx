@@ -1,1 +1,1 @@
-export { SettingsMcpPanel } from '../../mcp/SettingsMcpPanel';
+export { SettingsMcpPanel } from "../../mcp/SettingsMcpPanel";

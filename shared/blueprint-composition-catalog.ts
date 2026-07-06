@@ -1,235 +1,283 @@
-import type { BlueprintNode } from './schemas/app-blueprint-ui.schema';
+import type { BlueprintNode } from "./schemas/app-blueprint-ui.schema";
 
 export type BlueprintPreviewComponentDefinition = {
-  name: string;
-  category: 'layout' | 'display' | 'input' | 'action' | 'navigation' | 'feedback';
-  description: string;
-  allowedChildren?: string[];
-  defaultProps?: Record<string, unknown>;
-  previewHints?: {
-    minWidth?: string;
-    preferredSlot?: string;
-  };
+	name: string;
+	category:
+		| "layout"
+		| "display"
+		| "input"
+		| "action"
+		| "navigation"
+		| "feedback";
+	description: string;
+	allowedChildren?: string[];
+	defaultProps?: Record<string, unknown>;
+	previewHints?: {
+		minWidth?: string;
+		preferredSlot?: string;
+	};
 };
 
 export type BlueprintSectionPresetDefinition = {
-  name: 'search_header' | 'table_workspace' | 'metrics_overview' | 'kanban_board';
-  description: string;
-  slots: Array<{
-    name: string;
-    accepts: string[];
-    cardinality: 'one' | 'many' | 'optional';
-  }>;
+	name:
+		| "search_header"
+		| "table_workspace"
+		| "metrics_overview"
+		| "kanban_board";
+	description: string;
+	slots: Array<{
+		name: string;
+		accepts: string[];
+		cardinality: "one" | "many" | "optional";
+	}>;
 };
 
 type PresetLabels = {
-  searchPlaceholder: string;
-  primarySignal: string;
-  secondarySignal: string;
-  nextAction: string;
+	searchPlaceholder: string;
+	primarySignal: string;
+	secondarySignal: string;
+	nextAction: string;
 };
 
-export const blueprintPreviewComponentCatalog: BlueprintPreviewComponentDefinition[] = [
-  component('Text', 'display', 'Render titles, labels, and short supporting copy.'),
-  component('Button', 'action', 'Render a primary or secondary command.'),
-  component('IconButton', 'action', 'Render a compact icon command.'),
-  component('Input', 'input', 'Render a single text input or search field.'),
-  component('InputGroup', 'input', 'Render grouped input controls.'),
-  component('Select', 'input', 'Render a compact option picker.'),
-  component('Checkbox', 'input', 'Render a boolean choice.'),
-  component('Switch', 'input', 'Render a binary mode toggle.'),
-  component('Card', 'display', 'Render a metric, summary, or bounded content surface.'),
-  component('Badge', 'display', 'Render a compact status or category label.'),
-  component('Avatar', 'display', 'Render a person or account marker.'),
-  component('DataTable', 'display', 'Render mock columns and rows.', [], {
-    columns: [
-      { key: 'name', label: 'Name' },
-      { key: 'status', label: 'Status' },
-      { key: 'owner', label: 'Owner' },
-    ],
-  }),
-  component('Table', 'display', 'Render mock columns and rows.'),
-  component('KanbanTable', 'display', 'Render workflow statuses as a task table.'),
-  component('List', 'display', 'Render a vertical list of mock items.'),
-  component('Tabs', 'navigation', 'Render local navigation tabs.', ['Text', 'Badge']),
-  component('Accordion', 'display', 'Render collapsible detail groups.', ['Text', 'Card']),
-  component('Alert', 'feedback', 'Render an insight, warning, or confirmation.'),
-  component('Progress', 'feedback', 'Render a bounded progress value.'),
-  component('Tooltip', 'feedback', 'Render supplementary hover content.'),
-  component('Dialog', 'feedback', 'Render a modal preview surface.'),
-  component('Sidebar', 'navigation', 'Render persistent local navigation.'),
-  component('Breadcrumb', 'navigation', 'Render location hierarchy.'),
-  component('Pagination', 'navigation', 'Render page controls.'),
-  component('Separator', 'layout', 'Render a visual divider.'),
-];
+export const blueprintPreviewComponentCatalog: BlueprintPreviewComponentDefinition[] =
+	[
+		component(
+			"Text",
+			"display",
+			"Render titles, labels, and short supporting copy.",
+		),
+		component("Button", "action", "Render a primary or secondary command."),
+		component("IconButton", "action", "Render a compact icon command."),
+		component("Input", "input", "Render a single text input or search field."),
+		component("InputGroup", "input", "Render grouped input controls."),
+		component("Select", "input", "Render a compact option picker."),
+		component("Checkbox", "input", "Render a boolean choice."),
+		component("Switch", "input", "Render a binary mode toggle."),
+		component(
+			"Card",
+			"display",
+			"Render a metric, summary, or bounded content surface.",
+		),
+		component("Badge", "display", "Render a compact status or category label."),
+		component("Avatar", "display", "Render a person or account marker."),
+		component("DataTable", "display", "Render mock columns and rows.", [], {
+			columns: [
+				{ key: "name", label: "Name" },
+				{ key: "status", label: "Status" },
+				{ key: "owner", label: "Owner" },
+			],
+		}),
+		component("Table", "display", "Render mock columns and rows."),
+		component(
+			"KanbanTable",
+			"display",
+			"Render workflow statuses as a task table.",
+		),
+		component("List", "display", "Render a vertical list of mock items."),
+		component("Tabs", "navigation", "Render local navigation tabs.", [
+			"Text",
+			"Badge",
+		]),
+		component("Accordion", "display", "Render collapsible detail groups.", [
+			"Text",
+			"Card",
+		]),
+		component(
+			"Alert",
+			"feedback",
+			"Render an insight, warning, or confirmation.",
+		),
+		component("Progress", "feedback", "Render a bounded progress value."),
+		component("Tooltip", "feedback", "Render supplementary hover content."),
+		component("Dialog", "feedback", "Render a modal preview surface."),
+		component("Sidebar", "navigation", "Render persistent local navigation."),
+		component("Breadcrumb", "navigation", "Render location hierarchy."),
+		component("Pagination", "navigation", "Render page controls."),
+		component("Separator", "layout", "Render a visual divider."),
+	];
 
-export const blueprintSectionPresetCatalog: BlueprintSectionPresetDefinition[] = [
-  {
-    name: 'search_header',
-    description: 'Title, search input, optional filters, and action buttons.',
-    slots: [
-      slot('title', ['Text'], 'one'),
-      slot('searchInput', ['Input', 'InputGroup'], 'one'),
-      slot('filters', ['Select', 'Checkbox', 'Switch', 'Tabs'], 'many'),
-      slot('actions', ['Button', 'IconButton'], 'many'),
-    ],
-  },
-  {
-    name: 'table_workspace',
-    description: 'Toolbar, optional filters/actions, and a mock data table.',
-    slots: [
-      slot('toolbar', ['Text', 'Input', 'Select', 'Button'], 'optional'),
-      slot('filters', ['Input', 'Select', 'Checkbox', 'Switch'], 'many'),
-      slot('table', ['DataTable', 'Table'], 'one'),
-      slot('emptyState', ['Alert', 'Card'], 'optional'),
-    ],
-  },
-  {
-    name: 'metrics_overview',
-    description: 'Metric cards and optional supporting insight.',
-    slots: [
-      slot('metrics', ['Card', 'Badge', 'Progress'], 'many'),
-      slot('insight', ['Alert', 'Card'], 'optional'),
-    ],
-  },
-  {
-    name: 'kanban_board',
-    description: 'Workflow statuses rendered as a task table.',
-    slots: [
-      slot('toolbar', ['Text', 'Input', 'Select', 'Button'], 'optional'),
-      slot('columns', ['Table'], 'one'),
-    ],
-  },
-];
+export const blueprintSectionPresetCatalog: BlueprintSectionPresetDefinition[] =
+	[
+		{
+			name: "search_header",
+			description: "Title, search input, optional filters, and action buttons.",
+			slots: [
+				slot("title", ["Text"], "one"),
+				slot("searchInput", ["Input", "InputGroup"], "one"),
+				slot("filters", ["Select", "Checkbox", "Switch", "Tabs"], "many"),
+				slot("actions", ["Button", "IconButton"], "many"),
+			],
+		},
+		{
+			name: "table_workspace",
+			description: "Toolbar, optional filters/actions, and a mock data table.",
+			slots: [
+				slot("toolbar", ["Text", "Input", "Select", "Button"], "optional"),
+				slot("filters", ["Input", "Select", "Checkbox", "Switch"], "many"),
+				slot("table", ["DataTable", "Table"], "one"),
+				slot("emptyState", ["Alert", "Card"], "optional"),
+			],
+		},
+		{
+			name: "metrics_overview",
+			description: "Metric cards and optional supporting insight.",
+			slots: [
+				slot("metrics", ["Card", "Badge", "Progress"], "many"),
+				slot("insight", ["Alert", "Card"], "optional"),
+			],
+		},
+		{
+			name: "kanban_board",
+			description: "Workflow statuses rendered as a task table.",
+			slots: [
+				slot("toolbar", ["Text", "Input", "Select", "Button"], "optional"),
+				slot("columns", ["Table"], "one"),
+			],
+		},
+	];
 
 export function createPresetBlueprintNodeTree(input: {
-  preset: string;
-  sectionId?: string;
-  sectionName?: string;
-  props?: Record<string, unknown>;
-  labels: PresetLabels;
+	preset: string;
+	sectionId?: string;
+	sectionName?: string;
+	props?: Record<string, unknown>;
+	labels: PresetLabels;
 }): BlueprintNode {
-  const props = input.props || {};
-  const title = String(props.title || input.sectionName || input.sectionId || 'Section');
+	const props = input.props || {};
+	const title = String(
+		props.title || input.sectionName || input.sectionId || "Section",
+	);
 
-  if (input.preset === 'search_header') {
-    return layoutNode('root', 'stack', { gap: 'md' }, [
-      layoutNode('controls', 'row', { gap: 'sm', align: 'stretch' }, [
-        componentNode(
-          'searchInput',
-          'Input',
-          {
-            placeholder: String(
-              props.placeholder || props.searchPlaceholder || input.labels.searchPlaceholder
-            ),
-          },
-          { width: 'full' }
-        ),
-        layoutNode(
-          'actions',
-          'row',
-          { gap: 'sm' },
-          objectArray(props.actions).map((action, index) =>
-            componentNode(String(action.id || `action-${index + 1}`), 'Button', action)
-          )
-        ),
-      ]),
-    ]);
-  }
+	if (input.preset === "search_header") {
+		return layoutNode("root", "stack", { gap: "md" }, [
+			layoutNode("controls", "row", { gap: "sm", align: "stretch" }, [
+				componentNode(
+					"searchInput",
+					"Input",
+					{
+						placeholder: String(
+							props.placeholder ||
+								props.searchPlaceholder ||
+								input.labels.searchPlaceholder,
+						),
+					},
+					{ width: "full" },
+				),
+				layoutNode(
+					"actions",
+					"row",
+					{ gap: "sm" },
+					objectArray(props.actions).map((action, index) =>
+						componentNode(
+							String(action.id || `action-${index + 1}`),
+							"Button",
+							action,
+						),
+					),
+				),
+			]),
+		]);
+	}
 
-  if (input.preset === 'table_workspace') {
-    return layoutNode('root', 'stack', { gap: 'md' }, [
-      layoutNode('toolbar', 'row', { gap: 'sm', align: 'center' }, [
-        componentNode('title', 'Text', { title }),
-        layoutNode(
-          'actions',
-          'row',
-          { gap: 'sm' },
-          objectArray(props.actions).map((action, index) =>
-            componentNode(String(action.id || `action-${index + 1}`), 'Button', action)
-          )
-        ),
-      ]),
-      componentNode('table', 'DataTable', props),
-    ]);
-  }
+	if (input.preset === "table_workspace") {
+		return layoutNode("root", "stack", { gap: "md" }, [
+			layoutNode("toolbar", "row", { gap: "sm", align: "center" }, [
+				componentNode("title", "Text", { title }),
+				layoutNode(
+					"actions",
+					"row",
+					{ gap: "sm" },
+					objectArray(props.actions).map((action, index) =>
+						componentNode(
+							String(action.id || `action-${index + 1}`),
+							"Button",
+							action,
+						),
+					),
+				),
+			]),
+			componentNode("table", "DataTable", props),
+		]);
+	}
 
-  if (input.preset === 'metrics_overview') {
-    const items = objectArray(props.items || props.metrics || props.cards);
-    const metrics =
-      items.length > 0
-        ? items
-        : [
-            { label: input.labels.primarySignal, value: '-' },
-            { label: input.labels.secondarySignal, value: '-' },
-            { label: input.labels.nextAction, value: '-' },
-          ];
-    return layoutNode(
-      'metrics',
-      'grid',
-      { columns: Math.min(Math.max(metrics.length, 1), 4), gap: 'md' },
-      metrics.map((item, index) =>
-        componentNode(String(item.id || `metric-${index + 1}`), 'Card', item)
-      )
-    );
-  }
+	if (input.preset === "metrics_overview") {
+		const items = objectArray(props.items || props.metrics || props.cards);
+		const metrics =
+			items.length > 0
+				? items
+				: [
+						{ label: input.labels.primarySignal, value: "-" },
+						{ label: input.labels.secondarySignal, value: "-" },
+						{ label: input.labels.nextAction, value: "-" },
+					];
+		return layoutNode(
+			"metrics",
+			"grid",
+			{ columns: Math.min(Math.max(metrics.length, 1), 4), gap: "md" },
+			metrics.map((item, index) =>
+				componentNode(String(item.id || `metric-${index + 1}`), "Card", item),
+			),
+		);
+	}
 
-  if (input.preset === 'kanban_board') {
-    return componentNode('kanban-table', 'KanbanTable', {
-      columns: objectArray(props.columns),
-    });
-  }
+	if (input.preset === "kanban_board") {
+		return componentNode("kanban-table", "KanbanTable", {
+			columns: objectArray(props.columns),
+		});
+	}
 
-  return layoutNode('root', 'stack', { gap: 'md' }, [componentNode('fallback', 'Card', { title })]);
+	return layoutNode("root", "stack", { gap: "md" }, [
+		componentNode("fallback", "Card", { title }),
+	]);
 }
 
 function component(
-  name: string,
-  category: BlueprintPreviewComponentDefinition['category'],
-  description: string,
-  allowedChildren: string[] = [],
-  defaultProps: Record<string, unknown> = {}
+	name: string,
+	category: BlueprintPreviewComponentDefinition["category"],
+	description: string,
+	allowedChildren: string[] = [],
+	defaultProps: Record<string, unknown> = {},
 ): BlueprintPreviewComponentDefinition {
-  return { name, category, description, allowedChildren, defaultProps };
+	return { name, category, description, allowedChildren, defaultProps };
 }
 
 function slot(
-  name: string,
-  accepts: string[],
-  cardinality: 'one' | 'many' | 'optional'
-): BlueprintSectionPresetDefinition['slots'][number] {
-  return { name, accepts, cardinality };
+	name: string,
+	accepts: string[],
+	cardinality: "one" | "many" | "optional",
+): BlueprintSectionPresetDefinition["slots"][number] {
+	return { name, accepts, cardinality };
 }
 
 function layoutNode(
-  id: string,
-  layout: string,
-  props: Record<string, unknown>,
-  children: BlueprintNode[]
+	id: string,
+	layout: string,
+	props: Record<string, unknown>,
+	children: BlueprintNode[],
 ) {
-  return { kind: 'layout', id, layout, props, children } as BlueprintNode;
+	return { kind: "layout", id, layout, props, children } as BlueprintNode;
 }
 
 function componentNode(
-  id: string,
-  component: string,
-  props: Record<string, unknown>,
-  layout?: Record<string, unknown>
+	id: string,
+	component: string,
+	props: Record<string, unknown>,
+	layout?: Record<string, unknown>,
 ) {
-  return {
-    kind: 'component',
-    id,
-    component,
-    props,
-    layout: layout || {},
-    children: [],
-  } as BlueprintNode;
+	return {
+		kind: "component",
+		id,
+		component,
+		props,
+		layout: layout || {},
+		children: [],
+	} as BlueprintNode;
 }
 
 function objectArray(value: unknown): Array<Record<string, unknown>> {
-  return Array.isArray(value)
-    ? value.filter((item): item is Record<string, unknown> =>
-        Boolean(item && typeof item === 'object' && !Array.isArray(item))
-      )
-    : [];
+	return Array.isArray(value)
+		? value.filter((item): item is Record<string, unknown> =>
+				Boolean(item && typeof item === "object" && !Array.isArray(item)),
+			)
+		: [];
 }

@@ -1,7 +1,7 @@
-import { client } from './client';
+import { client } from "./client";
 
 export async function ensureProjectEvaluationTables() {
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS project_evaluation_runs (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -22,18 +22,22 @@ export async function ensureProjectEvaluationTables() {
       FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS project_eval_runs_repository_created_idx ON project_evaluation_runs (repository_id, created_at)'
-  );
-  const evaluationRunColumns = await client.execute('PRAGMA table_info(project_evaluation_runs)');
-  const hasEvaluationStatusColumn = evaluationRunColumns.rows.some((row) => row.name === 'status');
-  if (evaluationRunColumns.rows.length > 0 && !hasEvaluationStatusColumn) {
-    await client.execute(
-      "ALTER TABLE project_evaluation_runs ADD COLUMN status text DEFAULT 'completed' NOT NULL"
-    );
-  }
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS project_eval_runs_repository_created_idx ON project_evaluation_runs (repository_id, created_at)",
+	);
+	const evaluationRunColumns = await client.execute(
+		"PRAGMA table_info(project_evaluation_runs)",
+	);
+	const hasEvaluationStatusColumn = evaluationRunColumns.rows.some(
+		(row) => row.name === "status",
+	);
+	if (evaluationRunColumns.rows.length > 0 && !hasEvaluationStatusColumn) {
+		await client.execute(
+			"ALTER TABLE project_evaluation_runs ADD COLUMN status text DEFAULT 'completed' NOT NULL",
+		);
+	}
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS project_evaluation_dimensions (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -49,11 +53,11 @@ export async function ensureProjectEvaluationTables() {
       FOREIGN KEY (evaluation_id) REFERENCES project_evaluation_runs(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS project_eval_dimensions_evaluation_idx ON project_evaluation_dimensions (evaluation_id)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS project_eval_dimensions_evaluation_idx ON project_evaluation_dimensions (evaluation_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS project_evaluation_activity_events (
       id text PRIMARY KEY NOT NULL,
       evaluation_id text NOT NULL,
@@ -68,11 +72,11 @@ export async function ensureProjectEvaluationTables() {
       FOREIGN KEY (evaluation_id) REFERENCES project_evaluation_runs(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS project_eval_activity_evaluation_seq_idx ON project_evaluation_activity_events (evaluation_id, seq)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS project_eval_activity_evaluation_seq_idx ON project_evaluation_activity_events (evaluation_id, seq)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS project_improvement_ideas (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -87,11 +91,11 @@ export async function ensureProjectEvaluationTables() {
       FOREIGN KEY (evaluation_id) REFERENCES project_evaluation_runs(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS project_improvement_ideas_evaluation_idx ON project_improvement_ideas (evaluation_id)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS project_improvement_ideas_evaluation_idx ON project_improvement_ideas (evaluation_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS project_improvement_idea_score_impacts (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -105,11 +109,11 @@ export async function ensureProjectEvaluationTables() {
       FOREIGN KEY (idea_id) REFERENCES project_improvement_ideas(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS project_improvement_score_impacts_idea_idx ON project_improvement_idea_score_impacts (idea_id)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS project_improvement_score_impacts_idea_idx ON project_improvement_idea_score_impacts (idea_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS project_evaluation_task_links (
       id text PRIMARY KEY NOT NULL,
       evaluation_id text NOT NULL,
@@ -121,13 +125,13 @@ export async function ensureProjectEvaluationTables() {
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS project_eval_task_links_evaluation_idx ON project_evaluation_task_links (evaluation_id)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS project_eval_task_links_idea_idx ON project_evaluation_task_links (idea_id)'
-  );
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS project_eval_task_links_evaluation_idea_uidx ON project_evaluation_task_links (evaluation_id, idea_id)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS project_eval_task_links_evaluation_idx ON project_evaluation_task_links (evaluation_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS project_eval_task_links_idea_idx ON project_evaluation_task_links (idea_id)",
+	);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS project_eval_task_links_evaluation_idea_uidx ON project_evaluation_task_links (evaluation_id, idea_id)",
+	);
 }

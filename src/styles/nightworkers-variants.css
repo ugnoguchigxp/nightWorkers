@@ -1,112 +1,117 @@
 .nightworkers-shell[data-density="default"] {
-  --nw-control-height: 2.25rem;
-  --nw-page-padding: 1.75rem;
-  --nw-gap: 0.875rem;
-  --nw-font-size: 0.875rem;
+	--nw-control-height: 2.25rem;
+	--nw-page-padding: 1.75rem;
+	--nw-gap: 0.875rem;
+	--nw-font-size: 0.875rem;
 }
 
 .nightworkers-shell[data-density="comfortable"] {
-  --nw-control-height: 2.75rem;
-  --nw-page-padding: 2rem;
-  --nw-gap: 1rem;
-  --nw-font-size: 0.9375rem;
+	--nw-control-height: 2.75rem;
+	--nw-page-padding: 2rem;
+	--nw-gap: 1rem;
+	--nw-font-size: 0.9375rem;
 }
 
 .nightworkers-shell[data-shape="sharp"] {
-  --nw-radius: 0;
-  --nw-control-radius: 0;
+	--nw-radius: 0;
+	--nw-control-radius: 0;
 }
 
 .nightworkers-shell[data-shape="rounded"] {
-  --nw-radius: 0.875rem;
-  --nw-control-radius: 0.75rem;
+	--nw-radius: 0.875rem;
+	--nw-control-radius: 0.75rem;
 }
 
 .nightworkers-shell[data-shape="pill"] {
-  --nw-radius: 0.5rem;
-  --nw-control-radius: 9999px;
+	--nw-radius: 0.5rem;
+	--nw-control-radius: 9999px;
 }
 
 .nightworkers-shell[data-shadow="none"] {
-  --nw-shadow: none;
+	--nw-shadow: none;
 }
 
 .nightworkers-shell[data-shadow="medium"] {
-  --nw-shadow:
-    calc(var(--nw-shadow-x) * 4) calc(var(--nw-shadow-y) * 4) 18px -12px rgb(0 0 0 / 0.38),
-    calc(var(--nw-shadow-x) * 2) calc(var(--nw-shadow-y) * 2) 8px -6px rgb(0 0 0 / 0.3);
+	--nw-shadow:
+		calc(var(--nw-shadow-x) * 4) calc(var(--nw-shadow-y) * 4) 18px -12px
+		rgb(0 0 0 / 0.38),
+		calc(var(--nw-shadow-x) * 2) calc(var(--nw-shadow-y) * 2) 8px -6px
+		rgb(0 0 0 / 0.3);
 }
 
 .nightworkers-shell[data-shadow="strong"] {
-  --nw-shadow:
-    calc(var(--nw-shadow-x) * 7) calc(var(--nw-shadow-y) * 7) 40px -20px rgb(0 0 0 / 0.48),
-    calc(var(--nw-shadow-x) * 4) calc(var(--nw-shadow-y) * 4) 18px -16px rgb(0 0 0 / 0.38);
+	--nw-shadow:
+		calc(var(--nw-shadow-x) * 7) calc(var(--nw-shadow-y) * 7) 40px -20px
+		rgb(0 0 0 / 0.48),
+		calc(var(--nw-shadow-x) * 4) calc(var(--nw-shadow-y) * 4) 18px -16px
+		rgb(0 0 0 / 0.38);
 }
 
 .nightworkers-shell[data-shadow-direction="45deg"] {
-  --nw-shadow-x: 1px;
-  --nw-shadow-y: 1px;
+	--nw-shadow-x: 1px;
+	--nw-shadow-y: 1px;
 }
 
 .nightworkers-shell[data-shadow-direction="90deg"] {
-  --nw-shadow-x: 1px;
-  --nw-shadow-y: 0px;
+	--nw-shadow-x: 1px;
+	--nw-shadow-y: 0px;
 }
 
 .nightworkers-shell[data-shadow-direction="135deg"] {
-  --nw-shadow-x: 1px;
-  --nw-shadow-y: -1px;
+	--nw-shadow-x: 1px;
+	--nw-shadow-y: -1px;
 }
 
 .nightworkers-shell[data-shadow-direction="180deg"] {
-  --nw-shadow-x: 0px;
-  --nw-shadow-y: -1px;
+	--nw-shadow-x: 0px;
+	--nw-shadow-y: -1px;
 }
 
 .nightworkers-shell[data-shadow-direction="225deg"] {
-  --nw-shadow-x: -1px;
-  --nw-shadow-y: -1px;
+	--nw-shadow-x: -1px;
+	--nw-shadow-y: -1px;
 }
 
 .nightworkers-shell[data-shadow-direction="270deg"] {
-  --nw-shadow-x: -1px;
-  --nw-shadow-y: 0px;
+	--nw-shadow-x: -1px;
+	--nw-shadow-y: 0px;
 }
 
 .nightworkers-shell[data-shadow-direction="315deg"] {
-  --nw-shadow-x: -1px;
-  --nw-shadow-y: 1px;
+	--nw-shadow-x: -1px;
+	--nw-shadow-y: 1px;
 }
 
 .nightworkers-shell[data-font="system"] {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	font-family:
+		system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .nightworkers-shell[data-font="serif"] {
-  font-family: Georgia, "Times New Roman", serif;
+	font-family: Georgia, "Times New Roman", serif;
 }
 
 .nightworkers-shell[data-font="mono"] {
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
 .nightworkers-shell[data-contrast="high"] {
-  --nw-text: hsl(0 0% 100%);
-  --nw-muted-text: hsl(210 30% 84%);
-  --nw-border: hsl(210 25% 58% / 0.96);
+	--nw-text: hsl(0 0% 100%);
+	--nw-muted-text: hsl(210 30% 84%);
+	--nw-border: hsl(210 25% 58% / 0.96);
 }
 
-.nightworkers-shell[data-contrast="high"][data-theme]:not([data-theme="dark"]):not(
-    [data-theme="campfire"]
-  ) {
-  --nw-text: hsl(210 30% 4%);
-  --nw-muted-text: hsl(210 15% 24%);
-  --nw-border: hsl(210 18% 42% / 0.96);
+.nightworkers-shell[data-contrast="high"][data-theme]:not(
+		[data-theme="dark"]
+	):not([data-theme="campfire"]) {
+	--nw-text: hsl(210 30% 4%);
+	--nw-muted-text: hsl(210 15% 24%);
+	--nw-border: hsl(210 18% 42% / 0.96);
 }
 
 .nightworkers-shell[data-motion="reduced"],
 .nightworkers-shell[data-motion="reduced"] * {
-  scroll-behavior: auto;
-  transition-duration: 0ms;
-  animation-duration: 0ms;
+	scroll-behavior: auto;
+	transition-duration: 0ms;
+	animation-duration: 0ms;
 }

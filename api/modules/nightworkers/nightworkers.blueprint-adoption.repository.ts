@@ -1,1 +1,1 @@
-export * from '../blueprint/blueprint.repository';
+export * from "../blueprint/blueprint.repository";

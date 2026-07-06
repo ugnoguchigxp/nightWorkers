@@ -1,134 +1,169 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 import {
-  buildNightWorkersCodexToolApprovalConfig,
-  buildNightWorkersCodexToolConfigLines,
-  nightWorkersCheckBoundaryInputSchema,
-  nightWorkersClassifyGoalInputSchema,
-  nightWorkersCompileModuleContextInputSchema,
-  nightWorkersGetModuleOntologyInputSchema,
-  nightWorkersGetVerificationPlanInputSchema,
-  nightWorkersImportProjectInputSchema,
-  nightWorkersListOntologyModulesInputSchema,
-  nightWorkersReadCurrentSpecificationInputSchema,
-  nightWorkersTodoListInputSchema,
-  toNightWorkersJsonSchema,
-} from '../api/mcp/nightworkers-tool-manifest';
-import { buildCodexRuntimeSdkOptions } from '../api/services/agent-runtime/codex-runtime-config';
-import { getAllowedToolsForJobType } from '../api/services/supervisor/prompt-tool-registry';
+	buildNightWorkersCodexToolApprovalConfig,
+	buildNightWorkersCodexToolConfigLines,
+	nightWorkersCheckBoundaryInputSchema,
+	nightWorkersClassifyGoalInputSchema,
+	nightWorkersCompileModuleContextInputSchema,
+	nightWorkersGetModuleOntologyInputSchema,
+	nightWorkersGetVerificationPlanInputSchema,
+	nightWorkersImportProjectInputSchema,
+	nightWorkersListOntologyModulesInputSchema,
+	nightWorkersReadCurrentSpecificationInputSchema,
+	nightWorkersTodoListInputSchema,
+	toNightWorkersJsonSchema,
+} from "../api/mcp/nightworkers-tool-manifest";
+import { buildCodexRuntimeSdkOptions } from "../api/services/agent-runtime/codex-runtime-config";
+import { getAllowedToolsForJobType } from "../api/services/supervisor/prompt-tool-registry";
 
-describe('nightworkers MCP manifest', () => {
-  it('drives the runtime tool approval config', () => {
-    const options = buildCodexRuntimeSdkOptions({
-      env: {
-        PATH: '/usr/bin',
-        NIGHTWORKERS_CODEX_MCP_URL: 'http://127.0.0.1:39173/mcp/nightworkers',
-      } as never,
-    });
+describe("nightworkers MCP manifest", () => {
+	it("drives the runtime tool approval config", () => {
+		const options = buildCodexRuntimeSdkOptions({
+			env: {
+				PATH: "/usr/bin",
+				NIGHTWORKERS_CODEX_MCP_URL: "http://127.0.0.1:39173/mcp/nightworkers",
+			} as never,
+		});
 
-    expect(options.config).toMatchObject({
-      mcp_servers: {
-        nightworkers: {
-          transport: 'streamable_http',
-          url: 'http://127.0.0.1:39173/mcp/nightworkers',
-          tools: buildNightWorkersCodexToolApprovalConfig(),
-        },
-      },
-    });
-  });
+		expect(options.config).toMatchObject({
+			mcp_servers: {
+				nightworkers: {
+					transport: "streamable_http",
+					url: "http://127.0.0.1:39173/mcp/nightworkers",
+					tools: buildNightWorkersCodexToolApprovalConfig(),
+				},
+			},
+		});
+	});
 
-  it('adds per-run request context to the runtime MCP URL', () => {
-    const options = buildCodexRuntimeSdkOptions({
-      env: {
-        PATH: '/usr/bin',
-        NIGHTWORKERS_CODEX_MCP_URL: 'http://127.0.0.1:39173/mcp/nightworkers',
-        NIGHTWORKERS_TASK_ID: 'task-123',
-        NIGHTWORKERS_RUN_ID: 'run-456',
-        NIGHTWORKERS_EXECUTION_MODE: 'implementation',
-      } as never,
-    });
+	it("adds per-run request context to the runtime MCP URL", () => {
+		const options = buildCodexRuntimeSdkOptions({
+			env: {
+				PATH: "/usr/bin",
+				NIGHTWORKERS_CODEX_MCP_URL: "http://127.0.0.1:39173/mcp/nightworkers",
+				NIGHTWORKERS_TASK_ID: "task-123",
+				NIGHTWORKERS_RUN_ID: "run-456",
+				NIGHTWORKERS_EXECUTION_MODE: "implementation",
+			} as never,
+		});
 
-    const url = new URL(
-      String(
-        (options.config as { mcp_servers?: { nightworkers?: { url?: unknown } } } | undefined)
-          ?.mcp_servers?.nightworkers?.url ?? ''
-      )
-    );
+		const url = new URL(
+			String(
+				(
+					options.config as
+						| { mcp_servers?: { nightworkers?: { url?: unknown } } }
+						| undefined
+				)?.mcp_servers?.nightworkers?.url ?? "",
+			),
+		);
 
-    expect(url.origin + url.pathname).toBe('http://127.0.0.1:39173/mcp/nightworkers');
-    expect(url.searchParams.get('taskId')).toBe('task-123');
-    expect(url.searchParams.get('runId')).toBe('run-456');
-    expect(url.searchParams.get('executionMode')).toBe('implementation');
-  });
+		expect(url.origin + url.pathname).toBe(
+			"http://127.0.0.1:39173/mcp/nightworkers",
+		);
+		expect(url.searchParams.get("taskId")).toBe("task-123");
+		expect(url.searchParams.get("runId")).toBe("run-456");
+		expect(url.searchParams.get("executionMode")).toBe("implementation");
+	});
 
-  it('drives the installer tool config lines', () => {
-    const lines = buildNightWorkersCodexToolConfigLines().join('\n');
+	it("drives the installer tool config lines", () => {
+		const lines = buildNightWorkersCodexToolConfigLines().join("\n");
 
-    expect(lines).toContain('[mcp_servers.nightworkers.tools.read_current_specification]');
-    expect(lines).toContain('[mcp_servers.nightworkers.tools.list_recent_specifications]');
-    expect(lines).toContain('[mcp_servers.nightworkers.tools.todo_list]');
-    expect(lines).toContain('[mcp_servers.nightworkers.tools.import_project]');
-    expect(lines).toContain('[mcp_servers.nightworkers.tools.list_modules]');
-    expect(lines).toContain('[mcp_servers.nightworkers.tools.get_module_ontology]');
-    expect(lines).toContain('[mcp_servers.nightworkers.tools.classify_goal]');
-    expect(lines).toContain('[mcp_servers.nightworkers.tools.compile_module_context]');
-    expect(lines).toContain('[mcp_servers.nightworkers.tools.check_boundary]');
-    expect(lines).toContain('[mcp_servers.nightworkers.tools.get_verification_plan]');
-    expect(lines).not.toContain('replace_todo_list');
-  });
+		expect(lines).toContain(
+			"[mcp_servers.nightworkers.tools.read_current_specification]",
+		);
+		expect(lines).toContain(
+			"[mcp_servers.nightworkers.tools.list_recent_specifications]",
+		);
+		expect(lines).toContain("[mcp_servers.nightworkers.tools.todo_list]");
+		expect(lines).toContain("[mcp_servers.nightworkers.tools.import_project]");
+		expect(lines).toContain("[mcp_servers.nightworkers.tools.list_modules]");
+		expect(lines).toContain(
+			"[mcp_servers.nightworkers.tools.get_module_ontology]",
+		);
+		expect(lines).toContain("[mcp_servers.nightworkers.tools.classify_goal]");
+		expect(lines).toContain(
+			"[mcp_servers.nightworkers.tools.compile_module_context]",
+		);
+		expect(lines).toContain("[mcp_servers.nightworkers.tools.check_boundary]");
+		expect(lines).toContain(
+			"[mcp_servers.nightworkers.tools.get_verification_plan]",
+		);
+		expect(lines).not.toContain("replace_todo_list");
+	});
 
-  it('drives the supervisor prompt schemas for shared NightWorkers tools', () => {
-    const majorTools = getAllowedToolsForJobType('major_code_edit');
-    const readCurrentSpecification = majorTools.find(
-      (tool) => tool.name === 'read_current_specification'
-    );
-    const importProject = majorTools.find((tool) => tool.name === 'import_project');
-    const todoList = majorTools.find((tool) => tool.name === 'todo_list');
+	it("drives the supervisor prompt schemas for shared NightWorkers tools", () => {
+		const majorTools = getAllowedToolsForJobType("major_code_edit");
+		const readCurrentSpecification = majorTools.find(
+			(tool) => tool.name === "read_current_specification",
+		);
+		const importProject = majorTools.find(
+			(tool) => tool.name === "import_project",
+		);
+		const todoList = majorTools.find((tool) => tool.name === "todo_list");
 
-    expect(readCurrentSpecification?.inputSchema).toEqual(
-      toNightWorkersJsonSchema(nightWorkersReadCurrentSpecificationInputSchema)
-    );
-    expect(
-      (readCurrentSpecification?.inputSchema.properties as Record<string, unknown> | undefined)
-        ?.includeDesignContext
-    ).toMatchObject({ type: 'boolean' });
-    expect(importProject?.inputSchema).toEqual(
-      toNightWorkersJsonSchema(nightWorkersImportProjectInputSchema)
-    );
-    const sharedTodoSchema = toNightWorkersJsonSchema(nightWorkersTodoListInputSchema);
-    expect(
-      (
-        (todoList?.inputSchema.properties as Record<string, unknown> | undefined)?.operation as
-          | { enum?: unknown[] }
-          | undefined
-      )?.enum ?? []
-    ).toEqual(['replace', 'start', 'done', 'block', 'fail']);
-    expect(
-      (
-        (sharedTodoSchema.properties as Record<string, unknown> | undefined)?.operation as
-          | { enum?: unknown[] }
-          | undefined
-      )?.enum ?? []
-    ).toContain('list');
-  });
+		expect(readCurrentSpecification?.inputSchema).toEqual(
+			toNightWorkersJsonSchema(nightWorkersReadCurrentSpecificationInputSchema),
+		);
+		expect(
+			(
+				readCurrentSpecification?.inputSchema.properties as
+					| Record<string, unknown>
+					| undefined
+			)?.includeDesignContext,
+		).toMatchObject({ type: "boolean" });
+		expect(importProject?.inputSchema).toEqual(
+			toNightWorkersJsonSchema(nightWorkersImportProjectInputSchema),
+		);
+		const sharedTodoSchema = toNightWorkersJsonSchema(
+			nightWorkersTodoListInputSchema,
+		);
+		expect(
+			(
+				(
+					todoList?.inputSchema.properties as
+						| Record<string, unknown>
+						| undefined
+				)?.operation as { enum?: unknown[] } | undefined
+			)?.enum ?? [],
+		).toEqual(["replace", "start", "done", "block", "fail"]);
+		expect(
+			(
+				(sharedTodoSchema.properties as Record<string, unknown> | undefined)
+					?.operation as { enum?: unknown[] } | undefined
+			)?.enum ?? [],
+		).toContain("list");
+	});
 
-  it('defines JSON schemas for ontology MCP tools', () => {
-    expect(toNightWorkersJsonSchema(nightWorkersListOntologyModulesInputSchema)).toMatchObject({
-      type: 'object',
-    });
-    expect(toNightWorkersJsonSchema(nightWorkersGetModuleOntologyInputSchema)).toMatchObject({
-      required: ['module'],
-    });
-    expect(toNightWorkersJsonSchema(nightWorkersClassifyGoalInputSchema)).toMatchObject({
-      required: ['goal'],
-    });
-    expect(toNightWorkersJsonSchema(nightWorkersCompileModuleContextInputSchema)).toMatchObject({
-      required: ['goal'],
-    });
-    expect(toNightWorkersJsonSchema(nightWorkersCheckBoundaryInputSchema)).toMatchObject({
-      required: ['primaryModule', 'plannedFiles'],
-    });
-    expect(toNightWorkersJsonSchema(nightWorkersGetVerificationPlanInputSchema)).toMatchObject({
-      required: ['primaryModule'],
-    });
-  });
+	it("defines JSON schemas for ontology MCP tools", () => {
+		expect(
+			toNightWorkersJsonSchema(nightWorkersListOntologyModulesInputSchema),
+		).toMatchObject({
+			type: "object",
+		});
+		expect(
+			toNightWorkersJsonSchema(nightWorkersGetModuleOntologyInputSchema),
+		).toMatchObject({
+			required: ["module"],
+		});
+		expect(
+			toNightWorkersJsonSchema(nightWorkersClassifyGoalInputSchema),
+		).toMatchObject({
+			required: ["goal"],
+		});
+		expect(
+			toNightWorkersJsonSchema(nightWorkersCompileModuleContextInputSchema),
+		).toMatchObject({
+			required: ["goal"],
+		});
+		expect(
+			toNightWorkersJsonSchema(nightWorkersCheckBoundaryInputSchema),
+		).toMatchObject({
+			required: ["primaryModule", "plannedFiles"],
+		});
+		expect(
+			toNightWorkersJsonSchema(nightWorkersGetVerificationPlanInputSchema),
+		).toMatchObject({
+			required: ["primaryModule"],
+		});
+	});
 });

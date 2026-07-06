@@ -1,7 +1,7 @@
-import { navigationSample } from './navigationSample';
-import type { SectionSampleDefinition } from './types';
+import { navigationSample } from "./navigationSample";
+import type { SectionSampleDefinition } from "./types";
 
 export const explorerSidebarSectionSample: SectionSampleDefinition = {
-  name: 'ExplorerSidebarSection',
-  props: navigationSample,
+	name: "ExplorerSidebarSection",
+	props: navigationSample,
 };

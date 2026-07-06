@@ -1,410 +1,415 @@
 .blueprint-preview {
-  --background: hsl(0 0% 100%);
-  --foreground: hsl(210 20% 10%);
-  --card: hsl(0 0% 98%);
-  --card-foreground: hsl(210 20% 10%);
-  --primary: hsl(210 62% 49%);
-  --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(210 24% 94%);
-  --secondary-foreground: hsl(210 20% 10%);
-  --muted: hsl(210 24% 94%);
-  --muted-foreground: hsl(210 10% 42%);
-  --accent: hsl(210 24% 94%);
-  --accent-foreground: hsl(210 20% 10%);
-  --border: hsl(210 16% 82%);
-  --input: hsl(210 16% 82%);
-  --ring: hsl(210 62% 49%);
-  --radius: 0.5rem;
-  --blueprint-preview-surface-radius: var(--radius);
-  --blueprint-preview-control-radius: calc(var(--radius) - 0.125rem);
-  --blueprint-preview-shadow-x: 0px;
-  --blueprint-preview-shadow-y: 1px;
-  --blueprint-preview-shadow:
-    var(--blueprint-preview-shadow-x) var(--blueprint-preview-shadow-y) 3px 0 rgb(15 23 42 / 0.1),
-    var(--blueprint-preview-shadow-x) var(--blueprint-preview-shadow-y) 2px -1px rgb(15 23 42 / 0.1);
-  --blueprint-preview-section-padding: 1rem;
-  --blueprint-preview-control-height: 2.25rem;
-  --blueprint-preview-font-size: 0.875rem;
-  --blueprint-preview-gap: 0.75rem;
-  --blueprint-preview-motion-duration: 160ms;
-  background: var(--background);
-  color: var(--foreground);
-  color-scheme: light;
-  font-family: var(--font-sans, "Geist Variable", system-ui, sans-serif);
-  font-size: var(--blueprint-preview-font-size);
+	--background: hsl(0 0% 100%);
+	--foreground: hsl(210 20% 10%);
+	--card: hsl(0 0% 98%);
+	--card-foreground: hsl(210 20% 10%);
+	--primary: hsl(210 62% 49%);
+	--primary-foreground: hsl(0 0% 100%);
+	--secondary: hsl(210 24% 94%);
+	--secondary-foreground: hsl(210 20% 10%);
+	--muted: hsl(210 24% 94%);
+	--muted-foreground: hsl(210 10% 42%);
+	--accent: hsl(210 24% 94%);
+	--accent-foreground: hsl(210 20% 10%);
+	--border: hsl(210 16% 82%);
+	--input: hsl(210 16% 82%);
+	--ring: hsl(210 62% 49%);
+	--radius: 0.5rem;
+	--blueprint-preview-surface-radius: var(--radius);
+	--blueprint-preview-control-radius: calc(var(--radius) - 0.125rem);
+	--blueprint-preview-shadow-x: 0px;
+	--blueprint-preview-shadow-y: 1px;
+	--blueprint-preview-shadow:
+		var(--blueprint-preview-shadow-x) var(--blueprint-preview-shadow-y) 3px 0
+		rgb(15 23 42 / 0.1),
+		var(--blueprint-preview-shadow-x) var(--blueprint-preview-shadow-y) 2px -1px
+		rgb(15 23 42 / 0.1);
+	--blueprint-preview-section-padding: 1rem;
+	--blueprint-preview-control-height: 2.25rem;
+	--blueprint-preview-font-size: 0.875rem;
+	--blueprint-preview-gap: 0.75rem;
+	--blueprint-preview-motion-duration: 160ms;
+	background: var(--background);
+	color: var(--foreground);
+	color-scheme: light;
+	font-family: var(--font-sans, "Geist Variable", system-ui, sans-serif);
+	font-size: var(--blueprint-preview-font-size);
 }
 
 .blueprint-preview[data-theme="dark"] {
-  --background: hsl(210 20% 10%);
-  --foreground: hsl(210 30% 96%);
-  --card: hsl(210 20% 16%);
-  --card-foreground: hsl(210 30% 96%);
-  --primary: hsl(188 86% 58%);
-  --primary-foreground: hsl(210 30% 4%);
-  --secondary: hsl(210 20% 22%);
-  --secondary-foreground: hsl(210 30% 96%);
-  --muted: hsl(210 20% 22%);
-  --muted-foreground: hsl(210 15% 68%);
-  --accent: hsl(210 85% 42%);
-  --accent-foreground: hsl(210 30% 96%);
-  --border: hsl(210 20% 30%);
-  --input: hsl(210 20% 30%);
-  --ring: hsl(200 95% 42%);
-  color-scheme: dark;
+	--background: hsl(210 20% 10%);
+	--foreground: hsl(210 30% 96%);
+	--card: hsl(210 20% 16%);
+	--card-foreground: hsl(210 30% 96%);
+	--primary: hsl(188 86% 58%);
+	--primary-foreground: hsl(210 30% 4%);
+	--secondary: hsl(210 20% 22%);
+	--secondary-foreground: hsl(210 30% 96%);
+	--muted: hsl(210 20% 22%);
+	--muted-foreground: hsl(210 15% 68%);
+	--accent: hsl(210 85% 42%);
+	--accent-foreground: hsl(210 30% 96%);
+	--border: hsl(210 20% 30%);
+	--input: hsl(210 20% 30%);
+	--ring: hsl(200 95% 42%);
+	color-scheme: dark;
 }
 
 .blueprint-preview[data-theme="campfire"] {
-  --background: hsl(24 38% 8%);
-  --foreground: hsl(35 52% 92%);
-  --card: hsl(24 34% 13%);
-  --card-foreground: hsl(35 52% 92%);
-  --primary: hsl(25 96% 58%);
-  --primary-foreground: hsl(24 42% 8%);
-  --secondary: hsl(25 30% 18%);
-  --secondary-foreground: hsl(35 48% 90%);
-  --muted: hsl(25 28% 17%);
-  --muted-foreground: hsl(34 24% 70%);
-  --accent: hsl(16 72% 34%);
-  --accent-foreground: hsl(35 52% 94%);
-  --border: hsl(25 30% 28%);
-  --input: hsl(25 30% 28%);
-  --ring: hsl(25 96% 58%);
-  color-scheme: dark;
+	--background: hsl(24 38% 8%);
+	--foreground: hsl(35 52% 92%);
+	--card: hsl(24 34% 13%);
+	--card-foreground: hsl(35 52% 92%);
+	--primary: hsl(25 96% 58%);
+	--primary-foreground: hsl(24 42% 8%);
+	--secondary: hsl(25 30% 18%);
+	--secondary-foreground: hsl(35 48% 90%);
+	--muted: hsl(25 28% 17%);
+	--muted-foreground: hsl(34 24% 70%);
+	--accent: hsl(16 72% 34%);
+	--accent-foreground: hsl(35 52% 94%);
+	--border: hsl(25 30% 28%);
+	--input: hsl(25 30% 28%);
+	--ring: hsl(25 96% 58%);
+	color-scheme: dark;
 }
 
 .blueprint-preview[data-theme="eclipse"] {
-  --background: hsl(245 50% 90%);
-  --foreground: hsl(241 67% 17%);
-  --card: hsl(245 45% 85%);
-  --primary: hsl(248 30% 45%);
-  --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(245 40% 78%);
-  --muted: hsl(245 40% 78%);
-  --muted-foreground: hsl(240 23% 32%);
-  --border: hsl(245 30% 68%);
+	--background: hsl(245 50% 90%);
+	--foreground: hsl(241 67% 17%);
+	--card: hsl(245 45% 85%);
+	--primary: hsl(248 30% 45%);
+	--primary-foreground: hsl(0 0% 100%);
+	--secondary: hsl(245 40% 78%);
+	--muted: hsl(245 40% 78%);
+	--muted-foreground: hsl(240 23% 32%);
+	--border: hsl(245 30% 68%);
 }
 
 .blueprint-preview[data-theme="macosclassic"] {
-  --background: hsl(0 0% 90%);
-  --foreground: hsl(215 20% 12%);
-  --card: hsl(0 0% 96%);
-  --primary: hsl(210 85% 45%);
-  --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(0 0% 98%);
-  --muted: hsl(0 0% 98%);
-  --muted-foreground: hsl(215 12% 38%);
-  --border: hsl(0 0% 70%);
+	--background: hsl(0 0% 90%);
+	--foreground: hsl(215 20% 12%);
+	--card: hsl(0 0% 96%);
+	--primary: hsl(210 85% 45%);
+	--primary-foreground: hsl(0 0% 100%);
+	--secondary: hsl(0 0% 98%);
+	--muted: hsl(0 0% 98%);
+	--muted-foreground: hsl(215 12% 38%);
+	--border: hsl(0 0% 70%);
 }
 
 .blueprint-preview[data-theme="mint"] {
-  --background: hsl(154 30% 96%);
-  --foreground: hsl(160 38% 18%);
-  --card: hsl(150 34% 91%);
-  --card-foreground: hsl(160 38% 18%);
-  --primary: hsl(158 42% 40%);
-  --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(153 34% 88%);
-  --secondary-foreground: hsl(160 36% 20%);
-  --muted: hsl(152 30% 92%);
-  --muted-foreground: hsl(158 22% 42%);
-  --accent: hsl(156 34% 82%);
-  --accent-foreground: hsl(160 42% 20%);
-  --border: hsl(153 24% 78%);
-  --input: hsl(153 24% 78%);
-  --ring: hsl(158 42% 40%);
+	--background: hsl(154 30% 96%);
+	--foreground: hsl(160 38% 18%);
+	--card: hsl(150 34% 91%);
+	--card-foreground: hsl(160 38% 18%);
+	--primary: hsl(158 42% 40%);
+	--primary-foreground: hsl(0 0% 100%);
+	--secondary: hsl(153 34% 88%);
+	--secondary-foreground: hsl(160 36% 20%);
+	--muted: hsl(152 30% 92%);
+	--muted-foreground: hsl(158 22% 42%);
+	--accent: hsl(156 34% 82%);
+	--accent-foreground: hsl(160 42% 20%);
+	--border: hsl(153 24% 78%);
+	--input: hsl(153 24% 78%);
+	--ring: hsl(158 42% 40%);
 }
 
 .blueprint-preview[data-theme="bloom"] {
-  --background: hsl(344 76% 96%);
-  --foreground: hsl(327 34% 18%);
-  --card: hsl(337 68% 92%);
-  --card-foreground: hsl(327 34% 18%);
-  --primary: hsl(338 68% 63%);
-  --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(318 36% 88%);
-  --secondary-foreground: hsl(326 38% 22%);
-  --muted: hsl(333 52% 91%);
-  --muted-foreground: hsl(325 18% 45%);
-  --accent: hsl(350 84% 87%);
-  --accent-foreground: hsl(336 48% 24%);
-  --border: hsl(334 38% 78%);
-  --input: hsl(334 38% 78%);
-  --ring: hsl(338 68% 63%);
+	--background: hsl(344 76% 96%);
+	--foreground: hsl(327 34% 18%);
+	--card: hsl(337 68% 92%);
+	--card-foreground: hsl(327 34% 18%);
+	--primary: hsl(338 68% 63%);
+	--primary-foreground: hsl(0 0% 100%);
+	--secondary: hsl(318 36% 88%);
+	--secondary-foreground: hsl(326 38% 22%);
+	--muted: hsl(333 52% 91%);
+	--muted-foreground: hsl(325 18% 45%);
+	--accent: hsl(350 84% 87%);
+	--accent-foreground: hsl(336 48% 24%);
+	--border: hsl(334 38% 78%);
+	--input: hsl(334 38% 78%);
+	--ring: hsl(338 68% 63%);
 }
 
 .blueprint-preview[data-theme="mocha"] {
-  --background: hsl(38 38% 94%);
-  --foreground: hsl(24 32% 18%);
-  --card: hsl(34 34% 88%);
-  --card-foreground: hsl(24 32% 18%);
-  --primary: hsl(22 58% 45%);
-  --primary-foreground: hsl(38 54% 96%);
-  --secondary: hsl(31 34% 80%);
-  --secondary-foreground: hsl(24 34% 20%);
-  --muted: hsl(36 30% 86%);
-  --muted-foreground: hsl(24 18% 42%);
-  --accent: hsl(188 58% 36%);
-  --accent-foreground: hsl(38 54% 96%);
-  --border: hsl(28 28% 70%);
-  --input: hsl(28 28% 70%);
-  --ring: hsl(22 58% 45%);
+	--background: hsl(38 38% 94%);
+	--foreground: hsl(24 32% 18%);
+	--card: hsl(34 34% 88%);
+	--card-foreground: hsl(24 32% 18%);
+	--primary: hsl(22 58% 45%);
+	--primary-foreground: hsl(38 54% 96%);
+	--secondary: hsl(31 34% 80%);
+	--secondary-foreground: hsl(24 34% 20%);
+	--muted: hsl(36 30% 86%);
+	--muted-foreground: hsl(24 18% 42%);
+	--accent: hsl(188 58% 36%);
+	--accent-foreground: hsl(38 54% 96%);
+	--border: hsl(28 28% 70%);
+	--input: hsl(28 28% 70%);
+	--ring: hsl(22 58% 45%);
 }
 
 .blueprint-preview[data-density="compact"] {
-  --blueprint-preview-section-padding: 0.75rem;
-  --blueprint-preview-control-height: 2rem;
-  --blueprint-preview-font-size: 0.8125rem;
-  --blueprint-preview-gap: 0.5rem;
+	--blueprint-preview-section-padding: 0.75rem;
+	--blueprint-preview-control-height: 2rem;
+	--blueprint-preview-font-size: 0.8125rem;
+	--blueprint-preview-gap: 0.5rem;
 }
 
 .blueprint-preview[data-density="comfortable"] {
-  --blueprint-preview-section-padding: 1.25rem;
-  --blueprint-preview-control-height: 2.75rem;
-  --blueprint-preview-font-size: 0.9375rem;
-  --blueprint-preview-gap: 1rem;
+	--blueprint-preview-section-padding: 1.25rem;
+	--blueprint-preview-control-height: 2.75rem;
+	--blueprint-preview-font-size: 0.9375rem;
+	--blueprint-preview-gap: 1rem;
 }
 
 .blueprint-preview[data-shape="sharp"] {
-  --radius: 0;
-  --blueprint-preview-surface-radius: 0;
-  --blueprint-preview-control-radius: 0;
+	--radius: 0;
+	--blueprint-preview-surface-radius: 0;
+	--blueprint-preview-control-radius: 0;
 }
 
 .blueprint-preview[data-shape="rounded"] {
-  --radius: 0.875rem;
-  --blueprint-preview-surface-radius: var(--radius);
-  --blueprint-preview-control-radius: 0.75rem;
+	--radius: 0.875rem;
+	--blueprint-preview-surface-radius: var(--radius);
+	--blueprint-preview-control-radius: 0.75rem;
 }
 
 .blueprint-preview[data-shape="pill"] {
-  --radius: 0.5rem;
-  --blueprint-preview-surface-radius: var(--radius);
-  --blueprint-preview-control-radius: 9999px;
+	--radius: 0.5rem;
+	--blueprint-preview-surface-radius: var(--radius);
+	--blueprint-preview-control-radius: 9999px;
 }
 
 .blueprint-preview[data-shadow="none"] {
-  --blueprint-preview-shadow: none;
+	--blueprint-preview-shadow: none;
 }
 
 .blueprint-preview[data-shadow="medium"] {
-  --blueprint-preview-shadow:
-    calc(var(--blueprint-preview-shadow-x) * 4) calc(var(--blueprint-preview-shadow-y) * 4) 18px
-    -12px rgb(15 23 42 / 0.35),
-    calc(var(--blueprint-preview-shadow-x) * 2) calc(var(--blueprint-preview-shadow-y) * 2) 8px -6px
-    rgb(15 23 42 / 0.25);
+	--blueprint-preview-shadow:
+		calc(var(--blueprint-preview-shadow-x) * 4)
+		calc(var(--blueprint-preview-shadow-y) * 4) 18px -12px rgb(15 23 42 / 0.35),
+		calc(var(--blueprint-preview-shadow-x) * 2)
+		calc(var(--blueprint-preview-shadow-y) * 2) 8px -6px rgb(15 23 42 / 0.25);
 }
 
 .blueprint-preview[data-shadow="strong"] {
-  --blueprint-preview-shadow:
-    calc(var(--blueprint-preview-shadow-x) * 7) calc(var(--blueprint-preview-shadow-y) * 7) 40px
-    -20px rgb(15 23 42 / 0.45),
-    calc(var(--blueprint-preview-shadow-x) * 4) calc(var(--blueprint-preview-shadow-y) * 4) 18px
-    -16px rgb(15 23 42 / 0.35);
+	--blueprint-preview-shadow:
+		calc(var(--blueprint-preview-shadow-x) * 7)
+		calc(var(--blueprint-preview-shadow-y) * 7) 40px -20px rgb(15 23 42 / 0.45),
+		calc(var(--blueprint-preview-shadow-x) * 4)
+		calc(var(--blueprint-preview-shadow-y) * 4) 18px -16px rgb(15 23 42 / 0.35);
 }
 
 .blueprint-preview[data-shadow-direction="45deg"] {
-  --blueprint-preview-shadow-x: 1px;
-  --blueprint-preview-shadow-y: 1px;
+	--blueprint-preview-shadow-x: 1px;
+	--blueprint-preview-shadow-y: 1px;
 }
 
 .blueprint-preview[data-shadow-direction="90deg"] {
-  --blueprint-preview-shadow-x: 1px;
-  --blueprint-preview-shadow-y: 0px;
+	--blueprint-preview-shadow-x: 1px;
+	--blueprint-preview-shadow-y: 0px;
 }
 
 .blueprint-preview[data-shadow-direction="135deg"] {
-  --blueprint-preview-shadow-x: 1px;
-  --blueprint-preview-shadow-y: -1px;
+	--blueprint-preview-shadow-x: 1px;
+	--blueprint-preview-shadow-y: -1px;
 }
 
 .blueprint-preview[data-shadow-direction="180deg"] {
-  --blueprint-preview-shadow-x: 0px;
-  --blueprint-preview-shadow-y: -1px;
+	--blueprint-preview-shadow-x: 0px;
+	--blueprint-preview-shadow-y: -1px;
 }
 
 .blueprint-preview[data-shadow-direction="225deg"] {
-  --blueprint-preview-shadow-x: -1px;
-  --blueprint-preview-shadow-y: -1px;
+	--blueprint-preview-shadow-x: -1px;
+	--blueprint-preview-shadow-y: -1px;
 }
 
 .blueprint-preview[data-shadow-direction="270deg"] {
-  --blueprint-preview-shadow-x: -1px;
-  --blueprint-preview-shadow-y: 0px;
+	--blueprint-preview-shadow-x: -1px;
+	--blueprint-preview-shadow-y: 0px;
 }
 
 .blueprint-preview[data-shadow-direction="315deg"] {
-  --blueprint-preview-shadow-x: -1px;
-  --blueprint-preview-shadow-y: 1px;
+	--blueprint-preview-shadow-x: -1px;
+	--blueprint-preview-shadow-y: 1px;
 }
 
 .blueprint-preview[data-font="system"] {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	font-family:
+		system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .blueprint-preview[data-font="serif"] {
-  font-family: Georgia, "Times New Roman", serif;
+	font-family: Georgia, "Times New Roman", serif;
 }
 
 .blueprint-preview[data-font="mono"] {
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
 .blueprint-preview[data-contrast="high"] {
-  --foreground: hsl(210 30% 4%);
-  --muted-foreground: hsl(210 15% 24%);
-  --border: hsl(210 18% 42%);
-  --ring: hsl(210 90% 35%);
+	--foreground: hsl(210 30% 4%);
+	--muted-foreground: hsl(210 15% 24%);
+	--border: hsl(210 18% 42%);
+	--ring: hsl(210 90% 35%);
 }
 
 .blueprint-preview[data-theme="dark"][data-contrast="high"] {
-  --foreground: hsl(0 0% 100%);
-  --muted-foreground: hsl(210 30% 84%);
-  --border: hsl(210 25% 58%);
+	--foreground: hsl(0 0% 100%);
+	--muted-foreground: hsl(210 30% 84%);
+	--border: hsl(210 25% 58%);
 }
 
 .blueprint-preview[data-theme="campfire"][data-contrast="high"] {
-  --foreground: hsl(35 68% 98%);
-  --muted-foreground: hsl(34 36% 84%);
-  --border: hsl(25 38% 52%);
-  --ring: hsl(25 96% 62%);
+	--foreground: hsl(35 68% 98%);
+	--muted-foreground: hsl(34 36% 84%);
+	--border: hsl(25 38% 52%);
+	--ring: hsl(25 96% 62%);
 }
 
 .blueprint-preview[data-motion="reduced"],
 .blueprint-preview[data-motion="reduced"] * {
-  scroll-behavior: auto;
-  transition-duration: 0ms;
-  animation-duration: 0ms;
+	scroll-behavior: auto;
+	transition-duration: 0ms;
+	animation-duration: 0ms;
 }
 
 .blueprint-preview-card {
-  background: var(--card);
-  border-color: var(--border);
-  border-radius: var(--blueprint-preview-surface-radius);
-  box-shadow: var(--blueprint-preview-shadow);
-  color: var(--card-foreground);
+	background: var(--card);
+	border-color: var(--border);
+	border-radius: var(--blueprint-preview-surface-radius);
+	box-shadow: var(--blueprint-preview-shadow);
+	color: var(--card-foreground);
 }
 
 .blueprint-preview.bg-background,
 .blueprint-preview .bg-background {
-  background-color: var(--background);
+	background-color: var(--background);
 }
 
 .blueprint-preview.bg-card,
 .blueprint-preview .bg-card {
-  background-color: var(--card);
+	background-color: var(--card);
 }
 
 .blueprint-preview.bg-primary,
 .blueprint-preview .bg-primary {
-  background-color: var(--primary);
+	background-color: var(--primary);
 }
 
 .blueprint-preview.bg-secondary,
 .blueprint-preview .bg-secondary {
-  background-color: var(--secondary);
+	background-color: var(--secondary);
 }
 
 .blueprint-preview.bg-muted,
 .blueprint-preview .bg-muted {
-  background-color: var(--muted);
+	background-color: var(--muted);
 }
 
 .blueprint-preview.border-border,
 .blueprint-preview .border-border {
-  border-color: var(--border);
+	border-color: var(--border);
 }
 
 .blueprint-preview.border-primary,
 .blueprint-preview .border-primary {
-  border-color: var(--primary);
+	border-color: var(--primary);
 }
 
 .blueprint-preview.border-input,
 .blueprint-preview .border-input {
-  border-color: var(--input);
+	border-color: var(--input);
 }
 
 .blueprint-preview.text-foreground,
 .blueprint-preview .text-foreground {
-  color: var(--foreground);
+	color: var(--foreground);
 }
 
 .blueprint-preview.text-card-foreground,
 .blueprint-preview .text-card-foreground {
-  color: var(--card-foreground);
+	color: var(--card-foreground);
 }
 
 .blueprint-preview.text-muted-foreground,
 .blueprint-preview .text-muted-foreground {
-  color: var(--muted-foreground);
+	color: var(--muted-foreground);
 }
 
 .blueprint-preview.text-primary,
 .blueprint-preview .text-primary {
-  color: var(--primary);
+	color: var(--primary);
 }
 
 .blueprint-preview.text-primary-foreground,
 .blueprint-preview .text-primary-foreground {
-  color: var(--primary-foreground);
+	color: var(--primary-foreground);
 }
 
 .blueprint-preview-field {
-  min-height: var(--blueprint-preview-control-height);
-  border-radius: var(--blueprint-preview-control-radius);
+	min-height: var(--blueprint-preview-control-height);
+	border-radius: var(--blueprint-preview-control-radius);
 }
 
 .blueprint-preview-button {
-  min-height: var(--blueprint-preview-control-height);
-  border-radius: var(--blueprint-preview-control-radius);
-  background: var(--primary);
-  border-color: var(--primary);
-  color: var(--primary-foreground);
+	min-height: var(--blueprint-preview-control-height);
+	border-radius: var(--blueprint-preview-control-radius);
+	background: var(--primary);
+	border-color: var(--primary);
+	color: var(--primary-foreground);
 }
 
 .blueprint-preview-option {
-  border-radius: var(--blueprint-preview-control-radius);
+	border-radius: var(--blueprint-preview-control-radius);
 }
 
 .blueprint-preview[data-button-variant="soft"] .blueprint-preview-button {
-  background: color-mix(in srgb, var(--primary) 14%, transparent);
-  color: var(--foreground);
+	background: color-mix(in srgb, var(--primary) 14%, transparent);
+	color: var(--foreground);
 }
 
 .blueprint-preview[data-button-variant="outline"] .blueprint-preview-button {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--foreground);
+	background: transparent;
+	border: 1px solid var(--border);
+	color: var(--foreground);
 }
 
 .blueprint-preview-option[aria-pressed="true"] {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: var(--primary-foreground);
+	background: var(--primary);
+	border-color: var(--primary);
+	color: var(--primary-foreground);
 }
 
 .blueprint-preview[data-card-variant="plain"] .blueprint-preview-card {
-  box-shadow: none;
+	box-shadow: none;
 }
 
 .blueprint-preview[data-card-variant="elevated"] .blueprint-preview-card {
-  box-shadow: var(--blueprint-preview-shadow);
+	box-shadow: var(--blueprint-preview-shadow);
 }
 
 .blueprint-preview[data-table-variant="dense-grid"] .blueprint-preview-table th,
-.blueprint-preview[data-table-variant="dense-grid"] .blueprint-preview-table td {
-  border-right: 1px solid var(--border);
-  padding-block: 0.375rem;
+.blueprint-preview[data-table-variant="dense-grid"]
+	.blueprint-preview-table
+	td {
+	border-right: 1px solid var(--border);
+	padding-block: 0.375rem;
 }
 
 .blueprint-preview[data-input-variant="filled"] .blueprint-preview-field {
-  background: var(--muted);
+	background: var(--muted);
 }
 
 .blueprint-preview[data-input-variant="underline"] .blueprint-preview-field {
-  border-top: 0;
-  border-right: 0;
-  border-left: 0;
-  border-radius: 0;
-  background: transparent;
+	border-top: 0;
+	border-right: 0;
+	border-left: 0;
+	border-radius: 0;
+	background: transparent;
 }

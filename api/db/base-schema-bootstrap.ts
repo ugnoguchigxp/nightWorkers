@@ -1,7 +1,7 @@
-import { client } from './client';
+import { client } from "./client";
 
 export async function ensureBaseNightWorkersTables() {
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS users (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -12,9 +12,11 @@ export async function ensureBaseNightWorkersTables() {
       is_active integer DEFAULT true NOT NULL
     )
   `);
-  await client.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users (email)');
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users (email)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS refresh_tokens (
       id text PRIMARY KEY NOT NULL,
       token text NOT NULL,
@@ -24,12 +26,14 @@ export async function ensureBaseNightWorkersTables() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS refresh_tokens_token_unique ON refresh_tokens (token)'
-  );
-  await client.execute('CREATE INDEX IF NOT EXISTS rt_user_id_idx ON refresh_tokens (user_id)');
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS refresh_tokens_token_unique ON refresh_tokens (token)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS rt_user_id_idx ON refresh_tokens (user_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS user_external_accounts (
       id text PRIMARY KEY NOT NULL,
       user_id text NOT NULL,
@@ -40,14 +44,14 @@ export async function ensureBaseNightWorkersTables() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS uex_provider_ext_uidx ON user_external_accounts (provider, external_id)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS uex_user_id_idx ON user_external_accounts (user_id)'
-  );
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS uex_provider_ext_uidx ON user_external_accounts (provider, external_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS uex_user_id_idx ON user_external_accounts (user_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS repositories (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -62,7 +66,7 @@ export async function ensureBaseNightWorkersTables() {
     )
   `);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS tasks (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -80,11 +84,11 @@ export async function ensureBaseNightWorkersTables() {
       FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS tasks_repository_id_idx ON tasks (repository_id)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS tasks_repository_id_idx ON tasks (repository_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS task_runs (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -110,9 +114,11 @@ export async function ensureBaseNightWorkersTables() {
       FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade
     )
   `);
-  await client.execute('CREATE INDEX IF NOT EXISTS task_runs_task_id_idx ON task_runs (task_id)');
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS task_runs_task_id_idx ON task_runs (task_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS task_events (
       id text PRIMARY KEY NOT NULL,
       task_run_id text NOT NULL,
@@ -126,14 +132,14 @@ export async function ensureBaseNightWorkersTables() {
       FOREIGN KEY (task_run_id) REFERENCES task_runs(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS task_events_task_run_id_idx ON task_events (task_run_id)'
-  );
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS task_events_task_run_seq_uidx ON task_events (task_run_id, seq)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS task_events_task_run_id_idx ON task_events (task_run_id)",
+	);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS task_events_task_run_seq_uidx ON task_events (task_run_id, seq)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS native_api_turns (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -154,18 +160,22 @@ export async function ensureBaseNightWorkersTables() {
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS native_api_turns_run_turn_uidx ON native_api_turns (run_id, turn_index)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS native_api_turns_run_status_idx ON native_api_turns (run_id, status)'
-  );
-  await ensureColumn('native_api_turns', 'execution_mode', 'execution_mode text');
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS native_api_turns_resume_idx ON native_api_turns (task_id, status, provider, model, execution_mode, finished_at)'
-  );
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS native_api_turns_run_turn_uidx ON native_api_turns (run_id, turn_index)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS native_api_turns_run_status_idx ON native_api_turns (run_id, status)",
+	);
+	await ensureColumn(
+		"native_api_turns",
+		"execution_mode",
+		"execution_mode text",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS native_api_turns_resume_idx ON native_api_turns (task_id, status, provider, model, execution_mode, finished_at)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS native_api_tool_calls (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -189,17 +199,17 @@ export async function ensureBaseNightWorkersTables() {
       FOREIGN KEY (turn_id) REFERENCES native_api_turns(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS native_api_tool_calls_run_call_uidx ON native_api_tool_calls (run_id, tool_call_id)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS native_api_tool_calls_run_status_idx ON native_api_tool_calls (run_id, status)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS native_api_tool_calls_turn_idx ON native_api_tool_calls (turn_id)'
-  );
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS native_api_tool_calls_run_call_uidx ON native_api_tool_calls (run_id, tool_call_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS native_api_tool_calls_run_status_idx ON native_api_tool_calls (run_id, status)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS native_api_tool_calls_turn_idx ON native_api_tool_calls (turn_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS runtime_session_states (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -220,7 +230,7 @@ export async function ensureBaseNightWorkersTables() {
       FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE set null
     )
   `);
-  await client.execute(`
+	await client.execute(`
     CREATE INDEX IF NOT EXISTS runtime_session_states_lookup_idx
     ON runtime_session_states (
       task_id,
@@ -232,11 +242,11 @@ export async function ensureBaseNightWorkersTables() {
       last_seen_at
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS runtime_session_states_run_idx ON runtime_session_states (run_id)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS runtime_session_states_run_idx ON runtime_session_states (run_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS artifacts (
       id text PRIMARY KEY NOT NULL,
       run_id text NOT NULL,
@@ -247,13 +257,15 @@ export async function ensureBaseNightWorkersTables() {
       FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE cascade
     )
   `);
-  await client.execute('CREATE INDEX IF NOT EXISTS artifacts_run_id_idx ON artifacts (run_id)');
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS artifacts_run_id_idx ON artifacts (run_id)",
+	);
 }
 
 async function ensureColumn(table: string, column: string, definition: string) {
-  const columns = await client.execute(`PRAGMA table_info(${table})`);
-  const exists = columns.rows.some((row) => row.name === column);
-  if (columns.rows.length > 0 && !exists) {
-    await client.execute(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
-  }
+	const columns = await client.execute(`PRAGMA table_info(${table})`);
+	const exists = columns.rows.some((row) => row.name === column);
+	if (columns.rows.length > 0 && !exists) {
+		await client.execute(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+	}
 }

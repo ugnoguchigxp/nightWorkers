@@ -1,30 +1,33 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mcpClientManager } from '../api/services/mcp/mcp-client-manager';
-import { createMcpServer } from '../api/services/mcp/mcp-settings';
-import { DefaultToolPolicyGate } from '../api/services/tool-policy/tool-policy-gate';
-import { executeWorkerTool } from '../api/services/worker-tools/dispatcher';
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { mcpClientManager } from "../api/services/mcp/mcp-client-manager";
+import { createMcpServer } from "../api/services/mcp/mcp-settings";
+import { DefaultToolPolicyGate } from "../api/services/tool-policy/tool-policy-gate";
+import { executeWorkerTool } from "../api/services/worker-tools/dispatcher";
 
 let tempDir: string;
 
 beforeEach(() => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-mcp-tool-'));
-  process.env.NIGHTWORKERS_MCP_SETTINGS_PATH = path.join(tempDir, 'mcp-servers.json');
+	tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "nightworkers-mcp-tool-"));
+	process.env.NIGHTWORKERS_MCP_SETTINGS_PATH = path.join(
+		tempDir,
+		"mcp-servers.json",
+	);
 });
 
 afterEach(async () => {
-  await mcpClientManager.disconnectAll();
-  delete process.env.NIGHTWORKERS_MCP_SETTINGS_PATH;
-  fs.rmSync(tempDir, { recursive: true, force: true });
+	await mcpClientManager.disconnectAll();
+	delete process.env.NIGHTWORKERS_MCP_SETTINGS_PATH;
+	fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
 function writeFakeMcpServer() {
-  const serverPath = path.join(tempDir, 'fake-mcp-server.mjs');
-  fs.writeFileSync(
-    serverPath,
-    `
+	const serverPath = path.join(tempDir, "fake-mcp-server.mjs");
+	fs.writeFileSync(
+		serverPath,
+		`
 import readline from 'node:readline';
 
 const rl = readline.createInterface({ input: process.stdin });
@@ -79,103 +82,105 @@ rl.on('line', (line) => {
   }
 });
 `,
-    'utf-8'
-  );
-  return serverPath;
+		"utf-8",
+	);
+	return serverPath;
 }
 
-describe('MCP worker tool bridge', () => {
-  it('blocks invalid mcp_call_tool arguments in policy preflight', async () => {
-    const gate = new DefaultToolPolicyGate();
-    const decision = await gate.beforeToolCall({
-      runId: 'run-1',
-      iteration: 1,
-      toolName: 'mcp_call_tool',
-      args: { serverId: '', toolName: 'lookup' },
-      repoRoot: process.cwd(),
-      readFiles: [],
-    });
+describe("MCP worker tool bridge", () => {
+	it("blocks invalid mcp_call_tool arguments in policy preflight", async () => {
+		const gate = new DefaultToolPolicyGate();
+		const decision = await gate.beforeToolCall({
+			runId: "run-1",
+			iteration: 1,
+			toolName: "mcp_call_tool",
+			args: { serverId: "", toolName: "lookup" },
+			repoRoot: process.cwd(),
+			readFiles: [],
+		});
 
-    expect(decision).toMatchObject({
-      allowed: false,
-      code: 'INVALID_TOOL_ARGS',
-    });
-  });
+		expect(decision).toMatchObject({
+			allowed: false,
+			code: "INVALID_TOOL_ARGS",
+		});
+	});
 
-  it('returns a normal failed tool result when the MCP server is not configured', async () => {
-    const dispatch = await executeWorkerTool({
-      toolName: 'mcp_call_tool',
-      args: {
-        serverId: '00000000-0000-4000-8000-000000000000',
-        toolName: 'lookup',
-        arguments: {},
-      },
-      repoRoot: process.cwd(),
-      readFiles: [],
-    });
+	it("returns a normal failed tool result when the MCP server is not configured", async () => {
+		const dispatch = await executeWorkerTool({
+			toolName: "mcp_call_tool",
+			args: {
+				serverId: "00000000-0000-4000-8000-000000000000",
+				toolName: "lookup",
+				arguments: {},
+			},
+			repoRoot: process.cwd(),
+			readFiles: [],
+		});
 
-    expect(dispatch.result).toMatchObject({
-      ok: false,
-      toolName: 'mcp_call_tool',
-      error: { code: 'MCP_TOOL_CALL_FAILED' },
-    });
-  });
+		expect(dispatch.result).toMatchObject({
+			ok: false,
+			toolName: "mcp_call_tool",
+			error: { code: "MCP_TOOL_CALL_FAILED" },
+		});
+	});
 
-  it('lists paginated tools and calls a stdio MCP tool through the SDK transport', async () => {
-    const serverPath = writeFakeMcpServer();
-    const server = createMcpServer({
-      name: 'Fake MCP',
-      enabled: true,
-      transport: 'stdio',
-      command: process.execPath,
-      args: [serverPath],
-      toolPrefix: 'fake',
-    });
+	it("lists paginated tools and calls a stdio MCP tool through the SDK transport", async () => {
+		const serverPath = writeFakeMcpServer();
+		const server = createMcpServer({
+			name: "Fake MCP",
+			enabled: true,
+			transport: "stdio",
+			command: process.execPath,
+			args: [serverPath],
+			toolPrefix: "fake",
+		});
 
-    const tools = await mcpClientManager.listToolsForServer(server);
-    expect(tools.map((tool) => tool.name)).toEqual(['lookup', 'second_tool']);
+		const tools = await mcpClientManager.listToolsForServer(server);
+		expect(tools.map((tool) => tool.name)).toEqual(["lookup", "second_tool"]);
 
-    const dispatch = await executeWorkerTool({
-      toolName: 'mcp_call_tool',
-      args: {
-        serverId: server.id,
-        toolName: 'lookup',
-        arguments: { query: 'nightworkers' },
-      },
-      repoRoot: process.cwd(),
-      readFiles: [],
-    });
+		const dispatch = await executeWorkerTool({
+			toolName: "mcp_call_tool",
+			args: {
+				serverId: server.id,
+				toolName: "lookup",
+				arguments: { query: "nightworkers" },
+			},
+			repoRoot: process.cwd(),
+			readFiles: [],
+		});
 
-    expect(dispatch.result.ok).toBe(true);
-    expect(JSON.stringify(dispatch.result.payload)).toContain('lookup:nightworkers');
-  });
+		expect(dispatch.result.ok).toBe(true);
+		expect(JSON.stringify(dispatch.result.payload)).toContain(
+			"lookup:nightworkers",
+		);
+	});
 
-  it('maps MCP isError tool results to failed worker tool results', async () => {
-    const serverPath = writeFakeMcpServer();
-    const server = createMcpServer({
-      name: 'Fake MCP',
-      enabled: true,
-      transport: 'stdio',
-      command: process.execPath,
-      args: [serverPath],
-      toolPrefix: 'fake',
-    });
+	it("maps MCP isError tool results to failed worker tool results", async () => {
+		const serverPath = writeFakeMcpServer();
+		const server = createMcpServer({
+			name: "Fake MCP",
+			enabled: true,
+			transport: "stdio",
+			command: process.execPath,
+			args: [serverPath],
+			toolPrefix: "fake",
+		});
 
-    const dispatch = await executeWorkerTool({
-      toolName: 'mcp_call_tool',
-      args: {
-        serverId: server.id,
-        toolName: 'lookup',
-        arguments: { query: 'error' },
-      },
-      repoRoot: process.cwd(),
-      readFiles: [],
-    });
+		const dispatch = await executeWorkerTool({
+			toolName: "mcp_call_tool",
+			args: {
+				serverId: server.id,
+				toolName: "lookup",
+				arguments: { query: "error" },
+			},
+			repoRoot: process.cwd(),
+			readFiles: [],
+		});
 
-    expect(dispatch.result).toMatchObject({
-      ok: false,
-      toolName: 'mcp_call_tool',
-      error: { code: 'MCP_TOOL_EXECUTION_ERROR', message: 'lookup failed' },
-    });
-  });
+		expect(dispatch.result).toMatchObject({
+			ok: false,
+			toolName: "mcp_call_tool",
+			error: { code: "MCP_TOOL_EXECUTION_ERROR", message: "lookup failed" },
+		});
+	});
 });

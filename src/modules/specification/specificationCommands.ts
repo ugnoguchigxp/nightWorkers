@@ -1,19 +1,23 @@
-import { apiFetch } from '../../lib/api-base';
-import { jsonRequest } from '../../lib/api-request';
+import { apiFetch } from "../../lib/api-base";
+import { jsonRequest } from "../../lib/api-request";
 
 type SpecificationGenerationInput = {
-  questionnaireSessionId?: string | null;
-  sourceBlueprintMessageId?: string | null;
-  proceedWithUnansweredBlocking?: boolean;
+	prompt?: string;
+	questionnaireSessionId?: string | null;
+	sourceBlueprintMessageId?: string | null;
+	proceedWithUnansweredBlocking?: boolean;
 };
 
 export function fetchPlanModeWorkspace(sessionId: string, init?: RequestInit) {
-  return apiFetch(`/api/tasks/${sessionId}/plan-mode/workspace`, init);
+	return apiFetch(`/api/tasks/${sessionId}/plan-mode/workspace`, init);
 }
 
 export function generateFeaturePlanArtifact(
-  sessionId: string,
-  input: SpecificationGenerationInput
+	sessionId: string,
+	input: SpecificationGenerationInput,
 ) {
-  return apiFetch(`/api/tasks/${sessionId}/plan-mode/feature-plan`, jsonRequest('POST', input));
+	return apiFetch(
+		`/api/tasks/${sessionId}/plan-mode/feature-plan`,
+		jsonRequest("POST", input),
+	);
 }

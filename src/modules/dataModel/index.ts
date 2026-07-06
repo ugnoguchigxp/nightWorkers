@@ -1,1 +1,1 @@
-export * from './dataModelCommands';
+export * from "./dataModelCommands";

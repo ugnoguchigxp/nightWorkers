@@ -1,1 +1,1 @@
-export * from '../queue/queue-management.service';
+export * from "../queue/queue-management.service";

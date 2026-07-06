@@ -1,2 +1,2 @@
-export * from './inspect-structure';
-export * from './types';
+export * from "./inspect-structure";
+export * from "./types";

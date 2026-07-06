@@ -1,1 +1,1 @@
-export { GeneralSettingsPanel } from '../../settings/SettingsGeneralPanel';
+export { GeneralSettingsPanel } from "../../settings/SettingsGeneralPanel";

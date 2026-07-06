@@ -13,7 +13,13 @@
  * - Remove this file and related call sites once NightWorkers supports those external namespaces,
  *   or when prompt/system-context isolation is fully guaranteed.
  */
-export function isTemporarilyBlockedExternalToolName(toolName: string): boolean {
-  const lower = toolName.toLowerCase();
-  return lower.startsWith('mcp__') || lower.startsWith('functions.') || lower.includes('.');
+export function isTemporarilyBlockedExternalToolName(
+	toolName: string,
+): boolean {
+	const lower = toolName.toLowerCase();
+	return (
+		lower.startsWith("mcp__") ||
+		lower.startsWith("functions.") ||
+		lower.includes(".")
+	);
 }

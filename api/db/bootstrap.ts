@@ -1,21 +1,25 @@
-import { ensureBaseNightWorkersTables } from './base-schema-bootstrap';
-import { client } from './client';
+import { ensureBaseNightWorkersTables } from "./base-schema-bootstrap";
+import { client } from "./client";
 import {
-  ensureMissionPlannerTables,
-  ensureProjectDetailTables,
-} from './project-detail-schema-bootstrap';
-import { ensureProjectEvaluationTables } from './project-evaluation-schema-bootstrap';
-import { ensureReviewModeTables } from './review-mode-schema-bootstrap';
-import { ensureColumn } from './schema-bootstrap-utils';
+	ensureMissionPlannerTables,
+	ensureProjectDetailTables,
+} from "./project-detail-schema-bootstrap";
+import { ensureProjectEvaluationTables } from "./project-evaluation-schema-bootstrap";
+import { ensureReviewModeTables } from "./review-mode-schema-bootstrap";
+import { ensureColumn } from "./schema-bootstrap-utils";
 
 async function ensureNullableDesignQuestionnaireBlueprintSource() {
-  const columns = await client.execute('PRAGMA table_info(design_questionnaire_sessions)');
-  const sourceColumn = columns.rows.find((row) => row.name === 'source_blueprint_message_id');
-  if (!sourceColumn || sourceColumn.notnull !== 1) return;
+	const columns = await client.execute(
+		"PRAGMA table_info(design_questionnaire_sessions)",
+	);
+	const sourceColumn = columns.rows.find(
+		(row) => row.name === "source_blueprint_message_id",
+	);
+	if (!sourceColumn || sourceColumn.notnull !== 1) return;
 
-  await client.execute('PRAGMA foreign_keys = OFF');
-  try {
-    await client.execute(`
+	await client.execute("PRAGMA foreign_keys = OFF");
+	try {
+		await client.execute(`
       CREATE TABLE IF NOT EXISTS design_questionnaire_sessions_next (
         id text PRIMARY KEY NOT NULL,
         created_at integer NOT NULL,
@@ -29,7 +33,7 @@ async function ensureNullableDesignQuestionnaireBlueprintSource() {
         FOREIGN KEY (source_blueprint_message_id) REFERENCES task_messages(id) ON DELETE cascade
       )
     `);
-    await client.execute(`
+		await client.execute(`
       INSERT INTO design_questionnaire_sessions_next (
         id,
         created_at,
@@ -49,63 +53,79 @@ async function ensureNullableDesignQuestionnaireBlueprintSource() {
         status
       FROM design_questionnaire_sessions
     `);
-    await client.execute('DROP TABLE design_questionnaire_sessions');
-    await client.execute(
-      'ALTER TABLE design_questionnaire_sessions_next RENAME TO design_questionnaire_sessions'
-    );
-    await client.execute(
-      'CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_task_idx ON design_questionnaire_sessions (task_id)'
-    );
-    await client.execute(
-      'CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_repository_idx ON design_questionnaire_sessions (repository_id)'
-    );
-    await client.execute(
-      'CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_source_blueprint_idx ON design_questionnaire_sessions (source_blueprint_message_id)'
-    );
-  } finally {
-    await client.execute('PRAGMA foreign_keys = ON');
-  }
+		await client.execute("DROP TABLE design_questionnaire_sessions");
+		await client.execute(
+			"ALTER TABLE design_questionnaire_sessions_next RENAME TO design_questionnaire_sessions",
+		);
+		await client.execute(
+			"CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_task_idx ON design_questionnaire_sessions (task_id)",
+		);
+		await client.execute(
+			"CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_repository_idx ON design_questionnaire_sessions (repository_id)",
+		);
+		await client.execute(
+			"CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_source_blueprint_idx ON design_questionnaire_sessions (source_blueprint_message_id)",
+		);
+	} finally {
+		await client.execute("PRAGMA foreign_keys = ON");
+	}
 }
 
 export async function ensureNightWorkersSchema() {
-  await client.execute('PRAGMA foreign_keys = ON');
-  await client.execute('PRAGMA busy_timeout = 10000');
-  await client.execute('PRAGMA journal_mode = WAL');
+	await client.execute("PRAGMA foreign_keys = ON");
+	await client.execute("PRAGMA busy_timeout = 10000");
+	await client.execute("PRAGMA journal_mode = WAL");
 
-  // Drop legacy BBS tables if they exist
-  await client.execute('DROP TABLE IF EXISTS comments');
-  await client.execute('DROP TABLE IF EXISTS threads');
+	// Drop legacy BBS tables if they exist
+	await client.execute("DROP TABLE IF EXISTS comments");
+	await client.execute("DROP TABLE IF EXISTS threads");
 
-  await ensureBaseNightWorkersTables();
-  await ensureNullableDesignQuestionnaireBlueprintSource();
-  await ensureProjectEvaluationTables();
-  await ensureProjectDetailTables();
-  await ensureMissionPlannerTables();
-  await ensureReviewModeTables();
+	await ensureBaseNightWorkersTables();
+	await ensureNullableDesignQuestionnaireBlueprintSource();
+	await ensureProjectEvaluationTables();
+	await ensureProjectDetailTables();
+	await ensureMissionPlannerTables();
+	await ensureReviewModeTables();
 
-  const taskRunColumns = await client.execute('PRAGMA table_info(task_runs)');
-  const hasFinalJudgmentColumn = taskRunColumns.rows.some((row) => row.name === 'final_judgment');
-  if (taskRunColumns.rows.length > 0 && !hasFinalJudgmentColumn) {
-    await client.execute('ALTER TABLE task_runs ADD COLUMN final_judgment text');
-  }
+	const taskRunColumns = await client.execute("PRAGMA table_info(task_runs)");
+	const hasFinalJudgmentColumn = taskRunColumns.rows.some(
+		(row) => row.name === "final_judgment",
+	);
+	if (taskRunColumns.rows.length > 0 && !hasFinalJudgmentColumn) {
+		await client.execute(
+			"ALTER TABLE task_runs ADD COLUMN final_judgment text",
+		);
+	}
 
-  const repositoryColumns = await client.execute('PRAGMA table_info(repositories)');
-  const hasQueueEnabledColumn = repositoryColumns.rows.some((row) => row.name === 'queue_enabled');
-  if (repositoryColumns.rows.length > 0 && !hasQueueEnabledColumn) {
-    await client.execute(
-      'ALTER TABLE repositories ADD COLUMN queue_enabled integer DEFAULT false NOT NULL'
-    );
-  }
-  const hasMaxConcurrentSessionsColumn = repositoryColumns.rows.some(
-    (row) => row.name === 'max_concurrent_sessions'
-  );
-  if (repositoryColumns.rows.length > 0 && !hasMaxConcurrentSessionsColumn) {
-    await client.execute(
-      'ALTER TABLE repositories ADD COLUMN max_concurrent_sessions integer DEFAULT 1 NOT NULL'
-    );
-  }
+	const repositoryColumns = await client.execute(
+		"PRAGMA table_info(repositories)",
+	);
+	const hasQueueEnabledColumn = repositoryColumns.rows.some(
+		(row) => row.name === "queue_enabled",
+	);
+	if (repositoryColumns.rows.length > 0 && !hasQueueEnabledColumn) {
+		await client.execute(
+			"ALTER TABLE repositories ADD COLUMN queue_enabled integer DEFAULT false NOT NULL",
+		);
+	}
+	const hasMaxConcurrentSessionsColumn = repositoryColumns.rows.some(
+		(row) => row.name === "max_concurrent_sessions",
+	);
+	if (repositoryColumns.rows.length > 0 && !hasMaxConcurrentSessionsColumn) {
+		await client.execute(
+			"ALTER TABLE repositories ADD COLUMN max_concurrent_sessions integer DEFAULT 1 NOT NULL",
+		);
+	}
+	const hasProjectMetaColumn = repositoryColumns.rows.some(
+		(row) => row.name === "project_meta",
+	);
+	if (repositoryColumns.rows.length > 0 && !hasProjectMetaColumn) {
+		await client.execute(
+			"ALTER TABLE repositories ADD COLUMN project_meta text",
+		);
+	}
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS task_messages (
       id text PRIMARY KEY NOT NULL,
       task_id text NOT NULL,
@@ -120,14 +140,14 @@ export async function ensureNightWorkersSchema() {
     )
   `);
 
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS task_messages_task_id_idx ON task_messages (task_id)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS task_messages_run_id_idx ON task_messages (run_id)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS task_messages_task_id_idx ON task_messages (task_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS task_messages_run_id_idx ON task_messages (run_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS native_api_turns (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -148,18 +168,22 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS native_api_turns_run_turn_uidx ON native_api_turns (run_id, turn_index)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS native_api_turns_run_status_idx ON native_api_turns (run_id, status)'
-  );
-  await ensureColumn('native_api_turns', 'execution_mode', 'execution_mode text');
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS native_api_turns_resume_idx ON native_api_turns (task_id, status, provider, model, execution_mode, finished_at)'
-  );
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS native_api_turns_run_turn_uidx ON native_api_turns (run_id, turn_index)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS native_api_turns_run_status_idx ON native_api_turns (run_id, status)",
+	);
+	await ensureColumn(
+		"native_api_turns",
+		"execution_mode",
+		"execution_mode text",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS native_api_turns_resume_idx ON native_api_turns (task_id, status, provider, model, execution_mode, finished_at)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS native_api_tool_calls (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -183,17 +207,17 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (turn_id) REFERENCES native_api_turns(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS native_api_tool_calls_run_call_uidx ON native_api_tool_calls (run_id, tool_call_id)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS native_api_tool_calls_run_status_idx ON native_api_tool_calls (run_id, status)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS native_api_tool_calls_turn_idx ON native_api_tool_calls (turn_id)'
-  );
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS native_api_tool_calls_run_call_uidx ON native_api_tool_calls (run_id, tool_call_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS native_api_tool_calls_run_status_idx ON native_api_tool_calls (run_id, status)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS native_api_tool_calls_turn_idx ON native_api_tool_calls (turn_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS runtime_session_states (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -214,7 +238,7 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE set null
     )
   `);
-  await client.execute(`
+	await client.execute(`
     CREATE INDEX IF NOT EXISTS runtime_session_states_lookup_idx
     ON runtime_session_states (
       task_id,
@@ -226,11 +250,11 @@ export async function ensureNightWorkersSchema() {
       last_seen_at
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS runtime_session_states_run_idx ON runtime_session_states (run_id)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS runtime_session_states_run_idx ON runtime_session_states (run_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS conversation_context_snapshots (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -252,17 +276,17 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE set null
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS conversation_context_snapshots_task_id_idx ON conversation_context_snapshots (task_id)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS conversation_context_snapshots_run_id_idx ON conversation_context_snapshots (run_id)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS conversation_context_snapshots_task_updated_idx ON conversation_context_snapshots (task_id, updated_at)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS conversation_context_snapshots_task_id_idx ON conversation_context_snapshots (task_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS conversation_context_snapshots_run_id_idx ON conversation_context_snapshots (run_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS conversation_context_snapshots_task_updated_idx ON conversation_context_snapshots (task_id, updated_at)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS llm_usage_records (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -291,20 +315,20 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE set null
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS llm_usage_records_task_created_idx ON llm_usage_records (task_id, created_at)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS llm_usage_records_run_created_idx ON llm_usage_records (run_id, created_at)'
-  );
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS llm_usage_records_call_id_uidx ON llm_usage_records (call_id)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS llm_usage_records_provider_created_idx ON llm_usage_records (provider, created_at)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS llm_usage_records_task_created_idx ON llm_usage_records (task_id, created_at)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS llm_usage_records_run_created_idx ON llm_usage_records (run_id, created_at)",
+	);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS llm_usage_records_call_id_uidx ON llm_usage_records (call_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS llm_usage_records_provider_created_idx ON llm_usage_records (provider, created_at)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS llm_model_pricing (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -324,17 +348,17 @@ export async function ensureNightWorkersSchema() {
       enabled integer DEFAULT true NOT NULL
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS llm_model_pricing_provider_model_idx ON llm_model_pricing (provider, model)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS llm_model_pricing_enabled_idx ON llm_model_pricing (enabled)'
-  );
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS llm_model_pricing_provider_model_currency_effective_uidx ON llm_model_pricing (provider, model, currency_code, effective_from)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS llm_model_pricing_provider_model_idx ON llm_model_pricing (provider, model)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS llm_model_pricing_enabled_idx ON llm_model_pricing (enabled)",
+	);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS llm_model_pricing_provider_model_currency_effective_uidx ON llm_model_pricing (provider, model, currency_code, effective_from)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS activity_artifacts (
       id text PRIMARY KEY NOT NULL,
       task_id text NOT NULL,
@@ -348,17 +372,17 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE set null
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS activity_artifacts_task_id_idx ON activity_artifacts (task_id)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS activity_artifacts_run_id_idx ON activity_artifacts (run_id)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS activity_artifacts_kind_created_at_idx ON activity_artifacts (kind, created_at)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS activity_artifacts_task_id_idx ON activity_artifacts (task_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS activity_artifacts_run_id_idx ON activity_artifacts (run_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS activity_artifacts_kind_created_at_idx ON activity_artifacts (kind, created_at)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS activity_events (
       id text PRIMARY KEY NOT NULL,
       task_id text NOT NULL,
@@ -384,29 +408,29 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (artifact_id) REFERENCES activity_artifacts(id) ON DELETE set null
     )
   `);
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS activity_events_task_seq_uidx ON activity_events (task_id, seq)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS activity_events_task_created_at_idx ON activity_events (task_id, created_at)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS activity_events_run_seq_idx ON activity_events (run_id, run_seq)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS activity_events_turn_seq_idx ON activity_events (turn_id, seq)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS activity_events_kind_created_at_idx ON activity_events (kind, created_at)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS activity_events_artifact_id_idx ON activity_events (artifact_id)'
-  );
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS activity_events_dedupe_key_uidx ON activity_events (dedupe_key)'
-  );
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS activity_events_task_seq_uidx ON activity_events (task_id, seq)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS activity_events_task_created_at_idx ON activity_events (task_id, created_at)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS activity_events_run_seq_idx ON activity_events (run_id, run_seq)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS activity_events_turn_seq_idx ON activity_events (turn_id, seq)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS activity_events_kind_created_at_idx ON activity_events (kind, created_at)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS activity_events_artifact_id_idx ON activity_events (artifact_id)",
+	);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS activity_events_dedupe_key_uidx ON activity_events (dedupe_key)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS background_processes (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -432,17 +456,17 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (output_artifact_id) REFERENCES activity_artifacts(id) ON DELETE set null
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS background_processes_repository_status_idx ON background_processes (repository_id, status)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS background_processes_task_status_idx ON background_processes (task_id, status)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS background_processes_run_status_idx ON background_processes (run_id, status)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS background_processes_repository_status_idx ON background_processes (repository_id, status)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS background_processes_task_status_idx ON background_processes (task_id, status)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS background_processes_run_status_idx ON background_processes (run_id, status)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS task_run_todos (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -465,14 +489,14 @@ export async function ensureNightWorkersSchema() {
     )
   `);
 
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS task_run_todos_run_id_idx ON task_run_todos (run_id)'
-  );
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS task_run_todos_run_seq_uidx ON task_run_todos (run_id, seq)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS task_run_todos_run_id_idx ON task_run_todos (run_id)",
+	);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS task_run_todos_run_seq_uidx ON task_run_todos (run_id, seq)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS task_run_commit_records (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -495,14 +519,14 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS task_run_commit_records_run_id_uidx ON task_run_commit_records (run_id)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS task_run_commit_records_repository_status_idx ON task_run_commit_records (repository_id, status)'
-  );
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS task_run_commit_records_run_id_uidx ON task_run_commit_records (run_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS task_run_commit_records_repository_status_idx ON task_run_commit_records (repository_id, status)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS implementation_queue_entries (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -537,79 +561,107 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (active_run_id) REFERENCES task_runs(id) ON DELETE set null
     )
   `);
-  await ensureColumn('implementation_queue_entries', 'lease_owner_id', 'lease_owner_id text');
-  await ensureColumn(
-    'implementation_queue_entries',
-    'lease_acquired_at',
-    'lease_acquired_at integer'
-  );
-  await ensureColumn(
-    'implementation_queue_entries',
-    'lease_expires_at',
-    'lease_expires_at integer'
-  );
-  await ensureColumn(
-    'implementation_queue_entries',
-    'lease_version',
-    'lease_version integer DEFAULT 0 NOT NULL'
-  );
-  await ensureColumn(
-    'implementation_queue_entries',
-    'attempt_count',
-    'attempt_count integer DEFAULT 0 NOT NULL'
-  );
-  await ensureColumn('implementation_queue_entries', 'recovered_at', 'recovered_at integer');
-  await ensureColumn('implementation_queue_entries', 'recovery_reason', 'recovery_reason text');
-  await ensureColumn('implementation_queue_entries', 'last_failure_kind', 'last_failure_kind text');
-  await ensureColumn(
-    'implementation_queue_entries',
-    'execution_type',
-    "execution_type text DEFAULT 'normal' NOT NULL"
-  );
-  await ensureColumn(
-    'implementation_queue_entries',
-    'execution_lock_key',
-    'execution_lock_key text'
-  );
-  await ensureColumn('implementation_queue_entries', 'sequence_group_id', 'sequence_group_id text');
-  await ensureColumn('implementation_queue_entries', 'sequence_order', 'sequence_order integer');
-  await ensureColumn(
-    'implementation_queue_entries',
-    'sequence_depends_on_entry_id',
-    'sequence_depends_on_entry_id text'
-  );
-  await ensureColumn('implementation_queue_entries', 'scheduling_reason', 'scheduling_reason text');
-  await client.execute(`
+	await ensureColumn(
+		"implementation_queue_entries",
+		"lease_owner_id",
+		"lease_owner_id text",
+	);
+	await ensureColumn(
+		"implementation_queue_entries",
+		"lease_acquired_at",
+		"lease_acquired_at integer",
+	);
+	await ensureColumn(
+		"implementation_queue_entries",
+		"lease_expires_at",
+		"lease_expires_at integer",
+	);
+	await ensureColumn(
+		"implementation_queue_entries",
+		"lease_version",
+		"lease_version integer DEFAULT 0 NOT NULL",
+	);
+	await ensureColumn(
+		"implementation_queue_entries",
+		"attempt_count",
+		"attempt_count integer DEFAULT 0 NOT NULL",
+	);
+	await ensureColumn(
+		"implementation_queue_entries",
+		"recovered_at",
+		"recovered_at integer",
+	);
+	await ensureColumn(
+		"implementation_queue_entries",
+		"recovery_reason",
+		"recovery_reason text",
+	);
+	await ensureColumn(
+		"implementation_queue_entries",
+		"last_failure_kind",
+		"last_failure_kind text",
+	);
+	await ensureColumn(
+		"implementation_queue_entries",
+		"execution_type",
+		"execution_type text DEFAULT 'normal' NOT NULL",
+	);
+	await ensureColumn(
+		"implementation_queue_entries",
+		"execution_lock_key",
+		"execution_lock_key text",
+	);
+	await ensureColumn(
+		"implementation_queue_entries",
+		"sequence_group_id",
+		"sequence_group_id text",
+	);
+	await ensureColumn(
+		"implementation_queue_entries",
+		"sequence_order",
+		"sequence_order integer",
+	);
+	await ensureColumn(
+		"implementation_queue_entries",
+		"sequence_depends_on_entry_id",
+		"sequence_depends_on_entry_id text",
+	);
+	await ensureColumn(
+		"implementation_queue_entries",
+		"scheduling_reason",
+		"scheduling_reason text",
+	);
+	await client.execute(`
     UPDATE implementation_queue_entries
     SET execution_lock_key = 'repository:' || repository_id
     WHERE execution_lock_key IS NULL
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS implementation_queue_entries_task_id_idx ON implementation_queue_entries (task_id)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS implementation_queue_entries_repository_status_idx ON implementation_queue_entries (repository_id, status)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS implementation_queue_entries_claim_order_idx ON implementation_queue_entries (status, priority, queue_position, created_at)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS implementation_queue_entries_lease_expiry_idx ON implementation_queue_entries (status, lease_expires_at)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS implementation_queue_entries_active_run_idx ON implementation_queue_entries (active_run_id)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS implementation_queue_entries_lease_owner_idx ON implementation_queue_entries (lease_owner_id, lease_expires_at)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS implementation_queue_entries_scheduling_idx ON implementation_queue_entries (repository_id, execution_lock_key, execution_type, status)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS implementation_queue_entries_sequence_idx ON implementation_queue_entries (sequence_group_id, sequence_order)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS implementation_queue_entries_task_id_idx ON implementation_queue_entries (task_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS implementation_queue_entries_repository_status_idx ON implementation_queue_entries (repository_id, status)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS implementation_queue_entries_claim_order_idx ON implementation_queue_entries (status, priority, queue_position, created_at)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS implementation_queue_entries_lease_expiry_idx ON implementation_queue_entries (status, lease_expires_at)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS implementation_queue_entries_active_run_idx ON implementation_queue_entries (active_run_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS implementation_queue_entries_lease_owner_idx ON implementation_queue_entries (lease_owner_id, lease_expires_at)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS implementation_queue_entries_scheduling_idx ON implementation_queue_entries (repository_id, execution_lock_key, execution_type, status)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS implementation_queue_entries_sequence_idx ON implementation_queue_entries (sequence_group_id, sequence_order)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS implementation_queue_settings (
       id text PRIMARY KEY NOT NULL,
       processor_count integer DEFAULT 1 NOT NULL,
@@ -617,13 +669,13 @@ export async function ensureNightWorkersSchema() {
       updated_at integer NOT NULL
     )
   `);
-  await client.execute(`
+	await client.execute(`
     INSERT INTO implementation_queue_settings (id, processor_count, created_at, updated_at)
     SELECT 'global', 1, unixepoch() * 1000, unixepoch() * 1000
     WHERE NOT EXISTS (SELECT 1 FROM implementation_queue_settings WHERE id = 'global')
   `);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS todo_workflow_settings (
       id text PRIMARY KEY NOT NULL,
       require_per_todo_review integer DEFAULT true NOT NULL,
@@ -636,12 +688,12 @@ export async function ensureNightWorkersSchema() {
       updated_at integer NOT NULL
     )
   `);
-  await ensureColumn(
-    'todo_workflow_settings',
-    'require_register_candidate_prompt',
-    'require_register_candidate_prompt integer DEFAULT true NOT NULL'
-  );
-  await client.execute(`
+	await ensureColumn(
+		"todo_workflow_settings",
+		"require_register_candidate_prompt",
+		"require_register_candidate_prompt integer DEFAULT true NOT NULL",
+	);
+	await client.execute(`
     INSERT INTO todo_workflow_settings (
       id,
       require_per_todo_review,
@@ -656,7 +708,7 @@ export async function ensureNightWorkersSchema() {
     WHERE NOT EXISTS (SELECT 1 FROM todo_workflow_settings WHERE id = 'global')
   `);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS blueprint_design_settings (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -667,11 +719,11 @@ export async function ensureNightWorkersSchema() {
     )
   `);
 
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS blueprint_design_settings_task_id_uidx ON blueprint_design_settings (task_id)'
-  );
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS blueprint_design_settings_task_id_uidx ON blueprint_design_settings (task_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS blueprint_artifact_adoptions (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -683,14 +735,14 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (message_id) REFERENCES task_messages(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS blueprint_artifact_adoptions_task_id_idx ON blueprint_artifact_adoptions (task_id)'
-  );
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS blueprint_artifact_adoptions_message_uidx ON blueprint_artifact_adoptions (task_id, message_id)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS blueprint_artifact_adoptions_task_id_idx ON blueprint_artifact_adoptions (task_id)",
+	);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS blueprint_artifact_adoptions_message_uidx ON blueprint_artifact_adoptions (task_id, message_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS blueprint_design_token_adoptions (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -702,14 +754,14 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (message_id) REFERENCES task_messages(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS blueprint_design_token_adoptions_task_id_idx ON blueprint_design_token_adoptions (task_id)'
-  );
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS blueprint_design_token_adoptions_message_uidx ON blueprint_design_token_adoptions (task_id, message_id)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS blueprint_design_token_adoptions_task_id_idx ON blueprint_design_token_adoptions (task_id)",
+	);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS blueprint_design_token_adoptions_message_uidx ON blueprint_design_token_adoptions (task_id, message_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS design_questionnaire_sessions (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -723,17 +775,17 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (source_blueprint_message_id) REFERENCES task_messages(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_task_idx ON design_questionnaire_sessions (task_id)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_repository_idx ON design_questionnaire_sessions (repository_id)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_source_blueprint_idx ON design_questionnaire_sessions (source_blueprint_message_id)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_task_idx ON design_questionnaire_sessions (task_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_repository_idx ON design_questionnaire_sessions (repository_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_source_blueprint_idx ON design_questionnaire_sessions (source_blueprint_message_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS design_questionnaire_question_sets (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -746,14 +798,14 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (session_id) REFERENCES design_questionnaire_sessions(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS design_questionnaire_question_sets_session_idx ON design_questionnaire_question_sets (session_id)'
-  );
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS design_questionnaire_question_sets_sequence_uidx ON design_questionnaire_question_sets (session_id, sequence)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS design_questionnaire_question_sets_session_idx ON design_questionnaire_question_sets (session_id)",
+	);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS design_questionnaire_question_sets_sequence_uidx ON design_questionnaire_question_sets (session_id, sequence)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS design_questionnaire_answers (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -765,14 +817,14 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (session_id) REFERENCES design_questionnaire_sessions(id) ON DELETE cascade
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS design_questionnaire_answers_session_idx ON design_questionnaire_answers (session_id)'
-  );
-  await client.execute(
-    'CREATE UNIQUE INDEX IF NOT EXISTS design_questionnaire_answers_question_uidx ON design_questionnaire_answers (session_id, question_id)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS design_questionnaire_answers_session_idx ON design_questionnaire_answers (session_id)",
+	);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS design_questionnaire_answers_question_uidx ON design_questionnaire_answers (session_id, question_id)",
+	);
 
-  await client.execute(`
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS design_questionnaire_reviews (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,
@@ -785,10 +837,10 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (published_message_id) REFERENCES task_messages(id) ON DELETE set null
     )
   `);
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS design_questionnaire_reviews_session_idx ON design_questionnaire_reviews (session_id)'
-  );
-  await client.execute(
-    'CREATE INDEX IF NOT EXISTS design_questionnaire_reviews_published_message_idx ON design_questionnaire_reviews (published_message_id)'
-  );
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS design_questionnaire_reviews_session_idx ON design_questionnaire_reviews (session_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS design_questionnaire_reviews_published_message_idx ON design_questionnaire_reviews (published_message_id)",
+	);
 }

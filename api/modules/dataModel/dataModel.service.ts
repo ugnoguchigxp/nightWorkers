@@ -1,1 +1,1 @@
-export { generateDataModelArtifact } from './dataModel-generation.service';
+export { generateDataModelArtifact } from "./dataModel-generation.service";

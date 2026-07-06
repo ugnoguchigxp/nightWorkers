@@ -1,308 +1,352 @@
-import { createHash } from 'node:crypto';
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { estimateTokens, resolveConversationContextOptions } from './token-budget';
+import { createHash } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 import {
-  CONVERSATION_CONTEXT_VERSION,
-  type ConversationContextOptions,
-  type ConversationContextSnapshotV1,
-  type ConversationContextSource,
-} from './types';
+	estimateTokens,
+	resolveConversationContextOptions,
+} from "./token-budget";
+import {
+	CONVERSATION_CONTEXT_VERSION,
+	type ConversationContextOptions,
+	type ConversationContextSnapshotV1,
+	type ConversationContextSource,
+} from "./types";
 
-const DENIED_PATH_PREFIXES = ['logs/', 'coverage/', 'node_modules/', 'dist/', 'dist-api/', '.git/'];
+const DENIED_PATH_PREFIXES = [
+	"logs/",
+	"coverage/",
+	"node_modules/",
+	"dist/",
+	"dist-api/",
+	".git/",
+];
 const PATH_PATTERN =
-  /(?:^|[\s`"'(])([A-Za-z0-9._@/-]+\.[A-Za-z0-9]+|[A-Za-z0-9._@-]+\/[A-Za-z0-9._@/-]+)(?=$|[\s`"',).:;!?])/g;
+	/(?:^|[\s`"'(])([A-Za-z0-9._@/-]+\.[A-Za-z0-9]+|[A-Za-z0-9._@-]+\/[A-Za-z0-9._@/-]+)(?=$|[\s`"',).:;!?])/g;
 
 export async function buildConversationContextSnapshot(input: {
-  source: ConversationContextSource;
-  options?: ConversationContextOptions;
+	source: ConversationContextSource;
+	options?: ConversationContextOptions;
 }): Promise<ConversationContextSnapshotV1> {
-  const latestUser = findLatestUserMessage(input.source.messages);
-  const intake = findLatestIntakeJobSelection(input.source.messages);
-  const previousRun = findPreviousRun(input.source.runs, input.options?.currentRunId);
-  const previousSnapshot = input.source.previousSnapshot?.snapshotJson ?? null;
-  const workerEvidence =
-    previousRun?.lastWorkerEvidence ?? previousSnapshot?.runState.workerEvidence ?? null;
-  const targetFiles = deriveTargetFiles({
-    latestUserRequest:
-      latestUser?.content ?? input.source.task.description ?? input.source.task.objective ?? '',
-    intakeGoal: intake?.goal ?? null,
-    previousSnapshot,
-    workerEvidenceTargets: workerEvidence?.targets ?? [],
-  });
-  const snippets = await collectCodeSnippets({
-    repositoryPath: input.source.task.repositoryPath,
-    targetFiles,
-    options: input.options,
-  });
-  const previousAction = truncate(
-    previousRun?.finalReport ||
-      previousRun?.summary ||
-      previousSnapshot?.continuity.previousAction ||
-      null,
-    360
-  );
-  const lastError = extractLastError(previousRun);
+	const latestUser = findLatestUserMessage(input.source.messages);
+	const intake = findLatestIntakeJobSelection(input.source.messages);
+	const previousRun = findPreviousRun(
+		input.source.runs,
+		input.options?.currentRunId,
+	);
+	const previousSnapshot = input.source.previousSnapshot?.snapshotJson ?? null;
+	const workerEvidence =
+		previousRun?.lastWorkerEvidence ??
+		previousSnapshot?.runState.workerEvidence ??
+		null;
+	const targetFiles = deriveTargetFiles({
+		latestUserRequest:
+			latestUser?.content ??
+			input.source.task.description ??
+			input.source.task.objective ??
+			"",
+		intakeGoal: intake?.goal ?? null,
+		previousSnapshot,
+		workerEvidenceTargets: workerEvidence?.targets ?? [],
+	});
+	const snippets = await collectCodeSnippets({
+		repositoryPath: input.source.task.repositoryPath,
+		targetFiles,
+		options: input.options,
+	});
+	const previousAction = truncate(
+		previousRun?.finalReport ||
+			previousRun?.summary ||
+			previousSnapshot?.continuity.previousAction ||
+			null,
+		360,
+	);
+	const lastError = extractLastError(previousRun);
 
-  const snapshot: ConversationContextSnapshotV1 = {
-    version: CONVERSATION_CONTEXT_VERSION,
-    task: {
-      id: input.source.task.id,
-      status: input.source.task.status,
-      latestUserMessageId: latestUser?.id ?? null,
-      latestUserRequest: latestUser?.content ?? '',
-      title: input.source.task.title,
-    },
-    classification: {
-      jobType: intake?.jobType ?? previousSnapshot?.classification.jobType ?? null,
-      goal: intake?.goal ?? previousSnapshot?.classification.goal ?? null,
-      source: intake
-        ? 'intake_metadata'
-        : previousSnapshot?.classification.jobType
-          ? 'previous_run'
-          : 'none',
-    },
-    continuity: {
-      isContinuation:
-        Boolean(previousRun) ||
-        Boolean(previousSnapshot) ||
-        input.source.messages.filter((message) => message.role === 'user').length > 1,
-      previousRunId: previousRun?.id ?? previousSnapshot?.continuity.previousRunId ?? null,
-      previousTerminalState:
-        previousRun?.status ?? previousSnapshot?.continuity.previousTerminalState ?? null,
-      previousAction,
-    },
-    files: {
-      target: targetFiles,
-    },
-    runState: {
-      lastError,
-      lastFinalReport: truncate(previousRun?.finalReport ?? null, 720),
-      lastToolFailure: truncate(previousRun?.lastToolFailure ?? null, 500),
-      workerEvidence,
-    },
-    code: {
-      snippets,
-    },
-    limits: {
-      tokenEstimate: 0,
-      truncatedFields: [],
-    },
-  };
-  snapshot.contextBaseline = buildContextBaseline({
-    snapshot,
-    repoRoot: input.source.task.repositoryPath,
-    previousBaseline: previousSnapshot?.contextBaseline ?? null,
-  });
-  return snapshot;
+	const snapshot: ConversationContextSnapshotV1 = {
+		version: CONVERSATION_CONTEXT_VERSION,
+		task: {
+			id: input.source.task.id,
+			status: input.source.task.status,
+			latestUserMessageId: latestUser?.id ?? null,
+			latestUserRequest: latestUser?.content ?? "",
+			title: input.source.task.title,
+		},
+		classification: {
+			jobType:
+				intake?.jobType ?? previousSnapshot?.classification.jobType ?? null,
+			goal: intake?.goal ?? previousSnapshot?.classification.goal ?? null,
+			source: intake
+				? "intake_metadata"
+				: previousSnapshot?.classification.jobType
+					? "previous_run"
+					: "none",
+		},
+		continuity: {
+			isContinuation:
+				Boolean(previousRun) ||
+				Boolean(previousSnapshot) ||
+				input.source.messages.filter((message) => message.role === "user")
+					.length > 1,
+			previousRunId:
+				previousRun?.id ?? previousSnapshot?.continuity.previousRunId ?? null,
+			previousTerminalState:
+				previousRun?.status ??
+				previousSnapshot?.continuity.previousTerminalState ??
+				null,
+			previousAction,
+		},
+		files: {
+			target: targetFiles,
+		},
+		runState: {
+			lastError,
+			lastFinalReport: truncate(previousRun?.finalReport ?? null, 720),
+			lastToolFailure: truncate(previousRun?.lastToolFailure ?? null, 500),
+			workerEvidence,
+		},
+		code: {
+			snippets,
+		},
+		limits: {
+			tokenEstimate: 0,
+			truncatedFields: [],
+		},
+	};
+	snapshot.contextBaseline = buildContextBaseline({
+		snapshot,
+		repoRoot: input.source.task.repositoryPath,
+		previousBaseline: previousSnapshot?.contextBaseline ?? null,
+	});
+	return snapshot;
 }
 
-export function findLatestUserMessage(messages: ConversationContextSource['messages']) {
-  return [...messages].reverse().find((message) => message.role === 'user') ?? null;
+export function findLatestUserMessage(
+	messages: ConversationContextSource["messages"],
+) {
+	return (
+		[...messages].reverse().find((message) => message.role === "user") ?? null
+	);
 }
 
-export function findLatestIntakeJobSelection(messages: ConversationContextSource['messages']) {
-  for (const message of [...messages].reverse()) {
-    const metadata = asRecord(message.metadataJson);
-    const selection = asRecord(metadata?.intakeJobSelection) ?? asRecord(metadata?.jobSelection);
-    if (typeof selection?.jobType === 'string') {
-      return {
-        jobType: selection.jobType,
-        goal: typeof selection.goal === 'string' ? selection.goal : null,
-      };
-    }
-  }
-  return null;
+export function findLatestIntakeJobSelection(
+	messages: ConversationContextSource["messages"],
+) {
+	for (const message of [...messages].reverse()) {
+		const metadata = asRecord(message.metadataJson);
+		const selection =
+			asRecord(metadata?.intakeJobSelection) ??
+			asRecord(metadata?.jobSelection);
+		if (typeof selection?.jobType === "string") {
+			return {
+				jobType: selection.jobType,
+				goal: typeof selection.goal === "string" ? selection.goal : null,
+			};
+		}
+	}
+	return null;
 }
 
 export function findPreviousRun(
-  runs: ConversationContextSource['runs'],
-  currentRunId?: string | null
+	runs: ConversationContextSource["runs"],
+	currentRunId?: string | null,
 ) {
-  const candidates = currentRunId ? runs.filter((run) => run.id !== currentRunId) : runs;
-  return (
-    candidates.find((run) =>
-      [
-        'completed',
-        'failed',
-        'cancelled',
-        'needs_review',
-        'blocked',
-        'timed_out',
-        'needs_human',
-      ].includes(run.status)
-    ) ??
-    candidates[0] ??
-    null
-  );
+	const candidates = currentRunId
+		? runs.filter((run) => run.id !== currentRunId)
+		: runs;
+	return (
+		candidates.find((run) =>
+			[
+				"completed",
+				"failed",
+				"cancelled",
+				"needs_review",
+				"blocked",
+				"timed_out",
+				"needs_human",
+			].includes(run.status),
+		) ??
+		candidates[0] ??
+		null
+	);
 }
 
 export function deriveTargetFiles(input: {
-  latestUserRequest: string;
-  intakeGoal: string | null;
-  previousSnapshot: ConversationContextSnapshotV1 | null;
-  workerEvidenceTargets?: string[];
+	latestUserRequest: string;
+	intakeGoal: string | null;
+	previousSnapshot: ConversationContextSnapshotV1 | null;
+	workerEvidenceTargets?: string[];
 }) {
-  // Conservative file hints only. This must not classify workflow, jobType, or taskType.
-  const paths = new Set<string>();
-  for (const value of extractConservativePaths(input.latestUserRequest)) paths.add(value);
-  for (const value of extractConservativePaths(input.intakeGoal || '')) paths.add(value);
-  for (const value of input.previousSnapshot?.files.target ?? []) {
-    if (isAllowedRelativePath(value)) paths.add(value);
-  }
-  for (const value of input.workerEvidenceTargets ?? []) {
-    if (isAllowedRelativePath(value)) paths.add(value);
-  }
-  return Array.from(paths).slice(0, 20);
+	// Conservative file hints only. This must not classify workflow, jobType, or taskType.
+	const paths = new Set<string>();
+	for (const value of extractConservativePaths(input.latestUserRequest))
+		paths.add(value);
+	for (const value of extractConservativePaths(input.intakeGoal || ""))
+		paths.add(value);
+	for (const value of input.previousSnapshot?.files.target ?? []) {
+		if (isAllowedRelativePath(value)) paths.add(value);
+	}
+	for (const value of input.workerEvidenceTargets ?? []) {
+		if (isAllowedRelativePath(value)) paths.add(value);
+	}
+	return Array.from(paths).slice(0, 20);
 }
 
 export function extractConservativePaths(text: string) {
-  const paths = new Set<string>();
-  for (const match of text.matchAll(PATH_PATTERN)) {
-    const candidate = match[1];
-    if (isAllowedRelativePath(candidate)) paths.add(candidate);
-  }
-  return Array.from(paths);
+	const paths = new Set<string>();
+	for (const match of text.matchAll(PATH_PATTERN)) {
+		const candidate = match[1];
+		if (isAllowedRelativePath(candidate)) paths.add(candidate);
+	}
+	return Array.from(paths);
 }
 
 export function isAllowedRelativePath(candidate: string) {
-  const normalized = candidate.replaceAll('\\', '/').replace(/^\.\/+/, '');
-  if (!normalized || normalized.startsWith('/') || normalized.includes('..')) return false;
-  if (!normalized.includes('/') && !/\.[A-Za-z0-9]+$/.test(normalized)) return false;
-  if (
-    DENIED_PATH_PREFIXES.some(
-      (prefix) => normalized === prefix.slice(0, -1) || normalized.startsWith(prefix)
-    )
-  ) {
-    return false;
-  }
-  return normalized === candidate || candidate.startsWith('./');
+	const normalized = candidate.replaceAll("\\", "/").replace(/^\.\/+/, "");
+	if (!normalized || normalized.startsWith("/") || normalized.includes(".."))
+		return false;
+	if (!normalized.includes("/") && !/\.[A-Za-z0-9]+$/.test(normalized))
+		return false;
+	if (
+		DENIED_PATH_PREFIXES.some(
+			(prefix) =>
+				normalized === prefix.slice(0, -1) || normalized.startsWith(prefix),
+		)
+	) {
+		return false;
+	}
+	return normalized === candidate || candidate.startsWith("./");
 }
 
 async function collectCodeSnippets(input: {
-  repositoryPath: string;
-  targetFiles: string[];
-  options?: ConversationContextOptions;
-}): Promise<ConversationContextSnapshotV1['code']['snippets']> {
-  const options = resolveConversationContextOptions(input.options);
-  const snippets: ConversationContextSnapshotV1['code']['snippets'] = [];
-  for (const targetPath of input.targetFiles.slice(0, 5)) {
-    if (!options.includeSmallTargetFile) continue;
-    const absolutePath = path.resolve(input.repositoryPath, targetPath);
-    const repoRoot = path.resolve(input.repositoryPath);
-    if (!absolutePath.startsWith(`${repoRoot}${path.sep}`)) continue;
-    try {
-      const stat = await fs.stat(absolutePath);
-      if (!stat.isFile() || stat.size > options.smallFileCharLimit * 4) continue;
-      const content = await fs.readFile(absolutePath, 'utf8');
-      if (content.length <= options.smallFileCharLimit) {
-        snippets.push({
-          path: targetPath,
-          reason: 'target_file_small',
-          content,
-          truncated: false,
-        });
-      }
-    } catch {}
-  }
-  return snippets;
+	repositoryPath: string;
+	targetFiles: string[];
+	options?: ConversationContextOptions;
+}): Promise<ConversationContextSnapshotV1["code"]["snippets"]> {
+	const options = resolveConversationContextOptions(input.options);
+	const snippets: ConversationContextSnapshotV1["code"]["snippets"] = [];
+	for (const targetPath of input.targetFiles.slice(0, 5)) {
+		if (!options.includeSmallTargetFile) continue;
+		const absolutePath = path.resolve(input.repositoryPath, targetPath);
+		const repoRoot = path.resolve(input.repositoryPath);
+		if (!absolutePath.startsWith(`${repoRoot}${path.sep}`)) continue;
+		try {
+			const stat = await fs.stat(absolutePath);
+			if (!stat.isFile() || stat.size > options.smallFileCharLimit * 4)
+				continue;
+			const content = await fs.readFile(absolutePath, "utf8");
+			if (content.length <= options.smallFileCharLimit) {
+				snippets.push({
+					path: targetPath,
+					reason: "target_file_small",
+					content,
+					truncated: false,
+				});
+			}
+		} catch {}
+	}
+	return snippets;
 }
 
 export function finalizeSnapshotTokenEstimate(
-  snapshot: ConversationContextSnapshotV1,
-  stateCardText: string
+	snapshot: ConversationContextSnapshotV1,
+	stateCardText: string,
 ) {
-  snapshot.limits.tokenEstimate = estimateTokens(stateCardText);
-  return snapshot;
+	snapshot.limits.tokenEstimate = estimateTokens(stateCardText);
+	return snapshot;
 }
 
 function buildContextBaseline(input: {
-  snapshot: ConversationContextSnapshotV1;
-  repoRoot: string;
-  previousBaseline: ConversationContextSnapshotV1['contextBaseline'] | null;
-}): ConversationContextSnapshotV1['contextBaseline'] {
-  const relevantFilesDigest = digestValue(input.snapshot.files.target);
-  const workerEvidenceRefsDigest = digestValue(input.snapshot.runState.workerEvidence);
-  const lastRunId = input.snapshot.continuity.previousRunId;
-  const base = {
-    repoRoot: input.repoRoot,
-    jobType: input.snapshot.classification.jobType,
-    workflow: input.snapshot.classification.jobType,
-    safetyPolicyDigest: null,
-    stateCardDigest: '',
-    relevantFilesDigest,
-    adoptedArtifactDigest: null,
-    blueprintRefsDigest: null,
-    dataModelRefsDigest: null,
-    designQuestionnaireRefsDigest: null,
-    decisionReviewRefsDigest: null,
-    contextStillRefsDigest: null,
-    workerEvidenceRefsDigest,
-    lastRunId,
-  };
-  const stateCardDigest = digestValue({
-    taskId: input.snapshot.task.id,
-    latestUserMessageId: input.snapshot.task.latestUserMessageId,
-    jobType: input.snapshot.classification.jobType,
-    goal: input.snapshot.classification.goal,
-    previousRunId: input.snapshot.continuity.previousRunId,
-    previousTerminalState: input.snapshot.continuity.previousTerminalState,
-    previousAction: input.snapshot.continuity.previousAction,
-    targetFiles: input.snapshot.files.target,
-    lastError: input.snapshot.runState.lastError,
-    lastFinalReport: input.snapshot.runState.lastFinalReport,
-    workerEvidence: input.snapshot.runState.workerEvidence,
-    relevantFilesDigest,
-  });
-  const baseline = {
-    ...base,
-    stateCardDigest: stateCardDigest || 'sha256:empty',
-    unchangedFromPrevious: false,
-    changedFields: [] as string[],
-  };
-  if (input.previousBaseline) {
-    const changedFields = Object.entries(baseline)
-      .filter(([key, value]) => {
-        if (key === 'unchangedFromPrevious' || key === 'changedFields') return false;
-        return input.previousBaseline?.[key as keyof typeof baseline] !== value;
-      })
-      .map(([key]) => key);
-    baseline.changedFields = changedFields;
-    baseline.unchangedFromPrevious = changedFields.length === 0;
-  }
-  return baseline;
+	snapshot: ConversationContextSnapshotV1;
+	repoRoot: string;
+	previousBaseline: ConversationContextSnapshotV1["contextBaseline"] | null;
+}): ConversationContextSnapshotV1["contextBaseline"] {
+	const relevantFilesDigest = digestValue(input.snapshot.files.target);
+	const workerEvidenceRefsDigest = digestValue(
+		input.snapshot.runState.workerEvidence,
+	);
+	const lastRunId = input.snapshot.continuity.previousRunId;
+	const base = {
+		repoRoot: input.repoRoot,
+		jobType: input.snapshot.classification.jobType,
+		workflow: input.snapshot.classification.jobType,
+		safetyPolicyDigest: null,
+		stateCardDigest: "",
+		relevantFilesDigest,
+		adoptedArtifactDigest: null,
+		blueprintRefsDigest: null,
+		dataModelRefsDigest: null,
+		designQuestionnaireRefsDigest: null,
+		decisionReviewRefsDigest: null,
+		contextStillRefsDigest: null,
+		workerEvidenceRefsDigest,
+		lastRunId,
+	};
+	const stateCardDigest = digestValue({
+		taskId: input.snapshot.task.id,
+		latestUserMessageId: input.snapshot.task.latestUserMessageId,
+		jobType: input.snapshot.classification.jobType,
+		goal: input.snapshot.classification.goal,
+		previousRunId: input.snapshot.continuity.previousRunId,
+		previousTerminalState: input.snapshot.continuity.previousTerminalState,
+		previousAction: input.snapshot.continuity.previousAction,
+		targetFiles: input.snapshot.files.target,
+		lastError: input.snapshot.runState.lastError,
+		lastFinalReport: input.snapshot.runState.lastFinalReport,
+		workerEvidence: input.snapshot.runState.workerEvidence,
+		relevantFilesDigest,
+	});
+	const baseline = {
+		...base,
+		stateCardDigest: stateCardDigest || "sha256:empty",
+		unchangedFromPrevious: false,
+		changedFields: [] as string[],
+	};
+	if (input.previousBaseline) {
+		const changedFields = Object.entries(baseline)
+			.filter(([key, value]) => {
+				if (key === "unchangedFromPrevious" || key === "changedFields")
+					return false;
+				return input.previousBaseline?.[key as keyof typeof baseline] !== value;
+			})
+			.map(([key]) => key);
+		baseline.changedFields = changedFields;
+		baseline.unchangedFromPrevious = changedFields.length === 0;
+	}
+	return baseline;
 }
 
 function digestValue(value: unknown) {
-  if (
-    value === null ||
-    value === undefined ||
-    (Array.isArray(value) && value.length === 0) ||
-    value === ''
-  ) {
-    return null;
-  }
-  return `sha256:${createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
+	if (
+		value === null ||
+		value === undefined ||
+		(Array.isArray(value) && value.length === 0) ||
+		value === ""
+	) {
+		return null;
+	}
+	return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
 }
 
-function extractLastError(run: ConversationContextSource['runs'][number] | null) {
-  const judgment = asRecord(run?.finalJudgment);
-  const direct = judgment?.error || judgment?.lastError || judgment?.reason;
-  if (typeof direct === 'string' && direct.trim()) return truncate(direct, 500);
-  if (run?.status && ['failed', 'blocked', 'timed_out'].includes(run.status)) {
-    return truncate(run.summary || run.finalReport || run.status, 500);
-  }
-  return null;
+function extractLastError(
+	run: ConversationContextSource["runs"][number] | null,
+) {
+	const judgment = asRecord(run?.finalJudgment);
+	const direct = judgment?.error || judgment?.lastError || judgment?.reason;
+	if (typeof direct === "string" && direct.trim()) return truncate(direct, 500);
+	if (run?.status && ["failed", "blocked", "timed_out"].includes(run.status)) {
+		return truncate(run.summary || run.finalReport || run.status, 500);
+	}
+	return null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
 }
 
 function truncate(value: string | null, max: number) {
-  if (!value) return null;
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  return normalized.length > max ? normalized.slice(0, max) : normalized;
+	if (!value) return null;
+	const normalized = value.replace(/\s+/g, " ").trim();
+	return normalized.length > max ? normalized.slice(0, max) : normalized;
 }

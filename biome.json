@@ -1,60 +1,25 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
-  "assist": { "actions": { "source": { "organizeImports": "on" } } },
-  "linter": {
-    "enabled": true,
-    "rules": {
-      "recommended": true,
-      "correctness": {
-        "noUnusedVariables": "error",
-        "noUnusedFunctionParameters": "off"
-      },
-      "suspicious": {
-        "noExplicitAny": "error",
-        "noArrayIndexKey": "off",
-        "noUnknownAtRules": "off",
-        "noNonNullAssertedOptionalChain": "off"
-      },
-      "style": {
-        "noNonNullAssertion": "off"
-      }
-    }
-  },
-  "formatter": {
-    "enabled": true,
-    "formatWithErrors": false,
-    "indentStyle": "space",
-    "indentWidth": 2,
-    "lineWidth": 100,
-    "lineEnding": "lf"
-  },
-  "javascript": {
-    "formatter": {
-      "quoteStyle": "single",
-      "jsxQuoteStyle": "double",
-      "semicolons": "always",
-      "trailingCommas": "es5"
-    }
-  },
-  "css": {
-    "parser": {
-      "tailwindDirectives": true
-    }
-  },
-  "files": {
-    "ignoreUnknown": true,
-    "includes": [
-      "api/**",
-      "!api/.runtime",
-      "src/**",
-      "!**/src/routeTree.gen.ts",
-      "shared/**",
-      "tests/**",
-      "package.json",
-      "tsconfig.json",
-      "vite.config.ts",
-      "vitest.config.ts",
-      "playwright.config.ts"
-    ]
-  }
+	"$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
+	"assist": { "actions": { "source": { "organizeImports": "on" } } },
+	"css": {
+		"parser": {
+			"tailwindDirectives": true
+		}
+	},
+	"files": {
+		"ignoreUnknown": true,
+		"includes": [
+			"api/**",
+			"!api/.runtime",
+			"src/**",
+			"!**/src/routeTree.gen.ts",
+			"shared/**",
+			"tests/**",
+			"package.json",
+			"tsconfig.json",
+			"vite.config.ts",
+			"vitest.config.ts",
+			"playwright.config.ts"
+		]
+	}
 }

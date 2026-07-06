@@ -1,125 +1,146 @@
-import type { AgentRuntimeResult } from '../agent-runtime/types';
-import { digestText } from '../text-digest';
-import type { TodoCompletionGateResult, TodoRuntimeTodo } from './types';
+import type { AgentRuntimeResult } from "../agent-runtime/types";
+import { digestText } from "../text-digest";
+import type { TodoCompletionGateResult, TodoRuntimeTodo } from "./types";
 
 export function evaluateTodoCompletionGate(input: {
-  todo: TodoRuntimeTodo;
-  runtimeResult: AgentRuntimeResult;
-  outcomeStatus: string;
+	todo: TodoRuntimeTodo;
+	runtimeResult: AgentRuntimeResult;
+	outcomeStatus: string;
 }): TodoCompletionGateResult {
-  const { todo, runtimeResult, outcomeStatus } = input;
-  const diffBytes = Buffer.byteLength(runtimeResult.diffPatch || '', 'utf8');
-  const hasTests = runtimeResult.testResults !== undefined && runtimeResult.testResults !== null;
-  const terminalOk = ['completed', 'needs_review'].includes(runtimeResult.terminalState);
-  const outcomeOk = ['completed', 'needs_review'].includes(outcomeStatus);
-  const policyStopped = runtimeResult.stoppedBy === 'policy';
-  const budgetStopped = runtimeResult.stoppedBy === 'budget';
-  const coverageAutonomy = readCoverageAutonomy(runtimeResult.testResults);
-  const coveragePassed =
-    !coverageAutonomy ||
-    coverageAutonomy.status === 'disabled' ||
-    coverageAutonomy.status === 'passed';
-  const passed = terminalOk && outcomeOk && !policyStopped && !budgetStopped && coveragePassed;
+	const { todo, runtimeResult, outcomeStatus } = input;
+	const diffBytes = Buffer.byteLength(runtimeResult.diffPatch || "", "utf8");
+	const hasTests =
+		runtimeResult.testResults !== undefined &&
+		runtimeResult.testResults !== null;
+	const terminalOk = ["completed", "needs_review"].includes(
+		runtimeResult.terminalState,
+	);
+	const outcomeOk = ["completed", "needs_review"].includes(outcomeStatus);
+	const policyStopped = runtimeResult.stoppedBy === "policy";
+	const budgetStopped = runtimeResult.stoppedBy === "budget";
+	const coverageAutonomy = readCoverageAutonomy(runtimeResult.testResults);
+	const coveragePassed =
+		!coverageAutonomy ||
+		coverageAutonomy.status === "disabled" ||
+		coverageAutonomy.status === "passed";
+	const passed =
+		terminalOk &&
+		outcomeOk &&
+		!policyStopped &&
+		!budgetStopped &&
+		coveragePassed;
 
-  let status: TodoCompletionGateResult['status'] = passed ? 'passed' : 'failed';
-  if (
-    policyStopped ||
-    outcomeStatus === 'needs_human' ||
-    runtimeResult.terminalState === 'needs_human'
-  ) {
-    status = 'needs_human';
-  }
+	let status: TodoCompletionGateResult["status"] = passed ? "passed" : "failed";
+	if (
+		policyStopped ||
+		outcomeStatus === "needs_human" ||
+		runtimeResult.terminalState === "needs_human"
+	) {
+		status = "needs_human";
+	}
 
-  const reason = passed
-    ? 'Runtime completed this planned todo without a terminal gate failure.'
-    : `Runtime stopped with terminalState=${runtimeResult.terminalState}, stoppedBy=${runtimeResult.stoppedBy}, outcome=${outcomeStatus}.`;
+	const reason = passed
+		? "Runtime completed this planned todo without a terminal gate failure."
+		: `Runtime stopped with terminalState=${runtimeResult.terminalState}, stoppedBy=${runtimeResult.stoppedBy}, outcome=${outcomeStatus}.`;
 
-  return {
-    version: 1,
-    todoId: todo.id,
-    todoSeq: todo.seq,
-    procedureId: todo.procedureId,
-    status,
-    passed,
-    reason,
-    checks: [
-      {
-        id: 'terminal_state',
-        passed: terminalOk,
-        evidence: `terminalState=${runtimeResult.terminalState}`,
-      },
-      {
-        id: 'run_outcome',
-        passed: outcomeOk,
-        evidence: `outcome=${outcomeStatus}`,
-      },
-      {
-        id: 'stop_reason',
-        passed: !policyStopped && !budgetStopped,
-        evidence: `stoppedBy=${runtimeResult.stoppedBy}`,
-      },
-      ...(coverageAutonomy
-        ? [
-            {
-              id: 'coverage_autonomy',
-              passed: coveragePassed,
-              evidence: `status=${coverageAutonomy.status}`,
-            },
-          ]
-        : []),
-    ],
-    evidence: {
-      terminalState: runtimeResult.terminalState,
-      stoppedBy: runtimeResult.stoppedBy,
-      riskLevel: runtimeResult.riskLevel,
-      summaryDigest: digestText(runtimeResult.summary || ''),
-      finalReportDigest: digestText(runtimeResult.finalReport || ''),
-      diffBytes,
-      hasTests,
-      ...(coverageAutonomy ? { coverageAutonomy } : {}),
-    },
-  };
+	return {
+		version: 1,
+		todoId: todo.id,
+		todoSeq: todo.seq,
+		procedureId: todo.procedureId,
+		status,
+		passed,
+		reason,
+		checks: [
+			{
+				id: "terminal_state",
+				passed: terminalOk,
+				evidence: `terminalState=${runtimeResult.terminalState}`,
+			},
+			{
+				id: "run_outcome",
+				passed: outcomeOk,
+				evidence: `outcome=${outcomeStatus}`,
+			},
+			{
+				id: "stop_reason",
+				passed: !policyStopped && !budgetStopped,
+				evidence: `stoppedBy=${runtimeResult.stoppedBy}`,
+			},
+			...(coverageAutonomy
+				? [
+						{
+							id: "coverage_autonomy",
+							passed: coveragePassed,
+							evidence: `status=${coverageAutonomy.status}`,
+						},
+					]
+				: []),
+		],
+		evidence: {
+			terminalState: runtimeResult.terminalState,
+			stoppedBy: runtimeResult.stoppedBy,
+			riskLevel: runtimeResult.riskLevel,
+			summaryDigest: digestText(runtimeResult.summary || ""),
+			finalReportDigest: digestText(runtimeResult.finalReport || ""),
+			diffBytes,
+			hasTests,
+			...(coverageAutonomy ? { coverageAutonomy } : {}),
+		},
+	};
 }
 
 export function buildSkippedTodoGate(input: {
-  todo: TodoRuntimeTodo;
-  reason: string;
-  runtimeResult: AgentRuntimeResult;
+	todo: TodoRuntimeTodo;
+	reason: string;
+	runtimeResult: AgentRuntimeResult;
 }): TodoCompletionGateResult {
-  const { todo, reason, runtimeResult } = input;
-  return {
-    version: 1,
-    todoId: todo.id,
-    todoSeq: todo.seq,
-    procedureId: todo.procedureId,
-    status: 'skipped',
-    passed: false,
-    reason,
-    checks: [{ id: 'dependency_or_previous_failure', passed: false, evidence: reason }],
-    evidence: {
-      terminalState: runtimeResult.terminalState,
-      stoppedBy: runtimeResult.stoppedBy,
-      riskLevel: runtimeResult.riskLevel,
-      summaryDigest: digestText(runtimeResult.summary || ''),
-      finalReportDigest: digestText(runtimeResult.finalReport || ''),
-      diffBytes: Buffer.byteLength(runtimeResult.diffPatch || '', 'utf8'),
-      hasTests: runtimeResult.testResults !== undefined && runtimeResult.testResults !== null,
-      ...(readCoverageAutonomy(runtimeResult.testResults)
-        ? { coverageAutonomy: readCoverageAutonomy(runtimeResult.testResults) }
-        : {}),
-    },
-  };
+	const { todo, reason, runtimeResult } = input;
+	return {
+		version: 1,
+		todoId: todo.id,
+		todoSeq: todo.seq,
+		procedureId: todo.procedureId,
+		status: "skipped",
+		passed: false,
+		reason,
+		checks: [
+			{ id: "dependency_or_previous_failure", passed: false, evidence: reason },
+		],
+		evidence: {
+			terminalState: runtimeResult.terminalState,
+			stoppedBy: runtimeResult.stoppedBy,
+			riskLevel: runtimeResult.riskLevel,
+			summaryDigest: digestText(runtimeResult.summary || ""),
+			finalReportDigest: digestText(runtimeResult.finalReport || ""),
+			diffBytes: Buffer.byteLength(runtimeResult.diffPatch || "", "utf8"),
+			hasTests:
+				runtimeResult.testResults !== undefined &&
+				runtimeResult.testResults !== null,
+			...(readCoverageAutonomy(runtimeResult.testResults)
+				? { coverageAutonomy: readCoverageAutonomy(runtimeResult.testResults) }
+				: {}),
+		},
+	};
 }
 
-function readCoverageAutonomy(testResults: unknown): { status?: string } | null {
-  if (!testResults || typeof testResults !== 'object' || Array.isArray(testResults)) return null;
-  const coverageAutonomy = (testResults as Record<string, unknown>).coverageAutonomy;
-  if (
-    !coverageAutonomy ||
-    typeof coverageAutonomy !== 'object' ||
-    Array.isArray(coverageAutonomy)
-  ) {
-    return null;
-  }
-  return coverageAutonomy as { status?: string };
+function readCoverageAutonomy(
+	testResults: unknown,
+): { status?: string } | null {
+	if (
+		!testResults ||
+		typeof testResults !== "object" ||
+		Array.isArray(testResults)
+	)
+		return null;
+	const coverageAutonomy = (testResults as Record<string, unknown>)
+		.coverageAutonomy;
+	if (
+		!coverageAutonomy ||
+		typeof coverageAutonomy !== "object" ||
+		Array.isArray(coverageAutonomy)
+	) {
+		return null;
+	}
+	return coverageAutonomy as { status?: string };
 }

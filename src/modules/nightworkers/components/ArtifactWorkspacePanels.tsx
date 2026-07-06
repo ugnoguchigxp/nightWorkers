@@ -1,1 +1,1 @@
-export * from '../../planMode/PlanModeWorkspacePanels';
+export * from "../../planMode/PlanModeWorkspacePanels";

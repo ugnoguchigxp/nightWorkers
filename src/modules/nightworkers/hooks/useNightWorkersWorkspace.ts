@@ -1,615 +1,679 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { client } from '../../../lib/api';
-import { fetchPlanModeWorkspace } from '../../specification';
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { client } from "../../../lib/api";
+import { fetchPlanModeWorkspace } from "../../specification";
 import {
-  fetchBackgroundProcessesForTask,
-  fetchImplementationQueue,
-  fetchLatestTaskReviewSession,
-  fetchTaskActivityEvents,
-  fetchTaskLlmUsage,
-  fetchTaskMessages,
-} from '../nightWorkersCommands';
-import { mergeRunEvents } from '../realtimeEvents';
+	fetchBackgroundProcessesForTask,
+	fetchImplementationQueue,
+	fetchLatestTaskReviewSession,
+	fetchTaskActivityEvents,
+	fetchTaskLlmUsage,
+	fetchTaskMessages,
+} from "../nightWorkersCommands";
+import { mergeRunEvents } from "../realtimeEvents";
 import type {
-  ActivityEvent,
-  ActivityReplay,
-  BackgroundProcess,
-  ImplementationQueueDashboard,
-  PlanModeWorkspace,
-  Repository,
-  ReviewSessionDetail,
-  RunDetails,
-  Task,
-  TaskEvent,
-  TaskLlmUsageSummary,
-  TaskMessage,
-  TaskRun,
-} from '../types';
-import { createNightWorkersChatActions } from './nightWorkersChatActions';
-import type { NightWorkersWorkspaceState, RealtimeStatus } from './nightWorkersWorkspaceState';
-import { useNightWorkersMutations } from './useNightWorkersMutations';
-import { useNightWorkersProjectFiles } from './useNightWorkersProjectFiles';
-import { useNightWorkersRealtime } from './useNightWorkersRealtime';
-import { useNightWorkersSessionPresentation } from './useNightWorkersSessionPresentation';
-import { useNightWorkersSettings } from './useNightWorkersSettings';
+	ActivityEvent,
+	ActivityReplay,
+	BackgroundProcess,
+	ImplementationQueueDashboard,
+	PlanModeWorkspace,
+	Repository,
+	ReviewSessionDetail,
+	RunDetails,
+	Task,
+	TaskEvent,
+	TaskLlmUsageSummary,
+	TaskMessage,
+	TaskRun,
+} from "../types";
+import { createNightWorkersChatActions } from "./nightWorkersChatActions";
+import type {
+	NightWorkersWorkspaceState,
+	RealtimeStatus,
+} from "./nightWorkersWorkspaceState";
+import { useNightWorkersMutations } from "./useNightWorkersMutations";
+import { useNightWorkersProjectFiles } from "./useNightWorkersProjectFiles";
+import { useNightWorkersRealtime } from "./useNightWorkersRealtime";
+import { useNightWorkersSessionPresentation } from "./useNightWorkersSessionPresentation";
+import { useNightWorkersSettings } from "./useNightWorkersSettings";
 
 export type {
-  NightWorkersWorkspaceState,
-  ProjectSessionGroups,
-} from './nightWorkersWorkspaceState';
+	NightWorkersWorkspaceState,
+	ProjectSessionGroups,
+} from "./nightWorkersWorkspaceState";
 
 const emptyActivityReplay: ActivityReplay = { events: [], artifacts: [] };
 
 function _hasPlanModeWorkspaceEvidence(workspace: PlanModeWorkspace) {
-  return Boolean(
-    workspace.featurePlanArtifacts.length ||
-      workspace.blueprintArtifacts.length ||
-      workspace.dataModelArtifacts.length ||
-      workspace.dedicatedViewArtifacts.length ||
-      workspace.questionnaireSessions.length ||
-      workspace.decisionReviews.length ||
-      workspace.implementationReferences.length
-  );
+	return Boolean(
+		workspace.featurePlanArtifacts.length ||
+			workspace.blueprintArtifacts.length ||
+			workspace.dataModelArtifacts.length ||
+			workspace.dedicatedViewArtifacts.length ||
+			workspace.questionnaireSessions.length ||
+			workspace.decisionReviews.length ||
+			workspace.implementationReferences.length,
+	);
 }
 
 function _summarizePlanModeWorkspace(workspace: PlanModeWorkspace) {
-  return [
-    `${workspace.featurePlanArtifacts.length} spec`,
-    `${workspace.blueprintArtifacts.length} Blueprint`,
-    `${workspace.dataModelArtifacts.length} Data Model`,
-    `${workspace.dedicatedViewArtifacts.length} Plan Views`,
-    `${workspace.questionnaireSessions.length} Questionnaire`,
-    `${workspace.decisionReviews.length} Decision Review`,
-    `${workspace.implementationReferences.length} Implementation`,
-  ].join(' · ');
+	return [
+		`${workspace.featurePlanArtifacts.length} spec`,
+		`${workspace.blueprintArtifacts.length} Blueprint`,
+		`${workspace.dataModelArtifacts.length} Data Model`,
+		`${workspace.dedicatedViewArtifacts.length} Plan Views`,
+		`${workspace.questionnaireSessions.length} Questionnaire`,
+		`${workspace.decisionReviews.length} Decision Review`,
+		`${workspace.implementationReferences.length} Implementation`,
+	].join(" · ");
 }
 
-export function resolveNextActiveSessionId(currentId: string | null, sessions: Pick<Task, 'id'>[]) {
-  if (currentId && sessions.some((session) => session.id === currentId)) return currentId;
-  return sessions[0]?.id ?? null;
+export function resolveNextActiveSessionId(
+	currentId: string | null,
+	sessions: Pick<Task, "id">[],
+) {
+	if (currentId && sessions.some((session) => session.id === currentId))
+		return currentId;
+	return sessions[0]?.id ?? null;
 }
 
 export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
-  const queryClient = useQueryClient();
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
-  const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
-  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('initializing');
-  const [isChatSubmitting, setIsChatSubmitting] = useState(false);
-  const [pendingChatRunId, setPendingChatRunId] = useState<string | null>(null);
-  const [pendingAssistantTaskId, setPendingAssistantTaskId] = useState<string | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const lastSubmitRef = useRef<{
-    taskId: string;
-    prompt: string;
-    contextKey: string;
-    at: number;
-  } | null>(null);
-  const pendingChatQueueRef = useRef<Array<{ taskId: string; prompt: string }>>([]);
-  const chatSubmitStartedAtRef = useRef<number | null>(null);
-  const chatSubmitTransportRef = useRef<'http' | 'websocket' | null>(null);
-  const pendingChatRunIdRef = useRef<string | null>(null);
-  const pendingAssistantTaskIdRef = useRef<string | null>(null);
-  const pendingChatAbortControllerRef = useRef<AbortController | null>(null);
-  const processedRealtimeMessageKeysRef = useRef<Set<string>>(new Set());
-  const latestRunSubscriptionRef = useRef<{ runId: string | null; afterSeq?: number }>({
-    runId: null,
-  });
-  const [realtimeEvents, setRealtimeEvents] = useState<TaskEvent[]>([]);
-  const [bufferedEventsByRun, setBufferedEventsByRun] = useState<Record<string, TaskEvent[]>>({});
-  const [streamingTextByTask, setStreamingTextByTask] = useState<Record<string, string>>({});
+	const queryClient = useQueryClient();
+	const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+	const [expandedProjects, setExpandedProjects] = useState<
+		Record<string, boolean>
+	>({});
+	const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
+	const [realtimeStatus, setRealtimeStatus] =
+		useState<RealtimeStatus>("initializing");
+	const [isChatSubmitting, setIsChatSubmitting] = useState(false);
+	const [pendingChatRunId, setPendingChatRunId] = useState<string | null>(null);
+	const [pendingAssistantTaskId, setPendingAssistantTaskId] = useState<
+		string | null
+	>(null);
+	const wsRef = useRef<WebSocket | null>(null);
+	const lastSubmitRef = useRef<{
+		taskId: string;
+		prompt: string;
+		contextKey: string;
+		at: number;
+	} | null>(null);
+	const pendingChatQueueRef = useRef<Array<{ taskId: string; prompt: string }>>(
+		[],
+	);
+	const chatSubmitStartedAtRef = useRef<number | null>(null);
+	const chatSubmitTransportRef = useRef<"http" | "websocket" | null>(null);
+	const pendingChatRunIdRef = useRef<string | null>(null);
+	const pendingAssistantTaskIdRef = useRef<string | null>(null);
+	const pendingChatAbortControllerRef = useRef<AbortController | null>(null);
+	const processedRealtimeMessageKeysRef = useRef<Set<string>>(new Set());
+	const latestRunSubscriptionRef = useRef<{
+		runId: string | null;
+		afterSeq?: number;
+	}>({
+		runId: null,
+	});
+	const [realtimeEvents, setRealtimeEvents] = useState<TaskEvent[]>([]);
+	const [bufferedEventsByRun, setBufferedEventsByRun] = useState<
+		Record<string, TaskEvent[]>
+	>({});
+	const [streamingTextByTask, setStreamingTextByTask] = useState<
+		Record<string, string>
+	>({});
 
-  const {
-    data: projects = [],
-    isLoading: isProjectsLoading,
-    isFetching: isProjectsFetching,
-    refetch: refetchProjects,
-  } = useQuery({
-    queryKey: ['projects'],
-    queryFn: async () => {
-      const res = await client.repositories.$get();
-      if (!res.ok) throw new Error('Failed to fetch projects');
-      return (await res.json()) as Repository[];
-    },
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
+	const {
+		data: projects = [],
+		isLoading: isProjectsLoading,
+		isFetching: isProjectsFetching,
+		refetch: refetchProjects,
+	} = useQuery({
+		queryKey: ["projects"],
+		queryFn: async () => {
+			const res = await client.repositories.$get();
+			if (!res.ok) throw new Error("Failed to fetch projects");
+			return (await res.json()) as Repository[];
+		},
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
+	});
 
-  const {
-    data: sessions = [],
-    isLoading: isSessionsLoading,
-    isFetching: isSessionsFetching,
-    refetch: refetchSessions,
-  } = useQuery({
-    queryKey: ['sessions'],
-    queryFn: async () => {
-      const res = await client.tasks.$get();
-      if (!res.ok) throw new Error('Failed to fetch sessions');
-      return (await res.json()) as Task[];
-    },
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
+	const {
+		data: sessions = [],
+		isLoading: isSessionsLoading,
+		isFetching: isSessionsFetching,
+		refetch: refetchSessions,
+	} = useQuery({
+		queryKey: ["sessions"],
+		queryFn: async () => {
+			const res = await client.tasks.$get();
+			if (!res.ok) throw new Error("Failed to fetch sessions");
+			return (await res.json()) as Task[];
+		},
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
+	});
 
-  const { data: implementationQueue = null } = useQuery({
-    queryKey: ['implementationQueue'],
-    queryFn: async () => {
-      const res = await fetchImplementationQueue();
-      if (!res.ok) throw new Error('Failed to fetch implementation queue');
-      return (await res.json()) as ImplementationQueueDashboard;
-    },
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
+	const { data: implementationQueue = null } = useQuery({
+		queryKey: ["implementationQueue"],
+		queryFn: async () => {
+			const res = await fetchImplementationQueue();
+			if (!res.ok) throw new Error("Failed to fetch implementation queue");
+			return (await res.json()) as ImplementationQueueDashboard;
+		},
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
+	});
 
-  const { data: activeSessionRuns = [] } = useQuery({
-    queryKey: ['sessionRuns', activeSessionId],
-    queryFn: async () => {
-      if (!activeSessionId) return [];
-      const res = await client.tasks[':id'].runs.$get({ param: { id: activeSessionId } });
-      if (!res.ok) throw new Error('Failed to fetch session runs');
-      return (await res.json()) as TaskRun[];
-    },
-    enabled: !!activeSessionId,
-    refetchInterval: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-  const { data: taskMessages = [] } = useQuery({
-    queryKey: ['taskMessages', activeSessionId],
-    queryFn: async () => {
-      if (!activeSessionId) return [];
-      const res = await fetchTaskMessages(activeSessionId);
-      if (!res.ok) throw new Error('Failed to fetch task messages');
-      return (await res.json()) as TaskMessage[];
-    },
-    enabled: !!activeSessionId,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
+	const { data: activeSessionRuns = [] } = useQuery({
+		queryKey: ["sessionRuns", activeSessionId],
+		queryFn: async () => {
+			if (!activeSessionId) return [];
+			const res = await client.tasks[":id"].runs.$get({
+				param: { id: activeSessionId },
+			});
+			if (!res.ok) throw new Error("Failed to fetch session runs");
+			return (await res.json()) as TaskRun[];
+		},
+		enabled: !!activeSessionId,
+		refetchInterval: false,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
+	});
+	const { data: taskMessages = [] } = useQuery({
+		queryKey: ["taskMessages", activeSessionId],
+		queryFn: async () => {
+			if (!activeSessionId) return [];
+			const res = await fetchTaskMessages(activeSessionId);
+			if (!res.ok) throw new Error("Failed to fetch task messages");
+			return (await res.json()) as TaskMessage[];
+		},
+		enabled: !!activeSessionId,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
+	});
 
-  const { data: activePlanModeWorkspace = null } = useQuery({
-    queryKey: ['planModeWorkspace', activeSessionId],
-    queryFn: async () => {
-      if (!activeSessionId) return null;
-      const res = await fetchPlanModeWorkspace(activeSessionId);
-      if (!res.ok) throw new Error('Failed to fetch Plan Mode workspace');
-      return (await res.json()) as PlanModeWorkspace;
-    },
-    enabled: !!activeSessionId,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
+	const { data: activePlanModeWorkspace = null } = useQuery({
+		queryKey: ["planModeWorkspace", activeSessionId],
+		queryFn: async () => {
+			if (!activeSessionId) return null;
+			const res = await fetchPlanModeWorkspace(activeSessionId);
+			if (!res.ok) throw new Error("Failed to fetch Plan Mode workspace");
+			return (await res.json()) as PlanModeWorkspace;
+		},
+		enabled: !!activeSessionId,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
+	});
 
-  const { data: llmUsageSummary = null } = useQuery({
-    queryKey: ['llmUsage', activeSessionId],
-    queryFn: async () => {
-      if (!activeSessionId) return null;
-      const res = await fetchTaskLlmUsage(activeSessionId);
-      if (!res.ok) throw new Error('Failed to fetch LLM usage summary');
-      return (await res.json()) as TaskLlmUsageSummary;
-    },
-    enabled: !!activeSessionId,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
+	const { data: llmUsageSummary = null } = useQuery({
+		queryKey: ["llmUsage", activeSessionId],
+		queryFn: async () => {
+			if (!activeSessionId) return null;
+			const res = await fetchTaskLlmUsage(activeSessionId);
+			if (!res.ok) throw new Error("Failed to fetch LLM usage summary");
+			return (await res.json()) as TaskLlmUsageSummary;
+		},
+		enabled: !!activeSessionId,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
+	});
 
-  const { data: activityReplay = emptyActivityReplay } = useQuery({
-    queryKey: ['activityReplay', activeSessionId],
-    queryFn: async () => {
-      if (!activeSessionId) return emptyActivityReplay;
-      const res = await fetchTaskActivityEvents(activeSessionId);
-      if (!res.ok) throw new Error('Failed to fetch activity events');
-      return normalizeActivityReplay(await res.json());
-    },
-    enabled: !!activeSessionId,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-  const activityEvents = activityReplay.events;
-  const activityArtifacts = activityReplay.artifacts;
+	const { data: activityReplay = emptyActivityReplay } = useQuery({
+		queryKey: ["activityReplay", activeSessionId],
+		queryFn: async () => {
+			if (!activeSessionId) return emptyActivityReplay;
+			const res = await fetchTaskActivityEvents(activeSessionId);
+			if (!res.ok) throw new Error("Failed to fetch activity events");
+			return normalizeActivityReplay(await res.json());
+		},
+		enabled: !!activeSessionId,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
+	});
+	const activityEvents = activityReplay.events;
+	const activityArtifacts = activityReplay.artifacts;
 
-  const { data: activeReviewSession = null } = useQuery({
-    queryKey: ['reviewSession', activeSessionId],
-    queryFn: async () => {
-      if (!activeSessionId) return null;
-      const res = await fetchLatestTaskReviewSession(activeSessionId);
-      if (!res.ok) throw new Error('Failed to fetch Review Mode session');
-      return (await res.json()) as ReviewSessionDetail | null;
-    },
-    enabled: !!activeSessionId,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
+	const { data: activeReviewSession = null } = useQuery({
+		queryKey: ["reviewSession", activeSessionId],
+		queryFn: async () => {
+			if (!activeSessionId) return null;
+			const res = await fetchLatestTaskReviewSession(activeSessionId);
+			if (!res.ok) throw new Error("Failed to fetch Review Mode session");
+			return (await res.json()) as ReviewSessionDetail | null;
+		},
+		enabled: !!activeSessionId,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
+	});
 
-  const { data: backgroundProcesses = [] } = useQuery({
-    queryKey: ['backgroundProcesses', activeSessionId],
-    queryFn: async () => {
-      if (!activeSessionId) return [];
-      const res = await fetchBackgroundProcessesForTask(activeSessionId);
-      if (!res.ok) throw new Error('Failed to fetch background processes');
-      return (await res.json()) as BackgroundProcess[];
-    },
-    enabled: !!activeSessionId,
-    refetchInterval: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
+	const { data: backgroundProcesses = [] } = useQuery({
+		queryKey: ["backgroundProcesses", activeSessionId],
+		queryFn: async () => {
+			if (!activeSessionId) return [];
+			const res = await fetchBackgroundProcessesForTask(activeSessionId);
+			if (!res.ok) throw new Error("Failed to fetch background processes");
+			return (await res.json()) as BackgroundProcess[];
+		},
+		enabled: !!activeSessionId,
+		refetchInterval: false,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
+	});
 
-  const settingsState = useNightWorkersSettings();
-  const chatActions = createNightWorkersChatActions({
-    queryClient,
-    wsRef,
-    lastSubmitRef,
-    pendingChatQueueRef,
-    chatSubmitStartedAtRef,
-    chatSubmitTransportRef,
-    pendingChatRunIdRef,
-    pendingAssistantTaskIdRef,
-    pendingChatAbortControllerRef,
-    setIsChatSubmitting,
-    setPendingChatRunId,
-    setPendingAssistantTaskId,
-  });
+	const settingsState = useNightWorkersSettings();
+	const chatActions = createNightWorkersChatActions({
+		queryClient,
+		wsRef,
+		lastSubmitRef,
+		pendingChatQueueRef,
+		chatSubmitStartedAtRef,
+		chatSubmitTransportRef,
+		pendingChatRunIdRef,
+		pendingAssistantTaskIdRef,
+		pendingChatAbortControllerRef,
+		setIsChatSubmitting,
+		setPendingChatRunId,
+		setPendingAssistantTaskId,
+	});
 
-  useEffect(() => {
-    const nextActiveSessionId = resolveNextActiveSessionId(activeSessionId, sessions);
-    if (nextActiveSessionId !== activeSessionId) setActiveSessionId(nextActiveSessionId);
-  }, [activeSessionId, sessions]);
+	useEffect(() => {
+		const nextActiveSessionId = resolveNextActiveSessionId(
+			activeSessionId,
+			sessions,
+		);
+		if (nextActiveSessionId !== activeSessionId)
+			setActiveSessionId(nextActiveSessionId);
+	}, [activeSessionId, sessions]);
 
-  const {
-    createProjectMutation,
-    deleteProjectMutation,
-    updateProjectMutation,
-    createSessionMutation,
-    deleteSessionMutation,
-    startRunMutation,
-    stopRunMutation,
-    stopBackgroundProcessMutation,
-    queueSessionMutation,
-    submitRunReviewMutation,
-    startReviewSessionMutation,
-    runReviewSectionMutation,
-    updateReviewFindingDispositionMutation,
-    createReviewPromptSuggestionsMutation,
-    updateReviewPromptSuggestionMutation,
-    markReviewPromptSuggestionUsedMutation,
-    applyReviewFinalActionMutation,
-    updateSessionStatusMutation,
-    reorderQueueSessionsMutation,
-    moveWorkbenchSessionMutation,
-  } = useNightWorkersMutations({ activeSessionId, queryClient, setActiveSessionId });
+	const {
+		createProjectMutation,
+		deleteProjectMutation,
+		updateProjectMutation,
+		createSessionMutation,
+		deleteSessionMutation,
+		startRunMutation,
+		stopRunMutation,
+		stopBackgroundProcessMutation,
+		queueSessionMutation,
+		submitRunReviewMutation,
+		startReviewSessionMutation,
+		runReviewSectionMutation,
+		updateReviewFindingDispositionMutation,
+		createReviewPromptSuggestionsMutation,
+		updateReviewPromptSuggestionMutation,
+		markReviewPromptSuggestionUsedMutation,
+		applyReviewFinalActionMutation,
+		updateSessionStatusMutation,
+		reorderQueueSessionsMutation,
+		moveWorkbenchSessionMutation,
+	} = useNightWorkersMutations({
+		activeSessionId,
+		queryClient,
+		setActiveSessionId,
+	});
 
-  const activeSession = useMemo(
-    () => sessions.find((s) => s.id === activeSessionId) ?? null,
-    [activeSessionId, sessions]
-  );
-  const activeProject = useMemo(
-    () =>
-      activeSession
-        ? (projects.find((p) => p.id === activeSession.repositoryId) ?? null)
-        : (projects[0] ?? null),
-    [activeSession, projects]
-  );
-  const activeProjectId = activeProject?.id;
+	const activeSession = useMemo(
+		() => sessions.find((s) => s.id === activeSessionId) ?? null,
+		[activeSessionId, sessions],
+	);
+	const activeProject = useMemo(
+		() =>
+			activeSession
+				? (projects.find((p) => p.id === activeSession.repositoryId) ?? null)
+				: (projects[0] ?? null),
+		[activeSession, projects],
+	);
+	const activeProjectId = activeProject?.id;
 
-  const projectFilesState = useNightWorkersProjectFiles(activeProjectId);
-  const { setProjectFileEntriesByDirectory } = projectFilesState;
+	const projectFilesState = useNightWorkersProjectFiles(activeProjectId);
+	const { setProjectFileEntriesByDirectory } = projectFilesState;
 
-  const latestRun = activeSessionRuns[0];
-  const { data: latestRunDetails = null } = useQuery({
-    queryKey: ['runDetails', latestRun?.id],
-    queryFn: async () => {
-      if (!latestRun?.id) return null;
-      const res = await client.runs[':id'].$get({ param: { id: latestRun.id } });
-      if (!res.ok) throw new Error('Failed to fetch run details');
-      return (await res.json()) as RunDetails;
-    },
-    enabled: !!latestRun?.id,
-    refetchInterval: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
+	const latestRun = activeSessionRuns[0];
+	const { data: latestRunDetails = null } = useQuery({
+		queryKey: ["runDetails", latestRun?.id],
+		queryFn: async () => {
+			if (!latestRun?.id) return null;
+			const res = await client.runs[":id"].$get({
+				param: { id: latestRun.id },
+			});
+			if (!res.ok) throw new Error("Failed to fetch run details");
+			return (await res.json()) as RunDetails;
+		},
+		enabled: !!latestRun?.id,
+		refetchInterval: false,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
+	});
 
-  // 入力ロックは「送信/初期スレッド作成待ち」の間だけに限定する。
-  // run status に依存すると、サーバーダウン時に running が残って永久ロックになる。
-  const isInitialSessionCreating = createSessionMutation.isPending;
-  const isAgentWorking = isChatSubmitting || isInitialSessionCreating;
-  const isAgentThinking =
-    isInitialSessionCreating ||
-    isChatSubmitting ||
-    startRunMutation.isPending ||
-    Boolean(pendingChatRunId) ||
-    Boolean(activeSessionId && pendingAssistantTaskId === activeSessionId) ||
-    isActiveRunStatus(latestRun?.status) ||
-    isActiveTaskStatus(activeSession?.status);
-  const latestRunEvents =
-    realtimeEvents.length > 0 ? realtimeEvents : latestRunDetails?.events || [];
-  const latestRunTodos = latestRunDetails?.todos || [];
-  const latestRunReviews = latestRunDetails?.reviews || [];
+	// 入力ロックは「送信/初期スレッド作成待ち」の間だけに限定する。
+	// run status に依存すると、サーバーダウン時に running が残って永久ロックになる。
+	const isInitialSessionCreating = createSessionMutation.isPending;
+	const isAgentWorking = isChatSubmitting || isInitialSessionCreating;
+	const isAgentThinking =
+		isInitialSessionCreating ||
+		isChatSubmitting ||
+		startRunMutation.isPending ||
+		Boolean(pendingChatRunId) ||
+		Boolean(activeSessionId && pendingAssistantTaskId === activeSessionId) ||
+		isActiveRunStatus(latestRun?.status) ||
+		isActiveTaskStatus(activeSession?.status);
+	const latestRunEvents =
+		realtimeEvents.length > 0 ? realtimeEvents : latestRunDetails?.events || [];
+	const latestRunTodos = latestRunDetails?.todos || [];
+	const latestRunReviews = latestRunDetails?.reviews || [];
 
-  useEffect(() => {
-    const runBelongsToActiveSession = Boolean(
-      activeSessionId && latestRun?.id && latestRun.taskId === activeSessionId
-    );
-    const maxSeq = latestRunEvents.reduce<number | undefined>((currentMax, event) => {
-      if (typeof event.seq !== 'number') return currentMax;
-      if (currentMax === undefined) return event.seq;
-      return Math.max(currentMax, event.seq);
-    }, undefined);
-    latestRunSubscriptionRef.current = {
-      runId: runBelongsToActiveSession ? latestRun?.id || null : null,
-      afterSeq: runBelongsToActiveSession ? maxSeq : undefined,
-    };
-  }, [activeSessionId, latestRun?.id, latestRun?.taskId, latestRunEvents]);
-  const sessionPresentation = useNightWorkersSessionPresentation({
-    activeSession,
-    activePlanModeWorkspace,
-    implementationQueue,
-    latestRun,
-    latestRunEvents,
-    latestRunReviews,
-    latestRunTodos,
-    activeReviewSession,
-    taskMessages,
-    activityArtifacts,
-    sessions,
-    projects,
-  });
-  const {
-    activeArtifactRefs,
-    activeSessionViewWithQueuePosition,
-    groupedSessionViews,
-    sessionViews,
-  } = sessionPresentation;
+	useEffect(() => {
+		const runBelongsToActiveSession = Boolean(
+			activeSessionId && latestRun?.id && latestRun.taskId === activeSessionId,
+		);
+		const maxSeq = latestRunEvents.reduce<number | undefined>(
+			(currentMax, event) => {
+				if (typeof event.seq !== "number") return currentMax;
+				if (currentMax === undefined) return event.seq;
+				return Math.max(currentMax, event.seq);
+			},
+			undefined,
+		);
+		latestRunSubscriptionRef.current = {
+			runId: runBelongsToActiveSession ? latestRun?.id || null : null,
+			afterSeq: runBelongsToActiveSession ? maxSeq : undefined,
+		};
+	}, [activeSessionId, latestRun?.id, latestRun?.taskId, latestRunEvents]);
+	const sessionPresentation = useNightWorkersSessionPresentation({
+		activeSession,
+		activePlanModeWorkspace,
+		implementationQueue,
+		latestRun,
+		latestRunEvents,
+		latestRunReviews,
+		latestRunTodos,
+		activeReviewSession,
+		taskMessages,
+		activityArtifacts,
+		sessions,
+		projects,
+	});
+	const {
+		activeArtifactRefs,
+		activeSessionViewWithQueuePosition,
+		groupedSessionViews,
+		sessionViews,
+	} = sessionPresentation;
 
-  useEffect(() => {
-    // サーバーダウンやWS切断時に入力が永久ロックされるのを防ぐ
-    if (realtimeStatus !== 'disconnected') return;
-    setIsChatSubmitting(false);
-    chatSubmitStartedAtRef.current = null;
-    chatSubmitTransportRef.current = null;
-    pendingChatRunIdRef.current = null;
-    setPendingChatRunId(null);
-    pendingAssistantTaskIdRef.current = null;
-    setPendingAssistantTaskId(null);
-    pendingChatAbortControllerRef.current?.abort();
-    pendingChatAbortControllerRef.current = null;
-    pendingChatQueueRef.current = [];
-  }, [realtimeStatus]);
+	useEffect(() => {
+		// サーバーダウンやWS切断時に入力が永久ロックされるのを防ぐ
+		if (realtimeStatus !== "disconnected") return;
+		setIsChatSubmitting(false);
+		chatSubmitStartedAtRef.current = null;
+		chatSubmitTransportRef.current = null;
+		pendingChatRunIdRef.current = null;
+		setPendingChatRunId(null);
+		pendingAssistantTaskIdRef.current = null;
+		setPendingAssistantTaskId(null);
+		pendingChatAbortControllerRef.current?.abort();
+		pendingChatAbortControllerRef.current = null;
+		pendingChatQueueRef.current = [];
+	}, [realtimeStatus]);
 
-  useEffect(() => {
-    if (!activeSessionId) return;
-    const timer = setInterval(() => {
-      if (!isChatSubmitting) return;
-      const startedAt = chatSubmitStartedAtRef.current;
-      if (!startedAt) return;
-      if (chatSubmitTransportRef.current === 'http') return;
-      const elapsed = Date.now() - startedAt;
-      // 接続が生きて見えても応答が詰まるケース向けのフェイルセーフ
-      if (elapsed < 20000) return;
+	useEffect(() => {
+		if (!activeSessionId) return;
+		const timer = setInterval(() => {
+			if (!isChatSubmitting) return;
+			const startedAt = chatSubmitStartedAtRef.current;
+			if (!startedAt) return;
+			if (chatSubmitTransportRef.current === "http") return;
+			const elapsed = Date.now() - startedAt;
+			// 接続が生きて見えても応答が詰まるケース向けのフェイルセーフ
+			if (elapsed < 20000) return;
 
-      const hasAcceptedOrActiveRun =
-        Boolean(pendingChatRunIdRef.current || pendingChatRunId) ||
-        isActiveRunStatus(latestRun?.status) ||
-        isActiveTaskStatus(activeSession?.status);
+			const hasAcceptedOrActiveRun =
+				Boolean(pendingChatRunIdRef.current || pendingChatRunId) ||
+				isActiveRunStatus(latestRun?.status) ||
+				isActiveTaskStatus(activeSession?.status);
 
-      if (!hasAcceptedOrActiveRun) {
-        setIsChatSubmitting(false);
-        chatSubmitStartedAtRef.current = null;
-        chatSubmitTransportRef.current = null;
-        pendingChatRunIdRef.current = null;
-        setPendingChatRunId(null);
-        pendingAssistantTaskIdRef.current = null;
-        setPendingAssistantTaskId(null);
-        pendingChatAbortControllerRef.current?.abort();
-        pendingChatAbortControllerRef.current = null;
-        pendingChatQueueRef.current = [];
-      }
-    }, 2000);
-    return () => clearInterval(timer);
-  }, [
-    activeSession?.status,
-    activeSessionId,
-    isChatSubmitting,
-    latestRun?.status,
-    pendingChatRunId,
-  ]);
+			if (!hasAcceptedOrActiveRun) {
+				setIsChatSubmitting(false);
+				chatSubmitStartedAtRef.current = null;
+				chatSubmitTransportRef.current = null;
+				pendingChatRunIdRef.current = null;
+				setPendingChatRunId(null);
+				pendingAssistantTaskIdRef.current = null;
+				setPendingAssistantTaskId(null);
+				pendingChatAbortControllerRef.current?.abort();
+				pendingChatAbortControllerRef.current = null;
+				pendingChatQueueRef.current = [];
+			}
+		}, 2000);
+		return () => clearInterval(timer);
+	}, [
+		activeSession?.status,
+		activeSessionId,
+		isChatSubmitting,
+		latestRun?.status,
+		pendingChatRunId,
+	]);
 
-  useEffect(() => {
-    const runId = latestRun?.id;
-    if (!runId) {
-      setRealtimeEvents(
-        mergeRunEvents({
-          latestRunId: null,
-          restEvents: latestRunDetails?.events || [],
-          bufferedEventsByRun,
-        })
-      );
-      return;
-    }
-    const merged = mergeRunEvents({
-      latestRunId: runId,
-      restEvents: (latestRunDetails?.events || []) as TaskEvent[],
-      bufferedEventsByRun,
-    });
-    setRealtimeEvents(merged);
-  }, [latestRun?.id, latestRunDetails?.events, bufferedEventsByRun]);
+	useEffect(() => {
+		const runId = latestRun?.id;
+		if (!runId) {
+			setRealtimeEvents(
+				mergeRunEvents({
+					latestRunId: null,
+					restEvents: latestRunDetails?.events || [],
+					bufferedEventsByRun,
+				}),
+			);
+			return;
+		}
+		const merged = mergeRunEvents({
+			latestRunId: runId,
+			restEvents: (latestRunDetails?.events || []) as TaskEvent[],
+			bufferedEventsByRun,
+		});
+		setRealtimeEvents(merged);
+	}, [latestRun?.id, latestRunDetails?.events, bufferedEventsByRun]);
 
-  useNightWorkersRealtime({
-    activeSessionId,
-    queryClient,
-    wsRef,
-    latestRunSubscriptionRef,
-    pendingChatQueueRef,
-    processedRealtimeMessageKeysRef,
-    pendingChatRunIdRef,
-    pendingAssistantTaskIdRef,
-    chatSubmitStartedAtRef,
-    setIsRealtimeConnected,
-    setRealtimeStatus,
-    setBufferedEventsByRun,
-    setStreamingTextByTask,
-    setIsChatSubmitting,
-    setPendingChatRunId,
-    setPendingAssistantTaskId,
-    setProjectFileEntriesByDirectory,
-  });
+	useNightWorkersRealtime({
+		activeSessionId,
+		queryClient,
+		wsRef,
+		latestRunSubscriptionRef,
+		pendingChatQueueRef,
+		processedRealtimeMessageKeysRef,
+		pendingChatRunIdRef,
+		pendingAssistantTaskIdRef,
+		chatSubmitStartedAtRef,
+		setIsRealtimeConnected,
+		setRealtimeStatus,
+		setBufferedEventsByRun,
+		setStreamingTextByTask,
+		setIsChatSubmitting,
+		setPendingChatRunId,
+		setPendingAssistantTaskId,
+		setProjectFileEntriesByDirectory,
+	});
 
-  return {
-    projects,
-    sessions,
-    sessionViews,
-    groupedSessionViews,
-    activeSessionId,
-    activeSession,
-    activeSessionView: activeSessionViewWithQueuePosition,
-    activeProject,
-    activeSessionRuns,
-    latestRun,
-    taskMessages,
-    latestRunEvents,
-    llmUsageSummary,
-    activityEvents,
-    activityArtifacts,
-    backgroundProcesses,
-    activeStreamingResponse: activeSessionId ? streamingTextByTask[activeSessionId] || '' : '',
-    latestRunTodos,
-    latestRunReviews,
-    activeReviewSession,
-    activeArtifactRefs,
-    projectFileEntries: projectFilesState.projectFileEntries,
-    projectFileEntriesByDirectory: projectFilesState.projectFileEntriesByDirectory,
-    expandedProjectDirectories: projectFilesState.expandedProjectDirectories,
-    loadingProjectDirectories: projectFilesState.loadingProjectDirectories,
-    selectedProjectFile: projectFilesState.selectedProjectFile,
-    selectedProjectFilePath: projectFilesState.selectedProjectFilePath,
-    isProjectFilesLoading: projectFilesState.isProjectFilesLoading,
-    isProjectFileLoading: projectFilesState.isProjectFileLoading,
-    projectDiff: projectFilesState.projectDiff,
-    isProjectDiffLoading: projectFilesState.isProjectDiffLoading,
-    isRealtimeConnected,
-    realtimeStatus,
-    isChatSubmitting,
-    isProjectsLoading,
-    isProjectListRefreshing: isProjectsFetching || isSessionsFetching,
-    isSessionsLoading,
-    isAgentWorking,
-    isAgentThinking,
-    isUpdatingSessionStatus: updateSessionStatusMutation.isPending,
-    expandedProjects,
-    setExpandedProjects,
-    setActiveSessionId,
-    createProject: (input) => createProjectMutation.mutate(input),
-    updateProject: (id, input) => updateProjectMutation.mutateAsync({ id, data: input }),
-    deleteProject: (id) => deleteProjectMutation.mutate(id),
-    deleteSession: (id) => deleteSessionMutation.mutate(id),
-    createSession: (input) => createSessionMutation.mutateAsync(input),
-    startRun: (sessionId) => startRunMutation.mutateAsync(sessionId),
-    stopRun: (runId) => stopRunMutation.mutateAsync(runId),
-    stopBackgroundProcess: (processId) => stopBackgroundProcessMutation.mutateAsync(processId),
-    queueSession: (sessionId) => queueSessionMutation.mutateAsync(sessionId),
-    submitRunReview: async (runId, input) => {
-      await submitRunReviewMutation.mutateAsync({ runId, data: input });
-    },
-    startReviewSession: (runId) => startReviewSessionMutation.mutateAsync(runId),
-    runReviewSection: (reviewSessionId, section) =>
-      runReviewSectionMutation.mutateAsync({ reviewSessionId, section }),
-    updateReviewFindingDisposition: (reviewSessionId, findingId, input) =>
-      updateReviewFindingDispositionMutation.mutateAsync({
-        reviewSessionId,
-        findingId,
-        data: input,
-      }),
-    createReviewPromptSuggestions: (reviewSessionId) =>
-      createReviewPromptSuggestionsMutation.mutateAsync(reviewSessionId),
-    updateReviewPromptSuggestion: (reviewSessionId, suggestionId, input) =>
-      updateReviewPromptSuggestionMutation.mutateAsync({
-        reviewSessionId,
-        suggestionId,
-        data: input,
-      }),
-    markReviewPromptSuggestionUsed: (reviewSessionId, suggestionId) =>
-      markReviewPromptSuggestionUsedMutation.mutateAsync({ reviewSessionId, suggestionId }),
-    applyReviewFinalAction: (reviewSessionId, input) =>
-      applyReviewFinalActionMutation.mutateAsync({ reviewSessionId, data: input }),
-    updateSessionStatus: (sessionId, status) =>
-      updateSessionStatusMutation.mutateAsync({ sessionId, status }),
-    reorderQueueSessions: (sessionIds) => reorderQueueSessionsMutation.mutateAsync(sessionIds),
-    moveWorkbenchSession: (input) => moveWorkbenchSessionMutation.mutateAsync(input),
-    ...chatActions,
-    refreshWorkspace: () => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
-      queryClient.invalidateQueries({ queryKey: ['sessions'] });
-      queryClient.invalidateQueries({ queryKey: ['sessionRuns', activeSessionId] });
-      queryClient.invalidateQueries({ queryKey: ['runDetails', latestRun?.id] });
-      queryClient.invalidateQueries({ queryKey: ['backgroundProcesses', activeSessionId] });
-      queryClient.invalidateQueries({ queryKey: ['reviewSession', activeSessionId] });
-    },
-    refreshProjectList: async () => {
-      await Promise.all([refetchProjects(), refetchSessions()]);
-    },
-    currentBrowserPath: projectFilesState.currentBrowserPath,
-    browserParentPath: projectFilesState.browserParentPath,
-    browserDirectories: projectFilesState.browserDirectories,
-    isBrowserLoading: projectFilesState.isBrowserLoading,
-    fetchDirectories: projectFilesState.fetchDirectories,
-    createFolder: projectFilesState.createFolder,
-    refreshProjectFiles: projectFilesState.refreshProjectFiles,
-    refreshProjectDiff: projectFilesState.refreshProjectDiff,
-    ...settingsState,
-    toggleProjectDirectory: projectFilesState.toggleProjectDirectory,
-    openProjectFile: projectFilesState.openProjectFile,
-  };
+	return {
+		projects,
+		sessions,
+		sessionViews,
+		groupedSessionViews,
+		activeSessionId,
+		activeSession,
+		activeSessionView: activeSessionViewWithQueuePosition,
+		activeProject,
+		activeSessionRuns,
+		latestRun,
+		taskMessages,
+		latestRunEvents,
+		llmUsageSummary,
+		activityEvents,
+		activityArtifacts,
+		backgroundProcesses,
+		activeStreamingResponse: activeSessionId
+			? streamingTextByTask[activeSessionId] || ""
+			: "",
+		latestRunTodos,
+		latestRunReviews,
+		activeReviewSession,
+		activeArtifactRefs,
+		projectFileEntries: projectFilesState.projectFileEntries,
+		projectFileEntriesByDirectory:
+			projectFilesState.projectFileEntriesByDirectory,
+		expandedProjectDirectories: projectFilesState.expandedProjectDirectories,
+		loadingProjectDirectories: projectFilesState.loadingProjectDirectories,
+		selectedProjectFile: projectFilesState.selectedProjectFile,
+		selectedProjectFilePath: projectFilesState.selectedProjectFilePath,
+		isProjectFilesLoading: projectFilesState.isProjectFilesLoading,
+		isProjectFileLoading: projectFilesState.isProjectFileLoading,
+		projectDiff: projectFilesState.projectDiff,
+		isProjectDiffLoading: projectFilesState.isProjectDiffLoading,
+		isRealtimeConnected,
+		realtimeStatus,
+		isChatSubmitting,
+		isProjectsLoading,
+		isProjectListRefreshing: isProjectsFetching || isSessionsFetching,
+		isSessionsLoading,
+		isAgentWorking,
+		isAgentThinking,
+		isUpdatingSessionStatus: updateSessionStatusMutation.isPending,
+		expandedProjects,
+		setExpandedProjects,
+		setActiveSessionId,
+		createProject: (input) => createProjectMutation.mutate(input),
+		updateProject: (id, input) =>
+			updateProjectMutation.mutateAsync({ id, data: input }),
+		deleteProject: (id) => deleteProjectMutation.mutate(id),
+		deleteSession: (id) => deleteSessionMutation.mutate(id),
+		createSession: (input) => createSessionMutation.mutateAsync(input),
+		startRun: (sessionId) => startRunMutation.mutateAsync(sessionId),
+		stopRun: (runId) => stopRunMutation.mutateAsync(runId),
+		stopBackgroundProcess: (processId) =>
+			stopBackgroundProcessMutation.mutateAsync(processId),
+		queueSession: (sessionId) => queueSessionMutation.mutateAsync(sessionId),
+		submitRunReview: async (runId, input) => {
+			await submitRunReviewMutation.mutateAsync({ runId, data: input });
+		},
+		startReviewSession: (runId) =>
+			startReviewSessionMutation.mutateAsync(runId),
+		runReviewSection: (reviewSessionId, section) =>
+			runReviewSectionMutation.mutateAsync({ reviewSessionId, section }),
+		updateReviewFindingDisposition: (reviewSessionId, findingId, input) =>
+			updateReviewFindingDispositionMutation.mutateAsync({
+				reviewSessionId,
+				findingId,
+				data: input,
+			}),
+		createReviewPromptSuggestions: (reviewSessionId) =>
+			createReviewPromptSuggestionsMutation.mutateAsync(reviewSessionId),
+		updateReviewPromptSuggestion: (reviewSessionId, suggestionId, input) =>
+			updateReviewPromptSuggestionMutation.mutateAsync({
+				reviewSessionId,
+				suggestionId,
+				data: input,
+			}),
+		markReviewPromptSuggestionUsed: (reviewSessionId, suggestionId) =>
+			markReviewPromptSuggestionUsedMutation.mutateAsync({
+				reviewSessionId,
+				suggestionId,
+			}),
+		applyReviewFinalAction: (reviewSessionId, input) =>
+			applyReviewFinalActionMutation.mutateAsync({
+				reviewSessionId,
+				data: input,
+			}),
+		updateSessionStatus: (sessionId, status) =>
+			updateSessionStatusMutation.mutateAsync({ sessionId, status }),
+		reorderQueueSessions: (sessionIds) =>
+			reorderQueueSessionsMutation.mutateAsync(sessionIds),
+		moveWorkbenchSession: (input) =>
+			moveWorkbenchSessionMutation.mutateAsync(input),
+		...chatActions,
+		refreshWorkspace: () => {
+			queryClient.invalidateQueries({ queryKey: ["projects"] });
+			queryClient.invalidateQueries({ queryKey: ["sessions"] });
+			queryClient.invalidateQueries({
+				queryKey: ["sessionRuns", activeSessionId],
+			});
+			queryClient.invalidateQueries({
+				queryKey: ["runDetails", latestRun?.id],
+			});
+			queryClient.invalidateQueries({
+				queryKey: ["backgroundProcesses", activeSessionId],
+			});
+			queryClient.invalidateQueries({
+				queryKey: ["reviewSession", activeSessionId],
+			});
+		},
+		refreshProjectList: async () => {
+			await Promise.all([refetchProjects(), refetchSessions()]);
+		},
+		currentBrowserPath: projectFilesState.currentBrowserPath,
+		browserParentPath: projectFilesState.browserParentPath,
+		browserDirectories: projectFilesState.browserDirectories,
+		isBrowserLoading: projectFilesState.isBrowserLoading,
+		fetchDirectories: projectFilesState.fetchDirectories,
+		createFolder: projectFilesState.createFolder,
+		refreshProjectFiles: projectFilesState.refreshProjectFiles,
+		refreshProjectDiff: projectFilesState.refreshProjectDiff,
+		...settingsState,
+		toggleProjectDirectory: projectFilesState.toggleProjectDirectory,
+		openProjectFile: projectFilesState.openProjectFile,
+	};
 }
 
 function isActiveRunStatus(status: string | undefined): boolean {
-  return (
-    status === 'running' ||
-    status === 'context_compiling' ||
-    status === 'compiling_context' ||
-    status === 'finalizing'
-  );
+	return (
+		status === "running" ||
+		status === "context_compiling" ||
+		status === "compiling_context" ||
+		status === "finalizing"
+	);
 }
 
 function _isTerminalRunStatus(status: string | undefined): boolean {
-  return (
-    status === 'completed' ||
-    status === 'needs_review' ||
-    status === 'needs_human' ||
-    status === 'failed' ||
-    status === 'blocked' ||
-    status === 'timed_out' ||
-    status === 'cancelled'
-  );
+	return (
+		status === "completed" ||
+		status === "needs_review" ||
+		status === "needs_human" ||
+		status === "failed" ||
+		status === "blocked" ||
+		status === "timed_out" ||
+		status === "cancelled"
+	);
 }
 
 function normalizeActivityReplay(data: unknown): ActivityReplay {
-  if (Array.isArray(data)) return { events: data as ActivityEvent[], artifacts: [] };
-  if (!data || typeof data !== 'object') return emptyActivityReplay;
-  const replay = data as Partial<ActivityReplay>;
-  return {
-    events: Array.isArray(replay.events) ? replay.events : [],
-    artifacts: Array.isArray(replay.artifacts) ? replay.artifacts : [],
-  };
+	if (Array.isArray(data))
+		return { events: data as ActivityEvent[], artifacts: [] };
+	if (!data || typeof data !== "object") return emptyActivityReplay;
+	const replay = data as Partial<ActivityReplay>;
+	return {
+		events: Array.isArray(replay.events) ? replay.events : [],
+		artifacts: Array.isArray(replay.artifacts) ? replay.artifacts : [],
+	};
 }
 
 function _buildPriorityUpdates(sessionIds: string[], sessions: Task[]) {
-  const currentPriorityById = new Map(sessions.map((session) => [session.id, session.priority]));
-  return sessionIds
-    .map((sessionId, index) => ({
-      sessionId,
-      priority: sessionIds.length - index,
-    }))
-    .filter(({ sessionId, priority }) => currentPriorityById.get(sessionId) !== priority);
+	const currentPriorityById = new Map(
+		sessions.map((session) => [session.id, session.priority]),
+	);
+	return sessionIds
+		.map((sessionId, index) => ({
+			sessionId,
+			priority: sessionIds.length - index,
+		}))
+		.filter(
+			({ sessionId, priority }) =>
+				currentPriorityById.get(sessionId) !== priority,
+		);
 }
 
 function isActiveTaskStatus(status: string | undefined): boolean {
-  return (
-    status === 'running' ||
-    status === 'context_compiling' ||
-    status === 'compiling_context' ||
-    status === 'finalizing'
-  );
+	return (
+		status === "running" ||
+		status === "context_compiling" ||
+		status === "compiling_context" ||
+		status === "finalizing"
+	);
 }

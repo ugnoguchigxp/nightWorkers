@@ -1,1 +1,1 @@
-export * from '../../queue/queue-route-definitions';
+export * from "../../queue/queue-route-definitions";

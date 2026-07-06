@@ -1,1 +1,1 @@
-export * from '../blueprint/blueprint-adoption.service';
+export * from "../blueprint/blueprint-adoption.service";

@@ -1,7 +1,7 @@
-import { navigationSample } from './navigationSample';
-import type { SectionSampleDefinition } from './types';
+import { navigationSample } from "./navigationSample";
+import type { SectionSampleDefinition } from "./types";
 
 export const topMenuSectionSample: SectionSampleDefinition = {
-  name: 'TopMenuSection',
-  props: navigationSample,
+	name: "TopMenuSection",
+	props: navigationSample,
 };

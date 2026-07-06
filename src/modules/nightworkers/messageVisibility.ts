@@ -1,17 +1,17 @@
-import type { TaskMessage } from './types';
+import type { TaskMessage } from "./types";
 
 export function isWorkspaceOnlyTaskMessage(message: TaskMessage): boolean {
-  const intent = (message.metadataJson as Record<string, unknown>)?.intent;
-  return intent === 'feature_plan';
+	const intent = (message.metadataJson as Record<string, unknown>)?.intent;
+	return intent === "feature_plan";
 }
 
 export function isUserVisibleChatMessage(message: TaskMessage): boolean {
-  if (message.role !== 'user' && message.role !== 'assistant') return false;
-  const intent = (message.metadataJson as Record<string, unknown>)?.intent;
-  return (
-    intent !== 'blueprint_raw_output' &&
-    intent !== 'mock_blueprint_raw_output' &&
-    intent !== 'data_model_raw_output' &&
-    !isWorkspaceOnlyTaskMessage(message)
-  );
+	if (message.role !== "user" && message.role !== "assistant") return false;
+	const intent = (message.metadataJson as Record<string, unknown>)?.intent;
+	return (
+		intent !== "blueprint_raw_output" &&
+		intent !== "mock_blueprint_raw_output" &&
+		intent !== "data_model_raw_output" &&
+		!isWorkspaceOnlyTaskMessage(message)
+	);
 }

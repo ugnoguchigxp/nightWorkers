@@ -1,50 +1,54 @@
-import { execFile } from 'node:child_process';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { execFile } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+import { afterEach, describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
 
-let tempDir = '';
+let tempDir = "";
 
 afterEach(() => {
-  if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
-  tempDir = '';
+	if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+	tempDir = "";
 });
 
-describe('Codex NightWorkers MCP setup script', () => {
-  it('removes only the NightWorkers MCP config sections', async () => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-codex-mcp-'));
-    const configPath = path.join(tempDir, 'config.toml');
-    fs.writeFileSync(
-      configPath,
-      [
-        'model = "gpt-5.5"',
-        '',
-        '[mcp_servers.context-still]',
-        'command = "/bin/context-still"',
-        '',
-        '# NightWorkers MCP registration managed by scripts/setup-codex-nightworkers-mcp.mjs',
-        '[mcp_servers.nightworkers]',
-        'command = "bun"',
-        'args = ["run", "codex:mcp"]',
-        '',
-        '[mcp_servers.nightworkers.tools.todo_list]',
-        'approval_mode = "approve"',
-        '# End NightWorkers MCP registration',
-        '',
-      ].join('\n')
-    );
+describe("Codex NightWorkers MCP setup script", () => {
+	it("removes only the NightWorkers MCP config sections", async () => {
+		tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "nightworkers-codex-mcp-"));
+		const configPath = path.join(tempDir, "config.toml");
+		fs.writeFileSync(
+			configPath,
+			[
+				'model = "gpt-5.5"',
+				"",
+				"[mcp_servers.context-still]",
+				'command = "/bin/context-still"',
+				"",
+				"# NightWorkers MCP registration managed by scripts/setup-codex-nightworkers-mcp.mjs",
+				"[mcp_servers.nightworkers]",
+				'command = "bun"',
+				'args = ["run", "codex:mcp"]',
+				"",
+				"[mcp_servers.nightworkers.tools.todo_list]",
+				'approval_mode = "approve"',
+				"# End NightWorkers MCP registration",
+				"",
+			].join("\n"),
+		);
 
-    await execFileAsync(process.execPath, ['scripts/setup-codex-nightworkers-mcp.mjs'], {
-      cwd: process.cwd(),
-      env: { ...process.env, CODEX_CONFIG_PATH: configPath },
-    });
-    const removed = fs.readFileSync(configPath, 'utf8');
-    expect(removed).toContain('[mcp_servers.context-still]');
-    expect(removed).not.toContain('[mcp_servers.nightworkers]');
-    expect(removed).not.toContain('args = ["run", "codex:mcp"]');
-  });
+		await execFileAsync(
+			process.execPath,
+			["scripts/setup-codex-nightworkers-mcp.mjs"],
+			{
+				cwd: process.cwd(),
+				env: { ...process.env, CODEX_CONFIG_PATH: configPath },
+			},
+		);
+		const removed = fs.readFileSync(configPath, "utf8");
+		expect(removed).toContain("[mcp_servers.context-still]");
+		expect(removed).not.toContain("[mcp_servers.nightworkers]");
+		expect(removed).not.toContain('args = ["run", "codex:mcp"]');
+	});
 });

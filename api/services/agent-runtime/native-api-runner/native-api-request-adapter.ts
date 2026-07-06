@@ -1,111 +1,117 @@
 import {
-  buildNormalizedSupervisorLlmRequestCandidates,
-  providerAdapterKey,
-} from '../../structured-llm/request';
-import type { StructuredLlmModelTarget } from '../../structured-llm/settings';
+	buildNormalizedSupervisorLlmRequestCandidates,
+	providerAdapterKey,
+} from "../../structured-llm/request";
+import type { StructuredLlmModelTarget } from "../../structured-llm/settings";
 import type {
-  ProviderToolChoice,
-  ProviderToolDefinition,
-  ProviderToolMessage,
-  RawToolTurnCallOptions,
-} from '../../structured-llm/tool-calls';
-import type { StructuredLlmRoutePolicy } from '../../structured-llm/types';
-import type { AgentRunContext } from '../types';
-import { nativeApiRoleForExecutionMode, readNativeApiExecutionMode } from './native-api-mode';
+	ProviderToolChoice,
+	ProviderToolDefinition,
+	ProviderToolMessage,
+	RawToolTurnCallOptions,
+} from "../../structured-llm/tool-calls";
+import type { StructuredLlmRoutePolicy } from "../../structured-llm/types";
+import type { AgentRunContext } from "../types";
 import {
-  extractLatestNativeApiUserPrompt,
-  extractNativeApiSystemPrompt,
-  type NativeApiHistoryItem,
-  projectNativeApiHistoryToProviderMessages,
-} from './native-api-tool-history';
+	nativeApiRoleForExecutionMode,
+	readNativeApiExecutionMode,
+} from "./native-api-mode";
+import {
+	extractLatestNativeApiUserPrompt,
+	extractNativeApiSystemPrompt,
+	type NativeApiHistoryItem,
+	projectNativeApiHistoryToProviderMessages,
+} from "./native-api-tool-history";
 
 export type NativeApiProviderRequest = {
-  provider: string;
-  messages: ProviderToolMessage[];
-  tools: ProviderToolDefinition[];
-  systemPrompt: string;
-  userPrompt: string;
-  options: RawToolTurnCallOptions;
+	provider: string;
+	messages: ProviderToolMessage[];
+	tools: ProviderToolDefinition[];
+	systemPrompt: string;
+	userPrompt: string;
+	options: RawToolTurnCallOptions;
 };
 
 export function buildNativeApiProviderRequest(input: {
-  context: AgentRunContext;
-  history: readonly NativeApiHistoryItem[];
-  tools?: readonly ProviderToolDefinition[];
-  routeOverride?: StructuredLlmModelTarget | null;
-  routePolicy?: StructuredLlmRoutePolicy;
+	context: AgentRunContext;
+	history: readonly NativeApiHistoryItem[];
+	tools?: readonly ProviderToolDefinition[];
+	routeOverride?: StructuredLlmModelTarget | null;
+	routePolicy?: StructuredLlmRoutePolicy;
 }): NativeApiProviderRequest {
-  return buildNativeApiProviderRequests(input)[0];
+	return buildNativeApiProviderRequests(input)[0];
 }
 
 export function buildNativeApiProviderRequests(input: {
-  context: AgentRunContext;
-  history: readonly NativeApiHistoryItem[];
-  tools?: readonly ProviderToolDefinition[];
-  routeOverride?: StructuredLlmModelTarget | null;
-  routePolicy?: StructuredLlmRoutePolicy;
+	context: AgentRunContext;
+	history: readonly NativeApiHistoryItem[];
+	tools?: readonly ProviderToolDefinition[];
+	routeOverride?: StructuredLlmModelTarget | null;
+	routePolicy?: StructuredLlmRoutePolicy;
 }): NativeApiProviderRequest[] {
-  const executionMode = readNativeApiExecutionMode(input.context);
-  const role = nativeApiRoleForExecutionMode(executionMode);
-  const systemPrompt = extractNativeApiSystemPrompt(input.history);
-  const userPrompt = extractLatestNativeApiUserPrompt(input.history);
-  const normalizedRequests = buildNormalizedSupervisorLlmRequestCandidates({
-    systemPrompt,
-    userPrompt,
-    label: 'native_api_runner',
-    role,
-    routeOverride: input.routeOverride,
-    routePolicy: input.routePolicy,
-  });
+	const executionMode = readNativeApiExecutionMode(input.context);
+	const role = nativeApiRoleForExecutionMode(executionMode);
+	const systemPrompt = extractNativeApiSystemPrompt(input.history);
+	const userPrompt = extractLatestNativeApiUserPrompt(input.history);
+	const normalizedRequests = buildNormalizedSupervisorLlmRequestCandidates({
+		systemPrompt,
+		userPrompt,
+		label: "native_api_runner",
+		role,
+		routeOverride: input.routeOverride,
+		routePolicy: input.routePolicy,
+	});
 
-  return normalizedRequests.map((normalizedRequest) => ({
-    provider: providerAdapterKey(normalizedRequest.providerId),
-    messages: projectNativeApiHistoryToProviderMessages(input.history),
-    tools: [...(input.tools ?? [])],
-    systemPrompt,
-    userPrompt,
-    options: {
-      label: 'native_api_runner',
-      role,
-      routeOverride: input.routeOverride,
-      routePolicy: input.routePolicy,
-      timeoutMs: input.context.timeoutSeconds * 1000,
-      taskId: input.context.taskId,
-      runId: input.context.runId,
-      workingDirectory: input.context.repoRoot,
-      normalizedRequest,
-      toolChoice: nativeApiToolChoiceForExecutionMode(executionMode),
-      attemptTimeoutMs: nativeApiAttemptTimeoutMs({
-        timeoutMs: input.context.timeoutSeconds * 1000,
-        providerEndpointId: normalizedRequest.providerEndpointId,
-        providerId: normalizedRequest.providerId,
-        routeSource: normalizedRequest.routeSource,
-      }),
-    },
-  }));
+	return normalizedRequests.map((normalizedRequest) => ({
+		provider: providerAdapterKey(normalizedRequest.providerId),
+		messages: projectNativeApiHistoryToProviderMessages(input.history),
+		tools: [...(input.tools ?? [])],
+		systemPrompt,
+		userPrompt,
+		options: {
+			label: "native_api_runner",
+			role,
+			routeOverride: input.routeOverride,
+			routePolicy: input.routePolicy,
+			timeoutMs: input.context.timeoutSeconds * 1000,
+			taskId: input.context.taskId,
+			runId: input.context.runId,
+			workingDirectory: input.context.repoRoot,
+			normalizedRequest,
+			toolChoice: nativeApiToolChoiceForExecutionMode(executionMode),
+			attemptTimeoutMs: nativeApiAttemptTimeoutMs({
+				timeoutMs: input.context.timeoutSeconds * 1000,
+				providerEndpointId: normalizedRequest.providerEndpointId,
+				providerId: normalizedRequest.providerId,
+				routeSource: normalizedRequest.routeSource,
+			}),
+		},
+	}));
 }
 
 function nativeApiAttemptTimeoutMs(input: {
-  timeoutMs: number;
-  providerEndpointId?: string | null;
-  providerId: string;
-  routeSource?: string | null;
+	timeoutMs: number;
+	providerEndpointId?: string | null;
+	providerId: string;
+	routeSource?: string | null;
 }) {
-  const routeDefault = input.providerId === 'azure-openai' ? 120_000 : 1_800_000;
-  const timeoutMs =
-    Number.isFinite(input.timeoutMs) && input.timeoutMs > 0 ? input.timeoutMs : routeDefault;
-  return Math.max(1_000, Math.min(timeoutMs, routeDefault));
+	const routeDefault =
+		input.providerId === "azure-openai" ? 120_000 : 1_800_000;
+	const timeoutMs =
+		Number.isFinite(input.timeoutMs) && input.timeoutMs > 0
+			? input.timeoutMs
+			: routeDefault;
+	return Math.max(1_000, Math.min(timeoutMs, routeDefault));
 }
 
 function nativeApiToolChoiceForExecutionMode(
-  executionMode: ReturnType<typeof readNativeApiExecutionMode>
+	executionMode: ReturnType<typeof readNativeApiExecutionMode>,
 ): ProviderToolChoice {
-  if (
-    executionMode === 'implementation' ||
-    executionMode === 'review' ||
-    executionMode === 'runtime_debug'
-  ) {
-    return 'required';
-  }
-  return 'auto';
+	if (
+		executionMode === "implementation" ||
+		executionMode === "review" ||
+		executionMode === "runtime_debug"
+	) {
+		return "required";
+	}
+	return "auto";
 }

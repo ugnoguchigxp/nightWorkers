@@ -1,1 +1,1 @@
-export * from '../questionnaire/questionnaire-parser.service';
+export * from "../questionnaire/questionnaire-parser.service";

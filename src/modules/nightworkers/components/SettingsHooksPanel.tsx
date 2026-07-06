@@ -1,1 +1,1 @@
-export { SettingsHooksPanel } from '../../hooks/SettingsHooksPanel';
+export { SettingsHooksPanel } from "../../hooks/SettingsHooksPanel";

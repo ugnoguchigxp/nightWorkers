@@ -1,3 +1,3 @@
-import { installStructuredLlmEnvHooks } from '../structured-llm-test-env';
+import { installStructuredLlmEnvHooks } from "../structured-llm-test-env";
 
 installStructuredLlmEnvHooks();

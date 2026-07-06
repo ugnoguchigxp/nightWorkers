@@ -1,1 +1,1 @@
-export * from '../queue/queue.repository';
+export * from "../queue/queue.repository";
