@@ -56,7 +56,10 @@ export async function auditCodexMappedEvent(
 		typeof payload.toolName === "string" ? payload.toolName : null;
 	const executionMode = readCodexRuntimeExecutionMode(context);
 	const expectedCodexTools = new Set(
-		getNightWorkersCodexToolNames({ executionMode }),
+		getNightWorkersCodexToolNames({
+			executionMode,
+			ontologyMcpEnabled: readOntologyMcpEnabled(context),
+		}),
 	);
 	if (toolName?.startsWith("nightworkers.")) {
 		auditState.observedNightWorkersTools.add(toolName);
@@ -376,4 +379,18 @@ export async function auditCodexMappedEvent(
 		.map((warning) => toContractWarningEvent(auditState, warning))
 		.filter((warning): warning is AgentRuntimeEvent => warning !== null);
 	return [...warningEvents, auditedEvent];
+}
+
+function readOntologyMcpEnabled(context: AgentRunContext) {
+	const snapshot = context.contextSnapshot as Record<string, unknown>;
+	const ontologyMcp = snapshot.ontologyMcp;
+	if (
+		!ontologyMcp ||
+		typeof ontologyMcp !== "object" ||
+		Array.isArray(ontologyMcp)
+	) {
+		return true;
+	}
+	const enabled = (ontologyMcp as Record<string, unknown>).enabled;
+	return typeof enabled === "boolean" ? enabled : true;
 }

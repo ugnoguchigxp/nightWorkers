@@ -299,6 +299,7 @@ export function resolveExecutionModeFromMessages(
 		const jobType =
 			typeof selection?.jobType === "string" ? selection.jobType : null;
 		if (jobType) {
+			if (!isJobType(jobType)) return "general_answer";
 			if (
 				jobType === "planning" ||
 				jobType === "blueprint" ||
@@ -307,7 +308,6 @@ export function resolveExecutionModeFromMessages(
 				return "planning";
 			}
 			if (jobType === "review") return "review";
-			if (jobType === "runtime_debug") return "runtime_debug";
 			if (jobType === "general_answer") return "general_answer";
 			return "implementation";
 		}

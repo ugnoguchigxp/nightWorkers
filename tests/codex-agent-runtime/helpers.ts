@@ -9,14 +9,10 @@ export function buildContext(
 	input: {
 		repoRoot?: string;
 		codex?: Record<string, unknown>;
-		executionMode?:
-			| "planning"
-			| "implementation"
-			| "review"
-			| "runtime_debug"
-			| "general_answer";
+		executionMode?: "planning" | "implementation" | "review" | "general_answer";
 		runtimeOptions?: Record<string, unknown>;
 		ontologyContext?: unknown;
+		ontologyMcp?: { enabled: boolean; fileScale?: string | null };
 		latestUserMessage?: string;
 		conversationContextUsage?: {
 			latestUserMessageTokens: number;
@@ -63,6 +59,7 @@ export function buildContext(
 			...(input.ontologyContext
 				? { ontologyContext: input.ontologyContext }
 				: {}),
+			...(input.ontologyMcp ? { ontologyMcp: input.ontologyMcp } : {}),
 		},
 		runtimeOptions:
 			input.codex || input.executionMode || input.runtimeOptions

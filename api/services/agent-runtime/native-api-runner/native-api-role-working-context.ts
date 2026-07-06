@@ -324,7 +324,6 @@ function requireNativeApiExecutionMode(
 		value !== "planning" &&
 		value !== "implementation" &&
 		value !== "review" &&
-		value !== "runtime_debug" &&
 		value !== "general_answer"
 	) {
 		errors.push(`${label} is invalid`);

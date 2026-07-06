@@ -465,7 +465,6 @@ export type NightWorkersCodexToolExecutionMode =
 	| "planning"
 	| "implementation"
 	| "review"
-	| "runtime_debug"
 	| "general_answer";
 
 const PLAN_MODE_READ_ONLY_CODEX_TOOLS = new Set<NightWorkersCodexToolName>([
@@ -479,21 +478,31 @@ const PLAN_MODE_READ_ONLY_CODEX_TOOLS = new Set<NightWorkersCodexToolName>([
 	"get_verification_plan",
 ]);
 
+const ONTOLOGY_CODEX_TOOLS = new Set<NightWorkersCodexToolName>([
+	"list_modules",
+	"get_module_ontology",
+	"classify_goal",
+	"compile_module_context",
+	"check_boundary",
+	"get_verification_plan",
+]);
+
 export function getNightWorkersCodexToolNames(
-	input: { executionMode?: string } = {},
+	input: { executionMode?: string; ontologyMcpEnabled?: boolean } = {},
 ) {
 	return Object.keys(nightWorkersCodexToolManifest)
 		.filter((tool): tool is NightWorkersCodexToolName =>
 			isNightWorkersCodexToolAllowedForMode(
 				tool as NightWorkersCodexToolName,
 				input.executionMode,
+				input.ontologyMcpEnabled,
 			),
 		)
 		.map((tool) => `nightworkers.${tool}`);
 }
 
 export function buildNightWorkersCodexToolApprovalConfig(
-	input: { executionMode?: string } = {},
+	input: { executionMode?: string; ontologyMcpEnabled?: boolean } = {},
 ) {
 	return Object.fromEntries(
 		Object.entries(nightWorkersCodexToolManifest)
@@ -501,6 +510,7 @@ export function buildNightWorkersCodexToolApprovalConfig(
 				isNightWorkersCodexToolAllowedForMode(
 					name as NightWorkersCodexToolName,
 					input.executionMode,
+					input.ontologyMcpEnabled,
 				),
 			)
 			.map(([name, definition]) => [
@@ -511,13 +521,14 @@ export function buildNightWorkersCodexToolApprovalConfig(
 }
 
 export function buildNightWorkersCodexToolConfigLines(
-	input: { executionMode?: string } = {},
+	input: { executionMode?: string; ontologyMcpEnabled?: boolean } = {},
 ) {
 	return Object.entries(nightWorkersCodexToolManifest)
 		.filter(([name]) =>
 			isNightWorkersCodexToolAllowedForMode(
 				name as NightWorkersCodexToolName,
 				input.executionMode,
+				input.ontologyMcpEnabled,
 			),
 		)
 		.flatMap(([name, definition]) => [
@@ -530,7 +541,9 @@ export function buildNightWorkersCodexToolConfigLines(
 export function isNightWorkersCodexToolAllowedForMode(
 	tool: NightWorkersCodexToolName,
 	executionMode?: string,
+	ontologyMcpEnabled = true,
 ) {
+	if (!ontologyMcpEnabled && ONTOLOGY_CODEX_TOOLS.has(tool)) return false;
 	if (executionMode !== "planning") return true;
 	return PLAN_MODE_READ_ONLY_CODEX_TOOLS.has(tool);
 }

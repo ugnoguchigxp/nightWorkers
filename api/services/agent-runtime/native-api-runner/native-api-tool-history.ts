@@ -188,6 +188,7 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 	const planModeSettings = formatPlanModeSettingsSnapshot(
 		context.runtimeOptions?.planModeSettingsSnapshot,
 	);
+	const ontologyGuidance = buildOntologyGuidance(context);
 	return [
 		`executionMode: ${executionMode}`,
 		...(planModeSettings ? [`planModeSettings: ${planModeSettings}`] : []),
@@ -202,13 +203,7 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 		"- 仕様書、実装計画、artifact が source of truth です。Plan Mode artifact の契約詳細が実装に影響する場合は read_current_specification includeDesignContext=true の assembled design context も読んでください。",
 		"- 実作業前に context_initial_instructions が未実行なら、read_current_specification の後に呼び出すことを強く推奨します。",
 		"- repo 固有の文脈、過去判断、実装境界、検証方針が必要な場合は read_current_specification の spec content と assembled design context を踏まえて context_compile を使ってください。",
-		formatOntologyRuntimeContextForPrompt(
-			context.contextSnapshot.ontologyContext,
-		),
-		"- module ontology tool が使える場合、広域探索や cross-module edit の前に classify_goal と compile_module_context で primaryModule / secondaryModules / invariants / focused verification を確認してください。",
-		"- owned paths 外の planned edit では check_boundary を使い、unknown path や forbidden mutation を finalReport まで黙って持ち込まないでください。",
-		"- ontology-guided work の finalReport には primary module、secondary modules、boundary crossings、invariants checked、verification run、skipped verification reason を含めてください。",
-		formatOntologyCloseoutRequirementsForPrompt(),
+		...(ontologyGuidance ? ontologyGuidance : []),
 		"- TodoList pane がユーザーに見える進捗の source of truth です。Timeline 追加警告ではなく、TodoList の状態遷移で現在位置を示してください。",
 		"- 2 手以上の調査、レビュー、実装、検証では、最初の実質作業前に既存 Todo を start するか、作業内容に合わない場合だけ todo_list operation=replace で UI 追跡可能な TodoList にしてください。",
 		"- todo_list operation=replace は TodoList の構造を再定義する再計画操作です。見積もり変更、スコープ変更、作業分解の粒度変更、実装中に新しい必須作業が判明した場合だけ使います。",
@@ -225,6 +220,33 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 		...modeGuidance(executionMode),
 		`repoRoot: ${context.repoRoot}`,
 	].join("\n");
+}
+
+function buildOntologyGuidance(context: AgentRunContext) {
+	if (!readOntologyMcpEnabled(context)) return null;
+	return [
+		formatOntologyRuntimeContextForPrompt(
+			context.contextSnapshot.ontologyContext,
+		),
+		"- module ontology tool が使える場合、広域探索や cross-module edit の前に classify_goal と compile_module_context で primaryModule / secondaryModules / invariants / focused verification を確認してください。",
+		"- owned paths 外の planned edit では check_boundary を使い、unknown path や forbidden mutation を finalReport まで黙って持ち込まないでください。",
+		"- ontology-guided work の finalReport には primary module、secondary modules、boundary crossings、invariants checked、verification run、skipped verification reason を含めてください。",
+		formatOntologyCloseoutRequirementsForPrompt(),
+	];
+}
+
+function readOntologyMcpEnabled(context: AgentRunContext) {
+	const snapshot = context.contextSnapshot as Record<string, unknown>;
+	const ontologyMcp = snapshot.ontologyMcp;
+	if (
+		!ontologyMcp ||
+		typeof ontologyMcp !== "object" ||
+		Array.isArray(ontologyMcp)
+	) {
+		return true;
+	}
+	const enabled = (ontologyMcp as Record<string, unknown>).enabled;
+	return typeof enabled === "boolean" ? enabled : true;
 }
 
 function formatPlanModeSettingsSnapshot(snapshot: unknown) {
@@ -257,14 +279,6 @@ function modeGuidance(
 			"- 変更差分、受け入れ条件、検証結果を確認し、バグ・回帰・責務境界違反・テスト不足を優先してください。",
 			"- 必要に応じて git_diff、read_file、run_verification、context_compile を使って根拠を確認してください。",
 			"- 修正が必要で明確な場合は、Todo を更新して実装修正 tool を使って構いません。",
-			"",
-		];
-	}
-	if (executionMode === "runtime_debug") {
-		return [
-			"Runtime debug guidance:",
-			"- logs、DB 状態、runtime settings、直近 tool failure を優先して確認してください。",
-			"- 原因が実装バグとして明確な場合は、Todo を更新して修正 tool を使って構いません。",
 			"",
 		];
 	}

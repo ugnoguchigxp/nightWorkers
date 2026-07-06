@@ -29,6 +29,7 @@ afterAll(() => {
 vi.mock("../../api/modules/nightworkers/nightworkers.repository", () => ({
 	getTask: vi.fn(),
 	updateRepository: vi.fn(),
+	updateRepositoryProjectMeta: vi.fn(),
 	countActiveTaskRuns: vi.fn(),
 	claimNextQueuedTask: vi.fn(),
 	listActiveTaskRunsForTask: vi.fn(),

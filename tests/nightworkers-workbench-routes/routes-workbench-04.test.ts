@@ -109,8 +109,7 @@ function mockPlanModeGate(
 		| "plan_mode"
 		| "general_answer"
 		| "implementation"
-		| "review"
-		| "runtime_debug" = shouldStartPlanMode ? "plan_mode" : "implementation",
+		| "review" = shouldStartPlanMode ? "plan_mode" : "implementation",
 ) {
 	return JSON.stringify({ shouldStartPlanMode, action, reason });
 }

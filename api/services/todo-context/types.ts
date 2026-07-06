@@ -31,18 +31,8 @@ export type RuntimePromptSnapshot = {
 	source: "task_prompt" | "fallback";
 	degraded: boolean;
 	degradedReason?: string;
-	executionMode?:
-		| "planning"
-		| "implementation"
-		| "review"
-		| "runtime_debug"
-		| "general_answer";
-	executionPhase?:
-		| "planning"
-		| "implementation"
-		| "review"
-		| "runtime_debug"
-		| "general_answer";
+	executionMode?: "planning" | "implementation" | "review" | "general_answer";
+	executionPhase?: "planning" | "implementation" | "review" | "general_answer";
 	executionModeSource?:
 		| "message_history"
 		| "workbench_intake"
@@ -58,6 +48,13 @@ export type RuntimePromptSnapshot = {
 	runtimeLane?: "native-api-runner" | "codex-sdk";
 	runtimeLaneResolution?: RuntimeLaneSnapshot;
 	runtimeResume?: unknown;
+	projectMeta?: unknown;
+	ontologyMcp?: {
+		enabled: boolean;
+		source: "project_meta_file_scale";
+		fileScale?: string | null;
+		reason?: string | null;
+	};
 	ontologyContext?: unknown;
 	ontologyBoundaryAudit?: unknown;
 	effectiveLlmRouting?: unknown;
@@ -78,12 +75,7 @@ export type RuntimePromptSnapshot = {
 		stateCardText?: string;
 		snapshotJson?: unknown;
 		projection?: {
-			role:
-				| "plan"
-				| "implementation"
-				| "review"
-				| "runtime_debug"
-				| "general_answer";
+			role: "plan" | "implementation" | "review" | "general_answer";
 			workKind?: string | null;
 			source: "role_projection" | "raw_snapshot" | "omitted";
 			omittedSections: string[];

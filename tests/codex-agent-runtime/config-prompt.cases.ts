@@ -165,6 +165,38 @@ describe("CodexAgentRuntime config and prompt", () => {
 		]);
 	});
 
+	it("starts a fresh Codex SDK thread when runtime resume is disabled", async () => {
+		const freshThread = fakeThread([]);
+		const codexClient = {
+			resumeThread: vi.fn(),
+			startThread: vi.fn(() => freshThread),
+		};
+		const resumeEvents: unknown[] = [];
+
+		const thread = await createCodexRuntimeThread({
+			context: {
+				...buildContext(),
+				runtimeOptions: {
+					runtimeResume: {
+						kind: "codex_thread",
+						status: "disabled",
+						executionMode: "review",
+						reason: "review_fresh_context",
+					},
+				},
+			},
+			codexClient,
+			onResumeEvent: (event) => {
+				resumeEvents.push(event);
+			},
+		});
+
+		expect(thread).toBe(freshThread);
+		expect(codexClient.resumeThread).not.toHaveBeenCalled();
+		expect(codexClient.startThread).toHaveBeenCalledOnce();
+		expect(resumeEvents).toEqual([{ status: "unavailable" }]);
+	});
+
 	it("derives the Hono-hosted NightWorkers MCP URL from the API origin", () => {
 		const originOptions = buildCodexRuntimeSdkOptions({
 			env: {
@@ -381,6 +413,51 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(prompt).toContain("Ontology closeout requirements:");
 	});
 
+	it("omits ontology MCP tools and prompt guidance when disabled by project scale", () => {
+		const prompt = buildCodexRuntimePrompt(
+			buildContext({
+				ontologyMcp: { enabled: false, fileScale: "medium" },
+				ontologyContext: {
+					version: 1,
+					available: true,
+					primaryModule: "project-detail",
+				},
+			}),
+		);
+		const options = buildCodexRuntimeSdkOptions({
+			env: {
+				NIGHTWORKERS_EXECUTION_MODE: "implementation",
+				NIGHTWORKERS_ONTOLOGY_MCP_ENABLED: "false",
+				NIGHTWORKERS_CODEX_MCP_URL: "http://127.0.0.1:39173/mcp/nightworkers",
+			} as never,
+		});
+		const tools = (
+			options.config as {
+				mcp_servers?: { nightworkers?: { tools?: Record<string, unknown> } };
+			}
+		).mcp_servers?.nightworkers?.tools;
+
+		expect(prompt).not.toContain("Module ontology protocol:");
+		expect(prompt).not.toContain("nightworkers.classify_goal");
+		expect(prompt).not.toContain("nightworkers.compile_module_context");
+		expect(prompt).not.toContain("Ontology runtime snapshot:");
+		expect(tools).not.toHaveProperty("list_modules");
+		expect(tools).not.toHaveProperty("compile_module_context");
+		expect(
+			resolveCodexRuntimeMcpConfigState({
+				env: {
+					NIGHTWORKERS_EXECUTION_MODE: "implementation",
+					NIGHTWORKERS_ONTOLOGY_MCP_ENABLED: "false",
+				} as never,
+			}).expectedTools,
+		).toEqual(
+			getNightWorkersCodexToolNames({
+				executionMode: "implementation",
+				ontologyMcpEnabled: false,
+			}),
+		);
+	});
+
 	it("keeps boundary audit unavailable when no touched files are present", async () => {
 		const audit = await buildOntologyBoundaryAuditSnapshot({
 			repoRoot: process.cwd(),
@@ -453,6 +530,40 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(parts.estimates.runtimeContractTokens).toBeGreaterThan(0);
 		expect(parts.estimates.fullPromptTokens).toBeGreaterThan(
 			parts.estimates.requestTokens,
+		);
+	});
+
+	it("uses a lightweight completed-task contract for Codex review mode", () => {
+		const reviewParts = buildCodexRuntimePromptParts(
+			buildContext({
+				executionMode: "review",
+				latestUserMessage: "完了済みの差分をレビューしてください",
+			}),
+		);
+		const implementationParts = buildCodexRuntimePromptParts(
+			buildContext({
+				executionMode: "implementation",
+				latestUserMessage: "仕様に沿って実装してください",
+			}),
+		);
+
+		expect(reviewParts.prompt).toContain(
+			"完了済みの差分をレビューしてください",
+		);
+		expect(reviewParts.runtimeContract).toContain("executionMode: review");
+		expect(reviewParts.runtimeContract).toContain("completed-task review only");
+		expect(reviewParts.runtimeContract).toContain(
+			"実装中の会話履歴を前提にしない",
+		);
+		expect(reviewParts.runtimeContract).not.toContain(
+			"Minimal implementation behavior:",
+		);
+		expect(reviewParts.runtimeContract).not.toContain("operation=replace");
+		expect(reviewParts.runtimeContract).not.toContain(
+			"Module ontology protocol:",
+		);
+		expect(reviewParts.estimates.runtimeContractTokens).toBeLessThan(
+			implementationParts.estimates.runtimeContractTokens,
 		);
 	});
 

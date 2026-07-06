@@ -8,6 +8,7 @@ import {
 } from "../../../services/agent-runtime/native-api-runner/native-api-mode";
 import { buildNativeApiRoleContextSnapshot } from "../../../services/agent-runtime/native-api-runner/native-api-role-context-events";
 import {
+	buildOntologyRuntimeContextDisabledSnapshot,
 	buildOntologyRuntimeContextSnapshot,
 	ontologySnapshotEventSeverity,
 } from "../../../services/agent-runtime/ontology-runtime-context";
@@ -27,6 +28,7 @@ import { readStructuredLlmProviderSettings } from "../../../services/structured-
 import { digestText } from "../../../services/text-digest";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
 import { buildStandardImplementationTodoList } from "../../../services/todo-runtime";
+import { getFreshProjectMeta } from "../../project-detail/project-meta.service";
 import { getTodoWorkflowSettings } from "../../queue/queue-management.service";
 import { resolveBlueprintPlanningReadiness } from "../nightworkers.basic.service";
 import * as repo from "../nightworkers.repository";
@@ -106,6 +108,8 @@ export async function startTaskRun(
 			"Repository path is not a directory",
 		);
 	}
+	const projectMeta = await getFreshProjectMeta(repoInfo);
+	const ontologyMcpEnabled = isOntologyMcpEnabledForProjectMeta(projectMeta);
 	const messages = await repo.listTaskMessages(taskId);
 	const lastUserMessage = [...messages]
 		.reverse()
@@ -308,6 +312,15 @@ export async function startTaskRun(
 			diagnostics: runtimeLaneResolution.diagnostics,
 		},
 		effectiveLlmRouting,
+		projectMeta,
+		ontologyMcp: {
+			enabled: ontologyMcpEnabled,
+			source: "project_meta_file_scale",
+			fileScale: projectMeta?.fileScale.value ?? null,
+			reason: ontologyMcpEnabled
+				? "Project file scale is large or huge."
+				: "Project file scale is below large; ontology MCP is disabled.",
+		},
 		request: {
 			repositoryPath: repoInfo.localPath,
 			taskTitle: task.title,
@@ -331,10 +344,10 @@ export async function startTaskRun(
 		implementationHandoffMessage,
 		executionMode,
 	});
-	const conversationContext = await maybeLoadConversationStateCard(
-		taskId,
-		lastUserMessage?.id,
-	);
+	const conversationContext =
+		executionMode === "review"
+			? null
+			: await maybeLoadConversationStateCard(taskId, lastUserMessage?.id);
 	const projectedStateCard = projectConversationStateCardForRuntime({
 		snapshot: conversationContext,
 		role: stateCardRoleForExecutionMode(executionMode),
@@ -381,13 +394,20 @@ export async function startTaskRun(
 					},
 				},
 	};
-	const ontologyContext = await buildOntologyRuntimeContextSnapshot({
-		repoRoot: repoInfo.localPath,
-		goal: runtimeLatestUserMessage || compiledPromptText,
-		taskId,
-		runId: run.id,
-		runtimeLane: runtimeLaneResolution.lane,
-	});
+	const ontologyContext = ontologyMcpEnabled
+		? await buildOntologyRuntimeContextSnapshot({
+				repoRoot: repoInfo.localPath,
+				goal: runtimeLatestUserMessage || compiledPromptText,
+				taskId,
+				runId: run.id,
+				runtimeLane: runtimeLaneResolution.lane,
+			})
+		: buildOntologyRuntimeContextDisabledSnapshot({
+				taskId,
+				runId: run.id,
+				runtimeLane: runtimeLaneResolution.lane,
+				fileScale: projectMeta?.fileScale.value ?? null,
+			});
 	runtimeContextSnapshot = {
 		...runtimeContextSnapshot,
 		ontologyContext,
@@ -509,11 +529,19 @@ export async function startTaskRun(
 	}
 
 	if (runtimeLaneResolution.lane === "codex-sdk") {
-		const runtimeResume = await loadCodexRuntimeResumeState({
-			taskId,
-			repositoryId: task.repositoryId,
-			executionMode,
-		});
+		const runtimeResume =
+			executionMode === "review"
+				? {
+						kind: "codex_thread",
+						status: "disabled",
+						executionMode,
+						reason: "review_fresh_context",
+					}
+				: await loadCodexRuntimeResumeState({
+						taskId,
+						repositoryId: task.repositoryId,
+						executionMode,
+					});
 		runtimeContextSnapshot = {
 			...runtimeContextSnapshot,
 			runtimeResume,
@@ -530,7 +558,9 @@ export async function startTaskRun(
 			message:
 				runtimeResume.status === "available"
 					? "Codex runtime resume state loaded."
-					: "Codex runtime resume state unavailable; runtime will start fresh.",
+					: runtimeResume.status === "disabled"
+						? "Codex runtime resume state disabled for review; runtime will start fresh."
+						: "Codex runtime resume state unavailable; runtime will start fresh.",
 			data: {
 				action: "runtime.resume_state_loaded",
 				runtimeResume,
@@ -581,4 +611,17 @@ export async function startTaskRun(
 	});
 
 	return compiledRun ?? run;
+}
+
+function isOntologyMcpEnabledForProjectMeta(projectMeta: unknown) {
+	if (
+		!projectMeta ||
+		typeof projectMeta !== "object" ||
+		Array.isArray(projectMeta)
+	) {
+		return false;
+	}
+	const fileScale = (projectMeta as { fileScale?: { value?: unknown } })
+		.fileScale?.value;
+	return fileScale === "large" || fileScale === "huge";
 }

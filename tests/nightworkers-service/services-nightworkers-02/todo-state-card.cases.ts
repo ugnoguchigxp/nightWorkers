@@ -547,4 +547,103 @@ describe("NightWorkers service", () => {
 			conversationContext.getLatestConversationContextForTask,
 		).not.toHaveBeenCalled();
 	});
+
+	it("does not inject or load StateCard for review execution mode", async () => {
+		const task = {
+			id: "task-state-card-review",
+			repositoryId: "repo-state-card-review",
+			title: "StateCard review task",
+			description: "review request",
+			objective: "review request",
+			acceptanceCriteria: "Runtime completes",
+			timeoutSeconds: 60,
+		};
+		const run = {
+			id: "run-state-card-review",
+			taskId: task.id,
+			repositoryId: task.repositoryId,
+			status: "running",
+		};
+		vi.mocked(repo.getTask).mockResolvedValue(task as never);
+		vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+		vi.mocked(repo.getRepository).mockResolvedValue({
+			id: task.repositoryId,
+			localPath: repoRoot,
+			safetyPolicy: {},
+		} as never);
+		vi.mocked(repo.listTaskMessages).mockResolvedValue([
+			{
+				id: "message-review",
+				role: "user",
+				content: "完了済みの差分をレビューしてください",
+				metadataJson: {
+					jobSelection: { jobType: "review" },
+				},
+			},
+		] as never);
+		vi.mocked(repo.createTaskRun).mockResolvedValue(run as never);
+		vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
+		vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as never);
+		vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+		vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
+		vi.mocked(
+			conversationContext.getLatestConversationContextForTask,
+		).mockResolvedValue({
+			id: "snapshot-review",
+			taskId: task.id,
+			runId: "run-previous",
+			version: 1,
+			jobType: "minor_code_edit",
+			latestUserMessageId: "message-previous",
+			previousRunId: "run-previous",
+			terminalState: "completed",
+			tokenEstimate: 42,
+			snapshotJson: { version: 1 } as never,
+			stateCardText: "<STATE_CARD>\nTask: review\n</STATE_CARD>",
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		});
+		const runtimeStart = vi.fn().mockResolvedValue({
+			terminalState: "completed",
+			summary: "Runtime done",
+			finalReport: "Runtime report",
+			stoppedBy: "decision",
+			riskLevel: "low",
+			diffPatch: "",
+			logContent: "",
+		});
+		vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+			kind: "native-local",
+			start: runtimeStart,
+			stop: vi.fn(),
+		} as never);
+
+		await startTaskRun(task.id);
+
+		await vi.waitFor(() => {
+			expect(runtimeStart).toHaveBeenCalledTimes(1);
+		});
+		expect(runtimeStart.mock.calls[0][0]).toEqual(
+			expect.objectContaining({
+				latestUserMessage: "完了済みの差分をレビューしてください",
+				contextSnapshot: expect.objectContaining({
+					executionPhase: "review",
+					planModeClosed: true,
+					conversationContext: expect.objectContaining({
+						stateCardIncluded: false,
+						projection: expect.objectContaining({
+							role: "review",
+							source: "omitted",
+						}),
+						usage: expect.objectContaining({
+							stateCardTokens: 0,
+						}),
+					}),
+				}),
+			}),
+		);
+		expect(
+			conversationContext.getLatestConversationContextForTask,
+		).not.toHaveBeenCalled();
+	});
 });

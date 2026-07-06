@@ -144,7 +144,7 @@ Initial unique lookup should be logical rather than hard unique:
 
 Reason for keeping `execution_mode` strict initially:
 
-- Planning, implementation, review, runtime_debug, and general_answer carry different runtime contracts.
+- Planning, implementation, review, and general_answer carry different runtime contracts.
 - Cross-mode resume may be useful later, but it can leak stale role instructions into a new mode.
 - The first implementation should preserve safety over broad continuity.
 

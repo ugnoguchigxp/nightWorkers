@@ -16,11 +16,7 @@ export function shouldForceNativeApiStartupGates(
 ): boolean {
 	if (context.runtimeOptions?.forceStartupGates === false) return false;
 	const executionMode = readNativeApiExecutionMode(context);
-	return (
-		executionMode === "implementation" ||
-		executionMode === "review" ||
-		executionMode === "runtime_debug"
-	);
+	return executionMode === "implementation" || executionMode === "review";
 }
 
 export function canCompleteNativeApiWithTextOnly(

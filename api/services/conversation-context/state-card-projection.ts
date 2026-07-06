@@ -94,7 +94,7 @@ function renderRoleProjection(
 	const goal = snapshot.classification.goal?.trim();
 	if (goal) lines.push(`Goal: ${truncate(goal, 360)}`);
 	const request = snapshot.task.latestUserRequest?.trim();
-	if (request && (role === "plan" || role === "runtime_debug")) {
+	if (request && role === "plan") {
 		lines.push(`Latest request: ${truncate(request, 360)}`);
 	}
 	if (snapshot.files.target.length > 0 && role !== "plan") {
@@ -110,11 +110,6 @@ function renderRoleProjection(
 	}
 	if (snapshot.runState.lastError) {
 		lines.push(`Last error: ${truncate(snapshot.runState.lastError, 360)}`);
-	}
-	if (snapshot.runState.lastToolFailure && role === "runtime_debug") {
-		lines.push(
-			`Last tool failure: ${truncate(snapshot.runState.lastToolFailure, 360)}`,
-		);
 	}
 	const evidence = snapshot.runState.workerEvidence;
 	if (evidence?.criticalEvidence.length) {
@@ -142,7 +137,6 @@ function omittedSectionsForRole(role: NativeApiStateCardRole) {
 	if (role === "plan") return ["implementation_todos", "code_snippets"];
 	if (role === "review")
 		return ["implementation_todos", "code_snippets", "planning_detail"];
-	if (role === "runtime_debug") return ["planning_detail", "code_snippets"];
 	return ["raw_snapshot"];
 }
 

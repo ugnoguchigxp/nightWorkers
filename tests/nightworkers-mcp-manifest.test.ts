@@ -91,6 +91,29 @@ describe("nightworkers MCP manifest", () => {
 		expect(lines).not.toContain("replace_todo_list");
 	});
 
+	it("omits ontology MCP tools when ontology MCP is disabled for smaller projects", () => {
+		const lines = buildNightWorkersCodexToolConfigLines({
+			ontologyMcpEnabled: false,
+		}).join("\n");
+		const tools = buildNightWorkersCodexToolApprovalConfig({
+			ontologyMcpEnabled: false,
+		});
+
+		expect(lines).toContain(
+			"[mcp_servers.nightworkers.tools.read_current_specification]",
+		);
+		expect(lines).toContain("[mcp_servers.nightworkers.tools.todo_list]");
+		expect(lines).not.toContain(
+			"[mcp_servers.nightworkers.tools.list_modules]",
+		);
+		expect(lines).not.toContain(
+			"[mcp_servers.nightworkers.tools.compile_module_context]",
+		);
+		expect(tools).not.toHaveProperty("list_modules");
+		expect(tools).not.toHaveProperty("compile_module_context");
+		expect(tools).not.toHaveProperty("check_boundary");
+	});
+
 	it("drives the supervisor prompt schemas for shared NightWorkers tools", () => {
 		const majorTools = getAllowedToolsForJobType("major_code_edit");
 		const readCurrentSpecification = majorTools.find(

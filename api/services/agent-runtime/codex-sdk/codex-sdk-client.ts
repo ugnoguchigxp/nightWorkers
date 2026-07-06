@@ -50,6 +50,9 @@ export async function createCodexRuntimeThread(input: {
 			NIGHTWORKERS_TASK_ID: input.context.taskId,
 			NIGHTWORKERS_RUN_ID: input.context.runId,
 			NIGHTWORKERS_EXECUTION_MODE: readCodexRuntimeExecutionMode(input.context),
+			NIGHTWORKERS_ONTOLOGY_MCP_ENABLED: readOntologyMcpEnabled(input.context)
+				? "true"
+				: "false",
 		},
 	});
 	const codex = input.codexClient ?? new Codex(codexOptions);
@@ -86,6 +89,13 @@ function readCodexRuntimeExecutionMode(context: AgentRunContext) {
 	if (typeof value === "string") return value;
 	const snapshotValue = context.contextSnapshot.executionMode;
 	return typeof snapshotValue === "string" ? snapshotValue : "implementation";
+}
+
+function readOntologyMcpEnabled(context: AgentRunContext) {
+	const snapshot = context.contextSnapshot as Record<string, unknown>;
+	const ontologyMcp = readRecord(snapshot.ontologyMcp);
+	const enabled = ontologyMcp?.enabled;
+	return typeof enabled === "boolean" ? enabled : true;
 }
 
 function readCodexResumeState(context: AgentRunContext) {

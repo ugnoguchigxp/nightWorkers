@@ -106,7 +106,6 @@ export function readCodexRuntimeExecutionMode(context: AgentRunContext) {
 		value === "planning" ||
 		value === "implementation" ||
 		value === "review" ||
-		value === "runtime_debug" ||
 		value === "general_answer"
 	) {
 		return value;
@@ -116,7 +115,6 @@ export function readCodexRuntimeExecutionMode(context: AgentRunContext) {
 		snapshotValue === "planning" ||
 		snapshotValue === "implementation" ||
 		snapshotValue === "review" ||
-		snapshotValue === "runtime_debug" ||
 		snapshotValue === "general_answer"
 	) {
 		return snapshotValue;

@@ -5,14 +5,12 @@ export type NativeApiExecutionMode =
 	| "planning"
 	| "implementation"
 	| "review"
-	| "runtime_debug"
 	| "general_answer";
 
 export type NativeApiStateCardRole =
 	| "plan"
 	| "implementation"
 	| "review"
-	| "runtime_debug"
 	| "general_answer";
 
 export function normalizeNativeApiExecutionMode(
@@ -22,7 +20,6 @@ export function normalizeNativeApiExecutionMode(
 		value === "planning" ||
 		value === "implementation" ||
 		value === "review" ||
-		value === "runtime_debug" ||
 		value === "general_answer"
 	) {
 		return value;

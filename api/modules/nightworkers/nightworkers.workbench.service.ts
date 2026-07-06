@@ -377,13 +377,7 @@ const workbenchPlanModeGateSchema = z
 	.object({
 		shouldStartPlanMode: z.boolean(),
 		action: z
-			.enum([
-				"plan_mode",
-				"general_answer",
-				"implementation",
-				"review",
-				"runtime_debug",
-			])
+			.enum(["plan_mode", "general_answer", "implementation", "review"])
 			.optional(),
 		reason: z.string().min(1),
 		dedicatedViews: z
@@ -428,12 +422,7 @@ const workbenchPlanModeGateSchema = z
 	.strict();
 
 type WorkbenchPlanModeGate = z.infer<typeof workbenchPlanModeGateSchema> & {
-	action:
-		| "plan_mode"
-		| "general_answer"
-		| "implementation"
-		| "review"
-		| "runtime_debug";
+	action: "plan_mode" | "general_answer" | "implementation" | "review";
 	planSignal?: WorkbenchPlanSignal;
 };
 
@@ -543,13 +532,7 @@ async function decideWorkbenchPlanModeGate(input: {
 					shouldStartPlanMode: { type: "boolean" },
 					action: {
 						type: "string",
-						enum: [
-							"plan_mode",
-							"general_answer",
-							"implementation",
-							"review",
-							"runtime_debug",
-						],
+						enum: ["plan_mode", "general_answer", "implementation", "review"],
 					},
 					reason: { type: "string" },
 					dedicatedViews: {
@@ -629,7 +612,8 @@ function buildWorkbenchPlanModeGatePrompt(projectRoot: string) {
 		'ただし、直前の可否回答や状態確認に続いてユーザーが作業の続行、再開、実行を求めている場合は状態確認ではありません。Latest non-general run があればその executionMode を優先し、なければ action="implementation" にしてください。',
 		'修正、実装、設定変更、依存更新、リファクタは shouldStartPlanMode=false かつ action="implementation" にしてください。',
 		'コードレビュー、差分レビュー、品質レビューは shouldStartPlanMode=false かつ action="review" にしてください。',
-		'ログ確認、原因調査、実行時状態の確認、テスト実行や検証依頼は shouldStartPlanMode=false かつ action="runtime_debug" にしてください。',
+		'ログ確認、原因調査、実行時状態の確認は shouldStartPlanMode=false かつ action="general_answer" にしてください。',
+		'テスト実行や検証依頼は shouldStartPlanMode=false かつ action="review" にしてください。',
 		"完了済みの Plan Mode artifact は証跡として扱い、後続の質問や変更依頼で再編集対象にしないでください。",
 		"既に implementation_plan / feature_plan があり、現在の依頼が実装・修正・実行キュー投入なら Plan Mode を再起動しないでください。",
 		"Plan View は Plan Mode の表示メニュー用です。UI 変更がない場合は blueprint を omit、DB/永続化 schema 変更がない場合は data_model を omit してください。API 契約が主題の場合は api_io_contract を include し、OpenAPI 互換 API contract に寄せてください。",
@@ -642,7 +626,7 @@ function buildWorkbenchPlanModeGatePrompt(projectRoot: string) {
 		`プロジェクトルート: ${projectRoot}`,
 		"",
 		"[Output Schema]",
-		'{ "shouldStartPlanMode": boolean, "action": "plan_mode" | "general_answer" | "implementation" | "review" | "runtime_debug", "reason": "short reason", "dedicatedViews": [{ "view": "questionnaire|user_flow|blueprint|data_model|api_io_contract|activity_flow|sequence_flow|zod_schema_design", "decision": "include|omit", "reason": "short reason" }], "specificationLenses": ["target_users_or_actors|functional_requirements|business_rules|input_output|interface_contract|data_requirements|state_behavior|workflow_behavior|error_behavior|permission_boundary|compatibility|observability"] }',
+		'{ "shouldStartPlanMode": boolean, "action": "plan_mode" | "general_answer" | "implementation" | "review", "reason": "short reason", "dedicatedViews": [{ "view": "questionnaire|user_flow|blueprint|data_model|api_io_contract|activity_flow|sequence_flow|zod_schema_design", "decision": "include|omit", "reason": "short reason" }], "specificationLenses": ["target_users_or_actors|functional_requirements|business_rules|input_output|interface_contract|data_requirements|state_behavior|workflow_behavior|error_behavior|permission_boundary|compatibility|observability"] }',
 	].join("\n");
 }
 
@@ -722,9 +706,15 @@ function buildWorkbenchPlanModeGateUserPrompt(input: {
 function readRunExecutionMode(value: unknown) {
 	const context = toRecord(value);
 	const executionMode = context?.executionMode;
-	return typeof executionMode === "string" && executionMode.trim().length > 0
-		? executionMode.trim()
-		: null;
+	if (
+		executionMode === "planning" ||
+		executionMode === "implementation" ||
+		executionMode === "review" ||
+		executionMode === "general_answer"
+	) {
+		return executionMode;
+	}
+	return null;
 }
 
 function compactForGatePrompt(value: string, maxLength: number) {
@@ -947,19 +937,12 @@ function shouldPreferPlanModeForProjectEvaluationTask(
 }
 
 function workbenchRunStartedMessage(
-	executionMode:
-		| "general_answer"
-		| "implementation"
-		| "review"
-		| "runtime_debug",
+	executionMode: "general_answer" | "implementation" | "review",
 ) {
 	if (executionMode === "general_answer")
 		return "General answer run started from Workbench intake.";
 	if (executionMode === "review")
 		return "Review run started from Workbench intake.";
-	if (executionMode === "runtime_debug") {
-		return "Runtime debug run started from Workbench intake.";
-	}
 	return "Implementation run started from Workbench intake.";
 }
 

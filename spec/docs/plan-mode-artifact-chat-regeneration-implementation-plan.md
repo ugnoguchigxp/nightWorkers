@@ -353,7 +353,7 @@ bun run verify
 Expected:
 
 - Plan Mode artifact regeneration tests pass.
-- Normal intake / implementation / review / runtime debug routing tests pass.
+- Normal intake / implementation / review / general answer routing tests pass.
 - Plan Mode Status buttons still generate artifacts directly.
 - Questionnaire gate behavior remains unchanged.
 - Repo-native verification passes.

@@ -106,11 +106,7 @@ function nativeApiAttemptTimeoutMs(input: {
 function nativeApiToolChoiceForExecutionMode(
 	executionMode: ReturnType<typeof readNativeApiExecutionMode>,
 ): ProviderToolChoice {
-	if (
-		executionMode === "implementation" ||
-		executionMode === "review" ||
-		executionMode === "runtime_debug"
-	) {
+	if (executionMode === "implementation" || executionMode === "review") {
 		return "required";
 	}
 	return "auto";

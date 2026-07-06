@@ -82,6 +82,22 @@ export async function buildOntologyRuntimeContextSnapshot(input: {
 	}
 }
 
+export function buildOntologyRuntimeContextDisabledSnapshot(input: {
+	taskId: string;
+	runId: string;
+	runtimeLane: string;
+	fileScale?: string | null;
+}) {
+	return unavailableOntologyRuntimeContext(
+		`Ontology MCP disabled for project file scale ${input.fileScale ?? "unknown"}; enabled only for large or huge projects.`,
+		{
+			runId: input.runId,
+			taskId: input.taskId,
+			runtimeLane: input.runtimeLane,
+		},
+	);
+}
+
 export async function buildOntologyBoundaryAuditSnapshot(input: {
 	repoRoot: string;
 	ontologyContext?: unknown;
@@ -171,6 +187,14 @@ export function formatOntologyCloseoutRequirementsForPrompt() {
 export function ontologySnapshotEventSeverity(
 	snapshot: OntologyRuntimeContextSnapshot,
 ) {
+	if (
+		!snapshot.available &&
+		snapshot.warnings.some((warning) =>
+			warning.includes("Ontology MCP disabled for project file scale"),
+		)
+	) {
+		return "info";
+	}
 	return snapshot.available ? "info" : "warning";
 }
 

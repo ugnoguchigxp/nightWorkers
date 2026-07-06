@@ -824,8 +824,6 @@ function changeTypesForExecutionMode(
 	mode: ReturnType<typeof readNativeApiExecutionMode>,
 ) {
 	if (mode === "review") return ["review", "verification"];
-	if (mode === "runtime_debug")
-		return ["investigation", "implementation", "verification"];
 	if (mode === "planning") return ["planning"];
 	if (mode === "general_answer") return ["investigation"];
 	return ["implementation", "verification"];

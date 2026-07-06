@@ -26,13 +26,17 @@ export function buildCodexRuntimePromptParts(
 ): CodexRuntimePromptParts {
 	const request = (context.latestUserMessage || context.compiledPrompt).trim();
 	const executionMode = readCodexRuntimeExecutionMode(context);
+	const ontologyMcpEnabled = readOntologyMcpEnabled(context);
 	const nightWorkersToolList = getNightWorkersCodexToolNames({
 		executionMode,
+		ontologyMcpEnabled,
 	}).join(", ");
 	const runtimeContract =
 		executionMode === "general_answer"
 			? buildGeneralAnswerContract(context, nightWorkersToolList)
-			: buildExecutionContract(context, nightWorkersToolList, executionMode);
+			: executionMode === "review"
+				? buildReviewContract(context, nightWorkersToolList)
+				: buildExecutionContract(context, nightWorkersToolList, executionMode);
 	const prompt = request ? `${request}\n\n${runtimeContract}` : runtimeContract;
 	return {
 		prompt,
@@ -90,6 +94,7 @@ function buildExecutionContract(
 	}
 	const planModeContract =
 		"Plan mode: disabled. ユーザーはこの run で Plan Mode を明示していない。計画だけの回答で止まらず、implementation-plan artifact を主成果物として作らない。";
+	const ontologyProtocol = buildOntologyProtocolContract(context);
 	const contract = [
 		"[NightWorkers Runtime Contract]",
 		`taskId: ${context.taskId}`,
@@ -104,17 +109,7 @@ function buildExecutionContract(
 		"- If context-still.initial_instructions has not run in this NightWorkers run, run it before other task work and follow it.",
 		"- Treat nightworkers MCP tools as the execution interface. When a named NightWorkers tool fits, call it directly instead of describing equivalent shell steps.",
 		"",
-		"Module ontology protocol:",
-		formatOntologyRuntimeContextForPrompt(
-			context.contextSnapshot.ontologyContext,
-		),
-		"- When ontology tools are available and the task is not a trivial single-file edit, classify the goal with nightworkers.classify_goal before broad exploration.",
-		"- Compile module context with nightworkers.compile_module_context, then search owned paths before repository-wide search.",
-		"- Run nightworkers.check_boundary before planned edits outside owned paths; do not silently edit unknown or forbidden paths.",
-		"- Use nightworkers.get_verification_plan to prefer focused verification from the primary module and add secondary verification only for declared crossings.",
-		"- Final reports for ontology-guided work must include primary module, secondary modules, boundary crossings, invariants checked, verification run, and skipped verification reasons.",
-		formatOntologyCloseoutRequirementsForPrompt(),
-		"",
+		...(ontologyProtocol ? [ontologyProtocol, ""] : []),
 		"Minimal implementation behavior:",
 		"- ユーザーが実装計画、仕様化、設計文書、Plan mode、要件整理を明示していない場合は、計画文書で止まらず、必要最小限の確認後に実装へ進む。",
 		"- 小さく明確なコード変更では Todo 分解をコンパクトに保つ。着手のためだけに詳細な implementation-plan artifact を作らない。",
@@ -166,6 +161,47 @@ function buildExecutionContract(
 	return contract;
 }
 
+function buildReviewContract(
+	context: AgentRunContext,
+	nightWorkersToolList: string,
+) {
+	return [
+		"[NightWorkers Runtime Contract]",
+		`taskId: ${context.taskId}`,
+		`runId: ${context.runId}`,
+		`repoRoot: ${context.repoRoot}`,
+		"executionMode: review",
+		"Review lane: completed-task review only. 実装中の会話継続ではなく、完了後の system context と repository evidence を根拠にレビューする。",
+		"",
+		"NightWorkers MCP:",
+		"- MCP server name: nightworkers",
+		`- Available review tools in this lane: ${nightWorkersToolList}.`,
+		"- If context-still.initial_instructions has not run in this NightWorkers run, run it before review work and follow it.",
+		"",
+		"Review behavior:",
+		"- StateCard continuation、implementation handoff、実装中の会話履歴を前提にしない。",
+		"- 変更済み repository state、git diff/status、仕様、テスト/verify evidence、run events から判断する。",
+		"- 実装編集、Todo 実行、Implementation Queue 投入、import_project、Plan Mode artifact 更新を開始しない。",
+		"- 指摘は重大度順に、具体的な file/line と再現・検証根拠を添える。問題がなければその旨と残リスクだけを短く返す。",
+	].join("\n");
+}
+
+function buildOntologyProtocolContract(context: AgentRunContext) {
+	if (!readOntologyMcpEnabled(context)) return null;
+	return [
+		"Module ontology protocol:",
+		formatOntologyRuntimeContextForPrompt(
+			context.contextSnapshot.ontologyContext,
+		),
+		"- When ontology tools are available and the task is not a trivial single-file edit, classify the goal with nightworkers.classify_goal before broad exploration.",
+		"- Compile module context with nightworkers.compile_module_context, then search owned paths before repository-wide search.",
+		"- Run nightworkers.check_boundary before planned edits outside owned paths; do not silently edit unknown or forbidden paths.",
+		"- Use nightworkers.get_verification_plan to prefer focused verification from the primary module and add secondary verification only for declared crossings.",
+		"- Final reports for ontology-guided work must include primary module, secondary modules, boundary crossings, invariants checked, verification run, and skipped verification reasons.",
+		formatOntologyCloseoutRequirementsForPrompt(),
+	].join("\n");
+}
+
 function buildPlanningContract(
 	context: AgentRunContext,
 	nightWorkersToolList: string,
@@ -197,7 +233,6 @@ function readCodexRuntimeExecutionMode(context: AgentRunContext) {
 		value === "planning" ||
 		value === "implementation" ||
 		value === "review" ||
-		value === "runtime_debug" ||
 		value === "general_answer"
 	) {
 		return value;
@@ -207,10 +242,23 @@ function readCodexRuntimeExecutionMode(context: AgentRunContext) {
 		snapshotValue === "planning" ||
 		snapshotValue === "implementation" ||
 		snapshotValue === "review" ||
-		snapshotValue === "runtime_debug" ||
 		snapshotValue === "general_answer"
 	) {
 		return snapshotValue;
 	}
 	return "implementation";
+}
+
+function readOntologyMcpEnabled(context: AgentRunContext) {
+	const snapshot = context.contextSnapshot as Record<string, unknown>;
+	const ontologyMcp = snapshot.ontologyMcp;
+	if (
+		!ontologyMcp ||
+		typeof ontologyMcp !== "object" ||
+		Array.isArray(ontologyMcp)
+	) {
+		return true;
+	}
+	const enabled = (ontologyMcp as Record<string, unknown>).enabled;
+	return typeof enabled === "boolean" ? enabled : true;
 }

@@ -73,6 +73,7 @@ export function resolveCodexRuntimeMcpConfigState(
 ): CodexRuntimeMcpConfigState {
 	const expectedTools = getNightWorkersCodexToolNames({
 		executionMode: input.env?.NIGHTWORKERS_EXECUTION_MODE,
+		ontologyMcpEnabled: readOntologyMcpEnabledFromEnv(input.env),
 	});
 	if (input.enableNightworkersMcp === false) {
 		return {
@@ -131,9 +132,16 @@ function buildNightWorkersMcpServers(
 			url,
 			tools: buildNightWorkersCodexToolApprovalConfig({
 				executionMode: env.NIGHTWORKERS_EXECUTION_MODE,
+				ontologyMcpEnabled: readOntologyMcpEnabledFromEnv(env),
 			}),
 		},
 	};
+}
+
+function readOntologyMcpEnabledFromEnv(env: NodeJS.ProcessEnv | undefined) {
+	const raw = env?.NIGHTWORKERS_ONTOLOGY_MCP_ENABLED;
+	if (raw === undefined) return true;
+	return ["1", "true", "yes", "on"].includes(raw.trim().toLowerCase());
 }
 
 function resolveNightWorkersMcpUrl(env: NodeJS.ProcessEnv) {

@@ -20,7 +20,6 @@ export const supervisorModes = [
 	"code_edit",
 	"review",
 	"investigation",
-	"runtime_debug",
 	"test_and_verification",
 	"research",
 	"docs",

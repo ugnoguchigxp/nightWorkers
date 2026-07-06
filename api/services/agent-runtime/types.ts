@@ -12,7 +12,6 @@ export type AgentExecutionMode =
 	| "planning"
 	| "implementation"
 	| "review"
-	| "runtime_debug"
 	| "general_answer";
 
 export interface AgentSafetyPolicy {
@@ -43,12 +42,7 @@ export interface AgentRunContext {
 			stateCardText?: string;
 			snapshotJson?: unknown;
 			projection?: {
-				role:
-					| "plan"
-					| "implementation"
-					| "review"
-					| "runtime_debug"
-					| "general_answer";
+				role: "plan" | "implementation" | "review" | "general_answer";
 				workKind?: string | null;
 				source: "role_projection" | "raw_snapshot" | "omitted";
 				omittedSections: string[];

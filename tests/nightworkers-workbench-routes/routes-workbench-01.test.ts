@@ -108,8 +108,7 @@ function mockPlanModeGate(
 		| "plan_mode"
 		| "general_answer"
 		| "implementation"
-		| "review"
-		| "runtime_debug" = shouldStartPlanMode ? "plan_mode" : "implementation",
+		| "review" = shouldStartPlanMode ? "plan_mode" : "implementation",
 ) {
 	return JSON.stringify({ shouldStartPlanMode, action, reason });
 }
@@ -1073,9 +1072,9 @@ describe("NightWorkers workbench routes", () => {
 		});
 	});
 
-	it("starts a runtime debug run from intake instead of leaving only a classifier message", async () => {
+	it("starts a general answer run for status checks instead of leaving only a classifier message", async () => {
 		vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
-			mockPlanModeGate(false, "runtime debug", "runtime_debug"),
+			mockPlanModeGate(false, "status check", "general_answer"),
 		);
 		const { task } = await createWorkbenchTask({
 			title: "New Session",
@@ -1109,8 +1108,8 @@ describe("NightWorkers workbench routes", () => {
 				message.role === "system" &&
 				message.metadataJson?.intent === "run_started",
 		);
-		expect(systemMessage?.content).toContain("Runtime debug run started");
-		expect(systemMessage?.metadataJson?.executionMode).toBe("runtime_debug");
+		expect(systemMessage?.content).toContain("General answer run started");
+		expect(systemMessage?.metadataJson?.executionMode).toBe("general_answer");
 		expect(systemMessage?.metadataJson?.planModeGate?.shouldStartPlanMode).toBe(
 			false,
 		);
@@ -1118,13 +1117,13 @@ describe("NightWorkers workbench routes", () => {
 		expect(systemMessage?.metadataJson?.routingHypothesis).toBeUndefined();
 		const runs = await repo.listTaskRunsForTask(task.id);
 		expect(runs[0]?.contextSnapshot).toMatchObject({
-			executionPhase: "runtime_debug",
+			executionPhase: "general_answer",
 			executionModeSource: "workbench_intake",
 			planModeClosed: true,
 		});
 		await vi.waitFor(async () => {
 			const latestRuns = await repo.listTaskRunsForTask(task.id);
-			expect(latestRuns[0]?.status).toBe("needs_human");
+			expect(latestRuns[0]?.status).toBe("completed");
 		});
 	});
 
@@ -1179,7 +1178,7 @@ describe("NightWorkers workbench routes", () => {
 
 	it("starts an investigation run from intake without routing through planning", async () => {
 		vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
-			mockPlanModeGate(false, "runtime debug", "runtime_debug"),
+			mockPlanModeGate(false, "investigation", "general_answer"),
 		);
 		const { task } = await createWorkbenchTask({
 			title: "New Session",
@@ -1203,8 +1202,8 @@ describe("NightWorkers workbench routes", () => {
 				message.role === "system" &&
 				message.metadataJson?.intent === "run_started",
 		);
-		expect(systemMessage?.content).toContain("Runtime debug run started");
-		expect(systemMessage?.metadataJson?.executionMode).toBe("runtime_debug");
+		expect(systemMessage?.content).toContain("General answer run started");
+		expect(systemMessage?.metadataJson?.executionMode).toBe("general_answer");
 		expect(systemMessage?.metadataJson?.planModeGate?.shouldStartPlanMode).toBe(
 			false,
 		);
@@ -1214,7 +1213,7 @@ describe("NightWorkers workbench routes", () => {
 
 	it("starts a verification run from intake without routing through planning", async () => {
 		vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
-			mockPlanModeGate(false, "runtime debug", "runtime_debug"),
+			mockPlanModeGate(false, "verification", "review"),
 		);
 		const { task } = await createWorkbenchTask({
 			title: "New Session",
@@ -1238,8 +1237,8 @@ describe("NightWorkers workbench routes", () => {
 				message.role === "system" &&
 				message.metadataJson?.intent === "run_started",
 		);
-		expect(systemMessage?.content).toContain("Runtime debug run started");
-		expect(systemMessage?.metadataJson?.executionMode).toBe("runtime_debug");
+		expect(systemMessage?.content).toContain("Review run started");
+		expect(systemMessage?.metadataJson?.executionMode).toBe("review");
 		expect(systemMessage?.metadataJson?.planModeGate?.shouldStartPlanMode).toBe(
 			false,
 		);

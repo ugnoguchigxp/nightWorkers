@@ -217,8 +217,7 @@ async function countSourceLines(repoRoot: string, sourceFiles: string[]) {
 			if (!stat.isFile() || stat.size > 1_000_000) continue;
 			const text = await fs.readFile(fullPath, "utf8");
 			total += text.length === 0 ? 0 : text.split("\n").length;
-		} catch {
-		}
+		} catch {}
 	}
 	return total;
 }

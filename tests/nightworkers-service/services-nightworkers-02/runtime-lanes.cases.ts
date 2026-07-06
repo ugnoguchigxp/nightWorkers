@@ -272,6 +272,88 @@ describe("NightWorkers service", () => {
 		);
 	});
 
+	it("routes removed or unknown job types to general answers without implementation startup", async () => {
+		const task = {
+			id: "task-removed-job-type",
+			repositoryId: "repo-removed-job-type",
+			title: "Investigate previous run status",
+			description: "前回の実行ログと状態を確認してください",
+			objective: "前回の実行ログと状態を確認してください",
+			acceptanceCriteria: "Status is explained without starting implementation",
+			timeoutSeconds: 60,
+		};
+		const run = {
+			id: "run-removed-job-type",
+			taskId: task.id,
+			repositoryId: task.repositoryId,
+			status: "running",
+		};
+		vi.mocked(repo.getTask).mockResolvedValue(task as never);
+		vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+		vi.mocked(repo.getRepository).mockResolvedValue({
+			id: task.repositoryId,
+			localPath: repoRoot,
+			safetyPolicy: {},
+		} as never);
+		vi.mocked(repo.listTaskMessages).mockResolvedValue([
+			{ id: "message-user", role: "user", content: task.description },
+			{
+				id: "message-stale-run-started",
+				role: "system",
+				content: "A previous run started from Workbench intake.",
+				metadataJson: {
+					intent: "run_started",
+					source: "workbench",
+					intakeJobSelection: {
+						jobType: "removed_mode",
+						goal: task.description,
+					},
+				},
+			},
+		] as never);
+		vi.mocked(repo.createTaskRun).mockResolvedValue(run as never);
+		vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
+		vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as never);
+		vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+		vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
+		const runtimeStart = vi.fn().mockResolvedValue({
+			terminalState: "completed",
+			summary: "Status explained",
+			finalReport: "Status explained",
+			stoppedBy: "decision",
+			riskLevel: "low",
+			diffPatch: "",
+			logContent: "",
+		});
+		vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+			kind: "native-local",
+			start: runtimeStart,
+			stop: vi.fn(),
+		} as never);
+
+		await startTaskRun(task.id);
+
+		await vi.waitFor(() => {
+			expect(runtimeStart).toHaveBeenCalledTimes(1);
+		});
+		expect(repo.replaceTaskRunTodosForRun).toHaveBeenCalledWith(run.id, []);
+		expect(runtimeStart.mock.calls[0][0]).toEqual(
+			expect.objectContaining({
+				latestUserMessage: task.description,
+				runtimeOptions: expect.objectContaining({
+					executionMode: "general_answer",
+				}),
+				contextSnapshot: expect.objectContaining({
+					executionPhase: "general_answer",
+					planModeClosed: true,
+				}),
+			}),
+		);
+		expect(runtimeStart.mock.calls[0][0].latestUserMessage).not.toContain(
+			"plan mode はこの時点で終了です。",
+		);
+	});
+
 	it("passes the latest implementation handoff document into native/API implementation runs", async () => {
 		const task = {
 			id: "task-handoff",
