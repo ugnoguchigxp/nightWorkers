@@ -66,11 +66,17 @@ describe("NativeApiRunner import_project flow", () => {
 		restoreSettings = null;
 	});
 
-	it("exposes import_project without exposing materialize_template", () => {
-		const toolNames = getNativeApiToolDefinitions().map((tool) => tool.name);
+	it("exposes import_project only for import procedure Todos", () => {
+		const defaultToolNames = getNativeApiToolDefinitions().map(
+			(tool) => tool.name,
+		);
+		const importToolNames = getNativeApiToolDefinitions({
+			currentTodo: { taskType: "import", procedureId: "import_project" },
+		}).map((tool) => tool.name);
 
-		expect(toolNames).toContain("import_project");
-		expect(toolNames).not.toContain("materialize_template");
+		expect(defaultToolNames).not.toContain("import_project");
+		expect(importToolNames).toContain("import_project");
+		expect(importToolNames).not.toContain("materialize_template");
 	});
 
 	it("adds postImport context and blocks finalize until recommended verification succeeds", async () => {
@@ -176,12 +182,20 @@ describe("NativeApiRunner import_project flow", () => {
 			usageRecorder: vi.fn(async () => undefined),
 		});
 
-		const result = await runner.run(buildContext(), createSink());
+		const result = await runner.run(buildImportContext(), createSink());
 
 		expect(result).toMatchObject({
 			terminalState: "completed",
 			finalReport: "done after verification",
 		});
+		expect(providerTurn).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({
+				tools: expect.arrayContaining([
+					expect.objectContaining({ name: "import_project" }),
+				]),
+			}),
+		);
 		expect(providerTurn).toHaveBeenNthCalledWith(
 			2,
 			expect.objectContaining({
@@ -268,7 +282,7 @@ describe("NativeApiRunner import_project flow", () => {
 			usageRecorder: vi.fn(async () => undefined),
 		});
 
-		const result = await runner.run(buildContext(), createSink());
+		const result = await runner.run(buildImportContext(), createSink());
 
 		expect(result).toMatchObject({
 			terminalState: "needs_human",
@@ -388,6 +402,20 @@ function buildContext(
 		},
 		...overrides,
 	};
+}
+
+function buildImportContext(overrides: Partial<AgentRunContext> = {}) {
+	return buildContext({
+		currentTodo: {
+			id: "todo-import",
+			seq: 1,
+			title: "プロジェクトを import する",
+			taskType: "import",
+			status: "running",
+			procedureId: "import_project",
+		},
+		...overrides,
+	});
 }
 
 function installRuntimeLlmSettings(settings: Record<string, unknown>) {

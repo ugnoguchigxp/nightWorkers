@@ -79,6 +79,81 @@ describe("NativeApiRunner tool registry and dispatcher gates", () => {
 		expect(toolNames).not.toContain("todo_list");
 	});
 
+	it("keeps core coding tools visible while hiding one-shot procedure tools by default", () => {
+		const toolNames = getNativeApiToolDefinitions({
+			executionMode: "implementation",
+			currentTodo: {
+				taskType: "implementation",
+				procedureId: null,
+			},
+		}).map((tool) => tool.name);
+
+		expect(toolNames).toEqual(
+			expect.arrayContaining([
+				"read_current_specification",
+				"list_dir",
+				"read_file",
+				"search_files",
+				"apply_patch",
+				"replace_content",
+				"run_verification",
+				"git_status",
+				"git_diff",
+				"context_decision",
+				"todo_list",
+				"new_context",
+				"finalize_answer",
+			]),
+		);
+		expect(toolNames).not.toContain("import_project");
+		expect(toolNames).not.toContain("context_initial_instructions");
+		expect(toolNames).not.toContain("context_compile");
+		expect(toolNames).not.toContain("compile_eval");
+		expect(toolNames).not.toContain("register_candidates");
+		expect(toolNames).not.toContain("mcp_call_tool");
+	});
+
+	it("exposes one-shot procedure tools only for matching current Todos", () => {
+		const importTools = getNativeApiToolDefinitions({
+			executionMode: "implementation",
+			currentTodo: { taskType: "import", procedureId: "import_project" },
+		}).map((tool) => tool.name);
+		const contextTools = getNativeApiToolDefinitions({
+			executionMode: "implementation",
+			currentTodo: {
+				taskType: "context_compile",
+				procedureId: "contextstill.context_compile",
+			},
+		}).map((tool) => tool.name);
+		const closeoutTools = getNativeApiToolDefinitions({
+			executionMode: "implementation",
+			currentTodo: {
+				taskType: "knowledge_capture",
+				procedureId: "contextstill.register_candidates",
+			},
+		}).map((tool) => tool.name);
+
+		expect(importTools).toContain("import_project");
+		expect(contextTools).toContain("context_compile");
+		expect(closeoutTools).toContain("register_candidates");
+		expect(closeoutTools).not.toContain("import_project");
+	});
+
+	it("exposes generic MCP calls only when ontology MCP is enabled", () => {
+		const defaultTools = getNativeApiToolDefinitions({
+			executionMode: "implementation",
+		}).map((tool) => tool.name);
+		const ontologyTools = getNativeApiToolDefinitions({
+			executionMode: "implementation",
+			ontologyMcpEnabled: true,
+		}).map((tool) => tool.name);
+
+		expect(defaultTools).not.toContain("list_mcp_tools");
+		expect(defaultTools).not.toContain("mcp_call_tool");
+		expect(ontologyTools).toContain("list_mcp_tools");
+		expect(ontologyTools).toContain("mcp_call_tool");
+	});
+
 	it("exposes Codex-style new_context as an empty model-visible tool", () => {
 		const newContextTool = getNativeApiToolDefinitions().find(
 			(tool) => tool.name === "new_context",
@@ -97,10 +172,13 @@ describe("NativeApiRunner tool registry and dispatcher gates", () => {
 		});
 	});
 
-	it("exposes compile_eval with the contextStill-required closeout fields", () => {
-		const compileEvalTool = getNativeApiToolDefinitions().find(
-			(tool) => tool.name === "compile_eval",
-		);
+	it("exposes compile_eval with the contextStill-required closeout fields when closeout is current", () => {
+		const compileEvalTool = getNativeApiToolDefinitions({
+			currentTodo: {
+				taskType: "compile_eval",
+				procedureId: "contextstill.compile_eval",
+			},
+		}).find((tool) => tool.name === "compile_eval");
 
 		expect(compileEvalTool?.inputSchema).toMatchObject({
 			required: [

@@ -191,7 +191,11 @@ export class NativeApiRunner {
 						disallowedProviderIds: ["codex"],
 					},
 				});
-				const tools = getNativeApiToolDefinitions({ executionMode });
+				const tools = getNativeApiToolDefinitions({
+					executionMode,
+					currentTodo: currentTodo ?? context.currentTodo ?? null,
+					ontologyMcpEnabled: readOntologyMcpEnabled(context),
+				});
 				let providerRequests = buildNativeApiProviderRequests({
 					context,
 					history,
@@ -879,4 +883,17 @@ export class NativeApiRunner {
 		}
 		return false;
 	}
+}
+
+function readOntologyMcpEnabled(context: AgentRunContext) {
+	const snapshot = context.contextSnapshot as Record<string, unknown>;
+	const ontologyMcp = snapshot.ontologyMcp;
+	if (
+		!ontologyMcp ||
+		typeof ontologyMcp !== "object" ||
+		Array.isArray(ontologyMcp)
+	)
+		return false;
+	const enabled = (ontologyMcp as Record<string, unknown>).enabled;
+	return enabled === true;
 }

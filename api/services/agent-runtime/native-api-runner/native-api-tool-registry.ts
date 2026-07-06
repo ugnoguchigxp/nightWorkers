@@ -29,6 +29,17 @@ export type NativeApiToolRegistration = {
 	definition: ProviderToolDefinition;
 };
 
+export type NativeApiToolProfileTodo = {
+	taskType?: string | null;
+	procedureId?: string | null;
+};
+
+export type NativeApiToolProfileInput = {
+	executionMode?: NativeApiExecutionMode;
+	currentTodo?: NativeApiToolProfileTodo | null;
+	ontologyMcpEnabled?: boolean;
+};
+
 const objectSchema = (
 	properties: Record<string, unknown>,
 	required: string[] = [],
@@ -442,11 +453,13 @@ const nativeApiToolNamesByMode: Record<
 };
 
 export function getNativeApiToolDefinitions(
-	input: { executionMode?: NativeApiExecutionMode } = {},
+	input: NativeApiToolProfileInput = {},
 ): ProviderToolDefinition[] {
-	const allowed = allowedNativeApiToolNames(
-		input.executionMode ?? "implementation",
-	);
+	const allowed = modelVisibleNativeApiToolNames({
+		mode: input.executionMode ?? "implementation",
+		currentTodo: input.currentTodo,
+		ontologyMcpEnabled: input.ontologyMcpEnabled,
+	});
 	return nativeApiToolRegistrations
 		.filter((registration) => allowed.has(registration.name))
 		.map((registration) => registration.definition);
@@ -470,5 +483,92 @@ export function isNativeApiToolAllowedForMode(
 function allowedNativeApiToolNames(mode: NativeApiExecutionMode) {
 	return (
 		nativeApiToolNamesByMode[mode] ?? nativeApiToolNamesByMode.implementation
+	);
+}
+
+function modelVisibleNativeApiToolNames(input: {
+	mode: NativeApiExecutionMode;
+	currentTodo?: NativeApiToolProfileTodo | null;
+	ontologyMcpEnabled?: boolean;
+}) {
+	if (input.mode !== "implementation")
+		return allowedNativeApiToolNames(input.mode);
+	const allowed = new Set<NativeApiRuntimeToolName>([
+		"read_current_specification",
+		"list_dir",
+		"read_file",
+		"search_files",
+		"apply_patch",
+		"replace_content",
+		"run_verification",
+		"git_status",
+		"git_diff",
+		"context_decision",
+		"todo_list",
+		"new_context",
+		"finalize_answer",
+	]);
+	for (const toolName of oneShotToolNamesForTodo(input.currentTodo)) {
+		allowed.add(toolName);
+	}
+	if (input.ontologyMcpEnabled) {
+		allowed.add("list_mcp_tools");
+		allowed.add("mcp_call_tool");
+	}
+	return allowed;
+}
+
+function oneShotToolNamesForTodo(
+	todo?: NativeApiToolProfileTodo | null,
+): NativeApiRuntimeToolName[] {
+	const taskType = normalizeTodoSelector(todo?.taskType);
+	const procedureId = normalizeTodoSelector(todo?.procedureId);
+	const selectors = [taskType, procedureId].filter((value): value is string =>
+		Boolean(value),
+	);
+	const tools = new Set<NativeApiRuntimeToolName>();
+	if (selectors.some(isImportSelector)) tools.add("import_project");
+	if (
+		procedureId === "contextstill.initial_instructions" ||
+		taskType === "initial_instructions"
+	) {
+		tools.add("context_initial_instructions");
+	}
+	if (
+		procedureId === "contextstill.context_compile" ||
+		taskType === "context_compile"
+	) {
+		tools.add("context_compile");
+	}
+	if (
+		procedureId === "contextstill.register_candidates" ||
+		taskType === "knowledge_capture"
+	) {
+		tools.add("register_candidates");
+	}
+	if (
+		procedureId === "contextstill.compile_eval" ||
+		procedureId === "contextstill_closeout" ||
+		taskType === "compile_eval"
+	) {
+		tools.add("compile_eval");
+	}
+	return Array.from(tools);
+}
+
+function normalizeTodoSelector(value: unknown) {
+	return typeof value === "string" && value.trim().length > 0
+		? value.trim().toLowerCase()
+		: null;
+}
+
+function isImportSelector(value: string) {
+	return (
+		value === "import" ||
+		value === "project_import" ||
+		value === "import_project" ||
+		value.startsWith("import.") ||
+		value.startsWith("project_import.") ||
+		value.startsWith("import_project.")
 	);
 }
