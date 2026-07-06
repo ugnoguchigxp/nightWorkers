@@ -133,6 +133,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
   ].join(':');
   const planModeWorkspaceLabel = t('thread.planModeWorkspace');
   const noPlanModeWorkspaceLabel = t('thread.noPlanModeWorkspace');
+  const reviewArtifactLabel = reviewArtifact ? t('reviewStatus.title') : t('reviewStatus.start');
   const commitScrollState = useCallback(
     (snapshot: ScrollSnapshot) => {
       const state = buildPersistedScrollState(snapshot);
@@ -376,8 +377,8 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
                     props.isReviewActionBusy
                   }
                   onClick={() => void props.onOpenReviewArtifact()}
-                  title={reviewArtifact ? 'Review Status' : 'Start Review'}
-                  aria-label={reviewArtifact ? 'Review Status' : 'Start Review'}
+                  title={reviewArtifactLabel}
+                  aria-label={reviewArtifactLabel}
                 >
                   {props.isReviewActionBusy ? (
                     <LoaderCircle className="h-3.5 w-3.5 animate-spin" />

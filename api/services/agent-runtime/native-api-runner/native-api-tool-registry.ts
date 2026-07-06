@@ -48,12 +48,13 @@ const workerToolDefinitions: NativeApiToolRegistration[] = [
     definition: {
       name: 'read_current_specification',
       description:
-        "Read the latest NightWorkers task specification. Defaults to view='compact'; use view='full' only when exact full markdown is necessary. Strongly recommended when a specification, plan, or artifact is the source of truth, but not required for every task.",
+        "Read the latest NightWorkers task specification. Defaults to view='compact'; use view='full' only when exact full markdown is necessary. Set includeDesignContext=true to include assembled Plan Mode artifact contracts. Strongly recommended when a specification, plan, or artifact is the source of truth, but not required for every task.",
       inputSchema: objectSchema({
         view: {
           type: 'string',
           enum: ['compact', 'implementation', 'migration', 'ui', 'verification', 'full'],
         },
+        includeDesignContext: { type: 'boolean' },
       }),
     },
   },

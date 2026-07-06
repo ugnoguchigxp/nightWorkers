@@ -191,8 +191,38 @@ function compactSpecificationPayload(payload: unknown) {
     digest,
     contentChars: fullContentChars,
     compactContent: buildSpecificationCompactContent(content),
+    assembledDesignContext: compactAssembledDesignContext(record.assembledDesignContext),
     sources: record.sources,
     fullViewAvailableVia: "read_current_specification view='full'",
+  };
+}
+
+function compactAssembledDesignContext(value: unknown) {
+  const record = toRecord(value);
+  if (Object.keys(record).length === 0) return undefined;
+  const sections = Array.isArray(record.sections) ? record.sections : [];
+  return {
+    taskId: record.taskId,
+    generatedAt: record.generatedAt,
+    questionnaireSessionId: record.questionnaireSessionId,
+    summary:
+      typeof record.summary === 'string' && record.summary.length > 1200
+        ? `${record.summary.slice(0, 1200)}\n[summary-truncated]`
+        : record.summary,
+    sections: sections.slice(0, 12).map((section) => {
+      const sectionRecord = toRecord(section);
+      const content = typeof sectionRecord.content === 'string' ? sectionRecord.content : '';
+      return {
+        kind: sectionRecord.kind,
+        title: sectionRecord.title,
+        sourceMessageId: sectionRecord.sourceMessageId,
+        digest: sectionRecord.digest,
+        content: content.length > 1600 ? `${content.slice(0, 1600)}\n[section-truncated]` : content,
+      };
+    }),
+    omittedViews: record.omittedViews,
+    warnings: record.warnings,
+    sourceMessageIds: record.sourceMessageIds,
   };
 }
 

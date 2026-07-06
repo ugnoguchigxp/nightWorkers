@@ -212,6 +212,31 @@ describe('DedicatedViewPanel', () => {
                         operationId: 'createMissionTasks',
                         summary: 'Create mission tasks',
                         description: 'Starts async task creation.',
+                        parameters: [
+                          {
+                            name: 'missionId',
+                            in: 'path',
+                            required: true,
+                            description: 'Mission identifier',
+                            schema: { type: 'string' },
+                          },
+                          {
+                            name: 'dryRun',
+                            in: 'query',
+                            required: false,
+                            description: 'Preview task creation without enqueueing',
+                            schema: { type: 'boolean' },
+                          },
+                        ],
+                        requestBody: {
+                          required: true,
+                          description: 'Task generation options',
+                          content: {
+                            'application/json': {
+                              schema: { $ref: '#/components/schemas/CreateMissionTasksRequest' },
+                            },
+                          },
+                        },
                         responses: {
                           '202': { description: 'Accepted' },
                           '409': { description: 'Already generating' },
@@ -219,7 +244,24 @@ describe('DedicatedViewPanel', () => {
                       },
                     },
                   },
-                  components: { schemas: {} },
+                  components: {
+                    schemas: {
+                      CreateMissionTasksRequest: {
+                        type: 'object',
+                        required: ['limit'],
+                        properties: {
+                          limit: {
+                            type: 'integer',
+                            description: 'Maximum task count',
+                          },
+                          includeDrafts: {
+                            type: 'boolean',
+                            description: 'Include draft candidates',
+                          },
+                        },
+                      },
+                    },
+                  },
                 },
                 stateTransitions: [
                   {
@@ -259,6 +301,16 @@ describe('DedicatedViewPanel', () => {
     expect(markup).toContain('Mission API Contract');
     expect(markup).toContain('POST');
     expect(markup).toContain('/api/missions/{missionId}/tasks');
+    expect(markup).toContain('Parameters');
+    expect(markup).toContain('missionId');
+    expect(markup).toContain('path');
+    expect(markup).toContain('dryRun');
+    expect(markup).toContain('query');
+    expect(markup).toContain('Request body');
+    expect(markup).toContain('CreateMissionTasksRequest');
+    expect(markup).toContain('limit');
+    expect(markup).toContain('integer required');
+    expect(markup).toContain('includeDrafts');
     expect(markup).toContain('202');
     expect(markup).toContain('409');
     expect(markup).toContain('draft -&gt; generating_tasks');

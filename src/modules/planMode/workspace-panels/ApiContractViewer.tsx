@@ -20,6 +20,7 @@ export function ApiContractViewer({
   const summary = stringValue(apiContract.summary);
   const openapi = firstRecord(apiContract.openapi);
   const paths = firstRecord(openapi?.paths);
+  const components = firstRecord(openapi?.components);
   const stateTransitions = toRecordArray(apiContract.stateTransitions);
   const validation = toRecordArray(apiContract.validation);
   const operations = apiContractOperations(paths);
@@ -67,6 +68,7 @@ export function ApiContractViewer({
             <ApiOperationPanel
               key={`${operation.method}-${operation.path}-${operation.operationId}`}
               operation={operation}
+              components={components}
               transitions={stateTransitions.filter(
                 (transition) => stringValue(transition.operationId) === operation.operationId
               )}
@@ -138,6 +140,7 @@ export function ApiContractViewer({
 
 function ApiOperationPanel({
   operation,
+  components,
   transitions,
 }: {
   operation: {
@@ -146,11 +149,16 @@ function ApiOperationPanel({
     operationId: string;
     summary: string;
     description: string;
+    parameters: Array<Record<string, unknown>>;
+    requestBody: Record<string, unknown> | null;
     responses: Record<string, unknown>;
   };
+  components: Record<string, unknown> | null;
   transitions: Array<Record<string, unknown>>;
 }) {
   const responseEntries = Object.entries(operation.responses);
+  const requestSchemaName = schemaNameFromContent(operation.requestBody);
+  const requestFields = schemaFields(components, requestSchemaName);
   return (
     <div className="rounded border border-cyan-500/30 bg-slate-950/30 p-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -165,6 +173,42 @@ function ApiOperationPanel({
       ) : null}
       {operation.description ? (
         <p className="mt-1 text-slate-400">{operation.description}</p>
+      ) : null}
+      {operation.parameters.length > 0 ? (
+        <div className="mt-3 rounded border border-slate-800 bg-slate-950/40 p-2">
+          <div className="text-[11px] font-semibold uppercase text-slate-400">Parameters</div>
+          <div className="mt-2 grid gap-1">
+            {operation.parameters.map((parameter, index) => (
+              <ParameterRow
+                key={`${stringValue(parameter.name)}-${stringValue(parameter.in)}-${index}`}
+                parameter={parameter}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {operation.requestBody ? (
+        <div className="mt-3 rounded border border-slate-800 bg-slate-950/40 p-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase text-slate-400">Request body</span>
+            {requestSchemaName ? (
+              <span className="font-mono text-[11px] text-cyan-100">{requestSchemaName}</span>
+            ) : null}
+            {operation.requestBody.required === true ? (
+              <span className="text-[11px] text-amber-200">required</span>
+            ) : null}
+          </div>
+          {stringValue(operation.requestBody.description) ? (
+            <p className="mt-1 text-slate-400">{stringValue(operation.requestBody.description)}</p>
+          ) : null}
+          {requestFields.length > 0 ? (
+            <div className="mt-2 grid gap-1">
+              {requestFields.map((field) => (
+                <SchemaFieldRow key={field.name} field={field} />
+              ))}
+            </div>
+          ) : null}
+        </div>
       ) : null}
       <div className="mt-3 grid gap-2">
         {responseEntries.map(([status, response]) => (
@@ -204,6 +248,47 @@ function ApiOperationPanel({
   );
 }
 
+function ParameterRow({ parameter }: { parameter: Record<string, unknown> }) {
+  return (
+    <div className="grid gap-1 rounded border border-slate-800 bg-slate-950/40 p-2 sm:grid-cols-[auto_1fr_auto] sm:items-start">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded border border-slate-700 px-1.5 py-0.5 font-mono text-[10px] uppercase text-slate-300">
+          {stringValue(parameter.in) || 'param'}
+        </span>
+        <span className="font-mono text-[11px] text-slate-100">
+          {stringValue(parameter.name) || 'name'}
+        </span>
+      </div>
+      <div className="text-slate-400">{stringValue(parameter.description)}</div>
+      <div className="font-mono text-[11px] text-slate-500">
+        {schemaType(firstRecord(parameter.schema)) || 'unknown'}
+        {parameter.required === true ? ' required' : ''}
+      </div>
+    </div>
+  );
+}
+
+function SchemaFieldRow({
+  field,
+}: {
+  field: { name: string; type: string; required: boolean; description: string };
+}) {
+  return (
+    <div className="grid gap-1 rounded border border-slate-800 bg-slate-950/40 p-2 sm:grid-cols-[1fr_auto]">
+      <div>
+        <span className="font-mono text-[11px] text-slate-100">{field.name}</span>
+        {field.description ? (
+          <span className="ml-2 text-slate-400">{field.description}</span>
+        ) : null}
+      </div>
+      <div className="font-mono text-[11px] text-slate-500">
+        {field.type}
+        {field.required ? ' required' : ''}
+      </div>
+    </div>
+  );
+}
+
 function apiContractOperations(paths: Record<string, unknown> | null) {
   if (!paths) return [];
   const methodOrder = ['get', 'post', 'put', 'patch', 'delete', 'options', 'head'];
@@ -223,6 +308,8 @@ function apiContractOperations(paths: Record<string, unknown> | null) {
           operationId: stringValue(record.operationId) || `${method}-${path}`,
           summary: stringValue(record.summary),
           description: stringValue(record.description),
+          parameters: toRecordArray(record.parameters),
+          requestBody: firstRecord(record.requestBody),
           responses: firstRecord(record.responses) || {},
         };
       });
@@ -232,6 +319,44 @@ function apiContractOperations(paths: Record<string, unknown> | null) {
 function responseDescription(value: unknown) {
   if (!isRecord(value)) return '';
   return stringValue(value.description) || 'Response';
+}
+
+function schemaNameFromContent(value: Record<string, unknown> | null) {
+  if (!value) return '';
+  const content = firstRecord(value.content);
+  const json = firstRecord(content?.['application/json']);
+  const schema = firstRecord(json?.schema);
+  const ref = stringValue(schema?.$ref);
+  const match = ref.match(/^#\/components\/schemas\/(.+)$/);
+  return match?.[1] || '';
+}
+
+function schemaFields(components: Record<string, unknown> | null, schemaName: string) {
+  const schemas = firstRecord(components?.schemas);
+  const schema = schemaName ? firstRecord(schemas?.[schemaName]) : null;
+  const properties = firstRecord(schema?.properties);
+  const required = new Set(toStringArray(schema?.required));
+  if (!properties) return [];
+  return Object.entries(properties).flatMap(([name, value]) => {
+    const record = firstRecord(value);
+    if (!record) return [];
+    return {
+      name,
+      type: schemaType(record),
+      required: required.has(name),
+      description: stringValue(record.description),
+    };
+  });
+}
+
+function schemaType(schema: Record<string, unknown> | null): string {
+  if (!schema) return '';
+  const type = stringValue(schema.type);
+  if (type === 'array') {
+    const itemType = schemaType(firstRecord(schema.items));
+    return itemType ? `${type}<${itemType}>` : type;
+  }
+  return type || stringValue(schema.$ref).replace(/^#\/components\/schemas\//, '');
 }
 
 function slugFileName(value: string) {

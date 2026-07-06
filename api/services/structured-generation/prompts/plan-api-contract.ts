@@ -24,6 +24,22 @@ const planApiContractResponseDraftSchema = {
   },
 } as const;
 
+const planApiContractParameterDraftSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['name', 'in', 'type', 'required', 'description'],
+  properties: {
+    name: { type: 'string' },
+    in: { type: 'string', enum: ['query', 'path', 'header', 'cookie'] },
+    type: {
+      type: 'string',
+      enum: ['string', 'number', 'integer', 'boolean', 'object', 'array', 'unknown'],
+    },
+    required: { type: 'boolean' },
+    description: { type: 'string' },
+  },
+} as const;
+
 const planApiContractFieldDraftSchema = {
   type: 'object',
   additionalProperties: false,
@@ -70,6 +86,7 @@ export const planApiContractStructuredOutputSchema = {
           'summary',
           'description',
           'tags',
+          'parameters',
           'requestBody',
           'responses',
         ],
@@ -83,6 +100,10 @@ export const planApiContractStructuredOutputSchema = {
           summary: { type: 'string' },
           description: { type: 'string' },
           tags: { type: 'array', items: { type: 'string' } },
+          parameters: {
+            type: 'array',
+            items: planApiContractParameterDraftSchema,
+          },
           requestBody: planApiContractRequestBodyDraftSchema,
           responses: {
             type: 'array',
@@ -184,6 +205,9 @@ export function buildPlanApiContractSystemPrompt() {
     'artifactKind は "plan_mode_api_contract"、view は "api_io_contract" にしてください。',
     'operations には実装予定または変更対象の endpoint だけを書いてください。',
     '各 operation は operationId と responses を必ず持たせてください。',
+    'path parameter と GET/HEAD/DELETE の query parameter は operations[].parameters に必ず書いてください。',
+    'POST/PUT/PATCH の JSON body は requestBody.schemaName と componentSchemas.fields に必ず書いてください。body field を parameters に混ぜないでください。',
+    'query/path/header/cookie parameter は name、in、type、required、description を具体化してください。該当しない場合は空配列にしてください。',
     'requestBody.schemaName、response.schemaName、zodOwnerFile、state field が該当しない場合は null ではなく空文字にしてください。',
     'validation.examples の payloadJson は JSON.stringify 済みの文字列にしてください。',
     'status code は success / validation / conflict / auth / not found / server error のうち実装判断に必要なものだけを具体化してください。',

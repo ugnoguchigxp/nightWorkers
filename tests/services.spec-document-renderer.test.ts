@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildAssembledDesignContext,
   buildSpecificationDocumentContext,
   renderQuestionnaireAnswerMarkdown,
 } from '../api/modules/specification/specification-document-renderer';
@@ -360,6 +361,168 @@ describe('spec-document-renderer', () => {
         'Use the generated API contract as the source of truth.'
       );
       expect(result.traceability).not.toContain('activity_flow:activity_flow-msg-activity');
+    });
+
+    it('assembles artifact contracts outside the feature plan body', () => {
+      const assembled = buildAssembledDesignContext({
+        taskId: 'task-123',
+        task: mockTask,
+        session: mockSession,
+        workspace: {
+          ...mockWorkspace,
+          dedicatedViewArtifacts: [
+            {
+              id: 'api_io_contract-msg-api',
+              kind: 'api_io_contract',
+              title: 'API Contract',
+              sourceMessageId: 'msg-api',
+              createdAt: new Date().toISOString(),
+            },
+            {
+              id: 'zod_schema_design-msg-zod',
+              kind: 'zod_schema_design',
+              title: 'Zod Schema',
+              sourceMessageId: 'msg-zod',
+              createdAt: new Date().toISOString(),
+            },
+            {
+              id: 'activity_flow-msg-activity',
+              kind: 'activity_flow',
+              title: 'Todo Activity Flow',
+              sourceMessageId: 'msg-activity',
+              createdAt: new Date().toISOString(),
+            },
+          ],
+          decisionReviews: [
+            {
+              id: 'decision-review-msg-review',
+              kind: 'decision_review',
+              title: 'Decision Review',
+              sourceMessageId: 'msg-review',
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        },
+        messages: [
+          ...mockMessages,
+          {
+            id: 'msg-api',
+            metadataJson: {
+              intent: 'plan_mode_dedicated_view',
+              artifactKind: 'plan_mode_api_contract',
+              view: 'api_io_contract',
+              apiContract: {
+                artifactKind: 'plan_mode_api_contract',
+                view: 'api_io_contract',
+                title: 'Todo API Contract',
+                summary: 'CRUD for todo tasks.',
+                openapi: {
+                  openapi: '3.1.0',
+                  info: { title: 'Todo API', version: '0.1.0' },
+                  paths: {
+                    '/api/todos': {
+                      post: {
+                        operationId: 'createTodo',
+                        summary: 'Create todo task',
+                        requestBody: {
+                          required: true,
+                          content: {
+                            'application/json': {
+                              schema: { $ref: '#/components/schemas/CreateTodoRequest' },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                  components: {
+                    schemas: {
+                      CreateTodoRequest: {
+                        type: 'object',
+                        required: ['title'],
+                        properties: { title: { type: 'string' } },
+                      },
+                    },
+                  },
+                },
+                validation: [{ schemaName: 'TodoRequest', owner: 'request' }],
+              },
+            },
+          },
+          {
+            id: 'msg-zod',
+            metadataJson: {
+              intent: 'plan_mode_dedicated_view',
+              artifactKind: 'plan_mode_zod_schema',
+              view: 'zod_schema_design',
+              zodSchema: {
+                artifactKind: 'plan_mode_zod_schema',
+                view: 'zod_schema_design',
+                title: 'Todo Zod Schema',
+                summary: 'Validation for todo input.',
+                schemaName: 'TodoInputSchema',
+                owner: 'llm_json',
+                zodSource: 'const TodoInputSchema = z.object({ title: z.string() });',
+                fields: [
+                  { name: 'title', type: 'string', required: true, zodExpression: 'z.string()' },
+                ],
+              },
+            },
+          },
+          {
+            id: 'msg-activity',
+            content: '',
+            metadataJson: {
+              intent: 'plan_mode_dedicated_view',
+              artifactKind: 'plan_mode_dedicated_view',
+              view: 'activity_flow',
+              title: 'Todo Activity Flow',
+              markdown: '```mermaid\nflowchart TD\n  create --> persist\n```',
+            },
+          },
+          {
+            id: 'msg-review',
+            content: 'Use the generated API contract as the source of truth.',
+            metadataJson: {
+              intent: 'design_decision_review',
+              title: 'Decision Review',
+              designDecisionReview: {
+                decisions: ['Use the generated API contract as the source of truth.'],
+              },
+            },
+          },
+        ],
+      });
+
+      expect(assembled.summary).toContain('Sections:');
+      expect(assembled.questionnaireSessionId).toBe('session-123');
+      expect(assembled.sourceMessageIds).toEqual(
+        expect.arrayContaining(['msg-blueprint', 'msg-data-model', 'msg-api', 'msg-zod'])
+      );
+      expect(assembled.sourceMessageIds).not.toContain('session-123');
+      expect(assembled.sections.map((section) => section.kind)).toEqual(
+        expect.arrayContaining([
+          'questionnaire',
+          'blueprint',
+          'data_model',
+          'api_io_contract',
+          'zod_schema_design',
+          'activity_flow',
+          'decision_review',
+        ])
+      );
+      expect(
+        assembled.sections.find((section) => section.kind === 'api_io_contract')?.content
+      ).toContain('POST /api/todos (createTodo)');
+      expect(
+        assembled.sections.find((section) => section.kind === 'zod_schema_design')?.content
+      ).toContain('TodoInputSchema');
+      expect(
+        assembled.sections.find((section) => section.kind === 'data_model')?.content
+      ).toContain('CREATE TABLE users');
+      expect(
+        assembled.sections.find((section) => section.kind === 'activity_flow')?.content
+      ).toContain('flowchart TD');
     });
 
     it('handles missing blueprint and db design gracefully', () => {

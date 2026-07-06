@@ -3,11 +3,18 @@ import { desc, eq } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { taskMessages, tasks } from '../../db/schema';
 import * as repo from '../../modules/nightworkers/nightworkers.repository';
+import { listDesignQuestionnaires } from '../../modules/questionnaire/questionnaire.service';
+import { getPlanModeWorkspace } from '../../modules/specification/plan-mode-workspace.service';
+import {
+  type AssembledDesignContext,
+  buildAssembledDesignContext,
+} from '../../modules/specification/specification-document-renderer';
 import type { WorkerToolResult } from './types';
 
 export interface ReadCurrentSpecificationInput {
   taskId: string;
   view?: ReadCurrentSpecificationView;
+  includeDesignContext?: boolean;
 }
 
 export type ReadCurrentSpecificationView =
@@ -30,11 +37,15 @@ export interface ReadCurrentSpecificationOutput {
   compactWarning?: string;
   generatedAt: string | null;
   digest: string | null;
+  assembledDesignContext?: AssembledDesignContext;
   sources: {
     questionnaireSessionId?: string;
     blueprintSummaryIncluded?: boolean;
     dataModelReferenceIncluded?: boolean;
     dbDdlReferenceIncluded?: boolean;
+    assembledDesignContextIncluded?: boolean;
+    assembledDesignContextWarning?: string;
+    sourceMessageIds?: string[];
   };
 }
 
@@ -112,6 +123,10 @@ export async function readCurrentSpecificationTool(
     const projectedContent = projectSpecificationContent(content, view);
     const generation = isRecord(metadata.generation) ? metadata.generation : {};
     const generationContext = isRecord(generation.context) ? generation.context : {};
+    const assembledDesignContextResult = input.includeDesignContext
+      ? await resolveAssembledDesignContextSafely(taskId, messages, metadata)
+      : { context: undefined, warning: undefined };
+    const assembledDesignContext = assembledDesignContextResult.context;
 
     return {
       ok: true,
@@ -130,6 +145,7 @@ export async function readCurrentSpecificationTool(
         compactWarning: projectedContent.warning,
         generatedAt: String(latest.createdAt),
         digest,
+        ...(assembledDesignContext ? { assembledDesignContext } : {}),
         sources: {
           questionnaireSessionId:
             typeof metadata.questionnaireSessionId === 'string'
@@ -148,6 +164,15 @@ export async function readCurrentSpecificationTool(
             typeof generationContext.dbDdlReferenceIncluded === 'boolean'
               ? generationContext.dbDdlReferenceIncluded
               : undefined,
+          ...(assembledDesignContext
+            ? {
+                assembledDesignContextIncluded: true,
+                sourceMessageIds: assembledDesignContext.sourceMessageIds,
+              }
+            : {}),
+          ...(assembledDesignContextResult.warning
+            ? { assembledDesignContextWarning: assembledDesignContextResult.warning }
+            : {}),
         },
       },
     };
@@ -158,6 +183,53 @@ export async function readCurrentSpecificationTool(
       error instanceof Error ? error.message : String(error)
     );
   }
+}
+
+async function resolveAssembledDesignContextSafely(
+  taskId: string,
+  messages: Awaited<ReturnType<typeof repo.listTaskMessages>>,
+  specificationMetadata: Record<string, unknown>
+) {
+  try {
+    return {
+      context: await resolveAssembledDesignContext(taskId, messages, specificationMetadata),
+      warning: undefined,
+    };
+  } catch (error) {
+    return {
+      context: undefined,
+      warning: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function resolveAssembledDesignContext(
+  taskId: string,
+  messages: Awaited<ReturnType<typeof repo.listTaskMessages>>,
+  specificationMetadata: Record<string, unknown>
+) {
+  const task = await repo.getTask(taskId);
+  if (!task) return undefined;
+  const workspace = await getPlanModeWorkspace(taskId);
+  const sessions = await listDesignQuestionnaires(taskId);
+  const preferredQuestionnaireSessionId =
+    typeof specificationMetadata.questionnaireSessionId === 'string'
+      ? specificationMetadata.questionnaireSessionId
+      : null;
+  const session =
+    (preferredQuestionnaireSessionId
+      ? sessions.find((item) => item.id === preferredQuestionnaireSessionId)
+      : null) ||
+    sessions.find((item) => item.status === 'review_ready' || item.status === 'accepted') ||
+    sessions[0] ||
+    null;
+  return buildAssembledDesignContext({
+    taskId,
+    task,
+    session,
+    workspace,
+    messages,
+  });
 }
 
 export async function listRecentSpecificationsTool(
@@ -314,14 +386,47 @@ function projectSpecificationContent(
 function selectSpecificationSections(content: string, view: ReadCurrentSpecificationView) {
   const wanted =
     view === 'implementation'
-      ? ['scope', 'implementation', 'acceptance', 'files', 'steps', 'todo']
+      ? [
+          'scope',
+          'implementation',
+          'acceptance',
+          'files',
+          'steps',
+          'todo',
+          'スコープ',
+          'タスク分類',
+          '実装計画',
+          '完了条件',
+        ]
       : view === 'migration'
-        ? ['migration', 'schema', 'database', 'data model', 'rollback']
+        ? [
+            'migration',
+            'schema',
+            'database',
+            'data model',
+            'rollback',
+            'ddl',
+            'データ',
+            'マイグレーション',
+          ]
         : view === 'ui'
-          ? ['ui', 'ux', 'screen', 'component', 'interaction']
+          ? ['ui', 'ux', 'screen', 'component', 'interaction', '画面', 'ui', '操作']
           : view === 'verification'
-            ? ['verification', 'test', 'acceptance', 'gate', 'expected']
-            : ['purpose', 'goal', 'scope', 'acceptance', 'implementation', 'verification'];
+            ? ['verification', 'test', 'acceptance', 'gate', 'expected', '検証計画', '完了条件']
+            : [
+                'purpose',
+                'goal',
+                'scope',
+                'acceptance',
+                'implementation',
+                'verification',
+                '目的',
+                'スコープ',
+                'タスク分類',
+                '実装計画',
+                '検証計画',
+                '完了条件',
+              ];
   const lines = content.split(/\r?\n/);
   const selectedSections: string[] = [];
   let currentSection: string[] = [];

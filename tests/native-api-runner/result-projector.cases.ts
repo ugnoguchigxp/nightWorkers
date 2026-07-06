@@ -80,6 +80,24 @@ describe('NativeApiRunner result projection', () => {
         title: 'Feature Plan',
         content: longSpec,
         digest: 'sha256:spec',
+        assembledDesignContext: {
+          taskId: 'task-1',
+          generatedAt: '2026-07-06T00:00:00.000Z',
+          questionnaireSessionId: 'questionnaire-1',
+          summary: 'Task: Todo',
+          sections: [
+            {
+              kind: 'api_io_contract',
+              title: 'Todo API Contract',
+              sourceMessageId: 'msg-api',
+              digest: 'sha256:api',
+              content: `POST /api/todos\n${'x'.repeat(2200)}`,
+            },
+          ],
+          sourceMessageIds: ['msg-api'],
+          omittedViews: [],
+          warnings: [],
+        },
         sources: {},
       },
     });
@@ -88,6 +106,17 @@ describe('NativeApiRunner result projection', () => {
     expect(specContent.payload.content).toBeUndefined();
     expect(specContent.payload.compactContent).toContain('[specification-compact-view]');
     expect(specContent.payload.contentChars).toBe(longSpec.length);
+    expect(specContent.payload.assembledDesignContext.sections[0]).toMatchObject({
+      kind: 'api_io_contract',
+      title: 'Todo API Contract',
+      sourceMessageId: 'msg-api',
+    });
+    expect(specContent.payload.assembledDesignContext.questionnaireSessionId).toBe(
+      'questionnaire-1'
+    );
+    expect(specContent.payload.assembledDesignContext.sections[0].content).toContain(
+      '[section-truncated]'
+    );
     expect(specContent.payload.fullViewAvailableVia).toBe("read_current_specification view='full'");
     expect(specResult.payload).toMatchObject({ content: longSpec });
 

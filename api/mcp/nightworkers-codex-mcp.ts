@@ -41,11 +41,12 @@ export function createNightWorkersCodexMcpServer(context: NightWorkersMcpRequest
     {
       ...nightWorkersCodexToolManifest.read_current_specification,
     },
-    async ({ taskId, view }) =>
+    async ({ taskId, view, includeDesignContext }) =>
       toolResultToMcp(
         await readCurrentSpecificationTool({
           taskId: firstNonEmpty(taskId, context.taskId, process.env.NIGHTWORKERS_TASK_ID),
           view,
+          includeDesignContext,
         })
       )
   );

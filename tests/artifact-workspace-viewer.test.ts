@@ -199,6 +199,59 @@ describe('PlanModeWorkspaceViewer', () => {
     ]);
   });
 
+  it('does not show transition tabs for included plan views before artifacts exist', () => {
+    const tabs = buildVisiblePlanWorkspaceTabs({
+      questionnaireGateLocked: false,
+      hasFeaturePlan: false,
+      hasQuestionnaire: false,
+      hasBlueprint: false,
+      hasDataModel: true,
+      includedViews: new Set(['user_flow', 'api_io_contract']),
+      planModeCapabilities: {
+        questionnaire: true,
+        feature_plan: true,
+        user_flow: true,
+        blueprint: true,
+        data_model: true,
+        api_io_contract: true,
+        activity_flow: true,
+        sequence_flow: true,
+        zod_schema_design: true,
+      },
+      dedicatedViewArtifacts: [],
+    });
+
+    expect(tabs).toEqual(['status', 'data-model']);
+  });
+
+  it('shows transition tabs for plan views after artifacts exist', () => {
+    const tabs = buildVisiblePlanWorkspaceTabs({
+      questionnaireGateLocked: false,
+      hasFeaturePlan: false,
+      hasQuestionnaire: false,
+      hasBlueprint: false,
+      hasDataModel: true,
+      includedViews: new Set(['user_flow', 'api_io_contract']),
+      planModeCapabilities: {
+        questionnaire: true,
+        feature_plan: true,
+        user_flow: true,
+        blueprint: true,
+        data_model: true,
+        api_io_contract: true,
+        activity_flow: true,
+        sequence_flow: true,
+        zod_schema_design: true,
+      },
+      dedicatedViewArtifacts: [
+        { id: 'user-flow-1', kind: 'user_flow', title: 'User Flow' },
+        { id: 'api-contract-1', kind: 'api_io_contract', title: 'API Contract' },
+      ],
+    });
+
+    expect(tabs).toEqual(['status', 'data-model', 'user-flow', 'api-io-contract']);
+  });
+
   it('starts on Questionnaire and withholds Status until questionnaire answers are ready', () => {
     const markup = renderToStaticMarkup(
       createElement(PlanModeWorkspaceViewer, {

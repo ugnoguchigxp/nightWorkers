@@ -37,6 +37,12 @@ export const nightWorkersReadCurrentSpecificationInputSchema = z.object({
     .describe(
       'Specification view to return. compact is the default model-visible view. full returns the complete markdown content.'
     ),
+  includeDesignContext: z
+    .boolean()
+    .optional()
+    .describe(
+      'When true, include the assembled Plan Mode design context built from Questionnaire, Blueprint, Data Model, API Contract, Zod Schema, and flow artifacts.'
+    ),
 });
 
 export const nightWorkersListRecentSpecificationsInputSchema = z.object({
@@ -249,7 +255,7 @@ export const nightWorkersCodexToolManifest = {
   read_current_specification: {
     title: 'Read Current Specification',
     description:
-      'Read the latest NightWorkers draft specification markdown for a task. Defaults to view=compact; use view=full only when the complete markdown is necessary. This is read-only and does not edit project files.',
+      'Read the latest NightWorkers draft specification markdown for a task. Defaults to view=compact; use view=full only when the complete markdown is necessary. Pass includeDesignContext=true to include assembled Plan Mode artifact contracts. This is read-only and does not edit project files.',
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,

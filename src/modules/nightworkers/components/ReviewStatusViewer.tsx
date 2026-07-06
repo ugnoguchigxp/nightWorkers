@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -9,6 +10,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type {
   ReviewKnowledgeCandidate,
   ReviewModeFinding,
@@ -71,17 +73,6 @@ type ReviewStatusViewerProps = {
   ) => Promise<ReviewSessionDetail>;
 };
 
-const sectionLabels: Record<ReviewSectionKind, string> = {
-  acceptance_evidence: 'Acceptance Evidence',
-  verification_evidence: 'Verification Evidence',
-  self_review_followups: 'Self-review Follow-ups',
-  queue_recovery: 'Queue Recovery',
-  security_review: 'Security Review',
-  findings: 'Findings',
-  proposed_goals: 'Proposed Goals',
-  knowledge_candidates: 'Knowledge Candidates',
-};
-
 const requirementOrder = ['required', 'recommended', 'optional', 'omitted'] as const;
 const findingDispositions: NonNullable<ReviewModeFinding['disposition']>[] = [
   'human_callout',
@@ -108,6 +99,60 @@ function candidateEditState(candidate: ReviewKnowledgeCandidate): CandidateEditS
   };
 }
 
+function reviewStatusLabel(t: TFunction, key: string, fallback: string) {
+  return t(key, { defaultValue: fallback });
+}
+
+function reviewStatusValueLabel(t: TFunction, group: string, value: string) {
+  return reviewStatusLabel(t, `reviewStatus.${group}.${value}`, value);
+}
+
+function reviewStatusSectionReason(t: TFunction, reason: string) {
+  switch (reason) {
+    case 'No acceptance review signal was detected.':
+      return t('reviewStatus.sectionReason.noAcceptanceSignal');
+    case 'Check final report claims against run evidence.':
+      return t('reviewStatus.sectionReason.checkFinalReport');
+    case 'Verification evidence is missing or failed.':
+      return t('reviewStatus.sectionReason.verificationMissingOrFailed');
+    case 'Verification evidence can be inspected before acceptance.':
+      return t('reviewStatus.sectionReason.verificationInspectable');
+    case 'Self-review follow-up evidence is present.':
+      return t('reviewStatus.sectionReason.selfReviewPresent');
+    case 'No unresolved self-review follow-up signal was detected.':
+      return t('reviewStatus.sectionReason.noSelfReviewSignal');
+    case 'Queue recovery or status mismatch evidence should be checked.':
+      return t('reviewStatus.sectionReason.queueRecoveryCheck');
+    case 'No queue recovery signal was detected.':
+      return t('reviewStatus.sectionReason.noQueueRecoverySignal');
+    case 'Sensitive, schema, or public contract paths changed.':
+      return t('reviewStatus.sectionReason.sensitivePathsChanged');
+    case 'No security-sensitive change was detected.':
+      return t('reviewStatus.sectionReason.noSecuritySignal');
+    case 'No findings consolidation is needed.':
+      return t('reviewStatus.sectionReason.noFindingsNeeded');
+    case 'Consolidate section findings and route dispositions.':
+      return t('reviewStatus.sectionReason.consolidateFindings');
+    case 'Create follow-up Goal candidates only when findings need follow-up work.':
+      return t('reviewStatus.sectionReason.createFollowupGoals');
+    case 'Create reusable contextStill knowledge candidates only after preview.':
+      return t('reviewStatus.sectionReason.createKnowledgeCandidates');
+    default:
+      return reason;
+  }
+}
+
+function reviewStatusBlockingReason(t: TFunction, reason: string) {
+  switch (reason) {
+    case 'Required review sections are not complete.':
+      return t('reviewStatus.blockingReason.requiredSectionsIncomplete');
+    case 'Unresolved blocking findings remain.':
+      return t('reviewStatus.blockingReason.unresolvedBlockingFindings');
+    default:
+      return reason;
+  }
+}
+
 export function ReviewStatusViewer({
   detail,
   onRunSection,
@@ -120,6 +165,7 @@ export function ReviewStatusViewer({
   onSendKnowledgeCandidate,
   onFinalAction,
 }: ReviewStatusViewerProps) {
+  const { t } = useTranslation();
   const [busySection, setBusySection] = useState<ReviewSectionKind | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [busyCandidate, setBusyCandidate] = useState<string | null>(null);
@@ -133,7 +179,7 @@ export function ReviewStatusViewer({
   if (!detail) {
     return (
       <div className="flex h-full items-center justify-center text-xs text-slate-500">
-        Review Status is not available.
+        {t('reviewStatus.unavailable')}
       </div>
     );
   }
@@ -155,24 +201,24 @@ export function ReviewStatusViewer({
           <div>
             <div className="flex items-center gap-2 text-sm font-semibold">
               <ClipboardCheck className="h-4 w-4 text-cyan-200" />
-              Review Status
+              {t('reviewStatus.title')}
             </div>
             <div className="mt-2 text-xs leading-5 text-slate-400">
-              Run remains{' '}
+              {t('reviewStatus.runRemains')}{' '}
               {detail.session.status === 'approved'
-                ? 'review approved'
-                : 'execution status unchanged'}
+                ? t('reviewStatus.sessionState.approved')
+                : t('reviewStatus.sessionState.executionUnchanged')}
               .
             </div>
           </div>
           <span className={`rounded border px-2.5 py-1 text-xs font-medium ${levelClass}`}>
-            {level}
+            {reviewStatusValueLabel(t, 'level', level)}
           </span>
         </div>
 
         <div className="grid gap-2">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Reasons
+            {t('reviewStatus.reasons')}
           </div>
           <div className="grid gap-2">
             {status.recommendation.reasons.slice(0, 6).map((reason) => (
@@ -186,8 +232,9 @@ export function ReviewStatusViewer({
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 text-amber-300" />
                 )}
                 <div>
-                  <div className="font-medium text-slate-100">{reason.label}</div>
-                  <div className="mt-0.5 font-mono text-[11px] text-slate-500">{reason.code}</div>
+                  <div className="font-medium text-slate-100" title={reason.code}>
+                    {reviewStatusValueLabel(t, 'reason', reason.code)}
+                  </div>
                 </div>
               </div>
             ))}
@@ -203,7 +250,7 @@ export function ReviewStatusViewer({
             return (
               <div key={requirement} className="grid gap-2">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  {requirement}
+                  {reviewStatusValueLabel(t, 'requirement', requirement)}
                 </div>
                 <div className="grid gap-2">
                   {sections.map((section) => {
@@ -219,19 +266,21 @@ export function ReviewStatusViewer({
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-medium text-slate-100">
-                              {sectionLabels[section.kind]}
+                              {reviewStatusValueLabel(t, 'section', section.kind)}
                             </span>
                             <span className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
-                              {section.progress}
+                              {reviewStatusValueLabel(t, 'progress', section.progress)}
                             </span>
                             {section.findingCounts.blocking > 0 ? (
                               <span className="rounded border border-red-700 bg-red-950/40 px-2 py-0.5 text-[11px] text-red-100">
-                                {section.findingCounts.blocking} blocking
+                                {t('reviewStatus.findingCount.blocking', {
+                                  count: section.findingCounts.blocking,
+                                })}
                               </span>
                             ) : null}
                           </div>
                           <div className="mt-1 text-xs leading-5 text-slate-400">
-                            {section.reason}
+                            {reviewStatusSectionReason(t, section.reason)}
                           </div>
                         </div>
                         <button
@@ -245,14 +294,18 @@ export function ReviewStatusViewer({
                             try {
                               await onRunSection(section.kind);
                             } catch (err) {
-                              setError(err instanceof Error ? err.message : 'Section run failed.');
+                              setError(
+                                err instanceof Error
+                                  ? err.message
+                                  : t('reviewStatus.error.sectionRunFailed')
+                              );
                             } finally {
                               setBusySection(null);
                             }
                           }}
                         >
                           <Play className="h-3.5 w-3.5" />
-                          Run
+                          {t('reviewStatus.action.run')}
                         </button>
                       </div>
                     );
@@ -266,7 +319,7 @@ export function ReviewStatusViewer({
         {detail.findings.length > 0 ? (
           <div className="grid gap-3">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Findings
+              {t('reviewStatus.findings')}
             </div>
             <div className="grid gap-2">
               {detail.findings.map((finding) => {
@@ -297,10 +350,14 @@ export function ReviewStatusViewer({
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-medium text-slate-100">{finding.title}</span>
                         <span className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
-                          {finding.severity}
+                          {reviewStatusValueLabel(t, 'findingSeverity', finding.severity)}
                         </span>
                         <span className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
-                          {finding.dispositionStatus}
+                          {reviewStatusValueLabel(
+                            t,
+                            'dispositionStatus',
+                            finding.dispositionStatus
+                          )}
                         </span>
                       </div>
                       {finding.body ? (
@@ -321,14 +378,14 @@ export function ReviewStatusViewer({
                       >
                         {findingDispositions.map((disposition) => (
                           <option key={disposition} value={disposition}>
-                            {disposition}
+                            {reviewStatusValueLabel(t, 'findingDisposition', disposition)}
                           </option>
                         ))}
                       </select>
                       <input
                         className="h-8 rounded border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
                         value={findingEdit.note}
-                        placeholder="Disposition note"
+                        placeholder={t('reviewStatus.placeholder.dispositionNote')}
                         onChange={(event) => setFindingEdit({ note: event.target.value })}
                       />
                       <button
@@ -347,7 +404,9 @@ export function ReviewStatusViewer({
                             });
                           } catch (err) {
                             setError(
-                              err instanceof Error ? err.message : 'Finding disposition failed.'
+                              err instanceof Error
+                                ? err.message
+                                : t('reviewStatus.error.findingDispositionFailed')
                             );
                           } finally {
                             setBusyFinding(null);
@@ -355,7 +414,7 @@ export function ReviewStatusViewer({
                         }}
                       >
                         <Save className="h-3.5 w-3.5" />
-                        Save
+                        {t('reviewStatus.action.save')}
                       </button>
                       <button
                         type="button"
@@ -378,7 +437,7 @@ export function ReviewStatusViewer({
                             setError(
                               err instanceof Error
                                 ? err.message
-                                : 'Knowledge candidate creation failed.'
+                                : t('reviewStatus.error.knowledgeCandidateCreationFailed')
                             );
                           } finally {
                             setBusyCandidate(null);
@@ -386,7 +445,7 @@ export function ReviewStatusViewer({
                         }}
                       >
                         <ClipboardCheck className="h-3.5 w-3.5" />
-                        Candidate
+                        {t('reviewStatus.action.candidate')}
                       </button>
                     </div>
                   </div>
@@ -400,7 +459,7 @@ export function ReviewStatusViewer({
           <div className="grid gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Proposed Goals
+                {t('reviewStatus.proposedGoals')}
               </div>
               <button
                 type="button"
@@ -413,14 +472,18 @@ export function ReviewStatusViewer({
                   try {
                     await onCreateProposedGoals(detail.session.id);
                   } catch (err) {
-                    setError(err instanceof Error ? err.message : 'Proposed Goal sync failed.');
+                    setError(
+                      err instanceof Error
+                        ? err.message
+                        : t('reviewStatus.error.proposedGoalSyncFailed')
+                    );
                   } finally {
                     setBusyGoal(null);
                   }
                 }}
               >
                 <ClipboardCheck className="h-3.5 w-3.5" />
-                Sync
+                {t('reviewStatus.action.sync')}
               </button>
             </div>
             <div className="grid gap-3">
@@ -434,7 +497,7 @@ export function ReviewStatusViewer({
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-medium text-slate-100">{goal.title}</span>
                         <span className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
-                          {goal.status}
+                          {reviewStatusValueLabel(t, 'proposedGoalStatus', goal.status)}
                         </span>
                       </div>
                       <div className="mt-1 text-xs leading-5 text-slate-400">
@@ -467,14 +530,16 @@ export function ReviewStatusViewer({
                               });
                             } catch (err) {
                               setError(
-                                err instanceof Error ? err.message : 'Proposed Goal update failed.'
+                                err instanceof Error
+                                  ? err.message
+                                  : t('reviewStatus.error.proposedGoalUpdateFailed')
                               );
                             } finally {
                               setBusyGoal(null);
                             }
                           }}
                         >
-                          {nextStatus}
+                          {reviewStatusValueLabel(t, 'proposedGoalAction', nextStatus)}
                         </button>
                       ))}
                       <button
@@ -493,14 +558,16 @@ export function ReviewStatusViewer({
                             await onMaterializeProposedGoal(detail.session.id, goal.id);
                           } catch (err) {
                             setError(
-                              err instanceof Error ? err.message : 'Task materialization failed.'
+                              err instanceof Error
+                                ? err.message
+                                : t('reviewStatus.error.taskMaterializationFailed')
                             );
                           } finally {
                             setBusyGoal(null);
                           }
                         }}
                       >
-                        Task
+                        {t('reviewStatus.action.task')}
                       </button>
                     </div>
                   </div>
@@ -513,7 +580,7 @@ export function ReviewStatusViewer({
         {detail.securityHandoffs.length > 0 ? (
           <div className="grid gap-3">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Security Handoffs
+              {t('reviewStatus.securityHandoffs')}
             </div>
             <div className="grid gap-2">
               {detail.securityHandoffs.map((handoff) => (
@@ -525,7 +592,7 @@ export function ReviewStatusViewer({
                     <ShieldAlert className="h-3.5 w-3.5 text-amber-300" />
                     <span className="text-sm font-medium text-slate-100">{handoff.title}</span>
                     <span className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
-                      {handoff.status}
+                      {reviewStatusValueLabel(t, 'securityHandoffStatus', handoff.status)}
                     </span>
                   </div>
                   <div className="text-xs leading-5 text-slate-400">{handoff.summary}</div>
@@ -543,7 +610,7 @@ export function ReviewStatusViewer({
         {detail.knowledgeCandidates.length > 0 ? (
           <div className="grid gap-3">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Knowledge Candidates
+              {t('reviewStatus.knowledgeCandidates')}
             </div>
             <div className="grid gap-3">
               {detail.knowledgeCandidates.map((candidate) => {
@@ -566,7 +633,7 @@ export function ReviewStatusViewer({
                           {candidate.title}
                         </span>
                         <span className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
-                          {candidate.status}
+                          {reviewStatusValueLabel(t, 'knowledgeCandidateStatus', candidate.status)}
                         </span>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -590,7 +657,9 @@ export function ReviewStatusViewer({
                               );
                             } catch (err) {
                               setError(
-                                err instanceof Error ? err.message : 'Candidate save failed.'
+                                err instanceof Error
+                                  ? err.message
+                                  : t('reviewStatus.error.candidateSaveFailed')
                               );
                             } finally {
                               setBusyCandidate(null);
@@ -598,7 +667,7 @@ export function ReviewStatusViewer({
                           }}
                         >
                           <Save className="h-3.5 w-3.5" />
-                          Save
+                          {t('reviewStatus.action.save')}
                         </button>
                         <button
                           type="button"
@@ -614,7 +683,9 @@ export function ReviewStatusViewer({
                               await onSendKnowledgeCandidate(detail.session.id, candidate.id);
                             } catch (err) {
                               setError(
-                                err instanceof Error ? err.message : 'Candidate send failed.'
+                                err instanceof Error
+                                  ? err.message
+                                  : t('reviewStatus.error.candidateSendFailed')
                               );
                             } finally {
                               setBusyCandidate(null);
@@ -622,7 +693,7 @@ export function ReviewStatusViewer({
                           }}
                         >
                           <Send className="h-3.5 w-3.5" />
-                          Send
+                          {t('reviewStatus.action.send')}
                         </button>
                         <button
                           type="button"
@@ -642,7 +713,9 @@ export function ReviewStatusViewer({
                               });
                             } catch (err) {
                               setError(
-                                err instanceof Error ? err.message : 'Candidate discard failed.'
+                                err instanceof Error
+                                  ? err.message
+                                  : t('reviewStatus.error.candidateDiscardFailed')
                               );
                             } finally {
                               setBusyCandidate(null);
@@ -650,7 +723,7 @@ export function ReviewStatusViewer({
                           }}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
-                          Discard
+                          {t('reviewStatus.action.discard')}
                         </button>
                       </div>
                     </div>
@@ -666,9 +739,15 @@ export function ReviewStatusViewer({
                           })
                         }
                       >
-                        <option value="rule">rule</option>
-                        <option value="procedure">procedure</option>
-                        <option value="failure_pattern">failure_pattern</option>
+                        <option value="rule">
+                          {reviewStatusValueLabel(t, 'candidateType', 'rule')}
+                        </option>
+                        <option value="procedure">
+                          {reviewStatusValueLabel(t, 'candidateType', 'procedure')}
+                        </option>
+                        <option value="failure_pattern">
+                          {reviewStatusValueLabel(t, 'candidateType', 'failure_pattern')}
+                        </option>
                       </select>
                       <input
                         className="h-8 rounded border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100 disabled:opacity-60"
@@ -687,14 +766,14 @@ export function ReviewStatusViewer({
                       <input
                         className="h-8 rounded border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100 disabled:opacity-60"
                         value={edit.avoid ?? ''}
-                        placeholder="Avoid"
+                        placeholder={t('reviewStatus.placeholder.avoid')}
                         disabled={isLocked}
                         onChange={(event) => updateEdit({ avoid: event.target.value || null })}
                       />
                       <input
                         className="h-8 rounded border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100 disabled:opacity-60"
                         value={edit.prefer ?? ''}
-                        placeholder="Prefer"
+                        placeholder={t('reviewStatus.placeholder.prefer')}
                         disabled={isLocked}
                         onChange={(event) => updateEdit({ prefer: event.target.value || null })}
                       />
@@ -714,11 +793,11 @@ export function ReviewStatusViewer({
         <div className="grid gap-3 rounded border border-slate-800 bg-slate-900/60 p-4">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <CheckCircle2 className="h-4 w-4 text-emerald-300" />
-            Final Action
+            {t('reviewStatus.finalAction')}
           </div>
           {status.finalActionGate.blockingReason ? (
             <div className="rounded border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-100">
-              {status.finalActionGate.blockingReason}
+              {reviewStatusBlockingReason(t, status.finalActionGate.blockingReason)}
             </div>
           ) : null}
           <div className="flex flex-wrap gap-2">
@@ -741,21 +820,27 @@ export function ReviewStatusViewer({
                     try {
                       await onFinalAction(detail.session.id, { action });
                     } catch (err) {
-                      setError(err instanceof Error ? err.message : 'Final action failed.');
+                      setError(
+                        err instanceof Error
+                          ? err.message
+                          : t('reviewStatus.error.finalActionFailed')
+                      );
                     } finally {
                       setBusyAction(null);
                     }
                   }}
                 >
-                  {action}
+                  {reviewStatusValueLabel(t, 'finalActionType', action)}
                 </button>
               )
             )}
           </div>
           <div className="text-xs text-slate-500">
-            Proposed Goals: {status.proposedGoalCount} · Knowledge Candidates:{' '}
-            {status.knowledgeCandidateCount} · Security Handoffs:{' '}
-            {status.securityHandoffCount ?? detail.securityHandoffs.length}
+            {t('reviewStatus.finalCounts', {
+              proposedGoalCount: status.proposedGoalCount,
+              knowledgeCandidateCount: status.knowledgeCandidateCount,
+              securityHandoffCount: status.securityHandoffCount ?? detail.securityHandoffs.length,
+            })}
           </div>
           {error ? (
             <div className="rounded border border-red-800 bg-red-950/40 px-3 py-2 text-xs text-red-100">

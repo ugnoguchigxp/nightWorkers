@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type {
   DesignQuestionnaire,
   DesignQuestionnaireAnswer,
@@ -25,6 +26,35 @@ type QuestionnaireSessionLike = {
   id: string;
   questionSets: Array<{ questionnaire: DesignQuestionnaire | null }>;
   answers: QuestionnaireAnswerRow[];
+};
+export type AssembledDesignContextSectionKind =
+  | 'questionnaire'
+  | 'blueprint'
+  | 'data_model'
+  | 'api_io_contract'
+  | 'zod_schema_design'
+  | 'user_flow'
+  | 'activity_flow'
+  | 'sequence_flow'
+  | 'decision_review';
+
+export type AssembledDesignContextSection = {
+  kind: AssembledDesignContextSectionKind;
+  title: string;
+  sourceMessageId?: string | null;
+  digest?: string | null;
+  content: string;
+};
+
+export type AssembledDesignContext = {
+  taskId: string;
+  generatedAt: string;
+  questionnaireSessionId?: string | null;
+  summary: string;
+  sections: AssembledDesignContextSection[];
+  sourceMessageIds: string[];
+  omittedViews: Array<{ view: string; reason?: string }>;
+  warnings: string[];
 };
 
 export function buildSpecificationDocumentContext(input: {
@@ -102,6 +132,182 @@ export function buildSpecificationDocumentContext(input: {
   };
 }
 
+export function buildAssembledDesignContext(input: {
+  taskId: string;
+  task: TaskLike;
+  session: QuestionnaireSessionLike | null;
+  workspace: PlanModeWorkspace;
+  messages: TaskMessageRow[];
+  projectStackContext?: string | null;
+}): AssembledDesignContext {
+  const latestBlueprint = findLatestBlueprintMessage(input.messages, 'blueprint');
+  const latestDataModel = findLatestDataModelMessage(input.messages);
+  const latestApiContract = findLatestPlanViewMessage(input.messages, 'api_io_contract');
+  const latestZodSchema = findLatestPlanViewMessage(input.messages, 'zod_schema_design');
+  const sections: AssembledDesignContextSection[] = [];
+  const warnings: string[] = [];
+
+  if (input.session) {
+    const content = renderQuestionnaireAnswerMarkdown(input.session);
+    sections.push({
+      kind: 'questionnaire',
+      title: 'Questionnaire Decisions',
+      sourceMessageId: null,
+      digest: digestText(content),
+      content,
+    });
+  } else {
+    warnings.push('Questionnaire は未生成です。');
+  }
+
+  const blueprint = getMessageBlueprint(latestBlueprint);
+  if (blueprint) {
+    const content = renderCompressedBlueprintNaturalLanguage(blueprint);
+    sections.push({
+      kind: 'blueprint',
+      title: String(blueprint.name || 'Blueprint'),
+      sourceMessageId: latestBlueprint?.id ?? null,
+      digest: digestText(content),
+      content,
+    });
+  } else {
+    warnings.push('Blueprint は未生成です。');
+  }
+
+  const dataModelArtifact = getMessageDataModelArtifact(latestDataModel);
+  if (dataModelArtifact) {
+    const content = renderAssembledDataModelContract(dataModelArtifact);
+    sections.push({
+      kind: 'data_model',
+      title: String(dataModelArtifact.title || 'Data Model'),
+      sourceMessageId: latestDataModel?.id ?? null,
+      digest: digestText(content),
+      content,
+    });
+  } else {
+    warnings.push('Data Model は未生成です。');
+  }
+
+  const apiContract = getMessageApiContract(latestApiContract);
+  if (apiContract) {
+    const content = renderApiContractReference(apiContract);
+    sections.push({
+      kind: 'api_io_contract',
+      title: String(apiContract.title || 'API Contract'),
+      sourceMessageId: latestApiContract?.id ?? null,
+      digest: digestText(content),
+      content,
+    });
+  }
+
+  const zodSchema = getMessageZodSchema(latestZodSchema);
+  if (zodSchema) {
+    const content = renderZodSchemaReference(zodSchema);
+    sections.push({
+      kind: 'zod_schema_design',
+      title: String(zodSchema.schemaName || zodSchema.title || 'Zod Schema'),
+      sourceMessageId: latestZodSchema?.id ?? null,
+      digest: digestText(content),
+      content,
+    });
+  }
+
+  for (const artifact of workspaceArtifacts(input.workspace, 'dedicatedViewArtifacts')) {
+    if (!isFlowViewKind(artifact.kind)) continue;
+    const message = input.messages.find((item) => item.id === artifact.sourceMessageId);
+    const content = compactText(renderMessageReferenceSummary(message, 'dedicated_view'), 1600);
+    if (!content) continue;
+    sections.push({
+      kind: artifact.kind,
+      title: artifact.title || formatDesignContextKind(artifact.kind),
+      sourceMessageId: artifact.sourceMessageId,
+      digest: digestText(content),
+      content,
+    });
+  }
+
+  for (const artifact of workspaceArtifacts(input.workspace, 'decisionReviews')) {
+    const message = input.messages.find((item) => item.id === artifact.sourceMessageId);
+    const content = compactText(renderMessageReferenceSummary(message, 'decision_review'), 1400);
+    if (!content) continue;
+    sections.push({
+      kind: 'decision_review',
+      title: artifact.title || 'Decision Review',
+      sourceMessageId: artifact.sourceMessageId,
+      digest: digestText(content),
+      content,
+    });
+  }
+
+  const omittedViews = extractOmittedViewDecisions(input.messages);
+  const sourceMessageIds = uniqueStrings(
+    sections.map((section) => section.sourceMessageId).filter((id): id is string => Boolean(id))
+  );
+  const projectStackContext = input.projectStackContext?.trim();
+  const summary = [
+    `Task: ${input.task.title || 'Untitled'}`,
+    input.task.objective ? `Objective: ${compactText(input.task.objective, 180)}` : '',
+    projectStackContext ? `Project: ${compactText(projectStackContext, 240)}` : '',
+    `Sections: ${sections.map((section) => section.kind).join(', ') || 'none'}`,
+    omittedViews.length > 0
+      ? `Omitted views: ${omittedViews.map((item) => item.view).join(', ')}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  return {
+    taskId: input.taskId,
+    generatedAt: new Date().toISOString(),
+    questionnaireSessionId: input.session?.id ?? null,
+    summary,
+    sections,
+    sourceMessageIds,
+    omittedViews,
+    warnings,
+  };
+}
+
+export function renderAssembledDesignContextMarkdown(context: AssembledDesignContext) {
+  const lines = [
+    '[Assembled Design Context]',
+    `taskId: ${context.taskId}`,
+    `generatedAt: ${context.generatedAt}`,
+    context.questionnaireSessionId
+      ? `questionnaireSessionId: ${context.questionnaireSessionId}`
+      : '',
+    '',
+    '## Summary',
+    context.summary || 'No assembled design context summary.',
+  ];
+  if (context.omittedViews.length > 0) {
+    lines.push(
+      '',
+      '## Omitted Views',
+      ...context.omittedViews.map(
+        (item) => `- ${item.view}${item.reason ? `: ${item.reason}` : ''}`
+      )
+    );
+  }
+  if (context.warnings.length > 0) {
+    lines.push('', '## Warnings', ...context.warnings.map((warning) => `- ${warning}`));
+  }
+  for (const section of context.sections) {
+    lines.push(
+      '',
+      `## ${formatDesignContextKind(section.kind)}: ${section.title}`,
+      section.sourceMessageId ? `sourceMessageId: ${section.sourceMessageId}` : '',
+      section.digest ? `digest: ${section.digest}` : '',
+      '',
+      section.content || 'No content.'
+    );
+  }
+  if (context.sourceMessageIds.length > 0) {
+    lines.push('', '## Source Messages', ...context.sourceMessageIds.map((id) => `- ${id}`));
+  }
+  return lines.filter((line) => line !== '').join('\n');
+}
+
 export function sanitizeSpecificationTargetNaming(content: string, projectStackContext: string) {
   const targetProjectName = extractTargetProjectName(projectStackContext);
   if (isNightWorkersTargetProject(projectStackContext, targetProjectName)) return content;
@@ -160,10 +366,10 @@ function buildImplementationPlanGuidance(context: string) {
   const lines = [
     `分類: ${classification}`,
     `理由: 変更候補レイヤーは ${touchedLayers.length > 0 ? touchedLayers.join(' / ') : '未検出'}。`,
-    '出力方針: 重複説明を避け、実装者が決めるべき契約と順序だけを短く書く。',
+    '出力方針: 重複説明を避け、実装者が進める順序と参照すべき artifact だけを短く書く。',
     '採用判断: Questionnaire Decisions を優先する。DDL reference に含まれる将来拡張や対象外要素は実装対象にしない。',
     '判断方針: 既存資料から合理的に決められることは前提として固定し、open question は実装不能または危険な欠落だけに限定する。',
-    '画面仕様: Blueprint Summary の画面 / section / component / copy / sample / props 要約から、再現に必要な構成と状態を `## 契約` の UI 項目へ短く反映する。',
+    '契約詳細: API / UI / DB / validation / flow の詳細は各 Plan Mode artifact と assembled design context を正とし、Feature Plan 本文に再掲しない。',
   ];
 
   if (classification === '軽量タスク') {
@@ -187,17 +393,17 @@ function buildImplementationPlanGuidance(context: string) {
 
   if (hasApi) {
     lines.push(
-      'API 契約: endpoint、method、request/response/error、validation schema、auth/permission 要否を具体名で明記する。'
+      'API: API Contract artifact を正として route / schema / error handling を実装する手順を短く書く。'
     );
   }
   if (hasUi) {
     lines.push(
-      'UI 契約: route、主要 state、loading/error/empty、作成/編集/削除などの操作導線を明記する。'
+      'UI: Blueprint artifact を正として route、主要 state、操作導線を実装する手順を短く書く。'
     );
   }
   lines.push(
     '検証: unit / typecheck / verify / E2E のうち、既存 package script と変更範囲に合うものを本文の完了条件へ組み込む。',
-    '禁止: 元資料、Evidence、Questionnaire の raw answer を本文に再掲しない。背景説明より実装契約を優先する。'
+    '禁止: 元資料、Evidence、Questionnaire の raw answer、API schema、DDL、Blueprint 詳細を本文に再掲しない。'
   );
   return lines.join('\n');
 }
@@ -441,6 +647,60 @@ function renderDataModelDdlReference(artifact: JsonRecord | null) {
   return lines.join('\n').trim();
 }
 
+function renderAssembledDataModelContract(artifact: JsonRecord) {
+  const lines = [
+    `Canonical source: ${String(artifact.canonicalSource || 'unknown')}`,
+    artifact.summary ? `Summary: ${compactText(String(artifact.summary), 260)}` : '',
+  ].filter(Boolean);
+  const ddl = renderDataModelDdlReference(artifact);
+  if (ddl) lines.push('DDL:', compactText(ddl, 1600));
+  const tables = toRecordArray(artifact.derivedTables).slice(0, 12);
+  if (tables.length > 0) {
+    lines.push(
+      'Tables:',
+      ...tables.map((table) => {
+        const columns = toRecordArray(table.columns)
+          .slice(0, 12)
+          .map((column) =>
+            [
+              String(column.name || column.id || 'column'),
+              String(column.type || 'unknown'),
+              column.primaryKey ? 'pk' : '',
+              column.nullable === false ? 'required' : '',
+              column.unique ? 'unique' : '',
+            ]
+              .filter(Boolean)
+              .join(':')
+          );
+        return `- ${String(table.name || table.id || 'table')}: ${columns.join(', ')}`;
+      })
+    );
+  }
+  const relations = toRecordArray(artifact.relations).slice(0, 8);
+  if (relations.length > 0) {
+    lines.push(
+      'Relations:',
+      ...relations.map(
+        (relation) =>
+          `- ${[
+            relation.from || relation.fromTable,
+            relation.cardinality,
+            relation.to || relation.toTable,
+            relation.reason,
+          ]
+            .filter(Boolean)
+            .map(String)
+            .join(' -> ')}`
+      )
+    );
+  }
+  const constraints = Array.isArray(artifact.constraints)
+    ? artifact.constraints.map(String).filter(Boolean).slice(0, 8)
+    : [];
+  if (constraints.length > 0) lines.push('Constraints:', ...constraints.map((item) => `- ${item}`));
+  return lines.join('\n').trim() || 'Data Model は未生成です。';
+}
+
 function renderPlanViewReferences(input: {
   apiContract: JsonRecord | null;
   zodSchema: JsonRecord | null;
@@ -618,6 +878,60 @@ function workspaceArtifacts<K extends keyof PlanModeWorkspace>(
   return (Array.isArray(value) ? value : []) as PlanModeWorkspace[K] extends unknown[]
     ? PlanModeWorkspace[K]
     : [];
+}
+
+function extractOmittedViewDecisions(messages: TaskMessageRow[]) {
+  const byView = new Map<string, { view: string; reason?: string }>();
+  for (const message of messages) {
+    const metadata = isRecord(message.metadataJson) ? message.metadataJson : {};
+    const planModeGate = isRecord(metadata.planModeGate) ? metadata.planModeGate : null;
+    const originalGate =
+      planModeGate && isRecord(planModeGate.originalGate) ? planModeGate.originalGate : null;
+    const candidates = [
+      originalGate?.dedicatedViews,
+      isRecord(metadata.planMode) ? metadata.planMode.dedicatedViews : null,
+      planModeGate?.dedicatedViews,
+      metadata.dedicatedViews,
+      metadata.viewDecisions,
+    ];
+    for (const candidate of candidates) {
+      if (!Array.isArray(candidate)) continue;
+      for (const item of candidate) {
+        if (!isRecord(item)) continue;
+        const view = typeof item.view === 'string' ? item.view : '';
+        if (!view || item.decision !== 'omit') continue;
+        byView.set(view, {
+          view,
+          ...(typeof item.reason === 'string' ? { reason: item.reason } : {}),
+        });
+      }
+    }
+  }
+  return [...byView.values()];
+}
+
+function isFlowViewKind(
+  value: string
+): value is Extract<
+  AssembledDesignContextSectionKind,
+  'user_flow' | 'activity_flow' | 'sequence_flow'
+> {
+  return value === 'user_flow' || value === 'activity_flow' || value === 'sequence_flow';
+}
+
+function formatDesignContextKind(kind: string) {
+  return kind
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function digestText(value: string) {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values)];
 }
 
 function compactJson(value: unknown) {

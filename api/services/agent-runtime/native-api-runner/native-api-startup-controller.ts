@@ -251,13 +251,13 @@ export class NativeApiStartupController {
     turnId: string;
     state: NativeApiDispatchState;
   }): Promise<StartupGateResult> {
-    const args = { phase: 'startup_specification' };
+    const args = { phase: 'startup_specification', includeDesignContext: true };
     const result = await this.runRuntimeToolGate({
       phase: 'startup_specification',
       toolName: 'read_current_specification',
       workerToolName: 'read_current_specification',
       arguments: args,
-      executeArgs: {},
+      executeArgs: { includeDesignContext: true },
       context: input.context,
       sink: input.sink,
       turnId: input.turnId,
@@ -677,6 +677,14 @@ function buildContextCompileArguments(
     typeof spec.content === 'string' && spec.content.trim()
       ? summarizeText(spec.content, 240)
       : null;
+  const assembledDesignContext = toRecord(spec.assembledDesignContext);
+  const assembledSummary =
+    typeof assembledDesignContext.summary === 'string' && assembledDesignContext.summary.trim()
+      ? summarizeText(assembledDesignContext.summary, 240)
+      : null;
+  const assembledSources = Array.isArray(assembledDesignContext.sourceMessageIds)
+    ? assembledDesignContext.sourceMessageIds.length
+    : null;
   const request = summarizeText(context.latestUserMessage || context.compiledPrompt, 280);
   const executionMode = readNativeApiExecutionMode(context);
   const goalParts = [
@@ -690,6 +698,8 @@ function buildContextCompileArguments(
         ? '現行仕様書は見つからなかったため、復元済み native/API resume history とユーザー依頼を現在の作業単位にする。'
         : '読了済み仕様書を前提にする。',
     specContent ? `仕様書要点: ${specContent}` : '',
+    assembledSummary ? `Assembled design context 要点: ${assembledSummary}` : '',
+    assembledSources !== null ? `Assembled design context sources=${assembledSources}.` : '',
     `executionMode=${executionMode} として、必要な実装・検証・closeout まで進める。`,
   ];
   return {
@@ -794,13 +804,39 @@ function renderSpecificationHistory(payload: Record<string, unknown>) {
   const title = typeof payload.title === 'string' ? payload.title : 'Specification';
   const digest = typeof payload.digest === 'string' ? payload.digest : 'none';
   const content = typeof payload.content === 'string' ? payload.content : '';
+  const assembledContext = renderAssembledDesignContextHistory(payload.assembledDesignContext);
   return [
     '[Startup Specification]',
     `title=${title}`,
     `digest=${digest}`,
     '',
     content.slice(0, 4000),
+    assembledContext ? ['', assembledContext].join('\n') : '',
   ].join('\n');
+}
+
+function renderAssembledDesignContextHistory(value: unknown) {
+  const context = toRecord(value);
+  if (Object.keys(context).length === 0) return '';
+  const summary = typeof context.summary === 'string' ? context.summary : '';
+  const questionnaireSessionId =
+    typeof context.questionnaireSessionId === 'string' ? context.questionnaireSessionId : '';
+  const sections = Array.isArray(context.sections) ? context.sections : [];
+  const lines = ['[Assembled Design Context]'];
+  if (questionnaireSessionId) lines.push(`questionnaireSessionId=${questionnaireSessionId}`);
+  if (summary) lines.push('summary:', summary.slice(0, 1600));
+  for (const section of sections.slice(0, 10)) {
+    const record = toRecord(section);
+    const content = typeof record.content === 'string' ? record.content : '';
+    lines.push(
+      '',
+      `## ${String(record.kind || 'section')}: ${String(record.title || 'Untitled')}`,
+      record.sourceMessageId ? `sourceMessageId=${String(record.sourceMessageId)}` : '',
+      record.digest ? `digest=${String(record.digest)}` : '',
+      content.slice(0, 1800)
+    );
+  }
+  return lines.filter((line) => line !== '').join('\n');
 }
 
 function renderInitialInstructionsHistory(result: NativeApiToolResult) {

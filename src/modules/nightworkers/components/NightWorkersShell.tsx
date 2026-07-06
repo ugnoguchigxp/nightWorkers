@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { toDeepRecord } from '../../../../shared/json-record';
 import { fetchDesignQuestionnaireSession } from '../../questionnaire';
@@ -58,6 +59,7 @@ export {
 } from './nightworkers-shell-utils';
 
 export function NightWorkersShell(props: NightWorkersShellProps) {
+  const { t } = useTranslation();
   const { routeState, workspace } = props;
   const { attributes: appearanceAttributes } = useWorkspaceAppearanceState();
   const { panelSizes } = useWorkspaceLayoutState();
@@ -143,6 +145,15 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         workspace.latestRun.status
       )
   );
+  const reviewStatusTitle = t('reviewStatus.title');
+  const formatReviewStatusSummary = useCallback(
+    (level: string, sectionCount: number) =>
+      t('reviewStatus.artifact.summary', {
+        level: t(`reviewStatus.level.${level}`, { defaultValue: level }),
+        count: sectionCount,
+      }),
+    [t]
+  );
 
   if (previousActiveSessionIdRef.current !== activeSessionId) {
     previousActiveSessionIdRef.current = activeSessionId;
@@ -158,6 +169,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     workspace,
     setArtifactFocus,
     setClearedArtifactContextId,
+    reviewStatusTitle,
+    formatReviewStatusSummary,
   });
 
   useEffect(() => {
@@ -357,8 +370,11 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
         taskId: detail.session.taskId,
         runId: detail.session.runId,
         kind: 'review_status',
-        title: 'Review Status',
-        summary: `${detail.recommendation.level} · ${detail.statusArtifact.sections.length} sections`,
+        title: reviewStatusTitle,
+        summary: formatReviewStatusSummary(
+          detail.recommendation.level,
+          detail.statusArtifact.sections.length
+        ),
         source: { type: 'review_result', reviewId: detail.session.id },
         createdAt: detail.session.updatedAt,
         metadata: { reviewSession: detail },
@@ -368,7 +384,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
     setClearedArtifactContextId(null);
     setArtifactFocus({ type: 'artifact', artifact });
     props.onNavigate({ kind: 'session', sessionId, artifact: { kind: 'review_status' } });
-  }, [isReviewArtifactOpen, props.onNavigate]);
+  }, [formatReviewStatusSummary, isReviewArtifactOpen, props.onNavigate, reviewStatusTitle]);
   const focusTodoArtifact = useCallback(
     (sessionId: string) => {
       setClearedArtifactContextId(null);

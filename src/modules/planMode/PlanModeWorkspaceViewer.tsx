@@ -108,22 +108,16 @@ export function buildVisiblePlanWorkspaceTabs(input: {
   if (input.questionnaireGateLocked) return ['questionnaire'];
   const additionalTabs = additionalPlanViewTabs.filter((tab) => {
     const view = tabToPlanView[tab];
-    return (
-      input.dedicatedViewArtifacts?.some((artifact) => artifact.kind === view) ||
-      input.includedViews.has(view)
-    );
+    return input.dedicatedViewArtifacts?.some((artifact) => artifact.kind === view);
   });
   return [
     'status',
     ...(input.hasFeaturePlan ? (['feature-plan'] as const) : []),
-    ...(input.planModeCapabilities.questionnaire &&
-    (input.hasQuestionnaire || input.includedViews.has('questionnaire'))
+    ...(input.planModeCapabilities.questionnaire && input.hasQuestionnaire
       ? (['questionnaire'] as const)
       : []),
-    ...(input.hasBlueprint || input.includedViews.has('blueprint') ? (['blueprint'] as const) : []),
-    ...(input.hasDataModel || input.includedViews.has('data_model')
-      ? (['data-model'] as const)
-      : []),
+    ...(input.hasBlueprint ? (['blueprint'] as const) : []),
+    ...(input.hasDataModel ? (['data-model'] as const) : []),
     ...additionalTabs,
   ];
 }
@@ -194,6 +188,9 @@ export function PlanModeWorkspaceViewer({
     Boolean(workspace?.questionnaireSessions.some((session) => isCompletedStatus(session.status)));
   const questionnaireGateLocked = planModeCapabilities.questionnaire && !questionnaireComplete;
   const didSelectUnlockedDefaultTab = useRef(false);
+  const activeTabRef = useRef(activeTab);
+  const onTabChangeRef = useRef(onTabChange);
+  onTabChangeRef.current = onTabChange;
   const visibleTabs = useMemo<PlanWorkspaceTab[]>(() => {
     return buildVisiblePlanWorkspaceTabs({
       questionnaireGateLocked,
@@ -216,13 +213,12 @@ export function PlanModeWorkspaceViewer({
     workspace?.dedicatedViewArtifacts,
   ]);
   const defaultTab: PlanWorkspaceTab = questionnaireGateLocked ? 'questionnaire' : 'status';
-  const selectActiveTab = useCallback(
-    (tab: PlanWorkspaceTab) => {
-      setActiveTab(tab);
-      onTabChange?.(tab);
-    },
-    [onTabChange]
-  );
+  const selectActiveTab = useCallback((tab: PlanWorkspaceTab) => {
+    if (activeTabRef.current === tab) return;
+    activeTabRef.current = tab;
+    setActiveTab(tab);
+    onTabChangeRef.current?.(tab);
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!sessionId) return;
@@ -232,7 +228,11 @@ export function PlanModeWorkspaceViewer({
     if (sessionsRes.ok) {
       const nextSessions = (await sessionsRes.json()) as DesignQuestionnaireSession[];
       setSessions(nextSessions);
-      if (nextSessions.length > 0 && blueprintMessages.length === 0 && activeTab === 'blueprint') {
+      if (
+        nextSessions.length > 0 &&
+        blueprintMessages.length === 0 &&
+        activeTabRef.current === 'blueprint'
+      ) {
         selectActiveTab('questionnaire');
       }
       const selected = nextSessions.find((item) => item.id === activeSessionId) || nextSessions[0];
@@ -243,7 +243,7 @@ export function PlanModeWorkspaceViewer({
         );
       }
     }
-  }, [activeSessionId, activeTab, blueprintMessages.length, selectActiveTab, sessionId]);
+  }, [activeSessionId, blueprintMessages.length, selectActiveTab, sessionId]);
 
   useEffect(() => {
     void refresh();

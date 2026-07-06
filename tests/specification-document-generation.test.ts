@@ -14,15 +14,16 @@ describe('Specification document generation', () => {
 
     expect(systemPrompt).toContain('## タスク分類');
     expect(systemPrompt).toContain('## 実装計画');
-    expect(systemPrompt).toContain('## 契約');
     expect(systemPrompt).toContain('## 検証計画');
     expect(systemPrompt).toContain('## 完了条件');
+    expect(systemPrompt).not.toContain('## 契約');
+    expect(systemPrompt).not.toContain('## DDL');
     expect(systemPrompt).toContain('必要な判断だけを短く');
     expect(systemPrompt).toContain('同じ内容の重複を避け');
     expect(systemPrompt).toContain('Questionnaire Decisions を採用判断の正');
-    expect(systemPrompt).toContain('path/method/state/schema/error');
-    expect(systemPrompt).toContain('採用 section 名');
-    expect(systemPrompt).toContain('サンプルデータ');
+    expect(systemPrompt).toContain('詳細契約は assembled design context 側の責務');
+    expect(systemPrompt).toContain('Feature Plan 本文に schema 全文');
+    expect(systemPrompt).toContain('API Contract / Blueprint / Data Model / Zod Schema artifact');
     expect(systemPrompt).toContain('追加見出しは、重複になる場合は作らない');
     expect(systemPrompt).toContain('DB 変更が必要な場合');
     expect(systemPrompt).not.toContain('NightWorkers の Specification writer');
@@ -226,9 +227,9 @@ describe('Specification document generation', () => {
     expect(context.implementationPlanGuidance).toContain('UI/frontend');
     expect(context.implementationPlanGuidance).toContain('schema/migration');
     expect(context.implementationPlanGuidance).toContain('Questionnaire Decisions を優先');
-    expect(context.implementationPlanGuidance).toContain('具体名で明記');
-    expect(context.implementationPlanGuidance).toContain('背景説明より実装契約を優先');
-    expect(context.implementationPlanGuidance).toContain('Blueprint Summary');
+    expect(context.implementationPlanGuidance).toContain('assembled design context を正');
+    expect(context.implementationPlanGuidance).toContain('Feature Plan 本文に再掲しない');
+    expect(context.implementationPlanGuidance).toContain('Blueprint artifact');
     expect(context.blueprintSummary).toContain('Task List');
     expect(context.blueprintSummary).toContain('DataTableSection');
     expect(context.blueprintSummary).toContain('表示文言は task 一覧');
@@ -268,7 +269,7 @@ describe('Specification document generation', () => {
     const systemPrompt = buildSpecificationDocumentSystemPrompt();
     expect(systemPrompt).toContain('最終文書に全件列挙せず');
     expect(systemPrompt).toContain('未決定事項は極力作らず');
-    expect(systemPrompt).toContain('request / response / error / schema 名 / 適用先 / 主要 rule');
+    expect(systemPrompt).toContain('API / UI / DB / validation の詳細');
   });
 
   it('removes orchestration app names from generated target wording for other projects', () => {

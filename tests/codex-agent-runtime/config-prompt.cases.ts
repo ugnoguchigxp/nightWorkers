@@ -300,6 +300,7 @@ describe('CodexAgentRuntime config and prompt', () => {
     expect(prompt).toContain('nightworkers.list_recent_specifications');
     expect(prompt).toContain('For explicit planning, implementation-plan, specification');
     expect(prompt).toContain('implementation work grounded in an existing specification');
+    expect(prompt).toContain('includeDesignContext=true');
     expect(prompt).toContain('nightworkers.import_project');
     expect(prompt).not.toContain('nightworkers.materialize_template');
     expect(prompt).not.toContain('nightworkers.clone_git_repo');

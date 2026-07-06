@@ -52,6 +52,7 @@ const jsonSchemaFieldTypeSchema = z.enum([
   'array',
   'unknown',
 ]);
+const httpParameterLocationSchema = z.enum(['query', 'path', 'header', 'cookie']);
 
 export const genericPlanViewSchema = z.enum([
   'user_flow',
@@ -89,6 +90,15 @@ const planApiContractDraftSchema = z.object({
         summary: z.string(),
         description: z.string(),
         tags: z.array(z.string()),
+        parameters: z.array(
+          z.object({
+            name: z.string().min(1),
+            in: httpParameterLocationSchema,
+            type: jsonSchemaFieldTypeSchema,
+            required: z.boolean(),
+            description: z.string(),
+          })
+        ),
         requestBody: z.object({
           description: z.string(),
           schemaName: z.string(),
@@ -720,6 +730,15 @@ function normalizePlanApiContractDraft(
         ])
       ),
     };
+    if (operationDraft.parameters.length > 0) {
+      operation.parameters = operationDraft.parameters.map((parameter) => ({
+        name: parameter.name,
+        in: parameter.in,
+        required: parameter.in === 'path' ? true : parameter.required,
+        description: blankToUndefined(parameter.description),
+        schema: jsonSchemaTypeForField(parameter.type),
+      }));
+    }
     if (requestSchemaName) {
       operation.requestBody = {
         required: operationDraft.requestBody.required,
@@ -1027,10 +1046,12 @@ function literalValue(node: ts.Node | undefined, sourceFile: ts.SourceFile) {
   return node.getText(sourceFile);
 }
 
-async function validatePlanViewMermaidArtifact(artifact: GenericDedicatedViewArtifact) {
+export async function validatePlanViewMermaidArtifact(artifact: GenericDedicatedViewArtifact) {
   const chart = extractMermaidChart(artifact.markdown);
   if (!chart) return null;
-  const parseChart = chart.trim().startsWith('flowchart') ? stripFlowchartLabels(chart) : chart;
+  const parseChart = chart.trim().startsWith('flowchart')
+    ? buildFlowchartParseSource(chart)
+    : chart;
   try {
     await mermaid.parse(parseChart);
     return null;
@@ -1055,16 +1076,27 @@ export function normalizePlanViewMermaidArtifact(
 }
 
 function sanitizeFlowchartLabels(chart: string) {
-  return chart
-    .split('\n')
-    .map((line) =>
-      line
-        .replace(/\["([^"\n]*)"\]/g, (_match, label: string) => `["${sanitizeMermaidText(label)}"]`)
-        .replace(/\[([^\]\n]*)\]/g, (_match, label: string) => `["${sanitizeMermaidText(label)}"]`)
-        .replace(/\(([^)\n]*)\)/g, (_match, label: string) => `("${sanitizeMermaidText(label)}")`)
-        .replace(/\{([^}\n]*)\}/g, (_match, label: string) => `{"${sanitizeMermaidText(label)}"}`)
-    )
-    .join('\n');
+  return chart.split('\n').map(sanitizeFlowchartLabelLine).join('\n');
+}
+
+function sanitizeFlowchartLabelLine(line: string) {
+  const metadataBlocks: string[] = [];
+  const protectedLine = line.replace(/@\{[^}\n]*\}/g, (match) => {
+    const index = metadataBlocks.push(match) - 1;
+    return `__NIGHTWORKERS_MERMAID_METADATA_${index}__`;
+  });
+  return protectedLine
+    .replace(/\[\[([^\]\n]*)\]\]/g, (_match, label: string) => `["${sanitizeMermaidText(label)}"]`)
+    .replace(/\[\(([^)\n]*)\)\]/g, (_match, label: string) => `["${sanitizeMermaidText(label)}"]`)
+    .replace(/\(\(([^)\n]*)\)\)/g, (_match, label: string) => `("${sanitizeMermaidText(label)}")`)
+    .replace(/\{\{([^}\n]*)\}\}/g, (_match, label: string) => `{"${sanitizeMermaidText(label)}"}`)
+    .replace(/\["([^"\n]*)"\]/g, (_match, label: string) => `["${sanitizeMermaidText(label)}"]`)
+    .replace(/\[([^\]\n]*)\]/g, (_match, label: string) => `["${sanitizeMermaidText(label)}"]`)
+    .replace(/\(([^)\n]*)\)/g, (_match, label: string) => `("${sanitizeMermaidText(label)}")`)
+    .replace(/\{([^}\n]*)\}/g, (_match, label: string) => `{"${sanitizeMermaidText(label)}"}`)
+    .replace(/__NIGHTWORKERS_MERMAID_METADATA_(\d+)__/g, (_match, index: string) => {
+      return metadataBlocks[Number(index)] || '';
+    });
 }
 
 function sanitizeMermaidText(value: string) {
@@ -1083,16 +1115,33 @@ function sanitizeMermaidText(value: string) {
     .replace(/"/g, '\\"');
 }
 
-function stripFlowchartLabels(chart: string) {
+function buildFlowchartParseSource(chart: string) {
   return chart
     .split('\n')
-    .map((line) =>
-      line
-        .replace(/\[[^\]\n]*\]/g, '')
-        .replace(/\([^)\n]*\)/g, '')
-        .replace(/\{[^}\n]*\}/g, '')
-    )
+    .filter((line) => !isFlowchartGroupWrapperLine(line))
+    .map(stripFlowchartLabelsForParse)
     .join('\n');
+}
+
+function isFlowchartGroupWrapperLine(line: string) {
+  const trimmed = line.trim();
+  return /^subgraph\b/.test(trimmed) || trimmed === 'end';
+}
+
+function stripFlowchartLabelsForParse(line: string) {
+  return line
+    .replace(/@\{[^}\n]*\}/g, '')
+    .replace(/([-.=]+>?)\|[^|\n]*\|/g, '$1')
+    .replace(/--\s+[^-\n]+?\s+-->/g, '-->')
+    .replace(/-\.\s+[^.\n]+?\s+\.->/g, '-.->')
+    .replace(/==\s+[^=\n]+?\s+==>/g, '==>')
+    .replace(/\[\[[^\]\n]*\]\]/g, '')
+    .replace(/\[\([^\]\n]*\)\]/g, '')
+    .replace(/\(\([^)\n]*\)\)/g, '')
+    .replace(/\{\{[^}\n]*\}\}/g, '')
+    .replace(/\[[^\]\n]*\]/g, '')
+    .replace(/\([^)\n]*\)/g, '')
+    .replace(/\{[^}\n]*\}/g, '');
 }
 
 function buildPlanViewMermaidRepairContext(input: {

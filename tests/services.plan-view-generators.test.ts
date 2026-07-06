@@ -4,6 +4,7 @@ import {
   parseGenericDedicatedViewOutput,
   parsePlanApiContractOutput,
   parsePlanZodSchemaOutput,
+  validatePlanViewMermaidArtifact,
 } from '../api/modules/planViews/planView-generation.service';
 import {
   buildPlanApiContractUserPrompt,
@@ -85,6 +86,28 @@ describe('Plan View generation helpers', () => {
 
     expect(artifact.markdown).toContain('styles.css');
     expect(artifact.markdown).not.toContain('`styles.css`');
+  });
+
+  it('validates labeled User Flow flowcharts without invoking DOMPurify-only parse paths', async () => {
+    const artifact = normalizePlanViewMermaidArtifact({
+      artifactKind: 'plan_mode_dedicated_view',
+      view: 'user_flow',
+      title: 'Checkout User Flow',
+      markdown: [
+        '```mermaid',
+        'flowchart TD',
+        '  subgraph shopper [Shopper]',
+        '    entry[Open checkout] -->|clicks pay| review[[Review order]]',
+        '  end',
+        '  review -- confirms payment --> complete@{ shape: rect, label: "Payment complete" }',
+        '```',
+      ].join('\n'),
+      diagramKind: 'flowchart',
+    });
+
+    await expect(validatePlanViewMermaidArtifact(artifact)).resolves.toBeNull();
+    expect(artifact.markdown).toContain('Open checkout');
+    expect(artifact.markdown).toContain('clicks pay');
   });
 
   it('rejects User Flow Markdown-only artifacts', () => {
@@ -175,6 +198,15 @@ describe('Plan View generation helpers', () => {
             summary: 'Create task',
             description: 'Create a task and enqueue planning.',
             tags: ['tasks'],
+            parameters: [
+              {
+                name: 'repositoryId',
+                in: 'path',
+                type: 'string',
+                required: true,
+                description: 'Repository that owns the task',
+              },
+            ],
             requestBody: {
               description: 'Task creation payload',
               schemaName: 'CreateTaskRequest',
@@ -190,6 +222,35 @@ describe('Plan View generation helpers', () => {
                 status: 409,
                 description: 'Task already exists',
                 schemaName: 'TaskConflictError',
+              },
+            ],
+          },
+          {
+            path: '/api/tasks',
+            method: 'get',
+            operationId: 'listTasks',
+            summary: 'List tasks',
+            description: 'List tasks for a repository.',
+            tags: ['tasks'],
+            parameters: [
+              {
+                name: 'status',
+                in: 'query',
+                type: 'string',
+                required: false,
+                description: 'Optional task status filter',
+              },
+            ],
+            requestBody: {
+              description: '',
+              schemaName: '',
+              required: false,
+            },
+            responses: [
+              {
+                status: 200,
+                description: 'Task list',
+                schemaName: 'TaskListResponse',
               },
             ],
           },
@@ -216,6 +277,18 @@ describe('Plan View generation helpers', () => {
                 type: 'string',
                 required: true,
                 description: 'HTTP-visible state',
+              },
+            ],
+          },
+          {
+            name: 'TaskListResponse',
+            description: 'Task list response',
+            fields: [
+              {
+                name: 'items',
+                type: 'array',
+                required: true,
+                description: 'Tasks matching the query filter',
               },
             ],
           },
@@ -252,6 +325,26 @@ describe('Plan View generation helpers', () => {
     );
 
     const operation = artifact.openapi.paths['/api/tasks']?.post;
+    const getOperation = artifact.openapi.paths['/api/tasks']?.get;
+    expect(operation?.parameters).toEqual([
+      {
+        name: 'repositoryId',
+        in: 'path',
+        required: true,
+        description: 'Repository that owns the task',
+        schema: { type: 'string' },
+      },
+    ]);
+    expect(getOperation?.parameters).toEqual([
+      {
+        name: 'status',
+        in: 'query',
+        required: false,
+        description: 'Optional task status filter',
+        schema: { type: 'string' },
+      },
+    ]);
+    expect(getOperation?.requestBody).toBeUndefined();
     expect(operation?.requestBody).toMatchObject({
       required: true,
       content: {

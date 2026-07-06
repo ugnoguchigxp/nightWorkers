@@ -266,6 +266,14 @@ export function NightWorkersShellThreadPanel(props: NightWorkersShellThreadPanel
             }}
             onPlanWorkspaceTabChange={(tab) => {
               if (!workspace.activeSessionId) return;
+              if (
+                routeState.kind === 'session' &&
+                routeState.sessionId === workspace.activeSessionId &&
+                routeState.artifact?.kind === 'plan_mode_workspace' &&
+                routeState.artifact.tab === tab
+              ) {
+                return;
+              }
               onNavigate({
                 kind: 'session',
                 sessionId: workspace.activeSessionId,

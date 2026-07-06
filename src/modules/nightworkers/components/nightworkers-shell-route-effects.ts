@@ -14,8 +14,17 @@ export function useNightWorkersRouteArtifactSync(input: {
   workspace: NightWorkersWorkspaceState;
   setArtifactFocus: Dispatch<SetStateAction<ArtifactPaneFocus>>;
   setClearedArtifactContextId: Dispatch<SetStateAction<string | null>>;
+  reviewStatusTitle: string;
+  formatReviewStatusSummary: (level: string, sectionCount: number) => string;
 }) {
-  const { routeState, setArtifactFocus, setClearedArtifactContextId, workspace } = input;
+  const {
+    routeState,
+    setArtifactFocus,
+    setClearedArtifactContextId,
+    workspace,
+    reviewStatusTitle,
+    formatReviewStatusSummary,
+  } = input;
   const routeSessionId = routeState.kind === 'session' ? routeState.sessionId : null;
 
   useEffect(() => {
@@ -98,8 +107,11 @@ export function useNightWorkersRouteArtifactSync(input: {
               taskId: detail.session.taskId,
               runId: detail.session.runId,
               kind: 'review_status',
-              title: 'Review Status',
-              summary: `${detail.recommendation.level} · ${detail.statusArtifact.sections.length} sections`,
+              title: reviewStatusTitle,
+              summary: formatReviewStatusSummary(
+                detail.recommendation.level,
+                detail.statusArtifact.sections.length
+              ),
               source: { type: 'review_result', reviewId: detail.session.id },
               createdAt: detail.session.updatedAt,
               metadata: { reviewSession: detail },
@@ -121,5 +133,12 @@ export function useNightWorkersRouteArtifactSync(input: {
     } else {
       setArtifactFocus((current) => (current.type === 'closed' ? current : { type: 'closed' }));
     }
-  }, [routeState, setArtifactFocus, setClearedArtifactContextId, workspace]);
+  }, [
+    formatReviewStatusSummary,
+    reviewStatusTitle,
+    routeState,
+    setArtifactFocus,
+    setClearedArtifactContextId,
+    workspace,
+  ]);
 }

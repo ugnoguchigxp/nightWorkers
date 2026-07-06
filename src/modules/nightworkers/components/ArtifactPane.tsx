@@ -309,7 +309,9 @@ export function ArtifactPane({
       ? showProjectDiff
         ? t('artifact.gitDiff')
         : selectedFilePath || t('artifact.projectTree')
-      : displayArtifact?.title || selectedArtifact.title;
+      : showReviewStatus
+        ? t('reviewStatus.title')
+        : displayArtifact?.title || selectedArtifact.title;
   const exportedContent = buildExportedArtifactContent({
     showDiff,
     latestRun,

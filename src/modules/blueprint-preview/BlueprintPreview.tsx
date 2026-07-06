@@ -44,9 +44,10 @@ export function BlueprintPreview({
   const { t } = useTranslation();
   const blueprintId = String(blueprint.id || blueprint.name || screens[0]?.id || 'draft-blueprint');
   const previousBlueprintId = useRef(blueprintId);
+  const designPresetKey = stableJsonKey(blueprint.designPreset);
   const initialSettings = useMemo(
-    () => createBlueprintPreviewDesignSettings(blueprint.designPreset),
-    [blueprint.designPreset]
+    () => createBlueprintPreviewDesignSettings(parseStableJsonKey(designPresetKey)),
+    [designPresetKey]
   );
   const [settings, setSettings] = useState<BlueprintPreviewDesignSettings>(initialSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -747,4 +748,22 @@ function OptionRow<const T extends readonly string[]>({
       ))}
     </div>
   );
+}
+
+function stableJsonKey(value: unknown) {
+  if (value === undefined) return 'undefined';
+  try {
+    return JSON.stringify(value) || 'null';
+  } catch {
+    return String(value);
+  }
+}
+
+function parseStableJsonKey(value: string) {
+  if (value === 'undefined') return undefined;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
 }

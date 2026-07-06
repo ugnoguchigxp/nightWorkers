@@ -75,7 +75,7 @@ export async function generateFeaturePlanArtifact(
   const rawOutput = await generateSpecificationDesignDocumentRawOutput(taskId, context);
   const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
   const content = sanitizeSpecificationTargetNaming(
-    ensureSpecificationDdlSection(parsed.content, context.dataModelDdl),
+    parsed.content.trimEnd(),
     context.projectStackContext
   );
   const message = await createPlanModeTaskMessage({
@@ -95,6 +95,7 @@ export async function generateFeaturePlanArtifact(
           dataModelReferenceIncluded: Boolean(context.dataModelDdl.trim()),
           planViewReferencesIncluded: Boolean(context.planViewReferences.trim()),
           planModeReferencesIncluded: Boolean(context.planModeReferences.trim()),
+          contractDetailsStoredInAssembledDesignContext: true,
         },
       },
       markdownDocumentData: {
@@ -163,14 +164,4 @@ function isStructuredLlmAbortError(error: unknown) {
   return (
     error.name === 'AbortError' || error.message.toLowerCase().includes('operation was aborted')
   );
-}
-
-function ensureSpecificationDdlSection(content: string, dataModelDdl: string) {
-  const trimmedContent = content.trimEnd();
-  if (/^##\s+DDL\b/im.test(trimmedContent)) return trimmedContent;
-  const ddl = dataModelDdl.trim();
-  const ddlBody = ddl
-    ? ['```sql', ddl, '```'].join('\n')
-    : 'Data Model DDL reference は未生成です。';
-  return [trimmedContent, '', '## DDL', ddlBody].join('\n');
 }

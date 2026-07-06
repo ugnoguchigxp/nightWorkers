@@ -142,6 +142,98 @@ describe('read_current_specification worker tool', () => {
     });
   });
 
+  it('optionally assembles Plan Mode artifact contracts with the current specification', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: read spec design context ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: read current specification with design context',
+      description: 'Read specification artifact and assembled Plan Mode contracts',
+      status: 'draft',
+    });
+
+    await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: '# Blueprint\n\nTodo screen.',
+      messageType: 'markdown_document',
+      payloadJson: {
+        intent: 'mock_blueprint',
+        title: 'Todo Blueprint',
+        mockBlueprint: {
+          name: 'Todo Blueprint',
+          screens: [{ name: 'Todo List', path: '/todos', sections: [] }],
+        },
+      },
+    });
+    await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: '# API Contract\n\nPOST /api/todos',
+      messageType: 'markdown_document',
+      payloadJson: {
+        intent: 'plan_mode_dedicated_view',
+        artifactKind: 'plan_mode_api_contract',
+        view: 'api_io_contract',
+        title: 'Todo API Contract',
+        apiContract: {
+          artifactKind: 'plan_mode_api_contract',
+          view: 'api_io_contract',
+          title: 'Todo API Contract',
+          openapi: {
+            openapi: '3.1.0',
+            info: { title: 'Todo API', version: '0.1.0' },
+            paths: {
+              '/api/todos': {
+                post: { operationId: 'createTodo', summary: 'Create todo task' },
+              },
+            },
+            components: { schemas: {} },
+          },
+        },
+      },
+    });
+    await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: '# Feature Plan\n\n## 目的\nTodo を実装する。',
+      messageType: 'markdown_document',
+      payloadJson: {
+        intent: 'feature_plan',
+        title: 'Feature Plan',
+        markdownDocumentData: {
+          title: 'Feature Plan',
+          content: '# Feature Plan\n\n## 目的\nTodo を実装する。',
+        },
+      },
+    });
+
+    const result = await readCurrentSpecificationTool({
+      taskId: task.id,
+      includeDesignContext: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.payload.content).toContain('## 目的');
+    expect(result.payload.assembledDesignContext?.sections.map((section) => section.kind)).toEqual(
+      expect.arrayContaining(['blueprint', 'api_io_contract'])
+    );
+    expect(
+      result.payload.assembledDesignContext?.sections.find(
+        (section) => section.kind === 'api_io_contract'
+      )?.content
+    ).toContain('POST /api/todos (createTodo)');
+    expect(result.payload.sources).toMatchObject({
+      assembledDesignContextIncluded: true,
+    });
+    expect(result.payload.sources.sourceMessageIds).toEqual(
+      expect.arrayContaining([expect.any(String)])
+    );
+  });
+
   it('returns compact specification view by default and full markdown on explicit request', async () => {
     const createdRepo = await repo.createRepository({
       name: `TEST: read compact spec ${crypto.randomUUID()}`,
@@ -195,6 +287,62 @@ describe('read_current_specification worker tool', () => {
     expect(full.payload.content).toBe(longContent);
     expect(full.payload.fullContentChars).toBe(longContent.length);
     expect(full.payload.digest).toBe(compact.payload.digest);
+  });
+
+  it('keeps Japanese feature-plan contract sections in compact views', async () => {
+    const createdRepo = await repo.createRepository({
+      name: `TEST: read compact jp spec ${crypto.randomUUID()}`,
+      localPath: '/Users/y.noguchi/Code/nightWorkers',
+      branch: 'main',
+    });
+    const task = await repo.createTask({
+      repositoryId: createdRepo.id,
+      title: 'TEST: read compact Japanese current specification',
+      status: 'draft',
+    });
+    const longContent = [
+      '# Feature Plan',
+      '',
+      '## 目的',
+      'Todo を実装する。',
+      ...Array.from({ length: 900 }, (_, index) => `Noise line ${index}`),
+      '## スコープ',
+      '- 対象: Todo CRUD',
+      '## タスク分類',
+      '標準タスク',
+      '## 実装計画',
+      '1. API Contract artifact を正として route を実装する。',
+      '## 検証計画',
+      '`bun run verify` を実行する。',
+      '## 完了条件',
+      '検証が成功している。',
+      ...Array.from({ length: 900 }, (_, index) => `Tail noise ${index}`),
+    ].join('\n');
+    await repo.createTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      content: longContent,
+      messageType: 'markdown_document',
+      payloadJson: {
+        intent: 'feature_plan',
+        title: 'Feature Plan',
+        markdownDocumentData: {
+          title: 'Feature Plan',
+          content: longContent,
+        },
+      },
+    });
+
+    const compact = await readCurrentSpecificationTool({ taskId: task.id });
+
+    expect(compact.ok).toBe(true);
+    expect(compact.payload.content).toContain('## 目的');
+    expect(compact.payload.content).toContain('## スコープ');
+    expect(compact.payload.content).toContain('## タスク分類');
+    expect(compact.payload.content).toContain('## 実装計画');
+    expect(compact.payload.content).toContain('## 検証計画');
+    expect(compact.payload.content).toContain('## 完了条件');
+    expect(compact.payload.content.length).toBeLessThan(longContent.length);
   });
 
   it('returns found=false when no specification has been generated', async () => {

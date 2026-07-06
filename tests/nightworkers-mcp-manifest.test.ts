@@ -87,6 +87,10 @@ describe('nightworkers MCP manifest', () => {
     expect(readCurrentSpecification?.inputSchema).toEqual(
       toNightWorkersJsonSchema(nightWorkersReadCurrentSpecificationInputSchema)
     );
+    expect(
+      (readCurrentSpecification?.inputSchema.properties as Record<string, unknown> | undefined)
+        ?.includeDesignContext
+    ).toMatchObject({ type: 'boolean' });
     expect(importProject?.inputSchema).toEqual(
       toNightWorkersJsonSchema(nightWorkersImportProjectInputSchema)
     );

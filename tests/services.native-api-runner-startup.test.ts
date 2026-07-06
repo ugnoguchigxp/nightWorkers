@@ -131,7 +131,10 @@ describe('NativeApiStartupController', () => {
     });
     expect(executeTool).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ toolName: 'read_current_specification' })
+      expect.objectContaining({
+        toolName: 'read_current_specification',
+        args: expect.objectContaining({ includeDesignContext: true }),
+      })
     );
     expect(executeTool).toHaveBeenNthCalledWith(
       2,

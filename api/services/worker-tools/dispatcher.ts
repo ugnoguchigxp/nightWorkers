@@ -100,6 +100,7 @@ export async function executeWorkerTool(
       result: await readCurrentSpecificationTool({
         taskId: (args.taskId as string | undefined) || input.taskId || '',
         view: args.view as never,
+        includeDesignContext: args.includeDesignContext as boolean | undefined,
       }),
     };
   }
