@@ -1,8 +1,8 @@
 import * as repo from "../../modules/nightworkers/nightworkers.repository";
-import { getTodoWorkflowSettings } from "../../modules/queue/queue-management.service";
 import {
 	buildStandardImplementationTodoList,
 	type ImplementationTodoInput,
+	type TodoVerificationPolicy,
 } from "../todo-runtime";
 import type { WorkerToolResult } from "./types";
 
@@ -72,6 +72,7 @@ type TodoMutationContext = {
 	runId: string;
 	taskId: string;
 	requireDataMigrationGates: boolean;
+	verificationPolicy: TodoVerificationPolicy | null;
 	todos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>;
 };
 
@@ -110,6 +111,7 @@ export async function todoListTool(input: {
 				runId,
 				taskId,
 				requireDataMigrationGates,
+				verificationPolicy,
 				todos: currentTodos,
 			}) => {
 				const reasonValidation = validateTodoListReplaceReason({
@@ -118,23 +120,27 @@ export async function todoListTool(input: {
 				});
 				if (!reasonValidation.ok) {
 					return failedTodoAction(
-						{ runId, taskId, requireDataMigrationGates, todos: currentTodos },
+						{
+							runId,
+							taskId,
+							requireDataMigrationGates,
+							verificationPolicy,
+							todos: currentTodos,
+						},
 						"todo_list",
 						input.operation,
 						reasonValidation.errorCode,
 						{ todoListReplaceReason: input.todoListReplaceReason },
 					);
 				}
-				const workflowSettings = await getTodoWorkflowSettings();
 				const todos = buildStandardImplementationTodoList({
 					todos: input.todos ?? [],
 					startFirst: input.startFirst,
-					includeKnowledgeCapture:
-						workflowSettings.requireRegisterCandidatePrompt,
 					requireDataMigrationGates: requireDataMigrationGatesForContext({
 						contextRequiresDataMigration: requireDataMigrationGates,
 						todos: input.todos ?? [],
 					}),
+					verificationPolicy,
 				});
 				const created = await repo.replaceTaskRunTodosForRun(runId, todos);
 				return okTodoAction(
@@ -424,6 +430,7 @@ async function withRunContext(
 		runId: string;
 		taskId: string;
 		requireDataMigrationGates: boolean;
+		verificationPolicy: TodoVerificationPolicy | null;
 	}) => Promise<WorkerToolResult<TodoActionPayload>>,
 ) {
 	const runId = String(rawRunId || "").trim();
@@ -458,6 +465,7 @@ async function withRunContext(
 			runId,
 			taskId: run.taskId,
 			requireDataMigrationGates: requiresDataMigrationFromRun(run),
+			verificationPolicy: readVerificationPolicyFromRun(run),
 		});
 	} catch (error) {
 		return {
@@ -525,6 +533,28 @@ function requiresDataMigrationFromRun(run: { contextSnapshot?: unknown }) {
 			? (run.contextSnapshot as Record<string, unknown>)
 			: null;
 	return snapshot?.jobType === "data_migration";
+}
+
+function readVerificationPolicyFromRun(run: {
+	contextSnapshot?: unknown;
+}): TodoVerificationPolicy | null {
+	const snapshot =
+		run.contextSnapshot &&
+		typeof run.contextSnapshot === "object" &&
+		!Array.isArray(run.contextSnapshot)
+			? (run.contextSnapshot as Record<string, unknown>)
+			: null;
+	const value = snapshot?.verificationPolicy;
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const policy = value as Record<string, unknown>;
+	return {
+		suppressE2eTodos: policy.suppressE2eTodos === true,
+		source:
+			policy.source === "questionnaire_unit_primary"
+				? "questionnaire_unit_primary"
+				: "default",
+		reason: typeof policy.reason === "string" ? policy.reason : null,
+	};
 }
 
 function hasDataMigrationMarker(todo: ImplementationTodoInput) {

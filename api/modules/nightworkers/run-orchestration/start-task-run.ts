@@ -27,9 +27,11 @@ import { resolveStructuredLlmRoleRoute } from "../../../services/structured-llm/
 import { readStructuredLlmProviderSettings } from "../../../services/structured-llm/settings";
 import { digestText } from "../../../services/text-digest";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
-import { buildStandardImplementationTodoList } from "../../../services/todo-runtime";
+import {
+	buildStandardImplementationTodoList,
+	deriveTodoVerificationPolicyFromPromptText,
+} from "../../../services/todo-runtime";
 import { getFreshProjectMeta } from "../../project-detail/project-meta.service";
-import { getTodoWorkflowSettings } from "../../queue/queue-management.service";
 import { resolveBlueprintPlanningReadiness } from "../nightworkers.basic.service";
 import * as repo from "../nightworkers.repository";
 import { readGitBaseline } from "./git-ownership";
@@ -137,6 +139,8 @@ export async function startTaskRun(
 			"No user message found to start a run",
 		);
 	}
+	const verificationPolicy =
+		deriveTodoVerificationPolicyFromPromptText(compiledPromptText);
 	const runtimeRole = nativeApiRoleForExecutionMode(executionMode);
 	const blueprintReadiness =
 		executionMode === "general_answer"
@@ -199,6 +203,7 @@ export async function startTaskRun(
 			executionMode,
 			executionModeSource,
 			jobType,
+			verificationPolicy,
 			planModeSettingsSnapshot,
 			...blueprintPlanningSnapshot,
 			runtimeLane: runtimeLaneResolution.lane,
@@ -236,10 +241,6 @@ export async function startTaskRun(
 	const initialTodos = runtimeLaneDefinition.buildInitialTodos(
 		runtimeLaneSetupInput,
 	);
-	const todoWorkflowSettings =
-		executionMode === "planning" || executionMode === "general_answer"
-			? null
-			: await getTodoWorkflowSettings();
 	await repo.replaceTaskRunTodosForRun(
 		run.id,
 		executionMode === "planning" || executionMode === "general_answer"
@@ -247,9 +248,8 @@ export async function startTaskRun(
 			: buildStandardImplementationTodoList({
 					todos: initialTodos,
 					startFirst: true,
-					includeKnowledgeCapture:
-						todoWorkflowSettings?.requireRegisterCandidatePrompt ?? true,
 					requireDataMigrationGates: jobType === "data_migration",
+					verificationPolicy,
 				}),
 	);
 
@@ -302,6 +302,7 @@ export async function startTaskRun(
 		executionMode,
 		executionPhase: executionMode,
 		executionModeSource,
+		verificationPolicy,
 		planModeClosed: executionMode !== "planning",
 		planModeSettingsSnapshot,
 		...blueprintPlanningSnapshot,

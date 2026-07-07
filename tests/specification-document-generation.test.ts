@@ -21,6 +21,9 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain("必要な判断だけを短く");
 		expect(systemPrompt).toContain("同じ内容の重複を避け");
 		expect(systemPrompt).toContain("Questionnaire Decisions を採用判断の正");
+		expect(systemPrompt).toContain("Questionnaire Decisions は検証方針の正");
+		expect(systemPrompt).toContain("unit を主軸にする");
+		expect(systemPrompt).toContain("E2E を必須 command として含めない");
 		expect(systemPrompt).toContain(
 			"詳細契約は assembled design context 側の責務",
 		);
@@ -30,6 +33,7 @@ describe("Specification document generation", () => {
 		);
 		expect(systemPrompt).toContain("追加見出しは、重複になる場合は作らない");
 		expect(systemPrompt).toContain("DB 変更が必要な場合");
+		expect(systemPrompt).toContain("Bun 実行環境の `bun test`");
 		expect(systemPrompt).not.toContain("NightWorkers の Specification writer");
 		expect(systemPrompt).toContain(
 			"NightWorkers / NightWorker を実装対象名として使わない",

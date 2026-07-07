@@ -9,6 +9,12 @@ export type ImplementationTodoInput = {
 	dependsOn?: Array<string | number> | null;
 };
 
+export type TodoVerificationPolicy = {
+	suppressE2eTodos: boolean;
+	source: "questionnaire_unit_primary" | "default";
+	reason?: string | null;
+};
+
 export type BuiltTodoInput = {
 	seq: number;
 	title: string;
@@ -60,7 +66,7 @@ const DATA_MIGRATION_GATES: StandardGate[] = [
 	{
 		title: "DB migration を対象 DB に適用する",
 		description:
-			"作成した migration を実作業対象の DB に適用する。適用できない場合は完了扱いにせず block または fail にする。",
+			"作成した migration を実作業対象の DB に適用する。適用できない場合は、この apply gate を完了扱いにせず、失敗 command と最初の error を添えて block または fail にする。",
 		taskType: "data_migration",
 		procedureId: "data_migration.apply_migration",
 		dependsOn: [],
@@ -68,7 +74,7 @@ const DATA_MIGRATION_GATES: StandardGate[] = [
 	{
 		title: "DB migration を使う実 DB 統合テストを追加する",
 		description:
-			"migration が必要な機能実装では、既存 migration を一時 DB または隔離された test DB に適用し、実 DB 経路の作成・更新・SELECT・並び順などを確認する focused integration test を追加する。テスト内で schema を手書き再現せず、既存 DB を汚さない。",
+			"migration が必要な機能実装では、既存 migration を一時 DB または隔離された test DB に適用し、実 DB 経路の作成・更新・SELECT・並び順などを確認する focused integration test を追加する。テスト内で schema を手書き再現せず、既存 DB を汚さない。Hono/Bun template や bun:sqlite を使う repo では Bun 実行環境の bun test または bun run CLI smoke にし、Node/Vitest が bun:* を解決できない構成の test を追加しない。",
 		taskType: "test_change",
 		procedureId: "data_migration.add_integration_test",
 		dependsOn: [],
@@ -76,7 +82,7 @@ const DATA_MIGRATION_GATES: StandardGate[] = [
 	{
 		title: "DB migration 後の schema と動作を検証する",
 		description:
-			"migration 適用後に schema 存在確認、関連 API smoke、または focused test を実行し、DB schema 変更と実 DB 統合テストが実行時に反映されていることを確認する。",
+			"migration 適用後に schema 存在確認、関連 API smoke、または focused test を実行し、DB schema 変更と実 DB 統合テストが実行時に反映されていることを確認する。失敗時は schema check / API smoke / focused test のどの段階と command が失敗したかを分けて記録する。",
 		taskType: "focused_verification",
 		procedureId: "data_migration.verify_migration",
 		dependsOn: [],
@@ -101,14 +107,6 @@ const FINAL_GATES: StandardGate[] = [
 		dependsOn: [],
 	},
 	{
-		title: "知識登録を行う",
-		description:
-			"再利用可能な知識を register_candidates で登録し、必要な context_decision を処理する。compile_eval は完了報告直前の closeout 評価でのみ処理する。",
-		taskType: "knowledge_capture",
-		procedureId: "contextstill.register_candidates",
-		dependsOn: [],
-	},
-	{
 		title: "完了報告を行う",
 		description: "実装内容、検証結果、残存リスクをユーザーに簡潔に報告する。",
 		taskType: "completion_report",
@@ -120,30 +118,28 @@ const FINAL_GATES: StandardGate[] = [
 export function buildStandardImplementationTodoList(input: {
 	todos?: ImplementationTodoInput[];
 	startFirst?: boolean;
-	includeKnowledgeCapture?: boolean;
 	requireDataMigrationGates?: boolean;
+	verificationPolicy?: TodoVerificationPolicy | null;
 	now?: Date;
 }): BuiltTodoInput[] {
 	const now = input.now ?? new Date();
-	const implementationTodos = normalizeImplementationTodos(
+	const sourceTodos = applyTodoVerificationPolicy(
 		input.todos ?? [],
+		input.verificationPolicy ?? null,
+	);
+	const implementationTodos = normalizeImplementationTodos(
+		sourceTodos,
 		FIRST_GATES.length,
 	);
 	const dataMigrationGates =
-		input.requireDataMigrationGates || hasDataMigrationTodo(input.todos ?? [])
+		input.requireDataMigrationGates || hasDataMigrationTodo(sourceTodos)
 			? DATA_MIGRATION_GATES
 			: [];
-	const finalGates =
-		input.includeKnowledgeCapture === false
-			? FINAL_GATES.filter(
-					(todo) => todo.procedureId !== "contextstill.register_candidates",
-				)
-			: FINAL_GATES;
 	const gatesAndTodos = [
 		...FIRST_GATES,
 		...implementationTodos,
 		...dataMigrationGates,
-		...finalGates,
+		...FINAL_GATES,
 	];
 	const dataMigrationGateStartSeq =
 		FIRST_GATES.length + implementationTodos.length + 1;
@@ -174,6 +170,33 @@ export function buildStandardImplementationTodoList(input: {
 			startedAt: running ? now : null,
 		};
 	});
+}
+
+export function deriveTodoVerificationPolicyFromPromptText(
+	text: string,
+): TodoVerificationPolicy {
+	const compactText = text.replace(/\s+/g, " ");
+	const unitPrimarySelected =
+		compactText.includes("unit を主軸にする") ||
+		compactText.includes("unit 主軸") ||
+		compactText.includes("unit主軸");
+	const e2ePrimarySelected =
+		compactText.includes("E2E を主軸にする") ||
+		compactText.includes("E2E 主軸") ||
+		compactText.includes("E2E主軸");
+	if (unitPrimarySelected && !e2ePrimarySelected) {
+		return {
+			suppressE2eTodos: true,
+			source: "questionnaire_unit_primary",
+			reason:
+				"Questionnaire selected unit as the primary verification strategy.",
+		};
+	}
+	return {
+		suppressE2eTodos: false,
+		source: "default",
+		reason: null,
+	};
 }
 
 function normalizeImplementationTodos(
@@ -209,6 +232,74 @@ function normalizeImplementationTodos(
 			dependsOn: normalizeDependsOn(todo.dependsOn, seqMap),
 		};
 	});
+}
+
+function applyTodoVerificationPolicy(
+	todos: ImplementationTodoInput[],
+	policy: TodoVerificationPolicy | null,
+) {
+	if (!policy?.suppressE2eTodos) return todos;
+	return todos
+		.map((todo) => normalizeUnitPrimaryTodo(todo))
+		.filter((todo): todo is ImplementationTodoInput => todo !== null);
+}
+
+function normalizeUnitPrimaryTodo(
+	todo: ImplementationTodoInput,
+): ImplementationTodoInput | null {
+	if (typeof todo.title !== "string") return todo;
+	const title = todo.title.trim();
+	const description = todo.description?.trim() || null;
+	const originalText = [title, description, todo.taskType, todo.procedureId]
+		.filter((value): value is string => typeof value === "string")
+		.join(" ");
+	if (!containsE2e(originalText)) return todo;
+	const strippedTitle = stripE2eScope(title).trim();
+	const strippedDescription =
+		description === null
+			? null
+			: stripE2eScope(description).replace(/\s+/g, " ").trim();
+	const searchableWithoutE2e = [
+		strippedTitle,
+		strippedDescription,
+		typeof todo.procedureId === "string"
+			? stripE2eScope(todo.procedureId)
+			: null,
+	]
+		.filter((value): value is string => Boolean(value))
+		.join(" ");
+	if (!hasConcreteNonE2eScope(searchableWithoutE2e)) return null;
+	return {
+		...todo,
+		title: strippedTitle || title,
+		description: strippedDescription || description,
+		taskType:
+			typeof todo.taskType === "string" &&
+			todo.taskType.trim().toLowerCase() === "e2e"
+				? "test_change"
+				: todo.taskType,
+		procedureId:
+			typeof todo.procedureId === "string" && containsE2e(todo.procedureId)
+				? null
+				: todo.procedureId,
+	};
+}
+
+function containsE2e(value: string) {
+	return /\bE2E\b/i.test(value);
+}
+
+function stripE2eScope(value: string) {
+	return value
+		.replace(/\bE2E\b\s*(?:と|and|\/|\+|、|,)\s*/gi, "")
+		.replace(/\s*(?:と|and|\/|\+|、|,)\s*\bE2E\b/gi, "")
+		.replace(/\bE2E\b/gi, "");
+}
+
+function hasConcreteNonE2eScope(value: string) {
+	return /unit|単体|focused|integration|統合|API|DB|migration|schema|lint|typecheck|build|UI|コンポーネント|component/i.test(
+		value,
+	);
 }
 
 function isReservedFinalGateTodo(todo: ImplementationTodoInput) {

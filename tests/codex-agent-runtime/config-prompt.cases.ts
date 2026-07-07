@@ -320,14 +320,23 @@ describe("CodexAgentRuntime config and prompt", () => {
 			"既存 migration を使う実 DB focused integration test",
 		);
 		expect(prompt).toContain("テスト内で schema を手書き再現せず");
+		expect(prompt).toContain("Questionnaire が unit 主軸なら");
+		expect(prompt).toContain("E2E Todo や E2E command を追加・実行しない");
+		expect(prompt).toContain("Hono/Bun template や bun:sqlite");
+		expect(prompt).toContain("Bun 実行環境で走る bun test");
+		expect(prompt).toContain("db:migrate 成功後の integration test 失敗");
 		expect(prompt).toContain(
 			"小さいコード変更で仕様 artifact がないことだけを理由に停止しない",
 		);
 		expect(prompt).toContain(
 			"Execution order: specification -> Todo execution -> verification -> closeout.",
 		);
-		expect(prompt).toContain("Planning is not closeout");
-		expect(prompt).toContain("do not call context-still.compile_eval");
+		expect(prompt).toContain(
+			"context-still.initial_instructions が未実行なら作業前に実行して従う",
+		);
+		expect(prompt).not.toContain("ContextStill:");
+		expect(prompt).not.toContain("contextStill tool details");
+		expect(prompt).not.toContain("context-still.compile_eval is required");
 		expect(prompt).toContain(
 			"closeout starts only after implementation and verification are genuinely finished",
 		);
@@ -335,12 +344,8 @@ describe("CodexAgentRuntime config and prompt", () => {
 			"「完了報告を行う」closeout gate の final assistant report",
 		);
 		expect(prompt).toContain("Todo 作成結果、計画共有、途中経過");
-		expect(prompt).toContain(
-			"open Todo が completion_report だけになった final assistant report 直前",
-		);
-		expect(prompt).toContain(
-			"nightworkers.todo_list operation=replace 直後や context_compile 直後",
-		);
+		expect(prompt).not.toContain("register_candidates");
+		expect(prompt).not.toContain("知識登録を行う");
 		expect(prompt).toContain(
 			"TodoList pane is the user-visible progress source of truth",
 		);

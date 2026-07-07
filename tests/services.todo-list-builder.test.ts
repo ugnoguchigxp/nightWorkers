@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildStandardImplementationTodoList,
+	deriveTodoVerificationPolicyFromPromptText,
 	NIGHTWORKERS_TODO_TASK_TYPES,
 } from "../api/services/todo-runtime";
 
@@ -23,7 +24,7 @@ describe("standard implementation TodoList builder", () => {
 			],
 		});
 
-		expect(todos.map((todo) => todo.seq)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+		expect(todos.map((todo) => todo.seq)).toEqual([1, 2, 3, 4, 5, 6, 7]);
 		expect(todos.map((todo) => todo.taskType)).toEqual([
 			"initial_instructions",
 			"context_compile",
@@ -31,7 +32,6 @@ describe("standard implementation TodoList builder", () => {
 			"test",
 			"review",
 			"verification",
-			"knowledge_capture",
 			"completion_report",
 		]);
 		expect(todos[0]).toMatchObject({
@@ -44,23 +44,15 @@ describe("standard implementation TodoList builder", () => {
 			dependsOn: [1],
 		});
 		expect(todos[3]).toMatchObject({ title: "Add tests", dependsOn: [3] });
-		expect(todos.at(-4)).toMatchObject({ taskType: "review", dependsOn: [4] });
-		expect(todos.at(-3)).toMatchObject({
+		expect(todos.at(-3)).toMatchObject({ taskType: "review", dependsOn: [4] });
+		expect(todos.at(-2)).toMatchObject({
 			taskType: "verification",
 			dependsOn: [5],
 		});
-		expect(todos.at(-2)).toMatchObject({
-			title: "知識登録を行う",
-			taskType: "knowledge_capture",
-			dependsOn: [6],
-		});
-		expect(todos.at(-2)?.description).toContain(
-			"compile_eval は完了報告直前の closeout 評価でのみ処理する",
-		);
 		expect(todos.at(-1)).toMatchObject({
 			title: "完了報告を行う",
 			taskType: "completion_report",
-			dependsOn: [7],
+			dependsOn: [6],
 		});
 	});
 
@@ -75,16 +67,14 @@ describe("standard implementation TodoList builder", () => {
 			"context_compile",
 			"review",
 			"verification",
-			"knowledge_capture",
 			"completion_report",
 		]);
 		expect(todos.every((todo) => todo.status === "pending")).toBe(true);
 	});
 
-	it("can omit the knowledge capture gate for temporary debugging", () => {
+	it("does not add the register_candidates knowledge capture gate", () => {
 		const todos = buildStandardImplementationTodoList({
 			todos: [{ seq: 1, title: "Implement feature" }],
-			includeKnowledgeCapture: false,
 		});
 
 		expect(
@@ -155,8 +145,7 @@ describe("standard implementation TodoList builder", () => {
 			"4:test:Add focused tests",
 			"5:review:LLM コードレビューを実施する",
 			"6:verification:品質ゲート verify コマンドを通す",
-			"7:knowledge_capture:知識登録を行う",
-			"8:completion_report:完了報告を行う",
+			"7:completion_report:完了報告を行う",
 		]);
 		expect(todos[3]).toMatchObject({
 			title: "Add focused tests",
@@ -169,7 +158,7 @@ describe("standard implementation TodoList builder", () => {
 			todos.filter(
 				(todo) => todo.procedureId === "contextstill.register_candidates",
 			),
-		).toHaveLength(1);
+		).toHaveLength(0);
 		expect(
 			todos.filter((todo) => todo.procedureId === "final_completion_report"),
 		).toHaveLength(1);
@@ -198,8 +187,7 @@ describe("standard implementation TodoList builder", () => {
 			"4:test:Add focused tests",
 			"5:review:LLM コードレビューを実施する",
 			"6:verification:品質ゲート verify コマンドを通す",
-			"7:knowledge_capture:知識登録を行う",
-			"8:completion_report:完了報告を行う",
+			"7:completion_report:完了報告を行う",
 		]);
 		expect(todos[3]).toMatchObject({
 			title: "Add focused tests",
@@ -237,8 +225,7 @@ describe("standard implementation TodoList builder", () => {
 			"7:focused_verification:data_migration.verify_migration",
 			"8:review:llm_code_review",
 			"9:verification:quality_gate_verify",
-			"10:knowledge_capture:contextstill.register_candidates",
-			"11:completion_report:final_completion_report",
+			"10:completion_report:final_completion_report",
 		]);
 		expect(todos[3]).toMatchObject({
 			title: "DB migration を作成する",
@@ -254,14 +241,63 @@ describe("standard implementation TodoList builder", () => {
 		});
 		expect(todos[5]?.description).toContain("既存 migration を一時 DB");
 		expect(todos[5]?.description).toContain("schema を手書き再現せず");
+		expect(todos[5]?.description).toContain("Bun 実行環境の bun test");
+		expect(todos[5]?.description).toContain("bun:* を解決できない構成");
 		expect(todos[6]).toMatchObject({
 			title: "DB migration 後の schema と動作を検証する",
 			dependsOn: [6],
 		});
+		expect(todos[6]?.description).toContain("どの段階と command が失敗したか");
 		expect(todos[7]).toMatchObject({ taskType: "review", dependsOn: [7] });
 		expect(
 			todos.filter((todo) => todo.procedureId === "quality_gate_verify"),
 		).toHaveLength(1);
+	});
+
+	it("keeps questionnaire unit-primary TodoLists from expanding focused tests into E2E", () => {
+		const verificationPolicy = deriveTodoVerificationPolicyFromPromptText(
+			[
+				"## Questionnaire Decisions",
+				"- 検証方針: unit を主軸にする",
+				"## Feature Plan",
+				"- unit と E2E のどちらかではなく unit 主軸で進める。",
+			].join("\n"),
+		);
+		const todos = buildStandardImplementationTodoList({
+			verificationPolicy,
+			todos: [
+				{
+					title: "主要導線の unit と E2E を追加する",
+					description: "unit と E2E のテストを実装する。",
+					taskType: "test_change",
+				},
+				{
+					title: "E2E を実行する",
+					description: "verify:e2e を実行する。",
+					taskType: "test",
+					procedureId: "verify:e2e",
+				},
+			],
+		});
+
+		const implementationTodos = todos.filter(
+			(todo) =>
+				!todo.procedureId?.startsWith("contextstill.") &&
+				!todo.procedureId?.startsWith("data_migration.") &&
+				todo.procedureId !== "llm_code_review" &&
+				todo.procedureId !== "quality_gate_verify" &&
+				todo.procedureId !== "final_completion_report",
+		);
+		expect(verificationPolicy).toMatchObject({
+			suppressE2eTodos: true,
+			source: "questionnaire_unit_primary",
+		});
+		expect(implementationTodos).toHaveLength(1);
+		expect(implementationTodos[0]?.title).toBe("主要導線の unit を追加する");
+		expect(implementationTodos[0]?.description).toBe(
+			"unit のテストを実装する。",
+		);
+		expect(todos.map((todo) => todo.title).join("\n")).not.toContain("E2E");
 	});
 
 	it("preserves required migration gates when a replacement TodoList marks migration work", () => {
@@ -320,8 +356,7 @@ describe("standard implementation TodoList builder", () => {
 			"4:test:Add focused tests",
 			"5:review:LLM コードレビューを実施する",
 			"6:verification:品質ゲート verify コマンドを通す",
-			"7:knowledge_capture:知識登録を行う",
-			"8:completion_report:完了報告を行う",
+			"7:completion_report:完了報告を行う",
 		]);
 		expect(todos[3]).toMatchObject({
 			title: "Add focused tests",
@@ -362,8 +397,7 @@ describe("standard implementation TodoList builder", () => {
 			"3:implementation:Implement feature",
 			"4:review:LLM コードレビューを実施する",
 			"5:verification:品質ゲート verify コマンドを通す",
-			"6:knowledge_capture:知識登録を行う",
-			"7:completion_report:完了報告を行う",
+			"6:completion_report:完了報告を行う",
 		]);
 	});
 
@@ -387,7 +421,6 @@ describe("standard implementation TodoList builder", () => {
 				"context_compile",
 				"review",
 				"verification",
-				"knowledge_capture",
 				"completion_report",
 			]),
 		);
@@ -437,8 +470,7 @@ describe("standard implementation TodoList builder", () => {
 			"3:implementation:Implement feature",
 			"4:review:LLM コードレビューを実施する",
 			"5:verification:品質ゲート verify コマンドを通す",
-			"6:knowledge_capture:知識登録を行う",
-			"7:completion_report:完了報告を行う",
+			"6:completion_report:完了報告を行う",
 		]);
 		expect(
 			todos.filter((todo) => todo.taskType === "verification"),
@@ -490,8 +522,7 @@ describe("standard implementation TodoList builder", () => {
 			"3:implementation:todo の保存層と API 契約を実装する",
 			"4:review:LLM コードレビューを実施する",
 			"5:verification:品質ゲート verify コマンドを通す",
-			"6:knowledge_capture:知識登録を行う",
-			"7:completion_report:完了報告を行う",
+			"6:completion_report:完了報告を行う",
 		]);
 		expect(
 			todos.filter(
@@ -502,7 +533,7 @@ describe("standard implementation TodoList builder", () => {
 			todos.filter(
 				(todo) => todo.procedureId === "contextstill.register_candidates",
 			),
-		).toHaveLength(1);
+		).toHaveLength(0);
 		expect(
 			todos.filter((todo) => todo.procedureId === "final_completion_report"),
 		).toHaveLength(1);

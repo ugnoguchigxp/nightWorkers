@@ -12,7 +12,9 @@ export {
 export {
 	type BuiltTodoInput,
 	buildStandardImplementationTodoList,
+	deriveTodoVerificationPolicyFromPromptText,
 	type ImplementationTodoInput,
+	type TodoVerificationPolicy,
 } from "./todo-list-builder";
 export type {
 	TodoCompletionGateResult,

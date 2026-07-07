@@ -1,4 +1,5 @@
 import type { PlanModeCapability } from "../settings/general-settings";
+import type { TodoVerificationPolicy } from "../todo-runtime";
 
 export type RuntimeLaneSnapshot = {
 	workerKind: "native-local" | "codex-agent";
@@ -41,6 +42,7 @@ export type RuntimePromptSnapshot = {
 		| "implementation_queue"
 		| "session_queue"
 		| "explicit";
+	verificationPolicy?: TodoVerificationPolicy | null;
 	planModeClosed?: boolean;
 	planModeSettingsSnapshot?: PlanModeSettingsSnapshot;
 	implementationPhasePreamble?: string;
