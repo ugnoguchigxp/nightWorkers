@@ -1,3 +1,5 @@
+import { normalizeTodoTaskTypeForStorage } from "./task-types";
+
 export type ImplementationTodoInput = {
 	seq?: number;
 	title: string;
@@ -195,10 +197,7 @@ function normalizeImplementationTodos(
 
 	return eligibleTodos.map(({ todo }, index) => {
 		const title = typeof todo.title === "string" ? todo.title.trim() : "";
-		const taskType =
-			typeof todo.taskType === "string" && todo.taskType.trim().length > 0
-				? todo.taskType.trim()
-				: "implementation";
+		const taskType = normalizeTodoTaskTypeForStorage(todo.taskType);
 		if (!title) throw new Error(`Todo #${index + 1} requires title.`);
 		return {
 			title,
@@ -318,6 +317,7 @@ function isReservedBroadVerificationTodo(todo: ImplementationTodoInput) {
 		title === "品質ゲート verify を実施する" ||
 		title === "品質ゲート verify コマンドを通す" ||
 		taskType === "verification" ||
+		taskType === "quality_gate" ||
 		procedureId === "quality_gate_verify"
 	);
 }

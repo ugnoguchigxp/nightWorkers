@@ -1,29 +1,9 @@
 import { z } from "zod";
-
-export const nightWorkersTodoTaskTypes = [
-	"implementation",
-	"inspection",
-	"investigation",
-	"scaffold",
-	"focused_verification",
-	"verification",
-	"review",
-	"code_edit",
-	"code_change",
-	"test",
-	"test_change",
-	"documentation",
-	"docs",
-	"migration",
-	"data_migration",
-	"config",
-	"dependency",
-	"refactor",
-	"import",
-	"copy",
-	"git",
-	"release",
-] as const;
+import {
+	LLM_WRITABLE_TODO_TASK_TYPES,
+	NIGHTWORKERS_MANAGED_TODO_TASK_TYPES,
+	TODO_TASK_TYPE_ALIASES,
+} from "../services/todo-runtime";
 
 export const nightWorkersReadCurrentSpecificationInputSchema = z.object({
 	taskId: z
@@ -91,7 +71,22 @@ export const nightWorkersTodoListInputSchema = z.object({
 				seq: z.number().int().positive(),
 				title: z.string().trim().min(1),
 				description: z.string().optional(),
-				taskType: z.enum(nightWorkersTodoTaskTypes).optional(),
+				taskType: z
+					.string()
+					.trim()
+					.min(1)
+					.optional()
+					.describe(
+						[
+							"Optional Todo category. Prefer an LLM-writable taskType such as",
+							LLM_WRITABLE_TODO_TASK_TYPES.join(", "),
+							"for real work. NightWorkers-managed taskTypes",
+							NIGHTWORKERS_MANAGED_TODO_TASK_TYPES.join(", "),
+							"and aliases",
+							TODO_TASK_TYPE_ALIASES.join(", "),
+							"are accepted so echoed SystemContext does not fail MCP validation; replace will merge those gates back into NightWorkers-managed fixed gates.",
+						].join(" "),
+					),
 				procedureId: z.string().trim().min(1).nullable().optional(),
 				dependsOn: z
 					.array(
@@ -103,7 +98,7 @@ export const nightWorkersTodoListInputSchema = z.object({
 		)
 		.optional()
 		.describe(
-			"Run Todos decomposed by the LLM. Use taskType to distinguish inspection, implementation, and focused verification work. Fixed quality gates are added automatically. For DB schema changes, mark migration work with taskType=data_migration or procedureId=data_migration.create_migration / data_migration.apply_migration / data_migration.add_integration_test / data_migration.verify_migration so required migration gates are preserved.",
+			"Run Todos decomposed by the LLM. Pass real implementation/review/verification work here; NightWorkers keeps initial/context/knowledge/completion and broad quality gates as managed fixed gates. If SystemContext-managed gates are echoed back, todo_list replace accepts them and merges them back into the fixed gates. For DB schema changes, mark migration work with taskType=data_migration or procedureId=data_migration.create_migration / data_migration.apply_migration / data_migration.add_integration_test / data_migration.verify_migration so required migration gates are preserved.",
 		),
 	startFirst: z
 		.boolean()

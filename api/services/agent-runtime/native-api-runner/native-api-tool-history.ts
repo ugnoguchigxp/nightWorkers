@@ -236,6 +236,8 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 		"- Provider-visible tools are scoped to the current Todo/procedure. One-shot tools such as import_project, context_compile, compile_eval, and register_candidates are exposed only when that procedure is current.",
 		...(ontologyGuidance ? ontologyGuidance : []),
 		"- TodoList pane がユーザーに見える進捗の source of truth です。Timeline 追加警告ではなく、TodoList の状態遷移で現在位置を示してください。",
+		"- SystemContext / Todo snapshot に出る initial_instructions / context_compile / knowledge_capture / completion_report は読み取り用の NightWorkers-managed gates です。replace では実作業 Todo だけを書き、固定ゲートは NightWorkers に維持させてください。",
+		"- Todo snapshot を echo して固定ゲートを replace に含めても tool は固定ゲートへ merge しますが、これは進捗更新ではありません。作業段階を進める場合は start/done/block/fail を使ってください。",
 		"- 2 手以上の調査、レビュー、実装、検証では、最初の実質作業前に既存 Todo を start するか、作業内容に合わない場合だけ todo_list operation=replace で UI 追跡可能な TodoList にしてください。",
 		"- todo_list operation=replace は TodoList の構造を再定義する再計画操作です。見積もり変更、スコープ変更、作業分解の粒度変更、実装中に新しい必須作業が判明した場合だけ使います。",
 		"- running Todo がある状態で todo_list operation=replace を使う場合は todoListReplaceReason を必ず指定してください。現在の Todo が完了したことを表すために todo_list operation=replace を使ってはいけません。",

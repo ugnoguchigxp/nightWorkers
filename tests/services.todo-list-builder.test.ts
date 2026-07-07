@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildStandardImplementationTodoList } from "../api/services/todo-runtime";
+import {
+	buildStandardImplementationTodoList,
+	NIGHTWORKERS_TODO_TASK_TYPES,
+} from "../api/services/todo-runtime";
 
 describe("standard implementation TodoList builder", () => {
 	it("adds fixed first and final gates around LLM-decomposed implementation Todos", () => {
@@ -362,5 +365,146 @@ describe("standard implementation TodoList builder", () => {
 			"6:knowledge_capture:知識登録を行う",
 			"7:completion_report:完了報告を行う",
 		]);
+	});
+
+	it("keeps builder-generated taskTypes in the shared Todo taskType contract", () => {
+		const todos = buildStandardImplementationTodoList({
+			requireDataMigrationGates: true,
+			todos: [
+				{ seq: 1, title: "Inspect files", taskType: "inspection" },
+				{
+					seq: 2,
+					title: "Implement DB-backed feature",
+					taskType: "implementation",
+				},
+			],
+		});
+		const allowedTaskTypes = new Set<string>(NIGHTWORKERS_TODO_TASK_TYPES);
+
+		expect(todos.map((todo) => todo.taskType)).toEqual(
+			expect.arrayContaining([
+				"initial_instructions",
+				"context_compile",
+				"review",
+				"verification",
+				"knowledge_capture",
+				"completion_report",
+			]),
+		);
+		expect(
+			todos.filter((todo) => !allowedTaskTypes.has(todo.taskType)),
+		).toEqual([]);
+	});
+
+	it("normalizes unknown LLM taskTypes before storing Todos", () => {
+		const todos = buildStandardImplementationTodoList({
+			todos: [
+				{
+					seq: 1,
+					title: "DB-backed Todo API を実装する",
+					taskType: "backend_api",
+				},
+			],
+		});
+
+		expect(todos[2]).toMatchObject({
+			title: "DB-backed Todo API を実装する",
+			taskType: "implementation",
+		});
+	});
+
+	it("merges echoed quality_gate aliases into the fixed verification gate", () => {
+		const todos = buildStandardImplementationTodoList({
+			todos: [
+				{
+					seq: 1,
+					title: "Implement feature",
+					taskType: "implementation",
+				},
+				{
+					seq: 2,
+					title: "Run quality gate",
+					taskType: "quality_gate",
+				},
+			],
+		});
+
+		expect(
+			todos.map((todo) => `${todo.seq}:${todo.taskType}:${todo.title}`),
+		).toEqual([
+			"1:initial_instructions:initial_instructions を実行する",
+			"2:context_compile:context_compile を実行する",
+			"3:implementation:Implement feature",
+			"4:review:LLM コードレビューを実施する",
+			"5:verification:品質ゲート verify コマンドを通す",
+			"6:knowledge_capture:知識登録を行う",
+			"7:completion_report:完了報告を行う",
+		]);
+		expect(
+			todos.filter((todo) => todo.taskType === "verification"),
+		).toHaveLength(1);
+	});
+
+	it("merges SystemContext-echoed managed gates from replace input instead of duplicating them", () => {
+		const todos = buildStandardImplementationTodoList({
+			todos: [
+				{
+					seq: 1,
+					title: "initial_instructions を実行する",
+					taskType: "initial_instructions",
+					procedureId: "contextstill.initial_instructions",
+				},
+				{
+					seq: 2,
+					title: "context_compile を実行する",
+					taskType: "context_compile",
+					procedureId: "contextstill.context_compile",
+				},
+				{
+					seq: 3,
+					title: "todo の保存層と API 契約を実装する",
+					taskType: "implementation",
+				},
+				{
+					seq: 4,
+					title: "知識登録を行う",
+					taskType: "knowledge_capture",
+					procedureId: "contextstill.register_candidates",
+					dependsOn: [3],
+				},
+				{
+					seq: 5,
+					title: "完了報告を行う",
+					taskType: "completion_report",
+					procedureId: "final_completion_report",
+					dependsOn: [4],
+				},
+			],
+		});
+
+		expect(
+			todos.map((todo) => `${todo.seq}:${todo.taskType}:${todo.title}`),
+		).toEqual([
+			"1:initial_instructions:initial_instructions を実行する",
+			"2:context_compile:context_compile を実行する",
+			"3:implementation:todo の保存層と API 契約を実装する",
+			"4:review:LLM コードレビューを実施する",
+			"5:verification:品質ゲート verify コマンドを通す",
+			"6:knowledge_capture:知識登録を行う",
+			"7:completion_report:完了報告を行う",
+		]);
+		expect(
+			todos.filter(
+				(todo) => todo.procedureId === "contextstill.initial_instructions",
+			),
+		).toHaveLength(1);
+		expect(
+			todos.filter(
+				(todo) => todo.procedureId === "contextstill.register_candidates",
+			),
+		).toHaveLength(1);
+		expect(
+			todos.filter((todo) => todo.procedureId === "final_completion_report"),
+		).toHaveLength(1);
 	});
 });

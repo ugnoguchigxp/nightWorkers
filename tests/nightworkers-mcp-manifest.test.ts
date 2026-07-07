@@ -183,6 +183,75 @@ describe("nightworkers MCP manifest", () => {
 		).toContain("list");
 	});
 
+	it("accepts SystemContext-echoed managed Todo taskTypes in replace input", () => {
+		expect(() =>
+			nightWorkersTodoListInputSchema.parse({
+				operation: "replace",
+				runId: "7c943012-84a7-4b3e-a05f-559079db78dc",
+				todoListReplaceReason: "newly_required_work",
+				todos: [
+					{
+						seq: 1,
+						title: "todo_tasks の schema と migration を追加する",
+						taskType: "data_migration",
+						procedureId: "data_migration.create_migration",
+					},
+					{
+						seq: 2,
+						title: "todo の保存層と API 契約を実装する",
+						taskType: "implementation",
+					},
+					{
+						seq: 3,
+						title: "知識登録を行う",
+						taskType: "knowledge_capture",
+						procedureId: "contextstill.register_candidates",
+						dependsOn: [2],
+					},
+					{
+						seq: 4,
+						title: "完了報告を行う",
+						taskType: "completion_report",
+						procedureId: "final_completion_report",
+						dependsOn: [3],
+					},
+				],
+			}),
+		).not.toThrow();
+
+		const sharedTodoSchema = toNightWorkersJsonSchema(
+			nightWorkersTodoListInputSchema,
+		);
+		const taskTypeSchema = ((
+			(sharedTodoSchema.properties as Record<string, unknown> | undefined)
+				?.todos as
+				| { items?: { properties?: Record<string, unknown> } }
+				| undefined
+		)?.items?.properties?.taskType ?? {}) as {
+			enum?: unknown[];
+			type?: unknown;
+		};
+		expect(taskTypeSchema.type).toBe("string");
+		expect(taskTypeSchema.enum).toBeUndefined();
+	});
+
+	it("accepts unknown Todo taskTypes so runtime can normalize them fail-soft", () => {
+		expect(() =>
+			nightWorkersTodoListInputSchema.parse({
+				operation: "replace",
+				runId: "7c943012-84a7-4b3e-a05f-559079db78dc",
+				todoListReplaceReason: "newly_required_work",
+				todos: [
+					{
+						seq: 1,
+						title: "DB-backed Todo API を実装する",
+						taskType: "backend_api",
+					},
+				],
+			}),
+		).not.toThrow();
+	});
+
 	it("defines JSON schemas for ontology MCP tools", () => {
 		expect(
 			toNightWorkersJsonSchema(nightWorkersListOntologyModulesInputSchema),
