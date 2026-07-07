@@ -340,7 +340,10 @@ export function NightWorkersShellThreadPanel(
 						}}
 						onAddToQueue={props.addActiveSessionToQueue}
 						activeReviewSession={workspace.activeReviewSession}
+						activeGitCloseout={workspace.activeGitCloseout}
 						onRunReviewSection={workspace.runReviewSection}
+						onCommitRunGitCloseout={workspace.commitRunGitCloseout}
+						onPushRunGitCloseout={workspace.pushRunGitCloseout}
 						onUpdateReviewFindingDisposition={
 							workspace.updateReviewFindingDisposition
 						}

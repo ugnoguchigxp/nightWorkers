@@ -240,6 +240,32 @@ export function useNightWorkersRealtime({
 						queryClient.invalidateQueries({
 							queryKey: ["runDetails", msg.runId],
 						});
+						const eventType = String(
+							eventPayload.type || eventPayload.eventType || "",
+						);
+						const eventTaskId =
+							(eventPayload as { taskId?: string }).taskId || activeSessionId;
+						if (eventType.startsWith("review.") && eventTaskId) {
+							void queryClient.invalidateQueries({
+								queryKey: ["reviewSession", eventTaskId],
+							});
+							void queryClient.invalidateQueries({
+								queryKey: ["gitCloseout", msg.runId],
+							});
+						}
+						if (eventType.startsWith("git.closeout")) {
+							void queryClient.invalidateQueries({
+								queryKey: ["gitCloseout", msg.runId],
+							});
+							void queryClient.invalidateQueries({
+								queryKey: ["implementationQueue"],
+							});
+							if (eventTaskId) {
+								void queryClient.invalidateQueries({
+									queryKey: ["sessionRuns", eventTaskId],
+								});
+							}
+						}
 					}
 					if (msg.type === "task_message_created" && msg.payload?.message) {
 						const incoming = msg.payload.message;

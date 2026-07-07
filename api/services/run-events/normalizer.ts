@@ -53,6 +53,13 @@ const LEGACY_MAPPING: Record<RunEventType, LegacyMapping> = {
 	"verification.finished": { eventType: "checkpoint", type: "checkpoint" },
 	"git.status_collected": { eventType: "tool_result", type: "info" },
 	"git.diff_collected": { eventType: "final_report", type: "checkpoint" },
+	"git.closeout_committed": {
+		eventType: "git_closeout",
+		type: "checkpoint",
+	},
+	"git.closeout_commit_failed": { eventType: "git_closeout", type: "warning" },
+	"git.closeout_pushed": { eventType: "git_closeout", type: "checkpoint" },
+	"git.closeout_push_failed": { eventType: "git_closeout", type: "warning" },
 	"safety.budget_reached": { eventType: "error", type: "error" },
 	"safety.policy_violation": { eventType: "error", type: "error" },
 	"safety.repeated_failure": { eventType: "error", type: "error" },
@@ -71,6 +78,18 @@ const LEGACY_MAPPING: Record<RunEventType, LegacyMapping> = {
 	},
 	"review.recommendation_failed": {
 		eventType: "review_recommendation",
+		type: "warning",
+	},
+	"review.session_auto_started": {
+		eventType: "review_recommendation",
+		type: "info",
+	},
+	"review.required_section_auto_started": {
+		eventType: "review_evaluation",
+		type: "info",
+	},
+	"review.required_section_auto_failed": {
+		eventType: "review_evaluation",
 		type: "warning",
 	},
 	"system.info": { eventType: "info", type: "info" },

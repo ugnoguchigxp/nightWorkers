@@ -4,11 +4,13 @@ import { client } from "../../../lib/api";
 import {
 	applyReviewFinalAction,
 	archiveWorkbenchSession,
+	commitRunGitCloseout,
 	createReviewPromptSuggestions,
 	createWorkbenchSession,
 	deleteTask,
 	markReviewPromptSuggestionUsed,
 	patchTask as patchTaskCommand,
+	pushRunGitCloseout,
 	queueWorkbenchSession,
 	runReviewSection,
 	startReviewSession,
@@ -27,6 +29,7 @@ import type {
 	BackgroundProcess,
 	CreateProjectInput,
 	CreateSessionInput,
+	GitCloseoutState,
 	Repository,
 	ReviewSessionDetail,
 	RunDetails,
@@ -337,6 +340,9 @@ export function useNightWorkersMutations({
 			queryClient.invalidateQueries({
 				queryKey: ["runDetails", detail.session.runId],
 			});
+			queryClient.invalidateQueries({
+				queryKey: ["gitCloseout", detail.session.runId],
+			});
 		},
 	});
 
@@ -354,6 +360,46 @@ export function useNightWorkersMutations({
 			queryClient.invalidateQueries({
 				queryKey: ["reviewSession", detail.session.taskId],
 			});
+			queryClient.invalidateQueries({
+				queryKey: ["gitCloseout", detail.session.runId],
+			});
+		},
+	});
+
+	const commitRunGitCloseoutMutation = useMutation({
+		mutationFn: async (input: { runId: string; message?: string }) => {
+			const res = await commitRunGitCloseout(input.runId, {
+				message: input.message,
+			});
+			if (!res.ok) throw new Error(await res.text());
+			return (await res.json()) as GitCloseoutState;
+		},
+		onSuccess: (state) => {
+			queryClient.setQueryData<GitCloseoutState | null>(
+				["gitCloseout", state.runId],
+				state,
+			);
+			queryClient.invalidateQueries({ queryKey: ["gitCloseout", state.runId] });
+			queryClient.invalidateQueries({ queryKey: ["implementationQueue"] });
+			queryClient.invalidateQueries({ queryKey: ["sessions"] });
+			queryClient.invalidateQueries({ queryKey: ["sessionRuns"] });
+			queryClient.invalidateQueries({ queryKey: ["runDetails", state.runId] });
+		},
+	});
+
+	const pushRunGitCloseoutMutation = useMutation({
+		mutationFn: async (runId: string) => {
+			const res = await pushRunGitCloseout(runId);
+			if (!res.ok) throw new Error(await res.text());
+			return (await res.json()) as GitCloseoutState;
+		},
+		onSuccess: (state) => {
+			queryClient.setQueryData<GitCloseoutState | null>(
+				["gitCloseout", state.runId],
+				state,
+			);
+			queryClient.invalidateQueries({ queryKey: ["gitCloseout", state.runId] });
+			queryClient.invalidateQueries({ queryKey: ["runDetails", state.runId] });
 		},
 	});
 
@@ -653,6 +699,8 @@ export function useNightWorkersMutations({
 		moveWorkbenchSessionMutation,
 		startReviewSessionMutation,
 		runReviewSectionMutation,
+		commitRunGitCloseoutMutation,
+		pushRunGitCloseoutMutation,
 		updateReviewFindingDispositionMutation,
 		createReviewPromptSuggestionsMutation,
 		updateReviewPromptSuggestionMutation,

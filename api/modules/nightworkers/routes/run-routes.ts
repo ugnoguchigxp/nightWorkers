@@ -2,8 +2,10 @@ import { createRoute, z } from "@hono/zod-openapi";
 import {
 	activityReplaySchema,
 	backgroundProcessSchema,
+	commitRunCloseoutRequestSchema,
 	createReviewerEvaluationRequestSchema,
 	createReviewerReplayEvaluationRequestSchema,
+	gitCloseoutStateSchema,
 	ontologyRunDebugReportSchema,
 	overviewDashboardSchema,
 	reviewActionSchema,
@@ -197,6 +199,76 @@ export const stopTaskRunRoute = createRoute({
 		404: {
 			description: "Run not found",
 		},
+	},
+});
+
+export const getRunGitCloseoutRoute = createRoute({
+	method: "get",
+	path: "/runs/:id/git/closeout",
+	request: {
+		params: z.object({
+			id: z.string().uuid().openapi({ example: "run-uuid" }),
+		}),
+	},
+	responses: {
+		200: {
+			content: {
+				"application/json": {
+					schema: gitCloseoutStateSchema,
+				},
+			},
+			description: "Git closeout state for the run",
+		},
+		404: { description: "Run not found" },
+	},
+});
+
+export const commitRunGitCloseoutRoute = createRoute({
+	method: "post",
+	path: "/runs/:id/git/commit",
+	request: {
+		params: z.object({
+			id: z.string().uuid().openapi({ example: "run-uuid" }),
+		}),
+		body: {
+			content: {
+				"application/json": {
+					schema: commitRunCloseoutRequestSchema.optional(),
+				},
+			},
+		},
+	},
+	responses: {
+		200: {
+			content: {
+				"application/json": {
+					schema: gitCloseoutStateSchema,
+				},
+			},
+			description: "Commit runtime-owned paths for the run",
+		},
+		404: { description: "Run not found" },
+	},
+});
+
+export const pushRunGitCloseoutRoute = createRoute({
+	method: "post",
+	path: "/runs/:id/git/push",
+	request: {
+		params: z.object({
+			id: z.string().uuid().openapi({ example: "run-uuid" }),
+		}),
+	},
+	responses: {
+		200: {
+			content: {
+				"application/json": {
+					schema: gitCloseoutStateSchema,
+				},
+			},
+			description: "Push the committed run closeout",
+		},
+		404: { description: "Run not found" },
 	},
 });
 

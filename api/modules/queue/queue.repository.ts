@@ -110,6 +110,7 @@ function queueStatusForRunStatus(
 	status: string,
 ): ImplementationQueueEntryStatus {
 	if (status === "completed") return "execution_completed";
+	if (status === "needs_review") return "awaiting_commit_decision";
 	if (status === "cancelled") return "cancelled";
 	if (status === "needs_human") return "needs_human";
 	return "failed";

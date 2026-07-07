@@ -3,14 +3,17 @@ import {
 	AlertTriangle,
 	CheckCircle2,
 	ClipboardCheck,
+	GitCommitHorizontal,
 	LoaderCircle,
 	Play,
 	Save,
 	ShieldAlert,
+	UploadCloud,
 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
+	GitCloseoutState,
 	ReviewArtifact,
 	ReviewModeFinding,
 	ReviewSectionKind,
@@ -19,7 +22,13 @@ import type {
 
 type ReviewStatusViewerProps = {
 	detail: ReviewSessionDetail | null;
+	gitCloseout?: GitCloseoutState | null;
 	onRunSection?: (section: ReviewSectionKind) => Promise<ReviewSessionDetail>;
+	onCommitGitCloseout?: (
+		runId: string,
+		message?: string,
+	) => Promise<GitCloseoutState>;
+	onPushGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
 	onUpdateFindingDisposition?: (
 		reviewSessionId: string,
 		findingId: string,
@@ -131,6 +140,10 @@ function reviewStatusLabel(t: TFunction, key: string, fallback: string) {
 
 function reviewStatusValueLabel(t: TFunction, group: string, value: string) {
 	return reviewStatusLabel(t, `reviewStatus.${group}.${value}`, value);
+}
+
+function closeoutValueLabel(t: TFunction, group: string, value: string) {
+	return reviewStatusLabel(t, `reviewStatus.closeout.${group}.${value}`, value);
 }
 
 function reviewStatusSectionReason(t: TFunction, reason: string) {
@@ -401,7 +414,10 @@ function latestSectionArtifact(
 
 export function ReviewStatusViewer({
 	detail,
+	gitCloseout,
 	onRunSection,
+	onCommitGitCloseout,
+	onPushGitCloseout,
 	onUpdateFindingDisposition,
 	onCreatePromptSuggestions,
 	onUpdatePromptSuggestion,
@@ -412,6 +428,9 @@ export function ReviewStatusViewer({
 	const { t } = useTranslation();
 	const [busySection, setBusySection] = useState<string | null>(null);
 	const [busyAction, setBusyAction] = useState<string | null>(null);
+	const [busyCloseoutAction, setBusyCloseoutAction] = useState<
+		"commit" | "push" | null
+	>(null);
 	const [busyFinding, setBusyFinding] = useState<string | null>(null);
 	const [busyPromptSuggestion, setBusyPromptSuggestion] =
 		useState<BusyPromptSuggestion | null>(null);
@@ -771,6 +790,115 @@ export function ReviewStatusViewer({
 						);
 					})}
 				</div>
+
+				{gitCloseout ? (
+					<div className="grid gap-3 rounded border border-slate-800 bg-slate-900/50 p-3">
+						<div className="flex flex-wrap items-start justify-between gap-3">
+							<div className="min-w-0">
+								<div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+									<GitCommitHorizontal className="h-4 w-4 text-emerald-200" />
+									{t("reviewStatus.closeout.title")}
+								</div>
+								<div className="mt-1 text-xs leading-5 text-slate-400">
+									{gitCloseout.blockingReason
+										? gitCloseout.blockingReason
+										: t("reviewStatus.closeout.ready")}
+								</div>
+							</div>
+							<span className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
+								{closeoutValueLabel(t, "state", gitCloseout.state)}
+							</span>
+						</div>
+						<div className="flex flex-wrap gap-1.5 text-[11px] text-slate-300">
+							<span className="rounded border border-slate-700 px-2 py-0.5">
+								{t("reviewStatus.closeout.stageablePaths", {
+									count: gitCloseout.counts.stageablePaths,
+								})}
+							</span>
+							<span className="rounded border border-slate-700 px-2 py-0.5">
+								{t("reviewStatus.closeout.excludedPaths", {
+									count: gitCloseout.counts.excludedPaths,
+								})}
+							</span>
+							{gitCloseout.git.branch ? (
+								<span className="rounded border border-slate-700 px-2 py-0.5">
+									{gitCloseout.git.branch}
+								</span>
+							) : null}
+							{gitCloseout.git.upstream ? (
+								<span className="rounded border border-slate-700 px-2 py-0.5">
+									{gitCloseout.git.upstream}
+								</span>
+							) : null}
+						</div>
+						<div className="flex flex-wrap gap-2">
+							<button
+								type="button"
+								className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-emerald-700/70 bg-emerald-950/30 px-2.5 text-xs text-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+								disabled={
+									!gitCloseout.canCommit ||
+									!onCommitGitCloseout ||
+									busyCloseoutAction !== null
+								}
+								onClick={async () => {
+									if (!onCommitGitCloseout) return;
+									setBusyCloseoutAction("commit");
+									setError(null);
+									try {
+										await onCommitGitCloseout(gitCloseout.runId);
+									} catch (err) {
+										setError(
+											err instanceof Error
+												? err.message
+												: t("reviewStatus.error.closeoutCommitFailed"),
+										);
+									} finally {
+										setBusyCloseoutAction(null);
+									}
+								}}
+							>
+								{busyCloseoutAction === "commit" ? (
+									<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+								) : (
+									<GitCommitHorizontal className="h-3.5 w-3.5" />
+								)}
+								{t("reviewStatus.action.commit")}
+							</button>
+							<button
+								type="button"
+								className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-sky-700/70 bg-sky-950/30 px-2.5 text-xs text-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+								disabled={
+									!gitCloseout.canPush ||
+									!onPushGitCloseout ||
+									busyCloseoutAction !== null
+								}
+								onClick={async () => {
+									if (!onPushGitCloseout) return;
+									setBusyCloseoutAction("push");
+									setError(null);
+									try {
+										await onPushGitCloseout(gitCloseout.runId);
+									} catch (err) {
+										setError(
+											err instanceof Error
+												? err.message
+												: t("reviewStatus.error.closeoutPushFailed"),
+										);
+									} finally {
+										setBusyCloseoutAction(null);
+									}
+								}}
+							>
+								{busyCloseoutAction === "push" ? (
+									<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+								) : (
+									<UploadCloud className="h-3.5 w-3.5" />
+								)}
+								{t("reviewStatus.action.push")}
+							</button>
+						</div>
+					</div>
+				) : null}
 
 				{detail.findings.length > 0 ? (
 					<div className="grid gap-3">

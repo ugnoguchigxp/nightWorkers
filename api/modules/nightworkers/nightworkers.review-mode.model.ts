@@ -228,11 +228,6 @@ export function rowSecurityHandoff(
 export function planSections(
 	recommendation: NonNullable<ReturnType<typeof rowRecommendation>>,
 ): SectionPlan[] {
-	const blockingCodes = new Set(
-		recommendation.reasons
-			.filter((reason) => reason.severity === "blocking")
-			.map((reason) => reason.code),
-	);
 	const section = (
 		kind: ReviewSectionKind,
 		requirement: ReviewSectionRequirement,
@@ -241,19 +236,14 @@ export function planSections(
 	return [
 		section(
 			"test_coverage",
-			recommendation.level === "none" ? "omitted" : "recommended",
+			recommendation.level === "none" ? "omitted" : "required",
 			recommendation.level === "none"
 				? "No test evidence review is needed."
 				: "Check test evidence for implementation-plan acceptance criteria.",
 		),
 		section(
 			"security_review",
-			blockingCodes.has("security_sensitive_change") ||
-				blockingCodes.has("security_plugin_missing") ||
-				blockingCodes.has("schema_or_migration_change") ||
-				blockingCodes.has("public_contract_change")
-				? "required"
-				: "omitted",
+			recommendation.level === "none" ? "omitted" : "optional",
 			recommendation.reasons.some(
 				(reason) =>
 					reason.code === "security_sensitive_change" ||
@@ -265,11 +255,7 @@ export function planSections(
 		),
 		section(
 			"findings",
-			recommendation.level === "required"
-				? "required"
-				: recommendation.level === "none"
-					? "omitted"
-					: "recommended",
+			recommendation.level === "none" ? "omitted" : "optional",
 			recommendation.level === "none"
 				? "No findings consolidation is needed."
 				: "Consolidate section findings and route dispositions.",

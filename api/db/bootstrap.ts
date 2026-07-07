@@ -514,11 +514,35 @@ export async function ensureNightWorkersSchema() {
       verification_evidence_json text,
       commit_sha text,
       commit_message text,
+      push_status text,
+      pushed_at integer,
+      push_remote text,
+      push_branch text,
       status_reason text,
       FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE cascade,
       FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade
     )
   `);
+	await ensureColumn(
+		"task_run_commit_records",
+		"push_status",
+		"push_status text",
+	);
+	await ensureColumn(
+		"task_run_commit_records",
+		"pushed_at",
+		"pushed_at integer",
+	);
+	await ensureColumn(
+		"task_run_commit_records",
+		"push_remote",
+		"push_remote text",
+	);
+	await ensureColumn(
+		"task_run_commit_records",
+		"push_branch",
+		"push_branch text",
+	);
 	await client.execute(
 		"CREATE UNIQUE INDEX IF NOT EXISTS task_run_commit_records_run_id_uidx ON task_run_commit_records (run_id)",
 	);

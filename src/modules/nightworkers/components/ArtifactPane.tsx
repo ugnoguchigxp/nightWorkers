@@ -15,6 +15,7 @@ import { PlanModeWorkspaceViewer } from "../../planMode";
 import type { PlanWorkspaceTab } from "../../specification";
 import type {
 	ActivityArtifact,
+	GitCloseoutState,
 	ProjectDiff,
 	ProjectFileContent,
 	ProjectFileEntry,
@@ -73,6 +74,7 @@ type ArtifactPaneProps = {
 	onQueueSession?: () => Promise<void>;
 	onAddToQueue?: () => Promise<void>;
 	activeReviewSession?: ReviewSessionDetail | null;
+	activeGitCloseout?: GitCloseoutState | null;
 	onRunReviewSection?: (
 		reviewSessionId: string,
 		section: ReviewSectionKind,
@@ -113,6 +115,11 @@ type ArtifactPaneProps = {
 			note?: string;
 		},
 	) => Promise<ReviewSessionDetail>;
+	onCommitRunGitCloseout?: (
+		runId: string,
+		message?: string,
+	) => Promise<GitCloseoutState>;
+	onPushRunGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
 	isImplementationLocked?: boolean;
 };
 
@@ -186,6 +193,7 @@ export function ArtifactPane({
 	onQueueSession,
 	onAddToQueue,
 	activeReviewSession,
+	activeGitCloseout,
 	onRunReviewSection,
 	onUpdateReviewFindingDisposition,
 	onCreateReviewPromptSuggestions,
@@ -193,6 +201,8 @@ export function ArtifactPane({
 	onUseReviewPromptSuggestion,
 	onInsertReviewPromptSuggestion,
 	onApplyReviewFinalAction,
+	onCommitRunGitCloseout,
+	onPushRunGitCloseout,
 	isImplementationLocked = false,
 }: ArtifactPaneProps) {
 	const { t } = useTranslation();
@@ -431,6 +441,9 @@ export function ArtifactPane({
 							onUpdatePromptSuggestion={onUpdateReviewPromptSuggestion}
 							onUsePromptSuggestion={onUseReviewPromptSuggestion}
 							onInsertPromptSuggestion={onInsertReviewPromptSuggestion}
+							gitCloseout={activeGitCloseout}
+							onCommitGitCloseout={onCommitRunGitCloseout}
+							onPushGitCloseout={onPushRunGitCloseout}
 						/>
 					) : showBlueprint ? (
 						<BlueprintViewer

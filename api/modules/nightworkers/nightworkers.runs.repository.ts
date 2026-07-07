@@ -137,6 +137,10 @@ export async function createTaskRunCommitRecord(data: {
 	verificationEvidenceJson?: unknown;
 	commitSha?: string | null;
 	commitMessage?: string | null;
+	pushStatus?: string | null;
+	pushedAt?: Date | null;
+	pushRemote?: string | null;
+	pushBranch?: string | null;
 	statusReason?: string | null;
 }) {
 	const now = new Date();
@@ -154,6 +158,10 @@ export async function createTaskRunCommitRecord(data: {
 		verificationEvidenceJson: data.verificationEvidenceJson ?? null,
 		commitSha: data.commitSha ?? null,
 		commitMessage: data.commitMessage ?? null,
+		pushStatus: data.pushStatus ?? null,
+		pushedAt: data.pushedAt ?? null,
+		pushRemote: data.pushRemote ?? null,
+		pushBranch: data.pushBranch ?? null,
 		statusReason: data.statusReason ?? null,
 		createdAt: now,
 		updatedAt: now,
@@ -171,6 +179,10 @@ export async function createTaskRunCommitRecord(data: {
 		verificationEvidenceJson: values.verificationEvidenceJson,
 		commitSha: values.commitSha,
 		commitMessage: values.commitMessage,
+		pushStatus: values.pushStatus,
+		pushedAt: values.pushedAt,
+		pushRemote: values.pushRemote,
+		pushBranch: values.pushBranch,
 		statusReason: values.statusReason,
 		updatedAt: now,
 	};
@@ -204,6 +216,10 @@ export async function updateTaskRunCommitRecord(
 		verificationEvidenceJson?: unknown;
 		commitSha?: string | null;
 		commitMessage?: string | null;
+		pushStatus?: string | null;
+		pushedAt?: Date | null;
+		pushRemote?: string | null;
+		pushBranch?: string | null;
 		statusReason?: string | null;
 	},
 ) {
@@ -228,6 +244,10 @@ export async function updateTaskRunCommitRecord(
 		...(data.commitMessage !== undefined
 			? { commitMessage: data.commitMessage }
 			: {}),
+		...(data.pushStatus !== undefined ? { pushStatus: data.pushStatus } : {}),
+		...(data.pushedAt !== undefined ? { pushedAt: data.pushedAt } : {}),
+		...(data.pushRemote !== undefined ? { pushRemote: data.pushRemote } : {}),
+		...(data.pushBranch !== undefined ? { pushBranch: data.pushBranch } : {}),
 		...(data.statusReason !== undefined
 			? { statusReason: data.statusReason }
 			: {}),

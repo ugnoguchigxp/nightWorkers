@@ -4,6 +4,7 @@ import { withOpenApiRouteError } from "./nightworkers.route-utils";
 import * as service from "./nightworkers.service";
 import {
 	applyReviewFinalActionRoute,
+	commitRunGitCloseoutRoute,
 	createReviewerEvaluationRoute,
 	createReviewerReplayEvaluationRoute,
 	createReviewPromptSuggestionsRoute,
@@ -15,12 +16,14 @@ import {
 	type getOntologyRunDebugReportRoute,
 	getReviewRecommendationRoute,
 	getReviewSessionRoute,
+	getRunGitCloseoutRoute,
 	type getTaskRunRoute,
 	listBackgroundProcessesRoute,
 	type listReviewRubricsRoute,
 	listTaskRunActivityEventsRoute,
 	listTaskRunEventsRoute,
 	type listTaskRunsRoute,
+	pushRunGitCloseoutRoute,
 	runReviewSectionRoute,
 	startBackgroundProcessRoute,
 	stopBackgroundProcessRoute,
@@ -79,6 +82,33 @@ export const stopTaskRunHandler = withOpenApiRouteError(
 		const id = c.req.param("id");
 		const run = await service.stopTaskRun(id);
 		return c.json(run, 200);
+	},
+);
+
+export const getRunGitCloseoutHandler = withOpenApiRouteError(
+	getRunGitCloseoutRoute,
+	async (c) => {
+		const result = await service.getRunGitCloseout(c.req.param("id"));
+		return c.json(result, 200);
+	},
+);
+
+export const commitRunGitCloseoutHandler = withOpenApiRouteError(
+	commitRunGitCloseoutRoute,
+	async (c) => {
+		const result = await service.commitRunGitCloseout(
+			c.req.param("id"),
+			c.req.valid("json") ?? {},
+		);
+		return c.json(result, 200);
+	},
+);
+
+export const pushRunGitCloseoutHandler = withOpenApiRouteError(
+	pushRunGitCloseoutRoute,
+	async (c) => {
+		const result = await service.pushRunGitCloseout(c.req.param("id"));
+		return c.json(result, 200);
 	},
 );
 

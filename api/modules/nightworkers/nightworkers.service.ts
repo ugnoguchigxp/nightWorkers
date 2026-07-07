@@ -265,6 +265,11 @@ function toRuntimeTerminalState(
 }
 
 export {
+	commitRunGitCloseout,
+	getRunGitCloseout,
+	pushRunGitCloseout,
+} from "./nightworkers.git-closeout.service";
+export {
 	browseLocalFolders,
 	createLocalFolder,
 	createReviewerEvaluation,
@@ -275,9 +280,9 @@ export {
 	readProjectFile,
 	readRepositoryDiff,
 } from "./nightworkers.review-files.service";
-
 export {
 	applyReviewFinalAction,
+	autoStartReviewSessionForRun,
 	createReviewPromptSuggestions,
 	getLatestReviewSessionDetailForTask,
 	getOrCreateReviewRecommendation,

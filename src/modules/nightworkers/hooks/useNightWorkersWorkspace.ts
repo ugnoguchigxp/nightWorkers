@@ -6,6 +6,7 @@ import {
 	fetchBackgroundProcessesForTask,
 	fetchImplementationQueue,
 	fetchLatestTaskReviewSession,
+	fetchRunGitCloseout,
 	fetchTaskActivityEvents,
 	fetchTaskLlmUsage,
 	fetchTaskMessages,
@@ -15,6 +16,7 @@ import type {
 	ActivityEvent,
 	ActivityReplay,
 	BackgroundProcess,
+	GitCloseoutState,
 	ImplementationQueueDashboard,
 	PlanModeWorkspace,
 	Repository,
@@ -179,6 +181,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
 	});
+	const latestRun = activeSessionRuns[0];
 	const { data: taskMessages = [] } = useQuery({
 		queryKey: ["taskMessages", activeSessionId],
 		queryFn: async () => {
@@ -246,6 +249,19 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		refetchOnReconnect: false,
 	});
 
+	const { data: activeGitCloseout = null } = useQuery({
+		queryKey: ["gitCloseout", latestRun?.id],
+		queryFn: async () => {
+			if (!latestRun?.id) return null;
+			const res = await fetchRunGitCloseout(latestRun.id);
+			if (!res.ok) throw new Error("Failed to fetch Git closeout state");
+			return (await res.json()) as GitCloseoutState;
+		},
+		enabled: !!latestRun?.id && !!activeReviewSession,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
+	});
+
 	const { data: backgroundProcesses = [] } = useQuery({
 		queryKey: ["backgroundProcesses", activeSessionId],
 		queryFn: async () => {
@@ -298,6 +314,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		submitRunReviewMutation,
 		startReviewSessionMutation,
 		runReviewSectionMutation,
+		commitRunGitCloseoutMutation,
+		pushRunGitCloseoutMutation,
 		updateReviewFindingDispositionMutation,
 		createReviewPromptSuggestionsMutation,
 		updateReviewPromptSuggestionMutation,
@@ -328,7 +346,6 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 	const projectFilesState = useNightWorkersProjectFiles(activeProjectId);
 	const { setProjectFileEntriesByDirectory } = projectFilesState;
 
-	const latestRun = activeSessionRuns[0];
 	const { data: latestRunDetails = null } = useQuery({
 		queryKey: ["runDetails", latestRun?.id],
 		queryFn: async () => {
@@ -516,6 +533,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		latestRunTodos,
 		latestRunReviews,
 		activeReviewSession,
+		activeGitCloseout,
 		activeArtifactRefs,
 		projectFileEntries: projectFilesState.projectFileEntries,
 		projectFileEntriesByDirectory:
@@ -558,6 +576,10 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 			startReviewSessionMutation.mutateAsync(runId),
 		runReviewSection: (reviewSessionId, section) =>
 			runReviewSectionMutation.mutateAsync({ reviewSessionId, section }),
+		commitRunGitCloseout: (runId, message) =>
+			commitRunGitCloseoutMutation.mutateAsync({ runId, message }),
+		pushRunGitCloseout: (runId) =>
+			pushRunGitCloseoutMutation.mutateAsync(runId),
 		updateReviewFindingDisposition: (reviewSessionId, findingId, input) =>
 			updateReviewFindingDispositionMutation.mutateAsync({
 				reviewSessionId,
@@ -603,6 +625,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 			});
 			queryClient.invalidateQueries({
 				queryKey: ["reviewSession", activeSessionId],
+			});
+			queryClient.invalidateQueries({
+				queryKey: ["gitCloseout", latestRun?.id],
 			});
 		},
 		refreshProjectList: async () => {

@@ -78,8 +78,77 @@ export type TaskRun = {
 		excludedPathsJson?: Array<{ path: string; reason: string }> | null;
 		verificationStatus: "not_run" | "passed" | "failed" | "partial";
 		commitSha?: string | null;
+		commitMessage?: string | null;
+		pushStatus?:
+			| "not_pushed"
+			| "pushing"
+			| "pushed"
+			| "failed"
+			| "blocked"
+			| null;
+		pushedAt?: string | null;
+		pushRemote?: string | null;
+		pushBranch?: string | null;
 		statusReason?: string | null;
 	} | null;
+};
+
+export type GitCloseoutState = {
+	runId: string;
+	repositoryId: string;
+	canCommit: boolean;
+	canPush: boolean;
+	state:
+		| "review_required"
+		| "commit_ready"
+		| "commit_running"
+		| "committed"
+		| "push_ready"
+		| "push_running"
+		| "pushed"
+		| "needs_human"
+		| "failed";
+	blockingCode:
+		| "RUN_NOT_FOUND"
+		| "REPOSITORY_NOT_FOUND"
+		| "REVIEW_SESSION_MISSING"
+		| "REQUIRED_REVIEW_NOT_DONE"
+		| "COMMIT_RECORD_MISSING"
+		| "COMMIT_RECORD_NOT_READY"
+		| "NO_STAGEABLE_PATHS"
+		| "HEAD_MOVED"
+		| "DIRTY_PATHS_MISSING"
+		| "STAGED_PATHS_OUTSIDE_OWNERSHIP"
+		| "COMMIT_ALREADY_CREATED"
+		| "UPSTREAM_MISSING"
+		| "PUSH_HEAD_MISMATCH"
+		| "PUSH_POLICY_BLOCKED"
+		| "GIT_COMMAND_FAILED"
+		| null;
+	blockingReason?: string | null;
+	commitRecord: TaskRun["commitRecord"];
+	requiredReview: {
+		reviewSessionId?: string | null;
+		testCoverageStatus?:
+			| "not_started"
+			| "running"
+			| "done"
+			| "blocked"
+			| "needs_human"
+			| null;
+		complete: boolean;
+	};
+	git: {
+		head?: string | null;
+		branch?: string | null;
+		upstream?: string | null;
+		dirtyPaths: string[];
+		stagedPaths: string[];
+	};
+	counts: {
+		stageablePaths: number;
+		excludedPaths: number;
+	};
 };
 
 export type ImplementationQueueEntryStatus =

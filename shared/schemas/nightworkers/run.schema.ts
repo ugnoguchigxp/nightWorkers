@@ -45,11 +45,89 @@ export const taskRunCommitRecordSchema = z
 		verificationEvidenceJson: jsonValueSchema.nullable().optional(),
 		commitSha: z.string().nullable().optional(),
 		commitMessage: z.string().nullable().optional(),
+		pushStatus: z
+			.enum(["not_pushed", "pushing", "pushed", "failed", "blocked"])
+			.nullable()
+			.optional(),
+		pushedAt: dateLikeSchema.nullable().optional(),
+		pushRemote: z.string().nullable().optional(),
+		pushBranch: z.string().nullable().optional(),
 		statusReason: z.string().nullable().optional(),
 		createdAt: dateLikeSchema,
 		updatedAt: dateLikeSchema,
 	})
 	.openapi("TaskRunCommitRecord");
+
+export const gitCloseoutBlockingCodeSchema = z
+	.enum([
+		"RUN_NOT_FOUND",
+		"REPOSITORY_NOT_FOUND",
+		"REVIEW_SESSION_MISSING",
+		"REQUIRED_REVIEW_NOT_DONE",
+		"COMMIT_RECORD_MISSING",
+		"COMMIT_RECORD_NOT_READY",
+		"NO_STAGEABLE_PATHS",
+		"HEAD_MOVED",
+		"DIRTY_PATHS_MISSING",
+		"STAGED_PATHS_OUTSIDE_OWNERSHIP",
+		"COMMIT_ALREADY_CREATED",
+		"UPSTREAM_MISSING",
+		"PUSH_HEAD_MISMATCH",
+		"PUSH_POLICY_BLOCKED",
+		"GIT_COMMAND_FAILED",
+	])
+	.openapi("GitCloseoutBlockingCode");
+
+export const gitCloseoutUiStateSchema = z
+	.enum([
+		"review_required",
+		"commit_ready",
+		"commit_running",
+		"committed",
+		"push_ready",
+		"push_running",
+		"pushed",
+		"needs_human",
+		"failed",
+	])
+	.openapi("GitCloseoutUiState");
+
+export const gitCloseoutStateSchema = z
+	.object({
+		runId: z.string().uuid(),
+		repositoryId: z.string().uuid(),
+		canCommit: z.boolean(),
+		canPush: z.boolean(),
+		state: gitCloseoutUiStateSchema,
+		blockingCode: gitCloseoutBlockingCodeSchema.nullable(),
+		blockingReason: z.string().nullable(),
+		commitRecord: taskRunCommitRecordSchema.nullable(),
+		requiredReview: z.object({
+			reviewSessionId: z.string().uuid().nullable(),
+			testCoverageStatus: z
+				.enum(["not_started", "running", "done", "blocked", "needs_human"])
+				.nullable(),
+			complete: z.boolean(),
+		}),
+		git: z.object({
+			head: z.string().nullable(),
+			branch: z.string().nullable(),
+			upstream: z.string().nullable(),
+			dirtyPaths: z.array(z.string()),
+			stagedPaths: z.array(z.string()),
+		}),
+		counts: z.object({
+			stageablePaths: z.number().int().nonnegative(),
+			excludedPaths: z.number().int().nonnegative(),
+		}),
+	})
+	.openapi("GitCloseoutState");
+
+export const commitRunCloseoutRequestSchema = z
+	.object({
+		message: z.string().min(1).max(240).optional(),
+	})
+	.openapi("CommitRunCloseoutRequest");
 
 export const taskRunSchema = z
 	.object({

@@ -30,6 +30,7 @@ import {
 	type AcceptanceTestCoverageResult,
 	buildTestEvidencePrecheck,
 } from "./nightworkers.review-mode.test-evidence-precheck";
+import { toErrorMessage } from "./run-orchestration/utils";
 
 async function buildPackForRun(runId: string) {
 	const run = await repo.getTaskRun(runId);
@@ -114,8 +115,14 @@ async function buildStatusArtifact(reviewSessionId: string) {
 			findingCounts: countFindings(sourceFindings),
 		};
 	});
+	const requiredKinds = new Set(
+		sections
+			.filter((section) => section.requirement === "required")
+			.map((section) => section.kind),
+	);
 	const unresolvedBlocking = findings.filter(
 		(finding) =>
+			requiredKinds.has(finding.sourceSection as ReviewSectionKind) &&
 			finding.severity === "blocking" &&
 			!["accepted", "converted", "dismissed"].includes(
 				finding.dispositionStatus,
@@ -179,6 +186,82 @@ export async function startReviewSessionForRun(runId: string) {
 	});
 	await buildStatusArtifact(session.id);
 	return getReviewSessionDetail(session.id);
+}
+
+export async function autoStartReviewSessionForRun(runId: string) {
+	const detail = await startReviewSessionForRun(runId);
+	await repo.createRunEvent({
+		version: 1,
+		runId,
+		taskId: detail.session.taskId,
+		timestamp: new Date().toISOString(),
+		type: "review.session_auto_started",
+		severity: "info",
+		actor: "system",
+		message: "Review Mode session was automatically started for run closeout.",
+		data: { reviewSessionId: detail.session.id },
+	});
+	await repo.createRunEvent({
+		version: 1,
+		runId,
+		taskId: detail.session.taskId,
+		timestamp: new Date().toISOString(),
+		type: "review.required_section_auto_started",
+		severity: "info",
+		actor: "system",
+		message: "Required test evidence review was automatically started.",
+		data: { reviewSessionId: detail.session.id, section: "test_coverage" },
+	});
+	try {
+		return await runReviewSection(detail.session.id, "test_coverage");
+	} catch (error) {
+		const message = toErrorMessage(error);
+		await reviewRepo.upsertReviewArtifact({
+			reviewSessionId: detail.session.id,
+			runId,
+			taskId: detail.session.taskId,
+			kind: "test_coverage",
+			status: "needs_human",
+			artifactJson: {
+				version: 2,
+				kind: "test_coverage",
+				requirement: "required",
+				summary: "Required test evidence review could not complete.",
+				mode: "precheck_only",
+				precheck: null,
+				agenticReview: null,
+				degradedReason: message,
+				findings: [
+					{
+						severity: "warning",
+						title: "Required test evidence review could not complete",
+						body: message,
+						evidenceRefs: [],
+					},
+				],
+				recommendedActions: [
+					"Review the failure reason and rerun the required test evidence section.",
+				],
+			},
+			sourceEvidenceRefsJson: [],
+		});
+		await repo.createRunEvent({
+			version: 1,
+			runId,
+			taskId: detail.session.taskId,
+			timestamp: new Date().toISOString(),
+			type: "review.required_section_auto_failed",
+			severity: "warning",
+			actor: "system",
+			message: "Required test evidence review could not complete.",
+			data: {
+				reviewSessionId: detail.session.id,
+				section: "test_coverage",
+				error: message,
+			},
+		});
+		return getReviewSessionDetail(detail.session.id);
+	}
 }
 
 export async function getLatestReviewSessionDetailForTask(taskId: string) {

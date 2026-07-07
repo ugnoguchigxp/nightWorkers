@@ -63,7 +63,7 @@ describe("Review Mode", () => {
 		expect((await repo.getTaskRun(run.id))?.status).toBe("completed");
 	});
 
-	it("starts a review session, runs required sections, and gates approval on findings", async () => {
+	it("starts a review session and blocks approval while required test evidence needs human review", async () => {
 		const { task } = await createTask();
 		const run = await repo.createTaskRun({
 			taskId: task.id,
@@ -93,7 +93,7 @@ describe("Review Mode", () => {
 		expect(started.statusArtifact.finalActionGate.canApprove).toBe(false);
 		expect(
 			started.statusArtifact.finalActionGate.requiredSectionKindsRemaining,
-		).not.toContain("test_coverage");
+		).toContain("test_coverage");
 
 		const sectionRes = await app.request(
 			`http://localhost/api/review-sessions/${started.session.id}/sections/test_coverage/run`,
@@ -107,7 +107,8 @@ describe("Review Mode", () => {
 		const afterSection = await sectionRes.json();
 		expect(
 			afterSection.statusArtifact.finalActionGate.requiredSectionKindsRemaining,
-		).not.toContain("test_coverage");
+		).toContain("test_coverage");
+		expect(afterSection.statusArtifact.finalActionGate.canApprove).toBe(false);
 		expect(
 			afterSection.findings.map((finding: { title: string }) => finding.title),
 		).toContain("Test evidence review could not find an implementation plan");

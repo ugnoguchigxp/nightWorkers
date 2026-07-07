@@ -7,6 +7,7 @@ import {
 } from "../../services/settings/test-quality-settings";
 import {
 	applyReviewFinalActionHandler,
+	commitRunGitCloseoutHandler,
 	createReviewerEvaluationHandler,
 	createReviewerReplayEvaluationHandler,
 	createReviewPromptSuggestionsHandler,
@@ -18,12 +19,14 @@ import {
 	getOntologyRunDebugReportHandler,
 	getReviewRecommendationHandler,
 	getReviewSessionHandler,
+	getRunGitCloseoutHandler,
 	getTaskRunHandler,
 	listBackgroundProcessesHandler,
 	listReviewRubricsHandler,
 	listTaskRunActivityEventsHandler,
 	listTaskRunEventsHandler,
 	listTaskRunsHandler,
+	pushRunGitCloseoutHandler,
 	runReviewSectionHandler,
 	startBackgroundProcessHandler,
 	startTaskRunHandler,
@@ -57,6 +60,7 @@ import {
 } from "./routes/repository-routes";
 import {
 	applyReviewFinalActionRoute,
+	commitRunGitCloseoutRoute,
 	createReviewerEvaluationRoute,
 	createReviewerReplayEvaluationRoute,
 	createReviewPromptSuggestionsRoute,
@@ -69,6 +73,7 @@ import {
 	getOverviewDashboardRoute,
 	getReviewRecommendationRoute,
 	getReviewSessionRoute,
+	getRunGitCloseoutRoute,
 	getTaskLlmUsageRoute,
 	getTaskRunRoute,
 	listBackgroundProcessesRoute,
@@ -78,6 +83,7 @@ import {
 	listTaskRunActivityEventsRoute,
 	listTaskRunEventsRoute,
 	listTaskRunsRoute,
+	pushRunGitCloseoutRoute,
 	runReviewSectionRoute,
 	startBackgroundProcessRoute,
 	stopBackgroundProcessRoute,
@@ -388,6 +394,9 @@ const router = createOpenApiRouter()
 	.openapi(getTaskRunRoute, getTaskRunHandler)
 	.openapi(getOntologyRunDebugReportRoute, getOntologyRunDebugReportHandler)
 	.openapi(stopTaskRunRoute, stopTaskRunHandler)
+	.openapi(getRunGitCloseoutRoute, getRunGitCloseoutHandler)
+	.openapi(commitRunGitCloseoutRoute, commitRunGitCloseoutHandler)
+	.openapi(pushRunGitCloseoutRoute, pushRunGitCloseoutHandler)
 	.openapi(listTaskRunEventsRoute, listTaskRunEventsHandler)
 	.openapi(listTaskRunActivityEventsRoute, listTaskRunActivityEventsHandler)
 	.openapi(getReviewRecommendationRoute, getReviewRecommendationHandler)

@@ -5,6 +5,7 @@ import type {
 	BackgroundProcess,
 	CreateProjectInput,
 	CreateSessionInput,
+	GitCloseoutState,
 	LlmProvider,
 	LlmSettings,
 	PlanModeWorkspace,
@@ -66,6 +67,7 @@ export type NightWorkersWorkspaceState = {
 	latestRunTodos: TaskRunTodo[];
 	latestRunReviews: ReviewResult[];
 	activeReviewSession: ReviewSessionDetail | null;
+	activeGitCloseout: GitCloseoutState | null;
 	activeArtifactRefs: WorkbenchArtifactRef[];
 	projectFileEntries: ProjectFileEntry[];
 	projectFileEntriesByDirectory: Record<string, ProjectFileEntry[]>;
@@ -107,6 +109,11 @@ export type NightWorkersWorkspaceState = {
 		reviewSessionId: string,
 		section: string,
 	) => Promise<ReviewSessionDetail>;
+	commitRunGitCloseout: (
+		runId: string,
+		message?: string,
+	) => Promise<GitCloseoutState>;
+	pushRunGitCloseout: (runId: string) => Promise<GitCloseoutState>;
 	updateReviewFindingDisposition: (
 		reviewSessionId: string,
 		findingId: string,

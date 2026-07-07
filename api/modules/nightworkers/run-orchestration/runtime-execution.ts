@@ -15,6 +15,7 @@ import type { AgentRuntimeResult } from "../../../services/agent-runtime/types";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
 import { outcomeFromRuntimeResult } from "../nightworkers.basic.service";
 import * as repo from "../nightworkers.repository";
+import { autoStartReviewSessionForRun } from "../nightworkers.review-mode.service";
 import { createPlanningArtifactMessageIfNeeded } from "../nightworkers.workbench.service";
 import {
 	applyCoverageAutonomyFallback,
@@ -456,6 +457,27 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				},
 			});
 			await safelyCreateReviewRecommendation({ taskId, runId: run.id });
+			if (guardedStatus === "needs_review") {
+				try {
+					await autoStartReviewSessionForRun(run.id);
+				} catch (error) {
+					logger.warn(
+						{ error: toErrorMessage(error), runId: run.id },
+						"failed to auto-start Review Mode session",
+					);
+					await repo.createRunEvent({
+						version: 1,
+						runId: run.id,
+						taskId,
+						timestamp: new Date().toISOString(),
+						type: "review.required_section_auto_failed",
+						severity: "warning",
+						actor: "system",
+						message: "Review Mode session could not be automatically started.",
+						data: { error: toErrorMessage(error) },
+					});
+				}
+			}
 			await refreshConversationContextForRuntimeLane({
 				runtimeLaneResolution,
 				taskId,

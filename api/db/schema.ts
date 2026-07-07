@@ -308,6 +308,10 @@ export const taskRunCommitRecords = sqliteTable(
 		}),
 		commitSha: text("commit_sha"),
 		commitMessage: text("commit_message"),
+		pushStatus: text("push_status"),
+		pushedAt: integer("pushed_at", { mode: "timestamp" }),
+		pushRemote: text("push_remote"),
+		pushBranch: text("push_branch"),
 		statusReason: text("status_reason"),
 	},
 	(table) => ({

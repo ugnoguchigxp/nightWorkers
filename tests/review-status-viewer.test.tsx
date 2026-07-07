@@ -2,7 +2,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { i18next } from "../src/i18n/setup";
 import { ReviewStatusViewer } from "../src/modules/nightworkers/components/ReviewStatusViewer";
-import type { ReviewSessionDetail } from "../src/modules/nightworkers/types";
+import type {
+	GitCloseoutState,
+	ReviewSessionDetail,
+} from "../src/modules/nightworkers/types";
 
 function visibleText(markup: string) {
 	return markup.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
@@ -71,7 +74,7 @@ function reviewSessionDetail(): ReviewSessionDetail {
 			sections: [
 				{
 					kind: "test_coverage",
-					requirement: "recommended",
+					requirement: "required",
 					progress: "done",
 					reason:
 						"Check test evidence for implementation-plan acceptance criteria.",
@@ -102,7 +105,7 @@ function reviewSessionDetail(): ReviewSessionDetail {
 				artifact: {
 					version: 2,
 					kind: "test_coverage",
-					requirement: "recommended",
+					requirement: "required",
 					summary:
 						"1 confirmed, 1 not confirmed, 0 unclear by agentic test evidence review.",
 					mode: "agentic_review",
@@ -223,6 +226,47 @@ function reviewSessionDetail(): ReviewSessionDetail {
 	};
 }
 
+function gitCloseoutState(): GitCloseoutState {
+	return {
+		runId: "22222222-2222-4222-8222-222222222222",
+		repositoryId: "44444444-4444-4444-8444-444444444444",
+		canCommit: true,
+		canPush: false,
+		state: "commit_ready",
+		blockingCode: null,
+		blockingReason: null,
+		commitRecord: {
+			status: "ready",
+			baselineHead: "abc123",
+			preExistingDirtyPathsJson: [],
+			ownedCandidatePathsJson: ["src/app.ts"],
+			stageableOwnedPathsJson: ["src/app.ts"],
+			excludedPathsJson: [],
+			verificationStatus: "passed",
+			commitSha: null,
+			commitMessage: null,
+			pushStatus: null,
+			pushedAt: null,
+			pushRemote: null,
+			pushBranch: null,
+			statusReason: null,
+		},
+		requiredReview: {
+			reviewSessionId: "11111111-1111-4111-8111-111111111111",
+			testCoverageStatus: "done",
+			complete: true,
+		},
+		git: {
+			head: "abc123",
+			branch: "main",
+			upstream: "origin/main",
+			dirtyPaths: ["src/app.ts"],
+			stagedPaths: [],
+		},
+		counts: { stageablePaths: 1, excludedPaths: 0 },
+	};
+}
+
 describe("ReviewStatusViewer", () => {
 	it("renders acceptance criteria test-name check results in Japanese", async () => {
 		await i18next.changeLanguage("ja");
@@ -244,6 +288,25 @@ describe("ReviewStatusViewer", () => {
 		expect(text).not.toContain("検証記録");
 		expect(text).not.toContain("最終報告");
 		expect(text).not.toContain("保存済み Run 記録");
+	});
+
+	it("renders Git closeout state and buttons", async () => {
+		await i18next.changeLanguage("ja");
+
+		const text = visibleText(
+			renderToStaticMarkup(
+				<ReviewStatusViewer
+					detail={reviewSessionDetail()}
+					gitCloseout={gitCloseoutState()}
+				/>,
+			),
+		);
+
+		expect(text).toContain("Git closeout");
+		expect(text).toContain("Commit 可能");
+		expect(text).toContain("stageable 1 件");
+		expect(text).toContain("Commit");
+		expect(text).toContain("Push");
 	});
 
 	it("renders acceptance criteria test-name check results in English", async () => {

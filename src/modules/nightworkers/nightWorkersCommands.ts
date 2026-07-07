@@ -106,6 +106,21 @@ export function stopRun(runId: string) {
 	return apiFetch(`/api/runs/${runId}/stop`, { method: "POST" });
 }
 
+export function fetchRunGitCloseout(runId: string) {
+	return apiFetch(`/api/runs/${runId}/git/closeout`);
+}
+
+export function commitRunGitCloseout(
+	runId: string,
+	input: { message?: string } = {},
+) {
+	return apiFetch(`/api/runs/${runId}/git/commit`, jsonRequest("POST", input));
+}
+
+export function pushRunGitCloseout(runId: string) {
+	return apiFetch(`/api/runs/${runId}/git/push`, { method: "POST" });
+}
+
 export function stopBackgroundProcess(processId: string) {
 	return apiFetch(`/api/background-processes/${processId}/stop`, {
 		method: "POST",
