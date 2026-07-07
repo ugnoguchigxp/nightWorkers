@@ -307,13 +307,12 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(prompt).toContain("nightworkers.todo_list");
 		expect(prompt).toContain("operation=replace");
 		expect(prompt).toContain("operation=done");
-		expect(prompt).toContain("Minimal implementation behavior:");
-		expect(prompt).toContain(
-			"計画文書で止まらず、必要最小限の確認後に実装へ進む",
-		);
+		expect(prompt).not.toContain("Minimal implementation behavior:");
+		expect(prompt).toContain("実装時の最小実行方針:");
+		expect(prompt).toContain("最小確認後に実装する");
 		expect(prompt).toContain("詳細な implementation-plan artifact を作らない");
 		expect(prompt).toContain(
-			"LLM コードレビュー、品質ゲート verify コマンド、closeout は省略しない",
+			"Todo tracking、LLM コードレビュー、quality_gate_verify、closeout は省略しない",
 		);
 		expect(prompt).toContain("data_migration.add_integration_test");
 		expect(prompt).toContain(
@@ -321,38 +320,29 @@ describe("CodexAgentRuntime config and prompt", () => {
 		);
 		expect(prompt).toContain("テスト内で schema を手書き再現せず");
 		expect(prompt).toContain("Questionnaire が unit 主軸なら");
-		expect(prompt).toContain("E2E Todo や E2E command を追加・実行しない");
+		expect(prompt).toContain("E2E Todo / E2E command を追加・実行しない");
+		expect(prompt).toContain("verify が format / typecheck / lint / test");
+		expect(prompt).toContain("個別コマンドを重複実行しない");
 		expect(prompt).toContain("Hono/Bun template や bun:sqlite");
-		expect(prompt).toContain("Bun 実行環境で走る bun test");
+		expect(prompt).toContain("Bun 実行環境の bun test");
 		expect(prompt).toContain("db:migrate 成功後の integration test 失敗");
+		expect(prompt).toContain("仕様が正本の場合");
+		expect(prompt).toContain("実行順は specification -> Todo execution");
 		expect(prompt).toContain(
-			"小さいコード変更で仕様 artifact がないことだけを理由に停止しない",
+			"context-still.initial_instructions は、この task で未実行の場合だけ作業前に一度実行して従う",
 		);
-		expect(prompt).toContain(
-			"Execution order: specification -> Todo execution -> verification -> closeout.",
-		);
-		expect(prompt).toContain(
-			"context-still.initial_instructions が未実行なら作業前に実行して従う",
-		);
+		expect(prompt).toContain("チャット入力ごとに再実行しない");
 		expect(prompt).not.toContain("ContextStill:");
 		expect(prompt).not.toContain("contextStill tool details");
 		expect(prompt).not.toContain("context-still.compile_eval is required");
-		expect(prompt).toContain(
-			"closeout starts only after implementation and verification are genuinely finished",
-		);
-		expect(prompt).toContain(
-			"「完了報告を行う」closeout gate の final assistant report",
-		);
+		expect(prompt).toContain("closeout は実装と検証が終わり");
+		expect(prompt).toContain("「完了報告を行う」gate");
 		expect(prompt).toContain("Todo 作成結果、計画共有、途中経過");
 		expect(prompt).not.toContain("register_candidates");
 		expect(prompt).not.toContain("知識登録を行う");
-		expect(prompt).toContain(
-			"TodoList pane is the user-visible progress source of truth",
-		);
-		expect(prompt).toContain("Timeline cards are not the mechanism");
-		expect(prompt).toContain(
-			"Do not call nightworkers.todo_list operation=list to make progress",
-		);
+		expect(prompt).toContain("TodoList pane がユーザー向け進捗");
+		expect(prompt).toContain("Timeline cards は Todo 進捗");
+		expect(prompt).toContain("operation=list は診断専用");
 		expect(prompt).toContain(
 			"未確認 mutation や未実施 verification を done にしない",
 		);
@@ -363,10 +353,7 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(prompt).toContain("nightworkers.read_current_specification");
 		expect(prompt).toContain("nightworkers.list_recent_specifications");
 		expect(prompt).toContain(
-			"For explicit planning, implementation-plan, specification",
-		);
-		expect(prompt).toContain(
-			"implementation work grounded in an existing specification",
+			"planning / specification / design-doc / requirement-check",
 		);
 		expect(prompt).toContain("includeDesignContext=true");
 		expect(prompt).toContain("nightworkers.import_project");
@@ -375,11 +362,26 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(prompt).not.toContain("nightworkers.run_command");
 		expect(prompt).not.toContain("nightworkers.run_verification");
 		expect(prompt).toContain("source=starter, stack=hono");
-		expect(prompt).toContain("default SQLite variant");
-		expect(prompt).toContain("Codex native command_execution events");
-		expect(prompt).toContain("Do not create a fallback static app");
+		expect(prompt).toContain("既定 SQLite variant");
 		expect(prompt).toContain(
-			"do not stop with a plan-only answer or next-steps summary",
+			"targetPath 内の package.json や source files を shell/read tools で読まない",
+		);
+		expect(prompt).toContain("空の targetPath は未 materialized");
+		expect(prompt).toContain("zsh の先行展開を避けるため quote する");
+		expect(prompt).toContain("例: -name 'vite.config.*'");
+		expect(prompt).toContain(
+			"NightWorkers task_run id を外部 MCP runId として渡さない",
+		);
+		expect(prompt).toContain(
+			"context-still compile_eval では context_compile が返した runId",
+		);
+		expect(prompt).toContain(
+			"作成または大幅編集後は、検証や closeout の前に関係箇所を読み返す",
+		);
+		expect(prompt).toContain("Codex native command_execution events");
+		expect(prompt).toContain("fallback static app や代替実装を作らない");
+		expect(prompt).toContain(
+			"plan-only answer や next-steps summary で止まらず",
 		);
 		expect(prompt).toContain("Module ontology protocol:");
 		expect(prompt).toContain("nightworkers.classify_goal");
