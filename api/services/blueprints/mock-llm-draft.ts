@@ -402,8 +402,8 @@ function normalizeMockBlueprintDataset(
 						`Field ${index + 1}`,
 					),
 					type: normalizeFieldType(field.type),
-					...(typeof field.placeholder === "string"
-						? { placeholder: field.placeholder }
+					...(typeof field.placeholder === "string" && field.placeholder.trim()
+						? { placeholder: field.placeholder.trim() }
 						: {}),
 					...(Array.isArray(field.options)
 						? { options: field.options.map(String) }

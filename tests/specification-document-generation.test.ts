@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildSpecificationDocumentContext,
+	FEATURE_PLAN_TRACEABILITY_STATEMENT,
 	sanitizeSpecificationTargetNaming,
 } from "../api/modules/specification/specification-document-renderer";
 import {
@@ -28,6 +29,8 @@ describe("Specification document generation", () => {
 			"詳細契約は assembled design context 側の責務",
 		);
 		expect(systemPrompt).toContain("Feature Plan 本文に schema 全文");
+		expect(systemPrompt).toContain("`## トレーサビリティ` は次の固定文だけ");
+		expect(systemPrompt).toContain(FEATURE_PLAN_TRACEABILITY_STATEMENT);
 		expect(systemPrompt).toContain(
 			"API Contract / Blueprint / Data Model / Zod Schema artifact",
 		);
@@ -305,13 +308,7 @@ describe("Specification document generation", () => {
 		expect(context.planViewReferences).toContain(
 			"status:enum/required(todo|done)",
 		);
-		expect(context.traceability).toContain(
-			"API Contract: included and indexed",
-		);
-		expect(context.traceability).toContain("Zod Schema: included and indexed");
-		expect(context.traceability).toContain(
-			"Data Model DDL reference: included",
-		);
+		expect(context.traceability).toBe(FEATURE_PLAN_TRACEABILITY_STATEMENT);
 		expect(context.planModeReferences).toContain("Dedicated Views:");
 		expect(context.planModeReferences).toContain("Todo User Flow");
 		expect(context.planModeReferences).toContain("flowchart TD");

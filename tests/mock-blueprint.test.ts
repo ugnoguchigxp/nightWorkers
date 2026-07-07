@@ -805,6 +805,105 @@ describe("Mock Blueprint", () => {
 		}
 	});
 
+	it("drops empty form field placeholders before schema validation", async () => {
+		const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+		const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+		const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+		process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+		process.env.ACTIVE_LLM_PROVIDER = "fixture";
+		process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+			...representativeMockBlueprint,
+			meta: {
+				intent: "Todo form placeholder normalization.",
+				selectedSections: [
+					{
+						sectionType: "FormSection",
+						selectionReason: "Todo の追加と編集を確認するため。",
+					},
+				],
+			},
+			screens: [
+				{
+					...representativeMockBlueprint.screens[0],
+					sections: [
+						{
+							...representativeMockBlueprint.screens[0].sections[2],
+							componentName: "FormSection",
+							dataset: {
+								kind: "form",
+								fields: [
+									{
+										name: "title",
+										label: "タスク名",
+										type: "text",
+										placeholder: "例: 請求書を送る",
+									},
+									{
+										name: "dueDate",
+										label: "期限",
+										type: "date",
+										placeholder: "",
+									},
+									{
+										name: "completed",
+										label: "完了",
+										type: "checkbox",
+										placeholder: "   ",
+									},
+								],
+								submitLabel: "保存する",
+							},
+						},
+					],
+				},
+			],
+		});
+
+		try {
+			const repository = await repo.createRepository({
+				name: `TEST: Mock Blueprint Empty Placeholder ${crypto.randomUUID()}`,
+				localPath: "/Users/y.noguchi/Code/nightWorkers",
+				branch: "main",
+			});
+			const task = await repo.createTask({
+				repositoryId: repository.id,
+				title: "TEST: Mock Blueprint empty placeholder task",
+				description: "Validate empty placeholder normalization.",
+				status: "draft",
+			});
+			const result = await generatePlanModeMockBlueprintDraft({
+				taskId: task.id,
+				title: "Todo Mock",
+				prompt: "todo form with optional date and completed fields",
+			});
+			const dataset = result.mockBlueprint.screens[0].sections[0].dataset;
+
+			expect(dataset.kind).toBe("form");
+			if (dataset.kind !== "form") throw new Error("Expected form dataset.");
+			const titleField = dataset.fields.find((field) => field.name === "title");
+			const dueDateField = dataset.fields.find(
+				(field) => field.name === "dueDate",
+			);
+			const completedField = dataset.fields.find(
+				(field) => field.name === "completed",
+			);
+
+			expect(titleField).toMatchObject({ placeholder: "例: 請求書を送る" });
+			expect(dueDateField).not.toHaveProperty("placeholder");
+			expect(completedField).not.toHaveProperty("placeholder");
+		} finally {
+			if (originalProvider === undefined)
+				delete process.env.ACTIVE_LLM_PROVIDER;
+			else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+			if (originalFixture === undefined)
+				delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+			else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+			if (originalSettingsPath === undefined)
+				delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+			else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+		}
+	});
+
 	it("repairs missing copy and empty table datasets before final validation", async () => {
 		const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
 		const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;

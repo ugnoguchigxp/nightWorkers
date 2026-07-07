@@ -13,7 +13,9 @@ import {
 	extractViewDecisions,
 	getPlanWorkspaceTabLabel,
 	PlanModeWorkspaceViewer,
+	resetPlanWorkspaceScrollToTop,
 	resolveInitialPlanWorkspaceTabUpdate,
+	scrollPlanWorkspaceToTop,
 	selectActiveDedicatedArtifact,
 	shouldOpenQuestionnaireForEmptyBlueprint,
 	shouldShowQuestionnaireStartAction,
@@ -397,6 +399,36 @@ describe("PlanModeWorkspaceViewer", () => {
 				activeTab: "blueprint",
 			}),
 		).toBe(false);
+	});
+
+	it("resets the Plan Mode workspace scrollbar to the top", () => {
+		const scrollCalls: ScrollToOptions[] = [];
+		const scrollable = {
+			scrollTop: 240,
+			scrollTo: (options: ScrollToOptions) => scrollCalls.push(options),
+		};
+		const fallbackScrollable = { scrollTop: 240 };
+
+		scrollPlanWorkspaceToTop(scrollable);
+		scrollPlanWorkspaceToTop(fallbackScrollable);
+
+		expect(scrollCalls).toEqual([{ top: 0, left: 0, behavior: "auto" }]);
+		expect(fallbackScrollable.scrollTop).toBe(0);
+	});
+
+	it("schedules the Plan Mode workspace scrollbar reset against the latest element", () => {
+		let scheduledReset: (() => void) | null = null;
+		let scrollable: { scrollTop: number } | null = null;
+
+		resetPlanWorkspaceScrollToTop(() => scrollable, {
+			requestAnimationFrame: (callback) => {
+				scheduledReset = callback;
+			},
+		});
+		scrollable = { scrollTop: 240 };
+		scheduledReset?.();
+
+		expect(scrollable.scrollTop).toBe(0);
 	});
 });
 

@@ -1,5 +1,6 @@
 import type { DesignQuestionnaireSession } from "../../../../shared/schemas/design-questionnaire.schema";
 import type { QuestionnaireDecisionInventoryItem } from "../../../modules/questionnaire/questionnaire-validation";
+import { FEATURE_PLAN_TRACEABILITY_STATEMENT } from "../../../modules/specification/specification-traceability";
 
 type QuestionnaireSourceInput = {
 	sourceBlueprintMessage?: {
@@ -243,7 +244,7 @@ export function buildSpecificationDocumentSystemPrompt() {
 		"Plan Mode References は入力専用の関連資料 context です。最終文書に全件列挙せず、設計判断と契約の確定に使ってください。",
 		"既生成資料は正本として信頼し、同じ内容を推測し直さないでください。矛盾がある場合は、最新ユーザー指示、Questionnaire Decisions、各 domain の専用 view、既存 repository context の順に優先してください。",
 		"未決定事項は極力作らず、既存資料から合理的に決められる場合は前提として固定してください。実装を始めると危険な矛盾または欠落だけを未解決として短く残してください。",
-		"Plan View References に API Contract や Zod Schema がある場合は、本文に詳細を再掲せず、`## 実装計画` と `## トレーサビリティ` でどの artifact を正本として使うかを短く示してください。",
+		"Plan View References に API Contract や Zod Schema がある場合も、本文に詳細を再掲せず、`## 実装計画` で必要な参照先だけを短く示してください。",
 		"API Contract / Zod Schema に JSON shape が含まれる場合でも、Feature Plan 本文に schema 全文や request / response / error shape を貼らないでください。詳細契約は assembled design context 側の責務です。",
 		"auth / permission が仕様に影響する場合は、Questionnaire answer、Blueprint、または既存 project convention の根拠を1行で書いてください。根拠が無いまま public/protected/admin を固定しないでください。",
 		"`A または B`、`必要に応じて`、`適宜` のような API / DB 契約の未決表現は避けてください。既存資料から決められない場合だけ assumption として短く残してください。",
@@ -255,7 +256,8 @@ export function buildSpecificationDocumentSystemPrompt() {
 		"`## 検証計画` は Target Project Context の `Project package scripts` に存在する script 名だけを command として書いてください。存在しない `verify:e2e` や架空の focused test command を推測しないでください。",
 		"Hono/Bun template または `bun:*` API を使う DB/migration 実装では、migration 検証は Bun 実行環境の `bun test` または `bun run` 経由の CLI smoke を前提にしてください。Node/Vitest が `bun:*` を解決できない構成で動く integration test を検証計画にしないでください。",
 		"`## 完了条件` は検証済み事実だけで書いてください。",
-		"`## トレーサビリティ` は source ID 羅列ではなく、実装判断に効いた資料種別、採用判断、詳細契約は assembled design context にあることだけを短く書いてください。監査用 ID は metadata 側に残るため本文に列挙しないでください。",
+		"`## トレーサビリティ` は次の固定文だけを書いてください: " +
+			FEATURE_PLAN_TRACEABILITY_STATEMENT,
 		"画面仕様、機能要件、データ設計方針、参考情報、Evidence などの追加見出しは、重複になる場合は作らないでください。",
 		"出力は JSON object のみで、title と content を返してください。content は Markdown 文字列にしてください。",
 	].join("\n");

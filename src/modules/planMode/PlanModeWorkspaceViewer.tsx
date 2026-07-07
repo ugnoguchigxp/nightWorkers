@@ -208,6 +208,37 @@ export function shouldOpenQuestionnaireForEmptyBlueprint(input: {
 	);
 }
 
+type PlanWorkspaceScrollContainer = {
+	scrollTop: number;
+	scrollTo?: (options: ScrollToOptions) => void;
+};
+type PlanWorkspaceScrollScheduler = {
+	requestAnimationFrame?: (callback: () => void) => unknown;
+};
+
+export function scrollPlanWorkspaceToTop(
+	element: PlanWorkspaceScrollContainer | null,
+) {
+	if (!element) return;
+	if (typeof element.scrollTo === "function") {
+		element.scrollTo({ top: 0, left: 0, behavior: "auto" });
+		return;
+	}
+	element.scrollTop = 0;
+}
+
+export function resetPlanWorkspaceScrollToTop(
+	getElement: () => PlanWorkspaceScrollContainer | null,
+	scheduler?: PlanWorkspaceScrollScheduler,
+) {
+	const reset = () => scrollPlanWorkspaceToTop(getElement());
+	if (typeof scheduler?.requestAnimationFrame === "function") {
+		scheduler.requestAnimationFrame(reset);
+		return;
+	}
+	reset();
+}
+
 type PlanModeCapabilities = ReturnType<typeof getPlanModeCapabilities>;
 type PlanWorkspaceActionResult =
 	| { focusTab?: PlanWorkspaceTab | null }
@@ -334,6 +365,7 @@ export function PlanModeWorkspaceViewer({
 	const questionnaireGateLocked =
 		planModeCapabilities.questionnaire && !questionnaireComplete;
 	const didSelectUnlockedDefaultTab = useRef(false);
+	const workspaceScrollRef = useRef<HTMLDivElement | null>(null);
 	const activeTabRef = useRef(activeTab);
 	const onTabChangeRef = useRef(onTabChange);
 	onTabChangeRef.current = onTabChange;
@@ -366,6 +398,9 @@ export function PlanModeWorkspaceViewer({
 		activeTabRef.current = tab;
 		setActiveTab(tab);
 		onTabChangeRef.current?.(tab);
+	}, []);
+	const resetWorkspaceScrollTop = useCallback(() => {
+		resetPlanWorkspaceScrollToTop(() => workspaceScrollRef.current, window);
 	}, []);
 
 	const refresh = useCallback(
@@ -512,7 +547,10 @@ export function PlanModeWorkspaceViewer({
 			await refresh({
 				preserveGeneratedBlueprintFocus: focusTab === "blueprint",
 			});
-			if (focusTab) selectActiveTab(focusTab);
+			if (focusTab) {
+				selectActiveTab(focusTab);
+				resetWorkspaceScrollTop();
+			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			setActionError(message);
@@ -808,7 +846,10 @@ export function PlanModeWorkspaceViewer({
 					))}
 				</div>
 			</div>
-			<div className="nightworkers-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
+			<div
+				ref={workspaceScrollRef}
+				className="nightworkers-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4"
+			>
 				{activeTab === "feature-plan" ? (
 					<MarkdownViewer
 						content={

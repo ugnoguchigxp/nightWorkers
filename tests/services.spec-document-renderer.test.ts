@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	buildAssembledDesignContext,
 	buildSpecificationDocumentContext,
+	FEATURE_PLAN_TRACEABILITY_STATEMENT,
 	renderQuestionnaireAnswerMarkdown,
 } from "../api/modules/specification/specification-document-renderer";
 import type {
@@ -189,17 +190,7 @@ describe("spec-document-renderer", () => {
 				"ALTER TABLE profiles ADD FOREIGN KEY (user_id) REFERENCES users (id);",
 			);
 
-			// Check traceability
-			expect(result.traceability).toContain(
-				"Questionnaire decisions: included",
-			);
-			expect(result.traceability).toContain("Blueprint summary: included");
-			expect(result.traceability).toContain(
-				"Data Model DDL reference: included",
-			);
-			expect(result.traceability).toContain("API Contract: none");
-			expect(result.traceability).toContain("Zod Schema: none");
-			expect(result.traceability).toContain("Workspace counts: blueprint=1");
+			expect(result.traceability).toBe(FEATURE_PLAN_TRACEABILITY_STATEMENT);
 		});
 
 		it("uses a preferred Blueprint message when regenerating a Feature Plan from artifact context", () => {
@@ -436,13 +427,7 @@ describe("spec-document-renderer", () => {
 				"Zod Schema: TodoInputSchema",
 			);
 			expect(result.planViewReferences).toContain("title:string/required");
-			expect(result.traceability).toContain(
-				"API Contract: included and indexed",
-			);
-			expect(result.traceability).toContain("Zod Schema: included and indexed");
-			expect(result.traceability).toContain(
-				"Workspace counts: blueprint=1, dataModel=0",
-			);
+			expect(result.traceability).toBe(FEATURE_PLAN_TRACEABILITY_STATEMENT);
 			expect(result.planModeReferences).toContain("Dedicated Views:");
 			expect(result.planModeReferences).toContain("Todo Activity Flow");
 			expect(result.planModeReferences).toContain("flowchart TD");

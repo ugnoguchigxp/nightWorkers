@@ -5,6 +5,9 @@ import type {
 } from "../../../shared/schemas/design-questionnaire.schema";
 import type { PlanModeWorkspace } from "../../../shared/schemas/plan-mode-artifact.schema";
 import { getSessionQuestions } from "../questionnaire/questionnaire-parser.service";
+import { FEATURE_PLAN_TRACEABILITY_STATEMENT } from "./specification-traceability";
+
+export { FEATURE_PLAN_TRACEABILITY_STATEMENT } from "./specification-traceability";
 
 type JsonRecord = Record<string, unknown>;
 type TaskMessageRow = {
@@ -18,6 +21,7 @@ type TaskLike = {
 	description?: string | null;
 	objective?: string | null;
 };
+
 type QuestionnaireAnswerRow = {
 	questionId: string;
 	answer: DesignQuestionnaireAnswer;
@@ -78,16 +82,6 @@ export function buildSpecificationDocumentContext(input: {
 		input.messages,
 		"zod_schema_design",
 	);
-	const latestApiContractArtifact = findDedicatedViewArtifact(
-		input.workspace,
-		"api_io_contract",
-		latestApiContract?.id,
-	);
-	const latestZodSchemaArtifact = findDedicatedViewArtifact(
-		input.workspace,
-		"zod_schema_design",
-		latestZodSchema?.id,
-	);
 	const blueprint = getMessageBlueprint(latestBlueprint);
 	const dataModelArtifact = getMessageDataModelArtifact(latestDataModel);
 	const blueprintSummary = renderCompressedBlueprintNaturalLanguage(blueprint);
@@ -132,24 +126,7 @@ export function buildSpecificationDocumentContext(input: {
 		planViewReferences,
 		planModeReferences,
 		userRegenerationRequest: null as string | null,
-		traceability: [
-			input.session
-				? "Questionnaire decisions: included"
-				: "Questionnaire decisions: none",
-			latestBlueprint
-				? "Blueprint summary: included"
-				: "Blueprint summary: not generated",
-			latestDataModel
-				? "Data Model DDL reference: included"
-				: "Data Model DDL reference: none",
-			latestApiContract
-				? `API Contract: included${latestApiContractArtifact ? " and indexed" : ""}`
-				: "API Contract: none",
-			latestZodSchema
-				? `Zod Schema: included${latestZodSchemaArtifact ? " and indexed" : ""}`
-				: "Zod Schema: none",
-			`Workspace counts: blueprint=${workspaceArtifacts(input.workspace, "blueprintArtifacts").length}, dataModel=${workspaceArtifacts(input.workspace, "dataModelArtifacts").length}, dedicatedViews=${workspaceArtifacts(input.workspace, "dedicatedViewArtifacts").length}`,
-		].join("\n"),
+		traceability: FEATURE_PLAN_TRACEABILITY_STATEMENT,
 	};
 }
 
@@ -1344,23 +1321,6 @@ function findLatestPlanViewMessage(
 					metadata.zodSchema),
 		);
 	});
-}
-
-function findDedicatedViewArtifact(
-	workspace: PlanModeWorkspace,
-	view: "api_io_contract" | "zod_schema_design",
-	sourceMessageId: string | undefined,
-) {
-	return [...workspaceArtifacts(workspace, "dedicatedViewArtifacts")]
-		.reverse()
-		.find((artifact) => {
-			if (artifact.kind !== view) return false;
-			if (!sourceMessageId) return true;
-			return (
-				artifact.sourceMessageId === sourceMessageId ||
-				artifact.id === sourceMessageId
-			);
-		});
 }
 
 function getMessageBlueprint(
