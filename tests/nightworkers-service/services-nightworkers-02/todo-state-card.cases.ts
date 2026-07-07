@@ -365,6 +365,15 @@ describe("NightWorkers service", () => {
 				}),
 			}),
 		);
+		await vi.waitFor(() => {
+			expect(
+				conversationContext.refreshConversationContextSnapshot,
+			).toHaveBeenCalledWith({
+				taskId: task.id,
+				runId: run.id,
+				reason: "run_finished",
+			});
+		});
 	});
 
 	it("does not inject a StateCard built from the current latest user message", async () => {
@@ -545,6 +554,118 @@ describe("NightWorkers service", () => {
 		);
 		expect(
 			conversationContext.getLatestConversationContextForTask,
+		).not.toHaveBeenCalled();
+	});
+
+	it("does not inject, load, or refresh StateCard context for Codex SDK lane", async () => {
+		process.env.NIGHTWORKERS_RUNTIME_LANE = "codex-sdk";
+		const task = {
+			id: "task-state-card-codex-sdk",
+			repositoryId: "repo-state-card-codex-sdk",
+			title: "Codex StateCard task",
+			description: "initial",
+			objective: "initial",
+			acceptanceCriteria: "Runtime completes",
+			timeoutSeconds: 60,
+		};
+		const run = {
+			id: "run-state-card-codex-sdk",
+			taskId: task.id,
+			repositoryId: task.repositoryId,
+			status: "running",
+		};
+		vi.mocked(repo.getTask).mockResolvedValue(task as never);
+		vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+		vi.mocked(repo.getRepository).mockResolvedValue({
+			id: task.repositoryId,
+			localPath: repoRoot,
+			safetyPolicy: {},
+		} as never);
+		vi.mocked(repo.listTaskMessages).mockResolvedValue([
+			{
+				id: "message-codex-sdk",
+				role: "user",
+				content: "foo 条件も追加してください",
+			},
+		] as never);
+		vi.mocked(repo.createTaskRun).mockResolvedValue(run as never);
+		vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
+		vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as never);
+		vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+		vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
+		vi.mocked(
+			conversationContext.getLatestConversationContextForTask,
+		).mockResolvedValue({
+			id: "snapshot-codex-sdk",
+			taskId: task.id,
+			runId: "run-previous",
+			version: 1,
+			jobType: "minor_code_edit",
+			latestUserMessageId: "message-previous",
+			previousRunId: "run-previous",
+			terminalState: "completed",
+			tokenEstimate: 42,
+			snapshotJson: { version: 1 } as never,
+			stateCardText: "<STATE_CARD>\nTask: codex-sdk\n</STATE_CARD>",
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		});
+		const runtimeStart = vi.fn().mockResolvedValue({
+			terminalState: "completed",
+			summary: "Runtime done",
+			finalReport: "Runtime report",
+			stoppedBy: "decision",
+			riskLevel: "low",
+			diffPatch: "",
+			logContent: "",
+		});
+		vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+			kind: "codex-agent",
+			start: runtimeStart,
+			stop: vi.fn(),
+		} as never);
+
+		await startTaskRun(task.id);
+
+		await vi.waitFor(() => {
+			expect(runtimeStart).toHaveBeenCalledTimes(1);
+		});
+		expect(runtimeStart.mock.calls[0][0]).toEqual(
+			expect.objectContaining({
+				latestUserMessage: `${implementationPhasePreamble}\n\nfoo 条件も追加してください`,
+				contextSnapshot: expect.objectContaining({
+					runtimeLane: "codex-sdk",
+					executionPhase: "implementation",
+					planModeClosed: true,
+					implementationPhasePreamble,
+					conversationContext: expect.objectContaining({
+						stateCardIncluded: false,
+						usage: expect.objectContaining({
+							stateCardTokens: 0,
+						}),
+					}),
+				}),
+			}),
+		);
+		expect(runtimeStart.mock.calls[0][0].latestUserMessage).not.toContain(
+			"<STATE_CARD>",
+		);
+		expect(
+			conversationContext.getLatestConversationContextForTask,
+		).not.toHaveBeenCalled();
+		await vi.waitFor(() => {
+			expect(repo.createTaskMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					taskId: task.id,
+					runId: run.id,
+					role: "assistant",
+					content: "Runtime report",
+				}),
+			);
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(
+			conversationContext.refreshConversationContextSnapshot,
 		).not.toHaveBeenCalled();
 	});
 

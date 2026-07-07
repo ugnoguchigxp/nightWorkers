@@ -345,7 +345,7 @@ export async function startTaskRun(
 		executionMode,
 	});
 	const conversationContext =
-		executionMode === "review"
+		executionMode === "review" || runtimeLaneResolution.lane === "codex-sdk"
 			? null
 			: await maybeLoadConversationStateCard(taskId, lastUserMessage?.id);
 	const projectedStateCard = projectConversationStateCardForRuntime({

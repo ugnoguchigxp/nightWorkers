@@ -65,6 +65,19 @@ type LaunchRuntimeExecutionInput = {
 	runtimeLaneResolution: RuntimeLaneResolution;
 };
 
+async function refreshConversationContextForRuntimeLane(input: {
+	runtimeLaneResolution: RuntimeLaneResolution;
+	taskId: string;
+	runId: string;
+}) {
+	if (input.runtimeLaneResolution.lane === "codex-sdk") return;
+	await safelyRefreshConversationContext({
+		taskId: input.taskId,
+		runId: input.runId,
+		reason: "run_finished",
+	});
+}
+
 export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 	const {
 		taskId,
@@ -242,10 +255,10 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 						status: "cancelled",
 					},
 				});
-				await safelyRefreshConversationContext({
+				await refreshConversationContextForRuntimeLane({
+					runtimeLaneResolution,
 					taskId,
 					runId: run.id,
-					reason: "run_finished",
 				});
 				return;
 			}
@@ -443,10 +456,10 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				},
 			});
 			await safelyCreateReviewRecommendation({ taskId, runId: run.id });
-			await safelyRefreshConversationContext({
+			await refreshConversationContextForRuntimeLane({
+				runtimeLaneResolution,
 				taskId,
 				runId: run.id,
-				reason: "run_finished",
 			});
 		} catch (err: unknown) {
 			const errorMessage = toErrorMessage(err);
@@ -493,10 +506,10 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				},
 			});
 			await safelyCreateReviewRecommendation({ taskId, runId: run.id });
-			await safelyRefreshConversationContext({
+			await refreshConversationContextForRuntimeLane({
+				runtimeLaneResolution,
 				taskId,
 				runId: run.id,
-				reason: "run_finished",
 			});
 		}
 	})();
