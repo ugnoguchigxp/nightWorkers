@@ -15,6 +15,7 @@ import {
 	PlanModeWorkspaceViewer,
 	resolveInitialPlanWorkspaceTabUpdate,
 	selectActiveDedicatedArtifact,
+	shouldOpenQuestionnaireForEmptyBlueprint,
 	shouldShowQuestionnaireStartAction,
 	WorkspaceBlueprintPreview,
 } from "../src/modules/planMode";
@@ -371,6 +372,31 @@ describe("PlanModeWorkspaceViewer", () => {
 		expect(resolveInitialPlanWorkspaceTabUpdate("status", false)).toBe(
 			"status",
 		);
+	});
+
+	it("keeps generated Blueprint focus from being pushed back to Questionnaire", () => {
+		expect(
+			shouldOpenQuestionnaireForEmptyBlueprint({
+				hasQuestionnaireSessions: true,
+				hasBlueprintMessages: false,
+				activeTab: "blueprint",
+			}),
+		).toBe(true);
+		expect(
+			shouldOpenQuestionnaireForEmptyBlueprint({
+				hasQuestionnaireSessions: true,
+				hasBlueprintMessages: false,
+				activeTab: "blueprint",
+				preserveGeneratedBlueprintFocus: true,
+			}),
+		).toBe(false);
+		expect(
+			shouldOpenQuestionnaireForEmptyBlueprint({
+				hasQuestionnaireSessions: true,
+				hasBlueprintMessages: true,
+				activeTab: "blueprint",
+			}),
+		).toBe(false);
 	});
 });
 

@@ -194,7 +194,24 @@ export function resolveInitialPlanWorkspaceTabUpdate(
 	return initialTab === "questionnaire" ? null : initialTab;
 }
 
+export function shouldOpenQuestionnaireForEmptyBlueprint(input: {
+	hasQuestionnaireSessions: boolean;
+	hasBlueprintMessages: boolean;
+	activeTab: PlanWorkspaceTab;
+	preserveGeneratedBlueprintFocus?: boolean;
+}) {
+	return (
+		input.hasQuestionnaireSessions &&
+		!input.hasBlueprintMessages &&
+		input.activeTab === "blueprint" &&
+		!input.preserveGeneratedBlueprintFocus
+	);
+}
+
 type PlanModeCapabilities = ReturnType<typeof getPlanModeCapabilities>;
+type PlanWorkspaceActionResult =
+	| { focusTab?: PlanWorkspaceTab | null }
+	| undefined;
 
 export function buildVisiblePlanWorkspaceTabs(input: {
 	questionnaireGateLocked: boolean;
@@ -351,36 +368,47 @@ export function PlanModeWorkspaceViewer({
 		onTabChangeRef.current?.(tab);
 	}, []);
 
-	const refresh = useCallback(async () => {
-		if (!sessionId) return;
-		const workspaceRes = await fetchPlanModeWorkspace(sessionId);
-		if (workspaceRes.ok)
-			setWorkspace((await workspaceRes.json()) as PlanModeWorkspace);
-		const sessionsRes = await fetchDesignQuestionnaireSessions(sessionId);
-		if (sessionsRes.ok) {
-			const nextSessions =
-				(await sessionsRes.json()) as DesignQuestionnaireSession[];
-			setSessions(nextSessions);
-			if (
-				nextSessions.length > 0 &&
-				blueprintMessages.length === 0 &&
-				activeTabRef.current === "blueprint"
-			) {
-				selectActiveTab("questionnaire");
+	const refresh = useCallback(
+		async (options?: { preserveGeneratedBlueprintFocus?: boolean }) => {
+			if (!sessionId) return;
+			const workspaceRes = await fetchPlanModeWorkspace(sessionId);
+			const nextWorkspace = workspaceRes.ok
+				? ((await workspaceRes.json()) as PlanModeWorkspace)
+				: null;
+			if (nextWorkspace) setWorkspace(nextWorkspace);
+			const sessionsRes = await fetchDesignQuestionnaireSessions(sessionId);
+			if (sessionsRes.ok) {
+				const nextSessions =
+					(await sessionsRes.json()) as DesignQuestionnaireSession[];
+				setSessions(nextSessions);
+				if (
+					shouldOpenQuestionnaireForEmptyBlueprint({
+						hasQuestionnaireSessions: nextSessions.length > 0,
+						hasBlueprintMessages:
+							blueprintMessages.length > 0 ||
+							Boolean(nextWorkspace?.blueprintArtifacts.length),
+						activeTab: activeTabRef.current,
+						preserveGeneratedBlueprintFocus:
+							options?.preserveGeneratedBlueprintFocus,
+					})
+				) {
+					selectActiveTab("questionnaire");
+				}
+				const selected =
+					nextSessions.find((item) => item.id === activeSessionId) ||
+					nextSessions[0];
+				if (selected) {
+					setActiveSessionId(selected.id);
+					setAnswers(
+						Object.fromEntries(
+							selected.answers.map((item) => [item.questionId, item.answer]),
+						),
+					);
+				}
 			}
-			const selected =
-				nextSessions.find((item) => item.id === activeSessionId) ||
-				nextSessions[0];
-			if (selected) {
-				setActiveSessionId(selected.id);
-				setAnswers(
-					Object.fromEntries(
-						selected.answers.map((item) => [item.questionId, item.answer]),
-					),
-				);
-			}
-		}
-	}, [activeSessionId, blueprintMessages.length, selectActiveTab, sessionId]);
+		},
+		[activeSessionId, blueprintMessages.length, selectActiveTab, sessionId],
+	);
 
 	useEffect(() => {
 		void refresh();
@@ -471,13 +499,20 @@ export function PlanModeWorkspaceViewer({
 		questionnaireComplete,
 	});
 
-	async function runAction(action: string, fn: () => Promise<void>) {
+	async function runAction(
+		action: string,
+		fn: () => Promise<PlanWorkspaceActionResult>,
+	) {
 		setBusyAction(action);
 		setActionError(null);
 		setActionNotice(null);
 		try {
-			await fn();
-			await refresh();
+			const result = await fn();
+			const focusTab = result?.focusTab ?? null;
+			await refresh({
+				preserveGeneratedBlueprintFocus: focusTab === "blueprint",
+			});
+			if (focusTab) selectActiveTab(focusTab);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			setActionError(message);
@@ -488,7 +523,10 @@ export function PlanModeWorkspaceViewer({
 
 	async function runSessionAction(action: string, fn?: () => Promise<void>) {
 		if (!fn || isImplementationLocked) return;
-		await runAction(action, fn);
+		await runAction(action, async () => {
+			await fn();
+			return undefined;
+		});
 	}
 
 	const planModeDisabledReason =
@@ -666,7 +704,7 @@ export function PlanModeWorkspaceViewer({
 				setGeneratedMessages((prev) => [...prev, generatedMessage]);
 			}
 			if (result.workspace) setWorkspace(result.workspace);
-			selectActiveTab(nextTab);
+			return { focusTab: nextTab };
 		});
 	}
 
@@ -698,7 +736,7 @@ export function PlanModeWorkspaceViewer({
 				setGeneratedMessages((prev) => [...prev, ...generated]);
 			if (latestWorkspace) setWorkspace(latestWorkspace);
 			const firstTab = planViewToTab[targetViews[0]];
-			if (firstTab) selectActiveTab(firstTab);
+			if (firstTab) return { focusTab: firstTab };
 		});
 	}
 
