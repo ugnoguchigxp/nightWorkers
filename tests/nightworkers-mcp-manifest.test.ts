@@ -203,17 +203,10 @@ describe("nightworkers MCP manifest", () => {
 					},
 					{
 						seq: 3,
-						title: "知識登録を行う",
-						taskType: "knowledge_capture",
-						procedureId: "contextstill.register_candidates",
-						dependsOn: [2],
-					},
-					{
-						seq: 4,
 						title: "完了報告を行う",
 						taskType: "completion_report",
 						procedureId: "final_completion_report",
-						dependsOn: [3],
+						dependsOn: [2],
 					},
 				],
 			}),

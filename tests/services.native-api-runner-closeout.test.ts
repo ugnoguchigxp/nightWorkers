@@ -8,7 +8,7 @@ import type {
 } from "../api/services/agent-runtime/types";
 
 describe("NativeApiCloseoutController", () => {
-	it("records compile_eval as a runtime gate during closeout", async () => {
+	it("records compile_eval as a required runtime gate during closeout", async () => {
 		const store = createFakeStore();
 		const events: AgentRuntimeEvent[] = [];
 		const executeTool = vi.fn(async () => ({

@@ -304,7 +304,7 @@ const nativeApiToolRegistrations: NativeApiToolRegistration[] = [
 		definition: {
 			name: "compile_eval",
 			description:
-				"Record a contextStill compile_eval during closeout. Recommended when context_compile was used; do not treat failure as automatic task failure.",
+				"Record the required contextStill compile_eval during closeout when context_compile was used; do not treat failure as automatic task failure.",
 			inputSchema: objectSchema(
 				{
 					title: { type: "string" },
@@ -437,7 +437,6 @@ const nativeApiToolNamesByMode: Record<
 		"context_compile",
 		"context_decision",
 		"compile_eval",
-		"register_candidates",
 		"new_context",
 		"finalize_answer",
 	]),
@@ -539,12 +538,6 @@ function oneShotToolNamesForTodo(
 		taskType === "context_compile"
 	) {
 		tools.add("context_compile");
-	}
-	if (
-		procedureId === "contextstill.register_candidates" ||
-		taskType === "knowledge_capture"
-	) {
-		tools.add("register_candidates");
 	}
 	if (
 		procedureId === "contextstill.compile_eval" ||

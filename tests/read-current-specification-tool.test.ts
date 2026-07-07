@@ -486,7 +486,6 @@ describe("todo_list worker tool", () => {
 			"inspection",
 			"review",
 			"verification",
-			"knowledge_capture",
 			"completion_report",
 		]);
 		expect(result.payload.todos[0]).toMatchObject({
@@ -630,7 +629,6 @@ describe("todo_list worker tool", () => {
 			{ seq: 5, status: "pending" },
 			{ seq: 6, status: "pending" },
 			{ seq: 7, status: "pending" },
-			{ seq: 8, status: "pending" },
 		]);
 	});
 
@@ -673,7 +671,7 @@ describe("todo_list worker tool", () => {
 		expect(result.error?.message).toContain("todo_list operation=done");
 	});
 
-	it("leaves the final knowledge registration and completion report Todos pending without running them", async () => {
+	it("leaves the final completion report Todo pending without running it", async () => {
 		const createdRepo = await repo.createRepository({
 			name: `TEST: todo final closeout ${crypto.randomUUID()}`,
 			localPath: "/Users/y.noguchi/Code/nightWorkers",
@@ -706,23 +704,14 @@ describe("todo_list worker tool", () => {
 		}
 
 		const persisted = await repo.listTaskRunTodosForRun(run.id);
-		expect(persisted.at(-2)).toMatchObject({
-			seq: 6,
-			title: "知識登録を行う",
-			taskType: "knowledge_capture",
-			procedureId: "contextstill.register_candidates",
-			status: "pending",
-		});
 		expect(persisted.at(-1)).toMatchObject({
-			seq: 7,
+			seq: 6,
 			title: "完了報告を行う",
 			taskType: "completion_report",
 			procedureId: "final_completion_report",
 			status: "pending",
 		});
 		expect(persisted.some((todo) => todo.status === "running")).toBe(false);
-		expect(persisted.at(-2)?.startedAt).toBeFalsy();
-		expect(persisted.at(-2)?.completedAt).toBeFalsy();
 		expect(persisted.at(-1)?.startedAt).toBeFalsy();
 		expect(persisted.at(-1)?.completedAt).toBeFalsy();
 	});
@@ -759,40 +748,26 @@ describe("todo_list worker tool", () => {
 			expect(result.ok).toBe(true);
 		}
 
-		const beforeStart = await repo.listTaskRunTodosForRun(run.id);
-		const knowledgeTodo = beforeStart.find(
-			(todo) => todo.taskType === "knowledge_capture" && todo.seq === 6,
-		);
-		expect(knowledgeTodo).toBeTruthy();
-		if (!knowledgeTodo) {
-			throw new Error("Expected knowledge capture Todo to exist.");
-		}
-		await repo.updateTaskRunTodo(knowledgeTodo.id, {
-			status: "passed",
-			startedAt: new Date(),
-			completedAt: new Date(),
-		});
-
 		const started = await todoListTool({
 			runId: run.id,
 			operation: "start",
-			seq: 7,
+			seq: 6,
 		});
 
 		expect(started.ok).toBe(true);
 		expect(started.payload.currentTodo).toMatchObject({
-			seq: 7,
+			seq: 6,
 			taskType: "completion_report",
 			procedureId: "final_completion_report",
 			status: "running",
 		});
 		const persisted = await repo.listTaskRunTodosForRun(run.id);
-		expect(persisted[6]).toMatchObject({
-			seq: 7,
+		expect(persisted[5]).toMatchObject({
+			seq: 6,
 			taskType: "completion_report",
 			status: "running",
 		});
-		expect(persisted[6].startedAt).toBeTruthy();
+		expect(persisted[5].startedAt).toBeTruthy();
 	});
 
 	it("returns attempted todo diagnostics when complete fails", async () => {

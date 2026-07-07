@@ -125,17 +125,25 @@ describe("NativeApiRunner tool registry and dispatcher gates", () => {
 				procedureId: "contextstill.context_compile",
 			},
 		}).map((tool) => tool.name);
-		const closeoutTools = getNativeApiToolDefinitions({
+		const legacyKnowledgeTools = getNativeApiToolDefinitions({
 			executionMode: "implementation",
 			currentTodo: {
 				taskType: "knowledge_capture",
 				procedureId: "contextstill.register_candidates",
 			},
 		}).map((tool) => tool.name);
+		const closeoutTools = getNativeApiToolDefinitions({
+			executionMode: "implementation",
+			currentTodo: {
+				taskType: "compile_eval",
+				procedureId: "contextstill.compile_eval",
+			},
+		}).map((tool) => tool.name);
 
 		expect(importTools).toContain("import_project");
 		expect(contextTools).toContain("context_compile");
-		expect(closeoutTools).toContain("register_candidates");
+		expect(legacyKnowledgeTools).not.toContain("register_candidates");
+		expect(closeoutTools).toContain("compile_eval");
 		expect(closeoutTools).not.toContain("import_project");
 	});
 
