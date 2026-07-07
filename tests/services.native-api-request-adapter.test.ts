@@ -73,6 +73,7 @@ describe("NativeApiRunner request adapter", () => {
 				id: "todo-1",
 				seq: 1,
 				title: "仕様を読む",
+				description: "対象 DB と migration command の evidence を確認する。",
 				taskType: "inspection",
 				status: "running",
 				procedureId: "contextstill.context_compile",
@@ -122,6 +123,9 @@ describe("NativeApiRunner request adapter", () => {
 					content: expect.stringContaining("[Current Native API Runner Todo]"),
 				}),
 			]),
+		);
+		expect(JSON.stringify(request.messages)).toContain(
+			"description=対象 DB と migration command の evidence を確認する。",
 		);
 		expect(request.tools).toHaveLength(1);
 	});

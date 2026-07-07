@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { projectWorkerResultToNativeApiToolResult } from "../../api/services/agent-runtime/native-api-runner/native-api-tool-result-projector";
+import {
+	projectWorkerResultToMcpStructuredPayload,
+	projectWorkerResultToNativeApiToolResult,
+} from "../../api/services/agent-runtime/native-api-runner/native-api-tool-result-projector";
 import "./setup";
 
 describe("NativeApiRunner result projection", () => {
@@ -48,7 +51,7 @@ describe("NativeApiRunner result projection", () => {
 			taskType: "implementation",
 			status: index === 2 ? "running" : index < 2 ? "passed" : "pending",
 		}));
-		const todoResult = projectWorkerResultToNativeApiToolResult({
+		const workerTodoResult = {
 			ok: true,
 			toolName: "todo_list",
 			startedAt: new Date(0).toISOString(),
@@ -63,7 +66,9 @@ describe("NativeApiRunner result projection", () => {
 				nextTodo: todos[3],
 				transition: { completedSeq: 2, nextCurrentSeq: 3 },
 			},
-		});
+		} as const;
+		const todoResult =
+			projectWorkerResultToNativeApiToolResult(workerTodoResult);
 		const todoContent = JSON.parse(todoResult.content);
 
 		expect(todoContent.modelVisiblePayload).toBe("compact");
@@ -81,6 +86,36 @@ describe("NativeApiRunner result projection", () => {
 			"todo_list operation=list",
 		);
 		expect(todoResult.payload).toMatchObject({ todos });
+		const todoStructuredPayload =
+			projectWorkerResultToMcpStructuredPayload(workerTodoResult);
+
+		expect(todoStructuredPayload).toMatchObject({
+			operation: "done",
+			counts: { total: 25, pending: 22, running: 1 },
+			currentTodo: { seq: 3, title: "Todo 3" },
+		});
+		expect(
+			(todoStructuredPayload as { todos?: unknown[] }).todos,
+		).toBeUndefined();
+
+		const replacePayload = {
+			runId: "run-1",
+			taskId: "task-1",
+			action: "todo_list",
+			operation: "replace",
+			todos,
+			currentTodo: todos[2],
+			nextTodo: todos[3],
+		};
+		const replaceStructuredPayload = projectWorkerResultToMcpStructuredPayload({
+			ok: true,
+			toolName: "todo_list",
+			startedAt: new Date(0).toISOString(),
+			finishedAt: new Date(0).toISOString(),
+			payload: replacePayload,
+		});
+
+		expect(replaceStructuredPayload).toBe(replacePayload);
 
 		const longSpec = `# Feature Plan\n${Array.from(
 			{ length: 900 },

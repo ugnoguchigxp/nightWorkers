@@ -98,7 +98,7 @@ export const nightWorkersTodoListInputSchema = z.object({
 		)
 		.optional()
 		.describe(
-			"Run Todos decomposed by the LLM. Pass real implementation/review/verification work here; NightWorkers keeps initial/context/knowledge/completion and broad quality gates as managed fixed gates. If SystemContext-managed gates are echoed back, todo_list replace accepts them and merges them back into the fixed gates. For DB schema changes, mark migration work with taskType=data_migration or procedureId=data_migration.create_migration / data_migration.apply_migration / data_migration.add_integration_test / data_migration.verify_migration so required migration gates are preserved.",
+			"Run Todos decomposed by the LLM. Pass real implementation/review/verification work here; NightWorkers keeps initial/context/knowledge/completion and broad quality gates as managed fixed gates. If SystemContext-managed gates are echoed back, todo_list replace accepts them and merges them back into the fixed gates. For DB schema changes, or when creating/updating migration files, DB schema, DB bootstrap, seed, or persistence table definitions, mark migration work with taskType=data_migration or procedureId=data_migration.apply_migration so the fixed DB migration gate is preserved. That single gate covers migration file creation, migration command execution against the real target DB, read-only focused test/smoke implementation, and schema/API/test verification before done.",
 		),
 	startFirst: z
 		.boolean()

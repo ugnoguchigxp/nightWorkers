@@ -10,7 +10,10 @@ import {
 	getOntologyVerificationPlan,
 	listOntologyModules,
 } from "../services/agent-ontology/agent-ontology.service";
-import { projectWorkerResultToNativeApiToolResult } from "../services/agent-runtime/native-api-runner/native-api-tool-result-projector";
+import {
+	projectWorkerResultToMcpStructuredPayload,
+	projectWorkerResultToNativeApiToolResult,
+} from "../services/agent-runtime/native-api-runner/native-api-tool-result-projector";
 import { importProjectTool } from "../services/worker-tools/import-project";
 import {
 	listRecentSpecificationsTool,
@@ -475,7 +478,7 @@ function toolResultToMcp(result: WorkerToolResult<unknown>) {
 	return {
 		isError: !result.ok,
 		structuredContent: result.ok
-			? { payload: result.payload }
+			? { payload: projectWorkerResultToMcpStructuredPayload(result) }
 			: { error: result.error },
 		content: [{ type: "text" as const, text }],
 	};

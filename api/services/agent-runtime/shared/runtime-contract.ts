@@ -82,6 +82,52 @@ export function dedupeRuntimeContractWarnings(
 	return merged;
 }
 
+export function summarizeRuntimeContractWarnings(value: unknown) {
+	const warnings = normalizeRuntimeContractWarnings(value);
+	const byCode = new Map<
+		string,
+		{
+			code: string;
+			severity: RuntimeContractWarning["severity"];
+			count: number;
+		}
+	>();
+	const severityRank = { info: 0, warning: 1, error: 2 } as const;
+	for (const warning of warnings) {
+		const count = Math.max(1, warning.count ?? 1);
+		const existing = byCode.get(warning.code);
+		if (existing) {
+			existing.count += count;
+			if (severityRank[warning.severity] > severityRank[existing.severity]) {
+				existing.severity = warning.severity;
+			}
+			continue;
+		}
+		byCode.set(warning.code, {
+			code: warning.code,
+			severity: warning.severity,
+			count,
+		});
+	}
+	const codes = [...byCode.values()].sort(
+		(a, b) =>
+			severityRank[b.severity] - severityRank[a.severity] ||
+			b.count - a.count ||
+			a.code.localeCompare(b.code),
+	);
+	const totalCount = codes.reduce((sum, item) => sum + item.count, 0);
+	return {
+		totalCount,
+		warningCount: codes
+			.filter((item) => item.severity === "warning")
+			.reduce((sum, item) => sum + item.count, 0),
+		errorCount: codes
+			.filter((item) => item.severity === "error")
+			.reduce((sum, item) => sum + item.count, 0),
+		codes,
+	};
+}
+
 export function mergeRuntimeContractSnapshot(
 	snapshot: unknown,
 	warnings: RuntimeContractWarning[],
@@ -115,6 +161,7 @@ export function mergeRuntimeContractSnapshot(
 		...existingRuntimeContract,
 		lane: input.lane ?? existingRuntimeContract.lane ?? null,
 		warnings: mergedWarnings,
+		warningSummary: summarizeRuntimeContractWarnings(mergedWarnings),
 	};
 	return {
 		...base,

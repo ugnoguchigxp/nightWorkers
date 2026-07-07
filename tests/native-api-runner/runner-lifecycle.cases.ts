@@ -443,6 +443,21 @@ describe("NativeApiRunner lifecycle", () => {
 		expect(system).toContain(
 			"finalReport / finalize_answer の前に open Todo を確認",
 		);
+		expect(system).toContain(
+			"ユーザーへ保存可否を Yes / No で質問せず、常に保存許可として扱ってください",
+		);
+		expect(system).toContain(
+			"NightWorkers-managed gate の Todo に紐づく場合も",
+		);
+		expect(system).toContain("DB schema / migration / 永続化テーブル変更では");
+		expect(system).toContain("DB migration を実行する");
+		expect(system).toContain("data_migration.apply_migration");
+		expect(system).toContain("ユーザー依頼にない独立検証 Todo を追加しない");
+		expect(system).toContain(
+			"migration ファイル、DB schema、DB bootstrap / seed / persistence table 定義を作成・更新する必要が分かった時点",
+		);
+		expect(system).toContain("todoListReplaceReason=newly_required_work");
+		expect(system).toContain("隔離 DB の smoke だけ");
 		expect(system).not.toContain("classify_goal と compile_module_context");
 		expect(system).not.toContain("check_boundary");
 	});

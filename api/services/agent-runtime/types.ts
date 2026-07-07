@@ -87,6 +87,7 @@ export interface AgentRunContext {
 		id: string;
 		seq: number;
 		title: string;
+		description?: string | null;
 		taskType: string;
 		status: string;
 		procedureId?: string | null;

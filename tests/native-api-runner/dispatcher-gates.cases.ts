@@ -424,14 +424,14 @@ describe("NativeApiRunner tool registry and dispatcher gates", () => {
 		);
 	});
 
-	it("blocks finalize_answer while required migration verification Todos remain open", async () => {
+	it("blocks finalize_answer while the required migration execution Todo remains open", async () => {
 		(repo.listTaskRunTodosForRun as never).mockResolvedValue([
 			{
-				seq: 6,
-				title: "DB migration 後の schema と動作を検証する",
-				taskType: "focused_verification",
+				seq: 4,
+				title: "DB migration を実行する",
+				taskType: "data_migration",
 				status: "pending",
-				procedureId: "data_migration.verify_migration",
+				procedureId: "data_migration.apply_migration",
 			},
 		]);
 
@@ -459,14 +459,14 @@ describe("NativeApiRunner tool registry and dispatcher gates", () => {
 				details: {
 					nextAction: {
 						operation: "start",
-						seq: 6,
-						example: "todo_list operation=start seq=6",
+						seq: 4,
+						example: "todo_list operation=start seq=4",
 					},
 				},
 			},
 		});
 		expect(result.toolResult.content).toContain(
-			"data_migration.verify_migration",
+			"data_migration.apply_migration",
 		);
 	});
 

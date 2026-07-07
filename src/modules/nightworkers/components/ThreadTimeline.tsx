@@ -295,7 +295,8 @@ export function ThreadTimeline({
 									onOpenArtifact={onOpenArtifact}
 								/>
 							</ThreadMessage>
-						) : showDebugEvents ||
+						) : (showDebugEvents &&
+								!isChangedFilesOnlyDiffActivity(item.event)) ||
 							hasAgentEditSummary(item.event) ||
 							isReviewerEvaluationEvent(item.event) ||
 							hasContextStillToolCard(item.event) ||
@@ -667,7 +668,35 @@ export function getCodexCommandOutput(event: ActivityEvent): string {
 	return sanitizeTerminalText(asString(data.aggregatedOutput)).trim();
 }
 
-export function getActivityChangedFiles(event: ActivityEvent): string[] {
+export function getActivityDiffPayload(
+	event: ActivityEvent | TaskEvent,
+): string {
+	const payload = asRecord(event.payloadJson);
+	const data = codexActivityData(event.payloadJson);
+	return asString(
+		firstDefined(
+			data.diff,
+			payload.code,
+			nestedValue(payload, ["payload", "diff"]),
+			nestedValue(payload, ["runEvent", "data", "diff"]),
+		),
+	);
+}
+
+export function isChangedFilesOnlyDiffActivity(
+	event: ActivityEvent | TaskEvent,
+): boolean {
+	const eventKind = "kind" in event ? event.kind : "";
+	return (
+		eventKind === "file.diff" &&
+		getActivityDiffPayload(event).trim().length === 0 &&
+		getActivityChangedFiles(event).length > 0
+	);
+}
+
+export function getActivityChangedFiles(
+	event: ActivityEvent | TaskEvent,
+): string[] {
 	const activity = getToolActivityModel(event);
 	const activityFiles = normalizeStringArray(
 		activity?.resultPayload.changedFiles,

@@ -241,6 +241,7 @@ describe("Worker Tools Unit Tests", () => {
 					scripts: {
 						bootstrap:
 							"node -e \"const fs=require('fs'); if (!fs.existsSync('.git')) process.exit(2); fs.writeFileSync('bootstrap.txt','ok')\"",
+						verify: "bun scripts/verify.ts",
 						test: "vitest",
 						build: "vite build",
 					},
@@ -359,7 +360,7 @@ describe("Worker Tools Unit Tests", () => {
 						build: "vite build",
 					},
 				},
-				recommendedVerificationCommands: ["bun run test", "bun run build"],
+				recommendedVerificationCommands: ["bun run verify"],
 			});
 			expect(result.payload?.postImport?.manifest.rawContent).toContain(
 				'"template-app"',
@@ -516,6 +517,94 @@ describe("Worker Tools Unit Tests", () => {
 		} finally {
 			await fs.rm(templateRepo, { recursive: true, force: true });
 			await fs.rm(targetDir, { recursive: true, force: true });
+		}
+	});
+
+	it("imports a starter into an empty project root when targetPath repeats the project folder name", async () => {
+		const templateRepo = await fs.mkdtemp(
+			path.join(os.tmpdir(), "nightworkers-template-repo-"),
+		);
+		const parentDir = await fs.mkdtemp(
+			path.join(os.tmpdir(), "nightworkers-empty-root-parent-"),
+		);
+		const targetDir = path.join(parentDir, "todolist");
+		try {
+			await fs.mkdir(targetDir);
+			await fs.writeFile(
+				path.join(templateRepo, "package.json"),
+				'{"name":"template-app","packageManager":"bun@1.3.14"}',
+			);
+			await fs.mkdir(path.join(templateRepo, "src"));
+			await fs.writeFile(
+				path.join(templateRepo, "src/index.ts"),
+				"export const ok = true;\n",
+			);
+			await execFileAsync("git", ["init"], { cwd: templateRepo });
+			await execFileAsync("git", ["add", "."], { cwd: templateRepo });
+			await execFileAsync(
+				"git",
+				[
+					"-c",
+					"user.name=Test User",
+					"-c",
+					"user.email=test@example.com",
+					"commit",
+					"-m",
+					"init",
+				],
+				{ cwd: templateRepo },
+			);
+			await execFileAsync("git", ["tag", "sqlite-v1.0.0"], {
+				cwd: templateRepo,
+			});
+
+			const result = await importProjectTool({
+				source: "starter",
+				stack: "hono",
+				variant: "sqlite",
+				targetPath: "todolist",
+				initialize: false,
+				repoRoot: targetDir,
+				registry: {
+					"hono-standard": {
+						id: "hono-standard",
+						repoUrl: templateRepo,
+						defaultVariant: "sqlite",
+						variants: {
+							sqlite: {
+								name: "sqlite",
+								ref: "sqlite-v1.0.0",
+								description: "test",
+							},
+						},
+						overlays: {},
+					},
+					"python-standard": {
+						id: "python-standard",
+						repoUrl: templateRepo,
+						defaultVariant: "sqlite",
+						variants: {
+							sqlite: {
+								name: "sqlite",
+								ref: "sqlite-v1.0.0",
+								description: "test",
+							},
+						},
+						overlays: {},
+					},
+				},
+			});
+
+			expect(result.ok).toBe(true);
+			expect(result.payload?.template?.targetPath).toBe(targetDir);
+			expect(result.payload?.postImport?.targetPath).toBe(targetDir);
+			await expect(
+				fs.readFile(path.join(targetDir, "src/index.ts"), "utf-8"),
+			).resolves.toContain("ok = true");
+			await expect(fs.stat(path.join(targetDir, "todolist"))).rejects.toThrow();
+		} finally {
+			await fs.rm(templateRepo, { recursive: true, force: true });
+			await fs.rm(parentDir, { recursive: true, force: true });
 		}
 	});
 

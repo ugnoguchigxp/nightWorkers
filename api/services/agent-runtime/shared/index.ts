@@ -11,4 +11,5 @@ export {
 	dedupeRuntimeContractWarnings,
 	mergeRuntimeContractSnapshot,
 	normalizeRuntimeContractWarnings,
+	summarizeRuntimeContractWarnings,
 } from "./runtime-contract";

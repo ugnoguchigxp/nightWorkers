@@ -4,6 +4,7 @@ import {
 	asString,
 	getActivityChangedFiles,
 	getToolActivityModel,
+	isChangedFilesOnlyDiffActivity,
 	type ToolActivityLifecycle,
 } from "./ThreadTimeline";
 import { DiffCodeBlock } from "./ThreadTimelineDiffView";
@@ -29,6 +30,7 @@ export type CodexToolCardModel = {
 	editDiffPreview?: { diff: string; label: string };
 	resultPreview?: string;
 	outputPreview?: string;
+	detailsFilename?: string;
 	errorMessage?: string;
 };
 
@@ -52,6 +54,7 @@ export function getCodexToolCardModel(
 	const payload = asRecord(event.payloadJson ?? event);
 	const data = getCodexActivityData(payload);
 	if (asString(data.provider) !== "codex") return null;
+	if (isChangedFilesOnlyDiffActivity(event as ActivityEvent)) return null;
 
 	const activity = getToolActivityModel(event);
 	const toolName = activity?.toolName || asString(data.toolName);
@@ -199,7 +202,7 @@ function CodexToolCardBody({
 					{card.outputPreview ? (
 						<NightWorkersCodeBlock
 							code={card.outputPreview}
-							filename={`${card.toolName}.output.txt`}
+							filename={card.detailsFilename || `${card.toolName}.output.txt`}
 							language="text"
 							maxHeight={debug ? 240 : 140}
 							syntaxHighlighting={false}
@@ -209,7 +212,7 @@ function CodexToolCardBody({
 			) : (
 				<NightWorkersCodeBlock
 					code={blocks.join("\n\n")}
-					filename={`${card.toolName}.txt`}
+					filename={card.detailsFilename || `${card.toolName}.txt`}
 					language="text"
 					maxHeight={debug ? 320 : 220}
 					syntaxHighlighting={false}
@@ -302,6 +305,7 @@ function buildCommandCard(input: {
 			: undefined,
 		outputPreview:
 			sanitizeTerminalText(asString(input.data.aggregatedOutput)) || undefined,
+		detailsFilename: "command result",
 		errorMessage: input.errorMessage,
 	};
 }

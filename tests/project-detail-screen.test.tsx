@@ -13,7 +13,9 @@ import {
 	buildUnifiedTaskCandidates,
 	coverageAxesFromQualityRun,
 	GoalEditorDialog,
+	isProjectStackDetected,
 	QualityReportPanel,
+	shouldRefreshProjectStackOnFocus,
 	TaskGenerationTreeTable,
 	toggleMissionGoalTemplate,
 } from "../src/modules/nightworkers/components/ProjectDetailScreen";
@@ -55,6 +57,78 @@ const fullTemplateStack = stackProfile([
 		confidence: "high",
 	},
 ]);
+
+describe("isProjectStackDetected", () => {
+	it("treats a found manifest with technologies as detected", () => {
+		expect(isProjectStackDetected(fullTemplateStack)).toBe(true);
+	});
+
+	it("keeps missing or empty stack profiles eligible for a focus refresh", () => {
+		expect(isProjectStackDetected(null)).toBe(false);
+		expect(
+			isProjectStackDetected({
+				summary: "",
+				manifestStatus: "missing",
+				manifestPath: "/tmp/package.json",
+				packageManager: null,
+				technologies: [],
+			}),
+		).toBe(false);
+		expect(
+			isProjectStackDetected({
+				summary: "",
+				manifestStatus: "found",
+				manifestPath: "/tmp/package.json",
+				packageManager: "bun",
+				technologies: [],
+			}),
+		).toBe(false);
+	});
+});
+
+describe("shouldRefreshProjectStackOnFocus", () => {
+	const missingStack: ProjectStackProfile = {
+		summary: "",
+		manifestStatus: "missing",
+		manifestPath: "/tmp/package.json",
+		packageManager: null,
+		technologies: [],
+	};
+
+	it("refreshes only while the current stack is undetected and no fetch is in flight", () => {
+		expect(
+			shouldRefreshProjectStackOnFocus({
+				stackProfile: missingStack,
+				stackRefreshInFlight: false,
+				projectDetailLoadInFlight: false,
+			}),
+		).toBe(true);
+		expect(
+			shouldRefreshProjectStackOnFocus({
+				stackProfile: fullTemplateStack,
+				stackRefreshInFlight: false,
+				projectDetailLoadInFlight: false,
+			}),
+		).toBe(false);
+	});
+
+	it("does not start a focus refresh during existing detail or stack refreshes", () => {
+		expect(
+			shouldRefreshProjectStackOnFocus({
+				stackProfile: missingStack,
+				stackRefreshInFlight: true,
+				projectDetailLoadInFlight: false,
+			}),
+		).toBe(false);
+		expect(
+			shouldRefreshProjectStackOnFocus({
+				stackProfile: missingStack,
+				stackRefreshInFlight: false,
+				projectDetailLoadInFlight: true,
+			}),
+		).toBe(false);
+	});
+});
 
 describe("TaskGenerationTreeTable", () => {
 	const goal = {

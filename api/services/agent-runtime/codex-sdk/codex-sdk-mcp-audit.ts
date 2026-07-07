@@ -1,3 +1,4 @@
+import { summarizeRuntimeContractWarnings } from "../shared";
 import type { CodexContractWarning } from "../types";
 import {
 	type CodexRuntimeMcpConfigState,
@@ -57,6 +58,10 @@ export type CodexRuntimeAuditState = {
 		commandClass: string | null;
 		exitCode: number | null;
 	}>;
+	nativeCommandExecutions: {
+		totalCount: number;
+		byClass: Record<string, number>;
+	};
 	sawHighRiskNativeImportCommand: boolean;
 	highRiskNativeImportCommand: string | null;
 	highRiskNativeImportProviderItemId: string | null;
@@ -95,6 +100,7 @@ export function createCodexRuntimeAuditState(
 		importProjectProviderItemId: null,
 		recommendedVerificationCommands: [],
 		verificationEvidence: [],
+		nativeCommandExecutions: { totalCount: 0, byClass: {} },
 		sawHighRiskNativeImportCommand: false,
 		highRiskNativeImportCommand: null,
 		highRiskNativeImportProviderItemId: null,
@@ -117,6 +123,7 @@ export function buildCodexRuntimeContractSnapshot(
 	return {
 		lane: "codex-sdk",
 		warnings: state.contractWarnings,
+		warningSummary: summarizeRuntimeContractWarnings(state.contractWarnings),
 		summary: buildCodexRuntimeContractSummary(state),
 		mcp: {
 			configSource: state.mcpConfig.source,
@@ -145,6 +152,16 @@ export function addContractWarning(
 	}
 	state.contractWarnings.push(normalized);
 	return { warning: normalized, isNew: true };
+}
+
+export function recordNativeCommandExecution(
+	state: CodexRuntimeAuditState,
+	commandClass: string | null,
+) {
+	const key = commandClass || "other";
+	state.nativeCommandExecutions.totalCount += 1;
+	state.nativeCommandExecutions.byClass[key] =
+		(state.nativeCommandExecutions.byClass[key] ?? 0) + 1;
 }
 
 export function normalizeContractWarning(
@@ -216,6 +233,10 @@ function buildCodexRuntimeContractSummary(state: CodexRuntimeAuditState) {
 			),
 			coveredFileCount: state.readEvidenceByPath.size,
 			warningCount: warningCount("codex_file_change_without_prior_read"),
+		},
+		nativeCommandExecution: {
+			totalCount: state.nativeCommandExecutions.totalCount,
+			byClass: state.nativeCommandExecutions.byClass,
 		},
 	};
 }

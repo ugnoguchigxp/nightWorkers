@@ -228,16 +228,9 @@ function buildCodexSdkInitialRunTodos(
 			title: "対象変更を確認して実装する",
 			description: [
 				requestSummary,
-				"ユーザーが実装計画化を明示していない場合は、必要最小限の確認後に対象変更を実装する。",
+				"ユーザーが実装計画化を明示していない場合は、対象変更と必要な局所確認をこの Todo の中で扱う。",
 			].join("\n"),
 			taskType: "implementation",
-		},
-		{
-			title: "必要最小限の動作確認を行う",
-			description:
-				"変更範囲に応じた focused check を行う。広域 verify は追加される品質ゲート Todo で扱う。",
-			taskType: "focused_verification",
-			dependsOn: [1],
 		},
 	];
 }

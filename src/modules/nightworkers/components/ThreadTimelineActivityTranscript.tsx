@@ -11,8 +11,10 @@ import { ThreadMessage } from "./ThreadMessage";
 import {
 	formatCodexToolActivitySummary,
 	getActivityChangedFiles,
+	getActivityDiffPayload,
 	getCodexCommandOutput,
 	getToolActivityModel,
+	isChangedFilesOnlyDiffActivity,
 } from "./ThreadTimeline";
 import { CodexToolCard, hasCodexToolCard } from "./ThreadTimelineCodexToolCard";
 import {
@@ -91,6 +93,10 @@ export function TranscriptItemView({
 		);
 	}
 
+	if ("event" in item && isChangedFilesOnlyDiffActivity(item.event)) {
+		return null;
+	}
+
 	if (item.kind === "unknown") {
 		return (
 			<TranscriptActivityBlock
@@ -137,6 +143,13 @@ export function findArtifactTaskMessage(
 }
 
 function TranscriptChildView({ child }: { child: TranscriptChild }) {
+	if (
+		"event" in child &&
+		child.event &&
+		isChangedFilesOnlyDiffActivity(child.event)
+	) {
+		return null;
+	}
 	if (child.kind === "tool") {
 		return (
 			<TranscriptActivityBlock
@@ -347,14 +360,7 @@ export function getActivityCode(event: ActivityEvent) {
 }
 
 export function getActivityDiffCode(event: ActivityEvent) {
-	const payload = toDeepRecord(event.payloadJson);
-	const data = payload?.payload || payload?.runEvent?.data || payload || {};
-	if (typeof data.diff === "string") return data.diff;
-	if (typeof payload?.code === "string") return payload.code;
-	if (typeof payload?.payload?.diff === "string") return payload.payload.diff;
-	if (typeof payload?.runEvent?.data?.diff === "string")
-		return payload.runEvent.data.diff;
-	return "";
+	return getActivityDiffPayload(event);
 }
 
 function isLlmOutputActivity(event: ActivityEvent) {

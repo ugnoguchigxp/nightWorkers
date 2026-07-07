@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { type CloneGitRepoOutput, cloneGitRepoTool } from "./clone-git-repo";
 import {
 	type MaterializeTemplateOutput,
@@ -40,6 +42,8 @@ export interface ImportProjectOutput {
 	git?: CloneGitRepoOutput | null;
 	postImport?: ProjectPostImportOutput | null;
 }
+
+const EMPTY_PROJECT_ROOT_IGNORES = new Set([".git", ".DS_Store"]);
 
 export async function importProjectTool(
 	input: ImportProjectInput,
@@ -89,6 +93,7 @@ export async function importProjectTool(
 	}
 
 	if (importMode === "starter") {
+		const targetPath = await normalizeImportTargetPath(input);
 		const resolved = templateId
 			? resolveStarterTemplate({
 					stack: templateId === "python-standard" ? "python" : "hono",
@@ -107,7 +112,7 @@ export async function importProjectTool(
 			templateId: resolved.template.id,
 			variant: input.variant,
 			overlays: input.overlays,
-			targetPath: input.targetPath,
+			targetPath,
 			overwrite: input.overwrite,
 			exclude: input.exclude,
 			repoRoot: input.repoRoot,
@@ -141,9 +146,10 @@ export async function importProjectTool(
 		};
 	}
 
+	const targetPath = await normalizeImportTargetPath(input);
 	const result = await cloneGitRepoTool({
 		repoUrl: repoUrl || "",
-		targetPath: input.targetPath,
+		targetPath,
 		ref: input.ref,
 		depth: input.depth,
 		overwrite: input.overwrite,
@@ -171,6 +177,39 @@ export async function importProjectTool(
 		error: result.error,
 		artifactIds: result.artifactIds,
 	};
+}
+
+async function normalizeImportTargetPath(input: {
+	repoRoot: string;
+	targetPath?: string;
+}) {
+	const targetPath = input.targetPath?.trim();
+	if (!targetPath || path.isAbsolute(targetPath)) return targetPath;
+
+	const normalizedTarget = path.normalize(targetPath);
+	if (!normalizedTarget || normalizedTarget === ".") return targetPath;
+
+	const segments = normalizedTarget.split(path.sep).filter(Boolean);
+	if (segments.length !== 1) return targetPath;
+
+	const repoRoot = path.resolve(input.repoRoot);
+	if (segments[0] !== path.basename(repoRoot)) return targetPath;
+	if (await projectRootHasMaterialContent(repoRoot)) return targetPath;
+
+	return ".";
+}
+
+async function projectRootHasMaterialContent(repoRoot: string) {
+	const entries = await fs
+		.readdir(repoRoot, { withFileTypes: true })
+		.catch((error: unknown) => {
+			if (typeof error === "object" && error && "code" in error) {
+				const code = (error as { code?: unknown }).code;
+				if (code === "ENOENT") return [];
+			}
+			throw error;
+		});
+	return entries.some((entry) => !EMPTY_PROJECT_ROOT_IGNORES.has(entry.name));
 }
 
 function failedImportProject(

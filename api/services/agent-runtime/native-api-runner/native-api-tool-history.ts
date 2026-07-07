@@ -259,6 +259,7 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 		"- ファイルを編集する前に、対象ファイルまたは直接関係する既存ファイルを読む。新規ファイル作成では、配置先の route / registry / sibling / style / test pattern を先に確認してください。",
 		"- rg --files や ls は探索であり、編集対象の読了 evidence ではありません。読んだ内容に基づかない blind edit を避けてください。",
 		"- finalReport / finalize_answer の前に open Todo を確認し、未完了 Todo は done/block/fail のいずれかに整理してください。未確認 mutation や未実施 verification を done にしないでください。",
+		"- context-still compile_eval は context_compile を使った run の closeout feedback です。ユーザーへ保存可否を Yes / No で質問せず、常に保存許可として扱ってください。initial_instructions / context_compile / completion_report など NightWorkers-managed gate の Todo に紐づく場合も、その紐づけを理由にユーザー確認へ戻さないでください。",
 		"- blocker、未完了 Todo、failed tests/review、ユーザー確認へ進む判断がある場合は context_decision を強く推奨します。",
 		"- 推奨 tool を使わない場合は、finalReport でその理由を短く説明してください。",
 		"",
@@ -341,7 +342,11 @@ function modeGuidance(
 		"- 実装、必要な検証、必要な修正、closeout まで進めてください。明確な blocker がある場合は todo_list operation=block/fail を使って説明してください。",
 		"- ファイル編集、DB mutation、長い検証、review 判定の後は、該当 Todo を done/block/fail のいずれかに更新してから次の段階に進んでください。",
 		"- import_project を使った場合は、postImport payload と recommended verification command を優先してください。",
+		"- 局所確認は該当する実装・調査・migration Todo の完了条件として扱い、`必要最小限の動作確認を行う` のようなユーザー依頼にない独立検証 Todo を追加しないでください。",
 		"- コード変更後、package.json に verify script が存在する場合は、完了報告前の代表検証として verify command を最優先で実行してください。typecheck / lint / test / build の個別実行は、修正途中の focused check、または verify script が存在しない・実行不能な場合の fallback としてください。",
+		"- DB schema / migration / 永続化テーブル変更では、TodoList に固定 gate「DB migration を実行する」が追加されます。この 1 Todo の中で migration ファイル作成、実作業対象 DB への migration command 実行、既存 migration を使う read-only focused test / smoke 実装、その test / API / schema 確認の実行まで完了してから done にしてください。",
+		"- migration ファイル、DB schema、DB bootstrap / seed / persistence table 定義を作成・更新する必要が分かった時点で、編集前または直後に todo_list operation=replace を使い、todoListReplaceReason=newly_required_work または scope_changed として taskType=data_migration または procedureId=data_migration.apply_migration の Todo を含めてください。migration 作成だけ、隔離 DB の smoke だけ、通常 implementation Todo だけで DB 変更を閉じないでください。",
+		"- DB migration Todo の done には、実作業対象 DB の明示、migration command の exit code、対象 DB での schema/table 存在確認、関連 API または focused test の成功が必要です。対象 DB が不明、実 DB 未適用、または API が no such table 等で失敗する場合は done にせず block / fail にしてください。",
 		"",
 	];
 }
@@ -353,6 +358,9 @@ function renderCurrentTodoContext(
 		"[Current Native API Runner Todo]",
 		`seq=${currentTodo.seq}`,
 		`title=${currentTodo.title}`,
+		...(currentTodo.description
+			? [`description=${currentTodo.description.replace(/\s+/g, " ").trim()}`]
+			: []),
 		`taskType=${currentTodo.taskType}`,
 		`procedureId=${currentTodo.procedureId ?? "none"}`,
 		`status=${currentTodo.status}`,

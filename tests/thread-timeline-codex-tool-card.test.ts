@@ -113,6 +113,7 @@ describe("ThreadTimeline Codex tool cards", () => {
 		});
 
 		expect(card?.summary).toBe("command_execution | bun run build");
+		expect(card?.detailsFilename).toBe("command result");
 		expect(card?.outputPreview).toContain("transforming...");
 		expect(card?.outputPreview).toContain("✓ 1899 modules transformed.");
 		expect(card?.outputPreview).not.toContain(String.fromCharCode(27));
@@ -157,6 +158,24 @@ describe("ThreadTimeline Codex tool cards", () => {
 		expect(card?.editDiffPreview?.diff).toContain("--- src/App.tsx");
 		expect(card?.editDiffPreview?.diff).toContain("- oldTitle");
 		expect(card?.editDiffPreview?.diff).toContain("+ newTitle");
+	});
+
+	it("does not build Codex cards for changed-file-only diff detection logs", () => {
+		expect(
+			hasCodexToolCard({
+				kind: "file.diff",
+				status: "completed",
+				payloadJson: {
+					payload: {
+						provider: "codex",
+						providerEventType: "item.completed",
+						providerItemId: "file-change-1",
+						changedFiles: ["src/fizzbuzz.ts"],
+						status: "completed",
+					},
+				},
+			}),
+		).toBe(false);
 	});
 
 	it("keeps Codex MCP tool cards visible in normal transcript mode", () => {

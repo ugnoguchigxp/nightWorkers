@@ -13,6 +13,7 @@ import {
 	getToolArguments,
 	getToolName,
 	getToolResult,
+	isChangedFilesOnlyDiffActivity,
 	parseApplyPatchSections,
 	parseUnifiedDiffSections,
 } from "./ThreadTimeline";
@@ -524,6 +525,7 @@ export function buildVisibleEditDiffSummary(
 			? mergeEditSections(parseUnifiedDiffSections(diff))
 			: [];
 		if (sections.length > 0) return sections;
+		if (isChangedFilesOnlyDiffActivity(event)) return [];
 		return getActivityChangedFiles(event).map((path) => ({
 			path,
 			added: 0,

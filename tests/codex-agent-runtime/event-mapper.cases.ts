@@ -174,6 +174,128 @@ describe("CodexAgentRuntime event mapping and catalog contracts", () => {
 		}
 	});
 
+	it("aggregates native command_execution warnings while preserving context-still observations", async () => {
+		const runtime = new CodexAgentRuntime({
+			threadFactory: () =>
+				fakeThread([
+					{
+						type: "item.completed",
+						item: {
+							id: "cmd-status",
+							type: "command_execution",
+							command: "git status --short",
+							aggregated_output: "ok",
+							exit_code: 0,
+							status: "completed",
+						},
+					},
+					{
+						type: "item.completed",
+						item: {
+							id: "cmd-sed",
+							type: "command_execution",
+							command: "sed -n '1,80p' src/app.ts",
+							aggregated_output: "ok",
+							exit_code: 0,
+							status: "completed",
+						},
+					},
+					{
+						type: "item.completed",
+						item: {
+							id: "cmd-typecheck",
+							type: "command_execution",
+							command: "bun run typecheck",
+							aggregated_output: "ok",
+							exit_code: 0,
+							status: "completed",
+						},
+					},
+					{
+						type: "item.completed",
+						item: {
+							id: "context-compile",
+							type: "mcp_tool_call",
+							server: "context-still",
+							tool: "context_compile",
+							arguments: { goal: "collect context" },
+							status: "completed",
+							result: { ok: true },
+						},
+					},
+					{
+						type: "item.completed",
+						item: { id: "msg-1", type: "agent_message", text: "done" },
+					},
+				] as never),
+		});
+		const events: unknown[] = [];
+
+		const result = await runtime.start(buildContext(), {
+			emit: async (event) => {
+				events.push(event);
+			},
+		});
+
+		expect(result.contractWarnings).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					code: "codex_native_command_execution",
+					toolName: "command_execution",
+					command: "inspection",
+					count: 2,
+				}),
+				expect.objectContaining({
+					code: "codex_native_command_execution",
+					toolName: "command_execution",
+					command: "verification",
+					count: 1,
+				}),
+				expect.objectContaining({
+					code: "codex_global_mcp_tool_observed",
+					toolName: "context-still.context_compile",
+				}),
+			]),
+		);
+		expect(result.contractWarnings ?? []).not.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ command: "git status --short" }),
+				expect.objectContaining({ command: "sed -n '1,80p' src/app.ts" }),
+			]),
+		);
+		expect(events).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					type: "runtime_finished",
+					payload: expect.objectContaining({
+						contractWarningSummary: expect.objectContaining({
+							totalCount: 4,
+							codes: expect.arrayContaining([
+								expect.objectContaining({
+									code: "codex_native_command_execution",
+									count: 3,
+								}),
+								expect.objectContaining({
+									code: "codex_global_mcp_tool_observed",
+									count: 1,
+								}),
+							]),
+						}),
+						runtimeContract: expect.objectContaining({
+							warningSummary: expect.objectContaining({ totalCount: 4 }),
+							summary: expect.objectContaining({
+								nativeCommandExecution: {
+									totalCount: 3,
+									byClass: { inspection: 2, verification: 1 },
+								},
+							}),
+						}),
+					}),
+				}),
+			]),
+		);
+	});
+
 	it("compacts large Codex command_execution payloads at the activity boundary", () => {
 		const state = createCodexEventMapperState();
 		const longOutput = [

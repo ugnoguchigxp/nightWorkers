@@ -24,6 +24,7 @@ import {
 import {
 	buildCodexRuntimeContractSnapshot,
 	type CodexRuntimeAuditState,
+	recordNativeCommandExecution,
 } from "./codex-sdk/codex-sdk-mcp-audit";
 import type {
 	AgentRunContext,
@@ -157,6 +158,7 @@ export async function auditCodexMappedEvent(
 		const command = readString(payload.command);
 		const commandClass = readString(payload.commandClass);
 		const exitCode = readExitCode(payload);
+		recordNativeCommandExecution(auditState, commandClass);
 		recordCommandReadEvidence({
 			auditState,
 			repoRoot: context.repoRoot,
@@ -200,10 +202,10 @@ export async function auditCodexMappedEvent(
 		warnings.push({
 			code: "codex_native_command_execution",
 			severity: "warning",
-			message: `Codex native command_execution observed (${commandClass || "other"}).`,
-			providerItemId: readString(payload.providerItemId),
+			message: `Codex native command_execution events observed (${commandClass || "other"}).`,
+			providerItemId: null,
 			toolName,
-			command,
+			command: commandClass || "other",
 		});
 		if (commandClass === "git_clone_or_import") {
 			auditState.sawHighRiskNativeImportCommand = true;

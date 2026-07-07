@@ -39,8 +39,11 @@ describe("agent runtime registry", () => {
 		]);
 		expect(codexTodos).toMatchObject([
 			{ title: "対象変更を確認して実装する", taskType: "implementation" },
-			{ title: "必要最小限の動作確認を行う", taskType: "focused_verification" },
 		]);
+		expect(codexTodos).toHaveLength(1);
+		expect(codexTodos[0]?.description).toContain(
+			"必要な局所確認をこの Todo の中で扱う",
+		);
 	});
 
 	it("does not create implementation Todos for planning mode", () => {

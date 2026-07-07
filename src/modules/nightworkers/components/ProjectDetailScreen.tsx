@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ProjectEvaluationScreen } from "@/modules/project-evaluation";
 import type {
@@ -10,6 +10,7 @@ import type {
 	MissionTaskCandidate,
 	ProjectDetailMetrics,
 	ProjectQualityOverview,
+	ProjectStackProfile,
 } from "../../../../shared/schemas/project-detail.schema";
 import {
 	createMissionGoal,
@@ -88,6 +89,28 @@ export {
 	QualityReportPanel,
 } from "./project-detail/ProjectDetailQuality";
 
+export function isProjectStackDetected(
+	stackProfile: ProjectStackProfile | null | undefined,
+) {
+	return Boolean(
+		stackProfile &&
+			stackProfile.manifestStatus === "found" &&
+			stackProfile.technologies.length > 0,
+	);
+}
+
+export function shouldRefreshProjectStackOnFocus(input: {
+	stackProfile: ProjectStackProfile | null | undefined;
+	stackRefreshInFlight: boolean;
+	projectDetailLoadInFlight: boolean;
+}) {
+	return (
+		!input.stackRefreshInFlight &&
+		!input.projectDetailLoadInFlight &&
+		!isProjectStackDetected(input.stackProfile)
+	);
+}
+
 export function ProjectDetailScreen({
 	project,
 	sessionViews,
@@ -119,6 +142,8 @@ export function ProjectDetailScreen({
 	>("all");
 	const [busyAction, setBusyAction] = useState<string | null>(null);
 	const [message, setMessage] = useState<string>("");
+	const stackFocusRefreshInFlightRef = useRef(false);
+	const projectDetailLoadInFlightRef = useRef(false);
 	const totalRuns = metrics.runs.total || sessionViews.length;
 	const completedCount =
 		metrics.runs.total > 0
@@ -209,31 +234,36 @@ export function ProjectDetailScreen({
 	);
 
 	const loadProjectDetail = useCallback(async () => {
-		const [
-			metricsRes,
-			goalsRes,
-			missionsRes,
-			candidatesRes,
-			proposalsRes,
-			qualityRes,
-		] = await Promise.all([
-			fetchProjectDetailMetrics(project.id),
-			fetchMissionGoals(project.id),
-			fetchMissions(project.id),
-			fetchMissionTaskCandidates(project.id),
-			fetchRepositoryMissionTaskProposals(project.id),
-			fetchProjectQuality(project.id),
-		]);
-		setMetrics(await readJsonResponse<ProjectDetailMetrics>(metricsRes));
-		setGoals(await readJsonResponse<MissionGoal[]>(goalsRes));
-		setMissions(await readJsonResponse<Mission[]>(missionsRes));
-		setCandidates(
-			await readJsonResponse<MissionTaskCandidate[]>(candidatesRes),
-		);
-		setProposalCandidates(
-			await readJsonResponse<MissionTaskProposal[]>(proposalsRes),
-		);
-		setQuality(await readJsonResponse<ProjectQualityOverview>(qualityRes));
+		projectDetailLoadInFlightRef.current = true;
+		try {
+			const [
+				metricsRes,
+				goalsRes,
+				missionsRes,
+				candidatesRes,
+				proposalsRes,
+				qualityRes,
+			] = await Promise.all([
+				fetchProjectDetailMetrics(project.id),
+				fetchMissionGoals(project.id),
+				fetchMissions(project.id),
+				fetchMissionTaskCandidates(project.id),
+				fetchRepositoryMissionTaskProposals(project.id),
+				fetchProjectQuality(project.id),
+			]);
+			setMetrics(await readJsonResponse<ProjectDetailMetrics>(metricsRes));
+			setGoals(await readJsonResponse<MissionGoal[]>(goalsRes));
+			setMissions(await readJsonResponse<Mission[]>(missionsRes));
+			setCandidates(
+				await readJsonResponse<MissionTaskCandidate[]>(candidatesRes),
+			);
+			setProposalCandidates(
+				await readJsonResponse<MissionTaskProposal[]>(proposalsRes),
+			);
+			setQuality(await readJsonResponse<ProjectQualityOverview>(qualityRes));
+		} finally {
+			projectDetailLoadInFlightRef.current = false;
+		}
 	}, [project.id]);
 
 	useEffect(() => {
@@ -249,6 +279,44 @@ export function ProjectDetailScreen({
 			cancelled = true;
 		};
 	}, [loadProjectDetail]);
+
+	const refreshProjectStackOnFocus = useCallback(async () => {
+		if (
+			!shouldRefreshProjectStackOnFocus({
+				stackProfile: metrics.stackProfile,
+				stackRefreshInFlight: stackFocusRefreshInFlightRef.current,
+				projectDetailLoadInFlight: projectDetailLoadInFlightRef.current,
+			})
+		) {
+			return;
+		}
+		stackFocusRefreshInFlightRef.current = true;
+		try {
+			const metricsRes = await fetchProjectDetailMetrics(project.id);
+			setMetrics(await readJsonResponse<ProjectDetailMetrics>(metricsRes));
+		} catch (error) {
+			setMessage(error instanceof Error ? error.message : String(error));
+		} finally {
+			stackFocusRefreshInFlightRef.current = false;
+		}
+	}, [metrics.stackProfile, project.id]);
+
+	useEffect(() => {
+		const handleFocus = () => {
+			void refreshProjectStackOnFocus();
+		};
+		const handleVisibilityChange = () => {
+			if (document.visibilityState === "visible") {
+				void refreshProjectStackOnFocus();
+			}
+		};
+		window.addEventListener("focus", handleFocus);
+		document.addEventListener("visibilitychange", handleVisibilityChange);
+		return () => {
+			window.removeEventListener("focus", handleFocus);
+			document.removeEventListener("visibilitychange", handleVisibilityChange);
+		};
+	}, [refreshProjectStackOnFocus]);
 
 	useEffect(() => {
 		setExpandedRows((current) =>

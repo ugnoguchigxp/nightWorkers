@@ -105,7 +105,7 @@ describe("ThreadTimeline edit summaries", () => {
 		});
 	});
 
-	it("shows changed file paths without rendering a fake diff when no diff is available", () => {
+	it("hides changed-file-only Codex diff detection logs", () => {
 		const event = {
 			id: "activity-file-change",
 			taskId: "task-1",
@@ -121,9 +121,7 @@ describe("ThreadTimeline edit summaries", () => {
 			},
 		} as never;
 
-		expect(buildVisibleEditDiffSummary(event)).toEqual([
-			{ path: "src/fizzbuzz.ts", added: 0, deleted: 0, changedOnly: true },
-		]);
+		expect(buildVisibleEditDiffSummary(event)).toEqual([]);
 		expect(getActivityCode(event)).toBe("");
 	});
 
@@ -155,6 +153,35 @@ describe("ThreadTimeline edit summaries", () => {
 			{ path: "src/fizzbuzz.ts", added: 1, deleted: 0 },
 		]);
 		expect(getActivityCode(event)).toBe(diff);
+		expect(
+			getAgentEditSummary({
+				id: "event-file-diff",
+				type: "info",
+				eventType: "git.diff_collected",
+				message: "[Codex] Workspace diff collected: 1 file(s).",
+				payloadJson: {
+					runEvent: {
+						type: "git.diff_collected",
+						data: {
+							provider: "codex",
+							source: "post_run_git_diff",
+							changedFiles: ["src/fizzbuzz.ts"],
+							diff,
+						},
+					},
+				},
+			} as never),
+		).toMatchObject({
+			toolName: "git_diff",
+			sections: [{ path: "src/fizzbuzz.ts", added: 1, deleted: 0 }],
+			codeBlocks: [
+				{
+					filename: "workspace.diff",
+					language: "diff",
+					code: diff,
+				},
+			],
+		});
 	});
 
 	it("builds a CLI command summary from a schema-first tool.started event", () => {

@@ -49,6 +49,7 @@ import {
 	recordCodexRuntimeUsageIfPresent,
 } from "./codex-sdk/codex-sdk-usage";
 import { RuntimeSessionStateStore } from "./runtime-session-state";
+import { summarizeRuntimeContractWarnings } from "./shared";
 import type {
 	AgentRunContext,
 	AgentRuntime,
@@ -639,6 +640,8 @@ export class CodexAgentRuntime implements AgentRuntime {
 				? ""
 				: await this.collectDiff(context, sink, logs, input.auditState);
 		const contractWarnings = [...input.auditState.contractWarnings];
+		const contractWarningSummary =
+			summarizeRuntimeContractWarnings(contractWarnings);
 		const result: AgentRuntimeResult = {
 			terminalState: input.terminalState,
 			summary:
@@ -663,6 +666,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 				stoppedBy: result.stoppedBy,
 				finalReport: result.finalReport,
 				summary: result.summary,
+				contractWarningSummary,
 				contractWarnings,
 				runtimeContract: buildCodexRuntimeContractSnapshot(input.auditState),
 			},

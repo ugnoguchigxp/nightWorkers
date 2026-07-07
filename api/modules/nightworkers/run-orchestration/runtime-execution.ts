@@ -10,6 +10,7 @@ import {
 	buildOpenTodoRuntimeContractWarning,
 	mergeRuntimeContractSnapshot,
 	normalizeRuntimeContractWarnings,
+	summarizeRuntimeContractWarnings,
 } from "../../../services/agent-runtime/shared";
 import type { AgentRuntimeResult } from "../../../services/agent-runtime/types";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
@@ -150,6 +151,9 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			const runtimeContractWarnings = normalizeRuntimeContractWarnings(
 				runtimeResult.contractWarnings,
 			);
+			const runtimeContractWarningSummary = summarizeRuntimeContractWarnings(
+				runtimeContractWarnings,
+			);
 			const contextSnapshotBeforeFinalize =
 				latestRunBeforeFinalize?.contextSnapshot ?? runtimeContextSnapshot;
 
@@ -166,6 +170,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 					terminalState: runtimeResult.terminalState,
 					stoppedBy: runtimeResult.stoppedBy,
 					riskLevel: runtimeResult.riskLevel,
+					contractWarningSummary: runtimeContractWarningSummary,
 					contractWarnings: runtimeContractWarnings,
 				},
 			});

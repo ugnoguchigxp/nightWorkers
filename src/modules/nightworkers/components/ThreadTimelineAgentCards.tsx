@@ -10,11 +10,13 @@ import {
 	buildApplyPatchCodeBlockData,
 	buildReplaceContentCodeBlockData,
 	estimateReplacementStats,
+	getActivityDiffPayload,
 	getApplyPatchContent,
 	getChangedFilesFromResult,
 	getToolActivityModel,
 	getToolName,
 	parseApplyPatchSections,
+	parseUnifiedDiffSections,
 } from "./ThreadTimeline";
 import { NightWorkersCodeBlock } from "./ThreadTimelineMarkdown";
 
@@ -26,7 +28,9 @@ export function AgentEditSummaryCard({ event }: { event: TaskEvent }) {
 		<details className="rounded border border-slate-700/80 bg-slate-900/30">
 			<summary className="cursor-pointer list-none px-3 py-2 text-xs text-slate-200">
 				コード変更 ({summary.sections.length}){" "}
-				<span className="text-slate-400">{summary.toolName}</span>
+				<span className="text-slate-400">
+					{editSummaryToolLabel(summary.toolName)}
+				</span>
 			</summary>
 			<div className="space-y-3 border-t border-slate-700/80 px-3 py-2 text-xs">
 				<div className="space-y-1">
@@ -61,6 +65,10 @@ export function AgentEditSummaryCard({ event }: { event: TaskEvent }) {
 			</div>
 		</details>
 	);
+}
+
+function editSummaryToolLabel(toolName: AgentEditSummary["toolName"]) {
+	return toolName === "git_diff" ? "workspace diff" : toolName;
 }
 
 export function ReviewerEvaluationCard({ event }: { event: TaskEvent }) {
@@ -262,7 +270,7 @@ export function ReviewResultSummary({
 }
 
 export type AgentEditSummary = {
-	toolName: "apply_patch" | "replace_content";
+	toolName: "apply_patch" | "replace_content" | "git_diff";
 	sections: Array<{
 		path: string;
 		added?: number;
@@ -274,6 +282,24 @@ export type AgentEditSummary = {
 
 export function getAgentEditSummary(event: TaskEvent): AgentEditSummary | null {
 	const payload = event.payloadJson;
+	const diffContent = getActivityDiffPayload(event);
+	if (diffContent.trim()) {
+		const sections = parseUnifiedDiffSections(diffContent);
+		if (sections.length > 0) {
+			return {
+				toolName: "git_diff",
+				sections,
+				codeBlocks: [
+					{
+						code: diffContent.trimEnd(),
+						filename: "workspace.diff",
+						language: "diff",
+					},
+				],
+			};
+		}
+	}
+
 	const activity = getToolActivityModel(event) ?? getToolActivityModel(payload);
 	const toolName = activity?.toolName ?? getToolName(payload);
 	const args = activity?.arguments ?? {};

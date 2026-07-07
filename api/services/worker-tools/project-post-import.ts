@@ -403,6 +403,8 @@ function buildRecommendedVerificationCommands(
 	scripts: Record<string, string>,
 ) {
 	if (!packageManager) return [];
+	if (typeof scripts.verify === "string")
+		return [runCommandFor(packageManager, "verify")];
 	return VERIFICATION_SCRIPT_ORDER.filter(
 		(script) => typeof scripts[script] === "string",
 	).map((script) => runCommandFor(packageManager, script));

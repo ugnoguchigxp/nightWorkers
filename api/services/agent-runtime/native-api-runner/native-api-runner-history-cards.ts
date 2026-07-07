@@ -6,6 +6,7 @@ import type { NativeApiHistoryItem } from "./native-api-tool-history";
 export type NativeApiRuntimeTodoSnapshot = {
 	seq: number;
 	title: string;
+	description?: string | null;
 	taskType: string;
 	status: string;
 	procedureId?: string | null;
@@ -32,6 +33,7 @@ export async function buildTodoSnapshotHistory(runId: string): Promise<{
 				.map((todo) => ({
 					seq: todo.seq,
 					title: todo.title,
+					description: todo.description,
 					taskType: todo.taskType,
 					status: todo.status,
 					procedureId: todo.procedureId,
@@ -61,6 +63,9 @@ function renderRuntimeTodoContext(currentTodo: NativeApiRuntimeTodoSnapshot) {
 		"[Current Native API Runner Todo]",
 		`seq=${currentTodo.seq}`,
 		`title=${currentTodo.title}`,
+		...(currentTodo.description
+			? [`description=${currentTodo.description.replace(/\s+/g, " ").trim()}`]
+			: []),
 		`taskType=${currentTodo.taskType}`,
 		`procedureId=${currentTodo.procedureId ?? "none"}`,
 		`status=${currentTodo.status}`,

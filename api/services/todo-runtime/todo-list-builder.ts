@@ -56,35 +56,11 @@ const FIRST_GATES: StandardGate[] = [
 
 const DATA_MIGRATION_GATES: StandardGate[] = [
 	{
-		title: "DB migration を作成する",
+		title: "DB migration を実行する",
 		description:
-			"DB schema 変更が必要な場合は、既存の migration flow に従って migration ファイルまたは同等の schema 適用手順を作成する。",
-		taskType: "data_migration",
-		procedureId: "data_migration.create_migration",
-		dependsOn: [],
-	},
-	{
-		title: "DB migration を対象 DB に適用する",
-		description:
-			"作成した migration を実作業対象の DB に適用する。適用できない場合は、この apply gate を完了扱いにせず、失敗 command と最初の error を添えて block または fail にする。",
+			"DB schema 変更が必要な場合は、この Todo の中で migration ファイル作成、実作業対象 DB への migration command 実行、既存 migration を使う read-only focused test / smoke 実装、その test / API / schema 確認の実行まで行う。対象 DB が不明、実 DB へ未適用、または API が no such table 等で失敗する場合は done にせず block / fail にする。隔離 DB や一時 DB の smoke は補助証跡であり、実作業対象 DB への適用確認の代替にしない。",
 		taskType: "data_migration",
 		procedureId: "data_migration.apply_migration",
-		dependsOn: [],
-	},
-	{
-		title: "DB migration を使う実 DB 統合テストを追加する",
-		description:
-			"migration が必要な機能実装では、既存 migration を一時 DB または隔離された test DB に適用し、実 DB 経路の作成・更新・SELECT・並び順などを確認する focused integration test を追加する。テスト内で schema を手書き再現せず、既存 DB を汚さない。Hono/Bun template や bun:sqlite を使う repo では Bun 実行環境の bun test または bun run CLI smoke にし、Node/Vitest が bun:* を解決できない構成の test を追加しない。",
-		taskType: "test_change",
-		procedureId: "data_migration.add_integration_test",
-		dependsOn: [],
-	},
-	{
-		title: "DB migration 後の schema と動作を検証する",
-		description:
-			"migration 適用後に schema 存在確認、関連 API smoke、または focused test を実行し、DB schema 変更と実 DB 統合テストが実行時に反映されていることを確認する。失敗時は schema check / API smoke / focused test のどの段階と command が失敗したかを分けて記録する。",
-		taskType: "focused_verification",
-		procedureId: "data_migration.verify_migration",
 		dependsOn: [],
 	},
 ];

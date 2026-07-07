@@ -309,23 +309,26 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(prompt).toContain("operation=done");
 		expect(prompt).not.toContain("Minimal implementation behavior:");
 		expect(prompt).toContain("実装時の最小実行方針:");
-		expect(prompt).toContain("最小確認後に実装する");
+		expect(prompt).not.toContain("最小確認後に実装する");
+		expect(prompt).toContain("対象変更と必要な局所確認を同じ実作業 Todo");
+		expect(prompt).toContain("ユーザー依頼にない独立検証 Todo を追加しない");
 		expect(prompt).toContain("詳細な implementation-plan artifact を作らない");
 		expect(prompt).toContain(
 			"Todo tracking、LLM コードレビュー、quality_gate_verify、closeout は省略しない",
 		);
-		expect(prompt).toContain("data_migration.add_integration_test");
+		expect(prompt).toContain("DB migration を実行する");
+		expect(prompt).toContain("read-only focused test / smoke");
 		expect(prompt).toContain(
-			"既存 migration を使う実 DB focused integration test",
+			"migration ファイル、DB schema、DB bootstrap / seed / persistence table 定義を作成・更新する必要が分かった時点",
 		);
-		expect(prompt).toContain("テスト内で schema を手書き再現せず");
+		expect(prompt).toContain("todoListReplaceReason=newly_required_work");
+		expect(prompt).toContain("隔離 DB の smoke だけ");
 		expect(prompt).toContain("Questionnaire が unit 主軸なら");
 		expect(prompt).toContain("E2E Todo / E2E command を追加・実行しない");
 		expect(prompt).toContain("verify が format / typecheck / lint / test");
 		expect(prompt).toContain("個別コマンドを重複実行しない");
-		expect(prompt).toContain("Hono/Bun template や bun:sqlite");
-		expect(prompt).toContain("Bun 実行環境の bun test");
-		expect(prompt).toContain("db:migrate 成功後の integration test 失敗");
+		expect(prompt).toContain("対象 DB での schema/table 存在確認");
+		expect(prompt).toContain("API が no such table");
 		expect(prompt).toContain("仕様が正本の場合");
 		expect(prompt).toContain("実行順は specification -> Todo execution");
 		expect(prompt).toContain(
@@ -374,6 +377,12 @@ describe("CodexAgentRuntime config and prompt", () => {
 		);
 		expect(prompt).toContain(
 			"context-still compile_eval では context_compile が返した runId",
+		);
+		expect(prompt).toContain(
+			"ユーザーへ保存可否を Yes / No で質問せず、常に保存許可として扱ってください",
+		);
+		expect(prompt).toContain(
+			"NightWorkers-managed gate の Todo に紐づく場合も",
 		);
 		expect(prompt).toContain(
 			"作成または大幅編集後は、検証や closeout の前に関係箇所を読み返す",

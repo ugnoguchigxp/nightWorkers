@@ -201,7 +201,7 @@ describe("standard implementation TodoList builder", () => {
 		).toHaveLength(1);
 	});
 
-	it("adds required migration creation, application, integration test, and verification gates for data migration runs", () => {
+	it("adds one required migration execution gate for data migration runs", () => {
 		const todos = buildStandardImplementationTodoList({
 			requireDataMigrationGates: true,
 			todos: [
@@ -219,36 +219,21 @@ describe("standard implementation TodoList builder", () => {
 			"1:initial_instructions:contextstill.initial_instructions",
 			"2:context_compile:contextstill.context_compile",
 			"3:implementation:null",
-			"4:data_migration:data_migration.create_migration",
-			"5:data_migration:data_migration.apply_migration",
-			"6:test_change:data_migration.add_integration_test",
-			"7:focused_verification:data_migration.verify_migration",
-			"8:review:llm_code_review",
-			"9:verification:quality_gate_verify",
-			"10:completion_report:final_completion_report",
+			"4:data_migration:data_migration.apply_migration",
+			"5:review:llm_code_review",
+			"6:verification:quality_gate_verify",
+			"7:completion_report:final_completion_report",
 		]);
 		expect(todos[3]).toMatchObject({
-			title: "DB migration を作成する",
+			title: "DB migration を実行する",
 			dependsOn: [3],
 		});
-		expect(todos[4]).toMatchObject({
-			title: "DB migration を対象 DB に適用する",
-			dependsOn: [4],
-		});
-		expect(todos[5]).toMatchObject({
-			title: "DB migration を使う実 DB 統合テストを追加する",
-			dependsOn: [5],
-		});
-		expect(todos[5]?.description).toContain("既存 migration を一時 DB");
-		expect(todos[5]?.description).toContain("schema を手書き再現せず");
-		expect(todos[5]?.description).toContain("Bun 実行環境の bun test");
-		expect(todos[5]?.description).toContain("bun:* を解決できない構成");
-		expect(todos[6]).toMatchObject({
-			title: "DB migration 後の schema と動作を検証する",
-			dependsOn: [6],
-		});
-		expect(todos[6]?.description).toContain("どの段階と command が失敗したか");
-		expect(todos[7]).toMatchObject({ taskType: "review", dependsOn: [7] });
+		expect(todos[3]?.description).toContain("migration ファイル作成");
+		expect(todos[3]?.description).toContain("実作業対象 DB");
+		expect(todos[3]?.description).toContain("read-only focused test");
+		expect(todos[3]?.description).toContain("API が no such table");
+		expect(todos[3]?.description).toContain("隔離 DB や一時 DB");
+		expect(todos[4]).toMatchObject({ taskType: "review", dependsOn: [4] });
 		expect(
 			todos.filter((todo) => todo.procedureId === "quality_gate_verify"),
 		).toHaveLength(1);
@@ -300,7 +285,7 @@ describe("standard implementation TodoList builder", () => {
 		expect(todos.map((todo) => todo.title).join("\n")).not.toContain("E2E");
 	});
 
-	it("preserves required migration gates when a replacement TodoList marks migration work", () => {
+	it("preserves the required migration gate when a replacement TodoList marks migration work", () => {
 		const todos = buildStandardImplementationTodoList({
 			todos: [
 				{
@@ -322,12 +307,7 @@ describe("standard implementation TodoList builder", () => {
 			todos
 				.filter((todo) => todo.procedureId?.startsWith("data_migration."))
 				.map((todo) => todo.procedureId),
-		).toEqual([
-			"data_migration.create_migration",
-			"data_migration.apply_migration",
-			"data_migration.add_integration_test",
-			"data_migration.verify_migration",
-		]);
+		).toEqual(["data_migration.apply_migration"]);
 		expect(
 			todos.filter((todo) => todo.title.includes("threads table migration")),
 		).toHaveLength(0);

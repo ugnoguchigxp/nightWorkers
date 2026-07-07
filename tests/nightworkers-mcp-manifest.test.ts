@@ -215,6 +215,14 @@ describe("nightworkers MCP manifest", () => {
 		const sharedTodoSchema = toNightWorkersJsonSchema(
 			nightWorkersTodoListInputSchema,
 		);
+		const todosDescription = (
+			(sharedTodoSchema.properties as Record<string, unknown> | undefined)
+				?.todos as { description?: string } | undefined
+		)?.description;
+		expect(todosDescription).toContain("creating/updating migration files");
+		expect(todosDescription).toContain("apply_migration");
+		expect(todosDescription).toContain("real target DB");
+		expect(todosDescription).toContain("schema/API/test verification");
 		const taskTypeSchema = ((
 			(sharedTodoSchema.properties as Record<string, unknown> | undefined)
 				?.todos as

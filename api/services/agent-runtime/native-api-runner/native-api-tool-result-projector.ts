@@ -10,6 +10,10 @@ export function projectWorkerResultToNativeApiToolResult(
 	options: { contentLimitChars?: number } = {},
 ): NativeApiToolResult {
 	const content = buildWorkerModelVisibleContent(result);
+	const contentLimitChars =
+		result.toolName === "import_project"
+			? Math.max(options.contentLimitChars ?? 0, content.length)
+			: options.contentLimitChars;
 	return capNativeApiToolResultContent(
 		{
 			ok: result.ok,
@@ -24,8 +28,17 @@ export function projectWorkerResultToNativeApiToolResult(
 					}
 				: {}),
 		},
-		options,
+		{ ...options, contentLimitChars },
 	);
+}
+
+export function projectWorkerResultToMcpStructuredPayload(
+	result: WorkerToolResult<unknown>,
+): unknown {
+	if (result.toolName === "todo_list") {
+		return compactWorkerPayload(result.toolName, result.payload);
+	}
+	return result.payload;
 }
 
 function buildWorkerModelVisibleContent(result: WorkerToolResult<unknown>) {
@@ -54,7 +67,7 @@ function compactTodoPayload(payload: unknown) {
 	const todos = toArray(record.todos).map(toRecord);
 	const operation =
 		typeof record.operation === "string" ? record.operation : undefined;
-	if (operation === "list") return payload;
+	if (operation === "list" || operation === "replace") return payload;
 	const transition = toRecord(record.transition);
 	const diagnostics = toRecord(record.diagnostics);
 	const changedSeq =
@@ -138,10 +151,7 @@ function compactImportProjectPayload(payload: unknown) {
 										typeof llmContext.rawContent === "string"
 											? `chars:${llmContext.rawContent.length}`
 											: null,
-									preview:
-										typeof llmContext.rawContent === "string"
-											? llmContext.rawContent.slice(0, 1200)
-											: null,
+									rawContent: llmContext.rawContent,
 									errorMessage: llmContext.errorMessage,
 								}
 							: null,
