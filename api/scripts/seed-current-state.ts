@@ -8,34 +8,7 @@ import { client } from "../db/client";
 loadEnv({ quiet: true });
 
 const SNAPSHOT_RELATIVE_PATH = "drizzle/seeds/current-state.sql";
-const RESET_TABLES = [
-	"activity_artifacts",
-	"activity_events",
-	"artifacts",
-	"background_processes",
-	"blueprint_artifact_adoptions",
-	"blueprint_design_settings",
-	"blueprint_design_token_adoptions",
-	"conversation_context_snapshots",
-	"design_questionnaire_answers",
-	"design_questionnaire_question_sets",
-	"design_questionnaire_reviews",
-	"design_questionnaire_sessions",
-	"implementation_queue_entries",
-	"implementation_queue_settings",
-	"llm_model_pricing",
-	"llm_usage_records",
-	"refresh_tokens",
-	"task_events",
-	"task_messages",
-	"task_run_todos",
-	"task_runs",
-	"tasks",
-	"todo_workflow_settings",
-	"user_external_accounts",
-	"users",
-	"repositories",
-] as const;
+const PRESERVE_TABLES = new Set(["__drizzle_migrations"]);
 
 async function listExistingTables() {
 	const result = await client.execute(
@@ -71,7 +44,9 @@ function resolveDatabasePath() {
 function buildSeedSql(existingTables: Set<string>) {
 	const snapshotPath = path.resolve(process.cwd(), SNAPSHOT_RELATIVE_PATH);
 	const snapshotSql = readFileSync(snapshotPath, "utf8");
-	const deleteSql = RESET_TABLES.filter((table) => existingTables.has(table))
+	const deleteSql = [...existingTables]
+		.filter((table) => !PRESERVE_TABLES.has(table))
+		.sort()
 		.map((table) => `DELETE FROM ${table};`)
 		.join("\n");
 	return [

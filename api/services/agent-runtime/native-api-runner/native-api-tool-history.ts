@@ -65,6 +65,20 @@ export function buildInitialNativeApiHistory(
 	return items;
 }
 
+export function getLatestNativeApiUserContentByHeader(
+	history: readonly NativeApiHistoryItem[],
+	header: string,
+) {
+	return (
+		[...history]
+			.reverse()
+			.find(
+				(item): item is Extract<NativeApiHistoryItem, { type: "user" }> =>
+					item.type === "user" && item.content.startsWith(header),
+			)?.content ?? null
+	);
+}
+
 export function sanitizeNativeApiResumeHistory(
 	history: unknown,
 	options: { maxItems?: number } = {},

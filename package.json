@@ -37,6 +37,7 @@
 		"db:studio": "drizzle-kit studio",
 		"db:push": "drizzle-kit push",
 		"db:seed": "bun drizzle/seed.ts",
+		"db:dump:current": "bun api/scripts/dump-current-state.ts",
 		"db:seed:current": "bun api/scripts/seed-current-state.ts",
 		"db:reset": "bun api/scripts/reset-db.ts",
 		"db:init": "bun run db:reset && bun run db:seed:current",

@@ -1,3 +1,4 @@
+import type { RuntimeSessionStateStore } from "../agent-runtime/runtime-session-state";
 import type {
 	LlmPromptPartTokenEstimates,
 	NormalizedLlmUsage,
@@ -36,6 +37,7 @@ export type CallSupervisorOptions = {
 	runId?: string | null;
 	promptPartTokenEstimates?: LlmPromptPartTokenEstimates;
 	promptBudgetMetadata?: StructuredLlmPromptBudgetMetadata;
+	runtimeSessionStore?: RuntimeSessionStateStore;
 };
 
 export type StructuredLlmPromptBudgetMetadata = {

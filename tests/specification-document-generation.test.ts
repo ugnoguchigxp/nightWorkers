@@ -42,6 +42,24 @@ describe("Specification document generation", () => {
 			"NightWorkers / NightWorker を実装対象名として使わない",
 		);
 		expect(systemPrompt).toContain("実装対象は Task と Target Project Context");
+		expect(systemPrompt).toContain("`verify` または `verify:base`");
+		expect(systemPrompt).toContain(
+			"`build` / `typecheck` / `lint` / `test` を `verify` と同列に重複列挙しない",
+		);
+		expect(systemPrompt).toContain(
+			"または `## 実装計画` で追加すると明記した script 名だけ",
+		);
+		expect(systemPrompt).toContain(
+			"`## 完了条件` の各項目がどう確認されるかをつなぐテストケースゴール",
+		);
+		expect(systemPrompt).toContain(
+			"後続レビューでそのままテスト項目・検証ゴールとして使う",
+		);
+		expect(systemPrompt).toContain(
+			"レビュー時に条件ごとのテスト有無を判定できる形",
+		);
+		expect(systemPrompt).toContain("テンプレート未使用でも検証を弱めず");
+		expect(systemPrompt).toContain("最小の verify 系 script 追加");
 	});
 
 	it("adds implementation plan guidance for DB/API/UI/test spanning tasks", () => {
@@ -333,6 +351,15 @@ describe("Specification document generation", () => {
 		expect(userPrompt).toContain("API Contract: Todo API Contract");
 		expect(userPrompt).toContain("## Plan Mode References");
 		expect(userPrompt).toContain("Todo User Flow");
+		expect(userPrompt).toContain(
+			"後続レビューでテスト項目・検証ゴールとして使う",
+		);
+		expect(userPrompt).toContain(
+			"レビュー時に条件ごとのテスト有無を判定できる形",
+		);
+		expect(userPrompt).toContain("verify / verify:base がある場合は代表 gate");
+		expect(userPrompt).toContain("verify 系 script 追加を実装計画に入れる");
+		expect(userPrompt).toContain("同じ目的の command を重複列挙しない");
 		const systemPrompt = buildSpecificationDocumentSystemPrompt();
 		expect(systemPrompt).toContain("最終文書に全件列挙せず");
 		expect(systemPrompt).toContain("未決定事項は極力作らず");

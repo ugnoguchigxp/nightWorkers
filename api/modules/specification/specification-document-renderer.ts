@@ -451,7 +451,11 @@ function buildImplementationPlanGuidance(context: string) {
 		);
 	}
 	lines.push(
-		"検証: unit / typecheck / verify / E2E のうち、既存 package script と変更範囲に合うものを本文の完了条件へ組み込む。",
+		"完了条件: 後続レビューでテスト項目・検証ゴールとして使うため、各条件は確認対象と期待結果が分かる粒度で書く。",
+		"完了条件: UI 操作、DB 反映、API route、既存機能回帰などを混ぜず、レビュー時に条件ごとのテスト有無を判定できる形に分ける。",
+		"検証: Project package scripts に verify / verify:base がある場合は代表 gate として扱い、build / typecheck / lint / test は対象範囲の確認または verify で代替できない理由がある場合だけ別に書く。",
+		"検証: verify / verify:base が無い場合でも検証を弱めず、既存構成に合わせた最小の verify 系 script 追加を実装計画に入れる。",
+		"検証: unit / typecheck / verify / E2E のうち、既存 package script、または実装計画で追加する script と変更範囲に合うものを本文の完了条件へ組み込む。同じ目的の command を重複列挙しない。",
 		"禁止: 元資料、Evidence、Questionnaire の raw answer、API schema、DDL、Blueprint 詳細を本文に再掲しない。",
 	);
 	return lines.join("\n");

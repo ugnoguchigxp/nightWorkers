@@ -56,6 +56,7 @@ import {
 } from "./native-api-tool-dispatcher";
 import {
 	buildInitialNativeApiHistory,
+	getLatestNativeApiUserContentByHeader,
 	type NativeApiHistoryItem,
 	sanitizeNativeApiResumeHistory,
 } from "./native-api-tool-history";
@@ -63,6 +64,9 @@ import { getNativeApiToolDefinitions } from "./native-api-tool-registry";
 import { capNativeApiToolResultContent } from "./native-api-tool-result-projector";
 
 export type NativeApiToolTurnProvider = typeof callProviderToolTurn;
+
+const NATIVE_API_TODO_SNAPSHOT_HEADER = "[Native API Runner Todo Snapshot]";
+const NATIVE_API_CURRENT_TODO_HEADER = "[Current Native API Runner Todo]";
 
 export class NativeApiRunner {
 	private readonly cancelledRunIds = new Set<string>();
@@ -127,8 +131,16 @@ export class NativeApiRunner {
 			successfulVerificationCommands: [],
 			compileEvalCompleted: false,
 		};
-		let lastTodoSnapshotContent: string | null = null;
-		let lastCurrentTodoContent: string | null = null;
+		let lastTodoSnapshotContent: string | null =
+			getLatestNativeApiUserContentByHeader(
+				history,
+				NATIVE_API_TODO_SNAPSHOT_HEADER,
+			);
+		let lastCurrentTodoContent: string | null =
+			getLatestNativeApiUserContentByHeader(
+				history,
+				NATIVE_API_CURRENT_TODO_HEADER,
+			);
 		let lastPostImportHistoryToolCallId: string | null = null;
 		const runController = new AbortController();
 		this.activeRunControllers.set(context.runId, runController);
@@ -746,8 +758,14 @@ export class NativeApiRunner {
 						...state,
 						newContextWindowRequested: false,
 					};
-					lastTodoSnapshotContent = null;
-					lastCurrentTodoContent = null;
+					lastTodoSnapshotContent = getLatestNativeApiUserContentByHeader(
+						history,
+						NATIVE_API_TODO_SNAPSHOT_HEADER,
+					);
+					lastCurrentTodoContent = getLatestNativeApiUserContentByHeader(
+						history,
+						NATIVE_API_CURRENT_TODO_HEADER,
+					);
 					lastPostImportHistoryToolCallId = null;
 					await sink.emit({
 						type: "tool_call_progress",

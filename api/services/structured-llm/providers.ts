@@ -1,4 +1,5 @@
-import { Codex } from "@openai/codex-sdk";
+import { Codex, type Thread as CodexThread } from "@openai/codex-sdk";
+import { RuntimeSessionStateStore } from "../agent-runtime/runtime-session-state";
 import { estimateLlmUsage, normalizeProviderUsage } from "../llm-usage";
 import { shouldOmitCodexOutputSchema } from "./codex-output-schema";
 import { emitSupervisorLlmDebugEvent, rejectProviderActivity } from "./events";
@@ -48,6 +49,9 @@ type OpenAIChatCompletionToolCall = {
 
 const OPENAI_TRANSIENT_RETRY_DELAY_MS =
 	process.env.NODE_ENV === "test" ? 0 : 1500;
+const CODEX_STRUCTURED_RUNTIME_LANE = "structured-llm";
+const CODEX_RESUMED_SYSTEM_REFRESH_MAX_CHARS = 2_000;
+const defaultCodexStructuredSessionStore = new RuntimeSessionStateStore();
 
 export type RawLlmCallOptions = CallSupervisorOptions & {
 	jsonSchema?: { name: string; schema: unknown };
@@ -172,6 +176,49 @@ function buildFixtureProviderResult(
 	};
 }
 
+function buildCodexStructuredExecutionMode(input: {
+	role?: string | null;
+	model: string | null;
+	schemaName: string;
+}) {
+	return [
+		"structured",
+		input.role || "default",
+		input.model || "default-model",
+		input.schemaName,
+	].join(":");
+}
+
+function buildCodexResumedStructuredPrompt(input: {
+	schemaName: string;
+	systemPrompt: string;
+	userPrompt: string;
+}) {
+	const systemRefresh = compactCodexResumedSystemPrompt(input.systemPrompt);
+	return [
+		"Continue the existing NightWorkers structured artifact thread.",
+		"The stable system and project context from the earlier turn is already present in this Codex thread.",
+		`Current structured output schema: ${input.schemaName}`,
+		"Follow the current turn outputSchema when one is provided. Return only the requested structured output.",
+		"",
+		"## Current Turn System Refresh",
+		systemRefresh,
+		"",
+		"## Current Turn User Prompt",
+		input.userPrompt,
+	].join("\n");
+}
+
+function compactCodexResumedSystemPrompt(systemPrompt: string) {
+	const trimmed = systemPrompt.trim();
+	if (trimmed.length <= CODEX_RESUMED_SYSTEM_REFRESH_MAX_CHARS) return trimmed;
+	return [
+		trimmed.slice(0, CODEX_RESUMED_SYSTEM_REFRESH_MAX_CHARS).trimEnd(),
+		"",
+		`[System prompt truncated for resumed Codex thread: ${trimmed.length - CODEX_RESUMED_SYSTEM_REFRESH_MAX_CHARS} chars omitted. Stable prior context remains in the resumed thread.]`,
+	].join("\n");
+}
+
 async function callCodexProvider(
 	input: Parameters<typeof callProvider>[0],
 	isEnabled: (
@@ -205,7 +252,7 @@ async function callCodexProvider(
 			mcp_servers: {},
 		},
 	});
-	const thread = codex.startThread({
+	const threadOptions = {
 		model,
 		sandboxMode: "read-only",
 		approvalPolicy: "never",
@@ -214,7 +261,63 @@ async function callCodexProvider(
 		workingDirectory: input.options.workingDirectory || process.cwd(),
 		skipGitRepoCheck: true,
 		modelReasoningEffort,
-	});
+	} as const;
+	const sessionStore =
+		input.options.runtimeSessionStore ?? defaultCodexStructuredSessionStore;
+	const sessionLookup =
+		input.options.taskId !== undefined
+			? {
+					taskId: input.options.taskId,
+					runtimeLane: CODEX_STRUCTURED_RUNTIME_LANE,
+					provider: "codex",
+					executionMode: buildCodexStructuredExecutionMode({
+						role: input.options.role,
+						model,
+						schemaName: input.options.jsonSchema?.name ?? input.options.label,
+					}),
+				}
+			: null;
+	let thread: CodexThread;
+	let resumeState:
+		| { status: "unavailable" }
+		| { status: "reused"; providerThreadId: string; stateId: string }
+		| {
+				status: "fallback_started_fresh";
+				providerThreadId: string;
+				stateId: string;
+				error: string;
+		  } = { status: "unavailable" };
+	if (sessionLookup) {
+		const state =
+			await sessionStore.getLatestRuntimeSessionStateForTask(sessionLookup);
+		if (state?.providerSessionId) {
+			try {
+				thread = codex.resumeThread(state.providerSessionId, threadOptions);
+				resumeState = {
+					status: "reused",
+					providerThreadId: state.providerSessionId,
+					stateId: state.id,
+				};
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				await sessionStore.markRuntimeSessionStateResumeFailed({
+					id: state.id,
+					error: message,
+				});
+				thread = codex.startThread(threadOptions);
+				resumeState = {
+					status: "fallback_started_fresh",
+					providerThreadId: state.providerSessionId,
+					stateId: state.id,
+					error: message,
+				};
+			}
+		} else {
+			thread = codex.startThread(threadOptions);
+		}
+	} else {
+		thread = codex.startThread(threadOptions);
+	}
 	const omitOutputSchema = shouldOmitCodexOutputSchema(
 		input.options.jsonSchema?.name,
 	);
@@ -225,14 +328,62 @@ async function callCodexProvider(
 	if (!omitOutputSchema && outputSchema !== undefined) {
 		runOptions.outputSchema = outputSchema;
 	}
-	const turn = await thread.run(
-		[
-			{ type: "text", text: input.systemPrompt },
-			{ type: "text", text: input.userPrompt },
-		],
-		runOptions,
-	);
+	let resumedThread = resumeState.status === "reused";
+	let turnInput = resumedThread
+		? [
+				{
+					type: "text" as const,
+					text: buildCodexResumedStructuredPrompt({
+						schemaName: input.options.jsonSchema?.name ?? input.options.label,
+						systemPrompt: input.systemPrompt,
+						userPrompt: input.userPrompt,
+					}),
+				},
+			]
+		: [
+				{ type: "text" as const, text: input.systemPrompt },
+				{ type: "text" as const, text: input.userPrompt },
+			];
+	let turn: Awaited<ReturnType<CodexThread["run"]>>;
+	try {
+		turn = await thread.run(turnInput, runOptions);
+	} catch (error) {
+		if (resumeState.status !== "reused" || !sessionLookup) throw error;
+		const message = error instanceof Error ? error.message : String(error);
+		await sessionStore.markRuntimeSessionStateResumeFailed({
+			id: resumeState.stateId,
+			error: message,
+		});
+		thread = codex.startThread(threadOptions);
+		resumeState = {
+			status: "fallback_started_fresh",
+			providerThreadId: resumeState.providerThreadId,
+			stateId: resumeState.stateId,
+			error: message,
+		};
+		resumedThread = false;
+		turnInput = [
+			{ type: "text" as const, text: input.systemPrompt },
+			{ type: "text" as const, text: input.userPrompt },
+		];
+		turn = await thread.run(turnInput, runOptions);
+	}
 	const content = turn.finalResponse || "";
+	if (sessionLookup && thread.id) {
+		await sessionStore.upsertRuntimeSessionState({
+			...sessionLookup,
+			runId: input.options.runId ?? null,
+			providerSessionId: thread.id,
+			model,
+			metadata: {
+				providerEndpointId: endpoint?.id ?? null,
+				role: input.options.role ?? null,
+				label: input.options.label,
+				jsonSchemaName: input.options.jsonSchema?.name ?? null,
+				resumeState: resumeState.status,
+			},
+		});
+	}
 	const providerDebug = {
 		provider: "codex",
 		providerEndpointId: endpoint?.id ?? null,
@@ -244,6 +395,9 @@ async function callCodexProvider(
 		outputSchemaOmittedFor: omitOutputSchema
 			? input.options.jsonSchema?.name
 			: null,
+		resumeState: resumeState.status,
+		providerThreadId: thread.id ?? null,
+		resumedInputReduced: resumedThread,
 		hasUsage: Boolean(turn.usage),
 		itemCount: turn.items.length,
 	};

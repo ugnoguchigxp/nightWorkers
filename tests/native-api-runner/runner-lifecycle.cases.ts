@@ -146,6 +146,58 @@ describe("NativeApiRunner lifecycle", () => {
 		expect(store.finishedTurns[0]).toMatchObject({ status: "completed" });
 	});
 
+	it("does not re-add the initial current Todo context on the first provider turn", async () => {
+		vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([
+			{
+				id: "todo-1",
+				runId: "run-1",
+				taskId: "task-1",
+				seq: 1,
+				title: "Implement the requested change",
+				taskType: "implementation",
+				status: "running",
+				procedureId: "contextstill.context_compile",
+			} as never,
+		]);
+		const store = createFakeStore();
+		const providerTurn = vi.fn(async () => ({
+			type: "supported" as const,
+			content: "I will explain instead of using tools.",
+			toolCalls: [],
+			usage: usage(),
+			model: "api-model",
+		}));
+		const runner = new NativeApiRunner({
+			store: store.instance,
+			startupController: createNoopStartup(),
+			providerTurn,
+			usageRecorder: vi.fn(async () => undefined),
+		});
+
+		await runner.run(
+			buildContext({
+				currentTodo: {
+					id: "todo-1",
+					seq: 1,
+					title: "Implement the requested change",
+					taskType: "implementation",
+					status: "running",
+					procedureId: "contextstill.context_compile",
+				},
+			}),
+			createSink(),
+		);
+
+		const request = providerTurn.mock.calls[0]?.[0];
+		const serializedMessages = JSON.stringify(request?.messages ?? []);
+		expect(
+			serializedMessages.match(/\[Current Native API Runner Todo\]/g) ?? [],
+		).toHaveLength(1);
+		expect(
+			serializedMessages.match(/\[Native API Runner Todo Snapshot\]/g) ?? [],
+		).toHaveLength(1);
+	});
+
 	it("does not run fixed startup gates for review mode", async () => {
 		const store = createFakeStore();
 		const startupController = createNoopStartup();
