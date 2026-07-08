@@ -64,7 +64,11 @@ export function applyEvidenceToChecklist(input: {
 	if (input.fullGate && input.evidence.exitCode === 0) {
 		for (const item of next) {
 			if (!item.required || touched.has(item.conditionId)) continue;
-			if (item.status === "pending" || item.status === "unknown") {
+			if (
+				item.status === "pending" ||
+				item.status === "unknown" ||
+				item.status === "verified_by_gate"
+			) {
 				updateItem(item, {
 					status: "verified_by_gate",
 					evidenceId,

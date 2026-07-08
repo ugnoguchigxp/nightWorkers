@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
+import { getLatestVerificationDocumentForTask } from "../api/modules/nightworkers/nightworkers.verification.repository";
+import { recordVerificationEvidence } from "../api/modules/nightworkers/nightworkers.verification.service";
 import { createLedgerSink } from "../api/services/agent-runtime/ledger-sink";
 import { NativeAgentRuntime } from "../api/services/agent-runtime/NativeAgentRuntime";
 import type { NativeApiRunner } from "../api/services/agent-runtime/native-api-runner/native-api-runner";
@@ -15,6 +17,18 @@ vi.mock("../api/modules/nightworkers/nightworkers.repository", () => ({
 	startTaskRunTodoIfStillPendingAndNoEarlierOpen: vi.fn(),
 	updateTaskRunTodo: vi.fn(),
 }));
+vi.mock(
+	"../api/modules/nightworkers/nightworkers.verification.repository",
+	() => ({
+		getLatestVerificationDocumentForTask: vi.fn(),
+	}),
+);
+vi.mock(
+	"../api/modules/nightworkers/nightworkers.verification.service",
+	() => ({
+		recordVerificationEvidence: vi.fn(),
+	}),
+);
 
 describe("AgentRuntime", () => {
 	let tempDir: string;
@@ -297,6 +311,54 @@ describe("AgentRuntime", () => {
 		expect(repo.updateTaskRunTodo).toHaveBeenCalledTimes(1);
 	});
 
+	it("records native Codex verification commands as managed checklist evidence", async () => {
+		(repo.getTaskRun as never).mockResolvedValue({
+			id: "run-123",
+			taskId: "task-123",
+			worktreePath: "/workspace/app",
+		} as never);
+		(repo.listTaskRunTodosForRun as never).mockResolvedValue([] as never);
+		vi.mocked(getLatestVerificationDocumentForTask).mockResolvedValue({
+			id: "verification-doc-123",
+		} as never);
+
+		const sink = createLedgerSink("run-123");
+		await sink.emit({
+			type: "tool_call_finished",
+			message: "command finished",
+			payload: {
+				toolName: "command_execution",
+				command: "bun run verify",
+				commandClass: "broad_verification",
+				exitCode: 0,
+				status: "completed",
+				providerItemId: "item-verify-123",
+				aggregatedOutput: "OK verify complete",
+			},
+		});
+
+		expect(getLatestVerificationDocumentForTask).toHaveBeenCalledWith(
+			"task-123",
+		);
+		expect(recordVerificationEvidence).toHaveBeenCalledWith(
+			expect.objectContaining({
+				taskId: "task-123",
+				runId: "run-123",
+				verificationDocumentId: "verification-doc-123",
+				checkKind: "verify",
+				fullGate: true,
+				evidence: expect.objectContaining({
+					runId: "run-123",
+					taskId: "task-123",
+					command: "bun run verify",
+					cwd: "/workspace/app",
+					exitCode: 0,
+					runner: "unknown",
+				}),
+			}),
+		);
+	});
+
 	it("auto-closes only the knowledge registration gate after successful register_candidates", async () => {
 		(repo.getTaskRun as never).mockResolvedValue({
 			id: "run-123",
@@ -517,7 +579,7 @@ describe("AgentRuntime", () => {
 			},
 		});
 
-		expect(repo.getTaskRun).not.toHaveBeenCalled();
+		expect(repo.getTaskRun).toHaveBeenCalledWith("run-123");
 		expect(repo.listTaskRunTodosForRun).not.toHaveBeenCalled();
 		expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
 	});

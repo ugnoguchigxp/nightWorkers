@@ -46,6 +46,23 @@ describe("verification checklist matcher", () => {
 		expect(summarizeChecklist(updated).complete).toBe(false);
 	});
 
+	it("appends a new full-gate evidence id to already verified gate items", () => {
+		const updated = applyEvidenceToChecklist({
+			items: [
+				{
+					...item("AC-001"),
+					status: "verified_by_gate",
+					evidenceIds: ["evidence-old"],
+				},
+			],
+			fullGate: true,
+			evidence: evidence({ id: "evidence-new", exitCode: 0, cases: [] }),
+		});
+
+		expect(updated[0]?.status).toBe("verified_by_gate");
+		expect(updated[0]?.evidenceIds).toEqual(["evidence-old", "evidence-new"]);
+	});
+
 	it("does not treat skipped matching cases as passed", () => {
 		const updated = applyEvidenceToChecklist({
 			items: [item("AC-001")],
@@ -79,11 +96,12 @@ function item(conditionId: string): VerificationChecklistItem {
 }
 
 function evidence(input: {
+	id?: string;
 	exitCode: number;
 	cases: NormalizedVerificationEvidence["cases"];
 }): NormalizedVerificationEvidence {
 	return {
-		id: "evidence-1",
+		id: input.id ?? "evidence-1",
 		runId: "run-1",
 		taskId: "task-1",
 		command: "bun test",
