@@ -108,6 +108,12 @@ export const planModeWorkspaceReferenceSchema = z.object({
 	taskId: z.string().uuid(),
 });
 
+export const planModeViewDecisionSchema = z.object({
+	view: z.string().min(1),
+	decision: z.enum(["include", "omit"]),
+	reason: z.string().optional(),
+});
+
 export const dedicatedViewArtifactMetadataSchema = z.object({
 	artifactKind: z.literal("plan_mode_dedicated_view"),
 	view: dedicatedDesignViewSchema,
@@ -339,6 +345,7 @@ export const planModeWorkspaceSchema = z.object({
 	questionnaireSessions: z.array(planModeWorkspaceQuestionnaireSchema),
 	decisionReviews: z.array(planModeWorkspaceArtifactSchema),
 	implementationReferences: z.array(planModeWorkspaceReferenceSchema),
+	viewDecisions: z.array(planModeViewDecisionSchema).default([]),
 });
 
 export type FeaturePlanBodySection = z.infer<
@@ -357,6 +364,7 @@ export type PlanModeWorkspaceQuestionnaire = z.infer<
 export type PlanModeWorkspaceReference = z.infer<
 	typeof planModeWorkspaceReferenceSchema
 >;
+export type PlanModeViewDecision = z.infer<typeof planModeViewDecisionSchema>;
 export type PlanModeWorkspace = z.infer<typeof planModeWorkspaceSchema>;
 export type PlanModeRegenerationTarget = z.infer<
 	typeof planModeRegenerationTargetSchema

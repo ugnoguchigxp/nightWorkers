@@ -9,6 +9,9 @@ import {
 	listTaskRunEvents,
 	listTaskRunEventsForReplay,
 	startTaskRun,
+	archiveTask,
+	deleteTask,
+	createWorkbenchSession,
 } from "../../api/modules/nightworkers/nightworkers.service";
 import * as runtimeRegistry from "../../api/services/agent-runtime/registry";
 
@@ -53,6 +56,9 @@ vi.mock("../../api/modules/nightworkers/nightworkers.repository", () => ({
 	createTaskRunCommitRecord: vi.fn(),
 	getTaskRunCommitRecord: vi.fn(),
 	refreshImplementationQueueLeaseForRun: vi.fn(),
+	updateTask: vi.fn(),
+	deleteTask: vi.fn(),
+	createTask: vi.fn(),
 }));
 
 vi.mock("../../api/routes/settings", () => ({
@@ -947,6 +953,54 @@ describe("NightWorkers service", () => {
 				}),
 				expect.anything(),
 			);
+		});
+	});
+
+	describe("archiveTask", () => {
+		it("throws NotFoundError if task does not exist", async () => {
+			vi.mocked(repo.getTask).mockResolvedValueOnce(null);
+			await expect(archiveTask("invalid-id")).rejects.toThrow("Task not found");
+		});
+
+		it("returns task immediately if already completed, cancelled or failed", async () => {
+			const completedTask = { id: "t1", status: "completed" } as any;
+			vi.mocked(repo.getTask).mockResolvedValueOnce(completedTask);
+			const result = await archiveTask("t1");
+			expect(result).toBe(completedTask);
+		});
+
+		it("updates task status to cancelled", async () => {
+			const activeTask = { id: "t1", status: "running" } as any;
+			const archivedTask = { id: "t1", status: "cancelled" } as any;
+			vi.mocked(repo.getTask).mockResolvedValueOnce(activeTask);
+			vi.mocked(repo.updateTask).mockResolvedValueOnce(archivedTask);
+			const result = await archiveTask("t1");
+			expect(result.status).toBe("cancelled");
+			expect(repo.updateTask).toHaveBeenCalledWith("t1", { status: "cancelled" });
+		});
+	});
+
+	describe("deleteTask", () => {
+		it("deletes a task from repository", async () => {
+			vi.mocked(repo.deleteTask).mockResolvedValueOnce({ id: "t1" } as any);
+			const result = await deleteTask("t1");
+			expect(result).toEqual({ id: "t1" });
+			expect(repo.deleteTask).toHaveBeenCalledWith("t1");
+		});
+	});
+
+	describe("createWorkbenchSession", () => {
+		it("creates task session with defaults", async () => {
+			const dummySession = { id: "s1", title: "New Session" } as any;
+			vi.mocked(repo.createTask).mockResolvedValueOnce(dummySession);
+			const result = await createWorkbenchSession({
+				repositoryId: "repo-1",
+			});
+			expect(result).toBe(dummySession);
+			expect(repo.createTask).toHaveBeenCalledWith(expect.objectContaining({
+				repositoryId: "repo-1",
+				title: "New Session",
+			}));
 		});
 	});
 });

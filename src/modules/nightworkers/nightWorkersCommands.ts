@@ -107,8 +107,9 @@ export function startTestModeRun(
 	input: {
 		projectId: string;
 		specArtifactId: string;
-		verificationDocumentId: string;
+		verificationDocumentId?: string | null;
 		mode: "test";
+		action?: "discover_tests" | "run_unit_tests";
 		rerun?: boolean;
 	},
 ) {

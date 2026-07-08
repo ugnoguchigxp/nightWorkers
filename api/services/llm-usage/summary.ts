@@ -3,6 +3,7 @@ import { type DbTransaction, db } from "../../db/client";
 import {
 	llmUsageRecords,
 	llmUsageSummaryBuckets,
+	llmUsageSummaryTaskBuckets,
 	llmUsageSummaryWarnings,
 	tasks,
 } from "../../db/schema";
@@ -22,6 +23,7 @@ type SummaryDelta = {
 	bucketHourUtc: Date;
 	repositoryId: string | null;
 	repositoryKey: string;
+	taskId: string;
 	provider: string;
 	model: string | null;
 	modelKey: string;
@@ -70,6 +72,8 @@ export type LlmUsageSummaryIntegrityResult = {
 	checkedRecords: number;
 	expectedBuckets: number;
 	actualBuckets: number;
+	expectedTaskBuckets: number;
+	actualTaskBuckets: number;
 	mismatches: Array<{
 		key: string;
 		field: string;
@@ -139,9 +143,11 @@ export async function checkLlmUsageSummaryIntegrity(
 	const tolerance = input.tolerance ?? 0.000001;
 	const records = await listUsageRecordsForSummary(input);
 	const expected = new Map<string, SummaryDelta>();
+	const expectedTasks = new Map<string, SummaryDelta>();
 	for (const record of records) {
 		const delta = await buildLlmUsageSummaryDelta(record);
 		mergeSummaryDelta(expected, delta);
+		mergeSummaryDelta(expectedTasks, delta, summaryTaskDeltaKey(delta));
 	}
 
 	const actualRows = await listSummaryBuckets(input);
@@ -178,25 +184,85 @@ export async function checkLlmUsageSummaryIntegrity(
 	);
 
 	const mismatches: LlmUsageSummaryIntegrityResult["mismatches"] = [];
-	const allKeys = new Set([...expected.keys(), ...actual.keys()]);
+	compareSummaryMaps({ expected, actual, mismatches, keyPrefix: "bucket" });
+
+	const actualTaskRows = await listSummaryTaskBuckets(input);
+	const actualTasks = new Map(
+		actualTaskRows.map((row) => [
+			summaryTaskRowKey(row),
+			{
+				inputTokens: row.inputTokens,
+				outputTokens: row.outputTokens,
+				cachedInputTokens: row.cachedInputTokens,
+				reasoningOutputTokens: row.reasoningOutputTokens,
+				systemPromptTokens: row.systemPromptTokens,
+				userPromptTokens: row.userPromptTokens,
+				stateCardTokens: row.stateCardTokens,
+				totalTokens: row.totalTokens,
+				totalDurationMs: row.totalDurationMs,
+				outputDurationMs: row.outputDurationMs,
+				measuredDurationCallCount: row.measuredDurationCallCount,
+				callCount: row.callCount,
+				pricedCallCount: row.pricedCallCount,
+				estimatedCost: row.estimatedCost,
+			},
+		]),
+	);
+	compareSummaryMaps({
+		expected: expectedTasks,
+		actual: actualTasks,
+		mismatches,
+		keyPrefix: "task_bucket",
+		fields: TASK_SUMMARY_COMPARE_FIELDS,
+		tolerance,
+	});
+
+	return {
+		ok: mismatches.length === 0,
+		checkedRecords: records.length,
+		expectedBuckets: expected.size,
+		actualBuckets: actual.size,
+		expectedTaskBuckets: expectedTasks.size,
+		actualTaskBuckets: actualTasks.size,
+		mismatches,
+	};
+}
+
+function compareSummaryMaps(input: {
+	expected: Map<
+		string,
+		Partial<Record<(typeof SUMMARY_COMPARE_FIELDS)[number], number>>
+	>;
+	actual: Map<
+		string,
+		Partial<Record<(typeof SUMMARY_COMPARE_FIELDS)[number], number>>
+	>;
+	mismatches: LlmUsageSummaryIntegrityResult["mismatches"];
+	keyPrefix: string;
+	fields?: readonly (typeof SUMMARY_COMPARE_FIELDS)[number][];
+	tolerance?: number;
+}) {
+	const fields = input.fields ?? SUMMARY_COMPARE_FIELDS;
+	const tolerance = input.tolerance ?? 0.000001;
+	const allKeys = new Set([...input.expected.keys(), ...input.actual.keys()]);
 	for (const key of allKeys) {
-		const expectedRow = expected.get(key);
-		const actualRow = actual.get(key);
+		const expectedRow = input.expected.get(key);
+		const actualRow = input.actual.get(key);
 		if (!expectedRow || !actualRow) {
-			mismatches.push({
-				key,
-				field: "bucket",
+			input.mismatches.push({
+				key: `${input.keyPrefix}:${key}`,
+				field: input.keyPrefix,
 				expected: expectedRow ? "present" : null,
 				actual: actualRow ? "present" : null,
 			});
 			continue;
 		}
-		for (const field of SUMMARY_COMPARE_FIELDS) {
-			const expectedValue = expectedRow[field];
-			const actualValue = actualRow[field];
+		for (const field of fields) {
+			const expectedValue = expectedRow[field] ?? 0;
+			const actualValue = actualRow[field] ?? 0;
 			if (Math.abs(expectedValue - actualValue) > tolerance) {
-				mismatches.push({
-					key,
+				input.mismatches.push({
+					key: `${input.keyPrefix}:${key}`,
 					field,
 					expected: expectedValue,
 					actual: actualValue,
@@ -204,14 +270,6 @@ export async function checkLlmUsageSummaryIntegrity(
 			}
 		}
 	}
-
-	return {
-		ok: mismatches.length === 0,
-		checkedRecords: records.length,
-		expectedBuckets: expected.size,
-		actualBuckets: actual.size,
-		mismatches,
-	};
 }
 
 async function buildLlmUsageSummaryDelta(
@@ -289,6 +347,7 @@ async function buildLlmUsageSummaryDelta(
 		bucketHourUtc: toUtcHour(createdAt),
 		repositoryId,
 		repositoryKey: normalizeKey(repositoryId),
+		taskId: record.taskId,
 		provider: record.provider,
 		model: record.model,
 		modelKey,
@@ -351,6 +410,24 @@ async function upsertSummaryDelta(delta: SummaryDelta, executor: DbExecutor) {
 			set: summaryIncrementSet(delta, now),
 		});
 
+	await executor
+		.insert(llmUsageSummaryTaskBuckets)
+		.values({
+			...summaryTaskDeltaValues(delta),
+			createdAt: now,
+			updatedAt: now,
+		})
+		.onConflictDoUpdate({
+			target: [
+				llmUsageSummaryTaskBuckets.bucketHourUtc,
+				llmUsageSummaryTaskBuckets.repositoryKey,
+				llmUsageSummaryTaskBuckets.taskId,
+				llmUsageSummaryTaskBuckets.pricingCurrencyKey,
+				llmUsageSummaryTaskBuckets.pricingStatus,
+			],
+			set: summaryTaskIncrementSet(delta, now),
+		});
+
 	for (const warning of delta.warnings) {
 		await executor
 			.insert(llmUsageSummaryWarnings)
@@ -387,8 +464,34 @@ async function upsertSummaryDelta(delta: SummaryDelta, executor: DbExecutor) {
 }
 
 function summaryDeltaValues(delta: SummaryDelta) {
-	const { warnings: _warnings, ...values } = delta;
+	const { taskId: _taskId, warnings: _warnings, ...values } = delta;
 	return values;
+}
+
+function summaryTaskDeltaValues(delta: SummaryDelta) {
+	return {
+		bucketHourUtc: delta.bucketHourUtc,
+		repositoryId: delta.repositoryId,
+		repositoryKey: delta.repositoryKey,
+		taskId: delta.taskId,
+		pricingCurrencyCode: delta.pricingCurrencyCode,
+		pricingCurrencyKey: delta.pricingCurrencyKey,
+		pricingStatus: delta.pricingStatus,
+		inputTokens: delta.inputTokens,
+		outputTokens: delta.outputTokens,
+		cachedInputTokens: delta.cachedInputTokens,
+		reasoningOutputTokens: delta.reasoningOutputTokens,
+		systemPromptTokens: delta.systemPromptTokens,
+		userPromptTokens: delta.userPromptTokens,
+		stateCardTokens: delta.stateCardTokens,
+		totalTokens: delta.totalTokens,
+		totalDurationMs: delta.totalDurationMs,
+		outputDurationMs: delta.outputDurationMs,
+		measuredDurationCallCount: delta.measuredDurationCallCount,
+		callCount: delta.callCount,
+		pricedCallCount: delta.pricedCallCount,
+		estimatedCost: delta.estimatedCost,
+	};
 }
 
 function summaryIncrementSet(delta: SummaryDelta, now: Date) {
@@ -424,6 +527,26 @@ function summaryIncrementSet(delta: SummaryDelta, now: Date) {
 	};
 }
 
+function summaryTaskIncrementSet(delta: SummaryDelta, now: Date) {
+	return {
+		inputTokens: sql`${llmUsageSummaryTaskBuckets.inputTokens} + ${delta.inputTokens}`,
+		outputTokens: sql`${llmUsageSummaryTaskBuckets.outputTokens} + ${delta.outputTokens}`,
+		cachedInputTokens: sql`${llmUsageSummaryTaskBuckets.cachedInputTokens} + ${delta.cachedInputTokens}`,
+		reasoningOutputTokens: sql`${llmUsageSummaryTaskBuckets.reasoningOutputTokens} + ${delta.reasoningOutputTokens}`,
+		systemPromptTokens: sql`${llmUsageSummaryTaskBuckets.systemPromptTokens} + ${delta.systemPromptTokens}`,
+		userPromptTokens: sql`${llmUsageSummaryTaskBuckets.userPromptTokens} + ${delta.userPromptTokens}`,
+		stateCardTokens: sql`${llmUsageSummaryTaskBuckets.stateCardTokens} + ${delta.stateCardTokens}`,
+		totalTokens: sql`${llmUsageSummaryTaskBuckets.totalTokens} + ${delta.totalTokens}`,
+		totalDurationMs: sql`${llmUsageSummaryTaskBuckets.totalDurationMs} + ${delta.totalDurationMs}`,
+		outputDurationMs: sql`${llmUsageSummaryTaskBuckets.outputDurationMs} + ${delta.outputDurationMs}`,
+		measuredDurationCallCount: sql`${llmUsageSummaryTaskBuckets.measuredDurationCallCount} + ${delta.measuredDurationCallCount}`,
+		callCount: sql`${llmUsageSummaryTaskBuckets.callCount} + ${delta.callCount}`,
+		pricedCallCount: sql`${llmUsageSummaryTaskBuckets.pricedCallCount} + ${delta.pricedCallCount}`,
+		estimatedCost: sql`${llmUsageSummaryTaskBuckets.estimatedCost} + ${delta.estimatedCost}`,
+		updatedAt: now,
+	};
+}
+
 async function resolveRepositoryId(taskId: string, executor: DbExecutor) {
 	const [task] = await executor
 		.select({ repositoryId: tasks.repositoryId })
@@ -438,7 +561,8 @@ async function listUsageRecordsForSummary(input: {
 	repositoryId?: string | null;
 }) {
 	const conditions = [];
-	if (input.since) conditions.push(gte(llmUsageRecords.createdAt, input.since));
+	if (input.since)
+		conditions.push(gte(llmUsageRecords.createdAt, toUtcHour(input.since)));
 	if (input.repositoryId)
 		conditions.push(eq(tasks.repositoryId, input.repositoryId));
 	return db
@@ -483,6 +607,17 @@ async function listSummaryBuckets(input: {
 		.where(conditions.length ? and(...conditions) : undefined);
 }
 
+async function listSummaryTaskBuckets(input: {
+	since?: Date | null;
+	repositoryId?: string | null;
+}) {
+	const conditions = taskBucketScopeConditions(input);
+	return db
+		.select()
+		.from(llmUsageSummaryTaskBuckets)
+		.where(conditions.length ? and(...conditions) : undefined);
+}
+
 async function countSummaryBuckets(input: {
 	since?: Date | null;
 	repositoryId?: string | null;
@@ -507,6 +642,31 @@ async function deleteSummaryScope(input: {
 	await db
 		.delete(llmUsageSummaryBuckets)
 		.where(bucketConditions.length ? and(...bucketConditions) : undefined);
+	const taskBucketConditions = taskBucketScopeConditions(input);
+	await db
+		.delete(llmUsageSummaryTaskBuckets)
+		.where(
+			taskBucketConditions.length ? and(...taskBucketConditions) : undefined,
+		);
+}
+
+function taskBucketScopeConditions(input: {
+	since?: Date | null;
+	repositoryId?: string | null;
+}) {
+	const conditions = [];
+	if (input.since)
+		conditions.push(
+			gte(llmUsageSummaryTaskBuckets.bucketHourUtc, toUtcHour(input.since)),
+		);
+	if (input.repositoryId)
+		conditions.push(
+			eq(
+				llmUsageSummaryTaskBuckets.repositoryKey,
+				normalizeKey(input.repositoryId),
+			),
+		);
+	return conditions;
 }
 
 function bucketScopeConditions(input: {
@@ -550,8 +710,8 @@ function warningScopeConditions(input: {
 function mergeSummaryDelta(
 	target: Map<string, SummaryDelta>,
 	delta: SummaryDelta,
+	key = summaryDeltaKey(delta),
 ) {
-	const key = summaryDeltaKey(delta);
 	const current = target.get(key);
 	if (!current) {
 		target.set(key, { ...delta, warnings: [] });
@@ -589,6 +749,23 @@ const SUMMARY_COMPARE_FIELDS = [
 	"reasoningOutputCost",
 ] as const;
 
+const TASK_SUMMARY_COMPARE_FIELDS = [
+	"inputTokens",
+	"outputTokens",
+	"cachedInputTokens",
+	"reasoningOutputTokens",
+	"systemPromptTokens",
+	"userPromptTokens",
+	"stateCardTokens",
+	"totalTokens",
+	"totalDurationMs",
+	"outputDurationMs",
+	"measuredDurationCallCount",
+	"callCount",
+	"pricedCallCount",
+	"estimatedCost",
+] as const satisfies readonly (typeof SUMMARY_COMPARE_FIELDS)[number][];
+
 function summaryDeltaKey(delta: SummaryDelta) {
 	return [
 		delta.bucketHourUtc.getTime(),
@@ -600,12 +777,34 @@ function summaryDeltaKey(delta: SummaryDelta) {
 	].join("\u0000");
 }
 
+function summaryTaskDeltaKey(delta: SummaryDelta) {
+	return [
+		delta.bucketHourUtc.getTime(),
+		delta.repositoryKey,
+		delta.taskId,
+		delta.pricingCurrencyKey,
+		delta.pricingStatus,
+	].join("\u0000");
+}
+
 function summaryRowKey(row: typeof llmUsageSummaryBuckets.$inferSelect) {
 	return [
 		row.bucketHourUtc.getTime(),
 		row.repositoryKey,
 		row.provider,
 		row.modelKey,
+		row.pricingCurrencyKey,
+		row.pricingStatus,
+	].join("\u0000");
+}
+
+function summaryTaskRowKey(
+	row: typeof llmUsageSummaryTaskBuckets.$inferSelect,
+) {
+	return [
+		row.bucketHourUtc.getTime(),
+		row.repositoryKey,
+		row.taskId,
 		row.pricingCurrencyKey,
 		row.pricingStatus,
 	].join("\u0000");

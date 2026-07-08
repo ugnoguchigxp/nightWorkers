@@ -57,6 +57,31 @@ describe("NightWorkers task routes questionnaire core", () => {
 					dataModelArtifact: representativeDataModelArtifact,
 				},
 			});
+			await repo.createTaskMessage({
+				taskId: task.id,
+				role: "assistant",
+				content: "Plan Mode gate",
+				messageType: "system",
+				payloadJson: {
+					intent: "design_questionnaire_ready",
+					planModeGate: {
+						shouldStartPlanMode: true,
+						action: "plan_mode",
+						dedicatedViews: [
+							{
+								view: "blueprint",
+								decision: "omit",
+								reason: "UI方針の再設計ではありません。",
+							},
+							{
+								view: "api_io_contract",
+								decision: "include",
+								reason: "API契約変更があります。",
+							},
+						],
+					},
+				},
+			});
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				version: 1,
 				source: {
@@ -276,6 +301,18 @@ describe("NightWorkers task routes questionnaire core", () => {
 					expect.objectContaining({ title: "Support Desk Decision Review" }),
 				]),
 			);
+			expect(planModeWorkspace.viewDecisions).toEqual([
+				{
+					view: "blueprint",
+					decision: "omit",
+					reason: "UI方針の再設計ではありません。",
+				},
+				{
+					view: "api_io_contract",
+					decision: "include",
+					reason: "API契約変更があります。",
+				},
+			]);
 		} finally {
 			if (originalProvider === undefined)
 				delete process.env.ACTIVE_LLM_PROVIDER;

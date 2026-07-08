@@ -466,7 +466,7 @@ describe("PlanModeWorkspaceViewer", () => {
 		expect(markup).not.toContain(">spec</button>");
 	});
 
-	it("shows Test Artifact on the feature plan tab when verification metadata exists", () => {
+	it("shows separate test search and unit test actions on the feature plan tab", () => {
 		const featurePlan = buildTaskMessage({
 			id: "feature-plan-message",
 			content: "# Feature Plan\n\n## 完了条件\n- [AC-001] ユーザーを作成できる",
@@ -510,10 +510,42 @@ describe("PlanModeWorkspaceViewer", () => {
 			}),
 		);
 
-		expect(markup).toContain("Test Artifact");
+		expect(markup).toContain("Find related tests");
+		expect(markup).toContain("Run unit tests");
 		expect(markup).toContain("Verification Checklist");
 		expect(markup).toContain("AC-001");
 		expect(markup).toContain("ユーザーを作成できる");
+	});
+
+	it("hides test actions on locked Plan Mode workspaces", () => {
+		const featurePlan = buildTaskMessage({
+			id: "feature-plan-message",
+			content: "# Feature Plan\n\n## 完了条件\n- [AC-001] ユーザーを作成できる",
+			messageType: "markdown_document",
+			metadataJson: {
+				intent: "feature_plan",
+				title: "Feature Plan",
+				verificationDocumentId: "55555555-5555-4555-8555-555555555555",
+				markdownDocumentData: {
+					title: "Feature Plan",
+				},
+			},
+		});
+
+		const markup = renderToStaticMarkup(
+			createElement(PlanModeWorkspaceViewer, {
+				sessionId: "11111111-1111-4111-8111-111111111111",
+				taskMessages: [featurePlan],
+				activityArtifacts: [],
+				initialTab: "feature-plan",
+				onStartTestModeRun: async () => true,
+				isImplementationLocked: true,
+			}),
+		);
+
+		expect(markup).toContain("Verification Checklist");
+		expect(markup).not.toContain("Find related tests");
+		expect(markup).not.toContain("Run unit tests");
 	});
 
 	it("does not reapply the Questionnaire initial tab after the gate unlocks", () => {

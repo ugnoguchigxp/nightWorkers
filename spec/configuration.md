@@ -191,13 +191,15 @@ bun run desktop:smoke
 On macOS, `bun run desktop:build` produces a `.app`. `bun run desktop:smoke`
 launches that app and checks the sidecar health endpoint, overview endpoint,
 implementation queue endpoint, WebSocket startup, desktop/sidecar log output,
-and shutdown. `bun run verify` includes desktop runtime tests, Linux/Windows
+and shutdown. `bun run verify` is the lightweight base gate and does not run
+desktop build or smoke. It runs tracked-artifact check, TypeScript, and Biome in
+parallel first, then runs supervisor regression tests serially. Use
+`bun run verify:desktop` when rechecking desktop runtime tests, Linux/Windows
 packaging readiness checks, Rust lint, desktop build, staged sidecar smoke, and
-packaged app smoke. `bun run desktop:smoke` can also be run directly when
-rechecking release/adoption readiness without rerunning the full default gate.
-`bun run verify:full` adds `bun run test run` after the default gate; that
-command is the full non-E2E/non-live Vitest suite selected by
-`vitest.config.ts`.
+packaged app smoke; desktop runtime tests and desktop lint run in parallel before
+the build/smoke sequence. `bun run verify:full` adds `bun run test run` after the
+base gate; that command is the full non-E2E/non-live Vitest suite selected by
+`vitest.config.ts` and also does not run desktop build or smoke.
 
 Linux and Windows packaging is configured through platform-specific Tauri
 config files:

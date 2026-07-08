@@ -41,11 +41,20 @@ export function TokenBreakdownBand({
 	metrics: ProjectDetailMetrics;
 }) {
 	const { t } = useTranslation();
+	const uncachedInputTokens = Math.max(
+		metrics.llmUsage.inputTokens - metrics.llmUsage.cachedInputTokens,
+		0,
+	);
 	const items = [
 		{
-			key: "input",
+			key: "total-input",
 			label: t("projectDetail.usage.input"),
 			value: metrics.llmUsage.inputTokens,
+		},
+		{
+			key: "input",
+			label: t("projectDetail.usage.uncachedInput"),
+			value: uncachedInputTokens,
 		},
 		{
 			key: "output",
@@ -76,7 +85,7 @@ export function TokenBreakdownBand({
 
 	return (
 		<div
-			className="grid gap-2 border p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+			className="grid gap-2 border p-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7"
 			style={panelStyle}
 		>
 			{items.map((item) => (

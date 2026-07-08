@@ -51,11 +51,11 @@ describe("Plan Mode domain boundaries", () => {
 	it("keeps NightWorkers compatibility files as re-export shims for moved Plan Mode UI", () => {
 		const compatibilityExports = {
 			"src/modules/nightworkers/components/ArtifactQuestionnaire.tsx":
-				"export * from '../../planMode/PlanModeQuestionnaire';",
+				'export * from "../../planMode/PlanModeQuestionnaire";',
 			"src/modules/nightworkers/components/ArtifactWorkspacePanels.tsx":
-				"export * from '../../planMode/PlanModeWorkspacePanels';",
+				'export * from "../../planMode/PlanModeWorkspacePanels";',
 			"src/modules/nightworkers/components/ArtifactWorkspaceViewer.tsx":
-				"export * from '../../planMode/PlanModeWorkspaceViewer';",
+				'export * from "../../planMode/PlanModeWorkspaceViewer";',
 		};
 
 		for (const [path, expectedSource] of Object.entries(compatibilityExports)) {
@@ -173,8 +173,8 @@ describe("Plan Mode domain boundaries", () => {
 		expect(workspaceShell).toContain(
 			"sourceBlueprintMessageId: activeBlueprintMessage?.id ?? null",
 		);
-		expect(workspaceShell).toContain(
-			"{activeBlueprintMessage ? 'この画面案から質問を作成' : '質問を作成'}",
+		expect(workspaceShell).toMatch(
+			/activeBlueprintMessage\s*\?\s*['"]この画面案から質問を作成['"]\s*:\s*['"]質問を作成['"]/,
 		);
 		expect(questionnaireCommands).toContain(
 			"sourceBlueprintMessageId?: string | null",

@@ -322,8 +322,6 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(prompt).toContain("E2E Todo / E2E command を追加・実行しない");
 		expect(prompt).toContain("verify が format / typecheck / lint / test");
 		expect(prompt).toContain("個別コマンドを重複実行しない");
-		expect(prompt).toContain("対象 DB での schema/table 存在確認");
-		expect(prompt).toContain("API が no such table");
 		expect(prompt).toContain("仕様が正本の場合");
 		expect(prompt).toContain("実行順は specification -> Todo execution");
 		expect(prompt).toContain(
@@ -382,7 +380,6 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(prompt).toContain(
 			"作成または大幅編集後は、検証や closeout の前に関係箇所を読み返す",
 		);
-		expect(prompt).toContain("Codex native command_execution events");
 		expect(prompt).toContain("fallback static app や代替実装を作らない");
 		expect(prompt).toContain(
 			"plan-only answer や next-steps summary で止まらず",

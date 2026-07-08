@@ -303,7 +303,8 @@ export function calculateUsageCost(input: {
 	const reasoningCost =
 		input.pricing.reasoningOutputPer1m === null
 			? 0
-			: (0 * normalizeTokens(input.reasoningOutputTokens)) / 1_000_000;
+			: (normalizeTokens(input.reasoningOutputTokens) / 1_000_000) *
+				input.pricing.reasoningOutputPer1m;
 
 	const parts = [inputCost, cachedInputCost, outputCost, reasoningCost].filter(
 		(value): value is number =>

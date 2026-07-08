@@ -158,8 +158,9 @@ export const startTestModeRunFromArtifactRoute = createRoute({
 					schema: z.object({
 						projectId: z.string().uuid(),
 						specArtifactId: z.string().min(1),
-						verificationDocumentId: z.string().uuid(),
+						verificationDocumentId: z.string().uuid().nullable().optional(),
 						mode: z.literal("test"),
+						action: z.enum(["discover_tests", "run_unit_tests"]).optional(),
 						rerun: z.boolean().optional(),
 					}),
 				},

@@ -176,6 +176,13 @@
       "when": 1783497600000,
       "tag": "0024_llm_usage_summary",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1783501200000,
+      "tag": "0025_llm_usage_task_summary",
+      "breakpoints": true
     }
   ]
 }

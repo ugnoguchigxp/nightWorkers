@@ -26,6 +26,7 @@ import {
 	generateFeaturePlanArtifact,
 	getPlanModeCapabilities,
 	type PlanWorkspaceTab,
+	resolvePlanWorkspaceViewDecisions,
 	selectPlanModeWorkspaceMessages,
 } from "../specification";
 import {
@@ -49,6 +50,8 @@ import {
 	type GenericPlanView,
 	generatePlanViewArtifact,
 } from "./planViewCommands";
+
+type TestModeAction = "discover_tests" | "run_unit_tests";
 
 const additionalPlanViewTabs = [
 	"user-flow",
@@ -298,7 +301,8 @@ export function PlanModeWorkspaceViewer({
 	onAddToQueue?: () => Promise<void>;
 	onStartTestModeRun?: (input: {
 		specArtifactId: string;
-		verificationDocumentId: string;
+		verificationDocumentId?: string | null;
+		action: TestModeAction;
 	}) => Promise<boolean>;
 	isImplementationLocked?: boolean;
 }) {
@@ -332,11 +336,13 @@ export function PlanModeWorkspaceViewer({
 	const {
 		blueprintMessages,
 		designDocMessages,
+		activeFeaturePlanMessage,
 		activeBlueprintMessage,
 		activeDataModelMessage,
 		activeBlueprintSourceMessageId,
 	} = workspaceMessages;
-	const featurePlanMessage = designDocMessages.at(-1) || null;
+	const featurePlanMessage =
+		activeFeaturePlanMessage || designDocMessages.at(-1) || null;
 	const featurePlanVerification = useMemo(
 		() =>
 			activeTab === "feature-plan"
@@ -347,9 +353,13 @@ export function PlanModeWorkspaceViewer({
 				: null,
 		[activeTab, featurePlanMessage, taskMessages],
 	);
-	const viewDecisions = useMemo(
+	const messageViewDecisions = useMemo(
 		() => extractViewDecisions(taskMessages),
 		[taskMessages],
+	);
+	const viewDecisions = useMemo(
+		() => resolvePlanWorkspaceViewDecisions(workspace, messageViewDecisions),
+		[messageViewDecisions, workspace],
 	);
 	const includedViews = useMemo(
 		() =>
@@ -872,21 +882,22 @@ export function PlanModeWorkspaceViewer({
 						{featurePlanVerification ? (
 							<FeaturePlanVerificationBar
 								model={featurePlanVerification}
-								canStart={Boolean(onStartTestModeRun)}
+								canStart={
+									Boolean(onStartTestModeRun) && !isImplementationLocked
+								}
 								status={testModeStatus}
-								onStart={async () => {
-									if (
-										!onStartTestModeRun ||
-										!featurePlanVerification.verificationDocumentId
-									)
-										return;
-									setTestModeStatus("starting");
+								onStart={async (action) => {
+									if (!onStartTestModeRun) return;
+									setTestModeStatus(`${action}:starting`);
 									const ok = await onStartTestModeRun({
 										specArtifactId: featurePlanVerification.specArtifactId,
 										verificationDocumentId:
 											featurePlanVerification.verificationDocumentId,
+										action,
 									});
-									setTestModeStatus(ok ? "started" : "failed");
+									setTestModeStatus(
+										ok ? `${action}:started` : `${action}:failed`,
+									);
 								}}
 							/>
 						) : null}
@@ -1107,6 +1118,13 @@ type FeaturePlanVerificationModel = {
 	}>;
 };
 
+type FeaturePlanVerificationBarProps = {
+	model: FeaturePlanVerificationModel;
+	canStart: boolean;
+	status: string | null;
+	onStart: (action: TestModeAction) => Promise<void>;
+};
+
 function buildFeaturePlanVerificationModel(input: {
 	featurePlanMessage: TaskMessage | null;
 	taskMessages: TaskMessage[];
@@ -1148,14 +1166,16 @@ function FeaturePlanVerificationBar({
 	canStart,
 	status,
 	onStart,
-}: {
-	model: FeaturePlanVerificationModel;
-	canStart: boolean;
-	status: string | null;
-	onStart: () => Promise<void>;
-}) {
-	const disabled =
-		!canStart || !model.verificationDocumentId || status === "starting";
+}: FeaturePlanVerificationBarProps) {
+	const canShowStartButton = canStart && Boolean(model.specArtifactId);
+	const searchStatus = readFeaturePlanTestModeActionStatus(
+		status,
+		"discover_tests",
+	);
+	const unitStatus = readFeaturePlanTestModeActionStatus(
+		status,
+		"run_unit_tests",
+	);
 	return (
 		<div className="rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2">
 			<div className="flex items-center justify-between gap-3">
@@ -1165,24 +1185,34 @@ function FeaturePlanVerificationBar({
 					</div>
 					<div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
 						<span>{model.conditions.length} conditions</span>
-						{status === "started" ? <span>Test Mode run started</span> : null}
-						{status === "failed" ? <span>Test Mode start failed</span> : null}
+						{searchStatus === "started" ? (
+							<span>Test search started</span>
+						) : null}
+						{searchStatus === "failed" ? <span>Test search failed</span> : null}
+						{unitStatus === "started" ? (
+							<span>Unit test run started</span>
+						) : null}
+						{unitStatus === "failed" ? (
+							<span>Unit test start failed</span>
+						) : null}
 					</div>
 				</div>
-				<button
-					type="button"
-					className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 text-xs font-medium text-cyan-100 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-900 disabled:text-slate-500"
-					disabled={disabled}
-					onClick={() => void onStart()}
-					title={
-						model.verificationDocumentId
-							? "Start Test Mode"
-							: "verification JSON is missing"
-					}
-				>
-					<FlaskConical className="h-3.5 w-3.5" />
-					Test Artifact
-				</button>
+				{canShowStartButton ? (
+					<div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+						<FeaturePlanTestModeActionButton
+							action="discover_tests"
+							label="Find related tests"
+							status={searchStatus}
+							onStart={onStart}
+						/>
+						<FeaturePlanTestModeActionButton
+							action="run_unit_tests"
+							label="Run unit tests"
+							status={unitStatus}
+							onStart={onStart}
+						/>
+					</div>
+				) : null}
 			</div>
 			{model.conditions.length > 0 ? (
 				<div className="mt-2 grid gap-1">
@@ -1200,6 +1230,40 @@ function FeaturePlanVerificationBar({
 			) : null}
 		</div>
 	);
+}
+
+function FeaturePlanTestModeActionButton({
+	action,
+	label,
+	status,
+	onStart,
+}: {
+	action: TestModeAction;
+	label: string;
+	status: string | null;
+	onStart: (action: TestModeAction) => Promise<void>;
+}) {
+	const disabled = status === "starting";
+	return (
+		<button
+			type="button"
+			className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 text-xs font-medium text-cyan-100 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-900 disabled:text-slate-500"
+			disabled={disabled}
+			onClick={() => void onStart(action)}
+			title={label}
+		>
+			<FlaskConical className="h-3.5 w-3.5" />
+			{status === "starting" ? "Starting..." : label}
+		</button>
+	);
+}
+
+function readFeaturePlanTestModeActionStatus(
+	status: string | null,
+	action: TestModeAction,
+) {
+	const prefix = `${action}:`;
+	return status?.startsWith(prefix) ? status.slice(prefix.length) : null;
 }
 
 export function extractViewDecisions(

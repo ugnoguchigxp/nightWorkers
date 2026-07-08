@@ -1,4 +1,7 @@
-import type { PlanModeCapability } from "../../nightworkers/types";
+import type {
+	PlanModeCapability,
+	PlanModeViewDecision,
+} from "../../nightworkers/types";
 
 export type AdditionalPlanView = Exclude<
 	PlanModeCapability,
@@ -13,11 +16,7 @@ const ADDITIONAL_PLAN_VIEWS: readonly AdditionalPlanView[] = [
 	"zod_schema_design",
 ];
 
-export type PlanViewDecision = {
-	view: string;
-	decision: "include" | "omit";
-	reason?: string;
-};
+export type PlanViewDecision = PlanModeViewDecision;
 
 export type PlanWorkspaceStatusStep = {
 	number: number;

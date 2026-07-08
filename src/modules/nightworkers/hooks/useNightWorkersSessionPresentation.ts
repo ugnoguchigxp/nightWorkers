@@ -1,4 +1,8 @@
 import { useMemo } from "react";
+import {
+	resolveLatestPlanWorkspaceArtifact,
+	resolveLatestPlanWorkspaceTab,
+} from "../../specification";
 import type {
 	ActivityArtifact,
 	ImplementationQueueDashboard,
@@ -11,12 +15,14 @@ import type {
 	TaskMessage,
 	TaskRun,
 	TaskRunTodo,
+	WorkbenchArtifactRef,
 } from "../types";
 import {
 	buildWorkbenchArtifactRefs,
 	buildWorkbenchSessionView,
 	groupWorkbenchSessions,
 } from "../workbenchSelectors";
+import { toMs } from "../workbenchSelectorUtils";
 import type { ProjectSessionGroups } from "./nightWorkersWorkspaceState";
 
 function hasPlanModeWorkspaceEvidence(workspace: PlanModeWorkspace) {
@@ -41,6 +47,69 @@ function summarizePlanModeWorkspace(workspace: PlanModeWorkspace) {
 		`${workspace.decisionReviews.length} Decision Review`,
 		`${workspace.implementationReferences.length} Implementation`,
 	].join(" · ");
+}
+
+function buildPlanModeWorkspaceSourceMessageId(workspace: PlanModeWorkspace) {
+	return (
+		resolveLatestPlanWorkspaceArtifact(workspace)?.sourceMessageId ||
+		workspace.decisionReviews[0]?.sourceMessageId ||
+		workspace.implementationReferences[0]?.sourceMessageId ||
+		workspace.questionnaireSessions[0]?.sourceBlueprintMessageId ||
+		""
+	);
+}
+
+export function restorePlanModeWorkspaceArtifactRefs(input: {
+	refs: WorkbenchArtifactRef[];
+	activeSession: Task;
+	activePlanModeWorkspace: PlanModeWorkspace | null;
+}): WorkbenchArtifactRef[] {
+	if (
+		!input.activePlanModeWorkspace ||
+		!hasPlanModeWorkspaceEvidence(input.activePlanModeWorkspace)
+	) {
+		return input.refs;
+	}
+	const refs = [...input.refs];
+	const existingIndex = refs.findIndex(
+		(artifact) => artifact.kind === "plan_mode_workspace",
+	);
+	const existing = existingIndex >= 0 ? refs[existingIndex] : null;
+	const latestArtifact = resolveLatestPlanWorkspaceArtifact(
+		input.activePlanModeWorkspace,
+	);
+	const latestTab = resolveLatestPlanWorkspaceTab(
+		input.activePlanModeWorkspace,
+	);
+	const restoredWorkspaceRef = {
+		...(existing || {}),
+		id: `plan-mode-workspace-${input.activeSession.id}`,
+		taskId: input.activeSession.id,
+		runId: existing?.runId,
+		kind: "plan_mode_workspace" as const,
+		title: "Plan Mode Workspace",
+		summary: summarizePlanModeWorkspace(input.activePlanModeWorkspace),
+		source: {
+			type: "task_message" as const,
+			messageId: buildPlanModeWorkspaceSourceMessageId(
+				input.activePlanModeWorkspace,
+			),
+		},
+		createdAt: String(
+			latestArtifact?.createdAt ||
+				existing?.createdAt ||
+				input.activePlanModeWorkspace.generatedAt ||
+				input.activeSession.updatedAt,
+		),
+		metadata: {
+			...existing?.metadata,
+			planModeWorkspace: input.activePlanModeWorkspace,
+			...(latestTab ? { initialTab: latestTab } : {}),
+		},
+	};
+	if (existingIndex >= 0) refs[existingIndex] = restoredWorkspaceRef;
+	else refs.unshift(restoredWorkspaceRef);
+	return refs.sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
 }
 
 type UseNightWorkersSessionPresentationInput = {
@@ -84,39 +153,11 @@ export function useNightWorkersSessionPresentation({
 			messages: taskMessages,
 			activityArtifacts,
 		});
-		if (
-			activePlanModeWorkspace &&
-			hasPlanModeWorkspaceEvidence(activePlanModeWorkspace) &&
-			!refs.some((artifact) => artifact.kind === "plan_mode_workspace")
-		) {
-			refs.unshift({
-				id: `plan-mode-workspace-${activeSession.id}`,
-				taskId: activeSession.id,
-				kind: "plan_mode_workspace",
-				title: "Plan Mode Workspace",
-				summary: summarizePlanModeWorkspace(activePlanModeWorkspace),
-				source: {
-					type: "task_message",
-					messageId:
-						activePlanModeWorkspace.decisionReviews[0]?.sourceMessageId ||
-						activePlanModeWorkspace.featurePlanArtifacts[0]?.sourceMessageId ||
-						activePlanModeWorkspace.blueprintArtifacts[0]?.sourceMessageId ||
-						activePlanModeWorkspace.dataModelArtifacts[0]?.sourceMessageId ||
-						activePlanModeWorkspace.dedicatedViewArtifacts[0]
-							?.sourceMessageId ||
-						activePlanModeWorkspace.questionnaireSessions[0]
-							?.sourceBlueprintMessageId ||
-						activePlanModeWorkspace.implementationReferences[0]
-							?.sourceMessageId ||
-						"",
-				},
-				createdAt:
-					activePlanModeWorkspace.generatedAt ||
-					String(activeSession.updatedAt),
-				metadata: { planModeWorkspace: activePlanModeWorkspace },
-			});
-		}
-		return refs;
+		return restorePlanModeWorkspaceArtifactRefs({
+			refs,
+			activeSession,
+			activePlanModeWorkspace,
+		});
 	}, [
 		activeSession,
 		activePlanModeWorkspace,

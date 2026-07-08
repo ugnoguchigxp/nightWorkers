@@ -189,6 +189,7 @@ function buildImplementationPlanVerificationWorkspace(input: {
 		dedicatedViewArtifacts: [],
 		questionnaireSessions: [],
 		decisionReviews: [],
+		viewDecisions: [],
 		implementationReferences: [
 			{
 				id: `implementation-plan-${input.specMessageId}`,

@@ -171,4 +171,79 @@ describe("LLM usage summary", () => {
 			]),
 		);
 	});
+
+	it("backfills from the start of the affected hour when since is inside a bucket", async () => {
+		const createdRepo = await repo.createRepository({
+			name: `TEST: LLM Summary Since ${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const task = await repo.createTask({
+			repositoryId: createdRepo.id,
+			title: "TEST: LLM summary since task",
+			status: "draft",
+		});
+		await upsertPricingRow({
+			provider: "openai",
+			model: "summary-since-model",
+			currencyCode: "USD",
+			inputPer1m: 100,
+			outputPer1m: 200,
+			manualOverride: true,
+			enabled: true,
+		});
+		const bucketStart = new Date("2026-07-08T01:00:00.000Z");
+		await db.insert(llmUsageRecords).values([
+			{
+				createdAt: new Date("2026-07-08T01:05:00.000Z"),
+				updatedAt: bucketStart,
+				taskId: task.id,
+				callId: crypto.randomUUID(),
+				provider: "openai",
+				model: "summary-since-model",
+				label: "before-since",
+				usageMode: "measured",
+				inputTokens: 100,
+				outputTokens: 50,
+				totalTokens: 150,
+				durationMs: 100,
+			},
+			{
+				createdAt: new Date("2026-07-08T01:45:00.000Z"),
+				updatedAt: bucketStart,
+				taskId: task.id,
+				callId: crypto.randomUUID(),
+				provider: "openai",
+				model: "summary-since-model",
+				label: "after-since",
+				usageMode: "measured",
+				inputTokens: 300,
+				outputTokens: 150,
+				totalTokens: 450,
+				durationMs: 300,
+			},
+		]);
+
+		await expect(
+			rebuildLlmUsageSummary({
+				repositoryId: createdRepo.id,
+				since: new Date("2026-07-08T01:30:00.000Z"),
+			}),
+		).resolves.toMatchObject({
+			selectedRecords: 2,
+			updatedSummaryBuckets: 1,
+		});
+
+		await expect(
+			checkLlmUsageSummaryIntegrity({
+				repositoryId: createdRepo.id,
+				since: new Date("2026-07-08T01:30:00.000Z"),
+			}),
+		).resolves.toMatchObject({
+			ok: true,
+			checkedRecords: 2,
+			expectedBuckets: 1,
+			actualBuckets: 1,
+		});
+	});
 });

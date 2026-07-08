@@ -72,9 +72,75 @@ describe("Test Mode artifact pane", () => {
 		);
 
 		expect(markup).toContain("Verification Checklist");
+		expect(markup).toContain("Find related tests");
+		expect(markup).toContain("Run unit tests");
 		expect(markup).toContain("AC-001");
 		expect(markup).toContain("API が成功する");
 		expect(markup).toContain("AC-010");
 		expect(markup).toContain("UI が状態を表示する");
 	});
+
+	it("shows Test Mode actions even when the task is archived", () => {
+		const implementationPlan = buildTaskMessage({
+			id: "implementation-plan-message",
+			messageType: "markdown_document",
+			content: [
+				"# Implementation Plan",
+				"",
+				"## 完了条件",
+				"- [AC-001] API が成功する",
+			].join("\n"),
+			metadataJson: {
+				intent: "implementation_plan",
+				title: "Implementation Plan",
+				verificationDocumentId: "55555555-5555-4555-8555-555555555555",
+			},
+		});
+
+		const activeMarkup = renderTestModePane({
+			taskMessages: [implementationPlan],
+			activeTaskStatus: "running",
+		});
+		const archivedMarkup = renderTestModePane({
+			taskMessages: [implementationPlan],
+			activeTaskStatus: "cancelled",
+		});
+
+		expect(activeMarkup).toContain("Find related tests");
+		expect(activeMarkup).toContain("Run unit tests");
+		expect(archivedMarkup).toContain("Verification Checklist");
+		expect(archivedMarkup).toContain("Find related tests");
+		expect(archivedMarkup).toContain("Run unit tests");
+	});
 });
+
+function renderTestModePane(input: {
+	taskMessages: Parameters<typeof ArtifactPane>[0]["taskMessages"];
+	activeTaskStatus?: string | null;
+}) {
+	return renderToStaticMarkup(
+		<ArtifactPane
+			activeProject={project}
+			activeSessionId="11111111-1111-4111-8111-111111111111"
+			focusType="artifact"
+			selectedArtifact={testModeArtifact}
+			taskMessages={input.taskMessages}
+			activityArtifacts={[]}
+			fileEntries={[]}
+			fileEntriesByDirectory={{}}
+			expandedDirectories={{}}
+			loadingDirectories={{}}
+			selectedFile={null}
+			selectedFilePath={null}
+			isFilesLoading={false}
+			isFileLoading={false}
+			projectDiff={null}
+			isDiffLoading={false}
+			onToggleDirectory={async () => undefined}
+			onOpenFile={vi.fn()}
+			onRefreshFiles={async () => undefined}
+			onRefreshDiff={async () => undefined}
+			activeTaskStatus={input.activeTaskStatus}
+		/>,
+	);
+}

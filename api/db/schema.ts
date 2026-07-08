@@ -962,6 +962,57 @@ export const llmUsageSummaryWarnings = sqliteTable(
 	}),
 );
 
+export const llmUsageSummaryTaskBuckets = sqliteTable(
+	"llm_usage_summary_task_buckets",
+	{
+		...commonColumns,
+		bucketHourUtc: integer("bucket_hour_utc", { mode: "timestamp" }).notNull(),
+		repositoryId: text("repository_id").references(() => repositories.id, {
+			onDelete: "cascade",
+		}),
+		repositoryKey: text("repository_key").notNull(),
+		taskId: text("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		pricingCurrencyCode: text("pricing_currency_code"),
+		pricingCurrencyKey: text("pricing_currency_key").notNull(),
+		pricingStatus: text("pricing_status").notNull(),
+		inputTokens: integer("input_tokens").default(0).notNull(),
+		outputTokens: integer("output_tokens").default(0).notNull(),
+		cachedInputTokens: integer("cached_input_tokens").default(0).notNull(),
+		reasoningOutputTokens: integer("reasoning_output_tokens")
+			.default(0)
+			.notNull(),
+		systemPromptTokens: integer("system_prompt_tokens").default(0).notNull(),
+		userPromptTokens: integer("user_prompt_tokens").default(0).notNull(),
+		stateCardTokens: integer("state_card_tokens").default(0).notNull(),
+		totalTokens: integer("total_tokens").default(0).notNull(),
+		totalDurationMs: integer("total_duration_ms").default(0).notNull(),
+		outputDurationMs: integer("output_duration_ms").default(0).notNull(),
+		measuredDurationCallCount: integer("measured_duration_call_count")
+			.default(0)
+			.notNull(),
+		callCount: integer("call_count").default(0).notNull(),
+		pricedCallCount: integer("priced_call_count").default(0).notNull(),
+		estimatedCost: real("estimated_cost").default(0).notNull(),
+	},
+	(table) => ({
+		taskBucketUniqueIdx: uniqueIndex("llm_usage_summary_task_buckets_uidx").on(
+			table.bucketHourUtc,
+			table.repositoryKey,
+			table.taskId,
+			table.pricingCurrencyKey,
+			table.pricingStatus,
+		),
+		taskRepositoryIdx: index(
+			"llm_usage_summary_task_buckets_repository_idx",
+		).on(table.repositoryKey, table.taskId),
+		taskBucketIdx: index("llm_usage_summary_task_buckets_hour_idx").on(
+			table.bucketHourUtc,
+		),
+	}),
+);
+
 export const blueprintDesignSettings = sqliteTable(
 	"blueprint_design_settings",
 	{

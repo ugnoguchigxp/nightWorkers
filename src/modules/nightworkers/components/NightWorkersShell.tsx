@@ -66,6 +66,21 @@ export {
 	projectEvaluationTaskPromptDrafts,
 } from "./nightworkers-shell-utils";
 
+function restoredPlanWorkspaceTab(value: unknown) {
+	return value === "feature-plan" ||
+		value === "blueprint" ||
+		value === "data-model" ||
+		value === "user-flow" ||
+		value === "api-io-contract" ||
+		value === "activity-flow" ||
+		value === "sequence-flow" ||
+		value === "zod-schema-design" ||
+		value === "questionnaire" ||
+		value === "status"
+		? value
+		: "status";
+}
+
 export function NightWorkersShell(props: NightWorkersShellProps) {
 	const { t } = useTranslation();
 	const { routeState, workspace } = props;
@@ -412,16 +427,27 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 				(artifact) => artifact.kind === "app_blueprint",
 			);
 		if (existing) {
-			markArtifactOpenStart(existing);
+			const initialTab =
+				existing.kind === "plan_mode_workspace"
+					? restoredPlanWorkspaceTab(existing.metadata?.initialTab)
+					: "status";
+			const artifact =
+				existing.kind === "plan_mode_workspace"
+					? {
+							...existing,
+							metadata: { ...existing.metadata, initialTab },
+						}
+					: existing;
+			markArtifactOpenStart(artifact);
 			setClearedArtifactContextId(null);
-			setArtifactFocus({ type: "artifact", artifact: existing });
+			setArtifactFocus({ type: "artifact", artifact });
 			props.onNavigate({
 				kind: "session",
 				sessionId,
 				artifact:
-					existing.kind === "plan_mode_workspace"
-						? { kind: "plan_mode_workspace", tab: "status" }
-						: { kind: "artifact_ref", artifactId: existing.id },
+					artifact.kind === "plan_mode_workspace"
+						? { kind: "plan_mode_workspace", tab: initialTab }
+						: { kind: "artifact_ref", artifactId: artifact.id },
 			});
 			return;
 		}

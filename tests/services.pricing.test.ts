@@ -40,6 +40,36 @@ describe("LLM pricing calculation", () => {
 		expect(result.totalCost).toBeCloseTo(0.0164);
 	});
 
+	it("includes reasoning output token cost when a reasoning price is configured", () => {
+		const result = calculateUsageCost({
+			inputTokens: 0,
+			cachedInputTokens: 0,
+			outputTokens: 0,
+			reasoningOutputTokens: 2000,
+			pricing: {
+				id: "pricing-reasoning-test",
+				createdAt: new Date(),
+				updatedAt: new Date(),
+				provider: "openai",
+				model: "reasoning-priced-model",
+				currencyCode: "USD",
+				inputPer1m: 10,
+				cachedInputPer1m: 1,
+				outputPer1m: 20,
+				reasoningOutputPer1m: 30,
+				sourceUrl: null,
+				sourceLabel: null,
+				effectiveFrom: new Date(0),
+				fetchedAt: new Date(),
+				manualOverride: true,
+				enabled: true,
+			},
+		});
+
+		expect(result.reasoningCost).toBeCloseTo(0.06);
+		expect(result.totalCost).toBeCloseTo(0.06);
+	});
+
 	it("seeds official Codex credit pricing rows", async () => {
 		const rows = await seedCodexPricingRows();
 

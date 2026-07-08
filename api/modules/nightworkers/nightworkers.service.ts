@@ -1,3 +1,4 @@
+import { toDeepRecord } from "../../../shared/json-record";
 import { NotFoundError } from "../../lib/errors";
 import type { RuntimeLaneResult } from "../../services/agent-runtime/shared/contracts";
 import { buildReviewResult } from "../../services/review-results/build-review-result";
@@ -5,6 +6,7 @@ import { collectDefaultReviewEvidence } from "../../services/review-results/evid
 import type { ReviewRunRequest } from "../../services/review-results/types";
 import { decideRunOutcome } from "../../services/run-control/run-outcome-gate";
 import { configureQueueDrainRunner } from "../queue/queue-scheduler-port";
+import { buildSpecificationVerificationSidecar } from "../specification/specification-verification-sidecar";
 import { createTask } from "./nightworkers.basic.service";
 import { assertRunnableWorkbenchTask } from "./nightworkers.planning-helpers.service";
 import * as repo from "./nightworkers.repository";
@@ -17,6 +19,7 @@ import {
 	startTaskRun,
 } from "./nightworkers.run-orchestration.service";
 import { getVerificationDocument } from "./nightworkers.verification.repository";
+import { createVerificationDocumentFromSpec } from "./nightworkers.verification.service";
 
 configureQueueDrainRunner(runImplementationQueue);
 
@@ -95,8 +98,9 @@ export async function startTestModeRunFromArtifact(input: {
 	projectId: string;
 	taskId: string;
 	specArtifactId: string;
-	verificationDocumentId: string;
+	verificationDocumentId?: string | null;
 	mode: "test";
+	action?: "discover_tests" | "run_unit_tests";
 	rerun?: boolean;
 }) {
 	const task = await repo.getTask(input.taskId);
@@ -104,9 +108,13 @@ export async function startTestModeRunFromArtifact(input: {
 	if (task.repositoryId !== input.projectId) {
 		throw new NotFoundError("Project not found for task");
 	}
-	const verificationDocument = await getVerificationDocument(
-		input.verificationDocumentId,
-	);
+	const verificationDocument = input.verificationDocumentId
+		? await getVerificationDocument(input.verificationDocumentId)
+		: await ensureTestModeVerificationDocument({
+				taskId: input.taskId,
+				projectId: input.projectId,
+				specArtifactId: input.specArtifactId,
+			});
 	if (!verificationDocument || verificationDocument.taskId !== input.taskId) {
 		throw new NotFoundError("Verification document not found");
 	}
@@ -126,40 +134,228 @@ export async function startTestModeRunFromArtifact(input: {
 	return startTaskRun(input.taskId, {
 		executionMode: "test",
 		executionModeSource: "test_mode",
-		initialTodos: [
+		initialTodos: buildTestModeInitialTodos(input.action ?? "run_unit_tests"),
+		runtimeOptionsPatch: {
+			verificationDocumentId: verificationDocument.id,
+			testMode: {
+				action: input.action ?? "run_unit_tests",
+				specArtifactId: input.specArtifactId,
+				verificationDocumentId: verificationDocument.id,
+			},
+		},
+	});
+}
+
+export function buildTestModeInitialTodos(
+	action: "discover_tests" | "run_unit_tests",
+) {
+	if (action === "discover_tests") {
+		return [
 			{
 				title: "Verification Checklist を読む",
 				description:
 					"仕様書と verification JSON を読み、required condition を確認する。",
-				taskType: "verification",
+				taskType: "verification" as const,
 			},
 			{
-				title: "対象テストを実装または修正する",
+				title: "関連 test file を検索する",
 				description:
-					"完了条件に対応する test / fixture / helper を最小差分で追加・修正する。",
-				taskType: "implementation",
+					"rg で完了条件・対象 module・既存 spec 名に関連する test / fixture / helper を探し、候補と不足を記録する。",
+				taskType: "verification" as const,
 			},
 			{
-				title: "managed check を実行する",
+				title: "検索結果を evidence として残す",
 				description:
-					"run_check または run_verification を使い、raw artifact と evidence を残す。",
-				taskType: "verification",
+					"見つかった test file、未発見の条件、次に実行すべき focused unit test をまとめる。",
+				taskType: "verification" as const,
 			},
-			{
-				title: "completion_check を通す",
-				description:
-					"required condition が failed / pending / unknown で残っていないことを確認する。",
-				taskType: "verification",
-			},
-		],
-		runtimeOptionsPatch: {
-			verificationDocumentId: input.verificationDocumentId,
-			testMode: {
-				specArtifactId: input.specArtifactId,
-				verificationDocumentId: input.verificationDocumentId,
-			},
+		];
+	}
+	return [
+		{
+			title: "Verification Checklist を読む",
+			description:
+				"仕様書と verification JSON を読み、required condition を確認する。",
+			taskType: "verification" as const,
+		},
+		{
+			title: "対象 unit test を実行する",
+			description:
+				"関連 test file を特定し、focused unit test を実行する。必要なら完了条件に対応する test / fixture / helper を最小差分で追加・修正する。",
+			taskType: "verification" as const,
+		},
+		{
+			title: "managed check を実行する",
+			description:
+				"run_check または run_verification を使い、raw artifact と evidence を残す。",
+			taskType: "verification" as const,
+		},
+		{
+			title: "completion_check を通す",
+			description:
+				"required condition が failed / pending / unknown で残っていないことを確認する。",
+			taskType: "verification" as const,
+		},
+	];
+}
+
+export async function ensureTestModeVerificationDocument(input: {
+	taskId: string;
+	projectId: string;
+	specArtifactId: string;
+}) {
+	const messages = await repo.listTaskMessages(input.taskId);
+	const specMessage = resolveTestModeSpecMessage({
+		messages,
+		specArtifactId: input.specArtifactId,
+	});
+	if (!specMessage) return null;
+	const metadata = toDeepRecord(specMessage.metadataJson);
+	const existingVerificationDocumentId = readRecordString(
+		metadata,
+		"verificationDocumentId",
+	);
+	if (existingVerificationDocumentId) {
+		return getVerificationDocument(existingVerificationDocumentId);
+	}
+	const intent = readRecordString(metadata, "intent");
+	const specPath =
+		intent === "implementation_plan"
+			? "spec/implementation-plan.md"
+			: "spec/feature-plan.md";
+	const generatedAt = new Date().toISOString();
+	const sidecar = buildSpecificationVerificationSidecar({
+		taskId: input.taskId,
+		specId: specMessage.id,
+		specPath,
+		content: specMessage.content,
+		sourceMessageIds: messages.map((message) => message.id),
+		workspace: {
+			taskId: input.taskId,
+			repositoryId: input.projectId,
+			generatedAt,
+			featurePlanArtifacts:
+				intent === "feature_plan"
+					? [
+							{
+								id: `feature-plan-${specMessage.id}`,
+								kind: "feature_plan",
+								title: "Feature Plan",
+								sourceMessageId: specMessage.id,
+								createdAt: String(specMessage.createdAt),
+							},
+						]
+					: [],
+			blueprintArtifacts: [],
+			dataModelArtifacts: [],
+			dedicatedViewArtifacts: [],
+			questionnaireSessions: [],
+			decisionReviews: [],
+			viewDecisions: [],
+			implementationReferences:
+				intent === "implementation_plan"
+					? [
+							{
+								id: `implementation-plan-${specMessage.id}`,
+								kind: "implementation_reference",
+								title: "Implementation Plan",
+								sourceMessageId: specMessage.id,
+								taskId: input.taskId,
+							},
+						]
+					: [],
+		},
+		generatedAt,
+	});
+	const verificationMessage = await repo.createTaskMessage({
+		taskId: input.taskId,
+		runId: specMessage.runId,
+		role: "assistant",
+		content: JSON.stringify(sidecar.document, null, 2),
+		messageType: "verification_json",
+		payloadJson: {
+			intent:
+				intent === "implementation_plan"
+					? "implementation_plan_verification"
+					: "feature_plan_verification",
+			artifactKind: "verification_json",
+			title:
+				intent === "implementation_plan"
+					? "Implementation Plan Verification"
+					: "Feature Plan Verification",
+			verificationDocument: sidecar.document,
+			...(intent === "implementation_plan"
+				? { sourceImplementationPlanMessageId: specMessage.id }
+				: { sourceFeaturePlanMessageId: specMessage.id }),
 		},
 	});
+	const verificationArtifactId = `verification-json-${verificationMessage.id}`;
+	const verificationDocument = await createVerificationDocumentFromSpec({
+		taskId: input.taskId,
+		runId: specMessage.runId,
+		specMessageId: specMessage.id,
+		specArtifactId: input.specArtifactId,
+		verificationArtifactId,
+		sourceSpecPath: sidecar.document.specPath,
+		document: sidecar.document,
+	});
+	await repo.updateTaskMessageMetadata(specMessage.id, {
+		...metadata,
+		verificationDocumentId: verificationDocument.id,
+		verificationArtifactId,
+		verificationSidecarMessageId: verificationMessage.id,
+		markdownDocumentData: {
+			...toDeepRecord(metadata.markdownDocumentData),
+			verificationDocumentId: verificationDocument.id,
+		},
+	});
+	await repo.updateTaskMessageMetadata(verificationMessage.id, {
+		...toDeepRecord(verificationMessage.metadataJson),
+		verificationDocumentId: verificationDocument.id,
+		verificationArtifactId,
+	});
+	return verificationDocument;
+}
+
+function resolveTestModeSpecMessage(input: {
+	messages: Awaited<ReturnType<typeof repo.listTaskMessages>>;
+	specArtifactId: string;
+}) {
+	const explicitMessageId = input.specArtifactId.match(
+		/^(?:implementation-plan|feature-plan)-(.+)$/,
+	)?.[1];
+	if (explicitMessageId) {
+		const message = input.messages.find(
+			(item) =>
+				item.id === explicitMessageId &&
+				item.messageType === "markdown_document" &&
+				isTestModeSpecIntent(toDeepRecord(item.metadataJson)),
+		);
+		if (message) return message;
+	}
+	for (let index = input.messages.length - 1; index >= 0; index -= 1) {
+		const message = input.messages[index];
+		if (
+			message?.messageType === "markdown_document" &&
+			isTestModeSpecIntent(toDeepRecord(message.metadataJson))
+		) {
+			return message;
+		}
+	}
+	return null;
+}
+
+function isTestModeSpecIntent(metadata: Record<string, unknown>) {
+	const intent = readRecordString(metadata, "intent");
+	return intent === "implementation_plan" || intent === "feature_plan";
+}
+
+function readRecordString(
+	record: Record<string, unknown>,
+	key: string,
+): string | undefined {
+	const value = record[key];
+	return typeof value === "string" ? value : undefined;
 }
 
 export async function createWorkbenchSession(data: {

@@ -17,12 +17,13 @@ import {
 	type ProjectSignalSnapshot,
 } from "../../../shared/schemas/project-detail.schema";
 import { db } from "../../db/client";
-import { llmUsageRecords, taskRuns, tasks } from "../../db/schema";
-import { NotFoundError, ValidationError } from "../../lib/errors";
 import {
-	calculateUsageCost,
-	findPricingForUsage,
-} from "../../services/pricing";
+	llmUsageSummaryBuckets,
+	llmUsageSummaryTaskBuckets,
+	taskRuns,
+	tasks,
+} from "../../db/schema";
+import { NotFoundError, ValidationError } from "../../lib/errors";
 import { detectProjectStackProfile } from "../../services/project-stack-context";
 import {
 	evaluateCoverageGate,
@@ -81,75 +82,76 @@ async function requireRepository(repositoryId: string) {
 
 export async function getProjectDetailMetrics(repositoryId: string) {
 	const repository = await requireRepository(repositoryId);
-	const [runs, usageRows, latestEvaluation, latestQuality] = await Promise.all([
-		db.select().from(taskRuns).where(eq(taskRuns.repositoryId, repositoryId)),
-		db
-			.select({
-				taskId: llmUsageRecords.taskId,
-				title: tasks.title,
-				provider: llmUsageRecords.provider,
-				model: llmUsageRecords.model,
-				inputTokens: llmUsageRecords.inputTokens,
-				outputTokens: llmUsageRecords.outputTokens,
-				cachedInputTokens: llmUsageRecords.cachedInputTokens,
-				reasoningOutputTokens: llmUsageRecords.reasoningOutputTokens,
-				stateCardTokens: llmUsageRecords.stateCardTokens,
-				systemPromptTokens: llmUsageRecords.systemPromptTokens,
-				userPromptTokens: llmUsageRecords.userPromptTokens,
-				totalTokens: llmUsageRecords.totalTokens,
-				durationMs: llmUsageRecords.durationMs,
-				createdAt: llmUsageRecords.createdAt,
-			})
-			.from(llmUsageRecords)
-			.innerJoin(tasks, eq(tasks.id, llmUsageRecords.taskId))
-			.where(eq(tasks.repositoryId, repositoryId)),
-		projectEvaluationRepo.getLatestProjectEvaluation(repositoryId),
-		repo.getLatestProjectQualityRun({ repositoryId }),
-	]);
+	const [runs, summaryRows, taskSummaryRows, latestEvaluation, latestQuality] =
+		await Promise.all([
+			db.select().from(taskRuns).where(eq(taskRuns.repositoryId, repositoryId)),
+			db
+				.select()
+				.from(llmUsageSummaryBuckets)
+				.where(eq(llmUsageSummaryBuckets.repositoryKey, repositoryId)),
+			db
+				.select({
+					taskId: llmUsageSummaryTaskBuckets.taskId,
+					title: tasks.title,
+					pricingCurrencyCode: llmUsageSummaryTaskBuckets.pricingCurrencyCode,
+					inputTokens: llmUsageSummaryTaskBuckets.inputTokens,
+					outputTokens: llmUsageSummaryTaskBuckets.outputTokens,
+					cachedInputTokens: llmUsageSummaryTaskBuckets.cachedInputTokens,
+					reasoningOutputTokens:
+						llmUsageSummaryTaskBuckets.reasoningOutputTokens,
+					totalTokens: llmUsageSummaryTaskBuckets.totalTokens,
+					totalDurationMs: llmUsageSummaryTaskBuckets.totalDurationMs,
+					outputDurationMs: llmUsageSummaryTaskBuckets.outputDurationMs,
+					pricedCallCount: llmUsageSummaryTaskBuckets.pricedCallCount,
+					estimatedCost: llmUsageSummaryTaskBuckets.estimatedCost,
+				})
+				.from(llmUsageSummaryTaskBuckets)
+				.innerJoin(tasks, eq(tasks.id, llmUsageSummaryTaskBuckets.taskId))
+				.where(eq(llmUsageSummaryTaskBuckets.repositoryKey, repositoryId)),
+			projectEvaluationRepo.getLatestProjectEvaluation(repositoryId),
+			repo.getLatestProjectQualityRun({ repositoryId }),
+		]);
 	const projectMeta = await getFreshProjectMeta(repository);
 
-	const totalTokens = usageRows.reduce(
-		(sum, row) => sum + normalizeUsageTotal(row),
+	const totalTokens = summaryRows.reduce(
+		(sum, row) => sum + row.totalTokens,
 		0,
 	);
-	const inputTokens = usageRows.reduce(
-		(sum, row) => sum + (row.inputTokens ?? 0),
+	const inputTokens = summaryRows.reduce(
+		(sum, row) => sum + row.inputTokens,
 		0,
 	);
-	const outputTokens = usageRows.reduce(
-		(sum, row) => sum + (row.outputTokens ?? 0),
+	const outputTokens = summaryRows.reduce(
+		(sum, row) => sum + row.outputTokens,
 		0,
 	);
-	const cachedInputTokens = usageRows.reduce(
-		(sum, row) => sum + (row.cachedInputTokens ?? 0),
+	const cachedInputTokens = summaryRows.reduce(
+		(sum, row) => sum + row.cachedInputTokens,
 		0,
 	);
-	const reasoningOutputTokens = usageRows.reduce(
-		(sum, row) => sum + (row.reasoningOutputTokens ?? 0),
+	const reasoningOutputTokens = summaryRows.reduce(
+		(sum, row) => sum + row.reasoningOutputTokens,
 		0,
 	);
-	const stateCardTokens = usageRows.reduce(
-		(sum, row) => sum + (row.stateCardTokens ?? 0),
+	const stateCardTokens = summaryRows.reduce(
+		(sum, row) => sum + row.stateCardTokens,
 		0,
 	);
-	const promptInputTokens = usageRows.reduce(
+	const promptInputTokens = summaryRows.reduce(
 		(sum, row) =>
-			sum +
-			(row.systemPromptTokens ?? 0) +
-			(row.userPromptTokens ?? 0) +
-			(row.stateCardTokens ?? 0),
+			sum + row.systemPromptTokens + row.userPromptTokens + row.stateCardTokens,
 		0,
 	);
-	const totalDurationMs = usageRows.reduce(
-		(sum, row) => sum + Math.max(0, row.durationMs),
+	const totalDurationMs = summaryRows.reduce(
+		(sum, row) => sum + row.totalDurationMs,
 		0,
 	);
-	const measuredDurationCallCount = usageRows.filter(
-		(row) => row.durationMs > 0,
-	).length;
-	const outputDurationMs = usageRows.reduce(
-		(sum, row) =>
-			sum + ((row.outputTokens ?? 0) > 0 ? Math.max(0, row.durationMs) : 0),
+	const measuredDurationCallCount = summaryRows.reduce(
+		(sum, row) => sum + row.measuredDurationCallCount,
+		0,
+	);
+	const outputDurationMs = summaryRows.reduce(
+		(sum, row) => sum + row.outputDurationMs,
 		0,
 	);
 	const outputTokensPerSecond = calculateOutputTokensPerSecond({
@@ -191,9 +193,12 @@ export async function getProjectDetailMetrics(repositoryId: string) {
 	>();
 	let totalCost = 0;
 	let pricedUsageCount = 0;
-	for (const row of usageRows) {
-		const usageCost = await calculateProjectDetailUsageCost(row);
-		const modelKey = `${row.provider}:${row.model ?? ""}`;
+	for (const row of summaryRows) {
+		const usdCost =
+			row.pricingCurrencyCode === "USD" && row.pricedCallCount > 0
+				? row.estimatedCost
+				: null;
+		const modelKey = `${row.provider}:${row.modelKey}`;
 		const modelEntry = modelMap.get(modelKey) ?? {
 			provider: row.provider,
 			model: row.model ?? null,
@@ -208,22 +213,29 @@ export async function getProjectDetailMetrics(repositoryId: string) {
 			outputTokensPerSecond: null,
 			cost: null,
 		};
-		modelEntry.calls += 1;
-		modelEntry.tokens += normalizeUsageTotal(row);
-		modelEntry.inputTokens += row.inputTokens ?? 0;
-		modelEntry.outputTokens += row.outputTokens ?? 0;
-		modelEntry.cachedInputTokens += row.cachedInputTokens ?? 0;
-		modelEntry.reasoningOutputTokens += row.reasoningOutputTokens ?? 0;
-		modelEntry.totalDurationMs += Math.max(0, row.durationMs);
-		if ((row.outputTokens ?? 0) > 0)
-			modelEntry.outputDurationMs += Math.max(0, row.durationMs);
+		modelEntry.calls += row.callCount;
+		modelEntry.tokens += row.totalTokens;
+		modelEntry.inputTokens += row.inputTokens;
+		modelEntry.outputTokens += row.outputTokens;
+		modelEntry.cachedInputTokens += row.cachedInputTokens;
+		modelEntry.reasoningOutputTokens += row.reasoningOutputTokens;
+		modelEntry.totalDurationMs += row.totalDurationMs;
+		modelEntry.outputDurationMs += row.outputDurationMs;
 		modelEntry.outputTokensPerSecond =
 			calculateOutputTokensPerSecond(modelEntry);
-		if (usageCost !== null) {
-			modelEntry.cost = (modelEntry.cost ?? 0) + usageCost;
+		if (usdCost !== null) {
+			modelEntry.cost = (modelEntry.cost ?? 0) + usdCost;
+			totalCost += usdCost;
+			pricedUsageCount += row.pricedCallCount;
 		}
 		modelMap.set(modelKey, modelEntry);
+	}
 
+	for (const row of taskSummaryRows) {
+		const usdCost =
+			row.pricingCurrencyCode === "USD" && row.pricedCallCount > 0
+				? row.estimatedCost
+				: null;
 		const taskEntry = taskMap.get(row.taskId) ?? {
 			taskId: row.taskId,
 			title: row.title,
@@ -237,19 +249,16 @@ export async function getProjectDetailMetrics(repositoryId: string) {
 			outputTokensPerSecond: null,
 			cost: null,
 		};
-		taskEntry.tokens += normalizeUsageTotal(row);
-		taskEntry.inputTokens += row.inputTokens ?? 0;
-		taskEntry.outputTokens += row.outputTokens ?? 0;
-		taskEntry.cachedInputTokens += row.cachedInputTokens ?? 0;
-		taskEntry.reasoningOutputTokens += row.reasoningOutputTokens ?? 0;
-		taskEntry.totalDurationMs += Math.max(0, row.durationMs);
-		if ((row.outputTokens ?? 0) > 0)
-			taskEntry.outputDurationMs += Math.max(0, row.durationMs);
+		taskEntry.tokens += row.totalTokens;
+		taskEntry.inputTokens += row.inputTokens;
+		taskEntry.outputTokens += row.outputTokens;
+		taskEntry.cachedInputTokens += row.cachedInputTokens;
+		taskEntry.reasoningOutputTokens += row.reasoningOutputTokens;
+		taskEntry.totalDurationMs += row.totalDurationMs;
+		taskEntry.outputDurationMs += row.outputDurationMs;
 		taskEntry.outputTokensPerSecond = calculateOutputTokensPerSecond(taskEntry);
-		if (usageCost !== null) {
-			taskEntry.cost = (taskEntry.cost ?? 0) + usageCost;
-			totalCost += usageCost;
-			pricedUsageCount += 1;
+		if (usdCost !== null) {
+			taskEntry.cost = (taskEntry.cost ?? 0) + usdCost;
 		}
 		taskMap.set(row.taskId, taskEntry);
 	}
@@ -288,7 +297,7 @@ export async function getProjectDetailMetrics(repositoryId: string) {
 			outputDurationMs,
 			measuredDurationCallCount,
 			outputTokensPerSecond,
-			callCount: usageRows.length,
+			callCount: summaryRows.reduce((sum, row) => sum + row.callCount, 0),
 			totalCost: pricedUsageCount > 0 ? totalCost : null,
 			averageTokensPerRun:
 				runs.length > 0 ? Math.round(totalTokens / runs.length) : null,
@@ -306,38 +315,6 @@ export async function getProjectDetailMetrics(repositoryId: string) {
 			coverageAverage,
 		},
 	};
-}
-
-async function calculateProjectDetailUsageCost(row: {
-	provider: string;
-	model?: string | null;
-	inputTokens?: number | null;
-	outputTokens?: number | null;
-	cachedInputTokens?: number | null;
-	reasoningOutputTokens?: number | null;
-	createdAt: Date;
-}) {
-	const pricing = await findPricingForUsage({
-		provider: row.provider,
-		model: row.model ?? null,
-		createdAt: row.createdAt,
-	});
-	if (!pricing || pricing.currencyCode !== "USD") return null;
-	return calculateUsageCost({
-		inputTokens: row.inputTokens ?? null,
-		outputTokens: row.outputTokens ?? null,
-		cachedInputTokens: row.cachedInputTokens ?? null,
-		reasoningOutputTokens: row.reasoningOutputTokens ?? null,
-		pricing,
-	}).totalCost;
-}
-
-function normalizeUsageTotal(row: {
-	totalTokens?: number | null;
-	inputTokens?: number | null;
-	outputTokens?: number | null;
-}) {
-	return row.totalTokens ?? (row.inputTokens ?? 0) + (row.outputTokens ?? 0);
 }
 
 function calculateOutputTokensPerSecond(input: {

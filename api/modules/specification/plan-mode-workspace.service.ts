@@ -169,7 +169,53 @@ export async function getPlanModeWorkspace(
 		}),
 		decisionReviews,
 		implementationReferences,
+		viewDecisions: extractViewDecisions(messages),
 	};
+}
+
+function extractViewDecisions(
+	messages: Awaited<ReturnType<typeof listPlanModeTaskMessages>>,
+) {
+	const decisionsByView = new Map<
+		string,
+		{ view: string; decision: "include" | "omit"; reason?: string }
+	>();
+	for (const message of messages) {
+		const metadata = (message.metadataJson || {}) as Record<string, unknown>;
+		const planModeGate = isRecord(metadata.planModeGate)
+			? metadata.planModeGate
+			: null;
+		const originalGate =
+			planModeGate && isRecord(planModeGate.originalGate)
+				? planModeGate.originalGate
+				: null;
+		const planMode = isRecord(metadata.planMode) ? metadata.planMode : null;
+		const candidates = [
+			originalGate?.dedicatedViews,
+			planMode?.dedicatedViews,
+			planModeGate?.dedicatedViews,
+			metadata.dedicatedViews,
+			metadata.viewDecisions,
+		];
+		for (const candidate of candidates) {
+			if (!Array.isArray(candidate)) continue;
+			for (const item of candidate) {
+				if (!isRecord(item)) continue;
+				const view = typeof item.view === "string" ? item.view : "";
+				const decision =
+					item.decision === "include" || item.decision === "omit"
+						? item.decision
+						: null;
+				if (!view || !decision) continue;
+				decisionsByView.set(view, {
+					view,
+					decision,
+					...(typeof item.reason === "string" ? { reason: item.reason } : {}),
+				});
+			}
+		}
+	}
+	return [...decisionsByView.values()];
 }
 
 function findLatestAdditionalQuestionSetId(

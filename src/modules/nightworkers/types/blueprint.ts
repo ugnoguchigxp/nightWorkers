@@ -128,6 +128,12 @@ export type PlanModeWorkspaceArtifact = {
 	sourceArtifactMessageId?: string;
 };
 
+export type PlanModeViewDecision = {
+	view: string;
+	decision: "include" | "omit";
+	reason?: string;
+};
+
 export type PlanModeWorkspace = {
 	taskId: string;
 	repositoryId: string;
@@ -156,4 +162,5 @@ export type PlanModeWorkspace = {
 		sourceMessageId?: string;
 		taskId: string;
 	}>;
+	viewDecisions: PlanModeViewDecision[];
 };

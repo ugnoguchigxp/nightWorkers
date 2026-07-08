@@ -322,6 +322,9 @@ export async function deleteRepositories(repositoryIds: string[]) {
 		statements.push(
 			`DELETE FROM llm_usage_summary_buckets WHERE repository_key IN (${list});`,
 		);
+		statements.push(
+			`DELETE FROM llm_usage_summary_task_buckets WHERE repository_key IN (${list});`,
+		);
 	}
 	for (const ids of chunks(repositoryIds, chunkSize)) {
 		statements.push(`DELETE FROM repositories WHERE id IN (${sqlIn(ids)});`);

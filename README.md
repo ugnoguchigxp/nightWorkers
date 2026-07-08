@@ -263,16 +263,17 @@ Detailed runtime configuration:
 | `bun run db:seed` | Seed local development data |
 | `bun run cleanup:test-data:dry-run` | Preview cleanup of TEST-prefixed local data |
 | `bun run cleanup:test-data` | Delete TEST-prefixed local data |
-| `bun run verify:base` | Run the base gate: TypeScript, Biome, and supervisor regression tests |
-| `bun run verify:desktop` | Run desktop runtime tests, Rust format/Clippy checks, build the `.app`, and run sidecar/packaged smoke |
-| `bun run verify` | Run `verify:base` and `verify:desktop` |
-| `bun run verify:fast` | Run only `verify:base` |
-| `bun run verify:full` | Run `verify` plus `bun run test run` |
+| `bun run verify:base` | Run the base gate with static checks in parallel, then supervisor regression tests |
+| `bun run verify:desktop` | Run desktop runtime tests and lint in parallel, then build the `.app` and run sidecar/packaged smoke |
+| `bun run verify` | Run the same lightweight base gate as `verify:base` |
+| `bun run verify:fast` | Alias for `verify:base` |
+| `bun run verify:full` | Run the base gate plus `bun run test run` |
 
 ## Testing
-- Default gate: `bun run verify` runs TypeScript, Biome, supervisor regression tests, desktop runtime tests, Linux/Windows desktop readiness checks, Rust format/Clippy checks, the current-OS Tauri desktop build, staged sidecar smoke, and packaged app smoke.
-- Fast gate: `bun run verify:fast` runs only the TypeScript/Biome/supervisor regression base gate.
-- Full gate: `bun run verify:full` runs the default gate plus `bun run test run`, which is the full non-E2E/non-live Vitest suite selected by `vitest.config.ts` (`tests/**/*.{test,spec}.{ts,tsx}` excluding `tests/e2e/**` and `tests/live/**`). Use it when a change touches runtime behavior, API contracts, schemas, or user-visible flows.
+- Default gate: `bun run verify` runs the lightweight base gate: tracked-artifact check, TypeScript, and Biome first in parallel, then supervisor regression tests serially.
+- Fast gate: `bun run verify:fast` is an alias for `verify:base`.
+- Desktop gate: `bun run verify:desktop` remains separate. It runs desktop runtime tests and desktop lint first in parallel, then current-OS Tauri desktop build, staged sidecar smoke, and packaged app smoke serially.
+- Full gate: `bun run verify:full` runs the base gate plus `bun run test run` at the end serially, which is the full non-E2E/non-live Vitest suite selected by `vitest.config.ts` (`tests/**/*.{test,spec}.{ts,tsx}` excluding `tests/e2e/**` and `tests/live/**`). It does not run desktop build or smoke; use `bun run verify:desktop` when a change touches desktop packaging or sidecar behavior.
 - Coverage report: `bun run test:coverage` runs the same non-E2E/non-live Vitest suite with V8 coverage and writes `coverage/coverage-summary.json`; use the summary to track statements, branches, functions, and lines toward the 80% target.
 - Packaged desktop smoke: `bun run desktop:smoke` can also be run directly as the release/adoption smoke for launching the built `.app` and verifying API, WebSocket, logs, and shutdown.
 - Smoke E2E: `bun run test:e2e:smoke` remains separate until local app/server prerequisites are explicitly available.
@@ -289,6 +290,7 @@ bun run verify
 bun run verify:full
 bun run test:e2e:smoke
 ```
+For desktop packaging or sidecar changes, also run `bun run verify:desktop`.
 
 ## Documentation Map
 This repository uses the following documentation layout.

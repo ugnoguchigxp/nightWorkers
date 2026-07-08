@@ -90,6 +90,7 @@ type ArtifactPaneProps = {
 };
 
 type ProjectArtifactMode = "tree" | "diff";
+type TestModeAction = "discover_tests" | "run_unit_tests";
 
 function workspaceInitialTab(value: unknown): PlanWorkspaceTab | undefined {
 	if (value === "design-doc" || value === "specification")
@@ -473,6 +474,7 @@ export function ArtifactPane({
 									specArtifactId: input.specArtifactId,
 									verificationDocumentId: input.verificationDocumentId,
 									mode: "test",
+									action: input.action,
 								});
 								return response.ok;
 							}}
@@ -500,22 +502,27 @@ export function ArtifactPane({
 							projectId={activeProject?.id || null}
 							taskId={activeSessionId}
 							status={testModeStatus}
-							onStart={async () => {
+							canStartRun={true}
+							onStart={async (action, rerun) => {
 								if (
 									!activeProject?.id ||
 									!activeSessionId ||
-									!testModePanel?.verificationDocumentId
+									!testModePanel?.specArtifactId
 								) {
 									return;
 								}
-								setTestModeStatus("starting");
+								setTestModeStatus(`${action}:starting`);
 								const response = await startTestModeRun(activeSessionId, {
 									projectId: activeProject.id,
 									specArtifactId: testModePanel.specArtifactId,
 									verificationDocumentId: testModePanel.verificationDocumentId,
 									mode: "test",
+									action,
+									rerun,
 								});
-								setTestModeStatus(response.ok ? "started" : "failed");
+								setTestModeStatus(
+									response.ok ? `${action}:started` : `${action}:failed`,
+								);
 							}}
 						/>
 					) : showBlueprint ? (
@@ -557,28 +564,30 @@ export function ArtifactPane({
 									projectId={activeProject?.id || null}
 									taskId={activeSessionId}
 									status={testModeStatus}
-									onStart={async (rerun) => {
+									canStartRun={true}
+									onStart={async (action, rerun) => {
 										if (
 											!activeProject?.id ||
 											!activeSessionId ||
-											!verificationPanel.verificationDocumentId
+											!verificationPanel.specArtifactId
 										) {
 											return;
 										}
-										setTestModeStatus("starting");
+										setTestModeStatus(`${action}:starting`);
 										const response = await startTestModeRun(activeSessionId, {
 											projectId: activeProject.id,
 											specArtifactId: verificationPanel.specArtifactId,
 											verificationDocumentId:
 												verificationPanel.verificationDocumentId,
 											mode: "test",
+											action,
 											rerun,
 										});
 										if (!response.ok) {
-											setTestModeStatus("failed");
+											setTestModeStatus(`${action}:failed`);
 											return;
 										}
-										setTestModeStatus("started");
+										setTestModeStatus(`${action}:started`);
 									}}
 								/>
 							) : null}
@@ -753,13 +762,15 @@ function TestModeArtifactViewer({
 	projectId,
 	taskId,
 	status,
+	canStartRun,
 	onStart,
 }: {
 	model: VerificationPanelModel | null;
 	projectId: string | null;
 	taskId: string | null;
 	status: string | null;
-	onStart: () => Promise<void>;
+	canStartRun: boolean;
+	onStart: (action: TestModeAction, rerun: boolean) => Promise<void>;
 }) {
 	return (
 		<div className="h-full overflow-auto bg-slate-950 p-5 text-slate-100">
@@ -776,9 +787,8 @@ function TestModeArtifactViewer({
 						projectId={projectId}
 						taskId={taskId}
 						status={status}
-						onStart={async () => {
-							await onStart();
-						}}
+						canStartRun={canStartRun}
+						onStart={onStart}
 					/>
 				) : (
 					<div className="rounded-md border border-slate-800 bg-slate-900/50 p-4 text-xs text-slate-400">
@@ -795,22 +805,24 @@ function VerificationChecklistPanel({
 	projectId,
 	taskId,
 	status,
+	canStartRun,
 	onStart,
 }: {
 	model: VerificationPanelModel;
 	projectId: string | null;
 	taskId: string | null;
 	status: string | null;
-	onStart: (rerun: boolean) => Promise<void>;
+	canStartRun: boolean;
+	onStart: (action: TestModeAction, rerun: boolean) => Promise<void>;
 }) {
-	const disabled =
-		!projectId ||
-		!taskId ||
-		!model.verificationDocumentId ||
-		status === "starting";
+	const canShowStartButton = Boolean(model.specArtifactId);
+	const searchStatus = readTestModeActionStatus(status, "discover_tests");
+	const unitStatus = readTestModeActionStatus(status, "run_unit_tests");
+	const startDisabled =
+		!canStartRun || !projectId || !taskId || !model.specArtifactId;
 	return (
 		<div className="border-b border-slate-800 bg-slate-950/50 px-4 py-3">
-			<div className="flex items-center justify-between gap-3">
+			<div>
 				<div className="min-w-0">
 					<div className="text-xs font-semibold uppercase text-slate-300">
 						Verification Checklist
@@ -818,20 +830,36 @@ function VerificationChecklistPanel({
 					<div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
 						<span>{model.conditions.length} conditions</span>
 						{model.missingReason ? <span>{model.missingReason}</span> : null}
-						{status === "started" ? <span>Test Mode run started</span> : null}
-						{status === "failed" ? <span>Test Mode start failed</span> : null}
+						{searchStatus === "started" ? (
+							<span>Test search started</span>
+						) : null}
+						{searchStatus === "failed" ? <span>Test search failed</span> : null}
+						{unitStatus === "started" ? (
+							<span>Unit test run started</span>
+						) : null}
+						{unitStatus === "failed" ? (
+							<span>Unit test start failed</span>
+						) : null}
 					</div>
 				</div>
-				<button
-					type="button"
-					className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 text-xs font-medium text-cyan-100 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-900 disabled:text-slate-500"
-					disabled={disabled}
-					onClick={() => void onStart(false)}
-					title={model.missingReason || "Start Test Mode"}
-				>
-					<FlaskConical className="h-3.5 w-3.5" />
-					Test Artifact
-				</button>
+				{canShowStartButton ? (
+					<div className="mt-3 flex flex-wrap gap-1.5">
+						<TestModeActionButton
+							action="discover_tests"
+							label="Find related tests"
+							status={searchStatus}
+							disabled={startDisabled}
+							onStart={onStart}
+						/>
+						<TestModeActionButton
+							action="run_unit_tests"
+							label="Run unit tests"
+							status={unitStatus}
+							disabled={startDisabled}
+							onStart={onStart}
+						/>
+					</div>
+				) : null}
 			</div>
 			{model.conditions.length > 0 ? (
 				<div className="mt-3 grid gap-1.5">
@@ -849,6 +877,42 @@ function VerificationChecklistPanel({
 			) : null}
 		</div>
 	);
+}
+
+function TestModeActionButton({
+	action,
+	label,
+	status,
+	disabled,
+	onStart,
+}: {
+	action: TestModeAction;
+	label: string;
+	status: string | null;
+	disabled: boolean;
+	onStart: (action: TestModeAction, rerun: boolean) => Promise<void>;
+}) {
+	const isDisabled = disabled || status === "starting";
+	return (
+		<button
+			type="button"
+			className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 text-xs font-medium text-cyan-100 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-900 disabled:text-slate-500"
+			disabled={isDisabled}
+			onClick={() => void onStart(action, false)}
+			title={label}
+		>
+			<FlaskConical className="h-3.5 w-3.5" />
+			{status === "starting" ? "Starting..." : label}
+		</button>
+	);
+}
+
+function readTestModeActionStatus(
+	status: string | null,
+	action: TestModeAction,
+) {
+	const prefix = `${action}:`;
+	return status?.startsWith(prefix) ? status.slice(prefix.length) : null;
 }
 
 function readRecordString(
