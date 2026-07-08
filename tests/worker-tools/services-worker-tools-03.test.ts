@@ -38,6 +38,24 @@ beforeEach(async () => {
 		"utf-8",
 	);
 	await fs.writeFile(
+		path.join(dummyRepoDir, "src/symbol-variants.tsx"),
+		[
+			"import React, { useMemo } from 'react';",
+			"import * as pathTools from 'node:path';",
+			"export default function Widget() { return <div />; }",
+			"export class DefaultNamed { render() { return null; } }",
+			"export enum Mode { Read = 'read', Write = 'write' }",
+			"export const makeRunner = () => pathTools.basename('runner');",
+			"const localValue = useMemo;",
+		].join("\n"),
+		"utf-8",
+	);
+	await fs.writeFile(
+		path.join(dummyRepoDir, "src/upper.txt"),
+		"HELLO\n",
+		"utf-8",
+	);
+	await fs.writeFile(
 		path.join(dummyRepoDir, "config.json"),
 		JSON.stringify({ scripts: { verify: "pnpm verify" }, items: [1, 2] }),
 		"utf-8",
@@ -179,6 +197,78 @@ describe("inspectStructureTool", () => {
 		);
 	});
 
+	it("summarizes TSX imports, enums, variables, and class methods", async () => {
+		const result = await inspectStructureTool({
+			filePath: "src/symbol-variants.tsx",
+			repoRoot: dummyRepoDir,
+		});
+
+		expect(result.ok).toBe(true);
+		expect(result.payload.kind).toBe("source");
+		if (result.payload.kind !== "source")
+			throw new Error("expected source output");
+		expect(result.payload.language).toBe("typescript");
+		expect(result.payload.imports).toEqual([
+			expect.objectContaining({
+				module: "react",
+				names: ["React", "useMemo"],
+			}),
+			expect.objectContaining({
+				module: "node:path",
+				names: ["* as pathTools"],
+			}),
+		]);
+		expect(result.payload.symbols).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: "Widget",
+					kind: "function",
+					exported: true,
+				}),
+				expect.objectContaining({
+					name: "DefaultNamed",
+					kind: "class",
+					exported: true,
+				}),
+				expect.objectContaining({
+					name: "render",
+					kind: "method",
+					exported: false,
+				}),
+				expect.objectContaining({
+					name: "Mode",
+					kind: "enum",
+					exported: true,
+				}),
+				expect.objectContaining({
+					name: "makeRunner",
+					kind: "function",
+					exported: true,
+				}),
+				expect.objectContaining({
+					name: "localValue",
+					kind: "variable",
+					exported: false,
+				}),
+			]),
+		);
+	});
+
+	it("omits import summaries when includeImports is false", async () => {
+		const result = await inspectStructureTool({
+			filePath: "src/tool.ts",
+			repoRoot: dummyRepoDir,
+			includeImports: false,
+		});
+
+		expect(result.ok).toBe(true);
+		expect(result.payload.kind).toBe("source");
+		if (result.payload.kind !== "source")
+			throw new Error("expected source output");
+		expect(result.payload.imports).toBeUndefined();
+		expect(result.payload.symbols.length).toBeGreaterThan(0);
+	});
+
 	it("returns file_not_found when inspect target is missing", async () => {
 		const result = await inspectStructureTool({
 			filePath: "missing.ts",
@@ -235,7 +325,90 @@ describe("searchFilesTool", () => {
 
 		expect(result.ok).toBe(true);
 		expect(result.payload.count).toBeGreaterThanOrEqual(1);
-		expect(result.payload.matches[0].excerpt).toContain("hello");
+		expect(result.payload.matches.map((match) => match.excerpt)).toContain(
+			"hello",
+		);
+	});
+
+	it("honors case sensitivity and glob filters for ripgrep searches", async () => {
+		const insensitive = await searchFilesTool({
+			query: "hello",
+			repoRoot: dummyRepoDir,
+			glob: "*.txt",
+		});
+		const sensitive = await searchFilesTool({
+			query: "hello",
+			repoRoot: dummyRepoDir,
+			glob: "*.txt",
+			caseSensitive: true,
+		});
+
+		expect(insensitive.ok).toBe(true);
+		expect(insensitive.payload.matches.map((match) => match.filePath)).toEqual(
+			expect.arrayContaining(["hello.txt", "src/upper.txt"]),
+		);
+		expect(sensitive.ok).toBe(true);
+		expect(sensitive.payload.matches.map((match) => match.filePath)).toContain(
+			"hello.txt",
+		);
+		expect(
+			sensitive.payload.matches.map((match) => match.filePath),
+		).not.toContain("src/upper.txt");
+	});
+
+	it("limits search results before returning the payload", async () => {
+		const result = await searchFilesTool({
+			query: "line",
+			repoRoot: dummyRepoDir,
+			maxResults: 3,
+		});
+
+		expect(result.ok).toBe(true);
+		expect(result.payload.count).toBe(3);
+		expect(result.payload.matches).toHaveLength(3);
+	});
+
+	it("returns an empty ripgrep result when there are no matches", async () => {
+		const result = await searchFilesTool({
+			query: "not-present-in-fixture",
+			repoRoot: dummyRepoDir,
+		});
+
+		expect(result.ok).toBe(true);
+		expect(result.payload).toMatchObject({
+			count: 0,
+			matches: [],
+			engine: "ripgrep",
+		});
+	});
+
+	it("falls back to the manual scanner when ripgrep is unavailable", async () => {
+		const originalPath = process.env.PATH;
+		process.env.PATH = "";
+		try {
+			const result = await searchFilesTool({
+				query: "HELLO",
+				repoRoot: dummyRepoDir,
+				glob: "*.txt",
+				caseSensitive: true,
+				maxResults: 1,
+			});
+
+			expect(result.ok).toBe(true);
+			expect(result.payload).toMatchObject({
+				count: 1,
+				engine: "fallback",
+				matches: [
+					expect.objectContaining({
+						filePath: "src/upper.txt",
+						excerpt: "HELLO",
+					}),
+				],
+			});
+		} finally {
+			if (originalPath === undefined) delete process.env.PATH;
+			else process.env.PATH = originalPath;
+		}
 	});
 
 	it("returns search_root_not_found when repo root is missing", async () => {

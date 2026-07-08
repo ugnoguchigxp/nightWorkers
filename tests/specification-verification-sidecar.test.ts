@@ -6,7 +6,15 @@ const dummyWorkspace: PlanModeWorkspace = {
 	taskId: "task-1",
 	repositoryId: "repo-1",
 	generatedAt: "2026-07-08T00:00:00Z",
-	featurePlanArtifacts: [{ id: "fp-1", kind: "feature_plan", title: "Feature Plan", sourceMessageId: "msg-1", createdAt: "2026-07-08T00:00:00Z" }],
+	featurePlanArtifacts: [
+		{
+			id: "fp-1",
+			kind: "feature_plan",
+			title: "Feature Plan",
+			sourceMessageId: "msg-1",
+			createdAt: "2026-07-08T00:00:00Z",
+		},
+	],
 	blueprintArtifacts: [],
 	dataModelArtifacts: [],
 	dedicatedViewArtifacts: [],
@@ -37,7 +45,9 @@ describe("Specification Verification Sidecar", () => {
 
 		expect(result.document.conditions).toHaveLength(3);
 		expect(result.document.conditions[0].id).toBe("AC-001");
-		expect(result.document.conditions[0].text).toContain("APIエンドポイントが正常に動作すること。");
+		expect(result.document.conditions[0].text).toContain(
+			"APIエンドポイントが正常に動作すること。",
+		);
 		expect(result.document.conditions[0].verificationKind).toBe("command_gate");
 
 		expect(result.document.conditions[1].id).toBe("AC-002");

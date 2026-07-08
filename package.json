@@ -29,6 +29,8 @@
 		"desktop:sign": "node scripts/release/desktop-sign-notarize.mjs",
 		"test": "vitest",
 		"test:coverage": "vitest run --coverage",
+		"test:coverage:backend": "vitest run --config vitest.backend.config.ts --coverage",
+		"test:coverage:frontend": "vitest run --config vitest.frontend.config.ts --coverage",
 		"test:live:llm": "vitest run --config vitest.live.config.ts",
 		"test:supervisor-regression": "vitest run tests/services.supervisor-skills.test.ts tests/services.supervisor-prompt-packet.test.ts tests/structured-llm/services-structured-llm-01.test.ts tests/structured-llm/services-structured-llm-02.test.ts tests/structured-llm/services-structured-llm-03.test.ts",
 		"test:desktop-runtime": "vitest run tests/runtime-paths.test.ts tests/runtime-bootstrap.test.ts tests/api-base.test.ts tests/preflight.test.ts tests/routes.security-hardening.test.ts",

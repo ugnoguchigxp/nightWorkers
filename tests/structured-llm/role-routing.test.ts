@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-	structuredLlmRouteKey,
 	resolveStructuredLlmRoleRoute,
-	resolveStructuredLlmRoleRouteCandidates,
+	structuredLlmRouteKey,
 	validateStructuredLlmRoleRoutes,
 } from "../../api/services/structured-llm/role-routing";
 import type { StructuredLlmProviderSettings } from "../../api/services/structured-llm/settings";

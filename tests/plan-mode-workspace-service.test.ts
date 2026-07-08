@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { getPlanModeWorkspace } from "../api/modules/specification/plan-mode-workspace.service";
-import { getPlanModeTask, listPlanModeTaskMessages } from "../api/modules/nightworkers/nightworkers.plan-mode-core.port";
-import { listDesignQuestionnaires } from "../api/modules/questionnaire/questionnaire.service";
 import { getBlueprintArtifactAdoption } from "../api/modules/blueprint/blueprint-adoption.service";
+import {
+	getPlanModeTask,
+	listPlanModeTaskMessages,
+} from "../api/modules/nightworkers/nightworkers.plan-mode-core.port";
+import { getPlanModeWorkspace } from "../api/modules/specification/plan-mode-workspace.service";
 
 vi.mock("../api/modules/nightworkers/nightworkers.plan-mode-core.port", () => ({
 	getPlanModeTask: vi.fn(),
@@ -20,11 +22,16 @@ vi.mock("../api/modules/blueprint/blueprint-adoption.service", () => ({
 describe("plan-mode-workspace.service", () => {
 	it("throws NotFoundError if task is missing", async () => {
 		vi.mocked(getPlanModeTask).mockResolvedValueOnce(null);
-		await expect(getPlanModeWorkspace("task-1")).rejects.toThrow("Task not found");
+		await expect(getPlanModeWorkspace("task-1")).rejects.toThrow(
+			"Task not found",
+		);
 	});
 
 	it("returns workspace layout with artifacts and questionnaire parsed", async () => {
-		const task = { id: "task-1", repositoryId: "repo-1" } as any;
+		const task = {
+			id: "task-1",
+			repositoryId: "repo-1",
+		} as NonNullable<Awaited<ReturnType<typeof getPlanModeTask>>>;
 		vi.mocked(getPlanModeTask).mockResolvedValueOnce(task);
 
 		const messages = [
@@ -74,10 +81,12 @@ describe("plan-mode-workspace.service", () => {
 					intent: "implementation_plan",
 				},
 			},
-		] as any;
+		] as Awaited<ReturnType<typeof listPlanModeTaskMessages>>;
 
 		vi.mocked(listPlanModeTaskMessages).mockResolvedValueOnce(messages);
-		vi.mocked(getBlueprintArtifactAdoption).mockResolvedValueOnce({ adopted: true } as any);
+		vi.mocked(getBlueprintArtifactAdoption).mockResolvedValueOnce({
+			adopted: true,
+		} as Awaited<ReturnType<typeof getBlueprintArtifactAdoption>>);
 
 		const result = await getPlanModeWorkspace("task-1");
 

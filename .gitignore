@@ -32,6 +32,8 @@ pnpm-workspace.yaml
 
 # Testing
 coverage/
+coverage-backend/
+coverage-frontend/
 playwright-report/
 test-results/
 blob-report/
