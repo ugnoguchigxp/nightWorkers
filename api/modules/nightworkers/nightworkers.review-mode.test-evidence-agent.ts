@@ -1,7 +1,7 @@
 import path from "node:path";
 import { unknownErrorMessage } from "../../../shared/json-record";
 import {
-	buildNormalizedSupervisorLlmRequest,
+	buildNormalizedSupervisorLlmRequestCandidates,
 	callProviderToolTurn,
 	type ProviderToolDefinition,
 	type ProviderToolMessage,
@@ -63,12 +63,29 @@ export async function runAgenticTestEvidenceReview(input: {
 
 	const systemPrompt = buildSystemPrompt();
 	const userPrompt = buildUserPrompt(input.precheck);
-	const normalizedRequest = buildNormalizedSupervisorLlmRequest({
+	const candidateRequests = buildNormalizedSupervisorLlmRequestCandidates({
 		systemPrompt,
 		userPrompt,
 		label: "review_test_evidence",
 		role: "review",
 	});
+	const normalizedRequest = selectNativeToolTurnRequest(candidateRequests);
+	if (!normalizedRequest) {
+		return {
+			ok: false,
+			degradedReason: buildNoNativeToolTurnRouteReason(candidateRequests),
+			providerDebug: {
+				mode: "provider_native_tools",
+				supported: false,
+				candidateProviders: candidateRequests.map((request) => ({
+					providerId: request.providerId,
+					providerEndpointId: request.providerEndpointId ?? null,
+					routeSource: request.routeSource ?? null,
+				})),
+			},
+			commandsRun: [],
+		};
+	}
 	const providerTurn = input.providerTurn ?? callProviderToolTurn;
 	const provider = providerAdapterKey(normalizedRequest.providerId);
 	const messages: ProviderToolMessage[] = [
@@ -194,6 +211,28 @@ export async function runAgenticTestEvidenceReview(input: {
 		providerDebug,
 		commandsRun,
 	};
+}
+
+function selectNativeToolTurnRequest(
+	requests: ReturnType<typeof buildNormalizedSupervisorLlmRequestCandidates>,
+) {
+	return requests.find((request) => supportsNativeToolTurn(request.providerId));
+}
+
+function supportsNativeToolTurn(providerId: string) {
+	const provider = providerAdapterKey(providerId);
+	return provider === "openai" || provider === "azure";
+}
+
+function buildNoNativeToolTurnRouteReason(
+	requests: ReturnType<typeof buildNormalizedSupervisorLlmRequestCandidates>,
+) {
+	const providers = requests.map((request) => request.providerId);
+	return [
+		"No provider-native tool turn route is available for Review Mode test evidence.",
+		"Configure the review role with an OpenAI or Azure OpenAI provider endpoint.",
+		`Current candidate providers: ${providers.length ? providers.join(", ") : "none"}.`,
+	].join(" ");
 }
 
 const TEST_EVIDENCE_TOOLS: ProviderToolDefinition[] = [

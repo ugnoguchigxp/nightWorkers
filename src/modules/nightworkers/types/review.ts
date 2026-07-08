@@ -151,6 +151,46 @@ export type ReviewSectionProgress =
 	| "blocked"
 	| "needs_human";
 
+export type ReviewRunOptions = {
+	codeReview: boolean;
+	testEvidenceReview: boolean;
+	securityReview: boolean;
+	applyFixes: boolean;
+	commitChanges: boolean;
+};
+
+export type ReviewRunArtifactPayload = {
+	version: 1;
+	kind: "review_run";
+	runId: string;
+	reviewRunId: string | null;
+	taskId: string;
+	repositoryId: string;
+	options: ReviewRunOptions;
+	status: "not_started" | "running" | "needs_human" | "done" | "failed";
+	target: {
+		targetFiles?: Array<{
+			path: string;
+			status: string;
+			diffBytes?: number;
+		}>;
+		excludedDirtyFiles?: string[];
+		warningCount?: number;
+	};
+	todos: Array<{
+		seq: number;
+		title: string;
+		taskType: string;
+		procedureId: string | null;
+	}>;
+	warnings: Array<{
+		code: string;
+		severity: "info" | "warning" | "blocking";
+		message: string;
+		paths?: string[];
+	}>;
+};
+
 export type ReviewStatusArtifact = {
 	version: 1;
 	reviewSessionId: string;
@@ -231,7 +271,13 @@ export type ReviewArtifact = {
 	reviewSessionId: string;
 	runId: string;
 	taskId: string;
-	kind: "review_status" | ReviewSectionKind | "security_handoff";
+	kind:
+		| "review_status"
+		| "review_run"
+		| "review_targets"
+		| "review_findings_summary"
+		| ReviewSectionKind
+		| "security_handoff";
 	status: ReviewSectionProgress;
 	artifact: unknown;
 	sourceEvidenceRefs: ReviewEvidenceRef[];

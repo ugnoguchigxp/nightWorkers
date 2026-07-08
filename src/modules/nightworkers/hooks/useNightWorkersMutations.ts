@@ -2,24 +2,18 @@ import { type QueryClient, useMutation } from "@tanstack/react-query";
 import type { Dispatch, SetStateAction } from "react";
 import { client } from "../../../lib/api";
 import {
-	applyReviewFinalAction,
 	archiveWorkbenchSession,
 	commitRunGitCloseout,
-	createReviewPromptSuggestions,
 	createWorkbenchSession,
 	deleteTask,
-	markReviewPromptSuggestionUsed,
 	patchTask as patchTaskCommand,
-	pushRunGitCloseout,
 	queueWorkbenchSession,
-	runReviewSection,
+	startReviewRun,
 	startReviewSession,
 	startWorkbenchRun,
 	stopBackgroundProcess,
 	stopRun,
 	submitRunReview,
-	updateReviewFindingDisposition,
-	updateReviewPromptSuggestion,
 } from "../nightWorkersCommands";
 import {
 	mergeRealtimeRunDetails,
@@ -31,6 +25,7 @@ import type {
 	CreateSessionInput,
 	GitCloseoutState,
 	Repository,
+	ReviewRunOptions,
 	ReviewSessionDetail,
 	RunDetails,
 	Task,
@@ -46,18 +41,6 @@ type TaskPatchInput = {
 	acceptanceCriteria?: string;
 	status?: string;
 	priority?: number;
-};
-
-type ReviewFindingDispositionInput = {
-	disposition:
-		| "human_callout"
-		| "agent_followup"
-		| "prompt_suggestion"
-		| "security_plugin_handoff"
-		| "accepted_risk"
-		| "ignored";
-	note?: string;
-	evidenceRefs?: unknown[];
 };
 
 type UseNightWorkersMutationsInput = {
@@ -346,9 +329,14 @@ export function useNightWorkersMutations({
 		},
 	});
 
-	const runReviewSectionMutation = useMutation({
-		mutationFn: async (input: { reviewSessionId: string; section: string }) => {
-			const res = await runReviewSection(input.reviewSessionId, input.section);
+	const startReviewRunMutation = useMutation({
+		mutationFn: async (input: {
+			reviewSessionId: string;
+			options: Partial<ReviewRunOptions>;
+		}) => {
+			const res = await startReviewRun(input.reviewSessionId, {
+				options: input.options,
+			});
 			if (!res.ok) throw new Error(await res.text());
 			return (await res.json()) as ReviewSessionDetail;
 		},
@@ -361,35 +349,17 @@ export function useNightWorkersMutations({
 				queryKey: ["reviewSession", detail.session.taskId],
 			});
 			queryClient.invalidateQueries({
-				queryKey: ["gitCloseout", detail.session.runId],
+				queryKey: ["sessionRuns", detail.session.taskId],
+			});
+			queryClient.invalidateQueries({
+				queryKey: ["runDetails", detail.session.runId],
 			});
 		},
 	});
 
 	const commitRunGitCloseoutMutation = useMutation({
-		mutationFn: async (input: { runId: string; message?: string }) => {
-			const res = await commitRunGitCloseout(input.runId, {
-				message: input.message,
-			});
-			if (!res.ok) throw new Error(await res.text());
-			return (await res.json()) as GitCloseoutState;
-		},
-		onSuccess: (state) => {
-			queryClient.setQueryData<GitCloseoutState | null>(
-				["gitCloseout", state.runId],
-				state,
-			);
-			queryClient.invalidateQueries({ queryKey: ["gitCloseout", state.runId] });
-			queryClient.invalidateQueries({ queryKey: ["implementationQueue"] });
-			queryClient.invalidateQueries({ queryKey: ["sessions"] });
-			queryClient.invalidateQueries({ queryKey: ["sessionRuns"] });
-			queryClient.invalidateQueries({ queryKey: ["runDetails", state.runId] });
-		},
-	});
-
-	const pushRunGitCloseoutMutation = useMutation({
 		mutationFn: async (runId: string) => {
-			const res = await pushRunGitCloseout(runId);
+			const res = await commitRunGitCloseout(runId);
 			if (!res.ok) throw new Error(await res.text());
 			return (await res.json()) as GitCloseoutState;
 		},
@@ -398,132 +368,24 @@ export function useNightWorkersMutations({
 				["gitCloseout", state.runId],
 				state,
 			);
-			queryClient.invalidateQueries({ queryKey: ["gitCloseout", state.runId] });
-			queryClient.invalidateQueries({ queryKey: ["runDetails", state.runId] });
-		},
-	});
-
-	const updateReviewFindingDispositionMutation = useMutation({
-		mutationFn: async (input: {
-			reviewSessionId: string;
-			findingId: string;
-			data: ReviewFindingDispositionInput;
-		}) => {
-			const res = await updateReviewFindingDisposition(
-				input.reviewSessionId,
-				input.findingId,
-				input.data,
-			);
-			if (!res.ok) throw new Error(await res.text());
-			return (await res.json()) as ReviewSessionDetail;
-		},
-		onSuccess: (detail) => {
-			queryClient.setQueryData<ReviewSessionDetail | null>(
-				["reviewSession", detail.session.taskId],
-				detail,
-			);
 			queryClient.invalidateQueries({
-				queryKey: ["reviewSession", detail.session.taskId],
+				queryKey: ["gitCloseout", state.runId],
 			});
-		},
-	});
-
-	const createReviewPromptSuggestionsMutation = useMutation({
-		mutationFn: async (reviewSessionId: string) => {
-			const res = await createReviewPromptSuggestions(reviewSessionId);
-			if (!res.ok) throw new Error(await res.text());
-			return (await res.json()) as ReviewSessionDetail;
-		},
-		onSuccess: (detail) => {
-			queryClient.setQueryData<ReviewSessionDetail | null>(
-				["reviewSession", detail.session.taskId],
-				detail,
-			);
 			queryClient.invalidateQueries({
-				queryKey: ["reviewSession", detail.session.taskId],
+				queryKey: ["runDetails", state.runId],
 			});
-		},
-	});
-
-	const updateReviewPromptSuggestionMutation = useMutation({
-		mutationFn: async (input: {
-			reviewSessionId: string;
-			suggestionId: string;
-			data: { status: "dismissed" };
-		}) => {
-			const res = await updateReviewPromptSuggestion(
-				input.reviewSessionId,
-				input.suggestionId,
-				input.data,
-			);
-			if (!res.ok) throw new Error(await res.text());
-			return (await res.json()) as ReviewSessionDetail;
-		},
-		onSuccess: (detail) => {
-			queryClient.setQueryData<ReviewSessionDetail | null>(
-				["reviewSession", detail.session.taskId],
-				detail,
-			);
-			queryClient.invalidateQueries({
-				queryKey: ["reviewSession", detail.session.taskId],
-			});
-		},
-	});
-
-	const markReviewPromptSuggestionUsedMutation = useMutation({
-		mutationFn: async (input: {
-			reviewSessionId: string;
-			suggestionId: string;
-		}) => {
-			const res = await markReviewPromptSuggestionUsed(
-				input.reviewSessionId,
-				input.suggestionId,
-			);
-			if (!res.ok) throw new Error(await res.text());
-			return (await res.json()) as ReviewSessionDetail;
-		},
-		onSuccess: (detail) => {
-			queryClient.setQueryData<ReviewSessionDetail | null>(
-				["reviewSession", detail.session.taskId],
-				detail,
-			);
-			queryClient.invalidateQueries({
-				queryKey: ["reviewSession", detail.session.taskId],
-			});
-		},
-	});
-
-	const applyReviewFinalActionMutation = useMutation({
-		mutationFn: async (input: {
-			reviewSessionId: string;
-			data: {
-				action: "approve" | "request_changes" | "needs_human" | "exit_review";
-				note?: string;
-			};
-		}) => {
-			const res = await applyReviewFinalAction(
-				input.reviewSessionId,
-				input.data,
-			);
-			if (!res.ok) throw new Error(await res.text());
-			return (await res.json()) as ReviewSessionDetail;
-		},
-		onSuccess: (detail) => {
-			queryClient.setQueryData<ReviewSessionDetail | null>(
-				["reviewSession", detail.session.taskId],
-				detail,
-			);
-			queryClient.invalidateQueries({
-				queryKey: ["reviewSession", detail.session.taskId],
-			});
-			queryClient.invalidateQueries({ queryKey: ["sessions"] });
+			if (activeSessionId) {
+				queryClient.invalidateQueries({
+					queryKey: ["sessionRuns", activeSessionId],
+				});
+			}
 		},
 	});
 
 	const updateSessionStatusMutation = useMutation({
 		mutationFn: async (input: {
 			sessionId: string;
-			status: "draft" | "ready";
+			status: "draft" | "ready" | "cancelled";
 		}) => {
 			return patchTask(input.sessionId, { status: input.status });
 		},
@@ -698,13 +560,7 @@ export function useNightWorkersMutations({
 		reorderQueueSessionsMutation,
 		moveWorkbenchSessionMutation,
 		startReviewSessionMutation,
-		runReviewSectionMutation,
+		startReviewRunMutation,
 		commitRunGitCloseoutMutation,
-		pushRunGitCloseoutMutation,
-		updateReviewFindingDispositionMutation,
-		createReviewPromptSuggestionsMutation,
-		updateReviewPromptSuggestionMutation,
-		markReviewPromptSuggestionUsedMutation,
-		applyReviewFinalActionMutation,
 	};
 }

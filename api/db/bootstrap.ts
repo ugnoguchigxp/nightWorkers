@@ -7,6 +7,7 @@ import {
 import { ensureProjectEvaluationTables } from "./project-evaluation-schema-bootstrap";
 import { ensureReviewModeTables } from "./review-mode-schema-bootstrap";
 import { ensureColumn } from "./schema-bootstrap-utils";
+import { ensureVerificationTables } from "./verification-schema-bootstrap";
 
 async function ensureNullableDesignQuestionnaireBlueprintSource() {
 	const columns = await client.execute(
@@ -86,6 +87,7 @@ export async function ensureNightWorkersSchema() {
 	await ensureProjectDetailTables();
 	await ensureMissionPlannerTables();
 	await ensureReviewModeTables();
+	await ensureVerificationTables();
 
 	const taskRunColumns = await client.execute("PRAGMA table_info(task_runs)");
 	const hasFinalJudgmentColumn = taskRunColumns.rows.some(

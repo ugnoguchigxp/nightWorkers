@@ -107,10 +107,10 @@ export function getSessionPhase(
 	) {
 		return "Needs Attention";
 	}
-	if (isReviewNeededSession(task, evidence)) return "Reviewing";
-	if (task.status === "completed") return "Completed";
 	if (task.status === "cancelled" || task.status === "failed")
 		return "Archived";
+	if (isReviewNeededSession(task, evidence)) return "Reviewing";
+	if (task.status === "completed") return "Completed";
 	if (task.status === "queued" || task.status === "ready") return "Queued";
 	if (evidence.queueEntry?.status === "queued") return "Queued";
 	if (

@@ -484,7 +484,6 @@ describe("todo_list worker tool", () => {
 			"initial_instructions",
 			"context_compile",
 			"inspection",
-			"review",
 			"verification",
 			"completion_report",
 		]);
@@ -628,7 +627,6 @@ describe("todo_list worker tool", () => {
 			{ seq: 4, status: "pending" },
 			{ seq: 5, status: "pending" },
 			{ seq: 6, status: "pending" },
-			{ seq: 7, status: "pending" },
 		]);
 	});
 
@@ -694,7 +692,7 @@ describe("todo_list worker tool", () => {
 			operation: "replace",
 			todos: [{ seq: 1, title: "Implement feature" }],
 		});
-		for (const seq of [1, 2, 3, 4, 5]) {
+		for (const seq of [1, 2, 3, 4]) {
 			const result = await todoListTool({
 				runId: run.id,
 				operation: "done",
@@ -705,7 +703,7 @@ describe("todo_list worker tool", () => {
 
 		const persisted = await repo.listTaskRunTodosForRun(run.id);
 		expect(persisted.at(-1)).toMatchObject({
-			seq: 6,
+			seq: 5,
 			title: "完了報告を行う",
 			taskType: "completion_report",
 			procedureId: "final_completion_report",
@@ -739,7 +737,7 @@ describe("todo_list worker tool", () => {
 			operation: "replace",
 			todos: [{ seq: 1, title: "Implement feature" }],
 		});
-		for (const seq of [1, 2, 3, 4, 5]) {
+		for (const seq of [1, 2, 3, 4]) {
 			const result = await todoListTool({
 				runId: run.id,
 				operation: "done",
@@ -751,23 +749,23 @@ describe("todo_list worker tool", () => {
 		const started = await todoListTool({
 			runId: run.id,
 			operation: "start",
-			seq: 6,
+			seq: 5,
 		});
 
 		expect(started.ok).toBe(true);
 		expect(started.payload.currentTodo).toMatchObject({
-			seq: 6,
+			seq: 5,
 			taskType: "completion_report",
 			procedureId: "final_completion_report",
 			status: "running",
 		});
 		const persisted = await repo.listTaskRunTodosForRun(run.id);
-		expect(persisted[5]).toMatchObject({
-			seq: 6,
+		expect(persisted[4]).toMatchObject({
+			seq: 5,
 			taskType: "completion_report",
 			status: "running",
 		});
-		expect(persisted[5].startedAt).toBeTruthy();
+		expect(persisted[4].startedAt).toBeTruthy();
 	});
 
 	it("returns attempted todo diagnostics when complete fails", async () => {
@@ -824,14 +822,14 @@ describe("todo_list worker tool", () => {
 		const result = await todoListTool({
 			runId: run.id,
 			operation: "start",
-			seq: 6,
+			seq: 5,
 		});
 
 		expect(result.ok).toBe(false);
 		expect(result.error).toMatchObject({ code: "PREVIOUS_TODO_OPEN" });
 		const persisted = await repo.listTaskRunTodosForRun(run.id);
 		expect(persisted[2]).toMatchObject({ seq: 3, status: "running" });
-		expect(persisted[5]).toMatchObject({ seq: 6, status: "pending" });
+		expect(persisted[4]).toMatchObject({ seq: 5, status: "pending" });
 	});
 
 	it("does not auto-start an earlier pending Todo after completing a later Todo", async () => {
@@ -992,9 +990,9 @@ describe("todo_list worker tool", () => {
 		const todo7 = await repo.createTaskRunTodo({
 			runId: run.id,
 			seq: 7,
-			title: "LLM コードレビューを実施する",
-			taskType: "review",
-			procedureId: "llm_code_review",
+			title: "品質ゲート verify コマンドを通す",
+			taskType: "verification",
+			procedureId: "quality_gate_verify",
 			status: "passed",
 			startedAt: new Date("2026-06-13T11:37:14.000Z"),
 			completedAt: new Date("2026-06-13T11:37:53.000Z"),
@@ -1002,9 +1000,9 @@ describe("todo_list worker tool", () => {
 		await repo.createTaskRunTodo({
 			runId: run.id,
 			seq: 8,
-			title: "品質ゲート verify コマンドを通す",
-			taskType: "verification",
-			procedureId: "quality_gate_verify",
+			title: "完了報告を行う",
+			taskType: "completion_report",
+			procedureId: "final_completion_report",
 			status: "running",
 			startedAt: new Date("2026-06-13T11:37:53.000Z"),
 		});
@@ -1049,7 +1047,7 @@ describe("todo_list worker tool", () => {
 			runId: run.id,
 			seq: 7,
 			title: "Earlier pending",
-			taskType: "review",
+			taskType: "inspection",
 			status: "pending",
 		});
 		await repo.createTaskRunTodo({

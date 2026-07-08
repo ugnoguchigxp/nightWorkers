@@ -4,6 +4,7 @@
 	"description": "Local-first autonomous development control plane with native supervisor-worker runtime and contextStill.",
 	"main": "index.js",
 	"scripts": {
+		"setup": "bun install && (test -f .env || cp .env.example .env) && bun run db:migrate && bun run db:seed",
 		"dev": "concurrently -k -n api,web -c cyan,magenta \"bun run dev:api\" \"bun run dev:web\"",
 		"dev:api": "bun api/index.ts",
 		"dev:web": "vite",

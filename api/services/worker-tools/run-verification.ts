@@ -1,12 +1,12 @@
-import {
-	type RunCommandInput,
-	type RunCommandOutput,
-	runCommandTool,
-} from "./run-command";
+import { runCheckTool } from "./run-check";
+import type { RunCommandInput, RunCommandOutput } from "./run-command";
 import type { WorkerToolResult } from "./types";
 
 export interface RunVerificationInput extends RunCommandInput {
 	reason: string;
+	taskId?: string;
+	runId?: string;
+	verificationDocumentId?: string;
 }
 
 export interface RunVerificationOutput extends RunCommandOutput {
@@ -20,7 +20,11 @@ export async function runVerificationTool(
 	const startedAt = new Date().toISOString();
 	const { reason, ...cmdInput } = input;
 
-	const result = await runCommandTool(cmdInput);
+	const result = await runCheckTool({
+		...cmdInput,
+		checkKind: "verify",
+		displayMode: "summary",
+	});
 
 	const verified = result.ok && result.payload.exitCode === 0;
 
@@ -30,7 +34,14 @@ export async function runVerificationTool(
 		startedAt,
 		finishedAt: new Date().toISOString(),
 		payload: {
-			...result.payload,
+			command: result.payload.command,
+			exitCode: result.payload.exitCode,
+			stdout: result.payload.llmSummary,
+			stderr: "",
+			classification: result.payload.classification,
+			truncated: true,
+			logArtifactPath: result.payload.logArtifactPath,
+			compression: result.payload.compression,
 			reason,
 			verified,
 		},

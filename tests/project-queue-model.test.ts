@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	buildProjectQueueTasks,
 	getProjectQueuePriorityLabel,
+	getProjectQueueStatusLabel,
 	groupProjectQueueTasks,
 	sortProjectQueueTasksForTable,
 } from "../src/modules/queue/projectQueueModel";
@@ -125,6 +126,31 @@ describe("projectQueueModel", () => {
 		expect(
 			groupProjectQueueTasks(tasks).complete.map((item) => item.id),
 		).toEqual(["completed-session"]);
+	});
+
+	it("keeps archived Plan Mode sessions completed and archived instead of review required", () => {
+		const archivedTask = task("archived-plan", "Archived Plan");
+		const tasks = buildProjectQueueTasks({
+			project,
+			sessions: [archivedTask],
+			sessionViews: [
+				sessionView(archivedTask, "review_needed", { group: "archive" }),
+			],
+			implementationQueue: null,
+		});
+
+		expect(tasks).toMatchObject([
+			{
+				id: "archived-plan",
+				status: "archived",
+				phase: "Completed + Archived",
+				canMoveToPlanned: false,
+			},
+		]);
+		expect(getProjectQueueStatusLabel(tasks[0].status)).toBe("Archived");
+		expect(
+			groupProjectQueueTasks(tasks).complete.map((item) => item.id),
+		).toEqual(["archived-plan"]);
 	});
 
 	it("keeps review-needed and execution-completed work in Completed on the Kanban board", () => {
@@ -308,10 +334,12 @@ function entry(
 function sessionView(
 	taskRecord: ProjectQueueSession,
 	emailState: ProjectQueueSessionView["emailState"],
+	options: Partial<ProjectQueueSessionView> = {},
 ) {
 	return {
 		task: taskRecord,
 		emailState,
 		phase: "Reviewing",
+		...options,
 	} as ProjectQueueSessionView;
 }

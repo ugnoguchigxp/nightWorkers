@@ -324,6 +324,7 @@ function modeGuidance(
 			"Review guidance:",
 			"- 変更差分、受け入れ条件、検証結果を確認し、バグ・回帰・責務境界違反・テスト不足を優先してください。",
 			"- 必要に応じて git_diff、read_file、run_verification、context_compile を使って根拠を確認してください。",
+			"- Review Todo が表示されている場合は、各確認段階の完了時に todo_list operation=done を使い、未完了なら block/fail で状態を残してください。",
 			"- 修正が必要で明確な場合は、Todo を更新して実装修正 tool を使って構いません。",
 			"",
 		];

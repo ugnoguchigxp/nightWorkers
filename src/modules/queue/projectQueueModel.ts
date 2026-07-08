@@ -37,6 +37,7 @@ const TABLE_STATUS_RANK: Record<ProjectQueueTaskStatus, number> = {
 	unclassified: 3,
 	cancelled: 4,
 	completed: 4,
+	archived: 5,
 };
 
 type TaskCandidate = {
@@ -143,6 +144,19 @@ export function buildProjectQueueTasks({
 		);
 	}
 	for (const view of sessionViewByTaskId.values()) {
+		if (view.group === "archive") {
+			const current =
+				projected.get(view.task.id) ??
+				createBaseTask({ task: view.task, sessionView: view });
+			projected.set(view.task.id, {
+				...current,
+				status: "archived",
+				phase: "Completed + Archived",
+				queuePosition: null,
+				canMoveToPlanned: false,
+			});
+			continue;
+		}
 		if (
 			!ATTENTION_EMAIL_STATES.has(view.emailState) &&
 			!REVIEW_EMAIL_STATES.has(view.emailState)
@@ -237,6 +251,7 @@ export function getProjectQueueStatusLabel(status: ProjectQueueTaskStatus) {
 	if (status === "running") return "Running";
 	if (status === "review_required") return "Review Required";
 	if (status === "needs_human") return "Needs Human";
+	if (status === "archived") return "Archived";
 	if (status === "failed") return "Failed";
 	if (status === "cancelled") return "Cancelled";
 	return "Completed";
@@ -280,7 +295,9 @@ function createBaseTask(
 	const phase = candidate?.sessionView?.phase
 		? String(candidate.sessionView.phase)
 		: "Unclassified";
+	const archived = candidate?.sessionView?.group === "archive";
 	const needsPlan =
+		!archived &&
 		task.createdBy === "project-evaluation" &&
 		candidate?.sessionView?.emailState !== "plan_ready" &&
 		candidate?.sessionView?.emailState !== "queued" &&
@@ -292,16 +309,18 @@ function createBaseTask(
 		sessionId: task.id,
 		projectId: task.repositoryId,
 		title: task.title,
-		status: COMPLETED_EMAIL_STATES.has(candidate?.sessionView?.emailState || "")
-			? "completed"
-			: REVIEW_EMAIL_STATES.has(candidate?.sessionView?.emailState || "")
-				? "review_required"
-				: candidate?.sessionView?.emailState === "plan_ready"
-					? "ready_for_queue"
-					: needsPlan
-						? "plan_mode"
-						: "unclassified",
-		phase: needsPlan ? "Plan Mode" : phase,
+		status: archived
+			? "archived"
+			: COMPLETED_EMAIL_STATES.has(candidate?.sessionView?.emailState || "")
+				? "completed"
+				: REVIEW_EMAIL_STATES.has(candidate?.sessionView?.emailState || "")
+					? "review_required"
+					: candidate?.sessionView?.emailState === "plan_ready"
+						? "ready_for_queue"
+						: needsPlan
+							? "plan_mode"
+							: "unclassified",
+		phase: archived ? "Completed + Archived" : needsPlan ? "Plan Mode" : phase,
 		updatedAt: entry?.updatedAt ?? task.updatedAt,
 	};
 }
@@ -359,6 +378,7 @@ function statusFromQueueEntry(
 	}
 	if (status === "failed") return "failed";
 	if (status === "cancelled") return "cancelled";
+	if (status === "execution_archived") return "archived";
 	return "completed";
 }
 

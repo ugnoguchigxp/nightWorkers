@@ -17,6 +17,7 @@ import type { RuntimePromptSnapshot } from "../../../services/todo-context";
 import { outcomeFromRuntimeResult } from "../nightworkers.basic.service";
 import * as repo from "../nightworkers.repository";
 import { autoStartReviewSessionForRun } from "../nightworkers.review-mode.service";
+import { finalizeReviewRunFromRuntime } from "../nightworkers.review-run-finalize.service";
 import { createPlanningArtifactMessageIfNeeded } from "../nightworkers.workbench.service";
 import {
 	applyCoverageAutonomyFallback,
@@ -249,6 +250,13 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				});
 				await repo.updateTaskStatus(taskId, "ready");
 				await completeImplementationQueueEntryForRun(run.id, "cancelled");
+				await finalizeReviewRunFromRuntime({
+					runId: run.id,
+					taskId,
+					status: "cancelled",
+					contextSnapshot: contextSnapshotWithBoundaryAudit,
+					runtimeResult,
+				});
 				await repo.createTaskMessage({
 					taskId,
 					runId: run.id,
@@ -440,6 +448,16 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			}
 			await repo.updateTaskStatus(taskId, guardedStatus);
 			await completeImplementationQueueEntryForRun(run.id, guardedStatus);
+			await finalizeReviewRunFromRuntime({
+				runId: run.id,
+				taskId,
+				status: guardedStatus,
+				contextSnapshot: contextSnapshotWithBoundaryAudit,
+				runtimeResult: {
+					...runtimeResult,
+					finalReport,
+				},
+			});
 			if (shouldContinueSessionQueue(guardedStatus)) {
 				void runSessionQueueForRepository(task.repositoryId);
 			}
@@ -514,6 +532,22 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				finalReport,
 				finalJudgment: null,
 				summary: `Execution crashed: ${errorMessage}`,
+			});
+			const latestFailedRun = await repo.getTaskRun(run.id);
+			await finalizeReviewRunFromRuntime({
+				runId: run.id,
+				taskId,
+				status: "failed",
+				contextSnapshot:
+					latestFailedRun?.contextSnapshot ?? input.runtimeContextSnapshot,
+				runtimeResult: {
+					terminalState: "failed",
+					summary: `Execution crashed: ${errorMessage}`,
+					finalReport,
+					stoppedBy: "llm_error",
+					riskLevel: "high",
+					logContent: `[System Error] ${errorMessage}`,
+				},
 			});
 			await completeImplementationQueueEntryForRun(run.id, "failed");
 			if (shouldContinueSessionQueue("failed")) {

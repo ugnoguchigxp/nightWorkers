@@ -3,6 +3,7 @@ import type { WorkerToolName } from "../tool-policy/types";
 import {
 	applyPatchTool,
 	cloneGitRepoTool,
+	completionCheckTool,
 	copyDirectoryTool,
 	fetchContentTool,
 	findFileTool,
@@ -17,6 +18,7 @@ import {
 	readFileTool,
 	replaceContentTool,
 	runBackgroundCommandTool,
+	runCheckTool,
 	runCommandTool,
 	runVerificationTool,
 	searchFilesTool,
@@ -30,6 +32,7 @@ export type WorkerToolDispatchInput = {
 	args: Record<string, unknown>;
 	repoRoot: string;
 	taskId?: string;
+	runId?: string;
 	safetyPolicy?: AgentSafetyPolicy;
 	readFiles: string[];
 	toolContext?: WorkerToolExecutionContext;
@@ -282,7 +285,7 @@ export async function executeWorkerTool(
 				repoRoot,
 				cwd: args.cwd as string | undefined,
 				taskId: input.taskId,
-				runId: args.runId as string | undefined,
+				runId: (args.runId as string | undefined) || input.runId,
 				repositoryId: args.repositoryId as string | undefined,
 				blockedCommands: safetyPolicy?.blockedCommands,
 				allowedPaths: safetyPolicy?.allowedPaths,
@@ -299,6 +302,11 @@ export async function executeWorkerTool(
 				repoRoot,
 				reason: (args.reason as string) || "verification",
 				cwd: args.cwd as string | undefined,
+				taskId: input.taskId,
+				runId: (args.runId as string | undefined) || input.runId,
+				verificationDocumentId: args.verificationDocumentId as
+					| string
+					| undefined,
 				blockedCommands: safetyPolicy?.blockedCommands,
 				allowedPaths: safetyPolicy?.allowedPaths,
 				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
@@ -306,6 +314,43 @@ export async function executeWorkerTool(
 				timeoutSeconds: args.timeoutSeconds as number | undefined,
 				compressionMode: args.compressionMode as "auto" | "off" | undefined,
 				maxCommandSeconds: safetyPolicy?.maxCommandSeconds,
+			}),
+		};
+	}
+
+	if (toolName === "run_check") {
+		return {
+			result: await runCheckTool({
+				command: args.command as string,
+				repoRoot,
+				taskId: input.taskId,
+				runId: args.runId as string | undefined,
+				verificationDocumentId: args.verificationDocumentId as
+					| string
+					| undefined,
+				checkKind: (args.checkKind as never) || "other",
+				conditionIds: Array.isArray(args.conditionIds)
+					? args.conditionIds.map(String)
+					: undefined,
+				displayMode: args.displayMode as never,
+				cwd: args.cwd as string | undefined,
+				blockedCommands: safetyPolicy?.blockedCommands,
+				allowedPaths: safetyPolicy?.allowedPaths,
+				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
+				deniedPaths: safetyPolicy?.deniedPaths,
+				timeoutSeconds: args.timeoutSeconds as number | undefined,
+				maxCommandSeconds: safetyPolicy?.maxCommandSeconds,
+			}),
+		};
+	}
+
+	if (toolName === "completion_check") {
+		return {
+			result: await completionCheckTool({
+				taskId: (args.taskId as string | undefined) || input.taskId || "",
+				verificationDocumentId: args.verificationDocumentId as
+					| string
+					| undefined,
 			}),
 		};
 	}

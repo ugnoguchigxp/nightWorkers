@@ -79,6 +79,30 @@ describe("NativeApiRunner tool registry and dispatcher gates", () => {
 		expect(toolNames).not.toContain("todo_list");
 	});
 
+	it("exposes todo_list in review mode so Review Run Todos can progress", () => {
+		const toolNames = getNativeApiToolDefinitions({
+			executionMode: "review",
+			currentTodo: {
+				taskType: "inspection",
+				procedureId: "review.read_plan_spec",
+			},
+		}).map((tool) => tool.name);
+
+		expect(toolNames).toEqual(
+			expect.arrayContaining([
+				"read_current_specification",
+				"git_diff",
+				"run_verification",
+				"context_decision",
+				"todo_list",
+				"finalize_answer",
+			]),
+		);
+		expect(toolNames).not.toContain("apply_patch");
+		expect(toolNames).not.toContain("replace_content");
+		expect(toolNames).not.toContain("import_project");
+	});
+
 	it("keeps core coding tools visible while hiding one-shot procedure tools by default", () => {
 		const toolNames = getNativeApiToolDefinitions({
 			executionMode: "implementation",

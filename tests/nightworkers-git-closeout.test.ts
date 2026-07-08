@@ -4,12 +4,30 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import {
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from "vitest";
 import app from "../api/app";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
 import * as reviewRepo from "../api/modules/nightworkers/nightworkers.review-mode.repository";
 import * as queueRepo from "../api/modules/queue/queue.repository";
+import * as structuredLlm from "../api/services/structured-llm";
+
+vi.mock("../api/services/structured-llm", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("../api/services/structured-llm")>();
+	return {
+		...actual,
+		callStructuredJsonLLM: vi.fn(),
+	};
+});
 
 const execFileAsync = promisify(execFile);
 const sameOriginHeaders = { Origin: "http://localhost:39174" };
@@ -17,6 +35,13 @@ const tempRoots: string[] = [];
 
 beforeAll(async () => {
 	await ensureNightWorkersSchema();
+});
+
+beforeEach(() => {
+	vi.mocked(structuredLlm.callStructuredJsonLLM).mockReset();
+	vi.mocked(structuredLlm.callStructuredJsonLLM).mockResolvedValue(
+		JSON.stringify({ message: "Update owned closeout file" }),
+	);
 });
 
 afterEach(async () => {
@@ -59,7 +84,12 @@ async function createGitRepo(input: { withRemote?: boolean } = {}) {
 }
 
 async function createCloseoutFixture(
-	input: { withRemote?: boolean; safetyPolicy?: unknown } = {},
+	input: {
+		withRemote?: boolean;
+		safetyPolicy?: unknown;
+		withTestCoverage?: boolean;
+		withReviewRun?: boolean;
+	} = {},
 ) {
 	const gitRepo = await createGitRepo({ withRemote: input.withRemote });
 	const project = await repo.createRepository({
@@ -111,20 +141,40 @@ async function createCloseoutFixture(
 		repositoryId: project.id,
 		recommendationId: recommendation.id,
 	});
-	await reviewRepo.upsertReviewArtifact({
-		reviewSessionId: session.id,
-		runId: run.id,
-		taskId: task.id,
-		kind: "test_coverage",
-		status: "done",
-		artifactJson: {
-			version: 2,
+	if (input.withTestCoverage !== false) {
+		await reviewRepo.upsertReviewArtifact({
+			reviewSessionId: session.id,
+			runId: run.id,
+			taskId: task.id,
 			kind: "test_coverage",
-			requirement: "required",
-			summary: "Test evidence checked.",
-		},
-		sourceEvidenceRefsJson: [],
-	});
+			status: "done",
+			artifactJson: {
+				version: 2,
+				kind: "test_coverage",
+				requirement: "required",
+				summary: "Test evidence checked.",
+			},
+			sourceEvidenceRefsJson: [],
+		});
+	}
+	if (input.withReviewRun) {
+		await reviewRepo.upsertReviewArtifact({
+			reviewSessionId: session.id,
+			runId: run.id,
+			taskId: task.id,
+			kind: "review_run",
+			status: "running",
+			artifactJson: {
+				version: 1,
+				kind: "review_run",
+				status: "running",
+				todos: [],
+				target: { targetFiles: [{ path: "owned.txt" }] },
+				warnings: [],
+			},
+			sourceEvidenceRefsJson: [],
+		});
+	}
 	const entry = await queueRepo.createImplementationQueueEntry({
 		taskId: task.id,
 		repositoryId: project.id,
@@ -221,6 +271,51 @@ describe("NightWorkers Git closeout API", () => {
 		expect(
 			await git(fixture.gitRepo.root, ["rev-list", "--count", "HEAD"]),
 		).toBe("2");
+	});
+
+	it("generates a commit message with the LLM when no message is provided", async () => {
+		const fixture = await createCloseoutFixture();
+
+		const commitRes = await app.request(
+			`http://localhost/api/runs/${fixture.run.id}/git/commit`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({}),
+			},
+		);
+		expect(commitRes.status).toBe(200);
+		const committed = await commitRes.json();
+
+		expect(structuredLlm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
+		expect(committed.state).toBe("committed");
+		expect(committed.commitRecord.commitMessage).toBe(
+			"Update owned closeout file",
+		);
+	});
+
+	it("allows commit readiness from ReviewRun evidence without the legacy test coverage section", async () => {
+		const fixture = await createCloseoutFixture({
+			withTestCoverage: false,
+			withReviewRun: true,
+		});
+
+		const stateRes = await app.request(
+			`http://localhost/api/runs/${fixture.run.id}/git/closeout`,
+			{ headers: sameOriginHeaders },
+		);
+		expect(stateRes.status).toBe(200);
+		const state = await stateRes.json();
+
+		expect(state).toMatchObject({
+			canCommit: true,
+			state: "commit_ready",
+			requiredReview: {
+				testCoverageStatus: null,
+				reviewRunStatus: "running",
+				complete: true,
+			},
+		});
 	});
 
 	it("pushes the committed closeout to the configured upstream", async () => {

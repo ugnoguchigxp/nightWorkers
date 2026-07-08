@@ -88,27 +88,20 @@ Details: [Architecture and Module Boundaries](./spec/architecture.md)
 ## Requirements
 - Bun 1.3+
 - Node.js 20+ only for the packaged desktop sidecar and Node-based tooling
-- pnpm 10+ is supported as a fallback during the eventual Node.js/pnpm migration, but Bun is the primary development path today
 - Rust toolchain and macOS build tools for desktop packaging
 
 ## Quick Start
-1. Install dependencies
+1. Prepare local dependencies, environment, migrations, and seed data
 ```bash
-bun install
+bun run setup
 ```
-2. Create local environment file
-```bash
-cp .env.example .env
-```
-3. Apply migrations and seed data
-```bash
-bun run db:migrate
-bun run db:seed
-```
-4. Start the app
+2. Start the app
 ```bash
 bun run dev
 ```
+
+`setup` creates `.env` from `.env.example` only when `.env` does not already
+exist, then applies migrations and seeds the local database.
 
 Default URL: `http://localhost:39174`
 

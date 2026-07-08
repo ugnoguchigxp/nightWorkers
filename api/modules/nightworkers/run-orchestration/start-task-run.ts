@@ -30,6 +30,7 @@ import type { RuntimePromptSnapshot } from "../../../services/todo-context";
 import {
 	buildStandardImplementationTodoList,
 	deriveTodoVerificationPolicyFromPromptText,
+	type ImplementationTodoInput,
 } from "../../../services/todo-runtime";
 import { getFreshProjectMeta } from "../../project-detail/project-meta.service";
 import { resolveBlueprintPlanningReadiness } from "../nightworkers.basic.service";
@@ -61,7 +62,11 @@ export type StartTaskRunOptions = {
 		| "workbench_run_task"
 		| "implementation_queue"
 		| "session_queue"
+		| "review_run"
+		| "test_mode"
 		| "explicit";
+	initialTodos?: ImplementationTodoInput[];
+	runtimeOptionsPatch?: Record<string, unknown>;
 };
 
 export async function startTaskRun(
@@ -235,12 +240,13 @@ export async function startTaskRun(
 		planModeSettingsSnapshot,
 		llmUsageSettingsSnapshot,
 	};
-	const runtimeOptions = runtimeLaneDefinition.buildRuntimeOptions(
-		runtimeLaneSetupInput,
-	);
-	const initialTodos = runtimeLaneDefinition.buildInitialTodos(
-		runtimeLaneSetupInput,
-	);
+	const runtimeOptions = {
+		...runtimeLaneDefinition.buildRuntimeOptions(runtimeLaneSetupInput),
+		...(options.runtimeOptionsPatch ?? {}),
+	};
+	const initialTodos =
+		options.initialTodos ??
+		runtimeLaneDefinition.buildInitialTodos(runtimeLaneSetupInput);
 	await repo.replaceTaskRunTodosForRun(
 		run.id,
 		executionMode === "planning" || executionMode === "general_answer"
@@ -313,6 +319,9 @@ export async function startTaskRun(
 			diagnostics: runtimeLaneResolution.diagnostics,
 		},
 		effectiveLlmRouting,
+		...(runtimeOptions.reviewRun
+			? { reviewRun: runtimeOptions.reviewRun }
+			: {}),
 		projectMeta,
 		ontologyMcp: {
 			enabled: ontologyMcpEnabled,
@@ -531,12 +540,15 @@ export async function startTaskRun(
 
 	if (runtimeLaneResolution.lane === "codex-sdk") {
 		const runtimeResume =
-			executionMode === "review"
+			executionMode === "review" || executionMode === "test"
 				? {
 						kind: "codex_thread",
 						status: "disabled",
 						executionMode,
-						reason: "review_fresh_context",
+						reason:
+							executionMode === "test"
+								? "test_mode_fresh_context"
+								: "review_fresh_context",
 					}
 				: await loadCodexRuntimeResumeState({
 						taskId,
@@ -560,7 +572,7 @@ export async function startTaskRun(
 				runtimeResume.status === "available"
 					? "Codex runtime resume state loaded."
 					: runtimeResume.status === "disabled"
-						? "Codex runtime resume state disabled for review; runtime will start fresh."
+						? `Codex runtime resume state disabled for ${executionMode}; runtime will start fresh.`
 						: "Codex runtime resume state unavailable; runtime will start fresh.",
 			data: {
 				action: "runtime.resume_state_loaded",

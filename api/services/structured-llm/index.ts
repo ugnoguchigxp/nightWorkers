@@ -41,6 +41,7 @@ export {
 export { callProviderToolTurn } from "./providers";
 export {
 	buildNormalizedSupervisorLlmRequest,
+	buildNormalizedSupervisorLlmRequestCandidates,
 	normalizeProviderId,
 	providerAdapterKey,
 } from "./request";

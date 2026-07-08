@@ -5,7 +5,6 @@ export const LLM_WRITABLE_TODO_TASK_TYPES = [
 	"scaffold",
 	"focused_verification",
 	"verification",
-	"review",
 	"code_edit",
 	"code_change",
 	"test",

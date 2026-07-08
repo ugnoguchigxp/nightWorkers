@@ -11,15 +11,13 @@ import {
 	reviewActionSchema,
 	reviewEvidenceRefSchema,
 	reviewerEvaluationSchema,
-	reviewFinalActionRequestSchema,
 	reviewFindingDispositionRequestSchema,
 	reviewFindingSchema,
 	reviewPromptSuggestionUpdateRequestSchema,
 	reviewPromptSuggestionUseRequestSchema,
 	reviewRecommendationSchema,
 	reviewResultSchema,
-	reviewSectionKindSchema,
-	reviewSectionRunRequestSchema,
+	reviewRunRequestSchema,
 	reviewSessionDetailSchema,
 	startBackgroundProcessRequestSchema,
 	taskEventSchema,
@@ -579,18 +577,17 @@ export const getReviewSessionRoute = createRoute({
 	},
 });
 
-export const runReviewSectionRoute = createRoute({
+export const startReviewRunRoute = createRoute({
 	method: "post",
-	path: "/review-sessions/:id/sections/:section/run",
+	path: "/review-sessions/:id/run",
 	request: {
 		params: z.object({
 			id: z.string().uuid().openapi({ example: "review-session-uuid" }),
-			section: reviewSectionKindSchema,
 		}),
 		body: {
 			content: {
 				"application/json": {
-					schema: reviewSectionRunRequestSchema.optional(),
+					schema: reviewRunRequestSchema.optional(),
 				},
 			},
 		},
@@ -602,7 +599,7 @@ export const runReviewSectionRoute = createRoute({
 					schema: reviewSessionDetailSchema,
 				},
 			},
-			description: "Review section generated",
+			description: "Review Run started",
 		},
 		404: { description: "Review session not found" },
 	},
@@ -714,33 +711,6 @@ export const useReviewPromptSuggestionRoute = createRoute({
 				},
 			},
 			description: "Review prompt suggestion marked used",
-		},
-	},
-});
-
-export const applyReviewFinalActionRoute = createRoute({
-	method: "post",
-	path: "/review-sessions/:id/final-action",
-	request: {
-		params: z.object({
-			id: z.string().uuid().openapi({ example: "review-session-uuid" }),
-		}),
-		body: {
-			content: {
-				"application/json": {
-					schema: reviewFinalActionRequestSchema,
-				},
-			},
-		},
-	},
-	responses: {
-		200: {
-			content: {
-				"application/json": {
-					schema: reviewSessionDetailSchema,
-				},
-			},
-			description: "Review final action applied",
 		},
 	},
 });

@@ -19,6 +19,10 @@ import {
 	listRecentSpecificationsTool,
 	readCurrentSpecificationTool,
 } from "../services/worker-tools/read-current-specification";
+import {
+	completionCheckTool,
+	runCheckTool,
+} from "../services/worker-tools/run-check";
 import { todoListTool } from "../services/worker-tools/todo-list";
 import type { WorkerToolResult } from "../services/worker-tools/types";
 import {
@@ -97,6 +101,90 @@ export function createNightWorkersCodexMcpServer(
 					todos,
 					startFirst,
 					todoListReplaceReason,
+				}),
+			);
+		},
+	);
+
+	server.registerTool(
+		"run_check",
+		{
+			...nightWorkersCodexToolManifest.run_check,
+		},
+		async ({
+			runId,
+			verificationDocumentId,
+			command,
+			cwd,
+			checkKind,
+			conditionIds,
+			timeoutSeconds,
+			displayMode,
+		}) => {
+			if (isToolDisabledForExecutionMode("run_check", context)) {
+				return toolResultToMcp(disabledToolResult("run_check"));
+			}
+			const resolvedRunId = firstNonEmpty(
+				runId,
+				context.runId,
+				process.env.NIGHTWORKERS_RUN_ID,
+			);
+			const resolved = await resolveTaskRepository({
+				taskId: firstNonEmpty(context.taskId, process.env.NIGHTWORKERS_TASK_ID),
+				runId: resolvedRunId,
+			});
+			const { task, repository } = resolved;
+			if (!task || !repository) {
+				return toolResultToMcp({
+					ok: false,
+					toolName: "run_check",
+					startedAt: new Date().toISOString(),
+					finishedAt: new Date().toISOString(),
+					payload: null,
+					error: {
+						code: "TASK_REPOSITORY_NOT_FOUND",
+						message: "Cannot resolve the current NightWorkers task repository.",
+					},
+				});
+			}
+			return toolResultToMcp(
+				await runCheckTool({
+					taskId: task.id,
+					runId: resolvedRunId,
+					verificationDocumentId,
+					command,
+					cwd,
+					checkKind,
+					conditionIds,
+					timeoutSeconds,
+					displayMode,
+					repoRoot: repository.localPath,
+					allowedPaths: repository.safetyPolicy?.allowedPaths,
+					deniedPaths: repository.safetyPolicy?.deniedPaths,
+					blockedCommands: repository.safetyPolicy?.blockedCommands,
+					maxCommandSeconds: repository.safetyPolicy?.maxCommandSeconds,
+				}),
+			);
+		},
+	);
+
+	server.registerTool(
+		"completion_check",
+		{
+			...nightWorkersCodexToolManifest.completion_check,
+		},
+		async ({ taskId, verificationDocumentId }) => {
+			if (isToolDisabledForExecutionMode("completion_check", context)) {
+				return toolResultToMcp(disabledToolResult("completion_check"));
+			}
+			return toolResultToMcp(
+				await completionCheckTool({
+					taskId: firstNonEmpty(
+						taskId,
+						context.taskId,
+						process.env.NIGHTWORKERS_TASK_ID,
+					),
+					verificationDocumentId,
 				}),
 			);
 		},

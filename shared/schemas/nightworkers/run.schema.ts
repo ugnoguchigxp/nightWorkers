@@ -107,6 +107,10 @@ export const gitCloseoutStateSchema = z
 			testCoverageStatus: z
 				.enum(["not_started", "running", "done", "blocked", "needs_human"])
 				.nullable(),
+			reviewRunStatus: z
+				.enum(["not_started", "running", "done", "blocked", "needs_human"])
+				.nullable()
+				.optional(),
 			complete: z.boolean(),
 		}),
 		git: z.object({

@@ -4,6 +4,7 @@ import type { AgentRunContext } from "../types";
 export type NativeApiExecutionMode =
 	| "planning"
 	| "implementation"
+	| "test"
 	| "review"
 	| "general_answer";
 
@@ -19,6 +20,7 @@ export function normalizeNativeApiExecutionMode(
 	if (
 		value === "planning" ||
 		value === "implementation" ||
+		value === "test" ||
 		value === "review" ||
 		value === "general_answer"
 	) {
@@ -45,6 +47,7 @@ export function stateCardRoleForExecutionMode(
 	mode: NativeApiExecutionMode,
 ): NativeApiStateCardRole {
 	if (mode === "planning") return "plan";
+	if (mode === "test") return "implementation";
 	return mode;
 }
 

@@ -320,9 +320,11 @@ function isPatchEnvelopeText(text: string): boolean {
 export function NormalTranscriptItemView({
 	item,
 	onOpenArtifact,
+	onOpenProjectFile,
 }: {
 	item: TranscriptItem;
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
+	onOpenProjectFile?: (path: string) => void;
 }) {
 	if (item.kind === "user_turn") {
 		const timestamp = item.events.at(-1)?.createdAt;
@@ -333,6 +335,7 @@ export function NormalTranscriptItemView({
 			>
 				<ChatMarkdown
 					content={item.text || fallbackEventText(item.events.at(-1))}
+					onOpenProjectFile={onOpenProjectFile}
 				/>
 			</ThreadMessage>
 		);
@@ -352,9 +355,13 @@ export function NormalTranscriptItemView({
 						<MessagePayload
 							message={artifactMessage}
 							onOpenArtifact={onOpenArtifact}
+							onOpenProjectFile={onOpenProjectFile}
 						/>
 					) : visibleText.trim() ? (
-						<ChatMarkdown content={visibleText} />
+						<ChatMarkdown
+							content={visibleText}
+							onOpenProjectFile={onOpenProjectFile}
+						/>
 					) : null}
 					{item.children.map((child, _index) => {
 						const event = transcriptChildEvent(child);
@@ -371,10 +378,24 @@ export function NormalTranscriptItemView({
 	}
 
 	if (item.kind === "activity") {
-		return <NormalVisibleActivityBlock event={item.event} />;
+		const block = <NormalVisibleActivityBlock event={item.event} />;
+		return isVisibleEditDiffActivity(item.event) ? (
+			<ThreadMessage
+				messageRole="assistant"
+				timestamp={formatFinishedTime(item.event.createdAt)}
+			>
+				<div className="space-y-3">{block}</div>
+			</ThreadMessage>
+		) : (
+			block
+		);
 	}
 
 	return null;
+}
+
+function isVisibleEditDiffActivity(event: ActivityEvent) {
+	return buildVisibleEditDiffSummary(event).length > 0;
 }
 
 function NormalVisibleActivityBlock({ event }: { event: ActivityEvent }) {

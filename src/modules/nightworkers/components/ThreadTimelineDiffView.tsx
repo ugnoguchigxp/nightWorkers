@@ -1,13 +1,16 @@
 export function DiffCodeBlock({
 	code,
 	label,
+	className = "",
 }: {
 	code: string;
 	label: string;
+	className?: string;
 }) {
 	const metadata = parseDiffMetadata(code);
+	const lines = buildDiffDisplayLinesWithKeys(metadata.lines);
 	return (
-		<div className="nightworkers-diff-view">
+		<div className={`nightworkers-diff-view ${className}`.trim()}>
 			<div className="nightworkers-diff-header">
 				<span className="nightworkers-diff-file">
 					{metadata.filePath || "diff"}
@@ -15,10 +18,10 @@ export function DiffCodeBlock({
 				<span className="nightworkers-diff-label">{label}</span>
 			</div>
 			<pre className="nightworkers-diff-body">
-				{metadata.lines.map((line, _index) => (
+				{lines.map(({ key, line }) => (
 					<span
 						className={`nightworkers-diff-line ${diffLineClassName(line.text)}`}
-						key={line.text}
+						key={key}
 					>
 						<span className="nightworkers-diff-line-number">
 							{line.lineNumber ?? ""}
@@ -86,6 +89,21 @@ function buildDiffDisplayLines(lines: string[]): DiffDisplayLine[] {
 	}
 
 	return displayLines;
+}
+
+export function buildDiffDisplayLinesWithKeys(
+	lines: DiffDisplayLine[],
+): { key: string; line: DiffDisplayLine }[] {
+	const seen = new Map<string, number>();
+	return lines.map((line) => {
+		const baseKey = `${line.lineNumber ?? "meta"}:${line.text}`;
+		const occurrence = seen.get(baseKey) ?? 0;
+		seen.set(baseKey, occurrence + 1);
+		return {
+			key: `${baseKey}:${occurrence}`,
+			line,
+		};
+	});
 }
 
 function isDiffFileMetadataLine(line: string): boolean {

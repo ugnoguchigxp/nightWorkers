@@ -6,7 +6,6 @@ import {
 	writeTestQualitySettingsFile,
 } from "../../services/settings/test-quality-settings";
 import {
-	applyReviewFinalActionHandler,
 	commitRunGitCloseoutHandler,
 	createReviewerEvaluationHandler,
 	createReviewerReplayEvaluationHandler,
@@ -27,9 +26,10 @@ import {
 	listTaskRunEventsHandler,
 	listTaskRunsHandler,
 	pushRunGitCloseoutHandler,
-	runReviewSectionHandler,
 	startBackgroundProcessHandler,
+	startReviewRunHandler,
 	startTaskRunHandler,
+	startTestModeRunFromArtifactHandler,
 	stopBackgroundProcessHandler,
 	stopTaskRunHandler,
 	updateReviewFindingDispositionHandler,
@@ -59,7 +59,6 @@ import {
 	updateRepositoryRoute,
 } from "./routes/repository-routes";
 import {
-	applyReviewFinalActionRoute,
 	commitRunGitCloseoutRoute,
 	createReviewerEvaluationRoute,
 	createReviewerReplayEvaluationRoute,
@@ -84,8 +83,8 @@ import {
 	listTaskRunEventsRoute,
 	listTaskRunsRoute,
 	pushRunGitCloseoutRoute,
-	runReviewSectionRoute,
 	startBackgroundProcessRoute,
+	startReviewRunRoute,
 	stopBackgroundProcessRoute,
 	stopTaskRunRoute,
 	updateReviewFindingDispositionRoute,
@@ -101,6 +100,7 @@ import {
 	getTaskRoute,
 	listTasksRoute,
 	startTaskRunRoute,
+	startTestModeRunFromArtifactRoute,
 	updateTaskRoute,
 } from "./routes/task-routes";
 import { browseFoldersRoute, createFolderRoute } from "./routes/util-routes";
@@ -391,6 +391,10 @@ const router = createOpenApiRouter()
 		}),
 	)
 	.openapi(startTaskRunRoute, startTaskRunHandler)
+	.openapi(
+		startTestModeRunFromArtifactRoute,
+		startTestModeRunFromArtifactHandler,
+	)
 	.openapi(getTaskRunRoute, getTaskRunHandler)
 	.openapi(getOntologyRunDebugReportRoute, getOntologyRunDebugReportHandler)
 	.openapi(stopTaskRunRoute, stopTaskRunHandler)
@@ -403,7 +407,7 @@ const router = createOpenApiRouter()
 	.openapi(createReviewSessionRoute, createReviewSessionHandler)
 	.openapi(getLatestTaskReviewSessionRoute, getLatestTaskReviewSessionHandler)
 	.openapi(getReviewSessionRoute, getReviewSessionHandler)
-	.openapi(runReviewSectionRoute, runReviewSectionHandler)
+	.openapi(startReviewRunRoute, startReviewRunHandler)
 	.openapi(
 		updateReviewFindingDispositionRoute,
 		updateReviewFindingDispositionHandler,
@@ -417,7 +421,6 @@ const router = createOpenApiRouter()
 		updateReviewPromptSuggestionHandler,
 	)
 	.openapi(useReviewPromptSuggestionRoute, useReviewPromptSuggestionHandler)
-	.openapi(applyReviewFinalActionRoute, applyReviewFinalActionHandler)
 	.openapi(startBackgroundProcessRoute, startBackgroundProcessHandler)
 	.openapi(listBackgroundProcessesRoute, listBackgroundProcessesHandler)
 	.openapi(getBackgroundProcessRoute, getBackgroundProcessHandler)

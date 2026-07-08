@@ -1,18 +1,13 @@
 import { AppError, NotFoundError } from "../../lib/errors";
-import type {
-	ReviewEvidenceRef,
-	ReviewFinding,
-} from "../../services/review-results/types";
+import type { ReviewEvidenceRef } from "../../services/review-results/types";
 import { buildReviewEvidencePackFromRun } from "../../services/review-rubrics/evidence-pack";
 import * as repo from "./nightworkers.repository";
-import {
-	buildRecommendationFromEvidence,
-	sectionFindings,
-} from "./nightworkers.review-mode.evidence";
+import { buildRecommendationFromEvidence } from "./nightworkers.review-mode.evidence";
 import {
 	countFindings,
 	planSections,
 	type ReviewFindingDisposition,
+	type ReviewRunOptions,
 	type ReviewSectionKind,
 	type ReviewSectionProgress,
 	rowArtifact,
@@ -21,16 +16,9 @@ import {
 	rowRecommendation,
 	rowSecurityHandoff,
 	rowSession,
-	SECTION_ORDER,
 } from "./nightworkers.review-mode.model";
 import * as reviewRepo from "./nightworkers.review-mode.repository";
-import { runAgenticTestEvidenceReview } from "./nightworkers.review-mode.test-evidence-agent";
-import type { TestEvidenceReviewResult } from "./nightworkers.review-mode.test-evidence-agent.schema";
-import {
-	type AcceptanceTestCoverageResult,
-	buildTestEvidencePrecheck,
-} from "./nightworkers.review-mode.test-evidence-precheck";
-import { toErrorMessage } from "./run-orchestration/utils";
+import { startReviewRunForSession } from "./nightworkers.review-run.service";
 
 async function buildPackForRun(runId: string) {
 	const run = await repo.getTaskRun(runId);
@@ -201,67 +189,15 @@ export async function autoStartReviewSessionForRun(runId: string) {
 		message: "Review Mode session was automatically started for run closeout.",
 		data: { reviewSessionId: detail.session.id },
 	});
-	await repo.createRunEvent({
-		version: 1,
-		runId,
-		taskId: detail.session.taskId,
-		timestamp: new Date().toISOString(),
-		type: "review.required_section_auto_started",
-		severity: "info",
-		actor: "system",
-		message: "Required test evidence review was automatically started.",
-		data: { reviewSessionId: detail.session.id, section: "test_coverage" },
-	});
-	try {
-		return await runReviewSection(detail.session.id, "test_coverage");
-	} catch (error) {
-		const message = toErrorMessage(error);
-		await reviewRepo.upsertReviewArtifact({
-			reviewSessionId: detail.session.id,
-			runId,
-			taskId: detail.session.taskId,
-			kind: "test_coverage",
-			status: "needs_human",
-			artifactJson: {
-				version: 2,
-				kind: "test_coverage",
-				requirement: "required",
-				summary: "Required test evidence review could not complete.",
-				mode: "precheck_only",
-				precheck: null,
-				agenticReview: null,
-				degradedReason: message,
-				findings: [
-					{
-						severity: "warning",
-						title: "Required test evidence review could not complete",
-						body: message,
-						evidenceRefs: [],
-					},
-				],
-				recommendedActions: [
-					"Review the failure reason and rerun the required test evidence section.",
-				],
-			},
-			sourceEvidenceRefsJson: [],
-		});
-		await repo.createRunEvent({
-			version: 1,
-			runId,
-			taskId: detail.session.taskId,
-			timestamp: new Date().toISOString(),
-			type: "review.required_section_auto_failed",
-			severity: "warning",
-			actor: "system",
-			message: "Required test evidence review could not complete.",
-			data: {
-				reviewSessionId: detail.session.id,
-				section: "test_coverage",
-				error: message,
-			},
-		});
-		return getReviewSessionDetail(detail.session.id);
-	}
+	return detail;
+}
+
+export async function startReviewRun(
+	reviewSessionId: string,
+	options?: Partial<ReviewRunOptions> | null,
+) {
+	await startReviewRunForSession(reviewSessionId, options);
+	return getReviewSessionDetail(reviewSessionId);
 }
 
 export async function getLatestReviewSessionDetailForTask(taskId: string) {
@@ -299,289 +235,6 @@ export async function getReviewSessionDetail(reviewSessionId: string) {
 		promptSuggestions: promptSuggestions.map(rowPromptSuggestion),
 		securityHandoffs: securityHandoffs.map(rowSecurityHandoff),
 	};
-}
-
-export async function runReviewSection(
-	reviewSessionId: string,
-	sectionKind: ReviewSectionKind,
-) {
-	if (!SECTION_ORDER.includes(sectionKind))
-		throw new AppError(400, "INVALID_SECTION", "Invalid review section");
-	const session = await reviewRepo.getReviewSession(reviewSessionId);
-	if (!session) throw new NotFoundError("Review session not found");
-	const { pack } = await buildPackForRun(session.runId);
-	const recommendation = await getOrCreateReviewRecommendation(session.runId);
-	if (!recommendation)
-		throw new NotFoundError("Review recommendation not found");
-	const planned = planSections(recommendation).find(
-		(section) => section.kind === sectionKind,
-	);
-	if (!planned)
-		throw new AppError(400, "INVALID_SECTION", "Invalid review section");
-	if (sectionKind === "prompt_suggestions") {
-		return createReviewPromptSuggestions(reviewSessionId);
-	}
-	if (sectionKind === "test_coverage") {
-		return runTestEvidenceSection({
-			reviewSessionId,
-			session,
-			planned,
-		});
-	}
-	const findings =
-		sectionKind === "findings"
-			? (await reviewRepo.listReviewFindings(reviewSessionId)).map(
-					(finding) => ({
-						severity: finding.severity as ReviewFinding["severity"],
-						title: finding.title,
-						body: finding.body ?? undefined,
-						evidenceRefs: Array.isArray(finding.evidenceRefsJson)
-							? (finding.evidenceRefsJson as ReviewEvidenceRef[])
-							: [],
-					}),
-				)
-			: sectionFindings(sectionKind, pack);
-	if (sectionKind !== "findings") {
-		await reviewRepo.createReviewFindings(
-			findings.map((finding) => ({
-				reviewSessionId,
-				runId: session.runId,
-				taskId: session.taskId,
-				severity: finding.severity,
-				title: finding.title,
-				body: finding.body ?? null,
-				evidenceRefsJson: finding.evidenceRefs ?? [],
-				sourceSection: sectionKind,
-			})),
-		);
-	}
-	const artifact = {
-		version: 1,
-		kind: sectionKind,
-		requirement: planned.requirement,
-		summary:
-			findings.length === 0
-				? "No findings were produced by deterministic review."
-				: `${findings.length} deterministic finding${findings.length === 1 ? "" : "s"} produced.`,
-		evidence: {
-			diff: pack.diff,
-			selectedEvents: pack.selectedEvents,
-		},
-		findings,
-		recommendedActions: findings.map((finding) =>
-			finding.severity === "blocking"
-				? "Resolve, convert to follow-up, or accept risk with note."
-				: "Review and route disposition if needed.",
-		),
-	};
-	await reviewRepo.upsertReviewArtifact({
-		reviewSessionId,
-		runId: session.runId,
-		taskId: session.taskId,
-		kind: sectionKind,
-		status: "done",
-		artifactJson: artifact,
-		sourceEvidenceRefsJson: findings.flatMap(
-			(finding) => finding.evidenceRefs ?? [],
-		),
-	});
-	return getReviewSessionDetail(reviewSessionId);
-}
-
-async function runTestEvidenceSection(input: {
-	reviewSessionId: string;
-	session: NonNullable<Awaited<ReturnType<typeof reviewRepo.getReviewSession>>>;
-	planned: ReturnType<typeof planSections>[number];
-}) {
-	const precheck = await buildTestEvidencePrecheck({
-		taskId: input.session.taskId,
-		repositoryId: input.session.repositoryId,
-	});
-	const planEvidenceRefs = planEvidenceRefsFromPrecheck(precheck);
-	let mode: "precheck_only" | "agentic_review" = "precheck_only";
-	let status: ReviewSectionProgress = "done";
-	let agenticReview: TestEvidenceReviewResult | null = null;
-	let degradedReason: string | undefined;
-	let findings: ReviewFinding[] = [];
-
-	if (!precheck.planFound || precheck.criteria.length === 0) {
-		findings = [
-			{
-				severity: "warning",
-				title: !precheck.planFound
-					? "Test evidence review could not find an implementation plan"
-					: "Test evidence review could not find acceptance criteria",
-				body: !precheck.planFound
-					? "受け入れ条件を抽出する実装計画 artifact が見つからないため、テスト証跡確認は事前確認のみで停止しました。"
-					: "実装計画の受け入れ条件 section に箇条書きの条件がないため、テスト証跡確認は事前確認のみで停止しました。",
-				evidenceRefs: planEvidenceRefs,
-			},
-		];
-		status = "needs_human";
-	} else {
-		const agentic = await runAgenticTestEvidenceReview({
-			taskId: input.session.taskId,
-			repositoryId: input.session.repositoryId,
-			precheck,
-		});
-		if (agentic.ok) {
-			mode = "agentic_review";
-			agenticReview = agentic.result;
-			findings = findingsFromTestEvidenceReview(
-				agentic.result,
-				planEvidenceRefs,
-			);
-		} else {
-			degradedReason = agentic.degradedReason;
-			agenticReview = {
-				version: 1,
-				summary: "Agentic test evidence review could not complete.",
-				criteria: [],
-				commandsRun: agentic.commandsRun,
-			};
-			findings = [
-				{
-					severity: "warning",
-					title: "Agentic test evidence review could not complete",
-					body: `Agentic 確認に失敗しました。precheck 結果のみ表示しています。理由: ${agentic.degradedReason}`,
-					evidenceRefs: planEvidenceRefs,
-				},
-			];
-			status = "needs_human";
-		}
-	}
-
-	const insertedFindings = await reviewRepo.createReviewFindings(
-		findings.map((finding) => ({
-			reviewSessionId: input.reviewSessionId,
-			runId: input.session.runId,
-			taskId: input.session.taskId,
-			severity: finding.severity,
-			title: finding.title,
-			body: finding.body ?? null,
-			evidenceRefsJson: finding.evidenceRefs ?? [],
-			sourceSection: "test_coverage",
-		})),
-	);
-
-	await reviewRepo.upsertReviewArtifact({
-		reviewSessionId: input.reviewSessionId,
-		runId: input.session.runId,
-		taskId: input.session.taskId,
-		kind: "test_coverage",
-		status,
-		artifactJson: {
-			version: 2,
-			kind: "test_coverage",
-			requirement: input.planned.requirement,
-			summary: testEvidenceArtifactSummary(precheck, agenticReview, mode),
-			mode,
-			precheck,
-			agenticReview,
-			degradedReason,
-			findings,
-			recommendedActions: findings.map((finding) =>
-				finding.title === "Agentic test evidence review could not complete"
-					? "Review the precheck result manually or rerun this section after provider/tool support is available."
-					: "Review the generated improvement prompt and decide whether to continue this session.",
-			),
-		},
-		sourceEvidenceRefsJson: planEvidenceRefs,
-	});
-
-	for (const finding of insertedFindings.filter(
-		(item) =>
-			["warning", "blocking"].includes(item.severity) &&
-			isTestEvidenceFinding(item.title),
-	)) {
-		if (
-			!Array.isArray(finding.evidenceRefsJson) ||
-			finding.evidenceRefsJson.length === 0
-		)
-			continue;
-		const promptSuggestion = await ensureReviewPromptSuggestion(finding);
-		await reviewRepo.updateReviewFindingDisposition(finding.id, {
-			disposition: "prompt_suggestion",
-			dispositionStatus: "converted",
-			createdGoalId: promptSuggestion.id,
-		});
-	}
-	await refreshPromptSuggestionsArtifact(input.reviewSessionId);
-	return getReviewSessionDetail(input.reviewSessionId);
-}
-
-function planEvidenceRefsFromPrecheck(
-	precheck: AcceptanceTestCoverageResult,
-): ReviewEvidenceRef[] {
-	return precheck.planMessageId
-		? [
-				{
-					kind: "artifact" as const,
-					artifactId: precheck.planMessageId,
-					artifactKind: "feature_plan",
-				},
-			]
-		: [];
-}
-
-function findingsFromTestEvidenceReview(
-	result: TestEvidenceReviewResult,
-	evidenceRefs: ReviewEvidenceRef[],
-): ReviewFinding[] {
-	return result.criteria
-		.filter(
-			(criterion) =>
-				criterion.status === "not_found" || criterion.status === "unclear",
-		)
-		.map((criterion) => ({
-			severity: "warning" as const,
-			title:
-				criterion.status === "not_found"
-					? `Test evidence not confirmed for acceptance criterion: ${criterion.criterion}`
-					: `Test evidence review is unclear for acceptance criterion: ${criterion.criterion}`,
-			body: [
-				`受け入れ条件: ${criterion.criterion}`,
-				`状態: ${criterion.status}`,
-				`信頼度: ${criterion.confidence}`,
-				"確認した範囲:",
-				...criterion.evidence.map((evidence) => {
-					const source = [
-						evidence.filePath ? `file=${evidence.filePath}` : null,
-						evidence.testName ? `test=${evidence.testName}` : null,
-						evidence.command ? `command=${evidence.command}` : null,
-					]
-						.filter(Boolean)
-						.join(" ");
-					return `- ${evidence.kind}${source ? ` (${source})` : ""}: ${evidence.note}`;
-				}),
-				criterion.improvementPrompt
-					? `改善依頼 Prompt: ${criterion.improvementPrompt}`
-					: "",
-			]
-				.filter(Boolean)
-				.join("\n"),
-			evidenceRefs,
-		}));
-}
-
-function testEvidenceArtifactSummary(
-	precheck: AcceptanceTestCoverageResult,
-	agenticReview: TestEvidenceReviewResult | null,
-	mode: "precheck_only" | "agentic_review",
-) {
-	if (mode === "precheck_only" || !agenticReview) {
-		return `${precheck.matches.filter((match) => match.matched).length}/${precheck.criteria.length} acceptance criteria have similar test names in precheck.`;
-	}
-	const confirmed = agenticReview.criteria.filter(
-		(item) => item.status === "confirmed",
-	).length;
-	const notFound = agenticReview.criteria.filter(
-		(item) => item.status === "not_found",
-	).length;
-	const unclear = agenticReview.criteria.filter(
-		(item) => item.status === "unclear",
-	).length;
-	return `${confirmed} confirmed, ${notFound} not confirmed, ${unclear} unclear by agentic test evidence review.`;
 }
 
 export async function setReviewFindingDisposition(
@@ -986,48 +639,4 @@ async function refreshPromptSuggestionsArtifact(reviewSessionId: string) {
 				: [],
 		),
 	});
-}
-
-export async function applyReviewFinalAction(
-	reviewSessionId: string,
-	input: {
-		action: "approve" | "request_changes" | "needs_human" | "exit_review";
-		note?: string;
-	},
-) {
-	const detail = await getReviewSessionDetail(reviewSessionId);
-	const recommendation = detail.recommendation;
-	if (
-		input.action === "approve" &&
-		!detail.statusArtifact.finalActionGate.canApprove
-	) {
-		throw new AppError(
-			400,
-			"REVIEW_APPROVE_BLOCKED",
-			detail.statusArtifact.finalActionGate.blockingReason ||
-				"Review cannot be approved",
-		);
-	}
-	if (input.action === "exit_review" && recommendation.level === "required") {
-		throw new AppError(
-			400,
-			"REQUIRED_REVIEW_CANNOT_EXIT",
-			"Required review cannot be skipped",
-		);
-	}
-	const status =
-		input.action === "approve"
-			? "approved"
-			: input.action === "request_changes"
-				? "changes_requested"
-				: input.action === "needs_human"
-					? "needs_human"
-					: "cancelled";
-	await reviewRepo.updateReviewSession(reviewSessionId, {
-		status,
-		completedAt: new Date(),
-		finalAction: input.action,
-		finalNote: input.note?.trim() || null,
-	});
-	return getReviewSessionDetail(reviewSessionId);
 }

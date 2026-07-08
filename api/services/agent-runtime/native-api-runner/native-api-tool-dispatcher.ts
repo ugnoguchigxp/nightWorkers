@@ -149,6 +149,7 @@ export async function dispatchNativeApiToolCall(input: {
 		args: input.toolCall.arguments,
 		repoRoot: input.context.repoRoot,
 		taskId: input.context.taskId,
+		runId: input.context.runId,
 		safetyPolicy: input.context.safetyPolicy,
 		readFiles: input.state.readFiles,
 	});

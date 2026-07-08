@@ -1,5 +1,5 @@
 import { ChevronRight, File, Folder } from "lucide-react";
-import { memo } from "react";
+import { isValidElement, memo, type ReactNode, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
@@ -7,18 +7,15 @@ import remarkGfm from "remark-gfm";
 import { CodeBlock } from "@/components/ui/CodeBlock";
 import type { ProjectFileContent, ProjectFileEntry } from "../types";
 import { getChangedFiles } from "../utils/diff";
+import { normalizeProjectFileLinkTarget } from "../utils/projectFileLinks";
+import { DiffCodeBlock } from "./ThreadTimelineDiffView";
 
 const artifactCodeBlockThemes = {
 	light: "github-dark-default",
 	dark: "github-dark-default",
 } as const;
 const markdownRemarkPlugins = [remarkGfm];
-const markdownComponents: Components = {
-	a: ({ children, ...props }) => (
-		<a className="text-[#89b4fa] underline underline-offset-2" {...props}>
-			{children}
-		</a>
-	),
+const baseMarkdownComponents: Components = {
 	blockquote: ({ children }) => (
 		<blockquote className="border-[#45475a] border-l-2 pl-4 text-[#bac2de]">
 			{children}
@@ -75,10 +72,54 @@ const markdownComponents: Components = {
 		<ul className="my-3 list-disc space-y-1 pl-6">{children}</ul>
 	),
 };
+
+function markdownChildrenText(children: ReactNode): string {
+	if (typeof children === "string" || typeof children === "number")
+		return String(children);
+	if (Array.isArray(children))
+		return children.map(markdownChildrenText).join("");
+	if (isValidElement<{ children?: ReactNode }>(children))
+		return markdownChildrenText(children.props.children);
+	return "";
+}
+
+function buildMarkdownComponents(
+	onOpenProjectFile?: (path: string) => void,
+): Components {
+	return {
+		...baseMarkdownComponents,
+		a: ({ children, href, ...props }) => {
+			const projectFilePath =
+				normalizeProjectFileLinkTarget(href) ||
+				normalizeProjectFileLinkTarget(markdownChildrenText(children));
+			return (
+				<a
+					{...props}
+					className="text-[#89b4fa] underline underline-offset-2"
+					href={href}
+					data-project-file-link={projectFilePath || undefined}
+					title={projectFilePath ? "ソースコードを開く" : props.title}
+					onClick={
+						projectFilePath && onOpenProjectFile
+							? (event) => {
+									event.preventDefault();
+									onOpenProjectFile(projectFilePath);
+								}
+							: props.onClick
+					}
+				>
+					{children}
+				</a>
+			);
+		},
+	};
+}
 export const FileViewer = memo(function FileViewer({
 	file,
+	onOpenProjectFile,
 }: {
 	file: ProjectFileContent;
+	onOpenProjectFile?: (path: string) => void;
 }) {
 	const { t } = useTranslation();
 	const isMarkdown = /\.(md|mdx|markdown)$/i.test(file.path);
@@ -90,7 +131,10 @@ export const FileViewer = memo(function FileViewer({
 				</div>
 			) : null}
 			{isMarkdown ? (
-				<MarkdownViewer content={file.content || ""} />
+				<MarkdownViewer
+					content={file.content || ""}
+					onOpenProjectFile={onOpenProjectFile}
+				/>
 			) : (
 				<CodeBlock
 					className="dark nightworkers-artifact-code min-h-0 flex-1 [&_.line]:whitespace-pre-wrap [&_code]:break-words [&_code]:whitespace-pre-wrap [&_pre]:overflow-x-hidden"
@@ -112,10 +156,16 @@ export const FileViewer = memo(function FileViewer({
 
 export const MarkdownViewer = memo(function MarkdownViewer({
 	content,
+	onOpenProjectFile,
 }: {
 	content: string;
+	onOpenProjectFile?: (path: string) => void;
 }) {
 	const { t } = useTranslation();
+	const markdownComponents = useMemo(
+		() => buildMarkdownComponents(onOpenProjectFile),
+		[onOpenProjectFile],
+	);
 
 	return (
 		<div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-[#1e1e2e] px-8 py-6 text-[#cdd6f4]">
@@ -129,7 +179,13 @@ export const MarkdownViewer = memo(function MarkdownViewer({
 	);
 });
 
-export function DiffViewer({ diff }: { diff: string }) {
+export function DiffViewer({
+	diff,
+	onOpenProjectFile,
+}: {
+	diff: string;
+	onOpenProjectFile?: (path: string) => void;
+}) {
 	const { t } = useTranslation();
 	const files = getChangedFiles(diff);
 	return (
@@ -145,9 +201,16 @@ export function DiffViewer({ diff }: { diff: string }) {
 								key={file.path}
 								className="flex items-center justify-between gap-3 rounded border border-slate-800 bg-slate-900/35 px-2 py-1 text-xs"
 							>
-								<span className="min-w-0 truncate text-slate-200">
+								<button
+									type="button"
+									className="min-w-0 flex-1 truncate text-left text-slate-200 underline-offset-2 hover:text-cyan-200 hover:underline disabled:cursor-default disabled:text-slate-200 disabled:no-underline"
+									disabled={!onOpenProjectFile}
+									data-project-file-link={file.path}
+									onClick={() => onOpenProjectFile?.(file.path)}
+									title={file.path}
+								>
 									{file.path}
-								</span>
+								</button>
 								<span className="shrink-0 text-slate-400">
 									<span className="text-emerald-300">+{file.added}</span>{" "}
 									<span className="text-rose-300">-{file.deleted}</span>
@@ -161,9 +224,17 @@ export function DiffViewer({ diff }: { diff: string }) {
 					</p>
 				)}
 			</div>
-			<pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950/60 p-3 font-mono text-xs leading-5 text-slate-200">
-				{diff || t("artifact.noDiff")}
-			</pre>
+			{diff ? (
+				<DiffCodeBlock
+					className="nightworkers-artifact-diff-block"
+					code={diff}
+					label={t("artifact.diff")}
+				/>
+			) : (
+				<div className="rounded border border-slate-800 bg-slate-950/60 p-3 font-mono text-xs leading-5 text-slate-500">
+					{t("artifact.noDiff")}
+				</div>
+			)}
 		</div>
 	);
 }

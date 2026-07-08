@@ -84,6 +84,10 @@ const LEGACY_MAPPING: Record<RunEventType, LegacyMapping> = {
 		eventType: "review_recommendation",
 		type: "info",
 	},
+	"review.run_started": {
+		eventType: "review_evaluation",
+		type: "info",
+	},
 	"review.required_section_auto_started": {
 		eventType: "review_evaluation",
 		type: "info",

@@ -314,7 +314,7 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(prompt).toContain("ユーザー依頼にない独立検証 Todo を追加しない");
 		expect(prompt).toContain("詳細な implementation-plan artifact を作らない");
 		expect(prompt).toContain(
-			"Todo tracking、LLM コードレビュー、quality_gate_verify、closeout は省略しない",
+			"Todo tracking、quality_gate_verify、closeout は省略しない",
 		);
 		expect(prompt).toContain("DB migration を実行する");
 		expect(prompt).toContain("read-only focused test / smoke");
@@ -710,9 +710,7 @@ describe("CodexAgentRuntime config and prompt", () => {
 		);
 		expect(prompt).not.toContain("Minimal implementation behavior:");
 		expect(prompt).not.toContain("nightworkers.todo_list");
-		expect(prompt).not.toContain(
-			"LLM コードレビュー、品質ゲート verify コマンド、closeout",
-		);
+		expect(prompt).not.toContain("quality_gate_verify、closeout は省略しない");
 		expect(prompt).not.toContain(
 			"Execution order: specification -> Todo execution",
 		);

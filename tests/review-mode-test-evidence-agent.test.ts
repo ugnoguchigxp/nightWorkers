@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
 import { runAgenticTestEvidenceReview } from "../api/modules/nightworkers/nightworkers.review-mode.test-evidence-agent";
@@ -11,6 +11,18 @@ import type { ProviderToolTurnResult } from "../api/services/structured-llm";
 
 beforeAll(async () => {
 	await ensureNightWorkersSchema();
+});
+
+const originalLlmSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+const originalActiveLlmProvider = process.env.ACTIVE_LLM_PROVIDER;
+
+beforeEach(async () => {
+	await writeLlmSettings({ ACTIVE_LLM_PROVIDER: "openai" });
+});
+
+afterEach(() => {
+	restoreEnv("NIGHTWORKERS_LLM_SETTINGS_PATH", originalLlmSettingsPath);
+	restoreEnv("ACTIVE_LLM_PROVIDER", originalActiveLlmProvider);
 });
 
 describe("runAgenticTestEvidenceReview", () => {
@@ -32,6 +44,122 @@ describe("runAgenticTestEvidenceReview", () => {
 			ok: false,
 			degradedReason:
 				"Provider does not support native tool turn runtime yet: bedrock",
+		});
+	});
+
+	it("uses a native-tool fallback route when review primary is codex", async () => {
+		const { task, repository } = await createRepoFixture();
+		await writeLlmSettings({
+			ACTIVE_LLM_PROVIDER: "codex",
+			providerEndpoints: [
+				{
+					id: "codex-review",
+					name: "Codex Review",
+					kind: "codex",
+					enabled: true,
+					models: ["gpt-5.4-mini"],
+				},
+				{
+					id: "azure-review",
+					name: "Azure Review",
+					kind: "azure",
+					enabled: true,
+					apiKey: "test-azure-key",
+					endpoint: "https://example.openai.azure.com/",
+					apiVersion: "2025-04-01-preview",
+					models: ["gpt-5-4-mini"],
+				},
+			],
+			roleRoutes: [
+				{
+					role: "review",
+					primary: {
+						providerEndpointId: "codex-review",
+						model: "gpt-5.4-mini",
+					},
+					fallbacks: [
+						{
+							providerEndpointId: "azure-review",
+							model: "gpt-5-4-mini",
+						},
+					],
+				},
+			],
+		});
+
+		const result = await runAgenticTestEvidenceReview({
+			taskId: task.id,
+			repositoryId: repository.id,
+			precheck: precheckFixture(task.id),
+			providerTurn: async (input) => {
+				expect(input.provider).toBe("azure");
+				expect(input.options.normalizedRequest).toMatchObject({
+					providerId: "azure-openai",
+					providerEndpointId: "azure-review",
+					routeSource: "fallback",
+				});
+				return supported({
+					content: JSON.stringify(confirmedResult()),
+					toolCalls: [],
+				});
+			},
+		});
+
+		expect(result.ok).toBe(true);
+		expect(result.ok ? result.result.criteria[0] : null).toMatchObject({
+			status: "confirmed",
+			confidence: "high",
+		});
+	});
+
+	it("degrades before provider execution when only codex routes are available", async () => {
+		const { task, repository } = await createRepoFixture();
+		await writeLlmSettings({
+			ACTIVE_LLM_PROVIDER: "codex",
+			providerEndpoints: [
+				{
+					id: "codex-review",
+					name: "Codex Review",
+					kind: "codex",
+					enabled: true,
+					models: ["gpt-5.4-mini"],
+				},
+			],
+			roleRoutes: [
+				{
+					role: "review",
+					primary: {
+						providerEndpointId: "codex-review",
+						model: "gpt-5.4-mini",
+					},
+					fallbacks: [],
+				},
+			],
+		});
+
+		const result = await runAgenticTestEvidenceReview({
+			taskId: task.id,
+			repositoryId: repository.id,
+			precheck: precheckFixture(task.id),
+			providerTurn: async () => {
+				throw new Error("providerTurn should not be called");
+			},
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			degradedReason: expect.stringContaining(
+				"No provider-native tool turn route is available",
+			),
+			providerDebug: {
+				supported: false,
+				candidateProviders: [
+					{
+						providerId: "codex",
+						providerEndpointId: "codex-review",
+					},
+				],
+			},
 		});
 	});
 
@@ -272,6 +400,47 @@ function precheckFixture(taskId: string): AcceptanceTestCoverageResult {
 			},
 		],
 	};
+}
+
+function confirmedResult() {
+	return {
+		version: 1,
+		summary: "Found focused test evidence.",
+		criteria: [
+			{
+				criterion: "ルート A が保存される",
+				status: "confirmed",
+				confidence: "high",
+				evidence: [
+					{
+						kind: "test_name",
+						filePath: "tests/routes.test.ts",
+						testName: "ルート A が保存される",
+						note: "Matched by test name.",
+					},
+				],
+			},
+		],
+		commandsRun: [],
+	};
+}
+
+async function writeLlmSettings(settings: Record<string, unknown>) {
+	const settingsDir = await fs.mkdtemp(
+		path.join(os.tmpdir(), "nightworkers-llm-settings-"),
+	);
+	const settingsPath = path.join(settingsDir, "llm-settings.json");
+	await fs.writeFile(settingsPath, JSON.stringify(settings), "utf-8");
+	process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = settingsPath;
+	delete process.env.ACTIVE_LLM_PROVIDER;
+}
+
+function restoreEnv(key: string, value: string | undefined) {
+	if (value === undefined) {
+		delete process.env[key];
+		return;
+	}
+	process.env[key] = value;
 }
 
 function supported(input: {

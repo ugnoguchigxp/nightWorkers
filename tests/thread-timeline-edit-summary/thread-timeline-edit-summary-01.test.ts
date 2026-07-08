@@ -7,6 +7,7 @@ import {
 	getActivityCode,
 	parseDiffMetadata,
 } from "../../src/modules/nightworkers/components/ThreadTimeline";
+import { buildDiffDisplayLinesWithKeys } from "../../src/modules/nightworkers/components/ThreadTimelineDiffView";
 
 describe("ThreadTimeline edit summaries", () => {
 	it("recovers Blueprint artifact messages from activity transcript metadata", () => {
@@ -453,6 +454,27 @@ describe("ThreadTimeline edit summaries", () => {
 			{ text: "+second", lineNumber: 2 },
 			{ text: "+third", lineNumber: 3 },
 		]);
+	});
+
+	it("keeps display keys unique for repeated diff lines", () => {
+		const metadata = parseDiffMetadata(
+			[
+				"--- a/src/example.tsx",
+				"+++ b/src/example.tsx",
+				"@@ -1,3 +1,5 @@",
+				"+\t\t\t</section>",
+				"+\t\t\t</section>",
+			].join("\n"),
+		);
+
+		const keys = buildDiffDisplayLinesWithKeys(metadata.lines).map(
+			(line) => line.key,
+		);
+
+		expect(new Set(keys).size).toBe(keys.length);
+		expect(
+			keys.filter((key) => key.includes("+\t\t\t</section>")),
+		).toHaveLength(2);
 	});
 
 	it("uses new-file line numbers for unified diff context and additions", () => {

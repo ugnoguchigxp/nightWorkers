@@ -92,6 +92,9 @@ function buildExecutionContract(
 	if (executionMode === "planning") {
 		return buildPlanningContract(context, nightWorkersToolList);
 	}
+	if (executionMode === "test") {
+		return buildTestModeContract(context, nightWorkersToolList);
+	}
 	const planModeContract =
 		"Plan mode: disabled. ユーザーはこの run で Plan Mode を明示していない。計画だけの回答で止まらず、implementation-plan artifact を主成果物として作らない。";
 	const ontologyProtocol = buildOntologyProtocolContract(context);
@@ -111,7 +114,8 @@ function buildExecutionContract(
 		"",
 		...(ontologyProtocol ? [ontologyProtocol, ""] : []),
 		"実装時の最小実行方針:",
-		"- 明示的な計画・仕様化依頼でない限り、対象変更と必要な局所確認を同じ実作業 Todo の中で扱う。小変更で詳細な implementation-plan artifact を作らない。Todo tracking、LLM コードレビュー、quality_gate_verify、closeout は省略しない。",
+		"- 明示的な計画・仕様化依頼でない限り、対象変更と必要な局所確認を同じ実作業 Todo の中で扱う。小変更で詳細な implementation-plan artifact を作らない。Todo tracking、quality_gate_verify、closeout は省略しない。",
+		"- テスト実装は原則 Test Mode の担当です。Implementation Mode では production change と必要最小限の局所確認に集中してください。既存テストの軽微な修正や失敗原因切り分けを除き、新規 test file / broad test coverage の追加を主成果物にしないでください。",
 		"- 仕様が正本の場合、または planning / specification / design-doc / requirement-check / 既存仕様前提の実装では、最初に nightworkers.read_current_specification を呼ぶ。設計契約が実装に影響する場合は includeDesignContext=true。必要な仕様が見つからなければ nightworkers.list_recent_specifications から taskId を選んで読む。仕様と assembled design context を計画・実装・検証の根拠にする。",
 		"- 実行順は specification -> Todo execution -> verification -> closeout。closeout は実装と検証が終わり、実装 Todo に pending / running がない場合だけ開始する。NightWorkers の「完了報告」は TodoList 末尾の「完了報告を行う」gate の最終 assistant report だけを指し、Todo 作成結果、計画共有、途中経過、次着手メッセージは含めない。",
 		"- Todo 操作は nightworkers.todo_list に統一する。TodoList pane がユーザー向け進捗の正本で、Timeline cards は Todo 進捗や内部警告の機構ではない。SystemContext / Todo snapshot の initial_instructions / context_compile / completion_report は読み取り用の固定 gate であり、replace で再定義する実作業 Todo ではない。",
@@ -120,10 +124,12 @@ function buildExecutionContract(
 		"- operation=done は具体的 evidence がある current Todo にだけ使い、次の pending Todo を自動 start する。承認・入力待ちは block、実装・検証の具体的失敗は fail。fail / block / skipped は終端状態なので再 start しない。前の Todo が pending / running のまま後続 Todo を始めない。検証不能または失敗時は検証 Todo を先に fail / block する。",
 		"- 最終 assistant report 前に open Todo を確認し、未完了 Todo は done / block / fail に整理する。未確認 mutation や未実施 verification を done にしない。Todo 追跡 MCP が失敗しても次の実装行動が明確なら実装は続ける。追跡失敗は完了ではない。実装・scaffold・検証 Todo が running なら plan-only answer や next-steps summary で止まらず、作業継続または current Todo の block / fail を行う。",
 		"- quality_gate_verify Todo が current になる前は、修正途中の最小局所確認だけ行う。targeted E2E は current specification / Questionnaire Decisions が E2E 必須または主軸と明示した場合だけ使う。Questionnaire が unit 主軸なら E2E Todo / E2E command を追加・実行しない。リポジトリ全体の広域 verify は quality_gate_verify Todo が current の時だけ実行し、成功後にファイル変更がなければ再実行しない。",
-		"- package.json に verify script があれば、完了報告前の代表検証は verify command を優先する。verify が format / typecheck / lint / test を含む場合、個別コマンドを重複実行しない。個別実行は修正途中の切り分け、または verify がない・実行不能な場合の fallback に限る。verify 未実行なら理由と代替検証を final report に書く。CLI checks は Codex native command_execution events なので、重要な command、exit code、stdout、stderr を final report に残す。",
-		"- DB schema / migration / 永続化テーブル変更では、TodoList に固定 gate「DB migration を実行する」が追加される。この 1 Todo の中で migration ファイル作成、実作業対象 DB への migration command 実行、既存 migration を使う read-only focused test / smoke 実装、その test / API / schema 確認の実行まで完了してから done にする。",
-		"- migration ファイル、DB schema、DB bootstrap / seed / persistence table 定義を作成・更新する必要が分かった時点で、編集前または直後に nightworkers.todo_list operation=replace を使い、todoListReplaceReason=newly_required_work または scope_changed として taskType=data_migration または procedureId=data_migration.apply_migration の Todo を含める。migration 作成だけ、隔離 DB の smoke だけ、通常 implementation Todo だけで DB 変更を閉じない。",
-		"- DB migration Todo の done には、実作業対象 DB の明示、migration command の exit code、対象 DB での schema/table 存在確認、関連 API または focused test の成功が必要。対象 DB が不明、実 DB 未適用、または API が no such table 等で失敗する場合は done にせず block / fail にする。",
+		"- lint / format:check / typecheck / test / coverage / build / verify / completion_check は NightWorkers の run_check / run_verification / completion_check が正式 evidence 経路です。native command_execution で途中確認しても、closeout 前には managed check を実行してください。",
+		"- package.json に verify script があれば、完了報告前の代表検証は verify command を優先する。verify が format / typecheck / lint / test を含む場合、個別コマンドを重複実行しない。個別実行は修正途中の切り分け、または verify がない・実行不能な場合の fallback に限る。verify 未実行なら理由と代替検証を final report に書く。",
+		"- 同一 Todo 内の関連変更は、読み取りと方針整理後にまとめて編集する。1 エラー / 1 ファイルごとの逐次 file_change ループを避ける。",
+		"- verify 失敗時はエラー全体を分類し、同じ原因・同じ層をまとめて修正してから再実行する。",
+		"- DB schema 変更が必要または発生した時点で、nightworkers.todo_list operation=replace を使い、taskType=data_migration または procedureId=data_migration.apply_migration の Todo を含める。",
+		"- DB migration Todo は、migration 作成、実作業対象 DB への適用、schema/table 確認、関連 API または focused test 成功まで done にしない。",
 		"- ファイルを編集する前に、対象ファイルまたは直接関係する既存ファイルを読む。新規ファイルでは配置先 route / registry / sibling component / 既存 style / test pattern を先に読む。rg --files や ls は探索であり編集対象を読んだ evidence ではない。rg -n、sed、cat、nl、head/tail、git diff -- path など対象内容に触れる確認を使う。blind edit を避け、必要範囲だけ読む。",
 		"- 作成または大幅編集後は、検証や closeout の前に関係箇所を読み返す。新規ファイルは作成ファイルまたは path-scoped diff、既存ファイルは変更箇所または git diff -- path を確認する。",
 		"- Project import は nightworkers.import_project が単一入口。新規 scaffold は source=starter と stack/variant、任意 Git は source=git と repoUrl。未指定の空または空に近い Web/API app は、ユーザーが別 stack / blank / DB / RAG / SSR / SSG variant を明示しない限り source=starter, stack=hono、既定 SQLite variant を使う。DB 指定は postgres / pgvector / turso / cloudflare 等、RAG や embeddings-backed search は variant=rag、DB/RAG variant なしの SSR / SSG 指定は対応 overlay。DB/RAG variant と overlay は同時指定しない。",
@@ -136,10 +142,37 @@ function buildExecutionContract(
 	return contract;
 }
 
+function buildTestModeContract(
+	context: AgentRunContext,
+	nightWorkersToolList: string,
+) {
+	return [
+		"[NightWorkers Runtime Contract]",
+		`taskId: ${context.taskId}`,
+		`runId: ${context.runId}`,
+		`repoRoot: ${context.repoRoot}`,
+		"executionMode: test",
+		"Plan mode: disabled. この run は Test Mode です。Implementation run の thread/history を前提にせず、仕様書の completion conditions と verification JSON を source of truth にしてください。",
+		"",
+		"NightWorkers MCP:",
+		"- MCP server name: nightworkers",
+		`- Available Test Mode tools in this lane: ${nightWorkersToolList}.`,
+		"- context-still.initial_instructions は、この task で未実行の場合だけ作業前に一度実行して従う。チャット入力ごとに再実行しない。",
+		"",
+		"Test Mode behavior:",
+		"- 最初に nightworkers.read_current_specification view=verification を読み、verification JSON / Verification Checklist の完了条件を検証観点の正本にする。",
+		"- テストは完了条件観点を中心に追加・修正し、production code の変更は明確な defect を証明できる場合の最小修正に限る。",
+		"- lint / format:check / typecheck / test / coverage / build / verify は NightWorkers の run_check / run_verification で実行し、raw output artifact と managed evidence を残す。",
+		"- closeout 前に nightworkers.completion_check を実行する。failed / unknown required conditions が残る場合は、対象テストまたは明確な defect を修正して再度 run_check / completion_check を実行する。",
+		"- Verification Checklist の状態は TodoList ではなく backend の deterministic evidence 更新に任せる。Todo は Test Mode の作業進行だけに使う。",
+	].join("\n");
+}
+
 function buildReviewContract(
 	context: AgentRunContext,
 	nightWorkersToolList: string,
 ) {
+	const options = readReviewRunOptions(context);
 	return [
 		"[NightWorkers Runtime Contract]",
 		`taskId: ${context.taskId}`,
@@ -156,9 +189,34 @@ function buildReviewContract(
 		"Review behavior:",
 		"- StateCard continuation、implementation handoff、実装中の会話履歴を前提にしない。",
 		"- 変更済み repository state、git diff/status、仕様、テスト/verify evidence、run events から判断する。",
-		"- 実装編集、Todo 実行、Implementation Queue 投入、import_project、Plan Mode artifact 更新を開始しない。",
+		options.applyFixes
+			? "- applyFixes=true の Review Run では、根拠ある accepted findings だけを最小差分で修正してよい。"
+			: "- applyFixes=false の Review Run では、実装編集を開始しない。",
+		options.commitChanges
+			? "- commitChanges=true の Review Run では、verify 成功後に対象差分だけ commit してよい。"
+			: "- commitChanges=false の Review Run では、commit しない。",
+		"- Implementation Queue 投入、import_project、Plan Mode artifact 更新を開始しない。",
 		"- 指摘は重大度順に、具体的な file/line と再現・検証根拠を添える。問題がなければその旨と残リスクだけを短く返す。",
 	].join("\n");
+}
+
+function readReviewRunOptions(context: AgentRunContext) {
+	const reviewRun =
+		context.runtimeOptions?.reviewRun &&
+		typeof context.runtimeOptions.reviewRun === "object" &&
+		!Array.isArray(context.runtimeOptions.reviewRun)
+			? (context.runtimeOptions.reviewRun as Record<string, unknown>)
+			: {};
+	const options =
+		reviewRun.options &&
+		typeof reviewRun.options === "object" &&
+		!Array.isArray(reviewRun.options)
+			? (reviewRun.options as Record<string, unknown>)
+			: {};
+	return {
+		applyFixes: options.applyFixes === true,
+		commitChanges: options.commitChanges === true,
+	};
 }
 
 function buildOntologyProtocolContract(context: AgentRunContext) {
@@ -207,6 +265,7 @@ function readCodexRuntimeExecutionMode(context: AgentRunContext) {
 	if (
 		value === "planning" ||
 		value === "implementation" ||
+		value === "test" ||
 		value === "review" ||
 		value === "general_answer"
 	) {
@@ -216,6 +275,7 @@ function readCodexRuntimeExecutionMode(context: AgentRunContext) {
 	if (
 		snapshotValue === "planning" ||
 		snapshotValue === "implementation" ||
+		snapshotValue === "test" ||
 		snapshotValue === "review" ||
 		snapshotValue === "general_answer"
 	) {

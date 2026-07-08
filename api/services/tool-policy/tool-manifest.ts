@@ -110,6 +110,14 @@ export const TOOL_MANIFEST: Record<WorkerToolName, ToolManifestEntry> = {
 		commandArg: "command",
 		cwdArg: "cwd",
 	},
+	run_check: {
+		name: "run_check",
+		mutatesWorkspace: false,
+		requiresReadBeforeEdit: false,
+		pathArgs: [],
+		commandArg: "command",
+		cwdArg: "cwd",
+	},
 	run_verification: {
 		name: "run_verification",
 		mutatesWorkspace: false,
@@ -117,6 +125,12 @@ export const TOOL_MANIFEST: Record<WorkerToolName, ToolManifestEntry> = {
 		pathArgs: [],
 		commandArg: "command",
 		cwdArg: "cwd",
+	},
+	completion_check: {
+		name: "completion_check",
+		mutatesWorkspace: false,
+		requiresReadBeforeEdit: false,
+		pathArgs: [],
 	},
 	mcp_call_tool: {
 		name: "mcp_call_tool",

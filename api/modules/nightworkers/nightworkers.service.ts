@@ -16,6 +16,7 @@ import {
 	shouldContinueSessionQueue,
 	startTaskRun,
 } from "./nightworkers.run-orchestration.service";
+import { getVerificationDocument } from "./nightworkers.verification.repository";
 
 configureQueueDrainRunner(runImplementationQueue);
 
@@ -87,6 +88,77 @@ export async function startWorkbenchTaskRun(taskId: string) {
 	return startTaskRun(taskId, {
 		executionMode: "implementation",
 		executionModeSource: "workbench_run",
+	});
+}
+
+export async function startTestModeRunFromArtifact(input: {
+	projectId: string;
+	taskId: string;
+	specArtifactId: string;
+	verificationDocumentId: string;
+	mode: "test";
+	rerun?: boolean;
+}) {
+	const task = await repo.getTask(input.taskId);
+	if (!task) throw new NotFoundError("Task not found");
+	if (task.repositoryId !== input.projectId) {
+		throw new NotFoundError("Project not found for task");
+	}
+	const verificationDocument = await getVerificationDocument(
+		input.verificationDocumentId,
+	);
+	if (!verificationDocument || verificationDocument.taskId !== input.taskId) {
+		throw new NotFoundError("Verification document not found");
+	}
+	if (!input.rerun) {
+		const activeRuns = await repo.listActiveTaskRunsForTask(input.taskId);
+		const activeTestRun = activeRuns.find((run) => {
+			const snapshot =
+				run.contextSnapshot &&
+				typeof run.contextSnapshot === "object" &&
+				!Array.isArray(run.contextSnapshot)
+					? (run.contextSnapshot as Record<string, unknown>)
+					: {};
+			return snapshot.executionMode === "test";
+		});
+		if (activeTestRun) return activeTestRun;
+	}
+	return startTaskRun(input.taskId, {
+		executionMode: "test",
+		executionModeSource: "test_mode",
+		initialTodos: [
+			{
+				title: "Verification Checklist を読む",
+				description:
+					"仕様書と verification JSON を読み、required condition を確認する。",
+				taskType: "verification",
+			},
+			{
+				title: "対象テストを実装または修正する",
+				description:
+					"完了条件に対応する test / fixture / helper を最小差分で追加・修正する。",
+				taskType: "implementation",
+			},
+			{
+				title: "managed check を実行する",
+				description:
+					"run_check または run_verification を使い、raw artifact と evidence を残す。",
+				taskType: "verification",
+			},
+			{
+				title: "completion_check を通す",
+				description:
+					"required condition が failed / pending / unknown で残っていないことを確認する。",
+				taskType: "verification",
+			},
+		],
+		runtimeOptionsPatch: {
+			verificationDocumentId: input.verificationDocumentId,
+			testMode: {
+				specArtifactId: input.specArtifactId,
+				verificationDocumentId: input.verificationDocumentId,
+			},
+		},
 	});
 }
 
@@ -281,14 +353,13 @@ export {
 	readRepositoryDiff,
 } from "./nightworkers.review-files.service";
 export {
-	applyReviewFinalAction,
 	autoStartReviewSessionForRun,
 	createReviewPromptSuggestions,
 	getLatestReviewSessionDetailForTask,
 	getOrCreateReviewRecommendation,
 	getReviewSessionDetail,
-	runReviewSection,
 	setReviewFindingDisposition,
+	startReviewRun,
 	startReviewSessionForRun,
 	updateReviewPromptSuggestion,
 	useReviewPromptSuggestion,

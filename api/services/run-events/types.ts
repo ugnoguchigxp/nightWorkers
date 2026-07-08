@@ -56,6 +56,7 @@ export const RUN_EVENT_TYPES = [
 	"review.recommendation_created",
 	"review.recommendation_failed",
 	"review.session_auto_started",
+	"review.run_started",
 	"review.required_section_auto_started",
 	"review.required_section_auto_failed",
 	"system.info",

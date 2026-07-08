@@ -1,6 +1,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { z } from "zod";
 import { AppError, NotFoundError } from "../../lib/errors";
+import { callStructuredJsonLLM } from "../../services/structured-llm";
+import { parseRepairedJsonWithSchema } from "../../services/structured-llm/json";
 import * as queueRepo from "../queue/queue.repository";
 import * as repo from "./nightworkers.repository";
 import * as reviewRepo from "./nightworkers.review-mode.repository";
@@ -44,6 +47,23 @@ type ReviewProgress =
 	| "done"
 	| "blocked"
 	| "needs_human";
+
+const commitMessageDraftSchema = z.object({
+	message: z.string().trim().min(1).max(240),
+});
+
+const commitMessageJsonSchema = {
+	type: "object",
+	additionalProperties: false,
+	required: ["message"],
+	properties: {
+		message: {
+			type: "string",
+			minLength: 1,
+			maxLength: 240,
+		},
+	},
+};
 
 async function withRepositoryCloseoutLock<T>(
 	repositoryId: string,
@@ -178,8 +198,16 @@ async function loadCloseoutContext(runId: string) {
 	const testCoverage = artifacts.find(
 		(artifact) => artifact.kind === "test_coverage",
 	);
+	const reviewRunArtifact = artifacts
+		.filter((artifact) => artifact.kind === "review_run")
+		.sort(
+			(a, b) =>
+				new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+		)[0];
 	const testCoverageStatus =
 		(testCoverage?.status as ReviewProgress | undefined) ?? null;
+	const reviewRunStatus =
+		(reviewRunArtifact?.status as ReviewProgress | undefined) ?? null;
 	const gitState = await readGitState(repository.localPath);
 	return {
 		run,
@@ -187,6 +215,7 @@ async function loadCloseoutContext(runId: string) {
 		commitRecord,
 		reviewSession,
 		testCoverageStatus,
+		reviewRunStatus,
 		gitState,
 	};
 }
@@ -203,6 +232,7 @@ function decideCloseout(input: {
 	commitRecord: CommitRecord | null;
 	reviewSessionId: string | null;
 	testCoverageStatus: ReviewProgress | null;
+	reviewRunStatus: ReviewProgress | null;
 	head: string | null;
 	upstream: string | null;
 	dirtyPaths: string[];
@@ -210,6 +240,8 @@ function decideCloseout(input: {
 }) {
 	const { commitRecord } = input;
 	const stageablePaths = list(commitRecord?.stageableOwnedPathsJson);
+	const reviewComplete =
+		input.testCoverageStatus === "done" || Boolean(input.reviewRunStatus);
 	if (!input.reviewSessionId) {
 		return blocking(
 			"REVIEW_SESSION_MISSING",
@@ -217,10 +249,10 @@ function decideCloseout(input: {
 			"review_required",
 		);
 	}
-	if (input.testCoverageStatus !== "done") {
+	if (!reviewComplete) {
 		return blocking(
 			"REQUIRED_REVIEW_NOT_DONE",
-			"Required test evidence review is not complete.",
+			"Required review evidence is not complete.",
 			"review_required",
 		);
 	}
@@ -316,6 +348,7 @@ export async function getRunGitCloseout(runId: string) {
 		commitRecord: context.commitRecord,
 		reviewSessionId: context.reviewSession?.id ?? null,
 		testCoverageStatus: context.testCoverageStatus,
+		reviewRunStatus: context.reviewRunStatus,
 		head: context.gitState.head,
 		upstream: context.gitState.upstream,
 		dirtyPaths: context.gitState.dirtyPaths,
@@ -333,7 +366,10 @@ export async function getRunGitCloseout(runId: string) {
 		requiredReview: {
 			reviewSessionId: context.reviewSession?.id ?? null,
 			testCoverageStatus: context.testCoverageStatus,
-			complete: context.testCoverageStatus === "done",
+			reviewRunStatus: context.reviewRunStatus,
+			complete:
+				context.testCoverageStatus === "done" ||
+				Boolean(context.reviewRunStatus),
 		},
 		git: context.gitState,
 		counts: {
@@ -353,6 +389,72 @@ function defaultCommitMessage(input: {
 	const title = input.taskTitle?.trim();
 	if (title) return `Implement ${title}`;
 	return `Complete NightWorkers run ${input.runId.slice(0, 8)}`;
+}
+
+async function readOwnedDiff(input: {
+	repoRoot: string;
+	stageablePaths: string[];
+}) {
+	if (input.stageablePaths.length === 0) return "";
+	const diff = await git(
+		input.repoRoot,
+		["diff", "--", ...input.stageablePaths],
+		{ allowFailure: true },
+	);
+	return (diff ?? "").slice(0, 20_000);
+}
+
+async function generateCommitMessage(input: {
+	repoRoot: string;
+	runId: string;
+	taskTitle?: string | null;
+	runSummary?: string | null;
+	finalReport?: string | null;
+	stageablePaths: string[];
+	explicitMessage?: string;
+}) {
+	const fallback = defaultCommitMessage({
+		taskTitle: input.taskTitle,
+		runId: input.runId,
+		message: input.explicitMessage,
+	});
+	if (input.explicitMessage?.trim()) return fallback;
+	try {
+		const diff = await readOwnedDiff({
+			repoRoot: input.repoRoot,
+			stageablePaths: input.stageablePaths,
+		});
+		const raw = await callStructuredJsonLLM(
+			[
+				"You generate concise Git commit messages.",
+				"Return JSON only.",
+				"Use an imperative subject line.",
+				"Do not mention NightWorkers, ReviewRun, or implementation details unless they are part of the user-facing change.",
+			].join("\n"),
+			[
+				`Task title: ${input.taskTitle || "(none)"}`,
+				`Run summary: ${input.runSummary || "(none)"}`,
+				`Final report: ${(input.finalReport || "").slice(0, 2000) || "(none)"}`,
+				`Files:\n${input.stageablePaths.map((filePath) => `- ${filePath}`).join("\n")}`,
+				`Diff:\n${diff || "(diff unavailable)"}`,
+				"",
+				"Generate one commit message subject, 72 characters preferred, 240 characters maximum.",
+			].join("\n"),
+			{
+				schemaName: "git_commit_message",
+				schema: commitMessageJsonSchema,
+				role: "completion",
+				workingDirectory: input.repoRoot,
+				runId: input.runId,
+				timeoutMs: 30_000,
+			},
+		);
+		const parsed = parseRepairedJsonWithSchema(raw, commitMessageDraftSchema);
+		if (parsed.ok) return parsed.value.message;
+		return fallback;
+	} catch {
+		return fallback;
+	}
 }
 
 async function markUnsafe(runId: string, code: string, reason: string) {
@@ -401,10 +503,14 @@ async function commitRunGitCloseoutLocked(
 	}
 	const stageablePaths = list(commitRecord.stageableOwnedPathsJson);
 	const task = await repo.getTask(context.run.taskId);
-	const message = defaultCommitMessage({
+	const message = await generateCommitMessage({
+		repoRoot: context.repository.localPath,
 		taskTitle: task?.title,
 		runId,
-		message: input.message,
+		runSummary: context.run.summary,
+		finalReport: context.run.finalReport,
+		stageablePaths,
+		explicitMessage: input.message,
 	});
 	try {
 		const stagedBefore = context.gitState.stagedPaths;

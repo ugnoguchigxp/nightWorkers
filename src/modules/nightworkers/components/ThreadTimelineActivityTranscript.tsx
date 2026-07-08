@@ -46,9 +46,11 @@ export { DiffCodeBlock, parseDiffMetadata } from "./ThreadTimelineDiffView";
 export function TranscriptItemView({
 	item,
 	onOpenArtifact,
+	onOpenProjectFile,
 }: {
 	item: TranscriptItem;
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
+	onOpenProjectFile?: (path: string) => void;
 }) {
 	if (item.kind === "user_turn") {
 		const timestamp = item.events.at(-1)?.createdAt;
@@ -59,6 +61,7 @@ export function TranscriptItemView({
 			>
 				<ChatMarkdown
 					content={item.text || fallbackEventText(item.events.at(-1))}
+					onOpenProjectFile={onOpenProjectFile}
 				/>
 			</ThreadMessage>
 		);
@@ -78,9 +81,13 @@ export function TranscriptItemView({
 						<MessagePayload
 							message={artifactMessage}
 							onOpenArtifact={onOpenArtifact}
+							onOpenProjectFile={onOpenProjectFile}
 						/>
 					) : visibleText.trim() ? (
-						<ChatMarkdown content={visibleText} />
+						<ChatMarkdown
+							content={visibleText}
+							onOpenProjectFile={onOpenProjectFile}
+						/>
 					) : null}
 					{item.children.map((child, _index) => (
 						<TranscriptChildView
@@ -95,6 +102,21 @@ export function TranscriptItemView({
 
 	if ("event" in item && isChangedFilesOnlyDiffActivity(item.event)) {
 		return null;
+	}
+
+	if (item.kind === "activity" && isVisibleDiffActivity(item.event)) {
+		return (
+			<ThreadMessage
+				messageRole="assistant"
+				timestamp={formatFinishedTime(item.event.createdAt)}
+			>
+				<TranscriptActivityBlock
+					event={item.event}
+					title={item.event.kind}
+					showJson={true}
+				/>
+			</ThreadMessage>
+		);
 	}
 
 	if (item.kind === "unknown") {
@@ -116,6 +138,10 @@ export function TranscriptItemView({
 			showJson={true}
 		/>
 	);
+}
+
+function isVisibleDiffActivity(event: ActivityEvent) {
+	return isDiffActivity(event) && getActivityCode(event).trim().length > 0;
 }
 
 export function findArtifactTaskMessage(

@@ -52,9 +52,11 @@ export function FilesOutline({
 export function ProjectDiffContent({
 	diff,
 	isLoading,
+	onOpenProjectFile,
 }: {
 	diff: string;
 	isLoading: boolean;
+	onOpenProjectFile?: (path: string) => void;
 }) {
 	const { t } = useTranslation();
 	if (isLoading) {
@@ -66,7 +68,7 @@ export function ProjectDiffContent({
 	}
 	return (
 		<div className="h-full overflow-y-auto p-3">
-			<DiffViewer diff={diff} />
+			<DiffViewer diff={diff} onOpenProjectFile={onOpenProjectFile} />
 		</div>
 	);
 }
@@ -79,6 +81,7 @@ export function BlueprintViewer({
 	validation,
 	generation,
 	markdown,
+	onOpenProjectFile,
 }: {
 	sessionId: string | null;
 	messageId: string | null;
@@ -87,6 +90,7 @@ export function BlueprintViewer({
 	validation: unknown;
 	generation?: unknown;
 	markdown?: string;
+	onOpenProjectFile?: (path: string) => void;
 }) {
 	const { t } = useTranslation();
 	const previewBlueprint = isObject(mockBlueprint)
@@ -104,7 +108,10 @@ export function BlueprintViewer({
 			);
 		}
 		return (
-			<MarkdownViewer content={markdown || t("artifact.noBlueprintContent")} />
+			<MarkdownViewer
+				content={markdown || t("artifact.noBlueprintContent")}
+				onOpenProjectFile={onOpenProjectFile}
+			/>
 		);
 	}
 	return (
@@ -121,15 +128,20 @@ export function BlueprintViewer({
 export function ComponentDesignViewer({
 	artifact,
 	markdown,
+	onOpenProjectFile,
 }: {
 	artifact: unknown;
 	markdown?: string;
+	onOpenProjectFile?: (path: string) => void;
 }) {
 	const { t } = useTranslation();
 
 	if (!isObject(artifact))
 		return (
-			<MarkdownViewer content={markdown || t("artifact.noComponentDesign")} />
+			<MarkdownViewer
+				content={markdown || t("artifact.noComponentDesign")}
+				onOpenProjectFile={onOpenProjectFile}
+			/>
 		);
 	return <ComponentDesignArtifactViewer artifact={artifact} />;
 }

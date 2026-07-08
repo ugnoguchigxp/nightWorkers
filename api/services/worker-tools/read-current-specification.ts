@@ -3,6 +3,10 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "../../db/client";
 import { taskMessages, tasks } from "../../db/schema";
 import * as repo from "../../modules/nightworkers/nightworkers.repository";
+import {
+	getVerificationDocument,
+	listVerificationChecklistItems,
+} from "../../modules/nightworkers/nightworkers.verification.repository";
 import { listDesignQuestionnaires } from "../../modules/questionnaire/questionnaire.service";
 import { getPlanModeWorkspace } from "../../modules/specification/plan-mode-workspace.service";
 import {
@@ -38,6 +42,24 @@ export interface ReadCurrentSpecificationOutput {
 	generatedAt: string | null;
 	digest: string | null;
 	assembledDesignContext?: AssembledDesignContext;
+	verification?: {
+		verificationDocumentId: string | null;
+		verificationArtifactId?: string | null;
+		document?: unknown;
+		checklist?: Array<{
+			conditionId: string;
+			text: string;
+			required: boolean;
+			status: string;
+			reason?: string;
+			evidenceIds: string[];
+		}>;
+		summary?: {
+			total: number;
+			failedRequired: number;
+			unknownRequired: number;
+		};
+	};
 	sources: {
 		questionnaireSessionId?: string;
 		blueprintSummaryIncluded?: boolean;
@@ -133,6 +155,10 @@ export async function readCurrentSpecificationTool(
 			? await resolveAssembledDesignContextSafely(taskId, messages, metadata)
 			: { context: undefined, warning: undefined };
 		const assembledDesignContext = assembledDesignContextResult.context;
+		const verification = await resolveSpecificationVerification({
+			metadata,
+			includeDetails: view === "verification",
+		});
 
 		return {
 			ok: true,
@@ -152,6 +178,7 @@ export async function readCurrentSpecificationTool(
 				generatedAt: String(latest.createdAt),
 				digest,
 				...(assembledDesignContext ? { assembledDesignContext } : {}),
+				verification,
 				sources: {
 					questionnaireSessionId:
 						typeof metadata.questionnaireSessionId === "string"
@@ -192,6 +219,47 @@ export async function readCurrentSpecificationTool(
 			error instanceof Error ? error.message : String(error),
 		);
 	}
+}
+
+async function resolveSpecificationVerification(input: {
+	metadata: Record<string, unknown>;
+	includeDetails: boolean;
+}): Promise<ReadCurrentSpecificationOutput["verification"]> {
+	const verificationDocumentId =
+		typeof input.metadata.verificationDocumentId === "string"
+			? input.metadata.verificationDocumentId
+			: null;
+	const verificationArtifactId =
+		typeof input.metadata.verificationArtifactId === "string"
+			? input.metadata.verificationArtifactId
+			: null;
+	if (!verificationDocumentId) {
+		return { verificationDocumentId: null, verificationArtifactId };
+	}
+	if (!input.includeDetails) {
+		return { verificationDocumentId, verificationArtifactId };
+	}
+	const document = await getVerificationDocument(verificationDocumentId);
+	const checklist = await listVerificationChecklistItems(
+		verificationDocumentId,
+	);
+	return {
+		verificationDocumentId,
+		verificationArtifactId,
+		document: document?.documentJson ?? null,
+		checklist,
+		summary: {
+			total: checklist.length,
+			failedRequired: checklist.filter(
+				(item) => item.required && item.status === "failed",
+			).length,
+			unknownRequired: checklist.filter(
+				(item) =>
+					item.required &&
+					(item.status === "pending" || item.status === "unknown"),
+			).length,
+		},
+	};
 }
 
 async function resolveAssembledDesignContextSafely(

@@ -63,7 +63,7 @@ describe("Review Mode", () => {
 		expect((await repo.getTaskRun(run.id))?.status).toBe("completed");
 	});
 
-	it("starts a review session and blocks approval while required test evidence needs human review", async () => {
+	it("starts a review session without exposing old section or final-action APIs", async () => {
 		const { task } = await createTask();
 		const run = await repo.createTaskRun({
 			taskId: task.id,
@@ -90,10 +90,10 @@ describe("Review Mode", () => {
 		);
 		expect(startRes.status).toBe(201);
 		const started = await startRes.json();
-		expect(started.statusArtifact.finalActionGate.canApprove).toBe(false);
+		expect(started.statusArtifact.finalActionGate.canApprove).toBe(true);
 		expect(
 			started.statusArtifact.finalActionGate.requiredSectionKindsRemaining,
-		).toContain("test_coverage");
+		).toEqual([]);
 
 		const sectionRes = await app.request(
 			`http://localhost/api/review-sessions/${started.session.id}/sections/test_coverage/run`,
@@ -103,22 +103,7 @@ describe("Review Mode", () => {
 				body: JSON.stringify({}),
 			},
 		);
-		expect(sectionRes.status).toBe(200);
-		const afterSection = await sectionRes.json();
-		expect(
-			afterSection.statusArtifact.finalActionGate.requiredSectionKindsRemaining,
-		).toContain("test_coverage");
-		expect(afterSection.statusArtifact.finalActionGate.canApprove).toBe(false);
-		expect(
-			afterSection.findings.map((finding: { title: string }) => finding.title),
-		).toContain("Test evidence review could not find an implementation plan");
-		expect(
-			afterSection.findings.find(
-				(finding: { title: string }) =>
-					finding.title ===
-					"Test evidence review could not find an implementation plan",
-			),
-		).toMatchObject({ severity: "warning" });
+		expect(sectionRes.status).toBe(404);
 
 		const approveRes = await app.request(
 			`http://localhost/api/review-sessions/${started.session.id}/final-action`,
@@ -128,7 +113,7 @@ describe("Review Mode", () => {
 				body: JSON.stringify({ action: "approve" }),
 			},
 		);
-		expect(approveRes.status).toBe(400);
+		expect(approveRes.status).toBe(404);
 		expect((await repo.getTaskRun(run.id))?.status).toBe("completed");
 	});
 
@@ -241,6 +226,68 @@ describe("Review Mode", () => {
 		expect(synced.statusArtifact.promptSuggestionCount).toBe(5);
 	});
 
+	it("does not start a runtime Review Run when target extraction is blocking", async () => {
+		const { task } = await createTask();
+		const run = await repo.createTaskRun({
+			taskId: task.id,
+			repositoryId: task.repositoryId,
+			status: "completed",
+			workerKind: "native-local",
+			summary: "Large diff finished",
+			finalReport: "Large diff finished.",
+			startedAt: new Date(),
+			endedAt: new Date(),
+			finishedAt: new Date(),
+		});
+		await repo.createRunEvent({
+			version: 1,
+			runId: run.id,
+			taskId: task.id,
+			timestamp: new Date().toISOString(),
+			type: "git.diff_collected",
+			severity: "checkpoint",
+			actor: "worker",
+			message: "Diff collected",
+			data: {
+				changedFiles: Array.from(
+					{ length: 81 },
+					(_, index) => `src/generated-${index}.ts`,
+				),
+			},
+		});
+		const startRes = await app.request(
+			`http://localhost/api/runs/${run.id}/review-sessions`,
+			{
+				method: "POST",
+				headers: sameOriginHeaders,
+			},
+		);
+		expect(startRes.status).toBe(201);
+		const started = await startRes.json();
+
+		const reviewRunRes = await app.request(
+			`http://localhost/api/review-sessions/${started.session.id}/run`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({ options: { codeReview: true } }),
+			},
+		);
+
+		expect(reviewRunRes.status).toBe(200);
+		const detail = await reviewRunRes.json();
+		const reviewRunArtifact = detail.artifacts.find(
+			(artifact: { kind: string }) => artifact.kind === "review_run",
+		);
+		expect(reviewRunArtifact).toMatchObject({ status: "needs_human" });
+		expect(
+			reviewRunArtifact.artifact.warnings.map(
+				(warning: { code: string }) => warning.code,
+			),
+		).toContain("target_file_limit_exceeded");
+		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(1);
+	});
+
 	it("routes security plugin handoff findings into review-owned handoff artifacts", async () => {
 		delete process.env.NIGHTWORKERS_SECURITY_PLUGIN_INTEGRATION;
 		const { sessionId, findingId } = await createSessionWithSecurityFinding();
@@ -333,21 +380,18 @@ async function createSessionWithVerificationFinding() {
 	);
 	expect(startRes.status).toBe(201);
 	const started = await startRes.json();
-	const sectionRes = await app.request(
-		`http://localhost/api/review-sessions/${started.session.id}/sections/test_coverage/run`,
+	const [finding] = await reviewRepo.createReviewFindings([
 		{
-			method: "POST",
-			headers: { "Content-Type": "application/json", ...sameOriginHeaders },
-			body: JSON.stringify({}),
+			reviewSessionId: started.session.id,
+			runId: run.id,
+			taskId: task.id,
+			severity: "warning",
+			title: "Agentic test evidence review could not complete",
+			body: "Agentic confirmation could not complete.",
+			evidenceRefsJson: [{ kind: "changed_file", path: "src/app.ts" }],
+			sourceSection: "review_run",
 		},
-	);
-	expect(sectionRes.status).toBe(200);
-	const afterSection = await sectionRes.json();
-	const finding = afterSection.findings.find(
-		(item: { title: string }) =>
-			item.title === "Agentic test evidence review could not complete",
-	);
-	expect(finding).toBeTruthy();
+	]);
 	return {
 		sessionId: started.session.id as string,
 		findingId: finding.id as string,
@@ -379,21 +423,18 @@ async function createSessionWithSecurityFinding() {
 	);
 	expect(startRes.status).toBe(201);
 	const started = await startRes.json();
-	const sectionRes = await app.request(
-		`http://localhost/api/review-sessions/${started.session.id}/sections/security_review/run`,
+	const [finding] = await reviewRepo.createReviewFindings([
 		{
-			method: "POST",
-			headers: { "Content-Type": "application/json", ...sameOriginHeaders },
-			body: JSON.stringify({}),
+			reviewSessionId: started.session.id,
+			runId: run.id,
+			taskId: task.id,
+			severity: "blocking",
+			title: "Security-sensitive change needs external evidence",
+			body: "Security-sensitive changes need scanner-backed evidence.",
+			evidenceRefsJson: [{ kind: "changed_file", path: "api/auth/token.ts" }],
+			sourceSection: "review_run",
 		},
-	);
-	expect(sectionRes.status).toBe(200);
-	const afterSection = await sectionRes.json();
-	const finding = afterSection.findings.find(
-		(item: { title: string }) =>
-			item.title === "Security-sensitive change needs external evidence",
-	);
-	expect(finding).toBeTruthy();
+	]);
 	return {
 		sessionId: started.session.id as string,
 		findingId: finding.id as string,

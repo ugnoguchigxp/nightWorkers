@@ -89,6 +89,7 @@ type ThreadTimelineProps = {
 	isAgentWorking: boolean;
 	showDebugEvents: boolean;
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
+	onOpenProjectFile?: (path: string) => void;
 	onGrantExternalPath?: (path: string) => Promise<void>;
 };
 
@@ -123,6 +124,7 @@ export function ThreadTimeline({
 	isAgentWorking,
 	showDebugEvents,
 	onOpenArtifact,
+	onOpenProjectFile,
 	onGrantExternalPath,
 }: ThreadTimelineProps) {
 	const [isGrantingExternalPath, setIsGrantingExternalPath] = useState(false);
@@ -267,6 +269,7 @@ export function ThreadTimeline({
 								<TranscriptItemView
 									item={item}
 									onOpenArtifact={onOpenArtifact}
+									onOpenProjectFile={onOpenProjectFile}
 								/>
 							</TimelineDebugFragment>
 						) : (
@@ -274,6 +277,7 @@ export function ThreadTimeline({
 								key={item.id}
 								item={item}
 								onOpenArtifact={onOpenArtifact}
+								onOpenProjectFile={onOpenProjectFile}
 							/>
 						),
 					)
@@ -293,6 +297,7 @@ export function ThreadTimeline({
 								<MessagePayload
 									message={item.message}
 									onOpenArtifact={onOpenArtifact}
+									onOpenProjectFile={onOpenProjectFile}
 								/>
 							</ThreadMessage>
 						) : (showDebugEvents &&
@@ -310,28 +315,41 @@ export function ThreadTimeline({
 								}
 								latestRun={latestRun}
 							>
-								<div className="space-y-2">
-									<ReviewerEvaluationCard event={item.event} />
-									<AgentEditSummaryCard event={item.event} />
-									{!showDebugEvents ? (
-										<NormalContextStillToolCard event={item.event} />
-									) : null}
-									{!showDebugEvents ? (
-										<NormalImportProjectToolCard event={item.event} />
-									) : null}
-									{!showDebugEvents ? (
-										<NormalInspectionToolCard event={item.event} />
-									) : null}
-									{!showDebugEvents ? (
-										<NormalCodexToolCard event={item.event} />
-									) : null}
-									{showDebugEvents ? (
-										<CodexToolCard event={item.event} />
-									) : null}
-									{showDebugEvents ? (
-										<AgentDebugEventCard event={item.event} />
-									) : null}
-								</div>
+								{!showDebugEvents && hasAgentEditSummary(item.event) ? (
+									<ThreadMessage
+										messageRole="assistant"
+										timestamp={formatFinishedTime(
+											item.event.timestamp || item.event.createdAt,
+										)}
+									>
+										<div className="space-y-2">
+											<AgentEditSummaryCard event={item.event} />
+										</div>
+									</ThreadMessage>
+								) : (
+									<div className="space-y-2">
+										<ReviewerEvaluationCard event={item.event} />
+										<AgentEditSummaryCard event={item.event} />
+										{!showDebugEvents ? (
+											<NormalContextStillToolCard event={item.event} />
+										) : null}
+										{!showDebugEvents ? (
+											<NormalImportProjectToolCard event={item.event} />
+										) : null}
+										{!showDebugEvents ? (
+											<NormalInspectionToolCard event={item.event} />
+										) : null}
+										{!showDebugEvents ? (
+											<NormalCodexToolCard event={item.event} />
+										) : null}
+										{showDebugEvents ? (
+											<CodexToolCard event={item.event} />
+										) : null}
+										{showDebugEvents ? (
+											<AgentDebugEventCard event={item.event} />
+										) : null}
+									</div>
+								)}
 							</TimelineDebugFragment>
 						) : null,
 					)}
@@ -340,12 +358,18 @@ export function ThreadTimeline({
 			) : null}
 			{!hasActivityTranscript && streamingPreview ? (
 				<ThreadMessage messageRole="assistant">
-					<StreamingResponsePreview preview={streamingPreview} />
+					<StreamingResponsePreview
+						preview={streamingPreview}
+						onOpenProjectFile={onOpenProjectFile}
+					/>
 				</ThreadMessage>
 			) : null}
 			{!hasActivityTranscript && persistedStreamingPreview ? (
 				<ThreadMessage messageRole="assistant">
-					<PersistedStreamingResponse preview={persistedStreamingPreview} />
+					<PersistedStreamingResponse
+						preview={persistedStreamingPreview}
+						onOpenProjectFile={onOpenProjectFile}
+					/>
 				</ThreadMessage>
 			) : null}
 			{isAgentWorking ? (
@@ -354,7 +378,10 @@ export function ThreadTimeline({
 				</ThreadMessage>
 			) : null}
 			{!hasActivityTranscript ? (
-				<FinalReportCard latestRun={latestRun} />
+				<FinalReportCard
+					latestRun={latestRun}
+					onOpenProjectFile={onOpenProjectFile}
+				/>
 			) : null}
 		</div>
 	);

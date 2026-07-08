@@ -60,6 +60,7 @@ export type ProjectQueueDashboard = {
 
 export type ProjectQueueSessionView = {
 	task: ProjectQueueSession;
+	group?: "processing" | "queue" | "archive";
 	emailState:
 		| "draft"
 		| "plan_ready"
@@ -82,6 +83,7 @@ export type ProjectQueueTaskStatus =
 	| "review_required"
 	| "needs_human"
 	| "completed"
+	| "archived"
 	| "failed"
 	| "cancelled";
 

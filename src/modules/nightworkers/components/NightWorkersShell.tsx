@@ -87,10 +87,6 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 	const [clearedArtifactContextId, setClearedArtifactContextId] = useState<
 		string | null
 	>(null);
-	const [injectedPrompt, setInjectedPrompt] = useState<{
-		id: number;
-		text: string;
-	} | null>(null);
 	const showSettings = routeState.kind === "settings";
 	const isOverviewActive = routeState.kind === "overview";
 	const showQueueScreen = routeState.kind === "global_queue";
@@ -395,9 +391,6 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 			buildComposerLlmSelection(),
 		);
 	};
-	const insertReviewPromptSuggestion = useCallback((prompt: string) => {
-		setInjectedPrompt({ id: Date.now(), text: prompt });
-	}, []);
 	const handleOpenBlueprintArtifact = useCallback(async () => {
 		const sessionId = workspaceRef.current.activeSession?.id;
 		if (!sessionId) return;
@@ -922,8 +915,6 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 							onModelChange={handleComposerModelChange}
 							onThinkingDepthChange={handleComposerThinkingDepthChange}
 							onSubmitPrompt={submitPrompt}
-							injectedPrompt={injectedPrompt}
-							onInsertReviewPromptSuggestion={insertReviewPromptSuggestion}
 							buildComposerLlmSelection={buildComposerLlmSelection}
 							openQuestionnaireWorkspace={openQuestionnaireWorkspace}
 							selectedArtifactContext={selectedArtifactContext}

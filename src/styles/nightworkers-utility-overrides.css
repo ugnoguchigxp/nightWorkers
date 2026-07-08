@@ -133,6 +133,11 @@
 	);
 }
 
+.nightworkers-shell .nightworkers-review-run-button:not(:disabled),
+.nightworkers-shell .nightworkers-review-run-button:not(:disabled) svg {
+	color: #020617;
+}
+
 .nightworkers-settings-button,
 .nightworkers-blueprint-showcase-button {
 	background: var(--nw-panel);
@@ -302,6 +307,10 @@
 	max-height: 360px;
 	overflow: auto;
 	padding: 0;
+}
+
+.nightworkers-artifact-diff-block .nightworkers-diff-body {
+	max-height: 70vh;
 }
 
 .nightworkers-diff-line {

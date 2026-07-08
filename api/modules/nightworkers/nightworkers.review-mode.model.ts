@@ -11,6 +11,13 @@ export type ReviewSectionKind =
 	| "security_review"
 	| "findings"
 	| "prompt_suggestions";
+export type ReviewRunArtifactKind =
+	| "review_status"
+	| "review_run"
+	| "review_targets"
+	| "review_findings_summary"
+	| "security_handoff"
+	| ReviewSectionKind;
 export type ReviewSectionRequirement =
 	| "required"
 	| "recommended"
@@ -46,6 +53,77 @@ export type ReviewFindingDisposition =
 	| "security_plugin_handoff"
 	| "accepted_risk"
 	| "ignored";
+
+export type ReviewRunOptions = {
+	codeReview: boolean;
+	testEvidenceReview: boolean;
+	securityReview: boolean;
+	applyFixes: boolean;
+	commitChanges: boolean;
+};
+
+export const DEFAULT_REVIEW_RUN_OPTIONS: ReviewRunOptions = {
+	codeReview: true,
+	testEvidenceReview: true,
+	securityReview: false,
+	applyFixes: true,
+	commitChanges: false,
+};
+
+export type ReviewTargetWarning = {
+	code:
+		| "plan_artifact_missing"
+		| "no_edit_signals"
+		| "edit_signal_without_current_diff"
+		| "current_diff_without_edit_signal"
+		| "diff_read_failed"
+		| "target_file_limit_exceeded";
+	severity: "info" | "warning" | "blocking";
+	message: string;
+	paths?: string[];
+};
+
+export type ReviewTargetFile = {
+	path: string;
+	status: "modified" | "added" | "deleted" | "renamed" | "unknown";
+	sources: Array<
+		| "codex_file_change"
+		| "post_run_git_diff"
+		| "native_tool_edit"
+		| "run_diff_patch"
+		| "current_git_diff"
+	>;
+	eventIds: string[];
+	diff: string;
+	diffBytes: number;
+};
+
+export type ReviewTarget = {
+	runId: string;
+	taskId: string;
+	repositoryId: string;
+	repoRoot: string;
+	planArtifact: {
+		messageId: string | null;
+		title: string | null;
+		source: "plan_artifact" | "missing";
+	};
+	targetFiles: ReviewTargetFile[];
+	excludedDirtyFiles: string[];
+	signalOnlyFiles: string[];
+	diffOnlyFiles: string[];
+	warnings: ReviewTargetWarning[];
+};
+
+export type ReviewPlanSpec = {
+	sourceMessageId: string | null;
+	title: string | null;
+	body: string;
+	acceptanceCriteria: string[];
+	verificationHints: string[];
+	securityNotes: string[];
+	implementationScopeHints: string[];
+};
 
 export type ReviewRecommendationReason = {
 	code:
@@ -131,7 +209,7 @@ export function rowArtifact(
 		reviewSessionId: row.reviewSessionId,
 		runId: row.runId,
 		taskId: row.taskId,
-		kind: row.kind as "review_status" | ReviewSectionKind,
+		kind: row.kind as ReviewRunArtifactKind,
 		status: row.status as ReviewSectionProgress,
 		artifact: row.artifactJson,
 		sourceEvidenceRefs: Array.isArray(row.sourceEvidenceRefsJson)
@@ -236,10 +314,10 @@ export function planSections(
 	return [
 		section(
 			"test_coverage",
-			recommendation.level === "none" ? "omitted" : "required",
+			recommendation.level === "none" ? "omitted" : "optional",
 			recommendation.level === "none"
 				? "No test evidence review is needed."
-				: "Check test evidence for implementation-plan acceptance criteria.",
+				: "Review Run replaces the old required test evidence section.",
 		),
 		section(
 			"security_review",

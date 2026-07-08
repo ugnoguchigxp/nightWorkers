@@ -160,6 +160,7 @@ export function ProjectQueueTable({
 
 function ProjectQueueStatusCell({ task }: { task: ProjectQueueTask }) {
 	const toneClass = {
+		archived: "border-slate-600 bg-slate-900/60 text-slate-200",
 		cancelled: "border-amber-400/35 bg-amber-950/45 text-amber-100",
 		completed: "border-slate-700 bg-slate-950/60 text-slate-300",
 		failed: "border-amber-400/35 bg-amber-950/45 text-amber-100",

@@ -2,6 +2,7 @@ import {
 	type Dispatch,
 	type MutableRefObject,
 	type SetStateAction,
+	useCallback,
 	useState,
 } from "react";
 import type { useImplementationQueue } from "../../queue";
@@ -52,8 +53,6 @@ type NightWorkersShellThreadPanelProps = {
 		prompt: string,
 		intent?: WorkbenchChatIntent,
 	) => Promise<void>;
-	injectedPrompt?: { id: number; text: string } | null;
-	onInsertReviewPromptSuggestion?: (prompt: string) => void;
 	buildComposerLlmSelection: () => WorkbenchLlmSelection | undefined;
 	openQuestionnaireWorkspace: (
 		message: TaskMessage,
@@ -110,6 +109,24 @@ export function NightWorkersShellThreadPanel(
 		artifactFocus.type === "artifact"
 			? planModeArtifactContext || selectedArtifactContext
 			: selectedArtifactContext;
+	const handleOpenProjectFile = useCallback(
+		(path: string) => {
+			setArtifactFocus({ type: "project_tree" });
+			workspace.openProjectFile(path);
+			if (workspace.activeSessionId) {
+				onNavigate({
+					kind: "session",
+					sessionId: workspace.activeSessionId,
+					artifact: {
+						kind: "project_tree",
+						mode: "tree",
+						filePath: path,
+					},
+				});
+			}
+		},
+		[onNavigate, setArtifactFocus, workspace],
+	);
 
 	return (
 		<ThreadWorkspace
@@ -127,7 +144,6 @@ export function NightWorkersShellThreadPanel(
 			activeStreamingResponse={workspace.activeStreamingResponse}
 			artifactRefs={workspace.activeArtifactRefs}
 			activeArtifactContext={effectiveArtifactContext}
-			injectedPrompt={props.injectedPrompt}
 			isAgentWorking={workspace.isAgentWorking}
 			isAgentThinking={workspace.isAgentThinking}
 			realtimeStatus={workspace.realtimeStatus}
@@ -219,6 +235,7 @@ export function NightWorkersShellThreadPanel(
 					});
 				}
 			}}
+			onOpenProjectFile={handleOpenProjectFile}
 			onClearArtifactContext={() => {
 				if (selectedArtifact) setClearedArtifactContextId(selectedArtifact.id);
 			}}
@@ -318,21 +335,7 @@ export function NightWorkersShellThreadPanel(
 						}}
 						onPlanWorkspaceArtifactContextChange={setPlanModeArtifactContext}
 						onToggleDirectory={workspace.toggleProjectDirectory}
-						onOpenFile={(path) => {
-							setArtifactFocus({ type: "project_tree" });
-							workspace.openProjectFile(path);
-							if (workspace.activeSessionId) {
-								onNavigate({
-									kind: "session",
-									sessionId: workspace.activeSessionId,
-									artifact: {
-										kind: "project_tree",
-										mode: "tree",
-										filePath: path,
-									},
-								});
-							}
-						}}
+						onOpenFile={handleOpenProjectFile}
 						onRefreshFiles={workspace.refreshProjectFiles}
 						onRefreshDiff={workspace.refreshProjectDiff}
 						onQueueSession={async () => {
@@ -340,44 +343,16 @@ export function NightWorkersShellThreadPanel(
 						}}
 						onAddToQueue={props.addActiveSessionToQueue}
 						activeReviewSession={workspace.activeReviewSession}
-						activeGitCloseout={workspace.activeGitCloseout}
-						onRunReviewSection={workspace.runReviewSection}
-						onCommitRunGitCloseout={workspace.commitRunGitCloseout}
-						onPushRunGitCloseout={workspace.pushRunGitCloseout}
-						onUpdateReviewFindingDisposition={
-							workspace.updateReviewFindingDisposition
+						gitCloseout={workspace.activeGitCloseout}
+						onStartReviewRun={workspace.startReviewRun}
+						onCommitGitCloseout={workspace.commitRunGitCloseout}
+						activeTaskStatus={workspace.activeSession?.status ?? null}
+						onCompleteAndArchiveTask={(taskId) =>
+							workspace.updateSessionStatus(taskId, "cancelled")
 						}
-						onCreateReviewPromptSuggestions={
-							workspace.createReviewPromptSuggestions
+						onRestoreArchivedTask={(taskId) =>
+							workspace.updateSessionStatus(taskId, "ready")
 						}
-						onUpdateReviewPromptSuggestion={
-							workspace.updateReviewPromptSuggestion
-						}
-						onUseReviewPromptSuggestion={async (
-							reviewSessionId,
-							suggestionId,
-							prompt,
-						) => {
-							if (workspace.activeSession) {
-								await workspace.sendWorkbenchMessage(
-									workspace.activeSession.id,
-									prompt,
-									"intake",
-									effectiveArtifactContext,
-									buildComposerLlmSelection(),
-								);
-							} else {
-								await props.onSubmitPrompt(prompt, "intake");
-							}
-							return workspace.markReviewPromptSuggestionUsed(
-								reviewSessionId,
-								suggestionId,
-							);
-						}}
-						onInsertReviewPromptSuggestion={
-							props.onInsertReviewPromptSuggestion
-						}
-						onApplyReviewFinalAction={workspace.applyReviewFinalAction}
 						isImplementationLocked={isActiveImplementationLocked}
 					/>
 				) : undefined

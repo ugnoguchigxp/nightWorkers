@@ -32,8 +32,18 @@ export type RuntimePromptSnapshot = {
 	source: "task_prompt" | "fallback";
 	degraded: boolean;
 	degradedReason?: string;
-	executionMode?: "planning" | "implementation" | "review" | "general_answer";
-	executionPhase?: "planning" | "implementation" | "review" | "general_answer";
+	executionMode?:
+		| "planning"
+		| "implementation"
+		| "test"
+		| "review"
+		| "general_answer";
+	executionPhase?:
+		| "planning"
+		| "implementation"
+		| "test"
+		| "review"
+		| "general_answer";
 	executionModeSource?:
 		| "message_history"
 		| "workbench_intake"
@@ -41,6 +51,8 @@ export type RuntimePromptSnapshot = {
 		| "workbench_run_task"
 		| "implementation_queue"
 		| "session_queue"
+		| "review_run"
+		| "test_mode"
 		| "explicit";
 	verificationPolicy?: TodoVerificationPolicy | null;
 	planModeClosed?: boolean;

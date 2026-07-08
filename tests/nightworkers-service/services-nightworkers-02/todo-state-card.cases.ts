@@ -56,7 +56,7 @@ describe("NightWorkers service", () => {
 				runId: run.id,
 				seq: 3,
 				title: "Passed Todo",
-				taskType: "review",
+				taskType: "focused_verification",
 				status: "passed",
 			},
 		] as never);

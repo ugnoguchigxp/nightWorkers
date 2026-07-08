@@ -3,16 +3,18 @@ import {
 	ChevronRight,
 	Copy,
 	Download,
+	FlaskConical,
 	FolderTree,
 	GitCompare,
 	Maximize2,
 	Minimize2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toDeepRecord } from "../../../../shared/json-record";
 import { PlanModeWorkspaceViewer } from "../../planMode";
 import type { PlanWorkspaceTab } from "../../specification";
+import { startTestModeRun } from "../nightWorkersCommands";
 import type {
 	ActivityArtifact,
 	GitCloseoutState,
@@ -20,7 +22,7 @@ import type {
 	ProjectFileContent,
 	ProjectFileEntry,
 	Repository,
-	ReviewSectionKind,
+	ReviewRunOptions,
 	ReviewSessionDetail,
 	TaskMessage,
 	TaskRun,
@@ -74,52 +76,15 @@ type ArtifactPaneProps = {
 	onQueueSession?: () => Promise<void>;
 	onAddToQueue?: () => Promise<void>;
 	activeReviewSession?: ReviewSessionDetail | null;
-	activeGitCloseout?: GitCloseoutState | null;
-	onRunReviewSection?: (
+	gitCloseout?: GitCloseoutState | null;
+	onStartReviewRun?: (
 		reviewSessionId: string,
-		section: ReviewSectionKind,
+		options: Partial<ReviewRunOptions>,
 	) => Promise<ReviewSessionDetail>;
-	onUpdateReviewFindingDisposition?: (
-		reviewSessionId: string,
-		findingId: string,
-		input: {
-			disposition:
-				| "human_callout"
-				| "agent_followup"
-				| "prompt_suggestion"
-				| "security_plugin_handoff"
-				| "accepted_risk"
-				| "ignored";
-			note?: string;
-			evidenceRefs?: unknown[];
-		},
-	) => Promise<ReviewSessionDetail>;
-	onCreateReviewPromptSuggestions?: (
-		reviewSessionId: string,
-	) => Promise<ReviewSessionDetail>;
-	onUpdateReviewPromptSuggestion?: (
-		reviewSessionId: string,
-		suggestionId: string,
-		input: { status: "dismissed" },
-	) => Promise<ReviewSessionDetail>;
-	onUseReviewPromptSuggestion?: (
-		reviewSessionId: string,
-		suggestionId: string,
-		prompt: string,
-	) => Promise<ReviewSessionDetail>;
-	onInsertReviewPromptSuggestion?: (prompt: string) => void;
-	onApplyReviewFinalAction?: (
-		reviewSessionId: string,
-		input: {
-			action: "approve" | "request_changes" | "needs_human" | "exit_review";
-			note?: string;
-		},
-	) => Promise<ReviewSessionDetail>;
-	onCommitRunGitCloseout?: (
-		runId: string,
-		message?: string,
-	) => Promise<GitCloseoutState>;
-	onPushRunGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
+	onCommitGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
+	activeTaskStatus?: string | null;
+	onCompleteAndArchiveTask?: (taskId: string) => Promise<unknown>;
+	onRestoreArchivedTask?: (taskId: string) => Promise<unknown>;
 	isImplementationLocked?: boolean;
 };
 
@@ -193,16 +158,12 @@ export function ArtifactPane({
 	onQueueSession,
 	onAddToQueue,
 	activeReviewSession,
-	activeGitCloseout,
-	onRunReviewSection,
-	onUpdateReviewFindingDisposition,
-	onCreateReviewPromptSuggestions,
-	onUpdateReviewPromptSuggestion,
-	onUseReviewPromptSuggestion,
-	onInsertReviewPromptSuggestion,
-	onApplyReviewFinalAction,
-	onCommitRunGitCloseout,
-	onPushRunGitCloseout,
+	gitCloseout,
+	onStartReviewRun,
+	onCommitGitCloseout,
+	activeTaskStatus,
+	onCompleteAndArchiveTask,
+	onRestoreArchivedTask,
 	isImplementationLocked = false,
 }: ArtifactPaneProps) {
 	const { t } = useTranslation();
@@ -210,6 +171,7 @@ export function ArtifactPane({
 		null,
 	);
 	const [isFullscreen, setIsFullscreen] = useState(false);
+	const [testModeStatus, setTestModeStatus] = useState<string | null>(null);
 	const [localProjectArtifactMode, setLocalProjectArtifactMode] =
 		useState<ProjectArtifactMode>("tree");
 	const projectArtifactMode =
@@ -218,6 +180,8 @@ export function ArtifactPane({
 		if (!controlledProjectArtifactMode) setLocalProjectArtifactMode(mode);
 		onProjectArtifactModeChange?.(mode);
 	};
+	const refreshProjectFilesRef = useRef(onRefreshFiles);
+	const refreshProjectDiffRef = useRef(onRefreshDiff);
 	const showProjectTree = focusType === "project_tree";
 	const showProjectDiff = showProjectTree && projectArtifactMode === "diff";
 	const artifactVersions = useMemo(
@@ -230,14 +194,20 @@ export function ArtifactPane({
 		setIsFullscreen(false);
 	}, [selectedArtifact?.id]);
 	useEffect(() => {
+		refreshProjectFilesRef.current = onRefreshFiles;
+	}, [onRefreshFiles]);
+	useEffect(() => {
+		refreshProjectDiffRef.current = onRefreshDiff;
+	}, [onRefreshDiff]);
+	useEffect(() => {
 		if (!showProjectTree) return;
 		const refreshCurrentProjectArtifact = () => {
 			if (document.visibilityState === "hidden") return;
 			if (projectArtifactMode === "diff") {
-				void onRefreshDiff();
+				void refreshProjectDiffRef.current();
 				return;
 			}
-			void onRefreshFiles();
+			void refreshProjectFilesRef.current();
 		};
 		refreshCurrentProjectArtifact();
 		window.addEventListener("focus", refreshCurrentProjectArtifact);
@@ -252,7 +222,7 @@ export function ArtifactPane({
 				refreshCurrentProjectArtifact,
 			);
 		};
-	}, [onRefreshDiff, onRefreshFiles, projectArtifactMode, showProjectTree]);
+	}, [projectArtifactMode, showProjectTree]);
 	const currentVersionIndex = Math.max(
 		0,
 		artifactVersions.findIndex(
@@ -309,6 +279,11 @@ export function ArtifactPane({
 		activityArtifactMetadata.generation ||
 		displayArtifact?.metadata?.generation ||
 		null;
+	const verificationPanel = buildVerificationPanelModel({
+		message: selectedMessage,
+		taskMessages,
+		artifactId: displayArtifact?.id || selectedArtifact?.id || null,
+	});
 	const showDocument =
 		Boolean(selectedArtifact) &&
 		!showDiff &&
@@ -400,9 +375,13 @@ export function ArtifactPane({
 							isLoading={
 								isDiffLoading || Boolean(activeProject && !projectDiff)
 							}
+							onOpenProjectFile={onOpenFile}
 						/>
 					) : showDiff ? (
-						<DiffViewer diff={latestRun?.diffPatch || ""} />
+						<DiffViewer
+							diff={latestRun?.diffPatch || ""}
+							onOpenProjectFile={onOpenFile}
+						/>
 					) : showBlueprintWorkspace ? (
 						<PlanModeWorkspaceViewer
 							sessionId={activeSessionId}
@@ -426,24 +405,12 @@ export function ArtifactPane({
 									| undefined) ||
 								null
 							}
-							onRunSection={
-								onRunReviewSection && activeReviewSession
-									? (section) =>
-											onRunReviewSection(
-												activeReviewSession.session.id,
-												section,
-											)
-									: undefined
-							}
-							onFinalAction={onApplyReviewFinalAction}
-							onUpdateFindingDisposition={onUpdateReviewFindingDisposition}
-							onCreatePromptSuggestions={onCreateReviewPromptSuggestions}
-							onUpdatePromptSuggestion={onUpdateReviewPromptSuggestion}
-							onUsePromptSuggestion={onUseReviewPromptSuggestion}
-							onInsertPromptSuggestion={onInsertReviewPromptSuggestion}
-							gitCloseout={activeGitCloseout}
-							onCommitGitCloseout={onCommitRunGitCloseout}
-							onPushGitCloseout={onPushRunGitCloseout}
+							onStartReviewRun={onStartReviewRun}
+							gitCloseout={gitCloseout}
+							onCommitGitCloseout={onCommitGitCloseout}
+							activeTaskStatus={activeTaskStatus}
+							onCompleteAndArchiveTask={onCompleteAndArchiveTask}
+							onRestoreArchivedTask={onRestoreArchivedTask}
 						/>
 					) : showBlueprint ? (
 						<BlueprintViewer
@@ -465,6 +432,7 @@ export function ArtifactPane({
 								selectedActivityArtifact?.contentText ||
 								undefined
 							}
+							onOpenProjectFile={onOpenFile}
 						/>
 					) : showComponentDesign ? (
 						<ComponentDesignViewer
@@ -473,11 +441,50 @@ export function ArtifactPane({
 								displayArtifact?.metadata?.designDelta
 							}
 							markdown={selectedMessage?.content}
+							onOpenProjectFile={onOpenFile}
 						/>
 					) : showDocument ? (
-						<MarkdownViewer content={selectedMessage?.content || ""} />
+						<div className="flex h-full min-h-0 flex-col">
+							{verificationPanel ? (
+								<VerificationChecklistPanel
+									model={verificationPanel}
+									projectId={activeProject?.id || null}
+									taskId={activeSessionId}
+									status={testModeStatus}
+									onStart={async (rerun) => {
+										if (
+											!activeProject?.id ||
+											!activeSessionId ||
+											!verificationPanel.verificationDocumentId
+										) {
+											return;
+										}
+										setTestModeStatus("starting");
+										const response = await startTestModeRun(activeSessionId, {
+											projectId: activeProject.id,
+											specArtifactId: verificationPanel.specArtifactId,
+											verificationDocumentId:
+												verificationPanel.verificationDocumentId,
+											mode: "test",
+											rerun,
+										});
+										if (!response.ok) {
+											setTestModeStatus("failed");
+											throw new Error(await response.text());
+										}
+										setTestModeStatus("started");
+									}}
+								/>
+							) : null}
+							<div className="min-h-0 flex-1 overflow-hidden">
+								<MarkdownViewer
+									content={selectedMessage?.content || ""}
+									onOpenProjectFile={onOpenFile}
+								/>
+							</div>
+						</div>
 					) : showProjectTree && selectedFile ? (
-						<FileViewer file={selectedFile} />
+						<FileViewer file={selectedFile} onOpenProjectFile={onOpenFile} />
 					) : showProjectTree && isFileLoading ? (
 						<p className="text-xs text-slate-400">
 							{t("artifact.loadingFile")}
@@ -495,6 +502,134 @@ export function ArtifactPane({
 			</div>
 		</aside>
 	);
+}
+
+type VerificationPanelModel = {
+	specArtifactId: string;
+	verificationDocumentId: string | null;
+	missingReason?: string;
+	conditions: Array<{
+		id: string;
+		text: string;
+		status: string;
+		required: boolean;
+	}>;
+};
+
+function buildVerificationPanelModel(input: {
+	message: TaskMessage | null;
+	taskMessages: TaskMessage[];
+	artifactId: string | null;
+}): VerificationPanelModel | null {
+	if (!input.message) return null;
+	const metadata = toDeepRecord(input.message.metadataJson);
+	if (readRecordString(metadata, "intent") !== "feature_plan") return null;
+	const verificationDocumentId =
+		readRecordString(metadata, "verificationDocumentId") ?? null;
+	const sidecarMessageId =
+		readRecordString(metadata, "verificationSidecarMessageId") ?? null;
+	const sidecarMessage = sidecarMessageId
+		? input.taskMessages.find((message) => message.id === sidecarMessageId) ||
+			null
+		: null;
+	const sidecarMetadata = toDeepRecord(sidecarMessage?.metadataJson);
+	const document = toDeepRecord(sidecarMetadata.verificationDocument);
+	const conditions = Array.isArray(document.conditions)
+		? document.conditions
+				.map((condition) => toDeepRecord(condition))
+				.map((condition) => ({
+					id: String(condition.id || ""),
+					text: String(condition.text || ""),
+					status: String(condition.status || "pending"),
+					required: readRecordBoolean(condition, "required") !== false,
+				}))
+				.filter((condition) => condition.id && condition.text)
+		: [];
+	return {
+		specArtifactId: input.artifactId || `feature-plan-${input.message.id}`,
+		verificationDocumentId,
+		missingReason: verificationDocumentId
+			? undefined
+			: "verification JSON is missing",
+		conditions,
+	};
+}
+
+function VerificationChecklistPanel({
+	model,
+	projectId,
+	taskId,
+	status,
+	onStart,
+}: {
+	model: VerificationPanelModel;
+	projectId: string | null;
+	taskId: string | null;
+	status: string | null;
+	onStart: (rerun: boolean) => Promise<void>;
+}) {
+	const disabled =
+		!projectId ||
+		!taskId ||
+		!model.verificationDocumentId ||
+		status === "starting";
+	return (
+		<div className="border-b border-slate-800 bg-slate-950/50 px-4 py-3">
+			<div className="flex items-center justify-between gap-3">
+				<div className="min-w-0">
+					<div className="text-xs font-semibold uppercase text-slate-300">
+						Verification Checklist
+					</div>
+					<div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
+						<span>{model.conditions.length} conditions</span>
+						{model.missingReason ? <span>{model.missingReason}</span> : null}
+						{status === "started" ? <span>Test Mode run started</span> : null}
+						{status === "failed" ? <span>Test Mode start failed</span> : null}
+					</div>
+				</div>
+				<button
+					type="button"
+					className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 text-xs font-medium text-cyan-100 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-900 disabled:text-slate-500"
+					disabled={disabled}
+					onClick={() => void onStart(false)}
+					title={model.missingReason || "Start Test Mode"}
+				>
+					<FlaskConical className="h-3.5 w-3.5" />
+					Test Artifact
+				</button>
+			</div>
+			{model.conditions.length > 0 ? (
+				<div className="mt-3 grid gap-1.5">
+					{model.conditions.slice(0, 5).map((condition) => (
+						<div
+							key={condition.id}
+							className="grid grid-cols-[4.5rem_7rem_minmax(0,1fr)] items-center gap-2 text-xs"
+						>
+							<span className="font-mono text-slate-400">{condition.id}</span>
+							<span className="text-slate-400">{condition.status}</span>
+							<span className="truncate text-slate-200">{condition.text}</span>
+						</div>
+					))}
+				</div>
+			) : null}
+		</div>
+	);
+}
+
+function readRecordString(
+	record: Record<string, unknown>,
+	key: string,
+): string | undefined {
+	const value = record[key];
+	return typeof value === "string" ? value : undefined;
+}
+
+function readRecordBoolean(
+	record: Record<string, unknown>,
+	key: string,
+): boolean | undefined {
+	const value = record[key];
+	return typeof value === "boolean" ? value : undefined;
 }
 
 function ArtifactHeaderActions({

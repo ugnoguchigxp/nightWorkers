@@ -110,6 +110,7 @@ type ThreadWorkspaceProps = {
 	onRemoveQueueEntry: () => void;
 	onRequeueQueueEntry: (note?: string) => void;
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
+	onOpenProjectFile?: (path: string) => void;
 	onClearArtifactContext?: () => void;
 	isProjectFilesOpen: boolean;
 	onOpenProjectFiles: () => void;
@@ -506,6 +507,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 							onGrantExternalPath={props.onGrantExternalPath}
 							onModelChange={props.onModelChange}
 							onOpenArtifact={props.onOpenArtifact}
+							onOpenProjectFile={props.onOpenProjectFile}
 							onClearArtifactContext={props.onClearArtifactContext}
 							canStopActiveRun={props.canStopActiveRun}
 							onSubmitInitialPrompt={props.onSubmitInitialPrompt}
@@ -548,6 +550,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 						onGrantExternalPath={props.onGrantExternalPath}
 						onModelChange={props.onModelChange}
 						onOpenArtifact={props.onOpenArtifact}
+						onOpenProjectFile={props.onOpenProjectFile}
 						onClearArtifactContext={props.onClearArtifactContext}
 						canStopActiveRun={props.canStopActiveRun}
 						onSubmitInitialPrompt={props.onSubmitInitialPrompt}

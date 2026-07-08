@@ -349,10 +349,23 @@ export const reviewSectionKindSchema = z
 export const reviewArtifactKindSchema = z
 	.union([
 		z.literal("review_status"),
+		z.literal("review_run"),
+		z.literal("review_targets"),
+		z.literal("review_findings_summary"),
 		reviewSectionKindSchema,
 		z.literal("security_handoff"),
 	])
 	.openapi("ReviewArtifactKind");
+
+export const reviewRunOptionsSchema = z
+	.object({
+		codeReview: z.boolean().default(true),
+		testEvidenceReview: z.boolean().default(true),
+		securityReview: z.boolean().default(false),
+		applyFixes: z.boolean().default(true),
+		commitChanges: z.boolean().default(false),
+	})
+	.openapi("ReviewRunOptions");
 
 export const reviewSectionRequirementSchema = z
 	.enum(["required", "recommended", "optional", "omitted"])
@@ -537,11 +550,11 @@ export const reviewSessionDetailSchema = z
 	})
 	.openapi("ReviewSessionDetail");
 
-export const reviewSectionRunRequestSchema = z
+export const reviewRunRequestSchema = z
 	.object({
-		section: reviewSectionKindSchema.optional(),
+		options: reviewRunOptionsSchema.partial().optional(),
 	})
-	.openapi("ReviewSectionRunRequest");
+	.openapi("ReviewRunRequest");
 
 export const reviewFindingDispositionRequestSchema = z
 	.object({
@@ -562,15 +575,3 @@ export const reviewPromptSuggestionUseRequestSchema = z
 		createdMessageId: z.string().uuid().optional(),
 	})
 	.openapi("ReviewPromptSuggestionUseRequest");
-
-export const reviewFinalActionRequestSchema = z
-	.object({
-		action: z.enum([
-			"approve",
-			"request_changes",
-			"needs_human",
-			"exit_review",
-		]),
-		note: z.string().optional(),
-	})
-	.openapi("ReviewFinalActionRequest");

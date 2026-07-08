@@ -1,4 +1,7 @@
+import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { db } from "../../db/client";
+import { taskMessages } from "../../db/schema";
 import { AppError, NotFoundError } from "../../lib/errors";
 import {
 	buildSpecificationDocumentSystemPrompt,
@@ -11,6 +14,7 @@ import {
 	listPlanModeTaskMessages,
 } from "../nightworkers/nightworkers.plan-mode-core.port";
 import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.plan-mode-settings.service";
+import { createVerificationDocumentFromSpec } from "../nightworkers/nightworkers.verification.service";
 import {
 	getDesignQuestionnaireSession,
 	listDesignQuestionnaires,
@@ -23,6 +27,7 @@ import {
 	sanitizeSpecificationTargetNaming,
 } from "./specification-document-renderer";
 import { assertPlanModeMutable } from "./specification-mutability";
+import { buildSpecificationVerificationSidecar } from "./specification-verification-sidecar";
 
 const specificationDocumentDraftSchema = z.object({
 	title: z.string().min(1),
@@ -93,14 +98,24 @@ export async function generateFeaturePlanArtifact(
 		context,
 	);
 	const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
-	const content = sanitizeSpecificationTargetNaming(
+	const sanitizedContent = sanitizeSpecificationTargetNaming(
 		parsed.content.trimEnd(),
 		context.projectStackContext,
 	);
+	const initialSidecar = buildSpecificationVerificationSidecar({
+		taskId,
+		specId: taskId,
+		specPath: buildSpecificationPath(
+			parsed.title || DEFAULT_FEATURE_PLAN_TITLE,
+		),
+		content: sanitizedContent,
+		sourceMessageIds: messages.map((message) => message.id),
+		workspace,
+	});
 	const message = await createPlanModeTaskMessage({
 		taskId,
 		role: "assistant",
-		content,
+		content: initialSidecar.content,
 		messageType: "markdown_document",
 		payloadJson: {
 			intent: "feature_plan",
@@ -123,9 +138,47 @@ export async function generateFeaturePlanArtifact(
 			},
 			markdownDocumentData: {
 				title: parsed.title || DEFAULT_FEATURE_PLAN_TITLE,
-				content,
+				content: initialSidecar.content,
 			},
 		},
+	});
+	const sidecar = buildSpecificationVerificationSidecar({
+		taskId,
+		specId: message.id,
+		specPath: buildSpecificationPath(
+			parsed.title || DEFAULT_FEATURE_PLAN_TITLE,
+		),
+		content: initialSidecar.content,
+		sourceMessageIds: [...messages.map((item) => item.id), message.id],
+		workspace,
+		generatedAt: initialSidecar.document.generatedAt,
+	});
+	const verificationMessage = await createPlanModeTaskMessage({
+		taskId,
+		role: "assistant",
+		content: JSON.stringify(sidecar.document, null, 2),
+		messageType: "verification_json",
+		payloadJson: {
+			intent: "feature_plan_verification",
+			artifactKind: "verification_json",
+			title: `${parsed.title || DEFAULT_FEATURE_PLAN_TITLE} Verification`,
+			sourceFeaturePlanMessageId: message.id,
+			verificationDocument: sidecar.document,
+		},
+	});
+	const verificationDocument = await createVerificationDocumentFromSpec({
+		taskId,
+		specMessageId: message.id,
+		specArtifactId: `feature-plan-${message.id}`,
+		verificationArtifactId: `verification-json-${verificationMessage.id}`,
+		sourceSpecPath: sidecar.document.specPath,
+		document: sidecar.document,
+	});
+	await attachVerificationMetadata({
+		specMessageId: message.id,
+		verificationMessageId: verificationMessage.id,
+		verificationDocumentId: verificationDocument.id,
+		verificationArtifactId: `verification-json-${verificationMessage.id}`,
 	});
 	return { message, workspace: await getPlanModeWorkspace(taskId) };
 }
@@ -196,4 +249,66 @@ function isStructuredLlmAbortError(error: unknown) {
 		error.name === "AbortError" ||
 		error.message.toLowerCase().includes("operation was aborted")
 	);
+}
+
+async function attachVerificationMetadata(input: {
+	specMessageId: string;
+	verificationMessageId: string;
+	verificationDocumentId: string;
+	verificationArtifactId: string;
+}) {
+	const rows = await db
+		.select()
+		.from(taskMessages)
+		.where(eq(taskMessages.id, input.specMessageId));
+	const specMessage = rows[0];
+	const specMetadata = toRecord(specMessage?.metadataJson);
+	await db
+		.update(taskMessages)
+		.set({
+			metadataJson: {
+				...specMetadata,
+				verificationDocumentId: input.verificationDocumentId,
+				verificationArtifactId: input.verificationArtifactId,
+				verificationSidecarMessageId: input.verificationMessageId,
+				markdownDocumentData: {
+					...toRecord(specMetadata.markdownDocumentData),
+					verificationDocumentId: input.verificationDocumentId,
+				},
+			},
+		})
+		.where(eq(taskMessages.id, input.specMessageId));
+
+	const verificationRows = await db
+		.select()
+		.from(taskMessages)
+		.where(eq(taskMessages.id, input.verificationMessageId));
+	const verificationMessage = verificationRows[0];
+	await db
+		.update(taskMessages)
+		.set({
+			metadataJson: {
+				...toRecord(verificationMessage?.metadataJson),
+				verificationDocumentId: input.verificationDocumentId,
+				verificationArtifactId: input.verificationArtifactId,
+				sourceFeaturePlanMessageId: input.specMessageId,
+			},
+		})
+		.where(eq(taskMessages.id, input.verificationMessageId));
+}
+
+function buildSpecificationPath(title: string) {
+	const slug = title
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 80);
+	return `spec/${slug || "feature-plan"}.md`;
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: {};
 }

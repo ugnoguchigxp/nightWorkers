@@ -45,7 +45,13 @@ export function RuntimePromptSnapshotCard({
 	);
 }
 
-export function FinalReportCard({ latestRun }: { latestRun?: TaskRun }) {
+export function FinalReportCard({
+	latestRun,
+	onOpenProjectFile,
+}: {
+	latestRun?: TaskRun;
+	onOpenProjectFile?: (path: string) => void;
+}) {
 	if (!latestRun?.finalReport?.trim()) return null;
 	return (
 		<ThreadMessage
@@ -54,6 +60,7 @@ export function FinalReportCard({ latestRun }: { latestRun?: TaskRun }) {
 		>
 			<ChatMarkdown
 				content={formatVisibleAssistantText(latestRun.finalReport)}
+				onOpenProjectFile={onOpenProjectFile}
 			/>
 		</ThreadMessage>
 	);
@@ -61,8 +68,10 @@ export function FinalReportCard({ latestRun }: { latestRun?: TaskRun }) {
 
 export function StreamingResponsePreview({
 	preview,
+	onOpenProjectFile,
 }: {
 	preview: StreamingPreview;
+	onOpenProjectFile?: (path: string) => void;
 }) {
 	return (
 		<div className="space-y-2" aria-live="polite">
@@ -72,7 +81,10 @@ export function StreamingResponsePreview({
 			</div>
 			{preview.visibleText ? (
 				<div className="space-y-1">
-					<ChatMarkdown content={preview.visibleText} />
+					<ChatMarkdown
+						content={preview.visibleText}
+						onOpenProjectFile={onOpenProjectFile}
+					/>
 					<span className="ml-0.5 inline-block h-4 w-1 animate-pulse bg-cyan-300 align-[-2px]" />
 				</div>
 			) : (
@@ -84,10 +96,17 @@ export function StreamingResponsePreview({
 
 export function PersistedStreamingResponse({
 	preview,
+	onOpenProjectFile,
 }: {
 	preview: StreamingPreview;
+	onOpenProjectFile?: (path: string) => void;
 }) {
-	return <ChatMarkdown content={preview.visibleText || preview.statusText} />;
+	return (
+		<ChatMarkdown
+			content={preview.visibleText || preview.statusText}
+			onOpenProjectFile={onOpenProjectFile}
+		/>
+	);
 }
 
 export type StreamingPreview = {

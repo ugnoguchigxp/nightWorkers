@@ -121,6 +121,18 @@ function useControllableValue({
 	return [currentValue, setValue] as const;
 }
 
+function buildCodeDisplayLines(code: string): { key: string; text: string }[] {
+	const seen = new Map<string, number>();
+	return code.split("\n").map((line) => {
+		const occurrence = seen.get(line) ?? 0;
+		seen.set(line, occurrence + 1);
+		return {
+			key: `${line.length}:${occurrence}:${line}`,
+			text: line,
+		};
+	});
+}
+
 function CodeLines({
 	code,
 	lineNumbers,
@@ -128,20 +140,18 @@ function CodeLines({
 	code: string;
 	lineNumbers: boolean;
 }) {
+	const lines = React.useMemo(() => buildCodeDisplayLines(code), [code]);
 	return (
 		<pre className="m-0 overflow-x-auto bg-transparent py-4">
 			<code className="grid min-w-full bg-transparent font-mono leading-6">
-				{code.split("\n").map((line, index) => (
-					<span
-						className="line block min-h-6 w-full px-4"
-						key={`${line}-${line.length}`}
-					>
+				{lines.map((line, index) => (
+					<span className="line block min-h-6 w-full px-4" key={line.key}>
 						{lineNumbers ? (
 							<span className="mr-4 inline-block w-5 select-none text-right text-muted-foreground/45">
 								{index + 1}
 							</span>
 						) : null}
-						{line || " "}
+						{line.text || " "}
 					</span>
 				))}
 			</code>

@@ -136,6 +136,13 @@ export type GitCloseoutState = {
 			| "blocked"
 			| "needs_human"
 			| null;
+		reviewRunStatus?:
+			| "not_started"
+			| "running"
+			| "done"
+			| "blocked"
+			| "needs_human"
+			| null;
 		complete: boolean;
 	};
 	git: {

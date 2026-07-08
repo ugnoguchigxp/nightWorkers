@@ -73,6 +73,17 @@ describe("workbench selectors", () => {
 		).toBe("processing");
 	});
 
+	it("keeps archived sessions archived even when the latest run still has review evidence", () => {
+		const view = buildWorkbenchSessionView(
+			{ ...baseTask, status: "cancelled" },
+			{ latestRun: baseRun },
+		);
+
+		expect(view.group).toBe("archive");
+		expect(view.phase).toBe("Archived");
+		expect(view.emailState).toBe("failed");
+	});
+
 	it("returns progress basis and blockers from evidence instead of model self report", () => {
 		const event: TaskEvent = {
 			id: "33333333-3333-4333-8333-333333333333",

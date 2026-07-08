@@ -920,10 +920,6 @@ describe("NightWorkers service", () => {
 					taskType: "inspection",
 				}),
 				expect.objectContaining({
-					title: "LLM コードレビューを実施する",
-					taskType: "review",
-				}),
-				expect.objectContaining({
 					title: "品質ゲート verify コマンドを通す",
 					taskType: "verification",
 				}),

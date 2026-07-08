@@ -18,7 +18,9 @@ export type WorkerToolName =
 	| "replace_content"
 	| "run_command"
 	| "run_background_command"
+	| "run_check"
 	| "run_verification"
+	| "completion_check"
 	| "mcp_call_tool"
 	| "git_status"
 	| "git_diff";

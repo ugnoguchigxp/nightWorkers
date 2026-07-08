@@ -14,6 +14,7 @@ import type {
 	ProjectFileEntry,
 	Repository,
 	ReviewResult,
+	ReviewRunOptions,
 	ReviewSessionDetail,
 	Task,
 	TaskEvent,
@@ -105,52 +106,14 @@ export type NightWorkersWorkspaceState = {
 		input: { action: "complete" | "cancel"; note?: string },
 	) => Promise<void>;
 	startReviewSession: (runId: string) => Promise<ReviewSessionDetail>;
-	runReviewSection: (
+	startReviewRun: (
 		reviewSessionId: string,
-		section: string,
+		options: Partial<ReviewRunOptions>,
 	) => Promise<ReviewSessionDetail>;
-	commitRunGitCloseout: (
-		runId: string,
-		message?: string,
-	) => Promise<GitCloseoutState>;
-	pushRunGitCloseout: (runId: string) => Promise<GitCloseoutState>;
-	updateReviewFindingDisposition: (
-		reviewSessionId: string,
-		findingId: string,
-		input: {
-			disposition:
-				| "human_callout"
-				| "agent_followup"
-				| "prompt_suggestion"
-				| "security_plugin_handoff"
-				| "accepted_risk"
-				| "ignored";
-			note?: string;
-			evidenceRefs?: unknown[];
-		},
-	) => Promise<ReviewSessionDetail>;
-	createReviewPromptSuggestions: (
-		reviewSessionId: string,
-	) => Promise<ReviewSessionDetail>;
-	updateReviewPromptSuggestion: (
-		reviewSessionId: string,
-		suggestionId: string,
-		input: { status: "dismissed" },
-	) => Promise<ReviewSessionDetail>;
-	markReviewPromptSuggestionUsed: (
-		reviewSessionId: string,
-		suggestionId: string,
-	) => Promise<ReviewSessionDetail>;
-	applyReviewFinalAction: (
-		reviewSessionId: string,
-		input: {
-			action: "approve" | "request_changes" | "needs_human" | "exit_review";
-			note?: string;
-		},
-	) => Promise<ReviewSessionDetail>;
+	commitRunGitCloseout: (runId: string) => Promise<GitCloseoutState>;
 	updateSessionStatus: (
 		sessionId: string,
-		status: "draft" | "ready",
+		status: "draft" | "ready" | "cancelled",
 	) => Promise<Task>;
 	reorderQueueSessions: (sessionIds: string[]) => Promise<Task[]>;
 	moveWorkbenchSession: (input: {

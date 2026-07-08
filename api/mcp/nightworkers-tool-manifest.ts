@@ -44,6 +44,46 @@ export const nightWorkersListRecentSpecificationsInputSchema = z.object({
 		.describe("Maximum results. Default: 10."),
 });
 
+export const nightWorkersRunCheckInputSchema = z.object({
+	runId: z
+		.string()
+		.trim()
+		.optional()
+		.describe("NightWorkers run id. Defaults to request context."),
+	verificationDocumentId: z
+		.string()
+		.trim()
+		.optional()
+		.describe(
+			"Verification document id. Defaults to the latest task document.",
+		),
+	command: z.string().trim().min(1),
+	cwd: z.string().trim().optional(),
+	checkKind: z.enum([
+		"lint",
+		"format_check",
+		"typecheck",
+		"test",
+		"coverage",
+		"build",
+		"verify",
+		"completion_check",
+		"other",
+	]),
+	conditionIds: z.array(z.string().trim().min(1)).optional(),
+	timeoutSeconds: z.number().int().positive().optional(),
+	displayMode: z.enum(["summary", "error_excerpt", "full"]).optional(),
+});
+
+export const nightWorkersCompletionCheckInputSchema = z.object({
+	taskId: z
+		.string()
+		.trim()
+		.optional()
+		.describe("NightWorkers task id. Defaults to request context."),
+	verificationDocumentId: z.string().trim().optional(),
+});
+
 export const nightWorkersTodoListInputSchema = z.object({
 	runId: z
 		.string()
@@ -368,6 +408,30 @@ export const nightWorkersCodexToolManifest = {
 		approvalMode: "approve",
 		inputSchema: nightWorkersTodoListInputSchema,
 	},
+	run_check: {
+		title: "Run Check",
+		description:
+			"Run a NightWorkers-managed check command and store raw stdout/stderr as formal verification evidence. Use for lint, format:check, typecheck, test, coverage, build, and verify.",
+		annotations: {
+			readOnlyHint: false,
+			destructiveHint: false,
+			openWorldHint: false,
+		},
+		approvalMode: "approve",
+		inputSchema: nightWorkersRunCheckInputSchema,
+	},
+	completion_check: {
+		title: "Completion Check",
+		description:
+			"Check required Verification Checklist items from managed NightWorkers evidence before closeout.",
+		annotations: {
+			readOnlyHint: true,
+			destructiveHint: false,
+			openWorldHint: false,
+		},
+		approvalMode: "approve",
+		inputSchema: nightWorkersCompletionCheckInputSchema,
+	},
 	import_project: {
 		title: "Import Project",
 		description:
@@ -459,6 +523,7 @@ export type NightWorkersCodexToolName =
 export type NightWorkersCodexToolExecutionMode =
 	| "planning"
 	| "implementation"
+	| "test"
 	| "review"
 	| "general_answer";
 

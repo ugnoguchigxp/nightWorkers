@@ -167,6 +167,7 @@ function buildTaskIconClass(task: ProjectQueueTask) {
 	if (task.status === "plan_mode") return "text-violet-300";
 	if (task.status === "queued" || task.status === "ready_for_queue")
 		return "text-emerald-300";
+	if (task.status === "archived") return "text-slate-300";
 	return "text-slate-400";
 }
 
@@ -203,6 +204,7 @@ function buildTaskFooter(task: ProjectQueueTask) {
 	if (task.status === "needs_human") return "human input required";
 	if (task.status === "failed") return "failed";
 	if (task.status === "cancelled") return "cancelled";
+	if (task.status === "archived") return "completed and archived";
 	return "completed";
 }
 
@@ -221,5 +223,7 @@ function statusToneClass(task: ProjectQueueTask) {
 		return "border-amber-500/40 bg-amber-950/20 text-amber-100";
 	if (task.status === "completed")
 		return "border-slate-700 bg-slate-950/40 text-slate-300";
+	if (task.status === "archived")
+		return "border-slate-600 bg-slate-900/50 text-slate-200";
 	return "border-slate-700 bg-slate-950/40 text-slate-200";
 }

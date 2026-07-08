@@ -120,11 +120,7 @@ export const ProjectSidebar = memo(function ProjectSidebar(
 						const isExpanded = props.expandedProjects[project.id] ?? true;
 						const isProjectDetailActive =
 							props.activeProjectDetailId === project.id;
-						const sessions = [
-							...grouped.processing,
-							...grouped.queue,
-							...grouped.archive,
-						];
+						const sessions = [...grouped.processing, ...grouped.queue];
 						return (
 							<div key={project.id} className="space-y-1">
 								<div className="group flex items-center justify-between px-3 py-1">

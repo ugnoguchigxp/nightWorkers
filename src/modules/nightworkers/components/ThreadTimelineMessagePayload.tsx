@@ -8,9 +8,11 @@ import { ChatMarkdown, NightWorkersCodeBlock } from "./ThreadTimelineMarkdown";
 export function MessagePayload({
 	message,
 	onOpenArtifact,
+	onOpenProjectFile,
 }: {
 	message: TaskMessage;
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
+	onOpenProjectFile?: (path: string) => void;
 }) {
 	const { t } = useTranslation();
 	const metadata = toDeepRecord(message.metadataJson);
@@ -384,10 +386,20 @@ export function MessagePayload({
 		metadata?.markdownDocumentData?.content
 	) {
 		const markdownDocumentData = toDeepRecord(metadata.markdownDocumentData);
-		return <ChatMarkdown content={String(markdownDocumentData.content)} />;
+		return (
+			<ChatMarkdown
+				content={String(markdownDocumentData.content)}
+				onOpenProjectFile={onOpenProjectFile}
+			/>
+		);
 	}
 	if (message.role === "assistant") {
-		return <ChatMarkdown content={message.content} />;
+		return (
+			<ChatMarkdown
+				content={message.content}
+				onOpenProjectFile={onOpenProjectFile}
+			/>
+		);
 	}
 	return <>{message.content}</>;
 }

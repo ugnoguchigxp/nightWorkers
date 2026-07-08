@@ -102,23 +102,24 @@ export function startWorkbenchRun(sessionId: string) {
 	});
 }
 
+export function startTestModeRun(
+	sessionId: string,
+	input: {
+		projectId: string;
+		specArtifactId: string;
+		verificationDocumentId: string;
+		mode: "test";
+		rerun?: boolean;
+	},
+) {
+	return apiFetch(
+		`/api/tasks/${sessionId}/test-mode-run`,
+		jsonRequest("POST", input),
+	);
+}
+
 export function stopRun(runId: string) {
 	return apiFetch(`/api/runs/${runId}/stop`, { method: "POST" });
-}
-
-export function fetchRunGitCloseout(runId: string) {
-	return apiFetch(`/api/runs/${runId}/git/closeout`);
-}
-
-export function commitRunGitCloseout(
-	runId: string,
-	input: { message?: string } = {},
-) {
-	return apiFetch(`/api/runs/${runId}/git/commit`, jsonRequest("POST", input));
-}
-
-export function pushRunGitCloseout(runId: string) {
-	return apiFetch(`/api/runs/${runId}/git/push`, { method: "POST" });
 }
 
 export function stopBackgroundProcess(processId: string) {
@@ -158,76 +159,30 @@ export function fetchLatestTaskReviewSession(sessionId: string) {
 	return apiFetch(`/api/tasks/${sessionId}/review-session`);
 }
 
-export function runReviewSection(reviewSessionId: string, section: string) {
-	return apiFetch(
-		`/api/review-sessions/${reviewSessionId}/sections/${section}/run`,
-		jsonRequest("POST", {}),
-	);
-}
-
-export function updateReviewFindingDisposition(
-	reviewSessionId: string,
-	findingId: string,
-	input: {
-		disposition:
-			| "human_callout"
-			| "agent_followup"
-			| "prompt_suggestion"
-			| "security_plugin_handoff"
-			| "accepted_risk"
-			| "ignored";
-		note?: string;
-		evidenceRefs?: unknown[];
-	},
-) {
-	return apiFetch(
-		`/api/review-sessions/${reviewSessionId}/findings/${findingId}/disposition`,
-		jsonRequest("POST", input),
-	);
-}
-
-export function createReviewPromptSuggestions(reviewSessionId: string) {
-	return apiFetch(
-		`/api/review-sessions/${reviewSessionId}/prompt-suggestions`,
-		{
-			method: "POST",
-		},
-	);
-}
-
-export function updateReviewPromptSuggestion(
-	reviewSessionId: string,
-	suggestionId: string,
-	input: { status: "dismissed" },
-) {
-	return apiFetch(
-		`/api/review-sessions/${reviewSessionId}/prompt-suggestions/${suggestionId}`,
-		jsonRequest("PATCH", input),
-	);
-}
-
-export function markReviewPromptSuggestionUsed(
-	reviewSessionId: string,
-	suggestionId: string,
-	input: { createdMessageId?: string } = {},
-) {
-	return apiFetch(
-		`/api/review-sessions/${reviewSessionId}/prompt-suggestions/${suggestionId}/use`,
-		jsonRequest("POST", input),
-	);
-}
-
-export function applyReviewFinalAction(
+export function startReviewRun(
 	reviewSessionId: string,
 	input: {
-		action: "approve" | "request_changes" | "needs_human" | "exit_review";
-		note?: string;
-	},
+		options?: {
+			codeReview?: boolean;
+			testEvidenceReview?: boolean;
+			securityReview?: boolean;
+			applyFixes?: boolean;
+			commitChanges?: boolean;
+		};
+	} = {},
 ) {
 	return apiFetch(
-		`/api/review-sessions/${reviewSessionId}/final-action`,
+		`/api/review-sessions/${reviewSessionId}/run`,
 		jsonRequest("POST", input),
 	);
+}
+
+export function fetchRunGitCloseout(runId: string) {
+	return apiFetch(`/api/runs/${runId}/git/closeout`);
+}
+
+export function commitRunGitCloseout(runId: string) {
+	return apiFetch(`/api/runs/${runId}/git/commit`, jsonRequest("POST", {}));
 }
 
 export function browseFolders(targetPath?: string) {

@@ -1,0 +1,604 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { NotFoundError } from "../../lib/errors";
+import type { ImplementationTodoInput } from "../../services/todo-runtime";
+import * as repo from "./nightworkers.repository";
+import {
+	DEFAULT_REVIEW_RUN_OPTIONS,
+	type ReviewPlanSpec,
+	type ReviewRunOptions,
+	type ReviewTarget,
+	type ReviewTargetWarning,
+} from "./nightworkers.review-mode.model";
+import * as reviewRepo from "./nightworkers.review-mode.repository";
+import {
+	runReviewRunUnitTestCoverageCheck,
+	type UnitTestCoverageReview,
+} from "./nightworkers.review-run-test-evidence.service";
+import {
+	buildReviewTarget,
+	findLatestPlanArtifact,
+} from "./nightworkers.review-targets.service";
+import {
+	findingForVulnWorkbenchResult,
+	readVulnWorkbenchCliSettings,
+	runVulnWorkbenchSecurityDiagnostic,
+} from "./nightworkers.review-vulnworkbench.service";
+import { startTaskRun } from "./run-orchestration/start-task-run";
+
+export function normalizeReviewRunOptions(
+	value: Partial<ReviewRunOptions> | null | undefined,
+): ReviewRunOptions {
+	return {
+		...DEFAULT_REVIEW_RUN_OPTIONS,
+		...(value ?? {}),
+	};
+}
+
+export function buildReviewRunTodos(input: {
+	options: ReviewRunOptions;
+	target: ReviewTarget;
+	planSpec: ReviewPlanSpec;
+}): ImplementationTodoInput[] {
+	const todos: ImplementationTodoInput[] = [
+		{
+			title: "Review Plan 仕様書を読む",
+			description: input.planSpec.body
+				? "Plan 仕様書を source of truth として読み、受け入れ条件・検証観点・security notes を確認する。"
+				: "Plan 仕様書が見つからないため、missing warning を確認して code review path に限定する。",
+			taskType: "inspection",
+			procedureId: "review.read_plan_spec",
+		},
+		{
+			title: "この run の編集対象と diff を確認する",
+			description: `対象ファイル ${input.target.targetFiles.length} 件、除外 dirty file ${input.target.excludedDirtyFiles.length} 件、warning ${input.target.warnings.length} 件を確認する。`,
+			taskType: "inspection",
+			procedureId: "review.inspect_targets",
+			dependsOn: [1],
+		},
+	];
+	let previous = 2;
+	if (input.options.codeReview) {
+		previous += 1;
+		todos.push({
+			title: "Plan 仕様と対象 diff を照合し、コードレビュー findings を作る",
+			description:
+				"対象ファイルだけを主対象に、バグ・回帰・責務境界・低品質な修正を重大度付き finding として整理する。",
+			taskType: "inspection",
+			procedureId: "review.code_findings",
+			dependsOn: [previous - 1],
+		});
+	}
+	if (input.options.testEvidenceReview) {
+		previous += 1;
+		todos.push({
+			title: "受け入れ条件ごとのテスト証跡を確認する",
+			description:
+				"Plan 仕様書の受け入れ条件ごとに、テストファイル・テスト名・コマンド実行結果・本文証跡を分けて確認する。",
+			taskType: "focused_verification",
+			procedureId: "review.test_evidence",
+			dependsOn: [previous - 1],
+		});
+	}
+	if (input.options.securityReview) {
+		previous += 1;
+		todos.push({
+			title: "vulnWorkbench CLI でセキュリティ診断を実行する",
+			description:
+				"vulnWorkbench の scanner-backed evidence と scan review output を主根拠にし、LLM-only concern を confirmed vulnerability として扱わない。",
+			taskType: "focused_verification",
+			procedureId: "review.security_vulnworkbench",
+			dependsOn: [previous - 1],
+		});
+	}
+	previous += 1;
+	todos.push({
+		title: "findings を統合して artifact に保存する",
+		description:
+			"code review、test evidence、security review の結果を統合し、Review Mode findings と Review Run artifact の材料を整理する。",
+		taskType: "documentation",
+		procedureId: "review.consolidate_findings",
+		dependsOn: [previous - 1],
+	});
+	if (input.options.applyFixes) {
+		previous += 1;
+		todos.push({
+			title: "accepted findings を修正する",
+			description:
+				"Review Run で見つけた修正対象を最小差分で直し、対象外 dirty file を巻き込まない。",
+			taskType: "code_edit",
+			procedureId: "review.apply_fixes",
+			dependsOn: [previous - 1],
+		});
+		previous += 1;
+		todos.push({
+			title: "修正後に verify を実行する",
+			description:
+				"修正後に package.json の verify script または代表ゲートを実行し、失敗時は commit へ進まない。",
+			taskType: "verification",
+			procedureId: "review.verify_after_fixes",
+			dependsOn: [previous - 1],
+		});
+	}
+	if (input.options.commitChanges) {
+		previous += 1;
+		todos.push({
+			title: "review 対象差分を commit する",
+			description:
+				"verify 成功後に Review Run 対象/fix file だけを stage し、除外 dirty file は stage しない。",
+			taskType: "git",
+			procedureId: "review.commit_changes",
+			dependsOn: [previous - 1],
+		});
+	}
+	return todos;
+}
+
+export async function startReviewRunForSession(
+	reviewSessionId: string,
+	optionsInput?: Partial<ReviewRunOptions> | null,
+) {
+	const session = await reviewRepo.getReviewSession(reviewSessionId);
+	if (!session) throw new NotFoundError("Review session not found");
+	const options = normalizeReviewRunOptions(optionsInput);
+	const target = await buildReviewTarget({ runId: session.runId });
+	const planSpec = await readReviewPlanSpec(session.taskId);
+	const todos = buildReviewRunTodos({ options, target, planSpec });
+	const initialFindings = await createInitialReviewRunFindings({
+		session,
+		target,
+		planSpec,
+		options,
+	});
+	await reviewRepo.upsertReviewArtifact({
+		reviewSessionId,
+		runId: session.runId,
+		taskId: session.taskId,
+		kind: "review_targets",
+		status: target.warnings.some((warning) => warning.severity === "blocking")
+			? "needs_human"
+			: "done",
+		artifactJson: target,
+		sourceEvidenceRefsJson: target.targetFiles.flatMap((file) =>
+			file.eventIds.map((eventId) => ({ kind: "run_event", eventId })),
+		),
+	});
+	await reviewRepo.upsertReviewArtifact({
+		reviewSessionId,
+		runId: session.runId,
+		taskId: session.taskId,
+		kind: "review_run",
+		status: "running",
+		artifactJson: buildReviewRunArtifact({
+			session,
+			options,
+			target,
+			todos,
+			status: "running",
+			reviewRunId: null,
+			initialFindingCount: initialFindings.length,
+		}),
+		sourceEvidenceRefsJson: [],
+	});
+	const blockingWarnings = target.warnings.filter(
+		(warning) => warning.severity === "blocking",
+	);
+	if (blockingWarnings.length > 0) {
+		await reviewRepo.upsertReviewArtifact({
+			reviewSessionId,
+			runId: session.runId,
+			taskId: session.taskId,
+			kind: "review_run",
+			status: "needs_human",
+			artifactJson: buildReviewRunArtifact({
+				session,
+				options,
+				target,
+				todos,
+				status: "needs_human",
+				reviewRunId: null,
+				initialFindingCount: initialFindings.length,
+			}),
+			sourceEvidenceRefsJson: [],
+		});
+		await repo.createRunEvent({
+			version: 1,
+			runId: session.runId,
+			taskId: session.taskId,
+			timestamp: new Date().toISOString(),
+			type: "review.run_started",
+			severity: "warning",
+			actor: "system",
+			message:
+				"Review Run did not start because target extraction needs human review.",
+			data: {
+				reviewSessionId,
+				options,
+				blockingWarnings,
+				targetSummary: summarizeTarget(target),
+			},
+		});
+		return { reviewRun: null, target, planSpec, todos };
+	}
+
+	const unitTestCoverageReview = options.testEvidenceReview
+		? await runReviewRunUnitTestCoverageCheck({
+				reviewSessionId,
+				taskId: session.taskId,
+				repositoryId: session.repositoryId,
+				target,
+				planSpec,
+			})
+		: null;
+	const unitTestCoverageFindingCount =
+		unitTestCoverageReview?.criteria.filter(
+			(item) => item.status === "missing" || item.status === "unclear",
+		).length ?? 0;
+
+	const reviewPrompt = buildReviewRunPrompt({
+		session,
+		options,
+		target,
+		planSpec,
+		todos,
+		unitTestCoverageReview,
+	});
+	await repo.createTaskMessage({
+		taskId: session.taskId,
+		runId: null,
+		role: "user",
+		content: reviewPrompt,
+		messageType: "review_run_request",
+		payloadJson: {
+			intent: "review_run",
+			reviewSessionId,
+			reviewedRunId: session.runId,
+			options,
+			targetSummary: summarizeTarget(target),
+		},
+	});
+	const reviewRun = await startTaskRun(session.taskId, {
+		executionMode: "review",
+		executionModeSource: "review_run",
+		initialTodos: todos,
+		runtimeOptionsPatch: {
+			reviewRun: {
+				reviewSessionId,
+				reviewedRunId: session.runId,
+				options,
+				targetSummary: summarizeTarget(target),
+			},
+		},
+	});
+	await reviewRepo.upsertReviewArtifact({
+		reviewSessionId,
+		runId: session.runId,
+		taskId: session.taskId,
+		kind: "review_run",
+		status: "running",
+		artifactJson: buildReviewRunArtifact({
+			session,
+			options,
+			target,
+			todos,
+			status: "running",
+			reviewRunId: reviewRun.id,
+			initialFindingCount:
+				initialFindings.length + unitTestCoverageFindingCount,
+		}),
+		sourceEvidenceRefsJson: [],
+	});
+	await repo.createRunEvent({
+		version: 1,
+		runId: session.runId,
+		taskId: session.taskId,
+		timestamp: new Date().toISOString(),
+		type: "review.run_started",
+		severity: "info",
+		actor: "system",
+		message: "Review Run was started.",
+		data: {
+			reviewSessionId,
+			reviewRunId: reviewRun.id,
+			options,
+			targetSummary: summarizeTarget(target),
+		},
+	});
+	return { reviewRun, target, planSpec, todos };
+}
+
+async function readReviewPlanSpec(taskId: string): Promise<ReviewPlanSpec> {
+	const artifact = await findLatestPlanArtifact(taskId);
+	if (!artifact) {
+		return {
+			sourceMessageId: null,
+			title: null,
+			body: "",
+			acceptanceCriteria: [],
+			verificationHints: [],
+			securityNotes: [],
+			implementationScopeHints: [],
+		};
+	}
+	return {
+		sourceMessageId: artifact.id,
+		title: artifact.title,
+		body: artifact.body,
+		acceptanceCriteria: extractPlanBullets(artifact.body, [
+			"Acceptance Criteria",
+			"受け入れ条件",
+			"Completion Conditions",
+			"完了条件",
+		]),
+		verificationHints: extractPlanBullets(artifact.body, [
+			"Verification",
+			"検証",
+			"Verification Gates",
+		]),
+		securityNotes: extractPlanBullets(artifact.body, [
+			"Security",
+			"セキュリティ",
+		]),
+		implementationScopeHints: extractPlanBullets(artifact.body, [
+			"Implementation",
+			"実装",
+			"Scope",
+		]),
+	};
+}
+
+async function createInitialReviewRunFindings(input: {
+	session: NonNullable<Awaited<ReturnType<typeof reviewRepo.getReviewSession>>>;
+	target: ReviewTarget;
+	planSpec: ReviewPlanSpec;
+	options: ReviewRunOptions;
+}) {
+	const rows: Parameters<typeof reviewRepo.createReviewFindings>[0] =
+		input.target.warnings
+			.filter((warning) => warning.severity !== "info")
+			.map((warning) => warningToFinding(input.session, warning));
+	if (!input.planSpec.body && input.options.testEvidenceReview) {
+		rows.push({
+			reviewSessionId: input.session.id,
+			runId: input.session.runId,
+			taskId: input.session.taskId,
+			severity: "warning",
+			title: "Plan specification was not found for review",
+			body: "Acceptance criteria could not be read, so test evidence review needs human confirmation.",
+			evidenceRefsJson: [],
+			sourceSection: "review_run",
+		});
+	}
+	if (input.options.securityReview) {
+		const settings = readVulnWorkbenchCliSettings();
+		const artifactDir = await fs.mkdtemp(
+			path.join(os.tmpdir(), "nightworkers-review-"),
+		);
+		const result = await runVulnWorkbenchSecurityDiagnostic({
+			target: input.target,
+			artifactDir,
+			settings,
+		});
+		const artifact = await reviewRepo.upsertReviewArtifact({
+			reviewSessionId: input.session.id,
+			runId: input.session.runId,
+			taskId: input.session.taskId,
+			kind: "security_review",
+			status: result.ok ? "done" : "needs_human",
+			artifactJson: {
+				version: 1,
+				kind: "vulnworkbench_security_diagnostic",
+				result,
+			},
+			sourceEvidenceRefsJson: [],
+		});
+		const finding = findingForVulnWorkbenchResult(result);
+		const evidenceRefsJson: unknown[] = [
+			...finding.evidenceRefsJson,
+			{
+				kind: "artifact",
+				artifactId: artifact.id,
+				artifactKind: "security_review",
+			},
+		];
+		rows.push({
+			reviewSessionId: input.session.id,
+			runId: input.session.runId,
+			taskId: input.session.taskId,
+			...finding,
+			evidenceRefsJson,
+		});
+	}
+	return reviewRepo.createReviewFindings(rows);
+}
+
+function warningToFinding(
+	session: NonNullable<Awaited<ReturnType<typeof reviewRepo.getReviewSession>>>,
+	warning: ReviewTargetWarning,
+) {
+	return {
+		reviewSessionId: session.id,
+		runId: session.runId,
+		taskId: session.taskId,
+		severity: warning.severity === "blocking" ? "blocking" : "warning",
+		title: reviewTargetWarningTitle(warning),
+		body: [warning.message, warning.paths?.slice(0, 10).join("\n")]
+			.filter(Boolean)
+			.join("\n"),
+		evidenceRefsJson: [],
+		sourceSection: "review_run",
+	};
+}
+
+function buildReviewRunArtifact(input: {
+	session: NonNullable<Awaited<ReturnType<typeof reviewRepo.getReviewSession>>>;
+	options: ReviewRunOptions;
+	target: ReviewTarget;
+	todos: ImplementationTodoInput[];
+	status: "not_started" | "running" | "needs_human" | "done" | "failed";
+	reviewRunId: string | null;
+	initialFindingCount: number;
+}) {
+	return {
+		version: 1,
+		kind: "review_run",
+		runId: input.session.runId,
+		reviewRunId: input.reviewRunId,
+		taskId: input.session.taskId,
+		repositoryId: input.session.repositoryId,
+		options: input.options,
+		status: input.status,
+		target: summarizeTarget(input.target),
+		todos: input.todos.map((todo, index) => ({
+			seq: index + 1,
+			title: todo.title,
+			taskType: todo.taskType ?? "implementation",
+			procedureId: todo.procedureId ?? null,
+		})),
+		findings: [],
+		initialFindingCount: input.initialFindingCount,
+		fixesApplied: false,
+		commit: {
+			requested: input.options.commitChanges,
+			created: false,
+			sha: null,
+			message: null,
+			error: null,
+		},
+		warnings: input.target.warnings,
+	};
+}
+
+function buildReviewRunPrompt(input: {
+	session: NonNullable<Awaited<ReturnType<typeof reviewRepo.getReviewSession>>>;
+	options: ReviewRunOptions;
+	target: ReviewTarget;
+	planSpec: ReviewPlanSpec;
+	todos: ImplementationTodoInput[];
+	unitTestCoverageReview?: UnitTestCoverageReview | null;
+}) {
+	const targetLines = input.target.targetFiles
+		.map((file) => `- ${file.path} (${file.status}, ${file.diffBytes} bytes)`)
+		.join("\n");
+	const warningLines = input.target.warnings
+		.map(
+			(warning) =>
+				`- [${warning.severity}] ${warning.code}: ${warning.message}`,
+		)
+		.join("\n");
+	const unitTestCoverageLines = input.unitTestCoverageReview
+		? input.unitTestCoverageReview.criteria
+				.map((item) => {
+					const tests = item.matchedTests
+						.slice(0, 3)
+						.map(
+							(match) =>
+								`${match.filePath}:${match.lineNumber} ${match.testName}`,
+						)
+						.join("; ");
+					return `- [${item.status}] ${item.criterion}: ${item.reason}${
+						tests ? ` (${tests})` : ""
+					}`;
+				})
+				.join("\n")
+		: "(not run)";
+	return [
+		"Review Run を開始してください。",
+		"",
+		`reviewSessionId: ${input.session.id}`,
+		`reviewedRunId: ${input.session.runId}`,
+		`options: ${JSON.stringify(input.options)}`,
+		"",
+		"Plan specification:",
+		input.planSpec.body || "(missing)",
+		"",
+		"Acceptance criteria:",
+		input.planSpec.acceptanceCriteria.map((item) => `- ${item}`).join("\n") ||
+			"(none)",
+		"",
+		"Review target files:",
+		targetLines || "(none)",
+		"",
+		"Excluded dirty files:",
+		input.target.excludedDirtyFiles.map((file) => `- ${file}`).join("\n") ||
+			"(none)",
+		"",
+		"Target warnings:",
+		warningLines || "(none)",
+		"",
+		"Unit test coverage review:",
+		unitTestCoverageLines || "(none)",
+		"",
+		"Required Review Run TODOs:",
+		input.todos.map((todo, index) => `${index + 1}. ${todo.title}`).join("\n"),
+		"",
+		"Rules:",
+		"- Required Review Run TODOs は TodoList pane の進捗 source of truth です。各段階が終わったら todo_list operation=done で次へ進み、未完了なら block/fail で理由を残す。",
+		"- レビュー主対象は Review target files に限定する。必要な文脈読み取りは可。",
+		"- Findings は重大度、file/line、根拠、推奨アクションを分けて報告する。",
+		"- test evidence は command/file/test-name/body evidence を分ける。",
+		"- Unit test coverage review がある場合は、完了条件ごとの covered/missing/unclear と対応テストを最終報告に含める。",
+		input.options.securityReview
+			? "- security review は vulnWorkbench CLI output を主根拠にする。"
+			: "- security review option は off。",
+		input.options.applyFixes
+			? "- applyFixes=true のため、accepted findings は最小差分で修正してよい。Unit test coverage review の missing/unclear は、既存テストが同じ観点を検証しているなら test / it / describe 名を完了条件の観点に寄せ、観点が不足しているなら focused unit test を追加して対象テストを通す。"
+			: "- applyFixes=false のため、ファイルを編集しない。",
+		input.options.commitChanges
+			? "- commitChanges=true のため、verify 成功後に対象差分だけ commit する。"
+			: "- commitChanges=false のため、commit しない。",
+	].join("\n");
+}
+
+function summarizeTarget(target: ReviewTarget) {
+	return {
+		runId: target.runId,
+		repositoryId: target.repositoryId,
+		repoRoot: target.repoRoot,
+		planArtifact: target.planArtifact,
+		targetFiles: target.targetFiles.map((file) => ({
+			path: file.path,
+			status: file.status,
+			sources: file.sources,
+			diffBytes: file.diffBytes,
+		})),
+		excludedDirtyFiles: target.excludedDirtyFiles,
+		signalOnlyFiles: target.signalOnlyFiles,
+		diffOnlyFiles: target.diffOnlyFiles,
+		warningCount: target.warnings.length,
+	};
+}
+
+function extractPlanBullets(body: string, headings: string[]) {
+	const lines = body.split("\n");
+	const results: string[] = [];
+	let active = false;
+	for (const line of lines) {
+		const heading = /^#{1,4}\s+(.+?)\s*$/.exec(line)?.[1]?.trim() ?? null;
+		if (heading) {
+			active = headings.some((candidate) =>
+				heading.toLowerCase().includes(candidate.toLowerCase()),
+			);
+			continue;
+		}
+		if (!active) continue;
+		const bullet = /^\s*(?:[-*]|\d+\.)\s+(.+)$/.exec(line)?.[1]?.trim();
+		if (bullet) results.push(bullet);
+	}
+	return results;
+}
+
+function reviewTargetWarningTitle(warning: ReviewTargetWarning) {
+	if (warning.code === "current_diff_without_edit_signal")
+		return "Dirty files outside this run were excluded from Review Run";
+	if (warning.code === "edit_signal_without_current_diff")
+		return "Run edit signal no longer has a current diff";
+	if (warning.code === "plan_artifact_missing")
+		return "Plan specification was not found for review";
+	if (warning.code === "no_edit_signals")
+		return "No edit signals were found for Review Run";
+	if (warning.code === "target_file_limit_exceeded")
+		return "Review Run target file limit was exceeded";
+	return "Review Run target extraction warning";
+}

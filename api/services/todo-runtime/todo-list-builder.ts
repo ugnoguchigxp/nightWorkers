@@ -67,14 +67,6 @@ const DATA_MIGRATION_GATES: StandardGate[] = [
 
 const FINAL_GATES: StandardGate[] = [
 	{
-		title: "LLM コードレビューを実施する",
-		description:
-			"実装差分を LLM のコードレビュー観点で確認し、バグ、回帰、責務境界違反、テスト不足があれば修正する。",
-		taskType: "review",
-		procedureId: "llm_code_review",
-		dependsOn: [],
-	},
-	{
 		title: "品質ゲート verify コマンドを通す",
 		description:
 			"package.json に verify script がある場合は、このリポジトリ標準の verify コマンドを最優先で実行する。失敗した場合は原因を修正し、verify が成功するまで再実行する。verify script が無い、または環境制約で実行不能な場合だけ、typecheck / lint / test / build などの代替検証を明記して実行する。",
@@ -282,7 +274,7 @@ function isReservedFinalGateTodo(todo: ImplementationTodoInput) {
 	return (
 		isReservedFirstGateTodo(todo) ||
 		isReservedDataMigrationGateTodo(todo) ||
-		isReservedReviewTodo(todo) ||
+		isDeprecatedReviewTodo(todo) ||
 		isReservedCloseoutTodo(todo) ||
 		isReservedBroadVerificationTodo(todo)
 	);
@@ -329,19 +321,22 @@ function isReservedFirstGateTodo(todo: ImplementationTodoInput) {
 	);
 }
 
-function isReservedReviewTodo(todo: ImplementationTodoInput) {
+function isDeprecatedReviewTodo(todo: ImplementationTodoInput) {
 	const title =
 		typeof todo.title === "string" ? todo.title.trim().toLowerCase() : "";
 	const normalizedTitle = title.replace(/\s+/g, "");
 	const taskType =
-		typeof todo.taskType === "string" ? todo.taskType.trim() : "";
+		typeof todo.taskType === "string" ? todo.taskType.trim().toLowerCase() : "";
 	const procedureId =
-		typeof todo.procedureId === "string" ? todo.procedureId.trim() : "";
+		typeof todo.procedureId === "string"
+			? todo.procedureId.trim().toLowerCase()
+			: "";
 
 	return (
 		title === "llm code review" ||
 		normalizedTitle === "llmコードレビューを実施する" ||
 		taskType === "review" ||
+		taskType === "code_review" ||
 		procedureId === "llm_code_review"
 	);
 }

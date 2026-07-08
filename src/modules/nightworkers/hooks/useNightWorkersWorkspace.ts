@@ -182,6 +182,19 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		refetchOnReconnect: false,
 	});
 	const latestRun = activeSessionRuns[0];
+	const { data: activeGitCloseout = null } = useQuery({
+		queryKey: ["gitCloseout", latestRun?.id],
+		queryFn: async () => {
+			if (!latestRun?.id) return null;
+			const res = await fetchRunGitCloseout(latestRun.id);
+			if (!res.ok) throw new Error("Failed to fetch Git closeout state");
+			return (await res.json()) as GitCloseoutState;
+		},
+		enabled: !!latestRun?.id,
+		refetchInterval: false,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
+	});
 	const { data: taskMessages = [] } = useQuery({
 		queryKey: ["taskMessages", activeSessionId],
 		queryFn: async () => {
@@ -249,19 +262,6 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		refetchOnReconnect: false,
 	});
 
-	const { data: activeGitCloseout = null } = useQuery({
-		queryKey: ["gitCloseout", latestRun?.id],
-		queryFn: async () => {
-			if (!latestRun?.id) return null;
-			const res = await fetchRunGitCloseout(latestRun.id);
-			if (!res.ok) throw new Error("Failed to fetch Git closeout state");
-			return (await res.json()) as GitCloseoutState;
-		},
-		enabled: !!latestRun?.id && !!activeReviewSession,
-		refetchOnWindowFocus: false,
-		refetchOnReconnect: false,
-	});
-
 	const { data: backgroundProcesses = [] } = useQuery({
 		queryKey: ["backgroundProcesses", activeSessionId],
 		queryFn: async () => {
@@ -313,14 +313,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		queueSessionMutation,
 		submitRunReviewMutation,
 		startReviewSessionMutation,
-		runReviewSectionMutation,
+		startReviewRunMutation,
 		commitRunGitCloseoutMutation,
-		pushRunGitCloseoutMutation,
-		updateReviewFindingDispositionMutation,
-		createReviewPromptSuggestionsMutation,
-		updateReviewPromptSuggestionMutation,
-		markReviewPromptSuggestionUsedMutation,
-		applyReviewFinalActionMutation,
 		updateSessionStatusMutation,
 		reorderQueueSessionsMutation,
 		moveWorkbenchSessionMutation,
@@ -574,36 +568,10 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		},
 		startReviewSession: (runId) =>
 			startReviewSessionMutation.mutateAsync(runId),
-		runReviewSection: (reviewSessionId, section) =>
-			runReviewSectionMutation.mutateAsync({ reviewSessionId, section }),
-		commitRunGitCloseout: (runId, message) =>
-			commitRunGitCloseoutMutation.mutateAsync({ runId, message }),
-		pushRunGitCloseout: (runId) =>
-			pushRunGitCloseoutMutation.mutateAsync(runId),
-		updateReviewFindingDisposition: (reviewSessionId, findingId, input) =>
-			updateReviewFindingDispositionMutation.mutateAsync({
-				reviewSessionId,
-				findingId,
-				data: input,
-			}),
-		createReviewPromptSuggestions: (reviewSessionId) =>
-			createReviewPromptSuggestionsMutation.mutateAsync(reviewSessionId),
-		updateReviewPromptSuggestion: (reviewSessionId, suggestionId, input) =>
-			updateReviewPromptSuggestionMutation.mutateAsync({
-				reviewSessionId,
-				suggestionId,
-				data: input,
-			}),
-		markReviewPromptSuggestionUsed: (reviewSessionId, suggestionId) =>
-			markReviewPromptSuggestionUsedMutation.mutateAsync({
-				reviewSessionId,
-				suggestionId,
-			}),
-		applyReviewFinalAction: (reviewSessionId, input) =>
-			applyReviewFinalActionMutation.mutateAsync({
-				reviewSessionId,
-				data: input,
-			}),
+		startReviewRun: (reviewSessionId, options) =>
+			startReviewRunMutation.mutateAsync({ reviewSessionId, options }),
+		commitRunGitCloseout: (runId) =>
+			commitRunGitCloseoutMutation.mutateAsync(runId),
 		updateSessionStatus: (sessionId, status) =>
 			updateSessionStatusMutation.mutateAsync({ sessionId, status }),
 		reorderQueueSessions: (sessionIds) =>

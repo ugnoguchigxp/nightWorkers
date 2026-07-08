@@ -226,7 +226,9 @@ function reviewSessionDetail(): ReviewSessionDetail {
 	};
 }
 
-function gitCloseoutState(): GitCloseoutState {
+function gitCloseoutState(
+	override: Partial<GitCloseoutState> = {},
+): GitCloseoutState {
 	return {
 		runId: "22222222-2222-4222-8222-222222222222",
 		repositoryId: "44444444-4444-4444-8444-444444444444",
@@ -253,22 +255,73 @@ function gitCloseoutState(): GitCloseoutState {
 		},
 		requiredReview: {
 			reviewSessionId: "11111111-1111-4111-8111-111111111111",
-			testCoverageStatus: "done",
+			testCoverageStatus: null,
+			reviewRunStatus: "running",
 			complete: true,
 		},
 		git: {
 			head: "abc123",
 			branch: "main",
-			upstream: "origin/main",
+			upstream: null,
 			dirtyPaths: ["src/app.ts"],
 			stagedPaths: [],
 		},
 		counts: { stageablePaths: 1, excludedPaths: 0 },
+		...override,
+	};
+}
+
+function reviewRunArtifact(
+	status: "not_started" | "running" | "needs_human" | "done" | "failed",
+): ReviewSessionDetail["artifacts"][number] {
+	const now = "2026-07-06T00:00:00.000Z";
+	return {
+		id: "99999999-9999-4999-8999-999999999999",
+		reviewSessionId: "11111111-1111-4111-8111-111111111111",
+		runId: "22222222-2222-4222-8222-222222222222",
+		taskId: "33333333-3333-4333-8333-333333333333",
+		kind: "review_run",
+		status,
+		createdAt: now,
+		updatedAt: now,
+		sourceEvidenceRefs: [],
+		artifact: {
+			version: 1,
+			kind: "review_run",
+			runId: "22222222-2222-4222-8222-222222222222",
+			reviewRunId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+			taskId: "33333333-3333-4333-8333-333333333333",
+			repositoryId: "44444444-4444-4444-8444-444444444444",
+			options: {
+				codeReview: true,
+				testEvidenceReview: true,
+				securityReview: false,
+				applyFixes: true,
+				commitChanges: false,
+			},
+			status,
+			target: {
+				targetFiles: [
+					{ path: "src/app.ts", status: "modified", diffBytes: 120 },
+					{ path: "src/app.test.ts", status: "modified", diffBytes: 80 },
+				],
+				excludedDirtyFiles: [],
+			},
+			todos: [
+				{
+					seq: 1,
+					title: "Review Plan 仕様書を読む",
+					taskType: "inspection",
+					procedureId: "review.read_plan_spec",
+				},
+			],
+			warnings: [],
+		},
 	};
 }
 
 describe("ReviewStatusViewer", () => {
-	it("renders acceptance criteria test-name check results in Japanese", async () => {
+	it("renders Review Run options with detailed descriptions in Japanese", async () => {
 		await i18next.changeLanguage("ja");
 
 		const text = visibleText(
@@ -277,39 +330,202 @@ describe("ReviewStatusViewer", () => {
 			),
 		);
 
+		expect(text).toContain("Review Run");
+		expect(text).toContain("コードレビュー");
+		expect(text).toContain("実装計画、対象 diff、変更ファイルを照合");
 		expect(text).toContain("テスト証跡確認");
-		expect(text).toContain("実装計画: Feature Plan");
-		expect(text).toContain("受け入れ条件: 1 / 2 件一致");
-		expect(text).toContain("テストファイル 12 件 / テスト名 48 件");
-		expect(text).toContain("LLM がファイル/CLIで確認");
-		expect(text).toContain("確認済み 1 件");
-		expect(text).toContain("未確認 1 件");
-		expect(text).toContain("ルート B が削除される");
+		expect(text).toContain("受け入れ条件に対応するテスト、実行結果、証跡");
+		expect(text).toContain("セキュリティレビュー");
+		expect(text).toContain("vulnWorkbench を使って Semgrep");
+		expect(text).toContain("DAST、reproduction、dynamic verification");
+		expect(text).toContain("修正を適用");
+		expect(text).toContain("既存テスト名を完了条件の観点に寄せる");
+		expect(text).toContain("focused unit test を追加して通します");
+		expect(text).toContain("コミット");
+		expect(text).toContain("対象抽出が人の確認待ち");
+		expect(text).not.toContain("理由");
+		expect(text).not.toContain("実装計画: Feature Plan");
 		expect(text).not.toContain("検証記録");
 		expect(text).not.toContain("最終報告");
 		expect(text).not.toContain("保存済み Run 記録");
 	});
 
-	it("renders Git closeout state and buttons", async () => {
+	it("enables the Review Run button when a runner callback is provided", async () => {
 		await i18next.changeLanguage("ja");
+		const detail = {
+			...reviewSessionDetail(),
+			artifacts: [],
+			findings: [],
+			promptSuggestions: [],
+		};
 
+		const markup = renderToStaticMarkup(
+			<ReviewStatusViewer
+				detail={detail}
+				onStartReviewRun={async () => detail}
+			/>,
+		);
+		const runButton = markup.match(/<button[^>]*>[\s\S]*?Run<\/button>/)?.[0];
+
+		expect(runButton).toBeTruthy();
+		expect(runButton).not.toContain(' disabled=""');
+		expect(runButton).toContain("bg-cyan-300");
+		expect(runButton).toContain("font-semibold");
+	});
+
+	it("keeps the Review Run button loading and disabled while ReviewRun is running", async () => {
+		await i18next.changeLanguage("ja");
+		const detail = {
+			...reviewSessionDetail(),
+			artifacts: [
+				...reviewSessionDetail().artifacts,
+				reviewRunArtifact("running"),
+			],
+		};
+
+		const markup = renderToStaticMarkup(
+			<ReviewStatusViewer
+				detail={detail}
+				onStartReviewRun={async () => detail}
+			/>,
+		);
+		const runButton = markup
+			.match(/<button[^>]*>[\s\S]*?<\/button>/g)
+			?.find((button) => button.includes("Run"));
+
+		expect(runButton).toBeTruthy();
+		expect(runButton).toContain('disabled=""');
+		expect(runButton).toContain("animate-spin");
+	});
+
+	it("renders a manual commit button for the reviewed run", async () => {
+		await i18next.changeLanguage("ja");
+		const detail = reviewSessionDetail();
+		const markup = renderToStaticMarkup(
+			<ReviewStatusViewer
+				detail={detail}
+				gitCloseout={gitCloseoutState()}
+				onCommitGitCloseout={async () =>
+					gitCloseoutState({ state: "committed" })
+				}
+			/>,
+		);
+		const text = visibleText(markup);
+		const commitButton = markup
+			.match(/<button[^>]*>[\s\S]*?<\/button>/g)
+			?.find((button) => button.includes("LLMメッセージでコミット"));
+
+		expect(text).toContain("手動コミット");
+		expect(text).toContain("対象 1 件 / 除外 0 件 / commit_ready");
+		expect(commitButton).toBeTruthy();
+		expect(commitButton).not.toContain(' disabled=""');
+		expect(commitButton).toContain("bg-emerald-300");
+	});
+
+	it("does not render the ReviewRun status badge", async () => {
+		await i18next.changeLanguage("ja");
+		const detail = {
+			...reviewSessionDetail(),
+			artifacts: [
+				...reviewSessionDetail().artifacts,
+				reviewRunArtifact("needs_human"),
+			],
+		};
+
+		const text = visibleText(
+			renderToStaticMarkup(<ReviewStatusViewer detail={detail} />),
+		);
+
+		expect(text).toContain("targets 2");
+		expect(text).toContain("todos 1");
+		expect(text).not.toContain("needs_human");
+	});
+
+	it("hides the required review badge after ReviewRun completes", async () => {
+		await i18next.changeLanguage("ja");
+		const detail = {
+			...reviewSessionDetail(),
+			artifacts: [
+				...reviewSessionDetail().artifacts,
+				reviewRunArtifact("done"),
+			],
+		};
+
+		const text = visibleText(
+			renderToStaticMarkup(<ReviewStatusViewer detail={detail} />),
+		);
+
+		expect(text).not.toContain("レビュー必須");
+	});
+
+	it("disables the manual commit button when the reviewed run is already committed", async () => {
+		await i18next.changeLanguage("ja");
+		const markup = renderToStaticMarkup(
+			<ReviewStatusViewer
+				detail={reviewSessionDetail()}
+				gitCloseout={gitCloseoutState({
+					canCommit: false,
+					state: "committed",
+					commitRecord: {
+						...gitCloseoutState().commitRecord,
+						status: "committed",
+						commitSha: "def456",
+						commitMessage: "Update review run UI",
+						pushStatus: "not_pushed",
+					},
+				})}
+				onCommitGitCloseout={async () =>
+					gitCloseoutState({ state: "committed" })
+				}
+			/>,
+		);
+		const commitButton = markup
+			.match(/<button[^>]*>[\s\S]*?<\/button>/g)
+			?.find((button) => button.includes("コミット済み"));
+
+		expect(commitButton).toBeTruthy();
+		expect(commitButton).toContain('disabled=""');
+		expect(commitButton).toContain("bg-slate-900");
+		expect(commitButton).toContain("cursor-not-allowed");
+		expect(commitButton).not.toContain("bg-emerald-300");
+	});
+
+	it("renders the complete-and-archive task action for active review tasks", async () => {
+		await i18next.changeLanguage("ja");
 		const text = visibleText(
 			renderToStaticMarkup(
 				<ReviewStatusViewer
 					detail={reviewSessionDetail()}
-					gitCloseout={gitCloseoutState()}
+					activeTaskStatus="completed"
+					onCompleteAndArchiveTask={async () => null}
+					onRestoreArchivedTask={async () => null}
 				/>,
 			),
 		);
 
-		expect(text).toContain("Git closeout");
-		expect(text).toContain("Commit 可能");
-		expect(text).toContain("stageable 1 件");
-		expect(text).toContain("Commit");
-		expect(text).toContain("Push");
+		expect(text).toContain("レビュー後のタスク状態");
+		expect(text).toContain("完了してアーカイブ");
+		expect(text).not.toContain("アクティブタスクに戻す");
 	});
 
-	it("renders acceptance criteria test-name check results in English", async () => {
+	it("swaps to the restore action for archived review tasks", async () => {
+		await i18next.changeLanguage("ja");
+		const text = visibleText(
+			renderToStaticMarkup(
+				<ReviewStatusViewer
+					detail={reviewSessionDetail()}
+					activeTaskStatus="cancelled"
+					onCompleteAndArchiveTask={async () => null}
+					onRestoreArchivedTask={async () => null}
+				/>,
+			),
+		);
+
+		expect(text).toContain("アクティブタスクに戻す");
+		expect(text).not.toContain("完了してアーカイブ");
+	});
+
+	it("does not render legacy review menus or final actions", async () => {
 		await i18next.changeLanguage("en");
 
 		const text = visibleText(
@@ -318,13 +534,18 @@ describe("ReviewStatusViewer", () => {
 			),
 		);
 
-		expect(text).toContain("Test Evidence Review");
-		expect(text).toContain("Implementation plan: Feature Plan");
-		expect(text).toContain("Acceptance criteria matched: 1 / 2");
-		expect(text).toContain("12 test files / 48 test names");
-		expect(text).toContain("LLM checked files/CLI");
-		expect(text).toContain("1 confirmed");
-		expect(text).toContain("1 not confirmed");
+		expect(text).toContain("Review Run");
+		expect(text).not.toContain("Test Evidence Review");
+		expect(text).not.toContain("Implementation plan: Feature Plan");
+		expect(text).not.toContain("Git closeout");
+		expect(text).not.toContain(
+			"Test evidence not confirmed for acceptance criterion",
+		);
+		expect(text).not.toContain("テスト名を追加する");
+		expect(text).not.toContain("Continue with prompt");
+		expect(text).not.toContain("Final Action");
+		expect(text).not.toContain("Approve");
+		expect(text).not.toContain("Request changes");
 		expect(text).not.toContain("Verification Record");
 		expect(text).not.toContain("Final Report");
 		expect(text).not.toContain("Run Record Check");

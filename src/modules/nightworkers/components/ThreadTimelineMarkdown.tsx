@@ -1,9 +1,11 @@
+import { isValidElement, type ReactNode, useMemo } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { CodeBlockData, CodeBlockProps } from "@/components/ui/CodeBlock";
 import { CodeBlock } from "@/components/ui/CodeBlock";
 import { cn } from "@/lib/utils";
+import { normalizeProjectFileLinkTarget } from "../utils/projectFileLinks";
 
 const chatCodeBlockThemes = {
 	light: "github-dark-default",
@@ -59,17 +61,7 @@ export function NightWorkersCodeBlock({
 }
 
 const chatMarkdownRemarkPlugins = [remarkGfm];
-const chatMarkdownComponents: Components = {
-	a: ({ children, ...props }) => (
-		<a
-			className="text-cyan-200 underline underline-offset-2 hover:text-cyan-100"
-			target="_blank"
-			rel="noreferrer"
-			{...props}
-		>
-			{children}
-		</a>
-	),
+const baseChatMarkdownComponents: Components = {
 	blockquote: ({ children }) => (
 		<blockquote className="my-3 border-slate-600 border-l-2 pl-3 text-slate-300">
 			{children}
@@ -143,11 +135,66 @@ const chatMarkdownComponents: Components = {
 	),
 };
 
-export function ChatMarkdown({ content }: { content: string }) {
+function markdownChildrenText(children: ReactNode): string {
+	if (typeof children === "string" || typeof children === "number")
+		return String(children);
+	if (Array.isArray(children))
+		return children.map(markdownChildrenText).join("");
+	if (isValidElement<{ children?: ReactNode }>(children))
+		return markdownChildrenText(children.props.children);
+	return "";
+}
+
+function buildChatMarkdownComponents(
+	onOpenProjectFile?: (path: string) => void,
+): Components {
+	return {
+		...baseChatMarkdownComponents,
+		a: ({ children, href, ...props }) => {
+			const projectFilePath =
+				normalizeProjectFileLinkTarget(href) ||
+				normalizeProjectFileLinkTarget(markdownChildrenText(children));
+			return (
+				<a
+					{...props}
+					className="text-cyan-200 underline underline-offset-2 hover:text-cyan-100"
+					href={href}
+					target={projectFilePath ? undefined : "_blank"}
+					rel={projectFilePath ? undefined : "noreferrer"}
+					data-project-file-link={projectFilePath || undefined}
+					title={projectFilePath ? "ソースコードを開く" : props.title}
+					onClick={
+						projectFilePath && onOpenProjectFile
+							? (event) => {
+									event.preventDefault();
+									onOpenProjectFile(projectFilePath);
+								}
+							: props.onClick
+					}
+				>
+					{children}
+				</a>
+			);
+		},
+	};
+}
+
+export function ChatMarkdown({
+	content,
+	onOpenProjectFile,
+}: {
+	content: string;
+	onOpenProjectFile?: (path: string) => void;
+}) {
+	const markdownComponents = useMemo(
+		() => buildChatMarkdownComponents(onOpenProjectFile),
+		[onOpenProjectFile],
+	);
+
 	return (
 		<div className="nightworkers-message-content max-w-full whitespace-normal break-words text-sm leading-6 text-slate-100">
 			<ReactMarkdown
-				components={chatMarkdownComponents}
+				components={markdownComponents}
 				remarkPlugins={chatMarkdownRemarkPlugins}
 			>
 				{content}

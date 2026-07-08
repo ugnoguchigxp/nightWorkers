@@ -3,7 +3,6 @@ import type { AppEnv } from "../../lib/types";
 import { withOpenApiRouteError } from "./nightworkers.route-utils";
 import * as service from "./nightworkers.service";
 import {
-	applyReviewFinalActionRoute,
 	commitRunGitCloseoutRoute,
 	createReviewerEvaluationRoute,
 	createReviewerReplayEvaluationRoute,
@@ -24,15 +23,18 @@ import {
 	listTaskRunEventsRoute,
 	type listTaskRunsRoute,
 	pushRunGitCloseoutRoute,
-	runReviewSectionRoute,
 	startBackgroundProcessRoute,
+	startReviewRunRoute,
 	stopBackgroundProcessRoute,
 	stopTaskRunRoute,
 	updateReviewFindingDispositionRoute,
 	updateReviewPromptSuggestionRoute,
 	useReviewPromptSuggestionRoute,
 } from "./routes/run-routes";
-import { startTaskRunRoute } from "./routes/task-routes";
+import {
+	startTaskRunRoute,
+	startTestModeRunFromArtifactRoute,
+} from "./routes/task-routes";
 
 type NightWorkersRouteHandler<Route extends RouteConfig> = RouteHandler<
 	Route,
@@ -54,6 +56,19 @@ export const startTaskRunHandler = withOpenApiRouteError(
 	async (c) => {
 		const id = c.req.param("id");
 		const run = await service.startTaskRun(id);
+		return c.json(run, 201);
+	},
+);
+
+export const startTestModeRunFromArtifactHandler = withOpenApiRouteError(
+	startTestModeRunFromArtifactRoute,
+	async (c) => {
+		const id = c.req.param("id");
+		const request = c.req.valid("json");
+		const run = await service.startTestModeRunFromArtifact({
+			...request,
+			taskId: id,
+		});
 		return c.json(run, 201);
 	},
 );
@@ -242,12 +257,12 @@ export const getReviewSessionHandler = withOpenApiRouteError(
 	},
 );
 
-export const runReviewSectionHandler = withOpenApiRouteError(
-	runReviewSectionRoute,
+export const startReviewRunHandler = withOpenApiRouteError(
+	startReviewRunRoute,
 	async (c) => {
-		const result = await service.runReviewSection(
+		const result = await service.startReviewRun(
 			c.req.param("id"),
-			c.req.param("section") as Parameters<typeof service.runReviewSection>[1],
+			c.req.valid("json")?.options,
 		);
 		return c.json(result, 200);
 	},
@@ -294,17 +309,6 @@ export const useReviewPromptSuggestionHandler = withOpenApiRouteError(
 			c.req.param("id"),
 			c.req.param("suggestionId"),
 			c.req.valid("json") ?? {},
-		);
-		return c.json(result, 200);
-	},
-);
-
-export const applyReviewFinalActionHandler = withOpenApiRouteError(
-	applyReviewFinalActionRoute,
-	async (c) => {
-		const result = await service.applyReviewFinalAction(
-			c.req.param("id"),
-			c.req.valid("json"),
 		);
 		return c.json(result, 200);
 	},
