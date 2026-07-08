@@ -68,10 +68,16 @@ export function selectPlanModeWorkspaceMessages(input: {
 }
 
 function latestMessageByCreatedAt(messages: TaskMessage[]) {
-	return (
-		[...messages].sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt))[0] ||
-		null
-	);
+	let latest: TaskMessage | null = null;
+	let latestMs = Number.NEGATIVE_INFINITY;
+	for (const message of messages) {
+		const ms = toMs(message.createdAt);
+		if (ms > latestMs) {
+			latest = message;
+			latestMs = ms;
+		}
+	}
+	return latest;
 }
 
 export function isDesignAssemblyReady(

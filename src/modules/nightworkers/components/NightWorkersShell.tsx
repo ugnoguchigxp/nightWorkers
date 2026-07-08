@@ -9,6 +9,7 @@ import {
 	useImplementationQueue,
 } from "../../queue";
 import { fetchPlanModeWorkspace } from "../../specification";
+import { markArtifactOpenStart } from "../artifactPerformance";
 import { useWorkspaceAppearanceState } from "../contexts/WorkspaceAppearanceContext";
 import {
 	useWorkspaceLayoutActions,
@@ -411,6 +412,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 				(artifact) => artifact.kind === "app_blueprint",
 			);
 		if (existing) {
+			markArtifactOpenStart(existing);
 			setClearedArtifactContextId(null);
 			setArtifactFocus({ type: "artifact", artifact: existing });
 			props.onNavigate({
@@ -455,6 +457,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 			};
 		}
 		if (!artifact) return;
+		markArtifactOpenStart(artifact);
 		setClearedArtifactContextId(null);
 		setArtifactFocus({ type: "artifact", artifact });
 		props.onNavigate({
@@ -477,17 +480,19 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 			return;
 		}
 		setClearedArtifactContextId(null);
+		const artifact = {
+			id: `test-mode-${task.id}`,
+			taskId: task.id,
+			kind: "test_mode" as const,
+			title: "Test Mode",
+			summary: "Verification Checklist and Test Mode run launcher",
+			source: { type: "test_mode" as const },
+			createdAt: String(task.updatedAt || task.createdAt),
+		};
+		markArtifactOpenStart(artifact);
 		setArtifactFocus({
 			type: "artifact",
-			artifact: {
-				id: `test-mode-${task.id}`,
-				taskId: task.id,
-				kind: "test_mode",
-				title: "Test Mode",
-				summary: "Verification Checklist and Test Mode run launcher",
-				source: { type: "test_mode" },
-				createdAt: String(task.updatedAt || task.createdAt),
-			},
+			artifact,
 		});
 		props.onNavigate({
 			kind: "session",

@@ -417,6 +417,21 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 								<button
 									type="button"
 									className={`inline-flex h-7 w-7 items-center justify-center rounded border disabled:cursor-not-allowed disabled:opacity-40 ${
+										props.isTestModeArtifactOpen
+											? "border-cyan-400/70 bg-cyan-950/30 text-cyan-100"
+											: "border-slate-600/80 bg-slate-900/30 text-slate-200 hover:border-slate-400"
+									}`}
+									aria-pressed={props.isTestModeArtifactOpen}
+									disabled={!props.activeSession}
+									onClick={props.onOpenTestModeArtifact}
+									title={testModeArtifactLabel}
+									aria-label={testModeArtifactLabel}
+								>
+									<FlaskConical className="h-3.5 w-3.5" />
+								</button>
+								<button
+									type="button"
+									className={`inline-flex h-7 w-7 items-center justify-center rounded border disabled:cursor-not-allowed disabled:opacity-40 ${
 										props.isReviewArtifactOpen
 											? "border-cyan-400/70 bg-cyan-950/30 text-cyan-100"
 											: "border-slate-600/80 bg-slate-900/30 text-slate-200 hover:border-slate-400"
@@ -436,21 +451,6 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 									) : (
 										<ClipboardCheck className="h-3.5 w-3.5" />
 									)}
-								</button>
-								<button
-									type="button"
-									className={`inline-flex h-7 w-7 items-center justify-center rounded border disabled:cursor-not-allowed disabled:opacity-40 ${
-										props.isTestModeArtifactOpen
-											? "border-cyan-400/70 bg-cyan-950/30 text-cyan-100"
-											: "border-slate-600/80 bg-slate-900/30 text-slate-200 hover:border-slate-400"
-									}`}
-									aria-pressed={props.isTestModeArtifactOpen}
-									disabled={!props.activeSession}
-									onClick={props.onOpenTestModeArtifact}
-									title={testModeArtifactLabel}
-									aria-label={testModeArtifactLabel}
-								>
-									<FlaskConical className="h-3.5 w-3.5" />
 								</button>
 								<button
 									type="button"

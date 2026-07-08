@@ -1,7 +1,9 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { buildArtifactVersions } from "../src/modules/nightworkers/components/ArtifactPaneVersions";
 import type { TaskMessage } from "../src/modules/nightworkers/types";
+import { buildWorkbenchArtifactRefs } from "../src/modules/nightworkers/workbenchArtifactSelectors";
 import {
 	isDataModelMessage,
 	isNormalBlueprintMessage,
@@ -26,8 +28,108 @@ import { representativeMockBlueprint } from "./fixtures/mock-blueprint";
 import {
 	buildActivityArtifact,
 	buildBlueprintMessage,
+	buildTask,
 	buildTaskMessage,
 } from "./helpers/nightworkers-fixtures";
+
+describe("buildArtifactVersions", () => {
+	it("does not scan message-backed versions for synthetic Test Mode artifacts", () => {
+		const selectedArtifact = {
+			id: "test-mode-task-1",
+			taskId: "task-1",
+			kind: "test_mode" as const,
+			title: "Test Mode",
+			source: { type: "test_mode" as const },
+			createdAt: "2026-07-08T00:00:00.000Z",
+		};
+		const versions = buildArtifactVersions(
+			selectedArtifact,
+			[
+				buildTaskMessage({
+					id: "message-1",
+					messageType: "markdown_document",
+					metadataJson: {
+						intent: "implementation_plan",
+						markdownDocumentData: { title: "Implementation Plan" },
+					},
+				}),
+			],
+			[
+				buildActivityArtifact({
+					id: "artifact-1",
+					kind: "diff",
+				}),
+			],
+		);
+
+		expect(versions).toEqual([selectedArtifact]);
+	});
+});
+
+describe("buildWorkbenchArtifactRefs", () => {
+	it("does not parse activity artifact content while building lightweight refs", () => {
+		const parseSpy = vi.spyOn(JSON, "parse");
+
+		try {
+			const refs = buildWorkbenchArtifactRefs({
+				task: buildTask(),
+				messages: [],
+				activityArtifacts: [
+					buildActivityArtifact({
+						id: "artifact-blueprint-1",
+						kind: "app_blueprint",
+						contentText: JSON.stringify({
+							name: "Large Blueprint",
+							screens: Array.from({ length: 100 }, (_, index) => ({
+								name: `Screen ${index}`,
+							})),
+						}),
+						metadataJson: {
+							intent: "app_blueprint",
+							title: "Large Blueprint",
+						},
+					}),
+				],
+			});
+
+			expect(parseSpy).not.toHaveBeenCalled();
+			expect(
+				refs.some((ref) => ref.id === "artifact-artifact-blueprint-1"),
+			).toBe(true);
+		} finally {
+			parseSpy.mockRestore();
+		}
+	});
+
+	it("keeps content fallback for legacy activity artifact refs without metadata titles", () => {
+		const refs = buildWorkbenchArtifactRefs({
+			task: buildTask(),
+			messages: [],
+			activityArtifacts: [
+				buildActivityArtifact({
+					id: "artifact-legacy-blueprint-1",
+					kind: "app_blueprint",
+					contentText: JSON.stringify({
+						name: "Legacy Blueprint",
+						summary: "Parsed only when metadata cannot label the ref.",
+						screens: [],
+					}),
+					metadataJson: {
+						intent: "app_blueprint",
+					},
+				}),
+			],
+		});
+
+		expect(refs).toContainEqual(
+			expect.objectContaining({
+				id: "artifact-artifact-legacy-blueprint-1",
+				title: "Blueprint: Legacy Blueprint",
+				summary: "Parsed only when metadata cannot label the ref.",
+			}),
+		);
+	});
+});
 
 describe("mergeWorkspaceTaskMessages", () => {
 	it("does not let synthetic activity artifact messages override persisted Blueprint messages", () => {

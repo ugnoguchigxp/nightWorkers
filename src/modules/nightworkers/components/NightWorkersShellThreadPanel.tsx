@@ -6,6 +6,7 @@ import {
 	useState,
 } from "react";
 import type { useImplementationQueue } from "../../queue";
+import { markArtifactOpenStart } from "../artifactPerformance";
 import type { WorkbenchLlmSelection } from "../hooks/nightWorkersWorkspaceState";
 import type { NightWorkersWorkspaceState } from "../hooks/useNightWorkersWorkspace";
 import type { WorkbenchRouteState } from "../routing/workbench-route-state";
@@ -229,6 +230,7 @@ export function NightWorkersShellThreadPanel(
 				void queueState.requeueImplementationQueueEntry(entryId, note);
 			}}
 			onOpenArtifact={(artifact) => {
+				markArtifactOpenStart(artifact);
 				setClearedArtifactContextId(null);
 				setArtifactFocus({ type: "artifact", artifact });
 				if (workspace.activeSessionId) {

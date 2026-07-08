@@ -339,11 +339,13 @@ export function PlanModeWorkspaceViewer({
 	const featurePlanMessage = designDocMessages.at(-1) || null;
 	const featurePlanVerification = useMemo(
 		() =>
-			buildFeaturePlanVerificationModel({
-				featurePlanMessage,
-				taskMessages,
-			}),
-		[featurePlanMessage, taskMessages],
+			activeTab === "feature-plan"
+				? buildFeaturePlanVerificationModel({
+						featurePlanMessage,
+						taskMessages,
+					})
+				: null,
+		[activeTab, featurePlanMessage, taskMessages],
 	);
 	const viewDecisions = useMemo(
 		() => extractViewDecisions(taskMessages),

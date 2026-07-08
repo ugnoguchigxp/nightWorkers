@@ -14,7 +14,13 @@ export function buildArtifactVersions(
 	activityArtifacts: ActivityArtifact[],
 ): WorkbenchArtifactRef[] {
 	if (!selectedArtifact) return [];
-	if (selectedArtifact.kind === "diff") return [selectedArtifact];
+	if (
+		selectedArtifact.kind === "diff" ||
+		selectedArtifact.kind === "test_mode" ||
+		selectedArtifact.kind === "review_status" ||
+		selectedArtifact.kind === "plan_mode_workspace"
+	)
+		return [selectedArtifact];
 	const messageRefs = taskMessages
 		.map((message) => taskMessageToArtifactRef(message, selectedArtifact.kind))
 		.filter((artifact): artifact is WorkbenchArtifactRef => Boolean(artifact));

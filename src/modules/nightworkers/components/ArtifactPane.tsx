@@ -14,6 +14,7 @@ import { useTranslation } from "react-i18next";
 import { toDeepRecord } from "../../../../shared/json-record";
 import { PlanModeWorkspaceViewer } from "../../planMode";
 import type { PlanWorkspaceTab } from "../../specification";
+import { logArtifactPaneRendered } from "../artifactPerformance";
 import { startTestModeRun } from "../nightWorkersCommands";
 import type {
 	ActivityArtifact,
@@ -172,6 +173,9 @@ export function ArtifactPane({
 	);
 	const [isFullscreen, setIsFullscreen] = useState(false);
 	const [testModeStatus, setTestModeStatus] = useState<string | null>(null);
+	const [bodyRenderArtifactId, setBodyRenderArtifactId] = useState<
+		string | null
+	>(null);
 	const [localProjectArtifactMode, setLocalProjectArtifactMode] =
 		useState<ProjectArtifactMode>("tree");
 	const projectArtifactMode =
@@ -232,6 +236,15 @@ export function ArtifactPane({
 	);
 	const displayArtifact =
 		artifactVersions[currentVersionIndex] || selectedArtifact;
+	const displayArtifactId = displayArtifact?.id || null;
+	useEffect(() => {
+		setBodyRenderArtifactId(null);
+		if (!displayArtifactId) return;
+		const frame = requestAnimationFrame(() => {
+			setBodyRenderArtifactId(displayArtifactId);
+		});
+		return () => cancelAnimationFrame(frame);
+	}, [displayArtifactId]);
 	const showDiff = displayArtifact?.kind === "diff";
 	const showBlueprintWorkspace =
 		displayArtifact?.kind === "plan_mode_workspace";
@@ -245,17 +258,25 @@ export function ArtifactPane({
 		displayArtifact?.source.type === "task_message"
 			? displayArtifact.source.messageId
 			: null;
-	const selectedMessage = taskMessageId
-		? taskMessages.find((message) => message.id === taskMessageId) || null
-		: null;
+	const selectedMessage = useMemo(
+		() =>
+			taskMessageId
+				? taskMessages.find((message) => message.id === taskMessageId) || null
+				: null,
+		[taskMessageId, taskMessages],
+	);
 	const artifactRowId =
 		displayArtifact?.source.type === "artifact_row"
 			? displayArtifact.source.artifactId
 			: null;
-	const selectedActivityArtifact = artifactRowId
-		? activityArtifacts.find((artifact) => artifact.id === artifactRowId) ||
-			null
-		: null;
+	const selectedActivityArtifact = useMemo(
+		() =>
+			artifactRowId
+				? activityArtifacts.find((artifact) => artifact.id === artifactRowId) ||
+					null
+				: null,
+		[activityArtifacts, artifactRowId],
+	);
 	const selectedActivityArtifactContent = parseArtifactContentJson(
 		selectedActivityArtifact?.contentText,
 	);
@@ -281,14 +302,32 @@ export function ArtifactPane({
 		activityArtifactMetadata.generation ||
 		displayArtifact?.metadata?.generation ||
 		null;
-	const verificationPanel = buildVerificationPanelModel({
-		message: selectedMessage,
-		taskMessages,
-		artifactId: displayArtifact?.id || selectedArtifact?.id || null,
-	});
-	const testModePanel = buildLatestVerificationPanelModel({
-		taskMessages,
-	});
+	const verificationPanel = useMemo(
+		() =>
+			selectedMessage && !showTestMode
+				? buildVerificationPanelModel({
+						message: selectedMessage,
+						taskMessages,
+						artifactId: displayArtifact?.id || selectedArtifact?.id || null,
+					})
+				: null,
+		[
+			displayArtifact?.id,
+			selectedArtifact?.id,
+			selectedMessage,
+			showTestMode,
+			taskMessages,
+		],
+	);
+	const testModePanel = useMemo(
+		() =>
+			showTestMode
+				? buildLatestVerificationPanelModel({
+						taskMessages,
+					})
+				: null,
+		[showTestMode, taskMessages],
+	);
 	const showDocument =
 		Boolean(selectedArtifact) &&
 		!showDiff &&
@@ -308,17 +347,35 @@ export function ArtifactPane({
 				: showTestMode
 					? "Test Mode"
 					: displayArtifact?.title || selectedArtifact.title;
-	const exportedContent = buildExportedArtifactContent({
-		showDiff,
-		latestRun,
-		selectedMessage,
-		selectedActivityArtifact,
-		selectedFile,
-		selectedArtifact: displayArtifact,
-	});
+	const buildCurrentExportedContent = () =>
+		buildExportedArtifactContent({
+			showDiff,
+			latestRun,
+			selectedMessage,
+			selectedActivityArtifact,
+			selectedFile,
+			selectedArtifact: displayArtifact,
+		});
 	const artifactFrameClass = isFullscreen
 		? "fixed inset-3 z-50 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-slate-700 bg-[#1e1e2e] shadow-2xl"
 		: "nightworkers-artifact-pane flex min-h-0 min-w-0 flex-col overflow-hidden";
+	const shouldDeferArtifactBody =
+		typeof window !== "undefined" &&
+		Boolean(displayArtifact) &&
+		!showProjectTree &&
+		bodyRenderArtifactId !== displayArtifactId;
+	useEffect(() => {
+		logArtifactPaneRendered(displayArtifact, {
+			activityArtifactCount: activityArtifacts.length,
+			artifactVersionCount: artifactVersions.length,
+			taskMessageCount: taskMessages.length,
+		});
+	}, [
+		activityArtifacts.length,
+		artifactVersions.length,
+		displayArtifact,
+		taskMessages.length,
+	]);
 	return (
 		<aside className={artifactFrameClass}>
 			<div className="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-[#313244] bg-[#1e1e2e] px-3 pr-12">
@@ -353,16 +410,23 @@ export function ArtifactPane({
 								artifactVersions[currentVersionIndex + 1]?.id || null,
 							)
 						}
-						onCopy={() => void copyText(exportedContent)}
+						onCopy={() => void copyText(buildCurrentExportedContent())}
 						onSave={() =>
-							saveTextFile(exportedContent, artifactFileName(displayArtifact))
+							saveTextFile(
+								buildCurrentExportedContent(),
+								artifactFileName(displayArtifact),
+							)
 						}
 						onToggleFullscreen={() => setIsFullscreen((value) => !value)}
 					/>
 				) : null}
 			</div>
 			<div className="flex min-h-0 flex-1">
-				{showProjectTree && !showProjectDiff ? (
+				{shouldDeferArtifactBody ? (
+					<div className="flex min-h-0 flex-1 items-center justify-center text-xs text-slate-500">
+						Loading artifact...
+					</div>
+				) : showProjectTree && !showProjectDiff ? (
 					<div className="min-h-0 w-56 shrink-0 overflow-auto border-r border-slate-800 p-2">
 						<FilesOutline
 							isFilesLoading={isFilesLoading}
@@ -608,15 +672,20 @@ function buildVerificationPanelModel(input: {
 function buildLatestVerificationPanelModel(input: {
 	taskMessages: TaskMessage[];
 }): VerificationPanelModel | null {
-	const latestPlan =
-		[...input.taskMessages].reverse().find((message) => {
-			const metadata = toDeepRecord(message.metadataJson);
-			const intent = readRecordString(metadata, "intent");
-			return (
-				message.messageType === "markdown_document" &&
-				(intent === "implementation_plan" || intent === "feature_plan")
-			);
-		}) || null;
+	let latestPlan: TaskMessage | null = null;
+	for (let index = input.taskMessages.length - 1; index >= 0; index -= 1) {
+		const message = input.taskMessages[index];
+		if (!message) continue;
+		const metadata = toDeepRecord(message.metadataJson);
+		const intent = readRecordString(metadata, "intent");
+		if (
+			message.messageType === "markdown_document" &&
+			(intent === "implementation_plan" || intent === "feature_plan")
+		) {
+			latestPlan = message;
+			break;
+		}
+	}
 	return buildVerificationPanelModel({
 		message: latestPlan,
 		taskMessages: input.taskMessages,

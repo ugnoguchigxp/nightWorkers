@@ -17,10 +17,15 @@ export function activityArtifactToTaskMessage(
 	artifact: ActivityArtifact,
 ): TaskMessage {
 	const metadata = activityArtifactMetadata(artifact);
-	const parsedContent = parseArtifactContentJson(artifact.contentText);
 	const isMockBlueprint =
 		metadata.intent === "mock_blueprint" ||
 		metadata.schemaName === "mock_blueprint";
+	const metadataBlueprint = isMockBlueprint
+		? metadata.mockBlueprint
+		: metadata.appBlueprint;
+	const parsedContent = metadataBlueprint
+		? null
+		: parseArtifactContentJson(artifact.contentText);
 	const blueprintPayload = isMockBlueprint
 		? metadata.mockBlueprint || parsedContent
 		: metadata.appBlueprint || parsedContent;
@@ -293,18 +298,16 @@ export function buildWorkbenchArtifactRefs(input: {
 		decisionReviewMessages.length > 0 ||
 		featurePlanMessages.length > 0
 	) {
-		const latestWorkspaceMessage =
-			[
-				...blueprintMessages,
-				...dataModelMessages,
-				...dedicatedViewMessages,
-				...decisionReviewMessages,
-				...featurePlanMessages,
-			].sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt))[0] ||
-			blueprintMessages.at(-1);
-		const latestBlueprintArtifactRow = [...blueprintArtifactRows].sort(
-			(a, b) => toMs(b.createdAt) - toMs(a.createdAt),
-		)[0];
+		const latestWorkspaceMessage = latestTaskMessageByCreatedAt([
+			...blueprintMessages,
+			...dataModelMessages,
+			...dedicatedViewMessages,
+			...decisionReviewMessages,
+			...featurePlanMessages,
+		]);
+		const latestBlueprintArtifactRow = latestActivityArtifactByCreatedAt(
+			blueprintArtifactRows,
+		);
 		const workspaceSource = latestWorkspaceMessage
 			? { type: "task_message" as const, messageId: latestWorkspaceMessage.id }
 			: latestBlueprintArtifactRow
@@ -428,6 +431,32 @@ export function buildWorkbenchArtifactRefs(input: {
 	return refs.sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
 }
 
+function latestTaskMessageByCreatedAt(messages: TaskMessage[]) {
+	let latest: TaskMessage | undefined;
+	let latestMs = Number.NEGATIVE_INFINITY;
+	for (const message of messages) {
+		const ms = toMs(message.createdAt);
+		if (ms > latestMs) {
+			latest = message;
+			latestMs = ms;
+		}
+	}
+	return latest;
+}
+
+function latestActivityArtifactByCreatedAt(artifacts: ActivityArtifact[]) {
+	let latest: ActivityArtifact | undefined;
+	let latestMs = Number.NEGATIVE_INFINITY;
+	for (const artifact of artifacts) {
+		const ms = toMs(artifact.createdAt);
+		if (ms > latestMs) {
+			latest = artifact;
+			latestMs = ms;
+		}
+	}
+	return latest;
+}
+
 function activityArtifactRef(
 	taskId: string,
 	artifact: ActivityArtifact,
@@ -436,10 +465,15 @@ function activityArtifactRef(
 	const isMockBlueprint =
 		metadata.intent === "mock_blueprint" ||
 		metadata.schemaName === "mock_blueprint";
-	const parsedContent = parseArtifactContentJson(artifact.contentText);
-	const blueprint = isMockBlueprint
-		? metadata.mockBlueprint || parsedContent
-		: metadata.appBlueprint || parsedContent;
+	const metadataBlueprint = isMockBlueprint
+		? metadata.mockBlueprint
+		: metadata.appBlueprint;
+	const shouldParseContentFallback =
+		!metadataBlueprint && !metadata.title && !metadata.summary;
+	const parsedContent = shouldParseContentFallback
+		? parseArtifactContentJson(artifact.contentText)
+		: null;
+	const blueprint = metadataBlueprint || parsedContent;
 	const blueprintRecord = isRecord(blueprint) ? blueprint : null;
 	const title = String(blueprintRecord?.name || metadata.title || "Blueprint");
 	return {
@@ -453,7 +487,7 @@ function activityArtifactRef(
 				? blueprintRecord.description
 				: typeof blueprintRecord?.summary === "string"
 					? blueprintRecord.summary
-					: (artifact.contentText || "").slice(0, 160),
+					: String(metadata.summary || artifact.path || artifact.kind),
 		source: { type: "artifact_row", artifactId: artifact.id },
 		createdAt: String(artifact.createdAt),
 		metadata: {
@@ -461,9 +495,11 @@ function activityArtifactRef(
 			intent:
 				metadata.intent ||
 				(isMockBlueprint ? "mock_blueprint" : "app_blueprint"),
-			...(isMockBlueprint
-				? { mockBlueprint: blueprint }
-				: { appBlueprint: blueprint }),
+			...(blueprintRecord
+				? isMockBlueprint
+					? { mockBlueprint: blueprintRecord }
+					: { appBlueprint: blueprintRecord }
+				: {}),
 			artifactRef: {
 				artifactId: artifact.id,
 				kind: "app_blueprint",

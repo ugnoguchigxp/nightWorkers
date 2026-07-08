@@ -106,5 +106,8 @@ describe("ThreadWorkspace pending indicator", () => {
 		expect(markup).toContain("nightworkers-thinking-dot");
 		expect(markup).not.toContain("AIが作業中");
 		expect(markup).toContain('aria-label="thread.testModeArtifact"');
+		expect(markup.indexOf('aria-label="thread.testModeArtifact"')).toBeLessThan(
+			markup.indexOf('aria-label="reviewStatus.start"'),
+		);
 	});
 });
