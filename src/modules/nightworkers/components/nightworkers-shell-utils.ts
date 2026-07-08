@@ -8,6 +8,7 @@ import type {
 	Task,
 	TaskMessage,
 	ThinkingDepthOption,
+	WorkbenchArtifactRef,
 } from "../types";
 import { THINKING_DEPTH_OPTIONS } from "../types";
 
@@ -103,6 +104,40 @@ export function findComposerRouteTargetByKey(
 
 export function isImplementationLockedStatus(status: string | undefined) {
 	return status === "completed";
+}
+
+type PlanWorkspaceTab =
+	| "feature-plan"
+	| "blueprint"
+	| "data-model"
+	| "user-flow"
+	| "api-io-contract"
+	| "activity-flow"
+	| "sequence-flow"
+	| "zod-schema-design"
+	| "questionnaire"
+	| "status";
+
+export function resolvePlanWorkspaceInitialTab(
+	value: unknown,
+	artifact?: WorkbenchArtifactRef | null,
+): PlanWorkspaceTab {
+	const restoredTab: PlanWorkspaceTab =
+		value === "feature-plan" ||
+		value === "blueprint" ||
+		value === "data-model" ||
+		value === "user-flow" ||
+		value === "api-io-contract" ||
+		value === "activity-flow" ||
+		value === "sequence-flow" ||
+		value === "zod-schema-design" ||
+		value === "questionnaire" ||
+		value === "status"
+			? value
+			: "status";
+	const featurePlanCount = Number(artifact?.metadata?.featurePlanCount || 0);
+	if (restoredTab === "questionnaire" && featurePlanCount > 0) return "status";
+	return restoredTab;
 }
 
 export function isDesignQuestionnaireReadyMessage(message: TaskMessage) {

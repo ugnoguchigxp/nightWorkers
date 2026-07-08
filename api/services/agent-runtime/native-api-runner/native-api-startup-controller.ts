@@ -241,6 +241,7 @@ export class NativeApiStartupController {
 			input.context.runId,
 			"contextstill.context_compile",
 		);
+		await this.completeCodingPreparationTodo(input.context.runId);
 
 		const alignment = await this.alignTodos({
 			context: input.context,
@@ -622,7 +623,8 @@ export class NativeApiStartupController {
 		const openStartupGate = todos.find(
 			(todo) =>
 				["pending", "running"].includes(todo.status) &&
-				(todo.procedureId === "contextstill.initial_instructions" ||
+				(isCodingPreparationTodo(todo) ||
+					todo.procedureId === "contextstill.initial_instructions" ||
 					todo.procedureId === "contextstill.context_compile"),
 		);
 		if (openStartupGate) {
@@ -663,6 +665,23 @@ export class NativeApiStartupController {
 		const todos = await repo.listTaskRunTodosForRun(runId);
 		const target = todos
 			.filter((todo) => todo.procedureId === procedureId)
+			.sort((a, b) => a.seq - b.seq)[0];
+		if (!target || target.status === "passed") return;
+		if (target.status === "pending") {
+			const started = await this.mutateTodos({
+				runId,
+				operation: "start",
+				seq: target.seq,
+			});
+			if (!started.ok) return;
+		}
+		await this.mutateTodos({ runId, operation: "done", seq: target.seq });
+	}
+
+	private async completeCodingPreparationTodo(runId: string) {
+		const todos = await repo.listTaskRunTodosForRun(runId);
+		const target = todos
+			.filter(isCodingPreparationTodo)
 			.sort((a, b) => a.seq - b.seq)[0];
 		if (!target || target.status === "passed") return;
 		if (target.status === "pending") {
@@ -813,10 +832,21 @@ function isStartupGateTodo(todo: {
 	procedureId?: string | null;
 }) {
 	return (
+		isCodingPreparationTodo(todo) ||
 		todo.procedureId === "contextstill.initial_instructions" ||
 		todo.procedureId === "contextstill.context_compile" ||
 		todo.taskType === "initial_instructions" ||
 		todo.taskType === "context_compile"
+	);
+}
+
+function isCodingPreparationTodo(todo: {
+	taskType?: string | null;
+	procedureId?: string | null;
+}) {
+	return (
+		todo.taskType === "coding_preparation" ||
+		todo.procedureId === "coding_preparation"
 	);
 }
 

@@ -319,6 +319,7 @@ export async function startTaskRun(
 			diagnostics: runtimeLaneResolution.diagnostics,
 		},
 		effectiveLlmRouting,
+		...(runtimeOptions.testMode ? { testMode: runtimeOptions.testMode } : {}),
 		...(runtimeOptions.reviewRun
 			? { reviewRun: runtimeOptions.reviewRun }
 			: {}),

@@ -160,7 +160,13 @@ export const startTestModeRunFromArtifactRoute = createRoute({
 						specArtifactId: z.string().min(1),
 						verificationDocumentId: z.string().uuid().nullable().optional(),
 						mode: z.literal("test"),
-						action: z.enum(["discover_tests", "run_unit_tests"]).optional(),
+						action: z
+							.enum([
+								"discover_tests",
+								"plan_and_implement_tests",
+								"run_unit_tests",
+							])
+							.optional(),
 						rerun: z.boolean().optional(),
 					}),
 				},

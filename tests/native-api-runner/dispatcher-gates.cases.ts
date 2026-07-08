@@ -149,6 +149,13 @@ describe("NativeApiRunner tool registry and dispatcher gates", () => {
 				procedureId: "contextstill.context_compile",
 			},
 		}).map((tool) => tool.name);
+		const codingPreparationTools = getNativeApiToolDefinitions({
+			executionMode: "implementation",
+			currentTodo: {
+				taskType: "coding_preparation",
+				procedureId: "coding_preparation",
+			},
+		}).map((tool) => tool.name);
 		const legacyKnowledgeTools = getNativeApiToolDefinitions({
 			executionMode: "implementation",
 			currentTodo: {
@@ -166,6 +173,13 @@ describe("NativeApiRunner tool registry and dispatcher gates", () => {
 
 		expect(importTools).toContain("import_project");
 		expect(contextTools).toContain("context_compile");
+		expect(codingPreparationTools).toEqual(
+			expect.arrayContaining([
+				"context_initial_instructions",
+				"context_compile",
+				"import_project",
+			]),
+		);
 		expect(legacyKnowledgeTools).not.toContain("register_candidates");
 		expect(closeoutTools).toContain("compile_eval");
 		expect(closeoutTools).not.toContain("import_project");

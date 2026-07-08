@@ -48,9 +48,11 @@ export function RuntimePromptSnapshotCard({
 export function FinalReportCard({
 	latestRun,
 	onOpenProjectFile,
+	onOpenTestModeArtifact,
 }: {
 	latestRun?: TaskRun;
 	onOpenProjectFile?: (path: string) => void;
+	onOpenTestModeArtifact?: () => void;
 }) {
 	if (!latestRun?.finalReport?.trim()) return null;
 	return (
@@ -61,6 +63,7 @@ export function FinalReportCard({
 			<ChatMarkdown
 				content={formatVisibleAssistantText(latestRun.finalReport)}
 				onOpenProjectFile={onOpenProjectFile}
+				onOpenTestModeArtifact={onOpenTestModeArtifact}
 			/>
 		</ThreadMessage>
 	);
@@ -69,9 +72,11 @@ export function FinalReportCard({
 export function StreamingResponsePreview({
 	preview,
 	onOpenProjectFile,
+	onOpenTestModeArtifact,
 }: {
 	preview: StreamingPreview;
 	onOpenProjectFile?: (path: string) => void;
+	onOpenTestModeArtifact?: () => void;
 }) {
 	return (
 		<div className="space-y-2" aria-live="polite">
@@ -84,6 +89,7 @@ export function StreamingResponsePreview({
 					<ChatMarkdown
 						content={preview.visibleText}
 						onOpenProjectFile={onOpenProjectFile}
+						onOpenTestModeArtifact={onOpenTestModeArtifact}
 					/>
 					<span className="ml-0.5 inline-block h-4 w-1 animate-pulse bg-cyan-300 align-[-2px]" />
 				</div>
@@ -97,14 +103,17 @@ export function StreamingResponsePreview({
 export function PersistedStreamingResponse({
 	preview,
 	onOpenProjectFile,
+	onOpenTestModeArtifact,
 }: {
 	preview: StreamingPreview;
 	onOpenProjectFile?: (path: string) => void;
+	onOpenTestModeArtifact?: () => void;
 }) {
 	return (
 		<ChatMarkdown
 			content={preview.visibleText || preview.statusText}
 			onOpenProjectFile={onOpenProjectFile}
+			onOpenTestModeArtifact={onOpenTestModeArtifact}
 		/>
 	);
 }

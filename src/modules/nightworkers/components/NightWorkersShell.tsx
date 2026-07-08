@@ -54,6 +54,7 @@ import {
 	projectEvaluationTaskPromptDrafts,
 	resolveComposerRouteTarget,
 	resolveCurrentProviderModel,
+	resolvePlanWorkspaceInitialTab,
 } from "./nightworkers-shell-utils";
 import { OverviewScreen } from "./OverviewScreen";
 import { ProjectDetailScreen } from "./ProjectDetailScreen";
@@ -65,21 +66,6 @@ export {
 	projectEvaluationDraftStorageKey,
 	projectEvaluationTaskPromptDrafts,
 } from "./nightworkers-shell-utils";
-
-function restoredPlanWorkspaceTab(value: unknown) {
-	return value === "feature-plan" ||
-		value === "blueprint" ||
-		value === "data-model" ||
-		value === "user-flow" ||
-		value === "api-io-contract" ||
-		value === "activity-flow" ||
-		value === "sequence-flow" ||
-		value === "zod-schema-design" ||
-		value === "questionnaire" ||
-		value === "status"
-		? value
-		: "status";
-}
 
 export function NightWorkersShell(props: NightWorkersShellProps) {
 	const { t } = useTranslation();
@@ -196,6 +182,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 			].includes(workspace.latestRun.status),
 	);
 	const reviewStatusTitle = t("reviewStatus.title");
+	const testModeTitle = t("testMode.title");
+	const testModeArtifactSummary = t("testMode.artifact.summary");
 	const formatReviewStatusSummary = useCallback(
 		(level: string, sectionCount: number) =>
 			t("reviewStatus.artifact.summary", {
@@ -221,6 +209,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		setClearedArtifactContextId,
 		reviewStatusTitle,
 		formatReviewStatusSummary,
+		testModeTitle,
+		testModeArtifactSummary,
 	});
 
 	useEffect(() => {
@@ -429,7 +419,10 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		if (existing) {
 			const initialTab =
 				existing.kind === "plan_mode_workspace"
-					? restoredPlanWorkspaceTab(existing.metadata?.initialTab)
+					? resolvePlanWorkspaceInitialTab(
+							existing.metadata?.initialTab,
+							existing,
+						)
 					: "status";
 			const artifact =
 				existing.kind === "plan_mode_workspace"
@@ -510,8 +503,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 			id: `test-mode-${task.id}`,
 			taskId: task.id,
 			kind: "test_mode" as const,
-			title: "Test Mode",
-			summary: "Verification Checklist and Test Mode run launcher",
+			title: testModeTitle,
+			summary: testModeArtifactSummary,
 			source: { type: "test_mode" as const },
 			createdAt: String(task.updatedAt || task.createdAt),
 		};
@@ -525,7 +518,12 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 			sessionId: task.id,
 			artifact: { kind: "test_mode" },
 		});
-	}, [isTestModeArtifactOpen, props.onNavigate]);
+	}, [
+		isTestModeArtifactOpen,
+		props.onNavigate,
+		testModeArtifactSummary,
+		testModeTitle,
+	]);
 	const focusTodoArtifact = useCallback(
 		(sessionId: string) => {
 			setClearedArtifactContextId(null);

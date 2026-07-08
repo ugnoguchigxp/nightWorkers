@@ -2,6 +2,7 @@ import { type Dispatch, type SetStateAction, useEffect } from "react";
 import type { NightWorkersWorkspaceState } from "../hooks/useNightWorkersWorkspace";
 import type { WorkbenchRouteState } from "../routing/workbench-route-state";
 import type { WorkbenchArtifactRef } from "../types";
+import { resolvePlanWorkspaceInitialTab } from "./nightworkers-shell-utils";
 
 export type ArtifactPaneFocus =
 	| { type: "closed" }
@@ -16,6 +17,8 @@ export function useNightWorkersRouteArtifactSync(input: {
 	setClearedArtifactContextId: Dispatch<SetStateAction<string | null>>;
 	reviewStatusTitle: string;
 	formatReviewStatusSummary: (level: string, sectionCount: number) => string;
+	testModeTitle: string;
+	testModeArtifactSummary: string;
 }) {
 	const {
 		routeState,
@@ -24,6 +27,8 @@ export function useNightWorkersRouteArtifactSync(input: {
 		workspace,
 		reviewStatusTitle,
 		formatReviewStatusSummary,
+		testModeTitle,
+		testModeArtifactSummary,
 	} = input;
 	const routeSessionId =
 		routeState.kind === "session" ? routeState.sessionId : null;
@@ -76,11 +81,15 @@ export function useNightWorkersRouteArtifactSync(input: {
 					(item) => item.kind === "app_blueprint",
 				);
 			if (existing) {
+				const initialTab =
+					existing.kind === "plan_mode_workspace"
+						? resolvePlanWorkspaceInitialTab(artifact.tab, existing)
+						: "status";
 				setArtifactFocus((current) => {
 					if (
 						current.type === "artifact" &&
 						current.artifact.id === existing.id &&
-						current.artifact.metadata?.initialTab === artifact.tab
+						current.artifact.metadata?.initialTab === initialTab
 					) {
 						return current;
 					}
@@ -88,7 +97,7 @@ export function useNightWorkersRouteArtifactSync(input: {
 						type: "artifact",
 						artifact: {
 							...existing,
-							metadata: { ...existing.metadata, initialTab: artifact.tab },
+							metadata: { ...existing.metadata, initialTab },
 						},
 					};
 				});
@@ -168,8 +177,8 @@ export function useNightWorkersRouteArtifactSync(input: {
 						id: testModeArtifactId,
 						taskId: task.id,
 						kind: "test_mode",
-						title: "Test Mode",
-						summary: "Verification Checklist and Test Mode run launcher",
+						title: testModeTitle,
+						summary: testModeArtifactSummary,
 						source: { type: "test_mode" },
 						createdAt: String(task.updatedAt || task.createdAt),
 					},
@@ -197,6 +206,8 @@ export function useNightWorkersRouteArtifactSync(input: {
 		routeState,
 		setArtifactFocus,
 		setClearedArtifactContextId,
+		testModeArtifactSummary,
+		testModeTitle,
 		workspace,
 	]);
 }

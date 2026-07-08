@@ -23,6 +23,7 @@ export const LLM_WRITABLE_TODO_TASK_TYPES = [
 ] as const;
 
 export const NIGHTWORKERS_MANAGED_TODO_TASK_TYPES = [
+	"coding_preparation",
 	"initial_instructions",
 	"context_compile",
 	"knowledge_capture",

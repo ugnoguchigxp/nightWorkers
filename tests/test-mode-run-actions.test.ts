@@ -9,17 +9,24 @@ describe("Test Mode run actions", () => {
 
 	it("separates related test discovery from unit test execution", () => {
 		const discoveryTodos = buildTestModeInitialTodos("discover_tests");
+		const planTodos = buildTestModeInitialTodos("plan_and_implement_tests");
 		const unitTodos = buildTestModeInitialTodos("run_unit_tests");
 
 		expect(discoveryTodos.map((todo) => todo.title)).toContain(
-			"関連 test file を検索する",
+			"関連テストファイルを検索する",
 		);
 		expect(discoveryTodos.map((todo) => todo.title)).not.toContain(
-			"対象 unit test を実行する",
+			"対象ユニットテストを実行する",
 		);
 		expect(unitTodos.map((todo) => todo.title)).toContain(
-			"対象 unit test を実行する",
+			"対象ユニットテストを実行する",
 		);
+		expect(planTodos.map((todo) => todo.title)).toEqual([
+			"テスト実装を開始する",
+			"テスト実装を完了する",
+			"証跡テストチェックを行う",
+			"ユニットテストを実行する",
+		]);
 	});
 
 	it("sends the selected action to the Test Mode run endpoint", async () => {
@@ -64,6 +71,26 @@ describe("Test Mode run actions", () => {
 		).toMatchObject({
 			action: "run_unit_tests",
 			verificationDocumentId: null,
+		});
+	});
+
+	it("can request a checklist-based test plan that starts implementation", async () => {
+		const fetchMock = vi
+			.spyOn(globalThis, "fetch")
+			.mockResolvedValue(new Response(null, { status: 202 }));
+
+		await startTestModeRun("task-1", {
+			projectId: "project-1",
+			specArtifactId: "spec-1",
+			verificationDocumentId: "55555555-5555-4555-8555-555555555555",
+			mode: "test",
+			action: "plan_and_implement_tests",
+		});
+
+		expect(
+			JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)),
+		).toMatchObject({
+			action: "plan_and_implement_tests",
 		});
 	});
 });

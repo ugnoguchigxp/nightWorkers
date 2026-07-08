@@ -109,7 +109,7 @@ export function startTestModeRun(
 		specArtifactId: string;
 		verificationDocumentId?: string | null;
 		mode: "test";
-		action?: "discover_tests" | "run_unit_tests";
+		action?: "discover_tests" | "plan_and_implement_tests" | "run_unit_tests";
 		rerun?: boolean;
 	},
 ) {

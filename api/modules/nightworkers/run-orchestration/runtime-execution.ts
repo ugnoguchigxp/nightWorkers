@@ -55,6 +55,9 @@ type RuntimeOptions = Parameters<
 	ReturnType<RuntimeLaneDefinition["createAdapter"]>["start"]
 >[0]["runtimeOptions"];
 
+const TEST_MODE_NEXT_STEP_LABEL =
+	"テストモードに入り、完了条件テストの構築をする";
+
 type LaunchRuntimeExecutionInput = {
 	taskId: string;
 	task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>;
@@ -79,6 +82,28 @@ async function refreshConversationContextForRuntimeLane(input: {
 		runId: input.runId,
 		reason: "run_finished",
 	});
+}
+
+export function appendTestModeNextStepLink(input: {
+	finalReport: string;
+	taskId: string;
+	executionMode?: RuntimePromptSnapshot["executionMode"] | null;
+	status: AgentRuntimeResult["terminalState"];
+}) {
+	const report = input.finalReport.trim();
+	if (input.executionMode !== "implementation") return report;
+	if (input.status !== "completed" && input.status !== "needs_review")
+		return report;
+	if (
+		report.includes(TEST_MODE_NEXT_STEP_LABEL) ||
+		report.includes("artifact=test_mode")
+	) {
+		return report;
+	}
+	const href = `/sessions/${encodeURIComponent(input.taskId)}?artifact=test_mode`;
+	return [report, "", `[${TEST_MODE_NEXT_STEP_LABEL}](${href})`]
+		.filter(Boolean)
+		.join("\n");
 }
 
 export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
@@ -392,7 +417,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			const guardedStatus = todoFinalizationBlocked
 				? "needs_human"
 				: outcome.status;
-			const finalReport = todoFinalizationBlocked
+			const baseFinalReport = todoFinalizationBlocked
 				? [
 						runtimeResult.finalReport || outcome.summary,
 						"",
@@ -402,6 +427,12 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 						.filter(Boolean)
 						.join("\n")
 				: runtimeResult.finalReport || outcome.summary;
+			const finalReport = appendTestModeNextStepLink({
+				finalReport: baseFinalReport,
+				taskId,
+				executionMode: runtimeContextSnapshot.executionMode,
+				status: guardedStatus,
+			});
 			const statusBeforeOutcome = enteredFinalizing
 				? "finalizing"
 				: statusBeforeFinalize;

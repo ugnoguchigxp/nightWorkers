@@ -200,11 +200,7 @@ export function ReviewStatusViewer({
 			<div className="mx-auto grid max-w-5xl gap-5">
 				<div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800 pb-4">
 					<div>
-						<div className="flex items-center gap-2 text-sm font-semibold">
-							<ClipboardCheck className="h-4 w-4 text-cyan-200" />
-							{t("reviewStatus.title")}
-						</div>
-						<div className="mt-2 text-xs leading-5 text-slate-400">
+						<div className="text-xs leading-5 text-slate-400">
 							{t("reviewStatus.runRemains")}{" "}
 							{detail.session.status === "approved"
 								? t("reviewStatus.sessionState.approved")

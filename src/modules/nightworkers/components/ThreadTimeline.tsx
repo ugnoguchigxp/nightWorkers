@@ -90,6 +90,7 @@ type ThreadTimelineProps = {
 	showDebugEvents: boolean;
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
 	onOpenProjectFile?: (path: string) => void;
+	onOpenTestModeArtifact?: () => void;
 	onGrantExternalPath?: (path: string) => Promise<void>;
 };
 
@@ -125,6 +126,7 @@ export function ThreadTimeline({
 	showDebugEvents,
 	onOpenArtifact,
 	onOpenProjectFile,
+	onOpenTestModeArtifact,
 	onGrantExternalPath,
 }: ThreadTimelineProps) {
 	const [isGrantingExternalPath, setIsGrantingExternalPath] = useState(false);
@@ -270,6 +272,7 @@ export function ThreadTimeline({
 									item={item}
 									onOpenArtifact={onOpenArtifact}
 									onOpenProjectFile={onOpenProjectFile}
+									onOpenTestModeArtifact={onOpenTestModeArtifact}
 								/>
 							</TimelineDebugFragment>
 						) : (
@@ -278,6 +281,7 @@ export function ThreadTimeline({
 								item={item}
 								onOpenArtifact={onOpenArtifact}
 								onOpenProjectFile={onOpenProjectFile}
+								onOpenTestModeArtifact={onOpenTestModeArtifact}
 							/>
 						),
 					)
@@ -298,6 +302,7 @@ export function ThreadTimeline({
 									message={item.message}
 									onOpenArtifact={onOpenArtifact}
 									onOpenProjectFile={onOpenProjectFile}
+									onOpenTestModeArtifact={onOpenTestModeArtifact}
 								/>
 							</ThreadMessage>
 						) : (showDebugEvents &&
@@ -361,6 +366,7 @@ export function ThreadTimeline({
 					<StreamingResponsePreview
 						preview={streamingPreview}
 						onOpenProjectFile={onOpenProjectFile}
+						onOpenTestModeArtifact={onOpenTestModeArtifact}
 					/>
 				</ThreadMessage>
 			) : null}
@@ -369,6 +375,7 @@ export function ThreadTimeline({
 					<PersistedStreamingResponse
 						preview={persistedStreamingPreview}
 						onOpenProjectFile={onOpenProjectFile}
+						onOpenTestModeArtifact={onOpenTestModeArtifact}
 					/>
 				</ThreadMessage>
 			) : null}
@@ -381,6 +388,7 @@ export function ThreadTimeline({
 				<FinalReportCard
 					latestRun={latestRun}
 					onOpenProjectFile={onOpenProjectFile}
+					onOpenTestModeArtifact={onOpenTestModeArtifact}
 				/>
 			) : null}
 		</div>

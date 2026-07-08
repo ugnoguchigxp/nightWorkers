@@ -46,7 +46,7 @@ describe("PlanModeWorkspaceViewer", () => {
 			/>,
 		);
 
-		expect(markup).toContain("Plan Mode Workspace");
+		expect(markup).not.toContain("Plan Mode Workspace");
 		expect(markup).toContain("Questionnaire");
 	});
 });

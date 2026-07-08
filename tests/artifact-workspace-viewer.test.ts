@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import "../src/i18n/setup";
 import { buildArtifactVersions } from "../src/modules/nightworkers/components/ArtifactPaneVersions";
 import type { TaskMessage } from "../src/modules/nightworkers/types";
 import { buildWorkbenchArtifactRefs } from "../src/modules/nightworkers/workbenchArtifactSelectors";
@@ -555,7 +556,8 @@ describe("PlanModeWorkspaceViewer", () => {
 	it("shows separate test search and unit test actions on the feature plan tab", () => {
 		const featurePlan = buildTaskMessage({
 			id: "feature-plan-message",
-			content: "# Feature Plan\n\n## 完了条件\n- [AC-001] ユーザーを作成できる",
+			content:
+				"# Feature Plan\n\n## 完了条件\n- [AC-001] ユーザーを作成でき、長い完了条件も省略されずに読める",
 			messageType: "markdown_document",
 			metadataJson: {
 				intent: "feature_plan",
@@ -577,7 +579,7 @@ describe("PlanModeWorkspaceViewer", () => {
 					conditions: [
 						{
 							id: "AC-001",
-							text: "ユーザーを作成できる",
+							text: "ユーザーを作成でき、長い完了条件も省略されずに読める",
 							status: "pending",
 							required: true,
 						},
@@ -596,11 +598,18 @@ describe("PlanModeWorkspaceViewer", () => {
 			}),
 		);
 
-		expect(markup).toContain("Find related tests");
-		expect(markup).toContain("Run unit tests");
-		expect(markup).toContain("Verification Checklist");
+		expect(markup).toContain("テスト実装ワークフロー開始");
+		expect(markup).toContain("実装開始");
+		expect(markup).toContain("実装完了");
+		expect(markup).toContain("証跡テストチェック");
+		expect(markup).toContain("ユニットテスト実行");
+		expect(markup).toContain("検証チェックリスト");
 		expect(markup).toContain("AC-001");
-		expect(markup).toContain("ユーザーを作成できる");
+		expect(markup).toContain(
+			"ユーザーを作成でき、長い完了条件も省略されずに読める",
+		);
+		expect(markup).toContain("whitespace-normal break-words");
+		expect(markup).not.toContain("truncate text-slate-200");
 	});
 
 	it("hides test actions on locked Plan Mode workspaces", () => {
@@ -629,9 +638,8 @@ describe("PlanModeWorkspaceViewer", () => {
 			}),
 		);
 
-		expect(markup).toContain("Verification Checklist");
-		expect(markup).not.toContain("Find related tests");
-		expect(markup).not.toContain("Run unit tests");
+		expect(markup).toContain("検証チェックリスト");
+		expect(markup).not.toContain("テスト実装ワークフロー開始");
 	});
 
 	it("renders blueprint and data model tabs from task messages", () => {

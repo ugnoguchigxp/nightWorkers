@@ -325,20 +325,13 @@ describe("NativeApiRunner context windows and Todo refresh", () => {
 		(repo.listTaskRunTodosForRun as never).mockResolvedValue([
 			{
 				seq: 1,
-				title: "initial_instructions を実行する",
-				taskType: "initial_instructions",
+				title: "コーディング準備を行う",
+				taskType: "coding_preparation",
 				status: "passed",
-				procedureId: "contextstill.initial_instructions",
+				procedureId: "coding_preparation",
 			},
 			{
 				seq: 2,
-				title: "context_compile を実行する",
-				taskType: "context_compile",
-				status: "passed",
-				procedureId: "contextstill.context_compile",
-			},
-			{
-				seq: 3,
 				title: "Implement Todo list UI",
 				taskType: "implementation",
 				status: "running",
@@ -369,10 +362,10 @@ describe("NativeApiRunner context windows and Todo refresh", () => {
 				currentTodo: {
 					id: "todo-1",
 					seq: 1,
-					title: "initial_instructions を実行する",
-					taskType: "initial_instructions",
+					title: "コーディング準備を行う",
+					taskType: "coding_preparation",
 					status: "running",
-					procedureId: "contextstill.initial_instructions",
+					procedureId: "coding_preparation",
 				},
 			}),
 			createSink(),
@@ -380,7 +373,7 @@ describe("NativeApiRunner context windows and Todo refresh", () => {
 
 		expect(store.toolCalls[0]).toMatchObject({
 			toolName: "unknown_tool",
-			todoSeq: 3,
+			todoSeq: 2,
 		});
 		expect(providerTurn).toHaveBeenCalledWith(
 			expect.objectContaining({

@@ -316,8 +316,16 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(prompt).toContain(
 			"Todo tracking、quality_gate_verify、closeout は省略しない",
 		);
-		expect(prompt).toContain("DB schema 変更が必要または発生した時点で");
+		expect(prompt).toContain("DB schema / migration / 永続化テーブル変更では");
+		expect(prompt).toContain("TodoList に固定 gate「DB migration を実行する」");
+		expect(prompt).toContain(
+			"migration ファイル、DB schema、DB bootstrap / seed / persistence table 定義を作成・更新する必要が分かった時点",
+		);
+		expect(prompt).toContain("todoListReplaceReason=newly_required_work");
 		expect(prompt).toContain("DB migration Todo は、migration 作成");
+		expect(prompt).toContain(
+			"通常 implementation Todo だけで DB 変更を閉じない",
+		);
 		expect(prompt).toContain("Questionnaire が unit 主軸なら");
 		expect(prompt).toContain("E2E Todo / E2E command を追加・実行しない");
 		expect(prompt).toContain("verify が format / typecheck / lint / test");
@@ -362,7 +370,10 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(prompt).toContain(
 			"targetPath 内の package.json や source files を shell/read tools で読まない",
 		);
-		expect(prompt).toContain("空の targetPath は未 materialized");
+		expect(prompt).toContain(
+			"作業開始時にまず pwd と list-dir / ls 相当で targetPath の存在、空状態、.git の有無を確認する",
+		);
+		expect(prompt).toContain("空または空に近い targetPath は未 materialized");
 		expect(prompt).toContain("zsh の先行展開を避けるため quote する");
 		expect(prompt).toContain("例: -name 'vite.config.*'");
 		expect(prompt).toContain(

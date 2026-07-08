@@ -1,10 +1,25 @@
-import { FlaskConical, LoaderCircle } from "lucide-react";
+import {
+	AlertTriangle,
+	CheckCircle2,
+	Circle,
+	FlaskConical,
+	LoaderCircle,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toDeepRecord } from "../../../shared/json-record";
 import type { PlanModeRegenerationTarget } from "../../../shared/schemas/plan-mode-artifact.schema";
+import { TEST_MODE_WORKFLOW_ACTION } from "../../../shared/test-mode-workflow";
 import { generateBlueprintArtifact } from "../blueprint";
 import { generateDataModelArtifact } from "../dataModel";
 import { MarkdownViewer } from "../nightworkers/components/ArtifactFileViewers";
+import {
+	buildTestModeWorkflowSteps,
+	isTestModeWorkflowInProgress,
+	readTestModeWorkflowActionStatus,
+	type TestModeWorkflowStepStatus,
+	type TestModeWorkflowStepView,
+} from "../nightworkers/testModeWorkflowView";
 import type {
 	ActivityArtifact,
 	DesignQuestionnaireAnswer,
@@ -12,6 +27,7 @@ import type {
 	GeneralSettings,
 	PlanModeWorkspace,
 	TaskMessage,
+	TaskRun,
 	WorkbenchArtifactContext,
 } from "../nightworkers/types";
 import {
@@ -51,7 +67,10 @@ import {
 	generatePlanViewArtifact,
 } from "./planViewCommands";
 
-type TestModeAction = "discover_tests" | "run_unit_tests";
+type TestModeAction =
+	| "discover_tests"
+	| "plan_and_implement_tests"
+	| "run_unit_tests";
 
 const additionalPlanViewTabs = [
 	"user-flow",
@@ -289,6 +308,7 @@ export function PlanModeWorkspaceViewer({
 	onQueueSession,
 	onAddToQueue,
 	onStartTestModeRun,
+	latestRun,
 	isImplementationLocked = false,
 }: {
 	sessionId: string | null;
@@ -304,6 +324,7 @@ export function PlanModeWorkspaceViewer({
 		verificationDocumentId?: string | null;
 		action: TestModeAction;
 	}) => Promise<boolean>;
+	latestRun?: TaskRun | null;
 	isImplementationLocked?: boolean;
 }) {
 	const [workspace, setWorkspace] = useState<PlanModeWorkspace | null>(null);
@@ -853,10 +874,7 @@ export function PlanModeWorkspaceViewer({
 	return (
 		<div className="flex h-full min-h-0 flex-col bg-[#1e1e2e] text-slate-100">
 			<div className="shrink-0 border-slate-800 border-b px-5 py-3">
-				<div className="text-[11px] font-semibold uppercase text-cyan-200">
-					Plan Mode Workspace
-				</div>
-				<div className="mt-2 flex flex-wrap gap-1">
+				<div className="flex flex-wrap gap-1">
 					{visibleTabs.map((id) => (
 						<button
 							key={id}
@@ -882,6 +900,7 @@ export function PlanModeWorkspaceViewer({
 						{featurePlanVerification ? (
 							<FeaturePlanVerificationBar
 								model={featurePlanVerification}
+								latestRun={latestRun}
 								canStart={
 									Boolean(onStartTestModeRun) && !isImplementationLocked
 								}
@@ -1120,6 +1139,7 @@ type FeaturePlanVerificationModel = {
 
 type FeaturePlanVerificationBarProps = {
 	model: FeaturePlanVerificationModel;
+	latestRun?: TaskRun | null;
 	canStart: boolean;
 	status: string | null;
 	onStart: (action: TestModeAction) => Promise<void>;
@@ -1163,67 +1183,70 @@ function buildFeaturePlanVerificationModel(input: {
 
 function FeaturePlanVerificationBar({
 	model,
+	latestRun,
 	canStart,
 	status,
 	onStart,
 }: FeaturePlanVerificationBarProps) {
+	const { t } = useTranslation();
 	const canShowStartButton = canStart && Boolean(model.specArtifactId);
-	const searchStatus = readFeaturePlanTestModeActionStatus(
-		status,
-		"discover_tests",
-	);
-	const unitStatus = readFeaturePlanTestModeActionStatus(
-		status,
-		"run_unit_tests",
-	);
+	const workflowActionStatus = readTestModeWorkflowActionStatus(status);
+	const workflowSteps = buildTestModeWorkflowSteps({
+		latestRun,
+		localStatus: status,
+	});
+	const workflowInProgress =
+		workflowActionStatus === "starting" ||
+		isTestModeWorkflowInProgress(workflowSteps);
 	return (
 		<div className="rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2">
 			<div className="flex items-center justify-between gap-3">
 				<div className="min-w-0">
 					<div className="text-xs font-semibold uppercase text-slate-300">
-						Verification Checklist
+						{t("testMode.checklist.title")}
 					</div>
 					<div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
-						<span>{model.conditions.length} conditions</span>
-						{searchStatus === "started" ? (
-							<span>Test search started</span>
-						) : null}
-						{searchStatus === "failed" ? <span>Test search failed</span> : null}
-						{unitStatus === "started" ? (
-							<span>Unit test run started</span>
-						) : null}
-						{unitStatus === "failed" ? (
-							<span>Unit test start failed</span>
+						<span>
+							{t("testMode.checklist.conditionsCount", {
+								count: model.conditions.length,
+							})}
+						</span>
+						{workflowActionStatus === "failed" ? (
+							<span>{t("testMode.status.planFailed")}</span>
 						) : null}
 					</div>
 				</div>
 				{canShowStartButton ? (
 					<div className="flex shrink-0 flex-wrap justify-end gap-1.5">
 						<FeaturePlanTestModeActionButton
-							action="discover_tests"
-							label="Find related tests"
-							status={searchStatus}
-							onStart={onStart}
-						/>
-						<FeaturePlanTestModeActionButton
-							action="run_unit_tests"
-							label="Run unit tests"
-							status={unitStatus}
+							action={TEST_MODE_WORKFLOW_ACTION}
+							label={t("testMode.action.startWorkflow")}
+							status={workflowActionStatus}
+							disabled={workflowInProgress}
 							onStart={onStart}
 						/>
 					</div>
 				) : null}
 			</div>
+			<FeaturePlanTestModeWorkflowProgress steps={workflowSteps} />
 			{model.conditions.length > 0 ? (
 				<div className="mt-2 grid gap-1">
 					{model.conditions.slice(0, 3).map((condition) => (
 						<div
 							key={condition.id}
-							className="grid grid-cols-[4.5rem_6rem_minmax(0,1fr)] items-center gap-2 text-xs"
+							className="grid grid-cols-[4.5rem_6rem_minmax(0,1fr)] items-start gap-2 rounded-md border border-slate-800/80 bg-slate-900/35 px-2.5 py-1.5 text-xs"
 						>
-							<span className="font-mono text-slate-400">{condition.id}</span>
-							<span className="text-slate-400">{condition.status}</span>
-							<span className="truncate text-slate-200">{condition.text}</span>
+							<span className="font-mono leading-5 text-slate-400">
+								{condition.id}
+							</span>
+							<span className="whitespace-nowrap leading-5 text-slate-400">
+								{t(`testMode.conditionStatus.${condition.status}`, {
+									defaultValue: condition.status,
+								})}
+							</span>
+							<span className="min-w-0 whitespace-normal break-words leading-5 text-slate-100">
+								{condition.text}
+							</span>
 						</div>
 					))}
 				</div>
@@ -1232,38 +1255,80 @@ function FeaturePlanVerificationBar({
 	);
 }
 
+function FeaturePlanTestModeWorkflowProgress({
+	steps,
+}: {
+	steps: TestModeWorkflowStepView[];
+}) {
+	const { t } = useTranslation();
+	return (
+		<div className="mt-2 grid gap-2 sm:grid-cols-4">
+			{steps.map((step, index) => (
+				<div
+					key={step.id}
+					className="min-w-0 rounded-md border border-slate-800 bg-slate-900/35 px-2.5 py-2"
+				>
+					<div className="flex min-w-0 items-center gap-2">
+						<FeaturePlanTestModeWorkflowStatusIcon status={step.status} />
+						<span className="truncate text-xs font-medium text-slate-100">
+							{t(`testMode.workflow.step.${step.id}`)}
+						</span>
+					</div>
+					<div className="mt-1 text-[11px] text-slate-400">
+						{index + 1}. {t(`testMode.workflow.status.${step.status}`)}
+					</div>
+				</div>
+			))}
+		</div>
+	);
+}
+
+function FeaturePlanTestModeWorkflowStatusIcon({
+	status,
+}: {
+	status: TestModeWorkflowStepStatus;
+}) {
+	if (status === "passed") {
+		return <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-300" />;
+	}
+	if (status === "running") {
+		return (
+			<LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin text-cyan-300" />
+		);
+	}
+	if (status === "failed" || status === "needs_human") {
+		return <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-300" />;
+	}
+	return <Circle className="h-3.5 w-3.5 shrink-0 text-slate-500" />;
+}
+
 function FeaturePlanTestModeActionButton({
 	action,
 	label,
 	status,
+	disabled = false,
 	onStart,
 }: {
 	action: TestModeAction;
 	label: string;
 	status: string | null;
+	disabled?: boolean;
 	onStart: (action: TestModeAction) => Promise<void>;
 }) {
-	const disabled = status === "starting";
+	const { t } = useTranslation();
+	const isDisabled = disabled || status === "starting";
 	return (
 		<button
 			type="button"
 			className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 text-xs font-medium text-cyan-100 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-900 disabled:text-slate-500"
-			disabled={disabled}
+			disabled={isDisabled}
 			onClick={() => void onStart(action)}
 			title={label}
 		>
 			<FlaskConical className="h-3.5 w-3.5" />
-			{status === "starting" ? "Starting..." : label}
+			{status === "starting" ? t("testMode.status.starting") : label}
 		</button>
 	);
-}
-
-function readFeaturePlanTestModeActionStatus(
-	status: string | null,
-	action: TestModeAction,
-) {
-	const prefix = `${action}:`;
-	return status?.startsWith(prefix) ? status.slice(prefix.length) : null;
 }
 
 export function extractViewDecisions(

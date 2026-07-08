@@ -366,7 +366,7 @@
 }
 
 .nightworkers-todo-pane-title {
-	color: var(--nw-text);
+	color: var(--nw-primary);
 }
 
 .nightworkers-todo-pane-subtitle {
@@ -378,9 +378,10 @@
 }
 
 .nightworkers-todo-pane-count {
-	border: 0;
-	background: transparent;
-	color: var(--nw-subtle-text);
+	border: 1px solid color-mix(in srgb, var(--nw-primary) 48%, transparent);
+	border-radius: 0.375rem;
+	background: color-mix(in srgb, var(--nw-primary) 12%, transparent);
+	color: color-mix(in srgb, var(--nw-primary) 86%, var(--nw-text));
 }
 
 .nightworkers-todo-item {

@@ -37,6 +37,18 @@ describe("project file links", () => {
 		expect(markup).not.toContain('target="_blank"');
 	});
 
+	it("marks chat markdown Test Mode links for workbench artifact navigation", () => {
+		const markup = renderToStaticMarkup(
+			<ChatMarkdown
+				content="[テストモードに入り、完了条件テストの構築をする](/sessions/task-1?artifact=test_mode)"
+				onOpenTestModeArtifact={() => undefined}
+			/>,
+		);
+
+		expect(markup).toContain('data-workbench-artifact-link="test_mode"');
+		expect(markup).not.toContain('target="_blank"');
+	});
+
 	it("marks git diff changed files and renders colored diff lines", () => {
 		const markup = renderToStaticMarkup(
 			<DiffViewer

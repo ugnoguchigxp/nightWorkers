@@ -5,12 +5,13 @@ import {
 	FolderTree,
 	ListTodo,
 	LoaderCircle,
-	PanelsTopLeft,
+	NotebookPen,
 	Trash2,
 } from "lucide-react";
 import {
 	type ReactNode,
 	useCallback,
+	useEffect,
 	useLayoutEffect,
 	useRef,
 	useState,
@@ -62,6 +63,12 @@ export {
 	resolveRestoredScrollTop,
 	shouldKeepPendingRestore,
 };
+
+export const ARTIFACT_BUTTON_ACTION_COOLDOWN_MS = 700;
+
+export function nextArtifactButtonCooldown(now: number, cooldownUntil: number) {
+	return now < cooldownUntil ? null : now + ARTIFACT_BUTTON_ACTION_COOLDOWN_MS;
+}
 
 type ThreadWorkspaceProps = {
 	activeSession: Task | null;
@@ -132,6 +139,12 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 		(artifact) => artifact.kind === "review_status",
 	);
 	const [showDebugEvents, setShowDebugEvents] = useState(true);
+	const [artifactButtonsCoolingDown, setArtifactButtonsCoolingDown] =
+		useState(false);
+	const artifactButtonCooldownUntilRef = useRef(0);
+	const artifactButtonCooldownTimeoutRef = useRef<ReturnType<
+		typeof setTimeout
+	> | null>(null);
 	const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 	const scrollStateRef = useRef<PersistedScrollState>({ mode: "bottom" });
 	const pendingRestoreStateRef = useRef<PersistedScrollState | null>(null);
@@ -164,6 +177,37 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 		? t("reviewStatus.title")
 		: t("reviewStatus.start");
 	const testModeArtifactLabel = t("thread.testModeArtifact");
+	const debugModeTooltipLabel = t("thread.tooltip.debugMode");
+	const planModeTooltipLabel = t("thread.tooltip.planMode");
+	const testModeTooltipLabel = t("thread.tooltip.testMode");
+	const reviewModeTooltipLabel = t("thread.tooltip.reviewMode");
+	const todoListTooltipLabel = t("thread.tooltip.todoList");
+	const runArtifactButtonAction = useCallback((action: () => void) => {
+		const nextCooldownUntil = nextArtifactButtonCooldown(
+			Date.now(),
+			artifactButtonCooldownUntilRef.current,
+		);
+		if (nextCooldownUntil === null) return;
+		artifactButtonCooldownUntilRef.current = nextCooldownUntil;
+		setArtifactButtonsCoolingDown(true);
+		if (artifactButtonCooldownTimeoutRef.current) {
+			clearTimeout(artifactButtonCooldownTimeoutRef.current);
+		}
+		artifactButtonCooldownTimeoutRef.current = setTimeout(() => {
+			artifactButtonCooldownTimeoutRef.current = null;
+			setArtifactButtonsCoolingDown(false);
+		}, ARTIFACT_BUTTON_ACTION_COOLDOWN_MS);
+		action();
+	}, []);
+	const openArtifactWithCooldown = useCallback(
+		(artifact: WorkbenchArtifactRef) => {
+			runArtifactButtonAction(() => props.onOpenArtifact(artifact));
+		},
+		[props.onOpenArtifact, runArtifactButtonAction],
+	);
+	const openTestModeArtifactWithCooldown = useCallback(() => {
+		runArtifactButtonAction(props.onOpenTestModeArtifact);
+	}, [props.onOpenTestModeArtifact, runArtifactButtonAction]);
 	const commitScrollState = useCallback(
 		(snapshot: ScrollSnapshot) => {
 			const state = buildPersistedScrollState(snapshot);
@@ -289,6 +333,15 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 		};
 	}, [activeSessionId, forceLatestFocus, latestFocusSignal]);
 
+	useEffect(
+		() => () => {
+			if (artifactButtonCooldownTimeoutRef.current) {
+				clearTimeout(artifactButtonCooldownTimeoutRef.current);
+			}
+		},
+		[],
+	);
+
 	useLayoutEffect(() => {
 		const node = scrollContainerRef.current;
 		if (!node) return;
@@ -338,23 +391,6 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 							<div className="flex shrink-0 items-center gap-2">
 								<button
 									type="button"
-									className={`inline-flex h-7 w-7 items-center justify-center rounded border ${
-										showDebugEvents
-											? "border-cyan-400/70 bg-cyan-950/30 text-cyan-100"
-											: "border-slate-600/80 bg-slate-900/30 text-slate-300 hover:border-slate-400"
-									}`}
-									onClick={() => setShowDebugEvents((value) => !value)}
-									aria-pressed={showDebugEvents}
-									title={
-										showDebugEvents
-											? t("thread.hideDebugEvents")
-											: t("thread.showDebugEvents")
-									}
-								>
-									<Bug className="h-3.5 w-3.5" />
-								</button>
-								<button
-									type="button"
 									className="inline-flex items-center gap-1.5 rounded border border-rose-500/60 bg-rose-950/20 px-2 py-1 text-[10px] uppercase text-rose-100 hover:bg-rose-900/40"
 									onClick={() => {
 										const ok = window.confirm(
@@ -373,12 +409,30 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 								<button
 									type="button"
 									className={`inline-flex h-7 w-7 items-center justify-center rounded border ${
+										showDebugEvents
+											? "border-cyan-400/70 bg-cyan-950/30 text-cyan-100"
+											: "border-slate-600/80 bg-slate-900/30 text-slate-300 hover:border-slate-400"
+									}`}
+									onClick={() => setShowDebugEvents((value) => !value)}
+									aria-label={debugModeTooltipLabel}
+									aria-pressed={showDebugEvents}
+									title={debugModeTooltipLabel}
+								>
+									<Bug className="h-3.5 w-3.5" />
+								</button>
+								<button
+									type="button"
+									className={`inline-flex h-7 w-7 items-center justify-center rounded border disabled:cursor-wait disabled:opacity-60 ${
 										props.isProjectFilesOpen
 											? "border-cyan-400/70 bg-cyan-950/30 text-cyan-100"
 											: "border-slate-600/80 bg-slate-900/30 text-slate-200 hover:border-slate-400"
 									}`}
 									aria-pressed={props.isProjectFilesOpen}
-									onClick={props.onOpenProjectFiles}
+									aria-disabled={artifactButtonsCoolingDown}
+									disabled={artifactButtonsCoolingDown}
+									onClick={() =>
+										runArtifactButtonAction(props.onOpenProjectFiles)
+									}
 									title={t("thread.projectFiles")}
 								>
 									<FolderTree className="h-3.5 w-3.5" />
@@ -390,17 +444,19 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 											? "border-cyan-400/70 bg-cyan-950/30 text-cyan-100 hover:bg-cyan-900/30"
 											: "border-slate-600/80 bg-slate-900/30 text-slate-300 hover:border-slate-400"
 									}`}
-									onClick={() => void props.onOpenBlueprintArtifact()}
+									onClick={() =>
+										runArtifactButtonAction(() => {
+											void props.onOpenBlueprintArtifact();
+										})
+									}
 									disabled={
+										artifactButtonsCoolingDown ||
 										props.isBlueprintActionBusy ||
 										!props.activeSession ||
 										!blueprintArtifact
 									}
-									title={
-										blueprintArtifact
-											? planModeWorkspaceLabel
-											: noPlanModeWorkspaceLabel
-									}
+									aria-disabled={artifactButtonsCoolingDown}
+									title={planModeTooltipLabel}
 									aria-label={
 										blueprintArtifact
 											? planModeWorkspaceLabel
@@ -411,7 +467,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 									{props.isBlueprintActionBusy ? (
 										<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
 									) : (
-										<PanelsTopLeft className="h-3.5 w-3.5" />
+										<NotebookPen className="h-3.5 w-3.5" />
 									)}
 								</button>
 								<button
@@ -422,9 +478,10 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 											: "border-slate-600/80 bg-slate-900/30 text-slate-200 hover:border-slate-400"
 									}`}
 									aria-pressed={props.isTestModeArtifactOpen}
-									disabled={!props.activeSession}
-									onClick={props.onOpenTestModeArtifact}
-									title={testModeArtifactLabel}
+									aria-disabled={artifactButtonsCoolingDown}
+									disabled={artifactButtonsCoolingDown || !props.activeSession}
+									onClick={openTestModeArtifactWithCooldown}
+									title={testModeTooltipLabel}
 									aria-label={testModeArtifactLabel}
 								>
 									<FlaskConical className="h-3.5 w-3.5" />
@@ -437,13 +494,19 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 											: "border-slate-600/80 bg-slate-900/30 text-slate-200 hover:border-slate-400"
 									}`}
 									aria-pressed={props.isReviewArtifactOpen}
+									aria-disabled={artifactButtonsCoolingDown}
 									disabled={
+										artifactButtonsCoolingDown ||
 										!props.activeSession ||
 										(!props.latestRun && !props.hasReviewArtifact) ||
 										props.isReviewActionBusy
 									}
-									onClick={() => void props.onOpenReviewArtifact()}
-									title={reviewArtifactLabel}
+									onClick={() =>
+										runArtifactButtonAction(() => {
+											void props.onOpenReviewArtifact();
+										})
+									}
+									title={reviewModeTooltipLabel}
 									aria-label={reviewArtifactLabel}
 								>
 									{props.isReviewActionBusy ? (
@@ -460,13 +523,14 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 											: "border-slate-600/80 bg-slate-900/30 text-slate-200 hover:border-slate-400"
 									}`}
 									aria-pressed={props.isTodoArtifactOpen}
-									disabled={!props.hasTodoArtifact}
-									onClick={props.onOpenTodoArtifact}
-									title={
-										props.hasTodoArtifact
-											? t("thread.todoArtifact")
-											: t("thread.noTodoArtifact")
+									aria-disabled={artifactButtonsCoolingDown}
+									disabled={
+										artifactButtonsCoolingDown || !props.hasTodoArtifact
 									}
+									onClick={() =>
+										runArtifactButtonAction(props.onOpenTodoArtifact)
+									}
+									title={todoListTooltipLabel}
 									aria-label={
 										props.hasTodoArtifact
 											? t("thread.todoArtifact")
@@ -485,13 +549,15 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 						</p>
 						<button
 							type="button"
-							className={`inline-flex h-7 w-7 items-center justify-center rounded border ${
+							className={`inline-flex h-7 w-7 items-center justify-center rounded border disabled:cursor-wait disabled:opacity-60 ${
 								props.isProjectFilesOpen
 									? "border-cyan-400/70 bg-cyan-950/30 text-cyan-100"
 									: "border-slate-600/80 bg-slate-900/30 text-slate-200 hover:border-slate-400"
 							}`}
 							aria-pressed={props.isProjectFilesOpen}
-							onClick={props.onOpenProjectFiles}
+							aria-disabled={artifactButtonsCoolingDown}
+							disabled={artifactButtonsCoolingDown}
+							onClick={() => runArtifactButtonAction(props.onOpenProjectFiles)}
 							title={t("thread.projectFiles")}
 						>
 							<FolderTree className="h-3.5 w-3.5" />
@@ -525,8 +591,9 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 							modelOptions={props.modelOptions}
 							onGrantExternalPath={props.onGrantExternalPath}
 							onModelChange={props.onModelChange}
-							onOpenArtifact={props.onOpenArtifact}
+							onOpenArtifact={openArtifactWithCooldown}
 							onOpenProjectFile={props.onOpenProjectFile}
+							onOpenTestModeArtifact={openTestModeArtifactWithCooldown}
 							onClearArtifactContext={props.onClearArtifactContext}
 							canStopActiveRun={props.canStopActiveRun}
 							onSubmitInitialPrompt={props.onSubmitInitialPrompt}
@@ -568,8 +635,9 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 						modelOptions={props.modelOptions}
 						onGrantExternalPath={props.onGrantExternalPath}
 						onModelChange={props.onModelChange}
-						onOpenArtifact={props.onOpenArtifact}
+						onOpenArtifact={openArtifactWithCooldown}
 						onOpenProjectFile={props.onOpenProjectFile}
+						onOpenTestModeArtifact={openTestModeArtifactWithCooldown}
 						onClearArtifactContext={props.onClearArtifactContext}
 						canStopActiveRun={props.canStopActiveRun}
 						onSubmitInitialPrompt={props.onSubmitInitialPrompt}

@@ -16,10 +16,15 @@ import {
 	projectEvaluationTaskPromptDrafts,
 	resolveComposerRouteTarget,
 	resolveCurrentProviderModel,
+	resolvePlanWorkspaceInitialTab,
 } from "../src/modules/nightworkers/components/nightworkers-shell-utils";
 import type { NightWorkersWorkspaceState } from "../src/modules/nightworkers/hooks/useNightWorkersWorkspace";
 import type { WorkbenchRouteState } from "../src/modules/nightworkers/routing/workbench-route-state";
-import type { Task, TaskMessage } from "../src/modules/nightworkers/types";
+import type {
+	Task,
+	TaskMessage,
+	WorkbenchArtifactRef,
+} from "../src/modules/nightworkers/types";
 
 describe("nightworkers-shell-utils", () => {
 	it("asProjectSafetyPolicy maps values correctly", () => {
@@ -92,6 +97,27 @@ describe("nightworkers-shell-utils", () => {
 	it("isImplementationLockedStatus checkCompleted status", () => {
 		expect(isImplementationLockedStatus("completed")).toBe(true);
 		expect(isImplementationLockedStatus("running")).toBe(false);
+	});
+
+	it("opens planned Plan Mode workspaces on status instead of questionnaire", () => {
+		const unplannedArtifact = {
+			kind: "plan_mode_workspace",
+			metadata: { featurePlanCount: 0 },
+		} as WorkbenchArtifactRef;
+		const plannedArtifact = {
+			kind: "plan_mode_workspace",
+			metadata: { featurePlanCount: 1 },
+		} as WorkbenchArtifactRef;
+
+		expect(
+			resolvePlanWorkspaceInitialTab("questionnaire", unplannedArtifact),
+		).toBe("questionnaire");
+		expect(
+			resolvePlanWorkspaceInitialTab("questionnaire", plannedArtifact),
+		).toBe("status");
+		expect(resolvePlanWorkspaceInitialTab("blueprint", plannedArtifact)).toBe(
+			"blueprint",
+		);
 	});
 
 	it("isDesignQuestionnaireReadyMessage validates messages", () => {

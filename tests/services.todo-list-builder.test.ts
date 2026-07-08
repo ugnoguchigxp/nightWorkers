@@ -24,10 +24,9 @@ describe("standard implementation TodoList builder", () => {
 			],
 		});
 
-		expect(todos.map((todo) => todo.seq)).toEqual([1, 2, 3, 4, 5, 6]);
+		expect(todos.map((todo) => todo.seq)).toEqual([1, 2, 3, 4, 5]);
 		expect(todos.map((todo) => todo.taskType)).toEqual([
-			"initial_instructions",
-			"context_compile",
+			"coding_preparation",
 			"code_edit",
 			"test",
 			"verification",
@@ -35,22 +34,17 @@ describe("standard implementation TodoList builder", () => {
 		]);
 		expect(todos[0]).toMatchObject({
 			status: "running",
-			procedureId: "contextstill.initial_instructions",
+			procedureId: "coding_preparation",
 		});
-		expect(todos[1]).toMatchObject({
-			status: "pending",
-			procedureId: "contextstill.context_compile",
-			dependsOn: [1],
-		});
-		expect(todos[3]).toMatchObject({ title: "Add tests", dependsOn: [3] });
+		expect(todos[2]).toMatchObject({ title: "Add tests", dependsOn: [2] });
 		expect(todos.at(-2)).toMatchObject({
 			taskType: "verification",
-			dependsOn: [4],
+			dependsOn: [3],
 		});
 		expect(todos.at(-1)).toMatchObject({
 			title: "完了報告を行う",
 			taskType: "completion_report",
-			dependsOn: [5],
+			dependsOn: [4],
 		});
 	});
 
@@ -61,8 +55,7 @@ describe("standard implementation TodoList builder", () => {
 		});
 
 		expect(todos.map((todo) => todo.taskType)).toEqual([
-			"initial_instructions",
-			"context_compile",
+			"coding_preparation",
 			"verification",
 			"completion_report",
 		]);
@@ -77,11 +70,10 @@ describe("standard implementation TodoList builder", () => {
 		expect(
 			todos.map((todo) => `${todo.seq}:${todo.taskType}:${todo.title}`),
 		).toEqual([
-			"1:initial_instructions:initial_instructions を実行する",
-			"2:context_compile:context_compile を実行する",
-			"3:implementation:Implement feature",
-			"4:verification:品質ゲート verify コマンドを通す",
-			"5:completion_report:完了報告を行う",
+			"1:coding_preparation:コーディング準備を行う",
+			"2:implementation:Implement feature",
+			"3:verification:品質ゲート verify コマンドを通す",
+			"4:completion_report:完了報告を行う",
 		]);
 		expect(
 			todos.filter(
@@ -90,7 +82,7 @@ describe("standard implementation TodoList builder", () => {
 		).toHaveLength(0);
 		expect(todos.at(-1)).toMatchObject({
 			taskType: "completion_report",
-			dependsOn: [4],
+			dependsOn: [3],
 		});
 	});
 
@@ -107,8 +99,8 @@ describe("standard implementation TodoList builder", () => {
 			todos: [{ seq: 1, title: "Implement feature" }],
 		});
 
-		expect(todos[2]).toMatchObject({
-			seq: 3,
+		expect(todos[1]).toMatchObject({
+			seq: 2,
 			title: "Implement feature",
 			taskType: "implementation",
 		});
@@ -135,16 +127,15 @@ describe("standard implementation TodoList builder", () => {
 		expect(
 			todos.map((todo) => `${todo.seq}:${todo.taskType}:${todo.title}`),
 		).toEqual([
-			"1:initial_instructions:initial_instructions を実行する",
-			"2:context_compile:context_compile を実行する",
-			"3:implementation:Implement feature",
-			"4:test:Add focused tests",
-			"5:verification:品質ゲート verify コマンドを通す",
-			"6:completion_report:完了報告を行う",
+			"1:coding_preparation:コーディング準備を行う",
+			"2:implementation:Implement feature",
+			"3:test:Add focused tests",
+			"4:verification:品質ゲート verify コマンドを通す",
+			"5:completion_report:完了報告を行う",
 		]);
-		expect(todos[3]).toMatchObject({
+		expect(todos[2]).toMatchObject({
 			title: "Add focused tests",
-			dependsOn: [3],
+			dependsOn: [2],
 		});
 		expect(
 			todos.filter((todo) => todo.title.toLowerCase() === "closeout"),
@@ -176,16 +167,15 @@ describe("standard implementation TodoList builder", () => {
 		expect(
 			todos.map((todo) => `${todo.seq}:${todo.taskType}:${todo.title}`),
 		).toEqual([
-			"1:initial_instructions:initial_instructions を実行する",
-			"2:context_compile:context_compile を実行する",
-			"3:implementation:Implement feature",
-			"4:test:Add focused tests",
-			"5:verification:品質ゲート verify コマンドを通す",
-			"6:completion_report:完了報告を行う",
+			"1:coding_preparation:コーディング準備を行う",
+			"2:implementation:Implement feature",
+			"3:test:Add focused tests",
+			"4:verification:品質ゲート verify コマンドを通す",
+			"5:completion_report:完了報告を行う",
 		]);
-		expect(todos[3]).toMatchObject({
+		expect(todos[2]).toMatchObject({
 			title: "Add focused tests",
-			dependsOn: [3],
+			dependsOn: [2],
 		});
 		expect(
 			todos.filter((todo) => todo.title === "検証コマンドを実行する"),
@@ -210,22 +200,21 @@ describe("standard implementation TodoList builder", () => {
 		expect(
 			todos.map((todo) => `${todo.seq}:${todo.taskType}:${todo.procedureId}`),
 		).toEqual([
-			"1:initial_instructions:contextstill.initial_instructions",
-			"2:context_compile:contextstill.context_compile",
-			"3:implementation:null",
-			"4:data_migration:data_migration.apply_migration",
-			"5:verification:quality_gate_verify",
-			"6:completion_report:final_completion_report",
+			"1:coding_preparation:coding_preparation",
+			"2:implementation:null",
+			"3:data_migration:data_migration.apply_migration",
+			"4:verification:quality_gate_verify",
+			"5:completion_report:final_completion_report",
 		]);
-		expect(todos[3]).toMatchObject({
+		expect(todos[2]).toMatchObject({
 			title: "DB migration を実行する",
-			dependsOn: [3],
+			dependsOn: [2],
 		});
-		expect(todos[3]?.description).toContain("migration ファイル作成");
-		expect(todos[3]?.description).toContain("実作業対象 DB");
-		expect(todos[3]?.description).toContain("read-only focused test");
-		expect(todos[3]?.description).toContain("API が no such table");
-		expect(todos[3]?.description).toContain("隔離 DB や一時 DB");
+		expect(todos[2]?.description).toContain("migration ファイル作成");
+		expect(todos[2]?.description).toContain("実作業対象 DB");
+		expect(todos[2]?.description).toContain("read-only focused test");
+		expect(todos[2]?.description).toContain("API が no such table");
+		expect(todos[2]?.description).toContain("隔離 DB や一時 DB");
 		expect(
 			todos.filter((todo) => todo.procedureId === "quality_gate_verify"),
 		).toHaveLength(1);
@@ -260,6 +249,7 @@ describe("standard implementation TodoList builder", () => {
 		const implementationTodos = todos.filter(
 			(todo) =>
 				!todo.procedureId?.startsWith("contextstill.") &&
+				todo.procedureId !== "coding_preparation" &&
 				!todo.procedureId?.startsWith("data_migration.") &&
 				todo.procedureId !== "quality_gate_verify" &&
 				todo.procedureId !== "final_completion_report",
@@ -327,16 +317,15 @@ describe("standard implementation TodoList builder", () => {
 		expect(
 			todos.map((todo) => `${todo.seq}:${todo.taskType}:${todo.title}`),
 		).toEqual([
-			"1:initial_instructions:initial_instructions を実行する",
-			"2:context_compile:context_compile を実行する",
-			"3:implementation:Implement feature",
-			"4:test:Add focused tests",
-			"5:verification:品質ゲート verify コマンドを通す",
-			"6:completion_report:完了報告を行う",
+			"1:coding_preparation:コーディング準備を行う",
+			"2:implementation:Implement feature",
+			"3:test:Add focused tests",
+			"4:verification:品質ゲート verify コマンドを通す",
+			"5:completion_report:完了報告を行う",
 		]);
-		expect(todos[3]).toMatchObject({
+		expect(todos[2]).toMatchObject({
 			title: "Add focused tests",
-			dependsOn: [3],
+			dependsOn: [2],
 		});
 		expect(
 			todos.filter((todo) => todo.title === "Check implementation"),
@@ -371,11 +360,10 @@ describe("standard implementation TodoList builder", () => {
 		expect(
 			todos.map((todo) => `${todo.seq}:${todo.taskType}:${todo.title}`),
 		).toEqual([
-			"1:initial_instructions:initial_instructions を実行する",
-			"2:context_compile:context_compile を実行する",
-			"3:implementation:Implement feature",
-			"4:verification:品質ゲート verify コマンドを通す",
-			"5:completion_report:完了報告を行う",
+			"1:coding_preparation:コーディング準備を行う",
+			"2:implementation:Implement feature",
+			"3:verification:品質ゲート verify コマンドを通す",
+			"4:completion_report:完了報告を行う",
 		]);
 	});
 
@@ -395,8 +383,7 @@ describe("standard implementation TodoList builder", () => {
 
 		expect(todos.map((todo) => todo.taskType)).toEqual(
 			expect.arrayContaining([
-				"initial_instructions",
-				"context_compile",
+				"coding_preparation",
 				"verification",
 				"completion_report",
 			]),
@@ -417,7 +404,7 @@ describe("standard implementation TodoList builder", () => {
 			],
 		});
 
-		expect(todos[2]).toMatchObject({
+		expect(todos[1]).toMatchObject({
 			title: "DB-backed Todo API を実装する",
 			taskType: "implementation",
 		});
@@ -442,11 +429,10 @@ describe("standard implementation TodoList builder", () => {
 		expect(
 			todos.map((todo) => `${todo.seq}:${todo.taskType}:${todo.title}`),
 		).toEqual([
-			"1:initial_instructions:initial_instructions を実行する",
-			"2:context_compile:context_compile を実行する",
-			"3:implementation:Implement feature",
-			"4:verification:品質ゲート verify コマンドを通す",
-			"5:completion_report:完了報告を行う",
+			"1:coding_preparation:コーディング準備を行う",
+			"2:implementation:Implement feature",
+			"3:verification:品質ゲート verify コマンドを通す",
+			"4:completion_report:完了報告を行う",
 		]);
 		expect(
 			todos.filter((todo) => todo.taskType === "verification"),
@@ -493,17 +479,16 @@ describe("standard implementation TodoList builder", () => {
 		expect(
 			todos.map((todo) => `${todo.seq}:${todo.taskType}:${todo.title}`),
 		).toEqual([
-			"1:initial_instructions:initial_instructions を実行する",
-			"2:context_compile:context_compile を実行する",
-			"3:implementation:todo の保存層と API 契約を実装する",
-			"4:verification:品質ゲート verify コマンドを通す",
-			"5:completion_report:完了報告を行う",
+			"1:coding_preparation:コーディング準備を行う",
+			"2:implementation:todo の保存層と API 契約を実装する",
+			"3:verification:品質ゲート verify コマンドを通す",
+			"4:completion_report:完了報告を行う",
 		]);
 		expect(
 			todos.filter(
 				(todo) => todo.procedureId === "contextstill.initial_instructions",
 			),
-		).toHaveLength(1);
+		).toHaveLength(0);
 		expect(
 			todos.filter(
 				(todo) => todo.procedureId === "contextstill.register_candidates",

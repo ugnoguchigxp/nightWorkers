@@ -321,10 +321,12 @@ export function NormalTranscriptItemView({
 	item,
 	onOpenArtifact,
 	onOpenProjectFile,
+	onOpenTestModeArtifact,
 }: {
 	item: TranscriptItem;
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
 	onOpenProjectFile?: (path: string) => void;
+	onOpenTestModeArtifact?: () => void;
 }) {
 	if (item.kind === "user_turn") {
 		const timestamp = item.events.at(-1)?.createdAt;
@@ -336,6 +338,7 @@ export function NormalTranscriptItemView({
 				<ChatMarkdown
 					content={item.text || fallbackEventText(item.events.at(-1))}
 					onOpenProjectFile={onOpenProjectFile}
+					onOpenTestModeArtifact={onOpenTestModeArtifact}
 				/>
 			</ThreadMessage>
 		);
@@ -356,11 +359,13 @@ export function NormalTranscriptItemView({
 							message={artifactMessage}
 							onOpenArtifact={onOpenArtifact}
 							onOpenProjectFile={onOpenProjectFile}
+							onOpenTestModeArtifact={onOpenTestModeArtifact}
 						/>
 					) : visibleText.trim() ? (
 						<ChatMarkdown
 							content={visibleText}
 							onOpenProjectFile={onOpenProjectFile}
+							onOpenTestModeArtifact={onOpenTestModeArtifact}
 						/>
 					) : null}
 					{item.children.map((child, _index) => {

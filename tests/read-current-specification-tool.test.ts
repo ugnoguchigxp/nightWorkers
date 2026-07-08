@@ -481,8 +481,7 @@ describe("todo_list worker tool", () => {
 			operation: "replace",
 		});
 		expect(result.payload.todos.map((todo) => todo.taskType)).toEqual([
-			"initial_instructions",
-			"context_compile",
+			"coding_preparation",
 			"inspection",
 			"verification",
 			"completion_report",
@@ -525,7 +524,7 @@ describe("todo_list worker tool", () => {
 		expect(replaced.ok).toBe(true);
 		expect(replaced.payload.todos[0]).toMatchObject({
 			seq: 1,
-			taskType: "initial_instructions",
+			taskType: "coding_preparation",
 			status: "running",
 		});
 
@@ -542,7 +541,7 @@ describe("todo_list worker tool", () => {
 		});
 		expect(completed.payload.todos[1]).toMatchObject({
 			seq: 2,
-			taskType: "context_compile",
+			taskType: "implementation",
 			status: "running",
 		});
 
@@ -582,12 +581,12 @@ describe("todo_list worker tool", () => {
 		const completedInitialInstructions = beforeReplace[0];
 		expect(completedInitialInstructions).toMatchObject({
 			seq: 1,
-			taskType: "initial_instructions",
+			taskType: "coding_preparation",
 			status: "passed",
 		});
 		expect(beforeReplace[1]).toMatchObject({
 			seq: 2,
-			taskType: "context_compile",
+			taskType: "implementation",
 			status: "running",
 		});
 
@@ -606,8 +605,8 @@ describe("todo_list worker tool", () => {
 		expect(persisted[0]).toMatchObject({
 			id: completedInitialInstructions.id,
 			seq: 1,
-			title: "initial_instructions を実行する",
-			taskType: "initial_instructions",
+			title: "コーディング準備を行う",
+			taskType: "coding_preparation",
 			status: "passed",
 		});
 		expect(persisted[0].completedAt?.getTime()).toBe(
@@ -615,7 +614,7 @@ describe("todo_list worker tool", () => {
 		);
 		expect(persisted[1]).toMatchObject({
 			seq: 2,
-			taskType: "context_compile",
+			taskType: "implementation",
 			status: "running",
 		});
 		expect(
@@ -626,7 +625,6 @@ describe("todo_list worker tool", () => {
 			{ seq: 3, status: "pending" },
 			{ seq: 4, status: "pending" },
 			{ seq: 5, status: "pending" },
-			{ seq: 6, status: "pending" },
 		]);
 	});
 
@@ -692,7 +690,7 @@ describe("todo_list worker tool", () => {
 			operation: "replace",
 			todos: [{ seq: 1, title: "Implement feature" }],
 		});
-		for (const seq of [1, 2, 3, 4]) {
+		for (const seq of [1, 2, 3]) {
 			const result = await todoListTool({
 				runId: run.id,
 				operation: "done",
@@ -703,7 +701,7 @@ describe("todo_list worker tool", () => {
 
 		const persisted = await repo.listTaskRunTodosForRun(run.id);
 		expect(persisted.at(-1)).toMatchObject({
-			seq: 5,
+			seq: 4,
 			title: "完了報告を行う",
 			taskType: "completion_report",
 			procedureId: "final_completion_report",
@@ -737,7 +735,7 @@ describe("todo_list worker tool", () => {
 			operation: "replace",
 			todos: [{ seq: 1, title: "Implement feature" }],
 		});
-		for (const seq of [1, 2, 3, 4]) {
+		for (const seq of [1, 2, 3]) {
 			const result = await todoListTool({
 				runId: run.id,
 				operation: "done",
@@ -749,23 +747,23 @@ describe("todo_list worker tool", () => {
 		const started = await todoListTool({
 			runId: run.id,
 			operation: "start",
-			seq: 5,
+			seq: 4,
 		});
 
 		expect(started.ok).toBe(true);
 		expect(started.payload.currentTodo).toMatchObject({
-			seq: 5,
+			seq: 4,
 			taskType: "completion_report",
 			procedureId: "final_completion_report",
 			status: "running",
 		});
 		const persisted = await repo.listTaskRunTodosForRun(run.id);
-		expect(persisted[4]).toMatchObject({
-			seq: 5,
+		expect(persisted[3]).toMatchObject({
+			seq: 4,
 			taskType: "completion_report",
 			status: "running",
 		});
-		expect(persisted[4].startedAt).toBeTruthy();
+		expect(persisted[3].startedAt).toBeTruthy();
 	});
 
 	it("returns attempted todo diagnostics when complete fails", async () => {
@@ -822,14 +820,14 @@ describe("todo_list worker tool", () => {
 		const result = await todoListTool({
 			runId: run.id,
 			operation: "start",
-			seq: 5,
+			seq: 4,
 		});
 
 		expect(result.ok).toBe(false);
 		expect(result.error).toMatchObject({ code: "PREVIOUS_TODO_OPEN" });
 		const persisted = await repo.listTaskRunTodosForRun(run.id);
 		expect(persisted[2]).toMatchObject({ seq: 3, status: "running" });
-		expect(persisted[4]).toMatchObject({ seq: 5, status: "pending" });
+		expect(persisted[3]).toMatchObject({ seq: 4, status: "pending" });
 	});
 
 	it("does not auto-start an earlier pending Todo after completing a later Todo", async () => {

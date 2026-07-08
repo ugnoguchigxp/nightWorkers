@@ -44,10 +44,10 @@ describe("NativeApiCloseoutController", () => {
 				currentTodo: {
 					id: "todo-1",
 					seq: 1,
-					title: "initial_instructions を実行する",
-					taskType: "initial_instructions",
+					title: "コーディング準備を行う",
+					taskType: "coding_preparation",
 					status: "running",
-					procedureId: "contextstill.initial_instructions",
+					procedureId: "coding_preparation",
 				},
 			}),
 			sink: createSink(events),

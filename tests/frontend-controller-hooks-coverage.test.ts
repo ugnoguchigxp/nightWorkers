@@ -360,10 +360,25 @@ describe("frontend controller hook coverage", () => {
 				),
 			}),
 		);
-		const { useProjectEvaluationController } = await import(
+		const {
+			useProjectEvaluationController,
+			mergeCreatedProjectEvaluationTasks,
+		} = await import(
 			"../src/modules/project-evaluation/hooks/useProjectEvaluationController"
 		);
 		const onTasksCreated = vi.fn();
+
+		// Test mergeCreatedProjectEvaluationTasks directly
+		const currentTasks = [buildTask({ id: "task-1" })];
+		const createdTasks = [buildTask({ id: "task-2" })];
+		expect(mergeCreatedProjectEvaluationTasks(currentTasks, [])).toBe(
+			currentTasks,
+		);
+		const merged = mergeCreatedProjectEvaluationTasks(
+			currentTasks,
+			createdTasks,
+		);
+		expect(merged.length).toBe(2);
 
 		const controller = useProjectEvaluationController("repo-1", {
 			onTasksCreated,
@@ -375,7 +390,30 @@ describe("frontend controller hook coverage", () => {
 		await controller.generateIdeas();
 		await controller.createTasks();
 		controller.toggleIdea("idea-1");
+		// Toggle again to hit the delete branch
+		controller.toggleIdea("idea-1");
+		// Toggle new one to hit the add branch
+		controller.toggleIdea("idea-2");
+
+		// Execute queryClient.setQueryData mock callback to cover line 276
 		expect(queryClient.setQueryData).toHaveBeenCalled();
+		const setQueryDataCall = queryClient.setQueryData.mock.calls[0];
+		const callback = setQueryDataCall[1];
+		if (typeof callback === "function") {
+			const updated = callback(currentTasks);
+			expect(updated.length).toBe(2);
+		}
+
 		expect(onTasksCreated).toHaveBeenCalledWith([task]);
+
+		// Cover error branch in createTasks
+		const mockCommands = await import(
+			"../src/modules/project-evaluation/api/projectEvaluationCommands"
+		);
+		vi.mocked(mockCommands.createProjectEvaluationTasks).mockRejectedValueOnce(
+			new Error("Creation failed"),
+		);
+		await controller.createTasks();
+		expect(controller.error).toBe("Creation failed");
 	});
 });

@@ -9,10 +9,12 @@ export function MessagePayload({
 	message,
 	onOpenArtifact,
 	onOpenProjectFile,
+	onOpenTestModeArtifact,
 }: {
 	message: TaskMessage;
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
 	onOpenProjectFile?: (path: string) => void;
+	onOpenTestModeArtifact?: () => void;
 }) {
 	const { t } = useTranslation();
 	const metadata = toDeepRecord(message.metadataJson);
@@ -390,6 +392,7 @@ export function MessagePayload({
 			<ChatMarkdown
 				content={String(markdownDocumentData.content)}
 				onOpenProjectFile={onOpenProjectFile}
+				onOpenTestModeArtifact={onOpenTestModeArtifact}
 			/>
 		);
 	}
@@ -398,6 +401,7 @@ export function MessagePayload({
 			<ChatMarkdown
 				content={message.content}
 				onOpenProjectFile={onOpenProjectFile}
+				onOpenTestModeArtifact={onOpenTestModeArtifact}
 			/>
 		);
 	}

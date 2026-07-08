@@ -59,82 +59,56 @@ describe("NativeApiStartupController", () => {
 				okWorkerResult("todo_list", { operation: "done", todos: [] }),
 			)
 			.mockResolvedValueOnce(
-				okWorkerResult("todo_list", { operation: "done", todos: [] }),
-			)
-			.mockResolvedValueOnce(
 				okWorkerResult("todo_list", {
 					operation: "start",
-					transition: { nextCurrentSeq: 3 },
+					transition: { nextCurrentSeq: 2 },
 					todos: [],
 				}),
 			);
 		vi.mocked(repo.listTaskRunTodosForRun)
 			.mockResolvedValueOnce([
-				todo(
-					1,
-					"running",
-					"contextstill.initial_instructions",
-					"initial_instructions",
-				),
-				todo(2, "pending", "contextstill.context_compile", "context_compile"),
+				todo(1, "running", "coding_preparation", "coding_preparation"),
 				{
-					...todo(3, "pending", null, "implementation"),
+					...todo(2, "pending", null, "implementation"),
 					title: "Implement Todo list UI",
 				},
 			] as never)
 			.mockResolvedValueOnce([
-				todo(
-					1,
-					"passed",
-					"contextstill.initial_instructions",
-					"initial_instructions",
-				),
-				todo(2, "running", "contextstill.context_compile", "context_compile"),
+				todo(1, "running", "coding_preparation", "coding_preparation"),
 				{
-					...todo(3, "pending", null, "verification"),
+					...todo(2, "pending", null, "verification"),
 					title: "Pending follow-up check",
 				},
 				{
-					...todo(4, "running", null, "implementation"),
+					...todo(3, "running", null, "implementation"),
 					title: "Continue active Todo list implementation",
 				},
 			] as never)
 			.mockResolvedValueOnce([
-				todo(
-					1,
-					"passed",
-					"contextstill.initial_instructions",
-					"initial_instructions",
-				),
-				todo(2, "running", "contextstill.context_compile", "context_compile"),
+				todo(1, "running", "coding_preparation", "coding_preparation"),
 				{
-					...todo(3, "pending", null, "implementation"),
+					...todo(2, "pending", null, "implementation"),
 					title: "Implement Todo list UI",
 				},
 			] as never)
 			.mockResolvedValueOnce([
-				todo(
-					1,
-					"passed",
-					"contextstill.initial_instructions",
-					"initial_instructions",
-				),
-				todo(2, "passed", "contextstill.context_compile", "context_compile"),
+				todo(1, "running", "coding_preparation", "coding_preparation"),
 				{
-					...todo(3, "pending", null, "implementation"),
+					...todo(2, "pending", null, "implementation"),
 					title: "Implement Todo list UI",
 				},
 			] as never)
 			.mockResolvedValueOnce([
-				todo(
-					1,
-					"passed",
-					"contextstill.initial_instructions",
-					"initial_instructions",
-				),
-				todo(2, "passed", "contextstill.context_compile", "context_compile"),
+				todo(1, "passed", "coding_preparation", "coding_preparation"),
 				{
-					...todo(3, "running", null, "implementation"),
+					...todo(2, "pending", null, "implementation"),
+					title: "Implement Todo list UI",
+				},
+			] as never)
+			.mockResolvedValueOnce([
+				todo(1, "passed", "coding_preparation", "coding_preparation"),
+				{
+					...todo(2, "running", null, "implementation"),
 					title: "Implement Todo list UI",
 				},
 			] as never);
@@ -220,6 +194,7 @@ describe("NativeApiStartupController", () => {
 		expect(contextCompileArgs.goal).not.toContain(
 			"initial_instructions を実行する",
 		);
+		expect(contextCompileArgs.goal).not.toContain("コーディング準備を行う");
 		expect(contextCompileArgs).toMatchObject({
 			domains: ["nightWorkers"],
 			technologies: ["typescript", "bun"],
@@ -228,7 +203,7 @@ describe("NativeApiStartupController", () => {
 		expect(mutateTodos).toHaveBeenLastCalledWith({
 			runId: "run-1",
 			operation: "start",
-			seq: 3,
+			seq: 2,
 		});
 		expect(store.toolCalls).toEqual(
 			expect.arrayContaining([

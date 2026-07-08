@@ -603,6 +603,14 @@ function oneShotToolNamesForTodo(
 		Boolean(value),
 	);
 	const tools = new Set<NativeApiRuntimeToolName>();
+	if (
+		procedureId === "coding_preparation" ||
+		taskType === "coding_preparation"
+	) {
+		tools.add("context_initial_instructions");
+		tools.add("context_compile");
+		tools.add("import_project");
+	}
 	if (selectors.some(isImportSelector)) tools.add("import_project");
 	if (
 		procedureId === "contextstill.initial_instructions" ||

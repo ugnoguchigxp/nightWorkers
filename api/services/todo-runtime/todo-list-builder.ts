@@ -37,20 +37,12 @@ const DATA_MIGRATION_PROCEDURE_IDS = new Set([
 
 const FIRST_GATES: StandardGate[] = [
 	{
-		title: "initial_instructions を実行する",
+		title: "コーディング準備を行う",
 		description:
-			"作業開始時に contextStill の initial_instructions MCP tool を最初に一度実行し、この作業で守るべき基本手順を確認する。",
-		taskType: "initial_instructions",
-		procedureId: "contextstill.initial_instructions",
+			"作業開始時に contextStill の initial_instructions と context_compile を実行し、pwd と list-dir / ls 相当で targetPath の存在・空状態・.git の有無を確認する。空または未 materialized で starter / template / clone task と判断できる場合だけ import_project を実行し、失敗・cancel・未承認なら done にせず block / fail にする。",
+		taskType: "coding_preparation",
+		procedureId: "coding_preparation",
 		dependsOn: [],
-	},
-	{
-		title: "context_compile を実行する",
-		description:
-			"read_current_specification と initial_instructions の後に context_compile MCP tool を実行し、仕様書と実作業 Todo に基づく最小コンテキストを取得する。",
-		taskType: "context_compile",
-		procedureId: "contextstill.context_compile",
-		dependsOn: [1],
 	},
 ];
 
@@ -312,6 +304,9 @@ function isReservedFirstGateTodo(todo: ImplementationTodoInput) {
 		typeof todo.procedureId === "string" ? todo.procedureId.trim() : "";
 
 	return (
+		normalizedTitle === "コーディング準備を行う" ||
+		taskType === "coding_preparation" ||
+		procedureId === "coding_preparation" ||
 		normalizedTitle === "initial_instructionsを実行する" ||
 		normalizedTitle === "context_compileを実行する" ||
 		taskType === "initial_instructions" ||

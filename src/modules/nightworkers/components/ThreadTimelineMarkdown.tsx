@@ -1,4 +1,5 @@
 import { isValidElement, type ReactNode, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -145,8 +146,23 @@ function markdownChildrenText(children: ReactNode): string {
 	return "";
 }
 
+function isTestModeArtifactLink(href: string | undefined): boolean {
+	if (!href) return false;
+	try {
+		const url = new URL(href, "http://nightworkers.local");
+		return (
+			url.pathname.startsWith("/sessions/") &&
+			url.searchParams.get("artifact") === "test_mode"
+		);
+	} catch {
+		return false;
+	}
+}
+
 function buildChatMarkdownComponents(
 	onOpenProjectFile?: (path: string) => void,
+	onOpenTestModeArtifact?: () => void,
+	testModeArtifactTitle?: string,
 ): Components {
 	return {
 		...baseChatMarkdownComponents,
@@ -154,22 +170,41 @@ function buildChatMarkdownComponents(
 			const projectFilePath =
 				normalizeProjectFileLinkTarget(href) ||
 				normalizeProjectFileLinkTarget(markdownChildrenText(children));
+			const testModeArtifactLink = isTestModeArtifactLink(href);
 			return (
 				<a
 					{...props}
 					className="text-cyan-200 underline underline-offset-2 hover:text-cyan-100"
 					href={href}
-					target={projectFilePath ? undefined : "_blank"}
-					rel={projectFilePath ? undefined : "noreferrer"}
+					target={
+						projectFilePath || testModeArtifactLink ? undefined : "_blank"
+					}
+					rel={
+						projectFilePath || testModeArtifactLink ? undefined : "noreferrer"
+					}
 					data-project-file-link={projectFilePath || undefined}
-					title={projectFilePath ? "ソースコードを開く" : props.title}
+					data-workbench-artifact-link={
+						testModeArtifactLink ? "test_mode" : undefined
+					}
+					title={
+						projectFilePath
+							? "ソースコードを開く"
+							: testModeArtifactLink
+								? testModeArtifactTitle
+								: props.title
+					}
 					onClick={
 						projectFilePath && onOpenProjectFile
 							? (event) => {
 									event.preventDefault();
 									onOpenProjectFile(projectFilePath);
 								}
-							: props.onClick
+							: testModeArtifactLink && onOpenTestModeArtifact
+								? (event) => {
+										event.preventDefault();
+										onOpenTestModeArtifact();
+									}
+								: props.onClick
 					}
 				>
 					{children}
@@ -182,13 +217,22 @@ function buildChatMarkdownComponents(
 export function ChatMarkdown({
 	content,
 	onOpenProjectFile,
+	onOpenTestModeArtifact,
 }: {
 	content: string;
 	onOpenProjectFile?: (path: string) => void;
+	onOpenTestModeArtifact?: () => void;
 }) {
+	const { t } = useTranslation();
+	const testModeArtifactTitle = t("testMode.openArtifact");
 	const markdownComponents = useMemo(
-		() => buildChatMarkdownComponents(onOpenProjectFile),
-		[onOpenProjectFile],
+		() =>
+			buildChatMarkdownComponents(
+				onOpenProjectFile,
+				onOpenTestModeArtifact,
+				testModeArtifactTitle,
+			),
+		[onOpenProjectFile, onOpenTestModeArtifact, testModeArtifactTitle],
 	);
 
 	return (

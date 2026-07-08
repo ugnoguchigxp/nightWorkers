@@ -1,21 +1,33 @@
 import {
+	AlertTriangle,
+	CheckCircle2,
 	ChevronLeft,
 	ChevronRight,
+	Circle,
 	Copy,
 	Download,
 	FlaskConical,
 	FolderTree,
 	GitCompare,
+	LoaderCircle,
 	Maximize2,
 	Minimize2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toDeepRecord } from "../../../../shared/json-record";
+import { TEST_MODE_WORKFLOW_ACTION } from "../../../../shared/test-mode-workflow";
 import { PlanModeWorkspaceViewer } from "../../planMode";
 import type { PlanWorkspaceTab } from "../../specification";
 import { logArtifactPaneRendered } from "../artifactPerformance";
 import { startTestModeRun } from "../nightWorkersCommands";
+import {
+	buildTestModeWorkflowSteps,
+	isTestModeWorkflowInProgress,
+	readTestModeWorkflowActionStatus,
+	type TestModeWorkflowStepStatus,
+	type TestModeWorkflowStepView,
+} from "../testModeWorkflowView";
 import type {
 	ActivityArtifact,
 	GitCloseoutState,
@@ -90,7 +102,10 @@ type ArtifactPaneProps = {
 };
 
 type ProjectArtifactMode = "tree" | "diff";
-type TestModeAction = "discover_tests" | "run_unit_tests";
+type TestModeAction =
+	| "discover_tests"
+	| "plan_and_implement_tests"
+	| "run_unit_tests";
 
 function workspaceInitialTab(value: unknown): PlanWorkspaceTab | undefined {
 	if (value === "design-doc" || value === "specification")
@@ -346,8 +361,10 @@ export function ArtifactPane({
 			: showReviewStatus
 				? t("reviewStatus.title")
 				: showTestMode
-					? "Test Mode"
-					: displayArtifact?.title || selectedArtifact.title;
+					? t("testMode.title")
+					: showBlueprintWorkspace
+						? t("thread.planModeWorkspace")
+						: displayArtifact?.title || selectedArtifact.title;
 	const buildCurrentExportedContent = () =>
 		buildExportedArtifactContent({
 			showDiff,
@@ -381,11 +398,7 @@ export function ArtifactPane({
 		<aside className={artifactFrameClass}>
 			<div className="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-[#313244] bg-[#1e1e2e] px-3 pr-12">
 				<div className="flex min-w-0 items-center gap-2 text-sm">
-					<span className="truncate text-[#a6adc8]">
-						{activeProject?.name || t("artifact.project")}
-					</span>
-					<ChevronRight className="h-3.5 w-3.5 shrink-0 text-[#6c7086]" />
-					<span className="truncate font-medium text-[#cdd6f4]">
+					<span className="truncate font-medium text-cyan-200">
 						{artifactTitle}
 					</span>
 				</div>
@@ -425,7 +438,7 @@ export function ArtifactPane({
 			<div className="flex min-h-0 flex-1">
 				{shouldDeferArtifactBody ? (
 					<div className="flex min-h-0 flex-1 items-center justify-center text-xs text-slate-500">
-						Loading artifact...
+						{t("artifact.loading")}
 					</div>
 				) : showProjectTree && !showProjectDiff ? (
 					<div className="min-h-0 w-56 shrink-0 overflow-auto border-r border-slate-800 p-2">
@@ -463,6 +476,7 @@ export function ArtifactPane({
 							initialTab={workspaceInitialTab(
 								displayArtifact?.metadata?.initialTab,
 							)}
+							latestRun={latestRun}
 							onTabChange={onPlanWorkspaceTabChange}
 							onArtifactContextChange={onPlanWorkspaceArtifactContextChange}
 							onQueueSession={onQueueSession}
@@ -501,6 +515,7 @@ export function ArtifactPane({
 							model={testModePanel}
 							projectId={activeProject?.id || null}
 							taskId={activeSessionId}
+							latestRun={latestRun}
 							status={testModeStatus}
 							canStartRun={true}
 							onStart={async (action, rerun) => {
@@ -563,6 +578,7 @@ export function ArtifactPane({
 									model={verificationPanel}
 									projectId={activeProject?.id || null}
 									taskId={activeSessionId}
+									latestRun={latestRun}
 									status={testModeStatus}
 									canStartRun={true}
 									onStart={async (action, rerun) => {
@@ -673,7 +689,7 @@ function buildVerificationPanelModel(input: {
 		verificationDocumentId,
 		missingReason: verificationDocumentId
 			? undefined
-			: "verification JSON is missing",
+			: "verification_json_missing",
 		conditions,
 	};
 }
@@ -761,6 +777,7 @@ function TestModeArtifactViewer({
 	model,
 	projectId,
 	taskId,
+	latestRun,
 	status,
 	canStartRun,
 	onStart,
@@ -768,31 +785,31 @@ function TestModeArtifactViewer({
 	model: VerificationPanelModel | null;
 	projectId: string | null;
 	taskId: string | null;
+	latestRun?: TaskRun | null;
 	status: string | null;
 	canStartRun: boolean;
 	onStart: (action: TestModeAction, rerun: boolean) => Promise<void>;
 }) {
+	const { t } = useTranslation();
 	return (
 		<div className="h-full overflow-auto bg-slate-950 p-5 text-slate-100">
 			<div className="mx-auto grid max-w-5xl gap-4">
-				<div className="border-b border-slate-800 pb-4">
-					<div className="text-sm font-semibold text-slate-100">Test Mode</div>
-					<div className="mt-1 text-xs text-slate-400">
-						Verification Checklist から独立した Test Mode run を開始します。
-					</div>
+				<div className="border-b border-slate-800 pb-4 text-xs text-slate-400">
+					{t("testMode.description")}
 				</div>
 				{model ? (
 					<VerificationChecklistPanel
 						model={model}
 						projectId={projectId}
 						taskId={taskId}
+						latestRun={latestRun}
 						status={status}
 						canStartRun={canStartRun}
 						onStart={onStart}
 					/>
 				) : (
 					<div className="rounded-md border border-slate-800 bg-slate-900/50 p-4 text-xs text-slate-400">
-						実装計画の完了条件がまだありません。
+						{t("testMode.emptyConditions")}
 					</div>
 				)}
 			</div>
@@ -804,6 +821,7 @@ function VerificationChecklistPanel({
 	model,
 	projectId,
 	taskId,
+	latestRun,
 	status,
 	canStartRun,
 	onStart,
@@ -811,50 +829,59 @@ function VerificationChecklistPanel({
 	model: VerificationPanelModel;
 	projectId: string | null;
 	taskId: string | null;
+	latestRun?: TaskRun | null;
 	status: string | null;
 	canStartRun: boolean;
 	onStart: (action: TestModeAction, rerun: boolean) => Promise<void>;
 }) {
+	const { t } = useTranslation();
 	const canShowStartButton = Boolean(model.specArtifactId);
-	const searchStatus = readTestModeActionStatus(status, "discover_tests");
-	const unitStatus = readTestModeActionStatus(status, "run_unit_tests");
+	const workflowActionStatus = readTestModeWorkflowActionStatus(status);
+	const workflowSteps = buildTestModeWorkflowSteps({
+		latestRun,
+		localStatus: status,
+	});
+	const workflowInProgress =
+		workflowActionStatus === "starting" ||
+		isTestModeWorkflowInProgress(workflowSteps);
 	const startDisabled =
-		!canStartRun || !projectId || !taskId || !model.specArtifactId;
+		!canStartRun ||
+		!projectId ||
+		!taskId ||
+		!model.specArtifactId ||
+		workflowInProgress;
 	return (
 		<div className="border-b border-slate-800 bg-slate-950/50 px-4 py-3">
 			<div>
 				<div className="min-w-0">
 					<div className="text-xs font-semibold uppercase text-slate-300">
-						Verification Checklist
+						{t("testMode.checklist.title")}
 					</div>
 					<div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
-						<span>{model.conditions.length} conditions</span>
-						{model.missingReason ? <span>{model.missingReason}</span> : null}
-						{searchStatus === "started" ? (
-							<span>Test search started</span>
+						<span>
+							{t("testMode.checklist.conditionsCount", {
+								count: model.conditions.length,
+							})}
+						</span>
+						{model.missingReason ? (
+							<span>
+								{t(`testMode.missingReason.${model.missingReason}`, {
+									defaultValue: model.missingReason,
+								})}
+							</span>
 						) : null}
-						{searchStatus === "failed" ? <span>Test search failed</span> : null}
-						{unitStatus === "started" ? (
-							<span>Unit test run started</span>
-						) : null}
-						{unitStatus === "failed" ? (
-							<span>Unit test start failed</span>
+						{workflowActionStatus === "failed" ? (
+							<span>{t("testMode.status.planFailed")}</span>
 						) : null}
 					</div>
 				</div>
+				<TestModeWorkflowProgress steps={workflowSteps} />
 				{canShowStartButton ? (
 					<div className="mt-3 flex flex-wrap gap-1.5">
 						<TestModeActionButton
-							action="discover_tests"
-							label="Find related tests"
-							status={searchStatus}
-							disabled={startDisabled}
-							onStart={onStart}
-						/>
-						<TestModeActionButton
-							action="run_unit_tests"
-							label="Run unit tests"
-							status={unitStatus}
+							action={TEST_MODE_WORKFLOW_ACTION}
+							label={t("testMode.action.startWorkflow")}
+							status={workflowActionStatus}
 							disabled={startDisabled}
 							onStart={onStart}
 						/>
@@ -866,17 +893,72 @@ function VerificationChecklistPanel({
 					{model.conditions.slice(0, 5).map((condition) => (
 						<div
 							key={condition.id}
-							className="grid grid-cols-[4.5rem_7rem_minmax(0,1fr)] items-center gap-2 text-xs"
+							className="grid grid-cols-[4.5rem_7rem_minmax(0,1fr)] items-start gap-2 rounded-md border border-slate-800/80 bg-slate-900/35 px-2.5 py-1.5 text-xs"
 						>
-							<span className="font-mono text-slate-400">{condition.id}</span>
-							<span className="text-slate-400">{condition.status}</span>
-							<span className="truncate text-slate-200">{condition.text}</span>
+							<span className="font-mono leading-5 text-slate-400">
+								{condition.id}
+							</span>
+							<span className="whitespace-nowrap leading-5 text-slate-400">
+								{t(`testMode.conditionStatus.${condition.status}`, {
+									defaultValue: condition.status,
+								})}
+							</span>
+							<span className="min-w-0 whitespace-normal break-words leading-5 text-slate-100">
+								{condition.text}
+							</span>
 						</div>
 					))}
 				</div>
 			) : null}
 		</div>
 	);
+}
+
+function TestModeWorkflowProgress({
+	steps,
+}: {
+	steps: TestModeWorkflowStepView[];
+}) {
+	const { t } = useTranslation();
+	return (
+		<div className="mt-3 grid gap-2 sm:grid-cols-4">
+			{steps.map((step, index) => (
+				<div
+					key={step.id}
+					className="min-w-0 rounded-md border border-slate-800 bg-slate-900/35 px-2.5 py-2"
+				>
+					<div className="flex min-w-0 items-center gap-2">
+						<TestModeWorkflowStatusIcon status={step.status} />
+						<span className="truncate text-xs font-medium text-slate-100">
+							{t(`testMode.workflow.step.${step.id}`)}
+						</span>
+					</div>
+					<div className="mt-1 text-[11px] text-slate-400">
+						{index + 1}. {t(`testMode.workflow.status.${step.status}`)}
+					</div>
+				</div>
+			))}
+		</div>
+	);
+}
+
+function TestModeWorkflowStatusIcon({
+	status,
+}: {
+	status: TestModeWorkflowStepStatus;
+}) {
+	if (status === "passed") {
+		return <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-300" />;
+	}
+	if (status === "running") {
+		return (
+			<LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin text-cyan-300" />
+		);
+	}
+	if (status === "failed" || status === "needs_human") {
+		return <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-300" />;
+	}
+	return <Circle className="h-3.5 w-3.5 shrink-0 text-slate-500" />;
 }
 
 function TestModeActionButton({
@@ -892,6 +974,7 @@ function TestModeActionButton({
 	disabled: boolean;
 	onStart: (action: TestModeAction, rerun: boolean) => Promise<void>;
 }) {
+	const { t } = useTranslation();
 	const isDisabled = disabled || status === "starting";
 	return (
 		<button
@@ -902,17 +985,9 @@ function TestModeActionButton({
 			title={label}
 		>
 			<FlaskConical className="h-3.5 w-3.5" />
-			{status === "starting" ? "Starting..." : label}
+			{status === "starting" ? t("testMode.status.starting") : label}
 		</button>
 	);
-}
-
-function readTestModeActionStatus(
-	status: string | null,
-	action: TestModeAction,
-) {
-	const prefix = `${action}:`;
-	return status?.startsWith(prefix) ? status.slice(prefix.length) : null;
 }
 
 function readRecordString(

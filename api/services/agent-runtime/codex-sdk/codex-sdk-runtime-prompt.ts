@@ -118,7 +118,7 @@ function buildExecutionContract(
 		"- テスト実装は原則 Test Mode の担当です。Implementation Mode では production change と必要最小限の局所確認に集中してください。既存テストの軽微な修正や失敗原因切り分けを除き、新規 test file / broad test coverage の追加を主成果物にしないでください。",
 		"- 仕様が正本の場合、または planning / specification / design-doc / requirement-check / 既存仕様前提の実装では、最初に nightworkers.read_current_specification を呼ぶ。設計契約が実装に影響する場合は includeDesignContext=true。必要な仕様が見つからなければ nightworkers.list_recent_specifications から taskId を選んで読む。仕様と assembled design context を計画・実装・検証の根拠にする。",
 		"- 実行順は specification -> Todo execution -> verification -> closeout。closeout は実装と検証が終わり、実装 Todo に pending / running がない場合だけ開始する。NightWorkers の「完了報告」は TodoList 末尾の「完了報告を行う」gate の最終 assistant report だけを指し、Todo 作成結果、計画共有、途中経過、次着手メッセージは含めない。",
-		"- Todo 操作は nightworkers.todo_list に統一する。TodoList pane がユーザー向け進捗の正本で、Timeline cards は Todo 進捗や内部警告の機構ではない。SystemContext / Todo snapshot の initial_instructions / context_compile / completion_report は読み取り用の固定 gate であり、replace で再定義する実作業 Todo ではない。",
+		"- Todo 操作は nightworkers.todo_list に統一する。TodoList pane がユーザー向け進捗の正本で、Timeline cards は Todo 進捗や内部警告の機構ではない。SystemContext / Todo snapshot の coding_preparation / completion_report は読み取り用の固定 gate であり、replace で再定義する実作業 Todo ではない。",
 		"- operation=replace は scope / estimate / 分解変更時の構造再計画だけに使い、完了印には使わない。writable input はユーザー依頼に対応する実装・調査などの実作業 Todo だけ。局所確認は該当する実作業 Todo の完了条件に含め、`必要最小限の動作確認を行う` のようなユーザー依頼にない独立検証 Todo を追加しない。completion_report Todo や広域 verify Todo を意図的に含めない。固定 gate は NightWorkers が追加・merge する。",
 		"- 2 手以上の調査・レビュー・実装・検証では、最初の実質作業前に既存 Todo を start するか、必要な場合だけ replace する。作業段階が変わる tool 実行前に対応 Todo を running にし、編集・DB mutation・長い検証・review 判定後は具体的 evidence で done / block / fail に整理する。operation=list は診断専用で進捗変更に使わない。",
 		"- operation=done は具体的 evidence がある current Todo にだけ使い、次の pending Todo を自動 start する。承認・入力待ちは block、実装・検証の具体的失敗は fail。fail / block / skipped は終端状態なので再 start しない。前の Todo が pending / running のまま後続 Todo を始めない。検証不能または失敗時は検証 Todo を先に fail / block する。",
@@ -128,16 +128,16 @@ function buildExecutionContract(
 		"- package.json に verify script があれば、完了報告前の代表検証は verify command を優先する。verify が format / typecheck / lint / test を含む場合、個別コマンドを重複実行しない。個別実行は修正途中の切り分け、または verify がない・実行不能な場合の fallback に限る。verify 未実行なら理由と代替検証を final report に書く。",
 		"- 同一 Todo 内の関連変更は、読み取りと方針整理後にまとめて編集する。1 エラー / 1 ファイルごとの逐次 file_change ループを避ける。",
 		"- verify 失敗時はエラー全体を分類し、同じ原因・同じ層をまとめて修正してから再実行する。",
-		"- DB schema 変更が必要または発生した時点で、nightworkers.todo_list operation=replace を使い、taskType=data_migration または procedureId=data_migration.apply_migration の Todo を含める。",
-		"- DB migration Todo は、migration 作成、実作業対象 DB への適用、schema/table 確認、関連 API または focused test 成功まで done にしない。",
+		"- DB schema / migration / 永続化テーブル変更では、TodoList に固定 gate「DB migration を実行する」が必要です。migration ファイル、DB schema、DB bootstrap / seed / persistence table 定義を作成・更新する必要が分かった時点で、編集前または直後に nightworkers.todo_list operation=replace を使い、todoListReplaceReason=newly_required_work または scope_changed として taskType=data_migration または procedureId=data_migration.apply_migration の Todo を含める。",
+		"- DB migration Todo は、migration 作成、実作業対象 DB への適用、schema/table 確認、関連 API または focused test 成功まで done にしない。migration 作成だけ、隔離 DB の smoke だけ、通常 implementation Todo だけで DB 変更を閉じない。",
 		"- ファイルを編集する前に、対象ファイルまたは直接関係する既存ファイルを読む。新規ファイルでは配置先 route / registry / sibling component / 既存 style / test pattern を先に読む。rg --files や ls は探索であり編集対象を読んだ evidence ではない。rg -n、sed、cat、nl、head/tail、git diff -- path など対象内容に触れる確認を使う。blind edit を避け、必要範囲だけ読む。",
 		"- 作成または大幅編集後は、検証や closeout の前に関係箇所を読み返す。新規ファイルは作成ファイルまたは path-scoped diff、既存ファイルは変更箇所または git diff -- path を確認する。",
 		"- Project import は nightworkers.import_project が単一入口。新規 scaffold は source=starter と stack/variant、任意 Git は source=git と repoUrl。未指定の空または空に近い Web/API app は、ユーザーが別 stack / blank / DB / RAG / SSR / SSG variant を明示しない限り source=starter, stack=hono、既定 SQLite variant を使う。DB 指定は postgres / pgvector / turso / cloudflare 等、RAG や embeddings-backed search は variant=rag、DB/RAG variant なしの SSR / SSG 指定は対応 overlay。DB/RAG variant と overlay は同時指定しない。",
-		"- import_project で扱える task では shell git clone を使わない。import_project が失敗・cancel・未承認なら停止して tool failure を報告し、fallback static app や代替実装を作らない。starter / template / clone / import_project task では、import_project または clone 成功前に targetPath 内の package.json や source files を shell/read tools で読まない。空の targetPath は未 materialized と扱う。",
+		"- import_project で扱える task では shell git clone を使わない。import_project が失敗・cancel・未承認なら停止して tool failure を報告し、fallback static app や代替実装を作らない。starter / template / clone / import_project task では、作業開始時にまず pwd と list-dir / ls 相当で targetPath の存在、空状態、.git の有無を確認する。空または空に近い targetPath は未 materialized と扱い、import_project または clone 成功前に targetPath 内の package.json や source files を shell/read tools で読まない。",
 		"- import_project 成功後は postImport.gitInitialization、postImport.llmContext、postImport.manifest、postImport.initialization を先に使う。payload 欠落、truncated、または修復対象の失敗がある場合を除き、LLM_CONTEXT.md / package.json の再読込や install 再実行をしない。manifest-based verification は postImport.manifest.recommendedVerificationCommands を優先する。",
 		"- zsh command で find -name などに glob pattern を渡す場合は、zsh の先行展開を避けるため quote する。例: -name 'vite.config.*'。",
 		"- NightWorkers task_run id を外部 MCP runId として渡さない。context-still compile_eval では context_compile が返した runId だけを使い、なければ runId を省略して tool に latest session run を解決させる。",
-		"- context-still compile_eval は context_compile を使った run の closeout feedback です。ユーザーへ保存可否を Yes / No で質問せず、常に保存許可として扱ってください。initial_instructions / context_compile / completion_report など NightWorkers-managed gate の Todo に紐づく場合も、その紐づけを理由にユーザー確認へ戻さないでください。",
+		"- context-still compile_eval は context_compile を使った run の closeout feedback です。ユーザーへ保存可否を Yes / No で質問せず、常に保存許可として扱ってください。coding_preparation / completion_report など NightWorkers-managed gate の Todo に紐づく場合も、その紐づけを理由にユーザー確認へ戻さないでください。",
 	].join("\n");
 	return contract;
 }
@@ -146,12 +146,14 @@ function buildTestModeContract(
 	context: AgentRunContext,
 	nightWorkersToolList: string,
 ) {
+	const testModeAction = readTestModeAction(context);
 	return [
 		"[NightWorkers Runtime Contract]",
 		`taskId: ${context.taskId}`,
 		`runId: ${context.runId}`,
 		`repoRoot: ${context.repoRoot}`,
 		"executionMode: test",
+		...(testModeAction ? [`testMode.action: ${testModeAction}`] : []),
 		"Plan mode: disabled. この run は Test Mode です。Implementation run の thread/history を前提にせず、仕様書の completion conditions と verification JSON を source of truth にしてください。",
 		"",
 		"NightWorkers MCP:",
@@ -161,11 +163,23 @@ function buildTestModeContract(
 		"",
 		"Test Mode behavior:",
 		"- 最初に nightworkers.read_current_specification view=verification を読み、verification JSON / Verification Checklist の完了条件を検証観点の正本にする。",
+		"- testMode.action が plan_and_implement_tests の場合、画面上のワークフロー順に、実装開始 -> 実装完了 -> 証跡テストチェック -> ユニットテスト実行を進める。実装開始では Verification Checklist 準拠のテスト計画を本文にまとめたうえで着手し、計画作成だけで完了扱いにしない。",
 		"- テストは完了条件観点を中心に追加・修正し、production code の変更は明確な defect を証明できる場合の最小修正に限る。",
 		"- lint / format:check / typecheck / test / coverage / build / verify は NightWorkers の run_check / run_verification で実行し、raw output artifact と managed evidence を残す。",
 		"- closeout 前に nightworkers.completion_check を実行する。failed / unknown required conditions が残る場合は、対象テストまたは明確な defect を修正して再度 run_check / completion_check を実行する。",
 		"- Verification Checklist の状態は TodoList ではなく backend の deterministic evidence 更新に任せる。Todo は Test Mode の作業進行だけに使う。",
 	].join("\n");
+}
+
+function readTestModeAction(context: AgentRunContext) {
+	const testMode =
+		context.runtimeOptions?.testMode &&
+		typeof context.runtimeOptions.testMode === "object" &&
+		!Array.isArray(context.runtimeOptions.testMode)
+			? (context.runtimeOptions.testMode as Record<string, unknown>)
+			: {};
+	const action = testMode.action;
+	return typeof action === "string" ? action : null;
 }
 
 function buildReviewContract(

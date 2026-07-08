@@ -332,6 +332,7 @@ describe("miscellaneous frontend components", () => {
 		const todoMarkup = renderToStaticMarkup(<TodoListPane todos={todos()} />);
 		const workflowMarkup = renderWithQueryClient(<TodoWorkflowPanel />);
 
+		expect(todoMarkup).toContain("todolist");
 		expect(todoMarkup).toContain("Running todo");
 		expect(todoMarkup).toContain("1/4");
 		expect(workflowMarkup).toContain("TODO Workflow");

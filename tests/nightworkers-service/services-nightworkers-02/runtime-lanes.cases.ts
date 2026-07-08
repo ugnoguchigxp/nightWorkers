@@ -74,11 +74,9 @@ describe("NightWorkers service", () => {
 		expect(todos).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
-					title: "initial_instructions を実行する",
+					title: "コーディング準備を行う",
+					taskType: "coding_preparation",
 					status: "running",
-				}),
-				expect.objectContaining({
-					title: "context_compile を実行する",
 				}),
 				expect.objectContaining({
 					title: "仕様と既存構成を確認する",
@@ -170,7 +168,8 @@ describe("NightWorkers service", () => {
 			expect.arrayContaining([
 				expect.objectContaining({
 					seq: 1,
-					title: "initial_instructions を実行する",
+					title: "コーディング準備を行う",
+					taskType: "coding_preparation",
 					status: "running",
 				}),
 				expect.objectContaining({
