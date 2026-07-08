@@ -192,6 +192,7 @@ export function ArtifactPane({
 	useEffect(() => {
 		setVersionArtifactId(selectedArtifact?.id || null);
 		setIsFullscreen(false);
+		setTestModeStatus(null);
 	}, [selectedArtifact?.id]);
 	useEffect(() => {
 		refreshProjectFilesRef.current = onRefreshFiles;
@@ -235,6 +236,7 @@ export function ArtifactPane({
 	const showBlueprintWorkspace =
 		displayArtifact?.kind === "plan_mode_workspace";
 	const showReviewStatus = displayArtifact?.kind === "review_status";
+	const showTestMode = displayArtifact?.kind === "test_mode";
 	const showBlueprint = displayArtifact?.kind === "app_blueprint";
 	const showComponentDesign =
 		displayArtifact?.kind === "component_design" ||
@@ -284,11 +286,15 @@ export function ArtifactPane({
 		taskMessages,
 		artifactId: displayArtifact?.id || selectedArtifact?.id || null,
 	});
+	const testModePanel = buildLatestVerificationPanelModel({
+		taskMessages,
+	});
 	const showDocument =
 		Boolean(selectedArtifact) &&
 		!showDiff &&
 		!showBlueprintWorkspace &&
 		!showReviewStatus &&
+		!showTestMode &&
 		!showBlueprint &&
 		!showComponentDesign &&
 		Boolean(selectedMessage);
@@ -299,7 +305,9 @@ export function ArtifactPane({
 				: selectedFilePath || t("artifact.projectTree")
 			: showReviewStatus
 				? t("reviewStatus.title")
-				: displayArtifact?.title || selectedArtifact.title;
+				: showTestMode
+					? "Test Mode"
+					: displayArtifact?.title || selectedArtifact.title;
 	const exportedContent = buildExportedArtifactContent({
 		showDiff,
 		latestRun,
@@ -394,6 +402,16 @@ export function ArtifactPane({
 							onArtifactContextChange={onPlanWorkspaceArtifactContextChange}
 							onQueueSession={onQueueSession}
 							onAddToQueue={onAddToQueue}
+							onStartTestModeRun={async (input) => {
+								if (!activeProject?.id || !activeSessionId) return false;
+								const response = await startTestModeRun(activeSessionId, {
+									projectId: activeProject.id,
+									specArtifactId: input.specArtifactId,
+									verificationDocumentId: input.verificationDocumentId,
+									mode: "test",
+								});
+								return response.ok;
+							}}
 							isImplementationLocked={isImplementationLocked}
 						/>
 					) : showReviewStatus ? (
@@ -411,6 +429,30 @@ export function ArtifactPane({
 							activeTaskStatus={activeTaskStatus}
 							onCompleteAndArchiveTask={onCompleteAndArchiveTask}
 							onRestoreArchivedTask={onRestoreArchivedTask}
+						/>
+					) : showTestMode ? (
+						<TestModeArtifactViewer
+							model={testModePanel}
+							projectId={activeProject?.id || null}
+							taskId={activeSessionId}
+							status={testModeStatus}
+							onStart={async () => {
+								if (
+									!activeProject?.id ||
+									!activeSessionId ||
+									!testModePanel?.verificationDocumentId
+								) {
+									return;
+								}
+								setTestModeStatus("starting");
+								const response = await startTestModeRun(activeSessionId, {
+									projectId: activeProject.id,
+									specArtifactId: testModePanel.specArtifactId,
+									verificationDocumentId: testModePanel.verificationDocumentId,
+									mode: "test",
+								});
+								setTestModeStatus(response.ok ? "started" : "failed");
+							}}
 						/>
 					) : showBlueprint ? (
 						<BlueprintViewer
@@ -470,7 +512,7 @@ export function ArtifactPane({
 										});
 										if (!response.ok) {
 											setTestModeStatus("failed");
-											throw new Error(await response.text());
+											return;
 										}
 										setTestModeStatus("started");
 									}}
@@ -523,7 +565,9 @@ function buildVerificationPanelModel(input: {
 }): VerificationPanelModel | null {
 	if (!input.message) return null;
 	const metadata = toDeepRecord(input.message.metadataJson);
-	if (readRecordString(metadata, "intent") !== "feature_plan") return null;
+	const intent = readRecordString(metadata, "intent");
+	if (intent !== "feature_plan" && intent !== "implementation_plan")
+		return null;
 	const verificationDocumentId =
 		readRecordString(metadata, "verificationDocumentId") ?? null;
 	const sidecarMessageId =
@@ -534,7 +578,7 @@ function buildVerificationPanelModel(input: {
 		: null;
 	const sidecarMetadata = toDeepRecord(sidecarMessage?.metadataJson);
 	const document = toDeepRecord(sidecarMetadata.verificationDocument);
-	const conditions = Array.isArray(document.conditions)
+	const sidecarConditions = Array.isArray(document.conditions)
 		? document.conditions
 				.map((condition) => toDeepRecord(condition))
 				.map((condition) => ({
@@ -545,14 +589,136 @@ function buildVerificationPanelModel(input: {
 				}))
 				.filter((condition) => condition.id && condition.text)
 		: [];
+	const conditions =
+		sidecarConditions.length > 0
+			? sidecarConditions
+			: extractCompletionConditionsFromMarkdown(input.message.content);
 	return {
-		specArtifactId: input.artifactId || `feature-plan-${input.message.id}`,
+		specArtifactId:
+			input.artifactId ||
+			`${intent === "implementation_plan" ? "implementation-plan" : "feature-plan"}-${input.message.id}`,
 		verificationDocumentId,
 		missingReason: verificationDocumentId
 			? undefined
 			: "verification JSON is missing",
 		conditions,
 	};
+}
+
+function buildLatestVerificationPanelModel(input: {
+	taskMessages: TaskMessage[];
+}): VerificationPanelModel | null {
+	const latestPlan =
+		[...input.taskMessages].reverse().find((message) => {
+			const metadata = toDeepRecord(message.metadataJson);
+			const intent = readRecordString(metadata, "intent");
+			return (
+				message.messageType === "markdown_document" &&
+				(intent === "implementation_plan" || intent === "feature_plan")
+			);
+		}) || null;
+	return buildVerificationPanelModel({
+		message: latestPlan,
+		taskMessages: input.taskMessages,
+		artifactId: latestPlan
+			? `${readRecordString(toDeepRecord(latestPlan.metadataJson), "intent") === "implementation_plan" ? "implementation-plan" : "feature-plan"}-${latestPlan.id}`
+			: null,
+	});
+}
+
+function extractCompletionConditionsFromMarkdown(
+	content: string,
+): VerificationPanelModel["conditions"] {
+	const lines = content.split(/\r?\n/);
+	let inCompletionSection = false;
+	let conditionIndex = 1;
+	const usedIds = new Set<string>();
+	const conditions: VerificationPanelModel["conditions"] = [];
+	for (const line of lines) {
+		const heading = line.match(/^(#{2,6})\s+(.+?)\s*$/);
+		if (heading) {
+			inCompletionSection =
+				/完了条件|completion conditions?|acceptance criteria/i.test(
+					heading[2] || "",
+				);
+			continue;
+		}
+		if (!inCompletionSection) continue;
+		const bullet = line.match(/^\s*(?:[-*+]|\d+[.)])\s+(.+?)\s*$/);
+		if (!bullet) continue;
+		const rawText = stripMarkdownCheckbox(bullet[1] || "").trim();
+		if (!rawText) continue;
+		const existingId = rawText.match(/^\[?(AC-\d{3})\]?\s*[:：-]?\s*(.+)$/);
+		const id =
+			existingId?.[1] && !usedIds.has(existingId[1])
+				? existingId[1]
+				: nextConditionId(usedIds, conditionIndex);
+		usedIds.add(id);
+		conditionIndex += 1;
+		conditions.push({
+			id,
+			text: (existingId?.[2] || rawText).trim(),
+			status: "pending",
+			required: true,
+		});
+	}
+	return conditions;
+}
+
+function stripMarkdownCheckbox(value: string) {
+	return value.replace(/^\[[xX\s]\]\s*/, "");
+}
+
+function nextConditionId(usedIds: Set<string>, startIndex: number) {
+	let index = Math.max(1, startIndex);
+	let id = `AC-${String(index).padStart(3, "0")}`;
+	while (usedIds.has(id)) {
+		index += 1;
+		id = `AC-${String(index).padStart(3, "0")}`;
+	}
+	return id;
+}
+
+function TestModeArtifactViewer({
+	model,
+	projectId,
+	taskId,
+	status,
+	onStart,
+}: {
+	model: VerificationPanelModel | null;
+	projectId: string | null;
+	taskId: string | null;
+	status: string | null;
+	onStart: () => Promise<void>;
+}) {
+	return (
+		<div className="h-full overflow-auto bg-slate-950 p-5 text-slate-100">
+			<div className="mx-auto grid max-w-5xl gap-4">
+				<div className="border-b border-slate-800 pb-4">
+					<div className="text-sm font-semibold text-slate-100">Test Mode</div>
+					<div className="mt-1 text-xs text-slate-400">
+						Verification Checklist から独立した Test Mode run を開始します。
+					</div>
+				</div>
+				{model ? (
+					<VerificationChecklistPanel
+						model={model}
+						projectId={projectId}
+						taskId={taskId}
+						status={status}
+						onStart={async () => {
+							await onStart();
+						}}
+					/>
+				) : (
+					<div className="rounded-md border border-slate-800 bg-slate-900/50 p-4 text-xs text-slate-400">
+						実装計画の完了条件がまだありません。
+					</div>
+				)}
+			</div>
+		</div>
+	);
 }
 
 function VerificationChecklistPanel({

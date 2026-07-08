@@ -30,13 +30,16 @@ export function applyEvidenceToChecklist(input: {
 			const item = nextByCondition.get(conditionId);
 			if (!item) continue;
 			touched.add(conditionId);
+			const status = statusForTestCase(testCase.status);
 			updateItem(item, {
-				status: testCase.status === "failed" ? "failed" : "passed",
+				status,
 				evidenceId,
 				reason:
 					testCase.status === "failed"
 						? testCase.failureMessage || "対応する test case が失敗しました。"
-						: "対応する test case が成功しました。",
+						: testCase.status === "passed"
+							? "対応する test case が成功しました。"
+							: "対応する test case は完了証跡として扱えませんでした。",
 			});
 		}
 	}
@@ -99,6 +102,14 @@ export function summarizeChecklist(items: VerificationChecklistItem[]) {
 	);
 	const complete = items.every(isVerificationChecklistItemComplete);
 	return { items, complete, failedRequired, unknownRequired };
+}
+
+function statusForTestCase(
+	status: NormalizedVerificationEvidence["cases"][number]["status"],
+): VerificationChecklistItemStatus {
+	if (status === "failed") return "failed";
+	if (status === "passed") return "passed";
+	return "unknown";
 }
 
 function updateItem(

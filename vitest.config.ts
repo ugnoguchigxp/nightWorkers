@@ -25,12 +25,7 @@ export default defineConfig({
 			provider: "v8",
 			reporter: ["text", "html", "lcov", "json-summary"],
 			reportsDirectory: "./coverage",
-			include: [
-				"api/**/*.ts",
-				"shared/**/*.ts",
-				"src/modules/nightworkers/workbenchSelectors.ts",
-				"src/lib/utils.ts",
-			],
+			include: ["api/**/*.ts", "shared/**/*.ts", "src/**/*.ts", "src/**/*.tsx"],
 			exclude: [
 				"**/*.d.ts",
 				"api/services/oauth/base.ts",

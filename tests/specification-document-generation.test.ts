@@ -4,12 +4,85 @@ import {
 	FEATURE_PLAN_TRACEABILITY_STATEMENT,
 	sanitizeSpecificationTargetNaming,
 } from "../api/modules/specification/specification-document-renderer";
+import { buildSpecificationVerificationSidecar } from "../api/modules/specification/specification-verification-sidecar";
 import {
 	buildSpecificationDocumentSystemPrompt,
 	buildSpecificationDocumentUserPrompt,
 } from "../api/services/structured-generation/prompts/design-questionnaire";
 
 describe("Specification document generation", () => {
+	it("creates unique verification condition ids from completion bullets", () => {
+		const result = buildSpecificationVerificationSidecar({
+			taskId: "task-1",
+			specId: "spec-1",
+			specPath: "spec/sample.md",
+			sourceMessageIds: [],
+			workspace: {
+				taskId: "task-1",
+				repositoryId: "repo-1",
+				generatedAt: "2026-07-08T00:00:00.000Z",
+				featurePlanArtifacts: [],
+				blueprintArtifacts: [],
+				dataModelArtifacts: [],
+				dedicatedViewArtifacts: [],
+				decisionReviews: [],
+				questionnaireSessions: [],
+				implementationReferences: [],
+			},
+			content: [
+				"## 完了条件",
+				"- [AC-002] API が成功する",
+				"- UI が状態を表示する",
+				"- [AC-002] 重複 ID は再採番される",
+			].join("\n"),
+		});
+
+		expect(result.document.conditions.map((condition) => condition.id)).toEqual(
+			["AC-002", "AC-003", "AC-004"],
+		);
+		expect(result.content).toContain("[AC-004] 重複 ID は再採番される");
+	});
+
+	it("extracts unchecked and numbered completion condition bullets", () => {
+		const result = buildSpecificationVerificationSidecar({
+			taskId: "task-1",
+			specId: "spec-1",
+			specPath: "spec/sample.md",
+			sourceMessageIds: [],
+			workspace: {
+				taskId: "task-1",
+				repositoryId: "repo-1",
+				generatedAt: "2026-07-08T00:00:00.000Z",
+				featurePlanArtifacts: [],
+				blueprintArtifacts: [],
+				dataModelArtifacts: [],
+				dedicatedViewArtifacts: [],
+				decisionReviews: [],
+				questionnaireSessions: [],
+				implementationReferences: [],
+			},
+			content: [
+				"## 完了条件",
+				"- [ ] UI に Test Mode ボタンが表示される",
+				"1. 実装計画の条件がチェックリスト化される",
+				"- [x] 完了済みメモは条件にしない",
+			].join("\n"),
+		});
+
+		expect(
+			result.document.conditions.map((condition) => condition.text),
+		).toEqual([
+			"UI に Test Mode ボタンが表示される",
+			"実装計画の条件がチェックリスト化される",
+		]);
+		expect(result.content).toContain(
+			"- [AC-001] UI に Test Mode ボタンが表示される",
+		);
+		expect(result.content).toContain(
+			"1. [AC-002] 実装計画の条件がチェックリスト化される",
+		);
+	});
+
 	it("requires concise implementation-plan sections in the generation prompt", () => {
 		const systemPrompt = buildSpecificationDocumentSystemPrompt();
 

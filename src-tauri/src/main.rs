@@ -366,9 +366,25 @@ fn resolve_node_binary(resource_root: &Path) -> PathBuf {
     if let Ok(value) = env::var("NIGHTWORKERS_NODE_BINARY") {
         return PathBuf::from(value);
     }
-    let staged = resource_root.join("scripts/desktop/staged/node/bin/node");
-    if staged.exists() {
-        return staged;
+    let candidates = if cfg!(windows) {
+        vec![
+            resource_root.join("scripts/desktop/staged/node/bin/node.exe"),
+            resource_root.join("scripts/desktop/staged/node/bin/node"),
+        ]
+    } else {
+        vec![
+            resource_root.join("scripts/desktop/staged/node/bin/node"),
+            resource_root.join("scripts/desktop/staged/node/bin/node.exe"),
+        ]
+    };
+    for candidate in candidates {
+        if candidate.exists() {
+            return candidate;
+        }
     }
-    PathBuf::from("node")
+    if cfg!(windows) {
+        PathBuf::from("node.exe")
+    } else {
+        PathBuf::from("node")
+    }
 }

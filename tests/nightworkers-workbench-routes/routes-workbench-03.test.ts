@@ -387,7 +387,7 @@ describe("NightWorkers workbench routes", () => {
 		expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
 		expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
 		expect(vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[0]).toContain(
-			"Data Model Plan View generator",
+			"data_model は data structure view",
 		);
 		const dataModelMessage = body.messages.find(
 			(message: unknown) =>

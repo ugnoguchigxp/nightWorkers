@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import app from "../../api/app";
 import { ensureNightWorkersSchema } from "../../api/db/bootstrap";
+import { db } from "../../api/db/client";
+import { llmUsageRecords, llmUsageSummaryBuckets } from "../../api/db/schema";
 import * as repo from "../../api/modules/nightworkers/nightworkers.repository";
 import { recordLlmUsage } from "../../api/services/llm-usage";
 import { upsertPricingRow } from "../../api/services/pricing";
@@ -77,6 +79,118 @@ describe("NightWorkers task routes", () => {
 				taskId: task.id,
 				outputTokensPerSecond: 500,
 			}),
+		);
+	});
+
+	it("builds overview aggregate metrics from summary buckets without raw rows", async () => {
+		const createdRepo = await repo.createRepository({
+			name: `TEST: Overview Summary Only ${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const now = new Date();
+		const bucketHourUtc = new Date(
+			Math.floor(now.getTime() / 3_600_000) * 3_600_000,
+		);
+		await db.insert(llmUsageSummaryBuckets).values({
+			createdAt: now,
+			updatedAt: now,
+			bucketHourUtc,
+			repositoryId: createdRepo.id,
+			repositoryKey: createdRepo.id,
+			provider: "openai",
+			model: "summary-only-model",
+			modelKey: "summary-only-model",
+			pricingCurrencyCode: "JPY",
+			pricingCurrencyKey: "JPY",
+			pricingStatus: "manual",
+			inputTokens: 1200,
+			outputTokens: 300,
+			totalTokens: 1500,
+			totalDurationMs: 1000,
+			outputDurationMs: 1000,
+			measuredDurationCallCount: 1,
+			callCount: 1,
+			measuredCallCount: 1,
+			pricedCallCount: 1,
+			manualPricedCallCount: 1,
+			estimatedCost: 42,
+			inputCost: 12,
+			outputCost: 30,
+			pricingUpdatedAt: now,
+		});
+
+		const res = await app.request(
+			`http://localhost/api/overview?range=30d&repositoryId=${createdRepo.id}&currency=JPY`,
+		);
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		expect(body.usage).toMatchObject({
+			inputTokens: 1200,
+			outputTokens: 300,
+			totalTokens: 1500,
+			callCount: 1,
+			measuredCallCount: 1,
+			outputTokensPerSecond: 300,
+		});
+		expect(body.cost).toMatchObject({
+			currency: "JPY",
+			estimatedTotal: 42,
+			pricedCallCount: 1,
+			unpricedCallCount: 0,
+		});
+		expect(body.modelBreakdown).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					provider: "openai",
+					model: "summary-only-model",
+					pricingStatus: "manual",
+					estimatedCost: 42,
+				}),
+			]),
+		);
+	});
+
+	it("warns when raw usage exists but summary buckets are missing", async () => {
+		const createdRepo = await repo.createRepository({
+			name: `TEST: Overview Summary Missing ${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const task = await repo.createTask({
+			repositoryId: createdRepo.id,
+			title: "TEST: raw-only overview task",
+			status: "draft",
+		});
+		const now = new Date();
+		await db.insert(llmUsageRecords).values({
+			createdAt: now,
+			updatedAt: now,
+			taskId: task.id,
+			callId: crypto.randomUUID(),
+			provider: "openai",
+			model: "raw-only-model",
+			label: "raw-only",
+			usageMode: "measured",
+			inputTokens: 100,
+			outputTokens: 50,
+			totalTokens: 150,
+			durationMs: 100,
+		});
+
+		const res = await app.request(
+			`http://localhost/api/overview?range=30d&repositoryId=${createdRepo.id}&currency=JPY`,
+		);
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		expect(body.usage.callCount).toBe(0);
+		expect(body.warnings).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					code: "summary_backfill_required",
+					callCount: 1,
+				}),
+			]),
 		);
 	});
 

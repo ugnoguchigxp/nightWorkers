@@ -3,6 +3,7 @@ import { db } from "../../db/client";
 import { llmUsageRecords } from "../../db/schema";
 import * as nightWorkersRepo from "../../modules/nightworkers/nightworkers.repository";
 import { readGeneralSettings } from "../settings/general-settings";
+import { upsertLlmUsageSummaryForRecord } from "./summary";
 import type {
 	LlmPromptPartTokenEstimates,
 	LlmUsageMode,
@@ -43,37 +44,41 @@ export async function recordLlmUsage(input: {
 		nonCachedInputTokens,
 		promptPartObservabilityEnabled,
 	};
-	const [record] = await db
-		.insert(llmUsageRecords)
-		.values({
-			taskId: input.taskId,
-			runId: input.runId ?? null,
-			callId: input.callId,
-			provider: input.provider,
-			model: input.model ?? null,
-			label: input.label,
-			round: input.round ?? null,
-			usageMode,
-			inputTokens: input.usage.inputTokens,
-			outputTokens: input.usage.outputTokens,
-			cachedInputTokens: input.usage.cachedInputTokens,
-			reasoningOutputTokens: input.usage.reasoningOutputTokens,
-			totalTokens: input.usage.totalTokens,
-			systemPromptTokens: normalizeOptionalInt(
-				promptPartTokenEstimates?.systemPromptTokens,
-			),
-			userPromptTokens: normalizeOptionalInt(
-				promptPartTokenEstimates?.userPromptTokens,
-			),
-			stateCardTokens: normalizeOptionalInt(
-				promptPartTokenEstimates?.stateCardTokens,
-			),
-			responseTokensEstimate: null,
-			durationMs: Math.max(0, Math.floor(input.durationMs)),
-			rawUsageJson: input.usage.rawUsage ?? null,
-			metadataJson,
-		})
-		.returning();
+	const record = await db.transaction(async (tx) => {
+		const [created] = await tx
+			.insert(llmUsageRecords)
+			.values({
+				taskId: input.taskId,
+				runId: input.runId ?? null,
+				callId: input.callId,
+				provider: input.provider,
+				model: input.model ?? null,
+				label: input.label,
+				round: input.round ?? null,
+				usageMode,
+				inputTokens: input.usage.inputTokens,
+				outputTokens: input.usage.outputTokens,
+				cachedInputTokens: input.usage.cachedInputTokens,
+				reasoningOutputTokens: input.usage.reasoningOutputTokens,
+				totalTokens: input.usage.totalTokens,
+				systemPromptTokens: normalizeOptionalInt(
+					promptPartTokenEstimates?.systemPromptTokens,
+				),
+				userPromptTokens: normalizeOptionalInt(
+					promptPartTokenEstimates?.userPromptTokens,
+				),
+				stateCardTokens: normalizeOptionalInt(
+					promptPartTokenEstimates?.stateCardTokens,
+				),
+				responseTokensEstimate: null,
+				durationMs: Math.max(0, Math.floor(input.durationMs)),
+				rawUsageJson: input.usage.rawUsage ?? null,
+				metadataJson,
+			})
+			.returning();
+		if (created) await upsertLlmUsageSummaryForRecord(created, tx);
+		return created;
+	});
 
 	if (record) {
 		await nightWorkersRepo.appendActivityEvent({

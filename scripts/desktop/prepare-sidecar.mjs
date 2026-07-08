@@ -2,12 +2,14 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getDesktopSidecarTarget } from './platform-targets.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '../..');
 const stagedRoot = path.join(repoRoot, 'scripts/desktop/staged');
 const require = createRequire(import.meta.url);
 const copiedPackages = [];
+const sidecarTarget = getDesktopSidecarTarget();
 
 function copyRequired(source, destination) {
   if (!fs.existsSync(source)) {
@@ -52,36 +54,6 @@ function resolvePackageJson(packageName) {
   throw new Error(`Unable to resolve package root for ${packageName}`);
 }
 
-function resolveLibsqlNativePackage() {
-  const packageByPlatform = new Map([
-    ['darwin:arm64', '@libsql/darwin-arm64'],
-    ['darwin:x64', '@libsql/darwin-x64'],
-    ['linux:arm64', '@libsql/linux-arm64-gnu'],
-    ['linux:x64', '@libsql/linux-x64-gnu'],
-    ['win32:x64', '@libsql/win32-x64-msvc'],
-  ]);
-  const packageName = packageByPlatform.get(`${process.platform}:${process.arch}`);
-  if (!packageName) {
-    throw new Error(`Unsupported desktop sidecar native target: ${process.platform}/${process.arch}`);
-  }
-  return packageName;
-}
-
-function resolveCodexNativePackage() {
-  const packageByPlatform = new Map([
-    ['darwin:arm64', '@openai/codex-darwin-arm64'],
-    ['darwin:x64', '@openai/codex-darwin-x64'],
-    ['linux:arm64', '@openai/codex-linux-arm64'],
-    ['linux:x64', '@openai/codex-linux-x64'],
-    ['win32:x64', '@openai/codex-win32-x64'],
-  ]);
-  const packageName = packageByPlatform.get(`${process.platform}:${process.arch}`);
-  if (!packageName) {
-    throw new Error(`Unsupported Codex desktop native target: ${process.platform}/${process.arch}`);
-  }
-  return packageName;
-}
-
 fs.rmSync(stagedRoot, { recursive: true, force: true });
 fs.mkdirSync(stagedRoot, { recursive: true });
 
@@ -89,25 +61,30 @@ copyRequired(path.join(repoRoot, 'dist-api-desktop'), path.join(stagedRoot, 'dis
 copyRequired(path.join(repoRoot, 'dist'), path.join(stagedRoot, 'dist'));
 
 fs.copyFileSync(path.join(repoRoot, 'package.json'), path.join(stagedRoot, 'package.json'));
-copyPackage(resolveLibsqlNativePackage());
+copyPackage(sidecarTarget.libsqlPackage);
 copyPackage('argon2');
 copyPackage('@phc/format');
 copyPackage('node-addon-api');
 copyPackage('node-gyp-build');
 copyPackage('@openai/codex-sdk');
 copyPackage('@openai/codex');
-copyPackage(resolveCodexNativePackage());
+copyPackage(sidecarTarget.codexPackage);
 
 const nodeDestinationDir = path.join(stagedRoot, 'node/bin');
 fs.mkdirSync(nodeDestinationDir, { recursive: true });
-fs.copyFileSync(process.execPath, path.join(nodeDestinationDir, 'node'));
-fs.chmodSync(path.join(nodeDestinationDir, 'node'), 0o755);
+const nodeDestination = path.join(nodeDestinationDir, sidecarTarget.nodeExecutable);
+fs.copyFileSync(process.execPath, nodeDestination);
+if (process.platform !== 'win32') {
+  fs.chmodSync(nodeDestination, 0o755);
+}
 
 const metadata = {
   createdAt: new Date().toISOString(),
   node: process.version,
   platform: process.platform,
   arch: process.arch,
+  target: sidecarTarget.targetKey,
+  nodeExecutable: sidecarTarget.nodeExecutable,
   entry: 'dist-api-desktop/index.js',
   copiedPackages,
 };

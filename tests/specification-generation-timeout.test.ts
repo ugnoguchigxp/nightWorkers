@@ -10,6 +10,13 @@ vi.mock("../api/services/structured-llm", () => ({
 	callStructuredJsonLLM: vi.fn(),
 }));
 
+vi.mock(
+	"../api/modules/nightworkers/nightworkers.verification.repository",
+	() => ({
+		createVerificationDocument: vi.fn(async () => ({})),
+	}),
+);
+
 vi.mock("../api/modules/nightworkers/nightworkers.plan-mode-core.port", () => ({
 	getPlanModeTask: vi.fn(async () => ({
 		id: "task-1",

@@ -369,7 +369,7 @@ describe("ReviewStatusViewer", () => {
 
 		expect(runButton).toBeTruthy();
 		expect(runButton).not.toContain(' disabled=""');
-		expect(runButton).toContain("bg-cyan-300");
+		expect(runButton).toContain("nightworkers-primary-action-button");
 		expect(runButton).toContain("font-semibold");
 	});
 
@@ -419,7 +419,7 @@ describe("ReviewStatusViewer", () => {
 		expect(text).toContain("対象 1 件 / 除外 0 件 / commit_ready");
 		expect(commitButton).toBeTruthy();
 		expect(commitButton).not.toContain(' disabled=""');
-		expect(commitButton).toContain("bg-emerald-300");
+		expect(commitButton).toContain("nightworkers-success-action-button");
 	});
 
 	it("does not render the ReviewRun status badge", async () => {
@@ -485,44 +485,49 @@ describe("ReviewStatusViewer", () => {
 
 		expect(commitButton).toBeTruthy();
 		expect(commitButton).toContain('disabled=""');
-		expect(commitButton).toContain("bg-slate-900");
 		expect(commitButton).toContain("cursor-not-allowed");
-		expect(commitButton).not.toContain("bg-emerald-300");
+		expect(commitButton).toContain("nightworkers-success-action-button");
 	});
 
 	it("renders the complete-and-archive task action for active review tasks", async () => {
 		await i18next.changeLanguage("ja");
-		const text = visibleText(
-			renderToStaticMarkup(
-				<ReviewStatusViewer
-					detail={reviewSessionDetail()}
-					activeTaskStatus="completed"
-					onCompleteAndArchiveTask={async () => null}
-					onRestoreArchivedTask={async () => null}
-				/>,
-			),
+		const markup = renderToStaticMarkup(
+			<ReviewStatusViewer
+				detail={reviewSessionDetail()}
+				activeTaskStatus="completed"
+				onCompleteAndArchiveTask={async () => null}
+				onRestoreArchivedTask={async () => null}
+			/>,
 		);
+		const text = visibleText(markup);
+		const taskButton = markup
+			.match(/<button[^>]*>[\s\S]*?<\/button>/g)
+			?.find((button) => button.includes("完了してアーカイブ"));
 
 		expect(text).toContain("レビュー後のタスク状態");
 		expect(text).toContain("完了してアーカイブ");
 		expect(text).not.toContain("アクティブタスクに戻す");
+		expect(taskButton).toContain("nightworkers-success-action-button");
 	});
 
 	it("swaps to the restore action for archived review tasks", async () => {
 		await i18next.changeLanguage("ja");
-		const text = visibleText(
-			renderToStaticMarkup(
-				<ReviewStatusViewer
-					detail={reviewSessionDetail()}
-					activeTaskStatus="cancelled"
-					onCompleteAndArchiveTask={async () => null}
-					onRestoreArchivedTask={async () => null}
-				/>,
-			),
+		const markup = renderToStaticMarkup(
+			<ReviewStatusViewer
+				detail={reviewSessionDetail()}
+				activeTaskStatus="cancelled"
+				onCompleteAndArchiveTask={async () => null}
+				onRestoreArchivedTask={async () => null}
+			/>,
 		);
+		const text = visibleText(markup);
+		const taskButton = markup
+			.match(/<button[^>]*>[\s\S]*?<\/button>/g)
+			?.find((button) => button.includes("アクティブタスクに戻す"));
 
 		expect(text).toContain("アクティブタスクに戻す");
 		expect(text).not.toContain("完了してアーカイブ");
+		expect(taskButton).toContain("nightworkers-primary-action-button");
 	});
 
 	it("does not render legacy review menus or final actions", async () => {

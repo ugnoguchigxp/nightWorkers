@@ -1,6 +1,7 @@
 import {
 	Bug,
 	ClipboardCheck,
+	FlaskConical,
 	FolderTree,
 	ListTodo,
 	LoaderCircle,
@@ -102,6 +103,8 @@ type ThreadWorkspaceProps = {
 	isReviewArtifactOpen: boolean;
 	hasReviewArtifact: boolean;
 	isReviewActionBusy: boolean;
+	onOpenTestModeArtifact: () => void;
+	isTestModeArtifactOpen: boolean;
 	onOpenTodoArtifact: () => void;
 	isTodoArtifactOpen: boolean;
 	hasTodoArtifact: boolean;
@@ -160,6 +163,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 	const reviewArtifactLabel = reviewArtifact
 		? t("reviewStatus.title")
 		: t("reviewStatus.start");
+	const testModeArtifactLabel = t("thread.testModeArtifact");
 	const commitScrollState = useCallback(
 		(snapshot: ScrollSnapshot) => {
 			const state = buildPersistedScrollState(snapshot);
@@ -432,6 +436,21 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 									) : (
 										<ClipboardCheck className="h-3.5 w-3.5" />
 									)}
+								</button>
+								<button
+									type="button"
+									className={`inline-flex h-7 w-7 items-center justify-center rounded border disabled:cursor-not-allowed disabled:opacity-40 ${
+										props.isTestModeArtifactOpen
+											? "border-cyan-400/70 bg-cyan-950/30 text-cyan-100"
+											: "border-slate-600/80 bg-slate-900/30 text-slate-200 hover:border-slate-400"
+									}`}
+									aria-pressed={props.isTestModeArtifactOpen}
+									disabled={!props.activeSession}
+									onClick={props.onOpenTestModeArtifact}
+									title={testModeArtifactLabel}
+									aria-label={testModeArtifactLabel}
+								>
+									<FlaskConical className="h-3.5 w-3.5" />
 								</button>
 								<button
 									type="button"

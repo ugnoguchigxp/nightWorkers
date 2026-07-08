@@ -570,6 +570,7 @@ export const jaDictionary = {
 	"thread.noPlanModeWorkspace": "Plan Mode Workspace はありません",
 	"thread.todoArtifact": "TODO",
 	"thread.noTodoArtifact": "TODO はありません",
+	"thread.testModeArtifact": "Test Mode",
 	"thread.emptyPrompt": "作業スレッドを選択するか、下の入力欄から開始",
 	"todoPane.noActiveTodo": "現在実行中の Todo はありません",
 	"modelControls.model": "Model",

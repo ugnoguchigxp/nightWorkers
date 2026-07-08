@@ -40,7 +40,7 @@ export async function runVerificationTool(
 			stderr: "",
 			classification: result.payload.classification,
 			truncated: true,
-			logArtifactPath: result.payload.logArtifactPath,
+			logArtifactPath: result.payload.rawStdoutArtifactId,
 			compression: result.payload.compression,
 			reason,
 			verified,

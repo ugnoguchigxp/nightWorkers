@@ -71,6 +71,8 @@ type NightWorkersShellThreadPanelProps = {
 	isBlueprintArtifactOpen: boolean;
 	onOpenReviewArtifact: () => Promise<void>;
 	isReviewArtifactOpen: boolean;
+	onOpenTestModeArtifact: () => void;
+	isTestModeArtifactOpen: boolean;
 	onOpenTodoArtifact: () => void;
 	startSessionAndFocusTodo: (sessionId: string) => Promise<void>;
 	queueActiveSessionAndFocusTodo: () => Promise<void>;
@@ -199,6 +201,8 @@ export function NightWorkersShellThreadPanel(
 			isBlueprintActionBusy={workspace.isChatSubmitting}
 			onOpenReviewArtifact={props.onOpenReviewArtifact}
 			isReviewArtifactOpen={isReviewArtifactOpen}
+			onOpenTestModeArtifact={props.onOpenTestModeArtifact}
+			isTestModeArtifactOpen={props.isTestModeArtifactOpen}
 			hasReviewArtifact={Boolean(workspace.activeReviewSession)}
 			isReviewActionBusy={workspace.isChatSubmitting}
 			onOpenTodoArtifact={props.onOpenTodoArtifact}

@@ -1,0 +1,630 @@
+import { and, eq, gte, sql } from "drizzle-orm";
+import { type DbTransaction, db } from "../../db/client";
+import {
+	llmUsageRecords,
+	llmUsageSummaryBuckets,
+	llmUsageSummaryWarnings,
+	tasks,
+} from "../../db/schema";
+import { calculateUsageCost, findPricingForUsage } from "../pricing";
+
+type DbExecutor = typeof db | DbTransaction;
+type UsageRecord = typeof llmUsageRecords.$inferSelect;
+
+type SummaryWarningDelta = {
+	code: string;
+	detailKey: string;
+	detailJson: Record<string, unknown>;
+	callCount: number;
+};
+
+type SummaryDelta = {
+	bucketHourUtc: Date;
+	repositoryId: string | null;
+	repositoryKey: string;
+	provider: string;
+	model: string | null;
+	modelKey: string;
+	pricingCurrencyCode: string | null;
+	pricingCurrencyKey: string;
+	pricingStatus: "priced" | "manual" | "missing";
+	inputTokens: number;
+	outputTokens: number;
+	cachedInputTokens: number;
+	reasoningOutputTokens: number;
+	systemPromptTokens: number;
+	userPromptTokens: number;
+	stateCardTokens: number;
+	totalTokens: number;
+	totalDurationMs: number;
+	outputDurationMs: number;
+	measuredDurationCallCount: number;
+	callCount: number;
+	measuredCallCount: number;
+	estimatedCallCount: number;
+	mixedCallCount: number;
+	unavailableCallCount: number;
+	pricedCallCount: number;
+	unpricedCallCount: number;
+	manualPricedCallCount: number;
+	estimatedCost: number;
+	inputCost: number;
+	cachedInputCost: number;
+	outputCost: number;
+	reasoningOutputCost: number;
+	pricingUpdatedAt: Date | null;
+	warnings: SummaryWarningDelta[];
+};
+
+export type LlmUsageSummaryBackfillResult = {
+	dryRun: boolean;
+	reset: boolean;
+	selectedRecords: number;
+	existingSummaryBuckets: number;
+	updatedSummaryBuckets: number;
+	updatedWarnings: number;
+};
+
+export type LlmUsageSummaryIntegrityResult = {
+	ok: boolean;
+	checkedRecords: number;
+	expectedBuckets: number;
+	actualBuckets: number;
+	mismatches: Array<{
+		key: string;
+		field: string;
+		expected: number | string | null;
+		actual: number | string | null;
+	}>;
+};
+
+export async function upsertLlmUsageSummaryForRecord(
+	record: UsageRecord,
+	executor: DbExecutor = db,
+) {
+	const delta = await buildLlmUsageSummaryDelta(record, executor);
+	await upsertSummaryDelta(delta, executor);
+	return delta;
+}
+
+export async function rebuildLlmUsageSummary(input: {
+	since?: Date | null;
+	repositoryId?: string | null;
+	dryRun?: boolean;
+	reset?: boolean;
+}): Promise<LlmUsageSummaryBackfillResult> {
+	const records = await listUsageRecordsForSummary(input);
+	const existingSummaryBuckets = await countSummaryBuckets(input);
+	if (!input.dryRun && existingSummaryBuckets > 0 && !input.reset) {
+		throw new Error(
+			"LLM usage summary already has rows for this scope. Re-run with --reset to rebuild without double counting.",
+		);
+	}
+	if (input.dryRun) {
+		return {
+			dryRun: true,
+			reset: Boolean(input.reset),
+			selectedRecords: records.length,
+			existingSummaryBuckets,
+			updatedSummaryBuckets: 0,
+			updatedWarnings: 0,
+		};
+	}
+
+	if (input.reset) await deleteSummaryScope(input);
+	const touchedBuckets = new Set<string>();
+	let updatedWarnings = 0;
+	for (const record of records) {
+		const delta = await upsertLlmUsageSummaryForRecord(record);
+		touchedBuckets.add(summaryDeltaKey(delta));
+		updatedWarnings += delta.warnings.length;
+	}
+	return {
+		dryRun: false,
+		reset: Boolean(input.reset),
+		selectedRecords: records.length,
+		existingSummaryBuckets,
+		updatedSummaryBuckets: touchedBuckets.size,
+		updatedWarnings,
+	};
+}
+
+export async function checkLlmUsageSummaryIntegrity(
+	input: {
+		since?: Date | null;
+		repositoryId?: string | null;
+		tolerance?: number;
+	} = {},
+): Promise<LlmUsageSummaryIntegrityResult> {
+	const tolerance = input.tolerance ?? 0.000001;
+	const records = await listUsageRecordsForSummary(input);
+	const expected = new Map<string, SummaryDelta>();
+	for (const record of records) {
+		const delta = await buildLlmUsageSummaryDelta(record);
+		mergeSummaryDelta(expected, delta);
+	}
+
+	const actualRows = await listSummaryBuckets(input);
+	const actual = new Map(
+		actualRows.map((row) => [
+			summaryRowKey(row),
+			{
+				inputTokens: row.inputTokens,
+				outputTokens: row.outputTokens,
+				cachedInputTokens: row.cachedInputTokens,
+				reasoningOutputTokens: row.reasoningOutputTokens,
+				systemPromptTokens: row.systemPromptTokens,
+				userPromptTokens: row.userPromptTokens,
+				stateCardTokens: row.stateCardTokens,
+				totalTokens: row.totalTokens,
+				totalDurationMs: row.totalDurationMs,
+				outputDurationMs: row.outputDurationMs,
+				measuredDurationCallCount: row.measuredDurationCallCount,
+				callCount: row.callCount,
+				measuredCallCount: row.measuredCallCount,
+				estimatedCallCount: row.estimatedCallCount,
+				mixedCallCount: row.mixedCallCount,
+				unavailableCallCount: row.unavailableCallCount,
+				pricedCallCount: row.pricedCallCount,
+				unpricedCallCount: row.unpricedCallCount,
+				manualPricedCallCount: row.manualPricedCallCount,
+				estimatedCost: row.estimatedCost,
+				inputCost: row.inputCost,
+				cachedInputCost: row.cachedInputCost,
+				outputCost: row.outputCost,
+				reasoningOutputCost: row.reasoningOutputCost,
+			},
+		]),
+	);
+
+	const mismatches: LlmUsageSummaryIntegrityResult["mismatches"] = [];
+	const allKeys = new Set([...expected.keys(), ...actual.keys()]);
+	for (const key of allKeys) {
+		const expectedRow = expected.get(key);
+		const actualRow = actual.get(key);
+		if (!expectedRow || !actualRow) {
+			mismatches.push({
+				key,
+				field: "bucket",
+				expected: expectedRow ? "present" : null,
+				actual: actualRow ? "present" : null,
+			});
+			continue;
+		}
+		for (const field of SUMMARY_COMPARE_FIELDS) {
+			const expectedValue = expectedRow[field];
+			const actualValue = actualRow[field];
+			if (Math.abs(expectedValue - actualValue) > tolerance) {
+				mismatches.push({
+					key,
+					field,
+					expected: expectedValue,
+					actual: actualValue,
+				});
+			}
+		}
+	}
+
+	return {
+		ok: mismatches.length === 0,
+		checkedRecords: records.length,
+		expectedBuckets: expected.size,
+		actualBuckets: actual.size,
+		mismatches,
+	};
+}
+
+async function buildLlmUsageSummaryDelta(
+	record: UsageRecord,
+	executor: DbExecutor = db,
+): Promise<SummaryDelta> {
+	const repositoryId = await resolveRepositoryId(record.taskId, executor);
+	const createdAt = toDate(record.createdAt);
+	const pricing = await findPricingForUsage({
+		provider: record.provider,
+		model: record.model,
+		createdAt,
+	});
+	const warnings: SummaryWarningDelta[] = [];
+	const pricingStatus = pricing
+		? pricing.manualOverride
+			? "manual"
+			: "priced"
+		: "missing";
+	const pricingCurrencyCode = pricing?.currencyCode ?? null;
+	let estimatedCost = 0;
+	let inputCost = 0;
+	let cachedInputCost = 0;
+	let outputCost = 0;
+	let reasoningOutputCost = 0;
+
+	if (!pricing) {
+		warnings.push({
+			code: "pricing_missing",
+			detailKey: `${record.provider}:${record.model ?? "unknown"}`,
+			detailJson: {
+				provider: record.provider,
+				model: record.model,
+			},
+			callCount: 1,
+		});
+	} else {
+		const cost = calculateUsageCost({
+			inputTokens: record.inputTokens,
+			outputTokens: record.outputTokens,
+			cachedInputTokens: record.cachedInputTokens,
+			reasoningOutputTokens: record.reasoningOutputTokens,
+			pricing,
+		});
+		estimatedCost = cost.totalCost;
+		inputCost = cost.inputCost ?? 0;
+		cachedInputCost = cost.cachedInputCost ?? 0;
+		outputCost = cost.outputCost ?? 0;
+		reasoningOutputCost = cost.reasoningCost ?? 0;
+		for (const reason of cost.incompleteReasons) {
+			warnings.push({
+				code: "usage_token_anomaly",
+				detailKey: reason,
+				detailJson: { field: reason },
+				callCount: 1,
+			});
+		}
+	}
+
+	if (record.usageMode === "estimated") {
+		warnings.push({
+			code: "usage_estimated",
+			detailKey: "estimated",
+			detailJson: {},
+			callCount: 1,
+		});
+	}
+
+	const outputTokens = normalizeInt(record.outputTokens);
+	const durationMs = normalizeInt(record.durationMs);
+	const modelKey = normalizeKey(record.model);
+	const pricingCurrencyKey = normalizeKey(pricingCurrencyCode);
+
+	return {
+		bucketHourUtc: toUtcHour(createdAt),
+		repositoryId,
+		repositoryKey: normalizeKey(repositoryId),
+		provider: record.provider,
+		model: record.model,
+		modelKey,
+		pricingCurrencyCode,
+		pricingCurrencyKey,
+		pricingStatus,
+		inputTokens: normalizeInt(record.inputTokens),
+		outputTokens,
+		cachedInputTokens: normalizeInt(record.cachedInputTokens),
+		reasoningOutputTokens: normalizeInt(record.reasoningOutputTokens),
+		systemPromptTokens: normalizeInt(record.systemPromptTokens),
+		userPromptTokens: normalizeInt(record.userPromptTokens),
+		stateCardTokens: normalizeInt(record.stateCardTokens),
+		totalTokens:
+			record.totalTokens ?? normalizeInt(record.inputTokens) + outputTokens,
+		totalDurationMs: durationMs,
+		outputDurationMs: outputTokens > 0 ? durationMs : 0,
+		measuredDurationCallCount: durationMs > 0 ? 1 : 0,
+		callCount: 1,
+		measuredCallCount: record.usageMode === "measured" ? 1 : 0,
+		estimatedCallCount: record.usageMode === "estimated" ? 1 : 0,
+		mixedCallCount: record.usageMode === "mixed" ? 1 : 0,
+		unavailableCallCount:
+			record.usageMode !== "measured" &&
+			record.usageMode !== "estimated" &&
+			record.usageMode !== "mixed"
+				? 1
+				: 0,
+		pricedCallCount: pricing ? 1 : 0,
+		unpricedCallCount: pricing ? 0 : 1,
+		manualPricedCallCount: pricing?.manualOverride ? 1 : 0,
+		estimatedCost,
+		inputCost,
+		cachedInputCost,
+		outputCost,
+		reasoningOutputCost,
+		pricingUpdatedAt: pricing?.fetchedAt ?? null,
+		warnings,
+	};
+}
+
+async function upsertSummaryDelta(delta: SummaryDelta, executor: DbExecutor) {
+	const now = new Date();
+	await executor
+		.insert(llmUsageSummaryBuckets)
+		.values({
+			...summaryDeltaValues(delta),
+			createdAt: now,
+			updatedAt: now,
+		})
+		.onConflictDoUpdate({
+			target: [
+				llmUsageSummaryBuckets.bucketHourUtc,
+				llmUsageSummaryBuckets.repositoryKey,
+				llmUsageSummaryBuckets.provider,
+				llmUsageSummaryBuckets.modelKey,
+				llmUsageSummaryBuckets.pricingCurrencyKey,
+				llmUsageSummaryBuckets.pricingStatus,
+			],
+			set: summaryIncrementSet(delta, now),
+		});
+
+	for (const warning of delta.warnings) {
+		await executor
+			.insert(llmUsageSummaryWarnings)
+			.values({
+				bucketHourUtc: delta.bucketHourUtc,
+				repositoryId: delta.repositoryId,
+				repositoryKey: delta.repositoryKey,
+				provider: delta.provider,
+				model: delta.model,
+				modelKey: delta.modelKey,
+				code: warning.code,
+				detailKey: warning.detailKey,
+				detailJson: warning.detailJson,
+				callCount: warning.callCount,
+				createdAt: now,
+				updatedAt: now,
+			})
+			.onConflictDoUpdate({
+				target: [
+					llmUsageSummaryWarnings.bucketHourUtc,
+					llmUsageSummaryWarnings.repositoryKey,
+					llmUsageSummaryWarnings.provider,
+					llmUsageSummaryWarnings.modelKey,
+					llmUsageSummaryWarnings.code,
+					llmUsageSummaryWarnings.detailKey,
+				],
+				set: {
+					callCount: sql`${llmUsageSummaryWarnings.callCount} + ${warning.callCount}`,
+					detailJson: warning.detailJson,
+					updatedAt: now,
+				},
+			});
+	}
+}
+
+function summaryDeltaValues(delta: SummaryDelta) {
+	const { warnings: _warnings, ...values } = delta;
+	return values;
+}
+
+function summaryIncrementSet(delta: SummaryDelta, now: Date) {
+	return {
+		inputTokens: sql`${llmUsageSummaryBuckets.inputTokens} + ${delta.inputTokens}`,
+		outputTokens: sql`${llmUsageSummaryBuckets.outputTokens} + ${delta.outputTokens}`,
+		cachedInputTokens: sql`${llmUsageSummaryBuckets.cachedInputTokens} + ${delta.cachedInputTokens}`,
+		reasoningOutputTokens: sql`${llmUsageSummaryBuckets.reasoningOutputTokens} + ${delta.reasoningOutputTokens}`,
+		systemPromptTokens: sql`${llmUsageSummaryBuckets.systemPromptTokens} + ${delta.systemPromptTokens}`,
+		userPromptTokens: sql`${llmUsageSummaryBuckets.userPromptTokens} + ${delta.userPromptTokens}`,
+		stateCardTokens: sql`${llmUsageSummaryBuckets.stateCardTokens} + ${delta.stateCardTokens}`,
+		totalTokens: sql`${llmUsageSummaryBuckets.totalTokens} + ${delta.totalTokens}`,
+		totalDurationMs: sql`${llmUsageSummaryBuckets.totalDurationMs} + ${delta.totalDurationMs}`,
+		outputDurationMs: sql`${llmUsageSummaryBuckets.outputDurationMs} + ${delta.outputDurationMs}`,
+		measuredDurationCallCount: sql`${llmUsageSummaryBuckets.measuredDurationCallCount} + ${delta.measuredDurationCallCount}`,
+		callCount: sql`${llmUsageSummaryBuckets.callCount} + ${delta.callCount}`,
+		measuredCallCount: sql`${llmUsageSummaryBuckets.measuredCallCount} + ${delta.measuredCallCount}`,
+		estimatedCallCount: sql`${llmUsageSummaryBuckets.estimatedCallCount} + ${delta.estimatedCallCount}`,
+		mixedCallCount: sql`${llmUsageSummaryBuckets.mixedCallCount} + ${delta.mixedCallCount}`,
+		unavailableCallCount: sql`${llmUsageSummaryBuckets.unavailableCallCount} + ${delta.unavailableCallCount}`,
+		pricedCallCount: sql`${llmUsageSummaryBuckets.pricedCallCount} + ${delta.pricedCallCount}`,
+		unpricedCallCount: sql`${llmUsageSummaryBuckets.unpricedCallCount} + ${delta.unpricedCallCount}`,
+		manualPricedCallCount: sql`${llmUsageSummaryBuckets.manualPricedCallCount} + ${delta.manualPricedCallCount}`,
+		estimatedCost: sql`${llmUsageSummaryBuckets.estimatedCost} + ${delta.estimatedCost}`,
+		inputCost: sql`${llmUsageSummaryBuckets.inputCost} + ${delta.inputCost}`,
+		cachedInputCost: sql`${llmUsageSummaryBuckets.cachedInputCost} + ${delta.cachedInputCost}`,
+		outputCost: sql`${llmUsageSummaryBuckets.outputCost} + ${delta.outputCost}`,
+		reasoningOutputCost: sql`${llmUsageSummaryBuckets.reasoningOutputCost} + ${delta.reasoningOutputCost}`,
+		pricingUpdatedAt: delta.pricingUpdatedAt
+			? sql`case when ${llmUsageSummaryBuckets.pricingUpdatedAt} is null or ${llmUsageSummaryBuckets.pricingUpdatedAt} < ${delta.pricingUpdatedAt} then ${delta.pricingUpdatedAt} else ${llmUsageSummaryBuckets.pricingUpdatedAt} end`
+			: llmUsageSummaryBuckets.pricingUpdatedAt,
+		updatedAt: now,
+	};
+}
+
+async function resolveRepositoryId(taskId: string, executor: DbExecutor) {
+	const [task] = await executor
+		.select({ repositoryId: tasks.repositoryId })
+		.from(tasks)
+		.where(eq(tasks.id, taskId))
+		.limit(1);
+	return task?.repositoryId ?? null;
+}
+
+async function listUsageRecordsForSummary(input: {
+	since?: Date | null;
+	repositoryId?: string | null;
+}) {
+	const conditions = [];
+	if (input.since) conditions.push(gte(llmUsageRecords.createdAt, input.since));
+	if (input.repositoryId)
+		conditions.push(eq(tasks.repositoryId, input.repositoryId));
+	return db
+		.select({
+			id: llmUsageRecords.id,
+			createdAt: llmUsageRecords.createdAt,
+			updatedAt: llmUsageRecords.updatedAt,
+			taskId: llmUsageRecords.taskId,
+			runId: llmUsageRecords.runId,
+			callId: llmUsageRecords.callId,
+			provider: llmUsageRecords.provider,
+			model: llmUsageRecords.model,
+			label: llmUsageRecords.label,
+			round: llmUsageRecords.round,
+			usageMode: llmUsageRecords.usageMode,
+			inputTokens: llmUsageRecords.inputTokens,
+			outputTokens: llmUsageRecords.outputTokens,
+			cachedInputTokens: llmUsageRecords.cachedInputTokens,
+			reasoningOutputTokens: llmUsageRecords.reasoningOutputTokens,
+			totalTokens: llmUsageRecords.totalTokens,
+			systemPromptTokens: llmUsageRecords.systemPromptTokens,
+			userPromptTokens: llmUsageRecords.userPromptTokens,
+			stateCardTokens: llmUsageRecords.stateCardTokens,
+			responseTokensEstimate: llmUsageRecords.responseTokensEstimate,
+			durationMs: llmUsageRecords.durationMs,
+			rawUsageJson: llmUsageRecords.rawUsageJson,
+			metadataJson: llmUsageRecords.metadataJson,
+		})
+		.from(llmUsageRecords)
+		.leftJoin(tasks, eq(llmUsageRecords.taskId, tasks.id))
+		.where(conditions.length ? and(...conditions) : undefined);
+}
+
+async function listSummaryBuckets(input: {
+	since?: Date | null;
+	repositoryId?: string | null;
+}) {
+	const conditions = bucketScopeConditions(input);
+	return db
+		.select()
+		.from(llmUsageSummaryBuckets)
+		.where(conditions.length ? and(...conditions) : undefined);
+}
+
+async function countSummaryBuckets(input: {
+	since?: Date | null;
+	repositoryId?: string | null;
+}) {
+	const conditions = bucketScopeConditions(input);
+	const [row] = await db
+		.select({ count: sql<number>`count(*)` })
+		.from(llmUsageSummaryBuckets)
+		.where(conditions.length ? and(...conditions) : undefined);
+	return Number(row?.count ?? 0);
+}
+
+async function deleteSummaryScope(input: {
+	since?: Date | null;
+	repositoryId?: string | null;
+}) {
+	const warningConditions = warningScopeConditions(input);
+	await db
+		.delete(llmUsageSummaryWarnings)
+		.where(warningConditions.length ? and(...warningConditions) : undefined);
+	const bucketConditions = bucketScopeConditions(input);
+	await db
+		.delete(llmUsageSummaryBuckets)
+		.where(bucketConditions.length ? and(...bucketConditions) : undefined);
+}
+
+function bucketScopeConditions(input: {
+	since?: Date | null;
+	repositoryId?: string | null;
+}) {
+	const conditions = [];
+	if (input.since)
+		conditions.push(
+			gte(llmUsageSummaryBuckets.bucketHourUtc, toUtcHour(input.since)),
+		);
+	if (input.repositoryId)
+		conditions.push(
+			eq(
+				llmUsageSummaryBuckets.repositoryKey,
+				normalizeKey(input.repositoryId),
+			),
+		);
+	return conditions;
+}
+
+function warningScopeConditions(input: {
+	since?: Date | null;
+	repositoryId?: string | null;
+}) {
+	const conditions = [];
+	if (input.since)
+		conditions.push(
+			gte(llmUsageSummaryWarnings.bucketHourUtc, toUtcHour(input.since)),
+		);
+	if (input.repositoryId)
+		conditions.push(
+			eq(
+				llmUsageSummaryWarnings.repositoryKey,
+				normalizeKey(input.repositoryId),
+			),
+		);
+	return conditions;
+}
+
+function mergeSummaryDelta(
+	target: Map<string, SummaryDelta>,
+	delta: SummaryDelta,
+) {
+	const key = summaryDeltaKey(delta);
+	const current = target.get(key);
+	if (!current) {
+		target.set(key, { ...delta, warnings: [] });
+		return;
+	}
+	for (const field of SUMMARY_COMPARE_FIELDS) {
+		current[field] += delta[field];
+	}
+}
+
+const SUMMARY_COMPARE_FIELDS = [
+	"inputTokens",
+	"outputTokens",
+	"cachedInputTokens",
+	"reasoningOutputTokens",
+	"systemPromptTokens",
+	"userPromptTokens",
+	"stateCardTokens",
+	"totalTokens",
+	"totalDurationMs",
+	"outputDurationMs",
+	"measuredDurationCallCount",
+	"callCount",
+	"measuredCallCount",
+	"estimatedCallCount",
+	"mixedCallCount",
+	"unavailableCallCount",
+	"pricedCallCount",
+	"unpricedCallCount",
+	"manualPricedCallCount",
+	"estimatedCost",
+	"inputCost",
+	"cachedInputCost",
+	"outputCost",
+	"reasoningOutputCost",
+] as const;
+
+function summaryDeltaKey(delta: SummaryDelta) {
+	return [
+		delta.bucketHourUtc.getTime(),
+		delta.repositoryKey,
+		delta.provider,
+		delta.modelKey,
+		delta.pricingCurrencyKey,
+		delta.pricingStatus,
+	].join("\u0000");
+}
+
+function summaryRowKey(row: typeof llmUsageSummaryBuckets.$inferSelect) {
+	return [
+		row.bucketHourUtc.getTime(),
+		row.repositoryKey,
+		row.provider,
+		row.modelKey,
+		row.pricingCurrencyKey,
+		row.pricingStatus,
+	].join("\u0000");
+}
+
+function normalizeInt(value: number | null | undefined) {
+	return typeof value === "number" && Number.isFinite(value)
+		? Math.max(0, Math.floor(value))
+		: 0;
+}
+
+function normalizeKey(value: string | null | undefined) {
+	return value?.trim() || "";
+}
+
+function toUtcHour(date: Date) {
+	return new Date(Math.floor(date.getTime() / 3_600_000) * 3_600_000);
+}
+
+function toDate(value: Date | number) {
+	return value instanceof Date ? value : new Date(value);
+}

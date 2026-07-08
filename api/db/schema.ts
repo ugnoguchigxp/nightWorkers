@@ -855,6 +855,113 @@ export const llmModelPricing = sqliteTable(
 	}),
 );
 
+export const llmUsageSummaryBuckets = sqliteTable(
+	"llm_usage_summary_buckets",
+	{
+		...commonColumns,
+		bucketHourUtc: integer("bucket_hour_utc", { mode: "timestamp" }).notNull(),
+		repositoryId: text("repository_id").references(() => repositories.id, {
+			onDelete: "cascade",
+		}),
+		repositoryKey: text("repository_key").notNull(),
+		provider: text("provider").notNull(),
+		model: text("model"),
+		modelKey: text("model_key").notNull(),
+		pricingCurrencyCode: text("pricing_currency_code"),
+		pricingCurrencyKey: text("pricing_currency_key").notNull(),
+		pricingStatus: text("pricing_status").notNull(),
+		inputTokens: integer("input_tokens").default(0).notNull(),
+		outputTokens: integer("output_tokens").default(0).notNull(),
+		cachedInputTokens: integer("cached_input_tokens").default(0).notNull(),
+		reasoningOutputTokens: integer("reasoning_output_tokens")
+			.default(0)
+			.notNull(),
+		systemPromptTokens: integer("system_prompt_tokens").default(0).notNull(),
+		userPromptTokens: integer("user_prompt_tokens").default(0).notNull(),
+		stateCardTokens: integer("state_card_tokens").default(0).notNull(),
+		totalTokens: integer("total_tokens").default(0).notNull(),
+		totalDurationMs: integer("total_duration_ms").default(0).notNull(),
+		outputDurationMs: integer("output_duration_ms").default(0).notNull(),
+		measuredDurationCallCount: integer("measured_duration_call_count")
+			.default(0)
+			.notNull(),
+		callCount: integer("call_count").default(0).notNull(),
+		measuredCallCount: integer("measured_call_count").default(0).notNull(),
+		estimatedCallCount: integer("estimated_call_count").default(0).notNull(),
+		mixedCallCount: integer("mixed_call_count").default(0).notNull(),
+		unavailableCallCount: integer("unavailable_call_count")
+			.default(0)
+			.notNull(),
+		pricedCallCount: integer("priced_call_count").default(0).notNull(),
+		unpricedCallCount: integer("unpriced_call_count").default(0).notNull(),
+		manualPricedCallCount: integer("manual_priced_call_count")
+			.default(0)
+			.notNull(),
+		estimatedCost: real("estimated_cost").default(0).notNull(),
+		inputCost: real("input_cost").default(0).notNull(),
+		cachedInputCost: real("cached_input_cost").default(0).notNull(),
+		outputCost: real("output_cost").default(0).notNull(),
+		reasoningOutputCost: real("reasoning_output_cost").default(0).notNull(),
+		pricingUpdatedAt: integer("pricing_updated_at", { mode: "timestamp" }),
+	},
+	(table) => ({
+		bucketUniqueIdx: uniqueIndex("llm_usage_summary_buckets_uidx").on(
+			table.bucketHourUtc,
+			table.repositoryKey,
+			table.provider,
+			table.modelKey,
+			table.pricingCurrencyKey,
+			table.pricingStatus,
+		),
+		bucketIdx: index("llm_usage_summary_buckets_hour_idx").on(
+			table.bucketHourUtc,
+		),
+		repositoryBucketIdx: index(
+			"llm_usage_summary_buckets_repository_hour_idx",
+		).on(table.repositoryKey, table.bucketHourUtc),
+		modelBucketIdx: index("llm_usage_summary_buckets_model_hour_idx").on(
+			table.provider,
+			table.modelKey,
+			table.bucketHourUtc,
+		),
+	}),
+);
+
+export const llmUsageSummaryWarnings = sqliteTable(
+	"llm_usage_summary_warnings",
+	{
+		...commonColumns,
+		bucketHourUtc: integer("bucket_hour_utc", { mode: "timestamp" }).notNull(),
+		repositoryId: text("repository_id").references(() => repositories.id, {
+			onDelete: "cascade",
+		}),
+		repositoryKey: text("repository_key").notNull(),
+		provider: text("provider").notNull(),
+		model: text("model"),
+		modelKey: text("model_key").notNull(),
+		code: text("code").notNull(),
+		detailKey: text("detail_key").notNull(),
+		detailJson: text("detail_json", { mode: "json" }).$type<
+			Record<string, unknown>
+		>(),
+		callCount: integer("call_count").default(0).notNull(),
+	},
+	(table) => ({
+		warningUniqueIdx: uniqueIndex("llm_usage_summary_warnings_uidx").on(
+			table.bucketHourUtc,
+			table.repositoryKey,
+			table.provider,
+			table.modelKey,
+			table.code,
+			table.detailKey,
+		),
+		repositoryBucketIdx: index(
+			"llm_usage_summary_warnings_repository_hour_idx",
+		).on(table.repositoryKey, table.bucketHourUtc),
+		codeIdx: index("llm_usage_summary_warnings_code_idx").on(table.code),
+	}),
+);
+
 export const blueprintDesignSettings = sqliteTable(
 	"blueprint_design_settings",
 	{

@@ -3,7 +3,7 @@
 ## Top-Level Components
 - `api/`: backend API, domain services, integrations, and runners
 - `src/`: frontend routes and feature modules
-- `src-tauri/`: macOS Tauri shell and desktop sidecar lifecycle
+- `src-tauri/`: Tauri shell and desktop sidecar lifecycle
 - `shared/`: shared schemas and type contracts
 - `drizzle/`: database schema migrations and seed data
 - `src/components/ui/`: NightWorkers-owned reusable UI primitives

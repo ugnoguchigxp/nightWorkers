@@ -189,7 +189,7 @@ describe("Plan Mode domain boundaries", () => {
 			readProjectFile(
 				"api/modules/nightworkers/nightworkers.plan-mode-core.port.ts",
 			),
-		).toContain("import * as repo from './nightworkers.repository';");
+		).toMatch(/import \* as repo from ['"]\.\/nightworkers\.repository['"];/);
 	});
 
 	it("does not introduce user wording classifier helpers or split Plan mode generations", () => {

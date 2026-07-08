@@ -5,11 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { getNodeExecutableName } from './platform-targets.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '../..');
 const stagedRoot = path.join(repoRoot, 'scripts/desktop/staged');
-const nodeBinary = path.join(stagedRoot, 'node/bin/node');
+const nodeBinary = path.join(stagedRoot, 'node/bin', getNodeExecutableName());
 const backendEntry = path.join(stagedRoot, 'dist-api-desktop/index.js');
 
 if (!fs.existsSync(nodeBinary) || !fs.existsSync(backendEntry)) {

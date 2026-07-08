@@ -1,6 +1,12 @@
-import { and, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { db } from "../../db/client";
-import { llmUsageRecords, repositories, tasks } from "../../db/schema";
+import {
+	llmUsageRecords,
+	llmUsageSummaryBuckets,
+	llmUsageSummaryWarnings,
+	repositories,
+	tasks,
+} from "../../db/schema";
 import { calculateUsageCost, findPricingForUsage } from "../pricing";
 import {
 	convertCurrency,
@@ -26,6 +32,17 @@ type UsageAggregateRow = {
 	totalTokens?: number | null;
 	durationMs?: number | null;
 	usageMode?: string | null;
+};
+
+type UsageSummaryAggregateRow = UsageAggregateRow & {
+	totalDurationMs?: number | null;
+	outputDurationMs?: number | null;
+	measuredDurationCallCount?: number | null;
+	callCount?: number | null;
+	measuredCallCount?: number | null;
+	estimatedCallCount?: number | null;
+	mixedCallCount?: number | null;
+	unavailableCallCount?: number | null;
 };
 
 type OverviewWarning = Record<string, unknown> & {
@@ -60,44 +77,41 @@ export async function buildOverviewDashboard(input: {
 		}
 	}
 
-	const conditions = [];
-	if (cutoff) conditions.push(gte(llmUsageRecords.createdAt, cutoff));
+	const summaryConditions = [];
+	if (cutoff)
+		summaryConditions.push(
+			gte(llmUsageSummaryBuckets.bucketHourUtc, toUtcHour(cutoff)),
+		);
 	if (input.repositoryId)
-		conditions.push(eq(tasks.repositoryId, input.repositoryId));
+		summaryConditions.push(
+			eq(llmUsageSummaryBuckets.repositoryKey, input.repositoryId),
+		);
+	const warningConditions = [];
+	if (cutoff)
+		warningConditions.push(
+			gte(llmUsageSummaryWarnings.bucketHourUtc, toUtcHour(cutoff)),
+		);
+	if (input.repositoryId)
+		warningConditions.push(
+			eq(llmUsageSummaryWarnings.repositoryKey, input.repositoryId),
+		);
 
-	const rows = await db
-		.select({
-			id: llmUsageRecords.id,
-			taskId: llmUsageRecords.taskId,
-			runId: llmUsageRecords.runId,
-			provider: llmUsageRecords.provider,
-			model: llmUsageRecords.model,
-			label: llmUsageRecords.label,
-			usageMode: llmUsageRecords.usageMode,
-			inputTokens: llmUsageRecords.inputTokens,
-			outputTokens: llmUsageRecords.outputTokens,
-			cachedInputTokens: llmUsageRecords.cachedInputTokens,
-			reasoningOutputTokens: llmUsageRecords.reasoningOutputTokens,
-			systemPromptTokens: llmUsageRecords.systemPromptTokens,
-			userPromptTokens: llmUsageRecords.userPromptTokens,
-			stateCardTokens: llmUsageRecords.stateCardTokens,
-			totalTokens: llmUsageRecords.totalTokens,
-			durationMs: llmUsageRecords.durationMs,
-			createdAt: llmUsageRecords.createdAt,
-			repositoryId: tasks.repositoryId,
-			taskTitle: tasks.title,
-		})
-		.from(llmUsageRecords)
-		.leftJoin(tasks, eq(llmUsageRecords.taskId, tasks.id))
-		.where(conditions.length ? and(...conditions) : undefined)
-		.orderBy(llmUsageRecords.createdAt);
+	const summaryRows = await db
+		.select()
+		.from(llmUsageSummaryBuckets)
+		.where(summaryConditions.length ? and(...summaryConditions) : undefined)
+		.orderBy(llmUsageSummaryBuckets.bucketHourUtc);
+
+	const summaryWarningRows = await db
+		.select()
+		.from(llmUsageSummaryWarnings)
+		.where(warningConditions.length ? and(...warningConditions) : undefined);
 
 	const usage = emptyUsageSummary();
 	const buckets = new Map<string, ReturnType<typeof emptyBucket>>();
 	const modelMap = new Map<string, ReturnType<typeof emptyModelUsage>>();
 	const warningsMap = new Map<string, OverviewWarning>();
 	const fxCache = readFxRateCache();
-	const recentCalls = [];
 	let estimatedTotal = 0;
 	let inputCost = 0;
 	let cachedInputCost = 0;
@@ -110,105 +124,104 @@ export async function buildOverviewDashboard(input: {
 	let fxRate: number | null = null;
 	let fxBaseCurrency: string | null = null;
 
-	for (const row of rows) {
-		addUsage(usage, row);
-		const bucketKey = getBucketKey(row.createdAt, range, timezone);
+	for (const row of summaryRows) {
+		addAggregateUsage(usage, row);
+		const bucketKey = getBucketKey(row.bucketHourUtc, range, timezone);
 		const bucket = buckets.get(bucketKey.key) || emptyBucket(bucketKey);
-		addUsage(bucket, row);
+		addAggregateUsage(bucket, row);
 		buckets.set(bucketKey.key, bucket);
 
 		const modelKey = `${row.provider}:${row.model || "unknown"}`;
 		const modelUsage =
 			modelMap.get(modelKey) || emptyModelUsage(row.provider, row.model);
-		addUsage(modelUsage, row);
+		addAggregateUsage(modelUsage, row);
 		modelMap.set(modelKey, modelUsage);
+		if (row.pricingStatus === "manual") modelUsage.pricingStatus = "manual";
+		else if (
+			row.pricingStatus === "priced" &&
+			modelUsage.pricingStatus === "missing"
+		) {
+			modelUsage.pricingStatus = "priced";
+		}
 
-		const pricing = await findPricingForUsage({
-			provider: row.provider,
-			model: row.model,
-			createdAt: row.createdAt,
-		});
-		if (!pricing) {
-			unpricedCallCount += 1;
-			modelUsage.pricingStatus =
-				modelUsage.pricingStatus === "priced" ? "manual" : "missing";
-			warningsMap.set(`pricing:${modelKey}`, {
-				code: "pricing_missing",
-				provider: row.provider,
-				model: row.model,
-				callCount: (warningsMap.get(`pricing:${modelKey}`)?.callCount || 0) + 1,
-			});
+		pricedCallCount += row.pricedCallCount;
+		unpricedCallCount += row.unpricedCallCount;
+		if (row.pricingUpdatedAt) {
+			pricingUpdatedAt = maxIso(
+				pricingUpdatedAt,
+				row.pricingUpdatedAt.toISOString(),
+			);
+		}
+		if (row.pricingStatus === "missing") {
+			continue;
+		}
+		if (!row.pricingCurrencyCode) {
 			continue;
 		}
 
-		pricedCallCount += 1;
-		modelUsage.pricingStatus = pricing.manualOverride ? "manual" : "priced";
-		if (pricing.fetchedAt) {
-			const fetched = pricing.fetchedAt.toISOString();
-			pricingUpdatedAt = maxIso(pricingUpdatedAt, fetched);
-		}
-		const cost = calculateUsageCost({
-			inputTokens: row.inputTokens,
-			outputTokens: row.outputTokens,
-			cachedInputTokens: row.cachedInputTokens,
-			reasoningOutputTokens: row.reasoningOutputTokens,
-			pricing,
-		});
-		for (const reason of cost.incompleteReasons) {
-			warningsMap.set(`usage_token_anomaly:${reason}`, {
-				code: "usage_token_anomaly",
-				field: reason,
-				callCount:
-					(warningsMap.get(`usage_token_anomaly:${reason}`)?.callCount || 0) +
-					1,
-			});
-		}
-		let convertedAmount: number | null = null;
-		if (pricing.currencyCode === "CREDITS") {
-			creditTotal += cost.totalCost;
-			convertedAmount = cost.totalCost;
+		if (row.pricingCurrencyCode === "CREDITS") {
+			creditTotal += row.estimatedCost;
+			modelUsage.estimatedCost += row.estimatedCost;
+			inputCost += row.inputCost;
+			cachedInputCost += row.cachedInputCost;
+			outputCost += row.outputCost;
+			reasoningOutputCost += row.reasoningOutputCost;
 		} else {
 			const converted = convertCurrency({
-				amount: cost.totalCost,
-				from: pricing.currencyCode as NightWorkersCurrency,
+				amount: row.estimatedCost,
+				from: row.pricingCurrencyCode as NightWorkersCurrency,
 				to: currency,
 				cache: fxCache,
 			});
 			if (converted.amount === null) {
-				warningsMap.set(`fx:${pricing.currencyCode}:${currency}`, {
+				warningsMap.set(`fx:${row.pricingCurrencyCode}:${currency}`, {
 					code: "fx_unavailable",
 					currency,
-					baseCurrency: pricing.currencyCode,
+					baseCurrency: row.pricingCurrencyCode,
 				});
 			} else {
-				convertedAmount = converted.amount;
 				fxRate = converted.rate;
-				fxBaseCurrency = pricing.currencyCode;
+				fxBaseCurrency = row.pricingCurrencyCode;
 				estimatedTotal += converted.amount;
+				modelUsage.estimatedCost += converted.amount;
+				inputCost += convertCostPart(row.inputCost, {
+					from: row.pricingCurrencyCode,
+					to: currency,
+					cache: fxCache,
+				});
+				cachedInputCost += convertCostPart(row.cachedInputCost, {
+					from: row.pricingCurrencyCode,
+					to: currency,
+					cache: fxCache,
+				});
+				outputCost += convertCostPart(row.outputCost, {
+					from: row.pricingCurrencyCode,
+					to: currency,
+					cache: fxCache,
+				});
+				reasoningOutputCost += convertCostPart(row.reasoningOutputCost, {
+					from: row.pricingCurrencyCode,
+					to: currency,
+					cache: fxCache,
+				});
 			}
 		}
-		if (convertedAmount !== null) modelUsage.estimatedCost += convertedAmount;
-		inputCost += cost.inputCost ?? 0;
-		cachedInputCost += cost.cachedInputCost ?? 0;
-		outputCost += cost.outputCost ?? 0;
-		reasoningOutputCost += cost.reasoningCost ?? 0;
-		recentCalls.push({
-			id: row.id,
-			taskId: row.taskId,
-			runId: row.runId,
-			repositoryId: row.repositoryId,
-			taskTitle: row.taskTitle,
-			provider: row.provider,
-			model: row.model,
-			label: row.label,
-			inputTokens: row.inputTokens ?? 0,
-			outputTokens: row.outputTokens ?? 0,
-			stateCardTokens: row.stateCardTokens ?? 0,
-			totalTokens: normalizeTotal(row),
-			outputTokensPerSecond: calculateOutputTokensPerSecond(row),
-			estimatedCost: convertedAmount,
-			usageMode: row.usageMode,
-			createdAt: row.createdAt.toISOString(),
+	}
+
+	for (const warning of summaryWarningRows) {
+		if (warning.code === "usage_estimated") continue;
+		const key = `${warning.code}:${warning.provider}:${warning.modelKey}:${warning.detailKey}`;
+		const current = warningsMap.get(key);
+		const detail =
+			warning.detailJson && typeof warning.detailJson === "object"
+				? warning.detailJson
+				: {};
+		warningsMap.set(key, {
+			...detail,
+			code: warning.code,
+			provider: warning.provider,
+			model: warning.model,
+			callCount: (current?.callCount || 0) + warning.callCount,
 		});
 	}
 
@@ -218,6 +231,24 @@ export async function buildOverviewDashboard(input: {
 			estimatedCallCount: usage.estimatedCallCount,
 		});
 	}
+
+	const rawUsageRowCount =
+		summaryRows.length === 0
+			? await countRawUsageRows({ cutoff, repositoryId: input.repositoryId })
+			: 0;
+	if (rawUsageRowCount > 0) {
+		warningsMap.set("summary_backfill_required", {
+			code: "summary_backfill_required",
+			callCount: rawUsageRowCount,
+		});
+	}
+
+	const recentCalls = await buildRecentExpensiveCalls({
+		cutoff,
+		repositoryId: input.repositoryId,
+		currency,
+		fxCache,
+	});
 
 	return {
 		generatedAt: new Date().toISOString(),
@@ -303,9 +334,9 @@ function emptyModelUsage(provider: string, model: string | null) {
 	};
 }
 
-function addUsage(
+function addAggregateUsage(
 	target: ReturnType<typeof emptyUsageSummary>,
-	row: UsageAggregateRow,
+	row: UsageSummaryAggregateRow,
 ) {
 	target.inputTokens += row.inputTokens ?? 0;
 	target.promptInputTokens +=
@@ -317,17 +348,14 @@ function addUsage(
 	target.reasoningOutputTokens += row.reasoningOutputTokens ?? 0;
 	target.stateCardTokens += row.stateCardTokens ?? 0;
 	target.totalTokens += normalizeTotal(row);
-	const durationMs = row.durationMs ?? 0;
-	if (durationMs > 0) {
-		target.totalDurationMs += durationMs;
-		target.measuredDurationCallCount += 1;
-		if ((row.outputTokens ?? 0) > 0) target.outputDurationMs += durationMs;
-	}
-	target.callCount += 1;
-	if (row.usageMode === "measured") target.measuredCallCount += 1;
-	else if (row.usageMode === "estimated") target.estimatedCallCount += 1;
-	else if (row.usageMode === "mixed") target.mixedCallCount += 1;
-	else target.unavailableCallCount += 1;
+	target.totalDurationMs += row.totalDurationMs ?? row.durationMs ?? 0;
+	target.outputDurationMs += row.outputDurationMs ?? 0;
+	target.measuredDurationCallCount += row.measuredDurationCallCount ?? 0;
+	target.callCount += row.callCount ?? 0;
+	target.measuredCallCount += row.measuredCallCount ?? 0;
+	target.estimatedCallCount += row.estimatedCallCount ?? 0;
+	target.mixedCallCount += row.mixedCallCount ?? 0;
+	target.unavailableCallCount += row.unavailableCallCount ?? 0;
 	target.outputTokensPerSecond =
 		calculateAggregateOutputTokensPerSecond(target);
 }
@@ -357,12 +385,143 @@ function roundTokensPerSecond(value: number) {
 	return Math.round(value * 100) / 100;
 }
 
+async function buildRecentExpensiveCalls(input: {
+	cutoff: Date | null;
+	repositoryId?: string | null;
+	currency: NightWorkersCurrency;
+	fxCache: ReturnType<typeof readFxRateCache>;
+}) {
+	const conditions = [];
+	if (input.cutoff)
+		conditions.push(gte(llmUsageRecords.createdAt, input.cutoff));
+	if (input.repositoryId)
+		conditions.push(eq(tasks.repositoryId, input.repositoryId));
+	const rows = await db
+		.select({
+			id: llmUsageRecords.id,
+			taskId: llmUsageRecords.taskId,
+			runId: llmUsageRecords.runId,
+			provider: llmUsageRecords.provider,
+			model: llmUsageRecords.model,
+			label: llmUsageRecords.label,
+			usageMode: llmUsageRecords.usageMode,
+			inputTokens: llmUsageRecords.inputTokens,
+			outputTokens: llmUsageRecords.outputTokens,
+			cachedInputTokens: llmUsageRecords.cachedInputTokens,
+			reasoningOutputTokens: llmUsageRecords.reasoningOutputTokens,
+			systemPromptTokens: llmUsageRecords.systemPromptTokens,
+			userPromptTokens: llmUsageRecords.userPromptTokens,
+			stateCardTokens: llmUsageRecords.stateCardTokens,
+			totalTokens: llmUsageRecords.totalTokens,
+			durationMs: llmUsageRecords.durationMs,
+			createdAt: llmUsageRecords.createdAt,
+			repositoryId: tasks.repositoryId,
+			taskTitle: tasks.title,
+		})
+		.from(llmUsageRecords)
+		.leftJoin(tasks, eq(llmUsageRecords.taskId, tasks.id))
+		.where(conditions.length ? and(...conditions) : undefined)
+		.orderBy(desc(llmUsageRecords.createdAt))
+		.limit(100);
+
+	const recentCalls = [];
+	for (const row of rows) {
+		const pricing = await findPricingForUsage({
+			provider: row.provider,
+			model: row.model,
+			createdAt: row.createdAt,
+		});
+		if (!pricing) continue;
+		const cost = calculateUsageCost({
+			inputTokens: row.inputTokens,
+			outputTokens: row.outputTokens,
+			cachedInputTokens: row.cachedInputTokens,
+			reasoningOutputTokens: row.reasoningOutputTokens,
+			pricing,
+		});
+		const estimatedCost =
+			pricing.currencyCode === "CREDITS"
+				? cost.totalCost
+				: convertCurrency({
+						amount: cost.totalCost,
+						from: pricing.currencyCode as NightWorkersCurrency,
+						to: input.currency,
+						cache: input.fxCache,
+					}).amount;
+		recentCalls.push({
+			id: row.id,
+			taskId: row.taskId,
+			runId: row.runId,
+			repositoryId: row.repositoryId,
+			taskTitle: row.taskTitle,
+			provider: row.provider,
+			model: row.model,
+			label: row.label,
+			inputTokens: row.inputTokens ?? 0,
+			outputTokens: row.outputTokens ?? 0,
+			stateCardTokens: row.stateCardTokens ?? 0,
+			totalTokens: normalizeTotal(row),
+			outputTokensPerSecond: calculateOutputTokensPerSecond(row),
+			estimatedCost,
+			usageMode: row.usageMode,
+			createdAt: row.createdAt.toISOString(),
+		});
+	}
+	return recentCalls
+		.sort(
+			(a, b) =>
+				(b.estimatedCost ?? 0) - (a.estimatedCost ?? 0) ||
+				b.totalTokens - a.totalTokens,
+		)
+		.slice(0, 12);
+}
+
+async function countRawUsageRows(input: {
+	cutoff: Date | null;
+	repositoryId?: string | null;
+}) {
+	const conditions = [];
+	if (input.cutoff)
+		conditions.push(gte(llmUsageRecords.createdAt, input.cutoff));
+	if (input.repositoryId)
+		conditions.push(eq(tasks.repositoryId, input.repositoryId));
+	const [row] = await db
+		.select({ count: sql<number>`count(*)` })
+		.from(llmUsageRecords)
+		.leftJoin(tasks, eq(llmUsageRecords.taskId, tasks.id))
+		.where(conditions.length ? and(...conditions) : undefined);
+	return Number(row?.count ?? 0);
+}
+
+function convertCostPart(
+	amount: number,
+	input: {
+		from: string | null;
+		to: NightWorkersCurrency;
+		cache: ReturnType<typeof readFxRateCache>;
+	},
+) {
+	if (!input.from) return 0;
+	if (input.from === "CREDITS") return amount;
+	const converted = convertCurrency({
+		amount,
+		from: input.from as NightWorkersCurrency,
+		to: input.to,
+		cache: input.cache,
+	});
+	return converted.amount ?? 0;
+}
+
 function getRangeCutoff(range: OverviewRange) {
 	const now = Date.now();
 	if (range === "24h") return new Date(now - 24 * 60 * 60 * 1000);
 	if (range === "7d") return new Date(now - 7 * 24 * 60 * 60 * 1000);
 	if (range === "30d") return new Date(now - 30 * 24 * 60 * 60 * 1000);
 	return null;
+}
+
+function toUtcHour(date: Date) {
+	return new Date(Math.floor(date.getTime() / 3_600_000) * 3_600_000);
 }
 
 function getBucketKey(date: Date, range: OverviewRange, timezone: string) {

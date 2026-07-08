@@ -10,6 +10,7 @@ export type WorkbenchArtifactRouteState =
 	| { kind: "todo" }
 	| { kind: "project_tree"; mode: ProjectArtifactMode; filePath: string | null }
 	| { kind: "plan_mode_workspace"; tab: PlanWorkspaceTab }
+	| { kind: "test_mode" }
 	| { kind: "review_status" }
 	| { kind: "artifact_ref"; artifactId: string };
 
@@ -201,6 +202,9 @@ function appendArtifactSearch(
 			params.set("artifact", "plan_mode_workspace");
 			params.set("tab", artifact.tab);
 			return;
+		case "test_mode":
+			params.set("artifact", "test_mode");
+			return;
 		case "review_status":
 			params.set("artifact", "review_status");
 			return;
@@ -236,6 +240,7 @@ export function artifactRouteFromSearch(
 			tab: normalizePlanWorkspaceTab(search.tab),
 		};
 	}
+	if (artifact === "test_mode") return { kind: "test_mode" };
 	if (artifact === "review_status") return { kind: "review_status" };
 	return null;
 }

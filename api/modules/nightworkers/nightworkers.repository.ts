@@ -339,6 +339,18 @@ export async function createTaskMessage(data: {
 	return message;
 }
 
+export async function updateTaskMessageMetadata(
+	messageId: string,
+	metadataJson: Record<string, unknown>,
+) {
+	const [message] = await db
+		.update(taskMessages)
+		.set({ metadataJson })
+		.where(eq(taskMessages.id, messageId))
+		.returning();
+	return message;
+}
+
 export async function createBlueprintActivityArtifact(data: {
 	taskId: string;
 	runId?: string | null;

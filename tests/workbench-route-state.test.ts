@@ -80,6 +80,13 @@ describe("workbench route state", () => {
 				artifact: { kind: "plan_mode_workspace", tab: "data-model" },
 			}),
 		).toBe("/sessions/session-1?artifact=plan_mode_workspace&tab=data-model");
+		expect(
+			serializeWorkbenchRoute({
+				kind: "session",
+				sessionId: "session-1",
+				artifact: { kind: "test_mode" },
+			}),
+		).toBe("/sessions/session-1?artifact=test_mode");
 	});
 
 	it("normalizes artifact search params and rejects unsafe project file paths", () => {
@@ -103,6 +110,9 @@ describe("workbench route state", () => {
 		expect(artifactRouteFromSearch({ artifactId: "artifact-1" })).toEqual({
 			kind: "artifact_ref",
 			artifactId: "artifact-1",
+		});
+		expect(artifactRouteFromSearch({ artifact: "test_mode" })).toEqual({
+			kind: "test_mode",
 		});
 		expect(normalizeRelativeProjectPath("/tmp/App.tsx")).toBeNull();
 		expect(normalizeRelativeProjectPath("C:\\tmp\\App.tsx")).toBeNull();

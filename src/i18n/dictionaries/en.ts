@@ -573,6 +573,7 @@ export const enDictionary = {
 	"thread.noPlanModeWorkspace": "No Plan Mode Workspace",
 	"thread.todoArtifact": "TODO",
 	"thread.noTodoArtifact": "No TODO artifact",
+	"thread.testModeArtifact": "Test Mode",
 	"thread.emptyPrompt": "Select a work thread or start from the input below",
 	"todoPane.noActiveTodo": "No active Todo",
 	"modelControls.model": "Model",

@@ -5,6 +5,14 @@ export {
 	summarizeLlmUsageForTask,
 } from "./repository";
 export type {
+	LlmUsageSummaryBackfillResult,
+	LlmUsageSummaryIntegrityResult,
+} from "./summary";
+export {
+	checkLlmUsageSummaryIntegrity,
+	rebuildLlmUsageSummary,
+} from "./summary";
+export type {
 	LlmPromptPartTokenEstimates,
 	LlmUsageMode,
 	NormalizedLlmUsage,

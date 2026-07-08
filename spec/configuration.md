@@ -188,15 +188,30 @@ bun run desktop:build
 bun run desktop:smoke
 ```
 
-`bun run desktop:build` produces a macOS `.app`. `bun run desktop:smoke` launches that
-app and checks the sidecar health endpoint, overview endpoint, implementation
-queue endpoint, WebSocket startup, desktop/sidecar log output, and shutdown.
-`bun run verify` includes desktop runtime tests, Rust lint, desktop build,
-staged sidecar smoke, and packaged app smoke. `bun run desktop:smoke` can also
-be run directly when rechecking release/adoption readiness without rerunning the
-full default gate. `bun run verify:full` adds `bun run test run` after the
-default gate; that command is the full non-E2E/non-live Vitest suite selected by
-`vitest.config.ts`. `bun run desktop:build:dmg` is kept as a separate release
-gate because DMG creation can fail on local mount/Finder state.
-`bun run desktop:sign` requires `NIGHTWORKERS_DESKTOP_APP_PATH` and
-`APPLE_DEVELOPER_ID_APPLICATION`.
+On macOS, `bun run desktop:build` produces a `.app`. `bun run desktop:smoke`
+launches that app and checks the sidecar health endpoint, overview endpoint,
+implementation queue endpoint, WebSocket startup, desktop/sidecar log output,
+and shutdown. `bun run verify` includes desktop runtime tests, Linux/Windows
+packaging readiness checks, Rust lint, desktop build, staged sidecar smoke, and
+packaged app smoke. `bun run desktop:smoke` can also be run directly when
+rechecking release/adoption readiness without rerunning the full default gate.
+`bun run verify:full` adds `bun run test run` after the default gate; that
+command is the full non-E2E/non-live Vitest suite selected by
+`vitest.config.ts`.
+
+Linux and Windows packaging is configured through platform-specific Tauri
+config files:
+
+```bash
+bun run desktop:check:cross-platform
+bun run desktop:build:linux
+bun run desktop:build:windows
+```
+
+Run `desktop:build:linux` on a Linux build host to produce `.deb`, `.rpm`, and
+AppImage artifacts. Run `desktop:build:windows` on an x64 Windows build host to
+produce NSIS and MSI installers. `desktop:check:cross-platform` is safe to run
+on macOS because it only validates config, scripts, and sidecar target metadata.
+`bun run desktop:build:dmg` is kept as a separate release gate because DMG
+creation can fail on local mount/Finder state. `bun run desktop:sign` requires
+`NIGHTWORKERS_DESKTOP_APP_PATH` and `APPLE_DEVELOPER_ID_APPLICATION`.

@@ -189,7 +189,7 @@ function assertParsedJsonlIsUsable(parsed?: ParsedRunJsonl): void {
 	);
 	if (error) {
 		throw new AppError(400, "INVALID_REPLAY_JSONL", error.message, {
-			code: error.code,
+			diagnosticCode: error.code,
 			line: error.line,
 		});
 	}

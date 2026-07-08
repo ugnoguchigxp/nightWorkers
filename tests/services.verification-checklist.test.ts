@@ -45,6 +45,26 @@ describe("verification checklist matcher", () => {
 		expect(updated[0]?.status).toBe("unknown");
 		expect(summarizeChecklist(updated).complete).toBe(false);
 	});
+
+	it("does not treat skipped matching cases as passed", () => {
+		const updated = applyEvidenceToChecklist({
+			items: [item("AC-001")],
+			evidence: evidence({
+				exitCode: 0,
+				cases: [
+					{
+						id: "case-1",
+						name: "[AC-001] creates task",
+						status: "skipped",
+						conditionIds: ["AC-001"],
+					},
+				],
+			}),
+		});
+
+		expect(updated[0]?.status).toBe("unknown");
+		expect(summarizeChecklist(updated).complete).toBe(false);
+	});
 });
 
 function item(conditionId: string): VerificationChecklistItem {

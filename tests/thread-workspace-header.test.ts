@@ -44,7 +44,9 @@ describe("ThreadWorkspace header", () => {
 
 		expect(shellSource).toContain("startSessionAndFocusTodo");
 		expect(shellSource).toContain("await current.startRun(sessionId);");
-		expect(shellSource).toContain("setArtifactFocus({ type: 'todo' });");
+		expect(shellSource).toMatch(
+			/setArtifactFocus\(\{\s*type:\s*['"]todo['"]\s*\}\);/,
+		);
 		expect(shellSource).toContain("queueSessionAndFocusTodo");
 		expect(shellSource).toContain(
 			"await queueState.createImplementationQueueEntry(sessionId);",
@@ -58,29 +60,30 @@ describe("ThreadWorkspace header", () => {
 			"src/modules/nightworkers/components/NightWorkersShell.tsx",
 			"utf8",
 		);
+		const panelSource = readFileSync(
+			"src/modules/nightworkers/components/NightWorkersShellThreadPanel.tsx",
+			"utf8",
+		);
 
-		expect(shellSource).toContain(
-			"void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'status');",
+		expect(shellSource).toMatch(
+			/void openQuestionnaireWorkspace\(latestQuestionnaireMessage, ['"]status['"]\);/,
 		);
-		expect(shellSource).toContain(
-			"void openQuestionnaireWorkspace(latestQuestionnaireMessage, 'questionnaire');",
-		);
-		expect(shellSource).toContain("existingQuestionnaireMessageIds");
-		expect(shellSource).toContain(
+		expect(panelSource).toContain("existingQuestionnaireMessageIds");
+		expect(panelSource).toContain(
 			"!existingQuestionnaireMessageIds.has(message.id)",
 		);
-		expect(shellSource).toContain("if (!result?.run)");
+		expect(panelSource).toContain("if (!result?.run)");
 	});
 
 	it("shows the plan route before implementation in the composer model selector", () => {
 		const shellSource = readFileSync(
-			"src/modules/nightworkers/components/NightWorkersShell.tsx",
+			"src/modules/nightworkers/components/nightworkers-shell-utils.ts",
 			"utf8",
 		);
 
-		const rolePriority = shellSource.indexOf(
-			"const roles = ['plan', 'implementation'] as const;",
-		);
+		const roleRegex =
+			/const roles = \s*\[\s*(['"])plan\1\s*,\s*\1implementation\1\s*\]\s*as\s*const\s*;/;
+		const rolePriority = shellSource.search(roleRegex);
 		expect(rolePriority).toBeGreaterThanOrEqual(0);
 		expect(rolePriority).toBeLessThan(
 			shellSource.indexOf("for (const role of roles)"),

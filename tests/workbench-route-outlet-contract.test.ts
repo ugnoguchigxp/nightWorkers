@@ -23,7 +23,7 @@ describe("workbench nested route outlet contract", () => {
 		const source = readRoute("src/routes/settings.tsx");
 
 		expect(source).toContain("Outlet");
-		expect(source).toContain("location.pathname !== '/settings'");
+		expect(source).toMatch(/location\.pathname !== ['"]\/settings['"]/);
 		expect(source).toContain("return <Outlet />");
 	});
 
@@ -32,11 +32,11 @@ describe("workbench nested route outlet contract", () => {
 			"src/modules/nightworkers/components/ProjectSidebar.tsx",
 		);
 
-		expect(source).toContain("kind: 'overview'");
-		expect(source).toContain("kind: 'project_detail'");
-		expect(source).toContain("kind: 'project_queue'");
-		expect(source).toContain("kind: 'session'");
-		expect(source).toContain("tab: 'overview'");
+		expect(source).toMatch(/kind: ['"]overview['"]/);
+		expect(source).toMatch(/kind: ['"]project_detail['"]/);
+		expect(source).toMatch(/kind: ['"]project_queue['"]/);
+		expect(source).toMatch(/kind: ['"]session['"]/);
+		expect(source).toMatch(/tab: ['"]overview['"]/);
 		expect(source).toContain("handleWorkbenchAnchorClick");
 		expect(source).not.toContain("handleSidebarAnchorClick");
 	});
@@ -53,13 +53,13 @@ describe("workbench nested route outlet contract", () => {
 			"src/modules/queue/ProjectQueueScreen.tsx",
 		);
 
-		expect(projectDetailSource).toContain("kind: 'project_detail'");
+		expect(projectDetailSource).toMatch(/kind: ['"]project_detail['"]/);
 		expect(projectDetailSource).toContain("handleWorkbenchAnchorClick");
-		expect(overviewSource).toContain("kind: 'overview'");
-		expect(overviewSource).toContain("kind: 'session'");
-		expect(settingsSource).toContain("kind: 'settings'");
-		expect(settingsSource).toContain("kind: 'overview'");
-		expect(projectQueueSource).toContain("kind: 'project_queue'");
+		expect(overviewSource).toMatch(/kind: ['"]overview['"]/);
+		expect(overviewSource).toMatch(/kind: ['"]session['"]/);
+		expect(settingsSource).toMatch(/kind: ['"]settings['"]/);
+		expect(settingsSource).toMatch(/kind: ['"]overview['"]/);
+		expect(projectQueueSource).toMatch(/kind: ['"]project_queue['"]/);
 		expect(projectQueueSource).toContain('data-view-toggle="project-queue"');
 	});
 });

@@ -83,6 +83,7 @@ export type WorkbenchArtifactKind =
 	| "diff"
 	| "source_preview"
 	| "test_result"
+	| "test_mode"
 	| "review_result"
 	| "review_status"
 	| "run_ledger"
@@ -122,7 +123,8 @@ export type WorkbenchArtifactRef = {
 		| { type: "run_field"; runId: string; field: string }
 		| { type: "task_message"; messageId: string }
 		| { type: "run_event"; eventId: string }
-		| { type: "review_result"; reviewId: string };
+		| { type: "review_result"; reviewId: string }
+		| { type: "test_mode" };
 	createdAt: string;
 	metadata?: Record<string, unknown>;
 };

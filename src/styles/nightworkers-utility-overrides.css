@@ -133,9 +133,46 @@
 	);
 }
 
-.nightworkers-shell .nightworkers-review-run-button:not(:disabled),
-.nightworkers-shell .nightworkers-review-run-button:not(:disabled) svg {
-	color: #020617;
+.nightworkers-shell .nightworkers-primary-action-button:not(:disabled),
+.nightworkers-shell .nightworkers-composer-submit-ready {
+	background: var(--nw-primary);
+	border-color: color-mix(in srgb, var(--nw-primary) 72%, var(--nw-border));
+	color: var(--nw-primary-foreground);
+}
+
+.nightworkers-shell .nightworkers-primary-action-button:not(:disabled):hover {
+	background: color-mix(in srgb, var(--nw-primary) 88%, var(--nw-text));
+}
+
+.nightworkers-shell .nightworkers-primary-action-button:focus-visible {
+	outline-color: color-mix(in srgb, var(--nw-primary) 82%, var(--nw-text));
+}
+
+.nightworkers-shell .nightworkers-success-action-button:not(:disabled) {
+	background: var(--nw-success);
+	border-color: color-mix(in srgb, var(--nw-success) 72%, var(--nw-border));
+	color: var(--nw-primary-foreground);
+}
+
+.nightworkers-shell .nightworkers-success-action-button:not(:disabled):hover {
+	background: color-mix(in srgb, var(--nw-success) 86%, var(--nw-text));
+}
+
+.nightworkers-shell .nightworkers-success-action-button:focus-visible {
+	outline-color: color-mix(in srgb, var(--nw-success) 82%, var(--nw-text));
+}
+
+.nightworkers-shell .nightworkers-primary-action-button:disabled,
+.nightworkers-shell .nightworkers-success-action-button:disabled {
+	background: var(--nw-surface-soft);
+	border-color: var(--nw-border);
+	color: var(--nw-subtle-text);
+	opacity: 0.7;
+}
+
+.nightworkers-shell .nightworkers-primary-action-button svg,
+.nightworkers-shell .nightworkers-success-action-button svg {
+	color: currentColor;
 }
 
 .nightworkers-settings-button,
@@ -198,11 +235,6 @@
 .nightworkers-composer-submit {
 	border-radius: var(--nw-control-radius);
 	min-height: var(--nw-control-height);
-}
-
-.nightworkers-composer-submit-ready {
-	background: var(--nw-primary);
-	color: var(--nw-primary-foreground);
 }
 
 .nightworkers-composer-submit-idle {

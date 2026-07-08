@@ -48,6 +48,7 @@ function annotateCompletionConditions(markdown: string): {
 	const conditions: VerificationCondition[] = [];
 	let inCompletionSection = false;
 	let conditionIndex = 1;
+	const usedConditionIds = new Set<string>();
 	const nextLines = lines.map((line) => {
 		const heading = line.match(/^(#{2,6})\s+(.+?)\s*$/);
 		if (heading) {
@@ -58,20 +59,34 @@ function annotateCompletionConditions(markdown: string): {
 			return line;
 		}
 		if (!inCompletionSection) return line;
-		const bullet = line.match(/^(\s*[-*]\s+)(.+)$/);
+		const bullet = line.match(/^(\s*(?:[-*+]|\d+[.)])\s+)(.+)$/);
 		if (!bullet) return line;
-		const text = bullet[2]?.trim() || "";
-		if (!text || /^\[[xX\s]\]/.test(text)) return line;
+		const rawText = bullet[2]?.trim() || "";
+		if (!rawText || /^\[[xX]\]/.test(rawText)) return line;
+		const text = rawText.replace(/^\[\s\]\s*/, "");
 		const existingId = text.match(/^\[?(AC-\d{3})\]?\s*[:：-]?\s*(.+)$/);
 		const id =
-			existingId?.[1] || `AC-${String(conditionIndex).padStart(3, "0")}`;
+			existingId?.[1] && !usedConditionIds.has(existingId[1])
+				? existingId[1]
+				: nextAvailableConditionId(usedConditionIds, conditionIndex);
 		const conditionText = (existingId?.[2] || text).trim();
 		conditionIndex += 1;
+		usedConditionIds.add(id);
 		conditions.push(buildCondition(id, conditionText));
-		if (existingId) return line;
+		if (existingId?.[1] === id) return line;
 		return `${bullet[1]}[${id}] ${conditionText}`;
 	});
 	return { content: nextLines.join("\n"), conditions };
+}
+
+function nextAvailableConditionId(usedIds: Set<string>, startIndex: number) {
+	let index = Math.max(1, startIndex);
+	let id = `AC-${String(index).padStart(3, "0")}`;
+	while (usedIds.has(id)) {
+		index += 1;
+		id = `AC-${String(index).padStart(3, "0")}`;
+	}
+	return id;
 }
 
 function buildCondition(id: string, text: string): VerificationCondition {
@@ -194,11 +209,11 @@ function extractSection(markdown: string, headingPattern: RegExp): string {
 
 function collectWorkspaceArtifactIds(workspace: PlanModeWorkspace): string[] {
 	return [
-		...workspace.featurePlanArtifacts,
-		...workspace.blueprintArtifacts,
-		...workspace.dataModelArtifacts,
-		...workspace.dedicatedViewArtifacts,
-		...workspace.decisionReviews,
-		...workspace.implementationReferences,
+		...(workspace.featurePlanArtifacts || []),
+		...(workspace.blueprintArtifacts || []),
+		...(workspace.dataModelArtifacts || []),
+		...(workspace.dedicatedViewArtifacts || []),
+		...(workspace.decisionReviews || []),
+		...(workspace.implementationReferences || []),
 	].map((artifact) => artifact.id);
 }

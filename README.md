@@ -88,7 +88,7 @@ Details: [Architecture and Module Boundaries](./spec/architecture.md)
 ## Requirements
 - Bun 1.3+
 - Node.js 20+ only for the packaged desktop sidecar and Node-based tooling
-- Rust toolchain and macOS build tools for desktop packaging
+- Rust toolchain and target OS build tools for desktop packaging
 
 ## Quick Start
 1. Prepare local dependencies, environment, migrations, and seed data
@@ -166,7 +166,7 @@ Read [Trust Model](./spec/trust-model.md) before connecting provider
 credentials, MCP servers, hooks, or a repository that contains sensitive data.
 
 ## Desktop App
-NightWorkers can also be built as a macOS Tauri app. The desktop shell launches
+NightWorkers can also be built as a Tauri desktop app. The desktop shell launches
 the Vite frontend in a WebView and manages the Node backend as a sidecar.
 
 ```bash
@@ -174,11 +174,24 @@ bun run desktop:build
 bun run desktop:smoke
 ```
 
-The generated app is written to:
+On macOS, the default generated app is written to:
 
 ```text
 src-tauri/target/release/bundle/macos/NightWorkers.app
 ```
+
+Linux and Windows package targets are prepared with platform-specific Tauri
+config files. Run these on the matching OS build host:
+
+```bash
+bun run desktop:build:linux
+bun run desktop:build:windows
+```
+
+Linux builds target `.deb`, `.rpm`, and AppImage artifacts. Windows builds target
+x64 NSIS and MSI installers. `bun run desktop:check:cross-platform` verifies the
+Linux/Windows bundle config and sidecar target metadata without launching a
+non-macOS app.
 
 Desktop runtime state is stored under the resolved runtime directory. Set
 `NIGHTWORKERS_RUNTIME_DIR` to force a specific location; otherwise the packaged
@@ -198,10 +211,10 @@ The main files are `desktop.log` for the Tauri shell startup path, `sidecar.log`
 for the bundled Node process stdout/stderr, and `api.log` for API request and
 runtime events.
 
-The desktop build currently produces a verified `.app` artifact. DMG creation is
-kept as a separate release gate via `bun run desktop:build:dmg` because create-dmg
-can fail on local mount/Finder state. Signing requires Developer ID credentials
-and is run separately with `bun run desktop:sign`.
+The default desktop build on macOS currently produces a verified `.app` artifact.
+DMG creation is kept as a separate release gate via `bun run desktop:build:dmg`
+because create-dmg can fail on local mount/Finder state. Signing requires
+Developer ID credentials and is run separately with `bun run desktop:sign`.
 
 ## Configuration
 Important environment variables:
@@ -228,8 +241,11 @@ Detailed runtime configuration:
 | `bun run build` | Build frontend and backend |
 | `bun run start` | Start production backend bundle |
 | `bun run desktop:dev` | Start the Tauri desktop app in development mode |
-| `bun run desktop:build` | Build the macOS `.app` desktop artifact |
+| `bun run desktop:build` | Build the default desktop artifact for the current OS |
 | `bun run desktop:build:dmg` | Build a DMG release artifact as a separate gate |
+| `bun run desktop:build:linux` | Build Linux `.deb`, `.rpm`, and AppImage artifacts on Linux |
+| `bun run desktop:build:windows` | Build Windows NSIS and MSI installers on Windows |
+| `bun run desktop:check:cross-platform` | Statically verify Linux/Windows desktop packaging readiness |
 | `bun run desktop:lint` | Run Rust format and Clippy checks for the Tauri shell |
 | `bun run desktop:prepare-sidecar` | Stage the Node sidecar runtime resources |
 | `bun run desktop:smoke-sidecar` | Smoke-test the staged sidecar health endpoint |
@@ -254,7 +270,7 @@ Detailed runtime configuration:
 | `bun run verify:full` | Run `verify` plus `bun run test run` |
 
 ## Testing
-- Default gate: `bun run verify` runs TypeScript, Biome, supervisor regression tests, desktop runtime tests, Rust format/Clippy checks, Tauri `.app` build, staged sidecar smoke, and packaged app smoke.
+- Default gate: `bun run verify` runs TypeScript, Biome, supervisor regression tests, desktop runtime tests, Linux/Windows desktop readiness checks, Rust format/Clippy checks, the current-OS Tauri desktop build, staged sidecar smoke, and packaged app smoke.
 - Fast gate: `bun run verify:fast` runs only the TypeScript/Biome/supervisor regression base gate.
 - Full gate: `bun run verify:full` runs the default gate plus `bun run test run`, which is the full non-E2E/non-live Vitest suite selected by `vitest.config.ts` (`tests/**/*.{test,spec}.{ts,tsx}` excluding `tests/e2e/**` and `tests/live/**`). Use it when a change touches runtime behavior, API contracts, schemas, or user-visible flows.
 - Coverage report: `bun run test:coverage` runs the same non-E2E/non-live Vitest suite with V8 coverage and writes `coverage/coverage-summary.json`; use the summary to track statements, branches, functions, and lines toward the 80% target.
@@ -265,7 +281,7 @@ Detailed runtime configuration:
 - End-to-end: Playwright (`@smoke`, `@regression` tags)
 - Agent outcome E2E: `bun run test:e2e:agent-outcome` uses the deterministic `test` provider, scratch git workspaces, real API/DB/run event paths, and requires no provider credentials. Set `KEEP_E2E_WORKSPACE=1` to keep the scratch workspace after a failure.
 - Live agent E2E: `bun run test:e2e:agent-live` is optional and skips unless provider credentials are configured.
-- If validation fails, first identify the phase that failed: TypeScript (`bun run typecheck`), Biome (`bun run lint`), Rust/Tauri (`bun run desktop:lint` / `bun run desktop:build`), sidecar or packaged smoke (`bun run desktop:smoke-sidecar` / `bun run desktop:smoke`), Vitest (`bun run test run`), coverage (`bun run test:coverage`), or Playwright (`bun run test:e2e:smoke`).
+- If validation fails, first identify the phase that failed: TypeScript (`bun run typecheck`), Biome (`bun run lint`), desktop packaging readiness (`bun run desktop:check:cross-platform`), Rust/Tauri (`bun run desktop:lint` / `bun run desktop:build`), sidecar or packaged smoke (`bun run desktop:smoke-sidecar` / `bun run desktop:smoke`), Vitest (`bun run test run`), coverage (`bun run test:coverage`), or Playwright (`bun run test:e2e:smoke`).
 - Do not describe a red Full Vitest or coverage run as passing. Record the failing command, failing test file(s) or below-target metric, and the next repair target separately from any green narrower gate used for interim confidence.
 - Recommended pre-PR validation:
 ```bash

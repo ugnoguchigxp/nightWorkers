@@ -103,7 +103,7 @@ describe("Worker Tools Unit Tests", () => {
 		expect(result.ok).toBe(true);
 		expect(result.payload.verified).toBe(true);
 		expect(result.payload.truncated).toBe(true);
-		expect(result.payload.stdout).toContain("[command-output-compressed]");
+		expect(result.payload.stdout).toContain("OK verify");
 		expect(result.payload.reason).toBe("large verification output fixture");
 		expect(result.payload.logArtifactPath).toBeTruthy();
 	});

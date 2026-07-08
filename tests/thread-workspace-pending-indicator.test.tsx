@@ -28,6 +28,12 @@ const baseProps = {
 	onOpenBlueprintArtifact: vi.fn(),
 	isBlueprintArtifactOpen: false,
 	isBlueprintActionBusy: false,
+	onOpenReviewArtifact: vi.fn(),
+	isReviewArtifactOpen: false,
+	hasReviewArtifact: false,
+	isReviewActionBusy: false,
+	onOpenTestModeArtifact: vi.fn(),
+	isTestModeArtifactOpen: false,
 	onOpenTodoArtifact: vi.fn(),
 	isTodoArtifactOpen: false,
 	hasTodoArtifact: false,
@@ -99,5 +105,6 @@ describe("ThreadWorkspace pending indicator", () => {
 		expect(markup).toContain("AIが返答を生成中です");
 		expect(markup).toContain("nightworkers-thinking-dot");
 		expect(markup).not.toContain("AIが作業中");
+		expect(markup).toContain('aria-label="thread.testModeArtifact"');
 	});
 });

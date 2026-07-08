@@ -146,6 +146,37 @@ export function useNightWorkersRouteArtifactSync(input: {
 			}
 			return;
 		}
+		if (artifact.kind === "test_mode") {
+			const task = workspace.activeSession;
+			if (!task) {
+				setArtifactFocus((current) =>
+					current.type === "closed" ? current : { type: "closed" },
+				);
+				return;
+			}
+			const testModeArtifactId = `test-mode-${task.id}`;
+			setArtifactFocus((current) => {
+				if (
+					current.type === "artifact" &&
+					current.artifact.id === testModeArtifactId
+				) {
+					return current;
+				}
+				return {
+					type: "artifact",
+					artifact: {
+						id: testModeArtifactId,
+						taskId: task.id,
+						kind: "test_mode",
+						title: "Test Mode",
+						summary: "Verification Checklist and Test Mode run launcher",
+						source: { type: "test_mode" },
+						createdAt: String(task.updatedAt || task.createdAt),
+					},
+				};
+			});
+			return;
+		}
 		const existing = workspace.activeArtifactRefs.find(
 			(item) => item.id === artifact.artifactId,
 		);

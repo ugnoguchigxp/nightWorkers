@@ -107,6 +107,11 @@ function reviewRunPayload(
 	return artifact.artifact as ReviewRunArtifactPayload;
 }
 
+const reviewActionButtonBaseClass =
+	"inline-flex h-8 items-center justify-center gap-1.5 rounded border px-3 text-xs font-semibold shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:shadow-none";
+const reviewPrimaryActionButtonClass = `${reviewActionButtonBaseClass} nightworkers-primary-action-button`;
+const reviewSuccessActionButtonClass = `${reviewActionButtonBaseClass} nightworkers-success-action-button`;
+
 export function ReviewStatusViewer({
 	detail,
 	onStartReviewRun,
@@ -165,9 +170,6 @@ export function ReviewStatusViewer({
 		!commitAlreadyDone &&
 		busySection !== "git_commit";
 	const commitButtonDisabled = !onCommitGitCloseout || !canCommitReviewedRun;
-	const commitButtonClass = commitButtonDisabled
-		? "inline-flex h-8 cursor-not-allowed items-center justify-center gap-1.5 rounded border border-slate-700 bg-slate-900 px-3 text-xs font-semibold text-slate-500 opacity-70 shadow-none"
-		: "inline-flex h-8 items-center justify-center gap-1.5 rounded border border-emerald-200 bg-emerald-300 px-3 text-xs font-semibold text-slate-950 shadow-sm shadow-emerald-950/30 transition hover:bg-emerald-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-200";
 	const commitButtonTitle = commitAlreadyDone
 		? "この run は既にコミット済みです。"
 		: gitCloseout?.blockingReason;
@@ -180,7 +182,7 @@ export function ReviewStatusViewer({
 				description:
 					"このタスクを ready に戻し、通常のアクティブタスクとして再開できる状態にします。",
 				icon: <ArchiveRestore className="h-3.5 w-3.5" />,
-				tone: "cyan",
+				buttonClass: reviewPrimaryActionButtonClass,
 				disabled: !onRestoreArchivedTask || taskArchiveBusy,
 				run: () => onRestoreArchivedTask?.(detail.session.taskId),
 			}
@@ -189,14 +191,10 @@ export function ReviewStatusViewer({
 				description:
 					"このレビュー対象タスクを完全に完了したものとして扱い、アーカイブタスクへ移動します。",
 				icon: <Archive className="h-3.5 w-3.5" />,
-				tone: "emerald",
+				buttonClass: reviewSuccessActionButtonClass,
 				disabled: !onCompleteAndArchiveTask || taskArchiveBusy,
 				run: () => onCompleteAndArchiveTask?.(detail.session.taskId),
 			};
-	const taskArchiveButtonClass =
-		taskArchiveAction.tone === "emerald"
-			? "inline-flex h-8 items-center justify-center gap-1.5 rounded border border-emerald-200 bg-emerald-300 px-3 text-xs font-semibold text-slate-950 shadow-sm shadow-emerald-950/30 transition hover:bg-emerald-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-200 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500 disabled:shadow-none"
-			: "inline-flex h-8 items-center justify-center gap-1.5 rounded border border-cyan-200 bg-cyan-300 px-3 text-xs font-semibold text-slate-950 shadow-sm shadow-cyan-950/30 transition hover:bg-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-200 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500 disabled:shadow-none";
 	return (
 		<div className="nightworkers-review-status h-full overflow-auto bg-slate-950 p-5 text-slate-100">
 			<div className="mx-auto grid max-w-5xl gap-5">
@@ -247,7 +245,7 @@ export function ReviewStatusViewer({
 						</div>
 						<button
 							type="button"
-							className="nightworkers-review-run-button inline-flex h-8 items-center justify-center gap-1.5 rounded border border-cyan-200 bg-cyan-300 px-3 text-xs font-semibold text-slate-950 shadow-sm shadow-cyan-950/30 transition hover:bg-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-200 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500 disabled:shadow-none"
+							className={`nightworkers-review-run-button ${reviewPrimaryActionButtonClass}`}
 							disabled={!onStartReviewRun || reviewRunInProgress}
 							onClick={async () => {
 								if (!onStartReviewRun || reviewRunInProgress) return;
@@ -327,7 +325,7 @@ export function ReviewStatusViewer({
 						</div>
 						<button
 							type="button"
-							className={commitButtonClass}
+							className={reviewSuccessActionButtonClass}
 							title={commitButtonTitle ?? undefined}
 							disabled={commitButtonDisabled}
 							onClick={async () => {
@@ -412,7 +410,7 @@ export function ReviewStatusViewer({
 					</div>
 					<button
 						type="button"
-						className={taskArchiveButtonClass}
+						className={taskArchiveAction.buttonClass}
 						disabled={taskArchiveAction.disabled}
 						onClick={async () => {
 							setBusySection("task_archive");

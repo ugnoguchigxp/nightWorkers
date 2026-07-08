@@ -163,6 +163,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 			selectedArtifact?.kind === "app_blueprint");
 	const isReviewArtifactOpen =
 		artifactPaneOpen && selectedArtifact?.kind === "review_status";
+	const isTestModeArtifactOpen =
+		artifactPaneOpen && selectedArtifact?.kind === "test_mode";
 	const hasTodoArtifact = Boolean(workspace.activeSession);
 	const isActiveImplementationLocked = isImplementationLockedStatus(
 		workspace.activeSession?.status,
@@ -213,7 +215,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		}
 		if (
 			selectedArtifact.kind === "plan_mode_workspace" ||
-			selectedArtifact.kind === "review_status"
+			selectedArtifact.kind === "review_status" ||
+			selectedArtifact.kind === "test_mode"
 		)
 			return;
 		const stillAvailable = workspace.activeArtifactRefs.some(
@@ -465,6 +468,33 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		props.onNavigate,
 		reviewStatusTitle,
 	]);
+	const handleOpenTestModeArtifact = useCallback(() => {
+		const task = workspaceRef.current.activeSession;
+		if (!task) return;
+		if (isTestModeArtifactOpen) {
+			setArtifactFocus({ type: "closed" });
+			props.onNavigate({ kind: "session", sessionId: task.id, artifact: null });
+			return;
+		}
+		setClearedArtifactContextId(null);
+		setArtifactFocus({
+			type: "artifact",
+			artifact: {
+				id: `test-mode-${task.id}`,
+				taskId: task.id,
+				kind: "test_mode",
+				title: "Test Mode",
+				summary: "Verification Checklist and Test Mode run launcher",
+				source: { type: "test_mode" },
+				createdAt: String(task.updatedAt || task.createdAt),
+			},
+		});
+		props.onNavigate({
+			kind: "session",
+			sessionId: task.id,
+			artifact: { kind: "test_mode" },
+		});
+	}, [isTestModeArtifactOpen, props.onNavigate]);
 	const focusTodoArtifact = useCallback(
 		(sessionId: string) => {
 			setClearedArtifactContextId(null);
@@ -930,6 +960,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 							isBlueprintArtifactOpen={isBlueprintArtifactOpen}
 							onOpenReviewArtifact={handleOpenReviewArtifact}
 							isReviewArtifactOpen={isReviewArtifactOpen}
+							onOpenTestModeArtifact={handleOpenTestModeArtifact}
+							isTestModeArtifactOpen={isTestModeArtifactOpen}
 							onOpenTodoArtifact={handleOpenTodoArtifact}
 							startSessionAndFocusTodo={startSessionAndFocusTodo}
 							queueActiveSessionAndFocusTodo={queueActiveSessionAndFocusTodo}

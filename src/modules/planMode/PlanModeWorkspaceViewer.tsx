@@ -1,5 +1,6 @@
-import { LoaderCircle } from "lucide-react";
+import { FlaskConical, LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toDeepRecord } from "../../../shared/json-record";
 import type { PlanModeRegenerationTarget } from "../../../shared/schemas/plan-mode-artifact.schema";
 import { generateBlueprintArtifact } from "../blueprint";
 import { generateDataModelArtifact } from "../dataModel";
@@ -284,6 +285,7 @@ export function PlanModeWorkspaceViewer({
 	onArtifactContextChange,
 	onQueueSession,
 	onAddToQueue,
+	onStartTestModeRun,
 	isImplementationLocked = false,
 }: {
 	sessionId: string | null;
@@ -294,6 +296,10 @@ export function PlanModeWorkspaceViewer({
 	onArtifactContextChange?: (context: WorkbenchArtifactContext | null) => void;
 	onQueueSession?: () => Promise<void>;
 	onAddToQueue?: () => Promise<void>;
+	onStartTestModeRun?: (input: {
+		specArtifactId: string;
+		verificationDocumentId: string;
+	}) => Promise<boolean>;
 	isImplementationLocked?: boolean;
 }) {
 	const [workspace, setWorkspace] = useState<PlanModeWorkspace | null>(null);
@@ -308,6 +314,7 @@ export function PlanModeWorkspaceViewer({
 	const [busyAction, setBusyAction] = useState<string | null>(null);
 	const [actionError, setActionError] = useState<string | null>(null);
 	const [actionNotice, setActionNotice] = useState<string | null>(null);
+	const [testModeStatus, setTestModeStatus] = useState<string | null>(null);
 	const [generalSettings, setGeneralSettings] =
 		useState<GeneralSettings | null>(null);
 	const [, setAssemblyReadySessionIds] = useState<Set<string>>(new Set());
@@ -330,6 +337,14 @@ export function PlanModeWorkspaceViewer({
 		activeBlueprintSourceMessageId,
 	} = workspaceMessages;
 	const featurePlanMessage = designDocMessages.at(-1) || null;
+	const featurePlanVerification = useMemo(
+		() =>
+			buildFeaturePlanVerificationModel({
+				featurePlanMessage,
+				taskMessages,
+			}),
+		[featurePlanMessage, taskMessages],
+	);
 	const viewDecisions = useMemo(
 		() => extractViewDecisions(taskMessages),
 		[taskMessages],
@@ -851,11 +866,34 @@ export function PlanModeWorkspaceViewer({
 				className="nightworkers-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4"
 			>
 				{activeTab === "feature-plan" ? (
-					<MarkdownViewer
-						content={
-							featurePlanMessage?.content || "仕様書 artifact はありません。"
-						}
-					/>
+					<div className="grid gap-3">
+						{featurePlanVerification ? (
+							<FeaturePlanVerificationBar
+								model={featurePlanVerification}
+								canStart={Boolean(onStartTestModeRun)}
+								status={testModeStatus}
+								onStart={async () => {
+									if (
+										!onStartTestModeRun ||
+										!featurePlanVerification.verificationDocumentId
+									)
+										return;
+									setTestModeStatus("starting");
+									const ok = await onStartTestModeRun({
+										specArtifactId: featurePlanVerification.specArtifactId,
+										verificationDocumentId:
+											featurePlanVerification.verificationDocumentId,
+									});
+									setTestModeStatus(ok ? "started" : "failed");
+								}}
+							/>
+						) : null}
+						<MarkdownViewer
+							content={
+								featurePlanMessage?.content || "仕様書 artifact はありません。"
+							}
+						/>
+					</div>
 				) : activeTab === "blueprint" ? (
 					<div className="grid gap-3">
 						<WorkspaceBlueprintPreview
@@ -1056,6 +1094,112 @@ export function PlanModeWorkspaceViewer({
 	);
 }
 
+type FeaturePlanVerificationModel = {
+	specArtifactId: string;
+	verificationDocumentId: string | null;
+	conditions: Array<{
+		id: string;
+		text: string;
+		status: string;
+		required: boolean;
+	}>;
+};
+
+function buildFeaturePlanVerificationModel(input: {
+	featurePlanMessage: TaskMessage | null;
+	taskMessages: TaskMessage[];
+}): FeaturePlanVerificationModel | null {
+	const message = input.featurePlanMessage;
+	if (!message) return null;
+	const metadata = toDeepRecord(message.metadataJson);
+	if (readRecordString(metadata, "intent") !== "feature_plan") return null;
+	const verificationDocumentId =
+		readRecordString(metadata, "verificationDocumentId") ?? null;
+	const sidecarMessageId =
+		readRecordString(metadata, "verificationSidecarMessageId") ?? null;
+	const sidecarMessage = sidecarMessageId
+		? input.taskMessages.find((item) => item.id === sidecarMessageId) || null
+		: null;
+	const sidecarMetadata = toDeepRecord(sidecarMessage?.metadataJson);
+	const document = toDeepRecord(sidecarMetadata.verificationDocument);
+	const conditions = Array.isArray(document.conditions)
+		? document.conditions
+				.map((condition) => toDeepRecord(condition))
+				.map((condition) => ({
+					id: String(condition.id || ""),
+					text: String(condition.text || ""),
+					status: String(condition.status || "pending"),
+					required: readRecordBoolean(condition, "required") !== false,
+				}))
+				.filter((condition) => condition.id && condition.text)
+		: [];
+	if (!verificationDocumentId && conditions.length === 0) return null;
+	return {
+		specArtifactId: `feature-plan-${message.id}`,
+		verificationDocumentId,
+		conditions,
+	};
+}
+
+function FeaturePlanVerificationBar({
+	model,
+	canStart,
+	status,
+	onStart,
+}: {
+	model: FeaturePlanVerificationModel;
+	canStart: boolean;
+	status: string | null;
+	onStart: () => Promise<void>;
+}) {
+	const disabled =
+		!canStart || !model.verificationDocumentId || status === "starting";
+	return (
+		<div className="rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2">
+			<div className="flex items-center justify-between gap-3">
+				<div className="min-w-0">
+					<div className="text-xs font-semibold uppercase text-slate-300">
+						Verification Checklist
+					</div>
+					<div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
+						<span>{model.conditions.length} conditions</span>
+						{status === "started" ? <span>Test Mode run started</span> : null}
+						{status === "failed" ? <span>Test Mode start failed</span> : null}
+					</div>
+				</div>
+				<button
+					type="button"
+					className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 text-xs font-medium text-cyan-100 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-900 disabled:text-slate-500"
+					disabled={disabled}
+					onClick={() => void onStart()}
+					title={
+						model.verificationDocumentId
+							? "Start Test Mode"
+							: "verification JSON is missing"
+					}
+				>
+					<FlaskConical className="h-3.5 w-3.5" />
+					Test Artifact
+				</button>
+			</div>
+			{model.conditions.length > 0 ? (
+				<div className="mt-2 grid gap-1">
+					{model.conditions.slice(0, 3).map((condition) => (
+						<div
+							key={condition.id}
+							className="grid grid-cols-[4.5rem_6rem_minmax(0,1fr)] items-center gap-2 text-xs"
+						>
+							<span className="font-mono text-slate-400">{condition.id}</span>
+							<span className="text-slate-400">{condition.status}</span>
+							<span className="truncate text-slate-200">{condition.text}</span>
+						</div>
+					))}
+				</div>
+			) : null}
+		</div>
+	);
+}
+
 export function extractViewDecisions(
 	messages: TaskMessage[],
 ): PlanViewDecision[] {
@@ -1143,6 +1287,19 @@ function isCompletedStatus(status: string) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function readRecordString(
+	record: Record<string, unknown>,
+	key: string,
+): string | null {
+	const value = record[key];
+	return typeof value === "string" && value.trim() ? value : null;
+}
+
+function readRecordBoolean(record: Record<string, unknown>, key: string) {
+	const value = record[key];
+	return typeof value === "boolean" ? value : null;
 }
 
 function parseJsonRecord(value: string) {

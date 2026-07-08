@@ -364,6 +364,56 @@ describe("PlanModeWorkspaceViewer", () => {
 		expect(markup).not.toContain(">spec</button>");
 	});
 
+	it("shows Test Artifact on the feature plan tab when verification metadata exists", () => {
+		const featurePlan = buildTaskMessage({
+			id: "feature-plan-message",
+			content: "# Feature Plan\n\n## 完了条件\n- [AC-001] ユーザーを作成できる",
+			messageType: "markdown_document",
+			metadataJson: {
+				intent: "feature_plan",
+				title: "Feature Plan",
+				verificationDocumentId: "55555555-5555-4555-8555-555555555555",
+				verificationSidecarMessageId: "verification-message",
+				markdownDocumentData: {
+					title: "Feature Plan",
+				},
+			},
+		});
+		const verificationSidecar = buildTaskMessage({
+			id: "verification-message",
+			content: "{}",
+			messageType: "verification_json",
+			metadataJson: {
+				intent: "feature_plan_verification",
+				verificationDocument: {
+					conditions: [
+						{
+							id: "AC-001",
+							text: "ユーザーを作成できる",
+							status: "pending",
+							required: true,
+						},
+					],
+				},
+			},
+		});
+
+		const markup = renderToStaticMarkup(
+			createElement(PlanModeWorkspaceViewer, {
+				sessionId: "11111111-1111-4111-8111-111111111111",
+				taskMessages: [featurePlan, verificationSidecar],
+				activityArtifacts: [],
+				initialTab: "feature-plan",
+				onStartTestModeRun: async () => true,
+			}),
+		);
+
+		expect(markup).toContain("Test Artifact");
+		expect(markup).toContain("Verification Checklist");
+		expect(markup).toContain("AC-001");
+		expect(markup).toContain("ユーザーを作成できる");
+	});
+
 	it("does not reapply the Questionnaire initial tab after the gate unlocks", () => {
 		expect(resolveInitialPlanWorkspaceTabUpdate("questionnaire", true)).toBe(
 			"questionnaire",

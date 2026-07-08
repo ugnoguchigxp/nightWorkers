@@ -316,13 +316,8 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(prompt).toContain(
 			"Todo tracking、quality_gate_verify、closeout は省略しない",
 		);
-		expect(prompt).toContain("DB migration を実行する");
-		expect(prompt).toContain("read-only focused test / smoke");
-		expect(prompt).toContain(
-			"migration ファイル、DB schema、DB bootstrap / seed / persistence table 定義を作成・更新する必要が分かった時点",
-		);
-		expect(prompt).toContain("todoListReplaceReason=newly_required_work");
-		expect(prompt).toContain("隔離 DB の smoke だけ");
+		expect(prompt).toContain("DB schema 変更が必要または発生した時点で");
+		expect(prompt).toContain("DB migration Todo は、migration 作成");
 		expect(prompt).toContain("Questionnaire が unit 主軸なら");
 		expect(prompt).toContain("E2E Todo / E2E command を追加・実行しない");
 		expect(prompt).toContain("verify が format / typecheck / lint / test");
