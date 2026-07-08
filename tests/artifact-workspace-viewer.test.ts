@@ -252,6 +252,65 @@ describe("buildPlanModeArtifactContext", () => {
 			}),
 		).toBeNull();
 	});
+
+	it("builds regeneration contexts for feature plan, data model, and dedicated views", () => {
+		const featurePlanContext = buildPlanModeArtifactContext({
+			sessionId: "task-1",
+			activeTab: "feature-plan",
+			featurePlanMessage: {
+				id: "feature-plan-message",
+				content: "# Feature Plan\n\nGenerate the implementation spec.",
+			},
+		});
+		const dataModelContext = buildPlanModeArtifactContext({
+			sessionId: "task-1",
+			activeTab: "data-model",
+			activeDataModelMessage: {
+				id: "data-model-message",
+				content: "# Data Model\n\nTables and relationships.",
+			},
+		});
+		const dedicatedContext = buildPlanModeArtifactContext({
+			sessionId: "task-1",
+			activeTab: "api-io-contract",
+			activeDedicatedMessage: {
+				id: "api-message",
+				content: "# API Contract\n\nGET /tasks",
+			},
+			activeDedicatedArtifact: {
+				sourceMessageId: "api-artifact-source",
+			},
+			readyQuestionnaireSessionId: "questionnaire-ready",
+		});
+
+		expect(featurePlanContext).toMatchObject({
+			artifactId: "plan-mode-workspace-task-1:feature_plan",
+			title: "Feature Plan",
+			metadata: {
+				planModeTarget: "feature_plan",
+				displayKind: "PLAN_MODE:FEATURE_PLAN",
+				featurePlanMessageId: "feature-plan-message",
+			},
+		});
+		expect(dataModelContext).toMatchObject({
+			artifactId: "plan-mode-workspace-task-1:data_model",
+			title: "Data Model",
+			source: { type: "task_message", messageId: "data-model-message" },
+			metadata: {
+				planModeTarget: "data_model",
+				sourceDataModelMessageId: "data-model-message",
+			},
+		});
+		expect(dedicatedContext).toMatchObject({
+			artifactId: "plan-mode-workspace-task-1:api_io_contract",
+			title: "API Contract",
+			source: { type: "task_message", messageId: "api-message" },
+			metadata: {
+				planModeTarget: "api_io_contract",
+				questionnaireSessionId: "questionnaire-ready",
+			},
+		});
+	});
 });
 
 describe("Blueprint message classification", () => {
@@ -446,6 +505,33 @@ describe("PlanModeWorkspaceViewer", () => {
 		]);
 	});
 
+	it("locks visible tabs to Questionnaire while questionnaire gate is active", () => {
+		const tabs = buildVisiblePlanWorkspaceTabs({
+			questionnaireGateLocked: true,
+			hasFeaturePlan: true,
+			hasQuestionnaire: true,
+			hasBlueprint: true,
+			hasDataModel: true,
+			includedViews: new Set(["user_flow", "api_io_contract"]),
+			planModeCapabilities: {
+				questionnaire: true,
+				feature_plan: true,
+				user_flow: true,
+				blueprint: true,
+				data_model: true,
+				api_io_contract: true,
+				activity_flow: true,
+				sequence_flow: true,
+				zod_schema_design: true,
+			},
+			dedicatedViewArtifacts: [
+				{ id: "user-flow-1", kind: "user_flow", title: "User Flow" },
+			],
+		});
+
+		expect(tabs).toEqual(["questionnaire"]);
+	});
+
 	it("starts on Questionnaire and withholds Status until questionnaire answers are ready", () => {
 		const markup = renderToStaticMarkup(
 			createElement(PlanModeWorkspaceViewer, {
@@ -546,6 +632,51 @@ describe("PlanModeWorkspaceViewer", () => {
 		expect(markup).toContain("Verification Checklist");
 		expect(markup).not.toContain("Find related tests");
 		expect(markup).not.toContain("Run unit tests");
+	});
+
+	it("renders blueprint and data model tabs from task messages", () => {
+		const blueprint = buildBlueprintMessage({
+			id: "message-blueprint",
+			content: "# Blueprint fallback",
+			metadataJson: {
+				intent: "mock_blueprint",
+				mockBlueprint: representativeMockBlueprint,
+			},
+		});
+		const dataModel = buildTaskMessage({
+			id: "message-data-model",
+			messageType: "markdown_document",
+			content: "# Data Model\n\n- users\n- tasks",
+			metadataJson: {
+				intent: "app_blueprint",
+				artifactType: "data_model",
+				source: "data-model",
+				dataModelTarget: { sourceBlueprintMessageId: "message-blueprint" },
+				appBlueprint: { name: "Data Model" },
+			},
+		});
+
+		const blueprintMarkup = renderToStaticMarkup(
+			createElement(PlanModeWorkspaceViewer, {
+				sessionId: "task-1",
+				taskMessages: [blueprint, dataModel],
+				activityArtifacts: [],
+				initialTab: "blueprint",
+			}),
+		);
+		const dataModelMarkup = renderToStaticMarkup(
+			createElement(PlanModeWorkspaceViewer, {
+				sessionId: "task-1",
+				taskMessages: [blueprint, dataModel],
+				activityArtifacts: [],
+				initialTab: "data-model",
+			}),
+		);
+
+		expect(blueprintMarkup).toContain('data-blueprint-preview="true"');
+		expect(dataModelMarkup).toContain("Data Model");
+		expect(dataModelMarkup).toContain("users");
+		expect(dataModelMarkup).toContain("tasks");
 	});
 
 	it("does not reapply the Questionnaire initial tab after the gate unlocks", () => {

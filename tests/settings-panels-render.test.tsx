@@ -6,11 +6,13 @@ import { SettingsMcpPanel } from "../src/modules/mcp/SettingsMcpPanel";
 import type {
 	AgentHookConfig,
 	GeneralSettings,
+	LlmSettings,
 	McpServerConfig,
 	Repository,
 	TestQualitySettings,
 } from "../src/modules/nightworkers/types";
 import { GeneralSettingsPanel } from "../src/modules/settings/SettingsGeneralPanel";
+import { SettingsLlmPanel } from "../src/modules/settings/SettingsLlmPanel";
 import { SettingsPlanModePanel } from "../src/modules/settings/SettingsPlanModePanel";
 import { SettingsTestPanel } from "../src/modules/settings/SettingsTestPanel";
 
@@ -69,6 +71,103 @@ const testQualitySettings: TestQualitySettings = {
 	coverageGateEnabled: true,
 	coverageMinimumPercent: 80,
 	coverageMaxIterations: 5,
+};
+
+const llmSettings: LlmSettings = {
+	ACTIVE_LLM_PROVIDER: "openai",
+	AZURE_OPENAI_ENABLED: true,
+	AZURE_OPENAI_API_KEY: "azure-key",
+	AZURE_OPENAI_ENDPOINT: "https://azure.example.test",
+	AZURE_OPENAI_DEPLOYMENT_NAME: "gpt-5-mini",
+	AZURE_OPENAI_API_VERSION: "2024-05-01-preview",
+	OPENAI_ENABLED: true,
+	OPENAI_API_KEY: "openai-key",
+	OPENAI_BASE_URL: "https://api.openai.com/v1",
+	OPENAI_MODEL: "gpt-5-mini",
+	AWS_BEDROCK_ENABLED: true,
+	AWS_ACCESS_KEY_ID: "access",
+	AWS_SECRET_ACCESS_KEY: "secret",
+	AWS_REGION: "us-east-1",
+	AWS_BEDROCK_MODEL: "anthropic.claude-3-5-sonnet",
+	CODEX_ENABLED: true,
+	CODEX_ACCESS_TOKEN: "",
+	CODEX_MODEL: "gpt-5-codex",
+	IMPLEMENTATION_RUNTIME_LANE: "codex-agent",
+	SESSION_QUEUE_MAX_CONCURRENCY: 2,
+	providerEndpoints: [
+		{
+			id: "endpoint-openai",
+			name: "OpenAI Main",
+			kind: "openai",
+			enabled: true,
+			apiKey: "openai-key",
+			baseUrl: "https://api.openai.com/v1",
+			models: ["gpt-5-mini", "gpt-5-reasoning"],
+			modelDisplayNames: {
+				"gpt-5-mini": "Fast Plan",
+				"gpt-5-reasoning": "Reasoning",
+			},
+		},
+		{
+			id: "endpoint-azure",
+			name: "Azure Eval",
+			kind: "azure",
+			enabled: true,
+			apiKey: "azure-key",
+			endpoint: "https://azure.example.test",
+			apiVersion: "2024-05-01-preview",
+			models: ["gpt-5-eval"],
+		},
+		{
+			id: "endpoint-bedrock",
+			name: "Bedrock Review",
+			kind: "bedrock",
+			enabled: true,
+			region: "us-east-1",
+			models: ["anthropic.claude-3-5-sonnet"],
+		},
+		{
+			id: "endpoint-local",
+			name: "Local Qwen",
+			kind: "local",
+			enabled: false,
+			baseUrl: "http://localhost:11434/v1",
+			models: ["qwen3-coder"],
+		},
+		{
+			id: "endpoint-codex",
+			name: "Codex SDK",
+			kind: "codex",
+			enabled: true,
+			models: ["gpt-5-codex"],
+		},
+	],
+	roleRoutes: [
+		{
+			role: "plan",
+			primary: {
+				providerEndpointId: "endpoint-openai",
+				model: "gpt-5-reasoning",
+				thinkingDepth: "high",
+			},
+			fallbacks: [
+				{
+					providerEndpointId: "endpoint-codex",
+					model: "gpt-5-codex",
+					thinkingDepth: "medium",
+				},
+				{ providerEndpointId: "endpoint-azure", model: "gpt-5-eval" },
+			],
+		},
+		{
+			role: "review",
+			primary: {
+				providerEndpointId: "endpoint-bedrock",
+				model: "anthropic.claude-3-5-sonnet",
+			},
+			fallbacks: [],
+		},
+	],
 };
 
 const activeProject: Repository = {
@@ -196,5 +295,42 @@ describe("settings panels", () => {
 		expect(planModeMarkup).toContain("failed");
 		expect(testMarkup).toContain("NightWorkers");
 		expect(testMarkup).toContain("coverage saved");
+	});
+
+	it("renders LLM provider endpoints and role routing", () => {
+		const providersMarkup = renderToStaticMarkup(
+			<SettingsLlmPanel
+				section="providers"
+				settings={llmSettings}
+				isSaving={false}
+				saveStatus="success"
+				saveMessage="saved"
+				onChange={() => undefined}
+				handleSave={async () => undefined}
+			/>,
+		);
+		const routingMarkup = renderToStaticMarkup(
+			<SettingsLlmPanel
+				section="routing"
+				settings={llmSettings}
+				isSaving={true}
+				saveStatus="idle"
+				saveMessage=""
+				onChange={() => undefined}
+				handleSave={async () => undefined}
+			/>,
+		);
+
+		expect(providersMarkup).toContain("Provider Endpoints");
+		expect(providersMarkup).toContain("OpenAI Main");
+		expect(providersMarkup).toContain("Azure Eval");
+		expect(providersMarkup).toContain("Bedrock Review");
+		expect(providersMarkup).toContain("Codex SDK");
+		expect(providersMarkup).toContain("saved");
+		expect(routingMarkup).toContain("Role Routing");
+		expect(routingMarkup).toContain("Plan");
+		expect(routingMarkup).toContain("Reasoning");
+		expect(routingMarkup).toContain("Fallback 1");
+		expect(routingMarkup).toContain("保存中");
 	});
 });
