@@ -794,9 +794,6 @@ function TestModeArtifactViewer({
 	return (
 		<div className="h-full overflow-auto bg-slate-950 p-5 text-slate-100">
 			<div className="mx-auto grid max-w-5xl gap-4">
-				<div className="border-b border-slate-800 pb-4 text-xs text-slate-400">
-					{t("testMode.description")}
-				</div>
 				{model ? (
 					<VerificationChecklistPanel
 						model={model}
@@ -850,32 +847,17 @@ function VerificationChecklistPanel({
 		!taskId ||
 		!model.specArtifactId ||
 		workflowInProgress;
+	const checkResults = readLatestTestModeCheckResults(latestRun);
 	return (
 		<div className="border-b border-slate-800 bg-slate-950/50 px-4 py-3">
 			<div>
-				<div className="min-w-0">
-					<div className="text-xs font-semibold uppercase text-slate-300">
-						{t("testMode.checklist.title")}
+				{workflowActionStatus === "failed" ? (
+					<div className="text-[11px] text-amber-300">
+						{t("testMode.status.planFailed")}
 					</div>
-					<div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
-						<span>
-							{t("testMode.checklist.conditionsCount", {
-								count: model.conditions.length,
-							})}
-						</span>
-						{model.missingReason ? (
-							<span>
-								{t(`testMode.missingReason.${model.missingReason}`, {
-									defaultValue: model.missingReason,
-								})}
-							</span>
-						) : null}
-						{workflowActionStatus === "failed" ? (
-							<span>{t("testMode.status.planFailed")}</span>
-						) : null}
-					</div>
-				</div>
+				) : null}
 				<TestModeWorkflowProgress steps={workflowSteps} />
+				<TestModeCheckResults results={checkResults} />
 				{canShowStartButton ? (
 					<div className="mt-3 flex flex-wrap gap-1.5">
 						<TestModeActionButton
@@ -921,25 +903,178 @@ function TestModeWorkflowProgress({
 }) {
 	const { t } = useTranslation();
 	return (
-		<div className="mt-3 grid gap-2 sm:grid-cols-4">
+		<div className="mt-3 grid gap-2">
 			{steps.map((step, index) => (
 				<div
 					key={step.id}
-					className="min-w-0 rounded-md border border-slate-800 bg-slate-900/35 px-2.5 py-2"
+					className="grid min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_5.5rem] items-center gap-2 rounded-md border border-slate-800 bg-slate-900/35 px-2.5 py-2"
 				>
+					<div className="flex items-center gap-2 text-[11px] font-medium text-slate-500">
+						{index + 1}
+					</div>
 					<div className="flex min-w-0 items-center gap-2">
 						<TestModeWorkflowStatusIcon status={step.status} />
-						<span className="truncate text-xs font-medium text-slate-100">
+						<span className="min-w-0 whitespace-normal break-words text-xs font-medium text-slate-100">
 							{t(`testMode.workflow.step.${step.id}`)}
 						</span>
 					</div>
-					<div className="mt-1 text-[11px] text-slate-400">
-						{index + 1}. {t(`testMode.workflow.status.${step.status}`)}
+					<div className="text-right text-[11px] text-slate-400">
+						{t(`testMode.workflow.status.${step.status}`)}
 					</div>
 				</div>
 			))}
 		</div>
 	);
+}
+
+type TestModeCheckResult = {
+	key: string;
+	label: string;
+	status: "passed" | "failed" | "running";
+	summary: string;
+};
+
+function TestModeCheckResults({ results }: { results: TestModeCheckResult[] }) {
+	if (results.length === 0) return null;
+	return (
+		<div className="mt-3 grid gap-2">
+			{results.map((result) => (
+				<div
+					key={result.key}
+					className="rounded-md border border-slate-800 bg-slate-900/35 px-2.5 py-2 text-xs"
+				>
+					<div className="flex min-w-0 items-center justify-between gap-2">
+						<span className="min-w-0 whitespace-normal break-words font-medium text-slate-100">
+							{result.label}
+						</span>
+						<span
+							className={
+								result.status === "passed"
+									? "shrink-0 text-emerald-300"
+									: result.status === "failed"
+										? "shrink-0 text-amber-300"
+										: "shrink-0 text-cyan-300"
+							}
+						>
+							{result.status === "passed"
+								? "OK"
+								: result.status === "failed"
+									? "ERROR"
+									: "RUNNING"}
+						</span>
+					</div>
+					<div className="mt-1 whitespace-pre-wrap break-words text-[11px] leading-5 text-slate-400">
+						{result.summary}
+					</div>
+				</div>
+			))}
+		</div>
+	);
+}
+
+function readLatestTestModeCheckResults(
+	latestRun?: TaskRun | null,
+): TestModeCheckResult[] {
+	const events = latestRun?.events ?? [];
+	const results: TestModeCheckResult[] = [];
+	const seen = new Set<string>();
+	for (const event of [...events].reverse()) {
+		const payload = asRecord(event.payloadJson);
+		const runEvent = asRecord(payload.runEvent);
+		const runEventData = asRecord(runEvent.data);
+		const rawResult = firstRecord(
+			runEventData.result,
+			runEventData.toolResult,
+			payload.result,
+			asRecord(payload.payload).result,
+		);
+		const resultPayload = firstRecord(
+			rawResult.payload,
+			asRecord(rawResult.result).payload,
+			rawResult.result,
+			asRecord(payload.payload).payload,
+		);
+		const toolName = readFirstString(
+			runEventData.toolName,
+			rawResult.toolName,
+			payload.toolName,
+			asRecord(payload.payload).toolName,
+		);
+		if (toolName !== "run_check" && toolName !== "completion_check") continue;
+		const checkKind =
+			toolName === "run_check"
+				? readRecordString(resultPayload, "checkKind") || "other"
+				: "completion_check";
+		const key = `${toolName}:${checkKind}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		results.push({
+			key,
+			label: formatTestModeCheckLabel(checkKind),
+			status: readCheckResultStatus(rawResult, readOptionalEventStatus(event)),
+			summary: formatTestModeCheckSummary(resultPayload, rawResult),
+		});
+	}
+	return results.reverse();
+}
+
+function readOptionalEventStatus(
+	event: NonNullable<TaskRun["events"]>[number],
+) {
+	const status = (event as { status?: unknown }).status;
+	return typeof status === "string" ? status : undefined;
+}
+
+function firstRecord(...values: unknown[]): Record<string, unknown> {
+	for (const value of values) {
+		const record = asRecord(value);
+		if (Object.keys(record).length > 0) return record;
+	}
+	return {};
+}
+
+function readFirstString(...values: unknown[]) {
+	for (const value of values) {
+		if (typeof value === "string" && value.length > 0) return value;
+	}
+	return null;
+}
+
+function readCheckResultStatus(
+	result: Record<string, unknown>,
+	eventStatus?: string | null,
+): TestModeCheckResult["status"] {
+	if (result.ok === true) return "passed";
+	if (result.ok === false) return "failed";
+	return eventStatus === "running" || eventStatus === "started"
+		? "running"
+		: "failed";
+}
+
+function formatTestModeCheckLabel(checkKind: string) {
+	if (checkKind === "test") return "ユニットテスト実行結果";
+	if (checkKind === "verify") return "verify 実行結果";
+	if (checkKind === "completion_check") return "証跡テストチェック結果";
+	if (checkKind === "typecheck") return "typecheck 実行結果";
+	if (checkKind === "lint") return "lint 実行結果";
+	if (checkKind === "build") return "build 実行結果";
+	return `${checkKind} 実行結果`;
+}
+
+function formatTestModeCheckSummary(
+	payload: Record<string, unknown>,
+	result: Record<string, unknown>,
+) {
+	const llmSummary = readRecordString(payload, "llmSummary");
+	if (llmSummary) return llmSummary;
+	const exitCode = payload.exitCode;
+	if (typeof exitCode === "number") return `exitCode=${exitCode}`;
+	const completionResult = asRecord(payload.result);
+	const reason = readRecordString(completionResult, "reason");
+	if (reason) return reason;
+	const error = asRecord(result.error);
+	const errorMessage = readRecordString(error, "message");
+	return errorMessage || "結果の要約がありません。";
 }
 
 function TestModeWorkflowStatusIcon({

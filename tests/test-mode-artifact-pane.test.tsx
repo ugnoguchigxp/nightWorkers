@@ -5,10 +5,10 @@ import { ArtifactPane } from "../src/modules/nightworkers/components/ArtifactPan
 import type {
 	Repository,
 	TaskRun,
-	TaskRunTodo,
 	WorkbenchArtifactRef,
 } from "../src/modules/nightworkers/types";
 import {
+	buildTaskEvent,
 	buildTaskMessage,
 	buildTaskRun,
 } from "./helpers/nightworkers-fixtures";
@@ -77,13 +77,17 @@ describe("Test Mode artifact pane", () => {
 			/>,
 		);
 
-		expect(markup).toContain("検証チェックリスト");
 		expect(markup).toContain("テスト実装ワークフロー開始");
 		expect(markup).toContain("実装開始");
 		expect(markup).toContain("実装完了");
 		expect(markup).toContain("証跡テストチェック");
 		expect(markup).toContain("ユニットテスト実行");
 		expect(markup).toContain("待機中");
+		expect(markup).not.toContain(
+			"通常の実装実行とは独立して、検証チェックリストに沿ったテスト実行を開始します。",
+		);
+		expect(markup).not.toContain("検証 JSON がまだありません");
+		expect(markup).not.toContain("件の条件");
 		expect(markup).toContain("AC-001");
 		expect(markup).toContain(
 			"API が成功し、長い完了条件の説明も省略されずに一覧内で全文読める",
@@ -122,7 +126,6 @@ describe("Test Mode artifact pane", () => {
 
 		expect(activeMarkup).toContain("テスト実装ワークフロー開始");
 		expect(activeMarkup).toContain("実装開始");
-		expect(archivedMarkup).toContain("検証チェックリスト");
 		expect(archivedMarkup).toContain("テスト実装ワークフロー開始");
 		expect(archivedMarkup).toContain("ユニットテスト実行");
 	});
@@ -148,11 +151,45 @@ describe("Test Mode artifact pane", () => {
 				executionMode: "test",
 				testMode: { action: "plan_and_implement_tests" },
 			},
-			todos: [
-				workflowTodo(1, "テスト実装を開始する", "passed"),
-				workflowTodo(2, "テスト実装を完了する", "running"),
-				workflowTodo(3, "証跡テストチェックを行う", "pending"),
-				workflowTodo(4, "ユニットテストを実行する", "pending"),
+			events: [
+				buildTaskEvent({
+					id: "read-spec-event",
+					payloadJson: {
+						runEvent: {
+							data: {
+								toolName: "read_current_specification",
+								result: { ok: true, payload: {} },
+							},
+						},
+					},
+				}),
+				buildTaskEvent({
+					id: "apply-patch-event",
+					payloadJson: {
+						runEvent: {
+							data: {
+								toolName: "apply_patch",
+								result: { ok: true, payload: {} },
+							},
+						},
+					},
+				}),
+				buildTaskEvent({
+					id: "run-check-event",
+					payloadJson: {
+						runEvent: {
+							data: {
+								toolName: "run_check",
+								result: {
+									ok: false,
+									payload: {
+										checkKind: "test",
+									},
+								},
+							},
+						},
+					},
+				}),
 			],
 		});
 
@@ -164,9 +201,79 @@ describe("Test Mode artifact pane", () => {
 		expect(markup).toContain("実装開始");
 		expect(markup).toContain("完了");
 		expect(markup).toContain("実装完了");
-		expect(markup).toContain("実行中");
+		expect(markup).toContain("ユニットテスト実行");
+		expect(markup).toContain("失敗");
 		expect(markup).toContain("証跡テストチェック");
 		expect(markup).toContain("待機中");
+	});
+
+	it("shows managed check results from the latest Test Mode run", () => {
+		const implementationPlan = buildTaskMessage({
+			id: "implementation-plan-message",
+			messageType: "markdown_document",
+			content: [
+				"# Implementation Plan",
+				"",
+				"## 完了条件",
+				"- [AC-001] API が成功する",
+			].join("\n"),
+			metadataJson: {
+				intent: "implementation_plan",
+				title: "Implementation Plan",
+				verificationDocumentId: "55555555-5555-4555-8555-555555555555",
+			},
+		});
+		const latestRun = buildTaskRun({
+			contextSnapshot: {
+				executionMode: "test",
+				testMode: { action: "plan_and_implement_tests" },
+			},
+			events: [
+				buildTaskEvent({
+					id: "run-check-event",
+					payloadJson: {
+						runEvent: {
+							data: {
+								toolName: "run_check",
+								result: {
+									ok: true,
+									payload: {
+										checkKind: "test",
+										llmSummary: "OK test\nexitCode=0\nstdoutArtifact=stdout-1",
+									},
+								},
+							},
+						},
+					},
+				}),
+				buildTaskEvent({
+					id: "completion-check-event",
+					payloadJson: {
+						runEvent: {
+							data: {
+								toolName: "completion_check",
+								result: {
+									ok: true,
+									payload: {
+										llmSummary: "OK completion_check",
+									},
+								},
+							},
+						},
+					},
+				}),
+			],
+		});
+
+		const markup = renderTestModePane({
+			taskMessages: [implementationPlan],
+			latestRun,
+		});
+
+		expect(markup).toContain("ユニットテスト実行結果");
+		expect(markup).toContain("OK test");
+		expect(markup).toContain("証跡テストチェック結果");
+		expect(markup).toContain("OK completion_check");
 	});
 });
 
@@ -201,31 +308,4 @@ function renderTestModePane(input: {
 			activeTaskStatus={input.activeTaskStatus}
 		/>,
 	);
-}
-
-function workflowTodo(
-	seq: number,
-	title: string,
-	status: TaskRunTodo["status"],
-): TaskRunTodo {
-	const now = "2026-07-08T00:00:00.000Z";
-	return {
-		id: `todo-${seq}`,
-		runId: "33333333-3333-4333-8333-333333333333",
-		seq,
-		title,
-		description: null,
-		taskType: "verification",
-		status,
-		procedureId: null,
-		procedureSnapshot: null,
-		contextSnapshot: null,
-		completionGateResult: null,
-		dependsOn: null,
-		statusReason: null,
-		startedAt: status === "pending" ? null : now,
-		completedAt: status === "passed" ? now : null,
-		createdAt: now,
-		updatedAt: now,
-	};
 }

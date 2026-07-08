@@ -245,11 +245,15 @@ export async function startTaskRun(
 		...(options.runtimeOptionsPatch ?? {}),
 	};
 	const initialTodos =
-		options.initialTodos ??
-		runtimeLaneDefinition.buildInitialTodos(runtimeLaneSetupInput);
+		executionMode === "test"
+			? []
+			: (options.initialTodos ??
+				runtimeLaneDefinition.buildInitialTodos(runtimeLaneSetupInput));
 	await repo.replaceTaskRunTodosForRun(
 		run.id,
-		executionMode === "planning" || executionMode === "general_answer"
+		executionMode === "planning" ||
+			executionMode === "general_answer" ||
+			executionMode === "test"
 			? []
 			: buildStandardImplementationTodoList({
 					todos: initialTodos,

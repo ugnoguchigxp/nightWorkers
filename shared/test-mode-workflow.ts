@@ -10,12 +10,12 @@ export const TEST_MODE_WORKFLOW_STEPS = [
 		todoTitle: "テスト実装を完了する",
 	},
 	{
-		id: "evidence_check",
-		todoTitle: "証跡テストチェックを行う",
-	},
-	{
 		id: "unit_test",
 		todoTitle: "ユニットテストを実行する",
+	},
+	{
+		id: "evidence_check",
+		todoTitle: "証跡テストチェックを行う",
 	},
 ] as const;
 

@@ -163,11 +163,12 @@ function buildTestModeContract(
 		"",
 		"Test Mode behavior:",
 		"- 最初に nightworkers.read_current_specification view=verification を読み、verification JSON / Verification Checklist の完了条件を検証観点の正本にする。",
-		"- testMode.action が plan_and_implement_tests の場合、画面上のワークフロー順に、実装開始 -> 実装完了 -> 証跡テストチェック -> ユニットテスト実行を進める。実装開始では Verification Checklist 準拠のテスト計画を本文にまとめたうえで着手し、計画作成だけで完了扱いにしない。",
+		"- Test Mode agent は Implementation agent とは別 session で動く。Implementation run の thread/history を引き継がず、この run 内で必要な仕様・ファイル・テストを読み直す。",
+		"- testMode.action が plan_and_implement_tests の場合、画面上のワークフロー順に、実装開始 -> 実装完了 -> ユニットテスト実行 -> 証跡テストチェックを進める。実装開始では Verification Checklist 準拠のテスト計画を本文にまとめたうえで着手し、計画作成だけで完了扱いにしない。",
 		"- テストは完了条件観点を中心に追加・修正し、production code の変更は明確な defect を証明できる場合の最小修正に限る。",
 		"- lint / format:check / typecheck / test / coverage / build / verify は NightWorkers の run_check / run_verification で実行し、raw output artifact と managed evidence を残す。",
 		"- closeout 前に nightworkers.completion_check を実行する。failed / unknown required conditions が残る場合は、対象テストまたは明確な defect を修正して再度 run_check / completion_check を実行する。",
-		"- Verification Checklist の状態は TodoList ではなく backend の deterministic evidence 更新に任せる。Todo は Test Mode の作業進行だけに使う。",
+		"- Test Mode では TodoList を使わない。Verification Checklist の状態は backend の deterministic evidence 更新に任せ、画面進捗はこの run の managed tool 実行イベントから表現される。",
 	].join("\n");
 }
 

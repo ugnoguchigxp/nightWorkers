@@ -174,7 +174,10 @@ function buildChatMarkdownComponents(
 			return (
 				<a
 					{...props}
-					className="text-cyan-200 underline underline-offset-2 hover:text-cyan-100"
+					className={cn(
+						"text-cyan-200 underline underline-offset-2 hover:text-cyan-100",
+						testModeArtifactLink && "mt-1 block w-fit",
+					)}
 					href={href}
 					target={
 						projectFilePath || testModeArtifactLink ? undefined : "_blank"

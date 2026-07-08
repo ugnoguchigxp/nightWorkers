@@ -395,4 +395,40 @@ describe("miscellaneous frontend components", () => {
 		expect(emptyIdeaMarkup).toContain("選択軸から改善案を生成しています");
 		expect(linksMarkup).toContain("Created task");
 	});
+
+	it("renders AppearanceSettings with themes and component variants", () => {
+		const designSettings = {
+			theme: "mint" as const,
+			density: "compact" as const,
+			shape: "rounded" as const,
+			shadow: "soft" as const,
+			shadowDirection: "bottom" as const,
+			font: "system" as const,
+			contrast: "normal" as const,
+			motion: "reduced" as const,
+			componentVariants: {
+				button: "solid" as const,
+				card: "filled" as const,
+				table: "lined" as const,
+				input: "filled" as const,
+			},
+		};
+
+		const onChange = vi.fn();
+		const onReset = vi.fn();
+
+		const markup = renderToStaticMarkup(
+			<AppearanceSettings
+				value={designSettings}
+				onChange={onChange}
+				onReset={onReset}
+			/>,
+		);
+
+		expect(markup).toContain("外観設定");
+		expect(markup).toContain("Theme");
+		expect(markup).toContain("mint");
+		expect(markup).toContain("compact");
+		expect(markup).toContain("rounded");
+	});
 });

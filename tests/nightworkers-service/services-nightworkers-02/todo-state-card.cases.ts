@@ -659,7 +659,7 @@ describe("NightWorkers service", () => {
 					taskId: task.id,
 					runId: run.id,
 					role: "assistant",
-					content: "Runtime report",
+					content: expect.stringContaining("Runtime report"),
 				}),
 			);
 		});

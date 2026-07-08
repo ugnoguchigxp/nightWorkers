@@ -603,7 +603,7 @@ describe("PlanModeWorkspaceViewer", () => {
 		expect(markup).toContain("実装完了");
 		expect(markup).toContain("証跡テストチェック");
 		expect(markup).toContain("ユニットテスト実行");
-		expect(markup).toContain("検証チェックリスト");
+		expect(markup).not.toContain("件の条件");
 		expect(markup).toContain("AC-001");
 		expect(markup).toContain(
 			"ユーザーを作成でき、長い完了条件も省略されずに読める",
@@ -638,7 +638,7 @@ describe("PlanModeWorkspaceViewer", () => {
 			}),
 		);
 
-		expect(markup).toContain("検証チェックリスト");
+		expect(markup).toContain("AC-001");
 		expect(markup).not.toContain("テスト実装ワークフロー開始");
 	});
 

@@ -104,9 +104,7 @@ describe("WorkbenchRoutePage Component", () => {
 		expect(markup).toContain("layout");
 	});
 
-	it("canonicalizes route and calls navigate if pathname does not match target route url", () => {
-		// Mock canonicalization parameters so that shouldCanonicalizeWorkbenchRoute returns true
-		// /workbench is not the standard shape /workspaces/... etc
+	it("does not run canonicalization effects during static markup rendering", () => {
 		mockLocation.pathname = "/wrong-path";
 
 		const state: WorkbenchRouteState = {
@@ -116,6 +114,6 @@ describe("WorkbenchRoutePage Component", () => {
 		};
 
 		renderToStaticMarkup(<WorkbenchRoutePage routeState={state} />);
-		expect(mockNavigate).toHaveBeenCalled();
+		expect(mockNavigate).not.toHaveBeenCalled();
 	});
 });

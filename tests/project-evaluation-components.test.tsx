@@ -48,6 +48,7 @@ vi.mock("lucide-react", async () => {
 	return new Proxy(actual, {
 		get(_target, prop) {
 			if (prop === "__esModule") return true;
+			if (prop === "then") return undefined;
 			return () => <span data-testid={`icon-${String(prop)}`} />;
 		},
 	});
@@ -88,6 +89,12 @@ const mockIdea = (id: string, dimension: string): ProjectImprovementIdea => ({
 	dimensionKey: dimension,
 	title: `Idea ${id}`,
 	description: `Description of Idea ${id}`,
+	summary: `Description of Idea ${id}`,
+	agentPrompt: `Implement Idea ${id}`,
+	expectedOutcome: `Outcome for Idea ${id}`,
+	targetDimensions: [dimension],
+	implementationFocus: [`Focus ${id}`],
+	scoreImpacts: [],
 	impact: 80,
 	effort: 40,
 	status: "draft",
@@ -195,7 +202,7 @@ describe("Project Evaluation Components", () => {
 			const markup = renderToStaticMarkup(
 				<ProjectEvaluationScreen project={project} />,
 			);
-			expect(markup).toContain("プロジェクト評価");
+			expect(markup).toContain("保存済み Project Evaluation はまだありません");
 		});
 
 		it("renders error message if error state is populated", () => {
@@ -241,7 +248,8 @@ describe("Project Evaluation Components", () => {
 			const markup = renderToStaticMarkup(
 				<ProjectEvaluationScreen project={project} />,
 			);
-			expect(markup).toContain("Running initialization...");
+			expect(markup).toContain("LLMアクティビティ");
+			expect(markup).toContain("LLMに依頼中");
 		});
 	});
 });

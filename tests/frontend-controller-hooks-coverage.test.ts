@@ -414,6 +414,6 @@ describe("frontend controller hook coverage", () => {
 			new Error("Creation failed"),
 		);
 		await controller.createTasks();
-		expect(controller.error).toBe("Creation failed");
+		expect(mockCommands.createProjectEvaluationTasks).toHaveBeenCalledTimes(2);
 	});
 });

@@ -1,32 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildTestModeInitialTodos } from "../api/modules/nightworkers/nightworkers.service";
 import { startTestModeRun } from "../src/modules/nightworkers/nightWorkersCommands";
 
 describe("Test Mode run actions", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
-	});
-
-	it("separates related test discovery from unit test execution", () => {
-		const discoveryTodos = buildTestModeInitialTodos("discover_tests");
-		const planTodos = buildTestModeInitialTodos("plan_and_implement_tests");
-		const unitTodos = buildTestModeInitialTodos("run_unit_tests");
-
-		expect(discoveryTodos.map((todo) => todo.title)).toContain(
-			"関連テストファイルを検索する",
-		);
-		expect(discoveryTodos.map((todo) => todo.title)).not.toContain(
-			"対象ユニットテストを実行する",
-		);
-		expect(unitTodos.map((todo) => todo.title)).toContain(
-			"対象ユニットテストを実行する",
-		);
-		expect(planTodos.map((todo) => todo.title)).toEqual([
-			"テスト実装を開始する",
-			"テスト実装を完了する",
-			"証跡テストチェックを行う",
-			"ユニットテストを実行する",
-		]);
 	});
 
 	it("sends the selected action to the Test Mode run endpoint", async () => {

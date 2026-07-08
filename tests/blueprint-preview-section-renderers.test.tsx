@@ -211,4 +211,52 @@ describe("Blueprint preview section renderers", () => {
 
 		expect(markup).toContain("blueprint.preview.noScreens");
 	});
+
+	it("renders blueprint preview with active session in static markup", () => {
+		const fetchMock = vi.fn().mockImplementation((url) => {
+			if (url.includes("/settings")) {
+				return Promise.resolve(
+					new Response(JSON.stringify({ settings: { theme: "mint" } }), {
+						status: 200,
+					}),
+				);
+			}
+			if (url.includes("/adoption")) {
+				return Promise.resolve(
+					new Response(JSON.stringify({ adopted: true }), { status: 200 }),
+				);
+			}
+			return Promise.resolve(new Response("ok", { status: 200 }));
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const markup = renderToStaticMarkup(
+			createElement(BlueprintPreview, {
+				sessionId: "sess-1",
+				messageId: "msg-1",
+				blueprint: { id: "bp-1", designPreset: { theme: "mint" } },
+				screens: [
+					{
+						id: "screen-1",
+						name: "Dashboard",
+						layout: { template: "single_column" },
+						sections: [
+							{
+								id: "section-1",
+								name: "Dashboard",
+								componentName: "StatsGridSection",
+								props: { title: "Dashboard" },
+							},
+						],
+					},
+				],
+			}),
+		);
+
+		expect(markup).toContain("blueprint.preview.sectionsCount");
+		expect(markup).toContain("blueprint.preview.sectionFallbackText");
+		expect(fetchMock).not.toHaveBeenCalled();
+
+		vi.unstubAllGlobals();
+	});
 });

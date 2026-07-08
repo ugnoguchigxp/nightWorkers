@@ -1,5 +1,4 @@
 import { toDeepRecord } from "../../../shared/json-record";
-import { TEST_MODE_WORKFLOW_STEPS } from "../../../shared/test-mode-workflow";
 import { NotFoundError } from "../../lib/errors";
 import type { RuntimeLaneResult } from "../../services/agent-runtime/shared/contracts";
 import { buildReviewResult } from "../../services/review-results/build-review-result";
@@ -135,7 +134,6 @@ export async function startTestModeRunFromArtifact(input: {
 	return startTaskRun(input.taskId, {
 		executionMode: "test",
 		executionModeSource: "test_mode",
-		initialTodos: buildTestModeInitialTodos(input.action ?? "run_unit_tests"),
 		runtimeOptionsPatch: {
 			verificationDocumentId: verificationDocument.id,
 			testMode: {
@@ -145,91 +143,6 @@ export async function startTestModeRunFromArtifact(input: {
 			},
 		},
 	});
-}
-
-export function buildTestModeInitialTodos(
-	action: "discover_tests" | "plan_and_implement_tests" | "run_unit_tests",
-) {
-	if (action === "discover_tests") {
-		return [
-			{
-				title: "検証チェックリストを読む",
-				description: "仕様書と検証 JSON を読み、必須条件を確認する。",
-				taskType: "verification" as const,
-			},
-			{
-				title: "関連テストファイルを検索する",
-				description:
-					"rg で完了条件・対象モジュール・既存 spec 名に関連するテスト、fixture、helper を探し、候補と不足を記録する。",
-				taskType: "verification" as const,
-			},
-			{
-				title: "検索結果を根拠として残す",
-				description:
-					"見つかったテストファイル、未発見の条件、次に実行すべき focused unit test をまとめる。",
-				taskType: "verification" as const,
-			},
-		];
-	}
-	if (action === "plan_and_implement_tests") {
-		const [
-			implementationStart,
-			implementationComplete,
-			evidenceCheck,
-			unitTest,
-		] = TEST_MODE_WORKFLOW_STEPS;
-		return [
-			{
-				title: implementationStart.todoTitle,
-				description:
-					"仕様書と検証 JSON を読み、必須条件ごとの対象テストファイル、追加・修正するテストケース、実行コマンド、期待結果、失敗時対応を本文として整理してから着手する。",
-				taskType: "verification" as const,
-			},
-			{
-				title: implementationComplete.todoTitle,
-				description:
-					"計画に沿って focused unit test、fixture、helper を最小差分で追加・修正し、production code の変更は明確な defect を証明できる場合だけに限定する。",
-				taskType: "verification" as const,
-			},
-			{
-				title: evidenceCheck.todoTitle,
-				description:
-					"run_check または run_verification を使い、raw artifact と根拠を残す。必須条件が failed / pending / unknown で残らないことを確認する。",
-				taskType: "verification" as const,
-			},
-			{
-				title: unitTest.todoTitle,
-				description:
-					"関連する focused unit test を実行し、結果を Test Mode の証跡として残す。",
-				taskType: "verification" as const,
-			},
-		];
-	}
-	return [
-		{
-			title: "検証チェックリストを読む",
-			description: "仕様書と検証 JSON を読み、必須条件を確認する。",
-			taskType: "verification" as const,
-		},
-		{
-			title: "対象ユニットテストを実行する",
-			description:
-				"関連テストファイルを特定し、focused unit test を実行する。必要なら完了条件に対応するテスト、fixture、helper を最小差分で追加・修正する。",
-			taskType: "verification" as const,
-		},
-		{
-			title: "管理された検証コマンドを実行する",
-			description:
-				"run_check または run_verification を使い、raw artifact と根拠を残す。",
-			taskType: "verification" as const,
-		},
-		{
-			title: "完了条件チェックを通す",
-			description:
-				"必須条件が failed / pending / unknown で残っていないことを確認する。",
-			taskType: "verification" as const,
-		},
-	];
 }
 
 export async function ensureTestModeVerificationDocument(input: {

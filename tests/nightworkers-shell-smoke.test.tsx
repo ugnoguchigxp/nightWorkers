@@ -128,6 +128,10 @@ function createDummyWorkspace(): NightWorkersWorkspaceState {
 		isProjectFileLoading: false,
 		projectDiff: null,
 		isProjectDiffLoading: false,
+		currentBrowserPath: null,
+		browserParentPath: null,
+		browserDirectories: [],
+		isBrowserLoading: false,
 		isRealtimeConnected: true,
 		realtimeStatus: "connected" as const,
 		isChatSubmitting: false,
@@ -178,6 +182,9 @@ function createDummyWorkspace(): NightWorkersWorkspaceState {
 			],
 		},
 		refreshProjectList: async () => undefined,
+		fetchDirectories: async () => undefined,
+		createFolder: async ({ name }) => ({ name, path: `/tmp/${name}` }),
+		createProject: () => undefined,
 		providerModelOptions: [],
 	} as unknown as NightWorkersWorkspaceState;
 }
@@ -276,5 +283,55 @@ describe("NightWorkersShell Smoke Test", () => {
 
 		expect(markup).toContain("nightWorkers");
 		expect(markup).toContain("Task 1");
+	});
+
+	it("renders main shell with project_detail routing", () => {
+		const workspace = createDummyWorkspace();
+		const markup = renderToStaticMarkup(
+			<QueryClientProvider client={queryClient}>
+				<WorkspaceAppearanceProvider>
+					<WorkspaceLayoutProvider>
+						<NightWorkersShell
+							workspace={workspace}
+							routeState={{
+								kind: "project_detail",
+								projectId: "repo-1",
+								tab: "overview",
+							}}
+							onNavigate={() => undefined}
+							showFolderBrowser={false}
+							onOpenFolderBrowser={() => undefined}
+							onCloseFolderBrowser={() => undefined}
+						/>
+					</WorkspaceLayoutProvider>
+				</WorkspaceAppearanceProvider>
+			</QueryClientProvider>,
+		);
+
+		expect(markup).toContain("NightWorkers");
+		expect(markup).toContain("overview");
+	});
+
+	it("renders folder browser dialog when showFolderBrowser is true", () => {
+		const workspace = createDummyWorkspace();
+		const markup = renderToStaticMarkup(
+			<QueryClientProvider client={queryClient}>
+				<WorkspaceAppearanceProvider>
+					<WorkspaceLayoutProvider>
+						<NightWorkersShell
+							workspace={workspace}
+							routeState={{ kind: "overview", range: "30d", projectId: null }}
+							onNavigate={() => undefined}
+							showFolderBrowser={true}
+							onOpenFolderBrowser={() => undefined}
+							onCloseFolderBrowser={() => undefined}
+						/>
+					</WorkspaceLayoutProvider>
+				</WorkspaceAppearanceProvider>
+			</QueryClientProvider>,
+		);
+
+		expect(markup).toContain("Local folder を選択");
+		expect(markup).toContain("Folder を選択");
 	});
 });

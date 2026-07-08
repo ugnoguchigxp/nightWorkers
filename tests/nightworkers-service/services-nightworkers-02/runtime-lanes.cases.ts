@@ -267,6 +267,71 @@ describe("NightWorkers service", () => {
 		);
 	});
 
+	it("starts Test Mode runs without runtime Todos", async () => {
+		const task = {
+			id: "task-test-mode-no-todos",
+			repositoryId: "repo-test-mode-no-todos",
+			title: "Test Mode no Todos",
+			description: "テストモードを開始する",
+			objective: "テストモードを開始する",
+			acceptanceCriteria: "Test Mode does not create runtime Todos",
+			timeoutSeconds: 60,
+		};
+		const run = {
+			id: "run-test-mode-no-todos",
+			taskId: task.id,
+			repositoryId: task.repositoryId,
+			status: "running",
+		};
+		vi.mocked(repo.getTask).mockResolvedValue(task as never);
+		vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+		vi.mocked(repo.getRepository).mockResolvedValue({
+			id: task.repositoryId,
+			localPath: repoRoot,
+			safetyPolicy: {},
+		} as never);
+		vi.mocked(repo.listTaskMessages).mockResolvedValue([
+			{ role: "user", content: "テストモードを開始する" },
+		] as never);
+		vi.mocked(repo.createTaskRun).mockResolvedValue(run as never);
+		vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
+		vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as never);
+		vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+		vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
+		const runtimeStart = vi.fn().mockResolvedValue({
+			terminalState: "completed",
+			summary: "Test Mode done",
+			finalReport: "Test Mode report",
+			stoppedBy: "decision",
+			riskLevel: "low",
+			diffPatch: "",
+			logContent: "",
+		});
+		vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+			kind: "native-local",
+			start: runtimeStart,
+			stop: vi.fn(),
+		} as never);
+
+		await startTaskRun(task.id, {
+			executionMode: "test",
+			executionModeSource: "test_mode",
+			runtimeOptionsPatch: {
+				testMode: { action: "plan_and_implement_tests" },
+			},
+		});
+
+		expect(repo.replaceTaskRunTodosForRun).toHaveBeenCalledWith(run.id, []);
+		expect(repo.createTaskRun).toHaveBeenCalledWith(
+			expect.objectContaining({
+				contextSnapshot: expect.objectContaining({
+					executionMode: "test",
+					executionModeSource: "test_mode",
+				}),
+			}),
+		);
+	});
+
 	it("routes removed or unknown job types to general answers without implementation startup", async () => {
 		const task = {
 			id: "task-removed-job-type",

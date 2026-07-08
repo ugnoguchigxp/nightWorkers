@@ -31,24 +31,14 @@ export function buildTestModeWorkflowSteps(input: {
 	latestRun?: TaskRun | null;
 	localStatus?: string | null;
 }): TestModeWorkflowStepView[] {
-	const todos = input.latestRun?.todos ?? [];
 	const localActionStatus = readTestModeWorkflowActionStatus(input.localStatus);
-	const workflowTodoTitles = new Set<string>(
-		TEST_MODE_WORKFLOW_STEPS.map((step) => step.todoTitle),
-	);
-	const todoByTitle = new Map(
-		todos
-			.filter((todo) => workflowTodoTitles.has(todo.title))
-			.map((todo) => [todo.title, todo]),
-	);
 	const steps = TEST_MODE_WORKFLOW_STEPS.map((step) => ({
 		id: step.id,
 		todoTitle: step.todoTitle,
-		status: toWorkflowStepStatus(todoByTitle.get(step.todoTitle)?.status),
+		status: "pending" as TestModeWorkflowStepStatus,
 	}));
-	const hasObservedWorkflowProgress = steps.some(
-		(step) => step.status !== "pending",
-	);
+	applyToolEventProgress(steps, input.latestRun);
+	const hasObservedWorkflowProgress = steps.some(isObservedStep);
 
 	if (!hasObservedWorkflowProgress) {
 		const firstStep = steps[0];
@@ -80,19 +70,131 @@ export function isTestModeWorkflowComplete(steps: TestModeWorkflowStepView[]) {
 	return steps.every((step) => step.status === "passed");
 }
 
-function toWorkflowStepStatus(
-	status?: string | null,
-): TestModeWorkflowStepStatus {
-	if (
-		status === "running" ||
-		status === "passed" ||
-		status === "failed" ||
-		status === "needs_human" ||
-		status === "skipped"
-	) {
-		return status;
+function applyToolEventProgress(
+	steps: TestModeWorkflowStepView[],
+	run?: TaskRun | null,
+) {
+	if (!run) return;
+	const firstStep = steps.find((step) => step.id === "implementation_start");
+	const implementationStep = steps.find(
+		(step) => step.id === "implementation_complete",
+	);
+	const unitStep = steps.find((step) => step.id === "unit_test");
+	const evidenceStep = steps.find((step) => step.id === "evidence_check");
+	for (const event of run.events ?? []) {
+		const toolEvent = readManagedToolEvent(event);
+		if (!toolEvent) continue;
+		if (toolEvent.toolName === "read_current_specification") {
+			if (firstStep) firstStep.status = toolEventStatus(toolEvent);
+			continue;
+		}
+		if (isTestImplementationTool(toolEvent.toolName)) {
+			if (firstStep && firstStep.status === "pending") {
+				firstStep.status = "passed";
+			}
+			if (implementationStep) {
+				implementationStep.status = toolEventStatus(toolEvent);
+			}
+			continue;
+		}
+		if (toolEvent.toolName === "run_check" && toolEvent.checkKind === "test") {
+			if (firstStep && firstStep.status === "pending") {
+				firstStep.status = "passed";
+			}
+			if (implementationStep && implementationStep.status === "pending") {
+				implementationStep.status = "passed";
+			}
+			if (unitStep) unitStep.status = toolEventStatus(toolEvent);
+			continue;
+		}
+		if (toolEvent.toolName === "completion_check") {
+			if (firstStep && firstStep.status === "pending") {
+				firstStep.status = "passed";
+			}
+			if (implementationStep && implementationStep.status === "pending") {
+				implementationStep.status = "passed";
+			}
+			if (unitStep && unitStep.status === "pending") {
+				unitStep.status = "passed";
+			}
+			if (evidenceStep) evidenceStep.status = toolEventStatus(toolEvent);
+		}
 	}
-	return "pending";
+	if (
+		isActiveTestModeWorkflowRun(run) &&
+		!steps.some((step) => step.status === "failed")
+	) {
+		const firstPending = steps.find((step) => step.status === "pending");
+		if (firstPending) firstPending.status = "running";
+	}
+}
+
+function isObservedStep(step: TestModeWorkflowStepView) {
+	return step.status !== "pending";
+}
+
+type ManagedToolEvent = {
+	toolName: string;
+	checkKind?: string | null;
+	ok?: boolean;
+};
+
+function readManagedToolEvent(
+	event: NonNullable<TaskRun["events"]>[number],
+): ManagedToolEvent | null {
+	const payload = toDeepRecord(event.payloadJson);
+	const runEvent = toDeepRecord(payload.runEvent);
+	const runEventData = toDeepRecord(runEvent.data);
+	const payloadPayload = toDeepRecord(payload.payload);
+	const rawResult = firstRecord(
+		runEventData.result,
+		runEventData.toolResult,
+		payload.result,
+		payloadPayload.result,
+	);
+	const resultPayload = firstRecord(
+		rawResult.payload,
+		toDeepRecord(rawResult.result).payload,
+		rawResult.result,
+		payloadPayload.payload,
+	);
+	const toolName = readFirstString(
+		runEventData.toolName,
+		rawResult.toolName,
+		payload.toolName,
+		payloadPayload.toolName,
+	);
+	if (!toolName) return null;
+	return {
+		toolName,
+		checkKind: readRecordString(resultPayload, "checkKind"),
+		ok: typeof rawResult.ok === "boolean" ? rawResult.ok : undefined,
+	};
+}
+
+function firstRecord(...values: unknown[]): Record<string, unknown> {
+	for (const value of values) {
+		const record = toDeepRecord(value);
+		if (Object.keys(record).length > 0) return record;
+	}
+	return {};
+}
+
+function readFirstString(...values: unknown[]) {
+	for (const value of values) {
+		if (typeof value === "string" && value.length > 0) return value;
+	}
+	return null;
+}
+
+function toolEventStatus(event: ManagedToolEvent): TestModeWorkflowStepStatus {
+	if (event.ok === true) return "passed";
+	if (event.ok === false) return "failed";
+	return "running";
+}
+
+function isTestImplementationTool(toolName: string) {
+	return toolName === "apply_patch" || toolName === "replace_content";
 }
 
 function isActiveTestModeWorkflowRun(run?: TaskRun | null) {
