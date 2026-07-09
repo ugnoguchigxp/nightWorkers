@@ -106,6 +106,22 @@ describe("Review vulnWorkbench diagnostic", () => {
 							findingCount: 2,
 							highOrCriticalCount: 1,
 							reportPath: "/tmp/vuln-report.md",
+							findings: [
+								{
+									id: "finding-1",
+									severity: "high",
+									tool: "semgrep",
+									ruleId: "dockerfile.security.missing-user.missing-user",
+									title:
+										"By not specifying a USER, a program in the container may run as root.",
+									location: {
+										path: "/workspace/project/Dockerfile",
+										line: 18,
+									},
+									recommendation:
+										"Dockerfile に non-root の user/group 作成を追加し、最後に USER でそのユーザーへ切り替えてください。",
+								},
+							],
 						},
 						review: {
 							status: "completed",
@@ -126,6 +142,12 @@ describe("Review vulnWorkbench diagnostic", () => {
 		expect(result.scanRunId).toBe("scan-1");
 		expect(result.findingCount).toBe(2);
 		expect(result.highOrCriticalCount).toBe(1);
+		expect(result.topFindings).toHaveLength(1);
+		expect(result.topFindings[0]).toMatchObject({
+			severity: "high",
+			ruleId: "dockerfile.security.missing-user.missing-user",
+			location: { path: "/workspace/project/Dockerfile", line: 18 },
+		});
 		expect(result.improvementRequest).toContain("認可境界");
 		expect(calls).toHaveLength(1);
 		expect(calls[0]?.cwd).toBe("/workspace/vulnWorkbench");
@@ -136,10 +158,17 @@ describe("Review vulnWorkbench diagnostic", () => {
 			"/workspace/project",
 		]);
 		expect(calls[0]?.timeoutSeconds).toBe(600);
-		expect(findingForVulnWorkbenchResult(result)).toMatchObject({
+		const reviewFinding = findingForVulnWorkbenchResult(result);
+		expect(reviewFinding).toMatchObject({
 			severity: "warning",
 			title:
 				"vulnWorkbench security diagnostic reported scanner-backed findings",
 		});
+		expect(reviewFinding.body).toContain("対応が必要な検出");
+		expect(reviewFinding.body).toContain("/workspace/project/Dockerfile:18");
+		expect(reviewFinding.body).toContain("Dockerfile に non-root");
+		expect(reviewFinding.body).toContain(
+			"semgrep / dockerfile.security.missing-user.missing-user",
+		);
 	});
 });

@@ -345,6 +345,22 @@ function securityReviewArtifact(): ReviewSessionDetail["artifacts"][number] {
 				projectPath: "/workspace/project",
 				scanRunId: "scan-1",
 				profile: "agent-output",
+				topFindings: [
+					{
+						id: "finding-1",
+						severity: "high",
+						tool: "semgrep",
+						ruleId: "dockerfile.security.missing-user.missing-user",
+						title:
+							"By not specifying a USER, a program in the container may run as root.",
+						location: {
+							path: "/workspace/project/Dockerfile",
+							line: 18,
+						},
+						recommendation:
+							"Dockerfile に non-root の user/group 作成を追加し、最後に USER でそのユーザーへ切り替えてください。",
+					},
+				],
 				commandsRun: [
 					{
 						command:
@@ -603,6 +619,9 @@ describe("ReviewStatusViewer", () => {
 		expect(text).toContain("scan-1");
 		expect(text).toContain("findings: 2");
 		expect(text).toContain("high/critical: 1");
+		expect(text).toContain("対応が必要な検出");
+		expect(text).toContain("/workspace/project/Dockerfile:18");
+		expect(text).toContain("Dockerfile に non-root");
 		expect(text).toContain("bun run api/cli/oracle-security.ts");
 	});
 

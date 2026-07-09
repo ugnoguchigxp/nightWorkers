@@ -158,6 +158,9 @@ function securityDiagnosticResult(artifact: ReviewArtifact | undefined) {
 	const commandsRun = Array.isArray(result.commandsRun)
 		? result.commandsRun.filter(isRecord)
 		: [];
+	const topFindings = Array.isArray(result.topFindings)
+		? result.topFindings.filter(isRecord).slice(0, 10)
+		: [];
 	return {
 		ok: result.ok === true,
 		profile: typeof result.profile === "string" ? result.profile : "unknown",
@@ -175,6 +178,32 @@ function securityDiagnosticResult(artifact: ReviewArtifact | undefined) {
 			typeof result.improvementRequest === "string"
 				? result.improvementRequest
 				: null,
+		topFindings: topFindings.map((finding) => {
+			const location = isRecord(finding.location) ? finding.location : null;
+			return {
+				id: typeof finding.id === "string" ? finding.id : null,
+				severity:
+					typeof finding.severity === "string" ? finding.severity : "unknown",
+				tool: typeof finding.tool === "string" ? finding.tool : "unknown",
+				ruleId:
+					typeof finding.ruleId === "string" ? finding.ruleId : "unknown-rule",
+				title:
+					typeof finding.title === "string"
+						? finding.title
+						: "Untitled finding",
+				location:
+					typeof location?.path === "string"
+						? {
+								path: location.path,
+								line: typeof location.line === "number" ? location.line : null,
+							}
+						: null,
+				recommendation:
+					typeof finding.recommendation === "string"
+						? finding.recommendation
+						: null,
+			};
+		}),
 		error: typeof result.error === "string" ? result.error : null,
 		commandsRun: commandsRun.map((command) => ({
 			command: typeof command.command === "string" ? command.command : "",
@@ -522,6 +551,44 @@ export function ReviewStatusViewer({
 									{securityResult.improvementRequest ? (
 										<div className="whitespace-pre-wrap leading-5">
 											{securityResult.improvementRequest}
+										</div>
+									) : null}
+									{securityResult.topFindings.length > 0 ? (
+										<div className="grid gap-2">
+											<div className="font-semibold text-slate-100">
+												対応が必要な検出
+											</div>
+											{securityResult.topFindings.map((finding) => {
+												const location = finding.location
+													? `${finding.location.path}${
+															finding.location.line
+																? `:${finding.location.line}`
+																: ""
+														}`
+													: "-";
+												return (
+													<div
+														key={finding.id ?? `${finding.ruleId}-${location}`}
+														className="rounded border border-amber-900/60 bg-amber-950/20 px-2 py-1.5"
+													>
+														<div className="font-medium text-amber-100">
+															[{finding.severity}]{" "}
+															{compactText(finding.title, 260)}
+														</div>
+														<div className="mt-1 text-slate-300">
+															場所: {location}
+														</div>
+														<div className="text-slate-400">
+															根拠: {finding.tool} / {finding.ruleId}
+														</div>
+														{finding.recommendation ? (
+															<div className="mt-1 text-slate-200">
+																対応: {finding.recommendation}
+															</div>
+														) : null}
+													</div>
+												);
+											})}
 										</div>
 									) : null}
 									{securityResult.commandsRun.length > 0 ? (

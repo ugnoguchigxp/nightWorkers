@@ -19,6 +19,7 @@ export type VulnWorkbenchSecurityResult = {
 	projectPath: string | null;
 	scanRunId: string | null;
 	profile: string;
+	topFindings: VulnWorkbenchTopFinding[];
 	commandsRun: Array<{
 		command: string;
 		exitCode: number | null;
@@ -29,6 +30,19 @@ export type VulnWorkbenchSecurityResult = {
 	highOrCriticalCount: number;
 	improvementRequest: string | null;
 	error: string | null;
+};
+
+export type VulnWorkbenchTopFinding = {
+	id: string | null;
+	severity: string;
+	tool: string;
+	ruleId: string;
+	title: string;
+	location: {
+		path: string;
+		line: number | null;
+	} | null;
+	recommendation: string;
 };
 
 type BunCommandResult = {
@@ -130,6 +144,7 @@ export async function runVulnWorkbenchSecurityDiagnostic(input: {
 			projectPath: input.target.repoRoot,
 			scanRunId: oracle.scanRunId,
 			profile,
+			topFindings: [],
 			commandsRun,
 			reportPath: null,
 			findingCount: 0,
@@ -180,14 +195,19 @@ export function findingForVulnWorkbenchResult(
 				? "vulnWorkbench security diagnostic reported scanner-backed findings"
 				: "vulnWorkbench security diagnostic completed",
 		body: [
-			`profile: ${result.profile}`,
-			result.projectPath ? `projectPath: ${result.projectPath}` : null,
-			`scanRunId: ${result.scanRunId ?? "(unknown)"}`,
-			`findingCount: ${result.findingCount}`,
-			`highOrCriticalCount: ${result.highOrCriticalCount}`,
-			result.reportPath ? `reportPath: ${result.reportPath}` : null,
+			result.findingCount > 0
+				? formatActionableFindings(result)
+				: "scanner-backed finding は検出されませんでした。",
+			"",
+			"scan summary:",
+			`- profile: ${result.profile}`,
+			result.projectPath ? `- projectPath: ${result.projectPath}` : null,
+			`- scanRunId: ${result.scanRunId ?? "(unknown)"}`,
+			`- findingCount: ${result.findingCount}`,
+			`- highOrCriticalCount: ${result.highOrCriticalCount}`,
+			result.reportPath ? `- reportPath: ${result.reportPath}` : null,
 			result.improvementRequest
-				? `improvementRequest: ${result.improvementRequest}`
+				? `- improvementRequest: ${result.improvementRequest}`
 				: null,
 		]
 			.filter(Boolean)
@@ -250,6 +270,7 @@ function unconfiguredResult(
 		projectPath,
 		scanRunId: null,
 		profile,
+		topFindings: [],
 		commandsRun: [],
 		reportPath: null,
 		findingCount: 0,
@@ -350,6 +371,7 @@ function resultFromOraclePayload(
 		profile:
 			(typeof scan?.profile === "string" ? scan.profile : null) ??
 			fallbacks.fallbackProfile,
+		topFindings: parseTopFindings(scan?.findings),
 		commandsRun: fallbacks.commandsRun,
 		reportPath: typeof scan?.reportPath === "string" ? scan.reportPath : null,
 		findingCount:
@@ -366,6 +388,67 @@ function resultFromOraclePayload(
 				: null) ?? parsed.improvementRequest,
 		error: errorMessage,
 	};
+}
+
+function parseTopFindings(value: unknown): VulnWorkbenchTopFinding[] {
+	if (!Array.isArray(value)) return [];
+	return value
+		.map((item): VulnWorkbenchTopFinding | null => {
+			if (!isRecord(item)) return null;
+			const location = isRecord(item.location) ? item.location : null;
+			const locationPath =
+				typeof location?.path === "string" ? location.path : null;
+			return {
+				id: typeof item.id === "string" ? item.id : null,
+				severity: typeof item.severity === "string" ? item.severity : "unknown",
+				tool: typeof item.tool === "string" ? item.tool : "unknown",
+				ruleId: typeof item.ruleId === "string" ? item.ruleId : "unknown-rule",
+				title: typeof item.title === "string" ? item.title : "Untitled finding",
+				location: locationPath
+					? {
+							path: locationPath,
+							line: typeof location?.line === "number" ? location.line : null,
+						}
+					: null,
+				recommendation:
+					typeof item.recommendation === "string"
+						? item.recommendation
+						: "検出箇所を確認し、scanner rule が求める制御を追加してください。",
+			};
+		})
+		.filter((item): item is VulnWorkbenchTopFinding => item !== null)
+		.slice(0, 10);
+}
+
+function formatActionableFindings(result: VulnWorkbenchSecurityResult) {
+	if (result.topFindings.length === 0) {
+		return [
+			"対応が必要な検出がありますが、詳細要約は取得できませんでした。",
+			result.reportPath
+				? `詳細 report を確認してください: ${result.reportPath}`
+				: null,
+		]
+			.filter(Boolean)
+			.join("\n");
+	}
+	const lines = ["対応が必要な検出:"];
+	for (const [index, finding] of result.topFindings.entries()) {
+		const location = finding.location
+			? `${finding.location.path}${finding.location.line ? `:${finding.location.line}` : ""}`
+			: "(location unavailable)";
+		lines.push(
+			`${index + 1}. [${finding.severity}] ${finding.title}`,
+			`   場所: ${location}`,
+			`   根拠: ${finding.tool} / ${finding.ruleId}`,
+			`   対応: ${finding.recommendation}`,
+		);
+	}
+	if (result.findingCount > result.topFindings.length) {
+		lines.push(
+			`ほか ${result.findingCount - result.topFindings.length} 件は reportPath の詳細 report を確認してください。`,
+		);
+	}
+	return lines.join("\n");
 }
 
 function parseSecurityOutput(output: string) {
